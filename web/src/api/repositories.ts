@@ -4,6 +4,7 @@ import type {
  RepositoryCreate,
  RepositoryUpdate,
 } from '~/types'
+import type { NeighborMetadata } from '~/api/codegraph'
 import { ApiError, del, get, patch, post, upload } from './client'
 // 索引状态枚举
 export enum IndexStatus {
@@ -489,4 +490,40 @@ export const repositoriesApi = {
  refreshRemoteHead: async (id: string): Promise<RefreshRemoteHeadResponse> => {
  return post<RefreshRemoteHeadResponse>(`/repositories/${id}/refresh-remote-head/`)
  },
+}
+// ==================== Phase: GSEARCH 仓库级 GraphRAG 关联搜索 ====================
+/**
+ * L3 命中片段（与 端点 `results` 序列化对齐）。
+ * 作为前端构建扩散图「起点」节点（SourceChunk）的数据源。
+ */
+export interface GraphSearchResult {
+ chunk_id: string
+ file_path: string
+ line_start: number | null
+ line_end: number | null
+ content: string
+ score: number
+ language?: string
+}
+/**
+ * graph-search 端点返回结构（六键，严格对齐 GraphSearchView）。
+ * hop1/hop2 复用 `~/api/codegraph` 的 NeighborMetadata（与后端 `_serialize_neighbor` 同字段集）。
+ */
+export interface GraphSearchResponse {
+ query: string
+ results: GraphSearchResult
+ hop1_neighbors: NeighborMetadata
+ hop2_neighbors: NeighborMetadata
+ graph_context: string
+ total_tokens: number
+}
+/**
+ * 仓库级 GraphRAG 关联搜索（POST /repositories/{id}/graph-search/）。
+ * branch 来自页面 selectedBranch，透传给后端做分支作用域过滤；缺省/空走 base。
+ */
+export async function graphSearch(
+ id: string,
+ body: { query: string, branch?: string | null, top_k?: number, max_tokens?: number },
+): Promise<GraphSearchResponse> {
+ return post<GraphSearchResponse>(`/repositories/${id}/graph-search/`, body)
 }
