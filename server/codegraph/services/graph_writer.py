@@ -35,7 +35,9 @@ class GraphWriter:
  单次调用 write_bundle 处理一个文件的完整图谱数据。
  由 IndexerService（Plan）在每个索引文件后调用，或批量处理。
  """
- async def write_bundle(self, repository_id: str, bundle: Any) -> dict[str, int]:
+ async def write_bundle(
+ self, repository_id: str, bundle: Any, *, branch_name: str = "",
+ ) -> dict[str, int]:
  """将单文件的 ExtractionBundle 批量写入 Django ORM（async 包装器）。
  实际写入由 ``write_bundle_sync`` 承担，通过
  ``sync_to_async(thread_sensitive=False)`` 调度到独立线程池：
@@ -43,11 +45,15 @@ class GraphWriter:
  共享同一根 SingleThreadExecutor，graph 阶段大批写入时所有 HTTP 接口
  会被排队"待处理"。把整文件的 4 张表写入打包到独立线程，彻底切断
  与 ASGI 请求线程的争用。
+ branch_name：分支维度透传给 write_bundle_sync。默认 ""=base，
+ 保证现有 full/incremental 调用方行为字节不变（向后兼容红线）。
  """
  return await sync_to_async(
  self.write_bundle_sync, thread_sensitive=False,
- )(repository_id, bundle)
- def write_bundle_sync(self, repository_id: str, bundle: Any) -> dict[str, int]:
+ )(repository_id, bundle, branch_name=branch_name)
+ def write_bundle_sync(
+ self, repository_id: str, bundle: Any, *, branch_name: str = "",
+ ) -> dict[str, int]:
  """同步版本的 write_bundle，使用 sync ORM 一次性完成 4 张表写入。
  写入策略（per-file 幂等性）：
  1. 删除该文件旧记录：Symbol/ImportEdge/Endpoint 按 file_path 过滤 delete；
@@ -83,17 +89,24 @@ class GraphWriter:
  #：**必须在 Symbol delete 之前**先删边——否则 Symbol delete 会对
  # 即将被删的函数内边先触发一次 SET_NULL UPDATE（写放大）；先删边后这些
  # 行已不存在，Symbol delete 不再产生无谓 UPDATE，删除职责也单一化。
+ #：4 个 per-file 删除 filter 全部带 branch_name —— feature
+ # per-file 删除加 branch_name=<feature> 过滤后绝不会删到 base 行
+ # （base 行 branch_name=""），杜绝 feature 写入污染 base（Pitfall 1/4）。
  CallEdge.objects.filter(
  repository_id=repository_id, caller_file=file_path,
+ branch_name=branch_name,
  ).delete
  Symbol.objects.filter(
  repository_id=repository_id, file_path=file_path,
+ branch_name=branch_name,
  ).delete
  ImportEdge.objects.filter(
  repository_id=repository_id, source_file=file_path,
+ branch_name=branch_name,
  ).delete
  Endpoint.objects.filter(
  repository_id=repository_id, file_path=file_path,
+ branch_name=branch_name,
  ).delete
  # =================================================================
  # 第二步：批量创建 Symbol（必须先于 CallEdge）
@@ -102,6 +115,7 @@ class GraphWriter:
  for s in bundle.symbols:
  symbol_objs.append(Symbol(
  repository_id=repository_id,
+ branch_name=branch_name,
  name=s.name,
  symbol_type=s.symbol_type,
  file_path=s.file_path,
@@ -136,6 +150,7 @@ class GraphWriter:
  for imp in bundle.imports:
  import_objs.append(ImportEdge(
  repository_id=repository_id,
+ branch_name=branch_name,
  source_file=imp.source_file,
  target_module=imp.target_module,
  imported_names=imp.imported_names,
@@ -152,6 +167,7 @@ class GraphWriter:
  # url_path 可能为 None（Layer 1 装饰器扫描结果未关联 URL）
  endpoint_objs.append(Endpoint(
  repository_id=repository_id,
+ branch_name=branch_name,
  http_method=ep.http_method,
  url_path=ep.url_path or "",
  handler_name=ep.handler_name,
@@ -188,6 +204,7 @@ class GraphWriter:
  module_level_calls += 1
  call_objs.append(CallEdge(
  repository_id=repository_id,
+ branch_name=branch_name,
  caller_symbol_id=caller_id,
  caller_file=call.caller_key[0],
  callee_name=call.callee_name,
