@@ -22,6 +22,7 @@ from .index_views import (
  RepositoryWebhookView,
  RerankerHealthView,
 )
+from .graph_search_views import GraphSearchView
 from .refresh_remote_head_views import RefreshRemoteHeadView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
@@ -112,6 +113,13 @@ urlpatterns = [
  "<uuid:repository_id>/search/",
  CodeSearchView.as_view,
  name="repository-code-search",
+ ),
+ # GraphRAG 关联搜索（Phase）：放在 codegraph include 之前，
+ # graph-search/ 与 codegraph/ 字面不冲突，UUID 通配符顺序安全。
+ path(
+ "<uuid:repository_id>/graph-search/",
+ GraphSearchView.as_view,
+ name="repository-graph-search",
  ),
  # Index observability (Phase)
  path(
