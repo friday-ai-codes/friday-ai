@@ -11,7 +11,10 @@ export function computeFreshness(r: Repository): FreshnessState {
  return 'unknown'
  return r.remote_head_sha === r.last_indexed_commit_sha ? 'fresh': 'stale'
 }
-export function useKnowledgeOverview(repositoryId: Ref<string>) {
+export function useKnowledgeOverview(
+ repositoryId: Ref<string>,
+ branch?: Ref<string | null | undefined>,
+) {
  const loading = ref(true)
  const checking = ref(false)
  const errorMessage = ref<string | null>(null)
@@ -52,7 +55,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  try {
  // 直接读 ChunkEdge 表真实计数（不再依赖 IndexHistory.edge_count 快照，
  // 修复时序漏写导致的"0 语义边"误显示）
- graphRagStatus.value = await repositoriesApi.getGraphRagStatus(repositoryId.value)
+ graphRagStatus.value = await repositoriesApi.getGraphRagStatus(repositoryId.value, branch?.value)
  }
  catch {
  graphRagStatus.value = null
@@ -120,6 +123,11 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  const graphBusy = computed( => repo.value?.graph_build_status === 'running')
  watch(repositoryId, => {
  loadAll
+ })
+ // 切分支只重拉 branch-aware 的 graphrag-status，避免整页 loading 抖动；
+ // repo/health/structuredCounts 维持现状不随分支变（Pitfall D）。
+ watch( => branch?.value, => {
+ loadGraphRagStatus
  })
  return {
  loading,
