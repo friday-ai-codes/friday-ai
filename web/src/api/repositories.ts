@@ -117,6 +117,16 @@ export interface IndexHistoryItem {
  // Phase: 跨仓 API 匹配状态（Phase migration 0023 后端已落字段）
  cross_repo_match_count?: number
  cross_repo_built_at?: string | null
+ // Phase: per-run delta（本次索引新增，区别于累计 edge_count）
+ // optional 兼容老 IndexHistory 行未回填 / 旧后端
+ symbols_added?: number
+ imports_added?: number
+ calls_added?: number
+ endpoints_added?: number
+ chunk_edges_added?: number
+ // Phase: 行级 diff（null = 不可计算，前端显示 "—"，区别于真实 0）
+ lines_added?: number | null
+ lines_deleted?: number | null
 }
 export interface IndexHistoryResponse {
  items: IndexHistoryItem
