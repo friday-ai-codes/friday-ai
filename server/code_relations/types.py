@@ -14,6 +14,9 @@ class ChunkRegistryRow(TypedDict):
  - `repository_id`：`str(repo.id)`，indexer 不解析为 UUID（ 写法）
  - `file_path`：相对仓库根的路径字符串
  - `chunk_index`：≥0 整数，同 file_path 内 chunk 出现次序
+ - `branch_name`：分支隔离维度（v26.2 / Phase）。``""``=base，
+ feature 为归一化后的分支名；与 ChunkRegistry.branch_name 字段对齐，供
+ EdgeBuilder 分支过滤使用。
  Phase EdgeBuilder 可直接 `from code_relations.types import ChunkRegistryRow`
  在自身签名上复用，避免 typo `chunkid` / `contenthash` 滑过 mypy 直到运行期才 KeyError。
  """
@@ -22,3 +25,4 @@ class ChunkRegistryRow(TypedDict):
  repository_id: str
  file_path: str
  chunk_index: int
+ branch_name: str
