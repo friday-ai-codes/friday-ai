@@ -129,7 +129,7 @@ def test_build_points_returns_tuple -> None:
  assert isinstance(result[0], list)
  assert isinstance(result[1], list)
 def test_build_points_registry_row_fields_complete -> None:
- """registry_rows 每行必须含 5 个字段（chunk_id / content_hash / repository_id / file_path / chunk_index）。"""
+ """registry_rows 每行必须含 6 个字段（含 Phase 新增的 branch_name）。"""
  chunks = [_make_chunk(content="A", file_path="x.py")]
  embeddings = [[0.1]]
  _, registry_rows = IndexerService._build_points(
@@ -142,6 +142,9 @@ def test_build_points_registry_row_fields_complete -> None:
  "repository_id",
  "file_path",
  "chunk_index",
+ "branch_name",
  }
  assert row["repository_id"] == "repo-A"
  assert row["file_path"] == "x.py"
+ # base 路径（is_base_branch=False 且 branch_name=None）归一化为 ""，字节不变
+ assert row["branch_name"] == ""
