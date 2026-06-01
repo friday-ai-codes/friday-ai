@@ -23,8 +23,10 @@ import math
 import uuid
 from typing import TYPE_CHECKING, Any
 import structlog
+from asgiref.sync import sync_to_async
 from code_relations.builders.base import BaseEdgeBuilder
 from code_relations.models import ChunkEdge, EdgeType
+from services.branch_utils import get_effective_collection_name
 from services.qdrant_service import QdrantService
 if TYPE_CHECKING:
  from repositories.models import Repository
@@ -44,11 +46,24 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  if not dirty_chunk_ids:
  return
  from qdrant_client.http import models as qmodels
- collection_name = QdrantService.get_collection_name(str(repository.id))
+ # Phase / Pitfall 2：feature 分支的 chunk 向量写在 overlay
+ # collection；base（branch_name==""）落到旧 collection（字节不变）。
+ # `get_effective_collection_name` 内部走同步 ORM（RepositoryBranchIndex
+ # 路由），用 sync_to_async 包装避免在 async 上下文直接触发同步 DB 访问。
+ #
+ # 跨 collection 限制（本 phase 不解决，归 296 GSEARCH）：overlay collection
+ # 仅含 diff 文件 chunks，feature chunk 的语义近邻在 overlay 内搜不到 base
+ # 邻居。本 phase 仅保证 feature SEMANTIC 边写对 branch_name 且不污染 base；
+ # base+overlay 合并语义检索（hop1/hop2 跨 collection）属 296 范畴。
+ collection_name = await sync_to_async(get_effective_collection_name)(
+ str(repository.id), branch_name
+ )
  client = QdrantService.get_client
  edges: list[ChunkEdge] =
  skipped_no_vector = 0
@@ -99,6 +114,7 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
  weight=weight,
  metadata={"qdrant_score": raw_score},
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(
