@@ -2137,6 +2137,7 @@ class IndexerService:
  return SparseEncoderService.encode_batch(texts)
  async def _extract_and_write_graph(
  self, repo_path: str, file_paths: list[str], repository_id: str,
+ *, branch_name: str = "", history_id: str | None = None,
  ) -> dict[str, Any]:
  """对指定文件列表执行图谱抽取并写入 Django ORM（双轨架构图谱轨）。
  该方法在向量轨写入（Qdrant upsert）完成后调用，对每个 tree-sitter
@@ -2147,6 +2148,12 @@ class IndexerService:
  repo_path: 克隆仓库的本地路径
  file_paths: 需要抽取图谱的文件路径列表（相对路径）
  repository_id: 仓库 UUID 字符串
+ branch_name: 写入侧归一化后的分支名。``""``=base 路径，
+ feature 分支为归一化后的分支名。透传给 ``GraphWriter.write_bundle``
+ 与 ``enqueue_edge_build_for_history``，使图谱行/边带正确分支维度。
+ history_id: 关联的 IndexHistory 行 ID（ / Pitfall 3）。非 None
+ 时 lifecycle hook **直接用透传值**，跳过「查最近 RUNNING IndexHistory」
+ fallback（避免多分支并发误取错行）；None 时保留 fallback 向后兼容。
  Returns:
  dict: {"files_processed": N, "files_failed": N, "symbols": N, ...}
  """
@@ -2310,8 +2317,10 @@ class IndexerService:
  if extractor is None:
  continue
  bundle = extractor.extract(file_path, source, ctx)
- # 批量入库
- result = await graph_writer.write_bundle(repository_id, bundle)
+ # 批量入库（：透传归一化分支名，base 路径 branch_name="" 字节不变）
+ result = await graph_writer.write_bundle(
+ repository_id, bundle, branch_name=branch_name
+ )
  stats["files_processed"] += 1
  stats["total_symbols"] += result.get("symbols", 0)
  stats["total_imports"] += result.get("imports", 0)
@@ -2394,9 +2403,15 @@ class IndexerService:
  from repositories.models import IndexHistory, IndexHistoryStatus
  dirty = sorted(self._session_dirty_chunk_ids)
  self._session_dirty_chunk_ids.clear
- # history_id fallback：当前 _extract_and_write_graph 调用栈未透传
- # history_id（v22.0 设计），取该 repo 最近 RUNNING 的 IndexHistory
- # 行作为 lifecycle 写入目标；找不到则降级为透传 enqueue_edge_build。
+ # / Pitfall 3：history_id 透传优先。形参非 None 时直接用透传值，
+ # 跳过下方「查最近 RUNNING IndexHistory」fallback —— 避免多分支并发索引时
+ # fallback 取错行，把 feature 的 edge_count 回写到 base 的 IndexHistory。
+ running_history: uuid.UUID | str | None
+ if history_id is not None:
+ running_history = history_id
+ else:
+ # 向后兼容 fallback：调用栈未透传 history_id 时，取该 repo 最近 RUNNING
+ # 的 IndexHistory 行作为 lifecycle 写入目标；找不到则降级透传 None。
  running_history = await sync_to_async(
  lambda: IndexHistory.objects.filter(
  repository_id=repository_id,
@@ -2421,7 +2436,7 @@ class IndexerService:
  )
  if dirty:
  await enqueue_edge_build_for_history(
- str(repository_id), dirty, running_history
+ str(repository_id), dirty, running_history, branch_name=branch_name
  )
  stats["edge_build_enqueued"] = True
  stats["dirty_chunk_count"] = len(dirty)

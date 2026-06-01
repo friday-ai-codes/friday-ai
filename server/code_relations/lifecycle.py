@@ -184,6 +184,8 @@ async def enqueue_edge_build_for_history(
  repository_id: str,
  dirty_chunk_ids: list[uuid.UUID],
  history_id: uuid.UUID | str | None,
+ *,
+ branch_name: str = "",
 ) -> None:
  """`enqueue_edge_build` lifecycle wrapper：埋点 IndexHistory 状态机。
  Args:
@@ -191,6 +193,10 @@ async def enqueue_edge_build_for_history(
  dirty_chunk_ids: 本次 indexer 写入/更新的 chunk_id 列表
  history_id: 关联的 IndexHistory 行 ID；None 时跳过 lifecycle 更新，
  直接透传到 `enqueue_edge_build`（保兼容无 history 调用方）
+ branch_name: 写入侧归一化后的分支名（""=base）。Phase 透传链入口
+ 先在签名就位；将其继续下发给 `enqueue_edge_build` → orchestrator →
+ 6 EdgeBuilder（查询加 branch 过滤、写 ChunkEdge 打 branch）的完整透传
+ 由 Phase 落地。本 plan 接受该 kwarg 以保透传链自洽通过 mypy。
  异常隔离（per CONTEXT ）：函数体顶层 try/except 包裹，任何失败仅 log
  warning，不重抛——indexer 主流程不会被 reconcile 异常拉下水。
  """
@@ -259,6 +265,7 @@ async def enqueue_edge_build_for_history(
  history_id=str(history_id),
  dirty_chunks=len(dirty_chunk_ids),
  spawned_tasks=len(new_tasks),
+ branch_name=branch_name,
  )
  except Exception as exc:
  logger.exception(
