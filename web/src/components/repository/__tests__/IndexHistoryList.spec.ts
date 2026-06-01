@@ -291,7 +291,7 @@ describe('indexHistoryList — per-run delta + 行级 diff', => {
  const wrapper = mountList
  await flushPromises
  const text = wrapper.text
- expect(text).toContain('本次新增')
+ expect(text).toContain('本次索引')
  expect(text).toContain('42')
  expect(text).toContain('符号')
  expect(text).toContain('调用')
@@ -363,7 +363,7 @@ describe('indexHistoryList — per-run delta + 行级 diff', => {
  const wrapper = mountList
  await flushPromises
  expect(wrapper.exists).toBe(true)
- expect(wrapper.text).not.toContain('本次新增')
+ expect(wrapper.text).not.toContain('本次索引')
  expect(wrapper.text).not.toContain('文件重索引')
  })
 })

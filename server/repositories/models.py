@@ -322,28 +322,34 @@ class IndexHistory(models.Model):
  help_text="最近一次 cross_repo offline join 完成时间",
  )
  # Phase：per-run delta 可观测字段
- # 语义与上方累计 edge_count 严格对立——这 5 个字段记录「本次索引新增」数量，
+ # 语义与上方累计 edge_count 严格对立——这 5 个字段记录「本次索引」量，
  # 而非全仓库累计快照（Pitfall 7：杜绝把累计 count 误填进 per-run delta）。
  # 用 IntegerField（非 PositiveIntegerField）与 files_added 风格一致，避免负值边界争议。
+ #
+ # ⚠️ 口径区分（code-review 295 H1）：前 4 个 *_added 取自 GraphWriter.write_bundle
+ # 的本次写入量——增量索引按 per-file delete+rebuild，故对「被修改文件」会把该文件
+ # 内既有实体也计入（语义=本次重建涉及量，非去重净增）；chunk_edges_added 走
+ # bulk_insert_edges(ignore_conflicts) 去重后的 inserted，是真正的净新增。前端文案
+ # 用「本次索引」中性措辞，避免把前 4 个的重建量误读为净新增。
  symbols_added = models.IntegerField(
  default=0,
- help_text="本次索引新增 Symbol 数（per-run delta，本次新增非累计）",
+ help_text="本次索引写入/重建的 Symbol 数（per-run，非累计；增量重建文件含其既有符号，非去重净增）",
  )
  imports_added = models.IntegerField(
  default=0,
- help_text="本次索引新增 ImportEdge 数（per-run delta）",
+ help_text="本次索引写入/重建的 ImportEdge 数（per-run，非累计）",
  )
  calls_added = models.IntegerField(
  default=0,
- help_text="本次索引新增 CallEdge 数（per-run delta）",
+ help_text="本次索引写入/重建的 CallEdge 数（per-run，非累计）",
  )
  endpoints_added = models.IntegerField(
  default=0,
- help_text="本次索引新增 Endpoint 数（per-run delta）",
+ help_text="本次索引写入/重建的 Endpoint 数（per-run，非累计）",
  )
  chunk_edges_added = models.IntegerField(
  default=0,
- help_text="本次索引新增 ChunkEdge 数（per-run delta；区别于累计 edge_count）",
+ help_text="本次索引净新增 ChunkEdge 数（per-run，去重后 inserted；区别于累计 edge_count）",
  )
  # Phase：行级 diff 可观测字段（nullable 三态）
  # 三态语义：真实值（numstat 汇总数）/ 0（无变更或二进制文件）/ null（不可计算）。
