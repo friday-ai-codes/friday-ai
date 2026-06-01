@@ -590,6 +590,11 @@ class CodegraphRebuildView(APIView):
  status=status.HTTP_409_CONFLICT,
  )
  assert history is not None # error_detail None ⇒ history 必非空
+ #：读可选 branch（缺省 None → base）。归一化与 history.branch_name
+ # 写入统一在 service 层（build_graph_for_repository）完成——view 只透传，不在
+ # 此分叉 history 创建逻辑。权限/feature flag/路由均不变。
+ request_branch = request.data.get("branch") if request.data else None
+ branch_arg = request_branch if isinstance(request_branch, str) else None
  # 事务已 commit（sync helper 退出 ``transaction.atomic`` block），现在
  # 安全地调度后台 task。延迟 import service 入口以规避 module-level
  # 循环依赖（views ↔ services）。
@@ -601,6 +606,7 @@ class CodegraphRebuildView(APIView):
  repo_id_str,
  trigger=GraphBuildHistoryTrigger.MANUAL,
  history_id=history_id_str,
+ branch=branch_arg,
  ),
  name=f"graph-build-{repo_id_str}",
  )
@@ -609,6 +615,7 @@ class CodegraphRebuildView(APIView):
  repository_id=repo_id_str,
  history_id=history_id_str,
  trigger=GraphBuildHistoryTrigger.MANUAL.value,
+ branch=branch_arg or "",
  )
  return Response(
  {"history_id": history_id_str},
