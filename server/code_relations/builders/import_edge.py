@@ -27,6 +27,8 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  from codegraph.models import ImportEdge as CodegraphImportEdge
  first_chunk_cache: dict[str, uuid.UUID | None] = {}
@@ -38,6 +40,7 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  repository_id=repository.id,
  file_path=file_path,
  chunk_index=0,
+ branch_name=branch_name,
  ).first
  )
  cid = obj.chunk_id if obj is not None else None
@@ -100,7 +103,9 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  candidate = f"{base}{explicit_ext}"
  anchored = f"/{candidate}"
  obj = await sync_to_async(
- ChunkRegistry.objects.filter(repository_id=repository.id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  .filter(Q(file_path=candidate) | Q(file_path__endswith=anchored))
  .first
  )
@@ -109,7 +114,9 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  candidate = f"{base}{ext}"
  anchored = f"/{candidate}"
  obj = await sync_to_async(
- ChunkRegistry.objects.filter(repository_id=repository.id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  .filter(
  Q(file_path=candidate) | Q(file_path__endswith=anchored)
  )
@@ -121,7 +128,9 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  edges: list[ChunkEdge] =
  skipped_source = 0
  skipped_target = 0
- qs = CodegraphImportEdge.objects.filter(repository_id=repository.id)
+ qs = CodegraphImportEdge.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  async for iedge in qs.aiterator(chunk_size=1000):
  src_cid = await _first_chunk_id(iedge.source_file)
  if src_cid is None:
@@ -151,6 +160,7 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  "is_relative": bool(iedge.is_relative),
  },
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(

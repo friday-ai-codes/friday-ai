@@ -64,6 +64,8 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  clone_path = self._resolve_clone_path(repository)
  if clone_path is None:
@@ -79,7 +81,9 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  )
  return
  max_count = max(filtered.values) or 1
- file_chunks = await self._load_file_chunks(repository.id)
+ file_chunks = await self._load_file_chunks(
+ repository.id, branch_name=branch_name
+ )
  edges: list[ChunkEdge] =
  for (file_a, file_b), count in filtered.items:
  chunks_a = file_chunks.get(file_a, )
@@ -112,6 +116,7 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  "file_b": file_b,
  },
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(
@@ -248,11 +253,15 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  @staticmethod
  async def _load_file_chunks(
  repository_id: uuid.UUID,
+ *,
+ branch_name: str = "",
  ) -> dict[str, list[uuid.UUID]]:
  @sync_to_async
  def _load -> list[tuple[str, int, uuid.UUID]]:
  return list(
- ChunkRegistry.objects.filter(repository_id=repository_id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository_id, branch_name=branch_name
+ )
  .order_by("file_path", "chunk_index")
  .values_list("file_path", "chunk_index", "chunk_id")
  )

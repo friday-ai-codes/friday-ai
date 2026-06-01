@@ -61,6 +61,8 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  # 全扫策略（per CONTEXT ）：本 phase 接受全仓 ChunkRegistry
  # 扫描所有 file_path 重建 TEST_OF 边集；dirty_chunk_ids 暂未用于过滤。
@@ -70,7 +72,9 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  @sync_to_async
  def _list_test_files -> list[str]:
  return list(
- ChunkRegistry.objects.filter(repository_id=repository.id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  .values_list("file_path", flat=True)
  .distinct
  )
@@ -86,6 +90,7 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  repository_id=repository.id,
  file_path=file_path,
  chunk_index=0,
+ branch_name=branch_name,
  ).first
  )
  cid = obj.chunk_id if obj is not None else None
@@ -99,7 +104,9 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  def _q -> set[str]:
  return set(
  CodegraphImportEdge.objects.filter(
- repository_id=repository.id, source_file=test_file
+ repository_id=repository.id,
+ source_file=test_file,
+ branch_name=branch_name,
  ).values_list("target_module", flat=True)
  )
  modules = await _q
@@ -124,7 +131,9 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  """
  anchored = f"/{candidate}"
  return (
- ChunkRegistry.objects.filter(repository_id=repository.id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  .filter(
  Q(file_path=candidate) | Q(file_path__endswith=anchored)
  )
@@ -174,6 +183,7 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  "regex_id": regex_id,
  },
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(
