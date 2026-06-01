@@ -11,7 +11,11 @@
  * index_total_chunks, ... },
  * "running_history": null | { id, status, from_sha, to_sha,
  * files_added, files_modified, files_deleted,
- * changed_files, summary_text, ... }}
+ * changed_files, summary_text,
+ * // Phase per-run delta + 行级 diff
+ * symbols_added, imports_added, calls_added,
+ * endpoints_added, chunk_edges_added,
+ * lines_added, lines_deleted, ... }}
  *
  * {"type": "done", "reason": "idle" | "max_ticks" | "repo_deleted"}
  *
@@ -40,6 +44,14 @@ export type IndexStreamEvent =
  type: 'progress'
  ts: string
  repository: IndexStreamRepositoryPayload
+ // Phase：per-run delta（symbols_added / imports_added /
+ // calls_added / endpoints_added / chunk_edges_added）与行级 diff
+ // （lines_added / lines_deleted，number | null）经 running_history
+ // （后端 IndexHistorySerializer）天然携带 —— 这是 SSE delta 的**主路径**：
+ // RUNNING 行经 IndexHistoryList 的 liveRunningHistory merge 实时显示 delta，
+ // 无需扩展 SSE 后端的 graph 段。running_history 直接复用 IndexHistoryItem，
+ // 故 在 IndexHistoryItem 上新增的 delta 字段在此天然继承，
+ // 消除「后端发了 delta 字段、前端类型没有」的 drift。
  running_history: IndexHistoryItem | null
  }
  | { type: 'done', reason: string }
