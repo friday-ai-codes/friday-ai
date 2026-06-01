@@ -9,6 +9,7 @@ import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
+import CredentialModal from '~/components/repository/CredentialModal.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
@@ -180,6 +181,11 @@ async function confirmRebuildBranchIndex {
 }
 // 编辑仓库
 const editDialogOpen = ref(false)
+// 凭证管理弹窗（Phase：替代独立路由页入口）
+const credentialModalOpen = ref(false)
+async function handleCredentialSaved {
+ await repositoriesStore.fetchCredential(repositoryId.value)
+}
 const sections = ref<NavSection>([
  { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
  { id: 'branch-index', label: '分支索引', icon: 'icon-[lucide--git-branch]' },
@@ -438,12 +444,10 @@ function copyUrl {
  凭证配置
  </h3>
  </div>
- <RouterLink:to="`/repositories/${repository.id}/credential`">
- <Button variant="ghost" size="sm" class=" text-xs group">
+ <Button variant="ghost" size="sm" class=" text-xs group" @click="credentialModalOpen = true">
  管理
  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
  </Button>
- </RouterLink>
  </div>
  <div class="">
  <div v-if="credential" class="space-y-4">
@@ -480,12 +484,10 @@ function copyUrl {
  <p class="text-sm text-muted-foreground mb-3">
  尚未配置凭证
  </p>
- <RouterLink:to="`/repositories/${repository.id}/credential`">
- <Button size="sm" class=" text-xs">
+ <Button size="sm" class=" text-xs" @click="credentialModalOpen = true">
  <span class="icon-[lucide--key] mr-1.5" />
  配置凭证
  </Button>
- </RouterLink>
  </div>
  </div>
  </div>
@@ -549,6 +551,12 @@ function copyUrl {
  @confirm="handleEditSuccess"
  @cancel="editDialogOpen = false"
  @closed="editDialogOpen = false"
+ />
+ <!-- 凭证管理弹窗 -->
+ <CredentialModal
+ v-if="repository"
+ v-model:open="credentialModalOpen":repository-id="repository.id":credential="credential"
+ @saved="handleCredentialSaved"
  />
  <ConfirmDialog
  v-model:open="rebuildDialogOpen"
