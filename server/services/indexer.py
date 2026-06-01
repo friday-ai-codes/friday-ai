@@ -2475,6 +2475,27 @@ class IndexerService:
  .values_list("id", flat=True)
  .first
  )
+ # Phase（Pitfall A / Pitfall 7）：per-run delta 回填。
+ # 把本次 write_bundle 累加出的 symbols/imports/calls/endpoints 新增数
+ # 写入 running_history 指向的 IndexHistory 行。
+ #
+ # 为什么用 running_history 而非 history_id 形参（Pitfall A）：
+ # run_full_index 与 run_branch_index 透传 history_id=None，若直接用
+ # 形参，全量/分支索引的 *_added 永远写不进；running_history 含 fallback
+ # （history_id 透传优先 → 查最近 RUNNING → 最近一条 IndexHistory），与
+ # 下方 lifecycle 回写 edge_count 用同一来源，保证 per-run delta 与累计
+ # 落到同一 IndexHistory 行。
+ # 语义对立（Pitfall 7）：这 4 个 *_added 是「本次索引新增」（per-run
+ # delta，取自本次 stats 累加），与 lifecycle 写的 edge_count（全表累计
+ # 快照）落同一行但语义相反，绝不可互相串用。
+ # running_history 为 None（无任何 IndexHistory 可挂）时跳过回填，保持鲁棒。
+ if running_history is not None:
+ await IndexHistory.objects.filter(id=running_history).aupdate(
+ symbols_added=stats["total_symbols"],
+ imports_added=stats["total_imports"],
+ calls_added=stats["total_calls"],
+ endpoints_added=stats["total_endpoints"],
+ )
  if dirty:
  await enqueue_edge_build_for_history(
  str(repository_id), dirty, running_history, branch_name=branch_name
