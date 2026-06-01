@@ -254,3 +254,116 @@ describe('indexHistoryList — RUNNING 行 + SSE 流', => {
  expect(wrapper.text).not.toContain('重试')
  })
 })
+/**
+ * Phase：per-run delta 段 + 行级 diff 段展示
+ *
+ * 核心回归（Pitfall 6 前端镜像）：
+ * - 行级 diff null（不可计算：全量索引 / shallow 加深失败）→ 显示 "—"，**绝不**显示 "+0 −0"
+ * - 行级 diff 真实 0（无增删 / 二进制）→ 显示 "0"，区别于 "—"
+ * - per-run delta（symbols/calls/imports/chunk_edges）数值正确渲染
+ * - 老行未回填新字段（全 undefined）→ 整段隐藏，组件正常 mount 不崩（向后兼容）
+ */
+describe('indexHistoryList — per-run delta + 行级 diff', => {
+ beforeEach( => {
+ vi.clearAllMocks
+ vi.mocked(connectIndexProgressStream).mockReturnValue(new AbortController)
+ })
+ // 用 completed 行避免触发 SSE，聚焦展示逻辑
+ function mkCompletedItem(overrides: Record<string, unknown> = {}) {
+ return mkRunningItem({
+ id: 'h-delta',
+ status: 'completed' as const,
+ error_message: null,
+ finished_at: '2026-05-12T07:30:00Z',
+ ...overrides,
+ })
+ }
+ it('展示 per-run delta：符号/调用/import/chunk edge 数值渲染', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue({
+ items: [mkCompletedItem({
+ symbols_added: 42,
+ calls_added: 5,
+ imports_added: 3,
+ chunk_edges_added: 10,
+ })],
+ total: 1,
+ })
+ const wrapper = mountList
+ await flushPromises
+ const text = wrapper.text
+ expect(text).toContain('本次新增')
+ expect(text).toContain('42')
+ expect(text).toContain('符号')
+ expect(text).toContain('调用')
+ expect(text).toContain('import')
+ expect(text).toContain('chunk edge')
+ })
+ it('行级 diff null 显示 "—"（不可计算，不渲染 "+0 −0"，Pitfall 6 回归核心）', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue({
+ items: [mkCompletedItem({
+ lines_added: null,
+ lines_deleted: null,
+ // 排除文件级统计干扰，避免 +0 来自其它段
+ files_added: 0,
+ files_modified: 0,
+ files_deleted: 0,
+ changed_files: { added:, modified:, deleted: },
+ })],
+ total: 1,
+ })
+ const wrapper = mountList
+ await flushPromises
+ const text = wrapper.text
+ // null → em dash "—"
+ expect(text).toContain('—')
+ expect(text).toContain('行')
+ // 关键：不可计算绝不渲染成 "+0"（误导用户以为真无变更）
+ expect(text).not.toContain('+0')
+ })
+ it('行级 diff 真实 0 显示 "0"（区别于 "—"）', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue({
+ items: [mkCompletedItem({
+ lines_added: 0,
+ lines_deleted: 0,
+ files_added: 0,
+ files_modified: 0,
+ files_deleted: 0,
+ changed_files: { added:, modified:, deleted: },
+ })],
+ total: 1,
+ })
+ const wrapper = mountList
+ await flushPromises
+ const text = wrapper.text
+ // 真实 0 → "+0 −0"，不显示 em dash "—"
+ expect(text).toContain('+0')
+ expect(text).not.toContain('—')
+ })
+ it('行级 diff 真实值：+10 −4 行', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue({
+ items: [mkCompletedItem({
+ lines_added: 10,
+ lines_deleted: 4,
+ })],
+ total: 1,
+ })
+ const wrapper = mountList
+ await flushPromises
+ const text = wrapper.text
+ expect(text).toContain('+10')
+ expect(text).toContain('4')
+ expect(text).toContain('行')
+ })
+ it('老行未回填新字段（全 undefined）→ 整段隐藏，组件正常 mount', async => {
+ // mkRunningItem 默认不带 295 新字段 → hasPerRunDelta / hasLineDiff 均 false
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue({
+ items: [mkCompletedItem],
+ total: 1,
+ })
+ const wrapper = mountList
+ await flushPromises
+ expect(wrapper.exists).toBe(true)
+ expect(wrapper.text).not.toContain('本次新增')
+ expect(wrapper.text).not.toContain('文件重索引')
+ })
+})
