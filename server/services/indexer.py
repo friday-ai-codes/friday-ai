@@ -2624,6 +2624,9 @@ class IndexerService:
  "repository_id": row["repository_id"],
  "file_path": row["file_path"],
  "chunk_index": row["chunk_index"],
+ #：分支隔离维度。PK 仍是 chunk_id，feature chunk_id
+ # 已天然不同（分支命名空间），get_or_create 不跨分支覆盖 base。
+ "branch_name": row["branch_name"],
  },
  )
  )
@@ -2677,12 +2680,19 @@ class IndexerService:
  file_chunk_counter: dict[str, int] = {}
  points: list[dict] =
  registry_rows: list[ChunkRegistryRow] =
+ # / Critical 1 根因修复：归一化写入侧分支。base 路径（branch_name
+ # 为 None 或 is_base_branch）→ ""，使 generate_chunk_id 走 base 命名空间字节
+ # 不变（293 golden 不回归）；feature → 分支命名空间 chunk_id，与 base 天然不同，
+ # ChunkRegistry PK 不再跨分支碰撞覆盖。
+ _norm_branch = "" if (branch_name is None or is_base_branch) else branch_name
  for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
  chunk_index = file_chunk_counter.get(chunk.file_path, 0)
  file_chunk_counter[chunk.file_path] = chunk_index + 1
  if embedding is None:
  continue
- chunk_id = generate_chunk_id(repository_id, chunk.file_path, chunk_index)
+ chunk_id = generate_chunk_id(
+ repository_id, chunk.file_path, chunk_index, _norm_branch
+ )
  content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest
  payload: dict[str, Any] = {
  "file_path": chunk.file_path,
@@ -2720,6 +2730,7 @@ class IndexerService:
  "repository_id": repository_id,
  "file_path": chunk.file_path,
  "chunk_index": chunk_index,
+ "branch_name": _norm_branch,
  })
  return points, registry_rows
 async def clone_and_index_repository(

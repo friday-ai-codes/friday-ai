@@ -18,6 +18,7 @@ def _make_row(
  content_hash: str,
  file_path: str = "src/a.py",
  chunk_index: int = 0,
+ branch_name: str = "",
 ) -> dict:
  return {
  "chunk_id": chunk_id,
@@ -25,6 +26,7 @@ def _make_row(
  "repository_id": repository_id,
  "file_path": file_path,
  "chunk_index": chunk_index,
+ "branch_name": branch_name,
  }
 async def test_upsert_registry_batch_creates_new_rows(repository) -> None:
  """3 行新 chunk_id → 全部 created=True，content_hash_changed=False；DB 内 3 条。"""
