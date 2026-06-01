@@ -357,6 +357,10 @@ class GraphBuildHistory(models.Model):
  default=GraphBuildHistoryStatus.RUNNING,
  help_text="创建即 RUNNING——CONTEXT 决议不引入 pending 态",
  )
+ # v26.2：分支隔离维度。"" = base 分支（与 codegraph 6 模型同口径），
+ # feature 分支由 manual REST `build_graph_for_repository(branch=...)` 归一化后写入，
+ # 供 history list endpoint 区分「这次重建跑的是哪个分支」。
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  # 文件处理进度计数
  files_total = models.IntegerField(default=0)
  files_processed = models.IntegerField(default=0)
