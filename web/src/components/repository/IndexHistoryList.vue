@@ -449,14 +449,17 @@ onBeforeUnmount( => {
  {{ expandedItems.has(item.id) ? '收起': '查看变更文件' }}
  </button>
  </div>
- <!-- Phase：per-run delta 段（本次索引新增图谱实体，
- 区别于累计 edge_count；读 running_history 携带的 字段，
- RUNNING 行经 liveRunningHistory merge 实时刷新） -->
+ <!-- Phase：per-run delta 段（本次索引图谱实体，区别于累计
+ edge_count；读 running_history 携带的 字段，RUNNING 行经
+ liveRunningHistory merge 实时刷新）。
+ 文案用「本次索引」中性措辞（code-review 295 H1）：符号/调用/import 取自
+ write_bundle 本次写入/重建量（增量重建文件含其既有实体，非去重净增），
+ 仅 chunk edge 为去重净新增，避免把重建量误读为净新增。 -->
  <div
  v-if="hasPerRunDelta(item)"
  class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
  >
- <span class="text-muted-foreground/70">本次新增</span>
+ <span class="text-muted-foreground/70">本次索引</span>
  <span class="inline-flex items-center gap-1 tabular-nums">
  <span class="text-emerald-600 font-medium">{{ item.symbols_added ?? 0 }}</span>
  <span>符号</span>
