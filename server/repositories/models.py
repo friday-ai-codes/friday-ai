@@ -321,6 +321,46 @@ class IndexHistory(models.Model):
  null=True,
  help_text="最近一次 cross_repo offline join 完成时间",
  )
+ # Phase：per-run delta 可观测字段
+ # 语义与上方累计 edge_count 严格对立——这 5 个字段记录「本次索引新增」数量，
+ # 而非全仓库累计快照（Pitfall 7：杜绝把累计 count 误填进 per-run delta）。
+ # 用 IntegerField（非 PositiveIntegerField）与 files_added 风格一致，避免负值边界争议。
+ symbols_added = models.IntegerField(
+ default=0,
+ help_text="本次索引新增 Symbol 数（per-run delta，本次新增非累计）",
+ )
+ imports_added = models.IntegerField(
+ default=0,
+ help_text="本次索引新增 ImportEdge 数（per-run delta）",
+ )
+ calls_added = models.IntegerField(
+ default=0,
+ help_text="本次索引新增 CallEdge 数（per-run delta）",
+ )
+ endpoints_added = models.IntegerField(
+ default=0,
+ help_text="本次索引新增 Endpoint 数（per-run delta）",
+ )
+ chunk_edges_added = models.IntegerField(
+ default=0,
+ help_text="本次索引新增 ChunkEdge 数（per-run delta；区别于累计 edge_count）",
+ )
+ # Phase：行级 diff 可观测字段（nullable 三态）
+ # 三态语义：真实值（numstat 汇总数）/ 0（无变更或二进制文件）/ null（不可计算）。
+ # null=不可计算——全量索引无 from/to SHA diff、或 shallow clone 加深失败时，
+ # 绝不把「不可计算」写成 0（Pitfall 6：null 与真实 0 必须可区分，前端据此显示 "—"）。
+ lines_added = models.IntegerField(
+ null=True,
+ blank=True,
+ default=None,
+ help_text="本次增量 +行数；null=不可计算（全量索引/shallow 加深失败），0=无新增或二进制文件",
+ )
+ lines_deleted = models.IntegerField(
+ null=True,
+ blank=True,
+ default=None,
+ help_text="本次增量 -行数；null=不可计算（全量索引/shallow 加深失败），0=无删除或二进制文件",
+ )
  started_at = models.DateTimeField(blank=True, null=True)
  finished_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
