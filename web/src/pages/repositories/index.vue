@@ -143,7 +143,7 @@ const platformIcons: Record<string, string> = {
  <TooltipContent>代码索引</TooltipContent>
  </Tooltip>
  </RouterLink>
- <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
+ <RouterLink:to="`/repositories/${repository.id}#credential`" @click.stop>
  <Tooltip>
  <TooltipTrigger as-child>
  <Button variant="ghost" size="icon-sm">

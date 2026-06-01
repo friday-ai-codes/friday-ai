@@ -5,15 +5,15 @@
  * 把原独立路由页 `pages/repositories/[id]/credential.vue` 的凭证表单逻辑迁入详情页弹窗：
  * - 复用现网 shadcn Dialog 壳（参考 GraphSearchModal 的 v-model:open 模式）+ Glassmorphism。
  * - 查看已配置凭证（认证类型 / Git 用户 / 创建时间），Access Token 始终脱敏，绝不回显明文。
- * - 通过现有凭证 API（`repositoriesApi.setAccessToken`，不改后端）配置 / 更新 Access Token。
+ * - 通过 store action（`repositoriesStore.setAccessToken`，不改后端）配置 / 更新 Access Token。
  *
- * 数据同步：保存成功后 emit('saved')，由详情页 index.vue 重新拉取凭证刷新「凭证已配置」徽标。
+ * 数据同步：走 store action 同步 currentCredential + has_credential（currentRepository + 列表项）；
+ * 保存成功后 emit('saved')，由详情页 index.vue 重新拉取凭证刷新「凭证已配置」徽标。
  *
  * 注：现有凭证 API 仅支持 Access Token（无 SSH Key 写入端点），故表单仅提供 Access Token；
  * 已存在的 ssh_key 类型凭证以只读方式展示认证类型徽标。
  */
 import type { GitCredential } from '~/types'
-import { repositoriesApi } from '~/api/repositories'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -37,6 +37,9 @@ const emit = defineEmits<{
 const open = defineModel<boolean>('open', { default: false })
 const { handleError } = useErrorHandler
 const { success } = useToast
+// 走 store action 而非直调 API：除写 currentCredential 外，还同步 has_credential
+// （currentRepository + 列表项），避免刚配完凭证打开 EditRepositoryModal 分支不拉取（code-review ）。
+const repositoriesStore = useRepositoriesStore
 // 表单状态
 const accessToken = ref('')
 const gitUserName = ref('Friday Codes AI Agent')
@@ -63,7 +66,7 @@ async function handleAccessTokenUpdate {
  }
  submitting.value = true
  try {
- await repositoriesApi.setAccessToken(props.repositoryId, {
+ await repositoriesStore.setAccessToken(props.repositoryId, {
  token: accessToken.value,
  git_user_name: gitUserName.value,
  git_user_email: gitUserEmail.value,
