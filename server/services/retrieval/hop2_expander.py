@@ -56,6 +56,7 @@ async def fetch_hop2_edges(
  *,
  relation_types: list[str] | None = None,
  direction: Literal["downstream", "upstream"] = "downstream",
+ branch_name: str | None = None,
 ) -> list[tuple[str, str, str, float, dict[str, Any]]]:
  """单次 ChunkEdge ORM 拉边，返回二跳候选 (source, target, edge_type, weight, metadata)。
  Args:
@@ -71,6 +72,16 @@ async def fetch_hop2_edges(
  list → 不过滤。
  direction: ``"downstream"`` (默认) 或 ``"upstream"``，决定
  ``hop1_chunk_ids`` 在 ``filter`` 中的字段方向。
+ branch_name (v26.2 / ): 分支维度过滤（纯参数透传，
+ **不读 settings**——守 Pitfall 5 CI grep gate）：
+ - ``None`` / ``""``（base 查询）→ ``branch_name__in=[""]`` 仅取 base
+ 行，``find_related`` 等不传 branch 的现存 callsite **字节级向后兼容**；
+ - ``"feature"`` → ``branch_name__in=["", "feature"]`` 合并 base 独有边
+ + feature 边，**其他分支边天然排除（跨分支不串，Pitfall 4 防御）**。
+ 调用方负责把 base 分支名归一化为 ``None``（resolve_branch_for_query 对
+ base 分支名返回非空字符串，端点须再归一化），否则 ``["", "main"]`` 会漏
+ base 行（base 行 ``branch_name=""`` 而非 ``"main"``）。命中 293/294 既有
+ 复合索引 ``(repository, branch_name, source_chunk_id)``。
  Returns:
  ``list[(source, target, edge_type, weight, metadata)]``——5-tuple
  包含 ``ChunkEdge.metadata``，按 weight desc 排序，长度 ≤
@@ -85,6 +96,10 @@ async def fetch_hop2_edges(
  return
  from code_relations.models import ChunkEdge
  base = ChunkEdge.objects.filter(repository_id__in=repo_ids)
+ # base/overlay 合并：base 行 branch_name="" 全分支可见；feature 行=分支名仅本
+ # 分支可见。branch_name 为空 → 仅 base（向后兼容）；非空 → base + 本分支合并。
+ branch_filter = ["", branch_name] if branch_name else [""]
+ base = base.filter(branch_name__in=branch_filter)
  if direction == "upstream":
  base = base.filter(target_chunk_id__in=hop1_chunk_ids)
  else:
@@ -121,6 +136,7 @@ async def expand_hop2(
  rag_chunk_ids: set[str],
  repo_ids: list[str],
  reason_fn: ReasonFn,
+ branch_name: str | None = None,
 ) -> list[NeighborMetadata]:
  """二跳扩散主入口：fetch 边 + 三重去重 + ChunkRegistry metadata 拼装。
  Args:
@@ -129,6 +145,8 @@ async def expand_hop2(
  repo_ids: 候选仓库 ID 列表。
  reason_fn: ``ReasonFn`` —— ``(edge_type, source_file, target_file,
  edge_metadata) -> str``， 升级后透传完整 template 上下文。
+ branch_name: 透传给 ``fetch_hop2_edges`` 做 base/overlay 合并
+ （``None`` → base 语义，向后兼容）；语义详见 ``fetch_hop2_edges``。
  Returns:
  ``list[NeighborMetadata]``：
  - ``hop=2`` 固定标注；
@@ -140,7 +158,9 @@ async def expand_hop2(
  **性能**：单次 ChunkEdge ORM（``fetch_hop2_edges``）+ 单次 ChunkRegistry
  ``in_bulk``（``resolve_neighbor_metadata``）= 至多 2 次 SQL。
  """
- edges = await fetch_hop2_edges(list(hop1_chunk_ids), repo_ids)
+ edges = await fetch_hop2_edges(
+ list(hop1_chunk_ids), repo_ids, branch_name=branch_name
+ )
  if not edges:
  return
  # 三重去重 reject set：合并 hop1 + rag，per source 自环单独判断
