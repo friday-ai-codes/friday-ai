@@ -1,6 +1,0 @@
-# Add mysqlclient manually to avoid build issues (we use sqlite in dev, but dependency is present)
-# Using python 3.14 compatible version or simply commenting out if not needed for migration
-# But better to fix the build environment or bypass if possible.
-# Since we are using sqlite, let's try to temporarily remove mysqlclient from pyproject.toml if it's there
-# OR just try to run without it if it's optional.
-# Let's check pyproject.toml first.
