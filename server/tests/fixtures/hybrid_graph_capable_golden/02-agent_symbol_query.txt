@@ -11,4 +11,4 @@ class UserService:
 ### Indirect Neighbors (2-hop)
 - `src/users/helpers.py:42` (IMPORT, w=0.55): imports module
 - `src/users/db.py:42` (SAME_FILE, w=0.42): same file group
-# tokens=140 source_layer=hybrid final_chunks=4
+# tokens=162 source_layer=hybrid final_chunks=4

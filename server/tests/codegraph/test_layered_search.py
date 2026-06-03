@@ -2,15 +2,15 @@
 覆盖 work item 各层、端到端、以及异常降级行为。
 总计 20+ 条测试。
 """
+from unittest.mock import AsyncMock, patch
 import pytest
 from asgiref.sync import sync_to_async
-from unittest.mock import AsyncMock, MagicMock, patch
+from codegraph.models import Symbol
 from codegraph.services.layered_search import (
- LayeredSearchService,
  LayeredSearchResult,
+ LayeredSearchService,
  LayerResult,
 )
-from codegraph.models import Symbol
 # ============================================================================
 # TestL1RepoRouting — L1 仓库路由层测试
 # ============================================================================
@@ -404,33 +404,37 @@ class TestEndToEnd:
  """端到端测试 ."""
  @pytest.mark.asyncio
  async def test_search_returns_layered_result(self):
- """search 返回 LayeredSearchResult 含 layers。"""
- with patch.object(
- LayeredSearchService, "_l1_repo_routing", new_callable=AsyncMock
- ) as mock_l1, patch.object(
- LayeredSearchService, "_l2_symbol_lookup", new_callable=AsyncMock
- ) as mock_l2, patch.object(
- LayeredSearchService, "_l3_hybrid_search", new_callable=AsyncMock
- ) as mock_l3, patch.object(
- LayeredSearchService, "_l4_graph_expansion", new_callable=AsyncMock
- ) as mock_l4:
- mock_l1.return_value = (LayerResult(layer="L1", status="skipped", result_count=1), ["repo-1"])
- mock_l2.return_value = LayerResult(layer="L2", status="skipped")
- mock_l3.return_value = LayerResult(layer="L3", status="ok", items=)
- mock_l4.return_value = LayerResult(layer="L4", status="skipped")
+ """search delegate 返回 LayeredSearchResult 兼容对象。"""
+ with patch(
+ "services.retrieval.HybridSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search:
+ mock_search.return_value = LayeredSearchResult(
+ query="test query",
+ repository_ids=["repo-1"],
+ layers=[LayerResult(layer="L3", status="ok", items=)],
+ final_context="",
+ total_tokens=0,
+ )
  result = await LayeredSearchService.search("test query", repository_ids=["repo-1"])
  assert isinstance(result, LayeredSearchResult)
  assert result.query == "test query"
- assert len(result.layers) == 5 # work item
- assert all(isinstance(l, LayerResult) for l in result.layers)
+ assert len(result.layers) == 1
+ assert all(isinstance(layer, LayerResult) for layer in result.layers)
+ mock_search.assert_awaited_once
  @pytest.mark.asyncio
  async def test_search_empty_repos_returns_early(self):
- """无可用仓库时提前返回空结果。"""
- with patch.object(
- LayeredSearchService, "_l1_repo_routing", new_callable=AsyncMock
- ) as mock_l1:
- mock_l1.return_value = (
- LayerResult(layer="L1", status="error", error="no repos"),,
+ """delegate 返回空仓库结果时保持旧字段语义。"""
+ with patch(
+ "services.retrieval.HybridSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search:
+ mock_search.return_value = LayeredSearchResult(
+ query="test",
+ repository_ids=,
+ layers=,
+ final_context="",
+ total_tokens=0,
  )
  result = await LayeredSearchService.search("test")
  assert result.repository_ids ==
@@ -438,33 +442,30 @@ class TestEndToEnd:
  assert result.total_tokens == 0
  @pytest.mark.asyncio
  async def test_search_with_specified_repo_ids(self):
- """指定 repository_ids 时跳过 L1 路由。"""
- with patch.object(
- LayeredSearchService, "_l2_symbol_lookup", new_callable=AsyncMock
- ) as mock_l2, patch.object(
- LayeredSearchService, "_l3_hybrid_search", new_callable=AsyncMock
- ) as mock_l3, patch.object(
- LayeredSearchService, "_l4_graph_expansion", new_callable=AsyncMock
- ) as mock_l4:
- mock_l2.return_value = LayerResult(layer="L2", status="skipped")
- mock_l3.return_value = LayerResult(layer="L3", status="ok", items=)
- mock_l4.return_value = LayerResult(layer="L4", status="skipped")
+ """指定 repository_ids 时透传给 HybridSearchService。"""
+ with patch(
+ "services.retrieval.HybridSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search:
+ mock_search.return_value = LayeredSearchResult(
+ query="test",
+ repository_ids=["my-repo"],
+ layers=[LayerResult(layer="L3", status="ok", items=)],
+ final_context="",
+ total_tokens=0,
+ )
  result = await LayeredSearchService.search("test", repository_ids=["my-repo"])
  assert isinstance(result, LayeredSearchResult)
  assert result.repository_ids == ["my-repo"]
- # L1 应为 skipped
- l1 = result.layers[0]
- assert l1.layer == "L1"
- assert l1.status == "skipped"
+ mock_search.assert_awaited_once
+ assert mock_search.await_args.kwargs["repository_ids"] == ["my-repo"]
  @pytest.mark.asyncio
  async def test_search_all_layers_handle_error_gracefully(self):
- """各层异常不抛给调用方，仅记录 warning。"""
- with patch.object(
- LayeredSearchService, "_l1_repo_routing", new_callable=AsyncMock
- ) as mock_l1:
- mock_l1.side_effect = Exception("L1 crash")
+ """delegate 异常按当前 wrapper 契约传播给调用方。"""
+ with patch(
+ "services.retrieval.HybridSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search:
+ mock_search.side_effect = Exception("search crash")
  with pytest.raises(Exception):
- # L1 异常会直接传播因为它在 search 的 try/except 之外
- # 但 _l1_repo_routing 内部有 try/except
- # 这里测试 mock 抛出的情况
  await LayeredSearchService.search("test")

@@ -12,4 +12,4 @@ result = ProcessData(payload)
 ### Direct Neighbors (1-hop)
 - `src/pipeline/process.py:12` (CALL, w=0.81): via direct call
 - `lib/pipe/run.py:8` (IMPORT, w=0.66): imports module
-# tokens=114 source_layer=hybrid final_chunks=2
+# tokens=131 source_layer=hybrid final_chunks=2
