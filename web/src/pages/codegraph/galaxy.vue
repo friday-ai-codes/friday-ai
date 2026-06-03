@@ -4,7 +4,10 @@ meta:
  title: Galaxy 代码图谱
 </route>
 <script setup lang="ts">
+import type { LocationQueryRaw } from 'vue-router'
 import type { GalaxyNode, GalaxyRepoEdge, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { getGalaxyRepoGraph } from '~/api/galaxy'
 import GalaxyBreadcrumb from '~/components/galaxy/GalaxyBreadcrumb.vue'
 import GalaxyCommandPalette from '~/components/galaxy/GalaxyCommandPalette.vue'
@@ -14,8 +17,6 @@ import GalaxyLegend from '~/components/galaxy/GalaxyLegend.vue'
 import NodeDetailDrawer from '~/components/galaxy/NodeDetailDrawer.vue'
 import { useGalaxyGraph } from '~/composables/useGalaxyGraph'
 import { useToast } from '~/composables/useToast'
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 // 备选引擎：lazy import（不增 main bundle）
 const EchartsGraphGl = defineAsyncComponent( =>
  import('~/components/galaxy/EchartsGraphGl.vue'),
@@ -30,13 +31,20 @@ const viewMode = computed<'overview' | 'detail'>( =>
  route.query.repo_ids ? 'detail': 'overview',
 )
 // 当前 detail 模式下被选中的 repo_ids（URL 同步）
-const detailRepoIds = computed<string>( => {
+const detailRepoKey = computed<string>( => {
  const raw = route.query.repo_ids
- if (!raw) return
+ if (!raw)
+ return ''
  return (Array.isArray(raw) ? raw.join(','): raw)
  .split(',')
  .map(s => s.trim)
  .filter(Boolean)
+ .join(',')
+})
+const detailRepoIds = computed<string>( => {
+ if (!detailRepoKey.value)
+ return
+ return detailRepoKey.value.split(',')
 })
 // overview 模式下的空间过滤
 const selectedSpaceId = ref<string | null>(
@@ -44,7 +52,8 @@ const selectedSpaceId = ref<string | null>(
 )
 watch(selectedSpaceId, (val) => {
  const query = { ...route.query }
- if (val) query.space_id = val
+ if (val)
+ query.space_id = val
  else delete query.space_id
  router.replace({ query })
 })
@@ -96,7 +105,8 @@ async function loadOverview {
  }
 }
 async function loadDetail {
- if (detailRepoIds.value.length === 0) return
+ if (detailRepoIds.value.length === 0)
+ return
  await fetchGraph(detailRepoIds.value)
 }
 // 监听 viewMode + 过滤参数变化，自动加载对应数据
@@ -110,7 +120,7 @@ watch(
  { immediate: false },
 )
 watch(
- [viewMode, detailRepoIds],
+ [viewMode, detailRepoKey],
  async => {
  if (viewMode.value === 'detail') {
  await loadDetail
@@ -122,9 +132,11 @@ watch(
 const detailRepoLabel = computed<string>( => {
  // 优先从 overview 的节点表中找
  const id = detailRepoIds.value[0]
- if (!id) return ''
+ if (!id)
+ return ''
  const found = overviewNodes.value.find(n => n.repository_id === id)
- if (found) return found.label
+ if (found)
+ return found.label
  // 回退：从细粒度图中找任一节点的 repository_id 匹配
  return ''
 })
@@ -154,16 +166,16 @@ function openNode(nodeId: string) {
  graphRef.value?.focusNode(nodeId)
  })
 }
-function handleOverviewNodeClick(node: GalaxyNode) {
+function handleOverviewNodeClick(node: GalaxyNode | GalaxyRepoNode) {
  // overview 模式：点击仓库节点下钻到 L1
  if (node.type === 'repository') {
  const repoUuid = node.repository_id || node.id.replace(/^repo:/, '')
- const nextQuery = { ...route.query, repo_ids: repoUuid }
+ const nextQuery: LocationQueryRaw = { ...route.query, repo_ids: repoUuid }
  delete nextQuery.node
  router.push({ query: nextQuery })
  }
 }
-function handleDetailNodeClick(node: GalaxyNode) {
+function handleDetailNodeClick(node: GalaxyNode | GalaxyRepoNode) {
  openNode(node.id)
 }
 function handleCommandPaletteSelect(result: GalaxySearchResult) {
@@ -191,7 +203,8 @@ function handleBackToOverview {
 // ============================================================================
 const urlNodeHandled = ref(false)
 watch(filteredNodes, (nodes) => {
- if (urlNodeHandled.value || nodes.length === 0 || viewMode.value !== 'detail') return
+ if (urlNodeHandled.value || nodes.length === 0 || viewMode.value !== 'detail')
+ return
  const urlNode = route.query.node as string | undefined
  if (urlNode) {
  urlNodeHandled.value = true

@@ -25,9 +25,14 @@ const EDGE_COLORS: Record<GalaxyEdgeType, string> = {
  SEMANTIC: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
  API_CALLS: 'bg-red-500/20 text-red-300 border-red-500/30',
  IMPLEMENTS: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
+ REPO_API_CALL: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
 }
 function edgeColor(type: GalaxyEdgeType): string {
  return EDGE_COLORS[type] ?? 'bg-white/10 text-white/50 border-white/20'
+}
+function emitNodeSelect(nodeId: string): void {
+ // eslint-disable-next-line vue/custom-event-name-casing -- 父组件契约使用 kebab-case
+ emit('node-select', nodeId)
 }
 </script>
 <template>
@@ -54,7 +59,7 @@ function edgeColor(type: GalaxyEdgeType): string {
  <li
  v-for="ref in calledBy":key="ref.caller_node_id"
  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors"
- @click="emit('node-select', ref.caller_node_id)"
+ @click="emitNodeSelect(ref.caller_node_id)"
  >
  <span
  class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border":class="edgeColor(ref.edge_type)"
@@ -78,7 +83,7 @@ function edgeColor(type: GalaxyEdgeType): string {
  <li
  v-for="ref in calls":key="ref.source_node_id"
  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors"
- @click="emit('node-select', ref.source_node_id)"
+ @click="emitNodeSelect(ref.source_node_id)"
  >
  <span
  class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border":class="edgeColor(ref.edge_type)"
@@ -102,7 +107,7 @@ function edgeColor(type: GalaxyEdgeType): string {
  <li
  v-for="nb in neighbors":key="`${nb.node.id}-${nb.direction}`"
  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors"
- @click="emit('node-select', nb.node.id)"
+ @click="emitNodeSelect(nb.node.id)"
  >
  <span
  class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border":class="edgeColor(nb.edge_type)"
