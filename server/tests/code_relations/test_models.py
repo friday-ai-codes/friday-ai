@@ -76,8 +76,8 @@ def test_chunk_id_differs_per_triplet_field(
 # 用例 4：6 类边正常插入（共享 source/target 但 edge_type 不同 → unique 允许）
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("edge_type", [e.value for e in EdgeType])
-def test_chunkedge_six_types_insert_ok(repository, edge_type: str) -> None:
- """6 类 EdgeType.value 各自可以正常 .save 插入（共享 source/target 不冲突）。"""
+def test_chunkedge_edge_types_insert_ok(repository, edge_type: str) -> None:
+ """EdgeType.value 各自可以正常 .save 插入（共享 source/target 不冲突）。"""
  src = uuid.uuid4
  tgt = uuid.uuid4
  edge = ChunkEdge.objects.create(
@@ -91,7 +91,7 @@ def test_chunkedge_six_types_insert_ok(repository, edge_type: str) -> None:
  assert edge.edge_type == edge_type
  assert ChunkEdge.objects.filter(edge_type=edge_type).exists
 def test_chunkedge_same_source_target_diff_edge_type_unique_allows(repository) -> None:
- """同 (source, target) 但不同 edge_type 应当允许写入 6 条（uniq 三元组允许 edge_type 维度分散）。"""
+ """同 (source, target) 但不同 edge_type 应当全部允许写入。"""
  src = uuid.uuid4
  tgt = uuid.uuid4
  for et in EdgeType:
@@ -104,7 +104,8 @@ def test_chunkedge_same_source_target_diff_edge_type_unique_allows(repository) -
  repository=repository,
  )
  assert (
- ChunkEdge.objects.filter(source_chunk_id=src, target_chunk_id=tgt).count == 6
+ ChunkEdge.objects.filter(source_chunk_id=src, target_chunk_id=tgt).count
+ == len(EdgeType)
  )
 # ---------------------------------------------------------------------------
 # 用例 5：edge_type typo 拒绝（full_clean choices 校验）

@@ -964,6 +964,7 @@ class IndexerService:
  branch_name="",
  history_id=None,
  )
+ stats = stats or {}
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_file_paths)
  gbh.files_processed = stats.get("files_processed", 0)
@@ -1274,6 +1275,7 @@ class IndexerService:
  branch_name=_resolve_write_branch(repository, branch_name),
  history_id=None,
  )
+ stats = stats or {}
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
  gbh.files_processed = stats.get("files_processed", 0)
@@ -1754,6 +1756,7 @@ class IndexerService:
  branch_name=_write_branch,
  history_id=history_id,
  )
+ stats = stats or {}
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
  gbh.files_processed = stats.get("files_processed", 0)
@@ -2134,6 +2137,7 @@ class IndexerService:
  branch_name=_write_branch,
  history_id=history_id,
  )
+ stats = stats or {}
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
  gbh.files_processed = stats.get("files_processed", 0)
