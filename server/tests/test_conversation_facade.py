@@ -34,6 +34,7 @@ class _SdkConfigStub:
  timeout_seconds: int = 0
  agent_session: Any = None
  max_budget_usd: float | None = None
+ force_deep_analysis: bool = False
 class _SessionStub:
  """AgentSession 的最小化替身。"""
  def __init__(self) -> None:

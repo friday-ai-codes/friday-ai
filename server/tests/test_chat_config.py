@@ -39,7 +39,7 @@ class TestBuildSdkConfig:
  assert config.model == "claude-sonnet-4-5"
  assert config.space_id == str(project.id)
  assert config.conversation_id == str(conversation.id)
- assert config.max_turns == 30
+ assert config.max_turns == 50
  assert config.timeout_seconds == 0
  assert agent_session.status == "running"
  assert agent_session.session_id.startswith(f"chat-{conversation.id}-")

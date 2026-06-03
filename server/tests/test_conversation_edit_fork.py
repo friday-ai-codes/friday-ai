@@ -33,7 +33,7 @@ def _message(
  )
  message.refresh_from_db
  return message
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_fork_user_message_copies_only_prior_history(api_client, source_conversation):
  first_user = _message(
  source_conversation,
@@ -84,7 +84,7 @@ def test_fork_user_message_copies_only_prior_history(api_client, source_conversa
  .order_by("created_at")
  .values_list("id", flat=True)
  ) == [first_user.id, assistant.id, target.id, later.id]
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("role", [Message.Role.ASSISTANT, Message.Role.TOOL, Message.Role.SYSTEM])
 def test_fork_rejects_non_user_target(api_client, source_conversation, role):
  target = _message(source_conversation, role, "不能作为编辑目标", 1)
@@ -95,7 +95,7 @@ def test_fork_rejects_non_user_target(api_client, source_conversation, role):
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
  assert Conversation.objects.count == 1
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_fork_rejects_empty_content(api_client, source_conversation):
  target = _message(source_conversation, Message.Role.USER, "旧内容", 1)
  response = api_client.post(
@@ -105,7 +105,7 @@ def test_fork_rejects_empty_content(api_client, source_conversation):
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
  assert Conversation.objects.count == 1
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_fork_rejects_cross_conversation_message(api_client, source_conversation, project):
  other = Conversation.objects.create(project=project, title="另一个对话")
  target = _message(other, Message.Role.USER, "其他对话消息", 1)
@@ -116,7 +116,7 @@ def test_fork_rejects_cross_conversation_message(api_client, source_conversation
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
  assert Conversation.objects.count == 2
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_fork_deleted_or_missing_conversation_returns_404(api_client, source_conversation):
  target = _message(source_conversation, Message.Role.USER, "旧内容", 1)
  source_conversation.is_deleted = True

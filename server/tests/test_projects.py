@@ -7,7 +7,7 @@ from rest_framework import status
 # ============================================================================
 # 项目列表和创建测试
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestProjectListCreate:
  """项目列表和创建接口测试。"""
  def test_list_projects_empty(self, authenticated_admin_client, urls):
