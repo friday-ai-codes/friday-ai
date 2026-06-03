@@ -2,7 +2,6 @@
 from __future__ import annotations
 import pytest
 from qdrant_client.http.exceptions import ResponseHandlingException
-from structlog.testing import capture_logs
 from services.qdrant_service import QdrantService
 def test_upsert_vectors_retries_once_after_bad_file_descriptor(monkeypatch: pytest.MonkeyPatch) -> None:
  calls: list[str] =
@@ -31,15 +30,23 @@ def test_upsert_vectors_retries_once_after_bad_file_descriptor(monkeypatch: pyte
  assert calls == ["code_index_repo-1", "code_index_repo-1"]
 def test_upsert_vectors_reports_qdrant_response_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
  import httpx
+ logs: list[dict[str, object]] =
+ class CapturingLogger:
+ def info(self, event: str, **kwargs: object) -> None:
+ logs.append({"event": event, **kwargs})
+ def warning(self, event: str, **kwargs: object) -> None:
+ logs.append({"event": event, **kwargs})
+ def error(self, event: str, **kwargs: object) -> None:
+ logs.append({"event": event, **kwargs})
  class TimeoutClient:
  def upsert(self, *, collection_name: str, points: list[object]) -> None:
  raise ResponseHandlingException(httpx.ReadTimeout("timed out"))
+ monkeypatch.setattr("services.qdrant_service.logger", CapturingLogger)
  monkeypatch.setattr(
  QdrantService,
  "get_client",
  classmethod(lambda cls: TimeoutClient),
  )
- with capture_logs as logs:
  ok = QdrantService.upsert_vectors(
  "repo-1",
  [

@@ -455,11 +455,11 @@ class TestPRPhase:
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic, \
  _patch_pr_create_success, \
- patch("services.provider_config.aget_legacy_anthropic_config", new_callable=AsyncMock, return_value={
+ patch("services.provider_config.aget_claude_code_runtime_config", new_callable=AsyncMock, return_value={
  "api_key": "sk-test",
  "base_url": "",
  "default_model": "claude-sonnet-4-20250514",
- "small_model": "",
+ "sonnet_model": "",
  }):
  _setup_llm_mock(mock_anthropic, title="feat: awesome PR", description="Awesome changes")
  graph = build_coding_graph.compile(checkpointer=MemorySaver)

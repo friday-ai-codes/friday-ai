@@ -41,7 +41,7 @@ def messages(db, conversation):
 # ============================================================================
 # 创建对话测试
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestCreateConversation:
  """POST /api/chat/conversations/ 测试。"""
  def test_create_conversation_success(self, api_client, test_project):
@@ -83,7 +83,7 @@ class TestCreateConversation:
 # ============================================================================
 # 对话列表测试
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestConversationList:
  """GET /api/chat/conversations/ 测试。"""
  def test_list_conversations(self, api_client, conversation):
@@ -111,7 +111,7 @@ class TestConversationList:
 # ============================================================================
 # 对话详情测试
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestConversationDetail:
  """GET /api/chat/conversations/{id}/ 测试。"""
  def test_get_conversation_detail(self, api_client, conversation, messages):
@@ -137,7 +137,7 @@ class TestConversationDetail:
 # ============================================================================
 # 删除对话测试
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestDeleteConversation:
  """DELETE /api/chat/conversations/{id}/ 测试。"""
  def test_delete_conversation(self, api_client, conversation):

@@ -1,4 +1,5 @@
 """Chat API views."""
+import asyncio
 from typing import Any
 import structlog
 from adrf.views import APIView
@@ -28,9 +29,9 @@ from .serializers import (
  CodingSessionsBatchCreateResponseSerializer,
  CodingSessionSerializer,
  ConversationDetailSerializer,
+ ConversationForkRequestSerializer,
  ConversationListSerializer,
  ConversationMessageSerializer,
- ConversationForkRequestSerializer,
  ConversationPatchSerializer,
  ConversationRuntimeSerializer,
  CreateConversationSerializer,
@@ -47,6 +48,7 @@ from .serializers import (
 from .services import ChatMessage, ChatServiceError, aget_chat_service
 from .streaming import format_keepalive, format_sse
 logger = structlog.get_logger(__name__)
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set
 def _append_feishu_export_record(message, record: dict[str, str]) -> None:
  """Persist export history on message metadata for refresh-safe recovery."""
  metadata = message.metadata if isinstance(message.metadata, dict) else {}
