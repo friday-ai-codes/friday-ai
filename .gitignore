@@ -39,3 +39,5 @@ docs/.vitepress/cache/
 docs/api/.claude/worktrees/
 # Claude Code worktrees
 .claude/worktrees/
+# GSD 本机运行时记忆（含本机绝对路径，因机器而异，不入库）
+.claude/projects/
