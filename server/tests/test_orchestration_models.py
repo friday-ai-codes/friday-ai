@@ -121,10 +121,11 @@ class TestOrchestrationRunChoices:
  def test_status_choices_count(self) -> None:
  assert len(OrchestrationRun.Status.choices) == 6
  def test_phase_choices_count(self) -> None:
- assert len(OrchestrationRun.Phase.choices) == 6
+ assert len(OrchestrationRun.Phase.choices) == 7
  def test_status_values(self) -> None:
  expected = {"pending", "running", "waiting", "interrupted", "completed", "error"}
  assert {v for v, _ in OrchestrationRun.Status.choices} == expected
  def test_phase_values(self) -> None:
  expected = {"planning", "executing", "waiting", "finalizing", "completed", "error"}
+ expected.add("waiting_clarification")
  assert {v for v, _ in OrchestrationRun.Phase.choices} == expected

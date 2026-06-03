@@ -95,7 +95,13 @@ describe('chat store editMessageAndFork', => {
  store.currentConversationId = 'conv-old'
  store.activeCodingSession = { sessionId: 'session-1', status: 'running', isConfirming: false }
  store.codingProgress = { sessionId: 'session-1', steps:, modifiedFilesCount: 1 }
- store.codingResult = { sessionId: 'session-1', prUrl: '', branchName: 'b', modifiedFilesCount: 1 }
+ store.codingResult = {
+ sessionId: 'session-1',
+ prUrl: '',
+ branchName: 'b',
+ branchUrl: '',
+ modifiedFilesCount: 1,
+ }
  store.codingError = { sessionId: 'session-1', errorMessage: 'failed' }
  store.pendingClarifications.set('clarify-1', {
  clarification_id: 'clarify-1',

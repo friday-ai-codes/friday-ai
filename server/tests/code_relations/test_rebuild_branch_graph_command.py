@@ -4,6 +4,8 @@
 from __future__ import annotations
 import uuid
 from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import patch
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -116,11 +118,23 @@ def test_missing_repo_and_all_raises -> None:
  with pytest.raises(CommandError):
  call_command("rebuild_branch_graph", "--dry-run")
 @pytest.mark.django_db
-def test_non_dry_run_is_controlled_placeholder -> None:
- """：实跑（非 dry-run）受控占位——抛 CommandError 不静默写库。"""
+def test_non_dry_run_cleans_base_added_rows_and_rebuilds_branches -> None:
+ """：实跑清理 definite base 污染，并触发 base + feature 重建。"""
  repo = _make_repo
  _seed_pollution(repo)
- before = Symbol.objects.count
- with pytest.raises(CommandError):
- call_command("rebuild_branch_graph", "--repo", str(repo.id))
- assert Symbol.objects.count == before
+ calls: list[dict[str, object]] =
+ async def fake_build_graph_for_repository(*args, **kwargs):
+ calls.append({"args": args, "kwargs": kwargs})
+ return SimpleNamespace(status="completed", files_processed=1, files_total=1)
+ out = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_branch_graph.build_graph_for_repository",
+ new=fake_build_graph_for_repository,
+ ):
+ call_command("rebuild_branch_graph", "--repo", str(repo.id), stdout=out)
+ text = out.getvalue
+ assert "[APPLIED]" in text
+ assert "cleaned_base_rows=2" in text
+ assert Symbol.objects.filter(file_path="src/added.py", branch_name="").count == 0
+ assert ChunkRegistry.objects.filter(file_path="src/added.py", branch_name="").count == 0
+ assert [call["kwargs"]["branch"] for call in calls] == [None, "feature/x"]

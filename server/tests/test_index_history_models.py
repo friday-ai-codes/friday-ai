@@ -29,8 +29,10 @@ class TestIndexHistoryStatusEnum:
  assert IndexHistoryStatus.COMPLETED == "completed"
  def test_failed_choice(self):
  assert IndexHistoryStatus.FAILED == "failed"
+ def test_cancelled_choice(self):
+ assert IndexHistoryStatus.CANCELLED == "cancelled"
  def test_choices_count(self):
- assert len(IndexHistoryStatus.choices) == 4
+ assert len(IndexHistoryStatus.choices) == 5
 class TestRepositoryNewFields:
  """Repository 模型新增三个字段。"""
  def test_last_indexed_commit_sha_field(self):

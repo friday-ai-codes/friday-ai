@@ -69,7 +69,6 @@ declare module 'vue' {
  CleanupDialog: typeof import('./components/chat/CleanupDialog.vue')['default']
  CodePreviewDrawer: typeof import('./components/codegraph/CodePreviewDrawer.vue')['default']
  CodingErrorCard: typeof import('./components/chat/CodingErrorCard.vue')['default']
- CodingPlanCard: typeof import('./components/chat/CodingPlanCard.vue')['default']
  CodingProgressCard: typeof import('./components/chat/CodingProgressCard.vue')['default']
  CodingResultCard: typeof import('./components/chat/CodingResultCard.vue')['default']
  CodingSessionStatusRow: typeof import('./components/chat/CodingSessionStatusRow.vue')['default']
