@@ -152,8 +152,38 @@ class TaskRunner:
  log.error("Explore failed", error=error)
  await self.callback.report_error(error, "execution")
  return 1
+ if not await self._check_workspace_clean(log):
+ return 1
  log.info("Explore mode completed successfully")
  return 0
+ async def _check_workspace_clean(self, log) -> bool:
+ """Explore mode must leave the workspace untouched."""
+ repo = getattr(self.git_ops, "repo", None)
+ if repo is None:
+ log.warning("workspace_check_skipped_no_repo", task_id=self.config.task_id)
+ return True
+ try:
+ status_output = repo.git.status("--porcelain")
+ except Exception as exc:
+ log.error("workspace_check_failed", error=str(exc), task_id=self.config.task_id)
+ await self.callback.report_error(
+ f"无法检查工作区状态: {exc}",
+ "workspace",
+ )
+ return False
+ if status_output.strip:
+ log.error(
+ "workspace_not_clean",
+ task_id=self.config.task_id,
+ git_status=status_output,
+ )
+ await self.callback.report_error(
+ f"Explore 模式结束后工作区存在未提交变更:\n{status_output}",
+ "workspace",
+ )
+ return False
+ log.info("workspace_clean", task_id=self.config.task_id)
+ return True
  async def _run_repo_summary_mode(self, log: BoundLogger) -> int:
  """Run in repo summary mode — plan permission, sanitize output, new callback."""
  log.info("Running in repo summary mode")
@@ -202,8 +232,22 @@ class TaskRunner:
  log.error("Execution branch drift detected", expected_branch=branch_name)
  await self.callback.report_error(error, "branch")
  return 1
- diff_summary = await self.git_ops.get_diff_summary
- modified_files = await self.git_ops.get_modified_files
+ raw_diff_summary = await self.git_ops.get_diff_summary
+ diff_summary = raw_diff_summary if isinstance(raw_diff_summary, str) else ""
+ raw_modified_files = await self.git_ops.get_modified_files
+ modified_files = (
+ raw_modified_files
+ if isinstance(raw_modified_files, list)
+ and all(isinstance(path, str) for path in raw_modified_files)
+ else
+ )
+ if not diff_summary.strip and not modified_files:
+ log.warning("No changes to commit")
+ await self.callback.report_status(
+ status="no_changes",
+ message="No code changes were made",
+ )
+ return 0
  # 单阶段流程：在 commit 前生成最终 commit message，避免后续再启动
  # coding_commit 容器执行 amend + force push。
  suggested_commit_message = await self._generate_suggested_commit_message(

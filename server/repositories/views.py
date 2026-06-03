@@ -252,20 +252,19 @@ class RepositoryViewSet(ModelViewSet):
  {"detail": "Access Token 不能为空"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- if data.get("base_branch") and "default_branch" not in data:
- data["default_branch"] = data["base_branch"]
- data["base_branch"] = None
- default_branch = data.get("default_branch")
- if default_branch:
+ base_branch = data.get("base_branch")
+ if base_branch and "default_branch" not in data:
+ data["default_branch"] = base_branch
+ if base_branch:
  is_valid = await _validate_base_branch(
  git_url=data["git_url"],
  token=access_token,
- base_branch=default_branch,
+ base_branch=base_branch,
  proxy_url=data.get("proxy_url"),
  )
  if not is_valid:
  return Response(
- {"default_branch": [f"所选分支 '{default_branch}' 在远端仓库中不存在"]},
+ {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Create repository
@@ -282,9 +281,9 @@ class RepositoryViewSet(ModelViewSet):
  resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
  return Response(resp_data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
- if serializer.validated_data.get("base_branch") and "default_branch" not in serializer.validated_data:
- serializer.validated_data["default_branch"] = serializer.validated_data["base_branch"]
- serializer.validated_data["base_branch"] = None
+ base_branch = serializer.validated_data.get("base_branch")
+ if base_branch and "default_branch" not in serializer.validated_data:
+ serializer.validated_data["default_branch"] = base_branch
  default_branch = serializer.validated_data.get("default_branch")
  instance = serializer.instance
  old_default_branch = instance.default_branch
@@ -298,19 +297,19 @@ class RepositoryViewSet(ModelViewSet):
  raise serializers.ValidationError(
  {"default_branch": ["当前索引正在运行，请先停止索引后再切换默认分支"]}
  )
- if default_branch:
+ if base_branch:
  credential = await GitCredential.objects.filter(repository=instance).afirst
  if credential and credential.encrypted_token:
  token = decrypt_value(credential.encrypted_token)
  is_valid = await _validate_base_branch(
  git_url=instance.git_url,
  token=token,
- base_branch=default_branch,
+ base_branch=base_branch,
  proxy_url=instance.proxy_url,
  )
  if not is_valid:
  raise serializers.ValidationError(
- {"default_branch": [f"所选分支 '{default_branch}' 在远端仓库中不存在"]}
+ {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]}
  )
  # KEEP: RepositorySerializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
