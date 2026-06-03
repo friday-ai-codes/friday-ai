@@ -89,6 +89,9 @@ class TestIndexHistoryListView:
  "graph_build_status", "edge_count", "payload_synced_at",
  # Phase: 跨仓 API 匹配状态
  "cross_repo_match_count", "cross_repo_built_at",
+ # Phase/02: per-run delta + 行级 diff
+ "symbols_added", "imports_added", "calls_added", "endpoints_added",
+ "chunk_edges_added", "lines_added", "lines_deleted",
  }
  assert expected_fields == set(item.keys)
  def test_404_for_nonexistent_repo(self, authenticated_client) -> None:

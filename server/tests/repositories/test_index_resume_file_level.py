@@ -95,9 +95,10 @@ class TestFileLevelResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(
@@ -170,9 +171,10 @@ class TestFileLevelResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(
@@ -232,9 +234,10 @@ class TestFullIndexResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(
@@ -304,9 +307,10 @@ class TestFullIndexResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(
@@ -353,9 +357,10 @@ class TestFullIndexResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(
@@ -428,9 +433,10 @@ class TestFullIndexResume:
  ),
  patch.object(
  indexer.parser,
- "parse_file",
- side_effect=lambda full, base_path: _mk_chunks_for_file(
- os.path.relpath(full, base_path), 1
+ "parse_file_dual",
+ side_effect=lambda full, base_path, repository_id="": (
+ _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+ None,
  ),
  ),
  patch(

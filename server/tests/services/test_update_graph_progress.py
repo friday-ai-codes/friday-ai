@@ -42,7 +42,9 @@ from repositories.models import Repository, RepositoryGraphStatus
 @pytest.fixture(autouse=True)
 def _stub_prepare_repo_workdir -> Any:
  @contextlib.asynccontextmanager
- async def _fake_workdir(_repository_id: str) -> AsyncIterator[str]:
+ async def _fake_workdir(
+ _repository_id: str, **_kwargs: Any
+ ) -> AsyncIterator[str]:
  yield "/tmp/fake-graph-build-workdir"
  with patch(
  "services.graph_builder.prepare_repo_workdir_async",
