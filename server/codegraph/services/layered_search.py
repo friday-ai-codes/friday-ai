@@ -26,6 +26,7 @@ import warnings
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
+from services.retrieval.token_budget import estimate_tokens, trim_to_budget
 from services.retrieval.types import LayerSnapshot as LayerResult
 from services.retrieval.types import RagSearchResult as LayeredSearchResult
 logger = structlog.get_logger(__name__)
@@ -58,16 +59,14 @@ class LayeredSearchService:
  max_tokens: int = DEFAULT_MAX_TOKENS,
  top_k: int = DEFAULT_TOP_K,
  ) -> LayeredSearchResult:
- """Thin delegate 到 ``HybridSearchService(get_provider).search(...)``。
- 签名 / 返回字段语义与原 LayeredSearchService.search 完全一致
- （``LayeredSearchResult`` 现为 ``RagSearchResult`` 别名，字段 1:1）。
- 函数体延迟 import ``services.code_intel`` / ``services.retrieval``，
- 避开模块初始化期循环 import；本 wrapper 自身不读 codegraph 启用开关
- （per Pitfall 5：开关语义集中在 ``CodeIntelConfig.ready`` 的 Provider 注入）。
+ """Thin delegate 到 ``HybridSearchService(get_provider).search(...)``.
+ Deprecated wrapper 保持旧返回类型：Hybrid 路径显式 downcast 为
+ ``LayeredSearchResult``，避免旧 callsite 误消费 graph-only 字段。
  """
  from services.code_intel import get_provider
  from services.retrieval import HybridSearchService
- return await HybridSearchService(get_provider).search(
+ from services.retrieval.types import HybridSearchResult
+ result = await HybridSearchService(get_provider).search(
  query,
  repository_ids=repository_ids,
  project_id=project_id,
@@ -75,6 +74,9 @@ class LayeredSearchService:
  max_tokens=max_tokens,
  top_k=top_k,
  )
+ if isinstance(result, HybridSearchResult):
+ return result.to_rag_result
+ return result
  # ------------------------------------------------------------------
  # L1 — Repo Routing (per )
  # ------------------------------------------------------------------
@@ -229,8 +231,8 @@ class LayeredSearchService:
  try:
  if not l2_symbols:
  return LayerResult(layer="L4", status="skipped")
- from codegraph.services.graph_expansion import GraphExpansionService
  from codegraph.models import Symbol
+ from codegraph.services.graph_expansion import GraphExpansionService
  all_nodes: dict[str, dict[str, Any]] = {} # symbol_id -> node (保留最短 depth)
  all_edges: list[dict[str, Any]] =
  for sym_info in l2_symbols[:5]: # 最多对 5 个 L2 符号做扩展
@@ -265,46 +267,46 @@ class LayeredSearchService:
  l4_layer: LayerResult, max_tokens: int,
  ) -> tuple[str, int]:
  """上下文重组：按优先级裁剪组装 markdown 格式文本。"""
- import tiktoken
- enc = tiktoken.get_encoding("cl100k_base")
  effective_budget = int(max_tokens * cls.TOKEN_BUFFER_RATIO) # 7200 for 8000
  sections: list[str] =
  # L2 节: 精确匹配 (全部保留 — per )
  l2_section = cls._format_l2_section(l2_layer)
  sections.append(l2_section)
- current_tokens = len(enc.encode("\n\n".join(sections)))
+ current_tokens = estimate_tokens("\n\n".join(sections))
  # L4 节: 1-hop 关系 (子预算 3000)
  l4_hop1_section, l4_hop2_section = cls._format_l4_section_split(l4_layer)
- hop1_tokens = len(enc.encode(l4_hop1_section))
+ hop1_tokens = estimate_tokens(l4_hop1_section)
  if hop1_tokens <= cls.L4_1HOP_TOKEN_BUDGET:
  sections.append(l4_hop1_section)
- current_tokens = len(enc.encode("\n\n".join(sections)))
+ current_tokens = estimate_tokens("\n\n".join(sections))
  else:
- trimmed_hop1 = cls._trim_to_token_budget(l4_hop1_section, cls.L4_1HOP_TOKEN_BUDGET, enc)
+ trimmed_hop1 = trim_to_budget(
+ l4_hop1_section, cls.L4_1HOP_TOKEN_BUDGET
+ )
  sections.append(trimmed_hop1)
- current_tokens = len(enc.encode("\n\n".join(sections)))
+ current_tokens = estimate_tokens("\n\n".join(sections))
  # L3 节: 去重后的 hybrid 结果 (子预算 3000, 排除已被 L2 覆盖的 file_path)
  l3_filtered = cls._filter_l3_dedup(l3_layer, l2_layer)
  l3_section = cls._format_l3_section(l3_filtered)
- l3_tokens = len(enc.encode(l3_section))
+ l3_tokens = estimate_tokens(l3_section)
  if l3_tokens <= cls.L3_TOKEN_BUDGET:
  sections.append(l3_section)
- current_tokens = len(enc.encode("\n\n".join(sections)))
+ current_tokens = estimate_tokens("\n\n".join(sections))
  else:
- trimmed_l3 = cls._trim_to_token_budget(l3_section, cls.L3_TOKEN_BUDGET, enc)
+ trimmed_l3 = trim_to_budget(l3_section, cls.L3_TOKEN_BUDGET)
  sections.append(trimmed_l3)
- current_tokens = len(enc.encode("\n\n".join(sections)))
+ current_tokens = estimate_tokens("\n\n".join(sections))
  # L4 节: 2-hop 关系 (使用剩余预算)
  remaining = effective_budget - current_tokens
  if remaining > 200 and l4_hop2_section: # 至少 200 token 才值得加
- hop2_tokens = len(enc.encode(l4_hop2_section))
+ hop2_tokens = estimate_tokens(l4_hop2_section)
  if hop2_tokens <= remaining:
  sections.append(l4_hop2_section)
  else:
- trimmed_hop2 = cls._trim_to_token_budget(l4_hop2_section, remaining, enc)
+ trimmed_hop2 = trim_to_budget(l4_hop2_section, remaining)
  sections.append(trimmed_hop2)
  final_context = "\n\n".join(sections)
- final_tokens = len(enc.encode(final_context))
+ final_tokens = estimate_tokens(final_context)
  return final_context, final_tokens
  # ------------------------------------------------------------------
  # L5 格式化辅助方法

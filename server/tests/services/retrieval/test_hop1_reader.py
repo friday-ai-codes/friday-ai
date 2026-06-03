@@ -85,7 +85,9 @@ def test_extract_hop1_neighbors_raw_normal_5x5 -> None:
  assert isinstance(tup[0], str)
  assert isinstance(tup[1], str)
  assert isinstance(tup[2], float)
-def test_extract_skips_when_related_chunks_key_missing -> None:
+def test_extract_skips_when_related_chunks_key_missing(
+ capsys: pytest.CaptureFixture[str],
+) -> None:
  """payload 不含 'related_chunks' key → warning + 该 source 不入 dict。"""
  item = {
  "id": "src-1",
@@ -93,51 +95,42 @@ def test_extract_skips_when_related_chunks_key_missing -> None:
  "payload": {"file_path": "a.py", "chunk_index": 0, "content": ""},
  "repository_id": "r",
  }
- events, restore = _capture_structlog_events
- try:
  out = extract_hop1_neighbors_raw([item])
- finally:
- restore # type: ignore[operator]
  assert "src-1" not in out
- malformed = [e for e in events if e.get("event") == "hop1_payload_malformed"]
- assert malformed, f"expected hop1_payload_malformed warning, got {events}"
- assert malformed[-1]["chunk_id"] == "src-1"
-def test_extract_skips_when_related_chunks_empty_list -> None:
+ captured = capsys.readouterr.out
+ assert "hop1_payload_malformed" in captured
+ assert "src-1" in captured
+def test_extract_skips_when_related_chunks_empty_list(
+ capsys: pytest.CaptureFixture[str],
+) -> None:
  """related_chunks= → 静默跳过（不入 dict，无 warning）。"""
  item = _make_item("src-empty", )
- events, restore = _capture_structlog_events
- try:
  out = extract_hop1_neighbors_raw([item])
- finally:
- restore # type: ignore[operator]
  assert "src-empty" not in out
- malformed = [e for e in events if e.get("event") == "hop1_payload_malformed"]
- assert not malformed, f"empty list 不应触发 warning, 收到 {events}"
-def test_extract_warns_when_related_chunks_is_none -> None:
+ captured = capsys.readouterr.out
+ assert "hop1_payload_malformed" not in captured
+def test_extract_warns_when_related_chunks_is_none(
+ capsys: pytest.CaptureFixture[str],
+) -> None:
  """related_chunks=None → warning + 跳过。"""
  item = _make_item("src-none", None)
- events, restore = _capture_structlog_events
- try:
  out = extract_hop1_neighbors_raw([item])
- finally:
- restore # type: ignore[operator]
  assert "src-none" not in out
- malformed = [e for e in events if e.get("event") == "hop1_payload_malformed"]
- assert malformed
- assert malformed[-1]["chunk_id"] == "src-none"
-def test_extract_skips_source_when_neighbor_is_dict -> None:
+ captured = capsys.readouterr.out
+ assert "hop1_payload_malformed" in captured
+ assert "src-none" in captured
+def test_extract_skips_source_when_neighbor_is_dict(
+ capsys: pytest.CaptureFixture[str],
+) -> None:
  """邻居元素是 dict（错误类型）→ 整个 source 跳过 + warning。"""
  item = _make_item(
  "src-dict",
  [{"chunk_id": "x", "edge_type": "CALL", "weight": 0.5}],
  )
- events, restore = _capture_structlog_events
- try:
  out = extract_hop1_neighbors_raw([item])
- finally:
- restore # type: ignore[operator]
  assert "src-dict" not in out
- assert any(e.get("event") == "hop1_payload_malformed" for e in events)
+ captured = capsys.readouterr.out
+ assert "hop1_payload_malformed" in captured
 def test_extract_skips_source_when_weight_is_nan_or_inf -> None:
  """: weight 为 NaN / ±Inf / [0,1] 越界 → _is_valid_neighbor_tuple 拒绝整个 source。
  NaN 进 sorted 不可排序 + budget 估算异常；Inf 进 markdown 渲染会污染
@@ -157,16 +150,15 @@ def test_extract_skips_source_when_weight_is_nan_or_inf -> None:
  finally:
  restore # type: ignore[operator]
  _ = events # 不强校验 warning 内容，仅校验 dict 不入
-def test_extract_skips_source_when_tuple_short -> None:
+def test_extract_skips_source_when_tuple_short(
+ capsys: pytest.CaptureFixture[str],
+) -> None:
  """邻居元素少字段（[chunk_id, edge_type]，缺 weight）→ 跳过 source + warning。"""
  item = _make_item("src-short", [["target-1", "CALL"]])
- events, restore = _capture_structlog_events
- try:
  out = extract_hop1_neighbors_raw([item])
- finally:
- restore # type: ignore[operator]
  assert "src-short" not in out
- assert any(e.get("event") == "hop1_payload_malformed" for e in events)
+ captured = capsys.readouterr.out
+ assert "hop1_payload_malformed" in captured
 def test_extract_truncates_to_top10 -> None:
  """单 source 25 邻居 → 输出截断到 TOP_NEIGHBORS_PER_HOP1=10（按 weight desc）。"""
  neighbors = [[f"t-{i}", "CALL", i * 0.04] for i in range(25)]

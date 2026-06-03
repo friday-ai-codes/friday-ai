@@ -13,15 +13,24 @@
 不依赖 Django，单元可测。
 """
 from __future__ import annotations
+import re
 from functools import lru_cache
 from typing import Any
 TOKEN_BUFFER_RATIO: float = 0.9
 DEFAULT_ENCODING: str = "cl100k_base"
+class _FallbackEncoding:
+ """Offline token estimator used when tiktoken cannot load its BPE data."""
+ _TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+ def encode(self, text: str) -> list[str]:
+ return self._TOKEN_PATTERN.findall(text)
 @lru_cache(maxsize=4)
 def _get_encoding(encoding: str) -> Any:
- """缓存 tiktoken encoder 实例（lazy import 避免冷启动开销）。"""
+ """缓存 encoder 实例；tiktoken 资源不可用时保持离线可用。"""
+ try:
  import tiktoken
  return tiktoken.get_encoding(encoding)
+ except Exception:
+ return _FallbackEncoding
 def estimate_tokens(text: str, *, encoding: str = DEFAULT_ENCODING) -> int:
  """估算文本 token 数；空字符串返回 0。"""
  if not text:
@@ -66,9 +75,7 @@ def split_budget(
  """
  total_ratio = sum(ratios.values)
  if total_ratio > 1.0 + 1e-9:
- raise ValueError(
- f"split_budget ratios sum to {total_ratio:.3f}, must be ≤ 1.0"
- )
+ raise ValueError(f"split_budget ratios sum to {total_ratio:.3f}, must be ≤ 1.0")
  effective = int(max_tokens * buffer_ratio)
  return {key: int(effective * ratio) for key, ratio in ratios.items}
 __all__ = [

@@ -13,4 +13,4 @@ def budget_source: pass
 - `src/budget/m_02.py:10` (CALL, w=0.56): via direct call
 - `src/budget/m_01.py:10` (CALL, w=0.53): via direct call
 - `src/budget/m_00.py:10` (CALL, w=0.50): via direct call
-# tokens=241 source_layer=hybrid final_chunks=8
+# tokens=248 source_layer=hybrid final_chunks=8

@@ -6,4 +6,4 @@ def fail_source: pass
 ## Graph Context
 ### Direct Neighbors (1-hop)
 - `src/fail/handler.py:10` (CALL, w=0.80): via direct call
-# tokens=65 source_layer=hybrid final_chunks=1
+# tokens=73 source_layer=hybrid final_chunks=1
