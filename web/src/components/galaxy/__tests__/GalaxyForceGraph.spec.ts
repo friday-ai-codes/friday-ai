@@ -1,10 +1,10 @@
+import type { GalaxyEdge, GalaxyNode } from '~/api/galaxy'
 /**
  * Phase Plan — GalaxyForceGraph.vue 组件测试
  * 使用 mock 替换 3d-force-graph 和 THREE，绕过 WebGL 环境限制
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GalaxyEdge, GalaxyNode } from '~/api/galaxy'
 // Mock 3d-force-graph
 const mockGraph = {
  width: vi.fn.mockReturnThis,
@@ -27,7 +27,9 @@ const mockGraph = {
  onNodeHover: vi.fn.mockReturnThis,
  onNodeClick: vi.fn.mockReturnThis,
  d3Force: vi.fn.mockReturnThis,
+ warmupTicks: vi.fn.mockReturnThis,
  cooldownTicks: vi.fn.mockReturnThis,
+ d3VelocityDecay: vi.fn.mockReturnThis,
  onEngineStop: vi.fn.mockImplementation((cb: => void) => {
  // 立即调用回调（模拟引擎停止）
  setTimeout(cb, 0)
@@ -112,7 +114,7 @@ class MockResizeObserver {
  disconnect = vi.fn
  constructor(_callback: ResizeObserverCallback) {}
 }
-global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
 const mockNodes: GalaxyNode = [
  {
  id: 'chunk_registry:uuid-1',
@@ -149,7 +151,7 @@ const mockEdges: GalaxyEdge = [
  metadata: {},
  },
 ]
-describe('GalaxyForceGraph.vue', => {
+describe('galaxyForceGraph.vue', => {
  beforeEach( => {
  vi.clearAllMocks
  vi.useFakeTimers
@@ -166,6 +168,44 @@ describe('GalaxyForceGraph.vue', => {
  await flushPromises
  // 验证 graphData 被调用（说明 graph 实例初始化成功）
  expect(mockGraph.graphData).toHaveBeenCalled
+ wrapper.unmount
+ })
+ it('初始化时预热 force layout，减少首屏可见抖动', async => {
+ const { default: GalaxyForceGraph } = await import('../GalaxyForceGraph.vue')
+ const wrapper = mount(GalaxyForceGraph, {
+ props: {
+ nodes: mockNodes,
+ edges: mockEdges,
+ },
+ attachTo: document.body,
+ })
+ await flushPromises
+ expect(mockGraph.warmupTicks).toHaveBeenCalledWith(80)
+ expect(mockGraph.cooldownTicks).toHaveBeenCalledWith(60)
+ expect(mockGraph.d3VelocityDecay).toHaveBeenCalledWith(0.45)
+ wrapper.unmount
+ })
+ it('nodeLabel 优先使用图节点自身 payload，避免 tooltip 空白', async => {
+ const { default: GalaxyForceGraph } = await import('../GalaxyForceGraph.vue')
+ const wrapper = mount(GalaxyForceGraph, {
+ props: {
+ nodes: mockNodes,
+ edges: mockEdges,
+ },
+ attachTo: document.body,
+ })
+ await flushPromises
+ const labelCallback = mockGraph.nodeLabel.mock.calls[0]?.[0]
+ const html = labelCallback?.({
+ id: 'symbol:not-in-props',
+ type: 'symbol',
+ label: 'FallbackSymbol',
+ file_path: 'src/fallback.ts',
+ degree: 2,
+ })
+ expect(html).toContain('FallbackSymbol')
+ expect(html).toContain('src/fallback.ts')
+ expect(html).toContain('degree: 2')
  wrapper.unmount
  })
  it('props.nodes 变化时更新 graphData', async => {
@@ -233,7 +273,7 @@ describe('GalaxyForceGraph.vue', => {
 // ============================================================================
 // Phase — defineExpose focusNode 测试
 // ============================================================================
-describe('GalaxyForceGraph.expose.focusNode — Phase', => {
+describe('galaxyForceGraph.expose.focusNode — Phase', => {
  beforeEach( => {
  vi.clearAllMocks
  vi.useFakeTimers

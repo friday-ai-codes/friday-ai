@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import type { ForceGraph3DInstance, NodeObject } from '3d-force-graph'
-import type { GalaxyEdge, GalaxyNode } from '~/api/galaxy'
+import type { GalaxyEdge, GalaxyNode, GalaxyRepoEdge, GalaxyRepoNode } from '~/api/galaxy'
 import ForceGraph3D from '3d-force-graph'
 import * as THREE from 'three'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
+type GalaxyGraphNode = GalaxyNode | GalaxyRepoNode
+type GalaxyGraphEdge = GalaxyEdge | GalaxyRepoEdge
 // ============================================================================
 // Props / Emits（两引擎统一契约）
 // ============================================================================
 const props = withDefaults(defineProps<{
- nodes: GalaxyNode
- edges: GalaxyEdge
+ nodes: GalaxyGraphNode
+ edges: GalaxyGraphEdge
  loading?: boolean
 }>, { loading: false })
 const emit = defineEmits<{
- (e: 'node-click', node: GalaxyNode): void
- (e: 'node-hover', node: GalaxyNode | null): void
+ (e: 'node-click', node: GalaxyGraphNode): void
+ (e: 'node-hover', node: GalaxyGraphNode | null): void
  (e: 'fps-update', fps: number): void
  (e: 'ready'): void
 }>
@@ -24,6 +26,9 @@ const emit = defineEmits<{
 interface GalaxyNodeObject extends NodeObject {
  id: string
  type?: string
+ label?: string
+ file_path?: string
+ degree?: number
  // 3d-force-graph 内部注入的 Three.js 对象引用
  __threeObj?: THREE.Object3D
 }
@@ -31,8 +36,11 @@ interface GalaxyNodeObject extends NodeObject {
 // State
 // ============================================================================
 const containerRef = ref<HTMLDivElement | null>(null)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type GraphType = ForceGraph3DInstance<any, any>
+type GraphType = ForceGraph3DInstance<GalaxyNodeObject, GalaxyGraphEdge>
+type ForceGraph3DConstructor = new (
+ element: HTMLElement,
+ config?: Record<string, unknown>,
+) => GraphType
 let graph: GraphType | null = null
 let resizeObserver: ResizeObserver | null = null
 let animFrameId = 0
@@ -191,6 +199,7 @@ function measureFps: void {
  const currentFps = Math.round(fpsFrameCount * 1000 / (now - fpsLastTime))
  fpsFrameCount = 0
  fpsLastTime = now
+ // eslint-disable-next-line vue/custom-event-name-casing -- 父组件契约使用 kebab-case
  emit('fps-update', currentFps)
  }
  animFrameId = requestAnimationFrame(measureFps)
@@ -223,40 +232,50 @@ function updateGraphData: void {
 // ============================================================================
 // 初始化
 // ============================================================================
-function getEdgeType(link: Record<string, unknown>): string {
- return (link.edge_type as string) ?? ''
+function getEdgeType(link: Pick<GalaxyGraphEdge, 'edge_type'>): string {
+ return link.edge_type ?? ''
+}
+function escapeHtml(value: unknown): string {
+ return String(value ?? '')
+ .replaceAll('&', '&amp;')
+ .replaceAll('<', '&lt;')
+ .replaceAll('>', '&gt;')
+ .replaceAll('"', '&quot;')
+ .replaceAll('\'', '&#39;')
+}
+function formatNodeLabel(node: GalaxyNodeObject): string {
+ const source = props.nodes.find(x => x.id === node.id) ?? node
+ const label = escapeHtml(source.label ?? node.id)
+ const type = escapeHtml(source.type ?? 'unknown')
+ const filePath = escapeHtml(source.file_path ?? '')
+ const degree = escapeHtml(source.degree ?? '—')
+ return `<div style="background:rgba(10,10,31,0.85);border:1px solid rgba(255,255,255,0.15);padding:6px 10px;border-radius:6px;backdrop-filter:blur(4px);color:#fff;font-size:12px;line-height:1.6">
+ <strong>${label}</strong><br/>
+ <span style="opacity:0.7">${type}</span><br/>
+ <span style="opacity:0.7">${filePath}</span><br/>
+ degree: ${degree}
+ </div>`
 }
 function initGraph: void {
  if (!containerRef.value)
  return
  const el = containerRef.value
- // ForceGraph3D 的 TS 类型为 new(el, config)，实际 API 等价；any 断言绕过类型限制
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- const instance = new (ForceGraph3D as any)(el, { controlType: 'orbit' }) as GraphType
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- const gi = instance as any
- gi.width(el.clientWidth)
+ // ForceGraph3D 的运行时 API 是可 new 的构造器，包类型声明没有直接暴露构造签名。
+ const ForceGraphCtor = ForceGraph3D as unknown as ForceGraph3DConstructor
+ const instance = new ForceGraphCtor(el, { controlType: 'orbit' })
+ instance.width(el.clientWidth)
  .height(el.clientHeight)
  .showNavInfo(false)
  .backgroundColor('rgba(0,0,0,0)')
  .nodeThreeObject(createNodeObject)
  .nodeThreeObjectExtend(false)
  .nodeLabel((node: NodeObject) => {
- const n = node as GalaxyNodeObject
- const gn = props.nodes.find(x => x.id === n.id)
- if (!gn)
- return ''
- return `<div style="background:rgba(10,10,31,0.85);border:1px solid rgba(255,255,255,0.15);padding:6px 10px;border-radius:6px;backdrop-filter:blur(4px);color:#fff;font-size:12px;line-height:1.6">
- <strong>${gn.label}</strong><br/>
- <span style="opacity:0.7">${gn.type}</span><br/>
- <span style="opacity:0.7">${gn.file_path}</span><br/>
- degree: ${gn.degree}
- </div>`
+ return formatNodeLabel(node as GalaxyNodeObject)
  })
- .linkColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ffffff')
- .linkWidth((link: Record<string, unknown>) => EDGE_WIDTHS[getEdgeType(link)] ?? 1)
+ .linkColor(link => EDGE_COLORS[getEdgeType(link)] ?? '#ffffff')
+ .linkWidth(link => EDGE_WIDTHS[getEdgeType(link)] ?? 1)
  .linkOpacity(0.7)
- .linkDirectionalParticles((link: Record<string, unknown>) => {
+ .linkDirectionalParticles((link) => {
  const t = getEdgeType(link)
  if (t === 'API_CALLS')
  return 5
@@ -265,13 +284,14 @@ function initGraph: void {
  return 0
  })
  .linkDirectionalParticleSpeed(0.006)
- .linkDirectionalParticleColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ff4444')
+ .linkDirectionalParticleColor(link => EDGE_COLORS[getEdgeType(link)] ?? '#ff4444')
  .onNodeHover((node: NodeObject | null) => {
  if (hoverTimer)
  clearTimeout(hoverTimer)
  hoverTimer = setTimeout( => {
  const n = node as GalaxyNodeObject | null
  const gNode = n ? props.nodes.find(x => x.id === n.id) ?? null: null
+ // eslint-disable-next-line vue/custom-event-name-casing -- 父组件契约使用 kebab-case
  emit('node-hover', gNode)
  updateHoverHighlight(n?.id ?? null)
  }, HOVER_DEBOUNCE_MS)
@@ -279,11 +299,15 @@ function initGraph: void {
  .onNodeClick((node: NodeObject) => {
  const n = node as GalaxyNodeObject
  const gNode = props.nodes.find(x => x.id === n.id)
- if (gNode)
+ if (gNode) {
+ // eslint-disable-next-line vue/custom-event-name-casing -- 父组件契约使用 kebab-case
  emit('node-click', gNode)
+ }
  })
  .d3Force('charge', null)
- .cooldownTicks(200)
+ .warmupTicks(80)
+ .cooldownTicks(60)
+ .d3VelocityDecay(0.45)
  .onEngineStop( => {
  const scene = instance.scene
  setupSpaceBackground(scene)
@@ -319,8 +343,12 @@ function cleanup: void {
 // ============================================================================
 // 生命周期
 // ============================================================================
-onMounted( => { initGraph })
-onUnmounted( => { cleanup })
+onMounted( => {
+ initGraph
+})
+onUnmounted( => {
+ cleanup
+})
 watch(
  [ => props.nodes, => props.edges],
  => { updateGraphData },
@@ -331,10 +359,12 @@ watch(
 // ============================================================================
 defineExpose({
  focusNode(nodeId: string) {
- if (!graph) return
+ if (!graph)
+ return
  const data = graph.graphData as { nodes: Array<GalaxyNodeObject & { x?: number, y?: number, z?: number }> }
  const target = data.nodes.find(n => n.id === nodeId)
- if (!target) return
+ if (!target)
+ return
  const x = target.x ?? 0
  const y = target.y ?? 0
  const z = (target.z ?? 0) + 150

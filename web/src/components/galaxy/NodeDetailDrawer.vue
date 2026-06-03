@@ -2,6 +2,8 @@
 import type { DiffusionEdgeType, NeighborMetadata } from '~/api/codegraph'
 import type { GalaxyEdgeType, GalaxyNode, GalaxyNodeDetail } from '~/api/galaxy'
 import type { SourceChunk } from '~/composables/useDiffusionGraph'
+import { defineAsyncComponent, ref, watch } from 'vue'
+import { getGalaxyNodeDetail } from '~/api/galaxy'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import {
  Sheet,
@@ -11,13 +13,7 @@ import {
  SheetTitle,
 } from '~/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { getGalaxyNodeDetail } from '~/api/galaxy'
-import { defineAsyncComponent, ref, watch } from 'vue'
 import ReferencesList from './ReferencesList.vue'
-// 懒加载 GraphRAGDiffusionTab（避免引入 VueFlow 拖慢初始加载）
-const GraphRAGDiffusionTab = defineAsyncComponent(
- => import('~/components/codegraph/GraphRAGDiffusionTab.vue'),
-)
 // ============================================================================
 // Props / Emits
 // ============================================================================
@@ -29,6 +25,10 @@ const emit = defineEmits<{
  (e: 'update:modelValue', value: boolean): void
  (e: 'node-select', nodeId: string): void
 }>
+// 懒加载 GraphRAGDiffusionTab（避免引入 VueFlow 拖慢初始加载）
+const GraphRAGDiffusionTab = defineAsyncComponent(
+ => import('~/components/codegraph/GraphRAGDiffusionTab.vue'),
+)
 // ============================================================================
 // 状态
 // ============================================================================
@@ -49,6 +49,7 @@ const GALAXY_TO_DIFFUSION: Record<GalaxyEdgeType, DiffusionEdgeType> = {
  SEMANTIC: 'SEMANTIC',
  API_CALLS: 'CALL',
  IMPLEMENTS: 'CALL',
+ REPO_API_CALL: 'CALL',
 }
 function toNeighborMetadata(
  neighbors: GalaxyNodeDetail['neighbors'],
@@ -110,9 +111,11 @@ function typeColor(type: string): string {
 // 操作
 // ============================================================================
 function handleClose(open: boolean) {
- if (!open) emit('update:modelValue', false)
+ if (!open)
+ emit('update:modelValue', false)
 }
 function handleNodeSelect(nodeId: string) {
+ // eslint-disable-next-line vue/custom-event-name-casing -- 父组件契约使用 kebab-case
  emit('node-select', nodeId)
 }
 </script>

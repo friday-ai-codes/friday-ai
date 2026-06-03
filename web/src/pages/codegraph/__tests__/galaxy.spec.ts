@@ -15,12 +15,13 @@
 import type { GalaxyNode, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { ref } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 // ============================================================================
 // Mocks
 // ============================================================================
 const mockFilteredNodes = ref<GalaxyNode>
+const mockFetchGraph = vi.fn
 vi.mock('~/composables/useGalaxyGraph', => ({
  useGalaxyGraph: vi.fn( => ({
  meta: ref(null),
@@ -34,7 +35,7 @@ vi.mock('~/composables/useGalaxyGraph', => ({
  activeEdgeTypes: ref(new Set),
  filteredNodes: mockFilteredNodes,
  filteredEdges: ref,
- fetchGraph: vi.fn,
+ fetchGraph: mockFetchGraph,
  setRenderMode: vi.fn,
  onFpsUpdate: vi.fn,
  toggleNodeType: vi.fn,
@@ -150,8 +151,8 @@ function makeRepoNode(id: string): GalaxyRepoNode {
  }
 }
 interface GalaxyVm {
- handleDetailNodeClick: (n: GalaxyNode) => void
- handleOverviewNodeClick: (n: GalaxyNode) => void
+ handleDetailNodeClick: (n: GalaxyNode | GalaxyRepoNode) => void
+ handleOverviewNodeClick: (n: GalaxyNode | GalaxyRepoNode) => void
  handleCommandPaletteSelect: (r: GalaxySearchResult) => void
  handleDrawerClose: (open: boolean) => void
  handleDrawerNodeSelect: (id: string) => void
@@ -255,6 +256,17 @@ describe('galaxy.vue — detail 模式 Drawer 接线', => {
  vm.handleDetailNodeClick(makeNode({ id: 'symbol:url-test' }))
  await flushPromises
  expect(router.currentRoute.value.query.node).toBe('symbol:url-test')
+ wrapper.unmount
+ })
+ it('只更新 URL 中 ?node= 时不重新拉取 detail 图谱', async => {
+ const { wrapper, router } = await mountGalaxy({ repo_ids: 'repo-1' })
+ const vm = wrapper.vm as unknown as GalaxyVm
+ expect(mockFetchGraph).toHaveBeenCalledTimes(1)
+ vm.handleDetailNodeClick(makeNode({ id: 'symbol:no-refetch' }))
+ await flushPromises
+ await flushPromises
+ expect(router.currentRoute.value.query.node).toBe('symbol:no-refetch')
+ expect(mockFetchGraph).toHaveBeenCalledTimes(1)
  wrapper.unmount
  })
  it('handleDrawerClose(false) 清除 URL 中 ?node=', async => {
