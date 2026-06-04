@@ -1,10 +1,10 @@
 import type { AccessTokenDto } from '~/types/accessToken'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import AccessTokenSettings from '~/components/accessTokens/AccessTokenSettings.vue'
 import AccessTokenForm from '~/components/accessTokens/AccessTokenForm.vue'
 import AccessTokenListTable from '~/components/accessTokens/AccessTokenListTable.vue'
 import AccessTokenRevealDialog from '~/components/accessTokens/AccessTokenRevealDialog.vue'
+import AccessTokenSettings from '~/components/accessTokens/AccessTokenSettings.vue'
 // ============================================================================
 // Mocks：store + toast/errorHandler（隔离 vue-sonner 与网络）
 // ============================================================================
