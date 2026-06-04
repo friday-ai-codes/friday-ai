@@ -28,5 +28,5 @@
  "publishConfig": {
  "access": "public"
  },
- "license": "UNLICENSED"
+ "license": "MIT"
 }
