@@ -287,7 +287,18 @@ class WebPushUnsubscribeSerializer(serializers.Serializer):
  endpoint = serializers.CharField
 class SendMessageSerializer(serializers.Serializer):
  """发送消息请求。"""
- content = serializers.CharField(min_length=1, help_text="消息内容")
+ content = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ help_text="消息内容",
+ )
+ input_parts = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ default=list,
+ help_text="可选多模态输入 parts（text/image）",
+ )
  role = serializers.ChoiceField(
  choices=["developer", "pm", "designer", "qa", "general"],
  default="developer",
@@ -311,6 +322,23 @@ class SendMessageSerializer(serializers.Serializer):
  default="",
  help_text="检索默认分支（RAG/工具未显式指定 branch 时使用）",
  )
+ def validate(self, attrs):
+ """允许 image-only 消息，但拒绝真正空消息。"""
+ content = str(attrs.get("content", "") or "")
+ input_parts = attrs.get("input_parts") or
+ has_text = bool(content.strip) or any(
+ isinstance(part, dict)
+ and part.get("type") == "text"
+ and str(part.get("text", "")).strip
+ for part in input_parts
+ )
+ has_image = any(
+ isinstance(part, dict) and part.get("type") == "image"
+ for part in input_parts
+ )
+ if not has_text and not has_image:
+ raise serializers.ValidationError({"content": "消息内容不能为空"})
+ return attrs
 # ============================================================================
 # CodingPlan Serializers (Phase)
 # ============================================================================

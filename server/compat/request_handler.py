@@ -9,6 +9,7 @@ wrapper 内部 ``delegate HybridSearchService(get_provider).search(...)``，行�
 迁移 patch target 后可彻底删除此别名。
 """
 from __future__ import annotations
+from typing import Any
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 # patch compat：用 ``from codegraph.services import layered_search`` 间接 import，
@@ -21,6 +22,49 @@ logger = structlog.get_logger(__name__)
 #: 实际调用经 thin wrapper delegate 到 ``HybridSearchService(get_provider).search``。
 #: Phase 测试矩阵阶段迁移完成后删除。
 LayeredSearchService = _layered_search_compat.LayeredSearchService
+def _content_text(content: object) -> str:
+ """Extract only text parts for RAG/query/content fallbacks."""
+ if isinstance(content, str):
+ return content
+ if not isinstance(content, list):
+ return ""
+ parts: list[str] =
+ for part in content:
+ if isinstance(part, dict) and part.get("type") == "text":
+ parts.append(str(part.get("text", "")))
+ return "".join(parts)
+def _content_blocks(content: object) -> str | list[str | dict[Any, Any]]:
+ """Map OpenAI text/image_url parts to LangChain chat content blocks."""
+ if isinstance(content, str):
+ return content
+ if not isinstance(content, list):
+ return ""
+ blocks: list[str | dict[Any, Any]] =
+ for part in content:
+ if not isinstance(part, dict):
+ continue
+ part_type = part.get("type")
+ if part_type == "text":
+ text = str(part.get("text", ""))
+ if text:
+ blocks.append({"type": "text", "text": text})
+ continue
+ if part_type == "image_url":
+ raw = part.get("image_url")
+ if isinstance(raw, str):
+ url = raw
+ detail = "auto"
+ elif isinstance(raw, dict):
+ url = str(raw.get("url", ""))
+ detail = str(raw.get("detail") or "auto")
+ else:
+ continue
+ if url:
+ blocks.append({
+ "type": "image_url",
+ "image_url": {"url": url, "detail": detail},
+ })
+ return blocks
 async def prepare_messages(
  messages: list[dict],
  repository_ids: list[str] | None,
@@ -39,11 +83,11 @@ async def prepare_messages(
  role = m.get("role", "")
  content = m.get("content", "")
  if role == "system":
- lc_messages.append(SystemMessage(content=content))
+ lc_messages.append(SystemMessage(content=_content_text(content)))
  elif role == "assistant":
- lc_messages.append(AIMessage(content=content))
+ lc_messages.append(AIMessage(content=_content_text(content)))
  elif role in {"user", "developer"}:
- lc_messages.append(HumanMessage(content=content))
+ lc_messages.append(HumanMessage(content=_content_blocks(content)))
  # tool role 留待 处理
  # 把最后一条 user/developer message 作为 RAG query
  last_user = next(
@@ -57,7 +101,7 @@ async def prepare_messages(
  # 可访问范围（PermissionService.has_repository_access）。 暂不鉴权，启用
  # OPENAI_COMPAT_API_KEYS 后须在此加权限过滤，否则攻击者可读取任意仓库代码片段。
  result = await LayeredSearchService.search(
- query=str(last_user.get("content", "")),
+ query=_content_text(last_user.get("content", "")),
  repository_ids=repository_ids or None,
  project_id=project_id,
  )

@@ -5,7 +5,7 @@
  * 因此使用 fetch + ReadableStream + TextDecoder 手动解析 SSE。
  * 认证通过 HTTP-only Cookie 自动处理。
  */
-import type { SSEEvent } from '~/types/chat'
+import type { MessagePart, SSEEvent } from '~/types/chat'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 let currentRunId: string | null = null
 /**
@@ -23,7 +23,7 @@ export async function connectSSE(
  role: string,
  onEvent: (event: SSEEvent) => void,
  signal: AbortSignal,
- options?: { forceDeepAnalysis?: boolean, feishuDocId?: string, branch?: string },
+ options?: { forceDeepAnalysis?: boolean, feishuDocId?: string, branch?: string, inputParts?: MessagePart },
 ): Promise<void> {
  currentRunId = null
  const body: Record<string, unknown> = { content, role }
@@ -33,6 +33,8 @@ export async function connectSSE(
  body.feishu_doc_id = options.feishuDocId
  if (options?.branch)
  body.branch = options.branch
+ if (options?.inputParts && options.inputParts.length > 0)
+ body.input_parts = options.inputParts
  const response = await fetch(
  `${API_BASE}/chat/conversations/${conversationId}/stream/`,
  {

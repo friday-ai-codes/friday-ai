@@ -1,16 +1,20 @@
 """Chat API views."""
 import asyncio
+from pathlib import Path
 from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.http import HttpResponse
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
+from chat.multimodal import ImageValidationError, build_image_part, read_image_bytes, store_image_bytes
 from chat.coding_session_service import check_runner_online
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
@@ -202,6 +206,71 @@ class ChatCompletionsView(APIView):
  {"error": f"对话请求失败: {str(e)}"},
  status=status.HTTP_500_INTERNAL_SERVER_ERROR,
  )
+class ChatImageUploadView(APIView):
+ """Upload one Web Chat image and return a storage-backed ImagePart."""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ parser_classes = [MultiPartParser, FormParser]
+ @extend_schema(
+ summary="上传聊天图片",
+ description="上传 PNG/JPEG/GIF/WebP 图片并返回可用于 input_parts 的 image part",
+ responses={
+ 201: {"description": "图片 part"},
+ 400: {"description": "图片格式、大小或内容无效"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request):
+ uploaded = request.FILES.get("image") or request.FILES.get("file")
+ if uploaded is None:
+ return Response(
+ {"code": "missing_image", "error": "请上传图片文件"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ data = await sync_to_async(uploaded.read)
+ stored = await sync_to_async(store_image_bytes)(
+ data,
+ declared_mime_type=getattr(uploaded, "content_type", "") or "",
+ source="web",
+ filename=getattr(uploaded, "name", "") or "",
+ )
+ part = build_image_part(
+ index=0,
+ mime_type=stored.mime_type,
+ size_bytes=stored.size_bytes,
+ storage_ref=stored.storage_ref,
+ source_url=f"/api/chat/images/{Path(stored.storage_ref).name}/",
+ alt_text=getattr(uploaded, "name", "") or "",
+ )
+ return Response({"part": part}, status=status.HTTP_201_CREATED)
+ except ImageValidationError as exc:
+ return Response(
+ {"code": exc.code, "error": exc.message},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+class ChatImageView(APIView):
+ """Serve stored chat images through the authenticated chat API surface."""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ async def get(self, request, file_name: str):
+ storage_ref = f"chat_images/{file_name}"
+ try:
+ data = await sync_to_async(read_image_bytes)(storage_ref)
+ except ImageValidationError as exc:
+ return Response(
+ {"code": exc.code, "error": exc.message},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ suffix = Path(file_name).suffix.lower
+ content_type = {
+ ".png": "image/png",
+ ".jpg": "image/jpeg",
+ ".jpeg": "image/jpeg",
+ ".gif": "image/gif",
+ ".webp": "image/webp",
+ }.get(suffix, "application/octet-stream")
+ return HttpResponse(data, content_type=content_type)
 # ============================================================================
 # Conversation Views (Phase)
 # ============================================================================
@@ -938,6 +1007,7 @@ class ChatStreamView(APIView):
  if not serializer.is_valid:
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  content = serializer.validated_data["content"]
+ input_parts = serializer.validated_data.get("input_parts") or
  role = serializer.validated_data.get("role", "developer")
  force_deep_analysis = serializer.validated_data.get("force_deep_analysis", False)
  feishu_doc_id = serializer.validated_data.get("feishu_doc_id", "")
@@ -963,6 +1033,7 @@ class ChatStreamView(APIView):
  force_deep_analysis=force_deep_analysis,
  feishu_doc_id=feishu_doc_id,
  search_branch=search_branch,
+ input_parts=input_parts or None,
  ),
  content_type="text/event-stream",
  )
@@ -979,6 +1050,7 @@ class ChatStreamView(APIView):
  force_deep_analysis: bool = False,
  feishu_doc_id: str = "",
  search_branch: str | None = None,
+ input_parts: list[dict[str, Any]] | None = None,
  ):
  """生成 SSE 事件流。"""
  import uuid as uuid_mod
@@ -992,14 +1064,19 @@ class ChatStreamView(APIView):
  if orch_run:
  run_id = str(orch_run.run_id)
  try:
+ stream_kwargs: dict[str, Any] = {
+ "force_deep_analysis": force_deep_analysis,
+ "feishu_doc_id": feishu_doc_id,
+ "search_branch": search_branch,
+ }
+ if input_parts is not None:
+ stream_kwargs["input_parts"] = input_parts
  async for event in ConversationService.send_message_stream(
  conversation_id=conversation_id,
  content=content,
  role=role,
  notification_user_id=notification_user_id,
- force_deep_analysis=force_deep_analysis,
- feishu_doc_id=feishu_doc_id,
- search_branch=search_branch,
+ **stream_kwargs,
  ):
  if event.type == KEEPALIVE:
  yield format_keepalive

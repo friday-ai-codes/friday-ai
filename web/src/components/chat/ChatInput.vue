@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
+import type { ImagePart } from '~/types/chat'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
+import { uploadChatImage } from '~/api/chat'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
@@ -12,7 +14,20 @@ const chatStore = useChatStore
 const toast = useToast
 const inputContent = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
 const showModelMenu = ref(false)
+const MAX_IMAGES_PER_MESSAGE = 4
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+interface PendingImage {
+ id: string
+ file: File
+ previewUrl: string
+ status: 'ready' | 'uploading' | 'error'
+ error?: string
+}
+const pendingImages = ref<PendingImage>
+const isUploadingImages = ref(false)
 // ============================================================================
 // prefilled_query 自动填充（ Playground → Chat 联动）
 // XSS 防御（T-）：仅填充到 inputContent（v-model textarea），不使用 innerHTML 或 v-html
@@ -294,7 +309,9 @@ const hasSelectedModel = computed( => {
 const sendDisabledReason = computed<string>( => {
  if (chatStore.isStreaming)
  return '正在生成中，请稍候或先点「停止生成」'
- if (!inputContent.value.trim)
+ if (isUploadingImages.value)
+ return '图片上传中'
+ if (!hasDraftContent.value)
  return ''
  if (!chatStore.selectedSpaceId)
  return '请先在顶部选择一个空间'
@@ -302,12 +319,86 @@ const sendDisabledReason = computed<string>( => {
  return '当前没有可用的 Provider 凭证，请先在 admin/providers 或空间设置中添加'
  return ''
 })
+const hasDraftContent = computed( => !!inputContent.value.trim || pendingImages.value.length > 0)
 const canSend = computed(
- => !!inputContent.value.trim && !chatStore.isStreaming && !sendDisabledReason.value,
+ => hasDraftContent.value && !chatStore.isStreaming && !isUploadingImages.value && !sendDisabledReason.value,
 )
+function formatBytes(size: number): string {
+ if (size >= 1024 * 1024)
+ return `${(size / 1024 / 1024).toFixed(1)} MB`
+ return `${Math.max(1, Math.round(size / 1024))} KB`
+}
+function openFilePicker {
+ if (chatStore.isStreaming || isUploadingImages.value)
+ return
+ fileInput.value?.click
+}
+function resetFileInput {
+ if (fileInput.value)
+ fileInput.value.value = ''
+}
+function addImageFiles(files: Iterable<File>) {
+ const incoming = Array.from(files).filter(file => file.type.startsWith('image/'))
+ if (incoming.length === 0)
+ return
+ for (const file of incoming) {
+ if (pendingImages.value.length >= MAX_IMAGES_PER_MESSAGE) {
+ toast.warning(`一次最多添加 ${MAX_IMAGES_PER_MESSAGE} 张图片`)
+ break
+ }
+ if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
+ toast.error('不支持的图片格式', '请使用 PNG、JPEG、GIF 或 WebP')
+ continue
+ }
+ if (file.size > MAX_IMAGE_BYTES) {
+ toast.error('图片过大', '请上传 10MB 以内的图片')
+ continue
+ }
+ pendingImages.value.push({
+ id: crypto.randomUUID,
+ file,
+ previewUrl: URL.createObjectURL(file),
+ status: 'ready',
+ })
+ }
+}
+function handleFileSelect(event: Event) {
+ const input = event.target as HTMLInputElement
+ if (input.files)
+ addImageFiles(Array.from(input.files))
+ resetFileInput
+}
+function handlePaste(event: ClipboardEvent) {
+ const files = Array.from(event.clipboardData?.files || )
+ const imageFiles = files.filter(file => file.type.startsWith('image/'))
+ if (imageFiles.length === 0)
+ return
+ event.preventDefault
+ addImageFiles(imageFiles)
+}
+function handleDrop(event: DragEvent) {
+ const files = Array.from(event.dataTransfer?.files || )
+ addImageFiles(files)
+}
+function removePendingImage(id: string) {
+ const item = pendingImages.value.find(image => image.id === id)
+ if (item)
+ URL.revokeObjectURL(item.previewUrl)
+ pendingImages.value = pendingImages.value.filter(image => image.id !== id)
+}
+function clearPendingImages(images: PendingImage) {
+ const ids = new Set(images.map(image => image.id))
+ for (const image of images)
+ URL.revokeObjectURL(image.previewUrl)
+ pendingImages.value = pendingImages.value.filter(image => !ids.has(image.id))
+}
+onBeforeUnmount( => {
+ for (const image of pendingImages.value)
+ URL.revokeObjectURL(image.previewUrl)
+})
 async function handleSend {
- const content = inputContent.value.trim
- if (!content)
+ const typedContent = inputContent.value.trim
+ if (!typedContent && pendingImages.value.length === 0)
  return
  if (chatStore.isStreaming) {
  toast.warning('上一条消息正在生成中', '请等待完成或点「停止生成」后再发送')
@@ -338,14 +429,37 @@ async function handleSend {
  toast.error('请先选择 Provider / 模型')
  return
  }
- const feishuDocId = extractFirstFeishuDocId(content)
+ const content = typedContent || '请分析这张图片'
+ const feishuDocId = typedContent ? extractFirstFeishuDocId(typedContent): null
  const draft = inputContent.value
+ const draftImages = [...pendingImages.value]
+ try {
+ isUploadingImages.value = draftImages.length > 0
+ const uploadedImageParts: ImagePart =
+ for (const image of draftImages) {
+ image.status = 'uploading'
+ try {
+ uploadedImageParts.push(await uploadChatImage(image.file))
+ image.status = 'ready'
+ image.error = undefined
+ }
+ catch (error) {
+ image.status = 'error'
+ image.error = error instanceof Error ? error.message: '上传失败'
+ throw error
+ }
+ }
  inputContent.value = ''
  nextTick(autoResize)
- try {
- await chatStore.sendMessage(content, feishuDocId ?? undefined)
+ await chatStore.sendMessage(content, feishuDocId ?? undefined, uploadedImageParts)
+ if (!chatStore.error)
+ clearPendingImages(draftImages)
+ }
+ catch (error) {
+ toast.error('发送失败', error instanceof Error ? error.message: '请稍后重试')
  }
  finally {
+ isUploadingImages.value = false
  // sendMessage 内部失败会写 chatStore.error；这里只在草稿丢失但又有错误时回填
  if (chatStore.error && !chatStore.streamingContent && inputContent.value === '') {
  inputContent.value = draft
@@ -391,7 +505,20 @@ function toggleNotifications {
  </div>
  </Transition>
  <!-- 输入卡片 -->
- <div class="input-card":class="{ 'input-card--disabled': chatStore.isStreaming }">
+ <div
+ class="input-card":class="{ 'input-card--disabled': chatStore.isStreaming }"
+ @paste="handlePaste"
+ @dragover.prevent
+ @drop.prevent="handleDrop"
+ >
+ <input
+ ref="fileInput"
+ type="file"
+ class="sr-only"
+ accept="image/png,image/jpeg,image/gif,image/webp"
+ multiple
+ @change="handleFileSelect"
+ >
  <!-- 上层：文本输入 -->
  <textarea
  ref="textarea"
@@ -402,6 +529,28 @@ function toggleNotifications {
  @keydown="handleKeydown"
  @input="autoResize"
  />
+ <div v-if="pendingImages.length > 0" class="image-preview-strip">
+ <div
+ v-for="image in pendingImages":key="image.id"
+ class="image-preview-chip":class="{ 'image-preview-chip--error': image.status === 'error' }"
+ >
+ <img:src="image.previewUrl" alt="" class="image-preview-thumb">
+ <div class="image-preview-meta">
+ <span class="image-preview-name">{{ image.file.name }}</span>
+ <span class="image-preview-size">
+ {{ image.status === 'uploading' ? '上传中...': image.error || formatBytes(image.file.size) }}
+ </span>
+ </div>
+ <button
+ type="button"
+ class="image-preview-remove"
+ title="移除图片":disabled="image.status === 'uploading'"
+ @click="removePendingImage(image.id)"
+ >
+ <span class="icon-[lucide--x] text-[12px]" />
+ </button>
+ </div>
+ </div>
  <!-- 下层：工具栏 -->
  <div class="input-toolbar">
  <!-- 左侧工具 -->
@@ -410,7 +559,26 @@ function toggleNotifications {
  <Tooltip>
  <TooltipTrigger as-child>
  <button
- class="toolbar-btn":class="{ 'toolbar-btn--active': chatStore.forceDeepAnalysis }"
+ type="button"
+ class="toolbar-btn"
+ aria-label="添加图片"
+ title="添加图片":disabled="chatStore.isStreaming || isUploadingImages"
+ @click="openFilePicker"
+ >
+ <span class="icon-[lucide--image-plus] text-[15px]" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="top">
+ <p>添加图片</p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button
+ type="button"
+ class="toolbar-btn":aria-label="chatStore.forceDeepAnalysis ? '关闭深度分析': '开启深度分析'":title="chatStore.forceDeepAnalysis ? '关闭深度分析': '开启深度分析'":class="{ 'toolbar-btn--active': chatStore.forceDeepAnalysis }"
  @click="toggleDeepAnalysis"
  >
  <span class="icon-[lucide--scan-search] text-[15px]" />
@@ -425,7 +593,8 @@ function toggleNotifications {
  <Tooltip>
  <TooltipTrigger as-child>
  <button
- class="toolbar-btn":class="{ 'toolbar-btn--active': chatStore.notificationsEnabled }"
+ type="button"
+ class="toolbar-btn":aria-label="chatStore.notificationsEnabled ? '关闭浏览器通知': '开启浏览器通知'":title="chatStore.notificationsEnabled ? '关闭浏览器通知': '开启浏览器通知'":class="{ 'toolbar-btn--active': chatStore.notificationsEnabled }"
  @click="toggleNotifications"
  >
  <span:class="chatStore.notificationsEnabled ? 'icon-[lucide--bell-ring]': 'icon-[lucide--bell-off]'" class="text-[15px]" />
@@ -622,6 +791,80 @@ function toggleNotifications {
 }
 .input-textarea:disabled {
  cursor: not-allowed;
+}
+.image-preview-strip {
+ display: flex;
+ gap: 0.5rem;
+ overflow-x: auto;
+ padding: 0.125rem 0.75rem 0.375rem;
+ scrollbar-width: thin;
+}
+.image-preview-chip {
+ display: grid;
+ grid-template-columns: 3rem minmax(0, 8rem) 1.5rem;
+ align-items: center;
+ gap: 0.5rem;
+ min-width: 13.25rem;
+ max-width: 16rem;
+ padding: 0.375rem;
+ border-radius: 0.75rem;
+ border: 1px solid hsl(214 32% 88% / 0.9);
+ background: hsl(210 40% 98% / 0.8);
+}
+.image-preview-chip--error {
+ border-color: hsl(0 72% 51% / 0.28);
+ background: hsl(0 72% 51% / 0.05);
+}
+.image-preview-thumb {
+ width: 3rem;
+ height: 3rem;
+ border-radius: 0.5rem;
+ object-fit: cover;
+ background: hsl(214 32% 91%);
+}
+.image-preview-meta {
+ min-width: 0;
+ display: flex;
+ flex-direction: column;
+ gap: 0.125rem;
+}
+.image-preview-name,
+.image-preview-size {
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+.image-preview-name {
+ color: hsl(215 28% 17%);
+ font-size: 0.75rem;
+ font-weight: 700;
+}
+.image-preview-size {
+ color: hsl(215 16% 47%);
+ font-size: 0.6875rem;
+ font-weight: 600;
+}
+.image-preview-remove {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ width: 1.5rem;
+ height: 1.5rem;
+ border-radius: 0.5rem;
+ color: hsl(215 16% 47%);
+ transition:
+ background-color 0.15s ease,
+ color 0.15s ease;
+}
+.image-preview-remove:hover:not(:disabled),
+.image-preview-remove:focus-visible:not(:disabled) {
+ background: hsl(0 72% 51% / 0.08);
+ color: hsl(0 72% 45%);
+ outline: none;
+}
+.image-preview-remove:disabled {
+ cursor: not-allowed;
+ opacity: 0.5;
 }
 /* ======== 工具栏 ======== */
 .input-toolbar {
