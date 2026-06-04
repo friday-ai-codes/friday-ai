@@ -138,3 +138,93 @@ class McpCodingPlanVersion(models.Model):
  ordering = ["plan", "-version"]
  def __str__(self) -> str:
  return f"McpCodingPlanVersion({self.plan_id}, v{self.version})"
+class McpCodingExecutionTrace(models.Model):
+ """Execution trace for an external MCP coding plan run."""
+ class Status(models.TextChoices):
+ QUEUED = "queued", "已排队"
+ DISPATCHING = "dispatching", "分发中"
+ RUNNING = "running", "执行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ "interactions.InteractionRun",
+ on_delete=models.CASCADE,
+ related_name="mcp_coding_execution_traces",
+ )
+ plan = models.ForeignKey(
+ McpCodingPlan,
+ on_delete=models.CASCADE,
+ related_name="execution_traces",
+ )
+ plan_version = models.ForeignKey(
+ McpCodingPlanVersion,
+ on_delete=models.CASCADE,
+ related_name="execution_traces",
+ )
+ repository = models.ForeignKey(
+ "repositories.Repository",
+ on_delete=models.CASCADE,
+ related_name="mcp_coding_execution_traces",
+ )
+ coding_session = models.ForeignKey(
+ "chat.CodingSession",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ subagent_session = models.ForeignKey(
+ "subagent.SubAgentSession",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ tool_call = models.ForeignKey(
+ "interactions.ToolCallRecord",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ retry_of = models.ForeignKey(
+ "self",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="retries",
+ )
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.QUEUED,
+ db_index=True,
+ )
+ branch_name = models.CharField(max_length=255, blank=True, default="")
+ target_branch = models.CharField(max_length=255, blank=True, default="")
+ timeout_seconds = models.PositiveIntegerField(default=3600)
+ retry_count = models.PositiveIntegerField(default=0)
+ dispatch_payload = models.JSONField(default=dict, blank=True)
+ runner_logs = models.JSONField(default=list, blank=True)
+ file_changes = models.JSONField(default=list, blank=True)
+ test_results = models.JSONField(default=list, blank=True)
+ push_result = models.JSONField(default=dict, blank=True)
+ last_diff = models.JSONField(default=dict, blank=True)
+ recovery_state = models.JSONField(default=dict, blank=True)
+ commit_sha = models.CharField(max_length=64, blank=True, default="")
+ error = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ completed_at = models.DateTimeField(null=True, blank=True)
+ class Meta:
+ db_table = "mcp_coding_execution_traces"
+ indexes = [
+ models.Index(fields=["plan", "-created_at"]),
+ models.Index(fields=["repository", "-created_at"]),
+ models.Index(fields=["run"]),
+ models.Index(fields=["status"]),
+ ]
+ ordering = ["-created_at"]
+ def __str__(self) -> str:
+ return f"McpCodingExecutionTrace({self.id}, {self.status})"

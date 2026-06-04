@@ -3,7 +3,9 @@ from django.urls import path
 from .views import (
  AnalyzeRepositoryView,
  CreateCodingPlanView,
+ ExecuteCodingPlanView,
  FindRelatedChunksView,
+ GetCodingExecutionView,
  GetRepositoryFileView,
  GetRepositoryView,
  ImproveCodingPlanView,
@@ -21,4 +23,6 @@ urlpatterns = [
  path("tools/analyze_repository/", AnalyzeRepositoryView.as_view, name="mcp-tool-analyze-repository"),
  path("tools/create_coding_plan/", CreateCodingPlanView.as_view, name="mcp-tool-create-coding-plan"),
  path("tools/improve_coding_plan/", ImproveCodingPlanView.as_view, name="mcp-tool-improve-coding-plan"),
+ path("tools/execute_coding_plan/", ExecuteCodingPlanView.as_view, name="mcp-tool-execute-coding-plan"),
+ path("tools/get_coding_execution/", GetCodingExecutionView.as_view, name="mcp-tool-get-coding-execution"),
 ]

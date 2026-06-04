@@ -27,7 +27,18 @@ from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
 from services.qdrant_service import QdrantService
 from .errors import error_response
-from .models import McpCodingPlan, McpCodingPlanVersion, McpRepositoryAnalysis
+from .execution_service import (
+ ExecutionDispatchError,
+ dispatch_execution,
+ execution_trace_payload,
+ refresh_execution_trace,
+)
+from .models import (
+ McpCodingExecutionTrace,
+ McpCodingPlan,
+ McpCodingPlanVersion,
+ McpRepositoryAnalysis,
+)
 from .planning_service import (
  build_coding_plan,
  build_repository_analysis,
@@ -36,7 +47,9 @@ from .planning_service import (
 from .serializers import (
  AnalyzeRepositoryRequestSerializer,
  CreateCodingPlanRequestSerializer,
+ ExecuteCodingPlanRequestSerializer,
  FindRelatedChunksRequestSerializer,
+ GetCodingExecutionRequestSerializer,
  GetRepositoryFileRequestSerializer,
  GetRepositoryRequestSerializer,
  ImproveCodingPlanRequestSerializer,
@@ -920,4 +933,181 @@ class ImproveCodingPlanView(McpToolView):
  if tool_call is not None:
  version.tool_call = tool_call
  await version.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
+class ExecuteCodingPlanView(McpToolView):
+ tool_name = "execute_coding_plan"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(ExecuteCodingPlanRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ plan, version, err = await self._resolve_plan_version(input_data)
+ if err is not None:
+ return err
+ assert plan is not None
+ assert version is not None
+ retry_of: McpCodingExecutionTrace | None = None
+ if input_data.get("retry_of_execution_id"):
+ retry_of = await McpCodingExecutionTrace.objects.filter(
+ id=input_data["retry_of_execution_id"],
+ plan=plan,
+ ).afirst
+ if retry_of is None:
+ return error_response(
+ "execution_not_found",
+ "重试来源 execution 不存在或不属于该方案",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ trace = await McpCodingExecutionTrace.objects.acreate(
+ run=run,
+ plan=plan,
+ plan_version=version,
+ repository=plan.repository,
+ retry_of=retry_of,
+ retry_count=(retry_of.retry_count + 1) if retry_of else 0,
+ branch_name=str(input_data.get("branch_name") or ""),
+ target_branch=str(input_data.get("target_branch") or plan.repository.default_branch),
+ timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
+ )
+ dispatch_error = ""
+ try:
+ await dispatch_execution(
+ trace=trace,
+ plan=plan,
+ version=version,
+ branch_name=str(input_data.get("branch_name") or ""),
+ target_branch=str(input_data.get("target_branch") or ""),
+ timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
+ )
+ except ExecutionDispatchError as exc:
+ dispatch_error = str(exc)
+ trace.status = McpCodingExecutionTrace.Status.FAILED
+ trace.error = dispatch_error
+ trace.recovery_state = {
+ "retryable": True,
+ "status": trace.status,
+ "branch_name": trace.branch_name,
+ "target_branch": trace.target_branch,
+ "error": dispatch_error,
+ }
+ await trace.asave(update_fields=["status", "error", "recovery_state", "updated_at"])
+ await refresh_execution_trace(trace)
+ output_data = {
+ **execution_trace_payload(trace),
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="coding_execution_dispatched",
+ payload={
+ "execution_id": str(trace.id),
+ "plan_id": str(plan.id),
+ "version_id": str(version.id),
+ "status": trace.status,
+ "retry_of_execution_id": str(trace.retry_of_id or ""),
+ },
+ )
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=,
+ started_at=started_at,
+ call_status="failed" if trace.status == McpCodingExecutionTrace.Status.FAILED else "ok",
+ error=dispatch_error or trace.error,
+ )
+ if tool_call is not None:
+ trace.tool_call = tool_call
+ await trace.asave(update_fields=["tool_call"])
+ response_status = (
+ status.HTTP_200_OK
+ if trace.status == McpCodingExecutionTrace.Status.FAILED
+ else status.HTTP_202_ACCEPTED
+ )
+ return Response(output_data, status=response_status)
+ async def _resolve_plan_version(
+ self,
+ input_data: dict[str, Any],
+ ) -> tuple[McpCodingPlan | None, McpCodingPlanVersion | None, Response | None]:
+ try:
+ plan = await McpCodingPlan.objects.select_related("repository").aget(
+ id=input_data["plan_id"]
+ )
+ except McpCodingPlan.DoesNotExist:
+ return None, None, error_response(
+ "coding_plan_not_found",
+ "编码方案不存在",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ if input_data.get("version_id"):
+ try:
+ version = await McpCodingPlanVersion.objects.aget(
+ id=input_data["version_id"],
+ plan=plan,
+ )
+ except McpCodingPlanVersion.DoesNotExist:
+ return None, None, error_response(
+ "coding_plan_version_not_found",
+ "编码方案版本不存在或不属于该方案",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ else:
+ version = await plan.versions.order_by("-version").afirst
+ if version is None:
+ return None, None, error_response(
+ "coding_plan_version_not_found",
+ "编码方案没有可执行版本",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ return plan, version, None
+class GetCodingExecutionView(McpToolView):
+ tool_name = "get_coding_execution"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(GetCodingExecutionRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ trace = await McpCodingExecutionTrace.objects.filter(
+ id=input_data["execution_id"]
+ ).afirst
+ if trace is None:
+ return error_response(
+ "execution_not_found",
+ "执行记录不存在",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ await refresh_execution_trace(trace)
+ output_data = {
+ **execution_trace_payload(trace),
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="coding_execution_status_refreshed",
+ payload={
+ "execution_id": str(trace.id),
+ "status": trace.status,
+ "commit_sha": trace.commit_sha,
+ },
+ )
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=,
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ trace.tool_call = tool_call
+ await trace.asave(update_fields=["tool_call"])
  return Response(output_data, status=status.HTTP_200_OK)
