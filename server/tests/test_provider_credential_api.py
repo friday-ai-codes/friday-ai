@@ -43,6 +43,12 @@ def test_create_credential_pydantic_dispatch_invalid_anthropic(
  "name": "bad-anth",
  "scope": "system",
  "default_model": "claude-3-5-sonnet-20241022",
+ "available_models": [
+ {
+ "id": "claude-3-5-sonnet-20241022",
+ "display_name": "Claude 3.5 Sonnet",
+ }
+ ],
  "config": {}, # 缺 api_key → Pydantic missing
  },
  format="json",
@@ -74,6 +80,12 @@ def test_create_credential_pydantic_dispatch_valid_anthropic(
  "name": "good-anth",
  "scope": "system",
  "default_model": "claude-3-5-sonnet-20241022",
+ "available_models": [
+ {
+ "id": "claude-3-5-sonnet-20241022",
+ "display_name": "Claude 3.5 Sonnet",
+ }
+ ],
  "config": {
  "api_key": "sk-test-placeholder",
  "base_url": "https://api.anthropic.com",
@@ -118,6 +130,89 @@ def test_create_credential_pydantic_dispatch_valid_anthropic(
  assert config.get("api_key") == "sk-test-placeholder", (
  f"superuser 写权限用户 api_key 明文应回显: {config!r}"
  )
+@pytest.mark.django_db
+def test_create_credential_requires_at_least_one_bound_model(
+ system_admin_user,
+) -> None:
+ """Provider 创建必须携带至少一个绑定模型，不能只写 default_model。"""
+ client = _client_for(system_admin_user)
+ resp = client.post(
+ "/api/providers/credentials/",
+ data={
+ "provider_type": "anthropic",
+ "name": "no-model-list",
+ "scope": "system",
+ "default_model": "claude-3-5-sonnet-20241022",
+ "config": {
+ "api_key": "sk-test-placeholder",
+ "base_url": "https://api.anthropic.com",
+ },
+ },
+ format="json",
+ )
+ assert resp.status_code == 400, resp.content
+ body_text = resp.content.decode("utf-8", errors="replace")
+ assert "必填" in body_text or "available_models" in body_text
+@pytest.mark.django_db
+def test_update_credential_persists_manual_available_model(
+ system_admin_user, system_default_anthropic_credential
+) -> None:
+ """手动添加的模型应写入 available_models，并允许设为 default_model。"""
+ from system.models import ProviderCredential
+ client = _client_for(system_admin_user)
+ manual_model = {
+ "id": "deepseek-v4-pro",
+ "display_name": "deepseek-v4-pro",
+ }
+ resp = client.patch(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/",
+ data={
+ "available_models": [manual_model],
+ "default_model": "deepseek-v4-pro",
+ },
+ format="json",
+ )
+ assert resp.status_code == 200, resp.content
+ body = resp.json
+ assert body["available_models"][0] == {
+ **manual_model,
+ "input_modalities": ["text"],
+ "supports_vision": False,
+ "capability_source": "known_rules",
+ }
+ assert body["default_model"] == "deepseek-v4-pro"
+ cred = ProviderCredential.objects.get(id=system_default_anthropic_credential.id)
+ assert cred.available_models[0] == {
+ **manual_model,
+ "input_modalities": ["text"],
+ "supports_vision": False,
+ "capability_source": "known_rules",
+ }
+ assert cred.default_model == "deepseek-v4-pro"
+@pytest.mark.django_db
+def test_manual_deepseek_model_defaults_to_text_only_modalities(
+ system_admin_user, system_default_anthropic_credential
+) -> None:
+ """兼容 Anthropic 协议的 DeepSeek 模型不能被兜底识别为支持图片。"""
+ client = _client_for(system_admin_user)
+ resp = client.patch(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/",
+ data={
+ "available_models": [
+ {
+ "id": "deepseek-v4-pro",
+ "display_name": "deepseek-v4-pro",
+ }
+ ],
+ "default_model": "deepseek-v4-pro",
+ },
+ format="json",
+ )
+ assert resp.status_code == 200, resp.content
+ model = resp.json["available_models"][0]
+ assert model["input_modalities"] == ["text"]
+ assert model["supports_vision"] is False
+ assert model["capability_source"] == "known_rules"
 # ======================================================================
 # Pitfall 3 重新校准：config 按写权限分级回显矩阵
 # ======================================================================
@@ -266,10 +361,24 @@ def test_refresh_models_writes_available(
  f"/api/providers/credentials/{system_default_anthropic_credential.id}/refresh-models/",
  )
  assert resp.status_code == 200, f"应 200: {resp.content!r}"
- assert resp.json["available_models"] == fake_list
+ expected_list = [
+ {
+ **fake_list[0],
+ "input_modalities": ["text", "image"],
+ "supports_vision": True,
+ "capability_source": "known_rules",
+ },
+ {
+ **fake_list[1],
+ "input_modalities": ["text", "image"],
+ "supports_vision": True,
+ "capability_source": "known_rules",
+ },
+ ]
+ assert resp.json["available_models"] == expected_list
  # DB 回读确认
  cred = ProviderCredential.objects.get(id=system_default_anthropic_credential.id)
- assert cred.available_models == fake_list
+ assert cred.available_models == expected_list
 # ======================================================================
 # W4 修复：refresh-models 上游异常脱敏链路（T- 核心）
 # ======================================================================

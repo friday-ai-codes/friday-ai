@@ -17,7 +17,7 @@ from services.provider_config import (
  ProviderType,
  ResolvedProviderConfig,
 )
-from system.models import ProviderCredential, SettingKeys, SystemSetting
+from system.models import ProviderCredential
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -43,6 +43,64 @@ def _make_credential(
  )
  defaults.update(overrides)
  return ProviderCredential.objects.create(**defaults)
+# ============================================================================
+# Claude Code 专属配置：仅允许 Anthropic 类型凭证 + 已绑定模型
+# ============================================================================
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_aset_claude_code_config_rejects_non_anthropic_credential -> None:
+ """Claude Code 编码配置只能选择 provider_type=anthropic 的凭证。"""
+ from services.provider_config import aset_claude_code_config
+ cred = await sync_to_async(_make_credential)(
+ provider_type="openai_chat",
+ config_dict={"api_key": "sk-openai-test"},
+ default_model="gpt-4o",
+ available_models=[{"id": "gpt-4o", "display_name": "GPT-4o"}],
+ )
+ with pytest.raises(ProviderConfigError, match="Anthropic"):
+ await aset_claude_code_config(
+ credential_id=str(cred.id),
+ model_mapping={"opus": "gpt-4o", "sonnet": "gpt-4o", "haiku": "gpt-4o"},
+ )
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_aset_claude_code_config_rejects_unbound_model_mapping -> None:
+ """Claude Code 三档模型只能从所选凭证 available_models 中选择。"""
+ from services.provider_config import aset_claude_code_config
+ cred = await sync_to_async(_make_credential)(
+ provider_type="anthropic",
+ config_dict={
+ "api_key": "sk-ant-test",
+ "base_url": "https://api.anthropic.com",
+ },
+ default_model="claude-sonnet-4",
+ available_models=[
+ {"id": "claude-sonnet-4", "display_name": "Claude Sonnet 4"}
+ ],
+ )
+ with pytest.raises(ProviderConfigError, match="模型不在所选凭证"):
+ await aset_claude_code_config(
+ credential_id=str(cred.id),
+ model_mapping={
+ "opus": "claude-opus-4",
+ "sonnet": "claude-sonnet-4",
+ "haiku": "claude-sonnet-4",
+ },
+ )
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_aset_claude_code_config_clears_mapping_without_credential -> None:
+ """未选择 Claude Code 凭证时不保留手动模型映射。"""
+ from services.provider_config import aset_claude_code_config
+ payload = await aset_claude_code_config(
+ credential_id="",
+ model_mapping={
+ "opus": "manual-opus",
+ "sonnet": "manual-sonnet",
+ "haiku": "manual-haiku",
+ },
+ )
+ assert payload["model_mapping"] == {"opus": "", "sonnet": "", "haiku": ""}
 # ============================================================================
 # Task 1 契约：ProviderMissingError dataclass + 向后兼容字段
 # ============================================================================

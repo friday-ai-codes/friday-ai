@@ -187,6 +187,7 @@ from system.serializers import (
  ProviderCredentialSerializer,
  ProviderCredentialUpdateSerializer,
  ProviderTypeMetaSerializer,
+ _normalize_available_models,
 )
 _viewset_logger = structlog.get_logger(__name__)
 class ProviderCredentialViewSet(AsyncModelViewSet):
@@ -464,23 +465,33 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  },
  status=502,
  )
- credential.available_models = models_list
- # 成功拉取后清掉历史失败错误，避免健康 badge 持续展示旧的 404/超时
- credential.last_health_check_error = ""
- await sync_to_async(credential.save)(
- update_fields=[
+ normalized_models = _normalize_available_models(
+ models_list,
+ provider_type=credential.provider_type,
+ )
+ credential.available_models = normalized_models
+ update_fields = [
  "available_models",
  "last_health_check_error",
  "updated_at",
- ],
- )
+ ]
+ model_ids = {m["id"] for m in normalized_models}
+ if normalized_models and credential.default_model not in model_ids:
+ credential.default_model = normalized_models[0]["id"]
+ update_fields.append("default_model")
+ # 成功拉取后清掉历史失败错误，避免健康 badge 持续展示旧的 404/超时
+ credential.last_health_check_error = ""
+ await sync_to_async(credential.save)(update_fields=update_fields)
  _viewset_logger.info(
  "provider_credential_refresh_models",
  credential_id=str(credential.id),
  model_count=len(models_list),
  user_id=str(request.user.id),
  )
- return Response({"available_models": models_list})
+ return Response({
+ "available_models": normalized_models,
+ "default_model": credential.default_model,
+ })
 # ============================================================================
 # Phase：ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
 # ============================================================================
@@ -533,8 +544,8 @@ class ProviderFetchModelsView(APIView):
  """
  permission_classes = [IsAuthenticated]
  async def post(self, request: Request) -> Response: # type: ignore[no-untyped-def]
- from common.logging import redact_secrets_in_text
  from pydantic import ValidationError as PydanticValidationError
+ from common.logging import redact_secrets_in_text
  from services.provider_config import PROVIDER_REGISTRY, ProviderType
  from services.provider_health import (
  ERROR_TRUNCATE_LIMIT,
@@ -587,7 +598,11 @@ class ProviderFetchModelsView(APIView):
  {"available_models":, "error": redacted},
  status=502,
  )
- return Response({"available_models": models_list})
+ normalized_models = _normalize_available_models(
+ models_list,
+ provider_type=provider_type,
+ )
+ return Response({"available_models": normalized_models})
 # ============================================================================
 # Quick 问题②⑥：Claude Code 编码容器配置端点
 # ============================================================================

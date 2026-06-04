@@ -114,6 +114,12 @@ describe('useProviderCredentialStore', => {
  name: 'new',
  scope: 'system',
  default_model: 'claude-3-5-sonnet-20241022',
+ available_models: [
+ {
+ id: 'claude-3-5-sonnet-20241022',
+ display_name: 'Claude 3.5 Sonnet',
+ },
+ ],
  config: { api_key: 'sk-ant-test' },
  })
  expect(store.credentials[0].id).toBe('new-1')

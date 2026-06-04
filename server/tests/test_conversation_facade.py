@@ -95,16 +95,16 @@ def _facade_patches(
  graph: _MockGraph | None = None,
  finalize_return: list[AgentEvent] | None = None,
  finalize_mock: AsyncMock | None = None,
+ sdk_config: _SdkConfigStub | None = None,
 ) -> tuple[tuple[Any, Any, Any], AsyncMock]:
  """构建 facade 三件套 mock + finalize_mock 引用。"""
  if graph is None:
  graph = _make_graph
  if finalize_mock is None:
  finalize_mock = AsyncMock(return_value=finalize_return or )
- config_stub = _SdkConfigStub(
- conversation_id=str(conversation.id),
- space_id=str(conversation.project_id),
- )
+ config_stub = sdk_config or _SdkConfigStub
+ config_stub.conversation_id = str(conversation.id)
+ config_stub.space_id = str(conversation.project_id)
  session_stub = _SessionStub
  patches = (
  patch(
@@ -193,6 +193,62 @@ class TestConversationFacade:
  assert user_msg.metadata["image_count"] == 1
  assert graph.last_input_data is not None
  assert graph.last_input_data["user_parts"] == parts
+ async def test_facade_rejects_image_when_bound_model_has_no_image_modality(
+ self, project: Any,
+ ) -> None:
+ """聊天发图只信 Provider 绑定模型能力，不让 text-only 模型收到图片占位。"""
+ from system.models import ProviderCredential
+ credential = await ProviderCredential.objects.acreate(
+ provider_type="anthropic",
+ name="deepseek-anthropic",
+ scope="system",
+ encrypted_config="{}",
+ base_url="https://api.deepseek.com/anthropic",
+ default_model="deepseek-v4-pro",
+ available_models=[
+ {
+ "id": "deepseek-v4-pro",
+ "display_name": "deepseek-v4-pro",
+ "input_modalities": ["text"],
+ }
+ ],
+ )
+ conversation = await _create_conversation(project)
+ conversation.provider_credential_id = credential
+ conversation.model = "deepseek-v4-pro"
+ await conversation.asave(update_fields=["provider_credential_id", "model"])
+ parts = [
+ {"type": "text", "id": "p_text", "index": 0, "text": "看图", "state": "done"},
+ {
+ "type": "image",
+ "id": "p_img",
+ "index": 1,
+ "mime_type": "image/png",
+ "size_bytes": 12,
+ "width": None,
+ "height": None,
+ "detail": "auto",
+ "storage_ref": "chat_images/p_img.png",
+ "source_url": "",
+ "alt_text": "截图",
+ },
+ ]
+ graph = _make_graph
+ (p1, p2, p3), _ = _facade_patches(
+ conversation,
+ graph=graph,
+ sdk_config=_SdkConfigStub(model="deepseek-v4-pro"),
+ )
+ with p1, p2, p3:
+ from chat.conversation_service import ConversationService
+ with pytest.raises(ValueError, match="当前模型不支持图片"):
+ async for _ in ConversationService.send_message_stream(
+ conversation_id=str(conversation.id),
+ content="看图",
+ input_parts=parts,
+ ):
+ pass
+ assert graph.last_input_data is None
  async def test_facade_saves_assistant_message_from_graph_state(
  self, project: Any,
  ) -> None:

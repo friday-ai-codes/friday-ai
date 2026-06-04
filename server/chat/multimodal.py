@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any, Literal, NoReturn
 from django.conf import settings
 from chat.parts import ImagePart, part_to_dict
-from services.model_capabilities import ModelCapabilities
+from services.model_modalities import (
+ InputModality,
+ infer_model_modalities,
+ normalize_input_modalities,
+)
 from services.provider_config import PROVIDER_REGISTRY, ProviderType
 ALLOWED_IMAGE_MIME_TYPES: dict[str, str] = {
  "image/png": ".png",
@@ -138,18 +142,62 @@ def extract_text_from_parts(parts: list[dict[str, Any]]) -> str:
  """只抽取 text part，供 prompt/search/query 等文本路径复用。"""
  ordered = sorted(parts, key=_part_index)
  return "".join(str(part.get("text", "")) for part in ordered if part.get("type") == "text")
-def _provider_capability_key(provider_type: ProviderType) -> str:
- if provider_type in {ProviderType.OPENAI_CHAT, ProviderType.OPENAI_RESPONSES}:
- return "openai"
- return provider_type.value
 def ensure_vision_supported(provider_type: ProviderType, model: str) -> None:
  """确认 provider + model 均支持 vision；否则给入口层可直接展示的错误。"""
  provider_meta = PROVIDER_REGISTRY[provider_type]
  if not provider_meta.supports_vision:
  _raise("vision_not_supported", "当前 Provider 不支持图片，请切换支持视觉能力的模型。")
- capabilities = ModelCapabilities.get(_provider_capability_key(provider_type), model)
- if not capabilities.supports_vision:
+ modalities, _ = infer_model_modalities(
+ provider_type=provider_type,
+ model_id=model,
+ )
+ if "image" not in modalities:
  _raise("vision_not_supported", "当前模型不支持图片，请切换支持视觉能力的模型。")
+def _bound_model_modalities(
+ available_models: Any,
+ *,
+ provider_type: ProviderType,
+ model: str,
+) -> list[InputModality] | None:
+ if not isinstance(available_models, list):
+ return None
+ for item in available_models:
+ if isinstance(item, str):
+ model_id = item.strip
+ raw_model: dict[str, Any] = {"id": model_id, "display_name": model_id}
+ elif isinstance(item, dict):
+ model_id = str(item.get("id") or item.get("name") or "").strip
+ raw_model = item
+ else:
+ continue
+ if model_id != model:
+ continue
+ if "input_modalities" in raw_model:
+ return normalize_input_modalities(raw_model.get("input_modalities"))
+ modalities, _ = infer_model_modalities(
+ provider_type=provider_type,
+ model_id=model_id,
+ raw_model=raw_model,
+ )
+ return modalities
+ return None
+def ensure_image_input_supported(
+ *,
+ provider_type: ProviderType,
+ model: str,
+ available_models: Any = None,
+) -> None:
+ """确认当前绑定模型支持 image 输入，绑定模型能力优先于全局推断。"""
+ modalities = _bound_model_modalities(
+ available_models,
+ provider_type=provider_type,
+ model=model,
+ )
+ if modalities is not None:
+ if "image" not in modalities:
+ _raise("vision_not_supported", "当前模型不支持图片，请切换支持图片的模型。")
+ return
+ ensure_vision_supported(provider_type, model)
 def _image_data_url(part: dict[str, Any]) -> tuple[str, str]:
  mime_type = str(part.get("mime_type") or "")
  source_url = str(part.get("source_url") or "")

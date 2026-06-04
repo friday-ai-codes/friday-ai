@@ -54,8 +54,8 @@ from agents.models import AgentSession, ToolCallLog
 from agents.tool_budget import _ToolBudget
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
-from chat.parts import PartsCollector
 from chat.multimodal import to_provider_content_blocks
+from chat.parts import PartsCollector
 from repositories.models import Repository
 from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
@@ -163,7 +163,9 @@ def _build_args_schema(tool_def: ToolDefinition, hidden_fields: set[str]) -> typ
  model_name = "".join(part.capitalize for part in tool_def.name.split("_")) + "Args"
  return create_model(model_name, **cast(dict[str, Any], fields))
 async def _get_tool_names(
- space_id: str, *, force_deep_analysis: bool = False,
+ space_id: str,
+ *,
+ force_deep_analysis: bool = False,
 ) -> list[str]:
  """返回 LLM 可用工具名列表。
  - 无已索引仓库：仅 `_BASE_TOOL_NAMES`（避免误调检索工具拿空结果）。
@@ -198,7 +200,9 @@ def _extract_message_text(message: Any) -> str:
  parts.append(str(block["text"]))
  return "".join(parts)
 def _extract_usage(message: Any) -> dict[str, int]:
- usage = getattr(message, "usage_metadata", None) or getattr(message, "response_metadata", {}).get("usage")
+ usage = getattr(message, "usage_metadata", None) or getattr(
+ message, "response_metadata", {}
+ ).get("usage")
  if not isinstance(usage, dict):
  return {}
  return {
@@ -404,12 +408,14 @@ async def _load_history_messages(conversation_id: str) -> list[BaseMessage]:
  tc_id = str(tc.get("id", "") or "")
  if not tc_id:
  continue
- lc_tool_calls.append({
+ lc_tool_calls.append(
+ {
  "name": str(tc.get("name", "") or ""),
  "args": tc.get("input") or {},
  "id": tc_id,
  "type": "tool_call",
- })
+ }
+ )
  history.append(
  AIMessage(
  content=row.content or "",
@@ -463,7 +469,8 @@ async def _build_tool_specs(
  不变，下游 `_execute_tool_call` 契约零破坏。
  """
  tool_names = await _get_tool_names(
- space_id, force_deep_analysis=force_deep_analysis,
+ space_id,
+ force_deep_analysis=force_deep_analysis,
  )
  langchain_tools = build_langchain_tools(
  tool_names,
@@ -688,7 +695,9 @@ class ChatAnthropicRunner:
  # 旧事件先发（双轨期前端可选 flag 消费）
  yield AgentEvent(
  type=TEXT_DELTA,
- data=_inject_metadata({"text": text}, self._config.model, self._config.session_id),
+ data=_inject_metadata(
+ {"text": text}, self._config.model, self._config.session_id
+ ),
  )
  # 新事件后发：is_new 时先 part_started 再 part_delta；
  # 否则直接 part_delta（同一 streaming text part append）
@@ -715,9 +724,13 @@ class ChatAnthropicRunner:
  text=text,
  )
  elif block_type in {"reasoning", "thinking"}:
- reasoning = block.get("reasoning") or block.get("thinking") or block.get("text")
+ reasoning = (
+ block.get("reasoning") or block.get("thinking") or block.get("text")
+ )
  if reasoning:
- part_id, part_idx, is_new = collector.append_thinking(str(reasoning))
+ part_id, part_idx, is_new = collector.append_thinking(
+ str(reasoning)
+ )
  yield AgentEvent(
  type=THINKING,
  data=_inject_metadata(
@@ -765,13 +778,19 @@ class ChatAnthropicRunner:
  batch_id = f"batch_{uuid.uuid4.hex[:8]}" if len(tool_calls) > 1 else ""
  for tool_call in tool_calls:
  tool_name = str(tool_call.get("name", ""))
- tool_call_id = str(tool_call.get("id", "") or f"tool_{uuid.uuid4.hex[:8]}")
+ tool_call_id = str(
+ tool_call.get("id", "") or f"tool_{uuid.uuid4.hex[:8]}"
+ )
  arguments = tool_call.get("args", {})
  if tool_name not in tool_specs:
  error_msg = f"未知工具: {tool_name}"
  yield AgentEvent(
  type=ERROR,
- data=_inject_metadata({"message": error_msg}, self._config.model, self._config.session_id),
+ data=_inject_metadata(
+ {"message": error_msg},
+ self._config.model,
+ self._config.session_id,
+ ),
  )
  self._result = _make_agent_result(
  status="error",
@@ -885,7 +904,9 @@ class ChatAnthropicRunner:
  },
  )
  messages.append(tool_message)
- if isinstance(result.output, dict) and result.output.get("__blocking_task__"):
+ if isinstance(result.output, dict) and result.output.get(
+ "__blocking_task__"
+ ):
  blocking_marker_seen = True
  if blocking_marker_seen:
  collector.flush_all
@@ -1097,7 +1118,9 @@ class ChatAnthropicRunner:
  )
  yield AgentEvent(
  type=ERROR,
- data=_inject_metadata({"message": str(exc)}, self._config.model, self._config.session_id),
+ data=_inject_metadata(
+ {"message": str(exc)}, self._config.model, self._config.session_id
+ ),
  )
  yield _build_message_complete(
  final_answer="".join(accumulated_text),
