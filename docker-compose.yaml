@@ -1,8 +1,8 @@
 # Friday AI - Docker Compose 部署配置
 # 预构建镜像版本
 #
-# 启动（无内置数据库）: docker compose up -d
-# 启动（含内置 PostgreSQL）: docker compose --profile postgres up -d
+# 初始化配置: scripts/setup.sh
+# 启动完整体实例: docker compose up -d
 # 源码构建启动: docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build
 services:
  redis:
@@ -11,7 +11,7 @@ services:
  ports:
  - "${REDIS_PORT:-6379}:6379"
  volumes:
- - redis-data:/data
+ - "${FRIDAY_DATA_DIR:-~/.friday-ai}/redis:/data"
  networks:
  - friday-network
  restart: unless-stopped
@@ -21,29 +21,35 @@ services:
  timeout: 5s
  retries: 5
  server:
- image: ghcr.io/anthropic-ai/friday-ai/server:latest
+ image: ghcr.io/friday-ai-codes/friday-ai/server:latest
  container_name: friday-server
  ports:
  - "${FRIDAY_PORT:-10241}:8000"
  environment:
- - SECRET_KEY=${SECRET_KEY}
+ - SECRET_KEY=${SECRET_KEY:-}
  - DEBUG=${DEBUG:-false}
  - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
- - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY}
+ - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
  - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
- - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN}
+ - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
  - GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
  - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
  - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
  - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
  - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
  - REDIS_URL=redis://redis:6379/0
+ - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+ - QDRANT_API_KEY=${QDRANT_API_KEY:-}
  volumes:
- - server-data:/app/data
+ - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
  networks:
  - friday-network
  depends_on:
+ postgres:
+ condition: service_healthy
  redis:
+ condition: service_healthy
+ qdrant:
  condition: service_healthy
  restart: unless-stopped
  healthcheck:
@@ -53,7 +59,7 @@ services:
  retries: 5
  start_period: 30s
  web:
- image: ghcr.io/anthropic-ai/friday-ai/web:latest
+ image: ghcr.io/friday-ai-codes/friday-ai/web:latest
  container_name: friday-web
  ports:
  - "${FRIDAY_WEB_PORT:-10240}:8080"
@@ -72,17 +78,17 @@ services:
  retries: 3
  start_period: 5s
  runner:
- image: ghcr.io/anthropic-ai/friday-ai/runner:latest
+ image: ghcr.io/friday-ai-codes/friday-ai/runner:latest
  container_name: friday-runner
  user: "65534:${DOCKER_GID:-999}"
  environment:
  - FRIDAY_RUNNER_URL=http://server:8000
- - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN}
+ - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
  - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
  - FRIDAY_RUNNER_EXECUTOR=docker
  volumes:
  - /var/run/docker.sock:/var/run/docker.sock
- - runner-data:/data
+ - "${FRIDAY_DATA_DIR:-~/.friday-ai}/runner:/data"
  networks:
  - friday-network
  depends_on:
@@ -91,14 +97,13 @@ services:
  restart: unless-stopped
  postgres:
  image: postgres:17-alpine
- profiles: ["postgres"]
  container_name: friday-postgres
  environment:
  POSTGRES_USER: ${POSTGRES_USER:-friday}
  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-friday}
  POSTGRES_DB: ${POSTGRES_DB:-friday}
  volumes:
- - postgres-data:/var/lib/postgresql/data
+ - "${FRIDAY_DATA_DIR:-~/.friday-ai}/postgres:/var/lib/postgresql/data"
  networks:
  - friday-network
  healthcheck:
@@ -116,7 +121,7 @@ services:
  environment:
  - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
  volumes:
- - qdrant-data:/qdrant/storage
+ - "${FRIDAY_DATA_DIR:-~/.friday-ai}/qdrant:/qdrant/storage"
  networks:
  - friday-network
  restart: unless-stopped
@@ -126,12 +131,6 @@ services:
  timeout: 10s
  retries: 3
  start_period: 10s
-volumes:
- redis-data:
- server-data:
- postgres-data:
- qdrant-data:
- runner-data:
 networks:
  friday-network:
  driver: bridge

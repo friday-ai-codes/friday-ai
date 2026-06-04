@@ -20,30 +20,15 @@ cd friday-ai
 ```
 ### 步骤 2: 配置环境变量
 ```bash
-cp .env.example .env
+scripts/setup.sh
 ```
-### 步骤 3: 生成必填密钥
-运行以下命令分别生成三个必填密钥：
+脚本会自动生成必填密钥，写入 `.env`，并默认在 `~/.friday-ai` 下创建 `postgres`、`redis`、`qdrant`、`server`、`runner` 五个独立持久化目录。
+### 步骤 3: 启动服务
 ```bash
-# 生成 SECRET_KEY（Django 密钥）
-openssl rand -base64 32
-# 生成 FRIDAY_ENCRYPTION_KEY（数据加密密钥）
-openssl rand -base64 32
-# 生成 RUNNER_REGISTRATION_TOKEN（Runner 注册令牌）
-openssl rand -base64 32
-```
-编辑 `.env` 文件，将生成的三个值分别填入对应的配置项：
-```bash
-SECRET_KEY=<粘贴第一个生成值>
-FRIDAY_ENCRYPTION_KEY=<粘贴第二个生成值>
-RUNNER_REGISTRATION_TOKEN=<粘贴第三个生成值>
-```
-### 步骤 4: 启动服务
-```bash
-docker compose --profile postgres up -d
+docker compose up -d
 ```:: tip 推荐配置
-`--profile postgres` 会启动内置的 PostgreSQL 数据库，适合快速体验和中小规模部署。如果你已有外部 PostgreSQL，可以在 `.env` 中修改 `DATABASE_URL` 后去掉 `--profile postgres`。::
-### 步骤 5: 访问验证
+默认 Compose 编排会启动 Web、Server、Runner、PostgreSQL、Redis 和 Qdrant 完整体实例，适合快速体验和本地部署。::
+### 步骤 4: 访问验证
 服务启动后，访问以下地址确认部署成功：
 - **Web 界面**: [http://localhost:10240](http://localhost:10240)
 - **API 接口**: [http://localhost:10241/api/](http://localhost:10241/api/)
@@ -65,6 +50,7 @@ Docker Compose 部署包含以下服务：
 | <span v-pre>`FRIDAY_ENCRYPTION_KEY`</span> | <span v-pre>`openssl rand -base64 32`</span> | 敏感数据加密密钥（API Key、Token 等） |
 | <span v-pre>`RUNNER_REGISTRATION_TOKEN`</span> | <span v-pre>`openssl rand -base64 32`</span> | Runner 注册令牌，server 和 runner 共享 |
 | <span v-pre>`DATABASE_URL`</span> | 见下方说明 | 数据库连接字符串 |
+| <span v-pre>`FRIDAY_DATA_DIR`</span> | <span v-pre>`scripts/setup.sh` 自动写入 | Docker 持久化数据宿主机目录 |
 使用内置 PostgreSQL 时，`DATABASE_URL` 默认值为 <span v-pre>`postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday`</span>，无需修改。:: warning 生产环境安全
 生产环境部署时，务必为每个密钥生成独立的随机值。不要使用示例中的占位值，不要在多个环境间复用密钥。建议将 `.env` 文件权限设置为 `600`。::
 ### 飞书集成配置
