@@ -47,6 +47,13 @@ Execution and MR tools:
 - `get_coding_execution`
 - `summarize_branch`
 - `create_merge_request`
+Feishu work item and learning tools:
+- `get_feishu_work_item_context`
+- `create_feishu_technical_plan`
+- `create_work_item_repo_tasks`
+- `execute_work_item_repo_tasks`
+- `create_learning_case`
+- `search_learning_cases`
 ## Recovery
 - If repository routing is ambiguous, rerun `discover` with a stronger hint.
 - If the repository is not indexed, index it before GraphRAG, planning, or execution.
