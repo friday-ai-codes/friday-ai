@@ -87,6 +87,8 @@ class TestRedactSecretsInText:
  ("error: invalid sk-test-placeholder", "sk-test-placeholder"),
  ("Authorization: GOOGLE_API_KEY_PLACEHOLDER", "AIzaSyD"),
  ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiI"),
+ # Phase：Friday Access Token 明文前缀也必须脱敏（与 sk-ant 并列）
+ ("leaked FRIDAY_PAT_PLACEHOLDER token", "friday_pat_ABCD"),
  ],
  )
  def test_redact_common_provider_keys(self, input_text: str, must_not_contain: str) -> None:
