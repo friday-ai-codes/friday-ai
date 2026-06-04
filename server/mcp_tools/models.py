@@ -292,3 +292,69 @@ class McpWorkItemContext(models.Model):
  f"McpWorkItemContext("
  f"{self.feishu_project_key}/{self.work_item_type}/{self.work_item_id})"
  )
+class McpWorkItemTechnicalPlan(models.Model):
+ """Technical plan generated from a Feishu work item context."""
+ class Status(models.TextChoices):
+ COMPLETED = "completed", "已完成"
+ PARTIAL = "partial", "部分完成"
+ FAILED = "failed", "失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ "interactions.InteractionRun",
+ on_delete=models.CASCADE,
+ related_name="mcp_work_item_technical_plans",
+ )
+ context = models.ForeignKey(
+ McpWorkItemContext,
+ on_delete=models.CASCADE,
+ related_name="technical_plans",
+ )
+ project = models.ForeignKey(
+ "projects.Project",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="mcp_work_item_technical_plans",
+ )
+ tool_call = models.ForeignKey(
+ "interactions.ToolCallRecord",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ feishu_project_key = models.CharField(max_length=128, db_index=True)
+ work_item_type = models.CharField(max_length=80, db_index=True)
+ work_item_id = models.BigIntegerField(db_index=True)
+ title = models.CharField(max_length=240)
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.COMPLETED,
+ db_index=True,
+ )
+ plan_body = models.JSONField(default=dict, blank=True)
+ markdown = models.TextField(blank=True, default="")
+ repository_tasks = models.JSONField(default=list, blank=True)
+ evidence = models.JSONField(default=list, blank=True)
+ similar_cases = models.JSONField(default=list, blank=True)
+ feishu_document_id = models.CharField(max_length=128, blank=True, default="")
+ feishu_document_url = models.CharField(max_length=500, blank=True, default="")
+ comment_result = models.JSONField(default=dict, blank=True)
+ retry_state = models.JSONField(default=dict, blank=True)
+ error_stage = models.CharField(max_length=80, blank=True, default="")
+ error = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "mcp_work_item_technical_plans"
+ indexes = [
+ models.Index(fields=["context", "-created_at"]),
+ models.Index(fields=["feishu_project_key", "work_item_type", "work_item_id"]),
+ models.Index(fields=["run"]),
+ models.Index(fields=["status"]),
+ models.Index(fields=["project", "-created_at"]),
+ ]
+ ordering = ["-created_at"]
+ def __str__(self) -> str:
+ return f"McpWorkItemTechnicalPlan({self.title}, {self.status})"
