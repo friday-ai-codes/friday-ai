@@ -9,6 +9,10 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
  export interface GlobalComponents {
+ AccessTokenForm: typeof import('./components/accessTokens/AccessTokenForm.vue')['default']
+ AccessTokenListTable: typeof import('./components/accessTokens/AccessTokenListTable.vue')['default']
+ AccessTokenRevealDialog: typeof import('./components/accessTokens/AccessTokenRevealDialog.vue')['default']
+ AccessTokenSettings: typeof import('./components/accessTokens/AccessTokenSettings.vue')['default']
  AccountSettingsModal: typeof import('./components/settings/AccountSettingsModal.vue')['default']
  ActionNode: typeof import('./components/workflow/editor/nodes/ActionNode.vue')['default']
  AgentExecutionLog: typeof import('./components/workflow/execution/AgentExecutionLog.vue')['default']

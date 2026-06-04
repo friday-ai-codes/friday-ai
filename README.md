@@ -25,24 +25,17 @@ This project follows a Monorepo structure, containing independent frontend and b
 ### Full Stack Deployment (Docker)
 **Prerequisites:** Docker & Docker Compose
 #### One-Click Start
-1. **Configure Environment Variables**
+1. **Generate `.env` and local data directories**
  ```bash
- cp .env.example .env
- # Edit .env and fill in required values
+ scripts/setup.sh
  ```
-2. **Generate Encryption Key** (Required)
- ```bash
- # Using Python
- python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key.decode)"
- # Or using OpenSSL
- openssl rand -base64 32
- ```
- Add the generated key to `FRIDAY_ENCRYPTION_KEY` in `.env`
-3. **Start Full Stack Services**
+ The script creates `.env` and prepares persistent data directories under `~/.friday-ai` by default.
+2. **Start Full Stack Services**
  ```bash
  docker compose up -d
  ```
-4. **Access Services**
+ This starts Web, Server, Runner, PostgreSQL, Redis, and Qdrant.
+3. **Access Services**
  - **Application**: http://localhost:10240 (Nginx serves frontend + proxies API)
  - **API Docs**: http://localhost:10240/docs (Swagger UI)
  - **Direct API Access**: http://localhost:10241 (Optional, for debugging)
@@ -76,6 +69,7 @@ This project follows a Monorepo structure, containing independent frontend and b
 | `SECRET_KEY` | ✅ | - | Django secret key (generate for production) |
 | `FRIDAY_ENCRYPTION_KEY` | ✅ | - | Encryption key for sensitive data |
 | `DATABASE_URL` | ❌ | sqlite:///./data/friday.db | Database connection URL |
+| `FRIDAY_DATA_DIR` | ❌ | ~/.friday-ai | Host directory for persistent Docker data |
 | `FRIDAY_WEB_PORT` | ❌ | 10240 | Web frontend port |
 | `FRIDAY_PORT` | ❌ | 10241 | Backend API port |
 | `DEBUG` | ❌ | false | Enable debug mode |

@@ -21,6 +21,8 @@ connection.ensure_connection
 done
 echo "数据库已就绪，执行迁移..."
 python manage.py migrate --noinput
+echo "初始化系统设置..."
+python manage.py bootstrap_system_settings
 echo "初始化管理员..."
 python manage.py init_superuser
 echo "收集静态文件..."

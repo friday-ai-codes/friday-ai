@@ -156,6 +156,7 @@ declare global {
  const unref: typeof import('vue').unref
  const unrefElement: typeof import('@vueuse/core').unrefElement
  const until: typeof import('@vueuse/core').until
+ const useAccessTokenStore: typeof import('./stores/accessTokens').useAccessTokenStore
  const useActiveElement: typeof import('@vueuse/core').useActiveElement
  const useAnalyticsFiltersStore: typeof import('./stores/analyticsFilters').useAnalyticsFiltersStore
  const useAnimate: typeof import('@vueuse/core').useAnimate
@@ -617,6 +618,7 @@ declare module 'vue' {
  readonly unref: UnwrapRef<typeof import('vue')['unref']>
  readonly unrefElement: UnwrapRef<typeof import('@vueuse/core')['unrefElement']>
  readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>
+ readonly useAccessTokenStore: UnwrapRef<typeof import('./stores/accessTokens')['useAccessTokenStore']>
  readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
  readonly useAnalyticsFiltersStore: UnwrapRef<typeof import('./stores/analyticsFilters')['useAnalyticsFiltersStore']>
  readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>

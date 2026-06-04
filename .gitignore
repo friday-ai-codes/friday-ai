@@ -19,6 +19,7 @@ Thumbs.db
 *.log
 node_modules
 .env
+.env.back
 # Python
 __pycache__/
 *.pyc
@@ -33,6 +34,7 @@ venv/
 *.sqlite3
 # Runtime data
 server/data/
+server/data-test/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
