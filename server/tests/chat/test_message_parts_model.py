@@ -13,6 +13,7 @@
 from __future__ import annotations
 import pytest
 from chat.parts import (
+ ImagePart,
  PartsCollector,
  TextPart,
  ThinkingPart,
@@ -157,6 +158,50 @@ def test_part_pydantic_serialization_round_trip -> None:
  as_dict = part_to_dict(part)
  restored = part_from_dict(as_dict)
  assert part_to_dict(restored) == as_dict
+def test_image_part_pydantic_serialization_round_trip -> None:
+ """ImagePart 是一等 parts 成员，序列化不影响旧 text/tool/thinking 分支。"""
+ image = ImagePart(
+ id="p-img",
+ index=0,
+ mime_type="image/png",
+ size_bytes=128,
+ width=16,
+ height=16,
+ detail="auto",
+ storage_ref="chat_images/p-img.png",
+ source_url="",
+ alt_text="界面截图",
+ )
+ as_dict = part_to_dict(image)
+ restored = part_from_dict(as_dict)
+ assert as_dict["type"] == "image"
+ assert as_dict["mime_type"] == "image/png"
+ assert as_dict["storage_ref"] == "chat_images/p-img.png"
+ assert part_to_dict(restored) == as_dict
+def test_collector_content_ignores_image_parts -> None:
+ """Message.content 只由 text part 派生，图片 part 不进入大字段。"""
+ collector = PartsCollector
+ collector.parts = [
+ {"type": "text", "id": "p1", "index": 0, "text": "请分析", "state": "done"},
+ {
+ "type": "image",
+ "id": "p2",
+ "index": 1,
+ "mime_type": "image/png",
+ "size_bytes": 128,
+ "width": None,
+ "height": None,
+ "detail": "auto",
+ "storage_ref": "chat_images/p2.png",
+ "source_url": "",
+ "alt_text": "",
+ },
+ {"type": "text", "id": "p3", "index": 2, "text": "这张图", "state": "done"},
+ ]
+ payload = collector.to_message_payload
+ assert payload["content"] == "请分析这张图"
+ assert payload["parts"][1]["type"] == "image"
+ assert payload["tool_calls"] ==
 def test_collector_append_text_returns_is_new_part_flag -> None:
  """append_text 第一次创建 part 返回 is_new_part=True；第二次 append 返回 False。"""
  collector = PartsCollector
