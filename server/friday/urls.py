@@ -45,6 +45,8 @@ api_patterns = [
  path("containers/", include("subagent.api.urls")),
  # Runners
  path("runners/", include("runners.urls")),
+ # Access Tokens（Phase：外部 MCP/Skill 统一鉴权凭证）
+ path("access-tokens/", include("access_tokens.urls")),
  # Agent tools API
  path("agents/", include("agents.urls")),
  # API Documentation
