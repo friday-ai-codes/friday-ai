@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
  AnalyzeRepositoryView,
  CreateCodingPlanView,
+ CreateMergeRequestView,
  ExecuteCodingPlanView,
  FindRelatedChunksView,
  GetCodingExecutionView,
@@ -12,6 +13,7 @@ from .views import (
  ListRepositoryFilesView,
  RouteRepositoriesView,
  SearchRagChunksView,
+ SummarizeBranchView,
 )
 urlpatterns = [
  path("tools/route_repositories/", RouteRepositoriesView.as_view, name="mcp-tool-route-repositories"),
@@ -25,4 +27,6 @@ urlpatterns = [
  path("tools/improve_coding_plan/", ImproveCodingPlanView.as_view, name="mcp-tool-improve-coding-plan"),
  path("tools/execute_coding_plan/", ExecuteCodingPlanView.as_view, name="mcp-tool-execute-coding-plan"),
  path("tools/get_coding_execution/", GetCodingExecutionView.as_view, name="mcp-tool-get-coding-execution"),
+ path("tools/summarize_branch/", SummarizeBranchView.as_view, name="mcp-tool-summarize-branch"),
+ path("tools/create_merge_request/", CreateMergeRequestView.as_view, name="mcp-tool-create-merge-request"),
 ]

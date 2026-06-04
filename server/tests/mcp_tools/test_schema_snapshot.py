@@ -46,4 +46,12 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["execution_id"],
  "response": ["execution_id", "plan_id", "version_id", "repository_id", "status", "branch_name", "target_branch", "coding_session_id", "subagent_session_id", "commit_sha", "file_changes", "test_results", "push_result", "last_diff", "runner_logs", "recovery_state", "dispatch_payload", "error", "retry_of_execution_id", "retry_count", "run_id"],
  },
+ "summarize_branch": {
+ "request": ["execution_id", "repository_id", "source_branch", "target_branch", "max_files"],
+ "response": ["execution_id", "repository_id", "source_branch", "target_branch", "summary", "mr_draft", "run_id"],
+ },
+ "create_merge_request": {
+ "request": ["execution_id", "repository_id", "source_branch", "target_branch", "title", "description", "reviewer_usernames", "remove_source_branch"],
+ "response": ["execution_id", "repository_id", "source_branch", "target_branch", "mr", "execution_status", "run_id"],
+ },
  }
