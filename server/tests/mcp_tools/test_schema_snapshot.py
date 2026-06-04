@@ -70,4 +70,12 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["technical_plan_id", "task_ids", "create_missing", "dispatch", "create_merge_requests", "write_back", "timeout_seconds", "reviewer_usernames"],
  "response": ["technical_plan_id", "tasks", "summary", "document_update", "comment", "status", "run_id"],
  },
+ "create_learning_case": {
+ "request": ["technical_plan_id", "outcome", "root_cause", "solution_notes", "tests"],
+ "response": ["learning_case_id", "case", "run_id"],
+ },
+ "search_learning_cases": {
+ "request": ["query", "work_item_type", "repo_hints", "file_hints", "symbol_hints", "limit"],
+ "response": ["query", "results", "total", "run_id"],
+ },
  }

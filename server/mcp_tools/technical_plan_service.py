@@ -6,6 +6,7 @@ from typing import Any, cast
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from django.db.models import Q
 from interactions.models import InteractionRun
+from mcp_tools.learning_case_service import search_learning_cases
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.feishu import create_feishu_client_for_project
@@ -340,6 +341,20 @@ async def build_work_item_technical_plan(
  context=context,
  limit=5,
  )
+ effective_similar_cases = similar_cases
+ if not effective_similar_cases:
+ effective_similar_cases = await search_learning_cases(
+ query=_work_item_text(context),
+ work_item_type=context.work_item_type,
+ repo_hints=repo_hints,
+ file_hints=[
+ str(chunk.get("file_path") or "")
+ for chunk in context_chunks
+ if isinstance(chunk, dict)
+ ],
+ symbol_hints=,
+ limit=5,
+ )
  repository_tasks = await _build_repo_task_matrix(
  context=context,
  repositories=repositories,
@@ -349,7 +364,7 @@ async def build_work_item_technical_plan(
  evidence = _evidence_from_context(
  context=context,
  context_chunks=context_chunks,
- similar_cases=similar_cases,
+ similar_cases=effective_similar_cases,
  )
  work_item = {
  "context_id": str(context.id),
@@ -370,7 +385,7 @@ async def build_work_item_technical_plan(
  "work_item": work_item,
  "repository_task_matrix": repository_tasks,
  "linked_documents": context.documents,
- "similar_cases": similar_cases,
+ "similar_cases": effective_similar_cases,
  "evidence": evidence,
  "context_preview": _preview(_work_item_text(context), 1200),
  }
@@ -438,7 +453,7 @@ async def build_work_item_technical_plan(
  markdown=markdown,
  repository_tasks=repository_tasks,
  evidence=evidence,
- similar_cases=similar_cases,
+ similar_cases=effective_similar_cases,
  feishu_document_id=str(feishu_document.get("document_id") or ""),
  feishu_document_url=str(feishu_document.get("url") or ""),
  comment_result=comment_result,

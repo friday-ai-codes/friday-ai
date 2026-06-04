@@ -445,3 +445,60 @@ class McpWorkItemRepoTask(models.Model):
  ordering = ["technical_plan", "order"]
  def __str__(self) -> str:
  return f"McpWorkItemRepoTask({self.repository_id}, {self.status})"
+class McpLearningCase(models.Model):
+ """Auditable reusable implementation/fix case for work item RAG."""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ "interactions.InteractionRun",
+ on_delete=models.CASCADE,
+ related_name="mcp_learning_cases",
+ )
+ context = models.ForeignKey(
+ McpWorkItemContext,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="learning_cases",
+ )
+ technical_plan = models.ForeignKey(
+ McpWorkItemTechnicalPlan,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="learning_cases",
+ )
+ tool_call = models.ForeignKey(
+ "interactions.ToolCallRecord",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ work_item_type = models.CharField(max_length=80, blank=True, default="", db_index=True)
+ work_item_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+ title = models.CharField(max_length=240)
+ problem = models.TextField(blank=True, default="")
+ root_cause = models.TextField(blank=True, default="")
+ solution = models.TextField(blank=True, default="")
+ outcome = models.CharField(max_length=80, blank=True, default="", db_index=True)
+ repositories = models.JSONField(default=list, blank=True)
+ files = models.JSONField(default=list, blank=True)
+ symbols = models.JSONField(default=list, blank=True)
+ branches = models.JSONField(default=list, blank=True)
+ mr_urls = models.JSONField(default=list, blank=True)
+ tests = models.JSONField(default=list, blank=True)
+ source_links = models.JSONField(default=dict, blank=True)
+ case_body = models.JSONField(default=dict, blank=True)
+ embedding_text = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "mcp_learning_cases"
+ indexes = [
+ models.Index(fields=["work_item_type", "-created_at"]),
+ models.Index(fields=["outcome", "-created_at"]),
+ models.Index(fields=["run"]),
+ ]
+ ordering = ["-created_at"]
+ def __str__(self) -> str:
+ return f"McpLearningCase({self.title}, {self.outcome})"
