@@ -20,6 +20,7 @@ from agents.core.events import (
  TOOL_USE_START,
  AgentEvent,
 )
+from services.provider_config import ProviderType
 @dataclass
 class _SdkConfigStub:
  """SdkRunnerConfig 的最小化替身。"""
@@ -27,6 +28,7 @@ class _SdkConfigStub:
  model: str = "claude-sonnet-4-5"
  space_id: str = ""
  session_id: str = "chat-test-session-001"
+ provider_type: ProviderType = ProviderType.ANTHROPIC
  conversation_id: str = ""
  api_key: str = "sk-test-key"
  api_base_url: str = "https://api.example.com"
@@ -49,6 +51,8 @@ class _MockGraph:
  ) -> None:
  self._custom_events = custom_events
  self._final_state = final_state
+ self.last_input_data: dict[str, Any] | None = None
+ self.last_config: dict[str, Any] | None = None
  async def astream(
  self,
  input_data: dict[str, Any],
@@ -57,6 +61,8 @@ class _MockGraph:
  stream_mode: list[str],
  version: str,
  ):
+ self.last_input_data = input_data
+ self.last_config = config
  for event in self._custom_events:
  yield {"type": "custom", "data": event}
  yield {"type": "values", "data": self._final_state}
@@ -150,6 +156,43 @@ class TestConversationFacade:
  assert run is not None
  assert run.thread_id == str(conversation.id)
  assert run.status == OrchestrationRun.Status.COMPLETED
+ async def test_facade_persists_user_input_parts_and_passes_them_to_graph(self, project: Any) -> None:
+ """input_parts 是可选增量：含图 user message 落 parts，content 仍只保存文本。"""
+ conversation = await _create_conversation(project)
+ parts = [
+ {"type": "text", "id": "p_text", "index": 0, "text": "看图", "state": "done"},
+ {
+ "type": "image",
+ "id": "p_img",
+ "index": 1,
+ "mime_type": "image/png",
+ "size_bytes": 12,
+ "width": None,
+ "height": None,
+ "detail": "auto",
+ "storage_ref": "chat_images/p_img.png",
+ "source_url": "",
+ "alt_text": "截图",
+ },
+ ]
+ graph = _make_graph
+ (p1, p2, p3), _ = _facade_patches(conversation, graph=graph)
+ with p1, p2, p3:
+ from chat.conversation_service import ConversationService
+ async for _ in ConversationService.send_message_stream(
+ conversation_id=str(conversation.id),
+ content="看图",
+ input_parts=parts,
+ ):
+ pass
+ from chat.models import Message
+ user_msg = await Message.objects.filter(conversation=conversation, role=Message.Role.USER).aget
+ assert user_msg.content == "看图"
+ assert user_msg.parts == parts
+ assert user_msg.metadata["parts_schema_version"] == 2
+ assert user_msg.metadata["image_count"] == 1
+ assert graph.last_input_data is not None
+ assert graph.last_input_data["user_parts"] == parts
  async def test_facade_saves_assistant_message_from_graph_state(
  self, project: Any,
  ) -> None:

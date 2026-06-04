@@ -2,14 +2,22 @@
 from __future__ import annotations
 import asyncio
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 import structlog
 from django.utils import timezone
 from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TOOL_USE_START
-from chat.models import Message
 from chat.conversation_service import ConversationService, extract_reference_summaries
+from chat.multimodal import (
+ ImageValidationError,
+ MAX_IMAGES_PER_MESSAGE,
+ build_image_part,
+ store_image_bytes,
+)
+from chat.models import Message
+from chat.parts import TextPart, part_to_dict
 from feishu.cards.bot_cards import (
  build_answer_card,
  build_background_analysis_card,
@@ -21,7 +29,8 @@ from feishu.cards.bot_cards import (
 )
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
 from projects.models import Project
-from services.feishu_im import FeishuIMService
+from services.feishu_im import FeishuIMError, FeishuIMService
+from .parser import extract_message_attachments
 from .project_resolver import ProjectResolver
 from .thread_resolver import ThreadResolver, attach_message_to_thread
 logger = structlog.get_logger(__name__)
@@ -106,11 +115,16 @@ class FeishuBotService:
  thread.last_processing_card_id = thinking_card_id
  await thread.asave(update_fields=["last_processing_card_id", "updated_at"])
  try:
+ image_attachments = self._image_attachments(message)
+ default_image_prompt = "请分析这张图片"
+ display_question = message.normalized_text or (
+ default_image_prompt if image_attachments else "附件消息"
+ )
  if self._needs_attachment_clarification(message):
  await self._send_clarification(
  im_service,
  thread,
- question=message.normalized_text or "附件消息",
+ question=display_question,
  candidates=["请补充文字描述", "请补充项目或仓库名称"],
  status=FeishuBotThreadStatus.AWAITING_PROJECT_CLARIFICATION,
  reason="attachment_without_text",
@@ -124,7 +138,7 @@ class FeishuBotService:
  chat_id=message.chat_id,
  card_message_id=thinking_card_id,
  card=build_error_card(
- question=message.normalized_text or "附件消息",
+ question=display_question,
  hint_text="当前没有可用项目可供私聊上下文使用，请先创建或关联项目。",
  ),
  )
@@ -166,7 +180,7 @@ class FeishuBotService:
  if thread.conversation_id is None:
  conversation = await ConversationService.create_conversation(
  space_id=str(thread.project_id),
- title=self._build_conversation_title(message.normalized_text),
+ title=self._build_conversation_title(display_question),
  )
  thread.conversation = conversation
  await thread.asave(update_fields=["project", "conversation", "updated_at"])
@@ -178,9 +192,39 @@ class FeishuBotService:
  group_context = _build_group_context(history)
  except Exception:
  logger.warning("group_context_fetch_failed", chat_id=message.chat_id, exc_info=True)
- llm_content = message.normalized_text
+ llm_content = message.normalized_text or (
+ default_image_prompt if image_attachments else ""
+ )
  if group_context:
- llm_content = group_context + "当前用户的问题：\n" + message.normalized_text
+ llm_content = group_context + "当前用户的问题：\n" + llm_content
+ try:
+ input_parts = await self._build_input_parts(
+ im_service=im_service,
+ message=message,
+ text=llm_content,
+ image_attachments=image_attachments,
+ )
+ except (FeishuIMError, ImageValidationError) as exc:
+ metadata = thread.metadata or {}
+ metadata["last_image_error"] = str(exc)
+ if isinstance(exc, ImageValidationError):
+ metadata["last_image_error_code"] = exc.code
+ error_card = build_error_card(
+ question=display_question,
+ hint_text=(
+ "图片下载或校验失败，请确认机器人有权限读取该消息资源，"
+ "或重新发送一张 PNG/JPEG/GIF/WebP 图片。"
+ ),
+ )
+ await self._replace_card(
+ im_service,
+ chat_id=message.chat_id,
+ card_message_id=thinking_card_id,
+ card=error_card,
+ )
+ thread.metadata = metadata
+ await thread.asave(update_fields=["metadata", "updated_at"])
+ return {"status": "error", "error": "image_download_failed"}
  # 流式消费 send_message_stream，实时更新卡片显示工具调用
  session_id = ""
  final_answer = ""
@@ -196,6 +240,7 @@ class FeishuBotService:
  content=llm_content,
  role="developer",
  project_context_line=project_context_line,
+ input_parts=input_parts,
  ):
  if event.type == TOOL_USE_START:
  tool_name = str(event.data.get("tool_name") or "")
@@ -241,7 +286,7 @@ class FeishuBotService:
  else:
  metadata["last_waiting_fallback_status"] = "timeout"
  waiting_card = build_background_analysis_card(
- question=message.normalized_text,
+ question=display_question,
  task_count=waiting_task_count,
  phase=last_run_phase,
  )
@@ -258,7 +303,7 @@ class FeishuBotService:
  if not final_answer:
  metadata["last_empty_completion"] = True
  error_card = build_error_card(
- question=message.normalized_text or "附件消息",
+ question=display_question,
  hint_text="本次没有生成最终回复。请稍后重试，或补充项目/仓库与问题上下文。",
  )
  await self._replace_card(
@@ -279,7 +324,7 @@ class FeishuBotService:
  "cost_usd": cost_usd,
  }
  answer_card = build_answer_card(
- question=message.normalized_text,
+ question=display_question,
  answer=final_answer,
  references=references,
  usage=usage_info,
@@ -299,6 +344,24 @@ class FeishuBotService:
  thread.metadata = metadata
  await thread.asave(update_fields=["last_bot_message_id", "status", "metadata", "updated_at"])
  return {"status": "answered", "session_id": session_id}
+ except ImageValidationError as exc:
+ logger.warning("feishu_bot_vision_not_supported", message_id=message.message_id, error=str(exc))
+ error_card = build_error_card(
+ question=message.normalized_text or "图片消息",
+ hint_text=exc.message,
+ )
+ await self._replace_card(
+ im_service,
+ chat_id=message.chat_id,
+ card_message_id=thinking_card_id,
+ card=error_card,
+ )
+ metadata = thread.metadata or {}
+ metadata["last_error"] = exc.message
+ metadata["last_error_code"] = exc.code
+ thread.metadata = metadata
+ await thread.asave(update_fields=["metadata", "updated_at"])
+ return {"status": "error", "error": exc.code}
  except Exception as exc:
  logger.exception("feishu_bot_processing_failed", message_id=message.message_id, error=str(exc))
  error_card = build_error_card(
@@ -320,7 +383,64 @@ class FeishuBotService:
  def _needs_attachment_clarification(message: FeishuBotMessage) -> bool:
  if message.message_type not in {"image", "file", "audio", "post"}:
  return False
+ if FeishuBotService._image_attachments(message):
+ return False
  return not bool((message.normalized_text or "").strip)
+ @staticmethod
+ def _image_attachments(message: FeishuBotMessage) -> list[dict[str, Any]]:
+ attachments = extract_message_attachments(message.raw_payload or {})
+ images: list[dict[str, Any]] =
+ for attachment in attachments:
+ tag = str(attachment.get("tag") or "")
+ image_key = str(attachment.get("image_key") or "")
+ if tag in {"image", "img"} and image_key:
+ images.append(attachment)
+ return images[:MAX_IMAGES_PER_MESSAGE]
+ @staticmethod
+ async def _build_input_parts(
+ *,
+ im_service: FeishuIMService,
+ message: FeishuBotMessage,
+ text: str,
+ image_attachments: list[dict[str, Any]],
+ ) -> list[dict[str, Any]] | None:
+ if not image_attachments:
+ return None
+ parts: list[dict[str, Any]] = [
+ part_to_dict(
+ TextPart(
+ id=f"p_{uuid.uuid4.hex[:12]}",
+ index=0,
+ text=text,
+ state="done",
+ )
+ )
+ ]
+ for idx, attachment in enumerate(image_attachments, start=1):
+ image_key = str(attachment.get("image_key") or "")
+ if not image_key:
+ raise ImageValidationError("missing_image_key", "图片资源缺少 image_key，无法下载。")
+ resource = await im_service.download_message_resource(
+ message_id=message.message_id,
+ file_key=image_key,
+ resource_type="image",
+ )
+ stored = store_image_bytes(
+ resource.content,
+ declared_mime_type=resource.mime_type,
+ source=f"feishu:{message.message_id}:{image_key}",
+ filename=str(attachment.get("name") or image_key),
+ )
+ parts.append(
+ build_image_part(
+ index=idx,
+ mime_type=stored.mime_type,
+ size_bytes=stored.size_bytes,
+ storage_ref=stored.storage_ref,
+ alt_text=str(attachment.get("name") or ""),
+ )
+ )
+ return parts
  @staticmethod
  async def _maybe_send_welcome(im_service: FeishuIMService, thread: FeishuBotThread) -> None:
  has_previous_thread = await FeishuBotThread.objects.filter(chat_id=thread.chat_id).exclude(pk=thread.pk).aexists

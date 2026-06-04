@@ -68,6 +68,7 @@ async def build_sdk_config(
  model=model,
  space_id=project_id,
  session_id=session_id,
+ provider_type=resolved.provider_type,
  conversation_id=str(conversation.id),
  api_key=resolved.api_key,
  api_base_url=resolved.base_url,

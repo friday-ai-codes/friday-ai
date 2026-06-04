@@ -55,6 +55,7 @@ from agents.tool_budget import _ToolBudget
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
 from chat.parts import PartsCollector
+from chat.multimodal import to_provider_content_blocks
 from repositories.models import Repository
 from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
@@ -95,6 +96,7 @@ class ChatRunnerConfig:
  model: str
  space_id: str
  session_id: str
+ provider_type: ProviderType = ProviderType.ANTHROPIC
  conversation_id: str = ""
  api_key: str = ""
  api_base_url: str = ""
@@ -117,6 +119,20 @@ def _inject_metadata(data: dict[str, Any], model: str, session_id: str) -> dict[
  payload["model"] = model
  payload["session_id"] = session_id
  return payload
+def _build_human_message_content(
+ prompt: str,
+ input_parts: list[dict[str, Any]] | None,
+ config: ChatRunnerConfig,
+) -> str | list[str | dict[Any, Any]]:
+ """构造 HumanMessage.content；含图片时转 provider content blocks。"""
+ if not input_parts:
+ return prompt
+ blocks = to_provider_content_blocks(
+ input_parts,
+ provider_type=config.provider_type,
+ model=config.model,
+ )
+ return cast(list[str | dict[Any, Any]], blocks)
 def _schema_type_to_python(prop: dict[str, Any]) -> Any:
  schema_type = prop.get("type", "string")
  if isinstance(schema_type, list):
@@ -588,7 +604,12 @@ class ChatAnthropicRunner:
  artifact=result.output,
  )
  return result, tool_message, decision.intercepted
- async def stream(self, prompt: str): # type: ignore[override]
+ async def stream(
+ self,
+ prompt: str,
+ *,
+ input_parts: list[dict[str, Any]] | None = None,
+ ): # type: ignore[override]
  if not self._config.api_key:
  raise ValueError("ChatRunnerConfig.api_key 不能为空")
  model = self._build_model
@@ -602,10 +623,11 @@ class ChatAnthropicRunner:
  # 把 messages 表里的历史回灌给 LLM —— 否则同会话里 LLM 每轮都从零开始，
  # 会反复调同一个工具拿同一份数据。详见 _load_history_messages docstring。
  history_messages = await _load_history_messages(self._config.conversation_id)
+ human_content = _build_human_message_content(prompt, input_parts, self._config)
  messages: list[Any] = [
  SystemMessage(content=self._config.system_prompt),
  *history_messages,
- HumanMessage(content=prompt),
+ HumanMessage(content=human_content),
  ]
  total_usage = {"input_tokens": 0, "output_tokens": 0}
  accumulated_text: list[str] =

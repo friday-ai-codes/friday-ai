@@ -32,6 +32,13 @@ class RateLimitError(FeishuIMError):
  """Rate limit 错误，需要等待后重试。"""
  pass
 @dataclass
+class DownloadedMessageResource:
+ """飞书消息资源下载结果。"""
+ content: bytes
+ mime_type: str
+ file_key: str
+ resource_type: Literal["image", "file"]
+@dataclass
 class CardTemplate:
  """飞书卡片消息模板。
  支持 Markdown 内容和交互按钮。
@@ -312,6 +319,50 @@ class FeishuIMClient:
  items = items[:max_messages]
  log.info("chat_history_fetched", count=len(items))
  return items
+ async def download_message_resource(
+ self,
+ *,
+ message_id: str,
+ file_key: str,
+ resource_type: Literal["image", "file"],
+ ) -> DownloadedMessageResource:
+ """下载用户消息中的资源文件。
+ 飞书资源接口对图片也使用路径参数名 ``file_key``；调用方可传入
+ message content 中的 ``image_key``。
+ """
+ token = await self.get_tenant_access_token
+ log = logger.bind(message_id=message_id, file_key=file_key, resource_type=resource_type)
+ async with httpx.AsyncClient as client:
+ response = await client.get(
+ f"{self.OPEN_API_BASE}/im/v1/messages/{message_id}/resources/{file_key}",
+ params={"type": resource_type},
+ headers={"Authorization": f"Bearer {token}"},
+ )
+ data: dict[str, Any] | None = None
+ try:
+ parsed = response.json
+ if isinstance(parsed, dict):
+ data = parsed
+ except (ValueError, json.JSONDecodeError):
+ data = None
+ if data is not None and data.get("code", 0) != 0:
+ code = data.get("code")
+ log.warning("download_message_resource_failed", response=data)
+ raise FeishuIMError(f"获取消息资源失败: {data.get('msg', data)}", code=code)
+ content = bytes(getattr(response, "content", b"") or b"")
+ if not content:
+ log.warning("download_message_resource_empty")
+ raise FeishuIMError("获取消息资源失败: empty response")
+ headers = getattr(response, "headers", {}) or {}
+ raw_content_type = str(headers.get("content-type") or headers.get("Content-Type") or "")
+ mime_type = raw_content_type.split(";", 1)[0].strip.lower or "application/octet-stream"
+ log.info("message_resource_downloaded", size_bytes=len(content), mime_type=mime_type)
+ return DownloadedMessageResource(
+ content=content,
+ mime_type=mime_type,
+ file_key=file_key,
+ resource_type=resource_type,
+ )
  @staticmethod
  def verify_callback_signature(
  timestamp: str,
@@ -558,6 +609,18 @@ class FeishuIMService:
  chat_id,
  page_size=page_size,
  max_messages=max_messages,
+ )
+ async def download_message_resource(
+ self,
+ *,
+ message_id: str,
+ file_key: str,
+ resource_type: Literal["image", "file"],
+ ) -> DownloadedMessageResource:
+ return await self.client.download_message_resource(
+ message_id=message_id,
+ file_key=file_key,
+ resource_type=resource_type,
  )
  async def get_chat_id_for_work_item(
  self,
