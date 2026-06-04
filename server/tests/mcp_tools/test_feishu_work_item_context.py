@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any
 import pytest
 from rest_framework.test import APIClient
@@ -54,6 +55,42 @@ class _FakeFeishuClient:
 class _FakeDocClient:
  async def get_document_content(self, document_id: str) -> tuple[str, list[dict[str, Any]]]:
  return f"# {document_id}\n\n文档内容", [{"block_id": "b1"}]
+class _FlakyFeishuClient(_FakeFeishuClient):
+ async def get_work_item(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str = "story",
+ fields: list[str] | None = None,
+ ) -> WorkItemInfo:
+ token = "FRIDAY_PAT_PLACEHOLDER"
+ return WorkItemInfo(
+ id=work_item_id,
+ name="带敏感字段的 Bug",
+ description=f"复现文档 https://example.feishu.cn/docx/DOC123abc，临时 token {token}",
+ status="doing",
+ project_key=project_key,
+ work_item_type=work_item_type,
+ fields={"secret": token, "description": "关联文档 doxcnPlainToken123"},
+ raw_response=json.dumps({"secret": token, "nested": {"token": token}}),
+ )
+ async def get_work_item_relations(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str,
+ ) -> list[dict[str, Any]]:
+ raise RuntimeError("relation service unavailable")
+ async def get_comments(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str,
+ ) -> list[dict[str, Any]]:
+ raise RuntimeError("comment service unavailable")
+class _BoomDocClient:
+ async def get_document_content(self, document_id: str) -> tuple[str, list[dict[str, Any]]]:
+ raise RuntimeError(f"doc service unavailable: {document_id}")
 def test_extract_feishu_doc_refs_from_nested_values -> None:
  refs = extract_feishu_doc_refs(
  {
@@ -137,3 +174,51 @@ def test_get_feishu_work_item_context_partial_when_doc_client_missing(
  assert body["status"] == "partial"
  assert {doc["status"] for doc in body["documents"]} == {"skipped"}
  assert McpWorkItemContext.objects.get(id=body["context_id"]).status == "partial"
+def test_get_feishu_work_item_context_degrades_and_redacts_snapshot(
+ mcp_client: tuple[APIClient, str],
+ project,
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ client, _plaintext = mcp_client
+ token = "FRIDAY_PAT_PLACEHOLDER"
+ monkeypatch.setattr(
+ "mcp_tools.work_item_context_service.create_feishu_client_for_project",
+ lambda _project: _FlakyFeishuClient,
+ )
+ async def _doc_client(_project):
+ return _BoomDocClient
+ monkeypatch.setattr(
+ "mcp_tools.work_item_context_service.create_feishu_doc_client_for_project",
+ _doc_client,
+ )
+ response = client.post(
+ "/api/mcp/tools/get_feishu_work_item_context/",
+ {
+ "project_key": project.feishu_project_key,
+ "work_item_type": "bug",
+ "work_item_id": 42,
+ "include_comments": True,
+ },
+ format="json",
+ )
+ assert response.status_code == 200
+ body = response.json
+ assert body["status"] == "partial"
+ assert {doc["status"] for doc in body["documents"]} == {"error"}
+ assert body["context"]["summary"]["relation_error"] == "relation service unavailable"
+ assert body["context"]["summary"]["comment_error"] == "comment service unavailable"
+ assert token not in json.dumps(body, ensure_ascii=False)
+ context = McpWorkItemContext.objects.get(id=body["context_id"])
+ stored_blob = json.dumps(
+ {
+ "description": context.description,
+ "fields": context.fields,
+ "documents": context.documents,
+ "comments": context.comments,
+ "context": context.context,
+ "raw_response": context.raw_response,
+ },
+ ensure_ascii=False,
+ )
+ assert context.status == McpWorkItemContext.Status.PARTIAL
+ assert token not in stored_blob

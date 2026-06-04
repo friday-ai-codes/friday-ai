@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
+from interactions.redaction import redact_for_ledger
 from mcp_tools.models import McpWorkItemContext
 from projects.models import Project
 from services.feishu import create_feishu_client_for_project
@@ -143,6 +144,8 @@ async def _read_documents(project: Project, refs: list[dict[str, str]]) -> list[
  documents.append({**ref, "status": "rate_limited", "error": str(exc)})
  except FeishuDocAPIError as exc:
  documents.append({**ref, "status": "error", "error": str(exc)})
+ except Exception as exc: # noqa: BLE001 - one bad document should not drop the work item snapshot.
+ documents.append({**ref, "status": "error", "error": str(exc)})
  return documents
 async def build_work_item_context(
  *,
@@ -169,16 +172,25 @@ async def build_work_item_context(
  )
  except Exception as exc: # noqa: BLE001 - upstream Feishu errors are surfaced as MCP errors.
  raise WorkItemContextError("feishu_work_item_error", str(exc)) from exc
+ relation_error = ""
+ try:
  relations = await client.get_work_item_relations(
  effective_project_key,
  item.id,
  work_item_type,
  )
- comments = (
- await client.get_comments(effective_project_key, item.id, work_item_type)
- if include_comments
- else
- )
+ except Exception as exc: # noqa: BLE001 - relation lookup is useful but not required for context.
+ relations =
+ relation_error = str(exc)
+ comment_error = ""
+ if include_comments:
+ try:
+ comments = await client.get_comments(effective_project_key, item.id, work_item_type)
+ except Exception as exc: # noqa: BLE001 - comments should degrade the snapshot to partial.
+ comments =
+ comment_error = str(exc)
+ else:
+ comments =
  doc_refs = extract_feishu_doc_refs(
  {
  "description": item.description,
@@ -214,14 +226,25 @@ async def build_work_item_context(
  "document_count": len(documents),
  "document_ok_count": sum(1 for doc in documents if doc.get("status") == "ok"),
  "comment_count": len(comments),
+ "relation_error": relation_error,
+ "comment_error": comment_error,
  },
  }
  has_doc_errors = any(doc.get("status") not in ("ok",) for doc in documents)
+ has_context_errors = bool(relation_error or comment_error)
  status = (
  McpWorkItemContext.Status.PARTIAL
- if has_doc_errors
+ if has_doc_errors or has_context_errors
  else McpWorkItemContext.Status.COMPLETED
  )
+ stored_owners = redact_for_ledger(owners)
+ stored_fields = redact_for_ledger(item.fields)
+ stored_relations = redact_for_ledger(relations)
+ stored_documents = redact_for_ledger(documents)
+ stored_comments = redact_for_ledger(comments)
+ stored_context = redact_for_ledger(context)
+ stored_raw_response = redact_for_ledger(_json_from_raw(item.raw_response))
+ safe_work_item = redact_for_ledger(work_item)
  artifact = await McpWorkItemContext.objects.acreate(
  run=run,
  project=project,
@@ -231,23 +254,23 @@ async def build_work_item_context(
  name=item.name[:500],
  status=status,
  work_item_status=item.status,
- description=item.description,
- owners=owners,
- fields=item.fields,
- relations=relations,
- documents=documents,
- comments=comments,
- context=context,
- raw_response=_json_from_raw(item.raw_response),
+ description=redact_for_ledger(item.description),
+ owners=stored_owners,
+ fields=stored_fields,
+ relations=stored_relations,
+ documents=stored_documents,
+ comments=stored_comments,
+ context=stored_context,
+ raw_response=stored_raw_response,
  )
  output = {
  "context_id": str(artifact.id),
  "project_id": str(project.id),
- "work_item": work_item,
- "relations": relations,
- "documents": documents,
- "comments": comments,
- "context": context,
+ "work_item": safe_work_item,
+ "relations": stored_relations,
+ "documents": stored_documents,
+ "comments": stored_comments,
+ "context": stored_context,
  "status": status,
  "run_id": str(run.run_id),
  }

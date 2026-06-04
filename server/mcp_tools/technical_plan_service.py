@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, cast
-from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from django.db.models import Q
+from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.learning_case_service import search_learning_cases
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
@@ -29,6 +29,9 @@ def _slug(value: str) -> str:
 def _preview(value: str, limit: int = 500) -> str:
  text = value.strip
  return text[:limit] + ("..." if len(text) > limit else "")
+def _table_cell(value: Any) -> str:
+ text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+ return text.replace("|", "\\|").replace("`", "\\`").replace("\n", "<br>").strip
 def _work_item_text(context: McpWorkItemContext) -> str:
  parts = [
  context.name,
@@ -51,7 +54,6 @@ async def _resolve_repositories(
  *,
  repository_ids: list[str],
  repo_hints: list[str],
- context: McpWorkItemContext,
  limit: int,
 ) -> list[Repository]:
  if repository_ids:
@@ -215,14 +217,17 @@ def render_technical_plan_markdown(plan: dict[str, Any]) -> str:
  ]
  if repo_tasks:
  for task in repo_tasks:
- files = "<br>".join(str(path) for path in task.get("candidate_files", )[:6]) or "待执行前确认"
- tests = "<br>".join(str(item) for item in task.get("test_strategy", )[:4])
- risks = "<br>".join(str(item) for item in task.get("risks", )[:4])
+ files = (
+ "<br>".join(_table_cell(path) for path in task.get("candidate_files", )[:6])
+ or "待执行前确认"
+ )
+ tests = "<br>".join(_table_cell(item) for item in task.get("test_strategy", )[:4])
+ risks = "<br>".join(_table_cell(item) for item in task.get("risks", )[:4])
  lines.append(
  "| {repo} | `{branch}` | {goal} | {files} | {tests} | {risks} |".format(
- repo=task.get("repository_name", ""),
- branch=task.get("planned_branch", ""),
- goal=task.get("change_goal", ""),
+ repo=_table_cell(task.get("repository_name", "")),
+ branch=_table_cell(task.get("planned_branch", "")),
+ goal=_table_cell(task.get("change_goal", "")),
  files=files,
  tests=tests,
  risks=risks,
@@ -338,7 +343,6 @@ async def build_work_item_technical_plan(
  repositories = await _resolve_repositories(
  repository_ids=repository_ids,
  repo_hints=repo_hints,
- context=context,
  limit=5,
  )
  effective_similar_cases = similar_cases
