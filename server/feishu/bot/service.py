@@ -1,13 +1,18 @@
 """Feishu bot orchestration service."""
 from __future__ import annotations
+import asyncio
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 import structlog
-from agents.core.events import MESSAGE_COMPLETE, TOOL_USE_START
+from django.utils import timezone
+from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TOOL_USE_START
+from chat.models import Message
 from chat.conversation_service import ConversationService, extract_reference_summaries
 from feishu.cards.bot_cards import (
  build_answer_card,
+ build_background_analysis_card,
  build_clarification_card,
  build_error_card,
  build_streaming_card,
@@ -21,6 +26,8 @@ from .project_resolver import ProjectResolver
 from .thread_resolver import ThreadResolver, attach_message_to_thread
 logger = structlog.get_logger(__name__)
 _GROUP_CONTEXT_MSG_LIMIT = 500
+WAITING_FINAL_ANSWER_POLL_ATTEMPTS = 10
+WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS = 1.0
 _AUTO_MATCH_PROJECT_REASONS = {
  "explicit_alias_match",
  "thread_project_reuse",
@@ -180,6 +187,10 @@ class FeishuBotService:
  usage: dict[str, Any] = {}
  cost_usd: float = 0
  tool_names: list[str] =
+ last_run_phase = ""
+ last_run_id = ""
+ waiting_task_count = 0
+ stream_started_at = timezone.now
  async for event in ConversationService.send_message_stream(
  conversation_id=str(thread.conversation_id),
  content=llm_content,
@@ -194,11 +205,71 @@ class FeishuBotService:
  thinking_card_id,
  build_streaming_card(tool_names),
  )
+ elif event.type == PHASE_TRANSITION:
+ last_run_phase = str(event.data.get("phase") or last_run_phase)
+ last_run_id = str(event.data.get("run_id") or last_run_id)
+ session_id = str(event.data.get("session_id") or session_id)
+ raw_task_count = event.data.get("blocking_task_count") or event.data.get("task_count") or 0
+ try:
+ waiting_task_count = int(raw_task_count)
+ except (TypeError, ValueError):
+ waiting_task_count = 0
  elif event.type == MESSAGE_COMPLETE:
  session_id = event.data.get("session_id", "")
- final_answer = event.data.get("final_answer", "")
+ raw_answer = event.data.get("final_answer") or event.data.get("result") or ""
+ final_answer = str(raw_answer).strip
  usage = event.data.get("usage") or {}
  cost_usd = event.data.get("cost_usd", 0)
+ metadata = thread.metadata or {}
+ if last_run_phase:
+ metadata["last_run_phase"] = last_run_phase
+ if last_run_id:
+ metadata["last_run_id"] = last_run_id
+ if waiting_task_count:
+ metadata["last_waiting_task_count"] = waiting_task_count
+ if session_id:
+ metadata["last_session_id"] = session_id
+ if not final_answer and last_run_phase == "waiting":
+ metadata["last_waiting_started_at"] = timezone.now.isoformat
+ fallback_answer = await self._poll_final_answer_from_conversation(
+ str(thread.conversation_id),
+ created_after=stream_started_at,
+ )
+ if fallback_answer:
+ final_answer = fallback_answer
+ metadata["last_waiting_fallback_status"] = "resolved"
+ else:
+ metadata["last_waiting_fallback_status"] = "timeout"
+ waiting_card = build_background_analysis_card(
+ question=message.normalized_text,
+ task_count=waiting_task_count,
+ phase=last_run_phase,
+ )
+ await self._replace_card(
+ im_service,
+ chat_id=message.chat_id,
+ card_message_id=thinking_card_id,
+ card=waiting_card,
+ )
+ thread.status = FeishuBotThreadStatus.ACTIVE
+ thread.metadata = metadata
+ await thread.asave(update_fields=["status", "metadata", "updated_at"])
+ return {"status": "waiting", "session_id": session_id}
+ if not final_answer:
+ metadata["last_empty_completion"] = True
+ error_card = build_error_card(
+ question=message.normalized_text or "附件消息",
+ hint_text="本次没有生成最终回复。请稍后重试，或补充项目/仓库与问题上下文。",
+ )
+ await self._replace_card(
+ im_service,
+ chat_id=message.chat_id,
+ card_message_id=thinking_card_id,
+ card=error_card,
+ )
+ thread.metadata = metadata
+ await thread.asave(update_fields=["metadata", "updated_at"])
+ return {"status": "error", "error": "empty_final_answer", "session_id": session_id}
  references = await extract_reference_summaries(session_id)
  usage_info: dict[str, Any] | None = None
  if usage or cost_usd:
@@ -222,7 +293,6 @@ class FeishuBotService:
  card=answer_card,
  )
  thread.status = FeishuBotThreadStatus.ACTIVE
- metadata = thread.metadata or {}
  metadata["last_reference_count"] = len(references)
  metadata["last_session_id"] = session_id
  metadata["chat_type"] = message.chat_type
@@ -314,6 +384,31 @@ class FeishuBotService:
  if not hasattr(im_service, "get_chat_history"):
  return
  return await im_service.get_chat_history(chat_id, page_size=50, max_messages=_GROUP_CONTEXT_MSG_LIMIT)
+ @staticmethod
+ async def _poll_final_answer_from_conversation(conversation_id: str, *, created_after: datetime) -> str:
+ for _ in range(WAITING_FINAL_ANSWER_POLL_ATTEMPTS):
+ answer = await FeishuBotService._latest_assistant_answer(conversation_id, created_after=created_after)
+ if answer:
+ return answer
+ if WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS > 0:
+ await asyncio.sleep(WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS)
+ return ""
+ @staticmethod
+ async def _latest_assistant_answer(conversation_id: str, *, created_after: datetime) -> str:
+ queryset = (
+ Message.objects.filter(
+ conversation_id=conversation_id,
+ role=Message.Role.ASSISTANT,
+ created_at__gte=created_after,
+ )
+ .exclude(content="")
+ .order_by("-created_at")
+ )
+ async for message in queryset[:5]:
+ content = (message.content or "").strip
+ if content:
+ return content
+ return ""
  @staticmethod
  async def _replace_card(
  im_service: FeishuIMService,

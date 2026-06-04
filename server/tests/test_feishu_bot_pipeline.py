@@ -5,9 +5,9 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import pytest
-from agents.core.events import MESSAGE_COMPLETE, TOOL_USE_START, AgentEvent
+from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TOOL_USE_START, AgentEvent
 from agents.models import AgentSession, ToolCallLog
-from chat.models import Conversation
+from chat.models import Conversation, Message
 from feishu.bot.service import FeishuBotService
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
 from projects.models import Project
@@ -60,6 +60,21 @@ async def _tool_then_complete_stream(
  "cost_usd": 0,
  "status": "completed",
  "model": "test-model",
+ },
+ )
+async def _waiting_stream(
+ *,
+ session_id: str = "waiting-session",
+ run_id: str = "run-waiting",
+ blocking_task_count: int = 2,
+) -> AsyncGenerator[AgentEvent, None]:
+ yield AgentEvent(
+ type=PHASE_TRANSITION,
+ data={
+ "phase": "waiting",
+ "session_id": session_id,
+ "run_id": run_id,
+ "blocking_task_count": blocking_task_count,
  },
  )
 @pytest.mark.django_db(transaction=True)
@@ -194,6 +209,111 @@ class TestFeishuBotPipeline:
  assert result["status"] == "answered"
  assert thread.last_bot_message_id == "answer_3"
  assert im_service.send_card.await_count == 3
+ async def test_waiting_stream_without_final_answer_keeps_non_empty_background_card(self) -> None:
+ project = await Project.objects.acreate(name="Friday Deep", feishu_project_key="friday-deep")
+ thread = await FeishuBotThread.objects.acreate(chat_id="chat_waiting", root_message_id="msg_waiting")
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_waiting",
+ thread=thread,
+ chat_id="chat_waiting",
+ sender_open_id="ou_waiting",
+ message_type="text",
+ normalized_text="friday-deep 做一次深度分析",
+ quote_message_id="",
+ mentioned_bot=True,
+ raw_payload={},
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["welcome_waiting", "processing_waiting"]),
+ update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
+ )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _waiting_stream(blocking_task_count=2):
+ yield event
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="waiting")),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ), patch(
+ "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_ATTEMPTS",
+ 1,
+ create=True,
+ ), patch(
+ "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS",
+ 0,
+ create=True,
+ ):
+ result = await FeishuBotService.process_message("msg_waiting")
+ await thread.arefresh_from_db
+ assert result["status"] == "waiting"
+ assert thread.last_bot_message_id == "welcome_waiting"
+ assert thread.last_bot_message_id != "processing_waiting"
+ assert thread.metadata["last_run_phase"] == "waiting"
+ assert thread.metadata["last_waiting_task_count"] == 2
+ assert thread.metadata["last_waiting_fallback_status"] == "timeout"
+ assert im_service.update_card.await_count == 1
+ waiting_card = im_service.update_card.await_args.args[1]
+ content = "\n".join(element.get("content", "") for element in waiting_card["elements"] if isinstance(element, dict))
+ assert "后台分析中" in content
+ assert "2" in content
+ assert "（无回复内容）" not in content
+ async def test_waiting_stream_updates_processing_card_from_barrier_final_message(self) -> None:
+ project = await Project.objects.acreate(name="Friday Barrier", feishu_project_key="friday-barrier")
+ conversation = await Conversation.objects.acreate(project=project, title="barrier")
+ thread = await FeishuBotThread.objects.acreate(chat_id="chat_barrier", root_message_id="msg_barrier")
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_barrier",
+ thread=thread,
+ chat_id="chat_barrier",
+ sender_open_id="ou_barrier",
+ message_type="text",
+ normalized_text="friday-barrier 深度分析完成后告诉我",
+ quote_message_id="",
+ mentioned_bot=True,
+ raw_payload={},
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["welcome_barrier", "processing_barrier"]),
+ update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
+ )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _waiting_stream(blocking_task_count=1):
+ yield event
+ await Message.objects.acreate(
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ content="最终深度分析结果",
+ metadata={"session_id": "waiting-session"},
+ )
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=conversation),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ), patch(
+ "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_ATTEMPTS",
+ 1,
+ create=True,
+ ), patch(
+ "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS",
+ 0,
+ create=True,
+ ):
+ result = await FeishuBotService.process_message("msg_barrier")
+ await thread.arefresh_from_db
+ assert result["status"] == "answered"
+ assert thread.last_bot_message_id == "processing_barrier"
+ assert thread.metadata["last_waiting_fallback_status"] == "resolved"
+ assert im_service.update_card.await_count == 1
+ final_card = im_service.update_card.await_args.args[1]
+ content = "\n".join(element.get("content", "") for element in final_card["elements"] if isinstance(element, dict))
+ assert "最终深度分析结果" in content
+ assert "（无回复内容）" not in content
  async def test_processing_error_emits_error_card_without_overwriting_processing(self) -> None:
  repo = await Repository.objects.acreate(name="ops", git_url="https://example.com/ops.git")
  project = await Project.objects.acreate(name="Friday Ops", feishu_project_key="friday-ops")
