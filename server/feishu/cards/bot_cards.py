@@ -77,6 +77,33 @@ def build_streaming_card(tool_names: list[str]) -> dict[str, Any]:
  _markdown_block(content),
  ],
  }
+def build_background_analysis_card(
+ question: str,
+ *,
+ task_count: int = 0,
+ phase: str = "waiting",
+) -> dict[str, Any]:
+ """构建后台分析等待卡，避免 waiting/barrier 场景显示空答案。"""
+ task_line = f"- 后台任务数：{task_count}" if task_count > 0 else "- 后台任务仍在运行"
+ return {
+ "config": {"wide_screen_mode": True},
+ "header": {
+ "title": {"tag": "plain_text", "content": "Friday 后台分析中"},
+ "template": "blue",
+ "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+ },
+ "elements": [
+ _markdown_block(f"**原问题**\n{question}"),
+ {"tag": "hr"},
+ _markdown_block(
+ "后台分析中：我已经把任务交给后台继续分析，完成后会更新这张卡。\n\n"
+ "**当前状态**\n"
+ f"- 阶段：{phase}\n"
+ f"{task_line}\n"
+ "- 暂未生成最终回复，请稍后查看"
+ ),
+ ],
+ }
 def build_processing_card(question: str, progress_state: str = "项目识别中", thread_hint: str = "") -> dict[str, Any]:
  hint = f"\n\n话题线索：{thread_hint}" if thread_hint else ""
  return {
