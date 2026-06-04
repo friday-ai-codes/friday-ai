@@ -55,6 +55,7 @@ export default defineConfig({
  collapsed: true,
  items: [
  { text: '工作流指南', link: '/guide/workflows' },
+ { text: 'Friday Codebase Agent', link: '/guide/friday-codebase-agent' },
  ],
  },
  {
