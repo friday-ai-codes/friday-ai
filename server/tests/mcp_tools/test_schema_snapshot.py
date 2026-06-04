@@ -58,4 +58,8 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["project_id", "project_key", "work_item_type", "work_item_id", "fields", "include_comments"],
  "response": ["context_id", "project_id", "work_item", "relations", "documents", "comments", "context", "status", "run_id"],
  },
+ "create_feishu_technical_plan": {
+ "request": ["context_id", "repository_ids", "repo_hints", "context_chunks", "similar_cases", "title", "folder_token", "create_document", "write_comment"],
+ "response": ["technical_plan_id", "context_id", "project_id", "plan", "markdown", "repository_tasks", "evidence", "feishu_document", "comment", "status", "retry_state", "run_id"],
+ },
  }

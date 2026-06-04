@@ -181,6 +181,40 @@ class GetFeishuWorkItemContextRequestSerializer(serializers.Serializer):
  if attrs.get("project_id") or str(attrs.get("project_key") or "").strip:
  return attrs
  raise serializers.ValidationError("必须提供 project_id 或 project_key")
+class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
+ context_id = serializers.UUIDField(required=True)
+ repository_ids = serializers.ListField(
+ child=serializers.UUIDField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=10,
+ )
+ repo_hints = serializers.ListField(
+ child=serializers.CharField(max_length=200),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ context_chunks = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=30,
+ )
+ similar_cases = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ title = serializers.CharField(required=False, allow_blank=True, default="", max_length=240)
+ folder_token = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+ create_document = serializers.BooleanField(required=False, default=True)
+ write_comment = serializers.BooleanField(required=False, default=True)
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -237,5 +271,9 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "get_feishu_work_item_context": {
  "request": ["project_id", "project_key", "work_item_type", "work_item_id", "fields", "include_comments"],
  "response": ["context_id", "project_id", "work_item", "relations", "documents", "comments", "context", "status", "run_id"],
+ },
+ "create_feishu_technical_plan": {
+ "request": ["context_id", "repository_ids", "repo_hints", "context_chunks", "similar_cases", "title", "folder_token", "create_document", "write_comment"],
+ "response": ["technical_plan_id", "context_id", "project_id", "plan", "markdown", "repository_tasks", "evidence", "feishu_document", "comment", "status", "retry_state", "run_id"],
  },
 }

@@ -51,6 +51,7 @@ from .planning_service import (
 )
 from .serializers import (
  AnalyzeRepositoryRequestSerializer,
+ CreateFeishuTechnicalPlanRequestSerializer,
  CreateMergeRequestRequestSerializer,
  CreateCodingPlanRequestSerializer,
  ExecuteCodingPlanRequestSerializer,
@@ -65,6 +66,7 @@ from .serializers import (
  SearchRagChunksRequestSerializer,
  SummarizeBranchRequestSerializer,
 )
+from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
 from .work_item_context_service import WorkItemContextError, build_work_item_context
 logger = structlog.get_logger(__name__)
 def _jsonable(value: Any) -> Any:
@@ -724,6 +726,64 @@ class GetFeishuWorkItemContextView(McpToolView):
  "work_item_type": result.output["work_item"]["work_item_type"],
  "work_item_id": result.output["work_item"]["id"],
  "document_count": len(result.output["documents"]),
+ },
+ )
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=result.output,
+ traces=result.traces,
+ started_at=started_at,
+ call_status=result.output["status"],
+ )
+ if tool_call is not None:
+ result.artifact.tool_call = tool_call
+ await result.artifact.asave(update_fields=["tool_call"])
+ return Response(result.output, status=status.HTTP_200_OK)
+class CreateFeishuTechnicalPlanView(McpToolView):
+ tool_name = "create_feishu_technical_plan"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(CreateFeishuTechnicalPlanRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ result = await build_work_item_technical_plan(
+ run=run,
+ context_id=str(input_data["context_id"]),
+ repository_ids=[str(repo_id) for repo_id in input_data.get("repository_ids") or ],
+ repo_hints=[str(hint) for hint in input_data.get("repo_hints") or ],
+ context_chunks=list(input_data.get("context_chunks") or ),
+ similar_cases=list(input_data.get("similar_cases") or ),
+ title=str(input_data.get("title") or ""),
+ folder_token=str(input_data.get("folder_token") or ""),
+ create_document=bool(input_data.get("create_document", True)),
+ write_comment=bool(input_data.get("write_comment", True)),
+ )
+ except TechnicalPlanError as exc:
+ status_map = {
+ "work_item_context_not_found": status.HTTP_404_NOT_FOUND,
+ "repository_not_found": status.HTTP_404_NOT_FOUND,
+ }
+ return error_response(
+ exc.code,
+ exc.detail,
+ status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+ )
+ await self._record_agent_decision(
+ run,
+ action="feishu_technical_plan_created",
+ payload={
+ "technical_plan_id": str(result.artifact.id),
+ "context_id": result.output["context_id"],
+ "status": result.output["status"],
+ "repository_task_count": len(result.output["repository_tasks"]),
+ "document_url": result.output["feishu_document"].get("url", ""),
  },
  )
  tool_call = await self._record(
