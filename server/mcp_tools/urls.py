@@ -5,7 +5,9 @@ from .views import (
  CreateFeishuTechnicalPlanView,
  CreateCodingPlanView,
  CreateMergeRequestView,
+ CreateWorkItemRepoTasksView,
  ExecuteCodingPlanView,
+ ExecuteWorkItemRepoTasksView,
  FindRelatedChunksView,
  GetCodingExecutionView,
  GetFeishuWorkItemContextView,
@@ -33,4 +35,6 @@ urlpatterns = [
  path("tools/create_merge_request/", CreateMergeRequestView.as_view, name="mcp-tool-create-merge-request"),
  path("tools/get_feishu_work_item_context/", GetFeishuWorkItemContextView.as_view, name="mcp-tool-get-feishu-work-item-context"),
  path("tools/create_feishu_technical_plan/", CreateFeishuTechnicalPlanView.as_view, name="mcp-tool-create-feishu-technical-plan"),
+ path("tools/create_work_item_repo_tasks/", CreateWorkItemRepoTasksView.as_view, name="mcp-tool-create-work-item-repo-tasks"),
+ path("tools/execute_work_item_repo_tasks/", ExecuteWorkItemRepoTasksView.as_view, name="mcp-tool-execute-work-item-repo-tasks"),
 ]

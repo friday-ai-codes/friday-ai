@@ -54,7 +54,9 @@ from .serializers import (
  CreateFeishuTechnicalPlanRequestSerializer,
  CreateMergeRequestRequestSerializer,
  CreateCodingPlanRequestSerializer,
+ CreateWorkItemRepoTasksRequestSerializer,
  ExecuteCodingPlanRequestSerializer,
+ ExecuteWorkItemRepoTasksRequestSerializer,
  FindRelatedChunksRequestSerializer,
  GetCodingExecutionRequestSerializer,
  GetFeishuWorkItemContextRequestSerializer,
@@ -68,6 +70,12 @@ from .serializers import (
 )
 from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
 from .work_item_context_service import WorkItemContextError, build_work_item_context
+from .work_item_execution_service import (
+ WorkItemExecutionError,
+ create_repo_tasks_from_technical_plan,
+ execute_work_item_repo_tasks,
+ repo_task_payload,
+)
 logger = structlog.get_logger(__name__)
 def _jsonable(value: Any) -> Any:
  if isinstance(value, uuid.UUID):
@@ -797,6 +805,143 @@ class CreateFeishuTechnicalPlanView(McpToolView):
  if tool_call is not None:
  result.artifact.tool_call = tool_call
  await result.artifact.asave(update_fields=["tool_call"])
+ return Response(result.output, status=status.HTTP_200_OK)
+class CreateWorkItemRepoTasksView(McpToolView):
+ tool_name = "create_work_item_repo_tasks"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(CreateWorkItemRepoTasksRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ result = await create_repo_tasks_from_technical_plan(
+ run=run,
+ technical_plan_id=str(input_data["technical_plan_id"]),
+ )
+ except WorkItemExecutionError as exc:
+ status_map = {
+ "technical_plan_not_found": status.HTTP_404_NOT_FOUND,
+ "repository_not_found": status.HTTP_404_NOT_FOUND,
+ }
+ return error_response(
+ exc.code,
+ exc.detail,
+ status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+ )
+ output_data = {
+ "technical_plan_id": str(result.technical_plan.id),
+ "tasks": [repo_task_payload(task) for task in result.tasks],
+ "total": len(result.tasks),
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="work_item_repo_tasks_created",
+ payload={
+ "technical_plan_id": str(result.technical_plan.id),
+ "task_count": len(result.tasks),
+ },
+ )
+ traces = [
+ (
+ "file",
+ {
+ "source": "work_item_repo_task",
+ "task_id": str(task.id),
+ "repository_id": str(task.repository_id),
+ "branch_name": task.branch_name,
+ },
+ )
+ for task in result.tasks
+ ]
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=traces,
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ for task in result.tasks:
+ task.tool_call = tool_call
+ await task.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
+class ExecuteWorkItemRepoTasksView(McpToolView):
+ tool_name = "execute_work_item_repo_tasks"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(ExecuteWorkItemRepoTasksRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ result = await execute_work_item_repo_tasks(
+ run=run,
+ technical_plan_id=str(input_data.get("technical_plan_id") or ""),
+ task_ids=[str(task_id) for task_id in input_data.get("task_ids") or ],
+ create_missing=bool(input_data.get("create_missing", True)),
+ dispatch=bool(input_data.get("dispatch", True)),
+ create_merge_requests=bool(input_data.get("create_merge_requests", True)),
+ write_back=bool(input_data.get("write_back", True)),
+ timeout_seconds=int(input_data.get("timeout_seconds") or 3600),
+ reviewer_usernames=list(input_data.get("reviewer_usernames") or ),
+ )
+ except WorkItemExecutionError as exc:
+ status_map = {
+ "technical_plan_not_found": status.HTTP_404_NOT_FOUND,
+ "repo_task_not_found": status.HTTP_404_NOT_FOUND,
+ }
+ return error_response(
+ exc.code,
+ exc.detail,
+ status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+ )
+ await self._record_agent_decision(
+ run,
+ action="work_item_repo_tasks_executed",
+ payload={
+ "technical_plan_id": str(result.technical_plan.id),
+ "status": result.output["status"],
+ "task_count": len(result.tasks),
+ "completed": result.output["summary"]["completed"],
+ "partial": result.output["summary"]["partial"],
+ "failed": result.output["summary"]["failed"],
+ },
+ )
+ traces = [
+ (
+ "file",
+ {
+ "source": "work_item_repo_task_execution",
+ "task_id": str(task.id),
+ "repository_id": str(task.repository_id),
+ "status": task.status,
+ "mr_url": task.mr_url,
+ },
+ )
+ for task in result.tasks
+ ]
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=result.output,
+ traces=traces,
+ started_at=started_at,
+ call_status=result.output["status"],
+ )
+ if tool_call is not None:
+ for task in result.tasks:
+ task.tool_call = tool_call
+ await task.asave(update_fields=["tool_call"])
  return Response(result.output, status=status.HTTP_200_OK)
 class AnalyzeRepositoryView(McpToolView):
  tool_name = "analyze_repository"

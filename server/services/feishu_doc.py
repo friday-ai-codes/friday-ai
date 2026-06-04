@@ -192,6 +192,26 @@ class FeishuDocClient:
  "document_id": document_id,
  "url": doc_url,
  }
+ async def append_markdown(
+ self,
+ document_id: str,
+ content: str,
+ ) -> dict[str, Any]:
+ """Append Markdown content to an existing Feishu cloud document."""
+ token = await self.get_tenant_access_token
+ blocks = markdown_to_blocks(content)
+ if blocks:
+ await self._write_blocks(document_id, blocks, token)
+ logger.info(
+ "feishu_document_appended",
+ document_id=document_id,
+ block_count=len(blocks),
+ content_length=len(content),
+ )
+ return {
+ "document_id": document_id,
+ "appended_blocks": len(blocks),
+ }
  async def _write_blocks(
  self,
  document_id: str,

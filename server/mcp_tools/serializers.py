@@ -215,6 +215,38 @@ class CreateFeishuTechnicalPlanRequestSerializer(serializers.Serializer):
  folder_token = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
  create_document = serializers.BooleanField(required=False, default=True)
  write_comment = serializers.BooleanField(required=False, default=True)
+class CreateWorkItemRepoTasksRequestSerializer(serializers.Serializer):
+ technical_plan_id = serializers.UUIDField(required=True)
+class ExecuteWorkItemRepoTasksRequestSerializer(serializers.Serializer):
+ technical_plan_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ task_ids = serializers.ListField(
+ child=serializers.UUIDField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ create_missing = serializers.BooleanField(required=False, default=True)
+ dispatch = serializers.BooleanField(required=False, default=True)
+ create_merge_requests = serializers.BooleanField(required=False, default=True)
+ write_back = serializers.BooleanField(required=False, default=True)
+ timeout_seconds = serializers.IntegerField(
+ required=False,
+ default=3600,
+ min_value=60,
+ max_value=21600,
+ )
+ reviewer_usernames = serializers.ListField(
+ child=serializers.CharField(max_length=100),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+ if attrs.get("technical_plan_id") or attrs.get("task_ids"):
+ return attrs
+ raise serializers.ValidationError("必须提供 technical_plan_id 或 task_ids")
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -275,5 +307,13 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "create_feishu_technical_plan": {
  "request": ["context_id", "repository_ids", "repo_hints", "context_chunks", "similar_cases", "title", "folder_token", "create_document", "write_comment"],
  "response": ["technical_plan_id", "context_id", "project_id", "plan", "markdown", "repository_tasks", "evidence", "feishu_document", "comment", "status", "retry_state", "run_id"],
+ },
+ "create_work_item_repo_tasks": {
+ "request": ["technical_plan_id"],
+ "response": ["technical_plan_id", "tasks", "total", "run_id"],
+ },
+ "execute_work_item_repo_tasks": {
+ "request": ["technical_plan_id", "task_ids", "create_missing", "dispatch", "create_merge_requests", "write_back", "timeout_seconds", "reviewer_usernames"],
+ "response": ["technical_plan_id", "tasks", "summary", "document_update", "comment", "status", "run_id"],
  },
 }

@@ -62,4 +62,12 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["context_id", "repository_ids", "repo_hints", "context_chunks", "similar_cases", "title", "folder_token", "create_document", "write_comment"],
  "response": ["technical_plan_id", "context_id", "project_id", "plan", "markdown", "repository_tasks", "evidence", "feishu_document", "comment", "status", "retry_state", "run_id"],
  },
+ "create_work_item_repo_tasks": {
+ "request": ["technical_plan_id"],
+ "response": ["technical_plan_id", "tasks", "total", "run_id"],
+ },
+ "execute_work_item_repo_tasks": {
+ "request": ["technical_plan_id", "task_ids", "create_missing", "dispatch", "create_merge_requests", "write_back", "timeout_seconds", "reviewer_usernames"],
+ "response": ["technical_plan_id", "tasks", "summary", "document_update", "comment", "status", "run_id"],
+ },
  }
