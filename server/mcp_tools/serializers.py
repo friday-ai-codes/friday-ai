@@ -164,6 +164,23 @@ class CreateMergeRequestRequestSerializer(serializers.Serializer):
  raise serializers.ValidationError(
  "必须提供 execution_id，或同时提供 repository_id/source_branch/target_branch"
  )
+class GetFeishuWorkItemContextRequestSerializer(serializers.Serializer):
+ project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ project_key = serializers.CharField(required=False, allow_blank=True, default="", max_length=128)
+ work_item_type = serializers.CharField(required=False, allow_blank=False, default="story", max_length=80)
+ work_item_id = serializers.IntegerField(required=True, min_value=1)
+ fields = serializers.ListField(
+ child=serializers.CharField(max_length=128),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=80,
+ )
+ include_comments = serializers.BooleanField(required=False, default=False)
+ def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+ if attrs.get("project_id") or str(attrs.get("project_key") or "").strip:
+ return attrs
+ raise serializers.ValidationError("必须提供 project_id 或 project_key")
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -216,5 +233,9 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "create_merge_request": {
  "request": ["execution_id", "repository_id", "source_branch", "target_branch", "title", "description", "reviewer_usernames", "remove_source_branch"],
  "response": ["execution_id", "repository_id", "source_branch", "target_branch", "mr", "execution_status", "run_id"],
+ },
+ "get_feishu_work_item_context": {
+ "request": ["project_id", "project_key", "work_item_type", "work_item_id", "fields", "include_comments"],
+ "response": ["context_id", "project_id", "work_item", "relations", "documents", "comments", "context", "status", "run_id"],
  },
 }

@@ -7,6 +7,7 @@ from .views import (
  ExecuteCodingPlanView,
  FindRelatedChunksView,
  GetCodingExecutionView,
+ GetFeishuWorkItemContextView,
  GetRepositoryFileView,
  GetRepositoryView,
  ImproveCodingPlanView,
@@ -29,4 +30,5 @@ urlpatterns = [
  path("tools/get_coding_execution/", GetCodingExecutionView.as_view, name="mcp-tool-get-coding-execution"),
  path("tools/summarize_branch/", SummarizeBranchView.as_view, name="mcp-tool-summarize-branch"),
  path("tools/create_merge_request/", CreateMergeRequestView.as_view, name="mcp-tool-create-merge-request"),
+ path("tools/get_feishu_work_item_context/", GetFeishuWorkItemContextView.as_view, name="mcp-tool-get-feishu-work-item-context"),
 ]

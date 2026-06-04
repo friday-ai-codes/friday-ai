@@ -231,3 +231,64 @@ class McpCodingExecutionTrace(models.Model):
  ordering = ["-created_at"]
  def __str__(self) -> str:
  return f"McpCodingExecutionTrace({self.id}, {self.status})"
+class McpWorkItemContext(models.Model):
+ """Feishu work item context snapshot for external MCP workflows."""
+ class Status(models.TextChoices):
+ COMPLETED = "completed", "已完成"
+ PARTIAL = "partial", "部分完成"
+ ERROR = "error", "错误"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ "interactions.InteractionRun",
+ on_delete=models.CASCADE,
+ related_name="mcp_work_item_contexts",
+ )
+ project = models.ForeignKey(
+ "projects.Project",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="mcp_work_item_contexts",
+ )
+ tool_call = models.ForeignKey(
+ "interactions.ToolCallRecord",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ feishu_project_key = models.CharField(max_length=128, db_index=True)
+ work_item_type = models.CharField(max_length=80, db_index=True)
+ work_item_id = models.BigIntegerField(db_index=True)
+ name = models.CharField(max_length=500, blank=True, default="")
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.COMPLETED,
+ db_index=True,
+ )
+ work_item_status = models.CharField(max_length=120, blank=True, default="")
+ description = models.TextField(blank=True, default="")
+ owners = models.JSONField(default=list, blank=True)
+ fields = models.JSONField(default=dict, blank=True)
+ relations = models.JSONField(default=list, blank=True)
+ documents = models.JSONField(default=list, blank=True)
+ comments = models.JSONField(default=list, blank=True)
+ context = models.JSONField(default=dict, blank=True)
+ raw_response = models.JSONField(default=dict, blank=True)
+ error = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "mcp_work_item_contexts"
+ indexes = [
+ models.Index(fields=["feishu_project_key", "work_item_type", "work_item_id"]),
+ models.Index(fields=["run"]),
+ models.Index(fields=["status"]),
+ models.Index(fields=["project", "-created_at"]),
+ ]
+ ordering = ["-created_at"]
+ def __str__(self) -> str:
+ return (
+ f"McpWorkItemContext("
+ f"{self.feishu_project_key}/{self.work_item_type}/{self.work_item_id})"
+ )

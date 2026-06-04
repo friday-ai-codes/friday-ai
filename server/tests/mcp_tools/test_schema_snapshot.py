@@ -54,4 +54,8 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["execution_id", "repository_id", "source_branch", "target_branch", "title", "description", "reviewer_usernames", "remove_source_branch"],
  "response": ["execution_id", "repository_id", "source_branch", "target_branch", "mr", "execution_status", "run_id"],
  },
+ "get_feishu_work_item_context": {
+ "request": ["project_id", "project_key", "work_item_type", "work_item_id", "fields", "include_comments"],
+ "response": ["context_id", "project_id", "work_item", "relations", "documents", "comments", "context", "status", "run_id"],
+ },
  }
