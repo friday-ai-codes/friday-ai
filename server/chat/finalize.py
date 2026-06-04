@@ -7,6 +7,7 @@ from django.utils import timezone
 from agents.core.events import TITLE_GENERATED, AgentEvent
 from agents.models import AgentSession
 from chat.models import Conversation, Message
+from chat.parts import PARTS_SCHEMA_VERSION
 logger = structlog.get_logger(__name__)
 async def finalize_conversation(
  *,
@@ -118,6 +119,12 @@ async def finalize_conversation(
  conversation_id=str(conversation.id),
  exc_info=True,
  )
+ if parts_data:
+ msg_metadata["parts_schema_version"] = PARTS_SCHEMA_VERSION
+ image_count = sum(1 for part in parts_data if part.get("type") == "image")
+ if image_count:
+ msg_metadata["image_count"] = image_count
+ else:
  msg_metadata["parts_schema_version"] = 1
  # 2b. 深度分析子会话日志持久化：让历史消息刷新后仍能按会话还原各自的
  # 工具调用 / 思考过程。只挂载本条消息真正引用到的 deep-xxxx 会话（按 tool

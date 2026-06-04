@@ -45,9 +45,22 @@ async def test_persist_message_keeps_content_and_parts_in_sync -> None:
  parts = [
  {"type": "text", "id": "p1", "index": 0, "text": "Hello ", "state": "done"},
  {
+ "type": "image",
+ "id": "p-img",
+ "index": 1,
+ "mime_type": "image/png",
+ "size_bytes": 128,
+ "width": None,
+ "height": None,
+ "detail": "auto",
+ "storage_ref": "chat_images/p-img.png",
+ "source_url": "",
+ "alt_text": "截图",
+ },
+ {
  "type": "tool_use",
  "id": "p2",
- "index": 1,
+ "index": 2,
  "tool_call_id": "tc-1",
  "name": "search",
  "input": {"q": "x"},
@@ -55,7 +68,7 @@ async def test_persist_message_keeps_content_and_parts_in_sync -> None:
  "result": "found",
  "batch_id": None,
  },
- {"type": "text", "id": "p3", "index": 2, "text": "world!", "state": "done"},
+ {"type": "text", "id": "p3", "index": 3, "text": "world!", "state": "done"},
  ]
  # final_content 入参故意写错（"WRONG"），strict 同源应把它覆盖为
  # parts 中 text part 拼接（"Hello world!"）。
@@ -85,7 +98,8 @@ async def test_persist_message_keeps_content_and_parts_in_sync -> None:
  assert msg.tool_calls[0]["result"] == "found"
  assert msg.tool_calls[0]["status"] == "done"
  # parts_schema_version 写入 metadata
- assert msg.metadata.get("parts_schema_version") == 1
+ assert msg.metadata.get("parts_schema_version") == 2
+ assert msg.metadata.get("image_count") == 1
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_persist_legacy_path_when_collector_empty_falls_back_to_content_only -> None:

@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 logger = structlog.get_logger(__name__)
 # parts 数组元素 schema 版本号；新增 type 时（image / citation / code_execution）
 # 同步升 version 并保留旧分支（additive 策略，见 PLAN §4 D1）。
-PARTS_SCHEMA_VERSION: Literal[1] = 1
+PARTS_SCHEMA_VERSION: Literal[2] = 2
 class _PartBase(BaseModel):
  """Pydantic 公共字段。"""
  model_config = ConfigDict(extra="forbid")
@@ -47,10 +47,21 @@ class ThinkingPart(_PartBase):
  type: Literal["thinking"] = "thinking"
  text: str = ""
  state: Literal["streaming", "done"] = "streaming"
+class ImagePart(_PartBase):
+ """图片 part；只保存受控引用，不把二进制或 data URL 写入 content。"""
+ type: Literal["image"] = "image"
+ mime_type: str
+ size_bytes: int = Field(..., ge=1)
+ width: int | None = Field(default=None, ge=1)
+ height: int | None = Field(default=None, ge=1)
+ detail: Literal["auto", "low", "high"] = "auto"
+ storage_ref: str = ""
+ source_url: str = ""
+ alt_text: str = ""
 # discriminated union — Pydantic v2 通过 ``type`` 字面值判别。
 # 前端 ``MessagePart`` 联合类型必须与此处保持同源（ 输出）。
 Part = Annotated[
- Union[TextPart, ToolUsePart, ThinkingPart],
+ Union[TextPart, ToolUsePart, ThinkingPart, ImagePart],
  Field(discriminator="type"),
 ]
 _PartAdapter: TypeAdapter[Part] = TypeAdapter(Part)
