@@ -6,6 +6,7 @@
 import type { MeUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { getMe } from '~/api/users'
+import AccessTokenSettings from '~/components/accessTokens/AccessTokenSettings.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -207,6 +208,27 @@ onMounted( => {
  </span>
  </div>
  </div>
+ </div>
+ </div>
+ </div>
+ <!-- Access Tokens -->
+ <div class="group relative">
+ <div class="card overflow-hidden">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--key-round] text-2xl text-primary" />
+ </div>
+ <div>
+ <h2 class="text-lg font-semibold">
+ Access Tokens
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 管理用于外部 MCP / Skill 调用的访问令牌
+ </p>
+ </div>
+ </div>
+ <div class="">
+ <AccessTokenSettings />
  </div>
  </div>
  </div>
