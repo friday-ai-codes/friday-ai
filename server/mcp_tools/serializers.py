@@ -247,6 +247,43 @@ class ExecuteWorkItemRepoTasksRequestSerializer(serializers.Serializer):
  if attrs.get("technical_plan_id") or attrs.get("task_ids"):
  return attrs
  raise serializers.ValidationError("必须提供 technical_plan_id 或 task_ids")
+class CreateLearningCaseRequestSerializer(serializers.Serializer):
+ technical_plan_id = serializers.UUIDField(required=True)
+ outcome = serializers.CharField(required=False, allow_blank=True, default="unknown", max_length=80)
+ root_cause = serializers.CharField(required=False, allow_blank=True, default="", max_length=5000)
+ solution_notes = serializers.CharField(required=False, allow_blank=True, default="", max_length=10000)
+ tests = serializers.ListField(
+ child=serializers.CharField(max_length=500),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=50,
+ )
+class SearchLearningCasesRequestSerializer(serializers.Serializer):
+ query = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
+ work_item_type = serializers.CharField(required=False, allow_blank=True, default="", max_length=80)
+ repo_hints = serializers.ListField(
+ child=serializers.CharField(max_length=200),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ file_hints = serializers.ListField(
+ child=serializers.CharField(max_length=1000),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=50,
+ )
+ symbol_hints = serializers.ListField(
+ child=serializers.CharField(max_length=200),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=50,
+ )
+ limit = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -315,5 +352,13 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "execute_work_item_repo_tasks": {
  "request": ["technical_plan_id", "task_ids", "create_missing", "dispatch", "create_merge_requests", "write_back", "timeout_seconds", "reviewer_usernames"],
  "response": ["technical_plan_id", "tasks", "summary", "document_update", "comment", "status", "run_id"],
+ },
+ "create_learning_case": {
+ "request": ["technical_plan_id", "outcome", "root_cause", "solution_notes", "tests"],
+ "response": ["learning_case_id", "case", "run_id"],
+ },
+ "search_learning_cases": {
+ "request": ["query", "work_item_type", "repo_hints", "file_hints", "symbol_hints", "limit"],
+ "response": ["query", "results", "total", "run_id"],
  },
 }

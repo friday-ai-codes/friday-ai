@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import (
  AnalyzeRepositoryView,
+ CreateLearningCaseView,
  CreateFeishuTechnicalPlanView,
  CreateCodingPlanView,
  CreateMergeRequestView,
@@ -16,6 +17,7 @@ from .views import (
  ImproveCodingPlanView,
  ListRepositoryFilesView,
  RouteRepositoriesView,
+ SearchLearningCasesView,
  SearchRagChunksView,
  SummarizeBranchView,
 )
@@ -37,4 +39,6 @@ urlpatterns = [
  path("tools/create_feishu_technical_plan/", CreateFeishuTechnicalPlanView.as_view, name="mcp-tool-create-feishu-technical-plan"),
  path("tools/create_work_item_repo_tasks/", CreateWorkItemRepoTasksView.as_view, name="mcp-tool-create-work-item-repo-tasks"),
  path("tools/execute_work_item_repo_tasks/", ExecuteWorkItemRepoTasksView.as_view, name="mcp-tool-execute-work-item-repo-tasks"),
+ path("tools/create_learning_case/", CreateLearningCaseView.as_view, name="mcp-tool-create-learning-case"),
+ path("tools/search_learning_cases/", SearchLearningCasesView.as_view, name="mcp-tool-search-learning-cases"),
 ]

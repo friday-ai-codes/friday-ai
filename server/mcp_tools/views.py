@@ -52,6 +52,7 @@ from .planning_service import (
 from .serializers import (
  AnalyzeRepositoryRequestSerializer,
  CreateFeishuTechnicalPlanRequestSerializer,
+ CreateLearningCaseRequestSerializer,
  CreateMergeRequestRequestSerializer,
  CreateCodingPlanRequestSerializer,
  CreateWorkItemRepoTasksRequestSerializer,
@@ -65,8 +66,14 @@ from .serializers import (
  ImproveCodingPlanRequestSerializer,
  ListRepositoryFilesRequestSerializer,
  RouteRepositoriesRequestSerializer,
+ SearchLearningCasesRequestSerializer,
  SearchRagChunksRequestSerializer,
  SummarizeBranchRequestSerializer,
+)
+from .learning_case_service import (
+ LearningCaseError,
+ create_learning_case_from_technical_plan,
+ search_learning_cases,
 )
 from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
 from .work_item_context_service import WorkItemContextError, build_work_item_context
@@ -943,6 +950,108 @@ class ExecuteWorkItemRepoTasksView(McpToolView):
  task.tool_call = tool_call
  await task.asave(update_fields=["tool_call"])
  return Response(result.output, status=status.HTTP_200_OK)
+class CreateLearningCaseView(McpToolView):
+ tool_name = "create_learning_case"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(CreateLearningCaseRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ result = await create_learning_case_from_technical_plan(
+ run=run,
+ technical_plan_id=str(input_data["technical_plan_id"]),
+ outcome=str(input_data.get("outcome") or "unknown"),
+ root_cause=str(input_data.get("root_cause") or ""),
+ solution_notes=str(input_data.get("solution_notes") or ""),
+ tests=[str(item) for item in input_data.get("tests") or ],
+ )
+ except LearningCaseError as exc:
+ status_map = {"technical_plan_not_found": status.HTTP_404_NOT_FOUND}
+ return error_response(
+ exc.code,
+ exc.detail,
+ status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+ )
+ await self._record_agent_decision(
+ run,
+ action="learning_case_created",
+ payload={
+ "learning_case_id": result.output["learning_case_id"],
+ "technical_plan_id": str(input_data["technical_plan_id"]),
+ "outcome": result.output["case"]["outcome"],
+ },
+ )
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=result.output,
+ traces=result.traces,
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ result.artifact.tool_call = tool_call
+ await result.artifact.asave(update_fields=["tool_call"])
+ return Response(result.output, status=status.HTTP_200_OK)
+class SearchLearningCasesView(McpToolView):
+ tool_name = "search_learning_cases"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(SearchLearningCasesRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ results = await search_learning_cases(
+ query=str(input_data.get("query") or ""),
+ work_item_type=str(input_data.get("work_item_type") or ""),
+ repo_hints=[str(item) for item in input_data.get("repo_hints") or ],
+ file_hints=[str(item) for item in input_data.get("file_hints") or ],
+ symbol_hints=[str(item) for item in input_data.get("symbol_hints") or ],
+ limit=int(input_data.get("limit") or 5),
+ )
+ output_data = {
+ "query": str(input_data.get("query") or ""),
+ "results": results,
+ "total": len(results),
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="learning_cases_searched",
+ payload={
+ "query": output_data["query"],
+ "result_count": len(results),
+ },
+ )
+ traces = [
+ (
+ "file",
+ {
+ "source": "learning_case",
+ "case_id": result.get("case_id", ""),
+ "score": result.get("score", 0),
+ "title": result.get("title", ""),
+ },
+ )
+ for result in results
+ ]
+ await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=traces,
+ started_at=started_at,
+ )
+ return Response(output_data, status=status.HTTP_200_OK)
 class AnalyzeRepositoryView(McpToolView):
  tool_name = "analyze_repository"
  async def post(self, request: Request) -> Response:
