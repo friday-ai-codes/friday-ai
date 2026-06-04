@@ -4,8 +4,11 @@ from pathlib import Path
 from mcp_tools.serializers import TOOL_SCHEMA_SNAPSHOT
 REPO_ROOT = Path(__file__).resolve.parents[3]
 SKILL_DIR = REPO_ROOT / ".codex" / "skills" / "friday-codebase-agent"
+FEISHU_SKILL_DIR = REPO_ROOT / ".codex" / "skills" / "friday-feishu-agent"
 def _read(relative_path: str) -> str:
  return (SKILL_DIR / relative_path).read_text(encoding="utf-8")
+def _read_feishu(relative_path: str) -> str:
+ return (FEISHU_SKILL_DIR / relative_path).read_text(encoding="utf-8")
 def test_friday_codebase_agent_skill_metadata_and_workflows -> None:
  skill = _read("SKILL.md")
  assert "[TODO" not in skill
@@ -47,3 +50,33 @@ def test_full_auto_uat_requires_trace_reuse_and_end_to_end_path -> None:
  assert f"`{step}`" in uat
  assert "X-Friday-Run-ID" in workflows
  assert "All tool calls in the workflow share one `run_id`." in uat
+def test_friday_feishu_agent_skill_documents_work_item_workflows -> None:
+ skill = _read_feishu("SKILL.md")
+ workflows = _read_feishu("references/workflows.md")
+ tools = _read_feishu("references/mcp-tools.md")
+ uat = _read_feishu("references/uat.md")
+ assert "[TODO" not in skill
+ assert "name: friday-feishu-agent" in skill
+ for workflow in ("fetch_context", "plan", "execute", "learn", "full_auto"):
+ assert re.search(rf"`{workflow}`", skill)
+ assert re.search(rf"`{workflow}`", workflows)
+ required_tools = [
+ "get_feishu_work_item_context",
+ "create_feishu_technical_plan",
+ "create_work_item_repo_tasks",
+ "execute_work_item_repo_tasks",
+ "create_learning_case",
+ "search_learning_cases",
+ ]
+ for tool_name in required_tools:
+ assert f"`{tool_name}`" in tools
+ assert f"`{tool_name}`" in workflows
+ for scenario in (
+ "Requirement, single repo",
+ "Bug, single repo",
+ "Requirement, multi repo",
+ "Feishu doc no permission",
+ "MR partial failure",
+ "Similar case recall",
+ ):
+ assert scenario in uat
