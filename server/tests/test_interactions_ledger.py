@@ -100,6 +100,33 @@ def test_event_write_best_effort(monkeypatch: pytest.MonkeyPatch) -> None:
  # best-effort：子事件写入失败不应阻塞主请求，吞掉异常返回 None
  result = ledger.record_event(run, "error", {"reason": "x"})
  assert result is None
+@pytest.mark.django_db(transaction=True)
+async def test_begin_interaction_run_uses_fingerprint -> None:
+ """ /：单 token 入口创建 run，fingerprint 为 hash，raw_request 不含明文。
+ 模拟一个已通过认证（带 ``request.auth``）的请求 → ``begin_interaction_run``
+ → 断言 run.token_fingerprint == token_hash（只存 hash），且明文绝不入 raw_request。
+ """
+ entry = pytest.importorskip("interactions.entry")
+ from rest_framework.parsers import JSONParser
+ from rest_framework.request import Request
+ from rest_framework.test import APIRequestFactory
+ from interactions.models import InteractionRun
+ # 入口只读 request.auth.token_hash，无需建真 AccessToken；明文仅用于脱敏断言。
+ plaintext = "friday_pat_" + "Z" * 32
+ fingerprint = hash_token(plaintext)
+ class _FakeAuth:
+ token_hash = fingerprint
+ wsgi = APIRequestFactory.post(
+ "/api/mcp/", {"echo": f"token={plaintext}"}, format="json"
+ )
+ request = Request(wsgi, parsers=[JSONParser])
+ request.auth = _FakeAuth
+ run = await entry.begin_interaction_run(request, source="mcp")
+ assert isinstance(run, InteractionRun)
+ # fingerprint 取 token_hash，绝不取明文
+ assert run.token_fingerprint == fingerprint
+ # body 里的明文经 redact_for_ledger 脱敏后绝不入库
+ assert plaintext not in str(run.raw_request)
 def test_redact_for_ledger_scrubs_secrets -> None:
  """：redact_for_ledger 对 friday_pat_ / sk-ant- / nested dict 全脱敏。"""
  redaction = pytest.importorskip("interactions.redaction")
