@@ -5,15 +5,14 @@
  * 多 Provider 场景下选定一个凭证供 Claude Code 编码容器使用，并把
  * opus/sonnet/haiku 三档模型别名映射到该凭证的具体模型（cc-switch 风格）。
  *
- * - 凭证下拉：active 凭证全集（优先 anthropic，但允许任意 Anthropic 兼容网关凭证）。
- * - 三档模型：数据源为所选凭证的 available_models；为空时降级为手动输入。
+ * - 凭证下拉：仅 active anthropic 凭证（含 Anthropic 协议兼容网关）。
+ * - 三档模型：只能从所选凭证的 available_models 中选择。
  * - 读 GET /api/providers/claude-code-config/，存 PUT 同路径。
  */
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
 import { computed, onMounted, ref, watch } from 'vue'
 import { providerCredentialsApi } from '~/api/providerCredentials'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
 import {
  Select,
  SelectContent,
@@ -37,22 +36,16 @@ const TIERS: { key: ModelTier, label: string, hint: string, dot: string, icon: s
  { key: 'sonnet', label: 'Sonnet', hint: '默认主模型，日常编码', dot: 'bg-primary', icon: 'icon-[lucide--zap]' },
  { key: 'haiku', label: 'Haiku', hint: '子代理 / 后台快速任务', dot: 'bg-slate-400', icon: 'icon-[lucide--feather]' },
 ]
-/** 候选凭证：active 全集，anthropic 排前。 */
+/** 候选凭证：Claude Code 只接受 Anthropic API 格式。 */
 const candidateCredentials = computed<ProviderCredentialDto>( => {
- return [...store.activeCredentials].sort((a, b) => {
- if (a.provider_type === b.provider_type)
- return a.name.localeCompare(b.name)
- if (a.provider_type === 'anthropic')
- return -1
- if (b.provider_type === 'anthropic')
- return 1
- return a.provider_type.localeCompare(b.provider_type)
- })
+ return store.activeCredentials
+ .filter(c => c.provider_type === 'anthropic')
+ .sort((a, b) => a.name.localeCompare(b.name))
 })
 const selectedCredential = computed<ProviderCredentialDto | null>( =>
  candidateCredentials.value.find(c => c.id === selectedCredentialId.value) ?? null,
 )
-/** 所选凭证的可用模型；为空时三档降级为手动输入。 */
+/** 所选凭证的可用模型。 */
 const availableModels = computed<AvailableModel>(
  => selectedCredential.value?.available_models ??,
 )
@@ -71,6 +64,15 @@ async function load {
  sonnet: cfg.model_mapping?.sonnet ?? '',
  haiku: cfg.model_mapping?.haiku ?? '',
  }
+ if (!selectedCredentialId.value)
+ mapping.value = { opus: '', sonnet: '', haiku: '' }
+ if (
+ selectedCredentialId.value
+ && !candidateCredentials.value.some(c => c.id === selectedCredentialId.value)
+ ) {
+ selectedCredentialId.value = ''
+ mapping.value = { opus: '', sonnet: '', haiku: '' }
+ }
  }
  catch (e) {
  handleError(e, '加载 Claude Code 配置')
@@ -79,10 +81,8 @@ async function load {
  loading.value = false
  }
 }
-// 切换凭证时，若已选模型不在新凭证 available_models 中则清空（仅当有候选清单）
+// 切换凭证时，若已选模型不在新凭证 available_models 中则清空。
 watch(selectedCredentialId, => {
- if (!hasModelOptions.value)
- return
  const ids = new Set(availableModels.value.map(m => m.id))
  for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier) {
  if (mapping.value[tier] && !ids.has(mapping.value[tier]))
@@ -90,6 +90,10 @@ watch(selectedCredentialId, => {
  }
 })
 async function save {
+ if (selectedCredentialId.value && !hasModelOptions.value) {
+ toast.error('请先在 Provider 凭证中添加或刷新模型')
+ return
+ }
  saving.value = true
  try {
  await providerCredentialsApi.updateClaudeCodeConfig({
@@ -175,21 +179,23 @@ onMounted(load)
  </SelectItem>
  </SelectContent>
  </Select>
- <Input
+ <div
  v-else
- v-model="mapping[tier.key]"
- placeholder="手动输入模型名，如 claude-sonnet-4-20250514"
- class=" text-sm"
- />
+ class="flex items-center rounded-md border border-dashed border-border/70 px-3 text-sm text-muted-foreground"
+ >
+ 请先添加模型
+ </div>
  </div>
  </div>
  </div>
  <p v-if="selectedCredentialId && !hasModelOptions" class="text-xs text-muted-foreground">
- 所选凭证暂无模型清单，可先在上方「刷新模型清单」，或手动输入模型名。
+ 请先在 Provider 凭证中添加或刷新模型。
  </p>
  </div>
  <div class="flex justify-end border-t border-border/50 pt-4">
- <Button:disabled="saving" @click="save">
+ <Button:disabled="saving || (Boolean(selectedCredentialId) && !hasModelOptions)"
+ @click="save"
+ >
  <span v-if="saving" class="icon-[lucide--loader-2] w-4 mr-1.5 animate-spin" />
  <span v-else class="icon-[lucide--save] w-4 mr-1.5" />
  保存配置

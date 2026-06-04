@@ -6,6 +6,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers
 from common.encryption import decrypt_value, encrypt_value
+from services.model_modalities import infer_model_modalities
 from .models import ProviderCredential, SystemSetting
 class SystemSettingSerializer(serializers.ModelSerializer):
  """Serializer for SystemSetting model."""
@@ -44,6 +45,77 @@ _PROVIDER_TYPE_CHOICES = [
  "gemini",
  "ollama",
 ]
+def _normalize_available_models(
+ value: Any,
+ *,
+ provider_type: str | None = None,
+) -> list[dict[str, Any]]:
+ """把前端/上游模型清单统一成 [{id, display_name, ...}] 并去重。"""
+ if not isinstance(value, list):
+ raise serializers.ValidationError("available_models 必须是数组")
+ seen: set[str] = set
+ normalized: list[dict[str, Any]] =
+ for item in value:
+ if isinstance(item, str):
+ model_id = item.strip
+ model: dict[str, Any] = {"id": model_id, "display_name": model_id}
+ elif isinstance(item, dict):
+ raw_id = item.get("id") or item.get("name")
+ model_id = str(raw_id or "").strip
+ model = {
+ "id": model_id,
+ "display_name": str(
+ item.get("display_name") or item.get("name") or model_id
+ ).strip,
+ }
+ for key in (
+ "context_length",
+ "supports_tools",
+ "supports_vision",
+ "input_modalities",
+ "output_modalities",
+ "capability_source",
+ ):
+ if key in item:
+ model[key] = item[key]
+ else:
+ raise serializers.ValidationError(
+ "available_models 每一项必须是模型 ID 字符串或对象"
+ )
+ if not model_id:
+ raise serializers.ValidationError("available_models 中存在空模型 ID")
+ modalities, source = infer_model_modalities(
+ provider_type=provider_type,
+ model_id=model_id,
+ raw_model=model,
+ )
+ model["input_modalities"] = modalities
+ model["supports_vision"] = "image" in modalities
+ model["capability_source"] = str(model.get("capability_source") or source)
+ if model_id in seen:
+ continue
+ seen.add(model_id)
+ normalized.append(model)
+ return normalized
+def _validate_bound_models(
+ *,
+ available_models: list[dict[str, Any]],
+ default_model: str,
+) -> None:
+ """校验 Provider 至少绑定一个模型，且默认模型来自绑定清单。"""
+ if not available_models:
+ raise serializers.ValidationError(
+ {"available_models": "每个 Provider 必须至少绑定一个模型"}
+ )
+ if not default_model.strip:
+ raise serializers.ValidationError(
+ {"default_model": "每个 Provider 必须选择一个默认模型"}
+ )
+ model_ids = {str(m.get("id") or "") for m in available_models}
+ if default_model.strip not in model_ids:
+ raise serializers.ValidationError(
+ {"default_model": "默认模型必须来自该 Provider 的模型列表"}
+ )
 def _pydantic_to_jsonable(model: BaseModel) -> dict[str, Any]:
  """把 Pydantic 校验结果转回 plain dict，SecretStr 字段 unwrap 为明文。
  model_dump(mode="python") 对 SecretStr 字段保留 SecretStr 对象（避免被序列化为
@@ -115,6 +187,7 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  api_key_last4 = serializers.SerializerMethodField
  has_api_key = serializers.SerializerMethodField
  config = serializers.SerializerMethodField
+ available_models = serializers.SerializerMethodField
  class Meta:
  model = ProviderCredential
  fields = [
@@ -148,6 +221,15 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  """是否已配置 api_key / bearer_token；Ollama 无鉴权场景可为 False。"""
  config = _read_decrypted_config(obj)
  return bool(config.get("api_key") or config.get("bearer_token"))
+ def get_available_models(self, obj: ProviderCredential) -> list[dict[str, Any]]:
+ """读路径统一返回对象数组，兼容历史 string 数据。"""
+ try:
+ return _normalize_available_models(
+ obj.available_models or,
+ provider_type=obj.provider_type,
+ )
+ except serializers.ValidationError:
+ return
  def get_config(self, obj: ProviderCredential) -> dict[str, Any]:
  """按写权限分级回显已解密 config。
  - 始终包含 _NON_SECRET_CONFIG_KEYS（base_url / organization_id 等）。
@@ -190,6 +272,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  default_model = serializers.CharField(
  max_length=128, required=True, allow_blank=False
  )
+ available_models = serializers.JSONField(required=True)
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
  """scope 一致性 + Pydantic credential_schema dispatch 校验 + default_model 必填。"""
  scope = attrs["scope"]
@@ -214,6 +297,17 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  ):
  from rest_framework.exceptions import PermissionDenied
  raise PermissionDenied("仅系统管理员可创建系统级凭证")
+ available_models = _normalize_available_models(
+ attrs.get("available_models"),
+ provider_type=str(attrs.get("provider_type") or ""),
+ )
+ default_model = str(attrs.get("default_model") or "").strip
+ _validate_bound_models(
+ available_models=available_models,
+ default_model=default_model,
+ )
+ attrs["available_models"] = available_models
+ attrs["default_model"] = default_model
  # Pydantic credential_schema 按 provider_type dispatch 校验
  from services.provider_config import PROVIDER_REGISTRY, ProviderType
  provider_type = attrs["provider_type"]
@@ -268,12 +362,13 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  is_active = serializers.BooleanField(required=False)
  is_default = serializers.BooleanField(required=False)
  default_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
+ available_models = serializers.JSONField(required=False)
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
  """含 config 时按 instance.provider_type dispatch Pydantic 校验 + default_model 非空。"""
+ instance: ProviderCredential = self.instance # type: ignore[assignment]
  new_config = attrs.get("config")
  if new_config:
  from services.provider_config import PROVIDER_REGISTRY, ProviderType
- instance: ProviderCredential = self.instance # type: ignore[assignment]
  provider_type = instance.provider_type
  try:
  provider_enum = ProviderType(provider_type)
@@ -293,14 +388,31 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  {"config": _format_pydantic_errors(exc)}
  ) from exc
  attrs["_validated_config"] = _pydantic_to_jsonable(validated)
- # default_model 非空校验
- if "default_model" in attrs:
- default_model = attrs.get("default_model")
- if not default_model or not default_model.strip:
- raise serializers.ValidationError(
- {"default_model": "每个 Provider 必须至少配置一个模型（default_model 不能为空）"}
+ models_were_provided = "available_models" in attrs
+ if models_were_provided:
+ attrs["available_models"] = _normalize_available_models(
+ attrs.get("available_models"),
+ provider_type=str(instance.provider_type or ""),
  )
- attrs["default_model"] = default_model.strip
+ # default_model / available_models 任一变化时，校验二者仍然绑定一致。
+ if "default_model" in attrs:
+ default_model = str(attrs.get("default_model") or "").strip
+ attrs["default_model"] = default_model
+ else:
+ default_model = instance.default_model or ""
+ if "default_model" in attrs or models_were_provided:
+ bound_models = (
+ attrs["available_models"]
+ if models_were_provided
+ else _normalize_available_models(
+ instance.available_models or,
+ provider_type=str(instance.provider_type or ""),
+ )
+ )
+ _validate_bound_models(
+ available_models=bound_models,
+ default_model=default_model,
+ )
  return attrs
  def update(
  self,

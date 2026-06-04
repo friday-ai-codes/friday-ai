@@ -328,7 +328,12 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  try {
  const resp = await providerCredentialsApi.refreshModels(id)
  credentials.value = credentials.value.map(c =>
- c.id === id ? { ...c, available_models: resp.available_models }: c,
+ c.id === id
+ ? {
+ ...c,
+ available_models: resp.available_models,
+ default_model: resp.default_model ?? c.default_model,
+ }: c,
  )
  persist
  return resp.available_models

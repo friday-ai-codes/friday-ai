@@ -25,6 +25,7 @@ export type ProviderScopeFilter = ProviderScope | 'any'
  * 用于「立即测试」按钮点击后到后端响应前的中间态展示。
  */
 export type ProviderHealthStatus = '' | 'ok' | 'error' | 'testing'
+export type InputModality = 'text' | 'image' | 'audio' | 'video' | 'pdf'
 /** 可用模型项（refresh-models 后写入的 available_models 元素）。 */
 export interface AvailableModel {
  id: string
@@ -32,6 +33,9 @@ export interface AvailableModel {
  context_length?: number
  supports_tools?: boolean
  supports_vision?: boolean
+ input_modalities?: InputModality
+ output_modalities?: InputModality
+ capability_source?: 'known_rules' | 'manual_default' | 'manual' | 'legacy_supports_vision' | string
 }
 /** Read Serializer 对应的 DTO（与后端 ProviderCredentialSerializer 15 字段对齐）。 */
 export interface ProviderCredentialDto {
@@ -106,6 +110,8 @@ export interface ProviderCredentialCreatePayload {
  is_default?: boolean
  /** 默认模型（每个 Provider 必须至少配置一个模型）。 */
  default_model: string
+ /** 绑定到该 Provider 的模型列表（来自接口拉取或手动添加）。 */
+ available_models: AvailableModel
 }
 /**
  * PATCH /api/providers/credentials/<id>/ body。
@@ -123,6 +129,8 @@ export interface ProviderCredentialUpdatePayload {
  is_default?: boolean
  /** 手动设置或刷新后选择的默认模型 */
  default_model?: string
+ /** 绑定到该 Provider 的模型列表（来自接口拉取或手动添加）。 */
+ available_models?: AvailableModel
 }
 /** POST /test-connection/ 响应（Phase 既有端点）。 */
 export interface TestConnectionResponse {
@@ -134,6 +142,7 @@ export interface TestConnectionResponse {
 /** POST /refresh-models/ 响应。 */
 export interface RefreshModelsResponse {
  available_models: AvailableModel
+ default_model?: string
 }
 /** POST /api/providers/fetch-models/ body（无状态拉模型，config 不落库）。 */
 export interface FetchModelsStatelessPayload {

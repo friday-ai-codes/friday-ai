@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type {
+ AvailableModel,
+ InputModality,
  JsonSchemaProperty,
  ProviderCredentialCreatePayload,
  ProviderCredentialDto,
@@ -66,8 +68,8 @@ const isFetchingModels = ref(false)
 const fetchModelsError = ref<string | null>(null)
 // 编辑模式回显：后端已持久化的 available_models / default_model 直接落地，
 // 用户无需重新点「获取模型列表」即可看到此前拉取过的清单与当前默认模型。
-const fetchedModels = ref<Array<{ id: string, display_name: string }>>(
- (props.initial?.available_models ?? ).map(m => ({ id: m.id, display_name: m.display_name })),
+const fetchedModels = ref<AvailableModel>(
+ normalizeModels(props.initial?.available_models ?? ),
 )
 const showManualModelInput = ref(false)
 const manualModelName = ref('')
@@ -75,6 +77,89 @@ const selectedDefaultModel = ref(props.initial?.default_model ?? '')
 // 模型测试状态
 const testingModelId = ref<string | null>(null)
 const modelTestResults = ref<Record<string, { status: 'ok' | 'error', latency_ms?: number, error?: string }>>({})
+const editableModalities: Array<{ value: Exclude<InputModality, 'text'>, label: string, icon: string }> = [
+ { value: 'image', label: '图片', icon: 'icon-[lucide--image]' },
+ { value: 'pdf', label: 'PDF', icon: 'icon-[lucide--file-text]' },
+ { value: 'audio', label: '音频', icon: 'icon-[lucide--audio-lines]' },
+ { value: 'video', label: '视频', icon: 'icon-[lucide--video]' },
+]
+function normalizeInputModalities(value: unknown): InputModality {
+ const allowed = new Set<InputModality>(['text', 'image', 'audio', 'video', 'pdf'])
+ const raw = Array.isArray(value) ? value:
+ const result: InputModality = ['text']
+ for (const item of raw) {
+ const modality = String(item || '').trim.toLowerCase as InputModality
+ if (modality !== 'text' && allowed.has(modality) && !result.includes(modality))
+ result.push(modality)
+ }
+ return result
+}
+function inferInputModalities(model: Partial<AvailableModel> & { id: string }): {
+ modalities: InputModality
+ source: string
+} {
+ if (model.input_modalities)
+ return { modalities: normalizeInputModalities(model.input_modalities), source: 'manual' }
+ if (typeof model.supports_vision === 'boolean') {
+ return {
+ modalities: model.supports_vision ? ['text', 'image']: ['text'],
+ source: 'legacy_supports_vision',
+ }
+ }
+ const id = model.id.toLowerCase
+ if (id.startsWith('deepseek'))
+ return { modalities: ['text'], source: 'known_rules' }
+ if (id.startsWith('claude-'))
+ return { modalities: ['text', 'image'], source: 'known_rules' }
+ return { modalities: ['text'], source: 'manual_default' }
+}
+function normalizeModels(models: AvailableModel): AvailableModel {
+ const seen = new Set<string>
+ const normalized: AvailableModel =
+ for (const model of models) {
+ const id = String(model.id || '').trim
+ if (!id || seen.has(id))
+ continue
+ seen.add(id)
+ const { modalities, source } = inferInputModalities({ ...model, id })
+ normalized.push({
+ ...model,
+ id,
+ display_name: String(model.display_name || id).trim,
+ input_modalities: modalities,
+ supports_vision: modalities.includes('image'),
+ capability_source: model.capability_source || source,
+ })
+ }
+ return normalized
+}
+function modelFromId(id: string): AvailableModel {
+ const clean = id.trim
+ const { modalities, source } = inferInputModalities({ id: clean })
+ return {
+ id: clean,
+ display_name: clean,
+ input_modalities: modalities,
+ supports_vision: modalities.includes('image'),
+ capability_source: source,
+ }
+}
+function addModelToList(modelId: string): boolean {
+ const clean = modelId.trim
+ if (!clean)
+ return false
+ if (!fetchedModels.value.some(m => m.id === clean))
+ fetchedModels.value = [...fetchedModels.value, modelFromId(clean)]
+ return true
+}
+function modelsForSubmit(defaultModel: string): AvailableModel {
+ const manual = manualModelName.value.trim
+ if (manual)
+ addModelToList(manual)
+ if (defaultModel)
+ addModelToList(defaultModel)
+ return normalizeModels(fetchedModels.value)
+}
 // 确保 providerTypes 就位（store 内部去重，重复调用无副作用）
 if (store.providerTypes.length === 0) {
  store.fetchProviderTypes.catch( => {
@@ -170,6 +255,11 @@ watch( => meta.value.dirty, (v) => {
 })
 const onSubmit = handleSubmit((v) => {
  const defaultModel = (v.default_model as string)?.trim || selectedDefaultModel.value || ''
+ const availableModels = modelsForSubmit(defaultModel)
+ if (!defaultModel || availableModels.length === 0) {
+ toast.error('请至少添加一个模型')
+ return
+ }
  if (props.mode === 'create') {
  const payload: ProviderCredentialCreatePayload = {
  provider_type: v.provider_type as ProviderType,
@@ -179,6 +269,7 @@ const onSubmit = handleSubmit((v) => {
  config: (v.config as Record<string, unknown>) ?? {},
  is_active: (v.is_active as boolean | undefined) ?? true,
  default_model: defaultModel,
+ available_models: availableModels,
  }
  emit('submit', payload)
  }
@@ -190,9 +281,8 @@ const onSubmit = handleSubmit((v) => {
  scope_id: (v.scope_id as string | null | undefined) ?? null,
  config: Object.keys(configObj).length > 0 ? configObj: null,
  is_active: v.is_active as boolean | undefined,
- }
- if (defaultModel) {
- payload.default_model = defaultModel
+ default_model: defaultModel,
+ available_models: availableModels,
  }
  emit('submit', payload)
  }
@@ -203,7 +293,7 @@ async function fetchModelsAfterCreate(credentialId: string) {
  fetchModelsError.value = null
  try {
  const resp = await providerCredentialsApi.refreshModels(credentialId)
- fetchedModels.value = resp.available_models
+ fetchedModels.value = normalizeModels(resp.available_models)
  if (resp.available_models.length === 0) {
  fetchModelsError.value = '未获取到模型列表，请手动输入一个模型名称'
  showManualModelInput.value = true
@@ -211,6 +301,7 @@ async function fetchModelsAfterCreate(credentialId: string) {
  else {
  // 自动选择第一个模型作为 default_model
  selectedDefaultModel.value = resp.available_models[0].id
+ setValues({ default_model: resp.available_models[0].id } as Record<string, unknown>, false)
  toast.success(`成功获取 ${resp.available_models.length} 个模型`)
  }
  }
@@ -241,7 +332,7 @@ async function handleFetchModelsCreate {
  provider_type: selectedType.value,
  config,
  })
- fetchedModels.value = resp.available_models
+ fetchedModels.value = normalizeModels(resp.available_models)
  if (resp.available_models.length === 0) {
  fetchModelsError.value = resp.error || '未获取到模型，请手动输入模型名称'
  showManualModelInput.value = true
@@ -269,6 +360,10 @@ function selectModel(id: string) {
 function showManual {
  showManualModelInput.value = true
 }
+function onManualDefaultInput(value: string) {
+ selectedDefaultModel.value = value
+ setValues({ default_model: value } as Record<string, unknown>, false)
+}
 /** 确认手动输入的模型 */
 function confirmManualModel {
  if (!manualModelName.value.trim) {
@@ -276,10 +371,42 @@ function confirmManualModel {
  return
  }
  const modelName = manualModelName.value.trim
+ addModelToList(modelName)
  selectedDefaultModel.value = modelName
  setValues({ default_model: modelName } as Record<string, unknown>, false)
  showManualModelInput.value = false
+ manualModelName.value = ''
  toast.success(`已设置默认模型: ${modelName}`)
+}
+function removeModel(modelId: string) {
+ if (fetchedModels.value.length <= 1) {
+ toast.error('至少保留一个模型')
+ return
+ }
+ fetchedModels.value = fetchedModels.value.filter(m => m.id !== modelId)
+ if (selectedDefaultModel.value === modelId) {
+ const nextModel = fetchedModels.value[0]?.id ?? ''
+ selectedDefaultModel.value = nextModel
+ setValues({ default_model: nextModel } as Record<string, unknown>, false)
+ }
+}
+function modelHasModality(model: AvailableModel, modality: InputModality): boolean {
+ return normalizeInputModalities(model.input_modalities).includes(modality)
+}
+function toggleModelModality(modelId: string, modality: Exclude<InputModality, 'text'>) {
+ fetchedModels.value = fetchedModels.value.map((model) => {
+ if (model.id !== modelId)
+ return model
+ const modalities = normalizeInputModalities(model.input_modalities)
+ const next = modalities.includes(modality)
+ ? modalities.filter(item => item !== modality): [...modalities, modality]
+ return {
+ ...model,
+ input_modalities: normalizeInputModalities(next),
+ supports_vision: next.includes('image'),
+ capability_source: 'manual',
+ }
+ })
 }
 /** 测试指定模型的连接 */
 async function testModel(modelId: string) {
@@ -328,7 +455,7 @@ function getPlaceholder(key: string): string {
  return placeholders[key] ?? ''
 }
 // 测试 expose 方便 spec 直接操作
-defineExpose({ selectedType })
+defineExpose({ selectedType, onSubmit })
 </script>
 <template>
  <form class="flex min- flex-1 flex-col" @submit.prevent="onSubmit">
@@ -438,6 +565,17 @@ defineExpose({ selectedType })
  </h4>
  <span class="text-destructive" aria-hidden="true">*</span>
  </div>
+ <div class="flex items-center gap-2">
+ <Button
+ type="button"
+ variant="outline"
+ size="sm"
+ class=""
+ @click="showManual"
+ >
+ <span class="icon-[lucide--plus] mr-1.5 .5 w-3.5" />
+ 添加模型
+ </Button>
  <Button
  type="button"
  variant="outline"
@@ -453,15 +591,17 @@ defineExpose({ selectedType })
  {{ isFetchingModels ? '获取中…': (fetchedModels.length > 0 ? '刷新模型': '获取模型列表') }}
  </Button>
  </div>
+ </div>
  <div class="space-y-3 ">
  <!-- 已获取的模型：可选卡片网格 -->
  <div v-if="fetchedModels.length > 0" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
  <div
  v-for="m in fetchedModels":key="m.id"
- class="group/chip flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-all":class="selectedDefaultModel === m.id
+ class="group/chip flex cursor-pointer flex-col gap-2 rounded-lg border px-3 py-2 transition-all":class="selectedDefaultModel === m.id
  ? 'border-primary bg-primary/5 ring-1 ring-primary/15': 'border-border/60 hover:border-border hover:bg-accent/40'"
  @click="selectModel(m.id)"
  >
+ <div class="flex w-full items-center justify-between gap-2">
  <span class="flex min-w-0 items-center gap-2">
  <span
  class=" w-4 shrink-0":class="selectedDefaultModel === m.id
@@ -474,10 +614,11 @@ defineExpose({ selectedType })
  {{ m.display_name || m.id }}
  </span>
  </span>
+ <span class="flex shrink-0 items-center gap-1">
  <button
  v-if="props.mode === 'edit'"
  type="button"
- class="shrink-0 rounded-md transition-colors hover:bg-background":title="`测试模型 ${m.id} 连接`"
+ class="rounded-md transition-colors hover:bg-background":title="`测试模型 ${m.id} 连接`"
  @click.stop="testModel(m.id)"
  >
  <span
@@ -494,6 +635,27 @@ defineExpose({ selectedType })
  />
  <span v-else class="icon-[lucide--zap] .5 w-3.5 text-muted-foreground/60" />
  </button>
+ <button
+ type="button"
+ class="rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-destructive":title="`移除模型 ${m.id}`"
+ @click.stop="removeModel(m.id)"
+ >
+ <span class="icon-[lucide--x] .5 w-3.5" />
+ </button>
+ </span>
+ </div>
+ <div class="flex w-full flex-wrap gap-1">
+ <button
+ v-for="modality in editableModalities":key="`${m.id}-${modality.value}`"
+ type="button"
+ class="inline-flex items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors":class="modelHasModality(m, modality.value)
+ ? 'border-primary/40 bg-primary/10 text-primary': 'border-border/60 bg-background/70 text-muted-foreground hover:text-foreground'":title="`${modelHasModality(m, modality.value) ? '关闭': '开启'}${modality.label}输入`"
+ @click.stop="toggleModelModality(m.id, modality.value)"
+ >
+ <span:class="`${modality.icon} w-3`" />
+ <span>{{ modality.label }}</span>
+ </button>
+ </div>
  </div>
  </div>
  <!-- 空态：尚未获取模型 -->
@@ -525,7 +687,7 @@ defineExpose({ selectedType })
  v-bind="componentField"
  placeholder="输入模型名称，例如: claude-3-5-sonnet-20241022"
  class="text-sm"
- @input="selectedDefaultModel = ($event.target as HTMLInputElement).value"
+ @input="onManualDefaultInput(($event.target as HTMLInputElement).value)"
  />
  </FormControl>
  <FormMessage />

@@ -205,6 +205,35 @@ describe('providerCredentialForm', => {
  await cancelBtn!.trigger('click')
  expect(wrapper.emitted('cancel')?.length).toBe(1)
  })
+ it('create 模式手动输入模型时 submit payload 写入 available_models', async => {
+ const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
+ await flushPromises
+ const inputs = wrapper.findAll('input')
+ await inputs[0].setValue('deepseek-anthropic')
+ await inputs[1].setValue('sk-test-placeholder')
+ await inputs[2].setValue('https://api.deepseek.com/anthropic')
+ const manualBtn = wrapper.findAll('button').find(b => b.text.includes('手动输入模型名称'))
+ expect(manualBtn).toBeDefined
+ await manualBtn!.trigger('click')
+ await flushPromises
+ const modelInput = wrapper.findAll('input').at(-1)
+ expect(modelInput).toBeDefined
+ await modelInput!.setValue('deepseek-v4-pro')
+ await (wrapper.vm as unknown as { onSubmit: => Promise<void> | void }).onSubmit
+ await flushPromises
+ const emitted = wrapper.emitted('submit')?.[0]?.[0] as Record<string, unknown>
+ expect(emitted).toMatchObject({
+ default_model: 'deepseek-v4-pro',
+ available_models: [
+ {
+ id: 'deepseek-v4-pro',
+ display_name: 'deepseek-v4-pro',
+ input_modalities: ['text'],
+ supports_vision: false,
+ },
+ ],
+ })
+ })
  it('所有 FormLabel 显式使用 font-normal 覆盖默认字重（work item §Typography）', async => {
  const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
  await flushPromises

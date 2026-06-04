@@ -294,6 +294,22 @@ def _empty_claude_code_config -> dict[str, Any]:
  "credential_id": "",
  "model_mapping": {tier: "" for tier in CLAUDE_CODE_MODEL_TIERS},
  }
+def _bound_model_ids_from_credential(credential: "ProviderCredential") -> set[str]:
+ """从 ProviderCredential.available_models 读取已绑定模型 ID，兼容历史 string。"""
+ model_ids: set[str] = set
+ raw_models = credential.available_models or
+ if not isinstance(raw_models, list):
+ return model_ids
+ for item in raw_models:
+ if isinstance(item, str):
+ model_id = item.strip
+ elif isinstance(item, dict):
+ model_id = str(item.get("id") or item.get("name") or "").strip
+ else:
+ model_id = ""
+ if model_id:
+ model_ids.add(model_id)
+ return model_ids
 async def aget_claude_code_config -> dict[str, Any]:
  """读取 Claude Code 配置。缺省返回空配置（keys 固定）。
  Returns:
@@ -339,14 +355,37 @@ async def aset_claude_code_config(
  parsed_id = _parse_uuid_or_none(cred_id_str)
  if parsed_id is None:
  raise ProviderConfigError("credential_id 不是合法 UUID")
- exists = await ProviderCredential.objects.filter(
+ try:
+ credential = await ProviderCredential.objects.aget(
  id=parsed_id, is_active=True
- ).aexists
- if not exists:
+ )
+ except ProviderCredential.DoesNotExist:
  raise ProviderConfigError("所选凭证不存在或已禁用")
- clean_mapping = {
- tier: str(model_mapping.get(tier, "") or "") for tier in CLAUDE_CODE_MODEL_TIERS
+ if credential.provider_type != ProviderType.ANTHROPIC.value:
+ raise ProviderConfigError("Claude Code 只能选择 Anthropic 类型 Provider 凭证")
+ model_ids = _bound_model_ids_from_credential(credential)
+ if not model_ids:
+ raise ProviderConfigError("所选凭证没有模型列表，请先添加或刷新模型")
+ invalid_models = [
+ model
+ for model in (
+ str(model_mapping.get(tier, "") or "").strip
+ for tier in CLAUDE_CODE_MODEL_TIERS
+ )
+ if model and model not in model_ids
+ ]
+ if invalid_models:
+ raise ProviderConfigError(
+ "模型不在所选凭证的模型列表中: " + ", ".join(invalid_models)
+ )
+ clean_mapping = (
+ {
+ tier: str(model_mapping.get(tier, "") or "").strip
+ for tier in CLAUDE_CODE_MODEL_TIERS
  }
+ if cred_id_str
+ else {tier: "" for tier in CLAUDE_CODE_MODEL_TIERS}
+ )
  payload = {"credential_id": cred_id_str, "model_mapping": clean_mapping}
  await SystemSetting.objects.aupdate_or_create(
  key=SettingKeys.CLAUDE_CODE_CONFIG,
@@ -369,7 +408,6 @@ async def aget_claude_code_runtime_config -> dict[str, str]:
  "default_model": str, # 主模型兜底（sonnet 档 or 凭证 default_model）
  }
  """
- from system.models import ProviderCredential
  cc = await aget_claude_code_config
  cred_id = _parse_uuid_or_none(cc.get("credential_id"))
  mapping = cc.get("model_mapping", {})

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vue/custom-event-name-casing */
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { ImagePart } from '~/types/chat'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
@@ -177,15 +178,21 @@ const credentialModelOptions = computed<CredentialModelOption>( => {
 const defaultOptionKey = computed<string | null>(
  => credentialModelOptions.value[0]?.key ?? null,
 )
-// 当前生效的选中项：优先对话已绑定，否则用户级记忆（含自动选中的默认）
-const effectiveSelectionKey = computed<string | null>(
- => currentSelectionKey.value || chatStore.selectedCredentialModel || null,
-)
 const currentSelectionKey = computed<string | null>( => {
  const conv = chatStore.currentConversation
  if (!conv?.provider_credential_id || !conv.model)
  return null
  return `${conv.provider_credential_id}:${conv.model}`
+})
+// 当前生效的选中项：优先对话已绑定，否则用户级记忆（含自动选中的默认）
+const effectiveSelectionKey = computed<string | null>(
+ => currentSelectionKey.value || chatStore.selectedCredentialModel || null,
+)
+const currentSelectedOption = computed<CredentialModelOption | null>( => {
+ const key = effectiveSelectionKey.value
+ if (!key)
+ return null
+ return credentialModelOptions.value.find(o => o.key === key) ?? null
 })
 // 无当前对话绑定、且无用户级记忆时，自动选中默认 provider 的默认模型并持久化（用户诉求②）
 watch(
@@ -303,9 +310,19 @@ const hasSelectedModel = computed( => {
  const conv = chatStore.currentConversation
  return !!conv?.model || !!chatStore.selectedCredentialModel || (chatStore.selectedModel !== '__default__' && !!chatStore.selectedModel)
 })
+function selectedModelSupportsImage: boolean {
+ const model = currentSelectedOption.value?.model
+ if (!model)
+ return false
+ if (Array.isArray(model.input_modalities))
+ return model.input_modalities.includes('image')
+ return model.supports_vision === true
+}
+const supportsImageInput = computed( => selectedModelSupportsImage)
 // ============================================================================
 // 发送按钮可用性派生（避免「亮色但点了没反应」的误导）
 // ============================================================================
+const hasDraftContent = computed( => !!inputContent.value.trim || pendingImages.value.length > 0)
 const sendDisabledReason = computed<string>( => {
  if (chatStore.isStreaming)
  return '正在生成中，请稍候或先点「停止生成」'
@@ -319,7 +336,6 @@ const sendDisabledReason = computed<string>( => {
  return '当前没有可用的 Provider 凭证，请先在 admin/providers 或空间设置中添加'
  return ''
 })
-const hasDraftContent = computed( => !!inputContent.value.trim || pendingImages.value.length > 0)
 const canSend = computed(
  => hasDraftContent.value && !chatStore.isStreaming && !isUploadingImages.value && !sendDisabledReason.value,
 )
@@ -331,6 +347,10 @@ function formatBytes(size: number): string {
 function openFilePicker {
  if (chatStore.isStreaming || isUploadingImages.value)
  return
+ if (!supportsImageInput.value) {
+ toast.error('当前模型不支持图片', '请切换支持图片的模型后再粘贴或上传')
+ return
+ }
  fileInput.value?.click
 }
 function resetFileInput {
@@ -341,6 +361,10 @@ function addImageFiles(files: Iterable<File>) {
  const incoming = Array.from(files).filter(file => file.type.startsWith('image/'))
  if (incoming.length === 0)
  return
+ if (!supportsImageInput.value) {
+ toast.error('当前模型不支持图片', '请切换支持图片的模型后再粘贴或上传')
+ return
+ }
  for (const file of incoming) {
  if (pendingImages.value.length >= MAX_IMAGES_PER_MESSAGE) {
  toast.warning(`一次最多添加 ${MAX_IMAGES_PER_MESSAGE} 张图片`)
@@ -433,6 +457,10 @@ async function handleSend {
  const feishuDocId = typedContent ? extractFirstFeishuDocId(typedContent): null
  const draft = inputContent.value
  const draftImages = [...pendingImages.value]
+ if (draftImages.length > 0 && !supportsImageInput.value) {
+ toast.error('当前模型不支持图片', '请切换支持图片的模型后再发送')
+ return
+ }
  try {
  isUploadingImages.value = draftImages.length > 0
  const uploadedImageParts: ImagePart =
@@ -561,15 +589,14 @@ function toggleNotifications {
  <button
  type="button"
  class="toolbar-btn"
- aria-label="添加图片"
- title="添加图片":disabled="chatStore.isStreaming || isUploadingImages"
+ aria-label="添加图片":title="supportsImageInput ? '添加图片': '当前模型不支持图片'":disabled="chatStore.isStreaming || isUploadingImages || !supportsImageInput"
  @click="openFilePicker"
  >
  <span class="icon-[lucide--image-plus] text-[15px]" />
  </button>
  </TooltipTrigger>
  <TooltipContent side="top">
- <p>添加图片</p>
+ <p>{{ supportsImageInput ? '添加图片': '当前模型不支持图片' }}</p>
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>

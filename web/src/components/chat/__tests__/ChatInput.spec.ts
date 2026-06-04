@@ -15,6 +15,15 @@ import { defineComponent, h, nextTick } from 'vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 import { useChatStore } from '~/stores/chat'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
+const toastSpies = vi.hoisted( => ({
+ error: vi.fn,
+ warning: vi.fn,
+ success: vi.fn,
+ info: vi.fn,
+}))
+vi.mock('~/composables/useToast', => ({
+ useToast: => toastSpies,
+}))
 vi.mock('~/composables/usePermission', => ({
  usePermission: => ({
  isSystemAdmin: { value: false },
@@ -87,9 +96,28 @@ const PinDialogStub = defineComponent({
 })
 describe('chatInput model-selector 折叠重构', => {
  beforeEach( => {
+ const storage = {
+ getItem: vi.fn( => null),
+ setItem: vi.fn,
+ removeItem: vi.fn,
+ clear: vi.fn,
+ }
+ Object.defineProperty(window, 'localStorage', {
+ value: storage,
+ configurable: true,
+ })
+ Object.defineProperty(globalThis, 'localStorage', {
+ value: storage,
+ configurable: true,
+ })
  setActivePinia(createPinia)
+ toastSpies.error.mockReset
+ toastSpies.warning.mockReset
+ toastSpies.success.mockReset
+ toastSpies.info.mockReset
  const ps = useProviderCredentialStore
  vi.spyOn(ps, 'fetchCredentials').mockResolvedValue
+ vi.spyOn(ps, 'fetchProviderTypes').mockResolvedValue
  })
  afterEach( => {
  vi.restoreAllMocks
@@ -103,8 +131,8 @@ describe('chatInput model-selector 折叠重构', => {
  ps.credentials = creds
  const cs = useChatStore
  if (conversation) {
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- cs.conversations = [conversation as any]
+ type StoreConversation = typeof cs.conversations[number]
+ cs.conversations = [conversation as StoreConversation]
  cs.currentConversationId = conversation.id as string
  }
  // Tooltip 系列用 slot-rendering stub（true stub 会吞掉 default slot
@@ -228,6 +256,37 @@ describe('chatInput model-selector 折叠重构', => {
  expect(disabled.exists).toBe(true)
  expect(disabled.text).toContain('无可用 Provider')
  expect(disabled.attributes('disabled')).toBeDefined
+ wrapper.unmount
+ })
+ it('⑤ 当前模型不支持图片时，粘贴图片提示不支持且不加入预览', async => {
+ const cred = makeCredential({
+ id: 'c-deepseek',
+ name: 'deepseek-anthropic',
+ default_model: 'deepseek-v4-pro',
+ available_models: [
+ {
+ id: 'deepseek-v4-pro',
+ display_name: 'deepseek-v4-pro',
+ input_modalities: ['text'],
+ supports_vision: false,
+ },
+ ],
+ })
+ const wrapper = mountWithCredentials([cred])
+ await nextTick
+ const image = new File(['png'], 'shot.png', { type: 'image/png' })
+ const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+ Object.defineProperty(event, 'clipboardData', {
+ value: { files: [image] },
+ })
+ wrapper.find('.input-card').element.dispatchEvent(event)
+ await nextTick
+ expect(event.defaultPrevented).toBe(true)
+ expect(toastSpies.error).toHaveBeenCalledWith(
+ '当前模型不支持图片',
+ '请切换支持图片的模型后再粘贴或上传',
+ )
+ expect(wrapper.find('.image-preview-chip').exists).toBe(false)
  wrapper.unmount
  })
 })

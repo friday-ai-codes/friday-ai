@@ -775,10 +775,10 @@ class ConversationService:
  6. graph 完成后调用 finalize_conversation 落库
  """
  # lazy import 避免循环依赖（config.py 导入本模块的 _build_system_prompt）
- from chat.multimodal import ensure_vision_supported, extract_text_from_parts
- from chat.parts import PARTS_SCHEMA_VERSION
  from chat.config import build_sdk_config
  from chat.finalize import finalize_conversation as do_finalize
+ from chat.multimodal import ensure_image_input_supported, extract_text_from_parts
+ from chat.parts import PARTS_SCHEMA_VERSION
  async def _hydrate_finalize_from_snapshot(
  orch: OrchestrationRun,
  state: dict[str, Any],
@@ -820,13 +820,33 @@ class ConversationService:
  if isinstance(raw, list):
  return [p for p in raw if isinstance(p, dict)]
  return
- conversation = await Conversation.objects.select_related("project").aget(
+ conversation = await Conversation.objects.select_related(
+ "project",
+ "provider_credential_id",
+ ).aget(
  id=conversation_id,
  is_deleted=False,
  )
+ input_parts_data = list(input_parts or )
+ sdk_config, agent_session = await build_sdk_config(
+ conversation,
+ role=role,
+ notification_user_id=notification_user_id,
+ force_deep_analysis=force_deep_analysis,
+ project_context_line=project_context_line,
+ )
+ session_id = sdk_config.session_id
+ model = sdk_config.model
+ conv_id_str = str(conversation.id)
+ if any(part.get("type") == "image" for part in input_parts_data):
+ credential = getattr(conversation, "provider_credential_id", None)
+ ensure_image_input_supported(
+ provider_type=sdk_config.provider_type,
+ model=model,
+ available_models=getattr(credential, "available_models", None),
+ )
  # review review round Fix #1/#2：保留 user message id 作为 ConversationIntentTrace.triggering_message_id
  # （waiting_clarification 路径需要 — 见 _handle_waiting_clarification_state）。
- input_parts_data = list(input_parts or )
  user_msg_metadata: dict[str, Any] = {}
  user_msg_content = content
  if input_parts_data:
@@ -879,18 +899,6 @@ class ConversationService:
  f"{doc_markdown}\n---\n\n"
  )
  assistant_msg_id = uuid.uuid4
- sdk_config, agent_session = await build_sdk_config(
- conversation,
- role=role,
- notification_user_id=notification_user_id,
- force_deep_analysis=force_deep_analysis,
- project_context_line=project_context_line,
- )
- session_id = sdk_config.session_id
- model = sdk_config.model
- conv_id_str = str(conversation.id)
- if any(part.get("type") == "image" for part in input_parts_data):
- ensure_vision_supported(sdk_config.provider_type, model)
  orch_run = await OrchestrationRun.objects.acreate(
  conversation=conversation,
  thread_id=conv_id_str,

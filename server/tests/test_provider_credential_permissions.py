@@ -13,7 +13,6 @@ perform_acreate 契约，参数化 4 角色 × 场景组合成 16 用例矩阵�
 """
 from __future__ import annotations
 import json
-from uuid import uuid4
 import pytest
 from rest_framework.test import APIClient
 # ======================================================================
@@ -25,6 +24,12 @@ REQUEST_BODIES: dict[str, dict] = {
  "name": "matrix-sys-anth",
  "scope": "system",
  "default_model": "claude-3-5-sonnet-20241022",
+ "available_models": [
+ {
+ "id": "claude-3-5-sonnet-20241022",
+ "display_name": "Claude 3.5 Sonnet",
+ }
+ ],
  "config": {
  "api_key": "sk-test-placeholder",
  "base_url": "https://api.anthropic.com",
@@ -36,6 +41,9 @@ REQUEST_BODIES: dict[str, dict] = {
  "scope": "project",
  "scope_id": "__PROJECT_A_ID__",
  "default_model": "gemini-1.5-pro",
+ "available_models": [
+ {"id": "gemini-1.5-pro", "display_name": "Gemini 1.5 Pro"}
+ ],
  "config": {
  "api_key": "GOOGLE_API_KEY_PLACEHOLDER",
  },
@@ -46,6 +54,9 @@ REQUEST_BODIES: dict[str, dict] = {
  "scope": "project",
  "scope_id": "__PROJECT_A_ID__",
  "default_model": "llama3.2",
+ "available_models": [
+ {"id": "llama3.2", "display_name": "llama3.2"}
+ ],
  "config": {
  "base_url": "http://localhost:11434",
  },
