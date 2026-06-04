@@ -763,6 +763,7 @@ class ConversationService:
  feishu_doc_id: str = "",
  project_context_line: str | None = None,
  search_branch: str | None = None,
+ input_parts: list[dict[str, Any]] | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息 — 通过 LangGraph graph 驱动。
  签名保持不变，内部改为：
@@ -774,6 +775,8 @@ class ConversationService:
  6. graph 完成后调用 finalize_conversation 落库
  """
  # lazy import 避免循环依赖（config.py 导入本模块的 _build_system_prompt）
+ from chat.multimodal import ensure_vision_supported, extract_text_from_parts
+ from chat.parts import PARTS_SCHEMA_VERSION
  from chat.config import build_sdk_config
  from chat.finalize import finalize_conversation as do_finalize
  async def _hydrate_finalize_from_snapshot(
@@ -823,10 +826,21 @@ class ConversationService:
  )
  # review review round Fix #1/#2：保留 user message id 作为 ConversationIntentTrace.triggering_message_id
  # （waiting_clarification 路径需要 — 见 _handle_waiting_clarification_state）。
+ input_parts_data = list(input_parts or )
+ user_msg_metadata: dict[str, Any] = {}
+ user_msg_content = content
+ if input_parts_data:
+ user_msg_content = extract_text_from_parts(input_parts_data)
+ user_msg_metadata["parts_schema_version"] = PARTS_SCHEMA_VERSION
+ image_count = sum(1 for part in input_parts_data if part.get("type") == "image")
+ if image_count:
+ user_msg_metadata["image_count"] = image_count
  user_msg = await Message.objects.acreate(
  conversation=conversation,
  role=Message.Role.USER,
- content=content,
+ content=user_msg_content,
+ parts=input_parts_data,
+ metadata=user_msg_metadata,
  )
  user_msg_id_str = str(user_msg.id)
  # 对话进入进行中状态
@@ -875,6 +889,8 @@ class ConversationService:
  session_id = sdk_config.session_id
  model = sdk_config.model
  conv_id_str = str(conversation.id)
+ if any(part.get("type") == "image" for part in input_parts_data):
+ ensure_vision_supported(sdk_config.provider_type, model)
  orch_run = await OrchestrationRun.objects.acreate(
  conversation=conversation,
  thread_id=conv_id_str,
@@ -911,7 +927,11 @@ class ConversationService:
  try:
  final_state: dict[str, Any] = {}
  async for chunk in graph.astream(
- {"user_message": doc_context_prefix + content, "run_id": str(orch_run.run_id)},
+ {
+ "user_message": doc_context_prefix + content,
+ "user_parts": input_parts_data,
+ "run_id": str(orch_run.run_id),
+ },
  config=graph_config,
  stream_mode=["custom", "values"],
  version="v2",

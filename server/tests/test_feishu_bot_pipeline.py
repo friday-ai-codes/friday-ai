@@ -12,6 +12,14 @@ from feishu.bot.service import FeishuBotService
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
 from projects.models import Project
 from repositories.models import Repository
+from services.feishu_im import FeishuIMError
+PNG_1X1 = (
+ b"\x89PNG\r\n\x1a\n"
+ b"\x00\x00\x00\rIHDR"
+ b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x04\x00\x00\x00\xb5\x1c\x0c\x02"
+ b"\x00\x00\x00\x0bIDATx\xdac\xfc\xff\x1f\x00\x03\x03\x02\x00\xef\xbf\xa7\xdb"
+ b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 async def _fake_stream(
  *,
  session_id: str = "",
@@ -103,6 +111,107 @@ class TestFeishuBotPipeline:
  assert result["status"] == "clarification"
  assert thread.status == FeishuBotThreadStatus.AWAITING_PROJECT_CLARIFICATION
  assert im_service.send_card.await_count == 3
+ async def test_image_only_message_downloads_image_and_sends_input_parts(self, settings) -> None:
+ settings.DATA_DIR = settings.BASE_DIR / "data-test"
+ project = await Project.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
+ thread = await FeishuBotThread.objects.acreate(
+ chat_id="chat_img",
+ root_message_id="msg_img",
+ project=project,
+ )
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_img",
+ thread=thread,
+ chat_id="chat_img",
+ sender_open_id="ou_img",
+ message_type="image",
+ normalized_text="",
+ quote_message_id="",
+ mentioned_bot=True,
+ raw_payload={
+ "event": {
+ "message": {
+ "message_id": "msg_img",
+ "message_type": "image",
+ "content": '{"image_key":"img_1"}',
+ }
+ }
+ },
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["welcome_img", "processing_img"]),
+ update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
+ download_message_resource=AsyncMock(
+ return_value=SimpleNamespace(content=PNG_1X1, mime_type="image/png"),
+ ),
+ )
+ captured_kwargs: dict[str, Any] = {}
+ async def fake_send_message_stream(*_args: Any, **kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ captured_kwargs.update(kwargs)
+ async for event in _fake_stream(final_answer="这是一张界面截图。"):
+ yield event
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="vision")),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ):
+ result = await FeishuBotService.process_message("msg_img")
+ assert result["status"] == "answered"
+ assert captured_kwargs["content"] == "请分析这张图片"
+ parts = captured_kwargs["input_parts"]
+ assert [part["type"] for part in parts] == ["text", "image"]
+ assert parts[0]["text"] == "请分析这张图片"
+ assert parts[1]["mime_type"] == "image/png"
+ assert parts[1]["storage_ref"].startswith("chat_images/")
+ im_service.download_message_resource.assert_awaited_once_with(
+ message_id="msg_img",
+ file_key="img_1",
+ resource_type="image",
+ )
+ async def test_image_download_failure_updates_non_empty_error_card(self, settings) -> None:
+ settings.DATA_DIR = settings.BASE_DIR / "data-test"
+ project = await Project.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
+ thread = await FeishuBotThread.objects.acreate(
+ chat_id="chat_img_fail",
+ root_message_id="msg_img_fail",
+ project=project,
+ )
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_img_fail",
+ thread=thread,
+ chat_id="chat_img_fail",
+ sender_open_id="ou_img",
+ message_type="image",
+ normalized_text="",
+ quote_message_id="",
+ mentioned_bot=True,
+ raw_payload={
+ "event": {
+ "message": {
+ "message_id": "msg_img_fail",
+ "message_type": "image",
+ "content": '{"image_key":"img_bad"}',
+ }
+ }
+ },
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["welcome_fail", "processing_fail"]),
+ update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
+ download_message_resource=AsyncMock(side_effect=FeishuIMError("no permission", code=234006)),
+ )
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)):
+ result = await FeishuBotService.process_message("msg_img_fail")
+ assert result["status"] == "error"
+ assert result["error"] == "image_download_failed"
+ updated_card = im_service.update_card.await_args.args[1]
+ content = "\n".join(element.get("content", "") for element in updated_card["elements"] if isinstance(element, dict))
+ assert "图片" in content
+ assert content.strip
  async def test_successful_pipeline_updates_processing_card_with_real_trace(self, user: Any) -> None:
  repo = await Repository.objects.acreate(name="server", git_url="https://example.com/server.git")
  project = await Project.objects.acreate(name="Friday Server", feishu_project_key="friday-server")

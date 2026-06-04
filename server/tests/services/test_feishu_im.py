@@ -20,6 +20,13 @@ def _mock_response(data: dict) -> Mock:
  resp = Mock
  resp.json = Mock(return_value=data)
  return resp
+def _mock_binary_response(content: bytes, *, content_type: str = "image/png") -> Mock:
+ """创建模拟的二进制 httpx Response。"""
+ resp = Mock
+ resp.content = content
+ resp.headers = {"content-type": content_type}
+ resp.json = Mock(side_effect=ValueError("not json"))
+ return resp
 # ============================================================================
 # get_chat_members
 # ============================================================================
@@ -54,6 +61,41 @@ async def test_get_chat_members_api_error:
  )
  with pytest.raises(FeishuIMError, match="获取群聊成员失败"):
  await client.get_chat_members("oc_bad")
+@pytest.mark.asyncio
+async def test_download_message_resource_success:
+ """download_message_resource 调用消息资源接口并返回 bytes + mime。"""
+ client = _make_client
+ payload = b"\x89PNG\r\n\x1a\nfake"
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.get.return_value = _mock_binary_response(payload, content_type="image/png")
+ result = await client.download_message_resource(
+ message_id="msg_1",
+ file_key="img_1",
+ resource_type="image",
+ )
+ assert result.content == payload
+ assert result.mime_type == "image/png"
+ mock_http.get.assert_awaited_once
+ assert mock_http.get.await_args.args[0].endswith("/im/v1/messages/msg_1/resources/img_1")
+ assert mock_http.get.await_args.kwargs["params"] == {"type": "image"}
+@pytest.mark.asyncio
+async def test_download_message_resource_api_error:
+ """download_message_resource API 错误时抛出 FeishuIMError。"""
+ client = _make_client
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.get.return_value = _mock_response({"code": 234043, "msg": "resource not found"})
+ with pytest.raises(FeishuIMError, match="获取消息资源失败"):
+ await client.download_message_resource(
+ message_id="msg_1",
+ file_key="bad_img",
+ resource_type="image",
+ )
 # ============================================================================
 # add_bot_to_chat
 # ============================================================================

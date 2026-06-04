@@ -86,6 +86,15 @@ def _extract_mentions(raw_message: dict[str, Any], content: dict[str, Any]) -> b
  if mentions:
  return True
  return False
+def extract_message_attachments(raw_payload: dict[str, Any]) -> list[dict[str, Any]]:
+ """从原始飞书 payload 恢复规范化附件列表。"""
+ message = raw_payload.get("event", {}).get("message", {})
+ content = _loads_content(message.get("content", {}))
+ _, _, attachments = _extract_text_and_mentions(
+ str(message.get("message_type", "text")),
+ content,
+ )
+ return attachments
 def normalize_im_message(raw_payload: dict[str, Any]) -> InboundLarkMessage:
  """Normalize webhook or websocket IM payload."""
  header = raw_payload.get("header", {})

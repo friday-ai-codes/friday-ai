@@ -24,6 +24,7 @@ class WorkflowState(TypedDict, total=False):
  phase: str # RunPhase.value — 用 str 保持 JSON 序列化兼容
  blocking_tasks: list[dict[str, Any]]
  user_message: str
+ user_parts: list[dict[str, Any]]
  final_answer: str
  # Blocking task 循环（Phase）
  blocking_results: list[dict[str, Any]]

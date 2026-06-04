@@ -135,9 +135,9 @@ class _StreamingSnapshot:
  raw_result = data.get("result")
  result_str = _coerce_snapshot_result(raw_result)
  batch_id = data.get("batch_id") or None
- entry = self._tool_calls.get(tool_id)
- if entry is None:
- entry = {
+ result_entry = self._tool_calls.get(tool_id)
+ if result_entry is None:
+ result_entry = {
  "id": tool_id,
  "name": tool_name,
  "input": tool_input if isinstance(tool_input, dict) else {},
@@ -145,25 +145,32 @@ class _StreamingSnapshot:
  "status": "done",
  "batch_id": batch_id,
  }
- self._tool_calls[tool_id] = entry
+ self._tool_calls[tool_id] = result_entry
  self._tool_order.append(tool_id)
  else:
- if tool_name and not entry.get("name"):
- entry["name"] = tool_name
+ if tool_name and not result_entry.get("name"):
+ result_entry["name"] = tool_name
  if isinstance(tool_input, dict) and tool_input:
- entry["input"] = tool_input
+ result_entry["input"] = tool_input
  if result_str is not None:
- entry["result"] = result_str
- entry["status"] = "done"
- if batch_id and not entry.get("batch_id"):
- entry["batch_id"] = batch_id
+ result_entry["result"] = result_str
+ result_entry["status"] = "done"
+ if batch_id and not result_entry.get("batch_id"):
+ result_entry["batch_id"] = batch_id
+ timeline_name = str(result_entry.get("name") or tool_name or "")
+ timeline_batch = result_entry.get("batch_id")
+ if not isinstance(timeline_batch, str):
+ timeline_batch = None
+ timeline_result = result_entry.get("result")
+ if timeline_result is not None:
+ timeline_result = str(timeline_result)
  self._upsert_timeline_tool(
  tool_id,
- entry.get("name", "") or tool_name,
- entry.get("input", {}),
- entry.get("batch_id"),
+ timeline_name,
+ result_entry.get("input", {}),
+ timeline_batch,
  status="done",
- result=entry.get("result"),
+ result=timeline_result,
  )
  self._dirty = True
  return
@@ -350,6 +357,7 @@ async def _run_chat_stream(
  prompt: str,
  writer: StreamWriter,
  run_id: str,
+ input_parts: list[dict[str, Any]] | None = None,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
  """运行 Chat runner stream，返回 (accumulated_thinking, tool_calls_by_id)。
  中断时通过 writer 推送 phase_transition interrupted 确认事件后重新抛出。
@@ -361,7 +369,7 @@ async def _run_chat_stream(
  blocking_marker_seen = False
  snapshot = _StreamingSnapshot(run_id) if run_id else None
  try:
- async for event in runner.stream(prompt):
+ async for event in runner.stream(prompt, input_parts=input_parts):
  if event.type == THINKING:
  thinking_text = event.data.get("thinking", "")
  if thinking_text:
@@ -517,8 +525,11 @@ async def _execute_first_run(
  if conv_id:
  register_runner(conv_id, runner)
  try:
+ input_parts = state.get("user_parts")
+ if not isinstance(input_parts, list):
+ input_parts = None
  accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
- runner, state.get("user_message", ""), writer, run_id,
+ runner, state.get("user_message", ""), writer, run_id, input_parts,
  )
  except Exception:
  logger.exception(
