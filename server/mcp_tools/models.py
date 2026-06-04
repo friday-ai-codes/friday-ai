@@ -358,3 +358,90 @@ class McpWorkItemTechnicalPlan(models.Model):
  ordering = ["-created_at"]
  def __str__(self) -> str:
  return f"McpWorkItemTechnicalPlan({self.title}, {self.status})"
+class McpWorkItemRepoTask(models.Model):
+ """Per-repository execution task created from a work item technical plan."""
+ class Status(models.TextChoices):
+ PENDING = "pending", "待执行"
+ PLANNED = "planned", "已生成编码方案"
+ RUNNING = "running", "执行中"
+ COMPLETED = "completed", "已完成"
+ PARTIAL = "partial", "部分完成"
+ FAILED = "failed", "失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ "interactions.InteractionRun",
+ on_delete=models.CASCADE,
+ related_name="mcp_work_item_repo_tasks",
+ )
+ technical_plan = models.ForeignKey(
+ McpWorkItemTechnicalPlan,
+ on_delete=models.CASCADE,
+ related_name="repo_tasks",
+ )
+ repository = models.ForeignKey(
+ "repositories.Repository",
+ on_delete=models.CASCADE,
+ related_name="mcp_work_item_repo_tasks",
+ )
+ coding_plan = models.ForeignKey(
+ McpCodingPlan,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="work_item_repo_tasks",
+ )
+ plan_version = models.ForeignKey(
+ McpCodingPlanVersion,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="work_item_repo_tasks",
+ )
+ execution_trace = models.ForeignKey(
+ McpCodingExecutionTrace,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="work_item_repo_tasks",
+ )
+ tool_call = models.ForeignKey(
+ "interactions.ToolCallRecord",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ order = models.PositiveIntegerField(default=1)
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.PENDING,
+ db_index=True,
+ )
+ branch_name = models.CharField(max_length=255, blank=True, default="")
+ target_branch = models.CharField(max_length=255, blank=True, default="")
+ task_body = models.JSONField(default=dict, blank=True)
+ result = models.JSONField(default=dict, blank=True)
+ recovery_state = models.JSONField(default=dict, blank=True)
+ commit_sha = models.CharField(max_length=64, blank=True, default="")
+ mr_url = models.CharField(max_length=500, blank=True, default="")
+ error = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "mcp_work_item_repo_tasks"
+ constraints = [
+ models.UniqueConstraint(
+ fields=["technical_plan", "order"],
+ name="uniq_work_item_repo_task_order",
+ ),
+ ]
+ indexes = [
+ models.Index(fields=["technical_plan", "order"]),
+ models.Index(fields=["repository", "-created_at"]),
+ models.Index(fields=["run"]),
+ models.Index(fields=["status"]),
+ ]
+ ordering = ["technical_plan", "order"]
+ def __str__(self) -> str:
+ return f"McpWorkItemRepoTask({self.repository_id}, {self.status})"
