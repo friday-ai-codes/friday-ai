@@ -23,6 +23,7 @@ from .models import (
  InteractionEvent,
  InteractionRun,
  ModelUsageRecord,
+ RetrievalTrace,
  ToolCallRecord,
 )
 from .redaction import redact_for_ledger
@@ -109,6 +110,30 @@ def record_tool_call(
  logger.warning(
  "ledger_tool_call_write_failed",
  tool_name=tool_name,
+ error=str(exc),
+ )
+ return None
+def record_retrieval_trace(
+ run: InteractionRun,
+ *,
+ kind: str,
+ payload: dict[str, Any] | None = None,
+ tool_call: ToolCallRecord | None = None,
+) -> RetrievalTrace | None:
+ """记录一条检索证据（，best-effort）。"""
+ try:
+ seq = run.retrieval_traces.count
+ return RetrievalTrace.objects.create(
+ run=run,
+ tool_call=tool_call,
+ kind=kind,
+ payload=redact_for_ledger(payload or {}),
+ seq=seq,
+ )
+ except Exception as exc: # noqa: BLE001 —— best-effort
+ logger.warning(
+ "ledger_retrieval_trace_write_failed",
+ kind=kind,
  error=str(exc),
  )
  return None
@@ -208,6 +233,20 @@ async def arecord_tool_call(
  error=error,
  retry_index=retry_index,
  parent_event=parent_event,
+ )
+async def arecord_retrieval_trace(
+ run: InteractionRun,
+ *,
+ kind: str,
+ payload: dict[str, Any] | None = None,
+ tool_call: ToolCallRecord | None = None,
+) -> RetrievalTrace | None:
+ """``record_retrieval_trace`` 的异步包装。"""
+ return await sync_to_async(record_retrieval_trace)(
+ run,
+ kind=kind,
+ payload=payload,
+ tool_call=tool_call,
  )
 async def arecord_model_usage(
  run: InteractionRun,

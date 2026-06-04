@@ -153,6 +153,41 @@ class ToolCallRecord(models.Model):
  ordering = ["-created_at"]
  def __str__(self) -> str:
  return f"ToolCallRecord({self.run_id}, {self.tool_name}, {self.status})"
+class RetrievalTrace(models.Model):
+ """检索证据留痕。
+ append-only：每条 routing 候选、RAG chunk、GraphRAG edge、文件读取证据
+ 独立落一行，便于按 InteractionRun 回放外部 MCP read tool 的检索过程。
+ payload 写入前由 ledger helper 统一脱敏。
+ """
+ class Kind(models.TextChoices):
+ ROUTING = "routing", "仓库路由"
+ CHUNK = "chunk", "RAG chunk 命中"
+ EDGE = "edge", "GraphRAG 邻居边"
+ FILE = "file", "文件读取"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ run = models.ForeignKey(
+ InteractionRun, on_delete=models.CASCADE, related_name="retrieval_traces"
+ )
+ tool_call = models.ForeignKey(
+ ToolCallRecord,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="+",
+ )
+ seq = models.PositiveIntegerField
+ kind = models.CharField(max_length=20, choices=Kind.choices, db_index=True)
+ payload = models.JSONField(default=dict, blank=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "retrieval_traces"
+ indexes = [
+ models.Index(fields=["run", "seq"]),
+ models.Index(fields=["kind"]),
+ ]
+ ordering = ["run", "seq"]
+ def __str__(self) -> str:
+ return f"RetrievalTrace({self.run_id}, {self.seq}, {self.kind})"
 class ModelUsageRecord(models.Model):
  """模型用量明细记录。
  append-only：每次模型调用（含失败，``failure_type`` 标注）记录一条 token
