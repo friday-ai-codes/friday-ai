@@ -9,6 +9,10 @@
  ``InteractionRun``（ 保证可追踪），``token_fingerprint`` 取
  ``request.auth.token_hash``（绝不取明文，），``raw_request`` 经
  ``acreate_interaction_run`` 内部统一脱敏后入库。
+- Skill 编排可在首个 tool 响应拿到 ``run_id`` 后，把后续请求的
+ ``X-Friday-Run-ID`` / ``X-Friday-Workflow-Run-ID`` 设为该值，从而把多次 MCP
+ tool call 复用到同一个 running ``InteractionRun``。可选
+ ``X-Friday-Skill-Step`` 会写入 ``skill_step`` 事件。
 约定用法（work-item 的 MCP/Skill view）:
  from interactions.entry import AccessTokenAuthentication, begin_interaction_run
  class SomeMcpView(APIView):
@@ -23,8 +27,8 @@ from typing import Any
 from rest_framework.request import Request
 # re-export 认证类，方便后续 view 直接 `from interactions.entry import ...`。
 from access_tokens.authentication import AccessTokenAuthentication
-from interactions.ledger import acreate_interaction_run
-from interactions.models import InteractionRun
+from interactions.ledger import acreate_interaction_run, arecord_event
+from interactions.models import InteractionEvent, InteractionRun
 # 认证类点路径常量，便于 DRF settings / 字符串引用场景复用。
 ACCESS_TOKEN_AUTH = "access_tokens.authentication.AccessTokenAuthentication"
 __all__ = [
@@ -45,6 +49,20 @@ async def begin_interaction_run(request: Request, *, source: str) -> Interaction
  同步创建落库的 ``InteractionRun``（供后续子事件挂载）。
  """
  token_fingerprint = getattr(request.auth, "token_hash", "")
+ requested_run_id = (
+ request.META.get("HTTP_X_FRIDAY_RUN_ID")
+ or request.META.get("HTTP_X_FRIDAY_WORKFLOW_RUN_ID")
+ or ""
+ )
+ if requested_run_id:
+ existing_run = await InteractionRun.objects.filter(
+ run_id=requested_run_id,
+ token_fingerprint=token_fingerprint,
+ status=InteractionRun.Status.RUNNING,
+ ).afirst
+ if existing_run is not None:
+ await _record_skill_step_header(existing_run, request)
+ return existing_run
  raw_request: dict[str, Any] = {
  "method": request.method,
  "path": request.path,
@@ -56,9 +74,24 @@ async def begin_interaction_run(request: Request, *, source: str) -> Interaction
  data = None
  if data:
  raw_request["data"] = data
- return await acreate_interaction_run(
+ run = await acreate_interaction_run(
  token_fingerprint=token_fingerprint,
  source=source,
  request_id=request.META.get("HTTP_X_REQUEST_ID", ""),
  raw_request=raw_request,
+ )
+ await _record_skill_step_header(run, request)
+ return run
+async def _record_skill_step_header(run: InteractionRun, request: Request) -> None:
+ step = request.META.get("HTTP_X_FRIDAY_SKILL_STEP", "")
+ if not step:
+ return
+ await arecord_event(
+ run,
+ InteractionEvent.EventType.SKILL_STEP,
+ {
+ "step": step,
+ "path": request.path,
+ "method": request.method,
+ },
  )
