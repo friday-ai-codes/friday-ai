@@ -4,6 +4,7 @@
 # adrf 0.1.12 兼容性补丁（需在 Django 加载前执行）
 from core.patches import patch_asyncio_iscoroutinefunction
 patch_asyncio_iscoroutinefunction
+from typing import Any, Callable # noqa: E402
 import pytest # noqa: E402
 from django.contrib.auth import get_user_model # noqa: E402
 from django.core.cache import cache as django_cache # noqa: E402
@@ -955,3 +956,54 @@ def hybrid_service(provider_type):
  from services.retrieval import HybridSearchService
  provider = LocalProvider if provider_type == "local" else NullProvider
  return HybridSearchService(provider)
+# ============================================================================
+# Phase Wave：Access Token 共享 fixture（..04 测试桩消费）
+#
+# 设计要点（developer-notes.md + -PLAN.md / ）：
+# - 全函数严格类型注解（mypy 硬性要求）。
+# - access_tokens app 在 Wave 阶段尚未实现：fixture 体内通过
+# pytest.importorskip("access_tokens.models") 延迟导入，使本 conftest 顶层
+# 不硬 import 未实现 app —— 套件可被收集、不报 ImportError；模块缺失时
+# 依赖该 fixture 的用例优雅 skip。
+# - 明文仅来自 generate_pat，入库只存 fingerprint（runners.models.hash_token），
+# 明文绝不写任何字段。
+# ============================================================================
+@pytest.fixture
+def access_user(user: Any) -> Any:
+ """Access Token 归属用户。
+ 复用既有 `user` fixture（accounts.User），不重复造轮子（-PLAN Task 1）。
+ """
+ return user
+@pytest.fixture
+def make_access_token(
+ db: Any, access_user: Any
+) -> Callable[..., tuple[Any, str]]:
+ """工厂 fixture：创建 AccessToken 并返回 (模型实例, 明文)。
+ 返回的可调用对象签名：``(name="t", expires_at=None, revoked=False) -> tuple[AccessToken, str]``。
+ Wave 阶段 `access_tokens.models` 未落地 → importorskip 跳过依赖此 fixture 的用例；
+ 实现落地后生效。明文经 ``generate_pat`` 生成，仅 ``hash_token`` 结果入
+ ``token_hash``，明文绝不写任何字段。
+ Args:
+ name: token 显示名（默认 "t"）。
+ expires_at: 过期时间，None = 永不过期。
+ revoked: 是否软吊销（设置 revoked_at = 当前时间）。
+ """
+ access_models = pytest.importorskip("access_tokens.models")
+ from runners.models import hash_token
+ def _make(
+ name: str = "t",
+ expires_at: Any = None,
+ revoked: bool = False,
+ ) -> tuple[Any, str]:
+ from django.utils import timezone
+ plaintext: str = access_models.generate_pat
+ token = access_models.AccessToken.objects.create(
+ name=name,
+ token_hash=hash_token(plaintext),
+ token_prefix=plaintext[:12],
+ expires_at=expires_at,
+ revoked_at=timezone.now if revoked else None,
+ created_by=access_user,
+ )
+ return token, plaintext
+ return _make
