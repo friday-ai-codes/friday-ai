@@ -33,6 +33,11 @@ from .execution_service import (
  execution_trace_payload,
  refresh_execution_trace,
 )
+from .merge_request_service import (
+ MergeRequestToolError,
+ create_merge_request,
+ summarize_branch,
+)
 from .models import (
  McpCodingExecutionTrace,
  McpCodingPlan,
@@ -46,6 +51,7 @@ from .planning_service import (
 )
 from .serializers import (
  AnalyzeRepositoryRequestSerializer,
+ CreateMergeRequestRequestSerializer,
  CreateCodingPlanRequestSerializer,
  ExecuteCodingPlanRequestSerializer,
  FindRelatedChunksRequestSerializer,
@@ -56,6 +62,7 @@ from .serializers import (
  ListRepositoryFilesRequestSerializer,
  RouteRepositoriesRequestSerializer,
  SearchRagChunksRequestSerializer,
+ SummarizeBranchRequestSerializer,
 )
 logger = structlog.get_logger(__name__)
 def _jsonable(value: Any) -> Any:
@@ -1110,4 +1117,184 @@ class GetCodingExecutionView(McpToolView):
  if tool_call is not None:
  trace.tool_call = tool_call
  await trace.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
+class SummarizeBranchView(McpToolView):
+ tool_name = "summarize_branch"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(SummarizeBranchRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ resolved = await self._resolve_branch_request(input_data)
+ if isinstance(resolved, Response):
+ return resolved
+ trace, repo, source_branch, target_branch = resolved
+ try:
+ summary = await summarize_branch(
+ repository=repo,
+ source_branch=source_branch,
+ target_branch=target_branch,
+ max_files=int(input_data.get("max_files") or 50),
+ trace=trace,
+ )
+ except MergeRequestToolError as exc:
+ error_output_data = {"error_code": "git_platform_error", "detail": str(exc)}
+ await self._record(
+ run,
+ input_data=input_data,
+ output_data=error_output_data,
+ traces=,
+ started_at=started_at,
+ call_status="failed",
+ error=str(exc),
+ )
+ return error_response(
+ "git_platform_error",
+ str(exc),
+ status_code=status.HTTP_400_BAD_REQUEST,
+ )
+ output_data: dict[str, Any] = {
+ "execution_id": str(trace.id) if trace is not None else "",
+ "repository_id": str(repo.id),
+ "source_branch": source_branch,
+ "target_branch": target_branch,
+ "summary": summary,
+ "mr_draft": summary.get("mr_draft") or {},
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="branch_summary_created",
+ payload={
+ "execution_id": output_data["execution_id"],
+ "repository_id": str(repo.id),
+ "source_branch": source_branch,
+ "target_branch": target_branch,
+ "file_count": len(summary.get("files") or ),
+ },
+ )
+ await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=,
+ started_at=started_at,
+ )
+ return Response(output_data, status=status.HTTP_200_OK)
+ async def _resolve_branch_request(
+ self,
+ input_data: dict[str, Any],
+ ) -> tuple[McpCodingExecutionTrace | None, Repository, str, str] | Response:
+ if input_data.get("execution_id"):
+ trace = await McpCodingExecutionTrace.objects.select_related("repository").filter(
+ id=input_data["execution_id"]
+ ).afirst
+ if trace is None:
+ return error_response(
+ "execution_not_found",
+ "执行记录不存在",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ repo = trace.repository
+ source_branch = str(input_data.get("source_branch") or trace.branch_name)
+ target_branch = str(
+ input_data.get("target_branch") or trace.target_branch or repo.default_branch
+ )
+ return trace, repo, source_branch, target_branch
+ try:
+ repo = await Repository.objects.aget(
+ id=input_data["repository_id"],
+ is_deleted=False,
+ )
+ except Repository.DoesNotExist:
+ return error_response(
+ "repository_not_found",
+ "仓库不存在",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ return (
+ None,
+ repo,
+ str(input_data.get("source_branch") or ""),
+ str(input_data.get("target_branch") or repo.default_branch),
+ )
+class CreateMergeRequestView(SummarizeBranchView):
+ tool_name = "create_merge_request"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(CreateMergeRequestRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ resolved = await self._resolve_branch_request(input_data)
+ if isinstance(resolved, Response):
+ return resolved
+ trace, repo, source_branch, target_branch = resolved
+ try:
+ mr = await create_merge_request(
+ repository=repo,
+ source_branch=source_branch,
+ target_branch=target_branch,
+ title=str(input_data.get("title") or ""),
+ description=str(input_data.get("description") or ""),
+ reviewer_usernames=list(input_data.get("reviewer_usernames") or ),
+ remove_source_branch=bool(input_data.get("remove_source_branch", True)),
+ trace=trace,
+ )
+ except MergeRequestToolError as exc:
+ error_output_data = {"error_code": "git_platform_error", "detail": str(exc)}
+ await self._record(
+ run,
+ input_data=input_data,
+ output_data=error_output_data,
+ traces=,
+ started_at=started_at,
+ call_status="failed",
+ error=str(exc),
+ )
+ return error_response(
+ "git_platform_error",
+ str(exc),
+ status_code=status.HTTP_400_BAD_REQUEST,
+ )
+ execution_status = trace.status if trace is not None else ""
+ output_data: dict[str, Any] = {
+ "execution_id": str(trace.id) if trace is not None else "",
+ "repository_id": str(repo.id),
+ "source_branch": source_branch,
+ "target_branch": target_branch,
+ "mr": mr,
+ "execution_status": execution_status,
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="merge_request_created" if mr.get("success") else "merge_request_failed",
+ payload={
+ "execution_id": output_data["execution_id"],
+ "repository_id": str(repo.id),
+ "source_branch": source_branch,
+ "target_branch": target_branch,
+ "success": bool(mr.get("success")),
+ "mr_url": mr.get("mr_url") or "",
+ },
+ )
+ await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=,
+ started_at=started_at,
+ call_status="ok" if mr.get("success") else "failed",
+ error=str(mr.get("error") or ""),
+ )
  return Response(output_data, status=status.HTTP_200_OK)

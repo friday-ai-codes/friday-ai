@@ -319,6 +319,8 @@ def execution_trace_payload(trace: McpCodingExecutionTrace) -> dict[str, Any]:
  "test_results": trace.test_results,
  "push_result": trace.push_result,
  "last_diff": trace.last_diff,
+ "branch_summary": trace.branch_summary,
+ "mr_result": trace.mr_result,
  "runner_logs": trace.runner_logs,
  "recovery_state": trace.recovery_state,
  "dispatch_payload": trace.dispatch_payload,

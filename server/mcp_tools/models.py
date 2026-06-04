@@ -145,6 +145,7 @@ class McpCodingExecutionTrace(models.Model):
  DISPATCHING = "dispatching", "分发中"
  RUNNING = "running", "执行中"
  COMPLETED = "completed", "已完成"
+ PARTIAL = "partial", "部分完成"
  FAILED = "failed", "失败"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  run = models.ForeignKey(
@@ -211,6 +212,8 @@ class McpCodingExecutionTrace(models.Model):
  test_results = models.JSONField(default=list, blank=True)
  push_result = models.JSONField(default=dict, blank=True)
  last_diff = models.JSONField(default=dict, blank=True)
+ branch_summary = models.JSONField(default=dict, blank=True)
+ mr_result = models.JSONField(default=dict, blank=True)
  recovery_state = models.JSONField(default=dict, blank=True)
  commit_sha = models.CharField(max_length=64, blank=True, default="")
  error = models.TextField(blank=True, default="")

@@ -127,6 +127,43 @@ class ExecuteCodingPlanRequestSerializer(serializers.Serializer):
  )
 class GetCodingExecutionRequestSerializer(serializers.Serializer):
  execution_id = serializers.UUIDField(required=True)
+class SummarizeBranchRequestSerializer(serializers.Serializer):
+ execution_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ source_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+ target_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+ max_files = serializers.IntegerField(required=False, default=50, min_value=1, max_value=200)
+ def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+ if attrs.get("execution_id"):
+ return attrs
+ if attrs.get("repository_id") and attrs.get("source_branch") and attrs.get("target_branch"):
+ return attrs
+ raise serializers.ValidationError(
+ "必须提供 execution_id，或同时提供 repository_id/source_branch/target_branch"
+ )
+class CreateMergeRequestRequestSerializer(serializers.Serializer):
+ execution_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ source_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+ target_branch = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+ title = serializers.CharField(required=False, allow_blank=True, default="", max_length=200)
+ description = serializers.CharField(required=False, allow_blank=True, default="", max_length=20000)
+ reviewer_usernames = serializers.ListField(
+ child=serializers.CharField(max_length=100),
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ remove_source_branch = serializers.BooleanField(required=False, default=True)
+ def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+ if attrs.get("execution_id"):
+ return attrs
+ if attrs.get("repository_id") and attrs.get("source_branch") and attrs.get("target_branch"):
+ return attrs
+ raise serializers.ValidationError(
+ "必须提供 execution_id，或同时提供 repository_id/source_branch/target_branch"
+ )
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -171,5 +208,13 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "get_coding_execution": {
  "request": ["execution_id"],
  "response": ["execution_id", "plan_id", "version_id", "repository_id", "status", "branch_name", "target_branch", "coding_session_id", "subagent_session_id", "commit_sha", "file_changes", "test_results", "push_result", "last_diff", "runner_logs", "recovery_state", "dispatch_payload", "error", "retry_of_execution_id", "retry_count", "run_id"],
+ },
+ "summarize_branch": {
+ "request": ["execution_id", "repository_id", "source_branch", "target_branch", "max_files"],
+ "response": ["execution_id", "repository_id", "source_branch", "target_branch", "summary", "mr_draft", "run_id"],
+ },
+ "create_merge_request": {
+ "request": ["execution_id", "repository_id", "source_branch", "target_branch", "title", "description", "reviewer_usernames", "remove_source_branch"],
+ "response": ["execution_id", "repository_id", "source_branch", "target_branch", "mr", "execution_status", "run_id"],
  },
 }
