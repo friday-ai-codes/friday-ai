@@ -26,4 +26,16 @@ def test_mcp_read_tool_schema_snapshot -> None:
  "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
  "response": ["repository_id", "branch", "source", "related_chunks", "run_id"],
  },
+ "analyze_repository": {
+ "request": ["repository_id", "branch", "focus", "context_chunks", "max_files"],
+ "response": ["analysis_id", "repository_id", "branch", "analysis", "evidence", "run_id"],
+ },
+ "create_coding_plan": {
+ "request": ["repository_id", "branch", "requirement", "analysis_id", "context_chunks", "max_steps"],
+ "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id"],
+ },
+ "improve_coding_plan": {
+ "request": ["plan_id", "feedback", "context_chunks", "max_steps"],
+ "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id"],
+ },
  }
