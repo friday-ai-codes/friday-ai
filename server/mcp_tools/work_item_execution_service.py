@@ -2,8 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
-from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from django.utils import timezone
+from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.execution_service import (
  ExecutionDispatchError,
@@ -41,6 +41,9 @@ class RepoTaskExecutionResult:
  technical_plan: McpWorkItemTechnicalPlan
  tasks: list[McpWorkItemRepoTask]
  output: dict[str, Any]
+def _table_cell(value: Any) -> str:
+ text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+ return text.replace("|", "\\|").replace("`", "\\`").replace("\n", "<br>").strip
 async def _resolve_technical_plan(technical_plan_id: str) -> McpWorkItemTechnicalPlan:
  technical_plan = (
  await McpWorkItemTechnicalPlan.objects.select_related("context", "project")
@@ -94,21 +97,43 @@ async def create_repo_tasks_from_technical_plan(
  order = int(item.get("order") or index)
  branch_name = str(item.get("planned_branch") or "")
  target_branch = str(item.get("base_branch") or repo.base_branch or repo.default_branch)
- task, _created = await McpWorkItemRepoTask.objects.aupdate_or_create(
+ task = await McpWorkItemRepoTask.objects.filter(
  technical_plan=technical_plan,
  order=order,
- defaults={
- "run": run,
- "repository": repo,
- "status": McpWorkItemRepoTask.Status.PENDING,
- "branch_name": branch_name,
- "target_branch": target_branch,
- "task_body": item,
- "recovery_state": {"retryable": True, "stage": "created"},
- "error": "",
- },
- )
+ ).afirst
+ if task is not None:
+ task.repository = await Repository.objects.aget(id=task.repository_id)
+ if task.status in {
+ McpWorkItemRepoTask.Status.PENDING,
+ McpWorkItemRepoTask.Status.PLANNED,
+ }:
  task.repository = repo
+ task.branch_name = branch_name
+ task.target_branch = target_branch
+ task.task_body = item
+ await task.asave(
+ update_fields=[
+ "repository",
+ "branch_name",
+ "target_branch",
+ "task_body",
+ "updated_at",
+ ]
+ )
+ tasks.append(task)
+ continue
+ task = await McpWorkItemRepoTask.objects.acreate(
+ technical_plan=technical_plan,
+ order=order,
+ run=run,
+ repository=repo,
+ status=McpWorkItemRepoTask.Status.PENDING,
+ branch_name=branch_name,
+ target_branch=target_branch,
+ task_body=item,
+ recovery_state={"retryable": True, "stage": "created"},
+ error="",
+ )
  tasks.append(task)
  return RepoTaskCreationResult(technical_plan=technical_plan, tasks=tasks)
 async def _resolve_tasks(
@@ -224,6 +249,10 @@ async def _execute_one_task(
  reviewer_usernames: list[str],
 ) -> McpWorkItemRepoTask:
  task.repository = await Repository.objects.aget(id=task.repository_id)
+ if task.status == McpWorkItemRepoTask.Status.COMPLETED and (
+ task.mr_url or not create_merge_requests
+ ):
+ return task
  plan, version = await _ensure_coding_plan(run=run, task=task)
  trace = await _load_trace(task)
  if dispatch and trace is None:
@@ -266,6 +295,7 @@ async def _execute_one_task(
  "stage": "execution",
  "execution_status": execution_payload.get("status", task.status),
  }
+ task.error = ""
  if trace is not None and trace.status == McpCodingExecutionTrace.Status.FAILED:
  task.status = McpWorkItemRepoTask.Status.FAILED
  task.error = trace.error
@@ -277,6 +307,14 @@ async def _execute_one_task(
  task.status = McpWorkItemRepoTask.Status.RUNNING
  elif not dispatch:
  task.status = McpWorkItemRepoTask.Status.PLANNED
+ elif trace is not None and trace.status == McpCodingExecutionTrace.Status.COMPLETED:
+ task.status = (
+ McpWorkItemRepoTask.Status.COMPLETED
+ if task.mr_url or not create_merge_requests
+ else McpWorkItemRepoTask.Status.PARTIAL
+ )
+ if task.status == McpWorkItemRepoTask.Status.COMPLETED:
+ task.recovery_state = {"retryable": False, "stage": "completed"}
  else:
  task.status = McpWorkItemRepoTask.Status.PARTIAL
  if (
@@ -287,6 +325,7 @@ async def _execute_one_task(
  McpCodingExecutionTrace.Status.PARTIAL,
  }
  and task.branch_name
+ and not task.mr_url
  ):
  try:
  summary = await summarize_branch(
@@ -356,12 +395,12 @@ def _execution_results_markdown(tasks: list[McpWorkItemRepoTask]) -> str:
  for task in tasks:
  lines.append(
  "| {repo} | {status} | `{branch}` | `{commit}` | {mr} | {error} |".format(
- repo=task.repository.name,
- status=task.status,
- branch=task.branch_name,
- commit=task.commit_sha,
- mr=task.mr_url or "",
- error=task.error or "",
+ repo=_table_cell(task.repository.name),
+ status=_table_cell(task.status),
+ branch=_table_cell(task.branch_name),
+ commit=_table_cell(task.commit_sha),
+ mr=_table_cell(task.mr_url or ""),
+ error=_table_cell(task.error or ""),
  )
  )
  return "\n".join(lines) + "\n"
@@ -386,6 +425,8 @@ async def _write_results_back(
  )
  document_update = {"status": "appended", **result}
  except (ValueError, FeishuDocAPIError) as exc:
+ document_update = {"status": "error", "error": str(exc)}
+ except Exception as exc: # noqa: BLE001 - writeback errors should be retryable state.
  document_update = {"status": "error", "error": str(exc)}
  if technical_plan.project:
  lines = [
@@ -413,7 +454,30 @@ async def _write_results_back(
  "execution_comment": comment,
  "document_update": document_update,
  }
- await technical_plan.asave(update_fields=["plan_body", "markdown", "comment_result", "updated_at"])
+ if document_update.get("status") == "error" or comment.get("status") == "error":
+ technical_plan.status = McpWorkItemTechnicalPlan.Status.PARTIAL
+ retry_state = technical_plan.retry_state if isinstance(technical_plan.retry_state, dict) else {}
+ technical_plan.retry_state = {
+ **retry_state,
+ "retryable": True,
+ "failed_stage": retry_state.get("failed_stage") or "execution_writeback",
+ }
+ if not technical_plan.error_stage:
+ technical_plan.error_stage = "execution_writeback"
+ if not technical_plan.error:
+ technical_plan.error = str(document_update.get("error") or comment.get("error") or "")
+ await technical_plan.asave(
+ update_fields=[
+ "plan_body",
+ "markdown",
+ "comment_result",
+ "status",
+ "retry_state",
+ "error_stage",
+ "error",
+ "updated_at",
+ ]
+ )
  return document_update, comment
 async def execute_work_item_repo_tasks(
  *,
@@ -460,6 +524,10 @@ async def execute_work_item_repo_tasks(
  overall = "completed" if status_values == {McpWorkItemRepoTask.Status.COMPLETED} else "partial"
  if status_values == {McpWorkItemRepoTask.Status.FAILED}:
  overall = "failed"
+ if write_back and (
+ document_update.get("status") == "error" or comment.get("status") == "error"
+ ) and overall == "completed":
+ overall = "partial"
  output = {
  "technical_plan_id": str(technical_plan.id),
  "tasks": [repo_task_payload(task) for task in executed],
