@@ -2,6 +2,8 @@
 from django.urls import path
 from .views import (
  ChatCompletionsView,
+ ChatImageUploadView,
+ ChatImageView,
  ChatInterruptView,
  ChatStreamView,
  ClarificationAnswerView,
@@ -33,6 +35,8 @@ urlpatterns = [
  # 现有 Chat Protocol API
  path("models/", ModelsView.as_view, name="chat-models"),
  path("completions/", ChatCompletionsView.as_view, name="chat-completions"),
+ path("images/", ChatImageUploadView.as_view, name="chat-image-upload"),
+ path("images/<str:file_name>/", ChatImageView.as_view, name="chat-image"),
  # Conversation API (Phase)
  path("conversations/", ConversationListView.as_view, name="conversation-list"),
  path(

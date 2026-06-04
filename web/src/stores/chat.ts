@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
 import type { ClarificationAnswer, ClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
@@ -1510,7 +1510,29 @@ export const useChatStore = defineStore('chat', => {
  error.value = err instanceof Error ? err.message: '确认失败'
  }
  }
- async function sendMessage(content: string, feishuDocId?: string) {
+ function buildUserInputParts(content: string, imageParts: ImagePart = ): MessagePart | undefined {
+ if (imageParts.length === 0)
+ return undefined
+ const parts: MessagePart =
+ if (content) {
+ parts.push({
+ type: 'text',
+ id: crypto.randomUUID,
+ index: 0,
+ text: content,
+ state: 'done',
+ })
+ }
+ const baseIndex = parts.length
+ imageParts.forEach((part, offset) => {
+ parts.push({
+ ...part,
+ index: baseIndex + offset,
+ })
+ })
+ return parts
+ }
+ async function sendMessage(content: string, feishuDocId?: string, inputParts?: ImagePart) {
  if (isStreaming.value)
  return
  let materializedConversation: Conversation | null = null
@@ -1588,10 +1610,12 @@ export const useChatStore = defineStore('chat', => {
  restoredRuntimeConversationId.value = null
  streamingStatus.value = null
  // 添加用户消息到列表（乐观更新）
+ const userInputParts = buildUserInputParts(content, inputParts || )
  const userMessage: ConversationMessage = {
  id: crypto.randomUUID,
  role: 'user',
  content,
+ parts: userInputParts,
  created_at: new Date.toISOString,
  }
  messages.value.push(userMessage)
@@ -1612,6 +1636,7 @@ export const useChatStore = defineStore('chat', => {
  {
  forceDeepAnalysis: forceDeepAnalysis.value,
  feishuDocId,
+ inputParts: userInputParts,
  },
  )
  }

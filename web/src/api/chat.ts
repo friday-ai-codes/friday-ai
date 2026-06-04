@@ -1,9 +1,9 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart } from '~/types/chat'
 import type { ClarificationAnswerRequest, ClarificationAnswerResponse } from '~/types/clarification'
-import { del, get, patch, post } from './client'
+import { del, get, patch, post, upload } from './client'
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -62,6 +62,9 @@ export interface PushSubscriptionPayload {
  auth: string
  }
  user_agent?: string
+}
+export interface ChatImageUploadResponse {
+ part: ImagePart
 }
 // ============================================================================
 // 模型排序
@@ -147,6 +150,15 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
  */
 export async function chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
  return post<ChatCompletionResponse>('/chat/completions/', request)
+}
+/**
+ * 上传 Web Chat 图片并返回可直接放入 input_parts 的 ImagePart。
+ */
+export async function uploadChatImage(file: File): Promise<ImagePart> {
+ const formData = new FormData
+ formData.append('image', file)
+ const response = await upload<ChatImageUploadResponse>('/chat/images/', formData)
+ return response.part
 }
 // ============================================================================
 // Conversation CRUD API (Phase)
@@ -398,6 +410,7 @@ export async function postClarificationAnswer(
 export default {
  getModels,
  chatCompletion,
+ uploadChatImage,
  listConversations,
  createConversation,
  getConversationDetail,

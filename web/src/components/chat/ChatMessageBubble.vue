@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ProcessStep } from './ToolProcessGroup.vue'
-import type { ConversationMessage, DeepAnalysisSession, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
+import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
 import { shallowRef } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
@@ -12,6 +12,7 @@ import DocSummaryCard from './DocSummaryCard.vue'
 import StructuredJsonView from './StructuredJsonView.vue'
 import TechPlanCard from './TechPlanCard.vue'
 import ToolProcessGroup from './ToolProcessGroup.vue'
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -134,6 +135,19 @@ const displayParts = computed<MessagePart>( => {
  }
  return hydrateLegacyMessage(props.message)
 })
+const userImageParts = computed<ImagePart>( => {
+ if (props.message.role !== 'user')
+ return
+ return hydrateLegacyMessage(props.message)
+ .filter((part): part is ImagePart => part.type === 'image')
+})
+function userImageSrc(part: ImagePart): string {
+ if (part.source_url)
+ return part.source_url
+ const storage_ref = part.storage_ref || ''
+ const fileName = storage_ref.split('/').pop
+ return fileName ? `${API_BASE}/chat/images/${encodeURIComponent(fileName)}/`: ''
+}
 /**
  * 每个 text part 的 HTML 渲染缓存。基于 mdReady 触发首次渲染；后续 part 文本
  * 变更（streaming text_append）通过 computed 自动重算。
@@ -778,8 +792,15 @@ const suppressTypingCursor = computed( => chatStore.currentPhase === 'waiting_cl
  </div>
  </div>
  <template v-else>
- <div class="user-bubble">
+ <div v-if="message.content" class="user-bubble">
  {{ message.content }}
+ </div>
+ <div v-if="userImageParts.length > 0" class="image-preview-grid">
+ <img
+ v-for="part in userImageParts":key="part.id"
+ class="image-preview-thumb":src="userImageSrc(part)":alt="part.alt_text || '图片'"
+ loading="lazy"
+ >
  </div>
  <button
  v-if="canEditUserMessage"
@@ -1052,6 +1073,22 @@ const suppressTypingCursor = computed( => chatStore.currentPhase === 'waiting_cl
  white-space: pre-wrap;
  word-break: break-word;
  box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.image-preview-grid {
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(8rem, 12rem));
+ justify-content: end;
+ gap: 0.5rem;
+ width: min(100%, 38rem);
+}
+.image-preview-thumb {
+ width: 100%;
+ aspect-ratio: 4 / 3;
+ border-radius: 0.75rem;
+ border: 1px solid hsl(214 32% 86% / 0.9);
+ background: hsl(210 40% 96%);
+ object-fit: cover;
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.06);
 }
 .user-edit-trigger {
  display: inline-flex;

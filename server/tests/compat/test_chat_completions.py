@@ -7,6 +7,7 @@
 from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -110,6 +111,48 @@ async def test_non_streaming_response -> None:
  assert "prompt_tokens" in data["usage"]
  assert "completion_tokens" in data["usage"]
  assert "total_tokens" in data["usage"]
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_openai_compat_accepts_image_url_content_parts_and_uses_text_query -> None:
+ """OpenAI-style text + image_url parts pass schema and keep RAG query text-only."""
+ captured: dict[str, Any] = {}
+ runner = MagicMock
+ async def _stream(prompt: Any) -> AsyncGenerator[AgentEvent, None]:
+ captured["prompt"] = prompt
+ yield AgentEvent(type=TEXT_DELTA, data={"text": "看到了"})
+ yield AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 5, "output": 2}, "status": "completed"})
+ runner.stream = _stream
+ data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+ search_result = SimpleNamespace(final_context="")
+ with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=runner), \
+ patch("compat.request_handler.LayeredSearchService.search", new_callable=AsyncMock, return_value=search_result) as mock_search:
+ client = AsyncClient
+ response = await client.post(
+ "/v1/chat/completions",
+ data=json.dumps({
+ "model": "friday-default",
+ "messages": [
+ {
+ "role": "user",
+ "content": [
+ {"type": "text", "text": "描述这张截图"},
+ {"type": "image_url", "image_url": {"url": data_url, "detail": "low"}},
+ ],
+ }
+ ],
+ "stream": False,
+ }),
+ content_type="application/json",
+ )
+ assert response.status_code == 200
+ mock_search.assert_awaited_once
+ assert mock_search.await_args.kwargs["query"] == "描述这张截图"
+ prompt = captured["prompt"]
+ user_message = prompt[-1]
+ assert isinstance(user_message.content, list)
+ assert user_message.content[0] == {"type": "text", "text": "描述这张截图"}
+ assert user_message.content[1]["type"] == "image_url"
+ assert user_message.content[1]["image_url"]["url"] == data_url
 @pytest.mark.asyncio
 @pytest.mark.django_db
 async def test_invalid_request_returns_400 -> None:

@@ -151,6 +151,51 @@ class TestChatStreamView:
  content_type="application/json",
  )
  assert resp.status_code == 400
+ async def test_stream_accepts_image_parts_without_text(self, conversation, monkeypatch):
+ """有 image input_parts 时允许空 content，并透传给 ConversationService。"""
+ captured: dict[str, object] = {}
+ async def mock_send(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ notification_user_id: str | None = None,
+ **kwargs: object,
+ ):
+ captured["content"] = content
+ captured["input_parts"] = kwargs.get("input_parts")
+ yield AgentEvent(type=MESSAGE_COMPLETE, data={
+ "usage": {"input_tokens": 1, "output_tokens": 1},
+ "status": "completed",
+ "iterations": 1,
+ })
+ monkeypatch.setattr(
+ ConversationService,
+ "send_message_stream",
+ staticmethod(mock_send),
+ )
+ image_part = {
+ "type": "image",
+ "id": "p_img",
+ "index": 0,
+ "mime_type": "image/png",
+ "size_bytes": 68,
+ "storage_ref": "chat_images/example.png",
+ "detail": "auto",
+ }
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data=json.dumps({"content": "", "input_parts": [image_part]}),
+ content_type="application/json",
+ )
+ assert resp.status_code == 200
+ raw_parts: list[str] =
+ async for chunk in resp.streaming_content:
+ text = chunk.decode if isinstance(chunk, bytes) else chunk
+ raw_parts.append(text)
+ assert "".join(raw_parts)
+ assert captured["content"] == ""
+ assert captured["input_parts"] == [image_part]
  async def test_stream_with_role(self, conversation):
  """支持传入 role 参数。"""
  client = AsyncClient

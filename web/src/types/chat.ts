@@ -82,7 +82,18 @@ export interface ThinkingPart extends MessagePartBase {
  text: string
  state: 'streaming' | 'done'
 }
-export type MessagePart = TextPart | ToolUsePart | ThinkingPart
+export interface ImagePart extends MessagePartBase {
+ type: 'image'
+ mime_type: string
+ size_bytes: number
+ width?: number | null
+ height?: number | null
+ detail: 'auto' | 'low' | 'high'
+ storage_ref?: string
+ source_url?: string
+ alt_text?: string
+}
+export type MessagePart = TextPart | ToolUsePart | ThinkingPart | ImagePart
 /** part_started / part_completed 事件中的 part 字段 payload（streaming 期间的 partial shape）。 */
 export interface PartStartedPayload {
  id: string

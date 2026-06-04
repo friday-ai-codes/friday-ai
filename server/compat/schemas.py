@@ -2,8 +2,35 @@
 from rest_framework import serializers
 class _MessageSerializer(serializers.Serializer):
  role = serializers.ChoiceField(choices=["system", "user", "assistant", "tool", "developer"])
- content = serializers.CharField(allow_blank=True)
+ content = serializers.JSONField
  name = serializers.CharField(required=False, allow_blank=True)
+ def validate_content(self, value):
+ """Accept OpenAI string content or text/image_url content parts arrays."""
+ if isinstance(value, str):
+ return value
+ if not isinstance(value, list):
+ raise serializers.ValidationError("content 必须是字符串或 content parts 数组")
+ for idx, part in enumerate(value):
+ if not isinstance(part, dict):
+ raise serializers.ValidationError(f"content[{idx}] 必须是对象")
+ part_type = part.get("type")
+ if part_type == "text":
+ if not isinstance(part.get("text", ""), str):
+ raise serializers.ValidationError(f"content[{idx}].text 必须是字符串")
+ continue
+ if part_type == "image_url":
+ image_url = part.get("image_url")
+ if isinstance(image_url, str):
+ url = image_url
+ elif isinstance(image_url, dict):
+ url = image_url.get("url", "")
+ else:
+ url = ""
+ if not isinstance(url, str) or not url:
+ raise serializers.ValidationError(f"content[{idx}].image_url.url 必须是字符串")
+ continue
+ raise serializers.ValidationError(f"不支持的 content part type: {part_type}")
+ return value
 class _StreamOptionsSerializer(serializers.Serializer):
  include_usage = serializers.BooleanField(default=False)
 class ChatCompletionsRequestSerializer(serializers.Serializer):
