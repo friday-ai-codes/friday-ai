@@ -30,6 +30,7 @@ SENSITIVE_VALUE_PATTERN = re.compile(
  r"|sk-[A-Za-z0-9_\-]{20,}" # OpenAI: sk-... (>= 20 字符避免误伤短字符串)
  r"|AIza[A-Za-z0-9_\-]{20,}" # Google: AIza...
  r"|Bearer\s+[A-Za-z0-9._\-]{20,}" # Bearer token
+ r"|friday_pat_[A-Za-z0-9_\-]{20,}" # Friday Access Token: friday_pat_... (Phase)
  r"|-----BEGIN\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----[\s\S]+?"
  r"-----END\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----)"
 )
