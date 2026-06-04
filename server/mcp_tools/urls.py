@@ -1,0 +1,18 @@
+"""MCP read tools URLConf."""
+from django.urls import path
+from .views import (
+ FindRelatedChunksView,
+ GetRepositoryFileView,
+ GetRepositoryView,
+ ListRepositoryFilesView,
+ RouteRepositoriesView,
+ SearchRagChunksView,
+)
+urlpatterns = [
+ path("tools/route_repositories/", RouteRepositoriesView.as_view, name="mcp-tool-route-repositories"),
+ path("tools/search_rag_chunks/", SearchRagChunksView.as_view, name="mcp-tool-search-rag-chunks"),
+ path("tools/get_repository/", GetRepositoryView.as_view, name="mcp-tool-get-repository"),
+ path("tools/list_repository_files/", ListRepositoryFilesView.as_view, name="mcp-tool-list-repository-files"),
+ path("tools/get_repository_file/", GetRepositoryFileView.as_view, name="mcp-tool-get-repository-file"),
+ path("tools/find_related_chunks/", FindRelatedChunksView.as_view, name="mcp-tool-find-related-chunks"),
+]

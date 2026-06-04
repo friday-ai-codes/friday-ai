@@ -93,6 +93,7 @@ INSTALLED_APPS = [
  "orchestration",
  "interactions",
  "access_tokens",
+ "mcp_tools",
  "prompts",
  "services.code_intel.apps.CodeIntelConfig",
 ]

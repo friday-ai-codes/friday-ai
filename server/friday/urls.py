@@ -47,6 +47,8 @@ api_patterns = [
  path("runners/", include("runners.urls")),
  # Access Tokens（Phase：外部 MCP/Skill 统一鉴权凭证）
  path("access-tokens/", include("access_tokens.urls")),
+ # MCP read tools（Phase：外部仓库智能只读工具）
+ path("mcp/", include("mcp_tools.urls")),
  # Agent tools API
  path("agents/", include("agents.urls")),
  # API Documentation
