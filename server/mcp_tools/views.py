@@ -56,6 +56,7 @@ from .serializers import (
  ExecuteCodingPlanRequestSerializer,
  FindRelatedChunksRequestSerializer,
  GetCodingExecutionRequestSerializer,
+ GetFeishuWorkItemContextRequestSerializer,
  GetRepositoryFileRequestSerializer,
  GetRepositoryRequestSerializer,
  ImproveCodingPlanRequestSerializer,
@@ -64,6 +65,7 @@ from .serializers import (
  SearchRagChunksRequestSerializer,
  SummarizeBranchRequestSerializer,
 )
+from .work_item_context_service import WorkItemContextError, build_work_item_context
 logger = structlog.get_logger(__name__)
 def _jsonable(value: Any) -> Any:
  if isinstance(value, uuid.UUID):
@@ -680,6 +682,62 @@ class FindRelatedChunksView(McpToolView):
  "line_end": symbol.end_line,
  "chunk_id": str(symbol.chunk_id),
  }
+class GetFeishuWorkItemContextView(McpToolView):
+ tool_name = "get_feishu_work_item_context"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(GetFeishuWorkItemContextRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ result = await build_work_item_context(
+ run=run,
+ project_id=str(input_data["project_id"]) if input_data.get("project_id") else None,
+ project_key=str(input_data.get("project_key") or ""),
+ work_item_type=str(input_data.get("work_item_type") or "story"),
+ work_item_id=int(input_data["work_item_id"]),
+ fields=list(input_data.get("fields") or ),
+ include_comments=bool(input_data.get("include_comments", False)),
+ )
+ except WorkItemContextError as exc:
+ status_map = {
+ "project_not_found": status.HTTP_404_NOT_FOUND,
+ "feishu_project_not_configured": status.HTTP_400_BAD_REQUEST,
+ "feishu_work_item_error": status.HTTP_502_BAD_GATEWAY,
+ }
+ return error_response(
+ exc.code,
+ exc.detail,
+ status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+ )
+ await self._record_agent_decision(
+ run,
+ action="work_item_context_created",
+ payload={
+ "context_id": str(result.artifact.id),
+ "project_key": result.output["work_item"]["project_key"],
+ "work_item_type": result.output["work_item"]["work_item_type"],
+ "work_item_id": result.output["work_item"]["id"],
+ "document_count": len(result.output["documents"]),
+ },
+ )
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=result.output,
+ traces=result.traces,
+ started_at=started_at,
+ call_status=result.output["status"],
+ )
+ if tool_call is not None:
+ result.artifact.tool_call = tool_call
+ await result.artifact.asave(update_fields=["tool_call"])
+ return Response(result.output, status=status.HTTP_200_OK)
 class AnalyzeRepositoryView(McpToolView):
  tool_name = "analyze_repository"
  async def post(self, request: Request) -> Response:
