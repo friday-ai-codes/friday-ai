@@ -1,0 +1,11 @@
+name: friday-feishu-agent
+description: Feishu work item to technical plan, repo execution, MR writeback, and LearningCase memory.
+workflows:
+ - fetch_context
+ - plan
+ - execute
+ - learn
+ - full_auto
+required_env:
+ - FRIDAY_BASE_URL
+ - FRIDAY_ACCESS_TOKEN
