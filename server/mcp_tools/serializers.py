@@ -67,6 +67,42 @@ class FindRelatedChunksRequestSerializer(serializers.Serializer):
  "必须且只能提供 chunk_id、file_path、symbol_name 之一"
  )
  return attrs
+class AnalyzeRepositoryRequestSerializer(serializers.Serializer):
+ repository_id = serializers.UUIDField(required=True)
+ branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+ focus = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
+ context_chunks = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ max_files = serializers.IntegerField(required=False, default=80, min_value=1, max_value=200)
+class CreateCodingPlanRequestSerializer(serializers.Serializer):
+ repository_id = serializers.UUIDField(required=True)
+ branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+ requirement = serializers.CharField(required=True, allow_blank=False, max_length=8000)
+ analysis_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+ context_chunks = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ max_steps = serializers.IntegerField(required=False, default=8, min_value=1, max_value=20)
+class ImproveCodingPlanRequestSerializer(serializers.Serializer):
+ plan_id = serializers.UUIDField(required=True)
+ feedback = serializers.CharField(required=True, allow_blank=False, max_length=8000)
+ context_chunks = serializers.ListField(
+ child=serializers.DictField,
+ required=False,
+ allow_empty=True,
+ default=list,
+ max_length=20,
+ )
+ max_steps = serializers.IntegerField(required=False, default=10, min_value=1, max_value=30)
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "route_repositories": {
  "request": ["query", "top_k"],
@@ -91,5 +127,17 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
  "find_related_chunks": {
  "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
  "response": ["repository_id", "branch", "source", "related_chunks", "run_id"],
+ },
+ "analyze_repository": {
+ "request": ["repository_id", "branch", "focus", "context_chunks", "max_files"],
+ "response": ["analysis_id", "repository_id", "branch", "analysis", "evidence", "run_id"],
+ },
+ "create_coding_plan": {
+ "request": ["repository_id", "branch", "requirement", "analysis_id", "context_chunks", "max_steps"],
+ "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "evidence", "run_id"],
+ },
+ "improve_coding_plan": {
+ "request": ["plan_id", "feedback", "context_chunks", "max_steps"],
+ "response": ["plan_id", "version_id", "version", "repository_id", "branch", "plan", "change_summary", "risk_delta", "evidence", "run_id"],
  },
 }

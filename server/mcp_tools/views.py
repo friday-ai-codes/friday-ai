@@ -16,16 +16,30 @@ from agents.tools.chat_tools import _list_indexed_paths, _scroll_file_from_colle
 from code_relations.models import ChunkRegistry
 from codegraph.models import Symbol
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
-from interactions.ledger import arecord_retrieval_trace, arecord_tool_call
-from interactions.models import InteractionRun, RetrievalTrace, ToolCallRecord
+from interactions.ledger import (
+ arecord_event,
+ arecord_model_usage,
+ arecord_retrieval_trace,
+ arecord_tool_call,
+)
+from interactions.models import InteractionEvent, InteractionRun, RetrievalTrace, ToolCallRecord
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
 from services.qdrant_service import QdrantService
 from .errors import error_response
+from .models import McpCodingPlan, McpCodingPlanVersion, McpRepositoryAnalysis
+from .planning_service import (
+ build_coding_plan,
+ build_repository_analysis,
+ improve_coding_plan,
+)
 from .serializers import (
+ AnalyzeRepositoryRequestSerializer,
+ CreateCodingPlanRequestSerializer,
  FindRelatedChunksRequestSerializer,
  GetRepositoryFileRequestSerializer,
  GetRepositoryRequestSerializer,
+ ImproveCodingPlanRequestSerializer,
  ListRepositoryFilesRequestSerializer,
  RouteRepositoriesRequestSerializer,
  SearchRagChunksRequestSerializer,
@@ -57,6 +71,18 @@ def _first_error_detail(errors: Any) -> Any:
  if isinstance(errors, list):
  return [_first_error_detail(value) for value in errors]
  return str(errors)
+def _traces_from_evidence(evidence: Iterable[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+ traces: list[tuple[str, dict[str, Any]]] =
+ for item in evidence:
+ kind = str(item.get("kind") or "file")
+ if kind == "chunk":
+ trace_kind = RetrievalTrace.Kind.CHUNK
+ elif kind == "edge":
+ trace_kind = RetrievalTrace.Kind.EDGE
+ else:
+ trace_kind = RetrievalTrace.Kind.FILE
+ traces.append((trace_kind, item))
+ return traces
 class McpToolView(APIView):
  """MCP tool 基类：token-only、统一错误、run/tool-call/trace helper。"""
  authentication_classes = [AccessTokenAuthentication]
@@ -122,6 +148,52 @@ class McpToolView(APIView):
  tool_call=tool_call,
  )
  return tool_call
+ async def _record_agent_decision(
+ self,
+ run: InteractionRun,
+ *,
+ action: str,
+ payload: dict[str, Any],
+ ) -> None:
+ await arecord_event(
+ run,
+ InteractionEvent.EventType.AGENT_DECISION,
+ {
+ "tool_name": self.tool_name,
+ "action": action,
+ **payload,
+ },
+ )
+ async def _record_model_usage(
+ self,
+ run: InteractionRun,
+ usage: dict[str, Any],
+ ) -> None:
+ await arecord_model_usage(
+ run,
+ provider=str(usage.get("provider") or "friday"),
+ model=str(usage.get("model") or "unknown"),
+ prompt_version=str(usage.get("prompt_version") or ""),
+ system_prompt_version=str(usage.get("system_prompt_version") or ""),
+ prompt_tokens=int(usage.get("prompt_tokens") or 0),
+ completion_tokens=int(usage.get("completion_tokens") or 0),
+ total_tokens=int(usage.get("total_tokens") or 0),
+ duration_ms=int(usage.get("duration_ms") or 0),
+ )
+ async def _collect_indexed_paths(
+ self,
+ repository_id: str,
+ *,
+ limit: int,
+ ) -> list[str]:
+ paths: list[str] =
+ async for file_path in FileIndex.objects.filter(
+ repository_id=repository_id
+ ).order_by("file_path").values_list("file_path", flat=True):
+ paths.append(str(file_path))
+ if len(paths) >= limit:
+ break
+ return paths
  async def _get_indexed_repo(
  self,
  repository_id: str,
@@ -588,3 +660,264 @@ class FindRelatedChunksView(McpToolView):
  "line_end": symbol.end_line,
  "chunk_id": str(symbol.chunk_id),
  }
+class AnalyzeRepositoryView(McpToolView):
+ tool_name = "analyze_repository"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(AnalyzeRepositoryRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ repository_id = str(input_data["repository_id"])
+ repo, err = await self._get_indexed_repo(repository_id)
+ if err is not None:
+ return err
+ assert repo is not None
+ graph_branch, _collection_name = await self._resolve_graph_branch(
+ repository_id, repo, input_data.get("branch")
+ )
+ branch = graph_branch or (repo.base_branch or repo.default_branch)
+ file_paths = await self._collect_indexed_paths(
+ repository_id,
+ limit=int(input_data.get("max_files") or 80),
+ )
+ result = build_repository_analysis(
+ repository=repo,
+ branch=branch,
+ focus=str(input_data.get("focus") or ""),
+ file_paths=file_paths,
+ context_chunks=list(input_data.get("context_chunks") or ),
+ )
+ artifact = await McpRepositoryAnalysis.objects.acreate(
+ run=run,
+ repository=repo,
+ branch=branch,
+ focus=str(input_data.get("focus") or ""),
+ summary=result.payload,
+ evidence=result.evidence,
+ )
+ output_data = {
+ "analysis_id": str(artifact.id),
+ "repository_id": repository_id,
+ "branch": branch,
+ "analysis": result.payload,
+ "evidence": result.evidence,
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="repository_analysis_created",
+ payload={
+ "analysis_id": str(artifact.id),
+ "repository_id": repository_id,
+ "branch": branch,
+ "evidence_count": len(result.evidence),
+ },
+ )
+ await self._record_model_usage(run, result.model_usage)
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=_traces_from_evidence(result.evidence),
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ artifact.tool_call = tool_call
+ await artifact.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
+class CreateCodingPlanView(McpToolView):
+ tool_name = "create_coding_plan"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(CreateCodingPlanRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ repository_id = str(input_data["repository_id"])
+ repo, err = await self._get_indexed_repo(repository_id)
+ if err is not None:
+ return err
+ assert repo is not None
+ graph_branch, _collection_name = await self._resolve_graph_branch(
+ repository_id, repo, input_data.get("branch")
+ )
+ branch = graph_branch or (repo.base_branch or repo.default_branch)
+ analysis: McpRepositoryAnalysis | None = None
+ analysis_summary: dict[str, Any] | None = None
+ if input_data.get("analysis_id"):
+ try:
+ analysis = await McpRepositoryAnalysis.objects.aget(
+ id=input_data["analysis_id"],
+ repository_id=repository_id,
+ )
+ except McpRepositoryAnalysis.DoesNotExist:
+ return error_response(
+ "analysis_not_found",
+ "分析 artifact 不存在或不属于该仓库",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ analysis_summary = dict(analysis.summary or {})
+ file_paths = await self._collect_indexed_paths(repository_id, limit=120)
+ result = build_coding_plan(
+ repository=repo,
+ branch=branch,
+ requirement=str(input_data["requirement"]),
+ analysis_summary=analysis_summary,
+ file_paths=file_paths,
+ context_chunks=list(input_data.get("context_chunks") or ),
+ max_steps=int(input_data.get("max_steps") or 8),
+ )
+ plan = await McpCodingPlan.objects.acreate(
+ run=run,
+ repository=repo,
+ analysis=analysis,
+ branch=branch,
+ requirement=str(input_data["requirement"]),
+ title=str(result.payload.get("title") or repo.name)[:240],
+ current_version=1,
+ )
+ version = await McpCodingPlanVersion.objects.acreate(
+ plan=plan,
+ run=run,
+ version=1,
+ plan_body=result.payload,
+ affected_files=list(result.payload.get("affected_files") or ),
+ steps=list(result.payload.get("steps") or ),
+ test_plan=list(result.payload.get("test_plan") or ),
+ risks=list(result.payload.get("risks") or ),
+ evidence=result.evidence,
+ change_summary="Initial MCP coding plan",
+ risk_delta={"added":, "reduced": },
+ )
+ output_data = {
+ "plan_id": str(plan.id),
+ "version_id": str(version.id),
+ "version": version.version,
+ "repository_id": repository_id,
+ "branch": branch,
+ "plan": result.payload,
+ "evidence": result.evidence,
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="coding_plan_created",
+ payload={
+ "plan_id": str(plan.id),
+ "version_id": str(version.id),
+ "repository_id": repository_id,
+ "branch": branch,
+ "affected_files": result.payload.get("affected_files") or,
+ },
+ )
+ await self._record_model_usage(run, result.model_usage)
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=_traces_from_evidence(result.evidence),
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ version.tool_call = tool_call
+ await version.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
+class ImproveCodingPlanView(McpToolView):
+ tool_name = "improve_coding_plan"
+ async def post(self, request: Request) -> Response:
+ run, err = await self._begin(request)
+ if err is not None:
+ return err
+ assert run is not None
+ input_data, err = await self._validate(ImproveCodingPlanRequestSerializer, request)
+ if err is not None:
+ return err
+ assert input_data is not None
+ started_at = time.perf_counter
+ try:
+ plan = await McpCodingPlan.objects.select_related("repository").aget(
+ id=input_data["plan_id"]
+ )
+ except McpCodingPlan.DoesNotExist:
+ return error_response(
+ "coding_plan_not_found",
+ "编码方案不存在",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ latest = await plan.versions.order_by("-version").afirst
+ if latest is None:
+ return error_response(
+ "coding_plan_not_found",
+ "编码方案没有可改进的版本",
+ status_code=status.HTTP_404_NOT_FOUND,
+ )
+ repo = plan.repository
+ branch = plan.branch or (repo.base_branch or repo.default_branch)
+ result = improve_coding_plan(
+ repository=repo,
+ branch=branch,
+ existing_plan=dict(latest.plan_body or {}),
+ feedback=str(input_data["feedback"]),
+ context_chunks=list(input_data.get("context_chunks") or ),
+ max_steps=int(input_data.get("max_steps") or 10),
+ )
+ next_version = int(plan.current_version) + 1
+ updated_plan = dict(result.payload.get("plan") or {})
+ version = await McpCodingPlanVersion.objects.acreate(
+ plan=plan,
+ run=run,
+ version=next_version,
+ plan_body=updated_plan,
+ affected_files=list(updated_plan.get("affected_files") or ),
+ steps=list(updated_plan.get("steps") or ),
+ test_plan=list(updated_plan.get("test_plan") or ),
+ risks=list(updated_plan.get("risks") or ),
+ evidence=result.evidence,
+ change_summary=str(result.payload.get("change_summary") or ""),
+ risk_delta=dict(result.payload.get("risk_delta") or {}),
+ )
+ plan.current_version = next_version
+ await plan.asave(update_fields=["current_version", "updated_at"])
+ output_data = {
+ "plan_id": str(plan.id),
+ "version_id": str(version.id),
+ "version": version.version,
+ "repository_id": str(repo.id),
+ "branch": branch,
+ "plan": updated_plan,
+ "change_summary": version.change_summary,
+ "risk_delta": version.risk_delta,
+ "evidence": result.evidence,
+ "run_id": str(run.run_id),
+ }
+ await self._record_agent_decision(
+ run,
+ action="coding_plan_improved",
+ payload={
+ "plan_id": str(plan.id),
+ "version_id": str(version.id),
+ "version": version.version,
+ "feedback_preview": str(input_data["feedback"])[:240],
+ },
+ )
+ await self._record_model_usage(run, result.model_usage)
+ tool_call = await self._record(
+ run,
+ input_data=input_data,
+ output_data=output_data,
+ traces=_traces_from_evidence(result.evidence),
+ started_at=started_at,
+ )
+ if tool_call is not None:
+ version.tool_call = tool_call
+ await version.asave(update_fields=["tool_call"])
+ return Response(output_data, status=status.HTTP_200_OK)
