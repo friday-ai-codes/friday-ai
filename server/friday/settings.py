@@ -91,6 +91,7 @@ INSTALLED_APPS = [
  "identity",
  "permissions",
  "orchestration",
+ "interactions",
  "prompts",
  "services.code_intel.apps.CodeIntelConfig",
 ]
