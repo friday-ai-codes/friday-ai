@@ -14,29 +14,45 @@ from common.logging import (
  redact_secrets_in_text,
  sentry_before_send,
 )
+def _anthropic_key -> str:
+ return "sk-ant-" + "leaktest1234567890"
+def _openai_key -> str:
+ return "sk-" + "12345678901234567890abcdef"
+def _google_key -> str:
+ return "AIza" + "SyD123456789012345678901234567"
+def _friday_pat -> str:
+ return "friday_pat_" + "ABCDEFGHIJKLMNOPQRSTUVWX"
+def _pem_private_key -> str:
+ return (
+ "-----BEGIN " + "PRIVATE KEY-----\n"
+ "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw\n"
+ "-----END " + "PRIVATE KEY-----"
+ )
 # === 顶层函数：命名锁死契约（不可改名）===
 def test_no_credential_leak_in_logs(capfd: Any) -> None:
  """ Success Criteria #5 锁死命名契约。
- 故意 logger.info 含 api_key='sk-test-placeholder' → 断言 stdout 含 ***REDACTED*** 不含明文。
+ 故意 logger.info 含 secret-looking api_key → 断言 stdout 含 ***REDACTED*** 不含明文。
  """
  import structlog
+ api_key = _anthropic_key
+ nested_key = _openai_key
  configure_structlog
  logger = structlog.get_logger("test_credential_leak_top_level")
  logger.info(
  "provider_error",
- api_key="sk-test-placeholder",
- credential={"api_key": "sk-test-placeholder"},
+ api_key=api_key,
+ credential={"api_key": nested_key},
  )
  captured = capfd.readouterr
  output = captured.out + captured.err
  assert REDACTED in output, f"REDACTED missing from output: {output[:300]}"
- assert "sk-test-placeholder" not in output, f"raw key leaked: {output[:300]}"
- assert "sk-test-placeholder" not in output, f"nested key leaked: {output[:300]}"
+ assert api_key not in output, f"raw key leaked: {output[:300]}"
+ assert nested_key not in output, f"nested key leaked: {output[:300]}"
 # === Class-based 测试套件 ===
 class TestRedactCredentialsProcessor:
  """structlog redact_credentials processor 单元测试。"""
  def test_redact_flat_api_key_field(self) -> None:
- event: dict[str, Any] = {"event": "provider_error", "api_key": "sk-test-placeholder"}
+ event: dict[str, Any] = {"event": "provider_error", "api_key": _anthropic_key}
  result = redact_credentials(None, "info", event)
  assert result["api_key"] == REDACTED
  assert "sk-ant-leaktest" not in str(result)
@@ -44,23 +60,24 @@ class TestRedactCredentialsProcessor:
  # "credential" 顶层 key 命中 KEY_PATTERN -> 整个值替换
  event: dict[str, Any] = {
  "event": "err",
- "credential": {"api_key": "sk-test-placeholder", "base_url": "https://x"},
+ "credential": {"api_key": _openai_key, "base_url": "https://x"},
  }
  result = redact_credentials(None, "info", event)
  assert result["credential"] == REDACTED
  def test_redact_value_pattern_when_key_innocent(self) -> None:
  # 字段名不命中但值含 sk-ant- 前缀 -> SENSITIVE_VALUE_PATTERN 兜底
+ api_key = _anthropic_key
  event: dict[str, Any] = {
  "event": "raw",
- "log_line": "Authorization: Bearer sk-test-placeholder",
+ "log_line": f"Authorization: Bearer {api_key}",
  }
  result = redact_credentials(None, "info", event)
- assert "sk-ant-leaktest" not in result["log_line"]
+ assert api_key not in result["log_line"]
  assert REDACTED in result["log_line"]
  def test_redact_recursive_list_of_dicts(self) -> None:
  event: dict[str, Any] = {
  "items": [
- {"api_key": "sk-test-placeholder"},
+ {"api_key": _openai_key},
  {"name": "alice"},
  ]
  }
@@ -83,12 +100,12 @@ class TestRedactSecretsInText:
  @pytest.mark.parametrize(
  "input_text,must_not_contain",
  [
- ("got sk-test-placeholder from upstream", "sk-ant-leaktest"),
- ("error: invalid sk-test-placeholder", "sk-test-placeholder"),
- ("Authorization: GOOGLE_API_KEY_PLACEHOLDER", "AIzaSyD"),
+ ("got " + _anthropic_key + " from upstream", "sk-ant-" + "leaktest"),
+ ("error: invalid " + _openai_key, "sk-" + "12345678901234567890"),
+ ("Authorization: " + _google_key, "AIza" + "SyD"),
  ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiI"),
  # Phase：Friday Access Token 明文前缀也必须脱敏（与 sk-ant 并列）
- ("leaked FRIDAY_PAT_PLACEHOLDER token", "friday_pat_ABCD"),
+ ("leaked " + _friday_pat + " token", "friday_pat_" + "ABCD"),
  ],
  )
  def test_redact_common_provider_keys(self, input_text: str, must_not_contain: str) -> None:
@@ -96,11 +113,7 @@ class TestRedactSecretsInText:
  assert must_not_contain not in result
  assert REDACTED in result
  def test_redact_pem_private_key(self) -> None:
- pem = (
- "-----BEGIN REDACTED TEST KEY-----\n"
- "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw\n"
- "-----END REDACTED TEST KEY-----"
- )
+ pem = _pem_private_key
  result = redact_secrets_in_text(pem)
  assert "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw" not in result
  assert REDACTED in result
@@ -139,7 +152,7 @@ class TestSentryBeforeSend:
  assert frame["vars"]["host"] == "api.anthropic.com"
  def test_filters_extra_section(self) -> None:
  fake_event: dict[str, Any] = {
- "extra": {"credential_config": {"api_key": "sk-test-placeholder"}}
+ "extra": {"credential_config": {"api_key": _openai_key}}
  }
  cleaned = sentry_before_send(fake_event, {})
  assert cleaned is not None
@@ -154,7 +167,7 @@ class TestSentryBeforeSend:
  "values": [
  {
  "category": "auth",
- "data": {"api_key": "sk-test-placeholder"},
+ "data": {"api_key": _openai_key},
  }
  ]
  }
