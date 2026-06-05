@@ -1,4 +1,4 @@
-# Generated for initial implementation plan (work item).
+# Generated for implementation (work item).
 
 import uuid
 

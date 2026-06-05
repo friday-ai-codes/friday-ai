@@ -83,9 +83,9 @@ def calculate_cost(
     return total.quantize(Decimal("0.000001"))
 
 
-# === initial implementation contract：calculate_cost_v2 六字段定价 ===
+# === implementation contract：calculate_cost_v2 六字段定价 ===
 # 保留 calculate_cost(model, input_tokens, output_tokens) 旧 API 不删
-# (pricing compatibility，initial implementation 单独清理 plan)。
+# (pricing compatibility，implementation 单独清理 plan)。
 
 from services.model_capabilities import ModelCapabilities  # noqa: E402
 

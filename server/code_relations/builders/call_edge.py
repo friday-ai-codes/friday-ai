@@ -1,4 +1,4 @@
-"""CallEdgeBuilder：codegraph.CallEdge → ChunkEdge[CALL]（per initial implementation contract）。"""
+"""CallEdgeBuilder：codegraph.CallEdge → ChunkEdge[CALL]（per implementation contract）。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
     - call_count=1000 → 1.000
 
     callee 解析：在同 repository 内按 callee_name 取首个 Symbol（contract 简化策略；
-    跨文件同名歧义留 initial implementation/255 优化）。callee 找不到 → skip 该 CallEdge。
+    跨文件同名歧义留 implementation/255 优化）。callee 找不到 → skip 该 CallEdge。
     """
 
     edge_type_label: str = "CallEdge"
@@ -61,7 +61,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
 
         async for cedge in qs.aiterator(chunk_size=1000):
             caller = cedge.caller_symbol
-            # 模块级调用边 caller_symbol=NULL（initial implementation）：chunk 级 CALL 图以
+            # 模块级调用边 caller_symbol=NULL（implementation）：chunk 级 CALL 图以
             # Symbol 为节点，模块级 caller 无 file_path/start_line，直接跳过（仿 callee skip 模式）。
             if caller is None:
                 skipped_caller_chunk += 1

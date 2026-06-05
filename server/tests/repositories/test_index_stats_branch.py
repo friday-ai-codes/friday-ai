@@ -1,4 +1,4 @@
-"""``IndexStatsView`` 的 ``?branch=`` branch-aware 计数测试（initial implementation，work item）。
+"""``IndexStatsView`` 的 ``?branch=`` branch-aware 计数测试（implementation，work item）。
 
 GET /api/repositories/{id}/index/stats/?branch=<分支>
 

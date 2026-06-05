@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1: Repository AI summary 模型层测试。
+"""implementation Task 1: Repository AI summary 模型层测试。
 
 测试 Repository 模型扩展字段、AISummaryStatus 枚举、
 SubAgentSession.TaskType.REPO_SUMMARY、RepositorySerializer 新字段、

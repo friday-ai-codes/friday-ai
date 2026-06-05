@@ -1,6 +1,6 @@
-"""initial implementation plan：verify_payload_consistency 管理命令单测。
+"""implementation：verify_payload_consistency 管理命令单测。
 
-覆盖 6 条用例（per plan contract / contract + must_haves 异常隔离条款）：
+覆盖 6 条用例（contract / contract + must_haves 异常隔离条款）：
 
 1. test_no_errors_when_payload_intact
    所有 neighbor.chunk_id 都在 ChunkRegistry → stdout `total_orphans=0`。

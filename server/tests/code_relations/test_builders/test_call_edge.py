@@ -1,4 +1,4 @@
-"""CallEdgeBuilder 测试（per initial implementation contract / contract）。"""
+"""CallEdgeBuilder 测试（per implementation contract / contract）。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _create_call_edge(repository, caller: Symbol, callee_name: str, line_number:
 def _create_module_level_call_edge(
     repository, caller_file: str, callee_name: str, line_number: int
 ) -> None:
-    """构造 caller_symbol=NULL 的模块级调用边（initial implementation 产物）。"""
+    """构造 caller_symbol=NULL 的模块级调用边（implementation 产物）。"""
     CodegraphCallEdge.objects.create(
         repository=repository,
         caller_symbol=None,
@@ -129,7 +129,7 @@ async def test_caller_chunk_resolve_miss_skipped(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_module_level_call_edge_skipped(repository) -> None:
-    """initial implementation：caller_symbol=NULL 的模块级边被安全跳过，不抛 AttributeError。
+    """implementation：caller_symbol=NULL 的模块级边被安全跳过，不抛 AttributeError。
 
     构造一条正常文件内边 + 一条模块级边（caller_symbol=None），断言 build 不崩、
     且产出的 ChunkEdge 只来自正常边（模块级边计入 skipped_caller_chunk）。
@@ -188,7 +188,7 @@ async def test_self_loop_allowed(repository) -> None:
 
 
 # =============================================================================
-# initial implementation / work item：跨语言守门 parametrize 测试
+# implementation / work item：跨语言守门 parametrize 测试
 # 静态审计：CallEdgeBuilder 基于 codegraph.CallEdge.callee_name 字符串名匹配 Symbol.name，
 # 无 file extension / language 假设 → 天然语言无关 git diff = 0。
 # =============================================================================
@@ -206,7 +206,7 @@ async def test_self_loop_allowed(repository) -> None:
 async def test_call_edge_cross_language_resolution(
     repository, caller_file: str, callee_file: str, callee_name: str
 ) -> None:
-    """initial implementation / work item 守门：CallEdge 对 Go / TS / Vue 命名解析均能建 edge。
+    """implementation / work item 守门：CallEdge 对 Go / TS / Vue 命名解析均能建 edge。
 
     构造 caller Symbol + callee Symbol + CodegraphCallEdge + mock SymbolChunkResolver.resolve
     → 断言生成 ≥ 1 ChunkEdge[CALL]。

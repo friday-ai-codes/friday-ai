@@ -29,7 +29,7 @@ class OptionalJWTAuthentication(CookieJWTAuthentication):
     - token 无效/过期时返回 None（交给下一个 authenticator），而非抛 AuthenticationFailed
     - 没有 token 时同样返回 None
 
-    历史坑（v18.1 initial implementation 之后暴露）：早期版本继承的是 SimpleJWT 默认
+    历史坑（implementation 之后暴露）：早期版本继承的是 SimpleJWT 默认
     ``JWTAuthentication``，**只看 Authorization header**。而项目全局默认认证（设置
     在 ``REST_FRAMEWORK.DEFAULT_AUTHENTICATION_CLASSES`` 里）是 cookie 优先的
     ``CookieJWTAuthentication`` —— 前端只通过 HttpOnly cookie 携带 access_token。

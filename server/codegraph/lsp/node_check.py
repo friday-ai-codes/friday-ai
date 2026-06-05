@@ -1,4 +1,4 @@
-"""initial implementation: Node 22 LTS + vue-language-server + typescript SDK 检测层。
+"""implementation: Node 22 LTS + vue-language-server + typescript SDK 检测层。
 
 per work item：启动时一次性 subprocess 检测 + 进程级缓存（不过期；服务重启即重检）。
 per work item：tsdk 三探针顺序（npm root -g / which tsc / monorepo node_modules）+ None fallback。
@@ -15,7 +15,7 @@ per work item：``shutil.which`` 跨平台 PATH 检测兼容 macOS / Linux / Win
 ========
 
 - 检测失败 **不** raise；返 ``NodeCheckResult.available=False``，让 VolarPool
-  调用方决定是否走 fallback（per initial implementation fallback 兜底原则；per work item）。
+  调用方决定是否走 fallback（per implementation fallback 兜底原则；per work item）。
 - 5-10s subprocess 超时（探针只跑一次启动，长超时容忍 cold path）。
 - 不抛异常，不入库；纯 stdlib + structlog。
 """

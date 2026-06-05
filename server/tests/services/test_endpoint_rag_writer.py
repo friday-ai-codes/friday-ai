@@ -1,4 +1,4 @@
-"""initial implementation: endpoint_rag_writer 单元测试。
+"""implementation: endpoint_rag_writer 单元测试。
 
 测试 work item Markdown 模板生成 + work item Qdrant payload 字段。
 全部为非 integration 测试，通过 mock 隔离外部服务。

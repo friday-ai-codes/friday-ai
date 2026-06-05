@@ -1,4 +1,4 @@
-"""HybridSearchService 端到端图谱 enrichment 测试（per initial implementation plan Task 2）。
+"""HybridSearchService 端到端图谱 enrichment 测试（per implementation Task 2）。
 
 8 条端到端断言：
 
@@ -578,13 +578,13 @@ async def test_reason_for_co_changed_uses_explain_neighbor_fallback(
 
 
 # ---------------------------------------------------------------------------
-# case 7：NullProvider 路径 byte-equivalence 保 initial implementation 不动
+# case 7：NullProvider 路径 byte-equivalence 保 implementation 不动
 # ---------------------------------------------------------------------------
 
 
 async def test_null_provider_path_unchanged() -> None:
     """NullProvider 调 search → 返回 RagSearchResult（非 HybridSearchResult）
-    + 不含 ``## Graph Context`` 段；与 initial implementation _search_rag_only 完全一致。
+    + 不含 ``## Graph Context`` 段；与 implementation _search_rag_only 完全一致。
     """
     rag_items = [
         _rag_item(

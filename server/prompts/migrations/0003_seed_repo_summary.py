@@ -1,8 +1,8 @@
-"""initial implementation seed: repo.summary_generator prompt 入库。
+"""implementation seed: repo.summary_generator prompt 入库。
 
 决策依据（work-item.md）：
 - 仿照 0002_seed_system_defaults.py 的 data migration 模式
-- slug 已在 keys.py 预声明（initial implementation）: PromptSlugs.REPO_SUMMARY_GENERATOR
+- slug 已在 keys.py 预声明（implementation）: PromptSlugs.REPO_SUMMARY_GENERATOR
 - 幂等 upsert: 已存在且 body 相等 → skip；不同 → append_version
 """
 from __future__ import annotations
@@ -67,7 +67,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
         defaults={
             "category": "repo_analysis",
             "title": "仓库智能描述生成",
-            "description": "分析仓库源码并生成结构化 JSON 描述（initial implementation seed）",
+            "description": "分析仓库源码并生成结构化 JSON 描述（implementation seed）",
             "is_builtin": True,
         },
     )
@@ -78,7 +78,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
             version=1,
             body=REPO_SUMMARY_PROMPT_BODY,
             variables_schema={},
-            change_note="initial implementation initial seed",
+            change_note="implementation initial seed",
         )
         prompt.active_version = version
         prompt.save(update_fields=["active_version", "updated_at"])
@@ -92,7 +92,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
             version=max_v + 1,
             body=REPO_SUMMARY_PROMPT_BODY,
             variables_schema={},
-            change_note=f"initial implementation seed sync (body drift from v{max_v})",
+            change_note=f"implementation seed sync (body drift from v{max_v})",
         )
         prompt.active_version = new_version
         prompt.save(update_fields=["active_version", "updated_at"])

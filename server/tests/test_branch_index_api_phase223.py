@@ -1,4 +1,4 @@
-"""initial implementation: GET /api/repositories/<uuid>/branch-indexes/ 只读列表。"""
+"""implementation: GET /api/repositories/<uuid>/branch-indexes/ 只读列表。"""
 
 import uuid
 

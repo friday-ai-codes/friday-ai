@@ -93,7 +93,7 @@ def _patch_sdk(mock_runner: MagicMock):  # noqa: ANN202
 
 
 # ---------------------------------------------------------------------------
-# initial implementation 保留测试（更新为兼容 SDK 集成后的 executing_node）
+# implementation 保留测试（更新为兼容 SDK 集成后的 executing_node）
 # ---------------------------------------------------------------------------
 
 
@@ -247,7 +247,7 @@ async def test_graph_state_is_authoritative(graph_config: RunnableConfig) -> Non
 
 
 # ---------------------------------------------------------------------------
-# initial implementation 新增 SDK 集成测试
+# implementation 新增 SDK 集成测试
 # ---------------------------------------------------------------------------
 
 
@@ -392,7 +392,7 @@ async def test_executing_node_handles_sdk_error(graph_config: RunnableConfig) ->
 
 
 # ---------------------------------------------------------------------------
-# initial implementation 新增 — blocking task 提取、循环拓扑、结果注入
+# implementation 新增 — blocking task 提取、循环拓扑、结果注入
 # ---------------------------------------------------------------------------
 
 
@@ -428,7 +428,7 @@ def _blocking_task_events(
 
 @pytest.mark.asyncio
 async def test_waiting_resumes_to_executing(graph_config: RunnableConfig) -> None:
-    """initial implementation: resume 后 graph 回到 executing（非 finalizing）。"""
+    """implementation: resume 后 graph 回到 executing（非 finalizing）。"""
     events_first = _blocking_task_events(("bt-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
     mock_runner_second = _make_mock_runner(
@@ -466,7 +466,7 @@ async def test_waiting_resumes_to_executing(graph_config: RunnableConfig) -> Non
 
 @pytest.mark.asyncio
 async def test_multiple_blocking_tasks_collected(graph_config: RunnableConfig) -> None:
-    """initial implementation: 同一轮 SDK 运行中多个 blocking tasks 都被收集。"""
+    """implementation: 同一轮 SDK 运行中多个 blocking tasks 都被收集。"""
     events = _blocking_task_events(
         ("bt-a", "deep_analysis"),
         ("bt-b", "deep_analysis"),
@@ -619,7 +619,7 @@ async def test_blocking_marker_suppresses_premature_text_events(graph_config: Ru
 
 @pytest.mark.asyncio
 async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
-    """initial implementation: 二次 executing 运行注入 blocking_results 生成最终回答。"""
+    """implementation: 二次 executing 运行注入 blocking_results 生成最终回答。"""
     events_first = _blocking_task_events(("bt-inj-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
 
@@ -658,7 +658,7 @@ async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation wait-execute loop 阈值在 v22.0 节点错误处理后调整为 2，"
+        "OBSOLETE — implementation wait-execute loop 阈值在 v22.0 节点错误处理后调整为 2，"
         "且 OrchestrationRun.run_id 字段升级为 UUID（旧测试用 string run_id 导致 "
         "_persist_run_phase 静默失败 → phase 状态错乱）。需在 v24.0 重写为 UUID + "
         "新阈值断言。"
@@ -666,7 +666,7 @@ async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
 )
 @pytest.mark.asyncio
 async def test_loop_count_prevents_infinite_loops(graph_config: RunnableConfig) -> None:
-    """initial implementation: wait-execute 循环超过 2 次时强制走 finalizing。"""
+    """implementation: wait-execute 循环超过 2 次时强制走 finalizing。"""
     blocking_events = _blocking_task_events(("bt-loop", "deep_analysis"))
 
     mock_runner_1 = _make_mock_runner(blocking_events, _default_result())
@@ -698,7 +698,7 @@ async def test_loop_count_prevents_infinite_loops(graph_config: RunnableConfig) 
 
 @pytest.mark.asyncio
 async def test_blocking_results_cleared_after_second_run(graph_config: RunnableConfig) -> None:
-    """initial implementation: blocking_results 在二次运行后被清空。"""
+    """implementation: blocking_results 在二次运行后被清空。"""
     events_first = _blocking_task_events(("bt-clr-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
     mock_runner_second = _make_mock_runner(

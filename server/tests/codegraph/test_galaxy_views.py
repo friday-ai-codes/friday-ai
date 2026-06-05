@@ -1,4 +1,4 @@
-"""Galaxy API Views 集成测试 —— initial implementation/04/05。
+"""Galaxy API Views 集成测试 —— implementation/04/05。
 
 覆盖：
 V1  GET /galaxy/ 无认证 → 401

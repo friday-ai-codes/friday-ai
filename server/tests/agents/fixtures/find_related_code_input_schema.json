@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Agent tool ``find_related_code`` 输入契约（per ROADMAP success criterion / success criterion）。\n\n三选一互斥起点：``file_path`` / ``chunk_id`` / ``symbol_name`` 恰好一个非 ``None``，\n否则 ``ValidationError`` 含 ``\"exactly one\"`` 关键字（方便 LLM 错误模式匹配）。",
+  "description": "Agent tool ``find_related_code`` 输入契约（success criterion / success criterion）。\n\n三选一互斥起点：``file_path`` / ``chunk_id`` / ``symbol_name`` 恰好一个非 ``None``，\n否则 ``ValidationError`` 含 ``\"exactly one\"`` 关键字（方便 LLM 错误模式匹配）。",
   "properties": {
     "chunk_id": {
       "anyOf": [
@@ -41,7 +41,7 @@
     },
     "hops": {
       "default": 1,
-      "description": "图谱遍历跳数上限；硬约束 ≤2，与 initial implementation HybridSearchService.find_related MAX_HOPS=2 双层守卫对齐（per ROADMAP success criterion）。",
+      "description": "图谱遍历跳数上限；硬约束 ≤2，与 implementation HybridSearchService.find_related MAX_HOPS=2 双层守卫对齐（success criterion）。",
       "maximum": 2,
       "minimum": 1,
       "title": "Hops",

@@ -1,4 +1,4 @@
-"""一次性 fixture 生成脚本 —— per initial implementation contract。
+"""一次性 fixture 生成脚本 —— per implementation contract。
 
 仅在以下两种场景手动运行：
 
@@ -94,7 +94,7 @@ def main() -> None:
         FindRelatedCodeOutput.model_json_schema(),
     )
 
-    # initial implementation: API MCP tools (work item)
+    # implementation: API MCP tools (work item)
     _dump(
         FIXTURE_DIR / "find_api_handler_signature.json",
         _normalize_signature(find_api_handler),

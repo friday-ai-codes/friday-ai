@@ -1,4 +1,4 @@
-"""initial implementation: LSP 客户端 + Supervisor 子包入口。
+"""implementation: LSP 客户端 + Supervisor 子包入口。
 
 本子包封装通用 LSP 客户端框架：
 
@@ -14,7 +14,7 @@
 - :func:`shutdown_all_supervisors`：进程退出 / Django shutdown 时批量优雅退出
 
 本 phase 不在任何模块内调 ``register_backend`` 注册 ``lsp_*`` backend；
-真实 backend 子类（``VolarBackend`` / ``GoplsBackend``）由 initial implementation / 267 落地。
+真实 backend 子类（``VolarBackend`` / ``GoplsBackend``）由 implementation / 267 落地。
 """
 
 from __future__ import annotations

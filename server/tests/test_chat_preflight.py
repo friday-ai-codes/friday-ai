@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01 — contract 对话凭证前置探测端点（ConversationPreflightView）。
+"""implementation Task 01 — contract 对话凭证前置探测端点（ConversationPreflightView）。
 
 覆盖 contract/contract/contract 契约：
     GET /api/chat/conversations/{id}/preflight/
@@ -171,7 +171,7 @@ def test_preflight_missing_payload_has_all_contract_fields(
 
 
 # ============================================================================
-# Test G (NEW initial implementation Hotfix work-item item) — 跨项目 ADMIN preflight 他人项目对话 → 403
+# Test G (NEW implementation Hotfix work-item item) — 跨项目 ADMIN preflight 他人项目对话 → 403
 # ============================================================================
 
 
@@ -183,7 +183,7 @@ def test_preflight_cross_project_member_denied(
     """Behavior G：project_b_admin_user 虽是 project_b 的 ADMIN，但对 project_a
     的 conversation 无访问权限 → preflight 返 403 + structlog audit log。
 
-    initial implementation Hotfix（work item security mitigation）：跨项目 ownership 校验防御信息泄露。
+    implementation Hotfix（work item security mitigation）：跨项目 ownership 校验防御信息泄露。
     """
     conv = Conversation.objects.create(project=project_a, title="a-only")
 
@@ -199,7 +199,7 @@ def test_preflight_cross_project_member_denied(
 
 
 # ============================================================================
-# Test H (NEW initial implementation Hotfix work-item item) — 非成员 outsider preflight →
+# Test H (NEW implementation Hotfix work-item item) — 非成员 outsider preflight →
 # 403 + resolved payload 字段完全不回流（provider_type / credential_id）
 # ============================================================================
 
@@ -237,7 +237,7 @@ def test_preflight_non_member_user_denied(
 
 
 # ============================================================================
-# Test I (NEW initial implementation Hotfix work-item item) — superuser 跨项目豁免 → 200
+# Test I (NEW implementation Hotfix work-item item) — superuser 跨项目豁免 → 200
 # ============================================================================
 
 

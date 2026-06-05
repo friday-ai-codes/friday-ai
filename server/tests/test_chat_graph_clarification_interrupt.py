@@ -1,4 +1,4 @@
-"""chat_graph 协商 interrupt 单元测试（initial implementation plan / work item）。
+"""chat_graph 协商 interrupt 单元测试（implementation / work item）。
 
 走 ``_extract_pending_clarification`` + ``wait_clarification_node`` 单元覆盖，
 **不**启动真实 ``ChatAnthropicRunner`` —— 真 LLM 集成测试需要 Anthropic key

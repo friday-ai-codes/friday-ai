@@ -145,7 +145,7 @@ class TestSymbolExtractorEdgeCases:
         ctx = make_file_context()
         symbols = extract_symbols(tree, source, ctx)
 
-        # lambda 赋值可能产生 VARIABLE 类型的 Symbol，但 initial implementation 不提取 VARIABLE
+        # lambda 赋值可能产生 VARIABLE 类型的 Symbol，但 implementation 不提取 VARIABLE
         for s in symbols:
             assert s.name != "sort_key" or s.symbol_type != "FUNCTION", \
                 "lambda should not be extracted as FUNCTION"

@@ -1,4 +1,4 @@
-"""initial implementation: rebuild_cross_repo_edges management command 测试（work item）。"""
+"""implementation: rebuild_cross_repo_edges management command 测试（work item）。"""
 from __future__ import annotations
 
 from io import StringIO

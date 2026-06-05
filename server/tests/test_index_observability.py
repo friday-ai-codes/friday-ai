@@ -1,4 +1,4 @@
-"""initial implementation: 索引可观测性测试
+"""implementation: 索引可观测性测试
 
 测试覆盖：
 - work item: IndexHistory 操作记录查询 API（分页、筛选）
@@ -99,11 +99,11 @@ class TestIndexHistoryListView:
             "id", "trigger_type", "status", "from_sha", "to_sha",
             "files_added", "files_modified", "files_deleted", "changed_files",
             "summary_text", "error_message", "started_at", "finished_at", "created_at",
-            # initial implementation contract: GraphRAG 增量构建可观测字段
+            # implementation contract: GraphRAG 增量构建可观测字段
             "graph_build_status", "edge_count", "payload_synced_at",
-            # initial implementation: 跨仓 API 匹配状态
+            # implementation: 跨仓 API 匹配状态
             "cross_repo_match_count", "cross_repo_built_at",
-            # initial implementation/02: per-run delta + 行级 diff
+            # implementation/02: per-run delta + 行级 diff
             "symbols_added", "imports_added", "calls_added", "endpoints_added",
             "chunk_edges_added", "lines_added", "lines_deleted",
         }

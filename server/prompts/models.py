@@ -9,7 +9,7 @@ from django.db import models
 
 
 class PromptCategory(models.TextChoices):
-    """提示词类型分类（v19.0 initial implementation 共 5 类）。"""
+    """提示词类型分类（implementation 共 5 类）。"""
 
     AI_NODE = "ai_node", "AI 工作流节点"
     CHAT_AGENT = "chat_agent", "对话 Agent"

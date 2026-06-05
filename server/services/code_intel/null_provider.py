@@ -1,4 +1,4 @@
-"""NullProvider —— 代码智能不可用时的降级实现 (per initial implementation contract / contract).
+"""NullProvider —— 代码智能不可用时的降级实现 (per implementation contract / contract).
 
 主体严格控制在 30 行以内（Pitfall 5）：只实现 BaseCodeProvider，
 ``isinstance(NullProvider(), SymbolCapableProvider)`` 必须为 ``False``。

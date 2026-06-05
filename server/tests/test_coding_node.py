@@ -3,7 +3,7 @@
 覆盖 callback-driven 模式（TaskDispatcher 分发 -> waiting_event）
 和 error handling（缺少方案 -> failed、分发失败 -> failed）。
 
-initial implementation 引入 ProviderConfigService.aresolve_or_error 之后，AICodingNode
+implementation 引入 ProviderConfigService.aresolve_or_error 之后，AICodingNode
 执行路径会先解析 Anthropic 凭证再走 _run_repo_coding。本文件用 autouse fixture
 统一 stub aresolve_or_error 返回静态 ResolvedProviderConfig，避免单测落入凭证
 缺失分支（不破坏 missing-plan / empty-plan 等不依赖凭证的负向用例）。

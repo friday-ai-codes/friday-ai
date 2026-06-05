@@ -1,6 +1,6 @@
-"""HybridSearchService asyncio.gather 并发 wave 测试（per initial implementation plan）。
+"""HybridSearchService asyncio.gather 并发 wave 测试（per implementation）。
 
-5 条核心断言（per ROADMAP success criterion + contract + Discretion fallback 策略）：
+5 条核心断言（success criterion + contract + Discretion fallback 策略）：
 
 1. ``test_wave_0_concurrent_under_250ms`` —— rag_task + symbol_task 各 sleep 100ms
    asyncio.gather 并发 → 总耗时 < 250ms（验证真正并发）。

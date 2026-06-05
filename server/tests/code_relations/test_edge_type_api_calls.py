@@ -1,4 +1,4 @@
-"""initial implementation: EdgeType.API_CALLS + ChunkEdge.target_repository_id 测试（work item）。"""
+"""implementation: EdgeType.API_CALLS + ChunkEdge.target_repository_id 测试（work item）。"""
 from __future__ import annotations
 
 import uuid

@@ -1,4 +1,4 @@
-"""Repository 新增 behind_commits + behind_commits_calculated_at 字段（initial implementation contract）。"""
+"""Repository 新增 behind_commits + behind_commits_calculated_at 字段（implementation contract）。"""
 
 from django.db import migrations, models
 

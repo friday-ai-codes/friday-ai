@@ -153,7 +153,7 @@ def test_build_points_returns_tuple() -> None:
 
 
 def test_build_points_registry_row_fields_complete() -> None:
-    """registry_rows 每行必须含 6 个字段（含 initial implementation 新增的 branch_name）。"""
+    """registry_rows 每行必须含 6 个字段（含 implementation 新增的 branch_name）。"""
     chunks = [_make_chunk(content="A", file_path="x.py")]
     embeddings = [[0.1]]
     _, registry_rows = IndexerService._build_points(

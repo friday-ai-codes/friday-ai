@@ -1,6 +1,6 @@
-"""Vue 真实仓库 study-app 端到端集成测试 —— 覆盖 initial implementation 集成验证。
+"""Vue 真实仓库 study-app 端到端集成测试 —— 覆盖 implementation 集成验证。
 
-不调 indexer ORM 路径（同 initial implementation / 262 精神），仅断言 VueExtractor.extract
+不调 indexer ORM 路径（同 implementation / 262 精神），仅断言 VueExtractor.extract
 在真实 .vue 文件上返回非空 bundle 各字段。
 
 环境约束：

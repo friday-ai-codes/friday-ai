@@ -1,4 +1,4 @@
-"""initial implementation：chunk_edges_added per-run delta 回写单测（Pitfall 7）。
+"""implementation：chunk_edges_added per-run delta 回写单测（Pitfall 7）。
 
 验证 lifecycle `_handle_completion` 在 COMPLETED 分支经 `task.result()` 读取
 orchestrator 返回的本次插入数，写入 IndexHistory.chunk_edges_added，且该值与

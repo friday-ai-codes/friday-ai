@@ -1,4 +1,4 @@
-"""Pitfall 3 防御 grep gate（per initial implementation contract）。
+"""Pitfall 3 防御 grep gate（per implementation contract）。
 
 SemanticEdgeBuilder 唯一允许的 query 模式是
     qdrant.query_points(query=v, limit=20, score_threshold=0.85, query_filter=...)

@@ -1,4 +1,4 @@
-"""``ask_clarification`` 工具层测试（initial implementation plan / work item）。
+"""``ask_clarification`` 工具层测试（implementation / work item）。
 
 覆盖：
 

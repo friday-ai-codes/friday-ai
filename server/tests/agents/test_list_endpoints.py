@@ -1,4 +1,4 @@
-"""``list_endpoints`` MCP tool 单元测试 —— per initial implementation plan Task 8 / work item。
+"""``list_endpoints`` MCP tool 单元测试 —— per implementation Task 8 / work item。
 
 测试目标（≥6 cases）：
 
@@ -11,7 +11,7 @@
 7. ``test_missing_repository_id_returns_error`` —— repository_id 必填守卫
 8. ``test_truncated_metadata_flag`` —— total > limit 时 truncated=True
 
-per initial implementation 测试模式：mock ``Endpoint.objects``。
+per implementation 测试模式：mock ``Endpoint.objects``。
 """
 
 from __future__ import annotations

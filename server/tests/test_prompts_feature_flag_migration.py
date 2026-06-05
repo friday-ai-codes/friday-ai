@@ -1,4 +1,4 @@
-"""initial implementation: 5 调用点 × 3 态三态回退矩阵（work item 逐条验证）。"""
+"""implementation: 5 调用点 × 3 态三态回退矩阵（work item 逐条验证）。"""
 from __future__ import annotations
 
 from typing import Any
@@ -71,7 +71,7 @@ def _ensure_seed(
             project=None,
             category=category,
             title=title,
-            description="initial implementation test re-seed",
+            description="implementation test re-seed",
             is_builtin=True,
         )
         version = PromptVersion.objects.create(

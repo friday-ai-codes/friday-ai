@@ -1,4 +1,4 @@
-"""initial implementation：``POST /api/chat/clarifications/<id>/answer/`` endpoint 测试。
+"""implementation：``POST /api/chat/clarifications/<id>/answer/`` endpoint 测试。
 
 覆盖：
 - 404 unknown clarification_id

@@ -1,4 +1,4 @@
-"""initial implementation plan 单元测试：agents.llm_factory.build_chat_model。
+"""implementation 单元测试：agents.llm_factory.build_chat_model。
 
 覆盖 Requirements：
 - work item 单一工厂入口 + 5 Provider 前缀映射
@@ -36,7 +36,7 @@ def _make_resolved(
     base_url: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> ResolvedProviderConfig:
-    """构造 ResolvedProviderConfig，简化测试模板（initial implementation dataclass 定义）。"""
+    """构造 ResolvedProviderConfig，简化测试模板（implementation dataclass 定义）。"""
     default_base_urls = {
         ProviderType.ANTHROPIC: "https://api.anthropic.com",
         ProviderType.OPENAI_RESPONSES: "https://api.openai.com/v1",

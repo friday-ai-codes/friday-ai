@@ -1,4 +1,4 @@
-"""索引新鲜度服务层（initial implementation contract / contract）。
+"""索引新鲜度服务层（implementation contract / contract）。
 
 提供：
 - compute_freshness_status: 三态分级（fresh/stale/unknown）

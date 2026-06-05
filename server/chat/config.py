@@ -44,7 +44,7 @@ async def build_sdk_config(
     except ProviderConfigError as e:
         raise ValueError(str(e)) from e
 
-    # initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_MODEL 硬删后走
+    # implementation（contract/contract）：SettingKeys.ANTHROPIC_MODEL 硬删后走
     # ProviderCredential.default_model（通过 legacy helper 保证调用点最小变更）
     legacy = await aget_legacy_anthropic_config()
     system_model = legacy["default_model"]
@@ -71,7 +71,7 @@ async def build_sdk_config(
     budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
     max_budget_usd = float(budget_str) if budget_str else None
 
-    # initial implementation Task 7: _build_system_prompt 改为 async，调用处必须 await
+    # implementation Task 7: _build_system_prompt 改为 async，调用处必须 await
     system_prompt = await _build_system_prompt(
         project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
         project_context_line=effective_project_context_line,

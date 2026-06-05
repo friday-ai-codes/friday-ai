@@ -1,4 +1,4 @@
-"""代码智能 Provider AppConfig (per initial implementation contract / contract).
+"""代码智能 Provider AppConfig (per implementation contract / contract).
 
 ``ready()`` 阶段读 ``settings.CODE_INTELLIGENCE_PROVIDER`` 的 class path，
 importlib 加载并实例化一次，注入到 ``services.code_intel.registry``，最后 freeze。
@@ -49,7 +49,7 @@ class CodeIntelConfig(AppConfig):
             ) from exc
 
         provider = provider_cls()
-        # work item 修复（initial implementation REVIEW）：原注释 "security mitigation prevents arbitrary
+        # work item 修复（implementation REVIEW）：原注释 "security mitigation prevents arbitrary
         # class-path code execution" 措辞不准——CODE_INTELLIGENCE_PROVIDER 来自
         # env，能控制 env 的 attacker 已能任意 import，本检查不是安全边界。
         # 实际作用：保证 Provider **结构化契约**（capabilities / health_check

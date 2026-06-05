@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01 — contract DELETE /api/chat/conversations/{id}/messages/ 端点契约。
+"""implementation Task 01 — contract DELETE /api/chat/conversations/{id}/messages/ 端点契约。
 
 覆盖 contract 验收项：
     - DELETE ?before_id=X 硬删 before_id 之前的消息（created_at < target.created_at）
@@ -7,7 +7,7 @@
     - conversation 不存在 → 404
     - 跨项目越权 → 403 + audit log
 
-Test matrix (6 cases per Plan):
+Test matrix (6 cases ):
     C: DELETE 正确路径 → 200 + deleted_count=N
     D: 404 不存在 conversation
     E: 403 跨项目越权（project_a_admin_user 删 project_b 的对话）

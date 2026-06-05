@@ -1,4 +1,4 @@
-"""CoChangedEdgeBuilder Pitfall RSS perf gate（per initial implementation contract / contract）。
+"""CoChangedEdgeBuilder Pitfall RSS perf gate（per implementation contract / contract）。
 
 100k commits × 5 files/commit 工况下 ``tracemalloc.get_traced_memory()`` peak < 1 GB。
 CI 默认 skip（pyproject ``addopts = "-m 'not perf'"``）；本地用

@@ -1,4 +1,4 @@
-"""CSS 真实仓库 study-app 端到端集成测试 —— 覆盖 initial implementation 真实样本。
+"""CSS 真实仓库 study-app 端到端集成测试 —— 覆盖 implementation 真实样本。
 
 study-app .vitepress/theme/style.css 实测含 .dark / .DocSearch 两个 class selector，
 预期 ≥ 2 SymbolData。仓库不存在时整类 SKIP（per Pitfall 9）。

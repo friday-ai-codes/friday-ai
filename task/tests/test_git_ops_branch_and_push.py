@@ -4,7 +4,7 @@
 ``push_branch`` 的 docstring）：
 
 - **Bug X**：``setup_task_branch`` 原本对所有分支名强制拼 ``friday/`` 前缀，
-  与 v18.1 initial implementation 引入的模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）
+  与 implementation 引入的模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）
   冲突。修复后应严格尊重显式传入的 ``branch_strategy``。
 - **Bug Y**：``push_branch`` 原本只 try/except ``GitCommandError``，未检查
   GitPython ``origin.push()`` 返回的 ``PushInfo.flags``；push 被远端拒绝时

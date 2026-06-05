@@ -53,10 +53,10 @@ class SystemSettingUpdateSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation contract：ProviderCredential 三件套 Serializer（Read / Create / Update）
+# implementation contract：ProviderCredential 三件套 Serializer（Read / Create / Update）
 # ============================================================================
 
-# initial implementation 既锁定的 5 种 ProviderType；Serializer 层 ChoiceField 做白名单防御
+# implementation 既锁定的 5 种 ProviderType；Serializer 层 ChoiceField 做白名单防御
 _PROVIDER_TYPE_CHOICES = [
     "anthropic",
     "openai_responses",
@@ -205,7 +205,7 @@ def _format_pydantic_errors(exc: PydanticValidationError) -> list[str]:
 
     Pydantic .errors() 返回 list[dict]（含 loc/msg/type），但 DRF ValidationError 嵌套
     字典要求叶子节点是 str 或 str 列表。本函数统一成 [f"{loc}: {msg}"] 列表格式，
-    前端 toast 可直接 join 展示；不含 input 明文（initial implementation hide_input_in_errors=True 保证）。
+    前端 toast 可直接 join 展示；不含 input 明文（implementation hide_input_in_errors=True 保证）。
     """
     formatted: list[str] = []
     for err in exc.errors():
@@ -306,7 +306,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
     contract schema-driven：按 provider_type dispatch PROVIDER_REGISTRY[type].credential_schema
     做 Pydantic v2 校验，统一承载 5 种 Provider 凭证字段约束 + SecretStr 脱敏。
     校验通过后，config dict 经 encrypt_value(json.dumps(...)) 写入 encrypted_config 字段，
-    严禁落盘明文（initial implementation 加密契约）。
+    严禁落盘明文（implementation 加密契约）。
 
     Pitfall 7：需显式声明 `id` read_only 字段。DRF 默认用本 Serializer 序列化
     POST 201 响应；若缺少 `id`，前端 store 把响应数据插入列表后该凭证无 id，
@@ -388,7 +388,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
         try:
             validated = meta.credential_schema.model_validate(attrs["config"])
         except PydanticValidationError as exc:
-            # initial implementation 已锁 ConfigDict(hide_input_in_errors=True)，errors() 不含明文输入
+            # implementation 已锁 ConfigDict(hide_input_in_errors=True)，errors() 不含明文输入
             # 把 Pydantic 的 list[dict] errors 转成字段化 dict 以符合 DRF ValidationError 结构
             raise serializers.ValidationError(
                 {"config": _format_pydantic_errors(exc)}
@@ -516,7 +516,7 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation：Provider 类型元信息 Serializer（schema-driven 前端数据源）
+# implementation：Provider 类型元信息 Serializer（schema-driven 前端数据源）
 # ============================================================================
 
 

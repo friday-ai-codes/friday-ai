@@ -147,6 +147,6 @@ class TestProjectRepositoryAssociation:
 
 
 # ============================================================================
-# initial implementation plan（contract/contract）：v8.1 /api/projects/<id>/claude-config/ 端点硬删；
+# implementation（contract/contract）：v8.1 /api/projects/<id>/claude-config/ 端点硬删；
 # TestProjectClaudeConfig 整类删除。契约 404 由 tests/test_claude_config_endpoint_removed.py 覆盖。
 # ============================================================================

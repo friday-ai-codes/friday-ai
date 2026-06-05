@@ -1,4 +1,4 @@
-"""initial implementation: FridayLanguageClient —— pygls BaseLanguageClient 子类（thin wrapper）。
+"""implementation: FridayLanguageClient —— pygls BaseLanguageClient 子类（thin wrapper）。
 
 设计要点（per work item / work item / work item / work item / work item）：
 - 复用 pygls v2.x 的 ``BaseLanguageClient``，**不**手写 work item framing
@@ -34,7 +34,7 @@ _DEFAULT_STOP_TIMEOUT_SECONDS = 5.0
 
 
 def _build_client_capabilities() -> lsp.ClientCapabilities:
-    """构造 LSP client capability（per work item + initial implementation 补 implementation）。
+    """构造 LSP client capability（per work item + implementation 补 implementation）。
 
     声明 document_symbol / workspace symbol / references / definition / implementation；
     其他全部不申请，避免 LSP server 主动 push。
@@ -83,7 +83,7 @@ class FridayLanguageClient(BaseLanguageClient):
 
         Args:
             command: subprocess 启动命令，由 ``settings.LSP_SERVERS[name].command``
-                提供（initial implementation / 267 子类填具体值）。
+                提供（implementation / 267 子类填具体值）。
             workspace_root: LSP workspace 根目录（用于 root_uri / workspace_folders）。
             language_ids: 客户端声明的语言 id 列表（如 ``["vue", "typescript"]``）。
             initialization_options: server-specific initialization 参数。
@@ -193,7 +193,7 @@ class FridayLanguageClient(BaseLanguageClient):
             ) from exc
 
     # =========================================================================
-    # initial implementation: VolarBackend 消费的 3 个 capability 方法（per work item / work item）
+    # implementation: VolarBackend 消费的 3 个 capability 方法（per work item / work item）
     # =========================================================================
 
     async def request_document_symbol(
@@ -285,7 +285,7 @@ class FridayLanguageClient(BaseLanguageClient):
         """发起 ``textDocument/implementation`` 请求；超时归一为 ``LspTimeoutError``。
 
         gopls 使用此 capability 返回 Go interface 的所有实现类型位置。
-        initial implementation 新增（per work item / work item）。
+        implementation 新增（per work item / work item）。
 
         Returns:
             ``Location | list[Location] | list[LocationLink] | None``——

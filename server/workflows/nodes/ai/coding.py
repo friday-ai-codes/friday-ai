@@ -363,7 +363,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         validated_base_url = _validate_anthropic_base_url(resolved.base_url)
 
         # 只记 boolean / source，不记 api_key 明文值（security mitigation 缓解 + Pitfall 4 硬规则；
-        # 另有 initial implementation P5 redact_credentials structlog processor 对 api_key 字段名兜底脱敏）
+        # 另有 implementation P5 redact_credentials structlog processor 对 api_key 字段名兜底脱敏）
         log.info(
             "anthropic_credential_resolved",
             source=resolved.source,

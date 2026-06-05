@@ -1,4 +1,4 @@
-"""initial implementation: CI 内 LSP server stub —— 纯 stdlib，不依赖项目模块（per work item / Pitfall P16）。
+"""implementation: CI 内 LSP server stub —— 纯 stdlib，不依赖项目模块（per work item / Pitfall P16）。
 
 支持的 LSP method（per work item）：
 

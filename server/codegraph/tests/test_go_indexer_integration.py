@@ -1,6 +1,6 @@
 """Go gin 仓库端到端集成测试 —— 覆盖 work item / work item 真实仓库验证。
 
-不调 indexer ORM 路径（per initial implementation CONTEXT decisions "不扩展到 GraphWriter 全链路"），
+不调 indexer ORM 路径（per implementation CONTEXT decisions "不扩展到 GraphWriter 全链路"），
 仅断言 GraphExtractor.extract_all 在真实 .go 文件上返回非空 bundle 各字段。
 
 环境变量 GO_GIN_SAMPLE_REPO 不设时默认指向 `/Users/zaneliu/Projects/guanghe/study-course`；

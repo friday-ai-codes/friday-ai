@@ -2,7 +2,7 @@
   "$defs": {
     "NeighborOutput": {
       "additionalProperties": false,
-      "description": "单个图谱邻居（per ROADMAP success criterion + work-item contract）。\n\n字段名顺序与 ``services.retrieval.types.NeighborMetadata`` dataclass 完全一致，\n方便 plan 通过 ``NeighborOutput(**asdict(neighbor_metadata))`` 单步装配。\n``reason`` ``min_length=1`` 静态保证非空（plan 透传 ``_explain_neighbor`` 输出\n不重写空字符串）。",
+      "description": "单个图谱邻居（success criterion + work-item contract）。\n\n字段名顺序与 ``services.retrieval.types.NeighborMetadata`` dataclass 完全一致，\n方便 plan 通过 ``NeighborOutput(**asdict(neighbor_metadata))`` 单步装配。\n``reason`` ``min_length=1`` 静态保证非空（plan 透传 ``_explain_neighbor`` 输出\n不重写空字符串）。",
       "properties": {
         "chunk_id": {
           "description": "邻居 chunk UUID。",
@@ -10,7 +10,7 @@
           "type": "string"
         },
         "edge_type": {
-          "description": "图谱边类型；运行时值来自 code_relations.models.EdgeType.values，字符串而非 Literal 是因为输出层不做枚举强约束（initial implementation API 已守过一遍）。",
+          "description": "图谱边类型；运行时值来自 code_relations.models.EdgeType.values，字符串而非 Literal 是因为输出层不做枚举强约束（implementation API 已守过一遍）。",
           "title": "Edge Type",
           "type": "string"
         },
@@ -48,17 +48,17 @@
             }
           ],
           "default": null,
-          "description": "邻居 chunk 起始行号（1-indexed）；initial implementation NeighborMetadata 允许 None （某些 chunk 无精确行号信息）。",
+          "description": "邻居 chunk 起始行号（1-indexed）；implementation NeighborMetadata 允许 None （某些 chunk 无精确行号信息）。",
           "title": "Line Start"
         },
         "reason": {
-          "description": "initial implementation ``_explain_neighbor(edge_type, source_payload)`` 输出的自然语言解释，例如 'caller of login_user()' / 'test of src/auth.py'。min_length=1 静态保证非空（per ROADMAP success criterion）。",
+          "description": "implementation ``_explain_neighbor(edge_type, source_payload)`` 输出的自然语言解释，例如 'caller of login_user()' / 'test of src/auth.py'。min_length=1 静态保证非空（success criterion）。",
           "minLength": 1,
           "title": "Reason",
           "type": "string"
         },
         "weight": {
-          "description": "边权重（initial implementation ChunkEdge.weight）；用于 hop 内 weight 降序排序。",
+          "description": "边权重（implementation ChunkEdge.weight）；用于 hop 内 weight 降序排序。",
           "title": "Weight",
           "type": "number"
         }

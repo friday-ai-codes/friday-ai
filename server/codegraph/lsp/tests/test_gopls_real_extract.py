@@ -1,4 +1,4 @@
-"""initial implementation 集成测试：真实 gopls 抽 study-course Go 仓库验证 SymbolData / ImportData。
+"""implementation 集成测试：真实 gopls 抽 study-course Go 仓库验证 SymbolData / ImportData。
 
 @pytest.mark.integration + 三重 skipif：gopls binary / study-course 路径 / go.mod 存在。
 
@@ -50,7 +50,7 @@ class TestGoplsRealExtract:
         返 handle → _lsp_extract_symbols raise → tree-sitter fallback → ≥ 1 symbol。
 
         NOTE: 此测试实际执行的是 tree-sitter fallback，并非 gopls 直接抽取。
-        initial implementation 切真实 per-file supervisor 注入后，此测试需重写为
+        implementation 切真实 per-file supervisor 注入后，此测试需重写为
         直接调 _GoplsLazyBackend._lsp_extract_symbols 验证 gopls 抽取路径。
         """
         import services.background_runner as _bg
@@ -106,7 +106,7 @@ class TestGoplsRealExtract:
         → tree-sitter fallback → ≥ 1 ImportData。
 
         NOTE: 此测试实际执行的是 tree-sitter fallback，并非 gopls 直接抽取。
-        initial implementation 切真实 per-file supervisor 注入后，此测试需重写为
+        implementation 切真实 per-file supervisor 注入后，此测试需重写为
         直接调 _GoplsLazyBackend._lsp_extract_imports 验证 gopls 抽取路径。
         """
         import services.background_runner as _bg
@@ -155,10 +155,10 @@ class TestGoplsRealExtract:
 
 
 class TestGoplsPhaseSettings:
-    """initial implementation: settings 切换验证（不需 gopls binary，非 integration）。"""
+    """implementation: settings 切换验证（不需 gopls binary，非 integration）。"""
 
     def test_extractor_backends_go_is_gopls(self) -> None:
-        """EXTRACTOR_BACKENDS["go"] 已切为 "gopls"（initial implementation Plan-03）。"""
+        """EXTRACTOR_BACKENDS["go"] 已切为 "gopls"（implementation-03）。"""
         from django.conf import settings
 
         assert settings.EXTRACTOR_BACKENDS.get("go") == "gopls", (
@@ -166,7 +166,7 @@ class TestGoplsPhaseSettings:
         )
 
     def test_gopls_backend_enabled_is_true(self) -> None:
-        """GOPLS_BACKEND_ENABLED == True（initial implementation Plan-03 已切换）。"""
+        """GOPLS_BACKEND_ENABLED == True（implementation-03 已切换）。"""
         from django.conf import settings
 
         assert getattr(settings, "GOPLS_BACKEND_ENABLED", False) is True, (
@@ -179,7 +179,7 @@ class TestGoplsPhaseSettings:
     reason="gopls 未在 PATH（measure_go_call_completeness 需真实 gopls）",
 )
 class TestMeasureGoCallCompletenessCommand:
-    """initial implementation: measure_go_call_completeness command 可调用验证（@integration）。"""
+    """implementation: measure_go_call_completeness command 可调用验证（@integration）。"""
 
     def test_command_importable(self) -> None:
         """measure_go_call_completeness.py 可 import，Command 类存在。"""

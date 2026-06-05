@@ -1,4 +1,4 @@
-"""initial implementation-01 — 顶层 Graph 构建服务。
+"""implementation-01 — 顶层 Graph 构建服务。
 
 将"图谱构建"从 indexer 内部 private method 抽出为一等公民 service：
 
@@ -248,7 +248,7 @@ async def prepare_repo_workdir_async(
 
 
 async def reset_repository_graph_progress(repository_id: str) -> None:
-    """initial implementation-01：build_graph 入口 reset Repository 5 字段。
+    """implementation-01：build_graph 入口 reset Repository 5 字段。
 
     与 ``update_graph_progress`` 共享 try/except 容错模板——写失败仅 warning，
     不阻塞 build_graph 主流程（CONTEXT 决议：进度字段属"显示用"非"业务核心"）。
@@ -287,7 +287,7 @@ async def mark_repository_graph_terminal(
     files_processed: int | None = None,
     files_total: int | None = None,
 ) -> None:
-    """initial implementation-01：build_graph 终态 + ``graph_last_built_at=now()``。
+    """implementation-01：build_graph 终态 + ``graph_last_built_at=now()``。
 
     ``current_file`` / ``files_processed`` / ``files_total`` 显式传 ``None``
     时**不动**对应字段——CONTEXT Grey Area 1 失败路径决议：失败时保留最后
@@ -394,7 +394,7 @@ async def build_graph_for_repository(
         history_id=str(history.id),
     )
 
-    # initial implementation-01：入口 reset Repository 5 字段
+    # implementation-01：入口 reset Repository 5 字段
     # （graph_build_status=RUNNING / 计数归零 / current_file 清空）。
     await reset_repository_graph_progress(repository_id)
 
@@ -420,7 +420,7 @@ async def build_graph_for_repository(
                     repository_id, file_paths, branch_name=normalized_branch,
                 )
             except Exception as exc:
-                # 前置删除失败不阻塞主流程（与 initial implementation-01 异常隔离同模式）；
+                # 前置删除失败不阻塞主流程（与 implementation-01 异常隔离同模式）；
                 # 后续薄壳写入若与孤儿键冲突会再次报错并走主 try/except 路径。
                 logger.warning(
                     "graph_pre_delete_failed",
@@ -485,7 +485,7 @@ async def build_graph_for_repository(
             ],
         )
 
-        # initial implementation-01：成功出口写 Repository 终态
+        # implementation-01：成功出口写 Repository 终态
         # （status=COMPLETED / stage="完成" / current_file="" / counts /
         # graph_last_built_at=now）。
         await mark_repository_graph_terminal(
@@ -546,7 +546,7 @@ async def build_graph_for_repository(
                 error=str(save_exc),
             )
 
-        # initial implementation-01：异常出口写 Repository 终态
+        # implementation-01：异常出口写 Repository 终态
         # （status=FAILED / stage="" / graph_last_built_at=now）。
         # current_file / files_processed / files_total 传 None **不动**——
         # CONTEXT Grey Area 1 失败路径决议：保留最后写入的 current_graph_file

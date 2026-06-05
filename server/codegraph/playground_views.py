@@ -1,13 +1,13 @@
 """codegraph Playground 视图 —— 仅供管理员调试的五层检索测试面板。
 
-initial implementation plan (contract): callsite 语义已切换到 ``HybridSearchService`` 编排器；
+implementation (contract): callsite 语义已切换到 ``HybridSearchService`` 编排器；
 为保 contract 保留组 ``server/tests/codegraph/test_playground_api.py`` 中
 ``patch("codegraph.playground_views.LayeredSearchService.search")`` 继续生效
 （旧测试不动且全绿），模块顶部保留 ``LayeredSearchService`` 别名作为 patch 入口。
 
 实际调用走 ``LayeredSearchService.search`` thin wrapper（plan Task 2 改造），
 wrapper 内部 delegate ``HybridSearchService(get_provider()).search(...)``，行为与
-直接调 HybridSearchService 字节级等价；initial implementation 测试矩阵阶段统一迁移后可删别名。
+直接调 HybridSearchService 字节级等价；implementation 测试矩阵阶段统一迁移后可删别名。
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ logger = structlog.get_logger(__name__)
 
 #: contract 测试 patch 入口（``patch("codegraph.playground_views.LayeredSearchService.search")``）。
 #: 实际调用经 thin wrapper delegate 到 ``HybridSearchService(get_provider()).search``。
-#: initial implementation 测试矩阵阶段迁移完成后删除。
+#: implementation 测试矩阵阶段迁移完成后删除。
 LayeredSearchService = _layered_search_compat.LayeredSearchService
 
 #: LayerResult 别名（保 ``_serialize_layer`` 类型一致；plan Task 2 wrapper 会
@@ -40,7 +40,7 @@ LayerResult = _layered_search_compat.LayerResult
 #: max_tokens 默认值（plan token_budget 模块未导出该常量，本视图就近落字面量）。
 DEFAULT_MAX_TOKENS: int = 8000
 
-#: NeighborMetadata dataclass 字段集合（initial implementation plan graph 透传）。
+#: NeighborMetadata dataclass 字段集合（implementation graph 透传）。
 #: 与 ``services.retrieval.types.NeighborMetadata`` 字段同名同序，duck-typed mock
 #: 只要属性齐全即可（保 contract patch 风格兼容 — 不强制 ``isinstance``）。
 _NEIGHBOR_FIELDS: tuple[str, ...] = (
@@ -167,7 +167,7 @@ class PlaygroundSearchView(APIView):
 
         layers_data = [_serialize_layer(layer) for layer in result.layers]
 
-        # initial implementation plan：graph enrichment 透传（per work item §10 硬约束 1）。
+        # implementation：graph enrichment 透传（per work item §10 硬约束 1）。
         # 用 ``getattr(..., default)`` 兜底，兼容 contract 既有 LayeredSearchResult patch
         # 路径（无 graph 字段 → 降级为空 list / 空字符串）。
         # 禁止 ``isinstance(result, HybridSearchResult)`` 分支：会被 contract 测试 mock 打穿。

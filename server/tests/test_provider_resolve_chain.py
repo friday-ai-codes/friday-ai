@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1 — contract ProviderConfigService.aresolve_with_chain 单元测试。
+"""implementation Task 1 — contract ProviderConfigService.aresolve_with_chain 单元测试。
 
 覆盖 contract 四层 Provider 解析链契约：
     - Behavior A：node 层凭证存在 + 其他层也有 → chain[0].active=True，其余 False

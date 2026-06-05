@@ -1,4 +1,4 @@
-"""initial implementation payload sync E2E（per contract）。
+"""implementation payload sync E2E（per contract）。
 
 100 chunks + 50 edges 走 `_run_all_builders_and_sync_payload` 全链路；
 断言 batch_set_payload 被调**恰好一次**（per contract / contract）+ payload 满足

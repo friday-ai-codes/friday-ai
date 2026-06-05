@@ -1,4 +1,4 @@
-"""Repository 新增 remote_head_sha + remote_head_checked_at 字段（initial implementation contract）。"""
+"""Repository 新增 remote_head_sha + remote_head_checked_at 字段（implementation contract）。"""
 
 from django.db import migrations, models
 

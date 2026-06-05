@@ -1,4 +1,4 @@
-"""加密统一入口 —— Fernet 对称加密（v21.0 initial implementation 起激活）。
+"""加密统一入口 —— Fernet 对称加密（implementation 起激活）。
 
 激活背景：v21.0 引入 ProviderCredential 凭证模型需要真加密；
 保持兼容路径：decrypt_value 对 plaintext legacy 值返回原值，

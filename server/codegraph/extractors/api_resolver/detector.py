@@ -631,7 +631,7 @@ def resolve_call_sites_for_wrapper(
 
     Args:
         wrapper: ApiWrapperData（含 file_path + function_symbol）
-        supervisor: initial implementation VolarPool 获取的 LspSupervisor 实例
+        supervisor: implementation VolarPool 获取的 LspSupervisor 实例
         timeout: LSP 请求超时（秒）
 
     Returns:

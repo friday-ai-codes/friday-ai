@@ -1,4 +1,4 @@
-"""initial implementation 用户与成员管理测试。
+"""implementation 用户与成员管理测试。
 
 覆盖需求：work item, work item, work item, work item, work item, work item, work item
 """

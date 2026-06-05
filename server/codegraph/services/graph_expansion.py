@@ -1,6 +1,6 @@
 """Graph Expansion Service —— 2-hop 图遍历扩展。
 
-基于 initial implementation 已入库的 Symbol/CallEdge 图谱数据，
+基于 implementation 已入库的 Symbol/CallEdge 图谱数据，
 从种子符号出发沿调用边扩展调用者和被调用者关系。
 """
 
@@ -143,7 +143,7 @@ class GraphExpansionService:
                 })
 
         # --- 入边：谁调用了 seed ---
-        # 排除 caller_symbol=NULL 的模块级边（initial implementation）：符号级 DAG 以
+        # 排除 caller_symbol=NULL 的模块级边（implementation）：符号级 DAG 以
         # Symbol 为节点，模块级 caller 无对应 Symbol，本 phase 最小过滤不展示（完整改造留 291/work item）。
         incoming_edges = await sync_to_async(list)(
             CallEdge.objects.filter(

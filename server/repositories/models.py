@@ -69,7 +69,7 @@ class IndexHistoryStatus(models.TextChoices):
 
 
 class GraphBuildStatus(models.TextChoices):
-    """GraphRAG 增量构建状态（initial implementation contract）。
+    """GraphRAG 增量构建状态（implementation contract）。
 
     与 IndexHistoryStatus 互相独立——前者描述本次索引对应的 graph
     enrichment 阶段（ChunkEdge 构建 + payload 同步），后者描述整体索引流程。
@@ -83,12 +83,12 @@ class GraphBuildStatus(models.TextChoices):
 
 
 class GraphBuildHistoryStatus(models.TextChoices):
-    """独立 graph 构建生命周期 4 态（initial implementation-03）。
+    """独立 graph 构建生命周期 4 态（implementation-03）。
 
     与 IndexHistoryStatus / GraphBuildStatus 均独立——本枚举描述顶层
     `services/graph_builder.py` 的构建生命周期；**不引入 pending 态**：
-    创建即 RUNNING（per initial implementation CONTEXT 决议），省一态简化测试与未来
-    SSE 终止判定，与 ROADMAP success criterion/success criterion 的 4 态对齐。
+    创建即 RUNNING（per implementation CONTEXT 决议），省一态简化测试与未来
+    SSE 终止判定，与 success criterion/success criterion 的 4 态对齐。
     """
 
     RUNNING = "running", "运行中"
@@ -98,11 +98,11 @@ class GraphBuildHistoryStatus(models.TextChoices):
 
 
 class GraphBuildHistoryTrigger(models.TextChoices):
-    """独立 graph 构建触发来源 3 态（initial implementation-03）。
+    """独立 graph 构建触发来源 3 态（implementation-03）。
 
     - MANUAL：REST `POST /codegraph/rebuild/` 用户显式触发
     - AUTO_AFTER_INDEX：indexer 主流程在 `_extract_and_write_graph` 前后包裹
-    - WEBHOOK：仅占位，initial implementation 范围内无 view 路径产生该值（webhook 接入留 legacy.2+）
+    - WEBHOOK：仅占位，implementation 范围内无 view 路径产生该值（webhook 接入留 legacy.2+）
     """
 
     MANUAL = "manual", "手动触发"
@@ -111,14 +111,14 @@ class GraphBuildHistoryTrigger(models.TextChoices):
 
 
 class RepositoryGraphStatus(models.TextChoices):
-    """Repository 上的图谱当前态 5 态（initial implementation-01）。
+    """Repository 上的图谱当前态 5 态（implementation-01）。
 
     与 ``GraphBuildHistoryStatus`` 4 态独立——后者描述 history 行（创建即 RUNNING，
     不引入 pending/idle），前者描述仓库聚合态：必须有 ``IDLE`` 默认值表示"从未
     构建过"或"两次构建之间空闲"。4 个运行态字符串（running/completed/failed/
     cancelled）与 ``GraphBuildHistoryStatus`` 完全对齐，便于 view 层 1:1 映射。
 
-    CONTEXT 决议（initial implementation Grey Area 1）：不引入 pending / skipped。
+    CONTEXT 决议（implementation Grey Area 1）：不引入 pending / skipped。
     """
 
     IDLE = "idle", "未构建"
@@ -213,7 +213,7 @@ class Repository(models.Model):
     # 增量索引与自动触发字段
     last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
     auto_index_enabled = models.BooleanField(default=False)
-    # initial implementation-01：per-repo 自动构图开关，默认 True 保向后兼容。
+    # implementation-01：per-repo 自动构图开关，默认 True 保向后兼容。
     # indexer 主流程会在 _extract_and_write_graph 调用前以
     # `settings.ENABLE_CODEGRAPH AND auto_build_graph_enabled` 双重判断决定是否跳过
     # （双重判断落在 plan；本字段在 plan 单独落地）。
@@ -221,7 +221,7 @@ class Repository(models.Model):
         default=True,
         help_text="是否自动构建图谱（per-repo 开关，AND settings.ENABLE_CODEGRAPH 决定是否跳过）",
     )
-    # initial implementation-01：图谱进度 6 字段（与 index_* 字段并行，彻底解耦
+    # implementation-01：图谱进度 6 字段（与 index_* 字段并行，彻底解耦
     # 索引文案与图谱文案）。由 `services.indexer.update_graph_progress` helper 按
     # `GRAPH_YIELD_EVERY=25` callsite 节流写入；reset/terminal 由
     # `services.graph_builder.build_graph_for_repository` 主入口 + indexer 4 处
@@ -230,7 +230,7 @@ class Repository(models.Model):
         max_length=20,
         choices=RepositoryGraphStatus.choices,
         default=RepositoryGraphStatus.IDLE,
-        help_text="图谱当前态（initial implementation-01）",
+        help_text="图谱当前态（implementation-01）",
     )
     graph_stage = models.CharField(
         max_length=64,
@@ -266,7 +266,7 @@ class Repository(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # Hash 新鲜度字段（initial implementation contract）
+    # Hash 新鲜度字段（implementation contract）
     remote_head_sha = models.CharField(
         max_length=64,
         blank=True,
@@ -279,7 +279,7 @@ class Repository(models.Model):
         help_text="最近一次 git ls-remote 执行时间",
     )
 
-    # STALE commit 差值（initial implementation contract）
+    # STALE commit 差值（implementation contract）
     behind_commits = models.IntegerField(
         null=True,
         blank=True,
@@ -291,7 +291,7 @@ class Repository(models.Model):
         help_text="behind_commits 最近一次计算时间",
     )
 
-    # AI 描述生成字段（initial implementation）
+    # AI 描述生成字段（implementation）
     ai_summary = models.TextField(null=True, blank=True)
     ai_summary_status = models.CharField(
         max_length=20,
@@ -356,7 +356,7 @@ class IndexHistory(models.Model):
         blank=True,
         help_text="增量索引涉及的变更文件路径列表，全量索引时为空",
     )
-    # initial implementation contract：GraphRAG 增量构建可观测字段（lifecycle 写入逻辑见 plan）
+    # implementation contract：GraphRAG 增量构建可观测字段（lifecycle 写入逻辑见 plan）
     graph_build_status = models.CharField(
         max_length=20,
         choices=GraphBuildStatus.choices,
@@ -372,7 +372,7 @@ class IndexHistory(models.Model):
         null=True,
         help_text="最近一次 payload.related_chunks 同步完成时间",
     )
-    # initial implementation：跨仓 API join 可观测字段
+    # implementation：跨仓 API join 可观测字段
     cross_repo_match_count = models.PositiveIntegerField(
         default=0,
         help_text="最近一次 cross_repo offline join 产生的匹配记录总数",
@@ -382,7 +382,7 @@ class IndexHistory(models.Model):
         null=True,
         help_text="最近一次 cross_repo offline join 完成时间",
     )
-    # initial implementation：per-run delta 可观测字段
+    # implementation：per-run delta 可观测字段
     # 语义与上方累计 edge_count 严格对立——这 5 个字段记录「本次索引」量，
     # 而非全仓库累计快照（Pitfall 7：杜绝把累计 count 误填进 per-run delta）。
     # 用 IntegerField（非 PositiveIntegerField）与 files_added 风格一致，避免负值边界争议。
@@ -412,7 +412,7 @@ class IndexHistory(models.Model):
         default=0,
         help_text="本次索引净新增 ChunkEdge 数（per-run，去重后 inserted；区别于累计 edge_count）",
     )
-    # initial implementation：行级 diff 可观测字段（nullable 三态）
+    # implementation：行级 diff 可观测字段（nullable 三态）
     # 三态语义：真实值（numstat 汇总数）/ 0（无变更或二进制文件）/ null（不可计算）。
     # null=不可计算——全量索引无 from/to SHA diff、或 shallow clone 加深失败时，
     # 绝不把「不可计算」写成 0（Pitfall 6：null 与真实 0 必须可区分，前端据此显示 "—"）。
@@ -443,7 +443,7 @@ class IndexHistory(models.Model):
 
 
 class GraphBuildHistory(models.Model):
-    """独立图谱构建历史（initial implementation-03）。
+    """独立图谱构建历史（implementation-03）。
 
     与 `IndexHistory` 同居 repositories app，但描述的是顶层
     `services/graph_builder.py` 的图谱构建生命周期——三种 trigger 一视同仁

@@ -1,4 +1,4 @@
-"""initial implementation: registry 集成测试（apps.ready + EXTRACTOR_BACKENDS 切 volar + work item fallback）。
+"""implementation: registry 集成测试（apps.ready + EXTRACTOR_BACKENDS 切 volar + work item fallback）。
 
 per implementation plan Task 3 acceptance：
 - VOLAR_BACKEND_ENABLED=True：BACKEND_REGISTRY 5 项替换为 make_volar_backend 闭包

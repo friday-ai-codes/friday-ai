@@ -1,4 +1,4 @@
-"""initial implementation: 自动索引触发测试
+"""implementation: 自动索引触发测试
 
 测试覆盖：
 - work item: Webhook push 事件接收 + 签名验证（GitHub/GitLab/Gitea）

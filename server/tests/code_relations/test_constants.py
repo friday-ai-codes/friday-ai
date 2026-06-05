@@ -1,15 +1,15 @@
-"""`code_relations.constants` 暴露 initial implementation / initial implementation 编排器共享常量。
+"""`code_relations.constants` 暴露 implementation / implementation 编排器共享常量。
 
 覆盖 assertion：
 
-initial implementation（既有）：
+implementation（既有）：
 - MAX_HOPS == 2 / TOP_NEIGHBORS_PER_HOP1 == 10 / TOP_NEIGHBORS_PER_HOP2 == 50 字面值
 - 类型均为 `int`
 - 三常量均**不通过 `env.*` 读取**（runtime 不允许通过环境变量绕开 hops 上限或邻居裁剪量）
 
-initial implementation plan（新增）：
+implementation（新增）：
 - CO_CHANGED_WINDOW_COMMITS == 2000（per contract，CoChangedEdgeBuilder 滑窗）
-- SEMANTIC_SCORE_THRESHOLD == 0.85（per initial implementation success criterion，SemanticEdgeBuilder Qdrant 阈值）
+- SEMANTIC_SCORE_THRESHOLD == 0.85（per implementation success criterion，SemanticEdgeBuilder Qdrant 阈值）
 - 类型分别为 int / float 且非 bool
 - 既有常量 MAX_NEIGHBORS_PER_CHUNK == 20 / MAX_HOPS == 2 回归保护
 """
@@ -66,12 +66,12 @@ def test_constants_not_env_derived() -> None:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation plan：新增 CO_CHANGED_WINDOW_COMMITS / SEMANTIC_SCORE_THRESHOLD
+# implementation：新增 CO_CHANGED_WINDOW_COMMITS / SEMANTIC_SCORE_THRESHOLD
 # ---------------------------------------------------------------------------
 
 
 def test_co_changed_window_commits_literal_value() -> None:
-    """``CO_CHANGED_WINDOW_COMMITS`` 字面值锁定 == 2000（per initial implementation contract）。"""
+    """``CO_CHANGED_WINDOW_COMMITS`` 字面值锁定 == 2000（per implementation contract）。"""
     from code_relations.constants import CO_CHANGED_WINDOW_COMMITS
 
     assert CO_CHANGED_WINDOW_COMMITS == 2000
@@ -80,7 +80,7 @@ def test_co_changed_window_commits_literal_value() -> None:
 
 
 def test_semantic_score_threshold_literal_value() -> None:
-    """``SEMANTIC_SCORE_THRESHOLD`` 字面值锁定 == 0.85（per initial implementation success criterion 防漂移）。"""
+    """``SEMANTIC_SCORE_THRESHOLD`` 字面值锁定 == 0.85（per implementation success criterion 防漂移）。"""
     from code_relations.constants import SEMANTIC_SCORE_THRESHOLD
 
     assert SEMANTIC_SCORE_THRESHOLD == 0.85
@@ -91,7 +91,7 @@ def test_semantic_score_threshold_literal_value() -> None:
 def test_phase_256_constants_not_env_derived() -> None:
     """硬约束：CO_CHANGED_WINDOW_COMMITS / SEMANTIC_SCORE_THRESHOLD 不允许 env 读取。
 
-    与 initial implementation 三常量同款防御：扫描源码，断言 RHS 是纯字面赋值，
+    与 implementation 三常量同款防御：扫描源码，断言 RHS 是纯字面赋值，
     禁止通过 env / os.environ 绕过滑窗 / 阈值上限。
     """
     source = Path(constants.__file__).read_text(encoding="utf-8")
@@ -115,9 +115,9 @@ def test_phase_256_constants_not_env_derived() -> None:
 
 
 def test_existing_constants_unchanged_regression_guard() -> None:
-    """既有常量 MAX_NEIGHBORS_PER_CHUNK / MAX_HOPS 未被改动（initial implementation 回归保护）。
+    """既有常量 MAX_NEIGHBORS_PER_CHUNK / MAX_HOPS 未被改动（implementation 回归保护）。
 
-    initial implementation plan ``<action>`` 明确"不修改既有常量"——本测试在新增常量
+    implementation ``<action>`` 明确"不修改既有常量"——本测试在新增常量
     PR 引入意外副作用时锁定既有值。
     """
     assert constants.MAX_NEIGHBORS_PER_CHUNK == 20

@@ -1,4 +1,4 @@
-"""``CodeParser`` ast_aware 多语言精细切片测试（initial implementation 重写后）。
+"""``CodeParser`` ast_aware 多语言精细切片测试（implementation 重写后）。
 
 固化重写后的行为并防回归（对照重写前的三处翻车）：
 - class 不被揉进相邻小函数的合并组（Python / Go）；
@@ -128,7 +128,7 @@ def test_empty_content_returns_no_chunks(parser: CodeParser) -> None:
 
 
 # ---------------------------------------------------------------------------
-# parse_file_dual：一次解析双供（initial implementation single-parse）
+# parse_file_dual：一次解析双供（implementation single-parse）
 # ---------------------------------------------------------------------------
 
 

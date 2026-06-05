@@ -1,4 +1,4 @@
-"""initial implementation plan（work item 约束部分 + work item）：ChunkEdge 约束 + 双写 + 迁移可逆性。
+"""implementation（work item 约束部分 + work item）：ChunkEdge 约束 + 双写 + 迁移可逆性。
 
 覆盖：uniq_chunkedge_triple 含 branch_name 自省 + base/feature 双写无 IntegrityError +
 同 branch_name 重复写仍 IntegrityError + 4 条新迁移无 RunPython/RunSQL（可逆性护栏）。

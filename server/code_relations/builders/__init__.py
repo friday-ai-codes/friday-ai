@@ -1,4 +1,4 @@
-"""initial implementation EdgeBuilder 包：6 类 ChunkEdge 构建器（per contract）。
+"""implementation EdgeBuilder 包：6 类 ChunkEdge 构建器（per contract）。
 
 `BUILDERS` 注册表由 plan 07 末尾填入（plan 01..06 各自落地 builder 类，plan 07
 在此统一注册），含全部 6 个 builder 类，orchestrator 用此 list 并发跑

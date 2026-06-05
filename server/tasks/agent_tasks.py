@@ -83,7 +83,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
             system_prompt = stored_config.get("system_prompt", "")
             max_turns = stored_config.get("max_iterations", 15)
 
-        # initial implementation plan：从 ProviderConfigService.aresolve_or_error 获取凭证
+        # implementation：从 ProviderConfigService.aresolve_or_error 获取凭证
         # （替代 v8.1 aget_claude_config 路径）
         from services.provider_config import (
             ProviderConfigService,

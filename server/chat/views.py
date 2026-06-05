@@ -168,7 +168,7 @@ class ModelsView(APIView):
 class ChatCompletionsView(APIView):
     """API view for chat completions."""
 
-    # initial implementation OpenAI compat 兼容性：除默认 Cookie JWT 外，再接受 Bearer JWT 与
+    # implementation OpenAI compat 兼容性：除默认 Cookie JWT 外，再接受 Bearer JWT 与
     # X-Chat-Key（OpenAI SDK / 外部脚本通常通过 Authorization: Bearer 访问）。
     authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
     permission_classes = [IsAuthenticated]
@@ -314,7 +314,7 @@ class ChatImageView(APIView):
 
 
 # ============================================================================
-# Conversation Views (initial implementation)
+# Conversation Views (implementation)
 # ============================================================================
 
 
@@ -393,7 +393,7 @@ class ConversationDetailView(APIView):
     async def get(self, request, conversation_id):
         """获取对话详情含消息。
 
-        initial implementation contract contract：响应扩展 resolved_provider 字段 = {provider_type,
+        implementation contract contract：响应扩展 resolved_provider 字段 = {provider_type,
         model, source, chain: [4 层]}。
         """
         try:
@@ -409,7 +409,7 @@ class ConversationDetailView(APIView):
         conversation = result["conversation"]
         messages = result["messages"]
 
-        # initial implementation contract contract：四层 Provider 解析 Inspector
+        # implementation contract contract：四层 Provider 解析 Inspector
         # 预取 FK（async 上下文禁止触发 SynchronousOnlyOperation）
         conversation_prefetched = await Conversation.objects.select_related(
             "project",
@@ -543,7 +543,7 @@ class ConversationDetailView(APIView):
         description=(
             "部分更新对话的 provider_credential_id / model / title。"
             "frozen 状态（completed/stopped/error）下拒绝修改 provider_credential_id 和 model，"
-            "返回 HTTP 400 + {code: 'conversation_frozen'}（initial implementation contract contract 后端防御）。"
+            "返回 HTTP 400 + {code: 'conversation_frozen'}（implementation contract contract 后端防御）。"
         ),
         request=ConversationPatchSerializer,
         responses={
@@ -554,7 +554,7 @@ class ConversationDetailView(APIView):
         tags=["Conversations"],
     )
     async def patch(self, request, conversation_id):
-        """initial implementation contract contract/contract：对话 pin 更新 + frozen 校验。"""
+        """implementation contract contract/contract：对话 pin 更新 + frozen 校验。"""
         # 1. 对话存在性（Conversation.DoesNotExist → 404）
         try:
             conversation = await Conversation.objects.aget(
@@ -651,7 +651,7 @@ class ConversationDetailView(APIView):
 
 
 class ConversationPreflightView(APIView):
-    """initial implementation contract contract：对话凭证前置探测（不发送 user message）。
+    """implementation contract contract：对话凭证前置探测（不发送 user message）。
 
     用于 ChatMessageArea 在用户进入对话 / 按 Send / 切换 Provider 时提前判定：
         - 若凭证解析成功 → 200 `{status: "ok", resolved: {...}}`，允许正常 Send。
@@ -670,7 +670,7 @@ class ConversationPreflightView(APIView):
         summary="对话凭证前置探测",
         description=(
             "解析对话的 Provider 凭证；失败时返回结构化 provider_credential_missing 错误供前端渲染 "
-            "ProviderCredentialMissingCard（initial implementation contract contract）。"
+            "ProviderCredentialMissingCard（implementation contract contract）。"
         ),
         responses={
             200: {"description": "凭证可用"},
@@ -699,7 +699,7 @@ class ConversationPreflightView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # [initial implementation] Ownership 校验（security mitigation）
+        # [implementation] Ownership 校验（security mitigation）
         # 模式与 ConversationMessagesDeleteView.delete work item 完全一致，仅：
         #   min_role: "member" → "viewer"（preflight 是只读探测）
         #   event name: "chat.cleanup_denied_cross_project" → "chat.preflight_denied_cross_project"
@@ -815,7 +815,7 @@ class ConversationRuntimeView(APIView):
 
 
 class ConversationMessagesDeleteView(APIView):
-    """initial implementation contract contract：对话历史消息批量清理端点。
+    """implementation contract contract：对话历史消息批量清理端点。
 
     路由：``DELETE /api/chat/conversations/{conversation_id}/messages/?before_id=X``
 
@@ -843,7 +843,7 @@ class ConversationMessagesDeleteView(APIView):
         description=(
             "硬删 before_id 之前的所有消息（created_at 升序）。受 ownership 校验；"
             "conversation.project 需 user 有 MEMBER+ 权限（superuser 豁免）。"
-            "initial implementation contract contract。"
+            "implementation contract contract。"
         ),
         responses={
             200: {"description": "删除成功 {deleted_count: N}"},
@@ -1355,7 +1355,7 @@ async def _cancel_dispatched_task(task_info: dict) -> None:
 
 
 # ============================================================================
-# Export to Feishu (initial implementation)
+# Export to Feishu (implementation)
 # ============================================================================
 
 
@@ -1465,7 +1465,7 @@ class ExportToFeishuView(APIView):
 
 
 # ============================================================================
-# Export CodingPlan to Feishu (initial implementation / work item)
+# Export CodingPlan to Feishu (implementation / work item)
 # ============================================================================
 
 
@@ -1553,7 +1553,7 @@ class ExportCodingPlanToFeishuView(APIView):
 
 
 # ============================================================================
-# CodingSession Views (initial implementation)
+# CodingSession Views (implementation)
 # ============================================================================
 
 
@@ -1566,7 +1566,7 @@ class CodingSessionConfirmView(APIView):
     async def post(self, request, session_id):  # type: ignore[override]
         """确认 draft CodingSession，启动 coding_graph 后台任务。
 
-        initial implementation contract：本 view 不再直接调用 `dispatch_coding_task`，改为
+        implementation contract：本 view 不再直接调用 `dispatch_coding_task`，改为
         构建 `coding_graph` 并以 `asyncio.create_task` 异步驱动；同步前置仅做
         branch_name 校验、`aconfirm()` 与 Runner 在线探测。状态推进（confirmed
         -> running）由 graph 的 `dispatch_coding_node` 负责。
@@ -1584,7 +1584,7 @@ class CodingSessionConfirmView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # initial implementation: 处理前端传入的分支名覆盖
+        # implementation: 处理前端传入的分支名覆盖
         branch_name = request.data.get("branch_name") if request.data else None
         if branch_name:
             from chat.branch_service import validate_branch_name
@@ -2030,7 +2030,7 @@ class CodingSessionDetailView(APIView):
 class CodingPlanListView(APIView):
     """GET /api/chat/coding-plans/?conversation_id=<uuid>
 
-    initial implementation：按 conversation 查询 CodingPlan 列表。
+    implementation：按 conversation 查询 CodingPlan 列表。
     """
 
     authentication_classes = [OptionalJWTAuthentication]
@@ -2062,7 +2062,7 @@ class CodingPlanListView(APIView):
 class CodingPlanDetailView(APIView):
     """GET /api/chat/coding-plans/<uuid>/
 
-    initial implementation：CodingPlan 详情。
+    implementation：CodingPlan 详情。
     """
 
     authentication_classes = [OptionalJWTAuthentication]
@@ -2085,7 +2085,7 @@ class CodingPlanDetailView(APIView):
 class CodingPlanSessionsBatchCreateView(APIView):
     """POST /api/chat/coding-plans/{plan_id}/sessions/ -- work item 批量创建 CodingSession。
 
-    initial implementation：在已有 CodingPlan 上为 N 个 repository 批量创建 DRAFT CodingSession。
+    implementation：在已有 CodingPlan 上为 N 个 repository 批量创建 DRAFT CodingSession。
     每个 repository 独立校验 + 独立事务，部分失败不阻塞其他 repository（CONTEXT
     §批量创建 endpoint 语义）。
     """
@@ -2168,14 +2168,14 @@ class CodingPlanSessionsBatchCreateView(APIView):
 
 
 # ============================================================================
-# initial implementation：路由决策手动微调 endpoint
+# implementation：路由决策手动微调 endpoint
 # ============================================================================
 
 
 class RoutingTraceManualOverrideView(APIView):
     """POST /api/chat/routing-traces/<uuid:trace_id>/override/
 
-    initial implementation：用户在 RoutingDecisionPanel 改勾选 → 写一行新
+    implementation：用户在 RoutingDecisionPanel 改勾选 → 写一行新
     ``RepositoryRoutingTrace(triggered_by=MANUAL_OVERRIDE)`` —— 保留原 trace
     不变，evaluation SQL 可对比 AI 决策 vs 用户最终决策。
 
@@ -2262,7 +2262,7 @@ class RoutingTraceManualOverrideView(APIView):
 
 
 # ============================================================================
-# initial implementation / work item / work item：协商答复 endpoint
+# implementation / work item / work item：协商答复 endpoint
 # ============================================================================
 
 

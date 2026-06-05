@@ -1,4 +1,4 @@
-"""initial implementation: Go gin Endpoint Extractor 单元测试 + study-course 集成测试。
+"""implementation: Go gin Endpoint Extractor 单元测试 + study-course 集成测试。
 
 覆盖 work item 四个 Requirements。
 单元测试用 tree-sitter parse fixture 文件（无 mock），直接验证抽取结果。

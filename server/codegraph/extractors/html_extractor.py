@@ -1,10 +1,10 @@
 """HTML 专用抽取器 —— TreeSitterBackend("html") thin wrapper。
 
-per initial implementation / work item：与 ts_extractor.py / go_extractor.py 字面对称，
-**不**沿用 initial implementation SFC pre-splitter 模式（HTML 是单 grammar 文件，无须中间层）。
+per implementation / work item：与 ts_extractor.py / go_extractor.py 字面对称，
+**不**沿用 implementation SFC pre-splitter 模式（HTML 是单 grammar 文件，无须中间层）。
 
 calls / endpoints 显式 [] —— per work item / work item：HTML 无 callable / endpoint 语义；
-inline `<script>` / `<style>` 段不递归解析（per work item / work item 留 initial implementation volar）。
+inline `<script>` / `<style>` 段不递归解析（per work item / work item 留 implementation volar）。
 
 SymbolData 通过 walker.py SYMBOL_TYPES["html"] + symbol.py html 分支落地（PascalCase tag /
 custom element / id 属性）；ImportData 通过 walker.py IMPORT_TYPES["html"] +

@@ -1,4 +1,4 @@
-"""Galaxy API 端到端测试 —— initial implementation 全覆盖。
+"""Galaxy API 端到端测试 —— implementation 全覆盖。
 
 E1  work item: galaxy 模块可正常 import
 E2  work item: aggregate() 返回 5 类节点统一格式

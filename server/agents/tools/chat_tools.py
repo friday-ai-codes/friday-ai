@@ -811,7 +811,7 @@ DEEP_ANALYSIS_TIMEOUT = 1800  # 30 分钟
         "  所以「同仓库不同角度」的问题请合并到一个 task_description 里。\n\n"
         "Dispatch 后立即返回 blocking marker，系统会等所有并行任务完成后统一回灌结果。"
         "\n\n"
-        "**完成回流**（initial implementation）：每次容器完成时 Server 端会自动回算 "
+        "**完成回流**（implementation）：每次容器完成时 Server 端会自动回算 "
         "cross_repo_relevance —— 结果落 RepositoryRoutingTrace（triggered_by="
         "deep_analysis_completion）+ 写入 AgentSession.metadata['cross_repo_relevance'] "
         "+ 拼到本工具返回 text 末尾 `[cross_repo_relevance:<trace_id>]` 段。"
@@ -992,7 +992,7 @@ async def deep_analysis(
     )
 
     # 5. 从 ProviderCredential 获取 API 凭据 + Git 凭据，通过 metadata 注入容器
-    # initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
+    # implementation（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
     # ProviderCredential(scope=system, name=default, provider_type=anthropic)
     from common.encryption import decrypt_value
     from repositories.models import GitCredential

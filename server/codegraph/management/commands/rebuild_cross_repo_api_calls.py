@@ -7,7 +7,7 @@
     python manage.py rebuild_cross_repo_api_calls --all --batch-size 1000
 
 per work item, work item
-与 initial implementation backfill_chunk_edges 同模式。
+与 implementation backfill_chunk_edges 同模式。
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""initial implementation：CodingPlan REST 端点测试。
+"""implementation：CodingPlan REST 端点测试。
 
 GET /api/chat/coding-plans/?conversation_id=<uuid>  -- 列表
 GET /api/chat/coding-plans/<uuid>/                   -- 详情
@@ -108,7 +108,7 @@ class TestCodingPlanDetailAPI:
 
 @pytest.mark.django_db(transaction=True)
 class TestCodingSessionSerializerExposesPlanId:
-    """initial implementation：CodingSessionSerializer 暴露 coding_plan_id 字段。"""
+    """implementation：CodingSessionSerializer 暴露 coding_plan_id 字段。"""
 
     def test_serializer_shows_plan_id_when_linked(
         self, authenticated_client, conversation, repository, two_plans

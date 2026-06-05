@@ -1,6 +1,6 @@
 """Graph Expansion 测试共享 fixtures。
 
-initial implementation plan（golden snapshot baseline）追加：
+implementation（golden snapshot baseline）追加：
 - `GOLDEN_QUERIES_REGISTRY`：20 条 parametrize 入口常量（per contract）
 - `golden_mock_environment` fixture：确定性 mock 五个外部依赖（per contract）
 """
@@ -122,7 +122,7 @@ def second_hop_edge(callee_symbol, second_hop_symbol, graph_repo):
     )
 
 
-# --- RepoSummaryBuilder 测试 fixtures (initial implementation) ---
+# --- RepoSummaryBuilder 测试 fixtures (implementation) ---
 
 
 @pytest.fixture
@@ -212,10 +212,10 @@ def repo_file_indexes(repo_for_summary):
 
 
 # =============================================================================
-# initial implementation plan: Golden Snapshot Baseline fixtures
+# implementation: Golden Snapshot Baseline fixtures
 #
 # 锁定 LayeredSearchService.search() 的 final_context 现状行为，作为后续 RAG
-# 解耦阶段的"零漂移"门禁（Pitfall 4 per ROADMAP §initial implementation Success Criteria #2）。
+# 解耦阶段的"零漂移"门禁（Pitfall 4 requirements §implementation Success Criteria #2）。
 #
 # 设计要点（per contract / contract / contract）：
 # - 所有外部依赖（RepoRouter / Symbol ORM / BranchAwareSearch / Embedding /

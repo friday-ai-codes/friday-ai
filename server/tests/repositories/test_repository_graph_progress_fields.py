@@ -1,4 +1,4 @@
-"""initial implementation plan：Repository 6 个图谱进度字段 + RepositoryGraphStatus 5 态。
+"""implementation：Repository 6 个图谱进度字段 + RepositoryGraphStatus 5 态。
 
 测试覆盖（work item-01）：
 

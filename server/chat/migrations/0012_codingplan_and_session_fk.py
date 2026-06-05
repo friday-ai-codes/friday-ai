@@ -16,12 +16,12 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='codingsession',
             name='affected_files',
-            field=models.JSONField(default=list, help_text='initial implementation 起 deprecated：优先使用 coding_plan.affected_files；本字段保留至 v26.1 清理', verbose_name='影响文件列表'),
+            field=models.JSONField(default=list, help_text='implementation 起 deprecated：优先使用 coding_plan.affected_files；本字段保留至 v26.1 清理', verbose_name='影响文件列表'),
         ),
         migrations.AlterField(
             model_name='codingsession',
             name='tech_plan',
-            field=models.TextField(help_text='initial implementation 起 deprecated：优先使用 coding_plan.tech_plan；本字段保留至 v26.1 清理', verbose_name='技术方案 (Markdown)'),
+            field=models.TextField(help_text='implementation 起 deprecated：优先使用 coding_plan.tech_plan；本字段保留至 v26.1 清理', verbose_name='技术方案 (Markdown)'),
         ),
         migrations.CreateModel(
             name='CodingPlan',
@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='codingsession',
             name='coding_plan',
-            field=models.ForeignKey(blank=True, help_text='initial implementation：tech_plan / affected_files 拆出 CodingPlan 后的关联；过渡期为空，由 migrate_coding_sessions_to_plans 命令回填', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='coding_sessions', to='chat.codingplan'),
+            field=models.ForeignKey(blank=True, help_text='implementation：tech_plan / affected_files 拆出 CodingPlan 后的关联；过渡期为空，由 migrate_coding_sessions_to_plans 命令回填', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='coding_sessions', to='chat.codingplan'),
         ),
         migrations.AddIndex(
             model_name='codingplan',

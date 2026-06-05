@@ -1,6 +1,6 @@
-"""initial implementation / initial implementation contract: title_service prompt 迁移字节级等价测试。
+"""implementation / implementation contract: title_service prompt 迁移字节级等价测试。
 
-initial implementation contract（implementation plan）迁移后：
+implementation contract（implementation plan）迁移后：
 - 原 Anthropic SDK 客户端拦截改为 `build_chat_model` seam + `FakeChatModel`
 - 保留字节级 hash 比对能力：通过 `_CapturingFake` 子类在 `ainvoke` 时捕获
   `HumanMessage.content`，验证 3 个分支（DB 命中 / DB 空 / PROMPT_CENTER_DISABLED_KEYS）
@@ -106,7 +106,7 @@ class TestTitleServiceMigration:
                 project=None,
                 category="aux_model",
                 title="标题生成",
-                description="initial implementation test re-seed",
+                description="implementation test re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(
@@ -216,7 +216,7 @@ class TestTitleServiceMigration:
     ) -> None:
         """contract：验证 ainvoke 输入是 [HumanMessage(content=rendered_prompt)] 单一路径。
 
-        保证 work item initial implementation 字节级 hash 等价契约：title_service 不引入
+        保证 work item implementation 字节级 hash 等价契约：title_service 不引入
         ChatPromptTemplate 二次封装，保留 rendered_prompt → HumanMessage 透传。
         """
         captured_inputs: list[Any] = []

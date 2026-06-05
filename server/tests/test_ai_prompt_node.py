@@ -1,4 +1,4 @@
-"""initial implementation Wave（task）：AIPromptNode 单元测试。
+"""implementation Wave（task）：AIPromptNode 单元测试。
 
 覆盖范围（implementation plan Task 2 <behavior> 12 场景）：
 

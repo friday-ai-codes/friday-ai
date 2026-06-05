@@ -1,6 +1,6 @@
 """AgentEvent 数据结构测试。
 
-测试 initial implementation 新增的事件基础设施中 AgentEvent dataclass 和事件类型常量。
+测试 implementation 新增的事件基础设施中 AgentEvent dataclass 和事件类型常量。
 """
 
 from agents.core.events import (

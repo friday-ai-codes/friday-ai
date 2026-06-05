@@ -1,4 +1,4 @@
-"""RepoRouter 两阶段路由 + Route API 端点测试 —— initial implementation (per contract/contract/contract)."""
+"""RepoRouter 两阶段路由 + Route API 端点测试 —— implementation (per contract/contract/contract)."""
 
 from unittest.mock import AsyncMock, patch
 

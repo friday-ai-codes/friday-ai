@@ -535,7 +535,7 @@ class TokenUsage(models.Model):
         null=True,
         blank=True,
         verbose_name="Provider 类型",
-        help_text="LLM Provider 类型，用于按 Provider 分组统计成本 [v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]",
+        help_text="LLM Provider 类型，用于按 Provider 分组统计成本 [v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]",
     )
 
     # 数据来源

@@ -1,19 +1,19 @@
 """Vue SFC 专用抽取器 —— SFC pre-splitter + TS backend 组合。
 
-per initial implementation：不引入 tree-sitter-vue grammar，依赖 Python pre-splitter
-（vue_sfc_splitter）+ 复用 initial implementation 落地的 TS / TSX backend 完成 .vue 文件抽取。
+per implementation：不引入 tree-sitter-vue grammar，依赖 Python pre-splitter
+（vue_sfc_splitter）+ 复用 implementation 落地的 TS / TSX backend 完成 .vue 文件抽取。
 
 VueExtractor.extract 6 步流程（per work item）：
 1. 文件名 Component Symbol（per work item）
 2. SFC 拆分（split_sfc）
 3. script 段 dispatch 到 TreeSitterBackend("typescript" / "tsx")，行号偏移还原
 4. template 反向引用（与 script_symbol_names 集合交集，per work item）
-   + 模板子组件标签 <UserCard/> / <user-card/> 抽成 TEMPLATE_REF（per initial implementation
+   + 模板子组件标签 <UserCard/> / <user-card/> 抽成 TEMPLATE_REF（per implementation
    work item：子组件来自 import，不在 script 符号集，故独立产出、不取交集）
 5. style 段不处理（per work item）
 6. endpoints 安全返 []
 
-后续 initial implementation 切 volar 时只需在此覆写 backend 注入路径。
+后续 implementation 切 volar 时只需在此覆写 backend 注入路径。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _TEMPLATE_EVENT = re.compile(r'@[\w-]+\s*=\s*"(\w+)"')
 _TEMPLATE_BIND = re.compile(r':[\w-]+\s*=\s*"(\w+)"')
 _TEMPLATE_MUSTACHE = re.compile(r'\{\{\s*(\w+)\s*\}\}')
 
-# 模板子组件标签扫描（per initial implementation / RESEARCH Pitfall 4）。
+# 模板子组件标签扫描（per implementation / RESEARCH Pitfall 4）。
 # 匹配开标签 / 自闭合标签的标签名（lookahead 限定后接空白 / `/` / `>`，
 # 避免吞掉属性、且不匹配闭标签 `</X>`，线性扫描无灾难性回溯，命中 security mitigation）。
 # 过滤口径：含连字符（kebab-case 子组件）或首字母大写（PascalCase 子组件）才视为
@@ -66,7 +66,7 @@ class VueExtractor:
     内部组合 vue_sfc_splitter + TreeSitterBackend("typescript")/("tsx") 实现
     Vue 2 Options API + Vue 2.7+ / 3 <script setup> 全形态抽取。
 
-    决策：暂不支持外部 backend 注入（initial implementation 切 volar 时若需注入则覆写）。
+    决策：暂不支持外部 backend 注入（implementation 切 volar 时若需注入则覆写）。
     """
 
     def extract(

@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2：LangChainAgentRunner 核心 ReAct + interrupt + tool flow 测试。
+"""implementation Task 2：LangChainAgentRunner 核心 ReAct + interrupt + tool flow 测试。
 
 覆盖 Requirement 映射（project docs）：
 - work item：stream / result / interrupt 三件套接口 + CancelledError 传播

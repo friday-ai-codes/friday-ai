@@ -1,4 +1,4 @@
-"""``list_endpoints`` agent tool —— per initial implementation plan work item。
+"""``list_endpoints`` agent tool —— per implementation work item。
 
 列出指定仓库的所有 API 端点，按 HTTP 方法 + URL 路径排序。
 
@@ -7,7 +7,7 @@
 - **limit 参数**：default=200，max=1000（避超大仓库爆 output）。
 - **total 回传**：同时返回仓库总端点数（不受 limit 截断），让 Agent 知道是否被截断。
 - **轻量字典**：``.values()`` 避免全 ORM 实例化，减少内存占用。
-- 永不冒泡异常（per initial implementation 双层防御）。
+- 永不冒泡异常（per implementation 双层防御）。
 
 **注册路径**：通过 ``agents/tools/__init__.py`` 顶层 import 触发 ``@tool`` 注册。
 """
@@ -130,7 +130,7 @@ async def _list_endpoints_impl(
     if not validated.repository_id:
         return ToolResult(
             success=False,
-            error="repository_id is required (per work item initial implementation)",
+            error="repository_id is required (per work item implementation)",
         )
 
     repo_id = validated.repository_id

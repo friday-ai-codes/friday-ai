@@ -1,4 +1,4 @@
-"""``GraphRagStatusView`` 集成测试（initial implementation）。
+"""``GraphRagStatusView`` 集成测试（implementation）。
 
 GET /api/repositories/{id}/index/graphrag-status/ —— 以真实 ``ChunkEdge`` 表计数为
 权威事实来源，修复旧前端读 ``IndexHistory.edge_count`` 快照（时序漏写停在 0）导致的

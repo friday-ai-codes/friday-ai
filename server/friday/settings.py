@@ -410,60 +410,60 @@ FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 # Default workflow template for new tasks
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
 
-# initial implementation: When True, code graph extraction runs during indexing. Set False to skip graph writes.
-# **写入侧** 语义（per initial implementation contract）：控制 indexer 是否构建 ChunkEdge / 写
+# implementation: When True, code graph extraction runs during indexing. Set False to skip graph writes.
+# **写入侧** 语义（per implementation contract）：控制 indexer 是否构建 ChunkEdge / 写
 # Qdrant payload `related_chunks`；与读出侧 ENABLE_GRAPHRAG_ENRICHMENT 独立解耦。
 ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
 
-# initial implementation：RAG 切片模式。"ast_aware" = 符号驱动精细切片（按函数/类边界切，复用
+# implementation：RAG 切片模式。"ast_aware" = 符号驱动精细切片（按函数/类边界切，复用
 # codegraph tree-sitter 抽取，含 TS interface/type、export 解包、大符号不丢尾）；
 # "fixed" = 旧 tree-sitter 节点直取（向后兼容回退）。默认 ast_aware；切换后需重新
 # 索引仓库方能对存量 chunk 生效。
 CHUNKING_MODE: str = env.str("CHUNKING_MODE", "ast_aware")
 
-# initial implementation contract：**读出侧** GraphRAG enrichment 开关（与 ENABLE_CODEGRAPH 写入侧解耦）。
+# implementation contract：**读出侧** GraphRAG enrichment 开关（与 ENABLE_CODEGRAPH 写入侧解耦）。
 # False 时 HybridSearchService.search 入口强制 ``_search_rag_only`` 路径，即使
-# Provider 实现 GraphCapableProvider Protocol，输出 byte-equivalent initial implementation 路径。
-# 默认 True 保持向后兼容（与 v23.0 / initial implementation 行为一致）。
+# Provider 实现 GraphCapableProvider Protocol，输出 byte-equivalent implementation 路径。
+# 默认 True 保持向后兼容（与 v23.0 / implementation 行为一致）。
 # **唯一允许的直读点**：``services/retrieval/hybrid_search.py::HybridSearchService.search``
 # 入口（per CONTEXT.md 关键不变量；新增直读点应 PR review 拒绝）。
 ENABLE_GRAPHRAG_ENRICHMENT: bool = env.bool("ENABLE_GRAPHRAG_ENRICHMENT", default=True)
 
-# initial implementation: 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
+# implementation: 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
 # future 可切到 RemoteProvider 一次替换全局生效，per contract / contract）
 CODE_INTELLIGENCE_PROVIDER: str = env.str(
     "CODE_INTELLIGENCE_PROVIDER",
     "services.code_intel.local_provider.LocalProvider",
 )
 
-# initial implementation: 各语言使用的 extractor backend（tree_sitter / volar / gopls）
+# implementation: 各语言使用的 extractor backend（tree_sitter / volar / gopls）
 # 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
 EXTRACTOR_BACKENDS: dict[str, str] = {
     "python": "tree_sitter",
-    "go": "gopls",               # initial implementation 已切换（原 tree_sitter）
-    "typescript": "volar",       # initial implementation 切（原 tree_sitter）
-    "tsx": "volar",              # initial implementation 切
-    "vue": "volar",              # initial implementation 切
-    "javascript": "volar",       # initial implementation 新增（之前未有）
-    "jsx": "volar",              # initial implementation 新增
-    "html": "tree_sitter",       # initial implementation
-    "css": "tree_sitter",        # initial implementation
+    "go": "gopls",               # implementation 已切换（原 tree_sitter）
+    "typescript": "volar",       # implementation 切（原 tree_sitter）
+    "tsx": "volar",              # implementation 切
+    "vue": "volar",              # implementation 切
+    "javascript": "volar",       # implementation 新增（之前未有）
+    "jsx": "volar",              # implementation 新增
+    "html": "tree_sitter",       # implementation
+    "css": "tree_sitter",        # implementation
 }
 
-# initial implementation B3：CoChangedEdgeBuilder min_support 阈值（per work item 0 条根因修复）。
+# implementation B3：CoChangedEdgeBuilder min_support 阈值（per work item 0 条根因修复）。
 # 默认 2 让小仓库默认能建至少 2 commit 触发的边；env 可覆盖（ops 调试需要）。
 CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
     "CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2
 )
 
-# initial implementation：HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
+# implementation：HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings()` clamp 到边界 + structlog warning。
 # NOTE: 默认值与 services/retrieval/budget.py:GRAPHRAG_BUDGET_RATIO_DEFAULT 同值，
 # 调整需双改（settings.py 加载顺序敏感，无法直接 import budget 常量避免循环）。
 GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
 
-# initial implementation：跨仓 API 扩散 token 预算 + 启停开关。
+# implementation：跨仓 API 扩散 token 预算 + 启停开关。
 # CROSS_REPO_BUDGET_RATIO：cross_repo 预算比例（默认 0.0 = 不分配跨仓预算）。
 #   设置为 0.20 + GRAPHRAG_BUDGET_RATIO=0.50 → HybridBudget 50/30/20 预算（per work item）。
 # ENABLE_CROSS_REPO_ENRICHMENT：False 时 wave 跨仓扩散完全短路，输出 byte-equivalent v24。
@@ -472,10 +472,10 @@ CROSS_REPO_BUDGET_RATIO: float = env.float("CROSS_REPO_BUDGET_RATIO", default=0.
 ENABLE_CROSS_REPO_ENRICHMENT: bool = env.bool("ENABLE_CROSS_REPO_ENRICHMENT", default=True)
 
 # =============================================================================
-# initial implementation LSP Client + Supervisor Settings
+# implementation LSP Client + Supervisor Settings
 # =============================================================================
 
-# initial implementation：volar 真实命令落地（vue-language-server --stdio）
+# implementation：volar 真实命令落地（vue-language-server --stdio）
 # initialization_options.typescript.tsdk 由 VolarPool._build_supervisor 在每实例化时
 # 用 node_check.discover_tsdk() 动态注入；占位 None 仅给 mypy 用。
 # advisory（per Pitfall P-checkpoint）：study-app 大插件链场景启动 60-90s，
@@ -496,7 +496,7 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
         },
         "enabled": True,
     },
-    # initial implementation / work item：gopls 真实命令落地（gopls serve）
+    # implementation / work item：gopls 真实命令落地（gopls serve）
     # initialization_options 平铺 key（gopls 点号格式，非嵌套 dict）
     # advisory（per Pitfall P-checkpoint）：大仓库启动 20-60s；运维 env 调：
     #   LSP_STARTUP_TIMEOUT_SECONDS=60
@@ -511,7 +511,7 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
     },
 }
 
-# initial implementation：LSP 三层超时（env 可覆盖）
+# implementation：LSP 三层超时（env 可覆盖）
 # - STARTUP_TIMEOUT 默认 30s（volar 首次启动 30-60s spike 实测）
 # - REQUEST_TIMEOUT 默认 10s（普通 capability 请求）
 # - HEALTH_CHECK_TIMEOUT 默认 5s（workspace/symbol("") ping）
@@ -521,35 +521,35 @@ LSP_HEALTH_CHECK_TIMEOUT_SECONDS: int = env.int(
     "LSP_HEALTH_CHECK_TIMEOUT_SECONDS", default=5
 )
 
-# initial implementation：健康检查间隔（每 30s 一次 workspace/symbol("") ping）
+# implementation：健康检查间隔（每 30s 一次 workspace/symbol("") ping）
 LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int(
     "LSP_HEALTH_CHECK_INTERVAL_SECONDS", default=30
 )
 
-# initial implementation：crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
+# implementation：crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
 LSP_MAX_RESTART_ATTEMPTS: int = env.int("LSP_MAX_RESTART_ATTEMPTS", default=3)
 
-# initial implementation：idle timeout 回收（默认 30 分钟无使用即 stop）
+# implementation：idle timeout 回收（默认 30 分钟无使用即 stop）
 LSP_IDLE_TIMEOUT_SECONDS: int = env.int("LSP_IDLE_TIMEOUT_SECONDS", default=1800)
 
 # =============================================================================
-# initial implementation Volar Backend Settings
+# implementation Volar Backend Settings
 # =============================================================================
 
-# initial implementation：VolarPool 并发上限（per legacy spike 锁定 4GB 内存预算）
+# implementation：VolarPool 并发上限（per legacy spike 锁定 4GB 内存预算）
 VOLAR_POOL_MAX_CONCURRENT: int = env.int("VOLAR_POOL_MAX_CONCURRENT", default=4)
 
-# initial implementation：volar backend 运维 kill-switch；False 时 apps.ready 跳过
+# implementation：volar backend 运维 kill-switch；False 时 apps.ready 跳过
 # register_backend，BACKEND_REGISTRY 5 项保留 tree-sitter 默认。
 VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
 
 # =============================================================================
-# initial implementation Gopls Backend Settings
+# implementation Gopls Backend Settings
 # =============================================================================
 
-# initial implementation：gopls backend 运维 kill-switch
-# 默认 False —— initial implementation 仅落基础设施，不切 BACKEND_REGISTRY["go"]
-# initial implementation 已切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=False
+# implementation：gopls backend 运维 kill-switch
+# 默认 False —— implementation 仅落基础设施，不切 BACKEND_REGISTRY["go"]
+# implementation 已切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=False
 GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=True)
 
 # =============================================================================
@@ -593,7 +593,7 @@ MCP_ALLOWED_COMMANDS: list[str] = [
 ]
 
 # =============================================================================
-# initial implementation: Frontend API Call Resolver 配置（work item）
+# implementation: Frontend API Call Resolver 配置（work item）
 # =============================================================================
 
 API_DETECTOR_CONFIG: dict = {
@@ -624,7 +624,7 @@ API_DETECTOR_CONFIG: dict = {
 }
 
 # =============================================================================
-# Logging — Structlog 配置（initial implementation contract 凭证泄漏防护）
+# Logging — Structlog 配置（implementation contract 凭证泄漏防护）
 # =============================================================================
 # configure_structlog 必须在 LOGGING dictConfig 之后、任何业务 logger 实例化之前调用。
 # settings.py 末尾是最早安全点（pytest-django / gunicorn / daphne 启动时一次性配置完成）。

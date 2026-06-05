@@ -7,7 +7,7 @@
     python manage.py rebuild_cross_repo_edges --all --batch-size 1000
 
 per work item
-与 initial implementation rebuild_chunk_edges + initial implementation rebuild_cross_repo_api_calls 同模式。
+与 implementation rebuild_chunk_edges + implementation rebuild_cross_repo_api_calls 同模式。
 """
 
 from __future__ import annotations

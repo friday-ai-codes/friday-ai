@@ -1,4 +1,4 @@
-"""post_save signal handler 测试（contract initial implementation 仅打日志）。"""
+"""post_save signal handler 测试（contract implementation 仅打日志）。"""
 from __future__ import annotations
 
 from pathlib import Path

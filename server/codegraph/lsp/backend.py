@@ -1,4 +1,4 @@
-"""initial implementation: LspBackend 抽象基类 —— 5 模板方法 + 5 abstract hook + tree-sitter fallback。
+"""implementation: LspBackend 抽象基类 —— 5 模板方法 + 5 abstract hook + tree-sitter fallback。
 
 设计要点（per work item / work item / Pitfall P14 / work item / work item）：
 
@@ -14,7 +14,7 @@
 - **工厂闭包** ``make_lsp_backend(name)``：解决 ``BACKEND_REGISTRY`` 类型
   ``Callable[[str], ExtractorBackend]`` 与 ``LspBackend.__init__`` 签名差异
   （per Pitfall P14）。本 phase 工厂仅占位 raise NotImplementedError；
-  initial implementation / 267 各自定义具体子类的工厂闭包。
+  implementation / 267 各自定义具体子类的工厂闭包。
 
 本 phase **不**在任何模块内调 ``register_backend`` 注册 ``lsp_*`` backend；
 默认全 tree_sitter，per Phase Boundary。
@@ -70,7 +70,7 @@ class _LspParseHandle:
 class LspBackend(abc.ABC):
     """LSP 后端抽象基类（隐式遵循 ExtractorBackend Protocol）。
 
-    子类（如 initial implementation ``VolarBackend`` / initial implementation ``GoplsBackend``）需覆写：
+    子类（如 implementation ``VolarBackend`` / implementation ``GoplsBackend``）需覆写：
     - ClassVar 字段：``name`` / ``language_ids`` / ``command`` /
       ``initialization_options``（per work item）
     - 4 个 abstract hook：``_lsp_extract_*``（实装 LSP capability →
@@ -202,7 +202,7 @@ class LspBackend(abc.ABC):
     ) -> list[SymbolData]:
         """子类覆写：调 textDocument/documentSymbol + workspace/symbol 转 SymbolData。
 
-        initial implementation (volar) / initial implementation (gopls) 子类实装。
+        implementation (volar) / implementation (gopls) 子类实装。
         """
         raise NotImplementedError(
             "LspBackend._lsp_extract_symbols 须由子类覆写："
@@ -216,7 +216,7 @@ class LspBackend(abc.ABC):
     ) -> list[ImportData]:
         """子类覆写：LSP server-specific import 解析（无标准 LSP method）。
 
-        initial implementation (volar) / initial implementation (gopls) 子类实装。
+        implementation (volar) / implementation (gopls) 子类实装。
         """
         raise NotImplementedError(
             "LspBackend._lsp_extract_imports 须由子类覆写："
@@ -230,7 +230,7 @@ class LspBackend(abc.ABC):
     ) -> list[CallData]:
         """子类覆写：调 textDocument/references + textDocument/definition 转 CallData。
 
-        initial implementation (volar) / initial implementation (gopls) 子类实装。
+        implementation (volar) / implementation (gopls) 子类实装。
         """
         raise NotImplementedError(
             "LspBackend._lsp_extract_calls 须由子类覆写："
@@ -244,7 +244,7 @@ class LspBackend(abc.ABC):
     ) -> list[EndpointData]:
         """子类覆写：LSP server-specific endpoint 抽取（无标准 LSP method）。
 
-        initial implementation (volar) / initial implementation (gopls) 子类实装。
+        implementation (volar) / implementation (gopls) 子类实装。
         """
         raise NotImplementedError(
             "LspBackend._lsp_extract_endpoints 须由子类覆写："
@@ -260,7 +260,7 @@ def make_lsp_backend(name: str) -> Callable[[str], LspBackend]:
     ``LspBackend.__init__(language, supervisor, fallback)`` 签名差异。
 
     本 phase 基类工厂仅占位 raise NotImplementedError；具体子类（VolarBackend /
-    GoplsBackend）在 initial implementation / 267 各自定义 ``make_volar_backend`` /
+    GoplsBackend）在 implementation / 267 各自定义 ``make_volar_backend`` /
     ``make_gopls_backend`` 闭包注入 supervisor 与 backend 子类。
     """
 

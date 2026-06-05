@@ -122,7 +122,7 @@ class TestCodeSearchViewBranch:
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation LayeredSearchService 重构后 search_repository_code MCP "
+        "OBSOLETE — implementation LayeredSearchService 重构后 search_repository_code MCP "
         "工具不再直接调 EmbeddingService（agents.tools.space_tools.EmbeddingService 已不存在）。"
         "v24.0 应迁移为对 LayeredSearchService.search 的契约测试。"
     )

@@ -12,7 +12,7 @@ START → planning → executing →(条件路由)→ finalizing → END
 
 ### 节点
 
-| 节点 | 职责 | initial implementation 行为 |
+| 节点 | 职责 | implementation 行为 |
 |------|------|----------------|
 | `planning` | 接收用户消息，决定执行策略 | 设置 `phase="executing"` |
 | `executing` | 执行 Agent 调用，产出结果或阻塞任务 | 根据 `blocking_tasks` 决定阶段转换 |
@@ -88,9 +88,9 @@ class WorkflowState(TypedDict, total=False):
 - **生产环境**：`AsyncSqliteSaver`，独立 SQLite 文件（`data/orchestration_checkpoints.db`），避免与 Django 主库竞争写锁
 - **测试环境**：`MemorySaver`，内存存储，测试隔离无需文件清理
 
-## initial implementation 集成点
+## implementation 集成点
 
-### initial implementation：ConversationService 迁入 Graph
+### implementation：ConversationService 迁入 Graph
 
 - **对接点**：`planning_node` 和 `executing_node` 将接入 Agent SDK 调用
 - `ConversationService.handle_message()` 的核心逻辑迁入 graph 节点
@@ -98,7 +98,7 @@ class WorkflowState(TypedDict, total=False):
 - `executing_node` 承担原有的 Agent 调用与结果处理
 - 主流程切换：Web Chat 入口从直接调用 `ConversationService` 改为 `graph.ainvoke()`
 
-### initial implementation：并行阻塞任务与 Barrier
+### implementation：并行阻塞任务与 Barrier
 
 - **对接点**：`blocking_tasks` 列表支持多个并行任务
 - `waiting` 节点的 `interrupt()` payload 包含完整任务列表
@@ -106,7 +106,7 @@ class WorkflowState(TypedDict, total=False):
 - `BlockingTaskDispatcher` 协议负责任务分发与结果收集
 - resume 值从单个 `BlockingTaskResult` 扩展为结果列表
 
-### initial implementation：Runtime、SSE 与前端状态对齐
+### implementation：Runtime、SSE 与前端状态对齐
 
 - **对接点**：graph state 变更触发 SSE 推送
 - `phase` 字段变更同步到前端 UI 状态

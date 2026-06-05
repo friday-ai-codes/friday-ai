@@ -63,7 +63,7 @@ class ExtractorBackend(Protocol):
 # TreeSitterBackend —— 封装现有 tree-sitter extractor
 # =============================================================================
 
-# 语言到 (tree-sitter 模块, grammar 函数名) 的映射（per initial implementation）
+# 语言到 (tree-sitter 模块, grammar 函数名) 的映射（per implementation）
 # 升级为元组以支持单模块多 grammar 函数场景（如 tree-sitter-typescript 同时提供
 # language_typescript / language_tsx 两个 grammar）。
 _TREE_SITTER_LANGUAGE_MODULES: dict[str, tuple[str, str]] = {
@@ -71,11 +71,11 @@ _TREE_SITTER_LANGUAGE_MODULES: dict[str, tuple[str, str]] = {
     "go": ("tree_sitter_go", "language"),
     "typescript": ("tree_sitter_typescript", "language_typescript"),
     "tsx": ("tree_sitter_typescript", "language_tsx"),
-    "vue": ("tree_sitter_typescript", "language_typescript"),   # 占位（per initial implementation）；实际不被 VueExtractor 路径消费
-    "javascript": ("tree_sitter_javascript", "language"),  # initial implementation fallback（work item 新增 js）
-    "jsx": ("tree_sitter_javascript", "language"),         # initial implementation fallback（tree-sitter-javascript 同时覆盖 jsx 语法）
-    "html": ("tree_sitter_html", "language"),   # initial implementation
-    "css": ("tree_sitter_css", "language"),     # initial implementation
+    "vue": ("tree_sitter_typescript", "language_typescript"),   # 占位（per implementation）；实际不被 VueExtractor 路径消费
+    "javascript": ("tree_sitter_javascript", "language"),  # implementation fallback（work item 新增 js）
+    "jsx": ("tree_sitter_javascript", "language"),         # implementation fallback（tree-sitter-javascript 同时覆盖 jsx 语法）
+    "html": ("tree_sitter_html", "language"),   # implementation
+    "css": ("tree_sitter_css", "language"),     # implementation
 }
 
 
@@ -107,7 +107,7 @@ class TreeSitterBackend:
     """tree-sitter 后端实现 —— 封装现有 Python extractor。
 
     当前支持语言：python
-    后续 initial implementation 将扩展：go / typescript / tsx / vue / html / css
+    后续 implementation 将扩展：go / typescript / tsx / vue / html / css
     """
 
     def __init__(self, language: str) -> None:

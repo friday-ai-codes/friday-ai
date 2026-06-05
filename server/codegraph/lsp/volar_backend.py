@@ -1,6 +1,6 @@
-"""initial implementation: VolarBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
+"""implementation: VolarBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
 
-继承 initial implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
+继承 implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
 fallback）；本模块仅实装 4 个 ``_lsp_extract_*`` abstract hook + 5 ClassVar 字段
 + ``make_volar_backend(language)`` 工厂闭包。
 
@@ -19,7 +19,7 @@ _lsp_extract_calls            ts raw symbols + per-symbol references
 _lsp_extract_endpoints        return [] 前端无 endpoint
 ============================  ==============================================
 
-per work item：``make_volar_backend(language)`` 工厂闭包替换 initial implementation 占位
+per work item：``make_volar_backend(language)`` 工厂闭包替换 implementation 占位
 ``make_lsp_backend``；闭包内推断 sub_project_root（walk up tsconfig.json）+
 从 ``VolarPool.get`` 拿 supervisor + 实例化 VolarBackend。
 """
@@ -65,7 +65,7 @@ _SYMBOL_KIND_MAP: Final[dict[int, str]] = {
 
 
 class VolarBackend(LspBackend):
-    """volar (@vue/language-server) LSP backend；继承 initial implementation LspBackend。"""
+    """volar (@vue/language-server) LSP backend；继承 implementation LspBackend。"""
 
     name: ClassVar[str] = "volar"
     language_ids: ClassVar[list[str]] = [
@@ -86,7 +86,7 @@ class VolarBackend(LspBackend):
     ) -> list[SymbolData]:
         """workspace/symbol + documentSymbol 混合策略（per work item / V2）。
 
-        异常路径不 try/except；让 initial implementation LspBackend.extract_symbols 基类捕获 +
+        异常路径不 try/except；让 implementation LspBackend.extract_symbols 基类捕获 +
         fallback tree-sitter（per work item）。
         """
         timeout = float(getattr(settings, "LSP_REQUEST_TIMEOUT_SECONDS", 10))
@@ -416,7 +416,7 @@ def _find_sub_project_root(file_path: str) -> Path | None:
 
 
 def make_volar_backend(language: str) -> Callable[[str], ExtractorBackend]:
-    """工厂闭包 —— 替换 initial implementation 占位 ``make_lsp_backend``。
+    """工厂闭包 —— 替换 implementation 占位 ``make_lsp_backend``。
 
     返回的工厂签名 ``Callable[[str], ExtractorBackend]`` 与 ``BACKEND_REGISTRY`` 类型
     严格对齐；闭包内 lazy 推断 sub_project_root + 通过 ``VolarPool.get`` 拿
@@ -429,9 +429,9 @@ def make_volar_backend(language: str) -> Callable[[str], ExtractorBackend]:
         ``_factory(actual_language: str)``：实际语言由调用方传（通常等于 language）
 
     Note:
-        闭包接收的 ``actual_language`` 与外层 ``language`` 在 initial implementation BACKEND_REGISTRY
+        闭包接收的 ``actual_language`` 与外层 ``language`` 在 implementation BACKEND_REGISTRY
         替换路径下一致；保留参数让 GraphExtractor 可统一调用 ``factory(lang)`` 风格
-        （per initial implementation register_backend 签名约束）。
+        （per implementation register_backend 签名约束）。
 
         **本 phase 简化**：闭包不接受 ``file_path`` 入参，因 BACKEND_REGISTRY 是
         ``Callable[[str], ExtractorBackend]`` 不传 ctx；下游（如 GraphExtractor）
@@ -447,7 +447,7 @@ def make_volar_backend(language: str) -> Callable[[str], ExtractorBackend]:
 
         class _VolarLazyBackend(VolarBackend):
             """无 supervisor 占位实例：调用方传 ``_LspParseHandle`` 时 raise →
-            initial implementation LspBackend 基类 fallback；调用方传**真实 tree-sitter Tree** 时
+            implementation LspBackend 基类 fallback；调用方传**真实 tree-sitter Tree** 时
             （per orchestrator 既有调用风格）直接委托 fallback 不 raise，避免
             ``_extract_source_from_handle`` 在非 handle 入参下返空源回归。
 

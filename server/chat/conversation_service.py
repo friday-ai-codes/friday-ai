@@ -61,7 +61,7 @@ ROLE_PROMPTS: Final[dict[str, str]] = {
         "你是一名资深开发工程师助手。回答问题时关注代码细节、技术实现方案和最佳实践。"
         "使用专业技术术语，提供代码示例和具体的文件路径引用。"
         "分析问题时从架构设计、性能影响和可维护性角度出发。\n\n"
-        # initial implementation：把「准确性优先」哲学写进 developer 角色 prompt。
+        # implementation：把「准确性优先」哲学写进 developer 角色 prompt。
         # 仅追加段，不动现有句子；与 _STRATEGY_DEFAULT / _CODING_GUIDANCE 同源。
         "准确性优先原则（coding-plan workflow 哲学）：\n"
         "  - 用户的核心诉求不是「一次对话解决问题」，而是「准确解决问题」。"
@@ -95,7 +95,7 @@ ROLE_PROMPTS: Final[dict[str, str]] = {
 VALID_ROLES = frozenset(ROLE_PROMPTS.keys())
 
 
-# initial implementation Task 7 (work item): role → slug 映射，用于 _build_system_prompt 分发到 render_prompt
+# implementation Task 7 (work item): role → slug 映射，用于 _build_system_prompt 分发到 render_prompt
 ROLE_SLUG_MAP: Final[dict[str, str]] = {
     "developer": PromptSlugs.CHAT_SYSTEM_DEVELOPER,
     "pm": PromptSlugs.CHAT_SYSTEM_PM,
@@ -105,7 +105,7 @@ ROLE_SLUG_MAP: Final[dict[str, str]] = {
 }
 
 
-# initial implementation Task 1: 抽取 _build_system_prompt 内的 fragment 为模块级 Final[str]
+# implementation Task 1: 抽取 _build_system_prompt 内的 fragment 为模块级 Final[str]
 # 字节级无损从原函数局部变量复制而来，供 0002 data migration 跨 app import 作为 seed。
 # 重构后 _build_system_prompt 的拼接结果与迁移前字节级一致（由 test_role_prompt.py 10 用例保证）。
 
@@ -150,7 +150,7 @@ _STRATEGY_DEFAULT: Final[str] = (
     "  本模式下不要主动调用 deep_analysis —— 只有用户在前端显式开启「深度分析」开关\n"
     "  时，系统才会暴露并启用该工具；当前未开启，请用上面的检索工具完成回答。\n"
     "\n"
-    # initial implementation：默认策略追加「准确性优先」段。
+    # implementation：默认策略追加「准确性优先」段。
     # 命中编码动词 + 低置信场景必须先澄清，由 work item 编排层硬约束兜底。
     "准确性优先原则（必读）：\n"
     "  - 在调任何检索工具前先调 analyze_repository_relevance 拿到候选仓库列表 + confidence；\n"
@@ -205,7 +205,7 @@ _CODING_GUIDANCE: Final[str] = (
     "  - deep_analysis：分析理解代码（只读）\n"
     "  - create_coding_plan：执行代码变更（写入）\n"
     "\n"
-    # initial implementation：编码场景前置约束（与 work item 硬 gate 同源）。
+    # implementation：编码场景前置约束（与 work item 硬 gate 同源）。
     "编码请求的前置约束（coding-plan workflow）：\n"
     "  - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
     "    且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
@@ -248,13 +248,13 @@ async def _build_system_prompt(
     project_context_line: str = "",
     intent_classification: Any = None,
 ) -> str:
-    """构建角色化 system prompt（异步版，initial implementation Task 7 fragment 化）。
+    """构建角色化 system prompt（异步版，implementation Task 7 fragment 化）。
 
-    initial implementation: 每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
+    implementation: 每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
     条件拼接逻辑保留在 Python 层（不进 Jinja2 控制流 DSL）。
     结尾规则 _ENDING_RULES 保留 Python 字面量(非可运营 Prompt)，不占用 slug。
 
-    initial implementation：可选参数 ``intent_classification``（``IntentClassification``）；
+    implementation：可选参数 ``intent_classification``（``IntentClassification``）；
     传入且 ``is_coding_request=True`` 时在末尾追加「本轮专用 hint」，与
     work item always-on 段不重复。**默认 None 时返回与历史版本字节级一致**，
     保证 ``test_role_prompt`` / ``test_conversation_service_prompt_fragments``
@@ -322,7 +322,7 @@ async def _build_system_prompt(
         f"{_ENDING_RULES}"
     )
 
-    # initial implementation：可选 per-turn hint，仅在编码请求时追加。
+    # implementation：可选 per-turn hint，仅在编码请求时追加。
     # is_coding_request=False 或 intent_classification=None → 字节级与历史一致。
     if intent_classification is None:
         return base_prompt
@@ -355,7 +355,7 @@ async def _get_tool_names(space_id: str) -> list[str]:
         "get_repository_info",
         "create_coding_plan",
         "update_coding_plan",
-        # initial implementation：协商工具，所有有索引仓库的项目都暴露给 LLM
+        # implementation：协商工具，所有有索引仓库的项目都暴露给 LLM
         "ask_clarification",
     ]
 
@@ -1555,7 +1555,7 @@ class ConversationService:
                     if runtime.get("mode") is None:
                         runtime["mode"] = "deep_analysis"
 
-        # CodingSession 运行态检测 (initial implementation)
+        # CodingSession 运行态检测 (implementation)
         from chat.models import CodingSession
 
         coding_session = await CodingSession.objects.filter(
@@ -1584,7 +1584,7 @@ class ConversationService:
                 "diff_summary": coding_session.diff_summary or None,
             }
 
-            # initial implementation: 从 SubAgentSession.last_output 获取编码中间产出（per contract, contract）
+            # implementation: 从 SubAgentSession.last_output 获取编码中间产出（per contract, contract）
             if coding_session.subagent_session_id:
                 subagent_session = await SubAgentSession.objects.filter(
                     id=coding_session.subagent_session_id,
@@ -1615,11 +1615,11 @@ class ConversationService:
                     "affected_files": recent_coding.affected_files,
                 }
 
-        # initial implementation：附加最近 CodingPlan + 每仓 session 快照
+        # implementation：附加最近 CodingPlan + 每仓 session 快照
         #
         # 与 coding_session 字段独立并存（向后兼容旧前端单仓路径）；新前端读
         # runtime.coding_plan.sessions[]。commit_sha 来自 SubAgentSession.task_result
-        # （initial implementation contract 落库后才有真值），缺失时空字符串降级渲染。
+        # （implementation contract 落库后才有真值），缺失时空字符串降级渲染。
         from chat.models import CodingPlan
 
         coding_plan_payload: dict[str, Any] | None = None

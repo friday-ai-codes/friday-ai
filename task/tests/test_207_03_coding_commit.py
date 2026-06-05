@@ -1,4 +1,4 @@
-"""initial implementation 测试: TaskConfig 字段 + TaskRunner Phase/2 + callback 扩展。
+"""implementation 测试: TaskConfig 字段 + TaskRunner Phase/2 + callback 扩展。
 
 TDD RED 阶段：测试 TaskConfig 新增字段、TaskRunner coding_commit 路由、
 _run_commit_mode、_generate_suggested_commit_message、callback 扩展。
@@ -216,7 +216,7 @@ class TestTaskRunnerRouting:
         runner.git_ops.commit_changes.assert_awaited_once_with("fix: final message")
         # 确保调用了 report_suggested_commit_message（Phase 回传）
         runner.callback.report_suggested_commit_message.assert_called_once()
-        # initial implementation contract: 末尾发 completed 帧携带 git 元数据
+        # implementation contract: 末尾发 completed 帧携带 git 元数据
         runner.callback.report_completed.assert_called_once()
         completed_call = runner.callback.report_completed.call_args
         output = completed_call.kwargs["output"]
@@ -286,7 +286,7 @@ class TestRunCommitMode:
         assert result == 0
         runner.callback.report_push_complete.assert_called_once()
         runner.callback.report_execution_complete.assert_called_once()
-        # initial implementation contract: Phase 末尾也发 completed 帧（task_type=coding_commit）
+        # implementation contract: Phase 末尾也发 completed 帧（task_type=coding_commit）
         runner.callback.report_completed.assert_called_once()
         completed_call = runner.callback.report_completed.call_args
         output = completed_call.kwargs["output"]

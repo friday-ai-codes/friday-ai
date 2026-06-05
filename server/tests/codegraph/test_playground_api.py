@@ -201,13 +201,13 @@ def test_playground_response_structure(admin_client):
 
 
 # ============================================================================
-# initial implementation plan：graph enrichment 字段透传（hop1/hop2/graph_context）
+# implementation：graph enrichment 字段透传（hop1/hop2/graph_context）
 # ============================================================================
 
 
 @pytest.mark.django_db
 def test_search_passes_through_hop_neighbors_when_hybrid_result(admin_client):
-    """initial implementation: HybridSearchResult 路径透传 hop1/hop2/graph_context 三字段。"""
+    """implementation: HybridSearchResult 路径透传 hop1/hop2/graph_context 三字段。"""
     hop1 = NeighborMetadata(
         chunk_id="chunk-hop1-aaa",
         file_path="src/auth/login.py",
@@ -287,7 +287,7 @@ def test_search_passes_through_hop_neighbors_when_hybrid_result(admin_client):
 
 @pytest.mark.django_db
 def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
-    """initial implementation: contract LayeredSearchResult 路径无 graph 字段 → 降级空 list / 空字符串。"""
+    """implementation: contract LayeredSearchResult 路径无 graph 字段 → 降级空 list / 空字符串。"""
     mock_result = _make_mock_search_result()
 
     with patch(
@@ -318,7 +318,7 @@ def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
 
 
 # ============================================================================
-# initial implementation Code Review Fix（work item：work item / contract）
+# implementation Code Review Fix（work item：work item / contract）
 # ============================================================================
 
 

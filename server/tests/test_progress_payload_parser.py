@@ -1,4 +1,4 @@
-"""parse_progress_payload 纯函数单元测试（initial implementation G4）。
+"""parse_progress_payload 纯函数单元测试（implementation G4）。
 
 覆盖场景:
 - 基本字段解析（phase/progress/message/updated_at）

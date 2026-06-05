@@ -1,4 +1,4 @@
-"""SameFileEdgeBuilder：同文件 chunk 两两弱关联（per initial implementation contract/14/15）。"""
+"""SameFileEdgeBuilder：同文件 chunk 两两弱关联（per implementation contract/14/15）。"""
 
 from __future__ import annotations
 
@@ -44,9 +44,9 @@ class SameFileEdgeBuilder(BaseEdgeBuilder):
     ) -> list[ChunkEdge]:
         # work item 全扫策略（per context contract/14）：本 phase 接受全仓 ChunkRegistry
         # 重建全文件 SAME_FILE 边集；dirty_chunk_ids 暂未用于过滤，仅靠
-        # bulk_insert_edges 的 ignore_conflicts 兜底去重。initial implementation 应改造为
+        # bulk_insert_edges 的 ignore_conflicts 兜底去重。implementation 应改造为
         # 「dirty file_path 反查 → file_path__in 过滤」增量化。
-        del dirty_chunk_ids  # noqa: F841 — phase 全扫策略，initial implementation 增量化
+        del dirty_chunk_ids  # noqa: F841 — phase 全扫策略，implementation 增量化
 
         @sync_to_async
         def _load_rows() -> list[tuple[str, int, uuid.UUID]]:

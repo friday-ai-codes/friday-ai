@@ -1,4 +1,4 @@
-"""SemanticEdgeBuilder：Qdrant query_points 单点近邻（per initial implementation contract/08/09）。
+"""SemanticEdgeBuilder：Qdrant query_points 单点近邻（per implementation contract/08/09）。
 
 **Pitfall 3 红线**：唯一允许的 Qdrant 调用是 `query_points(query=vector,
 limit=20, score_threshold=0.85, must_not=file_path)`；禁止
@@ -11,14 +11,14 @@ limit=20, score_threshold=0.85, must_not=file_path)`；禁止
    query_filter=must_not[file_path=self])` 拿 top-20 跨文件近邻
 3. 每个 result point → 一条 ChunkEdge[SEMANTIC] weight=clamp(qdrant_score, 0, 1)
 
-**work item 性能注记（实测延迟 + initial implementation 优化点）：**
+**work item 性能注记（实测延迟 + implementation 优化点）：**
 
 每个 dirty chunk 触发 1 次 scroll + 1 次 query_points = 2 个 Qdrant round
 trip。Qdrant 单 call P50 ≈ 5ms，10k dirty chunks 串行约 100s 净网络耗时。
 Pitfall 3 红线限制的是 ``retrieve(ids=all, with_vectors=True)`` 一次性多 ID
 + 大对象传输（O(n²) trap），本实现合法但 N 次往返延迟堆叠。
 
-initial implementation 优化方向：批量 scroll —— 单次
+implementation 优化方向：批量 scroll —— 单次
 ``HasIdCondition(has_id=[batch of 100 ids])`` 减少 100× round trip；query_points
 仍需 per-chunk（每条向量独立查询），但 fetch_self_vector 阶段可批量化。
 """
@@ -73,7 +73,7 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
 
         from qdrant_client.http import models as qmodels
 
-        # initial implementation / Pitfall 2：feature 分支的 chunk 向量写在 overlay
+        # implementation / Pitfall 2：feature 分支的 chunk 向量写在 overlay
         # collection；base（branch_name==""）落到旧 collection（字节不变）。
         # `get_effective_collection_name` 内部走同步 ORM（RepositoryBranchIndex
         # 路由），用 sync_to_async 包装避免在 async 上下文直接触发同步 DB 访问。

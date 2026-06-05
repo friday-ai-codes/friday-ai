@@ -1,4 +1,4 @@
-"""initial implementation plan: 5 Provider 健康检查 + 原子写入 + Ollama available_models 测试。
+"""implementation: 5 Provider 健康检查 + 原子写入 + Ollama available_models 测试。
 
 覆盖 Requirement: contract, contract
 威胁参考: security mitigation (凭证泄漏到日志), security mitigation (上游 error body 泄漏), security mitigation (权限契约)
@@ -354,7 +354,7 @@ class TestHealthCheckDispatchMatrix:
 class TestTestConnectionEndpoint:
     """POST /api/providers/credentials/{id}/test-connection/ 契约。
 
-    本 phase 权限：IsAuthenticated（initial implementation 升级 IsSuperUserOrProjectAdmin）；
+    本 phase 权限：IsAuthenticated（implementation 升级 IsSuperUserOrProjectAdmin）；
     Ollama 凭证走 respx mock；鉴权失败 / 不存在 credential / URL reverse 链路验证。
     """
 

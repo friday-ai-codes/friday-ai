@@ -2,8 +2,8 @@
 
 TSExtractor 固定使用 TreeSitterBackend("typescript")；
 TSXExtractor 固定使用 TreeSitterBackend("tsx")。
-两类同文件分离（per initial implementation），避免与 registry.py 的循环导入。
-后续 initial implementation 切 volar 时只需在此覆写 backend 注入路径。
+两类同文件分离（per implementation），避免与 registry.py 的循环导入。
+后续 implementation 切 volar 时只需在此覆写 backend 注入路径。
 """
 
 from __future__ import annotations

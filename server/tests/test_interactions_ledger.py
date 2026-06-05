@@ -1,4 +1,4 @@
-"""contract..05 锁名测试桩（initial implementation Wave）。
+"""contract..05 锁名测试桩（implementation Wave）。
 
 Nyquist Wave：在实现代码落地前先用锁名测试把 Interaction Ledger 契约固定下来。
 顶部 `pytest.importorskip("interactions.models")` 让模块未实现时整文件优雅 skip，

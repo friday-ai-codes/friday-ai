@@ -1,4 +1,4 @@
-"""initial implementation：IndexHistory 增加跨仓 join 可观测字段。
+"""implementation：IndexHistory 增加跨仓 join 可观测字段。
 
 - cross_repo_match_count: 最近一次 offline join 匹配数（PositiveIntegerField）
 - cross_repo_built_at: 最近一次 offline join 完成时间（DateTimeField nullable）

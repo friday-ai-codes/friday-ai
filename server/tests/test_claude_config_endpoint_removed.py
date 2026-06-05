@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2：v8.1 /api/projects/<id>/claude-config/ 端点硬删 404 契约。
+"""implementation Task 2：v8.1 /api/projects/<id>/claude-config/ 端点硬删 404 契约。
 
 Scope:
     验证 ClaudeConfigView / ClaudeConfigSerializer / claude_config @action 全部清零：

@@ -1,4 +1,4 @@
-"""Provider 凭证 DRF 权限类（initial implementation contract 层 1）。
+"""Provider 凭证 DRF 权限类（implementation contract 层 1）。
 
 contract 双层防御的 request / object 级权限：
 - 层 1（本模块）：`has_permission` 拒绝未认证，`has_object_permission` 按 scope 与 HTTP method

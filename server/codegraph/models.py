@@ -28,8 +28,8 @@ class Symbol(models.Model):
         on_delete=models.CASCADE,
         related_name="symbols",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
-    # feature 分支由 initial implementation 写入侧透传；max_length 对齐 RepositoryBranchIndex.branch_name。
+    # work item：分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
+    # feature 分支由 implementation 写入侧透传；max_length 对齐 RepositoryBranchIndex.branch_name。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     name = models.CharField(max_length=255, db_index=True)
     symbol_type = models.CharField(max_length=16, choices=SymbolType.choices, db_index=True)
@@ -38,7 +38,7 @@ class Symbol(models.Model):
     end_line = models.IntegerField()
     signature = models.TextField(blank=True)
     is_async = models.BooleanField(default=False)
-    # initial implementation：该符号所属 RAG chunk_id（与 ChunkRegistry.chunk_id / Qdrant point_id
+    # implementation：该符号所属 RAG chunk_id（与 ChunkRegistry.chunk_id / Qdrant point_id
     # 同源）。索引时由「一套 AST 双供」同源回填，建立 chunk ↔ Symbol 双向绑定，取代
     # CallEdgeBuilder 等的 SymbolChunkResolver 行号 bisect 软对齐。NULL = 未绑定
     # （历史数据 / 该符号未命中任何 chunk）。不做 FK（per code_relations contract 柔性引用）。
@@ -52,11 +52,11 @@ class Symbol(models.Model):
         indexes = [
             models.Index(fields=["repository", "file_path"]),
             models.Index(fields=["repository", "name"]),
-            # v26.2 work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # work item：分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
-        # v26.2 work item：branch_name 进 unique 是 Critical 1 防御性冗余，
-        # initial implementation 写入侧必须同步透传 branch_name，否则撞约束（Pitfall 4）。
+        # work item：branch_name 进 unique 是 Critical 1 防御性冗余，
+        # implementation 写入侧必须同步透传 branch_name，否则撞约束（Pitfall 4）。
         unique_together = [("repository", "branch_name", "file_path", "name", "start_line")]
 
     def __str__(self) -> str:
@@ -72,7 +72,7 @@ class ImportEdge(models.Model):
         on_delete=models.CASCADE,
         related_name="import_edges",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传。
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     source_file = models.CharField(max_length=512, db_index=True)
     target_module = models.CharField(max_length=512, db_index=True)
@@ -86,7 +86,7 @@ class ImportEdge(models.Model):
         indexes = [
             models.Index(fields=["repository", "source_file"]),
             models.Index(fields=["repository", "target_module"]),
-            # v26.2 work item：分支隔离复合索引。
+            # work item：分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "source_file"]),
         ]
 
@@ -97,7 +97,7 @@ class ImportEdge(models.Model):
 class CallEdge(models.Model):
     """调用边 —— A 调用 B 的关系。
 
-    initial implementation 起承载跨文件 / 模块级 caller / 外键化 callee：
+    implementation 起承载跨文件 / 模块级 caller / 外键化 callee：
 
     - ``caller_symbol`` 可空（``SET_NULL``）：模块级调用（不在任何函数体内）写成
       ``caller_symbol=NULL`` + ``caller_file=<文件>`` 的边。注意 ``caller_symbol``
@@ -106,7 +106,7 @@ class CallEdge(models.Model):
       显式删除（函数内边与模块级边统一清理，见 ``GraphWriter``）。
     - ``callee_symbol``（``SET_NULL`` + ``incoming_calls``）：删除 ``Symbol`` 不级联
       删除引用它的边，FK 自动置 NULL，并可经 ``incoming_calls`` 反查「谁调用我」。
-      跨文件符号解析（裸名 → ``callee_symbol``/``callee_file``）属 initial implementation+，本表
+      跨文件符号解析（裸名 → ``callee_symbol``/``callee_file``）属 implementation+，本表
       只产外键字段 + 完整 raw，留空待回填。
     - ``callee_name`` 始终保留作向后兼容兜底。
     """
@@ -124,7 +124,7 @@ class CallEdge(models.Model):
         on_delete=models.CASCADE,
         related_name="call_edges",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传。
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     caller_symbol = models.ForeignKey(
         Symbol,
@@ -162,7 +162,7 @@ class CallEdge(models.Model):
             models.Index(fields=["repository", "callee_name"]),
             models.Index(fields=["repository", "caller_file"]),
             models.Index(fields=["repository", "callee_file"]),
-            # v26.2 work item：分支隔离复合索引。
+            # work item：分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "caller_file"]),
         ]
 
@@ -190,7 +190,7 @@ class Endpoint(models.Model):
         on_delete=models.CASCADE,
         related_name="endpoints",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传。
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     http_method = models.CharField(max_length=16)
     url_path = models.CharField(max_length=512, db_index=True)
@@ -207,7 +207,7 @@ class Endpoint(models.Model):
         indexes = [
             models.Index(fields=["repository", "url_path"]),
             models.Index(fields=["repository", "handler_name"]),
-            # v26.2 work item：分支隔离复合索引。
+            # work item：分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
 
@@ -218,7 +218,7 @@ class Endpoint(models.Model):
 class ApiWrapper(models.Model):
     """前端 ApiWrapper —— 封装 LowLevelHelper 调用的 export function。
 
-    通过三步推断算法（initial implementation）自动识别：
+    通过三步推断算法（implementation）自动识别：
     Step 0: axios 锚点定位 LowLevelHelper；Step 1: 反向找调用者为 ApiWrapper。
     metadata 存 JSDoc 元数据（work item）：@description/@author/@date/yapi URL。
     """
@@ -232,7 +232,7 @@ class ApiWrapper(models.Model):
         on_delete=models.CASCADE,
         related_name="api_wrappers",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传。
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     file_path = models.CharField(max_length=512, db_index=True)
     function_symbol = models.CharField(max_length=255)
@@ -250,10 +250,10 @@ class ApiWrapper(models.Model):
         indexes = [
             models.Index(fields=["repository", "url_path_pattern"]),
             models.Index(fields=["repository", "function_symbol"]),
-            # v26.2 work item：分支隔离复合索引。
+            # work item：分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
-        # v26.2 work item：branch_name 进 unique（Pitfall 4：294 写入侧须同步透传）。
+        # work item：branch_name 进 unique（Pitfall 4：294 写入侧须同步透传）。
         unique_together = [("repository", "branch_name", "file_path", "function_symbol")]
 
     def __str__(self) -> str:
@@ -297,7 +297,7 @@ class ApiCallSite(models.Model):
 class CrossRepoApiCall(models.Model):
     """跨仓 API 调用匹配记录 —— ApiCallSite × Endpoint offline join 结果。
 
-    通过 offline join（initial implementation）按 (http_method, url_path_pattern) 精确匹配。
+    通过 offline join（implementation）按 (http_method, url_path_pattern) 精确匹配。
     match_confidence: 1.0 完全匹配 / 0.7 path-only / 0.4 部分匹配。
     per work item
     """

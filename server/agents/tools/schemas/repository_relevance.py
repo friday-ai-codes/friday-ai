@@ -1,4 +1,4 @@
-"""initial implementation：``analyze_repository_relevance`` 工具 Pydantic schema。
+"""implementation：``analyze_repository_relevance`` 工具 Pydantic schema。
 
 字段冻结契约由 ``tests/agents/test_repository_relevance_tool.py`` 的
 schema snapshot fixture（``tests/agents/fixtures/repository_relevance_input_schema.json``）

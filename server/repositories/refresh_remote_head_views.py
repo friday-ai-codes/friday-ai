@@ -1,4 +1,4 @@
-"""Hash 新鲜度立即刷新端点（initial implementation contract）。
+"""Hash 新鲜度立即刷新端点（implementation contract）。
 
 POST /api/repositories/{id}/refresh-remote-head/ — 立即触发 git ls-remote 并更新 DB。
 """

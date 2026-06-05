@@ -1,4 +1,4 @@
-"""initial implementation（contract）：EdgeBuilder 分支隔离回归测试。
+"""implementation（contract）：EdgeBuilder 分支隔离回归测试。
 
 覆盖三条验收红线：
 

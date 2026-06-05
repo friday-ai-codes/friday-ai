@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1 — contract API 契约测试。
+"""implementation Task 1 — contract API 契约测试。
 
 覆盖 contract GET /api/chat/conversations/{id}/ 响应扩展契约：
     - Behavior E：响应包含 resolved_provider 对象 {provider_type, model, source, chain: [...]}

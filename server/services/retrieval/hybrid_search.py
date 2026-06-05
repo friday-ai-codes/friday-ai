@@ -1,7 +1,7 @@
-"""HybridSearchService 编排器（per initial implementation plan）。
+"""HybridSearchService 编排器（per implementation）。
 
-initial implementation 落地骨架（``HybridSearchService.__init__`` + ``search`` 分发入口 +
-``_search_rag_only`` NullProvider 路径）保持 byte-for-byte 等价；initial implementation plan
+implementation 落地骨架（``HybridSearchService.__init__`` + ``search`` 分发入口 +
+``_search_rag_only`` NullProvider 路径）保持 byte-for-byte 等价；implementation
 将 ``_search_graph_capable`` 重写为真正的 GraphRAG 编排器：
 
 - **wave 并发**：``asyncio.gather(rag_task, symbol_task, return_exceptions=True)``
@@ -21,7 +21,7 @@ initial implementation 落地骨架（``HybridSearchService.__init__`` + ``searc
   按 ``- <code>{file_path}:{line}</code> ({edge_type}, w={weight:.2f}): {reason}``
   渲染；空 neighbors → 不写空 markdown 段。
 - **structlog wave 日志**：``hybrid_search_wave_started`` / ``hybrid_search_wave_done``
-  与 initial implementation 既有 ``hybrid_search_started`` / ``hybrid_search_completed`` 共存。
+  与 implementation 既有 ``hybrid_search_started`` / ``hybrid_search_completed`` 共存。
 
 **Pitfall 5 守门**：本模块**不读** codegraph 启用开关；图谱启停由
 ``isinstance(provider, GraphCapableProvider)`` 运行时守卫 +
@@ -86,7 +86,7 @@ def _enrichment_reason_fn(
     metadata: dict[str, Any],
 ) -> str:
     """``hop1_reader.resolve_neighbor_metadata`` / ``hop2_expander.expand_hop2``
-    注入式 reason 生成器（initial implementation graph enrichment 路径，work item 升级）。
+    注入式 reason 生成器（implementation graph enrichment 路径，work item 升级）。
 
     完整调用 ``explain_neighbor(edge_type, source_file=..., target_file=...,
     metadata=...)`` 走完整模板路径——CALL/IMPORT 拼 target 文件，CO_CHANGED 拼
@@ -96,7 +96,7 @@ def _enrichment_reason_fn(
     Note:
         hop1 路径 ``edge_metadata`` 由 payload `related_chunks` 解析得来，当前
         payload 写入仅 3-tuple（不带 metadata），实际值为空 dict——CO_CHANGED /
-        SEMANTIC 仍走"recent history" / 缺 score 的降级模板。initial implementation 增量同步
+        SEMANTIC 仍走"recent history" / 缺 score 的降级模板。implementation 增量同步
         若扩 payload 为 4-tuple 则自动透出。hop2 路径 ``edge_metadata`` 来自
         ``ChunkEdge.metadata``（fetch_hop2_edges 已扩 5-tuple），完整可用。
     """
@@ -132,10 +132,10 @@ def _render_graph_context(
     hop2: list[NeighborMetadata],
     cross_repo: list[NeighborMetadata] | None = None,
 ) -> str:
-    """拼装 ``## Graph Context`` markdown（per contract + initial implementation cross-repo 段）。
+    """拼装 ``## Graph Context`` markdown（per contract + implementation cross-repo 段）。
 
     - 三段：``### Direct Neighbors (1-hop)`` / ``### Indirect Neighbors (2-hop)``
-      / ``### Cross-Repo Neighbors (API-Calls)``（initial implementation 新增，per work item）
+      / ``### Cross-Repo Neighbors (API-Calls)``（implementation 新增，per work item）
     - 邻居按 weight desc 排序
     - 过滤 ``file_path == "<unknown>"`` 的占位行（ChunkRegistry 缺失 fallback）
     - 全部空 → 返回 ``""``（**不写空 markdown 块**，避免污染 LLM 上下文）
@@ -230,9 +230,9 @@ class HybridSearchService:
                 False 时强制走 ``_search_rag_only`` 路径，即使 Provider 支持图谱。
                 供 callsite 在不需要二跳扩散时主动短路。
 
-                **initial implementation contract 入口守卫**：本方法在分发前与
+                **implementation contract 入口守卫**：本方法在分发前与
                 ``settings.ENABLE_GRAPHRAG_ENRICHMENT`` AND 合并，任一为 False
-                即强制 ``_search_rag_only``（byte-equivalent initial implementation 路径）。
+                即强制 ``_search_rag_only``（byte-equivalent implementation 路径）。
                 这是 contract / CONTEXT.md 关键不变量**唯一允许**的
                 ``settings.ENABLE_GRAPHRAG_ENRICHMENT`` 直读点；新增直读点应
                 在 PR review 拒绝。
@@ -242,8 +242,8 @@ class HybridSearchService:
               （含 ``graph_context`` / ``hop1_neighbors`` / ``hop2_neighbors`` 三字段）
             - 其余路径 → ``RagSearchResult``（字段同名同序兼容 callsite）
         """
-        # initial implementation contract 守卫：``settings.ENABLE_GRAPHRAG_ENRICHMENT`` 的**唯一**
-        # 直读点。work item 修复（initial implementation REVIEW）：原本方法体内 lazy import 是冗余
+        # implementation contract 守卫：``settings.ENABLE_GRAPHRAG_ENRICHMENT`` 的**唯一**
+        # 直读点。work item 修复（implementation REVIEW）：原本方法体内 lazy import 是冗余
         # 防御——``services.retrieval.budget`` 已在 module-level ``from django.conf
         # import settings``（且 hybrid_search 顶层 import budget），加载顺序在
         # module load 时已确定。``getattr`` 兜底保留覆盖 minimal test settings
@@ -392,7 +392,7 @@ class HybridSearchService:
     ) -> list[NeighborMetadata]:
         """contract 提取：wave 跨仓 API 扩散（ApiCallSite ↔ Endpoint via CrossRepoApiCall）。
 
-        initial implementation 新增 wave。调用方负责 ENABLE_CROSS_REPO_ENRICHMENT 守卫——
+        implementation 新增 wave。调用方负责 ENABLE_CROSS_REPO_ENRICHMENT 守卫——
         本方法不读 settings（per Pitfall 5 原则）。
         """
         return await expand_cross_repo(
@@ -479,7 +479,7 @@ class HybridSearchService:
             branch_name=branch_name,
         )
 
-        # --- wave: 跨仓 API 扩散（initial implementation）---
+        # --- wave: 跨仓 API 扩散（implementation）---
         # ENABLE_CROSS_REPO_ENRICHMENT 唯一直读点（hybrid_search 模块）。
         enable_cross: bool = bool(
             getattr(settings, "ENABLE_CROSS_REPO_ENRICHMENT", True)
@@ -514,7 +514,7 @@ class HybridSearchService:
         )
 
         # 无 graph_section 时保 rag_section 原貌（含 trim_to_budget 产出的尾换行），
-        # 与 _search_rag_only 路径 byte-equal —— 兑现 initial implementation byte-eq 承诺（initial implementation 提前）
+        # 与 _search_rag_only 路径 byte-equal —— 兑现 implementation byte-eq 承诺（implementation 提前）
         if graph_section:
             final_context = f"{rag_section.rstrip()}\n\n{graph_section}".rstrip()
         else:
@@ -560,7 +560,7 @@ class HybridSearchService:
         capability 守卫（``isinstance(provider, GraphCapableProvider)`` False）
         已在 search 入口完成。
 
-        **initial implementation zero-drift 守门**：本方法 byte-for-byte 等价 initial implementation
+        **implementation zero-drift 守门**：本方法 byte-for-byte 等价 implementation
         实现，既有 NullProvider 路径测试（test_hybrid_skeleton + test_null_provider_paths)
         必须全绿。
         """
@@ -628,13 +628,13 @@ class HybridSearchService:
         direction: Literal["downstream", "upstream", "both"] = "both",
         limit: int = 20,
     ) -> list[NeighborMetadata]:
-        """initial implementation MCP tool 直接调用入口（per plan success_criteria）。
+        """implementation MCP tool 直接调用入口（success criteria）。
 
         Thin wrapper：delegate 到 ``services.retrieval.find_related.find_related``
         模块级函数。**不做** ``isinstance(provider, GraphCapableProvider)`` 守卫——
         find_related 直接查 ChunkEdge ORM，不依赖 Provider；NullProvider 实例
-        调本方法依然可拿到 ChunkEdge 数据（per plan deviation："任何 provider
-        调 find_related 都能拿到 ChunkEdge 数据"）。如需限制，initial implementation MCP tool
+        调本方法依然可拿到 ChunkEdge 数据（implementation notes："任何 provider
+        调 find_related 都能拿到 ChunkEdge 数据"）。如需限制，implementation MCP tool
         在外层加 Pydantic schema + capability 守卫。
 
         Args:

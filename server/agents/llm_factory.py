@@ -1,4 +1,4 @@
-"""initial implementation 核心工厂入口 —— build_chat_model thin wrapper。
+"""implementation 核心工厂入口 —— build_chat_model thin wrapper。
 
 单一入口把 ResolvedProviderConfig + model 字符串映射为 LangChain BaseChatModel，
 capabilities 驱动 thinking / reasoning / max_tokens / timeout / base_url 分派，
@@ -7,13 +7,13 @@ api_key 用 pydantic.SecretStr 包装防泄漏（security mitigation-01/02 缓�
 职责边界（明确不做的事）：
 - 不调 LLM（仅构造对象；实测 init_chat_model 构造本身不触网 —— RESEARCH Pitfall I）
 - 不做 tool binding（归 implementation plan Runner：model.bind_tools(tools)）
-- 不计成本（归调用方 initial implementation AIAgentBaseNode + pricing.calculate_cost_v2）
+- 不计成本（归调用方 implementation AIAgentBaseNode + pricing.calculate_cost_v2）
 - 不持有状态（纯函数；每次调用构造新 BaseChatModel 实例）
 
 上游调用方：
 - implementation plan LangChainAgentRunner._build_model()
 - implementation plan FakeChatModel monkeypatch 正是替换此函数
-- initial implementation AIAgentBaseNode / AIPromptNode / AIVariableExtractorNode
+- implementation AIAgentBaseNode / AIPromptNode / AIVariableExtractorNode
 
 决策依据：
 - context contract~10（签名 / prefix / SecretStr / thinking / reasoning /
@@ -57,11 +57,11 @@ def build_chat_model(
     """单一工厂入口（contract）：capabilities 驱动 kwargs 分派。
 
     Args:
-        resolved: initial implementation 四层解析后的 Provider 配置（含 api_key 明文 / base_url /
+        resolved: implementation 四层解析后的 Provider 配置（含 api_key 明文 / base_url /
             provider_type / extra）。本函数立即把 api_key 包装为 SecretStr。
         model: 模型标识，如 "claude-sonnet-4-5-20250929" / "gpt-4o-mini" / "o1-mini"。
         capabilities: 模型能力与定价。None 时内部调 ModelCapabilities.get() 兜底查询
-            （initial implementation P2 永不 raise）。
+            （implementation P2 永不 raise）。
         max_output_tokens: 显式覆盖 capabilities.max_output_tokens；超过 capabilities
             时同步抛 ValueError（不静默截断，contract / work item）。
         timeout_seconds: 请求超时秒数。默认 600.0（覆盖 LangChain 60s 默认，避免工作

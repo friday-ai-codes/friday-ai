@@ -1,7 +1,7 @@
-"""一站式删除仓库索引衍生物 — initial implementation plan / contract + initial implementation plan.
+"""一站式删除仓库索引衍生物 — implementation / contract + implementation.
 
 `IndexDeleteView` 历史上把"删 Qdrant collection / 删 FileIndex / 删 codegraph
-三件套（Symbol / ImportEdge / Endpoint）"散落写在 view 函数体里，而 initial implementation 落
+三件套（Symbol / ImportEdge / Endpoint）"散落写在 view 函数体里，而 implementation 落
 地 ``ChunkRegistry`` / ``ChunkEdge`` 后又多出两类需要级联清理的子表。继续把这些
 delete 逻辑塞 view 会让 view 越来越胖，且无法被运维脚本（比如未来的 backfill /
 verify_payload_consistency --reset 子命令）复用。
@@ -14,7 +14,7 @@ verify_payload_consistency --reset 子命令）复用。
 1. 单测直接 assert 每类对象的删除计数 → 防止"忘删某子表"静默漂移。
 2. 调用方（view / 脚本）以结构化数据写日志或返回给前端。
 
-**initial implementation plan 关键设计**：
+**implementation 关键设计**：
 
 - ``cleanup_index`` 内部拆分为 ``_cleanup_vector_artifacts``（Qdrant + FileIndex
   + ChunkEdge + ChunkRegistry）/ ``_cleanup_graph_artifacts``（Symbol +
@@ -32,7 +32,7 @@ verify_payload_consistency --reset 子命令）复用。
   零破坏。
 - 向量段顺序固定：Qdrant → FileIndex → ChunkEdge → ChunkRegistry。
 - 图谱段顺序固定：Symbol → ImportEdge → Endpoint（与 graph_writer per-file
-  delete 同序，per initial implementation CONTEXT D-Discretion）。
+  delete 同序，per implementation CONTEXT D-Discretion）。
 - 每步独立 ``try/except`` + ``log.warning`` + report 字段降级（per context contract）；单步失败不向上传播给用户的 DELETE 请求。Qdrant 网络异常 / ORM 死锁
   都不应阻塞"删干净本地状态"。
 - ``CleanupReport`` 末位追加 ``graph_artifacts_cleared`` 字段保 ``@dataclass``
@@ -97,7 +97,7 @@ class CleanupReport:
 async def _cleanup_vector_artifacts(repo_id: str) -> dict[str, Any]:
     """清理向量轨衍生物：Qdrant collection + FileIndex + ChunkEdge + ChunkRegistry。
 
-    顺序锁定（initial implementation contract 不变量）：
+    顺序锁定（implementation contract 不变量）：
         Qdrant → FileIndex → ChunkEdge → ChunkRegistry
 
     返回 4 字段 dict（key 与 ``CleanupReport`` 字段名一一对应）：
@@ -170,7 +170,7 @@ async def cleanup_index(
             ChunkRegistry），跳过图谱三件套（Symbol / ImportEdge / Endpoint）。
             默认 ``False``——既有所有调用方（IndexDeleteView /
             verify_payload_consistency --reset 等）行为 byte-equivalent
-            不变，per initial implementation-01 兼容性约束。
+            不变，per implementation-01 兼容性约束。
 
     Returns:
         :class:`CleanupReport`；任何单步异常都会被吞掉并降级到对应字段

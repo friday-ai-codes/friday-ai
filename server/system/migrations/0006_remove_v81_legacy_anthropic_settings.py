@@ -1,4 +1,4 @@
-"""initial implementation plan contract/contract：硬删 SystemSetting 中 v8.1 legacy 行。
+"""implementation contract/contract：硬删 SystemSetting 中 v8.1 legacy 行。
 
 删除的 key：
     - anthropic_api_key
@@ -12,7 +12,7 @@
 
 forwards：
     SystemSetting.objects.filter(key__in=[...]).delete()
-    initial implementation contract seed_provider_credentials 已把 anthropic_* 导入为
+    implementation contract seed_provider_credentials 已把 anthropic_* 导入为
     ProviderCredential(scope=system, provider_type=anthropic, name=default)；
     删除这些行不会丢失凭证信息。
 

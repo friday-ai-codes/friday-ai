@@ -43,7 +43,7 @@ def get_effective_collection_name(
     """获取查询时使用的有效 collection 名称。
 
     当仓库有 RepositoryBranchIndex 记录时按分支路由，否则降级到旧 collection。
-    此函数为 initial implementation 检索合并预留接口。
+    此函数为 implementation 检索合并预留接口。
     """
     from repositories.models import RepositoryBranchIndex
     from services.qdrant_service import QdrantService

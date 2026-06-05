@@ -1,4 +1,4 @@
-"""hop2_expander —— initial implementation 编排器二跳 ORM 扩散测试（per plan contract / contract）。
+"""hop2_expander —— implementation 编排器二跳 ORM 扩散测试（contract / contract）。
 
 覆盖矩阵（10 条）：
 

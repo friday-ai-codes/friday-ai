@@ -1,4 +1,4 @@
-"""initial implementation plan — indexer 双重判断 + IndexHistory.graph_build_status=SKIPPED 测试。
+"""implementation — indexer 双重判断 + IndexHistory.graph_build_status=SKIPPED 测试。
 
 覆盖 work item-02 / work item-03：
 

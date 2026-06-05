@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2: Summary API 端点测试。
+"""implementation Task 2: Summary API 端点测试。
 
 测试 POST generate-summary（200/409/401）和 GET summary-status 端点。
 """

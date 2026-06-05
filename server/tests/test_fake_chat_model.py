@@ -1,4 +1,4 @@
-"""initial implementation contract / contract: FakeChatModel helper 自测。
+"""implementation contract / contract: FakeChatModel helper 自测。
 
 覆盖点：
 - 基本构造 + ainvoke 返回 AIMessage

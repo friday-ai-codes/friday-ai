@@ -1,4 +1,4 @@
-"""initial implementation 数据基础修复测试：work item/04/05
+"""implementation 数据基础修复测试：work item/04/05
 
 测试覆盖：
 - work item: asyncio.create_subprocess_exec 替换 subprocess.run

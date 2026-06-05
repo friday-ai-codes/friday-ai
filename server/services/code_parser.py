@@ -65,7 +65,7 @@ class CodeParser:
         self.chunk_lines = chunk_lines
         self.chunk_overlap = chunk_overlap
         self.max_chars = max_chars
-        # 切分模式："ast_aware"（符号驱动精细切片，initial implementation）或 "fixed"（tree-sitter
+        # 切分模式："ast_aware"（符号驱动精细切片，implementation）或 "fixed"（tree-sitter
         # 节点直取，向后兼容）。parse_file 未显式传 chunking_mode 时用此实例默认。
         self.chunking_mode = chunking_mode
         self._parsers: dict[str, Any] = {}
@@ -120,7 +120,7 @@ class CodeParser:
             base_path: 基础路径（用于生成 relative_path）。
             chunking_mode: 切分策略。``None``（默认）→ 用实例 ``self.chunking_mode``；
                 显式传 ``"fixed"`` / ``"ast_aware"`` 覆盖。"ast_aware" 为符号驱动精细
-                切片（initial implementation），"fixed" 为 tree-sitter 节点直取（向后兼容）。
+                切片（implementation），"fixed" 为 tree-sitter 节点直取（向后兼容）。
         """
         mode = chunking_mode if chunking_mode is not None else self.chunking_mode
         language = get_language_from_extension(file_path)
@@ -177,7 +177,7 @@ class CodeParser:
     def parse_file_dual(
         self, file_path: str, base_path: str = "", *, repository_id: str = ""
     ) -> tuple[list[CodeChunk], "Any | None"]:
-        """一次解析双供：返回 ``(chunks, bundle)``（initial implementation single-parse）。
+        """一次解析双供：返回 ``(chunks, bundle)``（implementation single-parse）。
 
         对图谱支持的**非 Vue** 语言（python/go/typescript/tsx/javascript/html/css）走
         ``unified_extraction``——同一次 codegraph 抽取同时产 RAG ``chunks`` 与 Graph
@@ -306,7 +306,7 @@ class CodeParser:
     def _ast_aware_chunk(
         self, content: str, file_path: str, file_hash: str, language: str
     ) -> list[CodeChunk]:
-        """AST-aware chunking：按符号边界切分（work item；initial implementation 重写）。
+        """AST-aware chunking：按符号边界切分（work item；implementation 重写）。
 
         复用 codegraph 的 tree-sitter 符号抽取（专用多语言 parser，含 TS
         interface/type、export/decorated 解包、递归遍历）得到符号边界 ``SymbolSpan``，
