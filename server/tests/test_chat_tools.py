@@ -363,7 +363,7 @@ class TestGetToolNames:
     """_get_tool_names 动态工具注入测试。"""
 
     async def test_with_indexed_repo_returns_full_tool_set(self, project):
-        """有已索引仓库的项目返回完整工具集合（initial implementation 起含
+        """有已索引仓库的项目返回完整工具集合（implementation 起含
         ``ask_clarification``，共 9 个工具）。
         """
         from chat.conversation_service import _get_tool_names
@@ -383,7 +383,7 @@ class TestGetToolNames:
         assert "get_repository_info" in tool_names
         assert "create_coding_plan" in tool_names
         assert "update_coding_plan" in tool_names
-        # initial implementation：协商工具
+        # implementation：协商工具
         assert "ask_clarification" in tool_names
 
     async def test_without_indexed_repo_returns_1_tool(self, project):

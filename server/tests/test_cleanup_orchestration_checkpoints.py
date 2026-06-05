@@ -1,4 +1,4 @@
-"""initial implementation contract 测试 — cleanup_orchestration_checkpoints management command。
+"""implementation contract 测试 — cleanup_orchestration_checkpoints management command。
 
 覆盖 VALIDATION.md work item 锁定的 test 名：
 - test_normal_cleanup

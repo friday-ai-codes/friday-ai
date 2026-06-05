@@ -1344,12 +1344,12 @@ class ExecutionContextView(APIView):
 
 
 # =============================================================================
-# initial implementation contract contract：Workflow Node Resolved Provider View
+# implementation contract contract：Workflow Node Resolved Provider View
 # =============================================================================
 
 
 class NodeResolvedProviderView(APIView):
-    """initial implementation contract contract：workflow 节点四层 Provider 解析链查询。
+    """implementation contract contract：workflow 节点四层 Provider 解析链查询。
 
     路由：``GET /api/workflows/{workflow_id}/nodes/{node_id}/resolved-provider/``
 
@@ -1489,7 +1489,7 @@ class LLMModelsView(APIView):
         use_system = request.data.get("use_system", False)
 
         if use_system:
-            # initial implementation plan：从 ProviderConfigService.aresolve_or_error 获取系统凭证
+            # implementation：从 ProviderConfigService.aresolve_or_error 获取系统凭证
             from services.provider_config import (
                 ProviderConfigService,
                 ProviderMissingError,
@@ -1574,7 +1574,7 @@ class LLMSystemConfigView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def get(self, request: Request) -> Response:
-        # initial implementation plan：从 ProviderConfigService.aresolve_or_error 获取系统配置
+        # implementation：从 ProviderConfigService.aresolve_or_error 获取系统配置
         from services.provider_config import (
             ProviderConfigService,
             ProviderMissingError,

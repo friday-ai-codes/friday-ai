@@ -1,6 +1,6 @@
-"""initial implementation: 索引全流程端到端集成测试 (work item)。
+"""implementation: 索引全流程端到端集成测试 (work item)。
 
-OBSOLETE — initial implementation 双轨索引（Qdrant + 图谱）后 clone_and_index_repository 调用链
+OBSOLETE — implementation 双轨索引（Qdrant + 图谱）后 clone_and_index_repository 调用链
 依赖 Qdrant 真实连接，本测试未 stub 该 seam，因 pytest-socket 隔离失败。
 v24.0 应统一抽 conftest fixture 注入 Qdrant mock 后取消 skip。
 """
@@ -11,7 +11,7 @@ import pytest
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation 双轨索引 + pytest-socket 隔离后，索引主链路触发真实"
+        "OBSOLETE — implementation 双轨索引 + pytest-socket 隔离后，索引主链路触发真实"
         " Qdrant 连接被阻塞。需在 v24.0 重写 fixture 统一 stub Qdrant client。"
     )
 )

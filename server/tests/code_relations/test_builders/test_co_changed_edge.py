@@ -1,4 +1,4 @@
-"""CoChangedEdgeBuilder 单元测试（per initial implementation contract/20/21/22）。
+"""CoChangedEdgeBuilder 单元测试（per implementation contract/20/21/22）。
 
 覆盖：
 - mock asyncio.create_subprocess_exec：流式喂 commit / file 行
@@ -68,7 +68,7 @@ def _create_chunks_for_file(repository, file_path: str, n: int) -> list[uuid.UUI
 async def test_basic_co_change_min_support_filter(repo_with_clone) -> None:
     """5 commits：(a.py,b.py) co-change 4 次 / (c.py,d.py) 2 次，仅前者过 min_support=3。
 
-    initial implementation B3：默认 min_support 已降为 2（per Pitfall 7），用 override_settings
+    implementation B3：默认 min_support 已降为 2（per Pitfall 7），用 override_settings
     锁定旧 min_support=3 契约。
     """
     lines = [
@@ -235,7 +235,7 @@ async def test_no_clone_path_returns_empty(repository, tmp_path) -> None:
 async def test_below_min_support_no_edges(repo_with_clone) -> None:
     """(a.py,b.py) 共变更 2 次 < min_support=3 → 0 边。
 
-    initial implementation B3：默认 min_support 已降为 2（per Pitfall 7），override_settings 锁旧契约。
+    implementation B3：默认 min_support 已降为 2（per Pitfall 7），override_settings 锁旧契约。
     """
     lines = [
         b"COMMIT c1\n", b"a.py\n", b"b.py\n",
@@ -270,7 +270,7 @@ async def test_max_count_normalization(repo_with_clone) -> None:
     a.py max_count=6 → file_weight_ab=6/6=1.0, edge_weight_ab=0.5；
     file_weight_ac=3/6=0.5, edge_weight_ac=0.25。
 
-    initial implementation B3：override_settings 锁旧 min_support=3 契约（per Pitfall 7）。
+    implementation B3：override_settings 锁旧 min_support=3 契约（per Pitfall 7）。
     """
     lines: list[bytes] = []
     for i in range(6):
@@ -296,13 +296,13 @@ async def test_max_count_normalization(repo_with_clone) -> None:
 
 
 # =============================================================================
-# initial implementation 三重 bug 修复（work item "0 条" 根因）守门测试
+# implementation 三重 bug 修复（work item "0 条" 根因）守门测试
 # =============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 async def test_no_clone_path_emits_diagnostic_fields(repository, tmp_path) -> None:
-    """initial implementation B1：clone_path 不存在 → log warning 含 attr_clone_path /
+    """implementation B1：clone_path 不存在 → log warning 含 attr_clone_path /
     settings_repo_clone_dir / decision 三诊断字段（让 prod 0 条根因可定位）。"""
     import structlog
 
@@ -322,7 +322,7 @@ async def test_no_clone_path_emits_diagnostic_fields(repository, tmp_path) -> No
 
 @pytest.mark.django_db(transaction=True)
 async def test_git_uses_max_count_not_since(repo_with_clone) -> None:
-    """initial implementation B2：git args 必须含 --max-count={CO_CHANGED_WINDOW_COMMITS}，
+    """implementation B2：git args 必须含 --max-count={CO_CHANGED_WINDOW_COMMITS}，
     不含 --since={anything}（让 constants.CO_CHANGED_WINDOW_COMMITS 字面承诺真生效）。"""
     await _create_chunks_for_file(repo_with_clone, "a.py", 1)
     await _create_chunks_for_file(repo_with_clone, "b.py", 1)
@@ -351,7 +351,7 @@ async def test_git_uses_max_count_not_since(repo_with_clone) -> None:
 @override_settings(CODEGRAPH_COCHANGE_MIN_SUPPORT=2)
 @pytest.mark.django_db(transaction=True)
 async def test_min_support_settings_override_two(repo_with_clone) -> None:
-    """initial implementation B3：override min_support=2 时，2 次 co-change 即可建边。"""
+    """implementation B3：override min_support=2 时，2 次 co-change 即可建边。"""
     lines = [
         b"COMMIT c1\n", b"a.py\n", b"b.py\n",
         b"COMMIT c2\n", b"a.py\n", b"b.py\n",

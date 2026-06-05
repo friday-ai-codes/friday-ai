@@ -1,4 +1,4 @@
-"""initial implementation: seed_provider_credentials —— 从 SystemSetting.ANTHROPIC_* 导入为一条 anthropic/system/default 凭证。
+"""implementation: seed_provider_credentials —— 从 SystemSetting.ANTHROPIC_* 导入为一条 anthropic/system/default 凭证。
 
 与 `server/system/migrations/0005_seed_provider_credentials.py` 共享
 `system.data_migrations.seed_provider_credentials_impl`（单一事实源）。

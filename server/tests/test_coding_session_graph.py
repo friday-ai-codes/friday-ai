@@ -59,7 +59,7 @@ def mock_coding_session() -> MagicMock:
     session.diff_summary = None
     session.amark_awaiting_confirmation = AsyncMock()
     session.amark_failed = AsyncMock()
-    session.amark_running = AsyncMock()  # initial implementation contract: dispatch_coding_node 调用
+    session.amark_running = AsyncMock()  # implementation contract: dispatch_coding_node 调用
     session.aresume_running = AsyncMock()
     session.amark_completed = AsyncMock()
     session.asave = AsyncMock()
@@ -85,7 +85,7 @@ def _patch_get_coding_session(
 
     直接 mock 内部的 _get_coding_session 函数，避免复杂的 ORM 链式调用 mock。
 
-    initial implementation G2 修复：由于 conflict_check_node 被前置到 await_commit_confirm 之前，
+    implementation G2 修复：由于 conflict_check_node 被前置到 await_commit_confirm 之前，
     既有测试（使用 MagicMock repository）会在 Phase resume 成功后立即触及
     GitCredential.objects.filter(repository=<MagicMock>) ORM 查询，导致
     ValidationError (UUID 字段不接受 MagicMock)。此 helper 默认附带
@@ -796,7 +796,7 @@ class TestConflictCheckNode:
     async def test_conflict_check_no_credential(
         self, mock_coding_session: MagicMock
     ) -> None:
-        """无 Git 凭据时静默早退（返回 {}），不推进 phase（initial implementation G2）。"""
+        """无 Git 凭据时静默早退（返回 {}），不推进 phase（implementation G2）。"""
         from orchestration.coding_graph import conflict_check_node
 
         state: CodingSessionState = {
@@ -883,7 +883,7 @@ class TestConflictCheckNode:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation G2: LangGraph 拓扑静态断言测试
+# implementation G2: LangGraph 拓扑静态断言测试
 # ---------------------------------------------------------------------------
 
 
@@ -927,12 +927,12 @@ class TestCodingGraphTopology:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation G2: route_after_coding 条件路由分支覆盖测试
+# implementation G2: route_after_coding 条件路由分支覆盖测试
 # ---------------------------------------------------------------------------
 
 
 class TestRouteAfterCoding:
-    """G2 (initial implementation Wave): route_after_coding 条件路由分支覆盖。"""
+    """G2 (implementation Wave): route_after_coding 条件路由分支覆盖。"""
 
     def test_route_after_coding_success_returns_conflict_check(self) -> None:
         """Phase 成功后 route_after_coding 返回 'conflict_check'。"""
@@ -954,7 +954,7 @@ class TestRouteAfterCoding:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation G2: resume 集成测试 -- conflict_check 前置 + interrupt payload + 失败 bypass
+# implementation G2: resume 集成测试 -- conflict_check 前置 + interrupt payload + 失败 bypass
 # ---------------------------------------------------------------------------
 
 
@@ -1017,7 +1017,7 @@ def _build_conflict_compare_mocks(
 
 
 class TestCodingSessionGraphResume:
-    """G2 (initial implementation Wave): conflict_check 前置后的 resume 集成测试。"""
+    """G2 (implementation Wave): conflict_check 前置后的 resume 集成测试。"""
 
     @pytest.mark.asyncio
     async def test_conflict_check_runs_before_commit_dispatch(

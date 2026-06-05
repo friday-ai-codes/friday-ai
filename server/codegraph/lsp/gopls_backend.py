@@ -1,6 +1,6 @@
-"""initial implementation: GoplsBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
+"""implementation: GoplsBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
 
-继承 initial implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
+继承 implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
 fallback）；本模块仅实装 4 个 ``_lsp_extract_*`` abstract hook + 4 ClassVar 字段
 + ``make_gopls_backend(language)`` 工厂闭包。
 
@@ -15,14 +15,14 @@ _lsp_extract_symbols          workspace/symbol(query="") + per-file
 _lsp_extract_imports          tree-sitter raw（fallback）+ textDocument/
                               definition 解 target_path → ImportData[]
 _lsp_extract_calls            tree-sitter raw symbols + per-symbol references
-                              全部入 CallData（per work item：initial implementation 精化）
-_lsp_extract_endpoints        return []（Go 端点 initial implementation gin tree-sitter；per work item）
+                              全部入 CallData（per work item：implementation 精化）
+_lsp_extract_endpoints        return []（Go 端点 implementation gin tree-sitter；per work item）
 ============================  ==============================================
 
-per work item：gopls 复用 initial implementation ``_SUPERVISORS["gopls"]`` module-level 单例缓存
-——与 initial implementation VolarPool 多实例选择**正好对称**，体现 initial implementation 双路径设计意图。
+per work item：gopls 复用 implementation ``_SUPERVISORS["gopls"]`` module-level 单例缓存
+——与 implementation VolarPool 多实例选择**正好对称**，体现 implementation 双路径设计意图。
 
-per work item：``make_gopls_backend(language)`` 工厂闭包替换 initial implementation 占位
+per work item：``make_gopls_backend(language)`` 工厂闭包替换 implementation 占位
 ``make_lsp_backend``；闭包内推断 go_mod_root + 从 ``get_or_create_supervisor``
 （module-level 单实例）拿 supervisor + 实例化 _GoplsLazyBackend。
 """
@@ -78,12 +78,12 @@ _SYMBOL_KIND_MAP: Final[dict[int, str]] = {
 
 
 class _GoplsLazyBackend(LspBackend):
-    """gopls LSP backend；继承 initial implementation LspBackend + 4 hook 实装。
+    """gopls LSP backend；继承 implementation LspBackend + 4 hook 实装。
 
-    initial implementation 实装 _GoplsLazyBackend 模式：闭包内 lazy 推断 go_mod_root +
+    implementation 实装 _GoplsLazyBackend 模式：闭包内 lazy 推断 go_mod_root +
     通过 get_or_create_supervisor（module-level 单例）拿 supervisor。
 
-    per work item：gopls 单实例策略（与 initial implementation VolarPool 多实例对称）。
+    per work item：gopls 单实例策略（与 implementation VolarPool 多实例对称）。
     """
 
     name: ClassVar[str] = "gopls"
@@ -135,7 +135,7 @@ class _GoplsLazyBackend(LspBackend):
     ) -> list[SymbolData]:
         """workspace/symbol + documentSymbol 混合策略（per work item / V2）。
 
-        异常路径不 try/except；让 initial implementation LspBackend.extract_symbols 基类捕获 +
+        异常路径不 try/except；让 implementation LspBackend.extract_symbols 基类捕获 +
         fallback tree-sitter（per work item）。
         """
         timeout = float(getattr(settings, "LSP_REQUEST_TIMEOUT_SECONDS", 10))
@@ -191,8 +191,8 @@ class _GoplsLazyBackend(LspBackend):
     ) -> list[CallData]:
         """per-symbol textDocument/references 反向追踪（per work item / work item）。
 
-        per work item：initial implementation 简化——全部 reference 入 CallData；
-        initial implementation 精化 cross-file caller 解析。
+        per work item：implementation 简化——全部 reference 入 CallData；
+        implementation 精化 cross-file caller 解析。
         策略：
             1. 从 tree-sitter fallback 抽 raw symbols（省 LSP 调用轮次）
             2. per symbol 调 textDocument/references 拿 caller 列表
@@ -255,7 +255,7 @@ class _GoplsLazyBackend(LspBackend):
     def _lsp_extract_endpoints(
         self, tree: Any, source: str, ctx: FileContext  # noqa: ARG002
     ) -> list[EndpointData]:
-        """Go 端点 initial implementation gin tree-sitter 处理；本 phase 直接 return []（per work item）。"""
+        """Go 端点 implementation gin tree-sitter 处理；本 phase 直接 return []（per work item）。"""
         return []
 
 
@@ -461,14 +461,14 @@ def _find_repo_root(file_path: Path) -> Path:
 
 
 def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend]:
-    """工厂闭包 —— 替换 initial implementation 占位 ``make_lsp_backend``（gopls 版本）。
+    """工厂闭包 —— 替换 implementation 占位 ``make_lsp_backend``（gopls 版本）。
 
     返回的工厂签名 ``Callable[[str], ExtractorBackend]`` 与 ``BACKEND_REGISTRY`` 类型
     严格对齐；闭包内 lazy 推断 go_mod_root + 通过 ``get_or_create_supervisor``
     （module-level 单例）拿 supervisor + 实例化 _GoplsLazyBackend。
 
-    per work item：gopls 单实例策略——与 initial implementation VolarPool 多实例选择正好对称；
-    用尽了 initial implementation 双路径设计意图。
+    per work item：gopls 单实例策略——与 implementation VolarPool 多实例选择正好对称；
+    用尽了 implementation 双路径设计意图。
 
     Args:
         language: BACKEND_REGISTRY key 期望的语言（"go"）
@@ -477,7 +477,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
         ``_factory(actual_language: str)``：实际语言由调用方传
 
     Note:
-        per Pitfall P-checkpoint：闭包内 _GoplsLazyBackend 沿用 initial implementation VolarLazyBackend
+        per Pitfall P-checkpoint：闭包内 _GoplsLazyBackend 沿用 implementation VolarLazyBackend
         同模式处理 handle 入参检测（_LspParseHandle vs 真实 tree-sitter Tree）。
     """
     captured_language = language
@@ -488,7 +488,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
         class _GoplsLazyInstance(_GoplsLazyBackend):
             """工厂路径 gopls lazy backend：首次 LSP 调用时延迟注入 supervisor。
 
-            per initial implementation：4 hook 真实调用（去占位 raise）；
+            per implementation：4 hook 真实调用（去占位 raise）；
             per Pitfall P-checkpoint：非 LSP handle 入参时直接委托 fallback。
 
             策略：_ensure_supervisor(ctx) 在首次 LSP 调用时延迟调 _get_supervisor，
@@ -498,7 +498,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
             def __init__(self, lang: str) -> None:
                 # 故意不调 super().__init__()：LspBackend.__init__ 要求 supervisor 立即注入，
                 # 但此 lazy 实例通过 _get_supervisor() 在首次 extract_* 时延迟决定 supervisor。
-                # per Pitfall P-checkpoint：与 initial implementation _VolarLazyBackend 同模式。
+                # per Pitfall P-checkpoint：与 implementation _VolarLazyBackend 同模式。
                 self.language = lang
                 self._supervisor: LspSupervisor = None  # type: ignore[assignment]
                 self._fallback: ExtractorBackend = TreeSitterBackend(lang)
@@ -509,7 +509,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
                 return isinstance(tree, _LspParseHandle)
 
             def _ensure_supervisor(self, ctx: FileContext) -> None:
-                """首次 LSP 调用时延迟注入 supervisor（initial implementation 真填策略）。
+                """首次 LSP 调用时延迟注入 supervisor（implementation 真填策略）。
 
                 若 _supervisor 已注入则跳过；否则调 _get_supervisor(file_path)。
                 使用 _supervisor_lock 确保多线程安全（per Review W-01）。

@@ -1,6 +1,6 @@
 """Prompt DRF serializers。
 
-initial implementation Plan-02 Task 1 产出：6 个 Serializer 覆盖 list / retrieve / create /
+implementation-02 Task 1 产出：6 个 Serializer 覆盖 list / retrieve / create /
 update / preview / version 路径。
 
 - contract：扁平 `/api/prompts/` 下的单一 Prompt ViewSet 共享这套 serializer

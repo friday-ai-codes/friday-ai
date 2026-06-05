@@ -1,4 +1,4 @@
-"""initial implementation: 新建 ApiWrapper + ApiCallSite 表（per work item）。
+"""implementation: 新建 ApiWrapper + ApiCallSite 表（per work item）。
 
 ApiWrapper: 前端 ApiWrapper 函数（封装 LowLevelHelper 调用），含 JSDoc metadata。
 ApiCallSite: ApiWrapper 调用点（通过 volar textDocument/references 反向追踪）。

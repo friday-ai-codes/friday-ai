@@ -1,4 +1,4 @@
-"""SameFileEdgeBuilder 测试（per initial implementation contract/14/15）。"""
+"""SameFileEdgeBuilder 测试（per implementation contract/14/15）。"""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ async def test_chunk_index_diff_metadata(repository) -> None:
 
 
 # =============================================================================
-# initial implementation / work item：跨语言守门 parametrize 测试
+# implementation / work item：跨语言守门 parametrize 测试
 # 静态审计：SameFileEdgeBuilder 实现完全基于 ChunkRegistry.file_path + chunk_index，
 # 无 file extension / language 假设 → 天然语言无关 git diff = 0。
 # =============================================================================
@@ -110,7 +110,7 @@ async def test_chunk_index_diff_metadata(repository) -> None:
 )
 @pytest.mark.django_db(transaction=True)
 async def test_same_file_edge_cross_language_guard(repository, file_path: str) -> None:
-    """initial implementation / work item 守门：SameFileEdge 对所有 5 语言 file_path 均能建 ≥ 1 条 edge。
+    """implementation / work item 守门：SameFileEdge 对所有 5 语言 file_path 均能建 ≥ 1 条 edge。
 
     建 2 chunks 同文件 → 1 edge（n*(n-1)/2）。验证 builder 实现天然语言无关。
     """

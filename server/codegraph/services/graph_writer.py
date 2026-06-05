@@ -261,7 +261,7 @@ class GraphWriter:
         return stats
 
     # =========================================================================
-    # initial implementation plan（work item-01）：批量按文件删除图谱孤儿数据
+    # implementation（work item-01）：批量按文件删除图谱孤儿数据
     #
     # 增量索引检测到文件被删除时，indexer 在 _extract_and_write_graph 之前
     # 调用 delete_for_files(deleted_file_paths) 把对应的 Symbol / ImportEdge /
@@ -367,7 +367,7 @@ class GraphWriter:
         )(repository_id, file_paths, branch_name=branch_name)
 
     # =========================================================================
-    # initial implementation: ApiWrapper + ApiCallSite 写入（work item）
+    # implementation: ApiWrapper + ApiCallSite 写入（work item）
     # =========================================================================
 
     def write_api_wrappers_for_file(

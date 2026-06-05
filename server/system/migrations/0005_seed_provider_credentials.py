@@ -1,4 +1,4 @@
-"""initial implementation: 数据迁移 —— SystemSetting.ANTHROPIC_* → ProviderCredential anthropic/system/default。
+"""implementation: 数据迁移 —— SystemSetting.ANTHROPIC_* → ProviderCredential anthropic/system/default。
 
 forward / reverse 均委托给 system.data_migrations 的共享实现（单一事实源，Pitfall E 防御）。
 """

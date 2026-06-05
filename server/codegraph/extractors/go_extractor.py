@@ -1,7 +1,7 @@
 """Go 专用抽取器 —— 直接实现 LanguageExtractor，不依赖 registry 模块。
 
 固定使用 TreeSitterBackend("go")，避免与 registry.py 的循环导入。
-后续 initial implementation 切 gopls 时只需在此覆写 backend 注入路径。
+后续 implementation 切 gopls 时只需在此覆写 backend 注入路径。
 """
 
 from __future__ import annotations

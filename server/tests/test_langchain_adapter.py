@@ -1,4 +1,4 @@
-"""LangChain adapter 单元测试（initial implementation contract）。
+"""LangChain adapter 单元测试（implementation contract）。
 
 覆盖 `agents.tools.langchain_adapter.build_langchain_tools` 的：
 - 空列表 / 未知工具静默跳过

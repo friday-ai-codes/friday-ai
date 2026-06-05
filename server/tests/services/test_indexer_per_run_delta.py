@@ -1,4 +1,4 @@
-"""initial implementation：per-run delta 回填集成测试（Pitfall A / Pitfall 7）。
+"""implementation：per-run delta 回填集成测试（Pitfall A / Pitfall 7）。
 
 驱动 `_extract_and_write_graph` 处理一个真实 .py 文件，mock graph_writer.write_bundle
 返回受控计数，断言 symbols/imports/calls/endpoints_added 经 running_history 回填到

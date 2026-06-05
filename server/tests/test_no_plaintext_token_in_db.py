@@ -1,4 +1,4 @@
-"""明文 token 防回归锁名契约（initial implementation / contract / contract / contract）。
+"""明文 token 防回归锁名契约（implementation / contract / contract / contract）。
 
 锁名契约（仿 server/tests/test_credential_leak_protection.py:28 范式）：
 - 本文件必含**顶层函数** `def test_no_plaintext_token_in_db()` —— 命名锁死、不可改名，

@@ -1,7 +1,7 @@
 """work item：AICodingNode metadata 注入 env_FRIDAY_TASK_CLAUDE_* 字段契约测试。
 
 覆盖：
-- ROADMAP initial implementation SC3（passthrough 成功路由）
+- ROADMAP implementation SC3（passthrough 成功路由）
 - context contract 纠偏命名（env_FRIDAY_TASK_CLAUDE_API_KEY / env_FRIDAY_TASK_CLAUDE_BASE_URL）
 - context contract（URL scheme 白名单 + host 非空）
 - context contract（空 base_url 不注入 metadata 键）

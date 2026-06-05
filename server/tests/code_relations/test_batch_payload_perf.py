@@ -1,6 +1,6 @@
-"""Pitfall 2 perf gate（per initial implementation contract + contract）。
+"""Pitfall 2 perf gate（per implementation contract + contract）。
 
-1k chunks 批量 payload 同步必须 < 1s wall-clock；对应 ROADMAP §initial implementation success criterion
+1k chunks 批量 payload 同步必须 < 1s wall-clock；对应 ROADMAP §implementation success criterion
 "1k chunks sync wall-clock < 1s"。CI 默认 skip（@pytest.mark.perf），本地用
 `pytest -m perf server/tests/code_relations/test_batch_payload_perf.py` 跑。
 """

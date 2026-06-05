@@ -413,7 +413,7 @@ class TestDebugEngine:
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestBreakpointMode:
-    """initial implementation: 断点模式测试。"""
+    """implementation: 断点模式测试。"""
 
     async def test_breakpoint_mode_only_pauses_at_breakpoints(self, parallel_workflow):
         """work item: 断点模式下仅断点节点暂停，非断点节点自动放行。

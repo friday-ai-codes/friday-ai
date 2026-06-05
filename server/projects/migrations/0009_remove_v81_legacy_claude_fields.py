@@ -1,5 +1,5 @@
-"""initial implementation plan contract/contract：硬删 Project.claude_* + default_provider_type/default_model 字段。
-initial implementation Hotfix（work item）：docstring 勘误 —— 实际 RunPython 为 work item。
+"""implementation contract/contract：硬删 Project.claude_* + default_provider_type/default_model 字段。
+implementation Hotfix（work item）：docstring 勘误 —— 实际 RunPython 为 work item。
 
 删除字段：
     - claude_api_key_encrypted
@@ -15,7 +15,7 @@ forwards RunPython：
         - Project.claude_api_key_encrypted 是 Fernet(api_key 明文)
         - ProviderCredential.encrypted_config 需 Fernet(json.dumps({api_key, base_url, ...}))
           两者 schema 不兼容；migration 历史快照内 import `common.encryption` 解密/
-          重加密违反 initial implementation REVIEW work item "RunPython 内 import runtime symbol" 原则
+          重加密违反 implementation REVIEW work item "RunPython 内 import runtime symbol" 原则
           （未来重命名/重构 common.encryption 时会 ImportError）。
 
         **执行本 migration 前必须运行预检命令：**
@@ -40,7 +40,7 @@ from django.db import migrations
 
 
 def backfill_claude_credentials(apps, schema_editor):
-    """forwards：**work item**（initial implementation Hotfix work item）。
+    """forwards：**work item**（implementation Hotfix work item）。
 
     见模块级 docstring 解释 —— 真 backfill 风险高于收益（schema 不兼容 + 违反
     历史快照原则）。预检由 `check_v81_legacy_residue` management command 承担,

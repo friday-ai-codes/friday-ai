@@ -1,4 +1,4 @@
-"""coding_plan_exporter 单元测试（initial implementation / work item）。
+"""coding_plan_exporter 单元测试（implementation / work item）。
 
 覆盖：
     1. 文档 markdown 结构 4 段标题 + 生成时间段

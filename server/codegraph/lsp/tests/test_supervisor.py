@@ -1,4 +1,4 @@
-"""initial implementation: LspSupervisor 单元测试。
+"""implementation: LspSupervisor 单元测试。
 
 覆盖：枚举与初始字段 / lifecycle / crash-loop 防护 / 健康检查 /
 同步桥接 / stub did_* API / structlog 事件契约。

@@ -1,4 +1,4 @@
-"""initial implementation plan Task 3 — HybridSearchService 结构化日志契约测试。
+"""implementation Task 3 — HybridSearchService 结构化日志契约测试。
 
 5 条断言锁定 plan 落地的 4 类 structlog 事件 + 字段拼写一致性，作为后续
 phase 修改 hybrid_search.py 的"日志契约"屏障。事件矩阵（per CONTEXT.md
@@ -24,7 +24,7 @@ D-Discretion + plan 代码）：
 5. ``test_null_provider_path_emits_started_with_rag_only`` —— NullProvider 路径
    下 hybrid_search_started.path=="rag_only" + 不 emit wave_started/wave_done
 
-测试技术（per plan deviation）：
+测试技术（implementation notes）：
 - 用 ``structlog.testing.capture_logs()`` 而非自实现 capture processor——项目
   ``cache_logger_on_first_use=True`` 致模块级 ``logger = structlog.get_logger(__name__)``
   首次绑定后自实现 helper 无法接管；官方 capture_logs 直接 monkeypatch

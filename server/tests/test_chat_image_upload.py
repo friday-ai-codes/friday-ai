@@ -1,4 +1,4 @@
-"""Web Chat image upload endpoint tests for initial implementation."""
+"""Web Chat image upload endpoint tests for implementation."""
 
 from __future__ import annotations
 

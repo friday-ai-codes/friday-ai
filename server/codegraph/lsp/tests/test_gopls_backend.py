@@ -1,4 +1,4 @@
-"""initial implementation: gopls_backend.py 单元测试（≥ 14 场景 mock supervisor + 4 hook 转换 + fallback）。
+"""implementation: gopls_backend.py 单元测试（≥ 14 场景 mock supervisor + 4 hook 转换 + fallback）。
 
 覆盖：
 - ClassVar 字段验证
@@ -433,7 +433,7 @@ class TestMakeGoplsBackend:
         assert "make_gopls_backend" in factory.__qualname__
 
     def test_factory_instance_has_ensure_supervisor(self) -> None:
-        """_GoplsLazyInstance 有 _ensure_supervisor 方法（initial implementation 新增）。"""
+        """_GoplsLazyInstance 有 _ensure_supervisor 方法（implementation 新增）。"""
         from codegraph.lsp.gopls_backend import make_gopls_backend
 
         factory = make_gopls_backend("go")
@@ -443,7 +443,7 @@ class TestMakeGoplsBackend:
 
 
 class TestGoplsLazyInstancePhase:
-    """initial implementation 新增：_GoplsLazyInstance 真填行为验证。"""
+    """implementation 新增：_GoplsLazyInstance 真填行为验证。"""
 
     def _make_lazy_instance(self) -> tuple:
         """创建 _GoplsLazyInstance 并 mock _get_supervisor。"""
@@ -501,7 +501,7 @@ class TestGoplsLazyInstancePhase:
         assert backend._supervisor is existing_sup
 
     def test_lsp_handle_no_raise_for_symbols(self) -> None:
-        """_GoplsLazyInstance _lsp_extract_symbols(lsp_handle) 不再 raise（initial implementation 修复）。"""
+        """_GoplsLazyInstance _lsp_extract_symbols(lsp_handle) 不再 raise（implementation 修复）。"""
         backend, mock_sup = self._make_lazy_instance()
         mock_sup.call_async_in_loop.return_value = ([], [])
         with patch.object(backend, "_get_supervisor", return_value=mock_sup):
@@ -510,7 +510,7 @@ class TestGoplsLazyInstancePhase:
 
 
 class TestLspExtractSymbolsExtended:
-    """initial implementation 新增：扩展 SymbolKind 映射 + documentSymbol 展平验证。"""
+    """implementation 新增：扩展 SymbolKind 映射 + documentSymbol 展平验证。"""
 
     def test_method_kind_maps_to_function(self) -> None:
         """SymbolKind.Method → symbol_type == 'FUNCTION'。"""
@@ -646,7 +646,7 @@ class TestLspExtractSymbolsExtended:
 
 
 class TestLspExtractImportsExtended:
-    """initial implementation 新增：imports 扩展 case。"""
+    """implementation 新增：imports 扩展 case。"""
 
     def test_multiple_imports_all_resolved(self) -> None:
         """多个 import → 各自 resolve（mock resolve 返不同路径）。"""
@@ -711,7 +711,7 @@ class TestLspExtractImportsExtended:
 
 
 class TestLspExtractCallsExtended:
-    """initial implementation 新增：calls 扩展 case。"""
+    """implementation 新增：calls 扩展 case。"""
 
     def test_references_returns_none_no_crash(self) -> None:
         """call_async_in_loop 返 None → 跳过，不 crash，result 为空。"""

@@ -9,7 +9,7 @@ from orchestration.state import RunPhase, WorkflowState
 
 class TestRunPhase:
     def test_has_seven_phases(self) -> None:
-        # initial implementation 新增 WAITING_CLARIFICATION，从 6 个升到 7 个
+        # implementation 新增 WAITING_CLARIFICATION，从 6 个升到 7 个
         assert len(RunPhase) == 7
 
     def test_values(self) -> None:
@@ -17,7 +17,7 @@ class TestRunPhase:
             "planning",
             "executing",
             "waiting",
-            "waiting_clarification",  # initial implementation
+            "waiting_clarification",  # implementation
             "finalizing",
             "completed",
             "error",
@@ -45,7 +45,7 @@ class TestWorkflowState:
             "run_id", "phase", "blocking_tasks", "user_message", "final_answer",
             "blocking_results", "wait_execute_loops",
             "accumulated_thinking", "tool_calls", "parts", "result_metadata", "agent_session_id",
-            # initial implementation：协商暂停 payload
+            # implementation：协商暂停 payload
             "pending_clarification",
         }
         assert set(hints.keys()) == expected_fields

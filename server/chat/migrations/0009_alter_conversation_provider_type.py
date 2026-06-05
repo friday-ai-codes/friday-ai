@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='conversation',
             name='provider_type',
-            field=models.CharField(blank=True, help_text='LLM Provider 类型，为空时继承上层配置 [v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', max_length=50, null=True, verbose_name='Provider 类型'),
+            field=models.CharField(blank=True, help_text='LLM Provider 类型，为空时继承上层配置 [v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', max_length=50, null=True, verbose_name='Provider 类型'),
         ),
     ]

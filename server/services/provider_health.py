@@ -39,7 +39,7 @@ class HealthCheckResult:
     """健康检查结果。
 
     available_models 仅 Ollama 路径填充（其他 Provider 保持 None）；
-    initial implementation refresh-models 端点会另行拉取其他 Provider 的模型清单。
+    implementation refresh-models 端点会另行拉取其他 Provider 的模型清单。
     """
 
     ok: bool
@@ -215,7 +215,7 @@ async def _ping_ollama(
     )
 
 
-# 5 ProviderType -> _ping_* 函数分派表（initial implementation 新增 Provider 时仅在此表登记）
+# 5 ProviderType -> _ping_* 函数分派表（implementation 新增 Provider 时仅在此表登记）
 _PING_DISPATCH = {
     ProviderType.ANTHROPIC: _ping_anthropic,
     ProviderType.OPENAI_RESPONSES: _ping_openai,
@@ -344,7 +344,7 @@ async def health_check(
 
 
 # ============================================================================
-# initial implementation contract：模型清单抽取（fetch_models_for_credential）
+# implementation contract：模型清单抽取（fetch_models_for_credential）
 # ============================================================================
 #
 # 与 health_check 分离的原因：

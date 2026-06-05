@@ -1,4 +1,4 @@
-"""initial implementation: 测量 volar vs tree-sitter import / call resolution 精度。
+"""implementation: 测量 volar vs tree-sitter import / call resolution 精度。
 
 per work item / work item / work item
 =========================

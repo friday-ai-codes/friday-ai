@@ -322,7 +322,7 @@ async def executing_node(
     模式 A（首次）：正常运行 SDK，提取 __blocking_task__ 标记。
     模式 B（二次）：注入 blocking_results 作为上下文再运行 SDK 生成最终回答。
 
-    initial implementation：首次进入时把 ``classify_intent`` 结果写入
+    implementation：首次进入时把 ``classify_intent`` 结果写入
     ``result_metadata.intent_classification``，下游 finalize / evaluation 路径可
     读取该字段做后续分析。
     """
@@ -336,7 +336,7 @@ def _annotate_intent_classification(
     state: WorkflowState,
     result_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    """initial implementation：把 ``classify_intent`` 结果写入 result_metadata。
+    """implementation：把 ``classify_intent`` 结果写入 result_metadata。
 
     纯函数，不写 DB / 不发 SSE；executing_node 收尾时调用一次即可（首次进入）。
     返回新的 result_metadata dict（含 intent_classification 字段）。
@@ -523,7 +523,7 @@ def _extract_pending_clarification(
 ) -> dict[str, Any] | None:
     """从 tool_calls 提取 ``ask_clarification`` 调用产生的 pending payload。
 
-    initial implementation：``ask_clarification`` 工具的 ToolResult.output 形如
+    implementation：``ask_clarification`` 工具的 ToolResult.output 形如
     ``{"clarification_id": ..., "pending": True, "marker": "ask_clarification",
        "question": ..., "options": [...], "allow_freeform": ...}``。
     chat_runner 会把 dict 序列化成 JSON 字符串再放到 tc["result"]，因此
@@ -696,7 +696,7 @@ async def _execute_first_run(
         }
 
     result_metadata = _build_result_metadata(runner)
-    # initial implementation：写入 intent_classification 供下游 evaluation 用
+    # implementation：写入 intent_classification 供下游 evaluation 用
     result_metadata = _annotate_intent_classification(state, result_metadata)
     result = runner.result
     final_answer = (result.final_answer if result else None) or ""
@@ -853,7 +853,7 @@ async def waiting_node(state: WorkflowState) -> dict[str, Any]:
 
 
 async def wait_clarification_node(state: WorkflowState) -> dict[str, Any]:
-    """等待用户对 ``ask_clarification`` 的回复（initial implementation）。
+    """等待用户对 ``ask_clarification`` 的回复（implementation）。
 
     interrupt() 暂停 graph，payload 是 ``pending_clarification`` 内容；
     resume 值由 ``ClarificationAnswerView`` 触发，结构::
@@ -916,12 +916,12 @@ async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
 def route_after_executing(state: WorkflowState) -> str:
     """条件路由：error 直接结束，有 blocking_tasks 走 waiting（含循环计数保护），否则走 finalizing。
 
-    initial implementation 新增：``phase=waiting_clarification`` 走专属
+    implementation 新增：``phase=waiting_clarification`` 走专属
     ``wait_clarification`` 节点 ``interrupt()`` 等用户答复。
     """
     if state.get("phase") == RunPhase.ERROR.value:
         return END
-    # initial implementation：协商分支放在 blocking_tasks 之前判定；ask_clarification 工具调用
+    # implementation：协商分支放在 blocking_tasks 之前判定；ask_clarification 工具调用
     # 通过 pending_clarification 字段非空 + phase=waiting_clarification 双标记驱动。
     if state.get("phase") == RunPhase.WAITING_CLARIFICATION.value:
         return "wait_clarification"
@@ -949,7 +949,7 @@ def build_graph() -> StateGraph:
     builder.add_node("planning", planning_node)
     builder.add_node("executing", executing_node)
     builder.add_node("waiting", waiting_node)
-    # initial implementation：协商暂停节点
+    # implementation：协商暂停节点
     builder.add_node("wait_clarification", wait_clarification_node)
     builder.add_node("finalizing", finalizing_node)
 

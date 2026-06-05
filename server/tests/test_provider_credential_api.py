@@ -353,7 +353,7 @@ def test_toggle_active_skips_in_aresolve(
 ) -> None:
     """PATCH toggle-active 反转 is_active；aresolve_or_error 下次解析不再命中该凭证。
 
-    initial implementation `_fetch_credential_by_id / _fetch_system_default_credential` 的
+    implementation `_fetch_credential_by_id / _fetch_system_default_credential` 的
     queryset 均带 `filter(is_active=True)`，is_active=false 时系统级 anthropic
     解析应返回 ProviderMissingError（测试库里除本凭证外没有其他 system-anthropic）。
 

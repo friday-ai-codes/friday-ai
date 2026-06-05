@@ -1,5 +1,5 @@
 """``find_related_code`` ↔ ``search_repository_code`` description 决策树语义锁
-—— per initial implementation plan 03 / work-item contract。
+—— per implementation 03 / work-item contract。
 
 snapshot（``test_tool_contracts.py``）锁的是字节级漂移，本文件锁**语义关键字**：
 确认决策树文字真在 description 中，避免「重排序文字 / 同义词替换」绕过 snapshot

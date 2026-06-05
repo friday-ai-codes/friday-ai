@@ -1,4 +1,4 @@
-"""initial implementation V5：12 structlog 事件名契约测试（grep + capture_logs 双重断言）。
+"""implementation V5：12 structlog 事件名契约测试（grep + capture_logs 双重断言）。
 
 12 事件名（per work item）：
 - supervisor 层 8 个：started / status_changed / health_passed / health_failed /

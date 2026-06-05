@@ -1,4 +1,4 @@
-"""initial implementation EdgeBuilder 协调器（per contract / contract / contract / contract）。
+"""implementation EdgeBuilder 协调器（per contract / contract / contract / contract）。
 
 **contract 实现路径决策（Claude's Discretion）：**
 
@@ -55,11 +55,11 @@ loop 对 task 仅持弱引用，IO-wait 期间触发 GC 理论上可 collect）�
 `add_done_callback(_BACKGROUND_TASKS.discard)` 自动回收。
 
 外部模块不应直接读 `_BACKGROUND_TASKS`，应通过 `snapshot_background_tasks()`
-取浅拷贝快照（per initial implementation REVIEW work item）。"""
+取浅拷贝快照（per implementation REVIEW work item）。"""
 
 
 def snapshot_background_tasks() -> set[asyncio.Task[Any]]:
-    """返回当前 ``_BACKGROUND_TASKS`` 的浅拷贝快照（per initial implementation REVIEW work item）。
+    """返回当前 ``_BACKGROUND_TASKS`` 的浅拷贝快照（per implementation REVIEW work item）。
 
     替代跨模块直读私有 ``_BACKGROUND_TASKS``。``verify_payload_consistency`` 与
     ``rebuild_chunk_edges`` 命令的 ``_dispatch_and_drain`` before/after diff 模式
@@ -94,7 +94,7 @@ async def enqueue_edge_build(
         repository_id: 仓库 UUID 字符串
         dirty_chunk_ids: 本次 indexer 写入或更新的 chunk_id 列表；空 list →
             直接 return 不 spawn task
-        branch_name: 写入侧归一化后的分支名（""=base，initial implementation 透传链）。
+        branch_name: 写入侧归一化后的分支名（""=base，implementation 透传链）。
             透传给 orchestrator → 6 EdgeBuilder.build；feature 分支据此过滤
             Symbol/ChunkRegistry/ChunkEdge 查询并把 branch_name 打到写入的边上。
 
@@ -143,7 +143,7 @@ async def _run_all_builders_and_sync_payload(
     `aggregate_top_neighbors` / `batch_set_payload` 的所有未捕获异常（fire-and-
     forget task 不会被 await，未 catch 异常会被静默吞噬）。
 
-    initial implementation：成功路径 `return inserted`（`bulk_insert_edges`
+    implementation：成功路径 `return inserted`（`bulk_insert_edges`
     ignore_conflicts 去重后的本次真实新增数，per-run delta 语义），异常/早退
     路径 `return 0`。lifecycle `_handle_completion` 经 `task.result()` 读取此值
     回写 IndexHistory.chunk_edges_added（区别于全表累计 edge_count，Pitfall 7）。

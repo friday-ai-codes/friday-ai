@@ -136,8 +136,8 @@ class FeishuConfigCreateSerializer(serializers.Serializer):
     user_key = serializers.CharField(required=False, allow_blank=True)
 
 
-# initial implementation plan（contract）：ClaudeConfigSerializer / ClaudeConfigCreateSerializer 整体硬删。
-# 替代：initial implementation ProviderCredentialSerializer（system/serializers.py）+ 空间级 scope。
+# implementation（contract）：ClaudeConfigSerializer / ClaudeConfigCreateSerializer 整体硬删。
+# 替代：implementation ProviderCredentialSerializer（system/serializers.py）+ 空间级 scope。
 
 
 class WebhookTokenSerializer(serializers.Serializer):

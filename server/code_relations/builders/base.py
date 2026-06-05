@@ -25,7 +25,7 @@ class BaseEdgeBuilder(abc.ABC):
     - `repository` 为 `repositories.Repository` 实例（带 .id / .git_url 等）。
     - `dirty_chunk_ids` 为本次索引刚写入或更新的 chunk_id 列表（来源：indexer
       `_upsert_chunk_registry_batch` 返回的 registry_rows，plan 07 转换）。
-    - `branch_name` 为写入侧归一化后的分支名（""=base，initial implementation 透传链）。
+    - `branch_name` 为写入侧归一化后的分支名（""=base，implementation 透传链）。
       子类据此对 Symbol/ChunkRegistry/ChunkEdge 查询加 branch 过滤，并把
       branch_name 打到产出的 ChunkEdge 上（base 路径 "" 保持字节不变）。
     - 返回 `list[ChunkEdge]`：**未 save 的实例**，统一交由 orchestrator 走

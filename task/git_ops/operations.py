@@ -258,7 +258,7 @@ class GitOperations:
     async def push_branch(self, branch_name: str) -> None:
         """Push branch to remote.
 
-        历史 bug（v18.1 initial implementation 多次容器跑完后代码丢失的真凶）：原实现只 try
+        历史 bug（implementation 多次容器跑完后代码丢失的真凶）：原实现只 try
         ``origin.push(...)`` 加 ``except GitCommandError``。**GitPython 的
         ``origin.push()`` 不会因为 push 被远端拒绝而抛 ``GitCommandError``** —
         它返回 ``list[PushInfo]``，错误以位掩码形式存在 ``info.flags``（
@@ -430,9 +430,9 @@ class GitOperations:
         Returns:
             The actual branch name created/checked out
 
-        历史 bug（v18.1 initial implementation 之后暴露）：原实现末尾强制对所有分支名拼
+        历史 bug（implementation 之后暴露）：原实现末尾强制对所有分支名拼
         ``friday/`` 前缀（"Normalize: ensure friday/ prefix if not present"），
-        是早期 Friday 还在用 ``friday/task-{task_id}`` 唯一命名时的兜底。initial implementation 引入模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）后，
+        是早期 Friday 还在用 ``friday/task-{task_id}`` 唯一命名时的兜底。implementation 引入模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）后，
         server 端通过 ``FRIDAY_TASK_BRANCH_STRATEGY`` 把模板名传进容器，但
         Runner 这里把 ``fix20260519.study-app-page-apps-favorites`` 静默改成
         ``friday/fix20260519.study-app-page-apps-favorites`` —— 跟 server 端

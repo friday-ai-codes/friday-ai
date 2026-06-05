@@ -22,7 +22,7 @@ class Conversation(models.Model):
     """对话模型 — 一次完整的用户-AI 交互会话。"""
 
     class Status(models.TextChoices):
-        """对话状态（initial implementation contract contract pin 冻结判据）。
+        """对话状态（implementation contract contract pin 冻结判据）。
 
         status 为 contract 三态判定的唯一真源：
             - draft：0 user message，Provider 可自由修改
@@ -51,9 +51,9 @@ class Conversation(models.Model):
         default="",
         help_text="LLM 模型 ID，为空时使用系统默认模型",
     )
-    # initial implementation plan（contract/contract）：v8.1 Conversation.provider_type 字段硬删；
+    # implementation（contract/contract）：v8.1 Conversation.provider_type 字段硬删；
     # 替代：provider_credential_id FK（contract pin 语义 contract）
-    # initial implementation contract contract/contract：对话级固定 Provider 凭证（pin 语义）
+    # implementation contract contract/contract：对话级固定 Provider 凭证（pin 语义）
     provider_credential_id = models.ForeignKey(
         "system.ProviderCredential",
         null=True,
@@ -62,7 +62,7 @@ class Conversation(models.Model):
         related_name="conversations",
         help_text="对话级固定 Provider 凭证（contract pin 语义 contract）",
     )
-    # initial implementation contract contract：对话状态（frozen 判据真源）
+    # implementation contract contract：对话状态（frozen 判据真源）
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -157,7 +157,7 @@ class ChatPushSubscription(models.Model):
 
 
 class CodingPlan(models.Model):
-    """编码方案 — initial implementation 拆出的独立领域实体。
+    """编码方案 — implementation 拆出的独立领域实体。
 
     一份 `CodingPlan` 描述一次"技术方案"语义（tech_plan + affected_files
     + 飞书文档元数据），由后续 CodingSession 实例引用执行。同一 conversation
@@ -195,10 +195,10 @@ class CodingPlan(models.Model):
         default="",
         verbose_name="飞书文档 URL",
     )
-    # initial implementation：AI 在 chat 流中通过 analyze_repository_relevance /
+    # implementation：AI 在 chat 流中通过 analyze_repository_relevance /
     # deep_analysis cross_repo_relevance 识别出的相关仓库 UUID 列表，自动
     # 预填到 create_coding_plan 工具的 recommended_repository_ids 入参。
-    # 由 fan-out 流程（initial implementation）按本字段批量创建 CodingSession。
+    # 由 fan-out 流程（implementation）按本字段批量创建 CodingSession。
     recommended_repository_ids = models.JSONField(
         default=list,
         blank=True,
@@ -206,7 +206,7 @@ class CodingPlan(models.Model):
         help_text=(
             "[str(UUID), ...] —— AI 识别的相关仓库 UUID 列表；不传则 Server "
             "自动从 conversation 最近一条 RepositoryRoutingTrace 取 "
-            "selected_by_user_final=True 的仓库（initial implementation）。"
+            "selected_by_user_final=True 的仓库（implementation）。"
         ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -302,7 +302,7 @@ class CodingSession(models.Model):
         blank=True,
         related_name="coding_sessions",
         help_text=(
-            "initial implementation：tech_plan / affected_files 拆出 CodingPlan 后的关联；"
+            "implementation：tech_plan / affected_files 拆出 CodingPlan 后的关联；"
             "过渡期为空，由 migrate_coding_sessions_to_plans 命令回填"
         ),
     )
@@ -322,7 +322,7 @@ class CodingSession(models.Model):
     tech_plan = models.TextField(
         verbose_name="技术方案 (Markdown)",
         help_text=(
-            "initial implementation 起 deprecated：优先使用 coding_plan.tech_plan；"
+            "implementation 起 deprecated：优先使用 coding_plan.tech_plan；"
             "本字段保留至 v26.1 清理"
         ),
     )
@@ -330,7 +330,7 @@ class CodingSession(models.Model):
         default=list,
         verbose_name="影响文件列表",
         help_text=(
-            "initial implementation 起 deprecated：优先使用 coding_plan.affected_files；"
+            "implementation 起 deprecated：优先使用 coding_plan.affected_files；"
             "本字段保留至 v26.1 清理"
         ),
     )
@@ -396,14 +396,14 @@ class CodingSession(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["conversation", "status"]),
-            # initial implementation：批量按 (coding_plan, status) 查询的覆盖索引；
+            # implementation：批量按 (coding_plan, status) 查询的覆盖索引；
             # 支撑 work item 批量预检 + work item 状态行渲染。
             models.Index(
                 fields=["coding_plan", "status"],
                 name="idx_codingsession_plan_status",
             ),
         ]
-        # initial implementation：同一 plan + 同一 repository 同一时刻仅允许 1 个活跃 session。
+        # implementation：同一 plan + 同一 repository 同一时刻仅允许 1 个活跃 session。
         # status 字面值与 CodingSession.Status 枚举对应：
         #   draft / confirmed / running / awaiting_confirmation
         # completed 与 failed 不计入约束（允许多个历史 / 重试副本）。
@@ -505,7 +505,7 @@ class CodingSession(models.Model):
 
 
 class RepositoryRoutingTrace(models.Model):
-    """跨仓相关性路由决策的可审计落地表（initial implementation）。
+    """跨仓相关性路由决策的可审计落地表（implementation）。
 
     三个写入来源（triggered_by 枚举）：
 
@@ -599,7 +599,7 @@ class RepositoryRoutingTrace(models.Model):
 
 
 class ConversationIntentTrace(models.Model):
-    """意图协商时间线（initial implementation）。
+    """意图协商时间线（implementation）。
 
     记录每次 ``ask_clarification`` 触发的协商：问题、选项、用户答复、
     inferred 状态、是否最终落到 CodingPlan。这是 coding-plan workflow「准确性优先于速度」

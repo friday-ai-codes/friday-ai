@@ -1,4 +1,4 @@
-"""initial implementation plan — 增量索引 3 callsite `adelete_for_files` 孤儿清理测试。
+"""implementation — 增量索引 3 callsite `adelete_for_files` 孤儿清理测试。
 
 覆盖 work item-02：
 
@@ -6,7 +6,7 @@
   `_extract_and_write_graph` 之前先调 `GraphWriter.adelete_for_files`
   清理被删除文件的图谱孤儿数据（Symbol / ImportEdge / Endpoint 三件套）。
 - 全量索引路径（`run_full_index`，CONTEXT 决议）**不加** delete hook，
-  initial implementation-01 落 `build_graph_for_repository` 时再统一处理。
+  implementation-01 落 `build_graph_for_repository` 时再统一处理。
 - `deleted_file_paths == []` 时短路（GraphWriter 内部已处理空列表）。
 
 测试策略：以源码 regex 白盒断言为主——4 处 callsite 各自的"前后顺序"是结构性
@@ -63,13 +63,13 @@ def test_incremental_callsite_calls_adelete_for_files(method_name: str) -> None:
 
 def test_run_full_index_does_not_call_adelete_for_files() -> None:
     """全量索引 (run_full_index, line 874 callsite) **不许** hook
-    adelete_for_files —— per CONTEXT 决议留给 initial implementation-01。
+    adelete_for_files —— per CONTEXT 决议留给 implementation-01。
     """
     method = IndexerService.run_full_index
     src = inspect.getsource(method)
     assert "adelete_for_files" not in src, (
         "run_full_index 不应包含 adelete_for_files hook —— "
-        "CONTEXT 决议：本 phase 仅 hook 增量 3 callsite，全量整仓清理留 initial implementation"
+        "CONTEXT 决议：本 phase 仅 hook 增量 3 callsite，全量整仓清理留 implementation"
     )
 
 

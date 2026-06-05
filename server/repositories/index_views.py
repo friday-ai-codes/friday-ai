@@ -582,8 +582,8 @@ class IndexDeleteView(APIView):
 
         # 级联清理：Qdrant collection + FileIndex + Symbol/ImportEdge/Endpoint
         # + ChunkEdge/ChunkRegistry。模块内每步独立 try/except + 字段降级
-        # （per initial implementation context contract 异常隔离），不向上抛 → 删除请求始终 204。
-        # initial implementation-02：可通过 ?keep_graph=true|1|yes 跳过图谱三件套
+        # （per implementation context contract 异常隔离），不向上抛 → 删除请求始终 204。
+        # implementation-02：可通过 ?keep_graph=true|1|yes 跳过图谱三件套
         # 清理（仅清向量轨），用于"清向量但保图谱"的运维场景。兼容 DRF Request
         # （生产经 dispatch 走入）与 WSGIRequest（旧测试用 APIRequestFactory 直
         # 调 view）：前者读 ``query_params``，后者回退 ``GET``。
@@ -884,7 +884,7 @@ class RerankerHealthView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# initial implementation: 索引可观测性 API
+# implementation: 索引可观测性 API
 # ---------------------------------------------------------------------------
 
 
@@ -907,21 +907,21 @@ class IndexHistorySerializer(serializers.Serializer):
     started_at = serializers.DateTimeField(allow_null=True)
     finished_at = serializers.DateTimeField(allow_null=True)
     created_at = serializers.DateTimeField()
-    # initial implementation contract：GraphRAG 增量构建可观测字段
+    # implementation contract：GraphRAG 增量构建可观测字段
     graph_build_status = serializers.CharField()
     edge_count = serializers.IntegerField()
     payload_synced_at = serializers.DateTimeField(allow_null=True)
-    # initial implementation：跨仓 API 匹配状态（initial implementation migration 0023 已落字段）
+    # implementation：跨仓 API 匹配状态（implementation migration 0023 已落字段）
     cross_repo_match_count = serializers.IntegerField()
     cross_repo_built_at = serializers.DateTimeField(allow_null=True)
-    # initial implementation：per-run delta（本次索引新增，区别于累计 edge_count）
+    # implementation：per-run delta（本次索引新增，区别于累计 edge_count）
     # 加字段后 SSE running_history 段（running_payload）天然携带 delta，供 checkpoint 展示。
     symbols_added = serializers.IntegerField()
     imports_added = serializers.IntegerField()
     calls_added = serializers.IntegerField()
     endpoints_added = serializers.IntegerField()
     chunk_edges_added = serializers.IntegerField()
-    # initial implementation：行级 diff（nullable，null 原样透传给前端显示 "—"）
+    # implementation：行级 diff（nullable，null 原样透传给前端显示 "—"）
     lines_added = serializers.IntegerField(allow_null=True)
     lines_deleted = serializers.IntegerField(allow_null=True)
 
@@ -1085,7 +1085,7 @@ class IndexProgressStreamView(APIView):
 
                 # work item-03：在帧 payload 顶层追加 graph 字段
                 # 与 ``repository`` / ``running_history`` 平级，老消费者忽略未知字段
-                # 不破坏 initial implementation 既有 schema。
+                # 不破坏 implementation 既有 schema。
                 graph_payload = await _build_graph_payload(repo)
 
                 yield _format_sse(
@@ -1101,7 +1101,7 @@ class IndexProgressStreamView(APIView):
                 # 终止条件：仓库非 INDEXING + 无 RUNNING IndexHistory + graph 非 RUNNING
                 # 三条件均满足才推 done idle 关闭流；任一活跃路径仍在跑（向量轨或
                 # 图谱轨）都继续推 progress 帧——避免手动触发的纯 graph 构建场景
-                # 原终止判定立刻关闭流让前端拿不到进度（initial implementation CONTEXT Grey Area 2
+                # 原终止判定立刻关闭流让前端拿不到进度（implementation CONTEXT Grey Area 2
                 # 终止条件决议）。
                 if (
                     repo.index_status != IndexStatus.INDEXING
@@ -1135,7 +1135,7 @@ def _format_sse(payload: dict[str, Any]) -> str:
 
 
 async def _build_graph_payload(repo: Repository) -> dict[str, Any]:
-    """构造 SSE 帧的 graph 段 payload（9 字段，initial implementation-03）。
+    """构造 SSE 帧的 graph 段 payload（9 字段，implementation-03）。
 
     字段口径（CONTEXT Grey Area 2 锁定）：
 
@@ -1542,7 +1542,7 @@ class IndexSnapshotImportView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# initial implementation: 自动索引触发
+# implementation: 自动索引触发
 # ---------------------------------------------------------------------------
 
 

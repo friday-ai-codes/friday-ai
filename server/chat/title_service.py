@@ -3,7 +3,7 @@
 首条 AI 回复完成后 fire-and-forget 调用，
 使用小模型生成简短中文标题。
 
-initial implementation contract（implementation plan）：调用链从旧 Anthropic SDK 直调迁至
+implementation contract（implementation plan）：调用链从旧 Anthropic SDK 直调迁至
 ``agents.llm_factory.build_chat_model(resolved).ainvoke(...)`` 统一 seam 层。
 原因 / 收益：
 - 与 LangChainAgentRunner / AIAgentBaseNode 共享同一工厂入口，Provider 切换零改动
@@ -37,7 +37,7 @@ logger = structlog.get_logger(__name__)
 # 标题生成使用系统配置的默认模型（与对话模型一致）
 TITLE_MODEL_FALLBACK: Final[str] = "claude-sonnet-4-20250514"
 
-# initial implementation contract: 占位符 {user_message} → {{user_message}}（Jinja2 语法对齐）
+# implementation contract: 占位符 {user_message} → {{user_message}}（Jinja2 语法对齐）
 TITLE_PROMPT: Final[str] = (
     "根据以下用户消息，生成一个简短的中文对话标题（10字以内），"
     "描述用户的核心意图。只输出标题文字，不要引号、标点或解释。\n\n"
@@ -78,7 +78,7 @@ async def generate_title(
         生成的标题字符串，失败时返回 None
     """
     try:
-        # initial implementation contract：走 ProviderConfigService.aresolve_or_error（contract Result 模式）
+        # implementation contract：走 ProviderConfigService.aresolve_or_error（contract Result 模式）
         # 四层优先级（node/conversation/project/system）+ SystemSetting 兼容降级自理
         resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
@@ -98,13 +98,13 @@ async def generate_title(
             )
             return None
 
-        # initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_MODEL 硬删后走
+        # implementation（contract/contract）：SettingKeys.ANTHROPIC_MODEL 硬删后走
         # ProviderCredential.default_model，回退到轻量默认值
         legacy = await aget_legacy_anthropic_config()
         model = legacy["default_model"] or TITLE_MODEL_FALLBACK
 
-        # initial implementation: 走 Prompt Center 渲染，fallback 保留原常量（contract 双轨）
-        # rendered_prompt 字节级 hash 等价契约不变（work item initial implementation 会再验一次）
+        # implementation: 走 Prompt Center 渲染，fallback 保留原常量（contract 双轨）
+        # rendered_prompt 字节级 hash 等价契约不变（work item implementation 会再验一次）
         rendered_prompt = await render_prompt(
             PromptSlugs.AUX_TITLE_GENERATION,
             project_id=None,  # title_service 无空间上下文（contract）
@@ -112,7 +112,7 @@ async def generate_title(
             fallback=TITLE_PROMPT,
         )
 
-        # initial implementation contract：build_chat_model seam + 单 turn ainvoke（非 streaming）
+        # implementation contract：build_chat_model seam + 单 turn ainvoke（非 streaming）
         chat_model = build_chat_model(
             resolved,
             model,

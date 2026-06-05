@@ -34,7 +34,7 @@ watch(activeTab, () => {
 })
 
 // 完整实现（ 修复）：从 result.layers 中 layer === '' 的 items 反查
-// 抽取 source chunk 列表，作为二跳扩散图的"起点"节点（per ROADMAP §SC2）。
+// 抽取 source chunk 列表，作为二跳扩散图的"起点"节点（requirements §SC2）。
 // 复用 CodePreviewDrawer.findChunkInLayers 同款解析模式（per UI-SPEC §10 硬约束 6
 // — 仅消费 L3 layers items，不引入新 chunk 详情 API），保持单一真值源。
 function extractSourceChunks(result: PlaygroundSearchResponse | null): SourceChunk[] {

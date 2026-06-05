@@ -1,1 +1,1 @@
-# initial implementation LSP tests
+# implementation LSP tests

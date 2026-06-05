@@ -1,5 +1,5 @@
 """parts contract：chat_runner.stream 接入 PartsCollector + parts
-归档 + ERROR 路径 parts 携带契约（major #1）+ initial implementation DEBUG 保护区不退化。
+归档 + ERROR 路径 parts 携带契约（major #1）+ implementation DEBUG 保护区不退化。
 
 测试矩阵（contract 测试要求 ≥ 7 条）：
 1. test_stream_text_only_yields_single_text_part

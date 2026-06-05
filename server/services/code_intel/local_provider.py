@@ -1,4 +1,4 @@
-"""LocalProvider —— 本地 codegraph 服务的 Provider 包装 (per initial implementation contract / contract).
+"""LocalProvider —— 本地 codegraph 服务的 Provider 包装 (per implementation contract / contract).
 
 包装现有 ``codegraph`` 服务：
 

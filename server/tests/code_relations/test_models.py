@@ -219,7 +219,7 @@ def test_chunkedge_edge_type_check_constraint_db_level(
 ) -> None:
     """绕过 full_clean 直接 .create(edge_type="call") → DB CheckConstraint 拒绝（IntegrityError）。
 
-    保证 initial implementation EdgeBuilder 即便走 bulk_create / .create() 不调 full_clean，
+    保证 implementation EdgeBuilder 即便走 bulk_create / .create() 不调 full_clean，
     typo edge_type 仍被 DB 层挡下（满足 ROADMAP 成功条件 #4 双保险）。
     """
     with pytest.raises(IntegrityError):

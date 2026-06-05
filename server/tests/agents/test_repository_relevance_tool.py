@@ -1,4 +1,4 @@
-"""initial implementation：``analyze_repository_relevance`` 工具单测。
+"""implementation：``analyze_repository_relevance`` 工具单测。
 
 测试范围（≥ 12 条）：
 

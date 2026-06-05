@@ -1,4 +1,4 @@
-"""initial implementation Wave（task）：节点级 provider_credential_id 四层优先级 +
+"""implementation Wave（task）：节点级 provider_credential_id 四层优先级 +
 cross_project scope 拒绝集成测试（work item / contract + work item 安全硬化）。
 
 覆盖范围（implementation plan Task 2 <behavior> 5 场景）：
@@ -23,7 +23,7 @@ cross_project scope 拒绝集成测试（work item / contract + work item 安全
   project B 节点 execute 指定 project A 的 project-scoped 凭证
   → API tier scope 校验拒绝（NodeResult(failed) + error_code
   provider_credential_missing + 错误消息含 "scope 校验失败"）。
-  security mitigation-01 disposition=mitigate 真正落地（不推给 initial implementation/230）。
+  security mitigation-01 disposition=mitigate 真正落地（不推给 implementation/230）。
 
 Fixture 策略（work item / checkpoint-03 conftest 复用）：
 - `fake_chat_model_factory` / `make_minimal_context` 引用 conftest，不重复定义。
@@ -247,7 +247,7 @@ async def test_project_level_overrides_system(
 
     通过 monkeypatch WorkflowExecution.objects.aget 返回带
     default_provider_credential_id 属性的 workflow 链，绕过 Project model
-    实际 schema 未落地限制（initial implementation/229 字段预留）。
+    实际 schema 未落地限制（implementation/229 字段预留）。
     """
     fake = fake_chat_model_factory(responses=["done"])
     captured = _capture_resolved(monkeypatch, fake)

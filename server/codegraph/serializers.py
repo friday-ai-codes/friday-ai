@@ -1,5 +1,5 @@
 """codegraph REST API 序列化器 —— 4 个 ModelSerializer 映射 codegraph 模型字段
-+ 1 个 GraphBuildHistorySerializer（initial implementation-03 list endpoint）。"""
++ 1 个 GraphBuildHistorySerializer（implementation-03 list endpoint）。"""
 
 from rest_framework import serializers
 
@@ -32,7 +32,7 @@ class SymbolSerializer(serializers.ModelSerializer):
 class CallEdgeSerializer(serializers.ModelSerializer):
     """CallEdge 序列化器。
 
-    initial implementation 起暴露跨文件 / 模块级字段：caller_file / callee_symbol_id /
+    implementation 起暴露跨文件 / 模块级字段：caller_file / callee_symbol_id /
     callee_file / is_cross_file（均 nullable，DRF 自动允许 null）。
     call_type 取值含 DIRECT/METHOD/ATTRIBUTE/JSX/TEMPLATE_REF。
     """
@@ -83,7 +83,7 @@ class EndpointSerializer(serializers.ModelSerializer):
 
 
 class GraphBuildHistorySerializer(serializers.Serializer):
-    """GraphBuildHistory 记录序列化器（initial implementation-03 list endpoint）。
+    """GraphBuildHistory 记录序列化器（implementation-03 list endpoint）。
 
     字段口径与 ``IndexHistorySerializer``（``repositories/index_views.py:807``）同构 ——
     平铺 14 字段：id / trigger_type / status / 7 个 counts(files_* + symbols_count +

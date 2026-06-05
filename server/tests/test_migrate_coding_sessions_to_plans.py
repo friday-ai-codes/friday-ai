@@ -1,4 +1,4 @@
-"""initial implementation 数据迁移命令测试。
+"""implementation 数据迁移命令测试。
 
 验证 `migrate_coding_sessions_to_plans` 管理命令的以下行为：
 
@@ -82,7 +82,7 @@ def test_command_basic_creates_plans(conversation, repository):
 def test_command_dedupes_same_tech_plan(conversation, repository):
     """同一 conversation 下两个 session 共享同一 tech_plan → 1 个 plan。
 
-    initial implementation 新增 partial unique 约束后，同 (plan, repo) 不允许 2 个
+    implementation 新增 partial unique 约束后，同 (plan, repo) 不允许 2 个
     active session。本用例下两个 session 默认都是 draft，迁移命令检测到第二个
     会触发约束，于是按 "conflicted" 分支跳过链接（不污染 DB）。第一个 session
     仍正常关联到同一 plan。
@@ -115,7 +115,7 @@ def test_command_isolates_per_conversation(conversation, second_conversation, re
 def test_command_placeholder_for_empty_tech_plan(conversation, repository):
     """空 tech_plan 走占位路径并复用同一占位 plan。
 
-    initial implementation：同 (placeholder_plan, repo) 上同时只能 1 个 active
+    implementation：同 (placeholder_plan, repo) 上同时只能 1 个 active
     session。第一个 session 链接成功，第二个走 "conflicted" 分支跳过。
     """
     s1 = _make_session(conversation, repository, "")

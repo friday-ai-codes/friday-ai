@@ -12,7 +12,7 @@ payload，方案 B「仅文件首 chunk 建边」语义不一致；笛卡尔积�
 保护（单文件 chunks > 50 时仅取前 5 个）防止边数爆炸 & 与 SameFileEdge
 weight=0.3 双计数）。
 
-**initial implementation 三重 bug 修复（work item "0 条" 根因）**：
+**implementation 三重 bug 修复（work item "0 条" 根因）**：
 - B1：``_resolve_clone_path`` log 增 attr_clone_path / settings_repo_clone_dir /
   decision 三诊断字段，让 prod 0 条根因可定位
 - B2：移除 ``_SINCE_WINDOW = "6 months ago"`` 时间窗，改 git log 参数
@@ -48,7 +48,7 @@ logger = structlog.get_logger(__name__)
 __all__ = ["CoChangedEdgeBuilder"]
 
 _MIN_SUPPORT_DEFAULT = 2
-"""默认最小共变更次数（per initial implementation B3）。
+"""默认最小共变更次数（per implementation B3）。
 
 previous _MIN_SUPPORT = 3 改为默认 2，让小仓库默认能建至少 2 commit 触发的边；
 既有 3 测试用 @override_settings(CODEGRAPH_COCHANGE_MIN_SUPPORT=3) 锁旧契约。
@@ -58,7 +58,7 @@ previous _MIN_SUPPORT = 3 改为默认 2，让小仓库默认能建至少 2 comm
 def _get_min_support() -> int:
     """读 settings.CODEGRAPH_COCHANGE_MIN_SUPPORT，默认 _MIN_SUPPORT_DEFAULT。
 
-    per initial implementation B3：函数化让每次 build 调用都重新读 settings，
+    per implementation B3：函数化让每次 build 调用都重新读 settings，
     支持 @override_settings 在测试内动态切换。
     """
     return int(getattr(settings, "CODEGRAPH_COCHANGE_MIN_SUPPORT", _MIN_SUPPORT_DEFAULT))
@@ -76,7 +76,7 @@ _LARGE_FILE_CHUNK_LIMIT = 5
 _CO_CHANGE_DISCOUNT = 0.5
 """contract chunk 级权重折扣；防止与 SameFileEdge weight=0.3 双计数。"""
 
-# initial implementation B2：移除 _SINCE_WINDOW = "6 months ago"，改 --max-count={CO_CHANGED_WINDOW_COMMITS}
+# implementation B2：移除 _SINCE_WINDOW = "6 months ago"，改 --max-count={CO_CHANGED_WINDOW_COMMITS}
 # 让 code_relations.constants 字面承诺（commit 数滑窗）真正生效。
 
 
@@ -178,7 +178,7 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
                 "co_changed_skip_no_clone_path",
                 repository_id=str(repository.id),
                 clone_path=str(path),
-                # initial implementation B1：3 诊断字段，让 prod 0 条根因可定位
+                # implementation B1：3 诊断字段，让 prod 0 条根因可定位
                 attr_clone_path=str(attr) if attr is not None else None,
                 settings_repo_clone_dir=str(
                     getattr(settings, "REPO_CLONE_DIR", "<unset>")
@@ -210,7 +210,7 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
                 "git",
                 "log",
                 "--name-only",
-                # initial implementation B2：从 --since={_SINCE_WINDOW} 改为 commit 数滑窗，
+                # implementation B2：从 --since={_SINCE_WINDOW} 改为 commit 数滑窗，
                 # 让 code_relations.constants.CO_CHANGED_WINDOW_COMMITS 字面承诺真生效
                 f"--max-count={CO_CHANGED_WINDOW_COMMITS}",
                 "--pretty=format:COMMIT %H",

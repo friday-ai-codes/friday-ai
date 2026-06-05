@@ -1,4 +1,4 @@
-"""initial implementation: API_CALLS reason 模板测试（work item）。"""
+"""implementation: API_CALLS reason 模板测试（work item）。"""
 from __future__ import annotations
 
 import pytest

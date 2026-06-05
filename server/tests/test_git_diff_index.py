@@ -1,4 +1,4 @@
-"""initial implementation: Git Diff 增量索引测试
+"""implementation: Git Diff 增量索引测试
 
 测试覆盖：
 - work item: git diff 获取变更文件列表 + last_indexed_commit_sha 更新
@@ -34,7 +34,7 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
 def _stub_qdrant_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     """全局 stub 所有 Qdrant 同步调用，避免 pytest-socket 阻塞真实 HTTP。
 
-    initial implementation 双轨索引引入后 IndexerService 在 git diff 路径上会触碰 Qdrant
+    implementation 双轨索引引入后 IndexerService 在 git diff 路径上会触碰 Qdrant
     （_ensure_collection / get_stored_file_hashes / upsert_vectors 等）。本文件
     集中验证 git diff 解析与分发逻辑，不验证向量库写入；用 AsyncMock seam
     一次性 stub 掉所有 qdrant_* helper 即可保证测试隔离。

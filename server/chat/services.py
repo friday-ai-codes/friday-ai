@@ -175,7 +175,7 @@ def _create_protocol(provider_type: str, api_key: str, base_url: str) -> Provide
 
 
 def _load_project_credential_sync(project_id: int) -> tuple[str, str]:
-    """initial implementation plan：同步读项目级默认 ProviderCredential(anthropic)。
+    """implementation：同步读项目级默认 ProviderCredential(anthropic)。
 
     Returns:
         (api_key, base_url) 元组；缺失则返回 ("", "")。
@@ -228,7 +228,7 @@ def _load_project_credential_sync(project_id: int) -> tuple[str, str]:
 
 
 async def _aload_project_credential_async(project_id: int) -> tuple[str, str]:
-    """initial implementation plan：异步读项目级默认 ProviderCredential(anthropic)。"""
+    """implementation：异步读项目级默认 ProviderCredential(anthropic)。"""
     from system.models import ProviderCredential
     from services.provider_config import (
         PROVIDER_REGISTRY,
@@ -275,7 +275,7 @@ async def _aload_project_credential_async(project_id: int) -> tuple[str, str]:
 
 
 def _load_system_credential_sync() -> tuple[str, str]:
-    """initial implementation plan：同步读系统级默认 ProviderCredential(anthropic)。"""
+    """implementation：同步读系统级默认 ProviderCredential(anthropic)。"""
     from system.models import ProviderCredential
     from services.provider_config import (
         PROVIDER_REGISTRY,
@@ -314,7 +314,7 @@ def get_chat_service(
 ) -> ChatService:
     """Get a ChatService instance with the appropriate configuration.
 
-    initial implementation plan（contract/contract）：从 ProviderCredential 读取凭证
+    implementation（contract/contract）：从 ProviderCredential 读取凭证
     （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
     """
     final_api_key = api_key
@@ -353,7 +353,7 @@ async def aget_chat_service(
 ) -> ChatService:
     """Get a ChatService instance — async 版本。
 
-    initial implementation plan（contract/contract）：从 ProviderCredential 读取凭证
+    implementation（contract/contract）：从 ProviderCredential 读取凭证
     （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
     """
     from services.provider_config import aget_legacy_anthropic_config

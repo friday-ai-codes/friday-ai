@@ -114,7 +114,7 @@ class ChatCompletionResponseSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# Conversation Serializers (initial implementation)
+# Conversation Serializers (implementation)
 # ============================================================================
 
 
@@ -133,7 +133,7 @@ class CreateConversationSerializer(serializers.Serializer):
 
 
 class ConversationPatchSerializer(serializers.Serializer):
-    """initial implementation contract contract：对话部分更新 Serializer。
+    """implementation contract contract：对话部分更新 Serializer。
 
     允许字段：
         - provider_credential_id（UUID，null 表示清空 pin）
@@ -219,7 +219,7 @@ class ConversationMessageSerializer(serializers.Serializer):
 
 
 class ResolvedProviderChainEntrySerializer(serializers.Serializer):
-    """initial implementation contract contract：四层解析链单条目序列化（响应契约驱动前端 tooltip）。"""
+    """implementation contract contract：四层解析链单条目序列化（响应契约驱动前端 tooltip）。"""
 
     layer = serializers.CharField()  # "node" | "conversation" | "project" | "system"
     provider_type = serializers.CharField(allow_null=True)
@@ -229,7 +229,7 @@ class ResolvedProviderChainEntrySerializer(serializers.Serializer):
 
 
 class ResolvedProviderSerializer(serializers.Serializer):
-    """initial implementation contract contract：Conversation / Node 响应扩展 resolved_provider 对象。"""
+    """implementation contract contract：Conversation / Node 响应扩展 resolved_provider 对象。"""
 
     provider_type = serializers.CharField()
     model = serializers.CharField(allow_blank=True)
@@ -238,7 +238,7 @@ class ResolvedProviderSerializer(serializers.Serializer):
 
 
 class ConversationDetailSerializer(serializers.Serializer):
-    """对话详情（含消息列表 + initial implementation resolved_provider）。
+    """对话详情（含消息列表 + implementation resolved_provider）。
 
     UAT 第 3 项 hotfix（follow-up）：补齐 model + status + provider_credential_id，
     与 list 响应字段对齐；让前端切换对话后能从 detail 直接读到 pin 状态。
@@ -253,7 +253,7 @@ class ConversationDetailSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
     messages = ConversationMessageSerializer(many=True, required=False)
-    # initial implementation contract contract：四层 Provider 解析 Inspector（null=全链路缺失，前端降级）
+    # implementation contract contract：四层 Provider 解析 Inspector（null=全链路缺失，前端降级）
     resolved_provider = ResolvedProviderSerializer(required=False, allow_null=True)
 
     def get_provider_credential_id(self, obj) -> str | None:
@@ -289,7 +289,7 @@ class ConversationRuntimeDeepSessionSerializer(serializers.Serializer):
 
 
 class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
-    """initial implementation：CodingPlan.sessions[] 单条状态快照。"""
+    """implementation：CodingPlan.sessions[] 单条状态快照。"""
 
     session_id = serializers.UUIDField()
     repository_id = serializers.UUIDField()
@@ -302,7 +302,7 @@ class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
 
 
 class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
-    """initial implementation：对话内最近 CodingPlan + 每仓 session 状态。"""
+    """implementation：对话内最近 CodingPlan + 每仓 session 状态。"""
 
     plan_id = serializers.UUIDField()
     title = serializers.CharField(allow_blank=True)
@@ -332,7 +332,7 @@ class ConversationRuntimeSerializer(serializers.Serializer):
     logs = RuntimeLogSerializer(many=True, required=False)
     # 多个深度分析子会话各自独立的日志（前端按会话渲染横向 swiper）
     deep_sessions = ConversationRuntimeDeepSessionSerializer(many=True, required=False)
-    # initial implementation：最近 CodingPlan + 每仓 session 状态
+    # implementation：最近 CodingPlan + 每仓 session 状态
     coding_plan = ConversationRuntimeCodingPlanSerializer(
         allow_null=True, required=False
     )
@@ -433,12 +433,12 @@ class SendMessageSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# CodingPlan Serializers (initial implementation)
+# CodingPlan Serializers (implementation)
 # ============================================================================
 
 
 class CodingPlanSerializer(serializers.Serializer):
-    """CodingPlan 详情序列化器（initial implementation）。
+    """CodingPlan 详情序列化器（implementation）。
 
     所有字段 read-only：写路径走 LLM tool（create_coding_plan / update_coding_plan），
     不通过 REST 直写。
@@ -456,7 +456,7 @@ class CodingPlanSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# CodingSession Serializers (initial implementation)
+# CodingSession Serializers (implementation)
 # ============================================================================
 
 
@@ -464,7 +464,7 @@ class CodingSessionSerializer(serializers.Serializer):
     """CodingSession 详情序列化器。"""
 
     id = serializers.UUIDField(read_only=True)
-    # initial implementation：新增反向 FK 暴露（null 表示历史 session 尚未迁移到 CodingPlan）
+    # implementation：新增反向 FK 暴露（null 表示历史 session 尚未迁移到 CodingPlan）
     coding_plan_id = serializers.UUIDField(read_only=True, allow_null=True)
     status = serializers.CharField(read_only=True)
     tech_plan = serializers.CharField(read_only=True)
@@ -485,7 +485,7 @@ class CodingSessionSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation：批量创建 CodingSession
+# implementation：批量创建 CodingSession
 # ============================================================================
 
 
@@ -549,7 +549,7 @@ class ExportToFeishuSerializer(serializers.Serializer):
 
 
 class ExportCodingPlanToFeishuSerializer(serializers.Serializer):
-    """导出 CodingPlan 到飞书文档（initial implementation / work item）。
+    """导出 CodingPlan 到飞书文档（implementation / work item）。
 
     与 ``ExportToFeishuSerializer`` 区别：标题与 folder_token 全部可选，
     缺省时由 view 层回退到 ``coding_plan.title`` / ``project.feishu_doc_folder_token``。
@@ -572,7 +572,7 @@ class ExportCodingPlanToFeishuSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation：路由决策手动微调（manual_override）
+# implementation：路由决策手动微调（manual_override）
 # ============================================================================
 
 
@@ -586,7 +586,7 @@ class RoutingTraceManualOverrideCandidateSerializer(serializers.Serializer):
 class RoutingTraceManualOverrideSerializer(serializers.Serializer):
     """POST /api/chat/routing-traces/<uuid>/override/ 请求体。
 
-    initial implementation：限制 frontend 只能改 selected 字段；score / level /
+    implementation：限制 frontend 只能改 selected 字段；score / level /
     evidence / selected_by_ai 由 Server 端继承原 trace，前端无权改写。
     """
 
@@ -598,7 +598,7 @@ class RoutingTraceManualOverrideSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation / work item：协商答复 endpoint
+# implementation / work item：协商答复 endpoint
 # ============================================================================
 
 

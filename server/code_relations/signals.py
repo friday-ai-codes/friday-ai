@@ -1,4 +1,4 @@
-"""initial implementation plan：ChunkRegistry pre_delete 信号 handler。
+"""implementation：ChunkRegistry pre_delete 信号 handler。
 
 ChunkRegistry 行被删除（增量索引重切分 / 文件被删 / 仓库被清理等场景）时：
 

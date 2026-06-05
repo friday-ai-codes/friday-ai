@@ -1,13 +1,13 @@
-# hybrid_graph_capable_golden — initial implementation plan fixture
+# hybrid_graph_capable_golden — implementation fixture
 
 **Purpose:** 锁定 `HybridSearchService.search()` 在 `graph_capable` 路径下的
-`final_context` 字节级行为（initial implementation 编排器主体落地后形成的 v2 baseline），
-作为 initial implementation+ 后续修改 `services/retrieval/hybrid_search.py` /
+`final_context` 字节级行为（implementation 编排器主体落地后形成的 v2 baseline），
+作为 implementation+ 后续修改 `services/retrieval/hybrid_search.py` /
 `hop1_reader.py` / `hop2_expander.py` / `find_related.py` 的回归屏障。
 
-与 initial implementation 落的 `tests/fixtures/layered_search_golden/` 关系：
+与 implementation 落的 `tests/fixtures/layered_search_golden/` 关系：
 
-| 维度 | layered_search_golden (initial implementation) | hybrid_graph_capable_golden (initial implementation) |
+| 维度 | layered_search_golden (implementation) | hybrid_graph_capable_golden (implementation) |
 |------|----------------------------------|----------------------------------------|
 | 编排器 | `LayeredSearchService.search()` | `HybridSearchService.search()` |
 | 路径   | 五层 L1..L5 等价委托            | RAG 主线 + `## Graph Context` enrichment |
@@ -29,7 +29,7 @@
 - **空行**：视觉分隔
 - **末行元数据**：`# tokens=N source_layer=hybrid final_chunks=K`
   - `tokens` = `result.total_tokens`
-  - `source_layer` = 固定 `hybrid`（区别于 initial implementation 的 `L2/L3/L4/EMPTY`）
+  - `source_layer` = 固定 `hybrid`（区别于 implementation 的 `L2/L3/L4/EMPTY`）
   - `final_chunks` = `len(hop1_neighbors) + len(hop2_neighbors)`（图谱邻居数；
     本字段 0 表示纯 RAG 路径，与 fixture 04/05/10 对齐）
 
@@ -71,7 +71,7 @@
 **禁止手动编辑 `.txt` fixture** —— 任何字节差异都应通过 `GENERATE_GOLDEN=1`
 重生成走流程，保证 fixture 永远反映 production 行为而不是手工美化。
 
-## 不变量（per initial implementation CONTEXT.md）
+## 不变量（per implementation CONTEXT.md）
 
 - `final_context` 仅含 ASCII / work item；LF 换行（无 CRLF）
 - `## Graph Context` 段不存在 ⇒ hop1+hop2 邻居均空（避免污染 LLM 上下文）

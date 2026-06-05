@@ -1,6 +1,6 @@
-"""initial implementation / initial implementation contract: code_review prompt 迁移字节级等价测试。
+"""implementation / implementation contract: code_review prompt 迁移字节级等价测试。
 
-initial implementation Wave（task）contract 迁移后：
+implementation Wave（task）contract 迁移后：
 - 老 PROMPT_CENTER 三态（DB hit / DB empty / flag disabled）测试保留，守护 render_prompt 契约
 - 新增 ``_CapturingFake`` + conftest ``fake_chat_model_factory`` seam 注入的集成测试，
   对 ``AICodeReviewNode.execute`` 真实传给 LLM 的 ``SystemMessage.content`` 做 sha256 字节级断言
@@ -44,7 +44,7 @@ class TestCodeReviewMigration:
                 project=None,
                 category="ai_node",
                 title="AI 节点 - 代码审查",
-                description="initial implementation test re-seed",
+                description="implementation test re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(
@@ -109,7 +109,7 @@ class TestCodeReviewMigration:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation contract：_CapturingFake seam 注入 + 字节级 hash 守护
+# implementation contract：_CapturingFake seam 注入 + 字节级 hash 守护
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +209,7 @@ def _make_fixed_context() -> ExecutionContext:
 
 @pytest.fixture
 def capturing_code_review_fake(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """initial implementation contract：_CapturingFake seam 注入（与 fake_chat_model_factory 同路径覆盖）。
+    """implementation contract：_CapturingFake seam 注入（与 fake_chat_model_factory 同路径覆盖）。
 
     单独定义而非直接复用 conftest ``fake_chat_model_factory``，以保留 ainvoke/astream
     捕获能力（FakeChatModel 本身不捕获 messages）；fake 的 responses 使用合法 JSON

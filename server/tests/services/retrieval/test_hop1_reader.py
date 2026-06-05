@@ -1,4 +1,4 @@
-"""hop1_reader —— initial implementation 编排器一跳 payload 直读测试（per plan contract）。
+"""hop1_reader —— implementation 编排器一跳 payload 直读测试（contract）。
 
 覆盖矩阵（14 条）：
 

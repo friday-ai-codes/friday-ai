@@ -1,6 +1,6 @@
-"""`ChunkRegistry.last_built_at` nullable 字段行为（initial implementation）。
+"""`ChunkRegistry.last_built_at` nullable 字段行为（implementation）。
 
-context contract 标 initial implementation 落但实际未落，本 plan 补齐 + 0005 migration。
+context contract 标 implementation 落但实际未落，本 plan 补齐 + 0005 migration。
 NULL = 未 backfill 语义；rebuild_chunk_edges 命令依赖该字段实现断点续跑。
 
 覆盖 5 条 assertion：

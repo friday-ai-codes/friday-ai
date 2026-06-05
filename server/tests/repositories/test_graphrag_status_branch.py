@@ -1,4 +1,4 @@
-"""``GraphRagStatusView`` 的 ``?branch=`` 合并计数测试（initial implementation，work item）。
+"""``GraphRagStatusView`` 的 ``?branch=`` 合并计数测试（implementation，work item）。
 
 GET /api/repositories/{id}/index/graphrag-status/?branch=<分支>
 

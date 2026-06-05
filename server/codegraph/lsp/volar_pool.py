@@ -1,10 +1,10 @@
-"""initial implementation: VolarPool —— 多 sub-project volar 实例池 + LRU 调度。
+"""implementation: VolarPool —— 多 sub-project volar 实例池 + LRU 调度。
 
 per work item：``max_concurrent=4`` + ``OrderedDict`` LRU 驱逐最久未用
 per work item：模块级单例 ``get_volar_pool()`` + ``threading.Lock`` 守门并发 init
 per work item：VolarPool 内部 ``_pool: OrderedDict[Path, LspSupervisor]`` 自管实例
-            （**不**复用 initial implementation ``_SUPERVISORS`` 模块级 cache，避免多实例 collide）
-per work item：所有 supervisor 共享 ``services/background_runner.py`` 全局 loop（同 initial implementation）
+            （**不**复用 implementation ``_SUPERVISORS`` 模块级 cache，避免多实例 collide）
+per work item：所有 supervisor 共享 ``services/background_runner.py`` 全局 loop（同 implementation）
 
 公开 API
 ========

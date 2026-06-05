@@ -57,7 +57,7 @@ urlpatterns = router.urls + [
         ExecutionContextView.as_view(),
         name="execution-context",
     ),
-    # initial implementation contract contract：workflow 节点四层 Provider 解析链
+    # implementation contract contract：workflow 节点四层 Provider 解析链
     path(
         "workflows/<uuid:workflow_id>/nodes/<uuid:node_id>/resolved-provider/",
         NodeResolvedProviderView.as_view(),

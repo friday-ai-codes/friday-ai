@@ -13,26 +13,26 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='project',
             name='claude_api_key_encrypted',
-            field=models.TextField(blank=True, help_text='[v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', null=True),
+            field=models.TextField(blank=True, help_text='[v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', null=True),
         ),
         migrations.AlterField(
             model_name='project',
             name='claude_base_url',
-            field=models.CharField(blank=True, help_text='[v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', max_length=500, null=True),
+            field=models.CharField(blank=True, help_text='[v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', max_length=500, null=True),
         ),
         migrations.AlterField(
             model_name='project',
             name='claude_default_model',
-            field=models.CharField(blank=True, help_text='[v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', max_length=200, null=True),
+            field=models.CharField(blank=True, help_text='[v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', max_length=200, null=True),
         ),
         migrations.AlterField(
             model_name='project',
             name='default_model',
-            field=models.CharField(blank=True, help_text='项目默认模型 ID，为空时使用 Provider 默认模型 [v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', max_length=200, null=True, verbose_name='默认模型'),
+            field=models.CharField(blank=True, help_text='项目默认模型 ID，为空时使用 Provider 默认模型 [v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', max_length=200, null=True, verbose_name='默认模型'),
         ),
         migrations.AlterField(
             model_name='project',
             name='default_provider_type',
-            field=models.CharField(blank=True, help_text='项目默认 Provider，为空时使用系统级配置 [v21.0 deprecated, will be removed after initial implementation UI cuts over to ProviderCredential]', max_length=50, null=True, verbose_name='默认 Provider 类型'),
+            field=models.CharField(blank=True, help_text='项目默认 Provider，为空时使用系统级配置 [v21.0 deprecated, will be removed after implementation UI cuts over to ProviderCredential]', max_length=50, null=True, verbose_name='默认 Provider 类型'),
         ),
     ]

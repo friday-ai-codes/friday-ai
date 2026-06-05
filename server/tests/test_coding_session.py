@@ -126,7 +126,7 @@ class TestCodingSessionStateMachine:
 
 
 # ============================================================================
-# Confirm API 测试 (task, initial implementation contract 改造)
+# Confirm API 测试 (task, implementation contract 改造)
 # ============================================================================
 
 
@@ -158,7 +158,7 @@ def _make_graph_mocks():
 
 @pytest.mark.django_db(transaction=True)
 class TestCodingSessionConfirmAPI:
-    """CodingSession confirm API 端点测试（initial implementation contract 改造后）。
+    """CodingSession confirm API 端点测试（implementation contract 改造后）。
 
     view 改为启动 coding_graph 后台任务，状态推进 confirmed -> running 下沉到
     dispatch_coding_node。这里只验证 view 同步前置（aconfirm + Runner 探测 + graph 启动），
@@ -182,7 +182,7 @@ class TestCodingSessionConfirmAPI:
     def test_confirm_only_draft(self, authenticated_client, draft_session):
         """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。
 
-        initial implementation：view 不再同步推进到 running；graph 后台任务负责。
+        implementation：view 不再同步推进到 running；graph 后台任务负责。
         view 同步前置成功后 status=confirmed（aconfirm 已切换），200 + graph 启动。
         """
         from unittest.mock import AsyncMock, patch
@@ -242,7 +242,7 @@ class TestCodingSessionConfirmAPI:
     def test_confirm_starts_graph_with_correct_thread_id(self, authenticated_client, draft_session):
         """confirm 成功后 graph 启动时 thread_id 格式必须是 coding-{coding_session.id}。
 
-        initial implementation contract 关键契约：thread_id 决定了 callback resume 时能否
+        implementation contract 关键契约：thread_id 决定了 callback resume 时能否
         找到对应 graph thread。CommitConfirmView / PRConfirmView 也依赖同款格式。
         """
         from unittest.mock import AsyncMock, patch
@@ -667,7 +667,7 @@ class TestCodingSessionSerializerNewFields:
 class TestCodingSessionConfirmBranchValidation:
     """CodingSessionConfirmView 分支名校验测试。(work item)
 
-    initial implementation contract 改造后：
+    implementation contract 改造后：
       - view 同步路径只对 request body 传入的 branch_name 做校验（前端实际流程）
       - 已落库的 branch_name 由 graph 的 dispatch_coding_node 在后台校验（dispatch_coding_task 内）
       - dispatch 时的 metadata 注入（env_FRIDAY_TASK_BRANCH_STRATEGY / target_branch）
@@ -765,7 +765,7 @@ class TestCodingSessionConfirmBranchValidation:
 
 
 # ============================================================================
-# initial implementation：unique_active_plan_repo 部分唯一约束测试
+# implementation：unique_active_plan_repo 部分唯一约束测试
 # ============================================================================
 
 
@@ -775,7 +775,7 @@ class TestUniqueActivePlanRepoConstraint:
 
     @pytest.fixture
     def coding_plan(self, db, project):
-        """创建 Conversation + CodingPlan（依赖 initial implementation 落库的 CodingPlan model）。"""
+        """创建 Conversation + CodingPlan（依赖 implementation 落库的 CodingPlan model）。"""
         from chat.models import CodingPlan, Conversation
 
         conversation = Conversation.objects.create(project=project, title="work item 对话")

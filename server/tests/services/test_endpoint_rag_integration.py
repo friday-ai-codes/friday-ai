@@ -1,4 +1,4 @@
-"""initial implementation: CrossRepo RAG 端到端集成测试（work item）。
+"""implementation: CrossRepo RAG 端到端集成测试（work item）。
 
 需要本地运行的 Qdrant（http://localhost:6333）+ 已配置 Embedding 服务。
 双重 skipif 保护：外部服务不可用时自动跳过，不阻塞 CI。

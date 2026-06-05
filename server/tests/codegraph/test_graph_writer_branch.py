@@ -1,6 +1,6 @@
 """contract 回归测试：GraphWriter branch-scoped 写/删。
 
-覆盖 initial implementation 验收红线 —— feature 分支 per-file 删除/重建只清本分支行，
+覆盖 implementation 验收红线 —— feature 分支 per-file 删除/重建只清本分支行，
 base 行（branch_name=""）绝不被删或被 feature 写覆盖；base+feature 双写后 4 表
 （Symbol/ImportEdge/Endpoint/CallEdge）各 branch_name 维度行数互不覆盖、按预期翻倍。
 """

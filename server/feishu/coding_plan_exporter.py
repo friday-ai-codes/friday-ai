@@ -1,4 +1,4 @@
-"""CodingPlan → 飞书云文档导出器（initial implementation / work item）。
+"""CodingPlan → 飞书云文档导出器（implementation / work item）。
 
 把一份 CodingPlan + 关联 CodingSession 列表组装成一篇飞书云文档：
 
@@ -44,7 +44,7 @@ __all__ = ["export_coding_plan_to_feishu", "markdown_to_blocks"]
 
 
 # CodingSession.Status → 飞书表格中的中文徽章文案。
-# 与 initial implementation CodingSession.Status 枚举（chat/models.py 中 6 态）一一对应；
+# 与 implementation CodingSession.Status 枚举（chat/models.py 中 6 态）一一对应；
 # 缺省时降级为原始 status 字符串，避免 KeyError 中断导出。
 _STATUS_LABEL: dict[str, str] = {
     CodingSession.Status.DRAFT: "📝 草稿",
@@ -143,7 +143,7 @@ async def _aget_project_for_plan(coding_plan: CodingPlan) -> Any:
 async def _aload_coding_sessions(coding_plan: CodingPlan) -> list[CodingSession]:
     """异步加载 ``coding_plan.coding_sessions``（含 repository / subagent_session 关联）。
 
-    ``commit_sha`` 与 initial implementation runtime serializer 同源：
+    ``commit_sha`` 与 implementation runtime serializer 同源：
     ``subagent_session.task_result.commit_sha`` —— CodingSession 本身没有
     ``commit_sha`` 列。
     """

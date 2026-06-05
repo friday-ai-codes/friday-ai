@@ -1,6 +1,6 @@
 """一次 AST 解析，双供 RAG（chunks）与 Graph（ExtractionBundle）。
 
-initial implementation 第二阶段核心：对单个文件只解析一次 AST，同时产出：
+implementation 第二阶段核心：对单个文件只解析一次 AST，同时产出：
 
 - RAG 用的 ``CodeChunk`` 列表（符号驱动精细切片）；
 - Graph 用的 ``ExtractionBundle``（symbols / imports / calls / endpoints）。

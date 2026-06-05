@@ -1,4 +1,4 @@
-"""GraphSearchView 端点测试 —— initial implementation / work item。
+"""GraphSearchView 端点测试 —— implementation / work item。
 
 测试端点：POST /api/repositories/{id}/graph-search/
 

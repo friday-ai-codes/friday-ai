@@ -361,7 +361,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         # _update_coding_session_on_complete 内部走 `coding_session is None` 短路。
         await _update_coding_session_on_complete(session)
 
-        # initial implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
+        # implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
         # 与 HTTP _handle_completed 对齐 —— 历史上 WS 路径漏了这一步，导致
         # deep_analysis 完成走 WS→BarrierManager 时永远写不到 deep_analysis_completion
         # trace / 回灌 [cross_repo_relevance:<trace_id>] 段（284 UAT review round 集成断点）。
@@ -502,7 +502,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         log.debug("token_usage_recorded_via_ws")
 
     async def _handle_progress(self, task_id: str, payload: dict) -> None:
-        # initial implementation G4: 调用公共 parse_progress_payload，与 HTTP 路径
+        # implementation G4: 调用公共 parse_progress_payload，与 HTTP 路径
         # subagent/api/callbacks.py:_handle_progress 保持同一解析逻辑
         from orchestration.progress_payload import parse_progress_payload
         from subagent.models import SubAgentSession
@@ -512,7 +512,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             return
 
         output = parse_progress_payload(payload)
-        # initial implementation G5: merge 语义保留既有 meta（task_type/source/conversation_id/logs 等）
+        # implementation G5: merge 语义保留既有 meta（task_type/source/conversation_id/logs 等）
         session.last_output = {**(session.last_output or {}), **output}
         await session.asave(update_fields=["last_output", "updated_at"])
         await _append_runtime_log(

@@ -1,4 +1,4 @@
-"""initial implementation：IntentRouter 纯函数单测。
+"""implementation：IntentRouter 纯函数单测。
 
 覆盖 ``classify_intent`` / ``evaluate_relev_confidence`` /
 ``build_clarification_from_relev`` 三个 helper 的语义边界。

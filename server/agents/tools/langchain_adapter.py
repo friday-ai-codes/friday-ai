@@ -1,4 +1,4 @@
-"""ToolDefinition → LangChain StructuredTool 桥接模块（initial implementation contract）。
+"""ToolDefinition → LangChain StructuredTool 桥接模块（implementation contract）。
 
 从 chat_runner.py 抽取 StructuredTool 装配三件套供 workflow 节点复用。
 chat 场景和 workflow 节点场景共享此 helper，差异仅在 injected_values 字段：

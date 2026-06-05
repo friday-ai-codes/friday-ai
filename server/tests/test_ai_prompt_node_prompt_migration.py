@@ -1,6 +1,6 @@
-"""initial implementation / Pitfall #10 弥补：AIPromptNode 字节级 hash 守护。
+"""implementation / Pitfall #10 弥补：AIPromptNode 字节级 hash 守护。
 
-作为第 5 个 `_prompt_migration.py` 测试文件完成 ROADMAP success criterion "4+1 字节级 hash
+作为第 5 个 `_prompt_migration.py` 测试文件完成 success criterion "4+1 字节级 hash
 100% 通过"的最后一项覆盖（原 Pitfall #10 明确 AIPromptNode 无字节级 hash
 覆盖，由本 plan 首次建立基线；work item 强化：expected hash 本次首建即锁定，
 后续 plan 不得改动）。

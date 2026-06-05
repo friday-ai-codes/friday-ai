@@ -1,13 +1,13 @@
-"""HybridBudget —— initial implementation 编排器 token 预算分配策略（per contract / work item）。
+"""HybridBudget —— implementation 编排器 token 预算分配策略（per contract / work item）。
 
-initial implementation 升级：扩 cross_repo 第三字段（默认 0.0 向后兼容）。
+implementation 升级：扩 cross_repo 第三字段（默认 0.0 向后兼容）。
 
 `HybridBudget(rag=0.6, graph=0.4).allocate(8000)` 返回
 `{"rag": 4320, "graph": 2880, "cross_repo": 0}`：
 
 - buffer：`max_tokens * TOKEN_BUFFER_RATIO`（复用 token_budget.py 的 0.9，
   剩 10% 冗余防 `estimate_tokens` 误差）
-- 默认 rag=0.6 / graph=0.4 / cross_repo=0.0（per ROADMAP success criterion；cross_repo=0 backward compat）
+- 默认 rag=0.6 / graph=0.4 / cross_repo=0.0（success criterion；cross_repo=0 backward compat）
 - `from_settings()` 读 `settings.GRAPHRAG_BUDGET_RATIO`（rag）+
   `settings.CROSS_REPO_BUDGET_RATIO`（cross_repo，默认 0.0）
 - ratio ∉ [0.1, 0.9] 自动 clamp 到边界并 structlog warning
@@ -49,10 +49,10 @@ RATIO_MAX: float = 0.9
 
 @dataclass(frozen=True, slots=True)
 class HybridBudget:
-    """token 预算三比例策略类（frozen + slots，不可修改；initial implementation 扩 cross_repo 字段）。
+    """token 预算三比例策略类（frozen + slots，不可修改；implementation 扩 cross_repo 字段）。
 
     Attributes:
-        rag: RAG 主线分配比例，默认 0.6（per ROADMAP success criterion）
+        rag: RAG 主线分配比例，默认 0.6（success criterion）
         graph: 图谱 enrichment 分配比例，默认 0.4
         cross_repo: 跨仓 API 扩散分配比例，默认 0.0（向后兼容；per work item）
 
@@ -72,7 +72,7 @@ class HybridBudget:
     def __post_init__(self) -> None:
         """contract: 强制 ``rag + graph + cross_repo == 1.0`` + 非负——避免静默超 budget。
 
-        initial implementation 升级：三字段 sum 校验（原双字段 rag+graph，现三字段总和）。
+        implementation 升级：三字段 sum 校验（原双字段 rag+graph，现三字段总和）。
         ``HybridBudget(rag=0.6, graph=0.4)`` → cross_repo=0.0 → sum=1.0 ✓（向后兼容）。
         """
         if self.rag < 0 or self.graph < 0 or self.cross_repo < 0:
@@ -95,7 +95,7 @@ class HybridBudget:
         effective = int(8000 * 0.9) = 7200 →
         {"rag": int(7200 * 0.6) = 4320, "graph": int(7200 * 0.4) = 2880, "cross_repo": 0}
 
-        initial implementation: 新增 cross_repo key（默认 0，不影响现有 budgets["rag"] / budgets["graph"] 读取）。
+        implementation: 新增 cross_repo key（默认 0，不影响现有 budgets["rag"] / budgets["graph"] 读取）。
 
         Raises:
             ValueError: ``max_tokens`` 为负——避免 ``trim_to_budget`` 全空 final_context
@@ -114,7 +114,7 @@ class HybridBudget:
 
     @classmethod
     def from_settings(cls) -> "HybridBudget":
-        """读取 Django settings 构造实例（initial implementation 扩 CROSS_REPO_BUDGET_RATIO）。
+        """读取 Django settings 构造实例（implementation 扩 CROSS_REPO_BUDGET_RATIO）。
 
         - GRAPHRAG_BUDGET_RATIO（rag 比）：缺失/非法 → fallback 到 0.6，
           ∉ [0.1, 0.9] → clamp + structlog warning
@@ -153,7 +153,7 @@ class HybridBudget:
             )
         rag = clamped
 
-        # cross_repo ratio（initial implementation）
+        # cross_repo ratio（implementation）
         raw_cross = getattr(settings, "CROSS_REPO_BUDGET_RATIO", CROSS_REPO_BUDGET_RATIO_DEFAULT)
         try:
             cross_repo = max(0.0, min(0.5, float(raw_cross)))

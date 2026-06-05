@@ -96,8 +96,8 @@ dev = [
     "factory-boy>=3.3",
     "types-docker>=7.1.0.20260109",
     "django-stubs-ext>=5.2.8",
-    "respx>=0.21.0",         # initial implementation: 5 Provider 健康检查 httpx mock
-    "pytest-socket>=0.7.0",  # initial implementation: --disable-socket 强制隔离外部 HTTP
+    "respx>=0.21.0",         # implementation: 5 Provider 健康检查 httpx mock
+    "pytest-socket>=0.7.0",  # implementation: --disable-socket 强制隔离外部 HTTP
 ]
 
 [tool.pytest.ini_options]
@@ -108,9 +108,9 @@ testpaths = ["tests"]
 addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration and not slow'"
 asyncio_mode = "auto"
 markers = [
-    "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（initial implementation contract）",
-    "integration: integration tests requiring external binaries (e.g. vue-language-server)（initial implementation）",
-    "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（initial implementation）",
+    "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（implementation contract）",
+    "integration: integration tests requiring external binaries (e.g. vue-language-server)（implementation）",
+    "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（implementation）",
     "real_history_load: 关闭 test_chat_runner.py 的 _disable_history_load autouse mock，用于专测历史回灌逻辑本身",
     "no_workdir_stub: 关闭 test_graph_builder.py 的 prepare_repo_workdir autouse stub，用于专测 clone 命令本身（contract）",
 ]
@@ -190,7 +190,7 @@ disable_error_code = ["attr-defined", "arg-type", "assignment", "misc", "var-ann
 
 [[tool.mypy.overrides]]
 module = ["agents.llm_factory"]
-# initial implementation：service-provider adapter 宽松域（contract / contract 限定单模块，禁止扩散）
+# implementation：service-provider adapter 宽松域（contract / contract 限定单模块，禁止扩散）
 disable_error_code = ["attr-defined", "arg-type", "assignment"]
 
 [[tool.mypy.overrides]]

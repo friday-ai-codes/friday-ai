@@ -48,21 +48,21 @@ __all__ = [
     "ToolDefinition",
     "ToolCategory",
     "ToolRegistry",
-    # LangChain bridge (initial implementation contract)
+    # LangChain bridge (implementation contract)
     "build_langchain_tools",
     # Space tools
     "list_space_repositories",
     "get_repository_info",
     "search_repository_code",
-    # Code graph tools (initial implementation)
+    # Code graph tools (implementation)
     "find_related_code",
-    # API graph tools (initial implementation)
+    # API graph tools (implementation)
     "find_api_handler",
     "find_api_callers",
     "list_endpoints",
-    # Cross-repo relevance (initial implementation)
+    # Cross-repo relevance (implementation)
     "analyze_repository_relevance",
-    # Clarification (initial implementation)
+    # Clarification (implementation)
     "ask_clarification",
     # Work item tools
     "get_work_item_detail",

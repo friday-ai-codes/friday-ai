@@ -1,4 +1,4 @@
-"""FakeChatModel —— initial implementation contract 测试脚手架。
+"""FakeChatModel —— implementation contract 测试脚手架。
 
 用法（与 `agents.llm_factory.build_chat_model` 配对使用）::
 

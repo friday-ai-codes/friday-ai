@@ -1,5 +1,5 @@
 """
-initial implementation: 环境验证脚本
+implementation: 环境验证脚本
 
 验证 Claude Agent SDK subprocess 架构在 Python 3.14 + Django ASGI 环境下的兼容性。
 覆盖三个维度：
@@ -221,7 +221,7 @@ async def main() -> None:
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print(" initial implementation: 环境验证")
+    print(" implementation: 环境验证")
     print("=" * 60 + "\n")
 
     results: dict[str, bool] = {}
@@ -244,7 +244,7 @@ async def main() -> None:
     print("=" * 60)
 
     if passed == total:
-        print("\n环境验证完成，可以继续 initial implementation")
+        print("\n环境验证完成，可以继续 implementation")
     else:
         failed = [name for name, ok in results.items() if not ok]
         print(f"\n以下验证失败: {', '.join(failed)}")

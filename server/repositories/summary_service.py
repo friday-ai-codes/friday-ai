@@ -1,4 +1,4 @@
-"""仓库智能描述生成 dispatch 服务（initial implementation）。
+"""仓库智能描述生成 dispatch 服务（implementation）。
 
 提供 dispatch_repo_summary() 函数，创建 AgentSession + SubAgentSession，
 构建 DispatchTask metadata 并通过 get_dispatcher().dispatch() 分发到 Runner。
@@ -183,7 +183,7 @@ async def _build_env_metadata(repository: Repository) -> dict[str, str]:
     from repositories.models import GitCredential
     from services.provider_config import aget_legacy_anthropic_config
 
-    # initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
+    # implementation（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
     # ProviderCredential(scope=system, name=default, provider_type=anthropic)
     legacy = await aget_legacy_anthropic_config()
     api_key = legacy["api_key"]

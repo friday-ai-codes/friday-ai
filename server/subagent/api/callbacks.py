@@ -421,7 +421,7 @@ class ContainerCallbackView(APIView):
 
 
 
-# === CodingSession 回调扩展 (initial implementation) ===
+# === CodingSession 回调扩展 (implementation) ===
 
 
 async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
@@ -623,7 +623,7 @@ async def _handle_completed(
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         await _update_repository_on_summary_complete(session, p)
 
-    # initial implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
+    # implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
     # 仅当 EXPLORE + source=chat_deep_analysis 触发（其它 EXPLORE 用途不回算）。
     if (
         session.task_type == SubAgentSession.TaskType.EXPLORE
@@ -774,7 +774,7 @@ async def _handle_progress(
 ) -> Response:
     """处理 progress 回调 — 更新 last_output（临时进度数据）。
 
-    initial implementation G1 + G4 + G5 修复（v18.1 audit gap closure）:
+    implementation G1 + G4 + G5 修复（v18.1 audit gap closure）:
       - G4: 调用公共 ``parse_progress_payload`` 与 WebSocket 路径
         (runners/consumers.py:RunnerConsumer._handle_progress) 共享同一解析逻辑，
         避免两条路径分叉。
@@ -858,7 +858,7 @@ async def _handle_token_usage(
     return Response({"status": "ok"})
 
 
-# === repo_summary 回调辅助函数 (initial implementation) ===
+# === repo_summary 回调辅助函数 (implementation) ===
 
 
 def _parse_summary_json(raw_text: str) -> str:
@@ -946,7 +946,7 @@ async def _update_repository_on_summary_fail(
     logger.info("repo_summary_fail_written", repository_id=repo_id, error=error_msg[:100])
 
 
-# === initial implementation：deep_analysis 完成回算 cross_repo_relevance ===
+# === implementation：deep_analysis 完成回算 cross_repo_relevance ===
 
 
 async def _update_agent_session_cross_repo_relevance(

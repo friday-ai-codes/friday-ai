@@ -1,4 +1,4 @@
-"""initial implementation: 新建 CrossRepoApiCall 表（per work item）。
+"""implementation: 新建 CrossRepoApiCall 表（per work item）。
 
 CrossRepoApiCall: ApiCallSite × Endpoint offline join 结果，含 match_confidence。
 unique_together: (call_site, endpoint) 保证幂等。

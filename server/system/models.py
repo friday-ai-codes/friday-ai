@@ -29,7 +29,7 @@ class SystemSetting(models.Model):
 class SettingKeys:
     """Predefined setting keys.
 
-    initial implementation plan（contract/contract）：以下 v8.1 legacy 常量已硬删：
+    implementation（contract/contract）：以下 v8.1 legacy 常量已硬删：
         - ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL / ANTHROPIC_SMALL_MODEL
         - DEFAULT_PROVIDER_TYPE
     已由 ProviderCredential 表 + ProviderConfigService 承载。
@@ -109,7 +109,7 @@ class ProviderCredential(models.Model):
       encrypt_value(json.dumps(...))），不在 save() override 里自动加密，
       避免 ORM 查询副作用与 update_fields 漏加密。
     - scope_id 用 UUIDField(null=True) 而非 FK，避免 Project 级联删除时凭证消失。
-    - last_health_check_* / available_models 字段一次性预留 initial implementation/229 所需，
+    - last_health_check_* / available_models 字段一次性预留 implementation/229 所需，
       schema 一次到位，避免未来再加 AddField 迁移。
     """
 
@@ -123,7 +123,7 @@ class ProviderCredential(models.Model):
         max_length=32,
         db_index=True,
         help_text=(
-            "Provider 类型字符串。本 phase 仅 'anthropic'，initial implementation 扩展为 5 种。"
+            "Provider 类型字符串。本 phase 仅 'anthropic'，implementation 扩展为 5 种。"
         ),
     )
     name = models.CharField(
@@ -166,26 +166,26 @@ class ProviderCredential(models.Model):
         ),
     )
 
-    # initial implementation (contract) 健康检查预留字段
+    # implementation (contract) 健康检查预留字段
     last_health_check_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="initial implementation (contract) 写入；本 phase 仅预留字段。",
+        help_text="implementation (contract) 写入；本 phase 仅预留字段。",
     )
     last_health_check_status = models.CharField(
         max_length=16,
         blank=True,
         default="",
-        help_text="ok/error/untested。initial implementation (contract) 写入；本 phase 仅预留字段。",
+        help_text="ok/error/untested。implementation (contract) 写入；本 phase 仅预留字段。",
     )
     last_health_check_error = models.TextField(blank=True, default="")
 
-    # initial implementation/229 (contract/contract) 模型清单缓存预留字段
+    # implementation/229 (contract/contract) 模型清单缓存预留字段
     available_models = models.JSONField(
         default=list,
         blank=True,
         help_text=(
-            "模型清单缓存。initial implementation/229 (contract/contract) 写入；本 phase 仅预留字段。"
+            "模型清单缓存。implementation/229 (contract/contract) 写入；本 phase 仅预留字段。"
         ),
     )
 

@@ -1,109 +1,54 @@
-// VitePress 主配置文件
-// 参考: https://vitepress.dev/reference/site-config
 import { defineConfig } from 'vitepress'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const apiSidebarPath = resolve(__dirname, 'api-sidebar.json')
-/**
- * 动态加载 API 侧边栏配置（由 generate-api-docs.mjs 生成）
- * 如果配置文件不存在，返回默认的概览链接
- */
-function loadApiSidebar {
- if (existsSync(apiSidebarPath)) {
- return JSON.parse(readFileSync(apiSidebarPath, 'utf-8'))
- }
- return [{ text: 'API 参考', items: [{ text: '概览', link: '/api/' }] }]
+
+function loadApiSidebar() {
+  if (existsSync(apiSidebarPath)) {
+    return JSON.parse(readFileSync(apiSidebarPath, 'utf-8'))
+  }
+
+  return [{ text: 'API Reference', items: [{ text: 'Overview', link: '/api/' }] }]
 }
+
 export default defineConfig({
- title: 'Friday AI',
- description: 'AI 驱动的敏捷开发自动化系统',
- lang: 'zh-CN',
- // 排除旧文档（已迁移到子目录或不再需要），避免路由冲突
- srcExclude: [
- '**/技术原理*.md',
- '**/获取工作项*.md',
- '**/飞书项目*.md',
- '**/claude-code-docs.md',
- '**/migration/**',
- 'quick-start.md',
- 'ai-agent-system-design.md',
- 'node-spec.md',
- ],
- // 忽略 localhost 链接的 dead link 检查
- ignoreDeadLinks: [
- /^https?:\/\/localhost/,
- ],
- themeConfig: {
- nav: [
- { text: '首页', link: '/' },
- { text: '指南', link: '/guide/quick-start' },
- { text: 'API 参考', link: '/api/' },
- { text: '开发', link: '/dev/architecture' },
- ],
- sidebar: {
- '/guide/': [
- {
- text: '快速开始',
- items: [
- { text: '安装部署', link: '/guide/quick-start' },
- ],
- },
- {
- text: '工作流',
- collapsed: true,
- items: [
- { text: '工作流指南', link: '/guide/workflows' },
- { text: 'Friday Codebase Agent', link: '/guide/friday-codebase-agent' },
- ],
- },
- {
- text: '管理',
- collapsed: true,
- items: [
- { text: '管理指南', link: '/guide/admin' },
- ],
- },
- ],
- '/api/': loadApiSidebar,
- '/dev/': [
- {
- text: '开发文档',
- items: [
- { text: '系统架构', link: '/dev/architecture' },
- { text: '节点规格', link: '/dev/node-spec' },
- ],
- },
- ],
- },
- search: {
- provider: 'local',
- options: {
- translations: {
- button: {
- buttonText: '搜索',
- buttonAriaLabel: '搜索文档',
- },
- modal: {
- displayDetails: '显示详细列表',
- resetButtonTitle: '重置搜索',
- noResultsText: '没有相关结果',
- footer: {
- selectText: '选择',
- navigateText: '切换',
- closeText: '关闭',
- },
- },
- },
- },
- },
- outline: {
- label: '页面导航',
- },
- docFooter: {
- prev: '上一页',
- next: '下一页',
- },
- },
+  title: 'Friday AI',
+  description: 'Open-source development automation with AI agents and workflows',
+  lang: 'en-US',
+  ignoreDeadLinks: [/^https?:\/\/localhost/],
+  themeConfig: {
+    nav: [
+      { text: 'Home', link: '/' },
+      { text: 'Guide', link: '/guide/quick-start' },
+      { text: 'API', link: '/api/' },
+    ],
+    sidebar: {
+      '/guide/': [
+        {
+          text: 'Getting Started',
+          items: [{ text: 'Quick Start', link: '/guide/quick-start' }],
+        },
+        {
+          text: 'Workflows',
+          collapsed: true,
+          items: [
+            { text: 'Workflow Guide', link: '/guide/workflows' },
+            { text: 'Friday Codebase Agent', link: '/guide/friday-codebase-agent' },
+          ],
+        },
+        {
+          text: 'Administration',
+          collapsed: true,
+          items: [{ text: 'Admin Guide', link: '/guide/admin' }],
+        },
+      ],
+      '/api/': loadApiSidebar(),
+    },
+    search: {
+      provider: 'local',
+    },
+  },
 })

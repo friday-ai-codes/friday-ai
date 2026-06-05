@@ -303,8 +303,8 @@ class SpaceViewSet(ModelViewSet):
             WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
         )
 
-    # initial implementation plan（contract）：claude_config @action 整体硬删。
-    # 替代：initial implementation ProviderCredential viewset（/api/system/provider-credentials/）
+    # implementation（contract）：claude_config @action 整体硬删。
+    # 替代：implementation ProviderCredential viewset（/api/system/provider-credentials/）
     # 及空间级 scope 凭证 API。调用 /api/spaces/<id>/claude-config/ 应返回 404。
 
     # === Feishu IM App configuration ===

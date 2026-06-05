@@ -1,15 +1,15 @@
-"""代码智能 Provider 单例 registry (per initial implementation contract / contract + initial implementation contract / contract).
+"""代码智能 Provider 单例 registry (per implementation contract / contract + implementation contract / contract).
 
 设计要点：
 
 - 由 ``CodeIntelConfig.ready()`` 一次性 ``register_provider("default", instance)``
   后立刻 ``freeze()``；之后任何 ``register_provider`` 调用都会 raise RuntimeError，
-  防止 web 请求生命周期内被恶意/误用代码重新注册（security mitigation，initial implementation contract）。
+  防止 web 请求生命周期内被恶意/误用代码重新注册（security mitigation，implementation contract）。
 - ``get_provider()`` 是 module-level 单例入口；上游统一通过本函数取实例，
   禁止跨包直接 ``import LocalProvider()``，确保 settings 切换 RemoteProvider 时
   一处替换全局生效。
 - ``PROVIDER_REGISTRY`` 是 ``types.MappingProxyType`` 包装的**只读视图**
-  （per initial implementation contract / contract / security mitigation-01）：试图
+  （per implementation contract / contract / security mitigation-01）：试图
   ``PROVIDER_REGISTRY["x"] = ...`` / ``del PROVIDER_REGISTRY["x"]``
   抛 ``TypeError``，与 ``register_provider`` freeze 后 ``RuntimeError`` 形成
   双层防御；视图与底层 ``_REGISTRY`` 同生命周期，``register_provider`` /
@@ -27,7 +27,7 @@ _REGISTRY: dict[str, BaseCodeProvider] = {}
 _FROZEN: bool = False
 
 PROVIDER_REGISTRY: Mapping[str, BaseCodeProvider] = MappingProxyType(_REGISTRY)
-"""Provider 注册表只读视图（per initial implementation contract / contract）。
+"""Provider 注册表只读视图（per implementation contract / contract）。
 
 外部模块通过本视图读 provider 实例（``PROVIDER_REGISTRY["default"]``）。
 mappingproxy 不支持 ``__setitem__`` / ``__delitem__`` / ``.update()`` 等
@@ -45,7 +45,7 @@ def register_provider(key: str, provider: BaseCodeProvider) -> None:
             "code_intel registry is frozen; "
             "web request lifecycle cannot register new providers (per contract, security mitigation)"
         )
-    # work item 修复（initial implementation REVIEW）：``@runtime_checkable Protocol + isinstance``
+    # work item 修复（implementation REVIEW）：``@runtime_checkable Protocol + isinstance``
     # 检查的就是**结构化兼容**（有 capabilities attribute + health_check
     # method），任何带这两个属性的类都会通过——所以这层**不是安全边界**，纯
     # 类型卫生：防 register_provider("default", 42)、拼错方法名、传入完全无关

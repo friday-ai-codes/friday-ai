@@ -1,6 +1,6 @@
-"""initial implementation plan：IndexHistory lifecycle wrapper 单测。
+"""implementation：IndexHistory lifecycle wrapper 单测。
 
-覆盖 4 条用例（per plan deviations / plan GraphBuildStatus 状态机）：
+覆盖 4 条用例（implementation notes / plan GraphBuildStatus 状态机）：
 
 1. test_marks_running_before_dispatch
    wrapper 调 enqueue_edge_build 之前，IndexHistory.graph_build_status 已被

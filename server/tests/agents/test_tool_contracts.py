@@ -1,4 +1,4 @@
-"""Agent tool contract snapshot tests —— per initial implementation contract / contract。
+"""Agent tool contract snapshot tests —— per implementation contract / contract。
 
 锁住两条契约：
 
@@ -16,7 +16,7 @@ Fixture 更新流程（**显式动作**）::
     git diff tests/agents/fixtures/  # review
     git add tests/agents/fixtures/*.json && git commit
 
-initial implementation 灰度切换函数签名时，本测试会先红再 baseline → review → commit，
+implementation 灰度切换函数签名时，本测试会先红再 baseline → review → commit，
 让契约升级 ＝ 一次显式提交。
 
 参见：
@@ -43,7 +43,7 @@ _FIND_RELATED_OUTPUT_SCHEMA_FIXTURE = (
     FIXTURE_DIR / "find_related_code_output_schema.json"
 )
 
-# initial implementation: API MCP tools snapshot fixtures
+# implementation: API MCP tools snapshot fixtures
 _FIND_API_HANDLER_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_handler_signature.json"
 _FIND_API_HANDLER_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "find_api_handler_input_schema.json"
 _FIND_API_CALLERS_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_callers_signature.json"
@@ -83,7 +83,7 @@ def test_search_repository_code_signature_snapshot() -> None:
 
     @tool decorator 用 ``functools.wraps``，所以 ``inspect.unwrap`` 能拿回原始
     函数；fixture 锁的是 *当前* 函数签名（含 ``repository_id`` / ``limit`` /
-    ``min_score`` 等遗留字段），initial implementation 切到 contract 新签名时此测试会失败 →
+    ``min_score`` 等遗留字段），implementation 切到 contract 新签名时此测试会失败 →
     届时刷新 fixture 即视作契约升级动作。
     """
     from agents.tools.space_tools import search_repository_code
@@ -116,7 +116,7 @@ def test_search_repository_code_input_schema_snapshot() -> None:
 
 
 def test_find_related_code_signature_snapshot() -> None:
-    """``find_related_code`` 函数签名 vs fixture 字节级 diff —— per initial implementation plan 03。
+    """``find_related_code`` 函数签名 vs fixture 字节级 diff —— per implementation 03。
 
     与 ``test_search_repository_code_signature_snapshot`` 同模式：``inspect.unwrap``
     剥 @tool wrapper 后比对原始函数 ``async def find_related_code(...)`` 的参数表。
@@ -177,12 +177,12 @@ def test_find_related_code_output_schema_snapshot() -> None:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation: API MCP tool snapshot tests (work item / work item / work item)
+# implementation: API MCP tool snapshot tests (work item / work item / work item)
 # ---------------------------------------------------------------------------
 
 
 def test_find_api_handler_signature_snapshot() -> None:
-    """``find_api_handler`` 函数签名 vs fixture 字节级 diff —— per initial implementation。"""
+    """``find_api_handler`` 函数签名 vs fixture 字节级 diff —— per implementation。"""
     from agents.tools.find_api_handler import find_api_handler
 
     actual = _normalize_signature(find_api_handler)
@@ -208,7 +208,7 @@ def test_find_api_handler_input_schema_snapshot() -> None:
 
 
 def test_find_api_callers_signature_snapshot() -> None:
-    """``find_api_callers`` 函数签名 vs fixture 字节级 diff —— per initial implementation。"""
+    """``find_api_callers`` 函数签名 vs fixture 字节级 diff —— per implementation。"""
     from agents.tools.find_api_callers import find_api_callers
 
     actual = _normalize_signature(find_api_callers)
@@ -234,7 +234,7 @@ def test_find_api_callers_input_schema_snapshot() -> None:
 
 
 def test_list_endpoints_signature_snapshot() -> None:
-    """``list_endpoints`` 函数签名 vs fixture 字节级 diff —— per initial implementation。"""
+    """``list_endpoints`` 函数签名 vs fixture 字节级 diff —— per implementation。"""
     from agents.tools.list_endpoints import list_endpoints
 
     actual = _normalize_signature(list_endpoints)

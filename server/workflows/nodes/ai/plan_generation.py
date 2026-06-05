@@ -31,7 +31,7 @@ from workflows.schemas.technical_plan import (
 logger = structlog.get_logger()
 
 
-# initial implementation Task 1: 从原 get_system_prompt f-string 抽取为模块级 Final[str]
+# implementation Task 1: 从原 get_system_prompt f-string 抽取为模块级 Final[str]
 # 供 0002 data migration 跨 app import 作为 seed；{schema_json} 改为 {{schema_json}} Jinja2 占位符
 # 字节级与原 f-string 等价(除了 schema_json 占位符从 {schema_json} → {{schema_json}})
 _PLAN_GENERATION_BASE_PROMPT: Final[str] = """你是一位资深技术方案架构师，负责分析需求并生成结构化技术方案。
@@ -129,9 +129,9 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     ]
 
     def __init__(self) -> None:
-        """初始化实例，声明 initial implementation 预渲染 base_prompt 实例属性。"""
+        """初始化实例，声明 implementation 预渲染 base_prompt 实例属性。"""
         super().__init__()
-        # initial implementation: execute() 预渲染结果注入口；get_system_prompt 从此读取
+        # implementation: execute() 预渲染结果注入口；get_system_prompt 从此读取
         self._precomputed_base_prompt: str | None = None
 
     config_schema: ClassVar[dict[str, Any]] = {
@@ -226,7 +226,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     def get_system_prompt(self, context: ExecutionContext) -> str:
         """生成 Orchestrator 角色的 System Prompt。
 
-        initial implementation Task 1/6 双路径：
+        implementation Task 1/6 双路径：
         - 若 self._precomputed_base_prompt 已由 execute() 预填（Prompt Center 渲染结果），直接使用
         - 否则降级到模块级常量 _PLAN_GENERATION_BASE_PROMPT 的 .replace() 替换路径
           （供单元测试直接调用 hook 时使用）
@@ -339,7 +339,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         """
         from workflows.models.execution import SubStepStatus
 
-        # initial implementation: 预渲染 base prompt（必须在 super().execute 之前）
+        # implementation: 预渲染 base prompt（必须在 super().execute 之前）
         # super().execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
         # 但若 user_prompt 为空，按惯例应立刻短路返回 failed，不做任何昂贵 DB/Prompt 查询
         if not context.node_config.get("user_prompt", "").strip():
@@ -354,7 +354,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         )
         project = await self._get_project(context)
         # contract retreat path: schema_json 体量 4KB+，如果走 render_prompt 会被
-        # initial implementation services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
+        # implementation services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
         # 此处手工读取 active version body（或 fallback 常量）并做 str.replace，
         # 绕过 Jinja2 sandbox + 清洗流程。仍然保留 3 态语义：DB hit / DB empty /
         # PROMPT_CENTER_DISABLED_KEYS 命中（与 render_prompt 行为等价）。

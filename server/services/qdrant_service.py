@@ -1302,7 +1302,7 @@ class QdrantService:
         batch_size: int = 500,
         timeout: float = 30.0,
     ) -> None:
-        """批量为 Qdrant points 设置 payload（per initial implementation contract / contract）。
+        """批量为 Qdrant points 设置 payload（per implementation contract / contract）。
 
         Pitfall 2 防御核心 API：禁止循环单 set_payload；唯一写入路径是
         client.batch_update_points + SetPayloadOperation。

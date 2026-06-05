@@ -1,4 +1,4 @@
-"""`ChunkRegistry.line_start` / `line_end` nullable 字段行为（per initial implementation contract）。
+"""`ChunkRegistry.line_start` / `line_end` nullable 字段行为（per implementation contract）。
 
 覆盖 4 条 assertion：
 

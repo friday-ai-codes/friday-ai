@@ -1,4 +1,4 @@
-"""initial implementation Wave（task）：AIVariableExtractorNode 单元测试。
+"""implementation Wave（task）：AIVariableExtractorNode 单元测试。
 
 覆盖范围（implementation plan Task 2 <behavior> 8 场景）：
 
@@ -217,7 +217,7 @@ async def test_missing_credential_propagates_as_value_error(
 
 
 # ============================================================================
-# Test 5: 缺模型 raise（initial implementation plan 更新：fallback 改为 resolved.extra.default_model）
+# Test 5: 缺模型 raise（implementation 更新：fallback 改为 resolved.extra.default_model）
 # ============================================================================
 
 
@@ -330,7 +330,7 @@ async def test_httpx_not_called(
 
 
 # ============================================================================
-# initial implementation plan（contract/contract）：Test 8 aget_claude_config fallback 守护随
+# implementation（contract/contract）：Test 8 aget_claude_config fallback 守护随
 # claude_config.py 整文件硬删一并移除。fallback 路径改为
 # resolved.extra.default_model（来自 ProviderCredential.default_model）。
 # 语义等价测试由 test_provider_config.py / test_provider_config_v2.py 覆盖。

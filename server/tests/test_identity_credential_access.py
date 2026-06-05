@@ -1,4 +1,4 @@
-"""initial implementation plan：validate_credential_scope 5 分支单元测试（contract 服务契约）。
+"""implementation：validate_credential_scope 5 分支单元测试（contract 服务契约）。
 
 分支矩阵：
 1. scope='system' + project_id=任意 → 返回 None（系统级凭证全通）
@@ -78,7 +78,7 @@ class TestValidateCredentialScope:
     async def test_violation_logs_structured_warning(self, caplog) -> None:
         """日志侧信道：分支 3 触发时结构化日志事件名 credential_scope_violation。
 
-        structlog 在测试环境下挂 stdlib logging（initial implementation settings.py 配置），
+        structlog 在测试环境下挂 stdlib logging（implementation settings.py 配置），
         caplog.records 可捕获 warning 级别事件。若 caplog 未拿到，也接受异常消息
         含"不能被项目"等兜底断言。
         """

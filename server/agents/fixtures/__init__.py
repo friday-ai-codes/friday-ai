@@ -1,4 +1,4 @@
-"""initial implementation: Provider model capabilities fixtures（LiteLLM 精选子集）。
+"""implementation: Provider model capabilities fixtures（LiteLLM 精选子集）。
 
 来源：BerriAI/litellm 上游 model_prices_and_context_window.json 的精选子集。
 本 phase 不引入 litellm Python 包（contract 锁定），仅 vendor JSON。

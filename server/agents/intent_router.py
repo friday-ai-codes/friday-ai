@@ -1,4 +1,4 @@
-"""initial implementation：意图分类 + 相关性置信度判定 + 协商 payload 构造。
+"""implementation：意图分类 + 相关性置信度判定 + 协商 payload 构造。
 
 本模块提供 3 个**纯函数**，供 ``orchestration.graph`` 在 executing_node 入口
 做 pre-routing 决策。所有函数：
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 
 
-# initial implementation / work item：硬编码动词词典 —— **不进 Prompt Center**。
+# implementation / work item：硬编码动词词典 —— **不进 Prompt Center**。
 # 词典是代码硬约束，跟测试强耦合；运营层 polish 走 prompt 即可。
 # 添加 / 删除词条必须同步更新 test_intent_router.py 的对应 case。
 CODING_VERBS_ZH: Final[frozenset[str]] = frozenset({
@@ -36,7 +36,7 @@ CODING_VERBS_EN: Final[frozenset[str]] = frozenset({
 })
 
 
-# 低置信阈值常量 —— initial implementation 用固定值起步；evaluation phase（v27 候选）会
+# 低置信阈值常量 —— implementation 用固定值起步；evaluation phase（v27 候选）会
 # 基于 trace 表（work item）+ RoutingTrace 表（work item）的真实数据 A/B 调优。
 #
 # coding-plan workflow hotfix #1（2026-05-21）：CONFIDENCE_GAP_MAX 从 0.7 → 0.92。
@@ -194,7 +194,7 @@ def evaluate_relev_confidence(
     - ``{"data": {"candidates": [...]}}``（``ToolResult.output`` 完整形态）。
 
     判定逻辑：
-    - ``relev_output is None`` → ``missing``（工具尚未调用 / initial implementation 未实施）。
+    - ``relev_output is None`` → ``missing``（工具尚未调用 / implementation 未实施）。
     - candidates 为空 → ``low_confidence``（没找到任何相关仓库 —— 应澄清）。
     - top1.score < ``CONFIDENCE_TOP1_MIN`` → ``low_confidence``。
     - top1 ≥ threshold 且 top2 / top1 > ``CONFIDENCE_GAP_MAX`` →

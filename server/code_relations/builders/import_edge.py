@@ -1,4 +1,4 @@
-"""ImportEdgeBuilder：codegraph.ImportEdge → ChunkEdge[IMPORT]（per initial implementation contract）。"""
+"""ImportEdgeBuilder：codegraph.ImportEdge → ChunkEdge[IMPORT]（per implementation contract）。"""
 
 from __future__ import annotations
 

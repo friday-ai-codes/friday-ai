@@ -1,4 +1,4 @@
-"""initial implementation plan work item：三 slug resync migration 契约测试。
+"""implementation work item：三 slug resync migration 契约测试。
 
 测试策略：``transaction=True`` 模式下每个 test 都会 flush DB（pytest-django 跑
 ``migrate`` 时已经执行过的 RunPython data migration 在事务回滚后数据丢失），

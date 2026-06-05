@@ -25,7 +25,7 @@ class OrchestrationRun(models.Model):
         EXECUTING = "executing", "执行"
         WAITING = "waiting", "等待"
         # UAT 2026-05-27 hotfix（review review round Fix #1）：
-        # initial implementation 在 graph 加了 WAITING_CLARIFICATION 状态（见
+        # implementation 在 graph 加了 WAITING_CLARIFICATION 状态（见
         # orchestration/state.py:14），但 OrchestrationRun.Phase 当时未同步登记，
         # 导致 conversation_service.py 的分发分支拿到原始字符串 "waiting_clarification"
         # 后落到 else（被当成正常完成）。这里补登枚举值，与 graph 层 RunPhase 一致。

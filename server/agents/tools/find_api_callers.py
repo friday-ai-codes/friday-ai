@@ -1,8 +1,8 @@
-"""``find_api_callers`` agent tool —— per initial implementation plan work item。
+"""``find_api_callers`` agent tool —— per implementation work item。
 
 给定后端 handler 函数名，通过 CrossRepoApiCall 表追溯所有前端业务调用方（call site）。
 
-查询链（per initial implementation 数据模型）：
+查询链（per implementation 数据模型）：
   handler_name → Endpoint(repo) → CrossRepoApiCall(endpoint) → ApiCallSite → {file:line}
 
 实现要点：
@@ -10,7 +10,7 @@
   避 N+1 查询。
 - **结构化错误**：handler_name 找不到 endpoint / 无跨仓调用 → 空列表 + message 说明。
 - **match_confidence 透传**：1.0/0.7/0.4 三档可信度让 Agent 知道匹配质量。
-- 永不冒泡异常（per initial implementation 双层防御）。
+- 永不冒泡异常（per implementation 双层防御）。
 
 **注册路径**：通过 ``agents/tools/__init__.py`` 顶层 import 触发 ``@tool`` 注册。
 """
@@ -45,7 +45,7 @@ _TOOL_DESCRIPTION = (
     "Returns frontend business call sites (ApiCallSite) with file path + line number, "
     "NOT the low-level axios helpers.\n"
     "\n"
-    "Requires cross-repo API call data (initial implementation offline join) to be populated.\n"
+    "Requires cross-repo API call data (implementation offline join) to be populated.\n"
     "DO NOT USE FOR finding the handler by URL — use `find_api_handler` instead."
 )
 
@@ -135,7 +135,7 @@ async def _find_api_callers_impl(
     if not validated.repository_id:
         return ToolResult(
             success=False,
-            error="repository_id is required (per work item initial implementation)",
+            error="repository_id is required (per work item implementation)",
         )
 
     if not validated.handler_name:

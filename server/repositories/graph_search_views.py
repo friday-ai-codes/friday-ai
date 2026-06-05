@@ -1,4 +1,4 @@
-"""仓库级 GraphRAG 关联搜索端点（initial implementation / work item + work item）。
+"""仓库级 GraphRAG 关联搜索端点（implementation / work item + work item）。
 
 把 Admin Playground 的 GraphRAG 扩散检索提取为带项目级 RBAC 的仓库级 branch-aware
 公开端点 ``POST /repositories/{id}/graph-search/``，消费 checkpoint 落地的 branch-aware

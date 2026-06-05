@@ -4,7 +4,7 @@
 
 1. 同文件裸名优先解析到当前文件内 Symbol；
 2. 经 ``ImportEdge`` + 语言 resolver 解析跨文件 import；
-3. JSX / TEMPLATE_REF 组件分支仅保留接口，具体实现留 initial implementation；
+3. JSX / TEMPLATE_REF 组件分支仅保留接口，具体实现留 implementation；
 4. 解析不到时返回空结果，绝不靠 fuzzy 同名兜底乱连。
 """
 
@@ -211,7 +211,7 @@ class SymbolResolver:
     def backfill(self, repository_id: str) -> dict[str, int]:
         """批量回填该仓尚未解析的 ``CallEdge``。
 
-        整库接入索引/重建流程留到 initial implementation；本入口仅供单测驱动与后续流程调用。
+        整库接入索引/重建流程留到 implementation；本入口仅供单测驱动与后续流程调用。
         单条边解析失败只记 warning，不阻断整批回填。
         """
         from codegraph.models import CallEdge

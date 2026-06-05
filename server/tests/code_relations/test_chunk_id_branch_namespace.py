@@ -1,4 +1,4 @@
-"""initial implementation plan（work item / Critical 1）：chunk_id 分支命名空间 golden 测试。
+"""implementation（work item / Critical 1）：chunk_id 分支命名空间 golden 测试。
 
 本文件是本 phase 的 **acceptance gate**：硬编码本 phase 实算的期望 UUID，钉死
 ``generate_chunk_id`` base 路径**字节级不变**（零漂移）+ feature 分支**必然不同**。

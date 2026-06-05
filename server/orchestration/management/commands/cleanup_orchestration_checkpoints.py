@@ -1,6 +1,6 @@
-"""清理 N 天前已完成/错误的编排 checkpoint（initial implementation contract）。
+"""清理 N 天前已完成/错误的编排 checkpoint（implementation contract）。
 
-initial implementation contract：防 SQLite orchestration_checkpoints.db 无限膨胀。
+implementation contract：防 SQLite orchestration_checkpoints.db 无限膨胀。
 
 清理规则：
 - Django ORM：`OrchestrationRun.status IN (COMPLETED, ERROR)` 且 `updated_at < now - N days`
@@ -32,7 +32,7 @@ logger = structlog.get_logger(__name__)
 
 
 class Command(BaseCommand):
-    help = "清理 N 天前已完成/错误的编排 checkpoint（默认 7 天；initial implementation contract）"
+    help = "清理 N 天前已完成/错误的编排 checkpoint（默认 7 天；implementation contract）"
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(

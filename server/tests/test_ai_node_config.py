@@ -1,4 +1,4 @@
-"""initial implementation Wave（task）：AI 节点 config_schema JSON Schema 验证测试。
+"""implementation Wave（task）：AI 节点 config_schema JSON Schema 验证测试。
 
 覆盖范围（implementation plan Task 3 <action> 6 测试函数）：
 
@@ -124,7 +124,7 @@ def test_provider_credential_id_accepts_valid_uuid_string() -> None:
 def test_max_budget_usd_preserved_in_all_three_nodes() -> None:
     """work item 守护：max_budget_usd 字段在 3 节点 config_schema 保留不变。
 
-    该字段 initial implementation contract 激活（成本追踪 Dashboard），禁止本 phase 删除。
+    该字段 implementation contract 激活（成本追踪 Dashboard），禁止本 phase 删除。
     """
     from workflows.nodes.ai.base_agent import AIAgentBaseNode
     from workflows.nodes.ai.prompt import AIPromptNode

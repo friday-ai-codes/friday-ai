@@ -1,11 +1,11 @@
-"""HybridSearchService matrix 路径覆盖 —— per initial implementation plan / work item。
+"""HybridSearchService matrix 路径覆盖 —— per implementation / work item。
 
 3 条聚焦于 NullProvider 路径核心 path（rag_only 短路 / max_tokens 裁剪 / 空 query
-兜底），与 initial implementation 既有 ``test_null_provider_paths.py`` 5 条形成 "基础行为 +
+兜底），与 implementation 既有 ``test_null_provider_paths.py`` 5 条形成 "基础行为 +
 能力契约 + 编排路径" 三层覆盖。
 
-函数名直接带 ``_null_provider`` 后缀（per plan must_have 保险方案），不依赖
-parametrize ID 即可被 ``pytest -k null_provider --co`` 收集（per ROADMAP success criterion
+函数名直接带 ``_null_provider`` 后缀（requirements 保险方案），不依赖
+parametrize ID 即可被 ``pytest -k null_provider --co`` 收集（success criterion
 字面要求 "≥10"）。
 
 mock 模式完全沿用 ``test_null_provider_paths.py``：仅 patch

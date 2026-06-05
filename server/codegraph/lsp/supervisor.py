@@ -1,4 +1,4 @@
-"""initial implementation: LspSupervisor —— LSP 进程 lifecycle + 健康检查 + crash-loop 防护。
+"""implementation: LspSupervisor —— LSP 进程 lifecycle + 健康检查 + crash-loop 防护。
 
 核心职责（per work item / work item / work item / work item / work item）：
 
@@ -12,11 +12,11 @@
    （per work item 全局单例）
 5. **did_* stub API**：``notify_did_open / change / close`` 仅维护
    ``_open_documents`` 字典 + log debug（per work item）；真实 LSP notification 由
-   initial implementation / 267 子类 backend 实装
+   implementation / 267 子类 backend 实装
 6. **可观测性**：12 事件名常量字典（per work item）+ structlog 字段化所有状态转换
 
 设计约束：
-- **不**用 ``async_to_sync`` / ``sync_to_async``（per Pitfall P11；initial implementation 踩坑）
+- **不**用 ``async_to_sync`` / ``sync_to_async``（per Pitfall P11；implementation 踩坑）
 - 测试 sleep 用 ``wait_until`` helper（per Pitfall P6 / P10）
 - 健康检查 / restart 路径全部在 background loop 内 async 执行
 """
@@ -341,7 +341,7 @@ class LspSupervisor:
     async def _replay_open_documents(self) -> None:
         """重启后批量 didOpen 复盘 stub（per work item）。
 
-        本 phase 仅 log info；真实 LSP notification 由 initial implementation / 267 子类实装。
+        本 phase 仅 log info；真实 LSP notification 由 implementation / 267 子类实装。
         """
         logger.info(
             "lsp_replay_open_documents_stub",

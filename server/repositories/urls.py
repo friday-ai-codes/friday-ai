@@ -62,7 +62,7 @@ urlpatterns = [
         RerankerHealthView.as_view(),
         name="reranker-health",
     ),
-    # initial implementation (per contract): 仓库路由 API —— 必须在 router 之前以避免被匹配为 repository id
+    # implementation (per contract): 仓库路由 API —— 必须在 router 之前以避免被匹配为 repository id
     path(
         "route/",
         RepoRouteView.as_view(),
@@ -118,14 +118,14 @@ urlpatterns = [
         CodeSearchView.as_view(),
         name="repository-code-search",
     ),
-    # GraphRAG 关联搜索（initial implementation）：放在 codegraph include 之前，
+    # GraphRAG 关联搜索（implementation）：放在 codegraph include 之前，
     # graph-search/ 与 codegraph/ 字面不冲突，UUID 通配符顺序安全。
     path(
         "<uuid:repository_id>/graph-search/",
         GraphSearchView.as_view(),
         name="repository-graph-search",
     ),
-    # Index observability (initial implementation)
+    # Index observability (implementation)
     path(
         "<uuid:repository_id>/index/history/",
         IndexHistoryListView.as_view(),
@@ -169,24 +169,24 @@ urlpatterns = [
         IndexSnapshotImportView.as_view(),
         name="repository-index-snapshot-import",
     ),
-    # Webhook (initial implementation, no auth required)
+    # Webhook (implementation, no auth required)
     path(
         "<uuid:repository_id>/webhooks/push/",
         RepositoryWebhookView.as_view(),
         name="repository-webhook-push",
     ),
-    # 同步状态查询（initial implementation contract / contract）
+    # 同步状态查询（implementation contract / contract）
     path(
         "<uuid:repository_id>/sync-status/",
         SyncStatusView.as_view(),
         name="repository-sync-status",
     ),
-    # Hash 新鲜度立即刷新（initial implementation contract）
+    # Hash 新鲜度立即刷新（implementation contract）
     path(
         "<uuid:repository_id>/refresh-remote-head/",
         RefreshRemoteHeadView.as_view(),
         name="repository-refresh-remote-head",
     ),
-    # codegraph API（initial implementation contract）：必须在末尾，UUID 通配符顺序安全
+    # codegraph API（implementation contract）：必须在末尾，UUID 通配符顺序安全
     path("<uuid:repository_id>/codegraph/", include("codegraph.urls")),
 ]
