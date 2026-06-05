@@ -42,6 +42,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 # Runtime data
+.superpowers/
 server/data/
 server/data-test/
 server/.coverage
