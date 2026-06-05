@@ -1,13 +1,24 @@
 ## L2 Exact Matches
+
 - `ValidateInput` (FUNCTION) in src/validators/input.py:5-25 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 - `sanitize_string` (FUNCTION) depth=1 relation=callee
+
 - `log_validation` (FUNCTION) depth=1 relation=caller
+
+
 ## L3 Related Code
+
 ### src/api/routes.py (score: 0.620)
 ```
 ValidateInput(payload)
 ```
+
+
 ## L4 Graph Context (2-hop)
+
 - `format_error` (FUNCTION) depth=2 relation=callee
+
 # tokens=119 source_layer=L2 final_chunks=6

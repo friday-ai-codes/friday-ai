@@ -1,6 +1,6 @@
 {
- "name": "@app-learn/legacy",
- "dependencies": {
- "vue": "2.7.14"
- }
+  "name": "@app-learn/legacy",
+  "dependencies": {
+    "vue": "2.7.14"
+  }
 }

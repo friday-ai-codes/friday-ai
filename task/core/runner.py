@@ -1,495 +1,580 @@
 """Task Runner - Main entry point for task container execution.
+
 这个模块是容器模式的入口点，通过环境变量读取配置。
 CLI 模式使用 cli 模块作为入口点。
+
 执行流程：
 1. 读取环境变量配置
 2. 设置 Git 仓库
 3. 根据模式执行任务（plan 或 execute）
 4. 报告结果（如果配置了回调 URL）
 """
+
 import asyncio
 import os
 import sys
+
 import httpx
 import structlog
 from git.exc import GitCommandError
 from structlog.stdlib import BoundLogger
+
 from git_ops import GitOperations
 from integrations import CallbackClient
+
 from .config import TaskConfig
 from .executor import ClaudeRunner
+
 # Configure structured logging
 structlog.configure(
- processors=[
- structlog.stdlib.filter_by_level,
- structlog.stdlib.add_logger_name,
- structlog.stdlib.add_log_level,
- structlog.stdlib.PositionalArgumentsFormatter,
- structlog.processors.TimeStamper(fmt="iso"),
- structlog.processors.StackInfoRenderer,
- structlog.processors.format_exc_info,
- structlog.processors.UnicodeDecoder,
- structlog.processors.JSONRenderer,
- ],
- wrapper_class=structlog.stdlib.BoundLogger,
- context_class=dict,
- logger_factory=structlog.stdlib.LoggerFactory,
- cache_logger_on_first_use=True,
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
 )
-logger = structlog.get_logger
+
+logger = structlog.get_logger()
+
 _GIT_IDENTITY_ENV = {
- "GIT_AUTHOR_NAME": "Friday Codes AI Agent",
- "GIT_AUTHOR_EMAIL": "ai@friday.codes",
- "GIT_COMMITTER_NAME": "Friday Codes AI Agent",
- "GIT_COMMITTER_EMAIL": "ai@friday.codes",
+    "GIT_AUTHOR_NAME": "Friday Codes AI Agent",
+    "GIT_AUTHOR_EMAIL": "ai@friday.codes",
+    "GIT_COMMITTER_NAME": "Friday Codes AI Agent",
+    "GIT_COMMITTER_EMAIL": "ai@friday.codes",
 }
+
+
 class TaskRunner:
- """Main task runner that orchestrates the entire task execution."""
- _EXECUTE_MODES = {"execute", "coding", "coding_commit"}
- def __init__(self, config: TaskConfig):
- """Initialize task runner with config."""
- self.config = config
- self.git_ops = GitOperations(config)
- self.callback = CallbackClient(config)
- self.claude: ClaudeRunner | None = None
- self._task_branch: str | None = None # Store branch name for push
- async def run(self) -> int:
- """Run the task and return exit code."""
- log = logger.bind(
- task_id=self.config.task_id,
- project_id=self.config.project_id,
- mode=self.config.task_mode,
- )
- log.info(
- "Task runner starting",
- git_url=self.config.git_repo_url,
- branch=self.config.git_branch,
- has_api_key=bool(self.config.claude_api_key),
- has_callback_url=bool(self.config.callback_url),
- )
- try:
- # Report started
- await self.callback.report_started
- # Set up Git repository
- log.info("Setting up Git repository")
- await self.git_ops.setup
- # Setup task-specific branch based on branch_strategy
- # CRITICAL: Branch must be created/switched BEFORE any Claude coding execution
- branch_name = self.config.git_branch
- if self._needs_task_branch:
- # Use branch_strategy if provided, otherwise fall back to git_new_branch or default
- branch_strategy = self.config.branch_strategy or self.config.git_new_branch
- self._task_branch = await self.git_ops.setup_task_branch(
- branch_strategy=branch_strategy,
- task_id=self.config.task_id,
- )
- branch_name = self._task_branch
- await self.callback.report_git_ready(branch_name)
- if not self._is_safe_work_branch(branch_name):
- error = (
- f"Refusing to run coding task on protected/base branch: {branch_name}. "
- "A dedicated work branch is required."
- )
- log.error(
- "unsafe_task_branch",
- branch=branch_name,
- base_branch=self.config.git_branch,
- )
- await self.callback.report_error(error, "branch")
- return 1
- log.info("Task branch ready for coding", branch=branch_name)
- else:
- log.info("Plan mode - staying on branch", branch=branch_name)
- # Initialize Claude runner
- self.claude = ClaudeRunner(self.config, self.git_ops.get_workspace_path)
- # Execute based on mode
- if self.config.task_mode == "plan":
- return await self._run_plan_mode(log, branch_name)
- elif self.config.task_mode == "explore":
- return await self._run_explore_mode(log)
- elif self.config.task_mode == "repo_summary":
- return await self._run_repo_summary_mode(log)
- else:
- return await self._run_execute_mode(log, branch_name)
- except Exception as e:
- log.exception("Task execution failed")
- await self.callback.report_error(str(e), "execution")
- return 1
- finally:
- self.git_ops.cleanup
- log.info("Task runner finished")
- def _needs_task_branch(self) -> bool:
- """coding 任务必须始终在独立工作分支上执行。"""
- return self.config.task_mode in self._EXECUTE_MODES
- def _is_safe_work_branch(self, branch_name: str) -> bool:
- """工作分支不能为空，也不能等于基础/保护分支。"""
- protected = {"main", "master", "develop", self.config.git_branch}
- return bool(branch_name) and branch_name not in protected
- async def _run_plan_mode(self, log, branch_name: str) -> int:
- """Run in plan mode to generate implementation plan."""
- log.info("Running in plan mode")
- assert self.claude is not None, "ClaudeRunner not initialized"
- result = await self.claude.run_plan_mode
- if not result.get("success"):
- error = result.get("error", "Unknown error")
- log.error("Plan generation failed", error=error)
- await self.callback.report_error(error, "planning")
- return 1
- plan = result.get("output", "")
- await self.callback.report_completed(
- output={"text": plan, "task_type": "coding_plan"},
- result_type="text",
- )
- log.info("Plan mode completed successfully")
- return 0
- async def _run_explore_mode(self, log) -> int:
- """Run in explore mode for deep code analysis (no commits)."""
- log.info("Running in explore mode")
- assert self.claude is not None, "ClaudeRunner not initialized"
- result = await self.claude.run_explore_mode
- if not result.get("success"):
- error = result.get("error", "Unknown error")
- log.error("Explore failed", error=error)
- await self.callback.report_error(error, "execution")
- return 1
- if not await self._check_workspace_clean(log):
- return 1
- log.info("Explore mode completed successfully")
- return 0
- async def _check_workspace_clean(self, log) -> bool:
- """Explore mode must leave the workspace untouched."""
- repo = getattr(self.git_ops, "repo", None)
- if repo is None:
- log.warning("workspace_check_skipped_no_repo", task_id=self.config.task_id)
- return True
- try:
- status_output = repo.git.status("--porcelain")
- except Exception as exc:
- log.error("workspace_check_failed", error=str(exc), task_id=self.config.task_id)
- await self.callback.report_error(
- f"无法检查工作区状态: {exc}",
- "workspace",
- )
- return False
- if status_output.strip:
- log.error(
- "workspace_not_clean",
- task_id=self.config.task_id,
- git_status=status_output,
- )
- await self.callback.report_error(
- f"Explore 模式结束后工作区存在未提交变更:\n{status_output}",
- "workspace",
- )
- return False
- log.info("workspace_clean", task_id=self.config.task_id)
- return True
- async def _run_repo_summary_mode(self, log: BoundLogger) -> int:
- """Run in repo summary mode — plan permission, sanitize output, new callback."""
- log.info("Running in repo summary mode")
- assert self.claude is not None, "ClaudeRunner not initialized"
- result = await self.claude.run_repo_summary_mode
- if not result.get("success"):
- error_msg = result.get("error", "Unknown error")
- log.error("repo_summary_failed", error=error_msg)
- await self.callback.report_failed(error_msg)
- return 1
- raw_output = result.get("output", "")
- sanitized = _sanitize_summary(raw_output)[:2000]
- await self.callback.report_completed(
- output={"text": sanitized, "task_type": "repo_summary"},
- result_type="text",
- )
- log.info("repo_summary_completed", output_length=len(sanitized))
- return 0
- async def _run_execute_mode(self, log, branch_name: str) -> int:
- """Run in execute mode to implement changes.
- 根据 task_type 分流:
- - coding_commit (Phase): 仅 amend commit message + push
- - coding (Phase / 默认): AI coding + commit(临时 msg) + push + 回传 suggested_commit_message
- """
- # Phase: coding_commit 模式 (per )
- if self.config.task_type == "coding_commit":
- return await self._run_commit_mode(log, branch_name)
- # === Phase / 默认 coding 流程 ===
- log.info("Running in execute mode")
- assert self.claude is not None, "ClaudeRunner not initialized"
- plan = await self.claude.get_session_summary
- result = await self.claude.run_execute_mode(plan)
- if not result.get("success"):
- error = result.get("error", "Unknown error")
- log.error("Execution failed", error=error)
- await self.callback.report_error(error, "execution")
- return 1
- # 防御纵深 #1：commit 前先强制 reset 回任务分支（restore_task_branch）。
- # 防御纵深 #2：reset 仍未到达就触发 ensure_current_branch 兜底失败。
- restored = await self.git_ops.restore_task_branch(branch_name)
- if not restored or not await self.git_ops.ensure_current_branch(branch_name):
- error = (
- f"Claude execution switched away from prepared branch: {branch_name}. "
- "Refusing to commit or push from an unexpected branch."
- )
- log.error("Execution branch drift detected", expected_branch=branch_name)
- await self.callback.report_error(error, "branch")
- return 1
- raw_diff_summary = await self.git_ops.get_diff_summary
- diff_summary = raw_diff_summary if isinstance(raw_diff_summary, str) else ""
- raw_modified_files = await self.git_ops.get_modified_files
- modified_files = (
- raw_modified_files
- if isinstance(raw_modified_files, list)
- and all(isinstance(path, str) for path in raw_modified_files)
- else
- )
- if not diff_summary.strip and not modified_files:
- log.warning("No changes to commit")
- await self.callback.report_status(
- status="no_changes",
- message="No code changes were made",
- )
- return 0
- # 单阶段流程：在 commit 前生成最终 commit message，避免后续再启动
- # coding_commit 容器执行 amend + force push。
- suggested_commit_message = await self._generate_suggested_commit_message(
- diff_summary=diff_summary,
- task_title=self.config.task_title,
- modified_files=modified_files,
- )
- commit_sha = await self.git_ops.commit_changes(suggested_commit_message)
- if not commit_sha:
- log.warning("No changes to commit")
- await self.callback.report_status(
- status="no_changes",
- message="No code changes were made",
- )
- return 0
- # Push branch with retry
- try:
- await self.git_ops.push_branch_with_retry(branch_name)
- await self.callback.report_push_complete(
- branch_name=branch_name,
- commit_sha=commit_sha,
- modified_files=modified_files,
- )
- except GitCommandError as e:
- log.error("Push failed after retries", error=str(e))
- await self.callback.report_error(str(e), "push")
- return 1
- # 回传 suggested_commit_message 到 SubAgentSession.last_output (per )
- await self.callback.report_suggested_commit_message(suggested_commit_message)
- log.info(
- "suggested_commit_message_sent",
- msg_preview=suggested_commit_message[:80],
- )
- # === End Phase 新增 ===
- # Report completion
- await self.callback.report_execution_complete(
- branch_name=branch_name,
- commit_sha=commit_sha,
- diff_summary=diff_summary,
- )
- # Phase: 显式发 completed 帧携带 git 元数据。
- # progress 帧（push_complete / suggested_commit_message / execution_complete）
- # 上面已经发过，server 端 progress 渲染依赖；此处补 completed 帧让 server
- # _handle_completed 走全 TaskResult 写入 + resume coding_graph。
- await self.callback.report_completed(
- output={
- "text": diff_summary,
- "branch_name": branch_name,
- "commit_sha": commit_sha,
- "suggested_commit_message": suggested_commit_message,
- "modified_files": modified_files,
- "task_type": "coding",
- },
- result_type="text",
- )
- log.info("Execute mode completed successfully", commit=commit_sha[:8])
- return 0
- async def _generate_suggested_commit_message(
- self,
- diff_summary: str,
- task_title: str,
- modified_files: list[str],
- ) -> str:
- """基于 diff 和任务标题生成 AI 建议的 commit message。
- 失败时回退到本地模板，但绝不把完整 task_description / prompt 拼进 commit body。
- """
- fallback = self._fallback_commit_message(task_title, diff_summary)
- if not self.config.claude_api_key:
- return fallback
- base_url = (self.config.claude_base_url or "https://api.anthropic.com").rstrip("/")
- model = self.config.claude_small_model or self.config.claude_model or "claude-haiku-4-5"
- files_text = "\n".join(f"- {path}" for path in modified_files[:20]) or "- 未获取到文件列表"
- prompt = (
- "请根据以下编码任务结果生成一个 Git commit message。\n\n"
- "要求：\n"
- "1. 使用 Conventional Commits 格式。\n"
- "2. 第一行格式为 `<type>: <中文摘要>`，摘要不超过 72 个字符。\n"
- "3. 空一行后写 body，最多 5 行，概括为什么和改了什么。\n"
- "4. 只输出 commit message 本身，不要 Markdown，不要解释。\n"
- "5. 不要复述原始任务 prompt、执行规格、分支信息或 Task ID。\n\n"
- f"任务标题：{task_title or '实现代码变更'}\n\n"
- f"变更文件：\n{files_text}\n\n"
- f"Diff stat：\n{diff_summary[:1200]}"
- )
- try:
- async with httpx.AsyncClient(timeout=10.0) as client:
- response = await client.post(
- f"{base_url}/v1/messages",
- headers={
- "x-api-key": self.config.claude_api_key,
- "anthropic-version": "2023-06-01",
- "content-type": "application/json",
- },
- json={
- "model": model,
- "max_tokens": 400,
- "messages": [{"role": "user", "content": prompt}],
- },
- )
- response.raise_for_status
- text = self._extract_commit_message_from_anthropic(response.json)
- return text or fallback
- except Exception as e:
- logger.warning("suggested_commit_message_ai_failed", error=str(e))
- return fallback
- @staticmethod
- def _extract_commit_message_from_anthropic(data: object) -> str:
- """从 Anthropic Messages API 响应里提取文本。"""
- if not isinstance(data, dict):
- return ""
- content = data.get("content")
- if not isinstance(content, list):
- return ""
- parts: list[str] =
- for block in content:
- if isinstance(block, dict) and isinstance(block.get("text"), str):
- parts.append(block["text"])
- return "\n".join(parts).strip
- @staticmethod
- def _fallback_commit_message(task_title: str, diff_summary: str) -> str:
- """AI 不可用时的安全 commit message 模板。"""
- title = (task_title or "implement changes").strip
- body = (diff_summary or "No diff summary available").strip[:300]
- return f"feat: {title}\n\n{body}".strip
- async def _run_commit_mode(self, log: BoundLogger, branch_name: str) -> int:
- """Phase: 使用用户确认的 commit message 执行 git commit --amend + push。
- Phase 已完成 coding + commit(临时 message) + push。
- Phase checkout 分支后执行 amend commit message 并 force push。
- Per /。
- """
- commit_message = self.config.commit_message
- if not commit_message:
- log.error("commit_mode_missing_message", task_id=self.config.task_id)
- await self.callback.report_error("缺少 commit message", "commit")
- return 1
- log.info("commit_mode_start", task_id=self.config.task_id, branch=branch_name)
- # amend 最近一次 commit 的 message（使用 asyncio.create_subprocess_exec 直接执行 git 命令）
- # GitOperations 没有 run_command 方法，直接使用 subprocess
- workspace = self.git_ops.get_workspace_path
- # Runner 自己的 git 写操作必须走 /usr/bin/git 绕过 PATH 中的 wrapper；
- # wrapper 在 coding / coding_commit 模式下会拒绝 commit/push 等命令，
- # 用 real git 才能正常 amend 和 force-push。
- git_env = {**os.environ, **_GIT_IDENTITY_ENV}
- try:
- proc = await asyncio.create_subprocess_exec(
- "/usr/bin/git", "commit", "--amend", "-m", commit_message,
- cwd=str(workspace),
- env=git_env,
- stdout=asyncio.subprocess.PIPE,
- stderr=asyncio.subprocess.PIPE,
- )
- stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=60)
- if proc.returncode != 0:
- error_msg = stderr.decode.strip if stderr else "unknown error"
- raise RuntimeError(f"git commit --amend failed: {error_msg}")
- log.info("commit_amended", result=stdout.decode[:200] if stdout else "")
- except Exception as e:
- log.error("commit_amend_failed", error=str(e))
- await self.callback.report_error(f"commit amend 失败: {e}", "commit")
- return 1
- # 获取新的 commit SHA（同样走 /usr/bin/git）
- try:
- proc = await asyncio.create_subprocess_exec(
- "/usr/bin/git", "rev-parse", "HEAD",
- cwd=str(workspace),
- stdout=asyncio.subprocess.PIPE,
- stderr=asyncio.subprocess.PIPE,
- )
- stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=10)
- commit_sha = stdout.decode.strip if stdout else ""
- except Exception:
- commit_sha = ""
- # force push (--force-with-lease 安全 force push, per T-)
- try:
- proc = await asyncio.create_subprocess_exec(
- "/usr/bin/git", "push", "--force-with-lease", "origin", branch_name,
- cwd=str(workspace),
- env=git_env,
- stdout=asyncio.subprocess.PIPE,
- stderr=asyncio.subprocess.PIPE,
- )
- stdout, stderr = await asyncio.wait_for(
- proc.communicate, timeout=self.config.git_timeout
- )
- if proc.returncode != 0:
- error_msg = stderr.decode.strip if stderr else "unknown error"
- raise RuntimeError(f"git push --force-with-lease failed: {error_msg}")
- except Exception as e:
- log.error("push_failed", error=str(e))
- await self.callback.report_error(f"push 失败: {e}", "push")
- return 1
- modified_files = await self.git_ops.get_modified_files
- await self.callback.report_push_complete(
- branch_name=branch_name,
- commit_sha=commit_sha,
- modified_files=modified_files,
- )
- diff_summary = await self.git_ops.get_diff_summary
- await self.callback.report_execution_complete(
- branch_name=branch_name,
- commit_sha=commit_sha,
- diff_summary=diff_summary,
- )
- # Phase: Phase 完成同样发 completed 帧（task_type="coding_commit"），
- # 让 server 端 _update_coding_session_on_complete 走 Phase 分支 resume graph。
- await self.callback.report_completed(
- output={
- "text": "commit message amended and pushed",
- "branch_name": branch_name,
- "commit_sha": commit_sha,
- "modified_files": modified_files,
- "task_type": "coding_commit",
- },
- result_type="text",
- )
- log.info("commit_mode_complete", commit_sha=commit_sha[:8] if commit_sha else "")
- return 0
-async def main -> int:
- """Main entry point for container mode."""
- logger.info("Container mode main starting")
- try:
- config = TaskConfig
- logger.info(
- "TaskConfig loaded successfully",
- task_id=config.task_id,
- mode=config.task_mode,
- )
- except Exception:
- logger.exception("Failed to load configuration")
- return 1
- runner = TaskRunner(config)
- return await runner.run
+    """Main task runner that orchestrates the entire task execution."""
+
+    _EXECUTE_MODES = {"execute", "coding", "coding_commit"}
+
+    def __init__(self, config: TaskConfig):
+        """Initialize task runner with config."""
+        self.config = config
+        self.git_ops = GitOperations(config)
+        self.callback = CallbackClient(config)
+        self.claude: ClaudeRunner | None = None
+        self._task_branch: str | None = None  # Store branch name for push
+
+    async def run(self) -> int:
+        """Run the task and return exit code."""
+        log = logger.bind(
+            task_id=self.config.task_id,
+            project_id=self.config.project_id,
+            mode=self.config.task_mode,
+        )
+
+        log.info(
+            "Task runner starting",
+            git_url=self.config.git_repo_url,
+            branch=self.config.git_branch,
+            has_api_key=bool(self.config.claude_api_key),
+            has_callback_url=bool(self.config.callback_url),
+        )
+
+        try:
+            # Report started
+            await self.callback.report_started()
+
+            # Set up Git repository
+            log.info("Setting up Git repository")
+            await self.git_ops.setup()
+
+            # Setup task-specific branch based on branch_strategy (work item)
+            # CRITICAL: Branch must be created/switched BEFORE any Claude coding execution
+            branch_name = self.config.git_branch
+            if self._needs_task_branch():
+                # Use branch_strategy if provided, otherwise fall back to git_new_branch or default
+                branch_strategy = self.config.branch_strategy or self.config.git_new_branch
+                self._task_branch = await self.git_ops.setup_task_branch(
+                    branch_strategy=branch_strategy,
+                    task_id=self.config.task_id,
+                )
+                branch_name = self._task_branch
+                await self.callback.report_git_ready(branch_name)
+                if not self._is_safe_work_branch(branch_name):
+                    error = (
+                        f"Refusing to run coding task on protected/base branch: {branch_name}. "
+                        "A dedicated work branch is required."
+                    )
+                    log.error(
+                        "unsafe_task_branch",
+                        branch=branch_name,
+                        base_branch=self.config.git_branch,
+                    )
+                    await self.callback.report_error(error, "branch")
+                    return 1
+                log.info("Task branch ready for coding", branch=branch_name)
+            else:
+                log.info("Plan mode - staying on branch", branch=branch_name)
+
+            # Initialize Claude runner
+            self.claude = ClaudeRunner(self.config, self.git_ops.get_workspace_path())
+
+            # Execute based on mode
+            if self.config.task_mode == "plan":
+                return await self._run_plan_mode(log, branch_name)
+            elif self.config.task_mode == "explore":
+                return await self._run_explore_mode(log)
+            elif self.config.task_mode == "repo_summary":
+                return await self._run_repo_summary_mode(log)
+            else:
+                return await self._run_execute_mode(log, branch_name)
+
+        except Exception as e:
+            log.exception("Task execution failed")
+            await self.callback.report_error(str(e), "execution")
+            return 1
+
+        finally:
+            self.git_ops.cleanup()
+            log.info("Task runner finished")
+
+    def _needs_task_branch(self) -> bool:
+        """coding 任务必须始终在独立工作分支上执行。"""
+        return self.config.task_mode in self._EXECUTE_MODES
+
+    def _is_safe_work_branch(self, branch_name: str) -> bool:
+        """工作分支不能为空，也不能等于基础/保护分支。"""
+        protected = {"main", "master", "develop", self.config.git_branch}
+        return bool(branch_name) and branch_name not in protected
+
+    async def _run_plan_mode(self, log, branch_name: str) -> int:
+        """Run in plan mode to generate implementation plan."""
+        log.info("Running in plan mode")
+
+        assert self.claude is not None, "ClaudeRunner not initialized"
+        result = await self.claude.run_plan_mode()
+
+        if not result.get("success"):
+            error = result.get("error", "Unknown error")
+            log.error("Plan generation failed", error=error)
+            await self.callback.report_error(error, "planning")
+            return 1
+
+        plan = result.get("output", "")
+        await self.callback.report_completed(
+            output={"text": plan, "task_type": "coding_plan"},
+            result_type="text",
+        )
+
+        log.info("Plan mode completed successfully")
+        return 0
+
+    async def _run_explore_mode(self, log) -> int:
+        """Run in explore mode for deep code analysis (no commits)."""
+        log.info("Running in explore mode")
+
+        assert self.claude is not None, "ClaudeRunner not initialized"
+        result = await self.claude.run_explore_mode()
+
+        if not result.get("success"):
+            error = result.get("error", "Unknown error")
+            log.error("Explore failed", error=error)
+            await self.callback.report_error(error, "execution")
+            return 1
+
+        if not await self._check_workspace_clean(log):
+            return 1
+
+        log.info("Explore mode completed successfully")
+        return 0
+
+    async def _check_workspace_clean(self, log) -> bool:
+        """Explore mode must leave the workspace untouched."""
+        repo = getattr(self.git_ops, "repo", None)
+        if repo is None:
+            log.warning("workspace_check_skipped_no_repo", task_id=self.config.task_id)
+            return True
+
+        try:
+            status_output = repo.git.status("--porcelain")
+        except Exception as exc:
+            log.error("workspace_check_failed", error=str(exc), task_id=self.config.task_id)
+            await self.callback.report_error(
+                f"无法检查工作区状态: {exc}",
+                "workspace",
+            )
+            return False
+
+        if status_output.strip():
+            log.error(
+                "workspace_not_clean",
+                task_id=self.config.task_id,
+                git_status=status_output,
+            )
+            await self.callback.report_error(
+                f"Explore 模式结束后工作区存在未提交变更:\n{status_output}",
+                "workspace",
+            )
+            return False
+
+        log.info("workspace_clean", task_id=self.config.task_id)
+        return True
+
+    async def _run_repo_summary_mode(self, log: BoundLogger) -> int:
+        """Run in repo summary mode — plan permission, sanitize output, new callback."""
+        log.info("Running in repo summary mode")
+
+        assert self.claude is not None, "ClaudeRunner not initialized"
+        result = await self.claude.run_repo_summary_mode()
+
+        if not result.get("success"):
+            error_msg = result.get("error", "Unknown error")
+            log.error("repo_summary_failed", error=error_msg)
+            await self.callback.report_failed(error_msg)
+            return 1
+
+        raw_output = result.get("output", "")
+        sanitized = _sanitize_summary(raw_output)[:2000]
+
+        await self.callback.report_completed(
+            output={"text": sanitized, "task_type": "repo_summary"},
+            result_type="text",
+        )
+
+        log.info("repo_summary_completed", output_length=len(sanitized))
+        return 0
+
+    async def _run_execute_mode(self, log, branch_name: str) -> int:
+        """Run in execute mode to implement changes.
+
+        根据 task_type 分流:
+        - coding_commit (Phase): 仅 amend commit message + push
+        - coding (Phase / 默认): AI coding + commit(临时 msg) + push + 回传 suggested_commit_message
+        """
+        # Phase: coding_commit 模式 (per contract)
+        if self.config.task_type == "coding_commit":
+            return await self._run_commit_mode(log, branch_name)
+
+        # === Phase / 默认 coding 流程 ===
+        log.info("Running in execute mode")
+
+        assert self.claude is not None, "ClaudeRunner not initialized"
+        plan = await self.claude.get_session_summary()
+        result = await self.claude.run_execute_mode(plan)
+
+        if not result.get("success"):
+            error = result.get("error", "Unknown error")
+            log.error("Execution failed", error=error)
+            await self.callback.report_error(error, "execution")
+            return 1
+
+        # 防御纵深 #1：commit 前先强制 reset 回任务分支（restore_task_branch）。
+        # 防御纵深 #2：reset 仍未到达就触发 ensure_current_branch 兜底失败。
+        restored = await self.git_ops.restore_task_branch(branch_name)
+        if not restored or not await self.git_ops.ensure_current_branch(branch_name):
+            error = (
+                f"Claude execution switched away from prepared branch: {branch_name}. "
+                "Refusing to commit or push from an unexpected branch."
+            )
+            log.error("Execution branch drift detected", expected_branch=branch_name)
+            await self.callback.report_error(error, "branch")
+            return 1
+
+        raw_diff_summary = await self.git_ops.get_diff_summary()
+        diff_summary = raw_diff_summary if isinstance(raw_diff_summary, str) else ""
+        raw_modified_files = await self.git_ops.get_modified_files()
+        modified_files = (
+            raw_modified_files
+            if isinstance(raw_modified_files, list)
+            and all(isinstance(path, str) for path in raw_modified_files)
+            else []
+        )
+
+        if not diff_summary.strip() and not modified_files:
+            log.warning("No changes to commit")
+            await self.callback.report_status(
+                status="no_changes",
+                message="No code changes were made",
+            )
+            return 0
+
+        # 单阶段流程：在 commit 前生成最终 commit message，避免后续再启动
+        # coding_commit 容器执行 amend + force push。
+        suggested_commit_message = await self._generate_suggested_commit_message(
+            diff_summary=diff_summary,
+            task_title=self.config.task_title,
+            modified_files=modified_files,
+        )
+        commit_sha = await self.git_ops.commit_changes(suggested_commit_message)
+
+        if not commit_sha:
+            log.warning("No changes to commit")
+            await self.callback.report_status(
+                status="no_changes",
+                message="No code changes were made",
+            )
+            return 0
+
+        # Push branch with retry (work item)
+        try:
+            await self.git_ops.push_branch_with_retry(branch_name)
+            await self.callback.report_push_complete(
+                branch_name=branch_name,
+                commit_sha=commit_sha,
+                modified_files=modified_files,
+            )
+        except GitCommandError as e:
+            log.error("Push failed after retries", error=str(e))
+            await self.callback.report_error(str(e), "push")
+            return 1
+
+        # 回传 suggested_commit_message 到 SubAgentSession.last_output (per contract)
+        await self.callback.report_suggested_commit_message(suggested_commit_message)
+        log.info(
+            "suggested_commit_message_sent",
+            msg_preview=suggested_commit_message[:80],
+        )
+        # === End initial implementation 新增 ===
+
+        # Report completion
+        await self.callback.report_execution_complete(
+            branch_name=branch_name,
+            commit_sha=commit_sha,
+            diff_summary=diff_summary,
+        )
+
+        # initial implementation contract: 显式发 completed 帧携带 git 元数据。
+        # progress 帧（push_complete / suggested_commit_message / execution_complete）
+        # 上面已经发过，server 端 progress 渲染依赖；此处补 completed 帧让 server
+        # _handle_completed 走全 TaskResult 写入 + resume coding_graph。
+        await self.callback.report_completed(
+            output={
+                "text": diff_summary,
+                "branch_name": branch_name,
+                "commit_sha": commit_sha,
+                "suggested_commit_message": suggested_commit_message,
+                "modified_files": modified_files,
+                "task_type": "coding",
+            },
+            result_type="text",
+        )
+
+        log.info("Execute mode completed successfully", commit=commit_sha[:8])
+        return 0
+
+    async def _generate_suggested_commit_message(
+        self,
+        diff_summary: str,
+        task_title: str,
+        modified_files: list[str],
+    ) -> str:
+        """基于 diff 和任务标题生成 AI 建议的 commit message。
+
+        失败时回退到本地模板，但绝不把完整 task_description / prompt 拼进 commit body。
+        """
+        fallback = self._fallback_commit_message(task_title, diff_summary)
+        if not self.config.claude_api_key:
+            return fallback
+
+        base_url = (self.config.claude_base_url or "https://api.anthropic.com").rstrip("/")
+        model = self.config.claude_small_model or self.config.claude_model or "claude-haiku-4-5"
+        files_text = "\n".join(f"- {path}" for path in modified_files[:20]) or "- 未获取到文件列表"
+        prompt = (
+            "请根据以下编码任务结果生成一个 Git commit message。\n\n"
+            "要求：\n"
+            "1. 使用 Conventional Commits 格式。\n"
+            "2. 第一行格式为 `<type>: <中文摘要>`，摘要不超过 72 个字符。\n"
+            "3. 空一行后写 body，最多 5 行，概括为什么和改了什么。\n"
+            "4. 只输出 commit message 本身，不要 Markdown，不要解释。\n"
+            "5. 不要复述原始任务 prompt、执行规格、分支信息或 Task ID。\n\n"
+            f"任务标题：{task_title or '实现代码变更'}\n\n"
+            f"变更文件：\n{files_text}\n\n"
+            f"Diff stat：\n{diff_summary[:1200]}"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{base_url}/v1/messages",
+                    headers={
+                        "x-api-key": self.config.claude_api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": 400,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+            response.raise_for_status()
+            text = self._extract_commit_message_from_anthropic(response.json())
+            return text or fallback
+        except Exception as e:
+            logger.warning("suggested_commit_message_ai_failed", error=str(e))
+            return fallback
+
+    @staticmethod
+    def _extract_commit_message_from_anthropic(data: object) -> str:
+        """从 Anthropic Messages API 响应里提取文本。"""
+        if not isinstance(data, dict):
+            return ""
+        content = data.get("content")
+        if not isinstance(content, list):
+            return ""
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "\n".join(parts).strip()
+
+    @staticmethod
+    def _fallback_commit_message(task_title: str, diff_summary: str) -> str:
+        """AI 不可用时的安全 commit message 模板。"""
+        title = (task_title or "implement changes").strip()
+        body = (diff_summary or "No diff summary available").strip()[:300]
+        return f"feat: {title}\n\n{body}".strip()
+
+    async def _run_commit_mode(self, log: BoundLogger, branch_name: str) -> int:
+        """Phase: 使用用户确认的 commit message 执行 git commit --amend + push。
+
+        Phase 已完成 coding + commit(临时 message) + push。
+        Phase checkout 分支后执行 amend commit message 并 force push。
+        Per contract/contract。
+        """
+        commit_message = self.config.commit_message
+        if not commit_message:
+            log.error("commit_mode_missing_message", task_id=self.config.task_id)
+            await self.callback.report_error("缺少 commit message", "commit")
+            return 1
+
+        log.info("commit_mode_start", task_id=self.config.task_id, branch=branch_name)
+
+        # amend 最近一次 commit 的 message（使用 asyncio.create_subprocess_exec 直接执行 git 命令）
+        # GitOperations 没有 run_command 方法，直接使用 subprocess
+        workspace = self.git_ops.get_workspace_path()
+
+        # Runner 自己的 git 写操作必须走 /usr/bin/git 绕过 PATH 中的 wrapper；
+        # wrapper 在 coding / coding_commit 模式下会拒绝 commit/push 等命令，
+        # 用 real git 才能正常 amend 和 force-push。
+        git_env = {**os.environ, **_GIT_IDENTITY_ENV}
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "/usr/bin/git", "commit", "--amend", "-m", commit_message,
+                cwd=str(workspace),
+                env=git_env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            if proc.returncode != 0:
+                error_msg = stderr.decode().strip() if stderr else "unknown error"
+                raise RuntimeError(f"git commit --amend failed: {error_msg}")
+            log.info("commit_amended", result=stdout.decode()[:200] if stdout else "")
+        except Exception as e:
+            log.error("commit_amend_failed", error=str(e))
+            await self.callback.report_error(f"commit amend 失败: {e}", "commit")
+            return 1
+
+        # 获取新的 commit SHA（同样走 /usr/bin/git）
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "/usr/bin/git", "rev-parse", "HEAD",
+                cwd=str(workspace),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            commit_sha = stdout.decode().strip() if stdout else ""
+        except Exception:
+            commit_sha = ""
+
+        # force push (--force-with-lease 安全 force push, per security mitigation)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "/usr/bin/git", "push", "--force-with-lease", "origin", branch_name,
+                cwd=str(workspace),
+                env=git_env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=self.config.git_timeout
+            )
+            if proc.returncode != 0:
+                error_msg = stderr.decode().strip() if stderr else "unknown error"
+                raise RuntimeError(f"git push --force-with-lease failed: {error_msg}")
+        except Exception as e:
+            log.error("push_failed", error=str(e))
+            await self.callback.report_error(f"push 失败: {e}", "push")
+            return 1
+
+        modified_files = await self.git_ops.get_modified_files()
+        await self.callback.report_push_complete(
+            branch_name=branch_name,
+            commit_sha=commit_sha,
+            modified_files=modified_files,
+        )
+
+        diff_summary = await self.git_ops.get_diff_summary()
+        await self.callback.report_execution_complete(
+            branch_name=branch_name,
+            commit_sha=commit_sha,
+            diff_summary=diff_summary,
+        )
+
+        # initial implementation contract: Phase 完成同样发 completed 帧（task_type="coding_commit"），
+        # 让 server 端 _update_coding_session_on_complete 走 Phase 分支 resume graph。
+        await self.callback.report_completed(
+            output={
+                "text": "commit message amended and pushed",
+                "branch_name": branch_name,
+                "commit_sha": commit_sha,
+                "modified_files": modified_files,
+                "task_type": "coding_commit",
+            },
+            result_type="text",
+        )
+
+        log.info("commit_mode_complete", commit_sha=commit_sha[:8] if commit_sha else "")
+        return 0
+
+
+async def main() -> int:
+    """Main entry point for container mode."""
+    logger.info("Container mode main() starting")
+
+    try:
+        config = TaskConfig()
+        logger.info(
+            "TaskConfig loaded successfully",
+            task_id=config.task_id,
+            mode=config.task_mode,
+        )
+    except Exception:
+        logger.exception("Failed to load configuration")
+        return 1
+
+    runner = TaskRunner(config)
+    return await runner.run()
+
+
 def _sanitize_summary(text: str) -> str:
- """脱敏 — 移除凭据、API key、邮箱等敏感信息。"""
- import re
- # Email 地址
- text = re.sub(r"[a-zA-._%+-]+@[a-zA-.-]+\.[a-zA-Z]{2,}", "[EMAIL]", text)
- # Bearer token
- text = re.sub(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer [REDACTED]", text)
- # API key 前缀 (ghp_, glpat-, sk-, xoxb-, xoxp-)
- text = re.sub(r"(ghp_|glpat-|sk-|xoxb-|xoxp-)[A-Za-z0-9_\-]{10,}", r"\1[REDACTED]", text)
- return text
+    """脱敏 — 移除凭据、API key、邮箱等敏感信息。"""
+    import re
+
+    # Email 地址
+    text = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL]", text)
+    # Bearer token
+    text = re.sub(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer [REDACTED]", text)
+    # API key 前缀 (ghp_, glpat-, sk-, xoxb-, xoxp-)
+    text = re.sub(r"(ghp_|glpat-|sk-|xoxb-|xoxp-)[A-Za-z0-9_\-]{10,}", r"\1[REDACTED]", text)
+    return text
+
+
 if __name__ == "__main__":
- exit_code = asyncio.run(main)
- sys.exit(exit_code)
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

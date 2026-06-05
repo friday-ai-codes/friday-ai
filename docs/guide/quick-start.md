@@ -51,6 +51,8 @@ Docker Compose 部署包含以下服务：
 | <span v-pre>`RUNNER_REGISTRATION_TOKEN`</span> | <span v-pre>`openssl rand -base64 32`</span> | Runner 注册令牌，server 和 runner 共享 |
 | <span v-pre>`DATABASE_URL`</span> | 见下方说明 | 数据库连接字符串 |
 | <span v-pre>`FRIDAY_DATA_DIR`</span> | <span v-pre>`scripts/setup.sh` 自动写入 | Docker 持久化数据宿主机目录 |
+| <span v-pre>`FRIDAY_IMAGE_PREFIX`</span> | <span v-pre>`scripts/setup.sh` 自动写入 | 预构建容器镜像命名空间 |
+| <span v-pre>`FRIDAY_IMAGE_TAG`</span> | <span v-pre>`scripts/setup.sh` 自动写入 | 预构建容器镜像标签 |
 使用内置 PostgreSQL 时，`DATABASE_URL` 默认值为 <span v-pre>`postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday`</span>，无需修改。:: warning 生产环境安全
 生产环境部署时，务必为每个密钥生成独立的随机值。不要使用示例中的占位值，不要在多个环境间复用密钥。建议将 `.env` 文件权限设置为 `600`。::
 ### 飞书集成配置

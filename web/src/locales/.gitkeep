@@ -1,5 +1,5 @@
 # 国际化语言文件目录
 # 当需要启用 i18n 功能时，在此目录下添加语言文件
 # 例如：
-# - en.yaml
-# - zh-CN.yaml
+#   - en.yaml
+#   - zh-CN.yaml

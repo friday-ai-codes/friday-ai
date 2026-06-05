@@ -1,10 +1,9 @@
-# v25.0 代码智能层 — 功能指南
-> **版本：** v25.0 统一代码智能层
+# 代码智能层功能指南
 > **发布日期：** 2026-05-16
 > **适用：** 开发者 / 系统集成
 ---
 ## 概览
-v25.0 将 v22 符号级骨架（仅 Python）与 v24 GraphRAG 整合为**统一的代码智能层**，新增：
+代码智能层将符号级代码解析、GraphRAG 和跨仓 API 关联整合为统一能力，包含：
 1. **多语言 extractor 矩阵** — Go / TS/TSX / Vue 2.7+/3 精确解析
 2. **跨仓库前后端 API 关联** — 前端 axios call site → 后端 handler 精确连边
 3. **3D Galaxy 可视化** — 银河感力导向图（30 FPS，5000+ 节点）
@@ -15,12 +14,12 @@ v25.0 将 v22 符号级骨架（仅 Python）与 v24 GraphRAG 整合为**统一�
 | 语言 | Backend | 精度 | 说明 |
 |------|---------|------|------|
 | Python | tree-sitter | 高 | 既有 |
-| Go | gopls LSP | 高 | Phase/268 新增；跨文件 call resolution ≥50% 完整度 |
-| TypeScript / TSX | tree-sitter-typescript | 中高 | Phase |
-| Vue 2.7+ / 3 | volar LSP | 高 | Phase/266；script setup + Options API |
-| HTML / CSS | tree-sitter | 中 | Phase |
+| Go | gopls LSP | 高 | 支持跨文件 call resolution |
+| TypeScript / TSX | tree-sitter-typescript | 中高 | 支持常见前端调用点解析 |
+| Vue 2.7+ / 3 | volar LSP | 高 | 支持 script setup + Options API |
+| HTML / CSS | tree-sitter | 中 | 支持基础符号解析 |
 ### Go Endpoint 识别（gin）
-Phase 新增 Go gin 路由抽取，支持：
+Go gin 路由抽取支持：
 - `r.GET("/path", handler)` / `r.POST(...)` 等基本形式
 - `ogin.G*` middleware 参数元数据
 - 查询：`codegraph_endpoint` 表
@@ -33,13 +32,13 @@ Phase 新增 Go gin 路由抽取，支持：
 ApiCallSite Endpoint
  ↓ (via ApiWrapper) ↑
  └──────── CrossRepoApiCall ──────────┘
- (offline join, Phase)
+ (offline join)
 ```
-### 三步推断（Phase）
+### 三步推断
 1. **auto-discover**：在 axios 锚点定位 LowLevelHelper（`get/post/put/delete` 基础封装）
 2. **ApiWrapper 识别**：找调用 LowLevelHelper 的 export function，提取 URL path
 3. **ApiCallSite 追踪**：通过 volar `textDocument/references` 反向找所有业务调用点
-### HybridSearch wave（Phase）
+### HybridSearch API 扩散
 跨仓 `API_CALLS` 类型 ChunkEdge 已接入 HybridSearch，支持：
 - 从前端 chunk 扩散到对应的后端 handler chunk
 - Budget 分配：50% 同仓语义 / 30% 图谱扩散 / 20% 跨仓 API 扩散
@@ -58,7 +57,7 @@ ApiCallSite Endpoint
 - FPS 低于门限时自动切换 ECharts GraphGL 备选渲染器
 ---
 ## 4. MCP Tools（Agent 使用）
-v25.0 新增 3 个 MCP tool，可在 Agent 对话中直接调用：
+以下 MCP tools 可在 Agent 对话中直接调用：
 ### `find_api_handler(url, method, repository_id)`
 给定 URL + HTTP method，找后端 handler。
 ```python
@@ -90,16 +89,7 @@ list_endpoints(
 ```
 ---
 ## 5. 数据库 Migrations 汇总
-以下 migrations 在 v25.0 各 phase 中创建，需在对应环境执行：
-| Migration | Phase | 说明 |
-|-----------|-------|------|
-| `codegraph/0002_*` | 269 | Endpoint metadata（ogin.G* 参数） |
-| `repositories/0003_*` | 270 | ApiWrapper + ApiCallSite 表 |
-| `codegraph/0004_*` | 272 | CrossRepoApiCall 表 |
-| `repositories/0023_*` | 272 | IndexHistory cross_repo 字段 |
-| `code_relations/0007_*` | 273 | ChunkEdge target_repository_id |
-| `code_relations/0008_*` | 273 | API_CALLS 边类型 |
-| `codegraph/0006_*` | 268 | IMPLEMENTS 边 |
+首次部署或升级后需要执行 Django migrations：
 执行命令：
 ```bash
 cd server && uv run python manage.py migrate
@@ -112,4 +102,4 @@ cd server && uv run python manage.py migrate
 - GraphRAG 构建状态（graph_build_status + 边数）
 - **跨仓 API 匹配数**（cross_repo_match_count + 构建时间）
 ---
-*文档版本：v25.0 / 2026-05-16*
+*文档更新日期：2026-05-16*

@@ -4,8 +4,10 @@
  * 提供便捷的 UiSchema 构建工具。
  */
 import type { UiSchema, UiSchemaField, UiSchemaGroup } from './types'
+
 // 重新导出类型
 export type { UiConditionOperator, UiSchema, UiSchemaField, UiSchemaGroup, UiVisibleIf, UiWidget } from './types'
+
 /**
  * 构建 UiSchema 的辅助函数
  *
@@ -16,20 +18,20 @@ export type { UiConditionOperator, UiSchema, UiSchemaField, UiSchemaGroup, UiVis
  * @example
  * ```ts
  * const schema = buildUiSchema(
- * {
- * delay_seconds: { widget: 'number', help: '延迟秒数' },
- * delay_until: { widget: 'text', help: 'ISO 时间' },
- * },
- * [{ key: 'timing', label: '时间设置', fields: ['delay_seconds', 'delay_until'] }]
+ *   {
+ *     delay_seconds: { widget: 'number', help: '延迟秒数' },
+ *     delay_until: { widget: 'text', help: 'ISO 时间' },
+ *   },
+ *   [{ key: 'timing', label: '时间设置', fields: ['delay_seconds', 'delay_until'] }]
  * )
  * ```
  */
 export function buildUiSchema(
- fieldConfigs: Record<string, UiSchemaField>,
- groups?: UiSchemaGroup,
+  fieldConfigs: Record<string, UiSchemaField>,
+  groups?: UiSchemaGroup[],
 ): UiSchema {
- return {
- ...(groups ? { groups }: {}),
- fields: fieldConfigs,
- }
+  return {
+    ...(groups ? { groups } : {}),
+    fields: fieldConfigs,
+  }
 }

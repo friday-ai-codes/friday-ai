@@ -1,44 +1,50 @@
 <script setup lang="ts">
 import { Button } from '~/components/ui/button'
+
 withDefaults(defineProps<{
- icon?: string
- title?: string
- description?: string
- actionLabel?: string
- gradient?: string
-}>, {
- icon: 'lucide--inbox',
- title: '暂无数据',
- description: '这里还没有任何内容',
- gradient: 'from-primary/20 to-primary/10',
+  icon?: string
+  title?: string
+  description?: string
+  actionLabel?: string
+  gradient?: string
+}>(), {
+  icon: 'lucide--inbox',
+  title: '暂无数据',
+  description: '这里还没有任何内容',
+  gradient: 'from-primary/20 to-primary/10',
 })
+
 const emit = defineEmits<{
- action:
-}>
+  action: []
+}>()
 </script>
+
 <template>
- <div class="relative flex flex-col items-center justify-center py-16 text-center">
- <!-- 背景装饰 -->
- <div class="absolute inset-0 -z-10 overflow-hidden" />
- <!-- 图标容器 -->
- <div class="relative mb-6">
- <div class="absolute inset-0 bg-primary/10 rounded-2xl blur-xl" />
- <div class="relative inline-flex items-center justify-center w-20 rounded-2xl bg-primary/10 border border-border/50 backdrop-blur-sm">
- <span class="text-4xl text-muted-foreground/60":class="[`icon-[${icon}]`]" />
- </div>
- </div>
- <!-- 文字内容 -->
- <h3 class="text-lg font-semibold text-foreground mb-2">
- {{ title }}
- </h3>
- <p class="text-muted-foreground mb-8 max-w-sm leading-relaxed">
- {{ description }}
- </p>
- <!-- 操作按钮 -->
- <Button v-if="actionLabel" class="group relative overflow-hidden" @click="emit('action')">
- <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
- <span class="icon-[lucide--plus] mr-2" />
- {{ actionLabel }}
- </Button>
- </div>
+  <div class="relative flex flex-col items-center justify-center py-16 text-center">
+    <!-- 背景装饰 -->
+    <div class="absolute inset-0 -z-10 overflow-hidden" />
+
+    <!-- 图标容器 -->
+    <div class="relative mb-6">
+      <div class="absolute inset-0 bg-primary/10 rounded-2xl blur-xl" />
+      <div class="relative inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 border border-border/50 backdrop-blur-sm">
+        <span class="text-4xl text-muted-foreground/60" :class="[`icon-[${icon}]`]" />
+      </div>
+    </div>
+
+    <!-- 文字内容 -->
+    <h3 class="text-lg font-semibold text-foreground mb-2">
+      {{ title }}
+    </h3>
+    <p class="text-muted-foreground mb-8 max-w-sm leading-relaxed">
+      {{ description }}
+    </p>
+
+    <!-- 操作按钮 -->
+    <Button v-if="actionLabel" class="group relative overflow-hidden" @click="emit('action')">
+      <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+      <span class="icon-[lucide--plus] mr-2" />
+      {{ actionLabel }}
+    </Button>
+  </div>
 </template>

@@ -2,60 +2,60 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
- name: {{ include "friday.fullname" . }}
- labels:
- {{- include "friday.labels" . | nindent 4 }}
- annotations:
- {{- if eq (.Values.ingress.className | default "nginx") "nginx" }}
- nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
- nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
- nginx.ingress.kubernetes.io/proxy-buffering: "off"
- {{- end }}
- {{- if eq (.Values.ingress.className | default "nginx") "traefik" }}
- traefik.ingress.kubernetes.io/router.middlewares: ""
- {{- end }}
- {{- with .Values.ingress.annotations }}
- {{- toYaml . | nindent 4 }}
- {{- end }}
+  name: {{ include "friday.fullname" . }}
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+  annotations:
+    {{- if eq (.Values.ingress.className | default "nginx") "nginx" }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    {{- end }}
+    {{- if eq (.Values.ingress.className | default "nginx") "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: ""
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
- ingressClassName: {{ .Values.ingress.className | default "nginx" }}
- {{- if .Values.ingress.tls }}
- tls:
- {{- toYaml .Values.ingress.tls | nindent 4 }}
- {{- end }}
- rules:
- - host: {{ .Values.ingress.host }}
- http:
- paths:
- # WebSocket — 直接路由到后端
- - path: /ws/
- pathType: Prefix
- backend:
- service:
- name: {{ include "friday.fullname" . }}-server
- port:
- number: 8000
- # API + 健康检查 — 直接路由到后端
- - path: /api/
- pathType: Prefix
- backend:
- service:
- name: {{ include "friday.fullname" . }}-server
- port:
- number: 8000
- - path: /health
- pathType: Prefix
- backend:
- service:
- name: {{ include "friday.fullname" . }}-server
- port:
- number: 8000
- # 其余所有 — 前端静态文件
- - path: /
- pathType: Prefix
- backend:
- service:
- name: {{ include "friday.fullname" . }}-web
- port:
- number: 8080
+  ingressClassName: {{ .Values.ingress.className | default "nginx" }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # WebSocket — 直接路由到后端
+          - path: /ws/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "friday.fullname" . }}-server
+                port:
+                  number: 8000
+          # API + 健康检查 — 直接路由到后端
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "friday.fullname" . }}-server
+                port:
+                  number: 8000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "friday.fullname" . }}-server
+                port:
+                  number: 8000
+          # 其余所有 — 前端静态文件
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "friday.fullname" . }}-web
+                port:
+                  number: 8080
 {{- end }}

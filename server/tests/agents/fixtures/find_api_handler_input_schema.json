@@ -1,28 +1,28 @@
 {
- "additionalProperties": false,
- "description": "``find_api_handler`` tool 输入契约。\n\n给定 HTTP method + URL 路径，在指定仓库的 Endpoint 表中查找匹配的后端 handler。\nURL 在查找前会经过 normalize_url_path 归一化（:param 风格）。",
- "properties": {
- "method": {
- "description": "HTTP 请求方法（GET / POST / PUT / DELETE / PATCH 等，大小写均可，内部统一转大写）。",
- "title": "Method",
- "type": "string"
- },
- "repository_id": {
- "description": "**REQUIRED.** 后端仓库的 UUID（存储 API Endpoint 的仓库，通常是 Go/Python 后端仓库）。",
- "title": "Repository Id",
- "type": "string"
- },
- "url": {
- "description": "目标 URL 路径（可包含任意 placeholder 风格：{id} /:id / <int:pk> / ${userId} 等）。查找时自动归一化为:param 风格对比后端路由。示例：'/api/v1/users/:id' 或 '/api/v1/users/123'",
- "title": "Url",
- "type": "string"
- }
- },
- "required": [
- "url",
- "method",
- "repository_id"
- ],
- "title": "FindApiHandlerInput",
- "type": "object"
+  "additionalProperties": false,
+  "description": "``find_api_handler`` tool 输入契约。\n\n给定 HTTP method + URL 路径，在指定仓库的 Endpoint 表中查找匹配的后端 handler。\nURL 在查找前会经过 normalize_url_path 归一化（:param 风格）。",
+  "properties": {
+    "method": {
+      "description": "HTTP 请求方法（GET / POST / PUT / DELETE / PATCH 等，大小写均可，内部统一转大写）。",
+      "title": "Method",
+      "type": "string"
+    },
+    "repository_id": {
+      "description": "**REQUIRED.** 后端仓库的 UUID（存储 API Endpoint 的仓库，通常是 Go/Python 后端仓库）。",
+      "title": "Repository Id",
+      "type": "string"
+    },
+    "url": {
+      "description": "目标 URL 路径（可包含任意 placeholder 风格：{id} / :id / <int:pk> / ${userId} 等）。查找时自动归一化为 :param 风格对比后端路由。示例：'/api/v1/users/:id' 或 '/api/v1/users/123'",
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "url",
+    "method",
+    "repository_id"
+  ],
+  "title": "FindApiHandlerInput",
+  "type": "object"
 }

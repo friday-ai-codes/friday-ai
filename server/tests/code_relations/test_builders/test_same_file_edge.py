@@ -1,97 +1,122 @@
-"""SameFileEdgeBuilder 测试（per Phase/14/15）。"""
+"""SameFileEdgeBuilder 测试（per initial implementation contract/14/15）。"""
+
 from __future__ import annotations
+
 import uuid
+
 import pytest
 from asgiref.sync import sync_to_async
+
 from code_relations.builders.same_file_edge import SameFileEdgeBuilder
 from code_relations.models import ChunkRegistry, EdgeType
+
+
 @sync_to_async
 def _create_chunks(repository, file_path: str, n: int) -> None:
- objs = [
- ChunkRegistry(
- chunk_id=uuid.uuid4,
- content_hash="x" * 64,
- repository=repository,
- file_path=file_path,
- chunk_index=i,
- )
- for i in range(n)
- ]
- ChunkRegistry.objects.bulk_create(objs)
+    objs = [
+        ChunkRegistry(
+            chunk_id=uuid.uuid4(),
+            content_hash="x" * 64,
+            repository=repository,
+            file_path=file_path,
+            chunk_index=i,
+        )
+        for i in range(n)
+    ]
+    ChunkRegistry.objects.bulk_create(objs)
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_5_chunks_full_pair(repository) -> None:
- """5 chunks → 10 edges，weight=0.3 / source<target 字典序。"""
- await _create_chunks(repository, "src/x.py", 5)
- edges = await SameFileEdgeBuilder.build(repository, )
- assert len(edges) == 10
- for e in edges:
- assert e.weight == 0.3
- assert e.edge_type == EdgeType.SAME_FILE
- assert str(e.source_chunk_id) < str(e.target_chunk_id)
- assert e.metadata["file_path"] == "src/x.py"
+    """5 chunks → 10 edges，weight=0.3 / source<target 字典序。"""
+    await _create_chunks(repository, "src/x.py", 5)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    assert len(edges) == 10
+    for e in edges:
+        assert e.weight == 0.3
+        assert e.edge_type == EdgeType.SAME_FILE
+        assert str(e.source_chunk_id) < str(e.target_chunk_id)
+        assert e.metadata["file_path"] == "src/x.py"
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_50_chunks_full_pair(repository) -> None:
- """n=50 仍走全配对：50*49/2 = 1225 边。"""
- await _create_chunks(repository, "src/big.py", 50)
- edges = await SameFileEdgeBuilder.build(repository, )
- assert len(edges) == 50 * 49 // 2
+    """n=50 仍走全配对：50*49/2 = 1225 边。"""
+    await _create_chunks(repository, "src/big.py", 50)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    assert len(edges) == 50 * 49 // 2
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_100_chunks_neighbor_window(repository) -> None:
- """n=100 (>50) 走相邻 5：sum(min(5, n-1-i) for i in range(100)) = 95×5 + 4+3+2+1 = 485。"""
- await _create_chunks(repository, "src/huge.py", 100)
- edges = await SameFileEdgeBuilder.build(repository, )
- expected = sum(min(5, 100 - 1 - i) for i in range(100))
- assert expected == 485
- assert len(edges) == 485
+    """n=100 (>50) 走相邻 5：sum(min(5, n-1-i) for i in range(100)) = 95×5 + 4+3+2+1 = 485。"""
+    await _create_chunks(repository, "src/huge.py", 100)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    expected = sum(min(5, 100 - 1 - i) for i in range(100))
+    assert expected == 485
+    assert len(edges) == 485
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_multi_file_mixed(repository) -> None:
- """fileA: 3 chunks (3 edges) + fileB: 60 chunks (60×5 - 15 = 285 edges) = 288。"""
- await _create_chunks(repository, "a.py", 3)
- await _create_chunks(repository, "b.py", 60)
- edges = await SameFileEdgeBuilder.build(repository, )
- expected_b = sum(min(5, 60 - 1 - i) for i in range(60))
- assert expected_b == 285
- assert len(edges) == 3 + 285
+    """fileA: 3 chunks (3 edges) + fileB: 60 chunks (60×5 - 15 = 285 edges) = 288。"""
+    await _create_chunks(repository, "a.py", 3)
+    await _create_chunks(repository, "b.py", 60)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    expected_b = sum(min(5, 60 - 1 - i) for i in range(60))
+    assert expected_b == 285
+    assert len(edges) == 3 + 285
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_empty_registry(repository) -> None:
- edges = await SameFileEdgeBuilder.build(repository, )
- assert edges ==
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    assert edges == []
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_single_chunk_no_edge(repository) -> None:
- await _create_chunks(repository, "x.py", 1)
- edges = await SameFileEdgeBuilder.build(repository, )
- assert edges ==
+    await _create_chunks(repository, "x.py", 1)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    assert edges == []
+
+
 @pytest.mark.django_db(transaction=True)
 async def test_chunk_index_diff_metadata(repository) -> None:
- """5 chunks 中应出现 diff=4 (idx 0↔4) 与 diff=1 (idx 1↔2)。"""
- await _create_chunks(repository, "src/x.py", 5)
- edges = await SameFileEdgeBuilder.build(repository, )
- diffs = {e.metadata["chunk_index_diff"] for e in edges}
- assert 4 in diffs
- assert 1 in diffs
+    """5 chunks 中应出现 diff=4 (idx 0↔4) 与 diff=1 (idx 1↔2)。"""
+    await _create_chunks(repository, "src/x.py", 5)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    diffs = {e.metadata["chunk_index_diff"] for e in edges}
+    assert 4 in diffs
+    assert 1 in diffs
+
+
 # =============================================================================
-# Phase /：跨语言守门 parametrize 测试
+# initial implementation / work item：跨语言守门 parametrize 测试
 # 静态审计：SameFileEdgeBuilder 实现完全基于 ChunkRegistry.file_path + chunk_index，
 # 无 file extension / language 假设 → 天然语言无关 git diff = 0。
 # =============================================================================
+
+
 @pytest.mark.parametrize(
- "file_path",
- [
- "handlers/user.go",
- "src/utils.ts",
- "components/Button.vue",
- "pages/index.html",
- ".vitepress/theme/style.css",
- ],
+    "file_path",
+    [
+        "handlers/user.go",
+        "src/utils.ts",
+        "components/Button.vue",
+        "pages/index.html",
+        ".vitepress/theme/style.css",
+    ],
 )
 @pytest.mark.django_db(transaction=True)
 async def test_same_file_edge_cross_language_guard(repository, file_path: str) -> None:
- """Phase / 守门：SameFileEdge 对所有 5 语言 file_path 均能建 ≥ 1 条 edge。
- 建 2 chunks 同文件 → 1 edge（n*(n-1)/2）。验证 builder 实现天然语言无关。
- """
- await _create_chunks(repository, file_path, 2)
- edges = await SameFileEdgeBuilder.build(repository, )
- file_edges = [e for e in edges if e.metadata.get("file_path") == file_path]
- assert len(file_edges) >= 1, (
- f"expected ≥ 1 SAME_FILE edge for {file_path}, got {file_edges}"
- )
+    """initial implementation / work item 守门：SameFileEdge 对所有 5 语言 file_path 均能建 ≥ 1 条 edge。
+
+    建 2 chunks 同文件 → 1 edge（n*(n-1)/2）。验证 builder 实现天然语言无关。
+    """
+    await _create_chunks(repository, file_path, 2)
+    edges = await SameFileEdgeBuilder().build(repository, [])
+    file_edges = [e for e in edges if e.metadata.get("file_path") == file_path]
+    assert len(file_edges) >= 1, (
+        f"expected ≥ 1 SAME_FILE edge for {file_path}, got {file_edges}"
+    )

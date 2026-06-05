@@ -1,61 +1,61 @@
 {
- "version": "1.0",
- "name": "PR 代码审查",
- "description": "GitHub/GitLab PR 事件触发 → 拉取 diff → AI 多维度审查 → 飞书通知结果。可配合 Webhook 实现 PR 提交自动审查。",
- "template_id": "code_review_pipeline",
- "nodes": [
- {
- "id": "trigger",
- "type": "webhook_trigger",
- "name": "PR Webhook 触发",
- "position": {"x": 400, "y": 0},
- "config": {
- "secret": "",
- "method": "POST"
- }
- },
- {
- "id": "fetch_pr",
- "type": "http_request",
- "name": "获取 PR Diff",
- "position": {"x": 400, "y": 200},
- "config": {
- "url": "",
- "method": "GET",
- "headers": {},
- "body_type": "none",
- "body": {}
- }
- },
- {
- "id": "review",
- "type": "ai_code_review",
- "name": "AI 代码审查",
- "position": {"x": 400, "y": 420},
- "config": {
- "model": "",
- "chat_id": "",
- "max_iterations": 30
- }
- },
- {
- "id": "notify",
- "type": "notify_feishu",
- "name": "通知审查结果",
- "position": {"x": 400, "y": 640},
- "config": {
- "webhook_url": "",
- "message_type": "text",
- "content": "PR 审查完成：{{nodes.review.output}}",
- "title": "",
- "at_all": false,
- "at_users":
- }
- }
- ],
- "edges": [
- {"source": "trigger", "target": "fetch_pr"},
- {"source": "fetch_pr", "target": "review"},
- {"source": "review", "target": "notify"}
- ]
+  "version": "1.0",
+  "name": "PR 代码审查",
+  "description": "GitHub/GitLab PR 事件触发 → 拉取 diff → AI 多维度审查 → 飞书通知结果。可配合 Webhook 实现 PR 提交自动审查。",
+  "template_id": "code_review_pipeline",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "webhook_trigger",
+      "name": "PR Webhook 触发",
+      "position": {"x": 400, "y": 0},
+      "config": {
+        "secret": "",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "fetch_pr",
+      "type": "http_request",
+      "name": "获取 PR Diff",
+      "position": {"x": 400, "y": 200},
+      "config": {
+        "url": "",
+        "method": "GET",
+        "headers": {},
+        "body_type": "none",
+        "body": {}
+      }
+    },
+    {
+      "id": "review",
+      "type": "ai_code_review",
+      "name": "AI 代码审查",
+      "position": {"x": 400, "y": 420},
+      "config": {
+        "model": "",
+        "chat_id": "",
+        "max_iterations": 30
+      }
+    },
+    {
+      "id": "notify",
+      "type": "notify_feishu",
+      "name": "通知审查结果",
+      "position": {"x": 400, "y": 640},
+      "config": {
+        "webhook_url": "",
+        "message_type": "text",
+        "content": "PR 审查完成：{{nodes.review.output}}",
+        "title": "",
+        "at_all": false,
+        "at_users": []
+      }
+    }
+  ],
+  "edges": [
+    {"source": "trigger", "target": "fetch_pr"},
+    {"source": "fetch_pr", "target": "review"},
+    {"source": "review", "target": "notify"}
+  ]
 }

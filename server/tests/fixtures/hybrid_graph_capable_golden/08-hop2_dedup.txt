@@ -1,11 +1,18 @@
 ## L3 Related Code
+
 ### src/dedup/source.py (score: 0.830)
 ```
-def dedup: pass
+def dedup(): pass
 ```
+
 ## Graph Context
+
 ### Direct Neighbors (1-hop)
+
 - `src/dedup/a.py:10` (CALL, w=0.85): via direct call
+
 ### Indirect Neighbors (2-hop)
+
 - `src/dedup/indep.py:42` (CALL, w=0.55): via direct call
+
 # tokens=108 source_layer=hybrid final_chunks=2

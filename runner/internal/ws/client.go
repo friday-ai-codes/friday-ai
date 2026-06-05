@@ -1,4 +1,5 @@
 package ws
+
 import (
 	"bytes"
 	"context"
@@ -12,32 +13,37 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
+
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ui"
 )
+
 const (
-	initialDelay = 1 * time.Second
-	maxDelay = 60 * time.Second
-	maxRetries = 20
-	heartbeatInterval = 30 * time.Second
-	closeCodeReplaced = 4002
-	zombieScanInterval = 30 * time.Second
+	initialDelay        = 1 * time.Second
+	maxDelay            = 60 * time.Second
+	maxRetries          = 20
+	heartbeatInterval   = 30 * time.Second
+	closeCodeReplaced   = 4002
+	zombieScanInterval  = 30 * time.Second
 	shutdownWaitTimeout = 300 * time.Second
 )
+
 // TaskPayload 是 ws 包内部的任务描述，避免导入 docker 包。
 type TaskPayload struct {
-	TaskID string
+	TaskID   string
 	TaskType string
-	Image string
-	RepoURL string
-	Branch string
-	Timeout int
-	Payload map[string]any
+	Image    string
+	RepoURL  string
+	Branch   string
+	Timeout  int
+	Payload  map[string]any
 }
+
 // CallbackService 解耦 ws 与 callback 包的循环依赖。
 type CallbackService interface {
 	Start(ctx context.Context) error
@@ -45,8 +51,10 @@ type CallbackService interface {
 	ResolveToolCall(callID string, result map[string]any)
 	CleanupPendingToolCalls(taskID string)
 }
+
 // CallbackFactory 在 Run 内部创建 CallbackServer。
 type CallbackFactory func(queue *MessageQueue, token string, port int) CallbackService
+
 // ExecutorService 抽象容器执行器。
 type ExecutorService interface {
 	StartContainer(ctx context.Context, task TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
@@ -55,8 +63,9 @@ type ExecutorService interface {
 	StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error
 	RemoveContainer(ctx context.Context, containerID string) error
 	StartupCleanup(ctx context.Context) (int, error)
-	ZombieScan(ctx context.Context, knownIDs string, queue *MessageQueue, zombieThreshold, retainHours float64) error
+	ZombieScan(ctx context.Context, knownIDs []string, queue *MessageQueue, zombieThreshold, retainHours float64) error
 }
+
 // SchedulerService 抽象任务调度器。
 type SchedulerService interface {
 	SetTaskCallback(fn func(context.Context, TaskPayload))
@@ -64,382 +73,420 @@ type SchedulerService interface {
 	Run(ctx context.Context)
 	RegisterContainer(taskID, containerID string)
 	UnregisterContainer(taskID string)
-	GetAllContainerIDs string
-	ActiveCount int
-	IsAccepting bool
-	StopAccepting
+	GetAllContainerIDs() []string
+	ActiveCount() int
+	IsAccepting() bool
+	StopAccepting()
 	WaitAllDone(timeout time.Duration)
-	TogglePause bool
+	TogglePause() bool
 }
+
 // Config 是 WebSocket 客户端配置。
 type Config struct {
-	ServerURL string
-	Token string
-	Name string
-	Version string
-	Concurrent int
-	Executor ExecutorService
-	Scheduler SchedulerService
+	ServerURL       string
+	Token           string
+	Name            string
+	Version         string
+	Concurrent      int
+	Executor        ExecutorService
+	Scheduler       SchedulerService
 	CallbackFactory CallbackFactory
-	CallbackPort int
-	DefaultTimeout int
+	CallbackPort    int
+	DefaultTimeout  int
 }
+
 // Run 启动 WebSocket 客户端主循环。
 func Run(ctx context.Context, cfg Config) error {
-	if pid, alive:= CheckPID; alive {
- return fmt.Errorf("Runner 已在运行 (PID %d)", pid)
+	if pid, alive := CheckPID(); alive {
+		return fmt.Errorf("Runner 已在运行 (PID %d)", pid)
 	}
-	RemovePID
-	if err:= WritePID; err != nil {
- return fmt.Errorf("写入 PID 文件失败: %w", err)
+	RemovePID()
+	if err := WritePID(); err != nil {
+		return fmt.Errorf("写入 PID 文件失败: %w", err)
 	}
-	Warmup
-	ctx, cancel:= signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
-	defer cancel
+
+	Warmup()
+
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
 	// SIGUSR1 触发 pause/resume，不终止进程
-	sigCh:= make(chan os.Signal, 1)
+	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGUSR1)
 	defer signal.Stop(sigCh)
-	go func {
- for {
- select {
- case <-ctx.Done:
- return
- case <-sigCh:
- paused:= cfg.Scheduler.TogglePause
- if paused {
- log.Info.Msg("sigusr1_paused")
- } else {
- log.Info.Msg("sigusr1_resumed")
- }
- }
- }
-	}
-	queue:= NewMessageQueue(100)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigCh:
+				paused := cfg.Scheduler.TogglePause()
+				if paused {
+					log.Info().Msg("sigusr1_paused")
+				} else {
+					log.Info().Msg("sigusr1_resumed")
+				}
+			}
+		}
+	}()
+
+	queue := NewMessageQueue(100)
+
 	// 生成 callbackToken
-	tokenBytes:= make(byte, 32)
-	if _, err:= rand.Read(tokenBytes); err != nil {
- return fmt.Errorf("生成 callback token 失败: %w", err)
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("生成 callback token 失败: %w", err)
 	}
-	callbackToken:= base64.URLEncoding.EncodeToString(tokenBytes)
-	callbackURL:= fmt.Sprintf("http://host.docker.internal:%d/callback", cfg.CallbackPort)
+	callbackToken := base64.URLEncoding.EncodeToString(tokenBytes)
+	callbackURL := fmt.Sprintf("http://host.docker.internal:%d/callback", cfg.CallbackPort)
+
 	// 创建并启动 CallbackServer
-	cb:= cfg.CallbackFactory(queue, callbackToken, cfg.CallbackPort)
+	cb := cfg.CallbackFactory(queue, callbackToken, cfg.CallbackPort)
 	go cb.Start(ctx)
+
 	// 清理残留容器
-	if cleaned, err:= cfg.Executor.StartupCleanup(ctx); err != nil {
- log.Warn.Err(err).Msg("startup_cleanup_failed")
+	if cleaned, err := cfg.Executor.StartupCleanup(ctx); err != nil {
+		log.Warn().Err(err).Msg("startup_cleanup_failed")
 	} else if cleaned > 0 {
- log.Info.Int("count", cleaned).Msg("startup_cleanup")
+		log.Info().Int("count", cleaned).Msg("startup_cleanup")
 	}
+
 	// 设置 scheduler onTask 回调
 	cfg.Scheduler.SetTaskCallback(func(taskCtx context.Context, task TaskPayload) {
- runTask(taskCtx, task, cfg, cb, queue, callbackURL, callbackToken)
+		runTask(taskCtx, task, cfg, cb, queue, callbackURL, callbackToken)
 	})
 	go cfg.Scheduler.Run(ctx)
+
 	// 僵尸扫描
 	go zombieScanLoop(ctx, cfg, queue)
-	defer func {
- cfg.Scheduler.StopAccepting
- cfg.Scheduler.WaitAllDone(shutdownWaitTimeout)
- cb.Shutdown(context.Background)
- RemovePID
-	}
-	delay:= initialDelay
-	for attempt:= 0; attempt < maxRetries; attempt++ {
- err:= connectAndServe(ctx, cfg, cb, queue)
- if ctx.Err != nil {
- ui.Info("正常关闭")
- return nil
- }
- if websocket.CloseStatus(err) == closeCodeReplaced {
- ui.Info("被新连接替代，停止重连")
- return nil
- }
- attempt++
- ui.Warn(fmt.Sprintf("重连中... 第 %d/%d 次", attempt, maxRetries))
- log.Warn.Err(err).Int("attempt", attempt).Msg("reconnecting")
- jitter:= time.Duration(mathrand.Int64N(int64(delay) / 10))
- select {
- case <-time.After(delay + jitter):
- case <-ctx.Done:
- return nil
- }
- delay = min(delay*2, maxDelay)
+
+	defer func() {
+		cfg.Scheduler.StopAccepting()
+		cfg.Scheduler.WaitAllDone(shutdownWaitTimeout)
+		cb.Shutdown(context.Background())
+		RemovePID()
+	}()
+
+	delay := initialDelay
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := connectAndServe(ctx, cfg, cb, queue)
+		if ctx.Err() != nil {
+			ui.Info("正常关闭")
+			return nil
+		}
+		if websocket.CloseStatus(err) == closeCodeReplaced {
+			ui.Info("被新连接替代，停止重连")
+			return nil
+		}
+		attempt++
+		ui.Warn(fmt.Sprintf("重连中... 第 %d/%d 次", attempt, maxRetries))
+		log.Warn().Err(err).Int("attempt", attempt).Msg("reconnecting")
+
+		jitter := time.Duration(mathrand.Int64N(int64(delay) / 10))
+		select {
+		case <-time.After(delay + jitter):
+		case <-ctx.Done():
+			return nil
+		}
+		delay = min(delay*2, maxDelay)
 	}
 	return fmt.Errorf("重连 %d 次全部失败", maxRetries)
 }
+
 func connectAndServe(ctx context.Context, cfg Config, cb CallbackService, queue *MessageQueue) error {
-	wsURL:= httpToWS(cfg.ServerURL) + "/ws/v1/runner/?token=" + cfg.Token
-	c, _, err:= websocket.Dial(ctx, wsURL, nil)
+	wsURL := httpToWS(cfg.ServerURL) + "/ws/v1/runner/?token=" + cfg.Token
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
- return err
+		return err
 	}
-	defer c.CloseNow
-	hello:= NewRequest(TypeRunnerHello, map[string]any{
- "name": cfg.Name, "version": cfg.Version, "concurrent": cfg.Concurrent,
+	defer c.CloseNow()
+
+	hello := NewRequest(TypeRunnerHello, map[string]any{
+		"name": cfg.Name, "version": cfg.Version, "concurrent": cfg.Concurrent,
 	})
-	if err:= wsjson.Write(ctx, c, hello); err != nil {
- return err
+	if err := wsjson.Write(ctx, c, hello); err != nil {
+		return err
 	}
 	ui.Success("已连接到 Server")
-	for _, msg:= range queue.Drain {
- if err:= wsjson.Write(ctx, c, msg); err != nil {
- return err
- }
+
+	for _, msg := range queue.Drain() {
+		if err := wsjson.Write(ctx, c, msg); err != nil {
+			return err
+		}
 	}
-	eg, ctx:= errgroup.WithContext(ctx)
-	eg.Go(func error { return readLoop(ctx, c, cfg, cb, queue) })
-	eg.Go(func error { return heartbeatLoop(ctx, c, cfg) })
-	eg.Go(func error { return writeLoop(ctx, c, queue) })
-	return eg.Wait
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error { return readLoop(ctx, c, cfg, cb, queue) })
+	eg.Go(func() error { return heartbeatLoop(ctx, c, cfg) })
+	eg.Go(func() error { return writeLoop(ctx, c, queue) })
+	return eg.Wait()
 }
+
 func readLoop(ctx context.Context, c *websocket.Conn, cfg Config, cb CallbackService, queue *MessageQueue) error {
 	for {
- var raw json.RawMessage
- if err:= wsjson.Read(ctx, c, &raw); err != nil {
- return err
- }
- var msg Message
- if err:= json.Unmarshal(raw, &msg); err != nil {
- log.Warn.Err(err).Msg("bad_message")
- continue
- }
- switch msg.Type {
- case TypeTaskAssign:
- handleTaskAssign(ctx, c, raw, cfg.Scheduler, queue)
- case TypeToolResult:
- handleToolResult(raw, cb)
- case TypeQuestionAnswer:
- go handleQuestionAnswer(raw)
- default:
- log.Debug.Str("type", msg.Type).Msg("received")
- }
+		var raw json.RawMessage
+		if err := wsjson.Read(ctx, c, &raw); err != nil {
+			return err
+		}
+		var msg Message
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			log.Warn().Err(err).Msg("bad_message")
+			continue
+		}
+		switch msg.Type {
+		case TypeTaskAssign:
+			handleTaskAssign(ctx, c, raw, cfg.Scheduler, queue)
+		case TypeToolResult:
+			handleToolResult(raw, cb)
+		case TypeQuestionAnswer:
+			go handleQuestionAnswer(raw)
+		default:
+			log.Debug().Str("type", msg.Type).Msg("received")
+		}
 	}
 }
+
 func writeLoop(ctx context.Context, c *websocket.Conn, queue *MessageQueue) error {
-	ticker:= time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	for {
- select {
- case <-ctx.Done:
- return ctx.Err
- case <-ticker.C:
- for _, msg:= range queue.Drain {
- if err:= wsjson.Write(ctx, c, msg); err != nil {
- // 写失败，放回队列
- queue.Push(msg)
- return err
- }
- }
- }
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			for _, msg := range queue.Drain() {
+				if err := wsjson.Write(ctx, c, msg); err != nil {
+					// 写失败，放回队列
+					queue.Push(msg)
+					return err
+				}
+			}
+		}
 	}
 }
+
 func heartbeatLoop(ctx context.Context, c *websocket.Conn, cfg Config) error {
-	ticker:= time.NewTicker(heartbeatInterval)
-	defer ticker.Stop
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
 	for {
- select {
- case <-ctx.Done:
- byeCtx, cancel:= context.WithTimeout(context.Background, 3*time.Second)
- defer cancel
- wsjson.Write(byeCtx, c, NewMessage(TypeRunnerBye, nil))
- c.Close(websocket.StatusNormalClosure, "bye")
- return ctx.Err
- case <-ticker.C:
- payload:= CollectMetrics(cfg.Scheduler.ActiveCount, cfg.Concurrent, cfg.Scheduler.IsAccepting)
- if err:= wsjson.Write(ctx, c, NewMessage(TypeRunnerHeartbeat, payload)); err != nil {
- return err
- }
- }
+		select {
+		case <-ctx.Done():
+			byeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			wsjson.Write(byeCtx, c, NewMessage(TypeRunnerBye, nil))
+			c.Close(websocket.StatusNormalClosure, "bye")
+			return ctx.Err()
+		case <-ticker.C:
+			payload := CollectMetrics(cfg.Scheduler.ActiveCount(), cfg.Concurrent, cfg.Scheduler.IsAccepting())
+			if err := wsjson.Write(ctx, c, NewMessage(TypeRunnerHeartbeat, payload)); err != nil {
+				return err
+			}
+		}
 	}
 }
+
 func handleTaskAssign(_ context.Context, c *websocket.Conn, raw json.RawMessage, sched SchedulerService, queue *MessageQueue) {
 	var envelope struct {
- ID string `json:"id"`
- Payload map[string]any `json:"payload"`
+		ID      string         `json:"id"`
+		Payload map[string]any `json:"payload"`
 	}
-	if err:= json.Unmarshal(raw, &envelope); err != nil {
- return
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return
 	}
-	taskID, _:= envelope.Payload["task_id"].(string)
-	if !sched.IsAccepting {
- resp:= NewResponse(envelope.ID, TypeTaskRejected, map[string]any{"task_id": taskID, "reason": "not_accepting"})
- if err:= wsjson.Write(context.Background, c, resp); err != nil {
- queue.Push(resp)
- }
- return
+	taskID, _ := envelope.Payload["task_id"].(string)
+
+	if !sched.IsAccepting() {
+		resp := NewResponse(envelope.ID, TypeTaskRejected, map[string]any{"task_id": taskID, "reason": "not_accepting"})
+		if err := wsjson.Write(context.Background(), c, resp); err != nil {
+			queue.Push(resp)
+		}
+		return
 	}
-	resp:= NewResponse(envelope.ID, TypeTaskAccepted, map[string]any{"task_id": taskID})
-	if err:= wsjson.Write(context.Background, c, resp); err != nil {
- queue.Push(resp)
+
+	resp := NewResponse(envelope.ID, TypeTaskAccepted, map[string]any{"task_id": taskID})
+	if err := wsjson.Write(context.Background(), c, resp); err != nil {
+		queue.Push(resp)
 	}
-	task:= TaskPayload{
- TaskID: taskID,
- TaskType: strVal(envelope.Payload, "task_type", "coding"),
- Image: strVal(envelope.Payload, "image", ""),
- RepoURL: strVal(envelope.Payload, "repo_url", ""),
- Branch: strVal(envelope.Payload, "branch", ""),
- Timeout: intVal(envelope.Payload, "timeout", 0),
- Payload: envelope.Payload,
+
+	task := TaskPayload{
+		TaskID:   taskID,
+		TaskType: strVal(envelope.Payload, "task_type", "coding"),
+		Image:    strVal(envelope.Payload, "image", ""),
+		RepoURL:  strVal(envelope.Payload, "repo_url", ""),
+		Branch:   strVal(envelope.Payload, "branch", ""),
+		Timeout:  intVal(envelope.Payload, "timeout", 0),
+		Payload:  envelope.Payload,
 	}
 	sched.Submit(task)
-	log.Info.Str("task_id", taskID).Msg("task_accepted")
+	log.Info().Str("task_id", taskID).Msg("task_accepted")
 }
+
 func handleToolResult(raw json.RawMessage, cb CallbackService) {
 	var envelope struct {
- Payload map[string]any `json:"payload"`
+		Payload map[string]any `json:"payload"`
 	}
-	if err:= json.Unmarshal(raw, &envelope); err != nil {
- return
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return
 	}
-	callID, _:= envelope.Payload["call_id"].(string)
+	callID, _ := envelope.Payload["call_id"].(string)
 	if callID == "" {
- return
+		return
 	}
-	result, _:= envelope.Payload["result"].(map[string]any)
+	result, _ := envelope.Payload["result"].(map[string]any)
 	cb.ResolveToolCall(callID, result)
 }
+
 func handleQuestionAnswer(raw json.RawMessage) {
 	var envelope struct {
- Payload map[string]any `json:"payload"`
+		Payload map[string]any `json:"payload"`
 	}
-	if err:= json.Unmarshal(raw, &envelope); err != nil {
- return
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return
 	}
-	endpoint, _:= envelope.Payload["answer_endpoint"].(string)
+	endpoint, _ := envelope.Payload["answer_endpoint"].(string)
 	if endpoint == "" {
- return
+		return
 	}
-	body, _:= json.Marshal(map[string]any{
- "question_id": envelope.Payload["question_id"],
- "answer": envelope.Payload["answer"],
+	body, _ := json.Marshal(map[string]any{
+		"question_id": envelope.Payload["question_id"],
+		"answer":      envelope.Payload["answer"],
 	})
-	client:= retryablehttp.NewClient
+	client := retryablehttp.NewClient()
 	client.RetryMax = 2
 	client.Logger = nil
-	resp, err:= client.Post(endpoint, "application/json", bytes.NewReader(body))
+	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(body))
 	if err != nil {
- log.Warn.Err(err).Str("endpoint", endpoint).Msg("question_answer_forward_failed")
- return
+		log.Warn().Err(err).Str("endpoint", endpoint).Msg("question_answer_forward_failed")
+		return
 	}
-	resp.Body.Close
+	resp.Body.Close()
 }
+
 func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackService, queue *MessageQueue, callbackURL, callbackToken string) {
-	start:= time.Now
-	defer func {
- cfg.Scheduler.UnregisterContainer(task.TaskID)
- cb.CleanupPendingToolCalls(task.TaskID)
-	}
-	containerID, answerEndpoint, err:= cfg.Executor.StartContainer(
- ctx, task, callbackURL, callbackToken,
+	start := time.Now()
+	defer func() {
+		cfg.Scheduler.UnregisterContainer(task.TaskID)
+		cb.CleanupPendingToolCalls(task.TaskID)
+	}()
+
+	containerID, answerEndpoint, err := cfg.Executor.StartContainer(
+		ctx, task, callbackURL, callbackToken,
 	)
 	if err != nil {
- queue.Push(NewMessage(TypeTaskFailed, map[string]any{
- "task_id": task.TaskID, "exit_code": -1, "error": err.Error,
- "duration_ms": int(time.Since(start).Milliseconds), "logs": "",
- }))
- return
+		queue.Push(NewMessage(TypeTaskFailed, map[string]any{
+			"task_id": task.TaskID, "exit_code": -1, "error": err.Error(),
+			"duration_ms": int(time.Since(start).Milliseconds()), "logs": "",
+		}))
+		return
 	}
 	cfg.Scheduler.RegisterContainer(task.TaskID, containerID)
 	// 失败时保留容器用于调试，成功时清理
-	taskFailed:= true
-	defer func {
- if taskFailed {
- log.Info.Str("task_id", task.TaskID).Str("container_id", containerID).Msg("container_retained_for_debug")
- } else {
- cfg.Executor.RemoveContainer(context.Background, containerID)
- }
-	}
+	taskFailed := true
+	defer func() {
+		if taskFailed {
+			log.Info().Str("task_id", task.TaskID).Str("container_id", containerID).Msg("container_retained_for_debug")
+		} else {
+			cfg.Executor.RemoveContainer(context.Background(), containerID)
+		}
+	}()
+
 	if answerEndpoint != "" {
- queue.Push(NewMessage(TypeTaskAccepted, map[string]any{
- "task_id": task.TaskID, "answer_endpoint": answerEndpoint,
- }))
+		queue.Push(NewMessage(TypeTaskAccepted, map[string]any{
+			"task_id": task.TaskID, "answer_endpoint": answerEndpoint,
+		}))
 	}
+
 	// 启动流式日志转发
-	streamCtx, cancelStream:= context.WithCancel(ctx)
-	streamDone:= make(chan struct{})
-	go func {
- defer close(streamDone)
- cfg.Executor.StreamLogs(streamCtx, containerID, func(line string) {
- queue.Push(NewMessage(TypeTaskLog, map[string]any{
- "task_id": task.TaskID, "message": line,
- }))
- })
-	}
-	timeout:= time.Duration(task.Timeout) * time.Second
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	streamDone := make(chan struct{})
+	go func() {
+		defer close(streamDone)
+		cfg.Executor.StreamLogs(streamCtx, containerID, func(line string) {
+			queue.Push(NewMessage(TypeTaskLog, map[string]any{
+				"task_id": task.TaskID, "message": line,
+			}))
+		})
+	}()
+
+	timeout := time.Duration(task.Timeout) * time.Second
 	if timeout == 0 {
- timeout = time.Duration(cfg.DefaultTimeout) * time.Second
+		timeout = time.Duration(cfg.DefaultTimeout) * time.Second
 	}
-	exitCode, _, err:= cfg.Executor.WaitContainer(ctx, containerID, timeout)
-	cancelStream
+	exitCode, _, err := cfg.Executor.WaitContainer(ctx, containerID, timeout)
+	cancelStream()
 	<-streamDone
-	durationMs:= int(time.Since(start).Milliseconds)
+	durationMs := int(time.Since(start).Milliseconds())
+
 	if err != nil {
- queue.Push(NewMessage(TypeTaskFailed, map[string]any{
- "task_id": task.TaskID, "exit_code": -1, "error": err.Error,
- "duration_ms": durationMs, "logs": "",
- }))
- return
+		queue.Push(NewMessage(TypeTaskFailed, map[string]any{
+			"task_id": task.TaskID, "exit_code": -1, "error": err.Error(),
+			"duration_ms": durationMs, "logs": "",
+		}))
+		return
 	}
+
 	if exitCode == 0 {
- taskFailed = false
- var sessionData map[string]any
- var textOutput string
- if rawSession, readErr:= cfg.Executor.ReadContainerFile(ctx, containerID, fmt.Sprintf("/app/sessions/%s.json", task.TaskID)); readErr != nil {
- log.Warn.Str("task_id", task.TaskID).Err(readErr).Msg("read_session_file_failed")
- } else if err:= json.Unmarshal(byte(rawSession), &sessionData); err != nil {
- log.Warn.Str("task_id", task.TaskID).Err(err).Msg("parse_session_file_failed")
- } else if out, ok:= sessionData["last_output"].(string); ok {
- textOutput = out
- }
- queue.Push(NewMessage(TypeTaskCompleted, map[string]any{
- "task_id": task.TaskID, "exit_code": 0, "duration_ms": durationMs, "logs": "",
- "text_output": textOutput, "output": sessionData,
- }))
+		taskFailed = false
+		var sessionData map[string]any
+		var textOutput string
+		if rawSession, readErr := cfg.Executor.ReadContainerFile(ctx, containerID, fmt.Sprintf("/app/sessions/%s.json", task.TaskID)); readErr != nil {
+			log.Warn().Str("task_id", task.TaskID).Err(readErr).Msg("read_session_file_failed")
+		} else if err := json.Unmarshal([]byte(rawSession), &sessionData); err != nil {
+			log.Warn().Str("task_id", task.TaskID).Err(err).Msg("parse_session_file_failed")
+		} else if out, ok := sessionData["last_output"].(string); ok {
+			textOutput = out
+		}
+		queue.Push(NewMessage(TypeTaskCompleted, map[string]any{
+			"task_id": task.TaskID, "exit_code": 0, "duration_ms": durationMs, "logs": "",
+			"text_output": textOutput, "output": sessionData,
+		}))
 	} else {
- errMsg:= "timeout"
- if exitCode != -1 {
- errMsg = fmt.Sprintf("exited with code %d", exitCode)
- }
- queue.Push(NewMessage(TypeTaskFailed, map[string]any{
- "task_id": task.TaskID, "exit_code": exitCode, "error": errMsg,
- "duration_ms": durationMs, "logs": "",
- }))
+		errMsg := "timeout"
+		if exitCode != -1 {
+			errMsg = fmt.Sprintf("exited with code %d", exitCode)
+		}
+		queue.Push(NewMessage(TypeTaskFailed, map[string]any{
+			"task_id": task.TaskID, "exit_code": exitCode, "error": errMsg,
+			"duration_ms": durationMs, "logs": "",
+		}))
 	}
 }
+
 func zombieScanLoop(ctx context.Context, cfg Config, queue *MessageQueue) {
-	ticker:= time.NewTicker(zombieScanInterval)
-	defer ticker.Stop
+	ticker := time.NewTicker(zombieScanInterval)
+	defer ticker.Stop()
 	for {
- select {
- case <-ctx.Done:
- return
- case <-ticker.C:
- ids:= cfg.Scheduler.GetAllContainerIDs
- if err:= cfg.Executor.ZombieScan(ctx, ids, queue, 3600, 1); err != nil {
- log.Warn.Err(err).Msg("zombie_scan_failed")
- }
- }
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			ids := cfg.Scheduler.GetAllContainerIDs()
+			if err := cfg.Executor.ZombieScan(ctx, ids, queue, 3600, 1); err != nil {
+				log.Warn().Err(err).Msg("zombie_scan_failed")
+			}
+		}
 	}
 }
+
 func httpToWS(u string) string {
 	u = strings.Replace(u, "https://", "wss://", 1)
 	u = strings.Replace(u, "http://", "ws://", 1)
 	return strings.TrimRight(u, "/")
 }
+
 func strVal(m map[string]any, key, fallback string) string {
-	if v, ok:= m[key].(string); ok && v != "" {
- return v
+	if v, ok := m[key].(string); ok && v != "" {
+		return v
 	}
 	return fallback
 }
+
 func intVal(m map[string]any, key string, fallback int) int {
-	switch v:= m[key].(type) {
+	switch v := m[key].(type) {
 	case float64:
- return int(v)
+		return int(v)
 	case int:
- return v
+		return v
 	}
 	return fallback
 }

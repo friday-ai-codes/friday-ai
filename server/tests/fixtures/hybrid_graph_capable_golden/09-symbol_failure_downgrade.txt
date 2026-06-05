@@ -1,9 +1,14 @@
 ## L3 Related Code
+
 ### src/fail/source.py (score: 0.790)
 ```
-def fail_source: pass
+def fail_source(): pass
 ```
+
 ## Graph Context
+
 ### Direct Neighbors (1-hop)
+
 - `src/fail/handler.py:10` (CALL, w=0.80): via direct call
+
 # tokens=73 source_layer=hybrid final_chunks=1

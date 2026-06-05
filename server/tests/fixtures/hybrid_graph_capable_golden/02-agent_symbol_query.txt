@@ -1,14 +1,21 @@
 ## L3 Related Code
+
 ### src/users/service.py (score: 0.920)
 ```
 class UserService:
- def list(self): ...
+    def list(self): ...
 ```
+
 ## Graph Context
+
 ### Direct Neighbors (1-hop)
+
 - `src/users/api.py:10` (CALL, w=0.88): via direct call
 - `src/users/admin.py:10` (TEST_OF, w=0.65): test relationship
+
 ### Indirect Neighbors (2-hop)
+
 - `src/users/helpers.py:42` (IMPORT, w=0.55): imports module
 - `src/users/db.py:42` (SAME_FILE, w=0.42): same file group
+
 # tokens=162 source_layer=hybrid final_chunks=4

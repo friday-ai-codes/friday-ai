@@ -1,16 +1,16 @@
 {
- "compilerOptions": {
- "target": "es2017",
- "module": "esnext",
- "baseUrl": ".",
- "paths": {
- "@/*": ["src/*"]
- },
- "strict": true,
- "jsx": "preserve"
- },
- "include": ["src/**/*.ts", "src/**/*.vue"],
- "vueCompilerOptions": {
- "target": 2.7
- }
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "esnext",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "strict": true,
+    "jsx": "preserve"
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue"],
+  "vueCompilerOptions": {
+    "target": 2.7
+  }
 }

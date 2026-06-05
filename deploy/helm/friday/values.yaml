@@ -5,113 +5,113 @@ fullnameOverride: ""
 existingSecret: ""
 # -- Server 配置
 server:
- replicaCount: 1
- image:
- repository: ghcr.io/friday-ai-codes/friday-ai/server
- tag: v18.0.1
- pullPolicy: IfNotPresent
- secretKey: "" # Django SECRET_KEY（existingSecret 优先）
- encryptionKey: "" # FRIDAY_ENCRYPTION_KEY
- debug: "false"
- allowedHosts: "*"
- gunicornWorkers: 1
- gunicornTimeout: 300
- adminUsername: "admin"
- adminPassword: ""
- resources: {}
- livenessProbe:
- httpGet:
- path: /health
- port: 8000
- initialDelaySeconds: 30
- periodSeconds: 30
- timeoutSeconds: 10
- readinessProbe:
- httpGet:
- path: /health
- port: 8000
- initialDelaySeconds: 10
- periodSeconds: 10
- timeoutSeconds: 5
+  replicaCount: 1
+  image:
+    repository: ghcr.io/friday-ai-codes/friday-ai/server
+    tag: v0.0.1
+    pullPolicy: IfNotPresent
+  secretKey: "" # Django SECRET_KEY（existingSecret 优先）
+  encryptionKey: "" # FRIDAY_ENCRYPTION_KEY
+  debug: "false"
+  allowedHosts: "*"
+  gunicornWorkers: 1
+  gunicornTimeout: 300
+  adminUsername: "admin"
+  adminPassword: ""
+  resources: {}
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
 # -- Web (nginx) 配置
 web:
- replicaCount: 1
- image:
- repository: ghcr.io/friday-ai-codes/friday-ai/web
- tag: v18.0.4
- pullPolicy: IfNotPresent
- resources:
- requests:
- cpu: 50m
- memory: 64Mi
- limits:
- cpu: 500m
- memory: 128Mi
+  replicaCount: 1
+  image:
+    repository: ghcr.io/friday-ai-codes/friday-ai/web
+    tag: v0.0.1
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
 # -- Runner 配置
 runner:
- enabled: true
- replicaCount: 1
- image:
- repository: ghcr.io/friday-ai-codes/friday-ai/runner
- tag: v18.0.3
- pullPolicy: IfNotPresent
- registrationToken: "" # RUNNER_REGISTRATION_TOKEN
- name: "k8s-runner"
- executor: "docker"
- dockerSocketPath: /var/run/docker.sock
- dockerGID: 999
- resources:
- requests:
- cpu: 50m
- memory: 64Mi
- limits:
- cpu: 500m
- memory: 128Mi
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/friday-ai-codes/friday-ai/runner
+    tag: v0.0.1
+    pullPolicy: IfNotPresent
+  registrationToken: "" # RUNNER_REGISTRATION_TOKEN
+  name: "k8s-runner"
+  executor: "docker"
+  dockerSocketPath: /var/run/docker.sock
+  dockerGID: 999
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
 # -- PostgreSQL 内置部署
 postgresql:
- enabled: true
- auth:
- username: friday
- password: friday
- database: friday
- persistence:
- size: 10Gi
- storageClass: ""
- resources:
- requests:
- cpu: 100m
- memory: 256Mi
- limits:
- cpu: "1"
- memory: 512Mi
+  enabled: true
+  auth:
+    username: friday
+    password: friday
+    database: friday
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
 # -- 外部数据库（postgresql.enabled=false 时使用）
 externalDatabase:
- url: "" # postgres://user:${POSTGRES_PASSWORD}@host:5432/dbname
+  url: "" # postgres://user:${POSTGRES_PASSWORD}@host:5432/dbname
 # -- Qdrant 向量数据库
 qdrant:
- enabled: true
- image:
- repository: qdrant/qdrant
- tag: latest
- apiKey: ""
- persistence:
- size: 10Gi
- storageClass: ""
- resources:
- requests:
- cpu: 100m
- memory: 256Mi
- limits:
- cpu: "1"
- memory: 512Mi
+  enabled: true
+  image:
+    repository: qdrant/qdrant
+    tag: latest
+  apiKey: ""
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
 # -- Ingress 配置
 ingress:
- enabled: false
- className: traefik
- host: friday.local
- annotations: {}
- tls:
+  enabled: false
+  className: traefik
+  host: friday.local
+  annotations: {}
+  tls: []
 # -- 数据库迁移 Job
 migration:
- enabled: true
- activeDeadlineSeconds: 300
+  enabled: true
+  activeDeadlineSeconds: 300

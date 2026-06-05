@@ -40,7 +40,7 @@ argocd app sync friday --dry-run
 ```
 ## 镜像自动更新（Image Updater）
 镜像版本由 [ArgoCD Image Updater](https://argocd-image-updater.readthedocs.io/) 全自动管理：
-1. 打 tag 并推送：`git tag v1.2.0 && git push origin v1.2.0`
+1. 打 tag 并推送：`git tag v0.0.1 && git push origin v0.0.1`
 2. CI 构建镜像推送到 GHCR
 3. Image Updater 每 2 分钟轮询 GHCR，发现新 semver tag 后自动更新 ArgoCD Application 的 Helm 参数
 4. ArgoCD 自动 sync，Pod 滚动更新

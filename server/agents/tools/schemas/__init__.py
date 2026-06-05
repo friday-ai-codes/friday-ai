@@ -1,34 +1,40 @@
-"""Agent tool 输入/输出 Pydantic v2 schema 包 —— per Phase / 。
+"""Agent tool 输入/输出 Pydantic v2 schema 包 —— per initial implementation contract / contract。
+
 本包集中所有 agent tool 的字段冻结契约：
+
 - ``FindRelatedCodeInput`` / ``FindRelatedCodeOutput`` / ``NeighborOutput``
- （per Phase Plan / ROADMAP -#3）
+  （per initial implementation plan 01 / ROADMAP success criterion-#3）
 - ``SearchRepositoryCodeInput`` / ``SearchRepositoryCodeOutput``
- （per Phase / ）
+  （per initial implementation contract / contract）
+
 字段冻结由 ``tests/agents/test_tool_contracts.py`` 的 snapshot 测试守护
-（per ）：任何字段名 / 类型 / 默认值漂移都会立即触发 fixture diff。
+（per contract）：任何字段名 / 类型 / 默认值漂移都会立即触发 fixture diff。
 """
+
 from __future__ import annotations
+
 from agents.tools.schemas.find_related_code import (
- FindRelatedCodeInput,
- FindRelatedCodeOutput,
- NeighborOutput,
+    FindRelatedCodeInput,
+    FindRelatedCodeOutput,
+    NeighborOutput,
 )
 from agents.tools.schemas.repository_relevance import (
- RepositoryRelevanceCandidate,
- RepositoryRelevanceInput,
- RepositoryRelevanceOutput,
+    RepositoryRelevanceCandidate,
+    RepositoryRelevanceInput,
+    RepositoryRelevanceOutput,
 )
 from agents.tools.schemas.search_repository_code import (
- SearchRepositoryCodeInput,
- SearchRepositoryCodeOutput,
+    SearchRepositoryCodeInput,
+    SearchRepositoryCodeOutput,
 )
+
 __all__ = [
- "FindRelatedCodeInput",
- "FindRelatedCodeOutput",
- "NeighborOutput",
- "RepositoryRelevanceCandidate",
- "RepositoryRelevanceInput",
- "RepositoryRelevanceOutput",
- "SearchRepositoryCodeInput",
- "SearchRepositoryCodeOutput",
+    "FindRelatedCodeInput",
+    "FindRelatedCodeOutput",
+    "NeighborOutput",
+    "RepositoryRelevanceCandidate",
+    "RepositoryRelevanceInput",
+    "RepositoryRelevanceOutput",
+    "SearchRepositoryCodeInput",
+    "SearchRepositoryCodeOutput",
 ]

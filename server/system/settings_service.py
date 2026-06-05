@@ -1,68 +1,93 @@
 """System settings runtime accessor.
+
 Provides type-safe, cached read access to SystemSetting values.
 All migrated env configs should be read through this module instead of
 Django settings to allow admin runtime modification.
 """
+
 from __future__ import annotations
+
 from typing import TypeVar
+
 from django.core.cache import cache
+
 from .models import SettingKeys, SystemSetting
+
 T = TypeVar("T", str, bool, int)
+
 CACHE_PREFIX = "sys_setting:"
-CACHE_TIMEOUT = 60 # 1 minute cache for settings
+CACHE_TIMEOUT = 60  # 1 minute cache for settings
+
+
 def _cache_key(key: str) -> str:
- return f"{CACHE_PREFIX}{key}"
+    return f"{CACHE_PREFIX}{key}"
+
+
 def _get_raw(key: str) -> str | None:
- """Fetch raw value from DB with short-lived cache."""
- cache_key = _cache_key(key)
- cached = cache.get(cache_key)
- if cached is not None:
- return cached if cached != "__none__" else None
- try:
- setting = SystemSetting.objects.filter(key=key).first
- except Exception:
- return None
- value = setting.value if setting else None
- cache.set(cache_key, value if value is not None else "__none__", CACHE_TIMEOUT)
- return value
+    """Fetch raw value from DB with short-lived cache."""
+    cache_key = _cache_key(key)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached if cached != "__none__" else None
+
+    try:
+        setting = SystemSetting.objects.filter(key=key).first()
+    except Exception:
+        return None
+
+    value = setting.value if setting else None
+    cache.set(cache_key, value if value is not None else "__none__", CACHE_TIMEOUT)
+    return value
+
+
 def get_setting(key: str, default: str = "") -> str:
- """Read string setting from SystemSetting."""
- value = _get_raw(key)
- return value if value is not None else default
+    """Read string setting from SystemSetting."""
+    value = _get_raw(key)
+    return value if value is not None else default
+
+
 def get_bool_setting(key: str, default: bool = False) -> bool:
- """Read boolean setting from SystemSetting."""
- value = _get_raw(key)
- if value is None:
- return default
- return value.lower in ("true", "1", "yes", "on")
+    """Read boolean setting from SystemSetting."""
+    value = _get_raw(key)
+    if value is None:
+        return default
+    return value.lower() in ("true", "1", "yes", "on")
+
+
 def get_int_setting(key: str, default: int = 0) -> int:
- """Read integer setting from SystemSetting."""
- value = _get_raw(key)
- if value is None:
- return default
- try:
- return int(value)
- except ValueError:
- return default
+    """Read integer setting from SystemSetting."""
+    value = _get_raw(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 async def aget_setting(key: str, default: str = "") -> str:
- """Async version of get_setting."""
- try:
- setting = await SystemSetting.objects.filter(key=key).afirst
- except Exception:
- return default
- return setting.value if setting and setting.value is not None else default
+    """Async version of get_setting."""
+    try:
+        setting = await SystemSetting.objects.filter(key=key).afirst()
+    except Exception:
+        return default
+    return setting.value if setting and setting.value is not None else default
+
+
 async def aget_bool_setting(key: str, default: bool = False) -> bool:
- """Async version of get_bool_setting."""
- value = await aget_setting(key, "")
- if not value:
- return default
- return value.lower in ("true", "1", "yes", "on")
+    """Async version of get_bool_setting."""
+    value = await aget_setting(key, "")
+    if not value:
+        return default
+    return value.lower() in ("true", "1", "yes", "on")
+
+
 async def aget_int_setting(key: str, default: int = 0) -> int:
- """Async version of get_int_setting."""
- value = await aget_setting(key, "")
- if not value:
- return default
- try:
- return int(value)
- except ValueError:
- return default
+    """Async version of get_int_setting."""
+    value = await aget_setting(key, "")
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default

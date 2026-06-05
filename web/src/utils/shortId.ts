@@ -8,15 +8,19 @@
  *
  * Used for template variable references like {{nodes.abc.field}}
  */
+
 import { customAlphabet } from 'nanoid'
+
 const letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const alphanumeric = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
 const generateFirstChar = customAlphabet(letters, 1)
 const generateRestChars = customAlphabet(alphanumeric, 2)
+
 /**
  * Generate a short ID for workflow nodes/edges.
  * Format: 1 letter + 2 alphanumeric = 3 chars total (e.g., "aB1", "Xyz")
  */
-export function generateShortId: string {
- return generateFirstChar + generateRestChars
+export function generateShortId(): string {
+  return generateFirstChar() + generateRestChars()
 }

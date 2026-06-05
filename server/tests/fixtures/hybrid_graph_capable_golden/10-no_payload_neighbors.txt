@@ -1,6 +1,8 @@
 ## L3 Related Code
+
 ### src/np/source.py (score: 0.810)
 ```
-def np_source: pass
+def np_source(): pass
 ```
+
 # tokens=34 source_layer=hybrid final_chunks=0

@@ -1,12 +1,12 @@
 {
- "limit": {
- "annotation": "int",
- "default": "200",
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "repository_id": {
- "annotation": "str | None",
- "default": "None",
- "kind": "POSITIONAL_OR_KEYWORD"
- }
+  "limit": {
+    "annotation": "int",
+    "default": "200",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "repository_id": {
+    "annotation": "str | None",
+    "default": "None",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  }
 }

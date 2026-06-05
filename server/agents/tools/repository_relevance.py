@@ -1,304 +1,354 @@
-"""``analyze_repository_relevance`` agent tool —— Phase。
+"""``analyze_repository_relevance`` agent tool —— initial implementation。
+
 在 chat 模式向 LLM 暴露的「跨仓相关性识别」工具。AI 在回答跨仓需求 / 创建编码
 方案前主动调用本工具，传入 query 返回排序后的 candidate 仓库列表 + score +
 evidence + 是否自动选中。
+
 **关键设计**：
-- 不重新实现召回：复用 v25.0 落地的 ``HybridSearchService.search``（5 倍
- 冗余多召回 → 按 repo 聚合 max score → 取 top_k）。
+
+- 不重新实现召回：复用 legacy 落地的 ``HybridSearchService.search()``（5 倍
+  冗余多召回 → 按 repo 聚合 max score → 取 top_k）。
 - evidence 三段生成：优先文件名 hint → 反向 ``CrossRepoApiCall`` 计数 →
- score 兜底。
+  score 兜底。
 - 每次调用都写一行 ``RepositoryRoutingTrace``（``triggered_by=chat_tool``），
- trace_id 透传 ``ToolResult.output['data']`` 让前端能引用。
+  trace_id 透传 ``ToolResult.output['data']`` 让前端能引用。
+
 公开 helper ``_analyze_relevance_core(triggered_by=..., agent_session_id=...)``
-为 Plan（deep_analysis_completion 路径）预留扩展点：deep_analysis 容器完成
+为 plan（deep_analysis_completion 路径）预留扩展点：deep_analysis 容器完成
 回调时复用同一段聚合逻辑，仅切换 ``triggered_by`` / ``agent_session_id`` 两参数
 即可。@tool 装饰的 ``analyze_repository_relevance`` 走 chat_tool 默认路径。
 """
+
 from __future__ import annotations
+
 from typing import Any, Literal
+
 import structlog
 from pydantic import ValidationError
+
 from agents.tools.base import ToolResult, tool
 from agents.tools.schemas.repository_relevance import (
- RepositoryRelevanceCandidate,
- RepositoryRelevanceInput,
- RepositoryRelevanceOutput,
+    RepositoryRelevanceCandidate,
+    RepositoryRelevanceInput,
+    RepositoryRelevanceOutput,
 )
 from services.code_intel import get_provider
 from services.retrieval import HybridSearchService
+
 logger = structlog.get_logger(__name__)
+
+
 _TOOL_DESCRIPTION = (
- "分析当前 query 与空间下各仓库的相关性，返回每个仓库的 relevance_score + "
- "level（high/medium/low）+ evidence + 是否自动选中。\n"
- "\n"
- "使用时机：用户提出跨仓需求 / 编码方案前 → 调用本工具识别相关仓库 → "
- "用结果指导后续 create_coding_plan 的 recommended_repository_ids（自动预填）。\n"
- "\n"
- "底层复用 v25.0 GraphRAG / HybridSearch 多仓召回 + 按 repo 聚合排序；每次调用都"
- "会落 RepositoryRoutingTrace 审计（triggered_by=chat_tool）。\n"
- "\n"
- "不要用本工具替代 search_repository_code —— 后者返回具体代码 chunk；本工具返回"
- "仓库粒度的相关性排名。"
+    "分析当前 query 与空间下各仓库的相关性，返回每个仓库的 relevance_score + "
+    "level（high/medium/low）+ evidence + 是否自动选中。\n"
+    "\n"
+    "使用时机：用户提出跨仓需求 / 编码方案前 → 调用本工具识别相关仓库 → "
+    "用结果指导后续 create_coding_plan 的 recommended_repository_ids（自动预填）。\n"
+    "\n"
+    "底层复用 legacy GraphRAG / HybridSearch 多仓召回 + 按 repo 聚合排序；每次调用都"
+    "会落 RepositoryRoutingTrace 审计（triggered_by=chat_tool）。\n"
+    "\n"
+    "不要用本工具替代 search_repository_code —— 后者返回具体代码 chunk；本工具返回"
+    "仓库粒度的相关性排名。"
 )
+
+
 _TOOL_PARAMETERS: dict[str, Any] = {
- "type": "object",
- "properties": {
- "query": {
- "type": "string",
- "description": "用户的跨仓需求 query，单一概念优先。",
- },
- "space_id": {
- "type": "string",
- "description": "空间 UUID（chat_runner 自动注入）。",
- },
- "conversation_id": {
- "type": "string",
- "description": "会话 UUID（chat_runner 自动注入）。",
- },
- "top_k": {
- "type": "integer",
- "minimum": 1,
- "maximum": 20,
- "default": 5,
- "description": "返回的相关仓库数量上限。",
- },
- "threshold": {
- "type": "number",
- "minimum": 0.0,
- "maximum": 1.0,
- "default": 0.5,
- "description": "自动选中阈值（≥ threshold 的仓库 selected_by_ai=True）。",
- },
- },
- "required": ["query", "space_id", "conversation_id"],
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "用户的跨仓需求 query，单一概念优先。",
+        },
+        "space_id": {
+            "type": "string",
+            "description": "空间 UUID（chat_runner 自动注入）。",
+        },
+        "conversation_id": {
+            "type": "string",
+            "description": "会话 UUID（chat_runner 自动注入）。",
+        },
+        "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5,
+            "description": "返回的相关仓库数量上限。",
+        },
+        "threshold": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.5,
+            "description": "自动选中阈值（≥ threshold 的仓库 selected_by_ai=True）。",
+        },
+    },
+    "required": ["query", "space_id", "conversation_id"],
 }
+
+
 def _score_to_level(score: float) -> Literal["high", "medium", "low"]:
- """三档阈值映射：0.7 / 0.4。"""
- if score >= 0.7:
- return "high"
- if score >= 0.4:
- return "medium"
- return "low"
+    """三档阈值映射：0.7 / 0.4。"""
+    if score >= 0.7:
+        return "high"
+    if score >= 0.4:
+        return "medium"
+    return "low"
+
+
 async def _build_evidence(
- *,
- repository_id: str,
- hits: list[dict[str, Any]],
- top_score: float,
+    *,
+    repository_id: str,
+    hits: list[dict[str, Any]],
+    top_score: float,
 ) -> str:
- """evidence 三段 fallback：文件名 → 反向 CrossRepoApiCall 计数 → score 兜底。"""
- parts: list[str] =
- files: list[str] =
- seen: set[str] = set
- for h in hits:
- payload = h.get("payload") or {}
- file_path = payload.get("file_path") or ""
- if file_path and file_path not in seen:
- seen.add(file_path)
- files.append(file_path)
- if len(files) >= 3:
- break
- if files:
- parts.append(f"命中 {len(files)} 个相关文件：{' / '.join(files[:3])}")
- try:
- from codegraph.models import CrossRepoApiCall
- cross_count = await CrossRepoApiCall.objects.filter(
- endpoint__repository_id=repository_id
- ).acount
- except Exception as exc: # noqa: BLE001 — 反向计数失败不阻塞 evidence
- logger.warning(
- "cross_repo_api_call_count_failed",
- repository_id=repository_id,
- error=str(exc),
- )
- cross_count = 0
- if cross_count > 0:
- parts.append(f"反向追踪 {cross_count} 个 API 调用")
- if not parts:
- return f"语义相关度 score={top_score:.2f}"
- return "；".join(parts)
+    """evidence 三段 fallback：文件名 → 反向 CrossRepoApiCall 计数 → score 兜底。"""
+    parts: list[str] = []
+
+    files: list[str] = []
+    seen: set[str] = set()
+    for h in hits:
+        payload = h.get("payload") or {}
+        file_path = payload.get("file_path") or ""
+        if file_path and file_path not in seen:
+            seen.add(file_path)
+            files.append(file_path)
+        if len(files) >= 3:
+            break
+
+    if files:
+        parts.append(f"命中 {len(files)} 个相关文件：{' / '.join(files[:3])}")
+
+    try:
+        from codegraph.models import CrossRepoApiCall
+
+        cross_count = await CrossRepoApiCall.objects.filter(
+            endpoint__repository_id=repository_id
+        ).acount()
+    except Exception as exc:  # noqa: BLE001 — 反向计数失败不阻塞 evidence
+        logger.warning(
+            "cross_repo_api_call_count_failed",
+            repository_id=repository_id,
+            error=str(exc),
+        )
+        cross_count = 0
+
+    if cross_count > 0:
+        parts.append(f"反向追踪 {cross_count} 个 API 调用")
+
+    if not parts:
+        return f"语义相关度 score={top_score:.2f}"
+
+    return "；".join(parts)
+
+
 async def _analyze_relevance_core(
- *,
- query: str,
- space_id: str,
- conversation_id: str,
- top_k: int = 5,
- threshold: float = 0.5,
- triggered_by: str | None = None,
- agent_session_id: str | None = None,
+    *,
+    query: str,
+    space_id: str,
+    conversation_id: str,
+    top_k: int = 5,
+    threshold: float = 0.5,
+    triggered_by: str | None = None,
+    agent_session_id: str | None = None,
 ) -> tuple[list[RepositoryRelevanceCandidate], str]:
- """公开 helper：跑相关性聚合 + 写一行 RepositoryRoutingTrace。
- 复用方：
- - chat_tool 路径（``analyze_repository_relevance`` @tool 装饰函数本身）：
- ``triggered_by=CHAT_TOOL`` / ``agent_session_id=None``。
- - deep_analysis_completion 路径（Plan ``_handle_completed`` 回调）：
- ``triggered_by=DEEP_ANALYSIS_COMPLETION`` /
- ``agent_session_id=main_session.id``。
- Returns:
- ``(candidates, trace_id)`` —— candidates 按 score 倒序，trace_id 是
- 新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串。
- Raises:
- ValueError: space / conversation 不存在或空间下无 indexed repo。
- """
- # lazy import 仅针对 Django ORM 模型避免 app registry race；服务类已在
- # 模块顶层 import（测试 monkeypatch 需要从本模块取 HybridSearchService）。
- from chat.models import Conversation, RepositoryRoutingTrace
- from projects.models import Project
- from repositories.models import Repository
- triggered_by = triggered_by or RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL
- try:
- project = await Project.objects.aget(id=space_id)
- except Project.DoesNotExist as exc:
- raise ValueError(f"Space not found: {space_id}") from exc
- try:
- await Conversation.objects.aget(id=conversation_id)
- except Conversation.DoesNotExist as exc:
- raise ValueError(f"Conversation not found: {conversation_id}") from exc
- repos: list[Repository] = [
- repo
- async for repo in Repository.objects.filter(
- projects=project,
- is_deleted=False,
- index_status="indexed",
- )
- ]
- if not repos:
- raise ValueError("No indexed repositories found in space")
- repo_ids = [str(r.id) for r in repos]
- repo_by_id = {str(r.id): r for r in repos}
- # HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合
- service = HybridSearchService(get_provider)
- try:
- result = await service.search(query, repository_ids=repo_ids, top_k=top_k * 5)
- except Exception as exc: # noqa: BLE001 — 召回失败统一外抛 ValueError
- raise ValueError(f"HybridSearchService failed: {exc}") from exc
- # 收集 L3 命中并按 repository_id 分桶
- buckets: dict[str, list[dict[str, Any]]] = {}
- for layer in result.layers:
- if getattr(layer, "layer", None) != "L3":
- continue
- if getattr(layer, "status", None) != "ok":
- continue
- for item in layer.items:
- rid = (
- item.get("repository_id")
- or (item.get("payload") or {}).get("repository_id")
- or ""
- )
- rid = str(rid)
- if rid and rid in repo_by_id:
- buckets.setdefault(rid, ).append(item)
- # 每仓取 max(score) 作为 candidate score；hits 按 score 倒序保留前 5 给 evidence
- candidates: list[RepositoryRelevanceCandidate] =
- for rid, hits in buckets.items:
- hits_sorted = sorted(hits, key=lambda x: float(x.get("score", 0.0)), reverse=True)
- top_score = float(hits_sorted[0].get("score", 0.0)) if hits_sorted else 0.0
- # score 截断到 [0, 1] 适配 Pydantic 校验（HybridSearch 偶尔 > 1.0）
- score = max(0.0, min(1.0, top_score))
- evidence = await _build_evidence(
- repository_id=rid,
- hits=hits_sorted[:5],
- top_score=score,
- )
- selected = score >= threshold
- repo = repo_by_id[rid]
- candidates.append(
- RepositoryRelevanceCandidate(
- repository_id=rid,
- repository_name=repo.name,
- score=score,
- level=_score_to_level(score),
- evidence=evidence,
- selected_by_ai=selected,
- selected_by_user_final=selected,
- )
- )
- candidates.sort(key=lambda c: c.score, reverse=True)
- candidates = candidates[:top_k]
- trace = await RepositoryRoutingTrace.objects.acreate(
- agent_session_id=agent_session_id,
- conversation_id=conversation_id,
- query=query,
- candidates=[c.model_dump for c in candidates],
- threshold=threshold,
- triggered_by=triggered_by,
- )
- logger.info(
- "analyze_repository_relevance_trace_written",
- trace_id=str(trace.id),
- candidate_count=len(candidates),
- triggered_by=triggered_by,
- agent_session_id=agent_session_id,
- )
- return candidates, str(trace.id)
+    """公开 helper：跑相关性聚合 + 写一行 RepositoryRoutingTrace。
+
+    复用方：
+
+    - chat_tool 路径（``analyze_repository_relevance`` @tool 装饰函数本身）：
+      ``triggered_by=CHAT_TOOL`` / ``agent_session_id=None``。
+    - deep_analysis_completion 路径（plan ``_handle_completed`` 回调）：
+      ``triggered_by=DEEP_ANALYSIS_COMPLETION`` /
+      ``agent_session_id=main_session.id``。
+
+    Returns:
+        ``(candidates, trace_id)`` —— candidates 按 score 倒序，trace_id 是
+        新写入的 ``RepositoryRoutingTrace`` 主键 UUID 字符串。
+
+    Raises:
+        ValueError: space / conversation 不存在或空间下无 indexed repo。
+    """
+    # lazy import 仅针对 Django ORM 模型避免 app registry race；服务类已在
+    # 模块顶层 import（测试 monkeypatch 需要从本模块取 HybridSearchService）。
+    from chat.models import Conversation, RepositoryRoutingTrace
+    from projects.models import Project
+    from repositories.models import Repository
+
+    triggered_by = triggered_by or RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL
+
+    try:
+        project = await Project.objects.aget(id=space_id)
+    except Project.DoesNotExist as exc:
+        raise ValueError(f"Space not found: {space_id}") from exc
+
+    try:
+        await Conversation.objects.aget(id=conversation_id)
+    except Conversation.DoesNotExist as exc:
+        raise ValueError(f"Conversation not found: {conversation_id}") from exc
+
+    repos: list[Repository] = [
+        repo
+        async for repo in Repository.objects.filter(
+            projects=project,
+            is_deleted=False,
+            index_status="indexed",
+        )
+    ]
+    if not repos:
+        raise ValueError("No indexed repositories found in space")
+
+    repo_ids = [str(r.id) for r in repos]
+    repo_by_id = {str(r.id): r for r in repos}
+
+    # HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合
+    service = HybridSearchService(get_provider())
+    try:
+        result = await service.search(query, repository_ids=repo_ids, top_k=top_k * 5)
+    except Exception as exc:  # noqa: BLE001 — 召回失败统一外抛 ValueError
+        raise ValueError(f"HybridSearchService failed: {exc}") from exc
+
+    # 收集 L3 命中并按 repository_id 分桶
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for layer in result.layers:
+        if getattr(layer, "layer", None) != "L3":
+            continue
+        if getattr(layer, "status", None) != "ok":
+            continue
+        for item in layer.items:
+            rid = (
+                item.get("repository_id")
+                or (item.get("payload") or {}).get("repository_id")
+                or ""
+            )
+            rid = str(rid)
+            if rid and rid in repo_by_id:
+                buckets.setdefault(rid, []).append(item)
+
+    # 每仓取 max(score) 作为 candidate score；hits 按 score 倒序保留前 5 给 evidence
+    candidates: list[RepositoryRelevanceCandidate] = []
+    for rid, hits in buckets.items():
+        hits_sorted = sorted(hits, key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        top_score = float(hits_sorted[0].get("score", 0.0)) if hits_sorted else 0.0
+        # score 截断到 [0, 1] 适配 Pydantic 校验（HybridSearch 偶尔 > 1.0）
+        score = max(0.0, min(1.0, top_score))
+        evidence = await _build_evidence(
+            repository_id=rid,
+            hits=hits_sorted[:5],
+            top_score=score,
+        )
+        selected = score >= threshold
+        repo = repo_by_id[rid]
+        candidates.append(
+            RepositoryRelevanceCandidate(
+                repository_id=rid,
+                repository_name=repo.name,
+                score=score,
+                level=_score_to_level(score),
+                evidence=evidence,
+                selected_by_ai=selected,
+                selected_by_user_final=selected,
+            )
+        )
+
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    candidates = candidates[:top_k]
+
+    trace = await RepositoryRoutingTrace.objects.acreate(
+        agent_session_id=agent_session_id,
+        conversation_id=conversation_id,
+        query=query,
+        candidates=[c.model_dump() for c in candidates],
+        threshold=threshold,
+        triggered_by=triggered_by,
+    )
+
+    logger.info(
+        "analyze_repository_relevance_trace_written",
+        trace_id=str(trace.id),
+        candidate_count=len(candidates),
+        triggered_by=triggered_by,
+        agent_session_id=agent_session_id,
+    )
+
+    return candidates, str(trace.id)
+
+
 @tool(
- name="analyze_repository_relevance",
- description=_TOOL_DESCRIPTION,
- category="RETRIEVAL",
- parameters=_TOOL_PARAMETERS,
+    name="analyze_repository_relevance",
+    description=_TOOL_DESCRIPTION,
+    category="RETRIEVAL",
+    parameters=_TOOL_PARAMETERS,
 )
 async def analyze_repository_relevance(
- query: str,
- space_id: str,
- conversation_id: str,
- top_k: int = 5,
- threshold: float = 0.5,
+    query: str,
+    space_id: str,
+    conversation_id: str,
+    top_k: int = 5,
+    threshold: float = 0.5,
 ) -> ToolResult:
- """分析当前 query 与空间下各仓库的相关性。"""
- logger.info(
- "analyze_repository_relevance_called",
- query=query[:120],
- space_id=space_id,
- conversation_id=conversation_id,
- top_k=top_k,
- threshold=threshold,
- )
- try:
- RepositoryRelevanceInput(
- query=query,
- space_id=space_id,
- conversation_id=conversation_id,
- top_k=top_k,
- threshold=threshold,
- )
- except ValidationError as exc:
- logger.warning(
- "analyze_repository_relevance_invalid_input",
- error=str(exc),
- )
- return ToolResult(success=False, error=str(exc))
- try:
- candidates, trace_id = await _analyze_relevance_core(
- query=query,
- space_id=space_id,
- conversation_id=conversation_id,
- top_k=top_k,
- threshold=threshold,
- triggered_by=None, # 走默认 CHAT_TOOL
- agent_session_id=None,
- )
- except ValueError as exc:
- logger.warning(
- "analyze_repository_relevance_failed",
- error=str(exc),
- )
- return ToolResult(success=False, error=str(exc))
- except Exception as exc: # noqa: BLE001 — 永不冒泡到 agent runtime
- logger.exception("analyze_repository_relevance_unexpected", error=str(exc))
- return ToolResult(success=False, error=f"Unexpected error: {exc}")
- output_model = RepositoryRelevanceOutput(
- candidates=candidates,
- threshold=threshold,
- total_candidates=len(candidates),
- trace_id=trace_id,
- )
- return ToolResult(
- success=True,
- output={
- "data": output_model.model_dump,
- "metadata": {
- "searched_repositories": len(candidates),
- "trace_id": trace_id,
- },
- },
- )
+    """分析当前 query 与空间下各仓库的相关性。"""
+    logger.info(
+        "analyze_repository_relevance_called",
+        query=query[:120],
+        space_id=space_id,
+        conversation_id=conversation_id,
+        top_k=top_k,
+        threshold=threshold,
+    )
+
+    try:
+        RepositoryRelevanceInput(
+            query=query,
+            space_id=space_id,
+            conversation_id=conversation_id,
+            top_k=top_k,
+            threshold=threshold,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "analyze_repository_relevance_invalid_input",
+            error=str(exc),
+        )
+        return ToolResult(success=False, error=str(exc))
+
+    try:
+        candidates, trace_id = await _analyze_relevance_core(
+            query=query,
+            space_id=space_id,
+            conversation_id=conversation_id,
+            top_k=top_k,
+            threshold=threshold,
+            triggered_by=None,  # 走默认 CHAT_TOOL
+            agent_session_id=None,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "analyze_repository_relevance_failed",
+            error=str(exc),
+        )
+        return ToolResult(success=False, error=str(exc))
+    except Exception as exc:  # noqa: BLE001 — 永不冒泡到 agent runtime
+        logger.exception("analyze_repository_relevance_unexpected", error=str(exc))
+        return ToolResult(success=False, error=f"Unexpected error: {exc}")
+
+    output_model = RepositoryRelevanceOutput(
+        candidates=candidates,
+        threshold=threshold,
+        total_candidates=len(candidates),
+        trace_id=trace_id,
+    )
+
+    return ToolResult(
+        success=True,
+        output={
+            "data": output_model.model_dump(),
+            "metadata": {
+                "searched_repositories": len(candidates),
+                "trace_id": trace_id,
+            },
+        },
+    )
+
+
 __all__ = ["analyze_repository_relevance", "_analyze_relevance_core"]

@@ -1,32 +1,32 @@
 {
- "branch": {
- "annotation": "str | None",
- "default": "None",
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "limit": {
- "annotation": "<class 'int'>",
- "default": "20",
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "min_score": {
- "annotation": "<class 'float'>",
- "default": "0.5",
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "query": {
- "annotation": "<class 'str'>",
- "default": null,
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "repository_id": {
- "annotation": "str | None",
- "default": "None",
- "kind": "POSITIONAL_OR_KEYWORD"
- },
- "space_id": {
- "annotation": "str | None",
- "default": "None",
- "kind": "POSITIONAL_OR_KEYWORD"
- }
+  "branch": {
+    "annotation": "str | None",
+    "default": "None",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "limit": {
+    "annotation": "<class 'int'>",
+    "default": "20",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "min_score": {
+    "annotation": "<class 'float'>",
+    "default": "0.5",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "query": {
+    "annotation": "<class 'str'>",
+    "default": null,
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "repository_id": {
+    "annotation": "str | None",
+    "default": "None",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  },
+  "space_id": {
+    "annotation": "str | None",
+    "default": "None",
+    "kind": "POSITIONAL_OR_KEYWORD"
+  }
 }

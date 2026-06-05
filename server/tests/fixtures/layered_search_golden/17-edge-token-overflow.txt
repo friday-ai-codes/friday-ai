@@ -1,11 +1,19 @@
 ## L2 Exact Matches
+
 - `ProcessData` (FUNCTION) in src/pipeline/process.py:12-45 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 - `validateInput` (FUNCTION) depth=1 relation=callee
+
 - `writeResult` (FUNCTION) depth=1 relation=callee
+
+
 ## L3 Related Code
+
 ### src/pipeline/runner.py (score: 0.680)
 ```
 result = ProcessData(payload)
 ```
+
 # tokens=99 source_layer=L2 final_chunks=6

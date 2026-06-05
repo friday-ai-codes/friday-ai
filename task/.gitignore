@@ -20,27 +20,33 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
 # Virtual environments
 .venv/
 venv/
 ENV/
+
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
+
 # uv
 uv.lock
+
 # Local data
 data/
 sessions/
 *.db
+
 # Credentials (ensure these are never committed)
 *.pem
 *.key

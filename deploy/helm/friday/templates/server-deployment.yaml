@@ -1,85 +1,85 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
- name: {{ include "friday.fullname" . }}-server
- labels:
- {{- include "friday.labels" . | nindent 4 }}
- app.kubernetes.io/component: server
+  name: {{ include "friday.fullname" . }}-server
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
 spec:
- replicas: {{ .Values.server.replicaCount }}
- selector:
- matchLabels:
- {{- include "friday.selectorLabels" . | nindent 6 }}
- app.kubernetes.io/component: server
- template:
- metadata:
- labels:
- {{- include "friday.selectorLabels" . | nindent 8 }}
- app.kubernetes.io/component: server
- spec:
- {{- if .Values.postgresql.enabled }}
- initContainers:
- - name: wait-for-db
- image: postgres:17-alpine
- command:
- - sh
- - -c
- - |
- until pg_isready -d "$DATABASE_URL"; do
- echo "等待数据库就绪..."
- sleep 2
- done
- envFrom:
- - configMapRef:
- name: {{ include "friday.fullname" . }}-config
- - secretRef:
- name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
- {{- end }}
- containers:
- - name: server
- image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
- imagePullPolicy: {{ .Values.server.image.pullPolicy }}
- # 跳过 entrypoint.sh（迁移由 Helm hook Job 处理），直接启动 gunicorn
- command: ["gunicorn"]
- args:
- - "friday.asgi:application"
- - "--workers"
- - "{{ .Values.server.gunicornWorkers }}"
- - "--worker-class"
- - "uvicorn.workers.UvicornWorker"
- - "--bind"
- - "0.0.0.0:8000"
- - "--access-logfile"
- - "-"
- - "--error-logfile"
- - "-"
- - "--capture-output"
- - "--timeout"
- - "{{ .Values.server.gunicornTimeout }}"
- ports:
- - name: http
- containerPort: 8000
- protocol: TCP
- envFrom:
- - configMapRef:
- name: {{ include "friday.fullname" . }}-config
- - secretRef:
- name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
- volumeMounts:
- - name: server-data
- mountPath: /app/data
- {{- with .Values.server.livenessProbe }}
- livenessProbe:
- {{- toYaml . | nindent 12 }}
- {{- end }}
- {{- with .Values.server.readinessProbe }}
- readinessProbe:
- {{- toYaml . | nindent 12 }}
- {{- end }}
- {{- with .Values.server.resources }}
- resources:
- {{- toYaml . | nindent 12 }}
- {{- end }}
- volumes:
- - name: server-data
- emptyDir: {}
+  replicas: {{ .Values.server.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "friday.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -d "$DATABASE_URL"; do
+                echo "等待数据库就绪..."
+                sleep 2
+              done
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+      {{- end }}
+      containers:
+        - name: server
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          # 跳过 entrypoint.sh（迁移由 Helm hook Job 处理），直接启动 gunicorn
+          command: ["gunicorn"]
+          args:
+            - "friday.asgi:application"
+            - "--workers"
+            - "{{ .Values.server.gunicornWorkers }}"
+            - "--worker-class"
+            - "uvicorn.workers.UvicornWorker"
+            - "--bind"
+            - "0.0.0.0:8000"
+            - "--access-logfile"
+            - "-"
+            - "--error-logfile"
+            - "-"
+            - "--capture-output"
+            - "--timeout"
+            - "{{ .Values.server.gunicornTimeout }}"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+          volumeMounts:
+            - name: server-data
+              mountPath: /app/data
+          {{- with .Values.server.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.server.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: server-data
+          emptyDir: {}
