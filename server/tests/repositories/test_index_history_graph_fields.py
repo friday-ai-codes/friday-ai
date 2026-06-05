@@ -1,4 +1,4 @@
-"""initial implementation plan：IndexHistory GraphRAG 字段三件套测试。
+"""implementation：IndexHistory GraphRAG 字段三件套测试。
 
 测试覆盖：
 1. test_default_values：新建 IndexHistory 行 default `graph_build_status='pending'` /

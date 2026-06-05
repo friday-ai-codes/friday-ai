@@ -1,4 +1,4 @@
-"""initial implementation: cross_repo_expander wave 扩散测试（work item）。"""
+"""implementation: cross_repo_expander wave 扩散测试（work item）。"""
 from __future__ import annotations
 
 import pytest

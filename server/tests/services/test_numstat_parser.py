@@ -1,4 +1,4 @@
-"""initial implementation：_parse_numstat_output 单测。
+"""implementation：_parse_numstat_output 单测。
 
 覆盖 git diff --numstat -z 解析的四类输入（纯函数，无 DB / 无 subprocess）：
 - 真实数字记录正确汇总

@@ -171,7 +171,7 @@ class FeishuIMTestView(APIView):
 
 
 # ============================================================================
-# initial implementation contract：ProviderCredential 健康检查端点
+# implementation contract：ProviderCredential 健康检查端点
 # ============================================================================
 
 
@@ -182,7 +182,7 @@ class ProviderCredentialTestConnectionView(APIView):
     同次往返原子写回 last_health_check_at/status/error 三字段；
     Ollama 路径额外写 available_models（contract 协同）。
 
-    权限：本 phase 用 IsAuthenticated；initial implementation 升级到
+    权限：本 phase 用 IsAuthenticated；implementation 升级到
     IsSuperUserOrProjectAdmin + ProjectScopedQuerysetMixin 过滤。
     """
 
@@ -224,7 +224,7 @@ class ProviderCredentialTestConnectionView(APIView):
 
 
 # ============================================================================
-# initial implementation contract / contract / contract：ProviderCredential CRUD ViewSet
+# implementation contract / contract / contract：ProviderCredential CRUD ViewSet
 # ============================================================================
 
 import structlog
@@ -251,7 +251,7 @@ _viewset_logger = structlog.get_logger(__name__)
 
 
 class ProviderCredentialViewSet(AsyncModelViewSet):
-    """Provider 凭证 CRUD ViewSet（initial implementation contract / contract / contract）。
+    """Provider 凭证 CRUD ViewSet（implementation contract / contract / contract）。
 
     contract 三层防御：
     - 层 1：ProviderCredentialPermission（request + object 级权限判定）
@@ -266,7 +266,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
     - PUT    /api/providers/credentials/{id}/         update
     - DELETE /api/providers/credentials/{id}/         destroy（硬删）
 
-    保留 initial implementation 既有 ProviderCredentialTestConnectionView（test-connection 端点不动）。
+    保留 implementation 既有 ProviderCredentialTestConnectionView（test-connection 端点不动）。
     @action 扩展（toggle-active / refresh-models / types）归 plan。
     """
 
@@ -452,7 +452,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         )
 
     # ------------------------------------------------------------------
-    # initial implementation @action 扩展：contract toggle + contract refresh-models
+    # implementation @action 扩展：contract toggle + contract refresh-models
     # ------------------------------------------------------------------
 
     @action(detail=True, methods=["patch"], url_path="toggle-active")
@@ -597,7 +597,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
 
 
 # ============================================================================
-# initial implementation：ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
+# implementation：ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
 # ============================================================================
 
 
@@ -813,7 +813,7 @@ class ClaudeCodeConfigView(APIView):
 
 
 # ============================================================================
-# initial implementation 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
+# implementation 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
 # ============================================================================
 
 import os

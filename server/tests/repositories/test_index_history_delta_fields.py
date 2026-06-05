@@ -1,4 +1,4 @@
-"""initial implementation plan（work item）：IndexHistory per-run delta + 行级 diff 模型字段测试。
+"""implementation（work item）：IndexHistory per-run delta + 行级 diff 模型字段测试。
 
 测试覆盖：
 1. test_delta_fields_default_zero：5 个 per-run delta 字段 default=0（本次新增非累计）

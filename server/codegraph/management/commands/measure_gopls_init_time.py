@@ -1,4 +1,4 @@
-"""initial implementation: 测量 gopls 初始化耗时（work item 90s 实战门 / 60s stretch advisory）。
+"""implementation: 测量 gopls 初始化耗时（work item 90s 实战门 / 60s stretch advisory）。
 
 per work item / work item
 ==================
@@ -42,7 +42,7 @@ _STRETCH_MS: Final[int] = 60_000
 
 
 class Command(BaseCommand):
-    """initial implementation：gopls 初始化耗时测量命令。"""
+    """implementation：gopls 初始化耗时测量命令。"""
 
     help = "测量 gopls 初始化耗时（work item：90s 实战门 / 60s stretch advisory）"
 

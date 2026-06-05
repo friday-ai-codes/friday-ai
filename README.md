@@ -1,5 +1,5 @@
 # Friday AI
-[简体中文](README.zh-CN.md) | English
+
 Friday AI is an open-source development automation platform. It connects project
 requirements, repositories, workflow orchestration, and AI coding agents so teams
 can move from an approved requirement to an auditable code change.

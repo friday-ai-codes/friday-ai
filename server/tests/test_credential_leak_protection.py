@@ -1,4 +1,4 @@
-"""initial implementation plan: contract 凭证泄漏防护契约测试。
+"""implementation: contract 凭证泄漏防护契约测试。
 
 覆盖 Requirement: contract
 威胁参考: security mitigation (structlog 凭证泄漏), security mitigation (上游 error body 泄漏)
@@ -112,7 +112,7 @@ class TestRedactSecretsInText:
             ("error: invalid sk-12345678901234567890abcdef", "sk-12345678901234567890"),
             ("Authorization: AIzaSyD123456789012345678901234567", "AIzaSyD"),
             ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiI"),
-            # initial implementation：Friday Access Token 明文前缀也必须脱敏（与 sk-ant 并列）
+            # implementation：Friday Access Token 明文前缀也必须脱敏（与 sk-ant 并列）
             ("leaked friday_pat_ABCDEFGHIJKLMNOPQRSTUVWX token", "friday_pat_ABCD"),
         ],
     )

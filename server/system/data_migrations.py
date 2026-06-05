@@ -1,6 +1,6 @@
 """数据迁移共享函数 —— 被 0005 RunPython 与 management command 双方 import。
 
-initial implementation 引入：seed_provider_credentials_impl 把 SystemSetting.ANTHROPIC_* 4 个 key
+implementation 引入：seed_provider_credentials_impl 把 SystemSetting.ANTHROPIC_* 4 个 key
 导入为一条 anthropic/system/default 凭证（幂等 + 反向 + dry-run）。
 
 设计要点：
@@ -79,11 +79,11 @@ def seed_provider_credentials_impl(
     - dry-run 时打印 mask 后 api_key + 模式=dry-run，不写库
     - apply 时 encrypt_value(json.dumps({"api_key": ...})) 写入
 
-    initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_* 常量硬删后，
+    implementation（contract/contract）：SettingKeys.ANTHROPIC_* 常量硬删后，
     此 seed 命令仍接受 SystemSetting 行（key 为字面量字符串 "anthropic_*"），
-    供 initial implementation contract 历史 migration 兼容调用。
+    供 implementation contract 历史 migration 兼容调用。
     """
-    # initial implementation plan：直接字面量 key，不再引用 SettingKeys.ANTHROPIC_* 常量
+    # implementation：直接字面量 key，不再引用 SettingKeys.ANTHROPIC_* 常量
     _ANTHROPIC_API_KEY = "anthropic_api_key"
     _ANTHROPIC_BASE_URL = "anthropic_base_url"
     _ANTHROPIC_MODEL = "anthropic_model"

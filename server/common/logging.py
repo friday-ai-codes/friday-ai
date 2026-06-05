@@ -1,6 +1,6 @@
 """contract：凭证泄漏防护（structlog processor + Sentry before_send + 业务字符串脱敏 helper）。
 
-initial implementation 引入。在全局 settings.py 末尾调用 configure_structlog()，全仓库 structlog.get_logger 自动生效。
+implementation 引入。在全局 settings.py 末尾调用 configure_structlog()，全仓库 structlog.get_logger 自动生效。
 
 设计要点：
 - 双层脱敏：字段名命中 SENSITIVE_KEY_PATTERN（顶层 + 递归 nested dict/list）+ 字段值
@@ -39,7 +39,7 @@ SENSITIVE_VALUE_PATTERN = re.compile(
     r"|sk-[A-Za-z0-9_\-]{20,}"             # OpenAI: sk-... (>= 20 字符避免误伤短字符串)
     r"|AIza[A-Za-z0-9_\-]{20,}"            # Google: AIza...
     r"|Bearer\s+[A-Za-z0-9._\-]{20,}"      # Bearer token
-    r"|friday_pat_[A-Za-z0-9_\-]{20,}"     # Friday Access Token: friday_pat_... (initial implementation)
+    r"|friday_pat_[A-Za-z0-9_\-]{20,}"     # Friday Access Token: friday_pat_... (implementation)
     r"|-----BEGIN\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----[\s\S]+?"
     r"-----END\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----)"
 )
@@ -155,7 +155,7 @@ def configure_structlog() -> None:
     )
 
 
-# === Sentry before_send pure function（本 phase 仅预留 + 单测；initial implementation+ 接入时使用）===
+# === Sentry before_send pure function（本 phase 仅预留 + 单测；implementation+ 接入时使用）===
 
 
 def sentry_before_send(

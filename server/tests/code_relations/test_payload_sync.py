@@ -1,4 +1,4 @@
-"""code_relations.payload_sync.aggregate_top_neighbors 测试（per initial implementation contract/24/25）。
+"""code_relations.payload_sync.aggregate_top_neighbors 测试（per implementation contract/24/25）。
 
 覆盖：
 - 基础聚合（50 chunks × 30 邻居 → 50 updates × top-20）

@@ -1,4 +1,4 @@
-"""``find_api_callers`` MCP tool 单元测试 —— per initial implementation plan Task 7 / work item。
+"""``find_api_callers`` MCP tool 单元测试 —— per implementation Task 7 / work item。
 
 测试目标（≥6 cases）：
 
@@ -11,7 +11,7 @@
 7. ``test_missing_handler_name_returns_error`` —— handler_name 必填守卫
 8. ``test_orm_value_error_returns_toolresult`` —— ORM ValueError 兜底
 
-per initial implementation 测试模式：mock ``Endpoint.objects`` / ``CrossRepoApiCall.objects``。
+per implementation 测试模式：mock ``Endpoint.objects`` / ``CrossRepoApiCall.objects``。
 """
 
 from __future__ import annotations

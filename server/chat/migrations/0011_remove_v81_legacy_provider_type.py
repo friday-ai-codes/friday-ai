@@ -1,4 +1,4 @@
-"""initial implementation plan contract/contract：硬删 Conversation.provider_type 字段。
+"""implementation contract/contract：硬删 Conversation.provider_type 字段。
 
 forwards:
     1. 把 Conversation.provider_type 的值保底写入 metadata.legacy_provider_type
@@ -18,7 +18,7 @@ from django.db import migrations
 
 
 def forwards_noop(apps, schema_editor):
-    """initial implementation plan：Conversation.provider_type 已在 initial implementation/229 UI cutover 后
+    """implementation：Conversation.provider_type 已在 implementation/229 UI cutover 后
     不再被写入。本函数作为 RunPython 的 forwards 钩子保留结构（便于测试观察），
     不做实际数据转换。
     """

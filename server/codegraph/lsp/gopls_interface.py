@@ -1,7 +1,7 @@
-"""initial implementation: GoplsInterfaceExtractor —— Go interface 实现关系抽取模块。
+"""implementation: GoplsInterfaceExtractor —— Go interface 实现关系抽取模块。
 
 本模块提供 Go interface 实现关系的 LSP 抽取能力（textDocument/implementation）；
-独立于 ExtractorBackend Protocol（per initial implementation），可由 indexer 选择性消费。
+独立于 ExtractorBackend Protocol（per implementation），可由 indexer 选择性消费。
 
 per work item 理由：
     1. ExtractorBackend Protocol 5 abstract method 不含 implementation；新增破坏既有契约
@@ -30,7 +30,7 @@ _DEFAULT_IMPLEMENTATION_TIMEOUT: Final[float] = 10.0
 
 @dataclasses.dataclass(frozen=True)
 class InterfaceImplementationData:
-    """Go interface 实现关系数据（per initial implementation / work item：frozen=True）。
+    """Go interface 实现关系数据（per implementation / work item：frozen=True）。
 
     Fields:
         interface_symbol_name: interface 的 Go 符号名（如 "CourseService"）
@@ -53,8 +53,8 @@ def extract_interface_implementations(
 ) -> list[InterfaceImplementationData]:
     """抽取 Go interface 实现关系（textDocument/implementation per symbol）。
 
-    per initial implementation：仅处理 symbol_type == "CLASS" 的 symbol（Go interface/struct
-    在 initial implementation SymbolKind 映射中均为 "CLASS"）；per-symbol 调 gopls 的
+    per implementation：仅处理 symbol_type == "CLASS" 的 symbol（Go interface/struct
+    在 implementation SymbolKind 映射中均为 "CLASS"）；per-symbol 调 gopls 的
     textDocument/implementation，收集所有实现该 interface 的位置。
 
     Args:
@@ -66,7 +66,7 @@ def extract_interface_implementations(
         InterfaceImplementationData 列表；失败项跳过（不 raise）。
 
     Note:
-        本函数复用 initial implementation get_or_create_supervisor("gopls", ...) 单例缓存；
+        本函数复用 implementation get_or_create_supervisor("gopls", ...) 单例缓存；
         与 _GoplsLazyBackend._get_supervisor 使用同一 supervisor 实例（per work item）。
     """
     if not interface_symbols:

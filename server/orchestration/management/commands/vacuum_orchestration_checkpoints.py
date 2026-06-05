@@ -1,4 +1,4 @@
-"""手动 VACUUM orchestration_checkpoints.db 回收空间（initial implementation Q4 Claude's Discretion）。
+"""手动 VACUUM orchestration_checkpoints.db 回收空间（implementation Q4 Claude's Discretion）。
 
 背景：SQLite DELETE 不释放磁盘空间，需 VACUUM 才能收缩文件。
 本 phase 决策（RESEARCH Open Q4）：
@@ -33,7 +33,7 @@ logger = structlog.get_logger(__name__)
 
 
 class Command(BaseCommand):
-    help = "手动 VACUUM orchestration_checkpoints.db 回收空间（initial implementation Q4 Claude's Discretion）"
+    help = "手动 VACUUM orchestration_checkpoints.db 回收空间（implementation Q4 Claude's Discretion）"
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(

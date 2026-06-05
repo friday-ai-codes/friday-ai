@@ -36,7 +36,7 @@ class CodingSessionState(TypedDict, total=False):
     # dispatch 共享配置（避免每次 dispatch 重新查询）
     dispatch_config: dict[str, Any]
 
-    # Phase: PR 确认 (initial implementation)
+    # Phase: PR 确认 (implementation)
     suggested_pr_title: str
     suggested_pr_description: str
     confirmed_pr_title: str
@@ -48,6 +48,6 @@ class CodingSessionState(TypedDict, total=False):
     branch_url: str
     pr_url: str
 
-    # initial implementation: 冲突预检与 diff 摘要
+    # implementation: 冲突预检与 diff 摘要
     conflict_check_result: dict[str, Any]
     diff_summary: dict[str, Any]

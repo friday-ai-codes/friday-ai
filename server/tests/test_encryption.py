@@ -1,4 +1,4 @@
-"""initial implementation: Fernet 加密激活回归保护（contract）。覆盖 roundtrip / 空值 / Unicode / 长 JSON / plaintext legacy fallback。"""
+"""implementation: Fernet 加密激活回归保护（contract）。覆盖 roundtrip / 空值 / Unicode / 长 JSON / plaintext legacy fallback。"""
 
 import pytest
 

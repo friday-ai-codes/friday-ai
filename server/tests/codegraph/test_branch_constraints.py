@@ -1,4 +1,4 @@
-"""initial implementation plan（work item 约束部分 + work item）：codegraph 约束 + 双写测试。
+"""implementation（work item 约束部分 + work item）：codegraph 约束 + 双写测试。
 
 覆盖：Symbol/ApiWrapper unique_together 含 branch_name 自省 + base/feature 双写无
 IntegrityError + 同 branch_name 重复写仍 IntegrityError（证明约束生效而非被绕过）。

@@ -1,4 +1,4 @@
-"""QdrantService.batch_set_payload 单元测试（per initial implementation contract）。"""
+"""QdrantService.batch_set_payload 单元测试（per implementation contract）。"""
 
 from __future__ import annotations
 

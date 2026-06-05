@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2：v8.1 legacy 字段硬删 migration 测试。
+"""implementation Task 2：v8.1 legacy 字段硬删 migration 测试。
 
 Scope:
     验证 plan 3 个硬删 migration 的字段实际移除 + 常量清零。
@@ -18,7 +18,7 @@ def test_conversation_provider_type_field_removed() -> None:
     Conversation = apps.get_model("chat", "Conversation")
     field_names = {f.name for f in Conversation._meta.get_fields()}
     assert "provider_type" not in field_names, (
-        "initial implementation plan contract 违反：Conversation.provider_type 未硬删"
+        "implementation contract 违反：Conversation.provider_type 未硬删"
     )
 
 
@@ -53,7 +53,7 @@ def test_claude_config_module_deleted() -> None:
 
     spec = importlib.util.find_spec("services.claude_config")
     assert spec is None, (
-        "initial implementation plan contract 违反：services/claude_config.py 未整文件删除"
+        "implementation contract 违反：services/claude_config.py 未整文件删除"
     )
 
 
@@ -87,7 +87,7 @@ def test_migration_files_exist() -> None:
 
 
 # ============================================================================
-# Test J (NEW initial implementation Hotfix work-item item) — check_v81_legacy_residue 命令可调用
+# Test J (NEW implementation Hotfix work-item item) — check_v81_legacy_residue 命令可调用
 # ============================================================================
 
 
@@ -96,7 +96,7 @@ def test_check_v81_legacy_residue_command_is_callable() -> None:
     """Behavior J：`python manage.py check_v81_legacy_residue` management command
     已注册到 Django 且可被 `call_command` 调用，不 crash。
 
-    initial implementation Hotfix（work item）：release 前人工预检 gate 必须可用。
+    implementation Hotfix（work item）：release 前人工预检 gate 必须可用。
 
     注：测试 DB 已 migrate 到 latest（claude_api_key_encrypted 列已删），
     命令会走 OperationalError 分支输出 "已完成 0009 migration"，
@@ -120,7 +120,7 @@ def test_check_v81_legacy_residue_command_is_callable() -> None:
 
 
 # ============================================================================
-# Test K (NEW initial implementation Hotfix work-item item) — 0009 migration docstring 声明 work item
+# Test K (NEW implementation Hotfix work-item item) — 0009 migration docstring 声明 work item
 # ============================================================================
 
 
@@ -128,7 +128,7 @@ def test_0009_migration_docstring_documents_noop() -> None:
     """Behavior K：0009 migration 文件必须在 docstring 声明 work item，删除旧的
     误导性"遍历 Project → 创建 ProviderCredential"表述，并引用预检命令。
 
-    initial implementation Hotfix（work item）：docstring 语义与 RunPython 实际行为对齐。
+    implementation Hotfix（work item）：docstring 语义与 RunPython 实际行为对齐。
 
     静态文本比较，不需要 django_db 夹具（与 L50 test_claude_config_module_deleted 同模式）。
     """
@@ -144,11 +144,11 @@ def test_0009_migration_docstring_documents_noop() -> None:
 
     # 必须声明 work item（大写或小写皆可）
     assert "work item" in content or "no-op" in content.lower(), (
-        "0009 migration docstring 必须明确声明 backfill 是 work item（initial implementation Hotfix work-item item）"
+        "0009 migration docstring 必须明确声明 backfill 是 work item（implementation Hotfix work-item item）"
     )
     # 旧的误导性表述必须删除
     assert "遍历仍有 claude_api_key_encrypted 的 Project" not in content, (
-        "0009 docstring 仍保留旧的误导性 backfill 承诺表述，未完成 initial implementation 勘误"
+        "0009 docstring 仍保留旧的误导性 backfill 承诺表述，未完成 implementation 勘误"
     )
     # 预检命令名必须在 docstring 内出现（引导 release manager）
     assert "check_v81_legacy_residue" in content, (

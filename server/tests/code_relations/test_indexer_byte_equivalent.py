@@ -1,6 +1,6 @@
-"""initial implementation plan success criterion byte-equivalent white-box 断言。
+"""implementation success criterion byte-equivalent white-box 断言。
 
-`_extract_and_write_graph` 是 initial implementation 引入、initial implementation 退化为薄壳的图谱抽取
+`_extract_and_write_graph` 是 implementation 引入、implementation 退化为薄壳的图谱抽取
 入口。plan 在 4 处 callsite 外层包裹 ``GraphBuildHistory`` 创建/转态，
 **关键约束**是不能侵入薄壳内部循环 —— 否则违反 success criterion byte-equivalent。
 
@@ -8,12 +8,12 @@
 
 1. 仍是 ``IndexerService`` 类方法（不抽出 module-level）
 2. 签名稳定（self / repo_path / file_paths / repository_id，return dict）
-3. 函数体仍读 ``settings.ENABLE_CODEGRAPH``（initial implementation 既有短路保留）
+3. 函数体仍读 ``settings.ENABLE_CODEGRAPH``（implementation 既有短路保留）
 4. 4 处 callsite 调用形态不变（``await self._extract_and_write_graph(...)``）
 5. 没有同名 module-level 函数（防御性 grep）
 6. 薄壳函数体内不含 ``GraphBuildHistory`` —— history 生命周期全部由
    callsite 外层管理（薄壳纯净 / 关注点分离 / 测试无侵入）
-7. ``dual_track_integration`` / initial implementation 既有套件 regression hook
+7. ``dual_track_integration`` / implementation 既有套件 regression hook
    —— 实际跑由 security mitigation-4 + security mitigation-6 跨套件验证（``tests/code_relations/``
    全量），本文件仅做白盒结构断言。
 """
@@ -70,12 +70,12 @@ def test_extract_and_write_graph_signature_stable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. 薄壳函数体内仍读 settings.ENABLE_CODEGRAPH（initial implementation 既有短路保留）
+# 3. 薄壳函数体内仍读 settings.ENABLE_CODEGRAPH（implementation 既有短路保留）
 # ---------------------------------------------------------------------------
 
 
 def test_extract_and_write_graph_still_reads_global_flag() -> None:
-    """initial implementation line 2080 等价短路 ``getattr(settings, "ENABLE_CODEGRAPH", False)``
+    """implementation line 2080 等价短路 ``getattr(settings, "ENABLE_CODEGRAPH", False)``
     必须保留在薄壳函数体内 —— 删除会破坏 success criterion。
     """
     src = inspect.getsource(IndexerService._extract_and_write_graph)
@@ -86,7 +86,7 @@ def test_extract_and_write_graph_still_reads_global_flag() -> None:
     assert pattern.search(src), (
         "_extract_and_write_graph 函数体内未发现 "
         "`getattr(settings, \"ENABLE_CODEGRAPH\", False)` 等价模式 —— "
-        "initial implementation 既有短路丢失，success criterion byte-equivalent 不变量被破坏"
+        "implementation 既有短路丢失，success criterion byte-equivalent 不变量被破坏"
     )
 
 
@@ -199,7 +199,7 @@ def test_extract_and_write_graph_still_has_core_extraction_tokens() -> None:
 
 
 def test_dual_track_regression_hook_documented() -> None:
-    """initial implementation 落地的 ``test_dual_track_integration.py`` 文件在当前
+    """implementation 落地的 ``test_dual_track_integration.py`` 文件在当前
     HEAD 不存在（推测合并/重构期间被并入其他套件）—— 本 plan 通过执行
     ``tests/code_relations/`` 全量套件等价验证 byte-equivalent，
     避免对缺失文件的硬依赖。
@@ -210,10 +210,10 @@ def test_dual_track_regression_hook_documented() -> None:
     import services.indexer as indexer_module
 
     src = inspect.getsource(indexer_module)
-    # 防御性 assertion：确保 initial implementation baseline 标识仍在
+    # 防御性 assertion：确保 implementation baseline 标识仍在
     # （如果未来薄壳被深度重构，此 anchor 触发预警）
-    assert "initial implementation" in src.lower() or "initial implementation" in src.lower(), (
-        "indexer.py 中未见 initial implementation/278 锚点 —— 薄壳上下文可能已大幅漂移"
+    assert "implementation" in src.lower() or "implementation" in src.lower(), (
+        "indexer.py 中未见 implementation/278 锚点 —— 薄壳上下文可能已大幅漂移"
     )
 
 

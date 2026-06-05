@@ -1,9 +1,9 @@
-"""``ENABLE_GRAPHRAG_ENRICHMENT`` flag + caller 参数四组合行为锁（per initial implementation plan）。
+"""``ENABLE_GRAPHRAG_ENRICHMENT`` flag + caller 参数四组合行为锁（per implementation）。
 
-contract 三 flag 语义中"读出侧" flag 的入口守卫测试。initial implementation 落 ``enable_graph_enrichment``
-caller 参数；initial implementation 在 ``HybridSearchService.search`` 入口**追加** settings 读取，
+contract 三 flag 语义中"读出侧" flag 的入口守卫测试。implementation 落 ``enable_graph_enrichment``
+caller 参数；implementation 在 ``HybridSearchService.search`` 入口**追加** settings 读取，
 两者 AND 合并：任一为 False → 强制 ``_search_rag_only`` 路径（即使 Provider 是
-GraphCapableProvider），byte-equivalent 兑现 initial implementation NullProvider 路径。
+GraphCapableProvider），byte-equivalent 兑现 implementation NullProvider 路径。
 
 覆盖 4 组合（settings × caller × Provider 能力）：
 
@@ -11,9 +11,9 @@ GraphCapableProvider），byte-equivalent 兑现 initial implementation NullProv
    + caller=True → ``_search_graph_capable`` → 返回 ``HybridSearchResult``。
 2. ``test_enrichment_settings_false_forces_rag_only``：``override_settings(ENABLE_GRAPHRAG_ENRICHMENT=False)``
    + LocalProvider + caller=True → 强制 ``_search_rag_only`` → 返回 ``RagSearchResult``
-   （initial implementation 新行为，本 plan RED）。
+   （implementation 新行为，本 plan RED）。
 3. ``test_enrichment_caller_false_forces_rag_only``：默认 settings + LocalProvider
-   + caller=False → ``_search_rag_only``（initial implementation 既有行为回归保护）。
+   + caller=False → ``_search_rag_only``（implementation 既有行为回归保护）。
 4. ``test_enrichment_null_provider_always_rag_only``：NullProvider + 任意 flag 组合
    → ``_search_rag_only``（capability 守卫永远优先于 enrichment flag）。
 
@@ -115,7 +115,7 @@ async def test_enrichment_default_true_graph_capable_active() -> None:
         "（返回 HybridSearchResult）"
     )
     assert hasattr(result, "hop1_neighbors"), (
-        "HybridSearchResult 必须暴露 hop1_neighbors 字段（per initial implementation contract）"
+        "HybridSearchResult 必须暴露 hop1_neighbors 字段（per implementation contract）"
     )
     assert result.hop1_neighbors == [], (
         "items 无 related_chunks → 一跳邻居应为空"
@@ -123,16 +123,16 @@ async def test_enrichment_default_true_graph_capable_active() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2：settings=False 强制 rag_only（initial implementation 新行为，本 plan 入口守卫验收）
+# Test 2：settings=False 强制 rag_only（implementation 新行为，本 plan 入口守卫验收）
 # ---------------------------------------------------------------------------
 
 
 async def test_enrichment_settings_false_forces_rag_only() -> None:
     """``settings.ENABLE_GRAPHRAG_ENRICHMENT=False`` 强制 rag_only，即使 caller=True。
 
-    initial implementation plan 核心交付：HybridSearchService.search 入口读 settings + 与
+    implementation 核心交付：HybridSearchService.search 入口读 settings + 与
     caller 参数 AND 合并；False 时短路到 ``_search_rag_only`` byte-equivalent
-    initial implementation 路径。
+    implementation 路径。
 
     断言：
     - 返回 ``RagSearchResult``（无 ``hop1_neighbors`` / ``hop2_neighbors`` 字段）；
@@ -160,20 +160,20 @@ async def test_enrichment_settings_false_forces_rag_only() -> None:
         "rag_only 路径不应误命中 HybridSearchResult"
     )
     assert "## L3 Related Code" in result.final_context, (
-        "rag_only 路径应保 initial implementation L3 markdown section 原貌"
+        "rag_only 路径应保 implementation L3 markdown section 原貌"
     )
 
 
 # ---------------------------------------------------------------------------
-# Test 3：caller=False 强制 rag_only（initial implementation 既有行为回归保护）
+# Test 3：caller=False 强制 rag_only（implementation 既有行为回归保护）
 # ---------------------------------------------------------------------------
 
 
 async def test_enrichment_caller_false_forces_rag_only() -> None:
     """``enable_graph_enrichment=False`` (caller 参数) 强制 rag_only。
 
-    initial implementation 既有行为回归保护：caller 不需要二跳扩散时主动短路，与
-    initial implementation settings flag 独立（两者 AND 合并）。
+    implementation 既有行为回归保护：caller 不需要二跳扩散时主动短路，与
+    implementation settings flag 独立（两者 AND 合并）。
     """
     items = [_l3_item("src/auth/login.py", "def login(req): ...")]
     snapshot = _make_l3_snapshot(items)

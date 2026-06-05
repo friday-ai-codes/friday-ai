@@ -1,4 +1,4 @@
-"""System app Django admin 注册（v21.0 initial implementation 起含 ProviderCredential）。"""
+"""System app Django admin 注册（implementation 起含 ProviderCredential）。"""
 
 from __future__ import annotations
 

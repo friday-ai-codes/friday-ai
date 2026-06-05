@@ -1,4 +1,4 @@
-"""initial implementation: Webhook Secret 生成与全量索引统计修复测试
+"""implementation: Webhook Secret 生成与全量索引统计修复测试
 
 测试覆盖：
 - work item: Webhook Secret 生成 API（generate_webhook_secret action）

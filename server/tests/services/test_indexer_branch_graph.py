@@ -1,4 +1,4 @@
-"""initial implementation contract indexer 图谱轨分支透传集成测试。
+"""implementation contract indexer 图谱轨分支透传集成测试。
 
 覆盖三条核心契约：
 
@@ -148,7 +148,7 @@ async def test_history_id_threaded(repository, settings, monkeypatch) -> None:
     )
 
     # fallback 查询守门：history_id 透传时不应触发 IndexHistory **fallback 读**
-    # （filter(...).order_by(...).values_list(...)）。但 initial implementation 的
+    # （filter(...).order_by(...).values_list(...)）。但 implementation 的
     # per-run delta 回填会合法地调 filter(id=running_history).aupdate(...) 写本次
     # delta —— 该写路径应放行，只拦截 fallback 读路径。
     from repositories.models import IndexHistory

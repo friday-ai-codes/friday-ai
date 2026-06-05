@@ -1,6 +1,6 @@
 """services.retrieval —— RAG 检索包骨架（per contract）。
 
-本包是 initial implementation RAG 解耦的核心入口：
+本包是 implementation RAG 解耦的核心入口：
 
 - `types`：`RagSearchResult` / `LayerSnapshot` 数据类
 - `token_budget`：`estimate_tokens` / `trim_to_budget` / `split_budget` 纯函数

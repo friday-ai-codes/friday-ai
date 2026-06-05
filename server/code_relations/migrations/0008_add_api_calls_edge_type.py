@@ -1,6 +1,6 @@
-"""initial implementation: 扩 EdgeType choices 加 API_CALLS（work item）。
+"""implementation: 扩 EdgeType choices 加 API_CALLS（work item）。
 
-与 initial implementation 0006_add_implements_edge_type.py 类似，但同时更新
+与 implementation 0006_add_implements_edge_type.py 类似，但同时更新
 DB 层 CheckConstraint chunkedge_edge_type_valid（migration 0002 硬编码了 6 个值）。
 
 操作：

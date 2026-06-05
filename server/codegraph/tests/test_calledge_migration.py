@@ -39,7 +39,7 @@ def repository(db):
 def test_legacy_style_edge_gets_safe_defaults(repository: Repository) -> None:
     """只填存量必填字段的「老边」迁移后新字段为安全默认值。
 
-    存量行（initial implementation 口径）仅有 repository / caller_symbol / callee_name /
+    存量行（implementation 口径）仅有 repository / caller_symbol / callee_name /
     call_type / line_number；0007 新增字段须全部取 NULL/默认，确保
     「无需清空即 migrate」（Pitfall 1）。
     """

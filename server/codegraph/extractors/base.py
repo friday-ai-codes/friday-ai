@@ -49,15 +49,15 @@ class ImportData:
     target_module: str  # 导入的模块名，如 "os.path"、"django.http"
     imported_names: list[str] = field(default_factory=list)  # ["foo", "bar as baz"]
     is_relative: bool = False  # 是否为相对导入（from .module import x）
-    line: int = 0  # initial implementation: 1-indexed import 语句所在行（0 = 未知；tree-sitter / volar 填充）
-    target_path: str | None = None  # initial implementation: volar 解析后的目标文件绝对路径
+    line: int = 0  # implementation: 1-indexed import 语句所在行（0 = 未知；tree-sitter / volar 填充）
+    target_path: str | None = None  # implementation: volar 解析后的目标文件绝对路径
 
 
 @dataclass
 class CallData:
     """调用边抽取结果 —— 函数 A 在文件内调用了函数/方法 B。
 
-    字段与 CallEdge 模型对齐。initial implementation 仅文件内解析（per contract），
+    字段与 CallEdge 模型对齐。implementation 仅文件内解析（per contract），
     callee_name 存字符串名（非 FK）。
     caller_key 为三元组 (file_path, name, start_line)，
     与 Symbol.unique_together 对应，GraphWriter 据此查找 caller FK。
@@ -68,7 +68,7 @@ class CallData:
     call_type: str  # "DIRECT" | "METHOD" | "ATTRIBUTE" (per contract)
     line_number: int
     # selector / 对象调用的限定符（Go ``pkg.Func()`` 的 ``pkg``）；简单 identifier 才捕获，
-    # 复杂操作数留 None。供 work item Go 跨包解析（initial implementation）。
+    # 复杂操作数留 None。供 work item Go 跨包解析（implementation）。
     callee_qualifier: str | None = None
 
 

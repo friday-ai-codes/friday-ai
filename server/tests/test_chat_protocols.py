@@ -367,14 +367,14 @@ class TestFallbackLogicRemoved:
         assert not hasattr(ChatService, "_get_headers")
 
 
-# --- Provider Type Configuration Tests (plan-02, updated initial implementation) ---
+# --- Provider Type Configuration Tests (plan-02, updated implementation) ---
 
 
 class TestSettingKeysProviderConfig:
-    """验证 SettingKeys 包含新的 Provider 配置键（initial implementation）。"""
+    """验证 SettingKeys 包含新的 Provider 配置键（implementation）。"""
 
     def test_default_provider_type_key_removed(self) -> None:
-        """SettingKeys.DEFAULT_PROVIDER_TYPE 已硬删（initial implementation plan）。"""
+        """SettingKeys.DEFAULT_PROVIDER_TYPE 已硬删（implementation）。"""
         from system.models import SettingKeys as SK
 
         assert not hasattr(SK, "DEFAULT_PROVIDER_TYPE")

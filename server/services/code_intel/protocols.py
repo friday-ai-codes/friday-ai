@@ -1,4 +1,4 @@
-"""代码智能 Provider 三层 Protocol 定义 (per initial implementation contract, contract)。
+"""代码智能 Provider 三层 Protocol 定义 (per implementation contract, contract)。
 
 三层结构允许调用方按能力分级 isinstance 守卫：
 

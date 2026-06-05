@@ -1,4 +1,4 @@
-"""initial implementation wave 集成测试（work item）。"""
+"""implementation wave 集成测试（work item）。"""
 from __future__ import annotations
 
 import pytest

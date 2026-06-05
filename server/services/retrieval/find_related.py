@@ -1,7 +1,7 @@
-"""find_related Python API + explain_neighbor reason 模板（per initial implementation plan）。
+"""find_related Python API + explain_neighbor reason 模板（per implementation）。
 
-兑现 ROADMAP success criterion 第三条 "MAX_HOPS=2 硬上限" 在 ``find_related`` API 入口（防 LLM
-通过 initial implementation MCP tool 传 hops=10 引发指数级 ORM 扩散），并为 initial implementation 提前抹平
+兑现 success criterion 第三条 "MAX_HOPS=2 硬上限" 在 ``find_related`` API 入口（防 LLM
+通过 implementation MCP tool 传 hops=10 引发指数级 ORM 扩散），并为 implementation 提前抹平
 ``reason`` 字段（让 LLM 理解相关性来源）。
 
 本模块两职责：
@@ -21,13 +21,13 @@
    - 其他 → ``"related via {edge_type}"`` 通用 fallback
 
 2. ``find_related(start_chunk_id, *, repo_ids, relation_types, hops, direction, limit)``
-   —— initial implementation MCP tool 包一层即可暴露的 Python API；直接查 ChunkEdge ORM，复用
+   —— implementation MCP tool 包一层即可暴露的 Python API；直接查 ChunkEdge ORM，复用
    ``hop2_expander.assert_hops_within_limit`` ValueError 守卫；hops=2 时复用
-   ``hop2_expander.fetch_hop2_edges`` 走 downstream 二跳扩散（per plan deviation
+   ``hop2_expander.fetch_hop2_edges`` 走 downstream 二跳扩散（implementation notes
    "二跳扩散仅 downstream"——避免反向二跳指数级 fan-in）。
 
 **不读** codegraph 启用开关（Pitfall 5）：本模块只做 reason 模板与 ORM 扩散；
-启停决策由 initial implementation MCP tool 在外层守卫；CI grep gate
+启停决策由 implementation MCP tool 在外层守卫；CI grep gate
 ``rg "settings\\.ENABLE_CODEGRAP[H]" services/retrieval/`` 必须 0 命中。
 """
 
@@ -142,7 +142,7 @@ class _TemplateFn(Protocol):
 def _tpl_api_calls(
     *, source_file: str | None, target_file: str | None, metadata: dict[str, Any]
 ) -> str:
-    """API_CALLS → 跨仓 API 调用关系 reason 模板（initial implementation）。
+    """API_CALLS → 跨仓 API 调用关系 reason 模板（implementation）。
 
     metadata 字段（由 cross_repo_expander / rebuild_cross_repo_edges 写入）：
     - function_symbol: str  —— ApiWrapper 函数名（如 fetchTopicFinished）
@@ -179,7 +179,7 @@ _TEMPLATE_REGISTRY: dict[str, _TemplateFn] = {
     "TEST_OF": _tpl_test_of,
     "CO_CHANGED": _tpl_co_changed,
     "SEMANTIC": _tpl_semantic,
-    "API_CALLS": _tpl_api_calls,  # initial implementation
+    "API_CALLS": _tpl_api_calls,  # implementation
 }
 """模板分发表（dict[edge_type, template_fn]）—— 比 if-else 链便于扩展（per plan
 "模板用 dict[str, Callable] 驱动，方便扩展"）。"""
@@ -192,7 +192,7 @@ def explain_neighbor(
     target_file: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> str:
-    """生成 NeighborMetadata.reason 字段：8 类模板 + graceful fallback（initial implementation）。
+    """生成 NeighborMetadata.reason 字段：8 类模板 + graceful fallback（implementation）。
 
     Args:
         edge_type: ``EdgeType`` 字面值（``CALL`` / ``IMPORT`` / ``SAME_FILE`` /
@@ -296,7 +296,7 @@ def _fetch_hop1_edges(
             )
 
     if direction in ("upstream", "both"):
-        # upstream：用 idx_chunkedge_target 反向索引（initial implementation 落）
+        # upstream：用 idx_chunkedge_target 反向索引（implementation 落）
         per_dir_limit = half_limit if direction == "both" else limit
         qs = (
             base.filter(target_chunk_id=start_chunk_id)
@@ -384,14 +384,13 @@ async def find_related(
 ) -> list[NeighborMetadata]:
     """查 chunk 相关邻居（一跳 / 二跳，多方向，多关系类型过滤）。
 
-    initial implementation MCP tool 仅需包一层 Pydantic schema delegate 到本函数（per plan
-    success_criteria）。
+    implementation MCP tool 仅需包一层 Pydantic schema delegate 到本函数（success criteria）。
 
     Args:
         start_chunk_id: 起点 chunk_id（UUID 字符串）。
         repo_ids: 候选仓库 ID 列表；空 → 立即返回 ``[]`` 不查 ORM。
         relation_types: 限定 ``EdgeType`` 列表；``None`` 或 ``[]`` → 不过滤
-            （per plan deviation："空列表语义=未指定过滤"）。
+            （implementation notes："空列表语义=未指定过滤"）。
         hops: 跳数（1 或 2）；``> MAX_HOPS=2`` 或 ``< 0`` → ``ValueError``
             （复用 ``hop2_expander.assert_hops_within_limit``）。
         direction: ``"downstream"`` (源→目标) / ``"upstream"`` (目标→源 用
@@ -409,7 +408,7 @@ async def find_related(
         ValueError: ``hops`` 越界 或 ``direction`` 非三选一。
 
     Examples:
-        >>> # initial implementation MCP tool 调用示例（伪代码）
+        >>> # implementation MCP tool 调用示例（伪代码）
         >>> neighbors = await find_related(
         ...     "abc-uuid",
         ...     repo_ids=["repo-1"],

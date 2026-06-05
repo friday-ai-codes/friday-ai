@@ -1,4 +1,4 @@
-"""initial implementation: ChunkEdge 新增 target_repository_id 字段（work item）。
+"""implementation: ChunkEdge 新增 target_repository_id 字段（work item）。
 
 AddField nullable IntegerField。
 v24 既有 6 类边 target_repository_id = NULL（backward compatible）。
@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
                 null=True,
                 db_index=True,
                 help_text=(
-                    "跨仓边的 target chunk 所在仓库 ID（initial implementation）。"
+                    "跨仓边的 target chunk 所在仓库 ID（implementation）。"
                     "单仓边（v24 既有 6 类边）为 NULL；UUID 类型与 Repository.id 对齐。"
                 ),
             ),

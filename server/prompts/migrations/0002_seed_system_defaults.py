@@ -1,4 +1,4 @@
-"""initial implementation seed: 12 个系统级内置 Prompt 灌入。
+"""implementation seed: 12 个系统级内置 Prompt 灌入。
 
 决策依据（work-item.md contract）：
 - 通过 Python import 原常量拿字面量，保证字节级单一来源
@@ -75,7 +75,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
             defaults={
                 "category": category,
                 "title": title,
-                "description": "系统内置默认 Prompt（initial implementation seed）",
+                "description": "系统内置默认 Prompt（implementation seed）",
                 "is_builtin": True,
             },
         )
@@ -86,7 +86,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
                 version=1,
                 body=body,
                 variables_schema={},
-                change_note="initial implementation initial seed",
+                change_note="implementation initial seed",
             )
             prompt.active_version = version
             prompt.save(update_fields=["active_version", "updated_at"])
@@ -100,7 +100,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
                 version=max_v + 1,
                 body=body,
                 variables_schema={},
-                change_note=f"initial implementation seed sync (body drift from v{max_v})",
+                change_note=f"implementation seed sync (body drift from v{max_v})",
             )
             prompt.active_version = new_version
             prompt.save(update_fields=["active_version", "updated_at"])

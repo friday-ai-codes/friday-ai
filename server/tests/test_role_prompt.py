@@ -1,7 +1,7 @@
 """角色化 System Prompt 测试。
 
 测试 _build_system_prompt 函数的角色差异化行为。
-initial implementation Task 7: async 化 + autouse fixture 强制 fallback 路径（避免测试依赖 DB seed 状态）。
+implementation Task 7: async 化 + autouse fixture 强制 fallback 路径（避免测试依赖 DB seed 状态）。
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from chat.conversation_service import ROLE_PROMPTS, _build_system_prompt
 
 @pytest.mark.asyncio
 class TestBuildSystemPrompt:
-    """_build_system_prompt 角色化 prompt 测试（异步版 initial implementation）。
+    """_build_system_prompt 角色化 prompt 测试（异步版 implementation）。
 
     每个测试通过 monkeypatch 强制 fallback 路径，不依赖 DB seed。
     """
@@ -86,7 +86,7 @@ class TestBuildSystemPrompt:
     async def test_all_roles_have_reasonable_length(self) -> None:
         """所有角色 prompt 长度在合理范围内。
 
-        initial implementation 在 developer / strategy / coding_guidance 各
+        implementation 在 developer / strategy / coding_guidance 各
         追加「准确性优先」段后，整体长度从 ~1100 增长到 ~3000+；上限同步
         放宽至 5000 留足后续 INTENT/RELEV phase 增量注入空间。
         """

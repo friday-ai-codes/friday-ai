@@ -1,4 +1,4 @@
-"""initial implementation plan / work item-03：``IndexProgressStreamView`` 帧 payload
+"""implementation / work item-03：``IndexProgressStreamView`` 帧 payload
 扩展 graph 顶层段 + 终止条件追加 ``graph_build_status != RUNNING`` 判定的端到端测试。
 
 覆盖：
@@ -10,7 +10,7 @@
 3. percent 边界：files_total=0 兜底 0，processed>total 上限 100
 4. 终止条件扩展：``graph_build_status=RUNNING`` 时 SSE 不立即 done（即使
    ``index_status != INDEXING`` 且无 RUNNING IndexHistory）
-5. 向后兼容：``repository`` + ``running_history`` 顶层字段保持完整不破坏 initial implementation
+5. 向后兼容：``repository`` + ``running_history`` 顶层字段保持完整不破坏 implementation
    既有 schema
 
 测试模板沿用 ``test_index_progress_stream.py``：``AsyncClient`` + ``RefreshToken``
@@ -306,7 +306,7 @@ class TestTerminationCondition:
         self, graph_user: User
     ) -> None:
         """index_status=INDEXED + 无 RUNNING IndexHistory + graph_build_status=IDLE
-        → 第一帧 progress 后立即 done idle（保 initial implementation 既有行为）。
+        → 第一帧 progress 后立即 done idle（保 implementation 既有行为）。
         """
         repo = await Repository.objects.acreate(
             name="graph-both-idle",
@@ -382,7 +382,7 @@ class TestBackwardCompat:
         self, graph_user: User
     ) -> None:
         """扩展后 progress 帧仍含 repository + running_history 顶层字段；
-        repository 子对象字段集合 ⊇ initial implementation 既有 schema。
+        repository 子对象字段集合 ⊇ implementation 既有 schema。
         """
         repo = await Repository.objects.acreate(
             name="graph-back-compat",

@@ -174,7 +174,7 @@ async def test_runtime_timeout_window() -> None:
 
 
 # ============================================================================
-# initial implementation：ConversationRuntime payload 携带 coding_plan
+# implementation：ConversationRuntime payload 携带 coding_plan
 # ============================================================================
 
 

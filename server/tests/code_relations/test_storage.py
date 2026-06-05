@@ -1,4 +1,4 @@
-"""code_relations.storage.bulk_insert_edges 测试（per initial implementation contract）。"""
+"""code_relations.storage.bulk_insert_edges 测试（per implementation contract）。"""
 
 from __future__ import annotations
 

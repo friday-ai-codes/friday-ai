@@ -1,6 +1,6 @@
-"""一次性数据修复：清理 initial implementation 集成漏洞导致 status=error 的 conv。
+"""一次性数据修复：清理 implementation 集成漏洞导致 status=error 的 conv。
 
-背景：work-item review round Test 2 调查发现，从 commit ``83218e04`` (initial implementation)
+背景：work-item review round Test 2 调查发现，从 commit ``83218e04`` (implementation)
 起，``chat/conversation_service.py`` 的 graph 收尾分发未识别新增的
 ``phase="waiting_clarification"``，导致 graph 正确 ``interrupt()`` 暂停后 chat
 层把它当成"正常完成"调 ``do_finalize`` + ``result_metadata={}`` → ``finalize.py:67``
@@ -47,7 +47,7 @@ logger = structlog.get_logger(__name__)
 
 
 class Command(BaseCommand):
-    help = "清理因 initial implementation 漏分发导致 status=error 的 conversation"
+    help = "清理因 implementation 漏分发导致 status=error 的 conversation"
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(

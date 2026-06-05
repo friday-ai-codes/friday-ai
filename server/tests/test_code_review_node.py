@@ -1,4 +1,4 @@
-"""AICodeReviewNode 单元测试（initial implementation contract 迁移后）。
+"""AICodeReviewNode 单元测试（implementation contract 迁移后）。
 
 覆盖 happy path（diff 获取成功 -> Agent 审查 -> 结构化报告）和 error handling
 （缺少 coding_result -> failed、空 merge_requests -> failed），以及 work item

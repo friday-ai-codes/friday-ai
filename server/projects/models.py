@@ -54,12 +54,12 @@ class Project(models.Model):
         help_text="飞书文档导出目标文件夹 token",
     )
 
-    # initial implementation plan（contract/contract）：v8.1 Claude configuration 字段硬删
+    # implementation（contract/contract）：v8.1 Claude configuration 字段硬删
     # 删除：claude_api_key_encrypted / claude_base_url / claude_default_model
     #       default_provider_type / default_model
     # 替代：ProviderCredential(scope="project", scope_id=project.id) + default_provider_credential_id FK
 
-    # initial implementation contract contract：项目级默认 Provider 凭证（四层解析 L3）
+    # implementation contract contract：项目级默认 Provider 凭证（四层解析 L3）
     default_provider_credential_id = models.ForeignKey(
         "system.ProviderCredential",
         null=True,

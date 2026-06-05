@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1: 服务端回调处理扩展测试。
+"""implementation Task 1: 服务端回调处理扩展测试。
 
 测试 _handle_completed 和 _handle_failed 中 repo_summary 分支，
 确认结果正确写回 Repository.ai_summary 和 ai_summary_error 字段。

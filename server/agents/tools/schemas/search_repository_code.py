@@ -3,7 +3,7 @@
 字段冻结（frozen=True / extra="forbid" / strict=True 三重防漂移）：
 
 - ``SearchRepositoryCodeInput``：``query`` / ``repository_ids`` / ``top_k`` /
-  ``include_expansion``，与 initial implementation 灰度切换的"目标契约"对齐（**当前函数签名
+  ``include_expansion``，与 implementation 灰度切换的"目标契约"对齐（**当前函数签名
   不一致**，per contract 注：本 phase 仅落 schema baseline，不动函数本身）。
 - ``SearchRepositoryCodeOutput``：``final_context`` / ``tokens`` /
   ``source_layers`` / ``hit_count``，对齐 ``LayeredSearchResult`` /
@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class SearchRepositoryCodeInput(BaseModel):
     """Agent tool ``search_repository_code`` 输入契约（per contract）。
 
-    initial implementation 灰度切换时，``space_tools.py`` 的函数体会改用本模型解析 kwargs；
+    implementation 灰度切换时，``space_tools.py`` 的函数体会改用本模型解析 kwargs；
     本 phase 仅冻结字段定义，不动 ``search_repository_code`` 函数签名（per contract）。
     """
 

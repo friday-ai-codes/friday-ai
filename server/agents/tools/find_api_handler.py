@@ -1,12 +1,12 @@
-"""``find_api_handler`` agent tool —— per initial implementation plan work item。
+"""``find_api_handler`` agent tool —— per implementation work item。
 
 给定 HTTP URL + method，在指定仓库的 Endpoint 表中查找匹配的后端 handler symbol。
 
 实现要点：
-- **URL 归一化**：复用 initial implementation ``path_normalizer.normalize_url_path``，将查询 URL 与
+- **URL 归一化**：复用 implementation ``path_normalizer.normalize_url_path``，将查询 URL 与
   Endpoint.url_path 统一归一化为 :param 风格再对比。
 - **查询策略**：先按 ``http_method + repository_id`` 过滤 Endpoint，再 Python 侧逐条
-  normalize(url_path) 对比——单仓 endpoint 数量有限（initial implementation 实测 285+），Python 侧对比可接受。
+  normalize(url_path) 对比——单仓 endpoint 数量有限（implementation 实测 285+），Python 侧对比可接受。
 - **method 大小写**：输入统一转大写对比（get → GET）。
 - **结构化错误**：repository_id 缺失 / Pydantic ValidationError / 内部异常均走
   ``ToolResult(success=False, error=...)``，永不冒泡。
@@ -145,7 +145,7 @@ async def _find_api_handler_impl(
     if not validated.repository_id:
         return ToolResult(
             success=False,
-            error="repository_id is required (per work item initial implementation)",
+            error="repository_id is required (per work item implementation)",
         )
 
     if not validated.url:

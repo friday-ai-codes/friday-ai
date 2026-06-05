@@ -1,13 +1,13 @@
 """request_handler — OpenAI messages → LangChain BaseMessage + HybridSearch 注入（contract/contract）。
 
-initial implementation plan (contract): callsite 语义已切换到 ``HybridSearchService`` 编排器；
+implementation (contract): callsite 语义已切换到 ``HybridSearchService`` 编排器；
 为保 contract 保留组 ``server/tests/compat/test_adapter.py`` 中
 ``patch("compat.request_handler.LayeredSearchService")`` 继续生效（旧测试不动且全绿），
 模块顶部保留 ``LayeredSearchService`` 别名作为 patch 入口。
 
 实际调用走 ``LayeredSearchService.search`` thin wrapper（plan Task 2 改造），
 wrapper 内部 ``delegate HybridSearchService(get_provider()).search(...)``，行为与
-直接调 ``HybridSearchService`` 字节级等价；initial implementation 双 provider 测试矩阵阶段统一
+直接调 ``HybridSearchService`` 字节级等价；implementation 双 provider 测试矩阵阶段统一
 迁移 patch target 后可彻底删除此别名。
 """
 
@@ -28,7 +28,7 @@ logger = structlog.get_logger(__name__)
 
 #: contract 测试 patch 入口（``patch("compat.request_handler.LayeredSearchService")``）。
 #: 实际调用经 thin wrapper delegate 到 ``HybridSearchService(get_provider()).search``。
-#: initial implementation 测试矩阵阶段迁移完成后删除。
+#: implementation 测试矩阵阶段迁移完成后删除。
 LayeredSearchService = _layered_search_compat.LayeredSearchService
 
 

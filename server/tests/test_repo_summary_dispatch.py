@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2: dispatch_repo_summary 服务测试。
+"""implementation Task 2: dispatch_repo_summary 服务测试。
 
 测试 dispatch 服务创建 AgentSession/SubAgentSession、构建 DispatchTask metadata、
 渲染 prompt 和更新 repository 状态。

@@ -1,4 +1,4 @@
-"""initial implementation: 测量 gopls vs tree-sitter Go call resolution 完整度。
+"""implementation: 测量 gopls vs tree-sitter Go call resolution 完整度。
 
 per work item / work item
 =====================

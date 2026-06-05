@@ -1,4 +1,4 @@
-"""索引自动触发任务（initial implementation）。
+"""索引自动触发任务（implementation）。
 
 包含：
 - Webhook push 事件处理
@@ -189,7 +189,7 @@ async def trigger_auto_index(
 
 
 # ---------------------------------------------------------------------------
-# 分支 overlay 重建 / 回收（initial implementation）
+# 分支 overlay 重建 / 回收（implementation）
 # ---------------------------------------------------------------------------
 
 # overlay 重建后台任务也走 background_runner，避免随请求 loop 一起死。

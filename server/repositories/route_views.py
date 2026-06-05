@@ -1,4 +1,4 @@
-"""仓库路由 API —— initial implementation (per contract)."""
+"""仓库路由 API —— implementation (per contract)."""
 
 from typing import Any
 

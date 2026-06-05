@@ -1,9 +1,9 @@
 """ConversationService 扩展集成测试：对话级模型选择。
 
-测试 initial implementation 新增的对话级模型选择功能。
+测试 implementation 新增的对话级模型选择功能。
 使用 AsyncClient 测试对话创建 API。
 
-注意：/messages/ 端点已在 initial implementation 中删除，替换为 /stream/ SSE 端点。
+注意：/messages/ 端点已在 implementation 中删除，替换为 /stream/ SSE 端点。
 原有的 TestSendMessageWithRole 和 TestConversationModelSelection 测试类已移除。
 """
 

@@ -1,4 +1,4 @@
-"""initial implementation plan — Analytics group_by 参数测试。
+"""implementation — Analytics group_by 参数测试。
 
 覆盖 contract contract 契约：
 - GET /api/analytics/overview/?group_by={none|provider_type|project}

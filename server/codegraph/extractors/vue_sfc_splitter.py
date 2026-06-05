@@ -1,6 +1,6 @@
 """Vue SFC pre-splitter —— 把 .vue 源码拆为 template / script / style 三段。
 
-per initial implementation：不引入 tree-sitter-vue grammar，用 Python 正则 + 标签扫描
+per implementation：不引入 tree-sitter-vue grammar，用 Python 正则 + 标签扫描
 实现的纯函数 splitter；保 line_offset / start_byte 精度，让子 extractor
 （TS / HTML / CSS）输出能还原到原 .vue 文件视角行号。
 
@@ -20,7 +20,7 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class SfcBlock:
-    """SFC 单块描述符（per initial implementation）。
+    """SFC 单块描述符（per implementation）。
 
     - kind: 块类型，固定三选一，便于后续 dispatch
     - attrs: 属性 dict（如 {"lang": "ts", "setup": True}），布尔值表示无 value 的 attr

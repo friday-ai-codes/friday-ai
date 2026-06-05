@@ -1,6 +1,6 @@
-"""initial implementation plan：ChunkRegistry pre_delete 信号 handler 单测。
+"""implementation：ChunkRegistry pre_delete 信号 handler 单测。
 
-覆盖 4 + 1 条用例（per plan contract / contract / contract / contract）：
+覆盖 4 + 1 条用例（contract / contract / contract / contract）：
 
 1. test_handler_deletes_inbound_chunk_edges
    pre_delete handler 同步删除 ChunkEdge.target_chunk_id=deleted 的孤儿边

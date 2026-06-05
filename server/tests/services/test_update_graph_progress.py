@@ -1,4 +1,4 @@
-"""initial implementation plan — `services.indexer.update_graph_progress` 实装 + Repository 入口/出口 reset/terminal 集成测试。
+"""implementation — `services.indexer.update_graph_progress` 实装 + Repository 入口/出口 reset/terminal 集成测试。
 
 测试覆盖（work item-02）：
 
@@ -10,7 +10,7 @@
      决议口径锁定——helper 一律全写 4 字段（per-call strong consistency，
      避免"上次的 stage 残留"bug；与 update_index_stage 仅写 index_stage 不同）
 
-2. 节流验证（ROADMAP success criterion 关键）：
+2. 节流验证（success criterion 关键）：
    - test_update_graph_progress_called_40_times_for_1000_files：callsite 循环
      `if i % 25 == 0: await update_graph_progress(...)` 调 1000 次 → mock
      aupdate.await_count == 40（精确 1000 // 25）
@@ -48,7 +48,7 @@ from django.utils import timezone
 from repositories.models import Repository, RepositoryGraphStatus
 
 
-# initial implementation-01 起 build_graph_for_repository 会 git clone 仓库到临时目录。
+# implementation-01 起 build_graph_for_repository 会 git clone 仓库到临时目录。
 # 本模块全部 mock 了 `_extract_and_write_graph`，clone 步骤必须 stub 以避免
 # 走真实 git clone 拉 fake URL 超时。
 @pytest.fixture(autouse=True)
@@ -180,7 +180,7 @@ async def test_update_graph_progress_writes_all_four_fields_each_call(
 
 
 # ---------------------------------------------------------------------------
-# 2. 节流验证（ROADMAP success criterion）
+# 2. 节流验证（success criterion）
 # ---------------------------------------------------------------------------
 
 

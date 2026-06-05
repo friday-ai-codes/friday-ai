@@ -270,7 +270,7 @@ async def test_deep_analysis_passes_branch() -> None:
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation LayeredSearchService 替代 EmbeddingService 直调 + "
+        "OBSOLETE — implementation LayeredSearchService 替代 EmbeddingService 直调 + "
         "BranchAwareSearchService。本测试 patch 的 "
         "`workflows.nodes.ai.context_retrieval.EmbeddingService` 已不存在。"
         "v24.0 应改写成对 LayeredSearchService.search 的 contract 测试。"
@@ -357,7 +357,7 @@ async def test_context_retrieval_passes_branch() -> None:
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation LayeredSearchService 替代 EmbeddingService 直调 + "
+        "OBSOLETE — implementation LayeredSearchService 替代 EmbeddingService 直调 + "
         "BranchAwareSearchService。本测试 patch 的 "
         "`workflows.nodes.ai.context_retrieval.EmbeddingService` 已不存在。"
         "v24.0 应改写成对 LayeredSearchService.search 的 contract 测试。"

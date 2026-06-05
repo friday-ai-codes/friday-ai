@@ -1,4 +1,4 @@
-"""SemanticEdgeBuilder Pitfall 3 perf gate（per initial implementation contract / contract）。
+"""SemanticEdgeBuilder Pitfall 3 perf gate（per implementation contract / contract）。
 
 10k chunks builder wall-clock < 60s。CI 默认 skip（pyproject
 ``addopts = "-m 'not perf'"``）；本地用

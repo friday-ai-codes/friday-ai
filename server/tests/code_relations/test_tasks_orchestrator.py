@@ -1,5 +1,5 @@
 """tasks._run_all_builders_and_sync_payload + enqueue_edge_build 测试
-（per initial implementation contract / contract / contract）。
+（per implementation contract / contract / contract）。
 
 覆盖：
 - 空 dirty 短路（不 spawn task）

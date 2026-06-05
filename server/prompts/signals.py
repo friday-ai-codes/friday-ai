@@ -1,7 +1,7 @@
 """Prompt 缓存失效 signal（contract 预埋 hook）。
 
-initial implementation：只打日志，不做任何缓存删除（contract 无缓存）。
-initial implementation+：若引入版本化缓存，在本 handler 中补充相应失效逻辑。
+implementation：只打日志，不做任何缓存删除（contract 无缓存）。
+implementation+：若引入版本化缓存，在本 handler 中补充相应失效逻辑。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def prompt_post_save_handler(
     created: bool,
     **kwargs: Any,
 ) -> None:
-    """Prompt 保存后触发的缓存失效钩子（initial implementation 只打日志）。"""
+    """Prompt 保存后触发的缓存失效钩子（implementation 只打日志）。"""
     logger.info(
         "prompt_cache_invalidated",
         slug=instance.slug,

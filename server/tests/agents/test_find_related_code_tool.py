@@ -1,6 +1,6 @@
-"""``find_related_code`` agent tool 函数体行为单测 —— per initial implementation plan 02 Task 1。
+"""``find_related_code`` agent tool 函数体行为单测 —— per implementation 02 Task 1。
 
-initial implementation 修复后：``repository_id`` / ``chunk_id`` 在 Pydantic schema 层校验
+implementation 修复后：``repository_id`` / ``chunk_id`` 在 Pydantic schema 层校验
 UUID 形态，本测试统一使用合法 UUID（``_VALID_REPO_ID``）做 repository_id，避免
 schema 层守卫早于 tool 业务逻辑短路 case。
 
@@ -13,7 +13,7 @@ schema 层守卫早于 tool 业务逻辑短路 case。
 4. ``test_missing_repository_id_returns_error`` —— repository_id is None
 5. ``test_pydantic_validation_error_returns_toolresult`` —— 0 起点 → ToolResult.error
 6. ``test_empty_neighbors_returns_message`` —— 空邻居 message="无关联代码"
-7. ``test_reason_field_passes_through_non_empty`` —— reason 透传 initial implementation _explain_neighbor
+7. ``test_reason_field_passes_through_non_empty`` —— reason 透传 implementation _explain_neighbor
 8. ``test_neighbor_output_field_order_aligned`` —— NeighborOutput vs NeighborMetadata 字段顺序
 9. ``test_hybrid_search_call_args_passthrough`` —— hops/direction/relation_types/limit 透传
 10. ``test_symbol_name_no_match_returns_error`` —— lookup_symbols 空 → 结构化 error
@@ -39,7 +39,7 @@ from services.retrieval.types import NeighborMetadata
 # ---------------------------------------------------------------------------
 
 _VALID_REPO_ID = "22222222-2222-2222-2222-222222222222"
-"""合法 UUID 形式 repository_id，per initial implementation schema 层 UUID 守卫。"""
+"""合法 UUID 形式 repository_id，per implementation schema 层 UUID 守卫。"""
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +345,7 @@ async def test_empty_neighbors_returns_message() -> None:
 
 @pytest.mark.asyncio
 async def test_reason_field_passes_through_non_empty() -> None:
-    """initial implementation _explain_neighbor 模板输出的 reason 必须原样透传，**禁止重写**。"""
+    """implementation _explain_neighbor 模板输出的 reason 必须原样透传，**禁止重写**。"""
     from agents.tools.find_related_code import find_related_code
 
     custom_reason = "caller of login_user() via direct call"
@@ -422,7 +422,7 @@ async def test_hybrid_search_call_args_passthrough() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Section 7: 异常兜底 —— initial implementation tool 层 try/except 双层防御
+# Section 7: 异常兜底 —— implementation tool 层 try/except 双层防御
 # ---------------------------------------------------------------------------
 
 

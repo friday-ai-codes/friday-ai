@@ -44,14 +44,14 @@ class RepositorySerializer(serializers.ModelSerializer):
             "ai_summary_status",
             "ai_summary_generated_at",
             "ai_summary_error",
-            # initial implementation: contract freshness 字段（contract/contract）
+            # implementation: contract freshness 字段（contract/contract）
             "remote_head_sha",
             "remote_head_checked_at",
             "behind_commits",
             "last_indexed_commit_sha",
-            # initial implementation-01：图谱进度 6 字段（全 read-only，由
+            # implementation-01：图谱进度 6 字段（全 read-only，由
             # 后端 indexer / graph_builder 控写；auto_build_graph_enabled
-            # initial implementation 已暴露为 read-write，不在此列）。
+            # implementation 已暴露为 read-write，不在此列）。
             "graph_build_status",
             "graph_stage",
             "current_graph_file",

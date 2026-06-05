@@ -1,4 +1,4 @@
-"""initial implementation 集成测试：真实 volar 抽 study-app sub-project 验证 SymbolData / ImportData。
+"""implementation 集成测试：真实 volar 抽 study-app sub-project 验证 SymbolData / ImportData。
 
 @pytest.mark.integration + 三重 skipif：vue-language-server 装 + study-app 路径 + fixture 存在
 """

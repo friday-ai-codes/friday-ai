@@ -341,7 +341,7 @@ async def search_repository_code(
             },
         )
 
-    # 统一调用 HybridSearchService (per initial implementation contract)
+    # 统一调用 HybridSearchService (per implementation contract)
     from services.code_intel import get_provider
     from services.retrieval import HybridSearchService
 

@@ -1,11 +1,11 @@
-"""hop1_reader 性能 gate —— initial implementation plan perf 基准（per ROADMAP success criterion）。
+"""hop1_reader 性能 gate —— implementation perf 基准（success criterion）。
 
 1000 rag_items × 平均 5 邻居 → ``extract_hop1_neighbors_raw`` +
 ``resolve_neighbor_metadata`` 总耗时 < 100ms（单次 in_bulk + 5000 元素 dict
 操作）。
 
 CI 默认 ``-m 'not perf'`` deselect；本地或性能 job 用 ``-m perf`` 运行
-（per initial implementation contract）。
+（per implementation contract）。
 """
 
 from __future__ import annotations

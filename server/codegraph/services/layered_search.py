@@ -1,7 +1,7 @@
-"""``LayeredSearchService`` — initial implementation plan deprecated thin wrapper（contract / contract）。
+"""``LayeredSearchService`` — implementation deprecated thin wrapper（contract / contract）。
 
-initial implementation 之前本模块承载五层检索（L1 RepoRouting → L5 ContextReassembly）的完整编排
-逻辑；initial implementation 解耦后业务入口统一改为 :class:`services.retrieval.HybridSearchService`。
+implementation 之前本模块承载五层检索（L1 RepoRouting → L5 ContextReassembly）的完整编排
+逻辑；implementation 解耦后业务入口统一改为 :class:`services.retrieval.HybridSearchService`。
 为保 contract 保留组旧测试（``tests/codegraph/test_layered_search.py`` 等 5 个文件）
 **零修改**继续全绿、并锁 golden snapshot 20/20 零漂移，本文件物理保留：
 
@@ -22,7 +22,7 @@ initial implementation 之前本模块承载五层检索（L1 RepoRouting → L5
 ``HybridSearchService(get_provider()).search(...)``；模块加载即触发
 ``DeprecationWarning``（``stacklevel=2`` 指向 importer），下个 checkpoint 物理删除。
 
-Per contract / contract / contract / initial implementation Success Criteria #1。
+Per contract / contract / contract / implementation Success Criteria #1。
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ logger = structlog.get_logger(__name__)
 warnings.warn(
     "codegraph.services.layered_search.LayeredSearchService is deprecated; "
     "use services.retrieval.HybridSearchService(get_provider()).search(...) instead. "
-    "Will be removed next checkpoint (per initial implementation contract / contract).",
+    "Will be removed next checkpoint (per implementation contract / contract).",
     DeprecationWarning,
     stacklevel=2,
 )

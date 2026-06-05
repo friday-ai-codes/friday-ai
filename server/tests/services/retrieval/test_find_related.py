@@ -1,7 +1,7 @@
-"""find_related Python API 单测（per initial implementation plan Task 2）。
+"""find_related Python API 单测（per implementation Task 2）。
 
 兑现 work item 第三条 "MAX_HOPS=2 硬上限" 在 find_related API 入口（防 LLM 通过
-initial implementation MCP tool 传 hops=10 引发指数级 ORM 扩散）。
+implementation MCP tool 传 hops=10 引发指数级 ORM 扩散）。
 
 12 条覆盖矩阵（pytest.mark.django_db + 真 ChunkEdge fixtures）：
 
@@ -20,7 +20,7 @@ initial implementation MCP tool 传 hops=10 引发指数级 ORM 扩散）。
 12. ``test_non_existent_chunk_id_returns_empty`` —— start_chunk_id 无边 → []
 13. ``test_reason_field_populated_via_explain_neighbor`` —— reason 字段非空 + 含模板关键词
 14. ``test_hybrid_search_service_has_find_related_method`` —— HybridSearchService.find_related thin
-    wrapper 暴露（per plan initial implementation MCP tool 直接调用入口）
+    wrapper 暴露（per plan implementation MCP tool 直接调用入口）
 """
 
 from __future__ import annotations
@@ -438,7 +438,7 @@ async def test_relation_types_filter_call_import(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_relation_types_empty_list_treated_as_no_filter(repository) -> None:
-    """relation_types=[] → 不抛错且语义同 None（per plan deviation）。"""
+    """relation_types=[] → 不抛错且语义同 None（implementation notes）。"""
     start = uuid.uuid4()
     n_call = uuid.uuid4()
     n_test = uuid.uuid4()
@@ -588,7 +588,7 @@ async def test_reason_field_populated_via_explain_neighbor(repository) -> None:
 async def test_hybrid_search_service_has_find_related_method(repository) -> None:
     """HybridSearchService.find_related 实例方法存在 + delegate 到 module-level 函数。
 
-    initial implementation MCP tool 直接调用入口（per plan success_criteria："initial implementation MCP
+    implementation MCP tool 直接调用入口（success criteria："implementation MCP
     tool 仅需 thin wrapper：包 Pydantic schema + delegate 到 HybridSearchService.find_related"）。
     """
     assert hasattr(HybridSearchService, "find_related"), (

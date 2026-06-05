@@ -1,4 +1,4 @@
-"""initial implementation 契约：SSE 事件流跨 5 Provider 字段名一致性（20 contract tests）。
+"""implementation 契约：SSE 事件流跨 5 Provider 字段名一致性（20 contract tests）。
 
 参数化维度：
 - provider: anthropic / openai_responses / openai_chat / gemini / ollama（5）

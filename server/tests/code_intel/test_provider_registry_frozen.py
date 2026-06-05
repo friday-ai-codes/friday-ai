@@ -1,17 +1,17 @@
-"""Provider 注册表 frozen 行为锁定测试 —— per initial implementation contract / contract。
+"""Provider 注册表 frozen 行为锁定测试 —— per implementation contract / contract。
 
 CONTEXT.md contract 字面要求::
 
     PROVIDER_REGISTRY: Mapping[str, type[BaseCodeProvider]] = MappingProxyType({...})
 
-initial implementation plan 在 initial implementation 既有 ``register_provider`` + ``freeze`` 之上：
+implementation 在 implementation 既有 ``register_provider`` + ``freeze`` 之上：
 追加 ``PROVIDER_REGISTRY`` 模块级只读视图（``types.MappingProxyType`` 包装内部
 ``_REGISTRY`` dict），形成"双层防御"：
 
 1. **运行时写守卫**：``PROVIDER_REGISTRY["x"] = ...`` / ``del PROVIDER_REGISTRY["x"]``
    抛 ``TypeError``（mappingproxy 不支持 ``__setitem__`` / ``__delitem__``）。
 2. **生命周期守卫**：``register_provider`` 在 ``freeze()`` 后抛 ``RuntimeError``
-   （initial implementation contract 既有行为，本套件回归保护）。
+   （implementation contract 既有行为，本套件回归保护）。
 
 外部模块只能通过 ``PROVIDER_REGISTRY`` 视图读 provider 实例；底层 ``_REGISTRY``
 不在 ``__all__`` 暴露（Python 语义限制：仍可通过 ``from ... import _REGISTRY``
@@ -100,7 +100,7 @@ def test_provider_registry_frozen_mapping_rejects_delitem() -> None:
 
 
 def test_register_provider_after_freeze_raises_runtime_error() -> None:
-    """freeze() 后调 register_provider 抛 RuntimeError（initial implementation contract 行为回归）。"""
+    """freeze() 后调 register_provider 抛 RuntimeError（implementation contract 行为回归）。"""
     _setup_default_provider()
 
     assert is_frozen() is True
@@ -123,7 +123,7 @@ def test_provider_registry_view_reflects_default_provider() -> None:
 
 
 def test_freeze_idempotent() -> None:
-    """连续两次 freeze() 不抛错（initial implementation 既有行为回归）。"""
+    """连续两次 freeze() 不抛错（implementation 既有行为回归）。"""
     register_provider("default", NullProvider())
     freeze()
     freeze()

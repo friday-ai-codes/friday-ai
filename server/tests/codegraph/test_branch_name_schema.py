@@ -1,4 +1,4 @@
-"""initial implementation plan（work item 加列部分）：codegraph 5 模型 branch_name 字段自省。
+"""implementation（work item 加列部分）：codegraph 5 模型 branch_name 字段自省。
 
 纯 ``_meta`` 自省断言，不依赖数据库、不需 apply 迁移。同时断言越界防御：
 ApiCallSite / CrossRepoApiCall **不应**有 branch_name 字段（不在 v26.2 范围）。

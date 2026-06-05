@@ -5,7 +5,7 @@ work-item）的纯函数抽出版本：
 
 - 步骤照搬现状（embedding 生成 → BranchAwareSearchService.search → 跨仓去重 →
   按 score 降序 → 截断 top_k）
-- 行为契约由 initial implementation golden snapshot 守护（plan wire-up 后由 zero-drift
+- 行为契约由 implementation golden snapshot 守护（plan wire-up 后由 zero-drift
   门禁验证 contract）
 - **禁止读 codegraph 启用开关**（per Pitfall 5）：search_rag 不参与启用/禁用
   决策，纯计算；启用决策由 plan 的 HybridSearchService 通过 Provider 注入

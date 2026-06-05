@@ -1,16 +1,16 @@
-"""``HybridSearchService.find_related`` 矩阵覆盖 —— per initial implementation plan / work item。
+"""``HybridSearchService.find_related`` 矩阵覆盖 —— per implementation / work item。
 
 2 条聚焦 NullProvider + find_related Python API 路径：
 
 - ``test_find_related_returns_empty_when_no_edges_for_null_provider`` —— mock
-  ChunkEdge ORM 空 → ``find_related`` 返 ``[]``；与 initial implementation plan deviation
+  ChunkEdge ORM 空 → ``find_related`` 返 ``[]``；与 implementation deviation
   "任何 provider 调 find_related 都能拿到 ChunkEdge 数据" 形成正向覆盖。
 - ``test_find_related_with_chunk_edge_data_for_null_provider`` —— mock 2 ChunkEdge
   hop1 边 → ``find_related`` 返 2 ``NeighborMetadata``；NullProvider 不阻挡
   ChunkEdge ORM 路径（与 ``find_related_code`` MCP tool 的 ``symbol_name`` 路径
   需要 SymbolCapableProvider 守卫语义对偶）。
 
-函数名带 ``_null_provider`` 后缀（per ROADMAP success criterion 字面要求 ``pytest -k
+函数名带 ``_null_provider`` 后缀（success criterion 字面要求 ``pytest -k
 null_provider --co`` 收集）。mock 模式：patch
 ``services.retrieval.find_related._fetch_hop1_edges`` /
 ``_resolve_chunk_files`` 直接绕过 ``@sync_to_async`` ORM 边界（与
@@ -40,7 +40,7 @@ async def test_find_related_returns_empty_when_no_edges_for_null_provider() -> N
     """NullProvider 注入 + ChunkEdge ORM 空 → ``find_related`` 返 ``[]`` 不抛错。
 
     ``HybridSearchService.find_related`` thin wrapper delegate 到
-    ``services.retrieval.find_related.find_related``——initial implementation plan deviation
+    ``services.retrieval.find_related.find_related``——implementation deviation
     "不做 isinstance(GraphCapableProvider) 守卫" 决策点：直接查 ChunkEdge ORM。
     NullProvider 注入不阻挡本路径，hop1 边查询无结果 → 返 ``[]``。
     """
@@ -74,7 +74,7 @@ async def test_find_related_with_chunk_edge_data_for_null_provider() -> None:
     - 邻居数量 == 2；
     - 每个 NeighborMetadata 的 ``chunk_id`` / ``edge_type`` / ``weight`` 与 mock
       边 1:1 对齐；
-    - ``reason`` 非空（initial implementation plan ``explain_neighbor`` 模板生成）；
+    - ``reason`` 非空（implementation ``explain_neighbor`` 模板生成）；
     - ``file_path`` 由 ``_resolve_chunk_files`` 模拟的 ChunkRegistry metadata
       填充（验证 NullProvider 路径不阻断 ChunkRegistry 元数据补全）。
     """
@@ -115,7 +115,7 @@ async def test_find_related_with_chunk_edge_data_for_null_provider() -> None:
     assert result[0].weight == 0.9
     assert result[0].file_path == "src/neighbor1.py"
     assert result[0].hop == 1
-    assert result[0].reason, "reason 必须非空（per initial implementation plan explain_neighbor 模板）"
+    assert result[0].reason, "reason 必须非空（per implementation explain_neighbor 模板）"
 
     assert result[1].chunk_id == _NEIGHBOR_2
     assert result[1].edge_type == "IMPORT"

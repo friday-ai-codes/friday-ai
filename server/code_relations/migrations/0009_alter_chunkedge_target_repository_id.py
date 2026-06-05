@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='chunkedge',
             name='target_repository_id',
-            field=models.UUIDField(blank=True, db_index=True, help_text='跨仓边的 target chunk 所在仓库 ID（initial implementation）。单仓边（v24 既有 6 类边）为 NULL——backward compatible。不做 ForeignKey（per contract 柔性引用原则）；与 Repository.id UUID 类型对齐。', null=True),
+            field=models.UUIDField(blank=True, db_index=True, help_text='跨仓边的 target chunk 所在仓库 ID（implementation）。单仓边（v24 既有 6 类边）为 NULL——backward compatible。不做 ForeignKey（per contract 柔性引用原则）；与 Repository.id UUID 类型对齐。', null=True),
         ),
     ]

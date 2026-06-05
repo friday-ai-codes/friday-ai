@@ -1,4 +1,4 @@
-"""initial implementation: LspBackend 抽象基类 + 工厂 + supervisor 单例工厂单元测试。
+"""implementation: LspBackend 抽象基类 + 工厂 + supervisor 单例工厂单元测试。
 
 覆盖 V1（ExtractorBackend Protocol 兼容）+ V2（fallback 4×4 parametrize）+
 V5（4 fallback 事件名）+ P14（make_lsp_backend 工厂闭包）+ work item（单例）。

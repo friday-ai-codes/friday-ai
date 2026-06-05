@@ -1,4 +1,4 @@
-"""initial implementation plan（work item-01）：GraphWriter.delete_for_files 同步/异步双 API 测试。
+"""implementation（work item-01）：GraphWriter.delete_for_files 同步/异步双 API 测试。
 
 覆盖五维场景：
 1. 短路：file_paths == [] 返回 0 且不进 transaction（mock spy 验证）

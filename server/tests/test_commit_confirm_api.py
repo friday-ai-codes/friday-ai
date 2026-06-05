@@ -185,7 +185,7 @@ class TestStateRecovery:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation Wave work item 端到端测试
+# implementation Wave work item 端到端测试
 # ---------------------------------------------------------------------------
 
 
@@ -193,7 +193,7 @@ class TestStateRecovery:
 class TestCommitConfirmE2E:
     """work item 端到端 — progress 回调 → GET /commit-confirm/ 数据流。
 
-    audit v18.1 G1 (BLOCKER) 指出：容器通过 progress 回调携带
+    regression 指出：容器通过 progress 回调携带
     details.suggested_commit_message，但服务端 _handle_progress 未提取该字段，
     导致 GET /api/chat/coding-sessions/{id}/commit-confirm/ 返回空字符串。
 

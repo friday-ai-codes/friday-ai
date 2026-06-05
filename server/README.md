@@ -1,7 +1,5 @@
 # Friday API Server
 
-[简体中文](README.zh-CN.md) | English
-
 This is the backend service for the Friday system, responsible for business logic, data persistence, and integration with Feishu, GitHub, and AI Agents.
 
 ## 🛠️ Tech Stack

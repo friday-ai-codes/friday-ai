@@ -1,4 +1,4 @@
-"""ConversationIntentTrace 模型层测试（initial implementation plan / work item）。
+"""ConversationIntentTrace 模型层测试（implementation / work item）。
 
 覆盖：
 - 默认值与字段语义

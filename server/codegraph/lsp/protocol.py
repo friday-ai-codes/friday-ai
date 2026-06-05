@@ -1,4 +1,4 @@
-"""initial implementation: LSP 协议层 helper（lsprotocol 类型重导出 + URI 双向转换）。
+"""implementation: LSP 协议层 helper（lsprotocol 类型重导出 + URI 双向转换）。
 
 设计目标（per work item / work item / Pitfall P15）：
 - 把 ``lsprotocol.types`` 集中通过一个 namespace（``lsp``）暴露，避免 LSP 类型

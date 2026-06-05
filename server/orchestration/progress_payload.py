@@ -1,8 +1,8 @@
-"""Progress payload 公共解析函数（initial implementation G4）。
+"""Progress payload 公共解析函数（implementation G4）。
 
 目的: 让 server/subagent/api/callbacks.py:_handle_progress (HTTP) 与
 server/runners/consumers.py:RunnerConsumer._handle_progress (WebSocket)
-两条 progress 路径解析逻辑完全一致，避免再次分叉（audit v18.1 G4）。
+两条 progress 路径解析逻辑完全一致，避免再次分叉（regression）。
 
 放置位置理由: 新建 orchestration 顶层模块，避免以下两条循环依赖风险:
   - 若放 subagent/api/callbacks.py，runners/consumers.py 需反向 import callbacks

@@ -108,7 +108,7 @@ async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
         extra_metadata={"env_FRIDAY_TASK_TASK_TITLE": _extract_task_title(coding_session)},
     )
 
-    # initial implementation contract: 推进 CodingSession 状态 confirmed -> running。
+    # implementation contract: 推进 CodingSession 状态 confirmed -> running。
     # 必须放在这里（dispatch_coding_node 内部）而非 view，因为 wait_coding_complete_node
     # resume 时会调 amark_awaiting_confirmation，该方法要求 status == RUNNING 前置。
     # 注意：dispatch_coding_task 返回的是 SubAgentSession.session_id（字符串），
@@ -175,7 +175,7 @@ async def await_commit_confirm_node(state: CodingSessionState) -> dict[str, Any]
     dispatch_commit。保留本节点是为了让已经停在旧 checkpoint 的会话仍可被用户
     确认后继续推进。
 
-    initial implementation G2 修复:
+    implementation G2 修复:
       - 前置节点为 conflict_check_node（由 build_coding_graph Phase 边拓扑决定）
       - interrupt 前 refresh DB 读取最新 conflict_check_result + diff_summary
         （由刚刚执行的 conflict_check_node 写入）
@@ -188,7 +188,7 @@ async def await_commit_confirm_node(state: CodingSessionState) -> dict[str, Any]
     LangGraph interrupt 重放语义保证 resume 时 node 函数从头执行，
     _get_coding_session 会再次 refresh DB -- 安全读取最新状态。
     """
-    # initial implementation G2: interrupt 前 refresh DB 拿 conflict_check_node 写入的最新结果
+    # implementation G2: interrupt 前 refresh DB 拿 conflict_check_node 写入的最新结果
     coding_session = await _get_coding_session(state)
 
     interrupt_payload: dict[str, Any] = {
@@ -217,7 +217,7 @@ async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
     一次 compare 调用同时产出冲突预检和 diff 摘要数据（per contract）。
     结果持久化到 CodingSession.conflict_check_result 和 diff_summary（per contract, contract）。
 
-    initial implementation G2 修复后: 此节点在 await_commit_confirm 之前运行，
+    implementation G2 修复后: 此节点在 await_commit_confirm 之前运行，
     不能推进 phase —— 必须保留 wait_coding_complete_node 设置的 "awaiting_commit_confirm"，
     由 await_commit_confirm_node 在 resume 后自行推进到 "committing"。
     """

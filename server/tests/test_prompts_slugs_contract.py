@@ -1,6 +1,6 @@
 """BUILTIN_SLUGS 契约测试 — 防 v18.1 G3 同型错误。
 
-initial implementation 唯一不可 skip 的 Wave 测试：
+implementation 唯一不可 skip 的 Wave 测试：
 - 验证 BUILTIN_SLUGS 从 PromptSlugs 类体派生
 - 验证 slug 数量锁死（防漂移）
 - 参数化遍历每个 slug，断言 render_prompt 能走 fallback 路径命中
@@ -54,7 +54,7 @@ class TestPromptSlugContract:
         这是防 G3 同型的核心契约：Registry 写入但调用点未读取的情况，
         通过遍历 BUILTIN_SLUGS + render_prompt(fallback="STUB") 必然返回 "STUB"。
 
-        initial implementation 更新：0002_seed_system_defaults 现在会在测试 DB 中种下
+        implementation 更新：0002_seed_system_defaults 现在会在测试 DB 中种下
         12 个系统 slug，若不先清空会走 DB body 渲染路径并触发
         PromptVariableMissingError（因新的 `{{user_message}}` 等占位符）。
         本测试专门验证 fallback **路径**可达性（不是 DB 路径），故先 adelete。

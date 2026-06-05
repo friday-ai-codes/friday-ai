@@ -1,4 +1,4 @@
-"""TestOfEdgeBuilder：test 文件 → src 文件 命名 + import 双启发式（per initial implementation contract/17/18）。"""
+"""TestOfEdgeBuilder：test 文件 → src 文件 命名 + import 双启发式（per implementation contract/17/18）。"""
 
 from __future__ import annotations
 
@@ -20,14 +20,14 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["TestOfEdgeBuilder"]
 
-_SUPPORTED_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".vue")  # contract + initial implementation
+_SUPPORTED_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".vue")  # contract + implementation
 
 # contract regex（编译一次，模块级常量）
 _PY_TEST_PREFIX = re.compile(r"(?:.+/)?tests?/.*test_(\w+)\.py$")
 _PY_TEST_SUFFIX = re.compile(r"(?:.+/)?tests?/(.*?)_test\.py$")
 _JSTS_TEST_INFIX = re.compile(r"(.+)\.(test|spec)\.(t|j)sx?$")
 _JSTS_TESTS_DIR = re.compile(r"__tests__/(\w+)\.(t|j)sx?$")
-# initial implementation 新增 Go / Vue test 命名 regex
+# implementation 新增 Go / Vue test 命名 regex
 _GO_TEST_SUFFIX = re.compile(r"(?:.+/)?(.+?)_test\.go$")
 _VUE_TEST_INFIX = re.compile(r"(?:.+/)?(.+?)\.(test|spec)\.vue$")
 
@@ -55,7 +55,7 @@ def _candidate_src_files(test_file: str) -> list[tuple[str, str]]:
         base, lang = m.group(1), m.group(2)
         for ext_suffix in ("s", "sx"):
             candidates.append((f"{base}.{lang}{ext_suffix}", "jsts_tests_dir"))
-    # initial implementation 新增 dispatch
+    # implementation 新增 dispatch
     m = _GO_TEST_SUFFIX.search(test_file)
     if m:
         stem = m.group(1)
@@ -81,8 +81,8 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
     ) -> list[ChunkEdge]:
         # work item 全扫策略（per context contract）：本 phase 接受全仓 ChunkRegistry
         # 扫描所有 file_path 重建 TEST_OF 边集；dirty_chunk_ids 暂未用于过滤。
-        # initial implementation 应改造为仅处理 dirty 涉及的 test 文件。
-        del dirty_chunk_ids  # noqa: F841 — phase 全扫策略，initial implementation 增量化
+        # implementation 应改造为仅处理 dirty 涉及的 test 文件。
+        del dirty_chunk_ids  # noqa: F841 — phase 全扫策略，implementation 增量化
 
         from codegraph.models import ImportEdge as CodegraphImportEdge
 

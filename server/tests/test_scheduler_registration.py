@@ -1,4 +1,4 @@
-"""initial implementation contract 测试 — APScheduler 注册行为。
+"""implementation contract 测试 — APScheduler 注册行为。
 
 关键验证：
 1. runapscheduler Command 模块定义了 cleanup_orchestration_checkpoints_job 函数

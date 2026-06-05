@@ -1,6 +1,6 @@
-"""initial implementation Wave（task）：AIPlanGenerationNode 测试 mock 迁移。
+"""implementation Wave（task）：AIPlanGenerationNode 测试 mock 迁移。
 
-迁移前（initial implementation / Wave 之前）：通过 ``unittest.mock.patch`` 拦截老 SDK 子工厂 runner 整个替掉；
+迁移前（implementation / Wave 之前）：通过 ``unittest.mock.patch`` 拦截老 SDK 子工厂 runner 整个替掉；
 迁移后（work item / contract）：统一走 conftest `fake_chat_model_factory` 注入
 `agents.llm_factory.build_chat_model` + `agents.langchain_runner.build_chat_model` seam，
 让真实 `LangChainAgentRunner` 跑完 stream 主循环（由 FakeChatModel 回放 responses / tool_calls）。
@@ -11,7 +11,7 @@ AIPlanGenerationNode **源码零改动**（继承 AIAgentBaseNode.execute），�
 - ``test_plan_generation_tool_loop_with_fake_model``：verify_plan / send_plan_card 两轮工具
   调用回放，验证继承链路 + FakeChatModel tool_calls 契约（work item / contract）。
 - ``test_plan_generation_sub_step_emit_order``：sub_step 三态 analyze / generate_plan /
-  review 的 RUNNING→COMPLETED 序列守护（ROADMAP success criterion）。
+  review 的 RUNNING→COMPLETED 序列守护（success criterion）。
 
 Fixture 策略（checkpoint-03 conftest / work item）：
 - ``fake_chat_model_factory`` / ``mock_aresolve_ok`` / ``make_minimal_context`` 从
@@ -261,7 +261,7 @@ async def test_plan_generation_tool_loop_with_fake_model(
 
 
 # ============================================================================
-# sub_step 三态 emit 序列守护（implementation plan §4 / ROADMAP success criterion）
+# sub_step 三态 emit 序列守护（implementation plan §4 / success criterion）
 # ============================================================================
 
 
@@ -273,7 +273,7 @@ async def test_plan_generation_sub_step_emit_order(
     mock_aresolve_ok: Any,
     make_minimal_context: Any,
 ) -> None:
-    """work item / ROADMAP success criterion：sub_step analyze / generate_plan / review 三态 emit 序列守护。
+    """work item / success criterion：sub_step analyze / generate_plan / review 三态 emit 序列守护。
 
     断言：
     - analyze / generate_plan / review 三个 step_type 均至少发射 1 次 RUNNING 和 1 次 COMPLETED

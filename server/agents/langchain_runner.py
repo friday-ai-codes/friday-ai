@@ -1,4 +1,4 @@
-"""LangChainAgentRunner —— 工作流 AI 节点通用 Runner（initial implementation/03/06）。
+"""LangChainAgentRunner —— 工作流 AI 节点通用 Runner（implementation/03/06）。
 
 基于 LangChain `init_chat_model` 多 Provider + 朴素 ReAct loop 实现；
 与 `chat_runner.py` 并存（场景差异：workflow 节点无 MCP / 无 deep_analysis / 纯 ReAct）。
@@ -150,7 +150,7 @@ class LangChainRunnerConfig:
     """workflow 节点场景 Runner 配置（contract / contract）。
 
     与 `ChatRunnerConfig` / `SdkRunnerConfig` 接口对齐（stream/result/interrupt
-    签名一致），initial implementation `AIAgentBaseNode` 迁移时零改动。
+    签名一致），implementation `AIAgentBaseNode` 迁移时零改动。
     """
 
     resolved: ResolvedProviderConfig
@@ -349,7 +349,7 @@ class LangChainAgentRunner:
 
         模板来源：chat_runner.py work item（一字不改迁移，仅适配 ToolMessage 代替 ToolResult）。
         tool_msg.status: Literal["success", "error"]（LangChain ToolMessage 默认 "success"；
-        initial implementation langchain_runner.py L521 error 分支构造 status="error"，本方法仅由成功分支调用）。
+        implementation langchain_runner.py L521 error 分支构造 status="error"，本方法仅由成功分支调用）。
         agent_session=None 时静默跳过；DB 异常走 logger.exception 兜底不 crash 主循环。
         """
         sess = self._config.agent_session
@@ -515,7 +515,7 @@ class LangChainAgentRunner:
                     merged[key] = merged.get(key, 0) + value
                 total_usage = cast(TokenUsage, merged)
 
-                # initial implementation contract：每 turn 结束持久化 usage 到 AgentSession.metadata
+                # implementation contract：每 turn 结束持久化 usage 到 AgentSession.metadata
                 await self._persist_usage(usage)
 
                 tool_calls = list(getattr(aimsg, "tool_calls", []) or [])
@@ -611,7 +611,7 @@ class LangChainAgentRunner:
                             self._config.session_id,
                         ),
                     )
-                    # initial implementation contract：工具执行成功后记录 ToolCallLog
+                    # implementation contract：工具执行成功后记录 ToolCallLog
                     await self._log_tool_call(
                         tool_name=tool_name,
                         tool_call_id=tool_call_id,
@@ -636,7 +636,7 @@ class LangChainAgentRunner:
 
         except ContextWindowExceededError:
             # contract / work item：strict_error 策略必须向外抛出 ContextWindowExceededError，
-            # **不**降级为 ERROR event —— 调用方（initial implementation AIAgentBaseNode）需要
+            # **不**降级为 ERROR event —— 调用方（implementation AIAgentBaseNode）需要
             # 区分"预算超限需降级引导"与"LLM provider 异常"两类错误分支。
             # 该异常必须先于下方 `except Exception` 捕获，否则会被吞为 ERROR event。
             raise

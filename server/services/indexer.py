@@ -315,7 +315,7 @@ async def update_index_stage(repository_id: str, stage: str) -> None:
         )
 
 
-# initial implementation-02：图谱进度节流常量。
+# implementation-02：图谱进度节流常量。
 # 与 ``_extract_and_write_graph`` 既有循环节奏对齐（line 2347
 # ``if index % GRAPH_YIELD_EVERY == 0``）；helper 函数体内**不二次节流**，
 # 节流责任在 callsite——保 helper 语义简单可单测。
@@ -332,7 +332,7 @@ async def update_graph_progress(
 ) -> None:
     """图谱构建进度上报 helper（与 update_index_stage / update_current_indexing_file 解耦）。
 
-    initial implementation-02：按 callsite 节流（``GRAPH_YIELD_EVERY=25``）
+    implementation-02：按 callsite 节流（``GRAPH_YIELD_EVERY=25``）
     写 4 字段——``graph_stage`` / ``current_graph_file`` /
     ``graph_files_processed`` / ``graph_files_total``。**helper 函数体内不
     二次节流**，每次调用即写库；与 ``update_index_stage`` 同 try/except
@@ -592,7 +592,7 @@ def _parse_git_diff_output(output: str) -> list[FileDiff]:
 def _parse_numstat_output(output: str) -> tuple[int, int]:
     """解析 git diff --numstat -z 输出，汇总 (lines_added, lines_deleted)。
 
-    initial implementation（与 _parse_git_diff_output 并列，绝不改其函数体）。
+    implementation（与 _parse_git_diff_output 并列，绝不改其函数体）。
 
     -z 模式每条记录形如 ``added\\tdeleted\\t<path>\\0``；rename 时为
     ``added\\tdeleted\\t\\0<old>\\0<new>\\0``（path 字段为空，须额外消费 old/new
@@ -657,20 +657,20 @@ class IndexerService:
         from django.conf import settings
 
         self.repository_id = repository_id
-        # initial implementation：默认启用 ast_aware 精细切片（符号驱动）；可经 settings.CHUNKING_MODE
+        # implementation：默认启用 ast_aware 精细切片（符号驱动）；可经 settings.CHUNKING_MODE
         # 回退 "fixed"。改切片策略后需重新索引方能对存量 chunk 生效。
         self.parser = CodeParser(
             chunking_mode=getattr(settings, "CHUNKING_MODE", "ast_aware"),
         )
-        # initial implementation: 图谱抽取与写入服务（双轨架构 - per contract）
+        # implementation: 图谱抽取与写入服务（双轨架构 - per contract）
         self._graph_extractor = None  # 延迟初始化
         self._graph_writer = None
-        # initial implementation（per contract / contract）：累积本次索引会话每次 _upsert_chunk_registry_batch
+        # implementation（per contract / contract）：累积本次索引会话每次 _upsert_chunk_registry_batch
         # 返回的 point_id 列表；_extract_and_write_graph 末尾一次性传给
         # `code_relations.tasks.enqueue_edge_build(...)` 触发 6 EdgeBuilder + payload sync，
         # 并在调用后清空。set 去重避免同一 chunk 多次 flush 重复进 builder 输入。
         self._session_dirty_chunk_ids: set[uuid.UUID] = set()
-        # initial implementation single-parse：缓存向量轨 parse_file_dual 产出的 ExtractionBundle
+        # implementation single-parse：缓存向量轨 parse_file_dual 产出的 ExtractionBundle
         # （rel_path → bundle），供图谱轨 _extract_and_write_graph 复用，消除每文件二次解析。
         # 缓存 miss 时图谱轨自行解析兜底；实例级（一次索引一个 IndexerService），无需跨方法清理。
         self._session_graph_bundles: dict[str, Any] = {}
@@ -685,7 +685,7 @@ class IndexerService:
             self._graph_writer = GraphWriter()
 
     async def _should_build_graph(self, history_id: str | None) -> bool:
-        """initial implementation-02 / work item-03：图谱构建双重判断 + SKIPPED 写入。
+        """implementation-02 / work item-03：图谱构建双重判断 + SKIPPED 写入。
 
         在 4 处 `_extract_and_write_graph` callsite 之前调用，
         以 `settings.ENABLE_CODEGRAPH AND Repository.auto_build_graph_enabled` 双重判断
@@ -1015,7 +1015,7 @@ class IndexerService:
 
                 # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（contract / contract 强一致）
                 _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
-                # initial implementation（per contract）：累积 dirty chunk_id，
+                # implementation（per contract）：累积 dirty chunk_id，
                 # _extract_and_write_graph 末尾一次性 enqueue_edge_build
                 self._session_dirty_chunk_ids.update(
                     uuid.UUID(point_id) for point_id, _changed in _registry_results
@@ -1084,8 +1084,8 @@ class IndexerService:
             # 用户能立刻看到 Hash 新鲜度卡片显示 fresh。
             await persist_vector_track_complete(self.repository_id, repo_path)
 
-            # initial implementation: 图谱轨写入（失败不影响"已索引"状态）
-            # initial implementation-02：双重判断后再决定是否构图（CONTEXT 决议留 initial implementation
+            # implementation: 图谱轨写入（失败不影响"已索引"状态）
+            # implementation-02：双重判断后再决定是否构图（CONTEXT 决议留 implementation
             # 薄壳形态——判断在调用方层而非 _extract_and_write_graph 函数体内部）。
             # run_full_index 无 history_id 形参，_should_build_graph 走 fallback 查 RUNNING。
             await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
@@ -1094,7 +1094,7 @@ class IndexerService:
             # 这种 tmp 前缀，导致前端代码图谱定位/调用关系全部对不上。
             graph_file_paths = [os.path.relpath(p, repo_path) for p in files]
             if await self._should_build_graph(None):
-                # initial implementation-01..05：auto_after_index 路径写
+                # implementation-01..05：auto_after_index 路径写
                 # GraphBuildHistory 行；薄壳 `_extract_and_write_graph` 不感知
                 # history（保 success criterion byte-equivalent），由 callsite 外层 wrap。
                 # 仍在 indexer 主任务（index-{repo_id}）内运行——不切新 task。
@@ -1103,12 +1103,12 @@ class IndexerService:
                     status=GraphBuildHistoryStatus.RUNNING,
                     trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
                 )
-                # initial implementation-01：auto_after_index 路径入口 reset
+                # implementation-01：auto_after_index 路径入口 reset
                 # Repository 5 字段（与 manual 路径 build_graph_for_repository
                 # 入口对齐——保 view 层读 Repository.graph_* 字段统一）。
                 await reset_repository_graph_progress(self.repository_id)
                 # security mitigation-5：示范切换 plan 02 update_graph_progress stub helper
-                # （initial implementation 才落字段写入，本 phase 仅 structlog 通路验证）。
+                # （implementation 才落字段写入，本 phase 仅 structlog 通路验证）。
                 await update_graph_progress(
                     self.repository_id,
                     stage="building_graph",
@@ -1148,7 +1148,7 @@ class IndexerService:
                             "finished_at",
                         ]
                     )
-                    # initial implementation-01：成功终态写 Repository。
+                    # implementation-01：成功终态写 Repository。
                     await mark_repository_graph_terminal(
                         self.repository_id,
                         status=RepositoryGraphStatus.COMPLETED,
@@ -1164,7 +1164,7 @@ class IndexerService:
                     await gbh.asave(
                         update_fields=["status", "error_message", "finished_at"]
                     )
-                    # initial implementation-01：失败终态写 Repository（保留
+                    # implementation-01：失败终态写 Repository（保留
                     # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
                     await mark_repository_graph_terminal(
                         self.repository_id,
@@ -1178,7 +1178,7 @@ class IndexerService:
                     )
                     # contract 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
 
-            # initial implementation (per contract): 异步构建仓库摘要索引，失败不回滚索引
+            # implementation (per contract): 异步构建仓库摘要索引，失败不回滚索引
             await update_index_stage(self.repository_id, IndexStage.FINALIZING)
             try:
                 from codegraph.services.repo_summary_builder import RepoSummaryBuilder
@@ -1379,7 +1379,7 @@ class IndexerService:
 
                 # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（contract / contract 强一致）
                 _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
-                # initial implementation（per contract）：累积 dirty chunk_id，
+                # implementation（per contract）：累积 dirty chunk_id，
                 # _extract_and_write_graph 末尾一次性 enqueue_edge_build
                 self._session_dirty_chunk_ids.update(
                     uuid.UUID(point_id) for point_id, _changed in _registry_results
@@ -1422,12 +1422,12 @@ class IndexerService:
             chunks=len(points),
         )
 
-        # initial implementation: 图谱轨写入
-        # initial implementation-02：双重判断 gating（run_branch_index 无 history_id 形参，
+        # implementation: 图谱轨写入
+        # implementation-02：双重判断 gating（run_branch_index 无 history_id 形参，
         # _should_build_graph 走 fallback 查 RUNNING）。
         if files_to_index and await self._should_build_graph(None):
             graph_files = [d.file_path for d in files_to_index]
-            # initial implementation-02：先按 deleted_file_paths 清图谱孤儿数据
+            # implementation-02：先按 deleted_file_paths 清图谱孤儿数据
             # （Symbol / ImportEdge / Endpoint 三件套），再写新图谱避免孤儿过渡态。
             deleted_file_paths = [
                 d.file_path for d in diffs if d.action == DiffAction.DELETE
@@ -1449,14 +1449,14 @@ class IndexerService:
                             deleted_count=len(deleted_file_paths),
                             exc_info=True,
                         )
-            # initial implementation-01..05：auto_after_index 路径写
+            # implementation-01..05：auto_after_index 路径写
             # GraphBuildHistory（与 callsite #1 共用模板）。
             gbh = await GraphBuildHistory.objects.acreate(
                 repository_id=self.repository_id,
                 status=GraphBuildHistoryStatus.RUNNING,
                 trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
             )
-            # initial implementation-01：入口 reset Repository 5 字段。
+            # implementation-01：入口 reset Repository 5 字段。
             await reset_repository_graph_progress(self.repository_id)
             try:
                 # contract：feature overlay 索引，归一化分支名后透传（==base 仍归 ""）。
@@ -1491,7 +1491,7 @@ class IndexerService:
                         "finished_at",
                     ]
                 )
-                # initial implementation-01：成功终态写 Repository。
+                # implementation-01：成功终态写 Repository。
                 await mark_repository_graph_terminal(
                     self.repository_id,
                     status=RepositoryGraphStatus.COMPLETED,
@@ -1507,7 +1507,7 @@ class IndexerService:
                 await gbh.asave(
                     update_fields=["status", "error_message", "finished_at"]
                 )
-                # initial implementation-01：失败终态写 Repository（保留
+                # implementation-01：失败终态写 Repository（保留
                 # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
                 await mark_repository_graph_terminal(
                     self.repository_id,
@@ -1600,7 +1600,7 @@ class IndexerService:
             d.file_path for d in diffs if d.action == DiffAction.DELETE
         ]
 
-        # initial implementation（Pitfall 6）：行级 diff 采集，三态落库。
+        # implementation（Pitfall 6）：行级 diff 采集，三态落库。
         # 在既有 --name-status 之后对同一对 SHA 追加 numstat（已 fetch 对象的 diff
         # 极廉价）。三态：numstat 成功 → 真实值（含真实 0，二进制文件在解析函数内
         # 计 0）；returncode≠0 / 超时 / 解析异常 → None（绝不写 0），降级写
@@ -1862,7 +1862,7 @@ class IndexerService:
 
                 # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（contract / contract 强一致）
                 _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
-                # initial implementation（per contract）：累积 dirty chunk_id，
+                # implementation（per contract）：累积 dirty chunk_id，
                 # _extract_and_write_graph 末尾一次性 enqueue_edge_build
                 self._session_dirty_chunk_ids.update(
                     uuid.UUID(point_id) for point_id, _changed in _registry_results
@@ -1940,12 +1940,12 @@ class IndexerService:
         # contract：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
         await persist_vector_track_complete(self.repository_id, repo_path)
 
-        # initial implementation: 图谱轨写入（失败不影响"已索引"状态）
-        # initial implementation-02：双重判断 gating（git_diff 路径已有 history_id 形参）
+        # implementation: 图谱轨写入（失败不影响"已索引"状态）
+        # implementation-02：双重判断 gating（git_diff 路径已有 history_id 形参）
         graph_files = [d.file_path for d in files_to_index]
         if graph_files and await self._should_build_graph(history_id):
             await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
-            # initial implementation-02：先按 deleted_file_paths 清孤儿（git_diff 路径
+            # implementation-02：先按 deleted_file_paths 清孤儿（git_diff 路径
             # 的 deleted_file_paths 已在 line ~1210 提早计算好）。
             # contract H-1：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
             # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
@@ -1972,14 +1972,14 @@ class IndexerService:
                             deleted_count=len(deleted_file_paths),
                             exc_info=True,
                         )
-            # initial implementation-01..05：auto_after_index 路径写
+            # implementation-01..05：auto_after_index 路径写
             # GraphBuildHistory（与 callsite #1 / #2 共用模板）。
             gbh = await GraphBuildHistory.objects.acreate(
                 repository_id=self.repository_id,
                 status=GraphBuildHistoryStatus.RUNNING,
                 trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
             )
-            # initial implementation-01：入口 reset Repository 5 字段。
+            # implementation-01：入口 reset Repository 5 字段。
             await reset_repository_graph_progress(self.repository_id)
             try:
                 # contract：复用上方已归一化的 _write_branch（H-1：删除与写入同分支）；
@@ -2014,7 +2014,7 @@ class IndexerService:
                         "finished_at",
                     ]
                 )
-                # initial implementation-01：成功终态写 Repository。
+                # implementation-01：成功终态写 Repository。
                 await mark_repository_graph_terminal(
                     self.repository_id,
                     status=RepositoryGraphStatus.COMPLETED,
@@ -2030,7 +2030,7 @@ class IndexerService:
                 await gbh.asave(
                     update_fields=["status", "error_message", "finished_at"]
                 )
-                # initial implementation-01：失败终态写 Repository。
+                # implementation-01：失败终态写 Repository。
                 await mark_repository_graph_terminal(
                     self.repository_id,
                     status=RepositoryGraphStatus.FAILED,
@@ -2269,7 +2269,7 @@ class IndexerService:
                         )
                     # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（contract / contract 强一致）
                     _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
-                    # initial implementation（per contract）：累积 dirty chunk_id
+                    # implementation（per contract）：累积 dirty chunk_id
                     self._session_dirty_chunk_ids.update(
                         uuid.UUID(point_id) for point_id, _changed in _registry_results
                     )
@@ -2337,12 +2337,12 @@ class IndexerService:
             # contract：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
             await persist_vector_track_complete(self.repository_id, repo_path)
 
-            # initial implementation: 图谱轨写入（失败不影响"已索引"状态）
-            # initial implementation-02：双重判断 gating（incremental 路径已有 history_id 形参）
+            # implementation: 图谱轨写入（失败不影响"已索引"状态）
+            # implementation-02：双重判断 gating（incremental 路径已有 history_id 形参）
             if files_to_index and await self._should_build_graph(history_id):
                 await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
                 graph_files = [d.file_path for d in files_to_index]
-                # initial implementation-02：先按 deleted_file_paths 清孤儿
+                # implementation-02：先按 deleted_file_paths 清孤儿
                 deleted_file_paths = [
                     d.file_path for d in diffs if d.action == DiffAction.DELETE
                 ]
@@ -2371,19 +2371,19 @@ class IndexerService:
                                 deleted_count=len(deleted_file_paths),
                                 exc_info=True,
                             )
-                # initial implementation-01..05：auto_after_index 路径写
+                # implementation-01..05：auto_after_index 路径写
                 # GraphBuildHistory（与 callsite #1 / #2 / #3 共用模板）。
                 gbh = await GraphBuildHistory.objects.acreate(
                     repository_id=self.repository_id,
                     status=GraphBuildHistoryStatus.RUNNING,
                     trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
                 )
-                # initial implementation-01：入口 reset Repository 5 字段
+                # implementation-01：入口 reset Repository 5 字段
                 # （置于 update_graph_progress 之前——后者会覆盖 graph_stage
                 # 为 "building_graph"，最终生效）。
                 await reset_repository_graph_progress(self.repository_id)
                 # security mitigation-5：示范切换 plan 02 update_graph_progress stub helper
-                # （initial implementation 才落字段写入，本 phase 仅 structlog 通路验证）。
+                # （implementation 才落字段写入，本 phase 仅 structlog 通路验证）。
                 await update_graph_progress(
                     self.repository_id,
                     stage="building_graph",
@@ -2423,7 +2423,7 @@ class IndexerService:
                             "finished_at",
                         ]
                     )
-                    # initial implementation-01：成功终态写 Repository。
+                    # implementation-01：成功终态写 Repository。
                     await mark_repository_graph_terminal(
                         self.repository_id,
                         status=RepositoryGraphStatus.COMPLETED,
@@ -2439,7 +2439,7 @@ class IndexerService:
                     await gbh.asave(
                         update_fields=["status", "error_message", "finished_at"]
                     )
-                    # initial implementation-01：失败终态写 Repository。
+                    # implementation-01：失败终态写 Repository。
                     await mark_repository_graph_terminal(
                         self.repository_id,
                         status=RepositoryGraphStatus.FAILED,
@@ -2452,7 +2452,7 @@ class IndexerService:
                     )
                     # contract 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
 
-            # initial implementation (per contract): 异步构建仓库摘要索引，失败不回滚索引
+            # implementation (per contract): 异步构建仓库摘要索引，失败不回滚索引
             await update_index_stage(self.repository_id, IndexStage.FINALIZING)
             try:
                 from codegraph.services.repo_summary_builder import RepoSummaryBuilder
@@ -2714,7 +2714,7 @@ class IndexerService:
                     module_path=module_path,
                 )
 
-                # initial implementation single-parse：向量轨 parse_file_dual 已为图谱支持的非 Vue
+                # implementation single-parse：向量轨 parse_file_dual 已为图谱支持的非 Vue
                 # 语言缓存同源 bundle —— 命中即复用，消除每文件二次解析；miss（Vue /
                 # 未缓存 / graph_builder 单独调用）走原解析兜底，保证功能不破坏。
                 cached_bundle = self._session_graph_bundles.get(file_path)
@@ -2763,7 +2763,7 @@ class IndexerService:
                     )
                     _all_endpoints_with_sigs.append((_ep, _sym.signature if _sym else ""))
 
-                # initial implementation: 条件追加 Go interface implementation 抽取
+                # implementation: 条件追加 Go interface implementation 抽取
                 # 仅当 gopls backend 已启用 + 当前文件为 Go + 有 symbol 时触发
                 if (
                     language == "go"
@@ -2824,7 +2824,7 @@ class IndexerService:
                 hybrid_enabled=_endpoint_rag_hybrid,
             )
 
-        # initial implementation hook（per contract / contract）+ initial implementation plan lifecycle 切换：
+        # implementation hook（per contract / contract）+ implementation lifecycle 切换：
         # 图谱写完后触发 6 EdgeBuilder + payload 一跳快照同步；改走
         # `code_relations.lifecycle.enqueue_edge_build_for_history` 外部 wrapper
         # 把 IndexHistory.graph_build_status 状态机接入（running → completed/failed/skipped）。
@@ -2856,7 +2856,7 @@ class IndexerService:
                     .values_list("id", flat=True)
                     .first()
                 )()
-                # initial implementation 时序修复：查不到 RUNNING 行（主流程可能已把本次 IndexHistory
+                # implementation 时序修复：查不到 RUNNING 行（主流程可能已把本次 IndexHistory
                 # 标 completed/failed）时，退取最近一条 IndexHistory 作为 lifecycle 回写目标，
                 # 避免 history_id=None 致使边建好却不回写 edge_count/graph_build_status
                 # （旧 bug：前端 GraphRAG 卡因此误显示「0 语义边」）。
@@ -2869,7 +2869,7 @@ class IndexerService:
                         .values_list("id", flat=True)
                         .first()
                     )()
-            # initial implementation（Pitfall A / Pitfall 7）：per-run delta 回填。
+            # implementation（Pitfall A / Pitfall 7）：per-run delta 回填。
             # 把本次 write_bundle 累加出的 symbols/imports/calls/endpoints 新增数
             # 写入 running_history 指向的 IndexHistory 行。
             #
@@ -2908,7 +2908,7 @@ class IndexerService:
             )
             stats["edge_build_enqueued"] = False
 
-        # initial implementation：图谱 Symbol 写完 + 向量轨 Qdrant chunk 已就绪 → 回填
+        # implementation：图谱 Symbol 写完 + 向量轨 Qdrant chunk 已就绪 → 回填
         # Symbol.chunk_id 持久化绑定（「一套 AST 双供」的关联落地，取代运行时行号 bisect）。
         # 异常隔离：绑定是优化项，失败仅 warning 不阻塞索引主流程。
         try:
@@ -2924,7 +2924,7 @@ class IndexerService:
                 error_type=type(exc).__name__,
             )
 
-        # initial implementation：整库 raw 写完后，对整库构建解析上下文（SymbolIndex +
+        # implementation：整库 raw 写完后，对整库构建解析上下文（SymbolIndex +
         # python/frontend/go resolver）回填 CallEdge.callee_symbol/callee_file/
         # is_cross_file。创建索引与手动重建均经本函数 → 一处接入两路径覆盖。
         # 异常隔离：回填是优化项，失败仅 warning 不阻塞索引主流程（contract）。
@@ -3012,11 +3012,11 @@ class IndexerService:
           消除原先 `_fetch_old_content_hash` → `update_or_create` 两次 sync_to_async
           之间的 TOCTOU race。`select_for_update()` 在 SQLite 上退化为 no-op（单进程
           atomic 已足够），在 Postgres 上提供行级锁，多 worker 场景下也安全。
-        - **入参用 `ChunkRegistryRow` TypedDict**（contract）：initial implementation EdgeBuilder
+        - **入参用 `ChunkRegistryRow` TypedDict**（contract）：implementation EdgeBuilder
           误传 `chunkid` / `contenthash` 等错拼字段 mypy 静态拦截，运行期不再 KeyError。
 
         返回 `list[tuple[str, bool]]` 每行 `(point_id, content_hash_changed)`：
-        `content_hash_changed=True` 表示同 chunk_id 但内容变化（initial implementation 据此决定
+        `content_hash_changed=True` 表示同 chunk_id 但内容变化（implementation 据此决定
         是否重新 embed；本 phase 仅返回不消费）。
 
         在 Qdrant upsert 全部成功之后调用；本方法内部抛错时 atomic 整批回滚，

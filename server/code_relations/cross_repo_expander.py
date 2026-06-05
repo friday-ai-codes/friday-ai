@@ -1,4 +1,4 @@
-"""跨仓 API 扩散器 —— initial implementation HybridSearch wave（per work item）。
+"""跨仓 API 扩散器 —— implementation HybridSearch wave（per work item）。
 
 当 RAG 命中 ApiCallSite chunk 时，扩散到对端 Endpoint chunk（via CrossRepoApiCall join）。
 当 RAG 命中 Endpoint chunk 时，反向扩散到 ApiCallSite chunk。

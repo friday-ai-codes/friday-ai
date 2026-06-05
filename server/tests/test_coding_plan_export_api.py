@@ -34,7 +34,7 @@ User = get_user_model()
 
 @pytest.fixture
 def coding_plan_with_project(db) -> CodingPlan:
-    """构造 Project + Conversation + CodingPlan，复用 initial implementation 模型形态。
+    """构造 Project + Conversation + CodingPlan，复用 implementation 模型形态。
 
     Project.feishu_doc_folder_token 预填 `fk_fallback`，测试可按需改写。
     """

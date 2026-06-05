@@ -1,4 +1,4 @@
-"""initial implementation plan（work item）：IndexHistorySerializer 新字段透传测试。
+"""implementation（work item）：IndexHistorySerializer 新字段透传测试。
 
 测试覆盖：
 1. test_serializer_emits_delta_fields：序列化含 delta 真实值的行，5 个 delta key 值正确

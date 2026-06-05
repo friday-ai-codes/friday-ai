@@ -1,4 +1,4 @@
-"""initial implementation plan：Provider 凭证 16 用例权限矩阵集成测试（contract 硬性契约）。
+"""implementation：Provider 凭证 16 用例权限矩阵集成测试（contract 硬性契约）。
 
 参考 context contract/contract + plan 实际交付的 ProviderCredentialPermission + get_queryset +
 perform_acreate 契约，参数化 4 角色 × 场景组合成 16 用例矩阵。

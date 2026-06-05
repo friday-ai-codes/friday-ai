@@ -1,9 +1,9 @@
-"""initial implementation plan Task 1 — graph_capable 路径 golden snapshot 二轮 baseline。
+"""implementation Task 1 — graph_capable 路径 golden snapshot 二轮 baseline。
 
 10 条 fixture × 字节级 `final_context` 比对，锁定 plan 落地的 GraphRAG 编排器
 （`HybridSearchService._search_graph_capable`）输出契约。
 
-设计与 initial implementation `tests/codegraph/test_layered_search_golden.py` 同 idiom：
+设计与 implementation `tests/codegraph/test_layered_search_golden.py` 同 idiom：
 
 - fixture 文件在 `tests/fixtures/hybrid_graph_capable_golden/{NN}-{slug}.txt`；
 - 文件格式 `{body}\n\n# tokens=N source_layer=hybrid final_chunks=K\n`；
@@ -73,7 +73,7 @@ _GENERATE_MODE: bool = os.environ.get("GENERATE_GOLDEN") == "1"
 
 
 def _split_fixture(text: str) -> tuple[str, str]:
-    """切分 `{body}\n\n# tokens=...` 返回 (body, metadata_line)，与 initial implementation idiom 一致。"""
+    """切分 `{body}\n\n# tokens=...` 返回 (body, metadata_line)，与 implementation idiom 一致。"""
     stripped = text.rstrip("\n")
     sep = "\n\n" + _METADATA_PREFIX
     idx = stripped.rfind(sep)

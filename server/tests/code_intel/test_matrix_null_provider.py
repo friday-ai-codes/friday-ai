@@ -1,7 +1,7 @@
-"""NullProvider 关键 path 矩阵测试 —— per initial implementation plan / work item。
+"""NullProvider 关键 path 矩阵测试 —— per implementation / work item。
 
-补全 ROADMAP §initial implementation success criterion "≥10 ``-k null_provider`` 测试" 的 code_intel 半边。
-initial implementation 既有 5 条 ``test_null_provider_paths.py`` + initial implementation / 255 衍生 8 条
+补全 ROADMAP §implementation success criterion "≥10 ``-k null_provider`` 测试" 的 code_intel 半边。
+implementation 既有 5 条 ``test_null_provider_paths.py`` + implementation / 255 衍生 8 条
 分布于 retrieval / agents 套件，本 plan 在 ``tests/code_intel/`` 落 4 条 Provider
 能力契约层面（不再过 HybridSearchService 编排）测试，与 ``HybridSearchService``
 路径测试形成 "下层 Provider 行为 → 上层编排行为" 的双层覆盖。
@@ -17,11 +17,11 @@ initial implementation 既有 5 条 ``test_null_provider_paths.py`` + initial im
 2. ``test_null_provider_search_empty_repo_ids_no_crash`` —— ``repository_ids=[]``
    不抛错；``search_rag`` 仍被以 ``repo_ids=[]`` 调一次。
 3. ``test_null_provider_health_check_returns_true`` —— ``NullProvider().health_check()``
-   始终 ``True``（per initial implementation contract，本测试守 NullProvider 能力契约 +
+   始终 ``True``（per implementation contract，本测试守 NullProvider 能力契约 +
    ``BaseCodeProvider`` Protocol 兼容）。
 4. ``test_null_provider_lookup_symbols_raises_not_implemented`` —— 上游
    误绕过 capability 守卫直接 ``await NullProvider().lookup_symbols(...)`` 必须
-   抛 ``NotImplementedError``（per initial implementation contract / Pitfall 5 hard_constraint
+   抛 ``NotImplementedError``（per implementation contract / Pitfall 5 hard_constraint
    #5：NullProvider 路径不能跨界拿到 GraphCapable 数据）。
 
 mock 模式沿用 ``tests/services/retrieval/test_null_provider_paths.py``：仅 patch
@@ -76,7 +76,7 @@ def _make_l3_snapshot(items: list[dict[str, Any]]) -> LayerSnapshot:
 async def test_null_provider_search_returns_rag_only_result_type() -> None:
     """NullProvider 注入 → ``search`` 返回 ``RagSearchResult``（不是 HybridSearchResult）。
 
-    断言三点（per plan must_have "graph_context == '' + hop1_neighbors == [] +
+    断言三点（requirements "graph_context == '' + hop1_neighbors == [] +
     final_context 非空（rag_only 路径）"）：
 
     - 返回值 ``isinstance(result, RagSearchResult)`` 且 ``not isinstance(result,
@@ -108,7 +108,7 @@ async def test_null_provider_search_returns_rag_only_result_type() -> None:
         "NullProvider 路径必须返 RagSearchResult（_search_rag_only 路径）"
     )
     assert not isinstance(result, HybridSearchResult), (
-        "RagSearchResult 与 HybridSearchResult 不存在继承关系（per initial implementation "
+        "RagSearchResult 与 HybridSearchResult 不存在继承关系（per implementation "
         "plan contract-b：字段同名同序而非继承）；NullProvider 路径不能返 "
         "HybridSearchResult，否则 callsite 类型 narrow 失败"
     )
@@ -162,7 +162,7 @@ async def test_null_provider_search_empty_repo_ids_no_crash() -> None:
 
 
 async def test_null_provider_health_check_returns_true() -> None:
-    """``NullProvider().health_check()`` 始终返回 True（per initial implementation contract）。
+    """``NullProvider().health_check()`` 始终返回 True（per implementation contract）。
 
     NullProvider 设计上"无能力但始终在线"——后端不可用降级到本路径时，仍要让
     探活端点返 True 表示本进程是 healthy 的；区别于真后端故障的语义。
@@ -172,7 +172,7 @@ async def test_null_provider_health_check_returns_true() -> None:
     assert result is True
     # capabilities 必须是空集合（per protocols.py BaseCodeProvider Protocol）
     assert provider.capabilities == frozenset(), (
-        "NullProvider 必须声明 capabilities = frozenset()（per initial implementation contract "
+        "NullProvider 必须声明 capabilities = frozenset()（per implementation contract "
         "+ Pitfall 5 hard_constraint #5：NullProvider 不能声明任何 capability）"
     )
 
@@ -200,7 +200,7 @@ async def test_null_provider_lookup_symbols_raises_not_implemented() -> None:
             ["foo"], repository_ids=["repo-a"]
         )
 
-    # expand_graph 同处理（initial implementation contract __getattr__ 兜底 capability 名集合）
+    # expand_graph 同处理（implementation contract __getattr__ 兜底 capability 名集合）
     with pytest.raises(NotImplementedError, match="expand_graph"):
         await provider.expand_graph(  # type: ignore[attr-defined]
             [{"symbol_id": "s1"}], max_hops=2

@@ -1,6 +1,6 @@
-"""initial implementation plan Task 2 — agent / workflow / chat 三路径 E2E callsite 契约。
+"""implementation Task 2 — agent / workflow / chat 三路径 E2E callsite 契约。
 
-6 条核心断言验证 ROADMAP §initial implementation success criterion "agent / workflow / chat 三路径调用
+6 条核心断言验证 ROADMAP §implementation success criterion "agent / workflow / chat 三路径调用
 `HybridSearchService.search(...)` 唯一入口"：
 
 1. ``test_agent_search_repository_code_returns_l3_results`` —— 调
@@ -307,7 +307,7 @@ def test_callsite_signature_unchanged() -> None:
 def test_no_layered_search_direct_import_in_callsites() -> None:
     """rg grep gate：``from codegraph.services.layered_search import`` 在
     ``server/agents/`` + ``server/workflows/`` + ``server/chat/`` 0 命中
-    （per ROADMAP §initial implementation success criterion "agent/workflow/chat 三路径全部通过
+    （requirements §implementation success criterion "agent/workflow/chat 三路径全部通过
     HybridSearchService"）。
 
     允许命中：

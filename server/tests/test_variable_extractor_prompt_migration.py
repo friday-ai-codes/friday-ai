@@ -1,10 +1,10 @@
-"""initial implementation + initial implementation Wave（task）：variable_extractor 迁移测试。
+"""implementation + implementation Wave（task）：variable_extractor 迁移测试。
 
-initial implementation 原 4 测试验证 Prompt Center render_prompt 三态行为 + `.format()` 字节级
+implementation 原 4 测试验证 Prompt Center render_prompt 三态行为 + `.format()` 字节级
 等价（contract），**不触及** LLM 调用（迁移前老 httpx 直调 / SDK 客户端均无 mock，
 node.execute 链路也不跑）。
 
-initial implementation Wave（work item / contract）补强：新增 `_CapturingFake` seam 经
+implementation Wave（work item / contract）补强：新增 `_CapturingFake` seam 经
 `build_chat_model` 共用 seam 注入，驱动真实 AIVariableExtractorNode.execute() 跑到
 `chat_model.bind(temperature=0.3).ainvoke(...)`，捕获 `HumanMessage.content` 做字节级
 sha256 断言（work item 基线守护）。
@@ -83,7 +83,7 @@ class TestVariableExtractorMigration:
                 project=None,
                 category="ai_node",
                 title="AI 节点 - 变量提取",
-                description="initial implementation test re-seed",
+                description="implementation test re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(
@@ -181,7 +181,7 @@ class TestVariableExtractorMigration:
 
 
 # ============================================================================
-# initial implementation Wave（task）：_CapturingFake seam 字节级守护（work item）
+# implementation Wave（task）：_CapturingFake seam 字节级守护（work item）
 # ============================================================================
 
 
@@ -196,7 +196,7 @@ def _resolved_anthropic_stub() -> ResolvedProviderConfig:
 
 @pytest.mark.django_db(transaction=True)
 class TestVariableExtractorPromptByteEqual:
-    """initial implementation Wave 补强：execute 路径 HumanMessage.content 字节级等价。
+    """implementation Wave 补强：execute 路径 HumanMessage.content 字节级等价。
 
     在 `build_chat_model` seam 注入 `_CapturingFake`（FakeChatModel 子类），其
     `ainvoke` 方法捕获 messages[0].content（HumanMessage.content）字节。断言该
@@ -216,7 +216,7 @@ class TestVariableExtractorPromptByteEqual:
                 project=None,
                 category="ai_node",
                 title="AI 节点 - 变量提取",
-                description="initial implementation test re-seed",
+                description="implementation test re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(

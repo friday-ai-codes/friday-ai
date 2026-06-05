@@ -1,4 +1,4 @@
-"""initial implementation plan：cleanup_index keep_graph 双路径单测。
+"""implementation：cleanup_index keep_graph 双路径单测。
 
 覆盖（work item-01..03）：
 
@@ -14,7 +14,7 @@
    / ``_cleanup_graph_artifacts`` 必须可从模块直接导入。
 5. ``test_vector_artifacts_order``：mock ``_delete_count`` + ``_delete_chunk_registries_raw``
    + Qdrant，断言向量段调用顺序 Qdrant → FileIndex → ChunkEdge → ChunkRegistry
-   （initial implementation contract 不变量：ChunkEdge 必须先于 ChunkRegistry）。
+   （implementation contract 不变量：ChunkEdge 必须先于 ChunkRegistry）。
 6. ``test_index_delete_view_keep_graph_query`` (security mitigation-3 端到端)：``DELETE
    /api/repositories/{id}/index/delete/?keep_graph=true`` Symbol 行不变；
    不带参数 Symbol 全清。
@@ -232,7 +232,7 @@ def test_internal_helpers_exist() -> None:
 
 
 async def test_vector_artifacts_order() -> None:
-    """断言 _cleanup_vector_artifacts 内部子步骤调用顺序（initial implementation contract 不变量）。"""
+    """断言 _cleanup_vector_artifacts 内部子步骤调用顺序（implementation contract 不变量）。"""
 
     from repositories.services import index_cleanup
     from repositories.services.index_cleanup import _cleanup_vector_artifacts

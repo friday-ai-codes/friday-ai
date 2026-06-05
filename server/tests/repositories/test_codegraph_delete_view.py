@@ -1,4 +1,4 @@
-"""initial implementation plan / work item-03：DELETE /api/repositories/{id}/codegraph/ 端到端。
+"""implementation / work item-03：DELETE /api/repositories/{id}/codegraph/ 端到端。
 
 覆盖的 6 条测试场景：
 

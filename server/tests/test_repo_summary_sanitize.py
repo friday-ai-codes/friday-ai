@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1: _parse_summary_json 和脱敏测试。
+"""implementation Task 1: _parse_summary_json 和脱敏测试。
 
 Test 6: _parse_summary_json 能从 ```json ... ``` 代码块中提取 JSON
 Test 7: _sanitize_summary 能移除 email / Bearer token / ghp_ API key

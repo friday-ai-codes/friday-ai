@@ -1,4 +1,4 @@
-"""initial implementation plan：aresolve_or_error Result 模式 + 四层优先级测试。
+"""implementation：aresolve_or_error Result 模式 + 四层优先级测试。
 
 覆盖 Requirement: contract, contract
 威胁参考: security mitigation (credential cache 污染), security mitigation (ValidationError 泄漏)
@@ -134,7 +134,7 @@ class TestProviderMissingErrorShape:
     """contract：ProviderMissingError 结构化契约（锁死字段 / 默认值 / frozen）。"""
 
     def test_provider_missing_error_default_code(self) -> None:
-        """code 默认值锁死 'provider_credential_missing'（initial implementation 前端分支依赖）。"""
+        """code 默认值锁死 'provider_credential_missing'（implementation 前端分支依赖）。"""
         err = ProviderMissingError(missing_provider="openai_chat")
         assert err.code == "provider_credential_missing"
         assert err.missing_provider == "openai_chat"
@@ -217,17 +217,17 @@ class TestAResolveOrError:
         assert result.code == "provider_credential_missing"
 
     @pytest.mark.skip(
-        reason="initial implementation plan（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
+        reason="implementation（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
     )
     async def test_systemsetting_fallback_only_for_anthropic(self) -> None:
-        """initial implementation plan：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+        """implementation：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
         pytest.skip("legacy path removed")
 
     @pytest.mark.skip(
-        reason="initial implementation plan（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
+        reason="implementation（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
     )
     async def test_no_systemsetting_fallback_for_non_anthropic(self) -> None:
-        """initial implementation plan：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+        """implementation：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
         pytest.skip("legacy path removed")
 
     async def test_priority_node_over_system(self) -> None:

@@ -88,7 +88,7 @@ class ExecutionContext:
     workflow_execution: "WorkflowExecution | None" = None
     node_execution: "NodeExecution | None" = None
 
-    # initial implementation contract contract：per-node Provider 快照
+    # implementation contract contract：per-node Provider 快照
     #
     # Shape: {node_id: {provider_type: str, model: str, source: str,
     #                   credential_id: str | None}}
@@ -666,7 +666,7 @@ class BaseNode(ABC):
             errors.append(str(e.message))
         return errors
 
-    # UI Schema（initial implementation: 声明式配置表单描述）
+    # UI Schema（implementation: 声明式配置表单描述）
     # 由子类覆盖，或从 node-definitions.json 注入
     ui_schema: ClassVar[dict | None] = None
 

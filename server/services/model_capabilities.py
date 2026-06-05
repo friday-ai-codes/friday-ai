@@ -3,13 +3,13 @@
 数据源：本地 vendored fixture `server/agents/fixtures/model_prices.json`（不引入 litellm Python 包）。
 查询优先级：精确 → 前缀（longest-match）→ Provider `*` 兜底 → 全局 `*/*` 兜底 → DEFAULT_CAPABILITIES。
 
-initial implementation plan 交付:
+implementation 交付:
 - ModelCapabilitiesEntry @dataclass(frozen=True) 六字段 Decimal 定价
 - ModelCapabilities.get() 四级 lookup 永不 raise
 - ModelCapabilities.merge_ollama() 写入 credential.available_models（caller 负责 save/aupdate）
 - _FIXTURE_KEY_MAP 支持 LiteLLM 上游字段名与 v21.0 内部字段名双向映射
 
-initial implementation 承接点: runtime cache + /api/show context_length 主动拉取。
+implementation 承接点: runtime cache + /api/show context_length 主动拉取。
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ class ModelCapabilities:
         """contract：Ollama /api/tags 返回的模型清单合并到 credential.available_models。
 
         本 phase：仅写 available_models 字段（caller 负责 save / aupdate 入库）。
-        initial implementation 可在此基础上增加运行时 cache 与 /api/show context_length 拉取。
+        implementation 可在此基础上增加运行时 cache 与 /api/show context_length 拉取。
 
         Args:
             credential: ProviderCredential 实例（仅赋值 available_models，不 save）

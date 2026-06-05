@@ -4,12 +4,12 @@
 而是写入关联 Message.metadata.codingResult / codingError，前端通过消息历史恢复。
 前端通过 ConversationRuntime 轮询检测编码完成。
 
-v18.1 initial implementation 决策 (gap closure for checkpoint audit G3):
+implementation 决策 (gap closure for checkpoint audit G3):
 正式锁定 ConversationRuntime 快照轮询为 work item 编码中间产出的投递路径,
 不做 AgentEvent SSE push 升级 —— 理由即本模块顶部论证 (Runner 容器生命周期
 与 SSE 流不兼容)。详见 project docs
 与 server/agents/core/events.py 中 CODING_PROGRESS / AWAITING_PR_REVIEW /
-CONFLICT_CHECK 三常量上方的 initial implementation 决策注释块 (Task 5 产出)。
+CONFLICT_CHECK 三常量上方的 implementation 决策注释块 (Task 5 产出)。
 """
 
 from __future__ import annotations

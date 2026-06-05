@@ -1,4 +1,4 @@
-"""initial implementation: Endpoint 表新增 metadata JSONField（per work item / work item）。
+"""implementation: Endpoint 表新增 metadata JSONField（per work item / work item）。
 
 存储 Go gin 路由中 ogin.G* 参数验证 middleware 的参数元数据（路径参数、
 查询参数、请求头参数）。null=True 保持与既有 Django/DRF Endpoint 记录兼容。

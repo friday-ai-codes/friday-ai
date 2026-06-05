@@ -1,4 +1,4 @@
-"""initial implementation Hotfix（work item）：v8.1 Project.claude_api_key_encrypted 残留预检命令。
+"""implementation Hotfix（work item）：v8.1 Project.claude_api_key_encrypted 残留预检命令。
 
 运行时机：`projects.migrations.0009_remove_v81_legacy_claude_fields` 执行**之前**
 （release checklist 强制）。
@@ -43,7 +43,7 @@ logger = structlog.get_logger(__name__)
 
 
 class Command(BaseCommand):
-    """v8.1 Project.claude_api_key_encrypted 残留预检（initial implementation Hotfix work-item item）。"""
+    """v8.1 Project.claude_api_key_encrypted 残留预检（implementation Hotfix work-item item）。"""
 
     help = (
         "检查 v8.1 遗留 Project.claude_api_key_encrypted 残留数据 —— "

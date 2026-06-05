@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01 — contract ContextWindowExceededError → SSE ERROR payload 契约。
+"""implementation Task 01 — contract ContextWindowExceededError → SSE ERROR payload 契约。
 
 覆盖 contract 验收项：AIAgentBaseNode.execute 捕获 ContextWindowExceededError 时，
 NodeResult.output 必须包含结构化 payload：

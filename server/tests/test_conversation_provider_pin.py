@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01 — contract 对话 Provider pin 语义（后端校验）。
+"""implementation Task 01 — contract 对话 Provider pin 语义（后端校验）。
 
 覆盖 contract 三态判定真源：
 - active/draft → PATCH provider_credential_id / model / title 允许

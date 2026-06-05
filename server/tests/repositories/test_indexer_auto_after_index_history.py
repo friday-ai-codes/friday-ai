@@ -1,4 +1,4 @@
-"""initial implementation plan — indexer auto_after_index 路径写 GraphBuildHistory 集成测试。
+"""implementation — indexer auto_after_index 路径写 GraphBuildHistory 集成测试。
 
 覆盖 work item-01..05 中 ``auto_after_index`` trigger 路径：
 
@@ -425,7 +425,7 @@ def test_at_least_one_callsite_invokes_update_graph_progress() -> None:
         f"实际 {len(update_calls)} 处：\n" + "\n".join(update_calls)
     )
 
-    # 既有 BUILDING_GRAPH 调用保留（initial implementation 才彻底删）
+    # 既有 BUILDING_GRAPH 调用保留（implementation 才彻底删）
     assert "IndexStage.BUILDING_GRAPH" in src
 
 

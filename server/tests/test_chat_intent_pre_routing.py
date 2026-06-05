@@ -1,4 +1,4 @@
-"""initial implementation：chat_graph 编排前置 gate 集成测试（unit 层）。
+"""implementation：chat_graph 编排前置 gate 集成测试（unit 层）。
 
 复用 ``test_chat_graph_clarification_interrupt`` 的 monkeypatch + helper 模式，
 聚焦 ``_annotate_intent_classification`` 写入与 LLM 主动 ``ask_clarification``

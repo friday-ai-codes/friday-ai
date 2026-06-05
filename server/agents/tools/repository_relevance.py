@@ -1,4 +1,4 @@
-"""``analyze_repository_relevance`` agent tool —— initial implementation。
+"""``analyze_repository_relevance`` agent tool —— implementation。
 
 在 chat 模式向 LLM 暴露的「跨仓相关性识别」工具。AI 在回答跨仓需求 / 创建编码
 方案前主动调用本工具，传入 query 返回排序后的 candidate 仓库列表 + score +

@@ -1,4 +1,4 @@
-"""explain_neighbor —— 6 类 EdgeType reason 模板单测（per initial implementation plan Task 1）。
+"""explain_neighbor —— 6 类 EdgeType reason 模板单测（per implementation Task 1）。
 
 兑现 contract / plan must-haves："_explain_neighbor(edge_type, source_payload,
 target_payload, metadata) 生成 reason 字段"——本测试覆盖 6 类正向模板 + metadata

@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='repository',
             name='graph_build_status',
-            field=models.CharField(choices=[('idle', '未构建'), ('running', '运行中'), ('completed', '已完成'), ('failed', '失败'), ('cancelled', '已停止')], default='idle', help_text='图谱当前态（initial implementation-01）', max_length=20),
+            field=models.CharField(choices=[('idle', '未构建'), ('running', '运行中'), ('completed', '已完成'), ('failed', '失败'), ('cancelled', '已停止')], default='idle', help_text='图谱当前态（implementation-01）', max_length=20),
         ),
         migrations.AddField(
             model_name='repository',

@@ -1,4 +1,4 @@
-"""work item hop2 branch-aware 契约测试（initial implementation plan）。
+"""work item hop2 branch-aware 契约测试（implementation）。
 
 覆盖 fetch_hop2_edges 的 branch base/overlay 合并语义 + 跨分支不串 +
 base 归一化回归（Pitfall 4 验收红线）：

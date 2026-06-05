@@ -1,10 +1,10 @@
 """ENABLE_GRAPHRAG_ENRICHMENT=False 路径 byte-equivalent 集成测试 ——
-per initial implementation context contract / contract / plan task 2。
+per implementation context contract / contract / plan task 2。
 
 context contract 字面承诺::
 
     ENABLE_GRAPHRAG_ENRICHMENT=False → HybridSearchService **强制** rag_only 路径
-    （即使 provider 是 GraphCapableProvider，也 byte-equiv initial implementation 路径）
+    （即使 provider 是 GraphCapableProvider，也 byte-equiv implementation 路径）
 
 本套件锁定该不变量：在 ``override_settings(ENABLE_GRAPHRAG_ENRICHMENT=False)``
 环境下，``LocalProvider`` (GraphCapableProvider) 与 ``NullProvider``
@@ -195,7 +195,7 @@ async def test_byte_equiv_max_tokens_trim_consistent() -> None:
 async def test_settings_true_local_provider_returns_graph_result_type() -> None:
     """默认 settings True 下 LocalProvider 路径仍返 ``HybridSearchResult``。
 
-    本对照组守门 initial implementation 灰度开关**不影响默认路径**：仅当 settings False
+    本对照组守门 implementation 灰度开关**不影响默认路径**：仅当 settings False
     时才强制 rag_only；True 时 LocalProvider (GraphCapableProvider) 走完整
     graph_capable 编排器，返带 graph_context/hop1/hop2 三字段的
     HybridSearchResult。

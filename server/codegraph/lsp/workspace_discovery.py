@@ -1,4 +1,4 @@
-"""initial implementation: nx sub-project 自动发现层（三探针并集 + tsconfig.json 兜底）。
+"""implementation: nx sub-project 自动发现层（三探针并集 + tsconfig.json 兜底）。
 
 per work item：
     - 第一探针 ``pnpm-workspace.yaml::packages`` glob 列表 + 展开
@@ -9,7 +9,7 @@ per work item：
 
 per work item / work item：薄防御层 —— 读 package.json ``dependencies.vue`` /
 ``devDependencies.vue`` semver；vue<2.7 时仍纳入 SubProject list（标 vue_version）；
-``VolarPool.get`` 入口再防御 raise，触发 initial implementation LspBackend 基类 fallback tree-sitter。
+``VolarPool.get`` 入口再防御 raise，触发 implementation LspBackend 基类 fallback tree-sitter。
 
 公开 API
 ========

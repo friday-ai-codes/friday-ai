@@ -1,4 +1,4 @@
-"""HybridSearchService 骨架烟测 —— initial implementation plan Task 2。
+"""HybridSearchService 骨架烟测 —— implementation Task 2。
 
 6 条核心断言（per hard_constraint #4 / #5 / #6 / #7 + Pitfall 5）：
 

@@ -1,4 +1,4 @@
-"""initial implementation: 三 slug resync —— 注入「准确性优先原则」。
+"""implementation: 三 slug resync —— 注入「准确性优先原则」。
 
 涉及 slug：
 

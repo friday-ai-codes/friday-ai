@@ -1,4 +1,4 @@
-"""initial implementation 集成测试：真实 spawn gopls serve lifecycle 验证。
+"""implementation 集成测试：真实 spawn gopls serve lifecycle 验证。
 
 @pytest.mark.integration：CI 默认 pytest -m "not integration" 跳过
 @pytest.mark.skipif：本地未装 gopls 时跳过
@@ -51,7 +51,7 @@ class TestGoplsRealLifecycle:
         测试用独立实例绕开全局缓存）。
         """
         import services.background_runner as _bg
-        _bg._ensure_worker_loop()  # 内部私有 API；initial implementation 切换时需关注是否有公开替代
+        _bg._ensure_worker_loop()  # 内部私有 API；implementation 切换时需关注是否有公开替代
 
         from codegraph.lsp.gopls_backend import _GoplsLazyBackend
         from codegraph.lsp.supervisor import LspSupervisor, LspSupervisorStatus
@@ -81,7 +81,7 @@ class TestGoplsRealLifecycle:
     def test_gopls_supervisor_shutdown_cleans_up(self, request: pytest.FixtureRequest) -> None:
         """shutdown 后 status == STOPPED。"""
         import services.background_runner as _bg
-        _bg._ensure_worker_loop()  # 内部私有 API；initial implementation 切换时需关注是否有公开替代
+        _bg._ensure_worker_loop()  # 内部私有 API；implementation 切换时需关注是否有公开替代
 
         from codegraph.lsp.gopls_backend import _GoplsLazyBackend
         from codegraph.lsp.supervisor import LspSupervisor, LspSupervisorStatus

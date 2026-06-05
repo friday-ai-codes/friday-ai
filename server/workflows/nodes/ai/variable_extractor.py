@@ -20,7 +20,7 @@ from workflows.nodes.registry import register_node
 logger = structlog.get_logger(__name__)
 
 
-# initial implementation contract:
+# implementation contract:
 # - 3 个真变量从 .format() 单花括号 → Jinja2 双花括号: {variable_definitions}/{input_text}/{additional_prompt}
 # - 原 JSON 示例内 f-string 转义 {{/}} 剥回真实 {/}（不再经过 .format()）
 # AI 提取提示词模板
@@ -198,7 +198,7 @@ class AIVariableExtractorNode(BaseNode):
             f"- {v['key']} ({v['name']}): {v['desc']}" for v in variables_config
         )
 
-        # initial implementation contract: 提取 space_id 传给 Prompt Center（允许空间级覆盖）
+        # implementation contract: 提取 space_id 传给 Prompt Center（允许空间级覆盖）
         space_id: str | None = None
         if context.workflow_execution:
             from workflows.models import WorkflowExecution
@@ -209,7 +209,7 @@ class AIVariableExtractorNode(BaseNode):
             if we.workflow and we.workflow.project:
                 space_id = str(we.workflow.project.id)
 
-        # initial implementation: 构建完整提示词（走 Prompt Center + fallback 双轨）
+        # implementation: 构建完整提示词（走 Prompt Center + fallback 双轨）
         prompt = await render_prompt(
             PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
             project_id=space_id,
@@ -397,7 +397,7 @@ class AIVariableExtractorNode(BaseNode):
         max_thinking_tokens: int | None = None,
         provider_credential_id: str = "",
     ) -> tuple[str, dict]:
-        """单 turn ainvoke 收敛（initial implementation / contract）。
+        """单 turn ainvoke 收敛（implementation / contract）。
 
         build_chat_model(resolved).bind(temperature=0.3).ainvoke([HumanMessage])；
         aresolve_or_error 主路径（contract），仅 model 字段走 claude_config fallback；
@@ -465,7 +465,7 @@ class AIVariableExtractorNode(BaseNode):
                 )
 
         # contract：model 字段空值 fallback
-        # initial implementation plan：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
+        # implementation：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
         if not model:
             model = (resolved.extra or {}).get("default_model", "") or ""
         if not model:

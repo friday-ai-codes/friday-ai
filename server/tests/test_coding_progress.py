@@ -1,4 +1,4 @@
-"""initial implementation: 编码中间产出 (coding_progress) 回调与轮询测试。
+"""implementation: 编码中间产出 (coding_progress) 回调与轮询测试。
 
 覆盖场景:
 - _handle_progress 回调在携带/不携带 coding_progress 时的行为
@@ -188,7 +188,7 @@ class TestHandleProgressCodingProgress:
         assert "updated_at" in cp
 
     # ------------------------------------------------------------------
-    # initial implementation G1 + G5 Wave 新增（RED → GREEN）
+    # implementation G1 + G5 Wave 新增（RED → GREEN）
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
@@ -197,7 +197,7 @@ class TestHandleProgressCodingProgress:
     ) -> None:
         """G1: _handle_progress 提取 details.suggested_commit_message 到 last_output。
 
-        audit v18.1 G1 (BLOCKER): 容器通过 progress 回调 details.suggested_commit_message
+        regression: 容器通过 progress 回调 details.suggested_commit_message
         传递 AI 生成的 commit message，但原 callbacks.py 内联拼装逻辑未提取该字段，
         导致 GET /commit-confirm/ 返回空字符串。本测试验证 Wave 修复后 session.last_output
         顶层携带 suggested_commit_message，证明 parse_progress_payload 被正确调用。
@@ -230,7 +230,7 @@ class TestHandleProgressCodingProgress:
     async def test_progress_callback_merges_and_preserves_meta(self) -> None:
         """G5: session.last_output 采用 merge 语义，预设 meta 完整保留。
 
-        audit v18.1 G5 (MEDIUM): 原 callbacks.py 使用 session.last_output = output 整体覆盖，
+        regression: 原 callbacks.py 使用 session.last_output = output 整体覆盖，
         会丢失既有 task_type / source / conversation_id / logs 等 meta 字段。
         本测试验证 Wave 修复后使用 {**(session.last_output or {}), **output} merge 语义，
         预设的 4 个 meta key 在 progress 回调写入后全部保留。
@@ -441,14 +441,14 @@ class TestConversationRuntimeCodingProgress:
 
 
 # ============================================================================
-# TestProgressPayloadSerializer — initial implementation G1 阻塞前置条件（Wave）
+# TestProgressPayloadSerializer — implementation G1 阻塞前置条件（Wave）
 # ============================================================================
 
 
 class TestProgressPayloadSerializer:
     """验证 ProgressPayloadSerializer 声明了 details 字段，避免 DRF 静默丢弃。
 
-    initial implementation G4 依赖 G1 阻塞前置条件：若 serializer 未声明 details，
+    implementation G4 依赖 G1 阻塞前置条件：若 serializer 未声明 details，
     则 callbacks.py 的 _handle_progress 永远无法从 validated_data 中拿到 details，
     导致下游 parse_progress_payload 的 suggested_commit_message 提取永远失败。
     """
@@ -478,7 +478,7 @@ class TestProgressPayloadSerializer:
 
 
 # ============================================================================
-# TestWSProgressParsesViaCommon — initial implementation G4 WS 路径调用公共 parser（Wave）
+# TestWSProgressParsesViaCommon — implementation G4 WS 路径调用公共 parser（Wave）
 # ============================================================================
 
 
@@ -564,7 +564,7 @@ class TestWSProgressParsesViaCommon:
 
 
 # ============================================================================
-# TestProgressParsingConsistency — initial implementation G4 Wave HTTP + WS 双路径一致性
+# TestProgressParsingConsistency — implementation G4 Wave HTTP + WS 双路径一致性
 # ============================================================================
 
 
@@ -697,12 +697,12 @@ class TestProgressParsingConsistency:
 
 
 # ============================================================================
-# TestPhaseRuntimePollingSmoke — initial implementation 方案 B 轮询路径 end-to-end smoke
+# TestPhaseRuntimePollingSmoke — implementation 方案 B 轮询路径 end-to-end smoke
 # ============================================================================
 
 
 class TestPhaseRuntimePollingSmoke:
-    """initial implementation 方案 B 轮询路径 smoke。
+    """implementation 方案 B 轮询路径 smoke。
 
     证明 progress 回调写入 SubAgentSession.last_output 后,
     ConversationRuntime 快照在一次 HTTP 调用内可读到 coding_progress。
@@ -710,10 +710,10 @@ class TestPhaseRuntimePollingSmoke:
     (真实延迟由前端 scheduleRuntimePoll 的 setTimeout(2000) 在应用层决定)。
 
     本用例使用 Option C 结构: payload 同时携带
-      - details.suggested_commit_message (证明 initial implementation G1 顶层透传未回归)
+      - details.suggested_commit_message (证明 implementation G1 顶层透传未回归)
       - coding_progress 嵌套 dict (证明 runtime 快照轮询路径端到端可达)
 
-    initial implementation 决策详见 project docs
+    implementation 决策详见 project docs
     """
 
     @pytest.mark.asyncio
@@ -729,7 +729,7 @@ class TestPhaseRuntimePollingSmoke:
         # --- Setup: 创建 Conversation + AgentSession + SubAgentSession + CodingSession ---
         conversation = await Conversation.objects.acreate(
             project=project,
-            title="initial implementation smoke",
+            title="implementation smoke",
         )
         agent_session = await AgentSession.objects.acreate(
             session_id="main-phase-smoke",
@@ -747,7 +747,7 @@ class TestPhaseRuntimePollingSmoke:
             conversation=conversation,
             repository=repository,
             status=CodingSession.Status.RUNNING,
-            tech_plan="# initial implementation smoke plan",
+            tech_plan="# implementation smoke plan",
             affected_files=[],
             subagent_session=subagent_session,
         )
@@ -757,14 +757,14 @@ class TestPhaseRuntimePollingSmoke:
         payload: dict[str, Any] = {
             "phase": "coding",
             "progress": 0.6,
-            "message": "正在编辑 initial implementation smoke 文件",
-            "details": {"suggested_commit_message": "feat: initial implementation gap closure"},
+            "message": "正在编辑 implementation smoke 文件",
+            "details": {"suggested_commit_message": "feat: implementation gap closure"},
             "coding_progress": {
                 "modified_files": [
                     {"path": "server/tests/test_coding_progress.py", "change_type": "modified"},
                 ],
                 "recent_tool_calls": [
-                    {"tool": "Edit", "summary": "Added initial implementation smoke"},
+                    {"tool": "Edit", "summary": "Added implementation smoke"},
                 ],
                 "updated_at": "2026-04-10T12:00:00Z",
             },
@@ -772,18 +772,18 @@ class TestPhaseRuntimePollingSmoke:
         response = await _handle_progress(subagent_session, payload, log)
         assert response.status_code == status.HTTP_200_OK
 
-        # --- Act 2: DB 回读验证 initial implementation G1 顶层透传 + coding_progress 嵌套保留 ---
+        # --- Act 2: DB 回读验证 implementation G1 顶层透传 + coding_progress 嵌套保留 ---
         await subagent_session.arefresh_from_db()
         saved = subagent_session.last_output
         assert saved is not None, "last_output 应已被 _handle_progress 写入,不应为 None"
-        assert saved["suggested_commit_message"] == "feat: initial implementation gap closure", (
-            "initial implementation G1 regression: details.suggested_commit_message 未透传到 last_output 顶层"
+        assert saved["suggested_commit_message"] == "feat: implementation gap closure", (
+            "implementation G1 regression: details.suggested_commit_message 未透传到 last_output 顶层"
         )
         assert "coding_progress" in saved
         cp = saved["coding_progress"]
         assert len(cp["modified_files"]) == 1
         assert cp["modified_files"][0]["path"] == "server/tests/test_coding_progress.py"
-        # NOTE: initial implementation 公共 parse_progress_payload 会用服务端 timezone.now()
+        # NOTE: implementation 公共 parse_progress_payload 会用服务端 timezone.now()
         # 覆盖调用方传入的 updated_at(既有模板用例 test_progress_callback_with_coding_progress
         # 的断言也是"存在即可")。此处断言存在性 + 字符串类型,不校验字面值。
         assert isinstance(cp["updated_at"], str) and cp["updated_at"]
@@ -795,7 +795,7 @@ class TestPhaseRuntimePollingSmoke:
         assert "coding_session" in runtime
         cs = runtime["coding_session"]
         assert "coding_progress" in cs, (
-            "initial implementation 方案 B 轮询路径断裂: runtime 快照未暴露 coding_progress"
+            "implementation 方案 B 轮询路径断裂: runtime 快照未暴露 coding_progress"
         )
         cp_runtime = cs["coding_progress"]
         assert len(cp_runtime["modified_files"]) == 1
@@ -806,5 +806,5 @@ class TestPhaseRuntimePollingSmoke:
         # NOTE: 不断言 runtime["coding_session"]["suggested_commit_message"] — 该字段
         # 源自 CodingSession.suggested_commit_message model 字段,只在 _update_coding_session_on_complete
         # (completed 回调) 时才透传写入。本 smoke 不触发 completed,所以该字段仍为空字符串。
-        # initial implementation 决策交叉引用详见 server/agents/core/events.py initial implementation 决策注释块
+        # implementation 决策交叉引用详见 server/agents/core/events.py implementation 决策注释块
         # 与 project docs contract。

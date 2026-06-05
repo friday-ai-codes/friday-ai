@@ -1,9 +1,9 @@
-"""initial implementation + initial implementation Wave（task）：plan_generation prompt 迁移。
+"""implementation + implementation Wave（task）：plan_generation prompt 迁移。
 
-initial implementation 原 6 测试验证 Prompt Center render_prompt 三态行为 + `.replace` 字节级等价，
+implementation 原 6 测试验证 Prompt Center render_prompt 三态行为 + `.replace` 字节级等价，
 **不触及** LLM 调用（迁移前老 SDK 客户端 / httpx-level mock 均无，node.execute 链路也不跑）。
 
-initial implementation Wave（work item / contract）补强：新增 `_CapturingFake` seam 经
+implementation Wave（work item / contract）补强：新增 `_CapturingFake` seam 经
 ``fake_chat_model_factory`` 共用 fixture 注入到 ``build_chat_model``，驱动真实
 AIPlanGenerationNode.execute() 跑到 LangChainAgentRunner.stream 首轮 invoke，
 捕获 ``SystemMessage.content`` 做字节级 sha256 断言（contract）。
@@ -57,7 +57,7 @@ class TestPlanGenerationMigration:
                 project=None,
                 category="ai_node",
                 title="AI 节点 - 方案生成",
-                description="initial implementation test re-seed",
+                description="implementation test re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(
@@ -75,9 +75,9 @@ class TestPlanGenerationMigration:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """initial implementation 行为参考：render_prompt DB 命中路径会 XML 包裹变量 & 触发截断。
+        """implementation 行为参考：render_prompt DB 命中路径会 XML 包裹变量 & 触发截断。
 
-        本测试记录 initial implementation services.render_prompt 的行为。initial implementation 的
+        本测试记录 implementation services.render_prompt 的行为。implementation 的
         plan_generation.execute() **不**走此路径（contract retreat），而是手工读取
         get_active_prompt + str.replace，见
         test_execute_schema_json_not_truncated_by_retreat_path。
@@ -98,9 +98,9 @@ class TestPlanGenerationMigration:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """contract retreat（work item regression fix）：schema_json 4KB+ 在 execute() 预渲染后
-        必须保留完整内容，不被 initial implementation _sanitize_variables 的 1024 字符截断。
+        必须保留完整内容，不被 implementation _sanitize_variables 的 1024 字符截断。
 
-        initial implementation code review work item 发现：schema_json 实测 4432 字符，走 render_prompt
+        implementation code review work item 发现：schema_json 实测 4432 字符，走 render_prompt
         会被截到 1024 → 切在中间产生残缺 JSON → LLM 看到 garbage。
         修复策略：plan_generation.execute() 改为手工 get_active_prompt + str.replace，
         绕过 Jinja2 sandbox + 清洗流程（符合 work-item contract 的 retreat 机制）。
@@ -196,7 +196,7 @@ class TestPlanGenerationMigration:
         assert result == expected
 
     # ================================================================
-    # initial implementation Wave（task）：`_CapturingFake` + execute()
+    # implementation Wave（task）：`_CapturingFake` + execute()
     # 链路字节级 hash 守护（work item / contract / Pattern 8）
     # ================================================================
 
@@ -208,7 +208,7 @@ class TestPlanGenerationMigration:
         mock_aresolve_ok: Any,
         make_minimal_context: Any,
     ) -> None:
-        """initial implementation：``_CapturingFake`` 捕获 ``SystemMessage.content`` 做字节级 sha256 断言。
+        """implementation：``_CapturingFake`` 捕获 ``SystemMessage.content`` 做字节级 sha256 断言。
 
         work item 强化：
         - ``expected_sha`` 由同一 Prompt Center 渲染路径 + 固定 ``execution_id`` /

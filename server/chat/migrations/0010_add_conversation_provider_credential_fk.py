@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01：Conversation 新增 provider_credential_id FK + status 字段。
+"""implementation Task 01：Conversation 新增 provider_credential_id FK + status 字段。
 
 contract contract/contract 依赖字段：
     - provider_credential_id → system.ProviderCredential（on_delete=SET_NULL）：对话级 pin 凭证

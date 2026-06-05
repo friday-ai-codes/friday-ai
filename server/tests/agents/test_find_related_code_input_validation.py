@@ -1,6 +1,6 @@
 """``FindRelatedCodeInput`` / ``NeighborOutput`` / ``FindRelatedCodeOutput`` Pydantic 校验测试。
 
-initial implementation plan 01：把"三选一互斥 + hops≤2 + direction 三选一 + reason 非空"等
+implementation 01：把"三选一互斥 + hops≤2 + direction 三选一 + reason 非空"等
 约束前置到 Pydantic 层，避免 plan tool 函数体内手写 if-else 校验。
 
 测试组：
@@ -95,7 +95,7 @@ def test_only_symbol_name_ok() -> None:
 
 
 def test_hops_exceeds_max_raises() -> None:
-    """hops=3 → ValidationError（le=2 守卫与 initial implementation MAX_HOPS 对齐）。"""
+    """hops=3 → ValidationError（le=2 守卫与 implementation MAX_HOPS 对齐）。"""
     from agents.tools.schemas.find_related_code import FindRelatedCodeInput
 
     with pytest.raises(ValidationError):
@@ -170,7 +170,7 @@ def test_defaults_combined() -> None:
 
 
 def test_chunk_id_invalid_uuid_raises() -> None:
-    """chunk_id 非 UUID 字符串 → ValidationError（per initial implementation schema 层守卫）。"""
+    """chunk_id 非 UUID 字符串 → ValidationError（per implementation schema 层守卫）。"""
     from agents.tools.schemas.find_related_code import FindRelatedCodeInput
 
     with pytest.raises(ValidationError, match=re.compile(r"valid uuid", re.IGNORECASE)):
@@ -178,7 +178,7 @@ def test_chunk_id_invalid_uuid_raises() -> None:
 
 
 def test_repository_id_invalid_uuid_raises() -> None:
-    """repository_id 非 UUID 字符串 → ValidationError（per initial implementation schema 层守卫）。"""
+    """repository_id 非 UUID 字符串 → ValidationError（per implementation schema 层守卫）。"""
     from agents.tools.schemas.find_related_code import FindRelatedCodeInput
 
     with pytest.raises(ValidationError, match=re.compile(r"valid uuid", re.IGNORECASE)):
@@ -220,7 +220,7 @@ def test_frozen_immutability() -> None:
 
 
 def test_neighbor_output_reason_empty_raises() -> None:
-    """NeighborOutput.reason='' → ValidationError（min_length=1，per ROADMAP success criterion）。"""
+    """NeighborOutput.reason='' → ValidationError（min_length=1，success criterion）。"""
     from agents.tools.schemas.find_related_code import NeighborOutput
 
     with pytest.raises(ValidationError):
@@ -256,7 +256,7 @@ def test_neighbor_output_reason_nonempty_ok() -> None:
 
 
 def test_neighbor_output_line_bounds_nullable() -> None:
-    """line_start / line_end 允许 None（per initial implementation NeighborMetadata nullable 设计）。"""
+    """line_start / line_end 允许 None（per implementation NeighborMetadata nullable 设计）。"""
     from agents.tools.schemas.find_related_code import NeighborOutput
 
     obj = NeighborOutput(

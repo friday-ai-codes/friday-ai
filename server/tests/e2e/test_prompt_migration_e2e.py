@@ -1,10 +1,10 @@
-"""initial implementation / initial implementation contract 端到端：title_service 迁移后 LLM payload 字节级等价验证。
+"""implementation / implementation contract 端到端：title_service 迁移后 LLM payload 字节级等价验证。
 
 目标：证明真实 generate_title 调用链下（fire-and-forget + async），
 LangChain BaseChatModel 收到的 HumanMessage payload 与迁移前 anthropic SDK
 行为等价（DB 空 fallback 路径、DB 命中 XML tag 路径）。
 
-initial implementation contract（implementation plan）迁移后：
+implementation contract（implementation plan）迁移后：
 - title_service 从 anthropic.AsyncAnthropic 迁至 build_chat_model(resolved).ainvoke(...)
 - 原 anthropic.AsyncAnthropic mock 路径失效；改用 FakeChatModel seam 捕获
   HumanMessage.content，字节级等价断言保持不变
@@ -63,7 +63,7 @@ def _patch_title_service(
         _stub_resolve,
     )
 
-    # initial implementation plan 后 title_service.model 取值改走
+    # implementation 后 title_service.model 取值改走
     # ``aget_legacy_anthropic_config()["default_model"]``，原 ``aget_setting_value`` 已不再被
     # title_service 引用。统一在此 mock 新的入口。
     async def _fake_legacy_anthropic() -> dict[str, str]:
@@ -96,7 +96,7 @@ class TestPromptMigrationE2E:
                 project=None,
                 category="aux_model",
                 title="标题生成",
-                description="initial implementation e2e re-seed",
+                description="implementation e2e re-seed",
                 is_builtin=True,
             )
             version = PromptVersion.objects.create(
@@ -155,7 +155,7 @@ class TestPromptMigrationE2E:
         result = await generate_title(str(conv_with_first_message.id), "端到端测试消息")
         assert result == "端到端标题"
 
-        # 字节级等价断言（work item 契约 —— initial implementation 会再验一次）
+        # 字节级等价断言（work item 契约 —— implementation 会再验一次）
         expected = TITLE_PROMPT.replace("{{user_message}}", "端到端测试消息")
         assert captured["content"] == expected, (
             f"E2E payload mismatch:\n"

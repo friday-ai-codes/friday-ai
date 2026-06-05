@@ -1,6 +1,6 @@
 """标题生成服务测试。
 
-initial implementation contract（implementation plan）迁移后：
+implementation contract（implementation plan）迁移后：
 - title_service 调用链从旧 Anthropic SDK 直调改为
   ``agents.llm_factory.build_chat_model(resolved).ainvoke(...)``
 - mock 注入点统一收敛到 ``build_chat_model`` + ``FakeChatModel``

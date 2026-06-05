@@ -4,7 +4,7 @@ Extracts common execution logic (session management, LangChainAgentRunner
 construction, result mapping) into a base class. Subclasses only need to
 override 5 hook methods to define specialized node behavior.
 
-initial implementation Wave work item：AIAgentBaseNode.execute 统一走 LangChainAgentRunner
+implementation Wave work item：AIAgentBaseNode.execute 统一走 LangChainAgentRunner
 （替换 v20.0 之前的 SDK 子工厂路径）；`_resolve_api_key_and_model` 签名由三元组
 `(api_key, model, base_url)` 调整为二元组
 `(ResolvedProviderConfig, model)`（contract）；use_custom_api 路径构造临时
@@ -163,7 +163,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
         范围、max_output_tokens 边界等规则）。
         Pitfall 7：jsonschema validator 默认 Draft 4，不一定支持 allOf.if/then/required
         → 走 Python 侧显式判定最稳（方案 B）。
-        initial implementation plan / work item §Fix 4 后端错误锁文案。
+        implementation / work item §Fix 4 后端错误锁文案。
 
         Threat mitigation：
         - security mitigation-01 Spoofing / Authentication Confusion：保存前拒绝非法组合 → 运行时
@@ -284,7 +284,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
         provider_type: str = "",
         provider_credential_id: str = "",
     ) -> tuple[ResolvedProviderConfig, str]:
-        """initial implementation contract contract/contract：优先读 ExecutionContext.node_snapshots，
+        """implementation contract contract/contract：优先读 ExecutionContext.node_snapshots，
         miss 时 fallback 到 _resolve_api_key_and_model 运行时解析。
 
         快照命中契约（contract）：
@@ -464,7 +464,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
         provider_type: str = "",
         provider_credential_id: str = "",
     ) -> tuple[ResolvedProviderConfig, str]:
-        """四层优先级解析 Provider 凭证 + 模型（initial implementation contract 二元组新签名）。
+        """四层优先级解析 Provider 凭证 + 模型（implementation contract 二元组新签名）。
 
         优先级：use_custom_api > provider_credential_id(节点 FK) > provider_type(节点类型)
                  > conversation > project > system。
@@ -546,7 +546,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
                 )
 
         # 模型 fallback（contract / contract）：config_model 为空时从 resolved.extra.default_model
-        # 读取（initial implementation plan：替代 v8.1 aget_claude_config 路径）
+        # 读取（implementation：替代 v8.1 aget_claude_config 路径）
         if config_model:
             resolved_model = config_model
         else:
@@ -598,7 +598,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
     # ===== Unified execute method =====
 
     async def execute(self, context: ExecutionContext) -> NodeResult:
-        """Execute the AI agent node using LangChainAgentRunner (initial implementation Wave)."""
+        """Execute the AI agent node using LangChainAgentRunner (implementation Wave)."""
         config = context.node_config
 
         # 1. Call hook methods
@@ -639,8 +639,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
             enhanced_prompt = self._enhance_system_prompt(system_prompt, session_id)
 
             # 解析 Provider 凭证 + 模型
-            # initial implementation contract contract/contract：优先读 ExecutionContext.node_snapshots，
-            # miss 时 fallback 到运行时 aresolve（与 initial implementation 二元组签名兼容）
+            # implementation contract contract/contract：优先读 ExecutionContext.node_snapshots，
+            # miss 时 fallback 到运行时 aresolve（与 implementation 二元组签名兼容）
             resolved, resolved_model = await self._resolve_from_snapshot_or_runtime(
                 context=context,
                 project=project,
@@ -746,7 +746,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
             )
 
         except ContextWindowExceededError as e:
-            # initial implementation contract contract：SSE ERROR 事件结构化 payload。
+            # implementation contract contract：SSE ERROR 事件结构化 payload。
             # 解析 langchain_runner.py `_check_context_window` strict_error 消息格式：
             #   context too long: {N} tokens > budget {B} (max_input={I}, max_output={O}, buffer={F})
             # regex 不匹配时 fallback 到 0 值，保证 error_code / recommended_actions 仍写入。

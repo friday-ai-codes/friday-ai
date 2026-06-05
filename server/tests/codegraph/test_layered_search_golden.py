@@ -1,11 +1,11 @@
-"""initial implementation plan — Pitfall 4 golden snapshot baseline 测试（v23.0 legacy baseline）。
+"""implementation — Pitfall 4 golden snapshot baseline 测试（v23.0 legacy baseline）。
 
-**initial implementation plan 状态变更（per work-item.md "graph_capable 路径**期望产生
+**implementation 状态变更（per work-item.md "graph_capable 路径**期望产生
 差异**" + plan byte-eq 升级）**：
 
-initial implementation era 下 ``LayeredSearchService.search()`` 输出 ``final_context`` 含
+implementation era 下 ``LayeredSearchService.search()`` 输出 ``final_context`` 含
 ``## L2 Exact Matches`` / ``## L4 Graph Context`` 等五层 stub 段（空 layer 也
-渲染 ``"(no exact symbol matches found)"`` 占位行）；initial implementation plan 重写
+渲染 ``"(no exact symbol matches found)"`` 占位行）；implementation 重写
 ``HybridSearchService._search_graph_capable`` + ``_search_rag_only`` 后两路径
 都**只**渲染 ``## L3 Related Code``（+ 非空时追加 ``## Graph Context``），不再
 渲染 L2/L4 stub 段。``LayeredSearchService.search`` 改为 thin delegate 到
@@ -13,7 +13,7 @@ initial implementation era 下 ``LayeredSearchService.search()`` 输出 ``final_
 
 **Fixture decision**：本文件 20 条 fixture 作为
 v23.0 历史基线**物理保留**（无字面信息丢失），但 parametrize 整体
-``pytest.mark.skip``——格式漂移是 initial implementation 设计预期，不应触发 CI 红灯。新格式
+``pytest.mark.skip``——格式漂移是 implementation 设计预期，不应触发 CI 红灯。新格式
 byte-eq 屏障在：
 
     server/tests/services/retrieval/test_hybrid_graph_capable_golden.py
@@ -39,13 +39,13 @@ import pytest
 from codegraph.services.layered_search import LayeredSearchService
 from tests.codegraph.conftest import GOLDEN_QUERIES_REGISTRY, GoldenQueryEntry
 
-# initial implementation plan: 本文件 20 条 v23.0 baseline 整体 skip——格式漂移是 Phase
+# implementation: 本文件 20 条 v23.0 baseline 整体 skip——格式漂移是 Phase
 # 253 设计预期（graph_capable + rag_only 路径都不再渲染 L2/L4 stub 段）。新
 # 格式 byte-eq 由 tests/services/retrieval/test_hybrid_graph_capable_golden.py
 # 锁定（10 条 fixture）。Fixtures retained as historical baseline.
 pytestmark = pytest.mark.skip(
     reason=(
-        "initial implementation plan: v23.0 LayeredSearchService L1..L5 stub-segment "
+        "implementation: v23.0 LayeredSearchService L1..L5 stub-segment "
         "output deprecated; replaced by hybrid_graph_capable_golden (10 fixtures) "
         "+ rag_only NullProvider path byte-eq in test_hybrid_skeleton.py / "
         "test_null_provider_paths.py. Fixtures retained as historical baseline."

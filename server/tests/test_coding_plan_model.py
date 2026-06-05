@@ -1,4 +1,4 @@
-"""CodingPlan 模型测试 — 工厂去重 / property 回退 / 异步更新（initial implementation）。"""
+"""CodingPlan 模型测试 — 工厂去重 / property 回退 / 异步更新（implementation）。"""
 
 from __future__ import annotations
 

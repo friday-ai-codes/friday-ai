@@ -1,4 +1,4 @@
-"""initial implementation plan — `services/graph_builder.py` 顶层服务单元测试。
+"""implementation — `services/graph_builder.py` 顶层服务单元测试。
 
 覆盖 work item-01 + work item-02：
 
@@ -38,7 +38,7 @@ from repositories.models import (
 )
 
 
-# initial implementation-01 起 `build_graph_for_repository` 在 `_extract_and_write_graph`
+# implementation-01 起 `build_graph_for_repository` 在 `_extract_and_write_graph`
 # 之前会 `git clone --depth 1` 到一个临时目录。本测试模块全部 mock 掉
 # `_extract_and_write_graph`，不需要真实源文件——但默认实现会去 `git clone`
 # `https://example.com/...`（fixture 的 fake URL），导致超时。下方 autouse 把
@@ -409,7 +409,7 @@ async def test_manual_and_auto_after_index_produce_equivalent_history_counts(
     graph_repo_with_files: Repository,
     fake_extract_stats: dict[str, Any],
 ) -> None:
-    """ROADMAP success criterion：相同抽取产物下，manual 与 auto_after_index 触发的 history 计数完全相等。"""
+    """success criterion：相同抽取产物下，manual 与 auto_after_index 触发的 history 计数完全相等。"""
     from services.graph_builder import build_graph_for_repository
     from services.indexer import IndexerService
 

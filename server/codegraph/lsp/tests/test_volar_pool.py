@@ -1,4 +1,4 @@
-"""initial implementation: VolarPool 单元测试（LRU + Vue 2.6- 防御 + 单例 + 并发，≥ 8 测试）。
+"""implementation: VolarPool 单元测试（LRU + Vue 2.6- 防御 + 单例 + 并发，≥ 8 测试）。
 
 per implementation plan Task 2 acceptance：
 - 池未满 / 命中 move_to_end / 池满 popitem(last=False) 驱逐 + stop

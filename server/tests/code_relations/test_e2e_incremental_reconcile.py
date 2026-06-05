@@ -1,4 +1,4 @@
-"""initial implementation plan：增量索引 reconcile 端到端集成测试。
+"""implementation：增量索引 reconcile 端到端集成测试。
 
 串起 plan pre_delete signal handler + plan verify_payload_consistency
 管理命令 + plan lifecycle wrapper 全链路：
@@ -12,7 +12,7 @@
 5. 调 `verify_payload_consistency --repo <id> --sample 10` → stdout
    `total_orphans=0`（reconcile 后 payload 已清孤儿引用）
 
-**关键约束**（per plan frontmatter）：本测试**完全不动 tasks.py / payload_sync.py**；
+**关键约束**（implementation constraints）：本测试**完全不动 tasks.py / payload_sync.py**；
 真实 ChunkEdge ORM + 真实 background_runner + 真实 verify_payload_consistency 管线，
 仅 mock Qdrant 边界（QdrantService.batch_set_payload + retrieve）。
 """

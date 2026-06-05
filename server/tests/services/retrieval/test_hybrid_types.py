@@ -1,4 +1,4 @@
-"""`NeighborMetadata` + `HybridSearchResult` 行为测试（per initial implementation contract / contract）。
+"""`NeighborMetadata` + `HybridSearchResult` 行为测试（per implementation contract / contract）。
 
 覆盖 4 条 assertion：
 
@@ -7,7 +7,7 @@
    layers / final_context / total_tokens）
 3. NeighborMetadata 是 frozen dataclass，setattr 抛 FrozenInstanceError
 4. RagSearchResult 兼容路径：to_rag_result() 返回值确为 RagSearchResult 实例
-   （Plan 选 to_rag_result() 显式转换路径而非继承，per Plan deviation contract-b）
+   （Plan 选 to_rag_result() 显式转换路径而非继承，implementation notes contract-b）
 """
 
 from __future__ import annotations

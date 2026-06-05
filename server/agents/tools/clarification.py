@@ -1,4 +1,4 @@
-"""``ask_clarification`` agent tool —— initial implementation。
+"""``ask_clarification`` agent tool —— implementation。
 
 让 LLM 主动「停下来等用户回答」的工具。返回 ``ToolResult.output`` 里携带
 ``pending=True`` + ``marker="ask_clarification"``；``orchestration.graph``

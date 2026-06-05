@@ -1,4 +1,4 @@
-"""initial implementation plan / work item-04 + work item-05：codegraph REST 三件套端到端测试。
+"""implementation / work item-04 + work item-05：codegraph REST 三件套端到端测试。
 
 覆盖的端点：
 
@@ -13,7 +13,7 @@
 - 403：``settings.ENABLE_CODEGRAPH=False`` 全局硬开关
 - 404 / 401：仓库缺失 / 未认证
 - cancel → rebuild 链路（CANCELLED 不在 RUNNING 过滤集内，应放行）
-- ROADMAP success criterion 反向独立锁：``graph_build_status=RUNNING`` 不阻塞 ``POST /index/``
+- success criterion 反向独立锁：``graph_build_status=RUNNING`` 不阻塞 ``POST /index/``
 - ``auto_build_graph_enabled=False`` 不影响手动 rebuild（CONTEXT Area 3 Q4）
 
 测试组织风格沿用 ``test_codegraph_delete_view.py`` —— 走完整 APIClient dispatch
@@ -526,7 +526,7 @@ def test_history_list_401_unauthenticated(
 
 
 # ===========================================================================
-# Section D：跨端点链路 + ROADMAP success criterion 反向独立锁
+# Section D：跨端点链路 + success criterion 反向独立锁
 # ===========================================================================
 
 
@@ -580,7 +580,7 @@ def test_index_creation_not_blocked_by_running_graph(
     authenticated_client: APIClient,
     repo: Repository,
 ) -> None:
-    """ROADMAP initial implementation success criterion 反向语义验证：向量轨锁与图谱轨锁独立。
+    """ROADMAP implementation success criterion 反向语义验证：向量轨锁与图谱轨锁独立。
 
     ``graph_build_status=RUNNING`` 不参与 ``IndexCreateView`` 的 409 判定 ——
     即 ``POST /index/`` 在图谱构建进行中时仍应放行（生成新 IndexHistory），

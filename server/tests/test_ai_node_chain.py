@@ -221,7 +221,7 @@ class TestAINodeConfigSchema:
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation LayeredSearchService 重构后 ContextRetrievalNode 不再直接"
+        "OBSOLETE — implementation LayeredSearchService 重构后 ContextRetrievalNode 不再直接"
         " 调 EmbeddingService + BranchAwareSearchService；BM25 注入语义已迁移到 RepoRouter / "
         "LayeredSearchService 测试。"
     )
@@ -301,7 +301,7 @@ async def test_context_retrieval_hybrid_search():
 
 @pytest.mark.skip(
     reason=(
-        "OBSOLETE — initial implementation LayeredSearchService 重构后 ContextRetrievalNode 不再"
+        "OBSOLETE — implementation LayeredSearchService 重构后 ContextRetrievalNode 不再"
         "直接调 EmbeddingService + BranchAwareSearchService。"
     )
 )

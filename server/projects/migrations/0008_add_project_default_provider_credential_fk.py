@@ -1,4 +1,4 @@
-"""initial implementation plan Task 01：Project 新增 default_provider_credential_id FK。
+"""implementation Task 01：Project 新增 default_provider_credential_id FK。
 
 contract contract 四层解析 L3 依赖字段：
     - default_provider_credential_id → system.ProviderCredential（on_delete=SET_NULL）

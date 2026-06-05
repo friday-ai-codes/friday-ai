@@ -1,4 +1,4 @@
-"""initial implementation: VolarBackend + helper 单元测试（≥ 12 测试覆盖 V1/V2/V3/V4 契约）。
+"""implementation: VolarBackend + helper 单元测试（≥ 12 测试覆盖 V1/V2/V3/V4 契约）。
 
 per implementation plan Task 3 acceptance：
 - ClassVar 5 字段值 + ExtractorBackend Protocol 契约（V1）
@@ -6,7 +6,7 @@ per implementation plan Task 3 acceptance：
 - helper：_convert_to_symbol_data / _convert_workspace_symbol /
   _flatten_document_symbol / _resolve_import_target_path /
   _extract_first_location_path / _convert_references_to_call_data
-- LspTimeoutError 走基类 fallback（per initial implementation 模板方法）
+- LspTimeoutError 走基类 fallback（per implementation 模板方法）
 - make_volar_backend 闭包返 callable
 """
 

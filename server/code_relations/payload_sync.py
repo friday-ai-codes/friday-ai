@@ -1,4 +1,4 @@
-"""payload `related_chunks` 一跳快照聚合（per initial implementation contract/24/25）。
+"""payload `related_chunks` 一跳快照聚合（per implementation contract/24/25）。
 
 单次 SQL 拉取所有 dirty source 的边 + Python group-by + top-N 截取 + 5KB 截断；
 输出 `list[(point_id_str, payload_dict)]` 给 `QdrantService.batch_set_payload`

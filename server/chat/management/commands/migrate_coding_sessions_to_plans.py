@@ -1,4 +1,4 @@
-"""initial implementation 一次性数据迁移命令。
+"""implementation 一次性数据迁移命令。
 
 把 ``CodingSession.tech_plan / affected_files`` 数据回填到独立的
 ``CodingPlan`` 表，并把 ``CodingSession.coding_plan_id`` 反向关联回填。
@@ -41,7 +41,7 @@ class Command(BaseCommand):
 
     help = (
         "把 CodingSession 的 tech_plan / affected_files 数据回填到独立的 "
-        "CodingPlan 表（initial implementation）。idempotent；支持 --dry-run 与 --report。"
+        "CodingPlan 表（implementation）。idempotent；支持 --dry-run 与 --report。"
     )
 
     def add_arguments(self, parser: Any) -> None:
@@ -68,7 +68,7 @@ class Command(BaseCommand):
 
         logger.info("migrate_coding_sessions_started", dry_run=dry_run)
 
-        # initial implementation：partial unique constraint unique_active_plan_repo
+        # implementation：partial unique constraint unique_active_plan_repo
         # 限制 (coding_plan, repository) 上同时只有 1 个 active session。
         # 历史数据中同一 conversation+repo 可能存在多个 draft session（迁移命令
         # 之前没有 plan FK 不受限制），此处按 (plan_id_sim, repo_id) 维护一个
@@ -153,7 +153,7 @@ class Command(BaseCommand):
                         stats["created"] += 1
                     placeholder_cache[conversation_id] = plan
                 plan = placeholder_cache[conversation_id]
-                # initial implementation：检查 (plan, repo) 是否已被 active session 占用
+                # implementation：检查 (plan, repo) 是否已被 active session 占用
                 taken_key = (str(plan.id), str(session.repository_id))
                 if (
                     session.status in active_statuses
@@ -219,7 +219,7 @@ class Command(BaseCommand):
             )
             if created:
                 stats["created"] += 1
-            # initial implementation：检查 (plan, repo) active 占用
+            # implementation：检查 (plan, repo) active 占用
             taken_key = (str(plan.id), str(session.repository_id))
             if (
                 session.status in active_statuses

@@ -1,4 +1,4 @@
-"""``find_api_handler`` MCP tool 单元测试 —— per initial implementation plan Task 6 / work item。
+"""``find_api_handler`` MCP tool 单元测试 —— per implementation Task 6 / work item。
 
 测试目标（≥6 cases）：
 
@@ -11,7 +11,7 @@
 7. ``test_multiple_matches_returned`` —— 同 method+path 多 handler
 8. ``test_orm_value_error_returns_toolresult`` —— ORM ValueError 不冒泡
 
-per initial implementation 测试模式：mock ``Endpoint.objects``（不依赖真实 DB），
+per implementation 测试模式：mock ``Endpoint.objects``（不依赖真实 DB），
 async iterable 模拟 queryset。
 """
 

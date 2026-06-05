@@ -1,6 +1,6 @@
-"""一跳邻居 payload 直读器（per initial implementation plan / contract / contract）。
+"""一跳邻居 payload 直读器（per implementation / contract / contract）。
 
-兑现 ROADMAP success criterion 第一条 —— "payload `related_chunks` 一跳扩散直读召回 chunk
+兑现 success criterion 第一条 —— "payload `related_chunks` 一跳扩散直读召回 chunk
 自带快照（不走 Qdrant 二次查询，不走 ORM）"：
 
 - ``extract_hop1_neighbors_raw``：纯函数，从 ``rag_items[*].payload['related_chunks']``
@@ -14,7 +14,7 @@
   邻居 ``file_path`` / ``line_start`` / ``line_end`` metadata，扁平到
   ``list[NeighborMetadata]``。无 N+1（用 mock 计数器在测试中守护）。
   ``ChunkRegistry`` 中缺失（payload 写时 chunk 在，读时已删——增量删除一致性
-  initial implementation reconcile 兜底）→ ``file_path='<unknown>'`` + ``line_*=None`` +
+  implementation reconcile 兜底）→ ``file_path='<unknown>'`` + ``line_*=None`` +
   log debug。``line_start`` / ``line_end`` 为 NULL（per contract 历史数据未回填）→
   graceful pass-through 到 ``NeighborMetadata``。
 
@@ -208,7 +208,7 @@ ReasonFn = Callable[
 ]
 """``resolve_neighbor_metadata`` / ``expand_hop2`` 注入式 reason 生成器签名。
 
-参数顺序：``(edge_type, source_file, target_file, metadata)``。initial implementation
+参数顺序：``(edge_type, source_file, target_file, metadata)``。implementation
 升级——原 ``(edge_type, source_chunk_id)`` 签名让 ``hybrid_search`` 路径无法
 传完整 metadata 给 ``explain_neighbor``，导致 reason 全部走 fallback；新签名让
 ``_enrichment_reason_fn`` 与 ``find_related._build_neighbor`` 拿到等价的
@@ -293,7 +293,7 @@ async def resolve_neighbor_metadata(
         target_registry = by_str_id.get(tgt)
         if target_registry is None:
             # info（非 debug）：ChunkRegistry 缺失意味着 payload 与 ORM 间存在
-            # 数据不一致（initial implementation reconcile 兜底场景），prod 默认 INFO 级别下
+            # 数据不一致（implementation reconcile 兜底场景），prod 默认 INFO 级别下
             # 必须可见以便 ops 关注；debug 级别在 prod 不输出会丢失信号
             logger.info(
                 "hop1_chunk_registry_miss",

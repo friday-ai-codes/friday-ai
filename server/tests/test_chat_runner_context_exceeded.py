@@ -1,4 +1,4 @@
-"""initial implementation plan — chat_runner.py contract SSE code 集成契约测试。
+"""implementation — chat_runner.py contract SSE code 集成契约测试。
 
 覆盖 success criterion：chat 对话路径触发 ContextWindowExceededError 时，SSE ERROR event 的
 顶层含 ``code: "context_window_exceeded"``，nested ``data`` 含 5 字段

@@ -1,4 +1,4 @@
-"""initial implementation Wave（task）：AIAgentBaseNode 单元测试。
+"""implementation Wave（task）：AIAgentBaseNode 单元测试。
 
 覆盖范围（implementation plan Task 3 <behavior> 11 场景）：
 
@@ -177,7 +177,7 @@ async def test_resolve_missing_credential_raises_valueerror(
     assert "请在系统设置中配置" in msg
 
 
-# initial implementation plan（contract/contract）：aget_claude_config 整体删除，Test 5 / Test 6
+# implementation（contract/contract）：aget_claude_config 整体删除，Test 5 / Test 6
 # fallback 测试随 claude_config.py 整文件删除一并移除。
 # 新 fallback 路径：resolved.extra.default_model（来自 ProviderCredential.default_model）。
 # 等价测试由 test_provider_config.py / test_provider_config_v2.py 覆盖。

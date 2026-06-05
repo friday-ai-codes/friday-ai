@@ -1,18 +1,18 @@
-"""initial implementation plan：`verify_payload_consistency` 管理命令。
+"""implementation：`verify_payload_consistency` 管理命令。
 
 运维侧兜底校验工具：随机采样 ChunkRegistry 行 → 从 Qdrant 拉
 `payload.related_chunks` → 校验每个 `neighbor.chunk_id` 仍在 ChunkRegistry
 存在 → 输出表格 + 总 orphan / skipped 计数。
 
-`--fix` 模式：把含 orphan 的 source chunk_id 列表透传给 initial implementation
-`enqueue_edge_build` 触发增量重 build，复用 initial implementation 现成管线。
+`--fix` 模式：把含 orphan 的 source chunk_id 列表透传给 implementation
+`enqueue_edge_build` 触发增量重 build，复用 implementation 现成管线。
 
 引用：
-- ROADMAP success criterion：本命令是 initial implementation reconcile 链路的兜底校验工具
+- success criterion：本命令是 implementation reconcile 链路的兜底校验工具
   （signal handler / cleanup_index 任一异常静默时由本命令 surface orphan + 修复）。
-- initial implementation context contract：命令位置 + BaseCommand 子类 + add_arguments 三参数
+- implementation context contract：命令位置 + BaseCommand 子类 + add_arguments 三参数
   规范。
-- initial implementation context contract：默认 dry-run；`--fix` 显式 opt-in 防误触发
+- implementation context contract：默认 dry-run；`--fix` 显式 opt-in 防误触发
   （security mitigation）。
 
 **用法：**
@@ -239,7 +239,7 @@ class Command(BaseCommand):
         """解析 payload.related_chunks 为 neighbor UUID 列表，跳过非法行。
 
         非法 entry 走 `logger.debug` surface（per work item）：payload 格式漂移
-        （initial implementation 新增字段 / 字典化）时静默跳过会让校验"全绿"误导，debug
+        （implementation 新增字段 / 字典化）时静默跳过会让校验"全绿"误导，debug
         log 让排查时能看见。
         """
         neighbor_ids: list[uuid.UUID] = []

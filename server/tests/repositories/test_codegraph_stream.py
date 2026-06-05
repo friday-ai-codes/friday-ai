@@ -1,4 +1,4 @@
-"""initial implementation plan / work item-04：独立 SSE 端点
+"""implementation / work item-04：独立 SSE 端点
 ``GET /api/repositories/<id>/codegraph/stream/`` + ``CodegraphCancelView``
 同步写 ``Repository.graph_build_status=CANCELLED`` 的端到端测试。
 
@@ -385,7 +385,7 @@ class TestCancelSync:
     ) -> None:
         """POST /codegraph/cancel/ 应同步把 Repository.graph_build_status=cancelled
         并清零 graph_stage / current_graph_file / graph_files_processed +
-        写 graph_last_built_at=now（initial implementation plan CONTEXT Grey Area 1
+        写 graph_last_built_at=now（implementation CONTEXT Grey Area 1
         取消出口决议）。
         """
         cg_repo.graph_build_status = RepositoryGraphStatus.RUNNING

@@ -1,4 +1,4 @@
-"""initial implementation Wave：静态守护测试门禁。
+"""implementation Wave：静态守护测试门禁。
 
 覆盖：
 - **success criterion httpx 清零**（work item / work item）：`server/workflows/nodes/ai/*.py` 无
@@ -237,7 +237,7 @@ def test_no_chat_prompt_template_in_langchain_runner() -> None:
 
 
 # work item（rename-project-to-space merge c2b352bb，2026-05-11）：
-# initial implementation / success criterion 锁定的 3 个 frozen file 在 v22.0 后期被 rename branch
+# implementation / success criterion 锁定的 3 个 frozen file 在 v22.0 后期被 rename branch
 # 改了纯参数名（project_id → space_id），不引入 httpx 残留也不破坏 LangChain
 # Runner 行为契约。下面允许「rename-only」白名单 SHA：当被改动文件 vs base_ref
 # 的 diff 仅命中这些 token 替换，则视为合规。
@@ -258,7 +258,7 @@ _RENAME_ALLOWED_SUBSTRING_PAIRS = (
     ],
 )
 def test_node_04_frozen_files_unchanged(path: str) -> None:
-    """success criterion / work item：禁区文件在 initial implementation 期间零改动（含 rename 白名单豁免）。
+    """success criterion / work item：禁区文件在 implementation 期间零改动（含 rename 白名单豁免）。
 
     **work item 决策**：base_ref 从 VALIDATION.md frontmatter.phase_start_sha
     读取，**不使用 HEAD~10 硬编码**。checkpoint-01 首 task 写入 phase_start_sha；
@@ -275,7 +275,7 @@ def test_node_04_frozen_files_unchanged(path: str) -> None:
     if _diff_only_contains_rename(path, base_ref=base_ref):
         return
     raise AssertionError(
-        f"{path} 在 initial implementation 期间被改动（work item / success criterion 违反）；"
+        f"{path} 在 implementation 期间被改动（work item / success criterion 违反）；"
         f"diff {diff_lines} 行 vs base_ref {base_ref}"
     )
 
@@ -397,7 +397,7 @@ def test_no_anthropic_asyncanthropic_mock_in_workflow_tests() -> None:
 
 
 # ---------------------------------------------------------------------------
-# initial implementation plan（contract/contract）：原 Test 11 Anti-pattern E 守护
+# implementation（contract/contract）：原 Test 11 Anti-pattern E 守护
 # （aget_claude_config 只作 model fallback）随 claude_config.py 整文件硬删移除。
 # 新的 fallback 路径：resolved.extra.default_model（来自 ProviderCredential）
 # ——不再是 aget_claude_config。守护已失效。
@@ -405,7 +405,7 @@ def test_no_anthropic_asyncanthropic_mock_in_workflow_tests() -> None:
 
 
 def test_no_aget_claude_config_references_in_ai_nodes() -> None:
-    """initial implementation plan 新守护：AI 节点不得再出现 aget_claude_config 任何引用
+    """implementation 新守护：AI 节点不得再出现 aget_claude_config 任何引用
     （含 import / 调用 / 注释 docstring 外的代码）。
 
     防止未来重新引入已删除的 v8.1 legacy 路径。
@@ -424,7 +424,7 @@ def test_no_aget_claude_config_references_in_ai_nodes() -> None:
             if forbidden_pattern.search(line):
                 offenders.append((str(path), i, line.rstrip()))
     assert not offenders, (
-        f"initial implementation plan 守护违反：AI 节点仍引用已删除的 aget_claude_config\n"
+        f"implementation 守护违反：AI 节点仍引用已删除的 aget_claude_config\n"
         f"offenders: {offenders}"
     )
 

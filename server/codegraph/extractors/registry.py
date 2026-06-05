@@ -15,8 +15,8 @@ from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.vue_extractor import VueExtractor
-from codegraph.extractors.html_extractor import HtmlExtractor   # initial implementation
-from codegraph.extractors.css_extractor import CssExtractor    # initial implementation
+from codegraph.extractors.html_extractor import HtmlExtractor   # implementation
+from codegraph.extractors.css_extractor import CssExtractor    # implementation
 
 logger = structlog.get_logger(__name__)
 
@@ -81,8 +81,8 @@ BACKEND_REGISTRY: dict[str, Callable[[str], ExtractorBackend]] = {
     "typescript": TreeSitterBackend,
     "tsx": TreeSitterBackend,
     "vue": TreeSitterBackend,
-    "html": TreeSitterBackend,    # initial implementation
-    "css": TreeSitterBackend,     # initial implementation
+    "html": TreeSitterBackend,    # implementation
+    "css": TreeSitterBackend,     # implementation
 }
 
 
@@ -143,8 +143,8 @@ EXTRACTOR_REGISTRY: dict[str, type[LanguageExtractor]] = {
     "typescript": TSExtractor,
     "tsx": TSXExtractor,
     "vue": VueExtractor,
-    "html": HtmlExtractor,        # initial implementation
-    "css": CssExtractor,          # initial implementation
+    "html": HtmlExtractor,        # implementation
+    "css": CssExtractor,          # implementation
 }
 
 

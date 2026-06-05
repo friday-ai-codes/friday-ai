@@ -1,6 +1,6 @@
-"""HTML 真实仓库 study-app 端到端集成测试 —— 覆盖 initial implementation 真实样本。
+"""HTML 真实仓库 study-app 端到端集成测试 —— 覆盖 implementation 真实样本。
 
-不调 indexer ORM 路径（同 initial implementation / 262 / 263 精神），仅断言 HtmlExtractor.extract
+不调 indexer ORM 路径（同 implementation / 262 / 263 精神），仅断言 HtmlExtractor.extract
 在真实 .html 文件上返回非空 bundle 各字段。
 
 study-app 仓库不存在时 TestStudyAppHtmlExtraction 整类 SKIP（per Pitfall 9 兜底），

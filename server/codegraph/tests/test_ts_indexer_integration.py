@@ -1,6 +1,6 @@
 """TS / TSX 真实仓库 study-app 端到端集成测试 —— 覆盖 work item / work item 真实仓库验证。
 
-不调 indexer ORM 路径（per initial implementation CONTEXT decisions 同 initial implementation 精神
+不调 indexer ORM 路径（per implementation CONTEXT decisions 同 implementation 精神
 "不扩展到 GraphWriter 全链路"），仅断言 GraphExtractor.extract_all 在
 真实 .ts / .tsx 文件上返回非空 bundle 各字段。
 

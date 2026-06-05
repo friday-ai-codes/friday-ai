@@ -1,4 +1,4 @@
-"""initial implementation: protocol helper 单元测试。"""
+"""implementation: protocol helper 单元测试。"""
 
 from __future__ import annotations
 

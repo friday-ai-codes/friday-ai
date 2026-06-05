@@ -1,4 +1,4 @@
-"""SymbolChunkResolver 测试（per initial implementation contract）。"""
+"""SymbolChunkResolver 测试（per implementation contract）。"""
 
 from __future__ import annotations
 

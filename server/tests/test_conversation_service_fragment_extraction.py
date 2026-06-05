@@ -1,4 +1,4 @@
-"""initial implementation Task 1: 字节级无损断言 — 抽取出的模块级常量正确。
+"""implementation Task 1: 字节级无损断言 — 抽取出的模块级常量正确。
 
 重构目标：把 `_build_system_prompt` 内的局部字面量抽为模块级 `Final[str]`，
 供 0002 data migration 跨 app import 时作为 seed。

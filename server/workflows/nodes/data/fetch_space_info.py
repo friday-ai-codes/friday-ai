@@ -284,9 +284,9 @@ class FetchSpaceInfoNode(BaseNode):
                 "is_configured": space.has_feishu_config(),
             }
 
-        # initial implementation plan（contract/contract）：Project.claude_* 字段硬删；
+        # implementation（contract/contract）：Project.claude_* 字段硬删；
         # include_claude_config flag 保留为向后兼容 stub（始终返回未配置状态）。
-        # 调用方应改用 include_provider_config（initial implementation+ 引入新字段读 ProviderCredential）。
+        # 调用方应改用 include_provider_config（implementation+ 引入新字段读 ProviderCredential）。
         if include_claude_config:
             output["claude_config"] = {
                 "has_api_key": False,

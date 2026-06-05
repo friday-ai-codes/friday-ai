@@ -1,7 +1,7 @@
-"""查询关键词抽取 + L3 markdown 格式化共享工具（per initial implementation contract 修复）。
+"""查询关键词抽取 + L3 markdown 格式化共享工具（per implementation contract 修复）。
 
 历史背景：``HybridSearchService`` 复用 ``LayeredSearchService._extract_symbol_names``
-/ ``_format_l3_section`` 私有方法（per plan idiom "复用 initial implementation 既有"），但
+/ ``_format_l3_section`` 私有方法（per plan idiom "复用 implementation 既有"），但
 跨模块调用 ``_`` 开头方法违反 Python 强约定。LayeredSearchService 重构时这两个
 hidden contract 会静默 break HybridSearchService。
 

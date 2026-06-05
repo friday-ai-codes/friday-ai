@@ -5,7 +5,7 @@
 ``system.models`` 的模型类定义 —— 在 ``services.code_intel`` 加入 INSTALLED_APPS
 之后，Django 需要在 apps_ready 之前导入 ``services`` 父包，eager import
 ``services.dependency_cache`` 会因 ``system.models`` ORM 元类调
-``check_apps_ready()`` 而抛 ``AppRegistryNotReady`` (per initial implementation Rule 3 修复)。
+``check_apps_ready()`` 而抛 ``AppRegistryNotReady`` (per implementation Rule 3 修复)。
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """codegraph REST API 视图 —— 仓库嵌套路由下的 Symbol/CallEdge/ImportEdge/Endpoint 接口
-+ initial implementation 三件套（rebuild / cancel / history list）。"""
++ implementation 三件套（rebuild / cancel / history list）。"""
 
 from __future__ import annotations
 
@@ -497,12 +497,12 @@ class EndpointListView(APIView):
 class CodegraphDeleteView(APIView):
     """DELETE /api/repositories/{repository_id}/codegraph/
 
-    initial implementation-03：仅清图谱三件套（Symbol / ImportEdge / Endpoint），
+    implementation-03：仅清图谱三件套（Symbol / ImportEdge / Endpoint），
     向量轨（FileIndex / ChunkEdge / ChunkRegistry / Qdrant collection）保持不变。
 
     并发保护：若该仓库存在 ``IndexHistory.graph_build_status=RUNNING`` 的活跃索
-    引，返 409 + detail 含 ``running`` 关键字（per plan must_haves）。本端点
-    不引入 ``select_for_update`` lock —— per CONTEXT decisions initial implementation
+    引，返 409 + detail 含 ``running`` 关键字（requirements）。本端点
+    不引入 ``select_for_update`` lock —— per CONTEXT decisions implementation
     work item-04 才会落 lock，本 phase 单查 ``aexists`` 即可。
 
     返回值矩阵：
@@ -537,7 +537,7 @@ class CodegraphDeleteView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # initial implementation must_have：单查 aexists 短路并发保护，不依赖 select_for_update。
+        # implementation must_have：单查 aexists 短路并发保护，不依赖 select_for_update。
         graph_running = await IndexHistory.objects.filter(
             repository_id=str(repo.id),
             graph_build_status=GraphBuildStatus.RUNNING,
@@ -571,7 +571,7 @@ class CodegraphDeleteView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# initial implementation-04 / work item-05：REST 三件套
+# implementation-04 / work item-05：REST 三件套
 # ---------------------------------------------------------------------------
 #
 # - POST /api/repositories/<id>/codegraph/rebuild/  手动触发 graph 构建
@@ -745,7 +745,7 @@ class CodegraphCancelView(APIView):
     background task 名 ``index-{repo_id}`` 而非 ``graph-build-{repo_id}``，
     ``cancel_background_task`` 调用对其 no-op；本端点仍把 DB 行转 CANCELLED 保
     DB 一致性，但 indexer 主任务不会停止 —— 前端应禁用对
-    ``trigger_type=auto_after_index`` history 的 cancel 按钮，或等 initial implementation
+    ``trigger_type=auto_after_index`` history 的 cancel 按钮，或等 implementation
     SSE 提供准确状态。
     """
 
@@ -788,7 +788,7 @@ class CodegraphCancelView(APIView):
         history.finished_at = timezone.now()
         await history.asave(update_fields=["status", "finished_at"])
 
-        # initial implementation-01 取消出口一致性（CONTEXT Grey Area 1
+        # implementation-01 取消出口一致性（CONTEXT Grey Area 1
         # 决议）：除 history 行转 CANCELLED 外，同步把 Repository 进度字段
         # 转 CANCELLED + 清空易失字段，让前端状态徽章 / 进度条立即归零。
         # auto_after_index 触发的 history 主任务 indexer 不会停止——本端点
@@ -864,7 +864,7 @@ class CodegraphHistoryListView(ListAPIView):
 
 
 class CodegraphProgressStreamView(APIView):
-    """SSE 端点：仅推图谱构建进度（initial implementation-04）。
+    """SSE 端点：仅推图谱构建进度（implementation-04）。
 
     ``GET /api/repositories/{repository_id}/codegraph/stream/``  (text/event-stream)
 

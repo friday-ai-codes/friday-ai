@@ -1,4 +1,4 @@
-"""initial implementation contract：IndexHistory.changed_files 字段与 indexer 写入逻辑测试。
+"""implementation contract：IndexHistory.changed_files 字段与 indexer 写入逻辑测试。
 
 测试覆盖：
 1. test_changed_files_populated_after_incremental_index：增量索引后 changed_files 包含正确的路径列表
@@ -70,9 +70,9 @@ async def test_changed_files_populated_after_incremental_index() -> None:
         patch.object(indexer, "_compute_diff", return_value=test_diffs),
         patch("services.indexer.qdrant_delete_by_file_path", new_callable=AsyncMock),
         patch.object(indexer, "_extract_and_write_graph", new_callable=AsyncMock),
-        # initial implementation plan：_should_build_graph 在 _extract_and_write_graph 之前
+        # implementation：_should_build_graph 在 _extract_and_write_graph 之前
         # 加双重判断 gating，本测试不进 DB 故直接 patch 为 False 跳过整段
-        # graph 写入逻辑（包括 initial implementation plan 引入的 GraphBuildHistory
+        # graph 写入逻辑（包括 implementation 引入的 GraphBuildHistory
         # acreate 调用——本测试不挂 django_db mark，无法做真实 DB 写）。
         patch.object(
             indexer, "_should_build_graph", new_callable=AsyncMock, return_value=False

@@ -1,6 +1,6 @@
 """Vue SFC extractor 测试 —— 验证 splitter + symbol/import/call 抽取 + template 反向引用。
 
-覆盖 initial implementation 全部 6 个 requirements：
+覆盖 implementation 全部 6 个 requirements：
 - work item：vue_sfc_splitter 三段拆分 + line_offset 精度 + attrs 解析（TestVueSfcSplitter）
 - work item：Vue 2 Options API 抽取（vue2_options fixture + TestVueExtractor 4 测试）
 - work item：Vue 2.7 / 3 <script setup lang="ts"> 抽取（vue27_setup / vue3_setup fixture）

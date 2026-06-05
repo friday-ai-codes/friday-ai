@@ -1,4 +1,4 @@
-"""Pitfall 2 防御 grep gate（per initial implementation contract）。
+"""Pitfall 2 防御 grep gate（per implementation contract）。
 
 禁止在 server/code_relations/ 内出现「for ...: ... set_payload(...)」循环单点
 set_payload 模式；payload sync 必须走 QdrantService.batch_set_payload（plan 02

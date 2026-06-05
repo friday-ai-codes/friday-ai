@@ -316,7 +316,7 @@ class WorkflowEngine:
                 status=NodeExecutionStatus.PENDING,
             )
 
-        # initial implementation contract contract：Execution 启动时统一快照 AI 节点 Provider，
+        # implementation contract contract：Execution 启动时统一快照 AI 节点 Provider，
         # 保证 Replay 稳定（后续项目 default_provider_credential_id 修改不影响本 Execution）。
         try:
             snapshots = await self._snapshot_ai_node_providers(dag, execution)
@@ -346,7 +346,7 @@ class WorkflowEngine:
 
         return execution
 
-    # initial implementation contract contract：AI 节点白名单（Execution 启动时遍历 DAG 统一快照）
+    # implementation contract contract：AI 节点白名单（Execution 启动时遍历 DAG 统一快照）
     _AI_NODE_TYPES: set[str] = {
         "ai_prompt",
         "ai_variable_extractor",

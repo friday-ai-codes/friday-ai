@@ -36,7 +36,7 @@ from workflows.models import (
 logger = structlog.get_logger(__name__)
 
 
-# initial implementation plan — contract group_by 白名单（V5 Input Validation / security mitigation-01 mitigation）
+# implementation — contract group_by 白名单（V5 Input Validation / security mitigation-01 mitigation）
 VALID_GROUP_BY: set[str] = {"none", "provider_type", "space"}
 
 
@@ -64,7 +64,7 @@ def _parse_date_range(request: Request) -> tuple[date, date]:
 class AnalyticsOverviewView(APIView):
     """KPI 概览：执行总数、成功率、平均时长、总成本。
 
-    initial implementation plan — contract contract：扩展 `group_by` 查询参数：
+    implementation — contract contract：扩展 `group_by` 查询参数：
         - none（默认）：flat shape `{total_executions, success_rate, ...}` 兼容旧 Phase
         - provider_type: `{group_by, groups: {"anthropic": {...}, ...}, total}`
         - space: `{group_by, groups: {"<space_id>": {...}}, total}`
@@ -299,7 +299,7 @@ class DurationDistributionView(APIView):
 class TokenCostView(APIView):
     """Token 消耗和 USD 成本：按日聚合。
 
-    initial implementation plan — contract contract：扩展 `group_by` 查询参数：
+    implementation — contract contract：扩展 `group_by` 查询参数：
         - 缺省：flat list[TokenCostDataPoint] 兼容旧 Phase
         - provider_type: `{group_by, groups: {"anthropic": [{date, tokens, cost}], ...}}`
         - space: `{group_by, groups: {"<space_id>": [...]}}`

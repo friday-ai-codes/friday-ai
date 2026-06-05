@@ -1,4 +1,4 @@
-"""initial implementation data migration 字节级 hash 契约测试。
+"""implementation data migration 字节级 hash 契约测试。
 
 目的：防止任一方（Python 常量 / DB body）漂移。
 任一方改动都会触发测试红灯，强制开发者同步另一方。
@@ -48,7 +48,7 @@ def _resolve_constant(module_path: str, attr_name: str, dict_key: str | None) ->
 
 @pytest.mark.django_db
 class TestPromptMigrationContract:
-    """initial implementation seed 的 12 个 slug 字节级契约测试。"""
+    """implementation seed 的 12 个 slug 字节级契约测试。"""
 
     @pytest.mark.parametrize(
         "slug,module_path,attr_name,dict_key",

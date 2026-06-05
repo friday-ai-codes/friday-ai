@@ -1,4 +1,4 @@
-"""initial implementation 集成修复：InvitationView 权限测试。
+"""implementation 集成修复：InvitationView 权限测试。
 
 验证 InvitationView GET（校验令牌）允许未认证访问，
 POST（创建邀请）仍需认证。

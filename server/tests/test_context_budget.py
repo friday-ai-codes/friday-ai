@@ -1,4 +1,4 @@
-"""initial implementation：Context window 预算策略测试。
+"""implementation：Context window 预算策略测试。
 
 覆盖 context contract 全部子项：
 - contract `_CONTEXT_SAFETY_BUFFER = 800` 硬编码、禁暴露节点配置
@@ -169,7 +169,7 @@ async def test_strict_error_message_format(
         pytest.fail("应抛 ContextWindowExceededError")
     except ContextWindowExceededError as exc:
         msg = str(exc)
-        # 5 关键字段均在错误消息中出现（便于前端 initial implementation contract 降级引导）
+        # 5 关键字段均在错误消息中出现（便于前端 implementation contract 降级引导）
         assert "tokens" in msg
         assert "budget" in msg
         assert "max_input=" in msg

@@ -216,7 +216,7 @@ async def test_no_call_relationships(seed_symbol):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_expand_ignores_module_level_incoming_edge(graph_repo, seed_symbol):
-    """initial implementation：caller_symbol=NULL 的模块级入边被排除，expand 不崩且不产模块级 caller 节点。
+    """implementation：caller_symbol=NULL 的模块级入边被排除，expand 不崩且不产模块级 caller 节点。
 
     构造一条模块级入边（caller_symbol=None, caller_file="m.py", callee_name=seed.name），
     断言 expand 不抛异常且返回 nodes 中无 caller 节点（模块级 caller 无对应 Symbol，被过滤）。
@@ -244,7 +244,7 @@ async def test_expand_ignores_module_level_incoming_edge(graph_repo, seed_symbol
 async def test_expand_module_level_mixed_with_real_caller(
     graph_repo, seed_symbol, caller_symbol, incoming_call_edge,
 ):
-    """initial implementation：模块级入边与真实文件内入边并存时，仅真实 caller 进 DAG。"""
+    """implementation：模块级入边与真实文件内入边并存时，仅真实 caller 进 DAG。"""
     await sync_to_async(CallEdge.objects.create)(
         repository=graph_repo,
         caller_symbol=None,

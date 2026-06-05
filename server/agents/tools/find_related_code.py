@@ -1,6 +1,6 @@
-"""``find_related_code`` agent tool —— per initial implementation plan 02 / ROADMAP success criterion-#3。
+"""``find_related_code`` agent tool —— per implementation 02 / success criterion-#3。
 
-把 initial implementation 落地的 ``HybridSearchService.find_related`` Python API 包装成 MCP tool：
+把 implementation 落地的 ``HybridSearchService.find_related`` Python API 包装成 MCP tool：
 
 - **三起点解析**：``chunk_id`` 直传 / ``file_path`` 走 ``ChunkRegistry.afirst`` /
   ``symbol_name`` 走 ``Provider.lookup_symbols`` → ``ChunkRegistry`` 取含起始行
@@ -12,7 +12,7 @@
   SymbolCapableProvider)`` 运行时守卫；NullProvider 返结构化 error 而不抛
   ``AttributeError``（per work-item contract）。
 - **reason 透传**：``list[NeighborMetadata] → list[NeighborOutput]`` 字段同序
-  装配，``reason`` 直接走 initial implementation reason 模板输出**不重写**（per work-item contract，CI grep gate 守门 —— 本模块禁止 import / 引用上游 reason 模板生成器）。
+  装配，``reason`` 直接走 implementation reason 模板输出**不重写**（per work-item contract，CI grep gate 守门 —— 本模块禁止 import / 引用上游 reason 模板生成器）。
 
 **注册路径**：plan 已通过 ``agents/tools/__init__.py`` 顶层 ``from
 agents.tools.find_related_code import find_related_code`` 触发 ``@tool``
@@ -128,7 +128,7 @@ _TOOL_PARAMETERS: dict[str, Any] = {
             "maximum": 2,
             "default": 1,
             "description": (
-                "图谱遍历跳数上限；硬约束 ≤2，与 initial implementation MAX_HOPS=2 对齐。"
+                "图谱遍历跳数上限；硬约束 ≤2，与 implementation MAX_HOPS=2 对齐。"
             ),
         },
         "direction": {
@@ -196,7 +196,7 @@ async def find_related_code(
         失败路径 ``success=False`` + ``error`` 字符串。**永不冒泡异常**——
         Pydantic ``ValidationError``、Django ``ValidationError``、``ValueError``、
         ``TypeError`` 等均被捕获后转结构化 ``ToolResult(success=False, error=...)``
-        （per initial implementation 双层防御：schema 层 UUID 形态守卫 + tool 层 ORM
+        （per implementation 双层防御：schema 层 UUID 形态守卫 + tool 层 ORM
         异常兜底）。
     """
     logger.info(

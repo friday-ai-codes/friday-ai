@@ -6,7 +6,7 @@
 ProviderType / ApiFormat / CredentialType / PROVIDER_REGISTRY 从
 agents.llm.providers 迁移至此，避免对已删除模块的依赖。
 
-initial implementation（v21.0）：扩展为 5 种 ProviderType（anthropic / openai_responses /
+implementation（v21.0）：扩展为 5 种 ProviderType（anthropic / openai_responses /
 openai_chat / gemini / ollama），ProviderMetadata 迁移为 @dataclass(frozen=True)
 （Pitfall 26 规避），新增 4 个 Pydantic credential_schema 类统一承载凭证字段
 校验与脱敏（SecretStr + ConfigDict(hide_input_in_errors=True)，缓解
@@ -23,7 +23,7 @@ from uuid import UUID
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-# initial implementation plan（contract/contract）：SettingKeys.ANTHROPIC_* 4 常量 +
+# implementation（contract/contract）：SettingKeys.ANTHROPIC_* 4 常量 +
 # SettingKeys.DEFAULT_PROVIDER_TYPE 常量硬删；provider_config 不再依赖 SystemSetting 行。
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class CredentialType(StrEnum):
 
 
 class ApiFormat(StrEnum):
-    """API 协议格式枚举，决定 initial implementation Runner 工厂分派路由。"""
+    """API 协议格式枚举，决定 implementation Runner 工厂分派路由。"""
 
     ANTHROPIC = "anthropic"
     OPENAI_RESPONSES = "openai_responses"
@@ -60,7 +60,7 @@ class ApiFormat(StrEnum):
     OLLAMA_NATIVE = "ollama_native"
 
 
-# === Pydantic credential_schema 类（initial implementation 决策 1） ===
+# === Pydantic credential_schema 类（implementation 决策 1） ===
 #
 # 每个类必须 model_config = ConfigDict(hide_input_in_errors=True)
 # —— 这是 security mitigation 缓解的强制契约，防止 ValidationError.errors() 中
@@ -132,7 +132,7 @@ class ProviderMetadata:
     credential_type: CredentialType
     default_base_url: str
     env_key: str
-    langchain_prefix: str  # initial implementation init_chat_model 前缀（本 phase 仅声明字符串）
+    langchain_prefix: str  # implementation init_chat_model 前缀（本 phase 仅声明字符串）
     credential_schema: type[BaseModel]  # Pydantic 类引用，service 层 .model_validate() 入口
     health_check_path: str = "/v1/models"  # contract 健康检查端点路径（D4 锁定，registry 集中管理）
     health_check_method: str = "GET"
@@ -214,14 +214,14 @@ class ProviderConfigError(Exception):
 
 @dataclass
 class ResolvedProviderConfig:
-    """配置解析结果。initial implementation 扩展 credential_id / extra 字段（向后兼容默认值）。"""
+    """配置解析结果。implementation 扩展 credential_id / extra 字段（向后兼容默认值）。"""
 
     provider_type: ProviderType
     api_key: str  # 凭据值（API Key）
     base_url: str  # 从 PROVIDER_REGISTRY 获取
     source: str  # "node" | "conversation" | "project" | "system"
 
-    # initial implementation 新增（默认值保持向后兼容；ChatAnthropicRunner 等现有调用方零改动）
+    # implementation 新增（默认值保持向后兼容；ChatAnthropicRunner 等现有调用方零改动）
     credential_id: UUID | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -230,7 +230,7 @@ class ResolvedProviderConfig:
 class ProviderMissingError:
     """凭证解析失败的结构化错误（contract）。
 
-    返回给上层（initial implementation API 层 / initial implementation 工作流节点）的 Result 模式错误对象。
+    返回给上层（implementation API 层 / implementation 工作流节点）的 Result 模式错误对象。
     code 字段 Literal 锁定，前端可基于此分支转 HTTP 4xx + i18n 提示。
     """
 
@@ -240,12 +240,12 @@ class ProviderMissingError:
     source_attempted: str = ""  # 四层中哪一层断流："system" / "project" / "conversation" / "node"
 
 
-# Result 模式 Union 类型（initial implementation / 229 调用方 isinstance 分派）
+# Result 模式 Union 类型（implementation / 229 调用方 isinstance 分派）
 AResolveResult = Union[ResolvedProviderConfig, ProviderMissingError]
 
 
 # ============================================================================
-# initial implementation contract contract：四层 Provider 解析 Inspector dataclass
+# implementation contract contract：四层 Provider 解析 Inspector dataclass
 # ============================================================================
 
 
@@ -256,7 +256,7 @@ class ResolutionChainEntry:
     用于前端 ResolvedSourceBadge.vue 的 tooltip 展开优先级链表；
     每层记录该层原始凭证的可见字段（非活跃凭证清为 None），以及本层是否为 winning source。
 
-    initial implementation contract contract 契约。
+    implementation contract contract 契约。
     """
 
     layer: Literal["node", "conversation", "project", "system"]
@@ -292,13 +292,13 @@ def _parse_uuid_or_none(value: Any) -> UUID | None:
 
 
 # ============================================================================
-# initial implementation plan：v8.1 SettingKeys.ANTHROPIC_* 硬删后 legacy 兼容层
+# implementation：v8.1 SettingKeys.ANTHROPIC_* 硬删后 legacy 兼容层
 # 从 ProviderCredential(scope=system, provider_type=anthropic, name=default) 读配置。
 # ============================================================================
 
 
 async def aget_legacy_anthropic_config() -> dict[str, str]:
-    """initial implementation plan 替代 SettingKeys.ANTHROPIC_* 读取路径。
+    """implementation 替代 SettingKeys.ANTHROPIC_* 读取路径。
 
     从系统级 default anthropic ProviderCredential 读 api_key / base_url / default_model。
     若无凭证返回空字符串字典（keys 固定）。供既有 legacy 路径平滑过渡使用。
@@ -565,11 +565,11 @@ async def aget_claude_code_runtime_config() -> dict[str, str]:
     }
 
 
-# initial implementation plan（contract/contract）：ENV_KEY_TO_SETTING_KEY + SettingKeys.ANTHROPIC_*
+# implementation（contract/contract）：ENV_KEY_TO_SETTING_KEY + SettingKeys.ANTHROPIC_*
 # 全部硬删；legacy 路径走 aget_legacy_anthropic_config() 读 ProviderCredential。
 
 
-# initial implementation plan（contract/contract）：_get_setting_value_sync/_get_setting_value_async 硬删。
+# implementation（contract/contract）：_get_setting_value_sync/_get_setting_value_async 硬删。
 # provider_config 不再读 SystemSetting 行；凭证解析全部走 ProviderCredential 表。
 
 
@@ -577,11 +577,11 @@ def _resolve_provider_type(
     node_config: dict[str, Any] | None,
     conversation: Any | None,
     project: Any | None,
-    get_setting: Any,  # 保留签名向后兼容；initial implementation plan 不再读 SettingKeys.DEFAULT_PROVIDER_TYPE
+    get_setting: Any,  # 保留签名向后兼容；implementation 不再读 SettingKeys.DEFAULT_PROVIDER_TYPE
 ) -> tuple[ProviderType, str]:
     """从四层配置中解析 provider_type。
 
-    initial implementation plan（contract/contract）：v8.1 SettingKeys.DEFAULT_PROVIDER_TYPE +
+    implementation（contract/contract）：v8.1 SettingKeys.DEFAULT_PROVIDER_TYPE +
     Conversation.provider_type + Project.default_provider_type 硬删后，
     provider_type 由 ProviderCredential 层承载；本函数仅按 node_config 层探测，
     其他层返回默认 ANTHROPIC（由 _resolve_credential_async 走 ProviderCredential FK 四层）。
@@ -605,7 +605,7 @@ def _parse_provider_type(value: str) -> ProviderType:
         raise ProviderConfigError(f"不支持的 Provider 类型: {value}")
 
 
-# === initial implementation contract 重构：纯函数 + IO 分层（Pitfall 28 sync/async drift 规避）===
+# === implementation contract 重构：纯函数 + IO 分层（Pitfall 28 sync/async drift 规避）===
 
 
 async def _fetch_credential_by_id(credential_id: UUID) -> "ProviderCredential | None":
@@ -659,7 +659,7 @@ async def _resolve_credential_async(
     """纯逻辑函数：按四层优先级查 ProviderCredential。
 
     返回 (credential, source_attempted)。
-    initial implementation / 229 引入 conversation.provider_credential_id /
+    implementation / 229 引入 conversation.provider_credential_id /
     project.default_provider_credential_id 字段后自动启用。
     """
     # 1. 节点级 FK
@@ -669,7 +669,7 @@ async def _resolve_credential_async(
         )
         if cred is not None:
             return cred, "node"
-    # 2. 对话级 FK（initial implementation/229 加字段后启用）
+    # 2. 对话级 FK（implementation/229 加字段后启用）
     #    注意：Django ORM 对 FK 字段 `provider_credential_id` 生成实际 DB 列
     #    `provider_credential_id_id`；访问字段名会返回 ProviderCredential 实例
     #    （触发同步查询，async 上下文会 SynchronousOnlyOperation）。
@@ -683,7 +683,7 @@ async def _resolve_credential_async(
         cred = await _fetch_credential_by_id(UUID(str(conv_fk)))
         if cred is not None:
             return cred, "conversation"
-    # 3. 项目级 FK（initial implementation/229 加字段后启用）
+    # 3. 项目级 FK（implementation/229 加字段后启用）
     #    同 conv_fk：读 `default_provider_credential_id_id` 列拿 UUID。
     proj_fk = (
         getattr(project, "default_provider_credential_id_id", None)
@@ -701,9 +701,9 @@ async def _resolve_credential_async(
     return None, "system"
 
 
-# initial implementation plan（contract/contract）：_resolve_from_system_setting_legacy 函数硬删。
+# implementation（contract/contract）：_resolve_from_system_setting_legacy 函数硬删。
 # SystemSetting.ANTHROPIC_* 4 行已通过 data_migrations.seed_provider_credentials
-# 导入为 ProviderCredential（initial implementation contract 已落地）；降级路径不再需要。
+# 导入为 ProviderCredential（implementation contract 已落地）；降级路径不再需要。
 
 
 class ProviderConfigService:
@@ -719,16 +719,16 @@ class ProviderConfigService:
         conversation: Any | None = None,
         project: Any | None = None,
     ) -> ResolvedProviderConfig:
-        """同步解析 Provider 配置（initial implementation plan contract/contract 后仅保留向后兼容 stub）。
+        """同步解析 Provider 配置（implementation contract/contract 后仅保留向后兼容 stub）。
 
-        initial implementation plan：legacy SettingKeys.ANTHROPIC_* 硬删后，同步路径不再支持
+        implementation：legacy SettingKeys.ANTHROPIC_* 硬删后，同步路径不再支持
         从 SystemSetting 降级。调用方应迁移到 aresolve_or_error。
 
         Raises:
             ProviderConfigError: 同步上下文下凭证解析不再支持
         """
         raise ProviderConfigError(
-            "同步 resolve() 已在 initial implementation plan 硬删；请使用 "
+            "同步 resolve() 已在 implementation 硬删；请使用 "
             "ProviderConfigService.aresolve_or_error(...) 异步接口"
         )
 
@@ -740,7 +740,7 @@ class ProviderConfigService:
     ) -> AResolveResult:
         """contract Result 模式入口。不抛异常，返回 ResolvedProviderConfig | ProviderMissingError。
 
-        initial implementation plan（contract/contract）：SettingKeys.DEFAULT_PROVIDER_TYPE +
+        implementation（contract/contract）：SettingKeys.DEFAULT_PROVIDER_TYPE +
         Conversation.provider_type + Project.default_provider_type 硬删后，
         provider_type 仅通过 node_config 显式覆盖；其他层由 ProviderCredential 承载。
 
@@ -840,7 +840,7 @@ class ProviderConfigService:
         dumped = validated.model_dump(exclude={"api_key", "base_url", "bearer_token"})
         for k, v in dumped.items():
             extra[k] = v
-        # initial implementation plan：注入 credential.default_model 到 extra（供调用方
+        # implementation：注入 credential.default_model 到 extra（供调用方
         # 做 model fallback 使用，替代既有 aget_claude_config(project).model 路径）
         if credential.default_model:
             extra["default_model"] = credential.default_model
@@ -869,7 +869,7 @@ class ProviderConfigService:
         """向后兼容：失败时仍抛 ProviderConfigError。
 
         ChatAnthropicRunner / orchestration/coding_graph.py 等现有调用方零改动。
-        新代码（initial implementation/229）应直接用 aresolve_or_error 走 Result 模式。
+        新代码（implementation/229）应直接用 aresolve_or_error 走 Result 模式。
 
         Raises:
             ProviderConfigError: 配置缺失或凭据校验失败
@@ -882,7 +882,7 @@ class ProviderConfigService:
         return result
 
     # ------------------------------------------------------------------
-    # initial implementation contract contract：完整四层优先级链路解析
+    # implementation contract contract：完整四层优先级链路解析
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -891,7 +891,7 @@ class ProviderConfigService:
         conversation: Any | None = None,
         project: Any | None = None,
     ) -> "ResolvedProviderChain | ProviderMissingError":
-        """initial implementation contract contract：返回四层解析链路 + winning source。
+        """implementation contract contract：返回四层解析链路 + winning source。
 
         逻辑：
             1. 从 node_config / conversation / project 读取各层原始 credential_id

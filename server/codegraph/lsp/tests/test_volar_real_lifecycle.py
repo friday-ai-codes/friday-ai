@@ -1,4 +1,4 @@
-"""initial implementation 集成测试：真实 spawn vue-language-server lifecycle 验证。
+"""implementation 集成测试：真实 spawn vue-language-server lifecycle 验证。
 
 @pytest.mark.integration：CI 默认 ``pytest -m "not integration"`` 跳过
 @pytest.mark.skipif：本地未装 vue-language-server / 无 fixture 时跳过

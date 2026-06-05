@@ -1,6 +1,6 @@
-"""initial implementation Wave：LangChainAgentRunner AgentSession + ToolCallLog 持久化守护测试。
+"""implementation Wave：LangChainAgentRunner AgentSession + ToolCallLog 持久化守护测试。
 
-contract / contract 审计结论：initial implementation 交付的 langchain_runner.py 未实现持久化；
+contract / contract 审计结论：implementation 交付的 langchain_runner.py 未实现持久化；
 checkpoint-01 补齐后本测试文件守护回归。
 
 测试覆盖（implementation plan Task 2 Behaviors 1-6）：
@@ -43,7 +43,7 @@ User = get_user_model()
 
 
 def _patch_model(monkeypatch: pytest.MonkeyPatch, fake: BaseChatModel) -> None:
-    """注入 FakeChatModel 到 runner._build_model 调用点（与 initial implementation core 测试一致）。"""
+    """注入 FakeChatModel 到 runner._build_model 调用点（与 implementation core 测试一致）。"""
     monkeypatch.setattr(
         "agents.langchain_runner.build_chat_model",
         lambda *a, **kw: fake,

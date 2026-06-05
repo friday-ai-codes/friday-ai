@@ -1,13 +1,13 @@
-"""``find_related_code`` agent tool 输入/输出契约 —— per initial implementation plan 01 / ROADMAP success criterion-#3。
+"""``find_related_code`` agent tool 输入/输出契约 —— per implementation 01 / success criterion-#3。
 
-字段冻结（frozen=True / extra='forbid' / strict=True 三重防漂移），与 initial implementation plan 06
+字段冻结（frozen=True / extra='forbid' / strict=True 三重防漂移），与 implementation 06
 ``search_repository_code`` 同包风格。
 
 - ``FindRelatedCodeInput``：三选一起点（``file_path`` / ``chunk_id`` / ``symbol_name``）+
   ``repository_id`` + ``relation_types`` + ``hops≤2`` + ``direction`` + ``limit``；
-  ``@model_validator(mode='after')`` 守住"恰好一个起点"硬约束（per ROADMAP success criterion）。
+  ``@model_validator(mode='after')`` 守住"恰好一个起点"硬约束（success criterion）。
 - ``NeighborOutput``：字段名顺序与 ``services.retrieval.types.NeighborMetadata`` 一致，
-  ``reason`` ``min_length=1`` 静态保证非空（per ROADMAP success criterion）。
+  ``reason`` ``min_length=1`` 静态保证非空（success criterion）。
 - ``FindRelatedCodeOutput``：``neighbors`` + ``message``；空 ``neighbors`` 时用
   ``message`` 解释（"无关联代码" / "tool unavailable"），让 Agent 区分"查到了无邻居"
   与"工具失败"。
@@ -40,7 +40,7 @@ Direction = Literal["downstream", "upstream", "both"]
 
 
 class FindRelatedCodeInput(BaseModel):
-    """Agent tool ``find_related_code`` 输入契约（per ROADMAP success criterion / success criterion）。
+    """Agent tool ``find_related_code`` 输入契约（success criterion / success criterion）。
 
     三选一互斥起点：``file_path`` / ``chunk_id`` / ``symbol_name`` 恰好一个非 ``None``，
     否则 ``ValidationError`` 含 ``"exactly one"`` 关键字（方便 LLM 错误模式匹配）。
@@ -89,8 +89,8 @@ class FindRelatedCodeInput(BaseModel):
         ge=1,
         le=2,
         description=(
-            "图谱遍历跳数上限；硬约束 ≤2，与 initial implementation HybridSearchService.find_related "
-            "MAX_HOPS=2 双层守卫对齐（per ROADMAP success criterion）。"
+            "图谱遍历跳数上限；硬约束 ≤2，与 implementation HybridSearchService.find_related "
+            "MAX_HOPS=2 双层守卫对齐（success criterion）。"
         ),
     )
     direction: Direction = Field(
@@ -113,7 +113,7 @@ class FindRelatedCodeInput(BaseModel):
     @field_validator("chunk_id", "repository_id", mode="before")
     @classmethod
     def _validate_uuid_shape(cls, value: object) -> object:
-        """守住 ``chunk_id`` / ``repository_id`` UUID 形态（per initial implementation）。
+        """守住 ``chunk_id`` / ``repository_id`` UUID 形态（per implementation）。
 
         Pydantic ``mode="before"`` 在类型转换前拦截非 UUID 字符串（典型 LLM 错觉：
         ``chunk_id="login_handler"`` / ``repository_id="repo-1"``），避免下游
@@ -139,7 +139,7 @@ class FindRelatedCodeInput(BaseModel):
         """守住 ``file_path`` / ``chunk_id`` / ``symbol_name`` 恰好一个非 ``None``。
 
         Pydantic v2 ``mode='after'`` 让校验发生在字段类型转换之后；错误信息含
-        ``"exactly one"`` 关键字便于 LLM 调用方做错误模式匹配（per ROADMAP success criterion）。
+        ``"exactly one"`` 关键字便于 LLM 调用方做错误模式匹配（success criterion）。
         """
         anchors = [self.file_path, self.chunk_id, self.symbol_name]
         count = sum(1 for a in anchors if a is not None)
@@ -152,7 +152,7 @@ class FindRelatedCodeInput(BaseModel):
 
 
 class NeighborOutput(BaseModel):
-    """单个图谱邻居（per ROADMAP success criterion + work-item contract）。
+    """单个图谱邻居（success criterion + work-item contract）。
 
     字段名顺序与 ``services.retrieval.types.NeighborMetadata`` dataclass 完全一致，
     方便 plan 通过 ``NeighborOutput(**asdict(neighbor_metadata))`` 单步装配。
@@ -173,7 +173,7 @@ class NeighborOutput(BaseModel):
     line_start: int | None = Field(
         default=None,
         description=(
-            "邻居 chunk 起始行号（1-indexed）；initial implementation NeighborMetadata 允许 None "
+            "邻居 chunk 起始行号（1-indexed）；implementation NeighborMetadata 允许 None "
             "（某些 chunk 无精确行号信息）。"
         ),
     )
@@ -185,20 +185,20 @@ class NeighborOutput(BaseModel):
         ...,
         description=(
             "图谱边类型；运行时值来自 code_relations.models.EdgeType.values，"
-            "字符串而非 Literal 是因为输出层不做枚举强约束（initial implementation API 已守过一遍）。"
+            "字符串而非 Literal 是因为输出层不做枚举强约束（implementation API 已守过一遍）。"
         ),
     )
     weight: float = Field(
         ...,
-        description="边权重（initial implementation ChunkEdge.weight）；用于 hop 内 weight 降序排序。",
+        description="边权重（implementation ChunkEdge.weight）；用于 hop 内 weight 降序排序。",
     )
     reason: str = Field(
         ...,
         min_length=1,
         description=(
-            "initial implementation ``_explain_neighbor(edge_type, source_payload)`` 输出的"
+            "implementation ``_explain_neighbor(edge_type, source_payload)`` 输出的"
             "自然语言解释，例如 'caller of login_user()' / 'test of src/auth.py'。"
-            "min_length=1 静态保证非空（per ROADMAP success criterion）。"
+            "min_length=1 静态保证非空（success criterion）。"
         ),
     )
     hop: int = Field(

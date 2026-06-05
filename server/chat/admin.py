@@ -1,6 +1,6 @@
 """Django admin 注册：chat 应用下需要管理后台可见的模型。
 
-当前仅注册 ``RepositoryRoutingTrace``（initial implementation）—— 跨仓路由决策的
+当前仅注册 ``RepositoryRoutingTrace``（implementation）—— 跨仓路由决策的
 可审计落地表，只读，不允许通过 admin 编辑。
 """
 
@@ -15,7 +15,7 @@ from chat.models import ConversationIntentTrace, RepositoryRoutingTrace
 
 @admin.register(RepositoryRoutingTrace)
 class RepositoryRoutingTraceAdmin(admin.ModelAdmin):
-    """``RepositoryRoutingTrace`` 只读 admin（initial implementation）。
+    """``RepositoryRoutingTrace`` 只读 admin（implementation）。
 
     trace 是审计记录，不允许编辑；list_filter 提供 evaluation SQL 友好的
     triggered_by / created_at 维度过滤。
@@ -58,7 +58,7 @@ class RepositoryRoutingTraceAdmin(admin.ModelAdmin):
 
 @admin.register(ConversationIntentTrace)
 class ConversationIntentTraceAdmin(admin.ModelAdmin):
-    """``ConversationIntentTrace`` 只读 admin（initial implementation）。
+    """``ConversationIntentTrace`` 只读 admin（implementation）。
 
     协商时间线属于审计记录，全字段 readonly；list_filter 提供 evaluation
     维度过滤（按时间窗 + 是否落到 plan）。

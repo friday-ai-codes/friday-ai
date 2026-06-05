@@ -1,4 +1,4 @@
-"""initial implementation: go_workspace.py 单元测试（≥ 8 场景 fixture 文件系统）。
+"""implementation: go_workspace.py 单元测试（≥ 8 场景 fixture 文件系统）。
 
 使用 mock_go_workspace/ 5 种 fixture 风格验证 discover_go_workspace 行为。
 """
@@ -57,7 +57,7 @@ class TestDiscoverMultiGomod:
             workspace = discover_go_workspace(_FIXTURE_ROOT / "multi_gomod")
         # 应有 workspace（最浅路径），且日志中含 multi_gomod 相关警告
         # structlog 使用 JSON 格式，验证关键字段存在于日志输出
-        # （initial implementation/266 structlog 模式：事件名在 extra 里或 message 里）
+        # （implementation/266 structlog 模式：事件名在 extra 里或 message 里）
         assert workspace is not None
         # 验证发出了 warning（通过 caplog 或直接验证 workspace 正确性）
         # multi_gomod 有 2 个候选：根目录 + svc-a，故 candidates_count >= 2

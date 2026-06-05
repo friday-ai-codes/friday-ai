@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2：`rebuild_chunk_edges` 管理命令。
+"""implementation Task 2：`rebuild_chunk_edges` 管理命令。
 
 老仓库（v23.0 索引完无 ChunkEdge）批量 backfill 入口：
 
@@ -9,7 +9,7 @@
 **断点续跑语义：** 仅 dispatch `ChunkRegistry.last_built_at IS NULL` 的 chunk，
 命令完成后 `update(last_built_at=now())` 标记 per row；二次跑跳过已建 chunk。
 
-**复用策略：** 命令本身不重新实现 builder 调度，直接调用 initial implementation
+**复用策略：** 命令本身不重新实现 builder 调度，直接调用 implementation
 `code_relations.tasks.enqueue_edge_build`；fire-and-forget 任务由 `_dispatch_and_drain`
 helper 复用 `verify_payload_consistency.py` 的 before/after snapshot 模式确保
 真正完成再 update last_built_at。
@@ -18,8 +18,8 @@ helper 复用 `verify_payload_consistency.py` 的 before/after snapshot 模式�
 时跑爆 RAM）；未来扩展 `--concurrency N` 参数预留接口（本 plan 不实现）。
 
 引用：
-- ROADMAP success criterion / work item
-- initial implementation context contract（backfill 触发点）/ contract（复用 enqueue_edge_build）
+- success criterion / work item
+- implementation context contract（backfill 触发点）/ contract（复用 enqueue_edge_build）
 - verify_payload_consistency.py（BaseCommand + asyncio.run + drain 模式样板）
 """
 
@@ -37,7 +37,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-# contract 修复（initial implementation REVIEW）：``_process_repo`` 三态状态机，让 summary
+# contract 修复（implementation REVIEW）：``_process_repo`` 三态状态机，让 summary
 # 区分 "无 pending chunk 跳过" 与 "dispatch 失败"，运维不再误判全成功。
 RepoStatus = Literal["processed", "skipped_no_work", "failed"]
 
@@ -175,7 +175,7 @@ class Command(BaseCommand):
             dry_run=dry_run,
         )
 
-        # contract 修复（initial implementation REVIEW）：任一 repo dispatch 失败 → 退出码非 0，
+        # contract 修复（implementation REVIEW）：任一 repo dispatch 失败 → 退出码非 0，
         # 让 CI / APScheduler wrapper (work item 也依赖此契约) 能感知。dry-run 不参
         # 与失败计算（dry-run 内部不真 dispatch，无法 fail）。
         if failed_repos > 0 and not dry_run:
@@ -203,12 +203,12 @@ class Command(BaseCommand):
             - ``("skipped_no_work", 0)``：无 pending chunk（已 backfill 或空仓）；
             - ``("failed", 0)``：dispatch 异常（work item 修复后真正 fail 才走这里）。
 
-        contract 修复（initial implementation REVIEW）：dispatch 失败被错误归类为 ``skipped`` →
+        contract 修复（implementation REVIEW）：dispatch 失败被错误归类为 ``skipped`` →
         三态分类避免运维误判全成功。
         """
         repo_id = str(repository.id)
         base_qs = ChunkRegistry.objects.filter(repository_id=repo_id)
-        # contract 修复（initial implementation REVIEW）：CONTEXT.md 第 27 行写
+        # contract 修复（implementation REVIEW）：CONTEXT.md 第 27 行写
         # "last_built_at IS NULL OR last_built_at < migration_time 才需要 backfill"；
         # 默认仍仅过滤 NULL（断点续跑语义不变），传 ``--since`` 时 OR ``< since``
         # 覆盖 EdgeBuilder schema 升级 / weight 算法变更后的全量重建场景，运维
@@ -260,7 +260,7 @@ class Command(BaseCommand):
             )
             return ("failed", 0)
 
-        # contract 修复（initial implementation REVIEW）：原 ``chunk_id__in=chunk_ids`` 把整个
+        # contract 修复（implementation REVIEW）：原 ``chunk_id__in=chunk_ids`` 把整个
         # list 展开成 SQL ``IN (?, ?, ...)``，SQLite ``SQLITE_MAX_VARIABLE_NUMBER``
         # 3.32 之前 999、3.32+ 32766；老仓库 backfill 几万 chunk 直接抛
         # ``OperationalError: too many SQL variables``。
@@ -303,7 +303,7 @@ class Command(BaseCommand):
         snapshot 模式（work item lesson）：只 drain 本次 dispatch 真正 spawn 的 task，
         避免误 await 跨 loop / 跨仓库的无关 task（多仓批量 backfill 时尤其重要）。
 
-        work item 修复（initial implementation REVIEW）：``asyncio.gather(..., return_exceptions=True)``
+        work item 修复（implementation REVIEW）：``asyncio.gather(..., return_exceptions=True)``
         把 builder 异常吞成返回值，外层 ``try/except`` 永远进不了 except 分支 ——
         失败 build 的 chunk 会被错误标 ``last_built_at != NULL``，下次 backfill
         过滤掉它们 → chunk 永久丢边。修复：检查 gather 返回值，发现任何

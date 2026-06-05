@@ -1,4 +1,4 @@
-"""initial implementation indexer hook integration test（per contract）+ initial implementation plan update.
+"""implementation indexer hook integration test（per contract）+ implementation update.
 
 验证 `IndexerService._extract_and_write_graph` 末尾 hook 行为：
 - IndexerService.__init__ 含 `_session_dirty_chunk_ids` 实例属性（默认空 set）

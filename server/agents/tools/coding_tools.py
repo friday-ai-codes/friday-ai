@@ -1,6 +1,6 @@
 """编码会话工具 — create_coding_plan / update_coding_plan @tool。
 
-initial implementation：工具落库切换到 `CodingPlan` 独立领域；返回 payload 同时携带
+implementation：工具落库切换到 `CodingPlan` 独立领域；返回 payload 同时携带
 `coding_plan_id` 和 `coding_session_id`（兼容期保留旧 `session_id` alias）。
 """
 
@@ -42,7 +42,7 @@ def _normalize_affected_files(
         "不再创建 CodingSession。session 由前端在 UI 选定仓库后通过 fan-out "
         "endpoint `POST /api/chat/coding-plans/{plan_id}/sessions/` 创建。"
         "\n\n"
-        "**initial implementation**：可选传 `recommended_repository_ids` 预填本方案"
+        "**implementation**：可选传 `recommended_repository_ids` 预填本方案"
         "在 fan-out 时建议的相关仓库列表。不传时 Server 端自动从 conversation 最近一条"
         "RepositoryRoutingTrace 取 `selected_by_user_final=True` 的仓库（来自之前的"
         "analyze_repository_relevance 工具调用 / deep_analysis cross_repo_relevance）。"
@@ -93,7 +93,7 @@ def _normalize_affected_files(
                 "type": "array",
                 "items": {"type": "string", "format": "uuid"},
                 "description": (
-                    "initial implementation：AI 已经识别相关的仓库 UUID 列表"
+                    "implementation：AI 已经识别相关的仓库 UUID 列表"
                     "（来自 analyze_repository_relevance / deep_analysis"
                     "cross_repo_relevance metadata）。不传则 Server 自动从"
                     "conversation 最近一条 RepositoryRoutingTrace 推断"
@@ -123,7 +123,7 @@ async def create_coding_plan(
     ``POST /api/chat/coding-plans/{plan_id}/sessions/`` (fan-out endpoint)
     创建，是 coding-plan workflow fan-out 设计的唯一 session 创建源。
 
-    initial implementation：``recommended_repository_ids`` 可选 ——
+    implementation：``recommended_repository_ids`` 可选 ——
 
     - LLM 显式传：校验全部属于该 space + 未软删 → 持久化到
       CodingPlan.recommended_repository_ids。
@@ -184,10 +184,10 @@ async def create_coding_plan(
             error=f"Conversation not found: {conversation_id}",
         )
 
-    # initial implementation：contract schema 归一化（兼容旧 path 入参）
+    # implementation：contract schema 归一化（兼容旧 path 入参）
     normalized_files = _normalize_affected_files(affected_files)
 
-    # initial implementation：解析 recommended_repository_ids（显式 / trace 推断 / 空）
+    # implementation：解析 recommended_repository_ids（显式 / trace 推断 / 空）
     recommended_source: str
     final_recommended: list[str] = []
     recommended_repositories: list[dict[str, str]] = []
@@ -255,7 +255,7 @@ async def create_coding_plan(
             if recommended_source == "empty":
                 recommended_source = "primary_repo"
 
-    # initial implementation：先 get/create CodingPlan
+    # implementation：先 get/create CodingPlan
     plan, plan_created = await CodingPlan.aget_or_create_for_conversation(
         conversation=conversation,
         tech_plan=tech_plan,
@@ -263,7 +263,7 @@ async def create_coding_plan(
         title="",
     )
 
-    # initial implementation：把推荐仓库列表写入 plan（覆盖既有值 —— 同 plan 多次
+    # implementation：把推荐仓库列表写入 plan（覆盖既有值 —— 同 plan 多次
     # 调用以最新一次为准；空列表也写以清空旧值）
     if list(plan.recommended_repository_ids or []) != final_recommended:
         plan.recommended_repository_ids = final_recommended
@@ -352,7 +352,7 @@ async def update_coding_plan(
     coding_plan_id: str = "",
     session_id: str = "",
 ) -> ToolResult:
-    """更新 CodingPlan + 同步 draft session 的 deprecated 字段（initial implementation）。"""
+    """更新 CodingPlan + 同步 draft session 的 deprecated 字段（implementation）。"""
     from chat.models import CodingPlan, CodingSession
 
     logger.info(

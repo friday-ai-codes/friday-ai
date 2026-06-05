@@ -60,7 +60,7 @@ def _reset_background_runner():
 
 @pytest.fixture(autouse=True)
 def _disable_scheduler_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """initial implementation contract：pytest 下关闭 APScheduler，避免 BackgroundScheduler
+    """implementation contract：pytest 下关闭 APScheduler，避免 BackgroundScheduler
     起后台线程污染测试（security mitigation-03 Availability mitigation）。
 
     生产路径 `python manage.py runapscheduler` 不受影响；此 fixture 仅保护 pytest。
@@ -251,7 +251,7 @@ def urls():
         def space_unlink_repository(space_id, repo_id):
             return f"/api/spaces/{space_id}/repositories/{repo_id}/"
 
-        # initial implementation plan（contract）：project_claude_config helper 已随 v8.1
+        # implementation（contract）：project_claude_config helper 已随 v8.1
         # /api/spaces/<id>/claude-config/ 端点硬删一并移除。
 
         # Repositories
@@ -272,7 +272,7 @@ def urls():
 
 
 # ============================================================================
-# Multi-Role User Fixtures (initial implementation: 权限引擎)
+# Multi-Role User Fixtures (implementation: 权限引擎)
 # ============================================================================
 
 
@@ -366,7 +366,7 @@ def authenticated_admin_client(api_client, admin_user):
 
 
 # ============================================================================
-# initial implementation Wave：AI 节点测试公共 fixture（Q6 决策落地 / work item 弥补）
+# implementation Wave：AI 节点测试公共 fixture（Q6 决策落地 / work item 弥补）
 #
 # checkpoint ~ checkpoint 所有新建 AI 节点测试统一引用以下 4 fixture，禁止重复定义。
 # 违反由 checkpoint 静态扫描拦截。
@@ -422,7 +422,7 @@ def fake_chat_model_factory(monkeypatch):
             lambda *a, **kw: fake,
             raising=False,
         )
-        # 节点级可选 seam（initial implementation Wave+ 才会存在；raising=False 兼容缺失）
+        # 节点级可选 seam（implementation Wave+ 才会存在；raising=False 兼容缺失）
         for mod_path in (
             "workflows.nodes.ai.prompt.build_chat_model",
             "workflows.nodes.ai.variable_extractor.build_chat_model",
@@ -527,7 +527,7 @@ def mock_aresolve_missing(monkeypatch):
 
 
 # ============================================================================
-# initial implementation plan：Provider 凭证测试公共 fixture
+# implementation：Provider 凭证测试公共 fixture
 #
 # 4 用户（system_admin + project_a_admin/member/viewer + project_b_admin）
 # + 2 独立项目（project_a / project_b）+ 3 凭证（system + project_a + project_b）
@@ -539,7 +539,7 @@ def mock_aresolve_missing(monkeypatch):
 
 @pytest.fixture
 def system_admin_user(db):
-    """initial implementation contract：系统级 superuser 用户。"""
+    """implementation contract：系统级 superuser 用户。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -554,7 +554,7 @@ def system_admin_user(db):
 
 @pytest.fixture
 def project_a(db):
-    """initial implementation：独立项目 A（避开既有 `project` fixture 的 repository 依赖）。"""
+    """implementation：独立项目 A（避开既有 `project` fixture 的 repository 依赖）。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -566,7 +566,7 @@ def project_a(db):
 
 @pytest.fixture
 def project_b(db):
-    """initial implementation：独立项目 B（跨项目场景用）。"""
+    """implementation：独立项目 B（跨项目场景用）。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -587,7 +587,7 @@ def _add_membership(project, user, role):
 
 @pytest.fixture
 def project_a_admin_user(db, project_a):
-    """initial implementation contract：项目 A 的 ADMIN 角色用户。"""
+    """implementation contract：项目 A 的 ADMIN 角色用户。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -602,7 +602,7 @@ def project_a_admin_user(db, project_a):
 
 @pytest.fixture
 def project_a_member_user(db, project_a):
-    """initial implementation contract：项目 A 的 MEMBER 角色用户。"""
+    """implementation contract：项目 A 的 MEMBER 角色用户。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -617,7 +617,7 @@ def project_a_member_user(db, project_a):
 
 @pytest.fixture
 def project_a_viewer_user(db, project_a):
-    """initial implementation contract：项目 A 的 VIEWER 角色用户。"""
+    """implementation contract：项目 A 的 VIEWER 角色用户。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -632,7 +632,7 @@ def project_a_viewer_user(db, project_a):
 
 @pytest.fixture
 def project_b_admin_user(db, project_b):
-    """initial implementation contract：项目 B 的 ADMIN 角色用户（跨项目越权测试）。"""
+    """implementation contract：项目 B 的 ADMIN 角色用户（跨项目越权测试）。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -647,7 +647,7 @@ def project_b_admin_user(db, project_b):
 
 @pytest.fixture
 def system_default_anthropic_credential(db):
-    """initial implementation：系统级 Anthropic 凭证（scope='system'，scope_id=None）。"""
+    """implementation：系统级 Anthropic 凭证（scope='system'，scope_id=None）。"""
     import json
     from uuid import uuid4
 
@@ -674,7 +674,7 @@ def system_default_anthropic_credential(db):
 
 @pytest.fixture
 def project_a_anthropic_credential(db, project_a):
-    """initial implementation：项目 A 的 Anthropic 凭证（scope='project'，scope_id=project_a.id）。"""
+    """implementation：项目 A 的 Anthropic 凭证（scope='project'，scope_id=project_a.id）。"""
     import json
     from uuid import uuid4
 
@@ -701,7 +701,7 @@ def project_a_anthropic_credential(db, project_a):
 
 @pytest.fixture
 def project_b_openai_credential(db, project_b):
-    """initial implementation：项目 B 的 OpenAI 凭证（跨项目用例）。"""
+    """implementation：项目 B 的 OpenAI 凭证（跨项目用例）。"""
     import json
     from uuid import uuid4
 
@@ -728,12 +728,12 @@ def project_b_openai_credential(db, project_b):
 
 @pytest.fixture
 def async_client():
-    """initial implementation：未认证的 APIClient（供矩阵测试 force_authenticate 按角色注入）。"""
+    """implementation：未认证的 APIClient（供矩阵测试 force_authenticate 按角色注入）。"""
     return APIClient()
 
 
 # ============================================================================
-# initial implementation Wave：AI 节点测试公共 fixture（Q6 决策落地 / work item 弥补）
+# implementation Wave：AI 节点测试公共 fixture（Q6 决策落地 / work item 弥补）
 # ============================================================================
 
 
@@ -792,7 +792,7 @@ def make_minimal_context():
     return _make
 
 
-# ============= initial implementation Wave fixtures =============
+# ============= implementation Wave fixtures =============
 #
 # plan 新增 5 个 factory fixture，供 plan-07 的后端测试直接注入。
 # 所有 fixture 遵循 project instructions 规范：
@@ -810,7 +810,7 @@ def make_minimal_context():
 
 @pytest.fixture
 def frozen_conversation_factory(db, project):
-    """initial implementation contract：创建 status ∈ {active, completed, stopped, error} 的 Conversation。
+    """implementation contract：创建 status ∈ {active, completed, stopped, error} 的 Conversation。
 
     plan pin 冻结用例的主入口 fixture。
 
@@ -854,7 +854,7 @@ def frozen_conversation_factory(db, project):
 
 @pytest.fixture
 def execution_with_snapshot_factory(db, project):
-    """initial implementation contract：创建 WorkflowExecution 并把 node_snapshots 写入 context JSONField。
+    """implementation contract：创建 WorkflowExecution 并把 node_snapshots 写入 context JSONField。
 
     Args:
         node_snapshots: dict[str, dict]，形如
@@ -913,7 +913,7 @@ def execution_with_snapshot_factory(db, project):
 
 @pytest.fixture
 def analytics_token_usage_factory(db):
-    """initial implementation contract：批量创建 TokenUsage，按 provider_type 聚合统计用。
+    """implementation contract：批量创建 TokenUsage，按 provider_type 聚合统计用。
 
     Args:
         provider_type: "anthropic" | "openai_chat" | "openai_responses" | "gemini" | "ollama"
@@ -958,7 +958,7 @@ def analytics_token_usage_factory(db):
 
         if session is None:
             # SubAgentSession 需要 main_session (AgentSession FK) + repo_url + task_type
-            # initial implementation plan Rule 1 bug fix：plan stub 未创建 main_session 致 NOT NULL 失败
+            # implementation Rule 1 bug fix：plan stub 未创建 main_session 致 NOT NULL 失败
             main = AgentSession.objects.create(
                 session_id=f"main-{uuid4().hex}",
                 status=AgentSession.Status.COMPLETED,
@@ -989,7 +989,7 @@ def analytics_token_usage_factory(db):
 
 @pytest.fixture
 def sse_error_emitter():
-    """initial implementation contract / contract：SSE ERROR 事件 payload 构造 helper。
+    """implementation contract / contract：SSE ERROR 事件 payload 构造 helper。
 
     返回一个 dataclass-like 对象，暴露 3 个 method，每个返回结构化 SSE 事件 dict：
         - context_exceeded(estimated, max_tokens, model) → contract contract
@@ -1065,7 +1065,7 @@ def sse_error_emitter():
 
 @pytest.fixture
 def resolve_chain_builder():
-    """initial implementation contract：构造四层 ResolvedProviderChain dict（plan aresolve_with_chain 产出）。
+    """implementation contract：构造四层 ResolvedProviderChain dict（plan aresolve_with_chain 产出）。
 
     Args:
         winning_layer: "node" | "conversation" | "project" | "system"
@@ -1130,7 +1130,7 @@ def resolve_chain_builder():
 
 
 # ============================================================================
-# initial implementation plan（contract / work item）：pytest matrix Provider 双 fixture
+# implementation（contract / work item）：pytest matrix Provider 双 fixture
 #
 # 把 ``CODE_INTELLIGENCE_PROVIDER ∈ {local, null}`` 双值参数化成 pytest fixture，
 # 让 chat / agent / workflow / retrieval / find_related 关键 path 测试一次 import
@@ -1145,16 +1145,16 @@ def resolve_chain_builder():
 #   lazy import，避免 conftest 顶层引入服务模块加重 Django app loading 顺序。
 # - **测试 ID 兜底**：``params=["local", "null"]`` 让 pytest 自动生成
 #   ``[local]`` / ``[null]`` 后缀，配合函数名中显式 ``_null_provider`` 子串
-#   双重保证 ``pytest -k null_provider --co`` 收集（per ROADMAP success criterion 字面要求）。
-# - **CI 双 job 桥接**：initial implementation CI 启用 ``CODE_INTELLIGENCE_PROVIDER=null``
+#   双重保证 ``pytest -k null_provider --co`` 收集（success criterion 字面要求）。
+# - **CI 双 job 桥接**：implementation CI 启用 ``CODE_INTELLIGENCE_PROVIDER=null``
 #   env 时，可在 fixture 内读 env 限定单 provider 跑——本 phase 仅落参数化骨架，
-#   env-driven filter 留 initial implementation 一起接（per contract / docs/work item-MATRIX.md）。
+#   env-driven filter 留 implementation 一起接（per contract / docs/work item-MATRIX.md）。
 # ============================================================================
 
 
 @pytest.fixture(params=["local", "null"])
 def provider_type(request) -> str:
-    """initial implementation contract / work item：Provider 双轨参数化 fixture。
+    """implementation contract / work item：Provider 双轨参数化 fixture。
 
     Returns:
         ``"local"`` 或 ``"null"``——下游 fixture / 测试用此字符串实例化
@@ -1176,7 +1176,7 @@ def provider_type(request) -> str:
 
 @pytest.fixture
 def hybrid_service(provider_type):
-    """initial implementation contract / work item：HybridSearchService(Provider) 工厂 fixture。
+    """implementation contract / work item：HybridSearchService(Provider) 工厂 fixture。
 
     根据 ``provider_type`` parametrize 值实例化对应 Provider 并注入
     ``HybridSearchService``，让测试 body 完全聚焦在调用与断言。
@@ -1204,7 +1204,7 @@ def hybrid_service(provider_type):
 
 
 # ============================================================================
-# initial implementation Wave：Access Token 共享 fixture（contract..04 测试桩消费）
+# implementation Wave：Access Token 共享 fixture（contract..04 测试桩消费）
 #
 # 设计要点（project instructions + contract）：
 #   - 全函数严格类型注解（mypy 硬性要求）。

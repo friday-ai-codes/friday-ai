@@ -1,4 +1,4 @@
-"""initial implementation: 5 类 LSP 异常体系单元测试。"""
+"""implementation: 5 类 LSP 异常体系单元测试。"""
 
 from __future__ import annotations
 

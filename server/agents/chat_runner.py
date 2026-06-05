@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, create_model
 
 # 触发 @tool 注册
 import agents.tools.chat_tools  # noqa: F401
-import agents.tools.clarification  # noqa: F401  # initial implementation
+import agents.tools.clarification  # noqa: F401  # implementation
 import agents.tools.coding_tools  # noqa: F401
 import agents.tools.repository_relevance  # noqa: F401
 import agents.tools.space_tools  # noqa: F401
@@ -88,9 +88,9 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "list_endpoints",
     "find_api_handler",
     "find_api_callers",
-    # initial implementation：先分析相关性，后创建方案
+    # implementation：先分析相关性，后创建方案
     "analyze_repository_relevance",
-    # initial implementation：不确定时主动澄清（暴露给所有有索引仓库的项目）
+    # implementation：不确定时主动澄清（暴露给所有有索引仓库的项目）
     "ask_clarification",
     "create_coding_plan",
     "update_coding_plan",
@@ -382,7 +382,7 @@ def _check_chat_context_window(
     """前 astream budget check（strict_error 策略）；超限抛 ContextWindowExceededError。
 
     消息格式与 ``langchain_runner.py`` work item 共用，保证 ``base_agent.py``
-    work item 的 regex 可复用（initial implementation Pitfall 1 单一事实源 / Pitfall 3 每 turn
+    work item 的 regex 可复用（implementation Pitfall 1 单一事实源 / Pitfall 3 每 turn
     check）。
 
     Args:
@@ -535,7 +535,7 @@ async def _build_tool_specs(
 ) -> dict[str, _ChatToolSpec]:
     """装配 chat 场景可用的工具清单。
 
-    内部通过 `build_langchain_tools` (initial implementation contract) 统一产出 StructuredTool：
+    内部通过 `build_langchain_tools` (implementation contract) 统一产出 StructuredTool：
     space_id / conversation_id 由 adapter 从 args_schema 剔除 + 闭包注入。
 
     `default_search_branch` "LLM 未提供 branch 时回填"语义属于 chat 场景特有
@@ -739,7 +739,7 @@ class ChatAnthropicRunner:
         budget = _ToolBudget(max_turns=self._config.max_turns)
 
         # REGION: interrupt-latch-fix-coding-plan workflow-2026-05-21
-        # ↑ initial implementation DEBUG 修复保护区，不可触碰：
+        # ↑ implementation DEBUG 修复保护区，不可触碰：
         #   1) _interrupt_requested latch（构造器 + interrupt()）
         #   2) _run_task 生命周期管理（assign / cancel / finally 清零）
         #   3) collector.flush_all() 在三个 except 分支的强制调用契约（major #1）
@@ -755,7 +755,7 @@ class ChatAnthropicRunner:
             for _ in range(self._config.max_turns):
                 full_message: AIMessageChunk | None = None
 
-                # initial implementation plan：每 turn 进入 astream 前做前置 budget check。
+                # implementation：每 turn 进入 astream 前做前置 budget check。
                 # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
                 # （Pitfall 3）。超限抛 ContextWindowExceededError，由下方专属 except 分支捕获。
                 _check_chat_context_window(messages, model=self._config.model)
@@ -1115,7 +1115,7 @@ class ChatAnthropicRunner:
             # ENDREGION: interrupt-latch-fix-coding-plan workflow-2026-05-21
             raise
         except ContextWindowExceededError as exc:
-            # initial implementation contract chat 路径集成：SSE ERROR 结构化 payload。
+            # implementation contract chat 路径集成：SSE ERROR 结构化 payload。
             # 消息格式同源 ``langchain_runner.py`` work item strict_error；
             # regex / payload schema 照抄 ``base_agent.py`` work item（字段名差异：
             # base_agent 走 NodeResult.output["error_code"]；chat_runner 直接

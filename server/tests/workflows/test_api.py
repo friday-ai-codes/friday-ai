@@ -438,7 +438,7 @@ class TestTaskCompatAPI:
 
 
 # ============================================================================
-# React Steps Tests (initial implementation)
+# React Steps Tests (implementation)
 # ============================================================================
 
 
@@ -511,7 +511,7 @@ class TestReactSteps:
 
 
 # ============================================================================
-# ActionLog Detail Tests (initial implementation)
+# ActionLog Detail Tests (implementation)
 # ============================================================================
 
 
@@ -542,7 +542,7 @@ class TestActionLogDetail:
 
 
 # ============================================================================
-# Cost Breakdown Tests (initial implementation)
+# Cost Breakdown Tests (implementation)
 # ============================================================================
 
 
@@ -617,7 +617,7 @@ class TestCostBreakdown:
 
 
 # ============================================================================
-# Timeline Tests (initial implementation)
+# Timeline Tests (implementation)
 # ============================================================================
 
 

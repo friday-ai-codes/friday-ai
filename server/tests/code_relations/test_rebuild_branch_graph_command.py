@@ -1,4 +1,4 @@
-"""initial implementation plan（work item / v26.2 Critical 2）：rebuild_branch_graph 命令测试。
+"""implementation（work item）：rebuild_branch_graph 命令测试。
 
 覆盖：dry-run 不写库 + 污染量区间报告结构 + INDEXED 非 base 分支筛选 + 参数校验。
 """

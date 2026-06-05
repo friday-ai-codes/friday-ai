@@ -1,6 +1,6 @@
-"""二跳邻居 ORM 扩散器（per initial implementation plan / contract / contract）。
+"""二跳邻居 ORM 扩散器（per implementation / contract / contract）。
 
-兑现 ROADMAP success criterion 第二条 + 第三条：
+兑现 success criterion 第二条 + 第三条：
 
 - **contract 二跳 ORM**：``ChunkEdge.objects.filter(repository_id__in=repo_ids,
   source_chunk_id__in=hop1_chunk_ids).only(4 字段).order_by('-weight')[:50]``
@@ -89,7 +89,7 @@ async def fetch_hop2_edges(
             list → 不过滤。
         direction (work item): ``"downstream"`` (默认) 或 ``"upstream"``，决定
             ``hop1_chunk_ids`` 在 ``filter`` 中的字段方向。
-        branch_name (v26.2 work item / work item): 分支维度过滤（纯参数透传，
+        branch_name (work item / work item): 分支维度过滤（纯参数透传，
             **不读 settings**——守 Pitfall 5 CI grep gate）：
             - ``None`` / ``""``（base 查询）→ ``branch_name__in=[""]`` 仅取 base
               行，``find_related`` 等不传 branch 的现存 callsite **字节级向后兼容**；

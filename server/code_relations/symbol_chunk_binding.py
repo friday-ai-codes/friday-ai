@@ -1,10 +1,10 @@
-"""Symbol ↔ chunk_id 持久化绑定回填（initial implementation 第二阶段）。
+"""Symbol ↔ chunk_id 持久化绑定回填（implementation 第二阶段）。
 
 索引完成后，把每个 codegraph ``Symbol`` 绑定到其所属的 RAG ``chunk_id``（落库到
 ``Symbol.chunk_id``），取代 ``CallEdgeBuilder`` / ``find_related`` 等在运行时反复用
 ``SymbolChunkResolver`` 做行号 bisect 的软对齐。
 
-因 initial implementation 第一阶段后向量轨 chunk 已按**符号边界**切分，``symbol.start_line``
+因 implementation 第一阶段后向量轨 chunk 已按**符号边界**切分，``symbol.start_line``
 通常精确落在对应 chunk 的行区间内，bisect 回填准确率高；绑定一次落库后，下游查询
 直接读 ``Symbol.chunk_id`` 即可，省去每次扫描 Qdrant。
 

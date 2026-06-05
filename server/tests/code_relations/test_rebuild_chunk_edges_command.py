@@ -1,6 +1,6 @@
-"""initial implementation plan Task 2：`rebuild_chunk_edges` 管理命令单测。
+"""implementation Task 2：`rebuild_chunk_edges` 管理命令单测。
 
-覆盖 6 条用例（per plan must_haves + 互斥校验 / 幂等 / 断点续跑语义）：
+覆盖 6 条用例（requirements + 互斥校验 / 幂等 / 断点续跑语义）：
 
 1. test_repo_and_all_mutually_exclusive
    `--repo` 与 `--all` 同传 → CommandError（错误信息含 "互斥"）。
@@ -240,7 +240,7 @@ def test_builder_failure_keeps_last_built_at_null(
 ) -> None:
     """work item 回归：builder spawn 的背景 task 抛异常 → ``last_built_at`` 不应被更新。
 
-    initial implementation REVIEW work item 揭示 ``asyncio.gather(..., return_exceptions=True)``
+    implementation REVIEW work item 揭示 ``asyncio.gather(..., return_exceptions=True)``
     把异常吞成返回值，外层 ``try/except`` 永远捕不到 → 失败 chunk 被错误标完成。
     修复后 ``_dispatch_and_drain`` 检测 ``BaseException`` 返回值 → 显式
     ``raise RuntimeError`` 让 ``_process_repo`` ``except`` 分支跳过 update。

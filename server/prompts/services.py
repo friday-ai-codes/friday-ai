@@ -178,7 +178,7 @@ async def render_prompt(
     variables: dict[str, Any] | None = None,
     fallback: str = "",
 ) -> str:
-    """渲染提示词的统一入口（initial implementation 对外 API）。
+    """渲染提示词的统一入口（implementation 对外 API）。
 
     流程：
       1. 读 PROMPT_CENTER_DISABLED_KEYS（contract）— 命中直接 fallback
@@ -219,7 +219,7 @@ async def render_prompt(
             fallback_used=bool(fallback),
         )
         if not fallback:
-            # 仅当 slug 在 BUILTIN_SLUGS 内却 DB 无记录 → 系统 bug（initial implementation seed 应补齐）
+            # 仅当 slug 在 BUILTIN_SLUGS 内却 DB 无记录 → 系统 bug（implementation seed 应补齐）
             if slug in BUILTIN_SLUGS:
                 logger.error("prompt_builtin_missing_from_db", slug=slug)
             raise PromptNotFoundError(slug=slug)
@@ -365,7 +365,7 @@ async def activate_version(
 def compute_version_diff(v1: PromptVersion, v2: PromptVersion) -> str:
     """计算两个版本 body 的 unified diff（供 API 返回）。
 
-    前端 initial implementation 用 jsdiff 再次 render；后端只返回原始 diff text。
+    前端 implementation 用 jsdiff 再次 render；后端只返回原始 diff text。
     """
     lines = list(
         unified_diff(

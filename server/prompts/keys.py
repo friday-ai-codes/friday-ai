@@ -39,7 +39,7 @@ class PromptSlugs:
     # --- Feishu Bot (v19.0 拆分) ---
     FEISHU_GROUP_CHAT_SYSTEM: Final[str] = "feishu.group_chat.system"
 
-    # --- Repository Summary (v19.0 initial implementation 依赖) ---
+    # --- Repository Summary (implementation 依赖) ---
     REPO_SUMMARY_GENERATOR: Final[str] = "repo.summary_generator"
 
 

@@ -1,4 +1,4 @@
-"""initial implementation plan（work item / v26.2 Critical 2）：`rebuild_branch_graph` 命令。
+"""implementation（work item）：`rebuild_branch_graph` 命令。
 
 存量 base 图谱「被历史 ``run_branch_index`` 写入的 feature 边」污染的评估 + 清污入口
 骨架，复用 v24.0 ``rebuild_chunk_edges`` 的命令模式（--repo/--all 互斥 + --dry-run 默
@@ -21,7 +21,7 @@
 随后重建 base 图谱与各 INDEXED feature 分支图谱。modified 文件属于 ambiguous 区间，
 交由 base 重建覆盖修正。
 
-引用：ROADMAP v26.2 Critical 2 / work item / work-item「清污 command 设计」。
+引用：maintenance requirement / work item / work-item「清污 command 设计」。
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class Command(BaseCommand):
     """评估并重建被历史 feature 写入污染过的分支图谱。"""
 
     help = (
-        "评估 / 重建分支隔离图谱（v26.2 work item）；"
+        "评估 / 重建分支隔离图谱（work item）；"
         "--dry-run 输出 base 图谱污染量区间报告且不写库"
     )
 

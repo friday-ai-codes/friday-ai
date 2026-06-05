@@ -1,4 +1,4 @@
-"""initial implementation plan Task 2: golden snapshot fixture 一次性生成脚本。
+"""implementation Task 2: golden snapshot fixture 一次性生成脚本。
 
 per contract / contract。本脚本：
 1. 在 `golden_mock_environment` 上下文里按 `GOLDEN_QUERIES_REGISTRY` 顺序逐条

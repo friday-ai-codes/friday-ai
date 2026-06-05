@@ -1,4 +1,4 @@
-"""match_confidence 评分函数 —— initial implementation。
+"""match_confidence 评分函数 —— implementation。
 
 评分规则：
 - 1.0: http_method 一致 + url_path 归一化后完全一致

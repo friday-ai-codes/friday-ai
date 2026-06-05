@@ -1,6 +1,6 @@
 """TS / TSX 语言 extractor 测试 —— 验证 symbol / import / call 抽取 + JSX 大小写过滤。
 
-覆盖 initial implementation..work item：
+覆盖 implementation..work item：
 - work item：TSExtractor / TSXExtractor 注册（巩固由 test_registry.py 测）
 - work item：interface / type_alias / class / function / method / 命名 arrow 符号抽取
 - work item：import named / namespace / default / type-only / 重导出

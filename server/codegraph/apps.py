@@ -13,7 +13,7 @@ class CodegraphConfig(AppConfig):
     verbose_name = "代码图谱"
 
     def ready(self) -> None:
-        """启动时注册 initial implementation volar backend + initial implementation gopls backend。"""
+        """启动时注册 implementation volar backend + implementation gopls backend。"""
         from django.conf import settings
 
         if getattr(settings, "VOLAR_BACKEND_ENABLED", True):
@@ -23,7 +23,7 @@ class CodegraphConfig(AppConfig):
             self._register_gopls_backend()
 
     def _register_volar_backends(self) -> None:
-        """initial implementation：5 项 BACKEND_REGISTRY 替换为 make_volar_backend(lang)。
+        """implementation：5 项 BACKEND_REGISTRY 替换为 make_volar_backend(lang)。
 
         kill-switch ``settings.VOLAR_BACKEND_ENABLED=False`` 时跳过整段，
         BACKEND_REGISTRY 5 项保持 tree-sitter 默认。
@@ -39,10 +39,10 @@ class CodegraphConfig(AppConfig):
             register_backend(language, make_volar_backend(language))
 
     def _register_gopls_backend(self) -> None:
-        """initial implementation：gopls backend 注册；GOPLS_BACKEND_ENABLED=True 时触发。
+        """implementation：gopls backend 注册；GOPLS_BACKEND_ENABLED=True 时触发。
 
-        默认 False —— initial implementation 仅落基础设施不切 BACKEND_REGISTRY["go"]。
-        initial implementation 切 True 完成 Stage C 切换。
+        默认 False —— implementation 仅落基础设施不切 BACKEND_REGISTRY["go"]。
+        implementation 切 True 完成 Stage C 切换。
         """
         import structlog as _structlog
         from codegraph.extractors.registry import register_backend

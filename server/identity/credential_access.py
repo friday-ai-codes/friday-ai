@@ -1,6 +1,6 @@
-"""Provider 凭证访问校验服务（initial implementation contract / contract + initial implementation 共用）。
+"""Provider 凭证访问校验服务（implementation contract / contract + implementation 共用）。
 
-contract 决策：抽出 initial implementation `base_agent.py` / `prompt.py` / `variable_extractor.py`
+contract 决策：抽出 implementation `base_agent.py` / `prompt.py` / `variable_extractor.py`
 三处内联的 scope 校验逻辑为共享服务函数；ViewSet `perform_acreate/perform_aupdate`
 与节点端 runner 共用同一实现，避免后续维护漂移。
 
@@ -25,7 +25,7 @@ class CredentialScopeViolation(Exception):
     """凭证 scope 校验失败（跨空间越权或数据不一致）。
 
     ViewSet / Runner 捕获后按场景转 DRF PermissionDenied（API 层）或
-    ValueError（节点端沿用 initial implementation 既有语义，initial implementation 迁移）。
+    ValueError（节点端沿用 implementation 既有语义，implementation 迁移）。
     """
 
 

@@ -1,4 +1,4 @@
-"""ImportEdgeBuilder 测试（per initial implementation contract）。"""
+"""ImportEdgeBuilder 测试（per implementation contract）。"""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ async def test_endswith_no_false_match(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_vue_target_module_resolution(repository) -> None:
-    """initial implementation：CANDIDATE_EXTENSIONS 含 .vue 后，target_module=components.Button
+    """implementation：CANDIDATE_EXTENSIONS 含 .vue 后，target_module=components.Button
     能解析到 components/Button.vue（候选枚举枚到 .vue 扩展即命中）。"""
     src = await _make_chunk(repository, "App.vue")
     target = await _make_chunk(repository, "components/Button.vue")

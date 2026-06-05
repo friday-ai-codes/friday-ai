@@ -1,4 +1,4 @@
-"""initial implementation: node_check 单元测试（mock subprocess + 9 场景覆盖）。
+"""implementation: node_check 单元测试（mock subprocess + 9 场景覆盖）。
 
 per implementation plan Task 2 acceptance：
 - Node 22 / 18 / 16 三档版本 + 缺 binary + subprocess raise

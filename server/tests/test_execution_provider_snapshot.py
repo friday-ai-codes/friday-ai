@@ -1,4 +1,4 @@
-"""initial implementation plan Task 1 — contract Execution Provider 快照集成测试。
+"""implementation Task 1 — contract Execution Provider 快照集成测试。
 
 覆盖 context contract/contract/contract 全链路：
     A: WorkflowEngine.start_execution 启动 DAG 含 AI 节点 → node_snapshots 写入
@@ -8,7 +8,7 @@
     E: AI 节点 runner miss → fallback aresolve + structlog warning
     F: snapshot 写入的 provider_type 是 str（JSON 序列化安全）
 
-Analog: test_node_provider_credential_resolution.py（initial implementation）+ fixture
+Analog: test_node_provider_credential_resolution.py（implementation）+ fixture
   execution_with_snapshot_factory（conftest work item）。
 """
 from __future__ import annotations

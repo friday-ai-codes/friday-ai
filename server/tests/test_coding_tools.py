@@ -265,13 +265,13 @@ class TestUpdateCodingPlan:
 
 
 # ============================================================================
-# initial implementation — CodingPlan dual-id + schema 归一化 + 多 session 同步
+# implementation — CodingPlan dual-id + schema 归一化 + 多 session 同步
 # ============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 class TestPhaseCodingPlanIntegration:
-    """initial implementation：create / update 切换到 CodingPlan 域。
+    """implementation：create / update 切换到 CodingPlan 域。
 
     coding-plan workflow：create 工具不再产 session；update 仍能同步既有
     session（由 fixture 或本类内 _mk_session_for_plan 手建）。
@@ -437,7 +437,7 @@ class TestPhaseCodingPlanIntegration:
     ):
         """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。
 
-        initial implementation：(coding_plan, repository) 部分唯一约束限制同时只能
+        implementation：(coding_plan, repository) 部分唯一约束限制同时只能
         1 个 active session；本用例通过创建第二个 Repository 模拟多仓 fan-out
         让 draft 与 running 落在不同 repo 上，规避 unique_active_plan_repo。
         """
@@ -562,7 +562,7 @@ def test_coding_tools_in_indexed_tool_names():
 async def test_system_prompt_contains_coding_guidance(monkeypatch):
     """验证 system prompt 包含编码意图识别指引。
 
-    initial implementation Task 7: async 化 + 强制 fallback 路径（避免依赖 DB seed）。
+    implementation Task 7: async 化 + 强制 fallback 路径（避免依赖 DB seed）。
     """
     from chat.conversation_service import _build_system_prompt
 
@@ -591,7 +591,7 @@ async def test_get_tool_names_includes_coding_tools(project, repository):
 
 
 # ============================================================================
-# initial implementation：create_coding_plan recommended_repository_ids 测试
+# implementation：create_coding_plan recommended_repository_ids 测试
 # ============================================================================
 
 

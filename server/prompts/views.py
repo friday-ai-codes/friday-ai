@@ -1,6 +1,6 @@
 """Prompt API views — 6 个 async APIView 覆盖 CRUD + Preview + Versions。
 
-initial implementation Plan-02 Task 2 产出。所有 view 基于 `adrf.views.APIView` 手写
+implementation-02 Task 2 产出。所有 view 基于 `adrf.views.APIView` 手写
 `async def get/post/patch/delete`，permission_classes = [IsAuthenticated]
 作为 baseline；写操作在方法内再通过 `_require_write_permission` 辅助做方法级
 RBAC 切换（contract）。

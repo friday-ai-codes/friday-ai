@@ -1,6 +1,6 @@
-"""initial implementation plan：IndexHistory lifecycle wrapper（不修改 tasks.py / payload_sync.py）。
+"""implementation：IndexHistory lifecycle wrapper（不修改 tasks.py / payload_sync.py）。
 
-为 initial implementation `enqueue_edge_build` 加一层**外部** lifecycle 埋点，
+为 implementation `enqueue_edge_build` 加一层**外部** lifecycle 埋点，
 把 IndexHistory.graph_build_status / edge_count / payload_synced_at 三字段
 （plan 落地）接入 reconcile 链路：
 
@@ -11,15 +11,15 @@
 - 空 dirty：`graph_build_status = SKIPPED`，不调 enqueue（避免 tasks.py 内部
   "skip_empty_dirty" log 路径与 IndexHistory 状态语义不一致）
 
-**关键约束**（per plan frontmatter）：本模块仅消费 `enqueue_edge_build` 公共 API，
+**关键约束**（implementation constraints）：本模块仅消费 `enqueue_edge_build` 公共 API，
 **tasks.py / payload_sync.py 在本 plan 末态 git diff 必须为 0**。
 
-**完成回调实现**（per plan deviations）：
+**完成回调实现**（implementation notes）：
 1. wrapper 先 `await _mark_running(history_id)`
-2. 调 `enqueue_edge_build(repo_id, dirty)`（initial implementation 公共 API，零修改）
+2. 调 `enqueue_edge_build(repo_id, dirty)`（implementation 公共 API，零修改）
 3. 从 `code_relations.tasks._BACKGROUND_TASKS` 取出新增的 Task（spawned-after diff
    判断）。访问私有符号是技术债（security mitigation），但只读不写风险可控；若
-   initial implementation 改 `_BACKGROUND_TASKS` 字段名，单测 import 会立刻失败，问题可见。
+   implementation 改 `_BACKGROUND_TASKS` 字段名，单测 import 会立刻失败，问题可见。
 4. `task.add_done_callback(...)` 注册同步回调，内部 `asyncio.create_task` 开新
    协程跑 `_handle_completion` 写回 IndexHistory（done_callback 本身是同步上下文，
    无法直接 `await`）。
@@ -154,7 +154,7 @@ async def _handle_completion(
         if edge_count is not None:
             # edge_count：全表累计快照口径（_count_edges_or_none），保留累计语义。
             update_fields["edge_count"] = edge_count
-        # initial implementation（Pitfall 7）：chunk_edges_added 是 per-run delta
+        # implementation（Pitfall 7）：chunk_edges_added 是 per-run delta
         # ——本次 orchestrator bulk_insert_edges 去重后的真实新增数，经
         # task.result() 读取（orchestrator `return inserted`）。与上方累计
         # edge_count 落同一行但语义对立：绝不复用 _count_edges_or_none 全表 count
@@ -235,7 +235,7 @@ async def enqueue_edge_build_for_history(
         dirty_chunk_ids: 本次 indexer 写入/更新的 chunk_id 列表
         history_id: 关联的 IndexHistory 行 ID；None 时跳过 lifecycle 更新，
             直接透传到 `enqueue_edge_build`（保兼容无 history 调用方）
-        branch_name: 写入侧归一化后的分支名（""=base）。initial implementation 接通完整
+        branch_name: 写入侧归一化后的分支名（""=base）。implementation 接通完整
             透传链：继续下发给 `enqueue_edge_build` → orchestrator
             `_run_all_builders_and_sync_payload` → 6 EdgeBuilder.build（查询加
             branch 过滤、写 ChunkEdge 打 branch、SemanticEdge/Resolver 切 overlay
@@ -264,7 +264,7 @@ async def enqueue_edge_build_for_history(
                 history_id, graph_build_status=GraphBuildStatus.RUNNING
             )
 
-        # `_BACKGROUND_TASKS` before/after diff（per plan frontmatter security mitigation）：
+        # `_BACKGROUND_TASKS` before/after diff（implementation constraints security mitigation）：
         # 依赖 `enqueue_edge_build` 函数体内**无任何 `await`** 的隐式契约
         # （work item / `tasks.py` line 86 同步 `asyncio.create_task`）。一旦
         # `enqueue_edge_build` 被改为先 await DB 查询再 spawn task，单线程 asyncio

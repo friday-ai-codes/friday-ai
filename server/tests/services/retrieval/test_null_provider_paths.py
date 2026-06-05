@@ -1,7 +1,7 @@
-"""NullProvider 路径行为测试 —— per initial implementation contract / contract / Pitfall 5。
+"""NullProvider 路径行为测试 —— per implementation contract / contract / Pitfall 5。
 
-5 条 case 覆盖 ROADMAP §initial implementation Success Criteria #3 一半（剩余完整 pytest
-matrix 由 initial implementation 补全）：
+5 条 case 覆盖 ROADMAP §implementation Success Criteria #3 一半（剩余完整 pytest
+matrix 由 implementation 补全）：
 
 1. ``test_case_1_null_provider_returns_pure_rag``：禁用配置 + 给定 repo_ids
    → final_context 仅含 ``## L3 Related Code``，**无** symbol / expansion 段。
@@ -216,22 +216,22 @@ async def test_case_4_null_provider_token_overflow_triggers_trim() -> None:
 async def test_case_5_local_provider_equivalent_to_null_when_disabled() -> None:
     """无邻居（payload 无 related_chunks + ChunkEdge 为空）时 LocalProvider 与 NullProvider 输出等价。
 
-    **initial implementation plan 更新（contract refresh）**：
-    initial implementation era 下 LocalProvider 路径会内联调 LayeredSearchService._l1.._l5
+    **implementation 更新（contract refresh）**：
+    implementation era 下 LocalProvider 路径会内联调 LayeredSearchService._l1.._l5
     渲染 L1/L2/L4 stub 段，导致 final_context 不等于 NullProvider 路径；本测试
     旧版断言 ``"## L2 Exact Matches" in local_result.final_context`` 捕获了那个
-    initial implementation 现状。
+    implementation 现状。
 
-    initial implementation 重写 ``_search_graph_capable`` 后：
+    implementation 重写 ``_search_graph_capable`` 后：
     - 不再渲染 L2/L4 stub 段（去除"图谱编排"与"layered 五层包装"耦合）
     - hop1/hop2 邻居均空时 ``## Graph Context`` 段**不写入**（避免空 markdown 块）
-    - 与 ``_search_rag_only`` 在零邻居下输出**byte-equal**（per initial implementation CONTEXT.md
+    - 与 ``_search_rag_only`` 在零邻居下输出**byte-equal**（per implementation CONTEXT.md
       "graph_capable 路径**期望产生差异**" 反向解读：仅当存在图谱信号才差异）
 
     本测试现在断言：无邻居条件下 LocalProvider 与 NullProvider final_context
-    完全相等（零漂移 byte-eq 升级版本，per initial implementation contract case 5 末段
-    "initial implementation 灰度切换若让 LocalProvider 在 codegraph 禁用配置下也走 _search_rag_only
-    同一路径，则 byte-equality 升级为全等" —— initial implementation 提前兑现该承诺）。
+    完全相等（零漂移 byte-eq 升级版本，per implementation contract case 5 末段
+    "implementation 灰度切换若让 LocalProvider 在 codegraph 禁用配置下也走 _search_rag_only
+    同一路径，则 byte-equality 升级为全等" —— implementation 提前兑现该承诺）。
     """
     items = [
         _l3_item("src/equiv/foo.py", "def foo():\n    return 'shared'", score=0.81),
@@ -267,11 +267,11 @@ async def test_case_5_local_provider_equivalent_to_null_when_disabled() -> None:
     )
     assert null_result.final_context == local_result.final_context, (
         "无邻居场景下 LocalProvider 与 NullProvider final_context 必须 byte-equal "
-        "(initial implementation plan 零漂移升级，per CONTEXT.md graph_capable 反向解读)"
+        "(implementation 零漂移升级，per CONTEXT.md graph_capable 反向解读)"
     )
     assert "## L3 Related Code" in local_result.final_context
     assert "## L2 Exact Matches" not in local_result.final_context, (
-        "initial implementation 重写后 LocalProvider 路径不再渲染 L2 stub 段"
+        "implementation 重写后 LocalProvider 路径不再渲染 L2 stub 段"
     )
     assert "## Graph Context" not in local_result.final_context, (
         "无邻居时不写空 graph_context markdown 块（避免污染 LLM 上下文）"

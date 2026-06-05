@@ -1,4 +1,4 @@
-"""SemanticEdgeBuilder 单元测试（per initial implementation contract/08）。
+"""SemanticEdgeBuilder 单元测试（per implementation contract/08）。
 
 mock Qdrant client（scroll + query_points），断言：
 - 空 dirty 不调 client
@@ -207,7 +207,7 @@ async def test_metadata_qdrant_score(repository) -> None:
 
 
 # =============================================================================
-# initial implementation / work item：跨语言守门 parametrize 测试
+# implementation / work item：跨语言守门 parametrize 测试
 # 静态审计：SemanticEdgeBuilder 基于 Qdrant 向量近邻 + payload.file_path 过滤，
 # 无语言假设 → 天然语言无关 git diff = 0。
 # =============================================================================
@@ -223,7 +223,7 @@ async def test_metadata_qdrant_score(repository) -> None:
 )
 @pytest.mark.django_db(transaction=True)
 async def test_semantic_edge_cross_language_guard(repository, file_path: str) -> None:
-    """initial implementation / work item 守门：SemanticEdge 对所有语言 file_path 均能建 ≥ 1 edge。
+    """implementation / work item 守门：SemanticEdge 对所有语言 file_path 均能建 ≥ 1 edge。
 
     mock Qdrant return 1 candidate → ≥ 1 SEMANTIC edge。验证 builder 文件路径无关。
     """

@@ -4,7 +4,7 @@
 
 主 bug — ``conversation_service.py:920`` 的 graph 收尾分发只识别
 ``phase=="waiting"``（blocking_tasks 路径），缺 ``elif phase=="waiting_clarification"``
-分支。initial implementation（commit 83218e04）在 graph 加了 ``wait_clarification_node``
+分支。implementation（commit 83218e04）在 graph 加了 ``wait_clarification_node``
 + ``WAITING_CLARIFICATION`` 状态，但 chat 层 post-graph 分发未同步 → graph 正确
 ``interrupt()`` 后 consumer 落 else → ``state.result_metadata={}`` →
 ``finalize.py:67`` ``status_str="unknown"`` → ``Conversation.Status.ERROR`` +

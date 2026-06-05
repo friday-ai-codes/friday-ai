@@ -1,4 +1,4 @@
-"""initial implementation plan 后端：use_custom_api 条件必填校验（228 work item 认证混淆关闭）。
+"""implementation 后端：use_custom_api 条件必填校验（228 work item 认证混淆关闭）。
 
 覆盖 success criterion：AIAgentBaseNode.validate_config 对
 ``use_custom_api=True + api_base_url=""`` 返回非空 errors；

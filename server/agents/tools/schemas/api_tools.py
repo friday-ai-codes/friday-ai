@@ -1,4 +1,4 @@
-"""API 相关 MCP tool 输入/输出契约 —— per initial implementation plan。
+"""API 相关 MCP tool 输入/输出契约 —— per implementation。
 
 三个 tool 的 schema 集中维护，防止字段漂移：
 
@@ -6,7 +6,7 @@
 - ``FindApiCallersInput / Output``：给定 handler 名找所有前端调用方（work item）
 - ``ListEndpointsInput / Output``：列仓库所有 API 端点（work item）
 
-规范同 initial implementation find_related_code：
+规范同 implementation find_related_code：
 - ``ConfigDict(strict=True, extra='forbid', frozen=True)`` 三重防漂移
 - 字段 description 含中文语义说明，LLM 读即感知参数意图
 - Literal / 约束类型不 import Django ORM（避 app loading 顺序耦合）

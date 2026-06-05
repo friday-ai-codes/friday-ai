@@ -4,7 +4,7 @@
   归属仓库 / file_path / chunk_index，indexer 用 `update_or_create` 写入。
 - `ChunkEdge`：chunk 间的 6 类关系边（CALL / IMPORT / SAME_FILE / TEST_OF /
   CO_CHANGED / SEMANTIC），承载 weight + builder-specific metadata。
-- `EdgeType`：6 类 TextChoices 枚举，initial implementation EdgeBuilder 与 initial implementation MCP tool
+- `EdgeType`：6 类 TextChoices 枚举，implementation EdgeBuilder 与 implementation MCP tool
   都会 import 引用。
 """
 
@@ -22,8 +22,8 @@ __all__ = ["ChunkRegistry", "ChunkEdge", "EdgeType"]
 class EdgeType(models.TextChoices):
     """ChunkEdge 8 类关系边枚举（per contract 字面 value 大写下划线）。
 
-    initial implementation 新增 IMPLEMENTS（Go interface 实现关系，per work item）。
-    initial implementation 新增 API_CALLS（跨仓 API 调用关系，per work item）。
+    implementation 新增 IMPLEMENTS（Go interface 实现关系，per work item）。
+    implementation 新增 API_CALLS（跨仓 API 调用关系，per work item）。
     """
 
     CALL = "CALL", "Call"
@@ -51,28 +51,28 @@ class ChunkRegistry(models.Model):
         on_delete=models.CASCADE,
         related_name="chunk_registry_entries",
     )
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传
     # （配合 generate_chunk_id 的分支命名空间，feature chunk_id 与 base 天然不同）。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     file_path = models.CharField(max_length=512)
     chunk_index = models.PositiveIntegerField()
-    # initial implementation contract：邻居元数据 enrichment 字段——indexer 后续 plan 同步回填，
+    # implementation contract：邻居元数据 enrichment 字段——indexer 后续 plan 同步回填，
     # 本 phase 仅声明字段。NULL 表示历史数据未回填，graph_context 渲染时
     # fallback 到无行号格式（plan `_resolve_neighbor_metadata` graceful 处理）。
     line_start = models.PositiveIntegerField(null=True, blank=True)
     line_end = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    # initial implementation：rebuild_chunk_edges 断点续跑标记。
+    # implementation：rebuild_chunk_edges 断点续跑标记。
     # NULL = 未 backfill；rebuild_chunk_edges 命令完成后 update_at = timezone.now()。
-    # context contract 标 initial implementation 落但实际未落，本 plan 补齐。
+    # context contract 标 implementation 落但实际未落，本 plan 补齐。
     last_built_at = models.DateTimeField(
         null=True,
         blank=True,
         db_index=True,
         help_text=(
             "最近一次 rebuild_chunk_edges 完成时间；"
-            "NULL 表示未 backfill（initial implementation）"
+            "NULL 表示未 backfill（implementation）"
         ),
     )
 
@@ -98,7 +98,7 @@ class ChunkRegistry(models.Model):
                 fields=["repository", "file_path"],
                 name="idx_chunk_reg_repo_file",
             ),
-            # v26.2 work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # work item：分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(
                 fields=["repository", "branch_name", "file_path"],
                 name="idx_chunkreg_repo_branch_file",
@@ -113,9 +113,9 @@ class ChunkEdge(models.Model):
     """chunk 间关系边（8 类语义 + weight + metadata）。
 
     - `source_chunk_id` / `target_chunk_id` 不做 FK（per contract）：允许跨仓 / chunk
-      未写入 ChunkRegistry 时柔性引用，孤儿引用由 initial implementation reconcile 命令兜底。
+      未写入 ChunkRegistry 时柔性引用，孤儿引用由 implementation reconcile 命令兜底。
     - `repository` 语义为「源 chunk 所在仓库」（per contract / work item）。
-    - `target_repository_id` 跨仓边的 target chunk 所在仓库 ID（initial implementation
+    - `target_repository_id` 跨仓边的 target chunk 所在仓库 ID（implementation
       work item）；单仓边（v24 既有 6 类）为 NULL——backward compatible。
       不做 FK（per contract 柔性引用原则）。
     - weight 双重校验：模型层 `MinValueValidator/MaxValueValidator` + DB 层
@@ -128,7 +128,7 @@ class ChunkEdge(models.Model):
     source_chunk_id = models.UUIDField(db_index=False)
     target_chunk_id = models.UUIDField(db_index=False)
     edge_type = models.CharField(max_length=20, choices=EdgeType.choices)
-    # v26.2 work item：分支隔离维度。"" = base 分支，feature 由 initial implementation 写入侧透传。
+    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     weight = models.FloatField(
         validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
@@ -144,7 +144,7 @@ class ChunkEdge(models.Model):
         blank=True,
         db_index=True,
         help_text=(
-            "跨仓边的 target chunk 所在仓库 ID（initial implementation）。"
+            "跨仓边的 target chunk 所在仓库 ID（implementation）。"
             "单仓边（v24 既有 6 类边）为 NULL——backward compatible。"
             "不做 ForeignKey（per contract 柔性引用原则）；与 Repository.id UUID 类型对齐。"
         ),
@@ -155,8 +155,8 @@ class ChunkEdge(models.Model):
         verbose_name = "Chunk 边"
         verbose_name_plural = "Chunk 边"
         constraints = [
-            # v26.2 work item：branch_name 进唯一约束（Critical 1 防御性冗余，
-            # initial implementation 写入侧必须同步透传 branch_name，否则跨分支同三元组撞约束）。
+            # work item：branch_name 进唯一约束（Critical 1 防御性冗余，
+            # implementation 写入侧必须同步透传 branch_name，否则跨分支同三元组撞约束）。
             UniqueConstraint(
                 fields=["source_chunk_id", "target_chunk_id", "edge_type", "branch_name"],
                 name="uniq_chunkedge_triple",
@@ -165,7 +165,7 @@ class ChunkEdge(models.Model):
                 condition=Q(weight__gte=0.0) & Q(weight__lte=1.0),
                 name="chunkedge_weight_range",
             ),
-            # work item：DB 层兜底 edge_type 枚举，避免 initial implementation EdgeBuilder 绕过
+            # work item：DB 层兜底 edge_type 枚举，避免 implementation EdgeBuilder 绕过
             # full_clean() 时（如 bulk_create / 直接 Manager.create）typo 静默落库；
             # 与 chunkedge_weight_range 同模式（双保险），满足 ROADMAP 成功条件 #4。
             CheckConstraint(
@@ -179,7 +179,7 @@ class ChunkEdge(models.Model):
                 fields=["repository", "source_chunk_id"],
                 name="idx_chunkedge_fanout",
             ),
-            # v26.2 work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # work item：分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(
                 fields=["repository", "branch_name", "source_chunk_id"],
                 name="idx_chunkedge_branch_fanout",

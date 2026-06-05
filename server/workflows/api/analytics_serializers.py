@@ -48,7 +48,7 @@ class NodePerformanceSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# initial implementation plan — contract group_by 扩展（contract）
+# implementation — contract group_by 扩展（contract）
 # ============================================================================
 
 

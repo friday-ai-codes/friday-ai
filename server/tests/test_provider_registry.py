@@ -1,10 +1,10 @@
-"""initial implementation plan：PROVIDER_REGISTRY 5 Provider 契约测试 + Pydantic credential_schema 脱敏测试。
+"""implementation：PROVIDER_REGISTRY 5 Provider 契约测试 + Pydantic credential_schema 脱敏测试。
 
 覆盖 Requirement: contract（5 Provider 元数据形状契约）。
 威胁参考: security mitigation（凭证 repr 泄漏）/ security mitigation（ValidationError 回显明文）。
 
-本文件 initial implementation plan 完全重写：
-- 旧版断言 `len(ProviderType) == 1`（initial implementation 遗留），在 5 Provider 扩展下自然失效。
+本文件 implementation 完全重写：
+- 旧版断言 `len(ProviderType) == 1`（implementation 遗留），在 5 Provider 扩展下自然失效。
 - 新版覆盖 7 个 unit test + TokenUsage 5 个 unit test（合并同文件以减少新建开销）。
 """
 
@@ -44,7 +44,7 @@ def test_registry_metadata_dataclass_frozen() -> None:
 
 
 def test_registry_langchain_prefix_populated() -> None:
-    """Test 3：5 个 entry 的 langchain_prefix 与 initial implementation init_chat_model 预期对齐。"""
+    """Test 3：5 个 entry 的 langchain_prefix 与 implementation init_chat_model 预期对齐。"""
     from services.provider_config import PROVIDER_REGISTRY, ProviderType
 
     expected = {

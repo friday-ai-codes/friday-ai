@@ -1,4 +1,4 @@
-"""initial implementation: gopls_interface.py 单元测试。
+"""implementation: gopls_interface.py 单元测试。
 
 覆盖：
 - InterfaceImplementationData frozen dataclass

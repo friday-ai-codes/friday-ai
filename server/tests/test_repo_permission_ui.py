@@ -1,4 +1,4 @@
-"""initial implementation 仓库关联权限 API 测试。
+"""implementation 仓库关联权限 API 测试。
 
 测试 ProjectRepository 模型扩展（permission_level 字段）和
 项目仓库关联管理 CRUD API 的完整行为。

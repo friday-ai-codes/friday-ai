@@ -1,4 +1,4 @@
-"""initial implementation: 扩 EdgeType TextChoices 加 IMPLEMENTS（per work item / work item）。
+"""implementation: 扩 EdgeType TextChoices 加 IMPLEMENTS（per work item / work item）。
 
 仅扩 ChunkEdge.edge_type field 的 choices，无 schema 变更（per work item）。
 复用既有 idx_chunkedge_target + idx_chunkedge_type 索引，覆盖新 type 自动。

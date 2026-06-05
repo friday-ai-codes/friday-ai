@@ -1,6 +1,6 @@
 """AI Prompt node for general LLM interactions.
 
-initial implementation / contract：三路径收敛到 build_chat_model.ainvoke 单入口
+implementation / contract：三路径收敛到 build_chat_model.ainvoke 单入口
 （contract~05）。保留 BaseNode 继承与 OpenResponses dataclass 向后兼容。
 """
 
@@ -454,7 +454,7 @@ class AIPromptNode(BaseNode):
         - {"type": "reasoning"/"thinking", "reasoning"/"thinking"/"text": "..."}
             → ReasoningItem(content=<first non-empty>)
 
-        usage 按 OpenResponses 三字段（initial implementation contract 明确不迁六字段 TokenUsage）：
+        usage 按 OpenResponses 三字段（implementation contract 明确不迁六字段 TokenUsage）：
         input_tokens / output_tokens / total_tokens = input + output。
         """
         output_items: list[OutputItem] = []
@@ -542,7 +542,7 @@ class AIPromptNode(BaseNode):
 
         # 分歧 A：use_custom_api=True 降级路径 —— 构造临时 ResolvedProviderConfig。
         # source 仍为四态之一（"node"），不新增第 5 种枚举值（严禁 D 守护）；
-        # custom_api 事实通过 extra 标记，initial implementation contract Inspector 可识别。
+        # custom_api 事实通过 extra 标记，implementation contract Inspector 可识别。
         if use_custom_api and api_base_url:
             if not model:
                 raise ValueError("使用自定义 API 时必须指定模型")
@@ -595,7 +595,7 @@ class AIPromptNode(BaseNode):
                     )
 
             # model 空值 fallback（contract：不再按模型前缀分派；仅 model 本身空时兜底）
-            # initial implementation plan：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
+            # implementation：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
             if not model:
                 model = (resolved.extra or {}).get("default_model", "") or ""
             if not model:

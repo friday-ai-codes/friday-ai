@@ -1,4 +1,4 @@
-"""GalaxyAggregator 单元测试 —— initial implementation/02/06。
+"""GalaxyAggregator 单元测试 —— implementation/02/06。
 
 覆盖：
 T1  空库 aggregate() → nodes=[], edges=[], sampled=False

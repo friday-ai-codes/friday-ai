@@ -1,4 +1,4 @@
-"""work item LocalProvider.lookup_symbols branch-aware 测试（initial implementation plan）。
+"""work item LocalProvider.lookup_symbols branch-aware 测试（implementation）。
 
 覆盖 Symbol 两处过滤（iexact 精确 + icontains 回退）的 branch base/overlay 合并：
 

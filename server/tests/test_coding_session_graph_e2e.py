@@ -1,6 +1,6 @@
 """contract: CodingSession multi-confirm 端到端回归测试。
 
-覆盖 coding-plan workflow initial implementation 修复后的全链路：
+覆盖 coding-plan workflow implementation 修复后的全链路：
 
     view confirm → coding_graph.ainvoke → wait_coding_complete interrupt
                 → callback (_handle_completed) → graph resume → awaiting_confirmation

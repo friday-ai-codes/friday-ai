@@ -1,4 +1,4 @@
-"""initial implementation: OIDC 认证 — 完整单元测试。"""
+"""implementation: OIDC 认证 — 完整单元测试。"""
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch

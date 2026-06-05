@@ -132,7 +132,7 @@ class TestCallbackClient:
 
 
 class TestRunExecuteModeReportsCompleted:
-    """initial implementation contract：_run_execute_mode 末尾发 completed 帧携带 git 元数据。"""
+    """implementation contract：_run_execute_mode 末尾发 completed 帧携带 git 元数据。"""
 
     @pytest.mark.asyncio
     async def test_legacy_coding_mode_sets_up_and_pushes_task_branch(self):

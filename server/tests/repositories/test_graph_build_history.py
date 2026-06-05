@@ -1,4 +1,4 @@
-"""initial implementation plan：GraphBuildHistory 模型 + 枚举 + Meta 三层断言。
+"""implementation：GraphBuildHistory 模型 + 枚举 + Meta 三层断言。
 
 测试覆盖（work item-03）：
 
@@ -60,7 +60,7 @@ def graph_repo(db) -> Repository:
 def test_status_enum_has_four_values() -> None:
     """GraphBuildHistoryStatus 严格 4 态：running/completed/failed/cancelled。
 
-    CONTEXT 决议：不引入 pending（创建即 RUNNING，与 ROADMAP success criterion/success criterion 对齐）。
+    CONTEXT 决议：不引入 pending（创建即 RUNNING，与 success criterion/success criterion 对齐）。
     """
     values = set(GraphBuildHistoryStatus.values)
     assert values == {"running", "completed", "failed", "cancelled"}

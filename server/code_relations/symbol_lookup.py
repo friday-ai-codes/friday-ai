@@ -1,6 +1,6 @@
-"""Symbol → chunk_id 反查（initial implementation EdgeBuilder 共用）。
+"""Symbol → chunk_id 反查（implementation EdgeBuilder 共用）。
 
-contract 决策：initial implementation ChunkRegistry 不存 line_start/line_end；codegraph.Symbol
+contract 决策：implementation ChunkRegistry 不存 line_start/line_end；codegraph.Symbol
 无 chunk_id 字段。**唯一可行方案**是 Qdrant payload（indexer _build_points 已写
 file_path/start_line/end_line）+ 内存 bisect。SymbolChunkResolver 在每次 builder
 构建时实例化一次，lazy scroll 一遍 Qdrant 拉 payload，构建 dict[file_path,
@@ -30,13 +30,13 @@ class SymbolChunkResolver:
     """文件级 line→chunk_id 二分查找解析器。
 
     每个 builder build() 内实例化一次；lazy load + 全 builder 调用期 cache。
-    initial implementation 不跨 builder 共享（避免 cache 一致性复杂度），instances 与
+    implementation 不跨 builder 共享（避免 cache 一致性复杂度），instances 与
     builder 实例 1:1。
     """
 
     def __init__(self, repository_id: str, *, branch_name: str = "") -> None:
         self.repository_id = repository_id
-        # initial implementation：feature 分支的 chunk 向量在 overlay collection；base（""）
+        # implementation：feature 分支的 chunk 向量在 overlay collection；base（""）
         # 落到旧 collection（字节不变）。base→base collection，feature→overlay。
         self.branch_name = branch_name
         self._index: dict[str, list[tuple[int, int, uuid.UUID]]] | None = None
@@ -47,10 +47,10 @@ class SymbolChunkResolver:
         包含语义：`chunk.line_start <= line_number <= chunk.line_end`。
 
         work item 注：``bisect_right(keys, line_number) - 1`` 假设 chunk 区间不
-        重叠。initial implementation chunker 实测多数情况下相邻 chunk 严格非重叠，但跨
+        重叠。implementation chunker 实测多数情况下相邻 chunk 严格非重叠，但跨
         语言（tree-sitter docstring 块）偶尔可能区间相交，此时仅返回最后
         一个 start <= line_number 的 entry，错过其他覆盖该 line 的 chunk。
-        initial implementation 接受该简化；如需严格命中所有覆盖区间，应改为线性扫描。
+        implementation 接受该简化；如需严格命中所有覆盖区间，应改为线性扫描。
         """
         if self._index is None:
             self._index = await self._load_index()

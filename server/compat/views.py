@@ -172,7 +172,7 @@ class ModelsView(APIView):
     permission_classes = [OptionalBearerTokenAuth]
 
     async def get(self, request: Any) -> Response:  # type: ignore[override]
-        # 固定返回 friday-default；后续 initial implementation+ 扩展为动态读取 ProviderCredential
+        # 固定返回 friday-default；后续 implementation+ 扩展为动态读取 ProviderCredential
         return Response({
             "object": "list",
             "data": [

@@ -1,4 +1,4 @@
-"""``runapscheduler`` initial implementation plan / work item ½ —— APScheduler
+"""``runapscheduler`` implementation / work item ½ —— APScheduler
 DateTrigger 启动时一次性 backfill ChunkEdge 单测。
 
 覆盖 must_haves 四条真相：
@@ -184,7 +184,7 @@ def test_scheduler_single_instance_lock(
 ) -> None:
     """contract 回归：第二份 scheduler 启动时 flock 拒绝。
 
-    initial implementation REVIEW contract 指出多 scheduler 进程会从 DjangoJobStore 拉到同一个
+    implementation REVIEW contract 指出多 scheduler 进程会从 DjangoJobStore 拉到同一个
     backfill job 并独立执行 → RAM 双倍 + context contract OOM 风险。修复后
     handle() 开头 fcntl.flock advisory lock，重复进程立即 SystemExit(1)。
     """
@@ -220,7 +220,7 @@ def test_backfill_date_trigger_is_timezone_aware(
     """work item 回归：``backfill_chunk_edges`` job 的 DateTrigger.run_date 必须是
     timezone-aware datetime。
 
-    initial implementation REVIEW work item 揭示裸 ``datetime.now()`` 是 naive，UTC 容器部署时
+    implementation REVIEW work item 揭示裸 ``datetime.now()`` 是 naive，UTC 容器部署时
     APScheduler 按 scheduler tz (``Asia/Shanghai``) 解释 → 落到 8 小时前的
     时间点，misfire 窗口外被丢弃 → backfill 永不触发。修复后用
     ``django.utils.timezone.now()`` 返 aware datetime。

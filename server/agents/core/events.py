@@ -28,7 +28,7 @@ DOC_ERROR = "doc_error"
 PART_STARTED = "part_started"
 PART_DELTA = "part_delta"
 PART_COMPLETED = "part_completed"
-# ─── initial implementation 决策注 (v18.1-work item G3 gap closure) ───
+# ─── implementation 决策注 (v18.1-work item G3 gap closure) ───
 # 以下三个常量 (CODING_PROGRESS / AWAITING_PR_REVIEW / CONFLICT_CHECK) 在 v18.1
 # 生产代码中均无 AgentEvent(type=...) 发射点 —— 全代码 grep 零命中。
 #
@@ -45,7 +45,7 @@ PART_COMPLETED = "part_completed"
 #   2) 若未来重新评估升级到真正的 SSE push,无需额外 schema 迁移
 #
 # 注意: events.py 中不存在 AWAITING_COMMIT_CONFIRM 常量 —— ROADMAP 旧版本
-# 与 v18.1-work item.md 对该常量名的引用为笔误,initial implementation 不新增。
+# 与 v18.1-work item.md 对该常量名的引用为笔误,implementation 不新增。
 CODING_PROGRESS = "coding_progress"
 CODING_COMPLETE = "coding_complete"
 CODING_FAILED = "coding_failed"

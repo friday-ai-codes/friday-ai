@@ -1,6 +1,6 @@
-"""HtmlExtractor 单元测试 —— 验证 initial implementation 落地。
+"""HtmlExtractor 单元测试 —— 验证 implementation 落地。
 
-per initial implementation / work item：PascalCase tag / custom element / id 属性 / 三类 import /
+per implementation / work item：PascalCase tag / custom element / id 属性 / 三类 import /
 scheme 守卫 / a href 守卫全覆盖。fixture: server/codegraph/tests/fixtures/html_index.html
 """
 

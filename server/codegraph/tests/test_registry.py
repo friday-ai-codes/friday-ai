@@ -10,8 +10,8 @@ from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.vue_extractor import VueExtractor
-from codegraph.extractors.html_extractor import HtmlExtractor   # initial implementation
-from codegraph.extractors.css_extractor import CssExtractor    # initial implementation
+from codegraph.extractors.html_extractor import HtmlExtractor   # implementation
+from codegraph.extractors.css_extractor import CssExtractor    # implementation
 from codegraph.extractors.registry import (
     BACKEND_REGISTRY,
     EXTRACTOR_REGISTRY,
@@ -126,7 +126,7 @@ class TestExtractorRegistry:
         assert isinstance(extractor, FakeExtractor)
 
     def test_get_extractor_go_returns_go_extractor(self):
-        """get_extractor('go') 返回 GoExtractor 实例（initial implementation Plan-01 注册）。"""
+        """get_extractor('go') 返回 GoExtractor 实例（implementation-01 注册）。"""
         extractor = get_extractor("go")
         assert isinstance(extractor, GoExtractor)
 
@@ -140,12 +140,12 @@ class TestExtractorRegistry:
         assert get_extractor("nonexistent_lang_xyz") is None
 
     def test_get_extractor_typescript_returns_ts_extractor(self):
-        """get_extractor('typescript') 返回 TSExtractor 实例（initial implementation Plan-01 注册）。"""
+        """get_extractor('typescript') 返回 TSExtractor 实例（implementation-01 注册）。"""
         extractor = get_extractor("typescript")
         assert isinstance(extractor, TSExtractor)
 
     def test_get_extractor_tsx_returns_tsx_extractor(self):
-        """get_extractor('tsx') 返回 TSXExtractor 实例（initial implementation Plan-01 注册）。"""
+        """get_extractor('tsx') 返回 TSXExtractor 实例（implementation-01 注册）。"""
         extractor = get_extractor("tsx")
         assert isinstance(extractor, TSXExtractor)
 
@@ -170,36 +170,36 @@ class TestExtractorRegistry:
         assert EXTRACTOR_REGISTRY["vue"] is VueExtractor
 
     def test_get_extractor_html_returns_html_extractor(self):
-        """initial implementation：get_extractor('html') 返 HtmlExtractor 实例。"""
+        """implementation：get_extractor('html') 返 HtmlExtractor 实例。"""
         extractor = get_extractor("html")
         assert extractor is not None
         assert type(extractor).__name__ == "HtmlExtractor"
 
     def test_extractor_registry_has_html(self):
-        """initial implementation：EXTRACTOR_REGISTRY 含 html 项指向 HtmlExtractor 类。"""
+        """implementation：EXTRACTOR_REGISTRY 含 html 项指向 HtmlExtractor 类。"""
         assert "html" in EXTRACTOR_REGISTRY
         assert EXTRACTOR_REGISTRY["html"] is HtmlExtractor
 
     def test_get_backend_html_returns_tree_sitter(self):
-        """initial implementation：get_backend('html') 返 TreeSitterBackend，language=html。"""
+        """implementation：get_backend('html') 返 TreeSitterBackend，language=html。"""
         backend = get_backend("html")
         assert backend is not None
         assert type(backend).__name__ == "TreeSitterBackend"
         assert backend.language == "html"
 
     def test_get_extractor_css_returns_css_extractor(self):
-        """initial implementation：get_extractor('css') 返 CssExtractor 实例。"""
+        """implementation：get_extractor('css') 返 CssExtractor 实例。"""
         extractor = get_extractor("css")
         assert extractor is not None
         assert type(extractor).__name__ == "CssExtractor"
 
     def test_extractor_registry_has_css(self):
-        """initial implementation：EXTRACTOR_REGISTRY 含 css 项指向 CssExtractor 类。"""
+        """implementation：EXTRACTOR_REGISTRY 含 css 项指向 CssExtractor 类。"""
         assert "css" in EXTRACTOR_REGISTRY
         assert EXTRACTOR_REGISTRY["css"] is CssExtractor
 
     def test_get_backend_css_returns_tree_sitter(self):
-        """initial implementation：get_backend('css') 返 TreeSitterBackend，language=css。"""
+        """implementation：get_backend('css') 返 TreeSitterBackend，language=css。"""
         backend = get_backend("css")
         assert backend is not None
         assert type(backend).__name__ == "TreeSitterBackend"

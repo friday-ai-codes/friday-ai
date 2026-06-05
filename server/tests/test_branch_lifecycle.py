@@ -1,4 +1,4 @@
-"""initial implementation: 分支生命周期自动化测试（work item ~ work item）。"""
+"""implementation: 分支生命周期自动化测试（work item ~ work item）。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch

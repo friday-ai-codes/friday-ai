@@ -1,4 +1,4 @@
-"""initial implementation 多模态消息基础设施测试。"""
+"""implementation 多模态消息基础设施测试。"""
 
 from __future__ import annotations
 

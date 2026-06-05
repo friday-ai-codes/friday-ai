@@ -1,4 +1,4 @@
-"""initial implementation 端到端 fallback 测试（V2 真实集成）。
+"""implementation 端到端 fallback 测试（V2 真实集成）。
 
 验证：LspBackend extract_symbols 在 _lsp_extract_symbols 触发 LspTimeoutError /
 LspDisabledError 后，fallback 走真实 ``TreeSitterBackend("python")`` 解析真实
