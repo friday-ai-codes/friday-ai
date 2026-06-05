@@ -91,12 +91,15 @@ jobs:
         run: |
           IMAGE="${IMAGE_PREFIX}/${{ matrix.service }}"
           VERSION="${GITHUB_REF_NAME}"
-          DIGESTS=$(ls /tmp/digests | sort)
-          REFS=$(for d in $DIGESTS; do echo "${IMAGE}@sha256:${d}"; done)
+          mapfile -t DIGESTS < <(find /tmp/digests -maxdepth 1 -type f -printf '%f\n' | sort)
+          REFS=()
+          for d in "${DIGESTS[@]}"; do
+            REFS+=("${IMAGE}@sha256:${d}")
+          done
           docker buildx imagetools create \
             -t "${IMAGE}:${VERSION}" \
             -t "${IMAGE}:latest" \
-            ${REFS}
+            "${REFS[@]}"
 
   # ── 3. 创建 GitHub Release ────────────────────────
   release:

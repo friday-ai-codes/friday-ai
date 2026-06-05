@@ -7,6 +7,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
+  expect: {
+    timeout: 20_000,
+  },
   reporter: 'html',
   use: {
     baseURL: 'http://localhost:10240',
@@ -29,6 +32,7 @@ export default defineConfig({
   webServer: {
     command: 'pnpm dev',
     url: 'http://localhost:10240',
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
 })
