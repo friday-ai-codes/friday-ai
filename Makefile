@@ -38,7 +38,7 @@ build-runner:
 # 重新构建 Task 容器镜像（Runner 启动新 task 容器时自动用最新 latest，无需重启 runner）
 # 用法：
 # make build-task # 构建 friday-task:latest
-# TASK_IMAGE=friday-task:v26.1 make build-task # 自定义 tag
+# TASK_IMAGE=friday-task:v0.0.1 make build-task # 自定义 tag
 build-task:
 	@echo "构建 Task 容器镜像: $(TASK_IMAGE)"
 	docker build -t $(TASK_IMAGE) ./task/

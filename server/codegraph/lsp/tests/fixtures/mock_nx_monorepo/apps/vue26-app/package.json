@@ -1,6 +1,6 @@
 {
- "name": "@app-learn/vue26-app",
- "dependencies": {
- "vue": "2.6.14"
- }
+  "name": "@app-learn/vue26-app",
+  "dependencies": {
+    "vue": "2.6.14"
+  }
 }

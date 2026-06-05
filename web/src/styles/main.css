@@ -2,6 +2,7 @@
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 @plugin "@iconify/tailwind4";
+
 /*
  * Safelist 动态图标类
  * 这些图标在 JS 中动态拼接，需要手动声明以确保被生成
@@ -16,464 +17,551 @@
 @source inline("icon-[lucide--history] icon-[lucide--undo-2] icon-[lucide--play] icon-[lucide--variable] icon-[lucide--info] icon-[lucide--eye]");
 @source inline("icon-[lucide--messages-square] icon-[lucide--workflow] icon-[lucide--bot] icon-[lucide--shield-check] icon-[lucide--map-pin] icon-[lucide--zap-off]");
 @source inline("icon-[lucide--flask-conical] icon-[lucide--folder-tree] icon-[lucide--book-open]");
+
 /*
  * Friday AI 配色方案 — Sub2API Teal/Cyan 风格
  *
  * 主题色:
- * - #f8fafc - 浅色背景 (HSL: 210 40% 98%) slate-50
- * - #f1f5f9 - 浅灰次要背景 (HSL: 210 40% 96%) slate-100
- * - #14b8a6 - 主色调青色 (HSL: 168 76% 42%) teal-500
- * - #1e293b - 深色文字 (HSL: 215 28% 17%) slate-800
+ * - #f8fafc - 浅色背景 (HSL: 210 40% 98%)  slate-50
+ * - #f1f5f9 - 浅灰次要背景 (HSL: 210 40% 96%)  slate-100
+ * - #14b8a6 - 主色调青色 (HSL: 168 76% 42%)  teal-500
+ * - #1e293b - 深色文字 (HSL: 215 28% 17%)  slate-800
  */
+
 @theme {
- /* 背景和前景 */
- --color-background: hsl(210 40% 98%); /* slate-50 */
- --color-foreground: hsl(215 28% 17%); /* slate-800 */
- /* 卡片 */
- --color-card: hsl(0 0% 100%); /* 纯白色卡片 */
- --color-card-foreground: hsl(215 28% 17%); /* slate-800 */
- /* 弹出层 */
- --color-popover: hsl(0 0% 100%); /* 纯白色 */
- --color-popover-foreground: hsl(215 28% 17%); /* slate-800 */
- /* 主色调 - Teal 青色 */
- --color-primary: hsl(168 76% 42%); /* teal-500 #14b8a6 */
- --color-primary-foreground: hsl(0 0% 100%); /* 白色文字 */
- /* 次要色 - Slate 浅灰 */
- --color-secondary: hsl(210 40% 96%); /* slate-100 */
- --color-secondary-foreground: hsl(215 28% 17%); /* slate-800 */
- /* 淡化区域 */
- --color-muted: hsl(210 40% 96%); /* slate-100 */
- --color-muted-foreground: hsl(215 16% 47%); /* slate-500 */
- /* 强调色 */
- --color-accent: hsl(210 40% 96%); /* slate-100 */
- --color-accent-foreground: hsl(215 28% 17%); /* slate-800 */
- /* 危险/错误色 - 保持红色 */
- --color-destructive: hsl(0 72% 51%); /* 红色 */
- --color-destructive-foreground: hsl(0 0% 100%); /* 白色 */
- /* 边框和输入框 */
- --color-border: hsl(214 32% 91%); /* slate-200 */
- --color-input: hsl(214 32% 91%);
- --color-ring: hsl(168 76% 42%); /* teal-500 */
- /* 圆角 */
- --radius: 0.5rem;
- /* 成功/警告色 */
- --color-success: hsl(142 71% 45%);
- --color-success-foreground: hsl(0 0% 100%);
- --color-warning: hsl(38 92% 50%);
- --color-warning-foreground: hsl(0 0% 100%);
- /* Sub2API 风格扩展 */
- --color-primary-600: hsl(167 76% 32%); /* #0d9488 teal-600 */
- --color-dark-950: hsl(222 84% 5%); /* #020617 slate-950 */
- /* 玻璃效果阴影 */
- --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
- --shadow-glow: 0 0 20px rgba(20, 184, 166, 0.25);
- --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
- --shadow-card-hover: 0 10px 40px rgba(0, 0, 0, 0.12);
- /* 动画 */
- --animate-fade-in: fadeIn 0.5s ease-out;
- --animate-slide-up: slideUp 0.5s ease-out;
- --animate-slide-down: slideDown 0.3s ease-out;
- --animate-slide-in-right: slideInRight 0.3s ease-out;
- --animate-scale-in: scaleIn 0.2s ease-out;
- --animate-shimmer: shimmer 2s infinite;
- --animate-glow: glow 2s ease-in-out infinite alternate;
+  /* 背景和前景 */
+  --color-background: hsl(210 40% 98%); /* slate-50 */
+  --color-foreground: hsl(215 28% 17%); /* slate-800 */
+
+  /* 卡片 */
+  --color-card: hsl(0 0% 100%); /* 纯白色卡片 */
+  --color-card-foreground: hsl(215 28% 17%); /* slate-800 */
+
+  /* 弹出层 */
+  --color-popover: hsl(0 0% 100%); /* 纯白色 */
+  --color-popover-foreground: hsl(215 28% 17%); /* slate-800 */
+
+  /* 主色调 - Teal 青色 */
+  --color-primary: hsl(168 76% 42%); /* teal-500 #14b8a6 */
+  --color-primary-foreground: hsl(0 0% 100%); /* 白色文字 */
+
+  /* 次要色 - Slate 浅灰 */
+  --color-secondary: hsl(210 40% 96%); /* slate-100 */
+  --color-secondary-foreground: hsl(215 28% 17%); /* slate-800 */
+
+  /* 淡化区域 */
+  --color-muted: hsl(210 40% 96%); /* slate-100 */
+  --color-muted-foreground: hsl(215 16% 47%); /* slate-500 */
+
+  /* 强调色 */
+  --color-accent: hsl(210 40% 96%); /* slate-100 */
+  --color-accent-foreground: hsl(215 28% 17%); /* slate-800 */
+
+  /* 危险/错误色 - 保持红色 */
+  --color-destructive: hsl(0 72% 51%); /* 红色 */
+  --color-destructive-foreground: hsl(0 0% 100%); /* 白色 */
+
+  /* 边框和输入框 */
+  --color-border: hsl(214 32% 91%); /* slate-200 */
+  --color-input: hsl(214 32% 91%);
+  --color-ring: hsl(168 76% 42%); /* teal-500 */
+
+  /* 圆角 */
+  --radius: 0.5rem;
+
+  /* 成功/警告色 */
+  --color-success: hsl(142 71% 45%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-warning: hsl(38 92% 50%);
+  --color-warning-foreground: hsl(0 0% 100%);
+
+  /* Sub2API 风格扩展 */
+  --color-primary-600: hsl(167 76% 32%); /* #0d9488 teal-600 */
+  --color-dark-950: hsl(222 84% 5%); /* #020617 slate-950 */
+
+  /* 玻璃效果阴影 */
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 20px rgba(20, 184, 166, 0.25);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 10px 40px rgba(0, 0, 0, 0.12);
+
+  /* 动画 */
+  --animate-fade-in: fadeIn 0.5s ease-out;
+  --animate-slide-up: slideUp 0.5s ease-out;
+  --animate-slide-down: slideDown 0.3s ease-out;
+  --animate-slide-in-right: slideInRight 0.3s ease-out;
+  --animate-scale-in: scaleIn 0.2s ease-out;
+  --animate-shimmer: shimmer 2s infinite;
+  --animate-glow: glow 2s ease-in-out infinite alternate;
 }
+
 /* 动画 @keyframes 定义 */
 @keyframes fadeIn {
- from {
- opacity: 0;
- }
- to {
- opacity: 1;
- }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
+
 @keyframes slideUp {
- from {
- opacity: 0;
- transform: translateY(20px);
- }
- to {
- opacity: 1;
- transform: translateY(0);
- }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 @keyframes slideDown {
- from {
- opacity: 0;
- transform: translateY(-10px);
- }
- to {
- opacity: 1;
- transform: translateY(0);
- }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 @keyframes slideInRight {
- from {
- opacity: 0;
- transform: translateX(20px);
- }
- to {
- opacity: 1;
- transform: translateX(0);
- }
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
+
 @keyframes scaleIn {
- from {
- opacity: 0;
- transform: scale(0.95);
- }
- to {
- opacity: 1;
- transform: scale(1);
- }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
+
 @keyframes shimmer {
- 0% {
- background-position: -200% 0;
- }
- 100% {
- background-position: 200% 0;
- }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
+
 @keyframes glow {
- from {
- box-shadow: 0 0 20px rgba(20, 184, 166, 0.2);
- }
- to {
- box-shadow: 0 0 30px rgba(20, 184, 166, 0.4);
- }
+  from {
+    box-shadow: 0 0 20px rgba(20, 184, 166, 0.2);
+  }
+  to {
+    box-shadow: 0 0 30px rgba(20, 184, 166, 0.4);
+  }
 }
+
 /* Sub2API 风格卡片系统 */
 .card {
- background: white;
- border: 1px solid hsl(214 32% 91%);
- border-radius: 1rem;
- box-shadow:
- 0 1px 3px rgba(0, 0, 0, 0.08),
- 0 1px 2px rgba(0, 0, 0, 0.04);
- transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
+  background: white;
+  border: 1px solid hsl(214 32% 91%);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
 }
+
 .card-interactive {
- cursor: pointer;
+  cursor: pointer;
 }
+
 .card-interactive:hover {
- box-shadow:
- 0 10px 40px rgba(0, 0, 0, 0.1),
- 0 2px 8px rgba(0, 0, 0, 0.06);
- border-color: hsl(168 76% 42% / 0.3);
- transform: translateY(-2px);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  border-color: hsl(168 76% 42% / 0.3);
+  transform: translateY(-2px);
 }
+
 .card-interactive:focus-visible {
- outline: 2px solid hsl(168 76% 42% / 0.5);
- outline-offset: 2px;
+  outline: 2px solid hsl(168 76% 42% / 0.5);
+  outline-offset: 2px;
 }
+
 .card-header {
- display: flex;
- flex-direction: column;
- gap: 0.375rem;
- padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1.5rem;
 }
+
 .card-content {
- padding: 0 1.5rem 1.5rem;
+  padding: 0 1.5rem 1.5rem;
 }
+
 .card-footer {
- display: flex;
- align-items: center;
- padding: 1rem 1.5rem;
- border-top: 1px solid hsl(214 32% 91% / 0.7);
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid hsl(214 32% 91% / 0.7);
 }
+
 /* Sub2API 统计卡片图标容器 */
 .stat-icon {
- width: 3rem;
- height: 3rem;
- border-radius: 0.75rem;
- display: flex;
- align-items: center;
- justify-content: center;
- font-size: 1.25rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
 }
+
 .stat-icon-primary {
- background: hsl(168 76% 42% / 0.1);
- color: hsl(168 76% 42%);
+  background: hsl(168 76% 42% / 0.1);
+  color: hsl(168 76% 42%);
 }
+
 .stat-icon-violet {
- background: hsl(263 70% 50% / 0.1);
- color: hsl(263 70% 50%);
+  background: hsl(263 70% 50% / 0.1);
+  color: hsl(263 70% 50%);
 }
+
 .stat-icon-amber {
- background: hsl(38 92% 50% / 0.1);
- color: hsl(38 92% 50%);
+  background: hsl(38 92% 50% / 0.1);
+  color: hsl(38 92% 50%);
 }
+
 .stat-icon-emerald {
- background: hsl(142 71% 45% / 0.1);
- color: hsl(142 71% 45%);
+  background: hsl(142 71% 45% / 0.1);
+  color: hsl(142 71% 45%);
 }
+
 /* Sub2API 风格侧边栏 */
 .sidebar-s2a {
- background: rgba(255, 255, 255, 0.85);
- backdrop-filter: blur(20px);
- -webkit-backdrop-filter: blur(20px);
- border-right: 1px solid hsl(214 32% 91% / 0.6);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid hsl(214 32% 91% / 0.6);
 }
+
 .sidebar-s2a-link {
- display: flex;
- align-items: center;
- gap: 0.75rem;
- padding: 0.5rem 0.75rem;
- border-radius: 0.75rem;
- font-size: 0.875rem;
- font-weight: 500;
- color: hsl(215 16% 47%);
- transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: hsl(215 16% 47%);
+  transition: all 0.2s ease;
 }
+
 .sidebar-s2a-link:hover {
- background: hsl(210 40% 96%);
- color: hsl(215 28% 17%);
+  background: hsl(210 40% 96%);
+  color: hsl(215 28% 17%);
 }
+
 .sidebar-s2a-link-active {
- background: hsl(168 76% 42% / 0.08);
- color: hsl(168 76% 42%);
+  background: hsl(168 76% 42% / 0.08);
+  color: hsl(168 76% 42%);
 }
+
 .sidebar-s2a-link-active:hover {
- background: hsl(168 76% 42% / 0.12);
+  background: hsl(168 76% 42% / 0.12);
 }
+
 /* Sub2API 风格 header */
 .header-glass {
- background: rgba(255, 255, 255, 0.8);
- backdrop-filter: blur(20px);
- -webkit-backdrop-filter: blur(20px);
- border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
 }
+
 /* Sub2API 风格按钮系统 */
 .btn {
- display: inline-flex;
- align-items: center;
- justify-content: center;
- gap: 0.5rem;
- border-radius: 0.75rem;
- padding: 0.625rem 1rem;
- font-size: 0.875rem;
- line-height: 1.25rem;
- font-weight: 500;
- cursor: pointer;
- transition: all 0.2s cubic-bezier(0, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0, 0, 0.2, 1);
 }
+
 .btn:focus {
- outline: 2px solid transparent;
- outline-offset: 2px;
- box-shadow:
- 0 0 0 2px var(--color-background),
- 0 0 0 4px hsl(168 76% 42% / 0.5);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 4px hsl(168 76% 42% / 0.5);
 }
+
 .btn:disabled {
- transform: none;
- cursor: not-allowed;
- opacity: 0.5;
+  transform: none;
+  cursor: not-allowed;
+  opacity: 0.5;
 }
+
 .btn:active:not(:disabled) {
- transform: scale(0.98);
+  transform: scale(0.98);
 }
+
 .btn-primary {
- background: linear-gradient(to right, #14b8a6, #0d9488);
- color: white;
- box-shadow:
- 0 4px 6px -1px rgb(0 0 0 / 0.1),
- 0 2px 4px -2px rgb(0 0 0 / 0.1);
- --tw-shadow-color: rgb(20 184 166 / 0.25);
- box-shadow:
- 0 4px 6px -1px var(--tw-shadow-color),
- 0 2px 4px -2px var(--tw-shadow-color);
+  background: linear-gradient(to right, #14b8a6, #0d9488);
+  color: white;
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --tw-shadow-color: rgb(20 184 166 / 0.25);
+  box-shadow:
+    0 4px 6px -1px var(--tw-shadow-color),
+    0 2px 4px -2px var(--tw-shadow-color);
 }
+
 .btn-primary:hover:not(:disabled) {
- background: linear-gradient(to right, #0d9488, #0f766e);
- box-shadow:
- 0 10px 15px -3px rgb(20 184 166 / 0.3),
- 0 4px 6px -4px rgb(20 184 166 / 0.3);
+  background: linear-gradient(to right, #0d9488, #0f766e);
+  box-shadow:
+    0 10px 15px -3px rgb(20 184 166 / 0.3),
+    0 4px 6px -4px rgb(20 184 166 / 0.3);
 }
+
 .btn-secondary {
- background-color: white;
- color: rgb(55 65 81);
- border: 1px solid rgb(229 231 235);
- box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: white;
+  color: rgb(55 65 81);
+  border: 1px solid rgb(229 231 235);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
+
 .btn-secondary:hover:not(:disabled) {
- background-color: rgb(249 250 251);
- border-color: rgb(209 213 219);
+  background-color: rgb(249 250 251);
+  border-color: rgb(209 213 219);
 }
+
 .btn-ghost {
- background-color: transparent;
- color: rgb(75 85 99);
+  background-color: transparent;
+  color: rgb(75 85 99);
 }
+
 .btn-ghost:hover:not(:disabled) {
- background-color: rgb(243 244 246);
+  background-color: rgb(243 244 246);
 }
+
 .btn-danger {
- background: linear-gradient(to right, #ef4444, #dc2626);
- color: white;
- box-shadow:
- 0 4px 6px -1px rgb(239 68 68 / 0.25),
- 0 2px 4px -2px rgb(239 68 68 / 0.25);
+  background: linear-gradient(to right, #ef4444, #dc2626);
+  color: white;
+  box-shadow:
+    0 4px 6px -1px rgb(239 68 68 / 0.25),
+    0 2px 4px -2px rgb(239 68 68 / 0.25);
 }
+
 .btn-danger:hover:not(:disabled) {
- background: linear-gradient(to right, #dc2626, #b91c1c);
- box-shadow:
- 0 10px 15px -3px rgb(239 68 68 / 0.3),
- 0 4px 6px -4px rgb(239 68 68 / 0.3);
+  background: linear-gradient(to right, #dc2626, #b91c1c);
+  box-shadow:
+    0 10px 15px -3px rgb(239 68 68 / 0.3),
+    0 4px 6px -4px rgb(239 68 68 / 0.3);
 }
+
 .btn-success {
- background: linear-gradient(to right, #10b981, #059669);
- color: white;
- box-shadow:
- 0 4px 6px -1px rgb(16 185 129 / 0.25),
- 0 2px 4px -2px rgb(16 185 129 / 0.25);
+  background: linear-gradient(to right, #10b981, #059669);
+  color: white;
+  box-shadow:
+    0 4px 6px -1px rgb(16 185 129 / 0.25),
+    0 2px 4px -2px rgb(16 185 129 / 0.25);
 }
+
 .btn-success:hover:not(:disabled) {
- background: linear-gradient(to right, #059669, #047857);
- box-shadow:
- 0 10px 15px -3px rgb(16 185 129 / 0.3),
- 0 4px 6px -4px rgb(16 185 129 / 0.3);
+  background: linear-gradient(to right, #059669, #047857);
+  box-shadow:
+    0 10px 15px -3px rgb(16 185 129 / 0.3),
+    0 4px 6px -4px rgb(16 185 129 / 0.3);
 }
+
 .btn-warning {
- background: linear-gradient(to right, #f59e0b, #d97706);
- color: white;
- box-shadow:
- 0 4px 6px -1px rgb(245 158 11 / 0.25),
- 0 2px 4px -2px rgb(245 158 11 / 0.25);
+  background: linear-gradient(to right, #f59e0b, #d97706);
+  color: white;
+  box-shadow:
+    0 4px 6px -1px rgb(245 158 11 / 0.25),
+    0 2px 4px -2px rgb(245 158 11 / 0.25);
 }
+
 .btn-warning:hover:not(:disabled) {
- background: linear-gradient(to right, #d97706, #b45309);
- box-shadow:
- 0 10px 15px -3px rgb(245 158 11 / 0.3),
- 0 4px 6px -4px rgb(245 158 11 / 0.3);
+  background: linear-gradient(to right, #d97706, #b45309);
+  box-shadow:
+    0 10px 15px -3px rgb(245 158 11 / 0.3),
+    0 4px 6px -4px rgb(245 158 11 / 0.3);
 }
+
 .btn-sm {
- border-radius: 0.5rem;
- padding: 0.375rem 0.75rem;
- font-size: 0.75rem;
- line-height: 1rem;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
+
 .btn-icon {
- border-radius: 0.75rem;
- padding: 0.625rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem;
 }
+
 /* 主色渐变背景 */
 .gradient-primary {
- background-image: linear-gradient(135deg, hsl(168 76% 42%), hsl(167 76% 32%));
+  background-image: linear-gradient(135deg, hsl(168 76% 42%), hsl(167 76% 32%));
 }
+
 /* Sub2API 网格渐变背景 */
 .bg-mesh-gradient {
- background-image:
- radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%),
- radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%),
- radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%);
+  background-image:
+    radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%);
 }
+
 @layer base {
- * {
- @apply border-border outline-ring/50;
- }
- body {
- @apply bg-background text-foreground;
- font-feature-settings:
- 'rlig' 1,
- 'calt' 1;
- }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
+  }
 }
-/* 图标容器修正：消除 line-height 导致的高度拉伸 */:has(> [class*='icon-[']:only-child) {
- line-height: 0;
+
+/* 图标容器修正：消除 line-height 导致的高度拉伸 */
+:has(> [class*='icon-[']:only-child) {
+  line-height: 0;
 }
+
 /* 隐藏滚动条但保留滚动功能 */
 .scrollbar-hide {
- -ms-overflow-style: none;
- scrollbar-width: none;
- &:-webkit-scrollbar {
- display: none;
- }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
+
 /* 自定义滚动条样式 — sub2api 风格（默认隐藏，悬停显示） */
 * {
- scrollbar-width: thin;
- scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
+
 *:hover,
 *:focus-within {
- scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
-}:-webkit-scrollbar {
- width: 6px;
- height: 6px;
-}:-webkit-scrollbar-track {
- background: transparent;
-}:-webkit-scrollbar-thumb {
- background: transparent;
- border-radius: 9999px;
- transition: background-color 0.2s ease;
+  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
 }
-*:hover:-webkit-scrollbar-thumb {
- background: rgba(148, 163, 184, 0.4);
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-*:hover:-webkit-scrollbar-thumb:hover {
- background: rgba(100, 116, 139, 0.6);
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
 /* 链接样式 */
 a {
- @apply text-primary hover:text-primary/80 transition-colors;
+  @apply text-primary hover:text-primary/80 transition-colors;
 }
-/* 选中文本样式 */:selection {
- background: hsl(168 76% 42% / 0.3); /* teal-500 30% */
+
+/* 选中文本样式 */
+::selection {
+  background: hsl(168 76% 42% / 0.3); /* teal-500 30% */
 }
+
 /* 自定义交互元素焦点环 */
 .btn:focus-visible,
 .sidebar-s2a-link:focus-visible {
- outline: 2px solid hsl(168 76% 42% / 0.5);
- outline-offset: 2px;
+  outline: 2px solid hsl(168 76% 42% / 0.5);
+  outline-offset: 2px;
 }
+
 /* 减少运动偏好 — WCAG 2.1 SC 2.3.3 */
 @media (prefers-reduced-motion: reduce) {
- *,
- *:before,
- *:after {
- animation-duration: 0.01ms !important;
- animation-iteration-count: 1 !important;
- transition-duration: 0.01ms !important;
- scroll-behavior: auto !important;
- }
- /*: GraphRAG 二跳扩散画布 — Vue Flow edge dasharray 持续动画兜底 */
- .vue-flow__edge-path {
- animation: none !important;
- }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* ME-02: GraphRAG 二跳扩散画布 — Vue Flow edge dasharray 持续动画兜底 */
+  .vue-flow__edge-path {
+    animation: none !important;
+  }
 }
+
 /* Vue Flow Handle 样式 — 节点连接点（小圆点） */
 .vue-flow__handle {
- width: 10px;
- height: 10px;
- background-color: hsl(168 76% 42%); /* teal-500 primary */
- border: 2px solid white;
- border-radius: 50%;
- transition: all 0.15s ease;
+  width: 10px;
+  height: 10px;
+  background-color: hsl(168 76% 42%); /* teal-500 primary */
+  border: 2px solid white;
+  border-radius: 50%;
+  transition: all 0.15s ease;
 }
+
 .vue-flow__handle:hover {
- width: 14px;
- height: 14px;
- background-color: hsl(168 76% 52%);
- box-shadow: 0 0 0 4px hsl(168 76% 42% / 0.2);
+  width: 14px;
+  height: 14px;
+  background-color: hsl(168 76% 52%);
+  box-shadow: 0 0 0 4px hsl(168 76% 42% / 0.2);
 }
+
 /* 连线时高亮可连接的 handle */
 .vue-flow__handle.connectingto,
 .vue-flow__handle.connectingfrom {
- background-color: hsl(142 71% 45%); /* success green */
- box-shadow: 0 0 0 4px hsl(142 71% 45% / 0.25);
+  background-color: hsl(142 71% 45%); /* success green */
+  box-shadow: 0 0 0 4px hsl(142 71% 45% / 0.25);
 }
+
 /* Vue Final Modal - shadcn 风格缩放动画 */
 .vfm-zoom-enter-active,
 .vfm-zoom-leave-active {
- transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .vfm-zoom-enter-from,
 .vfm-zoom-leave-to {
- opacity: 0;
- transform: scale(0.95);
+  opacity: 0;
+  transform: scale(0.95);
 }
+
 .vfm-zoom-enter-to,
 .vfm-zoom-leave-from {
- opacity: 1;
- transform: scale(1);
+  opacity: 1;
+  transform: scale(1);
 }

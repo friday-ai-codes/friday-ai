@@ -1,8 +1,14 @@
 ## L2 Exact Matches
+
 - `BaseModel` (CLASS) in src/core/base.py:5-40 [alpha-repo]
 - `BaseModel` (CLASS) in lib/core.py:8-50 [beta-repo]
+
 ## L4 Graph Context (1-hop)
+
 (no graph expansion results)
+
 ## L3 Related Code
+
 (no hybrid search results)
+
 # tokens=74 source_layer=L2 final_chunks=4

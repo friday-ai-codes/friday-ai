@@ -1,11 +1,18 @@
 ## L2 Exact Matches
+
 - `UserService` (CLASS) in src/users/service.py:10-80 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 - `get_by_id` (METHOD) depth=1 relation=callee
+
+
 ## L3 Related Code
+
 ### src/users/api.py (score: 0.700)
 ```
-def list_users:
- return UserService.list
+def list_users():
+    return UserService().list()
 ```
+
 # tokens=85 source_layer=L2 final_chunks=3

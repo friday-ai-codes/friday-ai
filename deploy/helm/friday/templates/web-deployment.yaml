@@ -1,53 +1,53 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
- name: {{ include "friday.fullname" . }}-web
- labels:
- {{- include "friday.labels" . | nindent 4 }}
- app.kubernetes.io/component: web
+  name: {{ include "friday.fullname" . }}-web
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
 spec:
- replicas: {{ .Values.web.replicaCount }}
- selector:
- matchLabels:
- {{- include "friday.selectorLabels" . | nindent 6 }}
- app.kubernetes.io/component: web
- template:
- metadata:
- labels:
- {{- include "friday.selectorLabels" . | nindent 8 }}
- app.kubernetes.io/component: web
- spec:
- containers:
- - name: web
- image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
- imagePullPolicy: {{ .Values.web.image.pullPolicy }}
- ports:
- - name: http
- containerPort: 8080
- protocol: TCP
- volumeMounts:
- - name: nginx-config
- mountPath: /etc/nginx/conf.d/default.conf
- subPath: nginx.conf
- livenessProbe:
- httpGet:
- path: /
- port: 8080
- initialDelaySeconds: 5
- periodSeconds: 30
- timeoutSeconds: 10
- readinessProbe:
- httpGet:
- path: /
- port: 8080
- initialDelaySeconds: 5
- periodSeconds: 10
- timeoutSeconds: 5
- {{- with .Values.web.resources }}
- resources:
- {{- toYaml . | nindent 12 }}
- {{- end }}
- volumes:
- - name: nginx-config
- configMap:
- name: {{ include "friday.fullname" . }}-nginx
+  replicas: {{ .Values.web.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "friday.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: nginx.conf
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          {{- with .Values.web.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ include "friday.fullname" . }}-nginx

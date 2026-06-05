@@ -1,5 +1,7 @@
 from django.apps import AppConfig
+
+
 class CompatConfig(AppConfig):
- default_auto_field = "django.db.models.BigAutoField"
- name = "compat"
- verbose_name = "OpenAI 兼容层"
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "compat"
+    verbose_name = "OpenAI 兼容层"

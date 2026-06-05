@@ -1,6 +1,7 @@
 # Git
 .git
 .gitignore
+
 # Python
 __pycache__
 *.py[cod]
@@ -10,35 +11,44 @@ __pycache__
 .venv
 venv
 ENV
+
 # IDE
 .idea
 .vscode
 *.swp
 *.swo
+
 # Build
 build
 dist
 *.egg-info
 .eggs
+
 # Testing
 .pytest_cache
 .coverage
 htmlcov
 .tox
+
 # Documentation
 docs/_build
+
 # Local development
 .env
 *.db
 data/
+
 # OS
 .DS_Store
 Thumbs.db
+
 # Task container (built separately)
 task/
+
 # Plans and specs (not needed in container)
 plans/
 openspec/
+
 # Other
 *.log
 *.tmp

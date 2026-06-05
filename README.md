@@ -1,114 +1,93 @@
-# Friday AI Dev Agent
+# Friday AI
 [简体中文](README.zh-CN.md) | English
-🤖 **AI-Powered Agile Development Automation System**
-Friday is an AI-driven agile development automation system that seamlessly integrates with Feishu/Lark Project Management, utilizing Claude Code to automate development tasks.
-## ✨ v25.0 新功能：统一代码智能层
-v25.0 构建了跨语言、跨仓库的代码智能层，主要特性：
-- **多语言 extractor 矩阵**：Go（gopls LSP）/ TS/TSX / Vue 2.7+/3（volar LSP）/ HTML/CSS 全语言精确解析
-- **Go gin 端点识别**：自动抽取 gin 路由 → `codegraph_endpoint` 表，含 middleware 元数据
-- **跨仓库前后端 API 关联**：前端 axios call site 三步推断 → `CrossRepoApiCall` offline join → 精确连边
-- **3D Galaxy 可视化**：`/codegraph/galaxy` — 银河感 3d-force-graph，5000+ 节点 30 FPS，Cmd+K 搜索 + NodeDetailDrawer
-- **3 个新 MCP Tool**（Phase）：
- - `find_api_handler(url, method)` — URL → 后端 handler symbol
- - `find_api_callers(handler_name)` — handler → 前端业务调用点
- - `list_endpoints(repo_id)` — 列仓库所有 API 端点
-- **HybridSearch wave**：跨仓 API_CALLS 扩散，budget 50/30/20
-> 详细文档：[docs/v25.0-codegraph.md](docs/v25.0-codegraph.md)
----
-## 🏗️ Architecture
-This project follows a Monorepo structure, containing independent frontend and backend services:
-- **Frontend (`web/`)**: Vue 3 + TypeScript + Vite
-- **Backend (`server/`)**: Django + Django REST Framework + Python 3.14+
-- **Infrastructure**: Full-stack orchestration via Docker Compose
-## 🚀 Quick Start
-> **详细指南**: 查看 [快速开始文档](docs/quick-start.md) 获取完整的中文安装和配置指南。
-### Full Stack Deployment (Docker)
-**Prerequisites:** Docker & Docker Compose
-#### One-Click Start
-1. **Generate `.env` and local data directories**
- ```bash
- scripts/setup.sh
- ```
- The script creates `.env` and prepares persistent data directories under `~/.friday-ai` by default.
-2. **Start Full Stack Services**
- ```bash
- docker compose up -d
- ```
- This starts Web, Server, Runner, PostgreSQL, Redis, and Qdrant.
-3. **Access Services**
- - **Application**: http://localhost:10240 (Nginx serves frontend + proxies API)
- - **API Docs**: http://localhost:10240/docs (Swagger UI)
- - **Direct API Access**: http://localhost:10241 (Optional, for debugging)
-### Service Architecture
+Friday AI is an open-source development automation platform. It connects project
+requirements, repositories, workflow orchestration, and AI coding agents so teams
+can move from an approved requirement to an auditable code change.
+## Status
+Friday AI is starting its public release line at `0.0.1`. The repository history
+has been rewritten and scanned for public release readiness. Treat the project as
+early-stage open source: APIs, deployment defaults, and extension points may still
+change between minor versions.
+## Quick Start
+Prerequisites:
+- Docker and Docker Compose v2
+- Git
+Generate a local `.env` file and persistent data directories:
+```bash
+scripts/setup.sh
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ User Browser │
-└───────────────────────────┬─────────────────────────────────┘
- │
- ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Nginx (friday-web:10240) │
-│ ┌─────────────────────┐ ┌───────────────────────────────┐ │
-│ │ Static Files │ │ Proxy: /api/* /health /docs │ │
-│ │ (Vue SPA) │ │ → server:8000 │ │
-│ └─────────────────────┘ └───────────────────────────────┘ │
-└───────────────────────────┬─────────────────────────────────┘
- │
- ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Django Server (friday-server:10241) │
-│ ┌────────────────┐ ┌──────────────────────────────────┐ │
-│ │ REST API │ │ Task Scheduler │ │
-│ │ /api/* │ │ (Docker Container Management) │ │
-│ └────────────────┘ └──────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+Start the full stack:
+```bash
+docker compose up -d
 ```
-### Environment Variables
+Friday starts Web, Server, Runner, PostgreSQL, Redis, and Qdrant.
+- Web app: <http://localhost:10240>
+- API docs: <http://localhost:10240/docs>
+- Direct API port: <http://localhost:10241>
+Useful commands:
+```bash
+docker compose logs -f
+docker compose down
+docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build -d
+```
+## Configuration
+`scripts/setup.sh` creates `.env`, generates required secrets, and writes data
+under `~/.friday-ai` by default. Run `scripts/setup.sh --help` for non-interactive
+and custom data directory options.
+Key environment variables:
 | Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SECRET_KEY` | ✅ | - | Django secret key (generate for production) |
-| `FRIDAY_ENCRYPTION_KEY` | ✅ | - | Encryption key for sensitive data |
-| `DATABASE_URL` | ❌ | sqlite:///./data/friday.db | Database connection URL |
-| `FRIDAY_DATA_DIR` | ❌ | ~/.friday-ai | Host directory for persistent Docker data |
-| `FRIDAY_WEB_PORT` | ❌ | 10240 | Web frontend port |
-| `FRIDAY_PORT` | ❌ | 10241 | Backend API port |
-| `DEBUG` | ❌ | false | Enable debug mode |
-### Claude Code Configuration
-Claude API configuration supports two levels (higher priority overrides lower):
-1. **Project Level** - Configure in Web UI → Project → Claude Settings
-2. **System Level** - Configure in Web UI → Settings → Claude Configuration
-This allows:
-- Different API keys for different projects
-- Custom proxy URLs for users in regions with limited API access
-## 💻 Local Development Guide
-### Backend Development (`server/`)
-For detailed instructions, see [Server README](server/README.md).
+| --- | --- | --- | --- |
+| `SECRET_KEY` | yes | generated | Django signing secret |
+| `FRIDAY_ENCRYPTION_KEY` | yes | generated | Encryption key for stored credentials |
+| `RUNNER_REGISTRATION_TOKEN` | yes | generated | Shared registration token for runners |
+| `DATABASE_URL` | no | `postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday` | Database URL used by the Compose stack |
+| `FRIDAY_DATA_DIR` | no | `~/.friday-ai` | Host directory for persistent data |
+| `FRIDAY_WEB_PORT` | no | `10240` | Web entrypoint |
+| `FRIDAY_PORT` | no | `10241` | Direct backend API port |
+| `FRIDAY_IMAGE_PREFIX` | no | `ghcr.io/friday-ai-codes/friday-ai` | Container image namespace |
+| `FRIDAY_IMAGE_TAG` | no | `latest` | Container image tag |
+Never commit `.env`, databases, logs, or exported customer data.
+## Development
+Install dependencies:
+```bash
+make install
+```
+Run the backend:
 ```bash
 cd server
-uv sync
-uv run python manage.py runserver
+uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port 10241
 ```
-### Frontend Development (`web/`)
-For detailed instructions, see [Web README](web/README.md).
+Run the frontend:
 ```bash
 cd web
-pnpm install
 pnpm dev
 ```
-## 📂 Project Structure
+Run focused checks:
+```bash
+cd server && uv run pytest tests/test_credential_leak_protection.py tests/test_interactions_ledger.py tests/mcp_tools/test_feishu_work_item_context.py tests/test_httpx_removal_guard.py tests/test_conversation_facade_waiting_clarification.py tests/test_intent_router.py tests/test_langchain_runner_core.py tests/test_langchain_runner_no_stategraph.py tests/test_coding_progress.py --cov=. --cov-report=term-missing
+cd web && pnpm test:unit:coverage
+cd web && pnpm test:e2e -- --project=chromium
+cd runner && go test ./...
 ```
-friday/
-├── server/ # Backend Service (Django)
-│ ├── src/ # Source Code
-│ ├── task/ # Task Execution Container
-│ └── README.md
-├── web/ # Frontend Project (Vue 3)
-│ ├── src/
-│ └── README.md
-├── docker-compose.yml # Full Stack Orchestration
-└── README.md # Project Entry Documentation
-```
-## 🤝 Contributing
-Issues and Pull Requests are welcome!
-## 📄 License
-MIT License
+## Repository Layout
+| Path | Purpose |
+| --- | --- |
+| `server/` | Django API, orchestration, integrations, and backend tests |
+| `web/` | Vue 3 frontend, Vitest unit tests, Playwright e2e tests |
+| `runner/` | Go runner service |
+| `task/` | Isolated task execution container |
+| `deploy/` | Docker, Helm, and Argo CD deployment assets |
+| `docs/` | User and developer documentation |
+| `scripts/` | Setup and verification scripts |
+## CI/CD
+The GitHub Actions CI workflow runs blocking web/task/runner checks, server
+smoke tests with coverage, Playwright smoke e2e, Docker Compose config
+validation, and secret scanning. Server ruff and mypy currently run as advisory
+checks while the legacy backend static-analysis baseline is being normalized.
+The release workflow builds multi-architecture container images and creates
+GitHub releases from version tags.
+## Contributing
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening pull requests.
+Security reports should follow [SECURITY.md](SECURITY.md).
+## License
+Friday AI is released under the [MIT License](LICENSE).

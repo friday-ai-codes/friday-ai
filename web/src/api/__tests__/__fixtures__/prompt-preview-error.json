@@ -1,6 +1,6 @@
 {
- "_comment": "Source: server/prompts/views.py:65-75 _handle_prompt_error. 422 prompt_variable_missing 响应字面结构。后端改动必须同步本 fixture。",
- "error": "prompt_variable_missing",
- "slug": "chat.system.developer",
- "missing": ["input_text", "additional_prompt"]
+  "_comment": "Source: server/prompts/views.py:65-75 _handle_prompt_error. 422 prompt_variable_missing 响应字面结构。后端改动必须同步本 fixture。",
+  "error": "prompt_variable_missing",
+  "slug": "chat.system.developer",
+  "missing": ["input_text", "additional_prompt"]
 }

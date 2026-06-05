@@ -7,13 +7,16 @@
  */
 import { onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-const route = useRoute
-const router = useRouter
-onMounted( => {
- const id = (route.params as { id: string }).id
- router.replace(`/executions/${id}`)
+
+const route = useRoute()
+const router = useRouter()
+
+onMounted(() => {
+  const id = (route.params as { id: string }).id
+  router.replace(`/executions/${id}`)
 })
 </script>
+
 <template>
- <div />
+  <div />
 </template>

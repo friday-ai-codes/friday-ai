@@ -1,10 +1,20 @@
 ## L2 Exact Matches
+
 - `SeedBeta` (FUNCTION) in src/seed/beta.py:1-10 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 - `validateInput` (FUNCTION) depth=1 relation=callee
+
 - `writeResult` (FUNCTION) depth=1 relation=callee
+
+
 ## L3 Related Code
+
 (no hybrid search results)
+
 ## L4 Graph Context (2-hop)
+
 - `normalizePayload` (FUNCTION) depth=2 relation=callee
+
 # tokens=104 source_layer=L2 final_chunks=5

@@ -1,696 +1,696 @@
 {
- "generated_at": "2026-04-29T15:26:46.397Z",
- "node_count": 14,
- "nodes": [
- {
- "node_type": "manual_trigger",
- "display_name": "手动触发",
- "description": "手动触发工作流执行",
- "icon": "icon-[lucide--play]",
- "category": "trigger",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "input_schema": {
- "default": {},
- "type": "object",
- "propertyNames": {
- "type": "string"
- },
- "additionalProperties": {}
- }
- },
- "required": [
- "input_schema"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "fields": {
- "input_schema": {
- "widget": "json-editor",
- "help": "定义用户触发时需要输入的参数"
- }
- }
- }
- },
- {
- "node_type": "webhook_trigger",
- "display_name": "Webhook",
- "description": "通过 HTTP 请求触发",
- "icon": "icon-[lucide--webhook]",
- "category": "trigger",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "secret": {
- "default": "",
- "type": "string"
- },
- "method": {
- "default": "POST",
- "type": "string",
- "enum": [
- "POST",
- "GET",
- "PUT"
- ]
- }
- },
- "required": [
- "secret",
- "method"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "delay",
- "display_name": "延迟",
- "description": "暂停工作流执行指定时间",
- "icon": "icon-[lucide--clock]",
- "category": "control",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "delay_seconds": {
- "default": 60,
- "type": "integer",
- "minimum": 1,
- "maximum": 86400
- },
- "delay_until": {
- "default": "",
- "type": "string"
- }
- },
- "required": [
- "delay_seconds",
- "delay_until"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "groups": [
- {
- "key": "timing",
- "label": "时间设置",
- "fields": [
- "delay_seconds",
- "delay_until"
- ]
- }
- ],
- "fields": {
- "delay_seconds": {
- "widget": "number",
- "help": "延迟执行的秒数 (1-86400)"
- },
- "delay_until": {
- "widget": "text",
- "help": "ISO 格式时间字符串，优先于 delay_seconds"
- }
- }
- }
- },
- {
- "node_type": "condition",
- "display_name": "条件分支",
- "description": "根据条件判断走不同的分支",
- "icon": "icon-[lucide--git-branch]",
- "category": "control",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "conditions": {
- "default":,
- "type": "array",
- "items": {
- "type": "object",
- "properties": {
- "name": {
- "default": "",
- "type": "string"
- },
- "expression": {
- "default": {
- "field": "",
- "operator": "eq",
- "value": ""
- },
- "type": "object",
- "properties": {
- "field": {
- "default": "",
- "type": "string"
- },
- "operator": {
- "default": "eq",
- "type": "string",
- "enum": [
- "eq",
- "ne",
- "gt",
- "gte",
- "lt",
- "lte",
- "contains",
- "not_contains",
- "starts_with",
- "ends_with",
- "is_empty",
- "is_not_empty",
- "is_true",
- "is_false"
- ]
- },
- "value": {
- "default": ""
- }
- },
- "required": [
- "field",
- "operator",
- "value"
- ],
- "additionalProperties": false
- }
- },
- "required": [
- "name",
- "expression"
- ],
- "additionalProperties": false
- }
- },
- "default_branch": {
- "default": "else",
- "type": "string"
- }
- },
- "required": [
- "conditions",
- "default_branch"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "fields": {
- "conditions": {
- "widget": "json-editor",
- "help": "条件列表，支持多分支"
- },
- "default_branch": {
- "widget": "text",
- "help": "当所有条件都不满足时走的分支"
- }
- }
- }
- },
- {
- "node_type": "parallel",
- "display_name": "并行分支",
- "description": "将工作流分成多个并行分支",
- "icon": "icon-[lucide--git-fork]",
- "category": "control",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "branches": {
- "default": [
- {
- "name": "分支 1",
- "enabled": true
- },
- {
- "name": "分支 2",
- "enabled": true
- }
- ],
- "type": "array",
- "items": {
- "type": "object",
- "properties": {
- "name": {
- "default": "",
- "type": "string"
- },
- "enabled": {
- "default": true,
- "type": "boolean"
- }
- },
- "required": [
- "name",
- "enabled"
- ],
- "additionalProperties": false
- }
- },
- "pass_input": {
- "default": true,
- "type": "boolean"
- }
- },
- "required": [
- "branches",
- "pass_input"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "fields": {
- "branches": {
- "widget": "json-editor",
- "help": "分支配置（名称和启用状态）"
- },
- "pass_input": {
- "widget": "boolean",
- "help": "是否将输入数据传递给所有分支"
- }
- }
- }
- },
- {
- "node_type": "join",
- "display_name": "并行汇合",
- "description": "等待所有并行分支完成后继续",
- "icon": "icon-[lucide--git-merge]",
- "category": "control",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "wait_mode": {
- "default": "all",
- "type": "string",
- "enum": [
- "all",
- "any",
- "count"
- ]
- },
- "wait_count": {
- "default": 1,
- "type": "integer",
- "minimum": 1,
- "maximum": 9007199254740991
- },
- "merge_strategy": {
- "default": "array",
- "type": "string",
- "enum": [
- "array",
- "object",
- "first",
- "last"
- ]
- },
- "timeout": {
- "default": 0,
- "type": "integer",
- "minimum": 0,
- "maximum": 9007199254740991
- }
- },
- "required": [
- "wait_mode",
- "wait_count",
- "merge_strategy",
- "timeout"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "fields": {
- "wait_mode": {
- "widget": "select",
- "help": "all=等待全部, any=任一完成, count=指定数量"
- },
- "wait_count": {
- "widget": "number",
- "help": "wait_mode=count 时生效"
- },
- "merge_strategy": {
- "widget": "select",
- "help": "如何合并各分支的输出"
- },
- "timeout": {
- "widget": "number",
- "help": "等待超时时间（秒），0 表示不超时"
- }
- }
- }
- },
- {
- "node_type": "human_approval",
- "display_name": "人工审批",
- "description": "等待人工审批",
- "icon": "icon-[lucide--user-check]",
- "category": "control",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "approvers": {
- "default":,
- "type": "array",
- "items": {
- "type": "string"
- }
- },
- "approval_message": {
- "default": "",
- "type": "string"
- },
- "timeout_hours": {
- "default": 72,
- "type": "integer",
- "minimum": 1,
- "maximum": 9007199254740991
- }
- },
- "required": [
- "approvers",
- "approval_message",
- "timeout_hours"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "notify_feishu",
- "display_name": "飞书通知",
- "description": "发送消息到飞书",
- "icon": "icon-[lucide--message-square]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "webhook_url": {
- "default": "",
- "type": "string"
- },
- "message_type": {
- "default": "text",
- "type": "string",
- "enum": [
- "text",
- "post",
- "interactive"
- ]
- },
- "content": {
- "default": "",
- "type": "string"
- },
- "title": {
- "default": "",
- "type": "string"
- },
- "at_all": {
- "default": false,
- "type": "boolean"
- },
- "at_users": {
- "default":,
- "type": "array",
- "items": {
- "type": "string"
- }
- }
- },
- "required": [
- "webhook_url",
- "message_type",
- "content",
- "title",
- "at_all",
- "at_users"
- ],
- "additionalProperties": false
- },
- "ui_schema": {
- "groups": [
- {
- "key": "message",
- "label": "消息内容",
- "fields": [
- "message_type",
- "content",
- "title"
- ]
- },
- {
- "key": "target",
- "label": "通知目标",
- "fields": [
- "webhook_url",
- "at_all",
- "at_users"
- ]
- }
- ],
- "fields": {
- "webhook_url": {
- "widget": "text",
- "help": "飞书机器人 Webhook 地址"
- },
- "message_type": {
- "widget": "select"
- },
- "content": {
- "widget": "textarea",
- "help": "消息内容，支持模板变量"
- },
- "title": {
- "widget": "text",
- "help": "富文本消息标题（仅 post 类型）",
- "visible_if": {
- "field": "message_type",
- "operator": "eq",
- "value": "post"
- }
- },
- "at_all": {
- "widget": "boolean",
- "help": "@所有人"
- },
- "at_users": {
- "widget": "json-editor",
- "help": "@指定用户 ID 列表"
- }
- }
- }
- },
- {
- "node_type": "http_request",
- "display_name": "HTTP 请求",
- "description": "发送 HTTP 请求",
- "icon": "icon-[lucide--globe]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "method": {
- "default": "GET",
- "type": "string",
- "enum": [
- "GET",
- "POST",
- "PUT",
- "DELETE",
- "PATCH"
- ]
- },
- "url": {
- "default": "",
- "type": "string"
- },
- "headers": {
- "default": {},
- "type": "object",
- "propertyNames": {
- "type": "string"
- },
- "additionalProperties": {
- "type": "string"
- }
- },
- "body": {
- "default": "",
- "type": "string"
- },
- "timeout": {
- "default": 30,
- "type": "integer",
- "minimum": 1,
- "maximum": 300
- }
- },
- "required": [
- "method",
- "url",
- "headers",
- "body",
- "timeout"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "merge_pr",
- "display_name": "合并 PR",
- "description": "合并 Pull Request",
- "icon": "icon-[lucide--git-merge]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "repositories": {
- "default":,
- "type": "array",
- "items": {
- "type": "string"
- }
- },
- "branch": {
- "default": "",
- "type": "string"
- },
- "delete_branch": {
- "default": true,
- "type": "boolean"
- }
- },
- "required": [
- "repositories",
- "branch",
- "delete_branch"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "mcp_deploy",
- "display_name": "MCP 部署",
- "description": "MCP 服务部署",
- "icon": "icon-[lucide--rocket]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "service_name": {
- "default": "",
- "type": "string"
- },
- "config": {
- "default": {},
- "type": "object",
- "propertyNames": {
- "type": "string"
- },
- "additionalProperties": {}
- }
- },
- "required": [
- "service_name",
- "config"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "fetch_group_chat",
- "display_name": "获取群聊",
- "description": "从飞书工作项获取群聊 ID",
- "icon": "icon-[lucide--message-circle]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "work_item_id": {
- "default": "",
- "type": "string"
- }
- },
- "required": [
- "work_item_id"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "join_group_chat",
- "display_name": "加入群聊",
- "description": "Bot 加入目标群聊",
- "icon": "icon-[lucide--user-plus]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "chat_id": {
- "default": "",
- "type": "string"
- }
- },
- "required": [
- "chat_id"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- },
- {
- "node_type": "group_chat_question",
- "display_name": "群聊提问",
- "description": "向群聊发送提问卡片等待回答",
- "icon": "icon-[lucide--message-circle-question]",
- "category": "integration",
- "config_schema": {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "type": "object",
- "properties": {
- "chat_id": {
- "default": "",
- "type": "string"
- },
- "question": {
- "default": "",
- "type": "string"
- },
- "timeout_seconds": {
- "default": 300,
- "type": "integer",
- "minimum": -9007199254740991,
- "maximum": 9007199254740991
- }
- },
- "required": [
- "chat_id",
- "question",
- "timeout_seconds"
- ],
- "additionalProperties": false
- },
- "ui_schema": null
- }
- ]
+  "generated_at": "2026-04-29T15:26:46.397Z",
+  "node_count": 14,
+  "nodes": [
+    {
+      "node_type": "manual_trigger",
+      "display_name": "手动触发",
+      "description": "手动触发工作流执行",
+      "icon": "icon-[lucide--play]",
+      "category": "trigger",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "input_schema": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "input_schema"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "input_schema": {
+            "widget": "json-editor",
+            "help": "定义用户触发时需要输入的参数"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "webhook_trigger",
+      "display_name": "Webhook",
+      "description": "通过 HTTP 请求触发",
+      "icon": "icon-[lucide--webhook]",
+      "category": "trigger",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "secret": {
+            "default": "",
+            "type": "string"
+          },
+          "method": {
+            "default": "POST",
+            "type": "string",
+            "enum": [
+              "POST",
+              "GET",
+              "PUT"
+            ]
+          }
+        },
+        "required": [
+          "secret",
+          "method"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "delay",
+      "display_name": "延迟",
+      "description": "暂停工作流执行指定时间",
+      "icon": "icon-[lucide--clock]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "delay_seconds": {
+            "default": 60,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "delay_until": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delay_seconds",
+          "delay_until"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "groups": [
+          {
+            "key": "timing",
+            "label": "时间设置",
+            "fields": [
+              "delay_seconds",
+              "delay_until"
+            ]
+          }
+        ],
+        "fields": {
+          "delay_seconds": {
+            "widget": "number",
+            "help": "延迟执行的秒数 (1-86400)"
+          },
+          "delay_until": {
+            "widget": "text",
+            "help": "ISO 格式时间字符串，优先于 delay_seconds"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "condition",
+      "display_name": "条件分支",
+      "description": "根据条件判断走不同的分支",
+      "icon": "icon-[lucide--git-branch]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "conditions": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "default": "",
+                  "type": "string"
+                },
+                "expression": {
+                  "default": {
+                    "field": "",
+                    "operator": "eq",
+                    "value": ""
+                  },
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "default": "",
+                      "type": "string"
+                    },
+                    "operator": {
+                      "default": "eq",
+                      "type": "string",
+                      "enum": [
+                        "eq",
+                        "ne",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte",
+                        "contains",
+                        "not_contains",
+                        "starts_with",
+                        "ends_with",
+                        "is_empty",
+                        "is_not_empty",
+                        "is_true",
+                        "is_false"
+                      ]
+                    },
+                    "value": {
+                      "default": ""
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "operator",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "expression"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "default_branch": {
+            "default": "else",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conditions",
+          "default_branch"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "conditions": {
+            "widget": "json-editor",
+            "help": "条件列表，支持多分支"
+          },
+          "default_branch": {
+            "widget": "text",
+            "help": "当所有条件都不满足时走的分支"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "parallel",
+      "display_name": "并行分支",
+      "description": "将工作流分成多个并行分支",
+      "icon": "icon-[lucide--git-fork]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "branches": {
+            "default": [
+              {
+                "name": "分支 1",
+                "enabled": true
+              },
+              {
+                "name": "分支 2",
+                "enabled": true
+              }
+            ],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "default": "",
+                  "type": "string"
+                },
+                "enabled": {
+                  "default": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pass_input": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "branches",
+          "pass_input"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "branches": {
+            "widget": "json-editor",
+            "help": "分支配置（名称和启用状态）"
+          },
+          "pass_input": {
+            "widget": "boolean",
+            "help": "是否将输入数据传递给所有分支"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "join",
+      "display_name": "并行汇合",
+      "description": "等待所有并行分支完成后继续",
+      "icon": "icon-[lucide--git-merge]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "wait_mode": {
+            "default": "all",
+            "type": "string",
+            "enum": [
+              "all",
+              "any",
+              "count"
+            ]
+          },
+          "wait_count": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "merge_strategy": {
+            "default": "array",
+            "type": "string",
+            "enum": [
+              "array",
+              "object",
+              "first",
+              "last"
+            ]
+          },
+          "timeout": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "wait_mode",
+          "wait_count",
+          "merge_strategy",
+          "timeout"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "wait_mode": {
+            "widget": "select",
+            "help": "all=等待全部, any=任一完成, count=指定数量"
+          },
+          "wait_count": {
+            "widget": "number",
+            "help": "wait_mode=count 时生效"
+          },
+          "merge_strategy": {
+            "widget": "select",
+            "help": "如何合并各分支的输出"
+          },
+          "timeout": {
+            "widget": "number",
+            "help": "等待超时时间（秒），0 表示不超时"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "human_approval",
+      "display_name": "人工审批",
+      "description": "等待人工审批",
+      "icon": "icon-[lucide--user-check]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "approvers": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "approval_message": {
+            "default": "",
+            "type": "string"
+          },
+          "timeout_hours": {
+            "default": 72,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "approvers",
+          "approval_message",
+          "timeout_hours"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "notify_feishu",
+      "display_name": "飞书通知",
+      "description": "发送消息到飞书",
+      "icon": "icon-[lucide--message-square]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "webhook_url": {
+            "default": "",
+            "type": "string"
+          },
+          "message_type": {
+            "default": "text",
+            "type": "string",
+            "enum": [
+              "text",
+              "post",
+              "interactive"
+            ]
+          },
+          "content": {
+            "default": "",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "type": "string"
+          },
+          "at_all": {
+            "default": false,
+            "type": "boolean"
+          },
+          "at_users": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "webhook_url",
+          "message_type",
+          "content",
+          "title",
+          "at_all",
+          "at_users"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "groups": [
+          {
+            "key": "message",
+            "label": "消息内容",
+            "fields": [
+              "message_type",
+              "content",
+              "title"
+            ]
+          },
+          {
+            "key": "target",
+            "label": "通知目标",
+            "fields": [
+              "webhook_url",
+              "at_all",
+              "at_users"
+            ]
+          }
+        ],
+        "fields": {
+          "webhook_url": {
+            "widget": "text",
+            "help": "飞书机器人 Webhook 地址"
+          },
+          "message_type": {
+            "widget": "select"
+          },
+          "content": {
+            "widget": "textarea",
+            "help": "消息内容，支持模板变量"
+          },
+          "title": {
+            "widget": "text",
+            "help": "富文本消息标题（仅 post 类型）",
+            "visible_if": {
+              "field": "message_type",
+              "operator": "eq",
+              "value": "post"
+            }
+          },
+          "at_all": {
+            "widget": "boolean",
+            "help": "@所有人"
+          },
+          "at_users": {
+            "widget": "json-editor",
+            "help": "@指定用户 ID 列表"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "http_request",
+      "display_name": "HTTP 请求",
+      "description": "发送 HTTP 请求",
+      "icon": "icon-[lucide--globe]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "method": {
+            "default": "GET",
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE",
+              "PATCH"
+            ]
+          },
+          "url": {
+            "default": "",
+            "type": "string"
+          },
+          "headers": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "body": {
+            "default": "",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 30,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "method",
+          "url",
+          "headers",
+          "body",
+          "timeout"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "merge_pr",
+      "display_name": "合并 PR",
+      "description": "合并 Pull Request",
+      "icon": "icon-[lucide--git-merge]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repositories": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branch": {
+            "default": "",
+            "type": "string"
+          },
+          "delete_branch": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repositories",
+          "branch",
+          "delete_branch"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "mcp_deploy",
+      "display_name": "MCP 部署",
+      "description": "MCP 服务部署",
+      "icon": "icon-[lucide--rocket]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "service_name": {
+            "default": "",
+            "type": "string"
+          },
+          "config": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "service_name",
+          "config"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "fetch_group_chat",
+      "display_name": "获取群聊",
+      "description": "从飞书工作项获取群聊 ID",
+      "icon": "icon-[lucide--message-circle]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "work_item_id": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_item_id"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "join_group_chat",
+      "display_name": "加入群聊",
+      "description": "Bot 加入目标群聊",
+      "icon": "icon-[lucide--user-plus]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_id"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    },
+    {
+      "node_type": "group_chat_question",
+      "display_name": "群聊提问",
+      "description": "向群聊发送提问卡片等待回答",
+      "icon": "icon-[lucide--message-circle-question]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "default": "",
+            "type": "string"
+          },
+          "question": {
+            "default": "",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "default": 300,
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "chat_id",
+          "question",
+          "timeout_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": null
+    }
+  ]
 }

@@ -1,5 +1,5 @@
 {
- "name": "mock-monorepo-root",
- "private": true,
- "workspaces": ["apps/**", "packages/**"]
+  "name": "mock-monorepo-root",
+  "private": true,
+  "workspaces": ["apps/**", "packages/**"]
 }

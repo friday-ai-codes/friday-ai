@@ -4,98 +4,102 @@ version = "0.1.0"
 description = "AI-powered development automation agent"
 requires-python = ">=3.14"
 dependencies = [
- # Django core
- "django>=5.1",
- "djangorestframework>=3.15",
- "djangorestframework-simplejwt>=5.3",
- "drf-spectacular>=0.27",
- "django-environ>=0.11",
- # Database drivers (支持多种数据库)
- "psycopg[binary]>=3.3", # PostgreSQL
- "mysqlclient>=2.2", # MySQL / MariaDB
- # Async support
- "uvicorn[standard]>=0.30",
- "httpx>=0.27",
- # Security
- "cryptography>=42.0",
- "passlib[argon2]>=1.7.4",
- # Integrations
- "docker>=7.1.0",
- "gitpython>=3.1.46",
- "lark-oapi>=1.5.2",
- "paramiko>=4.0.0",
- # Utilities
- "structlog>=25.5.0",
- "gunicorn>=23.0.0",
- "whitenoise>=6.7.0",
- "channels[daphne]>=4.3.2",
- "daphne>=4.2.1",
- "jsonpath-ng>=1.7.0",
- "qdrant-client>=1.9.0",
- "llama-index>=0.10.0",
- "llama-index-vector-stores-qdrant>=0.2.0",
- "tree-sitter>=0.21.0",
- "tree-sitter-go>=0.21.0",
- "tree-sitter-javascript>=0.21.0",
- "tree-sitter-python>=0.21.0",
- "tree-sitter-css>=0.21.0",
- "tree-sitter-html>=0.21.0",
- "tree-sitter-json>=0.21.0",
- "claude-agent-sdk>=0.1.58,<0.2",
- "jinja2>=3.1.6,<4.0",
- # Type checking
- "mypy>=1.14.0",
- "django-stubs>=5.1.0",
- "django-stubs-ext>=5.1.0",
- "djangorestframework-stubs>=3.15.0",
- "jsonschema>=4.23.0",
- # Git platform integrations
- "python-gitlab>=4.0.0",
- "PyGithub>=2.0.0",
- "tenacity>=8.2.0",
- # LLM providers
- "anthropic>=0.40.0",
- "mistune>=3.2.0",
- "django-apscheduler>=0.7.0",
- # System monitoring (Phase)
- "psutil>=5.9.0",
- "python-socks>=2.8.0",
- "openai>=2.16.0",
- "adrf>=0.1.12",
- "google-genai>=1.0.0",
- # RAG Enhancement
- "fastembed>=0.4.0",
- "pywebpush>=2.3.0",
- "langgraph>=1.1.6",
- "langgraph-checkpoint-sqlite>=3.0.3",
- "langchain>=1.2.15",
- "langchain-anthropic>=1.3.5",
- "langchain-openai>=1.1.14,<2.0",
- "langchain-google-genai>=4.2.1,<5.0",
- "langchain-ollama>=1.1.0,<2.0",
- "tree-sitter-typescript",
- "pygls>=2.0",
+    # Django core
+    "django>=5.1",
+    "djangorestframework>=3.15",
+    "djangorestframework-simplejwt>=5.3",
+    "drf-spectacular>=0.27",
+    "django-environ>=0.11",
+    # Database drivers (支持多种数据库)
+    "psycopg[binary]>=3.3", # PostgreSQL
+    "mysqlclient>=2.2",     # MySQL / MariaDB
+    # Async support
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    # Security
+    "cryptography>=42.0",
+    "passlib[argon2]>=1.7.4",
+    # Integrations
+    "docker>=7.1.0",
+    "gitpython>=3.1.46",
+    "lark-oapi>=1.5.2",
+    "paramiko>=4.0.0",
+    # Utilities
+    "structlog>=25.5.0",
+    "gunicorn>=23.0.0",
+    "whitenoise>=6.7.0",
+    "channels[daphne]>=4.3.2",
+    "daphne>=4.2.1",
+    "jsonpath-ng>=1.7.0",
+    "qdrant-client>=1.9.0",
+    "llama-index>=0.10.0",
+    "llama-index-vector-stores-qdrant>=0.2.0",
+    "tree-sitter>=0.21.0",
+    "tree-sitter-go>=0.21.0",
+    "tree-sitter-javascript>=0.21.0",
+    "tree-sitter-python>=0.21.0",
+    "tree-sitter-css>=0.21.0",
+    "tree-sitter-html>=0.21.0",
+    "tree-sitter-json>=0.21.0",
+    "claude-agent-sdk>=0.1.58,<0.2",
+    "jinja2>=3.1.6,<4.0",
+    # Type checking
+    "mypy>=1.14.0",
+    "django-stubs>=5.1.0",
+    "django-stubs-ext>=5.1.0",
+    "djangorestframework-stubs>=3.15.0",
+    "jsonschema>=4.23.0",
+    # Git platform integrations
+    "python-gitlab>=4.0.0",
+    "PyGithub>=2.0.0",
+    "tenacity>=8.2.0",
+    # LLM providers
+    "anthropic>=0.40.0",
+    "mistune>=3.2.0",
+    "django-apscheduler>=0.7.0",
+    # System monitoring (Phase)
+    "psutil>=5.9.0",
+    "python-socks>=2.8.0",
+    "openai>=2.16.0",
+    "adrf>=0.1.12",
+    "google-genai>=1.0.0",
+    # RAG Enhancement
+    "fastembed>=0.4.0",
+    "pywebpush>=2.3.0",
+    "langgraph>=1.1.6",
+    "langgraph-checkpoint-sqlite>=3.0.3",
+    "langchain>=1.2.15",
+    "langchain-anthropic>=1.3.5",
+    "langchain-openai>=1.1.14,<2.0",
+    "langchain-google-genai>=4.2.1,<5.0",
+    "langchain-ollama>=1.1.0,<2.0",
+    "tree-sitter-typescript",
+    "pygls>=2.0",
 ]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
 [tool.hatch.build.targets.wheel]
 packages = ["friday"]
+
 [dependency-groups]
 dev = [
- "debugpy>=1.8.19",
- "hatchling>=1.28.0",
- "pytest>=9.0.2",
- "pytest-asyncio>=1.3.0",
- "pytest-django>=4.8",
- "pytest-cov>=4.1",
- "ruff>=0.14.11",
- "factory-boy>=3.3",
- "types-docker>=7.1.0.20260109",
- "django-stubs-ext>=5.2.8",
- "respx>=0.21.0", # Phase: 5 Provider 健康检查 httpx mock
- "pytest-socket>=0.7.0", # Phase: --disable-socket 强制隔离外部 HTTP
+    "debugpy>=1.8.19",
+    "hatchling>=1.28.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-django>=4.8",
+    "pytest-cov>=4.1",
+    "ruff>=0.14.11",
+    "factory-boy>=3.3",
+    "types-docker>=7.1.0.20260109",
+    "django-stubs-ext>=5.2.8",
+    "respx>=0.21.0",         # initial implementation: 5 Provider 健康检查 httpx mock
+    "pytest-socket>=0.7.0",  # initial implementation: --disable-socket 强制隔离外部 HTTP
 ]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "friday.settings"
 pythonpath = ["."]
@@ -104,26 +108,29 @@ testpaths = ["tests"]
 addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration and not slow'"
 asyncio_mode = "auto"
 markers = [
- "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（Phase）",
- "integration: integration tests requiring external binaries (e.g. vue-language-server)（Phase）",
- "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（Phase）",
- "real_history_load: 关闭 test_chat_runner.py 的 _disable_history_load autouse mock，用于专测历史回灌逻辑本身",
- "no_workdir_stub: 关闭 test_graph_builder.py 的 prepare_repo_workdir autouse stub，用于专测 clone 命令本身",
+    "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（initial implementation contract）",
+    "integration: integration tests requiring external binaries (e.g. vue-language-server)（initial implementation）",
+    "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（initial implementation）",
+    "real_history_load: 关闭 test_chat_runner.py 的 _disable_history_load autouse mock，用于专测历史回灌逻辑本身",
+    "no_workdir_stub: 关闭 test_graph_builder.py 的 prepare_repo_workdir autouse stub，用于专测 clone 命令本身（contract）",
 ]
+
 [tool.coverage.run]
 source = ["friday"]
 omit = ["*/migrations/*", "*/tests/*", "*/__pycache__/*"]
+
 [tool.coverage.report]
 exclude_lines = [
- "pragma: no cover",
- "def __repr__",
- "raise NotImplementedError",
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
 ]
+
 [tool.mypy]
 python_version = "3.14"
 plugins = [
- "mypy_django_plugin.main",
- "mypy_drf_plugin.main",
+    "mypy_django_plugin.main",
+    "mypy_drf_plugin.main",
 ]
 strict = false
 warn_return_any = false
@@ -134,78 +141,89 @@ explicit_package_bases = true
 disallow_untyped_defs = false
 check_untyped_defs = false
 exclude = [
- "migrations/",
- "__pycache__/",
- ".venv/",
- "workflows/tests/", # 避免与 tests/ 重复
+    "migrations/",
+    "__pycache__/",
+    ".venv/",
+    "workflows/tests/",  # 避免与 tests/ 重复
 ]
+
 # 针对特定模块放宽检查
 [[tool.mypy.overrides]]
 module = [
- "*.views",
- "*.serializers",
- "*.permissions",
- "*.analytics",
- "*.analytics_serializers",
+    "*.views",
+    "*.serializers",
+    "*.permissions",
+    "*.analytics",
+    "*.analytics_serializers",
 ]
 # DRF 视图/序列化器/权限的特殊模式
 # type-var: adrf async @action 方法不满足 rest_framework-stubs 的 _View bound
 disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "list-item", "return-value", "type-var"]
+
 [[tool.mypy.overrides]]
 module = [
- "*.models",
- "*.models.*",
- "workflows.models.*",
+    "*.models",
+    "*.models.*",
+    "workflows.models.*",
 ]
 # Django ORM 动态属性
 disable_error_code = ["attr-defined", "assignment"]
+
 [[tool.mypy.overrides]]
 module = [
- "*.nodes.*",
- "*.engine.*",
- "*.triggers.*",
+    "*.nodes.*",
+    "*.engine.*",
+    "*.triggers.*",
 ]
 # 工作流节点的动态类型操作
 disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "operator", "call-overload", "return-value"]
+
 [[tool.mypy.overrides]]
 module = [
- "services.*",
- "chat.*",
- "projects.*",
- "prompts.*",
+    "services.*",
+    "chat.*",
+    "projects.*",
+    "prompts.*",
 ]
 # 服务层放宽检查
 disable_error_code = ["attr-defined", "arg-type", "assignment", "misc", "var-annotated"]
+
 [[tool.mypy.overrides]]
 module = ["agents.llm_factory"]
-# Phase：service-provider adapter 宽松域（ / 限定单模块，禁止扩散）
+# initial implementation：service-provider adapter 宽松域（contract / contract 限定单模块，禁止扩散）
 disable_error_code = ["attr-defined", "arg-type", "assignment"]
+
 [[tool.mypy.overrides]]
 module = [
- "*.urls",
- "*.templates.*",
- "*.approval",
- "feishu.*",
+    "*.urls",
+    "*.templates.*",
+    "*.approval",
+    "feishu.*",
 ]
 # URL 路由和其他模块
 disable_error_code = ["attr-defined", "arg-type"]
+
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disable_error_code = ["attr-defined", "arg-type", "no-untyped-def"]
+
 [tool.django-stubs]
 django_settings_module = "friday.settings"
+
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
+
 # uv 通过 [project.scripts] 定义 CLI 入口点
 # 常用命令直接使用 uv run：
-# uv run mypy . - 类型检查
-# uv run ruff check . - 代码检查
-# uv run ruff format . - 格式化代码
-# uv run pytest - 运行测试
-# uv run pytest --cov --cov-report=html - 测试+覆盖率
-# uv run python manage.py runserver - 开发服务器
-# uv run python manage.py migrate - 数据库迁移
+#   uv run mypy .                        - 类型检查
+#   uv run ruff check .                  - 代码检查
+#   uv run ruff format .                 - 格式化代码
+#   uv run pytest                        - 运行测试
+#   uv run pytest --cov --cov-report=html  - 测试+覆盖率
+#   uv run python manage.py runserver   - 开发服务器
+#   uv run python manage.py migrate     - 数据库迁移

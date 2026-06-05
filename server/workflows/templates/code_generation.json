@@ -1,70 +1,70 @@
 {
- "version": "2.0",
- "name": "代码生成工作流",
- "description": "从需求到 MR 的完整代码生成流程：方案生成 → 飞书审批 → 容器编码 → AI 代码审查",
- "template_id": "code_generation",
- "nodes": [
- {
- "id": "trigger",
- "type": "manual_trigger",
- "name": "手动触发",
- "position": {"x": 400, "y": 0},
- "config": {
- "input_schema": {
- "type": "object",
- "properties": {
- "title": {"type": "string", "title": "任务标题"},
- "description": {"type": "string", "title": "需求描述"},
- "work_item_id": {"type": "string", "title": "飞书工作项ID"}
- },
- "required": ["title", "description"]
- }
- }
- },
- {
- "id": "generate_plan",
- "type": "ai_plan_generation",
- "name": "AI 方案生成",
- "position": {"x": 400, "y": 180},
- "config": {
- "user_prompt": "## 需求\n\n**{{input.title}}**\n\n{{input.description}}"
- }
- },
- {
- "id": "plan_approval",
- "type": "ai_plan_approval",
- "name": "方案审批",
- "position": {"x": 700, "y": 380},
- "config": {
- "chat_id": ""
- }
- },
- {
- "id": "ai_coding",
- "type": "ai_coding",
- "name": "AI 编码执行",
- "position": {"x": 400, "y": 580},
- "config": {
- "container_image": "friday/claude-code:latest",
- "timeout_seconds": 1800,
- "chat_id": ""
- }
- },
- {
- "id": "code_review",
- "type": "ai_code_review",
- "name": "AI 代码审查",
- "position": {"x": 400, "y": 760},
- "config": {
- "chat_id": ""
- }
- }
- ],
- "edges": [
- {"source": "trigger", "target": "generate_plan"},
- {"source": "generate_plan", "target": "plan_approval"},
- {"source": "plan_approval", "target": "ai_coding", "source_handle": "approved"},
- {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
- {"source": "ai_coding", "target": "code_review"}
- ]
+  "version": "2.0",
+  "name": "代码生成工作流",
+  "description": "从需求到 MR 的完整代码生成流程：方案生成 → 飞书审批 → 容器编码 → AI 代码审查",
+  "template_id": "code_generation",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "manual_trigger",
+      "name": "手动触发",
+      "position": {"x": 400, "y": 0},
+      "config": {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string", "title": "任务标题"},
+            "description": {"type": "string", "title": "需求描述"},
+            "work_item_id": {"type": "string", "title": "飞书工作项ID"}
+          },
+          "required": ["title", "description"]
+        }
+      }
+    },
+    {
+      "id": "generate_plan",
+      "type": "ai_plan_generation",
+      "name": "AI 方案生成",
+      "position": {"x": 400, "y": 180},
+      "config": {
+        "user_prompt": "## 需求\n\n**{{input.title}}**\n\n{{input.description}}"
+      }
+    },
+    {
+      "id": "plan_approval",
+      "type": "ai_plan_approval",
+      "name": "方案审批",
+      "position": {"x": 700, "y": 380},
+      "config": {
+        "chat_id": ""
+      }
+    },
+    {
+      "id": "ai_coding",
+      "type": "ai_coding",
+      "name": "AI 编码执行",
+      "position": {"x": 400, "y": 580},
+      "config": {
+        "container_image": "friday/claude-code:latest",
+        "timeout_seconds": 1800,
+        "chat_id": ""
+      }
+    },
+    {
+      "id": "code_review",
+      "type": "ai_code_review",
+      "name": "AI 代码审查",
+      "position": {"x": 400, "y": 760},
+      "config": {
+        "chat_id": ""
+      }
+    }
+  ],
+  "edges": [
+    {"source": "trigger", "target": "generate_plan"},
+    {"source": "generate_plan", "target": "plan_approval"},
+    {"source": "plan_approval", "target": "ai_coding", "source_handle": "approved"},
+    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
+    {"source": "ai_coding", "target": "code_review"}
+  ]
 }

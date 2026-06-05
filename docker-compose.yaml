@@ -4,133 +4,140 @@
 # 初始化配置: scripts/setup.sh
 # 启动完整体实例: docker compose up -d
 # 源码构建启动: docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build
+
 services:
- redis:
- image: redis:7-alpine
- container_name: friday-redis
- ports:
- - "${REDIS_PORT:-6379}:6379"
- volumes:
- - "${FRIDAY_DATA_DIR:-~/.friday-ai}/redis:/data"
- networks:
- - friday-network
- restart: unless-stopped
- healthcheck:
- test: ["CMD", "redis-cli", "ping"]
- interval: 10s
- timeout: 5s
- retries: 5
- server:
- image: ghcr.io/friday-ai-codes/friday-ai/server:latest
- container_name: friday-server
- ports:
- - "${FRIDAY_PORT:-10241}:8000"
- environment:
- - SECRET_KEY=${SECRET_KEY:-}
- - DEBUG=${DEBUG:-false}
- - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
- - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
- - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
- - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
- - GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
- - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
- - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
- - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
- - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
- - REDIS_URL=redis://redis:6379/0
- - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
- - QDRANT_API_KEY=${QDRANT_API_KEY:-}
- volumes:
- - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
- networks:
- - friday-network
- depends_on:
- postgres:
- condition: service_healthy
- redis:
- condition: service_healthy
- qdrant:
- condition: service_healthy
- restart: unless-stopped
- healthcheck:
- test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
- interval: 30s
- timeout: 10s
- retries: 5
- start_period: 30s
- web:
- image: ghcr.io/friday-ai-codes/friday-ai/web:latest
- container_name: friday-web
- ports:
- - "${FRIDAY_WEB_PORT:-10240}:8080"
- volumes:
- - ./deploy/docker/nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
- networks:
- - friday-network
- depends_on:
- server:
- condition: service_healthy
- restart: unless-stopped
- healthcheck:
- test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
- interval: 30s
- timeout: 10s
- retries: 3
- start_period: 5s
- runner:
- image: ghcr.io/friday-ai-codes/friday-ai/runner:latest
- container_name: friday-runner
- user: "65534:${DOCKER_GID:-999}"
- environment:
- - FRIDAY_RUNNER_URL=http://server:8000
- - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
- - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
- - FRIDAY_RUNNER_EXECUTOR=docker
- volumes:
- - /var/run/docker.sock:/var/run/docker.sock
- - "${FRIDAY_DATA_DIR:-~/.friday-ai}/runner:/data"
- networks:
- - friday-network
- depends_on:
- server:
- condition: service_healthy
- restart: unless-stopped
- postgres:
- image: postgres:17-alpine
- container_name: friday-postgres
- environment:
- POSTGRES_USER: ${POSTGRES_USER:-friday}
- POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-friday}
- POSTGRES_DB: ${POSTGRES_DB:-friday}
- volumes:
- - "${FRIDAY_DATA_DIR:-~/.friday-ai}/postgres:/var/lib/postgresql/data"
- networks:
- - friday-network
- healthcheck:
- test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-friday}"]
- interval: 10s
- timeout: 5s
- retries: 5
- restart: unless-stopped
- qdrant:
- image: qdrant/qdrant:latest
- container_name: friday-qdrant
- ports:
- - "${QDRANT_HTTP_PORT:-6333}:6333"
- - "${QDRANT_GRPC_PORT:-6334}:6334"
- environment:
- - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
- volumes:
- - "${FRIDAY_DATA_DIR:-~/.friday-ai}/qdrant:/qdrant/storage"
- networks:
- - friday-network
- restart: unless-stopped
- healthcheck:
- test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
- interval: 30s
- timeout: 10s
- retries: 3
- start_period: 10s
+  redis:
+    image: redis:7-alpine
+    container_name: friday-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - "${FRIDAY_DATA_DIR:-~/.friday-ai}/redis:/data"
+    networks:
+      - friday-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/server:${FRIDAY_IMAGE_TAG:-latest}
+    container_name: friday-server
+    ports:
+      - "${FRIDAY_PORT:-10241}:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DEBUG=${DEBUG:-false}
+      - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+      - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
+      - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
+      - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
+      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+    volumes:
+      - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
+    networks:
+      - friday-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  web:
+    image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/web:${FRIDAY_IMAGE_TAG:-latest}
+    container_name: friday-web
+    ports:
+      - "${FRIDAY_WEB_PORT:-10240}:8080"
+    volumes:
+      - ./deploy/docker/nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - friday-network
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  runner:
+    image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/runner:${FRIDAY_IMAGE_TAG:-latest}
+    container_name: friday-runner
+    user: "65534:${DOCKER_GID:-999}"
+    environment:
+      - FRIDAY_RUNNER_URL=http://server:8000
+      - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
+      - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
+      - FRIDAY_RUNNER_EXECUTOR=docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "${FRIDAY_DATA_DIR:-~/.friday-ai}/runner:/data"
+    networks:
+      - friday-network
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: friday-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-friday}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-friday}
+      POSTGRES_DB: ${POSTGRES_DB:-friday}
+    volumes:
+      - "${FRIDAY_DATA_DIR:-~/.friday-ai}/postgres:/var/lib/postgresql/data"
+    networks:
+      - friday-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-friday}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: friday-qdrant
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+    volumes:
+      - "${FRIDAY_DATA_DIR:-~/.friday-ai}/qdrant:/qdrant/storage"
+    networks:
+      - friday-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 networks:
- friday-network:
- driver: bridge
+  friday-network:
+    driver: bridge

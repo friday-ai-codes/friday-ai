@@ -8,273 +8,306 @@ import DataTable from '~/components/common/DataTable.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
- Tooltip,
- TooltipContent,
- TooltipProvider,
- TooltipTrigger,
-} from '~/components/ui/tooltip'
-import {
- Select,
- SelectContent,
- SelectItem,
- SelectTrigger,
- SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '~/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '~/components/ui/tooltip'
 import SymbolTypeFilter from './SymbolTypeFilter.vue'
+
 const props = defineProps<{
- repositoryId: string
-}>
+  repositoryId: string
+}>()
+
 const emit = defineEmits<{
- 'select-symbol': [id: string]
-}>
+  'select-symbol': [id: string]
+}>()
+
 // 服务端分页状态
 const PAGE_SIZE_OPTIONS = [50, 100, 200] as const
-const symbols = ref<SymbolRow>
+const symbols = ref<SymbolRow[]>([])
 const total = ref(0)
 const offset = ref(0)
 const limit = ref<number>(50)
 const loading = ref(false)
 const error = ref<string | null>(null)
+
 // 过滤状态
-const selectedTypes = ref<string>
+const selectedTypes = ref<string[]>([])
 const nameQuery = ref('')
 const filePathQuery = ref('')
+
 const BADGE_VARIANTS: Record<string, 'info' | 'success' | 'secondary' | 'muted'> = {
- FUNCTION: 'info',
- CLASS: 'success',
- METHOD: 'info',
- VARIABLE: 'muted',
+  FUNCTION: 'info',
+  CLASS: 'success',
+  METHOD: 'info',
+  VARIABLE: 'muted',
 }
+
 const SYMBOL_TYPE_LABELS: Record<string, string> = {
- FUNCTION: '函数',
- CLASS: '类',
- METHOD: '方法',
- VARIABLE: '变量',
+  FUNCTION: '函数',
+  CLASS: '类',
+  METHOD: '方法',
+  VARIABLE: '变量',
 }
-const columns: ColumnDef<SymbolRow> = [
- {
- id: 'name',
- header: '名称',
- accessorKey: 'name',
- enableSorting: true,
- cell: ({ row }) =>
- h(
- 'button',
- {
- class: 'font-mono text-sm text-primary hover:underline text-left',
- onClick: (e: MouseEvent) => {
- e.stopPropagation
- emit('select-symbol', row.original.id)
- },
- },
- row.original.name,
- ),
- },
- {
- id: 'symbol_type',
- header: '类型',
- accessorKey: 'symbol_type',
- enableSorting: true,
- cell: ({ row }) =>
- h(
- Badge,
- { variant: BADGE_VARIANTS[row.original.symbol_type] ?? 'secondary' },
- => SYMBOL_TYPE_LABELS[row.original.symbol_type] ?? row.original.symbol_type,
- ),
- },
- {
- id: 'file_path',
- header: '文件路径',
- accessorKey: 'file_path',
- cell: ({ row }) =>
- h(TooltipProvider, { delayDuration: 300 }, =>
- h(Tooltip, null, {
- default: => [
- h(TooltipTrigger, { asChild: true }, =>
- h(
- 'span',
- { class: 'font-mono text-xs truncate max-w-[200px] block', title: row.original.file_path },
- row.original.file_path,
- )),
- h(TooltipContent, null, => row.original.file_path),
- ],
- })),
- },
- {
- id: 'line_range',
- header: '行范围',
- accessorFn: (row: SymbolRow) => `L${row.line_start}–${row.line_end}`,
- cell: ({ row }) =>
- h(
- 'span',
- { class: 'font-mono text-xs text-muted-foreground' },
- `L${row.original.line_start}–${row.original.line_end}`,
- ),
- },
+
+const columns: ColumnDef<SymbolRow>[] = [
+  {
+    id: 'name',
+    header: '名称',
+    accessorKey: 'name',
+    enableSorting: true,
+    cell: ({ row }) =>
+      h(
+        'button',
+        {
+          class: 'font-mono text-sm text-primary hover:underline text-left',
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation()
+            emit('select-symbol', row.original.id)
+          },
+        },
+        row.original.name,
+      ),
+  },
+  {
+    id: 'symbol_type',
+    header: '类型',
+    accessorKey: 'symbol_type',
+    enableSorting: true,
+    cell: ({ row }) =>
+      h(
+        Badge,
+        { variant: BADGE_VARIANTS[row.original.symbol_type] ?? 'secondary' },
+        () => SYMBOL_TYPE_LABELS[row.original.symbol_type] ?? row.original.symbol_type,
+      ),
+  },
+  {
+    id: 'file_path',
+    header: '文件路径',
+    accessorKey: 'file_path',
+    cell: ({ row }) =>
+      h(TooltipProvider, { delayDuration: 300 }, () =>
+        h(Tooltip, null, {
+          default: () => [
+            h(TooltipTrigger, { asChild: true }, () =>
+              h(
+                'span',
+                { class: 'font-mono text-xs truncate max-w-[200px] block', title: row.original.file_path },
+                row.original.file_path,
+              )),
+            h(TooltipContent, null, () => row.original.file_path),
+          ],
+        })),
+  },
+  {
+    id: 'line_range',
+    header: '行范围',
+    accessorFn: (row: SymbolRow) => `L${row.line_start}–${row.line_end}`,
+    cell: ({ row }) =>
+      h(
+        'span',
+        { class: 'font-mono text-xs text-muted-foreground' },
+        `L${row.original.line_start}–${row.original.line_end}`,
+      ),
+  },
 ]
-async function fetchSymbols {
- loading.value = true
- error.value = null
- try {
- const res = await getSymbols({
- repositoryId: props.repositoryId,
- symbolTypes: selectedTypes.value.length > 0 ? selectedTypes.value: undefined,
- name: nameQuery.value || undefined,
- filePath: filePathQuery.value || undefined,
- limit: limit.value,
- offset: offset.value,
- })
- symbols.value = res.results
- total.value = res.count
- }
- catch (e: unknown) {
- error.value = e instanceof Error ? e.message: '加载失败'
- }
- finally {
- loading.value = false
- }
+
+async function fetchSymbols() {
+  loading.value = true
+  error.value = null
+  try {
+    const res = await getSymbols({
+      repositoryId: props.repositoryId,
+      symbolTypes: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
+      name: nameQuery.value || undefined,
+      filePath: filePathQuery.value || undefined,
+      limit: limit.value,
+      offset: offset.value,
+    })
+    symbols.value = res.results
+    total.value = res.count
+  }
+  catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : '加载失败'
+  }
+  finally {
+    loading.value = false
+  }
 }
+
 const debouncedFetch = useDebounceFn(fetchSymbols, 300)
-watch([selectedTypes, filePathQuery], => {
- offset.value = 0
- fetchSymbols
+
+watch([selectedTypes, filePathQuery], () => {
+  offset.value = 0
+  fetchSymbols()
 })
-watch(nameQuery, => {
- offset.value = 0
- debouncedFetch
+
+watch(nameQuery, () => {
+  offset.value = 0
+  debouncedFetch()
 })
+
 function handleRowClick(row: SymbolRow) {
- emit('select-symbol', row.id)
+  emit('select-symbol', row.id)
 }
-function prevPage {
- if (offset.value >= limit.value) {
- offset.value -= limit.value
- fetchSymbols
- }
+
+function prevPage() {
+  if (offset.value >= limit.value) {
+    offset.value -= limit.value
+    fetchSymbols()
+  }
 }
-function nextPage {
- if (offset.value + limit.value < total.value) {
- offset.value += limit.value
- fetchSymbols
- }
+
+function nextPage() {
+  if (offset.value + limit.value < total.value) {
+    offset.value += limit.value
+    fetchSymbols()
+  }
 }
+
 function handlePageSizeChange(value: unknown) {
- const next = Number(value)
- if (!Number.isFinite(next) || next <= 0)
- return
- limit.value = next
- offset.value = 0
- fetchSymbols
+  const next = Number(value)
+  if (!Number.isFinite(next) || next <= 0)
+    return
+  limit.value = next
+  offset.value = 0
+  fetchSymbols()
 }
-function clearFilters {
- selectedTypes.value =
- nameQuery.value = ''
- filePathQuery.value = ''
- offset.value = 0
- fetchSymbols
+
+function clearFilters() {
+  selectedTypes.value = []
+  nameQuery.value = ''
+  filePathQuery.value = ''
+  offset.value = 0
+  fetchSymbols()
 }
-const hasFilters = computed( =>
- selectedTypes.value.length > 0 || !!nameQuery.value || !!filePathQuery.value,
+
+const hasFilters = computed(() =>
+  selectedTypes.value.length > 0 || !!nameQuery.value || !!filePathQuery.value,
 )
-const currentPage = computed( => Math.floor(offset.value / limit.value) + 1)
-const totalPages = computed( => Math.ceil(total.value / limit.value))
-const rangeStart = computed( => total.value === 0 ? 0: offset.value + 1)
-const rangeEnd = computed( => Math.min(offset.value + symbols.value.length, total.value))
+
+const currentPage = computed(() => Math.floor(offset.value / limit.value) + 1)
+const totalPages = computed(() => Math.ceil(total.value / limit.value))
+const rangeStart = computed(() => total.value === 0 ? 0 : offset.value + 1)
+const rangeEnd = computed(() => Math.min(offset.value + symbols.value.length, total.value))
 onMounted(fetchSymbols)
 </script>
+
 <template>
- <div class="space-y-3">
- <!-- 过滤栏 -->
- <SymbolTypeFilter
- v-model="selectedTypes"
- v-model:name-query="nameQuery"
- v-model:file-path-query="filePathQuery"
- />
- <!-- 错误提示 -->
- <p v-if="error" class="text-xs text-destructive">
- 加载失败：{{ error }}。请稍后重试。
- </p>
- <!-- DataTable：服务端分页模式，禁用其内置分页 footer，避免与下方分页器冲突 -->
- <DataTable:data="symbols":columns="columns"
- table-id="symbols-tab"
- server-side:loading="loading":on-row-click="handleRowClick"
- />
- <!-- 空状态（无数据 + 无过滤条件） -->
- <div
- v-if="!loading && symbols.length === 0 && !hasFilters"
- class="flex flex-col items-center justify-center py-8 text-center"
- >
- <span class="icon-[lucide--database] text-3xl text-muted-foreground mb-3" />
- <p class="text-base font-semibold">
- 仓库暂无 Symbol 数据
- </p>
- <p class="text-sm text-muted-foreground mt-1">
- 请先完成代码索引，系统将自动提取 Symbol 结构。
- </p>
- <Button variant="outline" size="sm" class="mt-3 text-xs">
- 前往索引设置
- </Button>
- </div>
- <!-- 空状态（有过滤条件但无结果） -->
- <div
- v-if="!loading && symbols.length === 0 && hasFilters"
- class="flex flex-col items-center justify-center py-6 text-center"
- >
- <span class="icon-[lucide--search-x] text-2xl text-muted-foreground mb-2" />
- <p class="text-sm font-semibold">
- 未找到匹配结果
- </p>
- <p class="text-xs text-muted-foreground mt-1">
- 尝试调整过滤条件或清除搜索内容。
- </p>
- <Button variant="ghost" size="sm" class="mt-2 text-xs" @click="clearFilters">
- 清除过滤
- </Button>
- </div>
- <!-- 服务端分页控制（与列表区域唯一可信进度源） -->
- <div
- v-if="total > 0"
- class="flex items-center justify-between px-1 gap-3 flex-wrap"
- >
- <div class="flex items-center gap-3 text-xs text-muted-foreground">
- <span>显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ total }} 个 Symbol</span>
- <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
- <div class="flex items-center gap-2">
- <span>每页:</span>
- <Select:model-value="String(limit)"
- @update:model-value="handlePageSizeChange"
- >
- <SelectTrigger class=" w-[70px] text-xs">
- <SelectValue />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="size in PAGE_SIZE_OPTIONS":key="size":value="String(size)"
- >
- {{ size }}
- </SelectItem>
- </SelectContent>
- </Select>
- </div>
- </div>
- <div class="flex gap-2">
- <Button
- variant="outline"
- size="sm"
- class=" text-xs":disabled="currentPage <= 1"
- @click="prevPage"
- >
- 上一页
- </Button>
- <Button
- variant="outline"
- size="sm"
- class=" text-xs":disabled="currentPage >= totalPages"
- @click="nextPage"
- >
- 下一页
- </Button>
- </div>
- </div>
- </div>
+  <div class="space-y-3">
+    <!-- 过滤栏 -->
+    <SymbolTypeFilter
+      v-model="selectedTypes"
+      v-model:name-query="nameQuery"
+      v-model:file-path-query="filePathQuery"
+    />
+
+    <!-- 错误提示 -->
+    <p v-if="error" class="text-xs text-destructive">
+      加载失败：{{ error }}。请稍后重试。
+    </p>
+
+    <!-- DataTable：服务端分页模式，禁用其内置分页 footer，避免与下方分页器冲突 -->
+    <DataTable
+      :data="symbols"
+      :columns="columns"
+      table-id="symbols-tab"
+      server-side
+      :loading="loading"
+      :on-row-click="handleRowClick"
+    />
+
+    <!-- 空状态（无数据 + 无过滤条件） -->
+    <div
+      v-if="!loading && symbols.length === 0 && !hasFilters"
+      class="flex flex-col items-center justify-center py-8 text-center"
+    >
+      <span class="icon-[lucide--database] text-3xl text-muted-foreground mb-3" />
+      <p class="text-base font-semibold">
+        仓库暂无 Symbol 数据
+      </p>
+      <p class="text-sm text-muted-foreground mt-1">
+        请先完成代码索引，系统将自动提取 Symbol 结构。
+      </p>
+      <Button variant="outline" size="sm" class="mt-3 h-8 text-xs">
+        前往索引设置
+      </Button>
+    </div>
+
+    <!-- 空状态（有过滤条件但无结果） -->
+    <div
+      v-if="!loading && symbols.length === 0 && hasFilters"
+      class="flex flex-col items-center justify-center py-6 text-center"
+    >
+      <span class="icon-[lucide--search-x] text-2xl text-muted-foreground mb-2" />
+      <p class="text-sm font-semibold">
+        未找到匹配结果
+      </p>
+      <p class="text-xs text-muted-foreground mt-1">
+        尝试调整过滤条件或清除搜索内容。
+      </p>
+      <Button variant="ghost" size="sm" class="mt-2 h-7 text-xs" @click="clearFilters">
+        清除过滤
+      </Button>
+    </div>
+
+    <!-- 服务端分页控制（与列表区域唯一可信进度源） -->
+    <div
+      v-if="total > 0"
+      class="flex items-center justify-between px-1 gap-3 flex-wrap"
+    >
+      <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <span>显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ total }} 个 Symbol</span>
+        <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+        <div class="flex items-center gap-2">
+          <span>每页:</span>
+          <Select
+            :model-value="String(limit)"
+            @update:model-value="handlePageSizeChange"
+          >
+            <SelectTrigger class="h-7 w-[70px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="size in PAGE_SIZE_OPTIONS"
+                :key="size"
+                :value="String(size)"
+              >
+                {{ size }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 text-xs"
+          :disabled="currentPage <= 1"
+          @click="prevPage"
+        >
+          上一页
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 text-xs"
+          :disabled="currentPage >= totalPages"
+          @click="nextPage"
+        >
+          下一页
+        </Button>
+      </div>
+    </div>
+  </div>
 </template>

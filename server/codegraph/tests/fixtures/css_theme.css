@@ -1,28 +1,37 @@
-/* Phase CSS Fixture (per + / ) */
+/* initial implementation CSS Fixture (per work item + work item / work item) */
 @import url("./base.css");
-@import "./reset.css";:root {
- --vp-c-brand: #646cff;
- --vp-c-text: #213547;
+@import "./reset.css";
+
+:root {
+  --vp-c-brand: #646cff;
+  --vp-c-text: #213547;
 }
+
 .foo {
- color: red;
+  color: red;
 }
+
 .button-primary,
 .button-secondary {
- background: var(--vp-c-brand);
+  background: var(--vp-c-brand);
 }
+
 #app {
- width: 100%;
+  width: 100%;
 }
+
 #footer {
- height: 60px;
+  height: 60px;
 }
+
 body {
- margin: 0;
+  margin: 0;
 }
+
 * {
- box-sizing: border-box;
+  box-sizing: border-box;
 }
+
 .complex.modifier:hover {
- opacity: 0.5;
+  opacity: 0.5;
 }

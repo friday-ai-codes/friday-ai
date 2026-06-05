@@ -1,382 +1,454 @@
 """AIPlanGenerationNode - AI-powered technical plan generation workflow node.
+
 Orchestrates multi-repository analysis and generates structured technical plans
 via LLM-driven tool scheduling. Supports iterative refinement through Feishu
 card interactions with verify_plan validation loop.
 """
+
 import json
 import os
 import re
 from typing import Any, ClassVar, Final
+
 import structlog
+
 from agents.core.result import AgentResult
 from prompts.keys import PromptSlugs
 from prompts.services import get_active_prompt
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.base import (
- ExecutionContext,
- NodePort,
- NodeResult,
- PortType,
+    ExecutionContext,
+    NodePort,
+    NodeResult,
+    PortType,
 )
 from workflows.nodes.registry import register_node
 from workflows.schemas.technical_plan import (
- TECHNICAL_PLAN_JSON_SCHEMA,
- validate_technical_plan,
+    TECHNICAL_PLAN_JSON_SCHEMA,
+    validate_technical_plan,
 )
-logger = structlog.get_logger
-# Phase Task 1: 从原 get_system_prompt f-string 抽取为模块级 Final[str]
+
+logger = structlog.get_logger()
+
+
+# initial implementation Task 1: 从原 get_system_prompt f-string 抽取为模块级 Final[str]
 # 供 0002 data migration 跨 app import 作为 seed；{schema_json} 改为 {{schema_json}} Jinja2 占位符
 # 字节级与原 f-string 等价(除了 schema_json 占位符从 {schema_json} → {{schema_json}})
 _PLAN_GENERATION_BASE_PROMPT: Final[str] = """你是一位资深技术方案架构师，负责分析需求并生成结构化技术方案。
+
 ## 角色与职责
+
 你需要：
 1. 理解用户的需求描述
 2. 分析关联仓库的代码结构和依赖关系
 3. 生成符合规范的结构化技术方案
 4. 通过验证后推送给用户审阅
+
 ## 工作流程
+
 ### 第一阶段：需求分析与方案生成
+
 1. **分析需求**：仔细阅读用户的需求描述和上游节点提供的上下文
 2. **仓库分析**：使用 search_code 工具分析相关仓库的代码结构
- - 有依赖关系的仓库串行分析（先分析被依赖方）
- - 无依赖关系的仓库可以交替分析
+   - 有依赖关系的仓库串行分析（先分析被依赖方）
+   - 无依赖关系的仓库可以交替分析
 3. **生成方案**：基于分析结果，生成完整的技术方案 JSON
+
 ### 第二阶段：方案验证（自动重试）
+
 4. **调用 verify_plan**：将生成的方案传给 verify_plan 工具验证
 5. **处理验证结果**：
- - 如果验证通过（valid=true）：进入第三阶段
- - 如果验证失败（valid=false）：根据错误信息修正方案，重新验证
- - **最多重试 3 轮**，如果 3 轮后仍失败，将最新版本推送给用户并说明问题
+   - 如果验证通过（valid=true）：进入第三阶段
+   - 如果验证失败（valid=false）：根据错误信息修正方案，重新验证
+   - **最多重试 3 轮**，如果 3 轮后仍失败，将最新版本推送给用户并说明问题
+
 ### 第三阶段：飞书交互
+
 6. **创建文档**：使用 create_feishu_document 将完整方案写入飞书文档
 7. **发送卡片**：使用 send_plan_card 将方案摘要和文档链接推送到飞书群
 8. **等待反馈**：用户可能：
- - 确认方案（approve）→ 你的任务完成
- - 请求修改（revise）→ 根据反馈修改方案，重新走验证和推送流程
- - 提供反馈（feedback）→ 根据反馈内容优化方案
+   - 确认方案（approve）→ 你的任务完成
+   - 请求修改（revise）→ 根据反馈修改方案，重新走验证和推送流程
+   - 提供反馈（feedback）→ 根据反馈内容优化方案
+
 ### 终止条件
+
 - 用户点击「确认方案」按钮
 - 用户反馈中包含明确的肯定确认
+
 ### 重要规则
+
 - **禁止直接输出文字回复用户。** 当你需要向用户提问、确认信息或请求补充需求时，必须调用 ask_user_question 工具，绝不能用纯文字回复代替。
 - 如果需求描述不清晰、信息不足或存在歧义，立即调用 ask_user_question 向用户提问，不要猜测或自行假设。
 - 你的每一轮迭代都应该调用至少一个工具（search_code、verify_plan、ask_user_question 等），不要空转。
+
 ## 输出格式
+
 技术方案必须符合以下 JSON Schema：
+
 ```json
 {{schema_json}}
 ```
+
 ### 关键字段说明
+
 - `title`: 方案标题，清晰描述方案主题
 - `summary`: 方案摘要，work-item 字概述方案内容和关键决策
 - `execution_plan`: 任务列表，每个任务必须指定目标仓库和分支策略
-- `execution_plan.coding_instruction`: 详细的编码指令，供下游 AI 编码节点使用
+- `execution_plan[].coding_instruction`: 详细的编码指令，供下游 AI 编码节点使用
+
 ## 注意事项
+
 - 每个任务必须绑定一个仓库（repository_id + repository_name）
 - 任务间的依赖关系通过 dependencies 字段声明
 - coding_instruction 应该足够详细，让不了解上下文的 AI 也能执行
 - 方案验证失败时仔细阅读错误信息，针对性修正"""
+
+
 @register_node
 class AIPlanGenerationNode(AIAgentBaseNode):
- """AI 技术方案生成节点。
- 通过 Orchestrator Agent 编排多仓库分析，自动生成结构化技术方案。
- 支持 verify_plan 验证 + 飞书卡片多轮迭代。
- Workflow: 分析需求 → 调度工具分析仓库 → 生成方案 → verify_plan 验证
- → 失败则重试(最多3轮) → 通过后 send_plan_card 推送飞书 → 用户迭代
- """
- node_type: ClassVar[str] = "ai_plan_generation"
- display_name: ClassVar[str] = "AI 方案生成"
- description: ClassVar[str] = "AI 自动跨仓库分析需求，生成结构化技术方案"
- icon: ClassVar[str] = "file-text"
- # 子步骤声明：分析需求 → 生成计划 → 审查计划
- sub_steps: ClassVar[list[tuple[str, str]]] = [
- ("analyze", "分析需求"),
- ("generate_plan", "生成计划"),
- ("review", "审查计划"),
- ]
- def __init__(self) -> None:
- """初始化实例，声明 Phase 预渲染 base_prompt 实例属性。"""
- super.__init__
- # Phase: execute 预渲染结果注入口；get_system_prompt 从此读取
- self._precomputed_base_prompt: str | None = None
- config_schema: ClassVar[dict[str, Any]] = {
- "type": "object",
- "properties": {
- **AIAgentBaseNode.config_schema["properties"],
- "system_prompt": {
- "type": "string",
- "title": "System Prompt (追加)",
- "description": "追加到默认 System Prompt 末尾的自定义指令",
- "default": "",
- },
- "user_prompt": {
- "type": "string",
- "title": "User Prompt",
- "description": "需求描述，支持模板变量 {{nodes.ID.field}}",
- },
- "include_repos": {
- "type": "array",
- "title": "必须包含的仓库",
- "items": {"type": "string"},
- "default":,
- },
- "exclude_repos": {
- "type": "array",
- "title": "必须排除的仓库",
- "items": {"type": "string"},
- "default":,
- },
- "max_iterations": {
- "type": "integer",
- "title": "最大迭代轮次",
- "description": "Agent Loop 最大迭代次数（方案生成需要更多轮次）",
- "default": 50,
- "minimum": 10,
- "maximum": 200,
- },
- "timeout_minutes": {
- "type": "integer",
- "title": "超时时间 (分钟)",
- "description": "方案生成的最大超时时间（默认 30 分钟，方案生成涉及多轮工具调用需要更长时间）",
- "default": 30,
- "minimum": 5,
- "maximum": 120,
- },
- "enabled_tools": {
- "type": "array",
- "title": "额外工具",
- "description": "除默认工具外额外启用的工具名称",
- "items": {"type": "string"},
- "default":,
- },
- },
- "required": ["user_prompt"],
- }
- inputs: ClassVar[list[NodePort]] = [
- NodePort(
- name="default",
- label="需求输入",
- port_type=PortType.OBJECT,
- required=False,
- description="上游节点输出，可在模板中通过 {{nodes.ID.field}} 引用",
- ),
- ]
- outputs: ClassVar[list[NodePort]] = [
- NodePort(
- name="default",
- label="技术方案",
- port_type=PortType.OBJECT,
- description="包含 plan（结构化方案）、final_answer、usage",
- schema={
- "type": "object",
- "properties": {
- "plan": {"type": "object"},
- "final_answer": {"type": "string"},
- "usage": {"type": "object"},
- },
- },
- ),
- NodePort(
- name="error",
- label="Error",
- port_type=PortType.OBJECT,
- description="错误信息",
- ),
- ]
- # ===== Hook method overrides =====
- def get_system_prompt(self, context: ExecutionContext) -> str:
- """生成 Orchestrator 角色的 System Prompt。
- Phase Task 1/6 双路径：
- - 若 self._precomputed_base_prompt 已由 execute 预填（Prompt Center 渲染结果），直接使用
- - 否则降级到模块级常量 _PLAN_GENERATION_BASE_PROMPT 的 .replace 替换路径
- （供单元测试直接调用 hook 时使用）
- """
- precomputed = getattr(self, "_precomputed_base_prompt", None)
- if precomputed is not None:
- base_prompt = precomputed
- else:
- schema_json = json.dumps(
- TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
- )
- base_prompt = _PLAN_GENERATION_BASE_PROMPT.replace(
- "{{schema_json}}", schema_json
- )
- # 追加用户自定义 system_prompt
- custom_prompt = context.node_config.get("system_prompt", "")
- if custom_prompt:
- custom_rendered = context.render_template(custom_prompt)
- base_prompt += f"\n\n## 额外指令\n\n{custom_rendered}"
- return base_prompt
- def get_user_prompt(self, context: ExecutionContext) -> str:
- """从 config 读取 user_prompt 并注入上下文。"""
- config = context.node_config
- user_prompt = context.render_template(config.get("user_prompt", ""))
- # 注入上游节点输出
- upstream_context = ""
- if context.input_data:
- upstream_context = "\n\n## 上游节点输出\n\n"
- upstream_context += json.dumps(
- context.input_data, ensure_ascii=False, indent=2
- )
- # 注入仓库过滤信息
- repo_context = ""
- include_repos: list[str] = config.get("include_repos", )
- exclude_repos: list[str] = config.get("exclude_repos", )
- if include_repos:
- repo_context += f"\n\n**必须包含的仓库:** {', '.join(include_repos)}"
- if exclude_repos:
- repo_context += f"\n\n**排除的仓库:** {', '.join(exclude_repos)}"
- return f"{user_prompt}{upstream_context}{repo_context}"
- def get_enabled_tools(self, context: ExecutionContext) -> list[str] | None:
- """返回方案生成节点需要的工具集。"""
- base_tools = [
- "verify_plan",
- "send_plan_card",
- "create_feishu_document",
- "fetch_feishu_document",
- "ask_user_question",
- "search_code",
- ]
- # 加上 config 中额外指定的工具
- extra_tools: list[str] = context.node_config.get("enabled_tools", )
- for t in extra_tools:
- if t not in base_tools:
- base_tools.append(t)
- return base_tools
- def get_max_iterations(self, context: ExecutionContext) -> int:
- """方案生成默认 50 轮（多轮迭代需要更多轮次）。"""
- value: int = context.node_config.get("max_iterations", 50)
- return value
- def map_output(self, result: AgentResult) -> dict[str, Any]:
- """从 AgentResult 提取方案并验证格式。"""
- plan_dict = self._extract_plan_from_result(result)
- if plan_dict is not None:
- is_valid, error_msg = validate_technical_plan(plan_dict)
- if is_valid:
- return {
- "plan": plan_dict,
- "final_answer": result.final_answer,
- "usage": result.usage,
- }
- logger.warning(
- "plan_validation_failed_in_map_output",
- error=error_msg,
- )
- return {
- "plan": plan_dict,
- "error": f"方案格式验证警告: {error_msg}",
- "final_answer": result.final_answer,
- "usage": result.usage,
- }
- # 无法提取结构化方案，返回原始输出
- return {
- "plan": None,
- "error": "未能从 Agent 输出中提取结构化方案",
- "final_answer": result.final_answer,
- "raw_output": result.output,
- "usage": result.usage,
- }
- # ===== Execute override with sub-step tracking =====
- async def execute(self, context: ExecutionContext) -> NodeResult:
- """执行 AI 方案生成，包含子步骤状态追踪。
- 子步骤：analyze（分析需求）→ generate_plan（生成计划）→ review（审查计划）。
- """
- from workflows.models.execution import SubStepStatus
- # Phase: 预渲染 base prompt（必须在 super.execute 之前）
- # super.execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
- # 但若 user_prompt 为空，按惯例应立刻短路返回 failed，不做任何昂贵 DB/Prompt 查询
- if not context.node_config.get("user_prompt", "").strip:
- return NodeResult(
- status="failed",
- error="User Prompt 不能为空",
- next_handle="error",
- )
- schema_json = json.dumps(
- TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
- )
- project = await self._get_project(context)
- # retreat path: schema_json 体量 4KB+，如果走 render_prompt 会被
- # Phase services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
- # 此处手工读取 active version body（或 fallback 常量）并做 str.replace，
- # 绕过 Jinja2 sandbox + 清洗流程。仍然保留 3 态语义：DB hit / DB empty /
- # PROMPT_CENTER_DISABLED_KEYS 命中（与 render_prompt 行为等价）。
- disabled_keys = {
- s.strip
- for s in os.environ.get("PROMPT_CENTER_DISABLED_KEYS", "").split(",")
- if s.strip
- }
- if PromptSlugs.AI_NODE_PLAN_GENERATION in disabled_keys:
- body_template = _PLAN_GENERATION_BASE_PROMPT
- else:
- version = await get_active_prompt(
- PromptSlugs.AI_NODE_PLAN_GENERATION,
- project_id=str(project.id) if project else None,
- )
- body_template = version.body if version is not None else _PLAN_GENERATION_BASE_PROMPT
- self._precomputed_base_prompt = body_template.replace(
- "{{schema_json}}", schema_json
- )
- # 初始化子步骤记录
- await self._init_sub_steps(context)
- # Phase: 分析需求（prompt 构建和准备）
- await self.emit_sub_step(context, "analyze", SubStepStatus.RUNNING)
- await self.emit_sub_step(context, "analyze", SubStepStatus.COMPLETED)
- # Phase: 生成计划（Agent 执行）
- await self.emit_sub_step(context, "generate_plan", SubStepStatus.RUNNING)
- try:
- result = await super.execute(context)
- except Exception:
- await self.emit_sub_step(context, "generate_plan", SubStepStatus.FAILED)
- raise
- await self.emit_sub_step(context, "generate_plan", SubStepStatus.COMPLETED)
- # Phase: 审查计划（结果验证）
- await self.emit_sub_step(context, "review", SubStepStatus.RUNNING)
- if result.status == "failed":
- await self.emit_sub_step(context, "review", SubStepStatus.FAILED)
- else:
- await self.emit_sub_step(context, "review", SubStepStatus.COMPLETED)
- return result
- # ===== Private helpers =====
- def _extract_plan_from_result(
- self, result: AgentResult
- ) -> dict[str, Any] | None:
- """尝试从 AgentResult 中提取技术方案 JSON。
- 检查 metadata 中的 plan、output 列表中的工具调用结果、
- 以及 final_answer 中的 JSON 块。
- """
- # 1. 检查 metadata 中是否直接有 plan
- if result.metadata and isinstance(result.metadata.get("plan"), dict):
- return result.metadata["plan"]
- # 2. 检查 output（工具调用历史）中的 verify_plan 结果
- if result.output and isinstance(result.output, list):
- for entry in reversed(result.output):
- if isinstance(entry, dict) and entry.get("tool") == "verify_plan":
- tool_input = entry.get("input", {})
- if isinstance(tool_input, dict) and "plan" in tool_input:
- return tool_input["plan"]
- # 3. 从 final_answer 中提取 JSON 块
- if result.final_answer:
- return self._extract_json_from_text(result.final_answer)
- return None
- @staticmethod
- def _extract_json_from_text(text: str) -> dict[str, Any] | None:
- """从文本中提取 JSON 对象（支持 ```json 代码块）。"""
- # 尝试 ```json ... ``` 格式
- json_blocks = re.findall(
- r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
- )
- for block in json_blocks:
- try:
- data = json.loads(block.strip)
- if isinstance(data, dict) and "title" in data:
- return data
- except json.JSONDecodeError:
- continue
- # 尝试直接解析整个文本
- try:
- data = json.loads(text.strip)
- if isinstance(data, dict):
- return data
- except json.JSONDecodeError:
- pass
- return None
+    """AI 技术方案生成节点。
+
+    通过 Orchestrator Agent 编排多仓库分析，自动生成结构化技术方案。
+    支持 verify_plan 验证 + 飞书卡片多轮迭代。
+
+    Workflow: 分析需求 → 调度工具分析仓库 → 生成方案 → verify_plan 验证
+    → 失败则重试(最多3轮) → 通过后 send_plan_card 推送飞书 → 用户迭代
+    """
+
+    node_type: ClassVar[str] = "ai_plan_generation"
+    display_name: ClassVar[str] = "AI 方案生成"
+    description: ClassVar[str] = "AI 自动跨仓库分析需求，生成结构化技术方案"
+    icon: ClassVar[str] = "file-text"
+
+    # 子步骤声明：分析需求 → 生成计划 → 审查计划
+    sub_steps: ClassVar[list[tuple[str, str]]] = [
+        ("analyze", "分析需求"),
+        ("generate_plan", "生成计划"),
+        ("review", "审查计划"),
+    ]
+
+    def __init__(self) -> None:
+        """初始化实例，声明 initial implementation 预渲染 base_prompt 实例属性。"""
+        super().__init__()
+        # initial implementation: execute() 预渲染结果注入口；get_system_prompt 从此读取
+        self._precomputed_base_prompt: str | None = None
+
+    config_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            **AIAgentBaseNode.config_schema["properties"],
+            "system_prompt": {
+                "type": "string",
+                "title": "System Prompt (追加)",
+                "description": "追加到默认 System Prompt 末尾的自定义指令",
+                "default": "",
+            },
+            "user_prompt": {
+                "type": "string",
+                "title": "User Prompt",
+                "description": "需求描述，支持模板变量 {{nodes.ID.field}}",
+            },
+            "include_repos": {
+                "type": "array",
+                "title": "必须包含的仓库",
+                "items": {"type": "string"},
+                "default": [],
+            },
+            "exclude_repos": {
+                "type": "array",
+                "title": "必须排除的仓库",
+                "items": {"type": "string"},
+                "default": [],
+            },
+            "max_iterations": {
+                "type": "integer",
+                "title": "最大迭代轮次",
+                "description": "Agent Loop 最大迭代次数（方案生成需要更多轮次）",
+                "default": 50,
+                "minimum": 10,
+                "maximum": 200,
+            },
+            "timeout_minutes": {
+                "type": "integer",
+                "title": "超时时间 (分钟)",
+                "description": "方案生成的最大超时时间（默认 30 分钟，方案生成涉及多轮工具调用需要更长时间）",
+                "default": 30,
+                "minimum": 5,
+                "maximum": 120,
+            },
+            "enabled_tools": {
+                "type": "array",
+                "title": "额外工具",
+                "description": "除默认工具外额外启用的工具名称",
+                "items": {"type": "string"},
+                "default": [],
+            },
+        },
+        "required": ["user_prompt"],
+    }
+
+    inputs: ClassVar[list[NodePort]] = [
+        NodePort(
+            name="default",
+            label="需求输入",
+            port_type=PortType.OBJECT,
+            required=False,
+            description="上游节点输出，可在模板中通过 {{nodes.ID.field}} 引用",
+        ),
+    ]
+
+    outputs: ClassVar[list[NodePort]] = [
+        NodePort(
+            name="default",
+            label="技术方案",
+            port_type=PortType.OBJECT,
+            description="包含 plan（结构化方案）、final_answer、usage",
+            schema={
+                "type": "object",
+                "properties": {
+                    "plan": {"type": "object"},
+                    "final_answer": {"type": "string"},
+                    "usage": {"type": "object"},
+                },
+            },
+        ),
+        NodePort(
+            name="error",
+            label="Error",
+            port_type=PortType.OBJECT,
+            description="错误信息",
+        ),
+    ]
+
+    # ===== Hook method overrides =====
+
+    def get_system_prompt(self, context: ExecutionContext) -> str:
+        """生成 Orchestrator 角色的 System Prompt。
+
+        initial implementation Task 1/6 双路径：
+        - 若 self._precomputed_base_prompt 已由 execute() 预填（Prompt Center 渲染结果），直接使用
+        - 否则降级到模块级常量 _PLAN_GENERATION_BASE_PROMPT 的 .replace() 替换路径
+          （供单元测试直接调用 hook 时使用）
+        """
+        precomputed = getattr(self, "_precomputed_base_prompt", None)
+        if precomputed is not None:
+            base_prompt = precomputed
+        else:
+            schema_json = json.dumps(
+                TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
+            )
+            base_prompt = _PLAN_GENERATION_BASE_PROMPT.replace(
+                "{{schema_json}}", schema_json
+            )
+
+        # 追加用户自定义 system_prompt
+        custom_prompt = context.node_config.get("system_prompt", "")
+        if custom_prompt:
+            custom_rendered = context.render_template(custom_prompt)
+            base_prompt += f"\n\n## 额外指令\n\n{custom_rendered}"
+
+        return base_prompt
+
+    def get_user_prompt(self, context: ExecutionContext) -> str:
+        """从 config 读取 user_prompt 并注入上下文。"""
+        config = context.node_config
+        user_prompt = context.render_template(config.get("user_prompt", ""))
+
+        # 注入上游节点输出
+        upstream_context = ""
+        if context.input_data:
+            upstream_context = "\n\n## 上游节点输出\n\n"
+            upstream_context += json.dumps(
+                context.input_data, ensure_ascii=False, indent=2
+            )
+
+        # 注入仓库过滤信息
+        repo_context = ""
+        include_repos: list[str] = config.get("include_repos", [])
+        exclude_repos: list[str] = config.get("exclude_repos", [])
+        if include_repos:
+            repo_context += f"\n\n**必须包含的仓库:** {', '.join(include_repos)}"
+        if exclude_repos:
+            repo_context += f"\n\n**排除的仓库:** {', '.join(exclude_repos)}"
+
+        return f"{user_prompt}{upstream_context}{repo_context}"
+
+    def get_enabled_tools(self, context: ExecutionContext) -> list[str] | None:
+        """返回方案生成节点需要的工具集。"""
+        base_tools = [
+            "verify_plan",
+            "send_plan_card",
+            "create_feishu_document",
+            "fetch_feishu_document",
+            "ask_user_question",
+            "search_code",
+        ]
+
+        # 加上 config 中额外指定的工具
+        extra_tools: list[str] = context.node_config.get("enabled_tools", [])
+        for t in extra_tools:
+            if t not in base_tools:
+                base_tools.append(t)
+
+        return base_tools
+
+    def get_max_iterations(self, context: ExecutionContext) -> int:
+        """方案生成默认 50 轮（多轮迭代需要更多轮次）。"""
+        value: int = context.node_config.get("max_iterations", 50)
+        return value
+
+    def map_output(self, result: AgentResult) -> dict[str, Any]:
+        """从 AgentResult 提取方案并验证格式。"""
+        plan_dict = self._extract_plan_from_result(result)
+
+        if plan_dict is not None:
+            is_valid, error_msg = validate_technical_plan(plan_dict)
+            if is_valid:
+                return {
+                    "plan": plan_dict,
+                    "final_answer": result.final_answer,
+                    "usage": result.usage,
+                }
+            logger.warning(
+                "plan_validation_failed_in_map_output",
+                error=error_msg,
+            )
+            return {
+                "plan": plan_dict,
+                "error": f"方案格式验证警告: {error_msg}",
+                "final_answer": result.final_answer,
+                "usage": result.usage,
+            }
+
+        # 无法提取结构化方案，返回原始输出
+        return {
+            "plan": None,
+            "error": "未能从 Agent 输出中提取结构化方案",
+            "final_answer": result.final_answer,
+            "raw_output": result.output,
+            "usage": result.usage,
+        }
+
+    # ===== Execute override with sub-step tracking =====
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        """执行 AI 方案生成，包含子步骤状态追踪。
+
+        子步骤：analyze（分析需求）→ generate_plan（生成计划）→ review（审查计划）。
+        """
+        from workflows.models.execution import SubStepStatus
+
+        # initial implementation: 预渲染 base prompt（必须在 super().execute 之前）
+        # super().execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
+        # 但若 user_prompt 为空，按惯例应立刻短路返回 failed，不做任何昂贵 DB/Prompt 查询
+        if not context.node_config.get("user_prompt", "").strip():
+            return NodeResult(
+                status="failed",
+                error="User Prompt 不能为空",
+                next_handle="error",
+            )
+
+        schema_json = json.dumps(
+            TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
+        )
+        project = await self._get_project(context)
+        # contract retreat path: schema_json 体量 4KB+，如果走 render_prompt 会被
+        # initial implementation services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
+        # 此处手工读取 active version body（或 fallback 常量）并做 str.replace，
+        # 绕过 Jinja2 sandbox + 清洗流程。仍然保留 3 态语义：DB hit / DB empty /
+        # PROMPT_CENTER_DISABLED_KEYS 命中（与 render_prompt 行为等价）。
+        disabled_keys = {
+            s.strip()
+            for s in os.environ.get("PROMPT_CENTER_DISABLED_KEYS", "").split(",")
+            if s.strip()
+        }
+        if PromptSlugs.AI_NODE_PLAN_GENERATION in disabled_keys:
+            body_template = _PLAN_GENERATION_BASE_PROMPT
+        else:
+            version = await get_active_prompt(
+                PromptSlugs.AI_NODE_PLAN_GENERATION,
+                project_id=str(project.id) if project else None,
+            )
+            body_template = version.body if version is not None else _PLAN_GENERATION_BASE_PROMPT
+        self._precomputed_base_prompt = body_template.replace(
+            "{{schema_json}}", schema_json
+        )
+
+        # 初始化子步骤记录
+        await self._init_sub_steps(context)
+
+        # Phase: 分析需求（prompt 构建和准备）
+        await self.emit_sub_step(context, "analyze", SubStepStatus.RUNNING)
+        await self.emit_sub_step(context, "analyze", SubStepStatus.COMPLETED)
+
+        # Phase: 生成计划（Agent 执行）
+        await self.emit_sub_step(context, "generate_plan", SubStepStatus.RUNNING)
+        try:
+            result = await super().execute(context)
+        except Exception:
+            await self.emit_sub_step(context, "generate_plan", SubStepStatus.FAILED)
+            raise
+        await self.emit_sub_step(context, "generate_plan", SubStepStatus.COMPLETED)
+
+        # Phase: 审查计划（结果验证）
+        await self.emit_sub_step(context, "review", SubStepStatus.RUNNING)
+        if result.status == "failed":
+            await self.emit_sub_step(context, "review", SubStepStatus.FAILED)
+        else:
+            await self.emit_sub_step(context, "review", SubStepStatus.COMPLETED)
+
+        return result
+
+    # ===== Private helpers =====
+
+    def _extract_plan_from_result(
+        self, result: AgentResult
+    ) -> dict[str, Any] | None:
+        """尝试从 AgentResult 中提取技术方案 JSON。
+
+        检查 metadata 中的 plan、output 列表中的工具调用结果、
+        以及 final_answer 中的 JSON 块。
+        """
+        # 1. 检查 metadata 中是否直接有 plan
+        if result.metadata and isinstance(result.metadata.get("plan"), dict):
+            return result.metadata["plan"]
+
+        # 2. 检查 output（工具调用历史）中的 verify_plan 结果
+        if result.output and isinstance(result.output, list):
+            for entry in reversed(result.output):
+                if isinstance(entry, dict) and entry.get("tool") == "verify_plan":
+                    tool_input = entry.get("input", {})
+                    if isinstance(tool_input, dict) and "plan" in tool_input:
+                        return tool_input["plan"]
+
+        # 3. 从 final_answer 中提取 JSON 块
+        if result.final_answer:
+            return self._extract_json_from_text(result.final_answer)
+
+        return None
+
+    @staticmethod
+    def _extract_json_from_text(text: str) -> dict[str, Any] | None:
+        """从文本中提取 JSON 对象（支持 ```json 代码块）。"""
+        # 尝试 ```json ... ``` 格式
+        json_blocks = re.findall(
+            r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
+        )
+        for block in json_blocks:
+            try:
+                data = json.loads(block.strip())
+                if isinstance(data, dict) and "title" in data:
+                    return data
+            except json.JSONDecodeError:
+                continue
+
+        # 尝试直接解析整个文本
+        try:
+            data = json.loads(text.strip())
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        return None

@@ -1,16 +1,23 @@
 # Friday Task Container Dependencies
+
 # HTTP client for API callbacks
 httpx>=0.27.0
+
 # Environment configuration
 pydantic>=2.6.0
 pydantic-settings>=2.2.0
+
 # Git operations
 gitpython>=3.1.42
+
 # Async subprocess
 asyncio
+
 # Logging and utilities
 structlog>=24.1.0
+
 # Claude Agent SDK for AI-powered development
 claude-agent-sdk==0.1.58
+
 # Jinja2 模板引擎（Prompt Center 渲染依赖）
 jinja2>=3.1.6,<4.0

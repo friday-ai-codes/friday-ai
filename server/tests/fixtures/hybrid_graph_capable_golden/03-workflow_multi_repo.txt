@@ -1,15 +1,21 @@
 ## L3 Related Code
+
 ### src/pipeline/process.py (score: 0.840)
 ```
 def ProcessData(payload):
- return transform(payload)
+    return transform(payload)
 ```
+
 ### lib/pipe/run.py (score: 0.740)
 ```
 result = ProcessData(payload)
 ```
+
 ## Graph Context
+
 ### Direct Neighbors (1-hop)
+
 - `src/pipeline/process.py:12` (CALL, w=0.81): via direct call
 - `lib/pipe/run.py:8` (IMPORT, w=0.66): imports module
+
 # tokens=131 source_layer=hybrid final_chunks=2

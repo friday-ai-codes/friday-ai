@@ -1,10 +1,16 @@
 ## L2 Exact Matches
+
 - `DupSeed` (FUNCTION) in src/dup/seed.py:1-5 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 (no graph expansion results)
+
 ## L3 Related Code
+
 ### src/dup/other.py (score: 0.750)
 ```
-callee
+callee()
 ```
+
 # tokens=71 source_layer=L2 final_chunks=3

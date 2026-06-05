@@ -2,77 +2,77 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
- name: {{ include "friday.fullname" . }}-postgresql
- labels:
- {{- include "friday.labels" . | nindent 4 }}
- app.kubernetes.io/component: postgresql
- annotations:
- argocd.argoproj.io/sync-options: Delete=false
+  name: {{ include "friday.fullname" . }}-postgresql
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
 spec:
- serviceName: {{ include "friday.fullname" . }}-postgresql
- replicas: 1
- selector:
- matchLabels:
- {{- include "friday.selectorLabels" . | nindent 6 }}
- app.kubernetes.io/component: postgresql
- template:
- metadata:
- labels:
- {{- include "friday.selectorLabels" . | nindent 8 }}
- app.kubernetes.io/component: postgresql
- spec:
- containers:
- - name: postgresql
- image: postgres:17-alpine
- ports:
- - name: tcp-postgresql
- containerPort: 5432
- env:
- - name: POSTGRES_USER
- value: {{ .Values.postgresql.auth.username | quote }}
- - name: POSTGRES_PASSWORD
- value: {{ .Values.postgresql.auth.password | quote }}
- - name: POSTGRES_DB
- value: {{ .Values.postgresql.auth.database | quote }}
- # PGDATA 设为子目录，避免 PVC 根目录 lost+found 导致初始化失败
- - name: PGDATA
- value: /var/lib/postgresql/data/pgdata
- livenessProbe:
- exec:
- command:
- - pg_isready
- - -U
- - {{ .Values.postgresql.auth.username }}
- initialDelaySeconds: 30
- periodSeconds: 10
- timeoutSeconds: 5
- readinessProbe:
- exec:
- command:
- - pg_isready
- - -U
- - {{ .Values.postgresql.auth.username }}
- initialDelaySeconds: 5
- periodSeconds: 10
- timeoutSeconds: 5
- volumeMounts:
- - name: data
- mountPath: /var/lib/postgresql/data
- {{- with .Values.postgresql.resources }}
- resources:
- {{- toYaml . | nindent 12 }}
- {{- end }}
- volumeClaimTemplates:
- - metadata:
- name: data
- annotations:
- argocd.argoproj.io/sync-options: Delete=false
- spec:
- accessModes: ["ReadWriteOnce"]
- {{- if .Values.postgresql.persistence.storageClass }}
- storageClassName: {{ .Values.postgresql.persistence.storageClass | quote }}
- {{- end }}
- resources:
- requests:
- storage: {{ .Values.postgresql.persistence.size }}
+  serviceName: {{ include "friday.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "friday.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: postgres:17-alpine
+          ports:
+            - name: tcp-postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.postgresql.auth.password | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            # PGDATA 设为子目录，避免 PVC 根目录 lost+found 导致初始化失败
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.postgresql.auth.username }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.postgresql.auth.username }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          {{- with .Values.postgresql.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          argocd.argoproj.io/sync-options: Delete=false
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ .Values.postgresql.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
 {{- end }}

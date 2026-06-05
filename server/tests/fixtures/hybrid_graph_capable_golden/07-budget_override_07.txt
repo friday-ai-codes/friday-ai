@@ -1,10 +1,14 @@
 ## L3 Related Code
+
 ### src/budget/source.py (score: 0.800)
 ```
-def budget_source: pass
+def budget_source(): pass
 ```
+
 ## Graph Context
+
 ### Direct Neighbors (1-hop)
+
 - `src/budget/m_07.py:10` (CALL, w=0.71): via direct call
 - `src/budget/m_06.py:10` (CALL, w=0.68): via direct call
 - `src/budget/m_05.py:10` (CALL, w=0.65): via direct call
@@ -13,4 +17,5 @@ def budget_source: pass
 - `src/budget/m_02.py:10` (CALL, w=0.56): via direct call
 - `src/budget/m_01.py:10` (CALL, w=0.53): via direct call
 - `src/budget/m_00.py:10` (CALL, w=0.50): via direct call
+
 # tokens=248 source_layer=hybrid final_chunks=8

@@ -1,7 +1,14 @@
 ## L2 Exact Matches
+
 - `SeedAlpha` (FUNCTION) in src/seed/alpha.py:1-10 [alpha-repo]
+
 ## L4 Graph Context (1-hop)
+
 - `validateInput` (FUNCTION) depth=1 relation=callee
+
+
 ## L3 Related Code
+
 (no hybrid search results)
+
 # tokens=65 source_layer=L2 final_chunks=3

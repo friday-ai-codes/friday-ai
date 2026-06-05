@@ -1,5 +1,7 @@
 module github.com/friday-ai-codes/friday-ai/runner
+
 go 1.25.0
+
 require (
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
@@ -14,6 +16,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	golang.org/x/sync v0.19.0
 )
+
 require (
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
