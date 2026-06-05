@@ -130,17 +130,20 @@ async def test_begin_interaction_run_uses_fingerprint -> None:
 def test_redact_for_ledger_scrubs_secrets -> None:
  """：redact_for_ledger 对 friday_pat_ / sk-ant- / nested dict 全脱敏。"""
  redaction = pytest.importorskip("interactions.redaction")
+ friday_pat_a = "friday_pat_" + "A" * 32
+ friday_pat_b = "friday_pat_" + "B" * 32
+ anthropic_key = "sk-ant-" + "anotherleak1234567890"
  payload = {
- "authorization": "Bearer FRIDAY_PAT_PLACEHOLDER",
+ "authorization": f"Bearer {friday_pat_a}",
  "nested": {
- "api_key": "sk-test-placeholder",
- "text": "my token FRIDAY_PAT_PLACEHOLDER",
+ "api_key": anthropic_key,
+ "text": f"my token {friday_pat_b}",
  },
- "items": ["plain", "sk-test-placeholder"],
+ "items": ["plain", anthropic_key],
  }
  cleaned = redaction.redact_for_ledger(payload)
  blob = str(cleaned)
- assert "friday_pat_AAAA" not in blob
- assert "friday_pat_BBBB" not in blob
- assert "sk-ant-leaktest" not in blob
- assert "sk-ant-anotherleak" not in blob
+ assert friday_pat_a not in blob
+ assert friday_pat_b not in blob
+ assert anthropic_key not in blob
+ assert "REDACTED" in blob

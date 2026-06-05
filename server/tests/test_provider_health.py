@@ -65,19 +65,20 @@ class TestHealthCheckAnthropic:
  {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
  )
  # 故意构造上游 422 body 含 sk-ant-* 明文
+ leaked_key = "sk-ant-" + "leaktest1234567890"
  respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
  return_value=httpx.Response(
  422,
- text='{"error":"invalid api_key sk-test-placeholder"}',
+ text=f'{{"error":"invalid api_key {leaked_key}"}}',
  )
  )
  result = await health_check(cred)
  assert result.status == "error"
  # T- 缓解契约：错误字段必须脱敏（DB + 返回值都必须脱敏）
  refreshed = await ProviderCredential.objects.aget(id=cred.id)
- assert "sk-test-placeholder" not in refreshed.last_health_check_error
+ assert leaked_key not in refreshed.last_health_check_error
  assert "REDACTED" in refreshed.last_health_check_error
- assert "sk-test-placeholder" not in result.error
+ assert leaked_key not in result.error
  @respx.mock
  async def test_uses_default_model_fallback(self) -> None:
  """cred.default_model 为空时 _ping_anthropic 用 claude-3-5-haiku-20241022 fallback。"""
