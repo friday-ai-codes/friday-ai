@@ -18,6 +18,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       runner: ${{ steps.filter.outputs.runner }}
       task: ${{ steps.filter.outputs.task }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -37,6 +38,15 @@ jobs:
             task:
               - 'task/**'
               - '.github/workflows/ci.yaml'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'CHANGELOG.md'
+              - 'CONTRIBUTING.md'
+              - 'SECURITY.md'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yaml'
 
   security-scan:
     runs-on: ubuntu-latest
@@ -48,9 +58,9 @@ jobs:
         with:
           go-version: '1.24'
       - name: Install gitleaks
-        run: go install github.com/gitleaks/gitleaks/v8@v8.29.1
+        run: go install github.com/zricethezav/gitleaks/v8@v8.29.1
       - name: Scan Git history for secrets
-        run: $(go env GOPATH)/bin/gitleaks detect --source . --redact --verbose
+        run: '"$(go env GOPATH)/bin/gitleaks" detect --source . --redact --verbose'
 
   open-source-smoke:
     runs-on: ubuntu-latest
@@ -162,6 +172,23 @@ jobs:
             web/test-results/
           if-no-files-found: ignore
 
+  docs-ci:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build docs
+        run: pnpm docs:build
+
   runner-ci:
     needs: changes
     if: needs.changes.outputs.runner == 'true'
@@ -236,9 +263,9 @@ jobs:
           exit-code: '1'
           severity: CRITICAL,HIGH
       - name: Smoke test - coding import
-        run: docker run --rm friday-task:test python -c "from core.runner import TaskRunner; print('coding import ok')"
+        run: docker run --rm --entrypoint python friday-task:test -c "from core.runner import TaskRunner; print('coding import ok')"
       - name: Smoke test - repo_summary config
-        run: docker run --rm -e TASK_MODE=repo_summary friday-task:test python -c "from core.config import TaskConfig; print('repo_summary config ok')"
+        run: docker run --rm -e TASK_MODE=repo_summary --entrypoint python friday-task:test -c "from core.config import TaskConfig; print('repo_summary config ok')"
 
   ci-gate:
     needs:
@@ -247,6 +274,7 @@ jobs:
       - commit-message
       - server-ci
       - web-ci
+      - docs-ci
       - runner-ci
       - task-ci
       - task-image-ci
@@ -260,6 +288,7 @@ jobs:
           echo "commit-message: ${{ needs.commit-message.result }}"
           echo "server-ci: ${{ needs.server-ci.result }}"
           echo "web-ci: ${{ needs.web-ci.result }}"
+          echo "docs-ci: ${{ needs.docs-ci.result }}"
           echo "runner-ci: ${{ needs.runner-ci.result }}"
           echo "task-ci: ${{ needs.task-ci.result }}"
           echo "task-image-ci: ${{ needs.task-image-ci.result }}"
@@ -269,6 +298,7 @@ jobs:
             "${{ needs.commit-message.result }}" \
             "${{ needs.server-ci.result }}" \
             "${{ needs.web-ci.result }}" \
+            "${{ needs.docs-ci.result }}" \
             "${{ needs.runner-ci.result }}" \
             "${{ needs.task-ci.result }}" \
             "${{ needs.task-image-ci.result }}"; do
