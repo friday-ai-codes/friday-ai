@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Friday AI Workflow</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111c;
+        --panel: rgba(13, 27, 43, 0.78);
+        --panel-strong: rgba(18, 37, 58, 0.94);
+        --line: rgba(114, 169, 221, 0.34);
+        --line-soft: rgba(114, 169, 221, 0.16);
+        --text: #eef7ff;
+        --muted: #9bb1c5;
+        --blue: #3b8cff;
+        --cyan: #32d5ff;
+        --green: #2fe6a3;
+        --amber: #f5b55f;
+        --red: #ff6b8a;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          linear-gradient(180deg, rgba(8, 17, 28, 0.98), rgba(6, 12, 21, 1)),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .frame {
+        position: relative;
+        width: 1600px;
+        height: 1180px;
+        padding: 52px 60px 46px;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(93, 164, 255, 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(93, 164, 255, 0.055) 1px, transparent 1px),
+          linear-gradient(145deg, #0b1724 0%, #08111c 44%, #0c1621 100%);
+        background-size: 40px 40px, 40px 40px, 100% 100%;
+        border: 1px solid rgba(123, 186, 239, 0.18);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+      }
+
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(50, 213, 255, 0.08), transparent 20%, transparent 80%, rgba(47, 230, 163, 0.08)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 30%);
+        pointer-events: none;
+      }
+
+      header {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 40px;
+        margin-bottom: 32px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 46px;
+        line-height: 1.04;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        margin: 14px 0 0;
+        max-width: 780px;
+        color: var(--muted);
+        font-size: 20px;
+        line-height: 1.45;
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(2, auto);
+        gap: 10px 18px;
+        padding: 14px 16px;
+        border: 1px solid var(--line-soft);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.035);
+        color: #bfd3e6;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 16px currentColor;
+      }
+
+      .workbench {
+        position: relative;
+        z-index: 1;
+        height: 630px;
+        margin-bottom: 26px;
+        border-radius: 28px;
+        border: 1px solid var(--line-soft);
+        background: rgba(5, 13, 23, 0.46);
+        overflow: hidden;
+      }
+
+      .workbench-title {
+        position: absolute;
+        left: 30px;
+        top: 24px;
+        color: #7da4c8;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .hub {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 340px;
+        min-height: 276px;
+        transform: translate(-50%, -50%);
+        padding: 28px 30px;
+        border-radius: 30px;
+        background:
+          linear-gradient(145deg, rgba(32, 69, 107, 0.98), rgba(14, 31, 50, 0.98)),
+          #102339;
+        border: 1px solid rgba(114, 197, 255, 0.38);
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.045) inset,
+          0 30px 80px rgba(30, 129, 255, 0.20);
+        text-align: center;
+      }
+
+      .hub-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        padding: 8px 12px;
+        border: 1px solid rgba(47, 230, 163, 0.24);
+        border-radius: 999px;
+        color: #a9f8d9;
+        background: rgba(47, 230, 163, 0.08);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .hub h2 {
+        margin: 0;
+        font-size: 32px;
+        letter-spacing: 0;
+      }
+
+      .hub p {
+        margin: 12px 0 20px;
+        color: #bfd3e6;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .core-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 9px;
+      }
+
+      .core-grid span {
+        padding: 9px 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        color: #d8ebfb;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .cluster {
+        position: absolute;
+        width: 328px;
+        padding: 16px 18px 15px;
+        border-radius: 22px;
+        background: var(--panel);
+        border: 1px solid var(--line-soft);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+      }
+
+      .cluster::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border-top: 1px solid rgba(255, 255, 255, 0.10);
+        pointer-events: none;
+      }
+
+      .cluster h3 {
+        margin: 0 0 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        color: #f4fbff;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .cluster h3 b {
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .cluster ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 7px;
+      }
+
+      .cluster li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 11px;
+        border-radius: 12px;
+        color: #c9d9e7;
+        background: rgba(255, 255, 255, 0.045);
+        font-size: 12.5px;
+      }
+
+      .cluster li span {
+        color: #7da4c8;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .entry {
+        --accent: var(--blue);
+        left: 30px;
+        top: 86px;
+      }
+
+      .context {
+        --accent: var(--cyan);
+        right: 30px;
+        top: 86px;
+      }
+
+      .human {
+        --accent: var(--amber);
+        left: 30px;
+        bottom: 38px;
+      }
+
+      .execution {
+        --accent: var(--green);
+        right: 30px;
+        bottom: 38px;
+      }
+
+      .connector {
+        position: absolute;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(88, 174, 255, 0.78), transparent);
+        transform-origin: center;
+      }
+
+      .connector.left-top {
+        left: 342px;
+        top: 220px;
+        width: 284px;
+        transform: rotate(13deg);
+      }
+
+      .connector.right-top {
+        right: 342px;
+        top: 220px;
+        width: 284px;
+        transform: rotate(-13deg);
+      }
+
+      .connector.left-bottom {
+        left: 342px;
+        bottom: 196px;
+        width: 284px;
+        transform: rotate(-13deg);
+      }
+
+      .connector.right-bottom {
+        right: 342px;
+        bottom: 196px;
+        width: 284px;
+        transform: rotate(13deg);
+      }
+
+      .rail {
+        position: relative;
+        z-index: 2;
+        height: 336px;
+        padding: 24px 28px 28px;
+        border-radius: 28px;
+        background:
+          linear-gradient(180deg, rgba(13, 27, 43, 0.92), rgba(7, 18, 31, 0.94));
+        border: 1px solid var(--line-soft);
+      }
+
+      .rail-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+
+      .rail h2 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+
+      .rail-note {
+        color: #8ca7bf;
+        font-size: 14px;
+      }
+
+      .pipeline {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 12px;
+        position: relative;
+      }
+
+      .pipeline::before {
+        content: "";
+        position: absolute;
+        left: 54px;
+        right: 54px;
+        top: 38px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--blue), var(--cyan), var(--green));
+        opacity: 0.76;
+      }
+
+      .step {
+        position: relative;
+        padding: 72px 14px 14px;
+        min-height: 166px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .num {
+        position: absolute;
+        top: 18px;
+        left: 50%;
+        width: 42px;
+        height: 42px;
+        transform: translateX(-50%);
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: #06111e;
+        background: linear-gradient(135deg, #e8fbff, #62ddff);
+        font-size: 14px;
+        font-weight: 900;
+        box-shadow: 0 0 28px rgba(50, 213, 255, 0.22);
+      }
+
+      .step h4 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: 0;
+      }
+
+      .step p {
+        margin: 0;
+        color: #91aabd;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      .loop-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .loop {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(47, 230, 163, 0.08);
+        border: 1px solid rgba(47, 230, 163, 0.16);
+        color: #bdf9df;
+        font-size: 12px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .loop.warn {
+        background: rgba(245, 181, 95, 0.08);
+        border-color: rgba(245, 181, 95, 0.18);
+        color: #ffe0ae;
+      }
+
+      .loop.info {
+        background: rgba(59, 140, 255, 0.09);
+        border-color: rgba(59, 140, 255, 0.18);
+        color: #c7ddff;
+      }
+
+      .loop.red {
+        background: rgba(255, 107, 138, 0.08);
+        border-color: rgba(255, 107, 138, 0.18);
+        color: #ffc2cf;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame" aria-label="Friday AI 工作流">
+      <header>
+        <div>
+          <h1>Friday AI 自动化工作台</h1>
+          <p class="subtitle">深度集成飞书，也能接入更多协作入口；用代码索引和 Graph RAG 给 Agent 上下文，再把 Claude Code、审批、PR / MR 和审计轨迹串起来。</p>
+        </div>
+        <div class="legend" aria-label="图例">
+          <span style="color: var(--blue)"><i class="dot"></i>协作入口</span>
+          <span style="color: var(--cyan)"><i class="dot"></i>代码智能</span>
+          <span style="color: var(--green)"><i class="dot"></i>执行交付</span>
+          <span style="color: var(--amber)"><i class="dot"></i>人工控制</span>
+        </div>
+      </header>
+
+      <section class="workbench">
+        <div class="workbench-title">Central Workbench</div>
+        <div class="connector left-top"></div>
+        <div class="connector right-top"></div>
+        <div class="connector left-bottom"></div>
+        <div class="connector right-bottom"></div>
+
+        <article class="cluster entry">
+          <h3>协作入口 <b>Intake</b></h3>
+          <ul>
+            <li>飞书项目：工作项 / 字段 / 状态 <span>Webhook</span></li>
+            <li>飞书文档：需求 / 表格 / 代码块 <span>Docs</span></li>
+            <li>机器人与群卡片：问答 / 审批 / 通知 <span>Bot</span></li>
+            <li>Web Chat 与未来系统入口 <span>Open</span></li>
+          </ul>
+        </article>
+
+        <article class="cluster context">
+          <h3>代码智能 <b>Context</b></h3>
+          <ul>
+            <li>GitHub / GitLab 仓库索引 <span>Repo</span></li>
+            <li>符号解析、调用关系、跨仓 API <span>Graph</span></li>
+            <li>Qdrant 混合检索与上下文预算 <span>RAG</span></li>
+            <li>Codex Skill / MCP tools 复用索引 <span>Skill</span></li>
+          </ul>
+        </article>
+
+        <article class="hub">
+          <div class="hub-kicker">Traceable Agent System</div>
+          <h2>Friday AI Core</h2>
+          <p>编排工作流、汇总证据、等待确认、分发执行，并把每一步写入可追踪记录。</p>
+          <div class="core-grid">
+            <span>Workflow DAG</span>
+            <span>Graph RAG</span>
+            <span>Provider Layer</span>
+            <span>Audit Ledger</span>
+          </div>
+        </article>
+
+        <article class="cluster human">
+          <h3>人工控制 <b>Control</b></h3>
+          <ul>
+            <li>方案评审、字段等待、群卡片确认 <span>Approve</span></li>
+            <li>缺信息时追问，补充后继续跑 <span>Clarify</span></li>
+            <li>执行失败可重试、恢复、改计划 <span>Recover</span></li>
+            <li>所有关键动作留 Trace <span>Audit</span></li>
+          </ul>
+        </article>
+
+        <article class="cluster execution">
+          <h3>执行交付 <b>Delivery</b></h3>
+          <ul>
+            <li>配置 Anthropic / OpenAI / Gemini / Ollama <span>Keys</span></li>
+            <li>Runner 隔离调度 Claude Code <span>Run</span></li>
+            <li>自动代码审查、摘要、测试建议 <span>Review</span></li>
+            <li>分支、提交、PR / MR、飞书回写 <span>Ship</span></li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="rail">
+        <div class="rail-head">
+          <h2>弹性流水线：不是一条死线，而是一组可回环的推进动作</h2>
+          <span class="rail-note">Clarify -> Replan -> Execute -> Review -> Write back</span>
+        </div>
+
+        <div class="pipeline">
+          <article class="step">
+            <div class="num">01</div>
+            <h4>接住需求</h4>
+            <p>工作项、文档、评论、聊天消息或手动输入进入 Friday。</p>
+          </article>
+          <article class="step">
+            <div class="num">02</div>
+            <h4>建立上下文</h4>
+            <p>聚合飞书材料、仓库索引、历史执行和相关学习案例。</p>
+          </article>
+          <article class="step">
+            <div class="num">03</div>
+            <h4>Graph RAG 找证据</h4>
+            <p>语义检索后沿图谱扩散，补齐调用链和跨仓影响面。</p>
+          </article>
+          <article class="step">
+            <div class="num">04</div>
+            <h4>生成方案并确认</h4>
+            <p>写回飞书字段或文档，等待字段、卡片或人工审批。</p>
+          </article>
+          <article class="step">
+            <div class="num">05</div>
+            <h4>Claude Code 执行</h4>
+            <p>Runner 在隔离环境中编码、整理分支并保留执行日志。</p>
+          </article>
+          <article class="step">
+            <div class="num">06</div>
+            <h4>审查与交付</h4>
+            <p>自动 review、生成摘要，创建 PR / MR 或等待人工接管。</p>
+          </article>
+          <article class="step">
+            <div class="num">07</div>
+            <h4>回写与学习</h4>
+            <p>状态、结果、证据、失败恢复点回到飞书和审计轨迹。</p>
+          </article>
+        </div>
+
+        <div class="loop-row">
+          <div class="loop info">多入口：飞书 / Web Chat / Skill / 未来系统</div>
+          <div class="loop warn">可暂停：等审批、等字段、等补充资料</div>
+          <div class="loop red">可恢复：失败后重试、改计划、继续分支</div>
+          <div class="loop">可复用：索引、Trace、学习案例沉淀给下一次</div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
