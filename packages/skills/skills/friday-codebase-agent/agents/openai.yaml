@@ -1,4 +1,0 @@
-interface:
- display_name: "Friday Codebase Agent"
- short_description: "Full-auto Friday repository coding"
- default_prompt: "Use $friday-codebase-agent to turn this requirement into a traced code change and merge request."
