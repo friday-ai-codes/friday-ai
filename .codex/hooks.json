@@ -1,0 +1,12 @@
+{
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "\"/Users/zaneliu/.local/share/fnm/node-versions/v24.14.1/installation/bin/node\" \"/Users/zaneliu/Projects/open-source/friday-ai/.codex/hooks/gsd-check-update.js\""
+        }
+      ]
+    }
+  ]
+}
