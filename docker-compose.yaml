@@ -38,7 +38,7 @@ services:
       - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
       - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
       - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
-      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
+      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-false}
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
@@ -75,7 +75,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -84,14 +84,16 @@ services:
   runner:
     image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/runner:${FRIDAY_IMAGE_TAG:-latest}
     container_name: friday-runner
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     user: "65534:${DOCKER_GID:-999}"
     environment:
       - FRIDAY_RUNNER_URL=http://server:8000
-      - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
+      - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
       - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
       - FRIDAY_RUNNER_EXECUTOR=docker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner/entrypoint.sh:/entrypoint.sh:ro
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/runner:/data"
     networks:
       - friday-network
@@ -132,7 +134,12 @@ services:
       - friday-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      test:
+        - CMD-SHELL
+        - >
+          bash -lc 'exec 3<>/dev/tcp/127.0.0.1/6333 &&
+          printf "GET /readyz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3 &&
+          grep -q "all shards are ready" <&3'
       interval: 30s
       timeout: 10s
       retries: 3
