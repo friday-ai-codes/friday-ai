@@ -4,6 +4,8 @@ set -e
 # 配置 XDG 目录（nobody 用户无默认 home）
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/data/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/data/.local/share}"
+REGISTRATION_TOKEN="${RUNNER_REGISTRATION_TOKEN:-${FRIDAY_RUNNER_REGISTRATION_TOKEN:-${FRIDAY_RUNNER_TOKEN:-}}}"
+unset FRIDAY_RUNNER_TOKEN
 
 if [ -z "${FRIDAY_RUNNER_URL:-}" ]; then
   echo "错误: 未设置 FRIDAY_RUNNER_URL"
@@ -27,10 +29,14 @@ echo "server 已就绪"
 
 # 检查是否已注册（容器重启时跳过注册）
 if [ ! -f "${XDG_CONFIG_HOME}/friday-runner/config.toml" ]; then
+  if [ -z "${REGISTRATION_TOKEN:-}" ]; then
+    echo "错误: 未设置 RUNNER_REGISTRATION_TOKEN"
+    exit 1
+  fi
   echo "开始注册 Runner..."
   /friday-runner register \
     --url "${FRIDAY_RUNNER_URL}" \
-    --token "${FRIDAY_RUNNER_TOKEN}" \
+    --token "${REGISTRATION_TOKEN}" \
     --name "${FRIDAY_RUNNER_NAME:-compose-runner}"
   echo "注册完成"
 else

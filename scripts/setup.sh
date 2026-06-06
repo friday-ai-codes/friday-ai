@@ -135,6 +135,10 @@ write_env() {
 
 detect_docker_gid() {
     local gid=""
+    if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        echo "0"
+        return
+    fi
     if [ -S /var/run/docker.sock ]; then
         gid=$(stat -c '%g' /var/run/docker.sock 2>/dev/null) || true
         if [ -z "$gid" ]; then
@@ -324,7 +328,7 @@ EOF
     echo "" >> "$ENV_FILE"
 
     echo "# Redis / Qdrant 配置" >> "$ENV_FILE"
-    write_env "USE_REDIS_CHANNEL_LAYER" "true"
+    write_env "USE_REDIS_CHANNEL_LAYER" "false"
     write_env "QDRANT_URL" "http://qdrant:6333"
     write_env "QDRANT_API_KEY" "$QDRANT_API_KEY_VALUE"
     echo "" >> "$ENV_FILE"
