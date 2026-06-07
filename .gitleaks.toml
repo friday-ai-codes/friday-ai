@@ -1,0 +1,11 @@
+# Gitleaks configuration
+# Extends the built-in default ruleset and adds project-specific allowlists.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "GSD file manifests store SHA-256 content hashes (e.g. for secrets.cjs), not real secrets"
+paths = [
+  '''\.(claude|codex|cursor)/gsd-file-manifest\.json''',
+]
