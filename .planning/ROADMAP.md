@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: 向导门禁与初始化状态检测** - 全新部署被导向向导外壳，已初始化实例被 fail-closed 拒之门外 (completed 2026-06-08)
 - [ ] **Phase 2: 管理员账号创建与自动登录** - 用户自设管理员账号，提交后即时创建并自动登录进入首页
-- [ ] **Phase 3: LLM 供应商配置与 Claude Code 绑定** - 一键预设配好 Anthropic 兼容供应商，加密落库 + 健康校验 + 绑定 Claude Code
+- [x] **Phase 3: LLM 供应商配置与 Claude Code 绑定** - 一键预设配好 Anthropic 兼容供应商，加密落库 + 健康校验 + 绑定 Claude Code (completed 2026-06-08)
 - [ ] **Phase 4: 安全校验与可选集成步骤** - 密钥安全风险提示 + 可跳过的飞书/向量检索配置步骤
 - [ ] **Phase 5: 入口迁移与向后兼容** - entrypoint 不再自动建号，运维命令保留，老部署升级不回退
 
@@ -85,7 +85,16 @@ Plans:
   4. 凭证经现有 Fernet 加密路径以密文存入系统级 `ProviderCredential`
   5. 所配 Anthropic 凭证被设为系统默认（`is_default`）并绑定 Claude Code 模型映射（`claude_code_config`）
 
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — 后端供应商配置编排端点（健康校验 + Fernet 落库 + 设默认 + 绑 Claude Code + 后端测试）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-02-PLAN.md — 前端两步向导（一键预设 + 能力展示 + 健康校验反馈 + i18n + 前端测试）
+
 **UI hint**: yes
 
 ### Phase 4: 安全校验与可选集成步骤
@@ -128,6 +137,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. 向导门禁与初始化状态检测 | 2/2 | Complete   | 2026-06-08 |
 | 2. 管理员账号创建与自动登录 | 2/2 | Complete | 2026-06-08 |
-| 3. LLM 供应商配置与 Claude Code 绑定 | 0/TBD | Not started | - |
+| 3. LLM 供应商配置与 Claude Code 绑定 | 2/2 | Complete | 2026-06-08 |
 | 4. 安全校验与可选集成步骤 | 0/TBD | Not started | - |
 | 5. 入口迁移与向后兼容 | 0/TBD | Not started | - |
