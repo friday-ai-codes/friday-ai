@@ -110,7 +110,16 @@ Plans:
   3. 用户可在向导中配置向量检索（Qdrant URL/Key、Embedding）或一键跳过，配置项与既有 `SettingKeys`（QDRANT_URL/EMBEDDING_*）对齐
   4. 跳过的可选步骤可稍后在既有设置页补充，不影响向导完成
 
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — 后端（安全校验只读端点 + 飞书/RAG 配置编排端点，复用 SystemSetting/SettingKeys/Fernet + 后端测试）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — 前端（向导追加安全校验/飞书/向量检索三步 + api/setup.ts + i18n + 前端测试）
+
 **UI hint**: yes
 
 ### Phase 5: 入口迁移与向后兼容
@@ -138,5 +147,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. 向导门禁与初始化状态检测 | 2/2 | Complete   | 2026-06-08 |
 | 2. 管理员账号创建与自动登录 | 2/2 | Complete | 2026-06-08 |
 | 3. LLM 供应商配置与 Claude Code 绑定 | 2/2 | Complete | 2026-06-08 |
-| 4. 安全校验与可选集成步骤 | 0/TBD | Not started | - |
+| 4. 安全校验与可选集成步骤 | 0/2 | In progress | - |
 | 5. 入口迁移与向后兼容 | 0/TBD | Not started | - |
