@@ -20,6 +20,8 @@ export const useAuthStore = defineStore('auth', () => {
   const mustChangePassword = ref(false)
   const spaceMemberships = ref<SpaceMembershipBrief[]>([])
   const gravatarUrl = ref<string | null>(null)
+  const needsSetup = ref(false) // 系统是否需要 setup，由路由守卫写入
+  const setupStatusChecked = ref(false) // 是否已检查过 setup 状态，每次 app 启动查一次
 
   // ============================================================================
   // Getters
@@ -286,6 +288,8 @@ export const useAuthStore = defineStore('auth', () => {
     mustChangePassword.value = false
     spaceMemberships.value = []
     gravatarUrl.value = null
+    needsSetup.value = false
+    setupStatusChecked.value = false
   }
 
   return {
@@ -298,6 +302,8 @@ export const useAuthStore = defineStore('auth', () => {
     mustChangePassword,
     spaceMemberships,
     gravatarUrl,
+    needsSetup,
+    setupStatusChecked,
     // Getters
     isAdmin,
     displayName,
