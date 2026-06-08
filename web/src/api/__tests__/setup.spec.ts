@@ -8,7 +8,7 @@ vi.mock('~/api/client', () => ({
   post: (url: string, body?: unknown) => postMock(url, body),
 }))
 
-const { getSetupStatus, initSetup, setupProvider } = await import('~/api/setup')
+const { getSetupStatus, initSetup, setupProvider, getSecurityCheck, setupFeishu, setupRag } = await import('~/api/setup')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -85,5 +85,45 @@ describe('setupProvider', () => {
     await expect(
       setupProvider({ api_key: 'bad', base_url: 'https://x', model: 'm' }),
     ).rejects.toThrow('请检查 API Key')
+  })
+})
+
+describe('getSecurityCheck', () => {
+  it('reads the security check endpoint', async () => {
+    getMock.mockResolvedValueOnce({
+      secure: false,
+      secret_key_secure: false,
+      encryption_key_set: false,
+      keys_independent: false,
+      risks: [{ code: 'secret_key_default', level: 'warning' }],
+    })
+
+    const result = await getSecurityCheck()
+
+    expect(result.secure).toBe(false)
+    expect(result.risks[0].code).toBe('secret_key_default')
+    expect(getMock).toHaveBeenCalledWith('/system/security-check/')
+  })
+})
+
+describe('setupFeishu', () => {
+  it('posts feishu credentials to the wizard endpoint', async () => {
+    postMock.mockResolvedValueOnce({ feishu_configured: true })
+
+    const result = await setupFeishu({ app_id: 'cli_x', app_secret: 's' })
+
+    expect(result.feishu_configured).toBe(true)
+    expect(postMock).toHaveBeenCalledWith('/system/setup-feishu/', { app_id: 'cli_x', app_secret: 's' })
+  })
+})
+
+describe('setupRag', () => {
+  it('posts rag config to the wizard endpoint', async () => {
+    postMock.mockResolvedValueOnce({ rag_configured: true, written_keys: ['qdrant_url'] })
+
+    const result = await setupRag({ qdrant_url: 'http://qdrant:6333' })
+
+    expect(result.rag_configured).toBe(true)
+    expect(postMock).toHaveBeenCalledWith('/system/setup-rag/', { qdrant_url: 'http://qdrant:6333' })
   })
 })
