@@ -227,7 +227,8 @@ configure_interactive() {
     read -rp "  管理员用户名 [${ADMIN_USERNAME}]: " admin_user_input
     ADMIN_USERNAME="${admin_user_input:-$ADMIN_USERNAME}"
 
-    read -rp "  管理员密码（留空则首次启动自动生成）: " admin_pass_input
+    # 首启默认走 Web 向导自行设置管理员；此处填写的用户名/密码仅供命令行兜底（init_superuser）使用。
+    read -rp "  管理员密码（留空即可，首启走 Web 向导设置；或后续用 init_superuser 命令兜底）: " admin_pass_input
     ADMIN_PASSWORD="${admin_pass_input:-}"
 
     DOCKER_GID_VALUE=$(detect_docker_gid)
@@ -340,7 +341,7 @@ EOF
     write_env "DOCKER_GID" "$DOCKER_GID_VALUE"
     echo "" >> "$ENV_FILE"
 
-    echo "# 管理员配置" >> "$ENV_FILE"
+    echo "# 管理员配置（首启默认走 Web 向导建号；以下变量仅供 init_superuser 命令兜底读取）" >> "$ENV_FILE"
     write_env "FRIDAY_ADMIN_USERNAME" "$ADMIN_USERNAME"
     if [ -n "$ADMIN_PASSWORD" ]; then
         write_env "FRIDAY_ADMIN_PASSWORD" "$ADMIN_PASSWORD"
