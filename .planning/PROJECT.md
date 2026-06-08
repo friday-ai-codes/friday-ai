@@ -41,7 +41,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - [ ] 向导内提供可选的飞书集成配置步骤（可跳过）
 - [ ] 向导内提供可选的向量检索（Qdrant/Embedding）配置步骤（可跳过）
 - [ ] 初始化完成后，向导接口与界面对所有访问者关闭、不再出现，并具备防重入/防接管保护
-- [ ] entrypoint 默认不再自动建管理员；`init_superuser` 保留为运维兜底命令；已有部署升级后不出现向导
+- [x] entrypoint 默认不再自动建管理员；`init_superuser` 保留为运维兜底命令；已有部署升级后不出现向导（Phase 5 完成 2026-06-08）
 
 ### Out of Scope
 
@@ -80,7 +80,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用） | 防止被用于重置或接管已有实例（安全） | — Pending |
 | DeepSeek V4 Pro / MiMo V2.5 Pro / Kimi 2.6 以 anthropic 兼容端点做"一键预设" | Claude Code 必须 anthropic 类型；这些模型经 base_url 覆盖接入，用户只填 Key | — Pending |
 | 向导必配：管理员 + 至少一个 Anthropic 兼容供应商；飞书/RAG 为可选步骤；加密密钥仅校验提示 | 保证"能进去 + 能跑 AI"为最小闭环，其余可跳过后补 | — Pending |
-| 保留 `init_superuser` 命令但默认从 entrypoint 移除，仅作运维兜底 | 兼容老部署与运维场景，同时去掉令人困惑的自动建号默认行为 | — Pending |
+| 保留 `init_superuser` 命令但默认从 entrypoint 移除，仅作运维兜底 | 兼容老部署与运维场景，同时去掉令人困惑的自动建号默认行为 | Validated（Phase 5，2026-06-08） |
 | 作为首个 GSD 里程碑 v0.1.0；既有能力记为 Validated 基线（已打基线 tag v0.0.1） | 项目为 brownfield，先建 GSD 基线再推进新特性；0.x 阶段里程碑走 minor、修复走 patch | — Pending |
 
 ## Evolution
