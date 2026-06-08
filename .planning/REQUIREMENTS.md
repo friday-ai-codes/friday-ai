@@ -16,9 +16,9 @@
 
 ### 管理员账号 (ADMIN)
 
-- [ ] **ADMIN-01**: 用户在向导中自定义管理员用户名与密码，含密码强度校验与二次确认
-- [ ] **ADMIN-02**: 提交后创建 superuser 并即时生效，用户可立即用该账号登录（不触发 must_change_password 强制改密）
-- [ ] **ADMIN-03**: 创建管理员成功后自动建立登录会话，用户直接进入系统首页，无需再次登录
+- [x] **ADMIN-01**: 用户在向导中自定义管理员用户名与密码，含密码强度校验与二次确认
+- [x] **ADMIN-02**: 提交后创建 superuser 并即时生效，用户可立即用该账号登录（不触发 must_change_password 强制改密）
+- [x] **ADMIN-03**: 创建管理员成功后自动建立登录会话，用户直接进入系统首页，无需再次登录
 
 ### LLM 供应商与模型预设 (PROV)
 
@@ -82,9 +82,9 @@
 | SETUP-02 | Phase 1 | Complete (Plan 01-01) |
 | SETUP-03 | Phase 1 | Complete (Plan 01-01) |
 | SETUP-04 | Phase 1 | Complete (Plan 01-01) |
-| ADMIN-01 | Phase 2 | Pending |
-| ADMIN-02 | Phase 2 | Pending |
-| ADMIN-03 | Phase 2 | Pending |
+| ADMIN-01 | Phase 2 | Complete |
+| ADMIN-02 | Phase 2 | Complete |
+| ADMIN-03 | Phase 2 | Complete |
 | PROV-01 | Phase 3 | Complete |
 | PROV-02 | Phase 3 | Complete |
 | PROV-03 | Phase 3 | Complete |

@@ -14,7 +14,7 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: 向导门禁与初始化状态检测** - 全新部署被导向向导外壳，已初始化实例被 fail-closed 拒之门外 (completed 2026-06-08)
-- [ ] **Phase 2: 管理员账号创建与自动登录** - 用户自设管理员账号，提交后即时创建并自动登录进入首页
+- [x] **Phase 2: 管理员账号创建与自动登录** - 用户自设管理员账号，提交后即时创建并自动登录进入首页 (completed 2026-06-08)
 - [x] **Phase 3: LLM 供应商配置与 Claude Code 绑定** - 一键预设配好 Anthropic 兼容供应商，加密落库 + 健康校验 + 绑定 Claude Code (completed 2026-06-08)
 - [x] **Phase 4: 安全校验与可选集成步骤** - 密钥安全风险提示 + 可跳过的飞书/向量检索配置步骤 (completed 2026-06-08)
 - [x] **Phase 5: 入口迁移与向后兼容** - entrypoint 不再自动建号，运维命令保留，老部署升级不回退 (completed 2026-06-08)

@@ -48,6 +48,10 @@ jobs:
           file: ${{ matrix.service.dockerfile }}
           platforms: ${{ matrix.platform.os }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
           cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
 
