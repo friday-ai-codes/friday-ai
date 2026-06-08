@@ -13,12 +13,15 @@ import {
   FormMessage,
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
+import SetupProviderStep from '~/components/setup/SetupProviderStep.vue'
 import { useAuthStore } from '~/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { t } = useI18n()
 
+// 两步向导：管理员账户 → AI 供应商（Phase 3）
+const step = ref<'admin' | 'provider'>('admin')
 const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
 
@@ -102,7 +105,9 @@ const onSubmit = handleSubmit(async (formValues) => {
       throw new Error(firstFieldError(data) || data.detail || t('setup.error.default'))
     }
 
-    // 后端已下发 cookie-JWT 会话：写入前端会话状态并直达系统首页，无需二次登录（ADMIN-03）
+    // 后端已下发 cookie-JWT 会话：写入前端会话状态（ADMIN-03）。
+    // Phase 3：管理员创建成功后不再直达首页，而是原地进入「AI 供应商」步骤
+    //（组件内部状态切换，不触发 /setup 路由导航，避免改动 Phase 1 门禁守卫）。
     authStore.applySetupSession(data.user)
     try {
       await authStore.fetchMe()
@@ -110,7 +115,7 @@ const onSubmit = handleSubmit(async (formValues) => {
     catch {
       // 静默忽略扩展信息获取失败，不影响进入系统（与 login() 一致）
     }
-    router.push('/')
+    step.value = 'provider'
   }
   catch (e: unknown) {
     setupError.value = e instanceof Error ? e.message : t('setup.error.default')
@@ -140,22 +145,59 @@ onMounted(async () => {
     <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
     <div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
 
-    <div class="relative z-10 w-full max-w-md mx-4">
+    <div
+      class="relative z-10 w-full mx-4 transition-all"
+      :class="step === 'provider' ? 'max-w-lg' : 'max-w-md'"
+    >
       <div class="bg-card/70 backdrop-blur-xl rounded-2xl border border-border/50 shadow-glass p-8">
-        <div class="mb-6 text-center">
-          <div class="inline-flex items-center justify-center p-3 mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
-            <span class="icon-[lucide--settings] text-3xl text-primary" />
-          </div>
-          <h1 class="text-2xl font-bold text-foreground mb-1">
-            {{ t('setup.title') }}
-          </h1>
-          <p class="text-sm text-muted-foreground">
-            {{ t('setup.subtitle') }}
-          </p>
+        <!-- 步骤指示（1/2） -->
+        <div class="mb-6 flex items-center justify-center gap-3 text-xs">
+          <span
+            class="inline-flex items-center gap-1.5 font-medium"
+            :class="step === 'admin' ? 'text-primary' : 'text-muted-foreground'"
+          >
+            <span
+              class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[0.7rem]"
+              :class="step === 'admin' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'"
+            >1</span>
+            {{ t('setup.steps.admin') }}
+          </span>
+          <span class="h-px w-6 bg-border" />
+          <span
+            class="inline-flex items-center gap-1.5 font-medium"
+            :class="step === 'provider' ? 'text-primary' : 'text-muted-foreground'"
+          >
+            <span
+              class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[0.7rem]"
+              :class="step === 'provider' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'"
+            >2</span>
+            {{ t('setup.steps.provider') }}
+          </span>
         </div>
 
-        <div
-          v-if="setupError"
+        <!-- 步骤 2：AI 供应商配置 -->
+        <SetupProviderStep
+          v-if="step === 'provider'"
+          @done="router.push('/')"
+          @skip="router.push('/')"
+        />
+
+        <!-- 步骤 1：管理员账户（Phase 1/2） -->
+        <template v-else>
+          <div class="mb-6 text-center">
+            <div class="inline-flex items-center justify-center p-3 mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
+              <span class="icon-[lucide--settings] text-3xl text-primary" />
+            </div>
+            <h1 class="text-2xl font-bold text-foreground mb-1">
+              {{ t('setup.title') }}
+            </h1>
+            <p class="text-sm text-muted-foreground">
+              {{ t('setup.subtitle') }}
+            </p>
+          </div>
+
+          <div
+            v-if="setupError"
           class="flex items-center gap-2.5 p-3 rounded-xl bg-destructive/8 border border-destructive/15 text-destructive mb-5"
         >
           <span class="icon-[lucide--alert-circle] text-base flex-shrink-0" />
@@ -254,6 +296,7 @@ onMounted(async () => {
             </template>
           </Button>
         </form>
+        </template>
       </div>
     </div>
   </div>
