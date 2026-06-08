@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 3 complete — LLM provider config + Claude Code binding (7 backend + 16 frontend tests passed)
-last_updated: "2026-06-08T17:00:00.000Z"
+stopped_at: Phase 4 complete — security check + optional feishu/rag steps (14 backend + 23 frontend tests passed)
+last_updated: "2026-06-08T17:25:00.000Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 60
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-07)
 
 **Core value:** 让团队开箱即用、安全地完成首次登录与必备配置，从而把飞书需求自动跑成 PR。
-**Current focus:** Phase 3 — LLM 供应商配置与 Claude Code 绑定（完成）
+**Current focus:** Phase 4 — 安全校验与可选集成步骤（完成）
 
 ## Current Position
 
-Phase: 3 (LLM 供应商配置与 Claude Code 绑定) — COMPLETE
-Plan: 2 of 2 (03-01 后端编排端点 + 03-02 前端两步向导 完成)
-Status: Phase complete — verified 6/6 must-haves（E2E 真机 + 真实 Key 流程待人工确认）
+Phase: 4 (安全校验与可选集成步骤) — COMPLETE
+Plan: 2 of 2 (04-01 后端安全校验+飞书/RAG 编排端点 + 04-02 前端三步向导 完成)
+Status: Phase complete — verified 4/4 must-haves（E2E 真机流程待人工确认）
 Last activity: 2026-06-08
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -72,6 +72,9 @@ Recent decisions affecting current work:
 - [03-01]: 新增薄编排端点 POST /api/providers/setup-wizard/（IsSuperUser），复用 Fernet encrypt_value + provider_health + aset_claude_code_config；落库前健康校验、失败不落库；update_or_create 幂等
 - [03-01]: provider_health 新增无状态 health_check_config（复用 _PING_DISPATCH，无 DB 副作用）
 - [03-02]: setup.vue 改两步向导，管理员创建成功后原地切供应商步骤（不路由跳转，不改 Phase 1 守卫）；预设为前端常量 lib/providerPresets.ts；Claude Code 三档统一映射所选 model
+- [04-01]: 新增 /api/system/ 三端点（security-check 只读非阻塞 + setup-feishu + setup-rag，IsSuperUser）；敏感项复用 encrypt_value+is_encrypted=True（与 bootstrap_system_settings 一致），键名一律 SettingKeys.*；安全校验只返回布尔+风险码、不回显密钥明文
+- [04-01]: 飞书/RAG 不走通用 PUT /settings/{key}/（该路径强制明文 is_encrypted=False），改薄编排端点加密落库，契合既有 is_encrypted/decrypt_value 读路径
+- [04-02]: setup.vue 扩为 5 步（admin→provider→security→feishu→rag），圆点指示+进度文字；provider done/skip 推进到 security；安全步骤「继续」任何态不 disable（非阻塞）；飞书/RAG 跳过=不调端点
 
 ### Pending Todos
 
