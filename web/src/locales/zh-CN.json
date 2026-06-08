@@ -27,6 +27,40 @@
     "error": {
       "connection": "无法连接到服务器，请检查后端服务后重试",
       "default": "设置失败，请重试"
+    },
+    "steps": {
+      "admin": "管理员账户",
+      "provider": "AI 供应商",
+      "indicator": "第 {current} / {total} 步"
+    },
+    "provider": {
+      "title": "配置 AI 供应商",
+      "subtitle": "选择模型预设并填写 API Key，Claude Code 将使用该供应商运行",
+      "presetLabel": "模型预设",
+      "fields": {
+        "apiKey": "API Key",
+        "baseUrl": "接口地址（Base URL）",
+        "model": "默认模型",
+        "apiKeyPlaceholder": "粘贴该供应商的 API Key"
+      },
+      "caps": {
+        "context": "上下文 {n}",
+        "vision": "支持图像",
+        "textOnly": "纯文本"
+      },
+      "validation": {
+        "apiKeyRequired": "请填写 API Key",
+        "baseUrlRequired": "请填写接口地址",
+        "modelRequired": "请填写默认模型"
+      },
+      "cta": "校验并完成配置",
+      "testing": "正在校验连通与鉴权…",
+      "success": "配置成功，正在进入系统…",
+      "skip": "稍后在设置中配置",
+      "error": {
+        "healthPrefix": "连接或鉴权失败",
+        "default": "供应商配置失败，请检查后重试"
+      }
     }
   }
 }
