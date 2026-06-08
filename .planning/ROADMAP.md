@@ -32,7 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. 并发或重复请求初始化接口时，存在 superuser 即一律被拒绝，无法用于重置或接管已有实例
 **Plans**: 2 plans
 Plans:
+**Wave 1**
 - [ ] 01-01-PLAN.md — 后端门禁层（SetupStatusView + SetupInitView + SetupNotInitialized + 后端测试）
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 01-02-PLAN.md — 前端路由守卫（api/setup.ts + auth store + i18n + router.beforeEach + setup.vue + 前端测试）
 **UI hint**: yes
 

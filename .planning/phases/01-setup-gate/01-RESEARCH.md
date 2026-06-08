@@ -787,17 +787,19 @@ class TestSetupInitView:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`SetupInitSerializer.validate_username` 中的 ORM 查询**
    - What we know: `serializer.is_valid()` 在 `sync_to_async` 包装内执行，validator 中的 `User.objects.filter().exists()` 是同步 DB 调用，在 `sync_to_async` 线程中运行（安全）
    - What's unclear: 若 Phase 2 改为 `await sync_to_async(serializer.is_valid)(raise_exception=True)` 调用方式，serializer 内部的 DB 查询是否需要特殊处理
    - Recommendation: 与现有 `InvitationAcceptView` 相同写法（`await sync_to_async(serializer.is_valid)(raise_exception=True)`），已被验证可用
+   - RESOLVED: 采用 `await sync_to_async(serializer.is_valid)(raise_exception=True)`；serializer 内同步 ORM 在 sync_to_async 线程中执行，安全，风险=低。
 
 2. **`has_permission` 同步 ORM 查询在 adrf 异步视图中是否安全**
    - What we know: adrf 文档说明 permission check 在同步上下文中调用（by DRF），不在事件循环内
    - What's unclear: 是否有 Django 5.x + adrf 版本组合导致此行为变化的边缘情况
    - Recommendation: 沿用现有项目中 `InvitationView.get_permissions()` 的同步判断模式，已验证可用
+   - RESOLVED: `SetupNotInitialized.has_permission` 保持同步（DRF 在同步上下文调用权限检查），沿用 `InvitationView` 模式，风险=低。
 
 ---
 
