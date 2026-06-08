@@ -43,8 +43,10 @@ spec:
             - |
               echo "执行数据库迁移..."
               python manage.py migrate --noinput
-              echo "初始化管理员..."
-              python manage.py init_superuser
+              # 不再自动创建管理员：首次部署的管理员账号改由 Web 首启向导引导用户自行设置。
+              # 运维兜底（需手动建/重置管理员时）：
+              #   kubectl exec deploy/<server> -- python manage.py init_superuser  # 读取 FRIDAY_ADMIN_USERNAME/PASSWORD（见 server 运行时 env）
+              #   kubectl exec deploy/<server> -- python manage.py reset_superuser_password
               echo "迁移完成"
           # 直接使用 env 而非 envFrom，避免 pre-install hook 阶段 ConfigMap/Secret 尚未创建的问题
           env:
@@ -58,10 +60,6 @@ spec:
               {{- else }}
               value: {{ .Values.externalDatabase.url | quote }}
               {{- end }}
-            - name: FRIDAY_ADMIN_USERNAME
-              value: {{ .Values.server.adminUsername | quote }}
-            - name: FRIDAY_ADMIN_PASSWORD
-              value: {{ .Values.server.adminPassword | quote }}
             - name: DEBUG
               value: {{ .Values.server.debug | quote }}
             - name: ALLOWED_HOSTS
