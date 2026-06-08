@@ -30,18 +30,18 @@
 
 ### 安全密钥校验 (SEC)
 
-- [ ] **SEC-01**: 向导检测 `SECRET_KEY` / `FRIDAY_ENCRYPTION_KEY` 是否为安全值（非默认、相互独立），给出风险提示但不阻塞完成
+- [x] **SEC-01**: 向导检测 `SECRET_KEY` / `FRIDAY_ENCRYPTION_KEY` 是否为安全值（非默认、相互独立），给出风险提示但不阻塞完成
 - [x] **SEC-02**: 向导写入的所有凭证/密钥经现有 Fernet 加密路径落库，确保为密文存储
 
 ### 飞书集成（可选步骤）(FEISHU)
 
-- [ ] **FEISHU-01**: 向导提供可选的飞书集成配置步骤（App ID / App Secret 等），用户可一键跳过
-- [ ] **FEISHU-02**: 飞书配置写入与既有 `SystemSetting` / `bootstrap_system_settings` 路径一致，跳过后可在设置页补充
+- [x] **FEISHU-01**: 向导提供可选的飞书集成配置步骤（App ID / App Secret 等），用户可一键跳过
+- [x] **FEISHU-02**: 飞书配置写入与既有 `SystemSetting` / `bootstrap_system_settings` 路径一致，跳过后可在设置页补充
 
 ### 向量检索（可选步骤）(RAG)
 
-- [ ] **RAG-01**: 向导提供可选的向量检索配置步骤（Qdrant URL/API Key、Embedding 配置），用户可一键跳过
-- [ ] **RAG-02**: RAG 配置项与既有 `SettingKeys`（QDRANT_URL/EMBEDDING_* 等）对齐，跳过后可在设置页补充
+- [x] **RAG-01**: 向导提供可选的向量检索配置步骤（Qdrant URL/API Key、Embedding 配置），用户可一键跳过
+- [x] **RAG-02**: RAG 配置项与既有 `SettingKeys`（QDRANT_URL/EMBEDDING_* 等）对齐，跳过后可在设置页补充
 
 ### 向后兼容与迁移 (COMPAT)
 
@@ -90,12 +90,12 @@
 | PROV-03 | Phase 3 | Complete |
 | PROV-04 | Phase 3 | Complete |
 | PROV-05 | Phase 3 | Complete |
-| SEC-01 | Phase 4 | Pending |
+| SEC-01 | Phase 4 | Complete |
 | SEC-02 | Phase 3 | Complete |
-| FEISHU-01 | Phase 4 | Pending |
-| FEISHU-02 | Phase 4 | Pending |
-| RAG-01 | Phase 4 | Pending |
-| RAG-02 | Phase 4 | Pending |
+| FEISHU-01 | Phase 4 | Complete |
+| FEISHU-02 | Phase 4 | Complete |
+| RAG-01 | Phase 4 | Complete |
+| RAG-02 | Phase 4 | Complete |
 | COMPAT-01 | Phase 5 | Pending |
 | COMPAT-02 | Phase 5 | Pending |
 | COMPAT-03 | Phase 5 | Pending |
