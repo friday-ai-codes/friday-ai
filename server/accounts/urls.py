@@ -14,6 +14,8 @@ from .views import (
     MeView,
     ProfileUpdateView,
     RefreshTokenView,
+    SetupInitView,
+    SetupStatusView,
     UserDetailView,
     UserListView,
 )
@@ -35,4 +37,8 @@ urlpatterns = [
     # System user management
     path("users/", UserListView.as_view(), name="user-list"),
     path("users/<str:user_id>/", UserDetailView.as_view(), name="user-detail"),
+    # 首启向导：初始化状态（AllowAny 只读）
+    path("setup/status/", SetupStatusView.as_view(), name="setup-status"),
+    # 首启向导：初始化写入（fail-closed + 防重入）
+    path("setup/", SetupInitView.as_view(), name="setup-init"),
 ]

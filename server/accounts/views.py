@@ -5,6 +5,7 @@ from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -13,6 +14,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Invitation, UserSource
+from .permissions import SetupNotInitialized
 from .serializers import (
     ChangePasswordSerializer,
     InvitationAcceptSerializer,
@@ -22,6 +24,7 @@ from .serializers import (
     LoginSerializer,
     MeSerializer,
     ProfileUpdateSerializer,
+    SetupInitSerializer,
     TokenResponseSerializer,
     UserSerializer,
 )
@@ -422,3 +425,81 @@ class AdminChangePasswordView(APIView):
         await request.user.asave(update_fields=["password", "must_change_password"])
 
         return Response({"message": "密码修改成功"})
+
+
+# ============================================================================
+# 首启向导门禁层（SETUP-02/03/04）
+# ============================================================================
+
+
+class SetupStatusView(APIView):
+    """只读初始化状态接口。
+
+    GET /api/auth/setup/status/ 无需认证，不泄露用户名/数量，
+    仅返回 {is_initialized: bool, needs_setup: bool}（SETUP-02）。
+    """
+
+    permission_classes = [AllowAny]
+
+    async def get(self, request):
+        is_initialized = await sync_to_async(User.objects.filter(is_superuser=True).exists)()
+        return Response({"is_initialized": is_initialized, "needs_setup": not is_initialized})
+
+
+def _atomic_create_superuser(username: str, password: str, display_name: str):
+    """在原子事务内创建 superuser，并发/重入安全。
+
+    返回 None 表示已存在 superuser（并发冲突），由调用方返回 409。
+    SQLite 依赖 WAL 写锁串行化，Postgres 依赖 READ COMMITTED 事务；
+    不使用 select_for_update()——SQLite 不支持，会抛 NotSupportedError。
+    IntegrityError（username UNIQUE 约束）作最终兜底（SETUP-04）。
+    """
+    with transaction.atomic():
+        if User.objects.filter(is_superuser=True).exists():
+            return None
+        return User.objects.create_superuser(
+            username=username,
+            password=password,
+            display_name=display_name,
+            source=UserSource.SYSTEM.value,
+        )
+
+
+class SetupInitView(APIView):
+    """首启初始化写入接口（fail-closed + 防重入）。
+
+    POST /api/auth/setup/ — 仅当无 superuser 时可用（SETUP-03），
+    在原子事务内创建 superuser 并返回 201（SETUP-02）；
+    已初始化时 SetupNotInitialized 返回 403，与调用者身份无关（SETUP-04）。
+
+    注意：authentication_classes = [] 是必要的：
+    DRF 在 permission_denied() 中检查 request.authenticators，
+    若存在 authenticator 但无成功认证则抛 NotAuthenticated (401) 而非 PermissionDenied (403)。
+    清空 authentication_classes 确保匿名请求被 SetupNotInitialized 拒绝时返回 403。
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny, SetupNotInitialized]
+
+    async def post(self, request):
+        serializer = SetupInitSerializer(data=request.data)
+        # KEEP: validate_username 执行 DB 查询，需要 sync_to_async 包装
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+
+        try:
+            user = await sync_to_async(_atomic_create_superuser)(
+                username=serializer.validated_data["username"],
+                password=serializer.validated_data["password"],
+                display_name=serializer.validated_data.get("display_name", "系统管理员"),
+            )
+        except IntegrityError:
+            return Response({"detail": "用户名已存在"}, status=status.HTTP_409_CONFLICT)
+
+        if user is None:
+            logger.warning("setup_init_conflict_concurrent")
+            return Response(
+                {"detail": "系统已初始化，初始化接口已关闭"}, status=status.HTTP_409_CONFLICT
+            )
+
+        logger.info("setup_init_success", username=serializer.validated_data["username"])
+        return Response({"detail": "管理员账户创建成功"}, status=status.HTTP_201_CREATED)
