@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 4 complete — security check + optional feishu/rag steps (14 backend + 23 frontend tests passed)
-last_updated: "2026-06-08T17:25:00.000Z"
-last_activity: 2026-06-08
+status: executing
+stopped_at: Plan 01-01 complete — backend setup gate implemented (8 tests passed)
+last_updated: "2026-06-08T09:30:43.377Z"
+last_activity: 2026-06-08 -- Phase 5 execution started
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 8
+  total_plans: 9
   completed_plans: 8
-  percent: 80
+  percent: 89
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-07)
 
 **Core value:** 让团队开箱即用、安全地完成首次登录与必备配置，从而把飞书需求自动跑成 PR。
-**Current focus:** Phase 4 — 安全校验与可选集成步骤（完成）
+**Current focus:** Phase 5 — 入口迁移与向后兼容
 
 ## Current Position
 
-Phase: 4 (安全校验与可选集成步骤) — COMPLETE
-Plan: 2 of 2 (04-01 后端安全校验+飞书/RAG 编排端点 + 04-02 前端三步向导 完成)
-Status: Phase complete — verified 4/4 must-haves（E2E 真机流程待人工确认）
-Last activity: 2026-06-08
+Phase: 5 (入口迁移与向后兼容) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 5
+Last activity: 2026-06-08 -- Phase 5 execution started
 
 Progress: [████████░░] 80%
 
