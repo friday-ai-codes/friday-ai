@@ -1,4 +1,4 @@
-# Roadmap: Friday AI — v1.0 首启初始化向导
+# Roadmap: Friday AI — v0.1.0 首启初始化向导
 
 ## Overview
 
@@ -30,7 +30,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. 后端 `is_initialized` 只读接口可被前端无认证调用，前端路由守卫据此放行/拦截
   3. 系统一旦存在 superuser，初始化接口返回 403/重定向、向导界面不再出现
   4. 并发或重复请求初始化接口时，存在 superuser 即一律被拒绝，无法用于重置或接管已有实例
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — 后端门禁层（SetupStatusView + SetupInitView + SetupNotInitialized + 后端测试）
+- [ ] 01-02-PLAN.md — 前端路由守卫（api/setup.ts + auth store + i18n + router.beforeEach + setup.vue + 前端测试）
 **UI hint**: yes
 
 ### Phase 2: 管理员账号创建与自动登录
