@@ -31,6 +31,9 @@
     "steps": {
       "admin": "管理员账户",
       "provider": "AI 供应商",
+      "security": "安全校验",
+      "feishu": "飞书集成",
+      "rag": "向量检索",
       "indicator": "第 {current} / {total} 步"
     },
     "provider": {
@@ -61,6 +64,65 @@
         "healthPrefix": "连接或鉴权失败",
         "default": "供应商配置失败，请检查后重试"
       }
+    },
+    "security": {
+      "title": "安全密钥校验",
+      "subtitle": "检查加密与签名密钥是否安全配置，仅作提示不阻塞",
+      "checking": "正在检查密钥配置…",
+      "allClear": "密钥配置安全：SECRET_KEY 与 FRIDAY_ENCRYPTION_KEY 均已自定义且相互独立",
+      "unavailable": "暂时无法读取密钥状态，可稍后在部署环境核对（不影响继续）",
+      "riskTitle": "检测到密钥安全风险（不影响完成向导）",
+      "cta": "继续配置可选集成",
+      "risk": {
+        "secretKeyDefault": "SECRET_KEY 仍为默认值，请在生产环境通过环境变量设置为随机强密钥",
+        "encryptionKeyUnset": "未单独设置 FRIDAY_ENCRYPTION_KEY，加密将回退派生自 SECRET_KEY，建议单独配置",
+        "keysNotIndependent": "FRIDAY_ENCRYPTION_KEY 与 SECRET_KEY 相同，建议使用相互独立的密钥"
+      }
+    },
+    "feishu": {
+      "title": "配置飞书集成（可选）",
+      "subtitle": "填写飞书应用凭证以启用飞书需求拉取与通知，可稍后在设置中配置",
+      "fields": {
+        "appId": "App ID",
+        "appSecret": "App Secret",
+        "appIdPlaceholder": "cli_xxxxxxxx",
+        "appSecretPlaceholder": "粘贴飞书应用的 App Secret"
+      },
+      "validation": {
+        "appIdRequired": "请填写 App ID",
+        "appSecretRequired": "请填写 App Secret"
+      },
+      "cta": "保存并继续",
+      "saving": "正在保存…",
+      "skip": "跳过，稍后在设置中配置",
+      "error": {
+        "default": "飞书配置保存失败，请重试"
+      }
+    },
+    "rag": {
+      "title": "配置向量检索（可选）",
+      "subtitle": "配置 Qdrant 与 Embedding 以启用代码语义检索，可稍后在设置中配置",
+      "fields": {
+        "qdrantUrl": "Qdrant 地址",
+        "qdrantApiKey": "Qdrant API Key（可选）",
+        "embeddingApiUrl": "Embedding 接口地址（可选）",
+        "embeddingApiKey": "Embedding API Key（可选）",
+        "embeddingModel": "Embedding 模型（可选）",
+        "embeddingDimension": "向量维度（可选）",
+        "qdrantUrlPlaceholder": "http://qdrant:6333"
+      },
+      "validation": {
+        "qdrantUrlRequired": "请填写 Qdrant 地址"
+      },
+      "cta": "保存并完成",
+      "saving": "正在保存…",
+      "skip": "跳过并进入系统",
+      "error": {
+        "default": "向量检索配置保存失败，请重试"
+      }
+    },
+    "finish": {
+      "success": "配置完成，正在进入系统…"
     }
   }
 }

@@ -4,6 +4,10 @@ import { useForm } from 'vee-validate'
 import { ref } from 'vue'
 import * as z from 'zod'
 import { getSetupStatus } from '~/api/setup'
+import SetupFeishuStep from '~/components/setup/SetupFeishuStep.vue'
+import SetupProviderStep from '~/components/setup/SetupProviderStep.vue'
+import SetupRagStep from '~/components/setup/SetupRagStep.vue'
+import SetupSecurityStep from '~/components/setup/SetupSecurityStep.vue'
 import { Button } from '~/components/ui/button'
 import {
   FormControl,
@@ -13,15 +17,17 @@ import {
   FormMessage,
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
-import SetupProviderStep from '~/components/setup/SetupProviderStep.vue'
 import { useAuthStore } from '~/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { t } = useI18n()
 
-// 两步向导：管理员账户 → AI 供应商（Phase 3）
-const step = ref<'admin' | 'provider'>('admin')
+// 多步向导：管理员账户 → AI 供应商（Phase 3）→ 安全校验 → 飞书集成 → 向量检索（Phase 4）
+type SetupStep = 'admin' | 'provider' | 'security' | 'feishu' | 'rag'
+const STEPS: SetupStep[] = ['admin', 'provider', 'security', 'feishu', 'rag']
+const step = ref<SetupStep>('admin')
+const currentStepIndex = computed(() => STEPS.indexOf(step.value))
 const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
 
@@ -107,7 +113,7 @@ const onSubmit = handleSubmit(async (formValues) => {
 
     // 后端已下发 cookie-JWT 会话：写入前端会话状态（ADMIN-03）。
     // Phase 3：管理员创建成功后不再直达首页，而是原地进入「AI 供应商」步骤
-    //（组件内部状态切换，不触发 /setup 路由导航，避免改动 Phase 1 门禁守卫）。
+    // （组件内部状态切换，不触发 /setup 路由导航，避免改动 Phase 1 门禁守卫）。
     authStore.applySetupSession(data.user)
     try {
       await authStore.fetchMe()
@@ -147,37 +153,50 @@ onMounted(async () => {
 
     <div
       class="relative z-10 w-full mx-4 transition-all"
-      :class="step === 'provider' ? 'max-w-lg' : 'max-w-md'"
+      :class="step === 'admin' ? 'max-w-md' : 'max-w-lg'"
     >
       <div class="bg-card/70 backdrop-blur-xl rounded-2xl border border-border/50 shadow-glass p-8">
-        <!-- 步骤指示（1/2） -->
-        <div class="mb-6 flex items-center justify-center gap-3 text-xs">
-          <span
-            class="inline-flex items-center gap-1.5 font-medium"
-            :class="step === 'admin' ? 'text-primary' : 'text-muted-foreground'"
-          >
-            <span
-              class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[0.7rem]"
-              :class="step === 'admin' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'"
-            >1</span>
-            {{ t('setup.steps.admin') }}
-          </span>
-          <span class="h-px w-6 bg-border" />
-          <span
-            class="inline-flex items-center gap-1.5 font-medium"
-            :class="step === 'provider' ? 'text-primary' : 'text-muted-foreground'"
-          >
-            <span
-              class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[0.7rem]"
-              :class="step === 'provider' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'"
-            >2</span>
-            {{ t('setup.steps.provider') }}
-          </span>
+        <!-- 步骤指示：N 圆点 + 文字进度（第 current / total 步） -->
+        <div class="mb-6 flex flex-col items-center gap-2">
+          <div class="flex items-center gap-1.5">
+            <template v-for="(s, i) in STEPS" :key="s">
+              <span
+                class="h-2 rounded-full transition-all"
+                :class="i === currentStepIndex
+                  ? 'w-6 bg-primary'
+                  : i < currentStepIndex ? 'w-2 bg-primary/50' : 'w-2 bg-border'"
+              />
+            </template>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            {{ t('setup.steps.indicator', { current: currentStepIndex + 1, total: STEPS.length }) }}
+            · {{ t(`setup.steps.${step}`) }}
+          </p>
         </div>
 
-        <!-- 步骤 2：AI 供应商配置 -->
+        <!-- 步骤 2：AI 供应商配置（Phase 3）→ 完成/跳过推进到安全校验 -->
         <SetupProviderStep
           v-if="step === 'provider'"
+          @done="step = 'security'"
+          @skip="step = 'security'"
+        />
+
+        <!-- 步骤 3：安全密钥校验（Phase 4，非阻塞） -->
+        <SetupSecurityStep
+          v-else-if="step === 'security'"
+          @continue="step = 'feishu'"
+        />
+
+        <!-- 步骤 4：飞书集成（Phase 4，可跳过） -->
+        <SetupFeishuStep
+          v-else-if="step === 'feishu'"
+          @done="step = 'rag'"
+          @skip="step = 'rag'"
+        />
+
+        <!-- 步骤 5：向量检索（Phase 4，可跳过，末步进入首页） -->
+        <SetupRagStep
+          v-else-if="step === 'rag'"
           @done="router.push('/')"
           @skip="router.push('/')"
         />
@@ -198,104 +217,104 @@ onMounted(async () => {
 
           <div
             v-if="setupError"
-          class="flex items-center gap-2.5 p-3 rounded-xl bg-destructive/8 border border-destructive/15 text-destructive mb-5"
-        >
-          <span class="icon-[lucide--alert-circle] text-base flex-shrink-0" />
-          <span class="text-sm">{{ setupError }}</span>
-        </div>
-
-        <form class="space-y-4" @submit="onSubmit">
-          <FormField v-slot="{ componentField }" name="username">
-            <FormItem>
-              <FormLabel class="text-foreground/80 text-sm font-medium">
-                {{ t('setup.fields.username') }}
-              </FormLabel>
-              <FormControl>
-                <div class="relative group">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--user] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
-                  <Input
-                    type="text"
-                    placeholder="admin"
-                    autocomplete="username"
-                    class="pl-9"
-                    v-bind="componentField"
-                  />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          </FormField>
-
-          <FormField v-slot="{ componentField }" name="password">
-            <FormItem>
-              <FormLabel class="text-foreground/80 text-sm font-medium">
-                {{ t('setup.fields.password') }}
-              </FormLabel>
-              <FormControl>
-                <div class="relative group">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
-                  <Input
-                    type="password"
-                    :placeholder="t('setup.fields.passwordPlaceholder')"
-                    autocomplete="new-password"
-                    class="pl-9"
-                    v-bind="componentField"
-                  />
-                </div>
-              </FormControl>
-              <div v-if="passwordStrength" class="space-y-1.5 pt-1">
-                <div class="flex gap-1">
-                  <span
-                    v-for="i in 3"
-                    :key="i"
-                    class="h-1.5 flex-1 rounded-full transition-colors"
-                    :class="i <= passwordStrength.filled ? passwordStrength.bar : 'bg-border'"
-                  />
-                </div>
-                <p class="text-xs" :class="passwordStrength.text">
-                  {{ t('setup.strength.label') }}：{{ t(`setup.strength.${passwordStrength.level}`) }}
-                </p>
-              </div>
-              <FormMessage />
-            </FormItem>
-          </FormField>
-
-          <FormField v-slot="{ componentField }" name="confirmPassword">
-            <FormItem>
-              <FormLabel class="text-foreground/80 text-sm font-medium">
-                {{ t('setup.fields.confirmPassword') }}
-              </FormLabel>
-              <FormControl>
-                <div class="relative group">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
-                  <Input
-                    type="password"
-                    placeholder="再次输入密码"
-                    autocomplete="new-password"
-                    class="pl-9"
-                    v-bind="componentField"
-                  />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          </FormField>
-
-          <Button
-            type="submit"
-            class="w-full h-10 text-sm font-semibold mt-2"
-            :disabled="isSubmitting"
+            class="flex items-center gap-2.5 p-3 rounded-xl bg-destructive/8 border border-destructive/15 text-destructive mb-5"
           >
-            <template v-if="isSubmitting">
-              <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-              {{ t('setup.submitting') }}
-            </template>
-            <template v-else>
-              <span class="icon-[lucide--shield-check] mr-2" />
-              {{ t('setup.cta') }}
-            </template>
-          </Button>
-        </form>
+            <span class="icon-[lucide--alert-circle] text-base flex-shrink-0" />
+            <span class="text-sm">{{ setupError }}</span>
+          </div>
+
+          <form class="space-y-4" @submit="onSubmit">
+            <FormField v-slot="{ componentField }" name="username">
+              <FormItem>
+                <FormLabel class="text-foreground/80 text-sm font-medium">
+                  {{ t('setup.fields.username') }}
+                </FormLabel>
+                <FormControl>
+                  <div class="relative group">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--user] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
+                    <Input
+                      type="text"
+                      placeholder="admin"
+                      autocomplete="username"
+                      class="pl-9"
+                      v-bind="componentField"
+                    />
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            </FormField>
+
+            <FormField v-slot="{ componentField }" name="password">
+              <FormItem>
+                <FormLabel class="text-foreground/80 text-sm font-medium">
+                  {{ t('setup.fields.password') }}
+                </FormLabel>
+                <FormControl>
+                  <div class="relative group">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
+                    <Input
+                      type="password"
+                      :placeholder="t('setup.fields.passwordPlaceholder')"
+                      autocomplete="new-password"
+                      class="pl-9"
+                      v-bind="componentField"
+                    />
+                  </div>
+                </FormControl>
+                <div v-if="passwordStrength" class="space-y-1.5 pt-1">
+                  <div class="flex gap-1">
+                    <span
+                      v-for="i in 3"
+                      :key="i"
+                      class="h-1.5 flex-1 rounded-full transition-colors"
+                      :class="i <= passwordStrength.filled ? passwordStrength.bar : 'bg-border'"
+                    />
+                  </div>
+                  <p class="text-xs" :class="passwordStrength.text">
+                    {{ t('setup.strength.label') }}：{{ t(`setup.strength.${passwordStrength.level}`) }}
+                  </p>
+                </div>
+                <FormMessage />
+              </FormItem>
+            </FormField>
+
+            <FormField v-slot="{ componentField }" name="confirmPassword">
+              <FormItem>
+                <FormLabel class="text-foreground/80 text-sm font-medium">
+                  {{ t('setup.fields.confirmPassword') }}
+                </FormLabel>
+                <FormControl>
+                  <div class="relative group">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
+                    <Input
+                      type="password"
+                      placeholder="再次输入密码"
+                      autocomplete="new-password"
+                      class="pl-9"
+                      v-bind="componentField"
+                    />
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            </FormField>
+
+            <Button
+              type="submit"
+              class="w-full h-10 text-sm font-semibold mt-2"
+              :disabled="isSubmitting"
+            >
+              <template v-if="isSubmitting">
+                <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+                {{ t('setup.submitting') }}
+              </template>
+              <template v-else>
+                <span class="icon-[lucide--shield-check] mr-2" />
+                {{ t('setup.cta') }}
+              </template>
+            </Button>
+          </form>
         </template>
       </div>
     </div>
