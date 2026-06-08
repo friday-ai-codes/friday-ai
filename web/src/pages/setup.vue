@@ -23,15 +23,17 @@ const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
 
 const formSchema = toTypedSchema(z.object({
-  username: z.string().min(1, '请输入用户名').max(150, '用户名过长'),
-  password: z.string().min(6, '密码至少 6 位'),
-  confirmPassword: z.string().min(1, '请确认密码'),
+  username: z.string().min(1, t('setup.validation.usernameRequired')).max(150, '用户名过长'),
+  password: z.string()
+    .min(8, t('setup.validation.passwordMin'))
+    .refine(v => !/^\d+$/.test(v), t('setup.validation.passwordNumeric')),
+  confirmPassword: z.string().min(1, t('setup.fields.confirmPassword')),
 }).refine(data => data.password === data.confirmPassword, {
-  message: '两次输入的密码不一致',
+  message: t('setup.validation.passwordMismatch'),
   path: ['confirmPassword'],
 }))
 
-const { handleSubmit } = useForm({
+const { handleSubmit, values } = useForm({
   validationSchema: formSchema,
   initialValues: {
     username: 'admin',
@@ -40,17 +42,56 @@ const { handleSubmit } = useForm({
   },
 })
 
-const onSubmit = handleSubmit(async (values) => {
+// 密码强度（仅 UX 提示，最终以后端 Django 校验器为准）：
+// 满足项数（长度≥8 / 含字母 / 含数字 / 含符号或长度≥12）→ 弱(0-1)/中(2-3)/强(4)
+const passwordStrength = computed(() => {
+  const pwd = values.password ?? ''
+  if (!pwd)
+    return null
+  let score = 0
+  if (pwd.length >= 8)
+    score++
+  if (/[a-z]/i.test(pwd))
+    score++
+  if (/\d/.test(pwd))
+    score++
+  if (/[^a-z0-9]/i.test(pwd) || pwd.length >= 12)
+    score++
+  const level = score <= 1 ? 'weak' : score <= 3 ? 'medium' : 'strong'
+  const meta = {
+    weak: { filled: 1, bar: 'bg-destructive', text: 'text-destructive' },
+    medium: { filled: 2, bar: 'bg-amber-500', text: 'text-amber-500' },
+    strong: { filled: 3, bar: 'bg-primary', text: 'text-primary' },
+  } as const
+  return { level, ...meta[level] }
+})
+
+// 从后端 400 响应中提取字段级中文错误（password/username）
+function firstFieldError(data: Record<string, unknown> | null): string | null {
+  if (!data || typeof data !== 'object')
+    return null
+  for (const key of ['password', 'username', 'confirmPassword']) {
+    const v = data[key]
+    if (Array.isArray(v) && v.length)
+      return String(v[0])
+    if (typeof v === 'string')
+      return v
+  }
+  return null
+}
+
+const onSubmit = handleSubmit(async (formValues) => {
   setupError.value = null
   isSubmitting.value = true
   try {
+    // 保持原始 fetch（不走 api/client.ts），避免 403/401 触发全局 auth:forbidden/logout 重定向
     const response = await fetch('/api/auth/setup/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
-        username: values.username,
-        password: values.password,
+        username: formValues.username,
+        password: formValues.password,
         display_name: '系统管理员',
       }),
     })
@@ -58,16 +99,21 @@ const onSubmit = handleSubmit(async (values) => {
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error(data.detail || '设置失败')
+      throw new Error(firstFieldError(data) || data.detail || t('setup.error.default'))
     }
 
-    // 设置成功，更新 setup 状态，跳转登录页
-    authStore.needsSetup = false
-    authStore.setupStatusChecked = true
-    router.push('/login')
+    // 后端已下发 cookie-JWT 会话：写入前端会话状态并直达系统首页，无需二次登录（ADMIN-03）
+    authStore.applySetupSession(data.user)
+    try {
+      await authStore.fetchMe()
+    }
+    catch {
+      // 静默忽略扩展信息获取失败，不影响进入系统（与 login() 一致）
+    }
+    router.push('/')
   }
   catch (e: unknown) {
-    setupError.value = e instanceof Error ? e.message : '设置失败，请重试'
+    setupError.value = e instanceof Error ? e.message : t('setup.error.default')
   }
   finally {
     isSubmitting.value = false
@@ -148,13 +194,26 @@ onMounted(async () => {
                   <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
                   <Input
                     type="password"
-                    placeholder="至少 6 位"
+                    :placeholder="t('setup.fields.passwordPlaceholder')"
                     autocomplete="new-password"
                     class="pl-9"
                     v-bind="componentField"
                   />
                 </div>
               </FormControl>
+              <div v-if="passwordStrength" class="space-y-1.5 pt-1">
+                <div class="flex gap-1">
+                  <span
+                    v-for="i in 3"
+                    :key="i"
+                    class="h-1.5 flex-1 rounded-full transition-colors"
+                    :class="i <= passwordStrength.filled ? passwordStrength.bar : 'bg-border'"
+                  />
+                </div>
+                <p class="text-xs" :class="passwordStrength.text">
+                  {{ t('setup.strength.label') }}：{{ t(`setup.strength.${passwordStrength.level}`) }}
+                </p>
+              </div>
               <FormMessage />
             </FormItem>
           </FormField>

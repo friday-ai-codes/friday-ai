@@ -94,6 +94,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * 应用首启向导创建管理员成功后写入会话状态。
+   *
+   * 后端 SetupInitView 在创建 superuser 时已下发 cookie-JWT 会话，
+   * 这里据响应体的 user 直接写入前端会话状态，使用户无需二次登录即可进入首页（ADMIN-03）。
+   * 同时关闭 setup 守卫（needsSetup=false）并标记已初始化，避免路由守卫把已登录用户弹回 /login。
+   */
+  function applySetupSession(sessionUser: User) {
+    user.value = sessionUser
+    isAuthenticated.value = true
+    isInitialized.value = true
+    mustChangePassword.value = false
+    needsSetup.value = false
+    setupStatusChecked.value = true
+  }
+
+  /**
    * 初始化认证状态
    * 应用启动时调用，直接请求 /me 验证登录态（cookie 自动携带）
    */
@@ -310,6 +326,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Actions
     login,
     logout,
+    applySetupSession,
     initAuth,
     fetchCurrentUser,
     fetchMe,
