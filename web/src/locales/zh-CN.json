@@ -5,10 +5,24 @@
     "loading": "正在检测系统状态…",
     "cta": "创建管理员账户",
     "submitting": "创建中…",
+    "success": "创建成功，正在进入系统…",
     "fields": {
       "username": "管理员用户名",
       "password": "密码",
-      "confirmPassword": "确认密码"
+      "confirmPassword": "确认密码",
+      "passwordPlaceholder": "至少 8 位，建议字母与数字组合"
+    },
+    "strength": {
+      "label": "密码强度",
+      "weak": "弱",
+      "medium": "中",
+      "strong": "强"
+    },
+    "validation": {
+      "usernameRequired": "请输入用户名",
+      "passwordMin": "密码至少 8 位",
+      "passwordNumeric": "密码不能全为数字",
+      "passwordMismatch": "两次输入的密码不一致"
     },
     "error": {
       "connection": "无法连接到服务器，请检查后端服务后重试",
