@@ -9,7 +9,7 @@
 
 ### Setup 向导框架与门禁 (SETUP)
 
-- [ ] **SETUP-01**: 系统检测到不存在任何超级管理员时，用户首次访问 Web 自动进入首启初始化向导
+- [x] **SETUP-01**: 系统检测到不存在任何超级管理员时，用户首次访问 Web 自动进入首启初始化向导
 - [x] **SETUP-02**: 后端提供只读「初始化状态」接口（如 `is_initialized`），前端路由守卫据此放行：未初始化时绕过登录进入向导，已初始化时禁止进入向导
 - [x] **SETUP-03**: 向导完成（已创建管理员）后，初始化接口与界面对所有访问者关闭（403 或重定向到登录），不再出现
 - [x] **SETUP-04**: 初始化接口 fail-closed 且具备防重入/并发保护——存在 superuser 时一律拒绝，无法用于重置或接管已有实例
@@ -78,7 +78,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SETUP-01 | Phase 1 | Pending |
+| SETUP-01 | Phase 1 | Complete |
 | SETUP-02 | Phase 1 | Complete (Plan 01-01) |
 | SETUP-03 | Phase 1 | Complete (Plan 01-01) |
 | SETUP-04 | Phase 1 | Complete (Plan 01-01) |
@@ -101,6 +101,7 @@
 | COMPAT-03 | Phase 5 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 21 total
 - Mapped to phases: 21 ✓
 - Unmapped: 0
