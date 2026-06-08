@@ -63,11 +63,11 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — 后端增强（密码强度校验 + 创建后下发 cookie-JWT 会话 + 不强制改密 + 后端测试）
+- [x] 02-01-PLAN.md — 后端增强（密码强度校验 + 创建后下发 cookie-JWT 会话 + 不强制改密 + 后端测试）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — 前端增强（auth store 会话 action + i18n + setup.vue 强度指示/校验/自动登录直达首页 + 前端测试）
+- [x] 02-02-PLAN.md — 前端增强（auth store 会话 action + i18n + setup.vue 强度指示/校验/自动登录直达首页 + 前端测试）
 
 **UI hint**: yes
 
@@ -127,7 +127,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 向导门禁与初始化状态检测 | 2/2 | Complete   | 2026-06-08 |
-| 2. 管理员账号创建与自动登录 | 0/TBD | Not started | - |
+| 2. 管理员账号创建与自动登录 | 2/2 | Complete | 2026-06-08 |
 | 3. LLM 供应商配置与 Claude Code 绑定 | 0/TBD | Not started | - |
 | 4. 安全校验与可选集成步骤 | 0/TBD | Not started | - |
 | 5. 入口迁移与向后兼容 | 0/TBD | Not started | - |
