@@ -45,9 +45,9 @@
 
 ### 向后兼容与迁移 (COMPAT)
 
-- [ ] **COMPAT-01**: `server/entrypoint.sh` 默认不再调用 `init_superuser` 自动建管理员（改由向导承担）
-- [ ] **COMPAT-02**: 保留 `init_superuser` 与 `reset_superuser_password` 管理命令作为运维兜底，命令行仍可手动建/重置管理员
-- [ ] **COMPAT-03**: 已有部署（已存在 superuser）升级后不出现向导、行为不回退；全新部署才进入向导
+- [x] **COMPAT-01**: `server/entrypoint.sh` 默认不再调用 `init_superuser` 自动建管理员（改由向导承担）
+- [x] **COMPAT-02**: 保留 `init_superuser` 与 `reset_superuser_password` 管理命令作为运维兜底，命令行仍可手动建/重置管理员
+- [x] **COMPAT-03**: 已有部署（已存在 superuser）升级后不出现向导、行为不回退；全新部署才进入向导
 
 ## v2 Requirements
 
@@ -96,9 +96,9 @@
 | FEISHU-02 | Phase 4 | Complete |
 | RAG-01 | Phase 4 | Complete |
 | RAG-02 | Phase 4 | Complete |
-| COMPAT-01 | Phase 5 | Pending |
-| COMPAT-02 | Phase 5 | Pending |
-| COMPAT-03 | Phase 5 | Pending |
+| COMPAT-01 | Phase 5 | Complete |
+| COMPAT-02 | Phase 5 | Complete |
+| COMPAT-03 | Phase 5 | Complete |
 
 **Coverage:**
 

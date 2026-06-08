@@ -148,4 +148,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. 管理员账号创建与自动登录 | 2/2 | Complete | 2026-06-08 |
 | 3. LLM 供应商配置与 Claude Code 绑定 | 2/2 | Complete | 2026-06-08 |
 | 4. 安全校验与可选集成步骤 | 2/2 | Complete | 2026-06-08 |
-| 5. 入口迁移与向后兼容 | 1/1 | Complete   | 2026-06-08 |
+| 5. 入口迁移与向后兼容 | 1/1 | Complete    | 2026-06-08 |
