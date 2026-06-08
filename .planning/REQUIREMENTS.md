@@ -22,16 +22,16 @@
 
 ### LLM 供应商与模型预设 (PROV)
 
-- [ ] **PROV-01**: 用户在向导中配置至少一个 Anthropic 兼容 LLM 供应商凭证（Claude Code 必备），保存为系统级 `ProviderCredential`（Fernet 加密）
-- [ ] **PROV-02**: 向导提供一键模型预设：DeepSeek V4 Pro、MiMo V2.5 Pro、Kimi 2.6、Anthropic 官方、自定义兼容端点；预设自动填充 `base_url` 与默认 `model`，用户仅需填 API Key
-- [ ] **PROV-03**: 每个预设标注模型能力（上下文长度、是否多模态/图像），辅助用户选择
-- [ ] **PROV-04**: 保存供应商凭证时执行健康检查（连通/鉴权），失败给出明确可操作的提示
-- [ ] **PROV-05**: 向导自动将所配 Anthropic 凭证设为系统默认（`is_default`）并绑定 Claude Code 运行配置（`claude_code_config` 模型映射）
+- [x] **PROV-01**: 用户在向导中配置至少一个 Anthropic 兼容 LLM 供应商凭证（Claude Code 必备），保存为系统级 `ProviderCredential`（Fernet 加密）
+- [x] **PROV-02**: 向导提供一键模型预设：DeepSeek V4 Pro、MiMo V2.5 Pro、Kimi 2.6、Anthropic 官方、自定义兼容端点；预设自动填充 `base_url` 与默认 `model`，用户仅需填 API Key
+- [x] **PROV-03**: 每个预设标注模型能力（上下文长度、是否多模态/图像），辅助用户选择
+- [x] **PROV-04**: 保存供应商凭证时执行健康检查（连通/鉴权），失败给出明确可操作的提示
+- [x] **PROV-05**: 向导自动将所配 Anthropic 凭证设为系统默认（`is_default`）并绑定 Claude Code 运行配置（`claude_code_config` 模型映射）
 
 ### 安全密钥校验 (SEC)
 
 - [ ] **SEC-01**: 向导检测 `SECRET_KEY` / `FRIDAY_ENCRYPTION_KEY` 是否为安全值（非默认、相互独立），给出风险提示但不阻塞完成
-- [ ] **SEC-02**: 向导写入的所有凭证/密钥经现有 Fernet 加密路径落库，确保为密文存储
+- [x] **SEC-02**: 向导写入的所有凭证/密钥经现有 Fernet 加密路径落库，确保为密文存储
 
 ### 飞书集成（可选步骤）(FEISHU)
 
@@ -85,13 +85,13 @@
 | ADMIN-01 | Phase 2 | Pending |
 | ADMIN-02 | Phase 2 | Pending |
 | ADMIN-03 | Phase 2 | Pending |
-| PROV-01 | Phase 3 | Pending |
-| PROV-02 | Phase 3 | Pending |
-| PROV-03 | Phase 3 | Pending |
-| PROV-04 | Phase 3 | Pending |
-| PROV-05 | Phase 3 | Pending |
+| PROV-01 | Phase 3 | Complete |
+| PROV-02 | Phase 3 | Complete |
+| PROV-03 | Phase 3 | Complete |
+| PROV-04 | Phase 3 | Complete |
+| PROV-05 | Phase 3 | Complete |
 | SEC-01 | Phase 4 | Pending |
-| SEC-02 | Phase 3 | Pending |
+| SEC-02 | Phase 3 | Complete |
 | FEISHU-01 | Phase 4 | Pending |
 | FEISHU-02 | Phase 4 | Pending |
 | RAG-01 | Phase 4 | Pending |
