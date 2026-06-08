@@ -82,8 +82,7 @@ async def _ping_anthropic(
     start = time.monotonic()
     api_key = cfg.get("api_key", "")
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
     ).rstrip("/")
     # default_model 为空时用 fallback（避免 400 unsupported_model）
     model = override_model or cred.default_model or "claude-3-5-haiku-20241022"
@@ -119,8 +118,7 @@ async def _ping_openai(
     start = time.monotonic()
     api_key = cfg.get("api_key", "")
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
     ).rstrip("/")
     headers = {"Authorization": f"Bearer {api_key}"}
     if cfg.get("organization_id"):
@@ -131,7 +129,11 @@ async def _ping_openai(
         resp = await client.post(
             f"{base_url}/chat/completions",
             headers={**headers, "Content-Type": "application/json"},
-            json={"model": override_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+            json={
+                "model": override_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            },
         )
     else:
         resp = await client.get(f"{base_url}/models", headers=headers)
@@ -185,8 +187,7 @@ async def _ping_ollama(
     """GET /api/tags —— 同次往返解析 models[].name 填充 available_models（contract）。"""
     start = time.monotonic()
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
     ).rstrip("/")
     headers: dict[str, str] = {}
     if cfg.get("bearer_token"):
@@ -196,11 +197,7 @@ async def _ping_ollama(
     if resp.status_code == 200:
         body = resp.json() if resp.content else {}
         if isinstance(body.get("models"), list):
-            model_names = [
-                m["name"]
-                for m in body["models"]
-                if isinstance(m, dict) and "name" in m
-            ]
+            model_names = [m["name"] for m in body["models"] if isinstance(m, dict) and "name" in m]
             return HealthCheckResult(
                 ok=True,
                 status="ok",
@@ -270,9 +267,7 @@ async def health_check(
                 ok=False,
                 status="error",
                 latency_ms=0,
-                error=_safe_error(
-                    f"unknown_provider_type: {credential.provider_type}"
-                ),
+                error=_safe_error(f"unknown_provider_type: {credential.provider_type}"),
             )
         else:
             # 3. 分派到对应 _ping_*
@@ -285,9 +280,7 @@ async def health_check(
                     error=f"no_dispatch_for_provider: {pt}",
                 )
             else:
-                async with httpx.AsyncClient(
-                    timeout=HEALTH_CHECK_TIMEOUT_SECONDS
-                ) as client:
+                async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT_SECONDS) as client:
                     try:
                         result = await ping_fn(client, credential, cfg, override_model)
                     except httpx.TimeoutException:
@@ -341,6 +334,79 @@ async def health_check(
             error_summary=result.error[:80],
         )
     return result
+
+
+# ============================================================================
+# 无状态健康校验：落库前对明文 config 探活（首启向导用），无 DB 副作用
+# ============================================================================
+
+
+async def health_check_config(
+    provider_type: str,
+    cfg: dict[str, Any],
+    model: str | None = None,
+) -> HealthCheckResult:
+    """无状态健康校验：用未落库的明文 config 探活，不写任何 DB 字段。
+
+    与 health_check 的区别：health_check 针对**已存库**的 ProviderCredential 并
+    `aupdate` 三字段；本函数针对**尚未落库**的 config（首启向导「先校验再落库」场景），
+    复用同一 `_PING_DISPATCH` 探活逻辑与 `_safe_error` 脱敏契约，但绝不触发 ORM 写入。
+
+    Args:
+        provider_type: ProviderType 字符串值（如 "anthropic"）。
+        cfg: 明文凭证 config（含 api_key / base_url 等，仅内存使用，不落库）。
+        model: 可选，覆盖探活模型（anthropic 走 count_tokens 时作为 model 参数）。
+
+    返回：HealthCheckResult（值对象；error 已脱敏 + 截断；不更新 DB）。
+    """
+    # 1. 解析 ProviderType
+    try:
+        pt = ProviderType(provider_type)
+    except ValueError:
+        return HealthCheckResult(
+            ok=False,
+            status="error",
+            latency_ms=0,
+            error=_safe_error(f"unknown_provider_type: {provider_type}"),
+        )
+
+    ping_fn = _PING_DISPATCH.get(pt)
+    if ping_fn is None:
+        return HealthCheckResult(
+            ok=False,
+            status="error",
+            latency_ms=0,
+            error=f"no_dispatch_for_provider: {pt}",
+        )
+
+    # 2. 构造未保存的 ProviderCredential stub（仅供 _ping_* 读取 default_model 兜底；
+    #    不 save、不进 DB）。override_model 传入后 _ping_anthropic 不依赖 stub.default_model。
+    stub = ProviderCredential(provider_type=pt.value, default_model=model or "")
+
+    async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT_SECONDS) as client:
+        try:
+            return await ping_fn(client, stub, cfg, model)
+        except httpx.TimeoutException:
+            return HealthCheckResult(
+                ok=False,
+                status="error",
+                latency_ms=int(HEALTH_CHECK_TIMEOUT_SECONDS * 1000),
+                error="Connection timeout (5s)",
+            )
+        except httpx.ConnectError as e:
+            return HealthCheckResult(
+                ok=False,
+                status="error",
+                latency_ms=0,
+                error=f"Connection failed: {_safe_error(str(e), 400)}",
+            )
+        except Exception as e:  # noqa: BLE001 —— graceful 降级，不抛给 caller
+            return HealthCheckResult(
+                ok=False,
+                status="error",
+                latency_ms=0,
+                error=_safe_error(str(e), 400),
+            )
 
 
 # ============================================================================
@@ -424,9 +490,7 @@ async def fetch_models_for_credential(
             "fetch_models_decrypt_failed",
             credential_id=str(credential.id),
         )
-        credential.last_health_check_error = _safe_error(
-            f"decrypt_failed: {type(exc).__name__}"
-        )
+        credential.last_health_check_error = _safe_error(f"decrypt_failed: {type(exc).__name__}")
         return []
 
     # 2. 委托无状态 dispatch；失败时脱敏错误写回 credential（保持原语义）
@@ -467,8 +531,7 @@ async def _fetch_models_anthropic(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """
     api_key = cfg.get("api_key", "")
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
     ).rstrip("/")
     anthropic_headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     bearer_headers = {"Authorization": f"Bearer {api_key}"}
@@ -508,8 +571,7 @@ async def _fetch_models_openai(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """OpenAI / Compatible /v1/models 端点（Responses + Chat 两种 API 共用）。"""
     api_key = cfg.get("api_key", "")
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
     ).rstrip("/")
     headers = {"Authorization": f"Bearer {api_key}"}
     if cfg.get("organization_id"):
@@ -565,8 +627,7 @@ async def _fetch_models_ollama(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     /api/show 对未完全 pull 的模型可能返回 4xx：静默降级为仅 id/display_name。
     """
     base_url = (
-        cfg.get("base_url")
-        or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
+        cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
     ).rstrip("/")
     headers: dict[str, str] = {}
     if cfg.get("bearer_token"):
