@@ -8,7 +8,7 @@ vi.mock('~/api/client', () => ({
   post: (url: string, body?: unknown) => postMock(url, body),
 }))
 
-const { getSetupStatus, initSetup } = await import('~/api/setup')
+const { getSetupStatus, initSetup, setupProvider } = await import('~/api/setup')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -45,5 +45,45 @@ describe('initSetup', () => {
     postMock.mockRejectedValueOnce(new Error('Forbidden'))
 
     await expect(initSetup({ username: 'admin', password: 'admin1234' })).rejects.toThrow('Forbidden')
+  })
+})
+
+describe('setupProvider', () => {
+  it('posts to the wizard endpoint with config payload', async () => {
+    postMock.mockResolvedValueOnce({
+      id: 'cred-1',
+      provider_type: 'anthropic',
+      name: 'default',
+      scope: 'system',
+      default_model: 'claude-sonnet-4-5',
+      is_default: true,
+      claude_code_bound: true,
+    })
+
+    const result = await setupProvider({
+      api_key: 'sk-ant-x',
+      base_url: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      context_length: 200000,
+      supports_vision: true,
+    })
+
+    expect(result.is_default).toBe(true)
+    expect(result.claude_code_bound).toBe(true)
+    expect(postMock).toHaveBeenCalledWith('/providers/setup-wizard/', {
+      api_key: 'sk-ant-x',
+      base_url: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      context_length: 200000,
+      supports_vision: true,
+    })
+  })
+
+  it('propagates backend actionable error', async () => {
+    postMock.mockRejectedValueOnce(new Error('连接或鉴权失败：401。请检查 API Key'))
+
+    await expect(
+      setupProvider({ api_key: 'bad', base_url: 'https://x', model: 'm' }),
+    ).rejects.toThrow('请检查 API Key')
   })
 })
