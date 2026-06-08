@@ -157,17 +157,21 @@ class FeishuIMTestView(APIView):
             )
             message_id = result.get("message_id", "")
 
-            return Response({
-                "success": True,
-                "message": "测试消息发送成功",
-                "message_id": message_id,
-            })
+            return Response(
+                {
+                    "success": True,
+                    "message": "测试消息发送成功",
+                    "message_id": message_id,
+                }
+            )
 
         except Exception as e:
-            return Response({
-                "success": False,
-                "message": f"发送失败: {e!s}",
-            })
+            return Response(
+                {
+                    "success": False,
+                    "message": f"发送失败: {e!s}",
+                }
+            )
 
 
 # ============================================================================
@@ -208,19 +212,21 @@ class ProviderCredentialTestConnectionView(APIView):
         # 健康检查完成后 aupdate 已写回三字段；重新读取最新 last_health_check_at
         refreshed = await ProviderCredential.objects.aget(id=credential_id)
 
-        return Response({
-            "ok": result.ok,
-            "status": result.status,
-            "latency_ms": result.latency_ms,
-            "error": result.error,
-            "last_check_at": (
-                refreshed.last_health_check_at.isoformat()
-                if refreshed.last_health_check_at
-                else None
-            ),
-            # 仅 Ollama 路径非 None；其他 Provider 保持 null
-            "available_models": result.available_models,
-        })
+        return Response(
+            {
+                "ok": result.ok,
+                "status": result.status,
+                "latency_ms": result.latency_ms,
+                "error": result.error,
+                "last_check_at": (
+                    refreshed.last_health_check_at.isoformat()
+                    if refreshed.last_health_check_at
+                    else None
+                ),
+                # 仅 Ollama 路径非 None；其他 Provider 保持 null
+                "available_models": result.available_models,
+            }
+        )
 
 
 # ============================================================================
@@ -304,10 +310,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             user_project_ids = list(
                 PermissionService.get_user_projects(user).values_list("id", flat=True)
             )
-            qs = qs.filter(
-                Q(scope="system")
-                | Q(scope="project", scope_id__in=user_project_ids)
-            )
+            qs = qs.filter(Q(scope="system") | Q(scope="project", scope_id__in=user_project_ids))
 
         # query_params 过滤
         params = self.request.query_params
@@ -319,9 +322,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         # 旧 scope=system / scope=project / 不传三种语义保持不变。
         if scope == "any":
             if space_id:
-                qs = qs.filter(
-                    Q(scope="system") | Q(scope="project", scope_id=space_id)
-                )
+                qs = qs.filter(Q(scope="system") | Q(scope="project", scope_id=space_id))
             else:
                 qs = qs.filter(scope="system")
         elif scope in ("system", "project"):
@@ -353,11 +354,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         scope = serializer.validated_data.get("scope")
         scope_id = serializer.validated_data.get("scope_id")
 
-        if (
-            scope == "project"
-            and scope_id is not None
-            and not self.request.user.is_superuser
-        ):
+        if scope == "project" and scope_id is not None and not self.request.user.is_superuser:
             from permissions.models import ProjectRole
             from permissions.services import PermissionService
             from projects.models import Project
@@ -372,9 +369,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
                 self.request.user, target_project, ProjectRole.MEMBER
             )
             if not has_access:
-                raise PermissionDenied(
-                    "您不是该项目的 MEMBER+，无法为项目创建凭证"
-                )
+                raise PermissionDenied("您不是该项目的 MEMBER+，无法为项目创建凭证")
 
         await sync_to_async(serializer.save)()
         _viewset_logger.info(
@@ -397,10 +392,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
 
         if new_scope == "project" and not self.request.user.is_superuser:
             # 只有 scope/scope_id 发生变动时才重跑 project_access 校验
-            if (
-                "scope" in serializer.validated_data
-                or "scope_id" in serializer.validated_data
-            ):
+            if "scope" in serializer.validated_data or "scope_id" in serializer.validated_data:
                 from permissions.models import ProjectRole
                 from permissions.services import PermissionService
                 from projects.models import Project
@@ -410,13 +402,11 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
                 )()
                 if target_project is None:
                     raise ValidationError({"scope_id": "项目不存在"})
-                has_access = await sync_to_async(
-                    PermissionService.has_project_access
-                )(self.request.user, target_project, ProjectRole.MEMBER)
+                has_access = await sync_to_async(PermissionService.has_project_access)(
+                    self.request.user, target_project, ProjectRole.MEMBER
+                )
                 if not has_access:
-                    raise PermissionDenied(
-                        "您不是该项目的 MEMBER+，无法迁移凭证到该项目"
-                    )
+                    raise PermissionDenied("您不是该项目的 MEMBER+，无法迁移凭证到该项目")
 
         # 附加 credential_access 服务校验：确保 scope/scope_id 自洽
         # 构造一个快照凭证实例（避免使用旧的 instance 字段组合）
@@ -467,9 +457,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         """
         credential = await self.aget_object()
         credential.is_active = not credential.is_active
-        await sync_to_async(credential.save)(
-            update_fields=["is_active", "updated_at"]
-        )
+        await sync_to_async(credential.save)(update_fields=["is_active", "updated_at"])
         _viewset_logger.info(
             "provider_credential_toggle_active",
             credential_id=str(credential.id),
@@ -590,10 +578,12 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             model_count=len(models_list),
             user_id=str(request.user.id),
         )
-        return Response({
-            "available_models": normalized_models,
-            "default_model": credential.default_model,
-        })
+        return Response(
+            {
+                "available_models": normalized_models,
+                "default_model": credential.default_model,
+            }
+        )
 
 
 # ============================================================================
@@ -620,25 +610,25 @@ class ProviderTypesView(APIView):
 
         data: list[dict[str, object]] = []
         for provider_type, meta in PROVIDER_REGISTRY.items():
-            data.append({
-                "provider_type": provider_type.value,
-                "display_name": meta.display_name,
-                "langchain_prefix": meta.langchain_prefix,
-                "api_format": meta.api_format.value,
-                "credential_type": meta.credential_type.value,
-                "default_base_url": meta.default_base_url,
-                # PROVIDER_REGISTRY 无类型级默认模型；返回空串保持前端契约稳定，
-                # 前端 ChatInput 的真正 fallback 取凭证自身的 cred.default_model。
-                "default_model": "",
-                "supports_thinking": meta.supports_thinking,
-                "supports_reasoning": meta.supports_reasoning,
-                "supports_vision": meta.supports_vision,
-                "supports_function_calling": meta.supports_function_calling,
-                "supports_streaming": meta.supports_streaming,
-                "credential_schema_json_schema": (
-                    meta.credential_schema.model_json_schema()
-                ),
-            })
+            data.append(
+                {
+                    "provider_type": provider_type.value,
+                    "display_name": meta.display_name,
+                    "langchain_prefix": meta.langchain_prefix,
+                    "api_format": meta.api_format.value,
+                    "credential_type": meta.credential_type.value,
+                    "default_base_url": meta.default_base_url,
+                    # PROVIDER_REGISTRY 无类型级默认模型；返回空串保持前端契约稳定，
+                    # 前端 ChatInput 的真正 fallback 取凭证自身的 cred.default_model。
+                    "default_model": "",
+                    "supports_thinking": meta.supports_thinking,
+                    "supports_reasoning": meta.supports_reasoning,
+                    "supports_vision": meta.supports_vision,
+                    "supports_function_calling": meta.supports_function_calling,
+                    "supports_streaming": meta.supports_streaming,
+                    "credential_schema_json_schema": (meta.credential_schema.model_json_schema()),
+                }
+            )
         serializer = ProviderTypeMetaSerializer(data, many=True)
         return Response(serializer.data)
 
@@ -769,11 +759,13 @@ class ClaudeCodeConfigView(APIView):
             except ProviderCredential.DoesNotExist:
                 credential_info = None
 
-        return Response({
-            "credential_id": config["credential_id"],
-            "model_mapping": config["model_mapping"],
-            "credential": credential_info,
-        })
+        return Response(
+            {
+                "credential_id": config["credential_id"],
+                "model_mapping": config["model_mapping"],
+                "credential": credential_info,
+            }
+        )
 
     async def put(self, request) -> Response:  # type: ignore[no-untyped-def]
         from services.provider_config import (
@@ -813,6 +805,169 @@ class ClaudeCodeConfigView(APIView):
 
 
 # ============================================================================
+# 首启向导：供应商一键配置编排端点（Phase 3 PROV-01/04/05、SEC-02）
+# ============================================================================
+
+
+class ProviderSetupWizardView(APIView):
+    """POST /api/providers/setup-wizard/ —— 首启向导供应商一键配置编排。
+
+    复用既有 service 层做幂等编排（不新建凭证存储、不绕过加密与权限）：
+    1. Pydantic AnthropicCredentialSchema 校验 config；
+    2. 落库前无状态健康校验（连通/鉴权），失败返回可操作中文提示且不落任何凭证（PROV-04）；
+    3. 经既有 Fernet 路径 encrypt_value 加密 upsert 系统级 anthropic ProviderCredential（PROV-01/SEC-02）；
+    4. 设为同维度系统默认 is_default（PROV-05）；
+    5. 绑定 Claude Code 运行配置 claude_code_config（PROV-05）。
+
+    权限：IsSuperUser（首启向导完成管理员创建并自动登录后，调用方为已认证 superuser）。
+    幂等：按 (scope=system, provider_type=anthropic, name) update_or_create，重试不撞唯一约束。
+    """
+
+    permission_classes = [IsSuperUser]
+
+    async def post(self, request) -> Response:  # type: ignore[no-untyped-def]
+        import json as _json
+
+        from django.db import transaction
+        from django.utils import timezone
+        from pydantic import ValidationError as PydanticValidationError
+
+        from common.encryption import encrypt_value
+        from services.provider_config import (
+            PROVIDER_REGISTRY,
+            ProviderConfigError,
+            ProviderType,
+            aset_claude_code_config,
+        )
+        from services.provider_health import health_check_config
+
+        from .serializers import ProviderSetupWizardSerializer
+
+        serializer = ProviderSetupWizardSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = serializer.validated_data
+
+        api_key = data["api_key"]
+        base_url = data["base_url"]
+        model = data["model"]
+        name = data.get("name") or "default"
+        context_length = data.get("context_length")
+        supports_vision = bool(data.get("supports_vision"))
+
+        cfg = {"api_key": api_key, "base_url": base_url}
+
+        # 1. Pydantic 凭证字段校验（hide_input_in_errors=True 保证不回显明文）
+        schema_cls = PROVIDER_REGISTRY[ProviderType.ANTHROPIC].credential_schema
+        try:
+            schema_cls.model_validate(cfg)
+        except PydanticValidationError:
+            return Response(
+                {"detail": "凭证字段校验失败，请检查 API Key 与 Base URL"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 2. 落库前健康校验（连通/鉴权）；失败不落库（PROV-04）
+        result = await health_check_config("anthropic", cfg, model)
+        if not result.ok:
+            return Response(
+                {
+                    "detail": (
+                        f"连接或鉴权失败：{result.error}。"
+                        "请检查 API Key 是否正确、Base URL 是否为该供应商的 Anthropic 兼容端点"
+                    ),
+                    "code": "provider_health_failed",
+                    "error": result.error,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3. 归一化模型清单（含能力推断），保证 default_model ∈ available_models
+        raw_model: dict[str, object] = {
+            "id": model,
+            "display_name": model,
+            "supports_vision": supports_vision,
+        }
+        if context_length:
+            raw_model["context_length"] = context_length
+        available_models = _normalize_available_models([raw_model], provider_type="anthropic")
+
+        # 4. Fernet 加密 + 幂等 upsert（复用既有加密入口，绝不落明文）
+        encrypted = encrypt_value(_json.dumps(cfg, ensure_ascii=False))
+
+        @sync_to_async
+        def _upsert_and_set_default() -> ProviderCredential:
+            with transaction.atomic():
+                cred, _created = ProviderCredential.objects.update_or_create(
+                    scope="system",
+                    provider_type="anthropic",
+                    name=name,
+                    defaults={
+                        "scope_id": None,
+                        "encrypted_config": encrypted,
+                        "base_url": base_url,
+                        "default_model": model,
+                        "available_models": available_models,
+                        "is_active": True,
+                        "last_health_check_at": timezone.now(),
+                        "last_health_check_status": "ok",
+                        "last_health_check_error": "",
+                    },
+                )
+                # 设为该维度系统默认：先清零其他，再置位（DB partial unique 约束兜底）
+                ProviderCredential.objects.filter(
+                    scope="system",
+                    scope_id=None,
+                    provider_type="anthropic",
+                    is_default=True,
+                ).exclude(id=cred.id).update(is_default=False)
+                if not cred.is_default:
+                    cred.is_default = True
+                    cred.save(update_fields=["is_default", "updated_at"])
+                return cred
+
+        cred = await _upsert_and_set_default()
+
+        # 5. 绑定 Claude Code 运行配置（三档统一映射到所选 model）
+        try:
+            await aset_claude_code_config(
+                str(cred.id),
+                {"opus": model, "sonnet": model, "haiku": model},
+            )
+            claude_code_bound = True
+        except ProviderConfigError as exc:
+            # 凭证已落库 + 设默认成功，仅 Claude Code 绑定失败：返回可操作提示
+            return Response(
+                {
+                    "detail": f"供应商已保存，但绑定 Claude Code 失败：{exc}",
+                    "code": "claude_code_bind_failed",
+                    "id": str(cred.id),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _viewset_logger.info(
+            "provider_setup_wizard_completed",
+            credential_id=str(cred.id),
+            provider="anthropic",
+            latency_ms=result.latency_ms,
+        )
+
+        return Response(
+            {
+                "id": str(cred.id),
+                "provider_type": "anthropic",
+                "name": cred.name,
+                "scope": "system",
+                "default_model": cred.default_model,
+                "is_default": cred.is_default,
+                "claude_code_bound": claude_code_bound,
+                "health": {"status": result.status, "latency_ms": result.latency_ms},
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ============================================================================
 # implementation 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
 # ============================================================================
 
@@ -836,15 +991,17 @@ class SystemInfoView(APIView):
     permission_classes = [IsSuperUser]
 
     async def get(self, request) -> Response:  # type: ignore[no-untyped-def]
-        return Response({
-            "version": self._get_version(),
-            "changelog_url": "/CHANGELOG.md",
-            "environment": self._get_safe_env(),
-            "image": self._get_image_info(),
-            "database": self._get_database_info(),
-            "python_version": f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}",
-            "django_version": __import__('django').get_version(),
-        })
+        return Response(
+            {
+                "version": self._get_version(),
+                "changelog_url": "/CHANGELOG.md",
+                "environment": self._get_safe_env(),
+                "image": self._get_image_info(),
+                "database": self._get_database_info(),
+                "python_version": f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}",
+                "django_version": __import__("django").get_version(),
+            }
+        )
 
     def _get_version(self) -> dict[str, str]:
         """优先从 git tag 读取版本号，回退到 pyproject.toml。"""
@@ -1016,7 +1173,9 @@ class SystemBackupView(APIView):
             )
 
         db_path = Path(settings.DATABASES["default"].get("NAME", ""))
-        backup_old = db_path.with_suffix(f".db.bak_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+        backup_old = db_path.with_suffix(
+            f".db.bak_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        )
 
         try:
             # 先备份当前数据库

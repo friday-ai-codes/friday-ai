@@ -101,9 +101,7 @@ def _normalize_available_models(
                 if key in item:
                     model[key] = item[key]
         else:
-            raise serializers.ValidationError(
-                "available_models 每一项必须是模型 ID 字符串或对象"
-            )
+            raise serializers.ValidationError("available_models 每一项必须是模型 ID 字符串或对象")
 
         if not model_id:
             raise serializers.ValidationError("available_models 中存在空模型 ID")
@@ -134,9 +132,7 @@ def _validate_bound_models(
             {"available_models": "每个 Provider 必须至少绑定一个模型"}
         )
     if not default_model.strip():
-        raise serializers.ValidationError(
-            {"default_model": "每个 Provider 必须选择一个默认模型"}
-        )
+        raise serializers.ValidationError({"default_model": "每个 Provider 必须选择一个默认模型"})
     model_ids = {str(m.get("id") or "") for m in available_models}
     if default_model.strip() not in model_ids:
         raise serializers.ValidationError(
@@ -324,9 +320,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
     config = serializers.DictField(write_only=True)
     is_active = serializers.BooleanField(default=True)
     is_default = serializers.BooleanField(required=False, default=False)
-    default_model = serializers.CharField(
-        max_length=128, required=True, allow_blank=False
-    )
+    default_model = serializers.CharField(max_length=128, required=True, allow_blank=False)
     available_models = serializers.JSONField(required=True)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
@@ -336,13 +330,9 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
 
         # scope 与 scope_id 互斥一致性
         if scope == "project" and not scope_id:
-            raise serializers.ValidationError(
-                {"scope_id": "scope='project' 时 scope_id 必填"}
-            )
+            raise serializers.ValidationError({"scope_id": "scope='project' 时 scope_id 必填"})
         if scope == "system" and scope_id:
-            raise serializers.ValidationError(
-                {"scope_id": "scope='system' 时 scope_id 必须为空"}
-            )
+            raise serializers.ValidationError({"scope_id": "scope='system' 时 scope_id 必须为空"})
 
         # contract / context contract 硬性契约：系统级凭证的写动作仅允许 superuser
         # （ViewSet 当前走 DRF Router 的同步路径，perform_acreate async 钩子不触发；
@@ -390,9 +380,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
         except PydanticValidationError as exc:
             # implementation 已锁 ConfigDict(hide_input_in_errors=True)，errors() 不含明文输入
             # 把 Pydantic 的 list[dict] errors 转成字段化 dict 以符合 DRF ValidationError 结构
-            raise serializers.ValidationError(
-                {"config": _format_pydantic_errors(exc)}
-            ) from exc
+            raise serializers.ValidationError({"config": _format_pydantic_errors(exc)}) from exc
 
         # 把 Pydantic 校验过的结构化 config（SecretStr unwrap）写入额外字段，供 create() 使用
         attrs["_validated_config"] = _pydantic_to_jsonable(validated)
@@ -458,9 +446,7 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
             try:
                 validated = meta.credential_schema.model_validate(new_config)
             except PydanticValidationError as exc:
-                raise serializers.ValidationError(
-                    {"config": _format_pydantic_errors(exc)}
-                ) from exc
+                raise serializers.ValidationError({"config": _format_pydantic_errors(exc)}) from exc
 
             attrs["_validated_config"] = _pydantic_to_jsonable(validated)
 
@@ -502,9 +488,7 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
         """按字段分派：_validated_config 走 encrypt_value 重写，其余字段原地赋值。"""
         if "_validated_config" in validated_data:
             new_config = validated_data.pop("_validated_config")
-            instance.encrypted_config = encrypt_value(
-                json.dumps(new_config, ensure_ascii=False)
-            )
+            instance.encrypted_config = encrypt_value(json.dumps(new_config, ensure_ascii=False))
 
         # config 明文字段不入库（已由 _validated_config 代替）
         validated_data.pop("config", None)
@@ -513,6 +497,39 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+# ============================================================================
+# 首启向导：供应商一键配置编排序列化器（Phase 3）
+# ============================================================================
+
+
+class ProviderSetupWizardSerializer(serializers.Serializer):
+    """首启向导供应商配置入参（Phase 3 PROV-01/02/03/04/05）。
+
+    仅承载请求体字段校验；凭证加密落库由 view 走既有 `encrypt_value` 路径完成，
+    本序列化器不持久化、不回显 api_key。provider_type 固定 anthropic（Claude Code
+    必备 anthropic 兼容凭证），DeepSeek/MiMo/Kimi 等预设以 base_url 覆盖 + 指定 model 接入。
+    """
+
+    api_key = serializers.CharField(write_only=True, trim_whitespace=False, allow_blank=False)
+    base_url = serializers.CharField(allow_blank=False)
+    model = serializers.CharField(max_length=128, allow_blank=False)
+    name = serializers.CharField(max_length=64, required=False, default="default")
+    context_length = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    supports_vision = serializers.BooleanField(required=False, default=False)
+
+    def validate_base_url(self, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("请填写接口地址（Base URL）")
+        return cleaned
+
+    def validate_model(self, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("请填写默认模型")
+        return cleaned
 
 
 # ============================================================================

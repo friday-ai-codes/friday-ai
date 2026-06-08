@@ -24,6 +24,7 @@ from .views import (
     ProviderCredentialTestConnectionView,
     ProviderCredentialViewSet,
     ProviderFetchModelsView,
+    ProviderSetupWizardView,
     ProviderTypesView,
 )
 
@@ -52,6 +53,12 @@ urlpatterns = [
         "claude-code-config/",
         ClaudeCodeConfigView.as_view(),
         name="claude-code-config",
+    ),
+    # 首启向导：供应商一键配置编排（Phase 3：健康校验 + Fernet 落库 + 设默认 + 绑 Claude Code）
+    path(
+        "setup-wizard/",
+        ProviderSetupWizardView.as_view(),
+        name="provider-setup-wizard",
     ),
     # implementation contract：健康检查端点（保留既有实现，route 独立于 ViewSet）
     path(
