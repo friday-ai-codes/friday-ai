@@ -16,6 +16,7 @@ import { useAuthStore } from '~/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
@@ -59,11 +60,10 @@ const onSubmit = handleSubmit(async (values) => {
       throw new Error(data.detail || '设置失败')
     }
 
-    // 设置成功，后端已设置 cookie，更新 store 并跳转
-    authStore.user = data.user
-    authStore.isAuthenticated = true
-    authStore.isInitialized = true
-    router.push('/')
+    // 设置成功，更新 setup 状态，跳转登录页
+    authStore.needsSetup = false
+    authStore.setupStatusChecked = true
+    router.push('/login')
   }
   catch (e: unknown) {
     setupError.value = e instanceof Error ? e.message : '设置失败，请重试'
@@ -83,7 +83,7 @@ onMounted(async () => {
     }
   }
   catch {
-    setupError.value = '无法连接到服务器'
+    setupError.value = t('setup.error.connection')
   }
 })
 </script>
@@ -101,10 +101,10 @@ onMounted(async () => {
             <span class="icon-[lucide--settings] text-3xl text-primary" />
           </div>
           <h1 class="text-2xl font-bold text-foreground mb-1">
-            首次设置
+            {{ t('setup.title') }}
           </h1>
           <p class="text-sm text-muted-foreground">
-            创建第一个管理员账户
+            {{ t('setup.subtitle') }}
           </p>
         </div>
 
@@ -120,7 +120,7 @@ onMounted(async () => {
           <FormField v-slot="{ componentField }" name="username">
             <FormItem>
               <FormLabel class="text-foreground/80 text-sm font-medium">
-                管理员用户名
+                {{ t('setup.fields.username') }}
               </FormLabel>
               <FormControl>
                 <div class="relative group">
@@ -141,7 +141,7 @@ onMounted(async () => {
           <FormField v-slot="{ componentField }" name="password">
             <FormItem>
               <FormLabel class="text-foreground/80 text-sm font-medium">
-                密码
+                {{ t('setup.fields.password') }}
               </FormLabel>
               <FormControl>
                 <div class="relative group">
@@ -162,7 +162,7 @@ onMounted(async () => {
           <FormField v-slot="{ componentField }" name="confirmPassword">
             <FormItem>
               <FormLabel class="text-foreground/80 text-sm font-medium">
-                确认密码
+                {{ t('setup.fields.confirmPassword') }}
               </FormLabel>
               <FormControl>
                 <div class="relative group">
@@ -187,11 +187,11 @@ onMounted(async () => {
           >
             <template v-if="isSubmitting">
               <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-              创建中...
+              {{ t('setup.submitting') }}
             </template>
             <template v-else>
               <span class="icon-[lucide--shield-check] mr-2" />
-              创建管理员账户
+              {{ t('setup.cta') }}
             </template>
           </Button>
         </form>
