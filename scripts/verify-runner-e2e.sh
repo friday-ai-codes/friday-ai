@@ -86,6 +86,13 @@ log_info "等待 Server 健康检查通过..."
 timeout 120 bash -c 'until docker inspect --format="{{.State.Health.Status}}" friday-server 2>/dev/null | grep -q healthy; do sleep 2; done' \
   && log_pass "Server 健康检查通过" || { log_fail "Server 启动超时"; docker compose logs server; exit 1; }
 
+log_step "创建管理员账号（运维兜底命令）"
+# entrypoint 默认不再自动建管理员（改由 Web 首启向导承担），E2E 无界面，
+# 故显式调用 init_superuser 兜底命令建号（读取上面传入的 FRIDAY_ADMIN_USERNAME/PASSWORD），
+# 供后续步骤（如 Registration Token）通过 User.objects.first() 取到管理员。
+docker exec friday-server python manage.py init_superuser \
+  && log_pass "管理员账号已创建（init_superuser 兜底命令可用）" || { log_fail "init_superuser 执行失败"; docker compose logs server; exit 1; }
+
 # ============================================================================
 # 阶段 2: work item -- Runner 注册与心跳 (per contract, contract, contract)
 # ============================================================================
