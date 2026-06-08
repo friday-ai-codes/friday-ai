@@ -3,6 +3,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { ref } from 'vue'
 import * as z from 'zod'
+import { getSetupStatus } from '~/api/setup'
 import { Button } from '~/components/ui/button'
 import {
   FormControl,
@@ -73,12 +74,11 @@ const onSubmit = handleSubmit(async (values) => {
   }
 })
 
-// 检测是否需要 setup
+// 检测是否需要 setup（复用 API 工具函数，遵守 VITE_API_URL 配置）
 onMounted(async () => {
   try {
-    const res = await fetch('/api/auth/setup/status/')
-    const data = await res.json()
-    if (!data.needs_setup) {
+    const setupStatus = await getSetupStatus()
+    if (!setupStatus.needs_setup) {
       router.push('/login')
     }
   }
