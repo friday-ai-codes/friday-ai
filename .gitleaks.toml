@@ -9,3 +9,16 @@ description = "GSD file manifests store SHA-256 content hashes (e.g. for secrets
 paths = [
   '''\.(claude|codex|cursor)/gsd-file-manifest\.json''',
 ]
+
+[[allowlists]]
+description = "Test fixtures use fake credentials, not real secrets"
+paths = [
+  '''server/tests/.*\.py''',
+]
+
+[[allowlists]]
+description = "False positive: Chinese code comment referencing auth:forbidden/logout events"
+regexTarget = "line"
+regexes = [
+  '''auth:forbidden/logout''',
+]
