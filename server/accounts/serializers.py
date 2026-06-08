@@ -34,9 +34,15 @@ class MeSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "email", "display_name",
-            "gravatar_url", "is_superuser", "is_active",
-            "space_memberships", "created_at",
+            "id",
+            "username",
+            "email",
+            "display_name",
+            "gravatar_url",
+            "is_superuser",
+            "is_active",
+            "space_memberships",
+            "created_at",
         ]
         read_only_fields = list(fields)
 
@@ -49,6 +55,7 @@ class MeSerializer(serializers.ModelSerializer):
     def get_space_memberships(self, obj: User) -> list[dict[str, str]]:
         # 注意：此方法在同步上下文中调用（由调用方 sync_to_async 包装）
         from permissions.models import ProjectMembership
+
         memberships = ProjectMembership.objects.filter(user=obj).select_related("project")
         return [
             {
@@ -86,7 +93,9 @@ class InvitationAcceptSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=64)
     username = serializers.CharField(max_length=150, min_length=3)
     password = serializers.CharField(min_length=6, write_only=True)
-    display_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    display_name = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default=""
+    )
 
 
 class LoginSerializer(serializers.Serializer):
@@ -157,5 +166,34 @@ class AdminProfileUpdateSerializer(serializers.Serializer):
         if user is None:
             raise serializers.ValidationError("用户上下文缺失")
         if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("该用户名已被使用")
+        return value
+
+
+class SetupInitSerializer(serializers.Serializer):
+    """首启初始化请求体校验。
+
+    在 sync_to_async 包装内的线程中执行 DB 查询（由调用方
+    await sync_to_async(serializer.is_valid)(raise_exception=True) 包装），安全。
+    """
+
+    username = serializers.CharField(
+        min_length=1,
+        max_length=150,
+        error_messages={"blank": "用户名不能为空"},
+    )
+    password = serializers.CharField(
+        min_length=6,
+        error_messages={"min_length": "密码至少 6 位"},
+    )
+    display_name = serializers.CharField(
+        required=False,
+        default="系统管理员",
+        max_length=150,
+    )
+
+    def validate_username(self, value: str) -> str:
+        """用户名唯一性校验（在 sync_to_async 包装内的线程中安全执行）。"""
+        if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("该用户名已被使用")
         return value
