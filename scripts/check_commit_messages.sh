@@ -9,9 +9,10 @@ Usage:
 
 Commit subject format:
   type: summary
+  type(scope): summary
 
 Allowed types:
-  chore, docs, feat, fix, refactor, style, test
+  build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test
 EOF
 }
 
@@ -36,7 +37,7 @@ case "${1:-}" in
     ;;
 esac
 
-pattern='^(chore|docs|feat|fix|refactor|style|test): [^[:space:]].*'
+pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([^()[:space:]]+\))?!?: [^[:space:]].*'
 bad=0
 
 while IFS=$'\t' read -r sha subject; do
@@ -55,11 +56,13 @@ if [ "$bad" -ne 0 ]; then
 
 Expected commit subject format:
   feat: add hat wobble
+  feat(scope): add hat wobble
 
 Allowed types:
-  chore, docs, feat, fix, refactor, style, test
+  build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test
 
-Do not use scopes, checkpoint numbers, mixed types, or private workflow IDs.
+An optional scope in parentheses is allowed (e.g. feat(api): ...).
+Do not use mixed types or whitespace inside the scope.
 EOF
   exit 1
 fi

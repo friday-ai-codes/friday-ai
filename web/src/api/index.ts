@@ -24,12 +24,12 @@ export * from './runners'
 export { default as settingsApi } from './settings'
 export * from './settings'
 
+export { default as setupApi } from './setup'
+export * from './setup'
+
 export { default as spacesApi } from './spaces'
 // 重新导出所有具体方法，便于按需引入
 export * from './spaces'
 
 export { default as workflowApi } from './workflow'
 export * from './workflow'
-
-export { default as setupApi } from './setup'
-export * from './setup'
