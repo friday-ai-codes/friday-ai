@@ -1,0 +1,18 @@
+{
+  "setup": {
+    "title": "首次设置",
+    "subtitle": "欢迎使用 Friday AI，开始初始化你的实例",
+    "loading": "正在检测系统状态…",
+    "cta": "创建管理员账户",
+    "submitting": "创建中…",
+    "fields": {
+      "username": "管理员用户名",
+      "password": "密码",
+      "confirmPassword": "确认密码"
+    },
+    "error": {
+      "connection": "无法连接到服务器，请检查后端服务后重试",
+      "default": "设置失败，请重试"
+    }
+  }
+}

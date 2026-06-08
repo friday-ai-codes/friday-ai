@@ -30,3 +30,6 @@ export * from './spaces'
 
 export { default as workflowApi } from './workflow'
 export * from './workflow'
+
+export { default as setupApi } from './setup'
+export * from './setup'
