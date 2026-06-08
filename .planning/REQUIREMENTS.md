@@ -1,18 +1,18 @@
-# Requirements: Friday AI — v1.0 首启初始化向导
+# Requirements: Friday AI — v0.1.0 首启初始化向导
 
 **Defined:** 2026-06-07
 **Core Value:** 让团队开箱即用、安全地完成首次登录与必备配置，从而把飞书需求自动跑成 PR。
 
 ## v1 Requirements
 
-本里程碑（v1.0）的全部需求。每条映射到一个 roadmap 阶段。
+本里程碑（v0.1.0）的全部需求。每条映射到一个 roadmap 阶段。
 
 ### Setup 向导框架与门禁 (SETUP)
 
 - [ ] **SETUP-01**: 系统检测到不存在任何超级管理员时，用户首次访问 Web 自动进入首启初始化向导
-- [ ] **SETUP-02**: 后端提供只读「初始化状态」接口（如 `is_initialized`），前端路由守卫据此放行：未初始化时绕过登录进入向导，已初始化时禁止进入向导
-- [ ] **SETUP-03**: 向导完成（已创建管理员）后，初始化接口与界面对所有访问者关闭（403 或重定向到登录），不再出现
-- [ ] **SETUP-04**: 初始化接口 fail-closed 且具备防重入/并发保护——存在 superuser 时一律拒绝，无法用于重置或接管已有实例
+- [x] **SETUP-02**: 后端提供只读「初始化状态」接口（如 `is_initialized`），前端路由守卫据此放行：未初始化时绕过登录进入向导，已初始化时禁止进入向导
+- [x] **SETUP-03**: 向导完成（已创建管理员）后，初始化接口与界面对所有访问者关闭（403 或重定向到登录），不再出现
+- [x] **SETUP-04**: 初始化接口 fail-closed 且具备防重入/并发保护——存在 superuser 时一律拒绝，无法用于重置或接管已有实例
 
 ### 管理员账号 (ADMIN)
 
@@ -79,9 +79,9 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SETUP-01 | Phase 1 | Pending |
-| SETUP-02 | Phase 1 | Pending |
-| SETUP-03 | Phase 1 | Pending |
-| SETUP-04 | Phase 1 | Pending |
+| SETUP-02 | Phase 1 | Complete (Plan 01-01) |
+| SETUP-03 | Phase 1 | Complete (Plan 01-01) |
+| SETUP-04 | Phase 1 | Complete (Plan 01-01) |
 | ADMIN-01 | Phase 2 | Pending |
 | ADMIN-02 | Phase 2 | Pending |
 | ADMIN-03 | Phase 2 | Pending |

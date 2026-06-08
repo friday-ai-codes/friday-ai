@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: milestone
 status: executing
-stopped_at: ROADMAP.md and STATE.md created; requirements traceability updated
-last_updated: "2026-06-08T07:33:14.662Z"
-last_activity: 2026-06-08 -- Phase 1 planning complete
+stopped_at: Plan 01-01 complete — backend setup gate implemented
+last_updated: "2026-06-08T07:37:00.000Z"
+last_activity: 2026-06-08 -- Plan 01-01 executed (backend gate layer)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 5
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-07)
 
 ## Current Position
 
-Phase: 1 of 5 (向导门禁与初始化状态检测)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-06-08 -- Phase 1 planning complete
+Phase: 1 (向导门禁与初始化状态检测) — EXECUTING
+Plan: 2 of 2 (Plan 01-01 complete)
+Status: Executing Phase 1
+Last activity: 2026-06-08 -- Plan 01-01 complete
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 5%
 
 ## Performance Metrics
 
@@ -63,6 +63,9 @@ Recent decisions affecting current work:
 - [Milestone]: 用「首次访问设置向导」替代启动期自动建管理员
 - [Milestone]: 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用）
 - [Milestone]: DeepSeek / MiMo / Kimi 以 anthropic 兼容端点做一键预设；保留 `init_superuser` 仅作运维兜底
+- [01-01]: authentication_classes=[] on SetupInitView 确保 403 而非 401（DRF permission_denied 行为）
+- [01-01]: SetupNotInitialized 独立权限类，供 Phase 2 复用
+- [01-01]: _atomic_create_superuser 不用 select_for_update（SQLite 不兼容），以 double-check + UNIQUE 约束兜底
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-07 16:36
-Stopped at: ROADMAP.md and STATE.md created; requirements traceability updated
+Last session: 2026-06-08 15:37
+Stopped at: Plan 01-01 complete — backend setup gate implemented (8 tests passed)
 Resume file: None
