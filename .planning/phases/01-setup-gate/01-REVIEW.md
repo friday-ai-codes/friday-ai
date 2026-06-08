@@ -1,13 +1,16 @@
 ---
 phase: 01-setup-gate
-reviewed: 2026-06-08T15:55:00+08:00
+reviewed: 2026-06-08T16:10:00+08:00
 depth: standard
-files_reviewed: 12
+iteration: 2
+files_reviewed: 14
 files_reviewed_list:
   - server/accounts/permissions.py
   - server/accounts/serializers.py
   - server/accounts/views.py
   - server/accounts/urls.py
+  - server/accounts/models.py
+  - server/accounts/migrations/0006_add_single_superuser_constraint.py
   - server/tests/test_setup_gate.py
   - web/src/api/setup.ts
   - web/src/api/index.ts
@@ -18,123 +21,55 @@ files_reviewed_list:
   - web/src/api/__tests__/setup.spec.ts
 findings:
   critical: 0
-  warning: 2
-  info: 4
-  total: 6
-status: issues_found
+  warning: 0
+  info: 5
+  total: 5
+status: clean
 ---
 
-# Phase 01: Setup Gate — Code Review Report
+# Phase 01: Setup Gate — Code Review Report (Iteration 2)
 
-**Reviewed:** 2026-06-08T15:55:00+08:00
+**Reviewed:** 2026-06-08T16:10:00+08:00
 **Depth:** standard
-**Files Reviewed:** 12
-**Status:** issues_found
+**Files Reviewed:** 14
+**Status:** clean（无 Critical / Warning；含 5 个 Info，均非阻塞）
 
 ## Summary
 
-整体实现结构清晰，fail-closed 门禁逻辑在单请求场景下正确；`authentication_classes = []`、permission 顺序、路由守卫在 `initAuth()` 前执行等关键细节均处理到位。发现 2 个 Warning 和 4 个 Info，无 Critical/Blocker。
+本次为 Re-Review，验证 gsd-code-fixer 对 WR-01、WR-02 的修复，并检查引入的新文件（`models.py`、Migration `0006`）是否产生回退。
 
-主要问题集中在两处：（1）`_atomic_create_superuser` 在 Postgres READ COMMITTED 下的并发逃逸；（2）`setup.vue` 的 `onMounted` 使用硬编码 raw fetch 而非 API 工具函数，与 submit handler 的有意为之不同，这里并无全局 403 事件的顾虑。
+**WR-01 已解决。** Migration `0006_add_single_superuser_constraint.py` 在 `users` 表上创建了 `partial unique index（WHERE is_superuser = TRUE）`，DB 层面保证并发不同用户名的创建请求中后提交者触发 `IntegrityError`，被 `SetupInitView` 已有的 409 兜底正确捕获。表名 `users` 与 `User.Meta.db_table = "users"` 一致；`reverse_sql` 完整；SQLite 3.8.9+/Postgres 均支持该语法。
 
----
+**WR-02 已解决。** `setup.vue` 的 `onMounted` 已改用 `getSetupStatus()`（`~/api/setup`），遵循 `VITE_API_URL` 配置，消除了 raw fetch 硬编码路径问题。错误兜底使用 `t('setup.error.connection')`，与路由守卫一致。
 
-## Warnings
-
-### WR-01: Postgres READ COMMITTED 下不同用户名并发可创建两个 superuser
-
-**File:** `server/accounts/views.py:457-465`
-
-**Issue:** `_atomic_create_superuser` 的防重入依赖 `transaction.atomic()` 内的再次查询 + IntegrityError 兜底。在 Postgres 默认的 READ COMMITTED 隔离级别下，两个并发事务都能在对方提交前读到"无 superuser"，随后分别以**不同用户名**各自 `create_superuser` 并提交成功。IntegrityError 只能捕获 **username UNIQUE** 冲突，对"不同用户名各建一个 superuser"的竞态无效。结果：数据库中出现两个 `is_superuser=True` 用户，违背"首启只能创建一个管理员"的业务约束。
-
-SQLite 受 WAL 写锁串行化保护，此漏洞不影响 SQLite；但项目生产推荐 Postgres，该场景确实可复现（需两个并发请求在时间窗口内均通过权限检查）。
-
-**Fix:** 在 Postgres 下，可在 `select_for_update()` 不可用时改用 `SERIALIZABLE` 事务或在应用层使用分布式锁（Redis `SET NX`）。最简兼容方案：在 atomic 块内对任意已知行加锁，迫使 Postgres 串行化——或改变数据模型，添加只允许单行的 DB 约束（例如在 `User` 表上加 partial unique index：`UNIQUE (is_superuser) WHERE is_superuser = TRUE`，由 migration 维护）。
-
-临时缓解（不依赖锁）：
-
-```python
-# migration 中添加 Postgres partial unique index（SQLite 兼容此语法）
-# 保证 DB 层面最多只有一个 is_superuser=True 的行
-from django.db import migrations
-
-class Migration(migrations.Migration):
-    operations = [
-        migrations.RunSQL(
-            sql="""
-            CREATE UNIQUE INDEX IF NOT EXISTS accounts_user_single_superuser
-            ON accounts_user (is_superuser)
-            WHERE is_superuser = TRUE;
-            """,
-            reverse_sql="DROP INDEX IF EXISTS accounts_user_single_superuser;",
-        )
-    ]
-```
-
-加上该约束后，第二个并发事务的 `create_superuser` 会触发 IntegrityError，已有的兜底逻辑即可正确处理。
-
----
-
-### WR-02: `setup.vue` onMounted 使用硬编码 raw fetch 而非 API 工具函数
-
-**File:** `web/src/pages/setup.vue:79`
-
-**Issue:** `onMounted` 中使用 `fetch('/api/auth/setup/status/')` 硬编码路径查询初始化状态。与 `main.ts` 中路由守卫使用 `getSetupStatus()`（经 API client 的 `VITE_API_URL` 配置）不一致。如果 `VITE_API_URL` 配置了不同于同源的地址（跨域开发代理、自定义前缀等），raw fetch 会请求错误的端点而静默失败（`catch` 块将 `setupError` 设为连接错误，而路由守卫已经正确检查了状态）。另外：`onMounted` 调用完全多余——路由守卫在进入 `/setup` 前已经确保 `needsSetup=true`；唯一有价值的场景（另一标签页完成 setup 后当前标签页重检）本可复用 `getSetupStatus()` 实现。
-
-注：`onSubmit` 中刻意使用 raw fetch 是有文档说明的设计（避免全局 `auth:forbidden` 重定向），本处 `onMounted` 无此需求。
-
-**Fix:**
-
-```typescript
-// setup.vue — onMounted
-import { getSetupStatus } from '~/api/setup'
-
-onMounted(async () => {
-  try {
-    const status = await getSetupStatus()
-    if (!status.needs_setup) {
-      router.push('/login')
-    }
-  }
-  catch {
-    setupError.value = t('setup.error.connection')
-  }
-})
-```
+无 Critical，无 Warning，无新增回退。原有 4 个 Info 项未修改，新增 1 个 Info（陈旧 docstring）。
 
 ---
 
 ## Info
 
-### IN-01: `SetupInitView.permission_classes` 中 `AllowAny` 冗余
+### IN-01: `SetupInitView.permission_classes` 中 `AllowAny` 冗余（遗留）
 
 **File:** `server/accounts/views.py:482`
 
-**Issue:** `permission_classes = [AllowAny, SetupNotInitialized]` — DRF 对权限列表做 AND 校验；`AllowAny` 永远返回 `True`，不影响结果，只增加干扰。`authentication_classes = []` 才是控制 401 vs 403 行为的关键，注释已说明。
+**Issue:** `permission_classes = [AllowAny, SetupNotInitialized]` — DRF AND 语义下 `AllowAny` 恒为 True，无实际效果；`authentication_classes = []` 才是控制 401 vs 403 行为的关键。
 
 **Fix:**
-
 ```python
 permission_classes = [SetupNotInitialized]
 ```
 
 ---
 
-### IN-02: `test_setup_gate.py` 缺少用户名唯一性和并发防重入场景
+### IN-02: 测试缺少用户名唯一性、display_name 断言场景（遗留）
 
 **File:** `server/tests/test_setup_gate.py`
 
-**Issue:** 测试覆盖了基本的 201/403/400 路径，但缺少：
+**Issue:** 缺少 username 已占用 → 400、成功后 `display_name` 落库验证等测试用例。
 
-1. **用户名重复校验**：`validate_username` 会返回 400，但无对应测试；
-2. **并发防重入（WR-01 描述的场景）**：第二个并发请求以不同用户名提交的 409/403 结果无测试；
-3. **`display_name` 字段**：成功创建后 DB 中 `display_name` 是否正确存储无断言。
-
-**Fix:** 建议补充：
-
+**Fix:**
 ```python
 def test_duplicate_username_returns_400(self, api_client):
-    """username 已被占用时返回 400。"""
     User.objects.create_user(username="existinguser", password="pw")
     response = api_client.post(
         SETUP_INIT_URL,
@@ -144,7 +79,6 @@ def test_duplicate_username_returns_400(self, api_client):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 def test_display_name_stored(self, api_client):
-    """display_name 字段正确写入 DB。"""
     api_client.post(
         SETUP_INIT_URL,
         {"username": "admin", "password": "admin1234", "display_name": "超管"},
@@ -156,38 +90,26 @@ def test_display_name_stored(self, api_client):
 
 ---
 
-### IN-03: `zh-CN.json` 中 `setup.error.default` 键未通过 `t()` 使用
+### IN-03: `zh-CN.json` 中 `setup.error.default` 键未通过 `t()` 使用（遗留）
 
-**File:** `web/src/locales/zh-CN.json:15`
+**File:** `web/src/pages/setup.vue:70`
 
-**Issue:** `setup.error.default: "设置失败，请重试"` 已定义，但 `setup.vue` 的错误兜底直接写了内联字符串 `'设置失败，请重试'`（第 69 行），未调用 `t('setup.error.default')`。该 i18n key 是死代码。
+**Issue:** 兜底错误文案仍为内联字符串 `'设置失败，请重试'`，`setup.error.default` i18n key 是死代码。
 
 **Fix:**
-
 ```typescript
-// setup.vue:69
 setupError.value = e instanceof Error ? e.message : t('setup.error.default')
 ```
 
 ---
 
-### IN-04: `setup.vue` onSubmit 中 `response.json()` 在检查 `response.ok` 之前调用
+### IN-04: `onSubmit` 中 `response.json()` 在 `response.ok` 检查之前调用（遗留）
 
-**File:** `web/src/pages/setup.vue:57-60`
+**File:** `web/src/pages/setup.vue:58-61`
 
-**Issue:**
-
-```typescript
-const data = await response.json()   // ← 先解析
-if (!response.ok) {
-  throw new Error(data.detail || '设置失败')
-}
-```
-
-若服务器返回非 JSON 响应（Nginx 502 返回 HTML、网关超时等），`response.json()` 抛出 JSON parse 错误，被 `catch` 捕获后显示 `'设置失败，请重试'`，而不是 `t('setup.error.connection')`。虽然最终用户看到的是可接受的错误文案，但两种情况（后端不可达 vs 后端返回业务错误）给出相同提示，影响排查。
+**Issue:** 若服务器返回非 JSON 响应（502 HTML、网关超时等），`response.json()` 抛出 parse 错误后被 catch 捕获，显示 `'设置失败，请重试'` 而不是 `t('setup.error.connection')`，两种失败情形无法区分。
 
 **Fix:**
-
 ```typescript
 if (!response.ok) {
   let detail = '设置失败'
@@ -202,6 +124,27 @@ if (!response.ok) {
 
 ---
 
-_Reviewed: 2026-06-08T15:55:00+08:00_
+### IN-05: `_atomic_create_superuser` 注释描述 IntegrityError 兜底范围已过时（新增）
+
+**File:** `server/accounts/views.py:455`
+
+**Issue:** Migration `0006` 添加 partial unique index 后，`IntegrityError` 兜底已不止捕获 `username UNIQUE` 约束冲突，还覆盖了并发不同用户名创建 superuser 的竞态场景；第 454 行 "Postgres 依赖 READ COMMITTED 事务" 的说明也不再准确（DB 约束现在是核心保护）。
+
+**Fix:**
+```python
+"""在原子事务内创建 superuser，并发/重入安全。
+
+返回 None 表示已存在 superuser（并发冲突），由调用方返回 409。
+DB 层面通过 partial unique index（accounts_user_single_superuser）
+保证最多只有一个 is_superuser=True 行，覆盖 Postgres READ COMMITTED
+下不同用户名的并发创建竞态；IntegrityError 作最终兜底（SETUP-04）。
+不使用 select_for_update()——SQLite 不支持，会抛 NotSupportedError。
+"""
+```
+
+---
+
+_Reviewed: 2026-06-08T16:10:00+08:00_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 2 (re-review after WR-01/WR-02 fixes)_
