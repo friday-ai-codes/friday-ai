@@ -27,8 +27,13 @@ python manage.py migrate --noinput
 echo "初始化系统设置..."
 python manage.py bootstrap_system_settings
 
-echo "初始化管理员..."
-python manage.py init_superuser
+# 注意：此处不再自动创建管理员。
+# 首次部署的管理员账号改由 Web「首启初始化向导」引导用户自行设置（无 superuser 时首次访问自动进入向导）。
+# 之所以移除启动期自动建号：随机密码只会打印在容器日志里，普通用户拿不到、进不去系统。
+# 运维兜底（需要命令行手动建/重置管理员时）：
+#   docker exec friday-server python manage.py init_superuser            # 可配 FRIDAY_ADMIN_USERNAME / FRIDAY_ADMIN_PASSWORD
+#   docker exec friday-server python manage.py reset_superuser_password  # 重置已有 superuser 密码
+# 已存在 superuser 的部署不受影响：首启向导门禁 is_initialized 为 true，向导不会出现，行为不回退。
 
 echo "收集静态文件..."
 python manage.py collectstatic --noinput
