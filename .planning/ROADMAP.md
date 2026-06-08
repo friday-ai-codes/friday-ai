@@ -59,7 +59,16 @@ Plans:
   3. 创建成功后自动建立登录会话，用户无需再次登录直接进入系统首页
   4. 该账号随后可正常用于登录，向导按 Phase 1 门禁逻辑对所有访问者关闭
 
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — 后端增强（密码强度校验 + 创建后下发 cookie-JWT 会话 + 不强制改密 + 后端测试）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — 前端增强（auth store 会话 action + i18n + setup.vue 强度指示/校验/自动登录直达首页 + 前端测试）
+
 **UI hint**: yes
 
 ### Phase 3: LLM 供应商配置与 Claude Code 绑定
