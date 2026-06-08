@@ -502,4 +502,42 @@ class SetupInitView(APIView):
             )
 
         logger.info("setup_init_success", username=serializer.validated_data["username"])
-        return Response({"detail": "管理员账户创建成功"}, status=status.HTTP_201_CREATED)
+
+        # 创建成功后复用 LoginView 的 cookie-JWT 路径建立会话，使前端无需二次登录（ADMIN-03）。
+        # must_change_password 保持 create_superuser 的默认 False，不强制改密（ADMIN-02）。
+        refresh = await sync_to_async(RefreshToken.for_user)(user)
+        refresh["sub"] = str(user.id)
+        access_token = str(refresh.access_token)
+
+        response = Response(
+            LoginResponseSerializer(
+                {
+                    "access_token": access_token,
+                    "user": user,
+                    "must_change_password": user.must_change_password,
+                }
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+        # Set refresh token cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=str(refresh),
+            httponly=settings.COOKIE_HTTPONLY,
+            samesite=settings.COOKIE_SAMESITE,
+            secure=settings.COOKIE_SECURE,
+            max_age=7 * 24 * 60 * 60,  # 7 days
+        )
+
+        # Set access token cookie (HTTP-only, same flags as refresh token)
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=settings.COOKIE_HTTPONLY,
+            samesite=settings.COOKIE_SAMESITE,
+            secure=settings.COOKIE_SECURE,
+            max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds()),
+        )
+
+        return response

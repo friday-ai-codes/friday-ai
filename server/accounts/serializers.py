@@ -3,6 +3,8 @@
 import hashlib
 
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password as dj_validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import Invitation, User
@@ -183,8 +185,8 @@ class SetupInitSerializer(serializers.Serializer):
         error_messages={"blank": "用户名不能为空"},
     )
     password = serializers.CharField(
-        min_length=6,
-        error_messages={"min_length": "密码至少 6 位"},
+        min_length=8,
+        error_messages={"min_length": "密码至少 8 位"},
     )
     display_name = serializers.CharField(
         required=False,
@@ -196,4 +198,19 @@ class SetupInitSerializer(serializers.Serializer):
         """用户名唯一性校验（在 sync_to_async 包装内的线程中安全执行）。"""
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("该用户名已被使用")
+        return value
+
+    def validate_password(self, value: str) -> str:
+        """密码强度校验：复用 settings.AUTH_PASSWORD_VALIDATORS（ADMIN-01）。
+
+        传入未保存的 User(username=...) 实例，使「密码与用户名过于相似」校验生效。
+        Django 校验器错误消息因 LANGUAGE_CODE=zh-hans 已为中文，直接透传为字段错误。
+        在调用方 await sync_to_async(serializer.is_valid) 包装的线程中安全执行。
+        """
+        username = self.initial_data.get("username", "") if self.initial_data else ""
+        tmp_user = User(username=username)
+        try:
+            dj_validate_password(value, user=tmp_user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
         return value
