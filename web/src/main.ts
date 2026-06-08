@@ -9,6 +9,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { routes } from 'vue-router/auto-routes'
 
 import App from './App.vue'
+import { getSetupStatus } from '~/api/setup'
+import zhCN from '~/locales/zh-CN.json'
 import { useAuthStore } from './stores/auth'
 import '@vue-flow/core/dist/style.css'
 import 'vue-final-modal/style.css'
@@ -24,12 +26,14 @@ const router = createRouter({
 // Pinia 状态管理
 const pinia = createPinia()
 
-// 国际化（预留能力）
+// 国际化
 const i18n = createI18n({
   legacy: false,
   locale: 'zh-CN',
   fallbackLocale: 'en',
-  messages: {},
+  messages: {
+    'zh-CN': zhCN,
+  },
 })
 
 // Head 管理
@@ -52,13 +56,37 @@ app.use(vfm)
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
+  // ── Step 1：初始化状态检测（每次 app 首次守卫触发时检查一次）──
+  if (!authStore.setupStatusChecked) {
+    try {
+      const status = await getSetupStatus()
+      authStore.needsSetup = status.needs_setup
+    }
+    catch {
+      // fail-safe：后端不可达时按「已初始化」处理，
+      // 防止误导向向导重置/接管生产实例（T-1-04）
+      authStore.needsSetup = false
+    }
+    authStore.setupStatusChecked = true
+  }
+
+  // ── Step 2：setup 路由守卫（必须在 initAuth 之前）──
+  if (authStore.needsSetup && to.path !== '/setup') {
+    return next('/setup')
+  }
+  if (!authStore.needsSetup && to.path === '/setup') {
+    return next('/login')
+  }
+
+  // ── Step 3：原有认证守卫（不变，/setup 已加入 publicPages）──
+
   // 初始化认证状态（应用启动时恢复登录）
   if (!authStore.isInitialized) {
     await authStore.initAuth()
   }
 
   // 公开页面和强制修改密码页面
-  const publicPages = ['/login', '/force-change-password', '/403', '/oidc/callback', '/invite']
+  const publicPages = ['/login', '/force-change-password', '/403', '/oidc/callback', '/invite', '/setup']
   const authRequired = !publicPages.some(p => to.path === p || to.path.startsWith(`${p}/`))
 
   if (authRequired && !authStore.isAuthenticated) {
