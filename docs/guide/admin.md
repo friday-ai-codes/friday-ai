@@ -189,10 +189,11 @@ helm install friday friday/friday -f values.yaml
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | 可选 | `15` | Access Token 过期时间（分钟） |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | 可选 | `7` | Refresh Token 过期时间（天） |
 ### 管理员
+首次部署的管理员账号默认由 Web「首启初始化向导」引导用户自行设置，系统启动时不再自动创建管理员。以下变量仅在手动执行命令行兜底（`python manage.py init_superuser`）时被读取：
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `FRIDAY_ADMIN_USERNAME` | 可选 | `admin` | 管理员用户名（首次启动时自动创建） |
-| `FRIDAY_ADMIN_PASSWORD` | 可选 | — | 管理员密码（留空则不创建管理员） |
+| `FRIDAY_ADMIN_USERNAME` | 可选 | `admin` | 管理员用户名（由 `init_superuser` 命令读取；首启默认走向导，不再自动建号） |
+| `FRIDAY_ADMIN_PASSWORD` | 可选 | — | 管理员密码（由 `init_superuser` 命令读取；留空则该命令随机生成并打印） |
 ## 下一步
 - [快速开始指南](/guide/quick-start) -- 基础部署入门
 - [工作流指南](/guide/workflows) -- 工作流配置操作

@@ -74,8 +74,8 @@ Git 仓库的访问凭据通过 Web UI 配置，不在环境变量中设置：
 2. 在 Friday Web UI 的项目设置中填入仓库 URL 和 Token
 ## 创建第一个项目
 ### 1. 登录 Web UI
-打开 [http://localhost:10240](http://localhost:10240)，使用管理员账户登录。:: tip 管理员账户
-如果在 `.env` 中配置了 `FRIDAY_ADMIN_USERNAME` 和 `FRIDAY_ADMIN_PASSWORD`，系统会在首次启动时自动创建管理员账户。否则需要通过命令行创建：`docker exec friday-server python manage.py createsuperuser`::
+打开 [http://localhost:10240](http://localhost:10240)。:: tip 管理员账户
+全新部署首次访问会自动进入「首启初始化向导」，按提示设置管理员用户名与密码即可（提交后自动登录进入系统）。如需命令行兜底创建/重置管理员（例如无界面环境）：`docker exec friday-server python manage.py init_superuser`（可配 `.env` 中的 `FRIDAY_ADMIN_USERNAME` / `FRIDAY_ADMIN_PASSWORD`），重置密码用 `docker exec friday-server python manage.py reset_superuser_password`。已存在管理员的实例不会出现向导。::
 ### 2. 创建项目
 进入「项目管理」页面，点击「创建项目」：
 - **项目名称**：填写你的项目名（如 "我的第一个项目"）
