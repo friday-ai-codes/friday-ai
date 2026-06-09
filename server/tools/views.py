@@ -10,13 +10,17 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
 from django.db import IntegrityError
+from django.utils import timezone
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
+from interactions.ledger import arecord_tool_call
+from interactions.models import InteractionRun
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
@@ -125,10 +129,30 @@ class RemoteToolExecuteView(APIView):
         serializer = RemoteToolExecuteSerializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         # 审计：以 owner 身份建顶层 run，指纹=token_hash（绝不明文，per MCPB-02/IDENT-04）。
-        await begin_interaction_run(request, source="tool")
+        run = await begin_interaction_run(request, source="tool")
+        tool_name = serializer.validated_data["name"]
+        arguments = serializer.validated_data.get("arguments") or {}
+        started_at = time.perf_counter()
         # 不改 execute_tool 签名、不传 user（Phase 11 gap，per RESEARCH Open Q1）。
-        result = await execute_tool(
-            serializer.validated_data["name"],
-            serializer.validated_data.get("arguments") or {},
+        result = await execute_tool(tool_name, arguments)
+        # 收尾审计（mirror McpToolView）：记录 tool-call 明细并把 run 推进到终态，
+        # 否则 begin_interaction_run 建的 RUNNING run 永不闭合，留下悬挂记录、且
+        # X-Friday-Run-ID 复用查询会命中陈旧 run。input/output 经 ledger 写库前
+        # redact_for_ledger 兜底脱敏（明文 PAT 只在 Authorization header，不入审计）。
+        ok = bool(result.get("ok"))
+        duration_ms = max(int((time.perf_counter() - started_at) * 1000), 0)
+        await arecord_tool_call(
+            run,
+            tool_name=tool_name,
+            input=arguments,
+            output=result,
+            status="ok" if ok else "error",
+            duration_ms=duration_ms,
+            error="" if ok else str((result.get("error") or {})),
         )
+        run.status = (
+            InteractionRun.Status.COMPLETED if ok else InteractionRun.Status.ERROR
+        )
+        run.completed_at = timezone.now()
+        await run.asave(update_fields=["status", "completed_at"])
         return Response(result, status=status.HTTP_200_OK)
