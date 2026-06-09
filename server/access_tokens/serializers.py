@@ -20,7 +20,9 @@ class AccessTokenSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "note",
             "token_prefix",
+            "token_suffix",
             "created_at",
             "expires_at",
             "revoked_at",
@@ -31,7 +33,13 @@ class AccessTokenSerializer(serializers.ModelSerializer):
 
 
 class AccessTokenCreateSerializer(serializers.Serializer):
-    """创建入参 —— name 必填，expires_at 可选（缺省由 view 填 now()+90d，可为 None 永不过期）。"""
+    """创建入参 —— name 必填，note/expires_at 可选（缺省由 view 填 now()+90d，可为 None 永不过期）。
+
+    note 仅创建时填写；token_suffix 由服务端从明文派生，不接受入参。
+    """
 
     name = serializers.CharField(max_length=200)
+    note = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, default=""
+    )
     expires_at = serializers.DateTimeField(required=False, allow_null=True)
