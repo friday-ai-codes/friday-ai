@@ -79,7 +79,7 @@
 **Plans**: 4 plans
 - [x] 08-01-PLAN.md — Wave 0 RED 验证脚手架：test_conversation_isolation.py 覆盖全 25 路径 cross-user-denied(404) + 回填/admin-no-bypass/open-mode + conftest fixtures
 - [x] 08-02-PLAN.md — 数据地基：Conversation.created_by FK + AddField(0018) + RunPython 回填(0019,可逆) + ConversationService owner-scoped 取数(aget_for_user/list/create/delete)
-- [ ] 08-03-PLAN.md — 直接会话端点 #1-12 owner gate（list/create/detail/delete/patch/preflight/runtime/messages/fork/stream/interrupt/export），SSE 流前 404
+- [x] 08-03-PLAN.md — 直接会话端点 #1-12 owner gate（list/create/detail/delete/patch/preflight/runtime/messages/fork/stream/interrupt/export），SSE 流前 404
 - [ ] 08-04-PLAN.md — 关联模型端点 #13-25 owner gate（coding-session/plan + trace/clarification via .conversation），去 superuser bypass
 
 ### Phase 9: 管理员会话管理后台（只读）
@@ -133,7 +133,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 5. 入口迁移与向后兼容 | v0.1.0 | 1/1 | Complete | 2026-06-08 |
 | 6. PAT 模型增强与一次性明文 | v0.2.0 | 2/3 | In progress | - |
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 1/3 | In progress | - |
-| 8. 对话/会话用户隔离 | v0.2.0 | 2/4 | In progress | - |
+| 8. 对话/会话用户隔离 | v0.2.0 | 3/4 | In progress | - |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 0/TBD | Not started | - |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 0/TBD | Not started | - |
 | 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/TBD | Not started | - |

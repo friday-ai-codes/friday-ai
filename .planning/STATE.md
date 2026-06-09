@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 08-02 complete — created_by FK + 0018/0019 迁移 + ConversationService owner-scoped 取数（backfill 用例 GREEN）
-last_updated: "2026-06-09T14:26:08.125Z"
+stopped_at: Plan 08-03 complete — 直接会话端点 #1-12 owner gate 接线（SSE 流前 404 + create 写 created_by），#1-12 隔离用例 GREEN
+last_updated: "2026-06-09T14:45:00.000Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 08 (对话/会话用户隔离) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-09
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 80%
 | Phase 07 P03 | 6 | 1 tasks | 1 files |
 | Phase 08 P01 | 15 | 3 tasks | 2 files |
 | Phase 08 P02 | 12 | 3 tasks | 4 files |
+| Phase 08 P03 | 18 | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 08]: [08-02] 两步迁移分离——0018 AddField + 0019 可逆 RunPython 回填（最早 superuser，无 superuser 早返回留 null 不阻塞部署）
 - [Phase 08]: [08-02] owner gate 收口到 ConversationService.aget_for_user 单一真源；service 方法加 user=None 关键字默认参数向后兼容，端点接线留待 08-03/08-04
 - [Phase 08]: [08-02] owner 过滤仅对已认证用户生效（getattr user is_authenticated），无 superuser bypass（源码 0 处 is_superuser，grep 守卫通过）
+- [Phase 08]: [08-03] 直接会话端点 #1-12 接线 owner gate；owner gate 作主/外层先于既有 has_project_access，越权 404、无 superuser bypass，既有 403 分支保留为 null-owner/共享行次层
+- [Phase 08]: [08-03] SSE stream 在 StreamingHttpResponse 构造前 aget_for_user → 干净 HTTP 404（非流内 error，Pitfall 5）；interrupt 在 runner.interrupt()/barrier 取消前加 owner-scoped 校验（T-08-11）
+- [Phase 08]: [08-03] 两种 owner gate 风格：aget_for_user（detail/runtime/patch/stream/interrupt）+ created_by_id 比对（preflight/messages-delete/fork/export，已 select_related），统一 owner-miss → 404
 
 ### Pending Todos
 
@@ -108,8 +112,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T14:26:00.000Z
-Stopped at: Plan 08-02 complete — created_by FK + 0018/0019 迁移 + ConversationService owner-scoped 取数（backfill 3 用例 GREEN，端点用例待 08-03/08-04）
+Last session: 2026-06-09T14:45:00.000Z
+Stopped at: Plan 08-03 complete — 直接会话端点 #1-12 owner gate 接线（SSE 流前 404 + create 写 created_by）；#1-12 隔离用例 GREEN，#13-25 待 08-04
 Resume file: None
 
 ## Operator Next Steps
