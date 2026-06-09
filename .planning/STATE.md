@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: verifying
+status: ready_to_plan
 stopped_at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
 last_updated: "2026-06-09T11:48:20.222Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
   completed_plans: 3
-  percent: 100
+  percent: 33
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 06 (PAT 模型增强与一次性明文) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 7
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-09
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 2
+- Total plans completed: 5
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -45,6 +45,7 @@ Progress: [██████████] 100%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 5 | 1 | - | - |
+| 06 | 3 | - | - |
 
 **Recent Trend:**
 
