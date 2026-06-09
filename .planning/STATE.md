@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 08-01 complete — 隔离 RED 脚手架 (test_conversation_isolation.py, 37 用例; 27 RED/10 GREEN 预期) + conftest fixtures; integration 套件未破坏
-last_updated: "2026-06-09T14:18:00.000Z"
-last_activity: 2026-06-09 -- Plan 08-01 complete (Wave 0 RED 隔离脚手架)
+stopped_at: Plan 08-02 complete — created_by FK + 0018/0019 迁移 + ConversationService owner-scoped 取数（backfill 用例 GREEN）
+last_updated: "2026-06-09T14:26:08.125Z"
+last_activity: 2026-06-09
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 08 (对话/会话用户隔离) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 08 — Plan 08-01 complete (Wave 0 RED 隔离脚手架)
-Last activity: 2026-06-09 -- Plan 08-01 complete
+Plan: 3 of 4
+Status: Ready to execute
+Last activity: 2026-06-09
 
-Progress: [██████████] 100%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 07 P02 | 8 | 2 tasks | 2 files |
 | Phase 07 P03 | 6 | 1 tasks | 1 files |
 | Phase 08 P01 | 15 | 3 tasks | 2 files |
+| Phase 08 P02 | 12 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 08]: [08-01] 隔离回填排序字段用 created_at（accounts.User 实有；accounts/0005 同款），解决 RESEARCH A2（非 date_joined）
 - [Phase 08]: [08-01] accounts/0006 partial unique index 限制最多一个 superuser → 回填「最早 superuser」即「唯一 superuser」
 - [Phase 08]: [08-01] 越权对象级一律 404 / list 一律 []（禁 403，ISO-04 不泄漏存在性）；owner-allowed 断言 != 404 捕捉过度收紧
+- [Phase 08]: [08-02] 两步迁移分离——0018 AddField + 0019 可逆 RunPython 回填（最早 superuser，无 superuser 早返回留 null 不阻塞部署）
+- [Phase 08]: [08-02] owner gate 收口到 ConversationService.aget_for_user 单一真源；service 方法加 user=None 关键字默认参数向后兼容，端点接线留待 08-03/08-04
+- [Phase 08]: [08-02] owner 过滤仅对已认证用户生效（getattr user is_authenticated），无 superuser bypass（源码 0 处 is_superuser，grep 守卫通过）
 
 ### Pending Todos
 
@@ -104,8 +108,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T14:18:00.000Z
-Stopped at: Plan 08-01 complete — Wave 0 RED 隔离脚手架 (test_conversation_isolation.py 37 用例) + conftest fixtures
+Last session: 2026-06-09T14:26:00.000Z
+Stopped at: Plan 08-02 complete — created_by FK + 0018/0019 迁移 + ConversationService owner-scoped 取数（backfill 3 用例 GREEN，端点用例待 08-03/08-04）
 Resume file: None
 
 ## Operator Next Steps
