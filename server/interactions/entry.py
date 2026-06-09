@@ -66,7 +66,14 @@ async def begin_interaction_run(request: Request, *, source: str) -> Interaction
     Returns:
         同步创建落库的 ``InteractionRun``（供后续子事件挂载）。
     """
-    token_fingerprint = getattr(request.auth, "token_hash", "")
+    # PAT 路径：request.auth 是 AccessToken，取其 token_hash（只存 hash，绝不明文）。
+    # JWT 路径（CookieJWTAuthentication）：request.auth 是已验证的 JWT，无 token_hash →
+    # 退化为基于已认证用户的稳定非敏感标识 user:<id>，保住审计连续性（绝不记明文/原始 JWT）。
+    token_fingerprint = getattr(request.auth, "token_hash", "") or (
+        f"user:{request.user.id}"
+        if getattr(request, "user", None) is not None and request.user.is_authenticated
+        else ""
+    )
 
     requested_run_id = (
         request.META.get("HTTP_X_FRIDAY_RUN_ID")
