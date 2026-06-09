@@ -694,10 +694,32 @@ class ConversationService:
     """对话系统业务逻辑服务。"""
 
     @staticmethod
+    async def aget_for_user(conversation_id: str, user: Any = None) -> Conversation:
+        """owner-scoped 取单个会话——按 id 取会话的唯一收口入口（ISO-04）。
+
+        隔离规则（仅对「已认证用户」生效，管理员不 bypass）：
+            - user 已认证 → 仅返回 created_by == user 的会话；越权/不存在统一抛
+              ``Conversation.DoesNotExist``（view 映射统一 404，杜绝存在性泄漏）。
+            - user 未认证（开放模式 / 匿名）→ 不加 owner 过滤，维持开放行为。
+
+        **不加任何管理员特权分支**（ISO-03：owner gate 无 superuser bypass）。
+        用 queryset filter（``created_by=user``）而非惰性访问 ``.created_by``，
+        避免 async 上下文的 SynchronousOnlyOperation（Pitfall 4）。
+
+        Raises:
+            Conversation.DoesNotExist: 会话不存在、已删除，或越权访问他人会话。
+        """
+        qs = Conversation.objects.filter(id=conversation_id, is_deleted=False)
+        if getattr(user, "is_authenticated", False):
+            qs = qs.filter(created_by=user)
+        return await qs.aget()
+
+    @staticmethod
     async def create_conversation(
         space_id: str,
         title: str = "新对话",
         model: str = "",
+        user: Any = None,
     ) -> Conversation:
         """创建新对话。
 
@@ -705,14 +727,18 @@ class ConversationService:
             space_id: 空间 UUID
             title: 对话标题
             model: LLM 模型 ID（为空时运行时使用系统默认）
+            user: 创建者；已认证则写入 created_by，未认证（开放模式）写 null（ISO-01）
 
         Returns:
             新创建的 Conversation 实例
         """
+        # 隔离仅对已认证用户生效：匿名/开放模式不写 owner。
+        created_by = user if getattr(user, "is_authenticated", False) else None
         conversation = await Conversation.objects.acreate(
             project_id=space_id,
             title=title,
             model=model,
+            created_by=created_by,
         )
         logger.info(
             "conversation_created",
@@ -1307,13 +1333,16 @@ class ConversationService:
             )
 
     @staticmethod
-    async def list_conversations() -> list[Conversation]:
-        """返回未删除对话列表，按 updated_at 降序。"""
-        return [
-            c async for c in Conversation.objects.filter(
-                is_deleted=False,
-            ).order_by("-updated_at")
-        ]
+    async def list_conversations(user: Any = None) -> list[Conversation]:
+        """返回未删除对话列表，按 updated_at 降序。
+
+        owner-scoped（ISO-02）：已认证用户仅列自己的会话（``created_by=user``）；
+        未认证（开放模式）维持现状列全部。无管理员特权 bypass（ISO-03）。
+        """
+        qs = Conversation.objects.filter(is_deleted=False)
+        if getattr(user, "is_authenticated", False):
+            qs = qs.filter(created_by=user)
+        return [c async for c in qs.order_by("-updated_at")]
 
     @staticmethod
     async def get_conversation_with_messages(
@@ -1682,19 +1711,27 @@ class ConversationService:
         return runtime
 
     @staticmethod
-    async def delete_conversation(conversation_id: str) -> None:
+    async def delete_conversation(conversation_id: str, user: Any = None) -> None:
         """软删除对话。
+
+        owner-scoped（ISO-04）：已认证用户仅能删自己的会话；越权/不存在统一抛
+        ``Conversation.DoesNotExist``（0 行更新即抛，view 映射 404）。无管理员
+        特权 bypass（ISO-03）；未认证（开放模式）维持现状。
 
         Args:
             conversation_id: 对话 UUID
+            user: 操作者；已认证则按 owner 过滤
 
         Raises:
-            Conversation.DoesNotExist: 对话不存在或已删除
+            Conversation.DoesNotExist: 对话不存在、已删除，或越权删除他人会话
         """
-        updated = await Conversation.objects.filter(
+        qs = Conversation.objects.filter(
             id=conversation_id,
             is_deleted=False,
-        ).aupdate(is_deleted=True)
+        )
+        if getattr(user, "is_authenticated", False):
+            qs = qs.filter(created_by=user)
+        updated = await qs.aupdate(is_deleted=True)
 
         if updated == 0:
             raise Conversation.DoesNotExist(
