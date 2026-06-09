@@ -312,7 +312,7 @@ class McpToolView(APIView):
 
 **注:** 以上为仅有的两处需 planner 确认的假设，其余结论均经源码核验（HIGH）。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **MCP 错误码契约（Pitfall 3）保 `"authentication_required"` 还是收敛到 `"authentication_failed"`？**
    - What we know: 改 `IsAuthenticated` 后权限层先拒，走 `handle_exception` → `"authentication_failed"`。
