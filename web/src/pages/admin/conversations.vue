@@ -110,7 +110,6 @@ const STATUS_META: Record<string, { label: string, variant: 'default' | 'seconda
   running: { label: '运行中', variant: 'default' },
   completed: { label: '已完成', variant: 'secondary' },
   draft: { label: '草稿', variant: 'outline' },
-  DRAFT: { label: '草稿', variant: 'outline' },
 }
 
 function statusMeta(status: string) {
