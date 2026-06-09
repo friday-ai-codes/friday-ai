@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: ready_to_plan
-stopped_at: Plan 10-03 complete — 后端装配：绑定序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 条 RED 全转 GREEN，57 passed 回归不退，makemigrations --check 干净；Phase 10 → 4/4 完成
-last_updated: "2026-06-10T01:02:00.000Z"
-last_activity: 2026-06-10 -- Phase 10 Plan 03 complete (后端绑定/执行端点装配，MCPB+RTOOL-01 GREEN，Phase 10 完成)
+status: executing
+stopped_at: Plan 10-03 complete — 后端装配：序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 RED 全 GREEN，57 passed 回归不退，makemigrations 干净；Phase 10 完成 4/4
+last_updated: "2026-06-09T17:58:32.880Z"
+last_activity: 2026-06-09 -- Phase 11 execution started
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 17
+  total_plans: 21
   completed_plans: 17
-  percent: 83
+  percent: 81
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 让每个用户用 GitHub/GitLab 风格的个人访问令牌以「用户身份 + 用户权限」安全调用 Friday，并让 skill/mcp 工具以用户身份在容器内真正执行。
-**Current focus:** Phase 10 — MCP 绑定用户令牌 + RemoteTool 执行端点
+**Current focus:** Phase 11 — task 容器接通（RemoteTool 链路闭环）
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-09
+Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 11
+Last activity: 2026-06-09 -- Phase 11 execution started
 
 Progress: [██████████] 100%
 
