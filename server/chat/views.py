@@ -1568,6 +1568,18 @@ class ExportCodingPlanToFeishuView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # owner gate（ISO-04）：经 plan.conversation 反查 owner，置于读取 project 之前，
+        # 越权 → 404（与「不存在」同体）；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_plan.conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"error": "方案不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         project = coding_plan.conversation.project
         title = serializer.validated_data.get("title") or None
         folder_token = (
@@ -2219,8 +2231,10 @@ class CodingPlanListView(APIView):
                 {"detail": "conversation_id query parameter is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # owner-scoped 存在性校验（ISO-02/04）：越权或不存在统一返回 []，
+        # 不列他人会话下的 coding-plan（保持既有「missing 返回 []」语义）。
         try:
-            await Conversation.objects.select_related("project").aget(id=conversation_id)
+            await ConversationService.aget_for_user(conversation_id, request.user)
         except Conversation.DoesNotExist:
             return Response([], status=status.HTTP_200_OK)
         plans = [
@@ -2246,12 +2260,27 @@ class CodingPlanDetailView(APIView):
         from .models import CodingPlan
 
         try:
-            plan = await CodingPlan.objects.aget(id=plan_id)
+            plan = await CodingPlan.objects.select_related(
+                "conversation"
+            ).aget(id=plan_id)
         except CodingPlan.DoesNotExist:
             return Response(
                 {"detail": "CodingPlan not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        # owner gate（ISO-04）：经 plan.conversation 反查 owner，置于序列化之前，
+        # 越权 → 404；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and plan.conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"detail": "CodingPlan not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         serializer = CodingPlanSerializer(plan)
         return Response(serializer.data)
 
@@ -2300,8 +2329,20 @@ class CodingPlanSessionsBatchCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 3) 项目级 ownership（MEMBER+）
+        # 3) owner gate（ISO-04，主/外层）：经 plan.conversation 反查 owner，置于既有
+        #    has_project_access 之前 —— owner-miss 必须先 404（不是 403，不泄漏存在性）。
+        #    用 created_by_id 避免 async 惰性 FK；无 superuser bypass（ISO-03）。
         user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and plan.conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"detail": "CodingPlan 不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 4) 项目级 ownership（MEMBER+）—— 保留为 null-owner/共享行次层防御
         if not getattr(user, "is_superuser", False):
             allowed = await sync_to_async(PermissionService.has_project_access)(
                 user=user,
@@ -2314,14 +2355,14 @@ class CodingPlanSessionsBatchCreateView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        # 4) 业务调用
+        # 5) 业务调用
         result = await create_sessions_for_plan(
             plan=plan,
             repository_ids=req_ser.validated_data["repository_ids"],
             branch_template=req_ser.validated_data.get("branch_template", ""),
         )
 
-        # 5) dataclass -> dict -> serializer
+        # 6) dataclass -> dict -> serializer
         resp_payload: dict[str, Any] = {
             "created": [
                 {
