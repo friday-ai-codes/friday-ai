@@ -225,6 +225,51 @@ def test_unbind_and_cross_user_404(
     assert cross_resp.status_code == 404
 
 
+def test_upsert_integrity_error_resolves_to_update(
+    monkeypatch: pytest.MonkeyPatch,
+    make_remote_tool: Callable[..., Any],
+    make_access_token: Callable[..., tuple[Any, str]],
+    user: Any,
+) -> None:
+    """MCPB-01/WR-03：并发 upsert 撞 unique_together（IntegrityError）收敛为换令牌更新，不 500。
+
+    模拟「先 get miss 再 create 撞唯一约束」的并发竞态：先经 API 绑 token_a，再把
+    ``aupdate_or_create`` 打桩为抛 IntegrityError，第二次绑 token_b 时应走 except
+    分支回落为对既有绑定的更新（200/201），最终令牌指向 token_b，绝不抛 500。
+    """
+    from tools.models import ToolTokenBinding
+
+    tool = make_remote_tool(source="mcp")
+    token_a, _ = make_access_token(name="race-a")
+    token_b, _ = make_access_token(name="race-b")
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    resp_a = client.post(
+        BINDINGS_URL, {"remote_tool": tool.id, "access_token": str(token_a.id)}, format="json"
+    )
+    assert resp_a.status_code == 201
+
+    async def _raise_integrity(*args: Any, **kwargs: Any) -> Any:
+        from django.db import IntegrityError
+
+        raise IntegrityError("simulated unique_together race")
+
+    monkeypatch.setattr(
+        ToolTokenBinding.objects, "aupdate_or_create", _raise_integrity, raising=True
+    )
+
+    resp_b = client.post(
+        BINDINGS_URL, {"remote_tool": tool.id, "access_token": str(token_b.id)}, format="json"
+    )
+    assert resp_b.status_code in (200, 201)
+
+    listing = client.get(BINDINGS_URL)
+    assert listing.status_code == 200
+    assert len(listing.data) == 1
+    assert listing.data[0]["access_token"]["id"] == str(token_b.id)
+
+
 def test_serializer_no_plaintext_no_hash(
     make_remote_tool: Callable[..., Any],
     make_access_token: Callable[..., tuple[Any, str]],
