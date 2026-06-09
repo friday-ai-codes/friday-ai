@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: milestone
-status: milestone_complete
+status: Awaiting next milestone
 stopped_at: Plan 01-01 complete — backend setup gate implemented (8 tests passed)
-last_updated: "2026-06-08T09:30:43.377Z"
-last_activity: 2026-06-08 -- Phase 5 execution started
+last_updated: "2026-06-09T09:47:07.821Z"
+last_activity: 2026-06-09 — Milestone v0.1.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 100
 ---
 
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-07)
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-08
-
-Progress: [████████░░] 80%
+Phase: Milestone v0.1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-09 — Milestone v0.1.0 completed and archived
 
 ## Performance Metrics
 
@@ -94,10 +92,15 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| verification | Phase 01 人工验收（01-VERIFICATION.md） | human_needed | 2026-06-09 (v0.1.0 close) |
+| verification | Phase 02 人工验收（02-VERIFICATION.md） | human_needed | 2026-06-09 (v0.1.0 close) |
 
 ## Session Continuity
 
 Last session: 2026-06-08T07:47:44.307Z
 Stopped at: Plan 01-01 complete — backend setup gate implemented (8 tests passed)
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

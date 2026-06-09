@@ -27,21 +27,13 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **认证与权限**：Cookie-JWT（HttpOnly + 刷新轮换/黑名单）、Argon2 密码、OIDC、RBAC 权限 — existing (`common.authentication`, `server/permissions/`)
 - ✓ **实时推送**：channels/WebSocket 推送工作流与对话状态；Web Push（VAPID）通知 — existing (`server/workflows/consumers.py`)
 - ✓ **自托管部署**：Docker Compose（server/web/runner/postgres/redis/qdrant），含 CI/CD 与预构建镜像 — existing (`docker-compose.yaml`, `.github/workflows/`)
+- ✓ **首启初始化向导**：无 superuser 时首次访问进入向导，自设管理员并自动登录；向导内一键预设配 Anthropic 兼容供应商（Fernet 加密 + 健康校验 + 绑 Claude Code）+ 安全密钥校验 + 可选飞书/RAG 步骤；fail-closed 防重入/防接管；entrypoint 去自动建号、运维命令保留 — v0.1.0 (`server/accounts/`, `server/system/`, `web/src/pages/setup.vue`)
 
 ### Active
 
-<!-- 当前里程碑 v0.1.0「首启初始化向导」要建的目标。上线并验证后移入 Validated。 -->
+<!-- 当前里程碑 v0.2.0「访问令牌与 Agent 集成」要建的目标。由 /gsd-new-milestone 填充。 -->
 
-首次部署"不知道 admin 用户名密码"是当前最大的上手障碍：现状由 `server/entrypoint.sh` 启动时调用 `init_superuser` 自动建管理员，密码或取自环境变量、或随机生成只打印在容器日志里，普通用户看不到、进不去系统。本里程碑用"首次访问引导用户自行设置"替代自动初始化，并在向导内顺带把必备配置一次配好。
-
-- [ ] 系统无任何超级管理员时，首次访问自动进入首启初始化向导
-- [ ] 用户在向导中自行设置管理员账号（用户名+密码），创建后即时生效
-- [ ] 向导内配置至少一个 Anthropic 兼容 LLM 供应商（Claude Code 必备），并提供一键模型预设（DeepSeek V4 Pro / MiMo V2.5 Pro / Kimi 2.6 / Anthropic 官方 / 自定义端点）
-- [ ] 向导内对加密/安全密钥（SECRET_KEY、FRIDAY_ENCRYPTION_KEY）做健康校验与风险提示
-- [ ] 向导内提供可选的飞书集成配置步骤（可跳过）
-- [ ] 向导内提供可选的向量检索（Qdrant/Embedding）配置步骤（可跳过）
-- [ ] 初始化完成后，向导接口与界面对所有访问者关闭、不再出现，并具备防重入/防接管保护
-- [x] entrypoint 默认不再自动建管理员；`init_superuser` 保留为运维兜底命令；已有部署升级后不出现向导（Phase 5 完成 2026-06-08）
+_v0.1.0 已归档（见 `.planning/milestones/`）。v0.2.0 目标将由新里程碑流程写入。_
 
 ### Out of Scope
 
@@ -76,10 +68,10 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 用"首次访问设置向导"替代启动期自动建管理员 | 自动建号的随机密码只在日志，用户进不去；让用户自设账号即时可用 | — Pending |
-| 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用） | 防止被用于重置或接管已有实例（安全） | — Pending |
-| DeepSeek V4 Pro / MiMo V2.5 Pro / Kimi 2.6 以 anthropic 兼容端点做"一键预设" | Claude Code 必须 anthropic 类型；这些模型经 base_url 覆盖接入，用户只填 Key | — Pending |
-| 向导必配：管理员 + 至少一个 Anthropic 兼容供应商；飞书/RAG 为可选步骤；加密密钥仅校验提示 | 保证"能进去 + 能跑 AI"为最小闭环，其余可跳过后补 | — Pending |
+| 用"首次访问设置向导"替代启动期自动建管理员 | 自动建号的随机密码只在日志，用户进不去；让用户自设账号即时可用 | ✓ Validated（v0.1.0） |
+| 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用） | 防止被用于重置或接管已有实例（安全） | ✓ Validated（v0.1.0） |
+| DeepSeek V4 Pro / MiMo V2.5 Pro / Kimi 2.6 以 anthropic 兼容端点做"一键预设" | Claude Code 必须 anthropic 类型；这些模型经 base_url 覆盖接入，用户只填 Key | ✓ Validated（v0.1.0） |
+| 向导必配：管理员 + 至少一个 Anthropic 兼容供应商；飞书/RAG 为可选步骤；加密密钥仅校验提示 | 保证"能进去 + 能跑 AI"为最小闭环，其余可跳过后补 | ✓ Validated（v0.1.0） |
 | 保留 `init_superuser` 命令但默认从 entrypoint 移除，仅作运维兜底 | 兼容老部署与运维场景，同时去掉令人困惑的自动建号默认行为 | Validated（Phase 5，2026-06-08） |
 | 作为首个 GSD 里程碑 v0.1.0；既有能力记为 Validated 基线（已打基线 tag v0.0.1） | 项目为 brownfield，先建 GSD 基线再推进新特性；0.x 阶段里程碑走 minor、修复走 patch | — Pending |
 
@@ -101,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-07 after initialization*
+*Last updated: 2026-06-09 after v0.1.0 milestone*
