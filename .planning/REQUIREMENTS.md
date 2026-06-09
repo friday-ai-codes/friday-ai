@@ -27,9 +27,9 @@
 ### 对话/会话用户隔离 (ISO)
 
 - [x] **ISO-01**: 每个会话记录创建者（`Conversation.created_by`）；迁移时历史无主会话归属给最早的 superuser
-- [ ] **ISO-02**: 普通用户在 AI 对话中只能查看/操作属于自己的会话（list / detail / runtime / stream / patch / delete / fork 等全路径按 owner 过滤）
-- [ ] **ISO-03**: 管理员在 AI 对话界面默认也只看自己的会话（与普通用户行为一致）
-- [ ] **ISO-04**: 越权访问他人会话（含 SSE/WebSocket 流式入口与对象级操作）返回 403/404，不泄漏会话存在性
+- [x] **ISO-02**: 普通用户在 AI 对话中只能查看/操作属于自己的会话（list / detail / runtime / stream / patch / delete / fork 等全路径按 owner 过滤）
+- [x] **ISO-03**: 管理员在 AI 对话界面默认也只看自己的会话（与普通用户行为一致）
+- [x] **ISO-04**: 越权访问他人会话（含 SSE/WebSocket 流式入口与对象级操作）返回 403/404，不泄漏会话存在性
 
 ### 管理员会话管理后台 (ADMVW)
 
@@ -91,9 +91,9 @@
 | IDENT-04 | Phase 7 | Complete |
 | IDENT-05 | Phase 7 | Complete |
 | ISO-01 | Phase 8 | Complete |
-| ISO-02 | Phase 8 | Pending |
-| ISO-03 | Phase 8 | Pending |
-| ISO-04 | Phase 8 | Pending |
+| ISO-02 | Phase 8 | Complete |
+| ISO-03 | Phase 8 | Complete |
+| ISO-04 | Phase 8 | Complete |
 | ADMVW-01 | Phase 9 | Pending |
 | ADMVW-02 | Phase 9 | Pending |
 | ADMVW-03 | Phase 9 | Pending |
