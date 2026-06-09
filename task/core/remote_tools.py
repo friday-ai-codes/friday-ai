@@ -81,7 +81,23 @@ def _make_handler(
                 "is_error": True,
             }
 
-        body = resp.json()  # {"ok": bool, "result"|"error": ...}
+        # 200 但响应体可能非 JSON（如反代/网关/鉴权门户返回 200 + text/html）：
+        # resp.json() 抛 json.JSONDecodeError（ValueError 子类，**不是** httpx.HTTPError），
+        # 不在上面的传输错误 except 内。这里单独兜底，保证 handler 永不 raise
+        # （RTOOL-04：handler 必须始终 return 结构化工具错误而非冒泡崩容器）。
+        try:
+            body = resp.json()  # {"ok": bool, "result"|"error": ...}
+            if not isinstance(body, dict):
+                raise ValueError("response body is not a JSON object")
+        except ValueError:
+            logger.warning(
+                "remote_tool_bad_json", tool=tool_name, status=resp.status_code
+            )
+            return {
+                "content": [{"type": "text", "text": "工具响应解析失败：非 JSON 响应"}],
+                "is_error": True,
+            }
+
         if body.get("ok"):
             return {"content": [{"type": "text", "text": str(body.get("result"))}]}
         return {

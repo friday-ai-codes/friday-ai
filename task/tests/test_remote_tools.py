@@ -58,7 +58,16 @@ class _FakeResponse:
         return self._body
 
 
-def _patch_post(monkeypatch: pytest.MonkeyPatch, response: _FakeResponse) -> None:
+class _BadJsonResponse:
+    """200 但响应体非 JSON：``json()`` 抛 ValueError（模拟反代/网关返回 text/html）。"""
+
+    status_code = 200
+
+    def json(self) -> Any:
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+def _patch_post(monkeypatch: pytest.MonkeyPatch, response: Any) -> None:
     async def _fake_post(self: Any, *args: Any, **kwargs: Any) -> _FakeResponse:
         return response
 
@@ -184,6 +193,22 @@ async def test_handler_non200_returns_tool_error(
     result = await handler({})
 
     assert result.get("is_error") is True
+
+
+@pytest.mark.asyncio
+async def test_handler_200_non_json_returns_tool_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """handler 收 200 但响应体非 JSON（resp.json() 抛 ValueError）→ 返回 is_error，
+    **绝不抛异常**（RTOOL-04 graceful / WR-01：反代返回 200 + HTML 也不崩容器）。
+    """
+    _patch_post(monkeypatch, _BadJsonResponse())
+    handler = _make_handler("a", TOOLS_ENDPOINT, SECRET_PAT)
+
+    result = await handler({})
+
+    assert result.get("is_error") is True
+    assert "content" in result
 
 
 # =========================================================================
