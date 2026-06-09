@@ -3,9 +3,11 @@
 FROM python:3.14-slim AS builder
 
 # Install build dependencies
+# gcc + g++：numpy 2.x 用 meson 构建，需同时具备 C 与 C++ 编译器。
 # libopenblas-dev：仅 x86_64 从源码重编 numpy 时链接它，避免退回慢速 fallback。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     libc-dev \
     libffi-dev \
     libopenblas-dev \
