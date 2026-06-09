@@ -106,8 +106,9 @@ def test_valid_token_passes(
     result = auth_mod.AccessTokenAuthentication().authenticate(request)
     assert result is not None
     user, auth_token = result
-    # 仿 RunnerTokenAuthentication：返回 (None, token)
-    assert user is None
+    # IDENT-01：返回 (token.created_by, token)——request.user=owner（真实 User），
+    # request.auth=token（审计链不断）。
+    assert user == token.created_by
     assert auth_token.token_hash == token.token_hash
     # single token：有效即拥有全部能力，模型无 scope 字段
     assert not hasattr(auth_token, "scope")
