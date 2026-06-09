@@ -62,7 +62,7 @@
   5. 令牌鉴权后审计仍正常：`request.auth` 为令牌实例，InteractionRun fingerprint 正确记录且不含明文
 **Constraints**: 「改 authenticate 返回值」与「逐入口权限 audit」必须同阶段交付（Pitfall 1）；`authenticate` 开头加 `friday_pat_` 前缀闸门、非 PAT Bearer 返回 None（Pitfall 2）；认证类保持纯同步 ORM + `select_related("created_by")` 预取防 async `SynchronousOnlyOperation`（Pitfall 6）；保持 `request.auth` 为 AccessToken 实例（Pitfall 3）
 **Plans**: 3 plans
-- [ ] 07-01-PLAN.md — Wave 0 验证脚手架（RED）：test_valid_token_passes owner 断言 + 新 test_pat_identity（前缀闸门/owner 身份/PAT·JWT 共存）+ MCP fail-closed authentication_failed
+- [x] 07-01-PLAN.md — Wave 0 验证脚手架（RED）：test_valid_token_passes owner 断言 + 新 test_pat_identity（前缀闸门/owner 身份/PAT·JWT 共存）+ MCP fail-closed authentication_failed
 - [ ] 07-02-PLAN.md — 认证地基：authentication.py 返回 (owner, token) + friday_pat_ 闸门 + authenticate_header（保 401）+ settings 认证类 PAT 优先
 - [ ] 07-03-PLAN.md — MCP 入口 fail-closed：McpToolView 基类收紧 IsAuthenticated + 显式 auth 类（17 子类全继承）
 
@@ -128,7 +128,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 4. 安全校验与可选集成步骤 | v0.1.0 | 2/2 | Complete | 2026-06-08 |
 | 5. 入口迁移与向后兼容 | v0.1.0 | 1/1 | Complete | 2026-06-08 |
 | 6. PAT 模型增强与一次性明文 | v0.2.0 | 2/3 | In progress | - |
-| 7. 令牌即用户身份（认证地基） | v0.2.0 | 0/TBD | Not started | - |
+| 7. 令牌即用户身份（认证地基） | v0.2.0 | 1/3 | In progress | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 0/TBD | Not started | - |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 0/TBD | Not started | - |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 0/TBD | Not started | - |
