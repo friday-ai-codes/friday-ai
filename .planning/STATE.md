@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: ready_to_plan
-stopped_at: Plan 09-03 complete — 前端 admin 只读会话后台（adminConversations.ts + ReadonlyConversationView + conversations.vue + 导航入口），前端 4 RED spec 转 GREEN、typecheck 清白；Phase 9 全部 3 plan 完成
-last_updated: "2026-06-09T16:00:49.388Z"
-last_activity: 2026-06-09
+status: executing
+stopped_at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
+last_updated: "2026-06-09T16:40:16.991Z"
+last_activity: 2026-06-09 -- Phase 10 execution started
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 13
+  completed_phases: 4
+  total_plans: 17
   completed_plans: 13
-  percent: 83
+  percent: 76
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 让每个用户用 GitHub/GitLab 风格的个人访问令牌以「用户身份 + 用户权限」安全调用 Friday，并让 skill/mcp 工具以用户身份在容器内真正执行。
-**Current focus:** Phase 09 — 管理员会话管理后台（只读）
+**Current focus:** Phase 10 — MCP 绑定用户令牌 + RemoteTool 执行端点
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-09
+Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 10
+Last activity: 2026-06-09 -- Phase 10 execution started
 
 Progress: [██████████] 100%
 
