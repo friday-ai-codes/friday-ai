@@ -79,37 +79,37 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PAT-01 | TBD | Pending |
-| PAT-02 | TBD | Pending |
-| PAT-03 | TBD | Pending |
-| PAT-04 | TBD | Pending |
-| PAT-05 | TBD | Pending |
-| PAT-06 | TBD | Pending |
-| IDENT-01 | TBD | Pending |
-| IDENT-02 | TBD | Pending |
-| IDENT-03 | TBD | Pending |
-| IDENT-04 | TBD | Pending |
-| IDENT-05 | TBD | Pending |
-| ISO-01 | TBD | Pending |
-| ISO-02 | TBD | Pending |
-| ISO-03 | TBD | Pending |
-| ISO-04 | TBD | Pending |
-| ADMVW-01 | TBD | Pending |
-| ADMVW-02 | TBD | Pending |
-| ADMVW-03 | TBD | Pending |
-| MCPB-01 | TBD | Pending |
-| MCPB-02 | TBD | Pending |
-| MCPB-03 | TBD | Pending |
-| RTOOL-01 | TBD | Pending |
-| RTOOL-02 | TBD | Pending |
-| RTOOL-03 | TBD | Pending |
-| RTOOL-04 | TBD | Pending |
+| PAT-01 | Phase 6 | Pending |
+| PAT-02 | Phase 6 | Pending |
+| PAT-03 | Phase 6 | Pending |
+| PAT-04 | Phase 6 | Pending |
+| PAT-05 | Phase 6 | Pending |
+| PAT-06 | Phase 6 | Pending |
+| IDENT-01 | Phase 7 | Pending |
+| IDENT-02 | Phase 7 | Pending |
+| IDENT-03 | Phase 7 | Pending |
+| IDENT-04 | Phase 7 | Pending |
+| IDENT-05 | Phase 7 | Pending |
+| ISO-01 | Phase 8 | Pending |
+| ISO-02 | Phase 8 | Pending |
+| ISO-03 | Phase 8 | Pending |
+| ISO-04 | Phase 8 | Pending |
+| ADMVW-01 | Phase 9 | Pending |
+| ADMVW-02 | Phase 9 | Pending |
+| ADMVW-03 | Phase 9 | Pending |
+| MCPB-01 | Phase 10 | Pending |
+| MCPB-02 | Phase 10 | Pending |
+| MCPB-03 | Phase 10 | Pending |
+| RTOOL-01 | Phase 10 | Pending |
+| RTOOL-02 | Phase 11 | Pending |
+| RTOOL-03 | Phase 11 | Pending |
+| RTOOL-04 | Phase 11 | Pending |
 
 **Coverage:**
 
 - v1 requirements: 25 total
-- Mapped to phases: 0 （roadmap 待生成）
-- Unmapped: 25
+- Mapped to phases: 25 (Phase 6-11)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-09*
