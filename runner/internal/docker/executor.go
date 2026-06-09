@@ -113,6 +113,8 @@ func buildContainerEnv(task ws.TaskPayload, callbackURL, callbackToken string) [
 		"FRIDAY_TASK_GIT_BRANCH=" + task.Branch,
 		"FRIDAY_TASK_CALLBACK_URL=" + callbackURL,
 		"FRIDAY_TASK_CALLBACK_TOKEN=" + callbackToken,
+		// 前缀修复（Pitfall 2）：TaskConfig 只认 FRIDAY_TASK_ 前缀，与旧 FRIDAY_REMOTE_TOOLS 同源同值。
+		"FRIDAY_TASK_REMOTE_TOOLS=" + string(remoteTools),
 		fmt.Sprintf("FRIDAY_TASK_EXECUTION_TIMEOUT=%d", task.Timeout),
 		"GIT_SSL_NO_VERIFY=true",
 		"CLAUDE_CODE_DISABLE_NONINTERACTIVE_SUBAGENTS=true",
