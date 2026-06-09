@@ -81,6 +81,21 @@ class TaskConfig(BaseSettings):
         description="Claude Code 最大对话轮数，防止非 Claude 模型死循环",
     )
 
+    # Phase 11 RemoteTool 链路（FRIDAY_TASK_ 前缀经 env_prefix 自动映射）。
+    # 三字段默认空 → 不设置 env 时行为与现状完全一致（向后兼容，不挂 MCP server）。
+    user_token: str = Field(
+        default="",
+        description="用户直传 PAT（friday_pat_...），仅注入 Authorization，绝不入日志",
+    )
+    tools_endpoint: str = Field(
+        default="",
+        description="Friday Server /api/tools/execute/ 完整 URL",
+    )
+    remote_tools: list[dict] = Field(
+        default_factory=list,
+        description="RemoteTool schema 列表（FRIDAY_TASK_REMOTE_TOOLS JSON）",
+    )
+
     # Callback configuration (可选 - 不设置则仅记录日志)
     callback_url: str = Field(
         default="",
