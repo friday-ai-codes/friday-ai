@@ -28,7 +28,7 @@ pytest.importorskip("access_tokens.models")
 
 from rest_framework.test import APIClient  # noqa: E402
 
-from interactions.models import InteractionRun  # noqa: E402
+from interactions.models import InteractionRun, ToolCallRecord  # noqa: E402
 
 pytestmark = pytest.mark.django_db
 
@@ -115,3 +115,48 @@ def test_execute_records_run(
     assert InteractionRun.objects.filter(
         token_fingerprint=token.token_hash
     ).exists()
+
+
+def test_execute_finalizes_run(
+    monkeypatch: pytest.MonkeyPatch,
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """MCPB-02/WR-02：execute 后 run 推进到终态并记录 tool-call，不留悬挂 RUNNING。"""
+    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    token, plaintext = make_access_token(name="exec-finalize")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(EXECUTE_URL, {"name": "x", "arguments": {}}, format="json")
+    assert resp.status_code == 200
+
+    run = InteractionRun.objects.filter(token_fingerprint=token.token_hash).latest(
+        "created_at"
+    )
+    # 终态：不再是 RUNNING（成功 → COMPLETED）。
+    assert run.status == InteractionRun.Status.COMPLETED
+    assert run.completed_at is not None
+    # 记录了 tool-call 明细（result 留痕）。
+    assert ToolCallRecord.objects.filter(run=run, status="ok").exists()
+
+
+def test_execute_error_finalizes_run_error(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """WR-02：执行失败（未知工具 ok=False）后 run 推进到 ERROR 终态并记录 error tool-call。"""
+    token, plaintext = make_access_token(name="exec-finalize-err")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(
+        EXECUTE_URL, {"name": "does_not_exist", "arguments": {}}, format="json"
+    )
+    assert resp.status_code == 200
+    assert resp.data["ok"] is False
+
+    run = InteractionRun.objects.filter(token_fingerprint=token.token_hash).latest(
+        "created_at"
+    )
+    assert run.status == InteractionRun.Status.ERROR
+    assert run.completed_at is not None
+    assert ToolCallRecord.objects.filter(run=run, status="error").exists()
