@@ -123,8 +123,12 @@
   2. 用户令牌以直传 PAT 形态经 server→runner→task 注入容器，agent 以用户身份回调执行端点完成端到端「需求→agent→调用用户授权工具」闭环
   3. `docker inspect` 与 runner/task 日志中不出现明文令牌（注入与脱敏必须同阶段交付）
   4. 任务运行中令牌被吊销时在途任务继续跑完、仅阻断后续新调用（graceful），鉴权失效定义为不可重试终止态并回传结构化错误
-**Constraints**: 复用 runner `env_` 前缀透传通道对齐 `FRIDAY_TASK_REMOTE_TOOLS`/`USER_TOKEN`/`API_URL`；Go 侧打印前按 key 名/`friday_pat_` 值模式脱敏，task 侧禁止把令牌写进 session/usage/prompt 落盘文件（Pitfall 7）；401/403/revoked 列为不可重试（Pitfall 8）；零新增依赖（claude-agent-sdk 0.1.58 自带 mcp_servers/@tool/create_sdk_mcp_server）
-**Plans**: TBD
+**Constraints**: 复用 runner `env_` 前缀透传通道对齐 `FRIDAY_TASK_REMOTE_TOOLS`/`USER_TOKEN`/`API_URL`；Go 侧打印前按 key 名/`friday_pat_` 值模式脱敏，task 侧禁止把令牌写进 session/usage/prompt 落盘文件（Pitfall 7）；401/403/revoked 列为不可重试（Pitfall 8）；零新增依赖（claude-agent-sdk 0.1.58 自带 mcp_servers/@tool/create_sdk_mcp_server）。Open Q1 裁决：Option C + 机会性 B——完整交付机制 + 脱敏 + graceful；PAT 明文仅在实时请求线程可用时注入，绝不落盘/绝不从 AccessToken 取（PAT-02），自动解析存量 PAT 为已知 follow-up。
+**Plans**: 4 plans
+- [ ] 11-01-PLAN.md — Wave 0 RED 脚手架：task test_remote_tools.py（SDK MCP 构建/handler 回调/401 graceful/脱敏）+ server test_remote_tool_dispatch.py（endpoint 推导/机会性 PAT/不读 DB）+ runner executor_test.go env 装配
+- [ ] 11-02-PLAN.md — task 机制：core/remote_tools.py（schema→SdkMcpTool 动态注册 + PAT 回调 + graceful）+ TaskConfig 三字段 + executor.py 条件挂载 mcp_servers/allowed_tools
+- [ ] 11-03-PLAN.md — runner（Go）：executor.go 新增 FRIDAY_TASK_REMOTE_TOOLS 前缀修复 + 经 metadata env_ 透传 USER_TOKEN/TOOLS_ENDPOINT，zerolog 不打印 env 值
+- [ ] 11-04-PLAN.md — server dispatch：coding.py 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT（FRIDAY_BASE_URL 推导）+ 机会性 PAT（绝不读 DB），PAT 不入日志
 
 ## Progress
 
@@ -143,4 +147,4 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 4/4 | Complete    | 2026-06-09 |
-| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/TBD | Not started | - |
+| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/4 | Planned | - |
