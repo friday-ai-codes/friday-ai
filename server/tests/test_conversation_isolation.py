@@ -189,30 +189,24 @@ class TestOwnerAssignment:
         assert getattr(conv, "created_by_id", None) == owner.id
 
     async def test_backfill_assigns_earliest_superuser(self, project):
-        """回填把历史无主会话归属给最早（created_at,id）的 superuser。"""
-        from datetime import timedelta
+        """回填把历史无主会话归属给最早（created_at,id）的 superuser。
 
+        注意：accounts/0006 以 partial unique index 约束「最多一个 superuser」，
+        故 DB 层只可能存在单个 superuser——「最早」在本系统中即「该唯一 superuser」；
+        回填迁移按 order_by("created_at","id")（与 accounts/0005 字段一致，见 A2）取它。
+        """
         from django.apps import apps as global_apps
-        from django.utils import timezone
 
-        su_early = await User.objects.acreate_superuser(
-            username="iso_su_early", email="early@example.com", password="x"
+        su = await User.objects.acreate_superuser(
+            username="iso_su_earliest", email="earliest@example.com", password="x"
         )
-        await User.objects.acreate_superuser(
-            username="iso_su_late", email="late@example.com", password="x"
-        )
-        # 强制 su_early 明确最早，避免同微秒 created_at 下 uuid id tiebreak 抖动。
-        await User.objects.filter(id=su_early.id).aupdate(
-            created_at=timezone.now() - timedelta(days=1)
-        )
-
         conv = await _acreate_conversation(project, owner=None)
 
         mod = _load_backfill_migration()
         await sync_to_async(mod.forwards)(global_apps, None)
 
         conv = await Conversation.objects.aget(id=conv.id)
-        assert conv.created_by_id == su_early.id
+        assert conv.created_by_id == su.id
 
     async def test_backfill_no_superuser_leaves_null(self, project):
         """无 superuser 时回填不阻塞、留 null（不报错）。"""
@@ -320,3 +314,251 @@ class TestOpenModeUnaffected:
 
         detail_resp = await client.get(f"/api/chat/conversations/{conv.id}/")
         assert detail_resp.status_code == 200
+
+
+# ============================================================================
+# ISO-04：全 25 路径 cross-user-denied（404）
+#
+# CROSS_USER_CASES 与 08-RESEARCH.md §Conversation Access Point Inventory
+# 1:1 映射（id 标注端点编号 #3..#25），供审计核对完整性。对象级越权一律
+# 断言 == 404（杜绝 403，ISO-04 / Pitfall 3）。
+#
+# 编号分布：
+#   A 直接会话端点  #3-#12（#1 list、#2 create 见 ISO-02/ISO-01 用例）
+#   B SSE 流式      #10′（test_stream_cross_user_404 单列：流打开前 404）
+#   C coding 关联   #13-#23（#13/#20 list-scoping 单列断言 []）
+#   D trace/澄清    #24-#25（当前已 404；加 owner gate 后仍 404）
+# 说明：#11 interrupt / #24 override / #25 clarification 在 Wave 0 即返回 404
+#   （无活跃 run / 既有 has_project_access 跨用户 404），其余 Wave 0 RED。
+# ============================================================================
+
+
+# (id, kind, method, path, body)
+# body 取值：dict 直传；{} 空体；None 无体；"<...>" 运行时按 repository 填充。
+CROSS_USER_CASES = [
+    # --- A. 直接会话端点 ---
+    {"id": "#3 conversation-detail GET", "kind": "conversation", "method": "get",
+     "path": "/api/chat/conversations/{cid}/", "body": None},
+    {"id": "#4 conversation-detail DELETE", "kind": "conversation", "method": "delete",
+     "path": "/api/chat/conversations/{cid}/", "body": None},
+    {"id": "#5 conversation-detail PATCH", "kind": "conversation", "method": "patch",
+     "path": "/api/chat/conversations/{cid}/", "body": {"title": "hacked"}},
+    {"id": "#6 conversation-preflight GET", "kind": "conversation", "method": "get",
+     "path": "/api/chat/conversations/{cid}/preflight/", "body": None},
+    {"id": "#7 conversation-runtime GET", "kind": "conversation", "method": "get",
+     "path": "/api/chat/conversations/{cid}/runtime/", "body": None},
+    {"id": "#8 conversation-messages-delete DELETE", "kind": "conversation", "method": "delete",
+     "path": "/api/chat/conversations/{cid}/messages/?before_id={bid}", "body": None},
+    {"id": "#9 conversation-message-fork POST", "kind": "fork", "method": "post",
+     "path": "/api/chat/conversations/{cid}/messages/{mid}/fork/", "body": {"content": "edited by B"}},
+    {"id": "#10 conversation-stream POST", "kind": "conversation", "method": "post",
+     "path": "/api/chat/conversations/{cid}/stream/", "body": {"content": "hi from B"}},
+    {"id": "#11 conversation-interrupt POST", "kind": "conversation", "method": "post",
+     "path": "/api/chat/conversations/{cid}/interrupt/", "body": {}},
+    {"id": "#12 conversation-export-to-feishu POST", "kind": "conversation", "method": "post",
+     "path": "/api/chat/conversations/{cid}/export-to-feishu/", "body": "<message_ids>"},
+    # --- C. coding-session / coding-plan 关联端点 ---
+    {"id": "#14 coding-session-detail GET", "kind": "coding_session", "method": "get",
+     "path": "/api/chat/coding-sessions/{sid}/", "body": None},
+    {"id": "#15 coding-session-confirm POST", "kind": "coding_session", "method": "post",
+     "path": "/api/chat/coding-sessions/{sid}/confirm/", "body": {}},
+    {"id": "#16 coding-session-commit-confirm GET", "kind": "coding_session", "method": "get",
+     "path": "/api/chat/coding-sessions/{sid}/commit-confirm/", "body": None},
+    {"id": "#17 coding-session-pr-confirm GET", "kind": "coding_session", "method": "get",
+     "path": "/api/chat/coding-sessions/{sid}/pr-confirm/", "body": None},
+    {"id": "#18 coding-session-conflict-check GET", "kind": "coding_session", "method": "get",
+     "path": "/api/chat/coding-sessions/{sid}/conflict-check/", "body": None},
+    {"id": "#19 coding-session-diff-summary GET", "kind": "coding_session", "method": "get",
+     "path": "/api/chat/coding-sessions/{sid}/diff-summary/", "body": None},
+    {"id": "#21 coding-plan-detail GET", "kind": "coding_plan", "method": "get",
+     "path": "/api/chat/coding-plans/{pid}/", "body": None},
+    {"id": "#22 coding-plan-sessions-batch POST", "kind": "coding_plan", "method": "post",
+     "path": "/api/chat/coding-plans/{pid}/sessions/", "body": "<repo_ids>"},
+    {"id": "#23 coding-plan-export-to-feishu POST", "kind": "coding_plan", "method": "post",
+     "path": "/api/chat/coding-plans/{pid}/export-to-feishu/", "body": {}},
+    # --- D. trace / clarification 关联端点 ---
+    {"id": "#24 routing-trace-manual-override POST", "kind": "routing_trace", "method": "post",
+     "path": "/api/chat/routing-traces/{tid}/override/", "body": "<candidates>"},
+    {"id": "#25 clarification-answer POST", "kind": "clarification", "method": "post",
+     "path": "/api/chat/clarifications/{clar}/answer/", "body": {"freeform_text": "B answer"}},
+]
+
+
+def _resolve_body(body, repository):
+    """把 CROSS_USER_CASES 里的 body 占位符按 repository 填充为合法请求体。
+
+    合法请求体很关键：若 body 非法导致序列化 400，本意（owner gate 404）会被
+    400 掩盖——Wave 0 仍 RED（非 404），但实现落地后 owner gate 必须在序列化
+    通过后命中 404，故 body 必须能过序列化校验。
+    """
+    if body == "<message_ids>":
+        return {"message_ids": [str(uuid4())], "title": "iso export"}
+    if body == "<repo_ids>":
+        return {"repository_ids": [str(repository.id)]}
+    if body == "<candidates>":
+        return {"candidates": [{"repository_id": str(repository.id), "selected": True}]}
+    return body
+
+
+@pytest.mark.django_db(transaction=True)
+class TestCrossUserDenied:
+    """ISO-04：用户 B 直取用户 A 的会话/关联资源 id → 404（全 25 路径）。"""
+
+    @pytest.mark.parametrize(
+        "case", CROSS_USER_CASES, ids=[c["id"] for c in CROSS_USER_CASES]
+    )
+    async def test_cross_user_denied(
+        self, case, owner_and_token, second_auth_headers, project, repository
+    ):
+        """A 建资源，B 携带自己的 JWT 访问该 id → 必须 404（不可为 403/200）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+        fmt: dict = {"cid": conv.id, "bid": uuid4()}
+
+        kind = case["kind"]
+        if kind == "coding_session":
+            sess = await _acreate_coding_session(conv, repository)
+            fmt["sid"] = sess.id
+        elif kind == "coding_plan":
+            plan = await _acreate_coding_plan(conv)
+            fmt["pid"] = plan.id
+        elif kind == "routing_trace":
+            trace = await _acreate_routing_trace(conv)
+            fmt["tid"] = trace.id
+        elif kind == "clarification":
+            clar_id = uuid4().hex
+            await _acreate_intent_trace(conv, clar_id)
+            fmt["clar"] = clar_id
+        elif kind == "fork":
+            msg = await _acreate_message(conv)
+            fmt["mid"] = msg.id
+
+        url = case["path"].format(**fmt)
+        body = _resolve_body(case["body"], repository)
+
+        client = AsyncClient()
+        method = getattr(client, case["method"])
+        kwargs: dict = {"headers": second_auth_headers}
+        if body is not None:
+            kwargs["data"] = json.dumps(body)
+            kwargs["content_type"] = "application/json"
+        resp = await method(url, **kwargs)
+
+        assert resp.status_code == 404, (
+            f"{case['id']}: 跨用户访问必须返回 404（拿到 {resp.status_code}）"
+        )
+
+    async def test_stream_cross_user_404(
+        self, owner_and_token, second_auth_headers, project
+    ):
+        """#10′ SSE：B POST A 会话 stream → 在流打开前返回 HTTP 404，而非 200 流内 error。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+
+        client = AsyncClient()
+        resp = await client.post(
+            f"/api/chat/conversations/{conv.id}/stream/",
+            data=json.dumps({"content": "hi from B"}),
+            content_type="application/json",
+            headers=second_auth_headers,
+        )
+        # 必须是干净的 HTTP 404，而非 200 的 text/event-stream
+        assert resp.status_code == 404
+        assert not getattr(resp, "streaming", False)
+
+    async def test_404_indistinguishable(
+        self, owner_and_token, second_auth_headers, project
+    ):
+        """ISO-04：B 访问 A 真实会话 id 与不存在随机 uuid，状态码/响应体一致（不泄漏存在性）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+
+        client = AsyncClient()
+        real = await client.get(
+            f"/api/chat/conversations/{conv.id}/", headers=second_auth_headers
+        )
+        missing = await client.get(
+            f"/api/chat/conversations/{uuid4()}/", headers=second_auth_headers
+        )
+        assert real.status_code == 404
+        assert missing.status_code == 404
+        assert real.json() == missing.json()
+
+    async def test_list_scoping_coding(
+        self, owner_and_token, second_auth_headers, project, repository
+    ):
+        """#13 / #20 list-scoping：B 传 A 的 conversation_id → 返回 []（不列他人）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+        await _acreate_coding_session(conv, repository)
+        await _acreate_coding_plan(conv)
+
+        client = AsyncClient()
+        sess_resp = await client.get(
+            f"/api/chat/coding-sessions/?conversation_id={conv.id}",
+            headers=second_auth_headers,
+        )
+        assert sess_resp.status_code == 200
+        assert sess_resp.json() == []
+
+        plan_resp = await client.get(
+            f"/api/chat/coding-plans/?conversation_id={conv.id}",
+            headers=second_auth_headers,
+        )
+        assert plan_resp.status_code == 200
+        assert plan_resp.json() == []
+
+
+# ============================================================================
+# owner-allowed 正向断言（plan-checker 警告 #2）
+#
+# 对象级主路径（detail/runtime/patch/delete/stream/fork）owner 访问自己会话
+# 不应被 owner gate 误伤成 404 —— 断言 != 404，从而「过度收紧把 owner 也 404」
+# 的实现会在此处被抓住，而非仅靠回归套件。
+# ============================================================================
+
+
+OWNER_ALLOWED_CASES = [
+    {"id": "#3 detail owner-allowed", "kind": "conversation", "method": "get",
+     "path": "/api/chat/conversations/{cid}/", "body": None},
+    {"id": "#7 runtime owner-allowed", "kind": "conversation", "method": "get",
+     "path": "/api/chat/conversations/{cid}/runtime/", "body": None},
+    {"id": "#5 patch owner-allowed", "kind": "conversation", "method": "patch",
+     "path": "/api/chat/conversations/{cid}/", "body": {"title": "renamed by owner"}},
+    {"id": "#4 delete owner-allowed", "kind": "conversation", "method": "delete",
+     "path": "/api/chat/conversations/{cid}/", "body": None},
+    {"id": "#10 stream owner-allowed", "kind": "conversation", "method": "post",
+     "path": "/api/chat/conversations/{cid}/stream/", "body": {"content": "hi"}},
+    {"id": "#9 fork owner-allowed", "kind": "fork", "method": "post",
+     "path": "/api/chat/conversations/{cid}/messages/{mid}/fork/", "body": {"content": "edited by owner"}},
+]
+
+
+@pytest.mark.django_db(transaction=True)
+class TestOwnerCanAccess:
+    """ISO-02 正向：owner 访问自己会话的对象级主路径不被 owner gate 误伤成 404。"""
+
+    @pytest.mark.parametrize(
+        "case", OWNER_ALLOWED_CASES, ids=[c["id"] for c in OWNER_ALLOWED_CASES]
+    )
+    async def test_owner_can_access(self, case, owner_and_token, owner_headers, project):
+        """owner 自己的会话主路径不应返回 404（防过度收紧的 gate）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+        fmt: dict = {"cid": conv.id}
+        if case["kind"] == "fork":
+            msg = await _acreate_message(conv)
+            fmt["mid"] = msg.id
+
+        url = case["path"].format(**fmt)
+        client = AsyncClient()
+        method = getattr(client, case["method"])
+        kwargs: dict = {"headers": owner_headers}
+        if case["body"] is not None:
+            kwargs["data"] = json.dumps(case["body"])
+            kwargs["content_type"] = "application/json"
+        resp = await method(url, **kwargs)
+
+        assert resp.status_code != 404, (
+            f"{case['id']}: owner 自己的会话不应返回 404（拿到 {resp.status_code}）"
+        )
