@@ -190,6 +190,14 @@ WORKFLOW_IDEMPOTENCY_REDIS_URL = env.str(
 WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", IS_PRODUCTION)
 
 # =============================================================================
+# Runner 注册
+# =============================================================================
+# 共享注册令牌（GitLab 风格）：容器化部署时 server 与 runner 通过同一个
+# RUNNER_REGISTRATION_TOKEN 完成自动注册，无需先在 UI 创建一次性令牌。
+# 留空则禁用共享令牌，仅接受 UI 创建的一次性 RegistrationToken。
+RUNNER_REGISTRATION_TOKEN = env.str("RUNNER_REGISTRATION_TOKEN", default="")
+
+# =============================================================================
 # Database
 # =============================================================================
 # 支持多种数据库，通过 DATABASE_URL 环境变量配置
@@ -262,7 +270,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # =============================================================================
 
 REST_FRAMEWORK = {
+    # PAT 类必须排首位：它对非 friday_pat_ 前缀的 Bearer return None 让行，CookieJWT
+    # 接住 JWT（前缀闸门，互不吞）。反之若 CookieJWT 在前，会对 friday_pat_ Bearer 抛
+    # InvalidToken，PAT 类永远跑不到（Pitfall 1）。站点级 401 由 PAT 类的
+    # authenticate_header 保住（Pitfall 2）。
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "access_tokens.authentication.AccessTokenAuthentication",
         "common.authentication.CookieJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
