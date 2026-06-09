@@ -1653,6 +1653,19 @@ class CodingSessionConfirmView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # owner gate（ISO-04，主/外层）：经 session.conversation 反查 owner，置于
+        # 任何状态机校验/字段读取之前；越权 → 404（与「未找到」同体，隐藏存在性）。
+        # 用 created_by_id 比对避免 async 惰性 FK；无 superuser bypass（ISO-03）。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         # implementation: 处理前端传入的分支名覆盖
         branch_name = request.data.get("branch_name") if request.data else None
         if branch_name:
@@ -1767,8 +1780,21 @@ class CommitConfirmView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -1794,8 +1820,21 @@ class CommitConfirmView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -1857,9 +1896,20 @@ class PRConfirmView(APIView):
 
         try:
             coding_session = await CodingSession.objects.select_related(
-                "repository",
+                "repository", "conversation",
             ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -1895,8 +1945,21 @@ class PRConfirmView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -2008,8 +2071,21 @@ class ConflictCheckView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -2032,8 +2108,21 @@ class DiffSummaryView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，越权 → 404。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and coding_session.conversation.created_by_id != user.id
+        ):
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -2059,9 +2148,10 @@ class CodingSessionListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 验证 conversation 存在
+        # owner-scoped 存在性校验（ISO-02/04）：越权或不存在统一返回 []，
+        # 不列他人会话下的 coding-session（保持既有「missing 返回 []」语义）。
         try:
-            await Conversation.objects.select_related("project").aget(id=conversation_id)
+            await ConversationService.aget_for_user(conversation_id, request.user)
         except Conversation.DoesNotExist:
             return Response([], status=status.HTTP_200_OK)
 
@@ -2086,12 +2176,27 @@ class CodingSessionDetailView(APIView):
         from .models import CodingSession
 
         try:
-            session = await CodingSession.objects.aget(id=session_id)
+            session = await CodingSession.objects.select_related(
+                "conversation"
+            ).aget(id=session_id)
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        # owner gate（ISO-04）：经 session.conversation 反查 owner，置于序列化之前，
+        # 越权 → 404；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and session.conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"detail": "CodingSession not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         serializer = CodingSessionSerializer(session)
         return Response(serializer.data)
 
