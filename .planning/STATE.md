@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 11-02 complete — task 容器侧机制：core/remote_tools.py（schema→SdkMcpTool 动态注册 + PAT 回调 handler + 401/403/非200/传输错误 graceful）+ TaskConfig 三字段（FRIDAY_TASK_ 自动 JSON 解码）+ executor 条件挂载 mcp_servers/allowed_tools；11-01 task RED 全转 GREEN（35 passed/3 skipped），PAT 仅进 header 不入日志，零新增依赖；Phase 11 进度 2/4
-last_updated: "2026-06-10T02:20:00.000Z"
-last_activity: 2026-06-10 -- Plan 11-02 complete（task 容器侧 RemoteTool 机制）
+stopped_at: Plan 11-03 complete — runner buildContainerEnv 注入 FRIDAY_TASK_REMOTE_TOOLS（前缀修复，TaskConfig 可读），USER_TOKEN/TOOLS_ENDPOINT 经既有 metadata env_ 透传；runner RED 转 GREEN，gofmt 干净，go build 通过，PAT 不进日志；Phase 11 进度 3/4
+last_updated: "2026-06-09T18:21:52.338Z"
+last_activity: 2026-06-09
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 11
-Last activity: 2026-06-10 -- Plan 11-02 complete（task 容器侧 RemoteTool 机制）
+Plan: 4 of 4
+Status: Ready to execute
+Last activity: 2026-06-09
 
-Progress: [██████████] 100%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [██████████] 100%
 | Phase 10 P03 | 12min | 3 tasks | 4 files |
 | Phase 11 P01 | 14min | 3 tasks | 4 files |
 | Phase 11 P02 | 9min | 3 tasks | 4 files |
+| Phase 11 P03 | 4min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,7 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 11]: [11-02] handler 不 raise_for_status，显式 status_code 分支（401/403→令牌失效 / !=200→HTTP{code} / 传输错误→catch httpx.HTTPError）全 return is_error 不抛（RTOOL-04 graceful）
 - [Phase 11]: [11-02] TaskConfig.remote_tools 走 pydantic v2 复杂类型 env 自动 JSON 解码（A2 首选，实测通过，无需 model_validator+json.loads 兜底）
 - [Phase 11]: [11-02] executor 装配 options_kwargs dict 条件加 mcp_servers/allowed_tools（仅 build_remote_tools_mcp_server 非 None 时），log 加 has_user_token bool + remote_tool_count，绝不记 PAT 明文
+- [Phase 11]: [11-03] FRIDAY_TASK_REMOTE_TOOLS 复用既有 remoteTools JSON 单源双键（旧 FRIDAY_REMOTE_TOOLS 保留），前缀修复使 TaskConfig 可读；USER_TOKEN/TOOLS_ENDPOINT 零新增 Go 代码经 metadata env_ 透传，runner 不记 env 值
 
 ### Pending Todos
 
@@ -148,8 +150,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T02:20:00.000Z
-Stopped at: Plan 11-02 complete — task 容器侧 RemoteTool 机制（remote_tools.py SDK MCP server + PAT 回调 + graceful + TaskConfig 三字段 + executor 条件挂载），task RED 全 GREEN，PAT 不入日志，回归不退；Phase 11 进度 2/4
+Last session: 2026-06-09T18:21:52.329Z
+Stopped at: Plan 11-03 complete — runner buildContainerEnv 注入 FRIDAY_TASK_REMOTE_TOOLS（前缀修复，TaskConfig 可读），USER_TOKEN/TOOLS_ENDPOINT 经既有 metadata env_ 透传；runner RED 转 GREEN，gofmt 干净，go build 通过，PAT 不进日志；Phase 11 进度 3/4
 Resume file: None
 
 ## Operator Next Steps
