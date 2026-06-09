@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: executing
+status: ready_to_plan
 stopped_at: Plan 08-04 complete — 关联模型端点 #13-25 owner gate 接线（coding-session/plan + trace/clarification，去 superuser bypass），全 25 路径隔离套件全绿；Phase 8 完成（4/4）
 last_updated: "2026-06-09T14:48:00.000Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 10
   completed_plans: 10
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 08 (对话/会话用户隔离) — COMPLETE (4/4)
-Plan: 4 of 4 (complete)
-Status: Phase 8 隔离面闭合（全 25 路径 cross-user-denied GREEN）
+Phase: 9
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-09
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 13
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -47,6 +47,7 @@ Progress: [██████████] 100%
 | 5 | 1 | - | - |
 | 06 | 3 | - | - |
 | 07 | 3 | - | - |
+| 08 | 4 | - | - |
 
 **Recent Trend:**
 
