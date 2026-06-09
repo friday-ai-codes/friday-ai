@@ -1,0 +1,117 @@
+"""RTOOL-01/MCPB-02 锁名测试桩：PAT 认证的 RemoteTool 执行端点 fail-closed + 审计（Wave 0）。
+
+在执行端点（10-02）落地前，先用锁名测试把执行端点的可验证安全契约钉死：
+
+- RTOOL-01：有效 PAT 经完整 DRF 链路按 name 执行 → 200 + executor ``{ok: True, ...}``。
+- RTOOL-01：匿名请求 → 401（fail-closed，per Pitfall 2，断言精确 401 而非 403 降级）。
+- RTOOL-01/IDENT-05：吊销 PAT → 401。
+- RTOOL-01：未知工具 → 200 + ``{ok: False, error.code == "not_found"}``（透传 executor 契约）。
+- MCPB-02/IDENT-04：执行建审计 ``InteractionRun``，``token_fingerprint == token_hash``（绝不明文）。
+
+约定（per 10-01 plan）：执行端点 URL 硬编码 ``/api/tools/execute/``（末尾带 ``/``），
+真实 PAT 经 ``client.credentials(HTTP_AUTHORIZATION="Bearer <plaintext>")`` 注入。
+execute_tool 桩以 ``monkeypatch.setattr("tools.views.execute_tool", _stub, raising=False)``
+注入（10-02 之前 tools.views 无该符号 → raising=False 不报错）。
+
+预期 RED：端点未实现（404）。实现（10-02）落地后转 GREEN。
+任何状态下都不应出现 collection / import error。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+import pytest
+
+# access_tokens 已实现（Phase 7）；importorskip 守卫保住「模块缺失则整文件 skip」。
+pytest.importorskip("access_tokens.models")
+
+from rest_framework.test import APIClient  # noqa: E402
+
+from interactions.models import InteractionRun  # noqa: E402
+
+pytestmark = pytest.mark.django_db
+
+EXECUTE_URL = "/api/tools/execute/"
+
+
+async def _stub_ok(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """execute_tool 成功桩：透传 executor 的 {ok: True, result} 契约。"""
+    return {"ok": True, "result": {"echo": name, "args": arguments}}
+
+
+def test_pat_execute_ok(
+    monkeypatch: pytest.MonkeyPatch,
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """RTOOL-01：有效 PAT → 200 + resp.data["ok"] is True（executor 透传）。"""
+    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    _token, plaintext = make_access_token(name="exec-ok")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(
+        EXECUTE_URL, {"name": "x", "arguments": {}}, format="json"
+    )
+
+    assert resp.status_code == 200
+    assert resp.data["ok"] is True
+
+
+def test_anonymous_401() -> None:
+    """RTOOL-01：匿名请求 → 401（fail-closed，per Pitfall 2，绝不降级 403）。"""
+    client = APIClient()
+    resp = client.post(EXECUTE_URL, {"name": "x", "arguments": {}}, format="json")
+    assert resp.status_code == 401
+
+
+def test_revoked_pat_401(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """RTOOL-01/IDENT-05：吊销 PAT → 401。"""
+    _token, plaintext = make_access_token(name="exec-revoked", revoked=True)
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(
+        EXECUTE_URL, {"name": "x", "arguments": {}}, format="json"
+    )
+    assert resp.status_code == 401
+
+
+def test_unknown_tool_ok_false(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """RTOOL-01：未知工具 → 200 + {ok: False, error.code == "not_found"}（不 mock executor）。"""
+    _token, plaintext = make_access_token(name="exec-unknown")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(
+        EXECUTE_URL, {"name": "does_not_exist", "arguments": {}}, format="json"
+    )
+
+    assert resp.status_code == 200
+    assert resp.data["ok"] is False
+    assert resp.data["error"]["code"] == "not_found"
+
+
+def test_execute_records_run(
+    monkeypatch: pytest.MonkeyPatch,
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """MCPB-02/IDENT-04：执行建审计 InteractionRun，fingerprint=token_hash（无明文）。"""
+    monkeypatch.setattr("tools.views.execute_tool", _stub_ok, raising=False)
+    token, plaintext = make_access_token(name="exec-audit")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    resp = client.post(
+        EXECUTE_URL, {"name": "x", "arguments": {}}, format="json"
+    )
+    assert resp.status_code == 200
+
+    # 审计：以令牌 hash 作指纹建 run（绝不存明文）。
+    assert InteractionRun.objects.filter(
+        token_fingerprint=token.token_hash
+    ).exists()
