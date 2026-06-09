@@ -29,11 +29,27 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **自托管部署**：Docker Compose（server/web/runner/postgres/redis/qdrant），含 CI/CD 与预构建镜像 — existing (`docker-compose.yaml`, `.github/workflows/`)
 - ✓ **首启初始化向导**：无 superuser 时首次访问进入向导，自设管理员并自动登录；向导内一键预设配 Anthropic 兼容供应商（Fernet 加密 + 健康校验 + 绑 Claude Code）+ 安全密钥校验 + 可选飞书/RAG 步骤；fail-closed 防重入/防接管；entrypoint 去自动建号、运维命令保留 — v0.1.0 (`server/accounts/`, `server/system/`, `web/src/pages/setup.vue`)
 
+## Current Milestone: v0.2.0 用户身份令牌与 Agent 工具打通
+
+**Goal:** 让每个用户拥有 GitHub/GitLab 风格的个人访问令牌，以"用户身份 + 用户权限"调用 API；在此基础上实现会话用户隔离、MCP 完整配置、RemoteTool 链路接通，使 skill/mcp 工具能以用户令牌在容器内真正执行。
+
+**Target features:**
+- 个人访问令牌增强：名称 + 备注、有效期（默认永久、不可延期）、明文仅展示一次、仅存 hash、展示前后几位便于区分；用户可自助添加/删除（吊销）
+- 令牌即用户身份：携带 token 调用 = 以该用户身份 + 该用户的权限访问 API（替代现状"有效即全权限"），暂不做读写 scope 细分
+- 对话/会话用户隔离：用户仅能查看/操作属于自己（或自己有权限）的会话
+- MCP 用户令牌配置：用户在 Friday 生成令牌并绑定给 skill/mcp，MCP 工具以该用户令牌执行
+- RemoteTool 链路接通：task 容器消费 `remote_tools`，agent 真正调用 skill/mcp（含用户令牌注入）
+
 ### Active
 
-<!-- 当前里程碑 v0.2.0「访问令牌与 Agent 集成」要建的目标。由 /gsd-new-milestone 填充。 -->
+<!-- 当前里程碑 v0.2.0 的目标。上线并验证后移入 Validated。由 REQUIREMENTS.md 细化为 REQ。 -->
 
-_v0.1.0 已归档（见 `.planning/milestones/`）。v0.2.0 目标将由新里程碑流程写入。_
+- [ ] 个人访问令牌：名称 + 备注、可选有效期（默认永久）、不可延期、明文仅展示一次、存 hash、展示前后几位
+- [ ] 用户自助管理令牌：添加 / 删除（吊销），不提供延期
+- [ ] 令牌即用户身份：携带 token 的请求以令牌所有者身份鉴权并施加其权限（GitHub/GitLab PAT 语义）
+- [ ] 对话/会话用户隔离：list/detail/create/delete/stream 等核心路径按当前用户过滤
+- [ ] MCP 工具以用户令牌执行：用户配置令牌后，MCP/skill 调用绑定到该用户身份
+- [ ] RemoteTool 链路接通：task 容器读取并使用 `remote_tools`，skill/mcp 工具真正被 agent 调用
 
 ### Out of Scope
 

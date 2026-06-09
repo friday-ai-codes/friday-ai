@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1.0
-milestone_name: milestone
-status: Awaiting next milestone
-stopped_at: Plan 01-01 complete — backend setup gate implemented (8 tests passed)
-last_updated: "2026-06-09T09:47:07.821Z"
-last_activity: 2026-06-09 — Milestone v0.1.0 completed and archived
+milestone: v0.2.0
+milestone_name: 用户身份令牌与 Agent 工具打通
+status: planning
+last_updated: "2026-06-09T09:51:13.472Z"
+last_activity: 2026-06-09
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-07)
 
 ## Current Position
 
-Phase: Milestone v0.1.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-09 — Milestone v0.1.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-09 — Milestone v0.2.0 started
 
 ## Performance Metrics
 
