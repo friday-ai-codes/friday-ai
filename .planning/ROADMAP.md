@@ -76,7 +76,10 @@
   3. 管理员在普通 AI 对话界面默认也只看自己的会话（与普通用户行为一致）
   4. 用户 B 直取用户 A 的会话 id（含 SSE/WebSocket 流式入口与对象级操作）返回 403/404，不泄漏会话存在性
 **Constraints**: 历史 backfill 是本阶段第一个 plan（Pitfall 4），迁移分两步（加 `null=True` 列 + 索引 → data migration 回填给最早 superuser），回填完成前不收紧 `null=False`；收口 `get_owned_conversation_or_404`，所有按 id 取会话入口必经它，SSE/WebSocket 纳入同阶段验收（Pitfall 5）
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 08-01-PLAN.md — Wave 0 验证脚手架（RED）：新增 test_conversation_isolation.py 覆盖全部 25 路径 cross-user-denied（404）+ created_by + 管理员无 bypass + 回填 + 开放模式不变；conftest 补 created_by/second_user
+- [ ] 08-02-PLAN.md — 模型与服务地基：Conversation.created_by FK + 0018 AddField + 0019 RunPython 回填（最早 superuser by created_at，可逆）+ ConversationService.aget_for_user owner gate + list/create/delete/fork 注入 user
+- [ ] 08-03-PLAN.md — views.py owner gate：全部 25 个会话访问路径接入 owner gate（404 非 403，无 superuser bypass）+ 新建会话 created_by 注入 + SSE/interrupt 开流前拦截
 
 ### Phase 9: 管理员会话管理后台（只读）
 **Goal**: 管理员有一个独立的只读会话管理后台浏览所有用户的会话，需交互时 fork 一份归到自己名下
