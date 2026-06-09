@@ -18,11 +18,11 @@
 
 ### 令牌即用户身份 (IDENT)
 
-- [ ] **IDENT-01**: 携带有效令牌的请求以令牌所有者身份被认证（`request.user` = owner），并施加该用户的 RBAC 权限（暂不做读写 scope 细分）
-- [ ] **IDENT-02**: 令牌认证按 `friday_pat_` 前缀闸门识别，PAT 与 JWT（同用 Bearer）互不吞掉，认证类顺序明确
+- [x] **IDENT-01**: 携带有效令牌的请求以令牌所有者身份被认证（`request.user` = owner），并施加该用户的 RBAC 权限（暂不做读写 scope 细分）
+- [x] **IDENT-02**: 令牌认证按 `friday_pat_` 前缀闸门识别，PAT 与 JWT（同用 Bearer）互不吞掉，认证类顺序明确
 - [ ] **IDENT-03**: MCP/工具入口从 `AllowAny` 收紧为要求认证（fail-closed），匿名请求不可调用
-- [ ] **IDENT-04**: 令牌鉴权后审计链路保持不断（`request.auth` 仍为令牌实例，InteractionRun fingerprint 正常记录）
-- [ ] **IDENT-05**: 已吊销/已过期令牌一律被拒，不能用于任何用户身份调用
+- [x] **IDENT-04**: 令牌鉴权后审计链路保持不断（`request.auth` 仍为令牌实例，InteractionRun fingerprint 正常记录）
+- [x] **IDENT-05**: 已吊销/已过期令牌一律被拒，不能用于任何用户身份调用
 
 ### 对话/会话用户隔离 (ISO)
 
@@ -85,11 +85,11 @@
 | PAT-04 | Phase 6 | Complete |
 | PAT-05 | Phase 6 | Complete |
 | PAT-06 | Phase 6 | Complete |
-| IDENT-01 | Phase 7 | Pending |
-| IDENT-02 | Phase 7 | Pending |
+| IDENT-01 | Phase 7 | Complete |
+| IDENT-02 | Phase 7 | Complete |
 | IDENT-03 | Phase 7 | Pending |
-| IDENT-04 | Phase 7 | Pending |
-| IDENT-05 | Phase 7 | Pending |
+| IDENT-04 | Phase 7 | Complete |
+| IDENT-05 | Phase 7 | Complete |
 | ISO-01 | Phase 8 | Pending |
 | ISO-02 | Phase 8 | Pending |
 | ISO-03 | Phase 8 | Pending |
