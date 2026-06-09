@@ -61,7 +61,10 @@
   4. 已吊销/已过期令牌一律被拒，不能用于任何用户身份调用
   5. 令牌鉴权后审计仍正常：`request.auth` 为令牌实例，InteractionRun fingerprint 正确记录且不含明文
 **Constraints**: 「改 authenticate 返回值」与「逐入口权限 audit」必须同阶段交付（Pitfall 1）；`authenticate` 开头加 `friday_pat_` 前缀闸门、非 PAT Bearer 返回 None（Pitfall 2）；认证类保持纯同步 ORM + `select_related("created_by")` 预取防 async `SynchronousOnlyOperation`（Pitfall 6）；保持 `request.auth` 为 AccessToken 实例（Pitfall 3）
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 07-01-PLAN.md — Wave 0 验证脚手架（RED）：test_valid_token_passes owner 断言 + 新 test_pat_identity（前缀闸门/owner 身份/PAT·JWT 共存）+ MCP fail-closed authentication_failed
+- [ ] 07-02-PLAN.md — 认证地基：authentication.py 返回 (owner, token) + friday_pat_ 闸门 + authenticate_header（保 401）+ settings 认证类 PAT 优先
+- [ ] 07-03-PLAN.md — MCP 入口 fail-closed：McpToolView 基类收紧 IsAuthenticated + 显式 auth 类（17 子类全继承）
 
 ### Phase 8: 对话/会话用户隔离
 **Goal**: 每个会话记录创建者，普通用户与管理员在 AI 对话中默认只能访问自己的会话，越权访问安全拒绝
