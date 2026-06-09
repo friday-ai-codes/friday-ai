@@ -19,9 +19,9 @@ const props = withDefaults(
   defineProps<{ showPrev?: boolean, qdrantBundled?: boolean, qdrantManagedUrl?: string }>(),
   { showPrev: false, qdrantBundled: false, qdrantManagedUrl: '' },
 )
+const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 // 托管时锁定的 Qdrant 地址：优先用后端回传的真实 env 地址，回退到 compose 内置默认
 const lockedQdrantUrl = props.qdrantManagedUrl || 'http://qdrant:6333'
-const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 const { t } = useI18n()
 
 const DOUBAO_URL = 'https://www.volcengine.com/product/doubao'

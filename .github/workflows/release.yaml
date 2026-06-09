@@ -16,6 +16,11 @@ env:
   # 强制所有 JavaScript action 跑在 Node.js 24 上（GitHub 2026-06-16 起默认），
   # 消除 upload/download-artifact、git-cliff-action 等仍声明 Node 20 的弃用警告。
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 关闭 docker/build-push-action 的 build summary：它会往日志里塞一张内嵌
+  # PNG（base64），且失败时常因拿到 HTML 而报 "invalid character '<'"，
+  # 既污染日志又会盖住真正的构建错误。
+  DOCKER_BUILD_SUMMARY: false
+  DOCKER_BUILD_RECORD_UPLOAD: false
 
 jobs:
   # ── 1. 并行构建各服务的单架构镜像 ──────────────────
@@ -55,8 +60,10 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ github.ref_name }}
-          cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
+          # 跨 run 复用层缓存：用 registry 后端把缓存推到 ghcr 的 buildcache-* tag，
+          # 比 type=gha 更持久（不受每仓库 10GB LRU 驱逐限制）。按服务+架构分 tag 隔离。
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:buildcache-${{ matrix.platform.pair }}
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:buildcache-${{ matrix.platform.pair }},mode=max
 
       - name: Export digest
         run: |
