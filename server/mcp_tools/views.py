@@ -12,13 +12,14 @@ from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from rest_framework import serializers, status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from agents.tools.chat_tools import _list_indexed_paths, _scroll_file_from_collection
 from code_relations.models import ChunkRegistry
 from codegraph.models import Symbol
+from common.authentication import CookieJWTAuthentication
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from interactions.ledger import (
     arecord_event,
@@ -141,8 +142,8 @@ def _traces_from_evidence(evidence: Iterable[dict[str, Any]]) -> list[tuple[str,
 class McpToolView(APIView):
     """MCP tool 基类：token-only、统一错误、run/tool-call/trace helper。"""
 
-    authentication_classes = [AccessTokenAuthentication]
-    permission_classes = [AllowAny]
+    authentication_classes = [AccessTokenAuthentication, CookieJWTAuthentication]
+    permission_classes = [IsAuthenticated]
     tool_name = ""
 
     def handle_exception(self, exc: Exception) -> Response:
