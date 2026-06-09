@@ -10,6 +10,11 @@ permissions:
   contents: read
   pull-requests: read
 
+# 同一分支/PR 的新 push 自动取消仍在进行的旧 run，避免重复占用与长时间空转
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -50,17 +55,19 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.29.1
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-      - name: Install gitleaks
-        run: go install github.com/zricethezav/gitleaks/v8@v8.29.1
+      - name: Install gitleaks (prebuilt binary)
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
       - name: Scan Git history for secrets
-        run: '"$(go env GOPATH)/bin/gitleaks" detect --source . --redact --verbose'
+        run: gitleaks detect --source . --redact --verbose
 
   open-source-smoke:
     runs-on: ubuntu-latest
@@ -158,16 +165,42 @@ jobs:
         run: pnpm test:unit:coverage
       - name: Build
         run: pnpm build
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-coverage
+          path: web/coverage/
+          if-no-files-found: ignore
+
+  # e2e 拆出独立 job，跑在官方 Playwright 镜像里（浏览器 + 系统依赖已预装），
+  # 省去 `playwright install --with-deps`，并与 web-ci 的 lint/type/unit/build 并行。
+  # 镜像 tag 必须与 web/pnpm-lock.yaml 中解析到的 @playwright/test 版本一致（当前 1.57.0）。
+  web-e2e:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Playwright e2e smoke
         run: pnpm test:e2e:ci
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: web-coverage-and-playwright
+          name: playwright-report
           path: |
-            web/coverage/
             web/playwright-report/
             web/test-results/
           if-no-files-found: ignore
@@ -243,8 +276,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
       - name: Build task image
-        run: docker build -t friday-task:test task/
+        uses: docker/build-push-action@v6
+        with:
+          context: task
+          load: true
+          tags: friday-task:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Check image size
         run: |
           size=$(docker image inspect friday-task:test --format '{{.Size}}')
@@ -274,6 +314,7 @@ jobs:
       - commit-message
       - server-ci
       - web-ci
+      - web-e2e
       - docs-ci
       - runner-ci
       - task-ci
@@ -288,6 +329,7 @@ jobs:
           echo "commit-message: ${{ needs.commit-message.result }}"
           echo "server-ci: ${{ needs.server-ci.result }}"
           echo "web-ci: ${{ needs.web-ci.result }}"
+          echo "web-e2e: ${{ needs.web-e2e.result }}"
           echo "docs-ci: ${{ needs.docs-ci.result }}"
           echo "runner-ci: ${{ needs.runner-ci.result }}"
           echo "task-ci: ${{ needs.task-ci.result }}"
@@ -298,6 +340,7 @@ jobs:
             "${{ needs.commit-message.result }}" \
             "${{ needs.server-ci.result }}" \
             "${{ needs.web-ci.result }}" \
+            "${{ needs.web-e2e.result }}" \
             "${{ needs.docs-ci.result }}" \
             "${{ needs.runner-ci.result }}" \
             "${{ needs.task-ci.result }}" \
