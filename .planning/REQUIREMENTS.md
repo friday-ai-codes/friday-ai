@@ -40,12 +40,12 @@
 ### MCP/skill 绑定用户令牌 (MCPB)
 
 - [x] **MCPB-01**: 用户可在 Friday 中把自己的某个访问令牌持久绑定给 skill/mcp 使用（绑定关系入库）
-- [ ] **MCPB-02**: 被绑定的 skill/mcp 调用以该令牌所有者的身份与权限执行
+- [x] **MCPB-02**: 被绑定的 skill/mcp 调用以该令牌所有者的身份与权限执行
 - [x] **MCPB-03**: 用户可查看并解除自己的绑定
 
 ### RemoteTool 链路接通 (RTOOL)
 
-- [ ] **RTOOL-01**: 提供一个经令牌认证的 RemoteTool 执行端点（按工具 name 执行），供容器内 agent 回调调用
+- [x] **RTOOL-01**: 提供一个经令牌认证的 RemoteTool 执行端点（按工具 name 执行），供容器内 agent 回调调用
 - [ ] **RTOOL-02**: task 容器消费 `remote_tools`，claude-agent-sdk 通过 SDK MCP server 真正加载并调用这些工具（含 builtin/mcp/skill）
 - [ ] **RTOOL-03**: 用户令牌以直传 PAT 形态经 server→runner→task 注入容器，供 agent 以用户身份回调执行；日志/审计对令牌脱敏
 - [ ] **RTOOL-04**: 任务运行中令牌被吊销时，在途任务继续跑完，仅阻断后续新调用（graceful）
@@ -98,9 +98,9 @@
 | ADMVW-02 | Phase 9 | Complete |
 | ADMVW-03 | Phase 9 | Complete |
 | MCPB-01 | Phase 10 | Complete |
-| MCPB-02 | Phase 10 | Pending |
+| MCPB-02 | Phase 10 | Complete |
 | MCPB-03 | Phase 10 | Complete |
-| RTOOL-01 | Phase 10 | Pending |
+| RTOOL-01 | Phase 10 | Complete |
 | RTOOL-02 | Phase 11 | Pending |
 | RTOOL-03 | Phase 11 | Pending |
 | RTOOL-04 | Phase 11 | Pending |

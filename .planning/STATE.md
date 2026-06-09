@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 10-04 complete — 前端工具令牌绑定 UI（toolBindings types/api/store + Settings/Table/Dialog 三组件 + profile 绑定卡片）；vitest 5/5 GREEN（10-01 前端 spec 转绿）+ vue-tsc 清白；明文零进 store/渲染、client 零 /tools/execute 引用（后端端点 10-03 待补）
-last_updated: "2026-06-10T00:59:00.000Z"
-last_activity: 2026-06-10 -- Phase 10 Plan 04 complete (前端绑定 UI，10-01 spec GREEN)
+stopped_at: Plan 10-03 complete — 后端装配：绑定序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 条 RED 全转 GREEN，57 passed 回归不退，makemigrations --check 干净；Phase 10 → 4/4 完成
+last_updated: "2026-06-10T01:02:00.000Z"
+last_activity: 2026-06-10 -- Phase 10 Plan 03 complete (后端绑定/执行端点装配，MCPB+RTOOL-01 GREEN，Phase 10 完成)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 17
-  completed_plans: 16
-  percent: 94
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — EXECUTING
-Plan: 10-04 complete（剩 10-03 后端装配未完成）
-Status: Ready to execute (10-03)
-Last activity: 2026-06-10 -- Phase 10 Plan 04 complete (前端绑定 UI，10-01 spec GREEN)
+Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — COMPLETE (4/4)
+Plan: 10-03 complete（Phase 10 全部 plan 完成）
+Status: Phase 10 complete — ready for Phase 11 (task 容器接通)
+Last activity: 2026-06-10 -- Phase 10 Plan 03 complete (后端绑定/执行端点装配，MCPB+RTOOL-01 GREEN)
 
-Progress: [█████████▌] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -70,6 +70,7 @@ Progress: [█████████▌] 94%
 | Phase 10 P01 | 10min | 3 tasks | 4 files |
 | Phase 10 P02 | 6min | 2 tasks | 2 files |
 | Phase 10 P04 | 6min | 3 tasks | 7 files |
+| Phase 10 P03 | 12min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase ?]: 10-02 0003 迁移仅 CreateModel 无 RunPython (RESEARCH 零历史回填); migrate OK + makemigrations --check 干净, make_tool_binding 停止 skip
 - [Phase 10]: [10-04] 前端绑定 UI 镜像 accessTokens 范式：types↔serializer 一一对应 + setup-store 元数据-only + Settings/Table/Dialog 三件套；下拉仅列 is_valid 令牌（computed filter，Pitfall 5）
 - [Phase 10]: [10-04] upsertBinding 就地按 remote_tool 替换（unique(user,remote_tool) 语义）；浏览器 client grep 零 /tools/execute 引用（T-10 边界）；10-01 前端 spec 5/5 GREEN
+- [Phase 10]: [10-03] 绑定 create serializer access_token=PrimaryKeyRelatedField(queryset=all)+validate_access_token 归属断言 created_by==user（不限定 queryset，统一走 ValidationError 不泄漏存在性）；validate_remote_tool 校验 source∈{mcp,skill}+is_active
+- [Phase 10]: [10-03] 绑定 ViewSet owner 隔离 get_queryset(user=request.user) + acreate aupdate_or_create 收敛 upsert；执行端点 auth=[AccessTokenAuthentication] 仅 PAT + IsAuthenticated + handle_exception→401（不降级 403，mirror McpToolView）
+- [Phase 10]: [10-03] 执行端点不做绑定强校验（可执行任意 active 工具）；execute_tool 签名不变、不传 user（Phase 11 gap，RESEARCH Open Q1）；后端 12 RED 全 GREEN，57 passed 回归不退，Phase 10 完成 4/4
 
 ### Pending Todos
 
@@ -135,8 +139,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T00:59:00.000Z
-Stopped at: Plan 10-04 complete — 前端工具令牌绑定 UI（types/api/store + 三组件 + profile 卡片）；vitest 5/5 GREEN + vue-tsc 清白；明文零进 store/渲染（后端端点 10-03 待补）
+Last session: 2026-06-10T01:02:00.000Z
+Stopped at: Plan 10-03 complete — 后端装配：序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 RED 全 GREEN，57 passed 回归不退，makemigrations 干净；Phase 10 完成 4/4
 Resume file: None
 
 ## Operator Next Steps
