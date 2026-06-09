@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: "Plan 08-04 complete — 关联模型端点 #13-25 owner gate 接线（coding-session/plan + trace/clarification，去 superuser bypass）；全 25 路径隔离套件全绿，Phase 8 完成（4/4）"
-last_updated: "2026-06-09T15:32:14.572Z"
-last_activity: 2026-06-09 -- Phase 09 execution started
+stopped_at: "Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例，ADMVW-01/02/03 + 不可续聊）+ 前端 conversations.spec.ts（4 用例）；预期 RED，Phase 8 隔离套件 39 passed 全绿"
+last_updated: "2026-06-09T15:45:00.000Z"
+last_activity: 2026-06-09 -- Plan 09-01 complete (RED scaffold)
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 13
-  completed_plans: 10
-  percent: 77
+  completed_plans: 11
+  percent: 85
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 09 (管理员会话管理后台（只读）) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 09
-Last activity: 2026-06-09 -- Phase 09 execution started
+Plan: 2 of 3
+Status: Executing Phase 09 (09-01 RED 脚手架完成)
+Last activity: 2026-06-09 -- Plan 09-01 complete (RED scaffold)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 85%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [██████████] 100%
 | Phase 08 P02 | 12 | 3 tasks | 4 files |
 | Phase 08 P03 | 18 | 3 tasks | 1 files |
 | Phase 08 P04 | 22 | 3 tasks | 1 files |
+| Phase 09 P01 | 12 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,8 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 08]: [08-03] 两种 owner gate 风格：aget_for_user（detail/runtime/patch/stream/interrupt）+ created_by_id 比对（preflight/messages-delete/fork/export，已 select_related），统一 owner-miss → 404
 - [Phase 08]: [08-04] 关联模型端点 #13-25 经 .conversation FK 接线 owner gate（select_related("conversation") + created_by_id 比对 → 404；list 型 #13/#20 走 aget_for_user → []），全 25 路径隔离套件全绿
 - [Phase 08]: [08-04] #24/#25 去除 owner 判定的 superuser bypass（ISO-03，管理员越权 → 404）；#22 owner gate 前置覆盖旧 403→404；既有 has_project_access 降为 null-owner/共享行次层不 bypass owner gate
+- [Phase 09]: [09-01] admin gate 语义用 403（非管理员明确 403），区别于 Phase 8 普通路径越权的 404（不泄漏存在性）——admin 端点管理员有权看全部，非管理员应明确拒绝
+- [Phase 09]: [09-01] 「不可续聊」双重钉死：admin detail POST → 405（方法层）+ stream 子路径 → 404（路由层）；test_admin_no_stream_route 在 Wave 0 即 PASS 且 GREEN 后仍成立
 
 ### Pending Todos
 
@@ -116,8 +119,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T14:48:00.000Z
-Stopped at: Plan 08-04 complete — 关联模型端点 #13-25 owner gate 接线（coding-session/plan + trace/clarification，去 superuser bypass）；全 25 路径隔离套件全绿，Phase 8 完成（4/4）
+Last session: 2026-06-09T15:45:00.000Z
+Stopped at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
 Resume file: None
 
 ## Operator Next Steps
