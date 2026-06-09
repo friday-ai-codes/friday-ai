@@ -442,8 +442,22 @@ class SetupStatusView(APIView):
     permission_classes = [AllowAny]
 
     async def get(self, request):
+        import os
+
         is_initialized = await sync_to_async(User.objects.filter(is_superuser=True).exists)()
-        return Response({"is_initialized": is_initialized, "needs_setup": not is_initialized})
+        # 容器化部署（docker compose）默认内置并启动 Qdrant；置位后向导锁定 Qdrant 地址。
+        qdrant_bundled = os.environ.get("QDRANT_BUNDLED", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        return Response(
+            {
+                "is_initialized": is_initialized,
+                "needs_setup": not is_initialized,
+                "qdrant_bundled": qdrant_bundled,
+            }
+        )
 
 
 def _atomic_create_superuser(username: str, password: str, display_name: str):

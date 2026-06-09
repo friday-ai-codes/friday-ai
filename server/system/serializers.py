@@ -504,6 +504,14 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
 # ============================================================================
 
 
+class SetupProviderModelSerializer(serializers.Serializer):
+    """首启向导单个模型入参（多模型模式）。"""
+
+    id = serializers.CharField(max_length=128, allow_blank=False)
+    context_length = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    supports_vision = serializers.BooleanField(required=False, default=False)
+
+
 class ProviderSetupWizardSerializer(serializers.Serializer):
     """首启向导供应商配置入参（Phase 3 PROV-01/02/03/04/05）。
 
@@ -514,10 +522,14 @@ class ProviderSetupWizardSerializer(serializers.Serializer):
 
     api_key = serializers.CharField(write_only=True, trim_whitespace=False, allow_blank=False)
     base_url = serializers.CharField(allow_blank=False)
-    model = serializers.CharField(max_length=128, allow_blank=False)
+    # 兼容旧单模型入参；多模型模式下可省略（由 default_model + models 提供）。
+    model = serializers.CharField(max_length=128, required=False, allow_blank=True)
     name = serializers.CharField(max_length=64, required=False, default="default")
     context_length = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     supports_vision = serializers.BooleanField(required=False, default=False)
+    # 多模型模式：default_model 为默认模型，models 为该供应商可用模型清单。
+    default_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    models = SetupProviderModelSerializer(many=True, required=False)
 
     def validate_base_url(self, value: str) -> str:
         cleaned = (value or "").strip()
@@ -525,11 +537,47 @@ class ProviderSetupWizardSerializer(serializers.Serializer):
             raise serializers.ValidationError("请填写接口地址（Base URL）")
         return cleaned
 
-    def validate_model(self, value: str) -> str:
-        cleaned = (value or "").strip()
-        if not cleaned:
-            raise serializers.ValidationError("请填写默认模型")
-        return cleaned
+    def validate(self, attrs: dict) -> dict:
+        """归一化：保证存在一个非空默认模型，并把 models 收敛为去重清单。
+
+        - default_model 优先取 default_model，其次 model；两者皆空时报错。
+        - models 为空时用默认模型兜底成单元素清单（兼容旧入参）。
+        - 确保 default_model ∈ models。
+        """
+        default_model = (attrs.get("default_model") or attrs.get("model") or "").strip()
+        if not default_model:
+            raise serializers.ValidationError({"default_model": "请填写默认模型"})
+
+        raw_models = attrs.get("models") or []
+        normalized: list[dict] = []
+        seen: set[str] = set()
+        for item in raw_models:
+            mid = (item.get("id") or "").strip()
+            if not mid or mid in seen:
+                continue
+            seen.add(mid)
+            normalized.append(
+                {
+                    "id": mid,
+                    "context_length": item.get("context_length"),
+                    "supports_vision": bool(item.get("supports_vision", False)),
+                }
+            )
+
+        if default_model not in seen:
+            normalized.insert(
+                0,
+                {
+                    "id": default_model,
+                    "context_length": attrs.get("context_length"),
+                    "supports_vision": bool(attrs.get("supports_vision", False)),
+                },
+            )
+
+        attrs["default_model"] = default_model
+        attrs["model"] = default_model
+        attrs["models"] = normalized
+        return attrs
 
 
 # ============================================================================

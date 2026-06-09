@@ -42,6 +42,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
     volumes:
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
     networks:

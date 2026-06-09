@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import type { ProviderPreset } from '~/lib/providerPresets'
+import type { PresetModel, ProviderPreset } from '~/lib/providerPresets'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
+import { computed, ref } from 'vue'
 import * as z from 'zod'
+import { providerCredentialsApi } from '~/api/providerCredentials'
 import { setupProvider } from '~/api/setup'
 import { Button } from '~/components/ui/button'
 import {
@@ -15,12 +17,20 @@ import {
 import { Input } from '~/components/ui/input'
 import { DEFAULT_PRESET, PROVIDER_PRESETS } from '~/lib/providerPresets'
 
-const emit = defineEmits<{ done: [], skip: [] }>()
+const props = withDefaults(defineProps<{ showPrev?: boolean }>(), { showPrev: false })
+const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 const { t } = useI18n()
 
 const selectedPresetId = ref(DEFAULT_PRESET.id)
 const submitError = ref<string | null>(null)
 const isSubmitting = ref(false)
+
+// 模型清单（本地状态，预设加载 / 获取 / 手动增删都改这里）
+const models = ref<PresetModel[]>(DEFAULT_PRESET.models.map(m => ({ ...m })))
+const selectedModelId = ref<string>(DEFAULT_PRESET.models[0]?.id ?? '')
+const manualModel = ref('')
+const isFetchingModels = ref(false)
+const fetchModelsError = ref<string | null>(null)
 
 const selectedPreset = computed<ProviderPreset>(
   () => PROVIDER_PRESETS.find(p => p.id === selectedPresetId.value) ?? DEFAULT_PRESET,
@@ -28,42 +38,114 @@ const selectedPreset = computed<ProviderPreset>(
 
 const formSchema = toTypedSchema(z.object({
   baseUrl: z.string().min(1, t('setup.provider.validation.baseUrlRequired')),
-  model: z.string().min(1, t('setup.provider.validation.modelRequired')),
   apiKey: z.string().min(1, t('setup.provider.validation.apiKeyRequired')),
 }))
 
-const { handleSubmit, setFieldValue } = useForm({
+const { handleSubmit, setFieldValue, values } = useForm({
   validationSchema: formSchema,
   initialValues: {
     baseUrl: DEFAULT_PRESET.baseUrl,
-    model: DEFAULT_PRESET.model,
     apiKey: '',
   },
 })
 
 function selectPreset(preset: ProviderPreset) {
   selectedPresetId.value = preset.id
-  // 预设自动填充 base_url + model（仍可编辑纠错）；自定义预设清空待用户填写
   setFieldValue('baseUrl', preset.baseUrl)
-  setFieldValue('model', preset.model)
+  models.value = preset.models.map(m => ({ ...m }))
+  selectedModelId.value = preset.models[0]?.id ?? ''
+  fetchModelsError.value = null
+}
+
+function selectModel(id: string) {
+  selectedModelId.value = id
+}
+
+function removeModel(id: string) {
+  models.value = models.value.filter(m => m.id !== id)
+  if (selectedModelId.value === id)
+    selectedModelId.value = models.value[0]?.id ?? ''
+}
+
+function addModel(id: string, contextLength: number | null = null, supportsVision = false): void {
+  const clean = id.trim()
+  if (!clean)
+    return
+  if (!models.value.some(m => m.id === clean))
+    models.value = [...models.value, { id: clean, contextLength, supportsVision }]
+  selectedModelId.value = clean
+}
+
+function confirmManualModel() {
+  const clean = manualModel.value.trim()
+  if (!clean)
+    return
+  addModel(clean)
+  manualModel.value = ''
 }
 
 function formatContext(n: number | null): string {
   if (!n)
     return ''
+  if (n >= 1_000_000)
+    return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
   return n >= 1000 ? `${Math.round(n / 1000)}K` : String(n)
+}
+
+/** 获取模型列表：与系统设置新建 Provider 完全一致的无状态拉取逻辑。 */
+async function handleFetchModels() {
+  const baseUrl = String(values.baseUrl ?? '').trim()
+  const apiKey = String(values.apiKey ?? '').trim()
+  if (!baseUrl || !apiKey) {
+    fetchModelsError.value = t('setup.provider.models.needCredentials')
+    return
+  }
+  isFetchingModels.value = true
+  fetchModelsError.value = null
+  try {
+    const resp = await providerCredentialsApi.fetchModelsStateless({
+      provider_type: 'anthropic',
+      config: { api_key: apiKey, base_url: baseUrl },
+    })
+    if (resp.available_models.length === 0) {
+      fetchModelsError.value = resp.error || t('setup.provider.models.empty')
+    }
+    else {
+      models.value = resp.available_models.map(m => ({
+        id: m.id,
+        contextLength: m.context_length ?? null,
+        supportsVision: Boolean(m.supports_vision),
+      }))
+      selectedModelId.value = resp.available_models[0].id
+    }
+  }
+  catch (e) {
+    fetchModelsError.value = e instanceof Error ? e.message : t('setup.provider.models.fetchFailed')
+  }
+  finally {
+    isFetchingModels.value = false
+  }
 }
 
 const onSubmit = handleSubmit(async (formValues) => {
   submitError.value = null
+  if (!selectedModelId.value || models.value.length === 0) {
+    submitError.value = t('setup.provider.models.required')
+    return
+  }
   isSubmitting.value = true
   try {
     await setupProvider({
       api_key: formValues.apiKey,
       base_url: formValues.baseUrl,
-      model: formValues.model,
-      context_length: selectedPreset.value.contextLength ?? undefined,
-      supports_vision: selectedPreset.value.supportsVision,
+      name: selectedPreset.value.id,
+      model: selectedModelId.value,
+      default_model: selectedModelId.value,
+      models: models.value.map(m => ({
+        id: m.id,
+        context_length: m.contextLength ?? undefined,
+        supports_vision: m.supportsVision,
+      })),
     })
     emit('done')
   }
@@ -99,6 +181,7 @@ const onSubmit = handleSubmit(async (formValues) => {
     </div>
 
     <form class="space-y-4" @submit="onSubmit">
+      <!-- 供应商预设选择 -->
       <div class="space-y-2">
         <p class="text-sm font-medium text-foreground/80">
           {{ t('setup.provider.presetLabel') }}
@@ -121,27 +204,30 @@ const onSubmit = handleSubmit(async (formValues) => {
                 class="icon-[lucide--check-circle-2] text-primary text-base flex-shrink-0"
               />
             </div>
-            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span
-                v-if="preset.contextLength"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground"
-              >
-                <span class="icon-[lucide--file-text] text-[0.7rem]" />
-                {{ t('setup.provider.caps.context', { n: formatContext(preset.contextLength) }) }}
-              </span>
-              <span
-                v-if="!preset.custom"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
-                :class="preset.supportsVision ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
-              >
-                <span :class="preset.supportsVision ? 'icon-[lucide--image]' : 'icon-[lucide--type]'" class="text-[0.7rem]" />
-                {{ preset.supportsVision ? t('setup.provider.caps.vision') : t('setup.provider.caps.textOnly') }}
-              </span>
-              <span class="text-xs text-muted-foreground/80">{{ preset.description }}</span>
-            </div>
+            <p class="mt-1 text-xs text-muted-foreground/80">
+              {{ preset.description }}
+            </p>
           </button>
         </div>
       </div>
+
+      <!-- 获取 API Key 引导 -->
+      <p
+        v-if="selectedPreset.apiKeyUrl"
+        class="flex items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <span class="icon-[lucide--info] text-sm flex-shrink-0" />
+        <span>{{ t('setup.provider.apiKeyGuide', { provider: selectedPreset.label }) }}</span>
+        <a
+          :href="selectedPreset.apiKeyUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-0.5 text-primary hover:underline"
+        >
+          {{ t('setup.provider.apiKeyGuideLink') }}
+          <span class="icon-[lucide--external-link] text-[0.7rem]" />
+        </a>
+      </p>
 
       <FormField v-slot="{ componentField }" name="baseUrl">
         <FormItem>
@@ -154,27 +240,6 @@ const onSubmit = handleSubmit(async (formValues) => {
               <Input
                 type="text"
                 placeholder="https://api.anthropic.com"
-                autocomplete="off"
-                class="pl-9"
-                v-bind="componentField"
-              />
-            </div>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      </FormField>
-
-      <FormField v-slot="{ componentField }" name="model">
-        <FormItem>
-          <FormLabel class="text-foreground/80 text-sm font-medium">
-            {{ t('setup.provider.fields.model') }}
-          </FormLabel>
-          <FormControl>
-            <div class="relative group">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--cpu] text-muted-foreground text-sm transition-colors group-focus-within:text-primary" />
-              <Input
-                type="text"
-                placeholder="claude-sonnet-4-5"
                 autocomplete="off"
                 class="pl-9"
                 v-bind="componentField"
@@ -206,29 +271,139 @@ const onSubmit = handleSubmit(async (formValues) => {
         </FormItem>
       </FormField>
 
-      <Button
-        type="submit"
-        class="w-full h-10 text-sm font-semibold mt-2"
-        :disabled="isSubmitting"
-      >
-        <template v-if="isSubmitting">
-          <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-          {{ t('setup.provider.testing') }}
-        </template>
-        <template v-else>
-          <span class="icon-[lucide--plug-zap] mr-2" />
-          {{ t('setup.provider.cta') }}
-        </template>
-      </Button>
+      <!-- 模型清单：选择默认模型 + 获取 / 手动增删 -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-sm font-medium text-foreground/80">
+            {{ t('setup.provider.models.label') }}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="h-7 text-xs"
+            :disabled="isFetchingModels"
+            @click="handleFetchModels"
+          >
+            <span
+              v-if="isFetchingModels"
+              class="icon-[lucide--loader-circle] mr-1.5 animate-spin"
+            />
+            <span v-else class="icon-[lucide--refresh-cw] mr-1.5" />
+            {{ isFetchingModels ? t('setup.provider.models.fetching') : t('setup.provider.models.fetch') }}
+          </Button>
+        </div>
 
-      <button
-        type="button"
-        class="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors pt-1"
-        :disabled="isSubmitting"
-        @click="emit('skip')"
-      >
-        {{ t('setup.provider.skip') }}
-      </button>
+        <div v-if="models.length > 0" class="grid grid-cols-1 gap-1.5">
+          <button
+            v-for="m in models"
+            :key="m.id"
+            type="button"
+            class="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors"
+            :class="m.id === selectedModelId
+              ? 'border-primary bg-primary/5'
+              : 'border-border/60 hover:border-border bg-card/40'"
+            @click="selectModel(m.id)"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <span
+                class="h-3.5 w-3.5 flex-shrink-0"
+                :class="m.id === selectedModelId
+                  ? 'icon-[lucide--circle-check] text-primary'
+                  : 'icon-[lucide--circle] text-muted-foreground/40'"
+              />
+              <span class="truncate text-sm" :class="m.id === selectedModelId ? 'text-primary font-medium' : 'text-foreground'">
+                {{ m.id }}
+              </span>
+            </span>
+            <span class="flex flex-shrink-0 items-center gap-1.5">
+              <span
+                v-if="m.contextLength"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground"
+              >
+                <span class="icon-[lucide--file-text] text-[0.7rem]" />
+                {{ t('setup.provider.caps.context', { n: formatContext(m.contextLength) }) }}
+              </span>
+              <span
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                :class="m.supportsVision ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+              >
+                <span :class="m.supportsVision ? 'icon-[lucide--image]' : 'icon-[lucide--type]'" class="text-[0.7rem]" />
+                {{ m.supportsVision ? t('setup.provider.caps.vision') : t('setup.provider.caps.textOnly') }}
+              </span>
+              <span
+                class="icon-[lucide--x] text-sm text-muted-foreground hover:text-destructive"
+                role="button"
+                :aria-label="`移除 ${m.id}`"
+                @click.stop="removeModel(m.id)"
+              />
+            </span>
+          </button>
+        </div>
+
+        <p
+          v-else
+          class="rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-3 text-center text-xs text-muted-foreground"
+        >
+          {{ t('setup.provider.models.empty') }}
+        </p>
+
+        <!-- 手动添加模型 -->
+        <div class="flex gap-2">
+          <Input
+            v-model="manualModel"
+            :placeholder="t('setup.provider.models.manualPlaceholder')"
+            class="flex-1 text-sm"
+            @keydown.enter.prevent="confirmManualModel"
+          />
+          <Button type="button" variant="secondary" size="sm" @click="confirmManualModel">
+            {{ t('setup.provider.models.add') }}
+          </Button>
+        </div>
+
+        <p v-if="fetchModelsError" class="flex items-center gap-1.5 text-xs text-destructive">
+          <span class="icon-[lucide--triangle-alert] flex-shrink-0" />
+          {{ fetchModelsError }}
+        </p>
+      </div>
+
+      <!-- 导航：上一步 / 跳过 / 完成 -->
+      <div class="flex items-center gap-2 pt-2">
+        <Button
+          v-if="props.showPrev"
+          type="button"
+          variant="outline"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('prev')"
+        >
+          <span class="icon-[lucide--arrow-left] mr-1.5" />
+          {{ t('setup.nav.prev') }}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('skip')"
+        >
+          {{ t('setup.nav.skip') }}
+        </Button>
+        <Button
+          type="submit"
+          class="h-10 flex-1 text-sm font-semibold"
+          :disabled="isSubmitting"
+        >
+          <template v-if="isSubmitting">
+            <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+            {{ t('setup.provider.testing') }}
+          </template>
+          <template v-else>
+            <span class="icon-[lucide--plug-zap] mr-2" />
+            {{ t('setup.provider.cta') }}
+          </template>
+        </Button>
+      </div>
     </form>
   </div>
 </template>
