@@ -370,7 +370,7 @@ class Migration(migrations.Migration):
 
 **If this table is empty:** N/A — confirm A1 and A2 with the user/executor before locking the plan.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **PAT access to chat conversation endpoints (A1).**
    - What we know: chat views accept JWT + chat-key only; PAT class is not in their `authentication_classes`.
