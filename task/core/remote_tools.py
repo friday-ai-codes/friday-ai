@@ -39,8 +39,10 @@ def _is_valid_tools_endpoint(endpoint: str) -> bool:
     新特性），可避免把 PAT 发往任意/恶意 host（如 ``javascript:`` / ``file://``）。
     镜像 ``server/workflows/nodes/ai/coding.py:_validate_anthropic_base_url``。
     """
+    if not isinstance(endpoint, str):
+        return False
     try:
-        parsed = urlparse(endpoint or "")
+        parsed = urlparse(endpoint)
     except ValueError:
         return False
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
@@ -149,9 +151,14 @@ def build_remote_tools_mcp_server(
     # 端点校验（防御性，WR-03）：scheme 非 http/https 或缺 host → 不挂 MCP server，
     # 即绝不向不可信/非法端点注入 PAT。
     if not _is_valid_tools_endpoint(tools_endpoint):
+        endpoint_scheme = (
+            urlparse(tools_endpoint).scheme
+            if isinstance(tools_endpoint, str)
+            else type(tools_endpoint).__name__
+        )
         logger.warning(
             "remote_tool_invalid_endpoint",
-            scheme=urlparse(tools_endpoint or "").scheme,
+            scheme=endpoint_scheme,
             tool_count=len(remote_tools),
         )
         return None
