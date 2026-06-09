@@ -131,6 +131,25 @@ def test_remote_allowed_tools_naming() -> None:
     ]
 
 
+@pytest.mark.asyncio
+async def test_malformed_schema_without_name_skipped() -> None:
+    """schema 列表中一条缺 name → 跳过坏条，不抛 KeyError，其余工具正常注册（WR-04）。"""
+    schemas: list[dict[str, Any]] = [
+        {"name": "a", "input_schema": {}},
+        {"description": "no name", "input_schema": {}},  # 坏条：缺 name
+    ]
+    config = build_remote_tools_mcp_server(schemas, TOOLS_ENDPOINT, SECRET_PAT)
+    assert config is not None
+    names = await _server_tool_names(config)
+    assert names == ["a"]
+
+
+def test_remote_allowed_tools_skips_missing_name() -> None:
+    """remote_allowed_tools 同样跳过无 name 的坏 schema，不抛 KeyError（WR-04）。"""
+    schemas: list[dict[str, Any]] = [{"name": "a"}, {"description": "no name"}]
+    assert remote_allowed_tools(schemas) == [f"mcp__{REMOTE_MCP_SERVER_NAME}__a"]
+
+
 # =========================================================================
 # RTOOL-02：handler 成功路径
 # =========================================================================
