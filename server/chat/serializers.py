@@ -199,6 +199,48 @@ class ConversationListSerializer(serializers.Serializer):
         return str(cred_id) if cred_id else None
 
 
+class _OwnerBriefSerializer(serializers.Serializer):
+    """会话 owner 简要信息（admin 列表跨用户展示用）。"""
+
+    id = serializers.UUIDField()
+    username = serializers.CharField()
+    display_name = serializers.CharField(allow_blank=True)
+
+
+class AdminConversationListSerializer(serializers.Serializer):
+    """管理员只读后台的会话列表项（ADMVW-01）。
+
+    在普通 ConversationListSerializer 字段基础上补充跨用户管理所需的
+    ``owner``（嵌套 {id, username, display_name}）与 ``message_count``
+    （来自 service 层 ``annotate(Count("messages"))``）。
+
+    **独立类，不污染** 既有 ConversationListSerializer / DetailSerializer 契约。
+    owner 用 SerializerMethodField 读 ``obj.created_by``（需 service 层
+    select_related 预取，None 安全），避免 async 序列化触发惰性 FK。
+    """
+
+    id = serializers.UUIDField()
+    space_id = serializers.UUIDField(source="project_id")
+    title = serializers.CharField()
+    status = serializers.CharField()
+    model = serializers.CharField(required=False, allow_blank=True)
+    message_count = serializers.IntegerField(read_only=True)
+    owner = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    def get_owner(self, obj) -> dict | None:
+        """读已预取的 created_by；None（历史/匿名/开放模式会话）安全返回 null。"""
+        user = getattr(obj, "created_by", None)
+        if user is None:
+            return None
+        return {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name or "",
+        }
+
+
 class ConversationMessageSerializer(serializers.Serializer):
     """对话消息。
 
