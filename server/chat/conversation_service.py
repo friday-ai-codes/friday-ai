@@ -822,6 +822,142 @@ class ConversationService:
         )
         return {"conversation": forked, "messages": messages}
 
+    # ========================================================================
+    # 管理员只读会话后台（ADMVW-01/02/03）—— 物理分离的 admin_* 业务方法。
+    #
+    # 这些方法**无 owner 过滤**（调用方在 view 层由 IsSuperUser 授权跨用户读取），
+    # 与 owner-scoped 的 aget_for_user / list_conversations / delete_conversation
+    # **完全独立**：不在普通路径加任何 superuser bypass（ISO-03 不回退）。
+    # ========================================================================
+
+    @staticmethod
+    async def admin_list_conversations(
+        owner_id: str | None = None,
+        q: str = "",
+    ) -> list[Conversation]:
+        """ADMVW-01：跨用户列出全部未删除会话（管理员只读后台）。
+
+        **无 created_by 过滤**（跨用户全集）；可选叠加 owner_id / 标题关键字过滤。
+        select_related("created_by", "project") 预取关联对象，避免 async 序列化时
+        惰性访问 FK 触发 SynchronousOnlyOperation（Pitfall 1）；
+        annotate(message_count=...) 供列表项展示消息数（无需 N+1 count）。
+
+        Args:
+            owner_id: 可选，按 created_by_id 过滤到单一 owner。
+            q: 可选，标题 icontains 关键字（ORM 参数化，无注入）。
+
+        Returns:
+            按 updated_at 降序排列的会话列表（每条带 message_count 注解）。
+        """
+        from django.db.models import Count
+
+        qs = (
+            Conversation.objects.filter(is_deleted=False)
+            .select_related("created_by", "project")
+            .annotate(message_count=Count("messages"))
+        )
+        if owner_id:
+            qs = qs.filter(created_by_id=owner_id)
+        if q:
+            qs = qs.filter(title__icontains=q)
+        return [c async for c in qs.order_by("-updated_at")]
+
+    @staticmethod
+    async def admin_get_with_messages(conversation_id: str) -> dict[str, Any]:
+        """ADMVW-01：取单个会话（无 owner 过滤）+ 其全部消息（管理员只读详情）。
+
+        与 owner-scoped 的 get_conversation_with_messages 区别：本方法面向管理员，
+        **不做 owner 过滤**（IsSuperUser 已授权跨用户读取）。会话 select_related
+        预取 created_by/project（Pitfall 1）；消息按 created_at 升序。
+
+        Raises:
+            Conversation.DoesNotExist: 会话不存在或已删除（view 兜成 404）。
+        """
+        conversation = await Conversation.objects.select_related(
+            "created_by",
+            "project",
+        ).aget(
+            id=conversation_id,
+            is_deleted=False,
+        )
+        messages = [
+            msg
+            async for msg in Message.objects.filter(
+                conversation=conversation,
+            ).order_by("created_at")
+        ]
+        return {"conversation": conversation, "messages": messages}
+
+    @staticmethod
+    async def admin_fork_to_own(
+        conversation_id: str,
+        admin_user: Any,
+    ) -> dict[str, Any]:
+        """ADMVW-03：把任意会话整份复制为一份归属当前管理员的新会话。
+
+        以 fork_conversation_before_message 为蓝本，**三处差异**：
+            1. created_by = 发起的管理员（显式归属，非继承源 owner，规避 Pitfall 5
+               owner 继承错误——否则 admin fork 后续聊立刻被 owner gate 404）。
+            2. 复制**全部**消息（去掉 created_at__lt 截断，整份拷贝）。
+            3. status = DRAFT（新副本语义，规避 Pitfall 4 pin 冻结——源会话若为
+               completed/stopped/error frozen 态，副本仍可被 admin 自由配置/续聊）。
+
+        provider_credential_id 携带源值（与普通 fork 一致；status=DRAFT 不冻结，
+        admin 可改）。无 owner 过滤（调用方 IsSuperUser 已授权）。
+
+        Args:
+            conversation_id: 源会话 UUID。
+            admin_user: 发起 fork 的管理员（新副本的 created_by）。
+
+        Returns:
+            {"conversation_id": <新会话 id 字符串>}。
+
+        Raises:
+            Conversation.DoesNotExist: 源会话不存在或已删除（view 兜成 404）。
+        """
+        source = await Conversation.objects.aget(
+            id=conversation_id,
+            is_deleted=False,
+        )
+
+        fork_title = f"{source.title}（管理员副本）"
+        if len(fork_title) > 200:
+            suffix = "（管理员副本）"
+            fork_title = f"{source.title[:200 - len(suffix)]}{suffix}"
+
+        forked = await Conversation.objects.acreate(
+            project_id=source.project_id,
+            title=fork_title,
+            model=source.model,
+            provider_credential_id_id=source.provider_credential_id_id,
+            created_by=admin_user,
+            status=Conversation.Status.DRAFT,
+        )
+
+        copied_count = 0
+        async for msg in Message.objects.filter(
+            conversation=source,
+        ).order_by("created_at"):
+            await Message.objects.acreate(
+                conversation=forked,
+                role=msg.role,
+                content=msg.content,
+                tool_calls=deepcopy(msg.tool_calls),
+                tool_call_id=msg.tool_call_id,
+                metadata=deepcopy(msg.metadata),
+                parts=deepcopy(msg.parts),
+            )
+            copied_count += 1
+
+        logger.info(
+            "admin_conversation_forked",
+            admin_id=str(getattr(admin_user, "id", "")),
+            source_conversation_id=str(source.id),
+            forked_conversation_id=str(forked.id),
+            copied_count=copied_count,
+        )
+        return {"conversation_id": str(forked.id)}
+
     @staticmethod
     async def _fetch_doc_for_context(
         project: Any,
