@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import threading
 import time
 import uuid
@@ -67,35 +68,55 @@ class QdrantService:
 
     @classmethod
     def _get_config_sync(cls) -> dict[str, Any]:
-        """Get Qdrant configuration from system settings (sync, for client init)."""
+        """Get Qdrant configuration (sync, for client init)。
+
+        解析优先级（与 PostgreSQL 一致的"env 锁定"模型）：环境变量 > SystemSetting(DB) > 默认。
+        部署（helm/compose）注入 QDRANT_URL 时即为权威值，DB 中的旧值被忽略，前端据此锁定配置。
+        """
         config = {}
 
-        url_setting = SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).first()
-        config["url"] = url_setting.value if url_setting else "http://localhost:6333"
+        env_url = os.environ.get("QDRANT_URL", "").strip()
+        if env_url:
+            config["url"] = env_url
+        else:
+            url_setting = SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).first()
+            config["url"] = url_setting.value if url_setting else "http://localhost:6333"
 
-        api_key_setting = SystemSetting.objects.filter(key=SettingKeys.QDRANT_API_KEY).first()
-        if api_key_setting and api_key_setting.value:
-            from common.encryption import decrypt_value
+        env_api_key = os.environ.get("QDRANT_API_KEY", "").strip()
+        if env_api_key:
+            config["api_key"] = env_api_key
+        else:
+            api_key_setting = SystemSetting.objects.filter(key=SettingKeys.QDRANT_API_KEY).first()
+            if api_key_setting and api_key_setting.value:
+                from common.encryption import decrypt_value
 
-            config["api_key"] = decrypt_value(api_key_setting.value)
+                config["api_key"] = decrypt_value(api_key_setting.value)
 
         return config
 
     @classmethod
     async def get_config(cls) -> dict[str, Any]:
-        """Get Qdrant configuration from system settings (async)."""
+        """Get Qdrant configuration (async)。优先级：环境变量 > SystemSetting(DB) > 默认。"""
         config = {}
 
-        url_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).afirst()
-        config["url"] = url_setting.value if url_setting else "http://localhost:6333"
+        env_url = os.environ.get("QDRANT_URL", "").strip()
+        if env_url:
+            config["url"] = env_url
+        else:
+            url_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).afirst()
+            config["url"] = url_setting.value if url_setting else "http://localhost:6333"
 
-        api_key_setting = await SystemSetting.objects.filter(
-            key=SettingKeys.QDRANT_API_KEY
-        ).afirst()
-        if api_key_setting and api_key_setting.value:
-            from common.encryption import decrypt_value
+        env_api_key = os.environ.get("QDRANT_API_KEY", "").strip()
+        if env_api_key:
+            config["api_key"] = env_api_key
+        else:
+            api_key_setting = await SystemSetting.objects.filter(
+                key=SettingKeys.QDRANT_API_KEY
+            ).afirst()
+            if api_key_setting and api_key_setting.value:
+                from common.encryption import decrypt_value
 
-            config["api_key"] = decrypt_value(api_key_setting.value)
+                config["api_key"] = decrypt_value(api_key_setting.value)
 
         return config
 

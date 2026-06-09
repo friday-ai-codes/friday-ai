@@ -2,6 +2,7 @@
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
+import { getSetupStatus } from '~/api/setup'
 import {
   getAllSettings,
   SettingKey,
@@ -41,6 +42,10 @@ const embeddingDimensionDirty = ref(false)
 
 const showQdrantApiKey = ref(false)
 const showEmbeddingApiKey = ref(false)
+
+// Qdrant 是否由部署环境（env QDRANT_URL）托管：托管时锁定地址/密钥，server 以 env 为准，
+// 此处 DB 中的值不会生效，故置为只读避免误导用户。
+const qdrantManaged = ref(false)
 
 // 健康状态
 const qdrantHealth = ref<{ status: string, message?: string } | null>(null)
@@ -95,6 +100,17 @@ async function loadSettings() {
 
     qdrantUrlValue.value = getValue(SettingKey.QDRANT_URL)
     qdrantApiKeyValue.value = getMasked(SettingKey.QDRANT_API_KEY)
+
+    // 检测 Qdrant 是否被 env 托管；若是，用真实 env 地址覆盖展示并锁定
+    try {
+      const setupStatus = await getSetupStatus()
+      qdrantManaged.value = Boolean(setupStatus.qdrant_bundled)
+      if (qdrantManaged.value && setupStatus.qdrant_url)
+        qdrantUrlValue.value = setupStatus.qdrant_url
+    }
+    catch {
+      qdrantManaged.value = false
+    }
     embeddingApiUrlValue.value = getValue(SettingKey.EMBEDDING_API_URL)
     embeddingApiKeyValue.value = getMasked(SettingKey.EMBEDDING_API_KEY)
     embeddingModelValue.value = getValue(SettingKey.EMBEDDING_MODEL)
@@ -294,6 +310,14 @@ onMounted(() => {
             />
           </div>
 
+          <p
+            v-if="qdrantManaged"
+            class="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <span class="icon-[lucide--lock] text-[0.7rem] shrink-0" />
+            Qdrant 地址由部署环境（环境变量）管理，此处不可修改。
+          </p>
+
           <div class="grid gap-4 md:grid-cols-2">
             <!-- Qdrant URL -->
             <div class="space-y-2">
@@ -305,7 +329,9 @@ onMounted(() => {
                   v-model="qdrantUrlValue"
                   type="url"
                   :placeholder="settingsMeta[SettingKey.QDRANT_URL].placeholder"
+                  :readonly="qdrantManaged"
                   class="pl-10 h-10 bg-muted/30 border-border/50 focus:border-primary/50"
+                  :class="qdrantManaged ? 'opacity-70 cursor-not-allowed' : ''"
                   @input="qdrantUrlDirty = true"
                 />
               </div>
@@ -324,7 +350,9 @@ onMounted(() => {
                   v-model="qdrantApiKeyValue"
                   :type="showQdrantApiKey ? 'text' : 'password'"
                   :placeholder="settingsMeta[SettingKey.QDRANT_API_KEY].placeholder"
+                  :readonly="qdrantManaged"
                   class="pl-10 pr-10 h-10 bg-muted/30 border-border/50 focus:border-primary/50"
+                  :class="qdrantManaged ? 'opacity-70 cursor-not-allowed' : ''"
                   @input="qdrantApiKeyDirty = true"
                 />
                 <button
