@@ -40,6 +40,11 @@ class AccessToken(models.Model):
     token_hash = models.CharField(max_length=64, unique=True, db_index=True)
     # 明文前 12 字符，供 UI 识别（非敏感，不可反推明文）。
     token_prefix = models.CharField(max_length=20, default="")
+    # 可选备注；空串=历史 token 无备注。
+    note = models.CharField(max_length=500, blank=True, default="")
+    # 明文后 4 字符，与 token_prefix 对称形成 friday_pat_xxx…abcd 指纹（非敏感）。
+    # max_length=8 留头部冗余，实际仅存 4 字符。
+    token_suffix = models.CharField(max_length=8, default="")
     created_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.CASCADE,
