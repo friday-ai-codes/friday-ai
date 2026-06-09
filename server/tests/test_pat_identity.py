@@ -119,3 +119,51 @@ def test_revoked_pat_rejected_through_chain(
     response = client.get(urls.me)
 
     assert response.status_code == 401
+
+
+def test_inactive_owner_pat_is_rejected(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """CR-01（unit）：有效但所有者已停用的 PAT → raise AuthenticationFailed，
+
+    且 best-effort 记一条 reason=owner_inactive 的 DENIED InteractionRun（与 JWT 路径
+    simplejwt CHECK_USER_IS_ACTIVE 对齐，fail-closed）。
+    """
+    from interactions.models import InteractionRun
+
+    token, plaintext = make_access_token(name="inactive-owner-pat")
+    # token 本身非吊销/非过期（is_valid=True），仅把所有者停用。
+    owner = token.created_by
+    owner.is_active = False
+    owner.save(update_fields=["is_active"])
+
+    request = APIRequestFactory().get(
+        "/", HTTP_AUTHORIZATION=f"Bearer {plaintext}"
+    )
+    with pytest.raises(AuthenticationFailed):
+        AccessTokenAuthentication().authenticate(request)
+
+    # best-effort 审计：记录一条 owner_inactive 的 DENIED run（fingerprint 为 hash）。
+    denied = InteractionRun.objects.filter(
+        token_fingerprint=token.token_hash,
+        status=InteractionRun.Status.DENIED,
+    )
+    assert denied.exists()
+    assert denied.latest("created_at").raw_request.get("reason") == "owner_inactive"
+
+
+def test_inactive_owner_pat_rejected_through_chain(
+    make_access_token: Callable[..., tuple[Any, str]],
+    urls: Any,
+) -> None:
+    """CR-01（integration）：所有者已停用的有效 PAT 经完整 DRF 链路 → 401。"""
+    token, plaintext = make_access_token(name="inactive-owner-chain")
+    owner = token.created_by
+    owner.is_active = False
+    owner.save(update_fields=["is_active"])
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {plaintext}")
+    response = client.get(urls.me)
+
+    assert response.status_code == 401
