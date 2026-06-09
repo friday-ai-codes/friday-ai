@@ -111,8 +111,22 @@ jobs:
         with:
           python-version: '3.14'
           allow-prereleases: true
+      # 缓存整个虚拟环境（按 uv.lock 哈希）：命中后 uv sync 仅做一致性校验，
+      # 跳过重型依赖（mysqlclient/tree-sitter 等需编译）的重复安装。
+      - uses: actions/cache@v4
+        with:
+          path: server/.venv
+          key: venv-server-${{ runner.os }}-py3.14-${{ hashFiles('server/uv.lock') }}
       - name: Install dependencies
         run: uv sync --locked --dev
+      # mypy 增量缓存：跨 run 复用 .mypy_cache，缩短类型检查耗时
+      - uses: actions/cache@v4
+        with:
+          path: server/.mypy_cache
+          key: mypy-server-${{ runner.os }}-${{ hashFiles('server/uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-server-${{ runner.os }}-${{ hashFiles('server/uv.lock') }}-
+            mypy-server-${{ runner.os }}-
       - name: Ruff lint (advisory legacy baseline)
         continue-on-error: true
         run: uv run ruff check . --exclude '**/migrations/*.py' --exclude '**/tests/**' --exclude 'tests/**' --exclude 'test_claude_agent_sdk.py'
@@ -263,6 +277,10 @@ jobs:
         with:
           python-version: '3.14'
           allow-prereleases: true
+      - uses: actions/cache@v4
+        with:
+          path: task/.venv
+          key: venv-task-${{ runner.os }}-py3.14-${{ hashFiles('task/uv.lock') }}
       - name: Install dependencies
         run: uv sync --dev
       - name: Ruff lint
