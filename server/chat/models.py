@@ -44,6 +44,17 @@ class Conversation(models.Model):
         on_delete=models.CASCADE,
         related_name="conversations",
     )
+    # ISO-01：会话创建者；owner-scoped 隔离的真源。可空——历史会话、匿名/开放
+    # 模式（未认证）创建的会话 created_by 为 null。删除 owner 用户走 SET_NULL，
+    # 会话保留、created_by 置 null（不级联删会话）。
+    created_by = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="conversations",
+        help_text="会话创建者；历史/匿名/开放模式可为 null（ISO-01）",
+    )
     title = models.CharField(max_length=200, default="新对话")
     model = models.CharField(
         max_length=100,
