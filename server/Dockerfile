@@ -28,14 +28,15 @@ RUN pip install uv \
 
 # 仅在 x86_64 上从源码重编 numpy：官方预编译 wheel 默认带 x86-64-v2 基线指令，
 # 在不支持 v2 指令集的虚拟机（如默认 qemu64/kvm64 的 KVM）上 import 时会直接
-# RuntimeError。把 CPU baseline 降到最低（SSE3）以兼容这类机器，并链接系统
-# OpenBLAS 保证矩阵运算性能不退化。arm64 无此问题，继续用官方预编译 wheel（更快）。
-# 注意：numpy 版本需与 uv.lock 中保持一致。
+# RuntimeError。注意 numpy 2.x 的 baseline=min 在 x86-64 上恰好等于 X86_V2，
+# 必须用 none 才能兼容老 VM（官方文档明确建议）——baseline 设为 none 后仅保留
+# 运行时按 CPU 分派的优化路径。链接系统 OpenBLAS 保证矩阵运算性能不退化。
+# arm64 无此问题，继续用官方预编译 wheel（更快）。numpy 版本需与 uv.lock 一致。
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
         uv pip install --system \
             --reinstall-package numpy \
             --no-binary numpy \
-            -C setup-args=-Dcpu-baseline=min \
+            -C setup-args=-Dcpu-baseline=none \
             "numpy==2.4.3"; \
     fi
 
