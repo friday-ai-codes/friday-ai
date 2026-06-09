@@ -24,7 +24,7 @@ spec:
           - {{ .Values.runner.dockerGID }}
       containers:
         - name: runner
-          image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
+          image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
           env:
             - name: FRIDAY_RUNNER_URL

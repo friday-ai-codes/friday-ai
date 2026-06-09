@@ -35,7 +35,7 @@ spec:
         {{- end }}
       containers:
         - name: migrate
-          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.server.image.pullPolicy }}
           command:
             - sh
@@ -49,11 +49,12 @@ spec:
               #   kubectl exec deploy/<server> -- python manage.py reset_superuser_password
               echo "迁移完成"
           # 直接使用 env 而非 envFrom，避免 pre-install hook 阶段 ConfigMap/Secret 尚未创建的问题
+          # 迁移仅需可启动的非空 SECRET_KEY/加密 key，无需与运行时一致（migrate 不触发加密）
           env:
             - name: SECRET_KEY
-              value: {{ .Values.server.secretKey | quote }}
+              value: {{ .Values.server.secretKey | default (randAlphaNum 50) | quote }}
             - name: FRIDAY_ENCRYPTION_KEY
-              value: {{ .Values.server.encryptionKey | quote }}
+              value: {{ .Values.server.encryptionKey | default (randAlphaNum 32 | b64enc) | quote }}
             - name: DATABASE_URL
               {{- if .Values.postgresql.enabled }}
               value: {{ printf "postgres://%s:%s@%s-postgresql:5432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "friday.fullname" .) .Values.postgresql.auth.database | quote }}

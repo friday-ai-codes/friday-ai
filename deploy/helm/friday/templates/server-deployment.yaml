@@ -37,7 +37,7 @@ spec:
       {{- end }}
       containers:
         - name: server
-          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.server.image.pullPolicy }}
           # 跳过 entrypoint.sh（迁移由 Helm hook Job 处理），直接启动 gunicorn
           command: ["gunicorn"]

@@ -9,10 +9,15 @@ export interface SetupStatus {
   needs_setup: boolean
   is_initialized: boolean
   /**
-   * 是否随部署内置了 Qdrant（docker compose 已启动）。为 true 时向导锁定
-   * Qdrant 地址，不允许用户更改（使用内置实例）。
+   * Qdrant 是否由部署环境（env QDRANT_URL）托管。为 true 时向导/设置页锁定
+   * Qdrant 地址，不允许用户更改（server 直接走 env，优先于 DB）。
    */
   qdrant_bundled?: boolean
+  /**
+   * 托管时的真实 Qdrant 地址（来自 env QDRANT_URL）；非托管为空。
+   * 向导据此锁定展示正确地址（兼容 helm 的 <release>-qdrant、外接地址等）。
+   */
+  qdrant_url?: string
 }
 
 export interface SetupInitRequest {

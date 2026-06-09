@@ -450,8 +450,13 @@ class SetupStatusView(APIView):
         import os
 
         is_initialized = await sync_to_async(User.objects.filter(is_superuser=True).exists)()
-        # 容器化部署（docker compose）默认内置并启动 Qdrant；置位后向导锁定 Qdrant 地址。
-        qdrant_bundled = os.environ.get("QDRANT_BUNDLED", "").strip().lower() in {
+        # Qdrant 由部署环境管理：只要注入了 QDRANT_URL（helm/compose 内置或外接），即视为"已托管"，
+        # 向导锁定 Qdrant 地址、连接直接走 env（见 QdrantService.get_config 的 env 优先级）。
+        # 兼容旧 compose：QDRANT_BUNDLED 显式置位也算托管。
+        env_qdrant_url = os.environ.get("QDRANT_URL", "").strip()
+        qdrant_bundled = bool(env_qdrant_url) or os.environ.get(
+            "QDRANT_BUNDLED", ""
+        ).strip().lower() in {
             "1",
             "true",
             "yes",
@@ -461,6 +466,8 @@ class SetupStatusView(APIView):
                 "is_initialized": is_initialized,
                 "needs_setup": not is_initialized,
                 "qdrant_bundled": qdrant_bundled,
+                # 托管时回传真实地址，供向导锁定展示（非托管为空字符串）
+                "qdrant_url": env_qdrant_url,
             }
         )
 

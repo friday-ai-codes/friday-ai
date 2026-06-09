@@ -9,6 +9,13 @@
 {{- end }}
 组件状态:
  kubectl get pods -l "app.kubernetes.io/instance={{ .Release.Name }}"
+{{- if not .Values.existingSecret }}
+密钥说明:
+ SECRET_KEY / FRIDAY_ENCRYPTION_KEY / RUNNER_REGISTRATION_TOKEN 若未在 values 中指定，
+ 已自动随机生成并保存在 Secret「{{ include "friday.fullname" . }}-secret」中，升级时会自动复用、不会轮换。
+ 查看 Runner 注册令牌:
+ kubectl get secret {{ include "friday.fullname" . }}-secret -o jsonpath='{.data.RUNNER_REGISTRATION_TOKEN}' | base64 -d
+{{- end }}
 {{- if not .Values.ingress.enabled }}
 提示: 要启用外部访问，请在 values.yaml 中设置:
  ingress:

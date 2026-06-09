@@ -12,3 +12,12 @@ data:
   FRIDAY_ADMIN_USERNAME: {{ .Values.server.adminUsername | quote }}
   FRIDAY_RUNNER_NAME: {{ .Values.runner.name | quote }}
   FRIDAY_RUNNER_EXECUTOR: {{ .Values.runner.executor | quote }}
+  {{- if .Values.qdrant.enabled }}
+  # 内置 Qdrant：env 注入内部 Service 地址，server 直连、前端锁定配置（env 优先）
+  QDRANT_URL: {{ printf "http://%s-qdrant:6333" (include "friday.fullname" .) | quote }}
+  QDRANT_BUNDLED: "true"
+  {{- else if .Values.externalQdrant.url }}
+  # 外接 Qdrant：env 注入外部地址，server 直连、前端锁定配置
+  QDRANT_URL: {{ .Values.externalQdrant.url | quote }}
+  QDRANT_BUNDLED: "true"
+  {{- end }}
