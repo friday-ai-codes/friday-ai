@@ -39,9 +39,9 @@
 
 ### MCP/skill 绑定用户令牌 (MCPB)
 
-- [ ] **MCPB-01**: 用户可在 Friday 中把自己的某个访问令牌持久绑定给 skill/mcp 使用（绑定关系入库）
+- [x] **MCPB-01**: 用户可在 Friday 中把自己的某个访问令牌持久绑定给 skill/mcp 使用（绑定关系入库）
 - [ ] **MCPB-02**: 被绑定的 skill/mcp 调用以该令牌所有者的身份与权限执行
-- [ ] **MCPB-03**: 用户可查看并解除自己的绑定
+- [x] **MCPB-03**: 用户可查看并解除自己的绑定
 
 ### RemoteTool 链路接通 (RTOOL)
 
@@ -97,9 +97,9 @@
 | ADMVW-01 | Phase 9 | Complete |
 | ADMVW-02 | Phase 9 | Complete |
 | ADMVW-03 | Phase 9 | Complete |
-| MCPB-01 | Phase 10 | Pending |
+| MCPB-01 | Phase 10 | Complete |
 | MCPB-02 | Phase 10 | Pending |
-| MCPB-03 | Phase 10 | Pending |
+| MCPB-03 | Phase 10 | Complete |
 | RTOOL-01 | Phase 10 | Pending |
 | RTOOL-02 | Phase 11 | Pending |
 | RTOOL-03 | Phase 11 | Pending |
