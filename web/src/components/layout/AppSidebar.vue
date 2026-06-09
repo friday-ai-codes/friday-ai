@@ -54,6 +54,7 @@ const mainNavItems: NavItem[] = [
 const adminNavItems: NavItem[] = [
   { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
+  { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
   { to: '/admin/oidc', label: 'OIDC 认证', icon: 'lucide--shield-check' },
   { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
   { to: '/codegraph/galaxy', label: 'Galaxy 图谱', icon: 'lucide--sparkles' },
