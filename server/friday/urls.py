@@ -54,6 +54,8 @@ api_patterns = [
     path("access-tokens/", include("access_tokens.urls")),
     # MCP read tools（implementation：外部仓库智能只读工具）
     path("mcp/", include("mcp_tools.urls")),
+    # Tool bindings + RemoteTool execute（Phase 10：令牌绑定 CRUD + PAT 执行端点）
+    path("tools/", include("tools.urls")),
     # Agent tools API
     path("agents/", include("agents.urls")),
     # API Documentation
