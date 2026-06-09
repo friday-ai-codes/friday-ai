@@ -740,6 +740,9 @@ class ConversationPreflightView(APIView):
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
             and conversation.project_id is not None
+            # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
+            # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
+            and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
                 user, conversation.project, "viewer"
@@ -922,6 +925,9 @@ class ConversationMessagesDeleteView(APIView):
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
             and conversation.project_id is not None
+            # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
+            # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
+            and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
                 user, conversation.project, "member"
@@ -1028,6 +1034,9 @@ class ConversationMessageForkView(APIView):
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
             and conversation.project_id is not None
+            # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
+            # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
+            and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
                 user, conversation.project, "member"
@@ -2343,7 +2352,12 @@ class CodingPlanSessionsBatchCreateView(APIView):
             )
 
         # 4) 项目级 ownership（MEMBER+）—— 保留为 null-owner/共享行次层防御
-        if not getattr(user, "is_superuser", False):
+        # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403。
+        is_owner = (
+            getattr(user, "is_authenticated", False)
+            and plan.conversation.created_by_id == user.id
+        )
+        if not getattr(user, "is_superuser", False) and not is_owner:
             allowed = await sync_to_async(PermissionService.has_project_access)(
                 user=user,
                 project=plan.conversation.project,
