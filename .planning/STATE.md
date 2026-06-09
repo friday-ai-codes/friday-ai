@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: executing
-stopped_at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
-last_updated: "2026-06-09T15:53:38.738Z"
+status: verifying
+stopped_at: Plan 09-03 complete — 前端 admin 只读会话后台（adminConversations.ts + ReadonlyConversationView + conversations.vue + 导航入口），前端 4 RED spec 转 GREEN、typecheck 清白；Phase 9 全部 3 plan 完成
+last_updated: "2026-06-09T16:00:49.388Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 13
-  completed_plans: 12
-  percent: 92
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 09 (管理员会话管理后台（只读）) — EXECUTING
+Phase: 09 (管理员会话管理后台（只读）) — COMPLETE
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-09
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 92%
 | Phase 08 P04 | 22 | 3 tasks | 1 files |
 | Phase 09 P01 | 12 | 2 tasks | 2 files |
 | Phase 09-admvw P02 | 10min | 3 tasks | 5 files |
+| Phase 09 P03 | 8 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,7 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 09]: [09-01] 「不可续聊」双重钉死：admin detail POST → 405（方法层）+ stream 子路径 → 404（路由层）；test_admin_no_stream_route 在 Wave 0 即 PASS 且 GREEN 后仍成立
 - [Phase ?]: admin fork: created_by=admin + status=DRAFT + copy all messages (avoid owner inherit/pin freeze)
 - [Phase ?]: admin endpoints physically separated (new admin_views/admin_urls, zero change to chat/views.py); IsSuperUser + default auth rejects anonymous
+- [Phase 09]: 前端 admin 会话后台只读查看器与普通 chat 渲染同源但不耦合 chatStore；fork→/chat?conversation= 续聊
 
 ### Pending Todos
 
@@ -122,7 +124,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T15:53:14.567Z
+Last session: 2026-06-09T15:59:56.837Z
 Stopped at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
 Resume file: None
 

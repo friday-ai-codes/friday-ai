@@ -27,7 +27,7 @@
 - [ ] **Phase 6: PAT 模型增强与一次性明文** - 令牌加名称/备注/可选有效期/前后缀指纹，明文仅展示一次，自助增删
 - [ ] **Phase 7: 令牌即用户身份（认证地基）** - PAT 认证返回 owner + 施加其 RBAC，MCP 入口 fail-closed，PAT/JWT 前缀闸门
 - [ ] **Phase 8: 对话/会话用户隔离** - Conversation 加 created_by + 历史回填，全路径按 owner 过滤，越权 403/404
-- [ ] **Phase 9: 管理员会话管理后台（只读）** - 独立只读后台浏览所有会话，交互需 fork 到自己名下
+- [x] **Phase 9: 管理员会话管理后台（只读）** - 独立只读后台浏览所有会话，交互需 fork 到自己名下 (completed 2026-06-09)
 - [ ] **Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点** - 持久绑定令牌给 skill/mcp，以 owner 身份执行；新增认证执行端点
 - [ ] **Phase 11: task 容器接通（RemoteTool 链路闭环）** - 容器消费 remote_tools + 直传 PAT 注入脱敏 + graceful 吊销
 
@@ -94,7 +94,7 @@
 **Plans**: 3 plans
 - [x] 09-01-PLAN.md — Wave 0 RED 验证脚手架：test_admin_conversations.py（admin 看全部/非 admin 403/匿名拒绝/只读 405/fork 归属）+ 前端 conversations.spec.ts + Phase 8 隔离回归保障
 - [x] 09-02-PLAN.md — 后端：chat/admin_views.py + admin_urls.py 挂载 /api/admin/conversations/（IsSuperUser+默认认证，只读 GET+fork POST）+ ConversationService.admin_* + AdminConversationListSerializer
-- [ ] 09-03-PLAN.md — 前端：adminConversations.ts + ReadonlyConversationView.vue + admin/conversations.vue（DataTable+只读详情+fork→/chat?conversation=）+ AppSidebar 导航入口
+- [x] 09-03-PLAN.md — 前端：adminConversations.ts + ReadonlyConversationView.vue + admin/conversations.vue（DataTable+只读详情+fork→/chat?conversation=）+ AppSidebar 导航入口
 **UI hint**: yes
 
 ### Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点
@@ -137,6 +137,6 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 6. PAT 模型增强与一次性明文 | v0.2.0 | 2/3 | In progress | - |
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 1/3 | In progress | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
-| 9. 管理员会话管理后台（只读） | v0.2.0 | 2/3 | In Progress|  |
+| 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 0/TBD | Not started | - |
 | 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/TBD | Not started | - |
