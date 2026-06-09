@@ -53,6 +53,30 @@ def test_create_persists_note(
 
 
 @pytest.mark.django_db
+def test_serializer_exposes_note_and_suffix_readonly(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """PAT-02：序列化输出暴露 note + token_suffix 只读，绝不含明文 / token_hash。"""
+    from access_tokens.serializers import AccessTokenSerializer
+
+    token, _plaintext = make_access_token(name="ser", note="hello")
+    data = AccessTokenSerializer(token).data
+
+    # 正向契约：新增只读字段出现在输出。
+    assert "note" in data
+    assert "token_suffix" in data
+    assert data["token_suffix"] == token.token_suffix
+    # 负向安全契约：明文与哈希绝不序列化（PAT-02）。
+    assert "token_hash" not in data
+    assert "token" not in data
+    # 只读安全契约：全部字段只读，序列化器不暴露任何可写字段。
+    assert (
+        AccessTokenSerializer.Meta.read_only_fields
+        == AccessTokenSerializer.Meta.fields
+    )
+
+
+@pytest.mark.django_db
 def test_list_never_returns_plaintext(
     make_access_token: Callable[..., tuple[Any, str]],
 ) -> None:
