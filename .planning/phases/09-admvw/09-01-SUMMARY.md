@@ -20,7 +20,7 @@ tech-stack:
   patterns:
     - "RED-first 行为契约：仅 import 既有模型，端点未实现 → 断言预期 404/RED，--co 可收集"
     - "admin gate 语义 403（非 404-everything）：非管理员明确 403，区别于 Phase 8 普通路径越权 404"
-    - "前端动态 @vite-ignore import 缺失页面：spec 可加载、用例各自 RED，避免 transform 期整 suite 失败"
+    - "前端 import.meta.glob 懒加载缺失页面：spec 可加载、用例各自 RED，避免 transform 期整 suite 失败，且页面落地后 glob 命中自动转 GREEN"
 
 key-files:
   created:
@@ -30,8 +30,9 @@ key-files:
 
 key-decisions:
   - "fork 测试先断言 status_code ∈ {200,201}（RED 在此失败），GREEN 后再跑 DB 归属/消息条数断言——避免 RED 期 resp.json() KeyError 掩盖本意"
-  - "test_admin_no_stream_route 在 Wave 0 即 PASS（路由不存在 → 404 正是契约），固化「admin 后台无流式续聊通道」且 GREEN 后仍成立"
-  - "前端用动态拼接 specifier + @vite-ignore 规避 vite 静态解析缺失模块，使 spec 可加载、4 用例各自 RED（优于整 suite 解析失败）"
+  - "「不可续聊」合并为单用例 test_admin_cannot_continue_send：detail POST → 405（方法层）+ stream 子路径 → 404（路由层）双断言一并钉死 ADMVW-02"
+  - "额外加 TestNormalPathIsolationRegression.test_normal_list_still_owner_scoped 作 ISO-03 最小回归信号（当前即 GREEN），与 test_conversation_isolation.py 互补"
+  - "前端用 import.meta.glob 懒加载缺失页面，规避 vite 静态解析失败，使 spec 可加载、4 用例各自 RED，且页面落地后自动转 GREEN"
 
 patterns-established:
   - "ADMVW RED 契约：admin 跨用户 list/detail 200、非 admin 403、匿名 401/403、写方法 405、fork created_by=admin + status=DRAFT + 复制全部消息 + 源会话不变"
@@ -57,14 +58,16 @@ completed: 2026-06-09
 - **Files created:** 2
 
 ## Accomplishments
-- 后端 `test_admin_conversations.py`：10 用例覆盖 ADMVW-01（list 跨用户 200 / 非 admin 403 / 匿名拒绝 / detail 含 messages）、ADMVW-02（PATCH/DELETE/POST → 405 + stream 子路径 404）、ADMVW-03（fork created_by=admin + 消息复制 + status=DRAFT + 源不变 + 非 admin 403）。
+- 后端 `test_admin_conversations.py`：10 用例覆盖 ADMVW-01（list 跨用户 200 / 非 admin 403 / 匿名拒绝 / detail 含 messages）、ADMVW-02（PATCH/DELETE/POST → 405 + stream 子路径 404）、ADMVW-03（fork created_by=admin + 消息复制 + status=DRAFT + 源不变 + 非 admin 403），外加 ISO-03 普通路径隔离回归最小信号。
 - 前端 `conversations.spec.ts`：4 用例覆盖 requiresAdmin meta、listAdminConversations 渲染含 owner 行、只读无写入入口、fork→`router.push('/chat?conversation=<id>')`（query 键名经 chat store `restoreFromURL` 确认为 `conversation`）。
 - Phase 8 隔离套件 `test_conversation_isolation.py` 显式作回归基线，未改动，39 passed 全绿。
 
 ## Task Commits
 
-1. **Task 1: 后端 RED 测试集 test_admin_conversations.py** — `a4c5dd43` (test)
-2. **Task 2: 前端 RED 组件 spec conversations.spec.ts** — `909236d9` (test)
+1. **Task 1: 后端 RED 测试集 test_admin_conversations.py** — `7168ae49` (test)
+2. **Task 2: 前端 RED 组件 spec conversations.spec.ts** — `565c7a4a` (test)
+
+_（早前一轮等价脚手架提交于 `a4c5dd43` / `909236d9` / docs `02252f1c`；本轮以改进版重写并重新提交。）_
 
 ## Files Created/Modified
 - `server/tests/test_admin_conversations.py` - admin 只读后台后端行为契约 RED 断言（ADMVW-01/02/03 + 不可续聊）
@@ -75,22 +78,23 @@ completed: 2026-06-09
 | Suite | 结果 | 说明 |
 |-------|------|------|
 | `pytest tests/test_admin_conversations.py --co -q` | 10 collected | 收集通过（无 import/collection error） |
-| `pytest tests/test_admin_conversations.py -q` | 9 failed, 1 passed | **预期 RED**：端点未实现 → 404；`test_admin_no_stream_route` 因路由本就不存在而 PASS（契约即此） |
+| `pytest tests/test_admin_conversations.py -q` | 9 failed, 1 passed | **预期 RED**：admin 端点未实现 → 404，9 个 admin 契约用例失败；唯一 PASS 为 `test_normal_list_still_owner_scoped`（ISO-03 回归信号，普通路径已隔离） |
 | `pytest tests/test_conversation_isolation.py -q` | 39 passed | Phase 8 回归基线全绿（未改动） |
-| `vitest run .../conversations.spec.ts` | 4 failed | **预期 RED**：`conversations.vue` 未实现 → 动态 import reject |
+| `vitest run .../conversations.spec.ts` | 4 failed | **预期 RED**：`conversations.vue` 未实现 → import.meta.glob 无命中，loadPage 抛错 |
 
 预期 RED 将在 09-02（后端 admin views/urls/service/serializer）与 09-03（前端 conversations.vue + adminConversations.ts）落地后转 GREEN。
 
 ## Decisions Made
 - fork 用例先断言状态码再查库，避免 RED 期 `resp.json()` 报错掩盖断言本意（见 frontmatter key-decisions）。
-- 前端缺失页面用 `@vite-ignore` 动态 import，spec 可加载且 4 用例各自 RED（acceptance 接受「模块解析失败」，但本形态更利于 GREEN 复用）。
+- 前端缺失页面用 `import.meta.glob` 懒加载，spec 可加载且 4 用例各自 RED（acceptance 接受「模块解析失败」，但本形态更利于 GREEN 自动复用）。
 
 ## Deviations from Plan
 
-None - plan executed exactly as written. 计划已显式要求 plan-checker #2 的「不可续聊」断言，本实现以 `test_admin_readonly_no_continue`（POST detail → 405）+ `test_admin_no_stream_route`（stream 子路径 → 404）双重满足。
+None - plan executed exactly as written. 计划已显式要求 plan-checker #2 的「不可续聊」断言，本实现以 `test_admin_cannot_continue_send`（detail POST → 405 + stream 子路径 → 404）单用例双断言满足；并额外补 `test_normal_list_still_owner_scoped`（ISO-03 普通路径隔离回归最小信号，T-09-03）。
 
 ## Issues Encountered
-- 初版前端 spec 用静态/别名动态 import 缺失页面，vite transform 期解析失败导致整 suite 加载失败（0 test）。改为相对路径 + `@vite-ignore` 动态 specifier 后，spec 正常加载、4 用例各自 RED。
+- 初版前端 spec 用别名静态动态 import (`import('~/pages/admin/conversations.vue')`) 缺失页面，vite transform 期解析失败导致整 suite 加载失败（0 test，`Failed to resolve import`）。改用 `import.meta.glob('../conversations.vue')`（文件缺失返回空 map，无 transform 错误）后，spec 正常加载、4 用例各自 RED，且页面落地后 glob 命中自动转 GREEN。
+- 后端 fixture 初版误以为 `owner_and_token` / `owner_headers` 在 conftest（实为 `test_conversation_isolation.py` 局部定义），导致 9 个 ERROR。改为自包含定义 admin/user_a/user_b 的 async JWT fixtures（仿 conftest `second_user_and_token` 范式）后转为干净的断言级 RED。
 
 ## User Setup Required
 None - 纯测试脚手架，无外部服务配置。
@@ -105,8 +109,8 @@ None - 纯测试脚手架，无外部服务配置。
 - FOUND: server/tests/test_admin_conversations.py
 - FOUND: web/src/pages/admin/__tests__/conversations.spec.ts
 - FOUND: .planning/phases/09-admvw/09-01-SUMMARY.md
-- FOUND commit: a4c5dd43 (Task 1)
-- FOUND commit: 909236d9 (Task 2)
+- FOUND commit: 7168ae49 (Task 1, current run)
+- FOUND commit: 565c7a4a (Task 2, current run)
 
 ---
 *Phase: 09-admvw*
