@@ -87,6 +87,16 @@ class AccessTokenAuthentication(BaseAuthentication):
             )
             raise AuthenticationFailed("Token 已吊销或已过期")
 
+        # 所有者已被停用：token 即用户身份，停用账号必须连带切断其 PAT，否则离职/
+        # 失陷账号仅停用而未逐个吊销 token 时仍可继续访问。与 JWT 路径
+        # （simplejwt CHECK_USER_IS_ACTIVE）对齐，fail-closed 当作可审计 denial。
+        # created_by 已随上面的 select_related 同查询取出，无额外查询/异步问题。
+        if not token.created_by.is_active:
+            self._record_denial(
+                request, fingerprint=token.token_hash, reason="owner_inactive"
+            )
+            raise AuthenticationFailed("令牌所有者已被停用")
+
         # contract：有效即放行，不做任何 scope/项目/allowlist 校验（contract）。
         # request.user = 令牌所有者，享其本人 RBAC（IDENT-01）。
         self._touch_last_used(token)
