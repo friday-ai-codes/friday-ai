@@ -33,9 +33,9 @@
 
 ### 管理员会话管理后台 (ADMVW)
 
-- [ ] **ADMVW-01**: 管理员有一个专门的「会话管理」后台视图，可浏览所有用户的会话（区别于普通 AI 对话界面）
-- [ ] **ADMVW-02**: 该后台视图为只读，管理员不能直接在他人会话上续聊/交互
-- [ ] **ADMVW-03**: 管理员如需基于他人会话交互，可 fork 一份归属到自己名下后再进行
+- [x] **ADMVW-01**: 管理员有一个专门的「会话管理」后台视图，可浏览所有用户的会话（区别于普通 AI 对话界面）
+- [x] **ADMVW-02**: 该后台视图为只读，管理员不能直接在他人会话上续聊/交互
+- [x] **ADMVW-03**: 管理员如需基于他人会话交互，可 fork 一份归属到自己名下后再进行
 
 ### MCP/skill 绑定用户令牌 (MCPB)
 
@@ -94,9 +94,9 @@
 | ISO-02 | Phase 8 | Complete |
 | ISO-03 | Phase 8 | Complete |
 | ISO-04 | Phase 8 | Complete |
-| ADMVW-01 | Phase 9 | Pending |
-| ADMVW-02 | Phase 9 | Pending |
-| ADMVW-03 | Phase 9 | Pending |
+| ADMVW-01 | Phase 9 | Complete |
+| ADMVW-02 | Phase 9 | Complete |
+| ADMVW-03 | Phase 9 | Complete |
 | MCPB-01 | Phase 10 | Pending |
 | MCPB-02 | Phase 10 | Pending |
 | MCPB-03 | Phase 10 | Pending |
