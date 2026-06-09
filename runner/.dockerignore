@@ -1,0 +1,30 @@
+# 本地编译产物（make build / build-all）——会破坏 COPY 层缓存
+friday-runner
+dist/
+bin/
+
+# Git
+.git
+.gitignore
+
+# 构建/部署相关文件（不需要进镜像，变动也不该触发重新构建）
+Dockerfile*
+.dockerignore
+Makefile
+*.md
+README*
+LICENSE
+
+# 本地运行时生成的数据/配置
+data/
+config.toml
+*.log
+*.tmp
+
+# IDE / OS
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

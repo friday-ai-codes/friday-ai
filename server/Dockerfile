@@ -3,10 +3,12 @@
 FROM python:3.14-slim AS builder
 
 # Install build dependencies
+# libopenblas-dev：仅 x86_64 从源码重编 numpy 时链接它，避免退回慢速 fallback。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc-dev \
     libffi-dev \
+    libopenblas-dev \
     libpq-dev \
     default-libmysqlclient-dev \
     pkg-config \
@@ -21,6 +23,19 @@ COPY pyproject.toml uv.lock ./
 RUN pip install uv \
     && uv export --frozen --no-hashes -o requirements.txt \
     && uv pip install --system -r requirements.txt
+
+# 仅在 x86_64 上从源码重编 numpy：官方预编译 wheel 默认带 x86-64-v2 基线指令，
+# 在不支持 v2 指令集的虚拟机（如默认 qemu64/kvm64 的 KVM）上 import 时会直接
+# RuntimeError。把 CPU baseline 降到最低（SSE3）以兼容这类机器，并链接系统
+# OpenBLAS 保证矩阵运算性能不退化。arm64 无此问题，继续用官方预编译 wheel（更快）。
+# 注意：numpy 版本需与 uv.lock 中保持一致。
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        uv pip install --system \
+            --reinstall-package numpy \
+            --no-binary-package numpy \
+            -C setup-args=-Dcpu-baseline=min \
+            "numpy==2.4.3"; \
+    fi
 
 # 再复制全部源码并安装项目本身（不重装依赖）
 COPY . .
@@ -37,6 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
+
+# x86_64 镜像里的 numpy 链接了系统 OpenBLAS，需带上其运行库；
+# arm64 用的是自带 BLAS 的预编译 wheel，无需安装。
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends libopenblas0-pthread \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /app
 

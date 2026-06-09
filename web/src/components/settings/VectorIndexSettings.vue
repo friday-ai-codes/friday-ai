@@ -2,12 +2,12 @@
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { getSetupStatus } from '~/api/setup'
 import {
   getAllSettings,
   SettingKey,
   updateSetting,
 } from '~/api/settings'
+import { getSetupStatus } from '~/api/setup'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
