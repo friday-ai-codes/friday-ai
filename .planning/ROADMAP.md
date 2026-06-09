@@ -46,7 +46,7 @@
 **Constraints**: 维持无盐 sha256 + 唯一索引（contract 锁定，勿改 Argon2/加盐）；后缀严格 ≤4 位避免熵损失；明文绝不进 logger/序列化器 list/detail/前端 store/localStorage/URL
 **Plans**: 3 plans
 - [x] 06-01-PLAN.md — Wave 0 验证脚手架：后端 token_suffix/note/序列化器只读断言 + 前端指纹/never 警告/note payload spec（RED）
-- [ ] 06-02-PLAN.md — 后端增量：模型加 note + token_suffix 字段 + AddField 迁移 + 序列化器/acreate 透传（plaintext[-4:]）
+- [x] 06-02-PLAN.md — 后端增量：模型加 note + token_suffix 字段 + AddField 迁移 + 序列化器/acreate 透传（plaintext[-4:]）
 - [ ] 06-03-PLAN.md — 前端增量：DTO + 表单 note 输入/never 非阻塞警告 + 列表备注列/prefix…suffix 指纹
 **UI hint**: yes
 
