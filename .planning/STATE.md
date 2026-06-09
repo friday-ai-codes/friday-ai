@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 06-01 complete — Nyquist Wave 0 PAT validation contract scaffolded (RED as expected)
-last_updated: "2026-06-09T11:25:43.276Z"
+stopped_at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
+last_updated: "2026-06-09T11:27:58.685Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
@@ -30,13 +30,13 @@ Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-09
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -91,8 +91,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T11:20:00.000Z
-Stopped at: Plan 06-01 complete — Nyquist Wave 0 PAT validation contract scaffolded (RED as expected)
+Last session: 2026-06-09T11:28:00.000Z
+Stopped at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
 Resume file: None
 
 ## Operator Next Steps

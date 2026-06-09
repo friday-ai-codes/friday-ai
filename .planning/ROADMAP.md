@@ -124,7 +124,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 3. LLM 供应商配置与 Claude Code 绑定 | v0.1.0 | 2/2 | Complete | 2026-06-08 |
 | 4. 安全校验与可选集成步骤 | v0.1.0 | 2/2 | Complete | 2026-06-08 |
 | 5. 入口迁移与向后兼容 | v0.1.0 | 1/1 | Complete | 2026-06-08 |
-| 6. PAT 模型增强与一次性明文 | v0.2.0 | 1/3 | In progress | - |
+| 6. PAT 模型增强与一次性明文 | v0.2.0 | 2/3 | In progress | - |
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 0/TBD | Not started | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 0/TBD | Not started | - |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 0/TBD | Not started | - |
