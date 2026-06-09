@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 11-01 complete — Wave 0 RED 脚手架：task/server/runner 三组件 RemoteTool 闭环测试就位（task 1 skipped importorskip 守卫无 collection error；server 2 RED endpoint/PAT + 2 GREEN 安全不变量；runner FRIDAY_TASK_REMOTE_TOOLS RED + 透传 GREEN）；WR-3 钉定机会性 PAT 经可选 user_pat 形参注入；回归不退；Phase 11 进度 1/4
-last_updated: "2026-06-09T18:06:00.000Z"
-last_activity: 2026-06-09 -- Plan 11-01 complete（Wave 0 RED 脚手架）
+stopped_at: Plan 11-02 complete — task 容器侧机制：core/remote_tools.py（schema→SdkMcpTool 动态注册 + PAT 回调 handler + 401/403/非200/传输错误 graceful）+ TaskConfig 三字段（FRIDAY_TASK_ 自动 JSON 解码）+ executor 条件挂载 mcp_servers/allowed_tools；11-01 task RED 全转 GREEN（35 passed/3 skipped），PAT 仅进 header 不入日志，零新增依赖；Phase 11 进度 2/4
+last_updated: "2026-06-10T02:20:00.000Z"
+last_activity: 2026-06-10 -- Plan 11-02 complete（task 容器侧 RemoteTool 机制）
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Executing Phase 11
-Last activity: 2026-06-09 -- Plan 11-01 complete（Wave 0 RED 脚手架）
+Last activity: 2026-06-10 -- Plan 11-02 complete（task 容器侧 RemoteTool 机制）
 
 Progress: [██████████] 100%
 
@@ -73,6 +73,7 @@ Progress: [██████████] 100%
 | Phase 10 P04 | 6min | 3 tasks | 7 files |
 | Phase 10 P03 | 12min | 3 tasks | 4 files |
 | Phase 11 P01 | 14min | 3 tasks | 4 files |
+| Phase 11 P02 | 9min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 11]: [11-01] Wave 0 RED 三组件契约字段名三侧一致（FRIDAY_TASK_USER_TOKEN/REMOTE_TOOLS/TOOLS_ENDPOINT）；task importorskip("core.remote_tools") 守卫零 collection error，handler 直测（monkeypatch httpx，无 live Claude）
 - [Phase 11]: [11-01] WR-3 钉定：机会性 PAT 经 _run_repo_coding 可选 user_pat 形参（mirror anthropic_api_key），_execute_with_branch 经 AICodingNode._resolve_user_pat 解析实时明文；server 测试 monkeypatch 该解析器钉死 11-04 实现形态
 - [Phase 11]: [11-01] omit-PAT/never-reads-AccessToken 为安全负向不变量（Wave 0 即 GREEN 须保持）；tools_endpoint 由 FRIDAY_BASE_URL 推导非 callback_url（Pitfall 1）；FRIDAY_TASK_REMOTE_TOOLS 前缀修复待 11-03（Pitfall 2）
+- [Phase 11]: [11-02] handler 不 raise_for_status，显式 status_code 分支（401/403→令牌失效 / !=200→HTTP{code} / 传输错误→catch httpx.HTTPError）全 return is_error 不抛（RTOOL-04 graceful）
+- [Phase 11]: [11-02] TaskConfig.remote_tools 走 pydantic v2 复杂类型 env 自动 JSON 解码（A2 首选，实测通过，无需 model_validator+json.loads 兜底）
+- [Phase 11]: [11-02] executor 装配 options_kwargs dict 条件加 mcp_servers/allowed_tools（仅 build_remote_tools_mcp_server 非 None 时），log 加 has_user_token bool + remote_tool_count，绝不记 PAT 明文
 
 ### Pending Todos
 
@@ -144,8 +148,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T01:58:00.000Z
-Stopped at: Plan 11-01 complete — Wave 0 RED 脚手架（task/server/runner 三组件 RemoteTool 闭环测试），WR-3 user_pat 机制钉定，回归不退；Phase 11 进度 1/4
+Last session: 2026-06-10T02:20:00.000Z
+Stopped at: Plan 11-02 complete — task 容器侧 RemoteTool 机制（remote_tools.py SDK MCP server + PAT 回调 + graceful + TaskConfig 三字段 + executor 条件挂载），task RED 全 GREEN，PAT 不入日志，回归不退；Phase 11 进度 2/4
 Resume file: None
 
 ## Operator Next Steps
