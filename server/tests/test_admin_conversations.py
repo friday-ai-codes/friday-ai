@@ -227,6 +227,49 @@ class TestAdminList:
             f"匿名访问 admin 列表必须被拒（401/403），拿到 {resp.status_code}"
         )
 
+    async def test_admin_list_invalid_owner_id_400(self, admin_headers, project):
+        """非法 ?owner_id=garbage → 400（WR-01），而非 ORM 求值阶段 500。
+
+        User.id 为 UUIDField，未校验的非 UUID owner_id 会在 filter 求值时抛
+        ValueError 穿透成 500。view 层显式校验后应返回 400 清晰报错。
+        """
+        client = AsyncClient()
+        resp = await client.get(
+            "/api/admin/conversations/?owner_id=garbage", headers=admin_headers
+        )
+        assert resp.status_code == 400, (
+            f"非法 owner_id 必须 400 而非 500（拿到 {resp.status_code}）"
+        )
+
+    async def test_admin_list_valid_owner_id_filters(
+        self, admin_headers, user_a, user_b, project
+    ):
+        """合法 ?owner_id=<user_a.id> → 200，且仅返回该 owner 的会话（WR-01 不误伤正常路径）。"""
+        conv_a, _ = await _acreate_conversation_with_messages(
+            project, owner=user_a, title="A-filter"
+        )
+        await _acreate_conversation_with_messages(
+            project, owner=user_b, title="B-filter"
+        )
+
+        client = AsyncClient()
+        resp = await client.get(
+            f"/api/admin/conversations/?owner_id={user_a.id}", headers=admin_headers
+        )
+        assert resp.status_code == 200, (
+            f"合法 owner_id 应 200（拿到 {resp.status_code}）"
+        )
+        data = resp.json()
+        items = data["results"] if isinstance(data, dict) and "results" in data else data
+        conv_ids = {str(item["id"]) for item in items}
+        assert str(conv_a.id) in conv_ids
+        owner_ids = {
+            str(item["owner"]["id"])
+            for item in items
+            if isinstance(item.get("owner"), dict) and item["owner"].get("id")
+        }
+        assert owner_ids == {str(user_a.id)}
+
     async def test_admin_detail_other_user(self, admin_headers, user_a, project):
         """admin GET 他人会话详情 → 200，响应含 messages 列表。"""
         conv, n = await _acreate_conversation_with_messages(

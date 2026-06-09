@@ -20,6 +20,8 @@ async 序列化纪律（Pitfall 1）：service 层已 select_related 预取关�
 
 from __future__ import annotations
 
+import uuid
+
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
@@ -51,6 +53,17 @@ class AdminConversationListView(APIView):
     async def get(self, request):
         """跨用户列出全部会话（含 owner + message_count）。"""
         owner_id = request.query_params.get("owner_id") or None
+        # User.id 是 UUIDField：非 UUID 的 owner_id 会在 ORM 查询求值阶段抛
+        # ValueError → 500。query param 没有 <uuid:...> 路由转换器兜底，故在此
+        # 显式校验，非法值返回 400（清晰报错），而非让其穿透成 500（WR-01）。
+        if owner_id is not None:
+            try:
+                owner_id = str(uuid.UUID(owner_id))
+            except (ValueError, TypeError, AttributeError):
+                return Response(
+                    {"error": "owner_id 格式无效（需为 UUID）"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         q = request.query_params.get("q") or ""
         conversations = await ConversationService.admin_list_conversations(
             owner_id=owner_id,
