@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -27,6 +28,22 @@ from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, create_sdk_mcp_serv
 logger = structlog.get_logger(__name__)
 
 REMOTE_MCP_SERVER_NAME = "friday-remote-tools"
+
+
+def _is_valid_tools_endpoint(endpoint: str) -> bool:
+    """校验 tools_endpoint 的 scheme/host（防御性，WR-03）。
+
+    端点会携带 PAT（``Authorization: Bearer``）。当前值由服务端从可信的
+    ``FRIDAY_BASE_URL`` 派生，无实时 SSRF/外泄路径；此处只做最小校验：
+    scheme ∈ {http, https} 且 host 非空。若未来端点来自不可信渠道（env 覆盖、
+    新特性），可避免把 PAT 发往任意/恶意 host（如 ``javascript:`` / ``file://``）。
+    镜像 ``server/workflows/nodes/ai/coding.py:_validate_anthropic_base_url``。
+    """
+    try:
+        parsed = urlparse(endpoint or "")
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _make_handler(
@@ -127,6 +144,16 @@ def build_remote_tools_mcp_server(
     """
     # 向后兼容（CONTEXT 决策）：无工具或无令牌或无端点 → 不挂 MCP server。
     if not remote_tools or not user_token or not tools_endpoint:
+        return None
+
+    # 端点校验（防御性，WR-03）：scheme 非 http/https 或缺 host → 不挂 MCP server，
+    # 即绝不向不可信/非法端点注入 PAT。
+    if not _is_valid_tools_endpoint(tools_endpoint):
+        logger.warning(
+            "remote_tool_invalid_endpoint",
+            scheme=urlparse(tools_endpoint or "").scheme,
+            tool_count=len(remote_tools),
+        )
         return None
 
     sdk_tools: list[SdkMcpTool[dict[str, Any]]] = []

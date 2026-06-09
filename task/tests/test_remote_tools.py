@@ -122,6 +122,34 @@ def test_no_endpoint_returns_none() -> None:
     assert build_remote_tools_mcp_server(TWO_SCHEMAS, "", SECRET_PAT) is None
 
 
+@pytest.mark.parametrize(
+    "bad_endpoint",
+    [
+        "ftp://evil.example.com/x",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "not-a-url",
+        "//no-scheme.example.com/x",
+    ],
+)
+def test_invalid_endpoint_returns_none(bad_endpoint: str) -> None:
+    """tools_endpoint scheme 非 http/https 或缺 host → 返回 None，
+    不构建 server / 绝不向非法端点注入 PAT（防御性，WR-03）。"""
+    assert build_remote_tools_mcp_server(TWO_SCHEMAS, bad_endpoint, SECRET_PAT) is None
+
+
+@pytest.mark.parametrize(
+    "ok_endpoint",
+    [
+        "https://friday.example.com/api/tools/execute/",
+        "http://localhost:10241/api/tools/execute/",
+    ],
+)
+def test_valid_endpoint_builds_server(ok_endpoint: str) -> None:
+    """http/https + 非空 host 的 tools_endpoint → 正常构建 server（WR-03 不误伤合法值）。"""
+    assert build_remote_tools_mcp_server(TWO_SCHEMAS, ok_endpoint, SECRET_PAT) is not None
+
+
 def test_remote_allowed_tools_naming() -> None:
     """allowed_tools 名格式为 mcp__{REMOTE_MCP_SERVER_NAME}__{name}。"""
     allowed = remote_allowed_tools(TWO_SCHEMAS)
