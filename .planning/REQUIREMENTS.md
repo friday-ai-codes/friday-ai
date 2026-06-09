@@ -46,9 +46,9 @@
 ### RemoteTool 链路接通 (RTOOL)
 
 - [x] **RTOOL-01**: 提供一个经令牌认证的 RemoteTool 执行端点（按工具 name 执行），供容器内 agent 回调调用
-- [ ] **RTOOL-02**: task 容器消费 `remote_tools`，claude-agent-sdk 通过 SDK MCP server 真正加载并调用这些工具（含 builtin/mcp/skill）
+- [x] **RTOOL-02**: task 容器消费 `remote_tools`，claude-agent-sdk 通过 SDK MCP server 真正加载并调用这些工具（含 builtin/mcp/skill）
 - [x] **RTOOL-03**: 用户令牌以直传 PAT 形态经 server→runner→task 注入容器，供 agent 以用户身份回调执行；日志/审计对令牌脱敏
-- [ ] **RTOOL-04**: 任务运行中令牌被吊销时，在途任务继续跑完，仅阻断后续新调用（graceful）
+- [x] **RTOOL-04**: 任务运行中令牌被吊销时，在途任务继续跑完，仅阻断后续新调用（graceful）
 
 ## v2 Requirements
 
@@ -101,9 +101,9 @@
 | MCPB-02 | Phase 10 | Complete |
 | MCPB-03 | Phase 10 | Complete |
 | RTOOL-01 | Phase 10 | Complete |
-| RTOOL-02 | Phase 11 | Pending |
+| RTOOL-02 | Phase 11 | Complete |
 | RTOOL-03 | Phase 11 | Complete |
-| RTOOL-04 | Phase 11 | Pending |
+| RTOOL-04 | Phase 11 | Complete |
 
 **Coverage:**
 
