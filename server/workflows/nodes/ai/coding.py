@@ -849,6 +849,19 @@ class AICodingNode(SubStepMixin, BaseNode):
         if anthropic_base_url:
             anthropic_env["env_FRIDAY_TASK_CLAUDE_BASE_URL"] = anthropic_base_url
 
+        # RTOOL-03：RemoteTool 链路注入。
+        #   - tools endpoint 强制由 settings.FRIDAY_BASE_URL 推导（拼 /api/tools/execute/），
+        #     绝不用 runner callback_url（Pitfall 1：错用会打到 runner 中转 → 工具调用 404）。
+        #     契约：空 base_url 不注入该键（向后兼容降级——task 侧无 endpoint → 不挂 MCP server）。
+        #   - 机会性 PAT：仅当实时请求线程提供明文时注入 env_FRIDAY_TASK_USER_TOKEN（见下），
+        #     无来源则省略该键（PAT-02：明文绝不落盘/不可从 DB 取）。
+        from django.conf import settings
+
+        tools_env: dict[str, str] = {}
+        base = getattr(settings, "FRIDAY_BASE_URL", "").rstrip("/")
+        if base:
+            tools_env["env_FRIDAY_TASK_TOOLS_ENDPOINT"] = f"{base}/api/tools/execute/"
+
         dispatch_task = DispatchTask(
             task_id=session_id,
             task_type="coding",
@@ -867,6 +880,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "work_item_id": config.get("work_item_id", ""),
                 "git_credentials": git_credentials,
                 **anthropic_env,   # work item：env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
+                **tools_env,       # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
             },
         )
 
@@ -911,7 +925,12 @@ class AICodingNode(SubStepMixin, BaseNode):
         try:
             await _create_session()
             await get_dispatcher().dispatch(dispatch_task)
-            log.info("task_dispatched_to_runner", session_id=session_id)
+            # 仅记 boolean，绝不记敏感值（PAT 明文/endpoint 明文不入日志，per Pitfall 4）
+            log.info(
+                "task_dispatched_to_runner",
+                session_id=session_id,
+                has_tools_endpoint=bool(base),
+            )
         except Exception as e:
             log.error("task_dispatch_failed", error=str(e))
             return {
