@@ -35,8 +35,21 @@ def test_create_returns_plaintext_once(
     # 入库的是 hash(明文)，明文本身绝不落任何字段（contract / contract）
     assert token.token_hash == hash_token(plaintext)
     assert token.token_prefix == plaintext[:12]
+    # 指纹后缀：明文后 4 字符（PAT-03 指纹）；后缀非敏感、≤4 字符以约束熵泄露（PAT-02）。
+    assert token.token_suffix == plaintext[-4:]
+    assert len(token.token_suffix) <= 4
     assert plaintext != token.token_hash
     assert plaintext not in token.name
+
+
+@pytest.mark.django_db
+def test_create_persists_note(
+    make_access_token: Callable[..., tuple[Any, str]],
+) -> None:
+    """PAT-01：创建时填写的备注持久化到 ``note`` 字段。"""
+    token, _plaintext = make_access_token(name="noted", note="ci pipeline")
+
+    assert token.note == "ci pipeline"
 
 
 @pytest.mark.django_db

@@ -1232,16 +1232,20 @@ def make_access_token(
 ) -> Callable[..., tuple[Any, str]]:
     """工厂 fixture：创建 AccessToken 并返回 (模型实例, 明文)。
 
-    返回的可调用对象签名：``(name="t", expires_at=None, revoked=False) -> tuple[AccessToken, str]``。
+    返回的可调用对象签名：``(name="t", expires_at=None, revoked=False, note="") -> tuple[AccessToken, str]``。
 
     Wave 阶段 `access_tokens.models` 未落地 → importorskip 跳过依赖此 fixture 的用例；
     实现（checkpoint）落地后生效。明文经 ``generate_pat()`` 生成，仅 ``hash_token`` 结果入
     ``token_hash``，明文绝不写任何字段（contract / contract）。
 
+    指纹由 ``token_prefix=plaintext[:12]`` 与 ``token_suffix=plaintext[-4:]`` 对称构成；
+    后 4 字符非敏感、不可反推明文（PAT-02/03）。``note`` 为可选备注（PAT-01）。
+
     Args:
         name: token 显示名（默认 "t"）。
         expires_at: 过期时间，None = 永不过期。
         revoked: 是否软吊销（设置 revoked_at = 当前时间）。
+        note: 可选备注（默认空串）。
     """
     access_models = pytest.importorskip("access_tokens.models")
     from runners.models import hash_token
@@ -1250,6 +1254,7 @@ def make_access_token(
         name: str = "t",
         expires_at: Any = None,
         revoked: bool = False,
+        note: str = "",
     ) -> tuple[Any, str]:
         from django.utils import timezone
 
@@ -1258,6 +1263,8 @@ def make_access_token(
             name=name,
             token_hash=hash_token(plaintext),
             token_prefix=plaintext[:12],
+            token_suffix=plaintext[-4:],
+            note=note,
             expires_at=expires_at,
             revoked_at=timezone.now() if revoked else None,
             created_by=access_user,
