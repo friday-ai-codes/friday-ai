@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 10-02 complete — tools.ToolTokenBinding 模型（三 FK CASCADE + unique(user, remote_tool)）+ 0003 CreateModel 迁移；migrate OK + makemigrations --check 干净；make_tool_binding 停止 skip，test_tool_bindings 由 9f/1p/2s → 6f/1p（端点 RED 待 10-03）
-last_updated: "2026-06-10T00:55:00.000Z"
-last_activity: 2026-06-10 -- Phase 10 Plan 02 complete (ToolTokenBinding 模型 + 迁移)
+stopped_at: Plan 10-04 complete — 前端工具令牌绑定 UI（toolBindings types/api/store + Settings/Table/Dialog 三组件 + profile 绑定卡片）；vitest 5/5 GREEN（10-01 前端 spec 转绿）+ vue-tsc 清白；明文零进 store/渲染、client 零 /tools/execute 引用（后端端点 10-03 待补）
+last_updated: "2026-06-10T00:59:00.000Z"
+last_activity: 2026-06-10 -- Phase 10 Plan 04 complete (前端绑定 UI，10-01 spec GREEN)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 17
-  completed_plans: 15
-  percent: 88
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — EXECUTING
-Plan: 3 of 4
-Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 10 Plan 02 complete (ToolTokenBinding 模型 + 迁移)
+Plan: 10-04 complete（剩 10-03 后端装配未完成）
+Status: Ready to execute (10-03)
+Last activity: 2026-06-10 -- Phase 10 Plan 04 complete (前端绑定 UI，10-01 spec GREEN)
 
-Progress: [█████████░] 88%
+Progress: [█████████▌] 94%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 88%
 | Phase 09 P03 | 8 | 3 tasks | 4 files |
 | Phase 10 P01 | 10min | 3 tasks | 4 files |
 | Phase 10 P02 | 6min | 2 tasks | 2 files |
+| Phase 10 P04 | 6min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 10]: [10-01] Wave 0 RED 脚手架：硬编码 URL 不 import 未落地 views → 端点 404 即 RED 而非 collection error；make_tool_binding 用 importorskip+getattr 守卫，ToolTokenBinding 缺失时优雅 skip
 - [Phase ?]: 10-02 ToolTokenBinding 三 FK 全 CASCADE + unique(user, remote_tool); related_name tool_token_bindings/tool_bindings/token_bindings 对齐 conftest
 - [Phase ?]: 10-02 0003 迁移仅 CreateModel 无 RunPython (RESEARCH 零历史回填); migrate OK + makemigrations --check 干净, make_tool_binding 停止 skip
+- [Phase 10]: [10-04] 前端绑定 UI 镜像 accessTokens 范式：types↔serializer 一一对应 + setup-store 元数据-only + Settings/Table/Dialog 三件套；下拉仅列 is_valid 令牌（computed filter，Pitfall 5）
+- [Phase 10]: [10-04] upsertBinding 就地按 remote_tool 替换（unique(user,remote_tool) 语义）；浏览器 client grep 零 /tools/execute 引用（T-10 边界）；10-01 前端 spec 5/5 GREEN
 
 ### Pending Todos
 
@@ -132,8 +135,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T00:55:00.000Z
-Stopped at: Plan 10-02 complete — tools.ToolTokenBinding 模型 + 0003 CreateModel 迁移；migrate OK + makemigrations --check 干净；make_tool_binding 停止 skip（端点 RED 待 10-03）
+Last session: 2026-06-10T00:59:00.000Z
+Stopped at: Plan 10-04 complete — 前端工具令牌绑定 UI（types/api/store + 三组件 + profile 卡片）；vitest 5/5 GREEN + vue-tsc 清白；明文零进 store/渲染（后端端点 10-03 待补）
 Resume file: None
 
 ## Operator Next Steps
