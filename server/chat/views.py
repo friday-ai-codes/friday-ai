@@ -332,7 +332,8 @@ class ConversationListView(APIView):
     )
     async def get(self, request):
         """获取对话列表。"""
-        conversations = await ConversationService.list_conversations()
+        # owner gate（ISO-02）：已认证用户仅列自己的会话，无 superuser bypass。
+        conversations = await ConversationService.list_conversations(request.user)
         serializer = ConversationListSerializer(conversations, many=True)
         return Response(serializer.data)
 
@@ -366,10 +367,12 @@ class ConversationListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # owner 注入（ISO-01）：已认证写 created_by=request.user，匿名/开放模式写 null。
         conversation = await ConversationService.create_conversation(
             space_id=space_id,
             title=title,
             model=model,
+            user=request.user,
         )
         response_serializer = ConversationListSerializer(conversation)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -396,6 +399,18 @@ class ConversationDetailView(APIView):
         implementation contract contract：响应扩展 resolved_provider 字段 = {provider_type,
         model, source, chain: [4 层]}。
         """
+        # owner gate（ISO-04）：先于任何取数/序列化做 owner-scoped 存在性校验，
+        # 越权/不存在统一 404，杜绝存在性泄漏（无 superuser bypass）。
+        try:
+            await ConversationService.aget_for_user(
+                str(conversation_id), request.user
+            )
+        except Conversation.DoesNotExist:
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         try:
             result = await ConversationService.get_conversation_with_messages(
                 str(conversation_id),
@@ -529,8 +544,11 @@ class ConversationDetailView(APIView):
     )
     async def delete(self, request, conversation_id):
         """软删除对话。"""
+        # owner gate（ISO-04）：owner-scoped 软删，0 行更新 → DoesNotExist → 404。
         try:
-            await ConversationService.delete_conversation(str(conversation_id))
+            await ConversationService.delete_conversation(
+                str(conversation_id), request.user
+            )
         except Conversation.DoesNotExist:
             return Response(
                 {"error": "对话不存在"},
@@ -555,11 +573,10 @@ class ConversationDetailView(APIView):
     )
     async def patch(self, request, conversation_id):
         """implementation contract contract/contract：对话 pin 更新 + frozen 校验。"""
-        # 1. 对话存在性（Conversation.DoesNotExist → 404）
+        # 1. owner gate（ISO-04）：owner-scoped 存在性校验，越权/不存在统一 404。
         try:
-            conversation = await Conversation.objects.aget(
-                id=conversation_id,
-                is_deleted=False,
+            conversation = await ConversationService.aget_for_user(
+                str(conversation_id), request.user
             )
         except Conversation.DoesNotExist:
             return Response(
