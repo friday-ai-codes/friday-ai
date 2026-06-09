@@ -28,7 +28,7 @@
 - [ ] **Phase 7: 令牌即用户身份（认证地基）** - PAT 认证返回 owner + 施加其 RBAC，MCP 入口 fail-closed，PAT/JWT 前缀闸门
 - [ ] **Phase 8: 对话/会话用户隔离** - Conversation 加 created_by + 历史回填，全路径按 owner 过滤，越权 403/404
 - [x] **Phase 9: 管理员会话管理后台（只读）** - 独立只读后台浏览所有会话，交互需 fork 到自己名下 (completed 2026-06-09)
-- [ ] **Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点** - 持久绑定令牌给 skill/mcp，以 owner 身份执行；新增认证执行端点
+- [x] **Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点** - 持久绑定令牌给 skill/mcp，以 owner 身份执行；新增认证执行端点 (completed 2026-06-10)
 - [ ] **Phase 11: task 容器接通（RemoteTool 链路闭环）** - 容器消费 remote_tools + 直传 PAT 注入脱敏 + graceful 吊销
 
 ## Phase Details
@@ -110,7 +110,7 @@
 **Plans**: 4 plans
 - [x] 10-01-PLAN.md — Wave 0 RED 验证脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py + test_remote_tool_execute.py + 前端 ToolBindingSettings.spec.ts
 - [x] 10-02-PLAN.md — 数据地基：tools.ToolTokenBinding 模型（三 FK CASCADE + unique(user, remote_tool)）+ 0003 CreateModel 迁移
-- [ ] 10-03-PLAN.md — 后端装配：serializers + 绑定 ViewSet(owner 隔离+upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/
+- [x] 10-03-PLAN.md — 后端装配：serializers + 绑定 ViewSet(owner 隔离+upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/
 - [x] 10-04-PLAN.md — 前端：types/api/store(toolBindings) + ToolBindingSettings/Table/Dialog + profile.vue 绑定卡片（下拉仅列 valid 令牌，无明文）
 **UI hint**: yes
 
@@ -142,5 +142,5 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 1/3 | In progress | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
-| 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 3/4 | In Progress|  |
+| 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 4/4 | Complete | 2026-06-10 |
 | 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/TBD | Not started | - |
