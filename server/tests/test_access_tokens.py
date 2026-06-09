@@ -142,6 +142,34 @@ def test_revoked_expired_denied_and_logged(
 
 
 @pytest.mark.django_db
+def test_revoke_is_idempotent_preserves_original_timestamp(
+    make_access_token: Callable[..., tuple[Any, str]],
+    authenticated_client: Any,
+) -> None:
+    """WR-01：重复吊销保留首次 revoked_at，审计时间戳不被覆盖（吊销操作幂等）。"""
+    from django.urls import reverse
+
+    from access_tokens.models import AccessToken
+
+    token, _plaintext = make_access_token(name="revoke-idem")
+    url = reverse("access-token-revoke", args=[token.id])
+
+    # 首次吊销：写入 revoked_at。
+    first = authenticated_client.post(url)
+    assert first.status_code == 200
+    token.refresh_from_db()
+    first_revoked_at = token.revoked_at
+    assert first_revoked_at is not None
+
+    # 再次吊销：幂等，仍返回 200，且 revoked_at 保持首次时间戳不变。
+    second = authenticated_client.post(url)
+    assert second.status_code == 200
+
+    refreshed = AccessToken.objects.get(id=token.id)
+    assert refreshed.revoked_at == first_revoked_at
+
+
+@pytest.mark.django_db
 def test_cross_user_isolation(
     make_access_token: Callable[..., tuple[Any, str]],
     django_user_model: Any,

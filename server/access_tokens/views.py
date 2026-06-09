@@ -77,6 +77,9 @@ class AccessTokenViewSet(ModelViewSet):
     async def revoke(self, request: Request, pk: str | None = None) -> Response:
         # aget_object 已受 get_queryset 限定，天然防越权吊销他人 token。
         token = await self.aget_object()
-        token.revoked_at = timezone.now()
-        await token.asave(update_fields=["revoked_at"])
+        # 幂等保护：仅首次吊销写入 revoked_at；重复吊销保留首次时间戳，
+        # 避免覆盖审计记录（重复 revoke 仍返回 200 + 当前序列化结果）。
+        if token.revoked_at is None:
+            token.revoked_at = timezone.now()
+            await token.asave(update_fields=["revoked_at"])
         return Response(AccessTokenSerializer(token).data)
