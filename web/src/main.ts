@@ -9,6 +9,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { routes } from 'vue-router/auto-routes'
 
 import { getSetupStatus } from '~/api/setup'
+import { hasResumableSetup } from '~/lib/setupProgress'
 import zhCN from '~/locales/zh-CN.json'
 import App from './App.vue'
 import { useAuthStore } from './stores/auth'
@@ -75,6 +76,11 @@ router.beforeEach(async (to, from, next) => {
     return next('/setup')
   }
   if (!authStore.needsSetup && to.path === '/setup') {
+    // 管理员已创建（needs_setup=false）但首启向导仍在进行（provider/feishu/rag），
+    // 刷新后允许停留在 /setup 恢复进度，避免“直接进去了”。完成后进度被清除即正常重定向。
+    if (hasResumableSetup()) {
+      return next()
+    }
     return next('/login')
   }
 

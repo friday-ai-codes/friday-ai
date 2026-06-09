@@ -4,7 +4,7 @@ const getMock = vi.fn()
 const postMock = vi.fn()
 
 vi.mock('~/api/client', () => ({
-  get: (url: string) => getMock(url),
+  get: (url: string, params?: unknown, options?: unknown) => getMock(url, params, options),
   post: (url: string, body?: unknown) => postMock(url, body),
 }))
 
@@ -22,7 +22,7 @@ describe('getSetupStatus', () => {
 
     expect(result.needs_setup).toBe(true)
     expect(result.is_initialized).toBe(false)
-    expect(getMock).toHaveBeenCalledWith('/auth/setup/status/')
+    expect(getMock).toHaveBeenCalledWith('/auth/setup/status/', undefined, { skipAuth: true })
   })
 
   it('rejects on network error', async () => {
@@ -102,7 +102,7 @@ describe('getSecurityCheck', () => {
 
     expect(result.secure).toBe(false)
     expect(result.risks[0].code).toBe('secret_key_default')
-    expect(getMock).toHaveBeenCalledWith('/system/security-check/')
+    expect(getMock).toHaveBeenCalledWith('/system/security-check/', undefined, undefined)
   })
 })
 

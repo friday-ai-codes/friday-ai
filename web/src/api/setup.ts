@@ -91,7 +91,7 @@ export interface SetupRagRequest {
  * 路由守卫在 initAuth() 前调用，fail-safe：异常时调用方 catch 按已初始化处理
  */
 export async function getSetupStatus(): Promise<SetupStatus> {
-  return get<SetupStatus>('/auth/setup/status/')
+  return get<SetupStatus>('/auth/setup/status/', undefined, { skipAuth: true })
 }
 
 /**

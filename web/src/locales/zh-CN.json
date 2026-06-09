@@ -36,6 +36,11 @@
       "rag": "向量检索",
       "indicator": "第 {current} / {total} 步"
     },
+    "nav": {
+      "prev": "上一步",
+      "skip": "跳过"
+    },
+    "leaveWarning": "首次设置尚未完成，离开或刷新页面将丢失当前已填写但未保存的配置。确定要离开吗？",
     "provider": {
       "title": "配置 AI 供应商",
       "subtitle": "选择模型预设并填写 API Key，Claude Code 将使用该供应商运行",
@@ -50,6 +55,19 @@
         "context": "上下文 {n}",
         "vision": "支持图像",
         "textOnly": "纯文本"
+      },
+      "apiKeyGuide": "还没有 {provider} 的 API Key？",
+      "apiKeyGuideLink": "前往获取",
+      "models": {
+        "label": "模型列表",
+        "fetch": "获取模型",
+        "fetching": "获取中…",
+        "manualPlaceholder": "输入模型 ID，回车或点击「添加」",
+        "add": "添加",
+        "empty": "暂无模型，点击「获取模型」拉取，或在下方手动添加",
+        "required": "请至少保留并选择一个模型作为默认模型",
+        "needCredentials": "请先填写接口地址与 API Key，再获取模型",
+        "fetchFailed": "获取模型失败，请检查接口地址与 API Key 后重试"
       },
       "validation": {
         "apiKeyRequired": "请填写 API Key",
@@ -80,8 +98,10 @@
       }
     },
     "feishu": {
-      "title": "配置飞书集成（可选）",
-      "subtitle": "填写飞书应用凭证以启用飞书需求拉取与通知，可稍后在设置中配置",
+      "title": "配置飞书集成",
+      "subtitle": "填写飞书应用凭证以启用飞书需求拉取与通知",
+      "guide": "在飞书开放平台创建「企业自建应用」后，进入应用的「凭证与基础信息」页即可获取 App ID 与 App Secret。",
+      "guideLink": "前往飞书开放平台",
       "fields": {
         "appId": "App ID",
         "appSecret": "App Secret",
@@ -94,14 +114,19 @@
       },
       "cta": "保存并继续",
       "saving": "正在保存…",
-      "skip": "跳过，稍后在设置中配置",
+      "skip": "跳过",
       "error": {
         "default": "飞书配置保存失败，请重试"
       }
     },
     "rag": {
-      "title": "配置向量检索（可选）",
-      "subtitle": "配置 Qdrant 与 Embedding 以启用代码语义检索，可稍后在设置中配置",
+      "title": "配置向量检索",
+      "subtitle": "配置向量库与 Embedding 模型，启用代码语义检索",
+      "about": "向量检索会把你的代码库做语义索引，让 AI 在生成技术方案和编码时检索到最相关的代码片段，显著提升结果准确度。",
+      "embeddingGuide": "需要一个 Embedding 模型服务。如果还没有，可前往火山引擎豆包或阿里云通义千问注册并开通 Embedding 能力。",
+      "doubaoLink": "火山引擎豆包",
+      "qianwenLink": "阿里云通义千问",
+      "qdrantBundledNote": "已随本次部署内置 Qdrant 向量库，将直接使用内置实例，地址不可修改。",
       "fields": {
         "qdrantUrl": "Qdrant 地址",
         "qdrantApiKey": "Qdrant API Key（可选）",
@@ -116,7 +141,7 @@
       },
       "cta": "保存并完成",
       "saving": "正在保存…",
-      "skip": "跳过并进入系统",
+      "skip": "跳过",
       "error": {
         "default": "向量检索配置保存失败，请重试"
       }
