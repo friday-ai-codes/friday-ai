@@ -85,7 +85,10 @@ function onSubmit() {
       customDateError.value = '请选择过期日期'
       return
     }
-    payload.expires_at = new Date(customDate.value).toISOString()
+    // 选中日期固定到「本地当天结束」(23:59:59.999) 再转 ISO：
+    // 直接 new Date('YYYY-MM-DD') 会按 UTC 午夜解析，正偏移时区（如 UTC+8）
+    // 会使 token 提前最多一天过期；拼接本地时间字符串可让其在用户所选日历日内持续有效。
+    payload.expires_at = new Date(`${customDate.value}T23:59:59.999`).toISOString()
   }
   // '90d'：省略 expires_at，交后端默认 90 天
 
