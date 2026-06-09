@@ -3,6 +3,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
@@ -36,6 +37,14 @@ class TestSetupStatusView:
         """无 Authorization 头可正常调用，证明 AllowAny 生效。"""
         # api_client 未 force_authenticate，相当于匿名请求
         response = api_client.get(SETUP_STATUS_URL)
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_status_ignores_invalid_access_cookie(self, api_client):
+        """公开 setup status 不应被过期/损坏的 access_token cookie 短路成 401。"""
+        api_client.cookies["access_token"] = "not-a-valid-jwt"
+
+        response = api_client.get(SETUP_STATUS_URL)
+
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -163,3 +172,34 @@ class TestSetupInitView:
             format="json",
         )
         assert login.status_code == status.HTTP_200_OK
+
+    def test_login_ignores_invalid_access_cookie(self, api_client):
+        """登录入口应忽略旧 access_token，否则浏览器残留坏 cookie 会导致无法重新登录。"""
+        create = api_client.post(
+            SETUP_INIT_URL,
+            {"username": "firstadmin", "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert create.status_code == status.HTTP_201_CREATED
+        api_client.cookies["access_token"] = "not-a-valid-jwt"
+
+        login = api_client.post(
+            LOGIN_URL,
+            {"username": "firstadmin", "password": STRONG_PASSWORD},
+            format="json",
+        )
+
+        assert login.status_code == status.HTTP_200_OK
+
+    def test_refresh_ignores_invalid_access_cookie(self, api_client, admin_user):
+        """刷新入口只依赖 refresh_token，坏 access_token 不应让刷新在视图前 401。"""
+        refresh = RefreshToken.for_user(admin_user)
+        refresh["sub"] = str(admin_user.id)
+        api_client.cookies["refresh_token"] = str(refresh)
+        api_client.cookies["access_token"] = "not-a-valid-jwt"
+
+        response = api_client.post("/api/auth/refresh/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "access_token" in response.cookies
+        assert "refresh_token" in response.cookies
