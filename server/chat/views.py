@@ -1197,11 +1197,12 @@ class ChatStreamView(APIView):
         branch_raw = serializer.validated_data.get("branch", "") or ""
         search_branch = branch_raw.strip() or None
 
-        # 验证对话存在
+        # owner gate（ISO-04，Pitfall 5）：必须在 StreamingHttpResponse 构造之前
+        # 做 owner-scoped 存在性校验，越权返回干净 HTTP 404 而非 text/event-stream
+        # 内的 error 事件；无 superuser bypass。
         try:
-            await Conversation.objects.aget(
-                id=conversation_id,
-                is_deleted=False,
+            await ConversationService.aget_for_user(
+                str(conversation_id), request.user
             )
         except Conversation.DoesNotExist:
             return Response(
@@ -1326,6 +1327,17 @@ class ChatInterruptView(APIView):
 
         conv_id_str = str(conversation_id)
 
+        # owner gate（ISO-04，T-08-11）：在执行 runner.interrupt()/barrier 取消之前
+        # 做 owner-scoped 存在性校验，防任意用户中断他人 run；越权/不存在统一 404；
+        # 无 superuser bypass。保留下方「无活跃对话」原有 404 分支。
+        try:
+            await ConversationService.aget_for_user(conv_id_str, request.user)
+        except Conversation.DoesNotExist:
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         # 场景 1: 检查是否有活跃 SDK runner
         runner = get_active_runner(conv_id_str)
         if runner:
@@ -1430,6 +1442,15 @@ class ExportToFeishuView(APIView):
                 is_deleted=False,
             )
         except Conversation.DoesNotExist:
+            return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        # owner gate（ISO-04）：在读取 project / messages 之前做 owner-scoped 校验，
+        # 越权 → 404；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and conversation.created_by_id != user.id
+        ):
             return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         project = conversation.project
