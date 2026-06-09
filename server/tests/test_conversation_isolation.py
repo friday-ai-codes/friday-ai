@@ -562,3 +562,75 @@ class TestOwnerCanAccess:
         assert resp.status_code != 404, (
             f"{case['id']}: owner 自己的会话不应返回 404（拿到 {resp.status_code}）"
         )
+
+
+# ============================================================================
+# CR-01 回归：fork 必须继承源对话 owner，避免 fork 出 null-owner 孤儿
+#
+# 既有 #9 fork owner-allowed 仅断言 fork POST != 404，未覆盖「fork 出的新会话
+# 后续是否可被 owner 访问」。这里钉死：owner fork 自己会话后，
+#   - 同一 owner 能在 list 看到该 fork，且 GET detail == 200；
+#   - 另一用户 GET 该 fork == 404（隔离仍成立）。
+# 修复前（fork 不写 created_by）该 fork 是 null-owner，owner 自己 detail 404 → RED。
+# ============================================================================
+
+
+@pytest.mark.django_db(transaction=True)
+class TestForkInheritsOwner:
+    """CR-01：fork 继承源对话 owner，owner 可访问自己的 fork，他人 404。"""
+
+    async def _create_fork(self, client, conv, headers):
+        """owner 通过 fork 端点对自己会话的 user message 派生分支，返回 fork id。"""
+        msg = await _acreate_message(conv)
+        resp = await client.post(
+            f"/api/chat/conversations/{conv.id}/messages/{msg.id}/fork/",
+            data=json.dumps({"content": "edited by owner"}),
+            content_type="application/json",
+            headers=headers,
+        )
+        assert resp.status_code == 201, (
+            f"owner fork 自己会话应 201（拿到 {resp.status_code}）"
+        )
+        return resp.json()["id"]
+
+    async def test_owner_can_access_own_fork(
+        self, owner_and_token, owner_headers, project
+    ):
+        """owner fork 自己会话后，DB 中 fork.created_by == owner，
+        且 owner 能在 list 看到并 GET detail 200（CR-01 修复核心）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+
+        client = AsyncClient()
+        forked_id = await self._create_fork(client, conv, owner_headers)
+
+        # 落库 owner 继承自源会话
+        forked = await Conversation.objects.aget(id=forked_id)
+        assert forked.created_by_id == owner.id
+
+        # owner 的 list 含该 fork
+        list_resp = await client.get("/api/chat/conversations/", headers=owner_headers)
+        assert list_resp.status_code == 200
+        ids = {item["id"] for item in list_resp.json()}
+        assert forked_id in ids
+
+        # owner GET fork detail == 200（修复前为 404）
+        detail_resp = await client.get(
+            f"/api/chat/conversations/{forked_id}/", headers=owner_headers
+        )
+        assert detail_resp.status_code == 200
+
+    async def test_other_user_cannot_access_fork(
+        self, owner_and_token, owner_headers, second_auth_headers, project
+    ):
+        """owner fork 自己会话后，另一用户 GET 该 fork == 404（隔离仍成立）。"""
+        owner, _ = owner_and_token
+        conv = await _acreate_conversation(project, owner=owner)
+
+        client = AsyncClient()
+        forked_id = await self._create_fork(client, conv, owner_headers)
+
+        detail_resp = await client.get(
+            f"/api/chat/conversations/{forked_id}/", headers=second_auth_headers
+        )
+        assert detail_resp.status_code == 404

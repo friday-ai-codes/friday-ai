@@ -788,6 +788,9 @@ class ConversationService:
             title=fork_title,
             model=source.model,
             provider_credential_id_id=source.provider_credential_id_id,
+            # 继承源对话的 owner，避免 fork 出 null-owner 孤儿对话：
+            # 否则鉴权用户 fork 自己的对话后会被 owner gate 立即 404（含编辑消息的后续 stream/）
+            created_by_id=source.created_by_id,
         )
 
         copied_count = 0
