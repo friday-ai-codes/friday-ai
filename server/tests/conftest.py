@@ -1345,3 +1345,102 @@ def make_access_token(
         return token, plaintext
 
     return _make
+
+
+# ============================================================================
+# Phase 10（MCP 绑定用户令牌 + RemoteTool 执行端点）测试 fixtures
+#
+# Wave 0 RED 脚手架消费（test_tool_bindings.py / test_remote_tool_execute.py）：
+#   - make_remote_tool：source/is_active 参数化的 RemoteTool 工厂（模型已存在）。
+#   - make_tool_binding：user↔token↔tool 绑定工厂（ToolTokenBinding 未落地时优雅
+#     skip，供跨用户隔离用例直接播种他人绑定）。
+#
+# 仅新增，不改动既有 fixture 语义（per 10-01 Task 1 acceptance）。
+# ============================================================================
+
+
+@pytest.fixture
+def make_remote_tool(db: Any) -> Callable[..., Any]:
+    """工厂 fixture：创建 ``RemoteTool``（source / is_active 可参数化）。
+
+    返回的可调用对象签名::
+
+        (name=None, source="mcp", is_active=True, description="t",
+         input_schema=None, timeout=30, config=None) -> RemoteTool
+
+    ``RemoteTool.name`` 唯一：``name=None`` 时自动拼随机后缀保证每次唯一，
+    亦允许显式传 ``name`` 覆盖（同名复用/冲突由调用方自负）。``input_schema``
+    缺省填最小合法 schema ``{"type": "object", "properties": {}}``，``config``
+    缺省 ``{}``。该模型已存在（无需 importorskip）。
+
+    Args:
+        name: 工具名；None=自动生成唯一名。
+        source: 工具源，``builtin`` / ``mcp`` / ``skill``（绑定范围仅 mcp/skill）。
+        is_active: 是否启用（bindable / 执行过滤依据）。
+        description: 描述文本。
+        input_schema: JSON Schema；None=最小合法 object schema。
+        timeout: 执行超时秒数。
+        config: 源特定配置 dict；None=空 dict。
+    """
+    from uuid import uuid4
+
+    from tools.models import RemoteTool
+
+    def _make(
+        name: str | None = None,
+        source: str = "mcp",
+        is_active: bool = True,
+        description: str = "t",
+        input_schema: dict[str, Any] | None = None,
+        timeout: int = 30,
+        config: dict[str, Any] | None = None,
+    ) -> Any:
+        if name is None:
+            name = f"tool_{source}_{uuid4().hex[:8]}"
+        return RemoteTool.objects.create(
+            name=name,
+            description=description,
+            source=source,
+            input_schema=input_schema or {"type": "object", "properties": {}},
+            timeout=timeout,
+            is_active=is_active,
+            config=config or {},
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_tool_binding(db: Any) -> Callable[..., Any]:
+    """工厂 fixture：创建 ``ToolTokenBinding``（user↔token↔tool 持久绑定）。
+
+    返回的可调用对象签名::
+
+        (user, access_token, remote_tool) -> ToolTokenBinding
+
+    **前向兼容守卫**：``ToolTokenBinding`` 由 10-02 落地。在模型缺失时
+    ``pytest.skip``（非 ImportError / 非 collection error），使 Wave 0 RED
+    阶段依赖此 fixture 的用例优雅跳过；模型落地后自动生效。
+
+    主要供跨用户 owner 隔离用例直接以 ORM 播种「他人」绑定（``make_access_token``
+    只为主用户铸令牌，且 create 序列化器拒绝跨用户令牌引用 → 二号用户无法经 API
+    绑定），故隔离播种必须走本 ORM 工厂。
+
+    Args:
+        user: 绑定归属用户（accounts.User）。
+        access_token: 被绑定的 ``access_tokens.AccessToken``。
+        remote_tool: 被绑定的 ``tools.RemoteTool``（source ∈ {mcp, skill}）。
+    """
+
+    def _make(user: Any, access_token: Any, remote_tool: Any) -> Any:
+        models = pytest.importorskip("tools.models")
+        binding_cls = getattr(models, "ToolTokenBinding", None)
+        if binding_cls is None:
+            pytest.skip("ToolTokenBinding 尚未实现（10-02）")
+        return binding_cls.objects.create(
+            user=user,
+            access_token=access_token,
+            remote_tool=remote_tool,
+        )
+
+    return _make
