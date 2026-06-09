@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
-last_updated: "2026-06-09T14:01:41.722Z"
-last_activity: 2026-06-09 -- Phase 08 planning complete
+stopped_at: Plan 08-01 complete — 隔离 RED 脚手架 (test_conversation_isolation.py, 37 用例; 27 RED/10 GREEN 预期) + conftest fixtures; integration 套件未破坏
+last_updated: "2026-06-09T14:18:00.000Z"
+last_activity: 2026-06-09 -- Plan 08-01 complete (Wave 0 RED 隔离脚手架)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 6
-  percent: 60
+  completed_plans: 7
+  percent: 70
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 让每个用户用 GitHub/GitLab 风格的个人访问令牌以「用户身份 + 用户权限」安全调用 Friday，并让 skill/mcp 工具以用户身份在容器内真正执行。
-**Current focus:** Phase 07 — 令牌即用户身份（认证地基）
+**Current focus:** Phase 08 — 对话/会话用户隔离
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-09 -- Phase 08 planning complete
+Phase: 08 (对话/会话用户隔离) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 08 — Plan 08-01 complete (Wave 0 RED 隔离脚手架)
+Last activity: 2026-06-09 -- Plan 08-01 complete
 
 Progress: [██████████] 100%
 
@@ -58,6 +58,7 @@ Progress: [██████████] 100%
 | Phase 07 P01 | 12 | 3 tasks | 3 files |
 | Phase 07 P02 | 8 | 2 tasks | 2 files |
 | Phase 07 P03 | 6 | 1 tasks | 1 files |
+| Phase 08 P01 | 15 | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase ?]: [07-02] PAT auth 返回 owner（token.created_by），request.user 即令牌所有者享其本人 RBAC
 - [Phase ?]: [07-02] DEFAULT_AUTHENTICATION_CLASSES PAT 类排首位 + friday_pat_ 前缀闸门 + authenticate_header 保住站点级 401
 - [Phase ?]: [07-03] MCP 入口 fail-closed：McpToolView 基类 IsAuthenticated + [AccessToken, CookieJWT]，17 个子类继承；匿名请求 401 authentication_failed
+- [Phase 08]: [08-01] 隔离回填排序字段用 created_at（accounts.User 实有；accounts/0005 同款），解决 RESEARCH A2（非 date_joined）
+- [Phase 08]: [08-01] accounts/0006 partial unique index 限制最多一个 superuser → 回填「最早 superuser」即「唯一 superuser」
+- [Phase 08]: [08-01] 越权对象级一律 404 / list 一律 []（禁 403，ISO-04 不泄漏存在性）；owner-allowed 断言 != 404 捕捉过度收紧
 
 ### Pending Todos
 
@@ -100,8 +104,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T13:23:42.706Z
-Stopped at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
+Last session: 2026-06-09T14:18:00.000Z
+Stopped at: Plan 08-01 complete — Wave 0 RED 隔离脚手架 (test_conversation_isolation.py 37 用例) + conftest fixtures
 Resume file: None
 
 ## Operator Next Steps
