@@ -43,18 +43,39 @@ const expiryStrategy = ref<ExpiryStrategy>('90d')
 const customDate = ref('')
 const customDateError = ref<string | null>(null)
 
-const formSchema = toTypedSchema(
-  z.object({
-    name: z.string().min(1, '请填写 Token 名称'),
-  }),
-)
+// 原始 zod schema：既驱动 vee-validate 字段级校验（FormMessage 展示），
+// 又用于提交时的同步校验（见 onSubmit）。
+const accessTokenSchema = z.object({
+  name: z.string().min(1, '请填写 Token 名称').max(200, '名称不超过 200 字符'),
+  note: z.string().max(500, '备注不超过 500 字符').optional(),
+})
+const formSchema = toTypedSchema(accessTokenSchema)
 
-const { handleSubmit } = useForm({
+const { values, setErrors } = useForm({
   validationSchema: formSchema,
 })
 
-const onSubmit = handleSubmit((values) => {
-  const payload: AccessTokenCreatePayload = { name: values.name }
+/**
+ * 提交：对当前表单值做同步 zod 校验，校验通过后即时 emit。
+ *
+ * 不走 vee-validate 异步 handleSubmit 的原因：其校验在微任务之外才落定，
+ * 同步 safeParse 让提交在事件循环当前 tick 内完成，行为可预期、易测。
+ */
+function onSubmit() {
+  const parsed = accessTokenSchema.safeParse(values)
+  if (!parsed.success) {
+    // 同步把字段错误回填到 vee-validate，触发 FormMessage 展示
+    const fieldErrors = parsed.error.flatten().fieldErrors
+    setErrors({ name: fieldErrors.name?.[0], note: fieldErrors.note?.[0] })
+    return
+  }
+
+  const payload: AccessTokenCreatePayload = { name: parsed.data.name }
+
+  // 备注 trim 后非空才发送，空串不进入 payload
+  const note = parsed.data.note?.trim()
+  if (note)
+    payload.note = note
 
   if (expiryStrategy.value === 'never') {
     payload.expires_at = null
@@ -70,7 +91,7 @@ const onSubmit = handleSubmit((values) => {
 
   customDateError.value = null
   emit('submit', payload)
-})
+}
 </script>
 
 <template>
@@ -85,7 +106,25 @@ const onSubmit = handleSubmit((values) => {
           <FormControl>
             <Input
               v-bind="componentField"
+              name="name"
               placeholder="例如：mcp-ci / skill-prod"
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      </FormField>
+
+      <!-- 备注（可选） -->
+      <FormField v-slot="{ componentField }" name="note">
+        <FormItem>
+          <FormLabel class="font-normal">
+            备注，可选
+          </FormLabel>
+          <FormControl>
+            <Input
+              v-bind="componentField"
+              name="note"
+              placeholder="用途说明，便于日后识别（≤500 字）"
             />
           </FormControl>
           <FormMessage />
@@ -111,6 +150,15 @@ const onSubmit = handleSubmit((values) => {
             </SelectItem>
           </SelectContent>
         </Select>
+
+        <!-- 永不过期非阻塞风险提示（仅展示，不参与校验、不阻断提交） -->
+        <div
+          v-if="expiryStrategy === 'never'"
+          class="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+        >
+          <span class="icon-[lucide--alert-triangle] mt-0.5 shrink-0" aria-hidden="true" />
+          <span>永不过期的 Token 一旦泄露将长期有效、无法自动失效，存在安全风险；建议仅在确有必要时使用。</span>
+        </div>
 
         <!-- 自定义日期 -->
         <Input
