@@ -15,6 +15,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 强制所有 JavaScript action 跑在 Node.js 24 上（GitHub 2026-06-16 起默认）。
+# 一次性消除 paths-filter / setup-python / setup-go / setup-uv / upload-artifact 等
+# 仍声明 Node 20 的 action 的弃用警告，无需逐个等待各 action 发布 node24 大版本。
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   changes:
     runs-on: ubuntu-latest
