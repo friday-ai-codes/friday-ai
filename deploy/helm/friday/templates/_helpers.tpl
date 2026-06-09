@@ -44,6 +44,16 @@ app.kubernetes.io/name: {{ include "friday.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 {{/*
+Secret 名称：existingSecret 优先，否则使用 Chart 创建的 <fullname>-secret
+*/}}
+{{- define "friday.secretName" -}}
+{{- if .Values.existingSecret }}
+{{- .Values.existingSecret }}
+{{- else }}
+{{- printf "%s-secret" (include "friday.fullname" .) }}
+{{- end }}
+{{- end }}
+{{/*
 数据库 Host：postgresql.enabled 时返回内部 Service 名称
 */}}
 {{- define "friday.databaseHost" -}}

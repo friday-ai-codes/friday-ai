@@ -16,9 +16,11 @@ import {
 import { Input } from '~/components/ui/input'
 
 const props = withDefaults(
-  defineProps<{ showPrev?: boolean, qdrantBundled?: boolean }>(),
-  { showPrev: false, qdrantBundled: false },
+  defineProps<{ showPrev?: boolean, qdrantBundled?: boolean, qdrantManagedUrl?: string }>(),
+  { showPrev: false, qdrantBundled: false, qdrantManagedUrl: '' },
 )
+// 托管时锁定的 Qdrant 地址：优先用后端回传的真实 env 地址，回退到 compose 内置默认
+const lockedQdrantUrl = props.qdrantManagedUrl || 'http://qdrant:6333'
 const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 const { t } = useI18n()
 
@@ -41,7 +43,7 @@ const formSchema = toTypedSchema(z.object({
 const { handleSubmit } = useForm({
   validationSchema: formSchema,
   initialValues: {
-    qdrantUrl: 'http://qdrant:6333',
+    qdrantUrl: props.qdrantBundled ? lockedQdrantUrl : 'http://qdrant:6333',
     qdrantApiKey: '',
     embeddingApiUrl: '',
     embeddingApiKey: '',
@@ -54,8 +56,8 @@ const onSubmit = handleSubmit(async (formValues) => {
   submitError.value = null
   isSubmitting.value = true
   try {
-    // 内置 Qdrant 时强制使用内置实例地址，忽略任何被改动的输入值
-    const qdrantUrl = props.qdrantBundled ? 'http://qdrant:6333' : formValues.qdrantUrl
+    // 托管 Qdrant 时强制使用 env 锁定地址，忽略任何被改动的输入值（server 也以 env 为准）
+    const qdrantUrl = props.qdrantBundled ? lockedQdrantUrl : formValues.qdrantUrl
     const payload: SetupRagRequest = { qdrant_url: qdrantUrl }
     if (formValues.qdrantApiKey?.trim())
       payload.qdrant_api_key = formValues.qdrantApiKey.trim()

@@ -109,11 +109,37 @@ Runner 通过 WebSocket 连接定期发送心跳信号：
 ## 高级部署：Helm / K8s
 ### 适用场景
 当你需要在 Kubernetes 集群中进行生产级大规模部署时，推荐使用 Helm Chart 安装 Friday。
-### 安装
+### 安装（OCI，一键）
+Chart 随每个版本发布到 GHCR（OCI 制品仓库），无需添加传统 Helm 仓库：
 ```bash
-helm repo add friday https://your-org.github.io/friday-ai
-helm install friday friday/friday -f values.yaml
+# 零配置安装：SECRET_KEY / 加密 key / Runner 令牌会自动随机生成并持久化
+helm install friday oci://ghcr.io/friday-ai-codes/friday-ai/charts/friday \
+  --namespace friday --create-namespace
+
+# 指定版本（省略则取 chart 最新版）
+helm install friday oci://ghcr.io/friday-ai-codes/friday-ai/charts/friday \
+  --version <版本号> --namespace friday --create-namespace
 ```
+镜像版本自动跟随 chart 的 `appVersion`，无需手动指定 tag。如需自定义配置，追加 `-f values.yaml` 或 `--set key=value`。
+
+### 升级（一键）
+```bash
+# 升级到最新版本：DB 迁移由 pre-upgrade Hook 自动执行，密钥自动复用不会轮换
+helm upgrade friday oci://ghcr.io/friday-ai-codes/friday-ai/charts/friday \
+  --namespace friday
+
+# 升级到指定版本
+helm upgrade friday oci://ghcr.io/friday-ai-codes/friday-ai/charts/friday \
+  --version <版本号> --namespace friday
+```
+
+::: tip 查看自动生成的密钥
+零配置安装时密钥由 chart 随机生成，可用以下命令导出留存：
+```bash
+kubectl get secret friday-secret -n friday \
+  -o jsonpath='{.data.RUNNER_REGISTRATION_TOKEN}' | base64 -d
+```
+:::
 ### 关键配置项
 以下为 `values.yaml` 中的主要配置项（完整参考请查看 `deploy/helm/friday/values.yaml`）：
 **Server 配置：**

@@ -108,9 +108,47 @@ jobs:
             -t "${IMAGE}:latest" \
             "${REFS[@]}"
 
-  # ── 3. 创建 GitHub Release ────────────────────────
-  release:
+  # ── 3. 打包并发布 Helm Chart 到 GHCR (OCI) ─────────
+  helm:
+    name: publish-helm-chart
     needs: merge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Compute chart version
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Chart 版本必须是合法 SemVer（不带前缀 v）；appVersion 保留完整 tag
+          echo "chart_version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "app_version=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Helm registry login (GHCR)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${REGISTRY}" \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Lint chart
+        run: helm lint deploy/helm/friday
+
+      - name: Package & push chart
+        run: |
+          mkdir -p /tmp/helm
+          helm package deploy/helm/friday \
+            --version "${{ steps.ver.outputs.chart_version }}" \
+            --app-version "${{ steps.ver.outputs.app_version }}" \
+            -d /tmp/helm
+          helm push "/tmp/helm/friday-${{ steps.ver.outputs.chart_version }}.tgz" \
+            "oci://${IMAGE_PREFIX}/charts"
+
+  # ── 4. 创建 GitHub Release ────────────────────────
+  release:
+    needs: [merge, helm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

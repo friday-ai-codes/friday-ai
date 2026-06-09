@@ -30,8 +30,10 @@ const step = ref<SetupStep>('admin')
 const currentStepIndex = computed(() => STEPS.indexOf(step.value))
 const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
-// 是否随部署内置 Qdrant（docker compose 已启动）：为 true 时向量检索步骤锁定 Qdrant 地址
+// Qdrant 是否由部署环境（env QDRANT_URL）托管：为 true 时向量检索步骤锁定 Qdrant 地址
 const qdrantBundled = ref(false)
+// 托管时的真实 Qdrant 地址（来自后端 env），用于向导锁定展示正确地址
+const qdrantManagedUrl = ref('')
 
 // 引导进度持久化：管理员创建后 needs_setup=false，记录当前步骤以便刷新恢复（避免“直接进去了”）
 watch(step, (s) => {
@@ -161,6 +163,7 @@ onMounted(async () => {
   try {
     const setupStatus = await getSetupStatus()
     qdrantBundled.value = Boolean(setupStatus.qdrant_bundled)
+    qdrantManagedUrl.value = setupStatus.qdrant_url ?? ''
     if (setupStatus.needs_setup) {
       // 尚未创建管理员：从头开始，清掉可能残留的旧进度
       step.value = 'admin'
@@ -233,6 +236,7 @@ onMounted(async () => {
           v-else-if="step === 'rag'"
           show-prev
           :qdrant-bundled="qdrantBundled"
+          :qdrant-managed-url="qdrantManagedUrl"
           @done="finishWizard"
           @skip="finishWizard"
           @prev="step = 'feishu'"

@@ -8,7 +8,8 @@ server:
   replicaCount: 1
   image:
     repository: ghcr.io/friday-ai-codes/friday-ai/server
-    tag: v0.0.1
+    # 留空则自动跟随 Chart.appVersion（发布时由 CI 注入），保证镜像与 chart 版本一致
+    tag: ""
     pullPolicy: IfNotPresent
   secretKey: "" # Django SECRET_KEY（existingSecret 优先）
   encryptionKey: "" # FRIDAY_ENCRYPTION_KEY
@@ -38,7 +39,8 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/friday-ai-codes/friday-ai/web
-    tag: v0.0.1
+    # 留空则自动跟随 Chart.appVersion
+    tag: ""
     pullPolicy: IfNotPresent
   resources:
     requests:
@@ -53,7 +55,8 @@ runner:
   replicaCount: 1
   image:
     repository: ghcr.io/friday-ai-codes/friday-ai/runner
-    tag: v0.0.1
+    # 留空则自动跟随 Chart.appVersion
+    tag: ""
     pullPolicy: IfNotPresent
   registrationToken: "" # RUNNER_REGISTRATION_TOKEN
   name: "k8s-runner"
@@ -104,6 +107,12 @@ qdrant:
     limits:
       cpu: "1"
       memory: 512Mi
+# -- 外部 Qdrant（qdrant.enabled=false 时使用）
+# 配置后 server 通过 env 直连，前端向导/设置页将锁定 Qdrant 地址（env 优先）。
+# 两者都留空（qdrant.enabled=false + url 为空）时，Qdrant 交由首启向导手动配置。
+externalQdrant:
+  url: "" # http://my-qdrant:6333
+  apiKey: ""
 # -- Ingress 配置
 ingress:
   enabled: false
