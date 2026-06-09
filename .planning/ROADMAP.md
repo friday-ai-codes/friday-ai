@@ -147,4 +147,4 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 4/4 | Complete    | 2026-06-09 |
-| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 4/4 | Complete | 2026-06-10 |
+| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 4/4 | Complete    | 2026-06-09 |

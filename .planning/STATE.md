@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: executing
+status: milestone_complete
 stopped_at: Plan 11-04 complete — coding.py dispatch 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT（FRIDAY_BASE_URL 推导）+ 机会性 PAT（_resolve_user_pat 实时明文，绝不读 DB；无来源省略键）；11-01 server RED 4/4 转 GREEN，回归 23 passed，PAT 不入日志；Phase 11 完成 4/4，里程碑 v0.2.0 全阶段达成
 last_updated: "2026-06-10T18:30:00.000Z"
 last_activity: 2026-06-10
 progress:
   total_phases: 6
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 21
   completed_plans: 21
-  percent: 100
+  percent: 117
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — COMPLETE
-Plan: 4 of 4
-Status: Phase complete
-Last activity: 2026-06-10
+Phase: 11
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-09
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 25
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -50,6 +50,7 @@ Progress: [██████████] 100%
 | 08 | 4 | - | - |
 | 09 | 3 | - | - |
 | 10 | 4 | - | - |
+| 11 | 4 | - | - |
 
 **Recent Trend:**
 
