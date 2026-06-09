@@ -68,6 +68,16 @@
 - SDK MCP server 让 claude-agent-sdk 真正「加载并调用」远程工具，而非仅传 schema。
 </specifics>
 
+<resolution>
+## Open Q1 裁决（直传 PAT vs PAT-02 冲突）—— 已定
+
+用户跳过选择，由编排者裁决：**Option C + 机会性 B**（PAT-02「明文绝不落盘」是 CLAUDE.md 锁定的不可违背约束，排除 Option A 的加密留存）。
+
+- 本期**完整交付机制**：task 侧 SDK MCP server 加载 `remote_tools` 并真正调用（RTOOL-02）；以直传 PAT 调 `/api/tools/execute/` 的回调链；吊销 graceful（RTOOL-04）；全链路注入管道（`FRIDAY_TASK_USER_TOKEN` + `FRIDAY_TASK_REMOTE_TOOLS` + 新增 `FRIDAY_TASK_TOOLS_ENDPOINT`，server→runner→task）；令牌脱敏。
+- **PAT 明文来源（机会性 B）**：仅在「带 PAT 的实时请求线程」内可拿到明文时下传注入（绝不落盘）；无明文来源的后台/飞书触发任务，机制就绪但自动注入留 follow-up（不违反 PAT-02）。
+- RTOOL-02 / RTOOL-04 本期完整达成；RTOOL-03 的注入机制 + 脱敏 + graceful 达成，"对所有 dispatch 场景自动解析 PAT 明文"作为已知 follow-up（不阻塞里程碑）。
+</resolution>
+
 <deferred>
 ## Deferred Ideas
 
