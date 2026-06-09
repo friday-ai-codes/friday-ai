@@ -12,8 +12,12 @@
 export interface AccessTokenDto {
   id: string
   name: string
+  /** 备注（可选），可能为空串。 */
+  note: string
   /** 明文前 12 字符，供 UI 指纹识别（非完整明文）。 */
   token_prefix: string
+  /** 明文后 4 字符，供 UI 指纹识别；空串=历史 token（明文已丢失，无法回填）。 */
+  token_suffix: string
   created_at: string
   /** null = 永不过期。 */
   expires_at: string | null
@@ -34,6 +38,8 @@ export interface AccessTokenDto {
  */
 export interface AccessTokenCreatePayload {
   name: string
+  /** 备注（可选）；空串经表单 trim 后不发送。 */
+  note?: string
   expires_at?: string | null
 }
 

@@ -29,7 +29,9 @@ function makeToken(overrides: Partial<AccessTokenDto> = {}): AccessTokenDto {
   return {
     id: overrides.id ?? 'tok-1',
     name: overrides.name ?? 'test',
+    note: overrides.note ?? '',
     token_prefix: overrides.token_prefix ?? 'friday_pat_',
+    token_suffix: overrides.token_suffix ?? '',
     created_at: overrides.created_at ?? '2026-06-04T00:00:00Z',
     expires_at: overrides.expires_at ?? null,
     revoked_at: overrides.revoked_at ?? null,
