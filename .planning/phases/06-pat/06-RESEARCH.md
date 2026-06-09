@@ -308,7 +308,7 @@ export interface AccessTokenCreatePayload {
 
 **所有高风险项均已 VERIFIED；A1 可在执行时用 `makemigrations --check`/实跑证伪，无阻断。**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **note 是否需要 trim / 去除首尾空白？**
    - What we know: CONTEXT 仅要求 ≤500、可选、不可后期编辑。
