@@ -382,6 +382,10 @@ class AICodingNode(SubStepMixin, BaseNode):
         if context.node_execution:
             node_execution_id = str(context.node_execution.id)
 
+        # RTOOL-03 机会性 PAT：仅解析「当前实时请求线程的明文 PAT」（绝不查 AccessToken/DB）。
+        # 无明文来源（背景/飞书触发）→ 返回 ""，下游省略 env_FRIDAY_TASK_USER_TOKEN（PAT-02）。
+        user_pat = await self._resolve_user_pat(context)
+
         coding_tasks = [
             self._run_repo_coding(
                 repository=repositories[repo_id],
@@ -393,6 +397,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 node_execution_id=node_execution_id,
                 anthropic_api_key=resolved.api_key,
                 anthropic_base_url=validated_base_url,
+                user_pat=user_pat,
             )
             for repo_id, tasks in repo_groups.items()
         ]
@@ -804,6 +809,25 @@ class AICodingNode(SubStepMixin, BaseNode):
     # SubAgent 分发（回调驱动模式）
     # ------------------------------------------------------------------
 
+    async def _resolve_user_pat(self, context: ExecutionContext) -> str:
+        """解析机会性 PAT 明文（RTOOL-03 / Open Q1 Option C + 机会性 B）。
+
+        唯一合法明文来源：**带 PAT 的实时认证请求线程**——仅在该上下文内可拿到明文。
+        本方法**绝不**从 AccessToken / ToolTokenBinding / 任何 DB 表读取明文
+        （PAT-02：明文绝不落盘、不可从 DB 取；AccessToken 仅存 sha256 哈希）。
+        明文亦绝不进日志（调用方只记 has_user_token=bool）。
+
+        当前实现：无现成的实时请求线程明文通道（workflow dispatch 多为背景/飞书触发，
+        triggered_by / AgentSession.user 可能为 None，均非明文来源），故返回 ""，
+        下游省略 env_FRIDAY_TASK_USER_TOKEN，task 侧不挂 MCP server（向后兼容降级）。
+        机制已就绪：实时请求线程一旦经上下文变量提供明文 PAT，此处取之即可下传。
+
+        TODO(RTOOL follow-up)：接入实时请求线程明文 PAT 通道（如 contextvar），
+        对带 PAT 的实时 dispatch 自动注入；存量后台任务自动解析不在本期范围
+        （per Open Q1 裁决：机制完整 + 不违反 PAT-02）。
+        """
+        return ""
+
     async def _run_repo_coding(
         self,
         repository: Repository,
@@ -815,6 +839,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         node_execution_id: str = "",
         anthropic_api_key: str = "",        # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         anthropic_base_url: str = "",        # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
+        user_pat: str = "",                  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
     ) -> dict[str, Any]:
         """通过 TaskDispatcher 分发编码任务到 Runner。"""
         log = logger.bind(
@@ -861,6 +886,9 @@ class AICodingNode(SubStepMixin, BaseNode):
         base = getattr(settings, "FRIDAY_BASE_URL", "").rstrip("/")
         if base:
             tools_env["env_FRIDAY_TASK_TOOLS_ENDPOINT"] = f"{base}/api/tools/execute/"
+        # 机会性 PAT：仅当上游解析出实时请求线程明文时注入（无来源 → 不注入该键，不阻塞 dispatch）。
+        if user_pat:
+            tools_env["env_FRIDAY_TASK_USER_TOKEN"] = user_pat
 
         dispatch_task = DispatchTask(
             task_id=session_id,
@@ -930,6 +958,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "task_dispatched_to_runner",
                 session_id=session_id,
                 has_tools_endpoint=bool(base),
+                has_user_token=bool(user_pat),
             )
         except Exception as e:
             log.error("task_dispatch_failed", error=str(e))
