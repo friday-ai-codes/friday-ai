@@ -423,6 +423,41 @@ class TestAdminFork:
         source_msg_count = await Message.objects.filter(conversation=source).acount()
         assert source_msg_count == n
 
+    async def test_admin_fork_copies_all_messages_consistently(
+        self, admin_headers, user_a, project
+    ):
+        """WR-02：fork 原子复制后，副本消息与源在条数 / 顺序 / 内容上完全一致。"""
+        conv, n = await _acreate_conversation_with_messages(
+            project, owner=user_a, title="A-fork-consistent", n=4
+        )
+
+        client = AsyncClient()
+        resp = await client.post(
+            f"/api/admin/conversations/{conv.id}/fork/",
+            data=json.dumps({}),
+            content_type="application/json",
+            headers=admin_headers,
+        )
+        assert resp.status_code in {200, 201}, (
+            f"admin fork 应 200/201（拿到 {resp.status_code}）"
+        )
+
+        new_id = resp.json()["conversation_id"]
+        forked = await Conversation.objects.aget(id=new_id)
+
+        source_msgs = [
+            (m.role, m.content)
+            async for m in Message.objects.filter(conversation=conv).order_by("created_at")
+        ]
+        forked_msgs = [
+            (m.role, m.content)
+            async for m in Message.objects.filter(conversation=forked).order_by("created_at")
+        ]
+        assert len(forked_msgs) == n
+        assert forked_msgs == source_msgs, (
+            "fork 副本消息应与源在顺序 + 内容上逐条一致（原子整份复制）"
+        )
+
     async def test_non_admin_fork_403(self, user_a_headers, user_a, project):
         """非管理员调 admin fork → 403。"""
         conv = await _acreate_conversation(project, owner=user_a, title="A-fork-403")
