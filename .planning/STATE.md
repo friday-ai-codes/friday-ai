@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-09T09:51:13.472Z"
 last_activity: 2026-06-09
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-07)
+See: .planning/PROJECT.md (updated 2026-06-09)
 
-**Core value:** 让团队开箱即用、安全地完成首次登录与必备配置，从而把飞书需求自动跑成 PR。
-**Current focus:** Phase 5 — 入口迁移与向后兼容
+**Core value:** 让每个用户用 GitHub/GitLab 风格的个人访问令牌以「用户身份 + 用户权限」安全调用 Friday，并让 skill/mcp 工具以用户身份在容器内真正执行。
+**Current focus:** Phase 6 — PAT 模型增强与一次性明文
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 6 of 11 (PAT 模型增强与一次性明文)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-09 — Milestone v0.2.0 started
+Status: Ready to plan
+Last activity: 2026-06-09 — v0.2.0 roadmap created (Phases 6-11, 25/25 requirements mapped)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -55,23 +57,15 @@ Last activity: 2026-06-09 — Milestone v0.2.0 started
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Recent decisions affecting current work (v0.2.0):
 
-- [Milestone]: 用「首次访问设置向导」替代启动期自动建管理员
-- [Milestone]: 向导完成后接口/界面永久关闭并 fail-closed（无 superuser 才可用）
-- [Milestone]: DeepSeek / MiMo / Kimi 以 anthropic 兼容端点做一键预设；保留 `init_superuser` 仅作运维兜底
-- [01-01]: authentication_classes=[] on SetupInitView 确保 403 而非 401（DRF permission_denied 行为）
-- [01-01]: SetupNotInitialized 独立权限类，供 Phase 2 复用
-- [01-01]: _atomic_create_superuser 不用 select_for_update（SQLite 不兼容），以 double-check + UNIQUE 约束兜底
-- [02-01]: 密码强度复用 settings.AUTH_PASSWORD_VALIDATORS（min_length 提升至 8）；setup 成功后复用 LoginView 的 cookie-JWT 路径下发会话
-- [02-01]: 不置 must_change_password（create_superuser 默认 False）
-- [02-02]: 新增 auth store applySetupSession(user)；向导提交成功直达首页 /（替换 /login）
-- [03-01]: 新增薄编排端点 POST /api/providers/setup-wizard/（IsSuperUser），复用 Fernet encrypt_value + provider_health + aset_claude_code_config；落库前健康校验、失败不落库；update_or_create 幂等
-- [03-01]: provider_health 新增无状态 health_check_config（复用 _PING_DISPATCH，无 DB 副作用）
-- [03-02]: setup.vue 改两步向导，管理员创建成功后原地切供应商步骤（不路由跳转，不改 Phase 1 守卫）；预设为前端常量 lib/providerPresets.ts；Claude Code 三档统一映射所选 model
-- [04-01]: 新增 /api/system/ 三端点（security-check 只读非阻塞 + setup-feishu + setup-rag，IsSuperUser）；敏感项复用 encrypt_value+is_encrypted=True（与 bootstrap_system_settings 一致），键名一律 SettingKeys.*；安全校验只返回布尔+风险码、不回显密钥明文
-- [04-01]: 飞书/RAG 不走通用 PUT /settings/{key}/（该路径强制明文 is_encrypted=False），改薄编排端点加密落库，契合既有 is_encrypted/decrypt_value 读路径
-- [04-02]: setup.vue 扩为 5 步（admin→provider→security→feishu→rag），圆点指示+进度文字；provider done/skip 推进到 security；安全步骤「继续」任何态不 disable（非阻塞）；飞书/RAG 跳过=不调端点
+- [Milestone]: 令牌即用户身份——`authenticate()` 返回 owner，施加用户 RBAC，暂不做读写 scope 细分
+- [Milestone]: 历史无主会话回填给最早的 superuser（Conversation 无 owner 字段，最稳妥归属）
+- [Milestone]: 默认所有人（含管理员）在 AI 对话只看自己；另设只读「管理员会话管理」后台，交互需 fork
+- [Milestone]: 用户令牌以直传 PAT 形态注入 task 容器，日志/审计脱敏
+- [Milestone]: skill/mcp 以持久绑定表绑定用户令牌；吊销令牌时在途任务 graceful（跑完仅阻断新调用）
+- [Roadmap]: 依赖链 6→7→8→9→10→11；Phase 7 单点认证地基全链路前置，MCP 入口同阶段收紧 fail-closed
+- [Roadmap]: Conversation.created_by 历史回填是 Phase 8 首个 plan；令牌注入与脱敏必须同阶段（Phase 11）交付，杜绝先接通后补安全
 
 ### Pending Todos
 
@@ -102,4 +96,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with /gsd-plan-phase 6
