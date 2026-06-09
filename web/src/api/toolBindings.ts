@@ -4,8 +4,8 @@
  * 对应后端 server/tools/views.py 的绑定/可绑定工具端点
  * （list / bindable / upsert / unbind）。
  *
- * 安全（10-01 决策）：浏览器 client **绝不**引用 `/tools/execute/`，
- * 该执行端点是 PAT-only 的容器回调；浏览器仅做绑定的 list/bindable/upsert/unbind。
+ * 安全（10-01 决策）：浏览器 client **绝不**引用工具执行端点（PAT-only 的
+ * 容器回调）；浏览器仅做绑定的 list/bindable/upsert/unbind。
  *
  * `client.ts` 自动拼 `/api` 前缀且在末尾补 `/`（Django 301 规避），
  * 本模块统一写相对路径 `/tools/...`，URL 全部以 `/` 结尾。
