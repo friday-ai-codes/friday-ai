@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 10-03 complete — 后端装配：序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 RED 全 GREEN，57 passed 回归不退，makemigrations 干净；Phase 10 完成 4/4
-last_updated: "2026-06-09T17:58:32.880Z"
-last_activity: 2026-06-09 -- Phase 11 execution started
+stopped_at: Plan 11-01 complete — Wave 0 RED 脚手架：task/server/runner 三组件 RemoteTool 闭环测试就位（task 1 skipped importorskip 守卫无 collection error；server 2 RED endpoint/PAT + 2 GREEN 安全不变量；runner FRIDAY_TASK_REMOTE_TOOLS RED + 透传 GREEN）；WR-3 钉定机会性 PAT 经可选 user_pat 形参注入；回归不退；Phase 11 进度 1/4
+last_updated: "2026-06-09T18:06:00.000Z"
+last_activity: 2026-06-09 -- Plan 11-01 complete（Wave 0 RED 脚手架）
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4
 Status: Executing Phase 11
-Last activity: 2026-06-09 -- Phase 11 execution started
+Last activity: 2026-06-09 -- Plan 11-01 complete（Wave 0 RED 脚手架）
 
 Progress: [██████████] 100%
 
@@ -72,6 +72,7 @@ Progress: [██████████] 100%
 | Phase 10 P02 | 6min | 2 tasks | 2 files |
 | Phase 10 P04 | 6min | 3 tasks | 7 files |
 | Phase 10 P03 | 12min | 3 tasks | 4 files |
+| Phase 11 P01 | 14min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 10]: [10-03] 绑定 create serializer access_token=PrimaryKeyRelatedField(queryset=all)+validate_access_token 归属断言 created_by==user（不限定 queryset，统一走 ValidationError 不泄漏存在性）；validate_remote_tool 校验 source∈{mcp,skill}+is_active
 - [Phase 10]: [10-03] 绑定 ViewSet owner 隔离 get_queryset(user=request.user) + acreate aupdate_or_create 收敛 upsert；执行端点 auth=[AccessTokenAuthentication] 仅 PAT + IsAuthenticated + handle_exception→401（不降级 403，mirror McpToolView）
 - [Phase 10]: [10-03] 执行端点不做绑定强校验（可执行任意 active 工具）；execute_tool 签名不变、不传 user（Phase 11 gap，RESEARCH Open Q1）；后端 12 RED 全 GREEN，57 passed 回归不退，Phase 10 完成 4/4
+- [Phase 11]: [11-01] Wave 0 RED 三组件契约字段名三侧一致（FRIDAY_TASK_USER_TOKEN/REMOTE_TOOLS/TOOLS_ENDPOINT）；task importorskip("core.remote_tools") 守卫零 collection error，handler 直测（monkeypatch httpx，无 live Claude）
+- [Phase 11]: [11-01] WR-3 钉定：机会性 PAT 经 _run_repo_coding 可选 user_pat 形参（mirror anthropic_api_key），_execute_with_branch 经 AICodingNode._resolve_user_pat 解析实时明文；server 测试 monkeypatch 该解析器钉死 11-04 实现形态
+- [Phase 11]: [11-01] omit-PAT/never-reads-AccessToken 为安全负向不变量（Wave 0 即 GREEN 须保持）；tools_endpoint 由 FRIDAY_BASE_URL 推导非 callback_url（Pitfall 1）；FRIDAY_TASK_REMOTE_TOOLS 前缀修复待 11-03（Pitfall 2）
 
 ### Pending Todos
 
@@ -140,8 +144,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T01:02:00.000Z
-Stopped at: Plan 10-03 complete — 后端装配：序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 RED 全 GREEN，57 passed 回归不退，makemigrations 干净；Phase 10 完成 4/4
+Last session: 2026-06-10T01:58:00.000Z
+Stopped at: Plan 11-01 complete — Wave 0 RED 脚手架（task/server/runner 三组件 RemoteTool 闭环测试），WR-3 user_pat 机制钉定，回归不退；Phase 11 进度 1/4
 Resume file: None
 
 ## Operator Next Steps
