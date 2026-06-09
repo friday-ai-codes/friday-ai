@@ -76,7 +76,7 @@ const selectStubs = {
   Select: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: `<div><button class="set-never" type="button" @click="$emit('update:modelValue', 'never')"></button><slot /></div>`,
+    template: `<div><button class="set-never" type="button" @click="$emit('update:modelValue', 'never')"></button><button class="set-custom" type="button" @click="$emit('update:modelValue', 'custom')"></button><slot /></div>`,
   },
   SelectTrigger: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
@@ -174,5 +174,30 @@ describe('accessTokenSettings', () => {
     expect(createTokenMock).toHaveBeenCalledWith(
       expect.objectContaining({ note: 'pipeline note' }),
     )
+  })
+
+  // WR-02：自定义过期日期按「本地当天结束」构造，避免被解析为 UTC 午夜导致提前过期。
+  it('custom_expiry_uses_end_of_local_day', async () => {
+    createTokenMock.mockResolvedValueOnce('friday_pat_CUSTOM')
+    const wrapper = mount(AccessTokenSettings, {
+      global: { stubs: { ...stubs, ...selectStubs } },
+    })
+
+    await wrapper.find('input[name="name"]').setValue('ci-custom')
+    // 切换到「自定义日期」，日期输入框随之出现。
+    await wrapper.find('.set-custom').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[type="date"]').setValue('2026-12-31')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    // 期望值与组件一致地按本地当天结束构造，确保不会回退成 UTC 午夜（提前过期）。
+    const expected = new Date('2026-12-31T23:59:59.999').toISOString()
+    expect(createTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ expires_at: expected }),
+    )
+    // 防回归：UTC 午夜解析（旧 bug）必须与期望值不同。
+    expect(expected).not.toBe(new Date('2026-12-31').toISOString())
   })
 })
