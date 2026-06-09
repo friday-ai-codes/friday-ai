@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 10-01 complete — Wave 0 RED 脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py(7) + test_remote_tool_execute.py(5) + 前端 ToolBindingSettings.spec.ts(5)，预期 RED；test_pat_identity 8 passed 不回退
-last_updated: "2026-06-10T00:50:00.000Z"
-last_activity: 2026-06-10 -- Phase 10 Plan 01 complete (Wave 0 RED)
+stopped_at: Plan 10-02 complete — tools.ToolTokenBinding 模型（三 FK CASCADE + unique(user, remote_tool)）+ 0003 CreateModel 迁移；migrate OK + makemigrations --check 干净；make_tool_binding 停止 skip，test_tool_bindings 由 9f/1p/2s → 6f/1p（端点 RED 待 10-03）
+last_updated: "2026-06-10T00:55:00.000Z"
+last_activity: 2026-06-10 -- Phase 10 Plan 02 complete (ToolTokenBinding 模型 + 迁移)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 17
-  completed_plans: 14
-  percent: 82
+  completed_plans: 15
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 10 Plan 01 complete (Wave 0 RED)
+Last activity: 2026-06-10 -- Phase 10 Plan 02 complete (ToolTokenBinding 模型 + 迁移)
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [████████░░] 82%
 | Phase 09-admvw P02 | 10min | 3 tasks | 5 files |
 | Phase 09 P03 | 8 | 3 tasks | 4 files |
 | Phase 10 P01 | 10min | 3 tasks | 4 files |
+| Phase 10 P02 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,8 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 10]: [10-01] 跨用户 owner 隔离用例经 ORM 工厂 make_tool_binding(second_user) 播种他人绑定（make_access_token 仅主用户铸令牌，create 序列化器拒跨用户令牌引用，二号用户无法经 API 绑定）
 - [Phase 10]: [10-01] 前端绑定 client 不引用 /tools/execute/（PAT-only 容器回调）；浏览器仅 list/bindable/upsert/unbind 走 /tools/bindings/ + /tools/bindable/
 - [Phase 10]: [10-01] Wave 0 RED 脚手架：硬编码 URL 不 import 未落地 views → 端点 404 即 RED 而非 collection error；make_tool_binding 用 importorskip+getattr 守卫，ToolTokenBinding 缺失时优雅 skip
+- [Phase ?]: 10-02 ToolTokenBinding 三 FK 全 CASCADE + unique(user, remote_tool); related_name tool_token_bindings/tool_bindings/token_bindings 对齐 conftest
+- [Phase ?]: 10-02 0003 迁移仅 CreateModel 无 RunPython (RESEARCH 零历史回填); migrate OK + makemigrations --check 干净, make_tool_binding 停止 skip
 
 ### Pending Todos
 
@@ -129,8 +132,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T00:50:00.000Z
-Stopped at: Plan 10-01 complete — Wave 0 RED 脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py(7) + test_remote_tool_execute.py(5) + 前端 ToolBindingSettings.spec.ts(5)，预期 RED；test_pat_identity 8 passed 不回退
+Last session: 2026-06-10T00:55:00.000Z
+Stopped at: Plan 10-02 complete — tools.ToolTokenBinding 模型 + 0003 CreateModel 迁移；migrate OK + makemigrations --check 干净；make_tool_binding 停止 skip（端点 RED 待 10-03）
 Resume file: None
 
 ## Operator Next Steps
