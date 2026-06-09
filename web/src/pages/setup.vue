@@ -7,7 +7,6 @@ import { getSetupStatus } from '~/api/setup'
 import SetupFeishuStep from '~/components/setup/SetupFeishuStep.vue'
 import SetupProviderStep from '~/components/setup/SetupProviderStep.vue'
 import SetupRagStep from '~/components/setup/SetupRagStep.vue'
-import SetupSecurityStep from '~/components/setup/SetupSecurityStep.vue'
 import { Button } from '~/components/ui/button'
 import {
   FormControl,
@@ -23,13 +22,15 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { t } = useI18n()
 
-// 多步向导：管理员账户 → AI 供应商（Phase 3）→ 安全校验 → 飞书集成 → 向量检索（Phase 4）
-type SetupStep = 'admin' | 'provider' | 'security' | 'feishu' | 'rag'
-const STEPS: SetupStep[] = ['admin', 'provider', 'security', 'feishu', 'rag']
+// 多步向导：管理员账户 → AI 供应商（Phase 3）→ 飞书集成 → 向量检索（Phase 4）
+type SetupStep = 'admin' | 'provider' | 'feishu' | 'rag'
+const STEPS: SetupStep[] = ['admin', 'provider', 'feishu', 'rag']
 const step = ref<SetupStep>('admin')
 const currentStepIndex = computed(() => STEPS.indexOf(step.value))
 const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
+// 是否随部署内置 Qdrant（docker compose 已启动）：为 true 时向量检索步骤锁定 Qdrant 地址
+const qdrantBundled = ref(false)
 
 const formSchema = toTypedSchema(z.object({
   username: z.string().min(1, t('setup.validation.usernameRequired')).max(150, '用户名过长'),
@@ -135,6 +136,7 @@ const onSubmit = handleSubmit(async (formValues) => {
 onMounted(async () => {
   try {
     const setupStatus = await getSetupStatus()
+    qdrantBundled.value = Boolean(setupStatus.qdrant_bundled)
     if (!setupStatus.needs_setup) {
       router.push('/login')
     }
@@ -174,31 +176,30 @@ onMounted(async () => {
           </p>
         </div>
 
-        <!-- 步骤 2：AI 供应商配置（Phase 3）→ 完成/跳过推进到安全校验 -->
+        <!-- 步骤 2：AI 供应商配置（Phase 3）→ 完成/跳过推进到飞书集成 -->
         <SetupProviderStep
           v-if="step === 'provider'"
-          @done="step = 'security'"
-          @skip="step = 'security'"
+          @done="step = 'feishu'"
+          @skip="step = 'feishu'"
         />
 
-        <!-- 步骤 3：安全密钥校验（Phase 4，非阻塞） -->
-        <SetupSecurityStep
-          v-else-if="step === 'security'"
-          @continue="step = 'feishu'"
-        />
-
-        <!-- 步骤 4：飞书集成（Phase 4，可跳过） -->
+        <!-- 步骤 3：飞书集成（Phase 4，可跳过） -->
         <SetupFeishuStep
           v-else-if="step === 'feishu'"
+          show-prev
           @done="step = 'rag'"
           @skip="step = 'rag'"
+          @prev="step = 'provider'"
         />
 
-        <!-- 步骤 5：向量检索（Phase 4，可跳过，末步进入首页） -->
+        <!-- 步骤 4：向量检索（Phase 4，可跳过，末步进入首页） -->
         <SetupRagStep
           v-else-if="step === 'rag'"
+          show-prev
+          :qdrant-bundled="qdrantBundled"
           @done="router.push('/')"
           @skip="router.push('/')"
+          @prev="step = 'feishu'"
         />
 
         <!-- 步骤 1：管理员账户（Phase 1/2） -->

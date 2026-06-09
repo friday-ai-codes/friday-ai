@@ -849,10 +849,10 @@ class ProviderSetupWizardView(APIView):
 
         api_key = data["api_key"]
         base_url = data["base_url"]
+        # serializer.validate 已归一：model == default_model，models 为去重清单（含默认模型）
         model = data["model"]
         name = data.get("name") or "default"
-        context_length = data.get("context_length")
-        supports_vision = bool(data.get("supports_vision"))
+        models = data.get("models") or []
 
         cfg = {"api_key": api_key, "base_url": base_url}
 
@@ -882,14 +882,18 @@ class ProviderSetupWizardView(APIView):
             )
 
         # 3. 归一化模型清单（含能力推断），保证 default_model ∈ available_models
-        raw_model: dict[str, object] = {
-            "id": model,
-            "display_name": model,
-            "supports_vision": supports_vision,
-        }
-        if context_length:
-            raw_model["context_length"] = context_length
-        available_models = _normalize_available_models([raw_model], provider_type="anthropic")
+        raw_models: list[dict[str, object]] = []
+        for item in models:
+            mid = item["id"]
+            raw: dict[str, object] = {
+                "id": mid,
+                "display_name": mid,
+                "supports_vision": bool(item.get("supports_vision", False)),
+            }
+            if item.get("context_length"):
+                raw["context_length"] = item["context_length"]
+            raw_models.append(raw)
+        available_models = _normalize_available_models(raw_models, provider_type="anthropic")
 
         # 4. Fernet 加密 + 幂等 upsert（复用既有加密入口，绝不落明文）
         encrypted = encrypt_value(_json.dumps(cfg, ensure_ascii=False))
