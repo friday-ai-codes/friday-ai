@@ -46,6 +46,11 @@ def mock_config(temp_session_dir):
     config.claude_base_url = os.environ.get("FRIDAY_TASK_CLAUDE_BASE_URL", "")
     config.callback_url = ""
     config.callback_token = ""
+    # Phase 11 RemoteTool 链路：默认空 = 向后兼容（无 token/无工具 → 不挂 MCP server）。
+    # Wave 1 executor 装配测试复用这三字段。
+    config.user_token = ""
+    config.remote_tools = []
+    config.tools_endpoint = ""
     return config
 
 
