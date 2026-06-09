@@ -29,7 +29,7 @@
 - [ ] **Phase 8: 对话/会话用户隔离** - Conversation 加 created_by + 历史回填，全路径按 owner 过滤，越权 403/404
 - [x] **Phase 9: 管理员会话管理后台（只读）** - 独立只读后台浏览所有会话，交互需 fork 到自己名下 (completed 2026-06-09)
 - [x] **Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点** - 持久绑定令牌给 skill/mcp，以 owner 身份执行；新增认证执行端点 (completed 2026-06-10)
-- [ ] **Phase 11: task 容器接通（RemoteTool 链路闭环）** - 容器消费 remote_tools + 直传 PAT 注入脱敏 + graceful 吊销
+- [x] **Phase 11: task 容器接通（RemoteTool 链路闭环）** - 容器消费 remote_tools + 直传 PAT 注入脱敏 + graceful 吊销
 
 ## Phase Details
 
@@ -128,7 +128,7 @@
 - [x] 11-01-PLAN.md — Wave 0 RED 脚手架：task test_remote_tools.py（SDK MCP 构建/handler 回调/401 graceful/脱敏）+ server test_remote_tool_dispatch.py（endpoint 推导/机会性 PAT/不读 DB）+ runner executor_test.go env 装配
 - [x] 11-02-PLAN.md — task 机制：core/remote_tools.py（schema→SdkMcpTool 动态注册 + PAT 回调 + graceful）+ TaskConfig 三字段 + executor.py 条件挂载 mcp_servers/allowed_tools
 - [x] 11-03-PLAN.md — runner（Go）：executor.go 新增 FRIDAY_TASK_REMOTE_TOOLS 前缀修复 + 经 metadata env_ 透传 USER_TOKEN/TOOLS_ENDPOINT，zerolog 不打印 env 值
-- [ ] 11-04-PLAN.md — server dispatch：coding.py 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT（FRIDAY_BASE_URL 推导）+ 机会性 PAT（绝不读 DB），PAT 不入日志
+- [x] 11-04-PLAN.md — server dispatch：coding.py 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT（FRIDAY_BASE_URL 推导）+ 机会性 PAT（绝不读 DB），PAT 不入日志
 
 ## Progress
 
@@ -147,4 +147,4 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
 | 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 4/4 | Complete    | 2026-06-09 |
-| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 3/4 | In Progress|  |
+| 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 4/4 | Complete | 2026-06-10 |

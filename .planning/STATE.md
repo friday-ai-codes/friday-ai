@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 11-03 complete — runner buildContainerEnv 注入 FRIDAY_TASK_REMOTE_TOOLS（前缀修复，TaskConfig 可读），USER_TOKEN/TOOLS_ENDPOINT 经既有 metadata env_ 透传；runner RED 转 GREEN，gofmt 干净，go build 通过，PAT 不进日志；Phase 11 进度 3/4
-last_updated: "2026-06-09T18:21:52.338Z"
-last_activity: 2026-06-09
+stopped_at: Plan 11-04 complete — coding.py dispatch 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT（FRIDAY_BASE_URL 推导）+ 机会性 PAT（_resolve_user_pat 实时明文，绝不读 DB；无来源省略键）；11-01 server RED 4/4 转 GREEN，回归 23 passed，PAT 不入日志；Phase 11 完成 4/4，里程碑 v0.2.0 全阶段达成
+last_updated: "2026-06-10T18:30:00.000Z"
+last_activity: 2026-06-10
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — EXECUTING
+Phase: 11 (task 容器接通（RemoteTool 链路闭环）) — COMPLETE
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-09
+Status: Phase complete
+Last activity: 2026-06-10
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [██████████] 95%
 | Phase 11 P01 | 14min | 3 tasks | 4 files |
 | Phase 11 P02 | 9min | 3 tasks | 4 files |
 | Phase 11 P03 | 4min | 1 tasks | 1 files |
+| Phase 11 P04 | 6min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,7 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 11]: [11-02] TaskConfig.remote_tools 走 pydantic v2 复杂类型 env 自动 JSON 解码（A2 首选，实测通过，无需 model_validator+json.loads 兜底）
 - [Phase 11]: [11-02] executor 装配 options_kwargs dict 条件加 mcp_servers/allowed_tools（仅 build_remote_tools_mcp_server 非 None 时），log 加 has_user_token bool + remote_tool_count，绝不记 PAT 明文
 - [Phase 11]: [11-03] FRIDAY_TASK_REMOTE_TOOLS 复用既有 remoteTools JSON 单源双键（旧 FRIDAY_REMOTE_TOOLS 保留），前缀修复使 TaskConfig 可读；USER_TOKEN/TOOLS_ENDPOINT 零新增 Go 代码经 metadata env_ 透传，runner 不记 env 值
+- [Phase 11]: [11-04] coding.py dispatch 注入 env_FRIDAY_TASK_TOOLS_ENDPOINT 强由 settings.FRIDAY_BASE_URL 拼 /api/tools/execute/（非 callback_url）；机会性 PAT 经 _resolve_user_pat（实时请求线程明文，绝不读 AccessToken/DB，PAT-02）+ 可选 user_pat 形参注入，无来源省略键；日志只记 has_tools_endpoint/has_user_token bool。_resolve_user_pat 当前返回 ''（机制就绪），实时明文通道接入留 follow-up（Open Q1 Option C）
 
 ### Pending Todos
 
@@ -150,8 +152,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T18:21:52.329Z
-Stopped at: Plan 11-03 complete — runner buildContainerEnv 注入 FRIDAY_TASK_REMOTE_TOOLS（前缀修复，TaskConfig 可读），USER_TOKEN/TOOLS_ENDPOINT 经既有 metadata env_ 透传；runner RED 转 GREEN，gofmt 干净，go build 通过，PAT 不进日志；Phase 11 进度 3/4
+Last session: 2026-06-10T18:30:00.000Z
+Stopped at: Plan 11-04 complete — coding.py dispatch 注入 tools_endpoint + 机会性 PAT；server RED 4/4 转 GREEN，回归 23 passed；Phase 11 完成 4/4，v0.2.0 全阶段达成
 Resume file: None
 
 ## Operator Next Steps
