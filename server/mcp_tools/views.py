@@ -156,9 +156,13 @@ class McpToolView(APIView):
         return super().handle_exception(exc)
 
     async def _begin(self, request: Request) -> tuple[InteractionRun | None, Response | None]:
+        # 基类已是 IsAuthenticated，未认证请求在权限层即被 handle_exception 拒为
+        # authentication_failed（401），此处不再可能为匿名。保留该 guard 作为纵深防御
+        # （兜底「已认证但 request.auth 为 None」的边缘态），错误码对齐 handle_exception 的
+        # authentication_failed，避免同一「无可用 token」语义出现两个分叉码。
         if request.auth is None:
             return None, error_response(
-                "authentication_required",
+                "authentication_failed",
                 "缺少 Friday Access Token",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
