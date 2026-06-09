@@ -14,8 +14,11 @@ import {
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
 
-const emit = defineEmits<{ done: [], skip: [] }>()
+const props = withDefaults(defineProps<{ showPrev?: boolean }>(), { showPrev: false })
+const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 const { t } = useI18n()
+
+const FEISHU_OPEN_PLATFORM_URL = 'https://open.feishu.cn/app'
 
 const submitError = ref<string | null>(null)
 const isSubmitting = ref(false)
@@ -71,6 +74,22 @@ const onSubmit = handleSubmit(async (formValues) => {
       <span class="text-sm">{{ submitError }}</span>
     </div>
 
+    <p class="flex items-start gap-1.5 mb-4 text-xs text-muted-foreground">
+      <span class="icon-[lucide--info] text-sm flex-shrink-0 mt-0.5" />
+      <span>
+        {{ t('setup.feishu.guide') }}
+        <a
+          :href="FEISHU_OPEN_PLATFORM_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-0.5 text-primary hover:underline"
+        >
+          {{ t('setup.feishu.guideLink') }}
+          <span class="icon-[lucide--external-link] text-[0.7rem]" />
+        </a>
+      </span>
+    </p>
+
     <form class="space-y-4" @submit="onSubmit">
       <FormField v-slot="{ componentField }" name="appId">
         <FormItem>
@@ -114,29 +133,43 @@ const onSubmit = handleSubmit(async (formValues) => {
         </FormItem>
       </FormField>
 
-      <Button
-        type="submit"
-        class="w-full h-10 text-sm font-semibold mt-2"
-        :disabled="isSubmitting"
-      >
-        <template v-if="isSubmitting">
-          <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-          {{ t('setup.feishu.saving') }}
-        </template>
-        <template v-else>
-          <span class="icon-[lucide--check] mr-2" />
-          {{ t('setup.feishu.cta') }}
-        </template>
-      </Button>
-
-      <button
-        type="button"
-        class="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors pt-1"
-        :disabled="isSubmitting"
-        @click="emit('skip')"
-      >
-        {{ t('setup.feishu.skip') }}
-      </button>
+      <!-- 导航：上一步 / 跳过 / 保存并继续 -->
+      <div class="flex items-center gap-2 pt-2">
+        <Button
+          v-if="props.showPrev"
+          type="button"
+          variant="outline"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('prev')"
+        >
+          <span class="icon-[lucide--arrow-left] mr-1.5" />
+          {{ t('setup.nav.prev') }}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('skip')"
+        >
+          {{ t('setup.feishu.skip') }}
+        </Button>
+        <Button
+          type="submit"
+          class="h-10 flex-1 text-sm font-semibold"
+          :disabled="isSubmitting"
+        >
+          <template v-if="isSubmitting">
+            <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+            {{ t('setup.feishu.saving') }}
+          </template>
+          <template v-else>
+            <span class="icon-[lucide--check] mr-2" />
+            {{ t('setup.feishu.cta') }}
+          </template>
+        </Button>
+      </div>
     </form>
   </div>
 </template>

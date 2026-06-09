@@ -15,8 +15,15 @@ import {
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
 
-const emit = defineEmits<{ done: [], skip: [] }>()
+const props = withDefaults(
+  defineProps<{ showPrev?: boolean, qdrantBundled?: boolean }>(),
+  { showPrev: false, qdrantBundled: false },
+)
+const emit = defineEmits<{ done: [], skip: [], prev: [] }>()
 const { t } = useI18n()
+
+const DOUBAO_URL = 'https://www.volcengine.com/product/doubao'
+const QIANWEN_URL = 'https://dashscope.console.aliyun.com/'
 
 const submitError = ref<string | null>(null)
 const isSubmitting = ref(false)
@@ -47,7 +54,9 @@ const onSubmit = handleSubmit(async (formValues) => {
   submitError.value = null
   isSubmitting.value = true
   try {
-    const payload: SetupRagRequest = { qdrant_url: formValues.qdrantUrl }
+    // 内置 Qdrant 时强制使用内置实例地址，忽略任何被改动的输入值
+    const qdrantUrl = props.qdrantBundled ? 'http://qdrant:6333' : formValues.qdrantUrl
+    const payload: SetupRagRequest = { qdrant_url: qdrantUrl }
     if (formValues.qdrantApiKey?.trim())
       payload.qdrant_api_key = formValues.qdrantApiKey.trim()
     if (formValues.embeddingApiUrl?.trim())
@@ -94,6 +103,39 @@ const onSubmit = handleSubmit(async (formValues) => {
       <span class="text-sm">{{ submitError }}</span>
     </div>
 
+    <!-- 用途说明：告诉用户向量检索是干嘛的 -->
+    <p class="flex items-start gap-1.5 mb-3 text-xs text-muted-foreground">
+      <span class="icon-[lucide--info] text-sm flex-shrink-0 mt-0.5" />
+      <span>{{ t('setup.rag.about') }}</span>
+    </p>
+
+    <!-- Embedding 服务引导：没有可去豆包 / 通义千问 注册购买 -->
+    <p class="flex items-start gap-1.5 mb-4 text-xs text-muted-foreground">
+      <span class="icon-[lucide--sparkles] text-sm flex-shrink-0 mt-0.5" />
+      <span>
+        {{ t('setup.rag.embeddingGuide') }}
+        <a
+          :href="DOUBAO_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-0.5 text-primary hover:underline"
+        >
+          {{ t('setup.rag.doubaoLink') }}
+          <span class="icon-[lucide--external-link] text-[0.7rem]" />
+        </a>
+        <span class="mx-1">/</span>
+        <a
+          :href="QIANWEN_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-0.5 text-primary hover:underline"
+        >
+          {{ t('setup.rag.qianwenLink') }}
+          <span class="icon-[lucide--external-link] text-[0.7rem]" />
+        </a>
+      </span>
+    </p>
+
     <form class="space-y-4" @submit="onSubmit">
       <FormField v-slot="{ componentField }" name="qdrantUrl">
         <FormItem>
@@ -108,10 +150,20 @@ const onSubmit = handleSubmit(async (formValues) => {
                 :placeholder="t('setup.rag.fields.qdrantUrlPlaceholder')"
                 autocomplete="off"
                 class="pl-9"
+                :readonly="props.qdrantBundled"
+                :class="props.qdrantBundled ? 'opacity-70 cursor-not-allowed' : ''"
                 v-bind="componentField"
               />
             </div>
           </FormControl>
+          <!-- 内置 Qdrant 时锁定地址：不允许更改，使用 docker compose 内置实例 -->
+          <p
+            v-if="props.qdrantBundled"
+            class="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <span class="icon-[lucide--lock] text-[0.7rem] flex-shrink-0" />
+            {{ t('setup.rag.qdrantBundledNote') }}
+          </p>
           <FormMessage />
         </FormItem>
       </FormField>
@@ -202,29 +254,43 @@ const onSubmit = handleSubmit(async (formValues) => {
         </FormField>
       </div>
 
-      <Button
-        type="submit"
-        class="w-full h-10 text-sm font-semibold mt-2"
-        :disabled="isSubmitting"
-      >
-        <template v-if="isSubmitting">
-          <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-          {{ t('setup.rag.saving') }}
-        </template>
-        <template v-else>
-          <span class="icon-[lucide--check] mr-2" />
-          {{ t('setup.rag.cta') }}
-        </template>
-      </Button>
-
-      <button
-        type="button"
-        class="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors pt-1"
-        :disabled="isSubmitting"
-        @click="emit('skip')"
-      >
-        {{ t('setup.rag.skip') }}
-      </button>
+      <!-- 导航：上一步 / 跳过 / 保存并完成 -->
+      <div class="flex items-center gap-2 pt-2">
+        <Button
+          v-if="props.showPrev"
+          type="button"
+          variant="outline"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('prev')"
+        >
+          <span class="icon-[lucide--arrow-left] mr-1.5" />
+          {{ t('setup.nav.prev') }}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          class="h-10"
+          :disabled="isSubmitting"
+          @click="emit('skip')"
+        >
+          {{ t('setup.rag.skip') }}
+        </Button>
+        <Button
+          type="submit"
+          class="h-10 flex-1 text-sm font-semibold"
+          :disabled="isSubmitting"
+        >
+          <template v-if="isSubmitting">
+            <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+            {{ t('setup.rag.saving') }}
+          </template>
+          <template v-else>
+            <span class="icon-[lucide--check] mr-2" />
+            {{ t('setup.rag.cta') }}
+          </template>
+        </Button>
+      </div>
     </form>
   </div>
 </template>

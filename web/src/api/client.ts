@@ -256,8 +256,9 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 export async function get<T>(
   endpoint: string,
   params?: QueryParams,
+  options?: Omit<RequestOptions, 'params' | 'method'>,
 ): Promise<T> {
-  return request<T>(endpoint, { method: 'GET', params })
+  return request<T>(endpoint, { method: 'GET', params, ...options })
 }
 
 /**

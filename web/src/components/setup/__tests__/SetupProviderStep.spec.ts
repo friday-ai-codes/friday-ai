@@ -21,14 +21,14 @@ describe('setupProviderStep', () => {
   it('renders the 5 model presets', () => {
     const wrapper = mount(SetupProviderStep)
     const text = wrapper.text()
-    expect(text).toContain('DeepSeek V4 Pro')
-    expect(text).toContain('MiMo V2.5 Pro')
-    expect(text).toContain('Kimi 2.6')
+    expect(text).toContain('DeepSeek')
+    expect(text).toContain('MiMo（小米）')
+    expect(text).toContain('Kimi（Moonshot）')
     expect(text).toContain('Anthropic 官方')
     expect(text).toContain('自定义兼容端点')
   })
 
-  it('selecting a preset auto-fills base_url + model inputs', async () => {
+  it('selecting a preset auto-fills base_url and loads its preset models', async () => {
     const wrapper = mount(SetupProviderStep)
     const anthropicBtn = wrapper
       .findAll('button')
@@ -37,9 +37,10 @@ describe('setupProviderStep', () => {
     await flushPromises()
 
     const inputs = wrapper.findAll('input')
-    // 顺序：baseUrl, model, apiKey
+    // 顺序：baseUrl, apiKey, 手动添加模型
     expect((inputs[0].element as HTMLInputElement).value).toBe('https://api.anthropic.com')
-    expect((inputs[1].element as HTMLInputElement).value).toBe('claude-sonnet-4-5')
+    // Anthropic 预设模型加载为可选列表
+    expect(wrapper.text()).toContain('claude-sonnet-4-5')
   })
 
   it('submits config to setupProvider and emits done on success', async () => {
@@ -50,8 +51,8 @@ describe('setupProviderStep', () => {
     })
     const wrapper = mount(SetupProviderStep)
     const inputs = wrapper.findAll('input')
-    // 默认预设(deepseek) 已填 base_url/model，仅需填 api key
-    await inputs[2].setValue('sk-ant-test-key')
+    // 默认预设(deepseek) 已填 base_url 并加载预设模型，仅需填 api key
+    await inputs[1].setValue('sk-ant-test-key')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
 
@@ -59,7 +60,9 @@ describe('setupProviderStep', () => {
     const payload = setupProviderMock.mock.calls[0][0]
     expect(payload.api_key).toBe('sk-ant-test-key')
     expect(payload.base_url).toBe('https://api.deepseek.com/anthropic')
-    expect(payload.model).toBe('deepseek-chat')
+    // 默认选中预设首个模型
+    expect(payload.model).toBe('deepseek-v4-pro')
+    expect(payload.default_model).toBe('deepseek-v4-pro')
     await vi.waitFor(() => expect(wrapper.emitted('done')).toBeTruthy())
   })
 
@@ -69,7 +72,7 @@ describe('setupProviderStep', () => {
     )
     const wrapper = mount(SetupProviderStep)
     const inputs = wrapper.findAll('input')
-    await inputs[2].setValue('bad-key')
+    await inputs[1].setValue('bad-key')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
 
@@ -78,11 +81,11 @@ describe('setupProviderStep', () => {
     expect(wrapper.emitted('done')).toBeFalsy()
   })
 
-  it('emits skip when "稍后配置" is clicked', async () => {
+  it('emits skip when the skip button is clicked', async () => {
     const wrapper = mount(SetupProviderStep)
     const skipBtn = wrapper
       .findAll('button')
-      .find(b => b.text().includes('setup.provider.skip'))!
+      .find(b => b.text().includes('setup.nav.skip'))!
     await skipBtn.trigger('click')
     expect(wrapper.emitted('skip')).toBeTruthy()
   })

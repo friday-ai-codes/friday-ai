@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import * as z from 'zod'
 import { getSetupStatus } from '~/api/setup'
 import SetupFeishuStep from '~/components/setup/SetupFeishuStep.vue'
@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
+import { clearSetupProgress, getSetupProgress, setSetupProgress } from '~/lib/setupProgress'
 import { useAuthStore } from '~/stores/auth'
 
 const router = useRouter()
@@ -31,6 +32,29 @@ const setupError = ref<string | null>(null)
 const isSubmitting = ref(false)
 // 是否随部署内置 Qdrant（docker compose 已启动）：为 true 时向量检索步骤锁定 Qdrant 地址
 const qdrantBundled = ref(false)
+
+// 引导进度持久化：管理员创建后 needs_setup=false，记录当前步骤以便刷新恢复（避免“直接进去了”）
+watch(step, (s) => {
+  if (s === 'admin')
+    return
+  setSetupProgress(s)
+})
+
+// 刷新/关闭阻断：引导未完成前提示用户离开会丢失未保存配置。
+// 现代浏览器只展示通用确认框（无法自定义文案），returnValue 仅为兼容旧浏览器。
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  e.preventDefault()
+  e.returnValue = t('setup.leaveWarning')
+}
+window.addEventListener('beforeunload', handleBeforeUnload)
+onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
+
+// 引导完成：清除进度与刷新阻断，进入系统。
+function finishWizard() {
+  clearSetupProgress()
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  router.push('/')
+}
 
 const formSchema = toTypedSchema(z.object({
   username: z.string().min(1, t('setup.validation.usernameRequired')).max(150, '用户名过长'),
@@ -137,7 +161,19 @@ onMounted(async () => {
   try {
     const setupStatus = await getSetupStatus()
     qdrantBundled.value = Boolean(setupStatus.qdrant_bundled)
-    if (!setupStatus.needs_setup) {
+    if (setupStatus.needs_setup) {
+      // 尚未创建管理员：从头开始，清掉可能残留的旧进度
+      step.value = 'admin'
+      clearSetupProgress()
+      return
+    }
+    // 管理员已存在：若引导仍在进行则恢复到对应步骤，否则离开向导
+    const resume = getSetupProgress()
+    if (resume === 'provider' || resume === 'feishu' || resume === 'rag') {
+      step.value = resume
+    }
+    else {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
       router.push('/login')
     }
   }
@@ -197,8 +233,8 @@ onMounted(async () => {
           v-else-if="step === 'rag'"
           show-prev
           :qdrant-bundled="qdrantBundled"
-          @done="router.push('/')"
-          @skip="router.push('/')"
+          @done="finishWizard"
+          @skip="finishWizard"
           @prev="step = 'feishu'"
         />
 

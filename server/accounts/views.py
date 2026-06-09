@@ -37,6 +37,7 @@ logger = structlog.get_logger(__name__)
 class LoginView(APIView):
     """User login endpoint."""
 
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [LoginRateThrottle]
 
@@ -89,6 +90,7 @@ class LoginView(APIView):
 class LogoutView(APIView):
     """User logout endpoint."""
 
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     async def post(self, request):
@@ -105,6 +107,7 @@ class RefreshTokenView(APIView):
     防止泄露的 Token 被持续利用。
     """
 
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [RefreshRateThrottle]
 
@@ -252,6 +255,7 @@ class InvitationView(APIView):
 class InvitationAcceptView(APIView):
     """接受邀请并注册新用户（公开端点）。"""
 
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     async def post(self, request):
@@ -439,6 +443,7 @@ class SetupStatusView(APIView):
     仅返回 {is_initialized: bool, needs_setup: bool}（SETUP-02）。
     """
 
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     async def get(self, request):

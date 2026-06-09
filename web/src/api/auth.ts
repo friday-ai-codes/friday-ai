@@ -22,6 +22,7 @@ import { get, post, put } from './client'
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   return post<LoginResponse>('/auth/login/', credentials, {
     credentials: 'include', // 重要：接收 HttpOnly Cookie
+    skipAuth: true,
   })
 }
 
@@ -32,6 +33,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 export async function logout(): Promise<void> {
   return post<void>('/auth/logout/', undefined, {
     credentials: 'include',
+    skipAuth: true,
   })
 }
 
@@ -42,6 +44,7 @@ export async function logout(): Promise<void> {
 export async function refresh(): Promise<RefreshResponse> {
   return post<RefreshResponse>('/auth/refresh/', undefined, {
     credentials: 'include', // 重要：发送 HttpOnly Cookie
+    skipAuth: true,
   })
 }
 

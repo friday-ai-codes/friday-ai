@@ -64,4 +64,20 @@ describe('api client — 401 自动刷新拦截器', () => {
     // 仅请求一次 refresh，没有递归再调 refresh
     expect(calls.filter(c => c.includes('/auth/refresh/')).length).toBe(1)
   })
+
+  it('skipAuth 请求拿到 401 时不触发 refresh', async () => {
+    const calls: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      return jsonResponse(401, { detail: 'public endpoint rejected' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(get('/auth/setup/status/', undefined, { skipAuth: true }))
+      .rejects
+      .toBeInstanceOf(ApiError)
+
+    expect(calls.filter(c => c.includes('/auth/refresh/')).length).toBe(0)
+  })
 })
