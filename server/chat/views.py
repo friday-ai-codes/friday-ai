@@ -2420,11 +2420,25 @@ class RoutingTraceManualOverrideView(APIView):
         except RepositoryRoutingTrace.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
-        # ownership 校验：复用既有 PermissionService（与 chat/views.py 其它
-        # endpoint 同模式）；跨用户返 404 隐藏存在性。
+        # owner gate（ISO-03/04，主/外层）：经 trace.conversation 反查 owner，越权 → 404
+        # 隐藏存在性。**无 superuser bypass**（管理员作为认证用户操作他人会话 → 404）；
+        # 用 created_by_id 避免 async 惰性 FK。
         from permissions.services import PermissionService
 
         user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and original.conversation.created_by_id != user.id
+        ):
+            logger.warning(
+                "routing_trace_manual_override_denied_cross_user",
+                user_id=str(getattr(user, "id", "")),
+                trace_id=str(original.id),
+            )
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        # 既有 project 级 has_project_access 保留为 null-owner/共享行次层防御
+        # （不 bypass 上面的 owner gate；保留 superuser→project 语义仅作用于无主行）。
         if not getattr(user, "is_superuser", False):
             allowed = await sync_to_async(PermissionService.has_project_access)(
                 user, original.conversation.project, "member"
@@ -2525,10 +2539,27 @@ class ClarificationAnswerView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 用户归属校验：跨 project 访问 → 404 隐藏存在性（与 routing-trace
-        # override 同模式）；trace.conversation.project.owner 是单 owner，
-        # 后续团队权限走 PermissionService.has_project_access 兜底。
+        # owner gate（ISO-03/04，主/外层）：经 trace.conversation 反查 owner，越权 → 404
+        # （404 body 与「不存在或已过期」一致，隐藏存在性）；owner-miss 必须在落库/resume
+        # 之前 404。**无 superuser bypass**（管理员操作他人会话 → 404）；
+        # 用 created_by_id 避免 async 惰性 FK。
         user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and trace.conversation.created_by_id != user.id
+        ):
+            logger.warning(
+                "clarification_answer_denied_cross_user",
+                user_id=str(getattr(user, "id", "")),
+                clarification_id=clarification_id,
+            )
+            return Response(
+                {"detail": "clarification 不存在或已过期"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 既有 project 级 has_project_access 保留为 null-owner/共享行次层防御
+        # （不 bypass 上面的 owner gate）。
         if not getattr(user, "is_superuser", False):
             from permissions.services import PermissionService
 
