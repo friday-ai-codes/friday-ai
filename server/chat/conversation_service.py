@@ -15,6 +15,8 @@ from copy import deepcopy
 from typing import Any, Final
 
 import structlog
+from asgiref.sync import sync_to_async
+from django.db import transaction
 
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools  # noqa: F401
@@ -925,29 +927,43 @@ class ConversationService:
             suffix = "（管理员副本）"
             fork_title = f"{source.title[:200 - len(suffix)]}{suffix}"
 
-        forked = await Conversation.objects.acreate(
-            project_id=source.project_id,
-            title=fork_title,
-            model=source.model,
-            provider_credential_id_id=source.provider_credential_id_id,
-            created_by=admin_user,
-            status=Conversation.Status.DRAFT,
-        )
+        # WR-02：会话 + 全部消息的复制必须原子化，否则复制中途异常会留下
+        # messages 不完整的 DRAFT 副本（孤儿数据）。收敛到单个 sync_to_async
+        # 包裹的 transaction.atomic() 块，并用 bulk_create 一次性写入消息，
+        # 保证「要么整份、要么不创建」。
+        @sync_to_async
+        def _copy_atomic() -> tuple[Conversation, int]:
+            with transaction.atomic():
+                forked = Conversation.objects.create(
+                    project_id=source.project_id,
+                    title=fork_title,
+                    model=source.model,
+                    provider_credential_id_id=source.provider_credential_id_id,
+                    created_by=admin_user,
+                    status=Conversation.Status.DRAFT,
+                )
+                source_messages = list(
+                    Message.objects.filter(conversation_id=source.id).order_by(
+                        "created_at"
+                    )
+                )
+                Message.objects.bulk_create(
+                    [
+                        Message(
+                            conversation=forked,
+                            role=msg.role,
+                            content=msg.content,
+                            tool_calls=deepcopy(msg.tool_calls),
+                            tool_call_id=msg.tool_call_id,
+                            metadata=deepcopy(msg.metadata),
+                            parts=deepcopy(msg.parts),
+                        )
+                        for msg in source_messages
+                    ]
+                )
+                return forked, len(source_messages)
 
-        copied_count = 0
-        async for msg in Message.objects.filter(
-            conversation=source,
-        ).order_by("created_at"):
-            await Message.objects.acreate(
-                conversation=forked,
-                role=msg.role,
-                content=msg.content,
-                tool_calls=deepcopy(msg.tool_calls),
-                tool_call_id=msg.tool_call_id,
-                metadata=deepcopy(msg.metadata),
-                parts=deepcopy(msg.parts),
-            )
-            copied_count += 1
+        forked, copied_count = await _copy_atomic()
 
         logger.info(
             "admin_conversation_forked",
