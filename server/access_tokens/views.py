@@ -59,8 +59,11 @@ class AccessTokenViewSet(ModelViewSet):
         plaintext = generate_pat()
         token = await AccessToken.objects.acreate(
             name=data["name"],
+            note=data.get("note", ""),
             token_hash=hash_token(plaintext),
             token_prefix=plaintext[:12],
+            # 指纹后缀：明文后 4 字符，仅由内存中明文派生（绝不回传明文再反推）。
+            token_suffix=plaintext[-4:],
             expires_at=expires_at,
             created_by=user,
         )
