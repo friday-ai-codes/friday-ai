@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 07-01 complete — Wave 0 RED auth-contract tests (IDENT-01/02/03/05) committed; expected RED until 07-02/07-03 land
-last_updated: "2026-06-09T13:14:22.964Z"
+stopped_at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
+last_updated: "2026-06-09T13:20:11.826Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 07 (令牌即用户身份（认证地基）) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-09
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 06 P03 | 35 | 3 tasks | 4 files |
 | Phase 07 P01 | 12 | 3 tasks | 3 files |
+| Phase 07 P02 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Recent decisions affecting current work (v0.2.0):
 - [Milestone]: skill/mcp 以持久绑定表绑定用户令牌；吊销令牌时在途任务 graceful（跑完仅阻断新调用）
 - [Roadmap]: 依赖链 6→7→8→9→10→11；Phase 7 单点认证地基全链路前置，MCP 入口同阶段收紧 fail-closed
 - [Roadmap]: Conversation.created_by 历史回填是 Phase 8 首个 plan；令牌注入与脱敏必须同阶段（Phase 11）交付，杜绝先接通后补安全
+- [Phase ?]: [07-02] PAT auth 返回 owner（token.created_by），request.user 即令牌所有者享其本人 RBAC
+- [Phase ?]: [07-02] DEFAULT_AUTHENTICATION_CLASSES PAT 类排首位 + friday_pat_ 前缀闸门 + authenticate_header 保住站点级 401
 
 ### Pending Todos
 
@@ -94,7 +97,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T13:14:22.959Z
+Last session: 2026-06-09T13:20:01.014Z
 Stopped at: Plan 06-02 complete — PAT backend增量 (note + token_suffix) GREEN; 8 backend tests pass, makemigrations --check clean
 Resume file: None
 
