@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 08-03 complete — 直接会话端点 #1-12 owner gate 接线（SSE 流前 404 + create 写 created_by），#1-12 隔离用例 GREEN
-last_updated: "2026-06-09T14:45:00.000Z"
+stopped_at: Plan 08-04 complete — 关联模型端点 #13-25 owner gate 接线（coding-session/plan + trace/clarification，去 superuser bypass），全 25 路径隔离套件全绿；Phase 8 完成（4/4）
+last_updated: "2026-06-09T14:48:00.000Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 08 (对话/会话用户隔离) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
+Phase: 08 (对话/会话用户隔离) — COMPLETE (4/4)
+Plan: 4 of 4 (complete)
+Status: Phase 8 隔离面闭合（全 25 路径 cross-user-denied GREEN）
 Last activity: 2026-06-09
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 90%
 | Phase 08 P01 | 15 | 3 tasks | 2 files |
 | Phase 08 P02 | 12 | 3 tasks | 4 files |
 | Phase 08 P03 | 18 | 3 tasks | 1 files |
+| Phase 08 P04 | 22 | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase 08]: [08-03] 直接会话端点 #1-12 接线 owner gate；owner gate 作主/外层先于既有 has_project_access，越权 404、无 superuser bypass，既有 403 分支保留为 null-owner/共享行次层
 - [Phase 08]: [08-03] SSE stream 在 StreamingHttpResponse 构造前 aget_for_user → 干净 HTTP 404（非流内 error，Pitfall 5）；interrupt 在 runner.interrupt()/barrier 取消前加 owner-scoped 校验（T-08-11）
 - [Phase 08]: [08-03] 两种 owner gate 风格：aget_for_user（detail/runtime/patch/stream/interrupt）+ created_by_id 比对（preflight/messages-delete/fork/export，已 select_related），统一 owner-miss → 404
+- [Phase 08]: [08-04] 关联模型端点 #13-25 经 .conversation FK 接线 owner gate（select_related("conversation") + created_by_id 比对 → 404；list 型 #13/#20 走 aget_for_user → []），全 25 路径隔离套件全绿
+- [Phase 08]: [08-04] #24/#25 去除 owner 判定的 superuser bypass（ISO-03，管理员越权 → 404）；#22 owner gate 前置覆盖旧 403→404；既有 has_project_access 降为 null-owner/共享行次层不 bypass owner gate
 
 ### Pending Todos
 
@@ -112,8 +115,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T14:45:00.000Z
-Stopped at: Plan 08-03 complete — 直接会话端点 #1-12 owner gate 接线（SSE 流前 404 + create 写 created_by）；#1-12 隔离用例 GREEN，#13-25 待 08-04
+Last session: 2026-06-09T14:48:00.000Z
+Stopped at: Plan 08-04 complete — 关联模型端点 #13-25 owner gate 接线（coding-session/plan + trace/clarification，去 superuser bypass）；全 25 路径隔离套件全绿，Phase 8 完成（4/4）
 Resume file: None
 
 ## Operator Next Steps
