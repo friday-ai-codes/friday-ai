@@ -716,17 +716,26 @@ class ConversationPreflightView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # owner gate（ISO-04，主/外层）：置于 select_related 预取之后、has_project_access
+        # 与 aresolve_or_error 之前 —— owner-miss → 404，避免 provider payload 信息泄漏
+        # （T-08-08）。用 created_by_id 比对避免 async 惰性 FK；无 superuser bypass（ISO-03）。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         # [implementation] Ownership 校验（security mitigation）
         # 模式与 ConversationMessagesDeleteView.delete work item 完全一致，仅：
         #   min_role: "member" → "viewer"（preflight 是只读探测）
         #   event name: "chat.cleanup_denied_cross_project" → "chat.preflight_denied_cross_project"
         #   detail: "无权删除其他项目的对话消息" → "无权访问该对话"
-        # 放置位置：select_related 预取之后、aresolve_or_error 之前 —— 避免 resolved
-        # / missing payload 的 provider_type / credential_id / missing_provider 字段
-        # 泄漏给跨项目用户（security mitigation-04 Information Disclosure）。
+        # 放置位置：owner gate 之后，作 null-owner/共享行的次层防御（保留既有 403 语义）。
         from permissions.services import PermissionService
-
-        user = request.user
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
@@ -816,10 +825,10 @@ class ConversationRuntimeView(APIView):
         tags=["Conversations"],
     )
     async def get(self, request, conversation_id):
+        # owner gate（ISO-04）：owner-scoped 存在性校验，越权/不存在统一 404。
         try:
-            await Conversation.objects.aget(
-                id=conversation_id,
-                is_deleted=False,
+            await ConversationService.aget_for_user(
+                str(conversation_id), request.user
             )
         except Conversation.DoesNotExist:
             return Response(
@@ -896,8 +905,19 @@ class ConversationMessagesDeleteView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 3. Ownership 校验（security mitigation-01 mitigate）：非 superuser 必须有 MEMBER+ 权限
+        # 2.5 owner gate（ISO-04，主/外层）：先于 has_project_access，owner-miss → 404
+        # （避免任意中断/篡改与存在性泄漏）；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
         user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 3. Ownership 校验（security mitigation-01 mitigate）：非 superuser 必须有 MEMBER+ 权限
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
@@ -992,7 +1012,18 @@ class ConversationMessageForkView(APIView):
 
         from permissions.services import PermissionService
 
+        # owner gate（ISO-04，主/外层）：先于 has_project_access，owner-miss → 404；
+        # 本期 fork 仅限自己（管理员 fork 他人留 Phase 9）；无 superuser bypass。
         user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and conversation.created_by_id != user.id
+        ):
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
