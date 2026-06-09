@@ -131,25 +131,39 @@ def build_remote_tools_mcp_server(
 
     sdk_tools: list[SdkMcpTool[dict[str, Any]]] = []
     for t in remote_tools:
+        # name 缺失/为空 → 跳过该条坏 schema，不让一条坏数据 KeyError 拖垮整个
+        # MCP server 构建（与 description/input_schema 的 .get 容错保持一致，WR-04）。
+        name = t.get("name")
+        if not name:
+            logger.warning("remote_tool_missing_name", schema=t)
+            continue
         sdk_tools.append(
             SdkMcpTool(
-                name=t["name"],
+                name=name,
                 description=t.get("description", ""),
                 input_schema=t.get("input_schema", {}),
-                handler=_make_handler(t["name"], tools_endpoint, user_token),
+                handler=_make_handler(name, tools_endpoint, user_token),
             )
         )
 
     logger.info(
         "remote_mcp_server_created",
         tool_count=len(sdk_tools),
-        tools=[t["name"] for t in remote_tools],  # 不打印 token
+        tools=[t.name for t in sdk_tools],  # 不打印 token
     )
     return create_sdk_mcp_server(name=REMOTE_MCP_SERVER_NAME, tools=sdk_tools)
 
 
 def remote_allowed_tools(remote_tools: list[dict[str, Any]]) -> list[str]:
-    """生成 allowed_tools 列表，格式 ``mcp__{REMOTE_MCP_SERVER_NAME}__{name}``。"""
-    return [
-        f"mcp__{REMOTE_MCP_SERVER_NAME}__{t['name']}" for t in remote_tools
-    ]
+    """生成 allowed_tools 列表，格式 ``mcp__{REMOTE_MCP_SERVER_NAME}__{name}``。
+
+    与 build_remote_tools_mcp_server 一致：跳过无 name 的坏 schema（WR-04），
+    避免 ``t["name"]`` 在坏数据上抛 KeyError。
+    """
+    allowed: list[str] = []
+    for t in remote_tools:
+        name = t.get("name")
+        if not name:
+            continue
+        allowed.append(f"mcp__{REMOTE_MCP_SERVER_NAME}__{name}")
+    return allowed
