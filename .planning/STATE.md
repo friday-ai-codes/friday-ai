@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
-status: executing
+status: ready_to_plan
 stopped_at: Plan 10-03 complete — 后端装配：绑定序列化器五件套 + owner 隔离 ModelViewSet(upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/；后端 12 条 RED 全转 GREEN，57 passed 回归不退，makemigrations --check 干净；Phase 10 → 4/4 完成
 last_updated: "2026-06-10T01:02:00.000Z"
 last_activity: 2026-06-10 -- Phase 10 Plan 03 complete (后端绑定/执行端点装配，MCPB+RTOOL-01 GREEN，Phase 10 完成)
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 17
   completed_plans: 17
-  percent: 100
+  percent: 83
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — COMPLETE (4/4)
-Plan: 10-03 complete（Phase 10 全部 plan 完成）
-Status: Phase 10 complete — ready for Phase 11 (task 容器接通)
-Last activity: 2026-06-10 -- Phase 10 Plan 03 complete (后端绑定/执行端点装配，MCPB+RTOOL-01 GREEN)
+Phase: 11
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-09
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 17
+- Total plans completed: 21
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -49,6 +49,7 @@ Progress: [██████████] 100%
 | 07 | 3 | - | - |
 | 08 | 4 | - | - |
 | 09 | 3 | - | - |
+| 10 | 4 | - | - |
 
 **Recent Trend:**
 
