@@ -3,8 +3,14 @@
 设计要点：
 - 保持同步 ``authenticate`` + 同步 ORM（与 RunnerTokenAuthentication 一致），
   可被任意 view 直接挂 ``authentication_classes``。
-- 有效 token 即放行，返回 ``(None, token)``；**不做任何 scope/项目/allowlist 校验**
-  （contract single token，contract）。
+- **前缀闸门**：仅认领 ``friday_pat_`` 前缀的 Bearer；非本前缀的 Bearer（如 JWT）
+  一律 ``return None`` 让行给后续认证类（CookieJWTAuthentication），绝不 raise
+  （Pitfall 1：raise 会吞掉 JWT 认证）。
+- 有效 token 即放行，返回 ``(token.created_by, token)``——request.user 为令牌所有者
+  （真实 User，享其本人 RBAC），request.auth 仍为 AccessToken 实例（审计链不断，
+  IDENT-04）；**不做任何 scope/项目/allowlist 校验**（contract single token，contract）。
+- ``authenticate_header`` 返回 ``'Bearer realm="api"'``——作为全局首位认证类，必须给出
+  非 None challenge，否则 DRF 会把站点级未认证响应从 401 降级为 403（Pitfall 2）。
 - 吊销/过期 token（**存在但 is_valid=False**）→ best-effort 记一条 DENIED
   ``InteractionRun`` + 一条 ``error`` 事件（仅存 fingerprint，绝不含明文，
   contract；contract），再 ``raise AuthenticationFailed``。
@@ -20,6 +26,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import structlog
 from django.utils import timezone
@@ -31,7 +38,10 @@ from rest_framework.request import Request
 
 from runners.models import hash_token
 
-from .models import AccessToken
+from .models import PAT_PREFIX, AccessToken
+
+if TYPE_CHECKING:
+    from accounts.models import User
 
 logger = structlog.get_logger(__name__)
 
@@ -42,10 +52,12 @@ _LAST_USED_THROTTLE = timedelta(seconds=60)
 class AccessTokenAuthentication(BaseAuthentication):
     """通过 Bearer token 认证 Friday Access Token。
 
-    返回 ``(None, token)`` —— request.user 为 None，request.auth 为 AccessToken 实例。
+    返回 ``(token.created_by, token)`` —— request.user 为令牌所有者（真实 User），
+    request.auth 为 AccessToken 实例（审计链不断）。非 ``friday_pat_`` 前缀的 Bearer
+    一律 ``return None`` 让行给后续认证类。
     """
 
-    def authenticate(self, request: Request) -> tuple[None, AccessToken] | None:
+    def authenticate(self, request: Request) -> tuple[User, AccessToken] | None:
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
         if not auth_header.startswith("Bearer "):
             return None
@@ -54,9 +66,15 @@ class AccessTokenAuthentication(BaseAuthentication):
         if not plaintext:
             return None
 
+        # 前缀闸门：非 friday_pat_ 前缀的 Bearer（如 JWT）让行给 CookieJWTAuthentication，
+        # 绝不 raise（Pitfall 1：raise 会吞掉后续 JWT 认证类）。
+        if not plaintext.startswith(PAT_PREFIX):
+            return None
+
         fingerprint = hash_token(plaintext)
         try:
-            token = AccessToken.objects.get(token_hash=fingerprint)
+            # select_related 同查询取出 owner，避免同步认证阶段的 N+1（Pitfall 4）。
+            token = AccessToken.objects.select_related("created_by").get(token_hash=fingerprint)
         except AccessToken.DoesNotExist:
             # 不存在 token 不建 run，仅 warning，防乱 token 灌爆审计表（Open Question 1）。
             logger.warning("access_token_denied", reason="not_found")
@@ -70,8 +88,13 @@ class AccessTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Token 已吊销或已过期")
 
         # contract：有效即放行，不做任何 scope/项目/allowlist 校验（contract）。
+        # request.user = 令牌所有者，享其本人 RBAC（IDENT-01）。
         self._touch_last_used(token)
-        return (None, token)
+        return (token.created_by, token)
+
+    def authenticate_header(self, request: Request) -> str:
+        """作为全局首位认证类，返回非 None challenge 以保持站点级未认证 401（Pitfall 2）。"""
+        return 'Bearer realm="api"'
 
     def _touch_last_used(self, token: AccessToken) -> None:
         """节流更新 last_used_at（best-effort，失败不阻塞认证返回，Pitfall 3）。"""
