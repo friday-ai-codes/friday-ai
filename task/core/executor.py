@@ -27,6 +27,11 @@ from claude_agent_sdk import (
 )
 
 from .config import TaskConfig
+from .remote_tools import (
+    REMOTE_MCP_SERVER_NAME,
+    build_remote_tools_mcp_server,
+    remote_allowed_tools,
+)
 
 logger = structlog.get_logger()
 
@@ -277,7 +282,16 @@ Implement the task as described. Make necessary code changes.
                 or "sonnet"
             )
 
-            options = ClaudeAgentOptions(
+            # RemoteTool 链路（Phase 11）：仅当 remote_tools + user_token + tools_endpoint
+            # 三者俱全时构建进程内 SDK MCP server；否则 build_* 返回 None，options 不含
+            # mcp_servers/allowed_tools，行为与现状完全一致（向后兼容）。
+            mcp_server = build_remote_tools_mcp_server(
+                self.config.remote_tools,
+                self.config.tools_endpoint,
+                self.config.user_token,
+            )
+
+            options_kwargs = dict(
                 system_prompt=self._get_system_prompt(),
                 permission_mode=permission_mode,
                 cwd=str(self.workspace),
@@ -288,6 +302,12 @@ Implement the task as described. Make necessary code changes.
                 env=env_vars,
                 extra_args={"debug-to-stderr": None},
             )
+            if mcp_server is not None:
+                options_kwargs["mcp_servers"] = {REMOTE_MCP_SERVER_NAME: mcp_server}
+                options_kwargs["allowed_tools"] = remote_allowed_tools(
+                    self.config.remote_tools
+                )
+            options = ClaudeAgentOptions(**options_kwargs)
 
             log.info(
                 "Executing Claude Agent SDK",
@@ -295,6 +315,8 @@ Implement the task as described. Make necessary code changes.
                 workspace=str(self.workspace),
                 has_api_key=bool(self.config.claude_api_key),
                 has_base_url=bool(self.config.claude_base_url),
+                has_user_token=bool(self.config.user_token),  # 脱敏：仅记 bool
+                remote_tool_count=len(self.config.remote_tools),
             )
 
             # 收集所有消息。只读/分析类任务遇到 Claude API 偶发 5xx/stream 中断时
