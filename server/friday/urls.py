@@ -38,6 +38,8 @@ api_patterns = [
     path("oidc/", include("identity.urls")),
     # Chat (LLM conversation)
     path("chat/", include("chat.urls")),
+    # 管理员只读会话后台（Phase 9 ADMVW）：与 chat/ 物理分离，IsSuperUser 守卫
+    path("admin/", include("chat.admin_urls")),
     # Prompts (implementation 统一提示词管理)
     path("prompts/", include("prompts.urls")),
     # Workflows
