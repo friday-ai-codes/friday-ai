@@ -163,6 +163,21 @@ describe('/admin/conversations 管理员只读会话后台', () => {
     wrapper.unmount()
   })
 
+  it('INFO：draft（小写）状态渲染「草稿」标签（STATUS_META key 大小写一致）', async () => {
+    listMock.mockResolvedValue([
+      makeItem({ id: 'conv-draft', title: '草稿会话', status: 'draft' }),
+    ])
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    // 存储值为小写 'draft'；STATUS_META 命中后渲染中文标签「草稿」，
+    // 而非回退为原始 status 字符串 'draft'。
+    const text = wrapper.text()
+    expect(text).toContain('草稿')
+    expect(text).not.toContain('draft')
+    wrapper.unmount()
+  })
+
   it('aDMVW-03：触发 fork 调用 forkAdminConversation 并跳转 /chat?conversation=<id>', async () => {
     const wrapper = await mountPage()
     await flushPromises()
