@@ -162,3 +162,102 @@ async def test_session_mapping_not_found(temp_session_dir):
     session_info = await ClaudeRunner.get_session_by_id("non-existent-session", temp_session_dir)
 
     assert session_info is None
+
+
+# === Phase 11 RemoteTool 装配（_execute_claude 条件挂载 mcp_servers/allowed_tools）===
+
+
+def _make_real_config(temp_session_dir, **overrides):
+    """构造真实 TaskConfig（非 MagicMock），便于断言 options 装配。"""
+    from core import TaskConfig
+
+    params = dict(
+        task_id="test-rtool-001",
+        task_description="rtool test",
+        git_repo_url="git@github.com:test/repo.git",
+        task_mode="plan",
+        session_dir=temp_session_dir,
+    )
+    params.update(overrides)
+    return TaskConfig(**params)
+
+
+async def _capture_options(monkeypatch, runner):
+    """monkeypatch core.executor.query 捕获 ClaudeAgentOptions，不触网。"""
+    captured: dict = {}
+
+    async def fake_query(*, prompt, options):
+        captured["options"] = options
+        if False:  # pragma: no cover - 让函数成为空 async generator
+            yield None
+
+    monkeypatch.setattr("core.executor.query", fake_query)
+    await runner._execute_claude(prompt="hi", permission_mode="plan")
+    return captured["options"]
+
+
+@pytest.mark.asyncio
+async def test_options_include_mcp_when_remote_tools_present(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """有 remote_tools + user_token + tools_endpoint → options 含 mcp_servers + allowed_tools。"""
+    from core import ClaudeRunner
+    from core.remote_tools import REMOTE_MCP_SERVER_NAME
+
+    config = _make_real_config(
+        temp_session_dir,
+        remote_tools=[{"name": "a", "input_schema": {}}],
+        user_token="friday_pat_SECRET123",
+        tools_endpoint="https://friday.example.com/api/tools/execute/",
+    )
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    options = await _capture_options(monkeypatch, runner)
+
+    assert REMOTE_MCP_SERVER_NAME in options.mcp_servers
+    assert options.allowed_tools == [f"mcp__{REMOTE_MCP_SERVER_NAME}__a"]
+
+
+@pytest.mark.asyncio
+async def test_options_omit_mcp_when_no_remote_tools(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """无 remote_tools/token/endpoint → options 不含 friday-remote-tools server（向后兼容）。"""
+    from core import ClaudeRunner
+    from core.remote_tools import REMOTE_MCP_SERVER_NAME
+
+    config = _make_real_config(temp_session_dir)
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    options = await _capture_options(monkeypatch, runner)
+
+    assert REMOTE_MCP_SERVER_NAME not in (options.mcp_servers or {})
+
+
+@pytest.mark.asyncio
+async def test_executor_logs_no_pat_plaintext(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """executor 日志只记 has_user_token bool，绝不记 PAT 明文（T-11-04 脱敏）。"""
+    import structlog
+
+    from core import ClaudeRunner
+
+    secret = "friday_pat_SECRET123"
+    config = _make_real_config(
+        temp_session_dir,
+        remote_tools=[{"name": "a", "input_schema": {}}],
+        user_token=secret,
+        tools_endpoint="https://friday.example.com/api/tools/execute/",
+    )
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    async def fake_query(*, prompt, options):
+        if False:  # pragma: no cover
+            yield None
+
+    monkeypatch.setattr("core.executor.query", fake_query)
+    with structlog.testing.capture_logs() as captured:
+        await runner._execute_claude(prompt="hi", permission_mode="plan")
+
+    assert secret not in str(captured)
