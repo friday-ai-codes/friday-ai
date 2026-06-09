@@ -53,6 +53,9 @@ function statusOf(t: AccessTokenDto): StatusMeta {
             指纹
           </th>
           <th class="hidden md:table-cell px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            备注
+          </th>
+          <th class="hidden md:table-cell px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             创建时间
           </th>
           <th class="hidden lg:table-cell px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -81,9 +84,14 @@ function statusOf(t: AccessTokenDto): StatusMeta {
             <span class="truncate font-medium text-foreground">{{ t.name }}</span>
           </td>
 
-          <!-- 指纹（明文前缀，非完整明文） -->
+          <!-- 指纹：prefix…suffix（非完整明文）；历史 token 无 suffix 时仅展示 prefix -->
           <td class="px-4 py-3.5">
-            <span class="font-mono text-xs text-muted-foreground">{{ t.token_prefix }}</span>
+            <span class="font-mono text-xs text-muted-foreground">{{ t.token_suffix ? `${t.token_prefix}…${t.token_suffix}` : t.token_prefix }}</span>
+          </td>
+
+          <!-- 备注（用户输入，经 Vue 文本插值自动转义，绝不用 v-html） -->
+          <td class="hidden md:table-cell px-4 py-3.5">
+            <span class="block max-w-[16rem] truncate text-muted-foreground">{{ t.note }}</span>
           </td>
 
           <!-- 创建时间 -->
@@ -135,7 +143,7 @@ function statusOf(t: AccessTokenDto): StatusMeta {
         </tr>
         <tr v-if="tokens.length === 0">
           <td
-            colspan="7"
+            colspan="8"
             class="px-4 py-12 text-center text-sm text-muted-foreground"
           >
             暂无 Access Token，点击右上角新建
