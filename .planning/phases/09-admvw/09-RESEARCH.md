@@ -409,7 +409,7 @@ async function forkToOwn(id: string) {
 | A3 | chat.vue 用 `?conversation=` query 恢复会话 | Code Examples | 中——需 planner grep `restoreFromURL` 确认确切键名，否则跳转后不自动选中会话 |
 | A4 | 列表分页：既有 `/api/chat/conversations/` 返回**无分页**纯数组（无 DRF 全局 PAGE_SIZE 配置），admin 列表可同样返回数组或手写 limit/offset | §Pattern 4 | 低——已确认 settings 无 `DEFAULT_PAGINATION_CLASS`；CONTEXT 称"分页与现有列表一致"即无分页。大数据量下可加手写 limit/offset（Claude's discretion） |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **fork 后是否弹确认对话框？**
    - 已知：CONTEXT 列为 Claude's discretion。
