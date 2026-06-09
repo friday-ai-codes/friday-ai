@@ -64,7 +64,7 @@
 **Plans**: 3 plans
 - [x] 07-01-PLAN.md — Wave 0 验证脚手架（RED）：test_valid_token_passes owner 断言 + 新 test_pat_identity（前缀闸门/owner 身份/PAT·JWT 共存）+ MCP fail-closed authentication_failed
 - [x] 07-02-PLAN.md — 认证地基：authentication.py 返回 (owner, token) + friday_pat_ 闸门 + authenticate_header（保 401）+ settings 认证类 PAT 优先
-- [ ] 07-03-PLAN.md — MCP 入口 fail-closed：McpToolView 基类收紧 IsAuthenticated + 显式 auth 类（17 子类全继承）
+- [x] 07-03-PLAN.md — MCP 入口 fail-closed：McpToolView 基类收紧 IsAuthenticated + 显式 auth 类（17 子类全继承）
 
 ### Phase 8: 对话/会话用户隔离
 **Goal**: 每个会话记录创建者，普通用户与管理员在 AI 对话中默认只能访问自己的会话，越权访问安全拒绝
