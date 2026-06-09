@@ -13,7 +13,7 @@
 - [x] **PAT-02**: 创建令牌时明文仅在创建响应中一次性展示且可复制，此后不可再获取（DB 仅存 sha256 hash，明文绝不落盘）
 - [x] **PAT-03**: 令牌列表展示名称、备注、创建时间、最后使用时间、过期时间，并展示明文的前几位与后几位（前缀 + 后缀）以便区分不同令牌
 - [x] **PAT-04**: 用户可删除（吊销）自己的令牌；系统不提供延期/续期（到期后只能新建）
-- [ ] **PAT-05**: 创建"永不过期"令牌时给出安全风险提示（非阻塞）
+- [x] **PAT-05**: 创建"永不过期"令牌时给出安全风险提示（非阻塞）
 - [x] **PAT-06**: 用户只能查看/创建/删除属于自己的令牌，不能管理他人令牌
 
 ### 令牌即用户身份 (IDENT)
@@ -83,7 +83,7 @@
 | PAT-02 | Phase 6 | Complete |
 | PAT-03 | Phase 6 | Complete |
 | PAT-04 | Phase 6 | Complete |
-| PAT-05 | Phase 6 | Pending |
+| PAT-05 | Phase 6 | Complete |
 | PAT-06 | Phase 6 | Complete |
 | IDENT-01 | Phase 7 | Pending |
 | IDENT-02 | Phase 7 | Pending |

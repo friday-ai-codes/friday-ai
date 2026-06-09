@@ -47,7 +47,7 @@
 **Plans**: 3 plans
 - [x] 06-01-PLAN.md — Wave 0 验证脚手架：后端 token_suffix/note/序列化器只读断言 + 前端指纹/never 警告/note payload spec（RED）
 - [x] 06-02-PLAN.md — 后端增量：模型加 note + token_suffix 字段 + AddField 迁移 + 序列化器/acreate 透传（plaintext[-4:]）
-- [ ] 06-03-PLAN.md — 前端增量：DTO + 表单 note 输入/never 非阻塞警告 + 列表备注列/prefix…suffix 指纹
+- [x] 06-03-PLAN.md — 前端增量：DTO + 表单 note 输入/never 非阻塞警告 + 列表备注列/prefix…suffix 指纹
 **UI hint**: yes
 
 ### Phase 7: 令牌即用户身份（认证地基）
