@@ -8,6 +8,11 @@ import { get, post } from './client'
 export interface SetupStatus {
   needs_setup: boolean
   is_initialized: boolean
+  /**
+   * 是否随部署内置了 Qdrant（docker compose 已启动）。为 true 时向导锁定
+   * Qdrant 地址，不允许用户更改（使用内置实例）。
+   */
+  qdrant_bundled?: boolean
 }
 
 export interface SetupInitRequest {
@@ -16,14 +21,26 @@ export interface SetupInitRequest {
   display_name?: string
 }
 
+/** 首启向导供应商配置单个模型入参。 */
+export interface SetupProviderModel {
+  id: string
+  context_length?: number | null
+  supports_vision?: boolean
+}
+
 /** 首启向导供应商配置入参（Phase 3，POST /api/providers/setup-wizard/）。 */
 export interface SetupProviderRequest {
   api_key: string
   base_url: string
+  /** 默认模型；兼容旧入参，等价于 default_model。 */
   model: string
   name?: string
   context_length?: number | null
   supports_vision?: boolean
+  /** 默认模型（多模型模式）。未提供时回退 model。 */
+  default_model?: string
+  /** 该供应商可用模型清单（多模型模式）。 */
+  models?: SetupProviderModel[]
 }
 
 /** 首启向导供应商配置响应。 */
