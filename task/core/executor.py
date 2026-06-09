@@ -38,6 +38,25 @@ logger = structlog.get_logger()
 # SDK 支持的权限模式
 PermissionModeType = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 
+# 编码 agent 依赖的内建工具。claude-agent-sdk 的 ``allowed_tools`` 是排他白名单：
+# 一旦显式设置，未列入的工具会被限制。挂载 RemoteTool MCP server 时若把
+# allowed_tools 设成「仅远程工具名」，会连带禁掉 Bash/Edit/Write 等编码必需工具，
+# 破坏 execute 模式。因此挂载远程工具时，必须把这些内建工具与远程工具一并列入
+# （WR-02）。名称对齐 server/agents/sdk/runner.py 中枚举的内建工具集合。
+_BUILTIN_CODING_TOOLS = [
+    "Bash",
+    "Read",
+    "Edit",
+    "Write",
+    "MultiEdit",
+    "Glob",
+    "Grep",
+    "LS",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+]
+
 _CLAUDE_TRANSIENT_ERROR_MARKERS = (
     "server had an error while processing your request",
     "overloaded",
@@ -304,9 +323,12 @@ Implement the task as described. Make necessary code changes.
             )
             if mcp_server is not None:
                 options_kwargs["mcp_servers"] = {REMOTE_MCP_SERVER_NAME: mcp_server}
-                options_kwargs["allowed_tools"] = remote_allowed_tools(
-                    self.config.remote_tools
-                )
+                # allowed_tools 是排他白名单：必须把内建编码工具与远程工具一并列入，
+                # 否则挂载远程工具会连带禁掉 Bash/Edit/Write，破坏 execute 编码（WR-02）。
+                options_kwargs["allowed_tools"] = [
+                    *_BUILTIN_CODING_TOOLS,
+                    *remote_allowed_tools(self.config.remote_tools),
+                ]
             options = ClaudeAgentOptions(**options_kwargs)
 
             log.info(

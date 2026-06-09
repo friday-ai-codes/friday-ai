@@ -215,7 +215,45 @@ async def test_options_include_mcp_when_remote_tools_present(
     options = await _capture_options(monkeypatch, runner)
 
     assert REMOTE_MCP_SERVER_NAME in options.mcp_servers
-    assert options.allowed_tools == [f"mcp__{REMOTE_MCP_SERVER_NAME}__a"]
+    # 远程工具被列入 allowed_tools
+    assert f"mcp__{REMOTE_MCP_SERVER_NAME}__a" in options.allowed_tools
+    # WR-02：挂载远程工具不得禁掉内建编码工具，Bash/Edit/Write/Read 必须仍可用
+    for builtin in ("Bash", "Edit", "Write", "Read"):
+        assert builtin in options.allowed_tools
+
+
+@pytest.mark.asyncio
+async def test_execute_mode_keeps_builtin_tools_with_remote_tools(
+    monkeypatch, temp_workspace, temp_session_dir
+):
+    """execute 模式挂载远程工具后，内建编码工具（Bash/Edit/Write/Read）仍在
+    allowed_tools 内，远程工具也在——二者并存（WR-02）。"""
+    from core import ClaudeRunner
+    from core.remote_tools import REMOTE_MCP_SERVER_NAME
+
+    config = _make_real_config(
+        temp_session_dir,
+        task_mode="execute",
+        remote_tools=[{"name": "a", "input_schema": {}}],
+        user_token="friday_pat_SECRET123",
+        tools_endpoint="https://friday.example.com/api/tools/execute/",
+    )
+    runner = ClaudeRunner(config=config, workspace=temp_workspace)
+
+    captured: dict = {}
+
+    async def fake_query(*, prompt, options):
+        captured["options"] = options
+        if False:  # pragma: no cover - 空 async generator
+            yield None
+
+    monkeypatch.setattr("core.executor.query", fake_query)
+    await runner._execute_claude(prompt="hi", permission_mode="bypassPermissions")
+    options = captured["options"]
+
+    assert f"mcp__{REMOTE_MCP_SERVER_NAME}__a" in options.allowed_tools
+    for builtin in ("Bash", "Edit", "Write", "Read", "Glob", "Grep"):
+        assert builtin in options.allowed_tools
 
 
 @pytest.mark.asyncio
