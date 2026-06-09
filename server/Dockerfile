@@ -32,7 +32,7 @@ RUN pip install uv \
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
         uv pip install --system \
             --reinstall-package numpy \
-            --no-binary-package numpy \
+            --no-binary numpy \
             -C setup-args=-Dcpu-baseline=min \
             "numpy==2.4.3"; \
     fi
