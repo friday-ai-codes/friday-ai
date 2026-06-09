@@ -108,7 +108,7 @@
   4. 存在一个经令牌认证、按工具 name 执行的 RemoteTool 端点（`auth=AccessToken` + `IsAuthenticated`），匿名/无效令牌被拒
 **Constraints**: 持久绑定走 NEW 表（user↔token↔tool），绑定可见可管理；执行端点复用 `tools.executor.execute_tool` 三源派发（builtin/mcp/skill），执行与第三方凭证解析始终留在 server 侧；执行端点亦是认证入口，纳入 Pitfall 1/3 验收
 **Plans**: 4 plans
-- [ ] 10-01-PLAN.md — Wave 0 RED 验证脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py + test_remote_tool_execute.py + 前端 ToolBindingSettings.spec.ts
+- [x] 10-01-PLAN.md — Wave 0 RED 验证脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py + test_remote_tool_execute.py + 前端 ToolBindingSettings.spec.ts
 - [ ] 10-02-PLAN.md — 数据地基：tools.ToolTokenBinding 模型（三 FK CASCADE + unique(user, remote_tool)）+ 0003 CreateModel 迁移
 - [ ] 10-03-PLAN.md — 后端装配：serializers + 绑定 ViewSet(owner 隔离+upsert+归属校验) + bindable 端点 + RemoteToolExecuteView(PAT fail-closed+审计) + 挂载 /api/tools/
 - [ ] 10-04-PLAN.md — 前端：types/api/store(toolBindings) + ToolBindingSettings/Table/Dialog + profile.vue 绑定卡片（下拉仅列 valid 令牌，无明文）
@@ -142,5 +142,5 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 1/3 | In progress | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 4/4 | Complete | 2026-06-09 |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 3/3 | Complete   | 2026-06-09 |
-| 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 0/4 | Planned | - |
+| 10. MCP 绑定用户令牌 + RemoteTool 执行端点 | v0.2.0 | 1/4 | In Progress|  |
 | 11. task 容器接通（RemoteTool 链路闭环） | v0.2.0 | 0/TBD | Not started | - |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: executing
-stopped_at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
-last_updated: "2026-06-09T16:40:16.991Z"
-last_activity: 2026-06-09 -- Phase 10 execution started
+stopped_at: Plan 10-01 complete — Wave 0 RED 脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py(7) + test_remote_tool_execute.py(5) + 前端 ToolBindingSettings.spec.ts(5)，预期 RED；test_pat_identity 8 passed 不回退
+last_updated: "2026-06-10T00:50:00.000Z"
+last_activity: 2026-06-10 -- Phase 10 Plan 01 complete (Wave 0 RED)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 17
-  completed_plans: 13
-  percent: 76
+  completed_plans: 14
+  percent: 82
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 10 (MCP 绑定用户令牌 + RemoteTool 执行端点) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 10
-Last activity: 2026-06-09 -- Phase 10 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-06-10 -- Phase 10 Plan 01 complete (Wave 0 RED)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████████] 100%
 | Phase 09 P01 | 12 | 2 tasks | 2 files |
 | Phase 09-admvw P02 | 10min | 3 tasks | 5 files |
 | Phase 09 P03 | 8 | 3 tasks | 4 files |
+| Phase 10 P01 | 10min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Recent decisions affecting current work (v0.2.0):
 - [Phase ?]: admin fork: created_by=admin + status=DRAFT + copy all messages (avoid owner inherit/pin freeze)
 - [Phase ?]: admin endpoints physically separated (new admin_views/admin_urls, zero change to chat/views.py); IsSuperUser + default auth rejects anonymous
 - [Phase 09]: 前端 admin 会话后台只读查看器与普通 chat 渲染同源但不耦合 chatStore；fork→/chat?conversation= 续聊
+- [Phase 10]: [10-01] 跨用户 owner 隔离用例经 ORM 工厂 make_tool_binding(second_user) 播种他人绑定（make_access_token 仅主用户铸令牌，create 序列化器拒跨用户令牌引用，二号用户无法经 API 绑定）
+- [Phase 10]: [10-01] 前端绑定 client 不引用 /tools/execute/（PAT-only 容器回调）；浏览器仅 list/bindable/upsert/unbind 走 /tools/bindings/ + /tools/bindable/
+- [Phase 10]: [10-01] Wave 0 RED 脚手架：硬编码 URL 不 import 未落地 views → 端点 404 即 RED 而非 collection error；make_tool_binding 用 importorskip+getattr 守卫，ToolTokenBinding 缺失时优雅 skip
 
 ### Pending Todos
 
@@ -125,8 +129,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T15:59:56.837Z
-Stopped at: Plan 09-01 complete — Wave 0 RED 脚手架：后端 test_admin_conversations.py（10 用例）+ 前端 conversations.spec.ts（4 用例），预期 RED；Phase 8 隔离套件 39 passed 全绿
+Last session: 2026-06-10T00:50:00.000Z
+Stopped at: Plan 10-01 complete — Wave 0 RED 脚手架：conftest make_remote_tool/make_tool_binding + test_tool_bindings.py(7) + test_remote_tool_execute.py(5) + 前端 ToolBindingSettings.spec.ts(5)，预期 RED；test_pat_identity 8 passed 不回退
 Resume file: None
 
 ## Operator Next Steps
