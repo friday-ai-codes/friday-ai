@@ -44,7 +44,10 @@
   4. 用户能删除（吊销）自己的令牌，界面无任何延期/续期入口（到期只能新建）
   5. 用户只能查看/创建/删除属于自己的令牌；关闭后明文不可再获取，前后端均不持久化明文
 **Constraints**: 维持无盐 sha256 + 唯一索引（contract 锁定，勿改 Argon2/加盐）；后缀严格 ≤4 位避免熵损失；明文绝不进 logger/序列化器 list/detail/前端 store/localStorage/URL
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 06-01-PLAN.md — Wave 0 验证脚手架：后端 token_suffix/note/序列化器只读断言 + 前端指纹/never 警告/note payload spec（RED）
+- [ ] 06-02-PLAN.md — 后端增量：模型加 note + token_suffix 字段 + AddField 迁移 + 序列化器/acreate 透传（plaintext[-4:]）
+- [ ] 06-03-PLAN.md — 前端增量：DTO + 表单 note 输入/never 非阻塞警告 + 列表备注列/prefix…suffix 指纹
 **UI hint**: yes
 
 ### Phase 7: 令牌即用户身份（认证地基）
@@ -121,7 +124,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11
 | 3. LLM 供应商配置与 Claude Code 绑定 | v0.1.0 | 2/2 | Complete | 2026-06-08 |
 | 4. 安全校验与可选集成步骤 | v0.1.0 | 2/2 | Complete | 2026-06-08 |
 | 5. 入口迁移与向后兼容 | v0.1.0 | 1/1 | Complete | 2026-06-08 |
-| 6. PAT 模型增强与一次性明文 | v0.2.0 | 0/TBD | Not started | - |
+| 6. PAT 模型增强与一次性明文 | v0.2.0 | 0/3 | Not started | - |
 | 7. 令牌即用户身份（认证地基） | v0.2.0 | 0/TBD | Not started | - |
 | 8. 对话/会话用户隔离 | v0.2.0 | 0/TBD | Not started | - |
 | 9. 管理员会话管理后台（只读） | v0.2.0 | 0/TBD | Not started | - |
