@@ -91,7 +91,10 @@
   2. 该后台为只读，管理员不能直接在他人会话上续聊/交互
   3. 管理员能把他人会话 fork 一份归属到自己名下后再进行交互
 **Constraints**: 只读默认防误操作；fork 复用 Phase 8 既有 fork 路径并设 `created_by = 管理员`；后台入口与普通对话隔离过滤共存、互不打架
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 09-01-PLAN.md — Wave 0 RED 验证脚手架：test_admin_conversations.py（admin 看全部/非 admin 403/匿名拒绝/只读 405/fork 归属）+ 前端 conversations.spec.ts + Phase 8 隔离回归保障
+- [ ] 09-02-PLAN.md — 后端：chat/admin_views.py + admin_urls.py 挂载 /api/admin/conversations/（IsSuperUser+默认认证，只读 GET+fork POST）+ ConversationService.admin_* + AdminConversationListSerializer
+- [ ] 09-03-PLAN.md — 前端：adminConversations.ts + ReadonlyConversationView.vue + admin/conversations.vue（DataTable+只读详情+fork→/chat?conversation=）+ AppSidebar 导航入口
 **UI hint**: yes
 
 ### Phase 10: MCP 绑定用户令牌 + RemoteTool 执行端点
