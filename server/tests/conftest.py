@@ -148,6 +148,73 @@ def admin_user(db):
 
 
 # ============================================================================
+# Phase 08（对话/会话用户隔离）测试 fixtures
+#
+# 供 tests/test_conversation_isolation.py 复现 IDOR（用户 B 直取用户 A 会话）。
+# 形态与 test_conversation_integration.py 的 user_and_token / auth_headers
+# 一致：async 创建用户 + sync_to_async(RefreshToken.for_user) 铸 JWT。
+# 仅新增，不改动既有 fixture 语义（per 08-01 Task 1 acceptance）。
+# ============================================================================
+
+
+@pytest.fixture
+def second_user(db):
+    """隔离测试用：二号普通用户（非 superuser），跨用户越权样本。"""
+    return User.objects.create_user(
+        username="iso_second_user",
+        email="iso_second@example.com",
+        password="iso-second-pass-123",
+    )
+
+
+@pytest.fixture
+async def second_user_and_token(db):
+    """隔离测试用：二号用户 + JWT access token（async）。
+
+    返回 ``(user, access_token_str)``，供二号用户以 Bearer 头发认证请求，
+    复现「B 持自己 JWT 直取 A 会话 id」的越权访问。
+    """
+    from asgiref.sync import sync_to_async
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    user = await User.objects.acreate_user(
+        username="iso_second_user_jwt",
+        password="iso-second-pass-123",
+    )
+    token = await sync_to_async(RefreshToken.for_user)(user)
+    return user, str(token.access_token)
+
+
+@pytest.fixture
+def second_auth_headers(second_user_and_token):
+    """二号用户 Bearer Authorization 头 dict。"""
+    _, access_token = second_user_and_token
+    return {"authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture
+async def superuser_and_token(db):
+    """隔离测试用：superuser + JWT（async），验证 ISO-03 管理员无特权 bypass。"""
+    from asgiref.sync import sync_to_async
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    user = await User.objects.acreate_superuser(
+        username="iso_superuser_jwt",
+        email="iso_superuser@example.com",
+        password="iso-superuser-pass-123",
+    )
+    token = await sync_to_async(RefreshToken.for_user)(user)
+    return user, str(token.access_token)
+
+
+@pytest.fixture
+def superuser_auth_headers(superuser_and_token):
+    """superuser Bearer Authorization 头 dict。"""
+    _, access_token = superuser_and_token
+    return {"authorization": f"Bearer {access_token}"}
+
+
+# ============================================================================
 # Repository Fixtures
 # ============================================================================
 
@@ -836,10 +903,16 @@ def frozen_conversation_factory(db, project):
 
     def _factory(*, status: str = "completed", **overrides: Any):
         Conversation = apps.get_model("chat", "Conversation")
+        field_names = {f.name for f in Conversation._meta.get_fields()}
         # 避免触发未迁移的 status 列（plan W0 前）
         status_kwarg: dict[str, Any] = {}
-        if "status" in {f.name for f in Conversation._meta.get_fields()}:
+        if "status" in field_names:
             status_kwarg["status"] = status
+        # Phase 08 ISO-01：created_by 向后兼容透传——字段落地后（08-02 schema
+        # migration）经 overrides 直接写入会话 owner；未迁移环境（Wave 0 之前）
+        # 丢弃该 override，避免 Conversation.objects.create() 抛 unexpected kwarg。
+        if "created_by" in overrides and "created_by" not in field_names:
+            overrides.pop("created_by")
         defaults: dict[str, Any] = {
             "project": overrides.pop("project", project),
             "title": overrides.pop("title", f"frozen-{status}"),
