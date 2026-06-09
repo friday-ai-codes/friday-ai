@@ -50,8 +50,9 @@ class ToolTokenBindingCreateSerializer(serializers.Serializer):
     """绑定写入入参 —— access_token 归属校验 + source/active 白名单。
 
     两个 ``validate_*`` 是 owner 隔离在 access_token 维度的唯一关卡：
-    - ``validate_access_token``：断言令牌属当前用户，越权引用一律 ValidationError
-      （per Pitfall 1，不泄漏存在性）。
+    - ``validate_access_token``：断言令牌属当前用户且仍有效，越权引用一律
+      ValidationError（per Pitfall 1，不泄漏存在性）；已吊销/过期令牌一律拒绝
+      （per Pitfall 5，服务端强校验，绝不让用户绑到失效令牌——不只是前端过滤）。
     - ``validate_remote_tool``：仅可绑 source ∈ {mcp, skill} 且 is_active 的工具。
     """
 
@@ -62,6 +63,10 @@ class ToolTokenBindingCreateSerializer(serializers.Serializer):
         request = self.context["request"]
         if value.created_by_id != request.user.id:
             raise serializers.ValidationError("无法引用他人的 Access Token。")
+        # 服务端强校验令牌有效性（per Pitfall 5）：吊销/过期令牌不可绑定，
+        # 否则直接 API 调用可绕过前端过滤绑到失效令牌（执行时才 401，绑定形同虚设）。
+        if not value.is_valid:
+            raise serializers.ValidationError("令牌已吊销或已过期，无法绑定。")
         return value
 
     def validate_remote_tool(self, value: RemoteTool) -> RemoteTool:

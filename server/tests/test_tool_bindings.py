@@ -145,6 +145,33 @@ def test_bind_others_token_rejected(
         assert not binding_cls.objects.filter(access_token=others_token).exists()
 
 
+def test_bind_revoked_token_rejected(
+    make_remote_tool: Callable[..., Any],
+    make_access_token: Callable[..., tuple[Any, str]],
+    user: Any,
+) -> None:
+    """MCPB-01/WR-04：绑定已吊销/过期令牌被拒（服务端强校验，per Pitfall 5）。
+
+    直接 API 调用（绕过前端 is_valid 过滤）引用一把已吊销令牌去绑 mcp 工具，
+    序列化器须在 ``validate_access_token`` 收成 400，且绝不落库。
+    """
+    tool = make_remote_tool(source="mcp")
+    revoked_token, _ = make_access_token(name="revoked-bind", revoked=True)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    resp = client.post(
+        BINDINGS_URL,
+        {"remote_tool": tool.id, "access_token": str(revoked_token.id)},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+    binding_cls = _binding_model()
+    if binding_cls is not None:
+        assert not binding_cls.objects.filter(access_token=revoked_token).exists()
+
+
 def test_list_owner_isolation(
     make_remote_tool: Callable[..., Any],
     make_tool_binding: Callable[..., Any],
