@@ -15,6 +15,7 @@ from typing import Any
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
@@ -57,11 +58,22 @@ class ToolTokenBindingViewSet(ModelViewSet):
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         # upsert（per Pitfall 3）：同一 (user, remote_tool) 重复绑定即换令牌，
         # 不撞 unique_together 抛 500。
-        binding, _created = await ToolTokenBinding.objects.aupdate_or_create(
-            user=request.user,
-            remote_tool=serializer.validated_data["remote_tool"],
-            defaults={"access_token": serializer.validated_data["access_token"]},
-        )
+        # aupdate_or_create 内部是「先 get 再 create」，并发双发（双击/重试）可能
+        # 双双 miss get 再竞争 create，撞 unique_together(user, remote_tool) → 500。
+        # 捕获 IntegrityError 收敛为对既有绑定的换令牌更新，保证 upsert 语义恒成立。
+        try:
+            binding, _created = await ToolTokenBinding.objects.aupdate_or_create(
+                user=request.user,
+                remote_tool=serializer.validated_data["remote_tool"],
+                defaults={"access_token": serializer.validated_data["access_token"]},
+            )
+        except IntegrityError:
+            binding = await ToolTokenBinding.objects.aget(
+                user=request.user,
+                remote_tool=serializer.validated_data["remote_tool"],
+            )
+            binding.access_token = serializer.validated_data["access_token"]
+            await binding.asave(update_fields=["access_token", "updated_at"])
         # 重新取出并预取关联，使输出序列化器零额外同步查询。
         binding = await (
             ToolTokenBinding.objects.select_related("access_token", "remote_tool").aget(
