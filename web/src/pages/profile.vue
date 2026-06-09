@@ -8,6 +8,7 @@ import { onMounted, ref } from 'vue'
 import { getMe } from '~/api/users'
 import AccessTokenSettings from '~/components/accessTokens/AccessTokenSettings.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import ToolBindingSettings from '~/components/toolBindings/ToolBindingSettings.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { useErrorHandler } from '~/composables/useErrorHandler'
@@ -253,6 +254,28 @@ onMounted(() => {
             </div>
             <div class="p-6">
               <AccessTokenSettings />
+            </div>
+          </div>
+        </div>
+
+        <!-- 工具令牌绑定 -->
+        <div class="group relative">
+          <div class="card overflow-hidden">
+            <div class="flex items-center gap-3 p-6 border-b border-border/50">
+              <div class="p-2.5 rounded-xl bg-primary/10 flex items-center justify-center">
+                <span class="icon-[lucide--link] text-2xl text-primary" />
+              </div>
+              <div>
+                <h2 class="text-lg font-semibold">
+                  工具令牌绑定
+                </h2>
+                <p class="text-sm text-muted-foreground">
+                  把访问令牌绑定给 skill / mcp 工具，调用时以令牌所有者身份执行
+                </p>
+              </div>
+            </div>
+            <div class="p-6">
+              <ToolBindingSettings />
             </div>
           </div>
         </div>
