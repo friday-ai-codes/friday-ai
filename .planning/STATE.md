@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 Milestone: v0.2.0 — SHIPPED 2026-06-10
 Phase: 6-11 all complete
 Status: Milestone complete (archived)
-Last activity: 2026-06-10 - Completed quick task 260610-oug: 仓库 URL 文案修正 + 英文提示汉化
+Last activity: 2026-06-10 - Completed quick task 260610-shc: OIDC 回调 URL 消费站点 Host 设置
 
 Progress: [██████████] 100% (6/6 phases, 21/21 plans)
 
@@ -55,6 +55,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260610-oug | 修复仓库 URL 提示文案为仅支持 HTTPS，并将所有英文校验/错误提示汉化 | 2026-06-10 | c4c60c4f | [260610-oug-url-https](./quick/260610-oug-url-https/) |
+| 260610-shc | OIDC 回调 URL 与登录跳转优先消费「站点 Host」(site_host) 系统设置 | 2026-06-10 | b01dc066 | [260610-shc-site-host-oidc](./quick/260610-shc-site-host-oidc/) |
 
 ## Deferred Items
 
