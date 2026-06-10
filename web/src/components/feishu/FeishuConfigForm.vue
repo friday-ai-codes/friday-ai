@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'updated'): void
+  (e: 'editSpace'): void
 }>()
 
 const { handleError } = useErrorHandler()
@@ -190,6 +191,13 @@ async function handleDelete() {
             <div>
               <span class="text-muted-foreground">Project Key:</span>
               <span class="ml-2">{{ config.project_key || '未设置' }}</span>
+              <button
+                type="button"
+                class="ml-2 text-xs text-primary hover:underline"
+                @click="emit('editSpace')"
+              >
+                去设置
+              </button>
             </div>
             <div>
               <span class="text-muted-foreground">插件 ID:</span>
@@ -204,6 +212,15 @@ async function handleDelete() {
               <span class="ml-2">{{ config.user_key || '未设置' }}</span>
             </div>
           </div>
+          <p class="text-xs text-muted-foreground">
+            Project Key 是飞书项目空间的标识（项目 URL 中域名后的第一段路径，如
+            <code class="font-mono">https://project.feishu.cn/&lt;project_key&gt;/...</code>），
+            用于匹配 Webhook 事件和调用飞书项目 API。它在
+            <button type="button" class="text-primary hover:underline" @click="emit('editSpace')">
+              编辑空间
+            </button>
+            弹窗的「飞书项目 Key」中设置。
+          </p>
         </div>
       </form>
     </div>
