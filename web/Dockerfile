@@ -13,6 +13,10 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
+# 发版时由 CI 传入 git tag（如 v0.2.1），覆盖 package.json 中的版本号
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
+
 RUN pnpm build
 
 FROM nginx:alpine AS production
