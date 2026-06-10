@@ -1,10 +1,10 @@
-"""implementation: 索引可观测性测试
+"""索引可观测性测试
 
 测试覆盖：
-- work item: IndexHistory 操作记录查询 API（分页、筛选）
-- work item: 统计 API（chunk 数、语言分布、覆盖率）
-- work item: Qdrant 健康校验 API（collection 存在性 + points_count）
-- work item: 索引新鲜度指示（last_indexed_commit_sha vs 远端 HEAD）
+- IndexHistory 操作记录查询 API（分页、筛选）
+- 统计 API（chunk 数、语言分布、覆盖率）
+- Qdrant 健康校验 API（collection 存在性 + points_count）
+- 索引新鲜度指示（last_indexed_commit_sha vs 远端 HEAD）
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 # ============================================================================
-# work item: IndexHistory 查询 API
+# IndexHistory 查询 API
 # ============================================================================
 
 
@@ -101,7 +101,7 @@ class TestIndexHistoryListView:
             "summary_text", "error_message", "started_at", "finished_at", "created_at",
             # implementation contract: GraphRAG 增量构建可观测字段
             "graph_build_status", "edge_count", "payload_synced_at",
-            # implementation: 跨仓 API 匹配状态
+            # 跨仓 API 匹配状态
             "cross_repo_match_count", "cross_repo_built_at",
             # implementation/02: per-run delta + 行级 diff
             "symbols_added", "imports_added", "calls_added", "endpoints_added",
@@ -117,7 +117,7 @@ class TestIndexHistoryListView:
 
 
 # ============================================================================
-# work item: 统计 API
+# 统计 API
 # ============================================================================
 
 
@@ -208,7 +208,7 @@ class TestIndexStatsView:
 
 
 # ============================================================================
-# work item: Qdrant 健康校验 API
+# Qdrant 健康校验 API
 # ============================================================================
 
 
@@ -311,7 +311,7 @@ class TestRepositoryCollectionHealthView:
 
 
 # ============================================================================
-# work item: 索引新鲜度指示 API
+# 索引新鲜度指示 API
 # ============================================================================
 
 

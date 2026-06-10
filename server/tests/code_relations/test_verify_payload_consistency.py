@@ -1,4 +1,4 @@
-"""implementation：verify_payload_consistency 管理命令单测。
+"""verify_payload_consistency 管理命令单测。
 
 覆盖 6 条用例（contract / contract + must_haves 异常隔离条款）：
 
@@ -63,7 +63,7 @@ def test_no_errors_when_payload_intact(repository) -> None:
     }
 
     def fake_retrieve(*, collection_name: str, ids: list[str], with_payload: list[str]) -> list[MagicMock]:
-        # work item：verify 命令现在批量传 ids；按 ids list 全部返回对应 record
+        # verify 命令现在批量传 ids；按 ids list 全部返回对应 record
         records = []
         for id_str in ids:
             cid = uuid.UUID(id_str)

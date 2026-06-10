@@ -1,4 +1,4 @@
-"""implementation: LSP supervisor 集成测试（真实 subprocess + work item roundtrip）。
+"""LSP supervisor 集成测试（真实 subprocess + work item roundtrip）。
 
 覆盖 5 路径：
 1. supervisor 启动 + 健康检查通过（V4 第一段）

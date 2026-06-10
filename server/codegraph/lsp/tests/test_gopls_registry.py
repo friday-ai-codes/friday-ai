@@ -1,4 +1,4 @@
-"""implementation: BACKEND_REGISTRY gopls kill-switch 守门测试（≥ 3 场景）。
+"""BACKEND_REGISTRY gopls kill-switch 守门测试（≥ 3 场景）。
 
 覆盖：
 - GOPLS_BACKEND_ENABLED=False 时 BACKEND_REGISTRY['go'] 仍为 tree-sitter（非 _GoplsLazyBackend）

@@ -1,4 +1,4 @@
-"""implementation：Repository.auto_build_graph_enabled 字段三层断言。
+"""Repository.auto_build_graph_enabled 字段三层断言。
 
 测试覆盖（work item-01）：
 1. test_field_default_is_true：模型字段默认值字面值 True（向后兼容）。

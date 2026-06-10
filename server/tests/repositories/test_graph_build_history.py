@@ -1,4 +1,4 @@
-"""implementation：GraphBuildHistory 模型 + 枚举 + Meta 三层断言。
+"""GraphBuildHistory 模型 + 枚举 + Meta 三层断言。
 
 测试覆盖（work item-03）：
 

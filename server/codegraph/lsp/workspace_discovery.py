@@ -1,13 +1,13 @@
-"""implementation: nx sub-project 自动发现层（三探针并集 + tsconfig.json 兜底）。
+"""nx sub-project 自动发现层（三探针并集 + tsconfig.json 兜底）。
 
-per work item：
+
     - 第一探针 ``pnpm-workspace.yaml::packages`` glob 列表 + 展开
     - 第二探针 root ``package.json::workspaces``（array 或 ``{packages: [...]}``）
     - 第三探针 ``nx.json::workspaceLayout {appsDir, libsDir}``
     - 兜底过滤：每候选目录 ``tsconfig.json`` 必须存在；``node_modules`` 子目录显式
       跳过；``!`` 前缀 glob 不支持
 
-per work item / work item：薄防御层 —— 读 package.json ``dependencies.vue`` /
+per work item / 薄防御层 —— 读 package.json ``dependencies.vue`` /
 ``devDependencies.vue`` semver；vue<2.7 时仍纳入 SubProject list（标 vue_version）；
 ``VolarPool.get`` 入口再防御 raise，触发 implementation LspBackend 基类 fallback tree-sitter。
 

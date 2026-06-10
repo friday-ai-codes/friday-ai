@@ -1,4 +1,4 @@
-"""implementation：增量索引 reconcile 端到端集成测试。
+"""增量索引 reconcile 端到端集成测试。
 
 串起 plan pre_delete signal handler + plan verify_payload_consistency
 管理命令 + plan lifecycle wrapper 全链路：

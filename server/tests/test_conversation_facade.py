@@ -152,7 +152,7 @@ class TestConversationFacade:
     """Facade 行为集成测试。"""
 
     async def test_facade_yields_events_from_graph(self, project: Any) -> None:
-        """work item, work item: graph 事件通过 Queue 桥接到 facade yield。"""
+        """work item, graph 事件通过 Queue 桥接到 facade yield。"""
         conversation = await _create_conversation(project)
         (p1, p2, p3), _ = _facade_patches(conversation)
         with p1, p2, p3:
@@ -172,7 +172,7 @@ class TestConversationFacade:
         assert MESSAGE_COMPLETE in types
 
     async def test_facade_creates_orchestration_run(self, project: Any) -> None:
-        """work item: 每次运行创建 OrchestrationRun 并在完成后更新状态。"""
+        """每次运行创建 OrchestrationRun 并在完成后更新状态。"""
         conversation = await _create_conversation(project)
         (p1, p2, p3), _ = _facade_patches(conversation)
         with p1, p2, p3:
@@ -300,7 +300,7 @@ class TestConversationFacade:
     async def test_facade_saves_assistant_message_from_graph_state(
         self, project: Any,
     ) -> None:
-        """work item: 从 graph state 读取 final_answer 传给 finalize_conversation。"""
+        """从 graph state 读取 final_answer 传给 finalize_conversation。"""
         conversation = await _create_conversation(project)
         fin_mock = AsyncMock(return_value=[])
         graph = _make_graph(
@@ -332,7 +332,7 @@ class TestConversationFacade:
         assert kw["result_metadata"]["cost_usd"] == 0.05
 
     async def test_facade_preserves_event_order(self, project: Any) -> None:
-        """work item: 事件顺序与 graph StreamWriter 推送顺序一致。"""
+        """事件顺序与 graph StreamWriter 推送顺序一致。"""
         conversation = await _create_conversation(project)
         ordered = [
             {"type": TOOL_USE_START, "data": {"tool_name": "search"}},
@@ -365,7 +365,7 @@ class TestConversationFacade:
         ]
 
     async def test_facade_does_not_create_sdk_runner_directly(self) -> None:
-        """work item: facade 不直接创建 SDKAgentRunner。"""
+        """facade 不直接创建 SDKAgentRunner。"""
         import inspect
 
         from chat.conversation_service import ConversationService
@@ -374,7 +374,7 @@ class TestConversationFacade:
         assert "SDKAgentRunner(" not in source
 
     async def test_facade_generates_title_event(self, project: Any) -> None:
-        """work item: finalize_conversation 返回的 title 事件被 yield。"""
+        """finalize_conversation 返回的 title 事件被 yield。"""
         conversation = await _create_conversation(project)
         title_ev = AgentEvent(type=TITLE_GENERATED, data={"title": "Auto Title"})
         (p1, p2, p3), _ = _facade_patches(
@@ -398,7 +398,7 @@ class TestConversationFacade:
     async def test_facade_synthesizes_message_complete_when_graph_omits_it(
         self, project: Any,
     ) -> None:
-        """work item: 若 SDK/graph 未显式发送 message_complete，facade 仍兜底补发。"""
+        """若 SDK/graph 未显式发送 message_complete，facade 仍兜底补发。"""
         conversation = await _create_conversation(project)
         graph = _make_graph(
             events=[{"type": TEXT_DELTA, "data": {"text": "Partial answer"}}],
@@ -437,7 +437,7 @@ class TestConversationFacade:
         }
 
     async def test_facade_handles_generator_exit(self, project: Any) -> None:
-        """work item: SSE 断连后后台 Task 完成 finalize。"""
+        """SSE 断连后后台 Task 完成 finalize。"""
         conversation = await _create_conversation(project)
         fin_mock = AsyncMock(return_value=[])
         (p1, p2, p3), _ = _facade_patches(

@@ -1,10 +1,10 @@
-"""implementation: 自动索引触发测试
+"""自动索引触发测试
 
 测试覆盖：
-- work item: Webhook push 事件接收 + 签名验证（GitHub/GitLab/Gitea）
-- work item: APScheduler 定时轮询
-- work item: auto_index_enabled 开关
-- work item: Webhook 防抖去重
+- Webhook push 事件接收 + 签名验证（GitHub/GitLab/Gitea）
+- APScheduler 定时轮询
+- auto_index_enabled 开关
+- Webhook 防抖去重
 """
 
 import hashlib
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 # ============================================================================
-# work item: Webhook 签名验证
+# Webhook 签名验证
 # ============================================================================
 
 
@@ -90,7 +90,7 @@ class TestParsePushEvent:
 
 
 # ============================================================================
-# work item: 防抖去重
+# 防抖去重
 # ============================================================================
 
 
@@ -123,7 +123,7 @@ class TestWebhookDedup:
 
 
 # ============================================================================
-# work item + work item: Webhook 端点 API 测试
+# work item + Webhook 端点 API 测试
 # ============================================================================
 
 
@@ -214,7 +214,7 @@ class TestRepositoryWebhookView:
 
 
 # ============================================================================
-# work item: 定时轮询
+# 定时轮询
 # ============================================================================
 
 

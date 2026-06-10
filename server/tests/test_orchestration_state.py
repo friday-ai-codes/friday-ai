@@ -45,7 +45,7 @@ class TestWorkflowState:
             "run_id", "phase", "blocking_tasks", "user_message", "final_answer",
             "blocking_results", "wait_execute_loops",
             "accumulated_thinking", "tool_calls", "parts", "result_metadata", "agent_session_id",
-            # implementation：协商暂停 payload
+            # 协商暂停 payload
             "pending_clarification",
         }
         assert set(hints.keys()) == expected_fields

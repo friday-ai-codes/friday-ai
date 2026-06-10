@@ -1,4 +1,4 @@
-"""implementation：PROVIDER_REGISTRY 5 Provider 契约测试 + Pydantic credential_schema 脱敏测试。
+"""PROVIDER_REGISTRY 5 Provider 契约测试 + Pydantic credential_schema 脱敏测试。
 
 覆盖 Requirement: contract（5 Provider 元数据形状契约）。
 威胁参考: security mitigation（凭证 repr 泄漏）/ security mitigation（ValidationError 回显明文）。

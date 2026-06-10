@@ -53,7 +53,7 @@ def test_join_performance_10_repos_1k_ep_5k_aw() -> None:
     使用纯内存 dict（不发 DB 查询），验证 O(N+M) 算法时间复杂度。
     实际 DB 场景耗时取决于网络/IO，但 join 算法本身应远低于 30s。
 
-    per work item: 10 仓库 × 1000 endpoint × 5000 ApiWrapper < 30s
+    10 仓库 × 1000 endpoint × 5000 ApiWrapper < 30s
     """
     n_endpoints = 10_000   # 10 仓 × 1000
     n_wrappers = 50_000    # 10 仓 × 5000

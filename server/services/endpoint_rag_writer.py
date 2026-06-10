@@ -60,7 +60,7 @@ def build_api_endpoint_md(
     repo_name: str,
     signature: str = "",
 ) -> str:
-    """work item：生成 api_endpoint.md 文档文本。
+    """生成 api_endpoint.md 文档文本。
 
     Args:
         http_method: HTTP 方法（GET/POST/PUT/DELETE 等）
@@ -113,9 +113,9 @@ async def write_endpoint_rag_docs(
 ) -> int:
     """为 endpoint 列表生成 api_endpoint.md 并写入 Qdrant。
 
-    work item: indexer hook 调用本函数
-    work item: build_api_endpoint_md 生成模板文本
-    work item: payload 加 content_type="api_endpoint" 字段
+    indexer hook 调用本函数
+    build_api_endpoint_md 生成模板文本
+    payload 加 content_type="api_endpoint" 字段
 
     Args:
         endpoints_with_sigs: [(EndpointData, signature_str), ...] 列表

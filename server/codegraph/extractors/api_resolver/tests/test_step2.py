@@ -1,6 +1,6 @@
 """Step 2 volar references 单元测试 —— mock LspSupervisor。
 
-per work item: 验证 resolve_call_sites_for_wrapper 在各种 volar 响应下的行为。
+验证 resolve_call_sites_for_wrapper 在各种 volar 响应下的行为。
 """
 
 from __future__ import annotations

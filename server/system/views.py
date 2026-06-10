@@ -587,7 +587,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
 
 
 # ============================================================================
-# implementation：ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
+# ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
 # ============================================================================
 
 

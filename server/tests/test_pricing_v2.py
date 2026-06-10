@@ -1,4 +1,4 @@
-"""implementation：calculate_cost_v2 六字段定价测试。
+"""calculate_cost_v2 六字段定价测试。
 
 覆盖 Requirement: contract
 Threats: (none) —— 纯计算 + 静态 fixture

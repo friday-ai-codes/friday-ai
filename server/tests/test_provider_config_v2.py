@@ -1,4 +1,4 @@
-"""implementation：aresolve_or_error Result 模式 + 四层优先级测试。
+"""aresolve_or_error Result 模式 + 四层优先级测试。
 
 覆盖 Requirement: contract, contract
 威胁参考: security mitigation (credential cache 污染), security mitigation (ValidationError 泄漏)
@@ -220,14 +220,14 @@ class TestAResolveOrError:
         reason="implementation（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
     )
     async def test_systemsetting_fallback_only_for_anthropic(self) -> None:
-        """implementation：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+        """_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
         pytest.skip("legacy path removed")
 
     @pytest.mark.skip(
         reason="implementation（contract/contract）：SystemSetting.ANTHROPIC_* 降级路径硬删。"
     )
     async def test_no_systemsetting_fallback_for_non_anthropic(self) -> None:
-        """implementation：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+        """_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
         pytest.skip("legacy path removed")
 
     async def test_priority_node_over_system(self) -> None:

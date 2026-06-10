@@ -1,4 +1,4 @@
-"""implementation: 索引全流程端到端集成测试 (work item)。
+"""索引全流程端到端集成测试 (work item)。
 
 OBSOLETE — implementation 双轨索引（Qdrant + 图谱）后 clone_and_index_repository 调用链
 依赖 Qdrant 真实连接，本测试未 stub 该 seam，因 pytest-socket 隔离失败。

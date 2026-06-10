@@ -1,6 +1,6 @@
 """Call 抽取器 —— 从 AST 中提取函数调用关系。
 
-per work item: 系统能从代码文件中提取函数调用关系。
+系统能从代码文件中提取函数调用关系。
 per contract: 仅文件内解析，caller 通过 WalkerNode.ancestor_function 判定。
 per contract: call_type 支持 DIRECT / METHOD / ATTRIBUTE。
 """
@@ -98,7 +98,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
         if isinstance(jsx_callee, bytes):
             jsx_callee = jsx_callee.decode("utf-8")
         if not jsx_callee or not jsx_callee[0].isupper():
-            # work item：HTML 原生小写标签（div / span / button 等）不抽
+            # HTML 原生小写标签（div / span / button 等）不抽
             return None
         return CallData(
             caller_key=(ctx.file_path, caller_name, 0),

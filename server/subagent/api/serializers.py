@@ -43,7 +43,7 @@ class CompletedPayloadSerializer(serializers.Serializer):
     modified_files = serializers.ListField(
         child=serializers.CharField(), required=False, default=list
     )
-    # implementation：容器端可选附带 cross_repo_relevance；不附带视为 []，
+    # 容器端可选附带 cross_repo_relevance；不附带视为 []，
     # Server 端 _handle_completed 内会主动回算（避免容器引入 Django ORM 访问）。
     cross_repo_relevance = serializers.ListField(
         required=False,
@@ -86,7 +86,7 @@ class ProgressPayloadSerializer(serializers.Serializer):
     phase = serializers.CharField(required=False, default="", allow_blank=True)
     progress = serializers.FloatField(required=False, default=0.0)
     message = serializers.CharField(required=False, default="", allow_blank=True)
-    # implementation: 编码任务中间产出（modified_files + recent_tool_calls）
+    # 编码任务中间产出（modified_files + recent_tool_calls）
     coding_progress = serializers.JSONField(required=False, default=None)
     # implementation G1: 容器通过 details 传递结构化载荷（suggested_commit_message 等）
     # 消费侧 parse_progress_payload 会对 details 做 isinstance(dict) 双重校验并按

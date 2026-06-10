@@ -26,7 +26,7 @@ _OUT_OF_SCOPE_MODELS: list[type[Model]] = [ApiCallSite, CrossRepoApiCall]
 
 @pytest.mark.parametrize("model", _BRANCH_MODELS)
 def test_codegraph_model_has_branch_name(model: type[Model]) -> None:
-    """work item：codegraph 5 模型均有 branch_name，max_length=200、default=""。"""
+    """codegraph 5 模型均有 branch_name，max_length=200、default=""。"""
     field = model._meta.get_field("branch_name")
     assert isinstance(field, CharField)
     assert field.max_length == 200

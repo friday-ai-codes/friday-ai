@@ -595,7 +595,7 @@ class AIPromptNode(BaseNode):
                     )
 
             # model 空值 fallback（contract：不再按模型前缀分派；仅 model 本身空时兜底）
-            # implementation：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
+            # 从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
             if not model:
                 model = (resolved.extra or {}).get("default_model", "") or ""
             if not model:

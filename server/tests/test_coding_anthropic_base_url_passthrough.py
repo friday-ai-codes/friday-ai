@@ -1,4 +1,4 @@
-"""work item：AICodingNode metadata 注入 env_FRIDAY_TASK_CLAUDE_* 字段契约测试。
+"""AICodingNode metadata 注入 env_FRIDAY_TASK_CLAUDE_* 字段契约测试。
 
 覆盖：
 - ROADMAP implementation SC3（passthrough 成功路由）

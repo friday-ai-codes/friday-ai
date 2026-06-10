@@ -1,4 +1,4 @@
-"""implementation: 容器侧 repo_summary 模式测试。
+"""容器侧 repo_summary 模式测试。
 
 覆盖 4 个 behavior:
 - Test 1: _check_explore_guard 在 task_mode="repo_summary" 时抛出 ExploreModeForbiddenError

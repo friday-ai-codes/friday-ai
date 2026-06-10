@@ -83,7 +83,7 @@ def seed_provider_credentials_impl(
     此 seed 命令仍接受 SystemSetting 行（key 为字面量字符串 "anthropic_*"），
     供 implementation contract 历史 migration 兼容调用。
     """
-    # implementation：直接字面量 key，不再引用 SettingKeys.ANTHROPIC_* 常量
+    # 直接字面量 key，不再引用 SettingKeys.ANTHROPIC_* 常量
     _ANTHROPIC_API_KEY = "anthropic_api_key"
     _ANTHROPIC_BASE_URL = "anthropic_base_url"
     _ANTHROPIC_MODEL = "anthropic_model"

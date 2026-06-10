@@ -36,7 +36,7 @@ router.register(
 )
 
 urlpatterns = [
-    # implementation：Provider 类型元信息 + 动态 JSON Schema
+    # Provider 类型元信息 + 动态 JSON Schema
     path(
         "types/",
         ProviderTypesView.as_view(),

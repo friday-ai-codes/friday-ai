@@ -1,6 +1,6 @@
 """detector.py 单元测试 —— Step 0/1 axios 锚点 + ApiWrapper 识别。
 
-per work item: 验证 LowLevelHelper 发现、ApiWrapper 识别、URL 提取、base URL 剥除。
+验证 LowLevelHelper 发现、ApiWrapper 识别、URL 提取、base URL 剥除。
 """
 
 from __future__ import annotations

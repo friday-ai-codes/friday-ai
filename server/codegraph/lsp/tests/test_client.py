@@ -1,4 +1,4 @@
-"""implementation: FridayLanguageClient 单元测试。
+"""FridayLanguageClient 单元测试。
 
 测试策略（per work item）：用 ``unittest.mock.AsyncMock`` 替换 pygls 的 4 个 async
 方法（start_io / initialize_async / shutdown_async / workspace_symbol_async），

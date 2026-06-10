@@ -102,7 +102,7 @@ def _enable_branch_index(repo: Repository, feature: str) -> None:
 def test_index_stats_branch_merges(
     auth_client: APIClient, repo: Repository
 ) -> None:
-    """work item：不同 branch 参数下图谱/ChunkEdge 维度（edge_count）合并生效。
+    """不同 branch 参数下图谱/ChunkEdge 维度（edge_count）合并生效。
 
     chunks_total 收窄保 base 不变（口径裁定），故两次请求 chunks_total 相同，
     仅 edge_count 随 branch 不同（feature=base+overlay，缺省=base）。
@@ -130,7 +130,7 @@ def test_index_stats_branch_merges(
 def test_index_stats_default_backward_compat(
     auth_client: APIClient, repo: Repository
 ) -> None:
-    """work item：缺省不传 branch 时既有字段与现状一致（向后兼容）。"""
+    """缺省不传 branch 时既有字段与现状一致（向后兼容）。"""
     _make_edges(repo, 4, branch_name="")  # 存量纯 base
 
     resp = auth_client.get(_url(repo.id))

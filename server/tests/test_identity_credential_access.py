@@ -1,4 +1,4 @@
-"""implementation：validate_credential_scope 5 分支单元测试（contract 服务契约）。
+"""validate_credential_scope 5 分支单元测试（contract 服务契约）。
 
 分支矩阵：
 1. scope='system' + project_id=任意 → 返回 None（系统级凭证全通）

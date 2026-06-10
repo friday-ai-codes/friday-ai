@@ -1,4 +1,4 @@
-"""implementation: 5 Provider 健康检查 + 原子写入 + Ollama available_models 测试。
+"""5 Provider 健康检查 + 原子写入 + Ollama available_models 测试。
 
 覆盖 Requirement: contract, contract
 威胁参考: security mitigation (凭证泄漏到日志), security mitigation (上游 error body 泄漏), security mitigation (权限契约)

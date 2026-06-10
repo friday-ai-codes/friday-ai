@@ -129,7 +129,7 @@ async def test_caller_chunk_resolve_miss_skipped(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_module_level_call_edge_skipped(repository) -> None:
-    """implementation：caller_symbol=NULL 的模块级边被安全跳过，不抛 AttributeError。
+    """caller_symbol=NULL 的模块级边被安全跳过，不抛 AttributeError。
 
     构造一条正常文件内边 + 一条模块级边（caller_symbol=None），断言 build 不崩、
     且产出的 ChunkEdge 只来自正常边（模块级边计入 skipped_caller_chunk）。
@@ -188,7 +188,7 @@ async def test_self_loop_allowed(repository) -> None:
 
 
 # =============================================================================
-# implementation / work item：跨语言守门 parametrize 测试
+# implementation / 跨语言守门 parametrize 测试
 # 静态审计：CallEdgeBuilder 基于 codegraph.CallEdge.callee_name 字符串名匹配 Symbol.name，
 # 无 file extension / language 假设 → 天然语言无关 git diff = 0。
 # =============================================================================

@@ -182,7 +182,7 @@ async def test_fetch_hop2_edges_returns_sorted_within_single_query(
         assert isinstance(tgt_str, str)
         assert isinstance(et, str)
         assert isinstance(w, float)
-        assert isinstance(meta, dict)  # work item: 5-tuple 含 metadata
+        assert isinstance(meta, dict)  # 5-tuple 含 metadata
 
 
 # ---------------------------------------------------------------------------

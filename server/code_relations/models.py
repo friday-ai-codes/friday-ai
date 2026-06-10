@@ -51,7 +51,7 @@ class ChunkRegistry(models.Model):
         on_delete=models.CASCADE,
         related_name="chunk_registry_entries",
     )
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传
     # （配合 generate_chunk_id 的分支命名空间，feature chunk_id 与 base 天然不同）。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     file_path = models.CharField(max_length=512)
@@ -63,7 +63,7 @@ class ChunkRegistry(models.Model):
     line_end = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    # implementation：rebuild_chunk_edges 断点续跑标记。
+    # rebuild_chunk_edges 断点续跑标记。
     # NULL = 未 backfill；rebuild_chunk_edges 命令完成后 update_at = timezone.now()。
     # context contract 标 implementation 落但实际未落，本 plan 补齐。
     last_built_at = models.DateTimeField(
@@ -98,7 +98,7 @@ class ChunkRegistry(models.Model):
                 fields=["repository", "file_path"],
                 name="idx_chunk_reg_repo_file",
             ),
-            # work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # 分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(
                 fields=["repository", "branch_name", "file_path"],
                 name="idx_chunkreg_repo_branch_file",
@@ -128,7 +128,7 @@ class ChunkEdge(models.Model):
     source_chunk_id = models.UUIDField(db_index=False)
     target_chunk_id = models.UUIDField(db_index=False)
     edge_type = models.CharField(max_length=20, choices=EdgeType.choices)
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     weight = models.FloatField(
         validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
@@ -155,7 +155,7 @@ class ChunkEdge(models.Model):
         verbose_name = "Chunk 边"
         verbose_name_plural = "Chunk 边"
         constraints = [
-            # work item：branch_name 进唯一约束（Critical 1 防御性冗余，
+            # branch_name 进唯一约束（Critical 1 防御性冗余，
             # implementation 写入侧必须同步透传 branch_name，否则跨分支同三元组撞约束）。
             UniqueConstraint(
                 fields=["source_chunk_id", "target_chunk_id", "edge_type", "branch_name"],
@@ -165,7 +165,7 @@ class ChunkEdge(models.Model):
                 condition=Q(weight__gte=0.0) & Q(weight__lte=1.0),
                 name="chunkedge_weight_range",
             ),
-            # work item：DB 层兜底 edge_type 枚举，避免 implementation EdgeBuilder 绕过
+            # DB 层兜底 edge_type 枚举，避免 implementation EdgeBuilder 绕过
             # full_clean() 时（如 bulk_create / 直接 Manager.create）typo 静默落库；
             # 与 chunkedge_weight_range 同模式（双保险），满足 ROADMAP 成功条件 #4。
             CheckConstraint(
@@ -179,7 +179,7 @@ class ChunkEdge(models.Model):
                 fields=["repository", "source_chunk_id"],
                 name="idx_chunkedge_fanout",
             ),
-            # work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # 分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(
                 fields=["repository", "branch_name", "source_chunk_id"],
                 name="idx_chunkedge_branch_fanout",

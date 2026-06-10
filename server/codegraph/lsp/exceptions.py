@@ -1,4 +1,4 @@
-"""implementation: LSP 子包业务异常体系（per work item）。
+"""LSP 子包业务异常体系（per work item）。
 
 5 类异常，``LspError`` 是兜底基类；调用方 ``try / except LspError`` 一行覆盖全部 4 子类。
 

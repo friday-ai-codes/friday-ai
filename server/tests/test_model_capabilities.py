@@ -1,4 +1,4 @@
-"""implementation：ModelCapabilities 查询服务 + Ollama runtime 合并测试。
+"""ModelCapabilities 查询服务 + Ollama runtime 合并测试。
 
 覆盖 Requirement: contract, contract
 Threats: (none) —— 纯静态 fixture 查询 + 凭证字段赋值，无 HTTP / DB 写入

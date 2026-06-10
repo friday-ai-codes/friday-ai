@@ -1,4 +1,4 @@
-"""implementation: VolarBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
+"""VolarBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
 
 继承 implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
 fallback）；本模块仅实装 4 个 ``_lsp_extract_*`` abstract hook + 5 ClassVar 字段
@@ -19,7 +19,7 @@ _lsp_extract_calls            ts raw symbols + per-symbol references
 _lsp_extract_endpoints        return [] 前端无 endpoint
 ============================  ==============================================
 
-per work item：``make_volar_backend(language)`` 工厂闭包替换 implementation 占位
+``make_volar_backend(language)`` 工厂闭包替换 implementation 占位
 ``make_lsp_backend``；闭包内推断 sub_project_root（walk up tsconfig.json）+
 从 ``VolarPool.get`` 拿 supervisor + 实例化 VolarBackend。
 """

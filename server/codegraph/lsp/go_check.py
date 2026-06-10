@@ -1,9 +1,9 @@
-"""implementation: gopls v0.14+ + Go SDK ≥ 1.20 二进制检测层 + 进程缓存。
+"""gopls v0.14+ + Go SDK ≥ 1.20 二进制检测层 + 进程缓存。
 
-per work item：启动时一次性 subprocess 检测 + 进程级缓存（不过期；服务重启即重检）。
-per work item：检测失败不 raise；返 GoCheckResult.available=False，让 _GoplsLazyBackend
+启动时一次性 subprocess 检测 + 进程级缓存（不过期；服务重启即重检）。
+检测失败不 raise；返 GoCheckResult.available=False，让 _GoplsLazyBackend
   调用方决定是否走 fallback（per implementation fallback 兜底原则）。
-per work item：shutil.which 跨平台 PATH 检测兼容 macOS / Linux / Windows。
+shutil.which 跨平台 PATH 检测兼容 macOS / Linux / Windows。
 
 公开 API
 ========

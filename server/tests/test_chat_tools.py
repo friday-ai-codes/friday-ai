@@ -383,7 +383,7 @@ class TestGetToolNames:
         assert "get_repository_info" in tool_names
         assert "create_coding_plan" in tool_names
         assert "update_coding_plan" in tool_names
-        # implementation：协商工具
+        # 协商工具
         assert "ask_clarification" in tool_names
 
     async def test_without_indexed_repo_returns_1_tool(self, project):

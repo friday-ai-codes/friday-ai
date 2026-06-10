@@ -581,7 +581,7 @@ class ProviderSetupWizardSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# implementation：Provider 类型元信息 Serializer（schema-driven 前端数据源）
+# Provider 类型元信息 Serializer（schema-driven 前端数据源）
 # ============================================================================
 
 

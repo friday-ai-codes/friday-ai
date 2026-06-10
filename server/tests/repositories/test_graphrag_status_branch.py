@@ -91,7 +91,7 @@ def _enable_branch_index(repo: Repository, feature: str) -> None:
 def test_branch_merges_base_and_overlay(
     auth_client: APIClient, repo: Repository
 ) -> None:
-    """work item：feature 分支返回 base+overlay 合并计数，不同 branch 返回不同值。"""
+    """feature 分支返回 base+overlay 合并计数，不同 branch 返回不同值。"""
     _enable_branch_index(repo, feature="feat-x")
     _make_edges(repo, 3, branch_name="")  # base
     _make_edges(repo, 2, branch_name="feat-x")  # overlay
@@ -128,7 +128,7 @@ def test_default_backward_compat(auth_client: APIClient, repo: Repository) -> No
 def test_base_branch_equals_base(
     auth_client: APIClient, repo: Repository
 ) -> None:
-    """work item：传 base_branch 名（==base）走 branch_name="" 路径，排除 feature 边。"""
+    """传 base_branch 名（==base）走 branch_name="" 路径，排除 feature 边。"""
     _enable_branch_index(repo, feature="feat-x")
     _make_edges(repo, 3, branch_name="")  # base
     _make_edges(repo, 2, branch_name="feat-x")  # overlay

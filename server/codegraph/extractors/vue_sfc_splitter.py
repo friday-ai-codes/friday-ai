@@ -1,6 +1,6 @@
 """Vue SFC pre-splitter —— 把 .vue 源码拆为 template / script / style 三段。
 
-per implementation：不引入 tree-sitter-vue grammar，用 Python 正则 + 标签扫描
+不引入 tree-sitter-vue grammar，用 Python 正则 + 标签扫描
 实现的纯函数 splitter；保 line_offset / start_byte 精度，让子 extractor
 （TS / HTML / CSS）输出能还原到原 .vue 文件视角行号。
 

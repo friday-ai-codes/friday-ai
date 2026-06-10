@@ -3,7 +3,7 @@
 **移植**（不从零写）``server/code_relations/builders/import_edge.py::_resolve_target_file``
 经实战修复的算法：
 
-- work item：相对导入按前导点数决定向上回溯层级（PEP 328：1 点=同包、2 点=父包，
+- 相对导入按前导点数决定向上回溯层级（PEP 328：1 点=同包、2 点=父包，
   ``up_levels = n_leading_dots - 1``），**不用** ``lstrip("./")``（字符集剥离会把 ``..``
   一并剥掉，破坏父级相对导入语义——已踩坑）。
 - 点→斜杠转换 + 路径分隔符归一化（折叠重复 ``/`` 与前导 ``/``）。

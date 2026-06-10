@@ -62,7 +62,7 @@ async def aggregate_top_neighbors(
         repository_id=repository_id,
         source_chunk_id__in=dirty_chunk_ids,
     ).only("source_chunk_id", "target_chunk_id", "edge_type", "weight")
-    # work item：删除 DB 端 ``.order_by("source_chunk_id", "-weight")`` —— 仅依赖
+    # 删除 DB 端 ``.order_by("source_chunk_id", "-weight")`` —— 仅依赖
     # Python 端 sort（确定性破平局靠 chunk_id 字典序）。100k 行 SQL ORDER BY
     # 与内存二次 sort 同时存在是冗余 IO/CPU。
 
@@ -95,7 +95,7 @@ async def aggregate_top_neighbors(
                     truncated_this = True
                     break
 
-            # work item：阶梯走到 limit=1 仍超限（极端 metadata：超长 file path /
+            # 阶梯走到 limit=1 仍超限（极端 metadata：超长 file path /
             # callee_name / commit_hashes 列表）→ skip 这条 update + log warning，
             # 不让超限 payload 流到 batch_set_payload 触发 Qdrant 端 reject。
             if not truncated_this and size > MAX_PAYLOAD_SIZE_BYTES:

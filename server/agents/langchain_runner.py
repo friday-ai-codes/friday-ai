@@ -635,7 +635,7 @@ class LangChainAgentRunner:
             )
 
         except ContextWindowExceededError:
-            # contract / work item：strict_error 策略必须向外抛出 ContextWindowExceededError，
+            # contract / strict_error 策略必须向外抛出 ContextWindowExceededError，
             # **不**降级为 ERROR event —— 调用方（implementation AIAgentBaseNode）需要
             # 区分"预算超限需降级引导"与"LLM provider 异常"两类错误分支。
             # 该异常必须先于下方 `except Exception` 捕获，否则会被吞为 ERROR event。

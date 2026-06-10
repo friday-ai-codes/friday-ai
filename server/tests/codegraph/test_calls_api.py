@@ -85,7 +85,7 @@ def _make_expand_result(seed: Symbol, neighbor: Symbol) -> dict[str, Any]:
 
 @pytest.mark.django_db
 def test_calls_returns_dag_structure(api_client, repo, seed_symbol, neighbor_symbol):
-    """work item: GET /calls/ 返回 {seed_symbol_id, nodes, edges}。"""
+    """GET /calls/ 返回 {seed_symbol_id, nodes, edges}。"""
     expand_result = _make_expand_result(seed_symbol, neighbor_symbol)
 
     with patch(
@@ -111,7 +111,7 @@ def test_calls_returns_dag_structure(api_client, repo, seed_symbol, neighbor_sym
 
 @pytest.mark.django_db
 def test_calls_uuid_filter(api_client, repo, seed_symbol, neighbor_symbol):
-    """work item: graph_expansion L274 bug —— 注入非 UUID target，确认响应中全部被过滤。"""
+    """graph_expansion L274 bug —— 注入非 UUID target，确认响应中全部被过滤。"""
     # 构造含非 UUID target 的边（graph_expansion L274 bug 场景）
     expand_result = {
         "seed_symbol": seed_symbol,

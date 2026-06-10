@@ -1,4 +1,4 @@
-"""implementation: 跨 Runner 类型定义（为 implementation LangChainAgentRunner 铺路）。
+"""跨 Runner 类型定义（为 implementation LangChainAgentRunner 铺路）。
 
 本 phase 仅定义 schema，implementation Runner 落地时直接 import。
 本 phase 不修改 server/agents/models.py::AgentSession.add_usage() 签名

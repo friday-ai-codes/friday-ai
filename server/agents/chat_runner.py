@@ -88,9 +88,9 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "list_endpoints",
     "find_api_handler",
     "find_api_callers",
-    # implementation：先分析相关性，后创建方案
+    # 先分析相关性，后创建方案
     "analyze_repository_relevance",
-    # implementation：不确定时主动澄清（暴露给所有有索引仓库的项目）
+    # 不确定时主动澄清（暴露给所有有索引仓库的项目）
     "ask_clarification",
     "create_coding_plan",
     "update_coding_plan",
@@ -758,7 +758,7 @@ class ChatAnthropicRunner:
             for _ in range(self._config.max_turns):
                 full_message: AIMessageChunk | None = None
 
-                # implementation：每 turn 进入 astream 前做前置 budget check。
+                # 每 turn 进入 astream 前做前置 budget check。
                 # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
                 # （Pitfall 3）。超限抛 ContextWindowExceededError，由下方专属 except 分支捕获。
                 _check_chat_context_window(messages, model=self._config.model)

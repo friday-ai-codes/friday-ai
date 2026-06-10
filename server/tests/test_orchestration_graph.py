@@ -99,14 +99,14 @@ def _patch_sdk(mock_runner: MagicMock):  # noqa: ANN202
 
 @pytest.mark.asyncio
 async def test_graph_compiles() -> None:
-    """work item: StateGraph 可编译为可运行 workflow。"""
+    """StateGraph 可编译为可运行 workflow。"""
     graph = build_graph().compile(checkpointer=MemorySaver())
     assert graph is not None
 
 
 @pytest.mark.asyncio
 async def test_normal_flow_without_blocking(graph_config: RunnableConfig) -> None:
-    """work item: 无阻塞任务时 graph 完整执行 planning → executing → finalizing。"""
+    """无阻塞任务时 graph 完整执行 planning → executing → finalizing。"""
     mock_runner = _make_mock_runner(_default_events(), _default_result())
 
     with _patch_sdk(mock_runner):
@@ -122,7 +122,7 @@ async def test_normal_flow_without_blocking(graph_config: RunnableConfig) -> Non
 
 @pytest.mark.asyncio
 async def test_interrupt_pauses_on_blocking_tasks(graph_config: RunnableConfig) -> None:
-    """work item: SDK tool 返回 __blocking_task__ 标记时 graph 在 waiting 节点暂停。"""
+    """SDK tool 返回 __blocking_task__ 标记时 graph 在 waiting 节点暂停。"""
     blocking_result = {
         "__blocking_task__": True,
         "task_type": "deep_analysis",
@@ -158,7 +158,7 @@ async def test_interrupt_pauses_on_blocking_tasks(graph_config: RunnableConfig) 
 
 @pytest.mark.asyncio
 async def test_resume_continues_after_interrupt(graph_config: RunnableConfig) -> None:
-    """work item: Command(resume=list[BlockingTaskResult]) 恢复 graph 回到 executing。"""
+    """Command(resume=list[BlockingTaskResult]) 恢复 graph 回到 executing。"""
     blocking_result = {
         "__blocking_task__": True,
         "task_type": "deep_analysis",
@@ -206,7 +206,7 @@ async def test_resume_continues_after_interrupt(graph_config: RunnableConfig) ->
 
 @pytest.mark.asyncio
 async def test_phase_transitions(graph_config: RunnableConfig) -> None:
-    """work item: graph state 中 phase 字段在每个节点正确转换。"""
+    """graph state 中 phase 字段在每个节点正确转换。"""
     mock_runner = _make_mock_runner(_default_events(), _default_result())
 
     with _patch_sdk(mock_runner):
@@ -230,7 +230,7 @@ async def test_phase_transitions(graph_config: RunnableConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_graph_state_is_authoritative(graph_config: RunnableConfig) -> None:
-    """work item: graph checkpoint 保存的 state 为 authoritative source。"""
+    """graph checkpoint 保存的 state 为 authoritative source。"""
     mock_runner = _make_mock_runner(_default_events(), _default_result())
 
     with _patch_sdk(mock_runner):
@@ -428,7 +428,7 @@ def _blocking_task_events(
 
 @pytest.mark.asyncio
 async def test_waiting_resumes_to_executing(graph_config: RunnableConfig) -> None:
-    """implementation: resume 后 graph 回到 executing（非 finalizing）。"""
+    """resume 后 graph 回到 executing（非 finalizing）。"""
     events_first = _blocking_task_events(("bt-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
     mock_runner_second = _make_mock_runner(
@@ -466,7 +466,7 @@ async def test_waiting_resumes_to_executing(graph_config: RunnableConfig) -> Non
 
 @pytest.mark.asyncio
 async def test_multiple_blocking_tasks_collected(graph_config: RunnableConfig) -> None:
-    """implementation: 同一轮 SDK 运行中多个 blocking tasks 都被收集。"""
+    """同一轮 SDK 运行中多个 blocking tasks 都被收集。"""
     events = _blocking_task_events(
         ("bt-a", "deep_analysis"),
         ("bt-b", "deep_analysis"),
@@ -619,7 +619,7 @@ async def test_blocking_marker_suppresses_premature_text_events(graph_config: Ru
 
 @pytest.mark.asyncio
 async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
-    """implementation: 二次 executing 运行注入 blocking_results 生成最终回答。"""
+    """二次 executing 运行注入 blocking_results 生成最终回答。"""
     events_first = _blocking_task_events(("bt-inj-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
 
@@ -666,7 +666,7 @@ async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
 )
 @pytest.mark.asyncio
 async def test_loop_count_prevents_infinite_loops(graph_config: RunnableConfig) -> None:
-    """implementation: wait-execute 循环超过 2 次时强制走 finalizing。"""
+    """wait-execute 循环超过 2 次时强制走 finalizing。"""
     blocking_events = _blocking_task_events(("bt-loop", "deep_analysis"))
 
     mock_runner_1 = _make_mock_runner(blocking_events, _default_result())
@@ -698,7 +698,7 @@ async def test_loop_count_prevents_infinite_loops(graph_config: RunnableConfig) 
 
 @pytest.mark.asyncio
 async def test_blocking_results_cleared_after_second_run(graph_config: RunnableConfig) -> None:
-    """implementation: blocking_results 在二次运行后被清空。"""
+    """blocking_results 在二次运行后被清空。"""
     events_first = _blocking_task_events(("bt-clr-1", "deep_analysis"))
     mock_runner_first = _make_mock_runner(events_first, _default_result())
     mock_runner_second = _make_mock_runner(
@@ -726,13 +726,13 @@ async def test_blocking_results_cleared_after_second_run(graph_config: RunnableC
 
 
 # ---------------------------------------------------------------------------
-# work item: _persist_run_phase 单元测试
+# _persist_run_phase 单元测试
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_persist_run_phase_calls_aupdate() -> None:
-    """work item: _persist_run_phase 调用 aupdate(phase=X)。"""
+    """_persist_run_phase 调用 aupdate(phase=X)。"""
     from unittest.mock import AsyncMock, patch as _patch
 
     from orchestration.graph import _persist_run_phase
@@ -746,7 +746,7 @@ async def test_persist_run_phase_calls_aupdate() -> None:
 
 @pytest.mark.asyncio
 async def test_persist_run_phase_swallows_exception() -> None:
-    """work item: DB 写入失败时 log warning 不抛异常。"""
+    """DB 写入失败时 log warning 不抛异常。"""
     from unittest.mock import AsyncMock, patch as _patch
 
     from orchestration.graph import _persist_run_phase
@@ -759,13 +759,13 @@ async def test_persist_run_phase_swallows_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# work item: planning_node 单元测试
+# planning_node 单元测试
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_planning_node_emits_phase_transition() -> None:
-    """work item: planning_node 发射 PHASE_TRANSITION executing 事件。"""
+    """planning_node 发射 PHASE_TRANSITION executing 事件。"""
     from unittest.mock import AsyncMock, patch as _patch
 
     from agents.core.events import PHASE_TRANSITION

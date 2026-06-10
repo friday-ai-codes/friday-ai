@@ -103,7 +103,7 @@ async def generate_title(
         legacy = await aget_legacy_anthropic_config()
         model = legacy["default_model"] or TITLE_MODEL_FALLBACK
 
-        # implementation: 走 Prompt Center 渲染，fallback 保留原常量（contract 双轨）
+        # 走 Prompt Center 渲染，fallback 保留原常量（contract 双轨）
         # rendered_prompt 字节级 hash 等价契约不变（work item implementation 会再验一次）
         rendered_prompt = await render_prompt(
             PromptSlugs.AUX_TITLE_GENERATION,

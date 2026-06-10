@@ -212,7 +212,7 @@ def repo_file_indexes(repo_for_summary):
 
 
 # =============================================================================
-# implementation: Golden Snapshot Baseline fixtures
+# Golden Snapshot Baseline fixtures
 #
 # 锁定 LayeredSearchService.search() 的 final_context 现状行为，作为后续 RAG
 # 解耦阶段的"零漂移"门禁（Pitfall 4 requirements §implementation Success Criteria #2）。

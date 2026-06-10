@@ -43,7 +43,7 @@ _FIND_RELATED_OUTPUT_SCHEMA_FIXTURE = (
     FIXTURE_DIR / "find_related_code_output_schema.json"
 )
 
-# implementation: API MCP tools snapshot fixtures
+# API MCP tools snapshot fixtures
 _FIND_API_HANDLER_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_handler_signature.json"
 _FIND_API_HANDLER_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "find_api_handler_input_schema.json"
 _FIND_API_CALLERS_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_callers_signature.json"
@@ -177,7 +177,7 @@ def test_find_related_code_output_schema_snapshot() -> None:
 
 
 # ---------------------------------------------------------------------------
-# implementation: API MCP tool snapshot tests (work item / work item / work item)
+# API MCP tool snapshot tests (work item / work item / work item)
 # ---------------------------------------------------------------------------
 
 

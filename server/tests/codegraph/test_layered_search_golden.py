@@ -39,7 +39,7 @@ import pytest
 from codegraph.services.layered_search import LayeredSearchService
 from tests.codegraph.conftest import GOLDEN_QUERIES_REGISTRY, GoldenQueryEntry
 
-# implementation: 本文件 20 条 v23.0 baseline 整体 skip——格式漂移是 Phase
+# 本文件 20 条 v23.0 baseline 整体 skip——格式漂移是 Phase
 # 253 设计预期（graph_capable + rag_only 路径都不再渲染 L2/L4 stub 段）。新
 # 格式 byte-eq 由 tests/services/retrieval/test_hybrid_graph_capable_golden.py
 # 锁定（10 条 fixture）。Fixtures retained as historical baseline.

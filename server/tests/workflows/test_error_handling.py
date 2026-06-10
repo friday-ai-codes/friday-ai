@@ -1,10 +1,10 @@
 """Tests for workflow node error handling framework.
 
 Tests cover:
-- work item: on_error field (abort/retry/ignore) with default abort
-- work item: Retry with exponential backoff
-- work item: Node timeout triggering on_error strategy
-- work item: Continue-on-fail (ignore mode) with fallback_values
+- on_error field (abort/retry/ignore) with default abort
+- Retry with exponential backoff
+- Node timeout triggering on_error strategy
+- Continue-on-fail (ignore mode) with fallback_values
 """
 
 import asyncio
@@ -258,14 +258,14 @@ def timeout_retry_workflow(db, engine_project):
 
 
 # ---------------------------------------------------------------------------
-# work item: on_error field tests
+# on_error field tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestOnErrorField:
-    """work item: on_error field defaults and validation."""
+    """on_error field defaults and validation."""
 
     def test_on_error_field_default_abort(self, engine_project):
         """New nodes default to on_error=abort."""
@@ -362,14 +362,14 @@ class TestOnErrorField:
 
 
 # ---------------------------------------------------------------------------
-# work item: Retry with exponential backoff
+# Retry with exponential backoff
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestRetryBehavior:
-    """work item: Retry with exponential backoff."""
+    """Retry with exponential backoff."""
 
     @pytest.mark.asyncio
     async def test_retry_succeeds_after_transient_failures(self, engine, retry_workflow):
@@ -425,14 +425,14 @@ class TestRetryBehavior:
 
 
 # ---------------------------------------------------------------------------
-# work item: Node timeout
+# Node timeout
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestTimeoutBehavior:
-    """work item: Node timeout triggers on_error strategy."""
+    """Node timeout triggers on_error strategy."""
 
     @pytest.mark.asyncio
     async def test_timeout_triggers_on_error_abort(self, engine, engine_project):
@@ -501,14 +501,14 @@ class TestTimeoutBehavior:
 
 
 # ---------------------------------------------------------------------------
-# work item: Continue on Fail (ignore mode)
+# Continue on Fail (ignore mode)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestIgnoreBehavior:
-    """work item: on_error=ignore with fallback_values."""
+    """on_error=ignore with fallback_values."""
 
     @pytest.mark.asyncio
     async def test_ignore_downstream_uses_fallback(self, engine, ignore_workflow):

@@ -1,6 +1,6 @@
 """config.py 单元测试 —— API_DETECTOR_CONFIG + .friday/config.yaml 合并层。
 
-per work item: 验证 settings 默认值、base URL 剥除、yaml 覆盖逻辑。
+验证 settings 默认值、base URL 剥除、yaml 覆盖逻辑。
 """
 
 from __future__ import annotations

@@ -91,7 +91,7 @@ PLAYGROUND_URL = "/api/codegraph/playground/search/"
 
 @pytest.mark.django_db
 def test_playground_requires_admin(regular_client):
-    """work item: 非 admin 用户访问 playground/search/ 返回 403（security mitigation 权限防护）。"""
+    """非 admin 用户访问 playground/search/ 返回 403（security mitigation 权限防护）。"""
     response = regular_client.post(
         PLAYGROUND_URL,
         {"query": "test"},
@@ -102,7 +102,7 @@ def test_playground_requires_admin(regular_client):
 
 @pytest.mark.django_db
 def test_playground_unauthenticated():
-    """work item: 未认证请求返回 401/403。"""
+    """未认证请求返回 401/403。"""
     client = APIClient()
     response = client.post(PLAYGROUND_URL, {"query": "test"}, format="json")
     assert response.status_code in (401, 403)
@@ -110,7 +110,7 @@ def test_playground_unauthenticated():
 
 @pytest.mark.django_db
 def test_playground_returns_layers(admin_client):
-    """work item: admin POST {query: "test"} → 200，含 layers 列表和 final_context 字符串。"""
+    """admin POST {query: "test"} → 200，含 layers 列表和 final_context 字符串。"""
     mock_result = _make_mock_search_result()
 
     with patch(
@@ -136,7 +136,7 @@ def test_playground_returns_layers(admin_client):
 
 @pytest.mark.django_db
 def test_playground_l4_no_orm_objects(admin_client):
-    """work item: L4 层 items 中无 Symbol ORM 对象 —— 手动序列化为 dict（security mitigation）。"""
+    """L4 层 items 中无 Symbol ORM 对象 —— 手动序列化为 dict（security mitigation）。"""
     mock_result = _make_mock_search_result(with_l4_orm=True)
 
     with patch(
@@ -179,7 +179,7 @@ def test_playground_empty_query(admin_client):
 
 @pytest.mark.django_db
 def test_playground_response_structure(admin_client):
-    """work item: 响应包含 query / repository_ids / layers / final_context / total_tokens。"""
+    """响应包含 query / repository_ids / layers / final_context / total_tokens。"""
     mock_result = _make_mock_search_result()
 
     with patch(
@@ -201,13 +201,13 @@ def test_playground_response_structure(admin_client):
 
 
 # ============================================================================
-# implementation：graph enrichment 字段透传（hop1/hop2/graph_context）
+# graph enrichment 字段透传（hop1/hop2/graph_context）
 # ============================================================================
 
 
 @pytest.mark.django_db
 def test_search_passes_through_hop_neighbors_when_hybrid_result(admin_client):
-    """implementation: HybridSearchResult 路径透传 hop1/hop2/graph_context 三字段。"""
+    """HybridSearchResult 路径透传 hop1/hop2/graph_context 三字段。"""
     hop1 = NeighborMetadata(
         chunk_id="chunk-hop1-aaa",
         file_path="src/auth/login.py",
@@ -287,7 +287,7 @@ def test_search_passes_through_hop_neighbors_when_hybrid_result(admin_client):
 
 @pytest.mark.django_db
 def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
-    """implementation: contract LayeredSearchResult 路径无 graph 字段 → 降级空 list / 空字符串。"""
+    """contract LayeredSearchResult 路径无 graph 字段 → 降级空 list / 空字符串。"""
     mock_result = _make_mock_search_result()
 
     with patch(
@@ -318,7 +318,7 @@ def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
 
 
 # ============================================================================
-# implementation Code Review Fix（work item：work item / contract）
+# implementation Code Review Fix（work item / contract）
 # ============================================================================
 
 

@@ -123,7 +123,7 @@ class TaskConfig(BaseSettings):
         description="MR target branch from tech plan (defaults to git_branch)",
     )
 
-    # implementation: 两阶段 dispatch 支持
+    # 两阶段 dispatch 支持
     task_type: str = Field(
         default="coding",
         description="任务类型: coding (完整编码) / coding_commit (仅 commit+push)",

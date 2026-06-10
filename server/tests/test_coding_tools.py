@@ -271,7 +271,7 @@ class TestUpdateCodingPlan:
 
 @pytest.mark.django_db(transaction=True)
 class TestPhaseCodingPlanIntegration:
-    """implementation：create / update 切换到 CodingPlan 域。
+    """create / update 切换到 CodingPlan 域。
 
     coding-plan workflow：create 工具不再产 session；update 仍能同步既有
     session（由 fixture 或本类内 _mk_session_for_plan 手建）。
@@ -437,7 +437,7 @@ class TestPhaseCodingPlanIntegration:
     ):
         """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。
 
-        implementation：(coding_plan, repository) 部分唯一约束限制同时只能
+        (coding_plan, repository) 部分唯一约束限制同时只能
         1 个 active session；本用例通过创建第二个 Repository 模拟多仓 fan-out
         让 draft 与 running 落在不同 repo 上，规避 unique_active_plan_repo。
         """
@@ -591,7 +591,7 @@ async def test_get_tool_names_includes_coding_tools(project, repository):
 
 
 # ============================================================================
-# implementation：create_coding_plan recommended_repository_ids 测试
+# create_coding_plan recommended_repository_ids 测试
 # ============================================================================
 
 

@@ -1,6 +1,6 @@
 """API 层 debug_mode 透传集成测试。
 
-implementation: 验证 debug_mode 从 Serializer → TriggerContext → Dispatcher 的完整透传链。
+验证 debug_mode 从 Serializer → TriggerContext → Dispatcher 的完整透传链。
 
 覆盖:
 - WorkflowExecuteSerializer 接受 debug_mode 布尔字段

@@ -108,7 +108,7 @@ class GraphWriter:
             # CASCADE）。函数内边与模块级边的 caller_file 都恒填 == 本文件，统一由
             # caller_file=file_path 显式删除，是**唯一**清理路径，不可移除——
             # 移除将导致本文件全部 CallEdge 泄漏无法清理。
-            # work item：**必须在 Symbol delete 之前**先删边——否则 Symbol delete 会对
+            # **必须在 Symbol delete 之前**先删边——否则 Symbol delete 会对
             # 即将被删的函数内边先触发一次 SET_NULL UPDATE（写放大）；先删边后这些
             # 行已不存在，Symbol delete 不再产生无谓 UPDATE，删除职责也单一化。
             # contract：4 个 per-file 删除 filter 全部带 branch_name —— feature
@@ -367,7 +367,7 @@ class GraphWriter:
         )(repository_id, file_paths, branch_name=branch_name)
 
     # =========================================================================
-    # implementation: ApiWrapper + ApiCallSite 写入（work item）
+    # ApiWrapper + ApiCallSite 写入（work item）
     # =========================================================================
 
     def write_api_wrappers_for_file(

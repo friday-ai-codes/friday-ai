@@ -1,4 +1,4 @@
-"""implementation：意图分类 + 相关性置信度判定 + 协商 payload 构造。
+"""意图分类 + 相关性置信度判定 + 协商 payload 构造。
 
 本模块提供 3 个**纯函数**，供 ``orchestration.graph`` 在 executing_node 入口
 做 pre-routing 决策。所有函数：
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 
 
-# implementation / work item：硬编码动词词典 —— **不进 Prompt Center**。
+# implementation / 硬编码动词词典 —— **不进 Prompt Center**。
 # 词典是代码硬约束，跟测试强耦合；运营层 polish 走 prompt 即可。
 # 添加 / 删除词条必须同步更新 test_intent_router.py 的对应 case。
 CODING_VERBS_ZH: Final[frozenset[str]] = frozenset({

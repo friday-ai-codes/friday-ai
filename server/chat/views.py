@@ -1744,7 +1744,7 @@ class CodingSessionConfirmView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # implementation: 处理前端传入的分支名覆盖
+        # 处理前端传入的分支名覆盖
         branch_name = request.data.get("branch_name") if request.data else None
         if branch_name:
             from chat.branch_service import validate_branch_name
@@ -2282,7 +2282,7 @@ class CodingSessionDetailView(APIView):
 class CodingPlanListView(APIView):
     """GET /api/chat/coding-plans/?conversation_id=<uuid>
 
-    implementation：按 conversation 查询 CodingPlan 列表。
+    按 conversation 查询 CodingPlan 列表。
     """
 
     authentication_classes = [OptionalJWTAuthentication]
@@ -2316,7 +2316,7 @@ class CodingPlanListView(APIView):
 class CodingPlanDetailView(APIView):
     """GET /api/chat/coding-plans/<uuid>/
 
-    implementation：CodingPlan 详情。
+    CodingPlan 详情。
     """
 
     authentication_classes = [OptionalJWTAuthentication]
@@ -2354,7 +2354,7 @@ class CodingPlanDetailView(APIView):
 class CodingPlanSessionsBatchCreateView(APIView):
     """POST /api/chat/coding-plans/{plan_id}/sessions/ -- work item 批量创建 CodingSession。
 
-    implementation：在已有 CodingPlan 上为 N 个 repository 批量创建 DRAFT CodingSession。
+    在已有 CodingPlan 上为 N 个 repository 批量创建 DRAFT CodingSession。
     每个 repository 独立校验 + 独立事务，部分失败不阻塞其他 repository（CONTEXT
     §批量创建 endpoint 语义）。
     """
@@ -2454,14 +2454,14 @@ class CodingPlanSessionsBatchCreateView(APIView):
 
 
 # ============================================================================
-# implementation：路由决策手动微调 endpoint
+# 路由决策手动微调 endpoint
 # ============================================================================
 
 
 class RoutingTraceManualOverrideView(APIView):
     """POST /api/chat/routing-traces/<uuid:trace_id>/override/
 
-    implementation：用户在 RoutingDecisionPanel 改勾选 → 写一行新
+    用户在 RoutingDecisionPanel 改勾选 → 写一行新
     ``RepositoryRoutingTrace(triggered_by=MANUAL_OVERRIDE)`` —— 保留原 trace
     不变，evaluation SQL 可对比 AI 决策 vs 用户最终决策。
 
@@ -2562,7 +2562,7 @@ class RoutingTraceManualOverrideView(APIView):
 
 
 # ============================================================================
-# implementation / work item / work item：协商答复 endpoint
+# implementation / work item / 协商答复 endpoint
 # ============================================================================
 
 

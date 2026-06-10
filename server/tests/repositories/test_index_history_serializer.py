@@ -35,7 +35,7 @@ def repo(db) -> Repository:
 
 @pytest.mark.django_db
 def test_serializer_emits_delta_fields(repo: Repository) -> None:
-    """work item：序列化输出含 5 个 per-run delta key 且值正确。"""
+    """序列化输出含 5 个 per-run delta key 且值正确。"""
     history = IndexHistory.objects.create(
         repository=repo,
         trigger_type=TriggerType.WEBHOOK,

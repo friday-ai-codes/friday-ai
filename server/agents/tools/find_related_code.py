@@ -251,7 +251,7 @@ async def _find_related_code_impl(
     direction: str,
     limit: int,
 ) -> ToolResult:
-    """``find_related_code`` 函数体实现（per work item：抽内层以承接外层 try/except）。
+    """``find_related_code`` 函数体实现（抽内层以承接外层 try/except）。
 
     所有 ORM / Provider 调用集中在此，外层 ``find_related_code`` 包统一异常兜底。
     保持原行为不变（含 Pydantic 层 ``ValidationError`` 走原 try/except 路径）。

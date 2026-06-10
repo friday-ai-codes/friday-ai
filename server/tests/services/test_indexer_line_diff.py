@@ -1,4 +1,4 @@
-"""implementation：run_git_diff_index 行级 diff 三态集成测试（Pitfall 6）。
+"""run_git_diff_index 行级 diff 三态集成测试（Pitfall 6）。
 
 mock git subprocess（name-status 返回空 diff 以走 no-changes 早退，跳过重索引；
 numstat 返回受控输出），断言 IndexHistory.lines_added/lines_deleted 三态落库：

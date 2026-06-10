@@ -1,4 +1,4 @@
-"""implementation: LspBackend 抽象基类 —— 5 模板方法 + 5 abstract hook + tree-sitter fallback。
+"""LspBackend 抽象基类 —— 5 模板方法 + 5 abstract hook + tree-sitter fallback。
 
 设计要点（per work item / work item / Pitfall P14 / work item / work item）：
 

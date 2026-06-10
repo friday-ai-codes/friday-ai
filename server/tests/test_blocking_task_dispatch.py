@@ -201,7 +201,7 @@ async def _call_deep_analysis(mocks: dict[str, MagicMock | AsyncMock]) -> ToolRe
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_returns_blocking_marker(da_mocks: dict[str, MagicMock | AsyncMock]) -> None:
-    """work item: deep_analysis 返回 __blocking_task__ 标记。"""
+    """deep_analysis 返回 __blocking_task__ 标记。"""
     result = await _call_deep_analysis(da_mocks)
 
     assert result.success is True
@@ -214,7 +214,7 @@ async def test_deep_analysis_returns_blocking_marker(da_mocks: dict[str, MagicMo
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_output_contains_params(da_mocks: dict[str, MagicMock | AsyncMock]) -> None:
-    """work item: 返回值包含 task_id、task_type、params。"""
+    """返回值包含 task_id、task_type、params。"""
     result = await _call_deep_analysis(da_mocks)
 
     assert result.output["task_type"] == "deep_analysis"
@@ -228,7 +228,7 @@ async def test_deep_analysis_output_contains_params(da_mocks: dict[str, MagicMoc
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_does_not_block(da_mocks: dict[str, MagicMock | AsyncMock]) -> None:
-    """work item: deep_analysis 在 dispatch 后立即返回，不轮询。"""
+    """deep_analysis 在 dispatch 后立即返回，不轮询。"""
     start = time.monotonic()
     result = await _call_deep_analysis(da_mocks)
     elapsed = time.monotonic() - start
@@ -240,7 +240,7 @@ async def test_deep_analysis_does_not_block(da_mocks: dict[str, MagicMock | Asyn
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_no_online_runner() -> None:
-    """work item: 无在线 Runner 时返回 ToolResult(success=False)。"""
+    """无在线 Runner 时返回 ToolResult(success=False)。"""
     mocks = _build_deep_analysis_mocks(online_runners=0)
     result = await _call_deep_analysis(mocks)
 
@@ -286,7 +286,7 @@ async def test_registry_key_consistency() -> None:
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_reuse_existing_session() -> None:
-    """work item: 同 conversation_id + 同 repository_id 时复用已有 session、不重新 dispatch。
+    """同 conversation_id + 同 repository_id 时复用已有 session、不重新 dispatch。
 
     Phase P15：复用键由 (conv_id, source) 升级为 (conv_id, repo_id, source)。
     本测试覆盖"同 conv + 同 repo"复用路径；并行场景（同 conv + 不同 repo）由

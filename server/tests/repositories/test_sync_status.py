@@ -1,4 +1,4 @@
-"""work item：SyncStatusView 集成测试。
+"""SyncStatusView 集成测试。
 
 GET /api/repositories/{id}/sync-status/ 响应结构、最近历史记录上限、404 处理、
 next_sync_at 数据源及 last_sync_result 映射的完整验证。

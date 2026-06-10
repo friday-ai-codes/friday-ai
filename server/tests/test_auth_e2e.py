@@ -1,6 +1,6 @@
 """认证全流程端到端集成测试。
 
-覆盖 work item：OIDC 登录 -> JWT 签发 -> 路由守卫 -> 权限检查 -> API 调用全流程。
+覆盖 OIDC 登录 -> JWT 签发 -> 路由守卫 -> 权限检查 -> API 调用全流程。
 """
 
 from unittest.mock import AsyncMock, patch

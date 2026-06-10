@@ -131,7 +131,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     def __init__(self) -> None:
         """初始化实例，声明 implementation 预渲染 base_prompt 实例属性。"""
         super().__init__()
-        # implementation: execute() 预渲染结果注入口；get_system_prompt 从此读取
+        # execute() 预渲染结果注入口；get_system_prompt 从此读取
         self._precomputed_base_prompt: str | None = None
 
     config_schema: ClassVar[dict[str, Any]] = {
@@ -339,7 +339,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         """
         from workflows.models.execution import SubStepStatus
 
-        # implementation: 预渲染 base prompt（必须在 super().execute 之前）
+        # 预渲染 base prompt（必须在 super().execute 之前）
         # super().execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
         # 但若 user_prompt 为空，按惯例应立刻短路返回 failed，不做任何昂贵 DB/Prompt 查询
         if not context.node_config.get("user_prompt", "").strip():

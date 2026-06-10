@@ -1,15 +1,15 @@
-"""implementation: Git Diff 增量索引测试
+"""Git Diff 增量索引测试
 
 测试覆盖：
-- work item: git diff 获取变更文件列表 + last_indexed_commit_sha 更新
-- work item: 按变更类型分发处理 + fallback
-- work item: 差异摘要生成
+- git diff 获取变更文件列表 + last_indexed_commit_sha 更新
+- 按变更类型分发处理 + fallback
+- 差异摘要生成
 
 模块级 autouse fixture `_stub_qdrant_calls` 已 stub 8 个 qdrant_* helper +
 IndexerService._ensure_collection；纯 git diff 解析 / 分发逻辑测试可正常通过。
 clone_and_index_repository 完整链路（含 Repository.objects 异步查询 / 双轨图谱
 写入 / index_history 落库）的 4 个测试因依赖更深的 Qdrant + 图谱 seam，
-统一在用例级 skip，遗留至 v24.0 conftest 全局 fixture 重写。
+统一在用例级 skip，待 conftest 提供全局 Qdrant fixture 后恢复。
 """
 
 from unittest.mock import AsyncMock, patch

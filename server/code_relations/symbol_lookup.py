@@ -36,7 +36,7 @@ class SymbolChunkResolver:
 
     def __init__(self, repository_id: str, *, branch_name: str = "") -> None:
         self.repository_id = repository_id
-        # implementation：feature 分支的 chunk 向量在 overlay collection；base（""）
+        # feature 分支的 chunk 向量在 overlay collection；base（""）
         # 落到旧 collection（字节不变）。base→base collection，feature→overlay。
         self.branch_name = branch_name
         self._index: dict[str, list[tuple[int, int, uuid.UUID]]] | None = None

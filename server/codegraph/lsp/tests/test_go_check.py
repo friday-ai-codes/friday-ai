@@ -1,4 +1,4 @@
-"""implementation: go_check.py 单元测试（≥ 9 场景 mock subprocess）。
+"""go_check.py 单元测试（≥ 9 场景 mock subprocess）。
 
 per Pitfall P-checkpoint：每测试前后重置 _CACHE 避免测试间污染。
 """

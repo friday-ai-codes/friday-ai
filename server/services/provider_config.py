@@ -292,7 +292,7 @@ def _parse_uuid_or_none(value: Any) -> UUID | None:
 
 
 # ============================================================================
-# implementation：v8.1 SettingKeys.ANTHROPIC_* 硬删后 legacy 兼容层
+# v8.1 SettingKeys.ANTHROPIC_* 硬删后 legacy 兼容层
 # 从 ProviderCredential(scope=system, provider_type=anthropic, name=default) 读配置。
 # ============================================================================
 
@@ -721,7 +721,7 @@ class ProviderConfigService:
     ) -> ResolvedProviderConfig:
         """同步解析 Provider 配置（implementation contract/contract 后仅保留向后兼容 stub）。
 
-        implementation：legacy SettingKeys.ANTHROPIC_* 硬删后，同步路径不再支持
+        legacy SettingKeys.ANTHROPIC_* 硬删后，同步路径不再支持
         从 SystemSetting 降级。调用方应迁移到 aresolve_or_error。
 
         Raises:
@@ -840,7 +840,7 @@ class ProviderConfigService:
         dumped = validated.model_dump(exclude={"api_key", "base_url", "bearer_token"})
         for k, v in dumped.items():
             extra[k] = v
-        # implementation：注入 credential.default_model 到 extra（供调用方
+        # 注入 credential.default_model 到 extra（供调用方
         # 做 model fallback 使用，替代既有 aget_claude_config(project).model 路径）
         if credential.default_model:
             extra["default_model"] = credential.default_model

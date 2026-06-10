@@ -657,12 +657,12 @@ class IndexerService:
         from django.conf import settings
 
         self.repository_id = repository_id
-        # implementation：默认启用 ast_aware 精细切片（符号驱动）；可经 settings.CHUNKING_MODE
+        # 默认启用 ast_aware 精细切片（符号驱动）；可经 settings.CHUNKING_MODE
         # 回退 "fixed"。改切片策略后需重新索引方能对存量 chunk 生效。
         self.parser = CodeParser(
             chunking_mode=getattr(settings, "CHUNKING_MODE", "ast_aware"),
         )
-        # implementation: 图谱抽取与写入服务（双轨架构 - per contract）
+        # 图谱抽取与写入服务（双轨架构 - per contract）
         self._graph_extractor = None  # 延迟初始化
         self._graph_writer = None
         # implementation（per contract / contract）：累积本次索引会话每次 _upsert_chunk_registry_batch
@@ -1084,7 +1084,7 @@ class IndexerService:
             # 用户能立刻看到 Hash 新鲜度卡片显示 fresh。
             await persist_vector_track_complete(self.repository_id, repo_path)
 
-            # implementation: 图谱轨写入（失败不影响"已索引"状态）
+            # 图谱轨写入（失败不影响"已索引"状态）
             # implementation-02：双重判断后再决定是否构图（CONTEXT 决议留 implementation
             # 薄壳形态——判断在调用方层而非 _extract_and_write_graph 函数体内部）。
             # run_full_index 无 history_id 形参，_should_build_graph 走 fallback 查 RUNNING。
@@ -1422,7 +1422,7 @@ class IndexerService:
             chunks=len(points),
         )
 
-        # implementation: 图谱轨写入
+        # 图谱轨写入
         # implementation-02：双重判断 gating（run_branch_index 无 history_id 形参，
         # _should_build_graph 走 fallback 查 RUNNING）。
         if files_to_index and await self._should_build_graph(None):
@@ -1940,7 +1940,7 @@ class IndexerService:
         # contract：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
         await persist_vector_track_complete(self.repository_id, repo_path)
 
-        # implementation: 图谱轨写入（失败不影响"已索引"状态）
+        # 图谱轨写入（失败不影响"已索引"状态）
         # implementation-02：双重判断 gating（git_diff 路径已有 history_id 形参）
         graph_files = [d.file_path for d in files_to_index]
         if graph_files and await self._should_build_graph(history_id):
@@ -2337,7 +2337,7 @@ class IndexerService:
             # contract：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
             await persist_vector_track_complete(self.repository_id, repo_path)
 
-            # implementation: 图谱轨写入（失败不影响"已索引"状态）
+            # 图谱轨写入（失败不影响"已索引"状态）
             # implementation-02：双重判断 gating（incremental 路径已有 history_id 形参）
             if files_to_index and await self._should_build_graph(history_id):
                 await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
@@ -2627,7 +2627,7 @@ class IndexerService:
         # 接口集体 "待处理"。
         GRAPH_YIELD_EVERY = 25
 
-        # work item: 预查询 endpoint RAG 写入所需参数（循环后批量处理）
+        # 预查询 endpoint RAG 写入所需参数（循环后批量处理）
         _all_endpoints_with_sigs: list[tuple[Any, str]] = []
         try:
             _repo_obj = await Repository.objects.filter(id=repository_id).afirst()
@@ -2754,7 +2754,7 @@ class IndexerService:
                 stats["total_calls"] += result.get("calls", 0)
                 stats["total_endpoints"] += result.get("endpoints", 0)
 
-                # work item: 收集当前文件 endpoint（含 best-effort symbol signature）
+                # 收集当前文件 endpoint（含 best-effort symbol signature）
                 for _ep in bundle.endpoints:
                     _handler_func = _ep.handler_name.rsplit(".", 1)[-1]
                     _sym = next(
@@ -2763,7 +2763,7 @@ class IndexerService:
                     )
                     _all_endpoints_with_sigs.append((_ep, _sym.signature if _sym else ""))
 
-                # implementation: 条件追加 Go interface implementation 抽取
+                # 条件追加 Go interface implementation 抽取
                 # 仅当 gopls backend 已启用 + 当前文件为 Go + 有 symbol 时触发
                 if (
                     language == "go"
@@ -2816,7 +2816,7 @@ class IndexerService:
                 endpoints=stats["total_endpoints"],
             )
 
-        # work item: 图谱轨完成后批量写 endpoint RAG 文档（失败不阻塞）
+        # 图谱轨完成后批量写 endpoint RAG 文档（失败不阻塞）
         if _all_endpoints_with_sigs and _endpoint_rag_repo_name:
             await self._write_endpoint_rag_docs(
                 endpoints_with_sigs=_all_endpoints_with_sigs,
@@ -2908,7 +2908,7 @@ class IndexerService:
             )
             stats["edge_build_enqueued"] = False
 
-        # implementation：图谱 Symbol 写完 + 向量轨 Qdrant chunk 已就绪 → 回填
+        # 图谱 Symbol 写完 + 向量轨 Qdrant chunk 已就绪 → 回填
         # Symbol.chunk_id 持久化绑定（「一套 AST 双供」的关联落地，取代运行时行号 bisect）。
         # 异常隔离：绑定是优化项，失败仅 warning 不阻塞索引主流程。
         try:
@@ -2924,7 +2924,7 @@ class IndexerService:
                 error_type=type(exc).__name__,
             )
 
-        # implementation：整库 raw 写完后，对整库构建解析上下文（SymbolIndex +
+        # 整库 raw 写完后，对整库构建解析上下文（SymbolIndex +
         # python/frontend/go resolver）回填 CallEdge.callee_symbol/callee_file/
         # is_cross_file。创建索引与手动重建均经本函数 → 一处接入两路径覆盖。
         # 异常隔离：回填是优化项，失败仅 warning 不阻塞索引主流程（contract）。
@@ -2954,7 +2954,7 @@ class IndexerService:
         repo_name: str,
         hybrid_enabled: bool,
     ) -> None:
-        """work item: 为已抽取的 endpoints 生成 api_endpoint.md 并写入 Qdrant。
+        """为已抽取的 endpoints 生成 api_endpoint.md 并写入 Qdrant。
 
         失败只记 warning，不阻塞图谱轨（per work item 容错原则）。
         """

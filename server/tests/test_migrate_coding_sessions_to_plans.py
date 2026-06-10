@@ -115,7 +115,7 @@ def test_command_isolates_per_conversation(conversation, second_conversation, re
 def test_command_placeholder_for_empty_tech_plan(conversation, repository):
     """空 tech_plan 走占位路径并复用同一占位 plan。
 
-    implementation：同 (placeholder_plan, repo) 上同时只能 1 个 active
+    同 (placeholder_plan, repo) 上同时只能 1 个 active
     session。第一个 session 链接成功，第二个走 "conflicted" 分支跳过。
     """
     s1 = _make_session(conversation, repository, "")

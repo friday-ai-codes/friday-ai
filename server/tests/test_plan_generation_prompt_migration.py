@@ -208,7 +208,7 @@ class TestPlanGenerationMigration:
         mock_aresolve_ok: Any,
         make_minimal_context: Any,
     ) -> None:
-        """implementation：``_CapturingFake`` 捕获 ``SystemMessage.content`` 做字节级 sha256 断言。
+        """``_CapturingFake`` 捕获 ``SystemMessage.content`` 做字节级 sha256 断言。
 
         work item 强化：
         - ``expected_sha`` 由同一 Prompt Center 渲染路径 + 固定 ``execution_id`` /

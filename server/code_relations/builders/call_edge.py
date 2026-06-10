@@ -100,7 +100,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
         edges: list[ChunkEdge] = []
         for (src, tgt), (count, names) in groups.items():
             weight = max(0.0, min(1.0, math.log10(count + 1) / 3.0))
-            # work item：``names`` 必非空（构造方一定 add 一次 callee_name），但
+            # ``names`` 必非空（构造方一定 add 一次 callee_name），但
             # 保留 ``or ""`` 兜底使 mypy 对 sorted() 序列化结果更宽容。
             callee_name = sorted(names)[0] if names else ""
             edges.append(

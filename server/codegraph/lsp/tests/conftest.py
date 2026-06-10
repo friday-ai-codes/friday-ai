@@ -1,4 +1,4 @@
-"""implementation: LSP 集成测试 fixtures（per work item / work item / Pitfall P6 / P7 / P10）。
+"""LSP 集成测试 fixtures（per work item / work item / Pitfall P6 / P7 / P10）。
 
 提供 3 个 fixture + wait_until helper：
 

@@ -1,7 +1,7 @@
 """Symbol 抽取器 —— 从 AST 中提取函数/类/方法定义。
 
 per contract: Symbol 包含 name / symbol_type / file_path / start_line / end_line / signature / is_async
-per work item: 系统能从代码文件中提取函数/类/接口等符号定义
+系统能从代码文件中提取函数/类/接口等符号定义
 per implementation / Pitfall 8：_extract_one_symbol 返回类型从 SymbolData | None 升级为
 list[SymbolData]，HTML element 一节点可能同时含 PascalCase tag + id 属性，需返多个；
 CSS rule_set 同理（多 selector 拆解）。既有 python / go / ts 路径机械改 [sym] / []。
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# implementation：HTML id 属性值合法 identifier 守卫
+# HTML id 属性值合法 identifier 守卫
 _HTML_ID_IDENTIFIER_RE = re.compile(r"^[\w\-]+$")
 
 
@@ -69,7 +69,7 @@ def _extract_one_symbol(
     """从单个 WalkerNode 提取 SymbolData 列表。
 
     处理 function_definition / class_definition / decorated_definition 等节点；
-    implementation：HTML element / script_element / style_element 走 _extract_html_symbol
+    HTML element / script_element / style_element 走 _extract_html_symbol
     分支；CSS rule_set 由 plan 加分支。返回类型 list 让 HTML 一节点可输出多个 SymbolData。
 
     Args:
@@ -84,11 +84,11 @@ def _extract_one_symbol(
 
     node = wn.node
 
-    # implementation / work item：HTML 分支（element / script_element / style_element）
+    # implementation / HTML 分支（element / script_element / style_element）
     if ctx.language == "html" and node.type in ("element", "script_element", "style_element"):
         return _extract_html_symbol(node, source, ctx)
 
-    # implementation / work item：CSS 分支（rule_set）
+    # implementation / CSS 分支（rule_set）
     if ctx.language == "css" and node.type == "rule_set":
         return _extract_css_symbol(node, source, ctx)
 
@@ -110,7 +110,7 @@ def _extract_one_symbol(
             if child.type == "type_spec":
                 name_node = child.child_by_field_name("name")
                 break
-    # work item：TS / TSX lexical_declaration 仅抽取 value 为 arrow_function 的命名 const，
+    # TS / TSX lexical_declaration 仅抽取 value 为 arrow_function 的命名 const，
     # 从 variable_declarator.name 取符号名；非 arrow value（如 const x = 5）不抽
     if name_node is None and node.type == "lexical_declaration":
         for child in node.children:
@@ -226,7 +226,7 @@ def _extract_html_symbol(
 ) -> "list[SymbolData]":
     """从 HTML element / script_element / style_element 节点提取 SymbolData 列表。
 
-    per implementation / work item：
+    per implementation / 
     - PascalCase tag (len ≥ 3 + 首字母大写) → CLASS
     - 含连字符的 custom element (len ≥ 2) → CLASS
     - id 属性（合法 identifier）→ VARIABLE

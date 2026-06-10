@@ -1,4 +1,4 @@
-"""implementation：ChunkRegistry pre_delete 信号 handler 单测。
+"""ChunkRegistry pre_delete 信号 handler 单测。
 
 覆盖 4 + 1 条用例（contract / contract / contract / contract）：
 

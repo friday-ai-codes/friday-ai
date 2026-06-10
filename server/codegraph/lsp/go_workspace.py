@@ -1,8 +1,8 @@
-"""implementation: Go workspace 自动发现 —— go.work 优先 + go.mod 最浅路径策略。
+"""Go workspace 自动发现 —— go.work 优先 + go.mod 最浅路径策略。
 
-per work item：gopls 复用 implementation _SUPERVISORS module-level 单实例缓存；
+gopls 复用 implementation _SUPERVISORS module-level 单实例缓存；
   workspace_root 指向 go.mod 最近父目录（不是文件所在目录）。
-per work item：vendor/ 内嵌 go.mod 不采纳（只扫一级子目录）。
+vendor/ 内嵌 go.mod 不采纳（只扫一级子目录）。
 per Pitfall P-checkpoint：vendor/ 显式跳过，防误识别。
 per Pitfall P-checkpoint：go.work use 路径相对于 go.work 所在目录，需 resolve() 绝对化。
 

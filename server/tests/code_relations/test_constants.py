@@ -66,7 +66,7 @@ def test_constants_not_env_derived() -> None:
 
 
 # ---------------------------------------------------------------------------
-# implementation：新增 CO_CHANGED_WINDOW_COMMITS / SEMANTIC_SCORE_THRESHOLD
+# 新增 CO_CHANGED_WINDOW_COMMITS / SEMANTIC_SCORE_THRESHOLD
 # ---------------------------------------------------------------------------
 
 

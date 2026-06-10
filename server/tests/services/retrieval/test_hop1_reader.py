@@ -167,7 +167,7 @@ def test_extract_skips_source_when_neighbor_is_dict(
 
 
 def test_extract_skips_source_when_weight_is_nan_or_inf() -> None:
-    """work item: weight 为 NaN / ±Inf / [0,1] 越界 → _is_valid_neighbor_tuple 拒绝整个 source。
+    """weight 为 NaN / ±Inf / [0,1] 越界 → _is_valid_neighbor_tuple 拒绝整个 source。
 
     NaN 进 sorted() 不可排序 + budget 估算异常；Inf 进 markdown 渲染会污染
     LLM 上下文（``w=inf``）。与 ChunkEdge.weight DB 约束 [0.0, 1.0] 对齐。

@@ -292,7 +292,7 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
                 stderr=stderr_bytes.decode("utf-8", errors="replace")[:512],
                 partial_pairs=len(counter),
             )
-            # work item：returncode != 0 但已采集 counter 时，保留 partial 数据；
+            # returncode != 0 但已采集 counter 时，保留 partial 数据；
             # 仅当 counter 完全为空时才 fallback 返回空（正常致命错误信号）。
 
         return dict(counter), dict(samples)

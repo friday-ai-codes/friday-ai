@@ -17,7 +17,7 @@ from repositories.models import Repository
 
 
 def test_chunkedge_unique_constraint_contains_branch_name() -> None:
-    """work item：uniq_chunkedge_triple 约束 fields 含 branch_name。"""
+    """uniq_chunkedge_triple 约束 fields 含 branch_name。"""
     constraint = next(
         c for c in ChunkEdge._meta.constraints if c.name == "uniq_chunkedge_triple"
     )
@@ -26,7 +26,7 @@ def test_chunkedge_unique_constraint_contains_branch_name() -> None:
 
 @pytest.mark.django_db
 def test_chunkedge_base_feature_dual_write_no_integrity_error() -> None:
-    """work item：base 与 feature 同三元组双写均成功；同 branch_name 重复写抛 IntegrityError。"""
+    """base 与 feature 同三元组双写均成功；同 branch_name 重复写抛 IntegrityError。"""
     repo = Repository.objects.create(
         name="ce-dual-repo",
         git_url="https://example.com/ce.git",

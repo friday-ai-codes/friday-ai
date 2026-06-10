@@ -61,7 +61,7 @@ async def test_delete_index_clears_file_resume_anchors_and_graph_state() -> None
         file_path="src/main.ts",
         line_number=1,
     )
-    # implementation：扩展为同时验证 ChunkEdge / ChunkRegistry 被级联清理。
+    # 扩展为同时验证 ChunkEdge / ChunkRegistry 被级联清理。
     cr_a = await ChunkRegistry.objects.acreate(
         chunk_id=uuid.uuid4(),
         content_hash="hash-a",
@@ -109,7 +109,7 @@ async def test_delete_index_clears_file_resume_anchors_and_graph_state() -> None
     assert await Symbol.objects.filter(repository=repo).acount() == 0
     assert await ImportEdge.objects.filter(repository=repo).acount() == 0
     assert await Endpoint.objects.filter(repository=repo).acount() == 0
-    # implementation：新增断言 — ChunkEdge / ChunkRegistry 也被级联清理
+    # 新增断言 — ChunkEdge / ChunkRegistry 也被级联清理
     assert await ChunkEdge.objects.filter(repository=repo).acount() == 0
     assert await ChunkRegistry.objects.filter(repository=repo).acount() == 0
 

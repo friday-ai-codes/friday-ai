@@ -1,12 +1,12 @@
 """TS / TSX 语言 extractor 测试 —— 验证 symbol / import / call 抽取 + JSX 大小写过滤。
 
-覆盖 implementation..work item：
-- work item：TSExtractor / TSXExtractor 注册（巩固由 test_registry.py 测）
-- work item：interface / type_alias / class / function / method / 命名 arrow 符号抽取
-- work item：import named / namespace / default / type-only / 重导出
-- work item：member call + DIRECT call
-- work item：TSX 独立 grammar（tsx grammar 0 ERROR，ts grammar 报 ERROR）
-- work item：JSX 大写组件 → call_type='JSX'，小写 HTML 元素不抽
+覆盖 implementation..
+- TSExtractor / TSXExtractor 注册（巩固由 test_registry.py 测）
+- interface / type_alias / class / function / method / 命名 arrow 符号抽取
+- import named / namespace / default / type-only / 重导出
+- member call + DIRECT call
+- TSX 独立 grammar（tsx grammar 0 ERROR，ts grammar 报 ERROR）
+- JSX 大写组件 → call_type='JSX'，小写 HTML 元素不抽
 关联 fixture：tests/fixtures/ts_module.ts + tests/fixtures/tsx_component.tsx。
 """
 
@@ -178,7 +178,7 @@ class TestTSXExtractor:
         assert "./api" in modules, modules
 
     def test_jsx_uppercase_component_as_call(self, tsx_parser, tsx_source):
-        """work item / work item：大写 JSX 组件抽为 call_type='JSX'，至少含 Card 或 UserAvatar。"""
+        """work item / 大写 JSX 组件抽为 call_type='JSX'，至少含 Card 或 UserAvatar。"""
         tree = tsx_parser.parse(tsx_source.encode("utf-8"))
         ctx = FileContext(file_path="tsx_component.tsx", language="tsx", repository_id="r1")
         backend = TreeSitterBackend("tsx")

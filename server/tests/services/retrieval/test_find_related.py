@@ -232,7 +232,7 @@ async def test_both_directions_union(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_find_related_upstream_hops2_correctness(repository) -> None:
-    """work item: direction='upstream' + hops=2 应返回「调用者的调用者」。
+    """direction='upstream' + hops=2 应返回「调用者的调用者」。
 
     构造调用链 A -> B -> C；find_related(start=C, direction='upstream', hops=2)
     应返回 [B (hop=1), A (hop=2)] 而非 [B (hop=1), B 的下游] —— 这是 work item

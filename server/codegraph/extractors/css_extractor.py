@@ -1,6 +1,6 @@
 """CSS 专用抽取器 —— TreeSitterBackend("css") thin wrapper。
 
-per implementation / work item：与 html_extractor.py / ts_extractor.py 字面对称。
+per implementation / 与 html_extractor.py / ts_extractor.py 字面对称。
 calls / endpoints 显式 [] —— per work item / work item CSS 无 callable / endpoint 语义。
 
 SymbolData 通过 walker.py SYMBOL_TYPES["css"]=["rule_set"] + symbol.py css 分支落地

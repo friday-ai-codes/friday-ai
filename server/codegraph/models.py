@@ -28,7 +28,7 @@ class Symbol(models.Model):
         on_delete=models.CASCADE,
         related_name="symbols",
     )
-    # work item：分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
+    # 分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
     # feature 分支由 implementation 写入侧透传；max_length 对齐 RepositoryBranchIndex.branch_name。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     name = models.CharField(max_length=255, db_index=True)
@@ -38,7 +38,7 @@ class Symbol(models.Model):
     end_line = models.IntegerField()
     signature = models.TextField(blank=True)
     is_async = models.BooleanField(default=False)
-    # implementation：该符号所属 RAG chunk_id（与 ChunkRegistry.chunk_id / Qdrant point_id
+    # 该符号所属 RAG chunk_id（与 ChunkRegistry.chunk_id / Qdrant point_id
     # 同源）。索引时由「一套 AST 双供」同源回填，建立 chunk ↔ Symbol 双向绑定，取代
     # CallEdgeBuilder 等的 SymbolChunkResolver 行号 bisect 软对齐。NULL = 未绑定
     # （历史数据 / 该符号未命中任何 chunk）。不做 FK（per code_relations contract 柔性引用）。
@@ -52,10 +52,10 @@ class Symbol(models.Model):
         indexes = [
             models.Index(fields=["repository", "file_path"]),
             models.Index(fields=["repository", "name"]),
-            # work item：分支隔离复合索引（旧索引保留，新增并存）。
+            # 分支隔离复合索引（旧索引保留，新增并存）。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
-        # work item：branch_name 进 unique 是 Critical 1 防御性冗余，
+        # branch_name 进 unique 是 Critical 1 防御性冗余，
         # implementation 写入侧必须同步透传 branch_name，否则撞约束（Pitfall 4）。
         unique_together = [("repository", "branch_name", "file_path", "name", "start_line")]
 
@@ -72,7 +72,7 @@ class ImportEdge(models.Model):
         on_delete=models.CASCADE,
         related_name="import_edges",
     )
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     source_file = models.CharField(max_length=512, db_index=True)
     target_module = models.CharField(max_length=512, db_index=True)
@@ -86,7 +86,7 @@ class ImportEdge(models.Model):
         indexes = [
             models.Index(fields=["repository", "source_file"]),
             models.Index(fields=["repository", "target_module"]),
-            # work item：分支隔离复合索引。
+            # 分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "source_file"]),
         ]
 
@@ -124,7 +124,7 @@ class CallEdge(models.Model):
         on_delete=models.CASCADE,
         related_name="call_edges",
     )
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     caller_symbol = models.ForeignKey(
         Symbol,
@@ -162,7 +162,7 @@ class CallEdge(models.Model):
             models.Index(fields=["repository", "callee_name"]),
             models.Index(fields=["repository", "caller_file"]),
             models.Index(fields=["repository", "callee_file"]),
-            # work item：分支隔离复合索引。
+            # 分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "caller_file"]),
         ]
 
@@ -190,7 +190,7 @@ class Endpoint(models.Model):
         on_delete=models.CASCADE,
         related_name="endpoints",
     )
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     http_method = models.CharField(max_length=16)
     url_path = models.CharField(max_length=512, db_index=True)
@@ -198,7 +198,7 @@ class Endpoint(models.Model):
     view_type = models.CharField(max_length=32, choices=ViewType.choices)
     file_path = models.CharField(max_length=512)
     line_number = models.IntegerField()
-    metadata = models.JSONField(null=True, blank=True, default=None)  # work item: ogin.G* 参数验证元数据
+    metadata = models.JSONField(null=True, blank=True, default=None)  # ogin.G* 参数验证元数据
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -207,7 +207,7 @@ class Endpoint(models.Model):
         indexes = [
             models.Index(fields=["repository", "url_path"]),
             models.Index(fields=["repository", "handler_name"]),
-            # work item：分支隔离复合索引。
+            # 分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
 
@@ -232,7 +232,7 @@ class ApiWrapper(models.Model):
         on_delete=models.CASCADE,
         related_name="api_wrappers",
     )
-    # work item：分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
+    # 分支隔离维度。"" = base 分支，feature 由 implementation 写入侧透传。
     branch_name = models.CharField(max_length=200, default="", blank=True)
     file_path = models.CharField(max_length=512, db_index=True)
     function_symbol = models.CharField(max_length=255)
@@ -241,7 +241,7 @@ class ApiWrapper(models.Model):
     url_path_pattern = models.CharField(max_length=512, db_index=True)
     detected_via = models.CharField(max_length=64, default="axios_anchor")
     line_number = models.IntegerField(default=0)
-    metadata = models.JSONField(null=True, blank=True, default=None)  # work item: JSDoc 元数据
+    metadata = models.JSONField(null=True, blank=True, default=None)  # JSDoc 元数据
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -250,10 +250,10 @@ class ApiWrapper(models.Model):
         indexes = [
             models.Index(fields=["repository", "url_path_pattern"]),
             models.Index(fields=["repository", "function_symbol"]),
-            # work item：分支隔离复合索引。
+            # 分支隔离复合索引。
             models.Index(fields=["repository", "branch_name", "file_path"]),
         ]
-        # work item：branch_name 进 unique（Pitfall 4：294 写入侧须同步透传）。
+        # branch_name 进 unique（Pitfall 4：294 写入侧须同步透传）。
         unique_together = [("repository", "branch_name", "file_path", "function_symbol")]
 
     def __str__(self) -> str:

@@ -30,7 +30,7 @@ urlpatterns = [
     ),
     path("imports/", ImportEdgeListView.as_view(), name="codegraph-import-list"),
     path("endpoints/", EndpointListView.as_view(), name="codegraph-endpoint-list"),
-    # implementation：统一邻居查询（file | component | symbol）。具名前缀放空 path 之前。
+    # 统一邻居查询（file | component | symbol）。具名前缀放空 path 之前。
     path(
         "graph/neighbors/",
         GraphNeighborsView.as_view(),

@@ -135,7 +135,7 @@ async def trigger_auto_index(
     """
     repo_id = str(repository.id)
 
-    # work item: 检查开关
+    # 检查开关
     if not repository.auto_index_enabled:
         return {"status": "skipped", "reason": "auto_index_disabled"}
 
@@ -143,7 +143,7 @@ async def trigger_auto_index(
     if repository.index_status == IndexStatus.INDEXING:
         return {"status": "skipped", "reason": "already_indexing"}
 
-    # work item: 防抖去重
+    # 防抖去重
     if commit_sha and _is_duplicate(commit_sha, dedup_branch_name):
         return {"status": "duplicate", "sha": commit_sha}
 

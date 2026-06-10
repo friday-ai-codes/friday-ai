@@ -31,7 +31,7 @@ import pytest
 
 
 def test_base_agent_config_schema_has_provider_credential_id() -> None:
-    """work item：AIAgentBaseNode.config_schema 含 provider_credential_id 字段。"""
+    """AIAgentBaseNode.config_schema 含 provider_credential_id 字段。"""
     from workflows.nodes.ai.base_agent import AIAgentBaseNode
 
     props = AIAgentBaseNode.config_schema.get("properties", {})
@@ -49,7 +49,7 @@ def test_base_agent_config_schema_has_provider_credential_id() -> None:
 
 
 def test_ai_prompt_node_config_schema_has_provider_credential_id() -> None:
-    """work item：AIPromptNode.config_schema 含 provider_credential_id 字段。"""
+    """AIPromptNode.config_schema 含 provider_credential_id 字段。"""
     from workflows.nodes.ai.prompt import AIPromptNode
 
     props = AIPromptNode.config_schema.get("properties", {})
@@ -62,7 +62,7 @@ def test_ai_prompt_node_config_schema_has_provider_credential_id() -> None:
 
 
 def test_variable_extractor_node_config_schema_has_provider_credential_id() -> None:
-    """work item：AIVariableExtractorNode.config_schema 含 provider_credential_id 字段。"""
+    """AIVariableExtractorNode.config_schema 含 provider_credential_id 字段。"""
     from workflows.nodes.ai.variable_extractor import AIVariableExtractorNode
 
     props = AIVariableExtractorNode.config_schema.get("properties", {})

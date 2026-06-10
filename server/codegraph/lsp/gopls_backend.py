@@ -1,4 +1,4 @@
-"""implementation: GoplsBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
+"""GoplsBackend —— LspBackend 子类实装（4 hook + ClassVar 覆写）+ 工厂闭包。
 
 继承 implementation ``LspBackend`` 的 4 extract_* 模板方法（try/except + tree-sitter
 fallback）；本模块仅实装 4 个 ``_lsp_extract_*`` abstract hook + 4 ClassVar 字段
@@ -15,14 +15,14 @@ _lsp_extract_symbols          workspace/symbol(query="") + per-file
 _lsp_extract_imports          tree-sitter raw（fallback）+ textDocument/
                               definition 解 target_path → ImportData[]
 _lsp_extract_calls            tree-sitter raw symbols + per-symbol references
-                              全部入 CallData（per work item：implementation 精化）
+                              全部入 CallData（implementation 精化）
 _lsp_extract_endpoints        return []（Go 端点 implementation gin tree-sitter；per work item）
 ============================  ==============================================
 
-per work item：gopls 复用 implementation ``_SUPERVISORS["gopls"]`` module-level 单例缓存
+gopls 复用 implementation ``_SUPERVISORS["gopls"]`` module-level 单例缓存
 ——与 implementation VolarPool 多实例选择**正好对称**，体现 implementation 双路径设计意图。
 
-per work item：``make_gopls_backend(language)`` 工厂闭包替换 implementation 占位
+``make_gopls_backend(language)`` 工厂闭包替换 implementation 占位
 ``make_lsp_backend``；闭包内推断 go_mod_root + 从 ``get_or_create_supervisor``
 （module-level 单实例）拿 supervisor + 实例化 _GoplsLazyBackend。
 """
@@ -83,7 +83,7 @@ class _GoplsLazyBackend(LspBackend):
     implementation 实装 _GoplsLazyBackend 模式：闭包内 lazy 推断 go_mod_root +
     通过 get_or_create_supervisor（module-level 单例）拿 supervisor。
 
-    per work item：gopls 单实例策略（与 implementation VolarPool 多实例对称）。
+    gopls 单实例策略（与 implementation VolarPool 多实例对称）。
     """
 
     name: ClassVar[str] = "gopls"
@@ -191,7 +191,7 @@ class _GoplsLazyBackend(LspBackend):
     ) -> list[CallData]:
         """per-symbol textDocument/references 反向追踪（per work item / work item）。
 
-        per work item：implementation 简化——全部 reference 入 CallData；
+        implementation 简化——全部 reference 入 CallData；
         implementation 精化 cross-file caller 解析。
         策略：
             1. 从 tree-sitter fallback 抽 raw symbols（省 LSP 调用轮次）
@@ -467,7 +467,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
     严格对齐；闭包内 lazy 推断 go_mod_root + 通过 ``get_or_create_supervisor``
     （module-level 单例）拿 supervisor + 实例化 _GoplsLazyBackend。
 
-    per work item：gopls 单实例策略——与 implementation VolarPool 多实例选择正好对称；
+    gopls 单实例策略——与 implementation VolarPool 多实例选择正好对称；
     用尽了 implementation 双路径设计意图。
 
     Args:
@@ -488,7 +488,7 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
         class _GoplsLazyInstance(_GoplsLazyBackend):
             """工厂路径 gopls lazy backend：首次 LSP 调用时延迟注入 supervisor。
 
-            per implementation：4 hook 真实调用（去占位 raise）；
+            4 hook 真实调用（去占位 raise）；
             per Pitfall P-checkpoint：非 LSP handle 入参时直接委托 fallback。
 
             策略：_ensure_supervisor(ctx) 在首次 LSP 调用时延迟调 _get_supervisor，

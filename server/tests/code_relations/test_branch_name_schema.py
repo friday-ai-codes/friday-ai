@@ -15,7 +15,7 @@ _BRANCH_MODELS: list[type[Model]] = [ChunkRegistry, ChunkEdge]
 
 @pytest.mark.parametrize("model", _BRANCH_MODELS)
 def test_code_relations_model_has_branch_name(model: type[Model]) -> None:
-    """work item：ChunkRegistry / ChunkEdge 均有 branch_name，max_length=200、default=""。"""
+    """ChunkRegistry / ChunkEdge 均有 branch_name，max_length=200、default=""。"""
     field = model._meta.get_field("branch_name")
     assert isinstance(field, CharField)
     assert field.max_length == 200

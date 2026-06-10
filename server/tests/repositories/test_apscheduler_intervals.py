@@ -1,4 +1,4 @@
-"""work item：验证 poll_repository_updates 注册间隔使用 settings.SYNC_INTERVAL_SECONDS（7200 秒）。
+"""验证 poll_repository_updates 注册间隔使用 settings.SYNC_INTERVAL_SECONDS（7200 秒）。
 
 不需要启动 APScheduler，只检查命令代码中的触发器参数（work item 修复后改用 settings 常量）。
 """

@@ -1,4 +1,4 @@
-"""implementation: gopls_backend.py 单元测试（≥ 14 场景 mock supervisor + 4 hook 转换 + fallback）。
+"""gopls_backend.py 单元测试（≥ 14 场景 mock supervisor + 4 hook 转换 + fallback）。
 
 覆盖：
 - ClassVar 字段验证

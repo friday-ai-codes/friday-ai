@@ -339,7 +339,7 @@ def urls():
 
 
 # ============================================================================
-# Multi-Role User Fixtures (implementation: 权限引擎)
+# Multi-Role User Fixtures (权限引擎)
 # ============================================================================
 
 
@@ -594,7 +594,7 @@ def mock_aresolve_missing(monkeypatch):
 
 
 # ============================================================================
-# implementation：Provider 凭证测试公共 fixture
+# Provider 凭证测试公共 fixture
 #
 # 4 用户（system_admin + project_a_admin/member/viewer + project_b_admin）
 # + 2 独立项目（project_a / project_b）+ 3 凭证（system + project_a + project_b）
@@ -621,7 +621,7 @@ def system_admin_user(db):
 
 @pytest.fixture
 def project_a(db):
-    """implementation：独立项目 A（避开既有 `project` fixture 的 repository 依赖）。"""
+    """独立项目 A（避开既有 `project` fixture 的 repository 依赖）。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -633,7 +633,7 @@ def project_a(db):
 
 @pytest.fixture
 def project_b(db):
-    """implementation：独立项目 B（跨项目场景用）。"""
+    """独立项目 B（跨项目场景用）。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
@@ -714,7 +714,7 @@ def project_b_admin_user(db, project_b):
 
 @pytest.fixture
 def system_default_anthropic_credential(db):
-    """implementation：系统级 Anthropic 凭证（scope='system'，scope_id=None）。"""
+    """系统级 Anthropic 凭证（scope='system'，scope_id=None）。"""
     import json
     from uuid import uuid4
 
@@ -741,7 +741,7 @@ def system_default_anthropic_credential(db):
 
 @pytest.fixture
 def project_a_anthropic_credential(db, project_a):
-    """implementation：项目 A 的 Anthropic 凭证（scope='project'，scope_id=project_a.id）。"""
+    """项目 A 的 Anthropic 凭证（scope='project'，scope_id=project_a.id）。"""
     import json
     from uuid import uuid4
 
@@ -768,7 +768,7 @@ def project_a_anthropic_credential(db, project_a):
 
 @pytest.fixture
 def project_b_openai_credential(db, project_b):
-    """implementation：项目 B 的 OpenAI 凭证（跨项目用例）。"""
+    """项目 B 的 OpenAI 凭证（跨项目用例）。"""
     import json
     from uuid import uuid4
 
@@ -795,7 +795,7 @@ def project_b_openai_credential(db, project_b):
 
 @pytest.fixture
 def async_client():
-    """implementation：未认证的 APIClient（供矩阵测试 force_authenticate 按角色注入）。"""
+    """未认证的 APIClient（供矩阵测试 force_authenticate 按角色注入）。"""
     return APIClient()
 
 
@@ -1227,7 +1227,7 @@ def resolve_chain_builder():
 
 @pytest.fixture(params=["local", "null"])
 def provider_type(request) -> str:
-    """implementation contract / work item：Provider 双轨参数化 fixture。
+    """implementation contract / Provider 双轨参数化 fixture。
 
     Returns:
         ``"local"`` 或 ``"null"``——下游 fixture / 测试用此字符串实例化
@@ -1249,7 +1249,7 @@ def provider_type(request) -> str:
 
 @pytest.fixture
 def hybrid_service(provider_type):
-    """implementation contract / work item：HybridSearchService(Provider) 工厂 fixture。
+    """implementation contract / HybridSearchService(Provider) 工厂 fixture。
 
     根据 ``provider_type`` parametrize 值实例化对应 Provider 并注入
     ``HybridSearchService``，让测试 body 完全聚焦在调用与断言。

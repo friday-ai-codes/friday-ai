@@ -497,13 +497,12 @@ class EndpointListView(APIView):
 class CodegraphDeleteView(APIView):
     """DELETE /api/repositories/{repository_id}/codegraph/
 
-    implementation-03：仅清图谱三件套（Symbol / ImportEdge / Endpoint），
+    仅清图谱三件套（Symbol / ImportEdge / Endpoint），
     向量轨（FileIndex / ChunkEdge / ChunkRegistry / Qdrant collection）保持不变。
 
     并发保护：若该仓库存在 ``IndexHistory.graph_build_status=RUNNING`` 的活跃索
-    引，返 409 + detail 含 ``running`` 关键字（requirements）。本端点
-    不引入 ``select_for_update`` lock —— per CONTEXT decisions implementation
-    work item-04 才会落 lock，本 phase 单查 ``aexists`` 即可。
+    引，返 409 + detail 含 ``running`` 关键字。本端点不引入
+    ``select_for_update`` lock，单查 ``aexists`` 即可满足当前并发量。
 
     返回值矩阵：
         - 204：成功（含图谱原本为空的幂等场景）。

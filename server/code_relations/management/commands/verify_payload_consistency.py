@@ -1,4 +1,4 @@
-"""implementation：`verify_payload_consistency` 管理命令。
+"""`verify_payload_consistency` 管理命令。
 
 运维侧兜底校验工具：随机采样 ChunkRegistry 行 → 从 Qdrant 拉
 `payload.related_chunks` → 校验每个 `neighbor.chunk_id` 仍在 ChunkRegistry
@@ -141,7 +141,7 @@ class Command(BaseCommand):
         )
         self.stdout.write("-" * 78)
 
-        # work item：单次批量 retrieve 替代循环 N 次单点查询；--sample 100 时
+        # 单次批量 retrieve 替代循环 N 次单点查询；--sample 100 时
         # HTTP roundtrip 从 100 次降到 1 次，节省 ~98% 网络开销。
         records_by_id: dict[str, Any] = {}
         try:

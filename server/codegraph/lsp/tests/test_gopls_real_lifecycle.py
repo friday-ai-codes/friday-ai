@@ -5,7 +5,7 @@
 
 启用：研发本地 go install golang.org/x/tools/gopls@latest + pytest -m integration
 
-per CONTEXT work item / work item：双重保护（integration marker + skipif binary）。
+per CONTEXT work item / 双重保护（integration marker + skipif binary）。
 """
 
 from __future__ import annotations

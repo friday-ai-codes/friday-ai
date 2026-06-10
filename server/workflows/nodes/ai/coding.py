@@ -328,7 +328,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             repo_count=len(repo_groups),
         )
 
-        # 5.0 work item：解析 Anthropic 凭证（四层优先级 + Result 模式）
+        # 5.0 解析 Anthropic 凭证（四层优先级 + Result 模式）
         #     在 _run_repo_coding 分发循环之前外层一次性完成，避免每 repo 重复 DB 往返
         #     （RESEARCH Open Question #1 推荐外层加载）。
         from services.provider_config import (
@@ -863,7 +863,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "ssl_verify": str(repository.credential.ssl_verify).lower(),
             }
 
-        # work item：构造 env_FRIDAY_TASK_CLAUDE_* 字段（contract 纠偏命名；Runner Docker executor
+        # 构造 env_FRIDAY_TASK_CLAUDE_* 字段（contract 纠偏命名；Runner Docker executor
         # `env_` 前缀自动 TrimPrefix 约定，见 runner/internal/docker/executor.go:84-95）
         #   - api_key 非空时写入 env_FRIDAY_TASK_CLAUDE_API_KEY
         #   - base_url 非空时写入 env_FRIDAY_TASK_CLAUDE_BASE_URL（contract：空 base_url 不注入该键，
@@ -907,7 +907,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "repository_name": repository.name,
                 "work_item_id": config.get("work_item_id", ""),
                 "git_credentials": git_credentials,
-                **anthropic_env,   # work item：env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
+                **anthropic_env,   # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
                 **tools_env,       # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
             },
         )

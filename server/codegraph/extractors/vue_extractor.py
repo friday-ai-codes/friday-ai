@@ -1,6 +1,6 @@
 """Vue SFC 专用抽取器 —— SFC pre-splitter + TS backend 组合。
 
-per implementation：不引入 tree-sitter-vue grammar，依赖 Python pre-splitter
+不引入 tree-sitter-vue grammar，依赖 Python pre-splitter
 （vue_sfc_splitter）+ 复用 implementation 落地的 TS / TSX backend 完成 .vue 文件抽取。
 
 VueExtractor.extract 6 步流程（per work item）：
@@ -9,7 +9,7 @@ VueExtractor.extract 6 步流程（per work item）：
 3. script 段 dispatch 到 TreeSitterBackend("typescript" / "tsx")，行号偏移还原
 4. template 反向引用（与 script_symbol_names 集合交集，per work item）
    + 模板子组件标签 <UserCard/> / <user-card/> 抽成 TEMPLATE_REF（per implementation
-   work item：子组件来自 import，不在 script 符号集，故独立产出、不取交集）
+   子组件来自 import，不在 script 符号集，故独立产出、不取交集）
 5. style 段不处理（per work item）
 6. endpoints 安全返 []
 

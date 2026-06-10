@@ -95,7 +95,7 @@ urlpatterns = [
         WebPushUnsubscribeView.as_view(),
         name="chat-push-unsubscribe",
     ),
-    # implementation: 导出对话消息到飞书文档
+    # 导出对话消息到飞书文档
     path(
         "conversations/<uuid:conversation_id>/export-to-feishu/",
         ExportToFeishuView.as_view(),
@@ -107,7 +107,7 @@ urlpatterns = [
         FeishuExportAvailabilityView.as_view(),
         name="chat-feishu-export-availability",
     ),
-    # implementation: 编码会话
+    # 编码会话
     path(
         "coding-sessions/",
         CodingSessionListView.as_view(),
@@ -143,7 +143,7 @@ urlpatterns = [
         DiffSummaryView.as_view(),
         name="coding-session-diff-summary",
     ),
-    # implementation：CodingPlan 独立领域 REST 端点
+    # CodingPlan 独立领域 REST 端点
     path(
         "coding-plans/",
         CodingPlanListView.as_view(),
@@ -154,25 +154,25 @@ urlpatterns = [
         CodingPlanDetailView.as_view(),
         name="coding-plan-detail",
     ),
-    # implementation：CodingPlan 批量创建 CodingSession
+    # CodingPlan 批量创建 CodingSession
     path(
         "coding-plans/<uuid:plan_id>/sessions/",
         CodingPlanSessionsBatchCreateView.as_view(),
         name="coding-plan-sessions-batch",
     ),
-    # implementation：导出 CodingPlan 到飞书文档
+    # 导出 CodingPlan 到飞书文档
     path(
         "coding-plans/<uuid:coding_plan_id>/export-to-feishu/",
         ExportCodingPlanToFeishuView.as_view(),
         name="coding-plan-export-to-feishu",
     ),
-    # implementation：路由决策手动微调
+    # 路由决策手动微调
     path(
         "routing-traces/<uuid:trace_id>/override/",
         RoutingTraceManualOverrideView.as_view(),
         name="routing-trace-manual-override",
     ),
-    # implementation：协商答复 endpoint
+    # 协商答复 endpoint
     path(
         "clarifications/<str:clarification_id>/answer/",
         ClarificationAnswerView.as_view(),

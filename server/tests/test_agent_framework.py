@@ -51,7 +51,7 @@ async def test_tool_validation():
 
 @pytest.mark.asyncio
 async def test_search_repository_code_hybrid_search():
-    """work item: search_repository_code 调用 BranchAwareSearchService.search 时传入 query_sparse 参数。"""
+    """search_repository_code 调用 BranchAwareSearchService.search 时传入 query_sparse 参数。"""
     from unittest.mock import AsyncMock, patch
 
     from services.embedding import EmbeddingService
@@ -114,7 +114,7 @@ async def test_search_repository_code_hybrid_search():
 
 @pytest.mark.asyncio
 async def test_search_repository_code_empty_query_dense_only():
-    """work item: 空 sparse 向量时退化为 dense-only，不传 query_sparse 或传 None。"""
+    """空 sparse 向量时退化为 dense-only，不传 query_sparse 或传 None。"""
     from unittest.mock import AsyncMock, patch
 
     from services.embedding import EmbeddingService

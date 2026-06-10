@@ -210,7 +210,7 @@ class CodingPlan(models.Model):
         default="",
         verbose_name="飞书文档 URL",
     )
-    # implementation：AI 在 chat 流中通过 analyze_repository_relevance /
+    # AI 在 chat 流中通过 analyze_repository_relevance /
     # deep_analysis cross_repo_relevance 识别出的相关仓库 UUID 列表，自动
     # 预填到 create_coding_plan 工具的 recommended_repository_ids 入参。
     # 由 fan-out 流程（implementation）按本字段批量创建 CodingSession。
@@ -411,14 +411,14 @@ class CodingSession(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["conversation", "status"]),
-            # implementation：批量按 (coding_plan, status) 查询的覆盖索引；
+            # 批量按 (coding_plan, status) 查询的覆盖索引；
             # 支撑 work item 批量预检 + work item 状态行渲染。
             models.Index(
                 fields=["coding_plan", "status"],
                 name="idx_codingsession_plan_status",
             ),
         ]
-        # implementation：同一 plan + 同一 repository 同一时刻仅允许 1 个活跃 session。
+        # 同一 plan + 同一 repository 同一时刻仅允许 1 个活跃 session。
         # status 字面值与 CodingSession.Status 枚举对应：
         #   draft / confirmed / running / awaiting_confirmation
         # completed 与 failed 不计入约束（允许多个历史 / 重试副本）。

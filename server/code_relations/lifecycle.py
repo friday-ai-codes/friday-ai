@@ -1,4 +1,4 @@
-"""implementation：IndexHistory lifecycle wrapper（不修改 tasks.py / payload_sync.py）。
+"""IndexHistory lifecycle wrapper（不修改 tasks.py / payload_sync.py）。
 
 为 implementation `enqueue_edge_build` 加一层**外部** lifecycle 埋点，
 把 IndexHistory.graph_build_status / edge_count / payload_synced_at 三字段
@@ -281,7 +281,7 @@ async def enqueue_edge_build_for_history(
 
         new_tasks = _tasks_module._BACKGROUND_TASKS - before_tasks
         if not new_tasks:
-            # work item：`enqueue_edge_build` 因合法分支（dedup / circuit breaker / 空
+            # `enqueue_edge_build` 因合法分支（dedup / circuit breaker / 空
             # dirty）未 spawn task —— 不应误判为 FAILED。lifecycle 上层已在
             # line ~189 处理空 dirty_chunk_ids 走 SKIPPED，此处 fallthrough 仅
             # warn + 保 RUNNING，等 verify_payload_consistency 兜底校验。

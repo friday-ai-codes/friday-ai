@@ -1,4 +1,4 @@
-"""implementation: conversation_service 8 fragment 独立渲染测试。"""
+"""conversation_service 8 fragment 独立渲染测试。"""
 from __future__ import annotations
 
 from typing import Any
@@ -127,7 +127,7 @@ class TestFragmentRendering:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestIntentPriorityFragments:
-    """implementation：「准确性优先原则」三 slug 渲染契约。"""
+    """「准确性优先原则」三 slug 渲染契约。"""
 
     async def test_developer_role_includes_intent_priority(
         self,
@@ -180,7 +180,7 @@ class TestIntentPriorityFragments:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestIntentPriorityFragments:
-    """implementation：「准确性优先」三 slug 注入语义验证。"""
+    """「准确性优先」三 slug 注入语义验证。"""
 
     async def test_developer_role_includes_intent_priority(
         self,

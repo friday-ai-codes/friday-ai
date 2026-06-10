@@ -55,8 +55,8 @@ logger = structlog.get_logger(__name__)
 
 
 # trigger 字符串到枚举的合法集合：未知 trigger 兜底为 MANUAL，避免
-# 调用方笔误导致 history 写入失败（CONTEXT decisions：三态 manual / auto_after_index /
-# webhook，webhook 本 phase 仅占位）。
+# 调用方笔误导致 history 写入失败。三态 manual / auto_after_index / webhook，
+# 其中 webhook 当前仅占位。
 _KNOWN_TRIGGERS: frozenset[str] = frozenset({
     GraphBuildHistoryTrigger.MANUAL.value,
     GraphBuildHistoryTrigger.AUTO_AFTER_INDEX.value,
@@ -68,7 +68,7 @@ _KNOWN_TRIGGERS: frozenset[str] = frozenset({
 class GraphBuildResult:
     """``build_graph_for_repository`` 返回值——与 ``GraphBuildHistory`` 字段口径对齐。
 
-    末位追加新字段保字段位置兼容（CONTEXT decisions：与 ``CleanupReport`` 同模式）。
+    末位追加新字段保字段位置兼容（与 ``CleanupReport`` 同模式）。
     完成时调用方可一次性 ``asdict(result)`` 写 history 行。
     """
 

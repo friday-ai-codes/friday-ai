@@ -1,4 +1,4 @@
-"""implementation: workspace_discovery 单元测试（fixture mock_nx_monorepo + ≥ 10 测试）。
+"""workspace_discovery 单元测试（fixture mock_nx_monorepo + ≥ 10 测试）。
 
 per implementation plan Task 3 acceptance：
 - 三探针并集去重 + tsconfig.json 兜底过滤

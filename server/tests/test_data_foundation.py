@@ -1,9 +1,9 @@
 """implementation 数据基础修复测试：work item/04/05
 
 测试覆盖：
-- work item: asyncio.create_subprocess_exec 替换 subprocess.run
-- work item: 模块级强引用集合防止 GC 回收
-- work item: select_for_update(skip_locked=True) 并发保护
+- asyncio.create_subprocess_exec 替换 subprocess.run
+- 模块级强引用集合防止 GC 回收
+- select_for_update(skip_locked=True) 并发保护
 """
 
 import asyncio
@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
 
 
 # ============================================================================
-# work item: asyncio.create_subprocess_exec 替换 subprocess.run
+# asyncio.create_subprocess_exec 替换 subprocess.run
 # ============================================================================
 
 
@@ -114,7 +114,7 @@ class TestAsyncSubprocess:
 
 
 # ============================================================================
-# work item: 后台 indexing 任务必须脱离请求 event loop
+# 后台 indexing 任务必须脱离请求 event loop
 # ============================================================================
 
 
@@ -240,7 +240,7 @@ class TestBackgroundRunnerIntegration:
 
 
 # ============================================================================
-# work item: select_for_update(skip_locked=True) 并发保护
+# select_for_update(skip_locked=True) 并发保护
 # ============================================================================
 
 

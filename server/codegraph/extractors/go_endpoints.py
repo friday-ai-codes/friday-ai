@@ -1,10 +1,10 @@
 """Go gin 端点抽取器 —— 宽松识别 <recv>.{GET|POST|...}(...) 路由注册调用。
 
 per work item（legacy spike T10/T11 决策）：
-  - work item：扫描所有 <recv>.{GET|POST|PUT|DELETE|PATCH|HEAD}(...)，不限 recv 类型
-  - work item：第一个 string_literal 为 url；最后一个 selector_expression/identifier 为 handler
-  - work item：<recv>.Use(...) 不写入 endpoint 表，直接忽略
-  - work item：提取 ogin.G* 参数验证 middleware 元数据写入 metadata JSON 字段
+  - 扫描所有 <recv>.{GET|POST|PUT|DELETE|PATCH|HEAD}(...)，不限 recv 类型
+  - 第一个 string_literal 为 url；最后一个 selector_expression/identifier 为 handler
+  - <recv>.Use(...) 不写入 endpoint 表，直接忽略
+  - 提取 ogin.G* 参数验证 middleware 元数据写入 metadata JSON 字段
   - work item（已删）：不实装 Group 嵌套前缀合并
 """
 
@@ -58,11 +58,11 @@ def extract_go_endpoints(
         if not method:
             continue
 
-        # work item：忽略 Use() 调用
+        # 忽略 Use() 调用
         if method == "Use":
             continue
 
-        # work item：只处理标准 HTTP 方法
+        # 只处理标准 HTTP 方法
         if method not in GIN_HTTP_METHODS:
             continue
 
@@ -74,7 +74,7 @@ def extract_go_endpoints(
         if len(named_args) < 2:
             continue
 
-        # work item：第一个 string literal 为 url
+        # 第一个 string literal 为 url
         url_path = _extract_url_path(named_args)
         if url_path is None:
             logger.warning(
@@ -84,7 +84,7 @@ def extract_go_endpoints(
             )
             continue
 
-        # work item：最后一个 selector_expression/identifier 为 handler
+        # 最后一个 selector_expression/identifier 为 handler
         handler_name = _extract_handler_name(named_args)
         if handler_name is None:
             logger.warning(
@@ -95,7 +95,7 @@ def extract_go_endpoints(
             )
             continue
 
-        # work item：提取 ogin.G* metadata
+        # 提取 ogin.G* metadata
         metadata = _extract_ogin_metadata(named_args)
 
         endpoints.append(
@@ -144,7 +144,7 @@ def _node_text(node: Any) -> str:
 
 
 # =============================================================================
-# work item：URL 路径 + Handler 提取
+# URL 路径 + Handler 提取
 # =============================================================================
 
 
@@ -190,7 +190,7 @@ def _extract_handler_name(args: list[Any]) -> str | None:
 
 
 # =============================================================================
-# work item：ogin.G* metadata 提取
+# ogin.G* metadata 提取
 # =============================================================================
 
 

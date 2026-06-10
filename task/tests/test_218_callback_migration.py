@@ -1,4 +1,4 @@
-"""implementation: 回调协议迁移测试。
+"""回调协议迁移测试。
 
 覆盖 work item 的 3 个 behavior:
 - _run_plan_mode (容器模式) 使用 report_completed 替代 report_plan_ready

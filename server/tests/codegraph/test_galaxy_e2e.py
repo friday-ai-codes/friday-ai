@@ -1,11 +1,11 @@
 """Galaxy API 端到端测试 —— implementation 全覆盖。
 
-E1  work item: galaxy 模块可正常 import
-E2  work item: aggregate() 返回 5 类节点统一格式
-E3  work item: GET /api/codegraph/galaxy/ → 200 nodes+edges+meta
-E4  work item: GET /api/codegraph/galaxy/search/?q=xxx → top-20 按 degree 排序
-E5  work item: GET /api/codegraph/galaxy/nodes/{id}/ → node + neighbors + references + called_by
-E6  work item: max_nodes=1, 3 节点 → sampled=True + per_repo_hint
+E1  galaxy 模块可正常 import
+E2  aggregate() 返回 5 类节点统一格式
+E3  GET /api/codegraph/galaxy/ → 200 nodes+edges+meta
+E4  GET /api/codegraph/galaxy/search/?q=xxx → top-20 按 degree 排序
+E5  GET /api/codegraph/galaxy/nodes/{id}/ → node + neighbors + references + called_by
+E6  max_nodes=1, 3 节点 → sampled=True + per_repo_hint
 """
 
 from __future__ import annotations

@@ -150,7 +150,7 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
         def _find_candidate(
             candidate: str, exclude_file: str
         ) -> "ChunkRegistry | None":
-            """work item + work item：endswith 加 ``/`` 锚定避免 ``auth.py`` 误匹配
+            """endswith 加 ``/`` 锚定避免 ``auth.py`` 误匹配
             ``xauth.py``；helper 提到 build 顶层只装饰一次（替代每次循环
             ``@sync_to_async`` 重新构造 ThreadSensitive 调度器引用）。
 

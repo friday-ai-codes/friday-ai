@@ -1,4 +1,4 @@
-"""implementation: endpoint_rag_writer 单元测试。
+"""endpoint_rag_writer 单元测试。
 
 测试 work item Markdown 模板生成 + work item Qdrant payload 字段。
 全部为非 integration 测试，通过 mock 隔离外部服务。
@@ -204,9 +204,9 @@ class TestWriteEndpointRagDocs:
         points: list[dict] = call_args[0][1]  # positional arg
         assert len(points) == 1
         payload = points[0]["payload"]
-        # work item: content_type 字段
+        # content_type 字段
         assert payload["content_type"] == "api_endpoint"
-        # work item: 关键字段都在 payload
+        # 关键字段都在 payload
         assert payload["http_method"] == "POST"
         assert payload["url_path"] == "/api/users"
         assert payload["handler_name"] == "user.Create"

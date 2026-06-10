@@ -337,7 +337,7 @@ class ConversationRuntimeDeepSessionSerializer(serializers.Serializer):
 
 
 class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
-    """implementation：CodingPlan.sessions[] 单条状态快照。"""
+    """CodingPlan.sessions[] 单条状态快照。"""
 
     session_id = serializers.UUIDField()
     repository_id = serializers.UUIDField()
@@ -350,7 +350,7 @@ class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
 
 
 class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
-    """implementation：对话内最近 CodingPlan + 每仓 session 状态。"""
+    """对话内最近 CodingPlan + 每仓 session 状态。"""
 
     plan_id = serializers.UUIDField()
     title = serializers.CharField(allow_blank=True)
@@ -380,7 +380,7 @@ class ConversationRuntimeSerializer(serializers.Serializer):
     logs = RuntimeLogSerializer(many=True, required=False)
     # 多个深度分析子会话各自独立的日志（前端按会话渲染横向 swiper）
     deep_sessions = ConversationRuntimeDeepSessionSerializer(many=True, required=False)
-    # implementation：最近 CodingPlan + 每仓 session 状态
+    # 最近 CodingPlan + 每仓 session 状态
     coding_plan = ConversationRuntimeCodingPlanSerializer(
         allow_null=True, required=False
     )
@@ -512,7 +512,7 @@ class CodingSessionSerializer(serializers.Serializer):
     """CodingSession 详情序列化器。"""
 
     id = serializers.UUIDField(read_only=True)
-    # implementation：新增反向 FK 暴露（null 表示历史 session 尚未迁移到 CodingPlan）
+    # 新增反向 FK 暴露（null 表示历史 session 尚未迁移到 CodingPlan）
     coding_plan_id = serializers.UUIDField(read_only=True, allow_null=True)
     status = serializers.CharField(read_only=True)
     tech_plan = serializers.CharField(read_only=True)
@@ -533,7 +533,7 @@ class CodingSessionSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# implementation：批量创建 CodingSession
+# 批量创建 CodingSession
 # ============================================================================
 
 
@@ -620,7 +620,7 @@ class ExportCodingPlanToFeishuSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# implementation：路由决策手动微调（manual_override）
+# 路由决策手动微调（manual_override）
 # ============================================================================
 
 
@@ -634,7 +634,7 @@ class RoutingTraceManualOverrideCandidateSerializer(serializers.Serializer):
 class RoutingTraceManualOverrideSerializer(serializers.Serializer):
     """POST /api/chat/routing-traces/<uuid>/override/ 请求体。
 
-    implementation：限制 frontend 只能改 selected 字段；score / level /
+    限制 frontend 只能改 selected 字段；score / level /
     evidence / selected_by_ai 由 Server 端继承原 trace，前端无权改写。
     """
 
@@ -646,7 +646,7 @@ class RoutingTraceManualOverrideSerializer(serializers.Serializer):
 
 
 # ============================================================================
-# implementation / work item：协商答复 endpoint
+# implementation / 协商答复 endpoint
 # ============================================================================
 
 
