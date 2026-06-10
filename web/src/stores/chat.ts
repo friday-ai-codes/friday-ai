@@ -29,6 +29,7 @@ import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
 import { useAuthStore } from '~/stores/auth'
 import { useRoutingStore } from '~/stores/routing'
+import { randomUUID } from '~/utils/uuid'
 /** ：preflight missing payload 契约。 */
 export interface CredentialMissingPayload {
   missingProvider: ProviderType
@@ -726,7 +727,7 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
     streamingTimeline.value.push({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       kind,
       text,
     })
@@ -1036,7 +1037,7 @@ export const useChatStore = defineStore('chat', () => {
     if (partPayload.type === 'text') {
       next = {
         type: 'text',
-        id: partPayload.id || crypto.randomUUID(),
+        id: partPayload.id || randomUUID(),
         index,
         text: partPayload.text || '',
         state: partPayload.state === 'done' ? 'done' : 'streaming',
@@ -1045,7 +1046,7 @@ export const useChatStore = defineStore('chat', () => {
     else if (partPayload.type === 'thinking') {
       next = {
         type: 'thinking',
-        id: partPayload.id || crypto.randomUUID(),
+        id: partPayload.id || randomUUID(),
         index,
         text: partPayload.text || '',
         state: partPayload.state === 'done' ? 'done' : 'streaming',
@@ -1054,7 +1055,7 @@ export const useChatStore = defineStore('chat', () => {
     else if (partPayload.type === 'tool_use') {
       next = {
         type: 'tool_use',
-        id: partPayload.id || crypto.randomUUID(),
+        id: partPayload.id || randomUUID(),
         index,
         tool_call_id: partPayload.tool_call_id || '',
         name: partPayload.name || '',
@@ -1219,7 +1220,7 @@ export const useChatStore = defineStore('chat', () => {
         )
         if (!timelineTool) {
           streamingTimeline.value.push({
-            id: event.tool_call_id || crypto.randomUUID(),
+            id: event.tool_call_id || randomUUID(),
             kind: 'tool',
             name: event.tool_name || '',
             input: (event.input as Record<string, unknown>) || {},
@@ -1617,7 +1618,7 @@ export const useChatStore = defineStore('chat', () => {
     if (content) {
       parts.push({
         type: 'text',
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         index: 0,
         text: content,
         state: 'done',
@@ -1721,7 +1722,7 @@ export const useChatStore = defineStore('chat', () => {
     // 添加用户消息到列表（乐观更新）
     const userInputParts = buildUserInputParts(content, inputParts || [])
     const userMessage: ConversationMessage = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       role: 'user',
       content,
       parts: userInputParts,
@@ -1861,7 +1862,7 @@ export const useChatStore = defineStore('chat', () => {
               : undefined)
 
         const assistantMessage: ConversationMessage = {
-          id: streamingMessageId.value || crypto.randomUUID(),
+          id: streamingMessageId.value || randomUUID(),
           role: 'assistant',
           content: streamingContent.value,
           tool_calls: mergedToolCalls,

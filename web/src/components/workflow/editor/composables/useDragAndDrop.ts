@@ -3,6 +3,7 @@ import { useVueFlow } from '@vue-flow/core'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
 import { generateShortId } from '~/utils/shortId'
+import { randomUUID } from '~/utils/uuid'
 
 const RECENT_NODES_KEY = 'friday-recent-nodes'
 const MAX_RECENT = 10
@@ -121,7 +122,7 @@ export function useDragAndDrop() {
 
     if (hitEdge) {
       // 插入到连线中间：删除原 edge，创建新节点，建立两条新 edge
-      const newNodeId = crypto.randomUUID()
+      const newNodeId = randomUUID()
 
       // 创建新节点（放在 drop 位置，稍偏移使中心对准鼠标）
       const newNode = {
@@ -173,7 +174,7 @@ export function useDragAndDrop() {
 
     // 未命中 edge：走原有逻辑，直接添加节点
     store.addNode({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       shortId: generateShortId(),
       nodeType,
       name: dragName || def?.displayName || nodeType,

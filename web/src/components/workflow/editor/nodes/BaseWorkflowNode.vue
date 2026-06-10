@@ -14,6 +14,7 @@ import { useRouter } from 'vue-router'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
+import { randomUUID } from '~/utils/uuid'
 import { getDefaultPortsForNodeType } from '../utils/portConfig'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
@@ -70,7 +71,7 @@ function handleCopy() {
     return
   const newNode = {
     ...JSON.parse(JSON.stringify(currentNode)),
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     shortId: generateShortId(),
     position: {
       x: (currentNode.position?.x ?? 0) + 50,
