@@ -41,7 +41,9 @@ services:
       - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-false}
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
-      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      # 必须与 qdrant 服务的 QDRANT__SERVICE__API_KEY 用同一默认值。
+      # 二者一旦不一致（尤其一边空一边非空），qdrant 健康检查会 401。
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-friday-local}
       - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
       # 与 runner 服务的 FRIDAY_RUNNER_IMAGE 保持同一默认值（设置页展示用）
       - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
@@ -133,7 +135,10 @@ services:
       - "${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
     environment:
-      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+      # 默认值必须与 server 的 QDRANT_API_KEY 保持一致（见上）。
+      # 注意：qdrant 只要该变量"存在且为空字符串"就会开启鉴权但 key 为空，
+      # 而客户端不会发送空 key，因此这里绝不能留空，必须有非空默认值。
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-friday-local}
     volumes:
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/qdrant:/qdrant/storage"
     networks:

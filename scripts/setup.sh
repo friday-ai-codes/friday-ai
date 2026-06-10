@@ -263,9 +263,13 @@ generate_secrets() {
     SECRET_KEY_VALUE=$(generate_secret 32)
     ENCRYPTION_KEY_VALUE=$(generate_secret 32)
     RUNNER_TOKEN_VALUE=$(generate_secret 32)
+    # Qdrant 必须生成非空 API Key：留空会让 qdrant 开启"空 key 鉴权"，
+    # 而 server 客户端遇到空 key 不发认证头，导致健康检查 401。
+    QDRANT_API_KEY_VALUE=$(generate_secret 32)
     print_success "SECRET_KEY 已生成"
     print_success "FRIDAY_ENCRYPTION_KEY 已生成"
     print_success "RUNNER_REGISTRATION_TOKEN 已生成"
+    print_success "QDRANT_API_KEY 已生成"
     echo ""
 }
 
