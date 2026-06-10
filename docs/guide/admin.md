@@ -70,6 +70,10 @@ Friday 采用 **Scoped RBAC**（基于项目的角色访问控制）模型。角
 
 Friday 支持 OIDC（OpenID Connect）单点登录，允许用户通过企业身份提供商（如 Azure AD、Okta、Keycloak 等）登录。
 
+登录链路：
+
+<FlowPipeline :steps="['用户点击 SSO 登录', '跳转身份提供商认证', '回调 /api/oidc/callback/', '按 email 匹配或创建用户', '登录完成']" />
+
 ### 配置 Provider
 
 通过管理后台或 API 创建 OIDC Provider 记录。配置字段如下（来源：`server/identity/models.py` — `OIDCProvider` 模型）：

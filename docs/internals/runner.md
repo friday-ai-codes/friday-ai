@@ -57,6 +57,8 @@ Runner 内置 CallbackServer（默认端口 `8976`，`runner/internal/callback/`
 
 ### 任务生命周期
 
+<FlowPipeline :steps="['Runner 注入参数启动容器', 'clone 仓库 + 检出分支', '编码代理执行', '提交并推送分支', 'server 继续推进 PR / MR']" />
+
 1. Runner 以环境变量注入任务参数（模式、仓库地址、一次性凭据、回调地址）启动容器；
 2. Task clone 仓库、检出工作分支；
 3. claude-agent-sdk 启动编码代理执行任务，期间 Tool Call、进度与 token 用量持续回传；

@@ -40,6 +40,26 @@ Friday 的定位是「安全地把需求自动变成代码」，安全设计贯�
 
 ## 执行隔离
 
+<FlowDiagram :layers="[
+  {
+    nodes: [
+      { title: 'Server', badge: 'Django', desc: '持有数据库与全局密钥，不下发给执行环境' },
+    ],
+    arrow: 'WS 派发任务 · 只携带该任务所需的一次性凭据',
+  },
+  {
+    nodes: [
+      { title: 'Runner', badge: 'Go', desc: '调度隔离容器，不解析业务数据' },
+    ],
+    arrow: 'docker run / k8s Job',
+  },
+  {
+    nodes: [
+      { title: '任务容器', badge: 'task', accent: true, desc: '编码代理只能访问指定仓库 + 受控回调通道' },
+    ],
+  },
+]" />
+
 AI 编码代理永远不在 server 进程里运行：
 
 - Runner 把每个任务放进独立容器（Docker / k8s Job），代理只拿到该任务所需的仓库与一次性凭据；
