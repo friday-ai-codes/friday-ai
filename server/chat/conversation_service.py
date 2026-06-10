@@ -345,9 +345,12 @@ async def _build_system_prompt(
 async def _get_tool_names(space_id: str) -> list[str]:
     """根据项目仓库索引状态返回可用工具列表。
 
+    无空间（space_id 为空）：不注入任何空间工具
     有已索引仓库：注入全部工具（检索工具 + 项目工具 + 编码工具）
     无仓库或未索引：仅注入 get_space_overview（基础信息）
     """
+    if not space_id:
+        return []
     base_tools = ["get_space_overview"]
     full_tools = base_tools + [
         "browse_file_content",
@@ -718,7 +721,7 @@ class ConversationService:
 
     @staticmethod
     async def create_conversation(
-        space_id: str,
+        space_id: str | None,
         title: str = "新对话",
         model: str = "",
         user: Any = None,
@@ -726,7 +729,7 @@ class ConversationService:
         """创建新对话。
 
         Args:
-            space_id: 空间 UUID
+            space_id: 空间 UUID；None 表示创建不绑定空间的通用对话
             title: 对话标题
             model: LLM 模型 ID（为空时运行时使用系统默认）
             user: 创建者；已认证则写入 created_by，未认证（开放模式）写 null（ISO-01）
@@ -1166,7 +1169,16 @@ class ConversationService:
         # 捕获 docSummary 给 finalize 落库（刷新回显飞书文档摘要卡）。
         # 形态与前端 metadata.docSummary 对齐（ChatMessageBubble.docSummary）。
         captured_doc_summary: dict[str, Any] | None = None
-        if feishu_doc_id:
+        if feishu_doc_id and conversation.project_id is None:
+            # 无空间对话没有飞书凭证来源，直接推 doc_error 降级（不中断对话）
+            yield AgentEvent(
+                type=DOC_ERROR,
+                data={
+                    "error_type": "no_space",
+                    "message": "当前对话未绑定空间，无法读取飞书文档；请选择空间后重试",
+                },
+            )
+        elif feishu_doc_id:
             doc_markdown, doc_event = await ConversationService._fetch_doc_for_context(
                 conversation.project, feishu_doc_id,
             )

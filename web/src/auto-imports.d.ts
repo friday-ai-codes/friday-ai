@@ -160,7 +160,6 @@ declare global {
   const useActiveElement: typeof import('@vueuse/core').useActiveElement
   const useAnalyticsFiltersStore: typeof import('./stores/analyticsFilters').useAnalyticsFiltersStore
   const useAnimate: typeof import('@vueuse/core').useAnimate
-  const useAppMode: typeof import('./composables/useAppMode').useAppMode
   const useArrayDifference: typeof import('@vueuse/core').useArrayDifference
   const useArrayEvery: typeof import('@vueuse/core').useArrayEvery
   const useArrayFilter: typeof import('@vueuse/core').useArrayFilter
@@ -385,9 +384,6 @@ declare global {
   // @ts-ignore
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
-  // @ts-ignore
-  export type { AppMode } from './composables/useAppMode'
-  import('./composables/useAppMode')
   // @ts-ignore
   export type { ParsedBranchName, ValidationResult } from './composables/useBranchValidation'
   import('./composables/useBranchValidation')
@@ -624,7 +620,6 @@ declare module 'vue' {
     readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
     readonly useAnalyticsFiltersStore: UnwrapRef<typeof import('./stores/analyticsFilters')['useAnalyticsFiltersStore']>
     readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>
-    readonly useAppMode: UnwrapRef<typeof import('./composables/useAppMode')['useAppMode']>
     readonly useArrayDifference: UnwrapRef<typeof import('@vueuse/core')['useArrayDifference']>
     readonly useArrayEvery: UnwrapRef<typeof import('@vueuse/core')['useArrayEvery']>
     readonly useArrayFilter: UnwrapRef<typeof import('@vueuse/core')['useArrayFilter']>

@@ -6,8 +6,9 @@ function readSource(path: string): string {
 }
 
 describe('chat visual contract', () => {
-  it('uses dedicated conversation item styling in the chat sidebar', () => {
-    const source = readSource('components/layout/AppSidebar.vue')
+  it('uses dedicated conversation item styling in the chat conversation list', () => {
+    // 入口重构：会话列表从全局 AppSidebar 迁入 chat 页内部二级栏
+    const source = readSource('components/chat/ChatConversationList.vue')
 
     expect(source).toContain('chat-conversation-item')
     expect(source).toContain('chat-conversation-item--active')
