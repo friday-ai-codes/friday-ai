@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import TailwindCSS from '@tailwindcss/vite'
@@ -14,11 +15,29 @@ import pkg from './package.json'
 
 const usePolling = process.env.VITE_USE_POLLING === 'true'
 
+/**
+ * 解析应用版本号，优先级：
+ * 1. APP_VERSION 环境变量 — CI 发版时传入 git tag（如 v0.2.1）
+ * 2. git describe — dev / 源码启动时给出「最近 tag + 领先提交数 + sha」（如 0.2.1-12-gabc1234）
+ * 3. package.json — 无 .git 的环境兜底（如 docker-compose.build.yaml 源码构建）
+ */
+function resolveAppVersion(): string {
+  if (process.env.APP_VERSION)
+    return process.env.APP_VERSION.replace(/^v/, '')
+  try {
+    return execSync('git describe --tags --always --dirty', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim().replace(/^v/, '')
+  }
+  catch {
+    return pkg.version
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   define: {
-    // 优先取 CI 传入的发布版本（git tag，去掉 v 前缀）；本地开发回退到 package.json
-    __APP_VERSION__: JSON.stringify((process.env.APP_VERSION || pkg.version).replace(/^v/, '')),
+    __APP_VERSION__: JSON.stringify(resolveAppVersion()),
   },
   plugins: [
     VueMacros({
