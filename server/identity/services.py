@@ -115,15 +115,31 @@ def build_authorize_url(
     return f"{provider.authorization_endpoint}?{urlencode(params)}"
 
 
-async def aresolve_site_base_url(fallback: str) -> str:
-    """解析站点基础 URL：优先系统设置「站点 Host」（site_host），空则回退给定值。
+def _request_base_url(request: object) -> str:
+    """从当前请求推断站点基础 URL（scheme://host[:port]）。
 
-    site_host 由管理员在设置页配置（如 https://friday.example.com），是部署后
-    可运行时修改的外部访问地址；env（FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL）
-    仅作回退，保证旧部署行为不回退。
+    依赖 Host 头（经 nginx 代理时为 proxy_set_header 透传的原始访问地址）。
+    推断失败（无 request / Host 非法）返回空串，由调用方继续回退。
+    """
+    build = getattr(request, "build_absolute_uri", None)
+    if build is None:
+        return ""
+    try:
+        return str(build("/")).rstrip("/")
+    except Exception:
+        return ""
 
-    归一化：去首尾空白、去尾斜杠；无 scheme 时补 http://（用户在输入框
-    常省略 scheme，缺 scheme 的 redirect_uri 会被 IdP 拒绝或当相对路径解析）。
+
+async def aresolve_site_base_url(fallback: str, request: object | None = None) -> str:
+    """解析站点基础 URL：站点 Host 设置 → 当前请求 Host → 给定回退值。
+
+    1. 「站点 Host」（site_host）系统设置：管理员显式配置的外部访问地址
+       （如 https://friday.example.com），优先级最高。
+    2. 当前请求的 Host：未配置时直接取用户实际访问的地址，开箱即用。
+    3. fallback：无请求上下文时回退 env（FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL）。
+
+    site_host 归一化：去首尾空白、去尾斜杠；无 scheme 时补 http://（用户在
+    输入框常省略 scheme，缺 scheme 的 redirect_uri 会被 IdP 拒绝或当相对路径解析）。
     """
     from system.models import SettingKeys
     from system.settings_service import aget_setting
@@ -131,16 +147,21 @@ async def aresolve_site_base_url(fallback: str) -> str:
     site_host = (await aget_setting(SettingKeys.SITE_HOST, "")).strip().rstrip("/")
     if site_host and "://" not in site_host:
         site_host = f"http://{site_host}"
-    return site_host or fallback
+    if site_host:
+        return site_host
+
+    request_base = _request_base_url(request) if request is not None else ""
+    return request_base or fallback
 
 
 async def build_callback_url(request: object) -> str:
     """构建 OIDC 回调 URL（redirect_uri）。
 
-    优先「站点 Host」系统设置，回退 FRIDAY_BASE_URL 配置。
+    站点 Host 设置 → 当前请求 Host → FRIDAY_BASE_URL 配置。
     """
     base_url = await aresolve_site_base_url(
-        getattr(settings, "FRIDAY_BASE_URL", "http://localhost:8000")
+        getattr(settings, "FRIDAY_BASE_URL", "http://localhost:8000"),
+        request=request,
     )
     return f"{base_url}/api/oidc/callback/"
 

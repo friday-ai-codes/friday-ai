@@ -310,10 +310,37 @@ class TestSiteHostResolution:
         assert url == "https://friday.example.com/api/oidc/callback/"
 
     def test_callback_url_falls_back_to_friday_base_url(self, settings):
-        """site_host 未配置时回退 FRIDAY_BASE_URL（旧部署行为不回退）。"""
+        """site_host 未配置且无请求上下文时回退 FRIDAY_BASE_URL（旧部署行为不回退）。"""
         settings.FRIDAY_BASE_URL = "http://fallback.example.com:10241"
         url = async_to_sync(build_callback_url)(None)
         assert url == "http://fallback.example.com:10241/api/oidc/callback/"
+
+    def test_callback_url_uses_request_host_when_no_site_host(self, rf, settings):
+        """site_host 未配置时直接取当前请求的 Host（含端口）。"""
+        settings.ALLOWED_HOSTS = ["*"]
+        settings.FRIDAY_BASE_URL = "http://localhost:10241"
+        request = rf.get("/api/oidc/authorize/x/", HTTP_HOST="192.168.1.10:10240")
+        url = async_to_sync(build_callback_url)(request)
+        assert url == "http://192.168.1.10:10240/api/oidc/callback/"
+
+    def test_disallowed_request_host_falls_back(self, rf, settings):
+        """请求 Host 不在 ALLOWED_HOSTS（疑似伪造）时回退 env，不中断登录。"""
+        settings.ALLOWED_HOSTS = ["testserver"]
+        settings.FRIDAY_BASE_URL = "http://fallback.example.com:10241"
+        request = rf.get("/api/oidc/authorize/x/", HTTP_HOST="evil.example.com")
+        url = async_to_sync(build_callback_url)(request)
+        assert url == "http://fallback.example.com:10241/api/oidc/callback/"
+
+    def test_site_host_overrides_request_host(self, rf):
+        """site_host 已配置时优先于请求 Host。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="https://friday.example.com"
+        )
+        request = rf.get("/api/oidc/authorize/x/", HTTP_HOST="192.168.1.10:10240")
+        url = async_to_sync(build_callback_url)(request)
+        assert url == "https://friday.example.com/api/oidc/callback/"
 
     def test_site_host_trailing_slash_stripped(self):
         """site_host 末尾斜杠被剥离，避免 URL 出现双斜杠。"""
@@ -343,6 +370,18 @@ class TestSiteHostResolution:
         settings.FRIDAY_BASE_URL = "http://fallback.example.com:10241"
         url = async_to_sync(build_callback_url)(None)
         assert url == "http://fallback.example.com:10241/api/oidc/callback/"
+
+    def test_authorize_redirect_uri_uses_request_host_without_site_host(
+        self, anon_api, oidc_provider
+    ):
+        """端到端：未配置 site_host 时 redirect_uri 直接取请求 Host。"""
+        from urllib.parse import quote
+
+        response = anon_api.get(f"/api/oidc/authorize/{oidc_provider.id}/?redirect_uri=/")
+        assert response.status_code == 200
+        authorize_url = response.json()["authorize_url"]
+        expected = quote("http://testserver/api/oidc/callback/", safe="")
+        assert f"redirect_uri={expected}" in authorize_url
 
     def test_authorize_redirect_uri_uses_site_host(self, anon_api, oidc_provider):
         """端到端：authorize 端点生成的授权 URL 中 redirect_uri 用站点 Host。"""
