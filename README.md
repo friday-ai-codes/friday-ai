@@ -35,7 +35,7 @@ Friday 已经深度集成飞书，包括飞书项目、飞书文档、飞书机�
   ·
   <a href="#它能做什么">它能做什么</a>
   ·
-  <a href="#codex-skill-和代码索引增强">Skill</a>
+  <a href="#agent-skill-和代码索引增强">Skill</a>
   ·
   <a href="#graph-rag-有什么不一样">Graph RAG</a>
   ·
@@ -69,7 +69,7 @@ Friday 已经深度集成飞书，包括飞书项目、飞书文档、飞书机�
 | 跨仓改造 | 前端页面要改接口参数，后端 handler、调用方、类型定义和测试可能分散在不同仓库。 | 通过语义检索、代码图谱和跨仓 API 关系找到上下游，拆出仓库任务矩阵，再分别执行。 |
 | 群里持续协作 | 执行中缺字段、缺截图、需要确认分支或要通知结果。 | 飞书机器人在群聊 / 私聊里发送问题卡片、审批卡片、代码审查卡片和结果通知。 |
 | 用户自己问代码库 | “这个支付回调现在走哪几个入口？”“这个组件还有哪些调用方？” | 在 Friday Web Chat 里选择已索引仓库，模型可以调用检索和代码浏览工具回答。 |
-| 用 Codex Skill 增强自己 | 你在本地写代码，希望 Codex 直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | 安装 `friday-codebase-agent` Skill，用 Friday MCP HTTP tools 做仓库发现、分析、计划、执行和 MR 创建。 |
+| 用 Agent Skill 增强自己 | 你在 Cursor / Claude Code / Codex 里写代码，希望 AI 助手直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | `npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent` 一键安装 Skill，配合 `@friday-ai/mcp` 做仓库发现、分析、计划、执行和 MR 创建。 |
 | AI 代码审查 | Claude Code 改完之后还需要一轮自动 review 和可读摘要。 | 工作流可以接 `ai_code_review`，把审查结果、分支摘要和 PR / MR 信息回写到飞书。 |
 
 ## 飞书深度集成，但不绑定飞书
@@ -87,18 +87,29 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 
 飞书是 Friday 现在打磨得最完整的协作入口。Friday 的底层模型仍然是“协作入口 + 工作流 + 代码智能 + Runner”，所以以后接入其他项目管理、文档、IM 或自动化系统时，不需要推翻这套主流程。
 
-## Codex Skill 和代码索引增强
+## Agent Skill 和代码索引增强
 
-Friday 可以作为 Codex / Agent 的“代码库后台”。仓库先在 Friday 里完成索引，Agent 就不需要只靠当前窗口里的文件猜上下文。
+Friday 可以作为 Cursor / Claude Code / Codex 的“代码库后台”。仓库先在 Friday 里完成索引，本地 AI 助手就不需要只靠当前窗口里的文件猜上下文。
 
-典型用法：
+三步接入：
 
-1. 在 Friday 里接入 GitHub / GitLab 仓库，并建立代码索引。
-2. 给本地 Codex 配置 `friday-codebase-agent` 这个 repo-local Skill。
-3. Skill 通过 Friday Access Token 调用 MCP HTTP tools。
-4. Codex 可以用同一套索引做仓库发现、Graph RAG 分析、代码计划、计划修订、执行、分支总结和 MR 创建。
+1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主）：
 
-这部分适合两类人：一类是在 Friday Web 里点流程的人，另一类是在本地 IDE / Codex 里写代码的人。前者拿到可视化工作流，后者拿到可调用的代码智能工具；底层证据和审计轨迹是同一套。
+   ```bash
+   npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent
+   ```
+
+2. 创建访问令牌：登录 Friday Web 控制台 → 个人资料 → 访问令牌 → 创建（明文只显示一次）。
+
+3. 配置连接（写入 `~/.friday/config.json`，并把 `@friday-ai/mcp` 注册为 MCP server）：
+
+   ```bash
+   npx -y @friday-ai/mcp init --base-url https://你的-friday-地址 --token <你的访问令牌>
+   ```
+
+   也可以装完 Skill 后直接在 IDE 里说“配置 Friday”，agent 会按 Skill 指引向你索要地址和令牌并自动完成配置与 MCP 注册。
+
+之后 AI 助手就能用同一套索引做仓库发现、Graph RAG 分析、代码计划、计划修订、远程执行、分支总结和 MR 创建。这部分适合两类人：一类是在 Friday Web 里点流程的人，另一类是在本地 IDE 里写代码的人。前者拿到可视化工作流，后者拿到可调用的代码智能工具；底层证据和审计轨迹是同一套。详见 [Friday Codebase Agent 指南](docs/guide/friday-codebase-agent.md)。
 
 ## Graph RAG 有什么不一样
 
@@ -171,6 +182,14 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 
    你可以从 Web Chat 问一个已索引仓库的问题，也可以从飞书工作项或工作流模板触发“生成方案 -> 人工确认 -> Claude Code 执行 -> PR / MR”的完整流程。
 
+8. 可选：在 IDE 里使用 Friday Skill：
+
+   ```bash
+   npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent
+   ```
+
+   然后在个人资料页创建访问令牌，按首页提示完成 `npx -y @friday-ai/mcp init` 配置，Cursor / Claude Code / Codex 就能直接调用 Friday 的代码智能与执行工具。
+
 ## 文档
 
 | 文档 | 内容 |
@@ -178,7 +197,7 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 | [快速开始](docs/guide/quick-start.md) | 本地部署、创建第一个项目、测试工作流。 |
 | [工作流指南](docs/guide/workflows.md) | 工作流节点、触发器、执行记录和调试。 |
 | [管理指南](docs/guide/admin.md) | 用户、权限、OIDC、Runner 和运维配置。 |
-| [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Codex Skill、MCP tools、Graph RAG 分析和 MR 创建。 |
+| [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Agent Skill 一键安装、MCP server、Graph RAG 分析和 MR 创建。 |
 | [代码智能层](docs/codegraph.md) | Graph RAG、跨仓 API 关联、Galaxy 图谱和 MCP 工具。 |
 | [API 参考](docs/api/index.md) | REST API 文档。 |
 | [Task 执行器](task/README.md) | Claude Agent SDK / Claude Code task 容器。 |

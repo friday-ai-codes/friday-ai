@@ -35,7 +35,7 @@ Friday already has deep Feishu integration across Feishu Project, Feishu Docs, F
   ·
   <a href="#what-it-can-do">What It Can Do</a>
   ·
-  <a href="#codex-skill-and-code-indexing">Skill</a>
+  <a href="#agent-skill-and-code-indexing">Skill</a>
   ·
   <a href="#what-makes-graph-rag-different">Graph RAG</a>
   ·
@@ -69,7 +69,7 @@ A typical flow starts from a Feishu work item. Friday fetches fields, relations,
 | Cross-repository API changes | A frontend page changes an API parameter while backend handlers, types, and tests live elsewhere. | Connect semantic retrieval, code graph expansion, and cross-repo API links to create a repository task matrix. |
 | Ongoing group collaboration | Execution needs a missing field, screenshot, branch confirmation, or result notification. | Feishu bots send question cards, approval cards, review cards, and coding result updates in group or p2p chats. |
 | Users ask the codebase directly | “Where does this payment callback enter?” or “Who calls this component?” | Friday Web Chat can call retrieval and code browsing tools over indexed repositories. |
-| Codex Skill uses Friday as a backend | You want local Codex to use Friday’s code index, Graph RAG, and execution tools. | Install the `friday-codebase-agent` Skill and call Friday MCP HTTP tools for discovery, analysis, planning, execution, and MR creation. |
+| Agent Skill uses Friday as a backend | You code in Cursor / Claude Code / Codex and want the assistant to use Friday’s code index, Graph RAG, and execution tools. | Install the Skill with `npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent` and use `@friday-ai/mcp` for discovery, analysis, planning, execution, and MR creation. |
 | AI code review | Claude Code has produced a branch and the team wants an automatic review plus a readable summary. | Workflows can run `ai_code_review`, then write review output, branch summaries, and PR / MR details back to Feishu. |
 
 ## Deep Feishu Integration, Not Feishu Lock-In
@@ -87,18 +87,29 @@ Friday integrates with Feishu at several levels. It is much more than notificati
 
 Feishu is the most polished collaboration entrypoint today. Underneath, Friday is still built as “collaboration entrypoint + workflow + code intelligence + Runner,” so adding other project-management, document, IM, or automation systems does not require replacing the main pipeline.
 
-## Codex Skill and Code Indexing
+## Agent Skill and Code Indexing
 
-Friday can act as a codebase backend for Codex and other agents. Once a repository is indexed by Friday, the agent no longer has to infer everything from the few files visible in the current local context.
+Friday can act as a codebase backend for Cursor, Claude Code, Codex, and other agents. Once a repository is indexed by Friday, the agent no longer has to infer everything from the few files visible in the current local context.
 
-Typical flow:
+Three steps to connect:
 
-1. Connect a GitHub / GitLab repository in Friday and build the code index.
-2. Configure the repo-local `friday-codebase-agent` Skill for Codex.
-3. Let the Skill call Friday MCP HTTP tools with a Friday Access Token.
-4. Use the same index for repository discovery, Graph RAG analysis, coding plans, plan revisions, execution, branch summaries, and MR creation.
+1. Install the Skill (auto-detects Claude Code, Cursor, Codex, and more):
 
-This works for both Web users and local coding users. Web users get the visual workflow; local Codex users get callable code-intelligence tools. Both paths share the same evidence and audit trail.
+   ```bash
+   npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent
+   ```
+
+2. Create an Access Token: Friday Web console → Profile → Access Tokens → Create (the plaintext is shown only once).
+
+3. Configure the connection (writes `~/.friday/config.json` and registers `@friday-ai/mcp` as an MCP server):
+
+   ```bash
+   npx -y @friday-ai/mcp init --base-url https://your-friday-host --token <your-access-token>
+   ```
+
+   Alternatively, just tell your IDE assistant to "set up Friday" after installing the Skill — it will ask for the host and token and finish the configuration and MCP registration for you.
+
+The assistant can then use the same index for repository discovery, Graph RAG analysis, coding plans, plan revisions, remote execution, branch summaries, and MR creation. Web users get the visual workflow; local IDE users get callable code-intelligence tools. Both paths share the same evidence and audit trail. See the [Friday Codebase Agent guide](docs/guide/friday-codebase-agent.md).
 
 ## What Makes Graph RAG Different
 
@@ -171,6 +182,14 @@ You only need Docker, Docker Compose v2, and Git.
 
    Ask Friday Web Chat a question about an indexed repository, or trigger the full “plan -> human confirmation -> Claude Code execution -> PR / MR” pipeline from a Feishu work item or workflow template.
 
+8. Optional: use the Friday Skill in your IDE:
+
+   ```bash
+   npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent
+   ```
+
+   Then create an Access Token on the Profile page and run `npx -y @friday-ai/mcp init` as shown on the dashboard. Cursor / Claude Code / Codex can then call Friday's code intelligence and execution tools directly.
+
 ## Docs
 
 | Document | Covers |
@@ -178,7 +197,7 @@ You only need Docker, Docker Compose v2, and Git.
 | [Quick Start](docs/guide/quick-start.md) | Local deployment, first project setup, and workflow testing. |
 | [Workflow Guide](docs/guide/workflows.md) | Workflow nodes, triggers, execution records, and debugging. |
 | [Admin Guide](docs/guide/admin.md) | Users, permissions, OIDC, runners, and operational settings. |
-| [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Codex Skill, MCP tools, Graph RAG analysis, and MR creation. |
+| [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Agent Skill, MCP server, Graph RAG analysis, and MR creation. |
 | [Code Intelligence](docs/codegraph.md) | Graph RAG, cross-repo API links, Galaxy graph, and MCP tools. |
 | [API Reference](docs/api/index.md) | REST API documentation. |
 | [Task Runner](task/README.md) | Claude Agent SDK / Claude Code task container. |

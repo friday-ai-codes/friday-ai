@@ -111,6 +111,7 @@ declare module 'vue' {
     DashboardKpiCards: typeof import('./components/dashboard/DashboardKpiCards.vue')['default']
     DashboardQuickActions: typeof import('./components/dashboard/DashboardQuickActions.vue')['default']
     DashboardRecentActivity: typeof import('./components/dashboard/DashboardRecentActivity.vue')['default']
+    DashboardSkillInstallTip: typeof import('./components/dashboard/DashboardSkillInstallTip.vue')['default']
     DataTable: typeof import('./components/common/DataTable.vue')['default']
     DeepAnalysisCard: typeof import('./components/chat/DeepAnalysisCard.vue')['default']
     DeepAnalysisGroup: typeof import('./components/chat/DeepAnalysisGroup.vue')['default']
