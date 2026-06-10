@@ -3,6 +3,7 @@ import { useHead } from '@vueuse/head'
 import DashboardKpiCards from '~/components/dashboard/DashboardKpiCards.vue'
 import DashboardQuickActions from '~/components/dashboard/DashboardQuickActions.vue'
 import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActivity.vue'
+import DashboardSkillInstallTip from '~/components/dashboard/DashboardSkillInstallTip.vue'
 
 useHead({
   title: '首页 - Friday AI',
@@ -123,6 +124,9 @@ const quickActions = [
         无缝集成飞书项目管理和 Claude Code
       </p>
     </section>
+
+    <!-- Skill 安装提示 — 可关闭 -->
+    <DashboardSkillInstallTip />
 
     <!-- 统计卡片 — KPI widget -->
     <DashboardKpiCards :stats="stats" :loading="loading" />

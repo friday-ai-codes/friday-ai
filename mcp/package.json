@@ -1,0 +1,47 @@
+{
+  "name": "@friday-ai/mcp",
+  "version": "0.1.0",
+  "description": "Friday AI MCP server — expose Friday code intelligence, Graph RAG, coding plan and MR tools to Cursor / Claude Code / Codex via Model Context Protocol",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "friday-ai",
+    "code-intelligence",
+    "graph-rag"
+  ],
+  "homepage": "https://github.com/friday-ai-codes/friday-ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/friday-ai-codes/friday-ai.git",
+    "directory": "mcp"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "friday-mcp": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.8"
+  }
+}
