@@ -163,7 +163,7 @@ describe('/admin/conversations 管理员只读会话后台', () => {
     wrapper.unmount()
   })
 
-  it('INFO：draft（小写）状态渲染「草稿」标签（STATUS_META key 大小写一致）', async () => {
+  it('info：draft（小写）状态渲染「草稿」标签（STATUS_META key 大小写一致）', async () => {
     listMock.mockResolvedValue([
       makeItem({ id: 'conv-draft', title: '草稿会话', status: 'draft' }),
     ])
