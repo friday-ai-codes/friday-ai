@@ -254,7 +254,7 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
           {{ errors.git_url }}
         </p>
         <p class="text-xs text-muted-foreground">
-          支持 HTTPS 或 SSH 格式
+          仅支持 HTTPS 格式（认证基于 Access Token，暂不支持 SSH）
         </p>
       </div>
 
