@@ -1,0 +1,57 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题。安全漏洞请勿在此提交，按 [SECURITY.md](../blob/main/SECURITY.md) 私下报告。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际行为与期望行为的差异
+      placeholder: 例：在仓库页点击「重建索引」后，进度一直停在 0%，server 日志出现 ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 进入 ...
+        2. 点击 ...
+        3. 观察到 ...
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy-mode
+    attributes:
+      label: 部署方式
+      options:
+        - Docker Compose（预构建镜像）
+        - Docker Compose（源码构建）
+        - Kubernetes
+        - 本地开发（make dev）
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: Release tag 或 commit SHA（侧边栏底部可见版本号）
+      placeholder: v0.2.0 / 0c63f0d
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: server / runner / task 容器日志片段（注意删除令牌等敏感信息）
+      render: text
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息
+      placeholder: 操作系统、浏览器、数据库（SQLite / PostgreSQL）、是否启用 Qdrant / Redis 等

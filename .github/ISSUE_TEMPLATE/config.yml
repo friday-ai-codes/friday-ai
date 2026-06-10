@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/friday-ai-codes/friday-ai/blob/main/SECURITY.md
+    about: 安全问题请勿公开提交 issue，按 SECURITY.md 的指引私下报告
+  - name: 使用文档
+    url: https://friday-ai-codes.github.io/friday-ai/
+    about: 部署、配置与使用问题请先查阅文档站
