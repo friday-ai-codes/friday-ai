@@ -5,6 +5,10 @@ title: Friday Codebase Agent
 
 `friday-codebase-agent` 是一个可分发的 Agent Skill，配合 `@friday-ai-codes/mcp` MCP server，让 Cursor / Claude Code / Codex 等本地 AI 编码助手直接使用 Friday 的代码索引、Graph RAG、编码计划、远程执行和 MR 创建能力。
 
+接入只需要三步，之后就能在 IDE 里完整跑通编码 workflow：
+
+<FlowPipeline :steps="['安装 Skill', '配置访问令牌', '注册 MCP server', 'IDE 里直接使用']" />
+
 ## 一键安装
 
 ```bash

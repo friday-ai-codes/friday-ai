@@ -14,6 +14,10 @@ title: 代码智能层（Graph RAG）
 | 普通 Graph | 展示符号、文件、调用、依赖之间的关系，适合导航结构 | 只有图很难理解「这个需求在说什么」，也很难把证据压成模型刚好能用的上下文 |
 | Friday Graph RAG | 先用语义和关键词召回相关 chunk，再沿代码图谱做一跳 / 二跳扩散，并补上跨仓 API 关系 | —— 它的目标就是让 Agent 改代码时拿到更接近真实影响面的证据 |
 
+一次检索的完整链路：
+
+<FlowPipeline :steps="['语义 + 关键词召回 chunk', '代码图谱一跳 / 二跳扩散', '跨仓 API 关联补边', 'token 预算控制', '组合上下文进入模型']" />
+
 索引过程结合符号解析、Qdrant 混合检索（稠密 + 稀疏向量，`fastembed` 本地嵌入）、图谱扩散、跨仓 API 关联和 token 预算控制。最终进入模型的不是一堆散落片段，而是「需求 + 相关文件 + 符号 + 邻居关系 + 跨仓线索」的组合上下文。
 
 ## 多语言 Extractor 矩阵
@@ -50,6 +54,8 @@ Go gin 路由抽取支持 `r.GET("/path", handler)` 等基本形式与 middlewar
 ]" />
 
 三步推断：
+
+<FlowPipeline :steps="['auto-discover 定位基础封装', 'ApiWrapper 识别 + 提取 URL', 'ApiCallSite 反向追踪调用点']" />
 
 1. **auto-discover**：在 axios 锚点定位 LowLevelHelper（`get/post/put/delete` 基础封装）；
 2. **ApiWrapper 识别**：找调用 LowLevelHelper 的 export function，提取 URL path；

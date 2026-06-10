@@ -6,6 +6,10 @@ title: 贡献指南
 
 感谢你帮助改进 Friday AI。本页是 [CONTRIBUTING.md](https://github.com/friday-ai-codes/friday-ai/blob/main/CONTRIBUTING.md) 的展开版。
 
+一次贡献的完整流程：
+
+<FlowPipeline :steps="['搭好开发环境', '改动代码', '跑对应区域检查', '规范化提交', '发起 Pull Request']" />
+
 ## 开发环境
 
 1. 安装 Docker、Docker Compose v2、`uv`、Node.js、pnpm、Go 和 Git；

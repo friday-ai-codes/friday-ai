@@ -64,6 +64,27 @@ scripts/setup.sh --non-interactive --force --data-dir /opt/friday-data
 
 - **Runner 挂载 Docker socket**：Runner 通过 `/var/run/docker.sock` 在宿主 daemon 上启动任务容器（与 Runner 是「兄弟容器」关系）。Linux 上需要设置 `DOCKER_GID`（`stat -c '%g' /var/run/docker.sock` 获取），macOS Docker Desktop / OrbStack 用默认值即可。
 - **回调链路**：任务容器通过 `host.docker.internal` 回调 Runner 的 CallbackServer（默认 `8976`），server 也通过同样机制向任务容器回传交互答案，因此 compose 里为 server 显式配置了 `host-gateway` 映射。
+
+<FlowDiagram :layers="[
+  {
+    nodes: [
+      { title: '任务容器', badge: 'task', desc: 'Runner 启动的「兄弟容器」，跑 Claude Code' },
+    ],
+    arrow: 'host.docker.internal:8976 上报进度 / 提问',
+  },
+  {
+    nodes: [
+      { title: 'Runner CallbackServer', badge: ':8976', accent: true, desc: '回调端口必须发布到宿主机' },
+    ],
+    arrow: 'WebSocket + HTTP · 转发回 server（含交互答案回传）',
+    bidirectional: true,
+  },
+  {
+    nodes: [
+      { title: 'Server', badge: 'Django', desc: 'compose 已配置 host-gateway 映射' },
+    ],
+  },
+]" />
 - **Qdrant API Key**：`QDRANT_API_KEY` 不能显式设为空字符串。qdrant 只要收到空值就会开启「空 key 鉴权」，而客户端不发空 key，健康检查会 401。留空请保持注释，compose 会回落到两端一致的默认值。
 - **Task 镜像**：Runner 启动任务容器时默认拉取 `ghcr.io/friday-ai-codes/friday-ai/task:latest`，本地调试可 `make build-task` 后设置 `FRIDAY_TASK_IMAGE=friday-task:latest`。
 

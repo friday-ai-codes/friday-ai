@@ -8,6 +8,10 @@ title: MCP Server
 
 源码位于仓库 [`mcp/`](https://github.com/friday-ai-codes/friday-ai/tree/main/mcp) 目录（TypeScript，stdio 传输）。
 
+接入流程：
+
+<FlowPipeline :steps="['创建访问令牌', 'init 写入配置', 'doctor 校验连通性', '注册到 IDE', '调用 19 个工具']" />
+
 ## 初始化配置
 
 先在 Friday Web 控制台「个人资料 → 访问令牌」创建 PAT（明文只显示一次），然后：
