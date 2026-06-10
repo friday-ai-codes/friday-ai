@@ -37,6 +37,11 @@ class SettingKeys:
 
     GIT_HTTP_PROXY = "git_http_proxy"
 
+    # 站点配置：当前站点的外部访问地址（如 https://friday.example.com），
+    # 用于生成 OIDC 回调 URL、登录跳转等用户可见链接；空则回退 env
+    # FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL（设置页「站点 Host」写入）。
+    SITE_HOST = "site_host"
+
     # Claude Code 编码容器配置（Claude Code 编码容器配置）
     # value 为 JSON：{credential_id: str, model_mapping: {opus, sonnet, haiku}}
     CLAUDE_CODE_CONFIG = "claude_code_config"

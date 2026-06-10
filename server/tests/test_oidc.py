@@ -13,6 +13,7 @@ from accounts.models import UserSource
 from identity.models import OIDCIdentity, OIDCProvider, OIDCProviderKind
 from identity.services import (
     build_authorize_url,
+    build_callback_url,
     create_signed_state,
     generate_state,
     jit_provision_user,
@@ -287,6 +288,90 @@ class TestAuthorize:
         )
         assert response.status_code == 200
         assert "prompt=" not in response.json()["authorize_url"]
+
+
+# =============================================================================
+# 站点 Host（site_host）解析测试
+# =============================================================================
+
+
+@pytest.mark.django_db
+class TestSiteHostResolution:
+    """OIDC 回调 URL 优先消费「站点 Host」系统设置（site_host）。"""
+
+    def test_callback_url_uses_site_host_when_set(self):
+        """site_host 已配置时，redirect_uri 用站点 Host 而非 FRIDAY_BASE_URL。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="https://friday.example.com"
+        )
+        url = async_to_sync(build_callback_url)(None)
+        assert url == "https://friday.example.com/api/oidc/callback/"
+
+    def test_callback_url_falls_back_to_friday_base_url(self, settings):
+        """site_host 未配置时回退 FRIDAY_BASE_URL（旧部署行为不回退）。"""
+        settings.FRIDAY_BASE_URL = "http://fallback.example.com:10241"
+        url = async_to_sync(build_callback_url)(None)
+        assert url == "http://fallback.example.com:10241/api/oidc/callback/"
+
+    def test_site_host_trailing_slash_stripped(self):
+        """site_host 末尾斜杠被剥离，避免 URL 出现双斜杠。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="https://friday.example.com/"
+        )
+        url = async_to_sync(build_callback_url)(None)
+        assert url == "https://friday.example.com/api/oidc/callback/"
+
+    def test_site_host_without_scheme_gets_http_prefix(self):
+        """site_host 缺 scheme 时自动补 http://（IdP 拒绝无 scheme 的 redirect_uri）。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="192.168.1.10:10240"
+        )
+        url = async_to_sync(build_callback_url)(None)
+        assert url == "http://192.168.1.10:10240/api/oidc/callback/"
+
+    def test_blank_site_host_falls_back(self, settings):
+        """site_host 存在但为空串时回退 env 配置（设置页允许清空）。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(key=SettingKeys.SITE_HOST, value="")
+        settings.FRIDAY_BASE_URL = "http://fallback.example.com:10241"
+        url = async_to_sync(build_callback_url)(None)
+        assert url == "http://fallback.example.com:10241/api/oidc/callback/"
+
+    def test_authorize_redirect_uri_uses_site_host(self, anon_api, oidc_provider):
+        """端到端：authorize 端点生成的授权 URL 中 redirect_uri 用站点 Host。"""
+        from urllib.parse import quote
+
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="https://friday.example.com"
+        )
+        response = anon_api.get(f"/api/oidc/authorize/{oidc_provider.id}/?redirect_uri=/")
+        assert response.status_code == 200
+        authorize_url = response.json()["authorize_url"]
+        expected = quote("https://friday.example.com/api/oidc/callback/", safe="")
+        assert f"redirect_uri={expected}" in authorize_url
+
+    def test_login_error_redirect_uses_site_host(self, anon_api):
+        """端到端：回调错误跳转登录页时前端 base 用站点 Host。"""
+        from system.models import SettingKeys, SystemSetting
+
+        SystemSetting.objects.create(
+            key=SettingKeys.SITE_HOST, value="https://friday.example.com"
+        )
+        response = anon_api.get(
+            "/api/oidc/callback/?error=access_denied&error_description=User+denied"
+        )
+        assert response.status_code == 302
+        location = response.headers.get("Location", "")
+        assert location.startswith("https://friday.example.com/login?oidc_error=")
 
 
 # =============================================================================
