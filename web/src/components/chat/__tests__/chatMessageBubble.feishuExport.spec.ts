@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
 import ChatMessageBubble from '~/components/chat/ChatMessageBubble.vue'
+import { useChatStore } from '~/stores/chat'
 
 vi.mock('~/composables/useMarkdownRenderer', () => ({
   getMarkdownRenderer: vi.fn(async () => ({
@@ -69,6 +70,9 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 describe('chatMessageBubble 消息级导出就地三态', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // 飞书导出入口受可用性门控（空间配置了文件夹 + 凭证才展示）。
+    // 本套契约测试聚焦三态切换，默认置可用；门控行为见第 7 条用例。
+    useChatStore().feishuExportAvailable = true
   })
 
   it('1. 未导出态：metadata 无 feishu_exports 时仅渲染「导出到飞书」', async () => {
@@ -152,5 +156,24 @@ describe('chatMessageBubble 消息级导出就地三态', () => {
     expect(wrapper.text()).toContain('导出到飞书')
     expect(wrapper.text()).not.toContain('在飞书打开')
     expect(wrapper.find('[aria-label="重新导出"]').exists()).toBe(false)
+  })
+
+  it('7. 可用性门控：feishuExportAvailable=false 时隐藏「导出到飞书」与「重新导出」，保留「在飞书打开」', async () => {
+    useChatStore().feishuExportAvailable = false
+
+    // 未导出态：导出入口整体隐藏
+    const unexported = await mountBubble(makeMessage())
+    expect(unexported.text()).not.toContain('导出到飞书')
+
+    // 已导出态：历史文档链接仍可打开，但不再提供重新导出
+    const exported = await mountBubble(makeMessage({
+      metadata: {
+        feishu_exports: [
+          { document_id: 'doc-1', url: 'https://feishu.example/doc-1', title: '导出文档', exported_at: '2026-05-21T01:00:00Z' },
+        ],
+      },
+    }))
+    expect(exported.text()).toContain('在飞书打开')
+    expect(exported.find('[aria-label="重新导出"]').exists()).toBe(false)
   })
 })

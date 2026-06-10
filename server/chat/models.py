@@ -39,8 +39,12 @@ class Conversation(models.Model):
         ERROR = "error", "异常"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # 可空：允许不绑定空间的「通用对话」。无空间时检索/编码工具不可用，
+    # system prompt 会引导用户在需要空间知识时先选择空间。
     project = models.ForeignKey(
         Project,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="conversations",
     )

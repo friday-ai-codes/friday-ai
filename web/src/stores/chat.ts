@@ -19,6 +19,7 @@ import {
   forkConversationForMessage,
   getConversationDetail,
   getConversationRuntime,
+  getFeishuExportAvailability,
   interruptConversation,
   listConversations,
   patchConversation,
@@ -185,6 +186,39 @@ export const useChatStore = defineStore('chat', () => {
 
   // 侧边栏状态
   const sidebarCollapsed = ref(false)
+
+  // 草稿填充信号：欢迎页快捷提示点击后填充到 ChatInput（填充而非直发，
+  // 给用户修改的机会，避免误触发送）。ChatInput watch 消费后置回 null。
+  const draftPrompt = ref<string | null>(null)
+
+  function prefillDraft(text: string) {
+    draftPrompt.value = text
+  }
+
+  // 飞书导出可用性：未配置（无文件夹/无凭证/无空间）时隐藏「导出到飞书」入口。
+  // 按 space 缓存探测结果，避免切消息/切会话重复请求。
+  const feishuExportAvailable = ref(false)
+  const _feishuAvailabilityBySpace = new Map<string, boolean>()
+
+  async function refreshFeishuExportAvailability(spaceId: string | null | undefined) {
+    if (!spaceId) {
+      feishuExportAvailable.value = false
+      return
+    }
+    if (_feishuAvailabilityBySpace.has(spaceId)) {
+      feishuExportAvailable.value = _feishuAvailabilityBySpace.get(spaceId)!
+      return
+    }
+    try {
+      const result = await getFeishuExportAvailability(spaceId)
+      _feishuAvailabilityBySpace.set(spaceId, result.available)
+      feishuExportAvailable.value = result.available
+    }
+    catch {
+      // 探测失败按不可用处理（按钮隐藏只是 UX 优化，后端仍有兜底校验）
+      feishuExportAvailable.value = false
+    }
+  }
 
   // 用户偏好（localStorage 持久化）
   const selectedSpaceId = useLocalStorage<string | null>('chat-space-id', null)
@@ -1642,15 +1676,12 @@ export const useChatStore = defineStore('chat', () => {
     let createdForDraft = false
 
     if (!currentConversationId.value) {
-      if (!selectedSpaceId.value) {
-        error.value = '请先选择空间'
-        return
-      }
-
       loading.value = true
       try {
+        // space_id 可空：未选空间时创建「通用对话」，任务涉及空间知识时由
+        // AI（system prompt 引导）要求用户先选择空间
         materializedConversation = await createConversation({
-          space_id: selectedSpaceId.value,
+          space_id: selectedSpaceId.value || null,
           model: resolveModelForNewConversation(),
         })
         pendingConversation.value = materializedConversation
@@ -2287,6 +2318,10 @@ export const useChatStore = defineStore('chat', () => {
     streamingMetadata,
     abortController,
     sidebarCollapsed,
+    draftPrompt,
+    prefillDraft,
+    feishuExportAvailable,
+    refreshFeishuExportAvailability,
     selectedSpaceId,
     selectedRole,
     selectedModel,

@@ -5,6 +5,9 @@
  *
  * 历史背景：删除原顶部凭证下拉与凭证切换确认弹窗、所有相关状态与事件，
  * 全部迁移到 ChatInput。
+ *
+ * 入口重构后：左侧展示当前对话标题（草稿态显示「新对话」），
+ * 右侧聚合空间 / 角色选择，高度与会话列表栏头部（h-16）对齐。
  */
 import type { ResolvedProvider } from '~/types/providerCredential'
 import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
@@ -28,48 +31,81 @@ withDefaults(defineProps<Props>(), {
 
 const chatStore = useChatStore()
 const spacesStore = useSpacesStore()
+
+/** 实例里一个空间都没有：下拉无可选项，改为「去创建空间」CTA */
+const noSpacesExist = computed(() => spacesStore.spaces.length === 0)
+
+const conversationTitle = computed(
+  () => chatStore.currentConversation?.title || '新对话',
+)
+const isRunning = computed(
+  () => chatStore.currentConversation?.status === 'running' || chatStore.isStreaming,
+)
 </script>
 
 <template>
   <div class="chat-header">
-    <!-- 空间选择 -->
-    <Select v-model="chatStore.selectedSpaceId">
-      <SelectTrigger class="w-44 h-8 text-xs border-border/40 bg-transparent shadow-none">
-        <SelectValue placeholder="选择空间" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem
-          v-for="space in spacesStore.spaces"
-          :key="space.id"
-          :value="space.id"
-        >
-          {{ space.name }}
-        </SelectItem>
-      </SelectContent>
-    </Select>
+    <!-- 左侧：对话标题 -->
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <h1 class="chat-header-title">
+        {{ conversationTitle }}
+      </h1>
+      <span v-if="isRunning" class="chat-header-running">
+        <span class="chat-header-running-dot" />
+        运行中
+      </span>
+    </div>
 
-    <!-- 角色选择 -->
-    <Select v-model="chatStore.selectedRole">
-      <SelectTrigger class="w-28 h-8 text-xs border-border/40 bg-transparent shadow-none">
-        <SelectValue placeholder="角色" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem
-          v-for="role in ROLE_OPTIONS"
-          :key="role.value"
-          :value="role.value"
-        >
-          {{ role.label }}
-        </SelectItem>
-      </SelectContent>
-    </Select>
+    <!-- 右侧：空间 / 角色 -->
+    <div class="flex items-center gap-2 shrink-0">
+      <ResolvedSourceBadge
+        v-if="resolvedProvider"
+        :source="resolvedProvider.source"
+        :chain="resolvedProvider.chain"
+      />
 
-    <!-- ：四层 Provider 解析 Inspector -->
-    <ResolvedSourceBadge
-      v-if="resolvedProvider"
-      :source="resolvedProvider.source"
-      :chain="resolvedProvider.chain"
-    />
+      <!-- 无任何空间：不渲染空白下拉，引导去创建（也可不选空间直接对话） -->
+      <RouterLink
+        v-if="noSpacesExist"
+        to="/spaces"
+        class="chat-header-create-space"
+        title="空间绑定代码仓库后，AI 才能回答代码相关问题；也可以不选空间直接对话"
+      >
+        <span class="icon-[lucide--folder-plus] text-[13px]" />
+        <span>暂无空间，去创建</span>
+      </RouterLink>
+
+      <Select v-else v-model="chatStore.selectedSpaceId">
+        <SelectTrigger class="w-44 h-8 text-xs border-border/40 bg-transparent shadow-none">
+          <span class="icon-[lucide--folder-git-2] text-[13px] text-muted-foreground/70 shrink-0" />
+          <SelectValue placeholder="选择空间（可不选）" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem
+            v-for="space in spacesStore.spaces"
+            :key="space.id"
+            :value="space.id"
+          >
+            {{ space.name }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select v-model="chatStore.selectedRole">
+        <SelectTrigger class="w-28 h-8 text-xs border-border/40 bg-transparent shadow-none">
+          <SelectValue placeholder="角色" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem
+            v-for="role in ROLE_OPTIONS"
+            :key="role.value"
+            :value="role.value"
+          >
+            {{ role.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   </div>
 </template>
 
@@ -77,8 +113,77 @@ const spacesStore = useSpacesStore()
 .chat-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: 1rem;
+  height: 4rem;
+  padding: 0 1.25rem;
   border-bottom: 1px solid hsl(var(--border) / 0.3);
+  background: hsl(0 0% 100% / 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  flex-shrink: 0;
+}
+
+.chat-header-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: hsl(215 28% 17%);
+}
+
+.chat-header-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: hsl(38 92% 50% / 0.1);
+  color: hsl(38 80% 36%);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chat-header-create-space {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px dashed hsl(168 76% 42% / 0.4);
+  color: hsl(168 76% 34%);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chat-header-create-space:hover {
+  background: hsl(168 76% 42% / 0.07);
+  border-color: hsl(168 76% 42% / 0.6);
+}
+
+.chat-header-running-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: hsl(38 92% 50%);
+  animation: header-pulse 1.6s ease infinite;
+}
+
+@keyframes header-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 </style>

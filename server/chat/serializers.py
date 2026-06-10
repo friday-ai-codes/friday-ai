@@ -121,7 +121,13 @@ class ChatCompletionResponseSerializer(serializers.Serializer):
 class CreateConversationSerializer(serializers.Serializer):
     """创建对话请求。"""
 
-    space_id = serializers.UUIDField(help_text="空间 ID")
+    # 可空：不传 / 传 null 表示创建不绑定空间的「通用对话」
+    space_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="空间 ID（可选，为空时创建不绑定空间的通用对话）",
+    )
     title = serializers.CharField(max_length=200, default="新对话", required=False)
     model = serializers.CharField(
         max_length=100,
@@ -185,7 +191,7 @@ class ConversationListSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id")
+    space_id = serializers.UUIDField(source="project_id", allow_null=True)
     title = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()
@@ -220,7 +226,7 @@ class AdminConversationListSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id")
+    space_id = serializers.UUIDField(source="project_id", allow_null=True)
     title = serializers.CharField()
     status = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
@@ -287,7 +293,7 @@ class ConversationDetailSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id")
+    space_id = serializers.UUIDField(source="project_id", allow_null=True)
     title = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()

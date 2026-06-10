@@ -4,6 +4,7 @@ meta:
 </route>
 
 <script setup lang="ts">
+import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 import ChatHeader from '~/components/chat/ChatHeader.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
@@ -18,6 +19,15 @@ onMounted(async () => {
     chatStore.fetchConversations(),
     spacesStore.fetchSpaces(),
   ])
+  // 自愈：localStorage 持久化的 chat-space-id 可能指向已删除的空间
+  // （空间被删 / 切换后端数据库）。残留会让首条消息创建对话时后端报
+  // 「空间不存在」。fetchSpaces 成功后校验一次，失效则清空回通用对话。
+  if (
+    chatStore.selectedSpaceId
+    && !spacesStore.spaces.some(s => s.id === chatStore.selectedSpaceId)
+  ) {
+    chatStore.selectedSpaceId = null
+  }
   await chatStore.restoreFromURL()
   if (chatStore.notificationsEnabled)
     chatStore.requestNotificationPermission()
@@ -26,10 +36,22 @@ onMounted(async () => {
   if (repositoriesStore.repositories.length === 0)
     repositoriesStore.fetchRepositories().catch(() => {})
 })
+
+// 飞书导出可用性：跟随当前会话的空间（草稿态跟随顶部所选空间）。
+// 未配置时 ChatMessageBubble 隐藏「导出到飞书」入口。
+watch(
+  () => chatStore.currentConversation?.space_id ?? chatStore.selectedSpaceId,
+  spaceId => chatStore.refreshFeishuExportAvailability(spaceId),
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-w-0 h-full">
+  <div class="flex-1 flex min-w-0 h-screen overflow-hidden">
+    <!-- 二级栏：会话列表（入口重构：从全局侧边栏迁入 chat 页内部，
+         全局侧边栏保持工作台导航不变） -->
+    <ChatConversationList />
+
     <!--
       UX 重设计（260423-lum）：chat 路径 Provider/模型选择已折叠到 ChatInput
       底部 model-selector。ChatHeader 不再消费 conversation-id / current-credential-id
@@ -38,13 +60,15 @@ onMounted(async () => {
       chatStore.patchConversationProviderAndModel（单次 PATCH 双字段，避免中间态）。
       :resolved-provider 暂不接（继承自 260423-kxt；ChatHeader 默认 null + v-if 兜底）。
     -->
-    <ChatHeader />
-    <div class="flex-1 min-h-0 relative">
-      <ChatMessageArea />
-      <ChatInput
-        class="chat-input-float"
-        @pin-confirmed="chatStore.patchConversationProviderAndModel"
-      />
+    <div class="flex-1 flex flex-col min-w-0 h-full">
+      <ChatHeader />
+      <div class="flex-1 min-h-0 relative">
+        <ChatMessageArea />
+        <ChatInput
+          class="chat-input-float"
+          @pin-confirmed="chatStore.patchConversationProviderAndModel"
+        />
+      </div>
     </div>
   </div>
 </template>

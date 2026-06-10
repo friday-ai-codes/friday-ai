@@ -18,7 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog'
-import { Input } from '~/components/ui/input'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -102,8 +101,15 @@ const exportDisabled = computed(() => {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="card rounded-2xl max-w-md">
+    <DialogContent class="rounded-2xl max-w-md bg-white border-border/60 shadow-xl">
       <DialogHeader>
+        <div class="export-dialog-icon">
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="w-5 h-5">
+            <path d="M10 8c0 1 7 3.5 14.745 16.744 0 0 4.184-4.363 6.255-5.744 1.5-1 2.712-1.332 2.712-1.332C33.712 15.156 29.5 8 28 8z" fill="#00d6b9" />
+            <path d="M43.5 18.5c-1-.667-3.65-1.771-6.5-1.5a15 15 0 0 0-3.288.668S32.5 18 31 19c-2.07 1.38-6.255 5.744-6.255 5.744-1.428 1.397-3.05 2.732-5.245 3.756 0 0 7 3 11.5 3 5.063 0 7-3.5 7-3.5 1.5-3.305 3.5-7 5.5-9.5" fill="#163c9a" />
+            <path d="M4 17.5v17c0 1 6 5.5 15 5.5 10 0 17.05-7.705 19-12 0 0-1.937 3.5-7 3.5-4.5 0-11.5-3-11.5-3-5.117-2.239-10.03-6.577-12.906-9.117C4.974 17.953 4 17.093 4 17.5" fill="#3370ff" />
+          </svg>
+        </div>
         <DialogTitle v-if="mode === 'conversation'">
           导出到飞书文档
         </DialogTitle>
@@ -111,7 +117,7 @@ const exportDisabled = computed(() => {
           导出技术方案到飞书
         </DialogTitle>
         <DialogDescription v-if="mode === 'conversation'">
-          将选中的 {{ selectedCount }} 条 AI 回答导出为飞书文档
+          将选中的 {{ selectedCount }} 条 AI 回答导出为一篇飞书文档
         </DialogDescription>
         <DialogDescription v-else>
           将技术方案导出为飞书文档
@@ -119,14 +125,15 @@ const exportDisabled = computed(() => {
       </DialogHeader>
 
       <!-- 文档标题输入 -->
-      <div class="space-y-2">
-        <label class="text-sm font-medium">文档标题</label>
-        <Input
+      <div class="space-y-1.5">
+        <label class="text-[13px] font-medium text-foreground/80">文档标题</label>
+        <input
           v-model="docTitle"
-          class="h-9 text-sm"
+          type="text"
+          class="export-title-input"
           placeholder="输入文档标题"
           :disabled="exporting"
-        />
+        >
       </div>
 
       <!-- 错误区域 -->
@@ -173,18 +180,71 @@ const exportDisabled = computed(() => {
         </div>
       </div>
 
-      <DialogFooter>
-        <Button variant="outline" @click="emit('update:open', false)">
+      <DialogFooter class="gap-2">
+        <Button variant="ghost" class="rounded-xl" @click="emit('update:open', false)">
           取消
         </Button>
         <Button
+          class="rounded-xl px-5"
           :disabled="exportDisabled"
           @click="handleExport"
         >
           <span v-if="exporting" class="icon-[lucide--loader-2] animate-spin mr-1" />
+          <span v-else class="icon-[lucide--upload] mr-1 text-[13px]" />
           {{ exporting ? '导出中...' : '导出' }}
         </Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
 </template>
+
+<style scoped>
+.export-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.375rem;
+  border-radius: 0.875rem;
+  background: hsl(217 91% 60% / 0.08);
+  border: 1px solid hsl(217 91% 60% / 0.15);
+}
+
+.export-title-input {
+  display: block;
+  width: 100%;
+  height: 2.5rem;
+  padding: 0 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(214 32% 86%);
+  background: hsl(0 0% 100%);
+  color: hsl(215 28% 17%);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.export-title-input::placeholder {
+  color: hsl(215 16% 62%);
+  font-weight: 400;
+}
+
+.export-title-input:focus {
+  outline: none;
+  border-color: hsl(168 76% 42% / 0.55);
+  box-shadow: 0 0 0 3px hsl(168 76% 42% / 0.1);
+}
+
+.export-title-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.export-title-input::selection {
+  background: hsl(168 76% 42% / 0.2);
+  color: hsl(215 28% 17%);
+}
+</style>

@@ -7,8 +7,8 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
-from django.http import HttpResponse
-from django.http import StreamingHttpResponse
+from django.core.exceptions import ValidationError
+from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -17,8 +17,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
-from chat.multimodal import ImageValidationError, build_image_part, read_image_bytes, store_image_bytes
 from chat.coding_session_service import check_runner_online
+from chat.multimodal import (
+    ImageValidationError,
+    build_image_part,
+    read_image_bytes,
+    store_image_bytes,
+)
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
 from orchestration.coding_graph import build_coding_graph
@@ -354,18 +359,20 @@ class ConversationListView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
-        space_id = str(data["space_id"])
+        # space_id 可空：None 表示创建不绑定空间的通用对话
+        space_id = str(data["space_id"]) if data.get("space_id") else None
         title = data.get("title", "新对话")
         model = data.get("model", "")
 
-        # 验证 project 存在
-        try:
-            await Project.objects.aget(id=space_id)
-        except Project.DoesNotExist:
-            return Response(
-                {"error": f"空间不存在: {space_id}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # 验证 project 存在（仅在指定了空间时）
+        if space_id is not None:
+            try:
+                await Project.objects.aget(id=space_id)
+            except Project.DoesNotExist:
+                return Response(
+                    {"error": f"空间不存在: {space_id}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # owner 注入（ISO-01）：已认证写 created_by=request.user，匿名/开放模式写 null。
         conversation = await ConversationService.create_conversation(
@@ -515,7 +522,7 @@ class ConversationDetailView(APIView):
         # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
         response_data = {
             "id": str(conversation.id),
-            "space_id": str(conversation.project_id),
+            "space_id": str(conversation.project_id) if conversation.project_id else None,
             "title": conversation.title,
             "model": conversation.model,
             "status": conversation.status,
@@ -651,7 +658,7 @@ class ConversationDetailView(APIView):
         return Response(
             {
                 "id": str(conversation.id),
-                "space_id": str(conversation.project_id),
+                "space_id": str(conversation.project_id) if conversation.project_id else None,
                 "title": conversation.title,
                 "model": conversation.model,
                 "status": conversation.status,
@@ -1074,7 +1081,7 @@ class ConversationMessageForkView(APIView):
         messages = result["messages"]
         response_data = {
             "id": str(forked.id),
-            "space_id": str(forked.project_id),
+            "space_id": str(forked.project_id) if forked.project_id else None,
             "title": forked.title,
             "model": forked.model,
             "status": forked.status,
@@ -1463,6 +1470,12 @@ class ExportToFeishuView(APIView):
             return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         project = conversation.project
+        if project is None:
+            # 无空间通用对话：没有飞书凭证与文件夹来源，导出不可用
+            return Response(
+                {"error": "当前对话未绑定空间，无法导出到飞书", "error_type": "not_configured"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         message_ids = serializer.validated_data["message_ids"]
         title = serializer.validated_data["title"]
         folder_token = (
@@ -1540,6 +1553,50 @@ class ExportToFeishuView(APIView):
                 {"error": f"导出失败: {exc}", "error_type": "api_error"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+
+
+class FeishuExportAvailabilityView(APIView):
+    """飞书文档导出可用性探测（前端按需隐藏「导出到飞书」按钮）。
+
+    判定逻辑与 ExportToFeishuView 实际依赖一致：
+        1. 必须有空间（无空间通用对话不可导出）
+        2. 空间必须配置导出文件夹 feishu_doc_folder_token
+        3. 凭证：空间级飞书 App（feishu_app_id + secret）或系统级 SystemSetting 兜底
+    """
+
+    authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+    permission_classes = [ChatAuthPermission]
+
+    @extend_schema(
+        summary="飞书导出可用性",
+        description="按 space_id 探测「导出到飞书」是否可用，返回 {available, reason}",
+        responses={200: {"description": "{available: bool, reason: str|null}"}},
+        tags=["Conversations"],
+    )
+    async def get(self, request):
+        space_id = request.query_params.get("space_id") or ""
+        if not space_id:
+            return Response({"available": False, "reason": "no_space"})
+
+        try:
+            project = await Project.objects.aget(id=space_id)
+        except (Project.DoesNotExist, ValueError, ValidationError):
+            return Response({"available": False, "reason": "space_not_found"})
+
+        if not project.feishu_doc_folder_token:
+            return Response({"available": False, "reason": "no_folder_token"})
+
+        if project.feishu_app_id and project.feishu_app_secret_encrypted:
+            return Response({"available": True, "reason": None})
+
+        from agents.tools.feishu_doc_tools import (
+            _aget_system_feishu_credentials_for_doc,
+        )
+
+        credentials = await _aget_system_feishu_credentials_for_doc()
+        if credentials:
+            return Response({"available": True, "reason": None})
+        return Response({"available": False, "reason": "no_credentials"})
 
 
 # ============================================================================

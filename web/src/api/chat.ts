@@ -196,6 +196,25 @@ export async function uploadChatImage(file: File): Promise<ImagePart> {
 // Conversation CRUD API
 // ============================================================================
 
+/** 飞书导出可用性探测响应 */
+export interface FeishuExportAvailability {
+  available: boolean
+  reason: string | null
+}
+
+/**
+ * 探测「导出到飞书」是否可用（空间配置了文件夹 + 凭证）。
+ * 前端据此隐藏导出入口，避免点击后才报「未配置」。
+ */
+export async function getFeishuExportAvailability(
+  spaceId?: string | null,
+): Promise<FeishuExportAvailability> {
+  return get<FeishuExportAvailability>(
+    '/chat/feishu-export-availability/',
+    spaceId ? { space_id: spaceId } : {},
+  )
+}
+
 /**
  * 获取对话列表
  */

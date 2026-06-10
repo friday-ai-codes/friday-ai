@@ -16,6 +16,17 @@ from services.provider_config import (
 )
 from system.models import SettingKeys
 
+# 无空间对话的上下文指引：替代「当前空间：xxx」行。
+# 关键行为契约：检测到任务依赖空间知识时必须引导用户先选择空间，而不是凭空作答。
+_NO_SPACE_CONTEXT_LINE = (
+    "当前对话未绑定任何空间：你无法访问代码库、仓库结构或空间内的文档/知识，"
+    "所有空间检索与编码工具均不可用。\n"
+    "如果用户的问题需要查阅具体代码、仓库、空间文档等空间相关知识，"
+    "请明确告知用户：本对话未绑定空间，需要在页面右上角选择一个空间后再新建对话提问；"
+    "若尚未创建空间，请先到「空间」页面创建。\n"
+    "与空间无关的通用问题（编程概念、方案讨论、写作等）可以直接回答。"
+)
+
 
 async def build_sdk_config(
     conversation: Conversation,
@@ -51,11 +62,17 @@ async def build_sdk_config(
     model = conversation.model or system_model
 
     session_id = f"chat-{conversation.id}-{uuid.uuid4().hex[:8]}"
-    project_name = conversation.project.name
-    project_id = str(conversation.project_id)
+    # 无空间对话：project 可空。space_id 传空串 → chat_runner 不注入任何
+    # 空间工具；context line 引导 LLM 在任务涉及空间知识时要求用户先选空间。
+    has_project = conversation.project_id is not None
+    project_name = conversation.project.name if has_project else ""
+    project_id = str(conversation.project_id) if has_project else ""
     effective_project_context_line = project_context_line
     if effective_project_context_line is None:
-        effective_project_context_line = f"当前空间：{project_name}"
+        if has_project:
+            effective_project_context_line = f"当前空间：{project_name}"
+        else:
+            effective_project_context_line = _NO_SPACE_CONTEXT_LINE
 
     agent_session = await AgentSession.objects.acreate(
         session_id=session_id,

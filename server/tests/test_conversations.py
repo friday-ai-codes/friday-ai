@@ -94,15 +94,33 @@ class TestCreateConversation:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_create_conversation_missing_project_id(self, api_client):
-        """缺少 space_id 时返回 400。"""
+    def test_create_conversation_without_space_creates_general_conversation(
+        self, api_client
+    ):
+        """缺少 space_id 时创建不绑定空间的通用对话（space_id=null）。
+
+        行为变更：原契约是缺 space_id → 400；现在允许无空间对话，
+        任务涉及空间知识时由 system prompt 引导用户选择空间。
+        """
         response = api_client.post(
             "/api/chat/conversations/",
             {},
             format="json",
         )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["space_id"] is None
+
+    def test_create_conversation_with_null_space_id(self, api_client):
+        """显式传 space_id=null 同样创建通用对话。"""
+        response = api_client.post(
+            "/api/chat/conversations/",
+            {"space_id": None},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["space_id"] is None
 
 
 # ============================================================================
