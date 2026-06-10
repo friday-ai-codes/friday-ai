@@ -21,6 +21,14 @@ fi
 #    才会被 wrapper 拦截。
 export GIT_PYTHON_GIT_EXECUTABLE=/usr/bin/git
 
+# 3. 无 AVX 的 CPU（常见于 kvm64/qemu64 等默认 CPU 模型的虚拟机）上，
+#    claude CLI（Bun 打包的独立二进制）的 JSC JIT 会生成 AVX 指令导致
+#    SIGILL 崩溃。禁用 JIT 规避（性能下降但可运行）。见 oven-sh/bun#28755
+if ! grep -q ' avx' /proc/cpuinfo 2>/dev/null; then
+    export BUN_JSC_useJIT=0
+    echo "[Friday Task] CPU lacks AVX, disabling Bun JSC JIT for claude CLI"
+fi
+
 if [ $# -eq 0 ]; then
     # 容器模式：无参数，使用环境变量配置
     echo "[Friday Task] Starting in container mode (env vars)"
