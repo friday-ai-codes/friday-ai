@@ -1,0 +1,80 @@
+/**
+ * Friday AI 品牌主题
+ * 主色取自 logo：teal #14b8a6 + slate #0f172a
+ */
+
+:root {
+  --friday-teal: #14b8a6;
+  --friday-teal-light: #2dd4bf;
+  --friday-teal-dark: #0d9488;
+  --friday-slate: #0f172a;
+
+  --vp-c-brand-1: var(--friday-teal-dark);
+  --vp-c-brand-2: var(--friday-teal);
+  --vp-c-brand-3: var(--friday-teal);
+  --vp-c-brand-soft: rgba(20, 184, 166, 0.14);
+
+  --vp-button-brand-bg: var(--friday-teal-dark);
+  --vp-button-brand-hover-bg: var(--friday-teal);
+  --vp-button-brand-active-bg: var(--friday-teal);
+
+  /* 首页 hero 渐变标题与光晕：保持同色系（teal 色域）过渡，避免与深色混出脏灰 */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #0f766e 20%, #14b8a6 60%, #2dd4bf);
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(13, 148, 136, 0.5) 30%,
+    rgba(45, 212, 191, 0.35) 70%
+  );
+  --vp-home-hero-image-filter: blur(56px);
+}
+
+.dark {
+  --vp-c-brand-1: var(--friday-teal-light);
+  --vp-c-brand-2: var(--friday-teal);
+  --vp-c-brand-3: var(--friday-teal-dark);
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #14b8a6 20%, #2dd4bf 60%, #99f6e4);
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(20, 184, 166, 0.4) 30%,
+    rgba(94, 234, 212, 0.25) 70%
+  );
+}
+
+@media (min-width: 640px) {
+  :root {
+    --vp-home-hero-image-filter: blur(72px);
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --vp-home-hero-image-filter: blur(88px);
+  }
+}
+
+/* 首页 hero 图标尺寸 */
+.VPHero .VPImage {
+  max-width: 200px;
+  max-height: 200px;
+}
+
+@media (min-width: 960px) {
+  .VPHero .VPImage {
+    max-width: 256px;
+    max-height: 256px;
+  }
+}
+
+/* feature 卡片 hover 提升品牌感 */
+.VPFeature {
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-2);
+  box-shadow: 0 8px 24px rgba(20, 184, 166, 0.12);
+}
+
