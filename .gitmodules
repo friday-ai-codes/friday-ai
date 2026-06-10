@@ -1,0 +1,6 @@
+[submodule "mcp"]
+	path = mcp
+	url = https://github.com/friday-ai-codes/mcp.git
+[submodule "skills"]
+	path = skills
+	url = https://github.com/friday-ai-codes/skills.git
