@@ -147,6 +147,9 @@ func buildContainerEnv(task ws.TaskPayload, callbackURL, callbackToken string) [
 		fmt.Sprintf("FRIDAY_TASK_EXECUTION_TIMEOUT=%d", task.Timeout),
 		"GIT_SSL_NO_VERIFY=true",
 		"CLAUDE_CODE_DISABLE_NONINTERACTIVE_SUBAGENTS=true",
+		// 关闭 claude CLI 遥测/统计/bootstrap 等非必要外联：
+		// ANTHROPIC_BASE_URL 指向第三方代理时这些端点持续 403 刷屏。
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 	}
 	// 从 task.Payload["metadata"] 中提取 env_ 前缀的字段注入容器环境变量
 	// 服务端通过 DispatchTask.metadata 传入，例如 {"env_FRIDAY_TASK_CLAUDE_API_KEY": "sk-..."}
