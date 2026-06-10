@@ -24,12 +24,12 @@
   <a href="README.en.md">English</a>
 </p>
 
-Friday AI 是一个开源 AI 开发自动化平台。它把需求、协作系统、代码仓库、Graph RAG、审批、Claude Code 和 PR / MR 串成一条能回看的流水线，让 AI 不只是“回答问题”，而是把已经确认的需求推进到可审查的代码变更。
+Friday AI 是一个开源的 AI 开发自动化平台。用一句话说：**它把飞书里的需求，自动变成可以审查的代码 PR**。
 
-Friday 已经深度集成飞书，包括飞书项目、飞书文档、飞书机器人、飞书卡片和相关自动化节点。但它不是只为飞书而生：核心能力是工作流编排、代码智能和可审计的 Agent 执行，后续也可以接入更多协作入口。
+需求进来后，Friday 会先读懂它、翻代码、写出技术方案；等团队确认后，再让 AI 在隔离环境里写代码、提 PR，并把每一步进度同步回飞书。人负责把关，Friday 负责跑腿。
 
 <p align="center">
-  <a href="#它是什么">它是什么</a>
+  <a href="#它解决什么问题">它解决什么问题</a>
   ·
   <a href="#它怎么工作">它怎么工作</a>
   ·
@@ -46,19 +46,45 @@ Friday 已经深度集成飞书，包括飞书项目、飞书文档、飞书机�
 
 ---
 
-## 它是什么
+## 它解决什么问题
 
-可以把 Friday AI 理解成研发团队旁边的一张自动化工作台。
+想象一个研发团队里每天都在发生的场景：
 
-它不是替 PM、Tech Lead、Reviewer 做所有判断的人，也不是一个“把 Agent 扔进仓库让它自由发挥”的按钮。它更像一位很有耐心的项目助理：先接住需求，翻出相关文档和评论，再去代码仓库里找证据，整理出技术方案，等人确认后，才让 Claude Code 在 Runner 管理的隔离环境里动手。
+产品经理在飞书项目里建了个需求——“购物车页面加一个优惠券入口”，附上需求文档，把状态拖到“待开发”。接下来呢？有人要去读文档、翻代码、评估改动范围、写技术方案，然后开发、提 PR、找人 review。每一步都在等人，信息散落在文档、群聊和代码仓库三个地方。
 
-动手之后，Friday 也不会把结果丢在黑盒里。它会把分支、提交、PR / MR、代码审查、飞书通知、Tool Call、检索证据、模型用量和失败恢复点放回同一条轨迹里。团队看到的不是一句“AI 已完成”，而是一段可以追问、可以审查、可以继续推进的工程过程。
+接上 Friday 之后，这条链路变成：
+
+1. Friday 监听到工作项状态变化，自动拉取需求描述、评论和关联文档；
+2. 在已建好索引的代码仓库里检索相关文件、函数和调用关系；
+3. 生成一份技术方案，写回飞书字段或文档；
+4. Tech Lead 看完方案，在飞书卡片上点“确认”；
+5. Friday 调度 Claude Code 在隔离容器里改代码、跑代码审查、整理分支；
+6. PR 链接、审查摘要和执行记录发回飞书群。
+
+人始终在关键节点把关：方案要人确认，代码要人 review。Friday 接手的是中间那些读文档、翻代码、来回同步进度的体力活。
+
+执行过程也不是黑盒。分支、提交、PR / MR、代码审查、检索证据、模型用量和失败恢复点都记录在同一条轨迹里，团队看到的不是一句“AI 已完成”，而是一段可以追问、可以审查、可以继续推进的工程过程。
+
+Friday 已经深度集成飞书，但不是只为飞书而生：核心能力是工作流编排、代码智能和可审计的 Agent 执行，后续也可以接入更多协作入口。
+
+## 第一次接触？先认识几个词
+
+如果你已经熟悉这些概念，跳过这节就行。
+
+| 名词 | 它是什么 |
+| --- | --- |
+| PR / MR | Pull Request / Merge Request，把改好的代码提交给团队审查、合并的请求。GitHub 叫 PR，GitLab 叫 MR。 |
+| Claude Code | Anthropic 出品的 AI 编程工具，Friday 用它来实际写代码。 |
+| Graph RAG | Friday 的代码检索方式：先按语义找到相关代码，再沿着调用关系把上下游一起找出来，让 AI 看到更完整的影响面。 |
+| Runner | Friday 的任务调度器，负责创建隔离的 Docker 容器。AI 写代码都发生在容器里，不会直接碰你的环境。 |
+| 工作流 | 把“触发 → 取需求 → 生成方案 → 等确认 → 写代码 → 通知”像流程图一样串起来，可以在网页上拖拽编排。 |
+| Agent Skill / MCP | 一种接入方式，让 Cursor、Claude Code 这类本地 AI 助手也能调用 Friday 的代码索引和执行能力。 |
 
 ## 它怎么工作
 
 ![Friday AI 工作流](docs/public/readme/how-it-works.png)
 
-一条典型链路是这样的：飞书工作项触发工作流，Friday 拉取字段、关系、评论和关联文档；Graph RAG 从已索引仓库里找相关文件、符号、调用关系和跨仓 API 线索；AI 生成技术方案并写回飞书字段或文档；团队通过字段、卡片或群聊确认；Runner 再调度 Claude Code 执行编码、审查和分支整理；最后把 PR / MR、执行状态和审计轨迹回写到协作界面。
+整个系统分四块：Web 控制台（看板、流程编辑器、对话）、Server（工作流引擎和代码智能）、Runner（调度隔离容器）、Task（容器里跑 Claude Code）。需求从飞书或网页进来，沿着你编排的工作流往前走；每个节点的输入输出、模型用量和失败恢复点都会被记录，随时可以回看。
 
 ## 它能做什么
 
@@ -82,14 +108,14 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 | 飞书文档 | 识别文档链接，读取云文档，把飞书块转成 Markdown，也能把 Markdown 写回文档，支持表格、代码块和引用。 |
 | 飞书机器人 / IM | 发送文本和卡片、更新卡片、读取群聊历史、下载消息资源、检查或邀请机器人入群，处理群聊和私聊。 |
 | 飞书卡片回调 | 审批、方案确认、补充信息、代码审查、编码结果等卡片都有对应回调。 |
-| 飞书工作流节点 | `feishu_event_trigger`、`fetch_work_item`、`wait_feishu_field`、`notify_feishu`、`fetch_group_chat`、`join_group_chat` 等节点可以直接放进 DAG。 |
+| 飞书工作流节点 | `feishu_event_trigger`、`fetch_work_item`、`wait_feishu_field`、`notify_feishu`、`fetch_group_chat`、`join_group_chat` 等节点可以直接拖进工作流画布。 |
 | MCP / Agent 工具 | `get_feishu_work_item_context` 聚合工作项、关系、评论和文档；`create_feishu_technical_plan` 结合代码证据生成并写回方案。 |
 
 飞书是 Friday 现在打磨得最完整的协作入口。Friday 的底层模型仍然是“协作入口 + 工作流 + 代码智能 + Runner”，所以以后接入其他项目管理、文档、IM 或自动化系统时，不需要推翻这套主流程。
 
 ## Agent Skill 和代码索引增强
 
-Friday 可以作为 Cursor / Claude Code / Codex 的“代码库后台”。仓库先在 Friday 里完成索引，本地 AI 助手就不需要只靠当前窗口里的文件猜上下文。
+如果你平时在 Cursor / Claude Code / Codex 里写代码，Friday 还能当它们的“代码库后台”：仓库先在 Friday 里完成索引，本地 AI 助手就能直接查整个仓库（甚至多个仓库）的代码关系，而不是只靠当前窗口里打开的几个文件猜上下文。
 
 三步接入：
 
@@ -113,7 +139,9 @@ Friday 可以作为 Cursor / Claude Code / Codex 的“代码库后台”。仓�
 
 ## Graph RAG 有什么不一样
 
-普通 RAG、普通 Graph 和 Friday 的 Graph RAG 解决的问题不一样。
+先解释一下 RAG：它是“先从资料库里检索相关内容，再交给模型回答”的常见做法，能让 AI 基于你的代码和文档说话，而不是凭记忆瞎猜。但代码和普通文档不一样——一个函数的影响面藏在调用链里，光靠“找相似的文本”经常找不全。
+
+普通 RAG、普通 Graph 和 Friday 的 Graph RAG 解决的问题不一样：
 
 | 类型 | 它擅长什么 | 它容易漏掉什么 |
 | --- | --- | --- |
@@ -192,13 +220,15 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 
 ## 文档
 
+完整文档站：<https://friday-ai-codes.github.io/friday-ai/>（涵盖部署、核心技术实现、集成与 API 参考）。
+
 | 文档 | 内容 |
 | --- | --- |
 | [快速开始](docs/guide/quick-start.md) | 本地部署、创建第一个项目、测试工作流。 |
 | [工作流指南](docs/guide/workflows.md) | 工作流节点、触发器、执行记录和调试。 |
 | [管理指南](docs/guide/admin.md) | 用户、权限、OIDC、Runner 和运维配置。 |
 | [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Agent Skill 一键安装、MCP server、Graph RAG 分析和 MR 创建。 |
-| [代码智能层](docs/codegraph.md) | Graph RAG、跨仓 API 关联、Galaxy 图谱和 MCP 工具。 |
+| [代码智能层](docs/internals/code-intelligence.md) | Graph RAG、跨仓 API 关联、Galaxy 图谱和 MCP 工具。 |
 | [API 参考](docs/api/index.md) | REST API 文档。 |
 | [Task 执行器](task/README.md) | Claude Agent SDK / Claude Code task 容器。 |
 | [English README](README.en.md) | 英文版 README。 |

@@ -24,12 +24,12 @@
   <a href="README.md">中文</a>
 </p>
 
-Friday AI is an open-source AI development automation platform. It connects requirements, collaboration systems, repositories, Graph RAG, approvals, Claude Code, and PR / MR delivery into a traceable workflow, so AI can move confirmed requirements toward reviewable code changes instead of only answering questions.
+Friday AI is an open-source AI development automation platform. In one sentence: **it turns requirements in Feishu into reviewable code PRs, automatically**.
 
-Friday already has deep Feishu integration across Feishu Project, Feishu Docs, Feishu bots, Feishu cards, and related automation nodes. It is not locked to Feishu: the core product is workflow orchestration, code intelligence, and auditable agent execution, so more collaboration entrypoints can be added later.
+When a requirement comes in, Friday reads it, digs through the codebase, and drafts a technical plan. After the team confirms the plan, it has AI write the code in an isolated environment, open a PR, and report every step back to Feishu. Humans make the calls; Friday does the legwork.
 
 <p align="center">
-  <a href="#what-it-is">What It Is</a>
+  <a href="#what-problem-it-solves">What Problem It Solves</a>
   ·
   <a href="#how-it-works">How It Works</a>
   ·
@@ -46,19 +46,45 @@ Friday already has deep Feishu integration across Feishu Project, Feishu Docs, F
 
 ---
 
-## What It Is
+## What Problem It Solves
 
-Think of Friday AI as an automation workbench beside your engineering team.
+Picture a scene that plays out in engineering teams every day:
 
-It does not replace the PM, tech lead, or reviewer. It is also not a button that drops an agent into a repository and hopes for the best. Friday catches the requirement, pulls in documents and comments, gathers code evidence from the repository, prepares a technical plan, waits for human confirmation, and only then asks Claude Code to work inside a Runner-managed isolated environment.
+A product manager creates a work item in Feishu Project — “add a coupon entry to the cart page” — attaches a requirement doc, and drags the status to “ready for development”. What happens next? Someone has to read the doc, dig through the code, estimate the scope, write a technical plan, then implement, open a PR, and find a reviewer. Every step waits on a person, and the information is scattered across docs, group chats, and the repository.
 
-After the work starts, Friday keeps the trail visible. Branches, commits, PRs / MRs, code review output, Feishu notifications, tool calls, retrieval evidence, model usage, and recovery points stay attached to the same execution record. The team does not get a vague “AI finished” message; it gets an engineering process that can be reviewed, questioned, and continued.
+With Friday connected, the chain becomes:
+
+1. Friday detects the status change and pulls the requirement description, comments, and linked documents;
+2. It searches the indexed repositories for relevant files, functions, and call relationships;
+3. It generates a technical plan and writes it back to Feishu fields or docs;
+4. The tech lead reviews the plan and clicks “confirm” on a Feishu card;
+5. Friday dispatches Claude Code to modify code, run code review, and prepare the branch inside an isolated container;
+6. The PR link, review summary, and execution record are posted back to the Feishu group.
+
+Humans stay at the checkpoints: plans need confirmation, code needs review. What Friday takes over is the grunt work in between — reading docs, digging through code, and relaying status updates.
+
+Execution is not a black box either. Branches, commits, PRs / MRs, code review output, retrieval evidence, model usage, and recovery points are all recorded on the same trail. The team does not get a vague “AI finished” message; it gets an engineering process that can be reviewed, questioned, and continued.
+
+Friday already integrates deeply with Feishu, but it is not built only for Feishu: the core is workflow orchestration, code intelligence, and auditable agent execution, so more collaboration entrypoints can be added later.
+
+## New Here? A Few Terms First
+
+If you already know these concepts, skip this section.
+
+| Term | What it means |
+| --- | --- |
+| PR / MR | Pull Request / Merge Request — a request to have your code changes reviewed and merged by the team. GitHub calls it a PR, GitLab calls it an MR. |
+| Claude Code | Anthropic's AI coding tool. Friday uses it to actually write the code. |
+| Graph RAG | Friday's code retrieval approach: find relevant code by semantics first, then follow call relationships to pull in upstream and downstream code, so the AI sees a more complete impact surface. |
+| Runner | Friday's task scheduler. It creates isolated Docker containers; all AI code changes happen inside them, never directly in your environment. |
+| Workflow | Chains “trigger → fetch requirement → generate plan → wait for confirmation → write code → notify” together like a flowchart, editable by drag-and-drop in the web UI. |
+| Agent Skill / MCP | The integration path that lets local AI assistants like Cursor and Claude Code call Friday's code index and execution capabilities. |
 
 ## How It Works
 
 ![Friday AI workflow](docs/public/readme/how-it-works.png)
 
-A typical flow starts from a Feishu work item. Friday fetches fields, relations, comments, and linked documents. Graph RAG retrieves relevant files, symbols, call relationships, and cross-repository API clues from indexed repositories. AI generates a technical plan and writes it back to Feishu fields or docs. The team confirms through fields, cards, or chat. Runner then dispatches Claude Code for implementation, review, and branch preparation. Finally, PR / MR status, execution updates, and audit traces are written back to the collaboration surface.
+The system has four parts: the Web console (dashboard, flow editor, chat), the Server (workflow engine and code intelligence), the Runner (schedules isolated containers), and the Task executor (runs Claude Code inside the container). Requirements enter from Feishu or the web and move along the workflow you composed; every node's inputs, outputs, model usage, and recovery points are recorded and can be revisited at any time.
 
 ## What It Can Do
 
@@ -82,14 +108,14 @@ Friday integrates with Feishu at several levels. It is much more than notificati
 | Feishu Docs | Detect document links, read cloud docs, convert Feishu blocks to Markdown, write Markdown back to docs, and handle tables, code blocks, and quotes. |
 | Feishu Bot / IM | Send text and cards, update cards, read group history, download message resources, check or add the bot to chats, and handle group or p2p conversations. |
 | Feishu card callbacks | Approval, plan confirmation, clarification, code review, and coding result cards all have callback handlers. |
-| Feishu workflow nodes | `feishu_event_trigger`, `fetch_work_item`, `wait_feishu_field`, `notify_feishu`, `fetch_group_chat`, and `join_group_chat` can be placed directly into DAG workflows. |
+| Feishu workflow nodes | `feishu_event_trigger`, `fetch_work_item`, `wait_feishu_field`, `notify_feishu`, `fetch_group_chat`, and `join_group_chat` can be dragged directly onto the workflow canvas. |
 | MCP / Agent tools | `get_feishu_work_item_context` aggregates work items, relations, comments, and docs; `create_feishu_technical_plan` combines that context with code evidence and writes a plan back. |
 
 Feishu is the most polished collaboration entrypoint today. Underneath, Friday is still built as “collaboration entrypoint + workflow + code intelligence + Runner,” so adding other project-management, document, IM, or automation systems does not require replacing the main pipeline.
 
 ## Agent Skill and Code Indexing
 
-Friday can act as a codebase backend for Cursor, Claude Code, Codex, and other agents. Once a repository is indexed by Friday, the agent no longer has to infer everything from the few files visible in the current local context.
+If you write code in Cursor / Claude Code / Codex, Friday can also serve as their codebase backend: once a repository is indexed in Friday, your local AI assistant can query code relationships across the entire repository (or several repositories), instead of guessing context from the few files open in the current window.
 
 Three steps to connect:
 
@@ -113,7 +139,9 @@ The assistant can then use the same index for repository discovery, Graph RAG an
 
 ## What Makes Graph RAG Different
 
-Plain RAG, plain graphs, and Friday’s Graph RAG solve different parts of the problem.
+A quick primer on RAG: it is the common practice of “retrieve relevant content first, then let the model answer”, so the AI speaks from your code and docs instead of guessing from memory. But code is not like prose — a function's impact hides in its call chain, and “find similar text” alone often misses it.
+
+Plain RAG, plain graphs, and Friday's Graph RAG solve different parts of the problem:
 
 | Type | What it is good at | What it tends to miss |
 | --- | --- | --- |
@@ -198,7 +226,8 @@ You only need Docker, Docker Compose v2, and Git.
 | [Workflow Guide](docs/guide/workflows.md) | Workflow nodes, triggers, execution records, and debugging. |
 | [Admin Guide](docs/guide/admin.md) | Users, permissions, OIDC, runners, and operational settings. |
 | [Friday Codebase Agent](docs/guide/friday-codebase-agent.md) | Agent Skill, MCP server, Graph RAG analysis, and MR creation. |
-| [Code Intelligence](docs/codegraph.md) | Graph RAG, cross-repo API links, Galaxy graph, and MCP tools. |
+| [Code Intelligence](docs/internals/code-intelligence.md) | Graph RAG, cross-repo API links, Galaxy graph, and MCP tools. |
+| [Docs Site](https://friday-ai-codes.github.io/friday-ai/) | Full documentation site (deployment, internals, integrations, API). |
 | [API Reference](docs/api/index.md) | REST API documentation. |
 | [Task Runner](task/README.md) | Claude Agent SDK / Claude Code task container. |
 | [Chinese README](README.md) | Chinese README. |
