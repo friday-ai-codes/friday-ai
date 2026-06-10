@@ -995,7 +995,7 @@ class FeishuConfigView(APIView):
             "feishu_config_view_get",
             space_id=str(project.id),
             space_name=project.name,
-            space_key=data.get("space_key") or "",
+            space_key=data.get("project_key") or "",
             plugin_id_prefix=_mask_identifier(data.get("plugin_id")),
             has_plugin_secret=bool(data.get("has_plugin_secret")),
             user_key_prefix=_mask_identifier(data.get("user_key")),

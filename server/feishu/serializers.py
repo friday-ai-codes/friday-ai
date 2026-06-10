@@ -111,7 +111,7 @@ class TriggerLogRawSerializer(serializers.Serializer):
 class FeishuConfigSerializer(serializers.Serializer):
     """Serializer for Feishu configuration."""
 
-    space_key = serializers.CharField(source="feishu_project_key", read_only=True)
+    project_key = serializers.CharField(source="feishu_project_key", read_only=True)
     plugin_id = serializers.CharField(source="feishu_plugin_id", read_only=True)
     user_key = serializers.CharField(source="feishu_user_key", read_only=True)
     has_plugin_secret = serializers.SerializerMethodField()
