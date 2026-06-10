@@ -184,7 +184,7 @@ onMounted(() => {
               />
             </div>
             <p class="text-xs text-muted-foreground">
-              用于生成 OIDC 登录回调、跳转链接等外部可访问地址。留空则使用服务端环境变量 FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL（默认 localhost，仅本机可用）。
+              填写大家在浏览器中访问本系统的地址，如 https://friday.example.com 或 http://192.168.1.10:10240。系统用它生成第三方登录（飞书等）的回调链接，未填写时这些功能只能在本机使用，部署到服务器后请务必配置。
             </p>
           </div>
           <div class="flex justify-end">
