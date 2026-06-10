@@ -7,6 +7,7 @@ import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 import { useToast } from '~/composables/useToast'
+import { randomUUID } from '~/utils/uuid'
 
 const emit = defineEmits<{
   'pin-confirmed': [credentialId: string, model: string]
@@ -423,7 +424,7 @@ function addImageFiles(files: Iterable<File>) {
       continue
     }
     pendingImages.value.push({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       file,
       previewUrl: URL.createObjectURL(file),
       status: 'ready',

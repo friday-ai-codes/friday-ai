@@ -16,6 +16,7 @@ import { computed, markRaw } from 'vue'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
+import { randomUUID } from '~/utils/uuid'
 import { useAlignmentGuides } from './composables/useAlignmentGuides'
 import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
@@ -163,7 +164,7 @@ function handleBatchCopy() {
       return
     const newNode = {
       ...JSON.parse(JSON.stringify(storeNode)),
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       shortId: generateShortId(),
       position: {
         x: (storeNode.position?.x ?? 0) + 50,

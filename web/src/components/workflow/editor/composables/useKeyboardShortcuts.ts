@@ -10,6 +10,7 @@ import { useVueFlow } from '@vue-flow/core'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
+import { randomUUID } from '~/utils/uuid'
 
 export function useKeyboardShortcuts() {
   const store = useWorkflowsStore()
@@ -74,7 +75,7 @@ export function useKeyboardShortcuts() {
               }
           const newNode = {
             ...sourceData,
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             shortId: generateShortId(),
             position: {
               x: (copiedNode.position?.x ?? 0) + 50,
