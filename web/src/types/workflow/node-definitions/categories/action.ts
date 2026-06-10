@@ -11,7 +11,7 @@ import { createNodeDefinition } from '../index'
 
 const codeSchema = z.object({
   code: z.string().default('# 编写 Python 代码\n# 通过 context["output"] = {...} 设置输出\n'),
-  timeout_seconds: z.number().int().min(1).max(300).default(30),
+  timeout_seconds: z.number().int().min(1, '不能小于 1').max(300, '不能大于 300').default(30),
 })
 
 export const codeDef = createNodeDefinition({
