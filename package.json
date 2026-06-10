@@ -4,14 +4,16 @@
  "type": "module",
  "private": true,
  "scripts": {
- "docs:dev": "vitepress dev docs",
- "docs:generate-api": "node docs/scripts/generate-api-docs.mjs",
- "docs:build": "node docs/scripts/generate-api-docs.mjs && vitepress build docs",
- "docs:preview": "vitepress preview docs"
+  "docs:dev": "vitepress dev docs",
+  "docs:generate-api": "node docs/scripts/generate-api-docs.mjs",
+  "docs:build": "node docs/scripts/generate-api-docs.mjs && vitepress build docs",
+  "docs:preview": "vitepress preview docs"
  },
  "devDependencies": {
- "vitepress": "^1.6.4",
- "vue": "^3.5.32"
+  "vitepress": "^1.6.4",
+  "vitepress-plugin-group-icons": "^1.7.5",
+  "vitepress-plugin-llms": "^1.13.1",
+  "vue": "^3.5.32"
  },
  "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017"
 }

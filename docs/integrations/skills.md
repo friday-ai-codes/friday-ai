@@ -28,9 +28,9 @@ Skill 通过 MCP HTTP 工具调用运行中的 Friday server，只装 skill 文�
 
 ## 安装
 
-### skills CLI（推荐，自动适配宿主）
+::: code-group
 
-```bash
+```bash [skills CLI（推荐）]
 # 安装全部 Friday skill（自动检测已安装的 agent）
 npx skills add friday-ai-codes/skills
 
@@ -44,11 +44,7 @@ npx skills add friday-ai-codes/skills --skill '*' -a claude-code -a codex -a cur
 npx skills add friday-ai-codes/skills --list
 ```
 
-agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 等，完整列表见 [supported agents](https://github.com/vercel-labs/skills#supported-agents)。
-
-### npm 包装器
-
-```bash
+```bash [npm 包装器]
 # 安装全部 skill 到自动检测的 agent（全局）
 npx @friday-ai-codes/skills
 
@@ -62,6 +58,10 @@ npx @friday-ai-codes/skills install --skill friday-feishu-agent
 # 查看内置 skill
 npx @friday-ai-codes/skills list
 ```
+
+:::
+
+agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 等，完整列表见 [supported agents](https://github.com/vercel-labs/skills#supported-agents)。
 
 ## 安装之后
 
