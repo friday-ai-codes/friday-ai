@@ -1,7 +1,7 @@
 """Import 抽取器 —— 从 AST 中提取 import 依赖关系。
 
-per work item: 系统能从代码文件中提取 import 关系，分析模块间依赖。
-per implementation / work item：HTML 分支抽 <link href> / <script src> / <img src>，
+系统能从代码文件中提取 import 关系，分析模块间依赖。
+per implementation / HTML 分支抽 <link href> / <script src> / <img src>，
 带 scheme 守卫（data: / javascript: / blob: / about: / mailto: / tel:）；CSS 分支由 plan 加。
 """
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# implementation：HTML 抽 ImportData 的标签 + 对应 attribute 名
+# HTML 抽 ImportData 的标签 + 对应 attribute 名
 _HTML_IMPORT_TAGS = {"link", "script", "img"}
 _HTML_IMPORT_ATTRS: dict[str, str] = {
     "link": "href",
@@ -92,11 +92,11 @@ def _extract_one_import(
 
     node = wn.node
 
-    # implementation / work item：HTML 分支
+    # implementation / HTML 分支
     if ctx.language == "html" and node.type in ("element", "script_element"):
         return _extract_html_imports(node, ctx)
 
-    # implementation / work item：CSS 分支
+    # implementation / CSS 分支
     if ctx.language == "css" and node.type == "import_statement":
         return _extract_css_imports(node, ctx)
 
@@ -110,7 +110,7 @@ def _extract_one_import(
         # Go 等语言的 import declaration
         return _parse_import_declaration(node, ctx)
     elif node.type == "export_statement" and ctx.language in ("typescript", "tsx"):
-        # work item：TS / TSX 重导出 `export { x } from '...'`
+        # TS / TSX 重导出 `export { x } from '...'`
         return _parse_export_statement_ts(node, ctx)
 
     return None
@@ -439,7 +439,7 @@ def _extract_html_imports(
 ) -> "list[ImportData] | None":
     """从 HTML element / script_element 节点提取 ImportData 列表。
 
-    per implementation / work item：仅抽 <link href> / <script src> / <img src>；
+    per implementation / 仅抽 <link href> / <script src> / <img src>；
     <a href> / <iframe src> / <form action> 不抽（HTTP 外链与图谱无业务关联）。
     scheme 守卫：data: / javascript: / blob: / about: / mailto: / tel: 全跳过；
     空值 / 单 # 也跳过。is_relative：value 不以 http:// / https:// / // / / 开头时为 True。
@@ -525,7 +525,7 @@ def _extract_css_imports(
 ) -> "list[ImportData] | None":
     """从 CSS import_statement 节点提取 ImportData 列表。
 
-    per implementation / work item：
+    per implementation / 
     - @import url("./base.css"); → call_expression → arguments → string_value
     - @import "./reset.css"; → 直接 string_value
     is_relative：value 不以 http:// / https:// / // / / 开头时 True

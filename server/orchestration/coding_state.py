@@ -48,6 +48,6 @@ class CodingSessionState(TypedDict, total=False):
     branch_url: str
     pr_url: str
 
-    # implementation: 冲突预检与 diff 摘要
+    # 冲突预检与 diff 摘要
     conflict_check_result: dict[str, Any]
     diff_summary: dict[str, Any]

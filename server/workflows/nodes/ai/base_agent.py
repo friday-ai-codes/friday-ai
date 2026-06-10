@@ -4,7 +4,7 @@ Extracts common execution logic (session management, LangChainAgentRunner
 construction, result mapping) into a base class. Subclasses only need to
 override 5 hook methods to define specialized node behavior.
 
-implementation Wave work item：AIAgentBaseNode.execute 统一走 LangChainAgentRunner
+implementation Wave AIAgentBaseNode.execute 统一走 LangChainAgentRunner
 （替换 v20.0 之前的 SDK 子工厂路径）；`_resolve_api_key_and_model` 签名由三元组
 `(api_key, model, base_url)` 调整为二元组
 `(ResolvedProviderConfig, model)`（contract）；use_custom_api 路径构造临时
@@ -546,7 +546,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
                 )
 
         # 模型 fallback（contract / contract）：config_model 为空时从 resolved.extra.default_model
-        # 读取（implementation：替代 v8.1 aget_claude_config 路径）
+        # 读取（替代 v8.1 aget_claude_config 路径）
         if config_model:
             resolved_model = config_model
         else:

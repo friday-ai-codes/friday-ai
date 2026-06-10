@@ -1,12 +1,11 @@
-"""TS / TSX 真实仓库 study-app 端到端集成测试 —— 覆盖 work item / work item 真实仓库验证。
+"""TS / TSX 真实仓库端到端集成测试。
 
-不调 indexer ORM 路径（per implementation CONTEXT decisions 同 implementation 精神
-"不扩展到 GraphWriter 全链路"），仅断言 GraphExtractor.extract_all 在
-真实 .ts / .tsx 文件上返回非空 bundle 各字段。
+不调 indexer ORM 路径（刻意不扩展到 GraphWriter 全链路），仅断言
+GraphExtractor.extract_all 在真实 .ts / .tsx 文件上返回非空 bundle 各字段。
 
-环境变量 TS_SAMPLE_REPO 不设时默认指向 `/Users/zaneliu/Projects/guanghe/study-app`；
-路径不存在时整 TestStudyAppExtraction 类 SKIP（CI / 其他开发机兜底，不阻断 phase）。
-TestTSExtractorRegistration 不带 skipif，任意环境必跑（巩固 plan 双注册）。
+通过环境变量 TS_SAMPLE_REPO 指定本地样例仓库；不设或路径不存在时整
+TestStudyAppExtraction 类 SKIP。TestTSExtractorRegistration 不带 skipif，
+任意环境必跑。
 """
 
 from __future__ import annotations
@@ -19,13 +18,7 @@ import pytest
 from codegraph.extractors.base import FileContext
 from codegraph.services.orchestrator import GraphExtractor
 
-
-TS_SAMPLE_REPO = Path(
-    os.environ.get(
-        "TS_SAMPLE_REPO",
-        "/Users/zaneliu/Projects/guanghe/study-app",
-    )
-)
+TS_SAMPLE_REPO = Path(os.environ.get("TS_SAMPLE_REPO", ""))
 
 
 @pytest.fixture
@@ -67,7 +60,7 @@ class TestTSExtractorRegistration:
 
 
 @pytest.mark.skipif(
-    not TS_SAMPLE_REPO.exists(),
+    not os.environ.get("TS_SAMPLE_REPO") or not TS_SAMPLE_REPO.exists(),
     reason=f"TS sample repo not present at {TS_SAMPLE_REPO}",
 )
 class TestStudyAppExtraction:

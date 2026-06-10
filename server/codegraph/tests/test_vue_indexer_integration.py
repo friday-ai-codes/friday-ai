@@ -1,13 +1,12 @@
-"""Vue 真实仓库 study-app 端到端集成测试 —— 覆盖 implementation 集成验证。
+"""Vue 真实仓库端到端集成测试。
 
-不调 indexer ORM 路径（同 implementation / 262 精神），仅断言 VueExtractor.extract
-在真实 .vue 文件上返回非空 bundle 各字段。
+不调 indexer ORM 路径，仅断言 VueExtractor.extract 在真实 .vue 文件上
+返回非空 bundle 各字段。
 
 环境约束：
-- 默认采样路径 `/Users/zaneliu/Projects/guanghe/study-app`，可通过环境变量
-  `VUE_SAMPLE_REPO` 覆盖
-- TestVueExtractorRegistration 类不带 skipif（CI 必跑，巩固 plan 注册）
-- TestStudyAppVueExtraction 类带 skipif，CI 缺仓库时整类 SKIP 不阻断 phase
+- 通过环境变量 `VUE_SAMPLE_REPO` 指定本地样例仓库
+- TestVueExtractorRegistration 类不带 skipif（CI 必跑）
+- TestStudyAppVueExtraction 类带 skipif，缺样例仓库时整类 SKIP
 """
 
 from __future__ import annotations
@@ -20,13 +19,7 @@ import pytest
 from codegraph.extractors.base import FileContext
 from codegraph.extractors.registry import get_extractor
 
-
-VUE_SAMPLE_REPO = Path(
-    os.environ.get(
-        "VUE_SAMPLE_REPO",
-        "/Users/zaneliu/Projects/guanghe/study-app",
-    )
-)
+VUE_SAMPLE_REPO = Path(os.environ.get("VUE_SAMPLE_REPO", ""))
 
 
 class TestVueExtractorRegistration:
@@ -39,7 +32,7 @@ class TestVueExtractorRegistration:
 
 
 @pytest.mark.skipif(
-    not VUE_SAMPLE_REPO.exists(),
+    not os.environ.get("VUE_SAMPLE_REPO") or not VUE_SAMPLE_REPO.exists(),
     reason=f"Vue sample repo not present at {VUE_SAMPLE_REPO}",
 )
 class TestStudyAppVueExtraction:

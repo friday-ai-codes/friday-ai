@@ -12,13 +12,9 @@ from pathlib import Path
 import pytest
 
 from codegraph.extractors.base import FileContext
-from codegraph.extractors.css_extractor import CssExtractor
 from codegraph.extractors.registry import get_extractor
 
-
-CSS_SAMPLE_REPO = Path(
-    os.environ.get("STUDY_APP_REPO", "/Users/zaneliu/Projects/guanghe/study-app")
-)
+CSS_SAMPLE_REPO = Path(os.environ.get("STUDY_APP_REPO", ""))
 CSS_SAMPLE_FILE = CSS_SAMPLE_REPO / ".vitepress" / "theme" / "style.css"
 
 
@@ -32,8 +28,8 @@ class TestCssExtractorRegistration:
 
 
 @pytest.mark.skipif(
-    not CSS_SAMPLE_FILE.exists(),
-    reason=f"study-app .vitepress/theme/style.css not found at {CSS_SAMPLE_FILE}",
+    not os.environ.get("STUDY_APP_REPO") or not CSS_SAMPLE_FILE.exists(),
+    reason="sample repo not configured (STUDY_APP_REPO)",
 )
 class TestStudyAppCssExtraction:
     """study-app 真实 CSS 端到端。"""

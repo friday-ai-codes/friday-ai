@@ -774,7 +774,7 @@ class TestWorkflowStateVerification:
 class TestHookNotifications:
     """验证 FeishuSyncHook 和 NotificationHook 在工作流执行过程中被正确调用。
 
-    覆盖 work item: 飞书卡片状态同步更新需求。
+    覆盖 飞书卡片状态同步更新需求。
     """
 
     @pytest.mark.asyncio

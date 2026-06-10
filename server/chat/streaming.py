@@ -17,7 +17,7 @@ def format_sse(event: AgentEvent, message_id: str = "", run_id: str = "") -> str
     Args:
         event: AgentEvent 事件
         message_id: 关联的消息 ID（前端用于断线恢复）
-        run_id: OrchestrationRun.run_id（work item: 事件稳定标识，便于排查和去重）
+        run_id: OrchestrationRun.run_id（事件稳定标识，便于排查和去重）
 
     Returns:
         SSE 格式字符串 "data: {...}\\n\\n"

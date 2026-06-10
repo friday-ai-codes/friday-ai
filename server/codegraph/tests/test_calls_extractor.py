@@ -67,7 +67,7 @@ class TestCallExtractorHappyPath:
     def test_module_level_calls_extracted(self, parse_fixture, make_file_context):
         """模块级调用（如 if __name__ == "__main__": 块内）被抽成 caller_key[1] == "<module>"。
 
-        work item：抽取层不再丢弃模块级调用。basic_module.py 末尾
+        抽取层不再丢弃模块级调用。basic_module.py 末尾
         `if __name__ == "__main__": main()` 是无 ancestor_function 的模块级调用，
         改造后应抽成 caller_key[1] == "<module>" 的 CallData（不再为 0）。
         """

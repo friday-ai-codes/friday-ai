@@ -22,12 +22,12 @@ _FEATURE_X_FOO_0 = uuid.UUID("49e64e01-d376-5099-97bf-753d44049e77")
 
 
 def test_base_chunk_id_byte_identical_idx0() -> None:
-    """work item：base 路径 chunk_id 与改造前字节级一致（idx 0，零漂移）。"""
+    """base 路径 chunk_id 与改造前字节级一致（idx 0，零漂移）。"""
     assert generate_chunk_id("repo-A", "src/foo.py", 0) == _BASE_FOO_0
 
 
 def test_base_chunk_id_byte_identical_idx1() -> None:
-    """work item：base 路径 chunk_id 与改造前字节级一致（idx 1，零漂移）。"""
+    """base 路径 chunk_id 与改造前字节级一致（idx 1，零漂移）。"""
     assert generate_chunk_id("repo-A", "src/foo.py", 1) == _BASE_FOO_1
 
 

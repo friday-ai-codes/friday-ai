@@ -92,7 +92,7 @@ async def test_chunk_index_diff_metadata(repository) -> None:
 
 
 # =============================================================================
-# implementation / work item：跨语言守门 parametrize 测试
+# implementation / 跨语言守门 parametrize 测试
 # 静态审计：SameFileEdgeBuilder 实现完全基于 ChunkRegistry.file_path + chunk_index，
 # 无 file extension / language 假设 → 天然语言无关 git diff = 0。
 # =============================================================================

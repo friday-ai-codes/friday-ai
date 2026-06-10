@@ -239,7 +239,7 @@ class TestGraphWriterWriteBundle:
 
         assert stats["symbols"] == 3, f"Expected 3 symbols, got {stats}"
         assert stats["imports"] == 2
-        # work item：3 条边全部落库（hello/method_a 函数内边 + 模块级 super 边），
+        # 3 条边全部落库（hello/method_a 函数内边 + 模块级 super 边），
         # 模块级调用不再被跳过。
         assert stats["calls"] == 3, f"Expected 3 calls (含模块级边), got {stats}"
         assert stats["endpoints"] == 1

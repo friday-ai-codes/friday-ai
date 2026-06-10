@@ -1,4 +1,4 @@
-"""implementation: ProviderCredential 模型测试 —— 字段、唯一约束、__str__、Manager。
+"""ProviderCredential 模型测试 —— 字段、唯一约束、__str__、Manager。
 
 覆盖 contract（系统/项目双作用域）与 contract（同 provider 多命名凭证）。
 """

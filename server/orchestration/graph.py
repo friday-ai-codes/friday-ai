@@ -322,7 +322,7 @@ async def executing_node(
     模式 A（首次）：正常运行 SDK，提取 __blocking_task__ 标记。
     模式 B（二次）：注入 blocking_results 作为上下文再运行 SDK 生成最终回答。
 
-    implementation：首次进入时把 ``classify_intent`` 结果写入
+    首次进入时把 ``classify_intent`` 结果写入
     ``result_metadata.intent_classification``，下游 finalize / evaluation 路径可
     读取该字段做后续分析。
     """
@@ -336,7 +336,7 @@ def _annotate_intent_classification(
     state: WorkflowState,
     result_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    """implementation：把 ``classify_intent`` 结果写入 result_metadata。
+    """把 ``classify_intent`` 结果写入 result_metadata。
 
     纯函数，不写 DB / 不发 SSE；executing_node 收尾时调用一次即可（首次进入）。
     返回新的 result_metadata dict（含 intent_classification 字段）。
@@ -523,7 +523,7 @@ def _extract_pending_clarification(
 ) -> dict[str, Any] | None:
     """从 tool_calls 提取 ``ask_clarification`` 调用产生的 pending payload。
 
-    implementation：``ask_clarification`` 工具的 ToolResult.output 形如
+    ``ask_clarification`` 工具的 ToolResult.output 形如
     ``{"clarification_id": ..., "pending": True, "marker": "ask_clarification",
        "question": ..., "options": [...], "allow_freeform": ...}``。
     chat_runner 会把 dict 序列化成 JSON 字符串再放到 tc["result"]，因此
@@ -696,7 +696,7 @@ async def _execute_first_run(
         }
 
     result_metadata = _build_result_metadata(runner)
-    # implementation：写入 intent_classification 供下游 evaluation 用
+    # 写入 intent_classification 供下游 evaluation 用
     result_metadata = _annotate_intent_classification(state, result_metadata)
     result = runner.result
     final_answer = (result.final_answer if result else None) or ""
@@ -921,7 +921,7 @@ def route_after_executing(state: WorkflowState) -> str:
     """
     if state.get("phase") == RunPhase.ERROR.value:
         return END
-    # implementation：协商分支放在 blocking_tasks 之前判定；ask_clarification 工具调用
+    # 协商分支放在 blocking_tasks 之前判定；ask_clarification 工具调用
     # 通过 pending_clarification 字段非空 + phase=waiting_clarification 双标记驱动。
     if state.get("phase") == RunPhase.WAITING_CLARIFICATION.value:
         return "wait_clarification"
@@ -949,7 +949,7 @@ def build_graph() -> StateGraph:
     builder.add_node("planning", planning_node)
     builder.add_node("executing", executing_node)
     builder.add_node("waiting", waiting_node)
-    # implementation：协商暂停节点
+    # 协商暂停节点
     builder.add_node("wait_clarification", wait_clarification_node)
     builder.add_node("finalizing", finalizing_node)
 

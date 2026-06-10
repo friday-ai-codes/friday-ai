@@ -1,4 +1,4 @@
-"""implementation: go_workspace.py 单元测试（≥ 8 场景 fixture 文件系统）。
+"""go_workspace.py 单元测试（≥ 8 场景 fixture 文件系统）。
 
 使用 mock_go_workspace/ 5 种 fixture 风格验证 discover_go_workspace 行为。
 """

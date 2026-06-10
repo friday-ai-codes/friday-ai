@@ -1,4 +1,4 @@
-"""work item: GET /api/providers/types/ schema 端点契约测试。
+"""GET /api/providers/types/ schema 端点契约测试。
 
 验证 schema-driven 前端数据源契约：
 - 返回 5 Provider 元信息

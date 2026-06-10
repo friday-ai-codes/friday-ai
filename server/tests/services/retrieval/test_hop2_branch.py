@@ -72,7 +72,7 @@ def _edge_keys(edges: list[tuple]) -> set[tuple[str, str, str]]:
 
 @pytest.mark.django_db(transaction=True)
 async def test_feature_differs_from_base(repository) -> None:
-    """work item：切 feature 分支的 hop2 neighbors 与 base 不同。"""
+    """切 feature 分支的 hop2 neighbors 与 base 不同。"""
     await _create_branch_edges(repository)
     hop1 = [str(_SOURCE)]
     repo_ids = [str(repository.id)]
@@ -92,7 +92,7 @@ async def test_feature_differs_from_base(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_base_edges_merged(repository) -> None:
-    """work item：base 独有边在 feature 查询中被合并（["", "feat-a"]）。"""
+    """base 独有边在 feature 查询中被合并（["", "feat-a"]）。"""
     await _create_branch_edges(repository)
     feat_a_edges = await fetch_hop2_edges(
         [str(_SOURCE)], [str(repository.id)], branch_name="feat-a"
@@ -107,7 +107,7 @@ async def test_base_edges_merged(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_no_cross_branch_leak(repository) -> None:
-    """work item：feat-b 的边不应出现在 feat-a 查询中（跨分支不串，Pitfall 4）。"""
+    """feat-b 的边不应出现在 feat-a 查询中（跨分支不串，Pitfall 4）。"""
     await _create_branch_edges(repository)
     feat_a_edges = await fetch_hop2_edges(
         [str(_SOURCE)], [str(repository.id)], branch_name="feat-a"
@@ -120,7 +120,7 @@ async def test_no_cross_branch_leak(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_base_normalized(repository) -> None:
-    """work item：branch=None（base）查询命中所有 base 边，不漏（防 ["main"] 漏 "" 行）。
+    """branch=None（base）查询命中所有 base 边，不漏（防 ["main"] 漏 "" 行）。
 
     回归 Pitfall 4 二义：base 行 branch_name=""，若误用分支名过滤会漏全部 base 边。
     """

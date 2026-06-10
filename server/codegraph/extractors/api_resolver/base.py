@@ -1,7 +1,7 @@
 """API Resolver 数据结构 —— ApiWrapperData / ApiCallSiteData dataclass。
 
-per work item: ApiWrapperData 对应 codegraph_api_wrapper 表
-per work item: ApiCallSiteData 对应 codegraph_api_call_site 表
+ApiWrapperData 对应 codegraph_api_wrapper 表
+ApiCallSiteData 对应 codegraph_api_call_site 表
 """
 
 from __future__ import annotations

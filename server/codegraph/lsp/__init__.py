@@ -1,4 +1,4 @@
-"""implementation: LSP 客户端 + Supervisor 子包入口。
+"""LSP 客户端 + Supervisor 子包入口。
 
 本子包封装通用 LSP 客户端框架：
 

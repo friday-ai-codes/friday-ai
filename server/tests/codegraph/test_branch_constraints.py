@@ -14,7 +14,7 @@ from repositories.models import Repository
 
 
 def test_symbol_unique_together_contains_branch_name() -> None:
-    """work item：Symbol unique_together 含 branch_name。"""
+    """Symbol unique_together 含 branch_name。"""
     assert (
         "repository",
         "branch_name",
@@ -25,7 +25,7 @@ def test_symbol_unique_together_contains_branch_name() -> None:
 
 
 def test_apiwrapper_unique_together_contains_branch_name() -> None:
-    """work item：ApiWrapper unique_together 含 branch_name。"""
+    """ApiWrapper unique_together 含 branch_name。"""
     assert (
         "repository",
         "branch_name",
@@ -36,7 +36,7 @@ def test_apiwrapper_unique_together_contains_branch_name() -> None:
 
 @pytest.mark.django_db
 def test_symbol_base_feature_dual_write_no_integrity_error() -> None:
-    """work item：base 与 feature 同业务键双写均成功；同 branch_name 重复写抛 IntegrityError。"""
+    """base 与 feature 同业务键双写均成功；同 branch_name 重复写抛 IntegrityError。"""
     repo = Repository.objects.create(
         name="dual-write-repo",
         git_url="https://example.com/dual.git",

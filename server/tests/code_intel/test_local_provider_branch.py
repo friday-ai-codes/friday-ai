@@ -40,7 +40,7 @@ async def _create_symbol(
 
 @pytest.mark.django_db(transaction=True)
 async def test_lookup_base_only(repository) -> None:
-    """work item：branch=None 仅返回 base 符号，不含任何 feature 符号。"""
+    """branch=None 仅返回 base 符号，不含任何 feature 符号。"""
     base = await _create_symbol(
         repository, name="handler", branch_name="", file_path="base.py"
     )
@@ -59,7 +59,7 @@ async def test_lookup_base_only(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_lookup_feature_merges_base(repository) -> None:
-    """work item：branch=feat-a 合并 base + feat-a，不含 feat-b（跨分支不串）。"""
+    """branch=feat-a 合并 base + feat-a，不含 feat-b（跨分支不串）。"""
     base = await _create_symbol(
         repository, name="handler", branch_name="", file_path="base.py"
     )
@@ -83,7 +83,7 @@ async def test_lookup_feature_merges_base(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_lookup_fuzzy_respects_branch(repository) -> None:
-    """work item：icontains 回退路径（无 iexact 命中时）同样带 branch 过滤。"""
+    """icontains 回退路径（无 iexact 命中时）同样带 branch 过滤。"""
     base = await _create_symbol(
         repository, name="process_payment", branch_name="", file_path="p_base.py"
     )

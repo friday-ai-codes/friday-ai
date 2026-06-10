@@ -75,7 +75,7 @@ def _is_valid_neighbor_tuple(item: Any) -> bool:
     任一字段类型错误或长度不为 3 → False。weight 接受 ``int``（JSON 数字常被
     解码为 int），后续显式 ``float()`` 转换。
 
-    work item: 拒绝 ``NaN`` / ``±Inf`` / 越界（[0.0, 1.0] 之外）weight——
+    拒绝 ``NaN`` / ``±Inf`` / 越界（[0.0, 1.0] 之外）weight——
     ``isinstance(float('nan'), float) is True``，但 NaN 进 ``sorted()`` 不可排序
     （比较全部 False），会让 budget 估算异常 + graph_context markdown 出现
     ``w=nan`` / ``w=inf`` 污染 LLM 上下文。与 ChunkEdge.weight ``MinValueValidator(0.0)``

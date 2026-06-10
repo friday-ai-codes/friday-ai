@@ -33,7 +33,7 @@ def repo(db) -> Repository:
 
 @pytest.mark.django_db
 def test_delta_fields_default_zero(repo: Repository) -> None:
-    """work item：新建 IndexHistory 行 5 个 per-run delta 字段应取 default=0。"""
+    """新建 IndexHistory 行 5 个 per-run delta 字段应取 default=0。"""
     history = IndexHistory.objects.create(
         repository=repo,
         trigger_type=TriggerType.MANUAL,
@@ -60,7 +60,7 @@ def test_line_diff_fields_default_none(repo: Repository) -> None:
 
 @pytest.mark.django_db
 def test_delta_fields_writable(repo: Repository) -> None:
-    """work item：写入 delta 真实值 + 行级 diff 真实值/显式 None，重查读回一致。"""
+    """写入 delta 真实值 + 行级 diff 真实值/显式 None，重查读回一致。"""
     history = IndexHistory.objects.create(
         repository=repo,
         trigger_type=TriggerType.WEBHOOK,
@@ -86,7 +86,7 @@ def test_delta_fields_writable(repo: Repository) -> None:
 
 @pytest.mark.django_db
 def test_backward_compat_existing_row(repo: Repository) -> None:
-    """work item：存量行（仅必填字段）只读新字段不报错（向后兼容）。"""
+    """存量行（仅必填字段）只读新字段不报错（向后兼容）。"""
     history = IndexHistory.objects.create(
         repository=repo,
         trigger_type=TriggerType.MANUAL,

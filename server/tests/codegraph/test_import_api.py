@@ -60,7 +60,7 @@ def import_edges(repo):
 
 @pytest.mark.django_db
 def test_import_list_returns_paginated(api_client, repo, import_edges):
-    """work item: GET /imports/ 返回 {count, results}，含 source_file / target_module 字段。"""
+    """GET /imports/ 返回 {count, results}，含 source_file / target_module 字段。"""
     url = f"/api/repositories/{repo.id}/codegraph/imports/"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -77,7 +77,7 @@ def test_import_list_returns_paginated(api_client, repo, import_edges):
 
 @pytest.mark.django_db
 def test_import_filter_source_file(api_client, repo, import_edges):
-    """work item: ?source_file=src/views 触发 source_file__startswith 过滤。"""
+    """?source_file=src/views 触发 source_file__startswith 过滤。"""
     url = f"/api/repositories/{repo.id}/codegraph/imports/?source_file=src/views"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -88,7 +88,7 @@ def test_import_filter_source_file(api_client, repo, import_edges):
 
 @pytest.mark.django_db
 def test_import_filter_target_module(api_client, repo, import_edges):
-    """work item: ?target_module=utils 触发 target_module__icontains 过滤。"""
+    """?target_module=utils 触发 target_module__icontains 过滤。"""
     url = f"/api/repositories/{repo.id}/codegraph/imports/?target_module=utils"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -99,7 +99,7 @@ def test_import_filter_target_module(api_client, repo, import_edges):
 
 @pytest.mark.django_db
 def test_import_list_pagination(api_client, repo, import_edges):
-    """work item: ?limit=1 → count=2, results 1 条。"""
+    """?limit=1 → count=2, results 1 条。"""
     url = f"/api/repositories/{repo.id}/codegraph/imports/?limit=1&offset=0"
     response = api_client.get(url)
     assert response.status_code == 200

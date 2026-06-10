@@ -1,4 +1,4 @@
-"""implementation：``RepositoryRoutingTrace`` 模型字段、枚举、cascade、
+"""``RepositoryRoutingTrace`` 模型字段、枚举、cascade、
 migration 与默认值断言。
 
 测试范围（≥ 8 条）：

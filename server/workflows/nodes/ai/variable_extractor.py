@@ -209,7 +209,7 @@ class AIVariableExtractorNode(BaseNode):
             if we.workflow and we.workflow.project:
                 space_id = str(we.workflow.project.id)
 
-        # implementation: 构建完整提示词（走 Prompt Center + fallback 双轨）
+        # 构建完整提示词（走 Prompt Center + fallback 双轨）
         prompt = await render_prompt(
             PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
             project_id=space_id,
@@ -465,7 +465,7 @@ class AIVariableExtractorNode(BaseNode):
                 )
 
         # contract：model 字段空值 fallback
-        # implementation：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
+        # 从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
         if not model:
             model = (resolved.extra or {}).get("default_model", "") or ""
         if not model:

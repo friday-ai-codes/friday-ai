@@ -1,6 +1,6 @@
 """API Resolver 配置层 —— settings.API_DETECTOR_CONFIG + .friday/config.yaml 覆盖。
 
-per work item: 支持仓库级 .friday/config.yaml 覆盖 force_helpers/exclude_helpers/
+支持仓库级 .friday/config.yaml 覆盖 force_helpers/exclude_helpers/
 base_url_patterns 三个维度。如文件不存在则全使用 settings 默认值。
 """
 

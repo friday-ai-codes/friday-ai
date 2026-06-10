@@ -143,7 +143,7 @@ async def _run_all_builders_and_sync_payload(
     `aggregate_top_neighbors` / `batch_set_payload` 的所有未捕获异常（fire-and-
     forget task 不会被 await，未 catch 异常会被静默吞噬）。
 
-    implementation：成功路径 `return inserted`（`bulk_insert_edges`
+    成功路径 `return inserted`（`bulk_insert_edges`
     ignore_conflicts 去重后的本次真实新增数，per-run delta 语义），异常/早退
     路径 `return 0`。lifecycle `_handle_completion` 经 `task.result()` 读取此值
     回写 IndexHistory.chunk_edges_added（区别于全表累计 edge_count，Pitfall 7）。
@@ -220,7 +220,7 @@ async def _run_all_builders_and_sync_payload(
             edges_inserted=inserted,
             payload_updates=len(updates),
         )
-        # work item：返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
+        # 返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
         return inserted
     except Exception as exc:
         logger.exception(

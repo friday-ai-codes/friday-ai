@@ -1,4 +1,4 @@
-"""implementation：IndexHistory lifecycle wrapper 单测。
+"""IndexHistory lifecycle wrapper 单测。
 
 覆盖 4 条用例（implementation notes / plan GraphBuildStatus 状态机）：
 

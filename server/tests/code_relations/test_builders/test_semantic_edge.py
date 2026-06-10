@@ -207,7 +207,7 @@ async def test_metadata_qdrant_score(repository) -> None:
 
 
 # =============================================================================
-# implementation / work item：跨语言守门 parametrize 测试
+# implementation / 跨语言守门 parametrize 测试
 # 静态审计：SemanticEdgeBuilder 基于 Qdrant 向量近邻 + payload.file_path 过滤，
 # 无语言假设 → 天然语言无关 git diff = 0。
 # =============================================================================

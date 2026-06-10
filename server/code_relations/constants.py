@@ -85,7 +85,7 @@ CANDIDATE_EXTENSIONS: tuple[str, ...] = (
     ".js",
     ".jsx",
     ".go",
-    ".vue",   # implementation：让 Vue 文件的 ImportEdge target_module 候选解析覆盖 Button.vue 等
+    ".vue",   # 让 Vue 文件的 ImportEdge target_module 候选解析覆盖 Button.vue 等
 )
 """ImportEdgeBuilder 候选文件扩展名（per work item）。
 

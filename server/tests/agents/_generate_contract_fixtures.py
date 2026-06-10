@@ -94,7 +94,7 @@ def main() -> None:
         FindRelatedCodeOutput.model_json_schema(),
     )
 
-    # implementation: API MCP tools (work item)
+    # API MCP tools (work item)
     _dump(
         FIXTURE_DIR / "find_api_handler_signature.json",
         _normalize_signature(find_api_handler),

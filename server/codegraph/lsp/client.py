@@ -1,4 +1,4 @@
-"""implementation: FridayLanguageClient —— pygls BaseLanguageClient 子类（thin wrapper）。
+"""FridayLanguageClient —— pygls BaseLanguageClient 子类（thin wrapper）。
 
 设计要点（per work item / work item / work item / work item / work item）：
 - 复用 pygls v2.x 的 ``BaseLanguageClient``，**不**手写 work item framing
@@ -193,7 +193,7 @@ class FridayLanguageClient(BaseLanguageClient):
             ) from exc
 
     # =========================================================================
-    # implementation: VolarBackend 消费的 3 个 capability 方法（per work item / work item）
+    # VolarBackend 消费的 3 个 capability 方法（per work item / work item）
     # =========================================================================
 
     async def request_document_symbol(

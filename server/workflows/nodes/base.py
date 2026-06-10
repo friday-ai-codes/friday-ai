@@ -666,7 +666,7 @@ class BaseNode(ABC):
             errors.append(str(e.message))
         return errors
 
-    # UI Schema（implementation: 声明式配置表单描述）
+    # UI Schema（声明式配置表单描述）
     # 由子类覆盖，或从 node-definitions.json 注入
     ui_schema: ClassVar[dict | None] = None
 

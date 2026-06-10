@@ -1,4 +1,4 @@
-"""implementation: 编码中间产出 (coding_progress) 回调与轮询测试。
+"""编码中间产出 (coding_progress) 回调与轮询测试。
 
 覆盖场景:
 - _handle_progress 回调在携带/不携带 coding_progress 时的行为

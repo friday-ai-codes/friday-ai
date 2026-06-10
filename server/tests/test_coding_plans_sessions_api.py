@@ -1,4 +1,4 @@
-"""work item：POST /api/chat/coding-plans/{id}/sessions/ 批量创建 API 测试。
+"""POST /api/chat/coding-plans/{id}/sessions/ 批量创建 API 测试。
 
 覆盖 6 类场景：
 - 3 仓库全成功

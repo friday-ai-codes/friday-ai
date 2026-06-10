@@ -44,7 +44,7 @@ class RepositorySerializer(serializers.ModelSerializer):
             "ai_summary_status",
             "ai_summary_generated_at",
             "ai_summary_error",
-            # implementation: contract freshness 字段（contract/contract）
+            # contract freshness 字段（contract/contract）
             "remote_head_sha",
             "remote_head_checked_at",
             "behind_commits",

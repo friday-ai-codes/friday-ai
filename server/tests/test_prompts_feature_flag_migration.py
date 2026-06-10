@@ -1,4 +1,4 @@
-"""implementation: 5 调用点 × 3 态三态回退矩阵（work item 逐条验证）。"""
+"""5 调用点 × 3 态三态回退矩阵（work item 逐条验证）。"""
 from __future__ import annotations
 
 from typing import Any

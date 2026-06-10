@@ -1,10 +1,10 @@
 """
-implementation: 环境验证脚本
+环境验证脚本
 
 验证 Claude Agent SDK subprocess 架构在 Python 3.14 + Django ASGI 环境下的兼容性。
 覆盖三个维度：
-  - work item: SDK query() 正常返回文本响应
-  - work item: CLAUDE_* 环境变量在 SDK 子进程中被正确隔离
+  - SDK query() 正常返回文本响应
+  - CLAUDE_* 环境变量在 SDK 子进程中被正确隔离
   - ASGI:   Django ASGI 环境下无 event loop 冲突
 
 用法: cd server && uv run python test_claude_agent_sdk.py
@@ -65,7 +65,7 @@ def preflight_checks() -> bool:
 
 
 async def verify_text_response() -> bool:
-    """work item: 验证 SDK query() 在 Python 3.14 + anyio 环境下正常返回文本响应。"""
+    """验证 SDK query() 在 Python 3.14 + anyio 环境下正常返回文本响应。"""
     try:
         with clean_claude_env() as removed:
             if removed:
@@ -103,7 +103,7 @@ async def verify_text_response() -> bool:
 
 
 async def verify_env_isolation() -> bool:
-    """work item: 验证 CLAUDE_* 环境变量不会泄漏到 SDK 子进程。"""
+    """验证 CLAUDE_* 环境变量不会泄漏到 SDK 子进程。"""
     # 注入测试标记变量
     test_vars = {
         "CLAUDE_TEST_MARKER": "should_not_leak",

@@ -1,10 +1,11 @@
-"""implementation 集成测试：真实 volar 抽 study-app sub-project 验证 SymbolData / ImportData。
+"""集成测试：真实 volar 抽样例仓库 sub-project 验证 SymbolData / ImportData。
 
-@pytest.mark.integration + 三重 skipif：vue-language-server 装 + study-app 路径 + fixture 存在
+@pytest.mark.integration + 三重 skipif：vue-language-server 装 + 样例仓库路径（VOLAR_TEST_REPO）+ fixture 存在
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 _VLS_BIN: str | None = shutil.which("vue-language-server")
-_STUDY_APP: Path = Path("/Users/zaneliu/Projects/guanghe/study-app")
+_STUDY_APP: Path = Path(os.environ.get("VOLAR_TEST_REPO", ""))
 _COURSES_SUB: Path = _STUDY_APP / "apps" / "courses"
 
 

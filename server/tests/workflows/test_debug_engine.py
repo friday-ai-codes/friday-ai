@@ -1,10 +1,10 @@
 """调试引擎核心测试。
 
 覆盖:
-- work item: 调试模式启动后每个节点执行完自动暂停
-- work item: release 命令后暂停节点放行
-- work item: skip 命令后节点标记 SKIPPED 空输出
-- work item: 调试逻辑不修改 BaseNode 子类——通用性验证
+- 调试模式启动后每个节点执行完自动暂停
+- release 命令后暂停节点放行
+- skip 命令后节点标记 SKIPPED 空输出
+- 调试逻辑不修改 BaseNode 子类——通用性验证
 - 调试串行分支退化
 - start_execution debug_mode 设置 is_debug 标记
 """
@@ -130,7 +130,7 @@ class TestDebugEngine:
     """调试引擎核心测试。"""
 
     async def test_debug_mode_pauses_after_each_node(self, debug_workflow):
-        """work item: 调试模式下，每个节点执行完后自动暂停。
+        """调试模式下，每个节点执行完后自动暂停。
 
         通过 mock _debug_pause_after_node 返回 release 来验证：
         该方法被调用的次数等于所有节点数量（trigger + condition = 2）。
@@ -157,7 +157,7 @@ class TestDebugEngine:
         assert execution.status == ExecutionStatus.COMPLETED
 
     async def test_debug_release_continues_to_next_node(self, debug_workflow):
-        """work item: 暂停后 release 动作让引擎继续执行下一节点。
+        """暂停后 release 动作让引擎继续执行下一节点。
 
         使用 mock 让 _debug_pause_after_node 始终返回 release，
         验证整个工作流顺利完成。
@@ -180,7 +180,7 @@ class TestDebugEngine:
         assert execution.status == ExecutionStatus.COMPLETED
 
     async def test_debug_skip_marks_skipped_with_empty_output(self, debug_workflow):
-        """work item: skip 动作将节点标记为 SKIPPED，输出为空 {}。"""
+        """skip 动作将节点标记为 SKIPPED，输出为空 {}。"""
         engine = WorkflowEngine()
 
         async def mock_pause(execution, node_execution):
@@ -209,7 +209,7 @@ class TestDebugEngine:
         assert "condition" in node_execs
 
     async def test_debug_works_with_any_node_type(self, debug_workflow):
-        """work item: 调试逻辑不依赖特定 BaseNode 子类。
+        """调试逻辑不依赖特定 BaseNode 子类。
 
         使用 manual_trigger + condition 两种不同节点类型，验证调试模式均能暂停。
         condition 节点是非 trigger 类型，也能正常暂停。
@@ -413,10 +413,10 @@ class TestDebugEngine:
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestBreakpointMode:
-    """implementation: 断点模式测试。"""
+    """断点模式测试。"""
 
     async def test_breakpoint_mode_only_pauses_at_breakpoints(self, parallel_workflow):
-        """work item: 断点模式下仅断点节点暂停，非断点节点自动放行。
+        """断点模式下仅断点节点暂停，非断点节点自动放行。
 
         设置 Branch A 为断点，Branch B 不是。
         断点模式下应只在 trigger 和 Branch A 处暂停（trigger 因为串行也会走条件判断）。
@@ -491,7 +491,7 @@ class TestBreakpointMode:
         assert "Branch B" not in pause_calls
 
     async def test_step_mode_pauses_all_nodes(self, debug_workflow):
-        """work item: 逐步模式（默认）下所有节点都暂停——与修改前一致。"""
+        """逐步模式（默认）下所有节点都暂停——与修改前一致。"""
         engine = WorkflowEngine()
         pause_calls: list[str] = []
 
@@ -579,7 +579,7 @@ class TestBreakpointMode:
         assert isinstance(session.breakpoints, set)
 
     async def test_mode_switch_auto_release_non_breakpoint_node(self):
-        """work item: 切换到断点模式时，若当前暂停在非断点节点，自动放行。"""
+        """切换到断点模式时，若当前暂停在非断点节点，自动放行。"""
         from workflows.engine.scheduler import DebugSession
 
         loop = asyncio.get_event_loop()
@@ -612,7 +612,7 @@ class TestBreakpointMode:
             _debug_sessions.pop("test-auto-release", None)
 
     async def test_mode_switch_keeps_breakpoint_node_paused(self):
-        """work item: 切换到断点模式时，若当前暂停在断点节点，不自动放行。"""
+        """切换到断点模式时，若当前暂停在断点节点，不自动放行。"""
         from workflows.engine.scheduler import DebugSession
 
         loop = asyncio.get_event_loop()

@@ -623,7 +623,7 @@ async def _handle_completed(
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         await _update_repository_on_summary_complete(session, p)
 
-    # implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
+    # chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
     # 仅当 EXPLORE + source=chat_deep_analysis 触发（其它 EXPLORE 用途不回算）。
     if (
         session.task_type == SubAgentSession.TaskType.EXPLORE
@@ -946,7 +946,7 @@ async def _update_repository_on_summary_fail(
     logger.info("repo_summary_fail_written", repository_id=repo_id, error=error_msg[:100])
 
 
-# === implementation：deep_analysis 完成回算 cross_repo_relevance ===
+# === deep_analysis 完成回算 cross_repo_relevance ===
 
 
 async def _update_agent_session_cross_repo_relevance(

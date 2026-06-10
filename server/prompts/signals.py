@@ -1,6 +1,6 @@
 """Prompt 缓存失效 signal（contract 预埋 hook）。
 
-implementation：只打日志，不做任何缓存删除（contract 无缓存）。
+只打日志，不做任何缓存删除（contract 无缓存）。
 implementation+：若引入版本化缓存，在本 handler 中补充相应失效逻辑。
 """
 

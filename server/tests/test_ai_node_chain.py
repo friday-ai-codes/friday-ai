@@ -228,7 +228,7 @@ class TestAINodeConfigSchema:
 )
 @pytest.mark.asyncio
 async def test_context_retrieval_hybrid_search():
-    """work item: ContextRetrievalNode._search_repository 调用 BranchAwareSearchService.search 时传入 query_sparse。"""
+    """ContextRetrievalNode._search_repository 调用 BranchAwareSearchService.search 时传入 query_sparse。"""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
@@ -307,7 +307,7 @@ async def test_context_retrieval_hybrid_search():
 )
 @pytest.mark.asyncio
 async def test_context_retrieval_empty_query_dense_only():
-    """work item: 空 sparse 向量时，ContextRetrievalNode 退化为 dense-only（query_sparse=None）。"""
+    """空 sparse 向量时，ContextRetrievalNode 退化为 dense-only（query_sparse=None）。"""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
