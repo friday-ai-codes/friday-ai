@@ -53,7 +53,7 @@ Friday 支持 OIDC（OpenID Connect）单点登录，允许用户通过企业身
 | `scopes` | 否 | 请求范围，默认 `openid profile email` | `openid profile email` |
 | `is_active` | 否 | 是否启用，默认 true | |
 ### Callback URL 配置
-首先在「系统设置 → 通用 → 站点 Host」中配置当前站点的外部访问地址（如 `https://your-domain`），Friday 会用它生成 OIDC 回调 URL 与登录跳转链接。未配置时回退到服务端环境变量 `FRIDAY_BASE_URL`（默认 `http://localhost:10241`，仅本机可用）。
+Friday 生成 OIDC 回调 URL 与登录跳转链接时，优先使用「系统设置 → 通用 → 站点 Host」配置的外部访问地址（如 `https://your-domain`）；未配置时自动使用当前请求的访问地址。如果部署在反向代理 / HTTPS 终止层之后，建议显式配置站点 Host，确保回调地址稳定一致。
 
 然后在身份提供商控制台中，将以下 URL 配置为 Redirect URI / Callback URL：
 ```

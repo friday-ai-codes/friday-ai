@@ -214,7 +214,7 @@ class OIDCCallbackView(APIView):
         if error:
             error_desc = params.get("error_description", error)
             logger.warning("oidc_callback_error", error=error, description=error_desc)
-            return await self._redirect_to_login(error=error_desc)
+            return await self._redirect_to_login(request, error=error_desc)
 
         # 缺少必要参数
         if not code or not state:
@@ -255,7 +255,7 @@ class OIDCCallbackView(APIView):
             id=state_data["provider_id"], is_active=True
         ).afirst()
         if not provider:
-            return await self._redirect_to_login(error="Provider 不存在或已禁用")
+            return await self._redirect_to_login(request, error="Provider 不存在或已禁用")
 
         # Token exchange
         callback_url = await build_callback_url(request)
@@ -263,7 +263,7 @@ class OIDCCallbackView(APIView):
             token_response = await exchange_code_for_tokens(provider, code, callback_url)
         except ValueError as e:
             logger.error("oidc_token_exchange_view_error", error=str(e))
-            return await self._redirect_to_login(error="Token 交换失败，请重试")
+            return await self._redirect_to_login(request, error="Token 交换失败，请重试")
 
         # 获取用户信息
         provider_access_token = str(token_response.get("access_token", ""))
@@ -286,10 +286,11 @@ class OIDCCallbackView(APIView):
         refresh["sub"] = str(user.id)  # JWT refresh token 字典动态索引，类型系统无法推断
         access_token = str(refresh.access_token)
 
-        # 构造前端回调 URL（优先「站点 Host」设置，回退 FRIDAY_FRONTEND_URL）
+        # 构造前端回调 URL（站点 Host 设置 → 当前请求 Host → FRIDAY_FRONTEND_URL）
         frontend_redirect = state_data.get("redirect_uri", "/")
         frontend_base = await aresolve_site_base_url(
-            getattr(settings, "FRIDAY_FRONTEND_URL", "")
+            getattr(settings, "FRIDAY_FRONTEND_URL", ""),
+            request=request,
         )
 
         # 重定向到前端回调页面
@@ -328,10 +329,11 @@ class OIDCCallbackView(APIView):
         )
         return response
 
-    async def _redirect_to_login(self, error: str) -> HttpResponseRedirect:
+    async def _redirect_to_login(self, request: object, error: str) -> HttpResponseRedirect:
         """重定向到登录页并携带错误信息。"""
         frontend_base = await aresolve_site_base_url(
-            getattr(settings, "FRIDAY_FRONTEND_URL", "")
+            getattr(settings, "FRIDAY_FRONTEND_URL", ""),
+            request=request,
         )
         from urllib.parse import quote
 
