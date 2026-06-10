@@ -65,6 +65,8 @@ agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 
 
 ## 安装之后
 
+<FlowPipeline :steps="['设置地址与令牌', 'friday-ai 校验并路由', '驱动对应 workflow skill']" />
+
 1. 在 agent 运行的环境中设置 `FRIDAY_BASE_URL` 与 `FRIDAY_ACCESS_TOKEN`（或用 [`@friday-ai-codes/mcp init`](/integrations/mcp#初始化配置) 写入 `~/.friday/config.json`）；
 2. 让 agent 先使用 `friday-ai` skill —— 它会校验连通性并路由到正确的 workflow skill；
 3. 然后驱动 `friday-codebase-agent`（仓库编码）或 `friday-feishu-agent`（飞书工作项）。
