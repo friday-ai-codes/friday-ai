@@ -131,6 +131,63 @@ class TestRunnerRegistrationAPI:
         runner = Runner.objects.get(name="custom-runner")
         assert runner.concurrent == 4
 
+    def test_register_with_master_token(self, api_client: APIClient, settings) -> None:
+        """共享注册令牌（env）可直接注册 Runner，无需 DB 一次性令牌。"""
+        settings.RUNNER_REGISTRATION_TOKEN = "shared-master-token"
+        url: str = reverse("runner-register")
+        response = api_client.post(url, {
+            "token": "shared-master-token",
+            "name": "compose-runner",
+        })
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["name"] == "compose-runner"
+        assert "runner_token" in data
+        assert Runner.objects.filter(name="compose-runner").count() == 1
+        # 不应消耗任何一次性令牌
+        assert RegistrationToken.objects.count() == 0
+
+    def test_register_with_master_token_is_idempotent_by_name(
+        self, api_client: APIClient, settings
+    ) -> None:
+        """同名 Runner 用共享令牌重注册时幂等（轮换 token，不重复建实例）。"""
+        settings.RUNNER_REGISTRATION_TOKEN = "shared-master-token"
+        url: str = reverse("runner-register")
+        first = api_client.post(url, {"token": "shared-master-token", "name": "compose-runner"})
+        second = api_client.post(url, {"token": "shared-master-token", "name": "compose-runner"})
+        assert first.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+        assert Runner.objects.filter(name="compose-runner").count() == 1
+        # token 已轮换
+        assert first.json()["runner_token"] != second.json()["runner_token"]
+
+    def test_register_with_wrong_master_token_falls_through(
+        self, api_client: APIClient, settings
+    ) -> None:
+        """非共享令牌仍走 DB 一次性令牌校验，无效则 401。"""
+        settings.RUNNER_REGISTRATION_TOKEN = "shared-master-token"
+        url: str = reverse("runner-register")
+        response = api_client.post(url, {
+            "token": "not-the-master-token",
+            "name": "compose-runner",
+        })
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_master_token_disabled_when_empty(
+        self, api_client: APIClient, settings
+    ) -> None:
+        """共享令牌为空时禁用该路径，空 token 不应放行。"""
+        settings.RUNNER_REGISTRATION_TOKEN = ""
+        url: str = reverse("runner-register")
+        response = api_client.post(url, {
+            "token": "",
+            "name": "compose-runner",
+        })
+        assert response.status_code in (
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
 
 @pytest.mark.django_db
 class TestRunnerVerifyEndpoint:
