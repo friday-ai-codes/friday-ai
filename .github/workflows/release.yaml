@@ -57,6 +57,9 @@ jobs:
           file: ${{ matrix.service.dockerfile }}
           platforms: ${{ matrix.platform.os }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }},push-by-digest=true,name-canonical=true,push=true
+          # APP_VERSION 仅 web 镜像使用（注入前端展示的版本号），其余服务忽略该 build-arg
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
