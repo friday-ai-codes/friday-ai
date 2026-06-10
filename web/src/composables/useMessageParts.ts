@@ -14,11 +14,10 @@
  */
 
 import type { ConversationMessage, MessagePart, StreamTimelineItem, TextPart, ThinkingPart, ToolCallData, ToolUsePart } from '~/types/chat'
+import { randomUUID } from '~/utils/uuid'
 
 function newPartId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return `p_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
-  return `p_${Math.random().toString(36).slice(2, 14)}`
+  return `p_${randomUUID().replace(/-/g, '').slice(0, 12)}`
 }
 
 function makeTextPart(text: string, index: number, state: 'streaming' | 'done' = 'done'): TextPart {
