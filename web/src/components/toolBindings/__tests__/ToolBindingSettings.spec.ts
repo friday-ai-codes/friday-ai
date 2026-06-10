@@ -170,6 +170,6 @@ describe('toolBindingSettings', () => {
     // 组件文本只含 prefix/suffix 指纹，绝不渲染任何完整 friday_pat_ 明文。
     // store 不暴露明文 → 组件无来源；以正则捕捉「friday_pat_ + 长随机段」形态。
     const text = wrapper.text()
-    expect(text).not.toMatch(/friday_pat_[A-Za-z0-9_-]{8,}/)
+    expect(text).not.toMatch(/friday_pat_[\w-]{8,}/)
   })
 })
