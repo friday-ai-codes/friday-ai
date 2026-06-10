@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import timedelta
 from typing import Any
 
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
@@ -91,6 +93,12 @@ class RunnerRegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # 共享注册令牌（GitLab 风格）：容器化部署用 RUNNER_REGISTRATION_TOKEN 环境变量
+        # 完成自动注册，无需先在 UI 创建一次性令牌。按 name 幂等，避免数据卷丢失后重复建 Runner。
+        master_token = settings.RUNNER_REGISTRATION_TOKEN
+        if master_token and secrets.compare_digest(str(data["token"]), str(master_token)):
+            return await self._register_with_master_token(request, data)
+
         token_hashed = hash_token(data["token"])
         now = timezone.now()
 
@@ -133,6 +141,55 @@ class RunnerRegisterView(APIView):
         # 回写 used_by_runner
         reg_token.used_by_runner = runner
         await reg_token.asave(update_fields=["used_by_runner"])
+
+        return Response(
+            RunnerRegisterResponseSerializer(
+                {
+                    "runner_id": runner.id,
+                    "runner_token": runner_token,
+                    "name": runner.name,
+                    "scope": runner.scope,
+                }
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    async def _register_with_master_token(self, request, data: dict) -> Response:
+        """用共享注册令牌注册：按 name 幂等，重注册时轮换 Runner token。"""
+        runner_token = generate_token()
+        runner = await Runner.objects.filter(name=data["name"]).afirst()
+        if runner is None:
+            runner = await Runner.objects.acreate(
+                name=data["name"],
+                token_hash=hash_token(runner_token),
+                token_prefix=runner_token[:8],
+                scope=data["scope"],
+                concurrent=data["concurrent"],
+                version=data.get("version", ""),
+                ip_address=request.META.get("REMOTE_ADDR"),
+                tags=["coding"],
+                run_untagged=True,
+            )
+        else:
+            runner.token_hash = hash_token(runner_token)
+            runner.token_prefix = runner_token[:8]
+            runner.scope = data["scope"]
+            runner.concurrent = data["concurrent"]
+            runner.version = data.get("version", "")
+            runner.ip_address = request.META.get("REMOTE_ADDR")
+            runner.is_active = True
+            await runner.asave(
+                update_fields=[
+                    "token_hash",
+                    "token_prefix",
+                    "scope",
+                    "concurrent",
+                    "version",
+                    "ip_address",
+                    "is_active",
+                    "updated_at",
+                ]
+            )
 
         return Response(
             RunnerRegisterResponseSerializer(
