@@ -215,7 +215,7 @@ async function testEmbeddingConnection() {
 
     if (!apiUrl) {
       showError('请先填写 Embedding API 地址')
-      embeddingHealth.value = { status: 'error', message: 'Embedding API URL is required' }
+      embeddingHealth.value = { status: 'error', message: '请输入 Embedding API URL' }
       return
     }
 

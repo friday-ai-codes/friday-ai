@@ -180,8 +180,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
             })
 
             if (!retryResponse.ok) {
-              const error: ApiErrorResponse = await retryResponse.json().catch(() => ({ detail: 'Request failed' }))
-              reject(new ApiError(retryResponse.status, error.detail || 'Request failed'))
+              const error: ApiErrorResponse = await retryResponse.json().catch(() => ({ detail: '请求失败' }))
+              reject(new ApiError(retryResponse.status, error.detail || '请求失败'))
             }
             else if (retryResponse.status === 204) {
               resolve(undefined as T)
@@ -217,8 +217,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       }
 
       if (!retryResponse.ok) {
-        const error: ApiErrorResponse = await retryResponse.json().catch(() => ({ detail: 'Request failed' }))
-        throw new ApiError(retryResponse.status, error.detail || 'Request failed')
+        const error: ApiErrorResponse = await retryResponse.json().catch(() => ({ detail: '请求失败' }))
+        throw new ApiError(retryResponse.status, error.detail || '请求失败')
       }
 
       return retryResponse.json()
@@ -234,7 +234,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   // 处理其他错误响应
   if (!response.ok) {
-    let detail = 'Request failed'
+    let detail = '请求失败'
     let body_: unknown = null
     try {
       const parsed: ApiErrorResponse & Record<string, unknown> = await response.json()
