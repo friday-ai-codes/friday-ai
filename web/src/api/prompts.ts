@@ -132,7 +132,7 @@ async function fetchPreviewDirect(
     return new PromptVariableMissingError(body.slug, body.missing)
   }
   // 其他非 422 状态 —— 退回到通用 ApiError
-  let detail = 'Request failed'
+  let detail = '请求失败'
   try {
     const data = (await resp.json()) as { detail?: string }
     detail = data.detail ?? detail
