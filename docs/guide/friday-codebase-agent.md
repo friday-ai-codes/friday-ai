@@ -97,3 +97,11 @@ X-Friday-Skill-Step: full_auto.plan
 ## 审计
 
 用最终 `run_id` 可以查到 `InteractionRun`、`InteractionEvent`、`ToolCallRecord`、`RetrievalTrace`、模型用量、执行轨迹与 MR 结果记录。workflow 应呈现 `skill_step` 事件以及同一 `run_id` 下的全部 MCP 工具调用。
+
+## 下一步
+
+<LinkCards>
+  <LinkCard icon="🛠️" title="Agent Skills" desc="全部内置 Skill 与安装方式" link="/integrations/skills" />
+  <LinkCard icon="🔌" title="MCP Server" desc="19 个工具的注册与 HTTP 直调" link="/integrations/mcp" />
+  <LinkCard icon="🧠" title="代码智能层" desc="Graph RAG 检索背后的实现" link="/internals/code-intelligence" />
+</LinkCards>

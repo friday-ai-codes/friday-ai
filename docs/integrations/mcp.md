@@ -26,15 +26,14 @@ npx -y @friday-ai-codes/mcp doctor
 
 ## 注册到 IDE
 
-Claude Code：
+::: code-group
 
-```bash
+```bash [Claude Code]
 claude mcp add friday -- npx -y @friday-ai-codes/mcp
 ```
 
-Cursor（`.cursor/mcp.json` 或 `~/.cursor/mcp.json`）：
-
-```json
+```json [Cursor]
+// .cursor/mcp.json 或 ~/.cursor/mcp.json
 {
   "mcpServers": {
     "friday": { "command": "npx", "args": ["-y", "@friday-ai-codes/mcp"] }
@@ -42,13 +41,14 @@ Cursor（`.cursor/mcp.json` 或 `~/.cursor/mcp.json`）：
 }
 ```
 
-Codex（`~/.codex/config.toml`）：
-
-```toml
+```toml [Codex]
+# ~/.codex/config.toml
 [mcp_servers.friday]
 command = "npx"
 args = ["-y", "@friday-ai-codes/mcp"]
 ```
+
+:::
 
 内网无法访问 npm registry 时，可从源码构建后把 MCP 配置指向 `mcp/dist/cli.js`。
 

@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
+import { groupIconMdPlugin, groupIconVitePlugin } from 'vitepress-plugin-group-icons'
+import llmstxt from 'vitepress-plugin-llms'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const apiSidebarPath = resolve(__dirname, 'api-sidebar.json')
@@ -22,6 +24,18 @@ export default defineConfig({
   base: process.env.DOCS_BASE || '/',
   lastUpdated: true,
   ignoreDeadLinks: [/^https?:\/\/localhost/],
+  markdown: {
+    config(md) {
+      md.use(groupIconMdPlugin)
+    },
+  },
+  vite: {
+    plugins: [
+      groupIconVitePlugin(),
+      // 构建时生成 llms.txt / llms-full.txt，方便 AI 助手读取整站文档
+      llmstxt(),
+    ],
+  },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${process.env.DOCS_BASE || '/'}favicon.svg` }],
     ['meta', { name: 'theme-color', content: '#14b8a6' }],

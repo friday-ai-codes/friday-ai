@@ -130,3 +130,11 @@ Runner 自身还支持 `FRIDAY_RUNNER_*` 前缀的全部配置项（viper 绑定
 | `FF_ENABLE_WORKFLOW_WEBSOCKET` | `true` | WebSocket 实时更新 |
 | `FF_DEFAULT_WORKFLOW_TEMPLATE` | `code_generation` | 默认工作流模板 |
 | `FF_ENABLE_SCHEDULER` | `true` | 启用调度器（仓库同步轮询等） |
+
+## 下一步
+
+<LinkCards>
+  <LinkCard icon="🐳" title="Docker Compose 部署" desc="一键部署、升级、备份与排障" link="/deploy/docker-compose" />
+  <LinkCard icon="☸️" title="Helm / Kubernetes 部署" desc="集群环境的配置项与 Secret 管理" link="/deploy/helm" />
+  <LinkCard icon="🔐" title="安全模型" desc="为什么凭据不走环境变量" link="/internals/security" />
+</LinkCards>

@@ -14,7 +14,7 @@ Friday 对飞书（Lark）的集成不只是发通知：项目空间、云文档
 | 飞书文档 | 识别文档链接，读取云文档，把飞书块转成 Markdown，也能把 Markdown 写回文档，支持表格、代码块和引用 |
 | 飞书机器人 / IM | 发送文本和卡片、更新卡片、读取群聊历史、下载消息资源、检查或邀请机器人入群，处理群聊和私聊 |
 | 飞书卡片回调 | 审批、方案确认、补充信息、代码审查、编码结果等卡片都有对应回调 |
-| 工作流节点 | `feishu_event_trigger`、`fetch_work_item`、`wait_feishu_field`、`notify_feishu`、`fetch_group_chat`、`join_group_chat` 等节点可直接放进 DAG |
+| 工作流节点 | `feishu_event_trigger`、`fetch_work_item`、`wait_feishu_field`、`notify_feishu`、`fetch_group_chat`、`join_group_chat` 等节点可直接拖进工作流画布 |
 | MCP / Agent 工具 | `get_feishu_work_item_context` 聚合工作项、关系、评论和文档；`create_feishu_technical_plan` 结合代码证据生成并写回方案 |
 
 ## 接入步骤
@@ -70,3 +70,11 @@ https://your-domain/api/feishu/webhook/
 | `飞书回填失败` / `FeishuAPIError` | 应用凭据是否正确；字段 Key 是否存在且有写入权限；应用是否被授权访问目标空间 |
 | 事件不触发工作流 | 回调地址是否可公网访问（HTTPS）；事件订阅是否包含对应事件类型；查看项目的触发日志 |
 | 卡片按钮无响应 | 卡片回调地址配置；查看 `docker logs friday-server` 中的回调处理日志 |
+
+## 下一步
+
+<LinkCards>
+  <LinkCard icon="🧩" title="工作流指南" desc="飞书相关节点的完整配置项" link="/guide/workflows" />
+  <LinkCard icon="⚡" title="快速开始" desc="从部署到第一条工作流" link="/guide/quick-start" />
+  <LinkCard icon="⚙️" title="环境变量参考" desc="FEISHU_ENCRYPT_KEY 等部署级配置" link="/deploy/configuration" />
+</LinkCards>
