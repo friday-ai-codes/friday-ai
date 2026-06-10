@@ -139,7 +139,7 @@ const exportDisabled = computed(() => {
               尚未配置导出目标文件夹
             </p>
             <RouterLink
-              :to="`/spaces/${spaceId}/feishu`"
+              :to="{ path: `/spaces/${spaceId}`, hash: '#feishu' }"
               class="text-sm text-primary hover:underline"
               @click="emit('update:open', false)"
             >
