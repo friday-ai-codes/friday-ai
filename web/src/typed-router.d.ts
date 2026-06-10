@@ -65,6 +65,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/conversations': RouteRecordInfo<
+      '/admin/conversations',
+      '/admin/conversations',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/oidc': RouteRecordInfo<
       '/admin/oidc',
       '/admin/oidc',
@@ -398,6 +405,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/components/SettingsInfoCard.vue': {
       routes:
         | '/admin/components/SettingsInfoCard'
+      views:
+        | never
+    }
+    'src/pages/admin/conversations.vue': {
+      routes:
+        | '/admin/conversations'
       views:
         | never
     }
