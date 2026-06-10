@@ -241,6 +241,7 @@ declare global {
   const useGalaxySearch: typeof import('./composables/useGalaxySearch').useGalaxySearch
   const useGamepad: typeof import('@vueuse/core').useGamepad
   const useGeolocation: typeof import('@vueuse/core').useGeolocation
+  const useGsapReveal: typeof import('./composables/useMotion').useGsapReveal
   const useI18n: typeof import('vue-i18n').useI18n
   const useId: typeof import('vue').useId
   const useIdle: typeof import('@vueuse/core').useIdle
@@ -252,7 +253,9 @@ declare global {
   const useKeyModifier: typeof import('@vueuse/core').useKeyModifier
   const useKnowledgeOverview: typeof import('./composables/useKnowledgeOverview').useKnowledgeOverview
   const useLastChanged: typeof import('@vueuse/core').useLastChanged
+  const useListReveal: typeof import('./composables/useMotion').useListReveal
   const useLocalStorage: typeof import('@vueuse/core').useLocalStorage
+  const useLottie: typeof import('./composables/useMotion').useLottie
   const useMagicKeys: typeof import('@vueuse/core').useMagicKeys
   const useManualRefHistory: typeof import('@vueuse/core').useManualRefHistory
   const useMediaControls: typeof import('@vueuse/core').useMediaControls
@@ -291,6 +294,7 @@ declare global {
   const usePreferredLanguages: typeof import('@vueuse/core').usePreferredLanguages
   const usePreferredReducedMotion: typeof import('@vueuse/core').usePreferredReducedMotion
   const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
+  const usePrefersReducedMotion: typeof import('./composables/useMotion').usePrefersReducedMotion
   const usePrevious: typeof import('@vueuse/core').usePrevious
   const usePromptsStore: typeof import('./stores/prompts').usePromptsStore
   const useProviderCredentialStore: typeof import('./stores/providerCredential').useProviderCredentialStore
@@ -423,6 +427,9 @@ declare global {
   // @ts-ignore
   export type { ModalOptions, ModalInstance } from './composables/useModal'
   import('./composables/useModal')
+  // @ts-ignore
+  export type { UseLottieOptions } from './composables/useMotion'
+  import('./composables/useMotion')
   // @ts-ignore
   export type { UsePollingOptions } from './composables/usePolling'
   import('./composables/usePolling')
@@ -701,6 +708,7 @@ declare module 'vue' {
     readonly useGalaxySearch: UnwrapRef<typeof import('./composables/useGalaxySearch')['useGalaxySearch']>
     readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
     readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
+    readonly useGsapReveal: UnwrapRef<typeof import('./composables/useMotion')['useGsapReveal']>
     readonly useI18n: UnwrapRef<typeof import('vue-i18n')['useI18n']>
     readonly useId: UnwrapRef<typeof import('vue')['useId']>
     readonly useIdle: UnwrapRef<typeof import('@vueuse/core')['useIdle']>
@@ -712,7 +720,9 @@ declare module 'vue' {
     readonly useKeyModifier: UnwrapRef<typeof import('@vueuse/core')['useKeyModifier']>
     readonly useKnowledgeOverview: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['useKnowledgeOverview']>
     readonly useLastChanged: UnwrapRef<typeof import('@vueuse/core')['useLastChanged']>
+    readonly useListReveal: UnwrapRef<typeof import('./composables/useMotion')['useListReveal']>
     readonly useLocalStorage: UnwrapRef<typeof import('@vueuse/core')['useLocalStorage']>
+    readonly useLottie: UnwrapRef<typeof import('./composables/useMotion')['useLottie']>
     readonly useMagicKeys: UnwrapRef<typeof import('@vueuse/core')['useMagicKeys']>
     readonly useManualRefHistory: UnwrapRef<typeof import('@vueuse/core')['useManualRefHistory']>
     readonly useMediaControls: UnwrapRef<typeof import('@vueuse/core')['useMediaControls']>
@@ -751,6 +761,7 @@ declare module 'vue' {
     readonly usePreferredLanguages: UnwrapRef<typeof import('@vueuse/core')['usePreferredLanguages']>
     readonly usePreferredReducedMotion: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedMotion']>
     readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
+    readonly usePrefersReducedMotion: UnwrapRef<typeof import('./composables/useMotion')['usePrefersReducedMotion']>
     readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
     readonly usePromptsStore: UnwrapRef<typeof import('./stores/prompts')['usePromptsStore']>
     readonly useProviderCredentialStore: UnwrapRef<typeof import('./stores/providerCredential')['useProviderCredentialStore']>

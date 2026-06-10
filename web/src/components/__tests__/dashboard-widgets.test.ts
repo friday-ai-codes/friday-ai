@@ -6,27 +6,35 @@ import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActiv
 
 describe('dashboardKpiCards', () => {
   const stats = [
-    { title: '项目总数', value: 10, icon: 'lucide--folder-git-2', statIconClass: 'stat-icon-primary', link: '/projects' },
-    { title: '执行总数', value: 25, icon: 'lucide--layers', statIconClass: 'stat-icon-primary', link: '/executions' },
+    { title: '仓库', value: 10, todayNew: 2, icon: 'icon-[lucide--folder-git-2]', link: '/repositories' },
+    { title: '完成编码', value: 25, todayNew: 0, icon: 'icon-[lucide--code-xml]', link: '/executions' },
   ]
 
-  it('should render correct number of StatCard components', () => {
+  it('should render one cell per stat', () => {
     const wrapper = mount(DashboardKpiCards, {
       props: { stats, loading: false },
-      global: { stubs: { StatCard: true, RouterLink: true } },
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
-    expect(wrapper.findAllComponents({ name: 'StatCard' })).toHaveLength(stats.length)
+    stats.forEach((stat) => {
+      expect(wrapper.text()).toContain(stat.title)
+    })
   })
 
-  it('should pass loading prop to StatCard', () => {
+  it('should show today delta when > 0 and fallback text when 0', () => {
+    const wrapper = mount(DashboardKpiCards, {
+      props: { stats, loading: false },
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+    expect(wrapper.text()).toContain('今日 +2')
+    expect(wrapper.text()).toContain('今日暂无新增')
+  })
+
+  it('should show skeleton when loading', () => {
     const wrapper = mount(DashboardKpiCards, {
       props: { stats, loading: true },
-      global: { stubs: { StatCard: true, RouterLink: true } },
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
-    const cards = wrapper.findAllComponents({ name: 'StatCard' })
-    cards.forEach((card) => {
-      expect(card.props('loading')).toBe(true)
-    })
+    expect(wrapper.findAll('.animate-pulse').length).toBeGreaterThan(0)
   })
 })
 

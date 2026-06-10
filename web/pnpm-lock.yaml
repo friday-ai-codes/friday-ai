@@ -234,9 +234,15 @@ catalogs:
     fuse.js:
       specifier: ^7.3.0
       version: 7.3.0
+    gsap:
+      specifier: ^3.13.0
+      version: 3.15.0
     happy-dom:
       specifier: ^20.3.0
       version: 20.3.0
+    lottie-web:
+      specifier: ^5.13.0
+      version: 5.13.0
     lowlight:
       specifier: 3.3.0
       version: 3.3.0
@@ -499,6 +505,12 @@ importers:
       fuse.js:
         specifier: 'catalog:'
         version: 7.3.0
+      gsap:
+        specifier: 'catalog:'
+        version: 3.15.0
+      lottie-web:
+        specifier: 'catalog:'
+        version: 5.13.0
       lowlight:
         specifier: 'catalog:'
         version: 3.3.0
@@ -3314,6 +3326,9 @@ packages:
   graphlib@2.1.8:
     resolution: {integrity: sha512-jcLLfkpoVGmH7/InMC/1hIvOPSUh38oJtGhvrOFGzioE1DZ+0YW16RgmOJhHiuWTvGiJQ9Z1Ik43JvkRPRvE+A==}
 
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
+
   happy-dom@20.3.0:
     resolution: {integrity: sha512-5qJbkqcvR8j/a4av5IWqqIWmEGf9dt6OhGMS6qxCgjSOBGzGa5XLoqg40OyD8XNzQ+g1g2zsXi10kjfpzYH55Q==}
     engines: {node: '>=20.0.0'}
@@ -3587,6 +3602,9 @@ packages:
 
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
+
+  lottie-web@5.13.0:
+    resolution: {integrity: sha512-+gfBXl6sxXMPe8tKQm7qzLnUy5DUPJPKIyRHwtpCpyUEYjHYRJC/5gjUvdkuO2c3JllrPtHXH5UJJK8LRYl5yQ==}
 
   lowlight@3.3.0:
     resolution: {integrity: sha512-0JNhgFoPvP6U6lE/UdVsSq99tn6DhjjpAj5MxG49ewd2mOBVtwWYIT8ClyABhq198aXXODMU6Ox8DrGy/CpTZQ==}
@@ -7495,6 +7513,8 @@ snapshots:
     dependencies:
       lodash: 4.18.1
 
+  gsap@3.15.0: {}
+
   happy-dom@20.3.0:
     dependencies:
       '@types/node': 20.19.29
@@ -7722,6 +7742,8 @@ snapshots:
   lodash@4.18.1: {}
 
   longest-streak@3.1.0: {}
+
+  lottie-web@5.13.0: {}
 
   lowlight@3.3.0:
     dependencies:

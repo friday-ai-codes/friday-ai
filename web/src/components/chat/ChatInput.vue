@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import type { AnimationItem } from 'lottie-web'
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { ImagePart } from '~/types/chat'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
+import { gsap } from 'gsap'
 import { uploadChatImage } from '~/api/chat'
+import deepOrbitAnimation from '~/assets/lottie/deepOrbit'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
@@ -530,6 +533,7 @@ async function handleSend() {
     toast.error('当前模型不支持图片', '请切换支持图片的模型后再发送')
     return
   }
+  playSendAnimation()
   try {
     isUploadingImages.value = draftImages.length > 0
     const uploadedImageParts: ImagePart[] = []
@@ -581,8 +585,127 @@ function autoResize() {
   el.style.height = `${Math.min(el.scrollHeight, 200)}px`
 }
 
+// ============================================================================
+// GSAP 微交互 + Lottie（深度分析双星环绕）
+// 统一遵循 prefers-reduced-motion：用户偏好减弱动效时全部跳过
+// ============================================================================
+const prefersReducedMotion
+  = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const deepPillEl = ref<HTMLElement | null>(null)
+const sendBtnEl = ref<HTMLElement | null>(null)
+
+/* 浮动徽标入场：整体弹性浮出后，文字四段错拍点亮（Friday → × → Claude → 深度分析） */
+function onBadgeEnter(el: Element, done: () => void) {
+  if (prefersReducedMotion) {
+    done()
+    return
+  }
+  const spans = el.querySelectorAll('.claude-badge-text > span')
+  gsap.timeline({ onComplete: done })
+    .fromTo(
+      el,
+      { y: 12, scale: 0.7, opacity: 0 },
+      { y: 0, scale: 1, opacity: 1, duration: 0.5, ease: 'back.out(1.9)' },
+    )
+    .fromTo(
+      spans,
+      { y: 5, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.28, stagger: 0.055, ease: 'power2.out' },
+      '-=0.3',
+    )
+}
+
+function onBadgeLeave(el: Element, done: () => void) {
+  if (prefersReducedMotion) {
+    done()
+    return
+  }
+  gsap.to(el, { y: 8, scale: 0.85, opacity: 0, duration: 0.18, ease: 'power2.in', onComplete: done })
+}
+
+/* 图片预览 chip：弹入 / 缩出 */
+function onChipEnter(el: Element, done: () => void) {
+  if (prefersReducedMotion) {
+    done()
+    return
+  }
+  gsap.fromTo(
+    el,
+    { scale: 0.85, opacity: 0, y: 6 },
+    { scale: 1, opacity: 1, y: 0, duration: 0.35, ease: 'back.out(1.8)', onComplete: done },
+  )
+}
+
+function onChipLeave(el: Element, done: () => void) {
+  if (prefersReducedMotion) {
+    done()
+    return
+  }
+  gsap.to(el, { scale: 0.85, opacity: 0, duration: 0.18, ease: 'power2.in', onComplete: done })
+}
+
+/* 发送瞬间：箭头向上飞出、再从下方弹回，按钮轻微回弹 */
+function playSendAnimation() {
+  const btn = sendBtnEl.value
+  if (!btn || prefersReducedMotion)
+    return
+  const arrow = btn.querySelector('span')
+  if (arrow) {
+    gsap.timeline()
+      .to(arrow, { y: -14, opacity: 0, duration: 0.16, ease: 'power2.in' })
+      .set(arrow, { y: 12 })
+      .to(arrow, { y: 0, opacity: 1, duration: 0.3, ease: 'back.out(2.2)' })
+  }
+  gsap.fromTo(btn, { scale: 0.88 }, { scale: 1, duration: 0.4, ease: 'elastic.out(1.1, 0.6)', clearProps: 'scale' })
+}
+
+/* 深度分析开关激活时：望远镜图标换成 Lottie「双星环绕」（Friday 青绿 × Claude 珊瑚） */
+const orbitEl = ref<HTMLElement | null>(null)
+let orbitAnim: AnimationItem | null = null
+
+watch(
+  () => chatStore.forceDeepAnalysis,
+  async (on) => {
+    if (!on) {
+      orbitAnim?.destroy()
+      orbitAnim = null
+      return
+    }
+    await nextTick()
+    if (!orbitEl.value || orbitAnim)
+      return
+    // 按需加载 lottie 轻量播放器（仅 svg 渲染），避免拖累首屏
+    const { default: lottie } = await import('lottie-web/build/player/lottie_light')
+    if (!chatStore.forceDeepAnalysis || !orbitEl.value || orbitAnim)
+      return
+    orbitAnim = lottie.loadAnimation({
+      container: orbitEl.value,
+      renderer: 'svg',
+      loop: true,
+      autoplay: !prefersReducedMotion,
+      // lottie 会原地修改 animationData，传副本避免污染模块单例
+      animationData: structuredClone(deepOrbitAnimation),
+    })
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  orbitAnim?.destroy()
+  orbitAnim = null
+})
+
 function toggleDeepAnalysis() {
   chatStore.forceDeepAnalysis = !chatStore.forceDeepAnalysis
+  if (!prefersReducedMotion && deepPillEl.value) {
+    gsap.fromTo(
+      deepPillEl.value,
+      { scale: 0.9 },
+      { scale: 1, duration: 0.45, ease: 'elastic.out(1.2, 0.5)', clearProps: 'scale' },
+    )
+  }
 }
 
 function toggleNotifications() {
@@ -610,19 +733,24 @@ function toggleNotifications() {
 
       <!-- 输入卡片（外层 wrap 承载深度分析模式的浮动 Claude 徽标） -->
       <div class="input-card-wrap">
-        <Transition name="claude-float">
+        <Transition :css="false" @enter="onBadgeEnter" @leave="onBadgeLeave">
           <div
             v-if="chatStore.forceDeepAnalysis"
             class="claude-badge"
             aria-hidden="true"
           >
-            <!-- Claude Code 终端图标：深色终端窗 + 珊瑚色 prompt 提示符 -->
+            <!-- Claude Code 终端图标：暖黑底上略浅的终端窗 + 珊瑚色 prompt 提示符 -->
             <svg class="claude-badge-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1.5" y="1.5" width="21" height="21" rx="5.5" fill="#1F1E1C" />
+              <rect x="1" y="1" width="22" height="22" rx="6" fill="#34312C" />
               <path d="M6.8 8.4 10.6 12l-3.8 3.6" stroke="#D97757" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none" />
               <path d="M12.6 16.2h4.6" stroke="#FAF9F5" stroke-width="2.1" stroke-linecap="round" fill="none" />
             </svg>
-            <span class="claude-badge-text">Friday × Claude Code 深度分析</span>
+            <span class="claude-badge-text">
+              <span class="claude-badge-friday">Friday</span>
+              <span class="claude-badge-times">×</span>
+              <span class="claude-badge-claude">Claude Code</span>
+              <span class="claude-badge-mode">深度分析</span>
+            </span>
           </div>
         </Transition>
 
@@ -656,7 +784,14 @@ function toggleNotifications() {
             @input="autoResize"
           />
 
-          <div v-if="pendingImages.length > 0" class="image-preview-strip">
+          <TransitionGroup
+            v-if="pendingImages.length > 0"
+            tag="div"
+            class="image-preview-strip"
+            :css="false"
+            @enter="onChipEnter"
+            @leave="onChipLeave"
+          >
             <div
               v-for="image in pendingImages"
               :key="image.id"
@@ -680,7 +815,7 @@ function toggleNotifications() {
                 <span class="icon-[lucide--x] text-[12px]" />
               </button>
             </div>
-          </div>
+          </TransitionGroup>
 
           <!-- 下层：工具栏 -->
           <div class="input-toolbar">
@@ -711,6 +846,7 @@ function toggleNotifications() {
                 <Tooltip>
                   <TooltipTrigger as-child>
                     <button
+                      ref="deepPillEl"
                       type="button"
                       class="toolbar-pill"
                       :aria-label="chatStore.forceDeepAnalysis ? '关闭深度分析' : '开启深度分析'"
@@ -718,7 +854,9 @@ function toggleNotifications() {
                       :class="{ 'toolbar-pill--active': chatStore.forceDeepAnalysis }"
                       @click="toggleDeepAnalysis"
                     >
-                      <span class="icon-[lucide--telescope] text-[14px]" />
+                      <!-- 激活态：Lottie 双星环绕（Friday 青绿 × Claude 珊瑚）替换静态望远镜 -->
+                      <span v-if="chatStore.forceDeepAnalysis" ref="orbitEl" class="pill-orbit" aria-hidden="true" />
+                      <span v-else class="icon-[lucide--telescope] text-[14px]" />
                       <span>深度分析</span>
                     </button>
                   </TooltipTrigger>
@@ -873,6 +1011,7 @@ function toggleNotifications() {
               </button>
               <button
                 v-else
+                ref="sendBtnEl"
                 type="button"
                 class="send-btn"
                 :class="{ 'send-btn--active': canSend }"
@@ -928,25 +1067,24 @@ function toggleNotifications() {
   position: relative;
 }
 
-/* 深度分析模式：Claude Code 徽标从卡片顶部浮出（静置，无晃动） */
+/* 深度分析模式：Claude Code 徽标从卡片顶部浮出（静置，无晃动）。
+   采用 Claude Code 终端的暖黑（#1F1E1C 系）作底，让 Friday 青绿与
+   Claude 珊瑚各自保持本色、在中性暗底上并置，而不是互相调和成脏色。 */
 .claude-badge {
   position: absolute;
-  top: -0.8125rem;
+  top: -0.875rem;
   left: 1.125rem;
   z-index: 11;
   display: inline-flex;
   align-items: center;
   gap: 0.4375rem;
-  padding: 0.25rem 0.6875rem 0.25rem 0.375rem;
+  padding: 0.3125rem 0.75rem 0.3125rem 0.4375rem;
   border-radius: 9999px;
-  border: 1px solid transparent;
-  /* 双色描边：与输入框的交织边框呼应（Friday 青绿 × Claude 珊瑚） */
-  background:
-    linear-gradient(hsl(0 0% 100% / 0.97), hsl(0 0% 100% / 0.97)) padding-box,
-    linear-gradient(110deg, hsl(168 76% 42% / 0.55), hsl(15 63% 55% / 0.55)) border-box;
+  border: 1px solid hsl(45 8% 26%);
+  background: linear-gradient(180deg, hsl(45 8% 16%), hsl(45 10% 11%));
   box-shadow:
-    0 4px 12px hsl(215 28% 17% / 0.1),
-    inset 0 1px 0 hsl(0 0% 100% / 0.8);
+    0 6px 16px hsl(30 20% 12% / 0.28),
+    inset 0 1px 0 hsl(0 0% 100% / 0.07);
   pointer-events: none;
   user-select: none;
 }
@@ -959,33 +1097,31 @@ function toggleNotifications() {
 }
 
 .claude-badge-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
   font-size: 0.6875rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.01em;
-  /* Friday × Claude 渐变文字，呼应「共同协作」 */
-  background: linear-gradient(100deg, hsl(168 70% 30%), hsl(15 58% 42%));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
   white-space: nowrap;
 }
 
-/* 入场：从卡片后方向上浮出 */
-.claude-float-enter-active {
-  transition:
-    opacity 0.3s ease-out,
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+/* 各品牌保留本色：Friday 青绿 / Claude 珊瑚，中性奶白作为衬底文字 */
+.claude-badge-friday {
+  color: hsl(168 62% 52%);
 }
-.claude-float-leave-active {
-  transition:
-    opacity 0.18s ease-in,
-    transform 0.18s ease-in;
+.claude-badge-times {
+  color: hsl(45 8% 52%);
+  font-weight: 500;
 }
-.claude-float-enter-from,
-.claude-float-leave-to {
-  opacity: 0;
-  transform: translateY(0.625rem) scale(0.85);
+.claude-badge-claude {
+  color: hsl(15 76% 68%);
 }
+.claude-badge-mode {
+  color: hsl(48 30% 92%);
+}
+
+/* 徽标入场/退场动画由 GSAP 驱动（onBadgeEnter / onBadgeLeave） */
 
 .input-card {
   border: 1px solid hsl(214 32% 88%);
@@ -1013,9 +1149,10 @@ function toggleNotifications() {
   opacity: 0.6;
 }
 
-/* ======== 深度分析模式边框：Friday 青绿 × Claude 珊瑚 交织流动 ========
-   隐喻 Friday 和 Claude Code 协作分析。conic-gradient 双色绕卡片缓慢
-   旋转；通过 @property 注册角度变量使其可被动画插值。 */
+/* ======== 深度分析模式边框：双色光点环游 ========
+   边框主体保持中性灰（与默认卡片一致），只让一颗 Friday 青绿光点与
+   一颗 Claude 珊瑚光点在边框上对向追逐——隐喻两个代理协作，而不是
+   把两种高饱和色糊满整圈。通过 @property 注册角度变量使其可被动画插值。 */
 @property --friday-deep-angle {
   syntax: '<angle>';
   inherits: false;
@@ -1028,27 +1165,30 @@ function toggleNotifications() {
     linear-gradient(hsl(0 0% 100% / 0.96), hsl(0 0% 100% / 0.96)) padding-box,
     conic-gradient(
         from var(--friday-deep-angle),
-        hsl(168 76% 42% / 0.9) 0deg,
-        hsl(15 63% 55% / 0.9) 90deg,
-        hsl(168 76% 42% / 0.9) 180deg,
-        hsl(15 63% 55% / 0.9) 270deg,
-        hsl(168 76% 42% / 0.9) 360deg
+        hsl(214 32% 87%) 0deg,
+        hsl(168 76% 40%) 38deg,
+        hsl(168 76% 40% / 0.3) 70deg,
+        hsl(214 32% 87%) 110deg,
+        hsl(214 32% 87%) 180deg,
+        hsl(15 70% 56%) 218deg,
+        hsl(15 70% 56% / 0.3) 250deg,
+        hsl(214 32% 87%) 290deg,
+        hsl(214 32% 87%) 360deg
       )
       border-box;
-  animation: deep-border-weave 6s linear infinite;
+  animation: deep-border-weave 7s linear infinite;
   box-shadow:
-    0 0 0 3px hsl(168 76% 42% / 0.05),
     0 10px 24px hsl(215 28% 17% / 0.09),
     0 1px 2px hsl(215 28% 17% / 0.05);
 }
 .input-card--deep:focus-within {
-  /* 覆盖基础 .input-card:focus-within 的纯色边框，保持渐变描边可见 */
+  /* 覆盖基础 .input-card:focus-within 的纯色边框，保持光点描边可见。
+     注意不要在此改 animation-duration：中途改时长会让动画进度重新映射、光点跳位 */
   border-color: transparent;
-  animation-duration: 3.5s;
   box-shadow:
-    0 0 0 3px hsl(168 76% 42% / 0.08),
-    0 0 18px hsl(15 63% 55% / 0.12),
-    0 12px 28px hsl(215 28% 17% / 0.1);
+    0 0 0 3px hsl(168 76% 42% / 0.05),
+    0 12px 28px hsl(215 28% 17% / 0.1),
+    0 1px 2px hsl(215 28% 17% / 0.05);
 }
 
 @keyframes deep-border-weave {
@@ -1240,14 +1380,32 @@ function toggleNotifications() {
   background: hsl(210 40% 96%);
   color: hsl(215 28% 25%);
 }
-/* 激活态与 Claude 品牌色保持一致（深度分析 = Claude Code 模式） */
+/* 激活态：Claude Code 终端暖黑底 + 珊瑚图标 + 奶白文字，与浮动徽标呼应 */
 .toolbar-pill--active {
-  border-color: hsl(15 63% 55% / 0.45);
-  background: hsl(15 63% 55% / 0.1);
-  color: hsl(15 58% 40%);
+  border-color: hsl(45 8% 24%);
+  background: linear-gradient(180deg, hsl(45 8% 17%), hsl(45 10% 12%));
+  color: hsl(48 30% 92%);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06);
 }
 .toolbar-pill--active:hover {
-  background: hsl(15 63% 55% / 0.16);
+  background: linear-gradient(180deg, hsl(45 8% 21%), hsl(45 10% 15%));
+  color: hsl(48 30% 95%);
+}
+.toolbar-pill--active [class*='icon-'] {
+  color: hsl(15 76% 64%);
+}
+
+/* Lottie 双星环绕容器（激活态替换望远镜图标） */
+.pill-orbit {
+  display: inline-flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+.pill-orbit :deep(svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ======== 模型选择器 ======== */
