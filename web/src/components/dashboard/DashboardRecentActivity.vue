@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
+import { ref, toRef } from 'vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 
-defineProps<{
+const props = defineProps<{
   executions: WorkflowExecution[]
   loading: boolean
 }>()
+
+// 数据到达后列表行错拍浮入
+const rootEl = ref<HTMLElement | null>(null)
+useListReveal(rootEl, '.activity-row', toRef(() => !props.loading))
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr)
@@ -20,7 +25,7 @@ function formatDate(dateStr: string) {
 </script>
 
 <template>
-  <section>
+  <section ref="rootEl">
     <div class="card overflow-hidden">
       <!-- 标题栏 -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-border/50">
@@ -84,7 +89,7 @@ function formatDate(dateStr: string) {
             v-for="(execution, index) in executions.slice(0, 5)"
             :key="execution.id"
             :to="`/executions/${execution.id}`"
-            class="group flex items-center gap-4 p-3 rounded-xl hover:bg-muted/50 transition-colors duration-200"
+            class="activity-row group flex items-center gap-4 p-3 rounded-xl hover:bg-muted/50 transition-colors duration-200"
           >
             <!-- 序号 -->
             <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center font-medium text-muted-foreground text-sm group-hover:bg-primary/10 group-hover:text-primary transition-colors">

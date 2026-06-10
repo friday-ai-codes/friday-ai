@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { TransitionPresets, useTransition } from '@vueuse/core'
-import { computed, reactive, watch } from 'vue'
-import StatCard from '~/components/common/StatCard.vue'
+import { gsap } from 'gsap'
+import { computed, reactive, ref, watch } from 'vue'
 
 export interface KpiStat {
   title: string
   value: number
+  /** 完整 iconify 类名，如 'icon-[lucide--folder-git-2]'（必须是完整字面量，Tailwind 才能扫描到） */
   icon: string
-  statIconClass: string
   link: string
+  /** 今日新增数量 */
+  todayNew: number
 }
 
 const props = defineProps<{
@@ -16,23 +18,20 @@ const props = defineProps<{
   loading: boolean
 }>()
 
-// 为每个 stat 创建动效源（初始值为 0）
-const sources = reactive<Record<number, number>>({
-  0: 0,
-  1: 0,
-  2: 0,
-  3: 0,
-})
+// 为每个 stat 创建动效源（初始值为 0）；stats 数量在页面生命周期内固定
+const indices = props.stats.map((_, i) => i)
+const sources = reactive<Record<number, number>>(
+  Object.fromEntries(indices.map(i => [i, 0])),
+)
 
-// 用 useTransition 包裹，实现数字平滑滚动
+// 数字平滑滚动动效
 const animated = Object.fromEntries(
-  [0, 1, 2, 3].map(i => [i, useTransition(
+  indices.map(i => [i, useTransition(
     computed(() => sources[i]),
     { duration: 800, transition: TransitionPresets.easeOutCubic },
   )]),
 )
 
-// 监听 loading 变化，loading 结束后赋值触发动效
 watch(() => props.loading, (newLoading) => {
   if (!newLoading) {
     props.stats.forEach((stat, i) => {
@@ -41,7 +40,6 @@ watch(() => props.loading, (newLoading) => {
   }
 })
 
-// 监听 stats 变化（数据更新时重新动画）
 watch(() => props.stats.map(s => s.value), (newValues) => {
   if (!props.loading) {
     newValues.forEach((v, i) => {
@@ -49,19 +47,63 @@ watch(() => props.stats.map(s => s.value), (newValues) => {
     })
   }
 }, { deep: true })
+
+// 格子入场 stagger：与父级 section 浮入错开一拍，形成「卡片 → 内容」两级节奏
+const rootEl = ref<HTMLElement | null>(null)
+useGsapReveal(rootEl, () => {
+  gsap.from('.kpi-cell', {
+    y: 14,
+    autoAlpha: 0,
+    duration: 0.45,
+    stagger: 0.06,
+    delay: 0.25,
+    ease: 'power2.out',
+    clearProps: 'all',
+  })
+})
 </script>
 
 <template>
-  <section class="grid gap-5 grid-cols-2 lg:grid-cols-4">
-    <StatCard
-      v-for="(stat, index) in stats"
-      :key="stat.title"
-      :title="stat.title"
-      :value="loading ? 0 : Math.round(animated[index]?.value ?? 0)"
-      :icon="stat.icon"
-      :icon-class="stat.statIconClass"
-      :loading="loading"
-      :to="stat.link"
-    />
+  <!-- 单卡分格 KPI strip：格子间用 1px 分隔线，避免 6 张独立小卡片的拥挤感 -->
+  <section ref="rootEl" class="card overflow-hidden" aria-label="数据总览">
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-px bg-border/60">
+      <RouterLink
+        v-for="(stat, index) in stats"
+        :key="stat.title"
+        :to="stat.link"
+        class="kpi-cell group bg-card px-5 py-4 flex flex-col gap-2.5 cursor-pointer transition-colors duration-200 hover:bg-primary/4 focus-visible:outline-2 focus-visible:outline-primary/50 focus-visible:-outline-offset-2"
+      >
+        <!-- 标题行：图标 + 名称，整行不换行 -->
+        <div class="flex items-center gap-1.5 text-muted-foreground group-hover:text-primary transition-colors duration-200">
+          <span class="text-base shrink-0" :class="stat.icon" aria-hidden="true" />
+          <span class="text-xs font-medium whitespace-nowrap">{{ stat.title }}</span>
+          <span
+            class="icon-[lucide--arrow-up-right] ml-auto text-sm opacity-0 group-hover:opacity-60 transition-opacity duration-200"
+            aria-hidden="true"
+          />
+        </div>
+
+        <!-- 数值 + 今日新增 -->
+        <template v-if="loading">
+          <span class="inline-block w-14 h-8 bg-muted animate-pulse rounded" />
+          <span class="inline-block w-16 h-3.5 bg-muted animate-pulse rounded" />
+        </template>
+        <template v-else>
+          <p class="text-3xl font-bold text-foreground tabular-nums leading-none">
+            {{ Math.round(animated[index]?.value ?? 0) }}
+          </p>
+          <p class="text-xs tabular-nums leading-none">
+            <span
+              v-if="stat.todayNew > 0"
+              class="inline-flex items-center gap-1 text-emerald-600 font-medium"
+            >
+              <span class="icon-[lucide--trending-up]" aria-hidden="true" />
+              今日 +{{ stat.todayNew }}
+            </span>
+            <span v-else class="text-muted-foreground/60">今日暂无新增</span>
+          </p>
+        </template>
+      </RouterLink>
+    </div>
   </section>
 </template>

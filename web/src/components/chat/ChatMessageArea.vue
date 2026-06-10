@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
+import { gsap } from 'gsap'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { usePermission } from '~/composables/usePermission'
@@ -24,6 +25,43 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
+
+// ============================================================================
+// 消息进场动效（GSAP）：新消息浮入。初次渲染历史消息不动画
+// （TransitionGroup 默认不触发初始 enter），避免长对话开屏集体闪动。
+// ============================================================================
+function onMessageEnter(el: Element, done: () => void) {
+  if (usePrefersReducedMotion()) {
+    done()
+    return
+  }
+  gsap.fromTo(
+    el,
+    { y: 16, autoAlpha: 0 },
+    { y: 0, autoAlpha: 1, duration: 0.38, ease: 'power2.out', clearProps: 'all', onComplete: done },
+  )
+}
+
+function onMessageLeave(_el: Element, done: () => void) {
+  done()
+}
+
+/**
+ * v-gsap-rise：元素挂载时浮入。用于流式气泡和各类 v-if 卡片
+ * （编码进度 / 确认 / 结果 / 错误等），它们的出现时机由业务状态驱动，
+ * 用指令比逐个包 Transition 更轻。
+ */
+const vGsapRise = {
+  mounted(el: HTMLElement) {
+    if (usePrefersReducedMotion())
+      return
+    gsap.fromTo(
+      el,
+      { y: 16, autoAlpha: 0 },
+      { y: 0, autoAlpha: 1, duration: 0.38, ease: 'power2.out', clearProps: 'all' },
+    )
+  },
+}
 
 const cleanupDialogOpen = ref(false)
 function handleCleanupConfirmed(_beforeId: string) {
@@ -283,16 +321,20 @@ function handleExportSuccess(
         @export="handleMultiExport"
       />
       <div class="chat-message-stack mx-auto pt-8 pb-40 space-y-7">
-        <ChatMessageBubble
-          v-for="msg in chatStore.messages"
-          :key="msg.id"
-          :message="msg"
-          @export-single="handleExportSingle"
-        />
+        <!-- TransitionGroup 不渲染包裹元素，气泡仍是 stack 直接子元素（space-y 生效） -->
+        <TransitionGroup :css="false" @enter="onMessageEnter" @leave="onMessageLeave">
+          <ChatMessageBubble
+            v-for="msg in chatStore.messages"
+            :key="msg.id"
+            :message="msg"
+            @export-single="handleExportSingle"
+          />
+        </TransitionGroup>
 
         <!-- 流式消息 -->
         <ChatMessageBubble
           v-if="chatStore.isStreaming"
+          v-gsap-rise
           :message="{
             id: 'streaming',
             role: 'assistant',
@@ -317,12 +359,14 @@ function handleExportSuccess(
         <ClarificationCard
           v-for="payload in visibleClarifications"
           :key="payload.clarification_id"
+          v-gsap-rise
           :payload="payload"
         />
 
         <!-- 编码进度卡片 (per D-03: inline 嵌入消息流) -->
         <CodingProgressCard
           v-if="chatStore.activeCodingSession?.status === 'running' && chatStore.codingProgress"
+          v-gsap-rise
           :steps="chatStore.codingProgress.steps"
           :modified-files-count="chatStore.codingProgress.modifiedFilesCount"
           :is-complete="false"
@@ -335,6 +379,7 @@ function handleExportSuccess(
           v-if="chatStore.activeCodingSession?.status === 'awaiting_confirmation'
             && chatStore.activeCodingSession.confirmationStep === 'commit_message'
             && chatStore.commitConfirmData"
+          v-gsap-rise
           :session-id="chatStore.activeCodingSession.sessionId"
           :suggested-commit-message="chatStore.commitConfirmData.suggestedCommitMessage"
           :conflict-data="chatStore.commitConfirmData.conflictCheck"
@@ -347,6 +392,7 @@ function handleExportSuccess(
           v-if="chatStore.activeCodingSession?.status === 'awaiting_confirmation'
             && chatStore.activeCodingSession.confirmationStep === 'pr_review'
             && chatStore.prConfirmData"
+          v-gsap-rise
           :session-id="chatStore.activeCodingSession.sessionId"
           :suggested-pr-title="chatStore.prConfirmData.suggestedPrTitle"
           :suggested-pr-description="chatStore.prConfirmData.suggestedPrDescription"
@@ -360,6 +406,7 @@ function handleExportSuccess(
         <!-- 编码结果卡片 (per D-09) -->
         <CodingResultCard
           v-if="chatStore.codingResult || (!chatStore.codingError && historyCodingResult)"
+          v-gsap-rise
           :pr-url="(chatStore.codingResult?.prUrl || historyCodingResult?.prUrl) ?? ''"
           :branch-name="(chatStore.codingResult?.branchName || historyCodingResult?.branchName) ?? ''"
           :modified-files-count="(chatStore.codingResult?.modifiedFilesCount || historyCodingResult?.modifiedFilesCount) ?? 0"
@@ -369,12 +416,14 @@ function handleExportSuccess(
         <!-- 编码错误卡片 (per D-12) -->
         <CodingErrorCard
           v-if="chatStore.codingError || (!chatStore.codingResult && historyCodingError)"
+          v-gsap-rise
           :error-message="(chatStore.codingError?.errorMessage || historyCodingError?.errorMessage) ?? ''"
         />
 
         <!-- /：凭证缺失结构化降级卡片 -->
         <ProviderCredentialMissingCard
           v-if="chatStore.credentialMissingPayload"
+          v-gsap-rise
           :missing-provider="chatStore.credentialMissingPayload.missingProvider"
           :user-role="userRole"
           :space-id="currentSpaceIdRef"
@@ -383,6 +432,7 @@ function handleExportSuccess(
         <!-- /：上下文超限结构化引导卡片 + CleanupDialog -->
         <ContextExceededCard
           v-if="chatStore.lastContextExceeded"
+          v-gsap-rise
           :estimated-tokens="chatStore.lastContextExceeded.estimated_tokens"
           :max-tokens="chatStore.lastContextExceeded.max_tokens"
           :exceeded-by="chatStore.lastContextExceeded.exceeded_by"
@@ -393,7 +443,7 @@ function handleExportSuccess(
         />
 
         <!-- 错误提示 -->
-        <div v-if="chatStore.error" class="error-card">
+        <div v-if="chatStore.error" v-gsap-rise class="error-card">
           <div class="error-icon">
             <span class="icon-[lucide--alert-circle] text-sm" />
           </div>

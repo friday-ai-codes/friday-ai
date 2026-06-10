@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { gsap } from 'gsap'
+import pulseRingsAnimation from '~/assets/lottie/pulseRings'
 import {
   Select,
   SelectContent,
@@ -9,6 +11,20 @@ import {
 
 const chatStore = useChatStore()
 const spacesStore = useSpacesStore()
+
+// ============================================================================
+// 入场动效：logo 弹入（背后 Lottie 涟漪光环）→ 标题/文案/引导卡片错拍浮现
+// ============================================================================
+const rootEl = ref<HTMLElement | null>(null)
+const logoRingsEl = ref<HTMLElement | null>(null)
+
+useLottie(logoRingsEl, pulseRingsAnimation)
+
+useGsapReveal(rootEl, () => {
+  gsap.timeline()
+    .from('.welcome-logo-wrap', { y: 16, scale: 0.78, autoAlpha: 0, duration: 0.55, ease: 'back.out(1.8)' })
+    .from('.welcome-item', { y: 12, autoAlpha: 0, duration: 0.4, stagger: 0.07, ease: 'power2.out', clearProps: 'all' }, '-=0.25')
+})
 
 const hasSpace = computed(() => !!chatStore.selectedSpaceId)
 /** 实例里一个空间都没有：引导创建，或直接开始通用对话 */
@@ -36,15 +52,23 @@ function handleQuickPrompt(prompt: string) {
   <div class="welcome-stage h-full flex items-center justify-center">
     <div class="w-full max-w-xl px-6 pb-36 text-center">
       <!-- Logo + 问候 -->
-      <img
-        src="/logo-mark.svg"
-        alt="Friday"
-        class="welcome-logo mx-auto w-14 h-14 mb-5"
-      >
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">
+      <div class="welcome-logo-wrap relative mx-auto w-14 h-14 mb-5">
+        <!-- Lottie 涟漪光环：在 logo 背后缓缓扩散 -->
+        <div
+          ref="logoRingsEl"
+          class="absolute -inset-5 pointer-events-none"
+          aria-hidden="true"
+        />
+        <img
+          src="/logo-mark.svg"
+          alt="Friday"
+          class="welcome-logo relative w-14 h-14"
+        >
+      </div>
+      <h1 class="welcome-item text-2xl font-semibold tracking-tight text-foreground">
         有什么可以帮你？
       </h1>
-      <p class="mt-2 text-sm text-muted-foreground">
+      <p class="welcome-item mt-2 text-sm text-muted-foreground">
         <template v-if="hasSpace">
           基于「{{ currentSpaceName }}」空间的代码知识，随时为你解答
         </template>
@@ -57,7 +81,7 @@ function handleQuickPrompt(prompt: string) {
       </p>
 
       <!-- 实例无任何空间：引导创建 or 直接对话 -->
-      <div v-if="noSpacesExist" class="mt-8 flex justify-center">
+      <div v-if="noSpacesExist" class="welcome-item mt-8 flex justify-center">
         <div class="welcome-space-card">
           <div class="flex items-center gap-2.5 text-left">
             <span class="welcome-space-icon">
@@ -85,7 +109,7 @@ function handleQuickPrompt(prompt: string) {
       </div>
 
       <!-- 有空间但未选：引导选择（也允许直接对话） -->
-      <div v-else-if="!hasSpace" class="mt-8 flex justify-center">
+      <div v-else-if="!hasSpace" class="welcome-item mt-8 flex justify-center">
         <div class="welcome-space-card">
           <div class="flex items-center gap-2.5 text-left">
             <span class="welcome-space-icon">
@@ -126,7 +150,7 @@ function handleQuickPrompt(prompt: string) {
           v-for="item in quickPrompts"
           :key="item.label"
           type="button"
-          class="welcome-prompt-card group"
+          class="welcome-prompt-card welcome-item group"
           @click="handleQuickPrompt(item.prompt)"
         >
           <span class="welcome-prompt-icon">

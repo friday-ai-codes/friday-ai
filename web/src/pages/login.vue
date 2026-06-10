@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { OIDCProviderPublic } from '~/types'
 import { toTypedSchema } from '@vee-validate/zod'
+import { gsap } from 'gsap'
 import { useForm } from 'vee-validate'
 import * as z from 'zod'
 import { getAuthorizeUrl, getPublicProviders } from '~/api/oidc'
@@ -127,10 +128,30 @@ const features = [
   { icon: 'icon-[lucide--workflow]', text: '可视化工作流编排' },
   { icon: 'icon-[lucide--shield-check]', text: '企业级安全与权限控制' },
 ]
+
+// ============================================================================
+// 入场动效（GSAP）：品牌区标题 → feature 列表错拍滑入，登录卡片弹入；
+// 背景光斑缓慢漂浮（无限 yoyo）。卸载时随 gsap.context 一并清理。
+// ============================================================================
+const pageEl = ref<HTMLElement | null>(null)
+
+useGsapReveal(pageEl, () => {
+  gsap.timeline()
+    .from('.login-brand-title', { y: 22, autoAlpha: 0, duration: 0.55, ease: 'power3.out', delay: 0.1 })
+    .from('.login-brand-sub', { y: 16, autoAlpha: 0, duration: 0.45, ease: 'power2.out' }, '-=0.3')
+    .from('.login-feature', { x: -24, autoAlpha: 0, duration: 0.4, stagger: 0.08, ease: 'power2.out' }, '-=0.2')
+    .from('.login-card', { y: 24, scale: 0.96, autoAlpha: 0, duration: 0.5, ease: 'back.out(1.4)' }, 0.25)
+
+  // 背景光斑漂浮：幅度小、周期长，提供「呼吸感」而不抢注意力
+  gsap.to('.login-blob--a', { x: 36, y: 28, duration: 9, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+  gsap.to('.login-blob--b', { x: -30, y: -22, duration: 11, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+  gsap.to('.login-blob--c', { x: -24, y: 30, duration: 10, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+  gsap.to('.login-blob--d', { x: 28, y: -26, duration: 12, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+})
 </script>
 
 <template>
-  <div class="min-h-screen flex">
+  <div ref="pageEl" class="min-h-screen flex">
     <!-- 左侧品牌区 -->
     <div class="hidden lg:flex lg:w-1/2 xl:w-[55%] relative flex-col justify-between p-12 overflow-hidden bg-slate-900">
       <!-- 背景装饰 -->
@@ -140,9 +161,9 @@ const features = [
           class="absolute inset-0 opacity-[0.03]"
           style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 48px 48px;"
         />
-        <!--  subtle radial glow -->
-        <div class="absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-teal-500/10 blur-3xl" />
-        <div class="absolute -bottom-1/4 -left-1/4 w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-3xl" />
+        <!--  subtle radial glow（GSAP 驱动缓慢漂浮） -->
+        <div class="login-blob--a absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-teal-500/10 blur-3xl" />
+        <div class="login-blob--b absolute -bottom-1/4 -left-1/4 w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-3xl" />
       </div>
 
       <!-- 顶部 Logo -->
@@ -157,21 +178,20 @@ const features = [
 
       <!-- 中间内容 -->
       <div class="relative z-10 max-w-md">
-        <h2 class="text-4xl font-bold text-white leading-tight mb-4 animate-fade-in">
+        <h2 class="login-brand-title text-4xl font-bold text-white leading-tight mb-4">
           让 AI 成为您的<br>
           <span class="bg-gradient-to-r from-teal-300 to-cyan-300 bg-clip-text text-transparent">开发伙伴</span>
         </h2>
-        <p class="text-slate-400 text-lg mb-10 leading-relaxed">
+        <p class="login-brand-sub text-slate-400 text-lg mb-10 leading-relaxed">
           智能代码审查、自动化工作流、AI 辅助编程——Friday AI 帮助团队更高效地构建软件。
         </p>
 
-        <!-- Feature 列表 -->
+        <!-- Feature 列表（入场由 GSAP 时间线错拍驱动） -->
         <div class="space-y-4">
           <div
             v-for="(feature, i) in features"
             :key="i"
-            class="flex items-center gap-3 text-slate-300 animate-slide-in-right"
-            :style="{ animationDelay: `${200 + i * 100}ms`, animationFillMode: 'both' }"
+            class="login-feature flex items-center gap-3 text-slate-300"
           >
             <div class="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
               <span :class="`${feature.icon} text-sm text-teal-400`" />
@@ -189,10 +209,10 @@ const features = [
 
     <!-- 右侧表单区 -->
     <div class="flex-1 flex items-center justify-center relative overflow-hidden">
-      <!-- 背景层次 -->
+      <!-- 背景层次（GSAP 驱动缓慢漂浮） -->
       <div class="absolute inset-0 bg-mesh-gradient" />
-      <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-      <div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
+      <div class="login-blob--c absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
+      <div class="login-blob--d absolute bottom-0 left-0 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
 
       <!-- 移动端顶部 Logo -->
       <RouterLink to="/" class="lg:hidden absolute top-6 left-6 flex items-center gap-2 z-10 group">
@@ -206,7 +226,7 @@ const features = [
 
       <!-- 登录卡片 -->
       <div class="relative z-10 w-full max-w-sm mx-4">
-        <div class="bg-card/70 backdrop-blur-xl rounded-2xl border border-border/50 shadow-glass p-8 animate-scale-in">
+        <div class="login-card bg-card/70 backdrop-blur-xl rounded-2xl border border-border/50 shadow-glass p-8">
           <!-- 标题 -->
           <div class="mb-8">
             <h1 class="text-2xl font-bold text-foreground mb-1">
