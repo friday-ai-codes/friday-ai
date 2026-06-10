@@ -9,6 +9,8 @@ services:
       context: ./server
       dockerfile: Dockerfile
     image: friday-server:local
+    environment:
+      - FRIDAY_RUNNER_IMAGE=friday-task:local
 
   web:
     build:
@@ -21,3 +23,18 @@ services:
       context: ./runner
       dockerfile: Dockerfile
     image: friday-runner:local
+    environment:
+      - FRIDAY_RUNNER_IMAGE=friday-task:local
+    depends_on:
+      task-image:
+        condition: service_completed_successfully
+
+  # task 镜像没有常驻服务：runner 通过宿主 docker.sock 按需创建任务容器。
+  # 这里借一个"构建完即退出"的服务让 compose --build 把镜像构建出来。
+  task-image:
+    build:
+      context: ./task
+      dockerfile: Dockerfile
+    image: friday-task:local
+    entrypoint: ["/bin/true"]
+    restart: "no"

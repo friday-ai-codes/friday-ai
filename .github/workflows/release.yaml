@@ -34,6 +34,7 @@ jobs:
           - { name: server, context: ./server, dockerfile: ./server/Dockerfile }
           - { name: web,    context: ./web,    dockerfile: ./web/Dockerfile }
           - { name: runner, context: ./runner, dockerfile: ./runner/Dockerfile }
+          - { name: task,   context: ./task,   dockerfile: ./task/Dockerfile }
         platform:
           - { os: linux/amd64, pair: amd64, runner: ubuntu-latest }
           - { os: linux/arm64, pair: arm64, runner: ubuntu-24.04-arm }
@@ -85,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [server, web, runner]
+        service: [server, web, runner, task]
     steps:
       - uses: docker/login-action@v3
         with:
