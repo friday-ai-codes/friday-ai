@@ -43,6 +43,8 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
+      # 与 runner 服务的 FRIDAY_RUNNER_IMAGE 保持同一默认值（设置页展示用）
+      - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
     volumes:
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
     networks:
@@ -92,6 +94,9 @@ services:
       - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
       - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
       - FRIDAY_RUNNER_EXECUTOR=docker
+      # Task 容器镜像：默认用发版时推送到 ghcr 的预构建镜像；
+      # 本地源码调试可改成 friday-task:latest（make build-task 构建）。
+      - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./runner/entrypoint.sh:/entrypoint.sh:ro
