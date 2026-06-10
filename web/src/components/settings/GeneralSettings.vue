@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { SystemInfoResponse } from '~/api/system'
 import { onMounted, ref } from 'vue'
-import { getAllSettings, updateSetting } from '~/api/settings'
+import { getAllSettings, SettingKey, updateSetting } from '~/api/settings'
 import {
   downloadSystemBackup,
   getSystemInfo,
@@ -29,7 +29,7 @@ async function loadHost() {
   hostLoading.value = true
   try {
     const settings = await getAllSettings()
-    const found = settings.find(s => s.key === 'site_host')
+    const found = settings.find(s => s.key === SettingKey.SITE_HOST)
     hostValue.value = found?.value ?? ''
     hostDirty.value = false
   }
@@ -47,7 +47,7 @@ async function saveHost() {
   }
   hostSaving.value = true
   try {
-    await updateSetting('site_host' as any, hostValue.value.trim())
+    await updateSetting(SettingKey.SITE_HOST, hostValue.value.trim())
     success('Host 配置已保存')
     hostDirty.value = false
   }
@@ -184,7 +184,7 @@ onMounted(() => {
               />
             </div>
             <p class="text-xs text-muted-foreground">
-              用于 Webhook 回调、邮件链接、分享地址等场景。留空则使用请求中的 Host 头。
+              用于生成 OIDC 登录回调、跳转链接等外部可访问地址。留空则使用服务端环境变量 FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL（默认 localhost，仅本机可用）。
             </p>
           </div>
           <div class="flex justify-end">
