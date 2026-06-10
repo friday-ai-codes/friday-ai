@@ -42,24 +42,30 @@ docker compose config
 Friday AI uses a strict commit subject format:
 ```text
 feat: add hat wobble
-^--^  ^------------^
-|     |
-|     +-> Summary in present tense.
+feat(web): add hat wobble
+^--^ ^-^  ^------------^
+|    |    |
+|    |    +-> Summary in present tense.
+|    +------> Optional scope in parentheses (e.g. web, server, runner).
 |
-+-------> Type: chore, docs, feat, fix, refactor, style, or test.
++-----------> Type: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, or test.
 ```
 Allowed types:
-- `feat`: a new user-facing feature, not build script work.
-- `fix`: a user-facing bug fix, not build script work.
+- `feat`: a new user-facing feature.
+- `fix`: a user-facing bug fix.
 - `docs`: documentation-only changes.
 - `style`: formatting changes with no production code change.
 - `refactor`: production code refactoring, such as renaming a variable.
+- `perf`: performance improvements.
 - `test`: adding or refactoring tests with no production code change.
+- `build` / `ci`: build system or CI configuration changes.
+- `revert`: reverting a previous commit.
 - `chore`: maintenance work with no production code change.
 
-Do not use scopes, checkpoint numbers, mixed types, or private workflow IDs in
-commit subjects. The CI job runs `scripts/check_commit_messages.sh --all` and
-rejects subjects outside this format.
+A scope in parentheses is optional (no whitespace inside). Do not use mixed
+types, checkpoint numbers, or private workflow IDs in commit subjects. The CI
+job runs `scripts/check_commit_messages.sh --all` and rejects subjects outside
+this format.
 
 ## Security
 Do not report vulnerabilities in public issues. Follow [SECURITY.md](SECURITY.md).

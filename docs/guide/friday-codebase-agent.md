@@ -3,25 +3,19 @@ title: Friday Codebase Agent
 ---
 # Friday Codebase Agent
 
-`friday-codebase-agent` 是一个可分发的 Agent Skill，配合 `@friday-ai-codes/mcp` MCP server，让 Cursor / Claude Code / Codex 等本地 AI 编码助手直接使用 Friday 的代码索引、Graph RAG、编码计划、远程执行和 MR 创建能力。
+Friday Codebase Agent 指的是一组 [Agent Skills](/integrations/skills)（`friday-discover` / `friday-analyze` / `friday-plan` / `friday-execute` / `friday-auto`），配合 `@friday-ai-codes/mcp` MCP server，让 Cursor / Claude Code / Codex 等本地 AI 编码助手直接使用 Friday 的代码索引、Graph RAG、编码计划、远程执行和 MR 创建能力。
 
 接入只需要三步，之后就能在 IDE 里完整跑通编码 workflow：
 
 <FlowPipeline :steps="['安装 Skill', '配置访问令牌', '注册 MCP server', 'IDE 里直接使用']" />
 
-## 一键安装
+## 安装
 
 ```bash
-npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+npx @friday-ai-codes/skills
 ```
 
-skills CLI 会把 skill 装进你的 agent 目录（Claude Code、Cursor、Codex 等均支持）。`--skill` 参数必须带上，用于精确锁定 skill 名称。
-
-也可以用 GitHub CLI：
-
-```bash
-gh skill install friday-ai-codes/friday-ai friday-codebase-agent
-```
+这条命令安装全部 12 个 Friday skill 到自动检测的 agent（Claude Code、Cursor、Codex 等均支持）。更多安装方式（指定 agent、装到项目、Claude Code 插件形式）见 [Agent Skills](/integrations/skills#安装)。
 
 ## 配置令牌
 
@@ -52,14 +46,17 @@ npx -y @friday-ai-codes/mcp doctor
 
 ## Workflows
 
-| Workflow | 用途 |
+每个阶段对应一个 skill，agent 会按任务自动触发；也可以用 `friday-auto` 一次跑完整条链路：
+
+| Skill | 用途 |
 | --- | --- |
-| `discover` | 把需求路由到候选仓库并检查索引健康度。 |
-| `analyze` | 用 Graph RAG 证据做架构 / 风险 / 调用链分析。 |
-| `plan` | 从需求与代码证据生成结构化编码计划。 |
-| `improve` | 按反馈修订计划生成新版本。 |
-| `execute` | 执行已确认的计划、轮询状态、总结分支、创建 MR。 |
-| `full_auto` | 飞书工作项 → 仓库 → Graph RAG → 方案 → 确认 → 执行 → MR → 轨迹报告。 |
+| `friday-discover` | 把需求路由到候选仓库并检查索引健康度。 |
+| `friday-analyze` | 用 Graph RAG 证据做架构 / 风险 / 调用链分析。 |
+| `friday-plan` | 从需求与代码证据生成结构化编码计划，并支持按反馈修订版本。 |
+| `friday-execute` | 执行已确认的计划、轮询状态、总结分支、创建 MR。 |
+| `friday-auto` | 编码需求端到端（full_auto）：发现 → 分析 → 计划 → 确认 → 执行 → MR。 |
+
+飞书工作项链路（工作项 → 技术方案 → 多仓执行 → 回写）由 `friday-feishu-*` 系列 skill 承担，见 [Agent Skills](/integrations/skills#内置-skill)。
 
 `execute_coding_plan` / `execute_work_item_repo_tasks` 会真实改代码、推分支、建 MR，skill 内置了"执行前必须人工确认"的硬性规则。
 

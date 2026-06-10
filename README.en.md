@@ -101,7 +101,7 @@ The system has four parts: the Web console (dashboard, flow editor, chat), the S
 | Cross-repository API changes | A frontend page changes an API parameter while backend handlers, types, and tests live elsewhere. | Connect semantic retrieval, code graph expansion, and cross-repo API links to create a repository task matrix. |
 | Ongoing group collaboration | Execution needs a missing field, screenshot, branch confirmation, or result notification. | Feishu bots send question cards, approval cards, review cards, and coding result updates in group or p2p chats. |
 | Users ask the codebase directly | “Where does this payment callback enter?” or “Who calls this component?” | Friday Web Chat can call retrieval and code browsing tools over indexed repositories. |
-| Agent Skill uses Friday as a backend | You code in Cursor / Claude Code / Codex and want the assistant to use Friday’s code index, Graph RAG, and execution tools. | Install the Skill with `npx skills add friday-ai-codes/skills --skill friday-codebase-agent` and use `@friday-ai-codes/mcp` for discovery, analysis, planning, execution, and MR creation. |
+| Agent Skill uses Friday as a backend | You code in Cursor / Claude Code / Codex and want the assistant to use Friday’s code index, Graph RAG, and execution tools. | Install the Skills with `npx @friday-ai-codes/skills` and use `@friday-ai-codes/mcp` for discovery, analysis, planning, execution, and MR creation. |
 | AI code review | Claude Code has produced a branch and the team wants an automatic review plus a readable summary. | Workflows can run `ai_code_review`, then write review output, branch summaries, and PR / MR details back to Feishu. |
 
 ## Deep Feishu Integration, Not Feishu Lock-In
@@ -125,10 +125,10 @@ If you write code in Cursor / Claude Code / Codex, Friday can also serve as thei
 
 Three steps to connect:
 
-1. Install the Skill (auto-detects Claude Code, Cursor, Codex, and more):
+1. Install the Skills (auto-detects Claude Code, Cursor, Codex, and more; ships 12 atomic skills covering requirement routing through MR creation):
 
    ```bash
-   npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+   npx @friday-ai-codes/skills
    ```
 
 2. Create an Access Token: Friday Web console → Profile → Access Tokens → Create (the plaintext is shown only once).
@@ -177,9 +177,11 @@ Friday tracks model input modalities. The Web Chat image path is already impleme
 
 You only need Docker, Docker Compose v2, and Git.
 
-1. Initialize the local environment:
+1. Clone the repository and initialize the local environment:
 
    ```bash
+   git clone https://github.com/friday-ai-codes/friday-ai.git
+   cd friday-ai
    scripts/setup.sh
    ```
 
@@ -219,7 +221,7 @@ You only need Docker, Docker Compose v2, and Git.
 8. Optional: use the Friday Skill in your IDE:
 
    ```bash
-   npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+   npx @friday-ai-codes/skills
    ```
 
    Then create an Access Token on the Profile page and run `npx -y @friday-ai-codes/mcp init` as shown on the dashboard. Cursor / Claude Code / Codex can then call Friday's code intelligence and execution tools directly.

@@ -84,24 +84,29 @@ Friday AI 使用严格的 commit subject 格式，CI 会运行 `scripts/check_co
 
 ```text
 feat: add hat wobble
-^--^  ^------------^
-|     |
-|     +-> 现在时态的摘要
+feat(web): add hat wobble
+^--^ ^-^  ^------------^
+|    |    |
+|    |    +-> 现在时态的摘要
+|    +------> 可选 scope，用括号包裹（如 web / server / runner）
 |
-+-------> 类型：chore / docs / feat / fix / refactor / style / test
++-----------> 类型：build / chore / ci / docs / feat / fix / perf / refactor / revert / style / test
 ```
 
 | 类型 | 用途 |
 | --- | --- |
-| `feat` | 面向用户的新功能（不含构建脚本） |
-| `fix` | 面向用户的 bug 修复（不含构建脚本） |
+| `feat` | 面向用户的新功能 |
+| `fix` | 面向用户的 bug 修复 |
 | `docs` | 仅文档变更 |
 | `style` | 格式调整，不改生产代码逻辑 |
 | `refactor` | 生产代码重构（如重命名变量） |
+| `perf` | 性能优化 |
 | `test` | 新增或重构测试，不改生产代码 |
+| `build` / `ci` | 构建系统或 CI 配置变更 |
+| `revert` | 回滚先前提交 |
 | `chore` | 维护性工作，不改生产代码 |
 
-不要使用 scope、checkpoint 编号、混合类型或私有 workflow ID。
+scope 可选（括号内不能有空白）。不要使用 checkpoint 编号、混合类型或私有 workflow ID。
 
 ## Pull Request
 
