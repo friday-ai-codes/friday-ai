@@ -100,18 +100,18 @@ export const aiPromptConfigSchema = z.object({
   api_base_url: z.string().default(''),
   api_key: z.string().default(''),
   // Provider 凭证:指向 ProviderCredential.id;null 走系统默认
-  provider_credential_id: z.string().uuid().nullable().optional(),
+  provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
   // 提示词配置
   system_prompt: z.string().default(''),
   user_prompt: z.string().default(''),
   // 模型配置
   model: z.string().default(''),
-  temperature: z.number().min(0).max(2).default(0.7),
-  max_tokens: z.number().min(100).max(100000).default(4096),
-  output_format: z.enum(['text', 'json', 'markdown']).default('text'),
+  temperature: z.number().min(0, '不能小于 0').max(2, '不能大于 2').default(0.7),
+  max_tokens: z.number().min(100, '不能小于 100').max(100000, '不能大于 100000').default(4096),
+  output_format: z.enum(['text', 'json', 'markdown'], '请选择有效的选项').default('text'),
   // 高级设置
-  max_thinking_tokens: z.number().int().min(1024).max(128000).nullable().optional(),
-  max_budget_usd: z.number().min(0.01).max(100).nullable().optional(),
+  max_thinking_tokens: z.number().int().min(1024, '不能小于 1024').max(128000, '不能大于 128000').nullable().optional(),
+  max_budget_usd: z.number().min(0.01, '不能小于 0.01').max(100, '不能大于 100').nullable().optional(),
 })
 
 /** AI 编码指派器节点配置 - 严格模式 */
@@ -123,7 +123,7 @@ export const aiCodingDispatcherConfigSchema = z.object({
 /** 获取工作项节点配置 */
 export const fetchWorkItemConfigSchema = z.object({
   work_item_id: z.string().default(''),
-  work_item_type: z.enum(['story', 'task', 'bug', '__auto__']).default('__auto__'),
+  work_item_type: z.enum(['story', 'task', 'bug', '__auto__'], '请选择有效的选项').default('__auto__'),
 })
 
 /** 飞书事件触发器配置 */
@@ -134,7 +134,7 @@ export const feishuEventTriggerConfigSchema = z.object({
   project_ids: z.array(z.string()).default([]),
   // 过滤条件
   filter_project_key: z.string().default(''), // 高级用法：直接指定飞书 project_key
-  filter_work_item_type: z.enum(['story', 'task', 'bug', 'epic', 'feature', '']).default(''),
+  filter_work_item_type: z.enum(['story', 'task', 'bug', 'epic', 'feature', ''], '请选择有效的选项').default(''),
   filter_status: z.array(z.string()).default([]), // 状态过滤（多选）
   filter_status_custom: z.string().default(''), // 自定义状态输入
   // 排除规则
@@ -172,15 +172,15 @@ export const aiVariableExtractorConfigSchema = z.object({
   api_base_url: z.string().default(''),
   api_key: z.string().default(''),
   // Provider 凭证:指向 ProviderCredential.id;null 走系统默认
-  provider_credential_id: z.string().uuid().nullable().optional(),
+  provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
   // 提取配置
   input_source: z.string().default(''),
   variables: z.array(aiVariableDefinitionSchema).default([]),
   additional_prompt: z.string().default(''),
   model: z.string().default(''),
   // 高级设置
-  max_thinking_tokens: z.number().int().min(1024).max(128000).nullable().optional(),
-  max_budget_usd: z.number().min(0.01).max(100).nullable().optional(),
+  max_thinking_tokens: z.number().int().min(1024, '不能小于 1024').max(128000, '不能大于 128000').nullable().optional(),
+  max_budget_usd: z.number().min(0.01, '不能小于 0.01').max(100, '不能大于 100').nullable().optional(),
 })
 
 /** 召回上下文节点配置 */
@@ -189,8 +189,8 @@ export const contextRetrievalConfigSchema = z.object({
   // Support both string (JSONPath expression like "{{$.input.repositories[*].id}}")
   // and array (legacy format or direct UUIDs)
   repositories: z.union([z.string(), z.array(z.string())]).default(''),
-  top_k: z.number().min(1).max(50).default(10),
-  score_threshold: z.number().min(0).max(1).default(0.5),
+  top_k: z.number().min(1, '不能小于 1').max(50, '不能大于 50').default(10),
+  score_threshold: z.number().min(0, '不能小于 0').max(1, '不能大于 1').default(0.5),
   language_filter: z.string().default(''),
   include_content: z.boolean().default(true),
   format_as_markdown: z.boolean().default(true),
@@ -199,7 +199,7 @@ export const contextRetrievalConfigSchema = z.object({
 /** 获取项目信息节点配置 */
 export const fetchSpaceInfoConfigSchema = z.object({
   project_identifier: z.string().default(''),
-  identifier_type: z.enum(['auto', 'id', 'feishu_project_key']).default('auto'),
+  identifier_type: z.enum(['auto', 'id', 'feishu_project_key'], '请选择有效的选项').default('auto'),
   include_repositories: z.boolean().default(true),
   include_feishu_config: z.boolean().default(false),
   include_claude_config: z.boolean().default(false),
@@ -209,24 +209,24 @@ export const fetchSpaceInfoConfigSchema = z.object({
 /** 等待条件 */
 export const waitConditionSchema = z.object({
   field: z.string().default(''),
-  operator: z.enum(['eq', 'ne', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'gt', 'gte', 'lt', 'lte', 'regex']).default('eq'),
+  operator: z.enum(['eq', 'ne', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'gt', 'gte', 'lt', 'lte', 'regex'], '请选择有效的选项').default('eq'),
   value: z.string().default(''),
 })
 
 /** 等待条件组 */
 export const waitConditionGroupSchema = z.object({
-  logic: z.enum(['and', 'or']).default('and'),
+  logic: z.enum(['and', 'or'], '请选择有效的选项').default('and'),
   conditions: z.array(waitConditionSchema).default([]),
 })
 
 /** 等待飞书字段节点配置 */
 export const waitFeishuFieldConfigSchema = z.object({
   work_item_id: z.string().default('{{trigger.work_item_id}}'),
-  work_item_type: z.enum(['story', 'task', 'bug', 'epic']).default('story'),
+  work_item_type: z.enum(['story', 'task', 'bug', 'epic'], '请选择有效的选项').default('story'),
   project_key: z.string().default('{{trigger.project_key}}'),
   condition: waitConditionGroupSchema.default({ logic: 'and', conditions: [] }),
   timeout_seconds: z.number().default(0),
-  timeout_action: z.enum(['fail', 'skip', 'retry']).default('fail'),
+  timeout_action: z.enum(['fail', 'skip', 'retry'], '请选择有效的选项').default('fail'),
 })
 
 /** 创建分支节点配置 */
@@ -260,7 +260,7 @@ export const aiPlanGenerationConfigSchema = z.object({
   exclude_repos: z.array(z.string()).default([]),
 
   // Execution limits
-  max_iterations: z.number().min(10).max(200).default(50),
+  max_iterations: z.number().min(10, '不能小于 10').max(200, '不能大于 200').default(50),
   enabled_tools: z.array(z.string()).default([]),
 
   // Feishu integration
@@ -272,7 +272,7 @@ export const aiPlanGenerationConfigSchema = z.object({
   api_key: z.string().default(''),
   model: z.string().default(''),
   // Provider 凭证:指向 ProviderCredential.id;null 走系统默认
-  provider_credential_id: z.string().uuid().nullable().optional(),
+  provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
 })
 
 /** 方案审批节点配置 */
@@ -283,9 +283,9 @@ export const aiPlanApprovalConfigSchema = z.object({
 /** AI 编码执行节点配置 */
 export const aiCodingConfigSchema = z.object({
   container_image: z.string().default('friday/claude-code:latest'),
-  timeout_seconds: z.number().int().min(60).max(7200).default(1800),
+  timeout_seconds: z.number().int().min(60, '不能小于 60').max(7200, '不能大于 7200').default(1800),
   chat_id: z.string().default(''),
-  polling_interval: z.number().int().min(5).max(60).default(15),
+  polling_interval: z.number().int().min(5, '不能小于 5').max(60, '不能大于 60').default(15),
 })
 
 /** AI 代码审查节点配置 */
@@ -295,9 +295,9 @@ export const aiCodeReviewConfigSchema = z.object({
   api_base_url: z.string().default(''),
   api_key: z.string().default(''),
   chat_id: z.string().default(''),
-  max_iterations: z.number().min(1).max(100).default(30),
+  max_iterations: z.number().min(1, '不能小于 1').max(100, '不能大于 100').default(30),
   // Provider 凭证:指向 ProviderCredential.id;null 走系统默认
-  provider_credential_id: z.string().uuid().nullable().optional(),
+  provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
 })
 
 /** 全局变量结构 */

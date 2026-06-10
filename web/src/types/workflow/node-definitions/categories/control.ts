@@ -10,7 +10,7 @@ import { createNodeDefinition } from '../index'
 // ============================================================================
 
 const delaySchema = z.object({
-  delay_seconds: z.number().int().min(1).max(86400).default(60),
+  delay_seconds: z.number().int().min(1, '不能小于 1').max(86400, '不能大于 86400').default(60),
   delay_until: z.string().default(''),
 })
 
@@ -53,7 +53,7 @@ const conditionExpressionSchema = z.object({
     'is_not_empty',
     'is_true',
     'is_false',
-  ]).default('eq'),
+  ], '请选择有效的选项').default('eq'),
   value: z.unknown().default(''),
 })
 
@@ -123,10 +123,10 @@ export const parallelDef = createNodeDefinition({
 // ============================================================================
 
 const joinSchema = z.object({
-  wait_mode: z.enum(['all', 'any', 'count']).default('all'),
-  wait_count: z.number().int().min(1).default(1),
-  merge_strategy: z.enum(['array', 'object', 'first', 'last']).default('array'),
-  timeout: z.number().int().min(0).default(0),
+  wait_mode: z.enum(['all', 'any', 'count'], '请选择有效的选项').default('all'),
+  wait_count: z.number().int().min(1, '不能小于 1').default(1),
+  merge_strategy: z.enum(['array', 'object', 'first', 'last'], '请选择有效的选项').default('array'),
+  timeout: z.number().int().min(0, '不能小于 0').default(0),
 })
 
 export const joinDef = createNodeDefinition({
@@ -155,7 +155,7 @@ export const joinDef = createNodeDefinition({
 const humanApprovalSchema = z.object({
   approvers: z.array(z.string()).default([]),
   approval_message: z.string().default(''),
-  timeout_hours: z.number().int().min(1).default(72),
+  timeout_hours: z.number().int().min(1, '不能小于 1').default(72),
 })
 
 export const humanApprovalDef = createNodeDefinition({
@@ -175,9 +175,9 @@ export const humanApprovalDef = createNodeDefinition({
 
 const foreachSchema = z.object({
   list_source: z.string().default('{{input.items}}'),
-  execution_mode: z.enum(['sequential', 'parallel']).default('sequential'),
-  max_concurrency: z.number().int().min(1).max(50).default(5),
-  on_iteration_error: z.enum(['abort', 'continue']).default('abort'),
+  execution_mode: z.enum(['sequential', 'parallel'], '请选择有效的选项').default('sequential'),
+  max_concurrency: z.number().int().min(1, '不能小于 1').max(50, '不能大于 50').default(5),
+  on_iteration_error: z.enum(['abort', 'continue'], '请选择有效的选项').default('abort'),
 })
 
 export const foreachDef = createNodeDefinition({

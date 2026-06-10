@@ -11,7 +11,7 @@ import { createNodeDefinition } from '../index'
 
 const notifyFeishuSchema = z.object({
   webhook_url: z.string().default(''),
-  message_type: z.enum(['text', 'post', 'interactive']).default('text'),
+  message_type: z.enum(['text', 'post', 'interactive'], '请选择有效的选项').default('text'),
   content: z.string().default(''),
   title: z.string().default(''),
   at_all: z.boolean().default(false),
@@ -48,11 +48,11 @@ export const notifyFeishuDef = createNodeDefinition({
 // ============================================================================
 
 const httpRequestSchema = z.object({
-  method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
+  method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], '请选择有效的选项').default('GET'),
   url: z.string().default(''),
   headers: z.record(z.string(), z.string()).default({}),
   body: z.string().default(''),
-  timeout: z.number().int().min(1).max(300).default(30),
+  timeout: z.number().int().min(1, '不能小于 1').max(300, '不能大于 300').default(30),
 })
 
 export const httpRequestDef = createNodeDefinition({

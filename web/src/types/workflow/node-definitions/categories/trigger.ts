@@ -38,7 +38,7 @@ export const manualTriggerDef = createNodeDefinition({
 
 const webhookTriggerSchema = z.object({
   secret: z.string().default(''),
-  method: z.enum(['POST', 'GET', 'PUT']).default('POST'),
+  method: z.enum(['POST', 'GET', 'PUT'], '请选择有效的选项').default('POST'),
 })
 
 export const webhookTriggerDef = createNodeDefinition({
