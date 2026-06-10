@@ -74,6 +74,8 @@
     "diff": "catalog:",
     "echarts": "catalog:",
     "fuse.js": "catalog:",
+    "gsap": "catalog:",
+    "lottie-web": "catalog:",
     "lowlight": "catalog:",
     "lucide-vue-next": "catalog:",
     "markdown-it": "catalog:",

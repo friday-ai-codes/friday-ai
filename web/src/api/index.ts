@@ -10,6 +10,8 @@ export { default as chatApi } from './chat'
 export * from './chat'
 export { ApiError } from './client'
 
+export * from './dashboard'
+
 export { default as logsApi } from './logs'
 export * from './logs'
 
