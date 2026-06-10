@@ -49,6 +49,10 @@ services:
       - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
     volumes:
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
+    # server 需要通过 answer_endpoint（host.docker.internal:<随机端口>）向任务容器
+    # 回传交互答案；Linux 上容器内默认无法解析该域名，必须显式映射 host-gateway。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - friday-network
     depends_on:
@@ -91,8 +95,15 @@ services:
     container_name: friday-runner
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     user: "65534:${DOCKER_GID:-999}"
+    # CallbackServer 端口必须发布到宿主机：任务容器是宿主 daemon 上的兄弟容器，
+    # 通过 host.docker.internal（host-gateway）回调 runner。不发布该端口时，
+    # 容器内回调全部 "All connection attempts failed"。
+    # 宿主端口必须与容器端口一致（回调 URL 与监听端口同源，见 GetCallbackPort）。
+    ports:
+      - "${FRIDAY_RUNNER_CALLBACK_PORT:-8976}:${FRIDAY_RUNNER_CALLBACK_PORT:-8976}"
     environment:
       - FRIDAY_RUNNER_URL=http://server:8000
+      - FRIDAY_RUNNER_CALLBACK_PORT=${FRIDAY_RUNNER_CALLBACK_PORT:-8976}
       - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
       - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
       - FRIDAY_RUNNER_EXECUTOR=docker
