@@ -36,6 +36,10 @@ const changelogHtml = ref('')
 // 剥掉后缀回退到最近的正式 tag 去取对应 release 的日志
 const releaseTag = computed(() => `v${appVersion.replace(/(-\d+-g[0-9a-f]+)?(-dirty)?$/, '')}`)
 
+// 侧边栏空间有限：dev 形态只展示「基线版本-dev」，完整版本放进悬浮层
+const isDevVersion = computed(() => `v${appVersion}` !== releaseTag.value)
+const displayVersion = computed(() => isDevVersion.value ? `${releaseTag.value}-dev` : `v${appVersion}`)
+
 async function loadChangelog(open: boolean) {
   if (!open || changelogState.value === 'loading' || changelogState.value === 'loaded')
     return
@@ -122,7 +126,7 @@ async function handleLogout() {
             <img src="/logo-wordmark.svg" alt="friday" class="h-4 w-auto">
             <Tooltip @update:open="loadChangelog">
               <TooltipTrigger as-child>
-                <span class="text-[10px] text-muted-foreground leading-none cursor-default w-fit">v{{ appVersion }}</span>
+                <span class="text-[10px] text-muted-foreground leading-none cursor-default w-fit whitespace-nowrap">{{ displayVersion }}</span>
               </TooltipTrigger>
               <TooltipContent
                 side="right"
@@ -131,6 +135,9 @@ async function handleLogout() {
               >
                 <div class="text-xs font-semibold mb-1.5">
                   {{ releaseTag }} 更新日志
+                </div>
+                <div v-if="isDevVersion" class="text-[10px] text-muted-foreground mb-1.5 break-all">
+                  当前构建：v{{ appVersion }}
                 </div>
                 <div v-if="changelogState === 'loading' || changelogState === 'idle'" class="text-xs text-muted-foreground">
                   加载中…
