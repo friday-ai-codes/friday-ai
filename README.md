@@ -101,7 +101,7 @@ Friday 已经深度集成飞书，但不是只为飞书而生：核心能力是�
 | 跨仓改造 | 前端页面要改接口参数，后端 handler、调用方、类型定义和测试可能分散在不同仓库。 | 通过语义检索、代码图谱和跨仓 API 关系找到上下游，拆出仓库任务矩阵，再分别执行。 |
 | 群里持续协作 | 执行中缺字段、缺截图、需要确认分支或要通知结果。 | 飞书机器人在群聊 / 私聊里发送问题卡片、审批卡片、代码审查卡片和结果通知。 |
 | 用户自己问代码库 | “这个支付回调现在走哪几个入口？”“这个组件还有哪些调用方？” | 在 Friday Web Chat 里选择已索引仓库，模型可以调用检索和代码浏览工具回答。 |
-| 用 Agent Skill 增强自己 | 你在 Cursor / Claude Code / Codex 里写代码，希望 AI 助手直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | `npx skills add friday-ai-codes/skills --skill friday-codebase-agent` 一键安装 Skill，配合 `@friday-ai-codes/mcp` 做仓库发现、分析、计划、执行和 MR 创建。 |
+| 用 Agent Skill 增强自己 | 你在 Cursor / Claude Code / Codex 里写代码，希望 AI 助手直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | `npx @friday-ai-codes/skills` 安装全部 Skill，配合 `@friday-ai-codes/mcp` 做仓库发现、分析、计划、执行和 MR 创建。 |
 | AI 代码审查 | Claude Code 改完之后还需要一轮自动 review 和可读摘要。 | 工作流可以接 `ai_code_review`，把审查结果、分支摘要和 PR / MR 信息回写到飞书。 |
 
 ## 飞书深度集成，但不绑定飞书
@@ -125,10 +125,10 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 
 三步接入：
 
-1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主）：
+1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 12 个原子 skill）：
 
    ```bash
-   npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+   npx @friday-ai-codes/skills
    ```
 
 2. 创建访问令牌：登录 Friday Web 控制台 → 个人资料 → 访问令牌 → 创建（明文只显示一次）。
@@ -177,9 +177,11 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 
 前置要求很简单：安装 Docker、Docker Compose v2 和 Git。
 
-1. 初始化本地环境：
+1. 克隆仓库并初始化本地环境：
 
    ```bash
+   git clone https://github.com/friday-ai-codes/friday-ai.git
+   cd friday-ai
    scripts/setup.sh
    ```
 
@@ -219,7 +221,7 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 8. 可选：在 IDE 里使用 Friday Skill：
 
    ```bash
-   npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+   npx @friday-ai-codes/skills
    ```
 
    然后在个人资料页创建访问令牌，按首页提示完成 `npx -y @friday-ai-codes/mcp init` 配置，Cursor / Claude Code / Codex 就能直接调用 Friday 的代码智能与执行工具。
