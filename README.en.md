@@ -7,16 +7,22 @@
 
 <p align="center">
   <a href="https://github.com/friday-ai-codes/friday-ai/actions/workflows/ci.yaml">
-    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/friday-ai-codes/friday-ai/ci.yaml?branch=main&label=CI">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/friday-ai-codes/friday-ai/ci.yaml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white&labelColor=1F1E1C">
+  </a>
+  <a href="https://codecov.io/gh/friday-ai-codes/friday-ai">
+    <img alt="Coverage" src="https://img.shields.io/codecov/c/github/friday-ai-codes/friday-ai?style=for-the-badge&logo=codecov&logoColor=white&labelColor=1F1E1C&label=coverage">
   </a>
   <a href="https://github.com/friday-ai-codes/friday-ai/actions/workflows/ci.yaml">
-    <img alt="Unit Coverage" src="https://img.shields.io/badge/unit%20coverage-server%20%7C%20web%20%7C%20task-20a66a">
+    <img alt="E2E" src="https://img.shields.io/badge/E2E-Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white&labelColor=1F1E1C">
   </a>
   <a href="https://github.com/friday-ai-codes/friday-ai/releases">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/friday-ai-codes/friday-ai?include_prereleases&label=latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/friday-ai-codes/friday-ai?include_prereleases&label=release&style=for-the-badge&logo=github&logoColor=white&labelColor=1F1E1C">
   </a>
   <a href="LICENSE">
-    <img alt="License" src="https://img.shields.io/github/license/friday-ai-codes/friday-ai">
+    <img alt="License" src="https://img.shields.io/github/license/friday-ai-codes/friday-ai?style=for-the-badge&labelColor=1F1E1C&color=20a66a">
+  </a>
+  <a href="https://github.com/friday-ai-codes/friday-ai/stargazers">
+    <img alt="Stars" src="https://img.shields.io/github/stars/friday-ai-codes/friday-ai?style=for-the-badge&logo=github&logoColor=white&labelColor=1F1E1C&color=f5a623">
   </a>
 </p>
 
@@ -67,17 +73,17 @@ Execution is not a black box either. Branches, commits, PRs / MRs, code review o
 
 Friday already integrates deeply with Feishu, but it is not built only for Feishu: the core is workflow orchestration, code intelligence, and auditable agent execution, so more collaboration entrypoints can be added later.
 
-## New Here? A Few Terms First
+## Glossary
 
-If you already know these concepts, skip this section.
+These terms come up throughout this document:
 
-| Term | What it means |
+| Term | Meaning |
 | --- | --- |
-| PR / MR | Pull Request / Merge Request — a request to have your code changes reviewed and merged by the team. GitHub calls it a PR, GitLab calls it an MR. |
+| PR / MR | Pull Request / Merge Request — a request to have code changes reviewed and merged. GitHub calls it a PR, GitLab calls it an MR. |
 | Claude Code | Anthropic's AI coding tool. Friday uses it to actually write the code. |
-| Graph RAG | Friday's code retrieval approach: find relevant code by semantics first, then follow call relationships to pull in upstream and downstream code, so the AI sees a more complete impact surface. |
-| Runner | Friday's task scheduler. It creates isolated Docker containers; all AI code changes happen inside them, never directly in your environment. |
-| Workflow | Chains “trigger → fetch requirement → generate plan → wait for confirmation → write code → notify” together like a flowchart, editable by drag-and-drop in the web UI. |
+| Graph RAG | Friday's code retrieval approach: find relevant code by semantics first, then follow call relationships to pull in upstream and downstream code. |
+| Runner | Friday's task scheduler. It creates isolated Docker containers where all AI coding takes place. |
+| Workflow | The visual orchestration of “trigger → fetch requirement → generate plan → wait for confirmation → write code → notify”, built by drag-and-drop in the web UI. |
 | Agent Skill / MCP | The integration path that lets local AI assistants like Cursor and Claude Code call Friday's code index and execution capabilities. |
 
 ## How It Works
@@ -231,6 +237,24 @@ You only need Docker, Docker Compose v2, and Git.
 | [API Reference](docs/api/index.md) | REST API documentation. |
 | [Task Runner](task/README.md) | Claude Agent SDK / Claude Code task container. |
 | [Chinese README](README.md) | Chinese README. |
+
+## Contributors
+
+Thanks to everyone who has contributed — issues and PRs are always welcome.
+
+<a href="https://github.com/friday-ai-codes/friday-ai/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=friday-ai-codes/friday-ai" />
+</a>
+
+## Star History
+
+<a href="https://www.star-history.com/#friday-ai-codes/friday-ai&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date">
+  </picture>
+</a>
 
 ## License
 

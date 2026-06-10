@@ -166,6 +166,14 @@ jobs:
           name: server-coverage
           path: server/coverage.xml
           if-no-files-found: ignore
+      # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: server/coverage.xml
+          flags: server
+          fail_ci_if_error: false
 
   web-ci:
     needs: changes
@@ -198,6 +206,14 @@ jobs:
           name: web-coverage
           path: web/coverage/
           if-no-files-found: ignore
+      # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          directory: web/coverage
+          flags: web
+          fail_ci_if_error: false
 
   # e2e 拆出独立 job，跑在官方 Playwright 镜像里（浏览器 + 系统依赖已预装），
   # 省去 `playwright install --with-deps`，并与 web-ci 的 lint/type/unit/build 并行。
@@ -300,6 +316,14 @@ jobs:
           name: task-coverage
           path: task/coverage.xml
           if-no-files-found: ignore
+      # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          files: task/coverage.xml
+          flags: task
+          fail_ci_if_error: false
 
   task-image-ci:
     needs: changes
