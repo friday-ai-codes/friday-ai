@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	imagetypes "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
@@ -56,6 +57,9 @@ func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload
 	if image == "" {
 		image = e.defaultImage
 	}
+	if err := e.ensureImage(ctx, image); err != nil {
+		return "", "", err
+	}
 	env := buildContainerEnv(task, callbackURL, callbackToken)
 	exposed, _ := nat.NewPort("tcp", "8977")
 	cfg := &container.Config{
@@ -85,6 +89,31 @@ func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload
 	}
 	log.Info().Str("task_id", task.TaskID).Str("container_id", resp.ID).Str("answer_endpoint", answerEndpoint).Msg("container_started")
 	return resp.ID, answerEndpoint, nil
+}
+
+// ensureImage 确保镜像在本地存在；不存在时从 registry 拉取。
+// Runner 创建的是宿主 daemon 上的兄弟容器，compose 不会替 task 镜像做 pull，
+// 因此首次使用发版镜像（ghcr.io/.../task）时必须在这里兜底拉取。
+func (e *DockerExecutor) ensureImage(ctx context.Context, ref string) error {
+	_, err := e.cli.ImageInspect(ctx, ref)
+	if err == nil {
+		return nil
+	}
+	if !client.IsErrNotFound(err) {
+		return fmt.Errorf("检查镜像失败: %w", err)
+	}
+	log.Info().Str("image", ref).Msg("image_pull_started")
+	reader, err := e.cli.ImagePull(ctx, ref, imagetypes.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("拉取镜像失败: %w", err)
+	}
+	defer reader.Close()
+	// 必须读完响应流，pull 才会真正完成
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return fmt.Errorf("拉取镜像中断: %w", err)
+	}
+	log.Info().Str("image", ref).Msg("image_pull_completed")
+	return nil
 }
 
 func buildContainerEnv(task ws.TaskPayload, callbackURL, callbackToken string) []string {
