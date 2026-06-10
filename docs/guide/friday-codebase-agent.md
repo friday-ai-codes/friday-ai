@@ -3,12 +3,12 @@ title: Friday Codebase Agent
 ---
 # Friday Codebase Agent
 
-`friday-codebase-agent` 是一个可分发的 Agent Skill，配合 `@friday-ai/mcp` MCP server，让 Cursor / Claude Code / Codex 等本地 AI 编码助手直接使用 Friday 的代码索引、Graph RAG、编码计划、远程执行和 MR 创建能力。
+`friday-codebase-agent` 是一个可分发的 Agent Skill，配合 `@friday-ai-codes/mcp` MCP server，让 Cursor / Claude Code / Codex 等本地 AI 编码助手直接使用 Friday 的代码索引、Graph RAG、编码计划、远程执行和 MR 创建能力。
 
 ## 一键安装
 
 ```bash
-npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent
+npx skills add friday-ai-codes/skills --skill friday-codebase-agent
 ```
 
 skills CLI 会把 skill 装进你的 agent 目录（Claude Code、Cursor、Codex 等均支持）。`--skill` 参数必须带上，用于精确锁定 skill 名称。
@@ -25,13 +25,13 @@ gh skill install friday-ai-codes/friday-ai friday-codebase-agent
 2. 写入本地配置并校验连通性：
 
 ```bash
-npx -y @friday-ai/mcp init --base-url https://friday.example.com --token <你的访问令牌>
+npx -y @friday-ai-codes/mcp init --base-url https://friday.example.com --token <你的访问令牌>
 ```
 
 配置保存在 `~/.friday/config.json`（权限 0600），也可以用环境变量 `FRIDAY_BASE_URL` / `FRIDAY_ACCESS_TOKEN` 覆盖。检查配置状态：
 
 ```bash
-npx -y @friday-ai/mcp doctor
+npx -y @friday-ai-codes/mcp doctor
 ```
 
 实际上这一步也可以跳过手动操作——装好 skill 后直接在 IDE 里说"配置 Friday"，agent 会按 skill 指引向你索要地址和令牌并完成配置。
@@ -40,9 +40,9 @@ npx -y @friday-ai/mcp doctor
 
 | 宿主 | 操作 |
 | --- | --- |
-| Claude Code | `claude mcp add friday -- npx -y @friday-ai/mcp` |
-| Cursor | `.cursor/mcp.json` 加入 `"friday": {"command": "npx", "args": ["-y", "@friday-ai/mcp"]}` |
-| Codex | `~/.codex/config.toml` 加入 `[mcp_servers.friday]`，`command = "npx"`，`args = ["-y", "@friday-ai/mcp"]` |
+| Claude Code | `claude mcp add friday -- npx -y @friday-ai-codes/mcp` |
+| Cursor | `.cursor/mcp.json` 加入 `"friday": {"command": "npx", "args": ["-y", "@friday-ai-codes/mcp"]}` |
+| Codex | `~/.codex/config.toml` 加入 `[mcp_servers.friday]`，`command = "npx"`，`args = ["-y", "@friday-ai-codes/mcp"]` |
 
 内网无法访问 npm registry 时，可从源码构建后把 MCP 配置指向 `mcp/dist/cli.js`（详见 skill 内的 `references/setup.md`）。
 
@@ -92,7 +92,7 @@ X-Friday-Skill-Step: full_auto.plan
 - 执行失败：用 `get_coding_execution` 查看 `runner_logs`、`last_diff` 与 `recovery_state`。
 - 执行 `partial`：代码已推送但后续步骤失败，优先重试 `summarize_branch` / `create_merge_request`，不要重跑代码。
 - MR 创建失败：分支、目标分支、commit sha 与 `mr_error` 均已持久化，修复平台权限或既有 MR 状态后重试。
-- 401 / 403：令牌失效，重建 PAT 后重跑 `npx -y @friday-ai/mcp init`。
+- 401 / 403：令牌失效，重建 PAT 后重跑 `npx -y @friday-ai-codes/mcp init`。
 
 ## 审计
 
