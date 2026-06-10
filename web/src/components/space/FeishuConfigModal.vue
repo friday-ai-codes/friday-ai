@@ -1,10 +1,28 @@
 <script setup lang="ts">
+/**
+ * FeishuConfigModal — 飞书配置管理弹窗
+ *
+ * 把原独立路由页 `pages/spaces/[id]/feishu.vue` 的全部功能迁入空间详情页弹窗：
+ *  - 飞书项目集成（插件 ID / Secret / 用户 Key，保存 / 测试连接 / 删除）— 复用 FeishuConfigForm
+ *  - 飞书文档导出（目标文件夹 Token）
+ *  - Webhook 配置说明
+ *
+ * 配置变更后 emit('updated')，由详情页刷新飞书配置状态徽标。
+ * 点击「去设置」飞书项目 Key 时 emit('edit-space')，由详情页关闭本弹窗并打开编辑空间弹窗。
+ */
+import type { FeishuDocConfig } from '~/api/spaces'
 import type { FeishuConfig } from '~/types'
-import { VueFinalModal } from 'vue-final-modal'
-import { getFeishuConfig, setFeishuConfig } from '~/api/spaces'
+import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/spaces'
+import { FeishuConfigForm } from '~/components/feishu'
 import { Button } from '~/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 
 const props = defineProps<{
@@ -12,241 +30,174 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  confirm: []
-  cancel: []
-  closed: []
+  updated: []
+  editSpace: []
 }>()
+
+const open = defineModel<boolean>('open', { default: false })
 
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-// 表单数据
-const form = reactive({
-  plugin_id: '',
-  plugin_secret: '',
-  user_key: '',
+// 飞书插件配置
+const loading = ref(false)
+const feishuConfig = ref<FeishuConfig | null>(null)
+
+// 飞书文档导出配置
+const docConfig = ref<FeishuDocConfig | null>(null)
+const folderToken = ref('')
+const savingDocConfig = ref(false)
+
+// Webhook URL（在客户端计算）
+const webhookUrl = computed(() => {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/webhook/feishu`
+  }
+  return '/api/webhook/feishu'
 })
 
-// 配置状态
-const config = ref<FeishuConfig | null>(null)
-const loading = ref(false)
-
-// 加载配置
-async function loadConfig() {
+async function loadData() {
   loading.value = true
   try {
-    const data = await getFeishuConfig(props.spaceId)
-    config.value = data
-    form.plugin_id = data.plugin_id || ''
-    form.user_key = data.user_key || ''
-    // secret 不回显
-    form.plugin_secret = ''
-  }
-  catch {
-    // 忽略错误，可能是未配置
-    config.value = null
+    try {
+      feishuConfig.value = await getFeishuConfig(props.spaceId)
+    }
+    catch {
+      feishuConfig.value = null
+    }
+    try {
+      docConfig.value = await getFeishuDocConfig(props.spaceId)
+      folderToken.value = docConfig.value.feishu_doc_folder_token
+    }
+    catch {
+      docConfig.value = null
+    }
   }
   finally {
     loading.value = false
   }
 }
 
-// 初始加载
-onMounted(() => {
-  loadConfig()
-})
+// 弹窗打开时加载配置
+watch(open, (isOpen) => {
+  if (isOpen)
+    loadData()
+}, { immediate: true })
 
-// 表单验证
-const errors = reactive({
-  plugin_id: '',
-  plugin_secret: '',
-  user_key: '',
-})
-
-function validate(): boolean {
-  errors.plugin_id = ''
-  errors.plugin_secret = ''
-  errors.user_key = ''
-  let isValid = true
-
-  if (!form.plugin_id.trim()) {
-    errors.plugin_id = '请输入插件 ID'
-    isValid = false
-  }
-
-  // 如果是首次配置，或者用户想修改 secret（输入了内容），则验证
-  // 如果已配置且用户留空，则表示不修改 secret
-  const isSecretRequired = !config.value?.has_plugin_secret || form.plugin_secret.length > 0
-  if (isSecretRequired && !form.plugin_secret.trim()) {
-    errors.plugin_secret = '请输入插件 Secret'
-    isValid = false
-  }
-
-  if (!form.user_key.trim()) {
-    errors.user_key = '请输入用户 Key'
-    isValid = false
-  }
-
-  return isValid
-}
-
-// 提交表单
-const submitting = ref(false)
-
-async function handleSubmit() {
-  if (!validate())
-    return
-
-  submitting.value = true
+async function saveDocConfig() {
+  savingDocConfig.value = true
   try {
-    await setFeishuConfig(props.spaceId, {
-      plugin_id: form.plugin_id,
-      plugin_secret: form.plugin_secret,
-      user_key: form.user_key,
+    await updateFeishuDocConfig(props.spaceId, {
+      feishu_doc_folder_token: folderToken.value,
     })
-    success('保存成功', '飞书配置已更新')
-    emit('confirm')
+    success('保存成功', '飞书文档导出配置已更新')
   }
   catch (e: unknown) {
-    handleError(e, '保存飞书配置')
+    handleError(e, '保存飞书文档导出配置')
   }
   finally {
-    submitting.value = false
+    savingDocConfig.value = false
   }
 }
 
-function handleCancel() {
-  emit('cancel')
+// 插件配置更新后刷新本地状态并通知详情页
+async function handleUpdated() {
+  try {
+    feishuConfig.value = await getFeishuConfig(props.spaceId)
+  }
+  catch {
+    feishuConfig.value = null
+  }
+  emit('updated')
 }
 </script>
 
 <template>
-  <VueFinalModal
-    class="flex justify-center items-center"
-    content-class="flex flex-col bg-card rounded-2xl shadow-lg border border-border/50 max-w-lg w-full mx-4"
-    overlay-transition="vfm-fade"
-    content-transition="vfm-zoom"
-    @closed="emit('closed')"
-  >
-    <!-- Header -->
-    <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
-      <div class="flex items-center gap-3">
-        <div class="p-2.5 rounded-xl bg-primary/10">
-          <span class="icon-[lucide--message-square] text-xl text-purple-600" />
+  <Dialog v-model:open="open">
+    <DialogContent class="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle class="flex items-center gap-2">
+          <span class="icon-[lucide--message-square] text-primary" />
+          飞书配置
+        </DialogTitle>
+        <DialogDescription>
+          配置飞书插件凭证与文档导出，用于接收 Webhook 和调用飞书项目 API
+        </DialogDescription>
+      </DialogHeader>
+
+      <!-- 加载状态 -->
+      <LoadingState v-if="loading" variant="skeleton" :count="2" />
+
+      <div v-else class="space-y-6">
+        <!-- 飞书配置表单 -->
+        <FeishuConfigForm
+          :space-id="spaceId"
+          :config="feishuConfig"
+          @updated="handleUpdated"
+          @edit-space="emit('editSpace')"
+        />
+
+        <!-- 飞书文档导出配置 -->
+        <div class="card">
+          <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+            <span class="icon-[lucide--file-up] text-primary" />
+            <h2 class="font-semibold">
+              飞书文档导出
+            </h2>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium">目标文件夹 Token</label>
+              <Input
+                v-model="folderToken"
+                placeholder="输入飞书文件夹 token"
+                class="font-mono"
+              />
+              <p class="text-xs text-muted-foreground">
+                在飞书中打开目标文件夹，从 URL 中复制 token（如 https://feishu.cn/drive/folder/xxxxx 中的 xxxxx）
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="savingDocConfig"
+              @click="saveDocConfig"
+            >
+              <span v-if="savingDocConfig" class="icon-[lucide--loader-2] animate-spin mr-1" />
+              保存
+            </Button>
+          </div>
         </div>
-        <div>
-          <h3 class="text-lg font-semibold text-foreground">
-            飞书配置
-          </h3>
-          <p class="text-sm text-muted-foreground">
-            配置飞书插件凭证以启用集成功能
-          </p>
+
+        <!-- 使用说明 -->
+        <div class="p-5 rounded-2xl border border-dashed border-border/50 bg-card/80">
+          <div class="flex items-start gap-3">
+            <span class="icon-[lucide--info] text-xl text-emerald-500 shrink-0 mt-0.5" />
+            <div class="space-y-3">
+              <h3 class="font-semibold">
+                配置说明
+              </h3>
+              <ol class="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                <li>
+                  在
+                  <button type="button" class="text-primary hover:underline" @click="emit('editSpace')">
+                    编辑空间
+                  </button>
+                  中填写「飞书项目 Key」（飞书项目 URL 中域名后的第一段路径），用于匹配 Webhook 事件来源
+                </li>
+                <li>在飞书项目管理后台创建插件，获取插件 ID 和插件 Secret</li>
+                <li>在插件权限页面申请飞书项目相关权限（如获取工作项详情）</li>
+                <li>在飞书项目中配置自动化规则，添加 Webhook 操作</li>
+                <li class="flex items-start gap-2">
+                  <span>Webhook URL 填写：</span>
+                  <code class="px-2 py-1 bg-muted/50 rounded-lg text-xs font-mono border border-border/50">{{ webhookUrl }}</code>
+                </li>
+                <li>Webhook Token 在空间详情页管理，请在飞书自动化规则中填写相同的 Token</li>
+              </ol>
+            </div>
+          </div>
         </div>
       </div>
-      <button
-        type="button"
-        class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-        @click="handleCancel"
-      >
-        <span class="icon-[lucide--x] text-lg" />
-      </button>
-    </div>
-
-    <!-- Body -->
-    <form class="px-6 py-5 space-y-5" @submit.prevent="handleSubmit">
-      <!-- Loading State -->
-      <div v-if="loading" class="space-y-5">
-        <div class="space-y-2">
-          <div class="h-4 w-20 bg-muted rounded animate-pulse" />
-          <div class="h-10 w-full bg-muted rounded animate-pulse" />
-        </div>
-        <div class="space-y-2">
-          <div class="h-4 w-24 bg-muted rounded animate-pulse" />
-          <div class="h-10 w-full bg-muted rounded animate-pulse" />
-        </div>
-        <div class="space-y-2">
-          <div class="h-4 w-20 bg-muted rounded animate-pulse" />
-          <div class="h-10 w-full bg-muted rounded animate-pulse" />
-        </div>
-      </div>
-
-      <template v-else>
-        <!-- 插件 ID -->
-        <div class="space-y-2">
-          <Label for="plugin_id" class="flex items-center gap-1 text-foreground">
-            插件 ID
-            <span class="text-destructive">*</span>
-          </Label>
-          <Input
-            id="plugin_id"
-            v-model="form.plugin_id"
-            placeholder="cli_..."
-            class="h-10"
-            :class="{ 'border-destructive': errors.plugin_id }"
-          />
-          <p v-if="errors.plugin_id" class="text-sm text-destructive flex items-center gap-1">
-            <span class="icon-[lucide--alert-circle]" />
-            {{ errors.plugin_id }}
-          </p>
-          <p v-else class="text-xs text-muted-foreground">
-            在飞书开发者后台创建企业自建应用后获取
-          </p>
-        </div>
-
-        <!-- 插件 Secret -->
-        <div class="space-y-2">
-          <Label for="plugin_secret" class="flex items-center gap-1 text-foreground">
-            插件 Secret
-            <span v-if="!config?.has_plugin_secret" class="text-destructive">*</span>
-          </Label>
-          <Input
-            id="plugin_secret"
-            v-model="form.plugin_secret"
-            type="password"
-            :placeholder="config?.has_plugin_secret ? '已配置（留空保持不变）' : '请输入插件 Secret'"
-            class="h-10"
-            :class="{ 'border-destructive': errors.plugin_secret }"
-          />
-          <p v-if="errors.plugin_secret" class="text-sm text-destructive flex items-center gap-1">
-            <span class="icon-[lucide--alert-circle]" />
-            {{ errors.plugin_secret }}
-          </p>
-        </div>
-
-        <!-- 用户 Key -->
-        <div class="space-y-2">
-          <Label for="user_key" class="flex items-center gap-1 text-foreground">
-            用户 Key
-            <span class="text-destructive">*</span>
-          </Label>
-          <Input
-            id="user_key"
-            v-model="form.user_key"
-            placeholder="ou_..."
-            class="h-10"
-            :class="{ 'border-destructive': errors.user_key }"
-          />
-          <p v-if="errors.user_key" class="text-sm text-destructive flex items-center gap-1">
-            <span class="icon-[lucide--alert-circle]" />
-            {{ errors.user_key }}
-          </p>
-          <p v-else class="text-xs text-muted-foreground">
-            用于 API 调用时的用户身份标识
-          </p>
-        </div>
-      </template>
-
-      <!-- Footer -->
-      <div class="flex justify-end gap-3 pt-4 border-t border-border/50">
-        <Button type="button" variant="outline" :disabled="submitting" @click="handleCancel">
-          取消
-        </Button>
-        <Button type="submit" :disabled="submitting || loading">
-          <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-          <span v-else class="icon-[lucide--save] mr-2" />
-          保存配置
-        </Button>
-      </div>
-    </form>
-  </VueFinalModal>
+    </DialogContent>
+  </Dialog>
 </template>

@@ -2,11 +2,13 @@
 import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
-import { computed } from 'vue'
+import { computed, markRaw } from 'vue'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/spaces'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import BaseModal from '~/components/modal/BaseModal.vue'
+import EditSpaceModal from '~/components/space/EditSpaceModal.vue'
+import FeishuConfigModal from '~/components/space/FeishuConfigModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -59,7 +61,43 @@ onMounted(async () => {
   finally {
     loading.value = false
   }
+
+  // 旧子页面 URL 重定向过来时自动打开对应弹窗
+  if (route.hash === '#feishu')
+    feishuModalOpen.value = true
+  else if (route.hash === '#edit')
+    openEditSpace()
 })
+
+// 编辑空间弹窗
+async function openEditSpace() {
+  const { open } = useModal({
+    component: markRaw(EditSpaceModal),
+    attrs: { spaceId: spaceId.value },
+    onConfirm: async () => {
+      await spacesStore.fetchSpace(spaceId.value)
+    },
+  })
+  await open()
+}
+
+// 飞书配置弹窗
+const feishuModalOpen = ref(false)
+
+async function handleFeishuUpdated() {
+  try {
+    await spacesStore.fetchFeishuConfig(spaceId.value)
+  }
+  catch {
+    // 忽略刷新失败
+  }
+}
+
+// 飞书弹窗内点击「去设置」飞书项目 Key → 切换到编辑空间弹窗
+function handleEditSpaceFromFeishu() {
+  feishuModalOpen.value = false
+  openEditSpace()
+}
 
 // 删除空间
 const deleteDialogOpen = ref(false)
@@ -378,12 +416,10 @@ async function handleCustomToken() {
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0 sm:self-start">
-              <RouterLink :to="`/spaces/${space.id}/edit`">
-                <Button variant="outline" size="sm" class="group">
-                  <span class="icon-[lucide--pencil] mr-1.5 group-hover:scale-110 transition-transform" />
-                  编辑
-                </Button>
-              </RouterLink>
+              <Button variant="outline" size="sm" class="group" @click="openEditSpace">
+                <span class="icon-[lucide--pencil] mr-1.5 group-hover:scale-110 transition-transform" />
+                编辑
+              </Button>
             </div>
           </div>
         </div>
@@ -629,12 +665,10 @@ async function handleCustomToken() {
                   飞书配置
                 </h3>
               </div>
-              <RouterLink :to="`/spaces/${space.id}/feishu`">
-                <Button variant="ghost" size="sm" class="h-8 text-xs group">
-                  管理
-                  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
-                </Button>
-              </RouterLink>
+              <Button variant="ghost" size="sm" class="h-8 text-xs group" @click="feishuModalOpen = true">
+                管理
+                <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </Button>
             </div>
             <div class="p-5">
               <div v-if="feishuConfigured" class="flex items-center justify-between gap-4">
@@ -669,12 +703,10 @@ async function handleCustomToken() {
                     </p>
                   </div>
                 </div>
-                <RouterLink :to="`/spaces/${space.id}/feishu`" class="shrink-0">
-                  <Button size="sm">
-                    <span class="icon-[lucide--plug] mr-1.5" />
-                    立即配置
-                  </Button>
-                </RouterLink>
+                <Button size="sm" class="shrink-0" @click="feishuModalOpen = true">
+                  <span class="icon-[lucide--plug] mr-1.5" />
+                  立即配置
+                </Button>
               </div>
             </div>
           </div>
@@ -903,6 +935,14 @@ async function handleCustomToken() {
         </section>
       </AnchorNavLayout>
     </div>
+
+    <!-- 飞书配置弹窗 -->
+    <FeishuConfigModal
+      v-model:open="feishuModalOpen"
+      :space-id="spaceId"
+      @updated="handleFeishuUpdated"
+      @edit-space="handleEditSpaceFromFeishu"
+    />
 
     <!-- 删除确认对话框 -->
     <ConfirmDialog
