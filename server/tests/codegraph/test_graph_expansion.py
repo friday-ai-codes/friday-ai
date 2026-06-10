@@ -12,7 +12,7 @@ from codegraph.services.graph_expansion import GraphExpansionService
 async def test_expand_one_hop_outgoing(
     seed_symbol, callee_symbol, outgoing_call_edge,
 ):
-    """work item: 1-hop 出边正确返回被调用者。"""
+    """1-hop 出边正确返回被调用者。"""
     result = await GraphExpansionService.expand(seed_symbol)
 
     assert len(result["nodes"]) > 0
@@ -36,7 +36,7 @@ async def test_expand_one_hop_outgoing(
 async def test_expand_one_hop_incoming(
     seed_symbol, caller_symbol, incoming_call_edge,
 ):
-    """work item: 1-hop 入边正确返回调用者。"""
+    """1-hop 入边正确返回调用者。"""
     result = await GraphExpansionService.expand(seed_symbol)
 
     caller_ids = [
@@ -62,7 +62,7 @@ async def test_expand_two_hop(
     seed_symbol, callee_symbol, second_hop_symbol,
     outgoing_call_edge, second_hop_edge,
 ):
-    """work item: 2-hop 扩展返回间接关系。"""
+    """2-hop 扩展返回间接关系。"""
     result = await GraphExpansionService.expand(seed_symbol)
 
     # 验证 2-hop 节点存在
@@ -75,7 +75,7 @@ async def test_expand_two_hop(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_dedup_shortest_depth(graph_repo, seed_symbol):
-    """work item: 同一符号在 1-hop 和 2-hop 都出现时保留最短 depth (1 > 2)。
+    """同一符号在 1-hop 和 2-hop 都出现时保留最短 depth (1 > 2)。
 
     构造场景：symbol_a 既是 seed 的直接调用者(1-hop)，
     又通过另一个中间符号间接关联(2-hop)。
@@ -138,7 +138,7 @@ async def test_dedup_shortest_depth(graph_repo, seed_symbol):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_max_symbols_per_hop_and_total(graph_repo, seed_symbol):
-    """work item: 上限控制——每 hop ≤ 20 符号，总 ≤ 50。
+    """上限控制——每 hop ≤ 20 符号，总 ≤ 50。
 
     创建 25 个 1-hop 调用者，验证截断到 20。
     """
@@ -175,7 +175,7 @@ async def test_max_symbols_per_hop_and_total(graph_repo, seed_symbol):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_return_structure(seed_symbol, callee_symbol, outgoing_call_edge):
-    """work item: 返回值结构包含 seed_symbol/nodes/edges 字段。"""
+    """返回值结构包含 seed_symbol/nodes/edges 字段。"""
     result = await GraphExpansionService.expand(seed_symbol)
 
     assert "seed_symbol" in result
@@ -205,7 +205,7 @@ async def test_return_structure(seed_symbol, callee_symbol, outgoing_call_edge):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_no_call_relationships(seed_symbol):
-    """work item: 无调用关系时返回空结构。"""
+    """无调用关系时返回空结构。"""
     result = await GraphExpansionService.expand(seed_symbol)
 
     assert result["seed_symbol"].id == seed_symbol.id
@@ -216,7 +216,7 @@ async def test_no_call_relationships(seed_symbol):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_expand_ignores_module_level_incoming_edge(graph_repo, seed_symbol):
-    """implementation：caller_symbol=NULL 的模块级入边被排除，expand 不崩且不产模块级 caller 节点。
+    """caller_symbol=NULL 的模块级入边被排除，expand 不崩且不产模块级 caller 节点。
 
     构造一条模块级入边（caller_symbol=None, caller_file="m.py", callee_name=seed.name），
     断言 expand 不抛异常且返回 nodes 中无 caller 节点（模块级 caller 无对应 Symbol，被过滤）。
@@ -244,7 +244,7 @@ async def test_expand_ignores_module_level_incoming_edge(graph_repo, seed_symbol
 async def test_expand_module_level_mixed_with_real_caller(
     graph_repo, seed_symbol, caller_symbol, incoming_call_edge,
 ):
-    """implementation：模块级入边与真实文件内入边并存时，仅真实 caller 进 DAG。"""
+    """模块级入边与真实文件内入边并存时，仅真实 caller 进 DAG。"""
     await sync_to_async(CallEdge.objects.create)(
         repository=graph_repo,
         caller_symbol=None,
@@ -267,7 +267,7 @@ async def test_expand_module_level_mixed_with_real_caller(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_seed_symbol_not_found(graph_repo):
-    """work item: 种子 Symbol 不存在时优雅处理。
+    """种子 Symbol 不存在时优雅处理。
 
     使用已删除/不存在的 Symbol ID 场景——传入一个未持久化的 Symbol。
     服务应优雅处理（无 crash），返回空结果或抛出明确的 ValueError。

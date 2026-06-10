@@ -170,36 +170,36 @@ class TestExtractorRegistry:
         assert EXTRACTOR_REGISTRY["vue"] is VueExtractor
 
     def test_get_extractor_html_returns_html_extractor(self):
-        """implementation：get_extractor('html') 返 HtmlExtractor 实例。"""
+        """get_extractor('html') 返 HtmlExtractor 实例。"""
         extractor = get_extractor("html")
         assert extractor is not None
         assert type(extractor).__name__ == "HtmlExtractor"
 
     def test_extractor_registry_has_html(self):
-        """implementation：EXTRACTOR_REGISTRY 含 html 项指向 HtmlExtractor 类。"""
+        """EXTRACTOR_REGISTRY 含 html 项指向 HtmlExtractor 类。"""
         assert "html" in EXTRACTOR_REGISTRY
         assert EXTRACTOR_REGISTRY["html"] is HtmlExtractor
 
     def test_get_backend_html_returns_tree_sitter(self):
-        """implementation：get_backend('html') 返 TreeSitterBackend，language=html。"""
+        """get_backend('html') 返 TreeSitterBackend，language=html。"""
         backend = get_backend("html")
         assert backend is not None
         assert type(backend).__name__ == "TreeSitterBackend"
         assert backend.language == "html"
 
     def test_get_extractor_css_returns_css_extractor(self):
-        """implementation：get_extractor('css') 返 CssExtractor 实例。"""
+        """get_extractor('css') 返 CssExtractor 实例。"""
         extractor = get_extractor("css")
         assert extractor is not None
         assert type(extractor).__name__ == "CssExtractor"
 
     def test_extractor_registry_has_css(self):
-        """implementation：EXTRACTOR_REGISTRY 含 css 项指向 CssExtractor 类。"""
+        """EXTRACTOR_REGISTRY 含 css 项指向 CssExtractor 类。"""
         assert "css" in EXTRACTOR_REGISTRY
         assert EXTRACTOR_REGISTRY["css"] is CssExtractor
 
     def test_get_backend_css_returns_tree_sitter(self):
-        """implementation：get_backend('css') 返 TreeSitterBackend，language=css。"""
+        """get_backend('css') 返 TreeSitterBackend，language=css。"""
         backend = get_backend("css")
         assert backend is not None
         assert type(backend).__name__ == "TreeSitterBackend"

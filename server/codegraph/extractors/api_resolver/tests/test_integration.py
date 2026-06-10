@@ -1,17 +1,18 @@
-"""端到端集成测试 —— fetchTopicFinished 类样本追踪（work item）。
+"""端到端集成测试 —— fetchTopicFinished 类样本追踪。
 
-需要 study-app 本地仓库：/Users/zaneliu/Projects/guanghe/study-app
+需要本地样例仓库，通过环境变量 TS_SAMPLE_REPO 指定。
 运行（本地）：pytest -m integration --no-cov -v
-CI 跳过：study-app 路径不存在时自动 skip。
+CI 跳过：样例仓库路径不存在时自动 skip。
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
-STUDY_APP_PATH = "/Users/zaneliu/Projects/guanghe/study-app"
+STUDY_APP_PATH = os.environ.get("TS_SAMPLE_REPO", "")
 STUDY_APP_GLOBAL_PKG = f"{STUDY_APP_PATH}/utils/global/src/axios.config.ts"
 STUDY_APP_HOME_SERVICES = f"{STUDY_APP_PATH}/apps/home/src/services/index.ts"
 STUDY_APP_LADDER_SERVICES = (
@@ -21,11 +22,11 @@ STUDY_APP_LADDER_SERVICES = (
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not Path(STUDY_APP_PATH).exists(),
+    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
     reason="study-app repo not found (run locally with access to study-app)",
 )
 class TestApiResolverStep0Integration:
-    """work item: Step 0 study-app 真实仓库测试。"""
+    """Step 0 study-app 真实仓库测试。"""
 
     def test_discover_helpers_from_axios_config(self):
         """Step 0：从 axios.config.ts 自动识别 get/post/put/del LowLevelHelper。"""
@@ -51,11 +52,11 @@ class TestApiResolverStep0Integration:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not Path(STUDY_APP_PATH).exists(),
+    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
     reason="study-app repo not found (run locally with access to study-app)",
 )
 class TestApiResolverStep1Integration:
-    """work item: Step 1 study-app 真实仓库测试。"""
+    """Step 1 study-app 真实仓库测试。"""
 
     def test_discover_wrappers_from_home_services(self):
         """Step 1：从 home/src/services/index.ts 发现 ApiWrapper。"""
@@ -107,7 +108,7 @@ class TestApiResolverStep1Integration:
         )
 
     def test_jsdoc_enrichment_textbook_last(self):
-        """work item：getLadderV5TextbookLast JSDoc 富集 → yapi metadata 正确。"""
+        """getLadderV5TextbookLast JSDoc 富集 → yapi metadata 正确。"""
         from codegraph.extractors.api_resolver.detector import resolve_wrappers_for_repository
 
         if not Path(STUDY_APP_LADDER_SERVICES).exists():
@@ -135,11 +136,11 @@ class TestApiResolverStep1Integration:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not Path(STUDY_APP_PATH).exists(),
+    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
     reason="study-app repo not found (run locally with access to study-app)",
 )
 class TestApiResolverFullScan:
-    """work item: 完整仓库扫描测试。"""
+    """完整仓库扫描测试。"""
 
     def test_full_repository_scan_discovers_wrappers(self):
         """完整仓库扫描（apps 目录）：能发现 ≥ 5 个 ApiWrapper。"""

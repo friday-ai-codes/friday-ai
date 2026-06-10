@@ -1,12 +1,13 @@
-"""implementation: Go gin Endpoint Extractor 单元测试 + study-course 集成测试。
+"""Go gin Endpoint Extractor 单元测试 + 真实仓库集成测试。
 
-覆盖 work item 四个 Requirements。
 单元测试用 tree-sitter parse fixture 文件（无 mock），直接验证抽取结果。
-集成测试使用 study-course 真实 Go 源码（双重保护：@integration + skipif）。
+集成测试使用本地样例 Go 仓库（GO_SAMPLE_REPO 环境变量指定；
+双重保护：@integration + skipif）。
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "codegraph/extractors/tests/fixtur
 BASIC_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_basic.go"
 OGIN_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_ogin.go"
 
-STUDY_COURSE_PATH = "/Users/zaneliu/Projects/guanghe/study-course"
+STUDY_COURSE_PATH = os.environ.get("GO_SAMPLE_REPO", "")
 STUDY_COURSE_HANDLERS = Path(STUDY_COURSE_PATH) / "handlers" / "handlers.go"
 
 
@@ -56,7 +57,7 @@ def _parse_go_fixture(file_path: Path) -> tuple[object, str, FileContext]:
 
 
 class TestBasicGinEndpoints:
-    """work item：基础 gin 路由识别。"""
+    """基础 gin 路由识别。"""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -67,45 +68,45 @@ class TestBasicGinEndpoints:
         }
 
     def test_basic_get_endpoint(self):
-        """work item: r.GET 被正确识别。"""
+        """r.GET 被正确识别。"""
         assert "GET:/users" in self.by_path
 
     def test_basic_post_endpoint(self):
-        """work item: r.POST 被正确识别。"""
+        """r.POST 被正确识别。"""
         assert "POST:/users" in self.by_path
 
     def test_all_http_methods(self):
-        """work item: GET/POST/PUT/DELETE/PATCH/HEAD 全部识别。"""
+        """GET/POST/PUT/DELETE/PATCH/HEAD 全部识别。"""
         methods = {ep.http_method for ep in self.endpoints}
         for m in ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"):
             assert m in methods, f"方法 {m} 未被识别"
 
     def test_use_middleware_ignored(self):
-        """work item: r.Use() 不生成 endpoint。"""
+        """r.Use() 不生成 endpoint。"""
         handler_names = {ep.handler_name for ep in self.endpoints}
         assert "someMiddleware" not in handler_names
         assert "<anonymous>" not in handler_names or True  # Use 的 anon 不应出现
 
     def test_url_is_first_arg_string(self):
-        """work item: url_path 取第一个 string literal。"""
+        """url_path 取第一个 string literal。"""
         ep = self.by_path.get("DELETE:/users/:id")
         assert ep is not None
         assert ep.url_path == "/users/:id"
 
     def test_handler_is_last_identifier(self):
-        """work item: handler_name 取最后一个 identifier/selector。"""
+        """handler_name 取最后一个 identifier/selector。"""
         ep = self.by_path.get("GET:/users")
         assert ep is not None
         assert ep.handler_name == "listUsers"
 
     def test_anonymous_handler(self):
-        """work item: func_literal handler → '<anonymous>'。"""
+        """func_literal handler → '<anonymous>'。"""
         ep = self.by_path.get("GET:/ping")
         assert ep is not None
         assert ep.handler_name == "<anonymous>"
 
     def test_router_group_routes_recognized(self):
-        """work item: v1.GET/v1.POST 也被识别（宽松 recv 类型）。
+        """v1.GET/v1.POST 也被识别（宽松 recv 类型）。
 
         注意：per work item 已删，不合并 Group 前缀；
         路由注册的 string literal 直接作为 url_path。
@@ -116,7 +117,7 @@ class TestBasicGinEndpoints:
         assert "POST:/items" in self.by_path
 
     def test_multiple_middleware_routes(self):
-        """work item: 多 middleware 时 handler 仍取最后一个。"""
+        """多 middleware 时 handler 仍取最后一个。"""
         ep = self.by_path.get("GET:/courses/:courseId")
         assert ep is not None
         assert ep.handler_name == "getCourse"
@@ -129,7 +130,7 @@ class TestBasicGinEndpoints:
 
 
 class TestOginMetadata:
-    """work item：ogin.G* middleware metadata 提取。"""
+    """ogin.G* middleware metadata 提取。"""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -140,13 +141,13 @@ class TestOginMetadata:
         }
 
     def test_use_calls_not_in_endpoints(self):
-        """work item: server.Use() 不生成 endpoint。"""
+        """server.Use() 不生成 endpoint。"""
         handler_names = {ep.handler_name for ep in self.endpoints}
         assert "metricsMiddleware" not in handler_names
         assert "tracingMiddleware" not in handler_names
 
     def test_ogin_path_param_extracted(self):
-        """work item: GPathRequireString 提取 path_params。"""
+        """GPathRequireString 提取 path_params。"""
         ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
         assert ep is not None
         assert ep.metadata is not None
@@ -158,7 +159,7 @@ class TestOginMetadata:
         assert path_params[0]["type"] == "string"
 
     def test_ogin_query_param_optional(self):
-        """work item: GQueryOptionalString 提取 query_params，required=False。"""
+        """GQueryOptionalString 提取 query_params，required=False。"""
         ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
         assert ep is not None
         query_params = ep.metadata.get("query_params", [])
@@ -167,7 +168,7 @@ class TestOginMetadata:
         ), f"query_params={query_params}"
 
     def test_ogin_header_param_optional(self):
-        """work item: GHeaderOptionalString 提取 header_params，required=False。"""
+        """GHeaderOptionalString 提取 header_params，required=False。"""
         ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
         assert ep is not None
         header_params = ep.metadata.get("header_params", [])
@@ -175,7 +176,7 @@ class TestOginMetadata:
         assert "client-type" in header_names
 
     def test_ogin_multiple_query_require_int(self):
-        """work item: 多个 GQueryRequireInt 全部提取。"""
+        """多个 GQueryRequireInt 全部提取。"""
         ep = self.by_path.get("GET:/study-course/chapter/tree")
         assert ep is not None
         query_params = ep.metadata.get("query_params", [])
@@ -186,7 +187,7 @@ class TestOginMetadata:
             assert p["type"] == "int"
 
     def test_no_ogin_metadata_returns_none(self):
-        """work item: 无 G* middleware 时 metadata=None。"""
+        """无 G* middleware 时 metadata=None。"""
         ep = self.by_path.get("POST:/study-course/batch/topic/detail")
         assert ep is not None
         assert ep.metadata is None
@@ -269,8 +270,8 @@ def _walk_nodes(node, node_type):
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not STUDY_COURSE_HANDLERS.exists(),
-    reason="study-course repo 不在本机，跳过 integration test",
+    not STUDY_COURSE_PATH or not STUDY_COURSE_HANDLERS.exists(),
+    reason="样例 Go 仓库未配置（GO_SAMPLE_REPO），跳过 integration test",
 )
 class TestStudyCourseIntegration:
     """study-course 端到端集成测试（双重保护）。"""

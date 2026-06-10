@@ -65,7 +65,7 @@ def _read_text(path: pathlib.Path) -> str:
 
 
 def _get_phase_start_sha() -> str:
-    """work item：从 VALIDATION.md frontmatter 读取 phase_start_sha。
+    """从 VALIDATION.md frontmatter 读取 phase_start_sha。
 
     **不使用 HEAD~10 硬编码**（HEAD~10 是非确定性 —— 取决于运行时 commit 数）。
     checkpoint-01 首 task 必须写入 phase_start_sha；本测试读取后做 git diff。
@@ -258,7 +258,7 @@ _RENAME_ALLOWED_SUBSTRING_PAIRS = (
     ],
 )
 def test_node_04_frozen_files_unchanged(path: str) -> None:
-    """success criterion / work item：禁区文件在 implementation 期间零改动（含 rename 白名单豁免）。
+    """success criterion / 禁区文件在 implementation 期间零改动（含 rename 白名单豁免）。
 
     **work item 决策**：base_ref 从 VALIDATION.md frontmatter.phase_start_sha
     读取，**不使用 HEAD~10 硬编码**。checkpoint-01 首 task 写入 phase_start_sha；

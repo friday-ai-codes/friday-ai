@@ -10,7 +10,7 @@ class RunPhase(str, enum.Enum):
     PLANNING = "planning"
     EXECUTING = "executing"
     WAITING = "waiting"
-    # implementation：等待用户对 ask_clarification 的回答。
+    # 等待用户对 ask_clarification 的回答。
     WAITING_CLARIFICATION = "waiting_clarification"
     FINALIZING = "finalizing"
     COMPLETED = "completed"
@@ -50,7 +50,7 @@ class WorkflowState(TypedDict, total=False):
     result_metadata: dict[str, Any]
     agent_session_id: str
 
-    # implementation：协商暂停 payload
+    # 协商暂停 payload
     # 形如 {"clarification_id": str, "question": str, "options": list,
     #        "allow_freeform": bool, "triggering_message_id": str}
     # interrupt() 时由 wait_clarification_node 透传给前端 / endpoint。

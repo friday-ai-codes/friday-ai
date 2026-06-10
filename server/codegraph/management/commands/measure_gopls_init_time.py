@@ -1,4 +1,4 @@
-"""implementation: 测量 gopls 初始化耗时（work item 90s 实战门 / 60s stretch advisory）。
+"""测量 gopls 初始化耗时（work item 90s 实战门 / 60s stretch advisory）。
 
 per work item / work item
 ==================
@@ -12,7 +12,7 @@ CLI 用例
 ::
 
     python manage.py measure_gopls_init_time \\
-        --repo-root=/Users/zaneliu/Projects/guanghe/study-course \\
+        --repo-root=/path/to/go-repo \\
         --output-json=/tmp/gopls_init_report.json
 
     # 如本地未装 gopls，advisory skip（exit 0）：
@@ -36,13 +36,13 @@ logger = structlog.get_logger(__name__)
 
 _EVENT_GOPLS_INIT_MEASURED: Final[str] = "gopls_init_measured"
 
-# work item：实战门（90s） / stretch advisory（60s）
+# 实战门（90s） / stretch advisory（60s）
 _GATE_MS: Final[int] = 90_000
 _STRETCH_MS: Final[int] = 60_000
 
 
 class Command(BaseCommand):
-    """implementation：gopls 初始化耗时测量命令。"""
+    """gopls 初始化耗时测量命令。"""
 
     help = "测量 gopls 初始化耗时（work item：90s 实战门 / 60s stretch advisory）"
 

@@ -1,4 +1,4 @@
-"""implementation：_handle_completed 自动回算 cross_repo_relevance 测试。
+"""_handle_completed 自动回算 cross_repo_relevance 测试。
 
 测试范围：
 

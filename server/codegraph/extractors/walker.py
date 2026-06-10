@@ -31,7 +31,7 @@ SYMBOL_TYPES: dict[str, list[str]] = {
         "method_definition",
         "lexical_declaration",
     ],
-    # work item：tsx 与 typescript 字段级一致（显式 dict literal，避免间接引用）
+    # tsx 与 typescript 字段级一致（显式 dict literal，避免间接引用）
     "tsx": [
         "function_declaration",
         "class_declaration",
@@ -41,7 +41,7 @@ SYMBOL_TYPES: dict[str, list[str]] = {
         "lexical_declaration",
     ],
     "go": ["function_declaration", "method_declaration", "type_declaration"],
-    # implementation：HTML element 节点统一入口；script_element / style_element
+    # HTML element 节点统一入口；script_element / style_element
     # 是 tree-sitter-html 对 <script>/<style> 的特殊节点（不归 element），
     # 显式列出让 walker yield 这些节点，便于在 helper 内做 PascalCase / id 属性判别。
     "html": ["element", "script_element", "style_element"],
@@ -55,7 +55,7 @@ IMPORT_TYPES: dict[str, list[str]] = {
     "typescript": ["import_statement", "export_statement"],
     "tsx": ["import_statement", "export_statement"],
     "go": ["import_declaration"],
-    # implementation：HTML <link href> / <img src> 走普通 element；
+    # HTML <link href> / <img src> 走普通 element；
     # <script src> 走 script_element，需要双节点 yield 路径。
     "html": ["element", "script_element"],
     "css": ["import_statement"],
@@ -64,12 +64,12 @@ IMPORT_TYPES: dict[str, list[str]] = {
 CALL_TYPES: dict[str, list[str]] = {
     "python": ["call"],
     "javascript": ["call_expression"],
-    # work item：TS 不含 JSX
+    # TS 不含 JSX
     "typescript": ["call_expression"],
-    # work item / work item：TSX 额外含 jsx_element / jsx_self_closing_element
+    # work item / TSX 额外含 jsx_element / jsx_self_closing_element
     "tsx": ["call_expression", "jsx_element", "jsx_self_closing_element"],
     "go": ["call_expression"],
-    # implementation：HTML / CSS 无 callable 语义，显式 [] 让 walker 跳过 call 维度
+    # HTML / CSS 无 callable 语义，显式 [] 让 walker 跳过 call 维度
     "html": [],
     "css": [],
 }
@@ -116,13 +116,13 @@ def walk_tree(tree: Any, language: str) -> Generator[WalkerNode, None, None]:
     # 内联递归函数 —— 保持闭包访问栈变量
     def _walk(node: Any) -> Generator[WalkerNode, None, None]:
         # 判断当前节点是否为符号定义，获取符号名
-        # work item：method_definition 加入函数判定（TS class 内方法）
-        # work item：lexical_declaration（命名 arrow_function 容器）当函数容器，
+        # method_definition 加入函数判定（TS class 内方法）
+        # lexical_declaration（命名 arrow_function 容器）当函数容器，
         # 取 variable_declarator.name 作 ancestor_function（用于内层 call 归属）
         node_is_function = node.type in ("function_definition", "function_declaration",
                                          "method_declaration", "arrow_function",
                                          "method_definition", "lexical_declaration")
-        # work item：interface_declaration / type_alias_declaration 当作类（CLASS 符号）
+        # interface_declaration / type_alias_declaration 当作类（CLASS 符号）
         node_is_class = node.type in ("class_definition", "class_declaration", "type_declaration",
                                       "interface_declaration", "type_alias_declaration")
         node_name: str | None = None
@@ -130,7 +130,7 @@ def walk_tree(tree: Any, language: str) -> Generator[WalkerNode, None, None]:
         if node_is_function or node_is_class:
             # 提取符号名：取 name 子节点（tree-sitter 约定）
             name_node = node.child_by_field_name("name")
-            # work item：lexical_declaration 没有 name 字段，下钻 variable_declarator
+            # lexical_declaration 没有 name 字段，下钻 variable_declarator
             # 当且仅当 value 是 arrow_function 时取 variable_declarator.name
             if name_node is None and node.type == "lexical_declaration":
                 for child in node.children:

@@ -3,7 +3,7 @@
 提供 check_runner_online / build_dispatch_metadata / create_sub_session / dispatch_coding_task
 四个 async 函数，供 CodingSessionConfirmView 和后续 CodingSession graph 节点复用。
 
-implementation：追加 `create_sessions_for_plan` 批量创建业务函数，
+追加 `create_sessions_for_plan` 批量创建业务函数，
 封装 per-repo 校验 + 独立事务 + 失败收集语义。
 """
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # ----------------------------------------------------------------------------
-# implementation / work item：active 状态枚举常量
+# implementation / active 状态枚举常量
 # 与 chat.models.CodingSession.Meta.constraints.unique_active_plan_repo 字面一致。
 # ----------------------------------------------------------------------------
 ACTIVE_STATUSES: frozenset[str] = frozenset(
@@ -381,7 +381,7 @@ async def dispatch_coding_task(
 
 
 # ============================================================================
-# implementation：批量创建 CodingSession（CodingPlan 上 fan-out）
+# 批量创建 CodingSession（CodingPlan 上 fan-out）
 # ============================================================================
 
 
@@ -451,7 +451,7 @@ async def create_sessions_for_plan(
     repository_ids: list[UUID],
     branch_template: str = "",
 ) -> CodingSessionsBatchResult:
-    """work item：在已有 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
+    """在已有 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
 
     per-repository 独立校验 + 独立 ``transaction.atomic()``，部分失败不阻塞其他仓库。
 

@@ -1,10 +1,10 @@
-"""implementation: VolarPool —— 多 sub-project volar 实例池 + LRU 调度。
+"""VolarPool —— 多 sub-project volar 实例池 + LRU 调度。
 
-per work item：``max_concurrent=4`` + ``OrderedDict`` LRU 驱逐最久未用
-per work item：模块级单例 ``get_volar_pool()`` + ``threading.Lock`` 守门并发 init
-per work item：VolarPool 内部 ``_pool: OrderedDict[Path, LspSupervisor]`` 自管实例
+``max_concurrent=4`` + ``OrderedDict`` LRU 驱逐最久未用
+模块级单例 ``get_volar_pool()`` + ``threading.Lock`` 守门并发 init
+VolarPool 内部 ``_pool: OrderedDict[Path, LspSupervisor]`` 自管实例
             （**不**复用 implementation ``_SUPERVISORS`` 模块级 cache，避免多实例 collide）
-per work item：所有 supervisor 共享 ``services/background_runner.py`` 全局 loop（同 implementation）
+所有 supervisor 共享 ``services/background_runner.py`` 全局 loop（同 implementation）
 
 公开 API
 ========
@@ -82,7 +82,7 @@ class VolarPool:
         Raises:
             LspUnhealthyError: vue<2.7 / Node 不可达 / vue-language-server 缺失
         """
-        # per work item：避免循环 import，inline 引入
+        # 避免循环 import，inline 引入
         from codegraph.lsp.workspace_discovery import is_vue_27_or_newer
 
         if not is_vue_27_or_newer(vue_version):

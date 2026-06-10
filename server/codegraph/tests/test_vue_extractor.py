@@ -1,12 +1,12 @@
 """Vue SFC extractor 测试 —— 验证 splitter + symbol/import/call 抽取 + template 反向引用。
 
 覆盖 implementation 全部 6 个 requirements：
-- work item：vue_sfc_splitter 三段拆分 + line_offset 精度 + attrs 解析（TestVueSfcSplitter）
-- work item：Vue 2 Options API 抽取（vue2_options fixture + TestVueExtractor 4 测试）
-- work item：Vue 2.7 / 3 <script setup lang="ts"> 抽取（vue27_setup / vue3_setup fixture）
-- work item：template-script 反向引用（test_template_event_ref）
-- work item：<script lang="ts"> 路由 typescript backend（test_script_lang_ts_routing）
-- work item：defineProps/defineEmits/defineExpose 三宏 call（test_define_macros_call）
+- vue_sfc_splitter 三段拆分 + line_offset 精度 + attrs 解析（TestVueSfcSplitter）
+- Vue 2 Options API 抽取（vue2_options fixture + TestVueExtractor 4 测试）
+- Vue 2.7 / 3 <script setup lang="ts"> 抽取（vue27_setup / vue3_setup fixture）
+- template-script 反向引用（test_template_event_ref）
+- <script lang="ts"> 路由 typescript backend（test_script_lang_ts_routing）
+- defineProps/defineEmits/defineExpose 三宏 call（test_define_macros_call）
 """
 
 from __future__ import annotations
@@ -114,7 +114,7 @@ class TestVueExtractor:
     """VueExtractor 端到端单元测试 —— 覆盖 work item..work item。"""
 
     def test_component_name_symbol(self, vue2_options_source: str) -> None:
-        """work item：文件名抽为 Component Symbol(CLASS)。"""
+        """文件名抽为 Component Symbol(CLASS)。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue2_options.vue", language="vue", repository_id="r1"
@@ -126,7 +126,7 @@ class TestVueExtractor:
         assert "vue2_options" in names
 
     def test_options_api_methods(self, vue2_options_source: str) -> None:
-        """work item / work item：methods 内 handleClick / onSave 抽 METHOD。"""
+        """work item / methods 内 handleClick / onSave 抽 METHOD。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue2_options.vue", language="vue", repository_id="r1"
@@ -139,7 +139,7 @@ class TestVueExtractor:
         assert "onSave" in method_names
 
     def test_options_api_data_not_symbol(self, vue2_options_source: str) -> None:
-        """work item：data 字段 title / count 不抽 SymbolData。"""
+        """data 字段 title / count 不抽 SymbolData。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue2_options.vue", language="vue", repository_id="r1"
@@ -164,7 +164,7 @@ class TestVueExtractor:
         assert "./ChildComp.vue" in modules
 
     def test_script_setup_symbols(self, vue27_setup_source: str) -> None:
-        """work item：<script setup lang="ts"> 顶层 function/命名 arrow/interface 抽。"""
+        """<script setup lang="ts"> 顶层 function/命名 arrow/interface 抽。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue27_setup.vue", language="vue", repository_id="r1"
@@ -191,7 +191,7 @@ class TestVueExtractor:
         assert "./api" in modules
 
     def test_define_props_call(self, vue27_setup_source: str) -> None:
-        """work item：defineProps 当 call_expression（callee_name=defineProps）。"""
+        """defineProps 当 call_expression（callee_name=defineProps）。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue27_setup.vue", language="vue", repository_id="r1"
@@ -203,7 +203,7 @@ class TestVueExtractor:
         assert "defineProps" in callee_names
 
     def test_define_macros_call(self, vue3_setup_source: str) -> None:
-        """work item：defineProps / defineEmits / defineExpose 三宏全命中 call。"""
+        """defineProps / defineEmits / defineExpose 三宏全命中 call。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue3_setup.vue", language="vue", repository_id="r1"
@@ -217,7 +217,7 @@ class TestVueExtractor:
         assert "defineExpose" in callee_names
 
     def test_template_event_ref(self, vue2_options_source: str) -> None:
-        """work item / work item：template `@click="handleClick"` → TEMPLATE_REF CallData。"""
+        """work item / template `@click="handleClick"` → TEMPLATE_REF CallData。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue2_options.vue", language="vue", repository_id="r1"
@@ -231,7 +231,7 @@ class TestVueExtractor:
         assert "onSave" in callee_names
 
     def test_template_url_attribute_no_match(self) -> None:
-        """work item：template `:src="https://cdn..."` URL 字面不命中 TEMPLATE_REF。"""
+        """template `:src="https://cdn..."` URL 字面不命中 TEMPLATE_REF。"""
         src = """<template>
   <img :src="https://cdn.example.com/x.png" />
 </template>
@@ -248,7 +248,7 @@ export default { name: 'X' }
         assert "https" not in template_refs
 
     def test_script_lang_ts_routing(self) -> None:
-        """work item：<script lang="ts"> 路由到 typescript backend。"""
+        """<script lang="ts"> 路由到 typescript backend。"""
         src = """<script lang="ts">
 interface Foo { x: string }
 function bar() { return 1 }
@@ -261,7 +261,7 @@ function bar() { return 1 }
         assert "bar" in names
 
     def test_script_no_lang_default_typescript(self) -> None:
-        """work item：无 lang 默认 typescript（能解析 interface）。"""
+        """无 lang 默认 typescript（能解析 interface）。"""
         src = """<script>
 interface Foo { x: string }
 function bar() {}
@@ -308,7 +308,7 @@ class TestVueTemplateComponentRef:
     def test_child_component_template_ref(
         self, vue_with_children_source: str
     ) -> None:
-        """work item：<ChildComp/> / <user-card/> 抽成 TEMPLATE_REF，kebab 归一 PascalCase。"""
+        """<ChildComp/> / <user-card/> 抽成 TEMPLATE_REF，kebab 归一 PascalCase。"""
         extractor = VueExtractor()
         ctx = FileContext(
             file_path="vue_with_children.vue", language="vue", repository_id="r1"

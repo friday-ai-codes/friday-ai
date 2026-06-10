@@ -1,6 +1,6 @@
 """JSDoc 元数据解析器 —— 从 /** ... */ 注释提取结构化元数据。
 
-per work item: 解析 @description / @author / @date / yapi URL pattern。
+解析 @description / @author / @date / yapi URL pattern。
 yapi URL pattern: https://yapi.yc345.tv/project/{pid}/interface/api/{iid}
 """
 

@@ -1,4 +1,4 @@
-"""implementation: VolarBackend + helper 单元测试（≥ 12 测试覆盖 V1/V2/V3/V4 契约）。
+"""VolarBackend + helper 单元测试（≥ 12 测试覆盖 V1/V2/V3/V4 契约）。
 
 per implementation plan Task 3 acceptance：
 - ClassVar 5 字段值 + ExtractorBackend Protocol 契约（V1）

@@ -182,7 +182,7 @@ class TestCodingSessionConfirmAPI:
     def test_confirm_only_draft(self, authenticated_client, draft_session):
         """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。
 
-        implementation：view 不再同步推进到 running；graph 后台任务负责。
+        view 不再同步推进到 running；graph 后台任务负责。
         view 同步前置成功后 status=confirmed（aconfirm 已切换），200 + graph 启动。
         """
         from unittest.mock import AsyncMock, patch
@@ -765,13 +765,13 @@ class TestCodingSessionConfirmBranchValidation:
 
 
 # ============================================================================
-# implementation：unique_active_plan_repo 部分唯一约束测试
+# unique_active_plan_repo 部分唯一约束测试
 # ============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 class TestUniqueActivePlanRepoConstraint:
-    """work item：同 plan + 同 repo 同一时刻最多 1 个 active session。"""
+    """同 plan + 同 repo 同一时刻最多 1 个 active session。"""
 
     @pytest.fixture
     def coding_plan(self, db, project):

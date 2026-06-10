@@ -1,4 +1,4 @@
-"""implementation: CrossRepo RAG 端到端集成测试（work item）。
+"""CrossRepo RAG 端到端集成测试（work item）。
 
 需要本地运行的 Qdrant（http://localhost:6333）+ 已配置 Embedding 服务。
 双重 skipif 保护：外部服务不可用时自动跳过，不阻塞 CI。
@@ -67,7 +67,7 @@ class _FakeEndpointData:
 )
 @pytest.mark.asyncio
 class TestCrossRagEndToEnd:
-    """work item: 端到端 write endpoint → Qdrant → 可被 search 召回。"""
+    """端到端 write endpoint → Qdrant → 可被 search 召回。"""
 
     TEST_REPO_ID = "work-item"
     TEST_REPO_NAME = "study-course-test"
@@ -140,13 +140,13 @@ class TestCrossRagEndToEnd:
         assert len(scroll_result) == 1
         payload = scroll_result[0].payload or {}
 
-        # work item: content_type 字段
+        # content_type 字段
         assert payload.get("content_type") == "api_endpoint"
         assert payload.get("http_method") == "POST"
         assert payload.get("url_path") == "/api/users"
         assert payload.get("handler_name") == "userHandler.CreateUser"
 
-        # work item: content 含关键字段
+        # content 含关键字段
         content = payload.get("content", "")
         assert "POST" in content
         assert "/api/users" in content

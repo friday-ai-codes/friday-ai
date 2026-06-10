@@ -73,7 +73,7 @@ def symbols(repo):
 
 @pytest.mark.django_db
 def test_symbol_list_returns_paginated(api_client, repo, symbols):
-    """work item: GET /codegraph/symbols/ 返回 {count, results}。"""
+    """GET /codegraph/symbols/ 返回 {count, results}。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -86,7 +86,7 @@ def test_symbol_list_returns_paginated(api_client, repo, symbols):
 
 @pytest.mark.django_db
 def test_symbol_list_alias_fields(api_client, repo, symbols):
-    """work item: results[0] 含 line_start/line_end，不含 start_line/end_line（关键差异 1）。"""
+    """results[0] 含 line_start/line_end，不含 start_line/end_line（关键差异 1）。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -99,7 +99,7 @@ def test_symbol_list_alias_fields(api_client, repo, symbols):
 
 @pytest.mark.django_db
 def test_symbol_list_filter_by_type(api_client, repo, symbols):
-    """work item: ?symbol_type=FUNCTION 只返回 FUNCTION 类型。"""
+    """?symbol_type=FUNCTION 只返回 FUNCTION 类型。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/?symbol_type=FUNCTION"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -111,7 +111,7 @@ def test_symbol_list_filter_by_type(api_client, repo, symbols):
 
 @pytest.mark.django_db
 def test_symbol_list_filter_by_name(api_client, repo, symbols):
-    """work item: ?name=process 触发 name__icontains 过滤。"""
+    """?name=process 触发 name__icontains 过滤。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/?name=process"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -124,7 +124,7 @@ def test_symbol_list_filter_by_name(api_client, repo, symbols):
 
 @pytest.mark.django_db
 def test_symbol_list_filter_by_file_path(api_client, repo, symbols):
-    """work item: ?file_path=src/core.py 触发 file_path__startswith 过滤。"""
+    """?file_path=src/core.py 触发 file_path__startswith 过滤。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/?file_path=src/core.py"
     response = api_client.get(url)
     assert response.status_code == 200
@@ -136,7 +136,7 @@ def test_symbol_list_filter_by_file_path(api_client, repo, symbols):
 
 @pytest.mark.django_db
 def test_symbol_list_pagination(api_client, repo, symbols):
-    """work item: ?limit=2&offset=0 → count=3, results 2 条；response 含 offset/limit。"""
+    """?limit=2&offset=0 → count=3, results 2 条；response 含 offset/limit。"""
     url = f"/api/repositories/{repo.id}/codegraph/symbols/?limit=2&offset=0"
     response = api_client.get(url)
     assert response.status_code == 200

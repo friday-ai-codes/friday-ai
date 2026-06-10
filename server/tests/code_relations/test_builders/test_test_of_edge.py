@@ -120,13 +120,13 @@ async def test_endswith_no_false_match(repository) -> None:
 
 
 # =============================================================================
-# implementation / work item：Go / Vue 多语言 regex 扩展
+# implementation / Go / Vue 多语言 regex 扩展
 # =============================================================================
 
 
 @pytest.mark.django_db(transaction=True)
 async def test_go_test_suffix_regex(repository) -> None:
-    """implementation：handlers/user_test.go → handlers/user.go 命中 go_test_suffix。"""
+    """handlers/user_test.go → handlers/user.go 命中 go_test_suffix。"""
     await _make_chunk(repository, "handlers/user_test.go")
     await _make_chunk(repository, "handlers/user.go")
     edges = await TestOfEdgeBuilder().build(repository, [])
@@ -138,7 +138,7 @@ async def test_go_test_suffix_regex(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_vue_spec_infix_regex(repository) -> None:
-    """implementation：components/Button.spec.vue → components/Button.vue 命中 vue_test_infix。"""
+    """components/Button.spec.vue → components/Button.vue 命中 vue_test_infix。"""
     await _make_chunk(repository, "components/Button.spec.vue")
     await _make_chunk(repository, "components/Button.vue")
     edges = await TestOfEdgeBuilder().build(repository, [])
@@ -149,7 +149,7 @@ async def test_vue_spec_infix_regex(repository) -> None:
 
 @pytest.mark.django_db(transaction=True)
 async def test_vue_test_infix_regex(repository) -> None:
-    """implementation：components/Card.test.vue → components/Card.vue 命中 vue_test_infix。"""
+    """components/Card.test.vue → components/Card.vue 命中 vue_test_infix。"""
     await _make_chunk(repository, "components/Card.test.vue")
     await _make_chunk(repository, "components/Card.vue")
     edges = await TestOfEdgeBuilder().build(repository, [])

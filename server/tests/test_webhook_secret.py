@@ -1,8 +1,8 @@
-"""implementation: Webhook Secret 生成与全量索引统计修复测试
+"""Webhook Secret 生成与全量索引统计修复测试
 
 测试覆盖：
-- work item: Webhook Secret 生成 API（generate_webhook_secret action）
-- work item: 前端集成所需的 API 响应格式验证
+- Webhook Secret 生成 API（generate_webhook_secret action）
+- 前端集成所需的 API 响应格式验证
 - 全量索引统计返回值修复（run_full_index 返回 added 字段）
 """
 

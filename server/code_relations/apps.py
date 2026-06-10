@@ -11,7 +11,7 @@ class CodeRelationsConfig(AppConfig):
     verbose_name = "代码关系图谱"
 
     def ready(self) -> None:
-        """implementation：显式 import signals 触发 @receiver decorator 注册。
+        """显式 import signals 触发 @receiver decorator 注册。
 
         不依赖 Django 自动发现 —— ready() 是 AppConfig 文档明确的 signal 注册时机；
         import 副作用使 `@receiver(pre_delete, sender=ChunkRegistry)` 在 app

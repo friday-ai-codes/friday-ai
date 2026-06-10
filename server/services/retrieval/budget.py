@@ -95,7 +95,7 @@ class HybridBudget:
         effective = int(8000 * 0.9) = 7200 →
         {"rag": int(7200 * 0.6) = 4320, "graph": int(7200 * 0.4) = 2880, "cross_repo": 0}
 
-        implementation: 新增 cross_repo key（默认 0，不影响现有 budgets["rag"] / budgets["graph"] 读取）。
+        新增 cross_repo key（默认 0，不影响现有 budgets["rag"] / budgets["graph"] 读取）。
 
         Raises:
             ValueError: ``max_tokens`` 为负——避免 ``trim_to_budget`` 全空 final_context

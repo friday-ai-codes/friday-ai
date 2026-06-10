@@ -361,7 +361,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         # _update_coding_session_on_complete 内部走 `coding_session is None` 短路。
         await _update_coding_session_on_complete(session)
 
-        # implementation：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
+        # chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
         # 与 HTTP _handle_completed 对齐 —— 历史上 WS 路径漏了这一步，导致
         # deep_analysis 完成走 WS→BarrierManager 时永远写不到 deep_analysis_completion
         # trace / 回灌 [cross_repo_relevance:<trace_id>] 段（284 UAT review round 集成断点）。

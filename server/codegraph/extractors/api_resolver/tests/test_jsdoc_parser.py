@@ -1,6 +1,6 @@
 """jsdoc_parser.py 单元测试 —— @description/@author/@date/yapi URL 解析。
 
-per work item: 验证 JSDoc 元数据解析的各种场景。
+验证 JSDoc 元数据解析的各种场景。
 """
 
 from __future__ import annotations

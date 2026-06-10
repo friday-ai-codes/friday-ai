@@ -1,10 +1,10 @@
 """implementation Task 2：LangChainAgentRunner 核心 ReAct + interrupt + tool flow 测试。
 
 覆盖 Requirement 映射（project docs）：
-- work item：stream / result / interrupt 三件套接口 + CancelledError 传播
-- work item：朴素 ReAct（不嵌 LangGraph 子图执行器；静态断言在 test_langchain_runner_no_stategraph.py）
-- work item：AIMessage.tool_calls 三元组直接消费 + Gemini id 缺失补 uuid
-- work item：TEXT_DELTA / THINKING / MESSAGE_COMPLETE data 字段契约
+- stream / result / interrupt 三件套接口 + CancelledError 传播
+- 朴素 ReAct（不嵌 LangGraph 子图执行器；静态断言在 test_langchain_runner_no_stategraph.py）
+- AIMessage.tool_calls 三元组直接消费 + Gemini id 缺失补 uuid
+- TEXT_DELTA / THINKING / MESSAGE_COMPLETE data 字段契约
 
 测试 FakeChatModel 策略（本 plan 本 task 的临时方案）：
 implementation plan 会抽离到 tests/helpers/fake_chat_model.py；本 plan 先 inline 最小化 FakeChatModel。
@@ -195,7 +195,7 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch, fake: BaseChatModel) -> None:
 
 
 def test_runner_interface(runner_config: LangChainRunnerConfig) -> None:
-    """work item：LangChainAgentRunner 含 stream / result / interrupt 三件套 + _last_trim_meta 预留。"""
+    """LangChainAgentRunner 含 stream / result / interrupt 三件套 + _last_trim_meta 预留。"""
     runner = LangChainAgentRunner(runner_config)
     assert hasattr(runner, "stream")
     assert hasattr(runner, "result")
@@ -208,7 +208,7 @@ def test_runner_interface(runner_config: LangChainRunnerConfig) -> None:
 async def test_stream_yields_agent_events(
     monkeypatch: pytest.MonkeyPatch, runner_config: LangChainRunnerConfig
 ) -> None:
-    """work item：stream 返回 AsyncGenerator 且至少 yield 一个 MESSAGE_COMPLETE。"""
+    """stream 返回 AsyncGenerator 且至少 yield 一个 MESSAGE_COMPLETE。"""
     fake = _InlineFakeChatModel.make(responses=["hello"])
     _patch_model(monkeypatch, fake)
 
@@ -222,7 +222,7 @@ async def test_stream_yields_agent_events(
 
 @pytest.mark.asyncio
 async def test_react_loop_no_langgraph(runner_config: LangChainRunnerConfig) -> None:
-    """work item：langchain_runner 模块 __dict__ 不含 StateGraph / Pregel 等子图符号。"""
+    """langchain_runner 模块 __dict__ 不含 StateGraph / Pregel 等子图符号。"""
     import agents.langchain_runner as mod
 
     assert "StateGraph" not in dir(mod)
@@ -235,7 +235,7 @@ async def test_react_loop_no_langgraph(runner_config: LangChainRunnerConfig) -> 
 async def test_max_turns_exhausted(
     monkeypatch: pytest.MonkeyPatch, runner_config: LangChainRunnerConfig
 ) -> None:
-    """work item：max_turns=2 下 tool_calls 无限循环 → result.status='max_iterations'。"""
+    """max_turns=2 下 tool_calls 无限循环 → result.status='max_iterations'。"""
     # 每轮都带 tool_calls → 总触发下一轮，直到耗尽 max_turns
     tcs = [[{"name": "dummy", "args": {}, "id": "call_1"}]] * 4
     fake = _InlineFakeChatModel.make(responses=["t"] * 4, tool_calls=tcs)
@@ -264,7 +264,7 @@ async def test_max_turns_exhausted(
 async def test_bind_tools_fake_model(
     monkeypatch: pytest.MonkeyPatch, runner_config: LangChainRunnerConfig
 ) -> None:
-    """work item：tools 非空时走 model.bind_tools(tools) 分支；FakeChatModel.bind_tools 返回 self。"""
+    """tools 非空时走 model.bind_tools(tools) 分支；FakeChatModel.bind_tools 返回 self。"""
     from langchain_core.tools import tool
 
     @tool
@@ -433,7 +433,7 @@ async def test_interrupt_reraises_cancelled_error(
 async def test_tool_calls_normalized_via_aimessage(
     monkeypatch: pytest.MonkeyPatch, runner_config: LangChainRunnerConfig
 ) -> None:
-    """work item：TOOL_USE_START.data 三元组字段与预置 AIMessage.tool_calls 对齐。"""
+    """TOOL_USE_START.data 三元组字段与预置 AIMessage.tool_calls 对齐。"""
     from langchain_core.tools import tool
 
     @tool

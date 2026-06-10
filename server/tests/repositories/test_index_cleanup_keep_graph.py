@@ -1,4 +1,4 @@
-"""implementation：cleanup_index keep_graph 双路径单测。
+"""cleanup_index keep_graph 双路径单测。
 
 覆盖（work item-01..03）：
 

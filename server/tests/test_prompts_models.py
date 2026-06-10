@@ -25,7 +25,7 @@ class TestPromptModel:
         assert isinstance(p.id, uuid.UUID)
 
     def test_system_slug_unique_constraint_enforced(self, admin_user) -> None:
-        # implementation: 清除 seed 以隔离单元测试的 unique 约束断言
+        # 清除 seed 以隔离单元测试的 unique 约束断言
         Prompt.objects.filter(slug="chat.system.developer", scope=PromptScope.SYSTEM).delete()
         Prompt.objects.create(
             slug="chat.system.developer",
@@ -44,7 +44,7 @@ class TestPromptModel:
             )
 
     def test_project_slug_unique_per_project(self, admin_user, project) -> None:
-        # implementation: project 作用域不冲突 seed（seed 仅 SYSTEM），但保持一致风格 preemptive clean
+        # project 作用域不冲突 seed（seed 仅 SYSTEM），但保持一致风格 preemptive clean
         Prompt.objects.filter(
             slug="chat.system.developer",
             scope=PromptScope.PROJECT,

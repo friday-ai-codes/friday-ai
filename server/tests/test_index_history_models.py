@@ -1,4 +1,4 @@
-"""implementation: 索引历史数据模型测试。
+"""索引历史数据模型测试。
 
 验证 Repository 新字段和 IndexHistory 模型定义。
 """

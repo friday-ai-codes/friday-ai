@@ -30,7 +30,7 @@ from services.retrieval.token_budget import TOKEN_BUFFER_RATIO
 
 def test_default_ratio_allocates_60_40() -> None:
     result = HybridBudget().allocate(8000)
-    # implementation: cross_repo=0.0 默认 → cross_repo key 存在但值为 0
+    # cross_repo=0.0 默认 → cross_repo key 存在但值为 0
     assert result == {"rag": 4320, "graph": 2880, "cross_repo": 0}
 
 

@@ -165,7 +165,7 @@ class IndexStatusSerializer(serializers.Serializer):
     index_processed_chunks = serializers.IntegerField()
     index_write_total = serializers.IntegerField()
     index_write_processed = serializers.IntegerField()
-    # work item: 统一进度字段
+    # 统一进度字段
     overall_progress = serializers.IntegerField()
     overall_stage = serializers.CharField()
     # contract：文件级实时进度
@@ -377,7 +377,7 @@ class GraphRagStatusView(APIView):
     async def get(self, request: Any, repository_id: str) -> Response:
         """返回真实 ChunkEdge 计数 + 综合状态 + 最近同步时间。
 
-        work item：可选 ``?branch=`` 参数支持 branch-aware 计数。归一化复用
+        可选 ``?branch=`` 参数支持 branch-aware 计数。归一化复用
         ``resolve_branch_for_query``（读侧标准归一化，绝不自己写
         ``if branch == default_branch``）。base 行 ``branch_name=""``、feature 行
         ``branch_name=<分支名>``，feature 查询走 base+overlay 合并。
@@ -884,7 +884,7 @@ class RerankerHealthView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# implementation: 索引可观测性 API
+# 索引可观测性 API
 # ---------------------------------------------------------------------------
 
 
@@ -911,17 +911,17 @@ class IndexHistorySerializer(serializers.Serializer):
     graph_build_status = serializers.CharField()
     edge_count = serializers.IntegerField()
     payload_synced_at = serializers.DateTimeField(allow_null=True)
-    # implementation：跨仓 API 匹配状态（implementation migration 0023 已落字段）
+    # 跨仓 API 匹配状态（implementation migration 0023 已落字段）
     cross_repo_match_count = serializers.IntegerField()
     cross_repo_built_at = serializers.DateTimeField(allow_null=True)
-    # implementation：per-run delta（本次索引新增，区别于累计 edge_count）
+    # per-run delta（本次索引新增，区别于累计 edge_count）
     # 加字段后 SSE running_history 段（running_payload）天然携带 delta，供 checkpoint 展示。
     symbols_added = serializers.IntegerField()
     imports_added = serializers.IntegerField()
     calls_added = serializers.IntegerField()
     endpoints_added = serializers.IntegerField()
     chunk_edges_added = serializers.IntegerField()
-    # implementation：行级 diff（nullable，null 原样透传给前端显示 "—"）
+    # 行级 diff（nullable，null 原样透传给前端显示 "—"）
     lines_added = serializers.IntegerField(allow_null=True)
     lines_deleted = serializers.IntegerField(allow_null=True)
 
@@ -986,7 +986,7 @@ class IndexedFilesListView(APIView):
 
 
 class IndexHistoryListView(APIView):
-    """work item: IndexHistory 操作记录查询 API（分页）。"""
+    """IndexHistory 操作记录查询 API（分页）。"""
 
     permission_classes = [IsAuthenticated]
 
@@ -1224,7 +1224,7 @@ async def _build_graph_payload(repo: Repository) -> dict[str, Any]:
 
 
 class IndexStatsView(APIView):
-    """work item: 统计 API（chunk 数、语言分布、覆盖率）。
+    """统计 API（chunk 数、语言分布、覆盖率）。
 
     Qdrant 偶发慢 / 超时 / 不可用时返回 200 + 降级数据（避免前端轮询持续报 500）。
     """
@@ -1248,7 +1248,7 @@ class IndexStatsView(APIView):
             repository_id=repository_id,
         ).acount()
 
-        # work item：图谱/ChunkEdge 维度 branch-aware。归一化复用
+        # 图谱/ChunkEdge 维度 branch-aware。归一化复用
         # resolve_branch_for_query（与 GraphRagStatusView 同口径，不自写
         # default_branch 判定）：缺省/==base → branch_name="" 干净 base 计数
         # （向后兼容）；feature → branch_name__in=["", effective_branch] 合并。
@@ -1312,7 +1312,7 @@ class IndexStatsView(APIView):
 
 
 class RepositoryCollectionHealthView(APIView):
-    """work item: 仓库 Qdrant 集合健康校验 API。
+    """仓库 Qdrant 集合健康校验 API。
 
     Qdrant 不可用时返回 200 + status=unhealthy，便于前端 UI 提示而非整页报错。
     """
@@ -1362,7 +1362,7 @@ class RepositoryCollectionHealthView(APIView):
 
 
 class IndexFreshnessView(APIView):
-    """work item: 索引新鲜度指示 API。"""
+    """索引新鲜度指示 API。"""
 
     permission_classes = [IsAuthenticated]
 
@@ -1542,12 +1542,12 @@ class IndexSnapshotImportView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# implementation: 自动索引触发
+# 自动索引触发
 # ---------------------------------------------------------------------------
 
 
 class RepositoryWebhookView(APIView):
-    """work item: Webhook 端点接收 push 事件并触发增量索引。
+    """Webhook 端点接收 push 事件并触发增量索引。
 
     支持 GitHub、GitLab、Gitea 三种平台的签名验证。
     此端点无需 JWT 认证（使用 webhook secret 验证）。
@@ -1573,14 +1573,14 @@ class RepositoryWebhookView(APIView):
         except Repository.DoesNotExist:
             return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
 
-        # work item: 检查开关
+        # 检查开关
         if not repository.auto_index_enabled:
             return Response(
                 {"detail": "自动索引未启用"},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # work item: 签名验证
+        # 签名验证
         if repository.webhook_secret:
             payload_bytes = request.body
             platform = repository.git_platform or "github"

@@ -1,6 +1,6 @@
 """CssExtractor 单元测试 —— 验证 implementation 落地。
 
-per implementation / work item：class / id selector / @import 双形态 / CSS var 守卫 /
+per implementation / class / id selector / @import 双形态 / CSS var 守卫 /
 tag selector 守卫 / 复合选择器递归全覆盖。fixture: server/codegraph/tests/fixtures/css_theme.css
 """
 

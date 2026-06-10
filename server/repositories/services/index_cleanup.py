@@ -115,7 +115,7 @@ async def _cleanup_vector_artifacts(repo_id: str) -> dict[str, Any]:
     chunk_edges_deleted = await _delete_count(
         ChunkEdge, repo_id, label="chunk_edges"
     )
-    # work item：ChunkRegistry 走 `_raw_delete` 绕过 pre_delete signal —— 整仓
+    # ChunkRegistry 走 `_raw_delete` 绕过 pre_delete signal —— 整仓
     # cleanup 场景下 ChunkEdge 已先全删，handler 内 `filter(target=).values_list`
     # + `filter(target=).delete()` 对每行 ChunkRegistry 都是空查 + 空删（100k
     # chunks 仓库 → 200k 条多余 SQL，cleanup 时长翻倍）。`_raw_delete` 直接
@@ -219,7 +219,7 @@ async def cleanup_index(
 async def _delete_qdrant_collection(repo_id: str) -> bool:
     """sync_to_async 包 Qdrant SDK 同步 API；任何异常降级为 False。
 
-    work item：加 `asyncio.wait_for` timeout 保护 —— Qdrant 网络分区时
+    加 `asyncio.wait_for` timeout 保护 —— Qdrant 网络分区时
     `delete_collection` 可能永久 hang，整个 DELETE 请求会被挂死；超时后
     降级为 False，本地 ORM 状态仍可继续 cleanup。
     """

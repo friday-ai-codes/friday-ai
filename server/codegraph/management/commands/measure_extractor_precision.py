@@ -1,4 +1,4 @@
-"""implementation: 测量 volar vs tree-sitter import / call resolution 精度。
+"""测量 volar vs tree-sitter import / call resolution 精度。
 
 per work item / work item / work item
 =========================
@@ -13,7 +13,7 @@ CLI 用例
 ::
 
     python manage.py measure_extractor_precision \\
-        --sample-repo=/Users/zaneliu/Projects/guanghe/study-app \\
+        --sample-repo=/path/to/vue-repo \\
         --sub-projects=apps/courses,apps/home,packages/onion-utils \\
         --output-json=/tmp/volar_precision_report.json
 """

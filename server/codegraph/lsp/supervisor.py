@@ -1,4 +1,4 @@
-"""implementation: LspSupervisor —— LSP 进程 lifecycle + 健康检查 + crash-loop 防护。
+"""LspSupervisor —— LSP 进程 lifecycle + 健康检查 + crash-loop 防护。
 
 核心职责（per work item / work item / work item / work item / work item）：
 

@@ -1,4 +1,4 @@
-"""implementation: LspBackend 抽象基类 + 工厂 + supervisor 单例工厂单元测试。
+"""LspBackend 抽象基类 + 工厂 + supervisor 单例工厂单元测试。
 
 覆盖 V1（ExtractorBackend Protocol 兼容）+ V2（fallback 4×4 parametrize）+
 V5（4 fallback 事件名）+ P14（make_lsp_backend 工厂闭包）+ work item（单例）。
@@ -322,7 +322,7 @@ def test_make_lsp_backend_returns_callable() -> None:
 
 
 # =============================================================================
-# work item: get_or_create_supervisor 单例工厂
+# get_or_create_supervisor 单例工厂
 # =============================================================================
 
 

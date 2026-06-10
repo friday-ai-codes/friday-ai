@@ -1,4 +1,4 @@
-"""implementation：``POST /api/chat/routing-traces/<uuid>/override/`` 测试。
+"""``POST /api/chat/routing-traces/<uuid>/override/`` 测试。
 
 测试范围（≥ 5 条）：
 

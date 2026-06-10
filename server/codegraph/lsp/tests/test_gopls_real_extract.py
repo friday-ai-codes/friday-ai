@@ -17,8 +17,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 _GOPLS_BIN: str | None = shutil.which("gopls")
-_STUDY_COURSE_DEFAULT = "/Users/zaneliu/Projects/guanghe/study-course"
-_STUDY_COURSE: Path = Path(os.environ.get("GOPLS_TEST_REPO", _STUDY_COURSE_DEFAULT))
+_STUDY_COURSE: Path = Path(os.environ.get("GOPLS_TEST_REPO", ""))
 _STUDY_COURSE_GOMOD: Path = _STUDY_COURSE / "go.mod"
 
 
@@ -155,7 +154,7 @@ class TestGoplsRealExtract:
 
 
 class TestGoplsPhaseSettings:
-    """implementation: settings 切换验证（不需 gopls binary，非 integration）。"""
+    """settings 切换验证（不需 gopls binary，非 integration）。"""
 
     def test_extractor_backends_go_is_gopls(self) -> None:
         """EXTRACTOR_BACKENDS["go"] 已切为 "gopls"（implementation-03）。"""
@@ -179,7 +178,7 @@ class TestGoplsPhaseSettings:
     reason="gopls 未在 PATH（measure_go_call_completeness 需真实 gopls）",
 )
 class TestMeasureGoCallCompletenessCommand:
-    """implementation: measure_go_call_completeness command 可调用验证（@integration）。"""
+    """measure_go_call_completeness command 可调用验证（@integration）。"""
 
     def test_command_importable(self) -> None:
         """measure_go_call_completeness.py 可 import，Command 类存在。"""

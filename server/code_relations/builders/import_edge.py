@@ -21,7 +21,7 @@ logger = structlog.get_logger(__name__)
 __all__ = ["ImportEdgeBuilder"]
 
 _CANDIDATE_EXTENSIONS = CANDIDATE_EXTENSIONS
-"""work item：从 ``code_relations.constants`` 导出，新增语言只改常量不改 builder。"""
+"""从 ``code_relations.constants`` 导出，新增语言只改常量不改 builder。"""
 
 
 class ImportEdgeBuilder(BaseEdgeBuilder):
@@ -67,12 +67,12 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
         ) -> str | None:
             """target_module → 候选 file_path（work item + work item 修复）。
 
-            work item：原 ``lstrip("./")`` 是字符集剥离会把 ``..`` 一并剥掉，破坏
+            原 ``lstrip("./")`` 是字符集剥离会把 ``..`` 一并剥掉，破坏
             PEP 328 父级相对导入语义。改为按前导点数量决定向上回溯层级（n
             dots → 1 dots = 同包，2 dots = 父包...），从 ``source_file`` 目录
             出发计算 base path。
 
-            work item：``file_path__endswith=candidate`` 无锚定时 ``auth.py`` 会
+            ``file_path__endswith=candidate`` 无锚定时 ``auth.py`` 会
             匹配 ``xauth.py`` / ``oauth.py``。改为 ``Q(file_path=candidate) |
             Q(file_path__endswith="/" + candidate)`` 加 ``/`` 锚定避免误匹配。
             """

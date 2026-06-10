@@ -5,7 +5,7 @@
   Layer 2: URL patterns（path() / re_path() / url()）- 仅 urls.py 文件
   Layer 3: ViewSet + Router 注册 - 仅 urls.py 文件
 
-per work item: 系统能从 Django/DRF 项目中提取 API 端点映射。
+系统能从 Django/DRF 项目中提取 API 端点映射。
 per contract: 仅处理 Django/DRF，不处理 FastAPI/Flask。
 """
 

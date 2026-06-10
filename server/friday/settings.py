@@ -423,12 +423,12 @@ FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 # Default workflow template for new tasks
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
 
-# implementation: When True, code graph extraction runs during indexing. Set False to skip graph writes.
+# When True, code graph extraction runs during indexing. Set False to skip graph writes.
 # **写入侧** 语义（per implementation contract）：控制 indexer 是否构建 ChunkEdge / 写
 # Qdrant payload `related_chunks`；与读出侧 ENABLE_GRAPHRAG_ENRICHMENT 独立解耦。
 ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
 
-# implementation：RAG 切片模式。"ast_aware" = 符号驱动精细切片（按函数/类边界切，复用
+# RAG 切片模式。"ast_aware" = 符号驱动精细切片（按函数/类边界切，复用
 # codegraph tree-sitter 抽取，含 TS interface/type、export 解包、大符号不丢尾）；
 # "fixed" = 旧 tree-sitter 节点直取（向后兼容回退）。默认 ast_aware；切换后需重新
 # 索引仓库方能对存量 chunk 生效。
@@ -442,14 +442,14 @@ CHUNKING_MODE: str = env.str("CHUNKING_MODE", "ast_aware")
 # 入口（per CONTEXT.md 关键不变量；新增直读点应 PR review 拒绝）。
 ENABLE_GRAPHRAG_ENRICHMENT: bool = env.bool("ENABLE_GRAPHRAG_ENRICHMENT", default=True)
 
-# implementation: 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
+# 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
 # future 可切到 RemoteProvider 一次替换全局生效，per contract / contract）
 CODE_INTELLIGENCE_PROVIDER: str = env.str(
     "CODE_INTELLIGENCE_PROVIDER",
     "services.code_intel.local_provider.LocalProvider",
 )
 
-# implementation: 各语言使用的 extractor backend（tree_sitter / volar / gopls）
+# 各语言使用的 extractor backend（tree_sitter / volar / gopls）
 # 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
 EXTRACTOR_BACKENDS: dict[str, str] = {
     "python": "tree_sitter",
@@ -469,14 +469,14 @@ CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
     "CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2
 )
 
-# implementation：HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
+# HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings()` clamp 到边界 + structlog warning。
 # NOTE: 默认值与 services/retrieval/budget.py:GRAPHRAG_BUDGET_RATIO_DEFAULT 同值，
 # 调整需双改（settings.py 加载顺序敏感，无法直接 import budget 常量避免循环）。
 GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
 
-# implementation：跨仓 API 扩散 token 预算 + 启停开关。
+# 跨仓 API 扩散 token 预算 + 启停开关。
 # CROSS_REPO_BUDGET_RATIO：cross_repo 预算比例（默认 0.0 = 不分配跨仓预算）。
 #   设置为 0.20 + GRAPHRAG_BUDGET_RATIO=0.50 → HybridBudget 50/30/20 预算（per work item）。
 # ENABLE_CROSS_REPO_ENRICHMENT：False 时 wave 跨仓扩散完全短路，输出 byte-equivalent v24。
@@ -488,7 +488,7 @@ ENABLE_CROSS_REPO_ENRICHMENT: bool = env.bool("ENABLE_CROSS_REPO_ENRICHMENT", de
 # implementation LSP Client + Supervisor Settings
 # =============================================================================
 
-# implementation：volar 真实命令落地（vue-language-server --stdio）
+# volar 真实命令落地（vue-language-server --stdio）
 # initialization_options.typescript.tsdk 由 VolarPool._build_supervisor 在每实例化时
 # 用 node_check.discover_tsdk() 动态注入；占位 None 仅给 mypy 用。
 # advisory（per Pitfall P-checkpoint）：study-app 大插件链场景启动 60-90s，
@@ -509,7 +509,7 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
         },
         "enabled": True,
     },
-    # implementation / work item：gopls 真实命令落地（gopls serve）
+    # implementation / gopls 真实命令落地（gopls serve）
     # initialization_options 平铺 key（gopls 点号格式，非嵌套 dict）
     # advisory（per Pitfall P-checkpoint）：大仓库启动 20-60s；运维 env 调：
     #   LSP_STARTUP_TIMEOUT_SECONDS=60
@@ -524,7 +524,7 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
     },
 }
 
-# implementation：LSP 三层超时（env 可覆盖）
+# LSP 三层超时（env 可覆盖）
 # - STARTUP_TIMEOUT 默认 30s（volar 首次启动 30-60s spike 实测）
 # - REQUEST_TIMEOUT 默认 10s（普通 capability 请求）
 # - HEALTH_CHECK_TIMEOUT 默认 5s（workspace/symbol("") ping）
@@ -534,25 +534,25 @@ LSP_HEALTH_CHECK_TIMEOUT_SECONDS: int = env.int(
     "LSP_HEALTH_CHECK_TIMEOUT_SECONDS", default=5
 )
 
-# implementation：健康检查间隔（每 30s 一次 workspace/symbol("") ping）
+# 健康检查间隔（每 30s 一次 workspace/symbol("") ping）
 LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int(
     "LSP_HEALTH_CHECK_INTERVAL_SECONDS", default=30
 )
 
-# implementation：crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
+# crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
 LSP_MAX_RESTART_ATTEMPTS: int = env.int("LSP_MAX_RESTART_ATTEMPTS", default=3)
 
-# implementation：idle timeout 回收（默认 30 分钟无使用即 stop）
+# idle timeout 回收（默认 30 分钟无使用即 stop）
 LSP_IDLE_TIMEOUT_SECONDS: int = env.int("LSP_IDLE_TIMEOUT_SECONDS", default=1800)
 
 # =============================================================================
 # implementation Volar Backend Settings
 # =============================================================================
 
-# implementation：VolarPool 并发上限（per legacy spike 锁定 4GB 内存预算）
+# VolarPool 并发上限（per legacy spike 锁定 4GB 内存预算）
 VOLAR_POOL_MAX_CONCURRENT: int = env.int("VOLAR_POOL_MAX_CONCURRENT", default=4)
 
-# implementation：volar backend 运维 kill-switch；False 时 apps.ready 跳过
+# volar backend 运维 kill-switch；False 时 apps.ready 跳过
 # register_backend，BACKEND_REGISTRY 5 项保留 tree-sitter 默认。
 VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
 
@@ -560,7 +560,7 @@ VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
 # implementation Gopls Backend Settings
 # =============================================================================
 
-# implementation：gopls backend 运维 kill-switch
+# gopls backend 运维 kill-switch
 # 默认 False —— implementation 仅落基础设施，不切 BACKEND_REGISTRY["go"]
 # implementation 已切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=False
 GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=True)
@@ -606,7 +606,7 @@ MCP_ALLOWED_COMMANDS: list[str] = [
 ]
 
 # =============================================================================
-# implementation: Frontend API Call Resolver 配置（work item）
+# Frontend API Call Resolver 配置（work item）
 # =============================================================================
 
 API_DETECTOR_CONFIG: dict = {

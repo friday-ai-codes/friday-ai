@@ -63,7 +63,7 @@ ROLE_PROMPTS: Final[dict[str, str]] = {
         "你是一名资深开发工程师助手。回答问题时关注代码细节、技术实现方案和最佳实践。"
         "使用专业技术术语，提供代码示例和具体的文件路径引用。"
         "分析问题时从架构设计、性能影响和可维护性角度出发。\n\n"
-        # implementation：把「准确性优先」哲学写进 developer 角色 prompt。
+        # 把「准确性优先」哲学写进 developer 角色 prompt。
         # 仅追加段，不动现有句子；与 _STRATEGY_DEFAULT / _CODING_GUIDANCE 同源。
         "准确性优先原则（coding-plan workflow 哲学）：\n"
         "  - 用户的核心诉求不是「一次对话解决问题」，而是「准确解决问题」。"
@@ -152,7 +152,7 @@ _STRATEGY_DEFAULT: Final[str] = (
     "  本模式下不要主动调用 deep_analysis —— 只有用户在前端显式开启「深度分析」开关\n"
     "  时，系统才会暴露并启用该工具；当前未开启，请用上面的检索工具完成回答。\n"
     "\n"
-    # implementation：默认策略追加「准确性优先」段。
+    # 默认策略追加「准确性优先」段。
     # 命中编码动词 + 低置信场景必须先澄清，由 work item 编排层硬约束兜底。
     "准确性优先原则（必读）：\n"
     "  - 在调任何检索工具前先调 analyze_repository_relevance 拿到候选仓库列表 + confidence；\n"
@@ -207,7 +207,7 @@ _CODING_GUIDANCE: Final[str] = (
     "  - deep_analysis：分析理解代码（只读）\n"
     "  - create_coding_plan：执行代码变更（写入）\n"
     "\n"
-    # implementation：编码场景前置约束（与 work item 硬 gate 同源）。
+    # 编码场景前置约束（与 work item 硬 gate 同源）。
     "编码请求的前置约束（coding-plan workflow）：\n"
     "  - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
     "    且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
@@ -252,11 +252,11 @@ async def _build_system_prompt(
 ) -> str:
     """构建角色化 system prompt（异步版，implementation Task 7 fragment 化）。
 
-    implementation: 每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
+    每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
     条件拼接逻辑保留在 Python 层（不进 Jinja2 控制流 DSL）。
     结尾规则 _ENDING_RULES 保留 Python 字面量(非可运营 Prompt)，不占用 slug。
 
-    implementation：可选参数 ``intent_classification``（``IntentClassification``）；
+    可选参数 ``intent_classification``（``IntentClassification``）；
     传入且 ``is_coding_request=True`` 时在末尾追加「本轮专用 hint」，与
     work item always-on 段不重复。**默认 None 时返回与历史版本字节级一致**，
     保证 ``test_role_prompt`` / ``test_conversation_service_prompt_fragments``
@@ -324,7 +324,7 @@ async def _build_system_prompt(
         f"{_ENDING_RULES}"
     )
 
-    # implementation：可选 per-turn hint，仅在编码请求时追加。
+    # 可选 per-turn hint，仅在编码请求时追加。
     # is_coding_request=False 或 intent_classification=None → 字节级与历史一致。
     if intent_classification is None:
         return base_prompt
@@ -360,7 +360,7 @@ async def _get_tool_names(space_id: str) -> list[str]:
         "get_repository_info",
         "create_coding_plan",
         "update_coding_plan",
-        # implementation：协商工具，所有有索引仓库的项目都暴露给 LLM
+        # 协商工具，所有有索引仓库的项目都暴露给 LLM
         "ask_clarification",
     ]
 
@@ -1780,7 +1780,7 @@ class ConversationService:
                 "diff_summary": coding_session.diff_summary or None,
             }
 
-            # implementation: 从 SubAgentSession.last_output 获取编码中间产出（per contract, contract）
+            # 从 SubAgentSession.last_output 获取编码中间产出（per contract, contract）
             if coding_session.subagent_session_id:
                 subagent_session = await SubAgentSession.objects.filter(
                     id=coding_session.subagent_session_id,
@@ -1811,7 +1811,7 @@ class ConversationService:
                     "affected_files": recent_coding.affected_files,
                 }
 
-        # implementation：附加最近 CodingPlan + 每仓 session 快照
+        # 附加最近 CodingPlan + 每仓 session 快照
         #
         # 与 coding_session 字段独立并存（向后兼容旧前端单仓路径）；新前端读
         # runtime.coding_plan.sessions[]。commit_sha 来自 SubAgentSession.task_result

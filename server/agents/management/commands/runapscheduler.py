@@ -169,7 +169,7 @@ def cleanup_orchestration_checkpoints_job():
 
 
 def backfill_chunk_edges_job() -> None:
-    """implementation：scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
+    """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
     DateTrigger(run_date=timezone.now()) 单次任务模式：跑完即结束，不周期重复
     （per context contract Claude Discretion，避免 IntervalTrigger 浪费资源）。

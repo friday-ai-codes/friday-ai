@@ -264,7 +264,7 @@ async def test_thinking_event_emitted_when_reasoning_block_present(
     monkeypatch: pytest.MonkeyPatch,
     default_caps: ModelCapabilitiesEntry,
 ) -> None:
-    """work item：AIMessage content_blocks 含 reasoning block 时发 THINKING event。
+    """AIMessage content_blocks 含 reasoning block 时发 THINKING event。
 
     该事件由 `_adapt_chunk` 分派（content block type=reasoning/thinking），
     非 Provider 专属逻辑；Anthropic extended thinking 与 OpenAI o 系列

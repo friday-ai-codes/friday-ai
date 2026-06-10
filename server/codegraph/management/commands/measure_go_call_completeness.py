@@ -1,4 +1,4 @@
-"""implementation: 测量 gopls vs tree-sitter Go call resolution 完整度。
+"""测量 gopls vs tree-sitter Go call resolution 完整度。
 
 per work item / work item
 =====================
@@ -12,7 +12,7 @@ CLI 用例
 ::
 
     python manage.py measure_go_call_completeness \\
-        --repo-root=/Users/zaneliu/Projects/guanghe/study-course \\
+        --repo-root=/path/to/go-repo \\
         --ground-truth=codegraph/management/fixtures/go_call_ground_truth.csv \\
         --output-json=/tmp/go_completeness_report.json
 """
@@ -81,8 +81,8 @@ def _measure_completeness_for_backend(
     Returns:
         float [0.0, 1.0]——callee_file 非空 CallData 比例；无 CallData 返 0.0
     """
-    from codegraph.extractors.base import FileContext
     from codegraph.backends.protocols import TreeSitterBackend
+    from codegraph.extractors.base import FileContext
 
     if backend_name == "gopls":
         from codegraph.lsp.gopls_backend import make_gopls_backend
@@ -115,7 +115,7 @@ def _measure_completeness_for_backend(
             for call in calls:
                 total_calls += 1
                 # 完整度指标：caller_key[0] 与当前文件不同（跨文件 call resolution）
-                # per CONTEXT.md work item：callee_file 字段非空率 = 跨文件 call 被正确解析的比例
+                # callee_file 字段非空率 = 跨文件 call 被正确解析的比例
                 # caller_key = (caller_file_path, caller_module, line)
                 # gopls references 返回 caller 位置；caller 在不同文件即为跨文件 call
                 caller_file = getattr(call, "caller_key", (None,))[0]
@@ -137,7 +137,7 @@ class Command(BaseCommand):
     def add_arguments(self, self_parser: Any) -> None:
         self_parser.add_argument(
             "--repo-root",
-            default="/Users/zaneliu/Projects/guanghe/study-course",
+            required=True,
             help="Go 仓库根目录（含 go.mod）",
         )
         self_parser.add_argument(
@@ -254,7 +254,7 @@ class Command(BaseCommand):
 
         # 输出结果
         status = "PASS" if passed else "FAIL"
-        self.stdout.write(f"\n=== Go Call Completeness Gate ===")
+        self.stdout.write("\n=== Go Call Completeness Gate ===")
         self.stdout.write(f"gopls:       {gopls_completeness:.1%}")
         self.stdout.write(f"tree-sitter: {tree_sitter_completeness:.1%}")
         self.stdout.write(f"ratio:       {ratio:.2f}x (gate >= {_RATIO_GATE}x)")

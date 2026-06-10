@@ -1489,7 +1489,7 @@ class LLMModelsView(APIView):
         use_system = request.data.get("use_system", False)
 
         if use_system:
-            # implementation：从 ProviderConfigService.aresolve_or_error 获取系统凭证
+            # 从 ProviderConfigService.aresolve_or_error 获取系统凭证
             from services.provider_config import (
                 ProviderConfigService,
                 ProviderMissingError,
@@ -1574,7 +1574,7 @@ class LLMSystemConfigView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def get(self, request: Request) -> Response:
-        # implementation：从 ProviderConfigService.aresolve_or_error 获取系统配置
+        # 从 ProviderConfigService.aresolve_or_error 获取系统配置
         from services.provider_config import (
             ProviderConfigService,
             ProviderMissingError,

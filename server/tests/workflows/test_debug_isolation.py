@@ -1,12 +1,12 @@
 """调试执行安全隔离测试。
 
 覆盖:
-- work item: is_debug=True 执行不出现在默认执行列表
-- work item: include_debug=true 参数时返回调试执行
-- work item: 飞书通知跳过调试执行
-- work item: 并发守卫排除调试执行
-- work item: 调试会话超时清理
-- work item: check_timeouts 排除调试执行
+- is_debug=True 执行不出现在默认执行列表
+- include_debug=true 参数时返回调试执行
+- 飞书通知跳过调试执行
+- 并发守卫排除调试执行
+- 调试会话超时清理
+- check_timeouts 排除调试执行
 """
 
 from datetime import timedelta
@@ -94,7 +94,7 @@ def iso_workflow_with_nodes(db, iso_project, user):
 
 @pytest.mark.django_db
 class TestDebugExecutionExcludedFromList:
-    """work item: 调试执行默认不出现在执行列表。"""
+    """调试执行默认不出现在执行列表。"""
 
     def test_debug_execution_excluded_from_list(self, iso_workflow, iso_project):
         """创建 is_debug=True 和 is_debug=False 执行，验证默认查询只返回非调试执行。"""
@@ -147,7 +147,7 @@ class TestDebugExecutionExcludedFromList:
 @pytest.mark.asyncio
 @pytest.mark.django_db
 class TestDebugExecutionIsolation:
-    """work item: 飞书通知跳过调试执行。"""
+    """飞书通知跳过调试执行。"""
 
     async def test_debug_execution_isolation_feishu(self):
         """验证 FeishuSyncHook.execute() 对 is_debug=True 执行直接返回（不发通知）。"""
@@ -220,7 +220,7 @@ class TestDebugExecutionIsolation:
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestDebugSessionTimeoutCleanup:
-    """work item: 调试会话 30 分钟超时自动清理。"""
+    """调试会话 30 分钟超时自动清理。"""
 
     async def test_debug_session_timeout_cleanup(self, iso_workflow_with_nodes):
         """模拟超时场景，验证 _debug_pause_after_node 返回 timeout 并清理会话。"""
@@ -261,7 +261,7 @@ class TestDebugSessionTimeoutCleanup:
 
 @pytest.mark.django_db
 class TestCheckTimeoutsExcludesDebug:
-    """work item: check_timeouts 命令排除 is_debug=True 执行。"""
+    """check_timeouts 命令排除 is_debug=True 执行。"""
 
     def test_check_timeouts_excludes_debug(self, iso_workflow, iso_project):
         """验证超时订阅查询排除 is_debug=True 的执行。"""
@@ -316,7 +316,7 @@ class TestCheckTimeoutsExcludesDebug:
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestConcurrencyGuardExcludesDebug:
-    """work item: 并发守卫不计入调试执行。"""
+    """并发守卫不计入调试执行。"""
 
     async def test_concurrency_guard_excludes_debug(self, iso_workflow_with_nodes):
         """验证 _create_execution_with_atomic_concurrency_guard 不计入调试执行。"""

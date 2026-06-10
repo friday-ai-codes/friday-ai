@@ -1,8 +1,8 @@
-"""implementation: Node 22 LTS + vue-language-server + typescript SDK 检测层。
+"""Node 22 LTS + vue-language-server + typescript SDK 检测层。
 
-per work item：启动时一次性 subprocess 检测 + 进程级缓存（不过期；服务重启即重检）。
-per work item：tsdk 三探针顺序（npm root -g / which tsc / monorepo node_modules）+ None fallback。
-per work item：``shutil.which`` 跨平台 PATH 检测兼容 macOS / Linux / Windows。
+启动时一次性 subprocess 检测 + 进程级缓存（不过期；服务重启即重检）。
+tsdk 三探针顺序（npm root -g / which tsc / monorepo node_modules）+ None fallback。
+``shutil.which`` 跨平台 PATH 检测兼容 macOS / Linux / Windows。
 
 公开 API
 ========

@@ -78,7 +78,7 @@ def _make_caps(
 
 
 # ============================================================================
-# work item：单一工厂入口 + 5 Provider 前缀映射
+# 单一工厂入口 + 5 Provider 前缀映射
 # ============================================================================
 
 
@@ -95,7 +95,7 @@ def _make_caps(
 def test_init_chat_model_factory(
     provider_type: ProviderType, model: str, expected_cls: str
 ) -> None:
-    """work item：5 Provider 前缀映射后均能构造 BaseChatModel 子类实例。"""
+    """5 Provider 前缀映射后均能构造 BaseChatModel 子类实例。"""
     resolved = _make_resolved(provider_type)
     result = build_chat_model(resolved, model, timeout_seconds=5.0)
     assert isinstance(result, BaseChatModel)
@@ -103,7 +103,7 @@ def test_init_chat_model_factory(
 
 
 def test_openai_responses_vs_openai_chat_distinction() -> None:
-    """contract / work item：use_responses_api=True 区分 Responses vs Chat。"""
+    """contract / use_responses_api=True 区分 Responses vs Chat。"""
     resolved_chat = _make_resolved(ProviderType.OPENAI_CHAT)
     resolved_resp = _make_resolved(
         ProviderType.OPENAI_RESPONSES, extra={"use_responses_api": True}
@@ -153,12 +153,12 @@ def test_organization_id_passthrough() -> None:
 
 
 # ============================================================================
-# work item：thinking 分派（仅 Anthropic）
+# thinking 分派（仅 Anthropic）
 # ============================================================================
 
 
 def test_thinking_anthropic_only() -> None:
-    """work item：supports_thinking=True + max_thinking_tokens=4096 时注入 thinking dict + temperature=1。"""
+    """supports_thinking=True + max_thinking_tokens=4096 时注入 thinking dict + temperature=1。"""
     resolved = _make_resolved(ProviderType.ANTHROPIC)
     caps = _make_caps(supports_thinking=True)
     model = build_chat_model(
@@ -187,7 +187,7 @@ def test_thinking_anthropic_only() -> None:
 def test_thinking_ignored_other_providers(
     provider_type: ProviderType, model_name: str
 ) -> None:
-    """work item：非 Anthropic Provider 传 max_thinking_tokens 静默忽略 + 不抛错。"""
+    """非 Anthropic Provider 传 max_thinking_tokens 静默忽略 + 不抛错。"""
     resolved = _make_resolved(provider_type)
     caps = _make_caps(supports_thinking=False)  # 其他 Provider capabilities 明确 False
     model = build_chat_model(
@@ -216,7 +216,7 @@ def test_thinking_requires_both_capability_and_tokens() -> None:
 
 
 # ============================================================================
-# work item：reasoning 分派（OpenAI o 系列 / gpt-5 + Gemini 2.5）
+# reasoning 分派（OpenAI o 系列 / gpt-5 + Gemini 2.5）
 # ============================================================================
 
 
@@ -224,7 +224,7 @@ def test_thinking_requires_both_capability_and_tokens() -> None:
 def test_reasoning_strip_params(
     model_name: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """work item：reasoning model 下 temperature / top_p 被 pop（正则兜底）。
+    """reasoning model 下 temperature / top_p 被 pop（正则兜底）。
 
     断言策略（contract 实证）：直接构造对象无法断言"kwargs 内已被 pop"，因为
     langchain-openai 对 o 系列模型有自己的 default temperature=1.0 硬编码。本测试
@@ -247,7 +247,7 @@ def test_reasoning_strip_params(
 
 
 def test_reasoning_effort_passed_through() -> None:
-    """work item：reasoning_effort='high' 透传到底层 kwargs。"""
+    """reasoning_effort='high' 透传到底层 kwargs。"""
     resolved = _make_resolved(ProviderType.OPENAI_CHAT)
     caps = _make_caps(supports_reasoning=True)
     model = build_chat_model(
@@ -262,7 +262,7 @@ def test_reasoning_effort_passed_through() -> None:
 
 
 def test_regex_fallback_recognizes_o6() -> None:
-    """work item：capabilities.supports_reasoning=False 下正则兜底识别新 o6-preview（未覆盖模型）。"""
+    """capabilities.supports_reasoning=False 下正则兜底识别新 o6-preview（未覆盖模型）。"""
     resolved = _make_resolved(ProviderType.OPENAI_CHAT)
     caps = _make_caps(supports_reasoning=False)  # fixtures 未覆盖 o6
     # 不应抛错；正则 ^o[1-9] 匹配 o6
@@ -279,12 +279,12 @@ def test_regex_fallback_recognizes_o6() -> None:
 
 
 # ============================================================================
-# work item：max_output_tokens 校验
+# max_output_tokens 校验
 # ============================================================================
 
 
 def test_max_output_tokens_default() -> None:
-    """work item：不传 max_output_tokens 时默认用 capabilities.max_output_tokens。"""
+    """不传 max_output_tokens 时默认用 capabilities.max_output_tokens。"""
     resolved = _make_resolved(ProviderType.ANTHROPIC)
     caps = _make_caps(max_output_tokens=8192)
     model = build_chat_model(
@@ -298,7 +298,7 @@ def test_max_output_tokens_default() -> None:
 
 
 def test_max_output_exceeds_limit_raises() -> None:
-    """work item：max_output_tokens > capabilities.max_output_tokens 同步抛 ValueError。"""
+    """max_output_tokens > capabilities.max_output_tokens 同步抛 ValueError。"""
     resolved = _make_resolved(ProviderType.ANTHROPIC)
     caps = _make_caps(max_output_tokens=8192)
     with pytest.raises(ValueError) as exc_info:
@@ -315,12 +315,12 @@ def test_max_output_exceeds_limit_raises() -> None:
 
 
 # ============================================================================
-# work item：timeout 透传
+# timeout 透传
 # ============================================================================
 
 
 def test_timeout_passthrough() -> None:
-    """work item：传 timeout_seconds=300.0 时底层 model.timeout 字段为 300.0（非 LangChain 60s 默认）。"""
+    """传 timeout_seconds=300.0 时底层 model.timeout 字段为 300.0（非 LangChain 60s 默认）。"""
     resolved = _make_resolved(ProviderType.ANTHROPIC)
     model = build_chat_model(
         resolved,
@@ -337,12 +337,12 @@ def test_timeout_passthrough() -> None:
 
 
 # ============================================================================
-# work item：api_key SecretStr 脱敏（security mitigation-01/02）
+# api_key SecretStr 脱敏（security mitigation-01/02）
 # ============================================================================
 
 
 def test_secretstr_wrapping() -> None:
-    """work item：api_key 包装为 SecretStr → repr 输出不含明文。"""
+    """api_key 包装为 SecretStr → repr 输出不含明文。"""
     plaintext_key = "sk-ant-real-fake-key-for-test-do-not-leak"
     resolved = _make_resolved(ProviderType.ANTHROPIC, api_key=plaintext_key)
     model = build_chat_model(

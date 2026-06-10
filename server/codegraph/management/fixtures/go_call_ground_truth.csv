@@ -1,7 +1,7 @@
 # Ground truth CSV for measure_go_call_completeness command
 # Fields: file (relative to repo root), line, caller_symbol, callee_symbol, expected_callee_file
-# Source: study-course Go gin project (study-course by guanghe)
-# Update with real paths from actual study-course repo before running integration test
+# Source: sample Go gin project
+# Update with real paths from the actual sample repo before running integration test
 file,line,caller_symbol,callee_symbol,expected_callee_file
 handlers/course_handler.go,42,GetCourseList,CourseService.GetList,services/course_service.go
 handlers/course_handler.go,58,GetCourseDetail,CourseService.GetDetail,services/course_service.go

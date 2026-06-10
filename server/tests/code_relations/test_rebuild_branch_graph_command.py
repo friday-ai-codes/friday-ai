@@ -68,7 +68,7 @@ def _seed_pollution(repo: Repository) -> None:
 
 @pytest.mark.django_db
 def test_dry_run_does_not_write_db() -> None:
-    """work item：--dry-run 运行前后图谱行计数零变化（证明不写库）。"""
+    """--dry-run 运行前后图谱行计数零变化（证明不写库）。"""
     repo = _make_repo()
     _seed_pollution(repo)
     before = (
@@ -93,7 +93,7 @@ def test_dry_run_does_not_write_db() -> None:
 
 @pytest.mark.django_db
 def test_dry_run_filters_indexed_non_base_only() -> None:
-    """work item：base 分支不计入 at-risk；无 feature 分支的仓为 skipped_no_work。"""
+    """base 分支不计入 at-risk；无 feature 分支的仓为 skipped_no_work。"""
     repo = _make_repo()
     _seed_pollution(repo)
     clean = _make_repo("clean-repo")
@@ -114,7 +114,7 @@ def test_dry_run_filters_indexed_non_base_only() -> None:
 
 @pytest.mark.django_db
 def test_dry_run_interval_definite_and_ambiguous() -> None:
-    """work item：added 命中计 definite、modified 命中计 ambiguous，区间口径自洽。"""
+    """added 命中计 definite、modified 命中计 ambiguous，区间口径自洽。"""
     repo = _make_repo()
     _seed_pollution(repo)
     out = StringIO()
@@ -127,21 +127,21 @@ def test_dry_run_interval_definite_and_ambiguous() -> None:
 
 @pytest.mark.django_db
 def test_repo_and_all_mutually_exclusive() -> None:
-    """work item：--repo 与 --all 同传抛 CommandError。"""
+    """--repo 与 --all 同传抛 CommandError。"""
     with pytest.raises(CommandError):
         call_command("rebuild_branch_graph", "--repo", str(uuid.uuid4()), "--all", "--dry-run")
 
 
 @pytest.mark.django_db
 def test_missing_repo_and_all_raises() -> None:
-    """work item：--repo / --all 都不传抛 CommandError。"""
+    """--repo / --all 都不传抛 CommandError。"""
     with pytest.raises(CommandError):
         call_command("rebuild_branch_graph", "--dry-run")
 
 
 @pytest.mark.django_db
 def test_non_dry_run_cleans_base_added_rows_and_rebuilds_branches() -> None:
-    """work item：实跑清理 definite base 污染，并触发 base + feature 重建。"""
+    """实跑清理 definite base 污染，并触发 base + feature 重建。"""
     repo = _make_repo()
     _seed_pollution(repo)
     calls: list[dict[str, object]] = []

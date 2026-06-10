@@ -167,7 +167,7 @@ class PlaygroundSearchView(APIView):
 
         layers_data = [_serialize_layer(layer) for layer in result.layers]
 
-        # implementation：graph enrichment 透传（per work item §10 硬约束 1）。
+        # graph enrichment 透传（per work item §10 硬约束 1）。
         # 用 ``getattr(..., default)`` 兜底，兼容 contract 既有 LayeredSearchResult patch
         # 路径（无 graph 字段 → 降级为空 list / 空字符串）。
         # 禁止 ``isinstance(result, HybridSearchResult)`` 分支：会被 contract 测试 mock 打穿。

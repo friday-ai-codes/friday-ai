@@ -1,4 +1,4 @@
-"""implementation：Context window 预算策略测试。
+"""Context window 预算策略测试。
 
 覆盖 context contract 全部子项：
 - contract `_CONTEXT_SAFETY_BUFFER = 800` 硬编码、禁暴露节点配置

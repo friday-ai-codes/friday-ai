@@ -1,4 +1,4 @@
-"""implementation: 索引去重幂等性和 shallow clone 回退测试。
+"""索引去重幂等性和 shallow clone 回退测试。
 
 OBSOLETE — implementation 双轨索引（Qdrant + 图谱）后 clone_and_index_repository 调用链
 依赖 Qdrant 真实连接，本测试未 stub 该 seam，因 pytest-socket 隔离失败。
@@ -22,7 +22,7 @@ from repositories.models import FileIndex, IndexHistory, IndexHistoryStatus, Rep
 
 @pytest.mark.django_db(transaction=True)
 class TestFileIndexDedup(TransactionTestCase):
-    """work item: DB 级文件去重幂等性测试。"""
+    """DB 级文件去重幂等性测试。"""
 
     def setUp(self) -> None:
         self.repo = Repository.objects.create(
@@ -98,7 +98,7 @@ class TestFileIndexDedup(TransactionTestCase):
 
 @pytest.mark.django_db(transaction=True)
 class TestShallowCloneFallback(TransactionTestCase):
-    """work item: Shallow clone 回退测试。"""
+    """Shallow clone 回退测试。"""
 
     def setUp(self) -> None:
         self.repo = Repository.objects.create(
