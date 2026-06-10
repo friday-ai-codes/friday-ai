@@ -184,7 +184,7 @@ onMounted(() => {
               />
             </div>
             <p class="text-xs text-muted-foreground">
-              本系统的访问地址，用于生成第三方登录回调等链接。
+              本系统的访问地址，用于生成第三方登录回调等链接。留空时自动使用当前访问地址。
             </p>
           </div>
           <div class="flex justify-end">
