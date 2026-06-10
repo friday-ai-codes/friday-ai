@@ -17,7 +17,8 @@ const usePolling = process.env.VITE_USE_POLLING === 'true'
 // https://vite.dev/config/
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    // 优先取 CI 传入的发布版本（git tag，去掉 v 前缀）；本地开发回退到 package.json
+    __APP_VERSION__: JSON.stringify((process.env.APP_VERSION || pkg.version).replace(/^v/, '')),
   },
   plugins: [
     VueMacros({
