@@ -113,8 +113,8 @@ X-Friday-Skill-Step: full_auto.plan
 
 ## 配合 Skill 使用
 
-单独注册 MCP 已经可用，但配合 [friday-codebase-agent skill](/guide/friday-codebase-agent) 使用效果最佳 —— skill 提供了 workflow 编排、人工确认规则与故障恢复指引：
+单独注册 MCP 已经可用，但配合 [Friday Agent Skills](/integrations/skills) 使用效果最佳 —— skill 提供了 workflow 编排、人工确认规则与故障恢复指引：
 
 ```bash
-npx skills add friday-ai-codes/skills --skill friday-codebase-agent
+npx @friday-ai-codes/skills
 ```

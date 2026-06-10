@@ -51,7 +51,7 @@ PR / MR 是把改好的代码提交给团队审查合并的请求（GitHub 叫 P
 | 跨仓改造 | 前端页面要改接口参数，后端 handler、调用方、类型定义和测试可能分散在不同仓库。 | 通过语义检索、代码图谱和跨仓 API 关系找到上下游，拆出仓库任务矩阵，再分别执行。 |
 | 群里持续协作 | 执行中缺字段、缺截图、需要确认分支或要通知结果。 | 飞书机器人在群聊 / 私聊里发送问题卡片、审批卡片、代码审查卡片和结果通知。 |
 | 用户自己问代码库 | 「这个支付回调现在走哪几个入口？」「这个组件还有哪些调用方？」 | 在 Friday Web Chat 里选择已索引仓库，模型可以调用检索和代码浏览工具回答。 |
-| 用 Agent Skill 增强自己 | 你在 Cursor / Claude Code / Codex 里写代码，希望 AI 助手直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | `npx skills add friday-ai-codes/skills --skill friday-codebase-agent` 一键安装 Skill，配合 `@friday-ai-codes/mcp` 做仓库发现、分析、计划、执行和 MR 创建。 |
+| 用 Agent Skill 增强自己 | 你在 Cursor / Claude Code / Codex 里写代码，希望 AI 助手直接调用 Friday 的代码索引、Graph RAG 和执行工具。 | `npx @friday-ai-codes/skills` 安装全部 Skill，配合 `@friday-ai-codes/mcp` 做仓库发现、分析、计划、执行和 MR 创建。 |
 | AI 代码审查 | Claude Code 改完之后还需要一轮自动 review 和可读摘要。 | 工作流可以接 `ai_code_review`，把审查结果、分支摘要和 PR / MR 信息回写到飞书。 |
 
 ## 飞书深度集成，但不绑定飞书

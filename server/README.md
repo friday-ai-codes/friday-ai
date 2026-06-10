@@ -1,104 +1,52 @@
-# Friday API Server
+# Friday Server
 
-This is the backend service for the Friday system, responsible for business logic, data persistence, and integration with Feishu, GitHub, and AI Agents.
+Friday 的 Django 后端：REST + WebSocket API、工作流引擎、代码智能（codegraph / Graph RAG）以及飞书、GitHub / GitLab、AI Provider 集成。
 
-## 🛠️ Tech Stack
-- **Language**: Python 3.14+
-- **Framework**: Django 6.0 + Django REST Framework
-- **Authentication**: djangorestframework-simplejwt (JWT)
-- **Database**: SQLite
-- **Production Server**: Gunicorn + Uvicorn (ASGI)
-- **Tooling**: uv (Package Management)
+完整文档见[文档站](https://friday-ai-codes.github.io/friday-ai/)，内部实现见 `docs/internals/`。
 
-## 🚀 Development Guide
+## 技术栈
 
-### Install Dependencies
-We use `uv` for package management:
+- Python 3.14+，Django 5.1+ / DRF（`adrf` 异步视图），`channels` + `daphne` 提供 WebSocket
+- 数据库通过 `DATABASE_URL` 配置：默认 SQLite（本地开发），生产推荐 PostgreSQL
+- 包管理用 `uv`，配置加载用 `django-environ`（`server/.env` 优先，其次项目根 `.env`）
+
+## 本地开发
 
 ```bash
-# Install dependencies
-uv sync
-
-# Activate virtual environment (optional, uv run handles this automatically)
-source .venv/bin/activate
+uv sync                              # 安装依赖
+uv run python manage.py migrate      # 应用迁移
+uv run uvicorn friday.asgi:application --reload   # 启动开发服务（含 WebSocket）
 ```
 
-### Start Service
+也可以在项目根目录用 `make dev` 同时启动 server 和 web。
+
+## 测试与检查
+
 ```bash
-# Development Mode (Hot Reload)
-uv run python manage.py runserver
-
-# Production Mode (Gunicorn + Uvicorn)
-uv run gunicorn friday.asgi:application \
-    --workers 2 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --bind 0.0.0.0:8000
+uv run pytest                # 全量测试
+uv run ruff check .          # lint
+uv run mypy .                # 类型检查
 ```
 
-### Database Migration
-```bash
-# Generate migration after model changes
-uv run python manage.py makemigrations
+变更后端代码前，建议先跑 `CONTRIBUTING.md` 中列出的重点测试集。
 
-# Apply migrations
-uv run python manage.py migrate
-```
+## 目录速览
 
-### Run Tests
-```bash
-uv run pytest
-```
+| 目录 | 职责 |
+| --- | --- |
+| `friday/` | Django 项目配置、ASGI/WSGI 入口、根路由 |
+| `workflows/` | 工作流引擎（DAG 调度）与节点实现 |
+| `services/` | 领域服务：索引、Graph RAG、git 平台、Provider 解析 |
+| `agents/` | Agent 运行时、工具与事件 |
+| `chat/` | Web Chat 会话与流式输出 |
+| `codegraph/` / `code_relations/` | 代码图谱与跨仓 API 关系 |
+| `feishu/` | 飞书项目 / 文档 / 机器人 / 卡片回调集成 |
+| `repositories/` | 仓库接入与索引管理 |
+| `runners/` | 与 Go runner 的 WebSocket 调度协议 |
+| `mcp_tools/` | MCP 工具的 HTTP 入口 |
+| `identity/` / `accounts/` / `access_tokens/` | 认证（JWT / OIDC）、用户与访问令牌 |
+| `tests/` | 后端测试 |
 
-## 📁 Directory Structure
-```
-server/
-├── friday/           # Django project settings
-│   ├── settings.py   # Django configuration
-│   ├── urls.py       # Root URL routing
-│   ├── asgi.py       # ASGI application entry
-│   └── wsgi.py       # WSGI application entry
-├── core/             # Core app (auth, health, settings)
-├── projects/         # Projects and repositories management
-├── tasks/            # Task lifecycle management
-├── webhooks/         # Feishu and GitHub webhook handling
-├── services/         # Business logic services
-│   ├── feishu.py     # Feishu API client
-│   ├── scheduler.py  # Docker container scheduler
-│   └── claude_config.py  # Claude configuration service
-├── tests/            # Unit and integration tests
-├── data/             # Database and persistent storage
-└── manage.py         # Django management script
-```
+## Docker
 
-## 🔐 Authentication
-The API uses JWT (JSON Web Token) authentication:
-
-- **Login**: `POST /api/auth/login` - Returns access_token and sets refresh_token cookie
-- **Refresh**: `POST /api/auth/refresh` - Refreshes access token using cookie
-- **Logout**: `POST /api/auth/logout` - Clears refresh token cookie
-
-## 📡 API Endpoints
-
-| Path | Description |
-|------|-------------|
-| `/health` | Health check |
-| `/api/auth/` | Authentication endpoints |
-| `/api/projects/` | Project CRUD operations |
-| `/api/repositories/` | Repository management |
-| `/api/tasks/` | Task lifecycle management |
-| `/api/webhook/` | Webhook handlers (Feishu, GitHub) |
-| `/api/settings/` | System settings |
-
-## 🐳 Docker Deployment
-```bash
-# Build image
-docker build -t friday-server .
-
-# Run container
-docker run -p 8000:8000 \
-    -v $(pwd)/data:/app/data \
-    -e FRIDAY_ENCRYPTION_KEY=your-secret-key \
-    friday-server
-```
-
-The Docker container uses Gunicorn with Uvicorn workers for production deployment.
+服务端镜像由仓库根的 `docker-compose.yaml` 统一编排（含 PostgreSQL、Redis、Qdrant），部署方式见[部署文档](https://friday-ai-codes.github.io/friday-ai/deploy/docker-compose)。
