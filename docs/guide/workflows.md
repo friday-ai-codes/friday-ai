@@ -221,6 +221,21 @@ AI 节点利用大语言模型完成智能化任务，是 Friday 的核心能力
 | --- | --- |
 | `branches` | 并行分支配置 |
 
+#### ForEach 循环（foreach）
+
+对列表中的每个元素执行操作，支持串行和并发两种模式，适合批量处理多个仓库、多个工作项的场景。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `list_source` | 列表数据来源，支持模板变量（如 <span v-pre>`{{input.items}}`</span>） |
+| `execution_mode` | `sequential`（串行）或 `parallel`（并发） |
+| `max_concurrency` | 并发模式下的最大并发数（1-50，默认 5） |
+| `on_iteration_error` | `abort`（任一失败终止）或 `continue`（记录错误继续） |
+
+#### 变量聚合（aggregate）
+
+把多个上游节点的输出汇总成一个对象，常放在并行分支之后整理数据。
+
 #### 等待飞书字段（wait_feishu_field）
 
 暂停工作流，等待飞书工作项指定字段变更为期望值后继续执行。
@@ -274,9 +289,24 @@ AI 节点利用大语言模型完成智能化任务，是 Friday 的核心能力
 | --- | --- |
 | `merge_method` | 合并方式：`merge`、`squash` 或 `rebase` |
 
-#### 获取项目信息（fetch_project_info）
+#### 获取空间信息（fetch_space_info）
 
-获取当前项目的配置信息，包括关联仓库、成员等数据。
+获取项目空间的配置信息，包括关联仓库、飞书配置等数据。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `space_identifier` | 空间标识 |
+| `identifier_type` | 标识类型 |
+| `include_repositories` | 是否返回空间关联的仓库列表 |
+
+#### 代码执行（code）
+
+在沙箱中执行一段 Python 代码处理上游数据，适合表达式不够用的数据加工场景。代码在执行前会经过 AST 校验，禁止 import、文件与网络访问等危险语法。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `code` | 要执行的 Python 代码 |
+| `timeout_seconds` | 执行超时（秒） |
 
 #### 变量提取（variable_extractor）
 
@@ -309,6 +339,27 @@ AI 节点利用大语言模型完成智能化任务，是 Friday 的核心能力
 | --- | --- |
 | `chat_id` | 飞书群 ID |
 | `message_template` | 消息模板，支持变量引用 |
+
+#### 获取群聊 / 加入群聊（fetch_group_chat / join_group_chat）
+
+`fetch_group_chat` 查找与工作项关联的飞书群聊并返回群信息；`join_group_chat` 把 Friday 机器人邀请进指定群聊。两者常配合使用：先找到需求对应的群，再确保机器人在群里，后续的提问卡片和结果通知才发得出去。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `chat_id` | 飞书群 ID，留空时可通过工作项信息查找 |
+| `project_key` / `work_item_id` | 通过工作项定位群聊（`fetch_group_chat`） |
+
+#### 群聊提问（group_chat_question）
+
+在飞书群里发送提问卡片，暂停工作流等待群成员回答后继续。适合执行中缺信息（缺字段、缺截图、需要确认分支）的场景。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `chat_id` | 飞书群 ID |
+| `question` | 问题内容，支持模板变量 |
+| `options` | 可选项列表（生成按钮卡片） |
+| `mention_user_id` | @ 指定成员 |
+| `max_rounds` | 最大追问轮数 |
 
 #### MCP 部署（mcp_deploy）
 
@@ -398,7 +449,7 @@ AI 节点利用大语言模型完成智能化任务，是 Friday 的核心能力
 
 ## 附录：节点类型速查表
 
-以下表格列出 Friday 全部 26 种节点类型。<Badge type="info" text="server" /> 表示在 Server 端执行，<Badge type="warning" text="runner" /> 表示需要 Runner 在线执行。
+以下表格列出 Friday 全部 32 种节点类型。<Badge type="info" text="server" /> 表示在 Server 端执行，<Badge type="warning" text="runner" /> 表示需要 Runner 在线执行。
 
 | node_type | 显示名称 | 分类 | 执行模式 | 阻塞 |
 | --- | --- | --- | --- | --- |
@@ -413,18 +464,24 @@ AI 节点利用大语言模型完成智能化任务，是 Friday 的核心能力
 | `ai_prompt` | AI Prompt | AI 节点 | <Badge type="info" text="server" /> | |
 | `ai_variable_extractor` | AI 变量提取 | AI 节点 | <Badge type="info" text="server" /> | |
 | `context_retrieval` | 召回上下文 | AI 节点 | <Badge type="info" text="server" /> | |
+| `aggregate` | 变量聚合 | 控制流节点 | <Badge type="info" text="server" /> | |
 | `condition` | 条件分支 | 控制流节点 | <Badge type="info" text="server" /> | |
 | `delay` | 延迟 | 控制流节点 | <Badge type="info" text="server" /> | |
+| `foreach` | ForEach 循环 | 控制流节点 | <Badge type="info" text="server" /> | |
 | `human_approval` | 人工审批 | 控制流节点 | <Badge type="info" text="server" /> | 是 |
 | `join` | 并行汇合 | 控制流节点 | <Badge type="info" text="server" /> | |
 | `parallel` | 并行分支 | 控制流节点 | <Badge type="info" text="server" /> | |
 | `wait_feishu_field` | 等待飞书字段 | 控制流节点 | <Badge type="info" text="server" /> | 是 |
+| `code` | 代码执行 | 操作节点 | <Badge type="info" text="server" /> | |
 | `create_branch` | 创建分支 | 操作节点 | <Badge type="info" text="server" /> | |
 | `create_pr` | 创建 PR | 操作节点 | <Badge type="info" text="server" /> | |
-| `fetch_project_info` | 获取项目信息 | 操作节点 | <Badge type="info" text="server" /> | |
+| `fetch_space_info` | 获取空间信息 | 操作节点 | <Badge type="info" text="server" /> | |
 | `merge_pr` | 合并 PR | 操作节点 | <Badge type="info" text="server" /> | |
 | `variable_extractor` | 变量提取 | 操作节点 | <Badge type="info" text="server" /> | |
+| `fetch_group_chat` | 获取群聊 | 集成节点 | <Badge type="info" text="server" /> | |
 | `fetch_work_item` | 获取工作项详情 | 集成节点 | <Badge type="info" text="server" /> | |
+| `group_chat_question` | 群聊提问 | 集成节点 | <Badge type="info" text="server" /> | 是 |
 | `http_request` | HTTP 请求 | 集成节点 | <Badge type="info" text="server" /> | |
+| `join_group_chat` | 加入群聊 | 集成节点 | <Badge type="info" text="server" /> | |
 | `mcp_deploy` | MCP 部署 | 集成节点 | <Badge type="info" text="server" /> | |
 | `notify_feishu` | 飞书通知 | 集成节点 | <Badge type="info" text="server" /> | |

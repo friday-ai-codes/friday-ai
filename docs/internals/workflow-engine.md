@@ -91,3 +91,10 @@ class MyNode(BaseNode):
 ```
 
 放入目录后重启 server，节点即出现在流程编辑器中。如需自定义图标与表单布局，在 `web/.../node-definitions.json` 中补充对应 UI schema。
+
+## 下一步
+
+<LinkCards>
+  <LinkCard icon="🧩" title="工作流指南" desc="全部 32 种节点的配置项与使用方式" link="/guide/workflows" />
+  <LinkCard icon="🛰️" title="Runner 与 Task 执行器" desc="runner_dispatched 节点的执行链路" link="/internals/runner" />
+</LinkCards>

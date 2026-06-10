@@ -34,14 +34,20 @@ Go gin 路由抽取支持 `r.GET("/path", handler)` 等基本形式与 middlewar
 
 前后端分仓时，「改一个接口要动哪些地方」是典型的检索盲区。Friday 通过离线 join 建立前端调用点到后端 handler 的精确连边：
 
-```
-前端仓库（Vue/TS）                  后端仓库（Go gin）
-─────────────────                  ─────────────────
-ApiCallSite                        Endpoint
-    ↓ (via ApiWrapper)                 ↑
-    └──────── CrossRepoApiCall ────────┘
-                (offline join)
-```
+<FlowDiagram :layers="[
+  {
+    nodes: [
+      { title: 'ApiCallSite', badge: '前端仓库', desc: 'Vue / TS 业务调用点（经 ApiWrapper 提取 URL）' },
+      { title: 'Endpoint', badge: '后端仓库', desc: 'Go gin 路由 handler（codegraph_endpoint）' },
+    ],
+    arrow: 'offline join（URL path + method 归一化匹配）',
+  },
+  {
+    nodes: [
+      { title: 'CrossRepoApiCall', accent: true, desc: '跨仓 API 连边 → 接入 HybridSearch 扩散' },
+    ],
+  },
+]" />
 
 三步推断：
 

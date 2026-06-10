@@ -6,24 +6,38 @@ title: 架构总览
 
 Friday AI 由四个组件构成，跨进程协作完成「需求 → 代码」的自动化链路。
 
-```
-┌─────────────┐   HTTP / WS    ┌──────────────────────────┐
-│  Web (Vue3) │ ─────────────▶ │   Server (Django ASGI)   │
-└─────────────┘                │  REST · WebSocket · 引擎  │
-                               │  代码智能 · Provider 层   │
-┌─────────────┐   事件/回调    └──────────┬───────────────┘
-│ 飞书 / Git   │ ◀────────────────────────┤
-│ 平台         │                WS 派发 + │ HTTP 回调
-└─────────────┘                ┌──────────▼───────────────┐
-                               │     Runner (Go)          │
-                               │  FIFO 队列 + 并发调度     │
-                               └──────────┬───────────────┘
-                                          │ docker run / k8s job
-                               ┌──────────▼───────────────┐
-                               │   Task 容器 (Python)      │
-                               │  claude-agent-sdk 编码代理 │
-                               └──────────────────────────┘
-```
+<FlowDiagram :layers="[
+  {
+    nodes: [
+      { title: 'Web 控制台', badge: 'Vue 3', desc: '流程编辑器 · Chat · Galaxy 图谱' },
+      { title: '飞书 / Git 平台', desc: '事件触发 · 审批卡片 · PR / MR 回写' },
+    ],
+    arrow: 'HTTP / WebSocket · 事件与回调',
+    bidirectional: true,
+  },
+  {
+    nodes: [
+      {
+        title: 'Server',
+        badge: 'Django ASGI',
+        accent: true,
+        desc: ['REST · WebSocket · 工作流引擎', '代码智能（Graph RAG）· Provider 层'],
+      },
+    ],
+    arrow: 'WS 任务派发 + HTTP 回调',
+  },
+  {
+    nodes: [
+      { title: 'Runner', badge: 'Go', desc: 'FIFO 队列 + 并发调度' },
+    ],
+    arrow: 'docker run / k8s job',
+  },
+  {
+    nodes: [
+      { title: 'Task 容器', badge: 'Python', desc: 'claude-agent-sdk 编码代理' },
+    ],
+  },
+]" />
 
 ## 组件职责
 
