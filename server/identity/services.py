@@ -115,12 +115,33 @@ def build_authorize_url(
     return f"{provider.authorization_endpoint}?{urlencode(params)}"
 
 
-def build_callback_url(request: object) -> str:
-    """根据请求构建 OIDC 回调 URL。
+async def aresolve_site_base_url(fallback: str) -> str:
+    """解析站点基础 URL：优先系统设置「站点 Host」（site_host），空则回退给定值。
 
-    使用 FRIDAY_BASE_URL 配置或从请求推断。
+    site_host 由管理员在设置页配置（如 https://friday.example.com），是部署后
+    可运行时修改的外部访问地址；env（FRIDAY_BASE_URL / FRIDAY_FRONTEND_URL）
+    仅作回退，保证旧部署行为不回退。
+
+    归一化：去首尾空白、去尾斜杠；无 scheme 时补 http://（用户在输入框
+    常省略 scheme，缺 scheme 的 redirect_uri 会被 IdP 拒绝或当相对路径解析）。
     """
-    base_url = getattr(settings, "FRIDAY_BASE_URL", "http://localhost:8000")
+    from system.models import SettingKeys
+    from system.settings_service import aget_setting
+
+    site_host = (await aget_setting(SettingKeys.SITE_HOST, "")).strip().rstrip("/")
+    if site_host and "://" not in site_host:
+        site_host = f"http://{site_host}"
+    return site_host or fallback
+
+
+async def build_callback_url(request: object) -> str:
+    """构建 OIDC 回调 URL（redirect_uri）。
+
+    优先「站点 Host」系统设置，回退 FRIDAY_BASE_URL 配置。
+    """
+    base_url = await aresolve_site_base_url(
+        getattr(settings, "FRIDAY_BASE_URL", "http://localhost:8000")
+    )
     return f"{base_url}/api/oidc/callback/"
 
 

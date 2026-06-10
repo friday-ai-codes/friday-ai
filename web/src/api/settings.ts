@@ -6,6 +6,8 @@ import { del, get, post, put } from './client'
 
 // 系统设置键
 export enum SettingKey {
+  // 站点配置
+  SITE_HOST = 'site_host',
   ANTHROPIC_API_KEY = 'anthropic_api_key',
   ANTHROPIC_BASE_URL = 'anthropic_base_url',
   ANTHROPIC_MODEL = 'anthropic_model',
