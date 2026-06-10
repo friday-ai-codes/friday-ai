@@ -7,16 +7,22 @@
 
 <p align="center">
   <a href="https://github.com/friday-ai-codes/friday-ai/actions/workflows/ci.yaml">
-    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/friday-ai-codes/friday-ai/ci.yaml?branch=main&label=CI">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/friday-ai-codes/friday-ai/ci.yaml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white&labelColor=1F1E1C">
+  </a>
+  <a href="https://codecov.io/gh/friday-ai-codes/friday-ai">
+    <img alt="Coverage" src="https://img.shields.io/codecov/c/github/friday-ai-codes/friday-ai?style=for-the-badge&logo=codecov&logoColor=white&labelColor=1F1E1C&label=coverage">
   </a>
   <a href="https://github.com/friday-ai-codes/friday-ai/actions/workflows/ci.yaml">
-    <img alt="Unit Coverage" src="https://img.shields.io/badge/unit%20coverage-server%20%7C%20web%20%7C%20task-20a66a">
+    <img alt="E2E" src="https://img.shields.io/badge/E2E-Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white&labelColor=1F1E1C">
   </a>
   <a href="https://github.com/friday-ai-codes/friday-ai/releases">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/friday-ai-codes/friday-ai?include_prereleases&label=latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/friday-ai-codes/friday-ai?include_prereleases&label=release&style=for-the-badge&logo=github&logoColor=white&labelColor=1F1E1C">
   </a>
   <a href="LICENSE">
-    <img alt="License" src="https://img.shields.io/github/license/friday-ai-codes/friday-ai">
+    <img alt="License" src="https://img.shields.io/github/license/friday-ai-codes/friday-ai?style=for-the-badge&labelColor=1F1E1C&color=20a66a">
+  </a>
+  <a href="https://github.com/friday-ai-codes/friday-ai/stargazers">
+    <img alt="Stars" src="https://img.shields.io/github/stars/friday-ai-codes/friday-ai?style=for-the-badge&logo=github&logoColor=white&labelColor=1F1E1C&color=f5a623">
   </a>
 </p>
 
@@ -67,18 +73,18 @@ Friday AI 是一个开源的 AI 开发自动化平台。用一句话说：**它�
 
 Friday 已经深度集成飞书，但不是只为飞书而生：核心能力是工作流编排、代码智能和可审计的 Agent 执行，后续也可以接入更多协作入口。
 
-## 第一次接触？先认识几个词
+## 名词速查
 
-如果你已经熟悉这些概念，跳过这节就行。
+正文里会反复出现这几个词：
 
-| 名词 | 它是什么 |
+| 名词 | 含义 |
 | --- | --- |
-| PR / MR | Pull Request / Merge Request，把改好的代码提交给团队审查、合并的请求。GitHub 叫 PR，GitLab 叫 MR。 |
+| PR / MR | Pull Request / Merge Request，提交代码供团队审查、合并的请求。GitHub 叫 PR，GitLab 叫 MR。 |
 | Claude Code | Anthropic 出品的 AI 编程工具，Friday 用它来实际写代码。 |
-| Graph RAG | Friday 的代码检索方式：先按语义找到相关代码，再沿着调用关系把上下游一起找出来，让 AI 看到更完整的影响面。 |
-| Runner | Friday 的任务调度器，负责创建隔离的 Docker 容器。AI 写代码都发生在容器里，不会直接碰你的环境。 |
-| 工作流 | 把“触发 → 取需求 → 生成方案 → 等确认 → 写代码 → 通知”像流程图一样串起来，可以在网页上拖拽编排。 |
-| Agent Skill / MCP | 一种接入方式，让 Cursor、Claude Code 这类本地 AI 助手也能调用 Friday 的代码索引和执行能力。 |
+| Graph RAG | Friday 的代码检索方式：先按语义找到相关代码，再沿调用关系把上下游一起找出来。 |
+| Runner | Friday 的任务调度器，负责创建隔离的 Docker 容器，AI 编码都在容器内进行。 |
+| 工作流 | “触发 → 取需求 → 生成方案 → 等确认 → 写代码 → 通知”的可视化编排，在网页上拖拽搭建。 |
+| Agent Skill / MCP | 让 Cursor、Claude Code 这类本地 AI 助手调用 Friday 代码索引与执行能力的接入方式。 |
 
 ## 它怎么工作
 
@@ -232,6 +238,24 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 | [API 参考](docs/api/index.md) | REST API 文档。 |
 | [Task 执行器](task/README.md) | Claude Agent SDK / Claude Code task 容器。 |
 | [English README](README.en.md) | 英文版 README。 |
+
+## 贡献者
+
+感谢每一位贡献者，欢迎提 Issue 和 PR 加入进来。
+
+<a href="https://github.com/friday-ai-codes/friday-ai/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=friday-ai-codes/friday-ai" />
+</a>
+
+## Star History
+
+<a href="https://www.star-history.com/#friday-ai-codes/friday-ai&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=friday-ai-codes/friday-ai&type=Date">
+  </picture>
+</a>
 
 ## License
 
