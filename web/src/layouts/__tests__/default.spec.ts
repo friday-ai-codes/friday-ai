@@ -12,7 +12,6 @@
  *     被以 (credentialId, model) 双参数调用
  *
  * Mock 策略：
- *   - useAppMode：顶层 vi.mock 强制 mode='chat' 让 v-else（chat 分支）渲染
  *   - useRunnerMonitor：避免真实 WebSocket 连接副作用
  *   - vue-router：useRoute().path='/' 让 displayMode === 'chat'；mock useRouter 防 push 报错
  *   - ChatInput：用 emit 友好的 stub 模拟 pin-confirmed 触发
@@ -21,17 +20,9 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick, ref } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import DefaultLayout from '~/layouts/default.vue'
 import { useChatStore } from '~/stores/chat'
-
-vi.mock('~/composables/useAppMode', () => ({
-  useAppMode: () => ({
-    mode: ref('chat'),
-    chatInitialized: ref(true),
-    setMode: vi.fn(),
-  }),
-}))
 
 vi.mock('~/composables/useRunnerMonitor', () => ({
   useRunnerMonitor: () => ({ connect: vi.fn() }),

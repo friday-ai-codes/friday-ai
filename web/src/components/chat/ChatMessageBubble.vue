@@ -53,6 +53,7 @@ const isSelected = computed(() =>
 const isEditingUserMessage = ref(false)
 const editedUserContent = ref('')
 const isSubmittingEdit = ref(false)
+const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canEditUserMessage = computed(() =>
   props.message.role === 'user' && !props.isStreaming,
@@ -66,6 +67,13 @@ const editSubmitDisabled = computed(() => {
 function startEditingUserMessage() {
   editedUserContent.value = props.message.content
   isEditingUserMessage.value = true
+  nextTick(() => {
+    const el = editTextareaRef.value
+    if (el) {
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    }
+  })
 }
 
 function cancelEditingUserMessage() {
@@ -837,6 +845,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
     <div class="user-message-stack">
       <div v-if="isEditingUserMessage" class="user-edit-panel">
         <textarea
+          ref="editTextareaRef"
           v-model="editedUserContent"
           data-test="edit-user-message-input"
           class="user-edit-textarea"
@@ -845,23 +854,28 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
           @keydown="handleUserEditKeydown"
         />
         <div class="user-edit-actions">
-          <button
-            type="button"
-            data-test="cancel-user-message-edit"
-            class="user-edit-btn user-edit-btn--ghost"
-            @click="cancelEditingUserMessage"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            data-test="submit-user-message-edit"
-            class="user-edit-btn user-edit-btn--primary"
-            :disabled="editSubmitDisabled"
-            @click="submitUserMessageEdit"
-          >
-            {{ isSubmittingEdit ? '发送中...' : '重新发送' }}
-          </button>
+          <span class="user-edit-hint">⌘ + Enter 重新发送 · Esc 取消</span>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              data-test="cancel-user-message-edit"
+              class="user-edit-btn user-edit-btn--ghost"
+              @click="cancelEditingUserMessage"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              data-test="submit-user-message-edit"
+              class="user-edit-btn user-edit-btn--primary"
+              :disabled="editSubmitDisabled"
+              @click="submitUserMessageEdit"
+            >
+              <span v-if="isSubmittingEdit" class="icon-[lucide--loader-circle] text-[11px] animate-spin" />
+              <span v-else class="icon-[lucide--corner-down-left] text-[11px]" />
+              {{ isSubmittingEdit ? '发送中...' : '重新发送' }}
+            </button>
+          </div>
         </div>
       </div>
       <template v-else>
@@ -1104,7 +1118,8 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
           <span v-else class="icon-[lucide--copy]" />
           <span class="action-label">{{ copied ? '已复制' : '复制' }}</span>
         </button>
-        <template v-if="props.message.role === 'assistant'">
+        <!-- 飞书导出入口仅在空间配置可用时展示（chatStore.feishuExportAvailable） -->
+        <template v-if="props.message.role === 'assistant' && (chatStore.feishuExportAvailable || exportedDoc)">
           <!-- 未导出态：单个「导出到飞书」按钮（向后兼容） -->
           <button
             v-if="!exportedDoc"
@@ -1136,6 +1151,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               <span class="action-label">在飞书打开</span>
             </button>
             <button
+              v-if="chatStore.feishuExportAvailable"
               class="action-btn"
               aria-label="重新导出"
               title="重新导出"
@@ -1178,18 +1194,19 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
 
 .user-bubble {
   max-width: min(100%, 38rem);
-  padding: 0.8125rem 1rem;
-  border-radius: 1rem 1rem 0.375rem 1rem;
-  border: 1px solid hsl(168 76% 42% / 0.18);
-  background: hsl(0 0% 100% / 0.9);
-  color: hsl(215 28% 18%);
-  font-size: 0.925rem;
-  font-weight: 600;
-  line-height: 1.65;
-  letter-spacing: -0.01em;
+  padding: 0.75rem 1.0625rem;
+  border-radius: 1.25rem 1.25rem 0.4375rem 1.25rem;
+  border: 1px solid hsl(168 76% 42% / 0.13);
+  /* 主题色淡渐变：与欢迎页 / 输入卡片同一视觉语言 */
+  background: linear-gradient(135deg, hsl(168 56% 95.5%), hsl(176 48% 93.5%));
+  color: hsl(215 30% 22%);
+  font-size: 0.9rem;
+  font-weight: 480;
+  line-height: 1.7;
+  letter-spacing: -0.005em;
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+  box-shadow: 0 1px 2px hsl(168 60% 30% / 0.05);
 }
 
 .image-preview-grid {
@@ -1238,56 +1255,69 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   outline: none;
 }
 
+/* 编辑面板：复用主输入卡片的视觉语言（圆角卡 + 无内边框 textarea + 底部操作条） */
 .user-edit-panel {
   width: min(100%, 38rem);
-  padding: 0.75rem;
-  border-radius: 1rem 1rem 0.375rem 1rem;
-  border: 1px solid hsl(168 76% 42% / 0.22);
-  background: hsl(0 0% 100% / 0.92);
-  box-shadow: 0 8px 28px hsl(215 28% 17% / 0.08);
+  border-radius: 1.25rem;
+  border: 1px solid hsl(168 76% 42% / 0.45);
+  background: hsl(0 0% 100%);
+  box-shadow:
+    0 0 0 3px hsl(168 76% 42% / 0.08),
+    0 12px 32px hsl(215 28% 17% / 0.1);
+  overflow: hidden;
 }
 
 .user-edit-textarea {
+  display: block;
   width: 100%;
-  min-height: 7rem;
+  min-height: 6rem;
+  max-height: 18rem;
   resize: vertical;
-  border-radius: 0.75rem;
-  border: 1px solid hsl(214 32% 86% / 0.9);
-  background: hsl(210 40% 98% / 0.78);
-  padding: 0.75rem 0.875rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0.875rem 1rem 0.375rem;
   color: hsl(215 28% 18%);
   font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.6;
+  font-weight: 450;
+  line-height: 1.7;
   white-space: pre-wrap;
-}
-
-.user-edit-textarea:focus {
-  border-color: hsl(168 76% 42% / 0.72);
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(168 76% 42% / 0.12);
+  text-align: left;
 }
 
 .user-edit-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.625rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.375rem 0.625rem 0.625rem 1rem;
+}
+
+.user-edit-hint {
+  font-size: 0.6875rem;
+  color: hsl(215 16% 60%);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-edit-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.3125rem;
   min-height: 2rem;
-  padding: 0 0.75rem;
+  padding: 0 0.875rem;
   border-radius: 9999px;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 600;
+  white-space: nowrap;
   transition:
     opacity 0.15s ease,
     background-color 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .user-edit-btn--ghost {
@@ -1297,23 +1327,26 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
 .user-edit-btn--ghost:hover,
 .user-edit-btn--ghost:focus-visible {
   background: hsl(215 16% 47% / 0.08);
+  color: hsl(215 28% 25%);
   outline: none;
 }
 
 .user-edit-btn--primary {
   background: hsl(168 76% 42%);
   color: white;
+  box-shadow: 0 1px 3px hsl(168 76% 42% / 0.3);
 }
 
 .user-edit-btn--primary:hover:not(:disabled),
 .user-edit-btn--primary:focus-visible:not(:disabled) {
-  background: hsl(168 76% 36%);
+  background: hsl(167 76% 36%);
   outline: none;
 }
 
 .user-edit-btn:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+  box-shadow: none;
 }
 
 /* ============ AI Message ============ */
@@ -1347,11 +1380,13 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   flex: 1;
   min-width: 0;
   max-width: 100%;
-  padding: 0.95rem 1rem 0.7rem;
-  border-radius: 1.125rem 1.125rem 1.125rem 0.4rem;
-  border: 1px solid hsl(214 32% 86% / 0.9);
-  background: hsl(0 0% 100% / 0.96);
-  box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+  padding: 0.95rem 1.125rem 0.7rem;
+  border-radius: 1.25rem 1.25rem 1.25rem 0.4375rem;
+  border: 1px solid hsl(214 32% 89% / 0.7);
+  background: hsl(0 0% 100% / 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 1px 3px hsl(215 28% 17% / 0.04);
 }
 
 .assistant-message-header {

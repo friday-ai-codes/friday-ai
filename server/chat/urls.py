@@ -26,6 +26,7 @@ from .views import (
     DiffSummaryView,
     ExportCodingPlanToFeishuView,
     ExportToFeishuView,
+    FeishuExportAvailabilityView,
     ModelsView,
     PRConfirmView,
     RoutingTraceManualOverrideView,
@@ -99,6 +100,12 @@ urlpatterns = [
         "conversations/<uuid:conversation_id>/export-to-feishu/",
         ExportToFeishuView.as_view(),
         name="conversation-export-to-feishu",
+    ),
+    # 飞书导出可用性探测（前端据此隐藏「导出到飞书」入口）
+    path(
+        "feishu-export-availability/",
+        FeishuExportAvailabilityView.as_view(),
+        name="chat-feishu-export-availability",
     ),
     # implementation: 编码会话
     path(

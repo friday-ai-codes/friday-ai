@@ -148,6 +148,47 @@ class TestBuildSdkConfig:
         ):
             await build_sdk_config(conversation)
 
+    async def test_no_space_conversation_builds_general_config(self):
+        """无空间对话（project=None）：space_id 为空串 + prompt 注入无空间指引。
+
+        行为契约：space_id="" → chat_runner._get_tool_names 不注入任何空间工具；
+        system prompt 引导 LLM 在任务涉及空间知识时要求用户先选择空间。
+        """
+        from chat.config import build_sdk_config
+        from chat.models import Conversation
+        from services.provider_config import ProviderType
+
+        @dataclass
+        class _FullResolvedStub:
+            api_key: str = "sk-test-key"
+            base_url: str = "https://api.example.com"
+            provider_type: ProviderType = ProviderType.ANTHROPIC
+
+        conversation = await Conversation.objects.acreate(
+            project=None,
+            title="general",
+            model="claude-sonnet-4-5",
+        )
+        conversation = await Conversation.objects.select_related("project").aget(
+            id=conversation.id,
+        )
+
+        with (
+            patch(
+                "chat.config.ProviderConfigService.aresolve",
+                new=AsyncMock(return_value=_FullResolvedStub()),
+            ),
+            patch(
+                "chat.config.aget_setting_value",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            config, agent_session = await build_sdk_config(conversation)
+
+        assert config.space_id == ""
+        assert "未绑定任何空间" in config.system_prompt
+        assert agent_session.project_id is None
+
     async def test_budget_from_settings(self, project):
         from chat.config import build_sdk_config
         from chat.models import Conversation

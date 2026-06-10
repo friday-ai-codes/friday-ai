@@ -56,6 +56,25 @@ watch(
   },
   { immediate: true },
 )
+
+// 欢迎页快捷提示 → 填充输入框并聚焦（填充而非直发，给用户修改机会）
+watch(
+  () => chatStore.draftPrompt,
+  (draft) => {
+    if (!draft)
+      return
+    inputContent.value = draft
+    chatStore.draftPrompt = null
+    nextTick(() => {
+      autoResize()
+      const el = textarea.value
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  },
+)
 const modelMenuRef = ref<HTMLElement | null>(null)
 
 // ============================================================================
@@ -370,8 +389,7 @@ const sendDisabledReason = computed<string>(() => {
     return '图片上传中'
   if (!hasDraftContent.value)
     return ''
-  if (!chatStore.selectedSpaceId)
-    return '请先在顶部选择一个空间'
+  // 无空间也允许对话（通用对话）；任务涉及空间知识时由 AI 引导用户选择空间
   if (isEmpty.value)
     return '当前没有可用的 Provider 凭证，请先在 admin/providers 或空间设置中添加'
   return ''
@@ -478,12 +496,6 @@ async function handleSend() {
     return
   if (chatStore.isStreaming) {
     toast.warning('上一条消息正在生成中', '请等待完成或点「停止生成」后再发送')
-    return
-  }
-
-  // 前置硬校验：没有空间根本无法创建对话
-  if (!chatStore.selectedSpaceId) {
-    toast.error('请先在顶部选择一个空间')
     return
   }
 
@@ -596,250 +608,281 @@ function toggleNotifications() {
         </div>
       </Transition>
 
-      <!-- 输入卡片 -->
-      <div
-        class="input-card"
-        :class="{ 'input-card--disabled': chatStore.isStreaming }"
-        @paste="handlePaste"
-        @dragover.prevent
-        @drop.prevent="handleDrop"
-      >
-        <input
-          ref="fileInput"
-          type="file"
-          class="sr-only"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          multiple
-          @change="handleFileSelect"
-        >
-        <!-- 上层：文本输入 -->
-        <textarea
-          ref="textarea"
-          v-model="inputContent"
-          placeholder="给 Friday 发消息..."
-          class="input-textarea"
-          rows="1"
-          :disabled="chatStore.isStreaming"
-          @keydown="handleKeydown"
-          @input="autoResize"
-        />
-
-        <div v-if="pendingImages.length > 0" class="image-preview-strip">
+      <!-- 输入卡片（外层 wrap 承载深度分析模式的浮动 Claude 徽标） -->
+      <div class="input-card-wrap">
+        <Transition name="claude-float">
           <div
-            v-for="image in pendingImages"
-            :key="image.id"
-            class="image-preview-chip"
-            :class="{ 'image-preview-chip--error': image.status === 'error' }"
+            v-if="chatStore.forceDeepAnalysis"
+            class="claude-badge"
+            aria-hidden="true"
           >
-            <img :src="image.previewUrl" alt="" class="image-preview-thumb">
-            <div class="image-preview-meta">
-              <span class="image-preview-name">{{ image.file.name }}</span>
-              <span class="image-preview-size">
-                {{ image.status === 'uploading' ? '上传中...' : image.error || formatBytes(image.file.size) }}
-              </span>
-            </div>
-            <button
-              type="button"
-              class="image-preview-remove"
-              title="移除图片"
-              :disabled="image.status === 'uploading'"
-              @click="removePendingImage(image.id)"
+            <!-- Claude Code 终端图标：深色终端窗 + 珊瑚色 prompt 提示符 -->
+            <svg class="claude-badge-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1.5" y="1.5" width="21" height="21" rx="5.5" fill="#1F1E1C" />
+              <path d="M6.8 8.4 10.6 12l-3.8 3.6" stroke="#D97757" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+              <path d="M12.6 16.2h4.6" stroke="#FAF9F5" stroke-width="2.1" stroke-linecap="round" fill="none" />
+            </svg>
+            <span class="claude-badge-text">Friday × Claude Code 深度分析</span>
+          </div>
+        </Transition>
+
+        <div
+          class="input-card"
+          :class="{
+            'input-card--disabled': chatStore.isStreaming,
+            'input-card--deep': chatStore.forceDeepAnalysis,
+          }"
+          @paste="handlePaste"
+          @dragover.prevent
+          @drop.prevent="handleDrop"
+        >
+          <input
+            ref="fileInput"
+            type="file"
+            class="sr-only"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            @change="handleFileSelect"
+          >
+          <!-- 上层：文本输入 -->
+          <textarea
+            ref="textarea"
+            v-model="inputContent"
+            placeholder="给 Friday 发消息..."
+            class="input-textarea"
+            rows="1"
+            :disabled="chatStore.isStreaming"
+            @keydown="handleKeydown"
+            @input="autoResize"
+          />
+
+          <div v-if="pendingImages.length > 0" class="image-preview-strip">
+            <div
+              v-for="image in pendingImages"
+              :key="image.id"
+              class="image-preview-chip"
+              :class="{ 'image-preview-chip--error': image.status === 'error' }"
             >
-              <span class="icon-[lucide--x] text-[12px]" />
-            </button>
-          </div>
-        </div>
-
-        <!-- 下层：工具栏 -->
-        <div class="input-toolbar">
-          <!-- 左侧工具 -->
-          <div class="toolbar-left">
-            <TooltipProvider :delay-duration="300">
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <button
-                    type="button"
-                    class="toolbar-btn"
-                    aria-label="添加图片"
-                    :title="supportsImageInput ? '添加图片' : '当前模型不支持图片'"
-                    :disabled="chatStore.isStreaming || isUploadingImages || !supportsImageInput"
-                    @click="openFilePicker"
-                  >
-                    <span class="icon-[lucide--image-plus] text-[15px]" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>{{ supportsImageInput ? '添加图片' : '当前模型不支持图片' }}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider :delay-duration="300">
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <button
-                    type="button"
-                    class="toolbar-btn"
-                    :aria-label="chatStore.forceDeepAnalysis ? '关闭深度分析' : '开启深度分析'"
-                    :title="chatStore.forceDeepAnalysis ? '关闭深度分析' : '开启深度分析'"
-                    :class="{ 'toolbar-btn--active': chatStore.forceDeepAnalysis }"
-                    @click="toggleDeepAnalysis"
-                  >
-                    <span class="icon-[lucide--scan-search] text-[15px]" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>{{ chatStore.forceDeepAnalysis ? '深度分析已开启 · Runner + Claude Code' : '点击开启深度分析' }}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider :delay-duration="300">
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <button
-                    type="button"
-                    class="toolbar-btn"
-                    :aria-label="chatStore.notificationsEnabled ? '关闭浏览器通知' : '开启浏览器通知'"
-                    :title="chatStore.notificationsEnabled ? '关闭浏览器通知' : '开启浏览器通知'"
-                    :class="{ 'toolbar-btn--active': chatStore.notificationsEnabled }"
-                    @click="toggleNotifications"
-                  >
-                    <span :class="chatStore.notificationsEnabled ? 'icon-[lucide--bell-ring]' : 'icon-[lucide--bell-off]'" class="text-[15px]" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>{{ chatStore.notificationsEnabled ? '浏览器通知已开启' : '点击开启浏览器通知' }}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-
-          <!-- 右侧：模型选择 + 发送 -->
-          <div class="toolbar-right">
-            <!-- 模型选择器（凭证/模型组合） -->
-            <div ref="modelMenuRef" class="relative">
-              <!-- 三态①：空态（无可用凭证）→ CTA tooltip -->
-              <TooltipProvider v-if="isEmpty" :delay-duration="200">
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <button class="model-selector model-selector--disabled" disabled>
-                      <span class="model-label">无可用 Provider</span>
-                      <span class="icon-[lucide--alert-triangle] text-[11px]" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" class="max-w-xs text-xs font-normal">
-                    <p class="mb-1">
-                      请先在 admin/providers 或空间设置创建并启用 Provider 凭证。
-                    </p>
-                    <RouterLink :to="emptyCta.to" class="text-primary hover:underline">
-                      {{ emptyCta.text }}
-                    </RouterLink>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <!-- 三态②：有凭证但 disabled（无对话 / frozen）→ 原因 tooltip -->
-              <TooltipProvider v-else-if="isSelectorDisabled" :delay-duration="200">
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <button
-                      class="model-selector model-selector--disabled"
-                      disabled
-                      :data-test-disabled-reason="disabledReason"
-                    >
-                      <span class="model-label">{{ currentSelectionLabel }}</span>
-                      <span class="icon-[lucide--lock] text-[11px]" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" class="max-w-xs text-xs font-normal">
-                    {{ disabledReason }}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <!-- 三态③：可用态 → 正常 dropdown -->
-              <button v-else class="model-selector" @click="toggleModelMenu">
-                <span class="model-label">{{ currentSelectionLabel }}</span>
-                <span
-                  class="icon-[lucide--chevron-down] text-[11px] transition-transform"
-                  :class="{ 'rotate-180': showModelMenu }"
-                />
+              <img :src="image.previewUrl" alt="" class="image-preview-thumb">
+              <div class="image-preview-meta">
+                <span class="image-preview-name">{{ image.file.name }}</span>
+                <span class="image-preview-size">
+                  {{ image.status === 'uploading' ? '上传中...' : image.error || formatBytes(image.file.size) }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="image-preview-remove"
+                title="移除图片"
+                :disabled="image.status === 'uploading'"
+                @click="removePendingImage(image.id)"
+              >
+                <span class="icon-[lucide--x] text-[12px]" />
               </button>
+            </div>
+          </div>
 
-              <!-- Teleport 到 body + fixed 定位，规避 .input-card overflow:hidden 裁剪 -->
-              <Teleport to="body">
-                <Transition
-                  enter-active-class="transition-all duration-150 ease-out"
-                  leave-active-class="transition-all duration-100 ease-in"
-                  enter-from-class="opacity-0 translate-y-1 scale-95"
-                  enter-to-class="opacity-100 translate-y-0 scale-100"
-                  leave-from-class="opacity-100 translate-y-0 scale-100"
-                  leave-to-class="opacity-0 translate-y-1 scale-95"
-                >
-                  <div
-                    v-if="showModelMenu && !isSelectorDisabled"
-                    ref="menuRef"
-                    class="model-menu"
-                    :style="menuStyle"
-                  >
+          <!-- 下层：工具栏 -->
+          <div class="input-toolbar">
+            <!-- 左侧工具 -->
+            <div class="toolbar-left">
+              <!-- 模型不支持图片时整体隐藏（disabled 灰按钮反而让人困惑） -->
+              <TooltipProvider v-if="supportsImageInput" :delay-duration="300">
+                <Tooltip>
+                  <TooltipTrigger as-child>
                     <button
-                      v-for="opt in credentialModelOptions"
-                      :key="opt.key"
-                      class="model-menu-item"
-                      :class="{ 'model-menu-item--active': opt.key === effectiveSelectionKey }"
-                      @click="onSelectCombination(opt)"
+                      type="button"
+                      class="toolbar-btn"
+                      aria-label="添加图片"
+                      title="添加图片"
+                      :disabled="chatStore.isStreaming || isUploadingImages"
+                      @click="openFilePicker"
                     >
-                      <span class="truncate">{{ opt.label }}</span>
-                      <span
-                        v-if="opt.key === defaultOptionKey"
-                        class="ml-1 shrink-0 rounded bg-primary/10 px-1 text-[10px] text-primary"
-                      >默认</span>
-                      <span
-                        v-if="opt.key === effectiveSelectionKey"
-                        class="icon-[lucide--check] text-xs text-primary shrink-0 ml-auto"
-                      />
+                      <span class="icon-[lucide--image-plus] text-[15px]" />
                     </button>
-                  </div>
-                </Transition>
-              </Teleport>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>添加图片</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider :delay-duration="300">
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <button
+                      type="button"
+                      class="toolbar-pill"
+                      :aria-label="chatStore.forceDeepAnalysis ? '关闭深度分析' : '开启深度分析'"
+                      :aria-pressed="chatStore.forceDeepAnalysis"
+                      :class="{ 'toolbar-pill--active': chatStore.forceDeepAnalysis }"
+                      @click="toggleDeepAnalysis"
+                    >
+                      <span class="icon-[lucide--telescope] text-[14px]" />
+                      <span>深度分析</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" class="max-w-xs">
+                    <p class="font-semibold">
+                      深度分析 · Claude Code
+                    </p>
+                    <p class="mt-1 text-xs font-normal leading-relaxed opacity-90">
+                      {{ chatStore.forceDeepAnalysis ? '已开启：' : '开启后' }}由 Runner 调度 Claude Code 编码代理深入探索代码库，结果更全面但耗时更长。
+                    </p>
+                    <p class="mt-1.5 text-xs font-normal leading-relaxed opacity-70">
+                      提示：安装 friday-codebase-agent Skill 后，也可以通过 MCP 在 Cursor / Claude Code 中直接使用 Friday 的代码索引与分析能力。
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider :delay-duration="300">
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <button
+                      type="button"
+                      class="toolbar-btn"
+                      :aria-label="chatStore.notificationsEnabled ? '关闭浏览器通知' : '开启浏览器通知'"
+                      :title="chatStore.notificationsEnabled ? '关闭浏览器通知' : '开启浏览器通知'"
+                      :class="{ 'toolbar-btn--active': chatStore.notificationsEnabled }"
+                      @click="toggleNotifications"
+                    >
+                      <span :class="chatStore.notificationsEnabled ? 'icon-[lucide--bell-ring]' : 'icon-[lucide--bell-off]'" class="text-[15px]" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>{{ chatStore.notificationsEnabled ? '浏览器通知已开启' : '点击开启浏览器通知' }}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
 
-            <!-- PinConfirmDialog（chat 路径凭证+模型切换确认） -->
-            <PinConfirmDialog
-              v-model:open="pinDialogOpen"
-              :old-provider-name="oldProviderName"
-              :old-model="oldModelLabel"
-              :new-provider-name="pendingOption?.credential.name ?? ''"
-              :new-model="pendingOption?.model.id ?? ''"
-              :message-count="chatStore.messages.length"
-              @confirm="handlePinConfirm"
-              @cancel="handlePinCancel"
-            />
+            <!-- 右侧：模型选择 + 发送 -->
+            <div class="toolbar-right">
+              <!-- 模型选择器（凭证/模型组合） -->
+              <div ref="modelMenuRef" class="relative">
+                <!-- 三态①：空态（无可用凭证）→ CTA tooltip -->
+                <TooltipProvider v-if="isEmpty" :delay-duration="200">
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <button class="model-selector model-selector--disabled" disabled>
+                        <span class="model-label">无可用 Provider</span>
+                        <span class="icon-[lucide--alert-triangle] text-[11px]" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" class="max-w-xs text-xs font-normal">
+                      <p class="mb-1">
+                        请先在 admin/providers 或空间设置创建并启用 Provider 凭证。
+                      </p>
+                      <RouterLink :to="emptyCta.to" class="text-primary hover:underline">
+                        {{ emptyCta.text }}
+                      </RouterLink>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-            <!-- 发送 / 停止按钮（同位切换：流式中显示停止，否则显示发送） -->
-            <button
-              v-if="chatStore.isStreaming"
-              type="button"
-              class="send-btn send-btn--stop"
-              :disabled="chatStore.isInterrupting"
-              :title="chatStore.isInterrupting ? '正在停止...' : '停止生成'"
-              @click="chatStore.stopStreaming()"
-            >
-              <span v-if="chatStore.isInterrupting" class="icon-[lucide--loader-circle] text-sm animate-spin" />
-              <span v-else class="send-btn__stop-square" aria-hidden="true" />
-            </button>
-            <button
-              v-else
-              type="button"
-              class="send-btn"
-              :class="{ 'send-btn--active': canSend }"
-              :disabled="!canSend"
-              :title="sendDisabledReason || '发送'"
-              @click="handleSend"
-            >
-              <span class="icon-[lucide--arrow-up] text-sm" />
-            </button>
+                <!-- 三态②：有凭证但 disabled（无对话 / frozen）→ 原因 tooltip -->
+                <TooltipProvider v-else-if="isSelectorDisabled" :delay-duration="200">
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <button
+                        class="model-selector model-selector--disabled"
+                        disabled
+                        :data-test-disabled-reason="disabledReason"
+                      >
+                        <span class="model-label">{{ currentSelectionLabel }}</span>
+                        <span class="icon-[lucide--lock] text-[11px]" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" class="max-w-xs text-xs font-normal">
+                      {{ disabledReason }}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <!-- 三态③：可用态 → 正常 dropdown -->
+                <button v-else class="model-selector" @click="toggleModelMenu">
+                  <span class="model-label">{{ currentSelectionLabel }}</span>
+                  <span
+                    class="icon-[lucide--chevron-down] text-[11px] transition-transform"
+                    :class="{ 'rotate-180': showModelMenu }"
+                  />
+                </button>
+
+                <!-- Teleport 到 body + fixed 定位，规避 .input-card overflow:hidden 裁剪 -->
+                <Teleport to="body">
+                  <Transition
+                    enter-active-class="transition-all duration-150 ease-out"
+                    leave-active-class="transition-all duration-100 ease-in"
+                    enter-from-class="opacity-0 translate-y-1 scale-95"
+                    enter-to-class="opacity-100 translate-y-0 scale-100"
+                    leave-from-class="opacity-100 translate-y-0 scale-100"
+                    leave-to-class="opacity-0 translate-y-1 scale-95"
+                  >
+                    <div
+                      v-if="showModelMenu && !isSelectorDisabled"
+                      ref="menuRef"
+                      class="model-menu"
+                      :style="menuStyle"
+                    >
+                      <button
+                        v-for="opt in credentialModelOptions"
+                        :key="opt.key"
+                        class="model-menu-item"
+                        :class="{ 'model-menu-item--active': opt.key === effectiveSelectionKey }"
+                        @click="onSelectCombination(opt)"
+                      >
+                        <span class="truncate">{{ opt.label }}</span>
+                        <span
+                          v-if="opt.key === defaultOptionKey"
+                          class="ml-1 shrink-0 rounded bg-primary/10 px-1 text-[10px] text-primary"
+                        >默认</span>
+                        <span
+                          v-if="opt.key === effectiveSelectionKey"
+                          class="icon-[lucide--check] text-xs text-primary shrink-0 ml-auto"
+                        />
+                      </button>
+                    </div>
+                  </Transition>
+                </Teleport>
+              </div>
+
+              <!-- PinConfirmDialog（chat 路径凭证+模型切换确认） -->
+              <PinConfirmDialog
+                v-model:open="pinDialogOpen"
+                :old-provider-name="oldProviderName"
+                :old-model="oldModelLabel"
+                :new-provider-name="pendingOption?.credential.name ?? ''"
+                :new-model="pendingOption?.model.id ?? ''"
+                :message-count="chatStore.messages.length"
+                @confirm="handlePinConfirm"
+                @cancel="handlePinCancel"
+              />
+
+              <!-- 发送 / 停止按钮（同位切换：流式中显示停止，否则显示发送） -->
+              <button
+                v-if="chatStore.isStreaming"
+                type="button"
+                class="send-btn send-btn--stop"
+                :disabled="chatStore.isInterrupting"
+                :title="chatStore.isInterrupting ? '正在停止...' : '停止生成'"
+                @click="chatStore.stopStreaming()"
+              >
+                <span v-if="chatStore.isInterrupting" class="icon-[lucide--loader-circle] text-sm animate-spin" />
+                <span v-else class="send-btn__stop-square" aria-hidden="true" />
+              </button>
+              <button
+                v-else
+                type="button"
+                class="send-btn"
+                :class="{ 'send-btn--active': canSend }"
+                :disabled="!canSend"
+                :title="sendDisabledReason || '发送'"
+                @click="handleSend"
+              >
+                <span class="icon-[lucide--arrow-up] text-sm" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -881,6 +924,69 @@ function toggleNotifications() {
 }
 
 /* ======== 输入卡片 ======== */
+.input-card-wrap {
+  position: relative;
+}
+
+/* 深度分析模式：Claude Code 徽标从卡片顶部浮出（静置，无晃动） */
+.claude-badge {
+  position: absolute;
+  top: -0.8125rem;
+  left: 1.125rem;
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.25rem 0.6875rem 0.25rem 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  /* 双色描边：与输入框的交织边框呼应（Friday 青绿 × Claude 珊瑚） */
+  background:
+    linear-gradient(hsl(0 0% 100% / 0.97), hsl(0 0% 100% / 0.97)) padding-box,
+    linear-gradient(110deg, hsl(168 76% 42% / 0.55), hsl(15 63% 55% / 0.55)) border-box;
+  box-shadow:
+    0 4px 12px hsl(215 28% 17% / 0.1),
+    inset 0 1px 0 hsl(0 0% 100% / 0.8);
+  pointer-events: none;
+  user-select: none;
+}
+
+.claude-badge-logo {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.3125rem;
+  flex-shrink: 0;
+}
+
+.claude-badge-text {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  /* Friday × Claude 渐变文字，呼应「共同协作」 */
+  background: linear-gradient(100deg, hsl(168 70% 30%), hsl(15 58% 42%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  white-space: nowrap;
+}
+
+/* 入场：从卡片后方向上浮出 */
+.claude-float-enter-active {
+  transition:
+    opacity 0.3s ease-out,
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.claude-float-leave-active {
+  transition:
+    opacity 0.18s ease-in,
+    transform 0.18s ease-in;
+}
+.claude-float-enter-from,
+.claude-float-leave-to {
+  opacity: 0;
+  transform: translateY(0.625rem) scale(0.85);
+}
+
 .input-card {
   border: 1px solid hsl(214 32% 88%);
   border-radius: 1.375rem;
@@ -905,6 +1011,61 @@ function toggleNotifications() {
 }
 .input-card--disabled {
   opacity: 0.6;
+}
+
+/* ======== 深度分析模式边框：Friday 青绿 × Claude 珊瑚 交织流动 ========
+   隐喻 Friday 和 Claude Code 协作分析。conic-gradient 双色绕卡片缓慢
+   旋转；通过 @property 注册角度变量使其可被动画插值。 */
+@property --friday-deep-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.input-card--deep {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(hsl(0 0% 100% / 0.96), hsl(0 0% 100% / 0.96)) padding-box,
+    conic-gradient(
+        from var(--friday-deep-angle),
+        hsl(168 76% 42% / 0.9) 0deg,
+        hsl(15 63% 55% / 0.9) 90deg,
+        hsl(168 76% 42% / 0.9) 180deg,
+        hsl(15 63% 55% / 0.9) 270deg,
+        hsl(168 76% 42% / 0.9) 360deg
+      )
+      border-box;
+  animation: deep-border-weave 6s linear infinite;
+  box-shadow:
+    0 0 0 3px hsl(168 76% 42% / 0.05),
+    0 10px 24px hsl(215 28% 17% / 0.09),
+    0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.input-card--deep:focus-within {
+  /* 覆盖基础 .input-card:focus-within 的纯色边框，保持渐变描边可见 */
+  border-color: transparent;
+  animation-duration: 3.5s;
+  box-shadow:
+    0 0 0 3px hsl(168 76% 42% / 0.08),
+    0 0 18px hsl(15 63% 55% / 0.12),
+    0 12px 28px hsl(215 28% 17% / 0.1);
+}
+
+@keyframes deep-border-weave {
+  to {
+    --friday-deep-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input-card--deep {
+    animation: none;
+  }
+}
+
+/* 给浮出的徽标让出首行空间，避免文字与徽标下沿重叠 */
+.input-card--deep .input-textarea {
+  padding-top: 1.125rem;
 }
 
 .input-textarea {
@@ -1056,6 +1217,37 @@ function toggleNotifications() {
 .toolbar-btn--active:hover {
   background: hsl(168 76% 42% / 0.14);
   color: hsl(167 76% 36%);
+}
+
+/* 带文字的功能开关 pill（深度分析）：参考 ChatGPT 工具开关样式 */
+.toolbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 2rem;
+  padding: 0 0.6875rem;
+  border-radius: 9999px;
+  border: 1px solid hsl(214 32% 89%);
+  background: transparent;
+  color: hsl(215 16% 47%);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.toolbar-pill:hover {
+  background: hsl(210 40% 96%);
+  color: hsl(215 28% 25%);
+}
+/* 激活态与 Claude 品牌色保持一致（深度分析 = Claude Code 模式） */
+.toolbar-pill--active {
+  border-color: hsl(15 63% 55% / 0.45);
+  background: hsl(15 63% 55% / 0.1);
+  color: hsl(15 58% 40%);
+}
+.toolbar-pill--active:hover {
+  background: hsl(15 63% 55% / 0.16);
 }
 
 /* ======== 模型选择器 ======== */

@@ -15,7 +15,8 @@ export type { ConversationStatus } from '~/composables/useConversationFrozen'
 /** 对话 */
 export interface Conversation {
   id: string
-  space_id: string
+  /** null = 未绑定空间的通用对话 */
+  space_id: string | null
   title: string
   model: string
   /** 对话 pin 状态（frozen 判据真源） */
@@ -252,7 +253,8 @@ export interface ForkConversationRequest {
 
 /** 创建对话参数 */
 export interface CreateConversationParams {
-  space_id: string
+  /** null = 创建不绑定空间的通用对话 */
+  space_id: string | null
   title?: string
   model?: string
 }

@@ -194,10 +194,13 @@ async def _get_tool_names(
 ) -> list[str]:
     """返回 LLM 可用工具名列表。
 
+    - 无空间（space_id 为空，未绑定空间的通用对话）：不注入任何空间工具。
     - 无已索引仓库：仅 `_BASE_TOOL_NAMES`（避免误调检索工具拿空结果）。
     - 有已索引仓库 + 普通模式：`_INDEXED_TOOL_NAMES`，**不含** `deep_analysis`。
     - 有已索引仓库 + 用户开启「深度分析」开关：`_DEEP_ANALYSIS_TOOL_NAMES`。
     """
+    if not space_id:
+        return []
     has_indexed = await Repository.objects.filter(
         projects__id=space_id,
         index_status="indexed",
