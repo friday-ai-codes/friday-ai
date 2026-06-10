@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import AppModeSwitcher from '~/components/layout/AppModeSwitcher.vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +6,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu'
-import { ScrollArea } from '~/components/ui/scroll-area'
 import {
   Tooltip,
   TooltipContent,
@@ -25,39 +23,9 @@ interface NavItem {
 }
 
 const authStore = useAuthStore()
-const chatStore = useChatStore()
 const router = useRouter()
-const route = useRoute()
 const { isSystemAdmin } = usePermission()
 const appVersion = __APP_VERSION__
-const displayMode = computed(() => route.path === '/chat' ? 'chat' : 'friday')
-
-// ==================== 版本号悬停展示当前版本 changelog ====================
-// 数据来源：GitHub Release（git-cliff 生成的 release notes），首次悬停时懒加载并缓存
-const changelogState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
-const changelogHtml = ref('')
-
-async function loadChangelog(open: boolean) {
-  if (!open || changelogState.value === 'loading' || changelogState.value === 'loaded')
-    return
-  changelogState.value = 'loading'
-  try {
-    const resp = await fetch(
-      `https://api.github.com/repos/friday-ai-codes/friday-ai/releases/tags/v${appVersion}`,
-    )
-    if (!resp.ok)
-      throw new Error(`HTTP ${resp.status}`)
-    const data = await resp.json()
-    if (!data.body)
-      throw new Error('empty release notes')
-    const md = await getMarkdownRenderer()
-    changelogHtml.value = md.render(data.body)
-    changelogState.value = 'loaded'
-  }
-  catch {
-    changelogState.value = 'error'
-  }
-}
 
 // 收缩状态持久化到 localStorage
 const isCollapsed = useLocalStorage('sidebar-collapsed', false)
@@ -66,7 +34,11 @@ function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
 }
 
-// ==================== 工作台导航 ====================
+// ==================== 导航 ====================
+// AI 对话作为一级导航入口（会话列表在 /chat 页面内部展示，
+// 不再劫持全局侧边栏 — 入口信息架构重构）
+const chatNavItem: NavItem = { to: '/chat', label: 'AI 对话', icon: 'lucide--message-circle' }
+
 const mainNavItems: NavItem[] = [
   { to: '/', label: '首页', icon: 'lucide--home', exact: true },
   { to: '/spaces', label: '空间', icon: 'lucide--folder-git-2' },
@@ -87,33 +59,6 @@ const adminNavItems: NavItem[] = [
   { to: '/codegraph/galaxy', label: 'Galaxy 图谱', icon: 'lucide--sparkles' },
   { to: '/codegraph/playground', label: 'Playground', icon: 'lucide--flask-conical' },
 ]
-
-// ==================== Chat 对话 ====================
-function handleNewConversation() {
-  chatStore.createNewConversation()
-}
-
-function handleSelectConversation(id: string) {
-  chatStore.selectConversation(id)
-}
-
-function handleDeleteConversation(id: string) {
-  chatStore.removeConversation(id)
-}
-
-function formatTime(dateStr: string) {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  if (days === 0)
-    return '今天'
-  if (days === 1)
-    return '昨天'
-  if (days < 7)
-    return `${days}天前`
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
 
 // ==================== 退出登录 ====================
 async function handleLogout() {
@@ -144,28 +89,7 @@ async function handleLogout() {
           >
           <div v-if="!isCollapsed" class="flex flex-col gap-0.5">
             <img src="/logo-wordmark.svg" alt="friday" class="h-4 w-auto">
-            <Tooltip @update:open="loadChangelog">
-              <TooltipTrigger as-child>
-                <span class="text-[10px] text-muted-foreground leading-none cursor-default w-fit">v{{ appVersion }}</span>
-              </TooltipTrigger>
-              <TooltipContent
-                side="right"
-                :side-offset="12"
-                class="max-w-xs max-h-80 overflow-y-auto bg-popover text-popover-foreground border border-border shadow-lg p-3 font-normal"
-              >
-                <div class="text-xs font-semibold mb-1.5">
-                  v{{ appVersion }} 更新日志
-                </div>
-                <div v-if="changelogState === 'loading' || changelogState === 'idle'" class="text-xs text-muted-foreground">
-                  加载中…
-                </div>
-                <div v-else-if="changelogState === 'error'" class="text-xs text-muted-foreground">
-                  暂无该版本的更新日志
-                </div>
-                <!-- eslint-disable-next-line vue/no-v-html — markdown-it 以 html:false 渲染，无 XSS 风险 -->
-                <div v-else class="changelog-content text-xs" v-html="changelogHtml" />
-              </TooltipContent>
-            </Tooltip>
+            <span class="text-[10px] text-muted-foreground leading-none">v{{ appVersion }}</span>
           </div>
         </RouterLink>
 
@@ -178,15 +102,40 @@ async function handleLogout() {
         </button>
       </div>
 
-      <!-- ==================== 模式切换器 ==================== -->
-      <div :class="isCollapsed ? 'px-2' : 'px-3'" class="pt-3 pb-2">
-        <AppModeSwitcher :collapsed="isCollapsed" />
-      </div>
+      <!-- ==================== 导航菜单 ==================== -->
+      <nav class="flex-1 overflow-y-auto py-3 scrollbar-hide" :class="isCollapsed ? 'px-2' : 'px-3'">
+        <!-- AI 对话入口（一级导航，置顶突出） -->
+        <RouterLink v-slot="{ isActive, navigate, href }" :to="chatNavItem.to" custom>
+          <Tooltip v-if="isCollapsed">
+            <TooltipTrigger as-child>
+              <a
+                :href="href"
+                class="flex items-center justify-center h-10 rounded-xl transition-all duration-200 mb-0.5"
+                :class="isActive ? 'sidebar-s2a-link-active' : 'sidebar-s2a-link'"
+                @click="navigate"
+              >
+                <span class="text-lg" :class="[`icon-[${chatNavItem.icon}]`]" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {{ chatNavItem.label }}
+            </TooltipContent>
+          </Tooltip>
 
-      <!-- ==================== 中间内容区（模式相关） ==================== -->
+          <a
+            v-else
+            :href="href"
+            class="sidebar-s2a-link mb-0.5"
+            :class="{ 'sidebar-s2a-link-active': isActive }"
+            @click="navigate"
+          >
+            <span class="text-lg shrink-0" :class="[`icon-[${chatNavItem.icon}]`]" />
+            <span class="truncate">{{ chatNavItem.label }}</span>
+          </a>
+        </RouterLink>
 
-      <!-- ===== 工作台模式：导航菜单 ===== -->
-      <nav v-if="displayMode === 'friday'" class="flex-1 overflow-y-auto py-1 scrollbar-hide" :class="isCollapsed ? 'px-2' : 'px-3'">
+        <div class="my-2 border-t border-border/40 mx-1" />
+
         <template
           v-for="item in mainNavItems"
           :key="item.to"
@@ -259,89 +208,6 @@ async function handleLogout() {
           </template>
         </template>
       </nav>
-
-      <!-- ===== Chat 模式：对话列表 ===== -->
-      <template v-else>
-        <!-- 新建对话按钮 -->
-        <div :class="isCollapsed ? 'px-2' : 'px-3'" class="pb-2">
-          <Tooltip v-if="isCollapsed">
-            <TooltipTrigger as-child>
-              <button
-                class="sidebar-s2a-link w-full justify-center"
-                @click="handleNewConversation"
-              >
-                <span class="icon-[lucide--plus] text-lg" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              新建对话
-            </TooltipContent>
-          </Tooltip>
-          <button
-            v-else
-            class="chat-new-button"
-            @click="handleNewConversation"
-          >
-            <span class="chat-new-button__icon icon-[lucide--plus] text-sm" />
-            <span>新建对话</span>
-          </button>
-        </div>
-
-        <!-- 对话列表 -->
-        <ScrollArea class="flex-1" :class="isCollapsed ? 'px-2' : ''">
-          <div v-if="!isCollapsed" class="chat-conversation-list px-2 pb-2">
-            <div v-if="chatStore.loading" class="p-3 text-center text-sm text-muted-foreground">
-              加载中...
-            </div>
-            <div
-              v-else-if="chatStore.conversations.length === 0"
-              class="card p-5 text-center"
-            >
-              <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <span class="icon-[lucide--message-square-plus] text-2xl text-primary" />
-              </div>
-              <p class="text-sm font-medium text-foreground">
-                暂无对话
-              </p>
-              <p class="mt-1 text-xs text-muted-foreground">
-                点击上方按钮开始新对话
-              </p>
-            </div>
-            <div
-              v-for="conv in chatStore.conversations"
-              :key="conv.id"
-              role="button"
-              tabindex="0"
-              class="chat-conversation-item group"
-              :class="{ 'chat-conversation-item--active': chatStore.currentConversationId === conv.id }"
-              @click="handleSelectConversation(conv.id)"
-              @keydown.enter="handleSelectConversation(conv.id)"
-            >
-              <span class="chat-conversation-icon">
-                <span class="icon-[lucide--message-square] text-[15px]" />
-              </span>
-              <div class="flex-1 min-w-0">
-                <p class="chat-conversation-title">
-                  {{ conv.title }}
-                </p>
-                <p class="chat-conversation-meta">
-                  <span>{{ formatTime(conv.updated_at) }}</span>
-                  <span v-if="conv.status === 'running'" class="chat-conversation-state chat-conversation-state--running">运行中</span>
-                  <span v-else-if="conv.status === 'completed'" class="chat-conversation-state chat-conversation-state--done">已完成</span>
-                  <span v-else class="chat-conversation-state">草稿</span>
-                </p>
-              </div>
-              <button
-                class="chat-conversation-delete"
-                aria-label="删除对话"
-                @click.stop="handleDeleteConversation(conv.id)"
-              >
-                <span class="icon-[lucide--trash-2] text-xs" />
-              </button>
-            </div>
-          </div>
-        </ScrollArea>
-      </template>
 
       <!-- ==================== 底部：收缩按钮 ==================== -->
       <div v-if="isCollapsed" class="px-2 pb-1">
@@ -440,208 +306,3 @@ async function handleLogout() {
     </aside>
   </TooltipProvider>
 </template>
-
-<style scoped>
-.chat-new-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  width: 100%;
-  min-height: 2.75rem;
-  border-radius: 1rem;
-  border: 1px solid hsl(168 76% 42% / 0.28);
-  background: linear-gradient(135deg, hsl(168 72% 48%), hsl(174 68% 36%)), hsl(168 76% 42%);
-  color: white;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  box-shadow:
-    0 8px 18px hsl(168 76% 42% / 0.16),
-    inset 0 1px 0 hsl(0 0% 100% / 0.22);
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    filter 0.18s ease;
-}
-
-.chat-new-button:hover {
-  transform: translateY(-1px);
-  filter: saturate(1.08);
-  box-shadow:
-    0 10px 22px hsl(168 76% 42% / 0.2),
-    inset 0 1px 0 hsl(0 0% 100% / 0.25);
-}
-
-.chat-new-button:focus-visible,
-.chat-conversation-item:focus-visible,
-.chat-conversation-delete:focus-visible {
-  outline: 2px solid hsl(168 76% 42% / 0.5);
-  outline-offset: 2px;
-}
-
-.chat-new-button__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 9999px;
-  background: hsl(0 0% 100% / 0.16);
-}
-
-.chat-conversation-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.chat-conversation-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  min-height: 3.5rem;
-  padding: 0.5rem 0.625rem;
-  border: 1px solid transparent;
-  border-radius: 0.875rem;
-  color: hsl(215 20% 43%);
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease,
-    color 0.18s ease;
-}
-
-.chat-conversation-item:hover {
-  border-color: hsl(214 32% 88% / 0.8);
-  background: hsl(0 0% 100% / 0.58);
-  color: hsl(215 28% 22%);
-  box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
-}
-
-.chat-conversation-item--active {
-  border-color: hsl(168 76% 42% / 0.18);
-  background: hsl(168 76% 42% / 0.08);
-  color: hsl(168 64% 28%);
-  box-shadow: none;
-}
-
-.chat-conversation-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.125rem;
-  height: 2.125rem;
-  border-radius: 0.75rem;
-  background: hsl(210 40% 96% / 0.72);
-  color: hsl(215 16% 47%);
-  flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px hsl(214 32% 91% / 0.75);
-}
-
-.chat-conversation-item--active .chat-conversation-icon {
-  background: hsl(168 76% 42% / 0.12);
-  color: hsl(168 76% 34%);
-  box-shadow: inset 0 0 0 1px hsl(168 76% 42% / 0.2);
-}
-
-.chat-conversation-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.875rem;
-  font-weight: 650;
-  line-height: 1.25rem;
-  letter-spacing: -0.01em;
-}
-
-.chat-conversation-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  margin-top: 0.125rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: hsl(215 16% 52% / 0.72);
-}
-
-.chat-conversation-state {
-  color: hsl(215 16% 52% / 0.74);
-  white-space: nowrap;
-}
-
-.chat-conversation-state--running {
-  color: hsl(38 82% 34%);
-}
-
-.chat-conversation-state--done {
-  color: hsl(142 66% 30%);
-}
-
-.chat-conversation-delete {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 0.625rem;
-  color: hsl(215 16% 47% / 0.45);
-  opacity: 0;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition:
-    opacity 0.18s ease,
-    background-color 0.18s ease,
-    color 0.18s ease;
-}
-
-.chat-conversation-item:hover .chat-conversation-delete,
-.chat-conversation-delete:focus-visible {
-  opacity: 1;
-}
-
-.chat-conversation-delete:hover {
-  color: hsl(0 72% 51%);
-  background: hsl(0 72% 51% / 0.08);
-}
-
-/* ==================== 版本 changelog 悬浮内容（v-html 渲染，需 :deep） ==================== */
-.changelog-content :deep(h1),
-.changelog-content :deep(h2),
-.changelog-content :deep(h3) {
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin: 0.5rem 0 0.25rem;
-}
-
-.changelog-content :deep(ul) {
-  list-style: disc;
-  padding-left: 1rem;
-  margin: 0.25rem 0;
-}
-
-.changelog-content :deep(li) {
-  margin: 0.125rem 0;
-}
-
-.changelog-content :deep(p) {
-  margin: 0.25rem 0;
-}
-
-.changelog-content :deep(a) {
-  color: hsl(var(--primary, 222 89% 55%));
-  text-decoration: underline;
-}
-
-.changelog-content :deep(code) {
-  font-size: 0.6875rem;
-  padding: 0 0.25rem;
-  border-radius: 0.25rem;
-  background: hsl(215 16% 47% / 0.12);
-}
-</style>
