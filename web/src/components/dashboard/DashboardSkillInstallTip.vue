@@ -14,8 +14,8 @@ const dismissed = useLocalStorage('friday:skill-tip-dismissed', false)
 // base-url 动态取当前实例地址，用户拷出来即可用
 const origin = window.location.origin
 
-const installCommand = 'npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent'
-const initCommand = computed(() => `npx -y @friday-ai/mcp init --base-url ${origin} --token <你的访问令牌>`)
+const installCommand = 'npx skills add friday-ai-codes/skills --skill friday-codebase-agent'
+const initCommand = computed(() => `npx -y @friday-ai-codes/mcp init --base-url ${origin} --token <你的访问令牌>`)
 
 const copiedKey = ref<string | null>(null)
 

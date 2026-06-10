@@ -23,9 +23,9 @@ describe('dashboardSkillInstallTip', () => {
   it('默认展示三步安装说明', () => {
     const wrapper = mountTip()
     expect(wrapper.find('[data-testid="skill-install-tip"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('npx skills add friday-ai-codes/friday-ai --skill friday-codebase-agent')
+    expect(wrapper.text()).toContain('npx skills add friday-ai-codes/skills --skill friday-codebase-agent')
     expect(wrapper.text()).toContain('访问令牌')
-    expect(wrapper.text()).toContain('npx -y @friday-ai/mcp init')
+    expect(wrapper.text()).toContain('npx -y @friday-ai-codes/mcp init')
   })
 
   it('init 命令的 base-url 动态使用当前实例地址', () => {
