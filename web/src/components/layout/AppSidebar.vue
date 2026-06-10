@@ -32,6 +32,33 @@ const { isSystemAdmin } = usePermission()
 const appVersion = __APP_VERSION__
 const displayMode = computed(() => route.path === '/chat' ? 'chat' : 'friday')
 
+// ==================== 版本号悬停展示当前版本 changelog ====================
+// 数据来源：GitHub Release（git-cliff 生成的 release notes），首次悬停时懒加载并缓存
+const changelogState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
+const changelogHtml = ref('')
+
+async function loadChangelog(open: boolean) {
+  if (!open || changelogState.value === 'loading' || changelogState.value === 'loaded')
+    return
+  changelogState.value = 'loading'
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/friday-ai-codes/friday-ai/releases/tags/v${appVersion}`,
+    )
+    if (!resp.ok)
+      throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    if (!data.body)
+      throw new Error('empty release notes')
+    const md = await getMarkdownRenderer()
+    changelogHtml.value = md.render(data.body)
+    changelogState.value = 'loaded'
+  }
+  catch {
+    changelogState.value = 'error'
+  }
+}
+
 // 收缩状态持久化到 localStorage
 const isCollapsed = useLocalStorage('sidebar-collapsed', false)
 
@@ -117,7 +144,28 @@ async function handleLogout() {
           >
           <div v-if="!isCollapsed" class="flex flex-col gap-0.5">
             <img src="/logo-wordmark.svg" alt="friday" class="h-4 w-auto">
-            <span class="text-[10px] text-muted-foreground leading-none">v{{ appVersion }}</span>
+            <Tooltip @update:open="loadChangelog">
+              <TooltipTrigger as-child>
+                <span class="text-[10px] text-muted-foreground leading-none cursor-default w-fit">v{{ appVersion }}</span>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                :side-offset="12"
+                class="max-w-xs max-h-80 overflow-y-auto bg-popover text-popover-foreground border border-border shadow-lg p-3 font-normal"
+              >
+                <div class="text-xs font-semibold mb-1.5">
+                  v{{ appVersion }} 更新日志
+                </div>
+                <div v-if="changelogState === 'loading' || changelogState === 'idle'" class="text-xs text-muted-foreground">
+                  加载中…
+                </div>
+                <div v-else-if="changelogState === 'error'" class="text-xs text-muted-foreground">
+                  暂无该版本的更新日志
+                </div>
+                <!-- eslint-disable-next-line vue/no-v-html — markdown-it 以 html:false 渲染，无 XSS 风险 -->
+                <div v-else class="changelog-content text-xs" v-html="changelogHtml" />
+              </TooltipContent>
+            </Tooltip>
           </div>
         </RouterLink>
 
@@ -560,5 +608,40 @@ async function handleLogout() {
 .chat-conversation-delete:hover {
   color: hsl(0 72% 51%);
   background: hsl(0 72% 51% / 0.08);
+}
+
+/* ==================== 版本 changelog 悬浮内容（v-html 渲染，需 :deep） ==================== */
+.changelog-content :deep(h1),
+.changelog-content :deep(h2),
+.changelog-content :deep(h3) {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.changelog-content :deep(ul) {
+  list-style: disc;
+  padding-left: 1rem;
+  margin: 0.25rem 0;
+}
+
+.changelog-content :deep(li) {
+  margin: 0.125rem 0;
+}
+
+.changelog-content :deep(p) {
+  margin: 0.25rem 0;
+}
+
+.changelog-content :deep(a) {
+  color: hsl(var(--primary, 222 89% 55%));
+  text-decoration: underline;
+}
+
+.changelog-content :deep(code) {
+  font-size: 0.6875rem;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  background: hsl(215 16% 47% / 0.12);
 }
 </style>
