@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from django.utils import timezone
@@ -112,3 +112,30 @@ def mock_qdrant_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     monkeypatch.setattr(QdrantService, "get_client", classmethod(lambda cls: client))
     return client
+
+
+@pytest.fixture
+def mock_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """dense + sparse 向量化的一行注入 seam（Phase 13 摄取测试用，非 autouse）。
+
+    - dense：``EmbeddingService.generate_embeddings_batch`` → 每条文本返回
+      ``[0.1] * 1024``（维度 1024 对齐 ``get_expected_dimension`` 默认值）；
+    - sparse：``SparseEncoderService.encode_batch`` → 每条文本返回非空
+      ``{"indices": [1], "values": [0.5]}``（hybrid 路径可被断言）。
+
+    与 ``mock_qdrant_client`` 同纪律：pytest 全局 ``--disable-socket``
+    是第二道保险，漏 mock 的真实调用直接被拦截。
+    """
+    from services.embedding import EmbeddingService
+    from services.sparse_encoder import SparseEncoderService
+
+    monkeypatch.setattr(
+        EmbeddingService,
+        "generate_embeddings_batch",
+        AsyncMock(side_effect=lambda texts, **kw: [[0.1] * 1024 for _ in texts]),
+    )
+    monkeypatch.setattr(
+        SparseEncoderService,
+        "encode_batch",
+        classmethod(lambda cls, texts: [{"indices": [1], "values": [0.5]} for _ in texts]),
+    )
