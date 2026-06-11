@@ -4,8 +4,8 @@ milestone: v0.3.0
 milestone_name: milestone
 status: executing
 stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T14:15:45.318Z"
-last_activity: 2026-06-11 -- Phase 13 execution started
+last_updated: "2026-06-11T14:52:59.718Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 5
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 
 ## Current Position
 
-Phase: 13 (统一摄取与版本化) — EXECUTING
-Plan: 4 of 4
+Phase: 14
+Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 13 execution started
+Last activity: 2026-06-11
 
 Progress: [□□□□□] 0/5 phases
 
