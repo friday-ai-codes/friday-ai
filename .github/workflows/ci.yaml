@@ -282,6 +282,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: runner/go.mod
+          cache-dependency-path: runner/go.sum
       - name: Go vet
         run: go vet ./...
       - name: Go test
