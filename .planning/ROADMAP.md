@@ -89,7 +89,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 14-01-PLAN.md — 基建：unidiff 依赖 + CodeChangeArchive/0003 migration + chunk 边 partial unique + EdgeSpec/apply_edge_specs 扩展 + chunk_in_edges + diff-aware chunker + 注册表三行
+- [x] 14-01-PLAN.md — 基建：unidiff 依赖 + CodeChangeArchive/0003 migration + chunk 边 partial unique + EdgeSpec/apply_edge_specs 扩展 + chunk_in_edges + diff-aware chunker + 注册表三行
 - [ ] 14-02-PLAN.md — git_platform get_branch_diff 抽象方法（OQ-1 定案：GitLab repository_compare / GitHub compare+patch，skip-PR 全量 diff 兜底）
 
 **Wave 2** *(blocked on Wave 1)*
@@ -144,7 +144,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
 | 13. 统一摄取与版本化 | 4/4 | Complete    | 2026-06-11 |
-| 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
+| 14. 全触发点接入与 diff 归档 | 1/6 | In Progress|  |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |
 
