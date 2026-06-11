@@ -340,7 +340,8 @@ async def revectorize_version(version: KnowledgeEntityVersion) -> None:
     needs_revector 路径 / 13-04 reconcile --fix / rebuild 全量重嵌入复用：
     从已存 ``version.content`` 重走 chunk → embed → build → upsert；
     point ids 复用已存 ``qdrant_point_ids``（为空或数量不符时按确定性
-    派生回写）。无 tombstone / 删点——本路径没有被替代的旧版本。
+    派生回写）。无版本级 tombstone / 删点——本路径没有被替代的旧版本；
+    但 chunk 数**收缩**时被覆写丢弃的旧多余点必须先下线（见函数体注释）。
     """
     entity = await KnowledgeEntity.objects.aget(id=version.entity_id)
     chunks = chunk_knowledge_text(entity.title, version.content)
@@ -356,7 +357,27 @@ async def revectorize_version(version: KnowledgeEntityVersion) -> None:
 
     point_ids = [str(pid) for pid in version.qdrant_point_ids]
     if len(point_ids) != len(chunks):
-        point_ids = derive_point_ids(version.id, len(chunks))
+        new_ids = derive_point_ids(version.id, len(chunks))
+        # WR-01 防线：chunk 数收缩时（如调大 MAX_CHUNK_CHARS 后 rebuild），
+        # index ≥ 新数量的旧点若被直接覆写丢弃，会以 is_latest=True 残留
+        # 且对 reconcile 六检查项全部免疫（version_id 在 PG 存在、所属版本
+        # 仍是 latest、检查项 1 只核对覆写后的新 ids）——覆写前必须先下线。
+        dropped = [pid for pid in point_ids if pid not in set(new_ids)]
+        if dropped:
+            # 失败语义与六步序一致：tombstone 失败响亮（error 日志）但不上抛，
+            # 物理删点纯优化（vector_ops 内已吞 + error 日志）。
+            try:
+                await tombstone_points(dropped)
+            except Exception as exc:
+                logger.error(
+                    "knowledge_revectorize_tombstone_failed",
+                    version_id=str(version.id),
+                    point_count=len(dropped),
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+            await delete_points(dropped)
+        point_ids = new_ids
         version.qdrant_point_ids = point_ids
         await version.asave(update_fields=["qdrant_point_ids"])
 
