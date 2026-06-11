@@ -450,9 +450,13 @@ async def invalidate_entity_version(entity_id: uuid.UUID, *, invalid_at: datetim
     """单事务级联失效原语（P2 防线）：失效实体最新版本 + 该实体全部活跃出入边。
 
     在一个 ``transaction.atomic()`` 内同时完成：
-    ① 该实体 ``is_latest=True`` 的版本行置 ``invalid_at``；
-    ② 该实体全部活跃出入边（source 或 target 命中且 ``invalid_at IS NULL``）
-       置 ``invalid_at``——失效后下游实体在多跳遍历中不可达。
+    ① 该实体 ``is_latest=True`` 且 ``invalid_at IS NULL`` 的版本行置 ``invalid_at``
+       ——已失效版本不再触碰，重复调用幂等，绝不覆盖原失效时间（防改写历史，
+       同 ``invalidate_edge``）；
+    ② 该实体全部活跃出入边（source 或 target 命中且 ``invalid_at IS NULL``
+       且 ``expired_at IS NULL``）置 ``invalid_at``——已被系统时间线作废
+       （expired）的边不再补业务失效时间戳，避免污染已作废记录；
+       失效后下游实体在多跳遍历中不可达。
 
     注意：``is_latest`` 翻转与重摄取触发在 Phase 13；本函数只交付
     级联失效的操作原语与事务语义。
@@ -462,11 +466,12 @@ async def invalidate_entity_version(entity_id: uuid.UUID, *, invalid_at: datetim
     def _invalidate_sync() -> tuple[int, int]:
         with transaction.atomic():
             version_count = KnowledgeEntityVersion.objects.filter(
-                entity_id=entity_id, is_latest=True
+                entity_id=entity_id, is_latest=True, invalid_at__isnull=True
             ).update(invalid_at=invalid_at)
             edge_count = KnowledgeEdge.objects.filter(
                 Q(source_entity_id=entity_id) | Q(target_entity_id=entity_id),
                 invalid_at__isnull=True,
+                expired_at__isnull=True,
             ).update(invalid_at=invalid_at)
         return version_count, edge_count
 
