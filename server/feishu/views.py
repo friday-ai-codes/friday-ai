@@ -760,6 +760,16 @@ class FeishuWebhookView(APIView):
         await self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
         logger.info("workitem_create_processed", work_item_id=work_item_id)
 
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "feishu_work_item",
+                f"{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+                "feishu_workitem_create",
+            )
+        )
+
     async def _handle_workitem_status(self, project, payload, trigger_log):
         """处理工作项状态变更事件。"""
         work_item_id = payload.get("id")
@@ -788,6 +798,16 @@ class FeishuWebhookView(APIView):
             work_item_id=str(work_item_id),
             event_type="WorkitemStatusEvent",
             payload=payload,
+        )
+
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "feishu_work_item",
+                f"{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+                "feishu_workitem_status",
+            )
         )
 
     async def _handle_workflow_node_status(self, project, payload, trigger_log):
@@ -857,6 +877,7 @@ class FeishuWebhookView(APIView):
     async def _handle_workitem_update(self, project, payload, trigger_log):
         """处理工作项字段修改事件。"""
         work_item_id = payload.get("id")
+        work_item_type = payload.get("work_item_type_key", "story")
         changed_fields = payload.get("changed_fields", []) or []
 
         if not work_item_id:
@@ -871,6 +892,16 @@ class FeishuWebhookView(APIView):
             work_item_id=str(work_item_id),
             event_type="WorkitemUpdateEvent",
             payload=payload,
+        )
+
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "feishu_work_item",
+                f"{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+                "feishu_workitem_update",
+            )
         )
 
     async def _check_and_resume_suspended_workflows(
