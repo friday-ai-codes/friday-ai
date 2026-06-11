@@ -1104,6 +1104,80 @@ class TestWorkflowTriggers:
         assert approval_exec.status == NodeExecutionStatus.COMPLETED
 
 
+def _make_feishu_trigger_log(project):
+    """TriggerLog 同步工厂（handler 入参；event_uuid 每次唯一）。"""
+    from feishu.models import TriggerLog, TriggerLogStatus
+
+    return TriggerLog.objects.create(
+        event_uuid=uuid.uuid4().hex,
+        event_type="WorkitemUpdateEvent",
+        project_key=project.feishu_project_key,
+        project=project,
+        status=TriggerLogStatus.ACCEPTED,
+    )
+
+
+class TestFeishuTriggers:
+    """14-05 Task 2：飞书三 handler 投递 + 缺 ID 早退 + 异常隔离（-k feishu 可选中）。"""
+
+    @staticmethod
+    def _handlers():
+        from feishu.views import FeishuWebhookView
+
+        view = FeishuWebhookView()
+        return {
+            "feishu_workitem_create": view._handle_workitem_create,
+            "feishu_workitem_status": view._handle_workitem_status,
+            "feishu_workitem_update": view._handle_workitem_update,
+        }
+
+    async def test_feishu_three_handlers_each_deliver_once(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """三事件各投递一次：(feishu_work_item, 三元组, feishu_workitem_<event>)。"""
+        project = await sync_to_async(_make_feishu_project)()
+        payload = {"id": 5001, "work_item_type_key": "story"}
+
+        for trigger, handler in self._handlers().items():
+            trigger_log = await sync_to_async(_make_feishu_trigger_log)(project)
+            await handler(project, payload, trigger_log)
+            assert _request_triple(captured_requests[-1]) == (
+                "feishu_work_item",
+                f"{project.feishu_project_key}:story:5001",
+                trigger,
+            )
+        assert len(captured_requests) == 3
+
+    async def test_feishu_missing_id_zero_delivery(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """payload 无 id → 三 handler 早退（既有 warning 分支），零投递。"""
+        project = await sync_to_async(_make_feishu_project)()
+
+        for _trigger, handler in self._handlers().items():
+            trigger_log = await sync_to_async(_make_feishu_trigger_log)(project)
+            await handler(project, {"work_item_type_key": "story"}, trigger_log)
+
+        assert captured_requests == []
+
+    async def test_feishu_handlers_survive_runner_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_in_background 抛 RuntimeError → 三 handler 宿主流程仍正常完成。"""
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+        project = await sync_to_async(_make_feishu_project)()
+        payload = {"id": 5001, "work_item_type_key": "story"}
+
+        for _trigger, handler in self._handlers().items():
+            trigger_log = await sync_to_async(_make_feishu_trigger_log)(project)
+            # 不 raise 即宿主流程未被拖垮（既有日志行为不变）
+            await handler(project, payload, trigger_log)
+
+
 class TestExceptionIsolation:
     """Pitfall 4：ingestion 投递链路抛错时宿主主流程仍成功返回。"""
 
