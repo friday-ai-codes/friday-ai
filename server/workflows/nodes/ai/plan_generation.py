@@ -398,6 +398,18 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         else:
             await self.emit_sub_step(context, "review", SubStepStatus.COMPLETED)
 
+            # INGEST-01（14-04）：方案产出成功 → 投递统一摄取（只投 ID，零取材；
+            # aschedule_ingestion 内部异常全吞，接线处不包 try/except）
+            from knowledge import ingestion  # lazy import 防循环
+
+            await ingestion.aschedule_ingestion(
+                ingestion.IngestionRequest(
+                    "workflow_plan",
+                    f"{context.execution_id}:{context.node_id}",
+                    "workflow_plan_generated",
+                )
+            )
+
         return result
 
     # ===== Private helpers =====
