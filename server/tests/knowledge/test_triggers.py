@@ -541,9 +541,7 @@ def _patch_feishu_clients(
 class TestFeishuWorkItemNormalizer:
     """14-05 Task 1：feishu_work_item normalize 取材用例组（-k feishu 可选中）。"""
 
-    async def test_feishu_full_snapshot_single_event(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_feishu_full_snapshot_single_event(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """全量快照取材：单事件，content 含名称/描述/自定义字段/PRD/技术方案/关联工作项各段。"""
         from knowledge.sources.feishu_work_item import normalize as normalize_feishu
 
@@ -605,9 +603,7 @@ class TestFeishuWorkItemNormalizer:
         from knowledge.models import KnowledgeEntity, KnowledgeEntityVersion
         from knowledge.sources.feishu_work_item import normalize as normalize_feishu
 
-        monkeypatch.setattr(
-            "knowledge.ingestion.ensure_delivery_knowledge_collection", AsyncMock()
-        )
+        monkeypatch.setattr("knowledge.ingestion.ensure_delivery_knowledge_collection", AsyncMock())
         from services.qdrant_service import QdrantService
 
         monkeypatch.setattr(
@@ -685,9 +681,7 @@ class TestFeishuWorkItemNormalizer:
         warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
         assert "knowledge_normalize_doc_fetch_failed" in warnings
 
-    async def test_feishu_event_time_always_aware(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_feishu_event_time_always_aware(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """event_time aware 双场景：毫秒时间戳 → 对应 UTC；字段缺失 → timezone.now() 兜底。"""
         from datetime import UTC, datetime
 
@@ -698,13 +692,9 @@ class TestFeishuWorkItemNormalizer:
 
         project = await sync_to_async(_make_feishu_project)()
         ms = 1750000000000  # 2025-06-15T15:06:40Z
-        info_with_ts = _make_work_item_info(
-            fields={KeyFields.PRD_URL: "", "updated_at": ms}
-        )
+        info_with_ts = _make_work_item_info(fields={KeyFields.PRD_URL: "", "updated_at": ms})
         client = FakeFeishuClient(work_item=info_with_ts)
-        _patch_feishu_clients(
-            monkeypatch, client=client, doc_client=FakeFeishuDocClient()
-        )
+        _patch_feishu_clients(monkeypatch, client=client, doc_client=FakeFeishuDocClient())
         source_id = f"{project.feishu_project_key}:story:5001"
 
         events = await normalize_feishu(
@@ -718,9 +708,7 @@ class TestFeishuWorkItemNormalizer:
         # 场景 2：时间字段缺失 → 接近 timezone.now() 且 aware
         info_no_ts = _make_work_item_info(fields={})
         client2 = FakeFeishuClient(work_item=info_no_ts)
-        _patch_feishu_clients(
-            monkeypatch, client=client2, doc_client=FakeFeishuDocClient()
-        )
+        _patch_feishu_clients(monkeypatch, client=client2, doc_client=FakeFeishuDocClient())
         before = dj_tz.now()
         events2 = await normalize_feishu(
             IngestionRequest("feishu_work_item", source_id, "feishu_workitem_update")
