@@ -15,12 +15,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# 强制所有 JavaScript action 跑在 Node.js 24 上（GitHub 2026-06-16 起默认）。
-# 一次性消除 paths-filter / setup-python / setup-go / setup-uv / upload-artifact 等
-# 仍声明 Node 20 的 action 的弃用警告，无需逐个等待各 action 发布 node24 大版本。
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -31,8 +25,8 @@ jobs:
       task: ${{ steps.filter.outputs.task }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -64,7 +58,7 @@ jobs:
     env:
       GITLEAKS_VERSION: 8.29.1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install gitleaks (prebuilt binary)
@@ -78,7 +72,7 @@ jobs:
   open-source-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Validate setup script syntax
         run: bash -n scripts/setup.sh
       - name: Generate example environment
@@ -89,7 +83,7 @@ jobs:
   commit-message:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       # 只校验本次 push / PR 的增量 commit，避免历史提交反复阻塞 CI
@@ -114,24 +108,24 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
           allow-prereleases: true
       # 缓存整个虚拟环境（按 uv.lock 哈希）：命中后 uv sync 仅做一致性校验，
       # 跳过重型依赖（mysqlclient/tree-sitter 等需编译）的重复安装。
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: server/.venv
           key: venv-server-${{ runner.os }}-py3.14-${{ hashFiles('server/uv.lock') }}
       - name: Install dependencies
         run: uv sync --locked --dev
       # mypy 增量缓存：跨 run 复用 .mypy_cache，缩短类型检查耗时
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: server/.mypy_cache
           key: mypy-server-${{ runner.os }}-${{ hashFiles('server/uv.lock') }}-${{ github.sha }}
@@ -171,7 +165,7 @@ jobs:
           tests/test_tool_bindings.py
           tests/test_remote_tool_execute.py
           --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: server-coverage
@@ -179,7 +173,7 @@ jobs:
           if-no-files-found: ignore
       # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           files: server/coverage.xml
@@ -194,9 +188,9 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -211,7 +205,7 @@ jobs:
         run: pnpm test:unit:coverage
       - name: Build
         run: pnpm build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: web-coverage
@@ -219,7 +213,7 @@ jobs:
           if-no-files-found: ignore
       # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           directory: web/coverage
@@ -239,9 +233,9 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -250,7 +244,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Playwright e2e smoke
         run: pnpm test:e2e:ci
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report
@@ -264,9 +258,9 @@ jobs:
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -284,8 +278,8 @@ jobs:
       run:
         working-directory: runner
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: runner/go.mod
       - name: Go vet
@@ -303,15 +297,15 @@ jobs:
       run:
         working-directory: task
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
           allow-prereleases: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: task/.venv
           key: venv-task-${{ runner.os }}-py3.14-${{ hashFiles('task/uv.lock') }}
@@ -321,7 +315,7 @@ jobs:
         run: uv run ruff check .
       - name: Pytest with coverage
         run: uv run pytest --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: task-coverage
@@ -329,7 +323,7 @@ jobs:
           if-no-files-found: ignore
       # 上传到 Codecov 供 README 覆盖率徽标使用（公开仓库免 token；失败不阻塞 CI）
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           files: task/coverage.xml
@@ -341,10 +335,10 @@ jobs:
     if: needs.changes.outputs.task == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
       - name: Build task image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: task
           load: true
@@ -362,7 +356,7 @@ jobs:
             exit 1
           fi
       - name: Trivy CVE scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: friday-task:test
           format: table
