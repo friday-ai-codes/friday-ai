@@ -604,6 +604,182 @@ class TestMcpTriggers:
         ]
 
 
+class TestWorkflowTriggers:
+    """14-04 Task 2：workflow 双触发点投递 + 节点类型过滤 + 异常隔离（-k workflow 可选中）。"""
+
+    @staticmethod
+    def _patch_super_execute(monkeypatch: pytest.MonkeyPatch, result) -> None:
+        """mock AIAgentBaseNode.execute（绕过真实 Agent loop，宿主子步骤逻辑保留）。"""
+        from workflows.nodes.ai.base_agent import AIAgentBaseNode
+
+        async def _fake_execute(self, context):
+            return result
+
+        monkeypatch.setattr(AIAgentBaseNode, "execute", _fake_execute)
+
+    @staticmethod
+    def _make_engine(monkeypatch: pytest.MonkeyPatch):
+        """WorkflowEngine 实例：hooks 与 _continue_after_node 置为 AsyncMock（最小宿主）。"""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from workflows.engine.scheduler import WorkflowEngine
+
+        engine = WorkflowEngine()
+        monkeypatch.setattr(engine, "hooks", SimpleNamespace(trigger=AsyncMock()))
+        monkeypatch.setattr(engine, "_continue_after_node", AsyncMock())
+        return engine
+
+    async def test_workflow_plan_generation_delivers_on_success(
+        self,
+        captured_requests: list[IngestionRequest],
+        make_minimal_context,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """生成节点 execute 成功 → 恰 1 条 workflow_plan_generated 投递。"""
+        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.base import NodeResult
+
+        self._patch_super_execute(
+            monkeypatch,
+            NodeResult(status="completed", output={"plan": {"title": "工作流方案"}}),
+        )
+        node = AIPlanGenerationNode()
+        ctx = make_minimal_context(
+            node_config={"user_prompt": "需求"},
+            execution_id="exec-wf-1",
+            node_id="node-wf-1",
+        )
+
+        result = await node.execute(ctx)
+
+        assert result.status == "completed"
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("workflow_plan", "exec-wf-1:node-wf-1", "workflow_plan_generated")
+        ]
+
+    async def test_workflow_plan_generation_zero_delivery_on_failure(
+        self,
+        captured_requests: list[IngestionRequest],
+        make_minimal_context,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """result.status == "failed" 分支零投递。"""
+        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.base import NodeResult
+
+        self._patch_super_execute(
+            monkeypatch,
+            NodeResult(status="failed", error="agent boom", next_handle="error"),
+        )
+        node = AIPlanGenerationNode()
+        ctx = make_minimal_context(node_config={"user_prompt": "需求"})
+
+        result = await node.execute(ctx)
+
+        assert result.status == "failed"
+        assert captured_requests == []
+
+    async def test_workflow_plan_approval_delivers_generation_node_key(
+        self,
+        captured_requests: list[IngestionRequest],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """approve_node 审批 ai_plan_approval → source_id 为生成节点 key（OQ-2 定案）。"""
+        from types import SimpleNamespace
+
+        from workflows.models.execution import NodeExecutionStatus
+
+        _p, execution, gen_node, _gen_exec, approval_exec = await sync_to_async(
+            lambda: _make_workflow_plan_execution(
+                with_approval=True,
+                approval_status=NodeExecutionStatus.WAITING_APPROVAL,
+            )
+        )()
+        engine = self._make_engine(monkeypatch)
+        approver = SimpleNamespace(id=1, username="审批人甲")
+
+        await engine.approve_node(approval_exec, approver)
+
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("workflow_plan", f"{execution.id}:{gen_node.id}", "workflow_plan_approved")
+        ]
+
+    async def test_workflow_plan_approve_non_approval_node_zero_delivery(
+        self,
+        captured_requests: list[IngestionRequest],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """approve_node 审批非 ai_plan_approval 节点（如人工确认）→ 零投递。"""
+        from types import SimpleNamespace
+
+        from workflows.models.execution import NodeExecutionStatus
+
+        _p, _e, _gen_node, _gen_exec, approval_exec = await sync_to_async(
+            lambda: _make_workflow_plan_execution(
+                with_approval=True,
+                approval_status=NodeExecutionStatus.WAITING_APPROVAL,
+                approval_node_type="manual_confirm",
+            )
+        )()
+        engine = self._make_engine(monkeypatch)
+        approver = SimpleNamespace(id=1, username="审批人甲")
+
+        await engine.approve_node(approval_exec, approver)
+
+        assert captured_requests == []
+
+    async def test_workflow_plan_generation_survives_runner_failure(
+        self,
+        make_minimal_context,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """run_in_background 抛 RuntimeError → 生成节点 execute 仍成功返回。"""
+        from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+        from workflows.nodes.base import NodeResult
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+        self._patch_super_execute(
+            monkeypatch,
+            NodeResult(status="completed", output={"plan": {"title": "隔离方案"}}),
+        )
+        node = AIPlanGenerationNode()
+
+        result = await node.execute(make_minimal_context(node_config={"user_prompt": "需求"}))
+
+        assert result.status == "completed"
+
+    async def test_workflow_plan_approval_survives_runner_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """run_in_background 抛 RuntimeError → approve_node 宿主流程仍成功完成节点。"""
+        from types import SimpleNamespace
+
+        from workflows.models.execution import NodeExecutionStatus
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+        _p, _e, _gen_node, _gen_exec, approval_exec = await sync_to_async(
+            lambda: _make_workflow_plan_execution(
+                with_approval=True,
+                approval_status=NodeExecutionStatus.WAITING_APPROVAL,
+            )
+        )()
+        engine = self._make_engine(monkeypatch)
+        approver = SimpleNamespace(id=1, username="审批人甲")
+
+        await engine.approve_node(approval_exec, approver)
+
+        await approval_exec.arefresh_from_db()
+        assert approval_exec.status == NodeExecutionStatus.COMPLETED
+
+
 class TestExceptionIsolation:
     """Pitfall 4：ingestion 投递链路抛错时宿主主流程仍成功返回。"""
 
