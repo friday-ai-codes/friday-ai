@@ -877,7 +877,9 @@ class FeishuWebhookView(APIView):
     async def _handle_workitem_update(self, project, payload, trigger_log):
         """处理工作项字段修改事件。"""
         work_item_id = payload.get("id")
-        work_item_type = payload.get("work_item_type_key", "story")
+        # 不默认 "story"：三元组是实体 natural key，占位类型会把同一工作项
+        # 分裂成两个实体（WR-04）——缺失时跳过摄取投递，仅 warning。
+        work_item_type = payload.get("work_item_type_key", "")
         changed_fields = payload.get("changed_fields", []) or []
 
         if not work_item_id:
@@ -893,6 +895,13 @@ class FeishuWebhookView(APIView):
             event_type="WorkitemUpdateEvent",
             payload=payload,
         )
+
+        if not work_item_type:
+            # 与 workflow_plan "三字段齐备才建锚" 同款防线：缺类型不构造身份 key
+            logger.warning(
+                "workitem_update_missing_type_key_skip_ingestion", work_item_id=work_item_id
+            )
+            return
 
         from knowledge import ingestion  # lazy import 防循环
 
