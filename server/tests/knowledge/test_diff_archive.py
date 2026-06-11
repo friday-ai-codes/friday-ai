@@ -36,6 +36,7 @@ from knowledge.diff_archive import (
     MAX_CONTENT_BYTES,
     MAX_DIFF_CHUNKS,
     FileDiff,
+    archive_code_change,
     build_code_change_content,
     compress_diff,
     decompress_diff,
@@ -43,7 +44,7 @@ from knowledge.diff_archive import (
     parse_diff_files,
 )
 from knowledge.models import CodeChangeArchive, EdgeRelation, KnowledgeEdge
-from services.git_platform.models import MRDiffFile
+from services.git_platform.models import MRDiffFile, MRDiffResult
 
 # acreate（sync_to_async 跨线程）需要真实事务隔离
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -453,3 +454,168 @@ class TestLargeDiff:
         diff_chunks = [c for c in chunks if c.chunk_kind == "diff"]
         assert 0 < len(diff_chunks) <= MAX_DIFF_CHUNKS
         assert len(chunks) <= MAX_DIFF_CHUNKS + 10  # summary/section 余量
+
+
+# ---------------------------------------------------------------------------
+# 14-03 Task 3：DiffArchiver service 端到端（archive_code_change 九步编排）
+# ---------------------------------------------------------------------------
+
+
+def _make_repo_with_credential(name: str, *, with_credential: bool = True):
+    """Repository（+ 可选 GitCredential）sync 工厂；token 走明文 fallback。"""
+    from repositories.models import GitCredential, Repository
+
+    repo = Repository.objects.create(
+        name=name,
+        git_url=f"https://gitlab.com/test/{name}.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+    if with_credential:
+        GitCredential.objects.create(repository=repo, encrypted_token="plain-test-token")
+    return repo
+
+
+_SERVICE_MR_FILES = [
+    MRDiffFile(
+        old_path="src/auth.py",
+        new_path="src/auth.py",
+        diff="@@ -1,3 +1,5 @@\n def login(user):\n+    audit(user)\n+    log(user)\n     return token(user)\n",
+    ),
+    MRDiffFile(
+        old_path="src/views.py",
+        new_path="src/views.py",
+        diff="@@ -10,2 +10,3 @@\n class LoginView:\n+    permission_classes = [IsAuthenticated]\n     pass\n",
+    ),
+]
+
+
+def _archive_kwargs(repo, **kw) -> dict:
+    """archive_code_change 调用参数工厂（MR 路径默认形态）。"""
+    defaults: dict = {
+        "source_kind": "task_result",
+        "source_id": "sub-service-001",
+        "repository": repo,
+        "branch_name": "feat/login-audit",
+        "base_branch": "main",
+        "commit_sha": "c" * 40,
+        "mr_url": "https://gitlab.com/test/svc/-/merge_requests/9",
+        "mr_id": "9",
+        "event_time": timezone.now(),
+    }
+    defaults.update(kw)
+    return defaults
+
+
+class TestDiffArchiverService:
+    """archive_code_change 五用例（MR/skip-PR/幂等/凭证缺失/放大参数+truncated）。"""
+
+    async def test_mr_path_end_to_end(self, fake_git_platform) -> None:
+        """MR 路径：归档行字段/压缩往返/files JSON/统计正确，返回归一化 content。"""
+        repo = await sync_to_async(_make_repo_with_credential)("svc-mr")
+        fake_git_platform.mr_result = MRDiffResult(success=True, files=_SERVICE_MR_FILES)
+
+        result = await archive_code_change(**_archive_kwargs(repo))
+
+        assert result is not None
+        archive = result.archive
+        assert archive.source_kind == "task_result"
+        assert archive.source_id == "sub-service-001"
+        assert archive.commit_sha == "c" * 40
+        assert archive.mr_url == "https://gitlab.com/test/svc/-/merge_requests/9"
+        assert archive.mr_id == "9"
+        assert archive.branch_name == "feat/login-audit"
+        assert archive.base_branch == "main"
+        assert archive.repository_id == repo.pk
+        assert archive.truncated is False
+        assert archive.file_count == 2
+        assert archive.total_additions == 3
+        assert archive.total_deletions == 0
+
+        # 压缩往返 + sha256/size 自洽
+        raw = decompress_diff(archive.diff_compressed)
+        assert hashlib.sha256(raw.encode("utf-8")).hexdigest() == archive.diff_sha256
+        assert archive.diff_size == len(raw.encode("utf-8"))
+        assert archive.compressed_size == len(bytes(archive.diff_compressed))
+        assert "diff --git a/src/auth.py b/src/auth.py" in raw
+        assert "diff --git a/src/views.py b/src/views.py" in raw
+
+        # files JSON（FileDiff asdict 列表）
+        assert [f["path"] for f in archive.files] == ["src/auth.py", "src/views.py"]
+        assert all(f["parse_failed"] is False for f in archive.files)
+
+        # 归一化 content（题头 + 摘要 + diff 段）与 EdgeSpec 列表
+        assert "## 变更摘要" in result.content
+        assert "## diff" in result.content
+        assert "+    audit(user)" in result.content
+        assert isinstance(result.edge_specs, list)
+
+        # MR 路径只走 get_merge_request_diff
+        assert len(fake_git_platform.mr_diff_calls) == 1
+        assert fake_git_platform.mr_diff_calls[0]["mr_id"] == "9"
+        assert fake_git_platform.branch_diff_calls == []
+
+    async def test_skip_pr_path_uses_branch_diff(self, fake_git_platform) -> None:
+        """skip-PR 路径：mr_id 空 → get_branch_diff(source, target) 被调，mr_url 归档为空。"""
+        repo = await sync_to_async(_make_repo_with_credential)("svc-skip")
+        fake_git_platform.branch_result = MRDiffResult(
+            success=True, files=[_SERVICE_MR_FILES[0]]
+        )
+
+        result = await archive_code_change(**_archive_kwargs(repo, mr_url="", mr_id=""))
+
+        assert result is not None
+        assert result.archive.mr_url == ""
+        assert result.archive.mr_id == ""
+        assert fake_git_platform.mr_diff_calls == []
+        assert len(fake_git_platform.branch_diff_calls) == 1
+        call = fake_git_platform.branch_diff_calls[0]
+        assert call["source_branch"] == "feat/login-audit"
+        assert call["target_branch"] == "main"
+
+    async def test_idempotent_short_circuit(self, fake_git_platform) -> None:
+        """同 (source_kind, source_id, commit_sha) 二次调用 → aexists 短路不再拉 diff。"""
+        repo = await sync_to_async(_make_repo_with_credential)("svc-idem")
+        fake_git_platform.mr_result = MRDiffResult(success=True, files=_SERVICE_MR_FILES)
+
+        first = await archive_code_change(**_archive_kwargs(repo))
+        assert first is not None
+        calls_after_first = len(fake_git_platform.mr_diff_calls)
+
+        second = await archive_code_change(**_archive_kwargs(repo))
+
+        assert second is None
+        assert len(fake_git_platform.mr_diff_calls) == calls_after_first  # 短路在拉 diff 之前
+        assert await CodeChangeArchive.objects.acount() == 1
+
+    async def test_no_credential_degrades(self, fake_git_platform) -> None:
+        """GitCredential 缺失 → warning + None，无归档行、无异常逃逸（后台路径降级）。"""
+        from structlog.testing import capture_logs
+
+        repo = await sync_to_async(_make_repo_with_credential)(
+            "svc-nocred", with_credential=False
+        )
+
+        with capture_logs() as cap:
+            result = await archive_code_change(**_archive_kwargs(repo))
+
+        assert result is None
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_diff_archive_no_credential" in warnings
+        assert await CodeChangeArchive.objects.acount() == 0
+        assert fake_git_platform.mr_diff_calls == []
+
+    async def test_amplified_params_and_truncated_flag(self, fake_git_platform) -> None:
+        """放大参数（Pitfall 2 防"全量变截断"）+ 平台 truncated 落库。"""
+        repo = await sync_to_async(_make_repo_with_credential)("svc-trunc")
+        fake_git_platform.mr_result = MRDiffResult(
+            success=True, files=[_SERVICE_MR_FILES[0]], truncated=True
+        )
+
+        result = await archive_code_change(**_archive_kwargs(repo))
+
+        assert result is not None
+        call = fake_git_platform.mr_diff_calls[0]
+        assert call["max_files"] >= 1000
+        assert call["max_diff_lines"] >= 100_000
+        assert result.archive.truncated is True
