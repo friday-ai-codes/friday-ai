@@ -125,7 +125,7 @@ If you write code in Cursor / Claude Code / Codex, Friday can also serve as thei
 
 Three steps to connect:
 
-1. Install the Skills (auto-detects Claude Code, Cursor, Codex, and more; ships 12 atomic skills covering requirement routing through MR creation):
+1. Install the Skills (auto-detects Claude Code, Cursor, Codex, and more; ships 5 skills covering requirement routing through MR creation):
 
    ```bash
    npx @friday-ai-codes/skills

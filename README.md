@@ -125,7 +125,7 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 
 三步接入：
 
-1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 12 个原子 skill）：
+1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 5 个 skill）：
 
    ```bash
    npx @friday-ai-codes/skills

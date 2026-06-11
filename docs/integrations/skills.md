@@ -10,24 +10,17 @@ Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skill
 
 ## 内置 Skill
 
-12 个原子 skill，每个对应 workflow 的一个阶段，agent 会根据任务自动触发对应的 skill：
+5 个按用户意图划分的 skill（全中文编写），agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
 
 | Skill | 用途 |
 | --- | --- |
-| `using-friday` | 元 skill：skill 路由表与轨迹纪律（Claude Code 插件 hook 自动注入） |
+| `using-friday` | 元 skill：skill 路由表与轨迹纪律（Claude Code 插件 hook / Cursor rule 自动注入） |
 | `friday-setup` | 安装 / 配置 / 修复 Friday 接入：`doctor` → `init` → `register` → 验证 |
-| `friday-discover` | 把需求路由到正确的已索引仓库，检查索引健康度 |
-| `friday-analyze` | Graph RAG 证据收集、架构 / 风险 / 测试分析，产出 `analysis_id` |
-| `friday-plan` | 创建或修订编码计划（`plan_id` / `version_id`） |
-| `friday-execute` | 执行计划、轮询状态、总结分支、创建 MR |
-| `friday-auto` | 编码需求 → MR 端到端（full_auto） |
-| `friday-feishu-context` | 读取飞书工作项与关联文档（`context_id`） |
-| `friday-feishu-plan` | 技术方案生成与飞书回写（`technical_plan_id`、仓库任务矩阵） |
-| `friday-feishu-execute` | 多仓任务执行 + PR/MR + 结果回写 |
-| `friday-feishu-auto` | 飞书工作项端到端（context → plan → execute → learn） |
+| `friday-code` | 远端已索引仓库的全部操作：找仓库 → 分析 → 计划 → 执行/MR，可分阶段也可一条龙 |
+| `friday-feishu` | 飞书工作项闭环：读上下文 → 技术方案 → 多仓执行 → 结果回写，可分阶段也可一条龙 |
 | `friday-learn` | 记录 / 检索 LearningCase 记忆 |
 
-仓库编码链路（discover → analyze → plan → execute）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
+仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
 
 ## 前置条件
 
@@ -65,7 +58,7 @@ npx @friday-ai-codes/skills list
 npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 # 只装一个 skill 到指定 agent
-npx skills add friday-ai-codes/skills --skill friday-plan -a claude-code
+npx skills add friday-ai-codes/skills --skill friday-code -a claude-code
 
 # 先看列表不安装
 npx skills add friday-ai-codes/skills --list
@@ -86,8 +79,10 @@ agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 
 <FlowPipeline :steps="['friday-setup 配置接入', 'using-friday 路由任务', '驱动对应阶段 skill']" />
 
 1. 让 agent「配置 Friday」—— `friday-setup` skill 会引导完成 `npx -y @friday-ai-codes/mcp init`（写入 `~/.friday/config.json`）与 MCP server 注册，也可以手动设置 `FRIDAY_BASE_URL` 与 `FRIDAY_ACCESS_TOKEN`（见 [`@friday-ai-codes/mcp init`](/integrations/mcp#初始化配置)）；
-2. 之后直接把任务交给 agent：`using-friday` 元 skill 会按任务类型路由到对应阶段的 skill；
-3. 仓库编码走 `friday-discover` → `friday-analyze` → `friday-plan` → `friday-execute`（或 `friday-auto` 端到端），飞书工作项走 `friday-feishu-*` 系列。
+2. 之后直接把任务交给 agent：`using-friday` 元 skill 会按任务类型路由到对应的 skill；
+3. 仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`。
+
+项目级安装且目标包含 Cursor 时，安装器会额外写入 `.cursor/rules/using-friday.mdc`（`alwaysApply`），确保每次 Cursor 会话都被引导到 `using-friday`——与 Claude Code 的 SessionStart hook 等效。
 
 也可以装完 skill 后直接在 IDE 里说「配置 Friday」，agent 会按 skill 指引向你索要地址和令牌并自动完成配置与 MCP 注册。
 
