@@ -12,7 +12,7 @@
 ## Phases
 
 - [x] **Phase 12: 知识模型与图存储地基** - `knowledge` app 实体/版本/bi-temporal 边模型 + GraphStore 接口 + `delivery_knowledge` collection 生命周期 (completed 2026-06-11)
-- [ ] **Phase 13: 统一摄取与版本化** - 幂等异步摄取管线 + 版本翻转/向量下线，接通 chat 与 MCP 首批触发点
+- [x] **Phase 13: 统一摄取与版本化** - 幂等异步摄取管线 + 版本翻转/向量下线，接通 chat 与 MCP 首批触发点 (completed 2026-06-11)
 - [ ] **Phase 14: 全触发点接入与 diff 归档** - workflow/编码回调/飞书三类触发点 + 全量 diff 归档与代码图谱对齐
 - [ ] **Phase 15: 时间感知混合检索** - 向量召回 + 图扩散 + 时间衰减融合，相似需求召回与迭代轨迹查询
 - [ ] **Phase 16: 多入口暴露与前端时间线** - MCP 工具 / chat tools / workflow 节点 / npm skill 四入口 + 前端只读详情页与 as-of 查询
@@ -56,7 +56,7 @@ Plans:
   4. 摄取一律 `transaction.on_commit` + background runner 异步执行，不阻塞请求/工作流主链路；同一事件重复投递不产生重复实体或重复版本（幂等键约束 + reconcile 对账命令可验证）
   5. 知识文本经确定性 chunk + 既有 EmbeddingService 向量化写入 `delivery_knowledge`（hybrid dense+sparse），payload 完整携带 entity_kind/entity_id/version/is_latest/project_id/event_time
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 Plans:
 **Wave 1**
 
@@ -69,7 +69,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 13-03-PLAN.md — source normalizers（coding_plan/mcp_plan）+ 5 锚点触发接线（chat ×3 + MCP ×2，只接线）
-- [ ] 13-04-PLAN.md — reconcile 对账命令（五检查项 dry-run/--fix）+ rebuild 全量重嵌入扩展
+- [x] 13-04-PLAN.md — reconcile 对账命令（五检查项 dry-run/--fix）+ rebuild 全量重嵌入扩展
 
 ### Phase 14: 全触发点接入与 diff 归档
 
@@ -124,7 +124,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
-| 13. 统一摄取与版本化 | 3/4 | In Progress|  |
+| 13. 统一摄取与版本化 | 4/4 | Complete   | 2026-06-11 |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |

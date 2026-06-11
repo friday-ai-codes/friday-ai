@@ -20,8 +20,8 @@
 - [x] **INGEST-03**: chat 对话产出 CodingPlan 或触发编码时，自动摄取提炼后的需求文本与方案（对话原文不入图）
 - [ ] **INGEST-04**: 飞书工作项在关键事件（产出方案/触发编码/工作项更新）时摄取快照：名称、描述、自定义字段、PRD 文档与技术方案文档正文、关联工作项，均带事件时间
 - [x] **INGEST-05**: MCP 工具链（`create_feishu_technical_plan` / `execute_work_item_repo_tasks` 等）产出方案或执行编码时自动摄取
-- [ ] **INGEST-06**: 技术方案/需求被修改（多轮对话修改、审批驳回重生成、飞书文档更新）时重摄取为新版本：新版本向量入库、旧版本向量下线（`is_latest` 翻转兜底 + 物理删除），旧边写 `expired_at`
-- [ ] **INGEST-07**: 摄取一律异步后台执行（`transaction.on_commit` + background runner），不阻塞请求/工作流主链路；幂等（重复事件不产生重复实体/版本）
+- [x] **INGEST-06**: 技术方案/需求被修改（多轮对话修改、审批驳回重生成、飞书文档更新）时重摄取为新版本：新版本向量入库、旧版本向量下线（`is_latest` 翻转兜底 + 物理删除），旧边写 `expired_at`
+- [x] **INGEST-07**: 摄取一律异步后台执行（`transaction.on_commit` + background runner），不阻塞请求/工作流主链路；幂等（重复事件不产生重复实体/版本）
 - [ ] **INGEST-08**: 知识文本（需求/方案/PRD/diff）确定性 chunk 后经既有 EmbeddingService 向量化，写入独立 `delivery_knowledge` collection（hybrid dense+sparse，payload 含 entity_kind/entity_id/version/is_latest/project_id/event_time）
 
 ### 知识检索（RETR）
@@ -83,8 +83,8 @@
 | INGEST-03 | Phase 13 | Complete |
 | INGEST-04 | Phase 14 | Pending |
 | INGEST-05 | Phase 13 | Complete |
-| INGEST-06 | Phase 13 | Pending |
-| INGEST-07 | Phase 13 | Pending |
+| INGEST-06 | Phase 13 | Complete |
+| INGEST-07 | Phase 13 | Complete |
 | INGEST-08 | Phase 13 | Pending |
 | RETR-01 | Phase 15 | Pending |
 | RETR-02 | Phase 15 | Pending |
