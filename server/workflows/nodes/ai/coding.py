@@ -526,6 +526,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         from subagent.models import SubAgentSession, TaskResult
 
         succeeded: list[dict[str, Any]] = []
+        completed_session_ids: list[str] = []
 
         for session_info in pending_sessions:
             session_id = session_info["session_id"]
@@ -546,6 +547,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                     continue
 
                 if session.status == SubAgentSession.Status.COMPLETED:
+                    completed_session_ids.append(session_id)
                     # 获取 TaskResult
                     task_result = await TaskResult.objects.filter(
                         session=session,
@@ -618,6 +620,41 @@ class AICodingNode(SubStepMixin, BaseNode):
                         changes_summary=result.get("output", {}),
                     )
                     mr_results.append({**result, **mr_result})
+
+        # INGEST-02（14-06）：MR 创建之后的完成锚点（时序防线：归档不挂容器回调）。
+        # 修订定案——先持久化后投递：mr_results 序列化写进 node_execution.output_data，
+        # task_result normalizer 后台经 session.node_execution 重读（workflow 路径
+        # mr_url 权威源）；持久化失败 warning 降级（normalizer 侧 mr_url 降级空串），
+        # 不阻塞投递与节点完成。
+        if completed_session_ids:
+            serialized_mr_results = [
+                {
+                    "repository_id": str(r.get("repository_id", "")),
+                    "mr_url": r.get("mr_url", ""),
+                    "mr_id": str(r.get("mr_id", "") or ""),
+                    "success": not r.get("error"),
+                }
+                for r in mr_results
+            ]
+            try:
+                node_execution = context.node_execution
+                if node_execution is not None:
+                    # 合并不覆盖既有键（_resume_from_callback 等回调写入的状态保留）
+                    merged = dict(node_execution.output_data or {})
+                    merged["mr_results"] = serialized_mr_results
+                    node_execution.output_data = merged
+                    await node_execution.asave(update_fields=["output_data"])
+            except Exception as exc:
+                log.warning("mr_results_persist_failed", error=str(exc))
+
+            from knowledge import ingestion  # lazy import 防循环
+
+            for completed_session_id in completed_session_ids:
+                await ingestion.aschedule_ingestion(
+                    ingestion.IngestionRequest(
+                        "task_result", completed_session_id, "workflow_coding_completed"
+                    )
+                )
 
         from workflows.models.execution import SubStepStatus
 
