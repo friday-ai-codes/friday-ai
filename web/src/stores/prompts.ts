@@ -34,7 +34,14 @@ export const usePromptsStore = defineStore('prompts', () => {
   const spaceList = ref<PromptListItem[]>([])
   const currentPrompt = ref<PromptDetail | null>(null)
   const versions = ref<PromptVersion[]>([])
+  /** 列表加载状态（loadSystemList / loadSpaceList），供列表页骨架屏 */
   const loading = ref(false)
+  /**
+   * 详情/版本加载状态（loadDetail / loadVersions）。
+   * 与列表 loading 分离：点击行打开编辑抽屉时拉取详情，
+   * 不应让背后的 DataTable 闪一次骨架屏（页面抖动）。
+   */
+  const detailLoading = ref(false)
   const saving = ref(false)
   const previewing = ref(false)
   const error = ref<string | null>(null)
@@ -111,7 +118,7 @@ export const usePromptsStore = defineStore('prompts', () => {
   }
 
   async function loadDetail(id: string): Promise<void> {
-    loading.value = true
+    detailLoading.value = true
     error.value = null
     try {
       currentPrompt.value = await promptsApi.get(id)
@@ -121,12 +128,12 @@ export const usePromptsStore = defineStore('prompts', () => {
       throw e
     }
     finally {
-      loading.value = false
+      detailLoading.value = false
     }
   }
 
   async function loadVersions(id: string): Promise<void> {
-    loading.value = true
+    detailLoading.value = true
     error.value = null
     try {
       versions.value = await promptsApi.listVersions(id)
@@ -136,7 +143,7 @@ export const usePromptsStore = defineStore('prompts', () => {
       throw e
     }
     finally {
-      loading.value = false
+      detailLoading.value = false
     }
   }
 
@@ -244,6 +251,7 @@ export const usePromptsStore = defineStore('prompts', () => {
     currentPrompt,
     versions,
     loading,
+    detailLoading,
     saving,
     previewing,
     error,

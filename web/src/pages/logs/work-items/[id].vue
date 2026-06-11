@@ -1,174 +1,23 @@
 <script setup lang="ts">
-import type { TriggerLogDetail } from '~/api/logs'
-import { useHead } from '@vueuse/head'
-import { getTriggerLog } from '~/api/logs'
-import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
-import { Separator } from '~/components/ui/separator'
-
-import { useErrorHandler } from '~/composables/useErrorHandler'
-
-const route = useRoute('/logs/work-items/[id]')
-const router = useRouter()
-const { handleError } = useErrorHandler()
-const { success } = useToast()
-
-const logId = computed(() => route.params.id)
-
-useHead({
-  title: computed(() => `工作项日志 - Friday AI`),
+/**
+ * 工作项日志详情页（已降级为 redirect-only）
+ *
+ * 日志详情已统一为日志列表页内的 TriggerLogDetailModal 弹窗（见
+ * `components/logs/TriggerLogDetailModal.vue` + `pages/logs/index.vue`）。
+ * 本文件仅保留 unplugin-vue-router 的 redirect 声明，把旧书签 URL
+ * `/logs/work-items/[id]` 重定向到 `/logs?detail=[id]`，确保旧链接不 404。
+ */
+definePage({
+  redirect: (to) => {
+    const id = (to.params as { id: string }).id
+    return {
+      path: '/logs',
+      query: { detail: id },
+    }
+  },
 })
-
-// 加载数据
-const loading = ref(true)
-const log = ref<TriggerLogDetail | null>(null)
-
-onMounted(async () => {
-  try {
-    log.value = await getTriggerLog(logId.value)
-  }
-  catch (e: unknown) {
-    handleError(e, '加载日志详情')
-  }
-  finally {
-    loading.value = false
-  }
-})
-
-// 格式化日期
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-// 复制 JSON 到剪贴板
-async function copyJson() {
-  if (!log.value)
-    return
-  try {
-    await navigator.clipboard.writeText(JSON.stringify(log.value.work_item_raw_response_parsed, null, 2))
-    success('复制成功', 'JSON 已复制到剪贴板')
-  }
-  catch (e: unknown) {
-    handleError(e, '复制')
-  }
-}
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- 返回按钮 -->
-    <RouterLink to="/logs" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
-      <span class="icon-[lucide--arrow-left] mr-1" />
-      返回日志列表
-    </RouterLink>
-
-    <!-- 加载状态 -->
-    <LoadingState v-if="loading" variant="skeleton" :count="4" />
-
-    <!-- 日志详情 -->
-    <template v-else-if="log">
-      <!-- 头部 -->
-      <div class="flex items-start justify-between">
-        <div class="space-y-2">
-          <h1 class="text-2xl font-bold">
-            工作项日志
-          </h1>
-          <div class="flex items-center gap-3">
-            <Badge variant="outline">
-              {{ log.event_type }}
-            </Badge>
-            <span v-if="log.work_item_id" class="text-muted-foreground font-mono">
-              #{{ log.work_item_id }}
-            </span>
-          </div>
-        </div>
-        <Button variant="outline" @click="copyJson">
-          <span class="icon-[lucide--copy] mr-2" />
-          复制 JSON
-        </Button>
-      </div>
-
-      <!-- 基本信息卡片 -->
-      <div class="card">
-        <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
-          <h3 class="text-sm font-semibold">
-            基本信息
-          </h3>
-        </div>
-        <div class="p-5 space-y-4">
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-sm text-muted-foreground">日志 ID</label>
-              <p class="font-mono text-sm">
-                {{ log.id }}
-              </p>
-            </div>
-            <div>
-              <label class="text-sm text-muted-foreground">创建时间</label>
-              <p class="text-sm">
-                {{ formatDate(log.created_at) }}
-              </p>
-            </div>
-          </div>
-          <Separator />
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-sm text-muted-foreground">工作项 ID</label>
-              <p class="font-mono text-sm">
-                {{ log.work_item_id }}
-              </p>
-            </div>
-            <div>
-              <label class="text-sm text-muted-foreground">事件类型</label>
-              <p class="font-mono text-sm">
-                {{ log.event_type }}
-              </p>
-            </div>
-          </div>
-          <Separator />
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-sm text-muted-foreground">空间 ID</label>
-              <p class="font-mono text-sm">
-                {{ log.space_id || '-' }}
-              </p>
-            </div>
-            <div>
-              <label class="text-sm text-muted-foreground">事件 UUID</label>
-              <p class="font-mono text-sm">
-                {{ log.event_uuid || '-' }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 原始响应卡片 -->
-      <div class="card">
-        <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
-          <h3 class="text-sm font-semibold">
-            飞书 API 响应数据
-          </h3>
-          <p class="text-xs text-muted-foreground mt-1">
-            从飞书项目 API 获取的工作项详细信息
-          </p>
-        </div>
-        <div class="p-5 space-y-4">
-          <div class="bg-muted rounded-lg p-4 overflow-auto max-h-[600px]">
-            <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.work_item_raw_response_parsed, null, 2) }}</pre>
-          </div>
-        </div>
-      </div>
-    </template>
-
-    <!-- 日志不存在 -->
-    <EmptyState
-      v-else
-      icon="lucide--help-circle"
-      title="日志不存在"
-      description="未找到该日志记录，可能已被删除"
-      action-label="返回列表"
-      @action="router.push('/logs')"
-    />
-  </div>
+  <div />
 </template>

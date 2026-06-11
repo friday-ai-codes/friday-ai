@@ -3,6 +3,7 @@ import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 import CreateSpaceModal from '~/components/space/CreateSpaceModal.vue'
 import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
@@ -29,6 +30,15 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// 最近工作项详情弹窗（原 /logs/triggers/[id] 页面已统一为弹窗）
+async function openTriggerLog(logId: string) {
+  const { open } = useModal({
+    component: markRaw(TriggerLogDetailModal),
+    attrs: { logId },
+  })
+  await open()
+}
 
 // 新建空间弹窗
 async function openCreateSpace() {
@@ -105,7 +115,7 @@ async function openCreateSpace() {
               v-for="item in space.recent_work_items"
               :key="item.id"
               class="group/item flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors text-left w-full"
-              @click.prevent="router.push(`/logs/triggers/${item.id}`)"
+              @click.prevent="openTriggerLog(item.id)"
             >
               <span class="w-1 h-1 rounded-full bg-muted-foreground/30 group-hover/item:bg-primary group-hover/item:scale-150 transition-all shrink-0" />
               <span class="truncate flex-1 group-hover/item:text-primary transition-colors" :title="item.name">{{ item.name }}</span>

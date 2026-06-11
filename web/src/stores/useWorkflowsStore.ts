@@ -67,7 +67,14 @@ const DRAFT_KEY_PREFIX = 'friday-workflow-draft-'
 export const useWorkflowsStore = defineStore('workflows', () => {
   const workflows = ref<Workflow[]>([])
   const currentWorkflow = ref<Workflow | null>(null)
+  /** 列表加载状态（仅 fetchWorkflows 使用，供列表页骨架屏） */
   const loading = ref(false)
+  /**
+   * 详情加载状态（fetchWorkflow 使用）。
+   * 与列表 loading 分离：避免在列表页上点"执行"等操作拉取详情时，
+   * 列表瞬间切回骨架屏造成页面抖动。
+   */
+  const detailLoading = ref(false)
   const saving = ref(false)
   const error = ref<string | null>(null)
 
@@ -314,7 +321,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
   }
 
   async function fetchWorkflow(id: string) {
-    loading.value = true
+    detailLoading.value = true
     error.value = null
     try {
       const workflow = await client.get<Workflow>(`/workflows/${id}/`)
@@ -336,7 +343,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
       error.value = (e as Error).message
     }
     finally {
-      loading.value = false
+      detailLoading.value = false
     }
   }
 
@@ -682,6 +689,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     workflows,
     currentWorkflow,
     loading,
+    detailLoading,
     saving,
     error,
     nodes,

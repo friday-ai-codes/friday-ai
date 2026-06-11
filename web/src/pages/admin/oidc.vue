@@ -1,33 +1,21 @@
 <script setup lang="ts">
-import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
-
+/**
+ * OIDC 认证配置页（已降级为 redirect-only）
+ *
+ * OIDC 配置已合并为系统设置页的「OIDC 认证」Tab（见
+ * `pages/admin/index.vue` 的 settingsTabs）。
+ * 本文件仅保留 unplugin-vue-router 的 redirect 声明，把旧书签 URL
+ * `/admin/oidc` 重定向到 `/admin#oidc`
+ * （系统设置页检测到 #oidc hash 后自动切换 Tab），确保旧链接不 404。
+ */
 definePage({
-  meta: { requiresAdmin: true },
+  redirect: {
+    path: '/admin',
+    hash: '#oidc',
+  },
 })
 </script>
 
 <template>
-  <div class="min-h-[calc(100vh-8rem)] relative">
-    <!-- 背景装饰 -->
-    <div class="absolute inset-0 -z-10 overflow-hidden">
-      <div class="absolute inset-x-0 top-0 h-48 bg-linear-to-b from-primary/6 to-transparent" />
-    </div>
-
-    <div class="max-w-2xl mx-auto space-y-8 relative">
-      <!-- 页面标题 -->
-      <section class="text-center pt-8 pb-4">
-        <div class="inline-flex items-center justify-center p-4 mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
-          <span class="icon-[lucide--shield-check] text-4xl text-primary" />
-        </div>
-        <h1 class="text-3xl font-bold tracking-tight mb-3">
-          OIDC 认证
-        </h1>
-        <p class="text-muted-foreground max-w-md mx-auto">
-          配置 OpenID Connect 身份提供商，启用单点登录
-        </p>
-      </section>
-
-      <OIDCProviderSettings />
-    </div>
-  </div>
+  <div />
 </template>
