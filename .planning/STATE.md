@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 Milestone: v0.2.0 — SHIPPED 2026-06-10
 Phase: 6-11 all complete
 Status: Milestone complete (archived)
-Last activity: 2026-06-11 - Completed quick task 260611-0pm: 打磨第 1 批（口径对齐 + 痕迹清洗 + 社区脚手架）
+Last activity: 2026-06-11 - Completed quick task 260611-fky: 打磨仓库列表索引完成界面视觉
 
 Progress: [██████████] 100% (6/6 phases, 21/21 plans)
 
@@ -58,6 +58,7 @@ None.
 | 260610-shc | OIDC 回调 URL 与登录跳转优先消费「站点 Host」(site_host) 系统设置 | 2026-06-10 | b01dc066 | [260610-shc-site-host-oidc](./quick/260610-shc-site-host-oidc/) |
 | 260610-qmv | 修复 compose 部署下任务容器回调失败（发布 runner callback 端口）并抑制 claude CLI 403 遥测噪音 | 2026-06-10 | 68ddaa4c | [260610-qmv-compose-runner-callback-claude-cli-403](./quick/260610-qmv-compose-runner-callback-claude-cli-403/) |
 | 260611-0pm | 打磨第 1 批：全仓口径对齐 + 过程痕迹清洗 + 社区脚手架 | 2026-06-11 | 7f0c4381 | [260611-0pm-polish-batch1](./quick/260611-0pm-polish-batch1/) |
+| 260611-fky | 打磨仓库列表索引完成界面视觉 | 2026-06-11 | fa5e1b0a | [260611-fky-repository-list-polish](./quick/260611-fky-repository-list-polish/) |
 
 ## Deferred Items
 
