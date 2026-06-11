@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: 交付知识图谱 — 需求/缺陷 ↔ 方案 ↔ 代码 GraphRAG 关联
-status: planning
-last_updated: "2026-06-11T08:21:03.236Z"
+status: roadmap_created
+last_updated: "2026-06-11T08:45:00.000Z"
 last_activity: 2026-06-11
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,15 +19,27 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.2.0 起每个用户以 GitHub/GitLab 风格 PAT 的「用户身份 + 用户权限」安全调用 Friday，并让 skill/mcp 工具以用户身份在容器内执行。
-**Current focus:** Planning next milestone（运行 `/gsd-new-milestone`）
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.3.0 起需求/缺陷、技术方案、编码 diff 全链路 RAG 化并以时间感知知识图谱关联，任意入口都能召回相似历史需求及其完整迭代轨迹。
+**Current focus:** v0.3.0 交付知识图谱（Phase 12–16）
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 12 of 16 — 知识模型与图存储地基（Not started）
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-11 — Milestone v0.3.0 started
+Status: Roadmap created, ready for planning
+Last activity: 2026-06-11 — v0.3.0 roadmap created（5 phases，28/28 requirements mapped）
+
+Progress: [□□□□□] 0/5 phases
+
+## Performance Metrics
+
+**Milestone v0.3.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phases completed | 0/5 |
+| Plans completed | 0 |
+| Requirements delivered | 0/28 |
 
 ## Accumulated Context
 
@@ -76,12 +88,12 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-10T03:05:00.000Z
-Stopped at: v0.2.0 milestone archived + tagged (v0.2.0, not pushed)
+Last session: 2026-06-11
+Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
 Resume file: None
 
 ## Operator Next Steps
 
-- `/clear` then `/gsd-new-milestone` 启动下一里程碑（问询 → 研究 → 需求 → roadmap）。
-- 候选首选项：接入实时明文 PAT 通道点亮 RemoteTool 端到端链路 + 真实容器 E2E；补齐顺延的人工验收（UAT）。
-- 操作者手动推送：`git push` 当前分支 + `git push origin v0.2.0`（本流程未推送任何 remote）。
+- `/gsd-plan-phase 12` 开始规划首个阶段（知识模型与图存储地基）。
+- Phase 15（时间感知混合检索）带研究标记：规划时需小范围调研时间衰减参数与跨语言召回质量（依赖评测集）。
+- 操作者手动推送：`git push` 当前分支 + `git push origin v0.2.0`（此前流程未推送任何 remote）。
