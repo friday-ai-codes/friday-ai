@@ -28,16 +28,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 import zlib
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import structlog
 import unidiff
 
 from knowledge.ingestion import EdgeSpec
-from knowledge.models import EdgeRelation
+from knowledge.models import CodeChangeArchive, EdgeRelation
+from services.git_platform import get_git_platform_client
 from services.git_platform.models import MRDiffFile
 
 if TYPE_CHECKING:
@@ -46,12 +49,16 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "DIFF_FETCH_MAX_DIFF_LINES",
+    "DIFF_FETCH_MAX_FILES",
     "MAX_ARCHIVE_RAW_BYTES",
     "MAX_CONTENT_BYTES",
     "MAX_DIFF_CHUNKS",
     "MAX_FILE_LEVEL_EDGES_PER_FILE",
     "SINGLE_FILE_GENERATED_LINE_THRESHOLD",
+    "ArchiveResult",
     "FileDiff",
+    "archive_code_change",
     "build_code_change_content",
     "compress_diff",
     "decompress_diff",
@@ -102,6 +109,9 @@ MAX_ARCHIVE_RAW_BYTES = 8 * 1024 * 1024
 MAX_CONTENT_BYTES = 256 * 1024
 # ENH-01 文件级降级封顶（OQ-3 规划定案）：超出只记 unresolved 不建边
 MAX_FILE_LEVEL_EDGES_PER_FILE = 20
+# diff 拉取放大参数（Pitfall 2：默认参数是 code_review 截断语义，归档必须放大）
+DIFF_FETCH_MAX_FILES = 1000
+DIFF_FETCH_MAX_DIFF_LINES = 100_000
 
 
 @dataclass(frozen=True)
@@ -449,3 +459,197 @@ async def resolve_modified_chunks(
         unresolved_count=sum(len(fd.unresolved_symbols) for fd in updated),
     )
     return list(edge_by_chunk.values()), updated
+
+
+# ---------------------------------------------------------------------------
+# service 层（Task 3）：DiffArchiver 九步编排
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ArchiveResult:
+    """``archive_code_change`` 返回值：normalizer（14-06）组装事件的全部素材。"""
+
+    archive: CodeChangeArchive
+    content: str
+    edge_specs: list[EdgeSpec]
+    file_diffs: list[FileDiff]
+
+
+def _assemble_raw_diff(files: list[MRDiffFile]) -> tuple[str, dict[str, str]]:
+    """步 ④：逐文件拼回 unified diff 原文（``diff --git`` 头 + 文件头 + diff 文本）。
+
+    Returns:
+        (整体原文, 按 FileDiff.path 索引的逐文件原文——content 构造用)。
+    """
+    parts: list[str] = []
+    raw_by_path: dict[str, str] = {}
+    for mr_file in files:
+        path = mr_file.new_path or mr_file.old_path
+        old_path = mr_file.old_path or path
+        source = "/dev/null" if mr_file.new_file else f"a/{old_path}"
+        target = "/dev/null" if mr_file.deleted_file else f"b/{path}"
+        text = f"diff --git a/{old_path} b/{path}\n--- {source}\n+++ {target}\n{mr_file.diff or ''}"
+        parts.append(text)
+        raw_by_path[path] = text
+    return "\n".join(parts), raw_by_path
+
+
+async def archive_code_change(
+    *,
+    source_kind: str,
+    source_id: str,
+    repository: Repository,
+    branch_name: str,
+    base_branch: str,
+    commit_sha: str,
+    mr_url: str,
+    mr_id: str,
+    event_time: datetime,
+) -> ArchiveResult | None:
+    """DiffArchiver 端到端编排（KMOD-05；task_result normalizer 的后台执行体）。
+
+    九步流（RESEARCH §DiffArchiver 设计）：① 幂等短路（aexists）→ ② 凭证→client
+    （缺凭证 warning 降级，后台路径无宿主可失败）→ ③ 放大参数拉 diff
+    （mr_id 非空走 MR diff，否则 get_branch_diff；Pitfall 2）→ ④ 拼回原文 +
+    MAX_ARCHIVE_RAW_BYTES 截断 → ⑤ parse_diff_files（含生成文件标注）→
+    ⑥ zlib 压缩 + sha256 + acreate（撞 unique 幂等放弃）→ ⑦ 符号对齐 +
+    unresolved 回写 files JSON → ⑧ build_code_change_content → ⑨ ArchiveResult。
+
+    任何降级路径返回 None（warning 不 raise）；token 作用域限制在 ②③ 内，
+    绝不入日志/归档/返回值（T-14-10）。
+    """
+    # ① 幂等短路（拉 diff 之前，重触发不白付平台 API 调用）
+    exists = await CodeChangeArchive.objects.filter(
+        source_kind=source_kind, source_id=source_id, commit_sha=commit_sha
+    ).aexists()
+    if exists:
+        logger.warning(
+            "knowledge_diff_archive_duplicate",
+            source_kind=source_kind,
+            source_id=source_id,
+            commit_sha=commit_sha,
+        )
+        return None
+
+    # ② 凭证 → client（DB 加密凭证经 service 层，锁定决策；不读 env）
+    from common.encryption import decrypt_value
+    from repositories.models import GitCredential
+
+    try:
+        cred = await GitCredential.objects.aget(repository=repository)
+    except GitCredential.DoesNotExist:
+        logger.warning(
+            "knowledge_diff_archive_no_credential",
+            source_kind=source_kind,
+            source_id=source_id,
+            repository_id=str(repository.pk) if repository else None,
+        )
+        return None
+    token = decrypt_value(cred.encrypted_token or "")
+    client = get_git_platform_client(repository, token)
+
+    # ③ 放大参数拉 diff（Pitfall 2：默认参数是 code_review 截断语义）
+    if mr_id:
+        diff_result = await client.get_merge_request_diff(
+            mr_id, max_files=DIFF_FETCH_MAX_FILES, max_diff_lines=DIFF_FETCH_MAX_DIFF_LINES
+        )
+    else:
+        diff_result = await client.get_branch_diff(
+            branch_name,
+            base_branch,
+            max_files=DIFF_FETCH_MAX_FILES,
+            max_diff_lines=DIFF_FETCH_MAX_DIFF_LINES,
+        )
+    if not diff_result.success:
+        logger.warning(
+            "knowledge_diff_archive_fetch_failed",
+            source_kind=source_kind,
+            source_id=source_id,
+            mr_id=mr_id,
+            error=diff_result.error,
+        )
+        return None
+
+    # ④ 拼回原文 + 归档上限截断（T-14-09）
+    raw, raw_by_path = _assemble_raw_diff(diff_result.files)
+    truncated = diff_result.truncated
+    raw_bytes = raw.encode("utf-8")
+    if len(raw_bytes) > MAX_ARCHIVE_RAW_BYTES:
+        raw = raw_bytes[:MAX_ARCHIVE_RAW_BYTES].decode("utf-8", errors="ignore")
+        raw_bytes = raw.encode("utf-8")
+        truncated = True
+
+    # ⑤ 文件级解析（畸形降级 parse_failed + 生成文件 is_generated 标注）
+    file_diffs = parse_diff_files(diff_result.files)
+
+    # ⑥ 压缩 + sha256 + 落库（撞 uniq_codechange_source_commit 即幂等放弃，T-14-12）
+    compressed = compress_diff(raw)
+    from django.db import IntegrityError  # service 层 ORM 异常（纯函数区零 ORM 纪律）
+
+    try:
+        archive = await CodeChangeArchive.objects.acreate(
+            source_kind=source_kind,
+            source_id=source_id,
+            repository=repository,
+            commit_sha=commit_sha,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            mr_url=mr_url,
+            mr_id=mr_id,
+            diff_compressed=compressed,
+            diff_size=len(raw_bytes),
+            compressed_size=len(compressed),
+            diff_sha256=hashlib.sha256(raw_bytes).hexdigest(),
+            truncated=truncated,
+            files=[asdict(fd) for fd in file_diffs],
+            file_count=len(file_diffs),
+            total_additions=sum(fd.additions for fd in file_diffs),
+            total_deletions=sum(fd.deletions for fd in file_diffs),
+            event_time=event_time,
+        )
+    except IntegrityError as exc:
+        logger.warning(
+            "knowledge_diff_archive_conflict",
+            source_kind=source_kind,
+            source_id=source_id,
+            commit_sha=commit_sha,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
+
+    # ⑦ 符号对齐（生成/解析失败文件在阶梯内跳过）+ unresolved 回写 files JSON
+    edge_specs, file_diffs = await resolve_modified_chunks(repository, file_diffs, commit_sha)
+    archive.files = [asdict(fd) for fd in file_diffs]
+    await archive.asave(update_fields=["files"])
+
+    # ⑧ 归一化 content（生成文件剔除、预算截断、archive_id 注入截断标注）
+    title = f"代码变更 {repository.name} {branch_name} @ {commit_sha[:12]}"
+    summary_lines = [
+        f"分支 {branch_name} → {base_branch} 共变更 {len(file_diffs)} 个文件"
+        f"（+{archive.total_additions}/-{archive.total_deletions}）。",
+        "",
+        "文件清单：",
+        *(f"- {fd.path}（{fd.change_type}, +{fd.additions}/-{fd.deletions}）" for fd in file_diffs),
+    ]
+    content = build_code_change_content(
+        title, summary_lines, file_diffs, raw_by_path, archive_id=str(archive.id)
+    )
+
+    logger.info(
+        "knowledge_diff_archived",
+        archive_id=str(archive.id),
+        source_kind=source_kind,
+        source_id=source_id,
+        commit_sha=commit_sha,
+        file_count=archive.file_count,
+        diff_size=archive.diff_size,
+        compressed_size=archive.compressed_size,
+        truncated=archive.truncated,
+        edge_count=len(edge_specs),
+    )
+    # ⑨ 返回 normalizer 全部素材
+    return ArchiveResult(
+        archive=archive, content=content, edge_specs=edge_specs, file_diffs=file_diffs
+    )
