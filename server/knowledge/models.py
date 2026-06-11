@@ -380,7 +380,8 @@ class CodeChangeArchive(models.Model):
     commit_sha = models.CharField(max_length=64, blank=True, default="")
     branch_name = models.CharField(max_length=255, blank=True, default="")
     base_branch = models.CharField(max_length=255, blank=True, default="")
-    mr_url = models.URLField(blank=True, default="")
+    # 500：自托管 GitLab 深层 group 嵌套 MR URL 可超默认 200 列宽（WR-02）
+    mr_url = models.URLField(max_length=500, blank=True, default="")
     mr_id = models.CharField(max_length=64, blank=True, default="")
     # 压缩 diff 原文：zlib.compress(raw.encode("utf-8"))，读取侧 decompress 还原
     diff_compressed = models.BinaryField()
