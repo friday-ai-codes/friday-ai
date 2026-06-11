@@ -142,7 +142,9 @@ async def ensure_delivery_knowledge_collection() -> None:
     - Qdrant 异常一律向上冒泡，不做任何静默降级。
     """
     expected_dimension = await get_expected_dimension()
-    client = QdrantService.get_client()
+    # 首次调用会经 _get_config_sync 读 SystemSetting（sync ORM），
+    # async 上下文必须经 sync_to_async 桥接（E2E 实跑发现，测试 mock 不覆盖此路径）
+    client = await sync_to_async(QdrantService.get_client)()
 
     collections = await sync_to_async(client.get_collections)()
     existing_names = [c.name for c in collections.collections]
