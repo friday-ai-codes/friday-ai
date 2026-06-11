@@ -508,15 +508,15 @@ async def test_ingest_idempotent(mock_qdrant_client, mock_embedding):
 
 ## Open Questions
 
-1. **INGEST-06 措辞"旧边写 expired_at" vs Phase 12 置位原语写 invalid_at**
+1. **[RESOLVED — 规划定案：按 Recommendation 采纳，`invalidate_edge` 置位 `invalid_at`（业务失效语义）；措辞映射已记入 13-02-PLAN.md"规划定案"节供 verify-work 对照]** **INGEST-06 措辞"旧边写 expired_at" vs Phase 12 置位原语写 invalid_at**
    - What we know：REQUIREMENTS/ROADMAP/CONTEXT domain 文案均写"旧边写 `expired_at`"；但 Phase 12 为重摄取交付的原语（`invalidate_edge` / `invalidate_entity_version`）写的是 `invalid_at`（业务时间线），`expired_at` 在模型 docstring 中定义为"系统时间线：记录作废（纠错用）"。GraphStore 默认遍历同时过滤两者，置位任一边都从默认结果消失——功能上等价。
    - What's unclear：verifier 是否按字面检查 expired_at。
    - Recommendation：按 bi-temporal 语义用 `invalidate_edge`（invalid_at）——版本替代是业务失效不是记录纠错；PLAN 中显式记录该措辞映射（"REQUIREMENTS 的 expired_at 按 Phase 12 已定型的 GraphStore 置位原语实现，语义为业务失效置位"），供 verify-work 对照。
-2. **migrate_coding_sessions_to_plans 命令会经模型方法触发摄取**
+2. **[RESOLVED — 规划定案：不排除（历史知识入图符合里程碑目标，幂等无害）；副作用记录责任落在 13-03-PLAN.md output 节（SUMMARY 必记）]** **migrate_coding_sessions_to_plans 命令会经模型方法触发摄取**
    - 模型层挂钩使历史迁移命令（chat/management/commands/migrate_coding_sessions_to_plans.py:146,214）也会触发摄取。幂等保证无害（历史 plan 入图甚至是福利），但 planner 应知情；如需排除，给模型方法加 `skip_ingestion=False` 参数由命令显式传 True。Recommendation：不排除（历史知识入图符合里程碑目标），在 SUMMARY 记录该副作用。
-3. **chat "提炼后的需求文本"取材边界**
+3. **[RESOLVED — 规划定案：content = title + tech_plan，不引入任何 conversation 消息；不为 chat 创建 work_item 实体。取材规格落在 13-03-PLAN.md Task 1，特征串断言测试钉死]** **chat "提炼后的需求文本"取材边界**
    - CodingPlan 无独立"需求文本"字段；tech_plan markdown 通常自含需求描述，title 是提炼标题。Recommendation：content = title + tech_plan，不引入任何 conversation 消息内容（守住"对话原文不入图"）；不为 chat 创建 work_item 实体（chat 自然语言需求无稳定 ID，PITFALLS P4 明确"裸新建不可接受"，归并策略是 Phase 14+ 课题）。
-4. **chat "触发编码"挂点选 fan-out 还是 confirm**
+4. **[RESOLVED — 规划定案：挂 `create_sessions_for_plan` 成功尾部（result.created 非空时投递），confirm 不挂；接线规格落在 13-03-PLAN.md Task 2，含 chat/views.py 零接线的 grep 验收]** **chat "触发编码"挂点选 fan-out 还是 confirm**
    - `create_sessions_for_plan`（fan-out，session 批量创建）与 `CodingSessionConfirmView`（confirm + dispatch）都可代表"触发编码"。Recommendation：挂 `create_sessions_for_plan` 成功尾部（单一 service 函数、有 plan 上下文、被唯一 view 调用）；confirm 不挂（同一 plan 的重复投递只会 hash 短路，无增益）。
 
 ## Environment Availability
