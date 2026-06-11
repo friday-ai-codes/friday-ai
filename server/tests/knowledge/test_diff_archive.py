@@ -480,7 +480,7 @@ _SERVICE_MR_FILES = [
     MRDiffFile(
         old_path="src/auth.py",
         new_path="src/auth.py",
-        diff="@@ -1,3 +1,5 @@\n def login(user):\n+    audit(user)\n+    log(user)\n     return token(user)\n",
+        diff="@@ -1,2 +1,4 @@\n def login(user):\n+    audit(user)\n+    log(user)\n     return token(user)\n",
     ),
     MRDiffFile(
         old_path="src/views.py",
@@ -558,9 +558,7 @@ class TestDiffArchiverService:
     async def test_skip_pr_path_uses_branch_diff(self, fake_git_platform) -> None:
         """skip-PR 路径：mr_id 空 → get_branch_diff(source, target) 被调，mr_url 归档为空。"""
         repo = await sync_to_async(_make_repo_with_credential)("svc-skip")
-        fake_git_platform.branch_result = MRDiffResult(
-            success=True, files=[_SERVICE_MR_FILES[0]]
-        )
+        fake_git_platform.branch_result = MRDiffResult(success=True, files=[_SERVICE_MR_FILES[0]])
 
         result = await archive_code_change(**_archive_kwargs(repo, mr_url="", mr_id=""))
 
@@ -592,9 +590,7 @@ class TestDiffArchiverService:
         """GitCredential 缺失 → warning + None，无归档行、无异常逃逸（后台路径降级）。"""
         from structlog.testing import capture_logs
 
-        repo = await sync_to_async(_make_repo_with_credential)(
-            "svc-nocred", with_credential=False
-        )
+        repo = await sync_to_async(_make_repo_with_credential)("svc-nocred", with_credential=False)
 
         with capture_logs() as cap:
             result = await archive_code_change(**_archive_kwargs(repo))
