@@ -238,6 +238,202 @@ def _make_fanout_plan():
     return plan, repo
 
 
+def _make_workflow_plan_execution(
+    *,
+    with_feishu_trigger: bool = True,
+    with_approval: bool = False,
+    approval_status: str = "completed",
+    approval_node_type: str = "ai_plan_approval",
+    approval_data: dict | None = None,
+):
+    """Project + Workflow + 生成/审批节点 + Execution 同步工厂（14-04 workflow 触发用例）。
+
+    返回 ``(project, execution, gen_node, gen_exec, approval_exec)``；
+    ``with_feishu_trigger=False`` 模拟手动触发（trigger_data 无飞书工作项字段）。
+    """
+    from django.utils import timezone
+    from projects.models import Project
+    from workflows.models import Workflow, WorkflowNode
+    from workflows.models.execution import (
+        NodeExecution,
+        NodeExecutionStatus,
+        WorkflowExecution,
+    )
+
+    project = Project.objects.create(
+        name="知识触发 workflow 项目", feishu_project_key="k-wf-proj"
+    )
+    workflow = Workflow.objects.create(name="方案工作流", project=project)
+    gen_node = WorkflowNode.objects.create(
+        workflow=workflow, node_type="ai_plan_generation", name="方案生成"
+    )
+    trigger_data = (
+        {"raw_payload": {"id": 4242, "work_item_type_key": "story", "name": "登录需求"}}
+        if with_feishu_trigger
+        else {}
+    )
+    execution = WorkflowExecution.objects.create(
+        workflow=workflow,
+        project=project,
+        trigger_type="feishu" if with_feishu_trigger else "manual",
+        trigger_data=trigger_data,
+    )
+    plan_dict = {
+        "title": "工作流登录方案",
+        "summary": "修复登录超时并补充审计日志。",
+        "execution_plan": [{"name": "task-1", "repository_name": "repo-a"}],
+    }
+    gen_exec = NodeExecution.objects.create(
+        workflow_execution=execution,
+        node=gen_node,
+        status=NodeExecutionStatus.COMPLETED,
+        output_data={"plan": plan_dict},
+        completed_at=timezone.now(),
+    )
+    approval_exec = None
+    if with_approval:
+        approval_node = WorkflowNode.objects.create(
+            workflow=workflow, node_type=approval_node_type, name="方案审批"
+        )
+        if approval_data is None:
+            if approval_status == NodeExecutionStatus.COMPLETED:
+                approval_data = {
+                    "plan": plan_dict,
+                    "approved": True,
+                    "approver_name": "审批人甲",
+                    "approved_at": timezone.now().isoformat(),
+                    "document_url": "https://feishu.cn/docx/doxcnWfPlan",
+                }
+            else:
+                approval_data = {"plan": plan_dict}
+        approval_exec = NodeExecution.objects.create(
+            workflow_execution=execution,
+            node=approval_node,
+            status=approval_status,
+            approval_data=approval_data,
+            completed_at=(
+                timezone.now()
+                if approval_status == NodeExecutionStatus.COMPLETED
+                else None
+            ),
+        )
+    return project, execution, gen_node, gen_exec, approval_exec
+
+
+class TestWorkflowPlanNormalizer:
+    """14-04 Task 1：workflow_plan normalize 取材用例组（-k workflow 可选中）。"""
+
+    async def test_workflow_plan_generated_dual_events_with_has_plan_edge(self) -> None:
+        """生成事件取材：work_item 锚在前（三元组 + HAS_PLAN exclusive），tech_plan 在后。"""
+        from knowledge.sources.workflow_plan import normalize as normalize_workflow_plan
+
+        project, execution, gen_node, gen_exec, _ = await sync_to_async(
+            _make_workflow_plan_execution
+        )()
+        source_id = f"{execution.id}:{gen_node.id}"
+
+        events = await normalize_workflow_plan(
+            IngestionRequest("workflow_plan", source_id, "workflow_plan_generated")
+        )
+
+        assert len(events) == 2
+        work_item, tech_plan = events
+
+        assert tech_plan.kind == "tech_plan"
+        assert tech_plan.origin == "workflow"
+        assert tech_plan.source_kind == "workflow_plan"
+        assert tech_plan.source_id == source_id
+        plan_dict = gen_exec.output_data["plan"]
+        assert plan_dict["title"] in tech_plan.content
+        assert plan_dict["summary"] in tech_plan.content
+        assert "task-1" in tech_plan.content  # execution_plan 取材
+        assert tech_plan.title == plan_dict["title"]
+        assert tech_plan.project_id == str(project.id)
+        assert tech_plan.repository_id is None
+        assert tech_plan.event_time == gen_exec.completed_at
+        assert tech_plan.edges == ()
+
+        assert work_item.kind == "work_item"
+        assert work_item.origin == "workflow"
+        assert work_item.source_kind == "feishu_work_item"
+        # natural key 规则表三元组格式逐字一致（models.py generate_entity_id docstring）
+        assert work_item.source_id == f"{project.feishu_project_key}:story:4242"
+        assert work_item.project_id == str(project.id)
+        assert len(work_item.edges) == 1
+        spec = work_item.edges[0]
+        assert spec.relation == "HAS_PLAN"
+        assert spec.target_entity_id == generate_entity_id(
+            "tech_plan", "workflow_plan", source_id
+        )
+        assert spec.exclusive is True
+
+    async def test_workflow_plan_manual_trigger_single_event(self) -> None:
+        """trigger_data 无飞书工作项字段（手动触发）→ 只产出 tech_plan 单事件 + warning。"""
+        from knowledge.sources.workflow_plan import normalize as normalize_workflow_plan
+
+        _project, execution, gen_node, _gen_exec, _ = await sync_to_async(
+            lambda: _make_workflow_plan_execution(with_feishu_trigger=False)
+        )()
+
+        with capture_logs() as cap:
+            events = await normalize_workflow_plan(
+                IngestionRequest(
+                    "workflow_plan",
+                    f"{execution.id}:{gen_node.id}",
+                    "workflow_plan_generated",
+                )
+            )
+
+        assert len(events) == 1
+        assert events[0].kind == "tech_plan"
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_anchor_payload_missing" in warnings
+
+    async def test_workflow_plan_approved_content_contains_approval_section(self) -> None:
+        """Pitfall 5：审批事件 content 尾部含审批段且与生成事件 content 不等（hash 必变）。"""
+        from datetime import datetime
+
+        from knowledge.sources.workflow_plan import normalize as normalize_workflow_plan
+
+        _project, execution, gen_node, _gen_exec, approval_exec = await sync_to_async(
+            lambda: _make_workflow_plan_execution(with_approval=True)
+        )()
+        source_id = f"{execution.id}:{gen_node.id}"
+
+        generated_events = await normalize_workflow_plan(
+            IngestionRequest("workflow_plan", source_id, "workflow_plan_generated")
+        )
+        approved_events = await normalize_workflow_plan(
+            IngestionRequest("workflow_plan", source_id, "workflow_plan_approved")
+        )
+
+        generated_plan = generated_events[-1]
+        approved_plan = approved_events[-1]
+        assert "## 审批" in approved_plan.content
+        assert "审批人甲" in approved_plan.content
+        assert approved_plan.content != generated_plan.content
+        assert "## 审批" not in generated_plan.content
+        # event_time 改取 approved_at（aware）
+        assert approved_plan.event_time == datetime.fromisoformat(
+            approval_exec.approval_data["approved_at"]
+        )
+        # source_id 不变：审批重摄同一 tech_plan 实体（OQ-2 定案）
+        assert approved_plan.source_id == generated_plan.source_id == source_id
+
+    async def test_workflow_plan_source_missing_returns_empty_with_warning(self) -> None:
+        """source_id 指向不存在的 NodeExecution → 空列表 + warning 不 raise。"""
+        from knowledge.sources.workflow_plan import normalize as normalize_workflow_plan
+
+        missing = f"{uuid.uuid4()}:{uuid.uuid4()}"
+        with capture_logs() as cap:
+            events = await normalize_workflow_plan(
+                IngestionRequest("workflow_plan", missing, "workflow_plan_generated")
+            )
+        assert events == []
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_source_missing" in warnings
+
+
 class TestChatTriggers:
     """chat ×3 锚点投递断言（-k chat 可选中）。"""
 
