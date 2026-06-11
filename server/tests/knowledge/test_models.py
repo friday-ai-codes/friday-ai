@@ -191,6 +191,19 @@ def test_version_invalid_at_not_after_valid_at_rejected(entity_factory, version_
             version_factory(entity, version=1, valid_at=now, invalid_at=now)
 
 
+def test_version_vector_synced_defaults_false(entity_factory, version_factory) -> None:
+    """新建版本默认 vector_synced=False（Phase 13 幂等短路的向量侧凭据）。
+
+    短路条件 = content_hash 相同 AND vector_synced——堵住"DB 已 commit、
+    向量未写入"窗口（Pitfall 2）；摄取核心在向量 upsert 成功后置 True。
+    """
+    entity = entity_factory()
+    version = version_factory(entity, version=1)
+    assert version.vector_synced is False
+    version.refresh_from_db()
+    assert version.vector_synced is False
+
+
 # ---------------------------------------------------------------------------
 # KMOD-02：bi-temporal 边
 # ---------------------------------------------------------------------------
