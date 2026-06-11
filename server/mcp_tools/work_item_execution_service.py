@@ -595,6 +595,12 @@ async def execute_work_item_repo_tasks(
         "status": overall,
         "run_id": str(run.run_id),
     }
+    from knowledge import ingestion  # lazy import 防循环
+
+    plan_id = str(technical_plan.id)
+    await ingestion.aschedule_ingestion(
+        ingestion.IngestionRequest("mcp_technical_plan", plan_id, "mcp_tasks_executed")
+    )
     return RepoTaskExecutionResult(
         technical_plan=technical_plan,
         tasks=executed,
