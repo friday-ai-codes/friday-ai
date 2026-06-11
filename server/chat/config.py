@@ -9,9 +9,11 @@ from agents.models import AgentSession
 from chat.conversation_service import _build_system_prompt
 from chat.models import Conversation
 from chat.services import aget_setting_value
+from services.model_capabilities import ModelCapabilities
 from services.provider_config import (
     ProviderConfigError,
     ProviderConfigService,
+    _fetch_credential_by_id,
     aget_legacy_anthropic_config,
 )
 from system.models import SettingKeys
@@ -60,6 +62,15 @@ async def build_sdk_config(
     legacy = await aget_legacy_anthropic_config()
     system_model = legacy["default_model"]
     model = conversation.model or system_model
+
+    # 凭证级能力解析：用户在凭证模型条目上配置的 context_length 优先于
+    # 静态 fixture（ModelCapabilities），未配置时 resolver 内部回退 fixture。
+    credential = None
+    if resolved.credential_id is not None:
+        credential = await _fetch_credential_by_id(resolved.credential_id)
+    capabilities = ModelCapabilities.resolve_for_credential(
+        credential, str(resolved.provider_type), model
+    )
 
     session_id = f"chat-{conversation.id}-{uuid.uuid4().hex[:8]}"
     # 无空间对话：project 可空。space_id 传空串 → chat_runner 不注入任何
@@ -114,6 +125,8 @@ async def build_sdk_config(
         # 同时透传给 ChatAnthropicRunner，使 _get_tool_names 能据此闸门 deep_analysis 工具。
         # 历史上该开关只影响 system prompt，导致 LLM 即使在普通模式也能看到 deep_analysis。
         force_deep_analysis=force_deep_analysis,
+        # 凭证级上下文窗口（含用户配置的 context_length override）
+        max_input_tokens=capabilities.max_input_tokens,
     )
 
     return config, agent_session

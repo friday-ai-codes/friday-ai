@@ -7,6 +7,8 @@
  *
  * - 凭证下拉：仅 active anthropic 凭证（含 Anthropic 协议兼容网关）。
  * - 三档模型：只能从所选凭证的 available_models 中选择。
+ * - 每档可勾选「1M 上下文」：保存时模型名拼 `[1m]` 后缀（Claude Code 的
+ *   上下文窗口声明语法），回显时剥后缀还原勾选态。
  * - 读 GET /api/providers/claude-code-config/，存 PUT 同路径。
  */
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
@@ -20,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select'
+import { Switch } from '~/components/ui/switch'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
@@ -34,6 +37,18 @@ const loading = ref(true)
 const saving = ref(false)
 const selectedCredentialId = ref<string>('')
 const mapping = ref<Record<ModelTier, string>>({ opus: '', sonnet: '', haiku: '' })
+/** 每档「1M 上下文」勾选态（持久化为模型名 `[1m]` 后缀） */
+const contextFlags = ref<Record<ModelTier, boolean>>({ opus: false, sonnet: false, haiku: false })
+
+const CONTEXT_1M_SUFFIX = '[1m]'
+
+/** 剥掉 `[1m]` 后缀，返回 [基础模型 ID, 是否带 1M 声明] */
+function splitContextSuffix(model: string): [string, boolean] {
+  const trimmed = model.trim()
+  if (trimmed.toLowerCase().endsWith(CONTEXT_1M_SUFFIX))
+    return [trimmed.slice(0, -CONTEXT_1M_SUFFIX.length), true]
+  return [trimmed, false]
+}
 
 const TIERS: { key: ModelTier, label: string, hint: string, dot: string, icon: string }[] = [
   { key: 'opus', label: 'Opus', hint: '复杂规划 / 高难度任务', dot: 'bg-violet-500', icon: 'icon-[lucide--gem]' },
@@ -67,19 +82,27 @@ async function load() {
     ])
     const cfg = await providerCredentialsApi.getClaudeCodeConfig()
     selectedCredentialId.value = cfg.credential_id ?? ''
-    mapping.value = {
-      opus: cfg.model_mapping?.opus ?? '',
-      sonnet: cfg.model_mapping?.sonnet ?? '',
-      haiku: cfg.model_mapping?.haiku ?? '',
+    // 回显：剥 `[1m]` 后缀 → Select 显示基础模型 + Switch 还原勾选态
+    const nextMapping: Record<ModelTier, string> = { opus: '', sonnet: '', haiku: '' }
+    const nextFlags: Record<ModelTier, boolean> = { opus: false, sonnet: false, haiku: false }
+    for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier[]) {
+      const [base, has1m] = splitContextSuffix(cfg.model_mapping?.[tier] ?? '')
+      nextMapping[tier] = base
+      nextFlags[tier] = has1m
     }
-    if (!selectedCredentialId.value)
+    mapping.value = nextMapping
+    contextFlags.value = nextFlags
+    if (!selectedCredentialId.value) {
       mapping.value = { opus: '', sonnet: '', haiku: '' }
+      contextFlags.value = { opus: false, sonnet: false, haiku: false }
+    }
     if (
       selectedCredentialId.value
       && !candidateCredentials.value.some(c => c.id === selectedCredentialId.value)
     ) {
       selectedCredentialId.value = ''
       mapping.value = { opus: '', sonnet: '', haiku: '' }
+      contextFlags.value = { opus: false, sonnet: false, haiku: false }
     }
   }
   catch (e) {
@@ -94,8 +117,10 @@ async function load() {
 watch(selectedCredentialId, () => {
   const ids = new Set(availableModels.value.map(m => m.id))
   for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier[]) {
-    if (mapping.value[tier] && !ids.has(mapping.value[tier]))
+    if (mapping.value[tier] && !ids.has(mapping.value[tier])) {
       mapping.value[tier] = ''
+      contextFlags.value[tier] = false
+    }
   }
 })
 
@@ -106,9 +131,17 @@ async function save() {
   }
   saving.value = true
   try {
+    // 勾选「1M 上下文」的档位：模型名拼 `[1m]` 后缀持久化
+    const mappingForSave: Record<ModelTier, string> = { opus: '', sonnet: '', haiku: '' }
+    for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier[]) {
+      const base = mapping.value[tier]
+      mappingForSave[tier] = base && contextFlags.value[tier]
+        ? `${base}${CONTEXT_1M_SUFFIX}`
+        : base
+    }
     await providerCredentialsApi.updateClaudeCodeConfig({
       credential_id: selectedCredentialId.value,
-      model_mapping: { ...mapping.value },
+      model_mapping: mappingForSave,
     })
     toast.success('Claude Code 配置已保存')
   }
@@ -206,6 +239,20 @@ onMounted(load)
                 请先添加模型
               </div>
             </div>
+            <!-- 1M 上下文声明：保存时模型名拼 [1m] 后缀（Claude Code 语法） -->
+            <label
+              class="flex shrink-0 cursor-pointer items-center gap-2"
+              :class="{ 'pointer-events-none opacity-40': !mapping[tier.key] }"
+              :title="mapping[tier.key]
+                ? '向 Claude Code 声明该模型支持 1M 上下文（模型名追加 [1m] 后缀）'
+                : '先选择模型'"
+            >
+              <Switch
+                v-model="contextFlags[tier.key]"
+                :disabled="!mapping[tier.key]"
+              />
+              <span class="whitespace-nowrap text-xs text-muted-foreground">1M 上下文</span>
+            </label>
           </div>
         </div>
         <p v-if="selectedCredentialId && !hasModelOptions" class="text-xs text-muted-foreground">

@@ -467,13 +467,18 @@ async def aset_claude_code_config(
         if not model_ids:
             raise ProviderConfigError("所选凭证没有模型列表，请先添加或刷新模型")
 
+        # 校验时剥掉 Claude Code 的 `[1m]` 类上下文声明后缀再比对凭证模型列表
+        # （存储仍存带后缀原文，dispatch 时直通容器 env 由 Claude Code 解析）。
+        from services.model_capabilities import strip_context_suffix
+
+        base_model_ids = {strip_context_suffix(m) for m in model_ids}
         invalid_models = [
             model
             for model in (
                 str(model_mapping.get(tier, "") or "").strip()
                 for tier in CLAUDE_CODE_MODEL_TIERS
             )
-            if model and model not in model_ids
+            if model and strip_context_suffix(model) not in base_model_ids
         ]
         if invalid_models:
             raise ProviderConfigError(

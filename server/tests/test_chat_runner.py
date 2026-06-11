@@ -71,6 +71,41 @@ def _make_bound_model(chunks: list[AIMessageChunk]):
     return SimpleNamespace(astream=_astream)
 
 
+def test_check_chat_context_window_respects_credential_override() -> None:
+    """凭证级 max_input_tokens_override 优先于 fixture：
+    fixture 预算内不抛；override 缩小预算后同样消息应抛 ContextWindowExceededError。
+    """
+    from langchain_core.messages import HumanMessage
+
+    from agents.chat_runner import (
+        ContextWindowExceededError,
+        _check_chat_context_window,
+    )
+
+    messages = [HumanMessage(content="x" * 40000)]  # ~10K tokens
+
+    # fixture 兜底（200K）下不超限
+    _check_chat_context_window(messages, model="claude-test-model")
+
+    # override 收紧到 8K → 超限
+    with pytest.raises(ContextWindowExceededError):
+        _check_chat_context_window(
+            messages,
+            model="claude-test-model",
+            max_input_tokens_override=8000,
+        )
+
+    # override 放大（如用户配置 1M）→ 大消息也不超限
+    big_messages = [HumanMessage(content="x" * 1_200_000)]  # ~300K tokens
+    with pytest.raises(ContextWindowExceededError):
+        _check_chat_context_window(big_messages, model="claude-test-model")
+    _check_chat_context_window(
+        big_messages,
+        model="claude-test-model",
+        max_input_tokens_override=1_000_000,
+    )
+
+
 def test_thinking_budget_enabled_for_supported_claude_models() -> None:
     assert _thinking_budget_tokens('claude-sonnet-4-5') == 4096
     assert _thinking_budget_tokens('claude-opus-4-5-thinking') == 4096
