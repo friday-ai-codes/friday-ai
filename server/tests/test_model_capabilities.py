@@ -75,6 +75,33 @@ def test_get_prefix_match_longest_wins() -> None:
     assert entry.max_output_tokens == 8192
 
 
+def test_deepseek_v4_models_have_1m_context() -> None:
+    """DeepSeek v4（经 anthropic 兼容端点）：1M 上下文 + 思考/缓存能力 + 真实定价。
+
+    含 `deepseek-v4-pro[1m]`（Claude Code 1M 上下文声明后缀）走前缀匹配
+    命中 deepseek-v4-pro 条目，避免落到 anthropic `*` 的 200K/Claude 价。
+    """
+    from services.model_capabilities import ModelCapabilities
+
+    pro = ModelCapabilities.get("anthropic", "deepseek-v4-pro")
+    assert pro.max_input_tokens == 1000000
+    assert pro.supports_thinking is True
+    assert pro.supports_prompt_caching is True
+    assert pro.input_cost_per_token == Decimal("4.2e-7")
+
+    flash = ModelCapabilities.get("anthropic", "deepseek-v4-flash")
+    assert flash.max_input_tokens == 1000000
+    assert flash.input_cost_per_token == Decimal("1.4e-7")
+
+    # [1m] 后缀（Claude Code 上下文声明语法）→ 前缀匹配命中 pro 条目
+    pro_1m = ModelCapabilities.get("anthropic", "deepseek-v4-pro[1m]")
+    assert pro_1m.model == "deepseek-v4-pro"
+
+    # 旧模型名（deepseek-chat / deepseek-reasoner，2026/07/24 弃用）→ deepseek 前缀兜底
+    legacy = ModelCapabilities.get("anthropic", "deepseek-chat")
+    assert legacy.model == "deepseek"
+
+
 def test_decimal_precision_no_float() -> None:
     """T5: cost 字段全部是 Decimal 类型，非 float；精度保持字符串构造值。"""
     from services.model_capabilities import ModelCapabilities
