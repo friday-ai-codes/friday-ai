@@ -187,21 +187,49 @@ class RelationalGraphStore:
         return edge.id
 
     async def invalidate_edge(self, edge_id: uuid.UUID, *, invalid_at: datetime) -> None:
-        """业务时间线失效置位（不删除）。目标不存在时 raise DoesNotExist。"""
+        """业务时间线失效置位（不删除，幂等）。目标不存在时 raise DoesNotExist。
+
+        仅在 ``invalid_at`` 仍为 NULL 时置位：已失效的边重复调用是幂等 no-op
+        （warning 日志），绝不覆盖原失效时间——bi-temporal 模型里覆盖等于改写
+        历史，``as_of`` 查询结果会随之漂移（T-12-04 防线）。
+        """
         _require_aware(invalid_at, "invalid_at")
-        updated = await KnowledgeEdge.objects.filter(id=edge_id).aupdate(invalid_at=invalid_at)
+        updated = await KnowledgeEdge.objects.filter(
+            id=edge_id, invalid_at__isnull=True
+        ).aupdate(invalid_at=invalid_at)
         if updated == 0:
-            raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
+            # 区分两种 0 行情况：边不存在（响亮报错） vs 已失效（幂等返回）
+            if not await KnowledgeEdge.objects.filter(id=edge_id).aexists():
+                raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
+            logger.warning(
+                "knowledge_edge_already_invalidated",
+                edge_id=str(edge_id),
+                requested_invalid_at=invalid_at.isoformat(),
+            )
+            return
         logger.info(
             "knowledge_edge_invalidated", edge_id=str(edge_id), invalid_at=invalid_at.isoformat()
         )
 
     async def expire_edge(self, edge_id: uuid.UUID, *, expired_at: datetime) -> None:
-        """系统时间线作废置位（纠错用，不删除）。目标不存在时 raise DoesNotExist。"""
+        """系统时间线作废置位（纠错用，不删除，幂等）。目标不存在时 raise DoesNotExist。
+
+        仅在 ``expired_at`` 仍为 NULL 时置位：已作废的边重复调用是幂等 no-op
+        （warning 日志），绝不覆盖原作废时间（同 ``invalidate_edge``，防改写历史）。
+        """
         _require_aware(expired_at, "expired_at")
-        updated = await KnowledgeEdge.objects.filter(id=edge_id).aupdate(expired_at=expired_at)
+        updated = await KnowledgeEdge.objects.filter(
+            id=edge_id, expired_at__isnull=True
+        ).aupdate(expired_at=expired_at)
         if updated == 0:
-            raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
+            if not await KnowledgeEdge.objects.filter(id=edge_id).aexists():
+                raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
+            logger.warning(
+                "knowledge_edge_already_expired",
+                edge_id=str(edge_id),
+                requested_expired_at=expired_at.isoformat(),
+            )
+            return
         logger.info(
             "knowledge_edge_expired", edge_id=str(edge_id), expired_at=expired_at.isoformat()
         )
