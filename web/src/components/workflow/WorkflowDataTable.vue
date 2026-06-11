@@ -24,6 +24,15 @@ const emit = defineEmits<{
   (e: 'toggleActive', workflow: Workflow, isActive: boolean): void
 }>()
 
+const MAX_VISIBLE_NODE_CHIPS = 4
+
+interface NodeTypeCount {
+  type: string
+  name: string
+  icon: string
+  count: number
+}
+
 function onCardClick(workflow: Workflow) {
   emit('click', workflow)
 }
@@ -44,7 +53,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
   emit('toggleActive', workflow, checked)
 }
 
-function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, icon: string, count: number }[] {
+function getNodeTypeCounts(workflow: Workflow): NodeTypeCount[] {
   const summary = (workflow as any).node_summary as { node_type: string }[] | undefined
   if (!summary?.length)
     return []
@@ -64,24 +73,38 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
     }
   })
 }
+
+function getVisibleNodeTypeCounts(workflow: Workflow): NodeTypeCount[] {
+  return getNodeTypeCounts(workflow).slice(0, MAX_VISIBLE_NODE_CHIPS)
+}
+
+function getHiddenNodeTypeCount(workflow: Workflow): number {
+  return Math.max(getNodeTypeCounts(workflow).length - MAX_VISIBLE_NODE_CHIPS, 0)
+}
 </script>
 
 <template>
   <TooltipProvider>
     <!-- Loading State -->
     <div v-if="loading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <div v-for="i in 6" :key="i" class="rounded-lg border border-border/70 bg-card p-4">
-        <div class="flex items-center gap-3 mb-3">
-          <Skeleton class="h-9 w-9 rounded-lg" />
-          <div class="flex-1">
-            <Skeleton class="h-4 w-3/4 mb-1.5" />
-            <Skeleton class="h-3 w-1/2" />
+      <div v-for="i in 6" :key="i" class="flex h-[380px] flex-col overflow-hidden rounded-lg border border-border/70 bg-card">
+        <Skeleton class="h-28 w-full rounded-none" />
+        <div class="flex flex-1 flex-col p-4 pb-3">
+          <div class="mb-3 flex items-start gap-3">
+            <Skeleton class="h-9 w-9 rounded-lg" />
+            <div class="flex-1">
+              <Skeleton class="mb-1.5 h-4 w-3/4" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+            <Skeleton class="h-5 w-8 rounded-full" />
           </div>
-        </div>
-        <Skeleton class="h-20 w-full rounded-lg mb-3" />
-        <div class="flex items-center justify-between">
-          <Skeleton class="h-5 w-16" />
-          <Skeleton class="h-7 w-20" />
+          <div class="mb-3 grid min-h-[64px] grid-cols-2 gap-1.5">
+            <Skeleton v-for="chip in 4" :key="chip" class="h-7 rounded-md" />
+          </div>
+          <div class="mt-auto flex items-center gap-2 border-t border-border/60 pt-3">
+            <Skeleton class="h-8 flex-1 rounded-md" />
+            <Skeleton class="h-8 w-8 rounded-md" />
+          </div>
         </div>
       </div>
     </div>
@@ -96,20 +119,20 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
       >
         <!-- Card body -->
         <div
-          class="relative overflow-hidden rounded-lg border transition-all duration-200"
+          class="workflow-card-shell relative flex h-[380px] flex-col overflow-hidden rounded-lg border transition-all duration-200"
           :class="[workflow.is_active ? 'bg-card border-border/70 shadow-[0_1px_2px_rgba(15,23,42,0.06)] group-hover:-translate-y-0.5 group-hover:border-primary/30 group-hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]' : 'bg-muted/25 border-border/50 opacity-80']"
         >
           <!-- Mini Map Preview -->
           <div
-            class="workflow-preview relative w-full border-b transition-colors"
+            class="workflow-preview relative h-28 w-full shrink-0 border-b transition-colors"
             :class="[workflow.is_active ? 'bg-background border-border/50' : 'bg-muted/20 border-border/30']"
           >
             <WorkflowMiniMap
               :nodes="(workflow as any).node_summary || []"
               :edges="(workflow as any).edge_summary || []"
               :width="400"
-              :height="100"
-              class="w-full h-auto"
+              :height="112"
+              class="h-full w-full"
             />
 
             <!-- Node count badge -->
@@ -120,7 +143,7 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
           </div>
 
           <!-- Content -->
-          <div class="p-4 pb-3">
+          <div class="workflow-card-content flex flex-1 flex-col p-4 pb-3">
             <!-- Header: Icon + Name + Toggle -->
             <div class="mb-3 flex items-start gap-3">
               <!-- Icon -->
@@ -141,7 +164,7 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
                 >
                   {{ workflow.name }}
                 </h3>
-                <p class="mt-0.5 truncate text-sm text-muted-foreground">
+                <p class="workflow-card-description mt-0.5 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
                   {{ workflow.description || '暂无描述' }}
                 </p>
               </div>
@@ -164,19 +187,26 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
             </div>
 
             <!-- Node Type Tags -->
-            <div v-if="getNodeTypeCounts(workflow).length" class="mb-3 flex flex-wrap gap-1.5">
+            <div class="workflow-node-chip-row mb-3 flex min-h-[64px] flex-wrap content-start gap-1.5 overflow-hidden">
               <span
-                v-for="nt in getNodeTypeCounts(workflow)"
+                v-for="nt in getVisibleNodeTypeCounts(workflow)"
                 :key="nt.type"
-                class="workflow-node-chip inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/35 px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                class="workflow-node-chip inline-flex h-7 max-w-full items-center gap-1 truncate rounded-md border border-border/60 bg-muted/35 px-2 text-[11px] font-medium text-muted-foreground"
               >
-                <span :class="nt.icon" class="text-xs" />
-                {{ nt.name }}<template v-if="nt.count > 1">&times;{{ nt.count }}</template>
+                <span :class="nt.icon" class="shrink-0 text-xs" />
+                <span class="truncate">{{ nt.name }}</span>
+                <template v-if="nt.count > 1">&times;{{ nt.count }}</template>
+              </span>
+              <span
+                v-if="getHiddenNodeTypeCount(workflow) > 0"
+                class="workflow-node-overflow inline-flex h-7 items-center rounded-md border border-primary/15 bg-primary/10 px-2 text-[11px] font-semibold text-primary"
+              >
+                +{{ getHiddenNodeTypeCount(workflow) }}
               </span>
             </div>
 
             <!-- Actions Row -->
-            <div class="workflow-card-actions flex items-center gap-2 border-t border-border/60 pt-3">
+            <div class="workflow-card-actions mt-auto flex shrink-0 items-center gap-2 border-t border-border/60 pt-3">
               <!-- Execute Button -->
               <Tooltip>
                 <TooltipTrigger as-child>
