@@ -513,6 +513,18 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
         # 兼容旧流程（非 graph 管理的 session）
         pr_url = task_result.pr_url if task_result else ""
         await coding_session.amark_completed(pr_url=pr_url)
+
+        # INGEST-02（14-06）：仅旧兼容路径在回调时刻投递（TaskResult 自带 pr_url 的
+        # 容器内建 MR 历史模式）；graph 主路径（coding/coding_commit）零投递——
+        # 归档挂 create_pr_or_skip_node / _resume_after_containers（时序防线 Pitfall 1）。
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest(
+                "task_result", session.session_id, "legacy_coding_completed"
+            )
+        )
+
         await store_coding_complete_to_message(coding_session)
         logger.info("coding_session_completed", coding_session_id=str(coding_session.id), pr_url=pr_url)
 

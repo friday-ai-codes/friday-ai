@@ -37,7 +37,10 @@ logger = structlog.get_logger(__name__)
 async def _get_coding_session(state: CodingSessionState) -> CodingSession:
     """从 state 中的 coding_session_id 查询 CodingSession（含 select_related）。"""
     return await CodingSession.objects.select_related(
-        "repository", "conversation__project", "coding_plan",
+        "repository",
+        "conversation__project",
+        "coding_plan",
+        "subagent_session",
     ).aget(id=state["coding_session_id"])
 
 
@@ -569,6 +572,20 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
             repo.git_url, repo.git_platform, coding_session.branch_name,
         )
         await coding_session.amark_completed(pr_url="")
+
+        # INGEST-02（14-06）：skip-PR 完成锚点投递统一摄取（时序防线：归档挂
+        # PR 决策之后而非容器回调；skip 路径 pr_url="" 属预期，归档走 branch diff）。
+        if coding_session.subagent_session_id:
+            from knowledge import ingestion  # lazy import 防循环
+
+            await ingestion.aschedule_ingestion(
+                ingestion.IngestionRequest(
+                    "task_result",
+                    str(coding_session.subagent_session.session_id),
+                    "chat_coding_pr_skipped",
+                )
+            )
+
         await store_coding_complete_to_message(coding_session, branch_url=branch_url)
 
         logger.info(
@@ -603,6 +620,20 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
 
     if result.success:
         await coding_session.amark_completed(pr_url=result.mr_url)
+
+        # INGEST-02（14-06）：PR 创建成功锚点投递统一摄取（mr_url 权威源已经
+        # amark_completed 持久化进 CodingSession.pr_url，normalizer 后台重读）。
+        if coding_session.subagent_session_id:
+            from knowledge import ingestion  # lazy import 防循环
+
+            await ingestion.aschedule_ingestion(
+                ingestion.IngestionRequest(
+                    "task_result",
+                    str(coding_session.subagent_session.session_id),
+                    "chat_coding_pr_created",
+                )
+            )
+
         await store_coding_complete_to_message(coding_session)
 
         logger.info(
