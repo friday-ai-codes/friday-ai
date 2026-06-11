@@ -215,6 +215,28 @@ async def ensure_delivery_knowledge_collection() -> None:
             },
         )
 
+    # hybrid 结构校验下半场：dense 维度匹配还不够，sparse named vector 必须存在——
+    # 残缺 collection（只有 named dense）若静默通过，Phase 13 写 sparse 向量时才在
+    # 摄取路径上失败（写入错库比报错更危险，P8 同源防线）。
+    sparse_config = getattr(collection_info.config.params, "sparse_vectors", None)
+    if not sparse_config or "sparse" not in sparse_config:
+        logger.error(
+            "knowledge_collection_config_mismatch",
+            collection=DELIVERY_KNOWLEDGE_COLLECTION,
+            existing_size=existing_size,
+            expected_size=expected_dimension,
+            existing_sparse=False,
+        )
+        raise KnowledgeCollectionMismatchError(
+            "delivery_knowledge collection 缺少 sparse named vector（非完整 hybrid 结构）。"
+            "请确认 collection 来源，或运行 `manage.py rebuild_delivery_knowledge --yes` 显式重建。",
+            details={
+                "existing_size": existing_size,
+                "expected_size": expected_dimension,
+                "existing_sparse": False,
+            },
+        )
+
     # 匹配通过 → 元信息缺失则补写（升级路径：collection 先于元信息存在）
     meta_setting = await SystemSetting.objects.filter(
         key=SettingKeys.KNOWLEDGE_COLLECTION_META
