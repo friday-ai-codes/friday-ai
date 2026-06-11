@@ -28,7 +28,7 @@ from .serializers import (
     TokenResponseSerializer,
     UserSerializer,
 )
-from .throttles import LoginRateThrottle, RefreshRateThrottle
+from .throttles import LoginIPRateThrottle, LoginRateThrottle, RefreshRateThrottle
 
 User = get_user_model()
 logger = structlog.get_logger(__name__)
@@ -39,13 +39,17 @@ class LoginView(APIView):
 
     authentication_classes = []
     permission_classes = [AllowAny]
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [LoginRateThrottle, LoginIPRateThrottle]
 
     async def post(self, request):
         serializer = LoginSerializer(data=request.data)
         # KEEP: LoginSerializer.is_valid() 内部调用 authenticate()，涉及 DB 查询
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         user = serializer.validated_data["user"]
+
+        # 登录成功即清空该「IP+用户名」的限流计数：限流只应拦截连续失败（爆破），
+        # 不应惩罚正常登录/切换账号（cache 后端可能是 Redis，走 sync_to_async）
+        await sync_to_async(LoginRateThrottle().reset)(request)
 
         # Generate tokens
         # KEEP: simplejwt RefreshToken.for_user() 无 async API

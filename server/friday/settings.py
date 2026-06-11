@@ -285,9 +285,17 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
+        # 登录限流按「IP+用户名」计数，且登录成功即清零——实际只拦"对单一账号
+        # 连续失败 5 次"的爆破行为，不影响共享出口 IP 的正常团队
         "auth_login": "5/min",
+        # 纯 IP 维度兜底，防单 IP 批量扫描多账号；需容纳 NAT 后整个团队的正常登录
+        "auth_login_ip": "30/min",
         "auth_refresh": "20/min",
     },
+    # 信任的反向代理跳数（默认 1 = 部署自带的 nginx）。决定 get_ident() 从
+    # X-Forwarded-For 取哪一跳作为限流 IP；不设置时 DRF 信任整条 XFF，
+    # 攻击者伪造头即可不断更换限流桶绕过限速。
+    "NUM_PROXIES": int(os.environ.get("NUM_PROXIES", "1")),
 }
 
 # =============================================================================
