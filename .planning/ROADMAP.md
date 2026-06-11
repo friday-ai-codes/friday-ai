@@ -11,7 +11,7 @@
 
 ## Phases
 
-- [ ] **Phase 12: 知识模型与图存储地基** - `knowledge` app 实体/版本/bi-temporal 边模型 + GraphStore 接口 + `delivery_knowledge` collection 生命周期
+- [x] **Phase 12: 知识模型与图存储地基** - `knowledge` app 实体/版本/bi-temporal 边模型 + GraphStore 接口 + `delivery_knowledge` collection 生命周期 (completed 2026-06-11)
 - [ ] **Phase 13: 统一摄取与版本化** - 幂等异步摄取管线 + 版本翻转/向量下线，接通 chat 与 MCP 首批触发点
 - [ ] **Phase 14: 全触发点接入与 diff 归档** - workflow/编码回调/飞书三类触发点 + 全量 diff 归档与代码图谱对齐
 - [ ] **Phase 15: 时间感知混合检索** - 向量召回 + 图扩散 + 时间衰减融合，相似需求召回与迭代轨迹查询
@@ -32,7 +32,7 @@
   4. 同一实体的多次修改形成 supersedes 版本链，可按版本号回溯任意旧版本
   5. `delivery_knowledge` collection 创建/校验有显式生命周期管理：维度不匹配时拒绝并响亮报错（提供显式重建命令），绝不自动删库重建；payload schema（entity_kind/entity_id/version/is_latest/project_id/event_time 及权限维度字段）第一天即定型
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 **Wave 1**
 
@@ -41,7 +41,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 12-02-PLAN.md — GraphStore 接口与递归 CTE 遍历（防环/深度 clamp/有效性过滤/raw SQL 收口 grep 审计）
-- [ ] 12-03-PLAN.md — delivery_knowledge collection 生命周期（payload schema 定型 + mismatch 拒绝 + --yes 显式重建命令）
+- [x] 12-03-PLAN.md — delivery_knowledge collection 生命周期（payload schema 定型 + mismatch 拒绝 + --yes 显式重建命令）
 
 ### Phase 13: 统一摄取与版本化
 
@@ -110,7 +110,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 12. 知识模型与图存储地基 | 2/3 | In Progress|  |
+| 12. 知识模型与图存储地基 | 3/3 | Complete   | 2026-06-11 |
 | 13. 统一摄取与版本化 | 0/? | Not started | - |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
