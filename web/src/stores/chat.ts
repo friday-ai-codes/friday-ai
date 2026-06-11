@@ -755,9 +755,9 @@ export const useChatStore = defineStore('chat', () => {
             id: tc.id,
             name: tc.name,
             input: tc.input || {},
-            result: tc.result == null ? undefined : tc.result,
+            result: tc.result ?? undefined,
             status: tc.status === 'done' ? 'done' : 'running',
-            batch_id: tc.batch_id == null ? undefined : tc.batch_id,
+            batch_id: tc.batch_id ?? undefined,
           }))
         : []
       streamingTimeline.value = Array.isArray(snap.timeline) ? [...snap.timeline] : []

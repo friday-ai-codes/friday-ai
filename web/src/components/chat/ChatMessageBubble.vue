@@ -287,7 +287,7 @@ function copyContent() {
   if (content) {
     navigator.clipboard.writeText(content)
     toggleCopied(true)
-    setTimeout(() => toggleCopied(false), 2000)
+    setTimeout(toggleCopied, 2000, false)
   }
 }
 
@@ -305,7 +305,7 @@ const toolCalls = computed(() => {
       id: p.tool_call_id || p.id,
       name: p.name,
       input: p.input,
-      result: p.result == null ? undefined : p.result,
+      result: p.result ?? undefined,
       status: p.status === 'running' ? 'running' : 'done',
     }))
   if (fromParts.length > 0) {
@@ -372,14 +372,14 @@ const repoNames = computed<Record<string, string>>(() => {
     if (Array.isArray(m.parts)) {
       for (const p of m.parts) {
         if (p.type === 'tool_use')
-          scanToolCall(p.name, p.input, p.result == null ? undefined : p.result)
+          scanToolCall(p.name, p.input, p.result ?? undefined)
       }
     }
   }
 
   for (const p of displayParts.value) {
     if (p.type === 'tool_use')
-      scanToolCall(p.name, p.input, p.result == null ? undefined : p.result)
+      scanToolCall(p.name, p.input, p.result ?? undefined)
   }
 
   return map
@@ -406,7 +406,7 @@ const repoRefs = computed<RepoRef[]>(() => {
   // 1. 相关性候选优先
   for (const p of tools) {
     if (p.name.replace(/^mcp__[^_]+__/, '') === 'analyze_repository_relevance') {
-      for (const c of relevanceCandidates(p.result == null ? undefined : p.result))
+      for (const c of relevanceCandidates(p.result ?? undefined))
         add(c.id, c.name)
     }
   }
@@ -418,7 +418,7 @@ const repoRefs = computed<RepoRef[]>(() => {
   }
   // 3. 编码方案推荐仓库
   for (const p of tools) {
-    const contributed = collectRepoNames(p.name, p.input, p.result == null ? undefined : p.result)
+    const contributed = collectRepoNames(p.name, p.input, p.result ?? undefined)
     for (const [id, name] of Object.entries(contributed))
       add(id, name)
   }
@@ -541,7 +541,7 @@ const groupedDisplayItems = computed<PartsDisplayItem[]>(() => {
             id: p.tool_call_id || p.id,
             name: p.name,
             input: p.input,
-            result: p.result == null ? undefined : p.result,
+            result: p.result ?? undefined,
             status: (p.status === 'running' ? 'running' : 'done') as 'running' | 'done',
           })
           k++
@@ -559,7 +559,7 @@ const groupedDisplayItems = computed<PartsDisplayItem[]>(() => {
           id: cur.tool_call_id || cur.id,
           name: cur.name,
           input: cur.input,
-          result: cur.result == null ? undefined : cur.result,
+          result: cur.result ?? undefined,
           status: (cur.status === 'running' ? 'running' : 'done') as 'running' | 'done',
         })
         i++
@@ -571,7 +571,7 @@ const groupedDisplayItems = computed<PartsDisplayItem[]>(() => {
         id: cur.tool_call_id || cur.id,
         name: cur.name,
         input: cur.input,
-        result: cur.result == null ? undefined : cur.result,
+        result: cur.result ?? undefined,
         status: (cur.status === 'running' ? 'running' : 'done') as 'running' | 'done',
       })
       i++

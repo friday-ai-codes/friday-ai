@@ -38,7 +38,7 @@ const hasUndeclared = computed(() =>
 
 // 变量在 variables_schema 中是否声明 —— 使用 hasOwnProperty 避免 prototype 污染误判
 function isDeclared(varName: string): boolean {
-  return Object.prototype.hasOwnProperty.call(props.variablesSchema, varName)
+  return Object.hasOwn(props.variablesSchema, varName)
 }
 
 // 变量在 variables_schema 中是否为必填
