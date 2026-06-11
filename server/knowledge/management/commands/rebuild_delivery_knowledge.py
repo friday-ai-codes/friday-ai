@@ -22,8 +22,8 @@ from django.core.management.base import BaseCommand, CommandParser
 
 from knowledge.collection import (
     DELIVERY_KNOWLEDGE_COLLECTION,
-    _expected_dimension,
     ensure_delivery_knowledge_collection,
+    get_expected_dimension,
 )
 from services.qdrant_service import QdrantService
 
@@ -92,4 +92,4 @@ class Command(BaseCommand):
         """
         await sync_to_async(QdrantService.delete_collection_by_name)(DELIVERY_KNOWLEDGE_COLLECTION)
         await ensure_delivery_knowledge_collection()
-        return await _expected_dimension()
+        return await get_expected_dimension()
