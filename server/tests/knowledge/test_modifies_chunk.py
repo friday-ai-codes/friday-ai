@@ -329,7 +329,9 @@ class TestResolutionLadder:
         assert all(s.metadata is not None and s.metadata["resolution"] == "file" for s in specs)
         unresolved = file_diffs[0].unresolved_symbols
         assert len(unresolved) == 5
-        assert all(r["file_path"] == FILE_PATH and r["commit_sha"] == COMMIT_SHA for r in unresolved)
+        assert all(
+            r["file_path"] == FILE_PATH and r["commit_sha"] == COMMIT_SHA for r in unresolved
+        )
 
     async def test_unresolved_for_new_file(self) -> None:
         """④ 新增文件（base 无任何 chunk）→ 零边 + unresolved 记录（懒解析跟踪）。"""
