@@ -29,7 +29,12 @@
   3. 通过 GraphStore 接口可完成 1–3 跳递归遍历，自动施加有效性过滤、深度上限与防环；调用方拿不到绕过接口的裸 SQL 路径（边表 raw SQL 仅存在于 GraphStore 实现内）
   4. 同一实体的多次修改形成 supersedes 版本链，可按版本号回溯任意旧版本
   5. `delivery_knowledge` collection 创建/校验有显式生命周期管理：维度不匹配时拒绝并响亮报错（提供显式重建命令），绝不自动删库重建；payload schema（entity_kind/entity_id/version/is_latest/project_id/event_time 及权限维度字段）第一天即定型
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — knowledge app 三模型（实体/版本链/bi-temporal 边）+ 全部 DB 约束 + 测试基建（Wave 0 合并）
+- [ ] 12-02-PLAN.md — GraphStore 接口与递归 CTE 遍历（防环/深度 clamp/有效性过滤/raw SQL 收口 grep 审计）
+- [ ] 12-03-PLAN.md — delivery_knowledge collection 生命周期（payload schema 定型 + mismatch 拒绝 + --yes 显式重建命令）
 
 ### Phase 13: 统一摄取与版本化
 **Goal**: 知识摄取成为业务流程的自动副产品——幂等、异步、版本化，检索面始终只见最新版；以 chat 与 MCP 两个形态最稳定的触发点验证管线
