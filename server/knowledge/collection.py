@@ -40,6 +40,7 @@ __all__ = [
     "KNOWLEDGE_PAYLOAD_REQUIRED_FIELDS",
     "KNOWLEDGE_SCHEMA_VERSION",
     "ensure_delivery_knowledge_collection",
+    "get_embedding_model_name",
     "get_expected_dimension",
 ]
 
@@ -104,8 +105,12 @@ async def get_expected_dimension() -> int:
         return DEFAULT_EMBEDDING_DIMENSION
 
 
-async def _embedding_model_name() -> str:
-    """读取当前 embedding 模型名（仅作元信息记录，可为空串）。"""
+async def get_embedding_model_name() -> str:
+    """读取当前 embedding 模型名（可为空串）。
+
+    公开 API：Phase 13 摄取写入 payload ``embedding_model`` 字段时复用，
+    避免跨模块 import 私有函数。
+    """
     model_setting = await SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_MODEL).afirst()
     return model_setting.value if model_setting and model_setting.value else ""
 
@@ -113,7 +118,7 @@ async def _embedding_model_name() -> str:
 async def _write_collection_meta(dimension: int) -> None:
     """将 collection 元信息（模型名 + 维度 + schema 版本）写入 SystemSetting。"""
     meta = {
-        "model": await _embedding_model_name(),
+        "model": await get_embedding_model_name(),
         "dimension": dimension,
         "schema_version": KNOWLEDGE_SCHEMA_VERSION,
     }
