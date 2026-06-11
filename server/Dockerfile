@@ -71,6 +71,13 @@ RUN groupadd -r friday && useradd -r -g friday -d /app -s /sbin/nologin friday
 # Copy app from builder
 COPY --from=builder /app /app
 
+# 预置 fastembed BM25 稀疏编码模型（assets/ 内仅 ~84KB 停用词表 + config，无权重文件，
+# 已按 huggingface_hub 缓存目录结构存放，构建与运行均无需访问 HuggingFace）。
+# 若缺失：运行时首次检索会卡在模型下载直到网关超时（502/504），随后 sparse encoder
+# 熔断，route_repositories / RAG 检索全部静默返回空结果。
+ENV FASTEMBED_CACHE_PATH=/opt/fastembed_cache
+COPY --chown=friday:friday assets/fastembed_cache /opt/fastembed_cache
+
 # Copy installed packages from builder's system Python
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
