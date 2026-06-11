@@ -11,7 +11,7 @@
 - [x] **KMOD-02**: 实体间关系以 bi-temporal 边存储（`valid_at`/`invalid_at` + `created_at`/`expired_at` 四时间戳），失效采用置位而非删除，历史可审计
 - [x] **KMOD-03**: 同一实体的多次修改形成版本链（supersedes），旧版本保留且可按版本号回溯
 - [x] **KMOD-04**: 图读写收敛于 GraphStore service 接口（内建 1–3 跳递归遍历、有效性过滤、防环与深度上限），调用方不得绕过接口裸写 SQL（保留换图引擎逃生门）
-- [ ] **KMOD-05**: 编码产出的全量 diff 归档落库（unidiff 解析到文件级），关联 commit SHA / MR URL / 仓库元数据，超大 diff 压缩存储
+- [x] **KMOD-05**: 编码产出的全量 diff 归档落库（unidiff 解析到文件级），关联 commit SHA / MR URL / 仓库元数据，超大 diff 压缩存储
 
 ### 知识摄取（INGEST）
 
@@ -43,7 +43,7 @@
 
 ### 增强（ENH）
 
-- [ ] **ENH-01**: diff→chunk 符号级对齐：code_change 经 `MODIFIES_CHUNK` 边关联 ChunkRegistry 代码块（记 file+symbol+commit_sha 懒解析），支持反查"这个函数被哪些需求改过"
+- [x] **ENH-01**: diff→chunk 符号级对齐：code_change 经 `MODIFIES_CHUNK` 边关联 ChunkRegistry 代码块（记 file+symbol+commit_sha 懒解析），支持反查"这个函数被哪些需求改过"
 - [ ] **ENH-02**: LLM 相似度复评：相似需求召回结果二阶段分级（重复/相关/无关）并附一句话理由
 - [ ] **ENH-03**: 前端只读实体详情页 + 关联时间线（列表/树形态，不做图画布编辑）
 - [ ] **ENH-04**: as-of（point-in-time）历史时点查询暴露为检索工具参数（"2026-05 时这个需求的方案是什么"）
@@ -77,7 +77,7 @@
 | KMOD-02 | Phase 12 | Complete |
 | KMOD-03 | Phase 12 | Complete |
 | KMOD-04 | Phase 12 | Complete |
-| KMOD-05 | Phase 14 | Pending |
+| KMOD-05 | Phase 14 | Complete |
 | INGEST-01 | Phase 14 | Pending |
 | INGEST-02 | Phase 14 | Pending |
 | INGEST-03 | Phase 13 | Complete |
@@ -97,7 +97,7 @@
 | EXPO-02 | Phase 16 | Pending |
 | EXPO-03 | Phase 16 | Pending |
 | EXPO-04 | Phase 16 | Pending |
-| ENH-01 | Phase 14 | Pending |
+| ENH-01 | Phase 14 | Complete |
 | ENH-02 | Phase 15 | Pending |
 | ENH-03 | Phase 16 | Pending |
 | ENH-04 | Phase 16 | Pending |
