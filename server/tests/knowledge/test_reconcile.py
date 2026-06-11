@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from django.core.management import call_command
-from django.utils import timezone
 
 from knowledge.models import EntityKind, EntityOrigin
 
@@ -80,16 +79,12 @@ def _drift_scenario(entity_factory, version_factory, mock_qdrant_client) -> dict
         kind=EntityKind.TECH_PLAN, origin=EntityOrigin.CHAT, source_kind="coding_plan"
     )
     missing_pid = str(uuid.uuid4())
-    v_missing = version_factory(
-        e_missing, qdrant_point_ids=[missing_pid], vector_synced=True
-    )
+    v_missing = version_factory(e_missing, qdrant_point_ids=[missing_pid], vector_synced=True)
 
     # 漂移 2：非 latest 版本的点 payload 仍 is_latest=true → stale_latest
     e_stale = entity_factory()
     stale_pid = str(uuid.uuid4())
-    version_factory(
-        e_stale, is_latest=False, qdrant_point_ids=[stale_pid], vector_synced=True
-    )
+    version_factory(e_stale, is_latest=False, qdrant_point_ids=[stale_pid], vector_synced=True)
 
     # 漂移 3：origin=mcp 且 kind=tech_plan 的 latest 实体无活跃 HAS_PLAN 入边 → missing_edges
     e_no_edge = entity_factory(
