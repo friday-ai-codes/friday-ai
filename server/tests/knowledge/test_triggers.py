@@ -1641,6 +1641,247 @@ class TestCodingTaskResultNormalizer:
         assert reached.get(work_item_id) == 2
 
 
+# ============================================================================
+# 14-06 Task 2：编码完成三锚点接线（coding_graph ×2 / coding.py / callbacks 旧兼容）
+# ============================================================================
+
+
+def _make_mock_chat_coding_session(session_id: str = "sub-chat-mock-1"):
+    """create_pr_or_skip_node 直调用的 mock CodingSession（test_coding_session_graph 同款形态）。"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    session = MagicMock()
+    session.id = "cs-mock-1"
+    session.repository.name = "mock-repo"
+    session.repository.git_url = "https://github.com/test/repo.git"
+    session.repository.git_platform = "github"
+    session.repository.default_branch = "main"
+    session.branch_name = "feat/coding-trigger"
+    session.subagent_session_id = 42
+    session.subagent_session.session_id = session_id
+    session.amark_completed = AsyncMock()
+    session.amark_failed = AsyncMock()
+    session.aresume_running = AsyncMock()
+    return session
+
+
+async def _run_resume_after_containers(coding_exec, monkeypatch: pytest.MonkeyPatch):
+    """构造 AICodingNode 宿主并直调 _resume_after_containers（MR 创建/通知/子步骤全 mock）。"""
+    from unittest.mock import AsyncMock
+
+    import structlog as _structlog
+
+    from workflows.nodes.ai.coding import AICodingNode
+    from workflows.nodes.base import ExecutionContext
+
+    node = AICodingNode()
+    monkeypatch.setattr(
+        node,
+        "_create_mr_for_repo",
+        AsyncMock(
+            return_value={
+                "mr_url": "https://gitlab.com/test/wf-coding-repo/-/merge_requests/11",
+                "mr_id": "11",
+                "has_conflicts": False,
+            }
+        ),
+    )
+    monkeypatch.setattr(node, "emit_sub_step", AsyncMock())
+    monkeypatch.setattr(node, "_send_result_notification", AsyncMock())
+
+    context = ExecutionContext(
+        execution_id=str(coding_exec.workflow_execution_id),
+        node_id=str(coding_exec.node_id),
+        node_config={},
+        input_data={},
+        workflow_context={},
+        previous_outputs={},
+        node_execution=coding_exec,
+    )
+    return await node._resume_after_containers(
+        context, dict(coding_exec.output_data), _structlog.get_logger("test")
+    )
+
+
+class TestCodingTriggers:
+    """14-06 Task 2：编码完成四锚点投递 + 时序防线 + 异常隔离（-k coding 选中）。"""
+
+    async def test_coding_chat_skip_branch_delivers_once(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """create_pr_or_skip_node skip 路径恰投递 1 条 chat_coding_pr_skipped。"""
+        from unittest.mock import AsyncMock, patch
+
+        from orchestration.coding_graph import create_pr_or_skip_node
+
+        mock_session = _make_mock_chat_coding_session("sub-chat-skip-1")
+        with (
+            patch(
+                "orchestration.coding_graph._get_coding_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock),
+        ):
+            result = await create_pr_or_skip_node(
+                {"coding_session_id": "cs-mock-1", "skip_pr": True}
+            )
+
+        assert result["phase"] == "completed"
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("task_result", "sub-chat-skip-1", "chat_coding_pr_skipped")
+        ]
+
+    async def test_coding_chat_pr_created_branch_delivers_once(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """create_pr_or_skip_node PR 成功路径恰投递 1 条 chat_coding_pr_created。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from orchestration.coding_graph import create_pr_or_skip_node
+        from services.git_platform.models import MRCreateResult
+
+        mock_session = _make_mock_chat_coding_session("sub-chat-pr-1")
+        mock_cred = MagicMock()
+        mock_cred.encrypted_token = "encrypted-token"
+        mock_client = AsyncMock()
+        mock_client.create_merge_request = AsyncMock(
+            return_value=MRCreateResult(
+                success=True, mr_url="https://github.com/test/repo/pull/3", mr_id="3"
+            )
+        )
+        with (
+            patch(
+                "orchestration.coding_graph._get_coding_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock),
+            patch("repositories.models.GitCredential") as mock_cred_cls,
+            patch("common.encryption.decrypt_value", return_value="token"),
+            patch("services.git_platform.get_git_platform_client", return_value=mock_client),
+        ):
+            mock_cred_cls.objects.aget = AsyncMock(return_value=mock_cred)
+            result = await create_pr_or_skip_node(
+                {
+                    "coding_session_id": "cs-mock-1",
+                    "skip_pr": False,
+                    "confirmed_pr_title": "feat: trigger",
+                    "confirmed_pr_description": "body",
+                    "target_branch": "main",
+                }
+            )
+
+        assert result["phase"] == "completed"
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("task_result", "sub-chat-pr-1", "chat_coding_pr_created")
+        ]
+
+    async def test_coding_workflow_persists_mr_results_then_delivers(
+        self,
+        captured_requests: list[IngestionRequest],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """_resume_after_containers：投递前 mr_results 已持久化进 node_execution.output_data。"""
+        from workflows.models.execution import NodeExecution
+
+        _p, repo, _e, _g, coding_exec, sub, _tr = await sync_to_async(
+            lambda: _make_coding_workflow_host(mr_results=None)
+        )()
+
+        result = await _run_resume_after_containers(coding_exec, monkeypatch)
+
+        assert result.status == "completed"
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("task_result", sub.session_id, "workflow_coding_completed")
+        ]
+        # blocker 修复锚：重读 DB 断言 mr_results 已持久化（normalizer 重读的权威源）
+        refreshed = await NodeExecution.objects.aget(id=coding_exec.id)
+        persisted = refreshed.output_data.get("mr_results")
+        assert persisted == [
+            {
+                "repository_id": str(repo.id),
+                "mr_url": "https://gitlab.com/test/wf-coding-repo/-/merge_requests/11",
+                "mr_id": "11",
+                "success": True,
+            }
+        ]
+        # 合并不覆盖既有键
+        assert refreshed.output_data.get("pending_sessions")
+
+    async def test_coding_callback_main_path_zero_delivery_legacy_delivers(
+        self,
+        captured_requests: list[IngestionRequest],
+    ) -> None:
+        """时序防线（Pitfall 1）：容器回调主路径（graph 管理）零投递；旧兼容分支投递 legacy_coding_completed。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from subagent.api.callbacks import _update_coding_session_on_complete
+
+        # 主路径：graph 管理（task_type=coding）→ 回调时刻零投递（归档挂 PR 创建之后）
+        _p1, _r1, _pl1, _cs1, sub1, _tr1 = await sync_to_async(_make_coding_chat_host)()
+        sub1.last_output = {"task_type": "coding"}
+        await sub1.asave(update_fields=["last_output", "updated_at"])
+        mock_compiled = MagicMock()
+        mock_compiled.ainvoke = AsyncMock(return_value={})
+        mock_builder = MagicMock()
+        mock_builder.compile.return_value = mock_compiled
+        with (
+            patch("orchestration.coding_graph.build_coding_graph", return_value=mock_builder),
+            patch("orchestration.checkpointer.get_checkpointer", new_callable=AsyncMock),
+        ):
+            await _update_coding_session_on_complete(sub1)
+        assert captured_requests == []
+
+        # 旧兼容分支：非 graph 管理 + TaskResult 自带 pr_url（容器内建 MR 历史模式）
+        _p2, _r2, _pl2, _cs2, sub2, _tr2 = await sync_to_async(
+            lambda: _make_coding_chat_host(
+                task_pr_url="https://gitlab.com/test/coding-repo/-/merge_requests/5",
+                last_output={"task_type": "explore"},
+            )
+        )()
+        with patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock):
+            await _update_coding_session_on_complete(sub2)
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("task_result", sub2.session_id, "legacy_coding_completed")
+        ]
+
+    async def test_coding_hosts_survive_runner_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """异常隔离：run_in_background 抛 RuntimeError → 两宿主流程仍正常完成。"""
+        from unittest.mock import AsyncMock, patch
+
+        from orchestration.coding_graph import create_pr_or_skip_node
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+
+        # chat skip 路径
+        mock_session = _make_mock_chat_coding_session("sub-chat-iso-1")
+        with (
+            patch(
+                "orchestration.coding_graph._get_coding_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock),
+        ):
+            result = await create_pr_or_skip_node(
+                {"coding_session_id": "cs-mock-1", "skip_pr": True}
+            )
+        assert result["phase"] == "completed"
+
+        # workflow 路径
+        _p, _repo, _e, _g, coding_exec, _sub, _tr = await sync_to_async(
+            lambda: _make_coding_workflow_host(mr_results=None)
+        )()
+        wf_result = await _run_resume_after_containers(coding_exec, monkeypatch)
+        assert wf_result.status == "completed"
+
+
 class TestExceptionIsolation:
     """Pitfall 4：ingestion 投递链路抛错时宿主主流程仍成功返回。"""
 
