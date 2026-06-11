@@ -73,13 +73,40 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| （roadmap 创建时填充） | | |
+| KMOD-01 | Phase 12 | Pending |
+| KMOD-02 | Phase 12 | Pending |
+| KMOD-03 | Phase 12 | Pending |
+| KMOD-04 | Phase 12 | Pending |
+| KMOD-05 | Phase 14 | Pending |
+| INGEST-01 | Phase 14 | Pending |
+| INGEST-02 | Phase 14 | Pending |
+| INGEST-03 | Phase 13 | Pending |
+| INGEST-04 | Phase 14 | Pending |
+| INGEST-05 | Phase 13 | Pending |
+| INGEST-06 | Phase 13 | Pending |
+| INGEST-07 | Phase 13 | Pending |
+| INGEST-08 | Phase 13 | Pending |
+| RETR-01 | Phase 15 | Pending |
+| RETR-02 | Phase 15 | Pending |
+| RETR-03 | Phase 15 | Pending |
+| RETR-04 | Phase 15 | Pending |
+| RETR-05 | Phase 15 | Pending |
+| RETR-06 | Phase 15 | Pending |
+| RETR-07 | Phase 15 | Pending |
+| EXPO-01 | Phase 16 | Pending |
+| EXPO-02 | Phase 16 | Pending |
+| EXPO-03 | Phase 16 | Pending |
+| EXPO-04 | Phase 16 | Pending |
+| ENH-01 | Phase 14 | Pending |
+| ENH-02 | Phase 15 | Pending |
+| ENH-03 | Phase 16 | Pending |
+| ENH-04 | Phase 16 | Pending |
 
 **Coverage:**
 - v1 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28 ⚠️（待 roadmap）
+- Mapped to phases: 28 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-11*
-*Last updated: 2026-06-11 after initial definition*
+*Last updated: 2026-06-11 after roadmap creation (traceability filled)*
