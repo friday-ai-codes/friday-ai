@@ -18,9 +18,8 @@
     "types": [
       "vitest",
       "vite/client",
-      "vite-plugin-vue-layouts/client",
-      "vue-macros/macros-global",
-      "unplugin-vue-router/client"
+      "vite-plugin-vue-layouts-next/client",
+      "vue-macros/macros-global"
     ],
     "allowJs": true,
     "strict": true,
