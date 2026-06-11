@@ -285,6 +285,10 @@ def test_edge_invalid_at_not_after_valid_at_rejected(entity_factory, edge_factor
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    connection.vendor != "sqlite",
+    reason="EXPLAIN QUERY PLAN 为 SQLite 专有语法；PG 小数据集下 planner 可合法选 seq scan，索引断言不可移植",
+)
 def test_edge_fanout_query_uses_fanout_index(entity_factory) -> None:
     """按 (source_entity_id, relation) 查询应走 idx_kedge_fanout 索引。"""
     a = entity_factory()
