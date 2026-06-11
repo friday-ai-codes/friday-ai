@@ -15,7 +15,8 @@ implementation 承接点: runtime cache + /api/show context_length 主动拉取�
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,16 @@ from typing import Any
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Claude Code 的上下文窗口声明后缀（如 `deepseek-v4-pro[1m]` / `sonnet[1m]`）。
+# 能力匹配时剥掉该后缀，让带后缀的模型名命中基础模型条目。
+_CONTEXT_SUFFIX_RE = re.compile(r"\[\d+[mk]\]$", re.IGNORECASE)
+
+
+def strip_context_suffix(model: str) -> str:
+    """剥掉 Claude Code 的 `[1m]` 类上下文声明后缀，返回基础模型 ID。"""
+    return _CONTEXT_SUFFIX_RE.sub("", model.strip())
+
 
 FIXTURE_PATH = Path(__file__).parent.parent / "agents" / "fixtures" / "model_prices.json"
 
@@ -139,6 +150,60 @@ class ModelCapabilities:
             return table[(provider, "*")]
         # 4. 全局兜底
         return table.get(("*", "*"), DEFAULT_CAPABILITIES)
+
+    @classmethod
+    def resolve_for_credential(
+        cls,
+        credential: Any,
+        provider: str,
+        model: str,
+    ) -> ModelCapabilitiesEntry:
+        """凭证级能力解析：用户在凭证模型条目上配置的能力优先于 fixture。
+
+        解析顺序：
+            1. ``cls.get(provider, model)`` 拿 fixture 基线（model 先剥 ``[1m]`` 后缀）。
+            2. 在 ``credential.available_models`` 中找到该模型条目（同样按剥后缀的
+               基础 ID 匹配），用其配置 overlay 基线：
+               - ``context_length`` → ``max_input_tokens``
+               - ``supports_vision`` → ``supports_vision``
+               - ``supports_tools`` → ``supports_function_calling``
+
+        ``credential=None`` 或条目未配置任何能力字段时与 ``get()`` 行为一致，
+        所有调用方可零风险接入。``input/output_modalities`` 不在本 entry 表达范围，
+        多模态门控走 ``chat/multimodal.py`` 的 ``available_models`` 路径。
+        """
+        base_model = strip_context_suffix(model)
+        entry = cls.get(provider, base_model)
+
+        raw_models = getattr(credential, "available_models", None) if credential else None
+        if not isinstance(raw_models, list):
+            return entry
+
+        for item in raw_models:
+            if isinstance(item, dict):
+                item_id = str(item.get("id") or item.get("name") or "").strip()
+                raw: dict[str, Any] = item
+            elif isinstance(item, str):
+                item_id = item.strip()
+                raw = {}
+            else:
+                continue
+            if strip_context_suffix(item_id) != base_model:
+                continue
+
+            overrides: dict[str, Any] = {}
+            context_length = raw.get("context_length")
+            if isinstance(context_length, int) and context_length > 0:
+                overrides["max_input_tokens"] = context_length
+            if isinstance(raw.get("supports_vision"), bool):
+                overrides["supports_vision"] = raw["supports_vision"]
+            if isinstance(raw.get("supports_tools"), bool):
+                overrides["supports_function_calling"] = raw["supports_tools"]
+            if overrides:
+                return replace(entry, **overrides)
+            return entry
+
+        return entry
 
     @classmethod
     def merge_ollama(cls, credential: Any, models_from_tags: list[str]) -> None:

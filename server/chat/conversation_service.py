@@ -1207,7 +1207,15 @@ class ConversationService:
         conv_id_str = str(conversation.id)
 
         if any(part.get("type") == "image" for part in input_parts_data):
-            credential = getattr(conversation, "provider_credential_id", None)
+            # 注意：FK 字段名为 provider_credential_id，直接属性访问会触发同步
+            # DB 查询（async 下 SynchronousOnlyOperation）。读 `_id` 列拿 UUID
+            # 再异步查凭证，让「凭证绑定模型的模态配置」真正生效。
+            from services.provider_config import _fetch_credential_by_id
+
+            credential = None
+            pinned_id = getattr(conversation, "provider_credential_id_id", None)
+            if pinned_id:
+                credential = await _fetch_credential_by_id(pinned_id)
             ensure_image_input_supported(
                 provider_type=sdk_config.provider_type,
                 model=model,

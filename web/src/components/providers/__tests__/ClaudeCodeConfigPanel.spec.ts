@@ -96,6 +96,57 @@ describe('claudeCodeConfigPanel', () => {
     expect(text).not.toContain('openai-prod · openai_chat')
   })
 
+  it('回显时剥 [1m] 后缀还原勾选态，保存时重新拼后缀', async () => {
+    listMock.mockResolvedValue([
+      makeCred({
+        id: 'cred-anth',
+        available_models: [
+          { id: 'deepseek-v4-pro', display_name: 'DeepSeek V4 Pro' },
+          { id: 'deepseek-v4-flash', display_name: 'DeepSeek V4 Flash' },
+        ],
+        default_model: 'deepseek-v4-pro',
+      }),
+    ])
+    getClaudeCodeConfigMock.mockResolvedValue({
+      credential_id: 'cred-anth',
+      model_mapping: {
+        opus: 'deepseek-v4-pro[1m]',
+        sonnet: 'deepseek-v4-pro[1m]',
+        haiku: 'deepseek-v4-flash',
+      },
+      credential: null,
+    })
+    updateClaudeCodeConfigMock.mockResolvedValue({})
+
+    const wrapper = mount(ClaudeCodeConfigPanel, {
+      global: { stubs: selectStubs },
+    })
+    await flushPromises()
+
+    // 回显：mapping 存基础模型 ID，1M 勾选态从后缀还原
+    const vm = wrapper.vm as any
+    expect(vm.mapping).toEqual({
+      opus: 'deepseek-v4-pro',
+      sonnet: 'deepseek-v4-pro',
+      haiku: 'deepseek-v4-flash',
+    })
+    expect(vm.contextFlags).toEqual({ opus: true, sonnet: true, haiku: false })
+
+    // 保存：勾选档重新拼 [1m] 后缀
+    const saveButton = wrapper.findAll('button').find(b => b.text().includes('保存配置'))
+    expect(saveButton).toBeTruthy()
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(updateClaudeCodeConfigMock).toHaveBeenCalledWith({
+      credential_id: 'cred-anth',
+      model_mapping: {
+        opus: 'deepseek-v4-pro[1m]',
+        sonnet: 'deepseek-v4-pro[1m]',
+        haiku: 'deepseek-v4-flash',
+      },
+    })
+  })
+
   it('所选 anthropic 凭证无模型列表时不渲染手动输入框', async () => {
     listMock.mockResolvedValue([
       makeCred({
