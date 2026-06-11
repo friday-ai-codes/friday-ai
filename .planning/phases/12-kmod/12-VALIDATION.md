@@ -38,11 +38,15 @@ created: 2026-06-11
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD（planner 填充） | — | — | KMOD-01 | T-12-02 | natural key 唯一约束 + kind/origin 枚举 DB 兜底 | unit | `uv run pytest tests/knowledge/test_models.py -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | KMOD-02 | — | 失效置位后默认遍历不可见、as_of 历史可见；时间次序 CheckConstraint | unit | `uv run pytest tests/knowledge/test_graph_store.py -k "invalid or as_of" -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | KMOD-03 | — | supersedes 版本链可按版本号回溯；one-latest 部分唯一约束 | unit | `uv run pytest tests/knowledge/test_models.py -k version -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | KMOD-04 | T-12-01 / T-12-03 | 1–3 跳遍历参数化 SQL；环终止；深度 clamp；raw SQL 收口 grep 审计 | unit | `uv run pytest tests/knowledge/test_graph_store.py -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | SC#5 | T-12-04 | collection 维度不匹配 raise 不删库；重建命令需 `--yes` | unit (Qdrant mock) | `uv run pytest tests/knowledge/test_collection.py -x` | ❌ W0 | ⬜ pending |
+| 12-01-01 | 01 | 1 | KMOD-01, KMOD-02, KMOD-03 | T-12-02 | 三模型 + natural key 唯一约束 + kind/origin 枚举 DB 兜底 + 四时间戳/时间次序约束 | unit | `uv run pytest tests/knowledge/test_models.py -x` | ❌ W0 | ⬜ pending |
+| 12-01-02 | 01 | 1 | KMOD-01 | — | 测试基建（conftest fixtures + Qdrant seam）+ admin 最小注册 | unit | `uv run pytest tests/knowledge/ -x` | ❌ W0 | ⬜ pending |
+| 12-01-03 | 01 | 1 | KMOD-01, KMOD-03 | T-12-02 | 约束/枚举兜底/版本链回溯全套测试；one-latest 部分唯一约束 | unit | `uv run pytest tests/knowledge/test_models.py -k version -x` | ❌ W0 | ⬜ pending |
+| 12-02-01 | 02 | 2 | KMOD-04, KMOD-02 | T-12-04 | GraphStore 接口 + 写路径 + 级联失效原语（置位不删除） | unit | `uv run pytest tests/knowledge/test_graph_store.py -x` | ❌ W0 | ⬜ pending |
+| 12-02-02 | 02 | 2 | KMOD-04 | T-12-01 / T-12-03 | 递归 CTE 遍历参数化 SQL（SQLite/PG 双后端）；环终止；深度 clamp | unit | `uv run pytest tests/knowledge/test_graph_store.py -x` | ❌ W0 | ⬜ pending |
+| 12-02-03 | 02 | 2 | KMOD-04, KMOD-02 | T-12-01 / T-12-03 | 失效边默认不可见、as_of 历史可见；raw SQL 收口 grep 审计 | unit | `uv run pytest tests/knowledge/test_graph_store.py -k "invalid or as_of" -x` | ❌ W0 | ⬜ pending |
+| 12-03-01 | 03 | 2 | KMOD-01 (SC#5) | T-12-02 / T-12-04 | payload schema 8 字段定型（含权限维度）；mismatch raise 不删库 | unit (Qdrant mock) | `uv run pytest tests/knowledge/test_collection.py -x` | ❌ W0 | ⬜ pending |
+| 12-03-02 | 03 | 2 | KMOD-01 (SC#5) | T-12-04 | `rebuild_delivery_knowledge` 显式重建命令需 `--yes`，structlog 留痕 | unit (Qdrant mock) | `uv run pytest tests/knowledge/test_collection.py -k command -x` | ❌ W0 | ⬜ pending |
+| 12-03-03 | 03 | 2 | KMOD-01 (SC#5) | T-12-04 | 生命周期/维度校验/命令流程测试（`delete_collection.assert_not_called()`） | unit (Qdrant mock) | `uv run pytest tests/knowledge/test_collection.py -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
