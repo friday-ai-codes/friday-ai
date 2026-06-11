@@ -516,3 +516,72 @@ async def test_revectorize_version_backfills_point_ids_and_sync(
     assert version.qdrant_point_ids  # derive 后回写
     assert len(mock_upsert) == 1
     assert mock_upsert[0] == list(version.qdrant_point_ids)
+
+
+async def test_revectorize_shrink_tombstones_and_deletes_dropped_points(
+    mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, entity_factory, version_factory
+) -> None:
+    """WR-01 锁定：chunk 数收缩时被丢弃的旧多余点先 tombstone 再物理删除。
+
+    模拟旧版本曾切成 3 块（qdrant_point_ids 预存 3 个 id），当前 content
+    只切出 1 块——index ≥ 1 的旧点必须在覆写前下线，否则以 is_latest=True
+    残留且 reconcile 六检查项全部检测不到。
+    """
+    from knowledge.chunking import derive_point_ids
+
+    def _setup():
+        entity = entity_factory(title="标题")
+        version = version_factory(entity, content="正文很短只有一块", vector_synced=False)
+        version.qdrant_point_ids = derive_point_ids(version.id, 3)
+        version.save(update_fields=["qdrant_point_ids"])
+        return entity, version
+
+    _entity, version = await sync_to_async(_setup)()
+    old_ids = [str(pid) for pid in version.qdrant_point_ids]
+    assert len(old_ids) == 3
+
+    await revectorize_version(version)
+
+    await version.arefresh_from_db()
+    new_ids = list(version.qdrant_point_ids)
+    assert new_ids == derive_point_ids(version.id, 1)  # 确定性派生回写
+    assert version.vector_synced is True
+
+    dropped = old_ids[1:]  # index 0 复用，index 1/2 被丢弃
+    # tombstone：is_latest 翻 False（第一道防线）
+    mock_qdrant_client.set_payload.assert_called_once()
+    tomb_kw = mock_qdrant_client.set_payload.call_args.kwargs
+    assert list(tomb_kw["points"]) == dropped
+    assert tomb_kw["payload"] == {"is_latest": False}
+    # 物理删点（纯优化层）
+    mock_qdrant_client.delete.assert_called_once()
+    del_kw = mock_qdrant_client.delete.call_args.kwargs
+    assert list(del_kw["points_selector"].points) == dropped
+    # 新点照常 upsert
+    assert len(mock_upsert) == 1
+    assert mock_upsert[0] == new_ids
+
+
+async def test_revectorize_shrink_tombstone_failure_does_not_raise(
+    mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, entity_factory, version_factory
+) -> None:
+    """WR-01 失败语义：收缩下线的 tombstone 失败响亮（error 日志）但不上抛。"""
+    from knowledge.chunking import derive_point_ids
+
+    def _setup():
+        entity = entity_factory(title="标题")
+        version = version_factory(entity, content="正文很短只有一块", vector_synced=False)
+        version.qdrant_point_ids = derive_point_ids(version.id, 3)
+        version.save(update_fields=["qdrant_point_ids"])
+        return version
+
+    version = await sync_to_async(_setup)()
+    mock_qdrant_client.set_payload.side_effect = RuntimeError("qdrant down")
+
+    with capture_logs() as cap:
+        await revectorize_version(version)  # 不应 raise
+
+    errors = [e["event"] for e in cap if e.get("log_level") == "error"]
+    assert "knowledge_revectorize_tombstone_failed" in errors
+    await version.arefresh_from_db()
+    assert version.vector_synced is True  # 补写主流程不受影响
