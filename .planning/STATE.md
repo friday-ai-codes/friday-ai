@@ -4,8 +4,8 @@ milestone: v0.2.0
 milestone_name: 用户身份令牌与 Agent 工具打通
 status: milestone_complete
 stopped_at: Milestone v0.2.0 archived — ROADMAP/REQUIREMENTS 归档至 milestones/，ROADMAP 折叠，PROJECT.md 全量演进，tag v0.2.0 已创建（未推送）
-last_updated: "2026-06-10T03:05:00.000Z"
-last_activity: 2026-06-10
+last_updated: "2026-06-11T03:56:31.000Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 6
   completed_phases: 6
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 Milestone: v0.2.0 — SHIPPED 2026-06-10
 Phase: 6-11 all complete
 Status: Milestone complete (archived)
-Last activity: 2026-06-11 - Completed quick task 260611-g31: 打磨工作流列表与执行监控界面视觉
+Last activity: 2026-06-11 - Completed quick task 260611-ghb: 统一工作流卡片高度并收纳节点标签
 
 Progress: [██████████] 100% (6/6 phases, 21/21 plans)
 
@@ -60,6 +60,7 @@ None.
 | 260611-0pm | 打磨第 1 批：全仓口径对齐 + 过程痕迹清洗 + 社区脚手架 | 2026-06-11 | 7f0c4381 | [260611-0pm-polish-batch1](./quick/260611-0pm-polish-batch1/) |
 | 260611-fky | 打磨仓库列表索引完成界面视觉 | 2026-06-11 | fa5e1b0a | [260611-fky-repository-list-polish](./quick/260611-fky-repository-list-polish/) |
 | 260611-g31 | 打磨工作流列表与执行监控界面视觉 | 2026-06-11 | 9bc59746 | [260611-g31-workflow-execution-polish](./quick/260611-g31-workflow-execution-polish/) |
+| 260611-ghb | 统一工作流卡片高度并收纳节点标签 | 2026-06-11 | c7af69b6 | [260611-ghb-workflow-card-uniform](./quick/260611-ghb-workflow-card-uniform/) |
 
 ## Deferred Items
 
