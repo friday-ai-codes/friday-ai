@@ -6,12 +6,11 @@
       "DOM",
       "ESNext"
     ],
-    "baseUrl": ".",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
       "~/*": [
-        "src/*"
+        "./src/*"
       ]
     },
     "resolveJsonModule": true,
