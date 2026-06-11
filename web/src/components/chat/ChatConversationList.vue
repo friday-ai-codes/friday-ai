@@ -97,8 +97,8 @@ function handleDeleteConversation(id: string) {
     <!-- 列表 -->
     <ScrollArea class="flex-1 min-h-0">
       <div class="px-2 pb-3">
-        <!-- Loading -->
-        <div v-if="chatStore.loading" class="space-y-2 px-1 pt-1">
+        <!-- Loading（仅首次加载、无缓存数据时显示，避免已有列表被骨架屏顶替造成抖动） -->
+        <div v-if="chatStore.loading && chatStore.conversations.length === 0" class="space-y-2 px-1 pt-1">
           <div v-for="i in 5" :key="i" class="conv-skeleton" />
         </div>
 

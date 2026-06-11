@@ -754,6 +754,80 @@ class ConversationService:
         return conversation
 
     @staticmethod
+    async def switch_space(
+        conversation: Conversation,
+        space_id: str | None,
+    ) -> Message | None:
+        """会话内切换绑定空间。
+
+        切换只改 ``conversation.project``，并落库一条 ``role=system`` 的
+        ``space_switch`` 标记消息（前端渲染为分隔线、LLM 历史重建时注入切换标注）。
+        历史消息保留不动 —— 下一个 turn ``build_sdk_config`` 从 ``project_id``
+        读到新空间后，system prompt / 工具集自动基于新空间重建。
+
+        Args:
+            conversation: 目标会话（caller 已完成 owner gate / running 校验）
+            space_id: 目标空间 UUID；None 表示切回不绑定空间的「通用对话」
+
+        Returns:
+            落库的 space_switch 系统消息；空间未变化时不落库，返回 None
+
+        Raises:
+            ValueError: 目标空间不存在
+        """
+        from projects.models import Project
+
+        old_space_id = str(conversation.project_id) if conversation.project_id else None
+        new_space_id = str(space_id) if space_id else None
+        if old_space_id == new_space_id:
+            return None
+
+        new_space_name = ""
+        if new_space_id is not None:
+            try:
+                project = await Project.objects.aget(id=new_space_id)
+            except Project.DoesNotExist as exc:
+                raise ValueError(f"空间不存在: {new_space_id}") from exc
+            new_space_name = project.name
+
+        old_space_name = ""
+        if old_space_id is not None:
+            old_space_name = (
+                await Project.objects.filter(id=old_space_id)
+                .values_list("name", flat=True)
+                .afirst()
+                or ""
+            )
+
+        conversation.project_id = new_space_id
+        await conversation.asave(update_fields=["project", "updated_at"])
+
+        content = (
+            f"已切换空间到「{new_space_name}」"
+            if new_space_id is not None
+            else "已切换为通用对话（不绑定空间）"
+        )
+        message = await Message.objects.acreate(
+            conversation=conversation,
+            role=Message.Role.SYSTEM,
+            content=content,
+            metadata={
+                "type": "space_switch",
+                "from_space_id": old_space_id,
+                "from_space_name": old_space_name,
+                "to_space_id": new_space_id,
+                "to_space_name": new_space_name,
+            },
+        )
+        logger.info(
+            "conversation_space_switched",
+            conversation_id=str(conversation.id),
+            from_space_id=old_space_id,
+            to_space_id=new_space_id,
+        )
+        return message
+
+    @staticmethod
     async def fork_conversation_before_message(
         conversation_id: str,
         message_id: str,

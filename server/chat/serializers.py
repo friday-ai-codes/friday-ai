@@ -145,8 +145,10 @@ class ConversationPatchSerializer(serializers.Serializer):
         - provider_credential_id（UUID，null 表示清空 pin）
         - model（LLM 模型 ID 字符串）
         - title（对话标题）
+        - space_id（UUID，null 表示切回不绑定空间的通用对话）
 
     frozen 校验由 ConversationDetailView.patch 在 serializer 前完成（contract 双重防御）。
+    space_id 不受 frozen 拦截（与 title 同等待遇），但 running 态由 view 拒绝。
     """
 
     provider_credential_id = serializers.UUIDField(required=False, allow_null=True)
@@ -154,6 +156,7 @@ class ConversationPatchSerializer(serializers.Serializer):
         required=False, allow_blank=True, max_length=200,
     )
     title = serializers.CharField(required=False, max_length=500)
+    space_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_provider_credential_id(self, value):
         """FK 存在性 + is_active 校验，防止指向已软删 / 已禁用凭证（security mitigation-02）。"""

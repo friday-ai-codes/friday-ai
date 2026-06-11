@@ -28,6 +28,10 @@ onMounted(async () => {
   ) {
     chatStore.selectedSpaceId = null
   }
+  // 有可用空间时默认选中第一个，避免顶部下拉长期显示空占位
+  if (!chatStore.selectedSpaceId && spacesStore.spaces.length > 0) {
+    chatStore.selectedSpaceId = spacesStore.spaces[0]!.id
+  }
   await chatStore.restoreFromURL()
   if (chatStore.notificationsEnabled)
     chatStore.requestNotificationPermission()

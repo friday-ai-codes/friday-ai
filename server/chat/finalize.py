@@ -249,21 +249,22 @@ async def finalize_conversation(
         status=result_metadata.get("status", "unknown"),
     )
 
-    # 6. Push 通知（deep_analysis 完成时）
-    if result_metadata.get("deep_analysis"):
+    # 6. Push 通知（会话正常完成时）
+    if status_str == "completed" and not interrupted_by_user and notification_user_id:
         try:
             from chat.push_service import ChatPushService
 
-            await ChatPushService.anotify_deep_analysis_complete(
+            await ChatPushService.anotify_conversation_complete(
                 user_id=notification_user_id,
                 conversation_id=str(conversation.id),
                 conversation_title=conversation.title,
                 answer_preview=final_content,
+                is_deep_analysis=bool(result_metadata.get("deep_analysis")),
             )
         except Exception as push_exc:
             try:
                 logger.warning(
-                    "deep_analysis_push_notify_failed",
+                    "conversation_push_notify_failed",
                     conversation_id=str(conversation.id),
                     session_id=session_id,
                     error=str(push_exc),
