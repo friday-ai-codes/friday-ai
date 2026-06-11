@@ -467,6 +467,26 @@ async def _load_history_messages(conversation_id: str) -> list[BaseMessage]:
 
     history: list[BaseMessage] = []
     for row in rows:
+        if row.role == Message.Role.SYSTEM:
+            # 会话内切换空间：space_switch 标记注入为 HumanMessage 标注，
+            # 让模型明确知道切换边界 —— 此前回答基于旧空间仅作参考，后续基于新空间。
+            # 其余 system 消息维持忽略（chat 场景不会单独落库）。
+            meta = row.metadata or {}
+            if meta.get("type") == "space_switch":
+                to_name = meta.get("to_space_name") or ""
+                from_name = meta.get("from_space_name") or ""
+                from_desc = f"「{from_name}」" if from_name else "无空间（通用对话）"
+                to_desc = f"「{to_name}」" if to_name else "无空间（通用对话）"
+                history.append(
+                    HumanMessage(
+                        content=(
+                            f"[系统提示] 用户已将本对话的空间从 {from_desc} 切换到 {to_desc}。"
+                            "此前的回答基于旧空间上下文，仅作参考；"
+                            "从现在起请基于新空间回答。"
+                        )
+                    )
+                )
+            continue
         if row.role == Message.Role.USER:
             history.append(HumanMessage(content=row.content or ""))
         elif row.role == Message.Role.ASSISTANT:

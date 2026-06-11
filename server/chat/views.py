@@ -566,9 +566,10 @@ class ConversationDetailView(APIView):
     @extend_schema(
         summary="更新对话（pin 语义）",
         description=(
-            "部分更新对话的 provider_credential_id / model / title。"
+            "部分更新对话的 provider_credential_id / model / title / space_id。"
             "frozen 状态（completed/stopped/error）下拒绝修改 provider_credential_id 和 model，"
             "返回 HTTP 400 + {code: 'conversation_frozen'}（implementation contract contract 后端防御）。"
+            "space_id 切换会话绑定空间（null 切回通用对话），running 态拒绝。"
         ),
         request=ConversationPatchSerializer,
         responses={
@@ -622,9 +623,31 @@ class ConversationDetailView(APIView):
             )
             raise
 
-        # 4. 应用变更（provider_credential_id 需写 FK 的 _id 列；Django 生成的 DB 列名
-        # 为 `<field_name>_id` → 对本字段即 `provider_credential_id_id`，setattr 更稳妥。）
+        # 4. 空间切换（会话内切换空间）：running 态拒绝（流式中切换语义混乱），
+        # 不受 frozen 拦截（与 title 同等待遇）。委托 service 落库 space_switch 系统消息。
         data = serializer.validated_data
+        if "space_id" in data:
+            if conversation.status == Conversation.Status.RUNNING:
+                return Response(
+                    {
+                        "code": "conversation_running",
+                        "detail": "对话进行中，无法切换空间，请等待本轮回答完成",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                await ConversationService.switch_space(
+                    conversation,
+                    str(data["space_id"]) if data["space_id"] else None,
+                )
+            except ValueError as exc:
+                return Response(
+                    {"error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # 5. 应用变更（provider_credential_id 需写 FK 的 _id 列；Django 生成的 DB 列名
+        # 为 `<field_name>_id` → 对本字段即 `provider_credential_id_id`，setattr 更稳妥。）
         updated_fields: list[str] = []
         if "provider_credential_id" in data:
             # 赋 UUID 到 FK 的 _id 列：Django ORM 约定 `{field}_id` 持久化 FK ID
@@ -651,7 +674,7 @@ class ConversationDetailView(APIView):
             fields_updated=list(data.keys()),
         )
 
-        # 5. 响应（复用 ConversationDetailSerializer）
+        # 6. 响应（复用 ConversationDetailSerializer）
         # UAT 第 3 项 hotfix（follow-up）：补齐 model + status + provider_credential_id，
         # 让前端 patchConversationCredential 直接拿响应回填本地 conversations[]，
         # 触发 currentConversation getter 反映新 pin。

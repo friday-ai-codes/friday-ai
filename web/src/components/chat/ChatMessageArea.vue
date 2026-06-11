@@ -323,12 +323,20 @@ function handleExportSuccess(
       <div class="chat-message-stack mx-auto pt-8 pb-40 space-y-7">
         <!-- TransitionGroup 不渲染包裹元素，气泡仍是 stack 直接子元素（space-y 生效） -->
         <TransitionGroup :css="false" @enter="onMessageEnter" @leave="onMessageLeave">
-          <ChatMessageBubble
-            v-for="msg in chatStore.messages"
-            :key="msg.id"
-            :message="msg"
-            @export-single="handleExportSingle"
-          />
+          <template v-for="msg in chatStore.messages">
+            <!-- 会话内切换空间标记：渲染为分隔线，不进气泡 -->
+            <ChatSpaceSwitchDivider
+              v-if="msg.role === 'system' && msg.metadata?.type === 'space_switch'"
+              :key="`divider-${msg.id}`"
+              :message="msg"
+            />
+            <ChatMessageBubble
+              v-else
+              :key="msg.id"
+              :message="msg"
+              @export-single="handleExportSingle"
+            />
+          </template>
         </TransitionGroup>
 
         <!-- 流式消息 -->

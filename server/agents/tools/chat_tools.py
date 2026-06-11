@@ -992,17 +992,17 @@ async def deep_analysis(
     )
 
     # 5. 从 ProviderCredential 获取 API 凭据 + Git 凭据，通过 metadata 注入容器
-    # implementation（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
-    # ProviderCredential(scope=system, name=default, provider_type=anthropic)
+    # Claude Code 任务容器统一凭证来源：优先读「Claude Code 编码配置」
+    # （选定凭证 + 三档映射）；未配置时 runtime_config 内部回退系统默认 anthropic 凭证。
     from common.encryption import decrypt_value
     from repositories.models import GitCredential
-    from services.provider_config import aget_legacy_anthropic_config
+    from services.provider_config import aget_claude_code_runtime_config
 
-    legacy = await aget_legacy_anthropic_config()
-    api_key = legacy["api_key"]
-    base_url = legacy["base_url"]
-    system_model = legacy["default_model"]
-    small_model = legacy["small_model"]
+    cc = await aget_claude_code_runtime_config()
+    api_key = cc["api_key"]
+    base_url = cc["base_url"]
+    system_model = cc["default_model"]
+    small_model = cc["haiku_model"]
 
     env_metadata: dict[str, str] = {
         "repository_id": str(repo.id),
