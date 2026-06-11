@@ -24,10 +24,12 @@ const heroRingsEl = ref<HTMLElement | null>(null)
 useLottie(heroRingsEl, pulseRingsAnimation)
 
 useGsapReveal(pageEl, () => {
+  // clearProps：每个目标播完即移除内联样式，避免 HMR / 中断场景下
+  // from() 写入的 opacity/visibility 滞留在元素上导致区块「消失」
   gsap.timeline()
-    .from('.hero-logo', { y: 20, scale: 0.78, autoAlpha: 0, duration: 0.6, ease: 'back.out(1.7)' })
-    .from('.hero-line', { y: 14, autoAlpha: 0, duration: 0.45, stagger: 0.09, ease: 'power2.out' }, '-=0.3')
-    .from('.dash-section', { y: 26, autoAlpha: 0, duration: 0.5, stagger: 0.1, ease: 'power2.out' }, '-=0.2')
+    .from('.hero-logo', { y: 20, scale: 0.78, autoAlpha: 0, duration: 0.6, ease: 'back.out(1.7)', clearProps: 'all' })
+    .from('.hero-line', { y: 14, autoAlpha: 0, duration: 0.45, stagger: 0.09, ease: 'power2.out', clearProps: 'all' }, '-=0.3')
+    .from('.dash-section', { y: 26, autoAlpha: 0, duration: 0.5, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }, '-=0.2')
 })
 
 const executionsStore = useExecutionsStore()
