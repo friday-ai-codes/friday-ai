@@ -32,7 +32,7 @@
   4. 同一实体的多次修改形成 supersedes 版本链，可按版本号回溯任意旧版本
   5. `delivery_knowledge` collection 创建/校验有显式生命周期管理：维度不匹配时拒绝并响亮报错（提供显式重建命令），绝不自动删库重建；payload schema（entity_kind/entity_id/version/is_latest/project_id/event_time 及权限维度字段）第一天即定型
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 Plans:
 **Wave 1**
 
@@ -40,7 +40,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 12-02-PLAN.md — GraphStore 接口与递归 CTE 遍历（防环/深度 clamp/有效性过滤/raw SQL 收口 grep 审计）
+- [x] 12-02-PLAN.md — GraphStore 接口与递归 CTE 遍历（防环/深度 clamp/有效性过滤/raw SQL 收口 grep 审计）
 - [ ] 12-03-PLAN.md — delivery_knowledge collection 生命周期（payload schema 定型 + mismatch 拒绝 + --yes 显式重建命令）
 
 ### Phase 13: 统一摄取与版本化
@@ -110,7 +110,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 12. 知识模型与图存储地基 | 1/3 | In Progress|  |
+| 12. 知识模型与图存储地基 | 2/3 | In Progress|  |
 | 13. 统一摄取与版本化 | 0/? | Not started | - |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
