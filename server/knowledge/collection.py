@@ -74,12 +74,31 @@ KNOWLEDGE_PAYLOAD_REQUIRED_FIELDS: tuple[str, ...] = (
 )
 
 
+DEFAULT_EMBEDDING_DIMENSION = 1024
+
+
 async def _expected_dimension() -> int:
-    """读取期望 embedding 维度（SystemSetting，indexer 同款 default 1024）。"""
+    """读取期望 embedding 维度（SystemSetting，indexer 同款 default 1024）。
+
+    边界值防线：``SystemSetting.value`` 可为 None/空串/非数字（TextField,
+    blank=True, null=True）——本函数在启动路径上，绝不允许 ``int()`` 直接崩溃。
+    空值视为未配置走默认；非法值回退默认并 structlog warning（响亮可观测）。
+    """
     dimension_setting = await SystemSetting.objects.filter(
         key=SettingKeys.EMBEDDING_DIMENSION
     ).afirst()
-    return int(dimension_setting.value) if dimension_setting else 1024
+    raw = dimension_setting.value if dimension_setting else None
+    if raw is None or not str(raw).strip():
+        return DEFAULT_EMBEDDING_DIMENSION
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        logger.warning(
+            "knowledge_embedding_dimension_invalid",
+            value=raw,
+            fallback=DEFAULT_EMBEDDING_DIMENSION,
+        )
+        return DEFAULT_EMBEDDING_DIMENSION
 
 
 async def _embedding_model_name() -> str:
