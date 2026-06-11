@@ -97,4 +97,47 @@ describe('workflowDataTable', () => {
     expect(wrapper.find('.workflow-card-actions').exists()).toBe(true)
     expect(wrapper.find('.workflow-execute-button').text()).toContain('执行')
   })
+
+  it('限制节点标签数量并渲染等高卡片骨架', () => {
+    const workflowWithManyNodeTypes = {
+      ...workflow,
+      description: '',
+      node_summary: [
+        { id: 'n1', node_type: 'feishu_trigger', name: '飞书事件', position_x: 0, position_y: 0 },
+        { id: 'n2', node_type: 'fetch_work_item', name: '获取工作项', position_x: 120, position_y: 80 },
+        { id: 'n3', node_type: 'ai_plan_generation', name: 'AI 方案生成', position_x: 240, position_y: 120 },
+        { id: 'n4', node_type: 'ai_plan_approval', name: '方案审批', position_x: 360, position_y: 160 },
+        { id: 'n5', node_type: 'ai_coding', name: 'AI 编码执行', position_x: 480, position_y: 200 },
+        { id: 'n6', node_type: 'ai_code_review', name: 'AI 代码审查', position_x: 600, position_y: 240 },
+      ],
+      node_count: 6,
+    } as Workflow
+
+    const wrapper = mount(WorkflowDataTable, {
+      props: {
+        workflows: [workflowWithManyNodeTypes],
+        loading: false,
+      },
+      global: {
+        stubs: {
+          TooltipProvider: { template: '<div><slot /></div>' },
+          Tooltip: { template: '<div><slot /></div>' },
+          TooltipTrigger: { template: '<div><slot /></div>' },
+          TooltipContent: { template: '<div><slot /></div>' },
+          Skeleton: { template: '<div />' },
+          Switch: { template: '<button />' },
+          Button: {
+            template: '<button v-bind="$attrs" data-test="button" @click="$emit(\'click\', $event)"><slot /></button>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('.workflow-card-shell').classes()).toContain('h-[380px]')
+    expect(wrapper.find('.workflow-card-content').exists()).toBe(true)
+    expect(wrapper.find('.workflow-card-description').exists()).toBe(true)
+    expect(wrapper.find('.workflow-node-chip-row').exists()).toBe(true)
+    expect(wrapper.findAll('.workflow-node-chip')).toHaveLength(4)
+    expect(wrapper.find('.workflow-node-overflow').text()).toBe('+2')
+  })
 })
