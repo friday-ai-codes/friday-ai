@@ -163,3 +163,65 @@ def test_item_exception_skips_without_crash(
 
     assert summary["skipped"] >= 1
     _assert_zero_writes(mock_fixers)
+
+
+# ============================================================================
+# Task 2：rebuild_delivery_knowledge 删建后全量重嵌入
+# ============================================================================
+
+
+def _setup_rebuild_env(mock_qdrant_client) -> None:
+    """rebuild 路径的 Qdrant mock：collection 不存在 → ensure 走创建分支。"""
+    mock_qdrant_client.get_collections.return_value = SimpleNamespace(collections=[])
+
+
+def _run_rebuild() -> str:
+    out = io.StringIO()
+    call_command("rebuild_delivery_knowledge", "--yes", stdout=out)
+    return out.getvalue()
+
+
+def test_rebuild_reembeds_all_latest_versions(
+    entity_factory, version_factory, mock_qdrant_client, monkeypatch
+) -> None:
+    """rebuild --yes：删建后逐个 latest 版本调 revectorize_version（2 个 → 2 次）。"""
+    reembed = AsyncMock()
+    monkeypatch.setattr("knowledge.ingestion.revectorize_version", reembed)
+    _setup_rebuild_env(mock_qdrant_client)
+
+    v1 = version_factory(entity_factory(), vector_synced=True)
+    v2 = version_factory(entity_factory(), vector_synced=True)
+    # 非 latest 版本不得进入重嵌入（P10：旧版本不进检索面）
+    version_factory(entity_factory(), is_latest=False)
+
+    output = _run_rebuild()
+
+    assert reembed.await_count == 2
+    reembedded_ids = {call.args[0].id for call in reembed.await_args_list}
+    assert reembedded_ids == {v1.id, v2.id}
+    assert "reembedded=2" in output
+    assert "failed=0" in output
+
+
+def test_rebuild_reembed_failure_does_not_abort(
+    entity_factory, version_factory, mock_qdrant_client, monkeypatch
+) -> None:
+    """单版本重嵌入失败不中断全量循环：失败计数出现在输出，其余版本照常重嵌入。"""
+    calls: list[uuid.UUID] = []
+
+    async def _flaky(version):
+        calls.append(version.id)
+        if len(calls) == 1:
+            raise RuntimeError("embedding api down")
+
+    monkeypatch.setattr("knowledge.ingestion.revectorize_version", _flaky)
+    _setup_rebuild_env(mock_qdrant_client)
+
+    version_factory(entity_factory(), vector_synced=True)
+    version_factory(entity_factory(), vector_synced=True)
+
+    output = _run_rebuild()
+
+    assert len(calls) == 2  # 失败后循环未中断
+    assert "reembedded=1" in output
+    assert "failed=1" in output
