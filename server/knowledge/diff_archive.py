@@ -28,13 +28,20 @@
 
 from __future__ import annotations
 
+import uuid
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 
 import structlog
 import unidiff
 
+from knowledge.ingestion import EdgeSpec
+from knowledge.models import EdgeRelation
 from services.git_platform.models import MRDiffFile
+
+if TYPE_CHECKING:
+    from repositories.models import Repository
 
 logger = structlog.get_logger(__name__)
 
@@ -50,6 +57,7 @@ __all__ = [
     "decompress_diff",
     "is_generated_file",
     "parse_diff_files",
+    "resolve_modified_chunks",
 ]
 
 # ---------------------------------------------------------------------------
@@ -263,3 +271,181 @@ def build_code_change_content(
             used += line_bytes
         diff_text = "\n".join(kept) + marker
     return head + diff_text
+
+
+# ---------------------------------------------------------------------------
+# 对齐层（Task 2，ENH-01）：MODIFIES_CHUNK 解析阶梯
+# ---------------------------------------------------------------------------
+
+
+def _chunk_edge_spec(
+    chunk_id: uuid.UUID,
+    *,
+    file_path: str,
+    symbol: str,
+    commit_sha: str,
+    resolution: str,
+    hunk_ranges: list[tuple[int, int]],
+) -> EdgeSpec:
+    """构造 MODIFIES_CHUNK EdgeSpec（边只产规格，写入收口 apply_edge_specs）。"""
+    return EdgeSpec(
+        relation=EdgeRelation.MODIFIES_CHUNK,
+        target_chunk_id=chunk_id,
+        metadata={
+            "file_path": file_path,
+            "symbol": symbol,
+            "commit_sha": commit_sha,
+            "resolution": resolution,
+            "hunk_ranges": [[start, end] for start, end in hunk_ranges],
+        },
+    )
+
+
+async def resolve_modified_chunks(
+    repository: Repository,
+    file_diffs: list[FileDiff],
+    commit_sha: str,
+) -> tuple[list[EdgeSpec], list[FileDiff]]:
+    """ENH-01 符号对齐阶梯：diff hunk 行区间 → chunk EdgeSpec + unresolved 记录。
+
+    逐文件独立走阶梯（ENH-01 降级条款：按文件降级非全局）：
+
+    ① 符号级：``Symbol(branch_name="", chunk_id 非 NULL)`` 行重叠命中
+       → ``resolution="symbol"``（符号级与 ② 为 ENH-01 明确交付项，主路径）；
+    ② 行号级：① 空时 ``ChunkRegistry`` 行区间重叠（line_start/line_end 非 NULL）
+       → ``resolution="symbol"``（chunk 即符号边界切块）；
+    ③ 文件级降级（ROADMAP 授权）：①② 空时该文件全部 ChunkRegistry chunk 建边，
+       封顶 ``MAX_FILE_LEVEL_EDGES_PER_FILE``，``resolution="file"``，
+       超出部分记 unresolved 不建边（OQ-3 定案）；
+    ④ 全空（新增文件 / 未入索引）：file+symbol+commit_sha 记入
+       ``FileDiff.unresolved_symbols``（懒解析跟踪载体，落归档表 files JSON）。
+
+    对齐查询恒 ``branch_name=""``（base 命名空间，Pitfall 7：feature overlay
+    chunk 合入后即过期，不作为边 target）；``is_generated`` / ``parse_failed``
+    文件整体跳过（零查询零边）。EdgeSpec 总量按 chunk_id 去重
+    （多文件命中同 chunk 只一条边，metadata 取首个）。
+
+    Returns:
+        (edge_specs, 更新了 unresolved_symbols 的 file_diffs)。
+    """
+    from code_relations.models import ChunkRegistry
+    from codegraph.models import Symbol
+
+    edge_by_chunk: dict[uuid.UUID, EdgeSpec] = {}
+    updated: list[FileDiff] = []
+    for fd in file_diffs:
+        if fd.is_generated or fd.parse_failed:
+            updated.append(fd)
+            continue
+
+        unresolved = list(fd.unresolved_symbols)
+        file_specs: dict[uuid.UUID, EdgeSpec] = {}
+
+        # ① 符号级：逐 hunk 区间行重叠查询（Python 侧聚合去重，等价 OR 聚合）
+        symbols: dict[uuid.UUID, str] = {}
+        for start, end in fd.hunk_ranges:
+            qs = Symbol.objects.filter(
+                repository=repository,
+                branch_name="",
+                file_path=fd.path,
+                start_line__lte=end,
+                end_line__gte=start,
+                chunk_id__isnull=False,
+            )
+            async for sym in qs:
+                symbols.setdefault(sym.chunk_id, sym.name)
+        if symbols:
+            for chunk_id, name in symbols.items():
+                file_specs.setdefault(
+                    chunk_id,
+                    _chunk_edge_spec(
+                        chunk_id,
+                        file_path=fd.path,
+                        symbol=name,
+                        commit_sha=commit_sha,
+                        resolution="symbol",
+                        hunk_ranges=fd.hunk_ranges,
+                    ),
+                )
+        else:
+            # ② 行号级：ChunkRegistry 同形行重叠（NULL 行号过滤）
+            line_chunks: set[uuid.UUID] = set()
+            for start, end in fd.hunk_ranges:
+                qs = ChunkRegistry.objects.filter(
+                    repository=repository,
+                    branch_name="",
+                    file_path=fd.path,
+                    line_start__isnull=False,
+                    line_end__isnull=False,
+                    line_start__lte=end,
+                    line_end__gte=start,
+                )
+                async for entry in qs:
+                    line_chunks.add(entry.chunk_id)
+            if line_chunks:
+                for chunk_id in line_chunks:
+                    file_specs.setdefault(
+                        chunk_id,
+                        _chunk_edge_spec(
+                            chunk_id,
+                            file_path=fd.path,
+                            symbol="",
+                            commit_sha=commit_sha,
+                            resolution="symbol",
+                            hunk_ranges=fd.hunk_ranges,
+                        ),
+                    )
+            else:
+                # ③ 文件级降级：该文件全部 chunk 建边，封顶 + 超出记 unresolved
+                all_chunks = [
+                    entry.chunk_id
+                    async for entry in ChunkRegistry.objects.filter(
+                        repository=repository, branch_name="", file_path=fd.path
+                    ).order_by("chunk_index")
+                ]
+                if all_chunks:
+                    for chunk_id in all_chunks[:MAX_FILE_LEVEL_EDGES_PER_FILE]:
+                        file_specs.setdefault(
+                            chunk_id,
+                            _chunk_edge_spec(
+                                chunk_id,
+                                file_path=fd.path,
+                                symbol="",
+                                commit_sha=commit_sha,
+                                resolution="file",
+                                hunk_ranges=fd.hunk_ranges,
+                            ),
+                        )
+                    for chunk_id in all_chunks[MAX_FILE_LEVEL_EDGES_PER_FILE:]:
+                        unresolved.append(
+                            {
+                                "file_path": fd.path,
+                                "symbol": "",
+                                "commit_sha": commit_sha,
+                                "chunk_id": str(chunk_id),
+                                "reason": "file_level_cap",
+                            }
+                        )
+                else:
+                    # ④ 全空：unresolved 记录（懒解析跟踪，新增文件属预期路径）
+                    unresolved.append(
+                        {
+                            "file_path": fd.path,
+                            "symbol": "",
+                            "commit_sha": commit_sha,
+                            "reason": "no_chunk_in_base",
+                        }
+                    )
+
+        for chunk_id, spec in file_specs.items():
+            edge_by_chunk.setdefault(chunk_id, spec)
+        updated.append(replace(fd, unresolved_symbols=unresolved))
+
+    logger.info(
+        "knowledge_modified_chunks_resolved",
+        commit_sha=commit_sha,
+        file_count=len(file_diffs),
+        edge_count=len(edge_by_chunk),
+        unresolved_count=sum(len(fd.unresolved_symbols) for fd in updated),
+    )
+    return list(edge_by_chunk.values()), updated
