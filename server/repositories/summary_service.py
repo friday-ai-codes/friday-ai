@@ -181,15 +181,16 @@ async def _build_env_metadata(repository: Repository) -> dict[str, str]:
     """构建 dispatch 所需的 metadata（参照 coding_session_service.build_dispatch_metadata）。"""
     from common.encryption import decrypt_value
     from repositories.models import GitCredential
-    from services.provider_config import aget_legacy_anthropic_config
+    from services.provider_config import aget_claude_code_runtime_config
 
-    # implementation（contract/contract）：SettingKeys.ANTHROPIC_* 硬删 → 走
-    # ProviderCredential(scope=system, name=default, provider_type=anthropic)
-    legacy = await aget_legacy_anthropic_config()
-    api_key = legacy["api_key"]
-    base_url = legacy["base_url"]
-    system_model = legacy["default_model"]
-    small_model = legacy["small_model"]
+    # Claude Code 任务容器统一凭证来源：优先读「Claude Code 编码配置」
+    # （选定凭证 + opus/sonnet/haiku 三档映射）；未配置 credential_id 时
+    # runtime_config 内部回退系统默认 anthropic 凭证（legacy 行为）。
+    cc = await aget_claude_code_runtime_config()
+    api_key = cc["api_key"]
+    base_url = cc["base_url"]
+    system_model = cc["default_model"]
+    small_model = cc["haiku_model"]
 
     env_metadata: dict[str, str] = {
         "repository_id": str(repository.id),

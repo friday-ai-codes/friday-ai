@@ -328,47 +328,72 @@ class AICodingNode(SubStepMixin, BaseNode):
             repo_count=len(repo_groups),
         )
 
-        # 5.0 解析 Anthropic 凭证（四层优先级 + Result 模式）
+        # 5.0 解析 Anthropic 凭证
         #     在 _run_repo_coding 分发循环之前外层一次性完成，避免每 repo 重复 DB 往返
         #     （RESEARCH Open Question #1 推荐外层加载）。
+        #
+        #     优先级：「Claude Code 编码配置」（admin 设置页绑定的凭证）优先 ——
+        #     所有启动 Claude Code 容器的路径统一以 CC 配置为准；未配置（api_key 为空）
+        #     时回退原四层解析（node → project → system），保持向后兼容。
         from services.provider_config import (
             ProviderConfigService,
             ProviderMissingError,
+            aget_claude_code_config,
+            aget_claude_code_runtime_config,
         )
-        from workflows.models import WorkflowExecution
 
-        project = None
-        if context.workflow_execution:
-            we = await WorkflowExecution.objects.select_related(
-                "workflow__project"
-            ).aget(id=context.workflow_execution.id)
-            project = we.workflow.project if we.workflow else None
+        resolved_api_key = ""
+        resolved_base_url = ""
+        credential_source = ""
 
-        # 强制 provider_type="anthropic"（Pitfall 5 缓解：防止上游 node_config 漂移
-        # 到非 Anthropic Provider；AICodingNode 容器永久 Anthropic-only）
-        anthropic_node_config = {
-            **(context.node_config or {}),
-            "provider_type": "anthropic",
-        }
-        resolved = await ProviderConfigService.aresolve_or_error(
-            node_config=anthropic_node_config,
-            conversation=None,              # AICodingNode 无 conversation 上下文
-            project=project,
-        )
-        if isinstance(resolved, ProviderMissingError):
-            raise ProviderConfigError(
-                resolved.recommended_action or "Anthropic 凭证缺失"
+        # 仅当显式绑定了 credential_id 才走 CC 分支 ——
+        # runtime_config 未配置时内部回退系统默认凭证，直接判 api_key
+        # 会让未配置 CC 的实例绕过节点/空间级凭证（四层契约回归）。
+        cc_bound = bool((await aget_claude_code_config()).get("credential_id"))
+        cc = await aget_claude_code_runtime_config() if cc_bound else None
+        if cc is not None and cc["api_key"]:
+            resolved_api_key = cc["api_key"]
+            resolved_base_url = cc["base_url"]
+            credential_source = "claude_code_config"
+        else:
+            from workflows.models import WorkflowExecution
+
+            project = None
+            if context.workflow_execution:
+                we = await WorkflowExecution.objects.select_related(
+                    "workflow__project"
+                ).aget(id=context.workflow_execution.id)
+                project = we.workflow.project if we.workflow else None
+
+            # 强制 provider_type="anthropic"（Pitfall 5 缓解：防止上游 node_config 漂移
+            # 到非 Anthropic Provider；AICodingNode 容器永久 Anthropic-only）
+            anthropic_node_config = {
+                **(context.node_config or {}),
+                "provider_type": "anthropic",
+            }
+            resolved = await ProviderConfigService.aresolve_or_error(
+                node_config=anthropic_node_config,
+                conversation=None,              # AICodingNode 无 conversation 上下文
+                project=project,
             )
-        # resolved: ResolvedProviderConfig —— api_key / base_url 为明文
-        validated_base_url = _validate_anthropic_base_url(resolved.base_url)
+            if isinstance(resolved, ProviderMissingError):
+                raise ProviderConfigError(
+                    resolved.recommended_action or "Anthropic 凭证缺失"
+                )
+            # resolved: ResolvedProviderConfig —— api_key / base_url 为明文
+            resolved_api_key = resolved.api_key
+            resolved_base_url = resolved.base_url
+            credential_source = resolved.source
+
+        validated_base_url = _validate_anthropic_base_url(resolved_base_url)
 
         # 只记 boolean / source，不记 api_key 明文值（security mitigation 缓解 + Pitfall 4 硬规则；
         # 另有 implementation P5 redact_credentials structlog processor 对 api_key 字段名兜底脱敏）
         log.info(
             "anthropic_credential_resolved",
-            source=resolved.source,
+            source=credential_source,
             has_base_url=bool(validated_base_url),
-            has_api_key=bool(resolved.api_key),
+            has_api_key=bool(resolved_api_key),
         )
 
         # 5. 并行分发（通过 TaskDispatcher → Runner）
@@ -395,7 +420,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 global_context=global_context,
                 config=config,
                 node_execution_id=node_execution_id,
-                anthropic_api_key=resolved.api_key,
+                anthropic_api_key=resolved_api_key,
                 anthropic_base_url=validated_base_url,
                 user_pat=user_pat,
             )

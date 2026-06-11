@@ -237,7 +237,11 @@ class TaskRunner:
             return 1
 
         raw_output = result.get("output", "")
-        sanitized = _sanitize_summary(raw_output)[:2000]
+        # 先提取 JSON 再截断：模型常在 JSON 外包一层前言 / ```json 围栏，
+        # 直接按字符截断会把 JSON 腰斩，server 端解析降级成原文存储（用户可见乱码）。
+        # server 端 ai_summary 容量 8192，这里截 8000 留余量。
+        extracted = _extract_summary_json(raw_output)
+        sanitized = _sanitize_summary(extracted)[:8000]
 
         await self.callback.report_completed(
             output={"text": sanitized, "task_type": "repo_summary"},
@@ -560,6 +564,41 @@ async def main() -> int:
 
     runner = TaskRunner(config)
     return await runner.run()
+
+
+def _extract_summary_json(text: str) -> str:
+    """从模型输出中提取 JSON summary 对象。
+
+    模型即使被要求"输出严格 JSON"，也常包一层前言（"Here is the ..."）
+    或 ```json 代码围栏。这里在截断 / 上报前先剥掉包装：
+
+    1. ```json ... ``` 围栏内提取；
+    2. 首个 ``{`` 到末个 ``}`` 的跨度尝试解析（容忍前言 / 未闭合围栏）；
+    3. 都失败则返回原文（由 server 端降级为 markdown 存储）。
+    """
+    import json
+    import re
+
+    if not text:
+        return text
+
+    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        try:
+            return json.dumps(json.loads(m.group(1)), ensure_ascii=False, indent=2)
+        except json.JSONDecodeError:
+            pass
+
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.dumps(
+                json.loads(text[start : end + 1]), ensure_ascii=False, indent=2
+            )
+        except json.JSONDecodeError:
+            pass
+
+    return text
 
 
 def _sanitize_summary(text: str) -> str:

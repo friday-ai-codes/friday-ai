@@ -883,7 +883,15 @@ def _parse_summary_json(raw_text: str) -> str:
         return json_mod.dumps(obj, ensure_ascii=False, indent=2)
     except json_mod.JSONDecodeError:
         pass
-    # 3. 降级：返回原始文本（markdown 存储）
+    # 3. 首个 { 到末个 } 跨度提取（容忍模型前言 / 未闭合 ```json 围栏）
+    start, end = raw_text.find("{"), raw_text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            obj = json_mod.loads(raw_text[start : end + 1])
+            return json_mod.dumps(obj, ensure_ascii=False, indent=2)
+        except json_mod.JSONDecodeError:
+            pass
+    # 4. 降级：返回原始文本（markdown 存储）
     return raw_text
 
 
