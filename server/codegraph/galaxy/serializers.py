@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 
 class GalaxyNode(TypedDict):
@@ -64,6 +64,8 @@ class GalaxyMeta(TypedDict):
     sampled: bool
     by_node_type: dict
     per_repo_hint: bool
+    # 本次响应是否命中文件缓存（仅 L1 GalaxyView 设置）
+    cache_hit: NotRequired[bool]
 
 
 __all__ = [

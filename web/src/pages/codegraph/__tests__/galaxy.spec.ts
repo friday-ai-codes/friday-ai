@@ -6,7 +6,7 @@
  *  - detail   (URL ?repo_ids=...)：L1 细粒度图，节点点击打开 Drawer
  *
  * 测试策略：
- *  - mock 所有子组件 (GalaxyForceGraph / CommandPalette / NodeDetailDrawer / Echarts / Breadcrumb / SpaceFilter)
+ *  - mock 所有子组件 (GalaxySigmaGraph / CommandPalette / NodeDetailDrawer / Breadcrumb / SpaceFilter)
  *  - mock useGalaxyGraph composable
  *  - mock getGalaxyRepoGraph API
  *  - mock useSpacesStore
@@ -27,19 +27,18 @@ const mockFetchGraph = vi.fn()
 
 vi.mock('~/composables/useGalaxyGraph', () => ({
   useGalaxyGraph: vi.fn(() => ({
+    nodes: mockFilteredNodes,
+    edges: ref([]),
     meta: ref(null),
     loading: ref(false),
     error: ref(null),
-    renderMode: ref('force3d'),
     maxNodes: ref(500),
     fps: ref(60),
-    lowFpsDetected: ref(false),
     activeNodeTypes: ref(new Set()),
     activeEdgeTypes: ref(new Set()),
     filteredNodes: mockFilteredNodes,
     filteredEdges: ref([]),
     fetchGraph: mockFetchGraph,
-    setRenderMode: vi.fn(),
     onFpsUpdate: vi.fn(),
     toggleNodeType: vi.fn(),
     toggleEdgeType: vi.fn(),
@@ -76,12 +75,12 @@ vi.mock('~/stores/spaces', () => ({
 
 const mockFocusNode = vi.fn()
 
-vi.mock('~/components/galaxy/GalaxyForceGraph.vue', () => ({
+vi.mock('~/components/galaxy/GalaxySigmaGraph.vue', () => ({
   default: {
-    name: 'GalaxyForceGraph',
-    props: ['nodes', 'edges', 'loading'],
-    emits: ['node-click', 'fps-update'],
-    template: '<div class="mock-force-graph" />',
+    name: 'GalaxySigmaGraph',
+    props: ['nodes', 'edges', 'loading', 'activeNodeTypes', 'activeEdgeTypes', 'selectedNodeId'],
+    emits: ['node-click', 'node-hover', 'fps-update', 'ready'],
+    template: '<div class="mock-sigma-graph" />',
     setup(_: unknown, { expose }: { expose: (obj: Record<string, unknown>) => void }) {
       expose({ focusNode: mockFocusNode })
       return {}
@@ -95,10 +94,6 @@ vi.mock('~/components/galaxy/GalaxyControls.vue', () => ({
 
 vi.mock('~/components/galaxy/GalaxyLegend.vue', () => ({
   default: { name: 'GalaxyLegend', template: '<div class="mock-legend" />' },
-}))
-
-vi.mock('~/components/galaxy/EchartsGraphGl.vue', () => ({
-  default: { name: 'EchartsGraphGl', template: '<div class="mock-echarts" />' },
 }))
 
 vi.mock('~/components/galaxy/GalaxyCommandPalette.vue', () => ({
