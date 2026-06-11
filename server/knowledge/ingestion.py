@@ -78,11 +78,20 @@ class EdgeSpec:
 
     ``exclusive=True``（如 HAS_PLAN）表示同 relation 同时只允许指向一个 target：
     重摄取时指向其他 target 的活跃边被逐条 ``invalidate_edge``，再建新边。
+
+    target XOR 语义（Phase 14 chunk 边扩展）：``target_entity_id``（实体边）与
+    ``target_chunk_id``（MODIFIES_CHUNK 边，弱引用 ChunkRegistry）二选一；
+    两者同填或同空的 spec 在 ``apply_edge_specs`` 中 warning 跳过（不 raise 整批）。
+    chunk 边不支持 exclusive（语义不适用，``exclusive`` 对 chunk 边忽略）；
+    ``metadata`` 落 ``KnowledgeEdge.metadata``（懒解析载体：file_path/symbol/
+    commit_sha/resolution 等）。
     """
 
     relation: str  # EdgeRelation 字面值
-    target_entity_id: uuid.UUID  # 已派生目标实体 id（generate_entity_id 产物）
+    target_entity_id: uuid.UUID | None = None  # 已派生目标实体 id（generate_entity_id 产物）
     exclusive: bool = False
+    target_chunk_id: uuid.UUID | None = None  # MODIFIES_CHUNK 边目标（Phase 14）
+    metadata: dict | None = None  # 边 metadata（chunk 边懒解析载体）
 
 
 @dataclass(frozen=True)
@@ -300,21 +309,59 @@ async def apply_edge_specs(
     对每个 EdgeSpec（规划定案 3，OQ-1 定案：业务失效置位 ``invalid_at``，
     不写 ``expired_at``——那是系统时间线纠错语义）：
 
+    - target XOR 不满足（双填/双空）→ warning 跳过该 spec（不 raise 整批）；
     - 已有指向同 target 的活跃出边 → 跳过（复用，无新边无置位）；
     - ``exclusive=True`` 时指向其他 target 的活跃边逐条
-      ``graph_store.invalidate_edge``；
+      ``graph_store.invalidate_edge``（仅实体边；chunk 边语义不适用，忽略）；
     - 随后 ``graph_store.add_edge`` 建新边，IntegrityError 视为并发已建
-      （``uniq_kedge_active`` 撞约束），幂等放弃 + warning。
+      （``uniq_kedge_active`` / ``uniq_kedge_chunk_active`` 撞约束），
+      幂等放弃 + warning。
+
+    chunk 边（Phase 14）：按 ``edge.target_chunk_id`` 比对既有活跃出边去重，
+    metadata 落 ``KnowledgeEdge.metadata``——chunk 边写入只走本函数唯一通路
+    （RESEARCH 选项 A 定案），normalizer 不得直接调 graph_store。
     """
     for spec in edges:
+        if (spec.target_entity_id is None) == (spec.target_chunk_id is None):
+            logger.warning(
+                "knowledge_ingest_edge_spec_invalid",
+                source_id=str(entity_id),
+                relation=spec.relation,
+                target_entity_id=str(spec.target_entity_id) if spec.target_entity_id else None,
+                target_chunk_id=str(spec.target_chunk_id) if spec.target_chunk_id else None,
+                reason="target_entity_id 与 target_chunk_id 必须二选一（XOR）",
+            )
+            continue
         existing = await graph_store.neighbors(
             entity_id, relations=[spec.relation], direction="out"
         )
+        if spec.target_chunk_id is not None:
+            # chunk 边分支：按 target_chunk_id 去重，不支持 exclusive
+            if any(edge.target_chunk_id == spec.target_chunk_id for edge in existing):
+                continue
+            try:
+                await graph_store.add_edge(
+                    source_id=entity_id,
+                    target_chunk_id=spec.target_chunk_id,
+                    relation=spec.relation,
+                    valid_at=event_time,
+                    metadata=spec.metadata,
+                )
+            except IntegrityError as exc:
+                logger.warning(
+                    "knowledge_ingest_edge_conflict",
+                    source_id=str(entity_id),
+                    target_chunk_id=str(spec.target_chunk_id),
+                    relation=spec.relation,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+            continue
         if any(edge.target_id == spec.target_entity_id for edge in existing):
             continue
         if spec.exclusive:
             for edge in existing:
-                if edge.target_id != spec.target_entity_id:
+                if edge.target_id is not None and edge.target_id != spec.target_entity_id:
                     await graph_store.invalidate_edge(edge.edge_id, invalid_at=event_time)
         try:
             await graph_store.add_edge(
