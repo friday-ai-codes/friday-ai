@@ -19,7 +19,19 @@ findings:
   warning: 1
   info: 3
   total: 4
-status: issues_found
+status: fixed
+fixed_at: 2026-06-11T22:30:00Z
+fixes:
+  - id: WR-01
+    status: fixed
+    commit: 73994e99
+  - id: IN-01
+    status: acknowledged  # 仅记录不修（空标题分叉，待 OQ-3 语义复核）
+  - id: IN-02
+    status: acknowledged  # 仅记录不修（import 失败概率极低，应用大概率起不来）
+  - id: IN-03
+    status: fixed
+    commit: 90d354fc
 ---
 
 # Phase 13: Code Review Report
@@ -49,6 +61,8 @@ status: issues_found
 
 ### WR-01: revectorize_version 在 chunk 数收缩时遗留 reconcile 检测不到的 stale latest 点
 
+**Resolution:** ✅ Fixed（commit `73994e99`）——覆写前对旧/新 point_ids 差集先 tombstone（失败响亮不上抛，与六步序步 4 语义一致）再物理删除；新增两条测试锁定收缩场景与失败语义。
+
 **File:** `server/knowledge/ingestion.py:357-361`
 **Issue:** 当 `len(point_ids) != len(chunks)` 时直接用新派生 ids 覆写 `version.qdrant_point_ids`。`derive_point_ids` 对同一 `version_id` 是按 index 确定性派生的，因此当新 chunk 数**少于**旧值（典型场景：调大 `MAX_CHUNK_CHARS` 后 rebuild/reconcile 重嵌入，模块注释明确允许调整该常量），index ≥ 新数量的旧点会残留在 Qdrant 且 `is_latest=true`。这些残留点对六检查项全部免疫：`version_id` 在 PG 存在 → 非孤儿（检查项 4）；所属版本仍是 latest → 检查项 2 不适用；同 entity 同 version → 非 multi_latest（检查项 3）；检查项 1 只核对覆写后的新 ids。结果是召回面永久污染且无兜底可修。
 **Fix:** 覆写前先下线被丢弃的旧 ids：
@@ -69,17 +83,23 @@ if len(old_ids) != len(chunks):
 
 ### IN-01: coding_plan content 与 event.title 在空标题时不一致
 
+**Resolution:** 📝 Acknowledged（不修）——改 content 拼法会改变既有实体 content_hash 触发版本翻转，待 OQ-3 语义复核后再定。
+
 **File:** `server/knowledge/sources/coding_plan.py:44-55`
 **Issue:** `title` 变量带 `plan.title or first_line[:200]` 回退，但 content 拼接固定用 `plan.title`、payload["title"] 也是 `plan.title`。当 `plan.title` 为空时，实体 title 是 tech_plan 首行，而 content 以空串开头（chunker strip 后无害）、payload.title 为空——三处"标题"语义分叉。若属 OQ-3 锁定拼法的有意结果，建议在注释中点明空标题分叉；否则 content/payload 应统一用回退后的 `title`。
 **Fix:** `content=f"{title}\n\n{plan.tech_plan}"`（注意会改变既有实体的 content_hash，触发一次版本翻转），或注释说明现状。
 
 ### IN-02: 宿主接线的 lazy import 与请求构造位于异常吞噬边界之外
 
+**Resolution:** 📝 Acknowledged（不修）——import 失败概率极低（依赖缺失时应用大概率起不来），保持现状。
+
 **File:** `server/chat/models.py:279-283, 296-300`; `server/mcp_tools/work_item_execution_service.py:598-603`
 **Issue:** `aschedule_ingestion` 内部全吞异常，但三处宿主调用点的 `from knowledge import ingestion` 与 `IngestionRequest(...)` 构造发生在该边界之外。import 失败（如 knowledge 依赖链异常）会直接打断宿主主流程，违背"触发点异常全吞不阻塞宿主"的字面纪律。现实概率极低（依赖缺失时整个应用大概率起不来），故仅记 Info。
 **Fix:** 如需绝对纪律，可将 import + 构造 + 调用整体包一层 `try/except Exception: logger.warning(...)`。
 
 ### IN-03: 跨模块 import 私有符号 `_require_aware`
+
+**Resolution:** ✅ Fixed（commit `90d354fc`）——`_require_aware` 全量改名为公开符号 `require_aware` 并加入 `graph_store.__all__`，graph_store 内 7 处引用与 ingestion import 同步更新。
 
 **File:** `server/knowledge/ingestion.py:39`
 **Issue:** 从 `knowledge.graph_store` import 下划线私有的 `_require_aware`，跨模块依赖私有 API，graph_store 重构时易悄然破坏。
