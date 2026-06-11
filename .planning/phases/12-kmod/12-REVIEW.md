@@ -17,7 +17,9 @@ findings:
   warning: 4
   info: 4
   total: 8
-status: issues_found
+status: fixed
+fixed_at: 2026-06-11T11:55:00Z
+fixed_findings: [WR-01, WR-02, WR-03, WR-04, IN-03]
 ---
 
 # Phase 12: Code Review Report
@@ -44,6 +46,7 @@ status: issues_found
 
 ### WR-01: `_expected_dimension` 对空值 setting 直接 `int()` 崩溃
 
+**Status:** ✅ fixed（commit `b476f8d1`）—— 空值/空白回退默认 1024；非数字值回退默认并 structlog warning；新增 4 个边界测试。
 **File:** `server/knowledge/collection.py:82`
 **Issue:** `SystemSetting.value` 是 `TextField(blank=True, null=True)`（见 `server/system/models.py:15`）。当 `embedding_dimension` 这条 setting 存在但 value 为 `None` 或空串时，`int(dimension_setting.value)` 抛 `TypeError`/`ValueError`，而非回退默认 1024。`ensure_delivery_knowledge_collection` 是启动路径，会被这个边界值打挂。
 **Fix:**
@@ -60,6 +63,7 @@ async def _expected_dimension() -> int:
 
 ### WR-02: hybrid 结构校验只验 dense 维度，未验 sparse 存在性
 
+**Status:** ✅ fixed（commit `ab15c074`）—— dense 维度比对后追加 sparse named vector 存在性校验，缺失即 raise KnowledgeCollectionMismatchError 且不删库；新增 2 个测试。
 **File:** `server/knowledge/collection.py:152-197`
 **Issue:** 模块文档声称"collection 存在且**维度/hybrid 结构**匹配 → 通过"，但实际校验只覆盖两种情况：非 dict（单向量）→ raise；dict 中 `dense` 维度不符 → raise。从未检查 `sparse_vectors_config` 是否存在 `sparse` named vector。一个只有 named dense（无 sparse）的既存 collection 会静默通过校验，Phase 13 写 sparse 向量时才在摄取路径上失败——这正是本模块要防的"写入错库比报错更危险"。
 **Fix:** 在维度比对后追加 sparse 校验：
@@ -75,6 +79,7 @@ if not sparse_config or "sparse" not in sparse_config:
 
 ### WR-03: `invalidate_edge` / `expire_edge` 可重复置位，静默覆盖既有时间戳
 
+**Status:** ✅ fixed（commit `9d56418f`，格式对齐 `672446c9`）—— 仅在目标时间戳为 NULL 时置位；0 行更新时区分"边不存在"（raise DoesNotExist）与"已置位"（幂等 no-op + warning 日志）；新增 3 个测试锁定语义。
 **File:** `server/knowledge/graph_store.py:192, 202`
 **Issue:** 两个置位方法都是无条件 `filter(id=edge_id).aupdate(...)`。对一条已失效（`invalid_at` 已置位）的边再次调用 `invalidate_edge` 会**覆盖**原失效时间——bi-temporal 模型里这等于改写历史，与"失效置位不删除、历史可审计"（locked decision / T-12-04 防线）直接冲突。`as_of` 历史查询的结果会随之漂移。`expire_edge` 同理。
 **Fix:** 过滤条件加 `invalid_at__isnull=True`（已失效则 0 行更新，按需 raise 或幂等返回）：
@@ -89,6 +94,7 @@ updated = await KnowledgeEdge.objects.filter(
 
 ### WR-04: `invalidate_entity_version` 同样可覆盖已置位的 `invalid_at`，且边过滤遗漏 `expired_at`
 
+**Status:** ✅ fixed（commit `62333455`）—— 版本行过滤补 `invalid_at__isnull=True`（防覆盖），级联边过滤补 `expired_at__isnull=True`（已作废边不再触碰）；新增 2 个测试锁定语义。
 **File:** `server/knowledge/graph_store.py:434-442`
 **Issue:** 两个问题：
 1. 版本行过滤只有 `is_latest=True`，没有 `invalid_at__isnull=True`——对已失效的 latest 版本重复调用会覆盖其原失效时间（同 WR-03 的历史改写问题）。
@@ -122,6 +128,7 @@ edge_count = KnowledgeEdge.objects.filter(
 
 ### IN-03: rebuild 命令跨模块 import 私有函数 `_expected_dimension`
 
+**Status:** ✅ fixed（commit `45ffd174`）—— 更名为公开函数 `get_expected_dimension` 并加入 `__all__`，rebuild 命令同步改用公开 API（公开名避开 ensure 内同名局部变量的遮蔽）。
 **File:** `server/knowledge/management/commands/rebuild_delivery_knowledge.py:25, 95`
 **Issue:** 从 `knowledge.collection` import 下划线前缀的 `_expected_dimension`（且该函数不在 `collection.__all__` 中），跨模块依赖私有 API。
 **Fix:** 在 `collection.py` 中将其更名为公开函数（如 `expected_dimension`）并加入 `__all__`，或由 `ensure_delivery_knowledge_collection` 返回维度供命令复用。
