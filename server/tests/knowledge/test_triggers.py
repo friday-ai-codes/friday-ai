@@ -429,6 +429,342 @@ class TestWorkflowPlanNormalizer:
         assert "knowledge_normalize_source_missing" in warnings
 
 
+def _make_feishu_project(*, with_feishu_config: bool = False):
+    """Project 同步工厂（feishu_work_item normalizer / 三 handler 接线用例）。"""
+    from projects.models import Project
+
+    kw = {}
+    if with_feishu_config:
+        kw = {"feishu_plugin_id": "plg-test", "feishu_plugin_secret_encrypted": "enc"}
+    return Project.objects.create(
+        name="知识触发 feishu 项目", feishu_project_key="k-feishu-proj", **kw
+    )
+
+
+class FakeFeishuClient:
+    """fake FeishuClient：按用例预置 work_item / relations 应答（零网络）。"""
+
+    def __init__(
+        self,
+        *,
+        work_item=None,
+        relations: list[dict] | None = None,
+        work_item_error: Exception | None = None,
+        relations_error: Exception | None = None,
+    ) -> None:
+        self.work_item = work_item
+        self.relations = relations or []
+        self.work_item_error = work_item_error
+        self.relations_error = relations_error
+        self.get_work_item_calls: list[dict] = []
+
+    async def get_work_item(self, project_key, work_item_id, work_item_type="story"):
+        self.get_work_item_calls.append(
+            {
+                "project_key": project_key,
+                "work_item_id": work_item_id,
+                "work_item_type": work_item_type,
+            }
+        )
+        if self.work_item_error is not None:
+            raise self.work_item_error
+        return self.work_item
+
+    async def get_work_item_relations(self, project_key, work_item_id, work_item_type):
+        if self.relations_error is not None:
+            raise self.relations_error
+        return self.relations
+
+
+class FakeFeishuDocClient:
+    """fake FeishuDocClient：按 doc token 返回正文；可整体抛错（文档降级用例）。"""
+
+    def __init__(
+        self, *, docs: dict[str, str] | None = None, error: Exception | None = None
+    ) -> None:
+        self.docs = docs or {}
+        self.error = error
+        self.fetch_calls: list[str] = []
+
+    async def get_document_content(self, document_id: str):
+        self.fetch_calls.append(document_id)
+        if self.error is not None:
+            raise self.error
+        return self.docs[document_id], []
+
+
+def _make_work_item_info(*, fields: dict | None = None):
+    """WorkItemInfo 工厂：默认含 PRD/技术方案 URL 双字段。"""
+    from feishu.models import KeyFields
+    from services.feishu import WorkItemInfo
+
+    if fields is None:
+        fields = {
+            KeyFields.PRD_URL: "https://feishu.cn/docx/doxcnPrdToken",
+            KeyFields.TECH_DOC_URL: "https://feishu.cn/docx/doxcnTechToken",
+            "priority": "P0",
+        }
+    return WorkItemInfo(
+        id=5001,
+        name="登录优化需求",
+        description="登录超时需要更清晰的提示。",
+        status="developing",
+        project_key="k-feishu-proj",
+        work_item_type="story",
+        fields=fields,
+    )
+
+
+def _patch_feishu_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    client: FakeFeishuClient,
+    doc_client: FakeFeishuDocClient | None = None,
+):
+    """以模块属性形态把 fake 客户端注入 ``knowledge.sources.feishu_work_item``。"""
+    monkeypatch.setattr(
+        "knowledge.sources.feishu_work_item.create_feishu_client_for_project",
+        lambda project: client,
+    )
+
+    async def _make_doc_client(project):
+        if doc_client is None:
+            raise AssertionError("用例未预置 doc client")
+        return doc_client
+
+    monkeypatch.setattr(
+        "knowledge.sources.feishu_work_item.create_feishu_doc_client_for_project",
+        _make_doc_client,
+    )
+
+
+class TestFeishuWorkItemNormalizer:
+    """14-05 Task 1：feishu_work_item normalize 取材用例组（-k feishu 可选中）。"""
+
+    async def test_feishu_full_snapshot_single_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """全量快照取材：单事件，content 含名称/描述/自定义字段/PRD/技术方案/关联工作项各段。"""
+        from knowledge.sources.feishu_work_item import normalize as normalize_feishu
+
+        project = await sync_to_async(_make_feishu_project)()
+        info = _make_work_item_info()
+        client = FakeFeishuClient(
+            work_item=info,
+            relations=[
+                {
+                    "relation_type": "parent",
+                    "work_item_id": 4000,
+                    "work_item_type": "story",
+                    "name": "登录大需求",
+                    "status": "developing",
+                }
+            ],
+        )
+        doc_client = FakeFeishuDocClient(
+            docs={
+                "doxcnPrdToken": "PRD 正文：登录提示要清晰。",
+                "doxcnTechToken": "技术方案正文：超时重试。",
+            }
+        )
+        _patch_feishu_clients(monkeypatch, client=client, doc_client=doc_client)
+        source_id = f"{project.feishu_project_key}:story:5001"
+
+        events = await normalize_feishu(
+            IngestionRequest("feishu_work_item", source_id, "feishu_workitem_update")
+        )
+
+        assert len(events) == 1
+        event = events[0]
+        assert event.kind == "work_item"
+        assert event.origin == "feishu"
+        assert event.source_kind == "feishu_work_item"
+        assert event.source_id == source_id  # 三元组原样回填
+        assert info.name in event.content
+        assert info.description in event.content
+        assert "## 自定义字段" in event.content
+        assert "priority" in event.content
+        assert "## PRD" in event.content
+        assert "PRD 正文：登录提示要清晰。" in event.content
+        assert "## 技术方案" in event.content
+        assert "技术方案正文：超时重试。" in event.content
+        assert "## 关联工作项" in event.content
+        assert "登录大需求" in event.content
+        assert event.payload["status"] == "developing"
+        assert event.payload["work_item_type"] == "story"
+        assert event.project_id == str(project.id)
+        assert event.project_id
+
+    async def test_feishu_same_key_reingest_upgrades_anchor_to_v2(
+        self, monkeypatch: pytest.MonkeyPatch, mock_embedding, mock_qdrant_client
+    ) -> None:
+        """同 key 升级语义：13-03 轻量锚先入图，全量快照重摄 → 同实体 v2（版本链）。"""
+        from unittest.mock import AsyncMock
+
+        from knowledge.ingestion import IngestionEvent, ingest_events
+        from knowledge.models import KnowledgeEntity, KnowledgeEntityVersion
+        from knowledge.sources.feishu_work_item import normalize as normalize_feishu
+
+        monkeypatch.setattr(
+            "knowledge.ingestion.ensure_delivery_knowledge_collection", AsyncMock()
+        )
+        from services.qdrant_service import QdrantService
+
+        monkeypatch.setattr(
+            QdrantService, "upsert_vectors_by_name", classmethod(lambda cls, name, pts: True)
+        )
+
+        project = await sync_to_async(_make_feishu_project)()
+        source_id = f"{project.feishu_project_key}:story:5001"
+        from django.utils import timezone as dj_tz
+
+        anchor_event = IngestionEvent(
+            kind="work_item",
+            origin="mcp",
+            source_kind="feishu_work_item",
+            source_id=source_id,
+            title="登录优化需求",
+            content="登录优化需求\n\n登录超时需要更清晰的提示。",
+            payload={"name": "登录优化需求"},
+            project_id=str(project.id),
+            repository_id=None,
+            event_time=dj_tz.now(),
+        )
+        await ingest_events([anchor_event])
+        assert await KnowledgeEntity.objects.acount() == 1
+
+        client = FakeFeishuClient(work_item=_make_work_item_info())
+        doc_client = FakeFeishuDocClient(
+            docs={
+                "doxcnPrdToken": "PRD 正文",
+                "doxcnTechToken": "技术方案正文",
+            }
+        )
+        _patch_feishu_clients(monkeypatch, client=client, doc_client=doc_client)
+        events = await normalize_feishu(
+            IngestionRequest("feishu_work_item", source_id, "feishu_workitem_update")
+        )
+        await ingest_events(events)
+
+        # 实体数不变：同 natural key 重摄是版本翻转，不是新实体
+        assert await KnowledgeEntity.objects.acount() == 1
+        entity = await KnowledgeEntity.objects.aget()
+        assert entity.current_version == 2
+        v1 = await KnowledgeEntityVersion.objects.aget(version=1)
+        v2 = await KnowledgeEntityVersion.objects.aget(version=2)
+        assert v2.is_latest is True
+        assert v2.supersedes_id == v1.id
+        assert "## 自定义字段" in v2.content
+
+    async def test_feishu_doc_fetch_failure_degrades_to_snapshot_without_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """文档降级：doc client 抛异常 → 事件仍产出，无 PRD/技术方案段 + warning。"""
+        from knowledge.sources.feishu_work_item import normalize as normalize_feishu
+
+        project = await sync_to_async(_make_feishu_project)()
+        client = FakeFeishuClient(work_item=_make_work_item_info())
+        doc_client = FakeFeishuDocClient(error=RuntimeError("doc api down"))
+        _patch_feishu_clients(monkeypatch, client=client, doc_client=doc_client)
+
+        with capture_logs() as cap:
+            events = await normalize_feishu(
+                IngestionRequest(
+                    "feishu_work_item",
+                    f"{project.feishu_project_key}:story:5001",
+                    "feishu_workitem_update",
+                )
+            )
+
+        assert len(events) == 1
+        event = events[0]
+        assert "## PRD" not in event.content
+        assert "## 技术方案" not in event.content
+        assert "## 自定义字段" in event.content
+        assert "登录优化需求" in event.content
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_doc_fetch_failed" in warnings
+
+    async def test_feishu_event_time_always_aware(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """event_time aware 双场景：毫秒时间戳 → 对应 UTC；字段缺失 → timezone.now() 兜底。"""
+        from datetime import UTC, datetime
+
+        from django.utils import timezone as dj_tz
+
+        from feishu.models import KeyFields
+        from knowledge.sources.feishu_work_item import normalize as normalize_feishu
+
+        project = await sync_to_async(_make_feishu_project)()
+        ms = 1750000000000  # 2025-06-15T15:06:40Z
+        info_with_ts = _make_work_item_info(
+            fields={KeyFields.PRD_URL: "", "updated_at": ms}
+        )
+        client = FakeFeishuClient(work_item=info_with_ts)
+        _patch_feishu_clients(
+            monkeypatch, client=client, doc_client=FakeFeishuDocClient()
+        )
+        source_id = f"{project.feishu_project_key}:story:5001"
+
+        events = await normalize_feishu(
+            IngestionRequest("feishu_work_item", source_id, "feishu_workitem_update")
+        )
+        assert len(events) == 1
+        event = events[0]
+        assert event.event_time.tzinfo is not None
+        assert event.event_time == datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+        # 场景 2：时间字段缺失 → 接近 timezone.now() 且 aware
+        info_no_ts = _make_work_item_info(fields={})
+        client2 = FakeFeishuClient(work_item=info_no_ts)
+        _patch_feishu_clients(
+            monkeypatch, client=client2, doc_client=FakeFeishuDocClient()
+        )
+        before = dj_tz.now()
+        events2 = await normalize_feishu(
+            IngestionRequest("feishu_work_item", source_id, "feishu_workitem_update")
+        )
+        after = dj_tz.now()
+        assert len(events2) == 1
+        event2 = events2[0]
+        assert event2.event_time.tzinfo is not None
+        assert before <= event2.event_time <= after
+
+    async def test_feishu_source_missing_returns_empty_with_warning(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """源缺失双场景：project_key 查无 Project / get_work_item 失败 → 空列表 + warning。"""
+        from knowledge.sources.feishu_work_item import normalize as normalize_feishu
+
+        # 场景 1：project_key 查无 Project
+        with capture_logs() as cap1:
+            events1 = await normalize_feishu(
+                IngestionRequest(
+                    "feishu_work_item", "no-such-proj:story:5001", "feishu_workitem_create"
+                )
+            )
+        assert events1 == []
+        warnings1 = [e["event"] for e in cap1 if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_source_missing" in warnings1
+
+        # 场景 2：get_work_item 失败
+        project = await sync_to_async(_make_feishu_project)()
+        client = FakeFeishuClient(work_item_error=RuntimeError("feishu api down"))
+        _patch_feishu_clients(monkeypatch, client=client, doc_client=FakeFeishuDocClient())
+        with capture_logs() as cap2:
+            events2 = await normalize_feishu(
+                IngestionRequest(
+                    "feishu_work_item",
+                    f"{project.feishu_project_key}:story:5001",
+                    "feishu_workitem_create",
+                )
+            )
+        assert events2 == []
+        warnings2 = [e["event"] for e in cap2 if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_source_missing" in warnings2
+
+
 class TestChatTriggers:
     """chat ×3 锚点投递断言（-k chat 可选中）。"""
 
