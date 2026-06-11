@@ -24,6 +24,26 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
+## Current Milestone: v0.3.0 交付知识图谱 — 需求/缺陷 ↔ 方案 ↔ 代码 GraphRAG 关联
+
+**Goal:** 把需求/缺陷（飞书或自然语言）、技术方案、编码 diff 全链路 RAG 化并以带时间语义的知识图谱关联，任意入口（chat/skill/工作流/MCP）都能召回相似历史需求及其完整迭代轨迹，且始终检索到最新版本。
+
+**Target features:**
+
+- 统一交付知识实体/边模型（Postgres bi-temporal 边，借鉴 Graphiti；经基准调研明确不引入图数据库，现有 ChunkEdge 也不迁移）
+- 需求来源多元化：飞书工作项 + chat 自然语言需求 + MCP/工作流，凡产出技术方案或触发编码的需求均自动摄取
+- 版本化更新机制：方案/需求被修改即重摄取，旧版本向量下线 + 边标记失效（历史可查），检索默认命中最新版
+- 全量 diff 归档 + 向量化，并与既有代码图谱（ChunkRegistry/ChunkEdge）打通
+- 时间感知混合检索：向量召回 + 图扩散 + 时间衰减/过时标记
+- 多入口暴露：MCP HTTP 工具 + chat agent tools + workflow 节点 + npm Friday skills
+
+**Key context:**
+
+- 沿用 Postgres + Qdrant 双栈；图访问收敛 GraphStore 接口，留换引擎逃生门
+- Embedding 复用 `EmbeddingService` 系统配置（部署当前为自托管 doubao-embedding-text，2560 维），不绑定模型
+- 实体/关系来自结构化业务数据（工作项/方案/MR 自带稳定 ID），不做 LLM 自由文本实体抽取
+- 选型对比结论：Microsoft GraphRAG（批处理/索引贵）与 LightRAG（LLM 抽实体）不适用；借鉴 Graphiti 的 bi-temporal 边模型自实现；八引擎基准显示 1–3 跳 GraphRAG 检索负载下 PG 递归 CTE 吞吐反超 Neo4j（22.5K vs 14.5K RPS）
+
 ## Requirements
 
 ### Validated
@@ -49,17 +69,23 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **MCP 绑定 + RemoteTool 执行端点**：ToolTokenBinding 持久绑定令牌给 skill/mcp；经 PAT 认证 fail-closed 的按工具 name 执行端点供容器回调 — v0.2.0 (`server/tools/`)
 - ✓ **task 容器 RemoteTool 链路（机制层）**：容器消费 `remote_tools` 经 SDK MCP server 加载工具，PAT 经 server→runner→task 直传注入并全程脱敏，吊销 graceful — v0.2.0 (`task/friday_task/core/remote_tools.py`, `runner/`)（注：实时明文 PAT 通道接入为已知 follow-up）
 
-### Next Milestone Goals
+### Active (v0.3.0)
 
-<!-- 下一里程碑目标占位。由 /gsd-new-milestone 细化为正式需求并写入新的 REQUIREMENTS.md。 -->
+<!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] _待定_ — 运行 `/gsd-new-milestone` 启动下一里程碑：问询 → 研究 → 需求 → roadmap。
-- 候选（来自 v0.2.0 follow-up / v2 backlog）：
-  - 接入实时明文 PAT 通道（contextvar），点亮 RemoteTool 端到端链路 + 真实容器 E2E（兑现 MCPB-02 / RTOOL-02·03·04 运行时）
-  - 令牌细粒度读写 scope / per-tool 权限（PATX-01）
-  - 令牌 rotate / 续期 regenerate（PATX-02）、IP allowlist / 频率限额（PATX-03）
-  - 注入容器改短 TTL 派生凭证 + tmpfs，替代直传 PAT（PATX-04）
-  - 补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
+- [ ] 交付知识图谱：需求/缺陷、技术方案、编码 diff 的实体/边建模（bi-temporal）与统一摄取
+- [ ] 知识向量化：需求文本/PRD/技术方案/diff 入 Qdrant（复用 EmbeddingService 与 hybrid 检索）
+- [ ] 版本化更新：方案修改后重摄取，检索始终命中最新版，历史可溯
+- [ ] 时间感知混合检索：向量召回 + 图扩散 + 时间衰减/过时标记
+- [ ] 多入口暴露：MCP 工具 / chat tools / workflow 节点 / npm skills
+
+**Backlog 候选（未入本里程碑）：**
+
+- 接入实时明文 PAT 通道（contextvar），点亮 RemoteTool 端到端链路 + 真实容器 E2E（兑现 MCPB-02 / RTOOL-02·03·04 运行时）
+- 令牌细粒度读写 scope / per-tool 权限（PATX-01）
+- 令牌 rotate / 续期 regenerate（PATX-02）、IP allowlist / 频率限额（PATX-03）
+- 注入容器改短 TTL 派生凭证 + tmpfs，替代直传 PAT（PATX-04）
+- 补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
 
 ### Out of Scope
 
@@ -130,4 +156,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 after v0.2.0 milestone*
+*Last updated: 2026-06-11 — milestone v0.3.0 started*

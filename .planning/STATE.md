@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.2.0
-milestone_name: 用户身份令牌与 Agent 工具打通
-status: milestone_complete
-stopped_at: Milestone v0.2.0 archived — ROADMAP/REQUIREMENTS 归档至 milestones/，ROADMAP 折叠，PROJECT.md 全量演进，tag v0.2.0 已创建（未推送）
-last_updated: "2026-06-11T03:56:31.000Z"
+milestone: v0.3.0
+milestone_name: 交付知识图谱 — 需求/缺陷 ↔ 方案 ↔ 代码 GraphRAG 关联
+status: planning
+last_updated: "2026-06-11T08:21:03.236Z"
 last_activity: 2026-06-11
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 
 ## Current Position
 
-Milestone: v0.2.0 — SHIPPED 2026-06-10
-Phase: 6-11 all complete
-Status: Milestone complete (archived)
-Last activity: 2026-06-11 - Completed quick task 260611-ghb: 统一工作流卡片高度并收纳节点标签
-
-Progress: [██████████] 100% (6/6 phases, 21/21 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-11 — Milestone v0.3.0 started
 
 ## Accumulated Context
 
