@@ -56,11 +56,11 @@ Plans:
   4. 摄取一律 `transaction.on_commit` + background runner 异步执行，不阻塞请求/工作流主链路；同一事件重复投递不产生重复实体或重复版本（幂等键约束 + reconcile 对账命令可验证）
   5. 知识文本经确定性 chunk + 既有 EmbeddingService 向量化写入 `delivery_knowledge`（hybrid dense+sparse），payload 完整携带 entity_kind/entity_id/version/is_latest/project_id/event_time
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 13-01-PLAN.md — 向量化基建：vector_synced 迁移 + 确定性 chunker + vector_ops 写薄层（payload schema 锁定、失败响亮）
+- [x] 13-01-PLAN.md — 向量化基建：vector_synced 迁移 + 确定性 chunker + vector_ops 写薄层（payload schema 锁定、失败响亮）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -124,7 +124,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
-| 13. 统一摄取与版本化 | 0/? | Not started | - |
+| 13. 统一摄取与版本化 | 1/4 | In Progress|  |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |
