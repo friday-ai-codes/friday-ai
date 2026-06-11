@@ -15,7 +15,7 @@
 
 ### 知识摄取（INGEST）
 
-- [ ] **INGEST-01**: 工作流 `ai_plan_generation` 产出技术方案时，自动摄取需求与方案实体并建立 `HAS_PLAN` 边（含方案审批通过事件）
+- [x] **INGEST-01**: 工作流 `ai_plan_generation` 产出技术方案时，自动摄取需求与方案实体并建立 `HAS_PLAN` 边（含方案审批通过事件）
 - [ ] **INGEST-02**: 编码完成回调（TaskResult/CodingTask）时，自动归档全量 diff、摄取 code_change 实体并关联到对应方案/需求
 - [x] **INGEST-03**: chat 对话产出 CodingPlan 或触发编码时，自动摄取提炼后的需求文本与方案（对话原文不入图）
 - [ ] **INGEST-04**: 飞书工作项在关键事件（产出方案/触发编码/工作项更新）时摄取快照：名称、描述、自定义字段、PRD 文档与技术方案文档正文、关联工作项，均带事件时间
@@ -78,7 +78,7 @@
 | KMOD-03 | Phase 12 | Complete |
 | KMOD-04 | Phase 12 | Complete |
 | KMOD-05 | Phase 14 | Complete |
-| INGEST-01 | Phase 14 | Pending |
+| INGEST-01 | Phase 14 | Complete |
 | INGEST-02 | Phase 14 | Pending |
 | INGEST-03 | Phase 13 | Complete |
 | INGEST-04 | Phase 14 | Pending |
