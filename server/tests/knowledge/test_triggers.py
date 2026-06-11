@@ -541,6 +541,20 @@ def _patch_feishu_clients(
 class TestFeishuWorkItemNormalizer:
     """14-05 Task 1：feishu_work_item normalize 取材用例组（-k feishu 可选中）。"""
 
+    def test_feishu_doc_token_strips_query_and_fragment(self) -> None:
+        """WR-03：带 query/fragment 的文档 URL 剥参后取末段 path；裸 token 原样返回。"""
+        from knowledge.sources.feishu_work_item import _extract_doc_token
+
+        assert (
+            _extract_doc_token("https://xxx.feishu.cn/docx/doxcnABC?from=tab_search") == "doxcnABC"
+        )
+        assert _extract_doc_token("https://xxx.larksuite.com/docx/doxcnABC#heading-1") == "doxcnABC"
+        assert _extract_doc_token("https://xxx.feishu.cn/docx/doxcnABC/?from=tab") == "doxcnABC"
+        assert _extract_doc_token("https://xxx.feishu.cn/docx/doxcnABC") == "doxcnABC"
+        assert _extract_doc_token("doxcnABC") == "doxcnABC"
+        assert _extract_doc_token("") == ""
+        assert _extract_doc_token(None) == ""
+
     async def test_feishu_full_snapshot_single_event(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """全量快照取材：单事件，content 含名称/描述/自定义字段/PRD/技术方案/关联工作项各段。"""
         from knowledge.sources.feishu_work_item import normalize as normalize_feishu
