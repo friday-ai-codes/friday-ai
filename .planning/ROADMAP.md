@@ -84,7 +84,26 @@ Plans:
   4. code_change 经 `MODIFIES_CHUNK` 边（file+symbol+commit_sha 懒解析）关联 ChunkRegistry 代码块，可反查"这个函数被哪些需求改过"
   5. 万行级大 diff（含生成文件）摄取不拖垮管线：分层切块、生成文件跳过、批量写入可经大 diff 夹具验证
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 14-01-PLAN.md — 基建：unidiff 依赖 + CodeChangeArchive/0003 migration + chunk 边 partial unique + EdgeSpec/apply_edge_specs 扩展 + chunk_in_edges + diff-aware chunker + 注册表三行
+- [ ] 14-02-PLAN.md — git_platform get_branch_diff 抽象方法（OQ-1 定案：GitLab repository_compare / GitHub compare+patch，skip-PR 全量 diff 兜底）
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 14-03-PLAN.md — diff_archive.py 三层件：unidiff 解析/生成文件判定/zlib 压缩纯函数 + MODIFIES_CHUNK 对齐阶梯（封顶 20）+ DiffArchiver service（大 diff 夹具验证）
+- [ ] 14-04-PLAN.md — workflow_plan normalizer + plan_generation/approve_node 双触发点接线（INGEST-01，审批段落防 hash 短路、source_id 恒生成节点 key）
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 14-05-PLAN.md — feishu_work_item 全量快照 normalizer（fields/relations/文档正文/降级）+ 飞书三 handler 接线（INGEST-04，webhook 路径零取材）
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 14-06-PLAN.md — task_result normalizer（DiffArchiver 编排 + IMPLEMENTED_BY/MODIFIES_CHUNK 双边）+ 编码完成三锚点接线 + 时序防线测试 + 全量收口（INGEST-02 闭环）
 
 ### Phase 15: 时间感知混合检索
 

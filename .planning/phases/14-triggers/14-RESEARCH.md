@@ -580,13 +580,13 @@ def build_large_diff(files: int = 30, lines_per_file: int = 400,
 
 ## Open Questions
 
-1. **GitHub skip-PR 路径的全量 diff 文本获取**
+1. **GitHub skip-PR 路径的全量 diff 文本获取** `[RESOLVED — 规划定案：采纳 Recommendation，14-02 新增 GitPlatformClient.get_branch_diff(source, target) -> MRDiffResult 抽象方法（GitLab 包 repository_compare、GitHub 包 compare+file.patch，patch 缺失置 truncated），DiffArchiver（14-03）统一消费]`
    - What we know: GitLab `compare_branches` 内部 `repository_compare` 的 `diffs[].diff` 自带 per-file diff 文本（gitlab_client.py:292-304）；GitHub `compare_branches` 用 `repo.compare()` 只提取统计（github_client.py:296-306），但 PyGithub Comparison.files 的每个 file 对象有 `.patch` 属性可取 [ASSUMED]。
    - What's unclear: GitHub compare API 对超大比较的 patch 截断行为。
    - Recommendation: 给 GitPlatformClient 增加一个 `get_branch_diff(source, target) -> MRDiffResult` 抽象方法（GitLab 包 repository_compare、GitHub 包 compare+file.patch），DiffArchiver 统一消费 MRDiffResult；chat skip-PR 是少数路径，截断容忍度高。
-2. **审批事件 source_id 的取法**（触发点 1b 列出的两个选项）
+2. **审批事件 source_id 的取法**（触发点 1b 列出的两个选项）`[RESOLVED — 规划定案：采纳 Recommendation，source_id 恒为生成节点 key；14-04 Task 2 接线处沿 execution 查 ai_plan_generation 节点换算，normalizer 保持单纯不做节点回溯]`
    - Recommendation: 接线处沿 execution 查 ai_plan_generation 节点 id，source_id 恒为生成节点 key——normalizer 单纯、实体唯一性有保证。规划时定案即可，两者实现成本相同。
-3. **文件级降级的边数上限**（每文件 ≤20 条 chunk 边的封顶值）
+3. **文件级降级的边数上限**（每文件 ≤20 条 chunk 边的封顶值）`[RESOLVED — 规划定案：采纳 Recommendation，14-03 Task 2 常量 MAX_FILE_LEVEL_EDGES_PER_FILE = 20 起步，超出只记 metadata 不建边，不配置化]`
    - Recommendation: 常量起步（`MAX_FILE_LEVEL_EDGES_PER_FILE = 20`），超出只记 metadata 不建边；无需配置化。
 
 ## Environment Availability
