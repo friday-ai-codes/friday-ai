@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     "repositories",
     "codegraph",
     "code_relations",
+    "knowledge",
     "projects",
     "feishu",
     "chat",
