@@ -10,7 +10,7 @@
 - [x] **KMOD-01**: 系统以统一实体模型存储四类交付知识实体——需求/缺陷（work_item）、技术方案（tech_plan）、代码变更（code_change：diff/commit/MR）、文档（document：PRD/技术方案文档），实体携带稳定业务引用（`source_kind` + `source_id`）与来源（feishu/chat/mcp/workflow）及事件时间
 - [x] **KMOD-02**: 实体间关系以 bi-temporal 边存储（`valid_at`/`invalid_at` + `created_at`/`expired_at` 四时间戳），失效采用置位而非删除，历史可审计
 - [x] **KMOD-03**: 同一实体的多次修改形成版本链（supersedes），旧版本保留且可按版本号回溯
-- [ ] **KMOD-04**: 图读写收敛于 GraphStore service 接口（内建 1–3 跳递归遍历、有效性过滤、防环与深度上限），调用方不得绕过接口裸写 SQL（保留换图引擎逃生门）
+- [x] **KMOD-04**: 图读写收敛于 GraphStore service 接口（内建 1–3 跳递归遍历、有效性过滤、防环与深度上限），调用方不得绕过接口裸写 SQL（保留换图引擎逃生门）
 - [ ] **KMOD-05**: 编码产出的全量 diff 归档落库（unidiff 解析到文件级），关联 commit SHA / MR URL / 仓库元数据，超大 diff 压缩存储
 
 ### 知识摄取（INGEST）
@@ -76,7 +76,7 @@
 | KMOD-01 | Phase 12 | Complete |
 | KMOD-02 | Phase 12 | Complete |
 | KMOD-03 | Phase 12 | Complete |
-| KMOD-04 | Phase 12 | Pending |
+| KMOD-04 | Phase 12 | Complete |
 | KMOD-05 | Phase 14 | Pending |
 | INGEST-01 | Phase 14 | Pending |
 | INGEST-02 | Phase 14 | Pending |
