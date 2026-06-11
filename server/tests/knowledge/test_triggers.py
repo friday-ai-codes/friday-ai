@@ -1174,6 +1174,18 @@ class TestFeishuTriggers:
 
         assert captured_requests == []
 
+    async def test_feishu_update_missing_type_key_zero_delivery(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """WR-04：update 事件缺 work_item_type_key → 跳过投递（不再默认 story 进 natural key）。"""
+        project = await sync_to_async(_make_feishu_project)()
+        trigger_log = await sync_to_async(_make_feishu_trigger_log)(project)
+
+        handler = self._handlers()["feishu_workitem_update"]
+        await handler(project, {"id": 5002}, trigger_log)
+
+        assert captured_requests == []
+
     async def test_feishu_handlers_survive_runner_failure(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
