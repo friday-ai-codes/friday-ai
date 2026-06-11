@@ -1178,6 +1178,467 @@ class TestFeishuTriggers:
             await handler(project, payload, trigger_log)
 
 
+# ============================================================================
+# 14-06 Task 1：task_result normalizer（DiffArchiver 编排 + 双事件双路径）
+# ============================================================================
+
+# diff 原文特征串：进 content 合法，进 payload 即违反"diff 原文不进 payload"定案。
+_DIFF_SENTINEL = "DIFF原文特征串-K7XQ-禁止入payload"
+# T-14-22 伪归属特征串：runner 可篡改 last_output，归属必须走服务端权威 FK。
+_FAKE_REPO_SENTINEL = "伪仓库特征串-T1422-禁止采信"
+
+
+def _make_coding_chat_host(
+    *,
+    with_plan: bool = True,
+    pr_url: str = "https://gitlab.com/test/coding-repo/-/merge_requests/7",
+    task_pr_url: str = "",
+    last_output: dict | None = None,
+):
+    """chat 编码完成全套宿主（Project/Repository/CodingPlan/CodingSession/SubAgentSession/TaskResult）。
+
+    默认形态即两条主路径的真实时序：TaskResult.pr_url 为空（PR 由 server 在容器
+    回调之后创建），权威源 CodingSession.pr_url 有值（blocker 修复锚）。
+    """
+    from agents.models import AgentSession
+    from chat.models import CodingPlan, CodingSession, Conversation
+    from django.utils import timezone
+    from projects.models import Project
+    from repositories.models import Repository
+    from subagent.models import SubAgentSession, TaskResult
+
+    suffix = uuid.uuid4().hex[:8]
+    project = Project.objects.create(name="编码触发项目", feishu_project_key=f"k-coding-{suffix}")
+    repo = Repository.objects.create(
+        name="coding-repo",
+        git_url=f"https://gitlab.com/test/coding-repo-{suffix}.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+    project.repositories.add(repo)
+    conversation = Conversation.objects.create(project=project, title="编码触发对话")
+    plan = None
+    if with_plan:
+        plan = CodingPlan.objects.create(
+            conversation=conversation,
+            title="编码归档方案",
+            tech_plan="## 方案\n\n实现编码完成自动归档",
+            affected_files=[],
+        )
+    agent_session = AgentSession.objects.create(
+        session_id=f"agent-coding-{suffix}", project=project
+    )
+    sub = SubAgentSession.objects.create(
+        session_id=f"sub-coding-{suffix}",
+        main_session=agent_session,
+        task_type=SubAgentSession.TaskType.CODING,
+        status=SubAgentSession.Status.COMPLETED,
+        repo_url=repo.git_url,
+        completed_at=timezone.now(),
+        last_output=last_output,
+    )
+    coding_session = CodingSession.objects.create(
+        conversation=conversation,
+        coding_plan=plan,
+        repository=repo,
+        tech_plan="## 方案",
+        status=CodingSession.Status.COMPLETED,
+        subagent_session=sub,
+        branch_name="feat/coding-archive",
+        pr_url=pr_url,
+    )
+    task_result = TaskResult.objects.create(
+        session=sub,
+        result_type=TaskResult.ResultType.GIT,
+        branch_name="feat/coding-archive",
+        commit_sha="abc1234def5678",
+        pr_url=task_pr_url,
+        modified_files=["src/app.py"],
+    )
+    return project, repo, plan, coding_session, sub, task_result
+
+
+def _make_coding_workflow_host(*, mr_results: list[dict] | None | str = "auto"):
+    """workflow 编码完成宿主：生成节点 + ai_coding NodeExecution（含 output_data 持久化形态）。
+
+    ``mr_results="auto"`` 时预置本仓库的 mr_results 项（Task 2 投递前持久化形态）；
+    传 None 模拟持久化缺失（normalizer mr_url 降级空串）。
+    """
+    from agents.models import AgentSession
+    from django.utils import timezone
+    from repositories.models import Repository
+    from subagent.models import SubAgentSession, TaskResult
+    from workflows.models import WorkflowNode
+    from workflows.models.execution import NodeExecution, NodeExecutionStatus
+
+    project, execution, gen_node, gen_exec, _ = _make_workflow_plan_execution()
+    workflow = execution.workflow
+    suffix = uuid.uuid4().hex[:8]
+    repo = Repository.objects.create(
+        name="wf-coding-repo",
+        git_url=f"https://gitlab.com/test/wf-coding-repo-{suffix}.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+    project.repositories.add(repo)
+    session_id = f"exec-wf-{suffix}"
+    output_data: dict = {
+        "pending_sessions": [
+            {
+                "session_id": session_id,
+                "container_id": "",
+                "repository_id": str(repo.id),
+                "repository_name": repo.name,
+            }
+        ],
+        "branch_name": "feat/wf-archive",
+        "base_branch": "main",
+    }
+    if mr_results == "auto":
+        output_data["mr_results"] = [
+            {
+                "repository_id": str(repo.id),
+                "mr_url": "https://gitlab.com/test/wf-coding-repo/-/merge_requests/9",
+                "mr_id": "9",
+                "success": True,
+            }
+        ]
+    elif mr_results is not None:
+        output_data["mr_results"] = mr_results
+    coding_node = WorkflowNode.objects.create(
+        workflow=workflow, node_type="ai_coding", name="编码执行"
+    )
+    coding_exec = NodeExecution.objects.create(
+        workflow_execution=execution,
+        node=coding_node,
+        status=NodeExecutionStatus.COMPLETED,
+        output_data=output_data,
+        completed_at=timezone.now(),
+    )
+    agent_session = AgentSession.objects.create(session_id=f"agent-wf-{suffix}", project=project)
+    sub = SubAgentSession.objects.create(
+        session_id=session_id,
+        main_session=agent_session,
+        task_type=SubAgentSession.TaskType.CODING,
+        status=SubAgentSession.Status.COMPLETED,
+        repo_url=repo.git_url,
+        node_execution=coding_exec,
+        completed_at=timezone.now(),
+    )
+    task_result = TaskResult.objects.create(
+        session=sub,
+        result_type=TaskResult.ResultType.GIT,
+        branch_name="feat/wf-archive",
+        commit_sha="9f8e7d6c5b4a3210",
+        pr_url="",  # 容器回调时刻真实形态：MR 由 server 侧之后创建
+        modified_files=["src/wf.py"],
+    )
+    return project, repo, execution, gen_node, coding_exec, sub, task_result
+
+
+def _make_archive_result(chunk_id: uuid.UUID | None = None, *, content: str | None = None):
+    """ArchiveResult 夹具：archive 摘要 + content（含 diff 特征串）+ chunk EdgeSpec。"""
+    from types import SimpleNamespace
+
+    from knowledge.diff_archive import ArchiveResult
+    from knowledge.ingestion import EdgeSpec
+    from knowledge.models import EdgeRelation
+
+    edge_specs = []
+    if chunk_id is not None:
+        edge_specs.append(
+            EdgeSpec(
+                relation=EdgeRelation.MODIFIES_CHUNK,
+                target_chunk_id=chunk_id,
+                metadata={
+                    "file_path": "src/app.py",
+                    "symbol": "main",
+                    "commit_sha": "abc1234def5678",
+                    "resolution": "symbol",
+                },
+            )
+        )
+    archive = SimpleNamespace(
+        id=uuid.uuid4(), file_count=1, total_additions=3, total_deletions=1, truncated=False
+    )
+    return ArchiveResult(
+        archive=archive,  # type: ignore[arg-type]
+        content=content
+        or f"代码变更 coding-repo\n\n## 变更摘要\n- src/app.py\n\n## diff\n{_DIFF_SENTINEL}",
+        edge_specs=edge_specs,
+        file_diffs=[],
+    )
+
+
+@pytest.fixture
+def fake_archive(monkeypatch: pytest.MonkeyPatch):
+    """以模块属性形态替换 ``knowledge.sources.task_result.diff_archive``。
+
+    用例设置 ``holder.result``（ArchiveResult | None）控制应答；
+    ``holder.calls`` 记录 archive_code_change 全部入参（kwargs）。
+    """
+    from types import SimpleNamespace
+
+    holder = SimpleNamespace(result=None, calls=[])
+
+    async def _archive_code_change(**kwargs):
+        holder.calls.append(kwargs)
+        return holder.result
+
+    monkeypatch.setattr(
+        "knowledge.sources.task_result.diff_archive",
+        SimpleNamespace(archive_code_change=_archive_code_change),
+    )
+    return holder
+
+
+class TestCodingTaskResultNormalizer:
+    """14-06 Task 1：task_result normalize 取材用例组（-k coding 选中锚定方法名）。"""
+
+    async def test_coding_chat_dual_events_mr_url_from_coding_session(self, fake_archive) -> None:
+        """chat 路径双事件 + mr_url 权威源真实形态（TaskResult.pr_url 空 + CodingSession.pr_url 有值）。"""
+        from knowledge.sources.task_result import normalize as normalize_task_result
+
+        project, repo, plan, coding_session, sub, task_result = await sync_to_async(
+            _make_coding_chat_host
+        )()
+        fake_archive.result = _make_archive_result(uuid.uuid4())
+
+        events = await normalize_task_result(
+            IngestionRequest("task_result", sub.session_id, "chat_coding_pr_created")
+        )
+
+        assert len(events) == 2
+        anchor, code_change = events
+        # 锚事件：tech_plan（coding_plan 短路重摄）+ IMPLEMENTED_BY 出边挂锚（边方向定案）
+        assert anchor.kind == "tech_plan"
+        assert anchor.origin == "chat"
+        assert anchor.source_kind == "coding_plan"
+        assert anchor.source_id == str(plan.id)
+        assert len(anchor.edges) == 1
+        spec = anchor.edges[0]
+        assert spec.relation == "IMPLEMENTED_BY"
+        assert spec.target_entity_id == generate_entity_id(
+            "code_change", "task_result", sub.session_id
+        )
+        # code_change 事件：content 来自 ArchiveResult，MODIFIES_CHUNK 挂在本事件
+        assert code_change.kind == "code_change"
+        assert code_change.source_kind == "task_result"
+        assert code_change.source_id == sub.session_id
+        assert code_change.content == fake_archive.result.content
+        chunk_edges = [e for e in code_change.edges if e.relation == "MODIFIES_CHUNK"]
+        assert len(chunk_edges) == 1
+        assert chunk_edges[0].target_chunk_id is not None
+        payload = code_change.payload
+        assert payload["archive_id"] == str(fake_archive.result.archive.id)
+        assert payload["commit_sha"] == task_result.commit_sha
+        # blocker 修复锚：TaskResult.pr_url 为空时主路径 mr_url 仍取权威源（非空）
+        assert task_result.pr_url == ""
+        assert coding_session.pr_url
+        assert payload["mr_url"] == coding_session.pr_url
+        assert fake_archive.calls[-1]["mr_url"] == coding_session.pr_url
+        assert fake_archive.calls[-1]["mr_id"] == "7"  # mr_url 尾段解析
+        # diff 原文不进 payload（T-14-24 前提：payload 只放摘要）
+        assert _DIFF_SENTINEL not in json.dumps(payload, ensure_ascii=False)
+        assert code_change.repository_id == str(repo.id)
+        assert code_change.project_id == str(project.id)
+
+    async def test_coding_workflow_anchor_and_mr_url_from_output_data(self, fake_archive) -> None:
+        """workflow 路径方案回溯 + mr_url 取自 node_execution.output_data 持久化项。"""
+        from knowledge.sources.task_result import normalize as normalize_task_result
+
+        project, repo, execution, gen_node, _coding_exec, sub, task_result = await sync_to_async(
+            _make_coding_workflow_host
+        )()
+        fake_archive.result = _make_archive_result(uuid.uuid4())
+
+        events = await normalize_task_result(
+            IngestionRequest("task_result", sub.session_id, "workflow_coding_completed")
+        )
+
+        assert len(events) == 2
+        anchor, code_change = events
+        assert anchor.kind == "tech_plan"
+        assert anchor.origin == "workflow"
+        assert anchor.source_kind == "workflow_plan"
+        assert anchor.source_id == f"{execution.id}:{gen_node.id}"
+        assert anchor.edges[0].target_entity_id == generate_entity_id(
+            "code_change", "task_result", sub.session_id
+        )
+        assert code_change.origin == "workflow"
+        # blocker 修复锚：TaskResult.pr_url 仍为空，mr_url 取 output_data["mr_results"] 匹配项
+        assert task_result.pr_url == ""
+        expected_mr_url = "https://gitlab.com/test/wf-coding-repo/-/merge_requests/9"
+        assert code_change.payload["mr_url"] == expected_mr_url
+        assert fake_archive.calls[-1]["mr_url"] == expected_mr_url
+        assert fake_archive.calls[-1]["mr_id"] == "9"
+        assert code_change.repository_id == str(repo.id)
+        assert code_change.project_id == str(project.id)
+
+    async def test_coding_no_plan_degrades_to_single_event(self, fake_archive) -> None:
+        """无方案降级：既无 coding_plan 也无 node_execution → 单 code_change 事件 + warning。"""
+        from knowledge.sources.task_result import normalize as normalize_task_result
+
+        _project, _repo, _plan, _cs, sub, _tr = await sync_to_async(
+            lambda: _make_coding_chat_host(with_plan=False, pr_url="")
+        )()
+        fake_archive.result = _make_archive_result(uuid.uuid4())
+
+        with capture_logs() as cap:
+            events = await normalize_task_result(
+                IngestionRequest("task_result", sub.session_id, "chat_coding_pr_skipped")
+            )
+
+        assert len(events) == 1
+        assert events[0].kind == "code_change"
+        # 边随锚缺席：单事件只带 chunk 边，不带 IMPLEMENTED_BY
+        assert all(e.relation == "MODIFIES_CHUNK" for e in events[0].edges)
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_anchor_plan_missing" in warnings
+
+    async def test_coding_archive_failure_returns_empty(self, fake_archive) -> None:
+        """归档失败降级：archive_code_change 返回 None → 空列表 + warning，不 raise。"""
+        from knowledge.sources.task_result import normalize as normalize_task_result
+
+        _project, _repo, _plan, _cs, sub, _tr = await sync_to_async(_make_coding_chat_host)()
+        fake_archive.result = None
+
+        with capture_logs() as cap:
+            events = await normalize_task_result(
+                IngestionRequest("task_result", sub.session_id, "chat_coding_pr_created")
+            )
+
+        assert events == []
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_normalize_archive_failed" in warnings
+
+    async def test_coding_last_output_untrusted_for_attribution(self, fake_archive) -> None:
+        """T-14-22：last_output 注入伪仓库特征串 → 归属仍取 CodingSession.repository，零泄漏。"""
+        from knowledge.sources.task_result import normalize as normalize_task_result
+
+        project, repo, _plan, _cs, sub, _tr = await sync_to_async(
+            lambda: _make_coding_chat_host(
+                last_output={
+                    "repository": {"id": str(uuid.uuid4()), "name": _FAKE_REPO_SENTINEL},
+                    "repository_name": _FAKE_REPO_SENTINEL,
+                }
+            )
+        )()
+        fake_archive.result = _make_archive_result(uuid.uuid4())
+
+        events = await normalize_task_result(
+            IngestionRequest("task_result", sub.session_id, "chat_coding_pr_created")
+        )
+
+        assert len(events) == 2
+        code_change = events[-1]
+        assert code_change.payload["repository_id"] == str(repo.id)
+        assert code_change.repository_id == str(repo.id)
+        assert code_change.project_id == str(project.id)
+        # 特征串零泄漏（事件全字段 repr 扫描）
+        assert _FAKE_REPO_SENTINEL not in repr(events)
+        assert fake_archive.calls[-1]["repository"].id == repo.id
+
+    async def test_coding_sc4_reverse_chain_chunk_to_work_item(
+        self,
+        fake_archive,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_embedding,
+        mock_qdrant_client,
+    ) -> None:
+        """SC#4 端到端三跳反查：chunk_in_edges → code_change → IMPLEMENTED_BY → tech_plan → HAS_PLAN → work_item。"""
+        from unittest.mock import AsyncMock
+
+        from django.utils import timezone as dj_tz
+
+        from code_relations.models import ChunkRegistry
+        from knowledge.graph_store import graph_store
+        from knowledge.ingestion import EdgeSpec, IngestionEvent, ingest_events
+        from knowledge.sources.task_result import normalize as normalize_task_result
+        from services.qdrant_service import QdrantService
+
+        monkeypatch.setattr("knowledge.ingestion.ensure_delivery_knowledge_collection", AsyncMock())
+        monkeypatch.setattr(
+            QdrantService, "upsert_vectors_by_name", classmethod(lambda cls, name, pts: True)
+        )
+
+        project, repo, plan, _cs, sub, _tr = await sync_to_async(_make_coding_chat_host)()
+
+        # 预置 work_item —HAS_PLAN→ tech_plan（coding_plan 锚）：走 ingest_events 正路
+        tech_plan_id = generate_entity_id("tech_plan", "coding_plan", str(plan.id))
+        work_item_source_id = f"{project.feishu_project_key}:story:6001"
+        now = dj_tz.now()
+        await ingest_events(
+            [
+                IngestionEvent(
+                    kind="work_item",
+                    origin="feishu",
+                    source_kind="feishu_work_item",
+                    source_id=work_item_source_id,
+                    title="编码需求",
+                    content="编码需求\n\n编码完成应自动归档 diff。",
+                    payload={},
+                    project_id=str(project.id),
+                    repository_id=None,
+                    event_time=now,
+                    edges=(
+                        EdgeSpec(
+                            relation="HAS_PLAN", target_entity_id=tech_plan_id, exclusive=True
+                        ),
+                    ),
+                ),
+                IngestionEvent(
+                    kind="tech_plan",
+                    origin="chat",
+                    source_kind="coding_plan",
+                    source_id=str(plan.id),
+                    title=plan.title,
+                    content=f"{plan.title}\n\n{plan.tech_plan}",
+                    payload={},
+                    project_id=str(project.id),
+                    repository_id=None,
+                    event_time=now,
+                ),
+            ]
+        )
+
+        # 真实 ChunkRegistry chunk 作为 MODIFIES_CHUNK 目标
+        chunk_id = uuid.uuid4()
+        await sync_to_async(ChunkRegistry.objects.create)(
+            chunk_id=chunk_id,
+            content_hash="0" * 64,
+            repository=repo,
+            branch_name="",
+            file_path="src/app.py",
+            chunk_index=0,
+            line_start=1,
+            line_end=10,
+        )
+        fake_archive.result = _make_archive_result(chunk_id)
+
+        events = await normalize_task_result(
+            IngestionRequest("task_result", sub.session_id, "chat_coding_pr_created")
+        )
+        await ingest_events(events, trigger="chat_coding_pr_created")
+
+        # 跳 1：chunk 反查 code_change 实体
+        in_edges = await graph_store.chunk_in_edges(chunk_id)
+        assert len(in_edges) == 1
+        code_change_id = in_edges[0].source_id
+        assert code_change_id == generate_entity_id("code_change", "task_result", sub.session_id)
+        # 跳 2/3：traverse(direction="in") 沿 IMPLEMENTED_BY / HAS_PLAN 上溯
+        results = await graph_store.traverse(
+            code_change_id,
+            max_hops=2,
+            relations=["IMPLEMENTED_BY", "HAS_PLAN"],
+            direction="in",
+        )
+        reached = {r.entity_id: r.depth for r in results}
+        assert reached.get(tech_plan_id) == 1
+        work_item_id = generate_entity_id("work_item", "feishu_work_item", work_item_source_id)
+        assert reached.get(work_item_id) == 2
+
+
 class TestExceptionIsolation:
     """Pitfall 4：ingestion 投递链路抛错时宿主主流程仍成功返回。"""
 
