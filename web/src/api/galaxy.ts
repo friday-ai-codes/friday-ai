@@ -66,6 +66,8 @@ export interface GalaxyMeta {
   sampled: boolean
   per_repo_hint: boolean
   max_nodes: number
+  /** 本次响应是否命中后端文件缓存（仅 L1 接口返回） */
+  cache_hit?: boolean
 }
 
 export interface GalaxyResponse {
@@ -91,21 +93,27 @@ export interface GalaxySearchResult {
   score?: number
 }
 
+/** 1-hop 邻居条目（与后端 GalaxyNeighbor TypedDict 对齐） */
+export interface GalaxyNeighbor {
+  node: GalaxyNode
+  edge: GalaxyEdge
+  direction: 'outgoing' | 'incoming'
+}
+
+/** 节点引用（如调用某 Endpoint 的 ApiCallSite，与后端 GalaxyReference 对齐） */
+export interface GalaxyReference {
+  type: string
+  id: string
+  label: string
+  repository_id: string
+  match_confidence: number
+}
+
 export interface GalaxyNodeDetail {
   node: GalaxyNode
-  neighbors: Array<{
-    node: GalaxyNode
-    edge_type: GalaxyEdgeType
-    direction: 'in' | 'out'
-  }>
-  references: Array<{
-    source_node_id: string
-    edge_type: GalaxyEdgeType
-  }>
-  called_by: Array<{
-    caller_node_id: string
-    edge_type: GalaxyEdgeType
-  }>
+  neighbors: GalaxyNeighbor[]
+  references: GalaxyReference[]
+  called_by: GalaxyReference[]
 }
 
 // ============================================================================
@@ -134,9 +142,10 @@ export async function searchGalaxyNodes(
   q: string,
   maxResults = 20,
 ): Promise<GalaxySearchResult[]> {
+  // 后端参数名为 limit（默认 20，max 100）
   const data = await get<{ results: GalaxySearchResult[] }>('/codegraph/galaxy/search/', {
     q,
-    max_results: maxResults,
+    limit: maxResults,
   })
   return data.results
 }

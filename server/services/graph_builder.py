@@ -497,6 +497,12 @@ async def build_graph_for_repository(
             files_total=files_total,
         )
 
+        # 图谱构建完成 → 主动刷新 Galaxy 文件缓存（refresh_repo 内部吞掉所有
+        # 异常，失败时下次请求的签名对比仍会自动重建，不影响主流程）。
+        from codegraph.galaxy.cache import GalaxyGraphCache
+
+        await sync_to_async(GalaxyGraphCache.refresh_repo)(repository_id)
+
         duration = time.perf_counter() - start
         logger.info(
             "graph_build_completed",

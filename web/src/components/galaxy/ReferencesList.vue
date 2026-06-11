@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import type { GalaxyEdgeType, GalaxyNode } from '~/api/galaxy'
+import type { GalaxyEdgeType, GalaxyNeighbor, GalaxyReference } from '~/api/galaxy'
 import { ScrollArea } from '~/components/ui/scroll-area'
 
 // ============================================================================
-// Props / Emits
+// Props / Emits（shape 与后端 GalaxyNodeDetail 对齐）
 // ============================================================================
 
 defineProps<{
-  calledBy?: Array<{ caller_node_id: string, edge_type: GalaxyEdgeType }>
-  calls?: Array<{ source_node_id: string, edge_type: GalaxyEdgeType }>
-  neighbors?: Array<{ node: GalaxyNode, edge_type: GalaxyEdgeType, direction: 'in' | 'out' }>
+  calledBy?: GalaxyReference[]
+  calls?: GalaxyReference[]
+  neighbors?: GalaxyNeighbor[]
   loading?: boolean
 }>()
 
@@ -67,45 +67,50 @@ function emitNodeSelect(nodeId: string): void {
           <ul class="space-y-1">
             <li
               v-for="ref in calledBy"
-              :key="ref.caller_node_id"
+              :key="ref.id"
               class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors"
-              @click="emitNodeSelect(ref.caller_node_id)"
+              @click="emitNodeSelect(ref.id)"
             >
               <span
-                class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border"
-                :class="edgeColor(ref.edge_type)"
+                class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-white/10 text-white/60 border-white/20"
               >
-                {{ ref.edge_type }}
+                {{ ref.type }}
               </span>
               <span class="flex-1 text-white/70 text-xs font-mono truncate">
-                {{ ref.caller_node_id }}
+                {{ ref.label }}
               </span>
               <span class="icon-[lucide--arrow-right] text-white/20 text-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
             </li>
           </ul>
         </section>
 
-        <!-- 调用（calls / references） -->
+        <!-- 引用方（references，如调用此 Endpoint 的 Call Site） -->
         <section v-if="calls && calls.length > 0">
           <h4 class="text-white/50 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
             <span class="icon-[lucide--arrow-up-from-line] text-sm" />
-            调用（{{ calls.length }}）
+            引用方（{{ calls.length }}）
           </h4>
           <ul class="space-y-1">
             <li
               v-for="ref in calls"
-              :key="ref.source_node_id"
+              :key="ref.id"
               class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors"
-              @click="emitNodeSelect(ref.source_node_id)"
+              @click="emitNodeSelect(ref.id)"
             >
               <span
-                class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border"
-                :class="edgeColor(ref.edge_type)"
+                class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-white/10 text-white/60 border-white/20"
               >
-                {{ ref.edge_type }}
+                {{ ref.type }}
               </span>
               <span class="flex-1 text-white/70 text-xs font-mono truncate">
-                {{ ref.source_node_id }}
+                {{ ref.label }}
+              </span>
+              <span
+                v-if="ref.match_confidence"
+                class="shrink-0 text-white/30 text-[10px] font-mono"
+                title="匹配置信度"
+              >
+                {{ Math.round(ref.match_confidence * 100) }}%
               </span>
               <span class="icon-[lucide--arrow-right] text-white/20 text-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
             </li>
@@ -127,15 +132,15 @@ function emitNodeSelect(nodeId: string): void {
             >
               <span
                 class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border"
-                :class="edgeColor(nb.edge_type)"
+                :class="edgeColor(nb.edge.edge_type)"
               >
-                {{ nb.edge_type }}
+                {{ nb.edge.edge_type }}
               </span>
               <span
                 class="shrink-0 text-white/30 text-xs"
-                :title="nb.direction === 'in' ? '入边' : '出边'"
+                :title="nb.direction === 'incoming' ? '入边' : '出边'"
               >
-                {{ nb.direction === 'in' ? '←' : '→' }}
+                {{ nb.direction === 'incoming' ? '←' : '→' }}
               </span>
               <div class="flex-1 min-w-0">
                 <p class="text-white/80 text-sm truncate">

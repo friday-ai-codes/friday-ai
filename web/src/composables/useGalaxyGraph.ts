@@ -2,11 +2,8 @@ import type { GalaxyEdge, GalaxyEdgeType, GalaxyMeta, GalaxyNode, GalaxyNodeType
 import { computed, ref } from 'vue'
 import { getGalaxyGraph } from '~/api/galaxy'
 
-const RENDER_MODE_KEY = 'galaxy_render_mode'
-const FPS_LOW_THRESHOLD = 30
-const FPS_LOW_CONSECUTIVE_REQUIRED = 2
-
-export type GalaxyRenderMode = 'force3d' | 'echarts'
+const ALL_NODE_TYPES: GalaxyNodeType[] = ['chunk_registry', 'symbol', 'endpoint', 'api_wrapper', 'api_call_site']
+const ALL_EDGE_TYPES: GalaxyEdgeType[] = ['CALL', 'IMPORT', 'SAME_FILE', 'TEST_OF', 'CO_CHANGED', 'SEMANTIC', 'API_CALLS', 'IMPLEMENTS']
 
 export function useGalaxyGraph() {
   const nodes = ref<GalaxyNode[]>([])
@@ -15,32 +12,22 @@ export function useGalaxyGraph() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // 渲染模式：从 localStorage 初始化
-  const savedMode = localStorage.getItem(RENDER_MODE_KEY) as GalaxyRenderMode | null
-  const renderMode = ref<GalaxyRenderMode>(savedMode ?? 'force3d')
-
   // 采样参数
   const maxNodes = ref(500)
 
-  // 节点/边类型过滤（默认全选）
-  const activeNodeTypes = ref<Set<GalaxyNodeType>>(
-    new Set(['chunk_registry', 'symbol', 'endpoint', 'api_wrapper', 'api_call_site']),
-  )
-  const activeEdgeTypes = ref<Set<GalaxyEdgeType>>(
-    new Set(['CALL', 'IMPORT', 'SAME_FILE', 'TEST_OF', 'CO_CHANGED', 'SEMANTIC', 'API_CALLS', 'IMPLEMENTS']),
-  )
+  // 节点/边类型过滤（默认全选）。
+  // 过滤通过 Sigma reducer 的 hidden 实现 —— 切换不重建图、不丢布局。
+  const activeNodeTypes = ref<Set<GalaxyNodeType>>(new Set(ALL_NODE_TYPES))
+  const activeEdgeTypes = ref<Set<GalaxyEdgeType>>(new Set(ALL_EDGE_TYPES))
 
-  // FPS 监控
+  // FPS 监控（仅展示）
   const fps = ref(60)
-  let lowFpsCount = 0
-  const lowFpsDetected = ref(false)
 
-  // 前端过滤（不重拉 API，即时响应）
+  // 过滤后的视图（供搜索面板 / 空状态判断使用；渲染层走 reducer hidden）
   const filteredNodes = computed(() =>
     nodes.value.filter(n => activeNodeTypes.value.has(n.type)),
   )
 
-  // 过滤边时同步过滤掉节点已被过滤的边
   const filteredEdges = computed(() => {
     const nodeIds = new Set(filteredNodes.value.map(n => n.id))
     return edges.value.filter(
@@ -74,59 +61,34 @@ export function useGalaxyGraph() {
     }
   }
 
-  function setRenderMode(mode: GalaxyRenderMode) {
-    renderMode.value = mode
-    localStorage.setItem(RENDER_MODE_KEY, mode)
-  }
-
   function onFpsUpdate(currentFps: number) {
     fps.value = currentFps
-    if (currentFps < FPS_LOW_THRESHOLD) {
-      lowFpsCount++
-      if (lowFpsCount >= FPS_LOW_CONSECUTIVE_REQUIRED) {
-        lowFpsDetected.value = true
-      }
-    }
-    else {
-      lowFpsCount = 0
-      lowFpsDetected.value = false
-    }
   }
 
   function toggleNodeType(type: GalaxyNodeType) {
-    if (activeNodeTypes.value.has(type)) {
-      activeNodeTypes.value.delete(type)
-    }
-    else {
-      activeNodeTypes.value.add(type)
-    }
+    const next = new Set(activeNodeTypes.value)
+    if (next.has(type))
+      next.delete(type)
+    else
+      next.add(type)
+    activeNodeTypes.value = next
   }
 
   function toggleEdgeType(type: GalaxyEdgeType) {
-    if (activeEdgeTypes.value.has(type)) {
-      activeEdgeTypes.value.delete(type)
-    }
-    else {
-      activeEdgeTypes.value.add(type)
-    }
+    const next = new Set(activeEdgeTypes.value)
+    if (next.has(type))
+      next.delete(type)
+    else
+      next.add(type)
+    activeEdgeTypes.value = next
   }
 
   function setAllNodeTypes(active: boolean) {
-    if (active) {
-      activeNodeTypes.value = new Set(['chunk_registry', 'symbol', 'endpoint', 'api_wrapper', 'api_call_site'])
-    }
-    else {
-      activeNodeTypes.value = new Set()
-    }
+    activeNodeTypes.value = active ? new Set(ALL_NODE_TYPES) : new Set()
   }
 
   function setAllEdgeTypes(active: boolean) {
-    if (active) {
-      activeEdgeTypes.value = new Set(['CALL', 'IMPORT', 'SAME_FILE', 'TEST_OF', 'CO_CHANGED', 'SEMANTIC', 'API_CALLS', 'IMPLEMENTS'])
-    }
-    else {
-      activeEdgeTypes.value = new Set()
-    }
+    activeEdgeTypes.value = active ? new Set(ALL_EDGE_TYPES) : new Set()
   }
 
   return {
@@ -135,16 +97,13 @@ export function useGalaxyGraph() {
     meta,
     loading,
     error,
-    renderMode,
     maxNodes,
     activeNodeTypes,
     activeEdgeTypes,
     fps,
-    lowFpsDetected,
     filteredNodes,
     filteredEdges,
     fetchGraph,
-    setRenderMode,
     onFpsUpdate,
     toggleNodeType,
     toggleEdgeType,

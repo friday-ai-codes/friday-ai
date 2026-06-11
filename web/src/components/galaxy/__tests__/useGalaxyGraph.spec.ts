@@ -127,71 +127,66 @@ describe('useGalaxyGraph', () => {
     expect(error.value).toBe('Network Error')
   })
 
-  it('filteredEdges — activeEdgeTypes 过滤正确', async () => {
+  it('filteredEdges — toggleEdgeType 过滤正确', async () => {
     const { getGalaxyGraph } = await import('~/api/galaxy')
     vi.mocked(getGalaxyGraph).mockResolvedValueOnce(mockResponse)
 
-    const { fetchGraph, filteredEdges, activeEdgeTypes } = useGalaxyGraph()
+    const { fetchGraph, filteredEdges, toggleEdgeType } = useGalaxyGraph()
     await fetchGraph(['repo-1'])
 
     // 初始全选：3 条边全部返回
     expect(filteredEdges.value).toHaveLength(3)
 
     // 移除 CALL 类型
-    activeEdgeTypes.value.delete('CALL')
+    toggleEdgeType('CALL')
     expect(filteredEdges.value).toHaveLength(2)
 
     // 移除 API_CALLS 类型
-    activeEdgeTypes.value.delete('API_CALLS')
+    toggleEdgeType('API_CALLS')
     expect(filteredEdges.value).toHaveLength(1)
     expect(filteredEdges.value[0].edge_type).toBe('IMPORT')
+
+    // 再次 toggle 恢复
+    toggleEdgeType('CALL')
+    expect(filteredEdges.value).toHaveLength(2)
   })
 
-  it('filteredNodes — activeNodeTypes 过滤正确', async () => {
+  it('filteredNodes — toggleNodeType 过滤正确', async () => {
     const { getGalaxyGraph } = await import('~/api/galaxy')
     vi.mocked(getGalaxyGraph).mockResolvedValueOnce(mockResponse)
 
-    const { fetchGraph, filteredNodes, activeNodeTypes } = useGalaxyGraph()
+    const { fetchGraph, filteredNodes, toggleNodeType } = useGalaxyGraph()
     await fetchGraph(['repo-1'])
 
     expect(filteredNodes.value).toHaveLength(3)
 
     // 移除 endpoint 类型
-    activeNodeTypes.value.delete('endpoint')
+    toggleNodeType('endpoint')
     expect(filteredNodes.value).toHaveLength(2)
     expect(filteredNodes.value.every(n => n.type !== 'endpoint')).toBe(true)
   })
 
-  it('onFpsUpdate FPS gate — 连续 2 次 < 30 → lowFpsDetected = true', () => {
-    const { onFpsUpdate, lowFpsDetected } = useGalaxyGraph()
+  it('toggle 操作生成新 Set 实例（保证 props 浅层 watch 能感知变化）', () => {
+    const { activeNodeTypes, toggleNodeType, setAllNodeTypes } = useGalaxyGraph()
 
-    expect(lowFpsDetected.value).toBe(false)
-    onFpsUpdate(25)
-    expect(lowFpsDetected.value).toBe(false) // 只有 1 次，未触发
-    onFpsUpdate(20)
-    expect(lowFpsDetected.value).toBe(true) // 连续 2 次，触发
+    const before = activeNodeTypes.value
+    toggleNodeType('symbol')
+    expect(activeNodeTypes.value).not.toBe(before)
+
+    const mid = activeNodeTypes.value
+    setAllNodeTypes(false)
+    expect(activeNodeTypes.value).not.toBe(mid)
+    expect(activeNodeTypes.value.size).toBe(0)
+
+    setAllNodeTypes(true)
+    expect(activeNodeTypes.value.size).toBe(5)
   })
 
-  it('onFpsUpdate — FPS 恢复后 lowFpsDetected 清零', () => {
-    const { onFpsUpdate, lowFpsDetected } = useGalaxyGraph()
+  it('onFpsUpdate — 更新 fps 值', () => {
+    const { onFpsUpdate, fps } = useGalaxyGraph()
 
-    onFpsUpdate(20)
-    onFpsUpdate(15)
-    expect(lowFpsDetected.value).toBe(true)
-
-    onFpsUpdate(60) // 恢复
-    expect(lowFpsDetected.value).toBe(false)
-  })
-
-  it('setRenderMode — 写入 localStorage', () => {
-    const { setRenderMode, renderMode } = useGalaxyGraph()
-
-    setRenderMode('echarts')
-    expect(renderMode.value).toBe('echarts')
-    expect(localStorage.getItem('galaxy_render_mode')).toBe('echarts')
-
-    setRenderMode('force3d')
-    expect(renderMode.value).toBe('force3d')
-    expect(localStorage.getItem('galaxy_render_mode')).toBe('force3d')
+    expect(fps.value).toBe(60)
+    onFpsUpdate(42)
+    expect(fps.value).toBe(42)
   })
 })

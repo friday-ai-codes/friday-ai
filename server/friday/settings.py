@@ -469,6 +469,16 @@ CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
     "CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2
 )
 
+# Galaxy 图谱文件缓存（codegraph/galaxy/cache.py）。
+# 全量聚合结果落盘 + 数据签名失效，把数秒的聚合请求降到毫秒级。
+# GALAXY_CACHE_ENABLED=False 为逃生舱：直接走实时聚合。
+GALAXY_CACHE_ENABLED: bool = env.bool("GALAXY_CACHE_ENABLED", default=True)
+# 启动后是否在后台线程对比签名预热各仓库缓存
+GALAXY_CACHE_WARM_ON_STARTUP: bool = env.bool(
+    "GALAXY_CACHE_WARM_ON_STARTUP", default=True
+)
+GALAXY_CACHE_DIR = DATA_DIR / "galaxy_cache"
+
 # HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings()` clamp 到边界 + structlog warning。

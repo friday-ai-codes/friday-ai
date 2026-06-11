@@ -22,6 +22,57 @@ class CodegraphConfig(AppConfig):
         if getattr(settings, "GOPLS_BACKEND_ENABLED", False):
             self._register_gopls_backend()
 
+        if getattr(settings, "GALAXY_CACHE_ENABLED", True) and getattr(
+            settings, "GALAXY_CACHE_WARM_ON_STARTUP", True
+        ):
+            self._schedule_galaxy_cache_warm()
+
+    @staticmethod
+    def _schedule_galaxy_cache_warm() -> None:
+        """启动后异步对比签名预热 Galaxy 文件缓存（feishu apps 同模式）。
+
+        - 管理命令（migrate / shell / pytest 等）跳过，仅服务进程执行
+        - 延迟 5s 等 Django/DB 完全就绪，daemon 线程不阻塞启动
+        - 任何异常仅记日志（缓存预热失败不影响服务可用性）
+        """
+        import os
+        import sys
+
+        argv0 = sys.argv[0] if sys.argv else ""
+        if "pytest" in argv0 or "py.test" in argv0:
+            return
+
+        is_runserver = any("runserver" in arg for arg in sys.argv)
+        if is_runserver and os.environ.get("RUN_MAIN") != "true":
+            return
+
+        is_management_cmd = len(sys.argv) > 1 and sys.argv[1] in (
+            "migrate", "makemigrations", "collectstatic", "check",
+            "shell", "dbshell", "test", "startapp", "createsuperuser",
+            "init_superuser", "reset_superuser_password",
+        )
+        if is_management_cmd:
+            return
+
+        import threading
+
+        def delayed_warm() -> None:
+            import time
+
+            time.sleep(5)
+            try:
+                from codegraph.galaxy.cache import GalaxyGraphCache
+
+                GalaxyGraphCache.warm_stale()
+            except Exception as exc:
+                import structlog
+
+                structlog.get_logger(__name__).warning(
+                    "galaxy_cache_warm_startup_failed", error=str(exc)
+                )
+
+        threading.Thread(target=delayed_warm, daemon=True).start()
+
     def _register_volar_backends(self) -> None:
         """5 项 BACKEND_REGISTRY 替换为 make_volar_backend(lang)。
 

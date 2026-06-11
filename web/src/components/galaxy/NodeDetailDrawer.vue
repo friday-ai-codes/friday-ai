@@ -63,13 +63,14 @@ const GALAXY_TO_DIFFUSION: Record<GalaxyEdgeType, DiffusionEdgeType> = {
 function toNeighborMetadata(
   neighbors: GalaxyNodeDetail['neighbors'],
 ): NeighborMetadata[] {
+  // 后端 neighbors 条目为 { node, edge: GalaxyEdge, direction }
   return neighbors.map(nb => ({
     chunk_id: nb.node.id,
     file_path: nb.node.file_path,
     line_start: nb.node.line_start,
     line_end: nb.node.line_end,
-    edge_type: GALAXY_TO_DIFFUSION[nb.edge_type],
-    weight: 1.0,
+    edge_type: GALAXY_TO_DIFFUSION[nb.edge.edge_type] ?? 'CALL',
+    weight: nb.edge.weight ?? 1.0,
     reason: '',
     hop: 1 as const,
   }))

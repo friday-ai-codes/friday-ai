@@ -6,27 +6,23 @@ meta:
 
 <script setup lang="ts">
 import type { LocationQueryRaw } from 'vue-router'
-import type { GalaxyNode, GalaxyRepoEdge, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import type { GalaxyRepoEdge, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
+import type { GalaxyGraphNode } from '~/lib/galaxy/graph-adapter'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getGalaxyRepoGraph } from '~/api/galaxy'
 import GalaxyBreadcrumb from '~/components/galaxy/GalaxyBreadcrumb.vue'
 import GalaxyCommandPalette from '~/components/galaxy/GalaxyCommandPalette.vue'
 import GalaxyControls from '~/components/galaxy/GalaxyControls.vue'
-import GalaxyForceGraph from '~/components/galaxy/GalaxyForceGraph.vue'
 import GalaxyLegend from '~/components/galaxy/GalaxyLegend.vue'
+import GalaxySigmaGraph from '~/components/galaxy/GalaxySigmaGraph.vue'
 import NodeDetailDrawer from '~/components/galaxy/NodeDetailDrawer.vue'
 import { useGalaxyGraph } from '~/composables/useGalaxyGraph'
 import { useToast } from '~/composables/useToast'
 
-// 备选引擎：lazy import（不增 main bundle）
-const EchartsGraphGl = defineAsyncComponent(() =>
-  import('~/components/galaxy/EchartsGraphGl.vue'),
-)
-
 const route = useRoute()
 const router = useRouter()
-const { error: toastError, warning: toastWarning } = useToast()
+const { error: toastError } = useToast()
 
 // ============================================================================
 // URL query 驱动 viewMode（overview = L2 仓库节点 / detail = L1 细粒度）
@@ -68,23 +64,21 @@ watch(selectedSpaceId, (val) => {
 })
 
 // ============================================================================
-// L1 detail 数据（沿用 useGalaxyGraph）
+// L1 detail 数据
 // ============================================================================
 
 const {
+  nodes,
+  edges,
   meta,
   loading,
   error,
-  renderMode,
   maxNodes,
   fps,
-  lowFpsDetected,
   activeNodeTypes,
   activeEdgeTypes,
   filteredNodes,
-  filteredEdges,
   fetchGraph,
-  setRenderMode,
   onFpsUpdate,
   toggleNodeType,
   toggleEdgeType,
@@ -148,36 +142,26 @@ watch(
 
 // 当前 detail 仓库 label（用于面包屑）
 const detailRepoLabel = computed<string>(() => {
-  // 优先从 overview 的节点表中找
   const id = detailRepoIds.value[0]
   if (!id)
     return ''
   const found = overviewNodes.value.find(n => n.repository_id === id)
   if (found)
     return found.label
-  // 回退：从细粒度图中找任一节点的 repository_id 匹配
   return ''
 })
 
 // ============================================================================
-// 移动端 / 低 FPS toast
+// 移动端 fallback
 // ============================================================================
 
 const isMobile = computed(() => typeof window !== 'undefined' && window.innerWidth < 1024)
-const hasShownFpsWarning = ref(false)
-
-watch(lowFpsDetected, (val) => {
-  if (val && !hasShownFpsWarning.value) {
-    hasShownFpsWarning.value = true
-    toastWarning('帧率较低', '检测到帧率持续 < 30 FPS，建议切换到 ECharts 高性能模式')
-  }
-})
 
 // ============================================================================
 // 节点交互（overview 仓库节点 → 下钻；detail 细粒度节点 → drawer）
 // ============================================================================
 
-const graphRef = ref<InstanceType<typeof GalaxyForceGraph> | null>(null)
+const graphRef = ref<InstanceType<typeof GalaxySigmaGraph> | null>(null)
 const selectedNodeId = ref<string | null>(null)
 const drawerOpen = ref(false)
 const commandPaletteOpen = ref(false)
@@ -191,7 +175,7 @@ function openNode(nodeId: string) {
   })
 }
 
-function handleOverviewNodeClick(node: GalaxyNode | GalaxyRepoNode) {
+function handleOverviewNodeClick(node: GalaxyGraphNode) {
   // overview 模式：点击仓库节点下钻到 L1
   if (node.type === 'repository') {
     const repoUuid = node.repository_id || node.id.replace(/^repo:/, '')
@@ -201,7 +185,7 @@ function handleOverviewNodeClick(node: GalaxyNode | GalaxyRepoNode) {
   }
 }
 
-function handleDetailNodeClick(node: GalaxyNode | GalaxyRepoNode) {
+function handleDetailNodeClick(node: GalaxyGraphNode) {
   openNode(node.id)
 }
 
@@ -212,6 +196,7 @@ function handleCommandPaletteSelect(result: GalaxySearchResult) {
 function handleDrawerClose(open: boolean) {
   if (!open) {
     drawerOpen.value = false
+    selectedNodeId.value = null
     const next = { ...route.query }
     delete next.node
     router.replace({ query: next })
@@ -234,8 +219,8 @@ function handleBackToOverview() {
 // ============================================================================
 
 const urlNodeHandled = ref(false)
-watch(filteredNodes, (nodes) => {
-  if (urlNodeHandled.value || nodes.length === 0 || viewMode.value !== 'detail')
+watch(filteredNodes, (list) => {
+  if (urlNodeHandled.value || list.length === 0 || viewMode.value !== 'detail')
     return
   const urlNode = route.query.node as string | undefined
   if (urlNode) {
@@ -295,7 +280,7 @@ onMounted(async () => {
       <div class="card text-center space-y-3 p-8 max-w-sm">
         <span class="icon-[lucide--monitor] text-5xl text-muted-foreground block" />
         <p class="text-sm text-muted-foreground">
-          3D Galaxy 图谱需要桌面端访问
+          Galaxy 图谱需要桌面端访问
         </p>
         <p class="text-xs text-muted-foreground/60">
           请在 ≥ 1024px 宽度的浏览器中访问
@@ -355,7 +340,7 @@ onMounted(async () => {
           v-else
           class="flex-1 relative overflow-hidden"
         >
-          <GalaxyForceGraph
+          <GalaxySigmaGraph
             :nodes="overviewNodes"
             :edges="overviewEdges"
             :loading="overviewLoading"
@@ -396,7 +381,7 @@ onMounted(async () => {
         </div>
 
         <div
-          v-else-if="!loading && filteredNodes.length === 0 && !error"
+          v-else-if="!loading && nodes.length === 0 && !error"
           class="flex-1 flex items-center justify-center"
         >
           <div class="card text-center space-y-3 p-8 max-w-sm bg-white/5 border-white/10">
@@ -432,32 +417,18 @@ onMounted(async () => {
           v-else
           class="flex-1 relative overflow-hidden"
         >
-          <GalaxyForceGraph
-            v-if="renderMode === 'force3d'"
+          <GalaxySigmaGraph
             ref="graphRef"
-            :nodes="filteredNodes"
-            :edges="filteredEdges"
+            :nodes="nodes"
+            :edges="edges"
             :loading="loading"
+            :active-node-types="activeNodeTypes"
+            :active-edge-types="activeEdgeTypes"
+            :selected-node-id="drawerOpen ? selectedNodeId : null"
             class="w-full h-full"
             @node-click="handleDetailNodeClick"
             @fps-update="onFpsUpdate"
           />
-          <Suspense v-else>
-            <component
-              :is="EchartsGraphGl"
-              :nodes="filteredNodes"
-              :edges="filteredEdges"
-              :loading="loading"
-              class="w-full h-full"
-              @node-click="handleDetailNodeClick"
-              @fps-update="onFpsUpdate"
-            />
-            <template #fallback>
-              <div class="flex-1 flex items-center justify-center">
-                <span class="icon-[lucide--loader-circle] text-4xl animate-spin text-primary" />
-              </div>
-            </template>
-          </Suspense>
 
           <Transition name="slide-down">
             <div
@@ -486,13 +457,10 @@ onMounted(async () => {
             <GalaxyControls
               :max-nodes="maxNodes"
               :fps="fps"
-              :low-fps-detected="lowFpsDetected"
-              :render-mode="renderMode"
               :meta="meta"
               :active-node-types="activeNodeTypes"
               :active-edge-types="activeEdgeTypes"
               @update:max-nodes="handleMaxNodesUpdate"
-              @update:render-mode="setRenderMode"
               @toggle-node-type="toggleNodeType"
               @toggle-edge-type="toggleEdgeType"
               @set-all-node-types="setAllNodeTypes"

@@ -19,6 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from codegraph.galaxy.aggregator import GalaxyAggregator
+from codegraph.galaxy.cache import GalaxyGraphCache
 
 logger = structlog.get_logger(__name__)
 
@@ -83,7 +84,9 @@ class GalaxyView(APIView):
             _MAX_NODES_CEILING,
         )
 
-        result = await sync_to_async(GalaxyAggregator.aggregate)(
+        # 文件缓存 + 签名失效（codegraph/galaxy/cache.py）；
+        # GALAXY_CACHE_ENABLED=False 时内部透传实时聚合
+        result = await sync_to_async(GalaxyGraphCache.aggregate_cached)(
             repo_ids=repo_ids,
             node_types=node_types,
             edge_types=edge_types,
@@ -96,6 +99,7 @@ class GalaxyView(APIView):
             nodes=len(result["nodes"]),
             edges=len(result["edges"]),
             sampled=result["meta"]["sampled"],
+            cache_hit=result["meta"].get("cache_hit", False),
         )
         return Response(result)
 
