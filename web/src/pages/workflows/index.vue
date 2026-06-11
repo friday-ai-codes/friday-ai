@@ -152,10 +152,11 @@ async function openCreateWorkflow() {
       @create="openCreateWorkflow"
     />
 
+    <!-- 骨架屏只在首次加载（无缓存数据）时出现；store 已有数据时直接展示，后台静默刷新，避免页面抖动 -->
     <WorkflowDataTable
       v-else
       :workflows="workflows"
-      :loading="loading"
+      :loading="loading && workflows.length === 0"
       @click="navigateToEditor($event.id)"
       @execute="openExecuteModal($event.id)"
       @edit="navigateToEditor($event.id)"

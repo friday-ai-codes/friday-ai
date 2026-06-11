@@ -6,17 +6,34 @@ import { h } from 'vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import CreateRunnerModal from '~/components/runners/CreateRunnerModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 
+// 后端 Runner API 为 IsSuperUser；前端守卫仅 UX 兜底，避免普通用户点入即 403
+definePage({ meta: { requiresAdmin: true } })
+
 useHead({ title: 'Runner 管理 - Friday AI' })
 
+const route = useRoute()
 const router = useRouter()
 const runnersStore = useRunnersStore()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
+
+// 创建 Runner 弹窗（原 /runners/new 页面已降级为弹窗）
+const createModalOpen = ref(false)
+
+async function handleRunnerCreated() {
+  try {
+    await runnersStore.fetchRunners()
+  }
+  catch {
+    // 列表刷新失败不阻塞令牌展示
+  }
+}
 
 const { status } = useRunnerMonitor()
 const disconnectedTooLong = ref(false)
@@ -49,6 +66,10 @@ onMounted(async () => {
   finally {
     loading.value = false
   }
+
+  // 旧 /runners/new URL 重定向过来时自动打开创建弹窗
+  if (route.hash === '#new')
+    createModalOpen.value = true
 })
 
 onUnmounted(() => {
@@ -192,7 +213,7 @@ const columns: ColumnDef<Runner>[] = [
         </Badge>
       </template>
       <template #actions>
-        <Button class="group relative overflow-hidden" @click="router.push('/runners/new')">
+        <Button class="group relative overflow-hidden" @click="createModalOpen = true">
           <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
           <span class="icon-[lucide--plus] mr-1.5" />
           新建 Runner
@@ -226,6 +247,12 @@ const columns: ColumnDef<Runner>[] = [
       table-id="runners-list"
       :loading="loading"
       :on-row-click="(runner) => router.push(`/runners/${runner.id}`)"
+    />
+
+    <!-- 创建 Runner 弹窗 -->
+    <CreateRunnerModal
+      v-model:open="createModalOpen"
+      @created="handleRunnerCreated"
     />
 
     <!-- 删除确认 -->

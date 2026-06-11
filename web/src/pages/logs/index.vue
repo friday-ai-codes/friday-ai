@@ -24,6 +24,7 @@ useHead({
   title: '触发日志 - Friday AI',
 })
 
+const route = useRoute()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
@@ -61,6 +62,11 @@ onMounted(async () => {
   finally {
     loading.value = false
   }
+
+  // 旧详情页 URL（/logs/triggers|webhooks|work-items/[id]）重定向过来时自动打开详情弹窗
+  const detailId = route.query.detail
+  if (typeof detailId === 'string' && detailId)
+    openDetail(detailId)
 })
 
 // 获取日志列表
