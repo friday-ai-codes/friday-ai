@@ -309,7 +309,7 @@ export function useGalaxySigma(options: UseGalaxySigmaOptions = {}) {
     })
     fa2.start()
     layoutRunning.value = true
-    layoutTimer = setTimeout(() => stopLayout(true), layoutDuration(graph.order))
+    layoutTimer = setTimeout(stopLayout, layoutDuration(graph.order), true)
   }
 
   // -------------------------------------------------------------------------

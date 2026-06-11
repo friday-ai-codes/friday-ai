@@ -136,7 +136,7 @@ async function fetchCustomModels() {
     const result = await queryLLMModels(localApiBaseUrl.value, localApiKey.value)
     customModels.value = result.models
     // 如果当前选中的模型不在列表中，选择第一个
-    if (result.models.length > 0 && !result.models.find(m => m.id === localModel.value)) {
+    if (result.models.length > 0 && !result.models.some(m => m.id === localModel.value)) {
       localModel.value = result.models[0].id
     }
   }
@@ -163,7 +163,7 @@ async function fetchSystemModels() {
     const result = await querySystemLLMModels()
     systemModels.value = result.models
     // 如果当前选中的模型不在列表中，选择第一个
-    if (result.models.length > 0 && !result.models.find(m => m.id === localModel.value)) {
+    if (result.models.length > 0 && !result.models.some(m => m.id === localModel.value)) {
       localModel.value = result.models[0].id
     }
   }

@@ -232,9 +232,9 @@ function parseContent(value: string): object {
     }
 
     // Bullet list item
-    if (line.match(/^[-*]\s+/)) {
+    if (/^[-*]\s+/.test(line)) {
       const listItems: object[] = []
-      while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
         const itemText = lines[i].replace(/^[-*]\s+/, '')
         listItems.push({
           type: 'listItem',
@@ -247,9 +247,9 @@ function parseContent(value: string): object {
     }
 
     // Ordered list item
-    if (line.match(/^\d+\.\s+/)) {
+    if (/^\d+\.\s+/.test(line)) {
       const listItems: object[] = []
-      while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
         const itemText = lines[i].replace(/^\d+\.\s+/, '')
         listItems.push({
           type: 'listItem',
