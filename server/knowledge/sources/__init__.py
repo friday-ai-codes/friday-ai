@@ -1,0 +1,33 @@
+"""source_kind → normalizer 惰性注册表（Plan 13-02 / INGEST-07）。
+
+normalizer 是 ``async def normalize(request: IngestionRequest) ->
+list[IngestionEvent]`` 形态的协程函数，由各 source 模块提供
+（``coding_plan`` / ``mcp_plan`` 模块在 Plan 13-03 落地）。
+
+本注册表只做惰性 import 解耦：摄取核心对"一个触发产出几个实体几条边"
+完全无感知，Phase 14 新触发点只需在此登记 + 新增 normalizer 模块。
+"""
+
+from __future__ import annotations
+
+import importlib
+from collections.abc import Callable
+
+__all__ = ["get_normalizer"]
+
+# source_kind → normalizer 模块路径（惰性 import，避免循环依赖与无谓加载）
+_NORMALIZERS: dict[str, str] = {
+    "coding_plan": "knowledge.sources.coding_plan",
+    "mcp_technical_plan": "knowledge.sources.mcp_plan",
+}
+
+
+def get_normalizer(source_kind: str) -> Callable:
+    """按 source_kind 返回对应 normalizer 协程函数。
+
+    未知 source_kind 直接 raise ``KeyError``（响亮——触发点接错线 /
+    配置漂移必须立刻暴露，不可静默吞掉）。
+    """
+    module_path = _NORMALIZERS[source_kind]
+    module = importlib.import_module(module_path)
+    return module.normalize
