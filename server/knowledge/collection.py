@@ -40,6 +40,7 @@ __all__ = [
     "KNOWLEDGE_PAYLOAD_REQUIRED_FIELDS",
     "KNOWLEDGE_SCHEMA_VERSION",
     "ensure_delivery_knowledge_collection",
+    "get_expected_dimension",
 ]
 
 DELIVERY_KNOWLEDGE_COLLECTION = "delivery_knowledge"
@@ -77,8 +78,10 @@ KNOWLEDGE_PAYLOAD_REQUIRED_FIELDS: tuple[str, ...] = (
 DEFAULT_EMBEDDING_DIMENSION = 1024
 
 
-async def _expected_dimension() -> int:
+async def get_expected_dimension() -> int:
     """读取期望 embedding 维度（SystemSetting，indexer 同款 default 1024）。
+
+    公开 API（rebuild 命令等跨模块调用方复用，IN-03）。
 
     边界值防线：``SystemSetting.value`` 可为 None/空串/非数字（TextField,
     blank=True, null=True）——本函数在启动路径上，绝不允许 ``int()`` 直接崩溃。
@@ -133,7 +136,7 @@ async def ensure_delivery_knowledge_collection() -> None:
       collection 原样保留，重建只能经 ``manage.py rebuild_delivery_knowledge --yes``；
     - Qdrant 异常一律向上冒泡，不做任何静默降级。
     """
-    expected_dimension = await _expected_dimension()
+    expected_dimension = await get_expected_dimension()
     client = QdrantService.get_client()
 
     collections = await sync_to_async(client.get_collections)()
