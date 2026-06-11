@@ -19,7 +19,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from structlog.testing import capture_logs
 
-from knowledge.ingestion import IngestionRequest
+from knowledge.ingestion import IngestionRequest, aschedule_ingestion
 from knowledge.models import generate_entity_id
 from knowledge.sources.coding_plan import normalize as normalize_coding_plan
 from knowledge.sources.mcp_plan import normalize as normalize_mcp_plan
@@ -187,3 +187,315 @@ class TestNormalizers:
         assert mcp_events == []
         warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
         assert warnings.count("knowledge_normalize_source_missing") == 2
+
+
+# ============================================================================
+# Task 3：接线投递断言（5 锚点）+ 异常隔离
+# ============================================================================
+
+
+@pytest.fixture
+def captured_requests(monkeypatch: pytest.MonkeyPatch) -> list[IngestionRequest]:
+    """monkeypatch ``knowledge.ingestion.aschedule_ingestion`` 收集投递请求。
+
+    接线处经 ``from knowledge import ingestion`` + 调用时属性解析，
+    monkeypatch 模块属性即可拦截全部 5 锚点投递（Pitfall 5：不真跑 worker）。
+    """
+    captured: list[IngestionRequest] = []
+
+    async def _collect(request: IngestionRequest) -> None:
+        captured.append(request)
+
+    monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", _collect)
+    return captured
+
+
+def _request_triple(request: IngestionRequest) -> tuple[str, str, str]:
+    return (request.source_kind, request.source_id, request.trigger)
+
+
+def _make_fanout_plan():
+    """Project + Repository + Conversation + CodingPlan（fan-out 用例同步工厂）。"""
+    from chat.models import CodingPlan, Conversation
+    from projects.models import Project
+    from repositories.models import Repository
+
+    project = Project.objects.create(name="触发fanout项目", feishu_project_key="k-fanout-proj")
+    repo = Repository.objects.create(
+        name="trigger-repo",
+        git_url="https://gitlab.com/test/trigger-repo.git",
+        git_platform="gitlab",
+        default_branch="main",
+    )
+    project.repositories.add(repo)
+    conversation = Conversation.objects.create(project=project, title="fanout 对话")
+    plan = CodingPlan.objects.create(
+        conversation=conversation,
+        title="fanout 方案",
+        tech_plan="## fanout 方案\n\n多仓批量创建",
+        affected_files=[],
+    )
+    return plan, repo
+
+
+class TestChatTriggers:
+    """chat ×3 锚点投递断言（-k chat 可选中）。"""
+
+    async def test_chat_plan_created_delivers_once_dedup_hit_zero(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """新建投递 chat_plan_created；同 tech_plan 再调（created=False）零新投递。"""
+        from chat.models import CodingPlan, Conversation
+        from projects.models import Project
+
+        def _setup():
+            project = Project.objects.create(name="触发chat项目", feishu_project_key="k-chat-proj")
+            return Conversation.objects.create(project=project, title="触发对话")
+
+        conversation = await sync_to_async(_setup)()
+
+        plan, created = await CodingPlan.aget_or_create_for_conversation(
+            conversation, tech_plan="## 新方案\n\n正文", affected_files=[], title="新方案"
+        )
+        assert created is True
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("coding_plan", str(plan.id), "chat_plan_created")
+        ]
+
+        _same, created_again = await CodingPlan.aget_or_create_for_conversation(
+            conversation, tech_plan="## 新方案\n\n正文", affected_files=[], title="新方案"
+        )
+        assert created_again is False
+        assert len(captured_requests) == 1  # 命中去重分支不接（内容未变，投递无增益）
+
+    async def test_chat_plan_updated_delivers(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """aupdate_plan 后投递 chat_plan_updated（INGEST-06 chat 版本翻转入口）。"""
+        _project, _conversation, plan = await sync_to_async(_make_chat_plan)()
+
+        await plan.aupdate_plan(tech_plan="## 修订方案\n\n新正文", affected_files=[])
+
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("coding_plan", str(plan.id), "chat_plan_updated")
+        ]
+
+    async def test_chat_coding_started_on_successful_fanout(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """create_sessions_for_plan 成功创建 session 后投递 chat_coding_started。"""
+        from chat.coding_session_service import create_sessions_for_plan
+
+        plan, repo = await sync_to_async(_make_fanout_plan)()
+
+        result = await create_sessions_for_plan(
+            plan=plan,
+            repository_ids=[repo.id],
+            branch_template="feat20260611.${repo}.ktrigger",
+        )
+
+        assert len(result.created) == 1
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("coding_plan", str(plan.id), "chat_coding_started")
+        ]
+
+    async def test_chat_coding_started_zero_delivery_when_all_failed(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """全部仓库创建失败（repository_ids 不合法）→ 零投递（OQ-4 挂点语义）。"""
+        from chat.coding_session_service import create_sessions_for_plan
+
+        plan, _repo = await sync_to_async(_make_fanout_plan)()
+
+        result = await create_sessions_for_plan(
+            plan=plan,
+            repository_ids=[uuid.uuid4()],  # 不属于 project 的仓库
+        )
+
+        assert result.created == []
+        assert len(result.failed) == 1
+        assert captured_requests == []
+
+
+class TestMcpTriggers:
+    """MCP ×2 锚点投递断言（-k mcp 可选中）。"""
+
+    async def test_mcp_plan_created_delivers(
+        self, captured_requests: list[IngestionRequest]
+    ) -> None:
+        """build_work_item_technical_plan 成功产出 artifact 后投递 mcp_plan_created。"""
+        from interactions.ledger import create_interaction_run
+        from mcp_tools.models import McpWorkItemContext
+        from mcp_tools.technical_plan_service import build_work_item_technical_plan
+        from projects.models import Project
+        from runners.models import hash_token
+
+        def _setup():
+            project = Project.objects.create(name="触发mcp项目", feishu_project_key="k-mcp-t-proj")
+            run = create_interaction_run(
+                token_fingerprint=hash_token("knowledge-trigger-mcp"), source="mcp"
+            )
+            context = McpWorkItemContext.objects.create(
+                run=run,
+                project=project,
+                feishu_project_key="k-mcp-t-proj",
+                work_item_type="story",
+                work_item_id=2002,
+                name="触发测试需求",
+                description="触发测试描述",
+            )
+            return run, context
+
+        run, context = await sync_to_async(_setup)()
+
+        result = await build_work_item_technical_plan(
+            run=run,
+            context_id=str(context.id),
+            repository_ids=[],
+            repo_hints=[],
+            context_chunks=[],
+            similar_cases=[{"case_id": "c1", "title": "先例", "outcome": "merged"}],
+            title="触发测试技术方案",
+            folder_token="",
+            create_document=False,
+            write_comment=False,
+        )
+
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("mcp_technical_plan", str(result.artifact.id), "mcp_plan_created")
+        ]
+
+    async def test_mcp_tasks_executed_delivers(
+        self,
+        captured_requests: list[IngestionRequest],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """execute_work_item_repo_tasks 成功返回时投递 mcp_tasks_executed。
+
+        对 service 内部依赖做最小 mock（_resolve_tasks / _execute_one_task /
+        repo_task_payload），断言点不变：source_kind/source_id/trigger 三元组。
+        """
+        from types import SimpleNamespace
+
+        from mcp_tools import work_item_execution_service as wie
+        from mcp_tools.models import McpWorkItemRepoTask
+
+        _project, _context, artifact = await sync_to_async(_make_mcp_artifact)()
+        run = await sync_to_async(lambda: artifact.run)()
+        fake_task = SimpleNamespace(status=McpWorkItemRepoTask.Status.COMPLETED)
+
+        async def _fake_resolve_tasks(**kw):
+            return artifact, [fake_task]
+
+        async def _fake_execute_one(**kw):
+            return kw["task"]
+
+        monkeypatch.setattr(wie, "_resolve_tasks", _fake_resolve_tasks)
+        monkeypatch.setattr(wie, "_execute_one_task", _fake_execute_one)
+        monkeypatch.setattr(wie, "repo_task_payload", lambda task: {"status": str(task.status)})
+        monkeypatch.setattr(wie, "_execution_results_markdown", lambda tasks: "# 执行结果")
+
+        result = await wie.execute_work_item_repo_tasks(
+            run=run,
+            technical_plan_id=str(artifact.id),
+            task_ids=[],
+            create_missing=False,
+            dispatch=False,
+            create_merge_requests=False,
+            write_back=False,
+            timeout_seconds=10,
+            reviewer_usernames=[],
+        )
+
+        assert result.output["status"] == "completed"
+        assert [_request_triple(r) for r in captured_requests] == [
+            ("mcp_technical_plan", str(artifact.id), "mcp_tasks_executed")
+        ]
+
+
+class TestExceptionIsolation:
+    """Pitfall 4：ingestion 投递链路抛错时宿主主流程仍成功返回。"""
+
+    async def test_chat_main_flow_survives_runner_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_in_background 抛 RuntimeError → aget_or_create_for_conversation 仍成功。"""
+        from chat.models import CodingPlan, Conversation
+        from projects.models import Project
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+
+        def _setup():
+            project = Project.objects.create(name="隔离chat项目", feishu_project_key="k-iso-proj")
+            return Conversation.objects.create(project=project, title="隔离对话")
+
+        conversation = await sync_to_async(_setup)()
+        plan, created = await CodingPlan.aget_or_create_for_conversation(
+            conversation, tech_plan="## 隔离方案\n\n正文", affected_files=[], title="隔离方案"
+        )
+        assert created is True
+        assert plan.id is not None
+
+    async def test_mcp_main_flow_survives_runner_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_in_background 抛 RuntimeError → build_work_item_technical_plan 仍成功。"""
+        from interactions.ledger import create_interaction_run
+        from mcp_tools.models import McpWorkItemContext
+        from mcp_tools.technical_plan_service import build_work_item_technical_plan
+        from runners.models import hash_token
+
+        def _boom(factory, *, name=None):
+            raise RuntimeError("runner down")
+
+        monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
+
+        def _setup():
+            run = create_interaction_run(
+                token_fingerprint=hash_token("knowledge-iso-mcp"), source="mcp"
+            )
+            context = McpWorkItemContext.objects.create(
+                run=run,
+                feishu_project_key="k-iso-mcp",
+                work_item_type="bug",
+                work_item_id=3003,
+                name="隔离需求",
+            )
+            return run, context
+
+        run, context = await sync_to_async(_setup)()
+        result = await build_work_item_technical_plan(
+            run=run,
+            context_id=str(context.id),
+            repository_ids=[],
+            repo_hints=[],
+            context_chunks=[],
+            similar_cases=[{"case_id": "c1"}],
+            title="隔离技术方案",
+            folder_token="",
+            create_document=False,
+            write_comment=False,
+        )
+        assert result.artifact.id is not None
+
+    async def test_schedule_registration_failure_warns_not_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """sync_to_async 注册体抛错 → aschedule_ingestion warning 记录且不上抛。"""
+
+        def _boom_sync_to_async(func, **kw):
+            async def _inner(*args, **kwargs):
+                raise RuntimeError("registration boom")
+
+            return _inner
+
+        monkeypatch.setattr("knowledge.ingestion.sync_to_async", _boom_sync_to_async)
+        with capture_logs() as cap:
+            await aschedule_ingestion(
+                IngestionRequest("coding_plan", "iso-plan", "chat_plan_updated")
+            )
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_ingest_schedule_failed" in warnings
