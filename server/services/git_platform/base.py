@@ -80,6 +80,7 @@ class GitPlatformClient(ABC):
         """
         pass
 
+    @abstractmethod
     async def get_branch_diff(
         self,
         source_branch: str,
@@ -92,10 +93,8 @@ class GitPlatformClient(ABC):
         语义为"取 source 相对 target 的全量 unified diff 文本"，与
         get_merge_request_diff 统一返回 MRDiffResult，供 DiffArchiver
         在无 MR/PR 的 skip-PR 路径下消费；与 compare_branches（冲突预检/
-        统计语义）并列，互不替代。
-
-        注：Task 2 双实现齐备后本方法转为 @abstractmethod；Task 1 暂以
-        NotImplementedError 占位，避免抽象化瞬间令未实现的子类不可实例化。
+        统计语义）并列，互不替代。抽象方法强制双子类实现，漏实现即
+        实例化 TypeError。
 
         Args:
             source_branch: 功能（变更侧）分支名。
@@ -107,7 +106,7 @@ class GitPlatformClient(ABC):
             MRDiffResult 包含文件列表（含 per-file unified diff 文本）；
             超限或平台侧 patch 缺失时 truncated=True 响亮标记。
         """
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     async def compare_branches(

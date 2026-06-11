@@ -5,7 +5,7 @@ import asyncio
 import structlog
 from github import Auth, Github, GithubException
 
-from .base import GitPlatformClient
+from .base import GitPlatformClient, truncate_diff_lines
 from .models import (
     BranchCompareResult,
     CompareFileEntry,
@@ -211,7 +211,9 @@ class GitHubClient(GitPlatformClient):
                 deleted_file = status == "removed"
 
                 # GitHub renamed 文件有 previous_filename
-                old_path = f.previous_filename if renamed_file and f.previous_filename else f.filename
+                old_path = (
+                    f.previous_filename if renamed_file and f.previous_filename else f.filename
+                )
 
                 files.append(
                     MRDiffFile(
@@ -255,6 +257,101 @@ class GitHubClient(GitPlatformClient):
             )
             return MRDiffResult(success=False, error=error_msg)
 
+    async def get_branch_diff(
+        self,
+        source_branch: str,
+        target_branch: str,
+        max_files: int = 50,
+        max_diff_lines: int = 500,
+    ) -> MRDiffResult:
+        """获取分支级全量 diff 文本（GitHub 实现，skip-PR 兜底，KMOD-05）。
+
+        包装 repo.compare(base=target, head=source) + file.patch；单文件超大时
+        GitHub 不返回 patch 字段（A1 假设）→ 该文件 diff 置空 + truncated=True
+        响亮降级，不本地兜底重拉。
+
+        Args:
+            source_branch: 功能（变更侧）分支名。
+            target_branch: 目标（base）分支名。
+            max_files: 最大文件数限制。
+            max_diff_lines: 单个文件 diff 最大行数。
+
+        Returns:
+            MRDiffResult 包含文件列表和 diff 内容；异常时 success=False 不上抛。
+        """
+        try:
+            repo = self._get_repo()
+
+            # base=target, head=source，与 compare_branches 既有调用同序
+            comparison = await asyncio.to_thread(repo.compare, target_branch, source_branch)
+
+            raw_files = list(comparison.files or [])
+            truncated = False
+
+            # 截断文件数量
+            if len(raw_files) > max_files:
+                raw_files = raw_files[:max_files]
+                truncated = True
+
+            files: list[MRDiffFile] = []
+            for f in raw_files:
+                patch_text = getattr(f, "patch", None)
+                if not patch_text:
+                    # A1 降级：超大文件平台侧不带 patch → 空 diff + 响亮标记
+                    diff_text = ""
+                    truncated = True
+                    logger.warning(
+                        "github_branch_diff_patch_missing",
+                        filename=f.filename,
+                        source=source_branch,
+                        target=target_branch,
+                    )
+                else:
+                    diff_text, was_truncated = truncate_diff_lines(patch_text, max_diff_lines)
+                    truncated = truncated or was_truncated
+
+                # 判断文件状态
+                status: str = f.status or ""
+                new_file = status == "added"
+                renamed_file = status == "renamed"
+                deleted_file = status == "removed"
+
+                # GitHub renamed 文件有 previous_filename
+                old_path = (
+                    f.previous_filename if renamed_file and f.previous_filename else f.filename
+                )
+
+                files.append(
+                    MRDiffFile(
+                        old_path=old_path,
+                        new_path=f.filename,
+                        diff=diff_text,
+                        new_file=new_file,
+                        renamed_file=renamed_file,
+                        deleted_file=deleted_file,
+                    )
+                )
+
+            logger.info(
+                "github_branch_diff_fetched",
+                source=source_branch,
+                target=target_branch,
+                files_count=len(files),
+                truncated=truncated,
+            )
+
+            return MRDiffResult(success=True, files=files, truncated=truncated)
+
+        except Exception as e:
+            # 只记 str(exc) 与分支名，不记 client/token 对象（T-14-05）
+            logger.warning(
+                "github_branch_diff_error",
+                source=source_branch,
+                target=target_branch,
+                error=str(e),
+            )
+            return MRDiffResult(success=False, error=str(e))
+
     async def compare_branches(
         self,
         source_branch: str,
@@ -278,9 +375,7 @@ class GitHubClient(GitPlatformClient):
             repo = self._get_repo()
 
             # 正向 compare: target...source（显示 source 相对于 target 的变更）
-            comparison = await asyncio.to_thread(
-                repo.compare, target_branch, source_branch
-            )
+            comparison = await asyncio.to_thread(repo.compare, target_branch, source_branch)
 
             # 提取文件列表
             raw_files = comparison.files or []

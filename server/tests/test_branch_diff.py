@@ -247,9 +247,7 @@ class TestGithubBranchDiff:
         client = self._make_client()
 
         long_patch = "\n".join(f"+line {i}" for i in range(20))
-        repo_mock = self._make_repo_mock(
-            [_make_github_compare_file(patch_text=long_patch)]
-        )
+        repo_mock = self._make_repo_mock([_make_github_compare_file(patch_text=long_patch)])
 
         with patch.object(client, "_get_repo", return_value=repo_mock):
             result = await client.get_branch_diff("feature", "main", max_diff_lines=10)
