@@ -303,14 +303,7 @@ describe('triggerLog Components', () => {
       const isValidUrl = (url: string): boolean => {
         if (!url)
           return false
-        try {
-          // eslint-disable-next-line no-new
-          new URL(url)
-          return true
-        }
-        catch {
-          return false
-        }
+        return URL.canParse(url)
       }
 
       expect(isValidUrl('https://example.com')).toBe(true)
