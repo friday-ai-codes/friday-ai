@@ -95,7 +95,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 14-03-PLAN.md — diff_archive.py 三层件：unidiff 解析/生成文件判定/zlib 压缩纯函数 + MODIFIES_CHUNK 对齐阶梯（封顶 20）+ DiffArchiver service（大 diff 夹具验证）
-- [ ] 14-04-PLAN.md — workflow_plan normalizer + plan_generation/approve_node 双触发点接线（INGEST-01，审批段落防 hash 短路、source_id 恒生成节点 key）
+- [x] 14-04-PLAN.md — workflow_plan normalizer + plan_generation/approve_node 双触发点接线（INGEST-01，审批段落防 hash 短路、source_id 恒生成节点 key）
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -144,7 +144,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
 | 13. 统一摄取与版本化 | 4/4 | Complete    | 2026-06-11 |
-| 14. 全触发点接入与 diff 归档 | 3/6 | In Progress|  |
+| 14. 全触发点接入与 diff 归档 | 4/6 | In Progress|  |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |
 
