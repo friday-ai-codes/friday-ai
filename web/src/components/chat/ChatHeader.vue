@@ -41,6 +41,33 @@ const conversationTitle = computed(
 const isRunning = computed(
   () => chatStore.currentConversation?.status === 'running' || chatStore.isStreaming,
 )
+
+/** Select 不接受 null value，用 sentinel 表示「通用对话（不绑定空间）」 */
+const SPACE_NONE = '__none__'
+
+/**
+ * 会话内切换空间：有活跃会话时下拉反映会话**实际绑定**的空间，
+ * 切换走 PATCH（后端落库 space_switch 分隔线消息）；
+ * 草稿态维持原行为 —— 只写 selectedSpaceId 偏好，影响下一个新建会话。
+ */
+const headerSpace = computed<string>({
+  get: () => {
+    const sid = chatStore.hasConversation
+      ? chatStore.currentConversation?.space_id ?? null
+      : chatStore.selectedSpaceId
+    return sid ?? SPACE_NONE
+  },
+  set: (val) => {
+    const sid = val === SPACE_NONE ? null : val
+    if (!chatStore.hasConversation) {
+      chatStore.selectedSpaceId = sid
+      return
+    }
+    // 失败时 store 已写 error.value（全局错误展示兜底）；
+    // computed get 仍读会话真实 space_id，UI 自动回弹到切换前的值。
+    chatStore.switchConversationSpace(sid).catch(() => {})
+  },
+})
 </script>
 
 <template>
@@ -75,12 +102,18 @@ const isRunning = computed(
         <span>暂无空间，去创建</span>
       </RouterLink>
 
-      <Select v-else v-model="chatStore.selectedSpaceId">
-        <SelectTrigger class="w-44 h-8 text-xs border-border/40 bg-transparent shadow-none">
+      <Select v-else v-model="headerSpace" :disabled="isRunning">
+        <SelectTrigger
+          class="w-44 h-8 text-xs border-border/40 bg-transparent shadow-none"
+          :title="isRunning ? '对话进行中，无法切换空间' : '切换空间后，后续回答将基于新空间'"
+        >
           <span class="icon-[lucide--folder-git-2] text-[13px] text-muted-foreground/70 shrink-0" />
-          <SelectValue placeholder="选择空间（可不选）" />
+          <SelectValue placeholder="选择空间" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem :value="SPACE_NONE">
+            通用对话（不绑定空间）
+          </SelectItem>
           <SelectItem
             v-for="space in spacesStore.spaces"
             :key="space.id"

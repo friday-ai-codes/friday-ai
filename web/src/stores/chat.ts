@@ -430,6 +430,48 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 会话内切换空间。
+   *
+   * 流程：
+   *   1. PATCH /chat/conversations/:id/ {space_id}（后端更新绑定 + 落库
+   *      space_switch 系统消息，下一轮回答自动基于新空间）
+   *   2. 成功 → 回填 conversations[] 条目 + 同步 selectedSpaceId 偏好
+   *      （凭证列表 / 飞书导出等既有 watcher 自动联动）
+   *   3. 刷新消息列表，让「已切换空间到 xxx」分隔线立即出现
+   *
+   * 流式 / running 态由 ChatHeader 禁用入口，这里再兜一层。
+   */
+  async function switchConversationSpace(spaceId: string | null) {
+    if (!currentConversationId.value) {
+      // 草稿态：没有会话可 PATCH，只更新偏好（影响下一个新建会话）
+      selectedSpaceId.value = spaceId
+      return
+    }
+    if (isStreaming.value || currentConversation.value?.status === 'running') {
+      const msg = '对话进行中，无法切换空间'
+      error.value = msg
+      throw new Error(msg)
+    }
+    const id = currentConversationId.value
+    try {
+      const updated = await patchConversation(id, { space_id: spaceId })
+      const idx = conversations.value.findIndex(c => c.id === updated.id)
+      if (idx >= 0)
+        conversations.value[idx] = { ...conversations.value[idx], ...updated }
+      else if (pendingConversation.value?.id === updated.id)
+        pendingConversation.value = { ...pendingConversation.value, ...updated }
+      selectedSpaceId.value = spaceId
+      error.value = null
+      await hydrateConversationMessages(id)
+      return updated
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : '切换空间失败'
+      throw e
+    }
+  }
+
   async function stopStreaming() {
     if (!currentConversationId.value)
       return
@@ -857,7 +899,7 @@ export const useChatStore = defineStore('chat', () => {
       // 任务极快失败（第一次轮询即终态）的场景。
       await hydrateConversationMessages(id)
       if (completedSessionId)
-        _notifyDeepAnalysisComplete(completedSessionId)
+        _notifyConversationComplete({ isDeepAnalysis: true })
       resetStreamingState()
     }
     catch {
@@ -1413,9 +1455,9 @@ export const useChatStore = defineStore('chat', () => {
           clearTimeout(interruptTimeout)
           interruptTimeout = null
         }
-        // 深度分析完成时发送浏览器通知
-        if (finalAnswer && deepAnalysisSessionId.value)
-          _notifyDeepAnalysisComplete()
+        // 会话完成时发送浏览器通知（用户已开启且页面不在前台时）
+        if (event.status !== 'interrupted')
+          _notifyConversationComplete({ isDeepAnalysis: !!deepAnalysisSessionId.value })
         break
       }
       case 'phase_transition':
@@ -1675,8 +1717,9 @@ export const useChatStore = defineStore('chat', () => {
     let materializedConversation: Conversation | null = null
     let createdForDraft = false
 
+    // 注意：此处不置 loading —— loading 仅供侧边栏会话列表骨架屏使用，
+    // 草稿首条消息创建会话时若置 loading，会话列表会闪一次骨架屏（页面抖动）。
     if (!currentConversationId.value) {
-      loading.value = true
       try {
         // space_id 可空：未选空间时创建「通用对话」，任务涉及空间知识时由
         // AI（system prompt 引导）要求用户先选择空间
@@ -1714,9 +1757,6 @@ export const useChatStore = defineStore('chat', () => {
         currentConversationId.value = null
         syncConversationToURL(null)
         return
-      }
-      finally {
-        loading.value = false
       }
     }
 
@@ -1939,7 +1979,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const sourceConversationId = currentConversationId.value
-    loading.value = true
+    // 同 sendMessage：不置 loading，避免编辑提问时侧边栏会话列表闪骨架屏
     error.value = null
     try {
       const forked = await forkConversationForMessage(sourceConversationId, messageId, {
@@ -1956,9 +1996,6 @@ export const useChatStore = defineStore('chat', () => {
     catch (e) {
       error.value = e instanceof Error ? e.message : '编辑历史提问失败'
       throw e
-    }
-    finally {
-      loading.value = false
     }
   }
 
@@ -2000,35 +2037,59 @@ export const useChatStore = defineStore('chat', () => {
 
   function requestNotificationPermission() {
     if (notificationsEnabled.value)
-      void requestAndEnableWebPush()
+      void requestAndEnableWebPush().catch(() => false)
   }
 
   async function toggleNotifications(enabled: boolean) {
-    notificationsEnabled.value = enabled
-    if (enabled) {
-      const success = await requestAndEnableWebPush()
-      if (!success)
-        notificationsEnabled.value = false
-    }
-    else {
+    if (!enabled) {
+      notificationsEnabled.value = false
       const { disableWebPush } = useWebPush()
       await disableWebPush()
+      return
     }
+
+    if (!('Notification' in window)) {
+      notificationsEnabled.value = false
+      return
+    }
+
+    if (Notification.permission === 'default') {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        notificationsEnabled.value = false
+        return
+      }
+    }
+    else if (Notification.permission !== 'granted') {
+      notificationsEnabled.value = false
+      return
+    }
+
+    notificationsEnabled.value = true
+    // Web Push 尽力注册；失败时仍保留本地 Notification 能力
+    await requestAndEnableWebPush().catch(() => false)
   }
 
-  function _notifyDeepAnalysisComplete(sessionId: string | null = deepAnalysisSessionId.value) {
+  function _notifyConversationComplete(options?: { isDeepAnalysis?: boolean }) {
+    if (!notificationsEnabled.value)
+      return
+    // Web Push 已就绪时由 Service Worker 接收服务端推送，避免重复弹窗
     if (webPushReady.value)
       return
     if (!('Notification' in window) || Notification.permission !== 'granted')
       return
-    if (document.hasFocus())
+    if (document.visibilityState === 'visible' && document.hasFocus())
       return
+
+    const isDeepAnalysis = options?.isDeepAnalysis ?? false
     const conv = conversations.value.find(c => c.id === currentConversationId.value)
     const title = conv?.title || '对话'
-    const n = new Notification('深度分析完成', {
-      body: `「${title}」的深度分析已完成，点击查看结果`,
+    const n = new Notification(isDeepAnalysis ? '深度分析完成' : 'AI 回复完成', {
+      body: isDeepAnalysis
+        ? `「${title}」的深度分析已完成，点击查看结果`
+        : `「${title}」已有新回复，点击查看`,
       icon: '/favicon.ico',
-      tag: `deep-analysis-${sessionId || currentConversationId.value || 'chat'}`,
+      tag: `chat-complete-${currentConversationId.value || 'chat'}`,
     })
     n.onclick = () => {
       window.focus()
@@ -2352,6 +2413,7 @@ export const useChatStore = defineStore('chat', () => {
     removeConversation,
     patchConversationCredential,
     patchConversationProviderAndModel,
+    switchConversationSpace,
     stopStreaming,
     toggleSidebar,
     clearCurrentConversation,

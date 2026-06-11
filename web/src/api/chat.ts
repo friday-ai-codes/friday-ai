@@ -262,6 +262,8 @@ export interface PatchConversationParams {
   provider_credential_id?: string | null
   model?: string
   title?: string
+  /** 会话内切换空间；null 切回不绑定空间的通用对话 */
+  space_id?: string | null
 }
 
 /**

@@ -134,12 +134,13 @@ class ChatPushService:
         return updated
 
     @staticmethod
-    async def anotify_deep_analysis_complete(
+    async def anotify_conversation_complete(
         *,
         user_id: str | None,
         conversation_id: str,
         conversation_title: str,
         answer_preview: str,
+        is_deep_analysis: bool = False,
     ) -> int:
         if not user_id:
             return 0
@@ -162,12 +163,14 @@ class ChatPushService:
             return 0
 
         config = await ChatPushService.aget_or_create_vapid_config()
+        push_title = "深度分析完成" if is_deep_analysis else "AI 回复完成"
+        status_text = "深度分析已完成" if is_deep_analysis else "已有新回复"
         payload = json.dumps(
             {
-                "title": "深度分析完成",
-                "body": f"「{conversation_title}」已完成。{answer_preview[:80]}",
+                "title": push_title,
+                "body": f"「{conversation_title}」{status_text}。{answer_preview[:80]}",
                 "icon": "/vite.svg",
-                "tag": f"deep-analysis-{conversation_id}",
+                "tag": f"chat-complete-{conversation_id}",
                 "url": f"/chat?conversation={conversation_id}",
                 "conversationId": conversation_id,
             },
@@ -213,3 +216,19 @@ class ChatPushService:
                 )
 
         return delivered
+
+    @staticmethod
+    async def anotify_deep_analysis_complete(
+        *,
+        user_id: str | None,
+        conversation_id: str,
+        conversation_title: str,
+        answer_preview: str,
+    ) -> int:
+        return await ChatPushService.anotify_conversation_complete(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            conversation_title=conversation_title,
+            answer_preview=answer_preview,
+            is_deep_analysis=True,
+        )

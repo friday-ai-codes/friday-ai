@@ -707,6 +707,7 @@ async def test_load_history_messages_reconstructs_user_assistant_tool_sequence()
     class _FakeRoleEnum:
         USER = "user"
         ASSISTANT = "assistant"
+        SYSTEM = "system"
 
     class _FakeMessage:
         Role = _FakeRoleEnum
@@ -768,6 +769,91 @@ async def test_load_history_messages_reconstructs_user_assistant_tool_sequence()
     assert history[2].tool_call_id == "tool_abc"
     # dict result 应被 json.dumps（ensure_ascii=False 保留中文）
     assert '"repositories"' in history[2].content
+
+
+@pytest.mark.real_history_load
+@pytest.mark.asyncio
+async def test_load_history_messages_annotates_space_switch() -> None:
+    """会话内切换空间：space_switch 系统消息应注入为 HumanMessage 切换标注；
+    其余 system 消息维持忽略。
+    """
+    from agents.chat_runner import _load_history_messages
+
+    rows = [
+        SimpleNamespace(role="user", content="旧空间的问题", tool_calls=None),
+        SimpleNamespace(role="assistant", content="旧空间的回答", tool_calls=None),
+        SimpleNamespace(
+            role="system",
+            content="已切换空间到「新空间」",
+            tool_calls=None,
+            metadata={
+                "type": "space_switch",
+                "from_space_id": None,
+                "from_space_name": "",
+                "to_space_id": "space-2",
+                "to_space_name": "新空间",
+            },
+        ),
+        SimpleNamespace(
+            role="system",
+            content="其它系统消息（应被忽略）",
+            tool_calls=None,
+            metadata={},
+        ),
+        SimpleNamespace(role="user", content="本轮新问题（应被丢弃）", tool_calls=None),
+    ]
+
+    class _FakeRoleEnum:
+        USER = "user"
+        ASSISTANT = "assistant"
+        SYSTEM = "system"
+
+    class _FakeMessage:
+        Role = _FakeRoleEnum
+
+        class objects:  # noqa: N801
+            @staticmethod
+            def filter(**_kwargs: object) -> object:
+                class _QS:
+                    def order_by(self, *_a: str) -> object:
+                        class _Aiter:
+                            def __aiter__(self_inner) -> object:  # noqa: N805
+                                self_inner._iter = iter(rows)
+                                return self_inner
+
+                            async def __anext__(self_inner) -> object:  # noqa: N805
+                                try:
+                                    return next(self_inner._iter)
+                                except StopIteration:
+                                    raise StopAsyncIteration
+
+                        return _Aiter()
+
+                return _QS()
+
+    import sys
+    fake_chat_models = SimpleNamespace(Message=_FakeMessage)
+    real_chat_models = sys.modules.get("chat.models")
+    sys.modules["chat.models"] = fake_chat_models  # type: ignore[assignment]
+    try:
+        history = await _load_history_messages("conv-test")
+    finally:
+        if real_chat_models is not None:
+            sys.modules["chat.models"] = real_chat_models
+        else:
+            sys.modules.pop("chat.models", None)
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    # user + assistant + space_switch 标注 = 3；普通 system 消息被忽略
+    assert len(history) == 3
+    assert isinstance(history[0], HumanMessage)
+    assert isinstance(history[1], AIMessage)
+    annotation = history[2]
+    assert isinstance(annotation, HumanMessage)
+    assert "切换" in annotation.content
+    assert "「新空间」" in annotation.content
+    assert "无空间（通用对话）" in annotation.content
 
 
 @pytest.mark.asyncio
