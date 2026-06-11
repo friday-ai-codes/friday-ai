@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.3.0
-milestone_name: 交付知识图谱 — 需求/缺陷 ↔ 方案 ↔ 代码 GraphRAG 关联
-status: roadmap_created
-last_updated: "2026-06-11T08:45:00.000Z"
-last_activity: 2026-06-11
+milestone_name: milestone
+status: planning
+stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
+last_updated: "2026-06-11T09:59:40.750Z"
+last_activity: 2026-06-11 — v0.3.0 roadmap created（5 phases，28/28 requirements mapped）
 progress:
   total_phases: 5
   completed_phases: 0
