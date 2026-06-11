@@ -162,6 +162,33 @@ async def test_ensure_respects_embedding_dimension_setting(
     assert json.loads(meta_setting.value)["dimension"] == 768
 
 
+@pytest.mark.parametrize("raw_value", [None, "", "   "], ids=["none", "empty", "blank"])
+async def test_ensure_falls_back_when_dimension_setting_empty(
+    mock_qdrant_client: MagicMock, raw_value: str | None
+) -> None:
+    """EMBEDDING_DIMENSION setting 存在但 value 为 None/空串/空白 → 不崩溃，回退默认 1024。"""
+    await SystemSetting.objects.acreate(key=SettingKeys.EMBEDDING_DIMENSION, value=raw_value)
+    mock_qdrant_client.get_collections.return_value = _collections_response()
+
+    await ensure_delivery_knowledge_collection()
+
+    create_kwargs = mock_qdrant_client.create_collection.call_args.kwargs
+    assert create_kwargs["vectors_config"]["dense"].size == 1024
+
+
+async def test_ensure_falls_back_when_dimension_setting_invalid(
+    mock_qdrant_client: MagicMock,
+) -> None:
+    """EMBEDDING_DIMENSION value 非数字（"abc"）→ 不崩溃，回退默认 1024（启动路径防线）。"""
+    await SystemSetting.objects.acreate(key=SettingKeys.EMBEDDING_DIMENSION, value="abc")
+    mock_qdrant_client.get_collections.return_value = _collections_response()
+
+    await ensure_delivery_knowledge_collection()
+
+    create_kwargs = mock_qdrant_client.create_collection.call_args.kwargs
+    assert create_kwargs["vectors_config"]["dense"].size == 1024
+
+
 # ---------------------------------------------------------------------------
 # rebuild_delivery_knowledge 命令
 # ---------------------------------------------------------------------------
