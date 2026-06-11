@@ -523,5 +523,10 @@ async def build_work_item_technical_plan(
         "retry_state": retry_state,
         "run_id": str(run.run_id),
     }
+    from knowledge import ingestion  # lazy import 防循环
+
+    await ingestion.aschedule_ingestion(
+        ingestion.IngestionRequest("mcp_technical_plan", str(artifact.id), "mcp_plan_created")
+    )
     traces = [(str(item.get("kind") or "file"), item) for item in evidence]
     return TechnicalPlanResult(artifact=artifact, output=output, traces=traces)
