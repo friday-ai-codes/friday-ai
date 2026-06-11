@@ -19,6 +19,11 @@ __all__ = ["get_normalizer"]
 _NORMALIZERS: dict[str, str] = {
     "coding_plan": "knowledge.sources.coding_plan",
     "mcp_technical_plan": "knowledge.sources.mcp_plan",
+    # Phase 14 先注册（13-02 先例）：模块由 14-04/05/06 落地，
+    # 落地前 get_normalizer 触发 ImportError 响亮失败，不静默。
+    "workflow_plan": "knowledge.sources.workflow_plan",
+    "task_result": "knowledge.sources.task_result",
+    "feishu_work_item": "knowledge.sources.feishu_work_item",
 }
 
 

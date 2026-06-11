@@ -123,6 +123,8 @@ class GraphStore(Protocol):
 
     async def expire_edge(self, edge_id: uuid.UUID, *, expired_at: datetime) -> None: ...
 
+    async def chunk_in_edges(self, chunk_id: uuid.UUID) -> list[EdgeRecord]: ...
+
     async def neighbors(
         self,
         entity_id: uuid.UUID,
@@ -238,6 +240,40 @@ class RelationalGraphStore:
         logger.info(
             "knowledge_edge_expired", edge_id=str(edge_id), expired_at=expired_at.isoformat()
         )
+
+    async def chunk_in_edges(self, chunk_id: uuid.UUID) -> list[EdgeRecord]:
+        """按 target_chunk_id 反查指向该 chunk 的活跃入边（Phase 14 / ENH-01）。
+
+        chunk 反查唯一收口（P9 精神）：``KnowledgeEdge.objects.filter(
+        target_chunk_id=...)`` 的 ORM 查询全仓只允许出现在本方法——
+        调用方（"函数被哪些需求改过"反查链路）一律经本接口取边，
+        再沿 ``source_id`` → ``traverse(direction="in")`` 回到需求实体。
+        默认只返回当前有效边（``invalid_at IS NULL AND expired_at IS NULL``）。
+        """
+        qs = KnowledgeEdge.objects.filter(
+            target_chunk_id=chunk_id, invalid_at__isnull=True, expired_at__isnull=True
+        ).select_related("source_entity")
+        records = [
+            EdgeRecord(
+                edge_id=e.id,
+                source_id=e.source_entity_id,
+                target_id=e.target_entity_id,
+                target_chunk_id=e.target_chunk_id,
+                relation=e.relation,
+                metadata=e.metadata,
+                valid_at=e.valid_at,
+                invalid_at=e.invalid_at,
+                created_at=e.created_at,
+                expired_at=e.expired_at,
+            )
+            async for e in qs
+        ]
+        logger.info(
+            "knowledge_chunk_in_edges_queried",
+            chunk_id=str(chunk_id),
+            edge_count=len(records),
+        )
+        return records
 
     async def neighbors(
         self,
