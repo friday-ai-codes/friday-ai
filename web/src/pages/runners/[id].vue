@@ -12,6 +12,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/comp
 
 import { useErrorHandler } from '~/composables/useErrorHandler'
 
+// 后端 Runner API 为 IsSuperUser；前端守卫仅 UX 兜底，避免普通用户深链直达即 403
+definePage({ meta: { requiresAdmin: true } })
+
 useHead({ title: 'Runner 详情 - Friday AI' })
 
 const route = useRoute('/runners/[id]')

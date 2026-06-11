@@ -9,6 +9,9 @@ import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import EditSpaceModal from '~/components/space/EditSpaceModal.vue'
 import FeishuConfigModal from '~/components/space/FeishuConfigModal.vue'
+import SpaceMembersModal from '~/components/space/SpaceMembersModal.vue'
+import SpacePromptsModal from '~/components/space/SpacePromptsModal.vue'
+import SpaceProvidersModal from '~/components/space/SpaceProvidersModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -67,6 +70,12 @@ onMounted(async () => {
     feishuModalOpen.value = true
   else if (route.hash === '#edit')
     openEditSpace()
+  else if (route.hash === '#prompts')
+    promptsModalOpen.value = true
+  else if (route.hash === '#providers')
+    providersModalOpen.value = true
+  else if (route.hash === '#members')
+    membersModalOpen.value = true
 })
 
 // 编辑空间弹窗
@@ -83,6 +92,11 @@ async function openEditSpace() {
 
 // 飞书配置弹窗
 const feishuModalOpen = ref(false)
+
+// Prompt 覆盖 / Provider 凭证 / 成员管理弹窗（原独立子页面已降级为弹窗）
+const promptsModalOpen = ref(false)
+const providersModalOpen = ref(false)
+const membersModalOpen = ref(false)
 
 async function handleFeishuUpdated() {
   try {
@@ -151,6 +165,7 @@ const sections = computed<NavSection[]>(() => [
   },
   { id: 'prompts', label: 'Prompt 覆盖', icon: 'icon-[lucide--file-text]' },
   { id: 'providers', label: 'Provider 凭证', icon: 'icon-[lucide--key-round]' },
+  { id: 'members', label: '成员管理', icon: 'icon-[lucide--users]' },
   {
     id: 'webhook-token',
     label: 'Webhook Token',
@@ -722,12 +737,10 @@ async function handleCustomToken() {
                   Prompt 覆盖
                 </h3>
               </div>
-              <RouterLink :to="`/spaces/${space.id}/prompts`">
-                <Button variant="ghost" size="sm" class="h-8 text-xs group">
-                  管理
-                  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
-                </Button>
-              </RouterLink>
+              <Button variant="ghost" size="sm" class="h-8 text-xs group" @click="promptsModalOpen = true">
+                管理
+                <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </Button>
             </div>
             <div class="p-5">
               <div class="flex items-center gap-3">
@@ -757,12 +770,10 @@ async function handleCustomToken() {
                   Provider 凭证
                 </h3>
               </div>
-              <RouterLink :to="`/spaces/${space.id}/providers`">
-                <Button variant="ghost" size="sm" class="h-8 text-xs group">
-                  管理
-                  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
-                </Button>
-              </RouterLink>
+              <Button variant="ghost" size="sm" class="h-8 text-xs group" @click="providersModalOpen = true">
+                管理
+                <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </Button>
             </div>
             <div class="p-5">
               <div class="flex items-center gap-3">
@@ -775,6 +786,39 @@ async function handleCustomToken() {
                   </p>
                   <p class="text-xs text-muted-foreground mt-0.5">
                     仅本空间可见，覆盖系统默认凭证
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 成员管理 -->
+        <section id="members" class="scroll-mt-22">
+          <div class="card">
+            <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="icon-[lucide--users] text-primary" />
+                <h3 class="text-sm font-semibold">
+                  成员管理
+                </h3>
+              </div>
+              <Button variant="ghost" size="sm" class="h-8 text-xs group" @click="membersModalOpen = true">
+                管理
+                <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </Button>
+            </div>
+            <div class="p-5">
+              <div class="flex items-center gap-3">
+                <div class="shrink-0 p-2 rounded-xl bg-primary/10">
+                  <span class="icon-[lucide--users] text-lg text-primary" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-foreground">
+                    空间成员与角色
+                  </p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    管理成员的访问权限：管理员 / 成员 / 观察者
                   </p>
                 </div>
               </div>
@@ -942,6 +986,24 @@ async function handleCustomToken() {
       :space-id="spaceId"
       @updated="handleFeishuUpdated"
       @edit-space="handleEditSpaceFromFeishu"
+    />
+
+    <!-- Prompt 覆盖弹窗 -->
+    <SpacePromptsModal
+      v-model:open="promptsModalOpen"
+      :space-id="spaceId"
+    />
+
+    <!-- Provider 凭证弹窗 -->
+    <SpaceProvidersModal
+      v-model:open="providersModalOpen"
+      :space-id="spaceId"
+    />
+
+    <!-- 成员管理弹窗 -->
+    <SpaceMembersModal
+      v-model:open="membersModalOpen"
+      :space-id="spaceId"
     />
 
     <!-- 删除确认对话框 -->

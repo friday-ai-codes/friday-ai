@@ -6,6 +6,7 @@ import LoadingState from '~/components/common/LoadingState.vue'
 import ClaudeCodeConfigPanel from '~/components/providers/ClaudeCodeConfigPanel.vue'
 import ProviderSettings from '~/components/providers/ProviderSettings.vue'
 import GeneralSettings from '~/components/settings/GeneralSettings.vue'
+import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
 import { Button } from '~/components/ui/button'
@@ -36,7 +37,7 @@ watch(() => claude.loading.value, (isLoading) => {
 // Tab 导航（仿 sub2api SettingsView 风格）
 // ============================================================================
 
-type SettingsTab = 'general' | 'rag' | 'integration' | 'provider'
+type SettingsTab = 'general' | 'rag' | 'integration' | 'provider' | 'oidc'
 
 const activeTab = ref<SettingsTab>('general')
 
@@ -45,7 +46,16 @@ const settingsTabs = [
   { key: 'rag' as SettingsTab, icon: 'icon-[lucide--brain]', label: 'RAG 设置' },
   { key: 'integration' as SettingsTab, icon: 'icon-[lucide--plug]', label: '集成设置' },
   { key: 'provider' as SettingsTab, icon: 'icon-[lucide--cpu]', label: 'Provider' },
+  { key: 'oidc' as SettingsTab, icon: 'icon-[lucide--shield-check]', label: 'OIDC 认证' },
 ]
+
+// 旧 /admin/oidc URL 重定向过来时（#oidc hash）自动切到对应 Tab
+const route = useRoute()
+onMounted(() => {
+  const hashTab = route.hash.slice(1) as SettingsTab
+  if (settingsTabs.some(t => t.key === hashTab))
+    activeTab.value = hashTab
+})
 </script>
 
 <template>
@@ -193,6 +203,11 @@ const settingsTabs = [
               <ClaudeCodeConfigPanel />
             </div>
           </div>
+        </div>
+
+        <!-- Tab: OIDC 认证 -->
+        <div v-show="activeTab === 'oidc'" class="space-y-6">
+          <OIDCProviderSettings />
         </div>
       </template>
 

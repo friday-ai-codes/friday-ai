@@ -1,21 +1,21 @@
 /**
- * pages/spaces/[id]/prompts.vue 集成测试 ——
+ * components/space/SpacePromptsModal.vue 集成测试
+ * （原 pages/spaces/[id]/prompts.vue 集成测试，页面降级为弹窗后迁移至此）
  *
  * 覆盖路径：
- *  1. 组件挂载后调用 store.loadProjectList(spaceId)
- *  2. 渲染 PageHeader 文案 "Prompt 覆盖" / "项目级提示词覆盖与系统级 fallback"
- *  3. DataTable 绑定 mergedProjectList 作为 data
- *  4. status='overridden' 行渲染 "项目级已覆盖" Badge variant default
+ *  1. 弹窗打开后调用 store.loadSpaceList(spaceId)
+ *  2. 渲染标题文案 "Prompt 覆盖" / "空间级提示词覆盖与系统级 fallback"
+ *  3. DataTable 绑定 mergedSpaceList 作为 data
+ *  4. status='overridden' 行渲染 "空间级已覆盖" Badge variant default
  *  5. status='fallback' 行渲染 "使用系统级 fallback" Badge variant outline
- *  6. status='space_only' 行渲染 "仅项目级" Badge variant secondary
- *  7. canEdit=false 时所有操作按钮 disabled + tooltip "仅项目管理员可操作"
- *  8. canEdit=true 时 fallback 行操作按钮文案 "创建项目级副本"
+ *  6. status='space_only' 行渲染 "仅空间级" Badge variant secondary
+ *  7. canEdit=false 时所有操作按钮 disabled + tooltip "仅空间管理员可操作"
+ *  8. canEdit=true 时 fallback 行操作按钮文案 "创建空间级副本"
  *  9. canEdit=true 时 overridden 行操作按钮文案 "编辑"
  * 10. 点击操作按钮 → sheetOpen=true（且 fallback → create / overridden → edit）
  *
- * Mock 策略：vi.hoisted 提升 closure，全 stub 化 PageContainer/PageHeader/DataTable/
+ * Mock 策略：vi.hoisted 提升 closure，全 stub 化 Dialog/DataTable/
  * PromptEditor/Badge/Button，绕开 reka-ui Teleport。
- * vue-router 整体 mock 为 useRoute returning { params: { id: 'test-space-id' } }。
  */
 
 import type { ColumnDef } from '@tanstack/vue-table'
@@ -23,7 +23,7 @@ import type { MergedSpaceListItem } from '~/stores/prompts'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, h, nextTick, ref } from 'vue'
-import PromptsOverridesPage from '../[id]/prompts.vue'
+import SpacePromptsModal from '../SpacePromptsModal.vue'
 
 // ============================================================================
 // Mock —— closure 通过 vi.hoisted 提升
@@ -39,10 +39,6 @@ const mocks = vi.hoisted(() => ({
   // canEditRef 是 readonly ComputedRef<boolean>。用 import('vue').ComputedRef 类型
   canEditRef: null as unknown as import('vue').ComputedRef<boolean>,
   canEditValue: { current: true },
-}))
-
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'test-space-id' } }),
 }))
 
 vi.mock('~/stores/prompts', () => ({
@@ -130,12 +126,11 @@ function PassthroughStub(name: string) {
   }
 }
 
-const PageContainerStub = PassthroughStub('PageContainer')
-const PageHeaderStub = {
-  name: 'PageHeader',
-  props: ['icon', 'title', 'description'],
-  template: '<header data-testid="page-header"><h1>{{ title }}</h1><p>{{ description }}</p></header>',
-}
+const DialogStub = PassthroughStub('Dialog')
+const DialogContentStub = PassthroughStub('DialogContent')
+const DialogHeaderStub = PassthroughStub('DialogHeader')
+const DialogTitleStub = PassthroughStub('DialogTitle')
+const DialogDescriptionStub = PassthroughStub('DialogDescription')
 const DataTableStub = {
   name: 'DataTable',
   props: ['data', 'columns', 'tableId', 'loading'],
@@ -159,12 +154,19 @@ const BadgeStub = {
   template: '<span :data-badge-variant="variant"><slot /></span>',
 }
 
-function mountPage() {
-  return mount(PromptsOverridesPage, {
+function mountModal() {
+  return mount(SpacePromptsModal, {
+    props: {
+      spaceId: 'test-space-id',
+      open: true,
+    },
     global: {
       stubs: {
-        PageContainer: PageContainerStub,
-        PageHeader: PageHeaderStub,
+        Dialog: DialogStub,
+        DialogContent: DialogContentStub,
+        DialogHeader: DialogHeaderStub,
+        DialogTitle: DialogTitleStub,
+        DialogDescription: DialogDescriptionStub,
         DataTable: DataTableStub,
         PromptEditor: PromptEditorStub,
         Button: ButtonStub,
@@ -229,7 +231,7 @@ function callDefaultSlot(vnode: { children?: unknown }): string {
 // ============================================================================
 // Tests
 // ============================================================================
-describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
+describe('components/space/SpacePromptsModal.vue', () => {
   beforeEach(() => {
     mocks.loadSpaceListMock.mockReset().mockResolvedValue(undefined)
     mocks.loadDetailMock.mockReset().mockResolvedValue(undefined)
@@ -242,23 +244,23 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
     mocks.canEditRef = computed(() => mocks.canEditValue.current)
   })
 
-  it('1. 组件挂载后调用 store.loadSpaceList(spaceId)', async () => {
-    mountPage()
+  it('1. 弹窗打开后调用 store.loadSpaceList(spaceId)', async () => {
+    mountModal()
     await nextTick()
     await new Promise(r => setTimeout(r, 0))
     expect(mocks.loadSpaceListMock).toHaveBeenCalledWith('test-space-id')
   })
 
-  it('2. PageHeader 渲染中文标题 "Prompt 覆盖"', async () => {
-    const wrapper = mountPage()
+  it('2. 渲染中文标题 "Prompt 覆盖"', async () => {
+    const wrapper = mountModal()
     await nextTick()
     expect(wrapper.text()).toContain('Prompt 覆盖')
     expect(wrapper.text()).toContain('空间级提示词覆盖与系统级 fallback')
   })
 
-  it('3. DataTable 绑定 mergedProjectList 作为 data', async () => {
+  it('3. DataTable 绑定 mergedSpaceList 作为 data', async () => {
     mocks.mergedSpaceListRef.value = [overriddenRow, fallbackRow]
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     expect(dt.exists()).toBe(true)
@@ -267,7 +269,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
   })
 
   it('4. status="overridden" 渲染 Badge variant=default 文案 "空间级已覆盖"', async () => {
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -279,7 +281,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
   })
 
   it('5. status="fallback" 渲染 Badge variant=outline 文案 "使用系统级 fallback"', async () => {
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -289,8 +291,8 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
     expect(callDefaultSlot(vnode)).toBe('使用系统级 fallback')
   })
 
-  it('6. status="project_only" 渲染 Badge variant=secondary 文案 "仅空间级"', async () => {
-    const wrapper = mountPage()
+  it('6. status="space_only" 渲染 Badge variant=secondary 文案 "仅空间级"', async () => {
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -302,7 +304,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
 
   it('7. canEdit=false 时所有操作按钮 disabled + tooltip "仅空间管理员可操作"', async () => {
     mocks.canEditValue.current = false
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -314,7 +316,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
 
   it('8. canEdit=true 时 fallback 行操作按钮文案 "创建空间级副本"', async () => {
     mocks.canEditValue.current = true
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -324,7 +326,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
   })
 
   it('9. canEdit=true 时 overridden 行操作按钮文案 "编辑"', async () => {
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -334,7 +336,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
   })
 
   it('10. 点击 fallback 行按钮 → editor 切到 create + clearCurrent + open=true', async () => {
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -353,7 +355,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
   })
 
   it('11. 点击 overridden 行按钮 → editor 切到 edit + 用 space_prompt.id 调 loadDetail', async () => {
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]
@@ -372,7 +374,7 @@ describe('pages/spaces/[id]/prompts.vue (PROMPTUI-03)', () => {
 
   it('12. canEdit=false 时点击按钮被早拒（onClick 直接 return，不调 store action）', async () => {
     mocks.canEditValue.current = false
-    const wrapper = mountPage()
+    const wrapper = mountModal()
     await nextTick()
     const dt = wrapper.findComponent(DataTableStub)
     const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>[]

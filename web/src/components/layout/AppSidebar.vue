@@ -81,15 +81,14 @@ const mainNavItems: NavItem[] = [
   { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
   { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
-  { to: '/runners', label: 'Runner', icon: 'lucide--server' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
 ]
 
 const adminNavItems: NavItem[] = [
   { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
+  { to: '/runners', label: 'Runner', icon: 'lucide--server' },
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
   { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
-  { to: '/admin/oidc', label: 'OIDC 认证', icon: 'lucide--shield-check' },
   { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
   { to: '/codegraph/galaxy', label: 'Galaxy 图谱', icon: 'lucide--sparkles' },
   { to: '/codegraph/playground', label: 'Playground', icon: 'lucide--flask-conical' },

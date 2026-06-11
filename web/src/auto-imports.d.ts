@@ -47,6 +47,7 @@ declare global {
   const decorateDeepLog: typeof import('./composables/useDeepAnalysisLog').decorateDeepLog
   const defineAsyncComponent: typeof import('vue').defineAsyncComponent
   const defineComponent: typeof import('vue').defineComponent
+  const definePage: typeof import('vue-router/experimental').definePage
   const defineStore: typeof import('pinia').defineStore
   const eagerComputed: typeof import('@vueuse/core').eagerComputed
   const effectScope: typeof import('vue').effectScope
@@ -239,6 +240,7 @@ declare global {
   const useFullscreen: typeof import('@vueuse/core').useFullscreen
   const useGalaxyGraph: typeof import('./composables/useGalaxyGraph').useGalaxyGraph
   const useGalaxySearch: typeof import('./composables/useGalaxySearch').useGalaxySearch
+  const useGalaxySigma: typeof import('./composables/useGalaxySigma').useGalaxySigma
   const useGamepad: typeof import('@vueuse/core').useGamepad
   const useGeolocation: typeof import('@vueuse/core').useGeolocation
   const useGsapReveal: typeof import('./composables/useMotion').useGsapReveal
@@ -413,8 +415,8 @@ declare global {
   export type { SourceChunk, DiffusionHop, DiffusionNodeData, DiffusionEdgeData } from './composables/useDiffusionGraph'
   import('./composables/useDiffusionGraph')
   // @ts-ignore
-  export type { GalaxyRenderMode } from './composables/useGalaxyGraph'
-  import('./composables/useGalaxyGraph')
+  export type { UseGalaxySigmaOptions } from './composables/useGalaxySigma'
+  import('./composables/useGalaxySigma')
   // @ts-ignore
   export type { GraphBuildStreamEvent, ConnectGraphStreamOptions } from './composables/useGraphBuildStream'
   import('./composables/useGraphBuildStream')
@@ -514,6 +516,7 @@ declare module 'vue' {
     readonly decorateDeepLog: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['decorateDeepLog']>
     readonly defineAsyncComponent: UnwrapRef<typeof import('vue')['defineAsyncComponent']>
     readonly defineComponent: UnwrapRef<typeof import('vue')['defineComponent']>
+    readonly definePage: UnwrapRef<typeof import('vue-router/experimental')['definePage']>
     readonly defineStore: UnwrapRef<typeof import('pinia')['defineStore']>
     readonly eagerComputed: UnwrapRef<typeof import('@vueuse/core')['eagerComputed']>
     readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
@@ -706,6 +709,7 @@ declare module 'vue' {
     readonly useFullscreen: UnwrapRef<typeof import('@vueuse/core')['useFullscreen']>
     readonly useGalaxyGraph: UnwrapRef<typeof import('./composables/useGalaxyGraph')['useGalaxyGraph']>
     readonly useGalaxySearch: UnwrapRef<typeof import('./composables/useGalaxySearch')['useGalaxySearch']>
+    readonly useGalaxySigma: UnwrapRef<typeof import('./composables/useGalaxySigma')['useGalaxySigma']>
     readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
     readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
     readonly useGsapReveal: UnwrapRef<typeof import('./composables/useMotion')['useGsapReveal']>

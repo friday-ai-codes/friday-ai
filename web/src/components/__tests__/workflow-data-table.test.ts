@@ -133,7 +133,7 @@ describe('workflowDataTable', () => {
       },
     })
 
-    expect(wrapper.find('.workflow-card-shell').classes()).toContain('h-[380px]')
+    expect(wrapper.find('.workflow-card-shell').classes()).toContain('min-h-[220px]')
     expect(wrapper.find('.workflow-card-content').exists()).toBe(true)
     expect(wrapper.find('.workflow-card-description').exists()).toBe(true)
     expect(wrapper.find('.workflow-node-chip-row').exists()).toBe(true)

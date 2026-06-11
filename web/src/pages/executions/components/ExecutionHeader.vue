@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { markRaw } from 'vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
+import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
@@ -23,7 +25,7 @@ interface Props {
   isReplayMode?: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   pause: []
@@ -35,6 +37,17 @@ const emit = defineEmits<{
   /** : 进入/退出回放 */
   replay: []
 }>()
+
+// 来源日志详情弹窗（原 /logs/triggers/[id] 页面已统一为弹窗）
+async function openTriggerLog() {
+  if (!props.triggerLogId)
+    return
+  const { open } = useModal({
+    component: markRaw(TriggerLogDetailModal),
+    attrs: { logId: props.triggerLogId },
+  })
+  await open()
+}
 </script>
 
 <template>
@@ -54,15 +67,15 @@ const emit = defineEmits<{
           <span class="text-[10px] text-muted-foreground font-mono truncate">
             {{ executionId }}
           </span>
-          <RouterLink
+          <button
             v-if="triggerLogId"
-            :to="`/logs/triggers/${triggerLogId}`"
+            type="button"
             class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
-            @click.stop
+            @click.stop="openTriggerLog"
           >
             <span class="icon-[lucide--file-text] w-3 h-3" />
             来源日志
-          </RouterLink>
+          </button>
         </div>
       </div>
     </div>

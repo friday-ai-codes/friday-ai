@@ -81,164 +81,172 @@ function getVisibleNodeTypeCounts(workflow: Workflow): NodeTypeCount[] {
 function getHiddenNodeTypeCount(workflow: Workflow): number {
   return Math.max(getNodeTypeCounts(workflow).length - MAX_VISIBLE_NODE_CHIPS, 0)
 }
+
+function hasNodes(workflow: Workflow): boolean {
+  return (((workflow as any).node_summary as unknown[] | undefined)?.length ?? 0) > 0
+}
 </script>
 
 <template>
   <TooltipProvider>
     <!-- Loading State -->
-    <div v-if="loading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <div v-for="i in 6" :key="i" class="flex h-[380px] flex-col overflow-hidden rounded-lg border border-border/70 bg-card">
-        <Skeleton class="h-28 w-full rounded-none" />
-        <div class="flex flex-1 flex-col p-4 pb-3">
-          <div class="mb-3 flex items-start gap-3">
-            <Skeleton class="h-9 w-9 rounded-lg" />
-            <div class="flex-1">
-              <Skeleton class="mb-1.5 h-4 w-3/4" />
-              <Skeleton class="h-9 w-full" />
+    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div v-for="i in 6" :key="i" class="flex min-h-[220px] flex-col overflow-hidden rounded-lg border border-border/70 bg-card">
+        <div class="flex flex-1 flex-col gap-3 p-4">
+          <div class="flex items-start gap-3">
+            <Skeleton class="size-9 rounded-lg" />
+            <div class="flex-1 space-y-1.5">
+              <Skeleton class="h-4 w-3/4" />
+              <Skeleton class="h-3.5 w-1/2" />
             </div>
             <Skeleton class="h-5 w-8 rounded-full" />
           </div>
-          <div class="mb-3 grid min-h-[64px] grid-cols-2 gap-1.5">
-            <Skeleton v-for="chip in 4" :key="chip" class="h-7 rounded-md" />
+          <Skeleton class="h-20 w-full rounded-lg" />
+          <div class="flex gap-1.5">
+            <Skeleton v-for="chip in 3" :key="chip" class="h-6 w-20 rounded-md" />
           </div>
-          <div class="mt-auto flex items-center gap-2 border-t border-border/60 pt-3">
-            <Skeleton class="h-8 flex-1 rounded-md" />
-            <Skeleton class="h-8 w-8 rounded-md" />
-          </div>
+        </div>
+        <div class="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2.5">
+          <Skeleton class="h-4 w-16" />
+          <Skeleton class="h-7 w-20 rounded-md" />
         </div>
       </div>
     </div>
 
     <!-- Workflow Cards -->
-    <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <div
+    <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <article
         v-for="workflow in workflows"
         :key="workflow.id"
-        class="workflow-card group relative cursor-pointer"
+        class="workflow-card group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-lg border transition-all duration-200"
+        :class="[workflow.is_active
+          ? 'workflow-card-shell border-border/70 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]'
+          : 'workflow-card-shell border-border/50 bg-muted/25 opacity-80']"
         @click="onCardClick(workflow)"
       >
-        <!-- Card body -->
-        <div
-          class="workflow-card-shell relative flex h-[380px] flex-col overflow-hidden rounded-lg border transition-all duration-200"
-          :class="[workflow.is_active ? 'bg-card border-border/70 shadow-[0_1px_2px_rgba(15,23,42,0.06)] group-hover:-translate-y-0.5 group-hover:border-primary/30 group-hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]' : 'bg-muted/25 border-border/50 opacity-80']"
-        >
-          <!-- Mini Map Preview -->
+        <!-- Content -->
+        <div class="workflow-card-content flex flex-1 flex-col gap-3 p-4">
+          <!-- Header: Icon + Name + Toggle -->
+          <div class="flex items-start gap-3">
+            <div
+              class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg ring-1"
+              :class="[workflow.is_active ? 'bg-primary/10 text-primary ring-primary/10' : 'bg-muted/50 text-muted-foreground ring-border/40']"
+            >
+              <span class="icon-[lucide--workflow] text-lg" />
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <h3
+                class="truncate text-base font-semibold leading-6 transition-colors"
+                :class="[workflow.is_active ? 'text-foreground group-hover:text-primary' : 'text-muted-foreground']"
+              >
+                {{ workflow.name }}
+              </h3>
+              <p class="workflow-card-description mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                {{ workflow.description || '暂无描述' }}
+              </p>
+            </div>
+
+            <!-- Toggle Switch -->
+            <div @click.stop>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Switch
+                    :checked="workflow.is_active"
+                    class="scale-75 origin-right"
+                    @update:checked="onToggleActive($event, workflow)"
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{{ workflow.is_active ? '点击禁用' : '点击启用' }}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+
+          <!-- Mini Map Preview（仅在有节点时展示） -->
           <div
-            class="workflow-preview relative h-28 w-full shrink-0 border-b transition-colors"
-            :class="[workflow.is_active ? 'bg-background border-border/50' : 'bg-muted/20 border-border/30']"
+            v-if="hasNodes(workflow)"
+            class="workflow-preview relative h-20 w-full shrink-0 overflow-hidden rounded-lg border transition-colors"
+            :class="[workflow.is_active ? 'border-border/50 bg-background' : 'border-border/30 bg-muted/20']"
           >
             <WorkflowMiniMap
               :nodes="(workflow as any).node_summary || []"
               :edges="(workflow as any).edge_summary || []"
               :width="400"
-              :height="112"
+              :height="80"
               class="h-full w-full"
             />
-
-            <!-- Node count badge -->
-            <div class="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+            <div class="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
               <span class="icon-[lucide--shapes] text-[10px]" />
               {{ (workflow as any).node_count ?? 0 }} 节点
             </div>
           </div>
 
-          <!-- Content -->
-          <div class="workflow-card-content flex flex-1 flex-col p-4 pb-3">
-            <!-- Header: Icon + Name + Toggle -->
-            <div class="mb-3 flex items-start gap-3">
-              <!-- Icon -->
-              <div
-                class="flex size-9 shrink-0 items-center justify-center rounded-lg ring-1"
-                :class="[workflow.is_active ? 'bg-primary/10 text-primary ring-primary/10' : 'bg-muted/50 text-muted-foreground ring-border/40']"
-              >
-                <span
-                  class="icon-[lucide--workflow] text-lg"
-                />
-              </div>
+          <!-- Node Type Tags -->
+          <div v-if="getVisibleNodeTypeCounts(workflow).length" class="workflow-node-chip-row flex flex-wrap gap-1.5">
+            <span
+              v-for="nt in getVisibleNodeTypeCounts(workflow)"
+              :key="nt.type"
+              class="workflow-node-chip inline-flex h-6 max-w-full items-center gap-1 truncate rounded-md border border-border/60 bg-muted/35 px-2 text-[11px] font-medium text-muted-foreground"
+            >
+              <span :class="nt.icon" class="shrink-0 text-xs" />
+              <span class="truncate">{{ nt.name }}</span>
+              <template v-if="nt.count > 1">&times;{{ nt.count }}</template>
+            </span>
+            <span
+              v-if="getHiddenNodeTypeCount(workflow) > 0"
+              class="workflow-node-overflow inline-flex h-6 items-center rounded-md border border-primary/15 bg-primary/10 px-2 text-[11px] font-semibold text-primary"
+            >
+              +{{ getHiddenNodeTypeCount(workflow) }}
+            </span>
+          </div>
 
-              <!-- Name & Description -->
-              <div class="min-w-0 flex-1">
-                <h3
-                  class="truncate text-base font-semibold leading-6 transition-colors"
-                  :class="[workflow.is_active ? 'group-hover:text-primary' : 'text-muted-foreground']"
-                >
-                  {{ workflow.name }}
-                </h3>
-                <p class="workflow-card-description mt-0.5 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
-                  {{ workflow.description || '暂无描述' }}
-                </p>
-              </div>
-
-              <!-- Toggle Switch -->
-              <div @click.stop>
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <Switch
-                      :checked="workflow.is_active"
-                      class="scale-75 origin-right"
-                      @update:checked="onToggleActive($event, workflow)"
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>{{ workflow.is_active ? '点击禁用' : '点击启用' }}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-
-            <!-- Node Type Tags -->
-            <div class="workflow-node-chip-row mb-3 flex min-h-[64px] flex-wrap content-start gap-1.5 overflow-hidden">
-              <span
-                v-for="nt in getVisibleNodeTypeCounts(workflow)"
-                :key="nt.type"
-                class="workflow-node-chip inline-flex h-7 max-w-full items-center gap-1 truncate rounded-md border border-border/60 bg-muted/35 px-2 text-[11px] font-medium text-muted-foreground"
-              >
-                <span :class="nt.icon" class="shrink-0 text-xs" />
-                <span class="truncate">{{ nt.name }}</span>
-                <template v-if="nt.count > 1">&times;{{ nt.count }}</template>
-              </span>
-              <span
-                v-if="getHiddenNodeTypeCount(workflow) > 0"
-                class="workflow-node-overflow inline-flex h-7 items-center rounded-md border border-primary/15 bg-primary/10 px-2 text-[11px] font-semibold text-primary"
-              >
-                +{{ getHiddenNodeTypeCount(workflow) }}
-              </span>
-            </div>
-
-            <!-- Actions Row -->
-            <div class="workflow-card-actions mt-auto flex shrink-0 items-center gap-2 border-t border-border/60 pt-3">
-              <!-- Execute Button -->
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button
-                    size="sm"
-                    class="workflow-execute-button h-8 flex-1 text-sm shadow-none"
-                    :disabled="!workflow.is_active"
-                    @click="onExecuteClick($event, workflow)"
-                  >
-                    <span class="icon-[lucide--play] mr-1" />
-                    执行
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent v-if="!workflow.is_active" side="top">
-                  <p>工作流已禁用</p>
-                </TooltipContent>
-              </Tooltip>
-
-              <!-- Delete Button -->
-              <Button
-                variant="ghost"
-                size="icon"
-                class="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="删除工作流"
-                @click.stop.prevent="onDeleteClick($event, workflow)"
-              >
-                <span class="icon-[lucide--trash-2] text-sm" />
-              </Button>
-            </div>
+          <!-- 空工作流提示 -->
+          <div v-else class="flex items-center gap-1.5 text-xs text-muted-foreground/70">
+            <span class="icon-[lucide--shapes]" />
+            暂无节点，点击进入编辑器开始编排
           </div>
         </div>
-      </div>
+
+        <!-- 底部操作栏 -->
+        <div class="workflow-card-actions mt-auto flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2">
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
+            编辑流程
+            <span class="icon-[lucide--arrow-right] transition-transform group-hover:translate-x-0.5" />
+          </span>
+
+          <div class="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="workflow-execute-button h-7 gap-1 px-2 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
+                  :disabled="!workflow.is_active"
+                  @click="onExecuteClick($event, workflow)"
+                >
+                  <span class="icon-[lucide--play]" />
+                  执行
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent v-if="!workflow.is_active" side="top">
+                <p>工作流已禁用</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              title="删除工作流"
+              @click.stop.prevent="onDeleteClick($event, workflow)"
+            >
+              <span class="icon-[lucide--trash-2] text-sm" />
+            </Button>
+          </div>
+        </div>
+      </article>
     </div>
   </TooltipProvider>
 </template>

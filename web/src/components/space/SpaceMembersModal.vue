@@ -1,0 +1,327 @@
+<script setup lang="ts">
+/**
+ * SpaceMembersModal — 空间成员管理弹窗
+ *
+ * 把原独立路由页 `pages/spaces/[id]/members.vue` 的全部功能迁入空间详情页弹窗：
+ *   - 成员列表（角色徽章 + 内联角色切换 + 移除）
+ *   - 添加成员（过滤已是成员的用户）
+ */
+import type { SpaceMembership, SystemUser } from '~/types'
+import { addSpaceMember, listSpaceMembers, removeSpaceMember, updateSpaceMember } from '~/api/members'
+import { listUsers } from '~/api/users'
+import EmptyState from '~/components/common/EmptyState.vue'
+import { Button } from '~/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
+
+const props = defineProps<{
+  spaceId: string
+}>()
+
+const open = defineModel<boolean>('open', { default: false })
+
+const { confirm } = useConfirmDialog()
+const { handleError } = useErrorHandler()
+const { success } = useToast()
+
+const members = ref<SpaceMembership[]>([])
+const loading = ref(true)
+const saving = ref(false)
+
+// 添加成员
+const showAddForm = ref(false)
+const allUsers = ref<SystemUser[]>([])
+const selectedUserId = ref('')
+const selectedRole = ref<'admin' | 'member' | 'viewer'>('member')
+const loadingUsers = ref(false)
+
+const roleLabels: Record<string, string> = {
+  admin: '管理员',
+  member: '成员',
+  viewer: '观察者',
+}
+
+async function loadMembers() {
+  loading.value = true
+  try {
+    members.value = await listSpaceMembers(props.spaceId)
+  }
+  catch (e: unknown) {
+    handleError(e, '加载成员列表')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+// 弹窗打开时加载成员，并重置添加表单状态
+watch(open, (isOpen) => {
+  if (isOpen) {
+    showAddForm.value = false
+    loadMembers()
+  }
+}, { immediate: true })
+
+async function openAddForm() {
+  showAddForm.value = true
+  loadingUsers.value = true
+  try {
+    allUsers.value = await listUsers()
+  }
+  catch (e: unknown) {
+    handleError(e, '加载用户列表')
+  }
+  finally {
+    loadingUsers.value = false
+  }
+}
+
+// 过滤出还不是成员的用户
+function getNonMembers() {
+  const memberUserIds = new Set(members.value.map(m => m.user.id))
+  return allUsers.value.filter(u => !memberUserIds.has(u.id) && u.is_active)
+}
+
+async function handleAddMember() {
+  if (!selectedUserId.value) {
+    handleError(new Error('请选择用户'), '添加成员')
+    return
+  }
+  saving.value = true
+  try {
+    const membership = await addSpaceMember(props.spaceId, {
+      user_id: selectedUserId.value,
+      role: selectedRole.value,
+    })
+    members.value.push(membership)
+    showAddForm.value = false
+    selectedUserId.value = ''
+    selectedRole.value = 'member'
+    success('成员已添加')
+  }
+  catch (e: unknown) {
+    handleError(e, '添加成员')
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+async function handleRoleChange(member: SpaceMembership, newRole: 'admin' | 'member' | 'viewer') {
+  saving.value = true
+  try {
+    const updated = await updateSpaceMember(props.spaceId, member.user.id, { role: newRole })
+    const idx = members.value.findIndex(m => m.id === member.id)
+    if (idx !== -1)
+      members.value[idx] = updated
+    success('角色已更新')
+  }
+  catch (e: unknown) {
+    handleError(e, '更新角色')
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+async function handleRemoveMember(member: SpaceMembership) {
+  const confirmed = await confirm({
+    title: '移除成员',
+    description: `确定要移除 ${member.user.display_name || member.user.username} 吗？`,
+    confirmText: '移除',
+    variant: 'destructive',
+  })
+  if (!confirmed)
+    return
+
+  saving.value = true
+  try {
+    await removeSpaceMember(props.spaceId, member.user.id)
+    members.value = members.value.filter(m => m.id !== member.id)
+    success('成员已移除')
+  }
+  catch (e: unknown) {
+    handleError(e, '移除成员')
+  }
+  finally {
+    saving.value = false
+  }
+}
+</script>
+
+<template>
+  <Dialog v-model:open="open">
+    <DialogContent class="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogHeader>
+        <div class="flex items-start justify-between gap-4 pr-8">
+          <div class="space-y-1.5">
+            <DialogTitle class="flex items-center gap-2">
+              <span class="icon-[lucide--users] text-primary" />
+              空间成员管理
+            </DialogTitle>
+            <DialogDescription>
+              管理空间成员的访问权限和角色（共 {{ members.length }} 位成员）
+            </DialogDescription>
+          </div>
+          <Button size="sm" class="shrink-0 gap-1.5" @click="openAddForm">
+            <span class="icon-[lucide--user-plus] text-sm" />
+            添加成员
+          </Button>
+        </div>
+      </DialogHeader>
+
+      <!-- 添加成员表单 -->
+      <div
+        v-if="showAddForm"
+        class="rounded-2xl bg-card/80 backdrop-blur-sm border border-primary/30 p-4 space-y-4"
+      >
+        <h2 class="font-semibold text-sm">
+          添加新成员
+        </h2>
+
+        <div v-if="loadingUsers" class="flex items-center gap-2 text-muted-foreground text-sm">
+          <span class="icon-[lucide--loader-2] animate-spin" />
+          加载用户列表...
+        </div>
+
+        <template v-else>
+          <div class="flex gap-3">
+            <Select v-model="selectedUserId" class="flex-1">
+              <SelectTrigger class="bg-background/50">
+                <SelectValue placeholder="选择用户" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="u in getNonMembers()"
+                  :key="u.id"
+                  :value="u.id"
+                >
+                  {{ u.display_name || u.username }}（@{{ u.username }}）
+                </SelectItem>
+                <div v-if="getNonMembers().length === 0" class="py-2 px-3 text-sm text-muted-foreground">
+                  所有用户已是成员
+                </div>
+              </SelectContent>
+            </Select>
+
+            <Select v-model="selectedRole">
+              <SelectTrigger class="w-32 bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">
+                  管理员
+                </SelectItem>
+                <SelectItem value="member">
+                  成员
+                </SelectItem>
+                <SelectItem value="viewer">
+                  观察者
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="saving || !selectedUserId"
+              @click="handleAddMember"
+            >
+              确认添加
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              @click="showAddForm = false"
+            >
+              取消
+            </Button>
+          </div>
+        </template>
+      </div>
+
+      <!-- 成员列表 -->
+      <div v-if="loading" class="flex items-center justify-center py-8">
+        <span class="icon-[lucide--loader-2] animate-spin text-2xl text-muted-foreground" />
+      </div>
+
+      <EmptyState
+        v-else-if="members.length === 0"
+        icon="lucide--users"
+        title="暂无成员"
+        description="当前空间还没有成员，点击右上角「添加成员」开始添加。"
+      />
+
+      <div v-else class="space-y-3">
+        <div
+          v-for="member in members"
+          :key="member.id"
+          class="flex items-center justify-between p-4 rounded-xl bg-background/50 border border-border/30 hover:border-primary/20 transition-colors"
+        >
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+              {{ (member.user.display_name || member.user.username).charAt(0).toUpperCase() }}
+            </div>
+            <div>
+              <p class="font-medium text-sm">
+                {{ member.user.display_name || member.user.username }}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                @{{ member.user.username }}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <Select
+              :model-value="member.role"
+              :disabled="saving"
+              @update:model-value="(v) => handleRoleChange(member, v as 'admin' | 'member' | 'viewer')"
+            >
+              <SelectTrigger class="w-28 h-8 text-xs bg-background/50">
+                <SelectValue>{{ roleLabels[member.role] }}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">
+                  管理员
+                </SelectItem>
+                <SelectItem value="member">
+                  成员
+                </SelectItem>
+                <SelectItem value="viewer">
+                  观察者
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              :disabled="saving"
+              class="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+              @click="handleRemoveMember(member)"
+            >
+              <span class="icon-[lucide--user-minus] text-sm" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DialogContent>
+  </Dialog>
+</template>
