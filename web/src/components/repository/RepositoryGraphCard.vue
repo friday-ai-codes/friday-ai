@@ -28,6 +28,7 @@ import {
 } from '~/api/codegraph'
 import { repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import GalaxyGraphModal from '~/components/galaxy/GalaxyGraphModal.vue'
 import GraphAutoBuildToggle from '~/components/repository/GraphAutoBuildToggle.vue'
 import {
   AlertDialog,
@@ -76,6 +77,8 @@ const rebuilding = ref(false)
 const cancelling = ref(false)
 const deleting = ref(false)
 const showDeleteDialog = ref(false)
+// 全屏 Galaxy 图谱弹层
+const galaxyModalOpen = ref(false)
 
 let streamController: AbortController | null = null
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -434,6 +437,26 @@ onUnmounted(() => {
           <p class="text-xs text-muted-foreground">
             最近构建：<span class="text-foreground">{{ formatRelativeTime(repository?.graph_last_built_at) }}</span>
           </p>
+
+          <!-- Galaxy 入口 banner：原地全屏打开当前仓库图谱 -->
+          <button
+            type="button"
+            class="galaxy-entry group relative flex w-full items-center gap-3 rounded-xl border border-white/10 px-4 py-3 overflow-hidden transition-all hover:border-primary/40 text-left cursor-pointer"
+            @click="galaxyModalOpen = true"
+          >
+            <div class="absolute inset-0 bg-[#0a0a1f]" />
+            <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(96,165,250,0.16),transparent_55%)]" />
+            <span class="relative icon-[lucide--orbit] text-xl text-primary shrink-0" />
+            <div class="relative flex-1 min-w-0">
+              <p class="text-sm font-medium text-white">
+                在 Galaxy 图谱中探索
+              </p>
+              <p class="text-xs text-white/50 truncate">
+                调用链 · 依赖 · 语义关联 · 跨仓 API 的交互式星图
+              </p>
+            </div>
+            <span class="relative icon-[lucide--expand] text-white/40 group-hover:text-white transition-all shrink-0" />
+          </button>
         </div>
 
         <!-- ===== failed 态：错误卡片（UI-SPEC §3.9） ===== -->
@@ -491,18 +514,6 @@ onUnmounted(() => {
 
         <!-- ===== 按钮组（UI-SPEC §3.8） ===== -->
         <div class="flex flex-wrap gap-2">
-          <!-- 查看 Galaxy 图谱（仅 completed 显示） -->
-          <Button
-            v-if="graphStatus === 'completed'"
-            variant="outline"
-            as-child
-          >
-            <router-link :to="{ path: '/codegraph/galaxy', query: { repo_ids: props.repositoryId } }">
-              <span class="icon-[lucide--orbit] mr-2" />
-              查看 Galaxy 图谱
-            </router-link>
-          </Button>
-
           <!-- 立即构建 / 重新构建（idle / completed / failed / cancelled） -->
           <TooltipProvider v-if="['idle', 'completed', 'failed', 'cancelled'].includes(graphStatus)">
             <Tooltip>
@@ -572,5 +583,12 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 全屏 Galaxy 图谱弹层（原地打开当前仓库图谱） -->
+    <GalaxyGraphModal
+      v-model:open="galaxyModalOpen"
+      :repository-id="props.repositoryId"
+      :repo-label="repository?.name"
+    />
   </div>
 </template>
