@@ -104,3 +104,9 @@ None — 未新增计划 threat_model 之外的安全面（无新端点/认证�
 - `manage.py makemigrations --check --dry-run` → 退出码 0
 - `ruff check knowledge/ tests/knowledge/` → All checks passed
 - 验收 grep：`_embedding_model_name` 私有名零残留；`tree_sitter|CodeParser` 零命中；`batch_set_payload|delete_vectors` 零命中；`wait=True` 4 处；测试 import schema 常量断言命中
+
+## Self-Check: PASSED
+
+- 6 个产物文件全部存在（chunking.py / vector_ops.py / 0002 迁移 / 两份测试 / SUMMARY）
+- 7 个 commit（4f673819, 2050b052, de6f14dd, 9430670f, 2e33ea86, 6367e2ba, 46495534）全部在 git log 中
+- tests/knowledge/ 80 passed；makemigrations --check 退出码 0
