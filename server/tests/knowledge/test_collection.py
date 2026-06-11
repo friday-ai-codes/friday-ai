@@ -45,9 +45,19 @@ def _collections_response(*names: str) -> SimpleNamespace:
     return SimpleNamespace(collections=[SimpleNamespace(name=n) for n in names])
 
 
-def _collection_info(vectors) -> SimpleNamespace:
-    """构造 get_collection 假返回：info.config.params.vectors。"""
-    return SimpleNamespace(config=SimpleNamespace(params=SimpleNamespace(vectors=vectors)))
+_VALID_SPARSE = {"sparse": models.SparseVectorParams()}
+
+
+def _collection_info(vectors, sparse_vectors=_VALID_SPARSE) -> SimpleNamespace:
+    """构造 get_collection 假返回：info.config.params.vectors / .sparse_vectors。
+
+    sparse_vectors 默认完整 hybrid 配置；传 None/空 dict 模拟残缺 collection。
+    """
+    return SimpleNamespace(
+        config=SimpleNamespace(
+            params=SimpleNamespace(vectors=vectors, sparse_vectors=sparse_vectors)
+        )
+    )
 
 
 def _hybrid_vectors(size: int) -> dict[str, models.VectorParams]:
@@ -135,6 +145,44 @@ async def test_ensure_raises_on_non_hybrid_structure_and_never_deletes(
 
     mock_qdrant_client.delete_collection.assert_not_called()
     assert "rebuild_delivery_knowledge --yes" in str(exc_info.value)
+
+
+async def test_ensure_raises_when_sparse_vector_missing(
+    mock_qdrant_client: MagicMock,
+) -> None:
+    """dense 维度匹配但缺 sparse named vector（残缺 hybrid）→ raise 且不删库（WR-02）。"""
+    mock_qdrant_client.get_collections.return_value = _collections_response(
+        DELIVERY_KNOWLEDGE_COLLECTION
+    )
+    mock_qdrant_client.get_collection.return_value = _collection_info(
+        _hybrid_vectors(1024), sparse_vectors=None
+    )
+
+    with pytest.raises(KnowledgeCollectionMismatchError) as exc_info:
+        await ensure_delivery_knowledge_collection()
+
+    mock_qdrant_client.delete_collection.assert_not_called()
+    mock_qdrant_client.create_collection.assert_not_called()
+    message = str(exc_info.value)
+    assert "sparse" in message
+    assert "rebuild_delivery_knowledge --yes" in message
+
+
+async def test_ensure_raises_when_sparse_dict_lacks_sparse_key(
+    mock_qdrant_client: MagicMock,
+) -> None:
+    """sparse_vectors 存在但无 "sparse" 命名向量 → 同样 raise 且不删库（WR-02）。"""
+    mock_qdrant_client.get_collections.return_value = _collections_response(
+        DELIVERY_KNOWLEDGE_COLLECTION
+    )
+    mock_qdrant_client.get_collection.return_value = _collection_info(
+        _hybrid_vectors(1024), sparse_vectors={"other": models.SparseVectorParams()}
+    )
+
+    with pytest.raises(KnowledgeCollectionMismatchError):
+        await ensure_delivery_knowledge_collection()
+
+    mock_qdrant_client.delete_collection.assert_not_called()
 
 
 async def test_ensure_propagates_qdrant_errors(mock_qdrant_client: MagicMock) -> None:
