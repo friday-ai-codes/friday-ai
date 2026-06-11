@@ -53,8 +53,12 @@ export function useListReveal(
     await nextTick()
     if (!container.value || usePrefersReducedMotion())
       return
+    // 空列表（空态分支）直接跳过，避免 GSAP "target not found" 告警
+    const targets = container.value.querySelectorAll(selector)
+    if (targets.length === 0)
+      return
     ctx = gsap.context(() => {
-      gsap.from(selector, {
+      gsap.from(targets, {
         y: 12,
         autoAlpha: 0,
         duration: 0.4,

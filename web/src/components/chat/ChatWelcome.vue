@@ -22,7 +22,7 @@ useLottie(logoRingsEl, pulseRingsAnimation)
 
 useGsapReveal(rootEl, () => {
   gsap.timeline()
-    .from('.welcome-logo-wrap', { y: 16, scale: 0.78, autoAlpha: 0, duration: 0.55, ease: 'back.out(1.8)' })
+    .from('.welcome-logo-wrap', { y: 16, scale: 0.78, autoAlpha: 0, duration: 0.55, ease: 'back.out(1.8)', clearProps: 'all' })
     .from('.welcome-item', { y: 12, autoAlpha: 0, duration: 0.4, stagger: 0.07, ease: 'power2.out', clearProps: 'all' }, '-=0.25')
 })
 

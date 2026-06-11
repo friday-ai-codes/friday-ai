@@ -137,10 +137,10 @@ const pageEl = ref<HTMLElement | null>(null)
 
 useGsapReveal(pageEl, () => {
   gsap.timeline()
-    .from('.login-brand-title', { y: 22, autoAlpha: 0, duration: 0.55, ease: 'power3.out', delay: 0.1 })
-    .from('.login-brand-sub', { y: 16, autoAlpha: 0, duration: 0.45, ease: 'power2.out' }, '-=0.3')
-    .from('.login-feature', { x: -24, autoAlpha: 0, duration: 0.4, stagger: 0.08, ease: 'power2.out' }, '-=0.2')
-    .from('.login-card', { y: 24, scale: 0.96, autoAlpha: 0, duration: 0.5, ease: 'back.out(1.4)' }, 0.25)
+    .from('.login-brand-title', { y: 22, autoAlpha: 0, duration: 0.55, ease: 'power3.out', delay: 0.1, clearProps: 'all' })
+    .from('.login-brand-sub', { y: 16, autoAlpha: 0, duration: 0.45, ease: 'power2.out', clearProps: 'all' }, '-=0.3')
+    .from('.login-feature', { x: -24, autoAlpha: 0, duration: 0.4, stagger: 0.08, ease: 'power2.out', clearProps: 'all' }, '-=0.2')
+    .from('.login-card', { y: 24, scale: 0.96, autoAlpha: 0, duration: 0.5, ease: 'back.out(1.4)', clearProps: 'all' }, 0.25)
 
   // 背景光斑漂浮：幅度小、周期长，提供「呼吸感」而不抢注意力
   gsap.to('.login-blob--a', { x: 36, y: 28, duration: 9, ease: 'sine.inOut', yoyo: true, repeat: -1 })
