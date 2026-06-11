@@ -1200,9 +1200,10 @@ def _make_coding_chat_host(
     默认形态即两条主路径的真实时序：TaskResult.pr_url 为空（PR 由 server 在容器
     回调之后创建），权威源 CodingSession.pr_url 有值（blocker 修复锚）。
     """
+    from django.utils import timezone
+
     from agents.models import AgentSession
     from chat.models import CodingPlan, CodingSession, Conversation
-    from django.utils import timezone
     from projects.models import Project
     from repositories.models import Repository
     from subagent.models import SubAgentSession, TaskResult
@@ -1264,8 +1265,9 @@ def _make_coding_workflow_host(*, mr_results: list[dict] | None | str = "auto"):
     ``mr_results="auto"`` 时预置本仓库的 mr_results 项（Task 2 投递前持久化形态）；
     传 None 模拟持久化缺失（normalizer mr_url 降级空串）。
     """
-    from agents.models import AgentSession
     from django.utils import timezone
+
+    from agents.models import AgentSession
     from repositories.models import Repository
     from subagent.models import SubAgentSession, TaskResult
     from workflows.models import WorkflowNode
