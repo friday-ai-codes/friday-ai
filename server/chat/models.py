@@ -276,6 +276,11 @@ class CodingPlan(models.Model):
             plan_id=str(plan.id),
             created=True,
         )
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest("coding_plan", str(plan.id), "chat_plan_created")
+        )
         return plan, True
 
     async def aupdate_plan(
@@ -288,6 +293,11 @@ class CodingPlan(models.Model):
         self.affected_files = affected_files
         await self.asave(update_fields=["tech_plan", "affected_files", "updated_at"])
         logger.info("coding_plan_updated", plan_id=str(self.id))
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest("coding_plan", str(self.id), "chat_plan_updated")
+        )
 
 
 class CodingSession(models.Model):

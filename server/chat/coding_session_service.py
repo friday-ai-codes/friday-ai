@@ -583,4 +583,10 @@ async def create_sessions_for_plan(
             branch_name=branch_name,
         )
 
+    if result.created:
+        from knowledge import ingestion  # lazy import 防循环
+
+        await ingestion.aschedule_ingestion(
+            ingestion.IngestionRequest("coding_plan", str(plan.id), "chat_coding_started")
+        )
     return result
