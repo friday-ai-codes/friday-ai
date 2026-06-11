@@ -209,6 +209,13 @@ class KnowledgeEntityVersion(models.Model):
         default=list, help_text="Phase 13 写入；版本下线按 point id 精确删除（P1）"
     )
     is_latest = models.BooleanField(default=True)
+    vector_synced = models.BooleanField(
+        default=False,
+        help_text=(
+            "Phase 13：向量 upsert 成功后置 True；"
+            "短路条件 = content_hash 相同 AND vector_synced（堵 DB 已写/向量缺失窗口）"
+        ),
+    )
     event_time = models.DateTimeField(help_text="该版本对应的业务事件时间")
     valid_at = models.DateTimeField(help_text="业务时间线：版本生效")
     invalid_at = models.DateTimeField(
