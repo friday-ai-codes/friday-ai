@@ -394,6 +394,40 @@ class TestDiffPureFunctions:
         assert "archive-uuid-001" in content
         assert "pnpm-lock.yaml" not in content.split("## diff", 1)[1]  # 生成文件剔除
 
+    def test_content_head_file_list_also_budgeted(self) -> None:
+        """WR-01：超大文件清单（head 区段）同样受 MAX_CONTENT_BYTES 约束。
+
+        万级长路径文件清单（head 远超 256KB）截断后 content 仍 <= 预算，
+        且带摘要截断标注；diff 区段让位但截断标注仍在。
+        """
+        file_diffs = [
+            FileDiff(
+                path=f"src/very/deeply/nested/module/path/component_{i:05d}/implementation.py",
+                old_path=f"src/very/deeply/nested/module/path/component_{i:05d}/implementation.py",
+                change_type="modified",
+                additions=1,
+                deletions=0,
+            )
+            for i in range(8000)
+        ]
+        summary_lines = [
+            "共 8000 个文件，+8000/-0",
+            "",
+            "文件清单：",
+            *(f"- {fd.path}（modified, +1/-0）" for fd in file_diffs),
+        ]
+        raw_by_path = {fd.path: f"diff --git a/{fd.path} b/{fd.path}\n+x = 1" for fd in file_diffs}
+
+        content = build_code_change_content(
+            "feat: 超多文件", summary_lines, file_diffs, raw_by_path, archive_id="archive-uuid-002"
+        )
+
+        assert len(content.encode("utf-8")) <= MAX_CONTENT_BYTES
+        assert "[摘要 truncated" in content
+        assert "[diff truncated" in content
+        assert content.startswith("feat: 超多文件\n\n## 变更摘要\n")
+        assert "## diff" in content
+
     def test_content_under_budget_not_truncated(self) -> None:
         """预算内 content 不截断、无 truncated 标注。"""
         file_diffs = [

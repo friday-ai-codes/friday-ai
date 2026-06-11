@@ -243,6 +243,19 @@ def decompress_diff(blob: bytes) -> str:
     return zlib.decompress(bytes(blob)).decode("utf-8")
 
 
+def _keep_lines_within_budget(text: str, allowed: int) -> str:
+    """按行保留 utf-8 字节预算内的前缀（整行粒度，每行按 ``字节数 + 1`` 计换行）。"""
+    kept: list[str] = []
+    used = 0
+    for line in text.splitlines():
+        line_bytes = len(line.encode("utf-8")) + 1  # 含换行
+        if used + line_bytes > allowed:
+            break
+        kept.append(line)
+        used += line_bytes
+    return "\n".join(kept)
+
+
 def build_code_change_content(
     title: str,
     summary_lines: list[str],
@@ -254,12 +267,26 @@ def build_code_change_content(
     """构造 code_change 实体的归一化 content（embedding 输入，受控大小）。
 
     结构：``{title}\\n\\n## 变更摘要\\n{...}\\n\\n## diff\\n{...}``。
-    diff 区段剔除生成文件与解析失败文件；超 ``MAX_CONTENT_BYTES`` 预算时按行
-    截断（utf-8 安全）并以 ``[diff truncated: 全文见归档 {archive_id}]`` 标注——
-    全量原文永远在 CodeChangeArchive（diff 原文绝不进 version.content 全量）。
+    head（含文件清单）与 diff 区段共同受 ``MAX_CONTENT_BYTES`` 预算约束：
+    文件清单超预算先截清单 + ``[摘要 truncated]`` 标注（WR-01：千文件长路径
+    场景清单可达数百 KB，不截会击穿 version.content 受控大小语义）；diff 区段
+    剔除生成文件与解析失败文件，超剩余预算按行截断（utf-8 安全）并以
+    ``[diff truncated: 全文见归档 {archive_id}]`` 标注——全量原文永远在
+    CodeChangeArchive（diff 原文绝不进 version.content 全量）。
     """
     summary = "\n".join(summary_lines)
-    head = f"{title}\n\n## 变更摘要\n{summary}\n\n## diff\n"
+    prefix = f"{title}\n\n## 变更摘要\n"
+    tail = "\n\n## diff\n"
+    diff_marker = f"\n[diff truncated: 全文见归档 {archive_id}]"
+    # WR-01：head 也纳入总预算。预留 diff_marker 字节——summary 截断后剩余
+    # diff 预算恒 >= len(diff_marker)，保证最终 content 严格 <= MAX_CONTENT_BYTES。
+    summary_budget = MAX_CONTENT_BYTES - len((prefix + tail + diff_marker).encode("utf-8"))
+    if len(summary.encode("utf-8")) > summary_budget:
+        summary_marker = "\n[摘要 truncated: 文件清单超出预算]"
+        allowed = max(summary_budget - len(summary_marker.encode("utf-8")), 0)
+        summary = _keep_lines_within_budget(summary, allowed) + summary_marker
+    head = prefix + summary + tail
+
     included = [
         raw_by_path[fd.path]
         for fd in file_diffs
@@ -269,17 +296,8 @@ def build_code_change_content(
 
     budget = MAX_CONTENT_BYTES - len(head.encode("utf-8"))
     if len(diff_text.encode("utf-8")) > budget:
-        marker = f"\n[diff truncated: 全文见归档 {archive_id}]"
-        allowed = max(budget - len(marker.encode("utf-8")), 0)
-        kept: list[str] = []
-        used = 0
-        for line in diff_text.splitlines():
-            line_bytes = len(line.encode("utf-8")) + 1  # 含换行
-            if used + line_bytes > allowed:
-                break
-            kept.append(line)
-            used += line_bytes
-        diff_text = "\n".join(kept) + marker
+        allowed = max(budget - len(diff_marker.encode("utf-8")), 0)
+        diff_text = _keep_lines_within_budget(diff_text, allowed) + diff_marker
     return head + diff_text
 
 
