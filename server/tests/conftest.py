@@ -91,30 +91,38 @@ def _clear_throttle_cache():
     SimpleRateThrottle.THROTTLE_RATES 是类变量（模块加载时评估），
     修改 settings.REST_FRAMEWORK 不会生效，需要直接 patch 类变量。
     """
-    from accounts.throttles import LoginRateThrottle, RefreshRateThrottle
+    from accounts.throttles import (
+        LoginIPRateThrottle,
+        LoginRateThrottle,
+        RefreshRateThrottle,
+    )
 
-    # 保存原始 rate（如果有的话）
-    orig_login_rate = getattr(LoginRateThrottle, "rate", None)
-    orig_refresh_rate = getattr(RefreshRateThrottle, "rate", None)
-    orig_login_throttle_rates = LoginRateThrottle.THROTTLE_RATES.copy()
-    orig_refresh_throttle_rates = RefreshRateThrottle.THROTTLE_RATES.copy()
+    throttle_classes = [LoginRateThrottle, LoginIPRateThrottle, RefreshRateThrottle]
+
+    # 保存原始 rate / THROTTLE_RATES（如果有的话）
+    originals = [
+        (cls, getattr(cls, "rate", None), cls.THROTTLE_RATES.copy())
+        for cls in throttle_classes
+    ]
 
     # 放宽限速——非 throttle 专项测试不受影响
-    relaxed = {"auth_login": "1000/min", "auth_refresh": "1000/min"}
-    LoginRateThrottle.THROTTLE_RATES = relaxed
-    RefreshRateThrottle.THROTTLE_RATES = relaxed
+    relaxed = {
+        "auth_login": "1000/min",
+        "auth_login_ip": "1000/min",
+        "auth_refresh": "1000/min",
+    }
+    for cls in throttle_classes:
+        cls.THROTTLE_RATES = relaxed
 
     django_cache.clear()
     yield
     django_cache.clear()
 
     # 恢复原始值
-    LoginRateThrottle.THROTTLE_RATES = orig_login_throttle_rates
-    RefreshRateThrottle.THROTTLE_RATES = orig_refresh_throttle_rates
-    if orig_login_rate is not None:
-        LoginRateThrottle.rate = orig_login_rate
-    if orig_refresh_rate is not None:
-        RefreshRateThrottle.rate = orig_refresh_rate
+    for cls, orig_rate, orig_throttle_rates in originals:
+        cls.THROTTLE_RATES = orig_throttle_rates
+        if orig_rate is not None:
+            cls.rate = orig_rate
 
 
 # ============================================================================
