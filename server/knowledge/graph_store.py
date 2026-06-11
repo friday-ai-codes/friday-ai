@@ -20,19 +20,21 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import structlog
 from asgiref.sync import sync_to_async
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 
 from knowledge.models import (
     EdgeRelation,
     KnowledgeEdge,
+    KnowledgeEntity,
     KnowledgeEntityVersion,
 )
 
@@ -286,8 +288,134 @@ class RelationalGraphStore:
         direction: str,
         as_of: datetime | None,
     ) -> list[TraversalResult]:
-        """同步遍历实现（Task 2 交付递归 CTE）。"""
-        raise NotImplementedError("递归 CTE 遍历在 Plan 12-02 Task 2 交付")
+        """同步遍历实现：递归 CTE（raw SQL 不出本文件）。
+
+        仅支持 SQLite 与 PostgreSQL（A1 定案）：MySQL 的 ``||`` 默认非字符串
+        拼接（需 PIPES_AS_CONCAT），响亮失败优于静默错误结果。
+        """
+        if connection.vendor not in ("sqlite", "postgresql"):
+            raise NotImplementedError(f"GraphStore 不支持 {connection.vendor}")
+        started = time.perf_counter()
+        prep_id = self._prep_uuid(start_id)
+        sql, params = self._build_sql(prep_id, hops, relations, as_of, direction)
+        with connection.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        results = [TraversalResult(entity_id=self._to_uuid(r[0]), depth=r[1]) for r in rows]
+        logger.info(
+            "knowledge_graph_traversed",
+            start_id=str(start_id),
+            hops=hops,
+            result_count=len(results),
+            elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return results
+
+    @staticmethod
+    def _prep_uuid(value: uuid.UUID) -> Any:
+        """UUID 进 SQL 前的跨后端预处理（Pitfall 1 防线）。
+
+        SQLite 存 32 位无连字符 hex、PG 存原生 uuid——raw cursor 不会自动做
+        ``get_db_prep_value``，所有进 SQL 的 UUID 参数必经本函数，否则
+        SQLite 下一行都查不到而 PG 正常（dev/prod 行为分叉）。
+        """
+        return KnowledgeEntity._meta.pk.get_db_prep_value(value, connection)
+
+    @staticmethod
+    def _to_uuid(raw: str | uuid.UUID) -> uuid.UUID:
+        """结果列 UUID 还原：SQLite 回 str（hex），PG psycopg 回 UUID 对象。"""
+        return uuid.UUID(hex=raw) if isinstance(raw, str) else raw
+
+    def _build_sql(
+        self,
+        prep_id: Any,
+        hops: int,
+        relations: list[str] | None,
+        as_of: datetime | None,
+        direction: str,
+    ) -> tuple[str, list]:
+        """拼装递归 CTE SQL（SQLite/PG 双后端可移植规格）。
+
+        可移植要点（RESEARCH §递归 CTE 双方言）：
+        - 防环：字符串 path + ``NOT LIKE``（PG 数组 / CYCLE 子句 SQLite 不支持）；
+          path 初始只含首跳目标（不含起点）——环回到起点时起点计 1 次后终止
+          （A→B→C→A 环结果含 A，每实体仅一条）。
+        - 深度上限：递归项 ``w.depth < %s``；LIMIT 仅放最外层（PG 禁止递归项 LIMIT）。
+        - 占位符统一 ``%s``（Django cursor 双后端适配）；零用户输入拼接（T-12-01）：
+          validity 谓词仅两个固定模板，relations 经白名单校验后只生成占位符。
+        - direction="both" 本阶段不实现（接口预留，Phase 15 需要时扩展）。
+        """
+        if direction == "out":
+            from_col, to_col = "source_entity_id", "target_entity_id"
+        elif direction == "in":
+            from_col, to_col = "target_entity_id", "source_entity_id"
+        elif direction == "both":
+            raise NotImplementedError(
+                'direction="both" 多跳遍历本阶段未实现（接口预留，Phase 15 需要时扩展）'
+            )
+        else:
+            raise ValueError(f"非法 direction: {direction!r}（必须 ∈ ('out', 'in', 'both')）")
+
+        # validity 谓词：仅两个固定模板字符串，as_of 值全部参数绑定（各出现 4 次）
+        if as_of is None:
+            validity = "e.invalid_at IS NULL AND e.expired_at IS NULL"
+            validity_params: list = []
+        else:
+            validity = (
+                "e.valid_at <= %s AND (e.invalid_at IS NULL OR e.invalid_at > %s) "
+                "AND e.created_at <= %s AND (e.expired_at IS NULL OR e.expired_at > %s)"
+            )
+            validity_params = [as_of, as_of, as_of, as_of]
+
+        # relation 过滤：白名单校验后才生成占位符，值全部参数绑定（T-12-01）
+        if relations:
+            for rel in relations:
+                if rel not in EdgeRelation.values:
+                    raise ValueError(f"非法 relation 值: {rel!r}（必须 ∈ {EdgeRelation.values}）")
+            placeholders = ", ".join(["%s"] * len(relations))
+            relation_filter = f"AND e.relation IN ({placeholders})"
+            relation_params: list = list(relations)
+        else:
+            relation_filter = ""
+            relation_params = []
+
+        # 表名硬编码 knowledge_knowledgeedge：全仓仅本文件允许出现（grep 审计守护）
+        sql = f"""
+WITH RECURSIVE walk(entity_id, depth, path) AS (
+    SELECT e.{to_col}, 1,
+           ',' || CAST(e.{to_col} AS TEXT) || ','
+    FROM knowledge_knowledgeedge e
+    WHERE e.{from_col} = %s
+      AND e.target_entity_id IS NOT NULL
+      AND {validity}
+      {relation_filter}
+  UNION ALL
+    SELECT e.{to_col}, w.depth + 1,
+           w.path || CAST(e.{to_col} AS TEXT) || ','
+    FROM knowledge_knowledgeedge e
+    JOIN walk w ON e.{from_col} = w.entity_id
+    WHERE w.depth < %s
+      AND e.target_entity_id IS NOT NULL
+      AND {validity}
+      {relation_filter}
+      AND w.path NOT LIKE '%%,' || CAST(e.{to_col} AS TEXT) || ',%%'
+)
+SELECT entity_id, MIN(depth) AS depth
+FROM walk
+GROUP BY entity_id
+ORDER BY depth
+LIMIT %s
+"""
+        params: list = (
+            [prep_id]
+            + validity_params
+            + relation_params
+            + [hops]
+            + validity_params
+            + relation_params
+            + [self._RESULT_LIMIT]
+        )
+        return sql, params
 
 
 async def invalidate_entity_version(entity_id: uuid.UUID, *, invalid_at: datetime) -> None:
