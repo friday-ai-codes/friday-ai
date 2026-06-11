@@ -51,8 +51,8 @@ updated: 2026-06-12
 | 14-04-T2 | 14-04 | 2 | INGEST-01 | T-14-15 / T-14-16 | 生成/审批各投递一次；审批 source_id 恒生成节点 key（OQ-2）；非审批节点零投递；异常隔离 | unit + regression | `uv run pytest tests/knowledge/test_triggers.py -k workflow -x && uv run pytest tests/test_ai_node_chain.py -x` | ✅ 既有扩展 | ⬜ pending |
 | 14-05-T1 | 14-05 | 3 | INGEST-04 | T-14-18 / T-14-20 / T-14-21 | 快照含 fields/relations/文档正文；文档失败降级；event_time 恒 aware（毫秒/兜底双场景）；13-03 锚同 key 升级 | unit | `uv run pytest tests/knowledge/test_triggers.py -k feishu -x` | ✅ 既有扩展 | ⬜ pending |
 | 14-05-T2 | 14-05 | 3 | INGEST-04 | T-14-17 / T-14-19 | 飞书三事件各投递一次（三元组正确）；webhook 路径零取材；缺 ID 早退零投递；异常隔离 | unit + regression | `uv run pytest tests/knowledge/test_triggers.py -k feishu -x && uv run pytest tests/feishu/ -x` | ✅ 既有扩展 | ⬜ pending |
-| 14-06-T1 | 14-06 | 4 | INGEST-02 / KMOD-05 / ENH-01 | T-14-22 / T-14-24 | task_result 双事件：IMPLEMENTED_BY 挂锚、MODIFIES_CHUNK 挂 code_change；归属权威 FK（last_output 零接触）；payload 权限维度恒带、diff 原文不进 payload | unit | `uv run pytest tests/knowledge/test_triggers.py -k coding -x` | ✅ 既有扩展 | ⬜ pending |
-| 14-06-T2 | 14-06 | 4 | INGEST-02 | T-14-23 / T-14-25 | chat PR/skip + workflow MR 创建后各投递；容器回调主路径零投递（时序防线）；旧兼容分支投递；宿主零回归 + full suite 收口 | unit + regression | `uv run pytest tests/knowledge/test_triggers.py -k coding -x && uv run pytest tests/test_coding_session_graph.py tests/test_coding_session_service.py -x` | ✅ 既有扩展 | ⬜ pending |
+| 14-06-T1 | 14-06 | 4 | INGEST-02 / KMOD-05 / ENH-01 | T-14-22 / T-14-24 | task_result 双事件：IMPLEMENTED_BY 挂锚、MODIFIES_CHUNK 挂 code_change；**mr_url 权威源（chat=CodingSession.pr_url / workflow=output_data.mr_results，TaskResult.pr_url 仅 legacy；测试以 TaskResult.pr_url 为空 + 权威源有值的真实形态钉死）**；SC#4 反查全链路三跳（chunk_in_edges→code_change→tech_plan→work_item）端到端断言；归属权威 FK（last_output 零接触）；payload 权限维度恒带、diff 原文不进 payload | unit | `uv run pytest tests/knowledge/test_triggers.py -k coding -x` | ✅ 既有扩展 | ⬜ pending |
+| 14-06-T2 | 14-06 | 4 | INGEST-02 | T-14-23 / T-14-25 | chat PR/skip + workflow MR 创建后各投递；**workflow 路径投递前 mr_results 持久化进 node_execution.output_data（重读 DB 断言）**；容器回调主路径零投递（时序防线）；旧兼容分支投递；宿主零回归 + full suite 收口 | unit + regression | `uv run pytest tests/knowledge/test_triggers.py -k coding -x && uv run pytest tests/test_coding_session_graph.py tests/test_coding_session_service.py -x` | ✅ 既有扩展 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -61,6 +61,9 @@ updated: 2026-06-12
 - 畸形 diff 防线（V5）：unidiff 解析失败 warning 降级"只归档不解析"，不拖垮摄取（14-03-T1 Test 2）
 - chunk 边幂等：`uniq_kedge_active` 对 chunk 边不生效（target_entity NULL）——代码级幂等收口 apply_edge_specs + partial unique `uniq_kedge_chunk_active` DB 防线（14-01-T1/T2）
 - 权限维度：CodeChangeArchive 带 repository FK（14-01-T1）；KnowledgeEntity 写入恒带 project_id/repository_id（14-04-T1 / 14-05-T1 / 14-06-T1）
+- mr_url 权威源（checker blocker 修复）：TaskResult.pr_url 两条主路径恒空——chat 取 CodingSession.pr_url、workflow 取投递前持久化的 node_execution.output_data["mr_results"]；测试以"TaskResult.pr_url 为空 + 权威源有值"的真实形态构造，禁止 TaskResult(pr_url=...) 掩蔽（14-06-T1 Test 1/2、14-06-T2 Test 2）
+- SC#4 反查全链路：chunk_in_edges → code_change → IMPLEMENTED_BY → tech_plan → HAS_PLAN → work_item 三跳端到端断言（14-06-T1 Test 6）
+- 测试命名约定：各组方法名统一 test_workflow_* / test_feishu_* / test_coding_* / test_chunk_* / test_large_* 前缀，保证 `-k` 选中非空且精确（pytest -k 大小写敏感，不依赖 PascalCase 类名）
 
 ---
 
