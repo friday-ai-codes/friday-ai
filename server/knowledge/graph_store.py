@@ -45,6 +45,7 @@ __all__ = [
     "TraversalResult",
     "graph_store",
     "invalidate_entity_version",
+    "require_aware",
 ]
 
 logger = structlog.get_logger(__name__)
@@ -78,8 +79,12 @@ class EdgeRecord:
     expired_at: datetime | None
 
 
-def _require_aware(dt: datetime, field: str) -> datetime:
-    """P2 防线：拒绝 naive datetime（USE_TZ=True，禁止 naive，否则 ±8h 漂移）。"""
+def require_aware(dt: datetime, field: str) -> datetime:
+    """P2 防线：拒绝 naive datetime（USE_TZ=True，禁止 naive，否则 ±8h 漂移）。
+
+    公开 util（IN-03）：ingestion 等下游模块同样需要该防线，
+    跨模块依赖私有符号易在重构时悄然破坏，故提升为公开 API。
+    """
     if dt.tzinfo is None:
         raise ValueError(f"{field} 必须是 aware datetime（USE_TZ=True，禁止 naive datetime）")
     return dt
@@ -163,7 +168,7 @@ class RelationalGraphStore:
         target_id（实体边）与 target_chunk_id（chunk 边，Phase 14）XOR 二选一：
         DB 层 ``kedge_target_xor`` 约束兜底，接口层先行校验给出友好错误。
         """
-        _require_aware(valid_at, "valid_at")
+        require_aware(valid_at, "valid_at")
         if relation not in EdgeRelation.values:
             raise ValueError(f"非法 relation 值: {relation!r}（必须 ∈ {EdgeRelation.values}）")
         if (target_id is None) == (target_chunk_id is None):
@@ -193,7 +198,7 @@ class RelationalGraphStore:
         （warning 日志），绝不覆盖原失效时间——bi-temporal 模型里覆盖等于改写
         历史，``as_of`` 查询结果会随之漂移（T-12-04 防线）。
         """
-        _require_aware(invalid_at, "invalid_at")
+        require_aware(invalid_at, "invalid_at")
         updated = await KnowledgeEdge.objects.filter(id=edge_id, invalid_at__isnull=True).aupdate(
             invalid_at=invalid_at
         )
@@ -217,7 +222,7 @@ class RelationalGraphStore:
         仅在 ``expired_at`` 仍为 NULL 时置位：已作废的边重复调用是幂等 no-op
         （warning 日志），绝不覆盖原作废时间（同 ``invalidate_edge``，防改写历史）。
         """
-        _require_aware(expired_at, "expired_at")
+        require_aware(expired_at, "expired_at")
         updated = await KnowledgeEdge.objects.filter(id=edge_id, expired_at__isnull=True).aupdate(
             expired_at=expired_at
         )
@@ -264,7 +269,7 @@ class RelationalGraphStore:
         if as_of is None:
             qs = qs.filter(invalid_at__isnull=True, expired_at__isnull=True)
         else:
-            _require_aware(as_of, "as_of")
+            require_aware(as_of, "as_of")
             qs = qs.filter(
                 Q(valid_at__lte=as_of)
                 & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
@@ -304,7 +309,7 @@ class RelationalGraphStore:
         """
         relations = _validate_relations(relations)
         if as_of is not None:
-            _require_aware(as_of, "as_of")
+            require_aware(as_of, "as_of")
         hops = max(1, min(int(max_hops), self.MAX_HOPS))
         return await sync_to_async(self._traverse_sync)(start_id, hops, relations, direction, as_of)
 
@@ -461,7 +466,7 @@ async def invalidate_entity_version(entity_id: uuid.UUID, *, invalid_at: datetim
     注意：``is_latest`` 翻转与重摄取触发在 Phase 13；本函数只交付
     级联失效的操作原语与事务语义。
     """
-    _require_aware(invalid_at, "invalid_at")
+    require_aware(invalid_at, "invalid_at")
 
     def _invalidate_sync() -> tuple[int, int]:
         with transaction.atomic():

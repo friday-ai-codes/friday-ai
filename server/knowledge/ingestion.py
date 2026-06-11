@@ -36,7 +36,7 @@ from django.db import IntegrityError, transaction
 from knowledge.chunking import KnowledgeChunk, chunk_knowledge_text, derive_point_ids
 from knowledge.collection import ensure_delivery_knowledge_collection, get_embedding_model_name
 from knowledge.exceptions import KnowledgeError
-from knowledge.graph_store import _require_aware, graph_store
+from knowledge.graph_store import graph_store, require_aware
 from knowledge.models import KnowledgeEntity, KnowledgeEntityVersion, generate_entity_id
 from knowledge.sources import get_normalizer
 from knowledge.vector_ops import (
@@ -179,7 +179,7 @@ async def ingest_events(events: list[IngestionEvent], *, trigger: str = "") -> N
 
     # ---- 阶段 A：每 event 预检 / 向量化 / 单事务持久化 ----
     for event in events:
-        _require_aware(event.event_time, "event_time")
+        require_aware(event.event_time, "event_time")
         # 步 0：collection 自检（mismatch raise → 整次摄取响亮 abort）
         await ensure_delivery_knowledge_collection()
 
