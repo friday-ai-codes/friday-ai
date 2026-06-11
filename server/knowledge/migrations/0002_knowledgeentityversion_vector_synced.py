@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('knowledge', '0001_initial'),
+        ("knowledge", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='knowledgeentityversion',
-            name='vector_synced',
-            field=models.BooleanField(default=False, help_text='Phase 13：向量 upsert 成功后置 True；短路条件 = content_hash 相同 AND vector_synced（堵 DB 已写/向量缺失窗口）'),
+            model_name="knowledgeentityversion",
+            name="vector_synced",
+            field=models.BooleanField(
+                default=False,
+                help_text="Phase 13：向量 upsert 成功后置 True；短路条件 = content_hash 相同 AND vector_synced（堵 DB 已写/向量缺失窗口）",
+            ),
         ),
     ]
