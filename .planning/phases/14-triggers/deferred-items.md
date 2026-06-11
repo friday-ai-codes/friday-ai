@@ -14,6 +14,18 @@
   模块级 `Final[str]` 注解与若干 `json.dumps(...)` 折行不符合当前 ruff format 输出；
   本 plan 插入块本身符合 format（`--diff` 输出全部位于未触碰区段）。
 
+## 14-06 执行中发现
+
+- **`ruff check workflows/` 既有错误延续（同 14-04 登记项，非本 plan 引入）**：
+  phase verification 的 `ruff check knowledge/ orchestration/ workflows/ subagent/
+  tests/knowledge/` 在 `workflows/api/*` / `engine/scheduler.py` / `hooks/builtin.py`
+  仍有 13 个既有 I001/F401 命中；本 plan 触碰文件（coding_graph.py / coding.py /
+  callbacks.py / task_result.py / test_triggers.py）check 全部通过，按"只验改动文件"执行。
+- **三个宿主文件既有 ruff format 漂移（非本 plan 引入）**：
+  `orchestration/coding_graph.py` / `workflows/nodes/ai/coding.py` /
+  `subagent/api/callbacks.py` 整文件本就非 format-clean（`--diff` 命中区域均在
+  未触碰区段）；本 plan 插入块自身符合 format 形态，不做全文件重排版。
+
 ## 14-05 执行中发现
 
 - **`server/feishu/bot/service.py` 既有 ruff I001（非本 plan 引入）**：
