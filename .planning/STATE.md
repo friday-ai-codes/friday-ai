@@ -4,14 +4,14 @@ milestone: v0.3.0
 milestone_name: milestone
 status: executing
 stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T17:54:25.853Z"
+last_updated: "2026-06-11T18:17:40.615Z"
 last_activity: 2026-06-11 -- Phase 14 execution started
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 13
-  completed_plans: 12
-  percent: 40
+  completed_plans: 13
+  percent: 60
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 ## Current Position
 
 Phase: 14 (全触发点接入与 diff 归档) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 14 execution started
 
@@ -50,6 +50,7 @@ Progress: [□□□□□] 0/5 phases
 | Phase 14 P03 | 16min | 3 tasks | 4 files |
 | Phase 14 P04 | 14min | 2 tasks | 4 files |
 | Phase 14 P05 | 12min | 2 tasks | 3 files |
+| Phase 14 P06 | 14min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 14]: 14-04: 审批事件 source_id 恒为生成节点 key（OQ-2），接线处换算、normalizer 单纯
 - [Phase 14]: 14-04: workflow_plan normalizer 兼容 trigger_data.raw_payload 与 payload 双键取飞书工作项锚
 - [Phase 14]: 14-05：飞书三 handler 只投三元组 ID（取材全在 normalizer 后台），文档拉取失败降级为缺段快照 + warning
+- [Phase ?]: 14-06: workflow mr_results 回退键按引擎实际落点 merge_requests（checker 建议的 succeeded_repos 实为计数 int）
+- [Phase ?]: 14-06: workflow 仓库归属经 output_data.pending_sessions 匹配 + session.repo_url 兜底（双源均服务端写入，T-14-22）
 
 ### Pending Todos
 
@@ -110,7 +113,7 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-11T17:53:36.489Z
+Last session: 2026-06-11T18:17:08.810Z
 Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
 Resume file: None
 
