@@ -99,7 +99,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 14-05-PLAN.md — feishu_work_item 全量快照 normalizer（fields/relations/文档正文/降级）+ 飞书三 handler 接线（INGEST-04，webhook 路径零取材）
+- [x] 14-05-PLAN.md — feishu_work_item 全量快照 normalizer（fields/relations/文档正文/降级）+ 飞书三 handler 接线（INGEST-04，webhook 路径零取材）
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -144,7 +144,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
 | 13. 统一摄取与版本化 | 4/4 | Complete    | 2026-06-11 |
-| 14. 全触发点接入与 diff 归档 | 4/6 | In Progress|  |
+| 14. 全触发点接入与 diff 归档 | 5/6 | In Progress|  |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |
 
