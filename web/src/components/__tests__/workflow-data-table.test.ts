@@ -57,4 +57,44 @@ describe('workflowDataTable', () => {
     expect(events).toBeTruthy()
     expect(events?.[0]?.[0]).toEqual(workflow)
   })
+
+  it('渲染轻量工作流卡片结构', () => {
+    const workflowWithSummary = {
+      ...workflow,
+      node_summary: [
+        { id: 'n1', node_type: 'feishu_trigger', name: '飞书事件', position_x: 0, position_y: 0 },
+        { id: 'n2', node_type: 'fetch_work_item', name: '获取工作项', position_x: 120, position_y: 80 },
+      ],
+      edge_summary: [
+        { source_node_id: 'n1', target_node_id: 'n2' },
+      ],
+      node_count: 2,
+    } as Workflow
+
+    const wrapper = mount(WorkflowDataTable, {
+      props: {
+        workflows: [workflowWithSummary],
+        loading: false,
+      },
+      global: {
+        stubs: {
+          TooltipProvider: { template: '<div><slot /></div>' },
+          Tooltip: { template: '<div><slot /></div>' },
+          TooltipTrigger: { template: '<div><slot /></div>' },
+          TooltipContent: { template: '<div><slot /></div>' },
+          Skeleton: { template: '<div />' },
+          Switch: { template: '<button />' },
+          Button: {
+            template: '<button v-bind="$attrs" data-test="button" @click="$emit(\'click\', $event)"><slot /></button>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('.workflow-card').exists()).toBe(true)
+    expect(wrapper.find('.workflow-preview').exists()).toBe(true)
+    expect(wrapper.find('.workflow-node-chip').exists()).toBe(true)
+    expect(wrapper.find('.workflow-card-actions').exists()).toBe(true)
+    expect(wrapper.find('.workflow-execute-button').text()).toContain('执行')
+  })
 })

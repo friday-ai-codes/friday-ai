@@ -69,8 +69,8 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
 <template>
   <TooltipProvider>
     <!-- Loading State -->
-    <div v-if="loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div v-for="i in 6" :key="i" class="p-5 rounded-2xl bg-card/80 border border-border/50">
+    <div v-if="loading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div v-for="i in 6" :key="i" class="rounded-lg border border-border/70 bg-card p-4">
         <div class="flex items-center gap-3 mb-3">
           <Skeleton class="h-9 w-9 rounded-lg" />
           <div class="flex-1">
@@ -87,22 +87,22 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
     </div>
 
     <!-- Workflow Cards -->
-    <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <div
         v-for="workflow in workflows"
         :key="workflow.id"
-        class="group relative cursor-pointer"
+        class="workflow-card group relative cursor-pointer"
         @click="onCardClick(workflow)"
       >
         <!-- Card body -->
         <div
-          class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden"
-          :class="[workflow.is_active ? 'bg-card/80 border-border/50 group-hover:border-primary/30 group-hover:shadow-card-hover group-hover:-translate-y-0.5' : 'bg-muted/30 border-border/30']"
+          class="relative overflow-hidden rounded-lg border transition-all duration-200"
+          :class="[workflow.is_active ? 'bg-card border-border/70 shadow-[0_1px_2px_rgba(15,23,42,0.06)] group-hover:-translate-y-0.5 group-hover:border-primary/30 group-hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]' : 'bg-muted/25 border-border/50 opacity-80']"
         >
           <!-- Mini Map Preview -->
           <div
-            class="relative w-full border-b transition-colors"
-            :class="[workflow.is_active ? 'bg-linear-to-b from-background/20 to-background/60 border-border/30' : 'bg-muted/20 border-border/20']"
+            class="workflow-preview relative w-full border-b transition-colors"
+            :class="[workflow.is_active ? 'bg-background border-border/50' : 'bg-muted/20 border-border/30']"
           >
             <WorkflowMiniMap
               :nodes="(workflow as any).node_summary || []"
@@ -113,36 +113,35 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
             />
 
             <!-- Node count badge -->
-            <div class="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-background/70 backdrop-blur-sm text-[10px] text-muted-foreground">
+            <div class="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
               <span class="icon-[lucide--shapes] text-[10px]" />
               {{ (workflow as any).node_count ?? 0 }} 节点
             </div>
           </div>
 
           <!-- Content -->
-          <div class="p-4">
+          <div class="p-4 pb-3">
             <!-- Header: Icon + Name + Toggle -->
-            <div class="flex items-start gap-3 mb-2.5">
+            <div class="mb-3 flex items-start gap-3">
               <!-- Icon -->
               <div
-                class="p-1.5 rounded-lg shrink-0"
-                :class="[workflow.is_active ? 'bg-linear-to-br from-teal-500/10 to-cyan-500/10' : 'bg-muted/50']"
+                class="flex size-9 shrink-0 items-center justify-center rounded-lg ring-1"
+                :class="[workflow.is_active ? 'bg-primary/10 text-primary ring-primary/10' : 'bg-muted/50 text-muted-foreground ring-border/40']"
               >
                 <span
-                  class="text-base"
-                  :class="[workflow.is_active ? 'icon-[lucide--workflow] text-teal-500' : 'icon-[lucide--workflow] text-muted-foreground']"
+                  class="icon-[lucide--workflow] text-lg"
                 />
               </div>
 
               <!-- Name & Description -->
-              <div class="flex-1 min-w-0">
+              <div class="min-w-0 flex-1">
                 <h3
-                  class="text-sm font-medium leading-tight truncate transition-colors"
+                  class="truncate text-base font-semibold leading-6 transition-colors"
                   :class="[workflow.is_active ? 'group-hover:text-primary' : 'text-muted-foreground']"
                 >
                   {{ workflow.name }}
                 </h3>
-                <p class="text-xs text-muted-foreground truncate mt-0.5">
+                <p class="mt-0.5 truncate text-sm text-muted-foreground">
                   {{ workflow.description || '暂无描述' }}
                 </p>
               </div>
@@ -165,25 +164,25 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
             </div>
 
             <!-- Node Type Tags -->
-            <div v-if="getNodeTypeCounts(workflow).length" class="flex flex-wrap gap-1 mb-3">
+            <div v-if="getNodeTypeCounts(workflow).length" class="mb-3 flex flex-wrap gap-1.5">
               <span
                 v-for="nt in getNodeTypeCounts(workflow)"
                 :key="nt.type"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted/50 text-[10px] text-muted-foreground"
+                class="workflow-node-chip inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/35 px-2 py-1 text-[11px] font-medium text-muted-foreground"
               >
-                <span :class="nt.icon" class="text-[10px]" />
+                <span :class="nt.icon" class="text-xs" />
                 {{ nt.name }}<template v-if="nt.count > 1">&times;{{ nt.count }}</template>
               </span>
             </div>
 
             <!-- Actions Row -->
-            <div class="flex items-center gap-2 pt-2.5 border-t border-border/50">
+            <div class="workflow-card-actions flex items-center gap-2 border-t border-border/60 pt-3">
               <!-- Execute Button -->
               <Tooltip>
                 <TooltipTrigger as-child>
                   <Button
                     size="sm"
-                    class="flex-1 h-7 text-xs"
+                    class="workflow-execute-button h-8 flex-1 text-sm shadow-none"
                     :disabled="!workflow.is_active"
                     @click="onExecuteClick($event, workflow)"
                   >
@@ -200,7 +199,7 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
               <Button
                 variant="ghost"
                 size="icon"
-                class="h-7 w-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                class="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 title="删除工作流"
                 @click.stop.prevent="onDeleteClick($event, workflow)"
               >

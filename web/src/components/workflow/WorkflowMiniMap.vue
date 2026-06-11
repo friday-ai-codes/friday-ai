@@ -25,7 +25,7 @@ const props = defineProps<{
 const svgWidth = computed(() => props.width ?? 280)
 const svgHeight = computed(() => props.height ?? 100)
 
-const NODE_RADIUS = 6
+const NODE_RADIUS = 5
 const PADDING = 14
 
 const colorMap: Record<string, string> = {
@@ -103,14 +103,28 @@ const layout = computed(() => {
     class="workflow-minimap"
   >
     <defs>
-      <filter id="glow">
-        <feGaussianBlur stdDeviation="2" result="blur" />
-        <feMerge>
-          <feMergeNode in="blur" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
+      <pattern id="workflow-minimap-grid" width="18" height="18" patternUnits="userSpaceOnUse">
+        <path d="M 18 0 L 0 0 0 18" fill="none" stroke="currentColor" stroke-opacity="0.05" stroke-width="1" />
+      </pattern>
     </defs>
+
+    <rect
+      x="0"
+      y="0"
+      :width="svgWidth"
+      :height="svgHeight"
+      rx="8"
+      fill="currentColor"
+      opacity="0.015"
+    />
+    <rect
+      x="0"
+      y="0"
+      :width="svgWidth"
+      :height="svgHeight"
+      rx="8"
+      fill="url(#workflow-minimap-grid)"
+    />
 
     <!-- Edges -->
     <line
@@ -121,8 +135,9 @@ const layout = computed(() => {
       :x2="edge.x2"
       :y2="edge.y2"
       :stroke="edge.color"
-      stroke-opacity="0.3"
-      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-opacity="0.24"
+      stroke-width="2"
     />
 
     <!-- Nodes -->
@@ -132,17 +147,17 @@ const layout = computed(() => {
         :cy="node.y"
         :r="NODE_RADIUS"
         :fill="node.color"
-        fill-opacity="0.2"
+        fill-opacity="0.12"
         :stroke="node.color"
-        stroke-opacity="0.6"
-        stroke-width="1"
+        stroke-opacity="0.55"
+        stroke-width="1.5"
       />
       <circle
         :cx="node.x"
         :cy="node.y"
-        :r="NODE_RADIUS * 0.45"
+        :r="NODE_RADIUS * 0.42"
         :fill="node.color"
-        fill-opacity="0.8"
+        fill-opacity="0.72"
       />
     </g>
 
@@ -154,8 +169,9 @@ const layout = computed(() => {
       text-anchor="middle"
       dominant-baseline="central"
       fill="currentColor"
-      opacity="0.3"
+      opacity="0.42"
       font-size="11"
+      font-weight="500"
     >
       暂无节点
     </text>
