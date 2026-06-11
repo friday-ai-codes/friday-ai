@@ -20,6 +20,7 @@ from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 
 __all__ = [
     "KNOWLEDGE_NAMESPACE",
+    "CodeChangeArchive",
     "EdgeRelation",
     "EntityKind",
     "EntityOrigin",
@@ -305,6 +306,14 @@ class KnowledgeEdge(models.Model):
                 condition=Q(invalid_at__isnull=True) & Q(expired_at__isnull=True),
                 name="uniq_kedge_active",
             ),
+            # chunk 边活跃唯一（Phase 14 / Pitfall 4 DB 防线）：
+            # uniq_kedge_active 对 target_entity 为 NULL 的 chunk 边不生效
+            # （NULL 彼此不相等），单独补一条 partial unique 封堵重复活跃 chunk 边。
+            UniqueConstraint(
+                fields=["source_entity", "target_chunk_id", "relation"],
+                condition=Q(invalid_at__isnull=True) & Q(expired_at__isnull=True),
+                name="uniq_kedge_chunk_active",
+            ),
             # 两端二选一：实体边 XOR chunk 边
             CheckConstraint(
                 condition=(
@@ -339,3 +348,69 @@ class KnowledgeEdge(models.Model):
     def __str__(self) -> str:
         target = self.target_entity_id or self.target_chunk_id
         return f"KnowledgeEdge({self.source_entity_id} -[{self.relation}]-> {target})"
+
+
+class CodeChangeArchive(models.Model):
+    """编码产出全量 diff 归档（KMOD-05，Phase 14 定型建表）。
+
+    diff 原文经 zlib 压缩存 ``diff_compressed``，文件级解析摘要进 ``files`` JSON；
+    **diff 原文绝不进 KnowledgeEntityVersion 的 payload/content 全量**——
+    version.content 只放受控大小的归一化文本（chunk 策略），全量原文唯一落点是本表。
+
+    与 KnowledgeEntity(code_change) 的关系（柔性引用原则，不 FK 到 entity）：
+    实体 id 经 ``generate_entity_id("code_change", source_kind, source_id)`` 派生，
+    归档行与实体经 ``(source_kind, source_id)`` 双向可查。
+
+    幂等锚：``uniq_codechange_source_commit`` 约束保证同一编码产出 + 同一
+    commit 只归档一次（重触发/回放撞约束即幂等放弃，T-14-01 防线）。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # 与 KnowledgeEntity(code_change) 同源弱引用（不 FK 到 KnowledgeEntity）
+    source_kind = models.CharField(max_length=50, help_text='来源类型（如 "task_result"）')
+    source_id = models.CharField(max_length=255, help_text="业务对象稳定 ID（如 session_id）")
+    repository = models.ForeignKey(
+        "repositories.Repository",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="code_change_archives",
+    )
+    # Git 元数据（KMOD-05 显式要求）
+    commit_sha = models.CharField(max_length=64, blank=True, default="")
+    branch_name = models.CharField(max_length=255, blank=True, default="")
+    base_branch = models.CharField(max_length=255, blank=True, default="")
+    mr_url = models.URLField(blank=True, default="")
+    mr_id = models.CharField(max_length=64, blank=True, default="")
+    # 压缩 diff 原文：zlib.compress(raw.encode("utf-8"))，读取侧 decompress 还原
+    diff_compressed = models.BinaryField()
+    diff_size = models.PositiveIntegerField(help_text="解压后字节数")
+    compressed_size = models.PositiveIntegerField(help_text="压缩后字节数")
+    diff_sha256 = models.CharField(max_length=64, help_text="原文 sha256 hex（幂等/完整性校验）")
+    truncated = models.BooleanField(default=False, help_text="平台 API / 上限截断标记")
+    # unidiff 文件级解析结果（每项：path/old_path/change_type/additions/
+    # deletions/is_generated/hunk_ranges/unresolved_symbols）
+    files = models.JSONField(default=list)
+    file_count = models.PositiveIntegerField(default=0)
+    total_additions = models.PositiveIntegerField(default=0)
+    total_deletions = models.PositiveIntegerField(default=0)
+    event_time = models.DateTimeField(help_text="业务事件时间（编码产出完成）")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "代码变更归档"
+        verbose_name_plural = "代码变更归档"
+        constraints = [
+            # 同一编码产出 + 同一 commit 只归档一次（重触发幂等锚）
+            UniqueConstraint(
+                fields=["source_kind", "source_id", "commit_sha"],
+                name="uniq_codechange_source_commit",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["repository", "commit_sha"], name="idx_cca_repo_commit"),
+            models.Index(fields=["source_kind", "source_id"], name="idx_cca_source"),
+        ]
+
+    def __str__(self) -> str:
+        return f"CodeChangeArchive({self.source_kind}:{self.source_id} @ {self.commit_sha[:12]})"
