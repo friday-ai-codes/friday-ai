@@ -13,7 +13,7 @@
 
 - [x] **Phase 12: 知识模型与图存储地基** - `knowledge` app 实体/版本/bi-temporal 边模型 + GraphStore 接口 + `delivery_knowledge` collection 生命周期 (completed 2026-06-11)
 - [x] **Phase 13: 统一摄取与版本化** - 幂等异步摄取管线 + 版本翻转/向量下线，接通 chat 与 MCP 首批触发点 (completed 2026-06-11)
-- [ ] **Phase 14: 全触发点接入与 diff 归档** - workflow/编码回调/飞书三类触发点 + 全量 diff 归档与代码图谱对齐
+- [x] **Phase 14: 全触发点接入与 diff 归档** - workflow/编码回调/飞书三类触发点 + 全量 diff 归档与代码图谱对齐 (completed 2026-06-11)
 - [ ] **Phase 15: 时间感知混合检索** - 向量召回 + 图扩散 + 时间衰减融合，相似需求召回与迭代轨迹查询
 - [ ] **Phase 16: 多入口暴露与前端时间线** - MCP 工具 / chat tools / workflow 节点 / npm skill 四入口 + 前端只读详情页与 as-of 查询
 
@@ -103,7 +103,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 14-06-PLAN.md — task_result normalizer（DiffArchiver 编排 + IMPLEMENTED_BY/MODIFIES_CHUNK 双边）+ 编码完成三锚点接线 + 时序防线测试 + 全量收口（INGEST-02 闭环）
+- [x] 14-06-PLAN.md — task_result normalizer（DiffArchiver 编排 + IMPLEMENTED_BY/MODIFIES_CHUNK 双边）+ 编码完成三锚点接线 + 时序防线测试 + 全量收口（INGEST-02 闭环）
 
 ### Phase 15: 时间感知混合检索
 
@@ -144,7 +144,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
 | 13. 统一摄取与版本化 | 4/4 | Complete    | 2026-06-11 |
-| 14. 全触发点接入与 diff 归档 | 5/6 | In Progress|  |
+| 14. 全触发点接入与 diff 归档 | 6/6 | Complete   | 2026-06-11 |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
 | 16. 多入口暴露与前端时间线 | 0/? | Not started | - |
 
