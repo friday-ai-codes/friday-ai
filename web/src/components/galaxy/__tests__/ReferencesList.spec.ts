@@ -1,7 +1,7 @@
 /**
- * — ReferencesList.vue 组件测试
+ * — ReferencesList.vue 组件测试（shape 与后端 GalaxyNodeDetail 对齐）
  */
-import type { GalaxyEdgeType, GalaxyNode } from '~/api/galaxy'
+import type { GalaxyEdge, GalaxyNode, GalaxyReference } from '~/api/galaxy'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ReferencesList from '../ReferencesList.vue'
@@ -21,57 +21,102 @@ function makeNode(overrides: Partial<GalaxyNode> = {}): GalaxyNode {
   }
 }
 
+function makeEdge(overrides: Partial<GalaxyEdge> = {}): GalaxyEdge {
+  return {
+    id: 'edge-1',
+    source: 'symbol:abc',
+    target: 'symbol:def',
+    edge_type: 'CALL',
+    weight: 0.8,
+    repository_id: 'repo-1',
+    target_repository_id: null,
+    metadata: {},
+    ...overrides,
+  }
+}
+
+function makeReference(overrides: Partial<GalaxyReference> = {}): GalaxyReference {
+  return {
+    type: 'api_call_site',
+    id: 'callsite:1',
+    label: 'fetchUsers()',
+    repository_id: 'repo-2',
+    match_confidence: 0.95,
+    ...overrides,
+  }
+}
+
 describe('referencesList', () => {
   it('渲染 called_by 段落', async () => {
     const wrapper = mount(ReferencesList, {
       props: {
         calledBy: [
-          { caller_node_id: 'symbol:caller1', edge_type: 'CALL' as GalaxyEdgeType },
-          { caller_node_id: 'symbol:caller2', edge_type: 'IMPORT' as GalaxyEdgeType },
+          makeReference({ id: 'symbol:caller1', label: 'callerOne' }),
+          makeReference({ id: 'symbol:caller2', label: 'callerTwo' }),
         ],
       },
     })
     await flushPromises()
     expect(wrapper.text()).toContain('被调用')
-    expect(wrapper.text()).toContain('symbol:caller1')
-    expect(wrapper.text()).toContain('symbol:caller2')
+    expect(wrapper.text()).toContain('callerOne')
+    expect(wrapper.text()).toContain('callerTwo')
     wrapper.unmount()
   })
 
-  it('渲染 calls 段落', async () => {
+  it('渲染 references（引用方）段落', async () => {
     const wrapper = mount(ReferencesList, {
       props: {
-        calls: [
-          { source_node_id: 'symbol:callee1', edge_type: 'CALL' as GalaxyEdgeType },
-        ],
+        calls: [makeReference({ label: 'getUserApi()' })],
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('调用')
-    expect(wrapper.text()).toContain('symbol:callee1')
+    expect(wrapper.text()).toContain('引用方')
+    expect(wrapper.text()).toContain('getUserApi()')
+    expect(wrapper.text()).toContain('95%')
     wrapper.unmount()
   })
 
-  it('渲染 neighbors 段落', async () => {
+  it('渲染 neighbors 段落（含边类型与方向）', async () => {
     const wrapper = mount(ReferencesList, {
       props: {
         neighbors: [
-          { node: makeNode({ id: 'n1', label: 'HelperFn' }), edge_type: 'SEMANTIC' as GalaxyEdgeType, direction: 'out' as const },
+          {
+            node: makeNode({ id: 'n1', label: 'HelperFn' }),
+            edge: makeEdge({ edge_type: 'SEMANTIC' }),
+            direction: 'outgoing' as const,
+          },
         ],
       },
     })
     await flushPromises()
     expect(wrapper.text()).toContain('关联节点')
     expect(wrapper.text()).toContain('HelperFn')
+    expect(wrapper.text()).toContain('SEMANTIC')
+    expect(wrapper.text()).toContain('→')
+    wrapper.unmount()
+  })
+
+  it('incoming 邻居显示入边箭头', async () => {
+    const wrapper = mount(ReferencesList, {
+      props: {
+        neighbors: [
+          {
+            node: makeNode({ id: 'n2', label: 'CallerFn' }),
+            edge: makeEdge(),
+            direction: 'incoming' as const,
+          },
+        ],
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('←')
     wrapper.unmount()
   })
 
   it('点击 called_by 项 emit node-select', async () => {
     const wrapper = mount(ReferencesList, {
       props: {
-        calledBy: [
-          { caller_node_id: 'symbol:caller', edge_type: 'CALL' as GalaxyEdgeType },
-        ],
+        calledBy: [makeReference({ id: 'symbol:caller' })],
       },
     })
     await flushPromises()
@@ -86,7 +131,11 @@ describe('referencesList', () => {
     const wrapper = mount(ReferencesList, {
       props: {
         neighbors: [
-          { node: makeNode({ id: 'symbol:nbr' }), edge_type: 'CALL' as GalaxyEdgeType, direction: 'in' as const },
+          {
+            node: makeNode({ id: 'symbol:nbr' }),
+            edge: makeEdge(),
+            direction: 'incoming' as const,
+          },
         ],
       },
     })

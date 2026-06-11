@@ -8,6 +8,7 @@ from core.patches import patch_asyncio_iscoroutinefunction
 
 patch_asyncio_iscoroutinefunction()
 
+from pathlib import Path  # noqa: E402
 from typing import Any, Callable  # noqa: E402
 
 import pytest  # noqa: E402
@@ -69,6 +70,18 @@ def _disable_scheduler_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     from django.conf import settings
 
     monkeypatch.setattr(settings, "FF_ENABLE_SCHEDULER", False, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_galaxy_cache_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Galaxy 文件缓存目录指向每测试独立 tmp，避免测试间互相污染 / 写入 data/。"""
+    from django.conf import settings
+
+    monkeypatch.setattr(
+        settings, "GALAXY_CACHE_DIR", tmp_path / "galaxy_cache", raising=False
+    )
 
 
 @pytest.fixture(autouse=True)

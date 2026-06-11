@@ -220,6 +220,14 @@ async def _run_all_builders_and_sync_payload(
             edges_inserted=inserted,
             payload_updates=len(updates),
         )
+
+        # 边构建完成 → 主动刷新 Galaxy 文件缓存（refresh_repo 内部吞掉所有异常，
+        # 失败时下次请求的签名对比仍会自动重建，不影响主流程）。
+        if inserted > 0:
+            from codegraph.galaxy.cache import GalaxyGraphCache
+
+            await sync_to_async(GalaxyGraphCache.refresh_repo)(repository_id)
+
         # 返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
         return inserted
     except Exception as exc:
