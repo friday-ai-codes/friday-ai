@@ -332,6 +332,47 @@ async def test_invalidate_entity_version_cascade(entity_factory, edge_factory, v
     assert c.id not in {r.entity_id for r in result}
 
 
+async def test_invalidate_entity_version_does_not_overwrite_existing_timestamp(
+    entity_factory, version_factory
+):
+    """重复 invalidate_entity_version 不覆盖已置位的版本 invalid_at（防改写历史）。"""
+
+    def _setup():
+        b = entity_factory()
+        version = version_factory(b, valid_at=timezone.now() - timedelta(hours=2))
+        return b, version
+
+    b, version = await sync_to_async(_setup)()
+    first_invalid_at = timezone.now() - timedelta(hours=1)
+    await invalidate_entity_version(b.id, invalid_at=first_invalid_at)
+
+    await invalidate_entity_version(b.id, invalid_at=timezone.now())
+
+    refreshed = await KnowledgeEntityVersion.objects.aget(id=version.id)
+    assert refreshed.invalid_at == first_invalid_at
+
+
+async def test_invalidate_entity_version_skips_expired_edges(entity_factory, edge_factory):
+    """已被系统时间线作废（expired_at 置位）的边不参与级联失效——
+    不再补业务失效时间戳，避免污染已作废记录。"""
+
+    def _setup():
+        a, b = entity_factory(), entity_factory()
+        past = timezone.now() - timedelta(hours=2)
+        expired_edge = edge_factory(a, b, valid_at=past, expired_at=timezone.now())
+        active_edge = edge_factory(b, a, valid_at=past)
+        return b, expired_edge, active_edge
+
+    b, expired_edge, active_edge = await sync_to_async(_setup)()
+
+    await invalidate_entity_version(b.id, invalid_at=timezone.now())
+
+    refreshed_expired = await KnowledgeEdge.objects.aget(id=expired_edge.id)
+    assert refreshed_expired.invalid_at is None  # 已作废边未被触碰
+    refreshed_active = await KnowledgeEdge.objects.aget(id=active_edge.id)
+    assert refreshed_active.invalid_at is not None  # 活跃边正常级联失效
+
+
 async def test_invalidate_entity_version_rejects_naive(entity_factory):
     """naive datetime 传入 invalidate_entity_version → ValueError（P2）。"""
     b = await sync_to_async(entity_factory)()
