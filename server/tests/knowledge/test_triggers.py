@@ -252,6 +252,7 @@ def _make_workflow_plan_execution(
     ``with_feishu_trigger=False`` 模拟手动触发（trigger_data 无飞书工作项字段）。
     """
     from django.utils import timezone
+
     from projects.models import Project
     from workflows.models import Workflow, WorkflowNode
     from workflows.models.execution import (
@@ -260,9 +261,7 @@ def _make_workflow_plan_execution(
         WorkflowExecution,
     )
 
-    project = Project.objects.create(
-        name="知识触发 workflow 项目", feishu_project_key="k-wf-proj"
-    )
+    project = Project.objects.create(name="知识触发 workflow 项目", feishu_project_key="k-wf-proj")
     workflow = Workflow.objects.create(name="方案工作流", project=project)
     gen_node = WorkflowNode.objects.create(
         workflow=workflow, node_type="ai_plan_generation", name="方案生成"
@@ -312,9 +311,7 @@ def _make_workflow_plan_execution(
             status=approval_status,
             approval_data=approval_data,
             completed_at=(
-                timezone.now()
-                if approval_status == NodeExecutionStatus.COMPLETED
-                else None
+                timezone.now() if approval_status == NodeExecutionStatus.COMPLETED else None
             ),
         )
     return project, execution, gen_node, gen_exec, approval_exec
@@ -362,9 +359,7 @@ class TestWorkflowPlanNormalizer:
         assert len(work_item.edges) == 1
         spec = work_item.edges[0]
         assert spec.relation == "HAS_PLAN"
-        assert spec.target_entity_id == generate_entity_id(
-            "tech_plan", "workflow_plan", source_id
-        )
+        assert spec.target_entity_id == generate_entity_id("tech_plan", "workflow_plan", source_id)
         assert spec.exclusive is True
 
     async def test_workflow_plan_manual_trigger_single_event(self) -> None:
