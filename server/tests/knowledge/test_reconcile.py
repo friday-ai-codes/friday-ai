@@ -19,8 +19,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from django.core.management import call_command
+from django.utils import timezone
 
-from knowledge.models import EntityKind, EntityOrigin
+from knowledge.ingestion import EdgeSpec, IngestionEvent
+from knowledge.models import EdgeRelation, EntityKind, EntityOrigin, generate_entity_id
 
 # SQLite + async（命令内 asyncio.run + sync_to_async 跨线程）需要 transaction=True
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -225,3 +227,156 @@ def test_rebuild_reembed_failure_does_not_abort(
     assert len(calls) == 2  # 失败后循环未中断
     assert "reembedded=1" in output
     assert "failed=1" in output
+
+
+# ============================================================================
+# Task 3：--fix 修复路径断言（调用参数级）
+# ============================================================================
+
+
+def test_fix_repairs_missing_stale_and_orphan(
+    entity_factory, version_factory, mock_qdrant_client, mock_fixers
+) -> None:
+    """--fix 三类修复：missing → revectorize；stale → tombstone+delete；orphan → delete。"""
+    # missing：latest 版本有 point ids 但 Qdrant 查无此点
+    e_missing = entity_factory(
+        kind=EntityKind.TECH_PLAN, origin=EntityOrigin.CHAT, source_kind="coding_plan"
+    )
+    missing_pid = str(uuid.uuid4())
+    v_missing = version_factory(e_missing, qdrant_point_ids=[missing_pid], vector_synced=True)
+
+    # stale：非 latest 版本的点 payload 仍 is_latest=true
+    e_stale = entity_factory()
+    stale_pid = str(uuid.uuid4())
+    version_factory(e_stale, is_latest=False, qdrant_point_ids=[stale_pid], vector_synced=True)
+
+    # orphan：scroll 返回的点 payload.version_id 不在 PG
+    orphan_pid = str(uuid.uuid4())
+    orphan_record = _record(
+        orphan_pid,
+        entity_id=str(uuid.uuid4()),
+        version=1,
+        version_id=str(uuid.uuid4()),
+        is_latest=True,
+    )
+
+    def _retrieve(collection_name, ids, with_payload=None):
+        return [_record(stale_pid, is_latest=True)] if stale_pid in ids else []
+
+    mock_qdrant_client.retrieve.side_effect = _retrieve
+    mock_qdrant_client.scroll.return_value = ([orphan_record], None)
+
+    output = _run_reconcile("--fix")
+    summary = _parse_summary(output)
+
+    # missing → revectorize_version 被调，参数为漂移版本本体
+    assert mock_fixers["revectorize"].await_count == 1
+    assert mock_fixers["revectorize"].await_args.args[0].id == v_missing.id
+    # stale → tombstone + delete（point id 列表逐项比对）
+    mock_fixers["tombstone"].assert_awaited_once_with([stale_pid])
+    delete_calls = [call.args[0] for call in mock_fixers["delete"].await_args_list]
+    assert [stale_pid] in delete_calls
+    # orphan → delete（按 point id 列表）
+    assert [orphan_pid] in delete_calls
+    assert summary["fixed"] == 3
+
+
+def test_fix_missing_edges_applies_edge_specs(
+    entity_factory, version_factory, mock_qdrant_client, mock_fixers, monkeypatch
+) -> None:
+    """--fix 检查项 6：经 fake normalizer 取 EdgeSpec 后 apply_edge_specs 被调（参数级断言）。"""
+    e_plan = entity_factory(
+        kind=EntityKind.TECH_PLAN,
+        origin=EntityOrigin.MCP,
+        source_kind="mcp_technical_plan",
+    )
+    ok_pid = str(uuid.uuid4())
+    v_plan = version_factory(e_plan, qdrant_point_ids=[ok_pid], vector_synced=True)
+    mock_qdrant_client.retrieve.side_effect = lambda collection_name, ids, with_payload=None: (
+        [_record(ok_pid, is_latest=True, version=v_plan.version)] if ok_pid in ids else []
+    )
+    mock_qdrant_client.scroll.return_value = ([], None)
+
+    event_time = timezone.now()
+    edge = EdgeSpec(relation=EdgeRelation.HAS_PLAN, target_entity_id=e_plan.id, exclusive=True)
+    anchor_event = IngestionEvent(
+        kind="work_item",
+        origin="mcp",
+        source_kind="feishu_work_item",
+        source_id="PROJ:story:42",
+        title="工作项锚",
+        content="工作项锚",
+        payload={},
+        project_id=None,
+        repository_id=None,
+        event_time=event_time,
+        edges=(edge,),
+    )
+
+    async def fake_normalize(request):
+        assert request.source_id == e_plan.source_id
+        return [anchor_event]
+
+    monkeypatch.setattr("knowledge.sources.get_normalizer", lambda source_kind: fake_normalize)
+
+    output = _run_reconcile("--fix")
+    summary = _parse_summary(output)
+
+    assert summary["missing_edges"] == 1
+    expected_source = generate_entity_id("work_item", "feishu_work_item", "PROJ:story:42")
+    mock_fixers["apply_edges"].assert_awaited_once_with(
+        expected_source, (edge,), event_time=event_time
+    )
+    assert summary["fixed"] == 1
+
+
+def test_fix_missing_edges_source_missing_skips(
+    entity_factory, version_factory, mock_qdrant_client, mock_fixers, monkeypatch
+) -> None:
+    """--fix 检查项 6 边界：normalizer 源对象已删（返回空事件）→ skip+warning 不崩。"""
+    e_plan = entity_factory(
+        kind=EntityKind.TECH_PLAN,
+        origin=EntityOrigin.MCP,
+        source_kind="mcp_technical_plan",
+    )
+    ok_pid = str(uuid.uuid4())
+    v_plan = version_factory(e_plan, qdrant_point_ids=[ok_pid], vector_synced=True)
+    mock_qdrant_client.retrieve.side_effect = lambda collection_name, ids, with_payload=None: (
+        [_record(ok_pid, is_latest=True, version=v_plan.version)] if ok_pid in ids else []
+    )
+    mock_qdrant_client.scroll.return_value = ([], None)
+
+    async def fake_normalize(request):
+        return []  # 源对象已删：normalizer 契约返回空列表
+
+    monkeypatch.setattr("knowledge.sources.get_normalizer", lambda source_kind: fake_normalize)
+
+    output = _run_reconcile("--fix")
+    summary = _parse_summary(output)
+
+    assert summary["missing_edges"] == 1
+    assert summary["skipped"] >= 1
+    assert mock_fixers["apply_edges"].await_count == 0
+    assert summary["fixed"] == 0
+
+
+def test_fix_pitfall2_vector_missing_detected_and_reembedded(
+    entity_factory, version_factory, mock_qdrant_client, mock_fixers
+) -> None:
+    """Pitfall 2 端到端：hash 短路掩盖向量缺失（vector_synced=False + Qdrant 无点）
+    由检查项 1 检出，--fix 后 revectorize_version 被调（同时计入 DB 不变量抽检）。"""
+    entity = entity_factory(
+        kind=EntityKind.TECH_PLAN, origin=EntityOrigin.CHAT, source_kind="coding_plan"
+    )
+    version = version_factory(entity, qdrant_point_ids=[str(uuid.uuid4())], vector_synced=False)
+
+    mock_qdrant_client.retrieve.return_value = []  # Qdrant 无该版本任何点
+    mock_qdrant_client.scroll.return_value = ([], None)
+
+    output = _run_reconcile("--fix")
+    summary = _parse_summary(output)
+
+    assert summary["missing"] == 1
+    assert summary["db_anomalies"] == 1  # vector_synced=False 的 latest 被抽检报告
+    assert mock_fixers["revectorize"].await_count == 1
+    assert mock_fixers["revectorize"].await_args.args[0].id == version.id
