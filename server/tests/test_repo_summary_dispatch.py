@@ -83,6 +83,36 @@ class TestDispatchRepoSummary:
         assert dispatch_task.metadata["env_FRIDAY_TASK_MODE"] == "repo_summary"
 
     @pytest.mark.asyncio
+    async def test_dispatch_uses_claude_code_runtime_config(
+        self,
+        repository: Repository,
+        mock_dispatcher,
+        mock_render_prompt,
+    ) -> None:
+        """repo_summary 容器凭证统一走 Claude Code 运行时配置（CC 配置优先，内部回退 legacy）。"""
+        from repositories.summary_service import dispatch_repo_summary
+
+        with patch(
+            "services.provider_config.aget_claude_code_runtime_config",
+            new_callable=AsyncMock,
+            return_value={
+                "api_key": "sk-cc-test",
+                "base_url": "https://proxy.example.com/anthropic",
+                "opus_model": "model-opus",
+                "sonnet_model": "model-sonnet",
+                "haiku_model": "model-haiku",
+                "default_model": "model-sonnet",
+            },
+        ):
+            await dispatch_repo_summary(repository)
+
+        meta = mock_dispatcher.call_args[0][0].metadata
+        assert meta["env_FRIDAY_TASK_CLAUDE_API_KEY"] == "sk-cc-test"
+        assert meta["env_FRIDAY_TASK_CLAUDE_BASE_URL"] == "https://proxy.example.com/anthropic"
+        assert meta["env_FRIDAY_TASK_CLAUDE_MODEL"] == "model-sonnet"
+        assert meta["env_FRIDAY_TASK_CLAUDE_SMALL_MODEL"] == "model-haiku"
+
+    @pytest.mark.asyncio
     async def test_renders_prompt_with_correct_slug(
         self,
         repository: Repository,

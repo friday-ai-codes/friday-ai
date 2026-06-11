@@ -36,6 +36,19 @@ Hope this helps!'''
         result = _parse_summary_json(raw)
         assert '"overview": "Test repo"' in result
 
+    def test_extracts_json_with_preamble_and_unclosed_fence(self) -> None:
+        """模型前言 + 未闭合 ```json 围栏：按首 { 末 } 跨度提取。"""
+        from subagent.api.callbacks import _parse_summary_json
+
+        raw = (
+            "Here is the final structured JSON analysis of the repository: "
+            '```json\n{"overview": "围栏未闭合", "tech_stack": ["Vue 3"]}'
+        )
+        result = _parse_summary_json(raw)
+        import json
+
+        assert json.loads(result) == {"overview": "围栏未闭合", "tech_stack": ["Vue 3"]}
+
     def test_returns_raw_text_on_invalid_json(self) -> None:
         """非 JSON 文本原样返回。"""
         from subagent.api.callbacks import _parse_summary_json

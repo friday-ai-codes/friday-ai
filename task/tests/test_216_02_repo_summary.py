@@ -79,6 +79,39 @@ class TestExploreGuardRepoSummary:
         assert exc_info.value.operation == "setup_task_branch"
 
 
+class TestExtractSummaryJson:
+    """_extract_summary_json: 截断/上报前剥掉模型输出的前言与代码围栏。"""
+
+    def test_extracts_from_json_fence(self):
+        from core.runner import _extract_summary_json
+
+        text = 'Here is the analysis:\n```json\n{"overview": "测试", "tech_stack": ["Vue"]}\n```\nDone.'
+        result = _extract_summary_json(text)
+        import json
+
+        assert json.loads(result) == {"overview": "测试", "tech_stack": ["Vue"]}
+
+    def test_extracts_with_preamble_and_unclosed_fence(self):
+        from core.runner import _extract_summary_json
+
+        text = 'Here is the final structured JSON analysis:\n```json\n{"overview": "无闭合围栏"}'
+        result = _extract_summary_json(text)
+        import json
+
+        assert json.loads(result) == {"overview": "无闭合围栏"}
+
+    def test_returns_original_when_not_json(self):
+        from core.runner import _extract_summary_json
+
+        text = "纯 markdown 描述，没有 JSON"
+        assert _extract_summary_json(text) == text
+
+    def test_empty_passthrough(self):
+        from core.runner import _extract_summary_json
+
+        assert _extract_summary_json("") == ""
+
+
 class TestGitWrapperRepoSummary:
     """Test 2: git-wrapper.sh 在 FRIDAY_TASK_MODE=repo_summary 时别名为 explore。"""
 

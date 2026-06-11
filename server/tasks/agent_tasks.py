@@ -83,26 +83,44 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
             system_prompt = stored_config.get("system_prompt", "")
             max_turns = stored_config.get("max_iterations", 15)
 
-        # 从 ProviderConfigService.aresolve_or_error 获取凭证
-        # （替代 v8.1 aget_claude_config 路径）
+        # 凭证解析：SDKAgentRunner 启动的是 Claude Code CLI ——
+        # 优先用「Claude Code 编码配置」（admin 设置页绑定凭证 + 三档映射）；
+        # 未配置（api_key / default_model 缺失）时回退四层解析，保持向后兼容。
         from services.provider_config import (
             ProviderConfigService,
             ProviderMissingError,
+            aget_claude_code_config,
+            aget_claude_code_runtime_config,
         )
 
-        resolve_result = await ProviderConfigService.aresolve_or_error(
-            project=session.project
+        # 仅当显式绑定 credential_id 才走 CC 分支（避免未配置 CC 的实例
+        # 因 runtime_config 内部回退而绕过空间级凭证）。
+        cc_bound = bool((await aget_claude_code_config()).get("credential_id"))
+        cc = (
+            await aget_claude_code_runtime_config()
+            if cc_bound
+            else {"api_key": "", "base_url": "", "default_model": ""}
         )
-        if isinstance(resolve_result, ProviderMissingError):
-            raise ValueError(
-                f"未配置 Provider 凭证：{resolve_result.recommended_action}"
+        if cc["api_key"] and cc["default_model"]:
+            resolved_api_key = cc["api_key"]
+            resolved_base_url = cc["base_url"]
+            resolved_model = cc["default_model"]
+        else:
+            resolve_result = await ProviderConfigService.aresolve_or_error(
+                project=session.project
             )
-        if not resolve_result.api_key:
-            raise ValueError("未配置 API Key，请在系统设置或项目设置中配置")
-        # model fallback：credential.default_model → 空则报错
-        resolved_model = (resolve_result.extra or {}).get("default_model", "") or ""
-        if not resolved_model:
-            raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+            if isinstance(resolve_result, ProviderMissingError):
+                raise ValueError(
+                    f"未配置 Provider 凭证：{resolve_result.recommended_action}"
+                )
+            if not resolve_result.api_key:
+                raise ValueError("未配置 API Key，请在系统设置或项目设置中配置")
+            resolved_api_key = resolve_result.api_key
+            resolved_base_url = resolve_result.base_url or ""
+            # model fallback：credential.default_model → 空则报错
+            resolved_model = (resolve_result.extra or {}).get("default_model", "") or ""
+            if not resolved_model:
+                raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
 
         # Build and run SDKAgentRunner
         runner_config = SdkRunnerConfig(
@@ -110,7 +128,8 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
             model=resolved_model,
             space_id=str(session.project_id) if session.project_id else "",
             session_id=session_id,
-            api_key=resolve_result.api_key,
+            api_key=resolved_api_key,
+            api_base_url=resolved_base_url,
             max_turns=max_turns,
             agent_session=session,
         )
