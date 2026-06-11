@@ -114,6 +114,23 @@ class TestCodeChangeArchiveModel:
         await sync_to_async(_dup)()
         assert await CodeChangeArchive.objects.acount() == 1
 
+    async def test_mr_url_column_fits_long_self_hosted_gitlab_url(self) -> None:
+        """WR-02：自托管 GitLab 深层 group 嵌套 MR URL（>200 字符）可落库。"""
+        long_url = (
+            "https://gitlab.internal.example.com/"
+            + "/".join(f"group-level-{i:02d}-with-long-name" for i in range(8))
+            + "/project-repo/-/merge_requests/12345"
+        )
+        assert len(long_url) > 200
+        field = CodeChangeArchive._meta.get_field("mr_url")
+        assert field.max_length == 500
+
+        archive = await CodeChangeArchive.objects.acreate(
+            **_make_archive_kwargs(mr_url=long_url)
+        )
+        await archive.arefresh_from_db()
+        assert archive.mr_url == long_url
+
     async def test_full_field_persistence(self) -> None:
         """repository FK（SET_NULL）、MR 元数据、文件级 JSON、统计字段全部落库可读。"""
         from repositories.models import Repository
