@@ -4,13 +4,13 @@ milestone: v0.3.0
 milestone_name: milestone
 status: executing
 stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T13:00:28.816Z"
+last_updated: "2026-06-11T13:35:32.591Z"
 last_activity: 2026-06-11 -- Phase 13 execution started
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 5
   percent: 20
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 ## Current Position
 
 Phase: 13 (统一摄取与版本化) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 13
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 13 execution started
 
 Progress: [□□□□□] 0/5 phases
@@ -44,6 +44,7 @@ Progress: [□□□□□] 0/5 phases
 | Phase 12 P01 | 10min | 3 tasks | 10 files |
 | Phase 12 P02 | 12min | 3 tasks | 2 files |
 | Phase 12 P03 | 8min | 3 tasks | 7 files |
+| Phase 13 P13-02 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -55,6 +56,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 12]: generate_entity_id 拼接格式 kind:source_kind:source_id + 独立 KNOWLEDGE_NAMESPACE；CodeChangeArchive 不预建（Phase 14 自带 migration）
 - [Phase 12]: GraphStore 递归 CTE anchor path 不含起点（环回到起点计 1 次后终止）；direction=both 多跳与 MySQL 后端显式 NotImplementedError
 - [Phase 12]: payload schema 8 索引字段第一天定型（含权限维度），回归测试锁键集合；ensure 不匹配 raise 绝不删库，重建唯一入口 rebuild_delivery_knowledge --yes 命令
+- [Phase ?]: 13-02: hash 相等绝不产生新版本——needs_revector 走 revectorize_version 补写向量，不建版本行不置 invalid_at
+- [Phase ?]: 13-02: 边非严格同事务——apply_edge_specs 幂等可重入，skipped/needs_revector 事件仍执行边阶段自愈
 
 ### Pending Todos
 
@@ -97,7 +100,7 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:37:53.246Z
+Last session: 2026-06-11T13:34:49.452Z
 Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
 Resume file: None
 
