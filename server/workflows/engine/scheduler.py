@@ -1214,6 +1214,40 @@ class WorkflowEngine:
             approver=approver,
         )
 
+        # INGEST-01（14-04）：ai_plan_approval 审批通过 → 投递统一摄取。
+        # source_id 恒为同 execution 中生成节点（ai_plan_generation）的 key（OQ-2 定案）；
+        # node FK 未必预加载，经 sync_to_async 安全取 node_type。
+        node_type = await sync_to_async(lambda: node_execution.node.node_type)()
+        if node_type == "ai_plan_approval":
+            generation_node_id = await (
+                NodeExecution.objects.filter(
+                    workflow_execution_id=node_execution.workflow_execution_id,
+                    node__node_type="ai_plan_generation",
+                    status=NodeExecutionStatus.COMPLETED,
+                )
+                .exclude(output_data={})
+                .order_by("-completed_at")
+                .values_list("node_id", flat=True)
+                .afirst()
+            )
+            if generation_node_id is None:
+                # 审批先于生成属病理态：warning 不投递
+                logger.warning(
+                    "knowledge_workflow_plan_source_missing",
+                    execution_id=str(node_execution.workflow_execution_id),
+                    node_execution_id=str(node_execution.id),
+                )
+            else:
+                from knowledge import ingestion  # lazy import 防循环
+
+                await ingestion.aschedule_ingestion(
+                    ingestion.IngestionRequest(
+                        "workflow_plan",
+                        f"{node_execution.workflow_execution_id}:{generation_node_id}",
+                        "workflow_plan_approved",
+                    )
+                )
+
         # Continue workflow execution from approved port
         node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
         execution = node_execution.workflow_execution
