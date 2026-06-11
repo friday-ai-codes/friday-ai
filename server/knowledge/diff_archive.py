@@ -603,7 +603,9 @@ async def archive_code_change(
 
     # ⑥ 压缩 + sha256 + 落库（撞 uniq_codechange_source_commit 即幂等放弃，T-14-12）
     compressed = compress_diff(raw)
-    from django.db import IntegrityError  # service 层 ORM 异常（纯函数区零 ORM 纪律）
+    # service 层 ORM 异常（纯函数区零 ORM 纪律）。DataError：acreate 不走
+    # full_clean，超列宽值由 DB 直接拒绝——按"整批绝不 raise"契约降级（WR-02）。
+    from django.db import DataError, IntegrityError
 
     try:
         archive = await CodeChangeArchive.objects.acreate(
@@ -626,7 +628,7 @@ async def archive_code_change(
             total_deletions=sum(fd.deletions for fd in file_diffs),
             event_time=event_time,
         )
-    except IntegrityError as exc:
+    except (DataError, IntegrityError) as exc:
         logger.warning(
             "knowledge_diff_archive_conflict",
             source_kind=source_kind,
