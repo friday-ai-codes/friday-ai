@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T10:25:03.594Z"
+last_updated: "2026-06-11T10:38:39.065Z"
 last_activity: 2026-06-11 -- Phase 12 execution started
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 20
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 
 Phase: 12 (知识模型与图存储地基) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-11 -- Phase 12 execution started
 
 Progress: [□□□□□] 0/5 phases
@@ -43,6 +43,7 @@ Progress: [□□□□□] 0/5 phases
 | Requirements delivered | 0/28 |
 | Phase 12 P01 | 10min | 3 tasks | 10 files |
 | Phase 12 P02 | 12min | 3 tasks | 2 files |
+| Phase 12 P03 | 8min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 12]: EntityKind/EdgeRelation 枚举字面值锁死（kind 进 uuid5 PK 派生，改名即数据迁移）；MODIFIES_CHUNK 为 Phase 14 占位
 - [Phase 12]: generate_entity_id 拼接格式 kind:source_kind:source_id + 独立 KNOWLEDGE_NAMESPACE；CodeChangeArchive 不预建（Phase 14 自带 migration）
 - [Phase 12]: GraphStore 递归 CTE anchor path 不含起点（环回到起点计 1 次后终止）；direction=both 多跳与 MySQL 后端显式 NotImplementedError
+- [Phase 12]: payload schema 8 索引字段第一天定型（含权限维度），回归测试锁键集合；ensure 不匹配 raise 绝不删库，重建唯一入口 rebuild_delivery_knowledge --yes 命令
 
 ### Pending Todos
 
@@ -95,7 +97,7 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:24:15.480Z
+Last session: 2026-06-11T10:37:53.246Z
 Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
 Resume file: None
 
