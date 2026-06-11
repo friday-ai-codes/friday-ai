@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 from django.utils import timezone
@@ -64,14 +65,15 @@ def _parse_event_time(fields: dict[str, Any]) -> datetime:
 def _extract_doc_token(field_value: Any) -> str:
     """字段值（文档 URL 或裸 token）→ doc token；取不出返回空串。
 
-    与 ``agents/tools/feishu_doc_tools._extract_document_id`` 同款解析：
-    完整 URL 取末段 path，裸 token 原样返回。
+    完整 URL 取末段 path，裸 token 原样返回。经 ``urlparse`` 先剥离
+    query string / fragment（WR-03：浏览器复制的 URL 普遍带 ``?from=`` 参数，
+    不剥离则 token 携参导致 doc API 必然 404、快照静默缺正文段）。
     """
     if not isinstance(field_value, str) or not field_value.strip():
         return ""
     value = field_value.strip()
     if "feishu.cn" in value or "larksuite.com" in value:
-        return value.rstrip("/").split("/")[-1]
+        return urlparse(value).path.rstrip("/").split("/")[-1]
     return value
 
 
