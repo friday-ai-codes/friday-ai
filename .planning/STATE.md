@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: milestone
-status: planning
+status: executing
 stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T09:59:40.750Z"
-last_activity: 2026-06-11 — v0.3.0 roadmap created（5 phases，28/28 requirements mapped）
+last_updated: "2026-06-11T10:11:56.123Z"
+last_activity: 2026-06-11 -- Phase 12 execution started
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.3.0 起需求/缺陷、技术方案、编码 diff 全链路 RAG 化并以时间感知知识图谱关联，任意入口都能召回相似历史需求及其完整迭代轨迹。
-**Current focus:** v0.3.0 交付知识图谱（Phase 12–16）
+**Current focus:** Phase 12 — 知识模型与图存储地基
 
 ## Current Position
 
-Phase: 12 of 16 — 知识模型与图存储地基（Not started）
-Plan: —
-Status: Roadmap created, ready for planning
-Last activity: 2026-06-11 — v0.3.0 roadmap created（5 phases，28/28 requirements mapped）
+Phase: 12 (知识模型与图存储地基) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-11 -- Phase 12 execution started
 
 Progress: [□□□□□] 0/5 phases
 
@@ -41,12 +41,16 @@ Progress: [□□□□□] 0/5 phases
 | Phases completed | 0/5 |
 | Plans completed | 0 |
 | Requirements delivered | 0/28 |
+| Phase 12 P01 | 10min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail in `.planning/milestones/v0.2.0-ROADMAP.md`.
+
+- [Phase 12]: EntityKind/EdgeRelation 枚举字面值锁死（kind 进 uuid5 PK 派生，改名即数据迁移）；MODIFIES_CHUNK 为 Phase 14 占位
+- [Phase 12]: generate_entity_id 拼接格式 kind:source_kind:source_id + 独立 KNOWLEDGE_NAMESPACE；CodeChangeArchive 不预建（Phase 14 自带 migration）
 
 ### Pending Todos
 
@@ -89,7 +93,7 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-11
+Last session: 2026-06-11T10:10:35.116Z
 Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
 Resume file: None
 

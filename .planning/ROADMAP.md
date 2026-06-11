@@ -32,11 +32,11 @@
   4. 同一实体的多次修改形成 supersedes 版本链，可按版本号回溯任意旧版本
   5. `delivery_knowledge` collection 创建/校验有显式生命周期管理：维度不匹配时拒绝并响亮报错（提供显式重建命令），绝不自动删库重建；payload schema（entity_kind/entity_id/version/is_latest/project_id/event_time 及权限维度字段）第一天即定型
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 12-01-PLAN.md — knowledge app 三模型（实体/版本链/bi-temporal 边）+ 全部 DB 约束 + 测试基建（Wave 0 合并）
+- [x] 12-01-PLAN.md — knowledge app 三模型（实体/版本链/bi-temporal 边）+ 全部 DB 约束 + 测试基建（Wave 0 合并）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -110,7 +110,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 12. 知识模型与图存储地基 | 0/? | Not started | - |
+| 12. 知识模型与图存储地基 | 1/3 | In Progress|  |
 | 13. 统一摄取与版本化 | 0/? | Not started | - |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
