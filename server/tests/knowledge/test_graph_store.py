@@ -227,9 +227,7 @@ async def test_expired_edge_invisible_by_default(entity_factory, edge_factory):
     assert await graph_store.neighbors(a.id) == []
 
 
-async def test_invalidate_edge_does_not_overwrite_existing_timestamp(
-    entity_factory, edge_factory
-):
+async def test_invalidate_edge_does_not_overwrite_existing_timestamp(entity_factory, edge_factory):
     """重复 invalidate_edge 是幂等 no-op：首次置位的 invalid_at 不被覆盖（防改写历史）。"""
 
     def _setup():

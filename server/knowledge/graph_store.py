@@ -194,9 +194,9 @@ class RelationalGraphStore:
         历史，``as_of`` 查询结果会随之漂移（T-12-04 防线）。
         """
         _require_aware(invalid_at, "invalid_at")
-        updated = await KnowledgeEdge.objects.filter(
-            id=edge_id, invalid_at__isnull=True
-        ).aupdate(invalid_at=invalid_at)
+        updated = await KnowledgeEdge.objects.filter(id=edge_id, invalid_at__isnull=True).aupdate(
+            invalid_at=invalid_at
+        )
         if updated == 0:
             # 区分两种 0 行情况：边不存在（响亮报错） vs 已失效（幂等返回）
             if not await KnowledgeEdge.objects.filter(id=edge_id).aexists():
@@ -218,9 +218,9 @@ class RelationalGraphStore:
         （warning 日志），绝不覆盖原作废时间（同 ``invalidate_edge``，防改写历史）。
         """
         _require_aware(expired_at, "expired_at")
-        updated = await KnowledgeEdge.objects.filter(
-            id=edge_id, expired_at__isnull=True
-        ).aupdate(expired_at=expired_at)
+        updated = await KnowledgeEdge.objects.filter(id=edge_id, expired_at__isnull=True).aupdate(
+            expired_at=expired_at
+        )
         if updated == 0:
             if not await KnowledgeEdge.objects.filter(id=edge_id).aexists():
                 raise KnowledgeEdge.DoesNotExist(f"KnowledgeEdge {edge_id} 不存在")
