@@ -51,9 +51,7 @@ class TestGitlabBranchDiff:
         diff_b = "+new content"
         compare_result = {
             "diffs": [
-                _make_gitlab_diff_entry(
-                    old_path="src/a.py", new_path="src/a.py", diff=diff_a
-                ),
+                _make_gitlab_diff_entry(old_path="src/a.py", new_path="src/a.py", diff=diff_a),
                 _make_gitlab_diff_entry(
                     old_path="", new_path="src/b.py", diff=diff_b, new_file=True
                 ),
@@ -83,9 +81,7 @@ class TestGitlabBranchDiff:
         client = self._make_client()
 
         compare_result = {
-            "diffs": [
-                _make_gitlab_diff_entry(new_path=f"src/file{i}.py") for i in range(3)
-            ],
+            "diffs": [_make_gitlab_diff_entry(new_path=f"src/file{i}.py") for i in range(3)],
         }
 
         project_mock = MagicMock()

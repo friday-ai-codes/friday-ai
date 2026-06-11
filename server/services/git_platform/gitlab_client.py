@@ -6,7 +6,7 @@ from typing import Any
 import gitlab
 import structlog
 
-from .base import GitPlatformClient
+from .base import GitPlatformClient, truncate_diff_lines
 from .models import (
     BranchCompareResult,
     CompareFileEntry,
@@ -83,9 +83,7 @@ class GitLabClient(GitPlatformClient):
         try:
             gl = self._get_client()
             # Run blocking API call in thread pool
-            users = await asyncio.to_thread(
-                lambda: list(gl.users.list(username=username))
-            )
+            users = await asyncio.to_thread(lambda: list(gl.users.list(username=username)))
             if users:
                 return users[0].id
             return None
@@ -258,6 +256,82 @@ class GitLabClient(GitPlatformClient):
             )
             return MRDiffResult(success=False, error=error_msg)
 
+    async def get_branch_diff(
+        self,
+        source_branch: str,
+        target_branch: str,
+        max_files: int = 50,
+        max_diff_lines: int = 500,
+    ) -> MRDiffResult:
+        """获取分支级全量 diff 文本（GitLab 实现，skip-PR 兜底，KMOD-05）。
+
+        包装 repository_compare(from_=target, to=source)——方向 = target 为基底、
+        source 为变更侧，与 MR diff 语义一致；diffs[].diff 自带 per-file unified
+        diff 文本，截断语义与 get_merge_request_diff 同款。
+
+        Args:
+            source_branch: 功能（变更侧）分支名。
+            target_branch: 目标（base）分支名。
+            max_files: 最大文件数限制。
+            max_diff_lines: 单个文件 diff 最大行数。
+
+        Returns:
+            MRDiffResult 包含文件列表和 diff 内容；异常时 success=False 不上抛。
+        """
+        try:
+            project = self._get_project()
+
+            result = await asyncio.to_thread(
+                project.repository_compare, from_=target_branch, to=source_branch
+            )
+
+            raw_diffs: list[dict[str, Any]] = result.get("diffs", [])
+            truncated = False
+
+            # 截断文件数量
+            if len(raw_diffs) > max_files:
+                raw_diffs = raw_diffs[:max_files]
+                truncated = True
+
+            files: list[MRDiffFile] = []
+            for entry in raw_diffs:
+                diff_text: str = entry.get("diff", "") or ""
+
+                # 截断单个文件 diff 行数
+                diff_text, was_truncated = truncate_diff_lines(diff_text, max_diff_lines)
+                truncated = truncated or was_truncated
+
+                files.append(
+                    MRDiffFile(
+                        old_path=entry.get("old_path", ""),
+                        new_path=entry.get("new_path", ""),
+                        diff=diff_text,
+                        new_file=entry.get("new_file", False),
+                        renamed_file=entry.get("renamed_file", False),
+                        deleted_file=entry.get("deleted_file", False),
+                    )
+                )
+
+            logger.info(
+                "gitlab_branch_diff_fetched",
+                source=source_branch,
+                target=target_branch,
+                files_count=len(files),
+                truncated=truncated,
+            )
+
+            return MRDiffResult(success=True, files=files, truncated=truncated)
+
+        except Exception as e:
+            # 只记 str(exc) 与分支名，不记 client/token 对象（T-14-05）
+            logger.warning(
+                "gitlab_branch_diff_error",
+                source=source_branch,
+                target=target_branch,
+                error=str(e),
+            )
+            return MRDiffResult(success=False, error=str(e))
+
     async def compare_branches(
         self,
         source_branch: str,
@@ -335,12 +409,8 @@ class GitLabClient(GitPlatformClient):
             conflicting_files: list[str] = []
 
             if behind_by > 0:
-                forward_paths = {
-                    d.get("new_path", "") for d in forward.get("diffs", [])
-                }
-                reverse_paths = {
-                    d.get("new_path", "") for d in reverse.get("diffs", [])
-                }
+                forward_paths = {d.get("new_path", "") for d in forward.get("diffs", [])}
+                reverse_paths = {d.get("new_path", "") for d in reverse.get("diffs", [])}
                 conflicting_files = sorted(forward_paths & reverse_paths)
                 has_potential_conflicts = len(conflicting_files) > 0
 
