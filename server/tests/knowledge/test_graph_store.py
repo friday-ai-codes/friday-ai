@@ -227,6 +227,52 @@ async def test_expired_edge_invisible_by_default(entity_factory, edge_factory):
     assert await graph_store.neighbors(a.id) == []
 
 
+async def test_invalidate_edge_does_not_overwrite_existing_timestamp(
+    entity_factory, edge_factory
+):
+    """重复 invalidate_edge 是幂等 no-op：首次置位的 invalid_at 不被覆盖（防改写历史）。"""
+
+    def _setup():
+        a, b = entity_factory(), entity_factory()
+        return edge_factory(a, b, valid_at=timezone.now() - timedelta(hours=2))
+
+    edge = await sync_to_async(_setup)()
+    first_invalid_at = timezone.now() - timedelta(hours=1)
+    await graph_store.invalidate_edge(edge.id, invalid_at=first_invalid_at)
+
+    # 再次调用（更晚的时间戳）不报错、不覆盖
+    await graph_store.invalidate_edge(edge.id, invalid_at=timezone.now())
+
+    refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
+    assert refreshed.invalid_at == first_invalid_at
+
+
+async def test_expire_edge_does_not_overwrite_existing_timestamp(entity_factory, edge_factory):
+    """重复 expire_edge 是幂等 no-op：首次置位的 expired_at 不被覆盖（防改写历史）。"""
+
+    def _setup():
+        a, b = entity_factory(), entity_factory()
+        return edge_factory(a, b, valid_at=timezone.now() - timedelta(hours=2))
+
+    edge = await sync_to_async(_setup)()
+    first_expired_at = timezone.now() - timedelta(hours=1)
+    await graph_store.expire_edge(edge.id, expired_at=first_expired_at)
+
+    await graph_store.expire_edge(edge.id, expired_at=timezone.now())
+
+    refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
+    assert refreshed.expired_at == first_expired_at
+
+
+async def test_invalidate_and_expire_missing_edge_raises():
+    """目标边不存在 → DoesNotExist（与"已置位幂等返回"严格区分）。"""
+    missing_id = uuid.uuid4()
+    with pytest.raises(KnowledgeEdge.DoesNotExist):
+        await graph_store.invalidate_edge(missing_id, invalid_at=timezone.now())
+    with pytest.raises(KnowledgeEdge.DoesNotExist):
+        await graph_store.expire_edge(missing_id, expired_at=timezone.now())
+
+
 async def test_naive_datetime_rejected_on_add_edge(entity_factory):
     """naive datetime 传入 add_edge → ValueError（P2 时区漂移防线）。"""
 
