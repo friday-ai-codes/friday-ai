@@ -153,7 +153,8 @@ async def tombstone_points(point_ids: list[str]) -> None:
     """
     if not point_ids:
         return
-    client = QdrantService.get_client()
+    # 首次调用经 sync ORM 读配置，async 上下文必须桥接
+    client = await sync_to_async(QdrantService.get_client)()
     try:
         await sync_to_async(client.set_payload)(
             collection_name=DELIVERY_KNOWLEDGE_COLLECTION,
@@ -181,7 +182,8 @@ async def delete_points(point_ids: list[str]) -> None:
     """
     if not point_ids:
         return
-    client = QdrantService.get_client()
+    # 首次调用经 sync ORM 读配置，async 上下文必须桥接
+    client = await sync_to_async(QdrantService.get_client)()
     try:
         await sync_to_async(client.delete)(
             collection_name=DELIVERY_KNOWLEDGE_COLLECTION,
