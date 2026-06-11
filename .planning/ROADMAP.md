@@ -110,7 +110,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 12. 知识模型与图存储地基 | 3/3 | Complete   | 2026-06-11 |
+| 12. 知识模型与图存储地基 | 3/3 | Complete    | 2026-06-11 |
 | 13. 统一摄取与版本化 | 0/? | Not started | - |
 | 14. 全触发点接入与 diff 归档 | 0/? | Not started | - |
 | 15. 时间感知混合检索 | 0/? | Not started | - |
