@@ -92,8 +92,19 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      # 只校验本次 push / PR 的增量 commit，避免历史提交反复阻塞 CI
       - name: Validate commit messages
-        run: scripts/check_commit_messages.sh --all
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            # 新分支首次 push / force-push 后旧基点不可达：只检查当前 commit
+            range="${{ github.sha }}^!"
+          else
+            range="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          scripts/check_commit_messages.sh --range "$range"
 
   server-ci:
     needs: changes
@@ -217,13 +228,13 @@ jobs:
 
   # e2e 拆出独立 job，跑在官方 Playwright 镜像里（浏览器 + 系统依赖已预装），
   # 省去 `playwright install --with-deps`，并与 web-ci 的 lint/type/unit/build 并行。
-  # 镜像 tag 必须与 web/pnpm-lock.yaml 中解析到的 @playwright/test 版本一致（当前 1.57.0）。
+  # 镜像 tag 必须与 web/pnpm-lock.yaml 中解析到的 @playwright/test 版本一致（当前 1.60.0）。
   web-e2e:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
     defaults:
       run:
         working-directory: web
