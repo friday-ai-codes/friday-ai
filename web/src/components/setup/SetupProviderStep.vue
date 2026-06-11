@@ -71,9 +71,54 @@ function addModel(id: string, contextLength: number | null = null, supportsVisio
   const clean = id.trim()
   if (!clean)
     return
-  if (!models.value.some(m => m.id === clean))
-    models.value = [...models.value, { id: clean, contextLength, supportsVision }]
+  if (!models.value.some(m => m.id === clean)) {
+    models.value = [
+      ...models.value,
+      { id: clean, contextLength: contextLength ?? inferContextLength(clean), supportsVision },
+    ]
+  }
   selectedModelId.value = clean
+}
+
+/** 上下文窗口预设（写 context_length，被后端上下文预算消费） */
+const contextPresets: Array<{ value: number, label: string }> = [
+  { value: 32_000, label: '32K' },
+  { value: 128_000, label: '128K' },
+  { value: 200_000, label: '200K' },
+  { value: 256_000, label: '256K' },
+  { value: 1_000_000, label: '1M' },
+]
+
+/** 常见模型上下文预设（仅初始值，可改） */
+function inferContextLength(modelId: string): number | null {
+  const id = modelId.toLowerCase()
+  if (id.startsWith('deepseek-v4') || id.startsWith('gemini-'))
+    return 1_000_000
+  if (id.startsWith('claude-'))
+    return 200_000
+  if (id.startsWith('gpt-'))
+    return 128_000
+  return null
+}
+
+function contextSelectValue(m: PresetModel): string {
+  return m.contextLength && m.contextLength > 0 ? String(m.contextLength) : ''
+}
+
+function isNonPresetContext(m: PresetModel): boolean {
+  return Boolean(
+    m.contextLength
+    && m.contextLength > 0
+    && !contextPresets.some(p => p.value === m.contextLength),
+  )
+}
+
+function onContextChange(modelId: string, raw: string) {
+  const parsed = Number(raw)
+  const next = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  models.value = models.value.map(m =>
+    m.id === modelId ? { ...m, contextLength: next } : m,
+  )
 }
 
 function confirmManualModel() {
@@ -113,7 +158,8 @@ async function handleFetchModels() {
     else {
       models.value = resp.available_models.map(m => ({
         id: m.id,
-        contextLength: m.context_length ?? null,
+        // 上游未返回 context_length 时按常见模型预设填充（可改）
+        contextLength: m.context_length ?? inferContextLength(m.id),
         supportsVision: Boolean(m.supports_vision),
       }))
       selectedModelId.value = resp.available_models[0].id
@@ -317,13 +363,25 @@ const onSubmit = handleSubmit(async (formValues) => {
               </span>
             </span>
             <span class="flex flex-shrink-0 items-center gap-1.5">
-              <span
-                v-if="m.contextLength"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground"
+              <!-- 上下文窗口：预设可改（默认 = 跟随系统） -->
+              <select
+                class="h-6 rounded-md border border-border/60 bg-background/70 px-1 text-xs text-muted-foreground outline-none transition-colors hover:border-border"
+                :value="contextSelectValue(m)"
+                :title="m.contextLength ? `上下文窗口：${m.contextLength.toLocaleString()} tokens` : '上下文窗口：未设置'"
+                :aria-label="`${m.id} 上下文窗口`"
+                @click.stop
+                @change="onContextChange(m.id, ($event.target as HTMLSelectElement).value)"
               >
-                <span class="icon-[lucide--file-text] text-[0.7rem]" />
-                {{ t('setup.provider.caps.context', { n: formatContext(m.contextLength) }) }}
-              </span>
+                <option value="">
+                  默认
+                </option>
+                <option v-if="isNonPresetContext(m)" :value="String(m.contextLength)">
+                  {{ formatContext(m.contextLength) }}
+                </option>
+                <option v-for="p in contextPresets" :key="p.value" :value="String(p.value)">
+                  {{ p.label }}
+                </option>
+              </select>
               <span
                 class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
                 :class="m.supportsVision ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"

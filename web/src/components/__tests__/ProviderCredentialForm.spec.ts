@@ -253,6 +253,32 @@ describe('providerCredentialForm', () => {
     })
   })
 
+  it('常见模型自动带上下文预设（deepseek-v4 → 1M），并随 submit 写入 context_length', async () => {
+    const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
+    await flushPromises()
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('deepseek-anthropic')
+    await inputs[1].setValue('sk-ant-validkey1234567890abcdef')
+    await inputs[2].setValue('https://api.deepseek.com/anthropic')
+
+    const manualBtn = wrapper.findAll('button').find(b => b.text().includes('手动输入模型名称'))
+    await manualBtn!.trigger('click')
+    await flushPromises()
+    const modelInput = wrapper.findAll('input').at(-1)
+    await modelInput!.setValue('deepseek-v4-pro')
+
+    await (wrapper.vm as unknown as { onSubmit: () => Promise<void> | void }).onSubmit()
+    await flushPromises()
+
+    const emitted = wrapper.emitted('submit')?.[0]?.[0] as Record<string, unknown>
+    expect(emitted).toMatchObject({
+      available_models: [
+        { id: 'deepseek-v4-pro', context_length: 1_000_000 },
+      ],
+    })
+  })
+
   it('所有 FormLabel 显式使用 font-normal 覆盖默认字重（UI-SPEC §Typography）', async () => {
     const wrapper = mount(ProviderCredentialForm, { props: { mode: 'create' } })
     await flushPromises()

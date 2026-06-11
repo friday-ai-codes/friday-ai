@@ -91,6 +91,88 @@ const editableModalities: Array<{ value: Exclude<InputModality, 'text'>, label: 
   { value: 'video', label: '视频', icon: 'icon-[lucide--video]' },
 ]
 
+/** 上下文窗口预设（写 context_length，被后端上下文预算消费） */
+const contextPresets: Array<{ value: number, label: string }> = [
+  { value: 32_000, label: '32K' },
+  { value: 128_000, label: '128K' },
+  { value: 200_000, label: '200K' },
+  { value: 256_000, label: '256K' },
+  { value: 1_000_000, label: '1M' },
+]
+
+/** 自定义上下文输入态：modelId → 是否展示数字输入框 */
+const customContextEditing = ref<Record<string, boolean>>({})
+
+function formatContextLength(value: number): string {
+  return value >= 1_000_000
+    ? `${Math.round(value / 100_000) / 10}M`
+    : `${Math.round(value / 1000)}K`
+}
+
+/**
+ * 常见模型上下文预设（仅初始值，可改）：
+ * deepseek-v4* / gemini-* → 1M；claude-* → 200K；gpt-* → 128K。
+ */
+function inferContextLength(modelId: string): number | undefined {
+  const id = modelId.toLowerCase()
+  if (id.startsWith('deepseek-v4'))
+    return 1_000_000
+  if (id.startsWith('gemini-'))
+    return 1_000_000
+  if (id.startsWith('claude-'))
+    return 200_000
+  if (id.startsWith('gpt-'))
+    return 128_000
+  return undefined
+}
+
+function contextSelectValue(m: AvailableModel): string {
+  if (customContextEditing.value[m.id])
+    return 'custom'
+  const len = m.context_length
+  if (typeof len !== 'number' || len <= 0)
+    return ''
+  return contextPresets.some(p => p.value === len) ? String(len) : 'custom'
+}
+
+function setModelContextLength(modelId: string, value: number | undefined) {
+  fetchedModels.value = fetchedModels.value.map(model =>
+    model.id === modelId
+      ? { ...model, context_length: value, capability_source: 'manual' }
+      : model,
+  )
+}
+
+function onContextSelectChange(modelId: string, raw: string) {
+  if (raw === 'custom') {
+    customContextEditing.value = { ...customContextEditing.value, [modelId]: true }
+    return
+  }
+  customContextEditing.value = { ...customContextEditing.value, [modelId]: false }
+  const parsed = Number(raw)
+  setModelContextLength(modelId, Number.isFinite(parsed) && parsed > 0 ? parsed : undefined)
+}
+
+function onCustomContextInput(modelId: string, raw: string) {
+  const parsed = Number(raw)
+  if (Number.isFinite(parsed) && parsed > 0)
+    setModelContextLength(modelId, Math.floor(parsed))
+}
+
+/** 输出能力：是否支持图片生成（output_modalities 含 image） */
+function modelHasImageOutput(m: AvailableModel): boolean {
+  return Array.isArray(m.output_modalities) && m.output_modalities.includes('image')
+}
+
+function toggleModelImageOutput(modelId: string) {
+  fetchedModels.value = fetchedModels.value.map((model) => {
+    if (model.id !== modelId)
+      return model
+    const next: InputModality[] = modelHasImageOutput(model) ? ['text'] : ['text', 'image']
+    return { ...model, output_modalities: next, capability_source: 'manual' }
+  })
+}
+
 function normalizeInputModalities(value: unknown): InputModality[] {
   const allowed = new Set<InputModality>(['text', 'image', 'audio', 'video', 'pdf'])
   const raw = Array.isArray(value) ? value : []
@@ -136,6 +218,10 @@ function normalizeModels(models: AvailableModel[]): AvailableModel[] {
       ...model,
       id,
       display_name: String(model.display_name || id).trim(),
+      // 常见模型上下文预设：仅在未配置时填充初始值（用户可改）
+      context_length: typeof model.context_length === 'number' && model.context_length > 0
+        ? model.context_length
+        : inferContextLength(id),
       input_modalities: modalities,
       supports_vision: modalities.includes('image'),
       capability_source: model.capability_source || source,
@@ -150,6 +236,7 @@ function modelFromId(id: string): AvailableModel {
   return {
     id: clean,
     display_name: clean,
+    context_length: inferContextLength(clean),
     input_modalities: modalities,
     supports_vision: modalities.includes('image'),
     capability_source: source,
@@ -729,6 +816,55 @@ defineExpose({ selectedType, onSubmit })
                   <span :class="`${modality.icon} h-3 w-3`" />
                   <span>{{ modality.label }}</span>
                 </button>
+                <!-- 输出能力：图片生成 -->
+                <button
+                  type="button"
+                  class="inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                  :class="modelHasImageOutput(m)
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border/60 bg-background/70 text-muted-foreground hover:text-foreground'"
+                  :title="`${modelHasImageOutput(m) ? '关闭' : '开启'}图片生成输出`"
+                  @click.stop="toggleModelImageOutput(m.id)"
+                >
+                  <span class="icon-[lucide--image-plus] h-3 w-3" />
+                  <span>生成图片</span>
+                </button>
+              </div>
+              <!-- 上下文窗口 -->
+              <div class="flex w-full items-center gap-1.5" @click.stop>
+                <span class="icon-[lucide--ruler] h-3 w-3 shrink-0 text-muted-foreground/60" />
+                <span class="shrink-0 text-[11px] text-muted-foreground">上下文</span>
+                <select
+                  class="h-6 rounded-md border border-border/60 bg-background/70 px-1 text-[11px] text-foreground outline-none transition-colors hover:border-border"
+                  :value="contextSelectValue(m)"
+                  :title="m.context_length ? `上下文窗口：${m.context_length.toLocaleString()} tokens` : '未设置，使用系统默认'"
+                  @change="onContextSelectChange(m.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">
+                    默认
+                  </option>
+                  <option v-for="p in contextPresets" :key="p.value" :value="String(p.value)">
+                    {{ p.label }}
+                  </option>
+                  <option value="custom">
+                    自定义…
+                  </option>
+                </select>
+                <Input
+                  v-if="customContextEditing[m.id]"
+                  type="number"
+                  class="h-6 w-28 px-1.5 text-[11px]"
+                  placeholder="tokens 数"
+                  :model-value="m.context_length ?? ''"
+                  @click.stop
+                  @update:model-value="onCustomContextInput(m.id, String($event))"
+                />
+                <span
+                  v-else-if="typeof m.context_length === 'number' && m.context_length > 0"
+                  class="text-[11px] text-muted-foreground"
+                >
+                  {{ formatContextLength(m.context_length) }}
+                </span>
               </div>
             </div>
           </div>

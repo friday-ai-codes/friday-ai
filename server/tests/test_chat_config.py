@@ -163,6 +163,7 @@ class TestBuildSdkConfig:
             api_key: str = "sk-test-key"
             base_url: str = "https://api.example.com"
             provider_type: ProviderType = ProviderType.ANTHROPIC
+            credential_id: None = None
 
         conversation = await Conversation.objects.acreate(
             project=None,

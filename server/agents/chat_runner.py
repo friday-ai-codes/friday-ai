@@ -115,6 +115,9 @@ class ChatRunnerConfig:
     agent_session: Any = field(default=None)
     max_budget_usd: float | None = None
     default_search_branch: str | None = None
+    # 凭证级上下文窗口（用户在凭证模型条目上配置的 context_length 解析结果）；
+    # 0 = 未覆盖，_check_chat_context_window 回退 fixture。
+    max_input_tokens: int = 0
     # 用户是否显式开启「深度分析」开关。仅当 True 时 deep_analysis 工具会被
     # 暴露给 LLM 并下发"策略二"system prompt。
     force_deep_analysis: bool = False
@@ -381,6 +384,7 @@ def _check_chat_context_window(
     *,
     model: str,
     max_output_tokens: int = 4096,
+    max_input_tokens_override: int = 0,
 ) -> None:
     """前 astream budget check（strict_error 策略）；超限抛 ContextWindowExceededError。
 
@@ -392,15 +396,18 @@ def _check_chat_context_window(
         messages: LangChain message 列表（含 accumulated ToolMessage）。
         model: Anthropic model id（caller 传 ``self._config.model``）。
         max_output_tokens: 可选覆盖；0 / None 走 ``caps.max_output_tokens``。
+        max_input_tokens_override: 凭证级上下文窗口覆盖（用户配置的
+            context_length 解析结果）；0 走 fixture ``caps.max_input_tokens``。
     """
     caps = ModelCapabilities.get(str(ProviderType.ANTHROPIC), model)
     effective_max_out = max_output_tokens or caps.max_output_tokens
-    budget = caps.max_input_tokens - effective_max_out - _CONTEXT_SAFETY_BUFFER
+    effective_max_in = max_input_tokens_override or caps.max_input_tokens
+    budget = effective_max_in - effective_max_out - _CONTEXT_SAFETY_BUFFER
     current = count_tokens_approximately(messages)
     if current > budget:
         raise ContextWindowExceededError(
             f"context too long: {current} tokens > budget {budget} "
-            f"(max_input={caps.max_input_tokens}, "
+            f"(max_input={effective_max_in}, "
             f"max_output={effective_max_out}, "
             f"buffer={_CONTEXT_SAFETY_BUFFER})"
         )
@@ -781,7 +788,11 @@ class ChatAnthropicRunner:
                 # 每 turn 进入 astream 前做前置 budget check。
                 # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
                 # （Pitfall 3）。超限抛 ContextWindowExceededError，由下方专属 except 分支捕获。
-                _check_chat_context_window(messages, model=self._config.model)
+                _check_chat_context_window(
+                    messages,
+                    model=self._config.model,
+                    max_input_tokens_override=self._config.max_input_tokens,
+                )
 
                 # Phase P15：剩余 ≤ BUDGET_FORCE_FINAL_AT 时切到原始 model
                 # （未 bind_tools），强制 LLM 基于已收集信息出最终回答，避免硬抛

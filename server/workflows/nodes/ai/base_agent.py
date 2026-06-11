@@ -28,6 +28,7 @@ from agents.langchain_runner import (
 )
 from agents.models import AgentSession
 from agents.tools.langchain_adapter import build_langchain_tools
+from services.model_capabilities import ModelCapabilities
 from services.provider_config import (
     ProviderConfigService,
     ProviderMissingError,
@@ -671,12 +672,24 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
                 float(timeout_minutes * 60) if timeout_minutes else 600.0
             )
 
+            # 凭证级能力解析：用户在凭证模型条目配置的 context_length 等
+            # 优先于静态 fixture；无凭证/未配置时 resolver 内部回退 fixture。
+            credential = None
+            if resolved.credential_id is not None:
+                from services.provider_config import _fetch_credential_by_id
+
+                credential = await _fetch_credential_by_id(resolved.credential_id)
+            capabilities = ModelCapabilities.resolve_for_credential(
+                credential, str(resolved.provider_type), resolved_model
+            )
+
             runner_config = LangChainRunnerConfig(
                 resolved=resolved,
                 model=resolved_model,
                 session_id=session_id,
                 max_turns=max_iterations,
                 timeout_seconds=timeout_seconds,
+                capabilities=capabilities,
                 tools=tools,
                 max_thinking_tokens=config.get("max_thinking_tokens"),
                 max_output_tokens=config.get("max_output_tokens"),

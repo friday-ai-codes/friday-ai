@@ -102,6 +102,70 @@ def test_deepseek_v4_models_have_1m_context() -> None:
     assert legacy.model == "deepseek"
 
 
+def test_resolve_for_credential_overlays_user_config() -> None:
+    """凭证模型条目上配置的 context_length / supports_vision / supports_tools
+    应 overlay fixture 基线；未配置字段保留 fixture 值。"""
+    from types import SimpleNamespace
+
+    from services.model_capabilities import ModelCapabilities
+
+    credential = SimpleNamespace(
+        available_models=[
+            {
+                "id": "claude-future-9000",
+                "display_name": "Claude Future",
+                "context_length": 1_000_000,
+                "supports_vision": False,
+                "supports_tools": True,
+            },
+        ]
+    )
+
+    entry = ModelCapabilities.resolve_for_credential(credential, "anthropic", "claude-future-9000")
+    assert entry.max_input_tokens == 1_000_000  # override 生效
+    assert entry.supports_vision is False  # override 生效（anthropic * 兜底是 True）
+    # 未覆盖字段保留兜底定价
+    assert entry.input_cost_per_token == Decimal("3e-6")
+
+
+def test_resolve_for_credential_matches_1m_suffix() -> None:
+    """`deepseek-v4-pro[1m]` 应按剥后缀的基础 ID 匹配凭证条目与 fixture。"""
+    from types import SimpleNamespace
+
+    from services.model_capabilities import ModelCapabilities
+
+    credential = SimpleNamespace(
+        available_models=[
+            {"id": "deepseek-v4-pro", "display_name": "pro", "context_length": 512_000},
+        ]
+    )
+
+    entry = ModelCapabilities.resolve_for_credential(credential, "anthropic", "deepseek-v4-pro[1m]")
+    assert entry.max_input_tokens == 512_000
+
+
+def test_resolve_for_credential_without_credential_falls_back() -> None:
+    """credential=None / 条目未配置能力字段 → 与 get() 行为一致。"""
+    from types import SimpleNamespace
+
+    from services.model_capabilities import ModelCapabilities
+
+    base = ModelCapabilities.get("anthropic", "deepseek-v4-pro")
+    assert ModelCapabilities.resolve_for_credential(None, "anthropic", "deepseek-v4-pro") == base
+
+    bare = SimpleNamespace(available_models=[{"id": "deepseek-v4-pro", "display_name": "pro"}])
+    assert ModelCapabilities.resolve_for_credential(bare, "anthropic", "deepseek-v4-pro") == base
+
+
+def test_strip_context_suffix() -> None:
+    from services.model_capabilities import strip_context_suffix
+
+    assert strip_context_suffix("deepseek-v4-pro[1m]") == "deepseek-v4-pro"
+    assert strip_context_suffix("claude-sonnet-4[200K]") == "claude-sonnet-4"
+    assert strip_context_suffix("deepseek-v4-pro") == "deepseek-v4-pro"
+    assert strip_context_suffix("  gpt-4o[1M] ") == "gpt-4o"
+
+
 def test_decimal_precision_no_float() -> None:
     """T5: cost 字段全部是 Decimal 类型，非 float；精度保持字符串构造值。"""
     from services.model_capabilities import ModelCapabilities
@@ -128,7 +192,6 @@ def test_default_capabilities_safe() -> None:
 def test_merge_ollama_writes_available_models() -> None:
     """T7: merge_ollama 将模型清单赋值到 credential.available_models。"""
     from common.encryption import encrypt_value
-
     from services.model_capabilities import ModelCapabilities
     from system.models import ProviderCredential
 
@@ -147,7 +210,6 @@ def test_merge_ollama_writes_available_models() -> None:
 def test_merge_ollama_idempotent() -> None:
     """T8: 连续调用同样 list，结果相同，不重复 append。"""
     from common.encryption import encrypt_value
-
     from services.model_capabilities import ModelCapabilities
     from system.models import ProviderCredential
 

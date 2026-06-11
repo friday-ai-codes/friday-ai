@@ -109,6 +109,35 @@ async def test_aset_claude_code_config_rejects_unbound_model_mapping() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
+async def test_aset_claude_code_config_accepts_1m_context_suffix() -> None:
+    """带 `[1m]` 上下文声明后缀的模型名应剥后缀比对凭证模型列表后通过校验。"""
+    from services.provider_config import aset_claude_code_config
+
+    cred = await sync_to_async(_make_credential)(
+        provider_type="anthropic",
+        default_model="deepseek-v4-pro",
+        available_models=[
+            {"id": "deepseek-v4-pro", "display_name": "DeepSeek V4 Pro"},
+            {"id": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash"},
+        ],
+    )
+
+    payload = await aset_claude_code_config(
+        credential_id=str(cred.id),
+        model_mapping={
+            "opus": "deepseek-v4-pro[1m]",
+            "sonnet": "deepseek-v4-pro[1m]",
+            "haiku": "deepseek-v4-flash",
+        },
+    )
+
+    # 存储保留带后缀原文（dispatch 直通容器 env，由 Claude Code 解析）
+    assert payload["model_mapping"]["opus"] == "deepseek-v4-pro[1m]"
+    assert payload["model_mapping"]["haiku"] == "deepseek-v4-flash"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
 async def test_aset_claude_code_config_clears_mapping_without_credential() -> None:
     """未选择 Claude Code 凭证时不保留手动模型映射。"""
     from services.provider_config import aset_claude_code_config
