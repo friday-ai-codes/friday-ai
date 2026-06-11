@@ -70,6 +70,11 @@ class SettingKeys:
     WEB_PUSH_VAPID_PRIVATE_KEY = "web_push_vapid_private_key"
     WEB_PUSH_VAPID_SUBJECT = "web_push_vapid_subject"
 
+    # Knowledge（delivery_knowledge collection）元信息：
+    # value 为 JSON：{model: str, dimension: int, schema_version: int}，
+    # 由 knowledge.collection.ensure_delivery_knowledge_collection 写入/校验。
+    KNOWLEDGE_COLLECTION_META = "knowledge_collection_meta"
+
     # RAG Enhancement Settings
     RERANKER_ENABLED = "reranker_enabled"
     RERANKER_API_URL = "reranker_api_url"
