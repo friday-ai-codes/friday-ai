@@ -192,6 +192,20 @@ declare module 'vue-router/auto-routes' {
       { token: ParamValue<false> },
       | never
     >,
+    '/knowledge/': RouteRecordInfo<
+      '/knowledge/',
+      '/knowledge',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/knowledge/entities/[id]': RouteRecordInfo<
+      '/knowledge/entities/[id]',
+      '/knowledge/entities/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     '/login': RouteRecordInfo<
       '/login',
       '/login',
@@ -563,6 +577,22 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | 'token'
+    }
+    'src/pages/knowledge/index.vue': {
+      routes:
+        | '/knowledge/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/knowledge/entities/[id].vue': {
+      routes:
+        | '/knowledge/entities/[id]'
+      views:
+        | never
+      pathParamNames:
+        | 'id'
     }
     'src/pages/login.vue': {
       routes:

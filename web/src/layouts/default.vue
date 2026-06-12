@@ -25,8 +25,9 @@ const pageTitle = computed(() => {
 
     <!-- 主内容区域 -->
     <Transition name="mode-content" mode="out-in">
-      <!-- Chat 路由 -->
-      <div v-if="route.path === '/chat'" key="content-chat" class="flex-1 flex flex-col min-w-0">
+      <!-- Chat 路由：锁定视口高度，页面内部各自滚动（会话列表 / 消息区），
+           顶部条与输入框固定不随页面滚动 -->
+      <div v-if="route.path === '/chat'" key="content-chat" class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <RouterView />
       </div>
 
