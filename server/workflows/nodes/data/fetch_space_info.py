@@ -264,7 +264,7 @@ class FetchSpaceInfoNode(BaseNode):
                     "git_url": repo.git_url,
                     "git_platform": repo.git_platform,
                     "default_branch": repo.default_branch,
-                    "description": repo.description or "",
+                    "description": repo.overview_text,
                     "index_status": getattr(repo, "index_status", None),
                 }
                 repositories.append(repo_info)

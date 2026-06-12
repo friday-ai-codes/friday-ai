@@ -46,7 +46,6 @@ def e2e_repository(db) -> Repository:
         git_url="https://gitlab.example.com/test/e2e-repo.git",
         git_platform="gitlab",
         default_branch="main",
-        description="E2E test repository",
     )
 
     # Add git credential

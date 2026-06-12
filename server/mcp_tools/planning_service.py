@@ -172,7 +172,7 @@ def build_repository_analysis(
         "repository": {
             "repo_id": str(repository.id),
             "name": repository.name,
-            "description": repository.description or "",
+            "description": repository.overview_text,
             "default_branch": repository.default_branch,
             "branch": branch,
             "index_status": repository.index_status,

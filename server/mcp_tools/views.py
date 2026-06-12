@@ -353,7 +353,7 @@ class RouteRepositoriesView(McpToolView):
             item = {
                 "repo_id": repo_id,
                 "name": repo.name,
-                "description": repo.description or "",
+                "description": repo.overview_text,
                 "score": float(candidate.score),
                 "reason": candidate.reasoning,
                 "confidence": candidate.confidence,

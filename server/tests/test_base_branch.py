@@ -167,6 +167,7 @@ class TestBranchListAPI:
     def test_test_connection_branches_sorted(
         self, mock_run, authenticated_client, repository_with_credential
     ) -> None:
+        """排序规则：HEAD（此处无）> main/master > 其余字典序。"""
         branches = ["zebra", "alpha", "main"]
         mock_run.return_value = _mock_subprocess_result(branches)
 
@@ -174,7 +175,36 @@ class TestBranchListAPI:
         response = authenticated_client.post(url)
 
         data = response.json()
-        assert data["branches"] == ["alpha", "main", "zebra"]
+        assert data["branches"] == ["main", "alpha", "zebra"]
+
+    @patch("subprocess.run")
+    def test_test_connection_head_branch_first(
+        self, mock_run, authenticated_client, repository_with_credential
+    ) -> None:
+        """symref 探测到的 HEAD 分支排第一且作为推荐分支，并缓存到模型。"""
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = (
+            "ref: refs/heads/develop\tHEAD\n"
+            "abc1234\tHEAD\n"
+            "abc1234\trefs/heads/develop\n"
+            "def5678\trefs/heads/main\n"
+            "aaa9999\trefs/heads/alpha\n"
+        )
+        result.stderr = ""
+        mock_run.return_value = result
+
+        url = reverse("repository-test-connection", args=[repository_with_credential.id])
+        response = authenticated_client.post(url)
+
+        data = response.json()
+        assert data["head_branch"] == "develop"
+        assert data["recommended_branch"] == "develop"
+        assert data["branches"][0] == "develop"
+        assert data["branches"][1] == "main"
+
+        repository_with_credential.refresh_from_db()
+        assert repository_with_credential.remote_head_branch == "develop"
 
 
 # ============================================================================
@@ -185,7 +215,9 @@ class TestBranchListAPI:
 @pytest.mark.django_db
 class TestBaseBranchValidation:
     @patch("repositories.views._validate_base_branch", new_callable=AsyncMock, return_value=False)
-    def test_invalid_branch_returns_400(self, mock_validate, authenticated_client) -> None:
+    def test_invalid_branch_returns_400(
+        self, mock_validate, authenticated_client, project_without_repo
+    ) -> None:
         url = reverse("repository-list")
         response = authenticated_client.post(
             url,
@@ -196,6 +228,7 @@ class TestBaseBranchValidation:
                 "default_branch": "main",
                 "base_branch": "nonexistent-branch",
                 "access_token": "ghp_test_token",
+                "space_ids": [str(project_without_repo.id)],
             },
             format="json",
         )
@@ -204,7 +237,9 @@ class TestBaseBranchValidation:
         assert "nonexistent-branch" in str(data["base_branch"])
 
     @patch("repositories.views._validate_base_branch", new_callable=AsyncMock, return_value=True)
-    def test_valid_branch_passes(self, mock_validate, authenticated_client) -> None:
+    def test_valid_branch_passes(
+        self, mock_validate, authenticated_client, project_without_repo
+    ) -> None:
         url = reverse("repository-list")
         response = authenticated_client.post(
             url,
@@ -215,6 +250,7 @@ class TestBaseBranchValidation:
                 "default_branch": "main",
                 "base_branch": "develop",
                 "access_token": "ghp_test_token",
+                "space_ids": [str(project_without_repo.id)],
             },
             format="json",
         )

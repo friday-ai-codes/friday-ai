@@ -43,7 +43,7 @@ def _iter_nodes(tree: list[dict[str, Any]]):
 
 
 def _repo_one_liner(repo: Any) -> str:
-    """仓库一句话摘要：优先树 overview，退 ai_summary 文本，再退 description。"""
+    """仓库一句话摘要：优先树 overview，退 ai_summary 文本。"""
     text = ""
     if repo.ai_summary:
         try:
@@ -51,8 +51,6 @@ def _repo_one_liner(repo: Any) -> str:
             text = str(obj.get("overview", ""))
         except (json.JSONDecodeError, TypeError):
             text = str(repo.ai_summary)
-    if not text:
-        text = str(repo.description or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:_SUMMARY_SNIPPET]
 
@@ -97,7 +95,7 @@ class CorpusTreeService:
         repos = [
             r
             async for r in Repository.objects.filter(is_deleted=False).only(
-                "id", "name", "description", "ai_summary", "facets"
+                "id", "name", "ai_summary", "facets"
             )[:MAX_REPOS_PER_LLM_BATCH]
         ]
         if not repos:

@@ -19,13 +19,11 @@ def mcp_client(make_access_token: Any) -> tuple[APIClient, str]:
 @pytest.fixture
 def indexed_repository(repository: Repository) -> Repository:
     repository.index_status = IndexStatus.INDEXED
-    repository.description = "用于 MCP 测试的仓库"
     repository.ai_summary = "测试仓库摘要"
     repository.last_indexed_commit_sha = "a" * 40
     repository.save(
         update_fields=[
             "index_status",
-            "description",
             "ai_summary",
             "last_indexed_commit_sha",
         ]
