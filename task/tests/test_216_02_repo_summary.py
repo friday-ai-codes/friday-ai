@@ -112,6 +112,95 @@ class TestExtractSummaryJson:
         assert _extract_summary_json("") == ""
 
 
+class TestRepoSummaryStructuredSubmit:
+    """repo_summary 不再用 plan 模式，通过 submit_summary 工具调用收集结构化结果。
+
+    plan 模式会让模型等待"用户批准计划"，无人值守容器里会以
+    "Please approve the plan ..." 文本收尾，拿不到 JSON。
+    """
+
+    def _make_runner(self, tmp_path: Path) -> ClaudeRunner:
+        config = TaskConfig(
+            task_id="test-rs-tool",
+            task_description="分析仓库并生成描述",
+            git_repo_url="https://test.com/repo.git",
+            task_mode="repo_summary",
+            session_dir=str(tmp_path / "sessions"),
+        )
+        return ClaudeRunner(config, tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_repo_summary_does_not_use_plan_mode(self, tmp_path):
+        """repo_summary 用 bypassPermissions + 只读白名单 + 禁用写工具，不再用 plan。"""
+        runner = self._make_runner(tmp_path)
+        runner._execute_claude = AsyncMock(
+            return_value={"success": True, "output": '{"overview": "x"}'}
+        )
+
+        await runner.run_repo_summary_mode()
+
+        kwargs = runner._execute_claude.call_args.kwargs
+        assert kwargs["permission_mode"] == "bypassPermissions"
+        for tool in ("Write", "Edit", "MultiEdit"):
+            assert tool in kwargs["disallowed_tools"]
+
+        submit_tool = "mcp__repo-summary__submit_summary"
+        assert submit_tool in kwargs["extra_allowed_tools"]
+        assert "Write" not in kwargs["extra_allowed_tools"]
+        assert "repo-summary" in kwargs["extra_mcp_servers"]
+        # prompt 末尾追加了工具提交指令
+        assert submit_tool in kwargs["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_tool_captured_summary_wins_even_on_empty_text(self, tmp_path):
+        """模型只调工具、无文本输出时，工具捕获的结构化结果覆盖 empty response 误判。"""
+        runner = self._make_runner(tmp_path)
+
+        async def fake_execute(**kwargs):
+            # 模拟 SDK 运行期间模型调用了 submit_summary 工具
+            await runner._handle_submit_summary(
+                {"overview": "测试项目", "tech_stack": ["Vue", "TypeScript"]}
+            )
+            return {"success": False, "error": "Claude SDK returned empty response"}
+
+        runner._execute_claude = AsyncMock(side_effect=fake_execute)
+        result = await runner.run_repo_summary_mode()
+
+        assert result["success"] is True
+        assert "error" not in result
+        assert result["structured_summary"] == {
+            "overview": "测试项目",
+            "tech_stack": ["Vue", "TypeScript"],
+        }
+        import json
+
+        assert json.loads(result["output"])["overview"] == "测试项目"
+
+    @pytest.mark.asyncio
+    async def test_handle_submit_summary_captures_args(self, tmp_path):
+        """submit_summary handler 捕获参数并返回完成提示。"""
+        runner = self._make_runner(tmp_path)
+
+        resp = await runner._handle_submit_summary({"overview": "x", "tech_stack": []})
+
+        assert runner._captured_summary == {"overview": "x", "tech_stack": []}
+        assert resp["content"][0]["type"] == "text"
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_text_output_when_tool_not_called(self, tmp_path):
+        """模型没调工具时降级走文本输出（由 runner 侧 _extract_summary_json 兜底）。"""
+        runner = self._make_runner(tmp_path)
+        runner._execute_claude = AsyncMock(
+            return_value={"success": True, "output": '{"overview": "纯文本"}'}
+        )
+
+        result = await runner.run_repo_summary_mode()
+
+        assert result["success"] is True
+        assert "structured_summary" not in result
+        assert result["output"] == '{"overview": "纯文本"}'
+
+
 class TestGitWrapperRepoSummary:
     """Test 2: git-wrapper.sh 在 FRIDAY_TASK_MODE=repo_summary 时别名为 explore。"""
 

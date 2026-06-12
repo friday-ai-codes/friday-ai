@@ -13,16 +13,18 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import structlog
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
+    SdkMcpTool,
     SystemMessage,
     TextBlock,
     ToolUseBlock,
+    create_sdk_mcp_server,
     query,
 )
 
@@ -57,6 +59,69 @@ _BUILTIN_CODING_TOOLS = [
     "WebSearch",
 ]
 
+# repo_summary 模式的只读分析工具白名单。不含 Write/Edit（无需改文件）、
+# 不含 WebFetch/WebSearch（prompt 约束禁止网络请求）。Bash 用于 ls 等只读检查，
+# git 写操作已被 git-wrapper.sh 在 shell 层拦截。
+_READONLY_ANALYSIS_TOOLS = [
+    "Bash",
+    "Read",
+    "Glob",
+    "Grep",
+    "LS",
+    "TodoWrite",
+]
+
+# repo_summary 结构化提交工具：模型通过 tool call 的参数提交结果，
+# 参数由 SDK 按 input_schema 校验，天然是合法 JSON——不再依赖模型在
+# 文本里输出可解析的 JSON（prompt 约束不可靠）。
+REPO_SUMMARY_MCP_SERVER_NAME = "repo-summary"
+REPO_SUMMARY_TOOL_NAME = "submit_summary"
+
+_REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "overview": {"type": "string", "description": "项目总体描述，用中文撰写"},
+        "tech_stack": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "主要技术栈列表，保留英文技术名称",
+        },
+        "modules": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["name", "description"],
+            },
+            "description": "主要模块列表（不超过 10 个）",
+        },
+        "entry_points": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "主要入口文件路径",
+        },
+        "build_commands": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "构建命令",
+        },
+        "testing_commands": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "测试命令",
+        },
+        "conventions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "代码规范和约定",
+        },
+    },
+    "required": ["overview", "tech_stack"],
+}
+
 _CLAUDE_TRANSIENT_ERROR_MARKERS = (
     "server had an error while processing your request",
     "overloaded",
@@ -84,6 +149,8 @@ class ClaudeRunner:
         self.workspace = workspace
         self.session_file = Path(config.session_dir) / f"{config.task_id}.json"
         self.mapping_file = Path(config.session_dir) / "mapping.json"
+        # repo_summary 模式下由 submit_summary 工具 handler 填充的结构化结果
+        self._captured_summary: dict[str, Any] | None = None
 
     async def run_plan_mode(self) -> dict:
         """Run Claude Agent in plan mode to generate implementation plan.
@@ -220,21 +287,80 @@ Implement the task as described. Make necessary code changes.
 
         return base_prompt
 
-    async def run_repo_summary_mode(self) -> dict:
-        """Run Claude Agent in repo summary mode — plan permission, max 15 turns.
+    async def _handle_submit_summary(self, args: dict[str, Any]) -> dict[str, Any]:
+        """repo_summary 提交工具 handler — 捕获结构化结果到实例属性。"""
+        self._captured_summary = dict(args)
+        return {
+            "content": [
+                {"type": "text", "text": "仓库描述已提交，任务完成，请直接结束，不要再输出其它内容。"}
+            ]
+        }
 
-        以 plan 权限只读扫描仓库，生成结构化 JSON 描述。
+    async def run_repo_summary_mode(self) -> dict:
+        """Run Claude Agent in repo summary mode — 只读工具白名单 + 结构化提交工具。
+
+        不再使用 permission_mode="plan"：plan 模式会让模型在结尾等待
+        "用户批准计划"（无人值守容器里没人批准），以 "Please approve the
+        plan ..." 之类的文本收尾，根本拿不到 JSON。改为 bypassPermissions +
+        只读工具白名单（无 Write/Edit），并通过进程内 MCP 工具
+        submit_summary 捕获结构化结果——工具参数由 SDK 按 schema 校验，
+        不再依赖模型在文本里输出合法 JSON。
         """
         log = logger.bind(task_id=self.config.task_id, mode="repo_summary")
         log.info("Starting repo summary mode execution with claude-agent-sdk")
 
-        prompt = self.config.task_description  # dispatch 时已渲染好的 prompt
+        self._captured_summary = None
+
+        summary_server = create_sdk_mcp_server(
+            name=REPO_SUMMARY_MCP_SERVER_NAME,
+            tools=[
+                SdkMcpTool(
+                    name=REPO_SUMMARY_TOOL_NAME,
+                    description=(
+                        "提交最终的仓库结构化描述。分析完成后必须调用本工具提交结果，"
+                        "调用成功即代表任务完成。"
+                    ),
+                    input_schema=_REPO_SUMMARY_INPUT_SCHEMA,
+                    handler=self._handle_submit_summary,
+                )
+            ],
+        )
+
+        submit_tool = f"mcp__{REPO_SUMMARY_MCP_SERVER_NAME}__{REPO_SUMMARY_TOOL_NAME}"
+        # dispatch 时已渲染好的分析 prompt + 任务侧强制追加的提交方式说明。
+        # 追加段优先级最高，覆盖 DB prompt 里"输出严格 JSON 文本"的旧要求。
+        prompt = (
+            f"{self.config.task_description}\n\n"
+            "## 结果提交方式（最高优先级，覆盖上文的任何输出格式要求）\n\n"
+            f"分析完成后，必须调用 `{submit_tool}` 工具提交结构化结果，"
+            "工具参数即为最终的仓库描述字段。\n"
+            "- 不要把 JSON 写在普通文本回复里\n"
+            "- 不需要任何人批准你的计划或结果，调用工具成功后直接结束任务"
+        )
 
         result = await self._execute_claude(
             prompt=prompt,
-            permission_mode="plan",
+            permission_mode="bypassPermissions",
             max_turns=15,  # 覆盖默认 50，控制成本
+            extra_mcp_servers={REPO_SUMMARY_MCP_SERVER_NAME: summary_server},
+            extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
+            disallowed_tools=["Write", "Edit", "MultiEdit", "NotebookEdit"],
         )
+
+        # 只要工具捕获到结构化结果，就以它为准（即使模型最后没有任何文本输出，
+        # _execute_claude 会因 empty response 误判失败——这里覆盖回 success）。
+        if self._captured_summary:
+            result["structured_summary"] = self._captured_summary
+            result["output"] = json.dumps(
+                self._captured_summary, ensure_ascii=False, indent=2
+            )
+            result["success"] = True
+            result.pop("error", None)
+        elif result.get("success"):
+            log.warning(
+                "repo_summary_tool_not_called",
+                output_preview=str(result.get("output", ""))[:200],
+            )
 
         log.info("Repo summary mode completed", success=result.get("success", False))
         return result
@@ -244,8 +370,19 @@ Implement the task as described. Make necessary code changes.
         prompt: str,
         permission_mode: PermissionModeType = "bypassPermissions",
         max_turns: int | None = None,
+        extra_mcp_servers: dict[str, Any] | None = None,
+        extra_allowed_tools: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> dict:
-        """Execute Claude Agent SDK with the given prompt."""
+        """Execute Claude Agent SDK with the given prompt.
+
+        Args:
+            extra_mcp_servers: 额外挂载的进程内 SDK MCP server（如 repo_summary
+                的结构化提交工具），与 RemoteTool MCP server 合并。
+            extra_allowed_tools: 追加到 allowed_tools 白名单的工具名。注意
+                allowed_tools 是排他白名单——一旦非空，未列入的工具会被限制。
+            disallowed_tools: 显式禁用的工具名（优先级高于 allowed_tools）。
+        """
         log = logger.bind(task_id=self.config.task_id)
 
         try:
@@ -321,14 +458,26 @@ Implement the task as described. Make necessary code changes.
                 env=env_vars,
                 extra_args={"debug-to-stderr": None},
             )
+            mcp_servers: dict[str, Any] = {}
+            allowed_tools: list[str] = []
             if mcp_server is not None:
-                options_kwargs["mcp_servers"] = {REMOTE_MCP_SERVER_NAME: mcp_server}
+                mcp_servers[REMOTE_MCP_SERVER_NAME] = mcp_server
                 # allowed_tools 是排他白名单：必须把内建编码工具与远程工具一并列入，
                 # 否则挂载远程工具会连带禁掉 Bash/Edit/Write，破坏 execute 编码（WR-02）。
-                options_kwargs["allowed_tools"] = [
+                allowed_tools = [
                     *_BUILTIN_CODING_TOOLS,
                     *remote_allowed_tools(self.config.remote_tools),
                 ]
+            if extra_mcp_servers:
+                mcp_servers.update(extra_mcp_servers)
+            if extra_allowed_tools:
+                allowed_tools.extend(t for t in extra_allowed_tools if t not in allowed_tools)
+            if mcp_servers:
+                options_kwargs["mcp_servers"] = mcp_servers
+            if allowed_tools:
+                options_kwargs["allowed_tools"] = allowed_tools
+            if disallowed_tools:
+                options_kwargs["disallowed_tools"] = disallowed_tools
             options = ClaudeAgentOptions(**options_kwargs)
 
             log.info(
