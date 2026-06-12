@@ -847,7 +847,7 @@ function toggleNotifications() {
                       {{ chatStore.forceDeepAnalysis ? '已开启：' : '开启后' }}由 Runner 调度 Claude Code 编码代理深入探索代码库，结果更全面但耗时更长。
                     </p>
                     <p class="mt-1.5 text-xs font-normal leading-relaxed opacity-70">
-                      提示：安装 friday-codebase-agent Skill 后，也可以通过 MCP 在 Cursor / Claude Code 中直接使用 Friday 的代码索引与分析能力。
+                      提示：安装 Friday Skills（npx @friday-ai-codes/skills）后，也可以通过 MCP 在 Cursor / Claude Code 中直接使用 Friday 的代码索引与分析能力。
                     </p>
                   </TooltipContent>
                 </Tooltip>

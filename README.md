@@ -125,21 +125,21 @@ Friday 当前对飞书的集成已经很深，不只是发通知。
 
 三步接入：
 
-1. 安装 Skill（自动适配 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 5 个 skill）：
+1. 创建访问令牌：登录 Friday Web 控制台 → 个人资料 → 访问令牌 → 创建（明文只显示一次）。
+
+2. 配置连接（交互式中文向导：凭证问答 → 注册 MCP server → 连通性测速 → 能力演示）：
+
+   ```bash
+   npx -y @friday-ai-codes/mcp setup
+   ```
+
+3. 安装 Skill（中文向导，自动嗅探 Claude Code、Cursor、Codex 等宿主，包含从需求路由到 MR 创建的 4 个 skill）：
 
    ```bash
    npx @friday-ai-codes/skills
    ```
 
-2. 创建访问令牌：登录 Friday Web 控制台 → 个人资料 → 访问令牌 → 创建（明文只显示一次）。
-
-3. 配置连接（写入 `~/.friday/config.json`，并把 `@friday-ai-codes/mcp` 注册为 MCP server）：
-
-   ```bash
-   npx -y @friday-ai-codes/mcp init --base-url https://你的-friday-地址 --token <你的访问令牌>
-   ```
-
-   也可以装完 Skill 后直接在 IDE 里说“配置 Friday”，agent 会按 Skill 指引向你索要地址和令牌并自动完成配置与 MCP 注册。
+   交互模式下装完技能会自动检测连接配置，没配好会直接接力拉起第 2 步的向导——先跑哪步都能闭环。
 
 之后 AI 助手就能用同一套索引做仓库发现、Graph RAG 分析、代码计划、计划修订、远程执行、分支总结和 MR 创建。这部分适合两类人：一类是在 Friday Web 里点流程的人，另一类是在本地 IDE 里写代码的人。前者拿到可视化工作流，后者拿到可调用的代码智能工具；底层证据和审计轨迹是同一套。详见 [Friday Codebase Agent 指南](docs/guide/friday-codebase-agent.md)。
 
@@ -220,11 +220,14 @@ Friday 会识别模型输入模态。当前 Web Chat 已支持图片上传链路
 
 8. 可选：在 IDE 里使用 Friday Skill：
 
+   先在个人资料页创建访问令牌，然后两条命令接入（中文交互式向导）：
+
    ```bash
-   npx @friday-ai-codes/skills
+   npx -y @friday-ai-codes/mcp setup    # 配置连接 + 注册 MCP + 测速
+   npx @friday-ai-codes/skills          # 安装 4 个 skill 到本机 agent
    ```
 
-   然后在个人资料页创建访问令牌，按首页提示完成 `npx -y @friday-ai-codes/mcp init` 配置，Cursor / Claude Code / Codex 就能直接调用 Friday 的代码智能与执行工具。
+   Cursor / Claude Code / Codex 就能直接调用 Friday 的代码智能与执行工具。
 
 ## 文档
 
