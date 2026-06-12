@@ -18,13 +18,24 @@ def _split_ids(raw: str | None) -> list[str] | None:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
+def _parse_int_param(raw: str | None, default: int, name: str) -> int | Response:
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return Response({"detail": f"{name} must be integer"}, status=400)
+
+
 @extend_schema(tags=["knowledge-retrieval-test"])
 class KnowledgeSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def get(self, request):
         q = request.query_params.get("q", "")
-        top_k = int(request.query_params.get("top_k", 10))
+        top_k = _parse_int_param(request.query_params.get("top_k"), 10, "top_k")
+        if isinstance(top_k, Response):
+            return top_k
         project_ids = _split_ids(request.query_params.get("project_ids"))
         repository_ids = _split_ids(request.query_params.get("repository_ids"))
         include_superseded = request.query_params.get("include_superseded", "").lower() == "true"
@@ -71,7 +82,9 @@ class KnowledgeRelatedView(APIView):
 
     async def get(self, request, entity_id):
         direction = request.query_params.get("direction", "both")
-        max_hops = int(request.query_params.get("max_hops", 2))
+        max_hops = _parse_int_param(request.query_params.get("max_hops"), 2, "max_hops")
+        if isinstance(max_hops, Response):
+            return max_hops
         related = await _service.get_related(
             entity_id, user=request.user, direction=direction, max_hops=max_hops
         )
