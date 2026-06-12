@@ -190,6 +190,8 @@ export const useWorkflowsStore = defineStore('workflows', () => {
 
       return {
         id: node.id,
+        // VAR-01 前端半边：客户端权威 short_id 上送，服务端校验唯一性后落库
+        short_id: node.shortId,
         node_type: node.nodeType,
         name: node.name || 'Untitled',
         description: node.description || '',
