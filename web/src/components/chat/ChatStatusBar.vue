@@ -9,6 +9,7 @@ const phaseDisplay: Record<string, { text: string, icon: string }> = {
   planning: { text: '正在规划...', icon: 'icon-[lucide--brain]' },
   executing: { text: '正在执行...', icon: 'icon-[lucide--zap]' },
   waiting: { text: '正在等待深度分析结果...', icon: 'icon-[lucide--loader]' },
+  waiting_clarification: { text: '等待你在上方卡片中确认...', icon: 'icon-[lucide--help-circle]' },
   finalizing: { text: '正在整理回答...', icon: 'icon-[lucide--file-text]' },
 }
 
@@ -17,7 +18,8 @@ const display = computed(() => {
     return { text: '正在中断...', icon: 'icon-[lucide--loader]' }
   if (!props.phase)
     return null
-  return phaseDisplay[props.phase] || { text: `${props.phase}...`, icon: 'icon-[lucide--activity]' }
+  // 未知 phase 兜底用中文通用文案，不直接暴露内部英文 phase 名
+  return phaseDisplay[props.phase] || { text: '正在处理...', icon: 'icon-[lucide--activity]' }
 })
 
 const showProgress = computed(() =>
