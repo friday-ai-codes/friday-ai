@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
 from knowledge.access_scope import resolve_allowed_project_ids
+from knowledge.graph_store import require_aware
 from knowledge.metadata_hydrate import hydrate_entity_metadata
 from knowledge.models import EdgeRelation, KnowledgeEntity, KnowledgeEntityVersion, KnowledgeEdge
 from knowledge.retrieval_types import TimelineNodeDTO
@@ -22,23 +24,45 @@ async def _assert_entity_access(entity: KnowledgeEntity, user) -> bool:
     return str(entity.project_id) in allowed
 
 
-def _version_queryset(entity_id: uuid.UUID, include_superseded: bool):
+def _version_queryset(
+    entity_id: uuid.UUID,
+    include_superseded: bool,
+    as_of: datetime | None = None,
+):
     qs = KnowledgeEntityVersion.objects.filter(entity_id=entity_id)
-    if not include_superseded:
+    if as_of is not None:
+        require_aware(as_of, "as_of")
+        qs = qs.filter(
+            Q(valid_at__lte=as_of) & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
+        )
+    elif not include_superseded:
         qs = qs.filter(Q(is_latest=True) | Q(invalid_at__isnull=True))
     return qs.order_by("version")
 
 
-async def _code_change_keys_for_version(entity_id: uuid.UUID) -> list[tuple[uuid.UUID, int]]:
+async def _code_change_keys_for_version(
+    entity_id: uuid.UUID,
+    *,
+    as_of: datetime | None = None,
+) -> list[tuple[uuid.UUID, int]]:
     """经 IMPLEMENTED_BY 出边反查 code_change entity。"""
     keys: list[tuple[uuid.UUID, int]] = []
     qs = KnowledgeEdge.objects.filter(
         source_entity_id=entity_id,
         relation=EdgeRelation.IMPLEMENTED_BY,
         target_entity_id__isnull=False,
-        invalid_at__isnull=True,
-        expired_at__isnull=True,
-    ).select_related("target_entity").order_by("valid_at")
+    )
+    if as_of is None:
+        qs = qs.filter(invalid_at__isnull=True, expired_at__isnull=True)
+    else:
+        require_aware(as_of, "as_of")
+        qs = qs.filter(
+            Q(valid_at__lte=as_of)
+            & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
+            & Q(created_at__lte=as_of)
+            & (Q(expired_at__isnull=True) | Q(expired_at__gt=as_of))
+        )
+    qs = qs.select_related("target_entity").order_by("valid_at")
     async for edge in qs:
         target = edge.target_entity
         if target is None:
@@ -52,6 +76,7 @@ async def build_entity_timeline(
     *,
     user,
     include_superseded: bool = False,
+    as_of: datetime | None = None,
 ) -> list[TimelineNodeDTO]:
     """按 version 升序返回迭代轨迹；挂接 code_change 按 event_time 排序。"""
     try:
@@ -62,8 +87,10 @@ async def build_entity_timeline(
     if not await _assert_entity_access(entity, user):
         return []
 
-    versions = await sync_to_async(list)(_version_queryset(entity_id, include_superseded))
-    code_change_keys = await _code_change_keys_for_version(entity_id)
+    versions = await sync_to_async(list)(
+        _version_queryset(entity_id, include_superseded, as_of=as_of)
+    )
+    code_change_keys = await _code_change_keys_for_version(entity_id, as_of=as_of)
 
     nodes: list[TimelineNodeDTO] = []
     for ver in versions:

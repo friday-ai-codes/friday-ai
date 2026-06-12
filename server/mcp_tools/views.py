@@ -55,6 +55,14 @@ from .planning_service import (
     build_repository_analysis,
     improve_coding_plan,
 )
+from knowledge.exposure import (
+    parse_as_of,
+    serialize_related,
+    serialize_search_results,
+    serialize_timeline,
+)
+from knowledge.retrieval import DeliveryKnowledgeSearchService
+
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
     CreateFeishuTechnicalPlanRequestSerializer,
@@ -66,12 +74,15 @@ from .serializers import (
     ExecuteWorkItemRepoTasksRequestSerializer,
     FindRelatedChunksRequestSerializer,
     GetCodingExecutionRequestSerializer,
+    GetEntityTimelineRequestSerializer,
     GetFeishuWorkItemContextRequestSerializer,
+    GetRelatedEntitiesRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
     RouteRepositoriesRequestSerializer,
+    SearchDeliveryKnowledgeRequestSerializer,
     SearchLearningCasesRequestSerializer,
     SearchRagChunksRequestSerializer,
     SummarizeBranchRequestSerializer,
@@ -91,6 +102,8 @@ from .work_item_execution_service import (
 )
 
 logger = structlog.get_logger(__name__)
+
+_delivery_knowledge_service = DeliveryKnowledgeSearchService()
 
 
 def _jsonable(value: Any) -> Any:
@@ -1810,5 +1823,187 @@ class CreateMergeRequestView(SummarizeBranchView):
             started_at=started_at,
             call_status="ok" if mr.get("success") else "failed",
             error=str(mr.get("error") or ""),
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class SearchDeliveryKnowledgeView(McpToolView):
+    tool_name = "search_delivery_knowledge"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(SearchDeliveryKnowledgeRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        try:
+            as_of = parse_as_of(input_data.get("as_of"))
+        except ValueError as exc:
+            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+        started_at = time.perf_counter()
+
+        results = await _delivery_knowledge_service.search_similar(
+            str(input_data["query"]),
+            user=request.user,
+            top_k=int(input_data.get("top_k") or 5),
+            project_ids=[str(p) for p in input_data.get("project_ids") or []] or None,
+            repository_ids=[str(r) for r in input_data.get("repository_ids") or []] or None,
+            entity_kinds=[str(k) for k in input_data.get("entity_kinds") or []] or None,
+            as_of=as_of,
+            include_superseded=bool(input_data.get("include_superseded")),
+        )
+        serialized = serialize_search_results(results)
+        output_data = {
+            "query": str(input_data["query"]),
+            "results": serialized,
+            "total": len(serialized),
+            "as_of": as_of.isoformat() if as_of else None,
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="delivery_knowledge_searched",
+            payload={"query": output_data["query"], "result_count": len(serialized)},
+        )
+        traces = [
+            (
+                RetrievalTrace.Kind.FILE,
+                {
+                    "source": "delivery_knowledge",
+                    "entity_id": item.get("entity_id", ""),
+                    "score": item.get("score", 0),
+                    "title": item.get("title", ""),
+                },
+            )
+            for item in serialized
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GetEntityTimelineView(McpToolView):
+    tool_name = "get_entity_timeline"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetEntityTimelineRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        try:
+            as_of = parse_as_of(input_data.get("as_of"))
+        except ValueError as exc:
+            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+        started_at = time.perf_counter()
+
+        entity_id = input_data["entity_id"]
+        nodes = await _delivery_knowledge_service.get_timeline(
+            entity_id,
+            user=request.user,
+            include_superseded=bool(input_data.get("include_superseded")),
+            as_of=as_of,
+        )
+        serialized = serialize_timeline(nodes)
+        output_data = {
+            "entity_id": str(entity_id),
+            "nodes": serialized,
+            "total": len(serialized),
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="entity_timeline_fetched",
+            payload={"entity_id": str(entity_id), "node_count": len(serialized)},
+        )
+        traces = [
+            (
+                RetrievalTrace.Kind.FILE,
+                {
+                    "source": "delivery_timeline",
+                    "entity_id": str(entity_id),
+                    "version": item.get("version"),
+                },
+            )
+            for item in serialized
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GetRelatedEntitiesView(McpToolView):
+    tool_name = "get_related_entities"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GetRelatedEntitiesRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        try:
+            as_of = parse_as_of(input_data.get("as_of"))
+        except ValueError as exc:
+            return error_response("invalid_params", str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+        started_at = time.perf_counter()
+
+        entity_id = input_data["entity_id"]
+        related = await _delivery_knowledge_service.get_related(
+            entity_id,
+            user=request.user,
+            direction=str(input_data.get("direction") or "both"),
+            max_hops=int(input_data.get("max_hops") or 2),
+            as_of=as_of,
+        )
+        serialized = serialize_related(related)
+        output_data = {
+            "entity_id": str(entity_id),
+            "related": serialized,
+            "total": len(serialized),
+            "as_of": as_of.isoformat() if as_of else None,
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="related_entities_fetched",
+            payload={"entity_id": str(entity_id), "related_count": len(serialized)},
+        )
+        traces = [
+            (
+                RetrievalTrace.Kind.EDGE,
+                {
+                    "source": "delivery_related",
+                    "entity_id": item.get("entity_id", ""),
+                    "relation": item.get("relation", ""),
+                    "depth": item.get("depth", 0),
+                },
+            )
+            for item in serialized
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
