@@ -19,7 +19,7 @@ Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skill
 | `friday-feishu` | 飞书工作项闭环：读上下文 → 技术方案 → 多仓执行 → 结果回写，可分阶段也可一条龙 |
 | `friday-memory` | Friday 的记忆层：记录 / 检索 LearningCase 经验 + 交付知识检索（相似需求、版本时间线、关联链、`as_of` 历史时点） |
 
-更细粒度的能力（22 个工具）全部由 [MCP Server](/integrations/mcp) 提供，skill 负责编排与护栏。仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
+更细粒度的能力（23 个工具）全部由 [MCP Server](/integrations/mcp) 提供，skill 负责编排与护栏。仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
 
 ## 安装顺序
 
@@ -90,5 +90,5 @@ npx skills add friday-ai-codes/skills --skill '*' -g -y
 
 ## 相关文档
 
-- [MCP Server](/integrations/mcp) —— 22 个工具的注册与使用
+- [MCP Server](/integrations/mcp) —— 23 个工具的注册与使用
 - [Friday Codebase Agent](/guide/friday-codebase-agent) —— workflow、故障恢复与审计
