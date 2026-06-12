@@ -110,9 +110,19 @@ class DeliveryKnowledgeSearchService:
 
         return await grade_search_results(query, results)
 
-    async def get_timeline(self, entity_id: uuid.UUID, *, user, include_superseded: bool = False):
+    async def get_timeline(
+        self,
+        entity_id: uuid.UUID,
+        *,
+        user,
+        include_superseded: bool = False,
+        as_of: datetime | None = None,
+    ):
         return await build_entity_timeline(
-            entity_id, user=user, include_superseded=include_superseded
+            entity_id,
+            user=user,
+            include_superseded=include_superseded,
+            as_of=as_of,
         )
 
     async def get_related(

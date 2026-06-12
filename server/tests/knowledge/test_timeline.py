@@ -58,3 +58,34 @@ async def test_timeline_unauthorized_user(entity_factory, version_factory, proje
     entity = await sync_to_async(entity_factory)(project=project)
     await sync_to_async(version_factory)(entity)
     assert await build_entity_timeline(entity.id, user=other_user) == []
+
+
+async def test_timeline_as_of_excludes_future_code_change(
+    entity_factory, version_factory, edge_factory, project, user, project_memberships
+):
+    """as_of 在边 valid_at 之前 → timeline 不含该 code_change（ENH-04）。"""
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    version_valid = timezone.now() - timezone.timedelta(days=3)
+    await sync_to_async(version_factory)(plan, version=1, valid_at=version_valid, event_time=version_valid)
+    future_valid = timezone.now() + timezone.timedelta(days=7)
+    await sync_to_async(edge_factory)(
+        plan, code, relation=EdgeRelation.IMPLEMENTED_BY, valid_at=future_valid
+    )
+    past_as_of = timezone.now() - timezone.timedelta(days=1)
+    nodes = await build_entity_timeline(plan.id, user=user, as_of=past_as_of)
+    assert len(nodes) == 1
+    assert len(nodes[0].code_changes) == 0
+
+
+async def test_timeline_as_of_passthrough_service(
+    entity_factory, version_factory, project, user, project_memberships
+):
+    from knowledge.retrieval import DeliveryKnowledgeSearchService
+
+    entity = await sync_to_async(entity_factory)(project=project)
+    await sync_to_async(version_factory)(entity, version=1)
+    as_of = timezone.now()
+    svc = DeliveryKnowledgeSearchService()
+    nodes = await svc.get_timeline(entity.id, user=user, as_of=as_of)
+    assert isinstance(nodes, list)

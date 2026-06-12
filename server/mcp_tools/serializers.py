@@ -306,6 +306,49 @@ class CreateLearningCaseRequestSerializer(serializers.Serializer):
     )
 
 
+class SearchDeliveryKnowledgeRequestSerializer(serializers.Serializer):
+    query = serializers.CharField(required=True, max_length=4000)
+    top_k = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
+    project_ids = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=50,
+    )
+    repository_ids = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=50,
+    )
+    entity_kinds = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=20,
+    )
+    as_of = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    include_superseded = serializers.BooleanField(required=False, default=False)
+
+
+class GetEntityTimelineRequestSerializer(serializers.Serializer):
+    entity_id = serializers.UUIDField(required=True)
+    include_superseded = serializers.BooleanField(required=False, default=False)
+    as_of = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+
+
+class GetRelatedEntitiesRequestSerializer(serializers.Serializer):
+    DIRECTION_CHOICES = ("both", "out", "in")
+
+    entity_id = serializers.UUIDField(required=True)
+    direction = serializers.ChoiceField(choices=DIRECTION_CHOICES, required=False, default="both")
+    max_hops = serializers.IntegerField(required=False, default=2, min_value=1, max_value=3)
+    as_of = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+
+
 class SearchLearningCasesRequestSerializer(serializers.Serializer):
     query = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
     work_item_type = serializers.CharField(required=False, allow_blank=True, default="", max_length=80)
@@ -409,5 +452,25 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "search_learning_cases": {
         "request": ["query", "work_item_type", "repo_hints", "file_hints", "symbol_hints", "limit"],
         "response": ["query", "results", "total", "run_id"],
+    },
+    "search_delivery_knowledge": {
+        "request": [
+            "query",
+            "top_k",
+            "project_ids",
+            "repository_ids",
+            "entity_kinds",
+            "as_of",
+            "include_superseded",
+        ],
+        "response": ["query", "results", "total", "as_of", "run_id"],
+    },
+    "get_entity_timeline": {
+        "request": ["entity_id", "include_superseded", "as_of"],
+        "response": ["entity_id", "nodes", "total", "run_id"],
+    },
+    "get_related_entities": {
+        "request": ["entity_id", "direction", "max_hops", "as_of"],
+        "response": ["entity_id", "related", "total", "as_of", "run_id"],
     },
 }

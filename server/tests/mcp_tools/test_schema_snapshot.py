@@ -81,4 +81,24 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": ["query", "work_item_type", "repo_hints", "file_hints", "symbol_hints", "limit"],
             "response": ["query", "results", "total", "run_id"],
         },
+        "search_delivery_knowledge": {
+            "request": [
+                "query",
+                "top_k",
+                "project_ids",
+                "repository_ids",
+                "entity_kinds",
+                "as_of",
+                "include_superseded",
+            ],
+            "response": ["query", "results", "total", "as_of", "run_id"],
+        },
+        "get_entity_timeline": {
+            "request": ["entity_id", "include_superseded", "as_of"],
+            "response": ["entity_id", "nodes", "total", "run_id"],
+        },
+        "get_related_entities": {
+            "request": ["entity_id", "direction", "max_hops", "as_of"],
+            "response": ["entity_id", "related", "total", "as_of", "run_id"],
+        },
     }
