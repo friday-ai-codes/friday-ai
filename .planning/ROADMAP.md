@@ -41,10 +41,10 @@
 **Plans**: 4 plans
 
 Plans:
-- [ ] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + 专项单测（VAR-02, VAR-04）
-- [ ] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写（VAR-01）
-- [ ] 17-03-PLAN.md — scheduler 结构化 error_message 落盘 + 节点调用面审计 + 集成回归（VAR-02）
-- [ ] 17-04-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
+- [ ] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + scheduler 结构化 error_message + 专项单测（VAR-02, VAR-04）
+- [ ] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写 + 不变式测试（VAR-01）
+- [ ] 17-03-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
+- [ ] 17-04-PLAN.md — 调用面渲染时机/吞错逐节点核查 + 后端/前端全链路回归（wave 2，VAR-01..04）
 **UI hint**: yes
 
 ### Phase 18: 执行引擎状态机修复
