@@ -103,6 +103,8 @@ def build_knowledge_points(
             "text": chunk.text,
             "embedding_model": embedding_model,
             "version_id": str(version.id),
+            # PageIndex 章节路径回溯用：命中 chunk → toc_tree.chunk_indexes 反查
+            "chunk_index": chunk.index,
         }
         missing = _SCHEMA_KEYS - payload.keys()
         if missing:  # 写入处契约自检：缺权限/定位字段即检索期 IDOR 温床（P6）

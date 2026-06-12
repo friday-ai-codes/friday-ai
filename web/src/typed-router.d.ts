@@ -276,6 +276,13 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
+    '/repositories/tree': RouteRecordInfo<
+      '/repositories/tree',
+      '/repositories/tree',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/runners/': RouteRecordInfo<
       '/runners/',
       '/runners',
@@ -669,6 +676,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/repositories/[id]/credential.vue': {
       routes:
         | '/repositories/[id]/credential'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/repositories/tree.vue': {
+      routes:
+        | '/repositories/tree'
       views:
         | never
       pathParamNames:

@@ -23,6 +23,9 @@ export * from './providerCredentials'
 
 export * from './repositories'
 
+export { default as repoTreeApi } from './repoTree'
+export * from './repoTree'
+
 export { default as runnersApi } from './runners'
 export * from './runners'
 

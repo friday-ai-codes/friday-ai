@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 
 import structlog
@@ -23,10 +22,33 @@ logger = structlog.get_logger(__name__)
 
 # fallback prompt — 当 DB 中 prompt 种子不可用时降级使用
 REPO_SUMMARY_FALLBACK = """\
-你是一个仓库分析助手。阅读仓库源码，输出结构化 JSON 描述。
-只读操作，禁止写文件/git push/网络请求。输出不超过 2000 字符。
-输出 JSON: {overview, tech_stack, modules, entry_points, build_commands, testing_commands, conventions}
+你是一个仓库分析助手。阅读仓库源码，生成层级能力树描述。
+只读操作，禁止写文件/git push/网络请求。
+tree 为扁平节点列表（node_id/parent_id/node_type/title/summary/keywords/paths）：
+monorepo 第一层为 sub_app 节点；module 节点 paths 必须指向真实目录；
+capability 叶子粒度为"一条需求能描述清楚的功能点"。树深 ≤4，总节点 ≤80。
+其余字段: {overview, tech_stack, is_monorepo, entry_points, build_commands, testing_commands, conventions}
 """
+
+
+async def _build_facet_vocab_section() -> str:
+    """构建语义分面受控词表 prompt 注入段；无词表时返回空字符串。"""
+    from repositories.models import FacetVocabulary
+
+    vocabs = [v async for v in FacetVocabulary.objects.filter(is_active=True)]
+    if not vocabs:
+        return ""
+    lines = [
+        "",
+        "## 分面词表（受控，打标只能从下列取值中选）",
+        "",
+    ]
+    for vocab in vocabs:
+        values = "、".join(str(v) for v in (vocab.values or []))
+        lines.append(f"- {vocab.dimension}：{values}")
+    lines.append("")
+    lines.append("在提交结果的 facets 字段中为仓库整体打标：{维度: 取值}；选不出填 \"未分类\"。")
+    return "\n".join(lines)
 
 
 async def dispatch_repo_summary(repository: Repository) -> str:
@@ -74,11 +96,18 @@ async def dispatch_repo_summary(repository: Repository) -> str:
     # 2. 构建 env_metadata
     env_metadata = await _build_env_metadata(repository)
 
-    # 3. 渲染 prompt
+    # 3. 渲染 prompt（追加语义分面受控词表注入段）
     prompt = await render_prompt(
         PromptSlugs.REPO_SUMMARY_GENERATOR,
         fallback=REPO_SUMMARY_FALLBACK,
     )
+    try:
+        facet_section = await _build_facet_vocab_section()
+    except Exception:  # noqa: BLE001 — 词表注入失败不阻塞描述生成
+        logger.warning("facet_vocab_section_failed", exc_info=True)
+        facet_section = ""
+    if facet_section:
+        prompt = f"{prompt}\n{facet_section}"
 
     # 4. 构建 DispatchTask 并分发
     dispatch_task = DispatchTask(

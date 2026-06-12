@@ -333,20 +333,20 @@ class RouteRepositoriesView(McpToolView):
         assert input_data is not None
         started_at = time.perf_counter()
 
-        from codegraph.services.repo_router import RepoRouter
+        from codegraph.services.repo_router_v2 import RepoRouterV2
 
         query = str(input_data["query"])
         top_k = int(input_data.get("top_k", 3))
-        route_results = await RepoRouter.route(query, top_k=top_k)
-        route_ids = [str(r.repo_id) for r in route_results]
+        route_result = await RepoRouterV2.route(query, top_k=top_k)
+        route_ids = [str(c.repo_id) for c in route_result.candidates]
         repos = {
             str(repo.id): repo
             async for repo in Repository.objects.filter(id__in=route_ids, is_deleted=False)
         }
         ranked_repos: list[dict[str, Any]] = []
         traces: list[tuple[str, dict[str, Any]]] = []
-        for result in route_results:
-            repo_id = str(result.repo_id)
+        for candidate in route_result.candidates:
+            repo_id = str(candidate.repo_id)
             repo = repos.get(repo_id)
             if repo is None:
                 continue
@@ -354,8 +354,12 @@ class RouteRepositoriesView(McpToolView):
                 "repo_id": repo_id,
                 "name": repo.name,
                 "description": repo.description or "",
-                "score": float(getattr(result, "final_score", 0.0)),
-                "reason": getattr(result, "match_reason", ""),
+                "score": float(candidate.score),
+                "reason": candidate.reasoning,
+                "confidence": candidate.confidence,
+                "sub_project": candidate.sub_project,
+                "sub_project_paths": candidate.sub_project_paths,
+                "matched_node_paths": candidate.matched_node_paths,
                 "index_status": repo.index_status,
                 "default_branch": repo.default_branch,
                 "ai_summary": repo.ai_summary or "",
@@ -367,6 +371,8 @@ class RouteRepositoriesView(McpToolView):
             "query": query,
             "ranked_repos": ranked_repos,
             "total": len(ranked_repos),
+            "router_version": route_result.router_version,
+            "auto_selected": route_result.auto_selected,
             "run_id": str(run.run_id),
         }
         await self._record(

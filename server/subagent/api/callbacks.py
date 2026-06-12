@@ -910,7 +910,14 @@ def _parse_summary_json(raw_text: str) -> str:
 async def _update_repository_on_summary_complete(
     session: SubAgentSession, p: dict[str, Any]
 ) -> None:
-    """repo_summary 完成 -- 解析结果写回 Repository。"""
+    """repo_summary 完成 -- 解析结果写回 Repository。
+
+    PageIndex 化扩展：结果含 tree 时走业务校验（结构/paths 真实性/monorepo
+    对齐），校验通过写 ai_summary_tree + is_monorepo + 语义 facets 并触发
+    节点向量化；校验失败保留旧树（fail-closed），仅更新文本 ai_summary。
+    """
+    import json as json_mod
+
     from repositories.models import Repository
 
     repo_id = (session.last_output or {}).get("repository_id")
@@ -929,20 +936,81 @@ async def _update_repository_on_summary_complete(
     repo.ai_summary_status = "completed"
     repo.ai_summary_generated_at = timezone.now()
     repo.ai_summary_error = ""
-    await repo.asave(
-        update_fields=[
-            "ai_summary",
-            "ai_summary_status",
-            "ai_summary_generated_at",
-            "ai_summary_error",
-            "updated_at",
-        ]
-    )
+    update_fields = [
+        "ai_summary",
+        "ai_summary_status",
+        "ai_summary_generated_at",
+        "ai_summary_error",
+        "updated_at",
+    ]
+
+    # 结构化能力树解析 + 校验（fail-closed：失败保留旧树）
+    tree_written = False
+    try:
+        payload_obj = json_mod.loads(parsed_summary)
+    except (json_mod.JSONDecodeError, TypeError):
+        payload_obj = None
+
+    if isinstance(payload_obj, dict) and payload_obj.get("tree"):
+        from repositories.tree_schema import (
+            TreeValidationError,
+            validate_and_assemble_tree,
+        )
+
+        try:
+            nested_tree = await validate_and_assemble_tree(str(repo_id), payload_obj)
+        except TreeValidationError as exc:
+            logger.warning(
+                "repo_summary_tree_validation_failed",
+                repository_id=repo_id,
+                error=str(exc),
+            )
+        else:
+            repo.ai_summary_tree = nested_tree
+            repo.is_monorepo = bool(payload_obj.get("is_monorepo", False))
+            # 树重建成功 → 清空增量 stale 状态
+            repo.tree_stale_state = {}
+            update_fields += ["ai_summary_tree", "is_monorepo", "tree_stale_state"]
+            tree_written = True
+
+            facets = payload_obj.get("facets")
+            if isinstance(facets, dict) and facets:
+                merged = dict(repo.facets or {})
+                merged.update({str(k): str(v) for k, v in facets.items()})
+                repo.facets = merged
+                update_fields.append("facets")
+
+    await repo.asave(update_fields=update_fields)
     logger.info(
         "repo_summary_written",
         repository_id=repo_id,
         summary_length=len(parsed_summary),
+        tree_written=tree_written,
     )
+
+    # 树写入成功后异步重建节点向量索引 + 全局树增量归类（不阻塞 callback 响应）
+    if tree_written:
+        from codegraph.services.corpus_tree import CorpusTreeService
+        from codegraph.services.repo_index_tree import RepoIndexTreeBuilder
+        from services.background_runner import run_in_background
+
+        repo_id_str = str(repo_id)
+
+        async def _post_tree_tasks() -> None:
+            await RepoIndexTreeBuilder.build(repo_id_str)
+            try:
+                await CorpusTreeService.assign_repository(repo_id_str)
+            except Exception:  # noqa: BLE001 — 归类失败不影响节点索引
+                logger.warning(
+                    "corpus_tree_assign_failed",
+                    repository_id=repo_id_str,
+                    exc_info=True,
+                )
+
+        run_in_background(
+            _post_tree_tasks,
+            name=f"repo_index_tree_{repo_id_str}",
+        )
 
 
 async def _update_repository_on_summary_fail(

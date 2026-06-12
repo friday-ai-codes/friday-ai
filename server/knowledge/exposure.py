@@ -97,6 +97,7 @@ def serialize_search_result(result: SearchResultDTO) -> dict[str, Any]:
             "provenance": _serialize_provenance(result.entity.provenance),
             "llm_grade": result.llm_grade,
             "llm_reason": result.llm_reason,
+            "toc_path": result.toc_path,
             "related_entities": [serialize_related_item(r) for r in result.related_entities],
         }
     )

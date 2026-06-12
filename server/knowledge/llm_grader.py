@@ -86,6 +86,7 @@ async def grade_search_results(query: str, results: list[SearchResultDTO]) -> li
                     related_entities=r.related_entities,
                     llm_grade=grade,
                     llm_reason=reason,
+                    toc_path=r.toc_path,
                 )
             )
         graded.sort(
