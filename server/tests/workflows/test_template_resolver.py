@@ -365,3 +365,66 @@ class TestResolvePath:
         with pytest.raises(TemplateResolutionError) as exc_info:
             resolve_path("foo.bar", sources)
         assert exc_info.value.reason == "unknown_prefix"
+
+
+# ---------------------------------------------------------------------------
+# ExecutionContext 集成层（薄委托后行为 + JSONPath 现状锁定，零 DB）
+# ---------------------------------------------------------------------------
+
+
+class TestExecutionContextIntegration:
+    """两 API 经 ExecutionContext 委托后语义一致；JSONPath 现状锁定（Pitfall 6）。"""
+
+    def _make_context(self):
+        from workflows.nodes.base import ExecutionContext
+
+        return ExecutionContext(
+            execution_id="exec-1",
+            node_id="node-1",
+            node_config={"cfg_key": "cfgv"},
+            input_data={"k": "iv"},
+            workflow_context={},
+            previous_outputs={"aB1": dict(NODE_OUTPUT)},
+        )
+
+    def test_render_template_bad_reference_raises(self):
+        ctx = self._make_context()
+        with pytest.raises(TemplateResolutionError) as exc_info:
+            ctx.render_template("{{nodes.zzz.output}}")
+        assert exc_info.value.reason == "node_not_found"
+
+    def test_render_template_unknown_prefix_raises(self):
+        ctx = self._make_context()
+        with pytest.raises(TemplateResolutionError) as exc_info:
+            ctx.render_template("{{foo.bar}}")
+        assert exc_info.value.reason == "unknown_prefix"
+
+    def test_get_template_value_preserves_type(self):
+        ctx = self._make_context()
+        value = ctx.get_template_value("{{nodes.aB1.count}}")
+        assert value == 42
+        assert isinstance(value, int)
+
+    def test_jsonpath_still_resolves(self):
+        # JSONPath 现状锁定：{{$nodes.x.items[*].name}} 正常解析
+        ctx = self._make_context()
+        result = ctx.render_template("{{$nodes.aB1.items[*].name}}")
+        assert result == "first\nsecond"
+
+    def test_jsonpath_zero_match_keeps_literal(self):
+        # Pitfall 6 characterization：JSONPath 零匹配时 render 保留 {{...}} 字面量
+        ctx = self._make_context()
+        template = "{{$nodes.aB1.missing[*].name}}"
+        assert ctx.render_template(template) == template
+
+    def test_get_previous_output_nested(self):
+        ctx = self._make_context()
+        assert ctx.get_previous_output("aB1", "data.name") == "alice"
+        assert ctx.get_previous_output("aB1", "items.0.name") == "first"
+
+    def test_get_previous_output_missing_returns_default(self):
+        # 与模板解析路径不同：直接调用方保留 default 语义，不抛异常
+        ctx = self._make_context()
+        assert ctx.get_previous_output("aB1", "data.bad", "DF") == "DF"
+        assert ctx.get_previous_output("zzz", "x", "DF") == "DF"
+        assert ctx.get_previous_output("aB1", "x.deeper", "DF") == "DF"

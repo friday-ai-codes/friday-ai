@@ -128,11 +128,35 @@ class ExecutionContext:
         return self.workflow_context.get(key, default)
 
     def get_previous_output(self, node_id: str, key: str | None = None, default: Any = None) -> Any:
-        """获取上游节点输出"""
+        """获取上游节点输出
+
+        支持点分嵌套路径（dict 键 + list 数字索引），如 "data.name"、"items.0.name"。
+
+        注意与模板解析路径的语义差异：render_template/get_template_value 对
+        nodes.* 引用执行严格语义（解析失败抛 TemplateResolutionError），而本方法
+        被节点代码直接调用，路径任一段缺失时返回 default 而不抛异常，
+        保持对直接调用方的兼容。
+        """
         output = self.previous_outputs.get(node_id, {})
-        if key:
-            return output.get(key, default)
-        return output
+        if not key:
+            return output
+        # 兼容历史扁平 key：含点号的字面量键优先精确匹配
+        if isinstance(output, dict) and key in output:
+            return output[key]
+        current: Any = output
+        for part in key.split("."):
+            if isinstance(current, dict):
+                if part not in current:
+                    return default
+                current = current[part]
+            elif isinstance(current, list):
+                try:
+                    current = current[int(part)]
+                except (ValueError, IndexError):
+                    return default
+            else:
+                return default
+        return current
 
     def get_trigger_data(self, key: str, default: Any = None) -> Any:
         """获取触发器数据
@@ -339,7 +363,7 @@ class ExecutionContext:
         return self.workflow_context.get("global_variables", {})
 
     def render_template(self, template: str) -> str:
-        """渲染模板字符串，支持变量替换
+        """渲染模板字符串，支持变量替换（薄委托 template_resolver 解析核心）
 
         支持格式：
         - {{$.key}} - 输入数据简写（等同于 input.key）
@@ -347,86 +371,15 @@ class ExecutionContext:
         - {{input.key}} - 输入数据
         - {{context.key}} - 工作流上下文
         - {{config.key}} - 节点配置
-        - {{nodes.node_id.key}} - 上游节点输出
+        - {{nodes.node_id.key}} - 上游节点输出（严格语义，解析失败抛
+          TemplateResolutionError）
         - {{global.key}} - 全局参数
         - {{trigger.key}} - 触发器数据
         """
+        # 延迟导入：避免与 workflows.engine 包初始化形成循环依赖
+        from workflows.engine.template_resolver import render_template
 
-        def replace(match: re.Match) -> str:
-            path = match.group(1).strip()
-
-            # JSONPath mode: starts with $ and contains [ (array access/filter)
-            # Examples: $nodes.SLT.fields[?(@.key=="xxx")].value, $.input.repos[*].id
-            if path.startswith("$") and "[" in path:
-                # Normalize path: $nodes.xxx -> $.nodes.xxx (add dot after $)
-                jsonpath_expr = path
-                if path.startswith("$") and not path.startswith("$."):
-                    jsonpath_expr = "$." + path[1:]
-
-                # _resolve_jsonpath will raise ValueError if node ID is invalid
-                result = self._resolve_jsonpath(jsonpath_expr)
-
-                # Convert result to string for template rendering
-                if isinstance(result, list):
-                    # Join list items with newlines for readability in prompts
-                    return "\n".join(str(item) for item in result)
-                return str(result) if result != "" else match.group(0)
-
-            # 处理 $ 简写语法：$.key 或 $key 等同于 input.key
-            if path.startswith("$."):
-                # {{$.repositories}} -> input.repositories
-                return str(self.get_input(path[2:], ""))
-            elif path.startswith("$") and not path.startswith("$"):
-                # {{$repositories}} -> input.repositories
-                return str(self.get_input(path[1:], ""))
-
-            parts = path.split(".")
-
-            if parts[0] == "$":
-                # {{$}} 单独使用表示整个 input 对象
-                return str(self.input_data or "")
-            elif parts[0] == "input":
-                return str(self.get_input(".".join(parts[1:]), ""))
-            elif parts[0] == "context":
-                return str(self.get_context(".".join(parts[1:]), ""))
-            elif parts[0] == "config":
-                return str(self.get_config(".".join(parts[1:]), ""))
-            elif parts[0] == "nodes" and len(parts) >= 3:
-                node_id = parts[1]
-                key = ".".join(parts[2:])
-                # Validate node ID exists
-                nodes_data = self.previous_outputs or {}
-                if node_id not in nodes_data:
-                    available_ids = list(nodes_data.keys())
-                    # Check for case-insensitive match
-                    case_match = next(
-                        (nid for nid in available_ids if nid.lower() == node_id.lower()),
-                        None
-                    )
-                    if case_match:
-                        raise ValueError(
-                            f"节点 ID '{node_id}' 不存在。"
-                            f"你是否想使用 '{case_match}'？（节点 ID 区分大小写）"
-                        )
-                    else:
-                        raise ValueError(
-                            f"节点 ID '{node_id}' 不存在。可用的节点 ID: {available_ids}"
-                        )
-                return str(self.get_previous_output(node_id, key, ""))
-            elif parts[0] == "global":
-                # 优先从全局变量获取值
-                var_key = ".".join(parts[1:])
-                value = self.get_global_variable_value(var_key, None)
-                if value is not None:
-                    return str(value)
-                # 回退到 global_params
-                return str(self.get_global_param(var_key, ""))
-            elif parts[0] == "trigger":
-                return str(self.get_trigger_data(".".join(parts[1:]), ""))
-
-            return match.group(0)  # 无法解析则保持原样
-
-        return re.sub(r"\{\{(.+?)\}\}", replace, template)
+        return render_template(template, self._build_resolution_sources(), self._resolve_jsonpath)
 
     def get_template_value(self, template: str) -> Any:
         """Get template value preserving complex types.
@@ -444,22 +397,25 @@ class ExecutionContext:
             "{{$.input.repositories[*].id}}" -> ["id1", "id2", ...]
             "prefix_{{global.name}}_suffix" -> str (uses render_template)
         """
-        template = template.strip()
+        # 延迟导入：避免与 workflows.engine 包初始化形成循环依赖
+        from workflows.engine.template_resolver import get_template_value
 
-        # Check if template is a single variable reference
-        match = re.fullmatch(r"\{\{(.+?)\}\}", template)
-        if not match:
-            # Multiple variables or mixed content - use string rendering
-            return self.render_template(template)
+        return get_template_value(
+            template, self._build_resolution_sources(), self._resolve_jsonpath
+        )
 
-        path = match.group(1).strip()
+    def _build_resolution_sources(self) -> Any:
+        """构造解析核心所需的数据源集合（ResolutionSources）。"""
+        from workflows.engine.template_resolver import ResolutionSources
 
-        # JSONPath mode: starts with $
-        if path.startswith("$"):
-            return self._resolve_jsonpath(path)
-
-        # Simple path mode (backward compatible)
-        return self._resolve_simple_path(path)
+        return ResolutionSources(
+            previous_outputs=self.previous_outputs or {},
+            input_data=self.input_data or {},
+            workflow_context=self.workflow_context or {},
+            node_config=self.node_config or {},
+            trigger_data=self.trigger_data or {},
+            global_values=self._get_global_values(),
+        )
 
     def _resolve_jsonpath(self, jsonpath_expr: str) -> Any:
         """Resolve JSONPath expression against execution context.
@@ -554,58 +510,6 @@ class ExecutionContext:
             else:
                 result[key] = var
         return result
-
-    def _resolve_simple_path(self, path: str) -> Any:
-        """Resolve simple dot-notation path (backward compatible).
-
-        Supports:
-            global.repositories, global.repositories[0]
-            input.project.id
-            nodes.abc123.output
-        """
-        # Handle array indexing: global.repositories[0] or global.repositories[-1]
-        index_match = re.match(r"(.+?)\[(-?\d+)\]$", path)
-        index = None
-        if index_match:
-            path = index_match.group(1)
-            index = int(index_match.group(2))
-
-        parts = path.split(".")
-
-        value = None
-        if parts[0] == "global" and len(parts) >= 2:
-            var_key = ".".join(parts[1:])
-            value = self.get_global_variable_value(var_key, None)
-            if value is None:
-                value = self.get_global_param(var_key, None)
-        elif parts[0] == "input":
-            value = self.get_input(".".join(parts[1:]), None)
-        elif parts[0] == "nodes" and len(parts) >= 3:
-            node_id = parts[1]
-            key = ".".join(parts[2:])
-            value = self.get_previous_output(node_id, key, None)
-        elif parts[0] == "trigger":
-            value = self.get_trigger_data(".".join(parts[1:]), None)
-        elif parts[0] == "config":
-            value = self.get_config(".".join(parts[1:]), None)
-        elif parts[0] == "context":
-            value = self.get_context(".".join(parts[1:]), None)
-        else:
-            # Unknown prefix
-            return ""
-
-        # Apply array index if specified (supports negative indexing)
-        if index is not None and isinstance(value, list):
-            try:
-                value = value[index]
-            except IndexError:
-                value = None
-
-        # If value is still None, return empty string for consistency
-        if value is None:
-            return ""
-
-        return value
 
 
 class BaseNode(ABC):
