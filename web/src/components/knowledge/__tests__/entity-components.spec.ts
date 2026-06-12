@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { describe, expect, it } from 'vitest'
+import { createI18n } from 'vue-i18n'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
 import EntityVersionTimeline from '~/components/knowledge/EntityVersionTimeline.vue'
 

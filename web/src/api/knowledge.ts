@@ -44,7 +44,7 @@ export interface RelatedEntity {
   metadata?: EntityMetadata
 }
 
-export interface SearchResultItem {
+export interface KnowledgeSearchResultItem {
   entity_id: string
   kind: string
   title: string
@@ -93,7 +93,7 @@ export async function searchDeliveryKnowledge(params: {
   asOf?: string | null
   includeSuperseded?: boolean
 }) {
-  return get<SearchResultItem[]>('/knowledge/search/', {
+  return get<KnowledgeSearchResultItem[]>('/knowledge/search/', {
     q: params.q,
     top_k: params.topK ?? 10,
     project_ids: params.projectIds?.join(','),

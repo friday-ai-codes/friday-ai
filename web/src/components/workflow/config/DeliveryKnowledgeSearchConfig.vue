@@ -16,14 +16,14 @@ interface Props {
   config: DeliveryKnowledgeSearchConfig
   workflowNodes?: WorkflowNode[]
   workflowEdges?: WorkflowEdge[]
-  currentNodeId?: string | null
+  currentNodeId?: string
   nodeTypeInfo?: NodeType | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   workflowNodes: () => [],
   workflowEdges: () => [],
-  currentNodeId: null,
+  currentNodeId: '',
   nodeTypeInfo: null,
 })
 
@@ -45,7 +45,12 @@ const includeSuperseded = field('include_superseded', false)
 
 <template>
   <div class="space-y-4">
-    <NodePortsDisplay v-if="nodeTypeInfo" :node-type="nodeTypeInfo" />
+    <NodePortsDisplay
+      v-if="nodeTypeInfo && currentNodeId"
+      :inputs="nodeTypeInfo.inputs"
+      :outputs="nodeTypeInfo.outputs"
+      :node-id="currentNodeId"
+    />
 
     <div class="space-y-2">
       <Label>检索 query</Label>
