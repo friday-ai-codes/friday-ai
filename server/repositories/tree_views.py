@@ -36,7 +36,7 @@ def _repo_card(repo: Any) -> dict[str, Any]:
     return {
         "repo_id": str(repo.id),
         "name": repo.name,
-        "overview": overview or (repo.description or "")[:200],
+        "overview": overview,
         "is_monorepo": repo.is_monorepo,
         "has_tree": bool(repo.ai_summary_tree),
         "index_status": repo.index_status,
@@ -49,7 +49,7 @@ async def _load_repo_cards() -> dict[str, dict[str, Any]]:
 
     cards: dict[str, dict[str, Any]] = {}
     async for repo in Repository.objects.filter(is_deleted=False).only(
-        "id", "name", "description", "ai_summary", "ai_summary_tree",
+        "id", "name", "ai_summary", "ai_summary_tree",
         "is_monorepo", "index_status", "facets",
     ):
         cards[str(repo.id)] = _repo_card(repo)

@@ -1,15 +1,37 @@
 """Repositories serializers."""
 
+import re
+
 from rest_framework import serializers
 
 from .models import GitCredential, Repository
 
+# SSH 仓库地址的两种形态：scp 风格（git@host:group/repo.git）与
+# ssh:// 协议（ssh://git@host[:port]/group/repo.git，端口为 ssh 端口需丢弃）。
+_SSH_SCP_RE = re.compile(r"^git@([^:/]+):(.+)$")
+_SSH_URL_RE = re.compile(r"^ssh://(?:[^@/]+@)?([^:/]+)(?::\d+)?/(.+)$")
+
+
+def ssh_git_url_to_https(git_url: str) -> str:
+    """把 SSH 形式的仓库地址转换为 HTTPS（非 SSH 形式原样返回）。
+
+    任务容器内没有 ssh，git clone SSH 地址必然失败（"cannot run ssh"）；
+    Access Token 认证也只兼容 HTTPS。在所有入口做自动转换，
+    存量数据由 repositories.0031 迁移统一改写。
+    """
+    url = git_url.strip()
+    match = _SSH_SCP_RE.match(url) or _SSH_URL_RE.match(url)
+    if match:
+        return f"https://{match.group(1)}/{match.group(2)}"
+    return url
+
 
 def validate_https_git_url(git_url: str) -> str:
-    """仅允许与 Access Token 认证兼容的 HTTPS 仓库地址。"""
+    """归一化为 HTTPS 仓库地址：SSH 形式自动转换，其余非 http(s) 拒绝。"""
+    git_url = ssh_git_url_to_https(git_url)
     if not git_url.startswith(("http://", "https://")):
         raise serializers.ValidationError(
-            "当前仅支持 HTTPS 仓库 URL；SSH URL 需要 SSH Key，暂未支持。"
+            "当前仅支持 HTTPS 仓库 URL（SSH 地址会自动转换为 HTTPS）。"
         )
     return git_url
 
@@ -29,7 +51,7 @@ class RepositorySerializer(serializers.ModelSerializer):
             "git_platform",
             "default_branch",
             "base_branch",
-            "description",
+            "remote_head_branch",
             "proxy_url",
             "auto_index_enabled",
             "auto_build_graph_enabled",
@@ -63,6 +85,7 @@ class RepositorySerializer(serializers.ModelSerializer):
             "id",
             "created_at",
             "updated_at",
+            "remote_head_branch",
             "webhook_secret",
             "index_status",
             "last_indexed_at",
@@ -94,11 +117,24 @@ class RepositorySerializer(serializers.ModelSerializer):
 
 
 class RepositoryCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating Repository with credential."""
+    """Serializer for creating Repository with credential.
+
+    space_ids 必填且至少一个：所有仓库都必须关联到至少一个空间。
+    """
 
     access_token = serializers.CharField(write_only=True)
     git_user_name = serializers.CharField(default="Friday Codes AI Agent")
     git_user_email = serializers.CharField(default="ai@friday.codes")
+    space_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        allow_empty=False,
+        error_messages={"empty": "仓库必须至少关联一个空间"},
+    )
+    # 前端从 test-connection 的 head_branch 带入（display-only 缓存字段）
+    remote_head_branch = serializers.CharField(
+        required=False, allow_blank=True, max_length=100
+    )
 
     class Meta:
         model = Repository
@@ -108,11 +144,12 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
             "git_platform",
             "default_branch",
             "base_branch",
-            "description",
+            "remote_head_branch",
             "proxy_url",
             "access_token",
             "git_user_name",
             "git_user_email",
+            "space_ids",
         ]
 
     def validate_git_url(self, value: str) -> str:

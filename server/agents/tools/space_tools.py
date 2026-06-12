@@ -68,7 +68,7 @@ async def list_space_repositories(space_id: str) -> ToolResult:
             "git_url": repo.git_url,
             "platform": repo.git_platform,
             "default_branch": repo.default_branch,
-            "description": repo.description or "",
+            "description": repo.overview_text,
             "index_status": repo.index_status,
         }
         async for repo in Repository.objects.filter(
@@ -160,7 +160,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
                 "git_url": repo.git_url,
                 "git_platform": repo.git_platform,
                 "default_branch": repo.default_branch,
-                "description": repo.description or "",
+                "description": repo.overview_text,
                 "index_status": repo.index_status,
                 "last_indexed_at": (
                     repo.last_indexed_at.isoformat() if repo.last_indexed_at else None
