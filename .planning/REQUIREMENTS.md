@@ -73,7 +73,32 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmap) | | |
+| VAR-01 | Phase 17 | Pending |
+| VAR-02 | Phase 17 | Pending |
+| VAR-03 | Phase 17 | Pending |
+| VAR-04 | Phase 17 | Pending |
+| ENG-01 | Phase 18 | Pending |
+| ENG-02 | Phase 18 | Pending |
+| ENG-03 | Phase 18 | Pending |
+| ENG-04 | Phase 18 | Pending |
+| ENG-05 | Phase 18 | Pending |
+| SSOT-01 | Phase 19 | Pending |
+| SSOT-02 | Phase 19 | Pending |
+| SSOT-03 | Phase 19 | Pending |
+| VAL-01 | Phase 20 | Pending |
+| VAL-02 | Phase 20 | Pending |
+| VAL-03 | Phase 20 | Pending |
+| TPL-01 | Phase 20 | Pending |
+| TPL-02 | Phase 20 | Pending |
+| TPL-03 | Phase 20 | Pending |
+| TRIG-01 | Phase 21 | Pending |
+| TRIG-02 | Phase 21 | Pending |
+| TRIG-03 | Phase 21 | Pending |
+| OBS-01 | Phase 21 | Pending |
+| OBS-02 | Phase 21 | Pending |
+| OBS-03 | Phase 21 | Pending |
+
+**Coverage:** 24/24 v1 requirements mapped（无孤儿、无重复）
 
 ---
 *Requirements defined: 2026-06-12*
