@@ -1851,6 +1851,7 @@ export const useChatStore = defineStore('chat', () => {
         = !!streamingContent.value
           || streamingToolCalls.value.length > 0
           || currentPhase.value === 'waiting'
+          || currentPhase.value === 'waiting_clarification'
       if (createdForDraft && error.value && !hadStreamingResponse) {
         pendingConversation.value = null
         currentConversationId.value = null
@@ -1875,9 +1876,14 @@ export const useChatStore = defineStore('chat', () => {
 
       // ↓↓↓ 以下保持 legacy 之前的 finally 结构不变（流式合并 / waiting 早退）↓↓↓
 
-      // graph 进入 WAITING（deep_analysis/coding 进行中）后 SSE 正常结束，
-      // 需要启动 runtime 轮询来恢复并跟踪后续状态
-      if (currentPhase.value === 'waiting' && currentConversationId.value) {
+      // graph 进入 WAITING（deep_analysis/coding 进行中）或
+      // WAITING_CLARIFICATION（等用户答复澄清卡）后 SSE 正常结束，
+      // 需要启动 runtime 轮询来恢复并跟踪后续状态 —— 否则用户提交澄清答复、
+      // 后端 resume graph 之后，前端没有任何通道感知 phase/消息变化。
+      if (
+        (currentPhase.value === 'waiting' || currentPhase.value === 'waiting_clarification')
+        && currentConversationId.value
+      ) {
         scheduleRuntimePoll(currentConversationId.value, 1000)
         return
       }
@@ -2356,6 +2362,11 @@ export const useChatStore = defineStore('chat', () => {
       status: 'answered',
       answer,
     })
+    // 答复后后端在后台 resume graph 继续推理 —— 立刻 kick 一次 runtime 轮询，
+    // 让状态条/消息能及时跟上 resume 进度（不依赖既有轮询是否在跑）。
+    const convId = existing.conversation_id ?? currentConversationId.value
+    if (convId && convId === currentConversationId.value)
+      scheduleRuntimePoll(convId, 800)
   }
 
   function clearAllClarifications() {

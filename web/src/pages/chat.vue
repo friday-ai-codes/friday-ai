@@ -51,7 +51,10 @@ watch(
 </script>
 
 <template>
-  <div class="flex-1 flex min-w-0 h-screen overflow-hidden">
+  <!-- h-full + min-h-0：高度由布局层（default.vue chat 分支 h-screen）锁定。
+       此前用 flex-1 + h-screen，在父级 flex column 里 h-screen 被内容撑破，
+       会话列表一多整页（含顶部条）跟着滚动。 -->
+  <div class="flex min-w-0 h-full min-h-0 overflow-hidden">
     <!-- 二级栏：会话列表（入口重构：从全局侧边栏迁入 chat 页内部，
          全局侧边栏保持工作台导航不变） -->
     <ChatConversationList />

@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import type { AnimationItem } from 'lottie-web'
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { ImagePart } from '~/types/chat'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
 import { gsap } from 'gsap'
 import { uploadChatImage } from '~/api/chat'
-import deepOrbitAnimation from '~/assets/lottie/deepOrbit'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
@@ -661,42 +659,6 @@ function playSendAnimation() {
   gsap.fromTo(btn, { scale: 0.88 }, { scale: 1, duration: 0.4, ease: 'elastic.out(1.1, 0.6)', clearProps: 'scale' })
 }
 
-/* 深度分析开关激活时：望远镜图标换成 Lottie「双星环绕」（Friday 青绿 × Claude 珊瑚） */
-const orbitEl = ref<HTMLElement | null>(null)
-let orbitAnim: AnimationItem | null = null
-
-watch(
-  () => chatStore.forceDeepAnalysis,
-  async (on) => {
-    if (!on) {
-      orbitAnim?.destroy()
-      orbitAnim = null
-      return
-    }
-    await nextTick()
-    if (!orbitEl.value || orbitAnim)
-      return
-    // 按需加载 lottie 轻量播放器（仅 svg 渲染），避免拖累首屏
-    const { default: lottie } = await import('lottie-web/build/player/lottie_light')
-    if (!chatStore.forceDeepAnalysis || !orbitEl.value || orbitAnim)
-      return
-    orbitAnim = lottie.loadAnimation({
-      container: orbitEl.value,
-      renderer: 'svg',
-      loop: true,
-      autoplay: !prefersReducedMotion,
-      // lottie 会原地修改 animationData，传副本避免污染模块单例
-      animationData: structuredClone(deepOrbitAnimation),
-    })
-  },
-  { immediate: true },
-)
-
-onBeforeUnmount(() => {
-  orbitAnim?.destroy()
-  orbitAnim = null
-})
-
 function toggleDeepAnalysis() {
   chatStore.forceDeepAnalysis = !chatStore.forceDeepAnalysis
   if (!prefersReducedMotion && deepPillEl.value) {
@@ -739,11 +701,10 @@ function toggleNotifications() {
             class="claude-badge"
             aria-hidden="true"
           >
-            <!-- Claude Code 终端图标：暖黑底上略浅的终端窗 + 珊瑚色 prompt 提示符 -->
+            <!-- Claude Code 官方 logo（lobehub 静态 SVG 路径）：暖黑圆角底上的珊瑚色像素飞船 -->
             <svg class="claude-badge-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <rect x="1" y="1" width="22" height="22" rx="6" fill="#34312C" />
-              <path d="M6.8 8.4 10.6 12l-3.8 3.6" stroke="#D97757" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-              <path d="M12.6 16.2h4.6" stroke="#FAF9F5" stroke-width="2.1" stroke-linecap="round" fill="none" />
+              <path fill="#D97757" fill-rule="evenodd" clip-rule="evenodd" transform="translate(3.36 3) scale(0.72)" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" />
             </svg>
             <span class="claude-badge-text">
               <span class="claude-badge-friday">Friday</span>
@@ -854,8 +815,26 @@ function toggleNotifications() {
                       :class="{ 'toolbar-pill--active': chatStore.forceDeepAnalysis }"
                       @click="toggleDeepAnalysis"
                     >
-                      <!-- 激活态：Lottie 双星环绕（Friday 青绿 × Claude 珊瑚）替换静态望远镜 -->
-                      <span v-if="chatStore.forceDeepAnalysis" ref="orbitEl" class="pill-orbit" aria-hidden="true" />
+                      <!-- 激活态：45° 斜置星环（纯 2D 椭圆轨道），Friday × Claude Code 双 logo 对位环绕 -->
+                      <span v-if="chatStore.forceDeepAnalysis" class="pill-orbit" aria-hidden="true">
+                        <span class="orbit-ring" />
+                        <span class="orbit-arm">
+                          <span class="orbit-logo">
+                            <svg class="orbit-svg orbit-svg--friday" viewBox="0 0 144 216" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M0 0H144V72H72Z" fill="#14b8a6" />
+                              <path d="M0 72H72L144 144H0Z" fill="#FAF9F5" />
+                              <path d="M0 144H72V216Z" fill="#FAF9F5" />
+                            </svg>
+                          </span>
+                        </span>
+                        <span class="orbit-arm orbit-arm--alt">
+                          <span class="orbit-logo">
+                            <svg class="orbit-svg orbit-svg--claude" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path fill="#D97757" fill-rule="evenodd" clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" />
+                            </svg>
+                          </span>
+                        </span>
+                      </span>
                       <span v-else class="icon-[lucide--telescope] text-[14px]" />
                       <span>深度分析</span>
                     </button>
@@ -1072,7 +1051,7 @@ function toggleNotifications() {
    Claude 珊瑚各自保持本色、在中性暗底上并置，而不是互相调和成脏色。 */
 .claude-badge {
   position: absolute;
-  top: -0.875rem;
+  top: -1rem;
   left: 1.125rem;
   z-index: 11;
   display: inline-flex;
@@ -1203,10 +1182,9 @@ function toggleNotifications() {
   }
 }
 
-/* 给浮出的徽标让出首行空间，避免文字与徽标下沿重叠 */
-.input-card--deep .input-textarea {
-  padding-top: 1.125rem;
-}
+/* 注意：深度分析模式不要改 textarea 的 padding——输入卡片整体高度会突变，
+   导致底部锚定的卡片连同浮动徽标瞬间上下跳动。徽标的首行避让靠
+   .claude-badge 的 top 偏移（上移半个徽标以上）解决，布局保持零位移。 */
 
 .input-textarea {
   display: block;
@@ -1395,17 +1373,115 @@ function toggleNotifications() {
   color: hsl(15 76% 64%);
 }
 
-/* Lottie 双星环绕容器（激活态替换望远镜图标） */
+/* ======== 45° 星环（纯 2D 椭圆轨道）：激活态替换望远镜图标 ========
+   原 CSS 3D（perspective + preserve-3d + billboard）方案在 20px 这种
+   微缩尺寸下，小 perspective 会把贴近视点的 logo 投影成歪斜的大色块，
+   看起来像渲染坏掉。改为纯 2D 等价实现：公转臂 rotate(-45deg)
+   scaleY(0.45) rotate(θ) 把圆轨道压成斜置椭圆，logo 用精确逆变换
+   rotate(-θ) scaleY(1/0.45) rotate(45deg) 抵消，保持永远端正不变形；
+   「近大远小」改用同步的 scale + opacity 关键帧模拟。 */
 .pill-orbit {
+  position: relative;
   display: inline-flex;
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
   flex-shrink: 0;
 }
-.pill-orbit :deep(svg) {
+
+/* 轨道描边：独立画一只斜置椭圆，避免被压扁的 border 出现亚像素断笔 */
+.orbit-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 7.2px;
+  margin: -3.6px 0 0 -8px;
+  border-radius: 50%;
+  border: 1px solid hsl(48 30% 92% / 0.5);
+  transform: rotate(-45deg);
+}
+
+.orbit-arm {
+  position: absolute;
+  inset: 0;
+  animation: orbit-rev 4.5s linear infinite;
+}
+
+.orbit-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: orbit-counter 4.5s linear infinite;
+}
+
+.orbit-svg {
   display: block;
-  width: 100%;
-  height: 100%;
+  animation: orbit-depth 4.5s linear infinite;
+}
+.orbit-svg--friday {
+  width: 5px;
+  height: 7.5px;
+}
+.orbit-svg--claude {
+  width: 7px;
+  height: 7px;
+}
+
+/* 第二颗星：负延迟半个周期 → 始终与第一颗处于环的对侧（一前一后交替） */
+.orbit-arm--alt,
+.orbit-arm--alt .orbit-logo,
+.orbit-arm--alt .orbit-svg {
+  animation-delay: -2.25s;
+}
+
+/* 公转：先斜置（-45°）再压扁（scaleY）再转公转角 θ。
+   起始相位 -45° 让 0%/50% 恰好落在椭圆最后端/最前端，方便对齐深度动画 */
+@keyframes orbit-rev {
+  from {
+    transform: rotate(-45deg) scaleY(0.45) rotate(-45deg);
+  }
+  to {
+    transform: rotate(-45deg) scaleY(0.45) rotate(315deg);
+  }
+}
+
+/* 反变换：translateX 上环后按相反顺序逐项抵消（-θ → scaleY 倒数 → +45°），
+   logo 全程端正、零形变 */
+@keyframes orbit-counter {
+  from {
+    transform: translateX(8px) rotate(45deg) scaleY(2.2222) rotate(45deg);
+  }
+  to {
+    transform: translateX(8px) rotate(-315deg) scaleY(2.2222) rotate(45deg);
+  }
+}
+
+/* 深度提示：50% 位于椭圆最前端（最大最亮），0%/100% 绕到最后端（最小最暗） */
+@keyframes orbit-depth {
+  0%,
+  100% {
+    transform: scale(0.78);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
+/* 减弱动效偏好：暂停于负延迟对应的相位帧，双星静止分立环两侧 */
+@media (prefers-reduced-motion: reduce) {
+  .orbit-arm,
+  .orbit-logo,
+  .orbit-svg {
+    animation-play-state: paused;
+  }
 }
 
 /* ======== 模型选择器 ======== */
