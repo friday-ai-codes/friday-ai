@@ -20,7 +20,7 @@
 
 ## Phases
 
-- [ ] **Phase 17: 变量引用链路修复** - 自建流水线 short_id 保存同步/重写，解析失败显式报错，前端引用入口统一格式，嵌套路径与解析器测试
+- [x] **Phase 17: 变量引用链路修复** - 自建流水线 short_id 保存同步/重写，解析失败显式报错，前端引用入口统一格式，嵌套路径与解析器测试 (completed 2026-06-12)
 - [ ] **Phase 18: 执行引擎状态机修复** - waiting_event 完成判定、next_handle 分支路由、trigger_data 注入、死锁诊断、target_handle 语义收敛与引擎回归测试
 - [ ] **Phase 19: 节点定义单一事实源** - 前端面板/端口/表单 schema 收敛到 `GET /api/node-types/`，删除硬编码 registry 与 portConfig，CI 一致性守护
 - [ ] **Phase 20: 保存即合法与模板修复** - `WorkflowGraphValidator` 统一校验（保存/导入/模板共用），IssuesPanel 接真实结果，4 个内置模板修复 + 可执行性校验测试
@@ -42,12 +42,12 @@
 
 Plans:
 **Wave 1**
-- [ ] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + scheduler 结构化 error_message + 专项单测（VAR-02, VAR-04）
-- [ ] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写 + 不变式测试（VAR-01）
-- [ ] 17-03-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
+- [x] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + scheduler 结构化 error_message + 专项单测（VAR-02, VAR-04）
+- [x] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写 + 不变式测试（VAR-01）
+- [x] 17-03-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17-04-PLAN.md — 调用面渲染时机/吞错逐节点核查 + 后端/前端全链路回归（wave 2，VAR-01..04）
+- [x] 17-04-PLAN.md — 调用面渲染时机/吞错逐节点核查 + 后端/前端全链路回归（wave 2，VAR-01..04）
 **UI hint**: yes
 
 ### Phase 18: 执行引擎状态机修复
@@ -109,7 +109,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. 变量引用链路修复 | 0/? | Not started | - |
+| 17. 变量引用链路修复 | 4/4 | Complete   | 2026-06-12 |
 | 18. 执行引擎状态机修复 | 0/? | Not started | - |
 | 19. 节点定义单一事实源 | 0/? | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |
