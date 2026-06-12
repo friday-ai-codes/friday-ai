@@ -23,6 +23,11 @@ from agents.tools.feishu_doc_tools import (
 from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.find_api_callers import find_api_callers
 from agents.tools.find_api_handler import find_api_handler
+from agents.tools.delivery_knowledge_tools import (
+    get_entity_timeline,
+    get_related_entities,
+    search_delivery_knowledge,
+)
 from agents.tools.find_related_code import find_related_code
 from agents.tools.list_endpoints import list_endpoints
 from agents.tools.langchain_adapter import build_langchain_tools
@@ -56,6 +61,10 @@ __all__ = [
     "search_repository_code",
     # Code graph tools (implementation)
     "find_related_code",
+    # Delivery knowledge tools (Phase 16)
+    "search_delivery_knowledge",
+    "get_entity_timeline",
+    "get_related_entities",
     # API graph tools (implementation)
     "find_api_handler",
     "find_api_callers",
