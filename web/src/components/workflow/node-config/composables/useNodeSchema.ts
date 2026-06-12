@@ -3,6 +3,7 @@ import type { WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow/stor
 import { computed, ref } from 'vue'
 
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
+import { buildNodeRef, buildPrefixRef } from '~/utils/variableRef'
 
 // 输入字段项类型
 export interface InputFieldItem {
@@ -50,7 +51,8 @@ export function useNodeSchema(
         continue
 
       const nodeLabel = sourceNode.name || sourceNodeType.display_name
-      const nodeShortId = sourceNode.shortId || sourceNode.id.slice(0, 8)
+      // shortId 缺失时留空，绝不回退 UUID 截断形式（锁定决策 VAR-03）
+      const nodeShortId = sourceNode.shortId || ''
 
       for (const output of sourceNodeType.outputs) {
         if (output.schema?.properties) {
@@ -102,14 +104,16 @@ export function useNodeSchema(
     return colors[type] || 'text-muted-foreground'
   }
 
-  // 生成输出变量引用路径 (使用 shortId)
+  // 生成输出变量引用路径（使用权威 shortId）
+  // shortId 缺失时返回空串：展示层显示空优于显示必坏的 UUID 引用（锁定决策 VAR-03）
   function getOutputPath(outputName: string): string {
-    return `{{nodes.${selectedNode.value?.shortId || selectedNodeId.value}.${outputName}}}`
+    const shortId = selectedNode.value?.shortId ?? ''
+    return shortId ? buildNodeRef(shortId, outputName) : ''
   }
 
   // 生成输入变量引用路径
   function getInputPath(outputName: string): string {
-    return `{{input.${outputName}}}`
+    return buildPrefixRef('input', outputName)
   }
 
   // 计算输出字段总数（包含 schema 详细字段）

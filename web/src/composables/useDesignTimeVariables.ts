@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
+import { buildNodePath, buildPrefixPath } from '~/utils/variableRef'
 
 /**
  * 设计态变量项
@@ -167,8 +168,9 @@ export function useDesignTimeVariables(
       const nodeLabel = extNode.name || node.data?.name || node.label || nodeTypeDef.display_name
 
       // 获取 shortId（用于用户友好的变量路径显示）
-      // WorkflowNodeStore 有 shortId，否则截取 UUID 前 8 位
-      const shortId = extNode.shortId || node.id.slice(0, 8)
+      // shortId 缺失属异常态（保存后 store 节点必有权威 shortId）：
+      // 跳过该节点的 nodes.* 变量生成，绝不回退 UUID/截断形式（锁定决策 VAR-03）
+      const shortId = extNode.shortId || ''
 
       // 是否是直接上游节点（决定是否生成 input.xxx 变量）
       const isDirectUpstream = directUpstreamIds.has(node.id)
@@ -181,22 +183,25 @@ export function useDesignTimeVariables(
             const schema = propSchema as { type?: string, description?: string }
 
             // 添加 nodes.{shortId}.{field} 格式（所有上游节点）
-            variables.push({
-              key: propKey,
-              path: `nodes.${shortId}.${propKey}`,
-              label: `${nodeLabel} - ${schema.description || propKey}`,
-              nodeId: node.id,
-              nodeLabel,
-              outputLabel: schema.description || propKey,
-              type: schema.type || 'any',
-              description: schema.description,
-            })
+            // shortId 缺失时跳过 nodes.* 路径（input.* 照常生成）
+            if (shortId) {
+              variables.push({
+                key: propKey,
+                path: buildNodePath(shortId, propKey),
+                label: `${nodeLabel} - ${schema.description || propKey}`,
+                nodeId: node.id,
+                nodeLabel,
+                outputLabel: schema.description || propKey,
+                type: schema.type || 'any',
+                description: schema.description,
+              })
+            }
 
             // 添加 input.{field} 格式（只有直接上游节点）
             if (isDirectUpstream) {
               variables.push({
                 key: propKey,
-                path: `input.${propKey}`,
+                path: buildPrefixPath('input', propKey),
                 label: `${nodeLabel} - ${schema.description || propKey}`,
                 nodeId: node.id,
                 nodeLabel,
@@ -209,22 +214,25 @@ export function useDesignTimeVariables(
         }
         else {
           // 没有详细 schema，使用端口级别信息
-          variables.push({
-            key: output.name,
-            path: `nodes.${shortId}.${output.name}`,
-            label: `${nodeLabel} - ${output.label}`,
-            nodeId: node.id,
-            nodeLabel,
-            outputLabel: output.label,
-            type: output.type,
-            description: output.description,
-          })
+          // shortId 缺失时跳过 nodes.* 路径（input.* 照常生成）
+          if (shortId) {
+            variables.push({
+              key: output.name,
+              path: buildNodePath(shortId, output.name),
+              label: `${nodeLabel} - ${output.label}`,
+              nodeId: node.id,
+              nodeLabel,
+              outputLabel: output.label,
+              type: output.type,
+              description: output.description,
+            })
+          }
 
           // 添加 input.{field} 格式（只有直接上游节点）
           if (isDirectUpstream) {
             variables.push({
               key: output.name,
-              path: `input.${output.name}`,
+              path: buildPrefixPath('input', output.name),
               label: `${nodeLabel} - ${output.label}`,
               nodeId: node.id,
               nodeLabel,
