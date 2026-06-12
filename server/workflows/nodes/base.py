@@ -500,9 +500,13 @@ class ExecutionContext:
     def _get_global_values(self) -> dict:
         """Get all global values (from variables and params) as flat dict."""
         result = {}
-        # Add global params
-        global_params = self.workflow_context.get("global_params", {})
-        result.update(global_params)
+        # Add global params：模型字段为持久化源（set_global_param/aset_global_param
+        # 只写 WorkflowExecution.global_params，不写 context 镜像），execution 从 DB
+        # 重载（resume/approve 等路径）后镜像为空，必须兜底模型字段（WR-01 回归修复）；
+        # context 镜像随后覆盖，保证同进程内最新写入值优先
+        if self.workflow_execution is not None:
+            result.update(self.workflow_execution.global_params or {})
+        result.update(self.workflow_context.get("global_params", {}))
         # Add global variable values (override params if same key)
         for key, var in self.get_all_global_variables().items():
             if isinstance(var, dict) and "value" in var:
