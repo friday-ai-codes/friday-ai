@@ -122,6 +122,51 @@ async def test_relations_invalid_value_raises(entity_factory):
         await graph_store.neighbors(a.id, relations=["nope"])
 
 
+async def test_both_direction_linear_chain(entity_factory, edge_factory):
+    """链 A→B→C both 2 跳含 B/C；从 C both 含 B/A。"""
+
+    def _setup():
+        a, b, c = (entity_factory() for _ in range(3))
+        for s, t in [(a, b), (b, c)]:
+            edge_factory(s, t)
+        return a, b, c
+
+    a, b, c = await sync_to_async(_setup)()
+
+    from_a = await graph_store.traverse(a.id, max_hops=2, direction="both")
+    assert {r.entity_id for r in from_a} == {b.id, c.id}
+
+    from_c = await graph_store.traverse(c.id, max_hops=2, direction="both")
+    assert {r.entity_id for r in from_c} == {b.id, a.id}
+
+
+async def test_both_direction_cycle_terminates(entity_factory, edge_factory):
+    """A→B→C→A 环 both 方向不 infinite loop。"""
+
+    def _setup():
+        a, b, c = (entity_factory() for _ in range(3))
+        for s, t in [(a, b), (b, c), (c, a)]:
+            edge_factory(s, t)
+        return a, b, c
+
+    a, b, c = await sync_to_async(_setup)()
+    result = await graph_store.traverse(a.id, max_hops=3, direction="both")
+    assert {r.entity_id for r in result} == {b.id, c.id}
+
+
+async def test_both_direction_invalidated_edge_invisible(entity_factory, edge_factory):
+    """失效边 both 遍历不可见（P2）。"""
+
+    def _setup():
+        a, b = entity_factory(), entity_factory()
+        edge = edge_factory(a, b, valid_at=timezone.now() - timedelta(hours=1))
+        return a, edge
+
+    a, edge = await sync_to_async(_setup)()
+    await graph_store.invalidate_edge(edge.id, invalid_at=timezone.now())
+    assert await graph_store.traverse(a.id, max_hops=2, direction="both") == []
+
+
 async def test_direction_in_traversal(entity_factory, edge_factory):
     """direction="in" 反向遍历命中上游实体。"""
 

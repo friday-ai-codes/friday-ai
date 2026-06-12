@@ -656,6 +656,18 @@ API_DETECTOR_CONFIG: dict = {
 }
 
 # =============================================================================
+# Knowledge Retrieval（Phase 15 RETR-05 / ENH-02）
+# =============================================================================
+
+KNOWLEDGE_RETRIEVAL_ALPHA: float = env.float("KNOWLEDGE_RETRIEVAL_ALPHA", 0.7)
+KNOWLEDGE_RETRIEVAL_BETA: float = env.float("KNOWLEDGE_RETRIEVAL_BETA", 0.3)
+KNOWLEDGE_RETRIEVAL_HALF_LIFE_DAYS: int = env.int("KNOWLEDGE_RETRIEVAL_HALF_LIFE_DAYS", 90)
+KNOWLEDGE_RETRIEVAL_GRAPH_MAX_HOPS: int = env.int("KNOWLEDGE_RETRIEVAL_GRAPH_MAX_HOPS", 2)
+KNOWLEDGE_RETRIEVAL_LLM_RERANK_ENABLED: bool = env.bool(
+    "KNOWLEDGE_RETRIEVAL_LLM_RERANK_ENABLED", False
+)
+
+# =============================================================================
 # Logging — Structlog 配置（implementation contract 凭证泄漏防护）
 # =============================================================================
 # configure_structlog 必须在 LOGGING dictConfig 之后、任何业务 logger 实例化之前调用。
