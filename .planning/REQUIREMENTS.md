@@ -1,113 +1,79 @@
-# Requirements: Friday AI — v0.3.0 交付知识图谱
+# Requirements: Friday AI — v0.4.0 工作流系统契约重构
 
-**Defined:** 2026-06-11
-**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.3.0 起需求/缺陷、技术方案、编码 diff 全链路 RAG 化并以时间感知知识图谱关联，任意入口都能召回相似历史需求及其完整迭代轨迹。
+**Defined:** 2026-06-12
+**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.4.0 收敛工作流系统的编辑态与运行态契约——保存即合法、模板开箱能跑、变量所选即所得、执行状态真实可见。
 
 ## v1 Requirements
 
-### 知识模型（KMOD）
+### 变量引用链路（VAR）
 
-- [x] **KMOD-01**: 系统以统一实体模型存储四类交付知识实体——需求/缺陷（work_item）、技术方案（tech_plan）、代码变更（code_change：diff/commit/MR）、文档（document：PRD/技术方案文档），实体携带稳定业务引用（`source_kind` + `source_id`）与来源（feishu/chat/mcp/workflow）及事件时间
-- [x] **KMOD-02**: 实体间关系以 bi-temporal 边存储（`valid_at`/`invalid_at` + `created_at`/`expired_at` 四时间戳），失效采用置位而非删除，历史可审计
-- [x] **KMOD-03**: 同一实体的多次修改形成版本链（supersedes），旧版本保留且可按版本号回溯
-- [x] **KMOD-04**: 图读写收敛于 GraphStore service 接口（内建 1–3 跳递归遍历、有效性过滤、防环与深度上限），调用方不得绕过接口裸写 SQL（保留换图引擎逃生门）
-- [x] **KMOD-05**: 编码产出的全量 diff 归档落库（unidiff 解析到文件级），关联 commit SHA / MR URL / 仓库元数据，超大 diff 压缩存储
+- [ ] **VAR-01**: 用户在自建流水线中通过变量选择器选择的上游节点输出引用（`{{nodes.<short_id>.<field>}}`），保存后执行时保证可解析——保存（bulk-update）时同步客户端 short_id 或服务端重写 config 中的节点引用，消除 short_id 漂移
+- [ ] **VAR-02**: 变量引用解析失败（节点 ID 不存在、字段不存在、未知前缀）时节点显式失败并给出可读错误（指明哪个引用、哪个节点），不再静默替换为空串或保留字面量
+- [ ] **VAR-03**: 前端所有产生变量引用的入口（变量选择器、端口复制、SmartInput）生成统一格式的引用（统一用 short_id），与后端解析器支持的语法完全一致
+- [ ] **VAR-04**: 变量解析支持嵌套字段路径（`{{nodes.x.data.name}}` 能取到 `output["data"]["name"]`），并有 `render_template`/`get_template_value` 的专项单元测试覆盖（错误 ID、未知前缀、UUID vs short_id、嵌套路径）
 
-### 知识摄取（INGEST）
+### 内置模板（TPL）
 
-- [x] **INGEST-01**: 工作流 `ai_plan_generation` 产出技术方案时，自动摄取需求与方案实体并建立 `HAS_PLAN` 边（含方案审批通过事件）
-- [x] **INGEST-02**: 编码完成回调（TaskResult/CodingTask）时，自动归档全量 diff、摄取 code_change 实体并关联到对应方案/需求
-- [x] **INGEST-03**: chat 对话产出 CodingPlan 或触发编码时，自动摄取提炼后的需求文本与方案（对话原文不入图）
-- [x] **INGEST-04**: 飞书工作项在关键事件（产出方案/触发编码/工作项更新）时摄取快照：名称、描述、自定义字段、PRD 文档与技术方案文档正文、关联工作项，均带事件时间
-- [x] **INGEST-05**: MCP 工具链（`create_feishu_technical_plan` / `execute_work_item_repo_tasks` 等）产出方案或执行编码时自动摄取
-- [x] **INGEST-06**: 技术方案/需求被修改（多轮对话修改、审批驳回重生成、飞书文档更新）时重摄取为新版本：新版本向量入库、旧版本向量下线（`is_latest` 翻转兜底 + 物理删除），旧边写 `expired_at`
-- [x] **INGEST-07**: 摄取一律异步后台执行（`transaction.on_commit` + background runner），不阻塞请求/工作流主链路；幂等（重复事件不产生重复实体/版本）
-- [x] **INGEST-08**: 知识文本（需求/方案/PRD/diff）确定性 chunk 后经既有 EmbeddingService 向量化，写入独立 `delivery_knowledge` collection（hybrid dense+sparse，payload 含 entity_kind/entity_id/version/is_latest/project_id/event_time）
+- [ ] **TPL-01**: 用户从任一内置模板创建工作流后，不修改任何配置即可成功执行到业务预期结果（修正 `daily_summary` 引用不存在的 `output` 字段、`code_review_pipeline` 节点链路与 `ai_code_review` 实现不符等已知断裂）
+- [ ] **TPL-02**: 模板自动化校验测试覆盖：每个模板的节点 type 存在于 registry、config 必填字段齐全、`{{ }}` 变量引用的节点 ID 与字段在上游输出 schema 中存在、edge 的 source/target handle 与节点端口定义一致
+- [ ] **TPL-03**: 模板创建（loader）在实例化前执行与保存相同的图校验，非法模板拒绝创建并返回结构化错误
 
-### 知识检索（RETR）
+### 节点定义单一事实源（SSOT）
 
-- [x] **RETR-01**: 用户给定新需求文本，可召回 top-K 相似历史需求，并附带其关联的技术方案、代码变更与 MR 链接
-- [x] **RETR-02**: 用户可从任一实体出发双向查看关联上下游（需求→方案→diff→MR，反向亦可）
-- [x] **RETR-03**: 用户可查询一个需求的完整迭代轨迹：方案 v1→vN 与各次编码按时间排序的时间线（走 PG 版本链，不依赖向量库）
-- [x] **RETR-04**: 检索默认仅命中最新有效版本；被取代的内容不出现在默认结果中，显式标注 `superseded by vN` 后方可返回
-- [x] **RETR-05**: 检索融合向量召回 + 1–2 跳图扩散 + 时间衰减重排，已失效实体/边硬过滤（衰减只作用于状态类内容）
-- [x] **RETR-06**: 每条检索结果附出处 metadata：实体类型、版本号、valid 时间区间、来源链接（飞书工作项 URL / MR URL / 会话）
-- [x] **RETR-07**: 检索按 project/space 权限在 service 层内过滤（payload 含权限维度字段），越权内容不可见，入口 fail-closed
+- [ ] **SSOT-01**: 前端节点面板（palette）、配置表单 schema、默认 config 全部以后端 `GET /api/node-types/` 返回为准，删除前端硬编码 `NODE_REGISTRY` 漂移（含幽灵节点 `fetch_project_info` → `fetch_space_info`）
+- [ ] **SSOT-02**: 前端画布节点的输入/输出 Handle 按后端 NodePort 定义渲染（如 `ai_coding` 的 `plan`、`ai_code_review` 的 `coding_result`、审批节点的 `approved`/`rejected`），替换 `portConfig.ts` 硬编码
+- [ ] **SSOT-03**: 前后端节点定义一致性有自动化守护：CI 校验前端消费的节点 type/端口与后端 registry 一致（或前端定义完全由后端生成，无需对账）
 
-### 多入口暴露（EXPO）
+### 保存校验（VAL）
 
-- [x] **EXPO-01**: MCP HTTP 查询工具（`search_delivery_knowledge` / `get_entity_timeline` / `get_related_entities`），PAT 认证 + interactions 审计，与既有 19 工具同体系
-- [x] **EXPO-02**: workflow 检索节点：方案生成前自动检索相似历史交付并注入上下文（使 `ai_plan_generation` 可消费历史 → 飞轮）
-- [x] **EXPO-03**: chat agent tools 暴露同一知识检索服务（@tool 注册 + langchain adapter）
-- [x] **EXPO-04**: npm Friday skill 封装知识检索工具链，外部 agent 可问"以前做过类似需求吗 / 这段代码为什么这么改"
+- [ ] **VAL-01**: 后端提供统一 `WorkflowGraphValidator`（DAG 环/入口/孤立节点、edge 节点归属与 handle 合法性、节点 config schema、变量引用可解析性），bulk-update、单节点/边 CRUD、导入、模板创建共用同一校验
+- [ ] **VAL-02**: 保存非法工作流（含新建节点 config 不合 schema）返回结构化错误（节点 id + 字段路径 + 原因），不再"能保存、一执行就失败"
+- [ ] **VAL-03**: 前端保存前可调用 dry-run 校验接口，IssuesPanel 展示真实校验警告/错误（当前 `useWorkflowValidationStore` 无任何调用方，面板永不出现）
 
-### 增强（ENH）
+### 执行引擎（ENG）
 
-- [x] **ENH-01**: diff→chunk 符号级对齐：code_change 经 `MODIFIES_CHUNK` 边关联 ChunkRegistry 代码块（记 file+symbol+commit_sha 懒解析），支持反查"这个函数被哪些需求改过"
-- [x] **ENH-02**: LLM 相似度复评：相似需求召回结果二阶段分级（重复/相关/无关）并附一句话理由
-- [x] **ENH-03**: 前端只读实体详情页 + 关联时间线（列表/树形态，不做图画布编辑）
-- [x] **ENH-04**: as-of（point-in-time）历史时点查询暴露为检索工具参数（"2026-05 时这个需求的方案是什么"）
+- [ ] **ENG-01**: 修复 `waiting_event` 与完成判定的状态机不一致：存在等待事件节点时执行不得被误判为 completed；挂起（suspended）状态对前端真实可见
+- [ ] **ENG-02**: 调度主循环与回调续跑路径行为一致：均按节点结果的 `next_handle` 与边的 `source_handle` 路由条件分支，未选中分支正确 skipped
+- [ ] **ENG-03**: 执行上下文注入 `trigger_data`，`{{trigger.*}}` 引用在所有触发方式下可解析
+- [ ] **ENG-04**: DAG 死锁（有 pending 但无 ready 且无等待节点）明确转 failed 并附诊断信息（哪些节点在等哪些依赖），不留无限 running
+- [ ] **ENG-05**: 节点输入收集尊重 `target_handle` 语义（或明确移除该字段并统一文档/前端展示），消除"端口名存实亡"的双轨模型；引擎核心路径（调度、分支、死锁、等待）有自动化回归测试
+
+### 触发模型（TRIG）
+
+- [ ] **TRIG-01**: 修复飞书触发同步字段断裂：画布 `feishu_event_trigger` 节点保存后 `WorkflowTrigger` 表正确生成（统一 `event_type`/`event_types` 字段），飞书事件能匹配到工作流
+- [ ] **TRIG-02**: `schedule` 触发类型不再是假功能：实现定时调度 handler（django-apscheduler 注册 → dispatch），或从模型/UI 中移除该选项
+- [ ] **TRIG-03**: 触发分发失败不再被静默吞掉：dispatch 异常记录到可查询的位置（执行记录或事件日志），用户能看到"触发了但没跑起来"的原因
+
+### 执行可观测（OBS）
+
+- [ ] **OBS-01**: 执行详情页节点失败时清晰展示错误信息（error_message、失败的变量引用、重试情况），用户不再把"节点失败"误感知为"卡住"
+- [ ] **OBS-02**: 执行详情页 WebSocket 断线时自动降级 REST 轮询（与列表页一致），长时执行 UI 不冻结；执行进度以服务端权威值为准
+- [ ] **OBS-03**: 执行整体状态（running/suspended/waiting_approval/failed）在列表与详情页如实展示，前端状态枚举与后端 `ExecutionStatus` 对齐（清除前端引用的不存在状态值）
 
 ## v2 Requirements
 
-### 知识洞察（INSIGHT）
+### 工作流增强（WFE）
 
-- **INSIGHT-01**: 跨需求洞察报表（哪些模块返工最多、方案推翻率）— 离线分析，先积累数据
-- **INSIGHT-02**: 检索权重自适应（α/half-life 按使用反馈调参）
-- **INSIGHT-03**: 知识图谱与代码图谱（ChunkEdge）双向融合检索
+- **WFE-01**: 编辑器内"试运行单节点"（mock 上游输出调试单个节点配置）
+- **WFE-02**: bulk-update 边改为 upsert（稳定 edge id），支持增量 diff 与审计
+- **WFE-03**: `_debug_sessions` 调试会话迁出模块级 dict（Redis/DB），支持多 worker 部署
+- **WFE-04**: 工作流版本快照与回滚
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| 全自动双向同步飞书（图谱回写工作项/全字段实时同步） | 回写=写权限+冲突解决+回环风暴；单向事件驱动快照已够 |
-| LLM 自由文本实体/关系抽取 | 实体自带稳定业务 ID，抽取是负价值（贵、慢、漂移）；既定决策 |
-| 在线图算法分析（社区发现/全图 PageRank） | 与 1–3 跳检索负载不同，会反推图数据库迁移；全局统计留离线 |
-| 图谱可视化编辑器（画布增删实体/边） | 人工边必然腐烂（RTM 教训），破坏"工作流副产品"不变量 |
-| 对话全量记忆化（Zep 式 agent memory） | 与会话隔离（v0.2.0）冲突、噪声大；仅摄取"成为需求"的节点 |
-| 旧版本物理删除 | 历史轨迹查询是 table stakes；失效置位不删除 |
-| 强一致同步索引（事件同步阻塞写图+写向量） | embedding 慢且可能失败；分钟级新鲜度容忍，异步幂等即可 |
-| 引入 Neo4j 等图数据库 / 迁移既有 ChunkEdge | 基准实证 1–3 跳负载 PG 递归 CTE 反超 Neo4j；GraphStore 接口留逃生门 |
+| 推倒重写执行引擎（DAG/Engine/BaseNode） | 骨架可用，问题在契约与校验前移；重写风险远大于收敛 |
+| 更换 vue-flow / 前端编辑器框架 | 编辑器交互本身不是痛点，契约才是 |
+| 新增工作流节点类型 | 本里程碑聚焦修复与重构，不扩功能面 |
+| 多 worker 水平扩展执行引擎 | 线程模型重构是独立大工程，先把单实例语义修对（WFE-03 留 v2） |
+| 工作流市场 / 模板分享 | 先让内置模板能跑，分享生态以后再说 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KMOD-01 | Phase 12 | Complete |
-| KMOD-02 | Phase 12 | Complete |
-| KMOD-03 | Phase 12 | Complete |
-| KMOD-04 | Phase 12 | Complete |
-| KMOD-05 | Phase 14 | Complete |
-| INGEST-01 | Phase 14 | Complete |
-| INGEST-02 | Phase 14 | Complete |
-| INGEST-03 | Phase 13 | Complete |
-| INGEST-04 | Phase 14 | Complete |
-| INGEST-05 | Phase 13 | Complete |
-| INGEST-06 | Phase 13 | Complete |
-| INGEST-07 | Phase 13 | Complete |
-| INGEST-08 | Phase 13 | Complete |
-| RETR-01 | Phase 15 | Complete |
-| RETR-02 | Phase 15 | Complete |
-| RETR-03 | Phase 15 | Complete |
-| RETR-04 | Phase 15 | Complete |
-| RETR-05 | Phase 15 | Complete |
-| RETR-06 | Phase 15 | Complete |
-| RETR-07 | Phase 15 | Complete |
-| EXPO-01 | Phase 16 | Complete |
-| EXPO-02 | Phase 16 | Complete |
-| EXPO-03 | Phase 16 | Complete |
-| EXPO-04 | Phase 16 | Complete |
-| ENH-01 | Phase 14 | Complete |
-| ENH-02 | Phase 15 | Complete |
-| ENH-03 | Phase 16 | Complete |
-| ENH-04 | Phase 16 | Complete |
-
-**Coverage:**
-
-- v1 requirements: 28 total
-- Mapped to phases: 28 ✓
-- Unmapped: 0
+| (filled by roadmap) | | |
 
 ---
-*Requirements defined: 2026-06-11*
-*Last updated: 2026-06-12 after v0.3.0 milestone completion (28/28 complete)*
+*Requirements defined: 2026-06-12*
