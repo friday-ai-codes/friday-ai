@@ -594,6 +594,13 @@ class RepositoryRoutingTrace(models.Model):
         max_length=32,
         choices=TriggeredBy.choices,
     )
+    # PageIndex 化路由版本对照（观测指标用）：
+    # legacy_hybrid（旧聚合）/ v2（树推理）/ v2_stage0_only（节点检索无 LLM）
+    router_version = models.CharField(
+        max_length=20,
+        default="legacy_hybrid",
+        help_text="路由实现版本，供 v1/v2 相关度对照分析",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

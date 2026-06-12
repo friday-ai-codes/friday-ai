@@ -28,6 +28,14 @@ from .graph_search_views import GraphSearchView
 from .refresh_remote_head_views import RefreshRemoteHeadView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
+from .tree_views import (
+    KnowledgeTreeFacetView,
+    KnowledgeTreePinView,
+    KnowledgeTreeRebuildView,
+    KnowledgeTreeSearchView,
+    KnowledgeTreeView,
+    RepositoryIndexTreeView,
+)
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 
 router = DefaultRouter()  # trailing_slash=True by default
@@ -67,6 +75,32 @@ urlpatterns = [
         "route/",
         RepoRouteView.as_view(),
         name="repository-route",
+    ),
+    # PageIndex 知识树浏览（必须在 router 之前）
+    path(
+        "knowledge-tree/",
+        KnowledgeTreeView.as_view(),
+        name="knowledge-tree",
+    ),
+    path(
+        "knowledge-tree/facet/",
+        KnowledgeTreeFacetView.as_view(),
+        name="knowledge-tree-facet",
+    ),
+    path(
+        "knowledge-tree/search/",
+        KnowledgeTreeSearchView.as_view(),
+        name="knowledge-tree-search",
+    ),
+    path(
+        "knowledge-tree/rebuild/",
+        KnowledgeTreeRebuildView.as_view(),
+        name="knowledge-tree-rebuild",
+    ),
+    path(
+        "knowledge-tree/pin/",
+        KnowledgeTreePinView.as_view(),
+        name="knowledge-tree-pin",
     ),
     # Router URLs
     path("", include(router.urls)),
@@ -111,6 +145,12 @@ urlpatterns = [
         "<uuid:repository_id>/index/delete/",
         IndexDeleteView.as_view(),
         name="repository-index-delete",
+    ),
+    # PageIndex 单仓能力树
+    path(
+        "<uuid:repository_id>/index-tree/",
+        RepositoryIndexTreeView.as_view(),
+        name="repository-index-tree",
     ),
     # Code search
     path(

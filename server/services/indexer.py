@@ -1191,6 +1191,10 @@ class IndexerService:
                     exc_info=True,
                 )
 
+            # PageIndex 事实层刷新（零 LLM）：能力树节点 payload 的事实分面/
+            # api_domains 随索引完成重算；失败不回滚索引。
+            await self._refresh_tree_facts()
+
             return {
                 "status": "success",
                 "files_processed": total_files,
@@ -1205,6 +1209,28 @@ class IndexerService:
                 error=str(e),
             )
             raise
+
+    async def _refresh_tree_facts(self) -> None:
+        """PageIndex 事实层刷新：树节点 payload 的分面/API 域随索引重算（零 LLM）。
+
+        仅当仓库已有能力树时执行；失败不冒泡（不阻塞索引 INDEXED 终态）。
+        """
+        try:
+            from codegraph.services.repo_index_tree import RepoIndexTreeBuilder
+            from repositories.facet_service import FacetService
+            from repositories.models import Repository
+
+            repo = await Repository.objects.filter(id=self.repository_id).afirst()
+            if repo is None or not repo.ai_summary_tree:
+                return
+            await FacetService.refresh_fact_facets(self.repository_id)
+            await RepoIndexTreeBuilder.refresh_facts(self.repository_id)
+        except Exception:
+            logger.warning(
+                "tree_facts_refresh_failed",
+                repository_id=self.repository_id,
+                exc_info=True,
+            )
 
     async def _update_branch_index_record(
         self,
@@ -2470,6 +2496,24 @@ class IndexerService:
             modified_file_paths = [d.file_path for d in diffs if d.action == DiffAction.UPDATE]
             deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
 
+            # PageIndex 增量分层刷新：
+            # 1. 树结构层——diff 映射到节点 stale 标记，阈值触发异步重建（claude code）
+            # 2. 事实层——节点 payload 事实字段零 LLM 重算
+            try:
+                from codegraph.services.tree_freshness import apply_index_delta
+
+                await apply_index_delta(
+                    self.repository_id,
+                    added_file_paths + modified_file_paths + deleted_file_paths,
+                )
+            except Exception:
+                logger.warning(
+                    "tree_freshness_apply_failed",
+                    repository_id=self.repository_id,
+                    exc_info=True,
+                )
+            await self._refresh_tree_facts()
+
             return {
                 "status": "success",
                 **stats,
@@ -2772,6 +2816,7 @@ class IndexerService:
                 ):
                     try:
                         from pathlib import Path as _Path  # noqa: PLC0415
+
                         from codegraph.lsp.gopls_interface import (  # noqa: PLC0415
                             extract_interface_implementations,
                         )

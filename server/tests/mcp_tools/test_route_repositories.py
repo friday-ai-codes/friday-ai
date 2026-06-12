@@ -18,15 +18,24 @@ def test_route_repositories_returns_enriched_candidates(
 ) -> None:
     client, _plaintext = mcp_client
     monkeypatch.setattr(
-        "codegraph.services.repo_router.RepoRouter.route",
+        "codegraph.services.repo_router_v2.RepoRouterV2.route",
         AsyncMock(
-            return_value=[
-                SimpleNamespace(
-                    repo_id=str(indexed_repository.id),
-                    final_score=0.91,
-                    match_reason="名称和摘要命中",
-                )
-            ]
+            return_value=SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        repo_id=str(indexed_repository.id),
+                        repo_name=indexed_repository.name,
+                        score=0.91,
+                        confidence="high",
+                        reasoning="名称和摘要命中",
+                        sub_project="",
+                        sub_project_paths=[],
+                        matched_node_paths=["认证模块 > 登录"],
+                    )
+                ],
+                router_version="v2",
+                auto_selected=True,
+            )
         ),
     )
 
@@ -41,5 +50,9 @@ def test_route_repositories_returns_enriched_candidates(
     assert body["ranked_repos"][0]["repo_id"] == str(indexed_repository.id)
     assert body["ranked_repos"][0]["description"] == "用于 MCP 测试的仓库"
     assert body["ranked_repos"][0]["reason"] == "名称和摘要命中"
+    assert body["ranked_repos"][0]["confidence"] == "high"
+    assert body["ranked_repos"][0]["matched_node_paths"] == ["认证模块 > 登录"]
+    assert body["router_version"] == "v2"
+    assert body["auto_selected"] is True
     assert InteractionRun.objects.filter(run_id=body["run_id"]).exists()
     assert RetrievalTrace.objects.filter(kind=RetrievalTrace.Kind.ROUTING).count() == 1

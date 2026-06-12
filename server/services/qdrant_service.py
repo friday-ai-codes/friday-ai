@@ -939,15 +939,35 @@ class QdrantService:
             return []
 
     @classmethod
+    def get_configured_embedding_dimension(cls) -> int:
+        """读取系统设置中的 embedding 维度（与 indexer 建 code_index 时同源）。
+
+        ensure_repo_summaries_collection 等"派生 collection"必须与 code_index
+        使用同一维度，否则 upsert 会因维度不匹配静默失败（历史 bug：写死 1024
+        而 embedding 模型实际输出 2560，repo_summaries 永远为空 →
+        route_repositories 永远返回空列表）。
+        """
+        setting = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_DIMENSION).first()
+        return int(setting.value) if setting and setting.value else 1024
+
+    @classmethod
     def create_collection_by_name(
         cls,
         collection_name: str,
         vector_size: int = 1024,
         hybrid: bool = False,
+        recreate_on_mismatch: bool = False,
     ) -> bool:
         """创建指定名称的 collection（用于 overlay branch collection）。
 
         与 create_collection 逻辑一致但接受 collection_name 而非 repository_id。
+
+        Args:
+            recreate_on_mismatch: 已存在 collection 的维度 / hybrid 模式与期望不符时，
+                是否删除重建。仅适用于**可从源数据完整重建**的派生 collection
+                （repo_summaries / repo_index_nodes / overlay 分支索引）；
+                不可重建的数据（如 delivery_knowledge）必须保持 False，
+                由调用方自行处理不一致。
         """
         client = cls.get_client()
         try:
@@ -955,8 +975,36 @@ class QdrantService:
             existing_names = [c.name for c in collections.collections]
 
             if collection_name in existing_names:
-                logger.info("collection_already_exists", collection_name=collection_name)
-                return True
+                if not recreate_on_mismatch:
+                    logger.info("collection_already_exists", collection_name=collection_name)
+                    return True
+
+                # 与 create_collection 相同的配置漂移检测：维度或 hybrid 模式
+                # 不一致就删除重建，否则后续 upsert 全部 400（维度错误）被静默吞掉。
+                collection_info = client.get_collection(collection_name)
+                vectors_config = collection_info.config.params.vectors
+                if isinstance(vectors_config, dict):
+                    existing_hybrid = True
+                    existing_size = vectors_config.get(
+                        "dense", models.VectorParams(size=0, distance=models.Distance.COSINE)
+                    ).size
+                else:
+                    existing_hybrid = False
+                    existing_size = vectors_config.size  # type: ignore[union-attr]
+
+                if existing_size == vector_size and existing_hybrid == hybrid:
+                    logger.info("collection_already_exists", collection_name=collection_name)
+                    return True
+
+                logger.warning(
+                    "collection_config_mismatch_recreate",
+                    collection_name=collection_name,
+                    existing_size=existing_size,
+                    new_size=vector_size,
+                    existing_hybrid=existing_hybrid,
+                    new_hybrid=hybrid,
+                )
+                client.delete_collection(collection_name=collection_name)
 
             if hybrid:
                 client.create_collection(
@@ -994,9 +1042,74 @@ class QdrantService:
             return False
 
     @classmethod
-    def ensure_repo_summaries_collection(cls, vector_size: int = 1024) -> bool:
-        """确保 repo_summaries collection 存在（hybrid 模式，幂等）。"""
-        return cls.create_collection_by_name("repo_summaries", vector_size=vector_size, hybrid=True)
+    def ensure_repo_summaries_collection(cls, vector_size: int | None = None) -> bool:
+        """确保 repo_summaries collection 存在（hybrid 模式，幂等）。
+
+        vector_size 缺省时从系统设置 EMBEDDING_DIMENSION 解析，保证与 code_index
+        同维度；已存在但维度 / 模式漂移时自动重建（repo_summaries 可随时由
+        rebuild_repo_summaries 全量回填，删除无数据丢失风险）。
+        """
+        if vector_size is None:
+            vector_size = cls.get_configured_embedding_dimension()
+        return cls.create_collection_by_name(
+            "repo_summaries", vector_size=vector_size, hybrid=True, recreate_on_mismatch=True
+        )
+
+    @classmethod
+    def ensure_repo_index_nodes_collection(cls, vector_size: int | None = None) -> bool:
+        """确保 repo_index_nodes collection 存在（能力树节点级索引，hybrid，幂等）。
+
+        与 ensure_repo_summaries_collection 同策略：维度跟随系统设置，
+        漂移自动重建（节点向量可由 RepoIndexTreeService 重新生成）。
+        """
+        if vector_size is None:
+            vector_size = cls.get_configured_embedding_dimension()
+        created = cls.create_collection_by_name(
+            "repo_index_nodes", vector_size=vector_size, hybrid=True, recreate_on_mismatch=True
+        )
+        if created:
+            # repository_id / node_type 是路由与浏览的主过滤字段
+            client = cls.get_client()
+            for field in ("repository_id", "node_type", "sub_project"):
+                try:
+                    client.create_payload_index(
+                        collection_name="repo_index_nodes",
+                        field_name=field,
+                        field_schema=models.PayloadSchemaType.KEYWORD,
+                    )
+                except UnexpectedResponse:
+                    pass  # 已存在
+        return created
+
+    @classmethod
+    def delete_by_payload_field(
+        cls, collection_name: str, field: str, value: str
+    ) -> bool:
+        """按 payload 字段等值条件删除 points（如重建某仓库的全部树节点）。"""
+        client = cls.get_client()
+        try:
+            client.delete(
+                collection_name=collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key=field,
+                                match=models.MatchValue(value=value),
+                            )
+                        ]
+                    )
+                ),
+            )
+            return True
+        except UnexpectedResponse as e:
+            logger.warning(
+                "delete_by_payload_field_failed",
+                collection_name=collection_name,
+                field=field,
+                error=str(e),
+            )
+            return False
 
     @classmethod
     def delete_collection_by_name(cls, collection_name: str) -> bool:
@@ -1088,16 +1201,30 @@ class QdrantService:
 
     @classmethod
     def _build_filter(cls, filters: dict[str, Any] | None) -> models.Filter | None:
-        """构建 Qdrant 查询过滤条件。"""
+        """构建 Qdrant 查询过滤条件。
+
+        通用规则：值为 list → MatchAny（任一匹配）；标量 → MatchValue 等值。
+        """
         filter_conditions = []
         if filters:
-            if "language" in filters:
-                filter_conditions.append(
-                    models.FieldCondition(
-                        key="language",
-                        match=models.MatchValue(value=filters["language"]),
+            for key, value in filters.items():
+                if isinstance(value, (list, tuple, set)):
+                    values = [v for v in value if v is not None]
+                    if not values:
+                        continue
+                    filter_conditions.append(
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchAny(any=list(values)),
+                        )
                     )
-                )
+                elif value is not None:
+                    filter_conditions.append(
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value),
+                        )
+                    )
         if filter_conditions:
             return models.Filter(must=filter_conditions)
         return None

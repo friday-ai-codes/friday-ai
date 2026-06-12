@@ -104,7 +104,7 @@ class TestRepositoryDetail:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "Test Repo"
-        assert "projects" in response.data
+        assert "spaces" in response.data
 
     def test_update_repository(self, authenticated_client, repository, urls):
         """测试更新仓库。"""

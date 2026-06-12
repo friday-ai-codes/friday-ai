@@ -34,22 +34,26 @@ class RepoRouteView(APIView):
         query = serializer.validated_data["query"]
         top_k = serializer.validated_data.get("top_k", 3)
 
-        from codegraph.services.repo_router import RepoRouter
+        from codegraph.services.repo_router_v2 import RepoRouterV2
 
-        results = await RepoRouter.route(query, top_k=top_k)
+        result = await RepoRouterV2.route(query, top_k=top_k)
 
         return Response({
             "query": query,
+            "router_version": result.router_version,
+            "auto_selected": result.auto_selected,
             "ranked_repos": [
                 {
-                    "repo_id": r.repo_id,
-                    "repo_name": r.repo_name,
-                    "score": r.final_score,
-                    "bm25_score": r.bm25_score,
-                    "embedding_score": r.embedding_score,
-                    "match_reason": r.match_reason,
+                    "repo_id": c.repo_id,
+                    "repo_name": c.repo_name,
+                    "score": c.score,
+                    "confidence": c.confidence,
+                    "match_reason": c.reasoning,
+                    "sub_project": c.sub_project,
+                    "sub_project_paths": c.sub_project_paths,
+                    "matched_node_paths": c.matched_node_paths,
                 }
-                for r in results
+                for c in result.candidates
             ],
-            "total": len(results),
+            "total": len(result.candidates),
         })

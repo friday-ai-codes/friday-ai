@@ -89,6 +89,10 @@ function formatIndexedTime(value: string) {
       description="管理您的 Git 仓库和凭证配置"
     >
       <template #actions>
+        <Button variant="outline" @click="router.push('/repositories/tree')">
+          <span class="icon-[lucide--folder-tree]" />
+          知识树
+        </Button>
         <Button @click="openCreateRepository">
           <span class="icon-[lucide--plus]" />
           新建仓库

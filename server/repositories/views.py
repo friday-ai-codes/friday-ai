@@ -37,7 +37,7 @@ from .serializers import (
     GitCredentialSerializer,
     RepositoryCreateSerializer,
     RepositorySerializer,
-    RepositoryWithProjectsSerializer,
+    RepositoryWithSpacesSerializer,
 )
 
 logger = structlog.get_logger(__name__)
@@ -266,18 +266,18 @@ class RepositoryViewSet(ModelViewSet):
         if self.action == "create":
             return RepositoryCreateSerializer
         if self.action == "retrieve":
-            return RepositoryWithProjectsSerializer
+            return RepositoryWithSpacesSerializer
         return RepositorySerializer
 
     async def aretrieve(self, request, *args, **kwargs):
-        """显式覆盖 aretrieve 确保使用包含 projects 字段的详情 serializer。
+        """显式覆盖 aretrieve 确保使用包含 spaces 字段的详情 serializer。
 
         adrf 的 aretrieve 默认走 get_serializer_class，但 action 判断在 async
         上下文中可能不正确，导致使用了基础 RepositorySerializer 而非
-        RepositoryWithProjectsSerializer。此处显式指定 serializer 以确保正确性。
+        RepositoryWithSpacesSerializer。此处显式指定 serializer 以确保正确性。
         """
         instance = await self.aget_object()
-        serializer = RepositoryWithProjectsSerializer(instance)
+        serializer = RepositoryWithSpacesSerializer(instance)
         data = await sync_to_async(lambda: serializer.data)()
         return Response(data)
 
@@ -324,9 +324,47 @@ class RepositoryViewSet(ModelViewSet):
             git_user_email=git_user_email,
         )
 
+        # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort：
+        # Runner 离线 / AI 凭证未配置等失败只记日志，不阻塞建仓响应）。
+        self._schedule_auto_summary(str(repository.id))
+
         # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
         resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)()
         return Response(resp_data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _schedule_auto_summary(repository_id: str) -> None:
+        """仓库创建后后台自动派发 repo_summary（AI 描述 + PageIndex 能力树）。"""
+        from services.background_runner import run_in_background
+
+        async def _auto_dispatch() -> None:
+            from repositories.summary_service import dispatch_repo_summary
+
+            repo = await Repository.objects.filter(
+                id=repository_id, is_deleted=False
+            ).afirst()
+            if repo is None or repo.ai_summary_status in (
+                AISummaryStatus.PENDING,
+                AISummaryStatus.RUNNING,
+            ):
+                return
+            try:
+                session_id = await dispatch_repo_summary(repo)
+                logger.info(
+                    "auto_repo_summary_dispatched",
+                    repository_id=repository_id,
+                    session_id=session_id,
+                )
+            except Exception:  # noqa: BLE001 — 自动触发失败不影响建仓
+                logger.warning(
+                    "auto_repo_summary_dispatch_failed",
+                    repository_id=repository_id,
+                    exc_info=True,
+                )
+
+        run_in_background(
+            _auto_dispatch, name=f"auto_repo_summary_{repository_id}"
+        )
 
     async def perform_aupdate(self, serializer):
         base_branch = serializer.validated_data.get("base_branch")
@@ -467,12 +505,27 @@ class RepositoryViewSet(ModelViewSet):
         from .summary_service import reconcile_ai_summary_status
 
         repository = await reconcile_ai_summary_status(repository)
+
+        # PageIndex 能力树状态：节点数统计（递归）
+        def _count_nodes(nodes: list) -> int:
+            total = 0
+            stack = list(nodes or [])
+            while stack:
+                node = stack.pop()
+                total += 1
+                stack.extend(node.get("children", []) if isinstance(node, dict) else [])
+            return total
+
+        tree = repository.ai_summary_tree or []
         return Response({
             "status": repository.ai_summary_status,
             "progress": None,
             "summary": repository.ai_summary,
             "generated_at": repository.ai_summary_generated_at,
             "error": repository.ai_summary_error or None,
+            "has_tree": bool(tree),
+            "is_monorepo": repository.is_monorepo,
+            "tree_node_count": _count_nodes(tree),
         })
 
     @action(detail=True, methods=["post"], url_path="generate-webhook-secret")

@@ -26,6 +26,10 @@ const summary = ref<string | null>(null)
 const generatedAt = ref<string | null>(null)
 const errorMsg = ref<string | null>(null)
 const generating = ref(false)
+// PageIndex 能力树状态
+const hasTree = ref(false)
+const isMonorepo = ref(false)
+const treeNodeCount = ref(0)
 
 // 轮询控制
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -65,6 +69,9 @@ async function fetchStatus() {
     summary.value = res.summary
     generatedAt.value = res.generated_at
     errorMsg.value = res.error
+    hasTree.value = res.has_tree ?? false
+    isMonorepo.value = res.is_monorepo ?? false
+    treeNodeCount.value = res.tree_node_count ?? 0
 
     // 终态时停止轮询
     if (res.status === 'completed' || res.status === 'failed' || res.status === 'not_started') {
@@ -110,12 +117,12 @@ async function generateSummary() {
   try {
     await repositoriesApi.generateSummary(props.repositoryId)
     status.value = 'pending'
-    toastSuccess(isRegenerate ? 'AI 描述重新生成任务已启动' : 'AI 描述生成任务已启动')
+    toastSuccess(isRegenerate ? 'AI 描述与 PageIndex 索引重新生成任务已启动' : 'AI 描述与 PageIndex 索引生成任务已启动')
     startPolling()
   }
   catch (e: unknown) {
     if (e instanceof ApiError && e.status === 409) {
-      toastWarning('描述正在生成中，请稍候')
+      toastWarning('生成任务正在进行中，请稍候')
       // 恢复 polling 以跟踪进度
       if (status.value !== 'pending' && status.value !== 'running') {
         status.value = 'running'
@@ -161,10 +168,10 @@ onUnmounted(() => {
         </div>
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-foreground">
-            AI 描述
+            AI 描述与 PageIndex 索引
           </h3>
           <p class="text-xs text-muted-foreground truncate">
-            自动分析仓库结构，生成项目概览与技术栈
+            自动分析仓库结构，生成项目概览与可检索的能力树索引
           </p>
         </div>
       </div>
@@ -190,7 +197,7 @@ onUnmounted(() => {
             @click="generateSummary"
           >
             <span class="icon-[lucide--sparkles] mr-1.5" />
-            重新生成描述
+            重新生成
           </Button>
         </template>
         <!-- failed: 重新生成 -->
@@ -202,7 +209,7 @@ onUnmounted(() => {
             @click="generateSummary"
           >
             <span class="icon-[lucide--sparkles] mr-1.5" />
-            重新生成描述
+            重新生成
           </Button>
         </template>
       </div>
@@ -227,12 +234,12 @@ onUnmounted(() => {
         <div class="flex flex-col items-center justify-center py-6 space-y-3">
           <span class="icon-[lucide--sparkles] text-2xl text-muted-foreground/40" />
           <p class="text-sm font-semibold text-foreground">
-            {{ hasLegacyDescription ? '可生成更完整的 AI 描述' : '尚未生成 AI 描述' }}
+            {{ hasLegacyDescription ? '可生成更完整的 AI 描述与 PageIndex 索引' : '尚未生成 AI 描述与 PageIndex 索引' }}
           </p>
           <p class="text-xs text-muted-foreground text-center max-w-sm">
             {{ hasLegacyDescription
-              ? 'AI 将分析代码结构，生成项目概览、技术栈、模块结构等结构化描述'
-              : '点击下方按钮，AI 将自动分析仓库结构并生成智能描述' }}
+              ? 'AI 将分析代码结构，生成项目概览与「子应用 → 模块 → 能力」层级索引，用于仓库智能检索'
+              : '新建仓库会自动触发生成；也可点击下方按钮手动触发，AI 将分析仓库结构并生成描述与能力树索引' }}
           </p>
           <Button
             variant="default"
@@ -241,7 +248,7 @@ onUnmounted(() => {
             @click="generateSummary"
           >
             <span class="icon-[lucide--sparkles] mr-1.5" />
-            生成 AI 描述
+            生成描述与索引
           </Button>
         </div>
       </div>
@@ -255,12 +262,39 @@ onUnmounted(() => {
         </div>
         <div class="flex items-center gap-2 text-sm text-muted-foreground">
           <span class="icon-[lucide--loader-2] animate-spin" />
-          <span>{{ status === 'pending' ? '任务排队中...' : 'AI 正在分析仓库结构...' }}</span>
+          <span>{{ status === 'pending' ? '任务排队中...' : 'AI 正在分析仓库结构，生成描述与能力树索引...' }}</span>
         </div>
       </div>
 
       <!-- 状态 C: completed -->
       <div v-else-if="status === 'completed' && summary">
+        <!-- PageIndex 索引状态行 -->
+        <div
+          class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border p-3"
+          :class="hasTree ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/50 bg-muted/20'"
+        >
+          <span
+            class="shrink-0"
+            :class="hasTree ? 'icon-[lucide--folder-tree] text-emerald-600 dark:text-emerald-400' : 'icon-[lucide--folder-tree] text-muted-foreground/60'"
+          />
+          <template v-if="hasTree">
+            <span class="text-xs font-medium text-foreground">PageIndex 能力树已生成</span>
+            <Badge variant="secondary" class="text-[10px]">{{ treeNodeCount }} 个节点</Badge>
+            <Badge v-if="isMonorepo" variant="secondary" class="text-[10px]">monorepo</Badge>
+            <RouterLink
+              to="/repositories/tree"
+              class="ml-auto text-xs text-primary hover:underline"
+            >
+              在知识树中查看 →
+            </RouterLink>
+          </template>
+          <template v-else>
+            <span class="text-xs text-muted-foreground">
+              本次结果未包含能力树索引（可能为旧版描述），点击「重新生成」可补建 PageIndex 索引
+            </span>
+          </template>
+        </div>
+
         <!-- 结构化 JSON 分段展示 -->
         <div v-if="parsedSummary" class="space-y-4">
           <template v-for="section in sectionConfig" :key="section.key">
@@ -349,7 +383,7 @@ onUnmounted(() => {
       <div v-else-if="status === 'failed'" class="flex flex-col items-center justify-center py-8 space-y-3">
         <span class="icon-[lucide--alert-triangle] text-2xl text-destructive" />
         <p class="text-sm font-semibold text-foreground">
-          描述生成失败
+          描述与索引生成失败
         </p>
         <p v-if="errorMsg" class="text-sm text-destructive text-center max-w-md leading-relaxed">
           {{ errorMsg }}
