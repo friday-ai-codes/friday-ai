@@ -12,37 +12,37 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.2.0 用户身份令牌与 Agent 工具打通（2026-06-10）
+**Latest shipped:** v0.3.0 交付知识图谱（2026-06-12）
 
-在 v0.1.0「首启初始化向导」的基础上，v0.2.0 为每个用户引入 GitHub/GitLab 风格的个人访问令牌（PAT），并以「用户身份 + 用户权限」贯通整条 agent 工具链路：
+在 v0.2.0「用户身份令牌与 Agent 工具打通」的基础上，v0.3.0 把需求/缺陷、技术方案、编码 diff 全链路 RAG 化，并以带时间语义（bi-temporal）的知识图谱关联：
 
-- **PAT 用户身份**：令牌加名称/备注/可选有效期、明文仅展示一次（仅存 sha256）、前后缀指纹区分；携带 PAT 的请求以令牌所有者身份 + 其 RBAC 被鉴权（替代「有效即全权限」），MCP/工具入口 fail-closed。
-- **会话隔离与运维可见**：会话记录创建者、历史回填，全路径按 owner 过滤（越权 404 不泄漏存在性）；管理员另有独立只读会话后台，交互需 fork 到自己名下。
-- **Agent 工具链路（机制层闭环）**：用户令牌可持久绑定 skill/mcp；新增经 PAT 认证的 RemoteTool 执行端点；task 容器消费 `remote_tools` 经 SDK MCP server 加载工具，PAT 直传注入全程脱敏、吊销 graceful。
+- **知识模型与图存储**：四类实体 + bi-temporal 边 + supersedes 版本链 + GraphStore 递归 CTE 收口
+- **统一摄取与版本化**：幂等异步摄取管线（六类触发点），版本翻转与向量下线，全量 diff 归档与代码图谱对齐
+- **时间感知混合检索**：向量召回 + 图扩散 + 时间衰减 + LLM 二阶段分级，fail-closed 权限过滤
+- **多入口暴露**：MCP PAT 三工具 / chat agent tools / workflow 检索节点 / npm friday-knowledge skill
 
-**已知 follow-up（tech debt，by-design）：** Phase 11 实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路端到端运行时休眠（受 PAT-02 明文不落盘约束的有意推迟）；6 个阶段人工验收（UAT）顺延（自动化全绿）。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
+**已知 follow-up（tech debt）：** v0.2.0 实时明文 PAT 通道未接入（RemoteTool 端到端休眠）；v0.3.0 W1-W3（前端知识检索 UI 占位、timeline provenance 未填充、graph enrich 边类型统一 RELATES_TO）；多阶段人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.3.0 交付知识图谱 — 需求/缺陷 ↔ 方案 ↔ 代码 GraphRAG 关联
+## Current Milestone: v0.4.0 工作流系统契约重构 — 保存即合法、模板开箱能跑、执行真实可见
 
-**Goal:** 把需求/缺陷（飞书或自然语言）、技术方案、编码 diff 全链路 RAG 化并以带时间语义的知识图谱关联，任意入口（chat/skill/工作流/MCP）都能召回相似历史需求及其完整迭代轨迹，且始终检索到最新版本。
+**Goal:** 收敛工作流系统的「编辑态契约」与「运行态契约」——以后端节点 registry 为唯一事实源，保存即校验、模板开箱能跑、变量引用所选即所得、执行状态真实可见，消灭「能保存、一执行就卡死/失败且不知道为什么」的体验。
 
 **Target features:**
 
-- 统一交付知识实体/边模型（Postgres bi-temporal 边，借鉴 Graphiti；经基准调研明确不引入图数据库，现有 ChunkEdge 也不迁移）
-- 需求来源多元化：飞书工作项 + chat 自然语言需求 + MCP/工作流，凡产出技术方案或触发编码的需求均自动摄取
-- 版本化更新机制：方案/需求被修改即重摄取，旧版本向量下线 + 边标记失效（历史可查），检索默认命中最新版
-- 全量 diff 归档 + 向量化，并与既有代码图谱（ChunkRegistry/ChunkEdge）打通
-- 时间感知混合检索：向量召回 + 图扩散 + 时间衰减/过时标记
-- 多入口暴露：MCP HTTP 工具 + chat agent tools + workflow 节点 + npm Friday skills
+- 变量引用链路修复：short_id 保存同步（或保存时重写 config 引用），变量选择器所选引用执行时保证可解析；解析失败显式报错而非静默空值
+- 模板修复 + 模板可执行性校验：修正 4 个内置模板的字段/链路错误（`daily_summary` 引用不存在的 `output` 字段、`code_review_pipeline` 节点链路与实现不符等），新增模板变量路径/端口/config 字段校验测试
+- 节点定义单一事实源：前端节点面板/端口/表单 schema 全部以 `GET /api/node-types/` 为准，消除前端硬编码 registry 漂移（含幽灵节点 `fetch_project_info` → `fetch_space_info`）
+- 保存即合法：抽取 `WorkflowGraphValidator`（DAG 环/入口、edge 归属与 handle、config schema、变量引用），bulk-update / 导入 / 模板创建共用，前端 IssuesPanel 接真实校验结果
+- 执行引擎状态机修复：`waiting_event` 与完成判定对齐、主循环 `next_handle` 分支路由、`trigger_data` 注入执行上下文、死锁/挂起状态对前端可见
+- 触发模型清理：修复飞书 `event_type`/`event_types` 字段断裂（WorkflowTrigger 同步永远为空），`schedule` 假功能处理（实现或移除）
+- 执行可观测：WS 断线降级轮询、节点错误在执行详情页清晰展示
 
 **Key context:**
 
-- 沿用 Postgres + Qdrant 双栈；图访问收敛 GraphStore 接口，留换引擎逃生门
-- Embedding 复用 `EmbeddingService` 系统配置（部署当前为自托管 doubao-embedding-text，2560 维），不绑定模型
-- 实体/关系来自结构化业务数据（工作项/方案/MR 自带稳定 ID），不做 LLM 自由文本实体抽取
-- 选型对比结论：Microsoft GraphRAG（批处理/索引贵）与 LightRAG（LLM 抽实体）不适用；借鉴 Graphiti 的 bi-temporal 边模型自实现；八引擎基准显示 1–3 跳 GraphRAG 检索负载下 PG 递归 CTE 吞吐反超 Neo4j（22.5K vs 14.5K RPS）
+- 调研结论（2026-06-12 三路代码审计）：节点定义存在三套源（后端 registry / 前端 TS registry / node-definitions.json）互相漂移；保存几乎零校验、错误延迟到运行时且常被吞；自建流水线 bulk-update 无 short_id 重写逻辑（模板创建有 `_rewrite_template_refs`）；引擎 `_collect_inputs` 无视 `target_handle`、主循环不按 `next_handle` 路由
+- 保持 Django + vue-flow 既有栈；核心引擎（DAG/Engine/BaseNode）骨架保留，重点是契约收敛与校验前移，不是推倒重写
 
 ## Requirements
 
@@ -68,16 +68,23 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **管理员只读会话后台**：物理隔离的 `/api/admin/conversations/`（IsSuperUser）浏览所有会话，只读防误操作，交互需 fork 到自己名下 — v0.2.0 (`server/chat/admin_views.py`, `web/.../admin/conversations.vue`)
 - ✓ **MCP 绑定 + RemoteTool 执行端点**：ToolTokenBinding 持久绑定令牌给 skill/mcp；经 PAT 认证 fail-closed 的按工具 name 执行端点供容器回调 — v0.2.0 (`server/tools/`)
 - ✓ **task 容器 RemoteTool 链路（机制层）**：容器消费 `remote_tools` 经 SDK MCP server 加载工具，PAT 经 server→runner→task 直传注入并全程脱敏，吊销 graceful — v0.2.0 (`task/friday_task/core/remote_tools.py`, `runner/`)（注：实时明文 PAT 通道接入为已知 follow-up）
+- ✓ **交付知识图谱**：四类实体 + bi-temporal 边 + supersedes 版本链，GraphStore 递归 CTE，`delivery_knowledge` collection 生命周期 — v0.3.0 (`server/knowledge/`)
+- ✓ **统一摄取与版本化**：幂等异步摄取管线（chat/MCP/workflow/飞书/编码回调六类触发点），版本翻转 + 向量下线，全量 diff 归档与 MODIFIES_CHUNK 代码图谱对齐 — v0.3.0
+- ✓ **时间感知混合检索**：`DeliveryKnowledgeSearchService` 向量召回 + 图扩散 + 时间衰减 + LLM 二阶段分级，fail-closed 权限过滤 — v0.3.0
+- ✓ **知识多入口暴露**：MCP PAT 三工具 / chat agent tools / workflow 检索节点 + ai_plan_generation 飞轮 / npm friday-knowledge skill — v0.3.0
+- ✓ **前端只读时间线**：实体详情页 + 关联时间线 + as-of 时点查询，REST `/api/knowledge/*` — v0.3.0
 
-### Active (v0.3.0)
+### Active (v0.4.0)
 
 <!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] 交付知识图谱：需求/缺陷、技术方案、编码 diff 的实体/边建模（bi-temporal）与统一摄取
-- [ ] 知识向量化：需求文本/PRD/技术方案/diff 入 Qdrant（复用 EmbeddingService 与 hybrid 检索）
-- [ ] 版本化更新：方案修改后重摄取，检索始终命中最新版，历史可溯
-- [ ] 时间感知混合检索：向量召回 + 图扩散 + 时间衰减/过时标记
-- [ ] 多入口暴露：MCP 工具 / chat tools / workflow 节点 / npm skills
+- [ ] 变量引用链路：自建流水线 short_id 同步/重写，所选变量执行时保证可解析，解析失败显式报错
+- [ ] 内置模板修复 + 模板可执行性校验测试（变量路径/端口/config 字段）
+- [ ] 节点定义单一事实源：前端面板/端口/表单 schema 收敛到 `GET /api/node-types/`
+- [ ] 保存即合法：`WorkflowGraphValidator` 统一校验（DAG/edges/config/变量引用），保存与导入共用
+- [ ] 执行引擎状态机修复：waiting_event 完成判定、next_handle 路由、trigger_data 注入、死锁/挂起可见
+- [ ] 触发模型清理：飞书 event_type 字段断裂修复、schedule 假功能处理
+- [ ] 执行可观测：WS 断线降级轮询、节点错误清晰展示
 
 **Backlog 候选（未入本里程碑）：**
 
@@ -156,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-11 — milestone v0.3.0 started*
+*Last updated: 2026-06-12 — milestone v0.4.0 started*
