@@ -51,3 +51,15 @@ export function buildPrefixPath(prefix: VariablePrefix, fieldPath: string): stri
 export function buildPrefixRef(prefix: VariablePrefix, fieldPath: string): string {
   return `{{${buildPrefixPath(prefix, fieldPath)}}}`
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 判定字符串是否为 UUID 形态（不区分大小写）。
+ *
+ * 用于运行时 node_outputs 双键（UUID + short_id 指向同一输出对象）去重：
+ * 存在对应 short_id 键时跳过 UUID 键，避免同一字段重复展示。
+ */
+export function isLikelyUuid(s: string): boolean {
+  return UUID_RE.test(s)
+}
