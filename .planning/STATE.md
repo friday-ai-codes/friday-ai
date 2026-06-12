@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: 工作流系统契约重构
-status: roadmap_created
-last_updated: "2026-06-12T15:05:00.000Z"
-last_activity: 2026-06-12
+status: executing
+stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
+last_updated: "2026-06-12T16:11:17.536Z"
+last_activity: 2026-06-12 -- Phase 17 planning complete
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
   percent: 0
 ---
@@ -26,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 Phase: 17 of 21 — 变量引用链路修复（Not started）
 Plan: —
-Status: Roadmap created, ready for `/gsd-plan-phase 17`
-Last activity: 2026-06-12 — v0.4.0 roadmap created (5 phases, 24 requirements mapped)
+Status: Ready to execute
+Last activity: 2026-06-12 -- Phase 17 planning complete
 
 Progress: [□□□□□] 0/5 phases
 
