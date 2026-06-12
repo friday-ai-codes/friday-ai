@@ -12,6 +12,7 @@ import {
 } from '~/components/ui/popover'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
+import { buildNodePath, buildPrefixPath, isLikelyUuid } from '~/utils/variableRef'
 
 // 运行时变量项
 interface RuntimeVariableItem {
@@ -107,7 +108,7 @@ const availableVariables = computed((): VariableCategory[] => {
   if (props.context?.trigger_data) {
     const items = Object.entries(props.context.trigger_data).map(([key, value]) => ({
       key,
-      path: `trigger.${key}`,
+      path: buildPrefixPath('trigger', key),
       value,
     }))
     if (items.length > 0) {
@@ -125,7 +126,7 @@ const availableVariables = computed((): VariableCategory[] => {
   if (props.context?.global_params) {
     const items = Object.entries(props.context.global_params).map(([key, value]) => ({
       key,
-      path: `global.${key}`,
+      path: buildPrefixPath('global', key),
       value,
     }))
     if (items.length > 0) {
@@ -143,7 +144,7 @@ const availableVariables = computed((): VariableCategory[] => {
   if (props.context?.input_data) {
     const items = Object.entries(props.context.input_data).map(([key, value]) => ({
       key,
-      path: `input.${key}`,
+      path: buildPrefixPath('input', key),
       value,
     }))
     if (items.length > 0) {
@@ -160,12 +161,21 @@ const availableVariables = computed((): VariableCategory[] => {
   // Node outputs
   if (props.context?.node_outputs) {
     const items: RuntimeVariableItem[] = []
-    Object.entries(props.context.node_outputs).forEach(([nodeId, outputs]) => {
+    const entries = Object.entries(props.context.node_outputs)
+    // scheduler 对同一节点输出以 UUID 与 short_id 双键写入同一对象（引用相等）：
+    // 存在指向同一对象的非 UUID 键时跳过 UUID 键，避免同一字段重复展示
+    const nonUuidOutputs = new Set(
+      entries.filter(([nodeKey]) => !isLikelyUuid(nodeKey)).map(([, outputs]) => outputs),
+    )
+    entries.forEach(([nodeKey, outputs]) => {
       if (typeof outputs === 'object' && outputs !== null) {
+        // 仅有 UUID 键无 short_id 对应时保留展示（存量执行兼容，引用不回退）
+        if (isLikelyUuid(nodeKey) && nonUuidOutputs.has(outputs))
+          return
         Object.entries(outputs).forEach(([key, value]) => {
           items.push({
-            key: `${nodeId}.${key}`,
-            path: `nodes.${nodeId}.${key}`,
+            key: `${nodeKey}.${key}`,
+            path: buildNodePath(nodeKey, key),
             value,
           })
         })
@@ -193,9 +203,9 @@ const presetVariables = computed((): VariableCategory[] => [
     icon: Database,
     color: 'text-orange-500',
     items: [
-      { key: 'work_item_id', path: 'input.work_item_id' },
-      { key: 'project_key', path: 'input.project_key' },
-      { key: 'event_type', path: 'input.event_type' },
+      { key: 'work_item_id', path: buildPrefixPath('input', 'work_item_id') },
+      { key: 'project_key', path: buildPrefixPath('input', 'project_key') },
+      { key: 'event_type', path: buildPrefixPath('input', 'event_type') },
     ],
   },
   {
@@ -204,9 +214,9 @@ const presetVariables = computed((): VariableCategory[] => [
     icon: Globe,
     color: 'text-green-500',
     items: [
-      { key: 'description', path: 'global.description' },
-      { key: 'prd_url', path: 'global.prd_url' },
-      { key: 'tech_doc_url', path: 'global.tech_doc_url' },
+      { key: 'description', path: buildPrefixPath('global', 'description') },
+      { key: 'prd_url', path: buildPrefixPath('global', 'prd_url') },
+      { key: 'tech_doc_url', path: buildPrefixPath('global', 'tech_doc_url') },
     ],
   },
   {
@@ -215,8 +225,8 @@ const presetVariables = computed((): VariableCategory[] => [
     icon: Zap,
     color: 'text-primary',
     items: [
-      { key: 'event_type', path: 'trigger.event_type' },
-      { key: 'trigger_log_id', path: 'trigger.trigger_log_id' },
+      { key: 'event_type', path: buildPrefixPath('trigger', 'event_type') },
+      { key: 'trigger_log_id', path: buildPrefixPath('trigger', 'trigger_log_id') },
     ],
   },
 ])
