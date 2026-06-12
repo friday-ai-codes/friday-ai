@@ -33,6 +33,10 @@ async def test_enrich_returns_related_kinds(entity_factory, edge_factory, versio
     kinds = {r.entity_kind for rs in enriched.values() for r in rs}
     assert EntityKind.TECH_PLAN in kinds
     assert EntityKind.CODE_CHANGE in kinds
+    related = enriched[wi.id]
+    by_kind = {r.entity_kind: r for r in related}
+    assert by_kind[EntityKind.TECH_PLAN].relation == EdgeRelation.HAS_PLAN
+    assert by_kind[EntityKind.CODE_CHANGE].relation == EdgeRelation.IMPLEMENTED_BY
 
 
 async def test_enrich_max_hops_one(entity_factory, edge_factory, version_factory, project):

@@ -149,6 +149,11 @@ class KnowledgeRelatedView(APIView):
         if err is not None:
             return err
         direction = request.query_params.get("direction", "both")
+        if direction not in ("both", "out", "in"):
+            return Response(
+                {"detail": "direction must be one of: both, out, in"},
+                status=400,
+            )
         max_hops = _parse_int_param(request.query_params.get("max_hops"), 2, "max_hops")
         if isinstance(max_hops, Response):
             return max_hops

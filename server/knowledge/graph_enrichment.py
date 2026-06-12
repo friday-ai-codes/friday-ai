@@ -41,39 +41,48 @@ async def enrich_vector_hits(
     out: dict[uuid.UUID, list[RelatedEntityDTO]] = {}
 
     for hit in hits:
-        traversed = await graph_store.traverse(
-            hit.entity_id,
-            max_hops=hops,
-            relations=list(_ENRICH_RELATIONS),
-            direction="out",
-            as_of=as_of,
-        )
         related: list[RelatedEntityDTO] = []
         seen: set[uuid.UUID] = {hit.entity_id}
-        for item in traversed:
-            if item.entity_id in seen:
+        # BFS 逐跳 neighbors，保留真实 relation（traverse 只返回 depth 无边类型）
+        frontier: list[tuple[uuid.UUID, int]] = [(hit.entity_id, 0)]
+        while frontier:
+            current_id, depth = frontier.pop(0)
+            if depth >= hops:
                 continue
-            seen.add(item.entity_id)
-            entity = await KnowledgeEntity.objects.filter(id=item.entity_id).afirst()
-            if entity is None or entity.project_id is None:
-                continue
-            if str(entity.project_id) not in allowed:
-                continue
-            if allowed_repos:
-                repo = str(entity.repository_id) if entity.repository_id else ""
-                if repo and repo not in allowed_repos:
-                    continue
-                if not repo and entity.kind in _CODE_KINDS:
-                    continue
-            meta = await hydrate_entity_metadata(entity.id, entity.current_version)
-            related.append(
-                RelatedEntityDTO(
-                    entity_id=item.entity_id,
-                    entity_kind=entity.kind,
-                    relation=EdgeRelation.RELATES_TO,
-                    depth=item.depth,
-                    metadata=meta,
-                )
+            edges = await graph_store.neighbors(
+                current_id,
+                relations=list(_ENRICH_RELATIONS),
+                direction="out",
+                as_of=as_of,
             )
+            for edge in edges:
+                target_id = edge.target_id
+                if target_id is None or target_id in seen:
+                    continue
+                seen.add(target_id)
+                entity = await KnowledgeEntity.objects.filter(id=target_id).afirst()
+                if entity is None or entity.project_id is None:
+                    continue
+                if str(entity.project_id) not in allowed:
+                    continue
+                if allowed_repos:
+                    repo = str(entity.repository_id) if entity.repository_id else ""
+                    if repo and repo not in allowed_repos:
+                        continue
+                    if not repo and entity.kind in _CODE_KINDS:
+                        continue
+                meta = await hydrate_entity_metadata(entity.id, entity.current_version)
+                child_depth = depth + 1
+                related.append(
+                    RelatedEntityDTO(
+                        entity_id=target_id,
+                        entity_kind=entity.kind,
+                        relation=edge.relation,
+                        depth=child_depth,
+                        metadata=meta,
+                    )
+                )
+                if child_depth < hops:
+                    frontier.append((target_id, child_depth))
         out[hit.entity_id] = related
     return out
