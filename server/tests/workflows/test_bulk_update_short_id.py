@@ -289,6 +289,22 @@ class TestInvalidFormatRegeneration:
         assert GENERATED_SHORT_ID_RE.match(node.short_id), "重生成值必须符合白名单格式"
 
 
+class TestMalformedPayload:
+    """IN-03：畸形 payload（nodes 元素非 dict）须报 400（ValidationError）而非 500。"""
+
+    def test_non_dict_node_element_raises_validation_error(self, workflow):
+        from rest_framework.exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
+            _bulk_update_nodes_and_edges(workflow, ["not-a-dict"], [])
+
+    def test_non_list_nodes_raises_validation_error(self, workflow):
+        from rest_framework.exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
+            _bulk_update_nodes_and_edges(workflow, {"id": "x"}, [])
+
+
 class TestRewriteCandidateSafety:
     """CR-01 回归：非法客户端值不得进入重写映射；旧 DB 身份的存量引用必须被重写。"""
 
