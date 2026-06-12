@@ -428,3 +428,39 @@ class TestExecutionContextIntegration:
         assert ctx.get_previous_output("aB1", "data.bad", "DF") == "DF"
         assert ctx.get_previous_output("zzz", "x", "DF") == "DF"
         assert ctx.get_previous_output("aB1", "x.deeper", "DF") == "DF"
+
+    def test_global_params_resolve_from_model_field_after_db_reload(self):
+        """WR-01 回归：set_global_param 只持久化 WorkflowExecution.global_params
+        模型字段，不写 context 镜像；execution 从 DB 重载（resume/approve 等路径）
+        后镜像为空，{{global.x}} 仍必须能从模型字段解析（legacy 语义）。"""
+        from workflows.models import WorkflowExecution
+        from workflows.nodes.base import ExecutionContext
+
+        we = WorkflowExecution(global_params={"x": "persisted-value"}, context={})
+        ctx = ExecutionContext(
+            execution_id="exec-1",
+            node_id="node-1",
+            node_config={},
+            input_data={},
+            workflow_context=we.context,
+            previous_outputs={},
+            workflow_execution=we,
+        )
+        assert ctx.render_template("val={{global.x}}") == "val=persisted-value"
+
+    def test_global_params_context_mirror_overrides_model_field(self):
+        """同进程内 context 镜像有最新值时优先于模型字段（覆盖语义不回退）。"""
+        from workflows.models import WorkflowExecution
+        from workflows.nodes.base import ExecutionContext
+
+        we = WorkflowExecution(global_params={"x": "stale"}, context={})
+        ctx = ExecutionContext(
+            execution_id="exec-1",
+            node_id="node-1",
+            node_config={},
+            input_data={},
+            workflow_context={"global_params": {"x": "fresh"}},
+            previous_outputs={},
+            workflow_execution=we,
+        )
+        assert ctx.render_template("val={{global.x}}") == "val=fresh"
