@@ -115,3 +115,53 @@ class TestSummaryStatusEndpoint:
         data = response.json()
         assert data["status"] == "completed"
         assert data["summary"] == "这是一个测试仓库的 AI 描述"
+
+    def test_summary_status_without_session_returns_empty_logs(
+        self,
+        authenticated_client: APIClient,
+        repository: Repository,
+    ) -> None:
+        """无 REPO_SUMMARY 会话时 recent_logs 为空列表（不报错）。"""
+        url = f"/api/repositories/{repository.id}/summary-status/"
+        response = authenticated_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["recent_logs"] == []
+
+    def test_summary_status_returns_recent_logs_tail(
+        self,
+        authenticated_client: APIClient,
+        repository: Repository,
+        user,
+    ) -> None:
+        """recent_logs 返回最近一次 REPO_SUMMARY 会话日志的尾部 30 条。"""
+        from agents.models import AgentSession
+        from subagent.models import SubAgentSession
+
+        agent_session = AgentSession.objects.create(
+            user=user,
+            session_id="main-summary-logs-session",
+        )
+        # 40 条日志 → 仅返回尾部 30 条（与 _append_runtime_log 的 80 条上限独立）
+        logs = [
+            {"type": "tool_call", "content": f'Read({{"file_path": "f{i}.py"}})', "ts": i}
+            for i in range(40)
+        ]
+        SubAgentSession.objects.create(
+            session_id="reposummary-logs-test",
+            main_session=agent_session,
+            repo_url=repository.git_url,
+            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+            status=SubAgentSession.Status.RUNNING,
+            last_output={"repository_id": str(repository.id), "logs": logs},
+        )
+        repository.ai_summary_status = AISummaryStatus.RUNNING
+        repository.save(update_fields=["ai_summary_status"])
+
+        url = f"/api/repositories/{repository.id}/summary-status/"
+        response = authenticated_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        recent = response.json()["recent_logs"]
+        assert len(recent) == 30
+        assert recent[0]["ts"] == 10
+        assert recent[-1]["ts"] == 39
+        assert recent[-1]["type"] == "tool_call"

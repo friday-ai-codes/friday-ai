@@ -75,3 +75,54 @@ class TestReconcileAiSummaryStatus:
         repository.refresh_from_db()
 
         assert repository.ai_summary_status == AISummaryStatus.RUNNING
+
+    def test_reconcile_stale_pending_without_runner_to_failed(
+        self,
+        repository: Repository,
+        agent_session,
+    ) -> None:
+        """PENDING + 无 Runner 接收 + 超过阈值 → 判定派发丢失，收敛为失败终态。"""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        repository.ai_summary_status = AISummaryStatus.PENDING
+        repository.save(update_fields=["ai_summary_status"])
+        session = _make_repo_summary_session(
+            repository,
+            agent_session,
+            status=SubAgentSession.Status.PENDING,
+        )
+        # created_at 是 auto_now_add，直接 update 回拨 11 分钟
+        SubAgentSession.objects.filter(pk=session.pk).update(
+            created_at=timezone.now() - timedelta(minutes=11)
+        )
+
+        async_to_sync(reconcile_ai_summary_status)(repository)
+        repository.refresh_from_db()
+        session.refresh_from_db()
+
+        assert repository.ai_summary_status == AISummaryStatus.FAILED
+        assert "未被 Runner 接收" in repository.ai_summary_error
+        assert session.status == SubAgentSession.Status.TIMEOUT
+
+    def test_reconcile_fresh_pending_stays_pending(
+        self,
+        repository: Repository,
+        agent_session,
+    ) -> None:
+        """刚派发的 PENDING（未超阈值）不被误判，保持排队状态。"""
+        repository.ai_summary_status = AISummaryStatus.PENDING
+        repository.save(update_fields=["ai_summary_status"])
+        session = _make_repo_summary_session(
+            repository,
+            agent_session,
+            status=SubAgentSession.Status.PENDING,
+        )
+
+        async_to_sync(reconcile_ai_summary_status)(repository)
+        repository.refresh_from_db()
+        session.refresh_from_db()
+
+        assert repository.ai_summary_status == AISummaryStatus.PENDING
+        assert session.status == SubAgentSession.Status.PENDING
