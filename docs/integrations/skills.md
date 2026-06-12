@@ -4,87 +4,85 @@ title: Agent Skills
 
 # Agent Skills
 
-Friday 提供与 agent 无关的 [Agent Skills](https://github.com/vercel-labs/skills)，可以安装到 Claude Code、Codex、Cursor 等 70+ 种 agent 宿主，让本地 AI 助手直接驱动 Friday 的代码索引、Graph RAG 与执行能力。
+Friday 提供与 agent 无关的 Agent Skills，可以安装到 Cursor、Claude Code、Codex、Gemini CLI、OpenCode 等宿主，让本地 AI 助手直接驱动 Friday 的代码索引、Graph RAG 与执行能力。
 
 Skill 仓库：[friday-ai-codes/skills](https://github.com/friday-ai-codes/skills)，npm 包：[`@friday-ai-codes/skills`](https://www.npmjs.com/package/@friday-ai-codes/skills)。
 
 ## 内置 Skill
 
-5 个按用户意图划分的 skill（全中文编写），agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
+4 个职责清晰的 skill（全中文编写），名字全部 `friday` 开头、一个词收尾。agent 会根据任务自动触发对应的 skill；流水线阶段以小节形式收在 skill 内部，用户只要某一阶段就停在那一阶段：
 
 | Skill | 用途 |
 | --- | --- |
-| `using-friday` | 元 skill：skill 路由表与轨迹纪律（Claude Code 插件 hook / Cursor rule 自动注入） |
-| `friday-setup` | 安装 / 配置 / 修复 Friday 接入：`doctor` → `init` → `register` → 验证 |
+| `friday` | 总入口：技能路由表 + 轨迹纪律，也可直接把任意需求交给它一条龙跑完（安装器 hook / Cursor rule 自动注入） |
 | `friday-code` | 远端已索引仓库的全部操作：找仓库 → 分析 → 计划 → 执行/MR，可分阶段也可一条龙 |
 | `friday-feishu` | 飞书工作项闭环：读上下文 → 技术方案 → 多仓执行 → 结果回写，可分阶段也可一条龙 |
-| `friday-learn` | 记录 / 检索 LearningCase 记忆 |
+| `friday-memory` | Friday 的记忆层：记录 / 检索 LearningCase 经验 + 交付知识检索（相似需求、版本时间线、关联链、`as_of` 历史时点） |
 
-仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
+更细粒度的能力（22 个工具）全部由 [MCP Server](/integrations/mcp) 提供，skill 负责编排与护栏。仓库编码链路（发现 → 分析 → 计划 → 执行）详见 [Codebase Agent 指南](/guide/friday-codebase-agent)。
 
-## 前置条件
+## 安装顺序
 
-Skill 通过 MCP HTTP 工具调用运行中的 Friday server，只装 skill 文件是不够的，每个用户还需要：
+**先配 MCP 连接，再装 Skills**——skill 依赖 `friday` MCP server 的工具，连接没配好装了也跑不起来：
 
-- `FRIDAY_BASE_URL` —— Friday server 地址，如 `https://friday.example.com`；
-- `FRIDAY_ACCESS_TOKEN` —— 在 Friday 个人资料页创建的访问令牌；
-- 仓库 / 飞书凭据已在 server 侧配置（仅执行、建 MR 或飞书 workflow 需要）。
+<FlowPipeline :steps="['mcp setup 配置连接', '安装 Skills', '把任务交给 agent']" />
 
-每次工具调用都是 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/`，携带 `Authorization: Bearer {FRIDAY_ACCESS_TOKEN}`。
+### 第一步 — 配置 Friday 连接
 
-## 安装
+```bash
+npx -y @friday-ai-codes/mcp setup
+```
+
+交互式中文向导：凭证问答（服务地址 + 访问令牌）→ 自动注册进本机 agent → 连通性测速 → 能力演示。访问令牌在 Friday Web 控制台「个人资料 → 访问令牌」创建。详见 [MCP Server](/integrations/mcp)。
+
+### 第二步 — 安装 Skills
 
 ::: code-group
 
-```bash [npm 包装器（推荐）]
-# 安装全部 skill 到自动检测的 agent（全局、非交互）
+```bash [交互式向导（推荐）]
 npx @friday-ai-codes/skills
+```
+
+```bash [非交互（脚本 / CI）]
+# 自动嗅探本机 agent，全局安装
+npx @friday-ai-codes/skills install -y
 
 # 装到当前项目而非全局
-npx @friday-ai-codes/skills install --project
+npx @friday-ai-codes/skills install --project --agent cursor
 
-# 指定 agent
-npx @friday-ai-codes/skills install --agent claude-code
+# 指定 agent（可重复）
+npx @friday-ai-codes/skills install --agent claude-code --agent codex
 
-# Codex：附带 AGENTS.md bootstrap（Codex 无 hook 机制）
-npx @friday-ai-codes/skills install --agent codex --codex-bootstrap
+# 只装技能，不注入各 agent 指令文件
+npx @friday-ai-codes/skills install -y --no-bootstrap
 
 # 查看内置 skill
 npx @friday-ai-codes/skills list
 ```
 
-```bash [skills CLI]
-# 安装全部 Friday skill（自动检测已安装的 agent）
-npx skills add friday-ai-codes/skills --skill '*' -g -y
-
-# 只装一个 skill 到指定 agent
-npx skills add friday-ai-codes/skills --skill friday-code -a claude-code
-
-# 先看列表不安装
-npx skills add friday-ai-codes/skills --list
-```
-
 ```bash [Claude Code 插件]
-# 插件形式额外提供 SessionStart hook（自动注入 using-friday）
+# 插件形式额外提供 SessionStart hook（自动注入 friday 入口技能）
 # 和捆绑的 MCP server 声明
 claude plugin add friday-ai-codes/skills
 ```
 
+```bash [开放 skills CLI]
+# 也兼容社区 skills CLI（注意：此路径不会引导后续 MCP 配置，
+# 请务必先完成第一步）
+npx skills add friday-ai-codes/skills --skill '*' -g -y
+```
+
 :::
 
-agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 等，完整列表见 [supported agents](https://github.com/vercel-labs/skills#supported-agents)。
+安装器自带安装能力：渐变 banner、中文向导、自动嗅探本机已装的 Cursor / Claude Code / Codex / Gemini CLI / OpenCode，把技能直接拷进各 agent 的原生技能目录（如 `~/.claude/skills/`、`.cursor/skills/`）。交互模式下装完技能还会检测 MCP 配置，未配置时直接接力拉起 `mcp setup`。
+
+安装器还会默认把一段精简的 `friday` 入口引导注入各 agent 的原生指令文件（marker 幂等，`--no-bootstrap` 可关闭）：Cursor → `.cursor/rules/friday.mdc`（`alwaysApply`），Claude Code → `CLAUDE.md`，Codex / OpenCode → `AGENTS.md`（共用自动去重），Gemini CLI → `GEMINI.md`；全局安装则写各家的用户级文件（`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`、`~/.gemini/GEMINI.md`、`~/.config/opencode/AGENTS.md`）。项目级注入用相对路径，文件进 git 后队友机器同样生效。
 
 ## 安装之后
 
-<FlowPipeline :steps="['friday-setup 配置接入', 'using-friday 路由任务', '驱动对应阶段 skill']" />
+直接把任务交给 agent：`friday` 入口技能会按任务类型路由——仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`，查历史经验 / 交付知识走 `friday-memory`。
 
-1. 让 agent「配置 Friday」—— `friday-setup` skill 会引导完成 `npx -y @friday-ai-codes/mcp init`（写入 `~/.friday/config.json`）与 MCP server 注册，也可以手动设置 `FRIDAY_BASE_URL` 与 `FRIDAY_ACCESS_TOKEN`（见 [`@friday-ai-codes/mcp init`](/integrations/mcp#初始化配置)）；
-2. 之后直接把任务交给 agent：`using-friday` 元 skill 会按任务类型路由到对应的 skill；
-3. 仓库编码走 `friday-code`（可分阶段，也可一条龙到 MR），飞书工作项走 `friday-feishu`。
-
-项目级安装且目标包含 Cursor 时，安装器会额外写入 `.cursor/rules/using-friday.mdc`（`alwaysApply`），确保每次 Cursor 会话都被引导到 `using-friday`——与 Claude Code 的 SessionStart hook 等效。
-
-也可以装完 skill 后直接在 IDE 里说「配置 Friday」，agent 会按 skill 指引向你索要地址和令牌并自动完成配置与 MCP 注册。
+环境出问题（看不到 `friday` 工具、调用 401/403）时，agent 会按 `friday` 技能的「环境未就绪」一节引导你重跑 `npx -y @friday-ai-codes/mcp setup`。
 
 ::: warning 执行类操作需要人工确认
 `execute_coding_plan` / `execute_work_item_repo_tasks` 会真实改代码、推分支、建 MR。skill 内置了「执行前必须人工确认」的硬性规则。
@@ -92,5 +90,5 @@ agent 目标包括 `claude-code`、`codex`、`cursor`、`opencode`、`windsurf` 
 
 ## 相关文档
 
-- [MCP Server](/integrations/mcp) —— 19 个工具的注册与使用
+- [MCP Server](/integrations/mcp) —— 22 个工具的注册与使用
 - [Friday Codebase Agent](/guide/friday-codebase-agent) —— workflow、故障恢复与审计

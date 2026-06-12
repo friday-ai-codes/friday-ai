@@ -125,21 +125,21 @@ If you write code in Cursor / Claude Code / Codex, Friday can also serve as thei
 
 Three steps to connect:
 
-1. Install the Skills (auto-detects Claude Code, Cursor, Codex, and more; ships 5 skills covering requirement routing through MR creation):
+1. Create an Access Token: Friday Web console → Profile → Access Tokens → Create (the plaintext is shown only once).
+
+2. Configure the connection (interactive wizard: credentials → MCP registration → latency check → capability demo):
+
+   ```bash
+   npx -y @friday-ai-codes/mcp setup
+   ```
+
+3. Install the Skills (interactive wizard; auto-detects Claude Code, Cursor, Codex, and more; ships 4 skills covering requirement routing through MR creation):
 
    ```bash
    npx @friday-ai-codes/skills
    ```
 
-2. Create an Access Token: Friday Web console → Profile → Access Tokens → Create (the plaintext is shown only once).
-
-3. Configure the connection (writes `~/.friday/config.json` and registers `@friday-ai-codes/mcp` as an MCP server):
-
-   ```bash
-   npx -y @friday-ai-codes/mcp init --base-url https://your-friday-host --token <your-access-token>
-   ```
-
-   Alternatively, just tell your IDE assistant to "set up Friday" after installing the Skill — it will ask for the host and token and finish the configuration and MCP registration for you.
+   In interactive mode the installer also checks the connection config after installing, and hands off to the step-2 wizard if it is missing — either order closes the loop.
 
 The assistant can then use the same index for repository discovery, Graph RAG analysis, coding plans, plan revisions, remote execution, branch summaries, and MR creation. Web users get the visual workflow; local IDE users get callable code-intelligence tools. Both paths share the same evidence and audit trail. See the [Friday Codebase Agent guide](docs/guide/friday-codebase-agent.md).
 
@@ -220,11 +220,14 @@ You only need Docker, Docker Compose v2, and Git.
 
 8. Optional: use the Friday Skill in your IDE:
 
+   Create an Access Token on the Profile page first, then connect with two commands (interactive wizards):
+
    ```bash
-   npx @friday-ai-codes/skills
+   npx -y @friday-ai-codes/mcp setup    # configure connection + register MCP + latency check
+   npx @friday-ai-codes/skills          # install the 4 skills into local agents
    ```
 
-   Then create an Access Token on the Profile page and run `npx -y @friday-ai-codes/mcp init` as shown on the dashboard. Cursor / Claude Code / Codex can then call Friday's code intelligence and execution tools directly.
+   Cursor / Claude Code / Codex can then call Friday's code intelligence and execution tools directly.
 
 ## Docs
 

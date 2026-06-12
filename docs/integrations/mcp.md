@@ -10,25 +10,43 @@ title: MCP Server
 
 接入流程：
 
-<FlowPipeline :steps="['创建访问令牌', 'init 写入配置', 'doctor 校验连通性', '注册到 IDE', '调用 19 个工具']" />
+<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 22 个工具']" />
 
-## 初始化配置
+## 一条命令配好（推荐）
 
 先在 Friday Web 控制台「个人资料 → 访问令牌」创建 PAT（明文只显示一次），然后：
+
+```bash
+npx -y @friday-ai-codes/mcp setup
+```
+
+交互式中文向导会依次完成：凭证问答（服务地址 + 令牌）→ 自动注册进 Cursor / Claude Code / Codex → 连通性测速（延迟毫秒数高亮）→ 能力演示（随机介绍一个已索引仓库）。
+
+## 初始化配置（命令式）
+
+脚本 / CI 场景用命令式 `init`：
 
 ```bash
 npx -y @friday-ai-codes/mcp init --base-url https://friday.example.com --token <你的访问令牌>
 ```
 
-配置写入 `~/.friday/config.json`（权限 `0600`），也可以用环境变量 `FRIDAY_BASE_URL` / `FRIDAY_ACCESS_TOKEN` 覆盖。
+不带参数在终端运行 `init` 同样会进入交互式问答。配置写入 `~/.friday/config.json`（权限 `0600`），也可以用环境变量 `FRIDAY_BASE_URL` / `FRIDAY_ACCESS_TOKEN` 覆盖。
 
-检查配置与连通性（不回显令牌）：
+检查配置、注册状态与连通性（含延迟测速，不回显令牌）：
 
 ```bash
 npx -y @friday-ai-codes/mcp doctor
 ```
 
 ## 注册到 IDE
+
+`setup` 已包含注册；也可以单独运行（自动探测本机 agent，幂等）：
+
+```bash
+npx -y @friday-ai-codes/mcp register
+```
+
+手动注册的等价配置：
 
 ::: code-group
 
@@ -61,10 +79,12 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | 命令 | 作用 |
 | --- | --- |
 | `friday-mcp`（无参数） | 启动 stdio MCP server |
-| `friday-mcp init --base-url <url> --token <pat>` | 写入配置并校验连通性 |
-| `friday-mcp doctor` | 检查当前配置与连通性（不回显令牌） |
+| `friday-mcp setup` | 交互式中文向导：凭证 → 注册 → 测速 → 能力演示 |
+| `friday-mcp init` | 写入配置（带 `--base-url` / `--token` 为命令式，否则交互式问答） |
+| `friday-mcp register [--agent <name>] [--project]` | 幂等注册进 Cursor / Claude Code / Codex |
+| `friday-mcp doctor` | 检查配置、注册状态与连通性测速（不回显令牌） |
 
-## 工具集（19 个）
+## 工具集（22 个）
 
 每个工具对应 Friday 的 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/` 端点：
 
@@ -89,6 +109,11 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | | `execute_work_item_repo_tasks` | 执行仓库任务矩阵 |
 | 学习案例 | `create_learning_case` | 沉淀可检索的执行经验 |
 | | `search_learning_cases` | 检索历史案例 |
+| 交付知识 | `search_delivery_knowledge` | 检索相似历史需求 / 方案 / 代码变更（支持 `as_of` 历史时点） |
+| | `get_entity_timeline` | 知识实体的版本迭代时间线 |
+| | `get_related_entities` | 需求 → 方案 → MR 关联链图遍历 |
+
+每个工具都带 MCP 标准 `annotations`（中文 `title` 按「阶段 · 动作」分组，外加 `readOnlyHint` / `idempotentHint` / `openWorldHint` 行为提示），agent 可据此判断工具是否只读、是否触达外部系统。
 
 此外，代码智能层还提供 `find_api_handler` / `find_api_callers` / `list_endpoints` 等图谱查询工具，见[代码智能层](/internals/code-intelligence#mcp-tools-agent-使用)。
 
