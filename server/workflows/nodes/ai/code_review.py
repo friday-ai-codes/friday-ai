@@ -17,7 +17,6 @@ import time
 from typing import Any, ClassVar, Final, Literal
 
 import structlog
-
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from agents.core.result import AgentResult
@@ -303,6 +302,10 @@ class AICodeReviewNode(AIAgentBaseNode):
             node_id=context.node_id,
         )
 
+        # Phase 17 严格解析语义：chat_id 模板前移到入口渲染——解析失败需在
+        # 逐 MR 的 LLM 调用等外部副作用之前 fail-fast，不浪费整轮审查开销。
+        notification_chat_id = context.render_template(config.get("chat_id", ""))
+
         # 1. 提取上游数据
         # coding_result 端口（AICodingNode 包装输出）或扁平的 merge_requests（直连兼容）
         coding_result = context.get_input("coding_result")
@@ -520,6 +523,7 @@ class AICodeReviewNode(AIAgentBaseNode):
             await self.emit_sub_step(context, "send_notification", SubStepStatus.RUNNING)
             await self._send_review_notification(
                 context=context,
+                chat_id=notification_chat_id,
                 approved=approved,
                 issues_count=total_issues,
                 severity_breakdown=total_breakdown,
@@ -814,6 +818,7 @@ class AICodeReviewNode(AIAgentBaseNode):
     async def _send_review_notification(
         self,
         context: ExecutionContext,
+        chat_id: str,
         approved: bool,
         issues_count: int,
         severity_breakdown: dict[str, int],
@@ -821,10 +826,10 @@ class AICodeReviewNode(AIAgentBaseNode):
         mr_count: int,
         log: Any,
     ) -> None:
-        """发送飞书审查结果通知卡片。"""
-        chat_id = context.render_template(
-            context.node_config.get("chat_id", "")
-        )
+        """发送飞书审查结果通知卡片。
+
+        chat_id 已由 execute() 入口渲染（Phase 17：渲染先于外部副作用）。
+        """
         if not chat_id:
             log.warning("review_notification_no_chat_id")
             return
