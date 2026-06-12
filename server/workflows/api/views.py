@@ -172,8 +172,10 @@ def _resolve_short_ids(
 
     Returns:
         (与 nodes_data 等长的最终 short_id 列表,
-         重写候选映射 client_value → final_value——仅含客户端显式提供且最终值
-         发生变化的条目，是否真正重写还需在落库后按"客户端值已无归属"过滤)
+         重写候选映射 old_value → final_value——old_value 取"合法客户端值"
+         （被冲突重生成时）或 update 节点的 DB 旧值（重命名/非法值重生成时），
+         非法客户端值绝不进入映射；是否真正重写还需在落库后按
+         "旧值已无归属"过滤)
     """
     db_short_map: dict[str, str] = {
         str(nid): sid for nid, sid in workflow.nodes.values_list("id", "short_id")
@@ -204,8 +206,17 @@ def _resolve_short_ids(
         taken.add(final)
         final_short_ids.append(final)
 
-        if isinstance(client_value, str) and client_value and final != client_value:
+        # 重写候选纳入规则（CR-01）：
+        # - 仅合法客户端值才允许作为旧标识符进入重写映射——非法值（如 "a.b"）
+        #   经 re.escape 后会整体命中 {{nodes.a.b.c}} 这类指向合法节点 a 的引用，
+        #   把它们静默改写为新生成值，属数据破坏；
+        # - update 节点的最终值脱离 DB 旧值时（重命名采纳新值 / 非法值被重生成），
+        #   真正的旧身份是 db_value，存量引用应重写到新值，否则产生悬挂引用。
+        # 是否真正重写仍需落库后按 final_owned 防卫过滤（旧值仍被合法占用则不改）。
+        if client_valid and final != client_value:
             rewrite_candidates[client_value] = final
+        elif db_value is not None and final != db_value:
+            rewrite_candidates[db_value] = final
 
     return final_short_ids, rewrite_candidates
 

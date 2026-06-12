@@ -287,3 +287,99 @@ class TestInvalidFormatRegeneration:
         node = workflow.nodes.get(name="n1")
         assert node.short_id != bad_value
         assert GENERATED_SHORT_ID_RE.match(node.short_id), "重生成值必须符合白名单格式"
+
+
+class TestRewriteCandidateSafety:
+    """CR-01 回归：非法客户端值不得进入重写映射；旧 DB 身份的存量引用必须被重写。"""
+
+    def test_invalid_client_value_must_not_rewrite_legit_node_refs(self, workflow):
+        """非法值 "abc.out"（含点号）被重生成时，不得把 {{nodes.abc.out.c}}——
+        指向合法节点 abc 字段 out.c 的引用——误改写为新生成值。"""
+        WorkflowNode.objects.create(
+            workflow=workflow, node_type="manual_trigger", name="legit", short_id="abc"
+        )
+        neighbor = WorkflowNode.objects.create(
+            workflow=workflow,
+            node_type="manual_trigger",
+            name="neighbor",
+            short_id="nB7",
+            config={"ref": "{{nodes.abc.out.c}}"},
+        )
+
+        _bulk_update_nodes_and_edges(
+            workflow, [_new_node("attacker", short_id="abc.out")], []
+        )
+
+        attacker = workflow.nodes.get(name="attacker")
+        assert attacker.short_id != "abc.out"
+        assert GENERATED_SHORT_ID_RE.match(attacker.short_id)
+        neighbor.refresh_from_db()
+        assert neighbor.config["ref"] == "{{nodes.abc.out.c}}", (
+            "指向合法节点 abc 的引用不得被非法客户端值污染的重写映射篡改"
+        )
+
+    def test_invalid_client_value_on_update_rewrites_old_db_refs(self, workflow):
+        """update 节点送非法 short_id 导致 DB 旧值被重生成替换时，
+        对旧 DB short_id 的存量引用必须重写到新值（不变式：保存后引用可解析）。"""
+        target = WorkflowNode.objects.create(
+            workflow=workflow, node_type="manual_trigger", name="target", short_id="kP3"
+        )
+        neighbor = WorkflowNode.objects.create(
+            workflow=workflow,
+            node_type="manual_trigger",
+            name="neighbor",
+            short_id="nB7",
+            config={"ref": "{{nodes.kP3.out}}"},
+        )
+
+        _bulk_update_nodes_and_edges(
+            workflow,
+            [
+                {
+                    "id": str(target.id),
+                    "node_type": "manual_trigger",
+                    "name": "target",
+                    "short_id": "k.P3",
+                }
+            ],
+            [],
+        )
+
+        target.refresh_from_db()
+        assert target.short_id != "kP3", "非法客户端值触发重生成"
+        assert GENERATED_SHORT_ID_RE.match(target.short_id)
+        neighbor.refresh_from_db()
+        assert neighbor.config["ref"] == f"{{{{nodes.{target.short_id}.out}}}}", (
+            "旧 DB short_id 的存量引用必须随重生成同步重写"
+        )
+
+    def test_rename_rewrites_old_db_refs(self, workflow):
+        """客户端合法重命名（kP3 → wZ5）后，对旧值 kP3 的存量引用同步重写。"""
+        target = WorkflowNode.objects.create(
+            workflow=workflow, node_type="manual_trigger", name="target", short_id="kP3"
+        )
+        neighbor = WorkflowNode.objects.create(
+            workflow=workflow,
+            node_type="manual_trigger",
+            name="neighbor",
+            short_id="nB7",
+            config={"ref": "{{nodes.kP3.out}}"},
+        )
+
+        _bulk_update_nodes_and_edges(
+            workflow,
+            [
+                {
+                    "id": str(target.id),
+                    "node_type": "manual_trigger",
+                    "name": "target",
+                    "short_id": "wZ5",
+                }
+            ],
+            [],
+        )
+
+        target.refresh_from_db()
+        assert target.short_id == "wZ5"
+        neighbor.refresh_from_db()
+        assert neighbor.config["ref"] == "{{nodes.wZ5.out}}"
