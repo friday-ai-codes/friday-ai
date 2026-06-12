@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: 工作流系统契约重构
-status: planning
-last_updated: "2026-06-12T13:53:59.803Z"
+status: roadmap_created
+last_updated: "2026-06-12T15:05:00.000Z"
 last_activity: 2026-06-12
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,15 +19,29 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.3.0 起需求/缺陷、技术方案、编码 diff 全链路 RAG 化并以时间感知知识图谱关联，任意入口都能召回相似历史需求及其完整迭代轨迹。
-**Current focus:** Planning next milestone (`/gsd-new-milestone`)
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.4.0 收敛工作流系统的编辑态与运行态契约——保存即合法、模板开箱能跑、变量所选即所得、执行状态真实可见。
+**Current focus:** Milestone v0.4.0 工作流系统契约重构（Phase 17–21）
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 17 of 21 — 变量引用链路修复（Not started）
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-12 — Milestone v0.4.0 started
+Status: Roadmap created, ready for `/gsd-plan-phase 17`
+Last activity: 2026-06-12 — v0.4.0 roadmap created (5 phases, 24 requirements mapped)
+
+Progress: [□□□□□] 0/5 phases
+
+## Milestone Overview (v0.4.0)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 17 | 变量引用链路修复 | VAR-01..04 | Not started |
+| 18 | 执行引擎状态机修复 | ENG-01..05 | Not started |
+| 19 | 节点定义单一事实源 | SSOT-01..03 | Not started |
+| 20 | 保存即合法与模板修复 | VAL-01..03, TPL-01..03 | Not started |
+| 21 | 触发模型与执行可观测 | TRIG-01..03, OBS-01..03 | Not started |
+
+**Execution order:** 17 → 18 → 19 → 20 → 21（19 可与 17/18 并行；20 依赖 17/18/19；21 依赖 17/18）
 
 ## Performance Metrics
 
@@ -113,10 +127,10 @@ Items acknowledged and deferred at milestone close.
 
 ## Session Continuity
 
-Last session: 2026-06-11T18:17:08.810Z
-Stopped at: Milestone v0.3.0 shipped (Phase 12–16, 28/28 requirements)
+Last session: 2026-06-12
+Stopped at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Start planning the first phase with /gsd-plan-phase 17
