@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 
 import structlog
 from django.conf import settings
+from django.utils import timezone
 
 from agents.models import AgentSession
 from prompts.keys import PromptSlugs
@@ -146,6 +148,11 @@ _TERMINAL_FAIL_STATUSES = frozenset({
     SubAgentSession.Status.CANCELLED,
 })
 
+# PENDING 且从未被 Runner 接收的会话超过该时长即判定为「派发丢失」。
+# 根因：dispatcher 的 _pending 是进程内存队列，server 重启（dev --reload /
+# 部署）会清空队列，但 SubAgentSession 停留在非终态 PENDING，UI 永远「排队中」。
+_STALE_PENDING_MINUTES = 10
+
 
 async def reconcile_ai_summary_status(repository: Repository) -> Repository:
     """将 Repository.ai_summary_status 与最新 REPO_SUMMARY SubAgentSession 对齐。
@@ -192,6 +199,26 @@ async def reconcile_ai_summary_status(repository: Repository) -> Repository:
 
     if session.status in _TERMINAL_FAIL_STATUSES:
         error_msg = session.failure_reason or "AI 描述生成失败"
+        await _update_repository_on_summary_fail(session, error_msg)
+        await repository.arefresh_from_db()
+        return repository
+
+    # 陈旧 PENDING 兜底：派发后长时间无 Runner 接收（runner 为空），任务已随
+    # server 重启从内存队列丢失，永远不会再被执行——收敛为 TIMEOUT 终态，
+    # 解锁 UI 的「重新生成」按钮。
+    if (
+        session.status == SubAgentSession.Status.PENDING
+        and session.runner_id is None
+        and session.created_at
+        < timezone.now() - timedelta(minutes=_STALE_PENDING_MINUTES)
+    ):
+        error_msg = (
+            f"任务派发后超过 {_STALE_PENDING_MINUTES} 分钟未被 Runner 接收"
+            "（Runner 离线或服务重启导致派发丢失），请重试。"
+        )
+        session.status = SubAgentSession.Status.TIMEOUT
+        session.failure_reason = error_msg
+        await session.asave(update_fields=["status", "failure_reason", "updated_at"])
         await _update_repository_on_summary_fail(session, error_msg)
         await repository.arefresh_from_db()
         return repository

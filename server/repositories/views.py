@@ -641,7 +641,7 @@ class RepositoryViewSet(ModelViewSet):
     async def summary_status(self, request, pk=None):
         """GET /api/repositories/{id}/summary-status/
 
-        返回仓库 AI 描述生成状态。
+        返回仓库 AI 描述生成状态 + Claude Code 调用细节（recent_logs）。
         """
         repository = await self.aget_object()
         from .summary_service import reconcile_ai_summary_status
@@ -658,6 +658,25 @@ class RepositoryViewSet(ModelViewSet):
                 stack.extend(node.get("children", []) if isinstance(node, dict) else [])
             return total
 
+        # 调用细节：Runner 实时回传的容器日志（[task:text]/[task:tool]/[task:result]）
+        # 由 runners.consumers._append_runtime_log 写入最近一次 REPO_SUMMARY 会话的
+        # last_output["logs"]，这里取尾部 30 条供前端展示进度活动流。
+        from subagent.models import SubAgentSession
+
+        recent_logs: list[dict] = []
+        session = await (
+            SubAgentSession.objects.filter(
+                task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+                last_output__repository_id=str(repository.id),
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
+        if session is not None:
+            logs = (session.last_output or {}).get("logs")
+            if isinstance(logs, list):
+                recent_logs = logs[-30:]
+
         tree = repository.ai_summary_tree or []
         return Response({
             "status": repository.ai_summary_status,
@@ -668,6 +687,7 @@ class RepositoryViewSet(ModelViewSet):
             "has_tree": bool(tree),
             "is_monorepo": repository.is_monorepo,
             "tree_node_count": _count_nodes(tree),
+            "recent_logs": recent_logs,
         })
 
     @action(detail=True, methods=["post"], url_path="generate-webhook-secret")
