@@ -349,7 +349,6 @@ declare global {
   const useToString: typeof import('@vueuse/core').useToString
   const useToast: typeof import('./composables/useToast').useToast
   const useToggle: typeof import('@vueuse/core').useToggle
-  const useToolBindingStore: typeof import('./stores/toolBindings').useToolBindingStore
   const useTransition: typeof import('@vueuse/core').useTransition
   const useUrlSearchParams: typeof import('@vueuse/core').useUrlSearchParams
   const useUserMedia: typeof import('@vueuse/core').useUserMedia
@@ -818,7 +817,6 @@ declare module 'vue' {
     readonly useToString: UnwrapRef<typeof import('@vueuse/core')['useToString']>
     readonly useToast: UnwrapRef<typeof import('./composables/useToast')['useToast']>
     readonly useToggle: UnwrapRef<typeof import('@vueuse/core')['useToggle']>
-    readonly useToolBindingStore: UnwrapRef<typeof import('./stores/toolBindings')['useToolBindingStore']>
     readonly useTransition: UnwrapRef<typeof import('@vueuse/core')['useTransition']>
     readonly useUrlSearchParams: UnwrapRef<typeof import('@vueuse/core')['useUrlSearchParams']>
     readonly useUserMedia: UnwrapRef<typeof import('@vueuse/core')['useUserMedia']>
