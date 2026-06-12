@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import math
 import uuid
 from dataclasses import dataclass
@@ -49,6 +48,7 @@ def _build_knowledge_must_filter(
     allowed_repository_ids: list[str],
     entity_kinds: list[str] | None,
     include_superseded: bool,
+    require_repository: bool = True,
 ) -> models.Filter:
     """构建 knowledge 检索 must filter（P1/P6，私有无 bypass 出口）。"""
     must: list[models.Condition] = []
@@ -61,11 +61,20 @@ def _build_knowledge_must_filter(
                 match=models.MatchAny(any=allowed_project_ids),
             )
         )
-    if allowed_repository_ids:
+    if require_repository:
+        if allowed_repository_ids:
+            must.append(
+                models.FieldCondition(
+                    key="repository_id",
+                    match=models.MatchAny(any=allowed_repository_ids),
+                )
+            )
+    elif allowed_repository_ids:
+        # demand 分路：无仓库实体 payload 为 ""，需 OR 匹配
         must.append(
             models.FieldCondition(
                 key="repository_id",
-                match=models.MatchAny(any=allowed_repository_ids),
+                match=models.MatchAny(any=[*allowed_repository_ids, ""]),
             )
         )
     if entity_kinds:
@@ -175,11 +184,14 @@ async def recall_similar_chunks(
     include_superseded: bool = False,
 ) -> list[VectorHit]:
     """分路 hybrid 召回 + 跨路 RRF + entity 去重。"""
-    if not allowed_project_ids or not allowed_repository_ids:
+    if not allowed_project_ids:
         return []
 
     demand_limit = max(1, math.ceil(top_k * 0.7))
-    code_limit = max(1, math.ceil(top_k * 0.3))
+    if allowed_repository_ids:
+        code_limit = max(1, math.ceil(top_k * 0.3))
+    else:
+        code_limit = 0
 
     query_dense = await EmbeddingService.generate_embedding(query)
     if not query_dense:
@@ -202,21 +214,26 @@ async def recall_similar_chunks(
         allowed_repository_ids=allowed_repository_ids,
         entity_kinds=demand_kinds if kinds_filter else demand_kinds,
         include_superseded=include_superseded,
+        require_repository=False,
     )
-    code_filter = _build_knowledge_must_filter(
-        allowed_project_ids=allowed_project_ids,
-        allowed_repository_ids=allowed_repository_ids,
-        entity_kinds=code_kinds if kinds_filter else code_kinds,
-        include_superseded=include_superseded,
+    demand_raw = await _hybrid_query(
+        query_dense, query_sparse, limit=demand_limit, query_filter=demand_filter
     )
-
-    demand_raw, code_raw = await asyncio.gather(
-        _hybrid_query(query_dense, query_sparse, limit=demand_limit, query_filter=demand_filter),
-        _hybrid_query(query_dense, query_sparse, limit=code_limit, query_filter=code_filter),
-    )
-
     demand_hits = [h for r in demand_raw if (h := _to_vector_hit(r, 0.0))]
-    code_hits = [h for r in code_raw if (h := _to_vector_hit(r, 0.0))]
+
+    code_hits: list[VectorHit] = []
+    if code_limit > 0:
+        code_filter = _build_knowledge_must_filter(
+            allowed_project_ids=allowed_project_ids,
+            allowed_repository_ids=allowed_repository_ids,
+            entity_kinds=code_kinds if kinds_filter else code_kinds,
+            include_superseded=include_superseded,
+            require_repository=True,
+        )
+        code_raw = await _hybrid_query(
+            query_dense, query_sparse, limit=code_limit, query_filter=code_filter
+        )
+        code_hits = [h for r in code_raw if (h := _to_vector_hit(r, 0.0))]
 
     fused = _rrf_fuse(demand_hits, code_hits)
     deduped = _dedupe_by_entity(fused)
