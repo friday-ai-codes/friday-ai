@@ -63,12 +63,13 @@ async def build_entity_timeline(
         return []
 
     versions = await sync_to_async(list)(_version_queryset(entity_id, include_superseded))
+    code_change_keys = await _code_change_keys_for_version(entity_id)
 
     nodes: list[TimelineNodeDTO] = []
     for ver in versions:
         if not include_superseded and not ver.is_latest and ver.invalid_at is not None:
             continue
-        keys = await _code_change_keys_for_version(entity_id)
+        keys = code_change_keys
         code_changes = []
         for eid, ver_no in keys:
             meta = await hydrate_entity_metadata(eid, ver_no, include_superseded=True)
