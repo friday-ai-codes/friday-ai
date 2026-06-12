@@ -31,6 +31,13 @@ from interactions.models import InteractionEvent, InteractionRun, RetrievalTrace
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
 from services.qdrant_service import QdrantService
+from services.repo_mirror import (
+    MirrorError,
+    ensure_mirror_commit,
+    grep_mirror,
+    list_mirror_paths,
+    read_mirror_file,
+)
 
 from .errors import error_response
 from .execution_service import (
@@ -79,6 +86,7 @@ from .serializers import (
     GetRelatedEntitiesRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
+    GrepRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
     RouteRepositoriesRequestSerializer,
@@ -136,6 +144,45 @@ def _first_error_detail(errors: Any) -> Any:
     if isinstance(errors, list):
         return [_first_error_detail(value) for value in errors]
     return str(errors)
+
+
+_MIRROR_ERROR_STATUS = {
+    "repository_not_found": status.HTTP_404_NOT_FOUND,
+    "invalid_params": status.HTTP_400_BAD_REQUEST,
+    "mirror_disabled": status.HTTP_400_BAD_REQUEST,
+    "mirror_unavailable": status.HTTP_400_BAD_REQUEST,
+    "grep_failed": status.HTTP_400_BAD_REQUEST,
+    "mirror_fetch_failed": status.HTTP_502_BAD_GATEWAY,
+    "git_timeout": status.HTTP_502_BAD_GATEWAY,
+}
+
+
+def _mirror_error_response(exc: MirrorError) -> Response:
+    return error_response(
+        exc.code,
+        exc.detail,
+        status_code=_MIRROR_ERROR_STATUS.get(exc.code, status.HTTP_400_BAD_REQUEST),
+    )
+
+
+_EXT_LANG_MAP = {
+    "py": "python",
+    "js": "javascript",
+    "jsx": "javascript",
+    "ts": "typescript",
+    "tsx": "typescript",
+    "go": "go",
+    "css": "css",
+    "html": "html",
+    "json": "json",
+    "vue": "vue",
+    "md": "markdown",
+}
+
+
+def _language_from_path(file_path: str) -> str:
+    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+    return _EXT_LANG_MAP.get(ext, "")
 
 
 def _traces_from_evidence(evidence: Iterable[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
@@ -469,6 +516,178 @@ class SearchRagChunksView(McpToolView):
         return Response(output_data, status=status.HTTP_200_OK)
 
 
+def _estimate_match_tokens(match: dict[str, Any]) -> int:
+    """匹配记录的 token 估算（字符数/4 + 结构开销），用于 max_tokens 预算。"""
+    chars = len(str(match.get("file_path", ""))) + len(str(match.get("content", "")))
+    return max(1, chars // 4) + 8
+
+
+class GrepRepositoryView(McpToolView):
+    """精确文本检索（grep 语义）。
+
+    与 search_rag_chunks 的语义召回互补：对「穷举所有出现位置」类问题
+    （字面量 / 符号引用 / 跳转路径枚举），在仓库本地 bare 镜像快照上执行
+    ripgrep（缺省回退 git grep），保证确定性全量结果。
+
+    范围：默认单仓（repository_id）；跨仓显式 opt-in（repository_ids 数组
+    或 all_repositories=true，受 max_repos 限制），结果按仓库分组返回。
+    base 分支默认 pin 到索引 commit，与其余 MCP 工具看到同一快照
+    （matches_index=True）。
+
+    输出模式：content（命中行 + 可配置上下文，受 max_tokens 预算约束）/
+    files_only（逐文件命中计数，看分布）/ count（仅统计）。
+    """
+
+    tool_name = "grep_repository"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GrepRepositoryRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        max_repos = int(input_data.get("max_repos", 10))
+        target_ids = [str(rid) for rid in input_data.get("target_repository_ids") or []]
+        if not target_ids and input_data.get("all_repositories"):
+            target_ids = [
+                str(rid)
+                async for rid in Repository.objects.filter(
+                    is_deleted=False, index_status=IndexStatus.INDEXED
+                )
+                .order_by("name")
+                .values_list("id", flat=True)[:max_repos]
+            ]
+            if not target_ids:
+                return error_response(
+                    "repository_not_found",
+                    "没有可检索的已索引仓库",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+        target_ids = target_ids[:max_repos]
+        single_target = len(target_ids) == 1
+
+        output_mode = str(input_data.get("output_mode", "content"))
+        context_lines = int(input_data.get("context_lines", 0)) if output_mode == "content" else 0
+        remaining_tokens = int(input_data.get("max_tokens", 8000))
+
+        repo_results: list[dict[str, Any]] = []
+        traces: list[tuple[str, dict[str, Any]]] = []
+        grand_total = 0
+        any_truncated = False
+
+        for repository_id in target_ids:
+            repo, repo_err = await self._get_indexed_repo(repository_id)
+            if repo_err is not None:
+                if single_target:
+                    return repo_err
+                repo_results.append({
+                    "repository_id": repository_id,
+                    "error_code": "repository_unavailable",
+                    "error": "仓库不存在或尚未建立索引",
+                })
+                continue
+            assert repo is not None
+
+            try:
+                snapshot = await ensure_mirror_commit(repository_id, input_data.get("branch"))
+                result = await grep_mirror(
+                    snapshot,
+                    pattern=str(input_data["pattern"]),
+                    regex=bool(input_data.get("regex", False)),
+                    case_sensitive=bool(input_data.get("case_sensitive", True)),
+                    paths=[str(p) for p in input_data.get("paths") or []],
+                    include_globs=[str(g) for g in input_data.get("include_globs") or []],
+                    exclude_globs=[str(g) for g in input_data.get("exclude_globs") or []],
+                    context_lines=context_lines,
+                    max_matches=int(input_data.get("max_matches", 100)),
+                )
+            except MirrorError as exc:
+                if single_target:
+                    await self._record(
+                        run,
+                        input_data=input_data,
+                        output_data={"error_code": exc.code, "detail": exc.detail},
+                        traces=[],
+                        started_at=started_at,
+                        call_status="failed",
+                        error=exc.detail,
+                    )
+                    return _mirror_error_response(exc)
+                # 跨仓检索：单仓失败不毁掉整次调用，记录后继续
+                repo_results.append({
+                    "repository_id": repository_id,
+                    "name": repo.name,
+                    "error_code": exc.code,
+                    "error": exc.detail,
+                })
+                continue
+
+            entry: dict[str, Any] = {
+                "repository_id": repository_id,
+                "name": repo.name,
+                "branch": snapshot.ref,
+                "commit_sha": snapshot.commit_sha,
+                "matches_index": snapshot.matches_index,
+                "engine": result["engine"],
+                "total_matches": result["total_matches"],
+                "files_with_matches": result["files_with_matches"],
+                "truncated": bool(result["truncated"]),
+            }
+            if output_mode == "content":
+                matches: list[dict[str, Any]] = []
+                for match in result["matches"]:
+                    cost = _estimate_match_tokens(match)
+                    if remaining_tokens - cost < 0:
+                        entry["truncated"] = True
+                        break
+                    remaining_tokens -= cost
+                    matches.append(match)
+                entry["matches"] = matches
+            elif output_mode == "files_only":
+                entry["files"] = result["file_counts"]
+            grand_total += int(result["total_matches"])
+            any_truncated = any_truncated or bool(entry["truncated"])
+            repo_results.append(entry)
+
+            matched_files = sorted(
+                {str(f["file_path"]) for f in result["file_counts"]}
+            )
+            traces.extend(
+                (
+                    RetrievalTrace.Kind.FILE,
+                    {
+                        "source": "grep_repository",
+                        "repository_id": repository_id,
+                        "file_path": file_path,
+                        "commit_sha": snapshot.commit_sha,
+                    },
+                )
+                for file_path in matched_files[:20]
+            )
+
+        output_data = {
+            "pattern": input_data["pattern"],
+            "output_mode": output_mode,
+            "repositories": repo_results,
+            "total_matches": grand_total,
+            "truncated": any_truncated,
+            "run_id": str(run.run_id),
+        }
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
 class GetRepositoryView(McpToolView):
     tool_name = "get_repository"
 
@@ -495,7 +714,7 @@ class GetRepositoryView(McpToolView):
         repository = {
             "repo_id": repository_id,
             "name": repo.name,
-            "description": repo.description or "",
+            "description": repo.overview_text,
             "default_branch": repo.default_branch,
             "base_branch": repo.base_branch or "",
             "index_status": repo.index_status,
@@ -592,6 +811,13 @@ class ListRepositoryFilesView(McpToolView):
 
 
 class GetRepositoryFileView(McpToolView):
+    """读取仓库单文件。
+
+    优先走本地 bare 镜像（git show，行号精确、内容全量、source="git"）；
+    镜像不可用（未启用 / fetch 失败 / 文件不在快照中）时回退 Qdrant 索引
+    chunk 拼接路径（source="index"），保持旧行为不回退。
+    """
+
     tool_name = "get_repository_file"
 
     async def post(self, request: Request) -> Response:
@@ -614,6 +840,50 @@ class GetRepositoryFileView(McpToolView):
             repository_id, repo, input_data.get("branch")
         )
         file_path = str(input_data["file_path"])
+        start_line = input_data.get("start_line")
+        end_line = input_data.get("end_line")
+        max_lines = int(input_data.get("max_lines", 500))
+        branch_label = graph_branch or (repo.base_branch or repo.default_branch)
+
+        mirror_hit = await self._read_from_mirror(
+            repository_id, input_data.get("branch"), file_path
+        )
+        if mirror_hit is not None:
+            resolved_path, full_text, snapshot = mirror_hit
+            all_lines = full_text.splitlines()
+            total_lines = len(all_lines)
+            slice_start = int(start_line) - 1 if start_line is not None else 0
+            slice_end = int(end_line) if end_line is not None else total_lines
+            selected_lines = all_lines[slice_start:slice_end]
+            truncated = len(selected_lines) > max_lines
+            returned_lines = selected_lines[:max_lines]
+            output_data = {
+                "repository_id": repository_id,
+                "branch": branch_label,
+                "file_path": resolved_path,
+                "requested_file_path": file_path,
+                "line_start": start_line,
+                "line_end": end_line,
+                "language": _language_from_path(resolved_path),
+                "content": "\n".join(returned_lines),
+                "truncated": truncated,
+                "total_chunks": 0,
+                "returned_lines": len(returned_lines),
+                "max_lines": max_lines,
+                "source": "git",
+                "commit_sha": snapshot.commit_sha,
+                "total_lines": total_lines,
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[(RetrievalTrace.Kind.FILE, output_data)],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
         chunks_raw = await _scroll_file_from_collection(collection_name, file_path)
         resolved_path = file_path
         if not chunks_raw:
@@ -632,8 +902,6 @@ class GetRepositoryFileView(McpToolView):
             )
 
         chunks_raw.sort(key=lambda chunk: chunk.get("chunk_index", 0))
-        start_line = input_data.get("start_line")
-        end_line = input_data.get("end_line")
         selected: list[dict[str, Any]] = []
         for chunk in chunks_raw:
             chunk_start = chunk.get("start_line", 0) or 0
@@ -650,12 +918,11 @@ class GetRepositoryFileView(McpToolView):
             if not language:
                 language = str(chunk.get("language") or "")
             lines.extend(str(chunk.get("content") or "").splitlines())
-        max_lines = int(input_data.get("max_lines", 500))
         truncated = len(lines) > max_lines
         returned_lines = lines[:max_lines]
         output_data = {
             "repository_id": repository_id,
-            "branch": graph_branch or (repo.base_branch or repo.default_branch),
+            "branch": branch_label,
             "file_path": resolved_path,
             "requested_file_path": file_path,
             "line_start": start_line,
@@ -666,6 +933,9 @@ class GetRepositoryFileView(McpToolView):
             "total_chunks": len(chunks_raw),
             "returned_lines": len(returned_lines),
             "max_lines": max_lines,
+            "source": "index",
+            "commit_sha": "",
+            "total_lines": len(lines),
             "run_id": str(run.run_id),
         }
         await self._record(
@@ -676,6 +946,38 @@ class GetRepositoryFileView(McpToolView):
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
+
+    async def _read_from_mirror(
+        self,
+        repository_id: str,
+        branch: str | None,
+        file_path: str,
+    ) -> tuple[str, str, Any] | None:
+        """尝试从本地镜像读文件；任何不可用情形返回 None 走索引回退。"""
+        try:
+            snapshot = await ensure_mirror_commit(repository_id, branch)
+            text = await read_mirror_file(snapshot, file_path)
+            resolved_path = file_path
+            if text is None:
+                candidates = [
+                    path for path in await list_mirror_paths(snapshot)
+                    if path.endswith(file_path)
+                ]
+                if len(candidates) == 1:
+                    resolved_path = candidates[0]
+                    text = await read_mirror_file(snapshot, resolved_path)
+            if text is None:
+                return None
+            return resolved_path, text, snapshot
+        except MirrorError as exc:
+            logger.info(
+                "repo_mirror_file_fallback_index",
+                repository_id=repository_id,
+                file_path=file_path,
+                code=exc.code,
+                detail=exc.detail,
+            )
+            return None
 
 
 class FindRelatedChunksView(McpToolView):
