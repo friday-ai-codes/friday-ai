@@ -78,8 +78,10 @@ def rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
     if not id_map:
         return config
 
+    # 尾断言接受 `.`（字段下钻）或 `[`（JSONPath 下标，如 {{$nodes.xY9[0].v}}），
+    # 避免 short_id 重生成时漏写"标识符后直接跟下标"的引用形式（IN-04）
     pattern = re.compile(
-        r"\{\{(\s*(?:\$\.?)?nodes\.)(" + "|".join(re.escape(k) for k in id_map) + r")(\.)"
+        r"\{\{(\s*(?:\$\.?)?nodes\.)(" + "|".join(re.escape(k) for k in id_map) + r")([.\[])"
     )
 
     def _rewrite_value(value: Any) -> Any:

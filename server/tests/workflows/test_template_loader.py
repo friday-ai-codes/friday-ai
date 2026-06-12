@@ -201,6 +201,22 @@ class TestRewriteTemplateRefs:
         rewritten = rewrite_template_refs(config, id_map)
         assert rewritten["url"] == "{{nodes.unknown.output}}"
 
+    def test_rewrite_subscript_form(self):
+        """IN-04：标识符后直接跟 `[` 下标的 JSONPath 形式也要被重写。"""
+        id_map = {"xY9": "Qw2"}
+        config = {
+            "a": "{{$nodes.xY9[0].v}}",
+            "b": "{{nodes.xY9[2]}}",
+            "c": "{{$.nodes.xY9[*].name}}",
+            # 前缀部分匹配的标识符不受影响
+            "d": "{{nodes.xY9z[0].v}}",
+        }
+        rewritten = rewrite_template_refs(config, id_map)
+        assert rewritten["a"] == "{{$nodes.Qw2[0].v}}"
+        assert rewritten["b"] == "{{nodes.Qw2[2]}}"
+        assert rewritten["c"] == "{{$.nodes.Qw2[*].name}}"
+        assert rewritten["d"] == "{{nodes.xY9z[0].v}}"
+
 
 class TestTemplateFileIntegrity:
     """Verify template JSON files are valid and well-formed."""
