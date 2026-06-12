@@ -326,6 +326,7 @@ declare module 'vue' {
     Sonner: typeof import('./components/ui/sonner/Sonner.vue')['default']
     SpaceFilter: typeof import('./components/galaxy/SpaceFilter.vue')['default']
     SpaceMembersModal: typeof import('./components/space/SpaceMembersModal.vue')['default']
+    SpaceMultiSelect: typeof import('./components/repository/SpaceMultiSelect.vue')['default']
     SpacePromptsModal: typeof import('./components/space/SpacePromptsModal.vue')['default']
     SpaceProvidersModal: typeof import('./components/space/SpaceProvidersModal.vue')['default']
     StatCard: typeof import('./components/common/StatCard.vue')['default']
