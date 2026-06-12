@@ -109,7 +109,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. 变量引用链路修复 | 4/4 | Complete   | 2026-06-12 |
+| 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
 | 18. 执行引擎状态机修复 | 0/? | Not started | - |
 | 19. 节点定义单一事实源 | 0/? | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |

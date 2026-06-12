@@ -7,10 +7,10 @@
 
 ### 变量引用链路（VAR）
 
-- [ ] **VAR-01**: 用户在自建流水线中通过变量选择器选择的上游节点输出引用（`{{nodes.<short_id>.<field>}}`），保存后执行时保证可解析——保存（bulk-update）时同步客户端 short_id 或服务端重写 config 中的节点引用，消除 short_id 漂移
-- [ ] **VAR-02**: 变量引用解析失败（节点 ID 不存在、字段不存在、未知前缀）时节点显式失败并给出可读错误（指明哪个引用、哪个节点），不再静默替换为空串或保留字面量
-- [ ] **VAR-03**: 前端所有产生变量引用的入口（变量选择器、端口复制、SmartInput）生成统一格式的引用（统一用 short_id），与后端解析器支持的语法完全一致
-- [ ] **VAR-04**: 变量解析支持嵌套字段路径（`{{nodes.x.data.name}}` 能取到 `output["data"]["name"]`），并有 `render_template`/`get_template_value` 的专项单元测试覆盖（错误 ID、未知前缀、UUID vs short_id、嵌套路径）
+- [x] **VAR-01**: 用户在自建流水线中通过变量选择器选择的上游节点输出引用（`{{nodes.<short_id>.<field>}}`），保存后执行时保证可解析——保存（bulk-update）时同步客户端 short_id 或服务端重写 config 中的节点引用，消除 short_id 漂移
+- [x] **VAR-02**: 变量引用解析失败（节点 ID 不存在、字段不存在、未知前缀）时节点显式失败并给出可读错误（指明哪个引用、哪个节点），不再静默替换为空串或保留字面量
+- [x] **VAR-03**: 前端所有产生变量引用的入口（变量选择器、端口复制、SmartInput）生成统一格式的引用（统一用 short_id），与后端解析器支持的语法完全一致
+- [x] **VAR-04**: 变量解析支持嵌套字段路径（`{{nodes.x.data.name}}` 能取到 `output["data"]["name"]`），并有 `render_template`/`get_template_value` 的专项单元测试覆盖（错误 ID、未知前缀、UUID vs short_id、嵌套路径）
 
 ### 内置模板（TPL）
 
@@ -73,10 +73,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VAR-01 | Phase 17 | Pending |
-| VAR-02 | Phase 17 | Pending |
-| VAR-03 | Phase 17 | Pending |
-| VAR-04 | Phase 17 | Pending |
+| VAR-01 | Phase 17 | Complete |
+| VAR-02 | Phase 17 | Complete |
+| VAR-03 | Phase 17 | Complete |
+| VAR-04 | Phase 17 | Complete |
 | ENG-01 | Phase 18 | Pending |
 | ENG-02 | Phase 18 | Pending |
 | ENG-03 | Phase 18 | Pending |
