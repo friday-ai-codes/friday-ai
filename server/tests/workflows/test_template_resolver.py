@@ -90,9 +90,7 @@ class TestNodeNotFound:
         assert "你是否想使用 'aB1'" in msg
 
     def test_available_filters_uuid_keys(self):
-        sources = make_sources(
-            previous_outputs={"aB1": NODE_OUTPUT, UUID_KEY: NODE_OUTPUT}
-        )
+        sources = make_sources(previous_outputs={"aB1": NODE_OUTPUT, UUID_KEY: NODE_OUTPUT})
         with pytest.raises(TemplateResolutionError) as exc_info:
             render_template("{{nodes.zzz.x}}", sources, _jp_stub)
         err = exc_info.value
@@ -106,9 +104,7 @@ class TestNodeNotFound:
         assert exc_info.value.available == [UUID_KEY]
 
     def test_available_contains_only_keys_never_values(self):
-        sources = make_sources(
-            previous_outputs={"aB1": {"x": "secret-output-value"}}
-        )
+        sources = make_sources(previous_outputs={"aB1": {"x": "secret-output-value"}})
         with pytest.raises(TemplateResolutionError) as exc_info:
             render_template("{{nodes.zzz.x}}", sources, _jp_stub)
         err = exc_info.value
@@ -153,12 +149,8 @@ class TestNestedPath:
 
     def test_list_numeric_index_path(self):
         sources = make_sources()
-        assert (
-            render_template("{{nodes.aB1.items.0.name}}", sources, _jp_stub) == "first"
-        )
-        assert (
-            render_template("{{nodes.aB1.items.1.name}}", sources, _jp_stub) == "second"
-        )
+        assert render_template("{{nodes.aB1.items.0.name}}", sources, _jp_stub) == "first"
+        assert render_template("{{nodes.aB1.items.1.name}}", sources, _jp_stub) == "second"
 
     def test_nested_missing_key_reports_full_path(self):
         sources = make_sources()
@@ -302,16 +294,12 @@ class TestTypePreservation:
 class TestMultiVariableRender:
     def test_multi_variable_string(self):
         sources = make_sources()
-        result = render_template(
-            "a={{nodes.aB1.x}}, b={{input.k}}", sources, _jp_stub
-        )
+        result = render_template("a={{nodes.aB1.x}}, b={{input.k}}", sources, _jp_stub)
         assert result == "a=vx, b=iv"
 
     def test_value_mode_falls_back_to_render_for_mixed_content(self):
         sources = make_sources()
-        result = get_template_value(
-            "prefix_{{nodes.aB1.x}}_suffix", sources, _jp_stub
-        )
+        result = get_template_value("prefix_{{nodes.aB1.x}}_suffix", sources, _jp_stub)
         assert result == "prefix_vx_suffix"
 
 
