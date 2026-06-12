@@ -91,6 +91,7 @@ None.
 | 260610-qmv | 修复 compose 部署下任务容器回调失败（发布 runner callback 端口）并抑制 claude CLI 403 遥测噪音 | 2026-06-10 | 68ddaa4c | [260610-qmv-compose-runner-callback-claude-cli-403](./quick/260610-qmv-compose-runner-callback-claude-cli-403/) |
 | 260611-0pm | 打磨第 1 批：全仓口径对齐 + 过程痕迹清洗 + 社区脚手架 | 2026-06-11 | 7f0c4381 | [260611-0pm-polish-batch1](./quick/260611-0pm-polish-batch1/) |
 | 260611-fky | 打磨仓库列表索引完成界面视觉 | 2026-06-11 | fa5e1b0a | [260611-fky-repository-list-polish](./quick/260611-fky-repository-list-polish/) |
+| 260612-crc | 修复 clarification 答复后 resume 后台任务因继承请求 contextvars 崩溃、会话永久卡在等待态 | 2026-06-12 | e6374837 | [20260612-fix-clarification-resume-context](./quick/20260612-fix-clarification-resume-context/) |
 | 260611-g31 | 打磨工作流列表与执行监控界面视觉 | 2026-06-11 | 9bc59746 | [260611-g31-workflow-execution-polish](./quick/260611-g31-workflow-execution-polish/) |
 | 260611-ghb | 统一工作流卡片高度并收纳节点标签 | 2026-06-11 | c7af69b6 | [260611-ghb-workflow-card-uniform](./quick/260611-ghb-workflow-card-uniform/) |
 
