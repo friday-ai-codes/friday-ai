@@ -38,7 +38,9 @@ services:
       - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
       - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
       - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
-      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-false}
+      # Compose 全包部署自带 Redis（见 redis 服务 + depends_on healthy），
+      # channel layer 默认直接走 Redis；显式设 false 可退回内存实现（单 worker 才安全）。
+      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       # 必须与 qdrant 服务的 QDRANT__SERVICE__API_KEY 用同一默认值。
