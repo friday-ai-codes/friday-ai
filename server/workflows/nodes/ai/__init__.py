@@ -5,6 +5,7 @@ from workflows.nodes.ai.code_review import AICodeReviewNode
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.ai.coding_dispatcher import AICodingDispatcherNode
 from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
+from workflows.nodes.ai.delivery_knowledge_search import DeliveryKnowledgeSearchNode
 from workflows.nodes.ai.plan_approval import PlanApprovalNode
 from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 from workflows.nodes.ai.prompt import AIPromptNode
@@ -16,6 +17,7 @@ __all__ = [
     "AICodingDispatcherNode",
     "AIVariableExtractorNode",
     "ContextRetrievalNode",
+    "DeliveryKnowledgeSearchNode",
     "AIPlanGenerationNode",
     "PlanApprovalNode",
     "AICodingNode",
