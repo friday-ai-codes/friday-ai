@@ -58,6 +58,8 @@ api_patterns = [
     path("tools/", include("tools.urls")),
     # Agent tools API
     path("agents/", include("agents.urls")),
+    # Knowledge retrieval（Phase 15 内部测试 REST）
+    path("knowledge/", include("knowledge.api.urls")),
     # API Documentation
     path("schema", SpectacularAPIView.as_view(), name="schema"),
     path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

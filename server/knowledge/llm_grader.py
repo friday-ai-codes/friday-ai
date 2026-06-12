@@ -60,10 +60,10 @@ async def grade_search_results(query: str, results: list[SearchResultDTO]) -> li
 
     try:
         from agents.llm_factory import build_chat_model
-        from services.provider_config import ProviderConfigService
+        from services.provider_config import ProviderConfigService, ProviderMissingError
 
         resolved = await ProviderConfigService.aresolve_or_error(scope="system")
-        if hasattr(resolved, "code"):
+        if isinstance(resolved, ProviderMissingError):
             raise RuntimeError("provider missing")
         model = build_chat_model(resolved, resolved.default_model, streaming=False)
         response = await model.ainvoke([system, human])
