@@ -897,6 +897,11 @@ class WorkflowEngine:
                 node_execution.attempt = attempt
                 await node_execution.asave(update_fields=["attempt"])
 
+            # 确定性失败标志（IN-01）：模板解析失败是配置错误，重试结果必然
+            # 相同，retry 策略下直接短路转最终失败，避免无意义退避延迟上报。
+            # 注：except 块的 as 变量在块外不可用，故用标志位而非 isinstance(_exc)
+            _deterministic_error = False
+
             try:
                 await node_execution.amark_started(input_data)
                 await node_execution.aappend_log(
@@ -1025,6 +1030,7 @@ class WorkflowEngine:
                         ensure_ascii=False,
                     )
                     last_error = f"{_exc}\n{structured}"
+                    _deterministic_error = True
                 elif isinstance(_exc, RuntimeError) and last_error:
                     pass  # 已设置 last_error
                 else:
@@ -1043,7 +1049,7 @@ class WorkflowEngine:
                 )
 
             # 到达此处表示执行失败
-            if attempt < max_attempts and on_error == "retry":
+            if attempt < max_attempts and on_error == "retry" and not _deterministic_error:
                 # 指数退避 + 随机 jitter
                 delay = min(300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay)))
                 await node_execution.amark_failed(last_error, error_code=_error_code)
