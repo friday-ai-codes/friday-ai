@@ -33,13 +33,30 @@ capability 叶子粒度为"一条需求能描述清楚的功能点"。树深 ≤
 """
 
 
+# 语义分面固定维度（与前端知识树分面视角 FACET_VIEWS 对齐，键名必须一致）
+SEMANTIC_FACET_DIMENSIONS = ("业务线/产品线", "服务对象", "技术形态")
+
+
 async def _build_facet_vocab_section() -> str:
-    """构建语义分面受控词表 prompt 注入段；无词表时返回空字符串。"""
+    """构建语义分面打标 prompt 注入段。
+
+    - 有受控词表（FacetVocabulary）：打标只能从词表取值（防漂移）。
+    - 无词表：降级为自由打标（开箱即用），维度固定、取值要求简短中文短语；
+      历史上无词表时直接跳过打标，导致语义分面永远为空。
+    """
     from repositories.models import FacetVocabulary
 
     vocabs = [v async for v in FacetVocabulary.objects.filter(is_active=True)]
     if not vocabs:
-        return ""
+        dims = "、".join(SEMANTIC_FACET_DIMENSIONS)
+        return "\n".join([
+            "",
+            "## 语义分面打标",
+            "",
+            f"在提交结果的 facets 字段中为仓库整体打标（{{维度: 取值}}），维度固定为：{dims}。",
+            "取值用简短中文短语（≤10 字，如「在线教育」「C端学生」「移动端H5」）；判断不出填 \"未分类\"。",
+            "",
+        ])
     lines = [
         "",
         "## 分面词表（受控，打标只能从下列取值中选）",
@@ -83,7 +100,7 @@ async def dispatch_repo_summary(repository: Repository) -> str:
         },
     )
 
-    sub_session = await SubAgentSession.objects.acreate(
+    await SubAgentSession.objects.acreate(
         session_id=session_id,
         main_session=agent_session,
         task_type=SubAgentSession.TaskType.REPO_SUMMARY,

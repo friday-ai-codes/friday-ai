@@ -59,16 +59,18 @@ async def grade_search_results(query: str, results: list[SearchResultDTO]) -> li
     )
 
     try:
-        from agents.llm_factory import build_chat_model
+        from agents.llm_factory import build_chat_model, content_to_text
         from services.provider_config import ProviderConfigService, ProviderMissingError
 
-        resolved = await ProviderConfigService.aresolve_or_error(scope="system")
+        resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
             raise RuntimeError("provider missing")
-        model = build_chat_model(resolved, resolved.default_model, streaming=False)
+        model_name = (resolved.extra or {}).get("default_model", "")
+        if not model_name:
+            raise RuntimeError("default model missing")
+        model = build_chat_model(resolved, model_name, streaming=False)
         response = await model.ainvoke([system, human])
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        grades = _parse_grades(content, len(results))
+        grades = _parse_grades(content_to_text(response.content), len(results))
         grade_by_id = {g.get("entity_id"): g for g in grades if isinstance(g, dict)}
 
         graded: list[SearchResultDTO] = []

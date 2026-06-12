@@ -43,6 +43,24 @@ logger = structlog.get_logger(__name__)
 _REASONING_MODEL_PATTERN = re.compile(r"^(o[1-9]|o4-mini|gpt-5)(-.*)?$")
 
 
+def content_to_text(content: Any) -> str:
+    """LangChain message content → 纯文本。
+
+    reasoning 模型（如经 anthropic 兼容代理的 deepseek/glm）返回的 content 是
+    content_blocks 列表（reasoning + text），直接 str() 会得到 Python repr
+    （单引号），下游 json.loads 必然失败——这里只拼接 text block。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return str(content) if content is not None else ""
+
+
 def build_chat_model(
     resolved: ResolvedProviderConfig,
     model: str,
