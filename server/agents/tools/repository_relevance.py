@@ -201,7 +201,78 @@ async def _analyze_relevance_core(
     repo_ids = [str(r.id) for r in repos]
     repo_by_id = {str(r.id): r for r in repos}
 
-    # HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合
+    # PageIndex v2 树推理路由优先：节点级粗筛 + LLM 推理，evidence 为
+    # "命中能力节点路径 + 推理理由"，置信度直接映射 level/selected_by_ai。
+    # v2 不可用（无树索引/LLM 失败回落 v1_fallback）时走 legacy 聚合。
+    router_version = "legacy_hybrid"
+    v2_candidates: list[RepositoryRelevanceCandidate] | None = None
+    try:
+        from codegraph.services.repo_router_v2 import RepoRouterV2
+
+        v2_result = await RepoRouterV2.route(
+            query, top_k=top_k, repository_ids=repo_ids
+        )
+        if v2_result.router_version in ("v2", "v2_stage0_only") and v2_result.candidates:
+            router_version = v2_result.router_version
+            v2_candidates = []
+            for c in v2_result.candidates:
+                repo = repo_by_id.get(c.repo_id)
+                if repo is None:
+                    continue
+                evidence_parts: list[str] = []
+                if c.matched_node_paths:
+                    evidence_parts.append(
+                        "命中能力节点: " + " / ".join(c.matched_node_paths[:3])
+                    )
+                if c.reasoning:
+                    evidence_parts.append(c.reasoning)
+                if c.sub_project:
+                    evidence_parts.append(f"子应用: {c.sub_project}")
+                score = max(0.0, min(1.0, float(c.score)))
+                selected = c.confidence == "high" or (
+                    c.confidence == "medium" and score >= threshold
+                )
+                v2_candidates.append(
+                    RepositoryRelevanceCandidate(
+                        repository_id=c.repo_id,
+                        repository_name=repo.name,
+                        score=score,
+                        level=c.confidence,
+                        evidence="；".join(evidence_parts) or f"语义相关度 score={score:.2f}",
+                        selected_by_ai=selected,
+                        selected_by_user_final=selected,
+                        sub_project=c.sub_project,
+                        sub_project_paths=c.sub_project_paths,
+                    )
+                )
+            if not v2_candidates:
+                v2_candidates = None
+    except Exception as exc:  # noqa: BLE001 — v2 任意失败都静默回落 legacy
+        logger.warning("repository_relevance_v2_failed", error=str(exc))
+        v2_candidates = None
+
+    if v2_candidates is not None:
+        candidates = v2_candidates[:top_k]
+        trace = await RepositoryRoutingTrace.objects.acreate(
+            agent_session_id=agent_session_id,
+            conversation_id=conversation_id,
+            query=query,
+            candidates=[c.model_dump() for c in candidates],
+            threshold=threshold,
+            triggered_by=triggered_by,
+            router_version=router_version,
+        )
+        logger.info(
+            "analyze_repository_relevance_trace_written",
+            trace_id=str(trace.id),
+            candidate_count=len(candidates),
+            triggered_by=triggered_by,
+            router_version=router_version,
+            agent_session_id=agent_session_id,
+        )
+        return candidates, str(trace.id)
+
+    # ---- legacy 路径：HybridSearchService 多召回（top_k * 5 冗余）+ 按 repo 聚合 ----
     service = HybridSearchService(get_provider())
     try:
         result = await service.search(query, repository_ids=repo_ids, top_k=top_k * 5)
@@ -261,6 +332,7 @@ async def _analyze_relevance_core(
         candidates=[c.model_dump() for c in candidates],
         threshold=threshold,
         triggered_by=triggered_by,
+        router_version=router_version,
     )
 
     logger.info(
@@ -268,6 +340,7 @@ async def _analyze_relevance_core(
         trace_id=str(trace.id),
         candidate_count=len(candidates),
         triggered_by=triggered_by,
+        router_version=router_version,
         agent_session_id=agent_session_id,
     )
 

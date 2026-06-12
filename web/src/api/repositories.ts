@@ -220,6 +220,11 @@ export interface AISummaryStatusResponse {
   summary: string | null
   generated_at: string | null
   error: string | null
+  /** PageIndex 能力树是否已生成 */
+  has_tree: boolean
+  is_monorepo: boolean
+  /** 能力树节点总数（递归） */
+  tree_node_count: number
 }
 
 export interface GenerateSummaryResponse {

@@ -89,3 +89,6 @@ class SearchResultDTO:
     related_entities: list[RelatedEntityDTO] = field(default_factory=list)
     llm_grade: LlmGrade | None = None
     llm_reason: str | None = None
+    # PageIndex 章节路径（如 ["接口设计", "鉴权"]）：命中 chunk 所属章节链，
+    # 空列表表示该版本无章节树或 chunk 未归属章节。
+    toc_path: list[str] = field(default_factory=list)

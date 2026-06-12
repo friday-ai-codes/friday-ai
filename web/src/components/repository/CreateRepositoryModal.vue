@@ -128,7 +128,7 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const repository = await repositoriesStore.createRepository(form)
-    success('创建成功', '仓库和凭证已创建')
+    success('创建成功', '仓库已创建，正在自动生成 AI 描述与 PageIndex 索引')
     emit('confirm', repository.id)
   }
   catch (e: unknown) {

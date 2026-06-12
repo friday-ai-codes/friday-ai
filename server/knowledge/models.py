@@ -209,6 +209,9 @@ class KnowledgeEntityVersion(models.Model):
     qdrant_point_ids = models.JSONField(
         default=list, help_text="Phase 13 写入；版本下线按 point id 精确删除（P1）"
     )
+    # PageIndex 化章节树：从 markdown 标题层级确定性生成（knowledge/toc_tree.py），
+    # 节点含 chunk_indexes 映射，检索命中 chunk 可回溯章节路径与 tree-walk 扩展。
+    toc_tree = models.JSONField(default=list, blank=True)
     is_latest = models.BooleanField(default=True)
     vector_synced = models.BooleanField(
         default=False,

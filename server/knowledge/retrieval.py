@@ -19,6 +19,7 @@ from knowledge.recency import compute_recency_score, fuse_vector_recency, normal
 from knowledge.related import fetch_related_entities
 from knowledge.retrieval_types import SearchResultDTO
 from knowledge.timeline import build_entity_timeline
+from knowledge.toc_path import resolve_toc_paths
 from knowledge.vector_recall import recall_similar_chunks
 
 logger = structlog.get_logger(__name__)
@@ -72,6 +73,9 @@ class DeliveryKnowledgeSearchService:
         keys = [(h.entity_id, h.version) for h in hits]
         metadata_map = await hydrate_many(keys, include_superseded=include_superseded)
 
+        # PageIndex 章节路径回溯（增强信息，失败返回空 map 不阻塞检索）
+        toc_paths = await resolve_toc_paths(hits)
+
         vector_scores = [h.rrf_score for h in hits]
         norm_scores = normalize_vector_scores(vector_scores)
 
@@ -92,6 +96,7 @@ class DeliveryKnowledgeSearchService:
                     recency_score=recency,
                     entity=meta,
                     related_entities=enriched.get(hit.entity_id, []),
+                    toc_path=toc_paths.get(hit.point_id, []),
                 )
             )
 

@@ -77,6 +77,44 @@ _READONLY_ANALYSIS_TOOLS = [
 REPO_SUMMARY_MCP_SERVER_NAME = "repo-summary"
 REPO_SUMMARY_TOOL_NAME = "submit_summary"
 
+# 能力树节点采用扁平邻接表（parent_id 引用）而非嵌套结构：
+# 递归 JSON Schema（$ref/$defs）在部分模型上校验/生成不稳定，扁平结构对
+# LLM 更易产出且可被严格校验；server 端 callback 负责组装为嵌套树。
+_TREE_NODE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "node_id": {
+            "type": "string",
+            "description": "节点唯一 ID，层级编号格式：0001 / 0001-01 / 0001-01-01",
+        },
+        "parent_id": {
+            "type": ["string", "null"],
+            "description": "父节点 node_id；顶层节点为 null",
+        },
+        "node_type": {
+            "type": "string",
+            "enum": ["sub_app", "module", "capability"],
+            "description": (
+                "节点层级语义：sub_app=monorepo 子应用（仅 monorepo 顶层使用）；"
+                "module=代码中真实存在的模块/目录；capability=一条需求能描述清楚的功能点"
+            ),
+        },
+        "title": {"type": "string", "description": "节点名称，用业务语言（中文优先）"},
+        "summary": {"type": "string", "description": "节点职责的一句话描述（中文）"},
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "检索关键词（业务词 + 技术词混合）",
+        },
+        "paths": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "节点对应的真实目录/文件相对路径（必须实际存在，禁止虚构）",
+        },
+    },
+    "required": ["node_id", "parent_id", "node_type", "title", "summary"],
+}
+
 _REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -85,6 +123,29 @@ _REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
             "type": "array",
             "items": {"type": "string"},
             "description": "主要技术栈列表，保留英文技术名称",
+        },
+        "is_monorepo": {
+            "type": "boolean",
+            "description": "是否为 monorepo（含多个子应用/子包）",
+        },
+        "tree": {
+            "type": "array",
+            "items": _TREE_NODE_SCHEMA,
+            "description": (
+                "层级能力树的扁平节点列表（parent_id 邻接表）。"
+                "monorepo 仓库第一层必须是 sub_app 节点；"
+                "之下为 module 节点（对应真实目录），叶子为 capability 节点"
+                "（粒度=一条需求能描述清楚的功能点，如「消息撤回」）。"
+                "总节点数不超过 80，树深不超过 4 层。"
+            ),
+        },
+        "facets": {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "description": (
+                "语义分面标签 {维度: 取值}。仅当 prompt 提供了受控词表时填写，"
+                "且只能从词表中选值；选不出填 '未分类'"
+            ),
         },
         "modules": {
             "type": "array",
@@ -96,7 +157,7 @@ _REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
                 },
                 "required": ["name", "description"],
             },
-            "description": "主要模块列表（不超过 10 个）",
+            "description": "（兼容字段）主要模块列表（不超过 10 个）",
         },
         "entry_points": {
             "type": "array",
@@ -119,7 +180,7 @@ _REPO_SUMMARY_INPUT_SCHEMA: dict[str, Any] = {
             "description": "代码规范和约定",
         },
     },
-    "required": ["overview", "tech_stack"],
+    "required": ["overview", "tech_stack", "tree"],
 }
 
 _CLAUDE_TRANSIENT_ERROR_MARKERS = (
@@ -311,6 +372,15 @@ Implement the task as described. Make necessary code changes.
 
         self._captured_summary = None
 
+        # monorepo 子项目静态发现：事实清单注入 prompt，约束树第一层骨架
+        from .workspace_facts import discover_workspace_facts, format_facts_prompt_section
+
+        try:
+            workspace_facts = discover_workspace_facts(self.workspace)
+        except Exception as exc:  # noqa: BLE001 — 发现失败不阻塞描述生成
+            log.warning("workspace_facts_discovery_failed", error=str(exc))
+            workspace_facts = {"is_monorepo": False, "sub_projects": []}
+
         summary_server = create_sdk_mcp_server(
             name=REPO_SUMMARY_MCP_SERVER_NAME,
             tools=[
@@ -327,13 +397,15 @@ Implement the task as described. Make necessary code changes.
         )
 
         submit_tool = f"mcp__{REPO_SUMMARY_MCP_SERVER_NAME}__{REPO_SUMMARY_TOOL_NAME}"
-        # dispatch 时已渲染好的分析 prompt + 任务侧强制追加的提交方式说明。
-        # 追加段优先级最高，覆盖 DB prompt 里"输出严格 JSON 文本"的旧要求。
+        # dispatch 时已渲染好的分析 prompt + 子项目事实约束 + 任务侧强制追加的
+        # 提交方式说明。追加段优先级最高，覆盖 DB prompt 里旧的输出格式要求。
+        facts_section = format_facts_prompt_section(workspace_facts)
         prompt = (
-            f"{self.config.task_description}\n\n"
+            f"{self.config.task_description}\n"
+            f"{facts_section}\n\n"
             "## 结果提交方式（最高优先级，覆盖上文的任何输出格式要求）\n\n"
             f"分析完成后，必须调用 `{submit_tool}` 工具提交结构化结果，"
-            "工具参数即为最终的仓库描述字段。\n"
+            "工具参数即为最终的仓库描述字段（含 tree 能力树节点列表）。\n"
             "- 不要把 JSON 写在普通文本回复里\n"
             "- 不需要任何人批准你的计划或结果，调用工具成功后直接结束任务"
         )
@@ -350,6 +422,15 @@ Implement the task as described. Make necessary code changes.
         # 只要工具捕获到结构化结果，就以它为准（即使模型最后没有任何文本输出，
         # _execute_claude 会因 empty response 误判失败——这里覆盖回 success）。
         if self._captured_summary:
+            # 静态发现的子项目清单随结果回传，供 server 端校验
+            # "monorepo 第一层 sub_app 与事实清单对齐"（LLM 输出不可信，事实可信）
+            if workspace_facts.get("sub_projects"):
+                self._captured_summary["discovered_sub_projects"] = [
+                    sp["root"] for sp in workspace_facts["sub_projects"]
+                ]
+                self._captured_summary.setdefault(
+                    "is_monorepo", workspace_facts["is_monorepo"]
+                )
             result["structured_summary"] = self._captured_summary
             result["output"] = json.dumps(
                 self._captured_summary, ensure_ascii=False, indent=2

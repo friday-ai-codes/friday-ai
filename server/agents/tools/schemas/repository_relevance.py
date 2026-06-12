@@ -34,6 +34,9 @@ class RepositoryRelevanceCandidate(BaseModel):
     evidence: str
     selected_by_ai: bool
     selected_by_user_final: bool
+    # PageIndex v2 扩展（可选，legacy 路径为空）：monorepo 子应用归属及其根目录
+    sub_project: str = ""
+    sub_project_paths: list[str] = Field(default_factory=list)
 
 
 class RepositoryRelevanceOutput(BaseModel):

@@ -34,6 +34,7 @@ from asgiref.sync import sync_to_async
 from django.db import IntegrityError, transaction
 
 from knowledge.chunking import KnowledgeChunk, chunk_knowledge_text, derive_point_ids
+from knowledge.toc_tree import build_toc_tree
 from knowledge.collection import ensure_delivery_knowledge_collection, get_embedding_model_name
 from knowledge.exceptions import KnowledgeError
 from knowledge.graph_store import graph_store, require_aware
@@ -508,6 +509,10 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
 
             new_version_id = uuid.uuid4()
             point_ids = derive_point_ids(new_version_id, len(chunks))
+            # PageIndex 章节树：确定性纯函数，与 chunks 同源生成（标题层级优先）
+            toc_tree = build_toc_tree(
+                event.title, event.content, [c.text for c in chunks]
+            )
             new_version = KnowledgeEntityVersion.objects.create(
                 id=new_version_id,
                 entity=entity,
@@ -517,6 +522,7 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
                 content_hash=content_hash,
                 payload=event.payload,
                 qdrant_point_ids=point_ids,
+                toc_tree=toc_tree,
                 is_latest=True,
                 vector_synced=False,
                 event_time=event.event_time,

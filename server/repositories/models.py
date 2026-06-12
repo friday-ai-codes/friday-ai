@@ -301,6 +301,19 @@ class Repository(models.Model):
     ai_summary_generated_at = models.DateTimeField(null=True, blank=True)
     ai_summary_error = models.TextField(blank=True, default="")
 
+    # PageIndex 化能力树字段：
+    # ai_summary_tree 存校验通过的嵌套能力树（root 列表，节点含
+    # node_id/node_type/title/summary/keywords/paths/children）；
+    # 校验失败时保留旧树不覆盖（fail-closed）。
+    ai_summary_tree = models.JSONField(null=True, blank=True)
+    is_monorepo = models.BooleanField(default=False)
+    # 多维分面标签 {dimension: value}；语义分面来自 repo_summary 打标，
+    # 事实分面（活跃度/技术栈/关键程度/团队）由 FacetService 自动刷新。
+    facets = models.JSONField(default=dict, blank=True)
+    # 增量更新状态：{"stale_node_ids": [...], "new_paths": [...], "evaluated_at": iso}
+    # webhook 索引完成后由 tree_freshness 维护；树重建成功后清空。
+    tree_stale_state = models.JSONField(default=dict, blank=True)
+
     class Meta:
         db_table = "repositories"
         verbose_name = "仓库"
@@ -618,6 +631,68 @@ class RepositoryBranchIndex(models.Model):
 
     def __str__(self) -> str:
         return f"{self.repository.name}:{self.branch_name} ({self.status})"
+
+
+class FacetVocabulary(models.Model):
+    """语义分面受控词表（PageIndex 化）。
+
+    语义分面（业务线/服务对象/技术形态）的打标只能从本词表选值，
+    防止 LLM 自由发挥导致标签碎片化。事实分面（活跃度/技术栈/关键程度/团队）
+    由 FacetService 自动计算，不进词表。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dimension = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text="分面维度标识，如 业务线 / 服务对象 / 技术形态",
+    )
+    values = models.JSONField(
+        default=list,
+        help_text="该维度的合法取值列表（字符串数组）",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "facet_vocabularies"
+        verbose_name = "分面词表"
+        verbose_name_plural = "分面词表"
+
+    def __str__(self) -> str:
+        return f"{self.dimension} ({len(self.values or [])} values)"
+
+
+class CorpusTreeSnapshot(models.Model):
+    """全局知识树快照（业务域 → 子域 → 仓库归属）。
+
+    tree 结构：[{"id", "title", "summary", "children": [...], "repo_ids": [...]}]
+    —— 域/子域节点递归嵌套，叶子域节点带 repo_ids。
+    manual_overrides：{repo_id: domain_node_id}，人工 pin 的归属，重建时不可改动。
+    同一时刻仅一个 is_active=True 快照；重建写新行再切换，保留历史可回溯。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    version = models.IntegerField(default=1)
+    tree = models.JSONField(default=list)
+    manual_overrides = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=False)
+    built_by = models.CharField(
+        max_length=20,
+        default="llm_full",
+        help_text="构建方式：llm_full（全量聚类）/ incremental（增量归类）/ manual",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "corpus_tree_snapshots"
+        verbose_name = "全局知识树快照"
+        verbose_name_plural = "全局知识树快照"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"CorpusTree v{self.version} ({'active' if self.is_active else 'inactive'})"
 
 
 class BranchFileIndex(models.Model):

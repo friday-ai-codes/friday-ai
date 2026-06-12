@@ -190,12 +190,12 @@ class TestProjectRepositoryLink:
     def test_repository_list_linked_count(
         self, project_admin_client: APIClient, repository: Repository,
     ) -> None:
-        """仓库列表返回 linked_projects_count。"""
+        """仓库列表返回 linked_spaces_count。"""
         response = project_admin_client.get("/api/repositories/")
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 1
-        assert "linked_projects_count" in data[0]
+        assert "linked_spaces_count" in data[0]
         # repository 已关联 project，count >= 1
         repo_data = next(r for r in data if r["id"] == str(repository.id))
-        assert repo_data["linked_projects_count"] >= 1
+        assert repo_data["linked_spaces_count"] >= 1
