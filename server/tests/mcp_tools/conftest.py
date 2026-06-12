@@ -8,6 +8,15 @@ from rest_framework.test import APIClient
 from repositories.models import FileIndex, IndexStatus, Repository
 
 
+@pytest.fixture(autouse=True)
+def _disable_repo_mirror(settings: Any) -> None:
+    """默认关闭本地镜像：fixture 仓库的 git_url 是假远端，避免测试触网。
+
+    需要镜像的用例（test_grep_repository.py）用 file:// 本地 origin 显式开启。
+    """
+    settings.REPO_MIRROR_ENABLED = False
+
+
 @pytest.fixture
 def mcp_client(make_access_token: Any) -> tuple[APIClient, str]:
     _token, plaintext = make_access_token(name="mcp-test-token")

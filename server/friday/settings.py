@@ -61,6 +61,14 @@ else:
 SECRET_KEY = env("SECRET_KEY")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=LOCALHOST_HOSTS)
 
+# 仓库本地 bare 镜像（services/repo_mirror.py）：为 MCP grep_repository /
+# get_repository_file 提供确定性的精确检索与全量文件读取；关闭后相关工具
+# 回退到 Qdrant 索引路径。
+REPO_MIRROR_ENABLED = env.bool("FRIDAY_REPO_MIRROR_ENABLED", default=True)
+# grep 引擎偏好：True 且系统装有 rg 时用 ripgrep（快照 worktree 上跑），
+# 否则回退 git grep（直接搜 bare 对象库，无额外依赖）。
+REPO_MIRROR_USE_RIPGREP = env.bool("FRIDAY_REPO_MIRROR_USE_RIPGREP", default=True)
+
 FRIDAY_ENV = env.str("FRIDAY_ENV", default="development").lower()
 IS_PRODUCTION = FRIDAY_ENV in {"prod", "production"} or env.bool("FRIDAY_PRODUCTION", default=False)
 

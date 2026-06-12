@@ -53,6 +53,70 @@ class GetRepositoryFileRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class GrepRepositoryRequestSerializer(serializers.Serializer):
+    # 目标范围：repository_id（单仓便捷参数）/ repository_ids（显式多仓）/
+    # all_repositories（显式全量跨仓，受 max_repos 限制），三者至少给一种。
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    repository_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=10,
+    )
+    all_repositories = serializers.BooleanField(required=False, default=False)
+    max_repos = serializers.IntegerField(required=False, default=10, min_value=1, max_value=20)
+    pattern = serializers.CharField(required=True, allow_blank=False, max_length=512)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+    regex = serializers.BooleanField(required=False, default=False)
+    case_sensitive = serializers.BooleanField(required=False, default=True)
+    paths = serializers.ListField(
+        child=serializers.CharField(max_length=500),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=10,
+    )
+    include_globs = serializers.ListField(
+        child=serializers.CharField(max_length=200),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=10,
+    )
+    exclude_globs = serializers.ListField(
+        child=serializers.CharField(max_length=200),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=10,
+    )
+    context_lines = serializers.IntegerField(required=False, default=0, min_value=0, max_value=50)
+    max_matches = serializers.IntegerField(required=False, default=100, min_value=1, max_value=500)
+    output_mode = serializers.ChoiceField(
+        required=False,
+        default="content",
+        choices=("content", "files_only", "count"),
+    )
+    max_tokens = serializers.IntegerField(
+        required=False, default=8000, min_value=256, max_value=32000
+    )
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        targets = [str(rid) for rid in cast(list[object], attrs.get("repository_ids") or [])]
+        single = attrs.get("repository_id")
+        if single is not None and str(single) not in targets:
+            targets.insert(0, str(single))
+        if not targets and not attrs.get("all_repositories"):
+            raise serializers.ValidationError(
+                "必须提供 repository_id / repository_ids，或显式设置 all_repositories=true"
+            )
+        if str(attrs.get("branch") or "").strip() and len(targets) != 1:
+            raise serializers.ValidationError("branch 仅支持单仓检索时指定")
+        attrs["target_repository_ids"] = targets
+        return attrs
+
+
 class FindRelatedChunksRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
@@ -395,7 +459,11 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     },
     "get_repository_file": {
         "request": ["repository_id", "file_path", "branch", "start_line", "end_line", "max_lines"],
-        "response": ["repository_id", "branch", "file_path", "content", "truncated", "total_chunks", "returned_lines", "max_lines", "run_id"],
+        "response": ["repository_id", "branch", "file_path", "content", "truncated", "total_chunks", "returned_lines", "max_lines", "source", "commit_sha", "total_lines", "run_id"],
+    },
+    "grep_repository": {
+        "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "pattern", "branch", "regex", "case_sensitive", "paths", "include_globs", "exclude_globs", "context_lines", "max_matches", "output_mode", "max_tokens"],
+        "response": ["pattern", "output_mode", "repositories", "total_matches", "truncated", "run_id"],
     },
     "find_related_chunks": {
         "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],

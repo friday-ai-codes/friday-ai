@@ -48,10 +48,12 @@ RUN uv pip install --system --no-deps .
 FROM python:3.14-slim
 
 # Install runtime dependencies only
+# ripgrep：grep_repository MCP 工具的首选检索引擎（缺失时自动回退 git grep）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     openssh-client \
+    ripgrep \
     libpq5 \
     default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
