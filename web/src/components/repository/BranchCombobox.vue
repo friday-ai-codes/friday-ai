@@ -20,12 +20,16 @@ import {
 } from '~/components/ui/popover'
 
 const props = defineProps<{
+  /** 分支列表（保持传入顺序展示；后端已按 HEAD > main/master > 活跃度 > 字典序排序） */
   branches: string[]
   /** 提供时列表行展示 stale / 相对索引时间 */
   indexRows?: BranchIndexRow[]
+  /** 远端 HEAD 所在分支，展示 HEAD 徽标并置顶推荐 */
+  headBranch?: string | null
   recommendedBranch?: string | null
   modelValue?: string | null
   disabled?: boolean
+  placeholder?: string
 }>()
 
 const emit = defineEmits<{
@@ -70,16 +74,25 @@ const selectedValue = computed({
   set: (val: string | null) => emit('update:modelValue', val),
 })
 
+/** 推荐组：HEAD 分支优先，其次 recommendedBranch（去重） */
 const recommendedBranches = computed(() => {
-  if (!props.recommendedBranch)
-    return []
-  return props.branches.filter(b => b === props.recommendedBranch)
+  const names: string[] = []
+  if (props.headBranch && props.branches.includes(props.headBranch))
+    names.push(props.headBranch)
+  if (
+    props.recommendedBranch
+    && props.recommendedBranch !== props.headBranch
+    && props.branches.includes(props.recommendedBranch)
+  ) {
+    names.push(props.recommendedBranch)
+  }
+  return names
 })
 
+/** 其余分支保持传入顺序（后端已排序），不再客户端字典序重排 */
 const otherBranches = computed(() => {
-  if (!props.recommendedBranch)
-    return [...props.branches].sort()
-  return props.branches.filter(b => b !== props.recommendedBranch).sort()
+  const picked = new Set(recommendedBranches.value)
+  return props.branches.filter(b => !picked.has(b))
 })
 
 function selectBranch(branch: string) {
@@ -93,7 +106,7 @@ function selectBranch(branch: string) {
   <Input
     v-if="branches.length === 0"
     :model-value="modelValue ?? ''"
-    placeholder="输入默认分支名称，如 main"
+    :placeholder="placeholder ?? '输入默认分支名称，如 main'"
     class="h-10"
     :disabled="disabled"
     @update:model-value="emit('update:modelValue', ($event as string) || null)"
@@ -109,8 +122,15 @@ function selectBranch(branch: string) {
         :disabled="disabled"
         class="w-full h-10 justify-between font-normal"
       >
-        <span :class="selectedValue ? 'text-foreground' : 'text-muted-foreground'">
-          {{ selectedValue || '选择默认分支...' }}
+        <span class="flex items-center gap-2 min-w-0" :class="selectedValue ? 'text-foreground' : 'text-muted-foreground'">
+          <span class="truncate font-mono text-sm">{{ selectedValue || (placeholder ?? '选择默认分支...') }}</span>
+          <Badge
+            v-if="selectedValue && selectedValue === headBranch"
+            variant="outline"
+            class="text-[10px] px-1.5 py-0 shrink-0 border-emerald-500/40 text-emerald-600 bg-emerald-500/5 font-semibold tracking-wide"
+          >
+            HEAD
+          </Badge>
         </span>
         <span class="icon-[lucide--chevrons-up-down] ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
@@ -121,7 +141,7 @@ function selectBranch(branch: string) {
         <CommandList class="max-h-60">
           <CommandEmpty>未找到匹配的分支</CommandEmpty>
 
-          <!-- 推荐分支组 -->
+          <!-- 推荐分支组（HEAD 优先） -->
           <CommandGroup v-if="recommendedBranches.length > 0" heading="推荐">
             <CommandItem
               v-for="branch in recommendedBranches"
@@ -136,7 +156,14 @@ function selectBranch(branch: string) {
               <div class="flex flex-1 min-w-0 flex-col gap-0.5">
                 <div class="flex items-center gap-2 min-w-0 flex-wrap">
                   <span class="font-mono text-sm truncate">{{ branch }}</span>
-                  <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+                  <Badge
+                    v-if="branch === headBranch"
+                    variant="outline"
+                    class="text-[10px] px-1.5 py-0 shrink-0 border-emerald-500/40 text-emerald-600 bg-emerald-500/5 font-semibold tracking-wide"
+                  >
+                    HEAD
+                  </Badge>
+                  <Badge v-else variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
                     推荐
                   </Badge>
                   <template v-if="richMode && rowByName.get(branch)">
