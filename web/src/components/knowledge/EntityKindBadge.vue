@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Badge } from '~/components/ui/badge'
 import { useI18n } from 'vue-i18n'
+import { Badge } from '~/components/ui/badge'
 
 const props = defineProps<{
   kind: string
