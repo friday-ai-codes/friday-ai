@@ -48,9 +48,9 @@ npx @friday-ai-codes/skills
 
 ## 工具集
 
-22 个工具，对应 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/`：
+23 个工具，对应 `POST {FRIDAY_BASE_URL}/api/mcp/tools/{tool_name}/`：
 
-- 读取类：`route_repositories`、`search_rag_chunks`、`get_repository`、`list_repository_files`、`get_repository_file`、`find_related_chunks`
+- 读取类：`route_repositories`、`search_rag_chunks`、`grep_repository`、`get_repository`、`list_repository_files`、`get_repository_file`、`find_related_chunks`
 - 计划类：`analyze_repository`、`create_coding_plan`、`improve_coding_plan`
 - 执行与 MR：`execute_coding_plan`、`get_coding_execution`、`summarize_branch`、`create_merge_request`
 - 飞书工作项与学习：`get_feishu_work_item_context`、`create_feishu_technical_plan`、`create_work_item_repo_tasks`、`execute_work_item_repo_tasks`、`create_learning_case`、`search_learning_cases`
@@ -90,6 +90,6 @@ X-Friday-Skill-Step: full_auto.plan
 
 <LinkCards>
   <LinkCard icon="🛠️" title="Agent Skills" desc="全部内置 Skill 与安装方式" link="/integrations/skills" />
-  <LinkCard icon="🔌" title="MCP Server" desc="22 个工具的注册与 HTTP 直调" link="/integrations/mcp" />
+  <LinkCard icon="🔌" title="MCP Server" desc="23 个工具的注册与 HTTP 直调" link="/integrations/mcp" />
   <LinkCard icon="🧠" title="代码智能层" desc="Graph RAG 检索背后的实现" link="/internals/code-intelligence" />
 </LinkCards>

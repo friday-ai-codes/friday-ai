@@ -10,7 +10,7 @@ title: MCP Server
 
 接入流程：
 
-<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 22 个工具']" />
+<FlowPipeline :steps="['创建访问令牌', 'setup 交互式配置', '注册到 IDE', '连通性测速', '调用 23 个工具']" />
 
 ## 一条命令配好（推荐）
 
@@ -93,9 +93,10 @@ args = ["-y", "@friday-ai-codes/mcp"]
 | 仓库发现 | `route_repositories` | 把需求路由到候选仓库并检查索引健康度 |
 | Graph RAG 检索 | `search_rag_chunks` | 混合检索代码 chunk（语义 + 关键词 + 图谱扩散） |
 | | `find_related_chunks` | 沿代码图谱找相关 chunk |
+| 精确检索 | `grep_repository` | 本地 git 镜像快照上的 grep 语义全量检索（ripgrep 优先，回退 git grep）：字面量 / 正则 / glob 过滤、可配置上下文行、`content` / `files_only` / `count` 输出模式、token 预算；默认单仓，`repository_ids` / `all_repositories` 显式跨仓，「穷举所有出现位置」类问题用这个 |
 | 仓库浏览 | `get_repository` | 仓库元信息与索引状态 |
 | | `list_repository_files` | 列出仓库文件 |
-| | `get_repository_file` | 读取文件内容 |
+| | `get_repository_file` | 读取文件内容（优先 git 镜像全量读取，回退索引 chunk） |
 | 分析与计划 | `analyze_repository` | 基于 Graph RAG 证据的架构 / 风险 / 调用链分析 |
 | | `create_coding_plan` | 从需求与代码证据生成结构化编码计划 |
 | | `improve_coding_plan` | 按反馈修订计划生成新版本 |
