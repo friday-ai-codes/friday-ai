@@ -143,3 +143,63 @@ class TestDispatchRepoSummary:
 
         await repository.arefresh_from_db()
         assert repository.ai_summary_status == AISummaryStatus.PENDING
+
+
+@pytest.mark.django_db(transaction=True)
+class TestBuildFacetVocabSection:
+    """语义分面打标 prompt 注入段。
+
+    回归保护：历史上无词表时返回空串 → prompt 不含打标要求 → 语义分面
+    （业务线/产品线、服务对象、技术形态）永远为空，知识树分面视角全是"未分类"。
+    """
+
+    @pytest.mark.asyncio
+    async def test_without_vocab_falls_back_to_freeform_tagging(self) -> None:
+        """无词表时降级为自由打标：固定维度必须全部出现在注入段中。"""
+        from repositories.summary_service import (
+            SEMANTIC_FACET_DIMENSIONS,
+            _build_facet_vocab_section,
+        )
+
+        section = await _build_facet_vocab_section()
+
+        assert section != ""
+        assert "facets" in section
+        for dim in SEMANTIC_FACET_DIMENSIONS:
+            assert dim in section
+
+    @pytest.mark.asyncio
+    async def test_with_vocab_uses_controlled_values(self) -> None:
+        """有词表时维持受控行为：注入段列出词表取值。"""
+        from repositories.models import FacetVocabulary
+        from repositories.summary_service import _build_facet_vocab_section
+
+        await FacetVocabulary.objects.acreate(
+            dimension="服务对象",
+            values=["C端学生", "B端学校"],
+            is_active=True,
+        )
+
+        section = await _build_facet_vocab_section()
+
+        assert "受控" in section
+        assert "服务对象" in section
+        assert "C端学生" in section
+        assert "B端学校" in section
+
+    @pytest.mark.asyncio
+    async def test_inactive_vocab_is_ignored(self) -> None:
+        """停用的词表不参与注入，行为退回自由打标。"""
+        from repositories.models import FacetVocabulary
+        from repositories.summary_service import _build_facet_vocab_section
+
+        await FacetVocabulary.objects.acreate(
+            dimension="服务对象",
+            values=["停用词表专用取值"],
+            is_active=False,
+        )
+
+        section = await _build_facet_vocab_section()
+
+        assert "受控" not in section
+        assert "停用词表专用取值" not in section

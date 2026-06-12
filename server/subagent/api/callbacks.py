@@ -1000,11 +1000,24 @@ async def _update_repository_on_summary_complete(
     if tree_written:
         from codegraph.services.corpus_tree import CorpusTreeService
         from codegraph.services.repo_index_tree import RepoIndexTreeBuilder
+        from repositories.facet_service import FacetService
         from services.background_runner import run_in_background
 
         repo_id_str = str(repo_id)
 
         async def _post_tree_tasks() -> None:
+            # 事实分面（团队归属/技术栈/活跃度）刷新依赖 ai_summary_tree 已存在，
+            # 而索引完成时 summary 任务往往尚未回写树（异步），导致索引侧的
+            # _refresh_tree_facts 被跳过——这里在树落库后补刷一次，保证浏览树
+            # 兜底分组（团队归属）与节点向量 payload 拿到最新事实分面。
+            try:
+                await FacetService.refresh_fact_facets(repo_id_str)
+            except Exception:  # noqa: BLE001 — 分面刷新失败不阻塞节点索引
+                logger.warning(
+                    "fact_facets_refresh_failed",
+                    repository_id=repo_id_str,
+                    exc_info=True,
+                )
             await RepoIndexTreeBuilder.build(repo_id_str)
             try:
                 await CorpusTreeService.assign_repository(repo_id_str)

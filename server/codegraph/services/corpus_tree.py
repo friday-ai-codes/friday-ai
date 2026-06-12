@@ -307,10 +307,15 @@ class CorpusTreeService:
         from agents.llm_factory import build_chat_model
         from services.provider_config import ProviderConfigService, ProviderMissingError
 
-        resolved = await ProviderConfigService.aresolve_or_error(scope="system")
+        # 无参调用走四层兜底的最后一层：系统 default ProviderCredential
+        resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
             return None
-        model = build_chat_model(resolved, resolved.default_model, streaming=False)
+        model_name = (resolved.extra or {}).get("default_model", "")
+        if not model_name:
+            logger.warning("corpus_tree_default_model_missing")
+            return None
+        model = build_chat_model(resolved, model_name, streaming=False)
 
         system = SystemMessage(
             content=(
@@ -330,10 +335,9 @@ class CorpusTreeService:
             content="仓库清单（id | 名称 | 摘要 | 分面）：\n" + "\n".join(repo_lines)
         )
         response = await model.ainvoke([system, human])
-        content = (
-            response.content if isinstance(response.content, str) else str(response.content)
-        )
-        return cls._parse_json_array(content)
+        from agents.llm_factory import content_to_text
+
+        return cls._parse_json_array(content_to_text(response.content))
 
     @classmethod
     async def _llm_assign(
@@ -349,12 +353,15 @@ class CorpusTreeService:
         from agents.llm_factory import build_chat_model
         from services.provider_config import ProviderConfigService, ProviderMissingError
 
-        resolved = await ProviderConfigService.aresolve_or_error(scope="system")
+        resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
             return None
-        model_name = (
-            (resolved.extra or {}).get("haiku_model") or resolved.default_model
-        )
+        model_name = (resolved.extra or {}).get("haiku_model") or (
+            resolved.extra or {}
+        ).get("default_model", "")
+        if not model_name:
+            logger.warning("corpus_tree_default_model_missing")
+            return None
         model = build_chat_model(resolved, model_name, streaming=False)
 
         facets_clean = {k: v for k, v in facets.items() if not str(k).startswith("_")}
@@ -377,10 +384,9 @@ class CorpusTreeService:
             )
         )
         response = await model.ainvoke([system, human])
-        content = (
-            response.content if isinstance(response.content, str) else str(response.content)
-        )
-        return cls._parse_json_object(content)
+        from agents.llm_factory import content_to_text
+
+        return cls._parse_json_object(content_to_text(response.content))
 
     @staticmethod
     def _parse_json_array(raw: str) -> list[Any] | None:
