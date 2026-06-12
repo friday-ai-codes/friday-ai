@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
 import type { UiSchema } from './node-definitions/types'
-import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, DeliveryKnowledgeSearchConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import { ALL_NODE_DEFINITIONS } from './node-definitions/index'
 import {
   aiCodeReviewConfigSchema,
@@ -12,6 +12,7 @@ import {
   aiPromptConfigSchema,
   aiVariableExtractorConfigSchema,
   contextRetrievalConfigSchema,
+  deliveryKnowledgeSearchConfigSchema,
   createBranchConfigSchema,
   createPRConfigSchema,
   feishuEventTriggerConfigSchema,
@@ -165,6 +166,18 @@ export const NODE_REGISTRY = {
     defaultConfig: contextRetrievalConfigSchema.parse({}),
     configComponent: () => import('~/components/workflow/config/ContextRetrievalConfig.vue'),
   } satisfies NodeTypeDefinition<ContextRetrievalConfig>,
+
+  delivery_knowledge_search: {
+    nodeType: 'delivery_knowledge_search',
+    displayName: '交付知识检索',
+    description: '检索相似历史交付并注入上下文',
+    icon: 'icon-[lucide--search]',
+    color: 'from-teal-500 to-emerald-400',
+    category: 'ai',
+    schema: deliveryKnowledgeSearchConfigSchema,
+    defaultConfig: deliveryKnowledgeSearchConfigSchema.parse({}),
+    configComponent: () => import('~/components/workflow/config/DeliveryKnowledgeSearchConfig.vue'),
+  } satisfies NodeTypeDefinition<DeliveryKnowledgeSearchConfig>,
 
   fetch_project_info: {
     nodeType: 'fetch_project_info',
