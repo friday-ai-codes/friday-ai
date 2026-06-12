@@ -1,5 +1,31 @@
 # Milestones
 
+## v0.3.0 交付知识图谱 (Shipped: 2026-06-12)
+
+**Phases completed:** 5 phases (12–16), 23 plans
+
+**Delivered:** 把需求/缺陷、技术方案、编码 diff 全链路 RAG 化，并以带时间语义（bi-temporal）的知识图谱关联；任意入口可召回相似历史需求及其完整迭代轨迹。
+
+**Key accomplishments:**
+
+- 知识模型与图存储：四类实体 + bi-temporal 边 + supersedes 版本链 + GraphStore 递归 CTE 收口 + `delivery_knowledge` collection 生命周期
+- 统一摄取与版本化：幂等异步摄取管线（chat/MCP/workflow/飞书/编码回调六类触发点），版本翻转与向量下线，全量 diff 归档与 MODIFIES_CHUNK 代码图谱对齐
+- 时间感知混合检索：`DeliveryKnowledgeSearchService` 融合向量召回 + 图扩散 + 时间衰减 + LLM 二阶段分级，PG 轨迹/关联查询，fail-closed 权限过滤
+- 多入口暴露：MCP PAT 三工具 / chat agent tools / workflow 检索节点 + ai_plan_generation 飞轮 / npm friday-knowledge skill，四入口复用 `exposure.py` 序列化
+- 前端只读时间线：实体详情页 + 关联时间线 + as-of 时点查询，REST `/api/knowledge/*` 与 JWT 实体详情 API
+
+**Stats:** 28/28 v1 requirements delivered, 2026-06-11 → 2026-06-12.
+
+**Known deferred items at close:** 1 — Phase 14 真实 git platform 超大 diff 截断需 dev 环境人工验收（TD-14，详见 audit）
+
+**Known follow-ups (tech debt):**
+
+- W1: 前端 `searchDeliveryKnowledge` 无 UI 消费（index 为占位页）
+- W2: timeline 节点级 `provenance` 未填充
+- W3: graph enrich 边类型统一标为 RELATES_TO
+
+---
+
 ## v0.1.0 首启初始化向导 (Shipped: 2026-06-09)
 
 **Phases completed:** 5 phases, 9 plans

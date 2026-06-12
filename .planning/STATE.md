@@ -2,35 +2,33 @@
 gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: milestone
-status: executing
-stopped_at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
-last_updated: "2026-06-11T18:17:40.615Z"
-last_activity: 2026-06-11 -- Phase 14 execution started
+status: complete
+stopped_at: Milestone v0.3.0 shipped (Phase 12–16, 28/28 requirements)
+last_updated: "2026-06-12T12:00:00.000Z"
+last_activity: 2026-06-12 — Milestone v0.3.0 completed and archived
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
-  percent: 60
+  completed_phases: 5
+  total_plans: 23
+  completed_plans: 23
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-10 after v0.2.0 milestone)
+See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.3.0 起需求/缺陷、技术方案、编码 diff 全链路 RAG 化并以时间感知知识图谱关联，任意入口都能召回相似历史需求及其完整迭代轨迹。
-**Current focus:** Phase 14 — 全触发点接入与 diff 归档
+**Current focus:** Planning next milestone (`/gsd-new-milestone`)
 
 ## Current Position
 
-Phase: 14 (全触发点接入与 diff 归档) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 14 execution started
-
-Progress: [□□□□□] 0/5 phases
+Phase: Milestone v0.3.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-12 — Milestone v0.3.0 completed and archived
 
 ## Performance Metrics
 
@@ -38,9 +36,9 @@ Progress: [□□□□□] 0/5 phases
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 0/5 |
-| Plans completed | 0 |
-| Requirements delivered | 0/28 |
+| Phases completed | 5/5 |
+| Plans completed | 23/23 |
+| Requirements delivered | 28/28 |
 | Phase 12 P01 | 10min | 3 tasks | 10 files |
 | Phase 12 P02 | 12min | 3 tasks | 2 files |
 | Phase 12 P03 | 8min | 3 tasks | 7 files |
@@ -110,15 +108,14 @@ Items acknowledged and deferred at milestone close.
 | verification | Phase 09 人工验收（09-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
 | verification | Phase 10 人工验收（10-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
 | verification | Phase 11 人工验收（11-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
+| verification | Phase 14 真实 git platform 超大 diff 截断人工验收（TD-14） | human_needed | 2026-06-12 (v0.3.0 close) |
 
 ## Session Continuity
 
 Last session: 2026-06-11T18:17:08.810Z
-Stopped at: v0.3.0 roadmap created（Phase 12–16，coverage 28/28）
+Stopped at: Milestone v0.3.0 shipped (Phase 12–16, 28/28 requirements)
 Resume file: None
 
 ## Operator Next Steps
 
-- `/gsd-plan-phase 12` 开始规划首个阶段（知识模型与图存储地基）。
-- Phase 15（时间感知混合检索）带研究标记：规划时需小范围调研时间衰减参数与跨语言召回质量（依赖评测集）。
-- 操作者手动推送：`git push` 当前分支 + `git push origin v0.2.0`（此前流程未推送任何 remote）。
+- Start the next milestone with /gsd-new-milestone
