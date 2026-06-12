@@ -76,6 +76,7 @@ dependencies = [
     "tree-sitter-typescript",
     "pygls>=2.0",
     "unidiff>=0.7.5,<0.8",
+    "channels-redis>=4.2",
 ]
 
 [build-system]

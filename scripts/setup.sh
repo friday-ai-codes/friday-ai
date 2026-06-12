@@ -332,8 +332,8 @@ EOF
     write_env "POSTGRES_DB" "$POSTGRES_DB"
     echo "" >> "$ENV_FILE"
 
-    echo "# Redis / Qdrant 配置" >> "$ENV_FILE"
-    write_env "USE_REDIS_CHANNEL_LAYER" "false"
+    echo "# Redis / Qdrant 配置（Compose 内置 Redis，channel layer 默认启用）" >> "$ENV_FILE"
+    write_env "USE_REDIS_CHANNEL_LAYER" "true"
     write_env "QDRANT_URL" "http://qdrant:6333"
     write_env "QDRANT_API_KEY" "$QDRANT_API_KEY_VALUE"
     echo "" >> "$ENV_FILE"
