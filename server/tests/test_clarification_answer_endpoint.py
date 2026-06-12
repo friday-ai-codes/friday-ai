@@ -7,14 +7,13 @@
 - 200 答复成功 → trace 写入 + Message(role=user, kind=clarification_answer)
 - 200 资源 trace.inferred_state 来自 selected option.implies
 - 跨 user 越权 → 404
-- resume graph 调用一次（mock get_compiled_graph）
+- resume 委托给 ConversationService.resume_clarification_run（mock service 层；
+  resume 本身的契约见 test_clarification_resume.py）
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from rest_framework.test import APIClient
@@ -23,8 +22,10 @@ from chat.models import Conversation, ConversationIntentTrace, Message
 
 
 @pytest.fixture
-def conversation(project) -> Conversation:
-    return Conversation.objects.create(project=project, title="协商测试")
+def conversation(project, user) -> Conversation:
+    # ISO owner gate：endpoint 校验 trace.conversation.created_by == 请求 user，
+    # 不设 created_by 时所有认证请求都会被 404 拦截（隐藏存在性）。
+    return Conversation.objects.create(project=project, title="协商测试", created_by=user)
 
 
 @pytest.fixture
@@ -61,32 +62,24 @@ def _url(clarification_id: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _mock_resume_graph(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """打桩 build_graph().compile().ainvoke 避免真起 graph。"""
+    """打桩 ConversationService.resume_clarification_run 避免真起 graph。
+
+    endpoint 现在把 resume 全流程委托给 service 层（重建 graph config +
+    finalize 落库），endpoint 测试只需验证后台 task 以正确参数触发。
+    """
     captured: dict[str, Any] = {"resume_calls": []}
 
-    fake_graph = MagicMock()
+    async def _fake_resume(
+        conversation_id: str, resume_payload: dict[str, Any],
+    ) -> None:
+        captured["resume_calls"].append({
+            "conversation_id": conversation_id,
+            "resume_payload": resume_payload,
+        })
 
-    async def _ainvoke(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        captured["resume_calls"].append({"args": args, "kwargs": kwargs})
-        return {}
-
-    fake_graph.ainvoke = _ainvoke
-
-    fake_compile = MagicMock()
-    fake_compile.compile = MagicMock(return_value=fake_graph)
-
-    async def _fake_get_compiled_graph() -> Any:
-        return fake_graph
-
-    # 同时 patch get_compiled_graph 与 build_graph().compile()
     monkeypatch.setattr(
-        "orchestration.graph.get_compiled_graph",
-        _fake_get_compiled_graph,
-    )
-    monkeypatch.setattr(
-        "chat.views.get_compiled_graph",
-        _fake_get_compiled_graph,
-        raising=False,
+        "chat.conversation_service.ConversationService.resume_clarification_run",
+        staticmethod(_fake_resume),
     )
     return captured
 

@@ -2723,10 +2723,9 @@ class ClarificationAnswerView(APIView):
 
         # 后台 resume graph：与 CodingSessionConfirmView 同模式（asyncio 后台
         # task + _BACKGROUND_TASKS 强引用），endpoint 不阻塞 SSE 等待。
-        from langgraph.types import Command
-
-        from orchestration.graph import get_compiled_graph
-
+        # resume 全流程（重建 graph config + finalize 落库）收敛在
+        # ConversationService.resume_clarification_run —— 裸 thread_id config
+        # 会让 executing_node 拿不到 api_key 静默失败（详见该方法 docstring）。
         thread_id = str(trace.conversation_id)
         resume_payload = {
             "clarification_id": clarification_id,
@@ -2738,10 +2737,8 @@ class ClarificationAnswerView(APIView):
 
         async def _resume_graph() -> None:
             try:
-                graph = await get_compiled_graph()
-                await graph.ainvoke(
-                    Command(resume=resume_payload),
-                    config={"configurable": {"thread_id": thread_id}},
+                await ConversationService.resume_clarification_run(
+                    thread_id, resume_payload,
                 )
             except Exception:
                 logger.exception(
