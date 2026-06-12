@@ -27,7 +27,16 @@ findings:
   warning: 2
   info: 4
   total: 7
-status: issues_found
+findings_status:
+  CR-01: fixed  # 7b5e0bba
+  WR-01: fixed  # 72f9e5a7
+  WR-02: fixed  # f51767bd
+  IN-01: fixed  # 27b39ff0
+  IN-02: fixed  # 4990455b
+  IN-03: fixed  # 28b8a8e6
+  IN-04: fixed  # a6739626
+status: issues_fixed
+fixed_at: 2026-06-12T18:00:00Z
 ---
 
 # Phase 17: Code Review Report（变量引用链路修复）
@@ -35,7 +44,7 @@ status: issues_found
 **Reviewed:** 2026-06-12T17:45:52Z
 **Depth:** standard
 **Files Reviewed:** 18
-**Status:** issues_found
+**Status:** issues_fixed（全部 7 项已修复，见 frontmatter findings_status 与各 fix(17) 提交）
 
 ## Summary
 
