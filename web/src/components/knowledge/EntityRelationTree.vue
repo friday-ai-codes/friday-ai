@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { RelatedEntity } from '~/api/knowledge'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '~/components/ui/badge'
 import EntityKindBadge from './EntityKindBadge.vue'

@@ -39,6 +39,8 @@ export {
   COMMON_STATUS_OPTIONS,
   type ContextRetrievalConfig,
   contextRetrievalConfigSchema,
+  type DeliveryKnowledgeSearchConfig,
+  deliveryKnowledgeSearchConfigSchema,
   type ExtractionRule,
   extractionRuleSchema,
   FEISHU_EVENT_TYPE_OPTIONS,

@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useHead } from '@vueuse/head'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
-import PageContainer from '~/components/layout/PageContainer.vue'
+import { useRoute } from 'vue-router'
+import { knowledgeApi } from '~/api'
+import { ApiError } from '~/api/client'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
-import { Skeleton } from '~/components/ui/skeleton'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityMetadataCard from '~/components/knowledge/EntityMetadataCard.vue'
 import EntityRelationTree from '~/components/knowledge/EntityRelationTree.vue'
 import EntityVersionTimeline from '~/components/knowledge/EntityVersionTimeline.vue'
-import { knowledgeApi } from '~/api'
-import { ApiError } from '~/api/client'
+import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
+import PageContainer from '~/components/layout/PageContainer.vue'
+import { Skeleton } from '~/components/ui/skeleton'
 
 const route = useRoute('/knowledge/entities/[id]')
 const queryClient = useQueryClient()
@@ -105,7 +105,9 @@ function resetAsOf() {
           <EntityMetadataCard v-else-if="entityQuery.data.value" :entity="entityQuery.data.value" />
         </section>
         <section id="entity-timeline" class="space-y-4 mt-6">
-          <h2 class="text-sm font-semibold">{{ t('knowledge.entity.sections.timeline') }}</h2>
+          <h2 class="text-sm font-semibold">
+            {{ t('knowledge.entity.sections.timeline') }}
+          </h2>
           <Skeleton v-if="timelineQuery.isLoading.value" class="h-48 w-full" />
           <EntityVersionTimeline v-else-if="timelineQuery.data.value?.length" :nodes="timelineQuery.data.value" />
           <CompactEmptyState
@@ -115,7 +117,9 @@ function resetAsOf() {
           />
         </section>
         <section id="entity-related" class="space-y-4 mt-6">
-          <h2 class="text-sm font-semibold">{{ t('knowledge.entity.sections.related') }}</h2>
+          <h2 class="text-sm font-semibold">
+            {{ t('knowledge.entity.sections.related') }}
+          </h2>
           <Skeleton v-if="relatedQuery.isLoading.value" class="h-32 w-full" />
           <EntityRelationTree
             v-else-if="relatedQuery.data.value?.length"

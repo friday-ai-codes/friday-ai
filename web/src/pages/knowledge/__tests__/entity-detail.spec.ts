@@ -1,7 +1,7 @@
-import { mount } from '@vue/test-utils'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import { createI18n } from 'vue-i18n'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { createI18n } from 'vue-i18n'
 import EntityDetailPage from '~/pages/knowledge/entities/[id].vue'
 
 vi.mock('vue-router', () => ({

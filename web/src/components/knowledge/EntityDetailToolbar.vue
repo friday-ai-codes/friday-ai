@@ -1,21 +1,20 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { useI18n } from 'vue-i18n'
-
-const asOfLocal = defineModel<string>('asOfLocal', { default: '' })
-const includeSuperseded = defineModel<boolean>('includeSuperseded', { default: false })
 
 const emit = defineEmits<{
   reset: []
 }>()
+const asOfLocal = defineModel<string>('asOfLocal', { default: '' })
+const includeSuperseded = defineModel<boolean>('includeSuperseded', { default: false })
 
 const { t } = useI18n()
 
-function onAsOfChange(value: string) {
-  asOfLocal.value = value
+function onAsOfChange(value: string | number) {
+  asOfLocal.value = String(value)
 }
 
 function reset() {
