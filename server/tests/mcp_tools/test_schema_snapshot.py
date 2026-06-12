@@ -23,7 +23,11 @@ def test_mcp_read_tool_schema_snapshot() -> None:
         },
         "get_repository_file": {
             "request": ["repository_id", "file_path", "branch", "start_line", "end_line", "max_lines"],
-            "response": ["repository_id", "branch", "file_path", "content", "truncated", "total_chunks", "returned_lines", "max_lines", "run_id"],
+            "response": ["repository_id", "branch", "file_path", "content", "truncated", "total_chunks", "returned_lines", "max_lines", "source", "commit_sha", "total_lines", "run_id"],
+        },
+        "grep_repository": {
+            "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "pattern", "branch", "regex", "case_sensitive", "paths", "include_globs", "exclude_globs", "context_lines", "max_matches", "output_mode", "max_tokens"],
+            "response": ["pattern", "output_mode", "repositories", "total_matches", "truncated", "run_id"],
         },
         "find_related_chunks": {
             "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
