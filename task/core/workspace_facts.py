@@ -193,15 +193,28 @@ def format_facts_prompt_section(facts: dict[str, Any]) -> str:
     sub_projects = facts.get("sub_projects") or []
     if not facts.get("is_monorepo") or not sub_projects:
         return ""
+    if len(sub_projects) > 20:
+        # 子项目数超过树的单层扇出上限（20）时，「每包一个第一层节点」结构上
+        # 不可能满足——改为要求按父目录分组（如 plugins/、packages/）。
+        skeleton_rules = [
+            f"- 清单共 {len(sub_projects)} 个子项目，超过树第一层扇出上限（20）。"
+            "请按父目录分组建 sub_app 节点（如 `apps/` 下每个应用一个节点、"
+            "`plugins/` 整体一个节点，paths 指向该父目录），组内重要包降为 module 子节点",
+            "- 禁止发明清单之外的子应用；分组节点的 paths 必须是清单内子项目的真实父目录",
+        ]
+    else:
+        skeleton_rules = [
+            "- 以这份清单为能力树的**第一层骨架**（node_type=sub_app，每个子项目一个节点）",
+            "- 禁止合并、遗漏或发明清单之外的子应用",
+        ]
     lines = [
         "",
         "## Monorepo 子项目清单（事实约束，最高优先级）",
         "",
         "静态扫描（pnpm-workspace / package.json workspaces / nx.json / go.work）"
         "已确认本仓库为 monorepo，子项目清单如下。你必须：",
-        "- 以这份清单为能力树的**第一层骨架**（node_type=sub_app，每个子项目一个节点）",
+        *skeleton_rules,
         "- 逐个子项目阅读其 README / 入口 / 路由后撰写职责描述",
-        "- 禁止合并、遗漏或发明清单之外的子应用",
         "",
     ]
     for sp in sub_projects:

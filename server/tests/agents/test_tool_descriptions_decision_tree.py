@@ -63,3 +63,19 @@ def test_search_repository_code_description_references_find_related() -> None:
         "missing 'CONCRETE starting point' anchor in counterpart note —— "
         "两 tool description 锚点关键字保持统一表述"
     )
+
+
+def test_repository_relevance_description_covers_code_understanding_questions() -> None:
+    """``analyze_repository_relevance`` 也要覆盖代码理解问答的仓库路由。
+
+    真实失败场景：用户问「study app 里的书桌是怎么实现的」时，模型容易先在
+    当前仓库本地搜索，并把桥接入口误当业务实现；description 必须把这类
+    “功能实现解释 / 当前仓库可能只是入口”问题纳入使用时机。
+    """
+    from agents.tools.repository_relevance import analyze_repository_relevance
+
+    desc = analyze_repository_relevance._tool_definition.description  # type: ignore[attr-defined]
+    assert "代码理解" in desc
+    assert "功能是怎么实现" in desc
+    assert "当前仓库只是入口" in desc
+    assert "search_repository_code 之前" in desc

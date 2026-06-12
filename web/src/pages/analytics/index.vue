@@ -32,7 +32,7 @@ const { grouping } = storeToRefs(filtersStore)
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer show-background>
     <!-- 页头 -->
     <PageHeader
       icon="lucide--bar-chart-3"
@@ -51,10 +51,10 @@ const { grouping } = storeToRefs(filtersStore)
     </PageHeader>
 
     <!-- KPI 概览 -->
-    <KpiCards class="mb-6" :grouping="grouping" />
+    <KpiCards class="mt-5 mb-6" :grouping="grouping" />
 
     <!-- 趋势和分布图 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
       <TrendChart />
       <DurationDistribution />
     </div>

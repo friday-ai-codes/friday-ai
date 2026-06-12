@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, inject, ref } from 'vue'
 import api from '~/api/client'
-import { Badge } from '~/components/ui/badge'
+import ChartCard from '~/components/analytics/ChartCard.vue'
 import { Skeleton } from '~/components/ui/skeleton'
 import {
   Table,
@@ -78,12 +78,12 @@ function formatTokens(tokens: number): string {
   return String(tokens)
 }
 
-function successRateVariant(rate: number): 'default' | 'secondary' | 'destructive' {
+function successRatePillClass(rate: number): string {
   if (rate >= 90)
-    return 'default'
+    return 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20'
   if (rate >= 70)
-    return 'secondary'
-  return 'destructive'
+    return 'bg-amber-500/10 text-amber-700 ring-amber-500/20'
+  return 'bg-red-500/10 text-red-700 ring-red-500/20'
 }
 
 function getSortIcon(field: SortField): string {
@@ -94,53 +94,64 @@ function getSortIcon(field: SortField): string {
 </script>
 
 <template>
-  <div class="card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30">
-    <h3 class="text-sm font-medium text-muted-foreground mb-4">
-      节点类型性能排行
-    </h3>
-
-    <Skeleton v-if="isLoading" class="h-[300px] w-full" />
-    <div v-else-if="!sortedData.length" class="h-[300px] flex items-center justify-center text-muted-foreground">
-      暂无节点执行数据
+  <ChartCard
+    title="节点类型性能排行"
+    description="各节点类型的执行表现与消耗"
+    icon="lucide--list-ordered"
+    icon-class="bg-sky-500/10 text-sky-600"
+  >
+    <Skeleton v-if="isLoading" class="h-[300px] w-full rounded-lg" />
+    <div v-else-if="!sortedData.length" class="h-[300px] flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <span class="icon-[lucide--list-ordered] text-3xl opacity-30" />
+      <span class="text-sm">暂无节点执行数据</span>
     </div>
 
-    <div v-else class="max-h-[300px] overflow-auto">
+    <div v-else class="max-h-[300px] overflow-auto rounded-lg border border-border/40">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead class="w-[200px]">
+          <TableRow class="bg-muted/30 hover:bg-muted/30">
+            <TableHead class="w-[200px] h-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               节点类型
             </TableHead>
-            <TableHead class="cursor-pointer select-none" @click="toggleSort('execution_count')">
+            <TableHead class="h-10 cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground" @click="toggleSort('execution_count')">
               执行次数 <span class="text-xs ml-1" :class="[getSortIcon('execution_count')]" />
             </TableHead>
-            <TableHead class="cursor-pointer select-none" @click="toggleSort('avg_duration_seconds')">
+            <TableHead class="h-10 cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground" @click="toggleSort('avg_duration_seconds')">
               平均时长 <span class="text-xs ml-1" :class="[getSortIcon('avg_duration_seconds')]" />
             </TableHead>
-            <TableHead class="cursor-pointer select-none" @click="toggleSort('success_rate')">
+            <TableHead class="h-10 cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground" @click="toggleSort('success_rate')">
               成功率 <span class="text-xs ml-1" :class="[getSortIcon('success_rate')]" />
             </TableHead>
-            <TableHead class="cursor-pointer select-none" @click="toggleSort('total_tokens')">
+            <TableHead class="h-10 cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground" @click="toggleSort('total_tokens')">
               Token 消耗 <span class="text-xs ml-1" :class="[getSortIcon('total_tokens')]" />
             </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="node in sortedData" :key="node.node_type">
-            <TableCell class="font-mono text-sm">
-              {{ node.node_type }}
-            </TableCell>
-            <TableCell>{{ node.execution_count }}</TableCell>
-            <TableCell>{{ formatDuration(node.avg_duration_seconds) }}</TableCell>
+          <TableRow v-for="node in sortedData" :key="node.node_type" class="hover:bg-muted/20">
             <TableCell>
-              <Badge :variant="successRateVariant(node.success_rate)">
-                {{ node.success_rate.toFixed(1) }}%
-              </Badge>
+              <code class="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-xs text-foreground/80">{{ node.node_type }}</code>
             </TableCell>
-            <TableCell>{{ formatTokens(node.total_tokens) }}</TableCell>
+            <TableCell class="tabular-nums text-sm">
+              {{ node.execution_count }}
+            </TableCell>
+            <TableCell class="tabular-nums text-sm text-muted-foreground">
+              {{ formatDuration(node.avg_duration_seconds) }}
+            </TableCell>
+            <TableCell>
+              <span
+                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1"
+                :class="successRatePillClass(node.success_rate)"
+              >
+                {{ node.success_rate.toFixed(1) }}%
+              </span>
+            </TableCell>
+            <TableCell class="tabular-nums text-sm text-muted-foreground">
+              {{ formatTokens(node.total_tokens) }}
+            </TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </div>
-  </div>
+  </ChartCard>
 </template>

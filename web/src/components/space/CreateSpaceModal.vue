@@ -142,11 +142,13 @@ function handleCancel() {
         <Input
           id="feishu_project_key"
           v-model="form.feishu_project_key"
-          placeholder="例如：project_key"
+          placeholder="例如：demo_project"
           class="h-10"
         />
         <p class="text-xs text-muted-foreground">
-          用于飞书项目管理 API 调用，可稍后在项目详情中配置
+          用于飞书项目管理 API 调用，可稍后在项目详情中配置。
+          获取方式：在飞书项目中打开目标空间，浏览器地址栏 URL 中域名后的第一段即为项目 Key，
+          例如 <code class="px-1 py-0.5 rounded bg-muted text-foreground/80">https://project.feishu.cn/<b>demo_project</b>/story/123</code> 中的 <code class="px-1 py-0.5 rounded bg-muted text-foreground/80">demo_project</code>
         </p>
       </div>
 

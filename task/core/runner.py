@@ -237,11 +237,14 @@ class TaskRunner:
             return 1
 
         raw_output = result.get("output", "")
-        # 先提取 JSON 再截断：模型常在 JSON 外包一层前言 / ```json 围栏，
-        # 直接按字符截断会把 JSON 腰斩，server 端解析降级成原文存储（用户可见乱码）。
-        # server 端 ai_summary 容量 8192，这里截 8000 留余量。
+        # 先提取 JSON：模型常在 JSON 外包一层前言 / ```json 围栏。
         extracted = _extract_summary_json(raw_output)
-        sanitized = _sanitize_summary(extracted)[:8000]
+        sanitized = _sanitize_summary(extracted)
+        # 合法 JSON 不截断——含 tree 能力树的 payload 远超 8000 字符，按字符
+        # 截断会把 JSON 腰斩，server 端解析失败 → 树丢失 + 描述存进乱码。
+        # 仅对非 JSON 的降级文本保留 8000 截断（server 端容量 8192 留余量）。
+        if not _is_valid_json(sanitized):
+            sanitized = sanitized[:8000]
 
         await self.callback.report_completed(
             output={"text": sanitized, "task_type": "repo_summary"},
@@ -599,6 +602,17 @@ def _extract_summary_json(text: str) -> str:
             pass
 
     return text
+
+
+def _is_valid_json(text: str) -> bool:
+    """判断文本是否为完整可解析的 JSON。"""
+    import json
+
+    try:
+        json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    return True
 
 
 def _sanitize_summary(text: str) -> str:

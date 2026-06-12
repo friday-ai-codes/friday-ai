@@ -123,26 +123,64 @@ def _collect_paths(tree: list[dict[str, Any]]) -> set[str]:
     return out
 
 
-def validate_paths_against_file_index(
-    tree: list[dict[str, Any]], indexed_paths: list[str]
-) -> None:
-    """paths 真实性校验：每个 path 必须是某个已索引文件的前缀（或全等）。
+# 整树拒绝阈值：无效 paths 占比超过该值才视为大规模虚构（疑似分析了错误仓库）。
+# 低于阈值时仅剪掉无效 path 保留树——FileIndex 可能滞后于最新 commit（新增目录
+# 尚未索引），个别无效 path 不应让整棵 80 节点的树 fail-closed 丢弃。
+_PATH_REJECT_RATIO = 0.5
 
+
+def validate_paths_against_file_index(
+    tree: list[dict[str, Any]],
+    indexed_paths: list[str],
+    extra_valid_roots: list[str] | None = None,
+) -> None:
+    """paths 真实性校验：path 须是某个已索引文件的前缀（或全等）。
+
+    无效 path 从节点上剪除（容忍 FileIndex 滞后与个别 LLM 笔误）；仅当无效
+    占比超过 _PATH_REJECT_RATIO 时整树拒绝（大规模虚构）。
     仓库未索引（FileIndex 为空）时跳过——此时无事实可对照，只记 warning。
+
+    Args:
+        extra_valid_roots: 额外可信的目录根（如任务容器对新鲜 clone 静态扫描
+            出的子项目清单）。FileIndex 可能滞后于最新 commit，这份清单比
+            索引更新，落在其下的 path 视为真实。
     """
     if not indexed_paths:
         logger.warning("tree_paths_validation_skipped_no_file_index")
         return
     normalized = [_normalize_path(p) for p in indexed_paths]
+    trusted_roots = [_normalize_path(p) for p in (extra_valid_roots or []) if p.strip()]
     claimed = _collect_paths(tree)
-    invalid: list[str] = []
+    if not claimed:
+        return
+    invalid: set[str] = set()
     for path in claimed:
-        if not any(f == path or f.startswith(path + "/") for f in normalized):
-            invalid.append(path)
-    if invalid:
+        if any(f == path or f.startswith(path + "/") for f in normalized):
+            continue
+        if any(
+            path == d or path.startswith(d + "/") or d.startswith(path + "/")
+            for d in trusted_roots
+        ):
+            continue
+        invalid.add(path)
+    if not invalid:
+        return
+    if len(invalid) / len(claimed) > _PATH_REJECT_RATIO:
         raise TreeValidationError(
-            f"以下 paths 不存在于仓库索引（疑似 LLM 虚构）: {sorted(invalid)[:10]}"
+            f"超过 {int(_PATH_REJECT_RATIO * 100)}% 的 paths 不存在于仓库索引"
+            f"（疑似大规模虚构）: {sorted(invalid)[:10]}"
         )
+    stack = list(tree)
+    while stack:
+        node = stack.pop()
+        node["paths"] = [p for p in node.get("paths", []) if p not in invalid]
+        stack.extend(node.get("children", []))
+    logger.warning(
+        "tree_paths_pruned",
+        pruned_count=len(invalid),
+        claimed_count=len(claimed),
+        pruned=sorted(invalid)[:10],
+    )
 
 
 def validate_monorepo_alignment(
@@ -163,9 +201,15 @@ def validate_monorepo_alignment(
             continue
         sub_app_paths.update(node.get("paths", []))
 
+    # sub_app path 合法形态：等于某子项目根、其子路径、或其**父目录**——
+    # 子项目数量超出扇出上限时（如 50+ 个 plugins/* 包），LLM 会合法地用
+    # 父目录（plugins）做分组 sub_app 节点。
     fabricated = {
         p for p in sub_app_paths
-        if not any(p == d or p.startswith(d + "/") for d in discovered)
+        if not any(
+            p == d or p.startswith(d + "/") or d.startswith(p + "/")
+            for d in discovered
+        )
     }
     if fabricated:
         raise TreeValidationError(
@@ -174,12 +218,26 @@ def validate_monorepo_alignment(
 
     missing = {
         d for d in discovered
-        if not any(p == d or p.startswith(d + "/") for p in sub_app_paths)
-    }
-    if missing:
-        raise TreeValidationError(
-            f"静态子项目清单中以下子应用未在树第一层出现: {sorted(missing)[:10]}"
+        if not any(
+            p == d or p.startswith(d + "/") or d.startswith(p + "/")
+            for p in sub_app_paths
         )
+    }
+    if not missing:
+        return
+    # 子项目数超过单层扇出上限时，「每个子项目一个第一层节点」结构上不可能
+    # 满足（MAX_FANOUT 会先拒绝），缺失降级为 warning 不拦截。
+    if len(discovered) > MAX_FANOUT:
+        logger.warning(
+            "tree_monorepo_alignment_partial",
+            discovered_count=len(discovered),
+            missing_count=len(missing),
+            missing=sorted(missing)[:10],
+        )
+        return
+    raise TreeValidationError(
+        f"静态子项目清单中以下子应用未在树第一层出现: {sorted(missing)[:10]}"
+    )
 
 
 async def validate_and_assemble_tree(
@@ -213,10 +271,16 @@ async def validate_and_assemble_tree(
         )
 
     indexed_paths = await sync_to_async(_load_indexed_paths, thread_sensitive=False)()
-    validate_paths_against_file_index(nested, indexed_paths)
-
     discovered = payload.get("discovered_sub_projects") or []
-    if isinstance(discovered, list):
-        validate_monorepo_alignment(nested, [str(p) for p in discovered])
+    discovered_list = [str(p) for p in discovered] if isinstance(discovered, list) else []
+
+    # 静态发现的子项目清单来自任务容器对新鲜 clone 的扫描，比 FileIndex 更新，
+    # 作为额外可信目录根参与 paths 校验。
+    validate_paths_against_file_index(
+        nested, indexed_paths, extra_valid_roots=discovered_list
+    )
+
+    if discovered_list:
+        validate_monorepo_alignment(nested, discovered_list)
 
     return nested

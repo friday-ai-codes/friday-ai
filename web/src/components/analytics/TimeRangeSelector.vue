@@ -63,9 +63,10 @@ function onCustomDateChange() {
 </script>
 
 <template>
-  <div class="flex items-center gap-3">
+  <div class="flex flex-wrap items-center gap-2.5">
     <Select :model-value="selectedPreset" @update:model-value="onPresetChange">
-      <SelectTrigger class="w-[140px] bg-card/80 backdrop-blur-sm border-border/50">
+      <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90">
+        <span class="icon-[lucide--calendar-days] mr-1.5 text-sm text-muted-foreground" />
         <SelectValue placeholder="时间范围" />
       </SelectTrigger>
       <SelectContent>
@@ -79,14 +80,14 @@ function onCustomDateChange() {
       <input
         v-model="customFrom"
         type="date"
-        class="h-9 rounded-md border border-border/50 bg-card/80 backdrop-blur-sm px-3 text-sm"
+        class="h-9 rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         @change="onCustomDateChange"
       >
       <span class="text-muted-foreground text-sm">至</span>
       <input
         v-model="customTo"
         type="date"
-        class="h-9 rounded-md border border-border/50 bg-card/80 backdrop-blur-sm px-3 text-sm"
+        class="h-9 rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         @change="onCustomDateChange"
       >
     </template>
