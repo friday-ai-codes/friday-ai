@@ -36,7 +36,13 @@ from .tree_views import (
     KnowledgeTreeView,
     RepositoryIndexTreeView,
 )
-from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
+from .views import (
+    CacheManagementView,
+    RepositorySpacesView,
+    RepositoryViewSet,
+    SetAccessTokenView,
+    TestConnectionView,
+)
 
 router = DefaultRouter()  # trailing_slash=True by default
 router.register("", RepositoryViewSet, basename="repository")
@@ -114,6 +120,11 @@ urlpatterns = [
         "<uuid:repository_id>/test-connection/",
         TestConnectionView.as_view(),
         name="repository-test-connection",
+    ),
+    path(
+        "<uuid:repository_id>/spaces/",
+        RepositorySpacesView.as_view(),
+        name="repository-spaces",
     ),
     path(
         "<uuid:repository_id>/branch-indexes/",

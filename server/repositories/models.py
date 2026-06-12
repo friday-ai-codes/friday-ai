@@ -158,7 +158,13 @@ class Repository(models.Model):
         default=GitPlatform.GITLAB,
     )
     default_branch = models.CharField(max_length=100, default="main")
-    description = models.TextField(blank=True, null=True)
+    # 远端 HEAD 所在分支（创建 / 测连时 best-effort 探测缓存，供 UI 展示 HEAD 标签）
+    remote_head_branch = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="远端仓库 HEAD 指向的分支名，由 ls-remote --symref 探测缓存",
+    )
     proxy_url = models.CharField(
         max_length=500,
         blank=True,
@@ -321,6 +327,25 @@ class Repository(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def overview_text(self) -> str:
+        """对外（agent 工具 / 浏览树）展示用描述：从 ai_summary 提取 overview。
+
+        手动维护的「仓库简介」字段已移除——描述统一来源于 AI 生成的
+        ai_summary（JSON 时取 overview 字段，非 JSON 时取原文）。
+        """
+        import json
+
+        if not self.ai_summary:
+            return ""
+        try:
+            obj = json.loads(self.ai_summary)
+            if isinstance(obj, dict):
+                return str(obj.get("overview", "") or "")
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return str(self.ai_summary)
 
     def soft_delete(self) -> None:
         """Mark the repository as deleted."""

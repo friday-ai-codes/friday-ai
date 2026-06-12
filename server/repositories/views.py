@@ -3,6 +3,7 @@
 import os
 import secrets
 import subprocess
+import tempfile
 from urllib.parse import quote
 
 import structlog
@@ -196,6 +197,122 @@ async def _validate_base_branch(
         return False
 
 
+def _parse_ls_remote_refs(stdout: str) -> tuple[list[str], str | None]:
+    """解析 ``git ls-remote --symref <url> HEAD refs/heads/*`` 输出。
+
+    返回 ``(branches, head_branch)``。head_branch 优先取 symref 行
+    （``ref: refs/heads/<name>\\tHEAD``）；部分 git 服务器不回传 symref 时，
+    退化为用 HEAD sha 反查同 sha 的分支（多个命中时偏向 main/master）。
+    """
+    branches: list[str] = []
+    head_branch: str | None = None
+    head_sha: str | None = None
+    sha_by_branch: dict[str, str] = {}
+    for line in stdout.strip().splitlines():
+        if not line or "\t" not in line:
+            continue
+        left, ref = line.split("\t", 1)
+        ref = ref.strip()
+        if left.startswith("ref: refs/heads/") and ref == "HEAD":
+            head_branch = left[len("ref: refs/heads/"):].strip()
+        elif ref == "HEAD":
+            head_sha = left.strip()
+        elif ref.startswith("refs/heads/"):
+            name = ref[len("refs/heads/"):]
+            branches.append(name)
+            sha_by_branch[name] = left.strip()
+    if head_branch is None and head_sha:
+        matched = [name for name, sha in sha_by_branch.items() if sha == head_sha]
+        for preferred in ("main", "master"):
+            if preferred in matched:
+                head_branch = preferred
+                break
+        else:
+            head_branch = matched[0] if matched else None
+    return branches, head_branch
+
+
+async def _probe_branch_activity(
+    auth_url: str,
+    proxy_url: str | None = None,
+    *,
+    timeout: int = 20,
+) -> dict[str, int]:
+    """best-effort 获取各远端分支最近一次提交时间（unix 秒）。
+
+    ``git ls-remote`` 只给 sha 不给时间，这里在临时 bare 仓库里做
+    ``fetch --depth=1 --filter=tree:0``（每分支只拉一个 commit 对象，无
+    tree/blob，流量极小），再用 for-each-ref 读 committerdate。服务器不支持
+    partial clone 或超时一律返回空 dict，调用方排序退化为字典序。
+    """
+
+    def _probe() -> dict[str, int]:
+        env = _build_git_env(proxy_url)
+        with tempfile.TemporaryDirectory(prefix="friday-branch-probe-") as tmp:
+            init = subprocess.run(
+                ["git", "init", "--bare", "--quiet", tmp],
+                capture_output=True, text=True, timeout=10, env=env,
+            )
+            if init.returncode != 0:
+                return {}
+            fetch = subprocess.run(
+                [
+                    "git", "-C", tmp, "fetch", "--quiet",
+                    "--depth=1", "--filter=tree:0",
+                    auth_url, "+refs/heads/*:refs/heads/*",
+                ],
+                capture_output=True, text=True, timeout=timeout, env=env,
+            )
+            if fetch.returncode != 0:
+                return {}
+            refs = subprocess.run(
+                [
+                    "git", "-C", tmp, "for-each-ref",
+                    "--format=%(committerdate:unix)\t%(refname:short)",
+                    "refs/heads",
+                ],
+                capture_output=True, text=True, timeout=10, env=env,
+            )
+            if refs.returncode != 0:
+                return {}
+            activity: dict[str, int] = {}
+            for line in refs.stdout.splitlines():
+                if "\t" not in line:
+                    continue
+                ts, name = line.split("\t", 1)
+                try:
+                    activity[name] = int(ts)
+                except ValueError:
+                    continue
+            return activity
+
+    try:
+        return await sync_to_async(_probe)()
+    except (subprocess.TimeoutExpired, Exception):
+        logger.info("branch_activity_probe_failed", auth_url_host=auth_url.split("@")[-1])
+        return {}
+
+
+def _sort_branches(
+    branches: list[str],
+    head_branch: str | None,
+    activity: dict[str, int] | None = None,
+) -> list[str]:
+    """分支排序：HEAD 所在分支 > main/master > 最近活跃 > 字典序。"""
+    activity = activity or {}
+
+    def sort_key(name: str) -> tuple[int, int, str]:
+        if name == head_branch:
+            group = 0
+        elif name in ("main", "master"):
+            group = 1
+        else:
+            group = 2
+        return (group, -activity.get(name, 0), name)
+
+    return sorted(branches, key=sort_key)
+
+
 async def _schedule_default_branch_rolling_index(
     repository: Repository,
     *,
@@ -289,12 +406,29 @@ class RepositoryViewSet(ModelViewSet):
         access_token = data.pop("access_token")
         git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
         git_user_email = data.pop("git_user_email", "ai@friday.codes")
+        space_ids = [str(sid) for sid in data.pop("space_ids")]
 
         if not access_token.strip():
             return Response(
                 {"detail": "Access Token 不能为空"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # 校验关联空间存在（所有仓库都必须至少关联一个空间）
+        from projects.models import Project, ProjectRepository
+
+        spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
+        if len(spaces) != len(set(space_ids)):
+            return Response(
+                {"space_ids": ["部分空间不存在"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # HEAD 分支由前端从 test-connection 结果带入（创建前必须测连拿分支列表）；
+        # 未显式选默认分支时自动采用 HEAD 分支
+        head_branch = data.get("remote_head_branch")
+        if head_branch and not data.get("default_branch"):
+            data["default_branch"] = head_branch
 
         base_branch = data.get("base_branch")
         if base_branch and "default_branch" not in data:
@@ -314,6 +448,14 @@ class RepositoryViewSet(ModelViewSet):
 
         # Create repository
         repository = await Repository.objects.acreate(**data)
+
+        # 建立空间关联
+        await ProjectRepository.objects.abulk_create(
+            [
+                ProjectRepository(project=space, repository=repository)
+                for space in spaces
+            ]
+        )
 
         # Create credential
         await GitCredential.objects.acreate(
@@ -581,6 +723,66 @@ class SetAccessTokenView(APIView):
             )
 
 
+class RepositorySpacesView(APIView):
+    """仓库侧的「关联空间」管理。
+
+    GET  /repositories/{id}/spaces/  -> [{id, name}]
+    PUT  /repositories/{id}/spaces/  body: {"space_ids": [...]}（全量设置，至少一个）
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, repository_id):
+        repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
+        spaces = [
+            {"id": str(p.id), "name": p.name}
+            async for p in repository.projects.all()
+        ]
+        return Response(spaces)
+
+    async def put(self, request, repository_id):
+        repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
+
+        space_ids = request.data.get("space_ids")
+        if not isinstance(space_ids, list) or not space_ids:
+            return Response(
+                {"space_ids": ["仓库必须至少关联一个空间"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        space_ids = [str(sid) for sid in space_ids]
+
+        from projects.models import Project, ProjectRepository
+
+        spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
+        if len(spaces) != len(set(space_ids)):
+            return Response(
+                {"space_ids": ["部分空间不存在"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_ids = {str(s.id) for s in spaces}
+        existing = [
+            link
+            async for link in ProjectRepository.objects.filter(
+                repository=repository
+            ).select_related("project")
+        ]
+        existing_ids = {str(link.project_id) for link in existing}
+
+        # 删除不再关联的，新增缺失的（保留已存在关联的 permission_level）
+        to_remove = [link.pk for link in existing if str(link.project_id) not in target_ids]
+        if to_remove:
+            await ProjectRepository.objects.filter(pk__in=to_remove).adelete()
+        to_add = [s for s in spaces if str(s.id) not in existing_ids]
+        if to_add:
+            await ProjectRepository.objects.abulk_create(
+                [ProjectRepository(project=space, repository=repository) for space in to_add]
+            )
+
+        spaces_sorted = sorted(spaces, key=lambda s: s.name)
+        return Response([{"id": str(s.id), "name": s.name} for s in spaces_sorted])
+
+
 class TestConnectionView(APIView):
     """View for testing Git repository connection."""
 
@@ -626,11 +828,15 @@ class TestConnectionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # SSH 地址自动转换为 HTTPS（任务容器内没有 ssh，token 认证也只支持 HTTPS）
+        from .serializers import ssh_git_url_to_https
+
+        git_url = ssh_git_url_to_https(git_url)
         if not is_https_git_url(git_url):
             return Response(
                 {
                     "success": False,
-                    "error": "当前仅支持 HTTPS 仓库 URL；SSH URL 需要 SSH Key，暂未支持。",
+                    "error": "当前仅支持 HTTPS 仓库 URL（SSH 地址会自动转换为 HTTPS）。",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -638,9 +844,9 @@ class TestConnectionView(APIView):
         # Build authenticated URL（GitLab project token 必须把 token 放在密码位置）
         auth_url = build_authenticated_git_url(git_url, token)
 
-        # Test connection using git ls-remote
+        # Test connection using git ls-remote（--symref 顺带探测 HEAD 所在分支）
         try:
-            cmd = ["git", "ls-remote", "--heads", auth_url]
+            cmd = ["git", "ls-remote", "--symref", auth_url, "HEAD", "refs/heads/*"]
             env = _build_git_env(proxy_url)
 
             # KEEP: subprocess.run 阻塞系统调用，必须在线程中运行
@@ -653,26 +859,32 @@ class TestConnectionView(APIView):
             )
 
             if result.returncode == 0:
-                # Parse branches from output
-                branches = []
-                for line in result.stdout.strip().split("\n"):
-                    if line and "\t" in line:
-                        ref = line.split("\t")[1]
-                        if ref.startswith("refs/heads/"):
-                            branches.append(ref.replace("refs/heads/", ""))
+                branches, head_branch = _parse_ls_remote_refs(result.stdout)
 
-                recommended_priority = ["main", "master", "develop"]
-                recommended_branch = None
-                for candidate in recommended_priority:
-                    if candidate in branches:
-                        recommended_branch = candidate
-                        break
+                # best-effort 分支活跃度（失败时排序退化为字典序）
+                activity = await _probe_branch_activity(auth_url, proxy_url)
+                branches = _sort_branches(branches, head_branch, activity)
+
+                # 推荐分支：HEAD 所在分支优先，退化到 main/master/develop
+                recommended_branch = head_branch
+                if recommended_branch is None:
+                    for candidate in ("main", "master", "develop"):
+                        if candidate in branches:
+                            recommended_branch = candidate
+                            break
+
+                # 已有仓库测连时顺手缓存 HEAD 分支，供详情页展示 HEAD 标签
+                if repository_id and head_branch:
+                    await Repository.objects.filter(id=repository_id).aupdate(
+                        remote_head_branch=head_branch,
+                    )
 
                 return Response(
                     {
                         "success": True,
                         "message": "连接成功",
-                        "branches": sorted(branches),
+                        "branches": branches,
+                        "head_branch": head_branch,
                         "recommended_branch": recommended_branch,
                     }
                 )

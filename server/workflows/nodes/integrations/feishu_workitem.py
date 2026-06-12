@@ -260,7 +260,7 @@ class FetchWorkItemNode(BaseNode):
                         "id": str(repo.id),
                         "name": repo.name,
                         "git_url": repo.git_url,
-                        "description": repo.description or "",
+                        "description": repo.overview_text,
                         "default_branch": repo.default_branch,
                     }
                 )

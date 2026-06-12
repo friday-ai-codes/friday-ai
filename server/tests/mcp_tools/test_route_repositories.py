@@ -48,7 +48,8 @@ def test_route_repositories_returns_enriched_candidates(
     assert response.status_code == 200
     body = response.json()
     assert body["ranked_repos"][0]["repo_id"] == str(indexed_repository.id)
-    assert body["ranked_repos"][0]["description"] == "用于 MCP 测试的仓库"
+    # description 统一来源于 ai_summary（overview_text），手动简介字段已移除
+    assert body["ranked_repos"][0]["description"] == "测试仓库摘要"
     assert body["ranked_repos"][0]["reason"] == "名称和摘要命中"
     assert body["ranked_repos"][0]["confidence"] == "high"
     assert body["ranked_repos"][0]["matched_node_paths"] == ["认证模块 > 登录"]
