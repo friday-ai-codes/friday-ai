@@ -149,5 +149,60 @@
     "finish": {
       "success": "配置完成，正在进入系统…"
     }
+  },
+  "knowledge": {
+    "entity": {
+      "pageTitle": "交付知识",
+      "sections": {
+        "metadata": "基本信息",
+        "timeline": "版本历史",
+        "related": "关联实体"
+      },
+      "kind": {
+        "workItem": "需求/缺陷",
+        "techPlan": "技术方案",
+        "codeChange": "代码变更"
+      },
+      "fields": {
+        "version": "版本",
+        "sourceKind": "来源类型",
+        "sourceId": "来源 ID",
+        "validAt": "生效时间",
+        "invalidAt": "失效时间",
+        "eventTime": "事件时间",
+        "project": "所属项目",
+        "repository": "所属仓库",
+        "entityId": "实体 ID"
+      },
+      "badges": {
+        "currentVersion": "当前版本",
+        "superseded": "已被新版本取代"
+      },
+      "provenance": {
+        "feishu": "在飞书中查看",
+        "mr": "查看合并请求",
+        "session": "查看编码会话"
+      },
+      "asOf": {
+        "label": "历史视点",
+        "placeholder": "选择日期与时间",
+        "active": "正在查看 {datetime} 时点数据",
+        "reset": "恢复当前"
+      },
+      "includeSuperseded": "显示已取代版本",
+      "empty": {
+        "timelineTitle": "暂无版本历史",
+        "timelineBody": "该实体尚未记录版本迭代",
+        "relatedTitle": "暂无关联实体",
+        "relatedBody": "尚未建立与需求、方案或代码变更的关联"
+      },
+      "error": {
+        "notFound": "实体不存在或你无权访问",
+        "notFoundAction": "返回上一页",
+        "loadFailed": "加载交付知识失败，请稍后重试",
+        "retry": "重试"
+      },
+      "loading": "正在加载实体详情…"
+    }
   }
 }

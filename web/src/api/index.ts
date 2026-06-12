@@ -33,5 +33,8 @@ export { default as spacesApi } from './spaces'
 // 重新导出所有具体方法，便于按需引入
 export * from './spaces'
 
+export { default as knowledgeApi } from './knowledge'
+export * from './knowledge'
+
 export { default as workflowApi } from './workflow'
 export * from './workflow'
