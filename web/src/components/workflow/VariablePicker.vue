@@ -162,15 +162,18 @@ const availableVariables = computed((): VariableCategory[] => {
   if (props.context?.node_outputs) {
     const items: RuntimeVariableItem[] = []
     const entries = Object.entries(props.context.node_outputs)
-    // scheduler 对同一节点输出以 UUID 与 short_id 双键写入同一对象（引用相等）：
-    // 存在指向同一对象的非 UUID 键时跳过 UUID 键，避免同一字段重复展示
-    const nonUuidOutputs = new Set(
-      entries.filter(([nodeKey]) => !isLikelyUuid(nodeKey)).map(([, outputs]) => outputs),
+    // scheduler 对同一节点输出以 UUID 与 short_id 双键写入；context 来自 API 的
+    // JSON 响应，经 JSON.parse 后双键不再共享对象引用（WR-02），改为按序列化
+    // 内容判等：存在内容相同的非 UUID 键时跳过 UUID 键，避免同一字段重复展示
+    const nonUuidSerialized = new Set(
+      entries
+        .filter(([nodeKey]) => !isLikelyUuid(nodeKey))
+        .map(([, outputs]) => JSON.stringify(outputs)),
     )
     entries.forEach(([nodeKey, outputs]) => {
       if (typeof outputs === 'object' && outputs !== null) {
         // 仅有 UUID 键无 short_id 对应时保留展示（存量执行兼容，引用不回退）
-        if (isLikelyUuid(nodeKey) && nonUuidOutputs.has(outputs))
+        if (isLikelyUuid(nodeKey) && nonUuidSerialized.has(JSON.stringify(outputs)))
           return
         Object.entries(outputs).forEach(([key, value]) => {
           items.push({
