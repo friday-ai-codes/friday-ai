@@ -1,6 +1,7 @@
 """Workflow execution engine."""
 
 import asyncio
+import json
 import random
 import threading
 import time
@@ -12,10 +13,10 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
-
 from rest_framework.exceptions import PermissionDenied
 
 from workflows.engine.dag import DAG
+from workflows.engine.template_resolver import TemplateResolutionError
 from workflows.models.execution import (
     ExecutionStatus,
     NodeExecution,
@@ -1011,7 +1012,20 @@ class WorkflowEngine:
                 )
 
             except Exception as _exc:
-                if isinstance(_exc, RuntimeError) and last_error:
+                if isinstance(_exc, TemplateResolutionError):
+                    # 模板解析失败（VAR-02）：中文一句话 + 结构化 JSON。
+                    # 最后一行可被 JSON.parse（Phase 21 错误展示直接消费）
+                    structured = json.dumps(
+                        {
+                            "reference": _exc.reference,
+                            "reason": _exc.reason,
+                            "available": _exc.available,
+                            "template": _exc.template,
+                        },
+                        ensure_ascii=False,
+                    )
+                    last_error = f"{_exc}\n{structured}"
+                elif isinstance(_exc, RuntimeError) and last_error:
                     pass  # 已设置 last_error
                 else:
                     last_error = str(_exc)
