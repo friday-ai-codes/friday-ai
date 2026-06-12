@@ -43,8 +43,10 @@ class DeliveryKnowledgeSearchService:
     ) -> list[SearchResultDTO]:
         logger.info("knowledge_search_started", query_len=len(query), top_k=top_k)
         allowed_projects = await resolve_allowed_project_ids(user, project_ids)
-        allowed_repos = await resolve_allowed_repository_ids(user, repository_ids)
-        if not allowed_projects or not allowed_repos:
+        allowed_repos = await resolve_allowed_repository_ids(
+            user, repository_ids, project_ids=allowed_projects
+        )
+        if not allowed_projects:
             logger.info("knowledge_search_completed", result_count=0)
             return []
 
@@ -63,6 +65,7 @@ class DeliveryKnowledgeSearchService:
         enriched = await enrich_vector_hits(
             hits,
             allowed_project_ids=allowed_projects,
+            allowed_repository_ids=allowed_repos,
             as_of=as_of,
         )
         reference_time = as_of or timezone.now()

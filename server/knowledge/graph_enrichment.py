@@ -9,7 +9,7 @@ from django.conf import settings
 
 from knowledge.graph_store import graph_store
 from knowledge.metadata_hydrate import hydrate_entity_metadata
-from knowledge.models import EdgeRelation, KnowledgeEntity
+from knowledge.models import EdgeRelation, EntityKind, KnowledgeEntity
 from knowledge.retrieval_types import RelatedEntityDTO
 from knowledge.vector_recall import VectorHit
 
@@ -20,12 +20,14 @@ _ENRICH_RELATIONS = [
     EdgeRelation.IMPLEMENTED_BY,
     EdgeRelation.RELATES_TO,
 ]
+_CODE_KINDS = frozenset({EntityKind.CODE_CHANGE})
 
 
 async def enrich_vector_hits(
     hits: list[VectorHit],
     *,
     allowed_project_ids: list[str],
+    allowed_repository_ids: list[str] | None = None,
     max_hops: int | None = None,
     as_of: datetime | None = None,
 ) -> dict[uuid.UUID, list[RelatedEntityDTO]]:
@@ -35,6 +37,7 @@ async def enrich_vector_hits(
 
     hops = max_hops or int(settings.KNOWLEDGE_RETRIEVAL_GRAPH_MAX_HOPS)
     allowed = set(allowed_project_ids)
+    allowed_repos = set(allowed_repository_ids or [])
     out: dict[uuid.UUID, list[RelatedEntityDTO]] = {}
 
     for hit in hits:
@@ -56,6 +59,12 @@ async def enrich_vector_hits(
                 continue
             if str(entity.project_id) not in allowed:
                 continue
+            if allowed_repos:
+                repo = str(entity.repository_id) if entity.repository_id else ""
+                if repo and repo not in allowed_repos:
+                    continue
+                if not repo and entity.kind in _CODE_KINDS:
+                    continue
             meta = await hydrate_entity_metadata(entity.id, entity.current_version)
             related.append(
                 RelatedEntityDTO(

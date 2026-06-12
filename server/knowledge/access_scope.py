@@ -48,6 +48,7 @@ async def resolve_allowed_project_ids(
 async def resolve_allowed_repository_ids(
     user: User | None,
     repository_ids: list[str] | None = None,
+    project_ids: list[str] | None = None,
 ) -> list[str]:
     """解析 user 可见 project 下关联的 repository_id（P6 双维权限）。
 
@@ -58,7 +59,7 @@ async def resolve_allowed_repository_ids(
 
     from repositories.models import Repository
 
-    allowed_projects = await resolve_allowed_project_ids(user)
+    allowed_projects = await resolve_allowed_project_ids(user, project_ids)
     if not allowed_projects:
         return []
 
