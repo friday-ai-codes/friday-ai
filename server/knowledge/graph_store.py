@@ -371,6 +371,8 @@ class RelationalGraphStore:
             cur.execute(sql, params)
             rows = cur.fetchall()
         results = [TraversalResult(entity_id=self._to_uuid(r[0]), depth=r[1]) for r in rows]
+        if direction == "both":
+            results = [r for r in results if r.entity_id != start_id]
         logger.info(
             "knowledge_graph_traversed",
             start_id=str(start_id),
@@ -412,17 +414,9 @@ class RelationalGraphStore:
         - 深度上限：递归项 ``w.depth < %s``；LIMIT 仅放最外层（PG 禁止递归项 LIMIT）。
         - 占位符统一 ``%s``（Django cursor 双后端适配）；零用户输入拼接（T-12-01）：
           validity 谓词仅两个固定模板，relations 经白名单校验后只生成占位符。
-        - direction="both" 本阶段不实现（接口预留，Phase 15 需要时扩展）。
+        - direction="both"：双向邻居（out+in UNION 语义），CASE 选取对端实体 id。
         """
-        if direction == "out":
-            from_col, to_col = "source_entity_id", "target_entity_id"
-        elif direction == "in":
-            from_col, to_col = "target_entity_id", "source_entity_id"
-        elif direction == "both":
-            raise NotImplementedError(
-                'direction="both" 多跳遍历本阶段未实现（接口预留，Phase 15 需要时扩展）'
-            )
-        else:
+        if direction not in ("out", "in", "both"):
             raise ValueError(f"非法 direction: {direction!r}（必须 ∈ ('out', 'in', 'both')）")
 
         # validity 谓词：仅两个固定模板字符串，as_of 值全部参数绑定（各出现 4 次）
@@ -448,7 +442,63 @@ class RelationalGraphStore:
             relation_filter = ""
             relation_params = []
 
-        # 表名硬编码 knowledge_knowledgeedge：全仓仅本文件允许出现（grep 审计守护）
+        if direction == "both":
+            neighbor_expr = (
+                "CASE WHEN e.source_entity_id = w.entity_id THEN e.target_entity_id "
+                "ELSE e.source_entity_id END"
+            )
+            base_neighbor = (
+                "CASE WHEN e.source_entity_id = %s THEN e.target_entity_id "
+                "ELSE e.source_entity_id END"
+            )
+            base_path = (
+                "CASE WHEN e.source_entity_id = %s THEN "
+                "',' || CAST(e.target_entity_id AS TEXT) || ',' "
+                "ELSE ',' || CAST(e.source_entity_id AS TEXT) || ',' END"
+            )
+            base_where = "(e.source_entity_id = %s OR e.target_entity_id = %s)"
+            join_on = "(e.source_entity_id = w.entity_id OR e.target_entity_id = w.entity_id)"
+            sql = f"""
+WITH RECURSIVE walk(entity_id, depth, path) AS (
+    SELECT {base_neighbor}, 1, {base_path}
+    FROM knowledge_knowledgeedge e
+    WHERE {base_where}
+      AND e.target_entity_id IS NOT NULL
+      AND {validity}
+      {relation_filter}
+  UNION ALL
+    SELECT {neighbor_expr}, w.depth + 1,
+           w.path || CAST({neighbor_expr} AS TEXT) || ','
+    FROM knowledge_knowledgeedge e
+    JOIN walk w ON {join_on}
+    WHERE w.depth < %s
+      AND e.target_entity_id IS NOT NULL
+      AND {validity}
+      {relation_filter}
+      AND w.path NOT LIKE '%%,' || CAST({neighbor_expr} AS TEXT) || ',%%'
+)
+SELECT entity_id, MIN(depth) AS depth
+FROM walk
+GROUP BY entity_id
+ORDER BY depth
+LIMIT %s
+"""
+            params: list = (
+                [prep_id, prep_id, prep_id, prep_id]
+                + validity_params
+                + relation_params
+                + [hops]
+                + validity_params
+                + relation_params
+                + [self._RESULT_LIMIT]
+            )
+            return sql, params
+
+        from_col, to_col = (
+            ("source_entity_id", "target_entity_id")
+            if direction == "out"
+            else ("target_entity_id", "source_entity_id")
+        )
         sql = f"""
 WITH RECURSIVE walk(entity_id, depth, path) AS (
     SELECT e.{to_col}, 1,
@@ -475,7 +525,7 @@ GROUP BY entity_id
 ORDER BY depth
 LIMIT %s
 """
-        params: list = (
+        params = (
             [prep_id]
             + validity_params
             + relation_params
