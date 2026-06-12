@@ -402,13 +402,16 @@ class AIPlanGenerationNode(AIAgentBaseNode):
                 context.node_config.get("user_prompt", "")
             ).strip()
             if rendered_prompt:
+                # Phase 17 严格解析语义：as_of 模板渲染移出 best-effort try——
+                # TemplateResolutionError 必须 fail-fast 直达 scheduler，
+                # 不得被相似历史注入的吞错分支静默改写为"跳过注入继续执行"。
+                as_of_raw = context.render_template(
+                    context.node_config.get("similar_history_as_of", "") or ""
+                )
                 try:
                     from knowledge.exposure import format_search_results_markdown, parse_as_of
                     from knowledge.retrieval import DeliveryKnowledgeSearchService
 
-                    as_of_raw = context.render_template(
-                        context.node_config.get("similar_history_as_of", "") or ""
-                    )
                     as_of = parse_as_of(as_of_raw or None)
                     user = await self._get_user(context)
                     if user is not None:
