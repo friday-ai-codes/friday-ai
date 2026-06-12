@@ -21,3 +21,12 @@ data:
   QDRANT_URL: {{ .Values.externalQdrant.url | quote }}
   QDRANT_BUNDLED: "true"
   {{- end }}
+  {{- if .Values.redis.enabled }}
+  # 内置 Redis：channel layer 走 Redis，WS 推送可跨 worker / 跨副本
+  USE_REDIS_CHANNEL_LAYER: "true"
+  REDIS_URL: {{ printf "redis://%s-redis:6379/0" (include "friday.fullname" .) | quote }}
+  {{- else if .Values.externalRedis.url }}
+  # 外接 Redis
+  USE_REDIS_CHANNEL_LAYER: "true"
+  REDIS_URL: {{ .Values.externalRedis.url | quote }}
+  {{- end }}

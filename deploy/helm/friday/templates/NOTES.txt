@@ -29,3 +29,8 @@ Runner 说明:
  如果遇到 docker.sock 权限问题，请调整 runner.dockerGID 匹配宿主机 docker 组 GID:
  stat -c '%g' /var/run/docker.sock
 {{- end }}
+{{- if and (not .Values.redis.enabled) (not .Values.externalRedis.url) }}
+注意: 未启用 Redis，WebSocket 使用内存 channel layer。
+ server.gunicornWorkers 与 server.replicaCount 必须保持 1，否则 WS 推送会丢失。
+ 如需横向扩展，请设置 redis.enabled=true 或配置 externalRedis.url。
+{{- end }}

@@ -113,6 +113,29 @@ qdrant:
 externalQdrant:
   url: "" # http://my-qdrant:6333
   apiKey: ""
+# -- Redis（channels channel layer）
+# 启用后 server 注入 USE_REDIS_CHANNEL_LAYER=true + REDIS_URL，
+# WebSocket 推送可跨 worker / 跨副本工作（gunicornWorkers、replicaCount 才能 >1）。
+# redis.enabled=false 且 externalRedis.url 为空时退回内存 channel layer，
+# 此时 server 必须保持单 worker 单副本，否则 WS 消息会丢。
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+# -- 外部 Redis（redis.enabled=false 时使用）
+externalRedis:
+  url: "" # redis://my-redis:6379/0（含密码时形如 redis://:pass@host:6379/0）
 # -- Ingress 配置
 ingress:
   enabled: false
