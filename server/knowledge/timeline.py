@@ -12,7 +12,7 @@ from knowledge.access_scope import resolve_allowed_project_ids
 from knowledge.graph_store import require_aware
 from knowledge.metadata_hydrate import hydrate_entity_metadata
 from knowledge.models import EdgeRelation, KnowledgeEntity, KnowledgeEntityVersion, KnowledgeEdge
-from knowledge.retrieval_types import TimelineNodeDTO
+from knowledge.retrieval_types import ProvenanceLinks, TimelineNodeDTO
 
 __all__ = ["build_entity_timeline"]
 
@@ -124,6 +124,10 @@ async def build_entity_timeline(
             if meta:
                 code_changes.append(meta)
         code_changes.sort(key=lambda m: m.event_time or m.valid_at or ver.event_time)
+        version_meta = await hydrate_entity_metadata(
+            entity.id, ver.version, include_superseded=True
+        )
+        provenance = version_meta.provenance if version_meta else ProvenanceLinks()
         nodes.append(
             TimelineNodeDTO(
                 entity_id=entity.id,
@@ -134,6 +138,7 @@ async def build_entity_timeline(
                 valid_at=ver.valid_at,
                 invalid_at=ver.invalid_at,
                 event_time=ver.event_time,
+                provenance=provenance,
                 code_changes=tuple(code_changes),
             )
         )
