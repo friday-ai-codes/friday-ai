@@ -196,6 +196,17 @@ export const contextRetrievalConfigSchema = z.object({
   format_as_markdown: z.boolean().default(true),
 })
 
+/** 交付知识检索节点配置 */
+export const deliveryKnowledgeSearchConfigSchema = z.object({
+  query: z.string().default(''),
+  top_k: z.number().min(1).max(20).default(5),
+  project_ids: z.array(z.string()).default([]),
+  repository_ids: z.array(z.string()).default([]),
+  entity_kinds: z.array(z.string()).default([]),
+  as_of: z.string().default(''),
+  include_superseded: z.boolean().default(false),
+})
+
 /** 获取项目信息节点配置 */
 export const fetchSpaceInfoConfigSchema = z.object({
   project_identifier: z.string().default(''),
@@ -262,6 +273,9 @@ export const aiPlanGenerationConfigSchema = z.object({
   // Execution limits
   max_iterations: z.number().min(10, '不能小于 10').max(200, '不能大于 200').default(50),
   enabled_tools: z.array(z.string()).default([]),
+  auto_inject_similar_history: z.boolean().default(true),
+  similar_history_top_k: z.number().min(1).max(20).default(5),
+  similar_history_as_of: z.string().default(''),
 
   // Feishu integration
   chat_id: z.string().default(''),
@@ -323,6 +337,7 @@ export type VariableExtractorConfig = z.infer<typeof variableExtractorConfigSche
 export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
 export type ContextRetrievalConfig = z.infer<typeof contextRetrievalConfigSchema>
+export type DeliveryKnowledgeSearchConfig = z.infer<typeof deliveryKnowledgeSearchConfigSchema>
 export type FetchProjectInfoConfig = z.infer<typeof fetchSpaceInfoConfigSchema>
 export type WaitCondition = z.infer<typeof waitConditionSchema>
 export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
@@ -344,6 +359,7 @@ export type NodeConfig
     | VariableExtractorConfig
     | AIVariableExtractorConfig
     | ContextRetrievalConfig
+    | DeliveryKnowledgeSearchConfig
     | FetchProjectInfoConfig
     | WaitFeishuFieldConfig
     | CreateBranchConfig
@@ -366,6 +382,7 @@ export const NODE_CONFIG_SCHEMAS = {
   variable_extractor: variableExtractorConfigSchema,
   ai_variable_extractor: aiVariableExtractorConfigSchema,
   context_retrieval: contextRetrievalConfigSchema,
+  delivery_knowledge_search: deliveryKnowledgeSearchConfigSchema,
   fetch_project_info: fetchSpaceInfoConfigSchema,
   wait_feishu_field: waitFeishuFieldConfigSchema,
   create_branch: createBranchConfigSchema,

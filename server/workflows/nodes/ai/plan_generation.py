@@ -133,6 +133,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         super().__init__()
         # execute() 预渲染结果注入口；get_system_prompt 从此读取
         self._precomputed_base_prompt: str | None = None
+        self._similar_history_markdown: str = ""
 
     config_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -183,6 +184,24 @@ class AIPlanGenerationNode(AIAgentBaseNode):
                 "description": "除默认工具外额外启用的工具名称",
                 "items": {"type": "string"},
                 "default": [],
+            },
+            "auto_inject_similar_history": {
+                "type": "boolean",
+                "title": "自动注入相似历史交付",
+                "default": True,
+            },
+            "similar_history_top_k": {
+                "type": "integer",
+                "title": "相似历史 top_k",
+                "default": 5,
+                "minimum": 1,
+                "maximum": 20,
+            },
+            "similar_history_as_of": {
+                "type": "string",
+                "title": "相似历史 as_of",
+                "description": "ISO8601 可选",
+                "default": "",
             },
         },
         "required": ["user_prompt"],
@@ -272,7 +291,9 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         if exclude_repos:
             repo_context += f"\n\n**排除的仓库:** {', '.join(exclude_repos)}"
 
-        return f"{user_prompt}{upstream_context}{repo_context}"
+        history = getattr(self, "_similar_history_markdown", "") or ""
+        history_block = f"\n\n{history}" if history else ""
+        return f"{user_prompt}{upstream_context}{repo_context}{history_block}"
 
     def get_enabled_tools(self, context: ExecutionContext) -> list[str] | None:
         """返回方案生成节点需要的工具集。"""
@@ -374,6 +395,37 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         self._precomputed_base_prompt = body_template.replace(
             "{{schema_json}}", schema_json
         )
+
+        self._similar_history_markdown = ""
+        if context.node_config.get("auto_inject_similar_history", True):
+            rendered_prompt = context.render_template(
+                context.node_config.get("user_prompt", "")
+            ).strip()
+            if rendered_prompt:
+                try:
+                    from knowledge.exposure import format_search_results_markdown, parse_as_of
+                    from knowledge.retrieval import DeliveryKnowledgeSearchService
+
+                    as_of_raw = context.render_template(
+                        context.node_config.get("similar_history_as_of", "") or ""
+                    )
+                    as_of = parse_as_of(as_of_raw or None)
+                    user = await self._get_user(context)
+                    if user is not None:
+                        svc = DeliveryKnowledgeSearchService()
+                        project_id = str(project.id) if project else None
+                        hits = await svc.search_similar(
+                            rendered_prompt,
+                            user=user,
+                            top_k=int(context.node_config.get("similar_history_top_k") or 5),
+                            project_ids=[project_id] if project_id else None,
+                            as_of=as_of,
+                        )
+                        self._similar_history_markdown = format_search_results_markdown(
+                            hits, as_of=as_of
+                        )
+                except Exception as exc:
+                    logger.warning("plan_generation_similar_history_failed", error=str(exc))
 
         # 初始化子步骤记录
         await self._init_sub_steps(context)
