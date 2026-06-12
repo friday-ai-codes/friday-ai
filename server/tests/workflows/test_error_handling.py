@@ -5,9 +5,11 @@ Tests cover:
 - Retry with exponential backoff
 - Node timeout triggering on_error strategy
 - Continue-on-fail (ignore mode) with fallback_values
+- Template resolution failure -> structured error_message (Phase 17 / VAR-02)
 """
 
 import asyncio
+import json
 
 import pytest
 
@@ -22,7 +24,6 @@ from workflows.models import (
 )
 from workflows.nodes.base import BaseNode, ExecutionContext, NodeCategory, NodeResult
 from workflows.nodes.registry import NodeRegistry
-
 
 # ---------------------------------------------------------------------------
 # Test node types: controllable pass/fail for testing
@@ -83,6 +84,25 @@ class SlowNode(BaseNode):
         return NodeResult(status="completed", output={"result": "done"})
 
 
+class TemplateRenderNode(BaseNode):
+    """Node that renders a config template — for testing resolution failure.
+
+    模拟真实节点（如 ai_prompt）在业务逻辑前渲染 config 模板的行为：
+    解析失败应在渲染阶段 fail-fast，异常逸出 execute 被 scheduler 捕获。
+    """
+
+    node_type = "test_template_render"
+    display_name = "Template Render"
+    description = "Renders config['template'] before business logic"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+    supports_retry = True
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        rendered = context.render_template(context.get_config("template", ""))
+        return NodeResult(status="completed", output={"rendered": rendered})
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -94,10 +114,12 @@ def _register_test_nodes():
     NodeRegistry.register(AlwaysFailNode)
     NodeRegistry.register(FailNTimesNode)
     NodeRegistry.register(SlowNode)
+    NodeRegistry.register(TemplateRenderNode)
     yield
     NodeRegistry._nodes.pop("test_always_fail", None)
     NodeRegistry._nodes.pop("test_fail_n_times", None)
     NodeRegistry._nodes.pop("test_slow_node", None)
+    NodeRegistry._nodes.pop("test_template_render", None)
 
 
 @pytest.fixture
@@ -617,3 +639,84 @@ class TestIgnoreBehavior:
         AlwaysFailNode._fail_count = 0
         execution = await engine.start_execution(workflow, run_sync=True)
         assert execution.status == ExecutionStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# 模板解析失败 -> 结构化 error_message（Phase 17 / VAR-02）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestTemplateResolutionError:
+    """解析失败经 scheduler 落入 NodeExecution.error_message（中文 + 结构化 JSON）。"""
+
+    @pytest.fixture
+    def bad_ref_workflow(self, engine_project):
+        """节点 config 引用不存在节点 {{nodes.zzz.output}} 的工作流。"""
+        workflow = Workflow.objects.create(
+            name="Bad Ref Workflow",
+            project=engine_project,
+            trigger_type="manual",
+        )
+        trigger = WorkflowNode.objects.create(
+            workflow=workflow,
+            node_type="manual_trigger",
+            name="Start",
+            position_x=0,
+            position_y=0,
+        )
+        render_node = WorkflowNode.objects.create(
+            workflow=workflow,
+            node_type="test_template_render",
+            name="Bad Ref Node",
+            position_x=200,
+            position_y=0,
+            config={"template": "结果: {{nodes.zzz.output}}"},
+            on_error="abort",
+        )
+        WorkflowEdge.objects.create(
+            workflow=workflow,
+            source_node=trigger,
+            target_node=render_node,
+        )
+        return workflow
+
+    @pytest.mark.asyncio
+    async def test_resolution_failure_structured_error_message(
+        self, engine, bad_ref_workflow
+    ):
+        """解析失败：节点 failed、error_message 中文 + 最后一行结构化 JSON、工作流 fail-fast。"""
+        execution = await engine.start_execution(bad_ref_workflow, run_sync=True)
+
+        # (d) fail-fast 生效：工作流失败，未静默继续
+        assert execution.status == ExecutionStatus.FAILED
+
+        from workflows.models import NodeExecution
+
+        render_ne = await NodeExecution.objects.filter(
+            workflow_execution=execution,
+            node__node_type="test_template_render",
+        ).afirst()
+
+        # (a) NodeExecution 状态为 failed
+        assert render_ne is not None
+        assert render_ne.status == NodeExecutionStatus.FAILED
+
+        # (b) error_message 含中文描述
+        assert "节点 ID 'zzz' 不存在" in render_ne.error_message
+
+        # (c) 最后一行可被 json.loads 且含四键，reason 属于枚举
+        last_line = render_ne.error_message.strip().splitlines()[-1]
+        payload = json.loads(last_line)
+        assert set(payload.keys()) == {"reference", "reason", "available", "template"}
+        assert payload["reason"] in {
+            "node_not_found",
+            "field_not_found",
+            "unknown_prefix",
+            "missing_field_path",
+        }
+        assert payload["reason"] == "node_not_found"
+        assert payload["reference"] == "nodes.zzz.output"
+        assert payload["template"] == "结果: {{nodes.zzz.output}}"
+        assert isinstance(payload["available"], list)
