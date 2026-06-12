@@ -272,9 +272,7 @@ def _bulk_update_nodes_and_edges(
         # workflow 的节点（T-17-11 越权防护）。
         if rewrite_candidates:
             final_owned = set(workflow.nodes.values_list("short_id", flat=True))
-            id_map = {
-                old: new for old, new in rewrite_candidates.items() if old not in final_owned
-            }
+            id_map = {old: new for old, new in rewrite_candidates.items() if old not in final_owned}
             if id_map:
                 for node in workflow.nodes.all():
                     rewritten = rewrite_template_refs(node.config, id_map)
