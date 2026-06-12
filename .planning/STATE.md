@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.3.0
-milestone_name: milestone
-status: complete
-stopped_at: Milestone v0.3.0 shipped (Phase 12–16, 28/28 requirements)
-last_updated: "2026-06-12T12:00:00.000Z"
-last_activity: 2026-06-12 — Milestone v0.3.0 completed and archived
+milestone: v0.4.0
+milestone_name: 工作流系统契约重构
+status: planning
+last_updated: "2026-06-12T13:53:59.803Z"
+last_activity: 2026-06-12
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 23
-  completed_plans: 23
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: Milestone v0.3.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-12 — Milestone v0.3.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-12 — Milestone v0.4.0 started
 
 ## Performance Metrics
 
