@@ -1,6 +1,7 @@
 """Chat API views."""
 
 import asyncio
+import contextvars
 from pathlib import Path
 from typing import Any
 
@@ -2747,7 +2748,12 @@ class ClarificationAnswerView(APIView):
                     thread_id=thread_id,
                 )
 
-        task = asyncio.create_task(_resume_graph())
+        # 必须用干净的 contextvars 上下文启动：默认 create_task 会复制当前请求的
+        # contextvars，其中含 asgiref 的 CurrentThreadExecutor；请求结束后该
+        # executor 退出，后台任务里的 sync_to_async（async ORM 内部）再向它提交
+        # 工作会抛 "CurrentThreadExecutor already quit or is broken"，导致 run
+        # 永久卡在 waiting_clarification。
+        task = asyncio.create_task(_resume_graph(), context=contextvars.Context())
         _BACKGROUND_TASKS.add(task)
         task.add_done_callback(_BACKGROUND_TASKS.discard)
 

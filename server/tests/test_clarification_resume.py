@@ -210,6 +210,38 @@ class TestResumeClarificationRun:
             metadata__status="error",
         ).exists()
 
+    def test_config_error_non_valueerror_marks_run_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        conversation: Conversation,
+        waiting_run: OrchestrationRun,
+        _mock_finalize: dict[str, Any],
+    ) -> None:
+        """回归：build_sdk_config 抛非 ValueError（如后台任务继承请求上下文导致的
+        "CurrentThreadExecutor already quit or is broken"）也必须把 run 标成
+        ERROR + 落兜底消息，不能让 run 永久停在 waiting_clarification。"""
+
+        async def _broken_build(conv: Any, **kwargs: Any) -> tuple[Any, Any]:
+            raise RuntimeError("CurrentThreadExecutor already quit or is broken")
+
+        monkeypatch.setattr("chat.config.build_sdk_config", _broken_build)
+        captured = _mock_graph(monkeypatch, final_state={"phase": "completed"})
+
+        asyncio.run(ConversationService.resume_clarification_run(
+            str(conversation.id), _RESUME_PAYLOAD,
+        ))
+
+        waiting_run.refresh_from_db()
+        conversation.refresh_from_db()
+        assert waiting_run.status == OrchestrationRun.Status.ERROR
+        assert conversation.status == Conversation.Status.ERROR
+        assert "config" not in captured  # graph 不应被触发
+        assert Message.objects.filter(
+            conversation=conversation,
+            role=Message.Role.ASSISTANT,
+            metadata__status="error",
+        ).exists()
+
     def test_no_waiting_run_is_noop(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -1660,7 +1660,9 @@ class ConversationService:
 
         try:
             sdk_config, agent_session = await build_sdk_config(conversation)
-        except ValueError as e:
+        except Exception as e:
+            # 不止 ValueError：任何配置阶段异常（如事件循环/executor 故障）都必须
+            # 把 run 标成 error，否则会永久停在 waiting_clarification 等待态。
             logger.exception(
                 "clarification_resume_config_error",
                 conversation_id=conv_id_str,
