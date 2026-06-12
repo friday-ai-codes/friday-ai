@@ -279,7 +279,7 @@ class TestInvalidFormatRegeneration:
 
     @pytest.mark.parametrize(
         "bad_value",
-        ["a.B1", "a{b}", "1abc", "ab cd", "", "a" * 13, "中文id"],
+        ["a.B1", "a{b}", "1abc", "ab cd", "", "a" * 13, "中文id", "a", "ab"],
     )
     def test_invalid_short_id_regenerated(self, workflow, bad_value):
         _bulk_update_nodes_and_edges(workflow, [_new_node("n1", short_id=bad_value)], [])

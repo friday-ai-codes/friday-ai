@@ -79,9 +79,10 @@ from workflows.triggers.dispatcher import TriggerDispatcher
 
 logger = structlog.get_logger()
 
-# short_id 格式白名单：字母开头 + 字母数字，1-12 位（与 common/short_id.py 生成约束一致）。
+# short_id 格式白名单：字母开头 + 字母数字，3-12 位（与 common/short_id.py 生成约束一致，
+# IN-02：过短标识符更易与字段路径片段产生文本歧义）。
 # 拒绝 `.`/`{`/`}`/空白等会破坏模板语法或重写正则的字符（T-17-10, ASVS V5）。
-_SHORT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,11}$")
+_SHORT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{2,11}$")
 
 
 async def async_sync_workflow_triggers(workflow: Workflow) -> None:
