@@ -256,7 +256,7 @@ class RepoRouterV2:
         from agents.llm_factory import build_chat_model
         from services.provider_config import ProviderConfigService, ProviderMissingError
 
-        resolved = await ProviderConfigService.aresolve_or_error(scope="system")
+        resolved = await ProviderConfigService.aresolve_or_error()
         if isinstance(resolved, ProviderMissingError):
             return None
 
@@ -264,8 +264,10 @@ class RepoRouterV2:
         model_name = (
             (resolved.extra or {}).get("haiku_model")
             or (resolved.extra or {}).get("small_model")
-            or resolved.default_model
+            or (resolved.extra or {}).get("default_model", "")
         )
+        if not model_name:
+            return None
         model = build_chat_model(
             resolved, model_name, streaming=False, timeout_seconds=LLM_TIMEOUT_SECONDS
         )
@@ -309,10 +311,9 @@ class RepoRouterV2:
         )
 
         response = await model.ainvoke([system, human])
-        content = (
-            response.content if isinstance(response.content, str) else str(response.content)
-        )
-        parsed = cls._parse_llm_json_array(content)
+        from agents.llm_factory import content_to_text
+
+        parsed = cls._parse_llm_json_array(content_to_text(response.content))
         if not parsed:
             return None
 

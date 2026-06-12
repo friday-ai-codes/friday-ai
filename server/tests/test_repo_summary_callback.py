@@ -7,7 +7,6 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from django.utils import timezone
 
 from repositories.models import AISummaryStatus, Repository
 from subagent.models import SubAgentSession
@@ -147,6 +146,120 @@ class TestHandleCompletedRepoSummary:
 
         await repository.arefresh_from_db()
         assert len(repository.ai_summary) == 8192
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPostTreeTasksFacetRefresh:
+    """树写入成功后的后台任务必须先补刷事实分面，再做节点向量化与域树归类。
+
+    回归保护：索引完成时 ai_summary_tree 往往尚未回写（summary 任务异步），
+    索引侧的 _refresh_tree_facts 会被跳过；若回调侧不补刷，事实分面
+    （团队归属/技术栈/活跃度）永远为空，知识树兜底分组全部落"未分组"。
+    """
+
+    @pytest.mark.asyncio
+    async def test_completed_with_tree_schedules_facet_refresh_first(
+        self, sub_session: SubAgentSession, repository: Repository
+    ) -> None:
+        import json
+
+        from subagent.api.callbacks import _update_repository_on_summary_complete
+
+        payload = {
+            "result_type": "text",
+            "output": {
+                "text": json.dumps({
+                    "overview": "A repo",
+                    "tree": [{"node_id": "root", "title": "root"}],
+                    "facets": {"服务对象": "C端学生"},
+                })
+            },
+        }
+
+        captured: dict = {}
+
+        def fake_run_in_background(fn, name=""):
+            captured["fn"] = fn
+
+        with patch(
+            "repositories.tree_schema.validate_and_assemble_tree",
+            new=AsyncMock(return_value=[{"node_id": "root", "title": "root"}]),
+        ):
+            with patch(
+                "services.background_runner.run_in_background",
+                side_effect=fake_run_in_background,
+            ):
+                await _update_repository_on_summary_complete(sub_session, payload)
+
+        # 语义分面已随回调写回
+        await repository.arefresh_from_db()
+        assert repository.facets.get("服务对象") == "C端学生"
+
+        # 后台任务被调度，且执行顺序为：事实分面刷新 → 节点向量化 → 域树归类
+        assert "fn" in captured
+        call_order: list[str] = []
+        with patch(
+            "repositories.facet_service.FacetService.refresh_fact_facets",
+            new=AsyncMock(side_effect=lambda rid: call_order.append("facets")),
+        ):
+            with patch(
+                "codegraph.services.repo_index_tree.RepoIndexTreeBuilder.build",
+                new=AsyncMock(side_effect=lambda rid: call_order.append("build")),
+            ):
+                with patch(
+                    "codegraph.services.corpus_tree.CorpusTreeService.assign_repository",
+                    new=AsyncMock(side_effect=lambda rid: call_order.append("assign")),
+                ):
+                    await captured["fn"]()
+
+        assert call_order == ["facets", "build", "assign"]
+
+    @pytest.mark.asyncio
+    async def test_facet_refresh_failure_does_not_block_node_indexing(
+        self, sub_session: SubAgentSession, repository: Repository
+    ) -> None:
+        import json
+
+        from subagent.api.callbacks import _update_repository_on_summary_complete
+
+        payload = {
+            "result_type": "text",
+            "output": {
+                "text": json.dumps({
+                    "overview": "A repo",
+                    "tree": [{"node_id": "root", "title": "root"}],
+                })
+            },
+        }
+
+        captured: dict = {}
+
+        with patch(
+            "repositories.tree_schema.validate_and_assemble_tree",
+            new=AsyncMock(return_value=[{"node_id": "root", "title": "root"}]),
+        ):
+            with patch(
+                "services.background_runner.run_in_background",
+                side_effect=lambda fn, name="": captured.update(fn=fn),
+            ):
+                await _update_repository_on_summary_complete(sub_session, payload)
+
+        call_order: list[str] = []
+        with patch(
+            "repositories.facet_service.FacetService.refresh_fact_facets",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            with patch(
+                "codegraph.services.repo_index_tree.RepoIndexTreeBuilder.build",
+                new=AsyncMock(side_effect=lambda rid: call_order.append("build")),
+            ):
+                with patch(
+                    "codegraph.services.corpus_tree.CorpusTreeService.assign_repository",
+                    new=AsyncMock(side_effect=lambda rid: call_order.append("assign")),
+                ):
+                    await captured["fn"]()
+
+        assert call_order == ["build", "assign"]
 
 
 @pytest.mark.django_db(transaction=True)
