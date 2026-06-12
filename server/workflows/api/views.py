@@ -1,5 +1,6 @@
 """Workflows API views."""
 
+import re
 import uuid
 
 import structlog
@@ -15,6 +16,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from common.exceptions import TriggerValidationError
+from common.short_id import generate_unique_short_id
 from permissions.mixins import ProjectScopedQuerysetMixin
 from permissions.models import ProjectRole
 from permissions.services import PermissionService
@@ -71,10 +73,15 @@ from workflows.models import (
     WorkflowTrigger,
 )
 from workflows.nodes.registry import NodeRegistry
+from workflows.templates.loader import rewrite_template_refs
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
 
 logger = structlog.get_logger()
+
+# short_id 格式白名单：字母开头 + 字母数字，1-12 位（与 common/short_id.py 生成约束一致）。
+# 拒绝 `.`/`{`/`}`/空白等会破坏模板语法或重写正则的字符（T-17-10, ASVS V5）。
+_SHORT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,11}$")
 
 
 async def async_sync_workflow_triggers(workflow: Workflow) -> None:
@@ -150,6 +157,59 @@ async def async_sync_workflow_triggers(workflow: Workflow) -> None:
     )
 
 
+def _resolve_short_ids(
+    workflow: Workflow,
+    nodes_data: list,
+) -> tuple[list[str], dict[str, str]]:
+    """逐节点解析最终 short_id（先到先得，按 payload 顺序）。
+
+    规则（VAR-01 锁定决策）：
+    - 客户端值合法（_SHORT_ID_RE 白名单）且未被本工作流其他节点占用 → 采纳为权威值；
+      update 节点对自身 DB 现值不算冲突（payload 内节点的 DB 现值不进初始占用集合）。
+    - update 节点 payload 缺失 short_id → 保留 DB 现值（存量行为不回退）；
+      若 DB 现值已被占用（存量重复，A2）→ 视为冲突走重生成自愈。
+    - 新节点缺失 / 任何节点冲突或非法 → generate_unique_short_id 重生成。
+
+    Returns:
+        (与 nodes_data 等长的最终 short_id 列表,
+         重写候选映射 client_value → final_value——仅含客户端显式提供且最终值
+         发生变化的条目，是否真正重写还需在落库后按"客户端值已无归属"过滤)
+    """
+    db_short_map: dict[str, str] = {
+        str(nid): sid for nid, sid in workflow.nodes.values_list("id", "short_id")
+    }
+    payload_node_ids = {str(nd["id"]) for nd in nodes_data if nd.get("id")}
+    # 占用集合初值：本次 payload 未涉及节点的现有 short_id
+    taken: set[str] = {sid for nid, sid in db_short_map.items() if nid not in payload_node_ids}
+    # 重生成时额外避开的值：全部 DB 现值 + payload 中全部合法客户端值，避免随机撞车
+    reserved: set[str] = set(db_short_map.values()) | {
+        nd["short_id"]
+        for nd in nodes_data
+        if isinstance(nd.get("short_id"), str) and _SHORT_ID_RE.match(nd["short_id"])
+    }
+
+    final_short_ids: list[str] = []
+    rewrite_candidates: dict[str, str] = {}
+    for node_data in nodes_data:
+        client_value = node_data.get("short_id")
+        db_value = db_short_map.get(str(node_data.get("id") or ""))
+        client_valid = isinstance(client_value, str) and bool(_SHORT_ID_RE.match(client_value))
+
+        if client_valid and client_value not in taken:
+            final = client_value
+        elif client_value is None and db_value is not None and db_value not in taken:
+            final = db_value
+        else:
+            final = generate_unique_short_id(taken | reserved)
+        taken.add(final)
+        final_short_ids.append(final)
+
+        if isinstance(client_value, str) and client_value and final != client_value:
+            rewrite_candidates[client_value] = final
+
+    return final_short_ids, rewrite_candidates
+
+
 def _bulk_update_nodes_and_edges(
     workflow: Workflow,
     nodes_data: list,
@@ -160,10 +220,22 @@ def _bulk_update_nodes_and_edges(
 
     提取为独立函数，后续 async 迁移时只需
     await sync_to_async(_bulk_update_nodes_and_edges)(...) 即可。
+
+    short_id 收敛（VAR-01）：客户端提供的 short_id 直接落库为权威值；缺失（新节点）、
+    工作流内冲突或非法格式时服务端重生成，并在同一事务内重写该工作流**全部**节点
+    config 中引用旧值的 ``{{nodes.<old>.*}}``（含 ``$nodes.`` JSONPath 形式）。
+    不变式：保存成功 ⇒ config 中全部 nodes.* 引用都属于该工作流的 short_id 或 UUID 集合。
+
+    设计取舍：short_id 刻意保留在 WorkflowNodeSerializer 的 read_only_fields 中
+    （DRF 自动忽略 payload 中的该字段），由本函数显式读取 ``node_data["short_id"]``
+    处理——这样单节点 node_detail PUT/PATCH 路径行为零变化，无需为其补唯一性校验
+    与引用重写（规避 RESEARCH Pitfall 5）。
     """
     with transaction.atomic():
+        final_short_ids, rewrite_candidates = _resolve_short_ids(workflow, nodes_data)
+
         existing_node_ids: set[str] = set()
-        for node_data in nodes_data:
+        for node_data, final_short_id in zip(nodes_data, final_short_ids, strict=True):
             node_id = node_data.get("id")
             if node_id:
                 node = WorkflowNode.objects.filter(id=node_id, workflow=workflow).first()
@@ -171,21 +243,49 @@ def _bulk_update_nodes_and_edges(
                     serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
                     serializer.is_valid(raise_exception=True)
                     serializer.save()
+                    if node.short_id != final_short_id:
+                        node.short_id = final_short_id
+                        node.save(update_fields=["short_id"])
                 else:
                     serializer = WorkflowNodeCreateSerializer(data=node_data)
                     serializer.is_valid(raise_exception=True)
                     node = WorkflowNode.objects.create(
-                        id=node_id, workflow=workflow, **serializer.validated_data
+                        id=node_id,
+                        workflow=workflow,
+                        short_id=final_short_id,
+                        **serializer.validated_data,
                     )
                 existing_node_ids.add(str(node_id))
             else:
                 serializer = WorkflowNodeCreateSerializer(data=node_data)
                 serializer.is_valid(raise_exception=True)
-                node = WorkflowNode.objects.create(workflow=workflow, **serializer.validated_data)
+                node = WorkflowNode.objects.create(
+                    workflow=workflow, short_id=final_short_id, **serializer.validated_data
+                )
                 existing_node_ids.add(str(node.id))
 
         if delete_orphans:
             workflow.nodes.exclude(id__in=existing_node_ids).delete()
+
+        # 引用重写：仅当客户端值在最终分配后不再属于该工作流任何节点时才纳入 id_map
+        # （防卫规则：避免把指向"合法占用者"的引用误改）。重写范围严格限定本
+        # workflow 的节点（T-17-11 越权防护）。
+        if rewrite_candidates:
+            final_owned = set(workflow.nodes.values_list("short_id", flat=True))
+            id_map = {
+                old: new for old, new in rewrite_candidates.items() if old not in final_owned
+            }
+            if id_map:
+                for node in workflow.nodes.all():
+                    rewritten = rewrite_template_refs(node.config, id_map)
+                    if rewritten != node.config:
+                        node.config = rewritten
+                        node.save(update_fields=["config"])
+                logger.info(
+                    "bulk_update_short_id_refs_rewritten",
+                    workflow_id=str(workflow.id),
+                    id_map=id_map,
+                )
 
         if edges_data:
             workflow.edges.all().delete()
