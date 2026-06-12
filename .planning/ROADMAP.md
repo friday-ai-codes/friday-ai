@@ -61,7 +61,19 @@ Plans:
   3. 任意触发方式（飞书事件、手动、API）发起的执行中，`{{trigger.*}}` 引用都能解析出触发数据
   4. DAG 死锁（有 pending 但无 ready 且无等待节点）时执行明确转 failed，错误信息列出哪些节点在等待哪些未满足的依赖，不留无限 running
   5. 节点输入收集尊重 `target_handle` 语义（或该字段被明确移除并统一文档/前端展示），且调度、分支、死锁、等待四类引擎核心路径有自动化回归测试
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+- [ ] 18-01-PLAN.md — routing.py 纯函数路由核心（就绪/级联/死锁/归集）+ DAGNode 入边明细 + 零 DB 单测
+**Wave 2**
+- [ ] 18-02-PLAN.md — conftest 测试基建 + 主循环就绪/级联/输入接入 routing + target_handle 端到端测试
+**Wave 3**
+- [ ] 18-03-PLAN.md — 完成/挂起/死锁收口（waiting ⇒ suspended、删轮询、热循环修复、死锁结构化转 failed）
+**Wave 4**
+- [ ] 18-04-PLAN.md — 回调续跑重入主循环 + 执行级互斥 + 容器回调断裂修复 + coding_callback 迷你调度器删除
+**Wave 5**
+- [ ] 18-05-PLAN.md — trigger_data 写入 source 键 + resume_from_node 继承 + _execute_node 注入 + {{trigger.*}} 端到端测试
 
 ### Phase 19: 节点定义单一事实源
 
