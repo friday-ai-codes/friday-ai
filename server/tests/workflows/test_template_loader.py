@@ -12,11 +12,11 @@ from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 from workflows.nodes.registry import NodeRegistry
 from workflows.templates.loader import (
     TEMPLATES_DIR,
-    _rewrite_template_refs,
     acreate_workflow_from_template,
     create_workflow_from_template,
     list_templates,
     load_template,
+    rewrite_template_refs,
 )
 
 
@@ -163,7 +163,7 @@ class TestCreateWorkflowFromTemplate:
 
 
 class TestRewriteTemplateRefs:
-    """Tests for _rewrite_template_refs()."""
+    """Tests for rewrite_template_refs()."""
 
     def test_rewrite_template_refs(self):
         """Template variables should be rewritten from template_id to short_id."""
@@ -180,7 +180,7 @@ class TestRewriteTemplateRefs:
             ],
         }
 
-        rewritten = _rewrite_template_refs(config, id_map)
+        rewritten = rewrite_template_refs(config, id_map)
 
         assert rewritten["url"] == "{{nodes.n_abc123.output}}"
         assert rewritten["content"] == "Result: {{nodes.n_def456.result}}"
@@ -191,14 +191,14 @@ class TestRewriteTemplateRefs:
     def test_rewrite_empty_map(self):
         """Empty id_map should return config unchanged."""
         config = {"url": "{{nodes.fetch_data.output}}"}
-        rewritten = _rewrite_template_refs(config, {})
+        rewritten = rewrite_template_refs(config, {})
         assert rewritten == config
 
     def test_rewrite_no_match(self):
         """Variables not in id_map should be left unchanged."""
         id_map = {"fetch_data": "n_abc123"}
         config = {"url": "{{nodes.unknown.output}}"}
-        rewritten = _rewrite_template_refs(config, id_map)
+        rewritten = rewrite_template_refs(config, id_map)
         assert rewritten["url"] == "{{nodes.unknown.output}}"
 
 

@@ -60,15 +60,17 @@ def load_template(template_id: str) -> dict:
         return json.load(f)
 
 
-def _rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
-    """Rewrite template node ID references in config values to actual short_ids.
+def rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
+    """按 id_map 重写 config 中的节点引用标识符（公共重写引擎）。
 
-    Scans all string values in the config dict for {{nodes.<template_id>.xxx}}
-    patterns and replaces <template_id> with the corresponding short_id.
+    递归扫描 config（dict/list/str）中全部字符串值，把 ``{{nodes.<old>.xxx}}``
+    与 ``{{$nodes.<old>.xxx}}`` / ``{{$.nodes.<old>.xxx}}`` JSONPath 形式中的
+    ``<old>`` 按 id_map 替换为新标识符。id_map 的键经 re.escape 转义，
+    恶意字符无法注入正则（T-17-10 双保险之一）。
 
     Args:
         config: Node config dict
-        id_map: Mapping from template node ID to actual short_id
+        id_map: 旧标识符 → 新标识符 的映射（模板 ID→short_id，或旧 short_id→新 short_id）
 
     Returns:
         Config dict with rewritten references
@@ -154,7 +156,7 @@ def create_workflow_from_template(
     # Phase: Rewrite template variable references in all node configs
     if template_to_short:
         for node in created_nodes:
-            rewritten = _rewrite_template_refs(node.config, template_to_short)
+            rewritten = rewrite_template_refs(node.config, template_to_short)
             if rewritten != node.config:
                 node.config = rewritten
                 node.save(update_fields=["config"])
@@ -242,7 +244,7 @@ async def acreate_workflow_from_template(
     # Phase: Rewrite template variable references in all node configs
     if template_to_short:
         for node in created_nodes:
-            rewritten = _rewrite_template_refs(node.config, template_to_short)
+            rewritten = rewrite_template_refs(node.config, template_to_short)
             if rewritten != node.config:
                 node.config = rewritten
                 await node.asave(update_fields=["config"])
