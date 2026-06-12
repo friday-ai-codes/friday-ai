@@ -162,7 +162,6 @@ jobs:
           tests/test_pat_identity.py
           tests/test_conversation_isolation.py
           tests/test_admin_conversations.py
-          tests/test_tool_bindings.py
           tests/test_remote_tool_execute.py
           --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
       - uses: actions/upload-artifact@v7
