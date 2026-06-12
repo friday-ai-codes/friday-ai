@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import type { Workflow } from '~/stores/useWorkflowsStore'
 import { storeToRefs } from 'pinia'
-import { markRaw, nextTick, onMounted, ref } from 'vue'
+import { markRaw, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -15,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
+import { Button } from '~/components/ui/button'
 
 import CreateWorkflowModal from '~/components/workflow/CreateWorkflowModal.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
@@ -34,6 +34,7 @@ const { success } = useToast()
 // 当前要执行的工作流
 const workflowToExecute = ref<Workflow | null>(null)
 const workflowToDelete = ref<Workflow | null>(null)
+const deletingWorkflow = ref(false)
 
 onMounted(() => {
   store.fetchWorkflows()
@@ -88,20 +89,18 @@ function requestDelete(workflow: Workflow) {
   workflowToDelete.value = workflow
 }
 
-// reka-ui 的 DialogClose 在点击 AlertDialogAction 时会同步触发 update:open=false,
-// 若此处同步清空 workflowToDelete,则随后的 @click="handleDelete" 取到的是 null。
-// 因此把清空动作推到 nextTick,等 click 同步阶段执行完毕后再重置状态。
 function cancelDelete() {
-  nextTick(() => {
-    workflowToDelete.value = null
-  })
+  if (deletingWorkflow.value)
+    return
+  workflowToDelete.value = null
 }
 
 async function handleDelete() {
   const target = workflowToDelete.value
-  if (!target)
+  if (!target || deletingWorkflow.value)
     return
 
+  deletingWorkflow.value = true
   try {
     await store.deleteWorkflow(target.id)
     success('工作流已删除')
@@ -109,6 +108,9 @@ async function handleDelete() {
   }
   catch (e: unknown) {
     handleError(e, '删除工作流')
+  }
+  finally {
+    deletingWorkflow.value = false
   }
 }
 
@@ -175,15 +177,18 @@ async function openCreateWorkflow() {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel @click="cancelDelete">
+          <AlertDialogCancel :disabled="deletingWorkflow" @click="cancelDelete">
             取消
           </AlertDialogCancel>
-          <AlertDialogAction
-            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <Button
+            type="button"
+            variant="destructive"
+            :disabled="deletingWorkflow"
             @click="handleDelete"
           >
-            删除
-          </AlertDialogAction>
+            <span v-if="deletingWorkflow" class="icon-[lucide--loader-circle] animate-spin" />
+            {{ deletingWorkflow ? '删除中' : '删除' }}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
