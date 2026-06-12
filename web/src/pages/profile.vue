@@ -8,7 +8,6 @@ import { onMounted, ref } from 'vue'
 import { getMe } from '~/api/users'
 import AccessTokenSettings from '~/components/accessTokens/AccessTokenSettings.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
-import ToolBindingSettings from '~/components/toolBindings/ToolBindingSettings.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
@@ -27,8 +26,8 @@ const saving = ref(false)
 const displayName = ref('')
 const editingName = ref(false)
 
-// 个人资料分页：个人信息 / 访问令牌 / 工具绑定（避免长页滚动，给普通用户清晰的自助设置入口）
-const activeTab = ref<'info' | 'tokens' | 'bindings'>('info')
+// 个人资料分页：个人信息 / 访问令牌（避免长页滚动，给普通用户清晰的自助设置入口）
+const activeTab = ref<'info' | 'tokens'>('info')
 
 async function loadProfile() {
   loading.value = true
@@ -99,7 +98,7 @@ onMounted(() => {
       <LoadingState v-if="loading" variant="spinner" text="加载资料..." />
 
       <Tabs v-else-if="meData" v-model="activeTab" class="w-full">
-        <TabsList class="grid w-full grid-cols-3 mb-8">
+        <TabsList class="grid w-full grid-cols-2 mb-8">
           <TabsTrigger value="info">
             <span class="icon-[lucide--user-circle] mr-1.5 h-4 w-4" aria-hidden="true" />
             个人信息
@@ -107,10 +106,6 @@ onMounted(() => {
           <TabsTrigger value="tokens">
             <span class="icon-[lucide--key-round] mr-1.5 h-4 w-4" aria-hidden="true" />
             访问令牌
-          </TabsTrigger>
-          <TabsTrigger value="bindings">
-            <span class="icon-[lucide--link] mr-1.5 h-4 w-4" aria-hidden="true" />
-            工具绑定
           </TabsTrigger>
         </TabsList>
 
@@ -278,31 +273,6 @@ onMounted(() => {
               </div>
               <div class="p-6">
                 <AccessTokenSettings />
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        <!-- Tab 3：工具绑定 -->
-        <TabsContent value="bindings">
-          <!-- 工具令牌绑定 -->
-          <div class="group relative">
-            <div class="card overflow-hidden">
-              <div class="flex items-center gap-3 p-6 border-b border-border/50">
-                <div class="p-2.5 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <span class="icon-[lucide--link] text-2xl text-primary" />
-                </div>
-                <div>
-                  <h2 class="text-lg font-semibold">
-                    工具令牌绑定
-                  </h2>
-                  <p class="text-sm text-muted-foreground">
-                    把访问令牌绑定给 skill / mcp 工具，调用时以令牌所有者身份执行
-                  </p>
-                </div>
-              </div>
-              <div class="p-6">
-                <ToolBindingSettings />
               </div>
             </div>
           </div>

@@ -875,7 +875,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         """解析机会性 PAT 明文（RTOOL-03 / Open Q1 Option C + 机会性 B）。
 
         唯一合法明文来源：**带 PAT 的实时认证请求线程**——仅在该上下文内可拿到明文。
-        本方法**绝不**从 AccessToken / ToolTokenBinding / 任何 DB 表读取明文
+        本方法**绝不**从 AccessToken / 任何 DB 表读取明文
         （PAT-02：明文绝不落盘、不可从 DB 取；AccessToken 仅存 sha256 哈希）。
         明文亦绝不进日志（调用方只记 has_user_token=bool）。
 
