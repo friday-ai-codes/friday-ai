@@ -1582,6 +1582,185 @@ class ConversationService:
             )
 
     @staticmethod
+    async def resume_clarification_run(
+        conversation_id: str,
+        resume_payload: dict[str, Any],
+    ) -> None:
+        """用户答复 clarification 后恢复 graph 并完成收尾落库。
+
+        ``ClarificationAnswerView`` 的后台 resume 入口。此前 view 直接
+        ``graph.ainvoke(Command(resume=...), {"configurable": {"thread_id": ...}})``
+        存在两个致命缺口（用户答复后 run 永久卡在 waiting_clarification 的根因）：
+
+        1. **configurable 不会从 checkpoint 恢复** —— LangGraph checkpoint 只存
+           state，api_key / model / system_prompt 等必须每次 invoke 重新传入。
+           裸 config resume 后 ``_build_chat_runner`` 拿不到 api_key，静默返回
+           ``phase=error``（不抛异常、不写 DB），OrchestrationRun 停留在
+           ``status=WAITING, phase=waiting_clarification``。
+        2. **resume 完成后无人收尾** —— 与 blocking_tasks 路径的
+           ``_on_barrier_complete`` 不同，没有人更新 OrchestrationRun 终态、
+           也没有人调 ``finalize_conversation`` 落 assistant 消息。
+
+        本方法对齐 ``_on_barrier_complete``：重建完整 graph config →
+        ``astream(Command(resume=...))`` → 更新 run 终态 + finalize 落库。
+        """
+        from langgraph.types import Command
+
+        from chat.config import build_sdk_config
+        from chat.finalize import finalize_conversation
+
+        conversation = await Conversation.objects.select_related(
+            "project", "provider_credential_id",
+        ).aget(id=conversation_id, is_deleted=False)
+        conv_id_str = str(conversation.id)
+
+        orch_run = await OrchestrationRun.objects.filter(
+            conversation=conversation,
+            status=OrchestrationRun.Status.WAITING,
+            phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
+        ).order_by("-created_at").afirst()
+        if orch_run is None:
+            logger.warning(
+                "clarification_resume_no_waiting_run",
+                conversation_id=conv_id_str,
+            )
+            return
+
+        reply_text = str(
+            resume_payload.get("freeform_text")
+            or resume_payload.get("selected_option_label")
+            or "",
+        )
+
+        async def _mark_error(error_message: str) -> None:
+            await OrchestrationRun.objects.filter(
+                id=orch_run.id,
+            ).exclude(status=OrchestrationRun.Status.INTERRUPTED).aupdate(
+                status=OrchestrationRun.Status.ERROR,
+                phase=OrchestrationRun.Phase.ERROR,
+            )
+            await Conversation.objects.filter(
+                id=conversation.id,
+            ).exclude(status=Conversation.Status.INTERRUPTED).aupdate(
+                status=Conversation.Status.ERROR,
+            )
+            # 兜底错误消息：避免前端只看到 run 变 error 却没有任何反馈气泡
+            try:
+                await Message.objects.acreate(
+                    conversation=conversation,
+                    role=Message.Role.ASSISTANT,
+                    content=error_message,
+                    metadata={"status": "error"},
+                )
+            except Exception:
+                logger.exception(
+                    "clarification_resume_error_message_failed",
+                    conversation_id=conv_id_str,
+                )
+
+        try:
+            sdk_config, agent_session = await build_sdk_config(conversation)
+        except ValueError as e:
+            logger.exception(
+                "clarification_resume_config_error",
+                conversation_id=conv_id_str,
+            )
+            await _mark_error(f"恢复对话失败：{e}")
+            return
+
+        session_id = sdk_config.session_id
+        model = sdk_config.model
+
+        # 与 send_message_stream 的 graph_config 同构 —— executing_node 会用
+        # configurable 重新构造 ChatRunnerConfig，缺字段会导致静默降级。
+        graph_config: dict[str, Any] = {
+            "configurable": {
+                "thread_id": conv_id_str,
+                "conversation_id": conv_id_str,
+                "api_key": sdk_config.api_key,
+                "api_base_url": sdk_config.api_base_url,
+                "model": model,
+                "session_id": session_id,
+                "system_prompt": sdk_config.system_prompt,
+                "space_id": sdk_config.space_id,
+                "role": "developer",
+                "agent_session_id": str(agent_session.id),
+                "notification_user_id": "",
+                "max_budget_usd": sdk_config.max_budget_usd,
+                "default_search_branch": None,
+                "force_deep_analysis": sdk_config.force_deep_analysis,
+            }
+        }
+
+        # 进入恢复执行态：前端 runtime polling 立刻能看到 phase 离开
+        # waiting_clarification（executing_node 稍后还会自己持久化 phase）。
+        await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+            status=OrchestrationRun.Status.RUNNING,
+            phase=OrchestrationRun.Phase.EXECUTING,
+        )
+        await Conversation.objects.filter(
+            id=conversation.id,
+        ).exclude(status=Conversation.Status.INTERRUPTED).aupdate(
+            status=Conversation.Status.RUNNING,
+        )
+
+        try:
+            graph = await get_compiled_graph()
+            final_state: dict[str, Any] = {}
+            async for chunk in graph.astream(
+                Command(resume=resume_payload),
+                config=graph_config,
+                stream_mode=["custom", "values"],
+                version="v2",
+            ):
+                if chunk["type"] == "values":
+                    final_state = chunk["data"]
+
+            is_error = final_state.get("phase") == "error"
+            await OrchestrationRun.objects.filter(
+                id=orch_run.id,
+            ).exclude(status=OrchestrationRun.Status.INTERRUPTED).aupdate(
+                status=OrchestrationRun.Status.ERROR
+                if is_error
+                else OrchestrationRun.Status.COMPLETED,
+                phase=final_state.get("phase", OrchestrationRun.Phase.COMPLETED),
+            )
+
+            raw_parts = final_state.get("parts")
+            parts = (
+                [p for p in raw_parts if isinstance(p, dict)]
+                if isinstance(raw_parts, list)
+                else []
+            )
+            await finalize_conversation(
+                conversation=conversation,
+                assistant_msg_id=uuid.uuid4(),
+                final_content=final_state.get("final_answer", ""),
+                accumulated_thinking=list(final_state.get("accumulated_thinking") or []),
+                tool_calls=list(final_state.get("tool_calls") or []),
+                result_metadata=final_state.get("result_metadata", {}),
+                agent_session=agent_session,
+                session_id=session_id,
+                model=model,
+                user_message=reply_text,
+                publish_title_event=False,
+                parts=parts,
+            )
+            logger.info(
+                "clarification_resume_finalized",
+                conversation_id=conv_id_str,
+                session_id=session_id,
+                is_error=is_error,
+            )
+        except Exception:
+            logger.exception(
+                "clarification_resume_error",
+                conversation_id=conv_id_str,
+                session_id=session_id,
+            )
+            await _mark_error("处理你的答复时出现异常，请重新发送消息。")
+
+    @staticmethod
     async def list_conversations(user: Any = None) -> list[Conversation]:
         """返回未删除对话列表，按 updated_at 降序。
 
