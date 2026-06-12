@@ -38,7 +38,13 @@
   2. 变量引用解析失败（节点 ID 不存在、字段不存在、未知前缀）时，对应节点显式失败，错误信息指明是哪个引用、哪个节点/字段缺失；不再静默替换为空串或原样保留 `{{...}}` 字面量
   3. 变量选择器、端口复制、SmartInput 三个入口生成的引用格式统一（统一用 short_id），与后端解析器支持的语法完全一致
   4. `{{nodes.x.data.name}}` 形式的嵌套字段路径能取到 `output["data"]["name"]`，且 `render_template`/`get_template_value` 对错误 ID、未知前缀、UUID vs short_id、嵌套路径均有专项单元测试覆盖
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + 专项单测（VAR-02, VAR-04）
+- [ ] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写（VAR-01）
+- [ ] 17-03-PLAN.md — scheduler 结构化 error_message 落盘 + 节点调用面审计 + 集成回归（VAR-02）
+- [ ] 17-04-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
 **UI hint**: yes
 
 ### Phase 18: 执行引擎状态机修复
