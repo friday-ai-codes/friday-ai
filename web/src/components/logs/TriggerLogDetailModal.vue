@@ -156,29 +156,32 @@ const webhookHeader = computed(() => {
     <!-- 日志详情 -->
     <template v-else>
       <div class="relative overflow-hidden shrink-0">
-        <div class="flex items-start justify-between p-6 border-b border-border/50">
-          <div class="flex items-center gap-4">
-            <div class="p-3 rounded-xl bg-primary/10">
+        <!-- 顶部渐变装饰 -->
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-b from-primary/6 to-transparent" />
+        <div class="relative flex items-start justify-between p-6 border-b border-border/50">
+          <div class="flex items-center gap-4 min-w-0">
+            <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-primary/20 to-primary/5 ring-1 ring-primary/15">
               <span class="icon-[lucide--file-text] text-2xl text-primary" />
             </div>
-            <div>
-              <h3 class="text-xl font-semibold">
+            <div class="min-w-0">
+              <h3 class="text-lg font-semibold leading-6 truncate">
                 {{ log.work_item_name || '未命名工作项' }}
               </h3>
-              <div class="flex items-center gap-2 mt-1">
+              <div class="flex flex-wrap items-center gap-2 mt-1.5">
                 <StatusBadge type="triggerLog" :status="log.status" />
-                <span class="text-sm text-muted-foreground">{{ log.event_type }}</span>
+                <code class="rounded-md bg-muted/70 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{{ log.event_type }}</code>
+                <span class="text-xs text-muted-foreground tabular-nums">{{ formatDate(log.created_at) }}</span>
               </div>
             </div>
           </div>
 
           <!-- Action buttons -->
-          <div class="flex items-center gap-2">
-            <Button variant="outline" size="sm" :disabled="retrying" @click="handleRetry">
+          <div class="flex shrink-0 items-center gap-2">
+            <Button variant="outline" size="sm" class="h-8 rounded-lg" :disabled="retrying" @click="handleRetry">
               <span class="icon-[lucide--refresh-cw] mr-1" :class="{ 'animate-spin': retrying }" />
               重试
             </Button>
-            <Button variant="outline" size="sm" class="text-destructive hover:text-destructive" @click="showDeleteConfirm = true">
+            <Button variant="outline" size="sm" class="h-8 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive" @click="showDeleteConfirm = true">
               <span class="icon-[lucide--trash-2] mr-1" />
               删除
             </Button>
@@ -194,87 +197,87 @@ const webhookHeader = computed(() => {
       </div>
 
       <!-- Body -->
-      <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div class="flex-1 overflow-y-auto bg-muted/20 p-5 space-y-4">
         <!-- Webhook 事件信息 -->
-        <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
-          <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
-            <div class="p-1.5 rounded-md bg-primary/10">
+        <div class="rounded-xl bg-card border border-border/60 shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
+          <div class="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/40 bg-muted/20">
+            <div class="flex size-7 items-center justify-center rounded-md bg-primary/10">
               <span class="icon-[lucide--webhook] text-sm text-primary" />
             </div>
-            <h4 class="text-sm font-medium">
+            <h4 class="text-sm font-semibold">
               事件信息
             </h4>
           </div>
 
-          <div class="px-3 py-2 space-y-2">
+          <div class="px-4 py-3 space-y-3">
             <!-- 基本信息网格 -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3">
               <!-- 工作项 ID -->
               <div>
-                <label class="text-xs text-muted-foreground">工作项 ID</label>
-                <p class="font-mono text-sm">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">工作项 ID</label>
+                <p class="mt-0.5 font-mono text-sm">
                   {{ webhookPayload?.id || log.work_item_id || '-' }}
                 </p>
               </div>
 
               <!-- 工作项类型 -->
               <div>
-                <label class="text-xs text-muted-foreground">类型</label>
-                <p class="text-sm">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">类型</label>
+                <p class="mt-0.5 text-sm">
                   {{ webhookPayload?.work_item_type_key || log.work_item_type || '-' }}
                 </p>
               </div>
 
               <!-- 项目 -->
               <div>
-                <label class="text-xs text-muted-foreground">项目</label>
-                <p class="text-sm truncate" :title="webhookPayload?.project_key as string">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">项目</label>
+                <p class="mt-0.5 text-sm truncate" :title="webhookPayload?.project_key as string">
                   {{ webhookPayload?.project_simple_name || '-' }}
                 </p>
               </div>
 
               <!-- 操作人 -->
               <div>
-                <label class="text-xs text-muted-foreground">操作人</label>
-                <p class="font-mono text-sm truncate">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">操作人</label>
+                <p class="mt-0.5 font-mono text-sm truncate">
                   {{ webhookHeader?.operator || webhookPayload?.updated_by || '-' }}
                 </p>
               </div>
 
               <!-- 事件时间 -->
               <div>
-                <label class="text-xs text-muted-foreground">事件时间</label>
-                <p class="text-sm">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">事件时间</label>
+                <p class="mt-0.5 text-sm tabular-nums">
                   {{ webhookPayload?.updated_at ? formatTimestamp(webhookPayload.updated_at as number) : formatDate(log.created_at) }}
                 </p>
               </div>
 
               <!-- 事件 UUID -->
               <div class="col-span-2 sm:col-span-1">
-                <label class="text-xs text-muted-foreground">事件 UUID</label>
-                <p class="font-mono text-xs text-muted-foreground truncate">
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">事件 UUID</label>
+                <p class="mt-0.5 font-mono text-xs text-muted-foreground truncate">
                   {{ webhookHeader?.uuid || log.event_uuid || '-' }}
                 </p>
               </div>
 
               <!-- 状态变更（仅 WorkitemStatusEvent） -->
               <div v-if="webhookPayload?.pre_sub_stage && webhookPayload?.cur_sub_stage" class="col-span-2">
-                <label class="text-xs text-muted-foreground">状态变更</label>
-                <div class="flex items-center gap-1.5 mt-0.5">
-                  <code class="px-1.5 py-0.5 rounded bg-muted text-xs">{{ webhookPayload.pre_sub_stage }}</code>
+                <label class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">状态变更</label>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <code class="px-2 py-0.5 rounded-md bg-muted text-xs">{{ webhookPayload.pre_sub_stage }}</code>
                   <span class="icon-[lucide--arrow-right] text-xs text-muted-foreground" />
-                  <code class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{{ webhookPayload.cur_sub_stage }}</code>
+                  <code class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-medium">{{ webhookPayload.cur_sub_stage }}</code>
                 </div>
               </div>
             </div>
 
             <!-- 错误信息 -->
-            <div v-if="log.error_message" class="rounded-lg border border-destructive/50 bg-destructive/10 p-2 mt-2">
-              <div class="flex items-center gap-1.5 text-destructive text-sm font-medium">
+            <div v-if="log.error_message" class="rounded-lg border border-destructive/40 bg-destructive/6 px-3 py-2.5">
+              <div class="flex items-center gap-1.5 text-destructive text-sm font-semibold">
                 <span class="icon-[lucide--alert-circle] text-sm" />
                 错误
               </div>
-              <p class="text-xs mt-0.5">
+              <p class="text-xs mt-1 text-destructive/90 wrap-break-word">
                 {{ log.error_message }}
               </p>
             </div>
@@ -282,34 +285,36 @@ const webhookHeader = computed(() => {
         </div>
 
         <!-- 关联的工作流执行 -->
-        <div v-if="log.workflow_executions?.length" class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
-          <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
-            <div class="p-1.5 rounded-md bg-primary/10">
-              <span class="icon-[lucide--play-circle] text-sm text-emerald-500" />
+        <div v-if="log.workflow_executions?.length" class="rounded-xl bg-card border border-border/60 shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
+          <div class="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/40 bg-muted/20">
+            <div class="flex size-7 items-center justify-center rounded-md bg-emerald-500/10">
+              <span class="icon-[lucide--play-circle] text-sm text-emerald-600" />
             </div>
-            <h4 class="text-sm font-medium">
+            <h4 class="text-sm font-semibold">
               关联执行
             </h4>
-            <span class="text-xs text-muted-foreground">({{ log.workflow_executions.length }})</span>
+            <span class="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+              {{ log.workflow_executions.length }}
+            </span>
           </div>
 
-          <div class="divide-y divide-border/50">
+          <div class="divide-y divide-border/40">
             <RouterLink
               v-for="exec in log.workflow_executions"
               :key="exec.id"
               :to="`/executions/${exec.id}`"
-              class="flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors group"
+              class="flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors group"
             >
-              <div class="flex items-center gap-2 min-w-0">
+              <div class="flex items-center gap-2.5 min-w-0">
                 <span
                   class="w-2 h-2 rounded-full shrink-0"
                   :class="{ 'bg-emerald-500': exec.status === 'completed', 'bg-primary animate-pulse': exec.status === 'running', 'bg-amber-500': exec.status === 'pending', 'bg-red-500': exec.status === 'failed', 'bg-gray-400': exec.status === 'cancelled' }"
                 />
-                <span class="text-sm truncate">{{ exec.workflow_name }}</span>
+                <span class="text-sm font-medium truncate">{{ exec.workflow_name }}</span>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-xs text-muted-foreground">{{ formatDate(exec.created_at) }}</span>
-                <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                <span class="text-xs text-muted-foreground tabular-nums">{{ formatDate(exec.created_at) }}</span>
+                <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 group-hover:text-primary transition-all" />
               </div>
             </RouterLink>
           </div>
@@ -317,35 +322,35 @@ const webhookHeader = computed(() => {
 
         <!-- 原始 Webhook 数据（可折叠） -->
         <Collapsible v-model:open="rawExpanded">
-          <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+          <div class="rounded-xl bg-card border border-border/60 shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
             <CollapsibleTrigger as-child>
               <button
                 type="button"
-                class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/30 transition-colors"
+                class="flex items-center justify-between w-full px-4 py-2.5 hover:bg-muted/30 transition-colors"
               >
-                <div class="flex items-center gap-2">
-                  <div class="p-1.5 rounded-md bg-primary/10">
-                    <span class="icon-[lucide--code] text-sm text-primary" />
+                <div class="flex items-center gap-2.5">
+                  <div class="flex size-7 items-center justify-center rounded-md bg-sky-500/10">
+                    <span class="icon-[lucide--code] text-sm text-sky-600" />
                   </div>
-                  <h4 class="text-sm font-medium">
+                  <h4 class="text-sm font-semibold">
                     原始数据
                   </h4>
                 </div>
                 <span
-                  class="icon-[lucide--chevron-down] text-sm text-muted-foreground transition-transform"
+                  class="icon-[lucide--chevron-down] text-sm text-muted-foreground transition-transform duration-200"
                   :class="{ 'rotate-180': rawExpanded }"
                 />
               </button>
             </CollapsibleTrigger>
 
             <CollapsibleContent>
-              <div class="border-t border-border/50">
-                <div class="max-h-[240px] overflow-y-auto">
+              <div class="border-t border-border/40">
+                <div class="max-h-[280px] overflow-y-auto">
                   <JsonHighlighter
                     v-if="log.webhook_raw_request_parsed"
                     :json="log.webhook_raw_request_parsed"
                   />
-                  <div v-else class="p-3 text-center text-muted-foreground text-sm">
+                  <div v-else class="p-4 text-center text-muted-foreground text-sm">
                     暂无数据
                   </div>
                 </div>

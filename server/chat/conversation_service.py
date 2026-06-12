@@ -145,6 +145,11 @@ _STRATEGY_DEEP_ANALYSIS: Final[str] = (
 
 _STRATEGY_DEFAULT: Final[str] = (
     "回答策略 - 快速检索（定位代码、查看文件、问答、分析、架构梳理）：\n"
+    "  代码理解 / 功能是怎么实现 / 架构梳理 / 某个 app 或业务功能在哪里实现，"
+    "都属于需要先路由仓库的问题；先调用 analyze_repository_relevance，"
+    "不要先假设当前仓库就是答案所在地。\n"
+    "  如果当前仓库只是入口、桥接、跳转或 SDK 包装，必须继续按相关性结果追到真正实现仓库，"
+    "再使用 search_repository_code / browse_file_content 等工具读代码。\n"
     "  调用 search_repository_code / browse_file_content / list_space_structure 等工具搜索向量库与代码\n"
     "  根据需要灵活组合调用，但要有目的性，避免无方向地反复搜索同一内容\n"
     "  信息足够时立即回答，不要为了全面而过度检索\n\n"

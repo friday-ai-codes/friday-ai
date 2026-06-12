@@ -197,30 +197,36 @@ const columns: ColumnDef<TriggerLog>[] = [
     enableGlobalFilter: false,
   },
   {
+    accessorKey: 'work_item_name',
+    header: '工作项',
+    cell: ({ row }) => h('div', { class: 'flex flex-col gap-0.5 min-w-0 max-w-[260px]' }, [
+      h('span', {
+        class: 'text-sm font-semibold text-foreground truncate',
+        title: row.original.work_item_name || undefined,
+      }, row.original.work_item_name || '未命名工作项'),
+      h('span', { class: 'text-xs text-muted-foreground font-mono truncate' }, `#${row.original.id.slice(0, 8)}`),
+    ]),
+    enableSorting: true,
+  },
+  {
     accessorKey: 'event_type',
     header: '触发类型',
-    cell: ({ row }) => h(Badge, { variant: 'secondary', class: 'text-xs' }, () => row.original.event_type),
+    cell: ({ row }) => h(Badge, { variant: 'secondary', class: 'text-xs font-mono font-medium' }, () => row.original.event_type),
     enableSorting: true,
   },
   {
     id: 'project',
     header: '空间',
-    cell: ({ row }) => h('span', { class: 'text-sm' }, getSpaceName(row.original.space_id)),
+    cell: ({ row }) => h('span', { class: 'inline-flex items-center gap-1.5 text-sm text-muted-foreground' }, [
+      h('span', { class: 'icon-[lucide--folder] text-xs text-muted-foreground/70' }),
+      getSpaceName(row.original.space_id),
+    ]),
     enableSorting: false,
-  },
-  {
-    accessorKey: 'work_item_name',
-    header: '工作项',
-    cell: ({ row }) => h('span', {
-      class: 'font-medium truncate block max-w-[200px]',
-      title: row.original.work_item_name || undefined,
-    }, row.original.work_item_name || '未命名工作项'),
-    enableSorting: true,
   },
   {
     accessorKey: 'created_at',
     header: '创建时间',
-    cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, formatDate(row.original.created_at)),
+    cell: ({ row }) => h('span', { class: 'text-sm tabular-nums text-muted-foreground' }, formatDate(row.original.created_at)),
     enableSorting: true,
   },
   {
@@ -235,14 +241,14 @@ const columns: ColumnDef<TriggerLog>[] = [
         children.push(
           h('a', {
             href: `/executions/${log.first_execution_id}`,
-            class: 'inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted/50 transition-colors',
+            class: 'inline-flex items-center justify-center h-8 w-8 rounded-lg text-primary hover:bg-primary/10 transition-colors',
             title: '查看执行',
             onClick: (e: Event) => {
               e.stopPropagation()
               e.preventDefault()
               useRouter().push(`/executions/${log.first_execution_id}`)
             },
-          }, h('span', { class: 'icon-[lucide--play-circle] text-sm text-primary' })),
+          }, h('span', { class: 'icon-[lucide--play-circle] text-sm' })),
         )
       }
 
@@ -251,13 +257,13 @@ const columns: ColumnDef<TriggerLog>[] = [
         h(Button, {
           variant: 'ghost',
           size: 'icon',
-          class: 'h-8 w-8',
+          class: 'h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground',
           title: '重试',
           onClick: (e: Event) => {
             e.stopPropagation()
             handleRetry(log.id)
           },
-        }, () => h('span', { class: 'icon-[lucide--refresh-cw] text-sm text-muted-foreground' })),
+        }, () => h('span', { class: 'icon-[lucide--refresh-cw] text-sm' })),
       )
 
       // 删除按钮
@@ -265,7 +271,7 @@ const columns: ColumnDef<TriggerLog>[] = [
         h(Button, {
           variant: 'ghost',
           size: 'icon',
-          class: 'h-8 w-8 hover:bg-destructive/10 hover:text-destructive',
+          class: 'h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
           title: '删除',
           onClick: (e: Event) => {
             e.stopPropagation()
@@ -274,7 +280,7 @@ const columns: ColumnDef<TriggerLog>[] = [
         }, () => h('span', { class: 'icon-[lucide--trash-2] text-sm' })),
       )
 
-      return h('div', { class: 'flex items-center gap-1' }, children)
+      return h('div', { class: 'flex items-center gap-0.5' }, children)
     },
     enableSorting: false,
     enableHiding: false,
@@ -295,16 +301,18 @@ const columns: ColumnDef<TriggerLog>[] = [
 
     <!-- DataTable -- 集成搜索/排序/分页/列可见性 -->
     <DataTable
+      class="mt-5"
       :data="triggerLogs"
       :columns="columns"
       table-id="logs-list"
       :loading="loading"
+      search-placeholder="搜索工作项..."
       :on-row-click="(log) => openDetail(log.id)"
     >
       <template #filters>
         <!-- 状态过滤 -->
         <Select v-model="statusFilter">
-          <SelectTrigger class="w-[140px]">
+          <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90">
             <SelectValue placeholder="全部状态" />
           </SelectTrigger>
           <SelectContent>
@@ -313,14 +321,17 @@ const columns: ColumnDef<TriggerLog>[] = [
               :key="option.value"
               :value="option.value"
             >
-              {{ option.label }}
+              <span class="inline-flex items-center gap-2">
+                <span class="size-2 rounded-full" :class="option.color" />
+                {{ option.label }}
+              </span>
             </SelectItem>
           </SelectContent>
         </Select>
 
         <!-- 空间过滤 -->
         <Select v-model="projectFilter">
-          <SelectTrigger class="w-[160px]">
+          <SelectTrigger class="h-9 w-[160px] rounded-lg bg-background/90">
             <SelectValue placeholder="全部空间" />
           </SelectTrigger>
           <SelectContent>
@@ -339,7 +350,7 @@ const columns: ColumnDef<TriggerLog>[] = [
 
         <!-- 时间范围过滤 -->
         <Select v-model="timeRangeFilter">
-          <SelectTrigger class="w-[140px]">
+          <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90">
             <SelectValue placeholder="时间范围" />
           </SelectTrigger>
           <SelectContent>
@@ -357,17 +368,16 @@ const columns: ColumnDef<TriggerLog>[] = [
           v-if="statusFilter !== '__all__' || projectFilter !== '__all__' || timeRangeFilter !== '7'"
           variant="ghost"
           size="sm"
+          class="h-9 text-muted-foreground hover:text-foreground"
           @click="statusFilter = '__all__'; projectFilter = '__all__'; timeRangeFilter = '7'"
         >
           <span class="icon-[lucide--x] mr-1" />
           清除筛选
         </Button>
 
-        <div class="flex-1" />
-
         <!-- 刷新按钮 -->
-        <Button variant="ghost" size="icon" class="h-8 w-8" @click="fetchLogs">
-          <span class="icon-[lucide--refresh-cw]" />
+        <Button variant="outline" size="icon" class="h-9 w-9 rounded-lg bg-background/90" title="刷新" @click="fetchLogs">
+          <span class="icon-[lucide--refresh-cw]" :class="{ 'animate-spin': loading }" />
         </Button>
       </template>
     </DataTable>

@@ -13,6 +13,15 @@ import type { ProviderType } from '~/types/providerCredential'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, inject } from 'vue'
 import api from '~/api/client'
+import {
+  axisLabelStyle,
+  axisLineStyle,
+  chartGrid,
+  legendTextStyle,
+  splitLineStyle,
+  tooltipStyle,
+} from '~/components/analytics/chart-theme'
+import ChartCard from '~/components/analytics/ChartCard.vue'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
 import { getProviderBrandColor } from '~/lib/providerBrandColors'
@@ -73,37 +82,39 @@ const flatChartOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(75, 85, 99, 0.3)',
-      textStyle: { color: '#e5e7eb' },
+      ...tooltipStyle,
     },
     legend: {
       data: ['输入 Token', '输出 Token', '成本 (USD)'],
-      textStyle: { color: '#9ca3af' },
+      textStyle: legendTextStyle,
+      icon: 'circle',
+      itemWidth: 8,
+      itemHeight: 8,
     },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    grid: chartGrid,
     xAxis: {
       type: 'category' as const,
       data: points.map(p => p.date),
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
+      axisLine: axisLineStyle,
+      axisLabel: axisLabelStyle,
+      axisTick: { show: false },
     },
     yAxis: [
       {
         type: 'value' as const,
         name: 'Tokens',
-        nameTextStyle: { color: '#9ca3af' },
-        axisLine: { lineStyle: { color: '#374151' } },
-        axisLabel: { color: '#9ca3af' },
-        splitLine: { lineStyle: { color: '#1f2937' } },
+        nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+        axisLine: { show: false },
+        axisLabel: axisLabelStyle,
+        splitLine: splitLineStyle,
       },
       {
         type: 'value' as const,
         name: 'USD',
-        nameTextStyle: { color: '#9ca3af' },
-        axisLine: { lineStyle: { color: '#374151' } },
+        nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+        axisLine: { show: false },
         axisLabel: {
-          color: '#9ca3af',
+          ...axisLabelStyle,
           // eslint-disable-next-line no-template-curly-in-string
           formatter: '${value}',
         },
@@ -116,23 +127,26 @@ const flatChartOption = computed(() => {
         type: 'bar' as const,
         stack: 'tokens',
         data: points.map(p => p.input_tokens),
-        itemStyle: { color: '#3b82f6', borderRadius: [0, 0, 0, 0] },
-        barMaxWidth: 30,
+        itemStyle: { color: '#38bdf8', borderRadius: [0, 0, 0, 0] },
+        barMaxWidth: 28,
       },
       {
         name: '输出 Token',
         type: 'bar' as const,
         stack: 'tokens',
         data: points.map(p => p.output_tokens),
-        itemStyle: { color: '#06b6d4', borderRadius: [4, 4, 0, 0] },
-        barMaxWidth: 30,
+        itemStyle: { color: '#0ea5e9', borderRadius: [6, 6, 0, 0] },
+        barMaxWidth: 28,
       },
       {
         name: '成本 (USD)',
         type: 'line' as const,
         yAxisIndex: 1,
         smooth: true,
-        lineStyle: { color: '#8b5cf6', width: 2 },
+        symbol: 'circle',
+        symbolSize: 6,
+        showSymbol: false,
+        lineStyle: { color: '#8b5cf6', width: 2.5 },
         itemStyle: { color: '#8b5cf6' },
         data: points.map(p => p.total_cost_usd),
       },
@@ -182,32 +196,34 @@ const stackedChartOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(75, 85, 99, 0.3)',
-      textStyle: { color: '#e5e7eb' },
+      ...tooltipStyle,
     },
     legend: {
       data: presentProviders.map(pt => PROVIDER_LABELS[pt] ?? pt),
-      textStyle: { color: '#9ca3af' },
+      textStyle: legendTextStyle,
+      icon: 'circle',
+      itemWidth: 8,
+      itemHeight: 8,
     },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    grid: chartGrid,
     xAxis: {
       type: 'category' as const,
       data: allDates,
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
+      axisLine: axisLineStyle,
+      axisLabel: axisLabelStyle,
+      axisTick: { show: false },
     },
     yAxis: {
       type: 'value' as const,
       name: 'USD',
-      nameTextStyle: { color: '#9ca3af' },
-      axisLine: { lineStyle: { color: '#374151' } },
+      nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+      axisLine: { show: false },
       axisLabel: {
-        color: '#9ca3af',
+        ...axisLabelStyle,
         // eslint-disable-next-line no-template-curly-in-string
         formatter: '${value}',
       },
-      splitLine: { lineStyle: { color: '#1f2937' } },
+      splitLine: splitLineStyle,
     },
     series,
   }
@@ -227,14 +243,17 @@ const hasData = computed(() => {
 </script>
 
 <template>
-  <div class="card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30">
-    <h3 class="text-sm font-medium text-muted-foreground mb-4">
-      {{ grouping === 'provider_type' ? 'Token 成本趋势（按 Provider）' : 'Token 消耗 / 成本趋势' }}
-    </h3>
-    <Skeleton v-if="isLoading" class="h-[300px] w-full" />
-    <div v-else-if="!hasData" class="h-[300px] flex items-center justify-center text-muted-foreground">
-      暂无 Token 数据
+  <ChartCard
+    :title="grouping === 'provider_type' ? 'Token 成本趋势（按 Provider）' : 'Token 消耗 / 成本趋势'"
+    description="模型调用的 Token 与成本走势"
+    icon="lucide--coins"
+    icon-class="bg-violet-500/10 text-violet-600"
+  >
+    <Skeleton v-if="isLoading" class="h-[300px] w-full rounded-lg" />
+    <div v-else-if="!hasData" class="h-[300px] flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <span class="icon-[lucide--coins] text-3xl opacity-30" />
+      <span class="text-sm">暂无 Token 数据</span>
     </div>
     <VChart v-else :option="chartOption" style="height: 300px" autoresize />
-  </div>
+  </ChartCard>
 </template>

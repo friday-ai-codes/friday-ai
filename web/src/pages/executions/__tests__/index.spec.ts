@@ -20,6 +20,7 @@ vi.mock('@tanstack/vue-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/vue-query')>()
   return {
     ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
     useQuery: vi.fn(({ queryKey }: { queryKey: string[] }) => {
       if (queryKey[0] === 'executions') {
         return {
@@ -48,6 +49,10 @@ vi.mock('@tanstack/vue-query', async (importOriginal) => {
   }
 })
 
+vi.mock('~/stores/auth', () => ({
+  useAuthStore: () => ({ isAdmin: true }),
+}))
+
 vi.mock('~/stores/spaces', () => ({
   useSpacesStore: () => ({
     spaces: [{ id: 'space-1', name: '默认空间' }],
@@ -65,6 +70,7 @@ vi.mock('~/stores/useWorkflowsStore', () => ({
 vi.mock('~/api/client', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
   },
 }))
 
@@ -123,7 +129,7 @@ describe('/executions index page', () => {
       },
     })
 
-    expect(wrapper.findAll('.execution-stat-card')).toHaveLength(4)
+    expect(wrapper.findAll('.execution-stat-card')).toHaveLength(5)
     expect(wrapper.find('.executions-filter-strip').exists()).toBe(true)
 
     const statusPill = wrapper.find('.execution-status-pill')

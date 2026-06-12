@@ -95,25 +95,29 @@ const flatKpis = computed(() => {
       label: '执行总数',
       value: flat?.total_executions ?? '—',
       icon: 'lucide--play-circle',
-      bgGradient: 'from-primary/20 to-primary/10',
+      surfaceClass: 'bg-primary/10 text-primary',
+      barClass: 'bg-primary',
     },
     {
       label: '成功率',
       value: flat ? `${flat.success_rate.toFixed(1)}%` : '—',
       icon: 'lucide--check-circle-2',
-      bgGradient: 'from-primary/20 to-primary/10',
+      surfaceClass: 'bg-emerald-500/10 text-emerald-600',
+      barClass: 'bg-emerald-500',
     },
     {
       label: '平均时长',
       value: flat ? formatDuration(flat.avg_duration_seconds) : '—',
       icon: 'lucide--clock',
-      bgGradient: 'from-primary/20 to-primary/10',
+      surfaceClass: 'bg-sky-500/10 text-sky-600',
+      barClass: 'bg-sky-500',
     },
     {
       label: '总成本',
       value: flat ? formatCost(flat.total_cost_usd) : '—',
       icon: 'lucide--dollar-sign',
-      bgGradient: 'from-primary/20 to-primary/10',
+      surfaceClass: 'bg-violet-500/10 text-violet-600',
+      barClass: 'bg-violet-500',
     },
   ]
 })
@@ -174,10 +178,11 @@ const totalSummary = computed(() => {
     <div
       v-for="kpi in flatKpis"
       :key="kpi.label"
-      class="group card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30"
+      class="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
     >
+      <span class="absolute inset-x-0 top-0 h-0.5 opacity-70" :class="kpi.barClass" />
       <div class="flex items-center gap-4">
-        <div class="bg-linear-to-br rounded-lg p-2.5" :class="[kpi.bgGradient]">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-xl" :class="kpi.surfaceClass">
           <span
             v-if="!isLoading"
             class="text-xl" :class="[`icon-[${kpi.icon}]`]"
@@ -185,11 +190,11 @@ const totalSummary = computed(() => {
           <Skeleton v-else class="h-5 w-5" />
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm text-muted-foreground">
+          <p class="text-xs font-medium text-muted-foreground">
             {{ kpi.label }}
           </p>
           <template v-if="!isLoading">
-            <p class="text-2xl font-bold font-mono">
+            <p class="text-2xl font-bold tabular-nums tracking-tight">
               {{ kpi.value }}
             </p>
           </template>
@@ -205,20 +210,20 @@ const totalSummary = computed(() => {
       <div
         v-for="card in providerCards"
         :key="card.providerType"
-        class="group card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30"
+        class="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
       >
         <div class="flex items-center gap-4">
-          <div class="rounded-lg p-2.5" :class="[card.bg]">
+          <div class="flex size-11 shrink-0 items-center justify-center rounded-xl" :class="[card.bg]">
             <span class="text-xl icon-[lucide--cpu]" :class="[card.text]" />
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-sm text-muted-foreground">
+            <p class="text-xs font-medium text-muted-foreground">
               {{ card.label }}
             </p>
-            <p class="text-2xl font-bold font-mono">
+            <p class="text-2xl font-bold tabular-nums tracking-tight">
               {{ formatCost(card.cost) }}
             </p>
-            <p class="text-xs text-muted-foreground font-mono">
+            <p class="text-xs text-muted-foreground tabular-nums">
               {{ formatTokens(card.tokens) }} tokens · {{ card.count }} 次
             </p>
           </div>
@@ -228,7 +233,7 @@ const totalSummary = computed(() => {
       <!-- Provider 无数据时的空态 -->
       <div
         v-if="providerCards.length === 0 && !isLoading"
-        class="col-span-full card p-6 text-center text-muted-foreground"
+        class="col-span-full rounded-xl border border-dashed border-border/70 bg-card/60 p-8 text-center text-sm text-muted-foreground"
       >
         当前时段内无任何 Provider 成本记录
       </div>
@@ -237,17 +242,19 @@ const totalSummary = computed(() => {
     <!-- 底部汇总行 -->
     <div
       v-if="totalSummary"
-      class="card p-6 ring-1 ring-primary/30"
+      class="rounded-xl border border-primary/25 bg-primary/4 p-5"
     >
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <span class="icon-[lucide--layers] text-xl text-primary" />
+          <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+            <span class="icon-[lucide--layers] text-base text-primary" />
+          </div>
           <span class="text-sm font-semibold text-primary">全 Provider 汇总</span>
         </div>
-        <div class="flex items-center gap-6 text-sm font-mono">
-          <span>执行 {{ totalSummary.total_executions }}</span>
-          <span>成功率 {{ totalSummary.success_rate.toFixed(1) }}%</span>
-          <span class="font-bold">{{ formatCost(totalSummary.total_cost_usd) }}</span>
+        <div class="flex items-center gap-6 text-sm tabular-nums">
+          <span class="text-muted-foreground">执行 <span class="font-semibold text-foreground">{{ totalSummary.total_executions }}</span></span>
+          <span class="text-muted-foreground">成功率 <span class="font-semibold text-foreground">{{ totalSummary.success_rate.toFixed(1) }}%</span></span>
+          <span class="text-base font-bold text-foreground">{{ formatCost(totalSummary.total_cost_usd) }}</span>
         </div>
       </div>
     </div>
@@ -258,10 +265,11 @@ const totalSummary = computed(() => {
     <div
       v-for="kpi in flatKpis"
       :key="kpi.label"
-      class="group card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30"
+      class="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
     >
+      <span class="absolute inset-x-0 top-0 h-0.5 opacity-70" :class="kpi.barClass" />
       <div class="flex items-center gap-4">
-        <div class="bg-linear-to-br rounded-lg p-2.5" :class="[kpi.bgGradient]">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-xl" :class="kpi.surfaceClass">
           <span
             v-if="!isLoading"
             class="text-xl" :class="[`icon-[${kpi.icon}]`]"
@@ -269,11 +277,11 @@ const totalSummary = computed(() => {
           <Skeleton v-else class="h-5 w-5" />
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm text-muted-foreground">
+          <p class="text-xs font-medium text-muted-foreground">
             {{ kpi.label }}（按空间）
           </p>
           <template v-if="!isLoading">
-            <p class="text-2xl font-bold font-mono">
+            <p class="text-2xl font-bold tabular-nums tracking-tight">
               {{ kpi.value }}
             </p>
           </template>
