@@ -11,6 +11,7 @@ from django.db import transaction
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -178,6 +179,10 @@ def _resolve_short_ids(
          非法客户端值绝不进入映射；是否真正重写还需在落库后按
          "旧值已无归属"过滤)
     """
+    # 系统边界输入校验（IN-03）：畸形 payload（元素非 dict）返回 400 而非 500
+    if not isinstance(nodes_data, list) or any(not isinstance(nd, dict) for nd in nodes_data):
+        raise ValidationError({"nodes": "nodes 必须是对象列表"})
+
     db_short_map: dict[str, str] = {
         str(nid): sid for nid, sid in workflow.nodes.values_list("id", "short_id")
     }
