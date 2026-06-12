@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { GitPlatform } from '~/types'
+import { watchDebounced } from '@vueuse/core'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
+import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { MarkdownEditor } from '~/components/ui/markdown-editor'
 import {
   Select,
   SelectContent,
@@ -27,13 +28,12 @@ const repositoriesStore = useRepositoriesStore()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-// 表单数据
+// 表单数据（默认分支不再让用户手填：测试连接成功后从远端分支列表中必选）
 const form = reactive({
   name: '',
   git_url: '',
   git_platform: 'gitlab' as GitPlatform,
-  default_branch: 'main',
-  description: '',
+  default_branch: '' as string,
   proxy_url: '',
   // 凭证信息（必填）
   access_token: '',
@@ -41,17 +41,24 @@ const form = reactive({
   git_user_email: 'ai@friday.codes',
 })
 
+// 关联空间（必选，至少一个）
+const spaceIds = ref<string[]>([])
+
 // 表单验证
 const errors = reactive({
   name: '',
   git_url: '',
   access_token: '',
+  default_branch: '',
+  spaces: '',
 })
 
 function validate(): boolean {
   errors.name = ''
   errors.git_url = ''
   errors.access_token = ''
+  errors.default_branch = ''
+  errors.spaces = ''
 
   if (!form.name.trim()) {
     errors.name = '请输入仓库名称'
@@ -65,34 +72,33 @@ function validate(): boolean {
   if (!form.access_token.trim()) {
     errors.access_token = '请输入 Access Token'
   }
+  if (!testResult.value?.success) {
+    errors.default_branch = '请先测试连接，从远端分支列表中选择默认分支'
+  }
+  else if (!form.default_branch) {
+    errors.default_branch = '请选择默认分支'
+  }
+  if (spaceIds.value.length === 0) {
+    errors.spaces = '请至少关联一个空间'
+  }
 
   return !errors.name && !errors.git_url && !errors.access_token
+    && !errors.default_branch && !errors.spaces
 }
 
 // 测试连接
 const testing = ref(false)
-const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string[], recommended_branch?: string | null } | null>(null)
+const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string[], head_branch?: string | null, recommended_branch?: string | null } | null>(null)
+
+const canTest = computed(() =>
+  /^https?:\/\//.test(form.git_url.trim()) && Boolean(form.access_token.trim()),
+)
 
 async function handleTestConnection() {
-  // 验证必填字段
-  errors.git_url = ''
-  errors.access_token = ''
-
-  if (!form.git_url.trim()) {
-    errors.git_url = '请输入仓库 URL'
+  if (!canTest.value || testing.value)
     return
-  }
-  if (!/^https?:\/\//.test(form.git_url)) {
-    errors.git_url = '当前仅支持 HTTPS 仓库 URL'
-    return
-  }
-  if (!form.access_token.trim()) {
-    errors.access_token = '请输入 Access Token'
-    return
-  }
 
   testing.value = true
-  testResult.value = null
 
   try {
     const result = await repositoriesApi.testConnection({
@@ -103,10 +109,12 @@ async function handleTestConnection() {
     testResult.value = result
 
     if (result.success) {
-      if (result.recommended_branch) {
-        form.default_branch = result.recommended_branch
-      }
-      success('连接成功', result.branches?.length ? `发现 ${result.branches.length} 个分支` : '仓库可访问')
+      errors.default_branch = ''
+      // 自动选中 HEAD 所在分支（其次推荐分支）
+      const auto = result.head_branch || result.recommended_branch
+      if (auto && (!form.default_branch || !result.branches?.includes(form.default_branch)))
+        form.default_branch = auto
+      success('连接成功', result.branches?.length ? `发现 ${result.branches.length} 个分支，已自动选中 HEAD 分支` : '仓库可访问')
     }
     // 失败时不再弹 toast，避免与下方 inline 提示重复
   }
@@ -118,6 +126,18 @@ async function handleTestConnection() {
   }
 }
 
+// 填完 URL + Token 后自动探测分支列表（防抖，无需手动点按钮）
+watchDebounced(
+  () => [form.git_url, form.access_token, form.proxy_url],
+  () => {
+    testResult.value = null
+    form.default_branch = ''
+    if (canTest.value)
+      handleTestConnection()
+  },
+  { debounce: 800 },
+)
+
 // 提交表单
 const submitting = ref(false)
 
@@ -127,7 +147,11 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    const repository = await repositoriesStore.createRepository(form)
+    const repository = await repositoriesStore.createRepository({
+      ...form,
+      space_ids: spaceIds.value,
+      remote_head_branch: testResult.value?.head_branch ?? undefined,
+    })
     success('创建成功', '仓库已创建，正在自动生成 AI 描述与 PageIndex 索引')
     emit('confirm', repository.id)
   }
@@ -207,7 +231,7 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
         </p>
       </div>
 
-      <!-- 仓库 URL -->
+      <!-- 仓库 URL + 平台 -->
       <div class="space-y-2">
         <Label for="git_url" class="flex items-center gap-1 text-foreground">
           仓库 URL
@@ -229,37 +253,6 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
         </p>
       </div>
 
-      <!-- 代理 URL (可选) -->
-      <div class="space-y-2">
-        <Label for="proxy_url" class="flex items-center gap-1 text-foreground">
-          Git 代理 URL
-          <span class="text-xs font-normal text-muted-foreground">(可选)</span>
-        </Label>
-        <Input
-          id="proxy_url"
-          v-model="form.proxy_url"
-          placeholder="http://proxy.example.com:8080"
-          class="h-10"
-        />
-        <p class="text-xs text-muted-foreground">
-          用于该仓库 Git 操作的 HTTP 代理
-        </p>
-      </div>
-
-      <!-- 仓库简介 -->
-      <div class="space-y-2">
-        <Label for="description" class="flex items-center gap-1 text-foreground">
-          仓库简介
-          <span class="text-xs font-normal text-muted-foreground">(可选，支持 Markdown)</span>
-        </Label>
-        <MarkdownEditor
-          v-model="form.description"
-          placeholder="简要描述仓库的用途和功能，支持 Markdown 语法..."
-          height="200px"
-        />
-      </div>
-
-      <!-- Git 平台和默认分支 -->
       <div class="grid gap-4 md:grid-cols-2">
         <div class="space-y-2">
           <Label class="text-foreground">Git 平台</Label>
@@ -283,23 +276,16 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
           </Select>
         </div>
         <div class="space-y-2">
-          <Label for="default_branch" class="text-foreground">默认分支（索引用）</Label>
-          <BranchCombobox
-            v-if="testResult?.success"
-            v-model="form.default_branch"
-            :branches="testResult?.branches || []"
-            :recommended-branch="testResult?.recommended_branch"
-          />
+          <Label for="proxy_url" class="flex items-center gap-1 text-foreground">
+            Git 代理 URL
+            <span class="text-xs font-normal text-muted-foreground">(可选)</span>
+          </Label>
           <Input
-            v-else
-            id="default_branch"
-            v-model="form.default_branch"
-            placeholder="main"
+            id="proxy_url"
+            v-model="form.proxy_url"
+            placeholder="http://proxy.example.com:8080"
             class="h-10"
           />
-          <p class="text-xs text-muted-foreground">
-            代码索引会使用这个默认分支
-          </p>
         </div>
       </div>
 
@@ -314,7 +300,7 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
               Git 凭证配置
             </h4>
             <p class="text-xs text-muted-foreground">
-              配置用于访问仓库的 Access Token（必填）
+              填写 Access Token 后会自动测试连接并获取远端分支
             </p>
           </div>
         </div>
@@ -366,38 +352,85 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
             </div>
           </div>
 
-          <!-- 测试连接按钮 -->
-          <div class="pt-2">
+          <!-- 连接状态 / 手动重试 -->
+          <div class="flex items-center justify-between gap-3">
+            <div
+              class="flex items-center gap-2 text-sm min-w-0"
+              :class="testing ? 'text-muted-foreground'
+                : testResult?.success ? 'text-emerald-600'
+                  : testResult ? 'text-red-600' : 'text-muted-foreground'"
+            >
+              <span
+                class="shrink-0"
+                :class="testing ? 'icon-[lucide--loader-circle] animate-spin'
+                  : testResult?.success ? 'icon-[lucide--check-circle]'
+                    : testResult ? 'icon-[lucide--x-circle]' : 'icon-[lucide--plug]'"
+              />
+              <span class="truncate">
+                {{ testing ? '正在连接仓库获取分支列表...'
+                  : testResult?.success ? `连接成功，发现 ${testResult.branches?.length ?? 0} 个分支`
+                    : testResult ? (testResult.error || '连接失败') : '填写 URL 与 Token 后自动测试连接' }}
+              </span>
+            </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              class="w-full"
-              :disabled="testing || !form.git_url || !form.access_token"
+              class="shrink-0"
+              :disabled="testing || !canTest"
               @click="handleTestConnection"
             >
-              <span v-if="testing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
-              <span v-else class="icon-[lucide--plug] mr-2" />
-              {{ testing ? '测试中...' : '测试连接' }}
+              <span v-if="testing" class="icon-[lucide--loader-circle] mr-1.5 animate-spin" />
+              <span v-else class="icon-[lucide--refresh-cw] mr-1.5" />
+              {{ testResult ? '重新测试' : '测试连接' }}
             </Button>
-            <!-- 测试结果 -->
-            <div
-              v-if="testResult"
-              class="mt-3 px-3 py-2.5 rounded-xl text-sm border flex items-start gap-2"
-              :class="testResult.success
-                ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/60'
-                : 'bg-red-50/80 text-red-700 border-red-200/60'"
-            >
-              <span
-                class="text-base shrink-0 mt-0.5"
-                :class="testResult.success ? 'icon-[lucide--check-circle]' : 'icon-[lucide--x-circle]'"
-              />
-              <span class="leading-relaxed wrap-break-word min-w-0">
-                {{ testResult.success ? '连接成功' : (testResult.error || '连接失败') }}
-              </span>
-            </div>
           </div>
         </div>
+      </div>
+
+      <!-- 默认分支（必选，来自远端分支列表） -->
+      <div class="space-y-2">
+        <Label class="flex items-center gap-1 text-foreground">
+          默认分支（索引用）
+          <span class="text-destructive">*</span>
+        </Label>
+        <BranchCombobox
+          v-if="testResult?.success && testResult.branches?.length"
+          v-model="form.default_branch"
+          :branches="testResult.branches"
+          :head-branch="testResult.head_branch"
+          :recommended-branch="testResult.recommended_branch"
+        />
+        <div
+          v-else
+          class="flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground"
+        >
+          <span :class="testing ? 'icon-[lucide--loader-circle] animate-spin' : 'icon-[lucide--git-branch]'" />
+          {{ testing ? '正在获取分支列表...' : '测试连接成功后从远端分支中选择' }}
+        </div>
+        <p v-if="errors.default_branch" class="text-sm text-destructive flex items-center gap-1">
+          <span class="icon-[lucide--alert-circle]" />
+          {{ errors.default_branch }}
+        </p>
+        <p v-else class="text-xs text-muted-foreground">
+          代码索引会使用这个分支，默认选中远端 HEAD 所在分支
+        </p>
+      </div>
+
+      <!-- 关联空间（必选） -->
+      <div class="space-y-2">
+        <Label class="flex items-center gap-1 text-foreground">
+          关联空间
+          <span class="text-destructive">*</span>
+        </Label>
+        <SpaceMultiSelect v-model="spaceIds" />
+        <p v-if="errors.spaces" class="text-sm text-destructive flex items-center gap-1">
+          <span class="icon-[lucide--alert-circle]" />
+          {{ errors.spaces }}
+        </p>
+        <p v-else class="text-xs text-muted-foreground">
+          所有仓库都必须至少关联一个空间，关联后可在空间内统一管理与协作
+        </p>
       </div>
 
       <!-- Footer -->

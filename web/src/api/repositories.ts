@@ -5,7 +5,7 @@ import type {
   RepositoryCreate,
   RepositoryUpdate,
 } from '~/types'
-import { ApiError, del, get, patch, post, upload } from './client'
+import { ApiError, del, get, patch, post, put, upload } from './client'
 
 // 索引状态枚举
 export enum IndexStatus {
@@ -207,12 +207,24 @@ export interface TestConnectionResponse {
   success: boolean
   message?: string
   error?: string
+  /** 已按 HEAD > main/master > 最近活跃 > 字典序排序 */
   branches?: string[]
+  /** 远端 HEAD 所在分支（ls-remote --symref 探测） */
+  head_branch?: string | null
   recommended_branch?: string | null
 }
 
 // : AI 智能描述
 export type AISummaryStatus = 'not_started' | 'pending' | 'running' | 'completed' | 'failed'
+
+/** Claude Code 容器运行日志条目（Runner 实时回传，[task:*] 前缀解析后） */
+export interface AISummaryLogEntry {
+  /** text=助手文本 / tool_call=工具调用 / result=结果帧 / block / system / message */
+  type: string
+  content: string
+  /** 毫秒时间戳 */
+  ts: number
+}
 
 export interface AISummaryStatusResponse {
   status: AISummaryStatus
@@ -225,6 +237,8 @@ export interface AISummaryStatusResponse {
   is_monorepo: boolean
   /** 能力树节点总数（递归） */
   tree_node_count: number
+  /** Claude Code 调用细节（最近 30 条，生成中实时增长） */
+  recent_logs?: AISummaryLogEntry[]
 }
 
 export interface GenerateSummaryResponse {
@@ -447,6 +461,22 @@ export const repositoriesApi = {
    */
   testRepositoryConnection: async (id: string): Promise<TestConnectionResponse> => {
     return post<TestConnectionResponse>(`/repositories/${id}/test-connection/`)
+  },
+
+  // ==================== 关联空间管理 API ====================
+
+  /**
+   * 获取仓库关联的空间列表
+   */
+  getLinkedSpaces: async (id: string): Promise<{ id: string, name: string }[]> => {
+    return get<{ id: string, name: string }[]>(`/repositories/${id}/spaces/`)
+  },
+
+  /**
+   * 全量设置仓库关联空间（至少保留一个）
+   */
+  setLinkedSpaces: async (id: string, spaceIds: string[]): Promise<{ id: string, name: string }[]> => {
+    return put<{ id: string, name: string }[]>(`/repositories/${id}/spaces/`, { space_ids: spaceIds })
   },
 
   // ==================== : 索引可观测性 API ====================

@@ -3,10 +3,10 @@ import type { GitPlatform } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
+import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { MarkdownEditor } from '~/components/ui/markdown-editor'
 import {
   Select,
   SelectContent,
@@ -24,9 +24,10 @@ const props = defineProps<{
     git_url: string
     git_platform: GitPlatform
     default_branch: string
-    description?: string
+    remote_head_branch?: string | null
     proxy_url?: string
     has_credential: boolean
+    spaces?: { id: string, name: string }[]
   }
 }>()
 
@@ -46,11 +47,14 @@ const form = reactive({
   git_url: props.repository.git_url,
   git_platform: props.repository.git_platform,
   default_branch: props.repository.default_branch,
-  description: props.repository.description || '',
   proxy_url: props.repository.proxy_url || '',
 })
 
+// 关联空间（必须至少保留一个）
+const spaceIds = ref<string[]>((props.repository.spaces ?? []).map(s => s.id))
+
 const branches = ref<string[]>([])
+const headBranch = ref<string | null>(props.repository.remote_head_branch ?? null)
 const recommendedBranch = ref<string | null>(null)
 const loadingBranches = ref(false)
 
@@ -62,6 +66,7 @@ async function fetchBranches() {
     const result = await repositoriesApi.testRepositoryConnection(props.repository.id)
     if (result.success) {
       branches.value = result.branches || []
+      headBranch.value = result.head_branch ?? headBranch.value
       recommendedBranch.value = result.recommended_branch ?? null
       if (result.recommended_branch && !form.default_branch)
         form.default_branch = result.recommended_branch
@@ -81,11 +86,13 @@ onMounted(fetchBranches)
 const errors = reactive({
   name: '',
   git_url: '',
+  spaces: '',
 })
 
 function validate(): boolean {
   errors.name = ''
   errors.git_url = ''
+  errors.spaces = ''
 
   if (!form.name.trim()) {
     errors.name = '请输入仓库名称'
@@ -96,8 +103,11 @@ function validate(): boolean {
   else if (!/^https?:\/\//.test(form.git_url)) {
     errors.git_url = '当前仅支持 HTTPS 仓库 URL'
   }
+  if (spaceIds.value.length === 0) {
+    errors.spaces = '仓库必须至少关联一个空间'
+  }
 
-  return !errors.name && !errors.git_url
+  return !errors.name && !errors.git_url && !errors.spaces
 }
 
 // 提交表单
@@ -108,9 +118,16 @@ async function handleSubmit() {
     return
 
   const defaultBranchChanged = form.default_branch !== props.repository.default_branch
+  const originalSpaceIds = (props.repository.spaces ?? []).map(s => s.id)
+  const spacesChanged
+    = spaceIds.value.length !== originalSpaceIds.length
+      || spaceIds.value.some(id => !originalSpaceIds.includes(id))
+
   submitting.value = true
   try {
     await repositoriesStore.updateRepository(props.repository.id, form)
+    if (spacesChanged)
+      await repositoriesApi.setLinkedSpaces(props.repository.id, spaceIds.value)
     if (defaultBranchChanged) {
       success('更新成功', '默认分支已变更，正在滚动更新索引')
     }
@@ -141,12 +158,14 @@ watch(() => props.repository, (newRepo) => {
   form.git_url = newRepo.git_url
   form.git_platform = newRepo.git_platform
   form.default_branch = newRepo.default_branch
-  form.description = newRepo.description || ''
   form.proxy_url = newRepo.proxy_url || ''
+  spaceIds.value = (newRepo.spaces ?? []).map(s => s.id)
   errors.name = ''
   errors.git_url = ''
+  errors.spaces = ''
   testResult.value = null
   branches.value = []
+  headBranch.value = newRepo.remote_head_branch ?? null
   recommendedBranch.value = null
   fetchBranches()
 }, { deep: true })
@@ -308,27 +327,29 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
             v-else
             v-model="form.default_branch"
             :branches="branches"
+            :head-branch="headBranch"
             :recommended-branch="recommendedBranch"
           />
           <p class="text-xs text-muted-foreground">
-            代码索引会使用这个默认分支
+            代码索引会使用这个默认分支，HEAD 为远端默认分支
           </p>
         </div>
       </div>
 
-      <!-- 描述 -->
+      <!-- 关联空间 -->
       <div class="space-y-2">
-        <Label for="description" class="flex items-center gap-1 text-foreground">
-          描述
-          <span class="text-xs font-normal text-muted-foreground">(支持 Markdown)</span>
+        <Label class="flex items-center gap-1 text-foreground">
+          关联空间
+          <span class="text-destructive">*</span>
         </Label>
-        <MarkdownEditor
-          v-model="form.description"
-          placeholder="仓库描述，支持 Markdown 语法..."
-          min-height="200px"
-          max-height="800px"
-          sticky-toolbar
-        />
+        <SpaceMultiSelect v-model="spaceIds" />
+        <p v-if="errors.spaces" class="text-sm text-destructive flex items-center gap-1">
+          <span class="icon-[lucide--alert-circle]" />
+          {{ errors.spaces }}
+        </p>
+        <p v-else class="text-xs text-muted-foreground">
+          仓库必须至少关联一个空间
+        </p>
       </div>
 
       <!-- 测试连接 -->

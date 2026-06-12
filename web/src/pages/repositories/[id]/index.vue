@@ -11,9 +11,18 @@ import AISummarySection from '~/components/repository/AISummarySection.vue'
 import CredentialModal from '~/components/repository/CredentialModal.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
+import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog'
 import {
   Tooltip,
   TooltipContent,
@@ -160,7 +169,27 @@ function formatDate(dateStr: string) {
 const repository = computed(() => repositoriesStore.currentRepository)
 const credential = computed(() => repositoriesStore.currentCredential)
 
-const branchNames = computed(() => branchIndexRows.value.map(r => r.branch_name))
+/** 远端 HEAD 所在分支（缓存字段，可能为空） */
+const headBranch = computed(() => repository.value?.remote_head_branch || null)
+
+/** 分支排序：HEAD > main/master > 最近索引时间 > 字典序 */
+const branchNames = computed(() => {
+  const head = headBranch.value
+  const rows = [...branchIndexRows.value].sort((a, b) => {
+    const group = (r: BranchIndexRow) =>
+      r.branch_name === head ? 0 : (r.branch_name === 'main' || r.branch_name === 'master') ? 1 : 2
+    const ga = group(a)
+    const gb = group(b)
+    if (ga !== gb)
+      return ga - gb
+    const ta = a.last_indexed_at ? new Date(a.last_indexed_at).getTime() : 0
+    const tb = b.last_indexed_at ? new Date(b.last_indexed_at).getTime() : 0
+    if (ta !== tb)
+      return tb - ta
+    return a.branch_name.localeCompare(b.branch_name)
+  })
+  return rows.map(r => r.branch_name)
+})
 
 const recommendedBaseBranch = computed(() => {
   const base = branchIndexRows.value.find(r => r.is_base_branch)
@@ -204,6 +233,34 @@ async function confirmRebuildBranchIndex() {
 
 // 编辑仓库
 const editDialogOpen = ref(false)
+
+// 关联空间管理弹窗
+const spacesDialogOpen = ref(false)
+const editingSpaceIds = ref<string[]>([])
+const savingSpaces = ref(false)
+
+function openSpacesDialog() {
+  editingSpaceIds.value = (repository.value?.spaces ?? []).map(s => s.id)
+  spacesDialogOpen.value = true
+}
+
+async function saveLinkedSpaces() {
+  if (editingSpaceIds.value.length === 0)
+    return
+  savingSpaces.value = true
+  try {
+    await repositoriesApi.setLinkedSpaces(repositoryId.value, editingSpaceIds.value)
+    await repositoriesStore.fetchRepository(repositoryId.value)
+    success('已更新关联空间')
+    spacesDialogOpen.value = false
+  }
+  catch (e: unknown) {
+    handleError(e, '更新关联空间')
+  }
+  finally {
+    savingSpaces.value = false
+  }
+}
 
 // 凭证管理弹窗（：替代独立路由页入口）
 const credentialModalOpen = ref(false)
@@ -285,6 +342,10 @@ function copyUrl() {
                   <Badge variant="secondary" class="shrink-0 font-mono text-xs">
                     <span class="icon-[lucide--git-branch] mr-1 text-[10px]" />
                     {{ repository.default_branch }}
+                    <span
+                      v-if="headBranch && repository.default_branch === headBranch"
+                      class="ml-1.5 rounded-sm bg-emerald-500/15 px-1 py-px text-[9px] font-semibold tracking-wide text-emerald-600"
+                    >HEAD</span>
                   </Badge>
                 </div>
                 <!-- Git URL -->
@@ -374,8 +435,19 @@ function copyUrl() {
                 </div>
                 <div>
                   <label class="text-xs text-muted-foreground">默认分支</label>
-                  <p class="text-sm mt-1 font-mono text-foreground">
+                  <p class="text-sm mt-1 font-mono text-foreground flex items-center gap-1.5">
                     {{ repository.default_branch }}
+                    <span
+                      v-if="headBranch && repository.default_branch === headBranch"
+                      class="rounded-sm bg-emerald-500/15 px-1 py-px text-[9px] font-semibold tracking-wide text-emerald-600"
+                    >HEAD</span>
+                  </p>
+                </div>
+                <div v-if="headBranch && repository.default_branch !== headBranch">
+                  <label class="text-xs text-muted-foreground">远端 HEAD 分支</label>
+                  <p class="text-sm mt-1 font-mono text-foreground flex items-center gap-1.5">
+                    {{ headBranch }}
+                    <span class="rounded-sm bg-emerald-500/15 px-1 py-px text-[9px] font-semibold tracking-wide text-emerald-600">HEAD</span>
                   </p>
                 </div>
                 <div v-if="repository.proxy_url">
@@ -400,10 +472,7 @@ function copyUrl() {
             </div>
           </div>
 
-          <AISummarySection
-            :repository-id="repository.id"
-            :legacy-description="repository.description"
-          />
+          <AISummarySection :repository-id="repository.id" />
 
           <!-- 关联空间 -->
           <div id="linked-projects" class="card scroll-mt-22">
@@ -413,6 +482,10 @@ function copyUrl() {
                 关联空间
               </h3>
               <span class="text-xs text-muted-foreground">({{ repository.spaces?.length || 0 }})</span>
+              <Button variant="ghost" size="sm" class="h-7 text-xs ml-auto group" @click="openSpacesDialog">
+                管理
+                <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+              </Button>
             </div>
             <div class="p-5">
               <CompactEmptyState
@@ -421,11 +494,9 @@ function copyUrl() {
                 title="暂无关联空间"
                 description="将仓库关联到空间后，可在空间内统一管理与协作"
               >
-                <Button as-child size="sm" class="h-7 text-xs">
-                  <RouterLink to="/spaces">
-                    <span class="icon-[lucide--folder] mr-1.5" />
-                    前往空间管理
-                  </RouterLink>
+                <Button size="sm" class="h-7 text-xs" @click="openSpacesDialog">
+                  <span class="icon-[lucide--folder-plus] mr-1.5" />
+                  关联空间
                 </Button>
               </CompactEmptyState>
               <div v-else class="space-y-1.5">
@@ -456,6 +527,7 @@ function copyUrl() {
             :git-url="repository.git_url"
             :branches="branchNames"
             :index-rows="branchIndexRows"
+            :head-branch="headBranch"
             :recommended-branch="recommendedBaseBranch"
             :selected-branch-row="selectedBranchRow"
             :index-global-busy="indexGlobalBusy"
@@ -608,5 +680,33 @@ function copyUrl() {
       :loading="rebuildingBranch"
       @confirm="confirmRebuildBranchIndex"
     />
+
+    <!-- 管理关联空间 -->
+    <Dialog v-model:open="spacesDialogOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>管理关联空间</DialogTitle>
+          <DialogDescription>
+            仓库必须至少关联一个空间；关联后可在空间内统一管理与协作
+          </DialogDescription>
+        </DialogHeader>
+        <div class="py-2">
+          <SpaceMultiSelect v-model="editingSpaceIds" :disabled="savingSpaces" />
+          <p v-if="editingSpaceIds.length === 0" class="mt-2 text-sm text-destructive flex items-center gap-1">
+            <span class="icon-[lucide--alert-circle]" />
+            请至少保留一个关联空间
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" :disabled="savingSpaces" @click="spacesDialogOpen = false">
+            取消
+          </Button>
+          <Button :disabled="savingSpaces || editingSpaceIds.length === 0" @click="saveLinkedSpaces">
+            <span v-if="savingSpaces" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

@@ -28,7 +28,6 @@ function makeRepository(overrides: Partial<Repository> = {}): Repository {
     git_platform: overrides.git_platform ?? 'gitlab',
     default_branch: overrides.default_branch ?? 'master',
     base_branch: overrides.base_branch ?? null,
-    description: overrides.description ?? '',
     created_at: overrides.created_at ?? '2026-06-10T10:00:00Z',
     updated_at: overrides.updated_at ?? '2026-06-10T10:00:00Z',
     has_credential: overrides.has_credential ?? true,

@@ -195,7 +195,6 @@ export interface RepositoryBase {
   git_platform: GitPlatform
   default_branch: string
   base_branch?: string | null
-  description?: string
 }
 
 /**
@@ -213,6 +212,8 @@ export interface Repository extends RepositoryBase {
   linked_spaces_count?: number
   index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed' | 'cancelled'
   last_indexed_at: string | null
+  /** 远端 HEAD 所在分支（ls-remote --symref 探测缓存，UI 展示 HEAD 标签用） */
+  remote_head_branch?: string | null
   // freshness 字段（/，后端 新增）
   remote_head_sha?: string | null
   remote_head_checked_at?: string | null
@@ -236,6 +237,10 @@ export interface RepositoryCreate extends RepositoryBase {
   access_token: string
   git_user_name?: string
   git_user_email?: string
+  /** 必填：所有仓库都必须至少关联一个空间 */
+  space_ids: string[]
+  /** test-connection 探测到的 HEAD 分支（display-only 缓存） */
+  remote_head_branch?: string | null
 }
 
 /**
@@ -247,7 +252,6 @@ export interface RepositoryUpdate {
   git_platform?: GitPlatform
   default_branch?: string
   base_branch?: string | null
-  description?: string
   auto_index_enabled?: boolean
   auto_build_graph_enabled?: boolean
 }

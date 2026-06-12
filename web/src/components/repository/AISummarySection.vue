@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AISummaryStatus, AISummaryStatusResponse } from '~/api/repositories'
+import type { AISummaryLogEntry, AISummaryStatus, AISummaryStatusResponse } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ApiError } from '~/api/client'
 import { repositoriesApi } from '~/api/repositories'
@@ -12,11 +12,7 @@ import { useToast } from '~/composables/useToast'
 
 const props = defineProps<{
   repositoryId: string
-  /** 仓库手动填写的 Markdown 描述（编辑仓库时可维护）；AI 未生成时作为降级展示 */
-  legacyDescription?: string | null
 }>()
-
-const hasLegacyDescription = computed(() => Boolean(props.legacyDescription?.trim()))
 
 const { success: toastSuccess, warning: toastWarning } = useToast()
 
@@ -30,6 +26,8 @@ const generating = ref(false)
 const hasTree = ref(false)
 const isMonorepo = ref(false)
 const treeNodeCount = ref(0)
+// Claude Code 调用细节（生成中实时增长的活动流）
+const recentLogs = ref<AISummaryLogEntry[]>([])
 
 // 轮询控制
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -45,6 +43,33 @@ const sections = reactive({
   testing_commands: true,
   conventions: true,
 })
+
+// 活动流展示：最新在最上方
+const displayLogs = computed(() => [...recentLogs.value].reverse())
+
+function logIcon(type: string): string {
+  switch (type) {
+    case 'tool_call':
+      return 'icon-[lucide--wrench]'
+    case 'text':
+      return 'icon-[lucide--message-square-text]'
+    case 'result':
+      return 'icon-[lucide--check-circle-2]'
+    default:
+      return 'icon-[lucide--activity]'
+  }
+}
+
+/** tool_call 内容形如 `Read({"file_path": "..."})`，拆出工具名与参数串 */
+function formatToolCall(content: string): { name: string, args: string } {
+  const idx = content.indexOf('(')
+  if (idx <= 0)
+    return { name: content, args: '' }
+  return {
+    name: content.slice(0, idx),
+    args: content.slice(idx + 1).replace(/\)\s*$/, ''),
+  }
+}
 
 // 解析 JSON summary
 const parsedSummary = computed(() => {
@@ -72,6 +97,7 @@ async function fetchStatus() {
     hasTree.value = res.has_tree ?? false
     isMonorepo.value = res.is_monorepo ?? false
     treeNodeCount.value = res.tree_node_count ?? 0
+    recentLogs.value = res.recent_logs ?? []
 
     // 终态时停止轮询
     if (res.status === 'completed' || res.status === 'failed' || res.status === 'not_started') {
@@ -217,29 +243,15 @@ onUnmounted(() => {
 
     <!-- 卡片内容 -->
     <div class="p-5">
-      <!-- 状态 A: not_started 空状态 / 手动描述降级 -->
+      <!-- 状态 A: not_started 空状态 -->
       <div v-if="status === 'not_started'" class="space-y-4">
-        <div
-          v-if="hasLegacyDescription"
-          class="rounded-lg border border-border/50 bg-muted/20 p-4 space-y-2"
-        >
-          <div class="flex items-center gap-2 text-xs text-muted-foreground">
-            <span class="icon-[lucide--file-text]" />
-            当前为手动填写的仓库描述
-          </div>
-          <div class="max-h-[240px] overflow-y-auto rounded-lg bg-muted/30 border border-border/40 p-3">
-            <MarkdownPreview :content="legacyDescription ?? ''" />
-          </div>
-        </div>
         <div class="flex flex-col items-center justify-center py-6 space-y-3">
           <span class="icon-[lucide--sparkles] text-2xl text-muted-foreground/40" />
           <p class="text-sm font-semibold text-foreground">
-            {{ hasLegacyDescription ? '可生成更完整的 AI 描述与 PageIndex 索引' : '尚未生成 AI 描述与 PageIndex 索引' }}
+            尚未生成 AI 描述与 PageIndex 索引
           </p>
           <p class="text-xs text-muted-foreground text-center max-w-sm">
-            {{ hasLegacyDescription
-              ? 'AI 将分析代码结构，生成项目概览与「子应用 → 模块 → 能力」层级索引，用于仓库智能检索'
-              : '新建仓库会自动触发生成；也可点击下方按钮手动触发，AI 将分析仓库结构并生成描述与能力树索引' }}
+            新建仓库会自动触发生成；也可点击下方按钮手动触发，AI 将分析仓库结构并生成描述与能力树索引
           </p>
           <Button
             variant="default"
@@ -253,9 +265,38 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 状态 B: pending / running 加载骨架屏 -->
+      <!-- 状态 B: pending / running — Claude Code 实时活动流（无日志时骨架屏兜底） -->
       <div v-else-if="status === 'pending' || status === 'running'" class="space-y-4">
-        <div class="space-y-3">
+        <div
+          v-if="displayLogs.length > 0"
+          data-testid="summary-activity-stream"
+          class="rounded-lg border border-border/50 bg-muted/20 overflow-hidden"
+        >
+          <div class="flex items-center gap-2 px-3 py-2 border-b border-border/40 text-xs text-muted-foreground">
+            <span class="icon-[lucide--terminal]" />
+            Claude Code 实时活动
+            <span class="ml-auto font-mono text-[10px] opacity-70">{{ displayLogs.length }} 条</span>
+          </div>
+          <div class="max-h-[240px] overflow-y-auto px-3 py-2 space-y-1.5">
+            <div
+              v-for="(log, idx) in displayLogs"
+              :key="`${log.ts}-${idx}`"
+              class="flex items-start gap-2 text-xs leading-relaxed"
+              :class="idx === 0 ? 'text-foreground' : 'text-muted-foreground'"
+            >
+              <span :class="logIcon(log.type)" class="mt-0.5 shrink-0" />
+              <span v-if="log.type === 'tool_call'" class="min-w-0 break-all">
+                <span class="font-semibold">{{ formatToolCall(log.content).name }}</span>
+                <span
+                  v-if="formatToolCall(log.content).args"
+                  class="font-mono text-[11px] opacity-80"
+                >({{ formatToolCall(log.content).args }})</span>
+              </span>
+              <span v-else class="min-w-0 break-all line-clamp-2">{{ log.content }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="space-y-3">
           <Skeleton class="h-4 w-full" />
           <Skeleton class="h-4 w-4/5" />
           <Skeleton class="h-4 w-3/5" />
@@ -400,6 +441,29 @@ onUnmounted(() => {
           <span class="icon-[lucide--sparkles] mr-1.5" />
           重新生成描述
         </Button>
+        <!-- 失败诊断：展开最近一次运行的 Claude Code 活动 -->
+        <details v-if="displayLogs.length > 0" class="w-full max-w-md">
+          <summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground text-center">
+            查看最近一次运行的活动（{{ displayLogs.length }} 条）
+          </summary>
+          <div class="mt-2 max-h-[200px] overflow-y-auto rounded-lg border border-border/40 bg-muted/20 px-3 py-2 space-y-1.5">
+            <div
+              v-for="(log, idx) in displayLogs"
+              :key="`${log.ts}-${idx}`"
+              class="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+            >
+              <span :class="logIcon(log.type)" class="mt-0.5 shrink-0" />
+              <span v-if="log.type === 'tool_call'" class="min-w-0 break-all">
+                <span class="font-semibold">{{ formatToolCall(log.content).name }}</span>
+                <span
+                  v-if="formatToolCall(log.content).args"
+                  class="font-mono text-[11px] opacity-80"
+                >({{ formatToolCall(log.content).args }})</span>
+              </span>
+              <span v-else class="min-w-0 break-all line-clamp-2">{{ log.content }}</span>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   </div>

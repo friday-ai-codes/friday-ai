@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<{
   // ：分支选择器上提进 Hub 头部所需的下传数据
   branches?: string[]
   indexRows?: BranchIndexRow[]
+  headBranch?: string | null
   recommendedBranch?: string | null
   selectedBranchRow?: BranchIndexRow | null
   indexGlobalBusy?: boolean
@@ -42,6 +43,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   branches: () => [],
   indexRows: () => [],
+  headBranch: null,
   recommendedBranch: null,
   selectedBranchRow: null,
   indexGlobalBusy: false,
@@ -208,6 +210,7 @@ const pipelineSteps = computed(() => [
             v-model="selectedBranch"
             :branches="branches"
             :index-rows="indexRows"
+            :head-branch="headBranch"
             :recommended-branch="recommendedBranch"
             :disabled="indexGlobalBusy"
           />
