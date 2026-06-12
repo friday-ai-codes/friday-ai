@@ -15,30 +15,11 @@ interface TreeNode {
   children: TreeNode[]
 }
 
-function buildTree(items: RelatedEntity[]): TreeNode[] {
-  const byId = new Map(items.map(r => [r.entity_id, r]))
-  const roots: TreeNode[] = []
-  const childIds = new Set<string>()
-
-  for (const item of items) {
-    if (item.depth === 0 || item.entity_id === props.currentEntityId)
-      continue
-    const parentCandidate = items.find(p => p.depth === item.depth - 1)
-    if (!parentCandidate || !byId.has(parentCandidate.entity_id)) {
-      roots.push({ entity: item, children: [] })
-    }
-    else {
-      childIds.add(item.entity_id)
-    }
-  }
-
-  if (roots.length === 0)
-    return items.filter(i => i.entity_id !== props.currentEntityId).map(e => ({ entity: e, children: [] }))
-
-  return roots
-}
-
-const tree = computed(() => buildTree(props.related))
+const tree = computed<TreeNode[]>(() =>
+  props.related
+    .filter(item => item.entity_id !== props.currentEntityId)
+    .map(entity => ({ entity, children: [] })),
+)
 </script>
 
 <template>
