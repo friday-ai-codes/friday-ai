@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NodePort } from '~/stores/useNodeTypesStore'
 import { ArrowDownToLine, ArrowUpFromLine, Copy } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -10,18 +11,29 @@ import {
   TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useToast } from '~/composables/useToast'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { buildNodeRef } from '~/utils/variableRef'
 
 interface Props {
   /** 输入端口列表 */
   inputs: NodePort[]
   /** 输出端口列表 */
   outputs: NodePort[]
-  /** 节点 ID（用于生成变量路径） */
+  /** 节点 ID（UUID，组件内查表换取权威 shortId 生成变量路径） */
   nodeId: string
 }
 
 const props = defineProps<Props>()
-const { success } = useToast()
+const { success, error } = useToast()
+
+const workflowsStore = useWorkflowsStore()
+
+/**
+ * 由 props.nodeId（UUID）查 store 节点的权威 shortId。
+ * 查不到属异常态（保存后 store 节点必有 shortId）——禁止生成引用，
+ * 绝不回退 props.nodeId 产 UUID 形式引用（锁定决策 VAR-03）。
+ */
+const shortId = computed(() => workflowsStore.getNodeById(props.nodeId)?.shortId ?? '')
 
 // 端口类型颜色映射
 const typeColors: Record<string, string> = {
@@ -38,7 +50,11 @@ function getTypeColor(type: string): string {
 }
 
 function copyVariablePath(portName: string) {
-  const path = `{{nodes.${props.nodeId}.${portName}}}`
+  if (!shortId.value) {
+    error('节点缺少 short_id，请先保存工作流')
+    return
+  }
+  const path = buildNodeRef(shortId.value, portName)
   navigator.clipboard.writeText(path)
   success('已复制', path)
 }
@@ -102,7 +118,7 @@ function copyVariablePath(portName: string) {
           <!-- 变量路径提示 -->
           <div class="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
             <code class="text-[10px] text-muted-foreground font-mono">
-              {{ `\{\{nodes.${nodeId}.${port.name}\}\}` }}
+              {{ shortId ? buildNodeRef(shortId, port.name) : '保存工作流后可用' }}
             </code>
             <TooltipProvider>
               <Tooltip>
