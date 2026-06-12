@@ -16,6 +16,8 @@ from rest_framework.response import Response
 
 from common.exceptions import TriggerValidationError
 from permissions.mixins import ProjectScopedQuerysetMixin
+from permissions.models import ProjectRole
+from permissions.services import PermissionService
 from workflows.api.permissions import (
     AlertRulePermission,
     ApprovalPermission,
@@ -24,9 +26,9 @@ from workflows.api.permissions import (
 )
 from workflows.api.serializers import (
     ActionLogDetailSerializer,
+    ActionLogSummarySerializer,
     AlertRuleExecutionSerializer,
     AlertRuleSerializer,
-    ActionLogSummarySerializer,
     CodingTaskListSerializer,
     CodingTaskSerializer,
     CodingTaskUpdateSerializer,
@@ -56,6 +58,7 @@ from workflows.api.serializers import (
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     CodingTask,
+    ExecutionStatus,
     NodeExecution,
     NodeExecutionStatus,
     NodeSubStep,
@@ -147,7 +150,6 @@ async def async_sync_workflow_triggers(workflow: Workflow) -> None:
     )
 
 
-
 def _bulk_update_nodes_and_edges(
     workflow: Workflow,
     nodes_data: list,
@@ -179,9 +181,7 @@ def _bulk_update_nodes_and_edges(
             else:
                 serializer = WorkflowNodeCreateSerializer(data=node_data)
                 serializer.is_valid(raise_exception=True)
-                node = WorkflowNode.objects.create(
-                    workflow=workflow, **serializer.validated_data
-                )
+                node = WorkflowNode.objects.create(workflow=workflow, **serializer.validated_data)
                 existing_node_ids.add(str(node.id))
 
         if delete_orphans:
@@ -502,7 +502,9 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         delete_orphans = request.data.get("delete_orphans", False)
 
         # KEEP: 包含 transaction.atomic() + 多个 serializer + 批量 CRUD，完全 async 化复杂度高
-        await sync_to_async(_bulk_update_nodes_and_edges)(workflow, nodes_data, edges_data, delete_orphans)
+        await sync_to_async(_bulk_update_nodes_and_edges)(
+            workflow, nodes_data, edges_data, delete_orphans
+        )
 
         # Return updated workflow
         await workflow.arefresh_from_db()
@@ -576,7 +578,13 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = WorkflowExecution.objects.all()
     serializer_class = WorkflowExecutionSerializer
     permission_classes = [IsAuthenticated, ExecutionPermission]
-    http_method_names = ["get", "post", "delete", "head", "options"]  # No create/update, post for actions
+    http_method_names = [
+        "get",
+        "post",
+        "delete",
+        "head",
+        "options",
+    ]  # No create/update, post for actions
     project_field = "workflow__project"
 
     def get_serializer_class(self):
@@ -585,9 +593,12 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         return WorkflowExecutionSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset().select_related(
-            "workflow", "triggered_by"
-        ).prefetch_related("node_executions")
+        queryset = (
+            super()
+            .get_queryset()
+            .select_related("workflow", "triggered_by")
+            .prefetch_related("node_executions")
+        )
 
         # Filter by workflow
         workflow_id = self.request.query_params.get("workflow_id")
@@ -610,6 +621,102 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
             queryset = queryset.filter(is_debug=False)
 
         return queryset.order_by("-created_at")
+
+    @action(detail=False, methods=["post"], url_path="batch-delete")
+    async def batch_delete(self, request: Request) -> Response:
+        """批量删除执行记录（仅 admin）。
+
+        fail-closed：superuser 可删任意执行；其余用户必须对执行所属空间持有
+        ADMIN 角色。运行中/等待中/暂停/挂起的执行一律跳过，避免删掉引擎
+        正在调度的实例。
+        """
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return Response(
+                {"detail": "必须提供非空的 ids 列表"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(ids) > 200:
+            return Response(
+                {"detail": "单次最多删除 200 条执行"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            uuid_ids = [uuid.UUID(str(i)) for i in ids]
+        except (ValueError, AttributeError, TypeError):
+            return Response(
+                {"detail": "ids 中包含非法的执行 ID"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        # 删除是不可逆操作，活跃状态的执行不允许批量清理
+        active_statuses = (
+            ExecutionStatus.PENDING,
+            ExecutionStatus.RUNNING,
+            ExecutionStatus.PAUSED,
+            ExecutionStatus.SUSPENDED,
+        )
+
+        def _batch_delete() -> dict:
+            executions = list(
+                WorkflowExecution.objects.filter(id__in=uuid_ids).select_related(
+                    "workflow__project"
+                )
+            )
+            found_ids = {e.id for e in executions}
+            not_found = [str(i) for i in uuid_ids if i not in found_ids]
+
+            deletable: list[uuid.UUID] = []
+            forbidden: list[str] = []
+            skipped_active: list[str] = []
+            # 同一空间的权限判定结果缓存，避免逐条查询
+            project_admin_cache: dict = {}
+
+            for execution in executions:
+                if not user.is_superuser:
+                    project = execution.workflow.project
+                    allowed = project_admin_cache.get(project.id)
+                    if allowed is None:
+                        allowed = PermissionService.has_project_access(
+                            user, project, ProjectRole.ADMIN
+                        )
+                        project_admin_cache[project.id] = allowed
+                    if not allowed:
+                        forbidden.append(str(execution.id))
+                        continue
+                if execution.status in active_statuses:
+                    skipped_active.append(str(execution.id))
+                    continue
+                deletable.append(execution.id)
+
+            if deletable:
+                WorkflowExecution.objects.filter(id__in=deletable).delete()
+
+            return {
+                "deleted": len(deletable),
+                "skipped_active": skipped_active,
+                "forbidden": forbidden,
+                "not_found": not_found,
+            }
+
+        result = await sync_to_async(_batch_delete)()
+
+        if result["deleted"] == 0 and result["forbidden"] and not result["skipped_active"]:
+            return Response(
+                {"detail": "没有删除任何执行：权限不足", **result},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        logger.info(
+            "workflow_executions_batch_deleted",
+            user_id=str(user.id),
+            deleted=result["deleted"],
+            skipped_active=len(result["skipped_active"]),
+            forbidden=len(result["forbidden"]),
+        )
+        return Response(result)
 
     @action(detail=True, methods=["post"])
     async def pause(self, request: Request, pk=None) -> Response:
@@ -771,11 +878,10 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
                 node_names[node_def["id"]] = node_def.get("name", node_def["id"])
 
         # 获取工作流和 DAG
-        execution = await WorkflowExecution.objects.select_related("workflow").aget(
-            pk=execution.pk
-        )
+        execution = await WorkflowExecution.objects.select_related("workflow").aget(pk=execution.pk)
         workflow = execution.workflow
         from workflows.engine.dag import DAG
+
         dag = await DAG.afrom_workflow(workflow)
 
         # 计算下游节点
@@ -809,12 +915,14 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
             else:
                 skip_nodes.append(node_info)
 
-        return Response({
-            "skip_nodes": skip_nodes,
-            "rerun_nodes": rerun_nodes,
-            "total_skip": len(skip_nodes),
-            "total_rerun": len(rerun_nodes),
-        })
+        return Response(
+            {
+                "skip_nodes": skip_nodes,
+                "rerun_nodes": rerun_nodes,
+                "total_skip": len(skip_nodes),
+                "total_rerun": len(rerun_nodes),
+            }
+        )
 
     @action(detail=True, methods=["get"], url_path="check-definition-changed")
     async def check_definition_changed(self, request: Request, pk=None) -> Response:
@@ -824,9 +932,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         if not execution.workflow_definition:
             return Response({"changed": False})
 
-        execution = await WorkflowExecution.objects.select_related("workflow").aget(
-            pk=execution.pk
-        )
+        execution = await WorkflowExecution.objects.select_related("workflow").aget(pk=execution.pk)
         engine = WorkflowEngine()
         changed = await engine._compare_workflow_definitions(
             execution.workflow_definition,
@@ -859,10 +965,8 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         model_distribution: dict[str, Decimal] = {}
         node_costs = []
 
-        async for ne in (
-            NodeExecution.objects
-            .filter(workflow_execution=execution)
-            .select_related("node")
+        async for ne in NodeExecution.objects.filter(workflow_execution=execution).select_related(
+            "node"
         ):
             models_breakdown: dict = {}
             async for session in ne.subagent_sessions.all():
@@ -881,9 +985,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
                     mb["output_tokens"] += usage.output_tokens
                     mb["cache_read_tokens"] += usage.cache_read_tokens
                     mb["cache_write_tokens"] += usage.cache_write_tokens
-                    mb["total_cost_usd"] = str(
-                        Decimal(mb["total_cost_usd"]) + usage.total_cost_usd
-                    )
+                    mb["total_cost_usd"] = str(Decimal(mb["total_cost_usd"]) + usage.total_cost_usd)
                     # 更新总计
                     total_input += usage.input_tokens
                     total_output += usage.output_tokens
@@ -891,31 +993,32 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
                     total_cache_write += usage.cache_write_tokens
                     total_cost += usage.total_cost_usd
                     model_distribution[model_name] = (
-                        model_distribution.get(model_name, Decimal("0"))
-                        + usage.total_cost_usd
+                        model_distribution.get(model_name, Decimal("0")) + usage.total_cost_usd
                     )
 
-            node_costs.append({
-                "node_id": str(ne.node_id),
-                "node_name": ne.node.name,
-                "node_type": ne.node.node_type,
-                "models": models_breakdown,
-            })
+            node_costs.append(
+                {
+                    "node_id": str(ne.node_id),
+                    "node_name": ne.node.name,
+                    "node_type": ne.node.node_type,
+                    "models": models_breakdown,
+                }
+            )
 
-        return Response({
-            "nodes": node_costs,
-            "summary": {
-                "total_input_tokens": total_input,
-                "total_output_tokens": total_output,
-                "total_cache_read_tokens": total_cache_read,
-                "total_cache_write_tokens": total_cache_write,
-                "total_tokens": total_input + total_output,
-                "total_cost_usd": str(total_cost),
-                "model_distribution": {
-                    k: str(v) for k, v in model_distribution.items()
+        return Response(
+            {
+                "nodes": node_costs,
+                "summary": {
+                    "total_input_tokens": total_input,
+                    "total_output_tokens": total_output,
+                    "total_cache_read_tokens": total_cache_read,
+                    "total_cache_write_tokens": total_cache_write,
+                    "total_tokens": total_input + total_output,
+                    "total_cost_usd": str(total_cost),
+                    "model_distribution": {k: str(v) for k, v in model_distribution.items()},
                 },
-            },
-        })
+            }
+        )
 
     @action(detail=True, methods=["get"], url_path="timeline")
     async def timeline(self, request: Request, pk=None) -> Response:
@@ -924,22 +1027,23 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
 
         nodes_data: list[dict] = []
         async for ne in (
-            NodeExecution.objects
-            .filter(workflow_execution=execution)
+            NodeExecution.objects.filter(workflow_execution=execution)
             .select_related("node")
             .order_by("started_at")
         ):
-            nodes_data.append({
-                "node_id": str(ne.node_id),
-                "node_name": ne.node.name,
-                "node_type": ne.node.node_type,
-                "status": ne.status,
-                "started_at": ne.started_at.isoformat() if ne.started_at else None,
-                "completed_at": ne.completed_at.isoformat() if ne.completed_at else None,
-                "duration_seconds": ne.duration,
-                "is_bottleneck": False,
-                "bottleneck_level": None,
-            })
+            nodes_data.append(
+                {
+                    "node_id": str(ne.node_id),
+                    "node_name": ne.node.name,
+                    "node_type": ne.node.node_type,
+                    "status": ne.status,
+                    "started_at": ne.started_at.isoformat() if ne.started_at else None,
+                    "completed_at": ne.completed_at.isoformat() if ne.completed_at else None,
+                    "duration_seconds": ne.duration,
+                    "is_bottleneck": False,
+                    "bottleneck_level": None,
+                }
+            )
 
         # 瓶颈标识：按耗时降序取 Top3
         timed = [n for n in nodes_data if n["duration_seconds"] is not None]
@@ -952,17 +1056,19 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         durations = [n["duration_seconds"] for n in nodes_data if n["duration_seconds"] is not None]
         total_duration = execution.duration
 
-        return Response({
-            "nodes": nodes_data,
-            "summary": {
-                "total_duration_seconds": total_duration,
-                "total_nodes": len(nodes_data),
-                "avg_node_duration_seconds": (
-                    sum(durations) / len(durations) if durations else None
-                ),
-                "bottleneck_nodes": len(timed[:3]),
-            },
-        })
+        return Response(
+            {
+                "nodes": nodes_data,
+                "summary": {
+                    "total_duration_seconds": total_duration,
+                    "total_nodes": len(nodes_data),
+                    "avg_node_duration_seconds": (
+                        sum(durations) / len(durations) if durations else None
+                    ),
+                    "bottleneck_nodes": len(timed[:3]),
+                },
+            }
+        )
 
 
 # =============================================================================
@@ -1091,9 +1197,9 @@ class NodeExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
 
         node_execution = await self.aget_object()
 
-        action_logs = ActionLog.objects.filter(
-            session__node_execution=node_execution
-        ).order_by("sequence")
+        action_logs = ActionLog.objects.filter(session__node_execution=node_execution).order_by(
+            "sequence"
+        )
 
         logs_list = [log async for log in action_logs]
         serializer = ActionLogSummarySerializer(logs_list, many=True)
@@ -1321,9 +1427,9 @@ class NodeSubStepListView(APIView):
 
         sub_steps = [
             s
-            async for s in NodeSubStep.objects.filter(
-                node_execution_id=node_execution_id
-            ).order_by("step_order")
+            async for s in NodeSubStep.objects.filter(node_execution_id=node_execution_id).order_by(
+                "step_order"
+            )
         ]
 
         serializer = NodeSubStepSerializer(sub_steps, many=True)
@@ -1775,10 +1881,12 @@ class NodeExecutionActionView(APIView):
             user=request.user.username if request.user.is_authenticated else "anonymous",
         )
 
-        return Response({
-            "status": "success",
-            "message": "已跳过等待，工作流继续执行",
-        })
+        return Response(
+            {
+                "status": "success",
+                "message": "已跳过等待，工作流继续执行",
+            }
+        )
 
     async def _trigger_resume(
         self, request: Request, execution: WorkflowExecution, node_execution: NodeExecution
@@ -1825,10 +1933,12 @@ class NodeExecutionActionView(APIView):
             user=request.user.username if request.user.is_authenticated else "anonymous",
         )
 
-        return Response({
-            "status": "success",
-            "message": "已手动触发唤醒，工作流继续执行",
-        })
+        return Response(
+            {
+                "status": "success",
+                "message": "已手动触发唤醒，工作流继续执行",
+            }
+        )
 
 
 # =============================================================================
@@ -1887,8 +1997,8 @@ class AlertRuleExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet
     project_field = "alert_rule__project"
 
     def get_queryset(self):
-        queryset = super().get_queryset().select_related(
-            "alert_rule", "workflow_execution__workflow"
+        queryset = (
+            super().get_queryset().select_related("alert_rule", "workflow_execution__workflow")
         )
 
         alert_rule_id = self.request.query_params.get("alert_rule_id")

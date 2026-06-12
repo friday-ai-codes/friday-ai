@@ -932,7 +932,19 @@ async def _update_repository_on_summary_complete(
     raw_text = p["output"].get("text", "") if p["result_type"] == "text" else ""
     parsed_summary = _parse_summary_json(raw_text)
 
-    repo.ai_summary = parsed_summary[:8192]
+    try:
+        payload_obj = json_mod.loads(parsed_summary)
+    except (json_mod.JSONDecodeError, TypeError):
+        payload_obj = None
+
+    # ai_summary 存「剥离 tree 的 JSON」：tree 体积大（可达数万字符）且已
+    # 单独存 ai_summary_tree；带 tree 直接截断 8192 会把 JSON 腰斩，导致
+    # overview_text 解析失败、对外描述变成乱码 JSON 片段。
+    if isinstance(payload_obj, dict):
+        summary_obj = {k: v for k, v in payload_obj.items() if k != "tree"}
+        repo.ai_summary = json_mod.dumps(summary_obj, ensure_ascii=False, indent=2)[:8192]
+    else:
+        repo.ai_summary = parsed_summary[:8192]
     repo.ai_summary_status = "completed"
     repo.ai_summary_generated_at = timezone.now()
     repo.ai_summary_error = ""
@@ -946,10 +958,6 @@ async def _update_repository_on_summary_complete(
 
     # 结构化能力树解析 + 校验（fail-closed：失败保留旧树）
     tree_written = False
-    try:
-        payload_obj = json_mod.loads(parsed_summary)
-    except (json_mod.JSONDecodeError, TypeError):
-        payload_obj = None
 
     if isinstance(payload_obj, dict) and payload_obj.get("tree"):
         from repositories.tree_schema import (

@@ -3,6 +3,14 @@ import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, inject } from 'vue'
 import api from '~/api/client'
+import {
+  axisLabelStyle,
+  axisLineStyle,
+  chartGrid,
+  splitLineStyle,
+  tooltipStyle,
+} from '~/components/analytics/chart-theme'
+import ChartCard from '~/components/analytics/ChartCard.vue'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
 
@@ -31,27 +39,21 @@ const chartOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(75, 85, 99, 0.3)',
-      textStyle: { color: '#e5e7eb' },
+      ...tooltipStyle,
     },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      containLabel: true,
-    },
+    grid: { ...chartGrid, top: 20 },
     xAxis: {
       type: 'category' as const,
       data: buckets.map(b => b.bucket_label),
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
+      axisLine: axisLineStyle,
+      axisLabel: axisLabelStyle,
+      axisTick: { show: false },
     },
     yAxis: {
       type: 'value' as const,
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
-      splitLine: { lineStyle: { color: '#1f2937' } },
+      axisLine: { show: false },
+      axisLabel: axisLabelStyle,
+      splitLine: splitLineStyle,
     },
     series: [
       {
@@ -65,13 +67,13 @@ const chartOption = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: '#3b82f6' },
-              { offset: 1, color: '#06b6d4' },
+              { offset: 0, color: '#14b8a6' },
+              { offset: 1, color: '#0d9488' },
             ],
           },
-          borderRadius: [4, 4, 0, 0],
+          borderRadius: [6, 6, 0, 0],
         },
-        barMaxWidth: 40,
+        barMaxWidth: 36,
       },
     ],
   }
@@ -79,14 +81,17 @@ const chartOption = computed(() => {
 </script>
 
 <template>
-  <div class="card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30">
-    <h3 class="text-sm font-medium text-muted-foreground mb-4">
-      执行时长分布
-    </h3>
-    <Skeleton v-if="isLoading" class="h-[300px] w-full" />
-    <div v-else-if="!data?.some(b => b.count > 0)" class="h-[300px] flex items-center justify-center text-muted-foreground">
-      暂无执行数据
+  <ChartCard
+    title="执行时长分布"
+    description="按时长区间统计的执行次数"
+    icon="lucide--bar-chart-2"
+    icon-class="bg-teal-500/10 text-teal-600"
+  >
+    <Skeleton v-if="isLoading" class="h-[300px] w-full rounded-lg" />
+    <div v-else-if="!data?.some(b => b.count > 0)" class="h-[300px] flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <span class="icon-[lucide--bar-chart-2] text-3xl opacity-30" />
+      <span class="text-sm">暂无执行数据</span>
     </div>
     <VChart v-else :option="chartOption" style="height: 300px" autoresize />
-  </div>
+  </ChartCard>
 </template>

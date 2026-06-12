@@ -55,22 +55,25 @@ async function openTriggerLog() {
     class="shrink-0 flex items-center justify-between px-4 py-2 h-14 bg-background/80 backdrop-blur-sm border-b border-border/50 z-20"
   >
     <!-- 左侧：返回 + 名称 -->
-    <div class="flex items-center gap-3 min-w-0">
-      <Button variant="ghost" size="icon" class="shrink-0 h-8 w-8" @click="emit('back')">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <Button variant="ghost" size="icon" class="shrink-0 h-8 w-8 rounded-lg" @click="emit('back')">
         <span class="icon-[lucide--arrow-left] w-4 h-4" />
       </Button>
+      <div class="hidden sm:flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+        <span class="icon-[lucide--workflow] w-4 h-4 text-primary" />
+      </div>
       <div class="min-w-0">
         <div class="text-sm font-semibold truncate">
           {{ workflowName || '工作流执行' }}
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-[10px] text-muted-foreground font-mono truncate">
+          <code class="text-[10px] text-muted-foreground font-mono truncate">
             {{ executionId }}
-          </span>
+          </code>
           <button
             v-if="triggerLogId"
             type="button"
-            class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
+            class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors shrink-0"
             @click.stop="openTriggerLog"
           >
             <span class="icon-[lucide--file-text] w-3 h-3" />

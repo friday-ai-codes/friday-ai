@@ -274,6 +274,95 @@ class TestWorkflowExecutionAPI:
 
 
 # ============================================================================
+# Execution Batch Delete Tests
+# ============================================================================
+
+
+@pytest.mark.django_db
+class TestExecutionBatchDeleteAPI:
+    """Tests for POST /api/workflow-executions/batch-delete/."""
+
+    URL = "/api/workflow-executions/batch-delete/"
+
+    def _create_execution(self, workflow, exec_status="completed"):
+        return WorkflowExecution.objects.create(
+            workflow=workflow,
+            project=workflow.project,
+            trigger_type="manual",
+            status=exec_status,
+        )
+
+    def test_superuser_can_batch_delete(self, authenticated_admin_client, api_workflow):
+        """superuser 可批量删除已结束的执行。"""
+        e1 = self._create_execution(api_workflow, "completed")
+        e2 = self._create_execution(api_workflow, "failed")
+
+        response = authenticated_admin_client.post(
+            self.URL, {"ids": [str(e1.id), str(e2.id)]}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["deleted"] == 2
+        assert WorkflowExecution.objects.filter(id__in=[e1.id, e2.id]).count() == 0
+
+    def test_active_executions_are_skipped(self, authenticated_admin_client, api_workflow):
+        """运行中/等待中的执行不会被删除。"""
+        running = self._create_execution(api_workflow, "running")
+        done = self._create_execution(api_workflow, "completed")
+
+        response = authenticated_admin_client.post(
+            self.URL, {"ids": [str(running.id), str(done.id)]}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["deleted"] == 1
+        assert str(running.id) in response.data["skipped_active"]
+        assert WorkflowExecution.objects.filter(id=running.id).exists()
+
+    def test_non_admin_member_is_forbidden(self, authenticated_client, user, api_workflow):
+        """空间普通成员（member）无权批量删除。"""
+        from permissions.models import ProjectMembership, ProjectRole
+
+        ProjectMembership.objects.create(
+            user=user, project=api_workflow.project, role=ProjectRole.MEMBER
+        )
+        execution = self._create_execution(api_workflow, "completed")
+
+        response = authenticated_client.post(self.URL, {"ids": [str(execution.id)]}, format="json")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert WorkflowExecution.objects.filter(id=execution.id).exists()
+
+    def test_project_admin_can_batch_delete(self, authenticated_client, user, api_workflow):
+        """空间 admin 可以批量删除本空间的执行。"""
+        from permissions.models import ProjectMembership, ProjectRole
+
+        ProjectMembership.objects.create(
+            user=user, project=api_workflow.project, role=ProjectRole.ADMIN
+        )
+        execution = self._create_execution(api_workflow, "cancelled")
+
+        response = authenticated_client.post(self.URL, {"ids": [str(execution.id)]}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["deleted"] == 1
+        assert not WorkflowExecution.objects.filter(id=execution.id).exists()
+
+    def test_invalid_payload_rejected(self, authenticated_admin_client):
+        """ids 缺失或非法时返回 400。"""
+        assert (
+            authenticated_admin_client.post(self.URL, {}, format="json").status_code
+            == status.HTTP_400_BAD_REQUEST
+        )
+        assert (
+            authenticated_admin_client.post(
+                self.URL, {"ids": ["not-a-uuid"]}, format="json"
+            ).status_code
+            == status.HTTP_400_BAD_REQUEST
+        )
+
+
+# ============================================================================
 # Node Type API Tests
 # ============================================================================
 
@@ -491,9 +580,7 @@ class TestReactSteps:
         log2_data = next(item for item in response.data if item["sequence"] == 2)
         assert log2_data["payload_summary"].endswith("...")
 
-    def test_react_steps_empty_for_no_logs(
-        self, authenticated_admin_client, obs_node_executions
-    ):
+    def test_react_steps_empty_for_no_logs(self, authenticated_admin_client, obs_node_executions):
         """没有 ActionLog 的节点应返回空列表。"""
         ne2 = obs_node_executions[1]  # 没有关联的 SubAgentSession
         url = f"/api/node-executions/{ne2.id}/react-steps/"
@@ -597,9 +684,7 @@ class TestCostBreakdown:
         assert summary["total_cost_usd"] == "0.060000"  # 0.015 + 0.045
         assert "model_distribution" in summary
 
-    def test_cost_breakdown_empty_execution(
-        self, authenticated_admin_client, obs_execution
-    ):
+    def test_cost_breakdown_empty_execution(self, authenticated_admin_client, obs_execution):
         """没有节点执行的执行应返回空结果。"""
         url = f"/api/workflow-executions/{obs_execution.id}/cost-breakdown/"
         response = authenticated_admin_client.get(url)
@@ -654,9 +739,7 @@ class TestTimeline:
         assert bottlenecks[1]["bottleneck_level"] == "warning"
         assert bottlenecks[2]["bottleneck_level"] == "warning"
 
-    def test_timeline_summary(
-        self, authenticated_admin_client, obs_execution, obs_node_executions
-    ):
+    def test_timeline_summary(self, authenticated_admin_client, obs_execution, obs_node_executions):
         """timeline summary 应包含摘要统计。"""
         url = f"/api/workflow-executions/{obs_execution.id}/timeline/"
         response = authenticated_admin_client.get(url)
@@ -787,8 +870,15 @@ class TestNodeSubStepAPI:
 
         step = response.data[0]
         expected_fields = {
-            "id", "name", "step_type", "step_order", "status",
-            "input_data", "output_data", "started_at", "completed_at",
+            "id",
+            "name",
+            "step_type",
+            "step_order",
+            "status",
+            "input_data",
+            "output_data",
+            "started_at",
+            "completed_at",
         }
         assert set(step.keys()) == expected_fields
 

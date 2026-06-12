@@ -410,14 +410,32 @@ Implement the task as described. Make necessary code changes.
             "- 不需要任何人批准你的计划或结果，调用工具成功后直接结束任务"
         )
 
-        result = await self._execute_claude(
-            prompt=prompt,
-            permission_mode="bypassPermissions",
-            max_turns=15,  # 覆盖默认 50，控制成本
-            extra_mcp_servers={REPO_SUMMARY_MCP_SERVER_NAME: summary_server},
-            extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
-            disallowed_tools=["Write", "Edit", "MultiEdit", "NotebookEdit"],
-        )
+        # max_turns 不能太小：大型 monorepo 只读分析常需 30+ 轮工具调用，
+        # 轮次用尽时 claude CLI 以非零码退出（SDK 抛 ProcessError），整次
+        # 任务白跑（实测 15 轮在 monorepo 上 100% 触发）。
+        try:
+            result = await self._execute_claude(
+                prompt=prompt,
+                permission_mode="bypassPermissions",
+                max_turns=40,
+                extra_mcp_servers={REPO_SUMMARY_MCP_SERVER_NAME: summary_server},
+                extra_allowed_tools=[*_READONLY_ANALYSIS_TOOLS, submit_tool],
+                disallowed_tools=["Write", "Edit", "MultiEdit", "NotebookEdit"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            # CLI 非零退出（如 max-turns 用尽）不应吞掉已捕获的提交结果；
+            # 未捕获到结果时给出可诊断的错误，而非裸 ProcessError。
+            if not self._captured_summary:
+                log.error("repo_summary_claude_failed", error=str(exc))
+                return {
+                    "success": False,
+                    "error": (
+                        "Claude 执行中断（疑似轮次用尽仍未调用 submit_summary "
+                        f"提交结果）: {exc}"
+                    ),
+                }
+            log.warning("repo_summary_claude_exit_after_submit", error=str(exc))
+            result = {"success": True, "output": ""}
 
         # 只要工具捕获到结构化结果，就以它为准（即使模型最后没有任何文本输出，
         # _execute_claude 会因 empty response 误判失败——这里覆盖回 success）。

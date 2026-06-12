@@ -39,7 +39,8 @@ function onChange(value: string | number | bigint | Record<string, unknown> | nu
 
 <template>
   <Select :model-value="modelValue" @update:model-value="onChange">
-    <SelectTrigger class="w-[140px] bg-card/80 backdrop-blur-sm border-border/50" aria-label="数据分组维度">
+    <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90" aria-label="数据分组维度">
+      <span class="icon-[lucide--layout-grid] mr-1.5 text-sm text-muted-foreground" />
       <SelectValue>
         {{ labels[modelValue] }}
       </SelectValue>

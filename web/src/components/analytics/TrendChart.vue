@@ -3,6 +3,15 @@ import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, inject } from 'vue'
 import api from '~/api/client'
+import {
+  axisLabelStyle,
+  axisLineStyle,
+  chartGrid,
+  legendTextStyle,
+  splitLineStyle,
+  tooltipStyle,
+} from '~/components/analytics/chart-theme'
+import ChartCard from '~/components/analytics/ChartCard.vue'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
 
@@ -33,37 +42,38 @@ const chartOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: 'rgba(17, 24, 39, 0.9)',
-      borderColor: 'rgba(75, 85, 99, 0.3)',
-      textStyle: { color: '#e5e7eb' },
+      ...tooltipStyle,
     },
     legend: {
       data: ['已完成', '失败'],
-      textStyle: { color: '#9ca3af' },
+      textStyle: legendTextStyle,
+      icon: 'circle',
+      itemWidth: 8,
+      itemHeight: 8,
     },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      containLabel: true,
-    },
+    grid: chartGrid,
     xAxis: {
       type: 'category' as const,
       data: points.map(p => p.date),
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
+      boundaryGap: false,
+      axisLine: axisLineStyle,
+      axisLabel: axisLabelStyle,
+      axisTick: { show: false },
     },
     yAxis: {
       type: 'value' as const,
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af' },
-      splitLine: { lineStyle: { color: '#1f2937' } },
+      axisLine: { show: false },
+      axisLabel: axisLabelStyle,
+      splitLine: splitLineStyle,
     },
     series: [
       {
         name: '已完成',
         type: 'line' as const,
         smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        showSymbol: false,
         areaStyle: {
           color: {
             type: 'linear' as const,
@@ -72,12 +82,12 @@ const chartOption = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(16, 185, 129, 0.8)' },
-              { offset: 1, color: 'rgba(20, 184, 166, 0.1)' },
+              { offset: 0, color: 'rgba(16, 185, 129, 0.28)' },
+              { offset: 1, color: 'rgba(16, 185, 129, 0.02)' },
             ],
           },
         },
-        lineStyle: { color: '#10b981', width: 2 },
+        lineStyle: { color: '#10b981', width: 2.5 },
         itemStyle: { color: '#10b981' },
         data: points.map(p => p.completed),
       },
@@ -85,6 +95,9 @@ const chartOption = computed(() => {
         name: '失败',
         type: 'line' as const,
         smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        showSymbol: false,
         areaStyle: {
           color: {
             type: 'linear' as const,
@@ -93,13 +106,13 @@ const chartOption = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(245, 158, 11, 0.8)' },
-              { offset: 1, color: 'rgba(249, 115, 22, 0.1)' },
+              { offset: 0, color: 'rgba(239, 68, 68, 0.22)' },
+              { offset: 1, color: 'rgba(239, 68, 68, 0.02)' },
             ],
           },
         },
-        lineStyle: { color: '#f59e0b', width: 2 },
-        itemStyle: { color: '#f59e0b' },
+        lineStyle: { color: '#ef4444', width: 2.5 },
+        itemStyle: { color: '#ef4444' },
         data: points.map(p => p.failed),
       },
     ],
@@ -108,14 +121,17 @@ const chartOption = computed(() => {
 </script>
 
 <template>
-  <div class="card p-6 transition-all duration-200 hover:shadow-lg hover:border-primary/30">
-    <h3 class="text-sm font-medium text-muted-foreground mb-4">
-      成功/失败趋势
-    </h3>
-    <Skeleton v-if="isLoading" class="h-[300px] w-full" />
-    <div v-else-if="!data?.length" class="h-[300px] flex items-center justify-center text-muted-foreground">
-      暂无执行数据
+  <ChartCard
+    title="成功/失败趋势"
+    description="每日完成与失败执行数"
+    icon="lucide--trending-up"
+    icon-class="bg-emerald-500/10 text-emerald-600"
+  >
+    <Skeleton v-if="isLoading" class="h-[300px] w-full rounded-lg" />
+    <div v-else-if="!data?.length" class="h-[300px] flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <span class="icon-[lucide--line-chart] text-3xl opacity-30" />
+      <span class="text-sm">暂无执行数据</span>
     </div>
     <VChart v-else :option="chartOption" style="height: 300px" autoresize />
-  </div>
+  </ChartCard>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends object">
-import type { ColumnDef, PaginationState, SortingState, VisibilityState } from '@tanstack/vue-table'
+import type { ColumnDef, PaginationState, RowSelectionState, SortingState, VisibilityState } from '@tanstack/vue-table'
 import {
 
   FlexRender,
@@ -15,6 +15,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import EmptyState from '~/components/common/EmptyState.vue'
 import Button from '~/components/ui/button/Button.vue'
+import { Checkbox } from '~/components/ui/checkbox'
 import {
   Popover,
   PopoverContent,
@@ -53,10 +54,17 @@ const props = defineProps<{
    * 提供独立的分页控件，避免双套分页相互冲突。
    */
   serverSide?: boolean
+  /** 开启行多选（渲染选择列），配合 v-model:row-selection 使用 */
+  selectable?: boolean
+  /** 行 ID 提取器；selectable 时建议传入业务 ID，使选择状态与数据解耦 */
+  getRowId?: (row: T) => string
+  /** 搜索框占位文案 */
+  searchPlaceholder?: string
 }>()
 
 defineSlots<{
   filters: () => unknown
+  selection: (props: { count: number, clear: () => void }) => unknown
 }>()
 
 // --- 受控状态 ---
@@ -70,6 +78,7 @@ const pagination = ref<PaginationState>({
   pageIndex: 0,
   pageSize: props.pageSize ?? 20,
 })
+const rowSelection = defineModel<RowSelectionState>('rowSelection', { default: () => ({}) })
 
 // --- useVueTable 初始化（getter 函数模式，保证响应性）---
 const table = useVueTable({
@@ -80,11 +89,14 @@ const table = useVueTable({
   getFilteredRowModel: getFilteredRowModel(),
   // server-side 模式不挂客户端分页 row model：data 即为当前页全部行
   ...(props.serverSide ? {} : { getPaginationRowModel: getPaginationRowModel() }),
+  enableRowSelection: props.selectable ?? false,
+  ...(props.getRowId ? { getRowId: props.getRowId } : {}),
   state: {
     get sorting() { return sorting.value },
     get globalFilter() { return globalFilter.value },
     get columnVisibility() { return columnVisibility.value },
     get pagination() { return pagination.value },
+    get rowSelection() { return rowSelection.value },
   },
   onSortingChange: (u) => {
     sorting.value = typeof u === 'function' ? u(sorting.value) : u
@@ -100,6 +112,22 @@ const table = useVueTable({
   onPaginationChange: (u) => {
     pagination.value = typeof u === 'function' ? u(pagination.value) : u
   },
+  onRowSelectionChange: (u) => {
+    rowSelection.value = typeof u === 'function' ? u(rowSelection.value) : u
+  },
+})
+
+// --- 选择状态 ---
+const selectedCount = computed(() => Object.keys(rowSelection.value).filter(k => rowSelection.value[k]).length)
+function clearSelection() {
+  rowSelection.value = {}
+}
+const headerCheckboxState = computed<boolean | 'indeterminate'>(() => {
+  if (table.getIsAllPageRowsSelected())
+    return true
+  if (table.getIsSomePageRowsSelected())
+    return 'indeterminate'
+  return false
 })
 
 // 每页条数选择（字符串适配 Select 组件）
@@ -154,19 +182,24 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
     return header
   return column.id
 }
+
+const colSpanCount = computed(() => table.getAllColumns().length + (props.selectable ? 1 : 0))
 </script>
 
 <template>
-  <div class="card overflow-hidden shadow-[var(--shadow-glass)]">
+  <div class="card overflow-hidden rounded-xl border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
     <!-- 工具栏：搜索框 + #filters slot + 列可见性按钮 -->
-    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/30">
-      <div class="flex items-center gap-3 flex-1">
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border/40 bg-muted/20">
+      <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
         <!-- 全局搜索框 -->
-        <input
-          v-model="globalFilter"
-          placeholder="搜索..."
-          class="flex h-9 w-64 rounded-xl border border-border/50 bg-card/70 backdrop-blur-sm px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
+        <div class="relative">
+          <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
+          <input
+            v-model="globalFilter"
+            :placeholder="props.searchPlaceholder ?? '搜索...'"
+            class="flex h-9 w-56 rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
+          >
+        </div>
         <!-- 调用方额外筛选控件 slot -->
         <slot name="filters" />
       </div>
@@ -174,13 +207,13 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
       <!-- 列可见性控件 -->
       <Popover>
         <PopoverTrigger as-child>
-          <Button variant="outline" size="sm" class="gap-1.5">
-            <span class="icon-[lucide--columns]" />
+          <Button variant="outline" size="sm" class="h-9 gap-1.5 rounded-lg bg-background/90">
+            <span class="icon-[lucide--sliders-horizontal] text-sm" />
             列
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" class="w-48 p-2">
-          <p class="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+          <p class="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             显示/隐藏列
           </p>
           <div class="border-t border-border/50 my-1" />
@@ -201,16 +234,53 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
       </Popover>
     </div>
 
+    <!-- 批量选择操作条 -->
+    <Transition
+      enter-active-class="transition-all duration-200 ease-out"
+      enter-from-class="opacity-0 -translate-y-1"
+      leave-active-class="transition-all duration-150 ease-in"
+      leave-to-class="opacity-0 -translate-y-1"
+    >
+      <div
+        v-if="props.selectable && selectedCount > 0"
+        class="flex items-center gap-3 px-4 py-2.5 border-b border-primary/20 bg-primary/6"
+      >
+        <span class="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+          <span class="icon-[lucide--check-square] text-sm" />
+          已选择 {{ selectedCount }} 项
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+          @click="clearSelection"
+        >
+          取消选择
+        </Button>
+        <div class="flex-1" />
+        <slot name="selection" :count="selectedCount" :clear="clearSelection" />
+      </div>
+    </Transition>
+
     <!-- 表格区域 -->
     <Table>
       <TableHeader>
         <TableRow
           v-for="headerGroup in table.getHeaderGroups()"
           :key="headerGroup.id"
+          class="bg-muted/30 hover:bg-muted/30"
         >
+          <TableHead v-if="props.selectable" class="w-10 pl-4 pr-0">
+            <Checkbox
+              :model-value="headerCheckboxState"
+              aria-label="全选当前页"
+              @update:model-value="(v) => table.toggleAllPageRowsSelected(v === true)"
+            />
+          </TableHead>
           <TableHead
             v-for="header in headerGroup.headers"
             :key="header.id"
+            class="h-11 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
             :class="header.column.getCanSort() ? 'cursor-pointer select-none' : ''"
             @click="header.column.getCanSort() ? header.column.toggleSorting() : undefined"
           >
@@ -233,6 +303,9 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
         <!-- Loading skeleton -->
         <template v-if="props.loading">
           <TableRow v-for="i in 8" :key="i">
+            <TableCell v-if="props.selectable" class="w-10 pl-4 pr-0">
+              <Skeleton class="h-4 w-4 rounded-sm" />
+            </TableCell>
             <TableCell
               v-for="col in table.getAllColumns()"
               :key="col.id"
@@ -247,9 +320,21 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
           <TableRow
             v-for="row in table.getRowModel().rows"
             :key="row.id"
-            :class="props.onRowClick ? 'cursor-pointer hover:bg-muted/50' : ''"
+            class="group/row transition-colors"
+            :class="[
+              props.onRowClick ? 'cursor-pointer hover:bg-muted/40' : 'hover:bg-muted/20',
+              row.getIsSelected() ? 'bg-primary/4 hover:bg-primary/7' : '',
+            ]"
             @click="props.onRowClick?.(row.original)"
           >
+            <TableCell v-if="props.selectable" class="w-10 pl-4 pr-0" @click.stop>
+              <Checkbox
+                :model-value="row.getIsSelected()"
+                :disabled="!row.getCanSelect()"
+                aria-label="选择行"
+                @update:model-value="(v) => row.toggleSelected(v === true)"
+              />
+            </TableCell>
             <TableCell v-for="cell in row.getVisibleCells()" :key="cell.id">
               <FlexRender
                 :render="cell.column.columnDef.cell"
@@ -262,7 +347,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
         <!-- 空状态 -->
         <template v-else>
           <TableRow>
-            <TableCell :colspan="table.getAllColumns().length" class="py-12">
+            <TableCell :colspan="colSpanCount" class="py-12">
               <EmptyState />
             </TableCell>
           </TableRow>
@@ -271,16 +356,16 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
     </Table>
 
     <!-- 分页区域：server-side 模式由外层接管，DataTable 自身不渲染 -->
-    <div v-if="!props.serverSide" class="flex items-center justify-between px-4 py-3 border-t border-border/30">
+    <div v-if="!props.serverSide" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-border/40 bg-muted/20">
       <!-- 左侧：显示范围 + 每页条数 -->
       <div class="flex items-center gap-4">
-        <span class="text-sm text-muted-foreground">
+        <span class="text-sm text-muted-foreground tabular-nums">
           显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ totalRows }} 条结果
         </span>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-muted-foreground">每页:</span>
+          <span class="text-sm text-muted-foreground">每页</span>
           <Select :model-value="pageSizeStr" @update:model-value="handlePageSizeChange">
-            <SelectTrigger class="h-8 w-[70px]">
+            <SelectTrigger class="h-8 w-[70px] rounded-lg bg-background/90">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -297,7 +382,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
         <Button
           variant="outline"
           size="icon"
-          class="h-8 w-8"
+          class="h-8 w-8 rounded-lg"
           :disabled="!table.getCanPreviousPage()"
           @click="table.previousPage()"
         >
@@ -310,7 +395,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
             v-else
             :variant="page === currentPage ? 'default' : 'outline'"
             size="icon"
-            class="h-8 w-8 text-xs"
+            class="h-8 w-8 rounded-lg text-xs tabular-nums"
             @click="goToPage(page)"
           >
             {{ page }}
@@ -320,7 +405,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
         <Button
           variant="outline"
           size="icon"
-          class="h-8 w-8"
+          class="h-8 w-8 rounded-lg"
           :disabled="!table.getCanNextPage()"
           @click="table.nextPage()"
         >

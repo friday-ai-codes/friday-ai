@@ -574,8 +574,15 @@ class FeishuWebhookView(APIView):
             return Response({"status": "duplicate", "uuid": event_uuid})
 
         # Get project
-        project_key = payload.get("project_key") or payload.get("project_simple_name")
-        if not project_key:
+        # 事件 payload 同时携带 project_key（飞书内部空间 ID）与
+        # project_simple_name（空间 URL 域名前缀）；用户在空间设置里配的
+        # 通常是后者（UI 提示按 URL 前缀获取），两者任一命中即匹配成功。
+        candidate_keys = [
+            key
+            for key in (payload.get("project_key"), payload.get("project_simple_name"))
+            if key
+        ]
+        if not candidate_keys:
             await TriggerLog.objects.acreate(
                 webhook_raw_request=raw_body,
                 event_uuid=None,  # 事件未被处理，不占用 unique 约束位
@@ -585,20 +592,26 @@ class FeishuWebhookView(APIView):
             )
             return Response({"status": "ignored", "reason": "缺少 space_key"})
 
-        try:
-            project = await Project.objects.prefetch_related("repositories").aget(
-                feishu_project_key=project_key
-            )
-        except Project.DoesNotExist:
+        project = (
+            await Project.objects.prefetch_related("repositories")
+            .filter(feishu_project_key__in=candidate_keys)
+            .afirst()
+        )
+        if project is None:
+            keys_display = " / ".join(candidate_keys)
             await TriggerLog.objects.acreate(
                 webhook_raw_request=raw_body,
                 event_uuid=None,  # 事件未被处理，不占用 unique 约束位
                 event_type=event_type,
-                project_key=project_key,
+                project_key=candidate_keys[0],
                 status=TriggerLogStatus.IGNORED,
-                error_message=f"空间未配置: {project_key}",
+                error_message=f"空间未配置: {keys_display}",
             )
-            return Response({"status": "ignored", "reason": f"空间未配置: {project_key}"})
+            return Response({"status": "ignored", "reason": f"空间未配置: {keys_display}"})
+
+        # 后续日志/TriggerLog/摄取统一使用空间配置的 key（与 handler 内
+        # project.feishu_project_key 取值一致，避免同一空间出现两种 key 记录）
+        project_key = project.feishu_project_key
 
         # Verify webhook token
         token = header.get("token", "")

@@ -150,6 +150,19 @@ class TestIntentPriorityFragments:
         assert "top1 score < 0.7" in prompt
         assert "必须调 ask_clarification" in prompt
 
+    async def test_strategy_default_routes_code_understanding_before_local_search(
+        self,
+        disable_all_chat_slugs: None,
+    ) -> None:
+        """代码理解问答也必须先路由仓库，避免把当前仓库误判为答案所在地。"""
+        prompt = await _build_system_prompt(
+            "P1", "proj-1", role="developer", force_deep_analysis=False
+        )
+        assert "代码理解" in prompt
+        assert "功能是怎么实现" in prompt
+        assert "当前仓库只是入口" in prompt
+        assert "先调用 analyze_repository_relevance" in prompt
+
     async def test_coding_guidance_includes_relev_gate(
         self,
         disable_all_chat_slugs: None,
@@ -202,6 +215,19 @@ class TestIntentPriorityFragments:
         )
         assert "top1 score < 0.7" in prompt
         assert "必须调 ask_clarification" in prompt
+
+    async def test_strategy_default_routes_code_understanding_before_local_search(
+        self,
+        disable_all_chat_slugs: None,
+    ) -> None:
+        """代码理解问答也必须先路由仓库，避免把当前仓库误判为答案所在地。"""
+        prompt = await _build_system_prompt(
+            "P1", "proj-1", role="developer", force_deep_analysis=False
+        )
+        assert "代码理解" in prompt
+        assert "功能是怎么实现" in prompt
+        assert "当前仓库只是入口" in prompt
+        assert "先调用 analyze_repository_relevance" in prompt
 
     async def test_coding_guidance_includes_relev_gate(
         self,

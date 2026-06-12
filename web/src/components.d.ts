@@ -61,6 +61,7 @@ declare module 'vue' {
     CardFooter: typeof import('./components/ui/card/CardFooter.vue')['default']
     CardHeader: typeof import('./components/ui/card/CardHeader.vue')['default']
     CardTitle: typeof import('./components/ui/card/CardTitle.vue')['default']
+    ChartCard: typeof import('./components/analytics/ChartCard.vue')['default']
     ChatConversationList: typeof import('./components/chat/ChatConversationList.vue')['default']
     ChatHeader: typeof import('./components/chat/ChatHeader.vue')['default']
     ChatInput: typeof import('./components/chat/ChatInput.vue')['default']
