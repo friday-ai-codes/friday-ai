@@ -349,7 +349,9 @@ export function buildPrefixRef(prefix: 'input' | 'trigger' | 'global' | 'context
    - Recommendation: 本阶段严格化限定 `nodes.*` + 未知前缀；其余前缀维持现状并补现状锁定测试，留给 Phase 18（trigger 注入）/20（保存校验）再收紧。计划中必须显式写出此定界。
 2. **工作流导入（`Workflow.from_json`）不设置 short_id，导入即漂移。**
    - Recommendation: 超出 ROADMAP 对本阶段的定义（bulk-update），列为已知缺口移交 Phase 20 或 backlog；若计划者认为顺手（导入处按 export 的 short_id 落库 + 同样唯一性处理），可作可选任务。
+   - **RESOLVED (planning, 2026-06-12)：** 移交 Phase 20——本阶段计划集（17-01..04）不含导入路径改造，已知缺口记录于 17-02-PLAN.md success_criteria，由 Phase 20 的统一校验/模板修复（VAL/TPL）承接。
 3. **结构化字段在 error_message 中的具体编码**（纯文案/格式 discretion）：建议"中文一句话 + `\n` + JSON 对象（reference/reason/available/template）"，Phase 21 可 `JSON.parse` 最后一行。
+   - **RESOLVED (planning, 2026-06-12)：** 采纳推荐编码"中文一句话 + `\n` + JSON（ensure_ascii=False）"，已写入 17-01-PLAN.md Task 3 的 action 与 acceptance_criteria（最后一行可 json.loads，含 reference/reason/available/template 四键）；具体中文措辞留 executor discretion。
 
 ## Environment Availability
 
