@@ -1074,6 +1074,8 @@ class WorkflowEngine:
                     workflow_execution=execution,
                     node_execution=node_execution,
                     node_snapshots=node_snapshots,
+                    trigger_data=execution.trigger_data
+                    or {},  # ENG-03 唯一读取侧缺口：注入触发数据使 {{trigger.*}} 真实可解析
                 )
 
                 # 执行节点（带可选超时）
@@ -1940,11 +1942,13 @@ class WorkflowEngine:
             status=ExecutionStatus.PENDING,
             trigger_type="resume",
             triggered_by=triggered_by,
+            # ENG-03：继承原执行 trigger_data（source/raw_payload 不丢失），再附加 resume metadata
             trigger_data={
+                **(original_execution.trigger_data or {}),
                 "metadata": {
                     "resumed_from": str(original_execution.id),
                     "failed_node_id": failed_node_id,
-                }
+                },
             },
             input_data=original_execution.input_data,
             resumed_from=original_execution,
