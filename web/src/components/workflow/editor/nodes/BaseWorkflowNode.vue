@@ -12,12 +12,17 @@ import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '~/composables/useToast'
+import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
-import { getDefaultPortsForNodeType } from '../utils/portConfig'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
+
+interface PortItem {
+  id: string
+  group: 'input' | 'output'
+}
 
 const props = withDefaults(defineProps<{
   id: string
@@ -33,6 +38,7 @@ const props = withDefaults(defineProps<{
 }>(), { hideHandles: 'none' })
 
 const store = useWorkflowsStore()
+const nodeTypesStore = useNodeTypesStore()
 const { dirtyNodeIds } = storeToRefs(store)
 const { getSelectedNodes } = useVueFlow()
 const router = useRouter()
@@ -41,7 +47,24 @@ const { success, error: toastError } = useToast()
 const visual = computed(() => getNodeVisual(props.data.nodeType))
 const style = computed(() => useNodeStyle(visual.value.color).value)
 
-const ports = computed(() => getDefaultPortsForNodeType(props.data.nodeType))
+/**
+ * Handle 端口集以后端 NodePort（useNodeTypesStore.inputs/outputs）为准（D-04）。
+ * computed 依赖 store ref → fetchNodeTypes 异步就绪后自动重渲染（RESEARCH Pitfall 1）。
+ * store 未就绪（首帧/离线）时回退最小端口（单 in/单 out + default），避免首帧空 Handle。
+ */
+const ports = computed<PortItem[]>(() => {
+  const nt = nodeTypesStore.getNodeType(props.data.nodeType)
+  if (!nt) {
+    return [
+      { id: 'default', group: 'input' },
+      { id: 'default', group: 'output' },
+    ]
+  }
+  return [
+    ...nt.inputs.map(p => ({ id: p.name, group: 'input' as const })),
+    ...nt.outputs.map(p => ({ id: p.name, group: 'output' as const })),
+  ]
+})
 const inputPorts = computed(() => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed(() => ports.value.filter(p => p.group === 'output'))
 
