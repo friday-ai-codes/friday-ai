@@ -15,6 +15,9 @@ export const executionStatusConfig: Record<string, StatusConfig> = {
   failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
   cancelled: { label: '已取消', icon: 'lucide--square', variant: 'muted' },
   timeout: { label: '超时', icon: 'lucide--alarm-clock-off', variant: 'warning' },
+  // OBS-03 / Pitfall 7：suspended 是 execution 级挂起态（Phase 18 等待落点），与后端 ExecutionStatus 对齐，补非 fallback badge
+  suspended: { label: '挂起中', icon: 'lucide--pause-circle', variant: 'warning' },
+  // 注：waiting_approval / waiting_input 仅用于 node 状态渲染（如 NodeOverviewTab），不用于 execution 级筛选/统计
   waiting_approval: { label: '待审批', icon: 'lucide--user-check', variant: 'warning' },
   waiting_input: { label: '待输入', icon: 'lucide--edit', variant: 'info' },
   skipped: { label: '已跳过', icon: 'lucide--skip-forward', variant: 'muted' },
