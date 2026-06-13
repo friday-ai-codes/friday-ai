@@ -21,7 +21,7 @@
 ## Phases
 
 - [x] **Phase 17: 变量引用链路修复** - 自建流水线 short_id 保存同步/重写，解析失败显式报错，前端引用入口统一格式，嵌套路径与解析器测试 (completed 2026-06-12)
-- [ ] **Phase 18: 执行引擎状态机修复** - waiting_event 完成判定、next_handle 分支路由、trigger_data 注入、死锁诊断、target_handle 语义收敛与引擎回归测试
+- [x] **Phase 18: 执行引擎状态机修复** - waiting_event 完成判定、next_handle 分支路由、trigger_data 注入、死锁诊断、target_handle 语义收敛与引擎回归测试 (completed 2026-06-13)
 - [ ] **Phase 19: 节点定义单一事实源** - 前端面板/端口/表单 schema 收敛到 `GET /api/node-types/`，删除硬编码 registry 与 portConfig，CI 一致性守护
 - [ ] **Phase 20: 保存即合法与模板修复** - `WorkflowGraphValidator` 统一校验（保存/导入/模板共用），IssuesPanel 接真实结果，4 个内置模板修复 + 可执行性校验测试
 - [ ] **Phase 21: 触发模型与执行可观测** - 飞书 event_type 断裂修复、schedule 假功能处理、dispatch 失败可查，执行详情错误展示 + WS 断线轮询兜底 + 状态枚举对齐
@@ -89,7 +89,7 @@ Plans:
 
 **Wave 5**
 
-- [ ] 18-05-PLAN.md — trigger_data 写入 source 键 + resume_from_node 继承 + _execute_node 注入 + {{trigger.*}} 端到端测试
+- [x] 18-05-PLAN.md — trigger_data 写入 source 键 + resume_from_node 继承 + _execute_node 注入 + {{trigger.*}} 端到端测试
 
 ### Phase 19: 节点定义单一事实源
 
@@ -144,7 +144,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
-| 18. 执行引擎状态机修复 | 4/5 | In Progress|  |
+| 18. 执行引擎状态机修复 | 5/5 | Complete   | 2026-06-13 |
 | 19. 节点定义单一事实源 | 0/? | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |
 | 21. 触发模型与执行可观测 | 0/? | Not started | - |
