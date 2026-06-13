@@ -55,7 +55,8 @@ export function createNodeDefinition<T>(def: NodeDefinition<T>): NodeDefinition<
  * 所有已迁移节点定义的聚合映射
  *
  * 首批迁移 14 个节点（trigger/control/integration 三个 category）。
- * 剩余 AI 节点在后续 Phase 迁移，仍由 NODE_REGISTRY legacy 管理。
+ * 该聚合仅作构建期 node-definitions.json 注入后端 ui_schema 之用；
+ * 前端运行时节点定义已统一由后端 /api/node-types/（store）驱动。
  */
 export const ALL_NODE_DEFINITIONS: Record<string, NodeDefinition> = {
   ...TRIGGER_DEFS,
