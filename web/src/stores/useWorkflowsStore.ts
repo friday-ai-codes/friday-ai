@@ -1,8 +1,10 @@
+import type { BackendValidationResult } from '~/stores/useWorkflowValidationStore'
 import type { ManualTriggerResponse, WorkflowEdgeStore, WorkflowNodeStore } from '~/types'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import client from '~/api/client'
+import client, { ApiError } from '~/api/client'
 import { migratePortId } from '~/components/workflow/editor/utils/portConfig'
+import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 import { getDefaultConfig as getRegistryDefaultConfig } from '~/types/workflow/registry'
 
 // Backend API response types (snake_case)
@@ -374,6 +376,10 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     if (!currentWorkflow.value)
       return
 
+    const validationStore = useWorkflowValidationStore()
+    // 每次保存重置上一轮校验问题，避免陈旧问题残留面板
+    validationStore.clearAllIssues()
+
     saving.value = true
     error.value = null
     try {
@@ -395,6 +401,15 @@ export const useWorkflowsStore = defineStore('workflows', () => {
       clearDraft()
     }
     catch (e: unknown) {
+      // 后端 WorkflowGraphValidator 拒绝非法图时返回 400 + {errors,warnings}
+      // （与 20-02 dry-run 同源）。灌入 validation store 由 IssuesPanel 呈现，
+      // 并保持抛出——错误阻断保存。
+      if (e instanceof ApiError && e.status === 400) {
+        const body = e.body as BackendValidationResult | null
+        if (body && (body.errors?.length || body.warnings?.length)) {
+          validationStore.addIssues(body)
+        }
+      }
       error.value = (e as Error).message
       throw e
     }

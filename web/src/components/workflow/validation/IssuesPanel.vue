@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown } from 'lucide-vue-next'
+import type { ValidationIssue } from '~/stores/useWorkflowValidationStore'
+import { AlertCircle, AlertTriangle, ChevronDown } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import {
   Collapsible,
@@ -13,7 +14,23 @@ import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 
 const validationStore = useWorkflowValidationStore()
 const workflowStore = useWorkflowsStore()
-const { warningsList, warningCount, hasWarnings } = storeToRefs(validationStore)
+const { issuesList, hasIssues, hasErrors, errorCount, warningCount } = storeToRefs(validationStore)
+
+// 整体面板视觉：含 error 用红色系，否则 amber
+const tone = computed(() => (hasErrors.value
+  ? {
+      container: 'bg-destructive/10 border-destructive/30',
+      hover: 'hover:bg-destructive/5',
+      iconWrap: 'bg-destructive/20',
+      icon: 'text-destructive',
+    }
+  : {
+      container: 'bg-amber-500/10 border-amber-500/30',
+      hover: 'hover:bg-amber-500/5',
+      iconWrap: 'bg-amber-500/20',
+      icon: 'text-amber-600',
+    }),
+)
 
 // Get node name by ID using store getter
 function getNodeName(nodeId: string): string {
@@ -21,31 +38,44 @@ function getNodeName(nodeId: string): string {
   return node?.name || nodeId.slice(0, 8)
 }
 
-// Handle clicking a warning - TODO: integrate with X6 graph for centering
-function handleWarningClick(_warning: typeof warningsList.value[0]) {
+// 单条问题的定位描述：edge 级显示 nodeId/fieldPath，否则展示 reason/fieldPath
+function describeLocation(issue: ValidationIssue): string {
+  if (issue.nodeId)
+    return issue.fieldPath ? `${getNodeName(issue.nodeId)} · ${issue.fieldPath}` : getNodeName(issue.nodeId)
+  if (issue.edgeId)
+    return issue.fieldPath || issue.edgeId
+  return issue.fieldPath || issue.reason
+}
+
+// Handle clicking an issue - TODO(D-06): integrate with X6 graph for centering
+function handleIssueClick(_issue: ValidationIssue) {
   // X6 centering will be implemented when graph instance is available via provide/inject
   // intentionally ignored
 }
 
-// Panel open state - auto-open when warnings exist
+// Panel open state - auto-open when issues exist
 const isOpen = ref(true)
 </script>
 
 <template>
   <Collapsible
-    v-if="hasWarnings"
+    v-if="hasIssues"
     v-model:open="isOpen"
-    class="rounded-xl bg-amber-500/10 border border-amber-500/30 overflow-hidden"
+    class="rounded-xl border overflow-hidden"
+    :class="tone.container"
   >
     <CollapsibleTrigger class="w-full">
-      <div class="flex items-center justify-between p-3 hover:bg-amber-500/5 transition-colors">
+      <div class="flex items-center justify-between p-3 transition-colors" :class="tone.hover">
         <div class="flex items-center gap-2">
-          <div class="p-1.5 rounded-lg bg-amber-500/20">
-            <AlertTriangle class="w-4 h-4 text-amber-600" />
+          <div class="p-1.5 rounded-lg" :class="tone.iconWrap">
+            <component :is="hasErrors ? AlertCircle : AlertTriangle" class="w-4 h-4" :class="tone.icon" />
           </div>
           <span class="text-sm font-medium">问题</span>
-          <Badge variant="warning">
-            {{ warningCount }}
+          <Badge v-if="errorCount > 0" variant="destructive">
+            {{ errorCount }} 错误
+          </Badge>
+          <Badge v-if="warningCount > 0" variant="warning">
+            {{ warningCount }} 警告
           </Badge>
         </div>
         <ChevronDown
@@ -58,21 +88,26 @@ const isOpen = ref(true)
     <CollapsibleContent>
       <div class="px-3 pb-3 space-y-2">
         <button
-          v-for="warning in warningsList"
-          :key="warning.id"
+          v-for="issue in issuesList"
+          :key="issue.id"
           class="w-full text-left p-2.5 rounded-lg bg-background/50 hover:bg-background/80 transition-colors group"
-          @click="handleWarningClick(warning)"
+          @click="handleIssueClick(issue)"
         >
           <div class="flex items-start gap-2">
-            <AlertTriangle class="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+            <AlertCircle
+              v-if="issue.severity === 'error'"
+              class="w-4 h-4 text-destructive mt-0.5 flex-shrink-0"
+            />
+            <AlertTriangle
+              v-else
+              class="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0"
+            />
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium truncate">
-                {{ warning.message }}
+                {{ issue.message }}
               </p>
               <p class="text-xs text-muted-foreground mt-0.5">
-                {{ getNodeName(warning.sourceNodeId) }}
-                <span class="mx-1">→</span>
-                {{ getNodeName(warning.targetNodeId) }}
+                {{ describeLocation(issue) }}
               </p>
             </div>
           </div>
