@@ -48,10 +48,10 @@ const formattedDuration = computed(() => {
 })
 
 const triggerTypeLabel = computed(() => {
+  // TRIG-02: 移除 schedule 定时触发标签
   const labels: Record<string, string> = {
     manual: '手动',
     webhook: 'Webhook',
-    schedule: '定时',
     event: '事件',
     api: 'API',
   }
