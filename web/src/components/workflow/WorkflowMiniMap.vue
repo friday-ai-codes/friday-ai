@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NODE_REGISTRY } from '~/types/workflow/registry'
+import { getNodeDefinition } from '~/types/workflow/registry'
 
 interface NodeSummary {
   id: string
@@ -37,7 +37,7 @@ const colorMap: Record<string, string> = {
 }
 
 function getNodeColor(nodeType: string): string {
-  const def = NODE_REGISTRY[nodeType as keyof typeof NODE_REGISTRY]
+  const def = getNodeDefinition(nodeType)
   if (def)
     return colorMap[def.category] ?? '#64748b'
   return '#64748b'
