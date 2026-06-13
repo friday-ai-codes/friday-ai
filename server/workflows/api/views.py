@@ -1573,13 +1573,27 @@ class WebhookTriggerView(APIView):
         )
 
         dispatcher = TriggerDispatcher()
-        executions = await dispatcher.dispatch(context)
+        # TRIG-03 / OQ#2：dispatch 异常返回区分原因的结构化错误响应（不强塞 TriggerLog——
+        # path 触发难解析唯一 WebhookConfig，Pitfall 4），不泄露 payload/凭证。
+        try:
+            executions = await dispatcher.dispatch(context)
+        except Exception as e:
+            log.error("webhook_dispatch_failed", error=str(e))
+            return Response(
+                {"status": "error", "message": str(e)[:2000]},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         log.info("webhook_trigger_complete", execution_count=len(executions))
 
         if not executions:
+            # 无匹配保持 200，但增 reason 键区分「已接受未匹配」vs「分发异常」。
             return Response(
-                {"status": "no_workflows", "message": "No matching workflows found"},
+                {
+                    "status": "no_workflows",
+                    "message": "No matching workflows found",
+                    "reason": "no_matching_trigger",
+                },
                 status=status.HTTP_200_OK,
             )
 
