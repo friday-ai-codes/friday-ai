@@ -153,6 +153,9 @@ class CodeNode(BaseNode):
             NodeResult with completed status and output, or failed with error.
         """
         code = context.node_config.get("code", "")
+        if not isinstance(code, str):
+            return NodeResult(status="failed", error="代码必须是字符串")
+        code = context.render_template(code)
         if not code.strip():
             return NodeResult(status="failed", error="代码不能为空")
 

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from workflows.engine.template_resolver import TemplateResolutionError
 from workflows.nodes.base import ExecutionContext, NodeCategory, NodeResult
 from workflows.nodes.registry import NodeRegistry
 
@@ -88,6 +89,61 @@ class TestCodeNodeSafeExecution:
         assert result.output["config_val"] == 30
         assert result.output["global_val"] == "global_value"
         assert result.output["trigger_val"] == "trigger_value"
+
+    @pytest.mark.asyncio
+    async def test_code_config_renders_node_template_references(self):
+        """Selected upstream variables in code config are rendered before execution."""
+        from workflows.nodes.actions.code import CodeNode
+
+        node = CodeNode()
+        context = ExecutionContext(
+            execution_id="exec-template-001",
+            node_id="node-template-001",
+            node_config={
+                "code": (
+                    "context['output'] = {\n"
+                    "    'space_name': '{{nodes.fetch01.space_name}}',\n"
+                    "    'project_key': '{{nodes.fetch01.feishu_project_key}}',\n"
+                    "}"
+                )
+            },
+            input_data={},
+            workflow_context={},
+            previous_outputs={
+                "fetch01": {
+                    "space_name": "UAT Space",
+                    "feishu_project_key": "FRI",
+                }
+            },
+        )
+
+        result = await node.execute(context)
+
+        assert result.status == "completed"
+        assert result.output == {
+            "space_name": "UAT Space",
+            "project_key": "FRI",
+        }
+
+    @pytest.mark.asyncio
+    async def test_code_config_missing_node_template_reference_raises(self):
+        """Missing upstream variables fail fast instead of remaining literal text."""
+        from workflows.nodes.actions.code import CodeNode
+
+        node = CodeNode()
+        context = ExecutionContext(
+            execution_id="exec-template-002",
+            node_id="node-template-002",
+            node_config={"code": "context['output'] = {'value': '{{nodes.fetch01.missing}}'}"},
+            input_data={},
+            workflow_context={},
+            previous_outputs={"fetch01": {"space_name": "UAT Space"}},
+        )
+
+        with pytest.raises(TemplateResolutionError) as exc_info:
+            await node.execute(context)
+
+        assert exc_info.value.reference == "nodes.fetch01.missing"
 
 
 class TestCodeNodeASTSafety:
