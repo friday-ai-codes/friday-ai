@@ -24,7 +24,7 @@
 - [x] **Phase 18: 执行引擎状态机修复** - waiting_event 完成判定、next_handle 分支路由、trigger_data 注入、死锁诊断、target_handle 语义收敛与引擎回归测试 (completed 2026-06-13)
 - [x] **Phase 19: 节点定义单一事实源** - 前端面板/端口/表单 schema 收敛到 `GET /api/node-types/`，删除硬编码 registry 与 portConfig，CI 一致性守护 (completed 2026-06-13)
 - [x] **Phase 20: 保存即合法与模板修复** - `WorkflowGraphValidator` 统一校验（保存/导入/模板共用），IssuesPanel 接真实结果，4 个内置模板修复 + 可执行性校验测试 (completed 2026-06-13)
-- [ ] **Phase 21: 触发模型与执行可观测** - 飞书 event_type 断裂修复、schedule 假功能处理、dispatch 失败可查，执行详情错误展示 + WS 断线轮询兜底 + 状态枚举对齐
+- [ ] **Phase 21: 触发模型与执行可观测** - 飞书 event_type 断裂修复、schedule 假功能移除、dispatch 失败可查，执行详情错误展示 + WS 断线轮询兜底 + 状态枚举对齐 (7 plans, 3 waves)
 
 ## Phase Details
 
@@ -165,7 +165,25 @@ Plans:
   4. 执行详情页节点失败时清晰展示 error_message、失败的变量引用与重试情况；WebSocket 断线时自动降级 REST 轮询（与列表页一致），长时执行 UI 不冻结，进度以服务端权威值为准
   5. 执行整体状态（running/suspended/failed 等）在列表与详情页如实展示，前端状态枚举与后端 `ExecutionStatus` 对齐，前端引用的不存在状态值（如 `waiting_approval`）被清除或后端补齐
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+**Wave 0** *(测试基建，并行)*
+
+- [ ] 21-01-PLAN.md — 后端测试脚手架：trigger_sync(TRIG-01) + trigger_type_choices(TRIG-02) + test_hooks 广播(OBS-01) + dispatch 失败持久化(TRIG-03)
+- [ ] 21-02-PLAN.md — 前端测试脚手架：status 全覆盖(OBS-03) + useExecutionsStore(OBS-01/03) + useExecutionState 降级(OBS-02) + NodeOverviewTab 结构化错误(OBS-01)
+
+**Wave 1** *(依赖 Wave 0；后端与独立前端并行)*
+
+- [ ] 21-03-PLAN.md — TRIG-01 async_sync 单数+filter_config + TRIG-03 飞书/webhook dispatch 失败可查
+- [ ] 21-04-PLAN.md — TRIG-02 TriggerType 移除 schedule + 0027 migration + OBS-01 WS 广播 error 字段
+- [ ] 21-05-PLAN.md — TRIG-02 前端 schedule 残留清除 + OBS-03 列表 statusOptions/stats 对齐
+
+**Wave 2** *(依赖 Wave 0 + 后端 WS 广播契约 21-04)*
+
+- [ ] 21-06-PLAN.md — OBS-03 status.ts 补 suspended + OBS-01 useExecutionsStore node_failed 写 error + stats 纠偏
+- [ ] 21-07-PLAN.md — OBS-01 NodeOverviewTab error_code/结构化解析 + OBS-03 DAG 色 + OBS-02 WS 断线降级轮询
+
 **UI hint**: yes
 
 ## Progress
