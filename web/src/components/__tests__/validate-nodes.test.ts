@@ -14,6 +14,12 @@ describe('validate-node-definitions 脚本验证', () => {
     expect(content).toContain('node-types')
   })
 
+  it('脚本应使用正确的 /api/node-types/ 路径（不含 workflows/node-types）', () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8')
+    expect(content).toContain('/api/node-types/')
+    expect(content).not.toContain('workflows/node-types')
+  })
+
   it('脚本应包含 3-layer 验证逻辑', () => {
     const content = fs.readFileSync(scriptPath, 'utf-8')
     expect(content).toContain('ui_schema')
