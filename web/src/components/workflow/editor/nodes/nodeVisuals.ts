@@ -47,7 +47,7 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
 
   // 数据获取 (orange)
   fetch_work_item: { icon: Briefcase, color: 'orange' },
-  fetch_project_info: { icon: FolderSearch, color: 'orange' },
+  fetch_space_info: { icon: FolderSearch, color: 'orange' },
   context_retrieval: { icon: SearchCode, color: 'orange' },
 
   // 操作 (green)

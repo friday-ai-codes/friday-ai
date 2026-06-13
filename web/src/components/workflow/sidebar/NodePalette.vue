@@ -43,7 +43,7 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
     name: '数据获取',
     items: [
       { type: 'fetch_work_item', name: '获取工作项', description: '从空间获取工作项信息' },
-      { type: 'fetch_project_info', name: '获取项目信息', description: '获取项目详细信息' },
+      { type: 'fetch_space_info', name: '获取空间信息', description: '获取空间/项目详细信息' },
       { type: 'context_retrieval', name: '上下文检索', description: '检索相关上下文信息' },
       { type: 'delivery_knowledge_search', name: '交付知识检索', description: '检索相似历史交付' },
     ],
