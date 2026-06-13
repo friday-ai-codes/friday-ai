@@ -20,9 +20,9 @@
 
 ### 节点定义单一事实源（SSOT）
 
-- [ ] **SSOT-01**: 前端节点面板（palette）、配置表单 schema、默认 config 全部以后端 `GET /api/node-types/` 返回为准，删除前端硬编码 `NODE_REGISTRY` 漂移（含幽灵节点 `fetch_project_info` → `fetch_space_info`）
-- [ ] **SSOT-02**: 前端画布节点的输入/输出 Handle 按后端 NodePort 定义渲染（如 `ai_coding` 的 `plan`、`ai_code_review` 的 `coding_result`、审批节点的 `approved`/`rejected`），替换 `portConfig.ts` 硬编码
-- [ ] **SSOT-03**: 前后端节点定义一致性有自动化守护：CI 校验前端消费的节点 type/端口与后端 registry 一致（或前端定义完全由后端生成，无需对账）
+- [x] **SSOT-01**: 前端节点面板（palette）、配置表单 schema、默认 config 全部以后端 `GET /api/node-types/` 返回为准，删除前端硬编码 `NODE_REGISTRY` 漂移（含幽灵节点 `fetch_project_info` → `fetch_space_info`）
+- [x] **SSOT-02**: 前端画布节点的输入/输出 Handle 按后端 NodePort 定义渲染（如 `ai_coding` 的 `plan`、`ai_code_review` 的 `coding_result`、审批节点的 `approved`/`rejected`），替换 `portConfig.ts` 硬编码
+- [x] **SSOT-03**: 前后端节点定义一致性有自动化守护：CI 校验前端消费的节点 type/端口与后端 registry 一致（或前端定义完全由后端生成，无需对账）
 
 ### 保存校验（VAL）
 
@@ -82,9 +82,9 @@
 | ENG-03 | Phase 18 | Complete |
 | ENG-04 | Phase 18 | Complete |
 | ENG-05 | Phase 18 | Complete |
-| SSOT-01 | Phase 19 | Pending |
-| SSOT-02 | Phase 19 | Pending |
-| SSOT-03 | Phase 19 | Pending |
+| SSOT-01 | Phase 19 | Complete |
+| SSOT-02 | Phase 19 | Complete |
+| SSOT-03 | Phase 19 | Complete |
 | VAL-01 | Phase 20 | Pending |
 | VAL-02 | Phase 20 | Pending |
 | VAL-03 | Phase 20 | Pending |
