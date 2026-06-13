@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { checkWorkflowChanged, getCostBreakdown } from '~/api/workflow'
+import { usePolling } from '~/composables/usePolling'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 
 /** 活跃状态判断 */
@@ -78,6 +79,21 @@ export function useExecutionState() {
     if (!isActiveStatus(currentExecution.value.status))
       return false
     return wsStatus.value === 'CLOSED'
+  })
+
+  // OBS-02 / D-05：WS 断线降级 REST 轮询。
+  // 轮询回调以 store.fetchExecution 全量覆盖 currentExecution 为服务端权威值（单一真相，
+  // Pitfall 6：断线期 WS 无消息流，不与 WS 本地 ++ 推断并存，避免进度回跳）。
+  const { start: startPoll, stop: stopPoll } = usePolling(
+    () => store.fetchExecution(executionId.value),
+    { interval: 5000, immediate: true },
+  )
+  // wsDisconnected（活跃 + WS CLOSED）→ 启动轮询；重连/终态 → 停止
+  watch(() => wsDisconnected.value, (disconnected) => {
+    if (disconnected)
+      startPoll()
+    else
+      stopPoll()
   })
 
   /** 预执行失败：执行在节点运行前就失败 */
