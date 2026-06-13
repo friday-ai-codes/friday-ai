@@ -81,11 +81,11 @@ Plans:
 
 **Wave 3**
 
-- [ ] 18-03-PLAN.md — 完成/挂起/死锁收口（waiting ⇒ suspended、删轮询、热循环修复、死锁结构化转 failed）
+- [x] 18-03-PLAN.md — 完成/挂起/死锁收口（waiting ⇒ suspended、删轮询、热循环修复、死锁结构化转 failed）
 
 **Wave 4**
 
-- [ ] 18-04-PLAN.md — 回调续跑重入主循环 + 执行级互斥 + 容器回调断裂修复 + coding_callback 迷你调度器删除
+- [x] 18-04-PLAN.md — 回调续跑重入主循环 + 执行级互斥 + 容器回调断裂修复 + coding_callback 迷你调度器删除
 
 **Wave 5**
 
@@ -144,7 +144,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
-| 18. 执行引擎状态机修复 | 2/5 | In Progress|  |
+| 18. 执行引擎状态机修复 | 4/5 | In Progress|  |
 | 19. 节点定义单一事实源 | 0/? | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |
 | 21. 触发模型与执行可观测 | 0/? | Not started | - |
