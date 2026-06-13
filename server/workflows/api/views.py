@@ -103,23 +103,33 @@ async def async_sync_workflow_triggers(workflow: Workflow) -> None:
     configured_triggers: list[dict] = []
     async for node in workflow.nodes.filter(node_type="feishu_event_trigger"):
         config = node.config or {}
-        event_types = config.get("event_types", [])
-        filter_config = {}
+        # TRIG-01 / D-01：单数 event_type 为事实源，历史复数 event_types 数组兜底（Pitfall 1：
+        # 并存不删复数读取，避免存量节点同步后丢 trigger）。
+        event_type = config.get("event_type")
+        legacy = config.get("event_types") or []
+        event_type_list = [et for et in ([event_type] if event_type else legacy) if et]
 
-        # Build filter config from node config
+        # Build filter config from node config（仅写入可正向表达的 include 字段）。
+        filter_config: dict = {}
         if config.get("filter_project_key"):
             filter_config["project_key"] = config["filter_project_key"]
         if config.get("filter_work_item_type"):
             filter_config["work_item_type_key"] = config["filter_work_item_type"]
         if config.get("filter_status"):
-            filter_config["cur_work_item_status.state_key"] = config["filter_status"]
+            # filter_status 已是数组 → 嵌套路径走 list 成员匹配（matches_event 契约）。
+            statuses = list(config["filter_status"])
+            if config.get("filter_status_custom"):
+                statuses.append(config["filter_status_custom"])
+            filter_config["cur_work_item_status.state_key"] = statuses
 
-        for event_type in event_types:
-            if not event_type:
-                continue
+        # TRIG-01 / OQ#1：project_ids / exclude_* 负向、跨 ID 空间（Space UUID）字段**不**写入
+        # 正向 filter_config —— `_matches_filter` 仅支持正向 include，写入会造成静默误匹配。
+        # 负向 / Space UUID 过滤留 v2（见 21-CONTEXT Deferred）。
+
+        for et in event_type_list:
             configured_triggers.append(
                 {
-                    "event_type": event_type,
+                    "event_type": et,
                     "filter_config": filter_config,
                     "node_id": str(node.id),
                     "node_name": node.name,
