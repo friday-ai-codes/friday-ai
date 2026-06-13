@@ -102,7 +102,23 @@ Plans:
   2. 画布节点的输入/输出 Handle 按后端 NodePort 定义渲染：`ai_coding` 显示 `plan` 输入、`ai_code_review` 显示 `coding_result` 输入、审批节点显示 `approved`/`rejected` 输出，`portConfig.ts` 硬编码被替换
   3. 前后端节点定义一致性有 CI 自动化守护：前端消费的节点 type/端口与后端 registry 漂移时 CI 失败（或前端定义完全由后端生成、无需对账）
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 19-01-PLAN.md — 后端 get_schema 派生 default_config + NodeTypeSerializer 暴露 ui_schema/default_config + dump_node_fixture 离线快照 + 后端字段断言（SSOT-01, SSOT-03）
+- [ ] 19-02-PLAN.md — 幽灵节点存量数据幂等迁移 fetch_project_info → fetch_space_info（SSOT-01）
+
+**Wave 2** *(depends on 19-01)*
+
+- [ ] 19-03-PLAN.md — store 接口扩字段 + registry helper 改 store 适配器 + 删 NODE_REGISTRY legacy + 消费方收敛 + validateNodeConfig 降级（SSOT-01）
+- [ ] 19-04-PLAN.md — BaseWorkflowNode Handle 由 store inputs/outputs 渲染 + 最小回退 + portConfig 降级保留 migratePortId + [id].vue 顺序化（SSOT-02）
+
+**Wave 3** *(depends on 19-01, 19-03)*
+
+- [ ] 19-05-PLAN.md — 幽灵前端全量改名 + 死代码清理 + node-sync fixture 驱动漂移守护 + validate-node-definitions URL 修正（SSOT-03, SSOT-01）
+
 **UI hint**: yes
 
 ### Phase 20: 保存即合法与模板修复
@@ -145,7 +161,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
 | 18. 执行引擎状态机修复 | 5/5 | Complete    | 2026-06-13 |
-| 19. 节点定义单一事实源 | 0/? | Not started | - |
+| 19. 节点定义单一事实源 | 0/5 | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |
 | 21. 触发模型与执行可观测 | 0/? | Not started | - |
 
