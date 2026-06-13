@@ -1,16 +1,37 @@
-"""DAGNode 入边明细测试（Phase 18 ENG-02，Task 1）。
+"""路由核心测试（Phase 18 ENG-02）。
 
-``TestDagIncomingEdges``：经 ORM 构建 DAG 后入边明细 incoming_edges 的收集
-正确性（django_db，参照 test_dag.py 建工作流）。
+包含两部分：
+- ``TestDagIncomingEdges``：经 ORM 构建 DAG 后入边明细 incoming_edges 的收集
+  正确性（django_db，参照 test_dag.py 建工作流）。
+- ``TestEvaluateNodeReadiness`` / ``TestSelectSuccessors`` / ``TestComputeSkippable``：
+  routing.py 纯函数零 DB 单测，手工构造 DAG，不标 django_db。
 
-routing.py 纯函数零 DB 单测在 Task 2 追加到本文件。
+模块级 helper ``_build_dag`` 供 test_engine_deadlock.py / test_engine_inputs.py 复用
+（本地 import，不进 conftest——conftest 工厂归 18-02）。
 """
 
 import pytest
 
 from projects.models import Project
 from workflows.engine.dag import DAG, DAGNode
+from workflows.engine.routing import (
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_RUNNING,
+    STATUS_SKIPPED,
+    STATUS_TOLERATED,
+    STATUS_WAITING,
+    RoutingState,
+    compute_skippable,
+    evaluate_node_readiness,
+    select_successors,
+)
 from workflows.models import Workflow, WorkflowEdge, WorkflowNode
+
+# ============================================================================
+# Task 1: DAGNode.incoming_edges（django_db）
+# ============================================================================
 
 
 @pytest.mark.django_db
@@ -87,3 +108,222 @@ class TestDagIncomingEdges:
         dag = DAG()
         dag.nodes["n1"] = DAGNode(node=object())
         assert dag.nodes["n1"].incoming_edges == []
+
+
+# ============================================================================
+# 纯函数零 DB 测试辅助
+# ============================================================================
+
+
+class _StubNode:
+    """轻量节点 stub（仅 routing 纯函数需要的 id/short_id/name）。"""
+
+    def __init__(self, node_id: str, name: str | None = None, short_id: str | None = None):
+        self.id = node_id
+        self.name = name or f"node-{node_id}"
+        self.short_id = short_id or node_id
+
+
+def _build_dag(edges: list[tuple], extra_nodes: list[str] | None = None) -> DAG:
+    """从 (source_id, target_id, source_handle, target_handle) 边列表手工构造 DAG。
+
+    供 routing/deadlock/inputs 三个测试文件复用（本地 import，不进 conftest——
+    conftest 工厂归 18-02）。
+    """
+    dag = DAG()
+    # 保持插入顺序（源先于目标、入口节点最先）——_detect_back_edges 的 DFS 起点
+    # 依赖节点字典顺序，无序集合会让反馈环识别变得不确定。
+    node_ids: dict[str, None] = {nid: None for nid in (extra_nodes or [])}
+    for src, tgt, *_ in edges:
+        node_ids.setdefault(src, None)
+        node_ids.setdefault(tgt, None)
+    for nid in node_ids:
+        dag.nodes[nid] = DAGNode(node=_StubNode(nid))
+    for src, tgt, source_handle, target_handle in edges:
+        dag.nodes[tgt].incoming.add(src)
+        dag.nodes[tgt].incoming_edges.append((src, source_handle, target_handle))
+        dag.nodes[src].outgoing.setdefault(source_handle, set()).add(tgt)
+    dag._detect_back_edges()
+    return dag
+
+
+# ============================================================================
+# Task 2: evaluate_node_readiness（纯函数，零 DB）
+# ============================================================================
+
+
+class TestEvaluateNodeReadiness:
+    """边感知就绪判定四枚举：ready / skip_failed / skip_unselected / blocked。"""
+
+    def test_branch_selected_and_unselected(self):
+        """Test 1：条件节点 completed 且 handle="true" → true 支 ready、false 支 skip_unselected。"""
+        dag = _build_dag(
+            [
+                ("A", "Bt", "true", "default"),
+                ("A", "Cf", "false", "default"),
+            ]
+        )
+        state = RoutingState(statuses={"A": STATUS_COMPLETED}, handles={"A": "true"})
+        assert evaluate_node_readiness(dag, "Bt", state) == "ready"
+        assert evaluate_node_readiness(dag, "Cf", state) == "skip_unselected"
+
+    def test_default_fallback_selected(self):
+        """Test 2：源 next_handle="success" 但只有 default 出边 → default 边视为选中，后继 ready。"""
+        dag = _build_dag([("A", "B", "default", "default")])
+        state = RoutingState(statuses={"A": STATUS_COMPLETED}, handles={"A": "success"})
+        assert evaluate_node_readiness(dag, "B", state) == "ready"
+
+    def test_diamond_join_one_alive_one_skipped_ready(self):
+        """Test 3：菱形汇合 B completed、C skipped → D ready（CONTEXT：一条活路即执行）。"""
+        dag = _build_dag(
+            [
+                ("A", "B", "true", "default"),
+                ("A", "C", "false", "default"),
+                ("B", "D", "default", "default"),
+                ("C", "D", "default", "default"),
+            ]
+        )
+        state = RoutingState(
+            statuses={
+                "A": STATUS_COMPLETED,
+                "B": STATUS_COMPLETED,
+                "C": STATUS_SKIPPED,
+            },
+            handles={"A": "true"},
+        )
+        assert evaluate_node_readiness(dag, "D", state) == "ready"
+
+    def test_diamond_join_both_skipped_skip_unselected(self):
+        """Test 4：双支全 skip → D skip_unselected。"""
+        dag = _build_dag(
+            [
+                ("B", "D", "default", "default"),
+                ("C", "D", "default", "default"),
+            ]
+        )
+        state = RoutingState(statuses={"B": STATUS_SKIPPED, "C": STATUS_SKIPPED}, handles={})
+        assert evaluate_node_readiness(dag, "D", state) == "skip_unselected"
+
+    def test_predecessor_failed_skip_failed(self):
+        """Test 5：任一 forward 依赖 failed（非 tolerated）→ skip_failed（保留 ANY 语义）。"""
+        dag = _build_dag(
+            [
+                ("A", "C", "default", "default"),
+                ("B", "C", "default", "default"),
+            ]
+        )
+        state = RoutingState(statuses={"A": STATUS_COMPLETED, "B": STATUS_FAILED}, handles={})
+        assert evaluate_node_readiness(dag, "C", state) == "skip_failed"
+
+    def test_tolerated_is_resolved_and_selected(self):
+        """Test 6：依赖 tolerated → 边已解析、按 default 选中，后继可 ready。"""
+        dag = _build_dag([("A", "B", "default", "default")])
+        state = RoutingState(statuses={"A": STATUS_TOLERATED}, handles={})
+        assert evaluate_node_readiness(dag, "B", state) == "ready"
+
+    def test_back_edge_does_not_block(self):
+        """Test 7：含反馈环（非 default handle 指向祖先）节点仅按 forward 入边判定。"""
+        # A -> B (default), B -> A (false, 指向 DFS 祖先 A，被识别为 back-edge)
+        dag = _build_dag(
+            [
+                ("A", "B", "default", "default"),
+                ("B", "A", "false", "default"),
+            ]
+        )
+        # B 是 A 的 back_edge_source —— A 应忽略该环边按入口节点 ready
+        assert "B" in dag.nodes["A"].back_edge_sources
+        state = RoutingState(statuses={}, handles={})
+        assert evaluate_node_readiness(dag, "A", state) == "ready"
+
+    def test_blocked_when_dependency_unresolved(self):
+        """Test 8：任一 forward 入边源仍 pending/running/waiting → blocked。"""
+        dag = _build_dag([("A", "B", "default", "default")])
+        for status in (STATUS_PENDING, STATUS_RUNNING, STATUS_WAITING):
+            state = RoutingState(statuses={"A": status}, handles={})
+            assert evaluate_node_readiness(dag, "B", state) == "blocked"
+
+    def test_entry_node_always_ready(self):
+        """无 forward 入边的入口节点恒 ready。"""
+        dag = _build_dag([("A", "B", "default", "default")])
+        state = RoutingState(statuses={}, handles={})
+        assert evaluate_node_readiness(dag, "A", state) == "ready"
+
+    def test_return_value_is_one_of_four_enum(self):
+        """四值枚举闭集断言（覆盖 ready/skip_failed/skip_unselected/blocked）。"""
+        seen = set()
+        # ready
+        d1 = _build_dag([("A", "B", "default", "default")])
+        seen.add(evaluate_node_readiness(d1, "A", RoutingState()))
+        seen.add(evaluate_node_readiness(d1, "B", RoutingState(statuses={"A": STATUS_COMPLETED})))
+        # blocked
+        seen.add(evaluate_node_readiness(d1, "B", RoutingState(statuses={"A": STATUS_PENDING})))
+        # skip_failed
+        seen.add(evaluate_node_readiness(d1, "B", RoutingState(statuses={"A": STATUS_FAILED})))
+        # skip_unselected
+        seen.add(evaluate_node_readiness(d1, "B", RoutingState(statuses={"A": STATUS_SKIPPED})))
+        assert seen == {"ready", "blocked", "skip_failed", "skip_unselected"}
+
+
+class TestSelectSuccessors:
+    """select_successors：handle 命中 + default 回退（与 scheduler.py:1411-1420 等价）。"""
+
+    def test_handle_hit_returns_bucket(self):
+        dag = _build_dag(
+            [
+                ("A", "Bt", "true", "default"),
+                ("A", "Cf", "false", "default"),
+            ]
+        )
+        succ = select_successors(dag, "A", "true")
+        assert [s.id for s in succ] == ["Bt"]
+
+    def test_fallback_to_default_when_handle_missing(self):
+        """未命中且 handle != "default" → 回退 default 桶。"""
+        dag = _build_dag([("A", "B", "default", "default")])
+        succ = select_successors(dag, "A", "success")
+        assert [s.id for s in succ] == ["B"]
+
+    def test_no_fallback_when_handle_is_default(self):
+        """handle == "default" 未命中则不回退（无歧义）。"""
+        dag = _build_dag([("A", "Bt", "true", "default")])
+        assert select_successors(dag, "A", "default") == []
+
+
+class TestComputeSkippable:
+    """compute_skippable：fixpoint 级联标记，不修改入参 state。"""
+
+    def test_chain_cascade_fixpoint(self):
+        """链式下游 fixpoint 全部标记 skip_unselected。"""
+        dag = _build_dag(
+            [
+                ("A", "B", "true", "default"),
+                ("A", "C", "false", "default"),
+                ("C", "D", "default", "default"),
+                ("D", "E", "default", "default"),
+            ]
+        )
+        state = RoutingState(statuses={"A": STATUS_COMPLETED}, handles={"A": "true"})
+        pending = {"B", "C", "D", "E"}
+        result = compute_skippable(dag, state, pending)
+        # B 选中（true 支）不 skip；C/D/E 级联 skip
+        assert set(result) == {"C", "D", "E"}
+        assert all(reason == "skip_unselected" for reason in result.values())
+
+    def test_does_not_mutate_input_state(self):
+        dag = _build_dag(
+            [
+                ("A", "B", "true", "default"),
+                ("A", "C", "false", "default"),
+            ]
+        )
+        statuses = {"A": STATUS_COMPLETED}
+        state = RoutingState(statuses=statuses, handles={"A": "true"})
+        compute_skippable(dag, state, {"B", "C"})
+        assert statuses == {"A": STATUS_COMPLETED}
+        assert state.statuses == {"A": STATUS_COMPLETED}
+
+    def test_failed_predecessor_records_skip_failed(self):
+        dag = _build_dag([("A", "B", "default", "default")])
+        state = RoutingState(statuses={"A": STATUS_FAILED}, handles={})
+        result = compute_skippable(dag, state, {"B"})
+        assert result == {"B": "skip_failed"}
