@@ -49,7 +49,8 @@ export interface Workflow {
   project_name: string
   created_by: string | null
   created_by_name: string | null
-  trigger_type: 'manual' | 'webhook' | 'schedule' | 'event'
+  // TRIG-02: 移除 'schedule' 假触发类型（前端不再支持定时触发，用户无法配出不生效触发器）
+  trigger_type: 'manual' | 'webhook' | 'event'
   trigger_config: Record<string, unknown>
   is_active: boolean
   is_template: boolean
