@@ -16,6 +16,17 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
 from workflows.engine.dag import DAG
+from workflows.engine.routing import (
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_SKIPPED,
+    STATUS_TOLERATED,
+    STATUS_WAITING,
+    RoutingState,
+    collect_inputs,
+    compute_skippable,
+    evaluate_node_readiness,
+)
 from workflows.engine.template_resolver import TemplateResolutionError
 from workflows.models.execution import (
     ExecutionStatus,
@@ -145,8 +156,10 @@ class WorkflowEngine:
         if isinstance(exception, OSError):
             return "resource"
         # 外部 API 异常
-        if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError,
-                                  httpx.HTTPError, httpx.HTTPStatusError)):
+        if isinstance(
+            exception,
+            (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError, httpx.HTTPStatusError),
+        ):
             return "api"
         # 通用 Python 异常 / 节点逻辑错误
         if isinstance(exception, Exception):
@@ -178,11 +191,15 @@ class WorkflowEngine:
             workflow = Workflow.objects.select_for_update().get(pk=workflow_id)
 
             if max_concurrent_executions > 0:
-                active_count = WorkflowExecution.objects.select_for_update().filter(
-                    workflow_id=workflow_id,
-                    status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
-                    is_debug=False,  # 调试执行不计入并发限制
-                ).count()
+                active_count = (
+                    WorkflowExecution.objects.select_for_update()
+                    .filter(
+                        workflow_id=workflow_id,
+                        status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+                        is_debug=False,  # 调试执行不计入并发限制
+                    )
+                    .count()
+                )
                 if active_count >= max_concurrent_executions:
                     raise ValueError(f"工作流已达到最大并发数 ({max_concurrent_executions})")
 
@@ -235,22 +252,26 @@ class WorkflowEngine:
         # 构建 workflow_definition 快照（DAG 结构 + 节点位置，用于前端可视化）
         nodes_snapshot: list[dict] = []
         async for node in workflow.nodes.all():
-            nodes_snapshot.append({
-                "id": str(node.id),
-                "name": node.name,
-                "node_type": node.node_type,
-                "position": {"x": node.position_x, "y": node.position_y},
-                "config": node.config or {},
-            })
+            nodes_snapshot.append(
+                {
+                    "id": str(node.id),
+                    "name": node.name,
+                    "node_type": node.node_type,
+                    "position": {"x": node.position_x, "y": node.position_y},
+                    "config": node.config or {},
+                }
+            )
         edges_snapshot: list[dict] = []
         async for edge in workflow.edges.all():
-            edges_snapshot.append({
-                "id": str(edge.id),
-                "source": str(edge.source_node_id),
-                "target": str(edge.target_node_id),
-                "sourcePort": edge.source_handle or "default",
-                "targetPort": edge.target_handle or "default",
-            })
+            edges_snapshot.append(
+                {
+                    "id": str(edge.id),
+                    "source": str(edge.source_node_id),
+                    "target": str(edge.target_node_id),
+                    "sourcePort": edge.source_handle or "default",
+                    "targetPort": edge.target_handle or "default",
+                }
+            )
 
         # 使用已有执行实例或创建新的
         if execution is None:
@@ -276,12 +297,18 @@ class WorkflowEngine:
             )
         else:
             if workflow.max_concurrent_executions > 0:
-                active_count = await WorkflowExecution.objects.filter(
-                    workflow=workflow,
-                    status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
-                ).exclude(pk=execution.pk).acount()
+                active_count = (
+                    await WorkflowExecution.objects.filter(
+                        workflow=workflow,
+                        status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+                    )
+                    .exclude(pk=execution.pk)
+                    .acount()
+                )
                 if active_count >= workflow.max_concurrent_executions:
-                    raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
+                    raise ValueError(
+                        f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})"
+                    )
             # 确保执行状态正确
             execution.status = ExecutionStatus.PENDING
             await execution.asave(update_fields=["status"])
@@ -340,10 +367,16 @@ class WorkflowEngine:
         # 开始执行
         if run_sync:
             # 同步执行（用于测试，保持在同一事务/上下文中）
-            await self._run_execution(execution, dag, input_data, stop_before_node_id=stop_before_node_id)
+            await self._run_execution(
+                execution, dag, input_data, stop_before_node_id=stop_before_node_id
+            )
         else:
             # 异步执行（在独立线程中运行，避免事件循环退出问题）
-            _run_in_thread(self._run_execution(execution, dag, input_data, stop_before_node_id=stop_before_node_id))
+            _run_in_thread(
+                self._run_execution(
+                    execution, dag, input_data, stop_before_node_id=stop_before_node_id
+                )
+            )
 
         return execution
 
@@ -414,23 +447,15 @@ class WorkflowEngine:
                 continue
 
             if isinstance(result, ResolvedProviderConfig):
-                provider_type_str = str(result.provider_type).replace(
-                    "ProviderType.", ""
-                )
+                provider_type_str = str(result.provider_type).replace("ProviderType.", "")
                 # enum 的 str()/.value 可能返回 "ProviderType.ANTHROPIC" 或 "anthropic"；
                 # 统一读 .value 保持 JSON 友好字符串
                 if hasattr(result.provider_type, "value"):
                     provider_type_str = result.provider_type.value
 
                 # model 优先读 node_config.model；fallback 到 resolved.extra["model"]
-                snap_model = (
-                    node_config.get("model")
-                    or (result.extra or {}).get("model")
-                    or ""
-                )
-                snap_credential_id = (
-                    str(result.credential_id) if result.credential_id else None
-                )
+                snap_model = node_config.get("model") or (result.extra or {}).get("model") or ""
+                snap_credential_id = str(result.credential_id) if result.credential_id else None
                 snapshots[str(node.id)] = {
                     "provider_type": provider_type_str,
                     "model": snap_model,
@@ -466,7 +491,9 @@ class WorkflowEngine:
 
         execution.debug_paused_at_node = node_execution.node_id
         await execution.asave(update_fields=["debug_paused_at_node"])
-        await self.hooks.trigger("node_debug_paused", execution=execution, node_execution=node_execution)
+        await self.hooks.trigger(
+            "node_debug_paused", execution=execution, node_execution=node_execution
+        )
 
         try:
             await asyncio.wait_for(session.event.wait(), timeout=1800)
@@ -535,6 +562,13 @@ class WorkflowEngine:
             skipped_nodes: set[str] = set()
             tolerated_failures: set[str] = set()  # on_error=ignore 的失败节点
 
+            # routing 纯函数的状态映射（主循环就绪/级联/后继判定的唯一语义源）。
+            # node_statuses: node_id -> STATUS_* 字面值（终态/等待时写入）。
+            # node_handles: node_id -> next_handle（仅非 default 时写入，缺省=default，
+            # 封堵 RESEARCH Pitfall 2 双来源不对称——热路径只用内存 result["handle"]）。
+            node_statuses: dict[str, str] = {}
+            node_handles: dict[str, str] = {}
+
             # 待处理节点
             pending_nodes = set(dag.nodes.keys())
 
@@ -543,7 +577,8 @@ class WorkflowEngine:
                 node_outputs.update(initial_outputs)
                 # 从数据库查询 skipped 节点，将其加入 completed/skipped 集合
                 skipped_ne_list = [
-                    ne async for ne in NodeExecution.objects.filter(
+                    ne
+                    async for ne in NodeExecution.objects.filter(
                         workflow_execution=execution,
                         status=NodeExecutionStatus.SKIPPED,
                     )
@@ -552,41 +587,40 @@ class WorkflowEngine:
                     node_id = str(ne.node_id)
                     skipped_nodes.add(node_id)
                     completed_nodes.add(node_id)
+                    # 续跑/恢复场景：这些节点实际已产出输出（DB 为复用 initial_outputs
+                    # 机制临时标记 SKIPPED）。对 routing 而言视为 COMPLETED（已解析且选中），
+                    # 保留旧主循环"completed/skipped 上游即放行下游"语义，避免被新的
+                    # skip_unselected 级联误伤；并从 output_data 还原 next_handle 保证路由。
+                    node_statuses[node_id] = STATUS_COMPLETED
+                    restored_handle = (ne.output_data or {}).get("_next_handle")
+                    if restored_handle and restored_handle != "default":
+                        node_handles[node_id] = restored_handle
                     pending_nodes.discard(node_id)
 
             # 入口节点的输入数据
             entry_inputs = {dag_node.id: input_data for dag_node in dag.get_entry_nodes()}
 
             while pending_nodes:
-                # 找出可以执行的节点（所有前置已完成）
+                # 路由状态快照——主循环就绪/级联判定的唯一语义源（routing 纯函数，
+                # 与回调续跑共用，消除"两套路由实现漂移"根因）。statuses 即 node_statuses
+                # 本体，下面写入 skip 后 routing_state 即时可见（同一 dict 引用）。
+                routing_state = RoutingState(statuses=node_statuses, handles=node_handles)
+
+                # 1) fixpoint 级联标记未选中/前置失败的可 skip 节点（含级联下游）
+                skippable = compute_skippable(dag, routing_state, pending_nodes)
+                for skip_id, skip_verdict in skippable.items():
+                    skip_dag_node = dag.nodes[skip_id]
+                    skip_reason = "前置节点失败" if skip_verdict == "skip_failed" else "分支未选中"
+                    await self._skip_node(execution, skip_dag_node, skip_reason)
+                    skipped_nodes.add(skip_id)
+                    node_statuses[skip_id] = STATUS_SKIPPED
+                    pending_nodes.discard(skip_id)
+
+                # 2) 边感知就绪判定：仅 "ready" 进入本轮执行批；"blocked" 留 pending
                 ready_nodes = []
-                nodes_to_remove = []
-
                 for node_id in pending_nodes:
-                    dag_node = dag.nodes[node_id]
-
-                    # 用 forward_incoming 检查依赖（排除反馈环 back-edge）
-                    forward_deps = dag_node.forward_incoming
-
-                    all_deps_completed = all(
-                        dep_id in completed_nodes or dep_id in skipped_nodes
-                        for dep_id in forward_deps
-                    )
-
-                    any_dep_failed = any(dep_id in failed_nodes for dep_id in forward_deps)
-
-                    if any_dep_failed:
-                        # 前置失败，跳过此节点
-                        await self._skip_node(execution, dag_node, "前置节点失败")
-                        skipped_nodes.add(node_id)
-                        nodes_to_remove.append(node_id)
-                        continue
-
-                    if all_deps_completed:
-                        ready_nodes.append(dag_node)
-
-                for node_id in nodes_to_remove:
-                    pending_nodes.discard(node_id)
+                    if evaluate_node_readiness(dag, node_id, routing_state) == "ready":
+                        ready_nodes.append(dag.nodes[node_id])
 
                 # 单节点测试：检查是否到达 stop_before 节点
                 if stop_before_node_id:
@@ -600,8 +634,11 @@ class WorkflowEngine:
                             pending_nodes.discard(ds_id)
                             ds_dag_node = dag.nodes.get(ds_id)
                             if ds_dag_node:
-                                await self._skip_node(execution, ds_dag_node, "单节点测试：上游已停止")
+                                await self._skip_node(
+                                    execution, ds_dag_node, "单节点测试：上游已停止"
+                                )
                                 skipped_nodes.add(ds_id)
+                                node_statuses[ds_id] = STATUS_SKIPPED
                         logger.info(
                             "execution_stop_before_node",
                             execution_id=str(execution.id),
@@ -617,13 +654,16 @@ class WorkflowEngine:
                                     final_output.update(node_outputs.get(nid, {}))
                             await execution.amark_completed(final_output)
                             hook_execution = await self._load_execution_for_hooks(execution)
-                            await self.hooks.trigger("execution_completed", execution=hook_execution)
+                            await self.hooks.trigger(
+                                "execution_completed", execution=hook_execution
+                            )
                             return
 
                 if not ready_nodes:
                     # 检查是否有正在等待审批或等待事件的节点
                     waiting_nodes = [
-                        ne async for ne in NodeExecution.objects.filter(
+                        ne
+                        async for ne in NodeExecution.objects.filter(
                             workflow_execution=execution,
                             status__in=[
                                 NodeExecutionStatus.WAITING_APPROVAL,
@@ -703,16 +743,27 @@ class WorkflowEngine:
                             node_input = entry_inputs[dag_node.id]
                         else:
                             node_input = self._collect_inputs(dag_node, dag, node_outputs)
-                        result = await self._execute_node(execution, dag_node, node_input, node_outputs)
+                        result = await self._execute_node(
+                            execution, dag_node, node_input, node_outputs
+                        )
                         pending_nodes.discard(dag_node.id)
 
                         if isinstance(result, Exception):
                             failed_nodes.add(dag_node.id)
+                            node_statuses[dag_node.id] = STATUS_FAILED
                         elif result.get("status") == "completed":
                             completed_nodes.add(dag_node.id)
+                            node_statuses[dag_node.id] = STATUS_COMPLETED
+                            handle = result.get("handle")
+                            if handle and handle != "default":
+                                node_handles[dag_node.id] = handle
                             output = result.get("output", {})
                             node_outputs[dag_node.id] = output
-                            if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+                            if (
+                                hasattr(dag_node, "node")
+                                and hasattr(dag_node.node, "short_id")
+                                and dag_node.node.short_id
+                            ):
                                 node_outputs[dag_node.node.short_id] = output
 
                             # 断点模式条件暂停：仅断点节点暂停，非断点节点自动放行
@@ -724,23 +775,34 @@ class WorkflowEngine:
                             if should_pause:
                                 # 调试暂停点
                                 ne = await NodeExecution.objects.aget(
-                                    workflow_execution=execution, node_id=dag_node.id,
+                                    workflow_execution=execution,
+                                    node_id=dag_node.id,
                                 )
-                                action, action_data = await self._debug_pause_after_node(execution, ne)
+                                action, action_data = await self._debug_pause_after_node(
+                                    execution, ne
+                                )
 
                                 if action == "release":
                                     edited_output = action_data.get("edited_output")
                                     if edited_output is not None:
                                         # 用编辑后数据覆盖原始输出
                                         node_outputs[dag_node.id] = edited_output
-                                        if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+                                        if (
+                                            hasattr(dag_node, "node")
+                                            and hasattr(dag_node.node, "short_id")
+                                            and dag_node.node.short_id
+                                        ):
                                             node_outputs[dag_node.node.short_id] = edited_output
                                         ne.output_data = edited_output
                                         await ne.asave(update_fields=["output_data"])
                                 elif action == "mock":
                                     mock_data = action_data.get("mock_output", {})
                                     node_outputs[dag_node.id] = mock_data
-                                    if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+                                    if (
+                                        hasattr(dag_node, "node")
+                                        and hasattr(dag_node.node, "short_id")
+                                        and dag_node.node.short_id
+                                    ):
                                         node_outputs[dag_node.node.short_id] = mock_data
                                     ne.output_data = mock_data
                                     await ne.asave(update_fields=["output_data"])
@@ -748,26 +810,37 @@ class WorkflowEngine:
                                     await ne.amark_skipped("用户调试跳过")
                                     completed_nodes.discard(dag_node.id)
                                     skipped_nodes.add(dag_node.id)
+                                    node_statuses[dag_node.id] = STATUS_SKIPPED
                                     node_outputs[dag_node.id] = {}
                                 elif action in ("timeout", "cancel"):
                                     if action == "cancel":
                                         await execution.amark_cancelled()
                                     else:
                                         await execution.amark_failed("调试会话超时")
-                                        hook_execution = await self._load_execution_for_hooks(execution)
-                                        await self.hooks.trigger("execution_failed", execution=hook_execution)
+                                        hook_execution = await self._load_execution_for_hooks(
+                                            execution
+                                        )
+                                        await self.hooks.trigger(
+                                            "execution_failed", execution=hook_execution
+                                        )
                                     return
                         elif isinstance(result, dict) and result.get("status") == "failed":
                             if result.get("tolerated"):
                                 # on_error=ignore: 容错处理
                                 tolerated_failures.add(dag_node.id)
                                 completed_nodes.add(dag_node.id)
-                                fallback = dag_node.node.fallback_values or {"status": "skipped", "output": {}}
+                                node_statuses[dag_node.id] = STATUS_TOLERATED
+                                fallback = dag_node.node.fallback_values or {
+                                    "status": "skipped",
+                                    "output": {},
+                                }
                                 node_outputs[dag_node.id] = fallback
                             else:
                                 failed_nodes.add(dag_node.id)
+                                node_statuses[dag_node.id] = STATUS_FAILED
                         else:
                             failed_nodes.add(dag_node.id)
+                            node_statuses[dag_node.id] = STATUS_FAILED
                     continue  # 回到 while 循环找下一批就绪节点
 
                 # 并行执行就绪节点
@@ -793,8 +866,14 @@ class WorkflowEngine:
                             error=str(result),
                         )
                         failed_nodes.add(dag_node.id)
+                        node_statuses[dag_node.id] = STATUS_FAILED
                     elif result.get("status") == "completed":
                         completed_nodes.add(dag_node.id)
+                        node_statuses[dag_node.id] = STATUS_COMPLETED
+                        # next_handle 写入 routing 状态（仅非 default；缺省=default）
+                        handle = result.get("handle")
+                        if handle and handle != "default":
+                            node_handles[dag_node.id] = handle
                         output = result.get("output", {})
                         node_outputs[dag_node.id] = output
                         # Also store by short_id for template variable support
@@ -805,7 +884,12 @@ class WorkflowEngine:
                             # on_error=ignore: 节点失败但不阻断工作流
                             tolerated_failures.add(dag_node.id)
                             completed_nodes.add(dag_node.id)  # 允许下游继续
-                            fallback = dag_node.node.fallback_values or {"status": "skipped", "output": {}}
+                            # tolerated=已解析且按 default 选中（routing 语义）
+                            node_statuses[dag_node.id] = STATUS_TOLERATED
+                            fallback = dag_node.node.fallback_values or {
+                                "status": "skipped",
+                                "output": {},
+                            }
                             node_outputs[dag_node.id] = fallback
                             if hasattr(dag_node.node, "short_id") and dag_node.node.short_id:
                                 node_outputs[dag_node.node.short_id] = fallback
@@ -816,15 +900,18 @@ class WorkflowEngine:
                             )
                         else:
                             failed_nodes.add(dag_node.id)
+                            node_statuses[dag_node.id] = STATUS_FAILED
                     elif result.get("status") == "waiting_approval":
-                        # 节点正在等待审批，保持在 pending
+                        # 节点正在等待审批，保持在 pending（挂起判定 18-03 收口）
                         pending_nodes.add(dag_node.id)
+                        node_statuses[dag_node.id] = STATUS_WAITING
                     elif result.get("status") == "waiting_event":
                         # 节点正在等待外部事件，不加回 pending
                         # 循环会检测到 waiting 节点并挂起 workflow
-                        pass
+                        node_statuses[dag_node.id] = STATUS_WAITING
                     else:
                         failed_nodes.add(dag_node.id)
+                        node_statuses[dag_node.id] = STATUS_FAILED
 
                 # 检查超时
                 await execution.arefresh_from_db()
@@ -922,9 +1009,7 @@ class WorkflowEngine:
 
                 # 构建执行上下文
                 exec_context = execution.context or {}
-                node_snapshots: dict[str, dict] = (
-                    exec_context.get("node_snapshots") or {}
-                )
+                node_snapshots: dict[str, dict] = exec_context.get("node_snapshots") or {}
                 context = ExecutionContext(
                     execution_id=str(execution.id),
                     node_id=str(node.id),
@@ -1051,7 +1136,9 @@ class WorkflowEngine:
             # 到达此处表示执行失败
             if attempt < max_attempts and on_error == "retry" and not _deterministic_error:
                 # 指数退避 + 随机 jitter
-                delay = min(300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay)))
+                delay = min(
+                    300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay))
+                )
                 await node_execution.amark_failed(last_error, error_code=_error_code)
                 await node_execution.aappend_log(
                     level="WARN",
@@ -1096,15 +1183,12 @@ class WorkflowEngine:
         dag: DAG,
         node_outputs: dict,
     ) -> dict:
-        """收集节点的输入数据（从上游节点输出）"""
-        inputs = {}
+        """收集节点的输入数据（委托 routing.collect_inputs 按 target_handle 归集）。
 
-        for source_id in dag_node.incoming:
-            if source_id in node_outputs:
-                # 合并上游输出到输入
-                inputs.update(node_outputs[source_id])
-
-        return inputs
+        调用点零改动；归集语义（扁平保底 + 同名键不覆盖 + 端口键补齐）由 routing
+        纯函数统一承载（ENG-05），与回调续跑共用同一语义源。
+        """
+        return collect_inputs(dag, str(dag_node.id), node_outputs)
 
     async def _skip_node(self, execution: WorkflowExecution, dag_node, reason: str) -> None:
         """跳过节点"""
@@ -1134,9 +1218,7 @@ class WorkflowEngine:
             raise ValueError("只能恢复已暂停的执行")
 
         # 1. 获取工作流和 DAG
-        execution = await WorkflowExecution.objects.select_related("workflow").aget(
-            pk=execution.pk
-        )
+        execution = await WorkflowExecution.objects.select_related("workflow").aget(pk=execution.pk)
         workflow = execution.workflow
         dag = await DAG.afrom_workflow(workflow)
 
@@ -1175,7 +1257,10 @@ class WorkflowEngine:
         # 6. 重入主循环（is_resume=True 避免覆盖 started_at）
         _run_in_thread(
             self._run_execution(
-                execution, dag, execution.input_data or {}, initial_outputs,
+                execution,
+                dag,
+                execution.input_data or {},
+                initial_outputs,
                 is_resume=True,
             )
         )
@@ -1191,7 +1276,8 @@ class WorkflowEngine:
 
         # 取消所有运行中的节点
         running_nodes = [
-            ne async for ne in NodeExecution.objects.filter(
+            ne
+            async for ne in NodeExecution.objects.filter(
                 workflow_execution=execution,
                 status__in=[
                     NodeExecutionStatus.RUNNING,
@@ -1269,7 +1355,9 @@ class WorkflowEngine:
                 )
 
         # Continue workflow execution from approved port
-        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(
+            id=node_execution.id
+        )
         execution = node_execution.workflow_execution
         await self._continue_after_node(execution, node_execution)
 
@@ -1322,7 +1410,9 @@ class WorkflowEngine:
         )
 
         # Continue workflow execution from rejected port
-        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(
+            id=node_execution.id
+        )
         execution = node_execution.workflow_execution
         await self._continue_after_node(execution, node_execution)
 
@@ -1339,7 +1429,9 @@ class WorkflowEngine:
             raise ValueError("只有手动触发节点可以被触发")
 
         input_data = input_data or {}
-        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+        node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(
+            id=node_execution.id
+        )
         execution = node_execution.workflow_execution
 
         # 更新执行的输入数据
@@ -1538,7 +1630,8 @@ class WorkflowEngine:
         {{nodes.<short_id>.field}} 能正确解析。
         """
         completed_nodes = [
-            ne async for ne in NodeExecution.objects.filter(
+            ne
+            async for ne in NodeExecution.objects.filter(
                 workflow_execution=execution,
                 status=NodeExecutionStatus.COMPLETED,
             ).select_related("node")
@@ -1567,7 +1660,8 @@ class WorkflowEngine:
 
         # Get their outputs
         terminal_outputs = [
-            ne async for ne in NodeExecution.objects.filter(
+            ne
+            async for ne in NodeExecution.objects.filter(
                 workflow_execution=execution,
                 node_id__in=terminal_node_ids,
                 status=NodeExecutionStatus.COMPLETED,
@@ -1633,11 +1727,13 @@ class WorkflowEngine:
         # 提取当前工作流的边信息
         curr_edges: set[tuple[str, str, str]] = set()
         async for edge in workflow.edges.all():
-            curr_edges.add((
-                str(edge.source_node_id),
-                str(edge.target_node_id),
-                edge.source_handle or "default",
-            ))
+            curr_edges.add(
+                (
+                    str(edge.source_node_id),
+                    str(edge.target_node_id),
+                    edge.source_handle or "default",
+                )
+            )
 
         return snap_edges != curr_edges
 
@@ -1691,9 +1787,9 @@ class WorkflowEngine:
             raise ValueError("指定节点不存在或不是失败状态")
 
         # 3. 获取工作流并构建 DAG
-        original_execution = await WorkflowExecution.objects.select_related(
-            "workflow"
-        ).aget(pk=original_execution.pk)
+        original_execution = await WorkflowExecution.objects.select_related("workflow").aget(
+            pk=original_execution.pk
+        )
         workflow = original_execution.workflow
         dag = await DAG.afrom_workflow(workflow)
 
