@@ -559,7 +559,3 @@ class NodeExecutionStatus:  # L30-43  node 级（含 waiting_approval/waiting_in
 
 **Research date:** 2026-06-13
 **Valid until:** 2026-07-13（内部代码事实稳定；除非引擎/触发器结构再变）
-
-
-
-
