@@ -25,6 +25,7 @@ from workflows.engine.routing import (
     RoutingState,
     collect_inputs,
     compute_skippable,
+    diagnose_deadlock,
     evaluate_node_readiness,
 )
 from workflows.engine.template_resolver import TemplateResolutionError
@@ -569,6 +570,12 @@ class WorkflowEngine:
             node_statuses: dict[str, str] = {}
             node_handles: dict[str, str] = {}
 
+            # 等待外部事件/审批而挂起的节点集合（ENG-01）。waiting_event 与
+            # waiting_approval 统一进此集合且都不加回 pending——审批/事件推进完全
+            # 依赖 approve_node / 事件回调闭环，消灭旧 waiting_approval 加回 pending
+            # 的热循环（§1.4）。收口判定 waiting 非空即挂起。
+            waiting_nodes_mem: set[str] = set()
+
             # 待处理节点
             pending_nodes = set(dag.nodes.keys())
 
@@ -645,96 +652,41 @@ class WorkflowEngine:
                             stop_before_node_id=stop_before_node_id,
                             downstream_removed=len(downstream),
                         )
-                        # 如果移除后没有可执行节点，正常完成
+                        # 如果移除后没有可执行节点，走统一收口（Pitfall 5：stop_before
+                        # 出口同样需查 waiting——waiting 非空仍判 suspended，绝不误判完成）
                         if not ready_nodes and not pending_nodes:
-                            final_output = {}
-                            for nid in completed_nodes:
-                                dnode = dag.nodes.get(nid)
-                                if dnode and not dnode.outgoing:
-                                    final_output.update(node_outputs.get(nid, {}))
-                            await execution.amark_completed(final_output)
-                            hook_execution = await self._load_execution_for_hooks(execution)
-                            await self.hooks.trigger(
-                                "execution_completed", execution=hook_execution
+                            await self._finalize_run_state(
+                                execution,
+                                dag,
+                                pending=pending_nodes,
+                                waiting=waiting_nodes_mem,
+                                failed=failed_nodes,
+                                completed=completed_nodes,
+                                node_statuses=node_statuses,
+                                node_handles=node_handles,
+                                node_outputs=node_outputs,
                             )
                             return
 
                 if not ready_nodes:
-                    # 检查是否有正在等待审批或等待事件的节点
-                    waiting_nodes = [
-                        ne
-                        async for ne in NodeExecution.objects.filter(
-                            workflow_execution=execution,
-                            status__in=[
-                                NodeExecutionStatus.WAITING_APPROVAL,
-                                NodeExecutionStatus.WAITING_EVENT,
-                            ],
-                        )
-                    ]
-
-                    if waiting_nodes:
-                        # Check if ALL remaining pending nodes are in waiting states
-                        # If so, we can truly suspend and release resources
-                        all_blocked = True
-                        for node_id in pending_nodes:
-                            # Check if this pending node is in waiting state
-                            ne = await NodeExecution.objects.filter(
-                                workflow_execution=execution,
-                                node_id=node_id,
-                            ).afirst()
-                            if ne and ne.status not in [
-                                NodeExecutionStatus.WAITING_APPROVAL,
-                                NodeExecutionStatus.WAITING_EVENT,
-                            ]:
-                                all_blocked = False
-                                break
-
-                        if all_blocked:
-                            # All paths are blocked on external events - truly suspend
-                            logger.info(
-                                "workflow_suspended",
-                                execution_id=str(execution.id),
-                                waiting_nodes=len(waiting_nodes),
-                            )
-                            await execution.amark_suspended()
-                            await self.hooks.trigger("execution_suspended", execution=execution)
-                            # Exit the loop - webhook will restart via _continue_after_node
-                            return
-                        else:
-                            # Some nodes might become ready (e.g., approval being processed)
-                            # Keep polling
-                            await asyncio.sleep(5)
-                            # 刷新状态
-                            for ne in waiting_nodes:
-                                await ne.arefresh_from_db()
-                                if ne.status == NodeExecutionStatus.COMPLETED:
-                                    completed_nodes.add(str(ne.node_id))
-                                    node_outputs[str(ne.node_id)] = ne.output_data
-                                    pending_nodes.discard(str(ne.node_id))
-                                elif ne.status == NodeExecutionStatus.FAILED:
-                                    failed_nodes.add(str(ne.node_id))
-                                    pending_nodes.discard(str(ne.node_id))
-                            continue
-                    else:
-                        # 死锁：有 pending 节点但没有任何节点可以调度
-                        if pending_nodes:
-                            logger.error(
-                                "workflow_deadlock",
-                                execution_id=str(execution.id),
-                                pending_nodes=list(pending_nodes),
-                            )
-                            pending_names = []
-                            for nid in pending_nodes:
-                                dn = dag.nodes.get(nid)
-                                if dn:
-                                    pending_names.append(dn.node.name)
-                            await execution.amark_failed(
-                                f"工作流死锁：{len(pending_nodes)} 个节点无法调度 ({', '.join(pending_names)})"
-                            )
-                            hook_execution = await self._load_execution_for_hooks(execution)
-                            await self.hooks.trigger("execution_failed", execution=hook_execution)
-                            return
-                        break
+                    # 无就绪节点：统一收口（删除旧 5s 轮询 + all_blocked 检查 + 单键刷新
+                    # 缺陷）。挂起优先于死锁——waiting 非空即挂起返回（webhook/事件回调
+                    # 经 _continue_after_node 续跑）；waiting 空且 pending 非空 → 死锁
+                    # 转 FAILED；都空 → 完成。挂起后线程立即退出，根除"永久 running
+                    # 僵尸线程"（T-18-04）。waiting 与纯死锁混合时先挂起，恢复续跑后
+                    # 残留纯死锁在 18-04 重入路径暴露。
+                    await self._finalize_run_state(
+                        execution,
+                        dag,
+                        pending=pending_nodes,
+                        waiting=waiting_nodes_mem,
+                        failed=failed_nodes,
+                        completed=completed_nodes,
+                        node_statuses=node_statuses,
+                        node_handles=node_handles,
+                        node_outputs=node_outputs,
+                    )
+                    return
 
                 # 调试模式：串行执行，每次逐节点暂停
                 if execution.is_debug:
@@ -838,6 +790,13 @@ class WorkflowEngine:
                             else:
                                 failed_nodes.add(dag_node.id)
                                 node_statuses[dag_node.id] = STATUS_FAILED
+                        elif isinstance(result, dict) and result.get("status") in (
+                            "waiting_approval",
+                            "waiting_event",
+                        ):
+                            # 调试串行路径同步收口语义：进 waiting 集合、不加回 pending
+                            waiting_nodes_mem.add(dag_node.id)
+                            node_statuses[dag_node.id] = STATUS_WAITING
                         else:
                             failed_nodes.add(dag_node.id)
                             node_statuses[dag_node.id] = STATUS_FAILED
@@ -902,12 +861,14 @@ class WorkflowEngine:
                             failed_nodes.add(dag_node.id)
                             node_statuses[dag_node.id] = STATUS_FAILED
                     elif result.get("status") == "waiting_approval":
-                        # 节点正在等待审批，保持在 pending（挂起判定 18-03 收口）
-                        pending_nodes.add(dag_node.id)
+                        # 等待审批 → 挂起。统一进 waiting 集合且**不加回 pending**
+                        # （消灭 §1.4 热循环——审批推进完全依赖 approve_node 回调闭环）。
+                        waiting_nodes_mem.add(dag_node.id)
                         node_statuses[dag_node.id] = STATUS_WAITING
                     elif result.get("status") == "waiting_event":
-                        # 节点正在等待外部事件，不加回 pending
-                        # 循环会检测到 waiting 节点并挂起 workflow
+                        # 等待外部事件 → 挂起。进 waiting 集合、不加回 pending，
+                        # 收口判定 waiting 非空即 amark_suspended。
+                        waiting_nodes_mem.add(dag_node.id)
                         node_statuses[dag_node.id] = STATUS_WAITING
                     else:
                         failed_nodes.add(dag_node.id)
@@ -921,21 +882,20 @@ class WorkflowEngine:
                     await self.hooks.trigger("execution_timeout", execution=execution)
                     return
 
-            # 执行完成
-            if failed_nodes:
-                await execution.amark_failed(f"失败节点: {len(failed_nodes)}")
-                hook_execution = await self._load_execution_for_hooks(execution)
-                await self.hooks.trigger("execution_failed", execution=hook_execution)
-            else:
-                # 收集最终输出（终端节点的输出）
-                final_output = {}
-                for node_id in completed_nodes:
-                    dag_node = dag.nodes.get(node_id)
-                    if dag_node and not dag_node.outgoing:
-                        final_output.update(node_outputs.get(node_id, {}))
-                await execution.amark_completed(final_output)
-                hook_execution = await self._load_execution_for_hooks(execution)
-                await self.hooks.trigger("execution_completed", execution=hook_execution)
+            # 主循环正常退出（pending 耗尽）：统一收口。waiting 非空（末端等待节点
+            # 是最后一个 pending）时判 SUSPENDED 而非 COMPLETED——修复 §1 末端
+            # waiting_event 被误判完成的根因（Test 1）。
+            await self._finalize_run_state(
+                execution,
+                dag,
+                pending=pending_nodes,
+                waiting=waiting_nodes_mem,
+                failed=failed_nodes,
+                completed=completed_nodes,
+                node_statuses=node_statuses,
+                node_handles=node_handles,
+                node_outputs=node_outputs,
+            )
 
         except Exception as e:
             logger.exception("workflow_execution_error", execution_id=str(execution.id))
@@ -944,6 +904,82 @@ class WorkflowEngine:
             await self.hooks.trigger("execution_failed", execution=hook_execution, error=e)
         finally:
             _debug_sessions.pop(str(execution.id), None)
+
+    async def _finalize_run_state(
+        self,
+        execution: WorkflowExecution,
+        dag: DAG,
+        *,
+        pending: set[str],
+        waiting: set[str],
+        failed: set[str],
+        completed: set[str],
+        node_statuses: dict[str, str],
+        node_handles: dict[str, str],
+        node_outputs: dict[str, dict],
+    ) -> None:
+        """完成 / 挂起 / 死锁三类终局判定的单一收口（主循环两个出口共用，ENG-01/04）。
+
+        判定优先级（顺序敏感，禁调换）：
+        a. ``waiting`` 非空 → ``amark_suspended`` + ``execution_suspended`` hook（等待
+           即挂起，CONTEXT 锁定语义；webhook/事件回调经 _continue_after_node 续跑）；
+        b. ``waiting`` 空且 ``pending`` 非空 → 经 ``routing.diagnose_deadlock`` 转 FAILED，
+           error_message = 中文一句话 + ``\\n`` + ``json.dumps(diag, ensure_ascii=False)``
+           （Phase 17 结构化约定，末行可独立 json.loads；诊断只含拓扑元数据，
+           绝不含节点输出值——V5 信息泄露防线）；
+        c. ``failed`` 非空 → 现状失败收口（文案保留）；
+        d. 否则 → 收集终端节点（无 outgoing）输出 + ``amark_completed`` + 完成 hook。
+
+        18-04 重入续跑路径复用本方法做恢复后的终局判定。
+        """
+        # a. 挂起优先：任一节点等待外部事件/审批即挂起
+        if waiting:
+            logger.info(
+                "workflow_suspended",
+                execution_id=str(execution.id),
+                waiting_nodes=len(waiting),
+            )
+            await execution.amark_suspended()
+            hook_execution = await self._load_execution_for_hooks(execution)
+            await self.hooks.trigger("execution_suspended", execution=hook_execution)
+            return
+
+        # b. 死锁：waiting 空但仍有 pending 无法调度 → 结构化诊断 + FAILED
+        if pending:
+            logger.error(
+                "workflow_deadlock",
+                execution_id=str(execution.id),
+                pending_nodes=list(pending),
+            )
+            routing_state = RoutingState(statuses=node_statuses, handles=node_handles)
+            diag = diagnose_deadlock(dag, routing_state, pending)
+            if diag is not None:
+                structured = json.dumps(diag, ensure_ascii=False)
+                error_message = f"工作流死锁：{len(pending)} 个节点无法调度\n{structured}"
+            else:
+                # 兜底：诊断三要素未齐（极少见，如状态不一致）仍写中文一句话失败
+                error_message = f"工作流死锁：{len(pending)} 个节点无法调度"
+            await execution.amark_failed(error_message)
+            hook_execution = await self._load_execution_for_hooks(execution)
+            await self.hooks.trigger("execution_failed", execution=hook_execution)
+            return
+
+        # c. 失败节点收口
+        if failed:
+            await execution.amark_failed(f"失败节点: {len(failed)}")
+            hook_execution = await self._load_execution_for_hooks(execution)
+            await self.hooks.trigger("execution_failed", execution=hook_execution)
+            return
+
+        # d. 完成：收集终端节点（无 outgoing）的输出
+        final_output: dict = {}
+        for node_id in completed:
+            dag_node = dag.nodes.get(node_id)
+            if dag_node and not dag_node.outgoing:
+                final_output.update(node_outputs.get(node_id, {}))
+        await execution.amark_completed(final_output)
+        hook_execution = await self._load_execution_for_hooks(execution)
+        await self.hooks.trigger("execution_completed", execution=hook_execution)
 
     async def _execute_node(
         self,
