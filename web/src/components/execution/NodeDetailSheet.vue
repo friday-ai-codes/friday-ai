@@ -23,6 +23,7 @@ import AICodeReviewPanel from './AICodeReviewPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AIInsightTab from './AIInsightTab.vue'
 import ExecutionLogPanel from './ExecutionLogPanel.vue'
+import HumanApprovalPanel from './HumanApprovalPanel.vue'
 import NodeConfigTab from './NodeConfigTab.vue'
 import NodeDataTab from './NodeDataTab.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
@@ -115,6 +116,11 @@ const showPlanApproval = computed(() =>
   && ['waiting_event', 'completed'].includes(nodeStatus.value),
 )
 
+const showHumanApproval = computed(() =>
+  nodeType.value === 'human_approval'
+  && ['waiting_approval', 'completed'].includes(nodeStatus.value),
+)
+
 /** 是否显示 AICodingPanel：ai_coding + running/waiting_event/completed */
 const showAICoding = computed(() =>
   nodeType.value === 'ai_coding'
@@ -134,7 +140,11 @@ const showDebugPanel = computed(() =>
 
 /** 是否有任何附加面板需要显示 */
 const hasExtraPanels = computed(() =>
-  showPlanApproval.value || showAICoding.value || showAICodeReview.value || showDebugPanel.value,
+  showPlanApproval.value
+  || showHumanApproval.value
+  || showAICoding.value
+  || showAICodeReview.value
+  || showDebugPanel.value,
 )
 
 function handleOpenChange(value: boolean) {
@@ -221,6 +231,12 @@ function handleActionComplete() {
                   <!-- AI 方案审批面板 -->
                   <PlanApprovalPanel
                     v-if="showPlanApproval"
+                    :node-execution="nodeExecution"
+                    @action-complete="handleActionComplete"
+                  />
+
+                  <HumanApprovalPanel
+                    v-if="showHumanApproval"
                     :node-execution="nodeExecution"
                     @action-complete="handleActionComplete"
                   />

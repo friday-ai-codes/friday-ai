@@ -1,6 +1,7 @@
 """Manual trigger node."""
 
 import structlog
+from django.contrib.auth import get_user_model
 
 from workflows.nodes.base import ExecutionContext, NodePort, PortType
 from workflows.nodes.registry import register_node
@@ -60,10 +61,22 @@ class ManualTriggerNode(BaseTriggerNode):
         executor_id = None
         executor_name = None
         if context.workflow_execution:
-            triggered_by = getattr(context.workflow_execution, "triggered_by", None)
-            if triggered_by:
-                executor_id = str(triggered_by.id)
-                executor_name = getattr(triggered_by, "username", None)
+            triggered_by_id = getattr(context.workflow_execution, "triggered_by_id", None)
+            if triggered_by_id:
+                executor_id = str(triggered_by_id)
+
+                cached_user = context.workflow_execution._state.fields_cache.get("triggered_by")
+                if cached_user is not None:
+                    executor_name = getattr(cached_user, "username", None)
+                else:
+                    user_model = get_user_model()
+                    user = (
+                        await user_model.objects.filter(pk=triggered_by_id)
+                        .only("username")
+                        .afirst()
+                    )
+                    if user is not None:
+                        executor_name = user.username
 
         return {
             "data": {

@@ -64,6 +64,7 @@ const statusOptions = [
   { value: 'running', label: '运行中' },
   { value: 'pending', label: '等待中' },
   { value: 'paused', label: '已暂停' },
+  { value: 'waiting_approval', label: '待审批' },
   { value: 'suspended', label: '挂起中' },
   { value: 'completed', label: '已完成' },
   { value: 'failed', label: '失败' },
@@ -189,7 +190,9 @@ const statCards = computed(() => [
 const filteredExecutions = computed(() => {
   let execs = executions.value || []
   if (statusFilter.value && statusFilter.value !== 'all') {
-    execs = execs.filter(e => e.status === statusFilter.value)
+    execs = statusFilter.value === 'waiting_approval'
+      ? execs.filter(e => hasWaitingApproval(e))
+      : execs.filter(e => e.status === statusFilter.value)
   }
   return execs
 })
@@ -304,7 +307,17 @@ const executionStatusPillClasses: Record<string, string> = {
   waiting_input: 'bg-blue-500/10 text-blue-700 ring-blue-500/20',
 }
 
-function renderExecutionStatusPill(status: string) {
+function hasWaitingApproval(execution: WorkflowExecution): boolean {
+  return execution.status === 'suspended'
+    || execution.node_executions?.some(n => n.status === 'waiting_approval')
+}
+
+function getExecutionDisplayStatus(execution: WorkflowExecution): string {
+  return hasWaitingApproval(execution) ? 'waiting_approval' : execution.status
+}
+
+function renderExecutionStatusPill(execution: WorkflowExecution) {
+  const status = getExecutionDisplayStatus(execution)
   const config = getStatusConfig('execution', status)
   return h(
     'span',
@@ -334,7 +347,7 @@ const columns: ColumnDef<WorkflowExecution>[] = [
   {
     accessorKey: 'status',
     header: '状态',
-    cell: ({ row }) => renderExecutionStatusPill(row.original.status),
+    cell: ({ row }) => renderExecutionStatusPill(row.original),
     enableSorting: false,
     enableGlobalFilter: false,
   },
@@ -379,6 +392,34 @@ const columns: ColumnDef<WorkflowExecution>[] = [
     header: '创建时间',
     cell: ({ row }) => h('span', { class: 'text-sm tabular-nums text-muted-foreground' }, formatDateTime(row.original.created_at)),
     enableSorting: true,
+  },
+  {
+    id: 'actions',
+    header: '操作',
+    cell: ({ row }) => {
+      if (!hasWaitingApproval(row.original)) {
+        return h('span', { class: 'text-xs text-muted-foreground' }, '-')
+      }
+
+      return h(
+        Button,
+        {
+          variant: 'outline',
+          size: 'sm',
+          class: 'h-8 gap-1.5 text-amber-700 border-amber-500/30 hover:bg-amber-500/10',
+          onClick: (event: MouseEvent) => {
+            event.stopPropagation()
+            router.push(`/executions/${row.original.id}`)
+          },
+        },
+        () => [
+          h('span', { class: 'icon-[lucide--user-check] text-sm' }),
+          '处理审批',
+        ],
+      )
+    },
+    enableSorting: false,
+    enableGlobalFilter: false,
   },
 ]
 </script>

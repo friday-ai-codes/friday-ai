@@ -10,7 +10,8 @@ Tests cover:
 
 import pytest
 
-from workflows.nodes.base import NodeCategory, NodePort, NodeResult, PortType
+from workflows.models import WorkflowExecution
+from workflows.nodes.base import ExecutionContext, NodeCategory, NodePort, NodeResult, PortType
 from workflows.nodes.registry import NodeRegistry
 
 # ============================================================================
@@ -176,6 +177,38 @@ class TestManualTriggerNode:
         output_ports = node_class.outputs
 
         assert len(output_ports) >= 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.django_db(transaction=True)
+    async def test_manual_trigger_reads_executor_without_async_lazy_load(self, obs_workflow, user):
+        """Executor metadata uses async-safe lookup when the FK is not cached."""
+        from workflows.nodes.triggers.manual import ManualTriggerNode
+
+        execution = await WorkflowExecution.objects.acreate(
+            workflow=obs_workflow,
+            project=obs_workflow.project,
+            trigger_type="manual",
+            triggered_by=user,
+            status="running",
+        )
+        execution = await WorkflowExecution.objects.aget(pk=execution.pk)
+        assert "triggered_by" not in execution._state.fields_cache
+
+        context = ExecutionContext(
+            execution_id=str(execution.id),
+            node_id="manual-001",
+            node_config={},
+            input_data={"raw_payload": {"feature": "uat"}},
+            workflow_context={},
+            previous_outputs={},
+            workflow_execution=execution,
+        )
+
+        result = await ManualTriggerNode().execute(context)
+
+        assert result.status == "completed"
+        assert result.output["data"]["executor_id"] == str(user.id)
+        assert result.output["data"]["executor_name"] == user.username
 
 
 # ============================================================================
