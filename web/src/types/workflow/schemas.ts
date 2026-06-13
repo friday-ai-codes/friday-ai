@@ -338,7 +338,7 @@ export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
 export type ContextRetrievalConfig = z.infer<typeof contextRetrievalConfigSchema>
 export type DeliveryKnowledgeSearchConfig = z.infer<typeof deliveryKnowledgeSearchConfigSchema>
-export type FetchProjectInfoConfig = z.infer<typeof fetchSpaceInfoConfigSchema>
+export type FetchSpaceInfoConfig = z.infer<typeof fetchSpaceInfoConfigSchema>
 export type WaitCondition = z.infer<typeof waitConditionSchema>
 export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
 export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
@@ -360,7 +360,7 @@ export type NodeConfig
     | AIVariableExtractorConfig
     | ContextRetrievalConfig
     | DeliveryKnowledgeSearchConfig
-    | FetchProjectInfoConfig
+    | FetchSpaceInfoConfig
     | WaitFeishuFieldConfig
     | CreateBranchConfig
     | CreatePRConfig
@@ -383,7 +383,7 @@ export const NODE_CONFIG_SCHEMAS = {
   ai_variable_extractor: aiVariableExtractorConfigSchema,
   context_retrieval: contextRetrievalConfigSchema,
   delivery_knowledge_search: deliveryKnowledgeSearchConfigSchema,
-  fetch_project_info: fetchSpaceInfoConfigSchema,
+  fetch_space_info: fetchSpaceInfoConfigSchema,
   wait_feishu_field: waitFeishuFieldConfigSchema,
   create_branch: createBranchConfigSchema,
   create_pr: createPRConfigSchema,
