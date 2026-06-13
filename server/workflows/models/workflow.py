@@ -28,9 +28,11 @@ class Workflow(models.Model):
     webhook_configs: "QuerySet[WebhookConfig]"
 
     class TriggerType(models.TextChoices):
+        # TRIG-02 / D-02：移除僵尸枚举 schedule（无 handler/无画布节点/无 dispatch）。
+        # 定时触发改用「外部 cron → 调 webhook」模式（沿用 templates/daily_summary.json
+        # 既定口径），不实现原生定时调度，避免用户配出不生效的触发器。
         MANUAL = "manual", "手动触发"
         WEBHOOK = "webhook", "Webhook 触发"
-        SCHEDULE = "schedule", "定时触发"
         EVENT = "event", "事件触发"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
