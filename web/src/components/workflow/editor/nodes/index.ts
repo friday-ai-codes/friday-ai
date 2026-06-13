@@ -1,5 +1,4 @@
 import type { NodeComponent } from '@vue-flow/core'
-import type { NodeTypeKey } from '~/types/workflow/registry'
 /**
  * Vue Flow 节点类型注册
  *
@@ -7,7 +6,6 @@ import type { NodeTypeKey } from '~/types/workflow/registry'
  * parallel/join 使用 DynamicPortNode（需要动态端口管理）。
  */
 import { markRaw } from 'vue'
-import { NODE_REGISTRY } from '~/types/workflow/registry'
 import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
 import DynamicPortNode from './DynamicPortNode.vue'
@@ -24,25 +22,13 @@ const specialNodes: Record<string, NodeComponent> = {
   ai_plan_generation: aiPlanGenNode,
 }
 
-/** 从 NODE_REGISTRY + nodeVisuals 合并生成节点类型映射 */
-const registryTypes = Object.fromEntries(
-  (Object.keys(NODE_REGISTRY) as NodeTypeKey[]).map(key => [
-    key,
-    specialNodes[key] ?? baseNode,
-  ]),
+/**
+ * 从 nodeVisuals（前端视觉源全集）生成节点类型映射。
+ * 节点定义已收敛到 useNodeTypesStore（运行时源），此处仅需 Vue Flow 组件注册。
+ */
+const registeredTypes: Record<string, NodeComponent> = Object.fromEntries(
+  allNodeTypeKeys.map(key => [key, specialNodes[key] ?? baseNode]),
 )
-
-/** nodeVisuals 中有但 NODE_REGISTRY 中没有的节点类型也注册（如 manual_trigger） */
-const visualOnlyTypes = Object.fromEntries(
-  allNodeTypeKeys
-    .filter(key => !(key in registryTypes))
-    .map(key => [key, specialNodes[key] ?? baseNode]),
-)
-
-const registeredTypes: Record<string, NodeComponent> = {
-  ...registryTypes,
-  ...visualOnlyTypes,
-}
 
 /**
  * 使用 Proxy 为未注册的节点类型提供 fallback，

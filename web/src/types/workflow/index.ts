@@ -14,11 +14,11 @@ export {
 
 // Registry
 export {
+  CONFIG_COMPONENTS,
   getDefaultConfig,
   getNodeDefinition,
   getNodesByCategory,
   hasNodeDefinition,
-  NODE_REGISTRY,
   type NodeCategory,
   type NodeTypeDefinition,
   type NodeTypeKey,
