@@ -27,11 +27,10 @@ interface MockWorkflowExecution {
   created_at: string
 }
 
-// 与页面实现一致的触发类型中文标签映射
+// 与页面实现一致的触发类型中文标签映射（TRIG-02: 无 schedule）
 const triggerTypeLabels: Record<string, string> = {
   manual: '手动触发',
   webhook: 'Webhook',
-  schedule: '定时触发',
   event: '事件触发',
 }
 
@@ -89,7 +88,7 @@ const columns: ColumnDef<MockWorkflowExecution>[] = [
 const testData: MockWorkflowExecution[] = [
   { id: '1', workflow: 'wf-1', workflow_name: '代码审查', status: 'completed', trigger_type: 'manual', duration: 45, created_at: '2026-03-15T10:00:00Z' },
   { id: '2', workflow: 'wf-2', workflow_name: '部署流水线', status: 'running', trigger_type: 'webhook', duration: null, created_at: '2026-03-15T11:00:00Z' },
-  { id: '3', workflow: 'wf-1', workflow_name: '代码审查', status: 'failed', trigger_type: 'schedule', duration: 120, created_at: '2026-03-15T12:00:00Z' },
+  { id: '3', workflow: 'wf-1', workflow_name: '代码审查', status: 'failed', trigger_type: 'event', duration: 120, created_at: '2026-03-15T12:00:00Z' },
   { id: '4', workflow: 'wf-3', workflow_name: '数据同步', status: 'pending', trigger_type: 'event', duration: null, created_at: '2026-03-15T13:00:00Z' },
 ]
 
@@ -122,7 +121,6 @@ describe('executions DataTable', () => {
     const text = wrapper.text()
     expect(text).toContain('手动触发')
     expect(text).toContain('Webhook')
-    expect(text).toContain('定时触发')
     expect(text).toContain('事件触发')
   })
 

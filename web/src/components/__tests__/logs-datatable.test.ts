@@ -34,7 +34,7 @@ const columns: ColumnDef<MockTriggerLog>[] = [
 const testData: MockTriggerLog[] = [
   { id: '1', event_type: 'push', work_item_name: 'feat: 添加登录功能', status: 'completed', created_at: '2026-03-15T10:00:00Z' },
   { id: '2', event_type: 'pull_request', work_item_name: 'fix: 修复 CSS 样式', status: 'failed', created_at: '2026-03-15T11:00:00Z' },
-  { id: '3', event_type: 'schedule', work_item_name: '定时同步任务', status: 'pending', created_at: '2026-03-15T12:00:00Z' },
+  { id: '3', event_type: 'event', work_item_name: '定时同步任务', status: 'pending', created_at: '2026-03-15T12:00:00Z' },
   { id: '4', event_type: 'push', work_item_name: 'feat: 添加登录功能', status: 'completed', created_at: '2026-03-15T13:00:00Z' },
 ]
 

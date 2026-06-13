@@ -23,10 +23,10 @@ const props = defineProps<{
 }>()
 
 const triggerTypeLabel = computed(() => {
+  // TRIG-02: 移除 schedule 定时触发标签
   const labels: Record<string, string> = {
     manual: '手动触发',
     webhook: 'Webhook',
-    schedule: '定时触发',
     event: '事件触发',
   }
   return labels[props.execution.trigger_type] || props.execution.trigger_type
