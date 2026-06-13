@@ -391,6 +391,26 @@ class TestNodeTypeAPI:
             assert "display_name" in node_type
             assert "category" in node_type
 
+    def test_node_types_expose_ui_schema_and_default_config(self, authenticated_admin_client):
+        """节点列表暴露 ui_schema/default_config，且无幽灵节点（SSOT-01）。"""
+        url = "/api/node-types/"
+        response = authenticated_admin_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        by_type = {n["node_type"]: n for n in response.data}
+
+        # 真实后端节点在、幽灵节点不在
+        assert "fetch_space_info" in by_type
+        assert "fetch_project_info" not in by_type
+
+        for node_type in response.data:
+            # 每节点都暴露新字段
+            assert "ui_schema" in node_type
+            assert "default_config" in node_type
+            # default_config 的键 ⊆ config_schema.properties 的键
+            props = (node_type["config_schema"] or {}).get("properties", {})
+            assert set(node_type["default_config"]).issubset(set(props))
+
 
 # ============================================================================
 # Template API Tests
