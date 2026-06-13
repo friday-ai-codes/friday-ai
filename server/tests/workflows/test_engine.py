@@ -246,39 +246,26 @@ class TestApprovalHandling:
     """Tests for approval node handling."""
 
     async def test_approval_node_waits(self, approval_workflow):
-        """Test that approval node pauses execution."""
+        """审批节点挂起执行（ENG-01：等待即 SUSPENDED，run_sync 立即返回）。"""
         engine = WorkflowEngine()
 
         execution = await engine.start_execution(
             workflow=approval_workflow,
             input_data={},
             trigger_type="manual",
+            run_sync=True,
         )
 
-        # Wait for execution to reach approval
-        for _ in range(20):
-            await asyncio.sleep(0.2)
-            await execution.arefresh_from_db()
+        # 新语义：审批等待 → 执行收口为 SUSPENDED（绝非 COMPLETED/RUNNING）
+        assert execution.status == ExecutionStatus.SUSPENDED
 
-            # Check if any node is waiting for approval
-            waiting_nodes = await sync_to_async(
-                lambda: list(
-                    execution.node_executions.filter(status=NodeExecutionStatus.WAITING_APPROVAL)
-                )
-            )()
-
-            if waiting_nodes:
-                break
-
-        # Should have a node waiting for approval
-        waiting_count = await sync_to_async(
+        # 审批节点 NE 状态为 WAITING_APPROVAL（真实锁定 ENG-01 语义）
+        approval_ne = await sync_to_async(
             lambda: execution.node_executions.filter(
                 status=NodeExecutionStatus.WAITING_APPROVAL
-            ).count()
+            ).first()
         )()
-
-        # Either waiting for approval or already processed
-        assert waiting_count >= 0
+        assert approval_ne is not None
 
 
 # ============================================================================
@@ -291,20 +278,21 @@ class TestApprovalHandling:
 class TestCancelOperation:
     """Tests for execution cancellation."""
 
-    async def test_cancel_running_execution(self, approval_workflow):
-        """Test cancelling a running execution."""
+    async def test_cancel_suspended_execution(self, approval_workflow):
+        """对挂起（等待审批）执行取消生效（新语义：审批等待即 SUSPENDED，再取消）。"""
         engine = WorkflowEngine()
 
         execution = await engine.start_execution(
             workflow=approval_workflow,
             input_data={},
             trigger_type="manual",
+            run_sync=True,
         )
 
-        # Give it a moment to start
-        await asyncio.sleep(0.5)
+        # run_sync 下审批节点立即挂起，无需轮询等待
+        assert execution.status == ExecutionStatus.SUSPENDED
 
-        # Cancel the execution
+        # 取消挂起执行
         await engine.cancel_execution(execution)
 
         await execution.arefresh_from_db()
