@@ -320,3 +320,65 @@ def test_feishu_sync_hook_registered_in_engine() -> None:
     exec_completed_hooks = engine.hooks._hooks.get("execution_completed", [])
     assert any(isinstance(h, FeishuSyncHook) for h in exec_completed_hooks), \
         "FeishuSyncHook 未注册到 execution_completed 事件"
+
+
+# ============================================================================
+# OBS-01：WebSocketBroadcastHook 失败广播附带 error 字段（Phase 21 Wave 0 RED）
+#
+# D-04 裁定：node 失败/超时时，WS 广播 message 追加 error_message/error_code，
+# 前端无需 full fetch 即见失败原因；仅失败态追加可选键（Pitfall 5 向后兼容）。
+# 被测目标：workflows.hooks.builtin.WebSocketBroadcastHook.execute。
+#
+# 注意：失败态用例在 21-03/04 实现前预期为 RED（当前 message 不含 error_* 键）。
+# 成功态用例编码「仅失败态追加可选键」契约（向后兼容回归保护）。转绿计划：21-03/04。
+# ============================================================================
+
+
+async def _invoke_broadcast_hook(event: str, node_status: str):
+    """触发 WebSocketBroadcastHook，返回 group_send 收到的 message dict。
+
+    用 SimpleNamespace 构造 execution / node_execution（不触 DB），
+    并 patch channels.layers.get_channel_layer 返回带 AsyncMock group_send 的 channel_layer。
+    """
+    from workflows.hooks.builtin import WebSocketBroadcastHook
+
+    execution = SimpleNamespace(id="exec-obs-01", status="running")
+    node_execution = SimpleNamespace(
+        node_id="node-obs-01",
+        status=node_status,
+        error_message="变量解析失败",
+        error_code="VAR_RESOLUTION_FAILED",
+    )
+
+    channel_layer = SimpleNamespace(group_send=AsyncMock())
+    with patch("channels.layers.get_channel_layer", return_value=channel_layer):
+        hook = WebSocketBroadcastHook()
+        await hook.execute(event, execution=execution, node_execution=node_execution)
+
+    channel_layer.group_send.assert_called_once()
+    # group_send(group_name, message)
+    return channel_layer.group_send.call_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_broadcast_failed_node_includes_error_fields() -> None:
+    """OBS-01：node 失败广播 message 应含 error_message / error_code（修复前 RED）。"""
+    message = await _invoke_broadcast_hook("node_failed", node_status="failed")
+    assert message.get("error_message") == "变量解析失败"
+    assert message.get("error_code") == "VAR_RESOLUTION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_timeout_node_includes_error_fields() -> None:
+    """OBS-01：node 超时（timeout）同样应附带 error 字段（修复前 RED）。"""
+    message = await _invoke_broadcast_hook("node_failed", node_status="timeout")
+    assert message.get("error_message") == "变量解析失败"
+    assert message.get("error_code") == "VAR_RESOLUTION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_success_node_omits_error_fields() -> None:
+    """OBS-01 Pitfall 5：node 非失败态（completed）时 message 不应含 error_* 键（向后兼容）。"""
+    message = await _invoke_broadcast_hook("node_completed", node_status="completed")
+    assert "error_message" not in message
+    assert "error_code" not in message
