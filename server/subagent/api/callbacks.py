@@ -112,7 +112,10 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
         log.debug("has_node_execution_skip_agent_resume")
         return
 
-    if isinstance(session.last_output, dict) and session.last_output.get("source") == "chat_deep_analysis":
+    if (
+        isinstance(session.last_output, dict)
+        and session.last_output.get("source") == "chat_deep_analysis"
+    ):
         log.info("chat_deep_analysis_notify_barrier", session_id=session.session_id)
         _notify_barrier_manager(session, log)
         return
@@ -239,7 +242,10 @@ def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> Non
             node_exec.output_data = output_data
             await node_exec.asave(update_fields=["output_data"])
 
-            # 恢复 workflow
+            # 恢复 workflow：统一续跑入口（18-04）。节点仍 WAITING_EVENT 且带
+            # _resume_from_callback 标记 → 入口检测后经 _execute_node 重跑该节点
+            # （消费标记，修复容器回调断裂 A1），再重建状态重入主循环；SUSPENDED→RUNNING
+            # 抢锁与互斥由 _continue_after_node 统一负责，本模块不做手工状态翻转。
             engine = WorkflowEngine()
             await engine._continue_after_node(
                 node_exec.workflow_execution,
@@ -420,7 +426,6 @@ class ContainerCallbackView(APIView):
         return await handler(session, payload, log)
 
 
-
 # === CodingSession 回调扩展 (implementation) ===
 
 
@@ -441,7 +446,11 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
         return
 
     task_result = await TaskResult.objects.filter(session=session).afirst()
-    if task_result and task_result.branch_name and task_result.branch_name != coding_session.branch_name:
+    if (
+        task_result
+        and task_result.branch_name
+        and task_result.branch_name != coding_session.branch_name
+    ):
         coding_session.branch_name = task_result.branch_name
         await coding_session.asave(update_fields=["branch_name", "updated_at"])
 
@@ -520,13 +529,13 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
         from knowledge import ingestion  # lazy import 防循环
 
         await ingestion.aschedule_ingestion(
-            ingestion.IngestionRequest(
-                "task_result", session.session_id, "legacy_coding_completed"
-            )
+            ingestion.IngestionRequest("task_result", session.session_id, "legacy_coding_completed")
         )
 
         await store_coding_complete_to_message(coding_session)
-        logger.info("coding_session_completed", coding_session_id=str(coding_session.id), pr_url=pr_url)
+        logger.info(
+            "coding_session_completed", coding_session_id=str(coding_session.id), pr_url=pr_url
+        )
 
 
 async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -> None:
@@ -1034,9 +1043,7 @@ async def _update_repository_on_summary_complete(
         )
 
 
-async def _update_repository_on_summary_fail(
-    session: SubAgentSession, error_msg: str
-) -> None:
+async def _update_repository_on_summary_fail(session: SubAgentSession, error_msg: str) -> None:
     """repo_summary 失败 -- 写回错误状态。"""
     from repositories.models import Repository
 
@@ -1049,9 +1056,7 @@ async def _update_repository_on_summary_fail(
 
     repo.ai_summary_status = "failed"
     repo.ai_summary_error = error_msg[:2000]
-    await repo.asave(
-        update_fields=["ai_summary_status", "ai_summary_error", "updated_at"]
-    )
+    await repo.asave(update_fields=["ai_summary_status", "ai_summary_error", "updated_at"])
     logger.info("repo_summary_fail_written", repository_id=repo_id, error=error_msg[:100])
 
 
@@ -1157,9 +1162,8 @@ async def _update_agent_session_cross_repo_relevance(
         # (2) TaskResult.text_output 末尾拼接 → BarrierManager 回灌
         import json as _json
 
-        relevance_block = (
-            f"\n\n[cross_repo_relevance:{trace_id}]\n"
-            + _json.dumps(candidates_dump, ensure_ascii=False)
+        relevance_block = f"\n\n[cross_repo_relevance:{trace_id}]\n" + _json.dumps(
+            candidates_dump, ensure_ascii=False
         )
         task_result = await TaskResult.objects.filter(session=session).afirst()
         if task_result is not None:
