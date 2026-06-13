@@ -107,6 +107,59 @@ class DAG:
         dag._detect_back_edges()
         return dag
 
+    @classmethod
+    def from_node_edge_dicts(cls, nodes: list[dict], edges: list[dict]) -> "DAG":
+        """从未持久化的 plain dict 节点/边集构建 DAG（零 ORM，编辑态校验用）。
+
+        与 ``from_workflow`` 同构：照搬 incoming/outgoing/incoming_edges 装配与
+        ``_detect_back_edges()`` 调用，保留"条件分支非 default handle 回退边不算环"
+        的精细语义（详见 ``has_cycle``）。差异：
+
+        - 节点 key 取 ``str(nd["id"])``（节点 dict 必带 UUID 形态 ``id``）；
+        - ``DAGNode.node`` 用 :class:`types.SimpleNamespace` 承载
+          ``id`` / ``node_type`` / ``name`` 三属性——``DAG.validate`` 仅读这三者；
+        - 边两端 ID 取 ``str(...)`` 归一化；handle 缺省回退 "default"；
+        - 仅当 source/target 两端都在 nodes 集时才装配边，缺失端归属由
+          上层 validator 另行报 ``edge_node_missing``（构图阶段静默跳过）。
+
+        Args:
+            nodes: 节点 dict 列表，每项至少含 ``id`` / ``node_type``，可选 ``name``。
+            edges: 边 dict 列表，每项含 ``source_node_id`` / ``target_node_id``，
+                可选 ``source_handle`` / ``target_handle``。
+        """
+        from types import SimpleNamespace
+
+        dag = cls()
+
+        for nd in nodes:
+            nid = str(nd["id"])
+            node_obj = SimpleNamespace(
+                id=nid,
+                node_type=nd["node_type"],
+                name=nd.get("name") or nid,
+            )
+            dag.nodes[nid] = DAGNode(node=node_obj)
+
+        for edge in edges:
+            source_id = str(edge["source_node_id"])
+            target_id = str(edge["target_node_id"])
+            handle = edge.get("source_handle") or "default"
+
+            if source_id in dag.nodes and target_id in dag.nodes:
+                dag.nodes[target_id].incoming.add(source_id)
+                dag.nodes[target_id].incoming_edges.append(
+                    (source_id, handle, edge.get("target_handle") or "default")
+                )
+
+                if handle not in dag.nodes[source_id].outgoing:
+                    dag.nodes[source_id].outgoing[handle] = set()
+                dag.nodes[source_id].outgoing[handle].add(target_id)
+
+                dag.edges.append(edge)
+
+        dag._detect_back_edges()
+        return dag
+
     def _detect_back_edges(self) -> None:
         """识别反馈环中的 back-edge 并标记到目标节点。
 
