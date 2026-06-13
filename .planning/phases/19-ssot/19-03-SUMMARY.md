@@ -148,6 +148,12 @@ _Note: Task 2 拆成功能提交（删 legacy + 收敛）与注释清理提交�
 ## TDD Gate Compliance
 Task 1 标注 `tdd="true"`，但 `config.json` `tdd_mode: false` 且 orchestrator 未传 MVP_MODE/TDD_MODE，故未强制 RED→GREEN 提交序列门禁。实务上 Task 1 同时落地实现 + `registry.test.ts`（10 passed），覆盖等价。
 
+## Self-Check: PASSED
+
+- 创建文件存在：`web/src/types/workflow/__tests__/registry.test.ts`、`.planning/phases/19-ssot/19-03-SUMMARY.md` 均 FOUND
+- 任务提交存在：`db2135f27`、`47ac186e8`、`c53c250a1` 均 FOUND
+- 门禁：`pnpm -C web type-check` exit 0；`rg "NODE_REGISTRY" web/src` 无业务/注释命中；registry/useDragAndDrop/node-sync 三测共 31 用例绿
+
 ---
 *Phase: 19-ssot*
 *Completed: 2026-06-13*
