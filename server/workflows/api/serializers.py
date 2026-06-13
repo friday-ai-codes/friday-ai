@@ -210,7 +210,8 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
     def validate_node_type(self, value: str) -> str:
         """Validate node type exists in registry."""
         if not NodeRegistry.get(value):
-            available = ", ".join(NodeRegistry.list_types())
+            # registry 无列举方法（Pitfall 7），用 get_all().keys() 枚举已注册类型
+            available = ", ".join(NodeRegistry.get_all().keys())
             raise serializers.ValidationError(
                 f"Unknown node type: {value}. Available types: {available}"
             )
@@ -263,6 +264,24 @@ class WorkflowNodeCreateSerializer(serializers.ModelSerializer):
         if not NodeRegistry.get(value):
             raise serializers.ValidationError(f"Unknown node type: {value}")
         return value
+
+    def validate(self, attrs: dict) -> dict:
+        """校验节点 config 是否符合 schema（闭合 create 路径缺口）。
+
+        与 WorkflowNodeSerializer.validate 同源：复用 BaseNode.validate_config
+        （jsonschema）。create 路径 node_type 恒在 attrs 中。
+        """
+        node_type = attrs.get("node_type")
+        config = attrs.get("config", {})
+
+        if node_type:
+            node_class = NodeRegistry.get(node_type)
+            if node_class:
+                errors = node_class.validate_config(config)
+                if errors:
+                    raise serializers.ValidationError({"config": errors})
+
+        return attrs
 
 
 # =============================================================================
@@ -464,7 +483,8 @@ class WorkflowCreateSerializer(serializers.ModelSerializer):
                     unknown_types.add(node_type)
 
             if unknown_types:
-                available = ", ".join(NodeRegistry.list_types())
+                # registry 无列举方法（Pitfall 7），用 get_all().keys() 枚举已注册类型
+                available = ", ".join(NodeRegistry.get_all().keys())
                 raise serializers.ValidationError(
                     {
                         "nodes": [
