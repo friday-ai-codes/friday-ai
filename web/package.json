@@ -17,7 +17,8 @@
     "test:e2e:ci": "playwright test --project=chromium",
     "test:e2e:ui": "playwright test --ui",
     "generate:node-defs": "tsx scripts/generate-node-definitions.ts",
-    "validate:node-defs": "tsx scripts/validate-node-definitions.ts"
+    "validate:node-defs": "tsx scripts/validate-node-definitions.ts",
+    "gen:node-fixture": "cd ../server && uv run python manage.py dump_node_fixture"
   },
   "dependencies": {
     "@codemirror/autocomplete": "catalog:",

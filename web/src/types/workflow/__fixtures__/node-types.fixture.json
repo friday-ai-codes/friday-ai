@@ -1,0 +1,521 @@
+{
+  "node_count": 33,
+  "nodes": [
+    {
+      "node_type": "aggregate",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_code_review",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "coding_result"
+        },
+        {
+          "name": "plan"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_coding",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "plan"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_coding_dispatcher",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "plan"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_plan_approval",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "approved"
+        },
+        {
+          "name": "rejected"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_plan_generation",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_prompt",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_variable_extractor",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "text"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "variables"
+        }
+      ]
+    },
+    {
+      "node_type": "code",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "condition",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "node_type": "context_retrieval",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "create_branch",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "create_pr",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "delay",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "delivery_knowledge_search",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "feishu_event_trigger",
+      "category": "trigger",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "fetch_group_chat",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "fetch_space_info",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "fetch_work_item",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "foreach",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "group_chat_question",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "answered"
+        },
+        {
+          "name": "timeout"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "http_request",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "human_approval",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "approved"
+        },
+        {
+          "name": "rejected"
+        }
+      ]
+    },
+    {
+      "node_type": "join",
+      "category": "control",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "join_group_chat",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "manual_trigger",
+      "category": "trigger",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "node_type": "mcp_deploy",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "merge_pr",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "notify_feishu",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "parallel",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "node_type": "variable_extractor",
+      "category": "action",
+      "inputs": [
+        {
+          "name": "data"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "variables"
+        }
+      ]
+    },
+    {
+      "node_type": "wait_feishu_field",
+      "category": "control",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "matched"
+        },
+        {
+          "name": "timeout"
+        },
+        {
+          "name": "skipped"
+        }
+      ]
+    },
+    {
+      "node_type": "webhook_trigger",
+      "category": "trigger",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "headers"
+        },
+        {
+          "name": "query"
+        }
+      ]
+    }
+  ]
+}
