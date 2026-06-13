@@ -10,7 +10,7 @@ import {
   TooltipTrigger,
 } from '~/components/ui/tooltip'
 import WorkflowMiniMap from '~/components/workflow/WorkflowMiniMap.vue'
-import { NODE_REGISTRY } from '~/types/workflow/registry'
+import { getNodeDefinition } from '~/types/workflow/registry'
 
 defineProps<{
   workflows: Workflow[]
@@ -64,7 +64,7 @@ function getNodeTypeCounts(workflow: Workflow): NodeTypeCount[] {
   }
 
   return Array.from(countMap.entries()).map(([type, count]) => {
-    const def = NODE_REGISTRY[type as keyof typeof NODE_REGISTRY]
+    const def = getNodeDefinition(type)
     return {
       type,
       name: def?.displayName ?? type,
