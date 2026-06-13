@@ -34,7 +34,7 @@
       "position": {"x": 400, "y": 420},
       "config": {
         "system_prompt": "你是一个专业的数据分析师，擅长将原始数据转化为结构清晰、重点突出的日报。",
-        "user_prompt": "基于以下数据生成日报，包含三个部分：\n1. 今日趋势（数据变化总结）\n2. 重点事项（需要关注的内容）\n3. 风险提示（异常或需跟进的问题）\n\n数据：\n{{nodes.fetch_data.output}}",
+        "user_prompt": "基于以下数据生成日报，包含三个部分：\n1. 今日趋势（数据变化总结）\n2. 重点事项（需要关注的内容）\n3. 风险提示（异常或需跟进的问题）\n\n数据：\n{{nodes.fetch_data.body}}",
         "model": "",
         "temperature": 0.3
       }
@@ -47,7 +47,7 @@
       "config": {
         "webhook_url": "",
         "message_type": "text",
-        "content": "{{nodes.summarize.output}}",
+        "content": "{{nodes.summarize.text}}",
         "title": "",
         "at_all": false,
         "at_users": []
