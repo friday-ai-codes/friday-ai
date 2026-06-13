@@ -58,14 +58,17 @@ const timeRangeOptions = [
   { value: 'all', label: '全部时间' },
 ]
 
+// OBS-03: 状态筛选项与后端 ExecutionStatus 对齐（server/workflows/models/execution.py）
 const statusOptions = [
   { value: 'all', label: '全部状态' },
   { value: 'running', label: '运行中' },
   { value: 'pending', label: '等待中' },
   { value: 'paused', label: '已暂停' },
+  { value: 'suspended', label: '挂起中' },
   { value: 'completed', label: '已完成' },
   { value: 'failed', label: '失败' },
   { value: 'cancelled', label: '已取消' },
+  { value: 'timeout', label: '超时' },
 ]
 
 // 计算查询参数
@@ -126,7 +129,9 @@ const stats = computed(() => {
     total: execs.length,
     running: execs.filter(e => e.status === 'running').length,
     pending: execs.filter(e => e.status === 'pending').length,
-    waitingApproval: execs.filter(e => e.status === 'waiting_approval' || e.node_executions?.some(n => n.status === 'waiting_approval')).length,
+    // OBS-03 / Pitfall 7: execution 级"等待"判 suspended（ExecutionStatus 无 waiting_approval，
+    // 见 server/workflows/models/execution.py）；node 级 waiting_approval 经 some() 旁路保留。
+    waitingApproval: execs.filter(e => e.status === 'suspended' || e.node_executions?.some(n => n.status === 'waiting_approval')).length,
     completed: execs.filter(e => e.status === 'completed').length,
     failed: execs.filter(e => e.status === 'failed').length,
   }
@@ -251,18 +256,16 @@ function getSpaceName(workflowId: string): string {
   return wf?.project_name || '-'
 }
 
-/** 触发类型中文标签映射 */
+/** 触发类型中文标签映射（TRIG-02: 移除 schedule 定时触发） */
 const triggerTypeLabels: Record<string, string> = {
   manual: '手动触发',
   webhook: 'Webhook',
-  schedule: '定时触发',
   event: '事件触发',
 }
 
 const triggerTypeIcons: Record<string, string> = {
   manual: 'icon-[lucide--mouse-pointer-click]',
   webhook: 'icon-[lucide--webhook]',
-  schedule: 'icon-[lucide--alarm-clock]',
   event: 'icon-[lucide--zap]',
 }
 
