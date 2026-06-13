@@ -3,11 +3,18 @@
 零 DB：复用 test_engine_routing.py 的 _build_dag helper 手工构造 DAG。
 diagnose_deadlock 只含拓扑元数据（名称/short_id/状态/handle），绝不读取节点输出值
 （V5 信息泄露防线，T-18-01）。
+
+另含 TestDeadlockIntegration（18-03）：直接调 engine._finalize_run_state 注入人造
+死锁状态，验证 scheduler 写入侧的完整链路（FAILED + 结构化 error_message + hook），
+以及挂起优先于死锁的判定优先级。
 """
 
 import json
 
+import pytest
+
 from tests.workflows.test_engine_routing import _build_dag
+from workflows.engine.dag import DAG
 from workflows.engine.routing import (
     STATUS_COMPLETED,
     STATUS_PENDING,
@@ -15,6 +22,13 @@ from workflows.engine.routing import (
     STATUS_WAITING,
     RoutingState,
     diagnose_deadlock,
+)
+from workflows.models import (
+    ExecutionStatus,
+    Workflow,
+    WorkflowEdge,
+    WorkflowExecution,
+    WorkflowNode,
 )
 
 
@@ -94,3 +108,134 @@ class TestDiagnoseDeadlockUnit:
         assert json.loads(serialized)["reason"] == "deadlock"
         # node_outputs 仅作泄露反证，未传入诊断函数
         assert secret_value in str(node_outputs)
+
+
+def _build_cyclic_workflow(engine_project):
+    """构造默认环工作流 A⇄B（default→default 不算 back-edge，构成真实互锁）。
+
+    18-02 级联修复后正常图结构不再能自然死锁——死锁守卫是针对状态不一致等异常态
+    的防御网，故用一个无入口（互为依赖）的 2 节点环验证收口写入侧链路。
+    """
+    workflow = Workflow.objects.create(
+        name="Deadlock Workflow",
+        project=engine_project,
+        trigger_type="manual",
+    )
+    node_a = WorkflowNode.objects.create(
+        workflow=workflow, node_type="condition", name="NodeA", position_x=0, position_y=0
+    )
+    node_b = WorkflowNode.objects.create(
+        workflow=workflow, node_type="condition", name="NodeB", position_x=200, position_y=0
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=node_a,
+        target_node=node_b,
+        source_handle="default",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=node_b,
+        target_node=node_a,
+        source_handle="default",
+        target_handle="default",
+    )
+    execution = WorkflowExecution.objects.create(
+        workflow=workflow,
+        project=engine_project,
+        trigger_type="manual",
+        status=ExecutionStatus.RUNNING,
+    )
+    return workflow, execution, str(node_a.id), str(node_b.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestDeadlockIntegration:
+    """收口判定写 FAILED + 结构化诊断 + 挂起优先级（ENG-04 主循环侧）。"""
+
+    async def test_finalize_writes_failed_with_structured_diagnosis(self, engine, engine_project):
+        """Test 1：人造死锁入参 → execution FAILED，error_message 末行结构化可解析。"""
+        from asgiref.sync import sync_to_async
+
+        _wf, execution, a_id, b_id = await sync_to_async(_build_cyclic_workflow)(engine_project)
+        workflow = await Workflow.objects.aget(pk=_wf.pk)
+        dag = await DAG.afrom_workflow(workflow)
+
+        node_statuses = {a_id: STATUS_PENDING, b_id: STATUS_PENDING}
+        await engine._finalize_run_state(
+            execution,
+            dag,
+            pending={a_id, b_id},
+            waiting=set(),
+            failed=set(),
+            completed=set(),
+            node_statuses=node_statuses,
+            node_handles={},
+            node_outputs={},
+        )
+
+        await execution.arefresh_from_db()
+        assert execution.status == ExecutionStatus.FAILED
+
+        lines = execution.error_message.strip().splitlines()
+        # 首行中文一句话
+        assert "工作流死锁" in lines[0]
+        # 末行可独立 json.loads（Phase 21 直接消费）
+        payload = json.loads(lines[-1])
+        assert payload["reason"] == "deadlock"
+        assert len(payload["pending"]) == 2
+        first = payload["pending"][0]
+        assert set(first.keys()) == {"node", "short_id", "waiting_on"}
+        assert len(first["waiting_on"]) >= 1
+        dep = first["waiting_on"][0]
+        assert set(dep.keys()) == {"node", "short_id", "status", "handle"}
+
+    async def test_diagnosis_excludes_output_values(self, engine, engine_project):
+        """Test 2：node_outputs 含哨兵串 → error_message 全文不含（V5 信息泄露防线端到端）。"""
+        from asgiref.sync import sync_to_async
+
+        sentinel = "SECRET_OUTPUT_VALUE"
+        _wf, execution, a_id, b_id = await sync_to_async(_build_cyclic_workflow)(engine_project)
+        workflow = await Workflow.objects.aget(pk=_wf.pk)
+        dag = await DAG.afrom_workflow(workflow)
+
+        await engine._finalize_run_state(
+            execution,
+            dag,
+            pending={a_id, b_id},
+            waiting=set(),
+            failed=set(),
+            completed=set(),
+            node_statuses={a_id: STATUS_PENDING, b_id: STATUS_PENDING},
+            node_handles={},
+            node_outputs={a_id: {"leaked": sentinel}, b_id: {"leaked": sentinel}},
+        )
+
+        await execution.arefresh_from_db()
+        assert execution.status == ExecutionStatus.FAILED
+        assert sentinel not in execution.error_message
+
+    async def test_waiting_takes_priority_over_deadlock(self, engine, engine_project):
+        """Test 3：同样死锁状态但 waiting 非空 → SUSPENDED 而非 FAILED（判定优先级锚定）。"""
+        from asgiref.sync import sync_to_async
+
+        _wf, execution, a_id, b_id = await sync_to_async(_build_cyclic_workflow)(engine_project)
+        workflow = await Workflow.objects.aget(pk=_wf.pk)
+        dag = await DAG.afrom_workflow(workflow)
+
+        await engine._finalize_run_state(
+            execution,
+            dag,
+            pending={a_id, b_id},
+            waiting={a_id},
+            failed=set(),
+            completed=set(),
+            node_statuses={a_id: STATUS_WAITING, b_id: STATUS_PENDING},
+            node_handles={},
+            node_outputs={},
+        )
+
+        await execution.arefresh_from_db()
+        assert execution.status == ExecutionStatus.SUSPENDED
