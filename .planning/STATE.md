@@ -4,8 +4,8 @@ milestone: v0.4.0
 milestone_name: 工作流系统契约重构
 status: executing
 stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-13T12:19:55.528Z"
-last_activity: 2026-06-13
+last_updated: "2026-06-13T15:08:44.583Z"
+last_activity: 2026-06-13 -- Phase 21 planning complete
 progress:
   total_phases: 5
   completed_phases: 4
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 Phase: 21
 Plan: Not started
-Status: Executing Phase 20
-Last activity: 2026-06-13
+Status: Ready to execute
+Last activity: 2026-06-13 -- Phase 21 planning complete
 
 Progress: [□□□□□] 0/5 phases
 
