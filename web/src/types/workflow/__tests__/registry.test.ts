@@ -14,7 +14,7 @@ import {
  * registry helper store 适配器单测（19-03）
  *
  * 验证 getNodeDefinition/getDefaultConfig/getNodesByCategory/validateNodeConfig
- * 全部从 useNodeTypesStore（唯一运行时源）取值，而非读已删除的 NODE_REGISTRY 硬编码。
+ * 全部从 useNodeTypesStore（唯一运行时源）取值，而非读已删除的硬编码注册表。
  */
 
 function makeNodeType(overrides: Partial<NodeType> = {}): NodeType {
