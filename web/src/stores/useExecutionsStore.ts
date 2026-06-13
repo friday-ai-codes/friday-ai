@@ -145,8 +145,12 @@ export const useExecutionsStore = defineStore('executions', () => {
     total: executions.value.length,
     running: executions.value.filter(e => e.status === 'running').length,
     pending: executions.value.filter(e => e.status === 'pending').length,
+    // OBS-03：execution 级"挂起"以 suspended 统计（Phase 18 落点），仅看 execution.status
+    suspended: executions.value.filter(e => e.status === 'suspended').length,
+    // waitingApproval：execution 级 suspended 或 node 级 waiting_approval（node_executions.some 旁路），
+    // 不把 e.status === 'waiting_approval' 当真——execution 永不取该值
     waitingApproval: executions.value.filter(e =>
-      e.status === 'waiting_approval'
+      e.status === 'suspended'
       || e.node_executions?.some(n => n.status === 'waiting_approval'),
     ).length,
     completed: executions.value.filter(e => e.status === 'completed').length,
@@ -373,6 +377,19 @@ export const useExecutionsStore = defineStore('executions', () => {
     }
     else if (event === 'node_failed') {
       currentExecution.value.failed_nodes++
+      // OBS-01：node_failed WS 广播失败态携带 error_message/error_code，写入对应 NE 供实时展示
+      // （Pitfall 5：防御读，缺字段不覆盖既有值，不破坏 NE 状态）
+      if (node_id) {
+        const failedNode = currentExecution.value.node_executions.find(
+          ne => ne.node === node_id,
+        )
+        if (failedNode) {
+          if (data.error_message != null)
+            failedNode.error_message = data.error_message
+          if (data.error_code != null)
+            failedNode.error_code = data.error_code
+        }
+      }
     }
     else if (event === 'node_skipped') {
       currentExecution.value.skipped_nodes++
