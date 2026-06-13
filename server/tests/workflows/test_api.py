@@ -9,6 +9,8 @@ Tests cover:
 - Task compatibility API
 """
 
+import uuid
+
 import pytest
 from rest_framework import status
 
@@ -360,6 +362,198 @@ class TestExecutionBatchDeleteAPI:
             ).status_code
             == status.HTTP_400_BAD_REQUEST
         )
+
+
+# ============================================================================
+# Validation Write-Path Tests (VAL-02)
+# ============================================================================
+
+
+def _vnode(node_type, *, config=None, name="N", short_id=None, node_id=None):
+    """构造 bulk-update / dry-run 节点 dict（显式 UUID 以便边引用）。"""
+    nd = {
+        "id": node_id or str(uuid.uuid4()),
+        "node_type": node_type,
+        "name": name,
+        "config": config or {},
+    }
+    if short_id:
+        nd["short_id"] = short_id
+    return nd
+
+
+def _vedge(source, target, *, source_handle="default", target_handle="default", edge_id=None):
+    """构造 bulk-update / dry-run 边 dict（UUID 空间 + 可选 edge id）。"""
+    return {
+        "id": edge_id or str(uuid.uuid4()),
+        "source_node_id": source["id"],
+        "target_node_id": target["id"],
+        "source_handle": source_handle,
+        "target_handle": target_handle,
+    }
+
+
+@pytest.mark.django_db
+class TestWorkflowValidationAPI:
+    """VAL-02：写入路径接入 WorkflowGraphValidator 的集成测试。
+
+    覆盖 bulk-update 非法图结构化 400 + 事务回滚、合法图不误拒、单节点 create
+    config 缺口闭合、dry-run 双端点、dry-run 与 bulk-update 同源（Pitfall 5）。
+    """
+
+    def _bulk_url(self, workflow):
+        return f"/api/workflows/{workflow.id}/bulk-update/"
+
+    def test_bulk_update_bad_config_returns_400_and_rolls_back(
+        self, authenticated_admin_client, api_workflow
+    ):
+        """坏 config（http_request 缺必填 url）→ 400 结构化 errors + 回滚不落库。"""
+        trigger = _vnode("manual_trigger", name="Start")
+        bad = _vnode("http_request", config={}, name="Fetch")  # 缺 required url
+        payload = {
+            "nodes": [trigger, bad],
+            "edges": [_vedge(trigger, bad)],
+        }
+        response = authenticated_admin_client.put(
+            self._bulk_url(api_workflow), payload, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "errors" in response.data
+        config_issues = [
+            e for e in response.data["errors"] if str(e["reason"]) == "config_schema_invalid"
+        ]
+        assert config_issues, response.data["errors"]
+        assert str(config_issues[0]["node_id"]) == bad["id"]
+        assert str(config_issues[0]["field_path"]) == "config"
+        # 事务回滚：一个节点都没落库
+        assert api_workflow.nodes.count() == 0
+
+    def test_bulk_update_bad_source_handle_returns_400(
+        self, authenticated_admin_client, api_workflow
+    ):
+        """坏 source_handle（不在上游输出端口）→ 400，errors 含 invalid_source_handle。"""
+        trigger = _vnode("manual_trigger", name="Start")
+        prompt = _vnode("ai_prompt", config={"user_prompt": "hi"}, name="Prompt")
+        edge = _vedge(trigger, prompt, source_handle="ghost_handle")
+        payload = {"nodes": [trigger, prompt], "edges": [edge]}
+
+        response = authenticated_admin_client.put(
+            self._bulk_url(api_workflow), payload, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        handle_issues = [
+            e for e in response.data["errors"] if str(e["reason"]) == "invalid_source_handle"
+        ]
+        assert handle_issues, response.data["errors"]
+        assert str(handle_issues[0]["edge_id"]) == edge["id"]
+        assert "source_handle" in str(handle_issues[0]["field_path"])
+        assert api_workflow.nodes.count() == 0
+
+    def test_bulk_update_unresolvable_variable_returns_400(
+        self, authenticated_admin_client, api_workflow
+    ):
+        """不可解析 nodes.* 变量（引用幽灵节点）→ 400，errors 含 node_not_found。"""
+        trigger = _vnode("manual_trigger", name="Start")
+        prompt = _vnode(
+            "ai_prompt",
+            config={"user_prompt": "数据：{{nodes.ghost.x}}"},
+            name="Prompt",
+        )
+        payload = {"nodes": [trigger, prompt], "edges": [_vedge(trigger, prompt)]}
+
+        response = authenticated_admin_client.put(
+            self._bulk_url(api_workflow), payload, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        var_issues = [e for e in response.data["errors"] if str(e["reason"]) == "node_not_found"]
+        assert var_issues, response.data["errors"]
+        assert str(var_issues[0]["node_id"]) == prompt["id"]
+        assert str(var_issues[0]["field_path"]).startswith("config")
+        assert api_workflow.nodes.count() == 0
+
+    def test_bulk_update_valid_graph_saves_200(self, authenticated_admin_client, api_workflow):
+        """合法工作流 bulk-update 保存零变化（不误拒）→ 200 + 落库成功。"""
+        trigger = _vnode("manual_trigger", name="Start")
+        prompt = _vnode("ai_prompt", config={"user_prompt": "你好"}, name="Prompt")
+        payload = {
+            "nodes": [trigger, prompt],
+            "edges": [_vedge(trigger, prompt)],
+            "delete_orphans": True,
+        }
+
+        response = authenticated_admin_client.put(
+            self._bulk_url(api_workflow), payload, format="json"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert api_workflow.nodes.count() == 2
+        assert api_workflow.edges.count() == 1
+
+    def test_node_create_bad_config_returns_400(self, authenticated_admin_client, api_workflow):
+        """单节点 create（WorkflowNodeCreateSerializer）坏 config → 400（闭合缺口）。"""
+        url = f"/api/workflows/{api_workflow.id}/nodes/"
+        data = {"node_type": "http_request", "name": "Fetch", "config": {}}  # 缺 required url
+        response = authenticated_admin_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # 错误体引用缺失的必填字段（闭合缺口前此请求会 201 落库坏节点）
+        assert "url" in str(response.data) or "config" in str(response.data)
+        assert api_workflow.nodes.count() == 0
+
+    def test_dry_run_draft_bad_graph_returns_errors_no_write(
+        self, authenticated_admin_client, api_project
+    ):
+        """dry-run detail=False：坏图 → 200 + errors 非空，且不写库。"""
+        url = "/api/workflows/validate/"
+        trigger = _vnode("manual_trigger", name="Start")
+        bad = _vnode("http_request", config={}, name="Fetch")
+        payload = {"nodes": [trigger, bad], "edges": [_vedge(trigger, bad)]}
+
+        before = Workflow.objects.count()
+        response = authenticated_admin_client.post(url, payload, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["errors"]
+        assert "warnings" in response.data
+        # 未写库：workflow 数量不变
+        assert Workflow.objects.count() == before
+
+    def test_dry_run_detail_valid_draft_returns_empty_errors(
+        self, authenticated_admin_client, api_workflow
+    ):
+        """dry-run detail=True：合法草图 → 200 + errors == []，不写库。"""
+        url = f"/api/workflows/{api_workflow.id}/validate/"
+        trigger = _vnode("manual_trigger", name="Start")
+        prompt = _vnode("ai_prompt", config={"user_prompt": "ok"}, name="Prompt")
+        payload = {"nodes": [trigger, prompt], "edges": [_vedge(trigger, prompt)]}
+
+        response = authenticated_admin_client.post(url, payload, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["errors"] == []
+        # 草图校验不落库
+        assert api_workflow.nodes.count() == 0
+
+    def test_dry_run_and_bulk_update_same_source(self, authenticated_admin_client, api_workflow):
+        """Pitfall 5：同一坏图，dry-run errors reason 集合 == bulk-update 400 reason 集合。"""
+        trigger = _vnode("manual_trigger", name="Start")
+        prompt = _vnode("ai_prompt", config={"user_prompt": "hi"}, name="Prompt")
+        edge = _vedge(trigger, prompt, source_handle="ghost_handle")
+        payload = {"nodes": [trigger, prompt], "edges": [edge]}
+
+        dry = authenticated_admin_client.post("/api/workflows/validate/", payload, format="json")
+        assert dry.status_code == status.HTTP_200_OK
+        dry_reasons = {str(e["reason"]) for e in dry.data["errors"]}
+
+        bulk = authenticated_admin_client.put(self._bulk_url(api_workflow), payload, format="json")
+        assert bulk.status_code == status.HTTP_400_BAD_REQUEST
+        bulk_reasons = {str(e["reason"]) for e in bulk.data["errors"]}
+
+        assert dry_reasons == bulk_reasons
+        assert "invalid_source_handle" in dry_reasons
 
 
 # ============================================================================
