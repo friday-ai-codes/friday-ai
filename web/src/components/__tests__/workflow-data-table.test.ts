@@ -1,6 +1,7 @@
 import type { Workflow } from '~/stores/useWorkflowsStore'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
 import WorkflowDataTable from '../workflow/WorkflowDataTable.vue'
 
 const workflow: Workflow = {
@@ -28,6 +29,12 @@ const workflow: Workflow = {
 }
 
 describe('workflowDataTable', () => {
+  // 组件经 getNodeDefinition 读取 useNodeTypesStore（19-03 收敛到 store），
+  // 渲染前必须激活 pinia；store 留空即可，节点芯片名/图标走 type 回退。
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('点击删除按钮时应发出 requestDelete 事件', async () => {
     const wrapper = mount(WorkflowDataTable, {
       props: {
