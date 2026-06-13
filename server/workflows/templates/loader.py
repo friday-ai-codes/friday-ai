@@ -60,6 +60,49 @@ def load_template(template_id: str) -> dict:
         return json.load(f)
 
 
+def _validate_template_graph(template: dict, template_id: str) -> None:
+    """建库前对模板图执行与保存同源的静态校验（TPL-03 / D-09）。
+
+    把模板的 ``nodes``/``edges`` 转成 ``WorkflowGraphValidator`` 入参形态：
+    - ``type`` → ``node_type``；模板节点 id 兼作 ``short_id``（与
+      ``rewrite_template_refs(template_to_short)`` 同源的标识符空间），同时填入
+      ``id`` 满足 edge 归属校验；
+    - 边 ``source``/``target`` → ``source_node_id``/``target_node_id``，保留
+      ``source_handle``/``target_handle``。
+    若 validator 返回 ``errors`` 非空 → 抛 ``ValueError``（含结构化 errors），
+    使 ``acreate`` 在落库前 fail-fast，不产生半残 workflow（view 层已 ValueError→400）。
+
+    validator 为纯 CPU 无 ORM，可在 async 函数中直接同步调用。
+    """
+    # 延迟导入：避免与 workflows.engine/validation 包初始化形成循环依赖
+    from workflows.validation.graph_validator import WorkflowGraphValidator
+
+    nodes = [
+        {
+            "id": n["id"],
+            "short_id": n["id"],
+            "node_type": n.get("type"),
+            "config": n.get("config", {}),
+        }
+        for n in template.get("nodes", [])
+    ]
+    edges = [
+        {
+            "source_node_id": e.get("source"),
+            "target_node_id": e.get("target"),
+            "source_handle": e.get("source_handle", "default"),
+            "target_handle": e.get("target_handle", "default"),
+        }
+        for e in template.get("edges", [])
+    ]
+
+    result = WorkflowGraphValidator().validate(nodes, edges)
+    if result["errors"]:
+        raise ValueError(
+            f"模板 '{template_id}' 图校验未通过，拒绝创建工作流: {result['errors']}"
+        )
+
+
 def rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
     """按 id_map 重写 config 中的节点引用标识符（公共重写引擎）。
 
@@ -121,6 +164,9 @@ def create_workflow_from_template(
     from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 
     template = load_template(template_id)
+
+    # 建库前同源图校验（TPL-03 / D-09）：非法模板拒绝创建，不产生半残 workflow
+    _validate_template_graph(template, template_id)
 
     # Create workflow
     workflow = Workflow.objects.create(
@@ -209,6 +255,9 @@ async def acreate_workflow_from_template(
     from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 
     template = load_template(template_id)
+
+    # 建库前同源图校验（TPL-03 / D-09）：非法模板拒绝创建，不产生半残 workflow
+    _validate_template_graph(template, template_id)
 
     # Create workflow
     workflow = await Workflow.objects.acreate(
