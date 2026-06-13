@@ -25,6 +25,7 @@ from workflows.engine.routing import (
 )
 from workflows.models import (
     ExecutionStatus,
+    NodeExecution,
     Workflow,
     WorkflowEdge,
     WorkflowExecution,
@@ -239,3 +240,67 @@ class TestDeadlockIntegration:
 
         await execution.arefresh_from_db()
         assert execution.status == ExecutionStatus.SUSPENDED
+
+    async def test_reentry_pure_deadlock_after_cancelled_dep_fails(self, engine, engine_project):
+        """Test 5（重建路径死锁兜底）：续跑入口重建后，节点 X 前置依赖 CANCELLED（非终态
+        解析集合、非 waiting/running）→ 纯死锁 → execution FAILED 且 error_message 末行
+        reason==deadlock（而非静默挂死）。"""
+        from asgiref.sync import sync_to_async
+
+        execution, dep_ne_id, _x_id = await sync_to_async(_build_cancelled_dep_execution)(
+            engine_project
+        )
+        dep_ne = await NodeExecution.objects.select_related("node").aget(id=dep_ne_id)
+
+        # 续跑入口重建（execution 处 SUSPENDED → 抢锁成功 → 重入暴露纯死锁）
+        await engine._continue_after_node(execution, dep_ne)
+
+        await execution.arefresh_from_db()
+        assert execution.status == ExecutionStatus.FAILED
+        last_line = execution.error_message.strip().splitlines()[-1]
+        payload = json.loads(last_line)
+        assert payload["reason"] == "deadlock"
+
+
+def _build_cancelled_dep_execution(engine_project):
+    """构造 NodeDep → NodeX 工作流，execution SUSPENDED；NodeDep NE CANCELLED、NodeX NE PENDING。
+
+    重入续跑后 X 的唯一前置 CANCELLED（不可解析、非 waiting/running）→ 纯死锁兜底。
+    """
+    from workflows.models import NodeExecution, NodeExecutionStatus
+
+    workflow = Workflow.objects.create(
+        name="Cancelled Dep Workflow",
+        project=engine_project,
+        trigger_type="manual",
+    )
+    node_dep = WorkflowNode.objects.create(
+        workflow=workflow, node_type="condition", name="NodeDep", position_x=0, position_y=0
+    )
+    node_x = WorkflowNode.objects.create(
+        workflow=workflow, node_type="condition", name="NodeX", position_x=200, position_y=0
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=node_dep,
+        target_node=node_x,
+        source_handle="default",
+        target_handle="default",
+    )
+    execution = WorkflowExecution.objects.create(
+        workflow=workflow,
+        project=engine_project,
+        trigger_type="manual",
+        status=ExecutionStatus.SUSPENDED,
+    )
+    dep_ne = NodeExecution.objects.create(
+        workflow_execution=execution,
+        node=node_dep,
+        status=NodeExecutionStatus.CANCELLED,
+    )
+    NodeExecution.objects.create(
+        workflow_execution=execution,
+        node=node_x,
+        status=NodeExecutionStatus.PENDING,
+    )
+    return execution, dep_ne.id, str(node_x.id)
