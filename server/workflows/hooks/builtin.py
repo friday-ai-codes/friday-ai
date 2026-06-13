@@ -69,6 +69,15 @@ class WebSocketBroadcastHook(BaseHook):
                     message["node_input"] = node_execution.input_data or {}
                     message["node_output"] = node_execution.output_data or {}
 
+                # OBS-01 / D-04 / Pitfall 5：仅失败/超时态追加可选 error 键，
+                # 前端无需 full fetch 即见失败原因；成功态不写入这些键以保持
+                # 现有消费方（AlertRuleHook 读 DB 对象，不受影响）向后兼容。
+                # error_message 由 Phase 17/18 已产出「摘要+末行 JSON」，此处直接
+                # 透传不二次拼接敏感数据，并截断 2000 字符防止超大 payload。
+                if node_execution.status in ("failed", "timeout"):
+                    message["error_message"] = (node_execution.error_message or "")[:2000]
+                    message["error_code"] = node_execution.error_code or ""
+
             await channel_layer.group_send(
                 f"execution_{execution.id}",
                 message,
