@@ -21,7 +21,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '~/components/ui/sheet'
-import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
 import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/node-config/NodeConfigPanel.vue'
@@ -50,16 +49,17 @@ const showLeaveDialog = ref(false)
 const pendingRoute = ref<string | null>(null)
 const historySheetOpen = ref(false)
 
+// 触发器判定由后端 category 派生（不再用硬编码触发器类型列表，SSOT-02）
 const hasTriggers = computed(() =>
-  nodes.value.some(node => TRIGGER_NODE_TYPES.includes(node.nodeType)),
+  nodes.value.some(node => nodeTypesStore.getNodeType(node.nodeType)?.category === 'trigger'),
 )
 
 onMounted(async () => {
-  // Fetch node types and workflow data in parallel
-  await Promise.all([
-    nodeTypesStore.fetchNodeTypes(),
-    store.fetchWorkflow(id),
-  ])
+  // 顺序化：先 fetchNodeTypes 再 fetchWorkflow（RESEARCH Pitfall 4）。
+  // 保证 toStoreEdges→migratePortId 与画布 Handle 渲染时后端端口/类型已就绪，
+  // 避免存量 edge 句柄退化为 default、首帧空 Handle。
+  await nodeTypesStore.fetchNodeTypes()
+  await store.fetchWorkflow(id)
 
   // Check if there's a draft to restore
   if (store.hasDraft()) {
