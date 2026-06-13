@@ -207,7 +207,6 @@ declare module 'vue' {
     IndexStatsPanel: typeof import('./components/repository/IndexStatsPanel.vue')['default']
     InfrastructureSettings: typeof import('./components/settings/InfrastructureSettings.vue')['default']
     Input: typeof import('./components/ui/input/Input.vue')['default']
-    IntegrationNode: typeof import('./components/workflow/editor/nodes/IntegrationNode.vue')['default']
     IssuesPanel: typeof import('./components/workflow/validation/IssuesPanel.vue')['default']
     JsonEditor: typeof import('./components/execution/JsonEditor.vue')['default']
     JsonHighlighter: typeof import('./components/logs/JsonHighlighter.vue')['default']
