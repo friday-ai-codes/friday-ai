@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FetchProjectInfoConfig, WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow'
+import type { FetchSpaceInfoConfig, WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow'
 
 import { Label } from '~/components/ui/label'
 import {
@@ -20,7 +20,7 @@ import { fetchSpaceInfoConfigSchema } from '~/types/workflow'
 // ============================================================================
 
 interface Props {
-  config: FetchProjectInfoConfig
+  config: FetchSpaceInfoConfig
   workflowNodes?: WorkflowNodeStore[]
   workflowEdges?: WorkflowEdgeStore[]
   currentNodeId?: string
@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentNodeId: '',
 })
 const emit = defineEmits<{
-  (e: 'update:config', value: FetchProjectInfoConfig): void
+  (e: 'update:config', value: FetchSpaceInfoConfig): void
 }>()
 
 // ============================================================================
