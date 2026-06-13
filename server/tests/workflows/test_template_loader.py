@@ -4,11 +4,11 @@ Covers template discovery, loading, instantiation, and variable rewriting.
 """
 
 import json
-from pathlib import Path
+from copy import deepcopy
 
 import pytest
 
-from workflows.models import Workflow, WorkflowEdge, WorkflowNode
+from workflows.models import Workflow
 from workflows.nodes.registry import NodeRegistry
 from workflows.templates.loader import (
     TEMPLATES_DIR,
@@ -18,6 +18,41 @@ from workflows.templates.loader import (
     load_template,
     rewrite_template_refs,
 )
+from workflows.validation.graph_validator import WorkflowGraphValidator
+
+ALL_TEMPLATE_IDS = [
+    "code_generation",
+    "feishu_full_pipeline",
+    "code_review_pipeline",
+    "daily_summary",
+]
+
+
+def _template_to_validator_inputs(template: dict) -> tuple[list[dict], list[dict]]:
+    """把模板 JSON 转成 WorkflowGraphValidator 入参（与 loader 同源口径）。
+
+    ``type`` → ``node_type``；模板节点 id 兼作 ``short_id`` 与 ``id``；边
+    ``source``/``target`` → ``source_node_id``/``target_node_id``，保留 handle。
+    """
+    nodes = [
+        {
+            "id": n["id"],
+            "short_id": n["id"],
+            "node_type": n.get("type"),
+            "config": n.get("config", {}),
+        }
+        for n in template.get("nodes", [])
+    ]
+    edges = [
+        {
+            "source_node_id": e.get("source"),
+            "target_node_id": e.get("target"),
+            "source_handle": e.get("source_handle", "default"),
+            "target_handle": e.get("target_handle", "default"),
+        }
+        for e in template.get("edges", [])
+    ]
+    return nodes, edges
 
 
 class TestListTemplates:
@@ -159,7 +194,8 @@ class TestCreateWorkflowFromTemplate:
         assert isinstance(workflow, Workflow)
         assert workflow.metadata.get("template_id") == "code_review_pipeline"
         nodes = [n async for n in workflow.nodes.all()]
-        assert len(nodes) == 4
+        # 方案 A 重构后 code_review_pipeline 为 3 节点（去除 http_request 中转节点）
+        assert len(nodes) == 3
 
 
 class TestRewriteTemplateRefs:
@@ -258,3 +294,164 @@ class TestTemplateFileIntegrity:
         for edge in data["edges"]:
             assert "source" in edge
             assert "target" in edge
+
+
+class TestTemplateGraphValidation:
+    """TPL-02：每个内置模板经 WorkflowGraphValidator 校验均零 error。"""
+
+    @pytest.mark.parametrize("template_id", ALL_TEMPLATE_IDS)
+    def test_template_validates_with_zero_errors(self, template_id):
+        """每个内置模板转 validator 入参后 errors 必须为空（契约一致性守护）。"""
+        template = load_template(template_id)
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        assert result["errors"] == [], (
+            f"模板 '{template_id}' 不应有校验错误，实际: {result['errors']}"
+        )
+
+
+class TestTemplateBreakageInjection:
+    """TPL-02：人为注入 schema 可判定的断裂 → validator errors 非空且 reason 命中。
+
+    注入路径仅使用 ai_prompt（有输出 schema）与 ghost（不存在）节点，
+    **禁止用 http 节点字段做坏变量注入**——http 无输出 schema，字段层会被跳过
+    导致假绿（Pitfall 3）。
+    """
+
+    def test_inject_bad_node_type(self):
+        """注入非法 node_type → unknown_node_type error。"""
+        template = deepcopy(load_template("daily_summary"))
+        template["nodes"][0]["type"] = "totally_not_a_real_node_type"
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        reasons = {e["reason"] for e in result["errors"]}
+        assert "unknown_node_type" in reasons
+
+    def test_inject_missing_required_config(self):
+        """删除 ai_prompt 必填 config（user_prompt）→ config_schema_invalid error。"""
+        template = deepcopy(load_template("daily_summary"))
+        for node in template["nodes"]:
+            if node["id"] == "summarize":  # ai_prompt，required: ["user_prompt"]
+                node["config"].pop("user_prompt", None)
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        reasons = {e["reason"] for e in result["errors"]}
+        assert "config_schema_invalid" in reasons
+
+    def test_inject_nonexistent_field_on_schema_node(self):
+        """{{nodes.summarize.nonexistent_field}}（ai_prompt 有 schema）→ field_not_found。"""
+        template = deepcopy(load_template("daily_summary"))
+        for node in template["nodes"]:
+            if node["id"] == "summarize":  # ai_prompt 输出 schema 含 text/response 等
+                node["config"]["user_prompt"] = "{{nodes.summarize.nonexistent_field}}"
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        reasons = {e["reason"] for e in result["errors"]}
+        assert "field_not_found" in reasons
+
+    def test_inject_ghost_node_reference(self):
+        """{{nodes.ghost.x}}（节点不存在）→ node_not_found error。"""
+        template = deepcopy(load_template("daily_summary"))
+        for node in template["nodes"]:
+            if node["id"] == "summarize":
+                node["config"]["user_prompt"] = "汇总：{{nodes.ghost.x}}"
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        reasons = {e["reason"] for e in result["errors"]}
+        assert "node_not_found" in reasons
+
+    def test_inject_bad_source_handle(self):
+        """坏 source_handle（不在 ai_prompt 输出端口）→ invalid_source_handle error。"""
+        template = deepcopy(load_template("daily_summary"))
+        for edge in template["edges"]:
+            # summarize（ai_prompt，输出端口仅 default/error）→ notify
+            if edge["source"] == "summarize" and edge["target"] == "notify":
+                edge["source_handle"] = "nonexistent_output_port"
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        reasons = {e["reason"] for e in result["errors"]}
+        assert "invalid_source_handle" in reasons
+
+
+class TestLoaderPreCreateValidation:
+    """TPL-03：loader 在建库前调同一 validator，非法模板拒绝且无 workflow 落库。"""
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
+    async def test_acreate_rejects_invalid_template(self, user, monkeypatch):
+        """注入断裂模板经 acreate_workflow_from_template → ValueError 且 DB 无新 workflow。"""
+        from projects.models import Project
+        from workflows.templates import loader as loader_mod
+
+        project = await Project.objects.acreate(name="Reject Test Project")
+
+        broken = deepcopy(load_template("daily_summary"))
+        # 注入 schema 可判定断裂：非法 node_type
+        for node in broken["nodes"]:
+            if node["id"] == "summarize":
+                node["type"] = "totally_not_a_real_node_type"
+
+        # acreate 内部以模块全局名调用 load_template，monkeypatch 即可注入断裂模板
+        monkeypatch.setattr(loader_mod, "load_template", lambda tid: deepcopy(broken))
+
+        before = await Workflow.objects.acount()
+        with pytest.raises(ValueError, match="图校验未通过"):
+            await acreate_workflow_from_template(
+                space_id=str(project.id),
+                template_id="daily_summary",
+                created_by=user,
+            )
+        after = await Workflow.objects.acount()
+        assert before == after, "非法模板不应产生半残 workflow"
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.asyncio
+    async def test_acreate_accepts_valid_templates(self, user):
+        """4 个合法内置模板经 acreate_workflow_from_template 均成功创建（回归不破）。"""
+        from projects.models import Project
+
+        project = await Project.objects.acreate(name="Valid Templates Project")
+        for template_id in ALL_TEMPLATE_IDS:
+            workflow = await acreate_workflow_from_template(
+                space_id=str(project.id),
+                template_id=template_id,
+                created_by=user,
+            )
+            assert isinstance(workflow, Workflow)
+            assert workflow.metadata.get("template_id") == template_id
+
+
+class TestTemplateFieldAlignmentRegression:
+    """TPL-01：守护 daily_summary / code_review_pipeline 修复不回退到坏字段。"""
+
+    def test_daily_summary_references_real_output_fields(self):
+        """daily_summary 引用真实输出字段（body/text），不回退到 output 坏字段。"""
+        template = load_template("daily_summary")
+        blob = json.dumps(template, ensure_ascii=False)
+        assert "{{nodes.fetch_data.body}}" in blob
+        assert "{{nodes.summarize.text}}" in blob
+        assert "{{nodes.fetch_data.output}}" not in blob
+        assert "{{nodes.summarize.output}}" not in blob
+
+        # validator 对修复后的字段引用零 error（不回退守护）
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        assert result["errors"] == []
+
+    def test_code_review_pipeline_method_a_contract(self):
+        """code_review_pipeline 方案 A 契约：无 http 节点、引 review_report、target_handle=coding_result。"""
+        template = load_template("code_review_pipeline")
+        node_types = {n["type"] for n in template["nodes"]}
+        assert "http_request" not in node_types
+
+        blob = json.dumps(template, ensure_ascii=False)
+        assert "{{nodes.review.review_report}}" in blob
+        assert "{{nodes.review.output}}" not in blob
+
+        assert any(
+            e.get("target_handle") == "coding_result" for e in template["edges"]
+        ), "应存在 target_handle=coding_result 的边（编码结果进入审查输入端口）"
+
+        nodes, edges = _template_to_validator_inputs(template)
+        result = WorkflowGraphValidator().validate(nodes, edges)
+        assert result["errors"] == []
