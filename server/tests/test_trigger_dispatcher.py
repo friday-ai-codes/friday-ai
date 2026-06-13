@@ -396,3 +396,86 @@ class TestDispatchWithTriggeredBy:
         mock_engine.start_execution.assert_called_once()
         call_kwargs = mock_engine.start_execution.call_args.kwargs
         assert call_kwargs["triggered_by"] == mock_user
+
+
+# ============================================================================
+# TRIG-03：飞书路径 dispatch 失败 / 无匹配持久化（Phase 21 Wave 0 RED）
+#
+# D-03 裁定：dispatch 校验失败 / 无匹配 / 启动异常不再恒 ACCEPTED，
+# 而是落 TriggerLog.status=error/ignored + error_message（前端可见原因）。
+# 被测目标：feishu.views.FeishuWebhookView._dispatch_to_workflows。
+#
+# 注意：以下用例在 21-04 实现前预期为 RED（当前异常仅 structlog、无匹配不更新 status）。
+# 转绿计划：21-04。
+# ============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestFeishuDispatchFailurePersistence:
+    """飞书 dispatch 失败 / 无匹配应持久化到 TriggerLog（TRIG-03）。"""
+
+    async def _make_trigger_log(self):
+        """创建一条 ACCEPTED 状态的 TriggerLog（模拟 webhook 入口已落库）。"""
+        from feishu.models import TriggerLog, TriggerLogStatus
+        from projects.models import Project
+
+        project = await Project.objects.acreate(
+            name="TRIG-03 Project",
+            description="Project for dispatch failure persistence RED tests",
+        )
+        trigger_log = await TriggerLog.objects.acreate(
+            event_type="WorkitemStatusEvent",
+            project=project,
+            status=TriggerLogStatus.ACCEPTED,
+        )
+        return project, trigger_log
+
+    async def test_dispatch_exception_sets_triggerlog_error(self):
+        """dispatch 抛异常时，关联 TriggerLog.status=error 且 error_message 非空（≤2000）。"""
+        from feishu.models import TriggerLogStatus
+        from feishu.views import FeishuWebhookView
+
+        project, trigger_log = await self._make_trigger_log()
+
+        # mock TriggerDispatcher 实例的 dispatch 抛异常
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.dispatch = AsyncMock(side_effect=RuntimeError("boom dispatch failed"))
+
+        view = FeishuWebhookView()
+        with patch("feishu.views.TriggerDispatcher", return_value=mock_dispatcher):
+            await view._dispatch_to_workflows(
+                "WorkitemStatusEvent",
+                project,
+                {"id": "wi-1"},
+                trigger_log,
+            )
+
+        await trigger_log.arefresh_from_db()
+        assert trigger_log.status == TriggerLogStatus.ERROR
+        assert trigger_log.error_message
+        assert len(trigger_log.error_message) <= 2000
+
+    async def test_dispatch_no_match_sets_triggerlog_ignored(self):
+        """dispatch 返回空（无匹配）时，TriggerLog.status=ignored 且 error_message 含 event_type。"""
+        from feishu.models import TriggerLogStatus
+        from feishu.views import FeishuWebhookView
+
+        project, trigger_log = await self._make_trigger_log()
+
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.dispatch = AsyncMock(return_value=[])
+
+        view = FeishuWebhookView()
+        with patch("feishu.views.TriggerDispatcher", return_value=mock_dispatcher):
+            await view._dispatch_to_workflows(
+                "WorkitemStatusEvent",
+                project,
+                {"id": "wi-2"},
+                trigger_log,
+            )
+
+        await trigger_log.arefresh_from_db()
+        assert trigger_log.status == TriggerLogStatus.IGNORED
+        assert trigger_log.error_message
+        assert "WorkitemStatusEvent" in trigger_log.error_message
