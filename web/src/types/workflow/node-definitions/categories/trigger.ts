@@ -53,8 +53,8 @@ export const webhookTriggerDef = createNodeDefinition({
 })
 
 // ============================================================================
-// Feishu Event Trigger — 保留 NODE_REGISTRY 原有 configComponent
-// 此节点不在此定义，由 NODE_REGISTRY legacy 部分管理
+// Feishu Event Trigger — 节点定义已由后端 /api/node-types/ 驱动（store 唯一运行时源）
+// 此处不再声明；前端专属 configComponent 见 registry.ts CONFIG_COMPONENTS
 // ============================================================================
 
 // ============================================================================
