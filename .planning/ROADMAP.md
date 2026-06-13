@@ -134,7 +134,22 @@ Plans:
   4. 模板自动化校验测试覆盖：节点 type 存在于 registry、config 必填字段齐全、`{{ }}` 变量引用的节点 ID 与字段在上游输出 schema 中存在、edge handle 与节点端口定义一致——人为注入断裂的模板会让测试失败
   5. 模板创建（loader）在实例化前执行与保存相同的图校验（同一 `WorkflowGraphValidator`），非法模板拒绝创建并返回结构化错误
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 0**
+
+- [ ] 20-01-PLAN.md — `WorkflowGraphValidator` 纯函数核心（DAG 内存构图 + 五类规则 + 不误伤）+ 零 DB 单测（VAL-01）
+
+**Wave 1** *(depends on 20-01)*
+
+- [ ] 20-02-PLAN.md — 写入路径接入 validator（bulk-update/单节点·边 CRUD/import）+ dry-run 双端点 + serializer config 缺口/list_types 修复 + 集成测试（VAL-01, VAL-02）
+- [ ] 20-03-PLAN.md — 模板修复（daily_summary 字段对齐 + code_review_pipeline 方案 A 契约重构）+ loader 建库前同源校验 + 模板守护测试（TPL-01, TPL-02, TPL-03）
+
+**Wave 2** *(depends on 20-01, 20-02)*
+
+- [ ] 20-04-PLAN.md — 前端 useWorkflowValidationStore 扩展 + saveWorkflow 接 dry-run/400 + IssuesPanel severity 真实渲染 + store 单测（VAL-03）
+
 **UI hint**: yes
 
 ### Phase 21: 触发模型与执行可观测
@@ -162,7 +177,7 @@ Plans:
 | 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
 | 18. 执行引擎状态机修复 | 5/5 | Complete    | 2026-06-13 |
 | 19. 节点定义单一事实源 | 5/5 | Complete    | 2026-06-13 |
-| 20. 保存即合法与模板修复 | 0/? | Not started | - |
+| 20. 保存即合法与模板修复 | 0/4 | Not started | - |
 | 21. 触发模型与执行可观测 | 0/? | Not started | - |
 
 ## Coverage Map
