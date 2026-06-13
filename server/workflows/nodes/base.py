@@ -589,6 +589,20 @@ class BaseNode(ABC):
         return NodeRegistry.get_ui_schema(cls.node_type)
 
     @classmethod
+    def _get_default_config(cls) -> dict:
+        """从 config_schema.properties.*.default 收集顶层默认值。
+
+        仅收集含 "default" 的顶层字段；config_schema 为空或无 properties 时返回 {}，
+        免去前端 schema.parse({}) 反推默认值（D-01）。
+        """
+        props = (cls.config_schema or {}).get("properties", {}) or {}
+        return {
+            k: v["default"]
+            for k, v in props.items()
+            if isinstance(v, dict) and "default" in v
+        }
+
+    @classmethod
     def get_schema(cls) -> dict:
         """获取完整的节点 Schema（用于前端）"""
         return {
@@ -599,6 +613,7 @@ class BaseNode(ABC):
             "category": cls.category.value,
             "config_schema": cls.config_schema,
             "ui_schema": cls._get_ui_schema(),
+            "default_config": cls._get_default_config(),
             "inputs": [
                 {
                     "name": p.name,

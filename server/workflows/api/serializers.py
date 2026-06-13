@@ -802,6 +802,8 @@ class NodeTypeSerializer(serializers.Serializer):
     icon = serializers.CharField()
     category = serializers.CharField()
     config_schema = serializers.JSONField()
+    ui_schema = serializers.JSONField(required=False, allow_null=True)
+    default_config = serializers.JSONField(required=False)
     inputs = NodePortSerializer(many=True)
     outputs = NodePortSerializer(many=True)
     requires_container = serializers.BooleanField()
