@@ -46,7 +46,7 @@ export {
   FEISHU_EVENT_TYPE_OPTIONS,
   type FeishuEventTriggerConfig,
   feishuEventTriggerConfigSchema,
-  type FetchProjectInfoConfig,
+  type FetchSpaceInfoConfig,
   fetchSpaceInfoConfigSchema,
   type FetchWorkItemConfig,
   fetchWorkItemConfigSchema,

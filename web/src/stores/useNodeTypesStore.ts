@@ -30,6 +30,10 @@ export interface NodeType {
   outputs: NodePort[]
   requires_container: boolean
   is_blocking: boolean
+  // 后端 NodeTypeSerializer 暴露的字段（19-01）：前端运行时驱动所需
+  ui_schema?: Record<string, any> | null
+  default_config?: Record<string, any>
+  execution_mode?: string
 }
 
 export const useNodeTypesStore = defineStore('nodeTypes', () => {
