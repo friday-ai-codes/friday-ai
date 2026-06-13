@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   console.log('\n--- Backend consistency ---')
   let backendSchemas: Map<string, Record<string, unknown>>
   try {
-    const res = await fetch(`${apiBase}/api/workflows/node-types/`)
+    const res = await fetch(`${apiBase}/api/node-types/`)
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
         console.warn(`⚠ Backend requires auth (HTTP ${res.status}), skipping backend validation`)
