@@ -34,20 +34,25 @@
 **Depends on**: Nothing（本里程碑首个阶段）
 **Requirements**: VAR-01, VAR-02, VAR-03, VAR-04
 **Success Criteria** (what must be TRUE):
+
   1. 用户在自建流水线中通过变量选择器选择上游节点输出引用并保存（bulk-update），执行时该引用保证可解析——客户端 short_id 被同步落库或服务端重写 config 引用，不再因 short_id 漂移抛 ValueError
   2. 变量引用解析失败（节点 ID 不存在、字段不存在、未知前缀）时，对应节点显式失败，错误信息指明是哪个引用、哪个节点/字段缺失；不再静默替换为空串或原样保留 `{{...}}` 字面量
   3. 变量选择器、端口复制、SmartInput 三个入口生成的引用格式统一（统一用 short_id），与后端解析器支持的语法完全一致
   4. `{{nodes.x.data.name}}` 形式的嵌套字段路径能取到 `output["data"]["name"]`，且 `render_template`/`get_template_value` 对错误 ID、未知前缀、UUID vs short_id、嵌套路径均有专项单元测试覆盖
+
 **Plans**: 4 plans
 
 Plans:
 **Wave 1**
+
 - [x] 17-01-PLAN.md — 解析核心 template_resolver.py（四分类报错 + 嵌套下钻）+ base.py 两 API 委托 + scheduler 结构化 error_message + 专项单测（VAR-02, VAR-04）
 - [x] 17-02-PLAN.md — bulk-update 落库客户端 short_id：唯一性校验、冲突重生成、同事务全 config 重写 + 不变式测试（VAR-01）
 - [x] 17-03-PLAN.md — 前端统一引用构造 util 三入口收口 + toBackendNodes 上送 short_id（VAR-03, VAR-01）
 
 **Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 17-04-PLAN.md — 调用面渲染时机/吞错逐节点核查 + 后端/前端全链路回归（wave 2，VAR-01..04）
+
 **UI hint**: yes
 
 ### Phase 18: 执行引擎状态机修复
@@ -56,23 +61,34 @@ Plans:
 **Depends on**: Phase 17（解析失败语义定稿，trigger_data 引用复用同一解析路径）
 **Requirements**: ENG-01, ENG-02, ENG-03, ENG-04, ENG-05
 **Success Criteria** (what must be TRUE):
+
   1. 含 waiting_event（审批/事件等待）节点的执行不会被误判为 completed，挂起（suspended）状态经 API/WS 对前端真实可见
   2. 条件分支在调度主循环与回调续跑两条路径下行为一致：均按节点结果 `next_handle` 与边 `source_handle` 路由，未选中分支的节点正确标记 skipped
   3. 任意触发方式（飞书事件、手动、API）发起的执行中，`{{trigger.*}}` 引用都能解析出触发数据
   4. DAG 死锁（有 pending 但无 ready 且无等待节点）时执行明确转 failed，错误信息列出哪些节点在等待哪些未满足的依赖，不留无限 running
   5. 节点输入收集尊重 `target_handle` 语义（或该字段被明确移除并统一文档/前端展示），且调度、分支、死锁、等待四类引擎核心路径有自动化回归测试
+
 **Plans**: 5 plans
 
 Plans:
 **Wave 1**
-- [ ] 18-01-PLAN.md — routing.py 纯函数路由核心（就绪/级联/死锁/归集）+ DAGNode 入边明细 + 零 DB 单测
+
+- [x] 18-01-PLAN.md — routing.py 纯函数路由核心（就绪/级联/死锁/归集）+ DAGNode 入边明细 + 零 DB 单测
+
 **Wave 2**
-- [ ] 18-02-PLAN.md — conftest 测试基建 + 主循环就绪/级联/输入接入 routing + target_handle 端到端测试
+
+- [x] 18-02-PLAN.md — conftest 测试基建 + 主循环就绪/级联/输入接入 routing + target_handle 端到端测试
+
 **Wave 3**
+
 - [ ] 18-03-PLAN.md — 完成/挂起/死锁收口（waiting ⇒ suspended、删轮询、热循环修复、死锁结构化转 failed）
+
 **Wave 4**
+
 - [ ] 18-04-PLAN.md — 回调续跑重入主循环 + 执行级互斥 + 容器回调断裂修复 + coding_callback 迷你调度器删除
+
 **Wave 5**
+
 - [ ] 18-05-PLAN.md — trigger_data 写入 source 键 + resume_from_node 继承 + _execute_node 注入 + {{trigger.*}} 端到端测试
 
 ### Phase 19: 节点定义单一事实源
@@ -81,9 +97,11 @@ Plans:
 **Depends on**: Nothing（可与 Phase 17/18 并行；建议序贯执行排在 18 后）
 **Requirements**: SSOT-01, SSOT-02, SSOT-03
 **Success Criteria** (what must be TRUE):
+
   1. 前端节点面板（palette）、配置表单 schema、默认 config 全部以 `GET /api/node-types/` 返回为准，硬编码 `NODE_REGISTRY` 删除后画布编辑功能不回退，幽灵节点 `fetch_project_info` 不再出现（指向真实的 `fetch_space_info`）
   2. 画布节点的输入/输出 Handle 按后端 NodePort 定义渲染：`ai_coding` 显示 `plan` 输入、`ai_code_review` 显示 `coding_result` 输入、审批节点显示 `approved`/`rejected` 输出，`portConfig.ts` 硬编码被替换
   3. 前后端节点定义一致性有 CI 自动化守护：前端消费的节点 type/端口与后端 registry 漂移时 CI 失败（或前端定义完全由后端生成、无需对账）
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -93,11 +111,13 @@ Plans:
 **Depends on**: Phase 17（变量引用解析语义定稿）、Phase 18（模板端到端执行依赖引擎路由正确）、Phase 19（端口/schema 校验以收敛后的 registry 为权威依据）
 **Requirements**: VAL-01, VAL-02, VAL-03, TPL-01, TPL-02, TPL-03
 **Success Criteria** (what must be TRUE):
+
   1. 保存非法工作流（DAG 环/无入口/孤立节点、edge 归属或 handle 非法、节点 config 不合 schema、变量引用不可解析）时，bulk-update / 单节点边 CRUD / 导入返回结构化错误（节点 id + 字段路径 + 原因）；合法工作流保存不受影响
   2. 前端保存前可调用 dry-run 校验接口，IssuesPanel 真实展示后端校验的警告/错误（不再是永不出现的死代码）
   3. 用户从任一内置模板（含 `daily_summary`、`code_review_pipeline`）创建工作流后，不修改任何配置即可成功执行到业务预期结果
   4. 模板自动化校验测试覆盖：节点 type 存在于 registry、config 必填字段齐全、`{{ }}` 变量引用的节点 ID 与字段在上游输出 schema 中存在、edge handle 与节点端口定义一致——人为注入断裂的模板会让测试失败
   5. 模板创建（loader）在实例化前执行与保存相同的图校验（同一 `WorkflowGraphValidator`），非法模板拒绝创建并返回结构化错误
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -107,11 +127,13 @@ Plans:
 **Depends on**: Phase 17（失败变量引用的错误信息）、Phase 18（suspended 状态与死锁诊断对前端可见）
 **Requirements**: TRIG-01, TRIG-02, TRIG-03, OBS-01, OBS-02, OBS-03
 **Success Criteria** (what must be TRUE):
+
   1. 画布保存 `feishu_event_trigger` 节点后 `WorkflowTrigger` 表正确生成（`event_type`/`event_types` 字段统一），对应飞书事件能匹配并触发工作流执行
   2. `schedule` 触发类型不再是假功能：定时调度按配置真正注册并 dispatch（django-apscheduler），或该选项从模型/UI 中移除、用户无法再配置出不生效的触发器
   3. 触发分发失败不再被静默吞掉：dispatch 异常记录到可查询的位置（执行记录或事件日志），用户能看到"触发了但没跑起来"的原因
   4. 执行详情页节点失败时清晰展示 error_message、失败的变量引用与重试情况；WebSocket 断线时自动降级 REST 轮询（与列表页一致），长时执行 UI 不冻结，进度以服务端权威值为准
   5. 执行整体状态（running/suspended/failed 等）在列表与详情页如实展示，前端状态枚举与后端 `ExecutionStatus` 对齐，前端引用的不存在状态值（如 `waiting_approval`）被清除或后端补齐
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -122,7 +144,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. 变量引用链路修复 | 4/4 | Complete    | 2026-06-12 |
-| 18. 执行引擎状态机修复 | 0/? | Not started | - |
+| 18. 执行引擎状态机修复 | 2/5 | In Progress|  |
 | 19. 节点定义单一事实源 | 0/? | Not started | - |
 | 20. 保存即合法与模板修复 | 0/? | Not started | - |
 | 21. 触发模型与执行可观测 | 0/? | Not started | - |
