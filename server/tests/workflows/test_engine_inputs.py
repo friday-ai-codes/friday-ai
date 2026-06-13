@@ -1,11 +1,24 @@
-"""输入归集纯函数测试（Phase 18 ENG-05，Task 3）。
+"""输入归集测试（Phase 18 ENG-05）。
 
-零 DB：复用 test_engine_routing.py 的 _build_dag helper。collect_inputs 按 RESEARCH
-Pattern 5 非破坏性叠加规则归集，I2/I3 为两条真实节点链 characterization。
+- ``TestCollectInputsUnit``：零 DB 纯函数单测（18-01 产出），复用
+  test_engine_routing.py 的 _build_dag helper，按 RESEARCH Pattern 5 归集。
+- ``TestTargetHandleIntegration``：经真实调度（run_sync）的 target_handle 端到端
+  集成测试（18-02 产出），锁定"端口键整包 + 扁平保底并存"在运行时闭环。
 """
 
+import pytest
+from asgiref.sync import sync_to_async
+
+from tests.workflows.conftest import BranchNode
 from tests.workflows.test_engine_routing import _build_dag
 from workflows.engine.routing import collect_inputs
+from workflows.models import (
+    ExecutionStatus,
+    NodeExecution,
+    Workflow,
+    WorkflowEdge,
+    WorkflowNode,
+)
 
 
 class TestCollectInputsUnit:
@@ -83,3 +96,94 @@ class TestCollectInputsUnit:
     def test_unknown_node_returns_empty(self):
         dag = _build_dag([("a", "T", "default", "default")])
         assert collect_inputs(dag, "missing", {"a": {"x": 1}}) == {}
+
+
+# ============================================================================
+# 集成测试：target_handle 经真实调度端到端归集（django_db + run_sync，ENG-05）
+# ============================================================================
+
+
+def _build_target_handle_workflow(project, target_handle: str) -> Workflow:
+    """手建 trigger → Source(test_branch) → Sink(test_echo_inputs)，Source→Sink 边带定制 target_handle。
+
+    Source 用 test_branch（输出 {"branch": "true"}、next_handle="true"），Source→Sink 边
+    source_handle="true" 保证被选中；target_handle 由参数注入。定制 target_handle 边仅
+    本测试用，故工作流就地手建（不进 conftest）。
+    """
+    workflow = Workflow.objects.create(
+        name=f"TargetHandle Workflow ({target_handle})",
+        project=project,
+        trigger_type="manual",
+    )
+    trigger = WorkflowNode.objects.create(
+        workflow=workflow, node_type="manual_trigger", name="Start", position_x=0, position_y=0
+    )
+    node_a = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_branch", name="Source", position_x=200, position_y=0
+    )
+    node_b = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_echo_inputs", name="Sink", position_x=400, position_y=0
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=trigger,
+        target_node=node_a,
+        source_handle="default",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=node_a,
+        target_node=node_b,
+        source_handle="true",
+        target_handle=target_handle,
+    )
+    return workflow
+
+
+async def _echoed_inputs(execution, name: str) -> dict:
+    """取指定节点回显的归集输入（NodeExecution.output_data["echoed_inputs"]）。"""
+    ne = await NodeExecution.objects.filter(workflow_execution=execution, node__name=name).afirst()
+    assert ne is not None, f"节点 {name} 无执行记录"
+    return (ne.output_data or {}).get("echoed_inputs", {})
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestTargetHandleIntegration:
+    """target_handle 经真实调度端到端：端口键整包 + 扁平保底并存（ENG-05 运行时落点）。"""
+
+    async def test_port_key_holds_full_upstream_output(
+        self, engine, engine_test_nodes, engine_project
+    ):
+        """Test 1：target_handle="custom_port" → Sink.echoed_inputs["custom_port"] 为 Source 完整输出 dict。"""
+        BranchNode._next_handle = "true"
+        workflow = await sync_to_async(_build_target_handle_workflow)(engine_project, "custom_port")
+        execution = await engine.start_execution(workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        echoed = await _echoed_inputs(execution, "Sink")
+        # 端口键为上游完整输出 dict（整包语义），非单字段
+        assert echoed["custom_port"] == {"branch": "true"}
+
+    async def test_flat_key_coexists_with_port_key(self, engine, engine_test_nodes, engine_project):
+        """Test 2：同一执行中扁平键 "branch"（现状保底）与端口键并存。"""
+        BranchNode._next_handle = "true"
+        workflow = await sync_to_async(_build_target_handle_workflow)(engine_project, "custom_port")
+        execution = await engine.start_execution(workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        echoed = await _echoed_inputs(execution, "Sink")
+        assert echoed["branch"] == "true"
+        assert "custom_port" in echoed
+
+    async def test_default_handle_no_port_key(self, engine, engine_test_nodes, engine_project):
+        """Test 3：target_handle="default" → 仅扁平键，无 "default" 端口键。"""
+        BranchNode._next_handle = "true"
+        workflow = await sync_to_async(_build_target_handle_workflow)(engine_project, "default")
+        execution = await engine.start_execution(workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        echoed = await _echoed_inputs(execution, "Sink")
+        assert echoed["branch"] == "true"
+        assert "default" not in echoed
