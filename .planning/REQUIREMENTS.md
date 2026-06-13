@@ -40,15 +40,15 @@
 
 ### 触发模型（TRIG）
 
-- [ ] **TRIG-01**: 修复飞书触发同步字段断裂：画布 `feishu_event_trigger` 节点保存后 `WorkflowTrigger` 表正确生成（统一 `event_type`/`event_types` 字段），飞书事件能匹配到工作流
-- [ ] **TRIG-02**: `schedule` 触发类型不再是假功能：实现定时调度 handler（django-apscheduler 注册 → dispatch），或从模型/UI 中移除该选项
-- [ ] **TRIG-03**: 触发分发失败不再被静默吞掉：dispatch 异常记录到可查询的位置（执行记录或事件日志），用户能看到"触发了但没跑起来"的原因
+- [x] **TRIG-01**: 修复飞书触发同步字段断裂：画布 `feishu_event_trigger` 节点保存后 `WorkflowTrigger` 表正确生成（统一 `event_type`/`event_types` 字段），飞书事件能匹配到工作流
+- [x] **TRIG-02**: `schedule` 触发类型不再是假功能：实现定时调度 handler（django-apscheduler 注册 → dispatch），或从模型/UI 中移除该选项
+- [x] **TRIG-03**: 触发分发失败不再被静默吞掉：dispatch 异常记录到可查询的位置（执行记录或事件日志），用户能看到"触发了但没跑起来"的原因
 
 ### 执行可观测（OBS）
 
-- [ ] **OBS-01**: 执行详情页节点失败时清晰展示错误信息（error_message、失败的变量引用、重试情况），用户不再把"节点失败"误感知为"卡住"
-- [ ] **OBS-02**: 执行详情页 WebSocket 断线时自动降级 REST 轮询（与列表页一致），长时执行 UI 不冻结；执行进度以服务端权威值为准
-- [ ] **OBS-03**: 执行整体状态（running/suspended/waiting_approval/failed）在列表与详情页如实展示，前端状态枚举与后端 `ExecutionStatus` 对齐（清除前端引用的不存在状态值）
+- [x] **OBS-01**: 执行详情页节点失败时清晰展示错误信息（error_message、失败的变量引用、重试情况），用户不再把"节点失败"误感知为"卡住"
+- [x] **OBS-02**: 执行详情页 WebSocket 断线时自动降级 REST 轮询（与列表页一致），长时执行 UI 不冻结；执行进度以服务端权威值为准
+- [x] **OBS-03**: 执行整体状态（running/suspended/waiting_approval/failed）在列表与详情页如实展示，前端状态枚举与后端 `ExecutionStatus` 对齐（清除前端引用的不存在状态值）
 
 ## v2 Requirements
 
@@ -91,12 +91,12 @@
 | TPL-01 | Phase 20 | Complete |
 | TPL-02 | Phase 20 | Complete |
 | TPL-03 | Phase 20 | Complete |
-| TRIG-01 | Phase 21 | Pending |
-| TRIG-02 | Phase 21 | Pending |
-| TRIG-03 | Phase 21 | Pending |
-| OBS-01 | Phase 21 | Pending |
-| OBS-02 | Phase 21 | Pending |
-| OBS-03 | Phase 21 | Pending |
+| TRIG-01 | Phase 21 | Complete |
+| TRIG-02 | Phase 21 | Complete |
+| TRIG-03 | Phase 21 | Complete |
+| OBS-01 | Phase 21 | Complete |
+| OBS-02 | Phase 21 | Complete |
+| OBS-03 | Phase 21 | Complete |
 
 **Coverage:** 24/24 v1 requirements mapped（无孤儿、无重复）
 

@@ -4,14 +4,14 @@ milestone: v0.4.0
 milestone_name: 工作流系统契约重构
 status: executing
 stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-13T15:08:45.016Z"
-last_activity: 2026-06-13 -- Phase 21 execution started
+last_updated: "2026-06-13T15:59:03.909Z"
+last_activity: 2026-06-13
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 18
-  percent: 72
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 21 (触发模型与执行可观测) — EXECUTING
-Plan: 1 of 7
+Phase: 21
+Plan: Not started
 Status: Executing Phase 21
-Last activity: 2026-06-13 -- Phase 21 execution started
+Last activity: 2026-06-13
 
 Progress: [□□□□□] 0/5 phases
 
