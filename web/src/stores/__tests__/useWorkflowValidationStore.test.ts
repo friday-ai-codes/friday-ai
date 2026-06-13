@@ -55,8 +55,8 @@ describe('useWorkflowValidationStore - addIssues', () => {
     expect(issue.reason).toBe('config_schema_invalid')
     expect(issue.severity).toBe('error')
     // 不应残留 snake_case 键
-    expect((issue as Record<string, unknown>).node_id).toBeUndefined()
-    expect((issue as Record<string, unknown>).field_path).toBeUndefined()
+    expect((issue as unknown as Record<string, unknown>).node_id).toBeUndefined()
+    expect((issue as unknown as Record<string, unknown>).field_path).toBeUndefined()
   })
 
   it('edge 级问题映射 edge_id 并可被 getIssuesForEdge 查找', () => {
