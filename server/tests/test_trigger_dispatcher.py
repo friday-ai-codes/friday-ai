@@ -226,7 +226,7 @@ class TestDispatchSuccess:
             input_data={"input_key": "input_value"},
             triggered_by=None,
             trigger_type="test",
-            trigger_data={"raw_payload": {"event": "test"}},
+            trigger_data={"source": "test", "raw_payload": {"event": "test"}},
             debug_mode=False,
             stop_before_node_id=None,
         )
