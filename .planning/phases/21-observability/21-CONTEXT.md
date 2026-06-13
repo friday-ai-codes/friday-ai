@@ -29,7 +29,8 @@
 ### D-01 [feishu 字段统一] 单数 event_type 为准，同步侧兼容兜底
 - 统一以 **单数 `event_type`** 为事实源（模型 WorkflowTrigger.event_type、节点 schema、前端 schema/UI、序列化已是单数）。
 - 修复 `async_sync_workflow_triggers`（views.py L96-166）：改读 `config.get("event_type")`，对历史 `event_types` 数组做兜底（取首项或展开多 trigger），消除"读复数→恒空→trigger 被 deactivate"的根因。
-- 补齐同步遗漏：`project_ids` / 排除规则 / `filter_status` 数组形态（schemas.ts L138 为数组）正确写入 filter_config。
+- 补齐同步遗漏中**可正向表达**的字段：`filter_status` 数组形态（schemas.ts L138 为数组）、`filter_project_key`、`filter_work_item_type` 正确写入 filter_config。
+- **范围收敛（orchestrator 裁定，2026-06-13）**：`project_ids`（friday Space UUID）与 `exclude_*` 排除规则**本阶段不写入 filter_config、移入 Deferred（v2）**。理由：`WorkflowTrigger._matches_filter` 仅支持正向 include 语义，`exclude_*` 是负向语义、`project_ids` 与 payload 携带的飞书 `project_key` 是不同 ID 空间——强行正向写入会造成**静默误匹配**（比延迟更糟）。完整支持需扩 `matches_event`（负向分支 + Space→project_key 映射），留 v2。
 - 加 `async_sync_workflow_triggers` 专项测试 + 字段对齐回归（保存 feishu_event_trigger → WorkflowTrigger 生成 → FeishuHandler.find_workflows 命中）。
 
 ### D-02 [schedule 处置] 移除假功能（非实现）
@@ -90,6 +91,7 @@ dispatch 失败（未知类型 / 校验失败 / 无匹配工作流 / start_execu
 <deferred>
 ## Deferred Ideas
 
+- **`project_ids`（Space UUID）/ `exclude_*` 排除规则的同步与匹配（v2）**——本阶段只同步正向可表达字段（filter_status/project_key/work_item_type）；负向/跨 ID 空间过滤需扩 `matches_event`，留 v2，避免静默误匹配。
 - 原生 schedule/cron 触发的完整实现（apscheduler per-workflow job 生命周期）——本里程碑用"外部 cron→webhook"模式替代，移除假入口。
 - 执行详情页全面可观测增强（节点级实时日志流等）——本阶段只补失败展示 + WS 降级 + 状态对齐。
 - DAG 失败节点的富交互（点击跳转/根因高亮）——可最小实现或留 TODO。
