@@ -50,7 +50,7 @@ function makeNodeExecution(overrides: Record<string, any> = {}) {
 
 function mountTab(nodeExecution: Record<string, any>) {
   return mount(NodeOverviewTab, {
-    props: { nodeExecution },
+    props: { nodeExecution: nodeExecution as any },
     global: {
       stubs: {
         StatusBadge: { template: '<span class="status-badge-stub" />' },
