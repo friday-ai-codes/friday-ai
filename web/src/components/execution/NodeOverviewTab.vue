@@ -55,6 +55,31 @@ function formatTime(isoStr: string | null): string {
     return '-'
   return new Date(isoStr).toLocaleString('zh-CN')
 }
+
+// OBS-01：Phase 17/18 结构化错误约定为「中文摘要 \n 末行 JSON」。
+// 解析出 summary（友好展示）+ detail（结构化引用/拓扑）；非 JSON 回退纯文本，不抛错（T-21-07-03）。
+function parseStructuredError(msg: string): { summary: string, detail: Record<string, any> | null } {
+  const lines = msg.split('\n')
+  if (lines.length < 2)
+    return { summary: msg, detail: null }
+  const lastLine = lines[lines.length - 1].trim()
+  try {
+    const parsed = JSON.parse(lastLine)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { summary: lines.slice(0, -1).join('\n').trim(), detail: parsed }
+    }
+    return { summary: msg, detail: null }
+  }
+  catch {
+    return { summary: msg, detail: null }
+  }
+}
+
+const parsedError = computed(() =>
+  props.nodeExecution.error_message
+    ? parseStructuredError(props.nodeExecution.error_message)
+    : null,
+)
 </script>
 
 <template>
@@ -118,6 +143,14 @@ function formatTime(isoStr: string | null): string {
         <div v-if="nodeExecution.attempt > 1">
           {{ nodeExecution.attempt - 1 }}
         </div>
+
+        <!-- OBS-01：错误码行 -->
+        <div v-if="nodeExecution.error_code" class="text-muted-foreground">
+          错误码
+        </div>
+        <div v-if="nodeExecution.error_code" class="font-mono text-xs">
+          {{ nodeExecution.error_code }}
+        </div>
       </div>
     </div>
 
@@ -138,7 +171,14 @@ function formatTime(isoStr: string | null): string {
       <div class="text-sm font-medium text-red-600 dark:text-red-400">
         错误信息
       </div>
-      <pre class="text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap wrap-break-word">{{ nodeExecution.error_message }}</pre>
+      <!-- OBS-01：结构化错误展示 summary（纯文本）+ detail（友好 key-value）；非 JSON 回退纯文本 -->
+      <pre class="text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap wrap-break-word">{{ parsedError?.summary ?? nodeExecution.error_message }}</pre>
+      <div v-if="parsedError?.detail" class="text-xs text-red-700 dark:text-red-300 space-y-1">
+        <div v-for="(value, key) in parsedError.detail" :key="key" class="flex gap-2">
+          <span class="text-red-500/80 shrink-0">{{ key }}:</span>
+          <span class="font-mono wrap-break-word">{{ typeof value === 'object' ? JSON.stringify(value) : value }}</span>
+        </div>
+      </div>
       <details v-if="nodeExecution.error_traceback" class="mt-2">
         <summary class="text-xs text-red-500 cursor-pointer hover:text-red-600">
           查看堆栈
