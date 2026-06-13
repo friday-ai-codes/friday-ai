@@ -32,11 +32,11 @@
 
 ### 执行引擎（ENG）
 
-- [ ] **ENG-01**: 修复 `waiting_event` 与完成判定的状态机不一致：存在等待事件节点时执行不得被误判为 completed；挂起（suspended）状态对前端真实可见
-- [ ] **ENG-02**: 调度主循环与回调续跑路径行为一致：均按节点结果的 `next_handle` 与边的 `source_handle` 路由条件分支，未选中分支正确 skipped
-- [ ] **ENG-03**: 执行上下文注入 `trigger_data`，`{{trigger.*}}` 引用在所有触发方式下可解析
-- [ ] **ENG-04**: DAG 死锁（有 pending 但无 ready 且无等待节点）明确转 failed 并附诊断信息（哪些节点在等哪些依赖），不留无限 running
-- [ ] **ENG-05**: 节点输入收集尊重 `target_handle` 语义（或明确移除该字段并统一文档/前端展示），消除"端口名存实亡"的双轨模型；引擎核心路径（调度、分支、死锁、等待）有自动化回归测试
+- [x] **ENG-01**: 修复 `waiting_event` 与完成判定的状态机不一致：存在等待事件节点时执行不得被误判为 completed；挂起（suspended）状态对前端真实可见
+- [x] **ENG-02**: 调度主循环与回调续跑路径行为一致：均按节点结果的 `next_handle` 与边的 `source_handle` 路由条件分支，未选中分支正确 skipped
+- [x] **ENG-03**: 执行上下文注入 `trigger_data`，`{{trigger.*}}` 引用在所有触发方式下可解析
+- [x] **ENG-04**: DAG 死锁（有 pending 但无 ready 且无等待节点）明确转 failed 并附诊断信息（哪些节点在等哪些依赖），不留无限 running
+- [x] **ENG-05**: 节点输入收集尊重 `target_handle` 语义（或明确移除该字段并统一文档/前端展示），消除"端口名存实亡"的双轨模型；引擎核心路径（调度、分支、死锁、等待）有自动化回归测试
 
 ### 触发模型（TRIG）
 
@@ -77,11 +77,11 @@
 | VAR-02 | Phase 17 | Complete |
 | VAR-03 | Phase 17 | Complete |
 | VAR-04 | Phase 17 | Complete |
-| ENG-01 | Phase 18 | Pending |
-| ENG-02 | Phase 18 | Pending |
-| ENG-03 | Phase 18 | Pending |
-| ENG-04 | Phase 18 | Pending |
-| ENG-05 | Phase 18 | Pending |
+| ENG-01 | Phase 18 | Complete |
+| ENG-02 | Phase 18 | Complete |
+| ENG-03 | Phase 18 | Complete |
+| ENG-04 | Phase 18 | Complete |
+| ENG-05 | Phase 18 | Complete |
 | SSOT-01 | Phase 19 | Pending |
 | SSOT-02 | Phase 19 | Pending |
 | SSOT-03 | Phase 19 | Pending |
