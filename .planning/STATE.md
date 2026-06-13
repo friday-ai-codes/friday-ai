@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: 工作流系统契约重构
-status: executing
+status: Awaiting next milestone
 stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-13T15:59:03.909Z"
-last_activity: 2026-06-13
+last_updated: "2026-06-13T16:01:21.009Z"
+last_activity: 2026-06-13 — Milestone v0.4.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Status: Executing Phase 21
-Last activity: 2026-06-13
-
-Progress: [□□□□□] 0/5 phases
+Phase: Milestone v0.4.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-13 — Milestone v0.4.0 completed and archived
 
 ## Milestone Overview (v0.4.0)
 
@@ -125,6 +123,15 @@ Items acknowledged and deferred at milestone close.
 | verification | Phase 10 人工验收（10-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
 | verification | Phase 11 人工验收（11-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
 | verification | Phase 14 真实 git platform 超大 diff 截断人工验收（TD-14） | human_needed | 2026-06-12 (v0.3.0 close) |
+| verification | Phase 17 人工验收（17-VERIFICATION.md / 17-HUMAN-UAT.md，3 pending） | human_needed | 2026-06-13 (v0.4.0 close) |
+| verification | Phase 18 真实容器回调续跑 E2E 人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
+| verification | Phase 19 画布编辑观感人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
+| verification | Phase 20 IssuesPanel 交互 + 模板端到端执行人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
+| verification | Phase 21 真实飞书事件触发 + WS 断线降级 + suspended 显示人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
+| tech_debt | VALIDATION.md（18-21）nyquist_compliant frontmatter 未翻转 true（Wave 0 测试实际全绿，文档收尾） | deferred | 2026-06-13 (v0.4.0 close) |
+| scope_v2 | Phase 21 project_ids/exclude_* 触发过滤（负向 + 跨 ID 空间，需扩 matches_event） | deferred | 2026-06-13 (v0.4.0 close) |
+| scope_v2 | Phase 20 input.*/trigger.* 严格静态校验 + IssuesPanel 点击画布居中 | deferred | 2026-06-13 (v0.4.0 close) |
+| quick_task | 260610-oug-url-https / 260611-ghb-workflow-card-uniform（状态 unknown） | deferred | 2026-06-13 (v0.4.0 close) |
 
 ## Session Continuity
 
@@ -134,4 +141,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start planning the first phase with /gsd-plan-phase 17
+- Start the next milestone with /gsd-new-milestone
