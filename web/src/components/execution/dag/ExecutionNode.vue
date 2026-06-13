@@ -45,8 +45,18 @@ const statusBorderClass = computed(() => {
     waiting_event: 'border-indigo-400/60',
     paused: 'border-yellow-400/60',
     cancelled: 'border-border/50',
+    // OBS-03：防御性补 suspended/timeout 色（DAG 渲染 NodeExecution，理论无 suspended，补色避免 fallback）
+    suspended: 'border-purple-400/60',
+    timeout: 'border-rose-400/60',
   }
   return map[props.data.status] ?? 'border-border/50'
+})
+
+// OBS-01：失败节点 error 摘要（最小实现，供 tooltip 展示；富交互留 v2）
+const failedErrorMessage = computed(() => {
+  if (props.data.status !== 'failed')
+    return ''
+  return props.data.nodeExecution?.error_message ?? ''
 })
 
 /** 瓶颈光晕 — 用 shadow + ring 避免与状态色 border 冲突 */
@@ -82,6 +92,8 @@ const statusDotClass = computed(() => {
     waiting_event: 'bg-indigo-400 animate-pulse',
     paused: 'bg-yellow-400',
     cancelled: 'bg-muted-foreground/50',
+    suspended: 'bg-purple-400 animate-pulse',
+    timeout: 'bg-rose-400',
   }
   return map[props.data.status] ?? 'bg-muted-foreground/50'
 })
@@ -176,8 +188,18 @@ function handleSubStepClick(stepId: string) {
         <span class="text-sm font-medium text-foreground truncate flex-1">
           {{ data.name }}
         </span>
-        <!-- 状态指示点 -->
-        <div class="w-2 h-2 rounded-full shrink-0" :class="statusDotClass" />
+        <!-- 状态指示点（OBS-01：失败节点 tooltip 展示 error_message） -->
+        <TooltipProvider v-if="failedErrorMessage">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <div class="w-2 h-2 rounded-full shrink-0 cursor-help" :class="statusDotClass" />
+            </TooltipTrigger>
+            <TooltipContent side="bottom" class="max-w-xs">
+              <span class="text-xs wrap-break-word">{{ failedErrorMessage }}</span>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <div v-else class="w-2 h-2 rounded-full shrink-0" :class="statusDotClass" />
       </div>
 
       <!-- 底部：耗时 + 从此继续按钮 + 成本徽章 + 瓶颈标签 -->
