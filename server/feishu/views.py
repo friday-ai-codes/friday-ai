@@ -722,6 +722,11 @@ class FeishuWebhookView(APIView):
                 if len(executions) == 1:
                     trigger_log.workflow_execution = executions[0]
                     await trigger_log.asave(update_fields=["workflow_execution"])
+            else:
+                # TRIG-03 / D-03：无匹配工作流不再恒 ACCEPTED，落 IGNORED + 可查原因。
+                trigger_log.status = TriggerLogStatus.IGNORED
+                trigger_log.error_message = f"无匹配工作流（event_type={event_type}）"
+                await trigger_log.asave(update_fields=["status", "error_message"])
 
         except Exception as e:
             logger.error(
@@ -729,6 +734,11 @@ class FeishuWebhookView(APIView):
                 event_type=event_type,
                 error=str(e),
             )
+            # TRIG-03 / D-03 / ASVS V7：dispatch 异常落 ERROR + 仅人类可读摘要，
+            # str(e)[:2000] 截断防 TextField 膨胀（不拼接 payload/凭证/node 输出值）。
+            trigger_log.status = TriggerLogStatus.ERROR
+            trigger_log.error_message = str(e)[:2000]
+            await trigger_log.asave(update_fields=["status", "error_message"])
 
     async def _fetch_and_update_work_item(self, project, work_item_id, work_item_type, trigger_log):
         """Fetch work item details and update trigger log."""
