@@ -19,6 +19,10 @@ class DAGNode:
     incoming: set[str] = field(default_factory=set)  # 入边的源节点 ID（含 back-edge）
     outgoing: dict[str, set[str]] = field(default_factory=dict)  # {handle: {target_node_ids}}
     back_edge_sources: set[str] = field(default_factory=set)  # 来自反馈环的源节点 ID
+    # 入边明细，元素为 (source_id, source_handle, target_handle) 三元组；
+    # handle 缺省 "default"。routing.py 的边感知就绪/级联/归集纯函数据此判定，
+    # 同一对节点间多条不同 handle 的边各自独立成元组（不去重）。
+    incoming_edges: list = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -62,6 +66,9 @@ class DAG:
 
             if source_id in dag.nodes and target_id in dag.nodes:
                 dag.nodes[target_id].incoming.add(source_id)
+                dag.nodes[target_id].incoming_edges.append(
+                    (source_id, edge.source_handle or "default", edge.target_handle or "default")
+                )
 
                 if handle not in dag.nodes[source_id].outgoing:
                     dag.nodes[source_id].outgoing[handle] = set()
@@ -87,6 +94,9 @@ class DAG:
 
             if source_id in dag.nodes and target_id in dag.nodes:
                 dag.nodes[target_id].incoming.add(source_id)
+                dag.nodes[target_id].incoming_edges.append(
+                    (source_id, edge.source_handle or "default", edge.target_handle or "default")
+                )
 
                 if handle not in dag.nodes[source_id].outgoing:
                     dag.nodes[source_id].outgoing[handle] = set()
