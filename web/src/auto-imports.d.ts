@@ -462,7 +462,7 @@ declare global {
   export type { PortSchema, NodePort, NodeType } from './stores/useNodeTypesStore'
   import('./stores/useNodeTypesStore')
   // @ts-ignore
-  export type { ValidationWarning } from './stores/useWorkflowValidationStore'
+  export type { ValidationWarning, ValidationIssue, BackendValidationResult } from './stores/useWorkflowValidationStore'
   import('./stores/useWorkflowValidationStore')
   // @ts-ignore
   export type { WorkflowNode, WorkflowEdge, Workflow } from './stores/useWorkflowsStore'

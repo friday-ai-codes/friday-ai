@@ -6,7 +6,7 @@
  * 节点状态通过 WebSocket 实时更新，执行完成后自动加载 Timeline 瓶颈数据。
  */
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useExecutionReplay } from '~/components/execution/dag/composables/useExecutionReplay'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
 import ReplayControls from '~/components/execution/replay/ReplayControls.vue'
@@ -24,6 +24,7 @@ import { useResumeLogic } from './composables/useResumeLogic'
 const sheetOpen = ref(false)
 const selectedNodeExecution = ref<NodeExecution | null>(null)
 const selectedNodeId = ref<string | null>(null)
+const hasAutoOpenedWaitingApproval = ref(false)
 
 // ----- Composables -----
 const {
@@ -207,6 +208,26 @@ function handleNodeClick(nodeExecution: NodeExecution | null, nodeId: string) {
   selectedNodeId.value = nodeId
   sheetOpen.value = true
 }
+
+watch(executionId, () => {
+  hasAutoOpenedWaitingApproval.value = false
+})
+
+watch(currentExecution, (execution) => {
+  if (!execution || sheetOpen.value || hasAutoOpenedWaitingApproval.value)
+    return
+
+  const waitingApproval = execution.node_executions?.find(
+    node => node.node_type === 'human_approval' && node.status === 'waiting_approval',
+  )
+  if (!waitingApproval)
+    return
+
+  selectedNodeExecution.value = waitingApproval
+  selectedNodeId.value = waitingApproval.node
+  sheetOpen.value = true
+  hasAutoOpenedWaitingApproval.value = true
+}, { immediate: true })
 
 /** 抽屉内操作完成后刷新数据 */
 function handleActionComplete() {
