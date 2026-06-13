@@ -13,12 +13,16 @@ from django.utils import timezone
 from agents.models import AgentSession
 from projects.models import Project
 from subagent.models import ActionLog, SubAgentSession, TokenUsage
+from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     NodeExecution,
     Workflow,
+    WorkflowEdge,
     WorkflowExecution,
     WorkflowNode,
 )
+from workflows.nodes.base import BaseNode, ExecutionContext, NodeCategory, NodeResult
+from workflows.nodes.registry import NodeRegistry
 
 
 @pytest.fixture
@@ -191,3 +195,276 @@ def obs_token_usages(obs_subagent_session):
         model="claude-opus-4-20250514",
     )
     return usage1, usage2
+
+
+# ===========================================================================
+# 引擎集成测试共享基建（Phase 18，18-02/03/04/05 共用）
+#
+# 可控测试节点 + 工作流工厂 + engine 夹具。范式照抄
+# test_error_handling.py（可控节点 + 注册/注销）与 test_engine.py（工厂三件套）。
+# 注意：节点注册夹具 `engine_test_nodes` 为具名 fixture（非 autouse）——
+# conftest 级 autouse 会污染全目录测试。
+# ===========================================================================
+
+
+class BranchNode(BaseNode):
+    """条件分支测试节点：按类属性 `_next_handle` 返回 next_handle（可控旋钮）。"""
+
+    node_type = "test_branch"
+    display_name = "Branch"
+    description = "Returns a controllable next_handle for branch routing tests"
+    category = NodeCategory.CONTROL
+    execution_mode = "server_local"
+
+    _next_handle = "true"
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        return NodeResult(
+            status="completed",
+            output={"branch": type(self)._next_handle},
+            next_handle=type(self)._next_handle,
+        )
+
+
+class WaitEventNode(BaseNode):
+    """等待外部事件测试节点：返回 waiting_event，类属性 `_exec_count` 计数。"""
+
+    node_type = "test_wait_event"
+    display_name = "WaitEvent"
+    description = "Returns waiting_event to suspend the workflow"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+
+    _exec_count = 0
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        type(self)._exec_count += 1
+        return NodeResult(status="waiting_event", output={})
+
+
+class WaitApprovalNode(BaseNode):
+    """等待审批测试节点：返回 waiting_approval，类属性 `_exec_count` 计数（18-03 热循环断言用）。"""
+
+    node_type = "test_wait_approval"
+    display_name = "WaitApproval"
+    description = "Returns waiting_approval to suspend the workflow"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+
+    _exec_count = 0
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        type(self)._exec_count += 1
+        return NodeResult(status="waiting_approval", output={})
+
+
+class EchoInputsNode(BaseNode):
+    """回显输入测试节点：输出 `context.input_data` 供输入归集断言。"""
+
+    node_type = "test_echo_inputs"
+    display_name = "EchoInputs"
+    description = "Echoes the node's collected input_data"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        return NodeResult(
+            status="completed",
+            output={"echoed_inputs": dict(context.input_data)},
+        )
+
+
+class EchoTriggerDataNode(BaseNode):
+    """回显触发数据测试节点：输出 `context.trigger_data`（18-05 消费）。"""
+
+    node_type = "test_echo_trigger"
+    display_name = "EchoTrigger"
+    description = "Echoes the execution's trigger_data"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        return NodeResult(
+            status="completed",
+            output={"echoed_trigger": dict(context.trigger_data)},
+        )
+
+
+@pytest.fixture
+def engine():
+    """WorkflowEngine 实例（照抄 test_error_handling.py:134-137）。"""
+    return WorkflowEngine()
+
+
+@pytest.fixture
+def engine_project(db):
+    """引擎集成测试用项目。"""
+    return Project.objects.create(
+        name="Engine Integration Test Project",
+        description="Project for engine integration tests",
+    )
+
+
+@pytest.fixture
+def engine_test_nodes():
+    """注册五个可控测试节点，测试结束后逐个注销并复位类属性旋钮/计数器。
+
+    具名 fixture（非 autouse）——仅显式请求的测试加载，避免污染全目录。
+    """
+    # 复位可控旋钮 / 计数器，保证用例间隔离
+    BranchNode._next_handle = "true"
+    WaitEventNode._exec_count = 0
+    WaitApprovalNode._exec_count = 0
+
+    NodeRegistry.register(BranchNode)
+    NodeRegistry.register(WaitEventNode)
+    NodeRegistry.register(WaitApprovalNode)
+    NodeRegistry.register(EchoInputsNode)
+    NodeRegistry.register(EchoTriggerDataNode)
+    yield
+    NodeRegistry._nodes.pop("test_branch", None)
+    NodeRegistry._nodes.pop("test_wait_event", None)
+    NodeRegistry._nodes.pop("test_wait_approval", None)
+    NodeRegistry._nodes.pop("test_echo_inputs", None)
+    NodeRegistry._nodes.pop("test_echo_trigger", None)
+    # 注销后复位旋钮/计数器，避免跨测试残留
+    BranchNode._next_handle = "true"
+    WaitEventNode._exec_count = 0
+    WaitApprovalNode._exec_count = 0
+
+
+@pytest.fixture
+def branch_workflow(db, engine_project):
+    """菱形分支工作流：manual_trigger → Branch → TrueSide / FalseSide → Join。
+
+    - Branch 出边 source_handle 分别为 "true"/"false"；
+    - TrueSide/FalseSide → Join 均 default（菱形汇合，一条活路即执行）。
+    节点 name 唯一且语义化，便于按 node__name 查询 NE 状态断言。
+    """
+    workflow = Workflow.objects.create(
+        name="Branch Workflow",
+        project=engine_project,
+        trigger_type="manual",
+    )
+    trigger = WorkflowNode.objects.create(
+        workflow=workflow, node_type="manual_trigger", name="Start", position_x=0, position_y=0
+    )
+    branch = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_branch", name="Branch", position_x=200, position_y=0
+    )
+    true_side = WorkflowNode.objects.create(
+        workflow=workflow,
+        node_type="test_echo_inputs",
+        name="TrueSide",
+        position_x=400,
+        position_y=-100,
+    )
+    false_side = WorkflowNode.objects.create(
+        workflow=workflow,
+        node_type="test_echo_inputs",
+        name="FalseSide",
+        position_x=400,
+        position_y=100,
+    )
+    join = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_echo_inputs", name="Join", position_x=600, position_y=0
+    )
+
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=trigger,
+        target_node=branch,
+        source_handle="default",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=branch,
+        target_node=true_side,
+        source_handle="true",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=branch,
+        target_node=false_side,
+        source_handle="false",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=true_side,
+        target_node=join,
+        source_handle="default",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=false_side,
+        target_node=join,
+        source_handle="default",
+        target_handle="default",
+    )
+    return workflow
+
+
+@pytest.fixture
+def waiting_workflow(db, engine_project):
+    """挂起工作流：manual_trigger → WaitEvent → Downstream（18-03 消费）。"""
+    workflow = Workflow.objects.create(
+        name="Waiting Workflow",
+        project=engine_project,
+        trigger_type="manual",
+    )
+    trigger = WorkflowNode.objects.create(
+        workflow=workflow, node_type="manual_trigger", name="Start", position_x=0, position_y=0
+    )
+    waiter = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_wait_event", name="Waiter", position_x=200, position_y=0
+    )
+    downstream = WorkflowNode.objects.create(
+        workflow=workflow,
+        node_type="test_echo_inputs",
+        name="Downstream",
+        position_x=400,
+        position_y=0,
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=trigger,
+        target_node=waiter,
+        source_handle="default",
+        target_handle="default",
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=waiter,
+        target_node=downstream,
+        source_handle="default",
+        target_handle="default",
+    )
+    return workflow
+
+
+@pytest.fixture
+def waiting_terminal_workflow(db, engine_project):
+    """末端挂起工作流：manual_trigger → WaitEvent（无下游，18-03 消费）。"""
+    workflow = Workflow.objects.create(
+        name="Waiting Terminal Workflow",
+        project=engine_project,
+        trigger_type="manual",
+    )
+    trigger = WorkflowNode.objects.create(
+        workflow=workflow, node_type="manual_trigger", name="Start", position_x=0, position_y=0
+    )
+    waiter = WorkflowNode.objects.create(
+        workflow=workflow, node_type="test_wait_event", name="Waiter", position_x=200, position_y=0
+    )
+    WorkflowEdge.objects.create(
+        workflow=workflow,
+        source_node=trigger,
+        target_node=waiter,
+        source_handle="default",
+        target_handle="default",
+    )
+    return workflow
