@@ -4,6 +4,12 @@
  * 端口 ID 使用与后端 NodePort.name 一致的语义化名称（如 "default"、
  * "approved"、"rejected"），确保模板创建的工作流和用户手动连线的
  * 工作流都能正确匹配 Handle。
+ *
+ * SSOT-02 / D-04：画布 Handle 的正常渲染路径已迁移到 `useNodeTypesStore`
+ * 的 inputs/outputs（见 BaseWorkflowNode.vue）。本文件的
+ * `getDefaultPortsForNodeType` 不再参与正常渲染，仅作为 `migratePortId`
+ * 的静态端口顺序回退源（用于把存量 edge 的旧式索引句柄迁移为语义名）。
+ * `migratePortId` 按 D-02 保留——禁删，兼容存量 edge。
  */
 
 /**

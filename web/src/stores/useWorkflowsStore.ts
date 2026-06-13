@@ -144,6 +144,10 @@ export const useWorkflowsStore = defineStore('workflows', () => {
    * Convert backend edges to store format.
    * Normalizes old indexed port IDs (e.g. "output-0") to semantic names
    * (e.g. "default", "approved") for backward compatibility.
+   *
+   * migratePortId 使用 portConfig 的静态端口回退表（非 store），故端口顺序
+   * 在 store 未就绪时也稳定；且 [id].vue 已顺序化 await fetchNodeTypes() 先于
+   * fetchWorkflow()（RESEARCH Pitfall 4），存量 edge 不会退化为 default。
    */
   function toStoreEdges(workflowEdges: WorkflowEdge[], workflowNodes: WorkflowNode[]): WorkflowEdgeStore[] {
     const nodeTypeMap = new Map(workflowNodes.map(n => [n.id, n.node_type]))
