@@ -258,6 +258,31 @@ class WaitApprovalNode(BaseNode):
         return NodeResult(status="waiting_approval", output={})
 
 
+class ResumableWaitEventNode(BaseNode):
+    """可恢复等待节点：首次执行返回 waiting_event 挂起；当 NE.output_data 含恢复标记
+    ``_resume_from_callback`` 时返回 completed。
+
+    模拟容器回调到达后 ai_coding "消费恢复标记 → 重跑节点终态" 的范式（18-04 A1
+    断裂修复用）。类属性 ``_exec_count`` 记录 execute 调用次数，断言节点确被重跑。
+    """
+
+    node_type = "test_resumable_wait"
+    display_name = "ResumableWait"
+    description = "Waits until a resume marker is present, then completes"
+    category = NodeCategory.ACTION
+    execution_mode = "server_local"
+
+    _exec_count = 0
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        type(self)._exec_count += 1
+        ne = context.node_execution
+        output_data = (ne.output_data or {}) if ne is not None else {}
+        if output_data.get("_resume_from_callback"):
+            return NodeResult(status="completed", output={"resumed": True})
+        return NodeResult(status="waiting_event", output={})
+
+
 class EchoInputsNode(BaseNode):
     """回显输入测试节点：输出 `context.input_data` 供输入归集断言。"""
 
@@ -315,22 +340,26 @@ def engine_test_nodes():
     BranchNode._next_handle = "true"
     WaitEventNode._exec_count = 0
     WaitApprovalNode._exec_count = 0
+    ResumableWaitEventNode._exec_count = 0
 
     NodeRegistry.register(BranchNode)
     NodeRegistry.register(WaitEventNode)
     NodeRegistry.register(WaitApprovalNode)
+    NodeRegistry.register(ResumableWaitEventNode)
     NodeRegistry.register(EchoInputsNode)
     NodeRegistry.register(EchoTriggerDataNode)
     yield
     NodeRegistry._nodes.pop("test_branch", None)
     NodeRegistry._nodes.pop("test_wait_event", None)
     NodeRegistry._nodes.pop("test_wait_approval", None)
+    NodeRegistry._nodes.pop("test_resumable_wait", None)
     NodeRegistry._nodes.pop("test_echo_inputs", None)
     NodeRegistry._nodes.pop("test_echo_trigger", None)
     # 注销后复位旋钮/计数器，避免跨测试残留
     BranchNode._next_handle = "true"
     WaitEventNode._exec_count = 0
     WaitApprovalNode._exec_count = 0
+    ResumableWaitEventNode._exec_count = 0
 
 
 @pytest.fixture

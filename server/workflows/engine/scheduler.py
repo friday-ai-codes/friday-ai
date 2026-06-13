@@ -538,16 +538,21 @@ class WorkflowEngine:
         initial_outputs: dict[str, dict] | None = None,
         is_resume: bool = False,
         stop_before_node_id: str | None = None,
+        *,
+        rebuilt_state: dict | None = None,
     ) -> None:
-        """执行工作流主循环
+        """执行工作流主循环（首跑与回调续跑/恢复重入字面同源，ENG-01/02）。
 
         Args:
             execution: 执行实例
             dag: DAG 实例
             input_data: 输入数据
             initial_outputs: 预填充的节点输出（从失败节点继续时，包含 skipped 节点的输出）
-            is_resume: 是否从暂停恢复（跳过 amark_started 避免覆盖 started_at）
+            is_resume: 是否从暂停/挂起恢复（跳过 amark_started 避免覆盖 started_at）
             stop_before_node_id: 单节点测试：执行到该节点前停止
+            rebuilt_state: 重入续跑时从 DB 重建的真实状态集合（_rebuild_state_from_db
+                产出）；非 None 时覆盖首跑的空集初始化与 initial_outputs 预填充，使
+                回调续跑/恢复与首跑共用同一 while 调度循环与 _finalize_run_state 收口。
         """
         try:
             if not is_resume:
@@ -579,8 +584,21 @@ class WorkflowEngine:
             # 待处理节点
             pending_nodes = set(dag.nodes.keys())
 
+            # 重入续跑（回调续跑 / paused-resume，18-04）：用从 DB 重建的真实 NE 状态
+            # 集合覆盖首跑空集——路由/级联/完成/死锁判定与主循环字面同源，消除两套
+            # 路由实现漂移。pending = DAG 中无终态/等待记录的节点（_rebuild_state_from_db）。
+            if rebuilt_state is not None:
+                node_outputs = rebuilt_state["node_outputs"]
+                completed_nodes = rebuilt_state["completed_nodes"]
+                failed_nodes = rebuilt_state["failed_nodes"]
+                skipped_nodes = rebuilt_state["skipped_nodes"]
+                tolerated_failures = rebuilt_state["tolerated_failures"]
+                node_statuses = rebuilt_state["node_statuses"]
+                node_handles = rebuilt_state["node_handles"]
+                waiting_nodes_mem = rebuilt_state["waiting_nodes_mem"]
+                pending_nodes = rebuilt_state["pending_nodes"]
             # 预填充 skipped 节点的输出（从失败节点继续场景）
-            if initial_outputs:
+            elif initial_outputs:
                 node_outputs.update(initial_outputs)
                 # 从数据库查询 skipped 节点，将其加入 completed/skipped 集合
                 skipped_ne_list = [
@@ -1206,6 +1224,14 @@ class WorkflowEngine:
             )
 
             if on_error == "ignore":
+                # tolerated fallback 持久化到 NE.output_data（Pitfall 4 显式决策）：
+                # 节点 DB 状态为 FAILED，但带 `_tolerated` 标记 + fallback 输出，
+                # 重入续跑重建时据此恢复 tolerated 语义与下游可见的 fallback 值
+                # （主循环内存 node_outputs 拿不到，线程退出即丢失）。
+                fallback = node.fallback_values or {"status": "skipped", "output": {}}
+                tolerated_output = {**fallback, "_tolerated": True}
+                node_execution.output_data = tolerated_output
+                await node_execution.asave(update_fields=["output_data"])
                 return {"status": "failed", "error": last_error, "tolerated": True}
 
             return {"status": "failed", "error": last_error}
@@ -1249,57 +1275,33 @@ class WorkflowEngine:
         await self.hooks.trigger("execution_paused", execution=execution)
 
     async def resume_execution(self, execution: WorkflowExecution) -> None:
-        """恢复暂停的执行，从中断点继续调度。"""
+        """恢复暂停的执行，从中断点继续调度。
+
+        18-04：废弃旧"COMPLETED→SKIPPED 改写 + initial_outputs"手法，改为按真实 NE
+        状态重建（_rebuild_state_from_db）重入主循环——与回调续跑字面同源，skipped
+        已是正式终态无需伪装为 completed 输出载体。
+        """
         if execution.status != ExecutionStatus.PAUSED:
             raise ValueError("只能恢复已暂停的执行")
 
         # 1. 获取工作流和 DAG
         execution = await WorkflowExecution.objects.select_related("workflow").aget(pk=execution.pk)
-        workflow = execution.workflow
-        dag = await DAG.afrom_workflow(workflow)
+        dag = await DAG.afrom_workflow(execution.workflow)
 
-        # 2. 收集已完成节点的输出作为 initial_outputs
-        initial_outputs: dict[str, dict] = {}
-        async for ne in NodeExecution.objects.filter(
-            workflow_execution=execution,
-            status=NodeExecutionStatus.COMPLETED,
-        ):
-            initial_outputs[str(ne.node_id)] = ne.output_data or {}
-
-        # 3. 将已完成节点标记为 SKIPPED（让 _run_execution 的 initial_outputs 机制识别）
-        completed_node_ids = list(initial_outputs.keys())
-        await NodeExecution.objects.filter(
-            workflow_execution=execution,
-            status=NodeExecutionStatus.COMPLETED,
-        ).aupdate(status=NodeExecutionStatus.SKIPPED)
-
-        # 4. 将 QUEUED 节点重置为 PENDING
+        # 2. QUEUED 节点重置为 PENDING（重建时归入 pending 重新调度）
         await NodeExecution.objects.filter(
             workflow_execution=execution,
             status=NodeExecutionStatus.QUEUED,
         ).aupdate(status=NodeExecutionStatus.PENDING)
 
-        # 5. 更新执行状态并恢复
+        # 3. 更新执行状态并恢复
         execution.status = ExecutionStatus.RUNNING
         await execution.asave(update_fields=["status"])
         await self.hooks.trigger("execution_resumed", execution=execution)
+        logger.info("execution_resumed", execution_id=str(execution.id))
 
-        logger.info(
-            "execution_resumed",
-            execution_id=str(execution.id),
-            skipped_nodes=len(completed_node_ids),
-        )
-
-        # 6. 重入主循环（is_resume=True 避免覆盖 started_at）
-        _run_in_thread(
-            self._run_execution(
-                execution,
-                dag,
-                execution.input_data or {},
-                initial_outputs,
-                is_resume=True,
-            )
-        )
+        # 4. 重建真实状态重入主循环（is_resume=True 避免覆盖 started_at）
+        _run_in_thread(self._rebuild_and_run(execution, dag))
 
     async def cancel_execution(self, execution: WorkflowExecution) -> None:
         """取消执行"""
@@ -1496,93 +1498,98 @@ class WorkflowEngine:
         # 直接执行后续节点（同步方式，确保错误信息正确保存）
         await self._continue_after_node(execution, node_execution)
 
+    # 容器回调恢复标记键（任一存在即触发"标记重跑"消费容器回调，A1 断裂修复）
+    _RESUME_MARKERS = ("_resume_from_callback", "_confirmed_branch_name")
+
     async def _continue_after_node(
         self,
         execution: WorkflowExecution,
         node_execution: NodeExecution,
     ) -> None:
-        """Continue workflow execution after a node completes via callback.
+        """节点经回调终态后的续跑薄入口——重建状态重入主循环（ENG-01/02）。
 
-        This is called when a container-based node (like CodeImplementNode)
-        reports completion through the callback API.
+        七条恢复入口（approve/reject/trigger_manual/skip_wait/trigger_resume/容器回调/
+        分支确认）共用本入口，签名不变。三步：
+
+        1. **执行级互斥**（先于任何节点重跑，防并发双执行）：仅 SUSPENDED 时原子抢锁
+           ``filter(status=SUSPENDED).aupdate(status=RUNNING)``——抢锁失败（他人已抢）
+           即放弃，杜绝同一挂起执行被两个回调起双循环（Pitfall 6 / T-18-05）。已
+           RUNNING（外部入口预翻转 / inline 续跑）放行；终态直接 return。
+        2. **标记重跑**（容器回调断裂 A1 修复）：节点仍 WAITING_* 且带恢复标记 →
+           重置 RUNNING 经 ``_execute_node`` 重跑（复用重试/超时/on_error）；无标记仍
+           WAITING → 等真正事件回调，不空转，还原挂起。
+        3. **重建重入**：``_rebuild_state_from_db`` 重建真实状态集合 → ``_run_execution``
+           重入同一 while 调度循环与 ``_finalize_run_state`` 收口（恢复后残留纯死锁在
+           此暴露并转 FAILED）。
         """
-        # Trigger completion hook
+        # 完成 hook（保留既有行为：容器/审批回调上报节点完成事件）
         await self.hooks.trigger(
             "node_completed",
             execution=execution,
             node_execution=node_execution,
         )
 
-        # Get the workflow and rebuild DAG
+        # 重新加载执行 + 重建 DAG
         execution = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id)
         workflow = execution.workflow
         dag = await DAG.afrom_workflow(workflow)
 
-        # Find successor nodes
-        completed_node_id = str(node_execution.node_id)
-        dag_node = dag.nodes.get(completed_node_id)
-
-        if not dag_node:
-            logger.warning(
-                "callback_node_not_in_dag",
-                node_id=completed_node_id,
+        # --- 步骤 1：执行级互斥抢锁（先于任何节点重跑，防并发双执行 T-18-05） ---
+        entry_status = execution.status
+        if entry_status in (
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMEOUT,
+        ):
+            logger.info(
+                "continue_after_node_terminal",
                 execution_id=str(execution.id),
+                status=entry_status,
             )
             return
+        if entry_status == ExecutionStatus.SUSPENDED:
+            acquired = await WorkflowExecution.objects.filter(
+                pk=execution.pk,
+                status=ExecutionStatus.SUSPENDED,
+            ).aupdate(status=ExecutionStatus.RUNNING)
+            if not acquired:
+                # 竞态：另一个续跑已原子抢到 SUSPENDED→RUNNING → 放弃（互斥）
+                logger.info("resume_lock_lost", execution_id=str(execution.id))
+                return
+            execution.status = ExecutionStatus.RUNNING
+        # else RUNNING/PENDING/PAUSED：外部入口已预翻转或 inline 续跑 → 放行（保留既有行为）
 
-        # Check if there are successor nodes to execute
-        if not dag_node.outgoing:
-            # This was a terminal node - check if execution is complete
-            await self._check_execution_complete(execution)
-            return
+        # --- 步骤 2：标记重跑（容器回调断裂 A1 修复） ---
+        await node_execution.arefresh_from_db()
+        if node_execution.status in (
+            NodeExecutionStatus.WAITING_EVENT,
+            NodeExecutionStatus.WAITING_APPROVAL,
+            NodeExecutionStatus.WAITING_INPUT,
+        ):
+            output_data = node_execution.output_data or {}
+            if any(marker in output_data for marker in self._RESUME_MARKERS):
+                dag_node = dag.nodes.get(str(node_execution.node_id))
+                if dag_node is not None:
+                    # 重置 RUNNING + 经 _execute_node 重跑（复用重试/超时/on_error）；
+                    # 节点 execute 内消费恢复标记后终态，再由步骤 3 重建放行下游。
+                    node_execution.status = NodeExecutionStatus.RUNNING
+                    await node_execution.asave(update_fields=["status"])
+                    rerun_outputs = await self._collect_all_outputs(execution)
+                    rerun_input = self._collect_inputs(dag_node, dag, rerun_outputs)
+                    await self._execute_node(execution, dag_node, rerun_input, rerun_outputs)
+            else:
+                # 无恢复标记仍 WAITING → 等待真正事件回调，不空转；还原挂起态
+                logger.warning(
+                    "continue_after_node_waiting_no_marker",
+                    execution_id=str(execution.id),
+                    node_id=str(node_execution.node_id),
+                )
+                await execution.amark_suspended()
+                return
 
-        # Read next_handle from output_data for handle-based routing
-        output_data = node_execution.output_data or {}
-        next_handle = output_data.get("_next_handle", "default")
-
-        # Use dag.get_successors() to route by handle
-        successors = dag.get_successors(completed_node_id, next_handle)
-
-        # Fallback to "default" handle if specified handle has no successors
-        if not successors and next_handle != "default":
-            successors = dag.get_successors(completed_node_id, "default")
-
-        if not successors:
-            # Terminal node - check if execution is complete
-            await self._check_execution_complete(execution)
-            return
-
-        # Collect all node outputs for context
-        node_outputs = await self._collect_all_outputs(execution)
-
-        # Execute successor nodes that are now ready
-        for successor_dag_node in successors:
-            # Check if all dependencies are satisfied
-            all_deps_ready = await self._check_dependencies_ready(execution, successor_dag_node)
-
-            if all_deps_ready:
-                # Get successor's node execution
-                successor_exec = await NodeExecution.objects.filter(
-                    workflow_execution=execution,
-                    node_id=successor_dag_node.id,
-                    status=NodeExecutionStatus.PENDING,
-                ).afirst()
-
-                if successor_exec:
-                    # Collect inputs and execute
-                    input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
-                    result = await self._execute_node(
-                        execution, successor_dag_node, input_data, node_outputs
-                    )
-                    # Recursive: if successor also completed immediately, continue its downstream
-                    if isinstance(result, dict) and result.get("status") == "completed":
-                        successor_ne = await NodeExecution.objects.filter(
-                            workflow_execution=execution,
-                            node_id=successor_dag_node.id,
-                            status=NodeExecutionStatus.COMPLETED,
-                        ).afirst()
-                        if successor_ne:
-                            await self._continue_after_node(execution, successor_ne)
+        # --- 步骤 3：重建状态重入主循环 ---
+        await self._rebuild_and_run(execution, dag)
 
     async def _handle_node_failure(
         self,
@@ -1613,51 +1620,135 @@ class WorkflowEngine:
         hook_execution = await self._load_execution_for_hooks(execution)
         await self.hooks.trigger("execution_failed", execution=hook_execution)
 
-    async def _check_execution_complete(self, execution: WorkflowExecution) -> None:
-        """Check if workflow execution is complete and update status."""
-        # Count node statuses
-        base_qs = NodeExecution.objects.filter(workflow_execution=execution)
-        stats = {
-            "pending": await base_qs.filter(status=NodeExecutionStatus.PENDING).acount(),
-            "running": await base_qs.filter(status=NodeExecutionStatus.RUNNING).acount(),
-            "waiting": await base_qs.filter(
-                status__in=[
-                    NodeExecutionStatus.WAITING_APPROVAL,
-                    NodeExecutionStatus.WAITING_EVENT,
-                ],
-            ).acount(),
-            "failed": await base_qs.filter(status=NodeExecutionStatus.FAILED).acount(),
+    async def _rebuild_and_run(self, execution: WorkflowExecution, dag: DAG) -> None:
+        """重建 DB 状态并重入主循环调度（回调续跑 / paused-resume 共用入口）。"""
+        rebuilt_state = await self._rebuild_state_from_db(execution, dag)
+        await self._run_execution(
+            execution,
+            dag,
+            execution.input_data or {},
+            is_resume=True,
+            rebuilt_state=rebuilt_state,
+        )
+
+    async def _rebuild_state_from_db(self, execution: WorkflowExecution, dag: DAG) -> dict:
+        """从 DB NE 真实状态重建主循环调度集合（重入续跑与完成判定的唯一状态源）。
+
+        映射规则（与主循环 node_statuses/node_handles 维护点对齐，消除两套判定漂移）：
+        - COMPLETED → completed + STATUS_COMPLETED + 从 output_data._next_handle 还原 handle；
+        - SKIPPED → skipped + STATUS_SKIPPED（真正未选中支，不放行下游）；
+        - FAILED 且 output_data._tolerated → tolerated + completed + STATUS_TOLERATED
+          （fallback 输出剥离 _tolerated 标记后入 node_outputs，与首跑内存值一致）；
+        - FAILED（非 tolerated）→ failed + STATUS_FAILED；
+        - WAITING_* → waiting + STATUS_WAITING；
+        - CANCELLED/TIMEOUT → 不可解析终态，node_statuses 不置（阻塞下游 → 死锁兜底）；
+        - PENDING/QUEUED/RUNNING / 无 NE → pending（重新调度）。
+
+        node_outputs 双键（UUID + short_id）保证模板变量解析（与 _collect_all_outputs 一致）。
+        """
+        node_outputs: dict[str, dict] = {}
+        completed_nodes: set[str] = set()
+        failed_nodes: set[str] = set()
+        skipped_nodes: set[str] = set()
+        tolerated_failures: set[str] = set()
+        waiting_nodes_mem: set[str] = set()
+        node_statuses: dict[str, str] = {}
+        node_handles: dict[str, str] = {}
+
+        ne_status: dict[str, str] = {}
+        async for ne in NodeExecution.objects.filter(
+            workflow_execution=execution,
+        ).select_related("node"):
+            nid = str(ne.node_id)
+            ne_status[nid] = ne.status
+            out = ne.output_data or {}
+            short_id = ne.node.short_id
+
+            if ne.status == NodeExecutionStatus.COMPLETED:
+                completed_nodes.add(nid)
+                node_statuses[nid] = STATUS_COMPLETED
+                node_outputs[nid] = out
+                if short_id:
+                    node_outputs[short_id] = out
+                handle = out.get("_next_handle")
+                if handle and handle != "default":
+                    node_handles[nid] = handle
+            elif ne.status == NodeExecutionStatus.SKIPPED:
+                skipped_nodes.add(nid)
+                node_statuses[nid] = STATUS_SKIPPED
+                if out:
+                    node_outputs[nid] = out
+                    if short_id:
+                        node_outputs[short_id] = out
+            elif ne.status == NodeExecutionStatus.FAILED:
+                if out.get("_tolerated"):
+                    tolerated_failures.add(nid)
+                    completed_nodes.add(nid)
+                    node_statuses[nid] = STATUS_TOLERATED
+                    clean = {k: v for k, v in out.items() if k != "_tolerated"}
+                    node_outputs[nid] = clean
+                    if short_id:
+                        node_outputs[short_id] = clean
+                    handle = out.get("_next_handle")
+                    if handle and handle != "default":
+                        node_handles[nid] = handle
+                else:
+                    failed_nodes.add(nid)
+                    node_statuses[nid] = STATUS_FAILED
+            elif ne.status in (
+                NodeExecutionStatus.WAITING_APPROVAL,
+                NodeExecutionStatus.WAITING_EVENT,
+                NodeExecutionStatus.WAITING_INPUT,
+            ):
+                waiting_nodes_mem.add(nid)
+                node_statuses[nid] = STATUS_WAITING
+            # CANCELLED/TIMEOUT：不可解析终态，node_statuses 不置 → 阻塞下游触发死锁兜底
+
+        pending_nodes: set[str] = set()
+        for nid in dag.nodes:
+            st = ne_status.get(nid)
+            if st is None or st in (
+                NodeExecutionStatus.PENDING,
+                NodeExecutionStatus.QUEUED,
+                NodeExecutionStatus.RUNNING,
+            ):
+                pending_nodes.add(nid)
+
+        return {
+            "node_outputs": node_outputs,
+            "completed_nodes": completed_nodes,
+            "failed_nodes": failed_nodes,
+            "skipped_nodes": skipped_nodes,
+            "tolerated_failures": tolerated_failures,
+            "node_statuses": node_statuses,
+            "node_handles": node_handles,
+            "waiting_nodes_mem": waiting_nodes_mem,
+            "pending_nodes": pending_nodes,
         }
 
-        if stats["pending"] == 0 and stats["running"] == 0 and stats["waiting"] == 0:
-            # All nodes are done
-            if stats["failed"] > 0:
-                await execution.amark_failed(f"失败节点: {stats['failed']}")
-                hook_execution = await self._load_execution_for_hooks(execution)
-                await self.hooks.trigger("execution_failed", execution=hook_execution)
-            else:
-                # Collect final outputs
-                final_output = await self._collect_final_outputs(execution)
-                await execution.amark_completed(final_output)
-                hook_execution = await self._load_execution_for_hooks(execution)
-                await self.hooks.trigger("execution_completed", execution=hook_execution)
+    async def _check_execution_complete(self, execution: WorkflowExecution) -> None:
+        """[兼容入口] 终端节点回调后的完成判定，委托重建 + _finalize_run_state 单一收口。
 
-    async def _check_dependencies_ready(
-        self,
-        execution: WorkflowExecution,
-        dag_node,
-    ) -> bool:
-        """Check if all forward dependencies of a node are completed."""
-        for dep_id in dag_node.forward_incoming:
-            dep_exec = await NodeExecution.objects.filter(
-                workflow_execution=execution,
-                node_id=dep_id,
-            ).afirst()
-
-            if not dep_exec or dep_exec.status != NodeExecutionStatus.COMPLETED:
-                return False
-
-        return True
+        回调续跑主路径已改为 ``_continue_after_node`` 重入主循环，不再调用本方法；保留供
+        外部历史调用方（test_hooks 等）使用，统一委托收口函数避免判定逻辑漂移。仅当无
+        pending/waiting 活跃节点时收口（保留原 all-done 语义）。
+        """
+        execution = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id)
+        dag = await DAG.afrom_workflow(execution.workflow)
+        state = await self._rebuild_state_from_db(execution, dag)
+        if state["pending_nodes"] or state["waiting_nodes_mem"]:
+            return
+        await self._finalize_run_state(
+            execution,
+            dag,
+            pending=state["pending_nodes"],
+            waiting=state["waiting_nodes_mem"],
+            failed=state["failed_nodes"],
+            completed=state["completed_nodes"],
+            node_statuses=state["node_statuses"],
+            node_handles=state["node_handles"],
+            node_outputs=state["node_outputs"],
+        )
 
     async def _collect_all_outputs(self, execution: WorkflowExecution) -> dict:
         """Collect outputs from all completed nodes.
