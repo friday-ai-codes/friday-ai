@@ -4,14 +4,14 @@ milestone: v0.4.0
 milestone_name: 工作流系统契约重构
 status: executing
 stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-13T15:08:44.583Z"
-last_activity: 2026-06-13 -- Phase 21 planning complete
+last_updated: "2026-06-13T15:08:45.016Z"
+last_activity: 2026-06-13 -- Phase 21 execution started
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 18
+  total_plans: 25
   completed_plans: 18
-  percent: 80
+  percent: 72
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.4.0 收敛工作流系统的编辑态与运行态契约——保存即合法、模板开箱能跑、变量所选即所得、执行状态真实可见。
-**Current focus:** Phase 20 — 保存即合法与模板修复
+**Current focus:** Phase 21 — 触发模型与执行可观测
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-13 -- Phase 21 planning complete
+Phase: 21 (触发模型与执行可观测) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 21
+Last activity: 2026-06-13 -- Phase 21 execution started
 
 Progress: [□□□□□] 0/5 phases
 
