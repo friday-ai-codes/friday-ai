@@ -13,6 +13,7 @@
 import pytest
 
 from projects.models import Project
+from tests.workflows.conftest import BranchNode
 from workflows.engine.dag import DAG, DAGNode
 from workflows.engine.routing import (
     STATUS_COMPLETED,
@@ -27,7 +28,14 @@ from workflows.engine.routing import (
     evaluate_node_readiness,
     select_successors,
 )
-from workflows.models import Workflow, WorkflowEdge, WorkflowNode
+from workflows.models import (
+    ExecutionStatus,
+    NodeExecution,
+    NodeExecutionStatus,
+    Workflow,
+    WorkflowEdge,
+    WorkflowNode,
+)
 
 # ============================================================================
 # Task 1: DAGNode.incoming_edges（django_db）
@@ -327,3 +335,79 @@ class TestComputeSkippable:
         state = RoutingState(statuses={"A": STATUS_FAILED}, handles={})
         result = compute_skippable(dag, state, {"B"})
         assert result == {"B": "skip_failed"}
+
+
+# ============================================================================
+# 集成测试：主循环按 routing 纯函数真路由（django_db + run_sync）
+# ============================================================================
+
+
+async def _ne_status(execution, name: str):
+    """按 node__name 查询 NodeExecution 状态（不存在返回 None）。"""
+    ne = await NodeExecution.objects.filter(workflow_execution=execution, node__name=name).afirst()
+    return ne.status if ne else None
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestBranchRoutingIntegration:
+    """条件分支主循环真路由 + 未选中支级联 skipped + 完成判定（消费 conftest 夹具）。"""
+
+    async def test_true_branch_selected_false_skipped(
+        self, engine, engine_test_nodes, branch_workflow
+    ):
+        """Test 1：_next_handle="true" → TrueSide COMPLETED、FalseSide SKIPPED、Join COMPLETED。"""
+        BranchNode._next_handle = "true"
+        execution = await engine.start_execution(branch_workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "Branch") == NodeExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "TrueSide") == NodeExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "FalseSide") == NodeExecutionStatus.SKIPPED
+        # 菱形汇合一活一死照常执行
+        assert await _ne_status(execution, "Join") == NodeExecutionStatus.COMPLETED
+
+    async def test_false_branch_selected_true_skipped(
+        self, engine, engine_test_nodes, branch_workflow
+    ):
+        """Test 2（对称）：_next_handle="false" → FalseSide COMPLETED、TrueSide SKIPPED、Join COMPLETED。"""
+        BranchNode._next_handle = "false"
+        execution = await engine.start_execution(branch_workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "FalseSide") == NodeExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "TrueSide") == NodeExecutionStatus.SKIPPED
+        assert await _ne_status(execution, "Join") == NodeExecutionStatus.COMPLETED
+
+    async def test_skipped_counts_toward_completion_no_pending_residue(
+        self, engine, engine_test_nodes, branch_workflow
+    ):
+        """Test 3：skipped 参与完成判定——执行 COMPLETED，全部 NE 终态（无 PENDING 残留）。"""
+        BranchNode._next_handle = "true"
+        execution = await engine.start_execution(branch_workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        terminal = {
+            NodeExecutionStatus.COMPLETED,
+            NodeExecutionStatus.SKIPPED,
+            NodeExecutionStatus.FAILED,
+        }
+        statuses = [
+            ne.status async for ne in NodeExecution.objects.filter(workflow_execution=execution)
+        ]
+        assert statuses, "应有节点执行记录"
+        assert all(s in terminal for s in statuses), f"存在非终态 NE: {statuses}"
+        assert NodeExecutionStatus.PENDING not in statuses
+
+    async def test_no_matching_handle_cascades_all_skipped(
+        self, engine, engine_test_nodes, branch_workflow
+    ):
+        """Test 4：无匹配 handle 且无 default 边 → 两支 + Join 全 SKIPPED，执行 COMPLETED（无死锁/无 running 残留）。"""
+        BranchNode._next_handle = "nonexistent_handle"
+        execution = await engine.start_execution(branch_workflow, run_sync=True)
+
+        assert execution.status == ExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "Branch") == NodeExecutionStatus.COMPLETED
+        assert await _ne_status(execution, "TrueSide") == NodeExecutionStatus.SKIPPED
+        assert await _ne_status(execution, "FalseSide") == NodeExecutionStatus.SKIPPED
+        assert await _ne_status(execution, "Join") == NodeExecutionStatus.SKIPPED
