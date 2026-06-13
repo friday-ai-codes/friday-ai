@@ -77,6 +77,13 @@ from workflows.nodes.registry import NodeRegistry
 from workflows.templates.loader import rewrite_template_refs
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
+from workflows.validation import WorkflowGraphValidator
+
+# 单边 CRUD handle 子集校验只关心边相关 issue（节点归属/handle），其余结构性
+# 问题（环/入口/孤立）由整图 bulk-update / dry-run 路径负责（VAL-01）。
+_EDGE_HANDLE_REASONS = frozenset(
+    {"edge_node_missing", "invalid_source_handle", "invalid_target_handle"}
+)
 
 logger = structlog.get_logger()
 
@@ -227,6 +234,39 @@ def _resolve_short_ids(
     return final_short_ids, rewrite_candidates
 
 
+def _node_to_validator_dict(node: WorkflowNode) -> dict:
+    """ORM 节点 → validator 节点 dict（同带 UUID id 与最终 short_id）。"""
+    return {
+        "id": str(node.id),
+        "short_id": node.short_id,
+        "node_type": node.node_type,
+        "config": node.config or {},
+    }
+
+
+def _edge_to_validator_dict(edge: WorkflowEdge) -> dict:
+    """ORM 边 → validator 边 dict（UUID 空间）。"""
+    return {
+        "id": str(edge.id),
+        "source_node_id": str(edge.source_node_id),
+        "target_node_id": str(edge.target_node_id),
+        "source_handle": edge.source_handle,
+        "target_handle": edge.target_handle,
+    }
+
+
+def _check_edge_handles(node_dicts: list[dict], edge_dict: dict) -> None:
+    """单边 handle/归属子集校验：仅取边相关 issue，命中即 400（Pitfall 1 white-list）。
+
+    复用整图 WorkflowGraphValidator，过滤出 edge_node_missing /
+    invalid_source_handle / invalid_target_handle，避免单边路径误报环/入口/孤立。
+    """
+    result = WorkflowGraphValidator().validate(node_dicts, [edge_dict])
+    relevant = [issue for issue in result["errors"] if issue["reason"] in _EDGE_HANDLE_REASONS]
+    if relevant:
+        raise ValidationError({"errors": relevant})
+
+
 def _bulk_update_nodes_and_edges(
     workflow: Workflow,
     nodes_data: list,
@@ -301,6 +341,30 @@ def _bulk_update_nodes_and_edges(
                     workflow_id=str(workflow.id),
                     id_map=id_map,
                 )
+
+        # 写库前统一图校验（VAL-02 / Pitfall 6）：在 short_id 收敛 + 引用重写之后、
+        # commit（edges 重建/返回）之前，用最终落库状态构造校验输入。节点 dict 同时
+        # 带 UUID id（edge 归属/handle）与最终 short_id（nodes.* 变量）两套 id 空间。
+        # edges_data 非空时用待落库的请求边；为空时用 DB 现状边（本次保存不动边）。
+        validator_nodes = [_node_to_validator_dict(n) for n in workflow.nodes.all()]
+        if edges_data:
+            validator_edges = [
+                {
+                    "id": e.get("id"),
+                    "source_node_id": e.get("source_node_id"),
+                    "target_node_id": e.get("target_node_id"),
+                    "source_handle": e.get("source_handle"),
+                    "target_handle": e.get("target_handle"),
+                }
+                for e in edges_data
+            ]
+        else:
+            validator_edges = [_edge_to_validator_dict(e) for e in workflow.edges.all()]
+
+        result = WorkflowGraphValidator().validate(validator_nodes, validator_edges)
+        if result["errors"]:
+            # ValidationError 在 atomic 内抛出 → 事务回滚（不落库）→ DRF 400 结构化
+            raise ValidationError({"errors": result["errors"], "warnings": result["warnings"]})
 
         if edges_data:
             workflow.edges.all().delete()
@@ -474,6 +538,19 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
 
         project = await aget_object_or_404(Project, id=space_id)
 
+        # 入库前统一图校验（VAL-02）：解析出的 nodes/edges 与保存同源调 validator。
+        # 导入数据的 nodes 自带 id/short_id/node_type/config，edges 用 source_node_id/
+        # target_node_id（同 to_json 形态），id 空间在导入数据内自洽。
+        import_data = serializer.validated_data["data"]
+        validation = await sync_to_async(WorkflowGraphValidator().validate)(
+            import_data.get("nodes", []), import_data.get("edges", [])
+        )
+        if validation["errors"]:
+            return Response(
+                {"errors": validation["errors"], "warnings": validation["warnings"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             workflow = await Workflow.afrom_json(
                 data=serializer.validated_data["data"],
@@ -567,6 +644,18 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         source = await aget_object_or_404(WorkflowNode, id=source_id, workflow=workflow)
         target = await aget_object_or_404(WorkflowNode, id=target_id, workflow=workflow)
 
+        # handle 子集校验（VAL-01 单边路径）：非 default handle 必须在端口集合中
+        _check_edge_handles(
+            [_node_to_validator_dict(source), _node_to_validator_dict(target)],
+            {
+                "id": None,
+                "source_node_id": str(source_id),
+                "target_node_id": str(target_id),
+                "source_handle": data.get("source_handle"),
+                "target_handle": data.get("target_handle"),
+            },
+        )
+
         edge = await WorkflowEdge.objects.acreate(
             workflow=workflow,
             source_node=source,
@@ -599,6 +688,23 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         partial = request.method == "PATCH"
         serializer = WorkflowEdgeSerializer(edge, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+
+        # handle 子集校验（VAL-01 单边路径）：用更新后的 handle + 两端节点做校验。
+        # source_node/target_node 为 read_only，归属不变；仅 handle 可能改动。
+        validated = serializer.validated_data
+        source = await WorkflowNode.objects.aget(id=edge.source_node_id)
+        target = await WorkflowNode.objects.aget(id=edge.target_node_id)
+        _check_edge_handles(
+            [_node_to_validator_dict(source), _node_to_validator_dict(target)],
+            {
+                "id": str(edge.id),
+                "source_node_id": str(edge.source_node_id),
+                "target_node_id": str(edge.target_node_id),
+                "source_handle": validated.get("source_handle", edge.source_handle),
+                "target_handle": validated.get("target_handle", edge.target_handle),
+            },
+        )
+
         # KEEP: serializer 继承自 rest_framework，不支持 asave()
         await sync_to_async(serializer.save)()
         return Response(serializer.data)
@@ -630,6 +736,48 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         # KEEP: WorkflowSerializer 内部 get_execution_count/get_last_execution 触发 DB 查询
         data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)()
         return Response(data)
+
+    # =========================================================================
+    # Dry-run Validation (D-04)
+    # =========================================================================
+
+    @action(detail=True, methods=["post"], url_path="validate")
+    async def validate(self, request: Request, pk=None) -> Response:
+        """dry-run 校验已存 workflow（D-04 detail=True）。
+
+        入参可选 ``{nodes, edges}``（校验编辑中草图）；二者皆缺省时取该 workflow
+        DB 现状构造校验输入。走 WorkflowPermission（aget_object）+ 作用域过滤，
+        与真实保存调同一 WorkflowGraphValidator（Pitfall 5 同源），返回
+        ``{errors, warnings}`` 且不写库。
+        """
+        workflow = await self.aget_object()
+
+        nodes = request.data.get("nodes")
+        edges = request.data.get("edges")
+
+        if nodes is None and edges is None:
+            # 缺省取 DB 现状（ORM 迭代走线程）
+            def _load_current() -> tuple[list[dict], list[dict]]:
+                node_dicts = [_node_to_validator_dict(n) for n in workflow.nodes.all()]
+                edge_dicts = [_edge_to_validator_dict(e) for e in workflow.edges.all()]
+                return node_dicts, edge_dicts
+
+            nodes, edges = await sync_to_async(_load_current)()
+
+        result = await sync_to_async(WorkflowGraphValidator().validate)(nodes or [], edges or [])
+        return Response(result)
+
+    @action(detail=False, methods=["post"], url_path="validate")
+    async def validate_draft(self, request: Request) -> Response:
+        """dry-run 校验未持久化草图（D-04 detail=False）。
+
+        必填 ``{nodes, edges}``，仅校验请求体（不读库，无越权面），与保存同源调
+        WorkflowGraphValidator，返回 ``{errors, warnings}`` 且不写库。
+        """
+        nodes = request.data.get("nodes", [])
+        edges = request.data.get("edges", [])
+        result = await sync_to_async(WorkflowGraphValidator().validate)(nodes, edges)
+        return Response(result)
 
     # =========================================================================
     # Template Actions
