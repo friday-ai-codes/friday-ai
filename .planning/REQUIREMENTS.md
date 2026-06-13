@@ -14,9 +14,9 @@
 
 ### 内置模板（TPL）
 
-- [ ] **TPL-01**: 用户从任一内置模板创建工作流后，不修改任何配置即可成功执行到业务预期结果（修正 `daily_summary` 引用不存在的 `output` 字段、`code_review_pipeline` 节点链路与 `ai_code_review` 实现不符等已知断裂）
-- [ ] **TPL-02**: 模板自动化校验测试覆盖：每个模板的节点 type 存在于 registry、config 必填字段齐全、`{{ }}` 变量引用的节点 ID 与字段在上游输出 schema 中存在、edge 的 source/target handle 与节点端口定义一致
-- [ ] **TPL-03**: 模板创建（loader）在实例化前执行与保存相同的图校验，非法模板拒绝创建并返回结构化错误
+- [x] **TPL-01**: 用户从任一内置模板创建工作流后，不修改任何配置即可成功执行到业务预期结果（修正 `daily_summary` 引用不存在的 `output` 字段、`code_review_pipeline` 节点链路与 `ai_code_review` 实现不符等已知断裂）
+- [x] **TPL-02**: 模板自动化校验测试覆盖：每个模板的节点 type 存在于 registry、config 必填字段齐全、`{{ }}` 变量引用的节点 ID 与字段在上游输出 schema 中存在、edge 的 source/target handle 与节点端口定义一致
+- [x] **TPL-03**: 模板创建（loader）在实例化前执行与保存相同的图校验，非法模板拒绝创建并返回结构化错误
 
 ### 节点定义单一事实源（SSOT）
 
@@ -26,9 +26,9 @@
 
 ### 保存校验（VAL）
 
-- [ ] **VAL-01**: 后端提供统一 `WorkflowGraphValidator`（DAG 环/入口/孤立节点、edge 节点归属与 handle 合法性、节点 config schema、变量引用可解析性），bulk-update、单节点/边 CRUD、导入、模板创建共用同一校验
-- [ ] **VAL-02**: 保存非法工作流（含新建节点 config 不合 schema）返回结构化错误（节点 id + 字段路径 + 原因），不再"能保存、一执行就失败"
-- [ ] **VAL-03**: 前端保存前可调用 dry-run 校验接口，IssuesPanel 展示真实校验警告/错误（当前 `useWorkflowValidationStore` 无任何调用方，面板永不出现）
+- [x] **VAL-01**: 后端提供统一 `WorkflowGraphValidator`（DAG 环/入口/孤立节点、edge 节点归属与 handle 合法性、节点 config schema、变量引用可解析性），bulk-update、单节点/边 CRUD、导入、模板创建共用同一校验
+- [x] **VAL-02**: 保存非法工作流（含新建节点 config 不合 schema）返回结构化错误（节点 id + 字段路径 + 原因），不再"能保存、一执行就失败"
+- [x] **VAL-03**: 前端保存前可调用 dry-run 校验接口，IssuesPanel 展示真实校验警告/错误（当前 `useWorkflowValidationStore` 无任何调用方，面板永不出现）
 
 ### 执行引擎（ENG）
 
@@ -85,12 +85,12 @@
 | SSOT-01 | Phase 19 | Complete |
 | SSOT-02 | Phase 19 | Complete |
 | SSOT-03 | Phase 19 | Complete |
-| VAL-01 | Phase 20 | Pending |
-| VAL-02 | Phase 20 | Pending |
-| VAL-03 | Phase 20 | Pending |
-| TPL-01 | Phase 20 | Pending |
-| TPL-02 | Phase 20 | Pending |
-| TPL-03 | Phase 20 | Pending |
+| VAL-01 | Phase 20 | Complete |
+| VAL-02 | Phase 20 | Complete |
+| VAL-03 | Phase 20 | Complete |
+| TPL-01 | Phase 20 | Complete |
+| TPL-02 | Phase 20 | Complete |
+| TPL-03 | Phase 20 | Complete |
 | TRIG-01 | Phase 21 | Pending |
 | TRIG-02 | Phase 21 | Pending |
 | TRIG-03 | Phase 21 | Pending |
