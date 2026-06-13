@@ -202,10 +202,15 @@ class WorkflowGraphValidator:
         """nodes.* 变量静态校验（short_id 空间）。
 
         D-03 / Pitfall 2：仅处理 ``nodes.`` 前缀（input/trigger/global/context/config/$
-        跳过）；short_id 不存在 → node_not_found；上游输出端口 schema 全为 None 时只校验
+        跳过）；标识符不存在 → node_not_found；上游输出端口 schema 全为 None 时只校验
         节点存在性、字段层跳过；首段字段不在所有输出端口 schema properties 并集 → field_not_found。
+
+        节点标识符同时接受 short_id 与 UUID 两套空间：运行态既支持
+        ``{{nodes.<short_id>.*}}`` 也支持 ``{{nodes.<uuid>.*}}``（bulk-update 引用重写
+        亦保留 UUID 形式），故 UUID 形式不得误判为 node_not_found（VAL-02 不误拒）。
         """
         short_by_id = {str(nd["short_id"]): nd for nd in nodes if nd.get("short_id")}
+        id_by_uuid = {str(nd["id"]): nd for nd in nodes if nd.get("id") is not None}
 
         for nd in nodes:
             config = nd.get("config", {})
@@ -221,7 +226,7 @@ class WorkflowGraphValidator:
                         continue
 
                     short_id = parts[1]
-                    target_nd = short_by_id.get(short_id)
+                    target_nd = short_by_id.get(short_id) or id_by_uuid.get(short_id)
                     if target_nd is None:
                         errors.append(
                             ValidationIssue(

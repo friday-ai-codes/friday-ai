@@ -297,14 +297,22 @@ def _bulk_update_nodes_and_edges(
             if node_id:
                 node = WorkflowNode.objects.filter(id=node_id, workflow=workflow).first()
                 if node:
-                    serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
+                    # config 校验交由下方 WorkflowGraphValidator 统一产出结构化 errors
+                    serializer = WorkflowNodeSerializer(
+                        node,
+                        data=node_data,
+                        partial=True,
+                        context={"skip_config_validation": True},
+                    )
                     serializer.is_valid(raise_exception=True)
                     serializer.save()
                     if node.short_id != final_short_id:
                         node.short_id = final_short_id
                         node.save(update_fields=["short_id"])
                 else:
-                    serializer = WorkflowNodeCreateSerializer(data=node_data)
+                    serializer = WorkflowNodeCreateSerializer(
+                        data=node_data, context={"skip_config_validation": True}
+                    )
                     serializer.is_valid(raise_exception=True)
                     node = WorkflowNode.objects.create(
                         id=node_id,
@@ -314,7 +322,9 @@ def _bulk_update_nodes_and_edges(
                     )
                 existing_node_ids.add(str(node_id))
             else:
-                serializer = WorkflowNodeCreateSerializer(data=node_data)
+                serializer = WorkflowNodeCreateSerializer(
+                    data=node_data, context={"skip_config_validation": True}
+                )
                 serializer.is_valid(raise_exception=True)
                 node = WorkflowNode.objects.create(
                     workflow=workflow, short_id=final_short_id, **serializer.validated_data

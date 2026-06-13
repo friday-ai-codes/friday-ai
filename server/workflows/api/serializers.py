@@ -226,6 +226,12 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs: dict) -> dict:
         """Validate node configuration against schema."""
+        # bulk-update 路径由 WorkflowGraphValidator 统一做 config 校验并产出结构化
+        # {errors:[...]}（VAL-02），跳过此处的单字段校验以免提前以 {"config":...}
+        # 形态拦截；单节点 node_detail 路径不传该 context，校验照常生效。
+        if self.context.get("skip_config_validation"):
+            return attrs
+
         node_type = attrs.get("node_type") or (self.instance.node_type if self.instance else None)
         config = attrs.get("config", {})
 
@@ -269,8 +275,12 @@ class WorkflowNodeCreateSerializer(serializers.ModelSerializer):
         """校验节点 config 是否符合 schema（闭合 create 路径缺口）。
 
         与 WorkflowNodeSerializer.validate 同源：复用 BaseNode.validate_config
-        （jsonschema）。create 路径 node_type 恒在 attrs 中。
+        （jsonschema）。create 路径 node_type 恒在 attrs 中。bulk-update 路径传
+        ``skip_config_validation`` context，改由 WorkflowGraphValidator 统一校验。
         """
+        if self.context.get("skip_config_validation"):
+            return attrs
+
         node_type = attrs.get("node_type")
         config = attrs.get("config", {})
 
