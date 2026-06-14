@@ -153,7 +153,7 @@ def test_build_points_returns_tuple() -> None:
 
 
 def test_build_points_registry_row_fields_complete() -> None:
-    """registry_rows 每行必须含 6 个字段（含 implementation 新增的 branch_name）。"""
+    """registry_rows 每行必须含 8 个字段（含 branch_name + IDX-02 行号 line_start/line_end）。"""
     chunks = [_make_chunk(content="A", file_path="x.py")]
     embeddings = [[0.1]]
     _, registry_rows = IndexerService._build_points(
@@ -167,6 +167,8 @@ def test_build_points_registry_row_fields_complete() -> None:
         "file_path",
         "chunk_index",
         "branch_name",
+        "line_start",
+        "line_end",
     }
     assert row["repository_id"] == "repo-A"
     assert row["file_path"] == "x.py"

@@ -3322,6 +3322,11 @@ class IndexerService:
                     "file_path": chunk.file_path,
                     "chunk_index": chunk_index,
                     "branch_name": _norm_branch,
+                    # 行号回填（IDX-02）：直接取 CodeChunk 既有 1-based 闭区间属性，
+                    # 与上方写入 Qdrant payload 的 start_line/end_line 同源，保证
+                    # payload 与 ChunkRegistry 行号一致。per D-02。
+                    "line_start": chunk.start_line,
+                    "line_end": chunk.end_line,
                 }
             )
 
