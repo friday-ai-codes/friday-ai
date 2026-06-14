@@ -172,9 +172,7 @@ def mock_subagent_session_create(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _fake_sub_aupdate_or_create(**kwargs: Any) -> tuple[Any, bool]:
         return (SubAgentSession(session_id=kwargs.get("session_id", "")), True)
 
-    monkeypatch.setattr(
-        SubAgentSession.objects, "aupdate_or_create", _fake_sub_aupdate_or_create
-    )
+    monkeypatch.setattr(SubAgentSession.objects, "aupdate_or_create", _fake_sub_aupdate_or_create)
 
 
 @pytest.fixture
@@ -252,10 +250,7 @@ async def test_dispatch_metadata_includes_tools_endpoint(
 
     assert len(mock_dispatcher) == 1, "应恰好触发一次 dispatch"
     meta = mock_dispatcher[0].metadata
-    assert (
-        meta["env_FRIDAY_TASK_TOOLS_ENDPOINT"]
-        == "https://friday.example.com/api/tools/execute/"
-    )
+    assert meta["env_FRIDAY_TASK_TOOLS_ENDPOINT"] == "https://friday.example.com/api/tools/execute/"
 
 
 # =========================================================================
@@ -383,10 +378,100 @@ async def test_dispatch_never_reads_access_token_plaintext(
         log=log,
     )
 
-    assert calls == [], (
-        f"dispatch 路径不得查询 AccessToken 取明文（PAT-02），实际调用：{calls}"
-    )
+    assert calls == [], f"dispatch 路径不得查询 AccessToken 取明文（PAT-02），实际调用：{calls}"
     # 兜底：metadata 中不得出现任何 friday_pat_ 来自 DB 的注入。
     assert len(mock_dispatcher) == 1
     meta_text = str(mock_dispatcher[0].metadata)
     assert "friday_pat_" not in meta_text
+
+
+# =========================================================================
+# RTOOL follow-up：实时明文 PAT 通道接入（contextvar → ExecutionContext 瞬态字段）
+# =========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_resolve_user_pat_reads_execution_context_field(
+    settings: Any,
+    execution_context: Any,
+    mock_dispatcher: list[Any],
+    mock_subagent_session_create: None,
+    mock_fetch_repositories_with_credential: None,
+    mock_anthropic_resolved: None,
+    log: Any,
+) -> None:
+    """GREEN：明文经 ExecutionContext.user_pat_plaintext 真实下传 → 注入 USER_TOKEN。
+
+    不 monkeypatch _resolve_user_pat，验证 follow-up 接入后解析器真实读取上下文瞬态字段
+    （通道：请求 ContextVar → start_execution → execution 瞬态属性 → ExecutionContext）。
+    """
+    settings.FRIDAY_BASE_URL = "https://friday.example.com"
+    execution_context.user_pat_plaintext = "friday_pat_REALCHANNEL"
+
+    from workflows.nodes.ai.coding import AICodingNode
+
+    node = AICodingNode()
+    await node._execute_with_branch(
+        context=execution_context, branch_name="feat/test-branch", log=log
+    )
+
+    assert len(mock_dispatcher) == 1
+    assert mock_dispatcher[0].metadata["env_FRIDAY_TASK_USER_TOKEN"] == "friday_pat_REALCHANNEL"
+
+
+def test_pat_context_var_roundtrip() -> None:
+    """ContextVar 通道 set/get/reset 语义；reset 后回到无明文（空串）。"""
+    from access_tokens.context import get_request_pat, reset_request_pat, set_request_pat
+
+    assert get_request_pat() == ""
+    token = set_request_pat("friday_pat_CTX")
+    assert get_request_pat() == "friday_pat_CTX"
+    reset_request_pat(token)
+    assert get_request_pat() == ""
+    # 空写入等价无来源。
+    set_request_pat("")
+    assert get_request_pat() == ""
+
+
+def test_user_pat_plaintext_is_transient_not_persisted_field() -> None:
+    """PAT-02 守护：user_pat_plaintext 仅运行时瞬态，绝不是 WorkflowExecution 的 DB 字段。"""
+    from workflows.models.execution import WorkflowExecution
+
+    field_names = {f.name for f in WorkflowExecution._meta.get_fields()}
+    assert "user_pat_plaintext" not in field_names
+    assert "_user_pat_plaintext" not in field_names
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_dispatch_forwards_request_pat_to_start_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    workflow: Any,
+) -> None:
+    """触发边界：dispatch 从请求 ContextVar 取明文并以 user_pat= 转发给 start_execution。"""
+    from access_tokens.context import reset_request_pat, set_request_pat
+    from workflows.triggers.context import TriggerContext
+    from workflows.triggers.dispatcher import TriggerDispatcher
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_start_execution(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+
+        class _Exec:
+            id = uuid4()
+
+        return _Exec()
+
+    dispatcher = TriggerDispatcher()
+    monkeypatch.setattr(dispatcher.engine, "start_execution", _fake_start_execution)
+
+    context = TriggerContext(trigger_type="manual", raw_payload={}, workflow=workflow)
+    token = set_request_pat("friday_pat_FROM_REQUEST")
+    try:
+        await dispatcher.dispatch_single(context)
+    finally:
+        reset_request_pat(token)
+
+    assert captured.get("user_pat") == "friday_pat_FROM_REQUEST"
