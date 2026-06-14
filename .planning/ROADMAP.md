@@ -85,7 +85,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 24-02-PLAN.md — run_full_index 后台触发 + 可选 LLM 二分类（graceful 退化） ✅ 2026-06-15
-- [ ] 24-03-PLAN.md — REST API：list / accept（建 ai_suggested 规则）/ dismiss，绝不静默删
+- [x] 24-03-PLAN.md — REST API：list / accept（建 ai_suggested 规则）/ dismiss，绝不静默删 ✅ 2026-06-15
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -115,7 +115,7 @@ Plans:
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | In progress (2/4) | — |
+| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | In progress (3/4) | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
