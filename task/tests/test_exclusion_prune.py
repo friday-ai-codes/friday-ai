@@ -57,6 +57,23 @@ class TestPruneExcluded:
         assert keep_readme.exists()
         assert deleted == 4
 
+    def test_bare_glob_prunes_subdir_secrets(self, tmp_path: Path) -> None:
+        # BL-01：无分隔符 glob 按 basename 命中任意子目录，子目录密钥也被 prune。
+        from core.exclusion import prune_excluded
+
+        _write(tmp_path, "server/.env", "SECRET=1")
+        _write(tmp_path, "web/.env", "SECRET=2")
+        _write(tmp_path, "deploy/id_rsa", "key")
+        keep = _write(tmp_path, "server/.env.example", "TEMPLATE")
+
+        deleted = prune_excluded(tmp_path, _rules((".env", "glob"), ("id_rsa", "glob")))
+
+        assert not (tmp_path / "server" / ".env").exists()
+        assert not (tmp_path / "web" / ".env").exists()
+        assert not (tmp_path / "deploy" / "id_rsa").exists()
+        assert keep.exists()
+        assert deleted == 3
+
     def test_git_dir_preserved(self, tmp_path: Path) -> None:
         from core.exclusion import prune_excluded
 
@@ -191,7 +208,9 @@ class TestGitOpsSetupPrune:
 
         monkeypatch.setattr(ops, "_clone_repo", _fake_clone)
         monkeypatch.setattr(ops, "_checkout_branch", _fake_checkout)
-        monkeypatch.setattr(exclusion.os, "remove", lambda _p: (_ for _ in ()).throw(OSError("nope")))
+        monkeypatch.setattr(
+            exclusion.os, "remove", lambda _p: (_ for _ in ()).throw(OSError("nope"))
+        )
 
         with pytest.raises(ExclusionPruneError):
             await ops.setup()
