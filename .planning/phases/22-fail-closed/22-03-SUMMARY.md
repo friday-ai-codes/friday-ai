@@ -120,10 +120,18 @@ Each task committed atomically (TDD RED → GREEN where applicable):
 - **Verification:** 全量 retrieval 套件 157 passed。
 - **Committed in:** 0e9b80a26
 
+**3. [Rule 1 - Bug] e2e callsite 测试 mock 用非法 repo_id 触发兜底 fail-closed**
+- **Found during:** Task 2 收尾全量回归
+- **Issue:** 既有 `tests/services/retrieval/test_hybrid_e2e_callsites.py` 的 mock L3 item 硬编码 `repository_id="repo-a"`（非 UUID）；Task 2 在 `search_repository_code` 新增的兜底过滤按 item.repository_id 预取匹配器，非法 id → `build_matcher_for_repo` 失败 → fail-closed 丢弃全部结果 → `test_agent_search_repository_code_returns_l3_results` 断言空。
+- **Fix:** mock helper `_l3_snapshot_with_items(repo_id)` 改用真实 repo_id（生产路径 search_rag 本就写真实 id，故仅 mock 数据不真实）。
+- **Files modified:** server/tests/services/retrieval/test_hybrid_e2e_callsites.py
+- **Verification:** e2e 5 passed + retrieval 全量 165 passed。
+- **Committed in:** 7229ba3e0
+
 ---
 
-**Total deviations:** 2 auto-fixed（1 测试 bug，1 阻塞性提交遗漏）
-**Impact on plan:** 均为兑现 plan acceptance 所必需，无范围蔓延。
+**Total deviations:** 3 auto-fixed（2 测试 bug / mock 数据，1 阻塞性提交遗漏）
+**Impact on plan:** 均为兑现 plan acceptance / 保持既有契约所必需，无范围蔓延。兜底 fail-closed 语义未削弱（生产路径 repository_id 恒为真实 UUID）。
 
 ## Issues Encountered
 - 执行期出现 reflog 抖动（连续提交 + 一次 no-op reset）一度被误判为「并发执行器」；经澄清确认全部为本会话自身活动，工作树独占。
@@ -151,7 +159,7 @@ Each task committed atomically (TDD RED → GREEN where applicable):
 
 - Files: test_retrieval_exclusion.py / test_tools_exclusion.py / rag_search.py / hybrid_search.py / chat_tools.py / space_tools.py / 22-03-SUMMARY.md — all FOUND.
 - Commits: a4ea109c0 / d77d348e1 / 0e9b80a26 / 1ca1793ca / 5b3c2829b / 481ba91d6 — all FOUND.
-- Tests: 15 passed（`uv run pytest tests/services/test_retrieval_exclusion.py tests/agents/test_tools_exclusion.py`）；retrieval 全量 157 passed（无 byte-eq 漂移）。
+- Tests: 15 passed（`uv run pytest tests/services/test_retrieval_exclusion.py tests/agents/test_tools_exclusion.py`）；retrieval 全量 + 两守护文件 165 passed / 1 skipped（无 byte-eq 漂移）。
 - Lint: `ruff format` 已应用（无改动）；`ruff check` 干净。
 
 ---
