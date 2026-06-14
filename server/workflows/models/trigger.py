@@ -1,8 +1,12 @@
 """WorkflowTrigger model for event-based workflow triggering."""
 
+import re
 import uuid
 
+import structlog
 from django.db import models
+
+logger = structlog.get_logger()
 
 
 class TriggerEventType(models.TextChoices):
@@ -125,6 +129,15 @@ class WorkflowTrigger(models.Model):
     def _matches_filter(self, payload: dict) -> bool:
         """检查 payload 是否满足过滤条件
 
+        filter_config 结构（向后兼容）：
+        - 普通键（如 ``project_key`` / ``cur_work_item_status.state_key``）：正向 AND
+          匹配，list 值走成员匹配、标量走相等匹配。
+        - ``_include`` / ``_exclude`` 两个以 ``_`` 开头的特殊子结构：负向 / 白名单过滤，
+          正向遍历时必须跳过，避免被当作普通字段路径误匹配。
+
+        匹配顺序：先跑正向 AND；再跑 ``_exclude``（命中任一即返回 False）；最后跑
+        ``_include.project_keys`` 白名单（非空时要求 payload.project_key 在其中）。
+
         Args:
             payload: Webhook payload
 
@@ -134,7 +147,10 @@ class WorkflowTrigger(models.Model):
         if not self.filter_config:
             return True
 
+        # 正向 AND：跳过 _include / _exclude 等以 _ 开头的特殊键
         for key, expected_value in self.filter_config.items():
+            if key.startswith("_"):
+                continue
             actual_value = self._get_nested_value(payload, key)
 
             if isinstance(expected_value, list):
@@ -143,6 +159,51 @@ class WorkflowTrigger(models.Model):
                     return False
             elif actual_value != expected_value:
                 return False
+
+        # 负向 _exclude：命中任一规则即不匹配
+        exclude = self.filter_config.get("_exclude") or {}
+        if exclude and not self._passes_exclude(payload, exclude):
+            return False
+
+        # 白名单 _include.project_keys：非空时要求 project_key 在白名单内
+        include = self.filter_config.get("_include") or {}
+        include_project_keys = include.get("project_keys") or []
+        if include_project_keys and payload.get("project_key") not in include_project_keys:
+            return False
+
+        return True
+
+    def _passes_exclude(self, payload: dict, exclude: dict) -> bool:
+        """检查 payload 是否通过 _exclude 黑名单（True=通过，未命中任何排除规则）。
+
+        排除规则（命中任一 → 返回 False）：
+        - ``project_keys``：payload.project_key 在黑名单中；
+        - ``work_item_pattern``：payload.name 含该子串；
+        - ``work_item_regex``：payload.name 匹配该正则（非法正则记 warning 并视为
+          未命中该规则，绝不抛异常打断匹配）。
+        """
+        project_key = payload.get("project_key")
+        exclude_project_keys = exclude.get("project_keys") or []
+        if project_key is not None and project_key in exclude_project_keys:
+            return False
+
+        name = payload.get("name") or ""
+
+        pattern = exclude.get("work_item_pattern")
+        if pattern and pattern in name:
+            return False
+
+        regex = exclude.get("work_item_regex")
+        if regex:
+            try:
+                if re.search(regex, name):
+                    return False
+            except re.error:
+                logger.warning(
+                    "trigger_exclude_regex_invalid",
+                    trigger_id=str(self.id),
+                    regex=regex,
+                )
 
         return True
 
