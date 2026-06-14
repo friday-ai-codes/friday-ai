@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: completed
+status: executing
 stopped_at: 完成 23-04——web/src/api/reconcile.ts（reconcileApi + ReconcileReport/CleanupDispatch/CleanupRun 类型，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 + degraded『对账不可信』警示并禁用清理 W3 + 普通/敏感双入口 §9.2 + 敏感强确认含不可逆/不承诺 git/备份物理消失 §9.1 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun.sensitive unscrubbed/caveat W1/W2）+ 仓库详情页挂载 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5）、eslint 0 错；原子提交 51cd36867 / baa35af01
-last_updated: "2026-06-14T16:21:40.233Z"
-last_activity: 2026-06-14
+last_updated: "2026-06-14T16:37:51.268Z"
+last_activity: 2026-06-14 -- Phase 24 execution started
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 10
+  total_plans: 14
   completed_plans: 11
   percent: 40
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
-**Current focus:** Phase 23 — 清理对账（普通/敏感两模式）
+**Current focus:** Phase 24 — 敏感文件 AI 识别建议名单
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
-Status: Phase 23 complete — next Phase 24 (敏感文件 AI 识别建议名单) Not started
-Last activity: 2026-06-14
+Phase: 24 (敏感文件 AI 识别建议名单) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 24
+Last activity: 2026-06-14 -- Phase 24 execution started
 
 ## Milestone Overview (v0.5.0)
 
