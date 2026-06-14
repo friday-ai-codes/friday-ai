@@ -3388,6 +3388,36 @@ async def _run_sensitive_detection(
         )
 
 
+async def _run_commit_index(repository_id: str, repo_path: str) -> None:
+    """IDX-01（25-04）：在临时克隆目录删除**之前**同步触发 commit 历史索引。
+
+    与 ``_run_sensitive_detection`` 同款时序与 fail-safe 范式（BL-01 修复经验）：必须在
+    ``clone_and_index_repository`` 的 ``finally`` 执行 ``shutil.rmtree(temp_dir)`` 之前 await
+    完成——``index_commits`` 需读真实克隆的 git 历史（git log / diff-tree），await 它保证读到
+    的是真实克隆目录而非已删除/空目录（绝不后台派发去遍历一个即将被删除的目录）。
+
+    全量与增量索引均流经此挂接点（``index_commits`` 内部按 ``commit_index_boundary_sha``
+    边界自行区分首轮/增量）。整段 best-effort，任何异常仅记 warning，commit 索引失败/缺供应商
+    绝不阻断既有索引 success 终态（对齐 D-04/T-25-12，与 ``_run_sensitive_detection`` 同契约）。
+    """
+    try:
+        from services.commit_index import index_commits
+
+        result = await index_commits(repository_id, repo_path)
+        logger.info(
+            "commit_index_completed",
+            repository_id=repository_id,
+            indexed=result.get("indexed"),
+            head=result.get("head"),
+        )
+    except Exception as e:
+        logger.warning(
+            "commit_index_dispatch_failed",
+            repository_id=repository_id,
+            error=str(e),
+        )
+
+
 async def clone_and_index_repository(
     repository_id: str,
     *,
@@ -3717,6 +3747,9 @@ async def clone_and_index_repository(
         # 增量/diff 仅扫变更文件。best-effort，绝不阻断索引终态。
         if not branch:
             await _run_sensitive_detection(repository_id, temp_dir, index_result)
+            # IDX-01（25-04）：base 索引（全量+增量）完成、rmtree 之前 best-effort 摄取 commit
+            # 历史（读真实克隆的 git 历史）；失败仅 warning，绝不阻断索引 success（T-25-12）。
+            await _run_commit_index(repository_id, temp_dir)
 
         return index_result
 
