@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: executing
-stopped_at: 完成 23-04——对账/清理前端面板（EXCL-06，Phase 23 收官）：web/src/api/reconcile.ts（reconcileApi getReconcile/cleanup/getCleanupStatus + ReconcileReport 含 degraded/error、CleanupRun 含 sensitive unscrubbed/caveat，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 match_count+excluded_paths 列表；degraded 显式『对账不可信』警示并禁用清理、不渲染空态 W3；普通/敏感双入口分离 §9.2，敏感强确认含『不可逆 + 不承诺 git/备份物理消失』§9.1；派发后第二个 useQuery 轮询 getCleanupStatus 按 status 回显，如实渲染 CleanupRun.sensitive 真实 unscrubbed 面 + caveat W1/W2 非静态文案）+ 挂载于仓库详情页 ExclusionRulesPanel 旁 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5，初版 createI18n messages 类型不符被门禁捕获修复）、eslint 0 错；原子提交 51cd36867 / baa35af01
-last_updated: "2026-06-14T15:55:00.000Z"
-last_activity: 2026-06-14 -- 23-04 完成（对账/清理前端面板，EXCL-06；Phase 23 全部完成）
+status: completed
+stopped_at: 完成 23-04——web/src/api/reconcile.ts（reconcileApi + ReconcileReport/CleanupDispatch/CleanupRun 类型，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 + degraded『对账不可信』警示并禁用清理 W3 + 普通/敏感双入口 §9.2 + 敏感强确认含不可逆/不承诺 git/备份物理消失 §9.1 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun.sensitive unscrubbed/caveat W1/W2）+ 仓库详情页挂载 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5）、eslint 0 错；原子提交 51cd36867 / baa35af01
+last_updated: "2026-06-14T16:21:40.233Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 11
+  total_plans: 10
   completed_plans: 11
   percent: 40
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 23 (清理对账（普通/敏感两模式）) — COMPLETE (4/4 plans)
-Plan: 4 of 4 done (23-01, 23-02, 23-03, 23-04 done)
+Phase: 24
+Plan: Not started
 Status: Phase 23 complete — next Phase 24 (敏感文件 AI 识别建议名单) Not started
-Last activity: 2026-06-14 -- 23-04 完成（对账/清理前端面板，EXCL-06；Phase 23 收官）
+Last activity: 2026-06-14
 
 ## Milestone Overview (v0.5.0)
 
