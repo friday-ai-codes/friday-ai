@@ -39,6 +39,7 @@ from services.branch_utils import (
 )
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
+from services.exclusion import build_matcher_for_repo
 from services.graph_builder import (
     mark_repository_graph_terminal,
     reset_repository_graph_progress,
@@ -834,7 +835,10 @@ class IndexerService:
                 )
 
             await update_index_stage(self.repository_id, IndexStage.SCANNING_FILES)
-            files = scan_directory(repo_path)
+            # fail-closed 排除过滤（EXCL-02）：预取单一匹配器（async 加载），把相对
+            # 仓库根路径判定注入同步 scan_directory，被排除文件从源头不进 files。
+            exclusion_matcher = await build_matcher_for_repo(self.repository_id)
+            files = scan_directory(repo_path, is_excluded_rel=exclusion_matcher.is_excluded)
             logger.info("files_scanned", count=len(files))
 
             # 续传锚点：上次中断时 _flush_batch 已写入的 (file_path → file_hash)
@@ -2181,7 +2185,10 @@ class IndexerService:
 
             # Scan local files and compute hashes
             await update_index_stage(self.repository_id, IndexStage.SCANNING_FILES)
-            files = scan_directory(repo_path)
+            # fail-closed 排除过滤（EXCL-02）：被排除文件不进 local_hashes，使其在
+            # _compute_diff 中既不算 ADD 也不算 UPDATE（存量清理留 Phase 23）。
+            exclusion_matcher = await build_matcher_for_repo(self.repository_id)
+            files = scan_directory(repo_path, is_excluded_rel=exclusion_matcher.is_excluded)
             local_hashes: dict[str, str] = {}
             for file_path in files:
                 relative_path = os.path.relpath(file_path, repo_path)
