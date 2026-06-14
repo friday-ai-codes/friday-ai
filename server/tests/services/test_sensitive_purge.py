@@ -224,6 +224,159 @@ async def test_sensitive_action_log_payload_redacted(repository: Any) -> None:
     assert refreshed.payload["keep"] == "unrelated"  # 无关字段保留
 
 
+async def test_sensitive_knowledge_version_scrubbed_and_vectors_deleted(repository: Any) -> None:
+    """HI-01：归档派生的 KnowledgeEntityVersion.content 中被排除文件 diff 段被剔除、
+    其向量被删除（避免明文 + 向量残留于知识检索面），他文件 diff 保留。"""
+    from unittest.mock import AsyncMock
+
+    from knowledge.models import (
+        KnowledgeEntity,
+        KnowledgeEntityVersion,
+        generate_entity_id,
+    )
+    from services.sensitive_purge import purge_sensitive_planes
+
+    def _seed_version() -> Any:
+        source_kind = "task_result"
+        source_id = "sess-knowledge-1"
+        entity = KnowledgeEntity.objects.create(
+            id=generate_entity_id("code_change", source_kind, source_id),
+            kind="code_change",
+            origin="chat",
+            source_kind=source_kind,
+            source_id=source_id,
+            repository=repository,
+            title="代码变更",
+            event_time=timezone.now(),
+        )
+        content = (
+            "代码变更 demo\n\n## 变更摘要\n变更 2 个文件\n\n## diff\n"
+            + _file_segment("src/secret.py", "SECRET_KEY=topsecret")
+            + "\n"
+            + _file_segment("src/keep.py", "harmless_change")
+        )
+        return KnowledgeEntityVersion.objects.create(
+            entity=entity,
+            version=1,
+            content=content,
+            content_hash="0" * 64,
+            payload={},
+            qdrant_point_ids=["p1", "p2"],
+            vector_synced=True,
+            event_time=timezone.now(),
+            valid_at=timezone.now(),
+        )
+
+    version = await sync_to_async(_seed_version)()
+
+    delete_spy = AsyncMock()
+    # delete_points 在函数内懒导入自 knowledge.vector_ops，patch 其源以避免真实 Qdrant
+    from knowledge import vector_ops
+
+    orig = vector_ops.delete_points
+    vector_ops.delete_points = delete_spy
+    try:
+        result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+    finally:
+        vector_ops.delete_points = orig
+
+    assert result["scrubbed"]["code_change_knowledge"]["scrubbed"] == 1
+    delete_spy.assert_awaited_once()
+    assert sorted(delete_spy.await_args.args[0]) == ["p1", "p2"]
+
+    refreshed = await KnowledgeEntityVersion.objects.aget(id=version.id)
+    assert "SECRET_KEY" not in refreshed.content  # 被排除文件 diff 段已剔除
+    assert "src/keep.py" in refreshed.content  # 他文件 diff 保留
+    assert refreshed.qdrant_point_ids == []
+    assert refreshed.vector_synced is False
+
+
+async def test_sensitive_archive_segment_mismatch_not_reported_success(repository: Any) -> None:
+    """HI-03：归档 files 声称命中但 diff 段切割解析不出该段（git 引号/格式漂移）时，
+    绝不回写"已 scrub"——原归档保持不变、正文残留，且如实记 errors（不静默 under-scrub）。"""
+    import hashlib as _hashlib
+    import zlib as _zlib
+
+    from knowledge.diff_archive import decompress_diff
+    from knowledge.models import CodeChangeArchive
+    from services.sensitive_purge import purge_sensitive_planes
+
+    def _seed_quoted_archive() -> Any:
+        # 被排除文件段使用 git 风格引号头，_split_diff_segments 无法解析出 b/ 路径
+        secret_seg = (
+            'diff --git "a/src/secret.py" "b/src/secret.py"\n'
+            '--- "a/src/secret.py"\n'
+            '+++ "b/src/secret.py"\n'
+            "@@ -1,1 +1,1 @@\n-old\n+SECRET_KEY=topsecret"
+        )
+        keep_seg = _file_segment("src/keep.py", "harmless_change")
+        raw = secret_seg + "\n" + keep_seg
+        raw_bytes = raw.encode("utf-8")
+        compressed = _zlib.compress(raw_bytes, 6)
+        return CodeChangeArchive.objects.create(
+            source_kind="task_result",
+            source_id="sess-mismatch-1",
+            repository=repository,
+            commit_sha=_hashlib.sha1(b"mismatch").hexdigest()[:40],
+            diff_compressed=compressed,
+            diff_size=len(raw_bytes),
+            compressed_size=len(compressed),
+            diff_sha256=_hashlib.sha256(raw_bytes).hexdigest(),
+            files=[_file_entry("src/secret.py"), _file_entry("src/keep.py")],
+            file_count=2,
+            total_additions=2,
+            total_deletions=2,
+            event_time=timezone.now(),
+        )
+
+    archive = await sync_to_async(_seed_quoted_archive)()
+
+    result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+
+    # 未声称成功（scrubbed=0），且如实记 errors
+    assert result["scrubbed"]["code_change_archive"]["scrubbed"] == 0
+    assert any("segment_mismatch" in e for e in result["errors"])
+
+    # 归档保持不变：正文仍在（绝不在未确认剔除时改写 metadata）
+    refreshed = await CodeChangeArchive.objects.aget(id=archive.id)
+    assert refreshed.file_count == 2
+    raw = await sync_to_async(decompress_diff)(refreshed.diff_compressed)
+    assert "SECRET_KEY" in raw
+
+
+async def test_sensitive_task_result_shared_remote_conservative(repository: Any) -> None:
+    """ME-04：两条 Repository 共享同一 remote 且记录无精确 FK 关联时，保守不动并如实披露
+    （避免 repo_url 关联跨仓 over-scrub）。"""
+    from repositories.models import Repository
+    from services.sensitive_purge import purge_sensitive_planes
+    from subagent.models import TaskResult
+
+    def _seed() -> Any:
+        # 第二条仓库共享同一 git_url（mirror / 双记录）
+        Repository.objects.create(
+            name="Mirror Repo",
+            git_url=repository.git_url,
+            git_platform="github",
+            default_branch="main",
+        )
+        session = _make_session(repository.git_url)  # 无 coding_session 精确 FK
+        return TaskResult.objects.create(
+            session=session,
+            result_type=TaskResult.ResultType.GIT,
+            modified_files=["src/secret.py", "src/keep.py"],
+            raw_output={},
+        )
+
+    tr = await sync_to_async(_seed)()
+
+    result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+
+    assert result["scrubbed"]["task_result"]["scrubbed"] == 0  # 保守不动
+    assert "task_result_shared_remote" in result["unscrubbed"]
+    refreshed = await TaskResult.objects.aget(id=tr.id)
+    assert refreshed.modified_files == ["src/secret.py", "src/keep.py"]  # 未被误清
+
+
 async def test_sensitive_plane_isolation_on_failure(repository: Any, monkeypatch: Any) -> None:
     """单面失败不中断其余面：errors 记录该面，其余面正常返回。"""
     from services import sensitive_purge
@@ -246,20 +399,25 @@ async def test_sensitive_plane_isolation_on_failure(repository: Any, monkeypatch
 # ============================================================================
 
 
-def _make_message(*, content: str, parts: list[Any]) -> Any:
-    from chat.models import Conversation, Message
+def _make_message(*, content: str, parts: list[Any], repository: Any | None = None) -> Any:
+    """构造一条消息；传 ``repository`` 则经 ``CodingSession`` 把会话绑定到该仓（HI-02 作用域）。"""
+    from chat.models import CodingSession, Conversation, Message
 
     conv = Conversation.objects.create(title="t")
-    return Message.objects.create(
+    msg = Message.objects.create(
         conversation=conv,
         role=Message.Role.ASSISTANT,
         content=content,
         parts=parts,
     )
+    if repository is not None:
+        CodingSession.objects.create(conversation=conv, repository=repository, tech_plan="")
+    return msg
 
 
 async def test_sensitive_message_parts_and_content_redacted(repository: Any) -> None:
-    """message content / parts 中子串命中被排除 file_path 的正文段被脱敏；无关消息不动。"""
+    """本仓关联会话的 message content / parts 命中被排除 file_path 的正文段被脱敏；
+    无关叶子保留。"""
     from chat.models import Message
     from services.sensitive_purge import purge_sensitive_planes
 
@@ -269,13 +427,16 @@ async def test_sensitive_message_parts_and_content_redacted(repository: Any) -> 
             {"type": "text", "text": "无关段保留"},
             {"type": "tool_use", "input": {"file_path": "src/secret.py", "body": "KEY"}},
         ],
+        repository=repository,
     )
     untouched = await sync_to_async(_make_message)(
-        content="完全无关的消息", parts=[{"type": "text", "text": "hello"}]
+        content="完全无关的消息", parts=[{"type": "text", "text": "hello"}], repository=repository
     )
 
     result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
     assert result["scrubbed"]["message_text"]["scrubbed"] >= 1
+    # 无 repo 关联的消息面如实计入 unscrubbed（HI-02 诚实披露）
+    assert "chat_messages_unscoped" in result["unscrubbed"]
 
     hit_refreshed = await Message.objects.aget(id=hit.id)
     assert "src/secret.py" not in hit_refreshed.content
@@ -287,6 +448,43 @@ async def test_sensitive_message_parts_and_content_redacted(repository: Any) -> 
     untouched_refreshed = await Message.objects.aget(id=untouched.id)
     assert untouched_refreshed.content == "完全无关的消息"
     assert untouched_refreshed.parts == [{"type": "text", "text": "hello"}]
+
+
+async def test_sensitive_message_cross_repo_preserved(repository: Any) -> None:
+    """HI-02：他仓 / 无关联会话里提到被排除路径子串的消息绝不被销毁（跨仓作用域隔离）。"""
+    from chat.models import Message
+    from repositories.models import Repository
+    from services.sensitive_purge import purge_sensitive_planes
+
+    def _seed_other_repo() -> Any:
+        return Repository.objects.create(
+            name="Other Repo",
+            git_url="https://github.com/other/elsewhere.git",
+            git_platform="github",
+            default_branch="main",
+        )
+
+    other_repo = await sync_to_async(_seed_other_repo)()
+
+    # 他仓会话内的消息（含被排除路径子串）
+    other_repo_msg = await sync_to_async(_make_message)(
+        content="他仓对话提到 src/secret.py 但不应被清",
+        parts=[{"type": "text", "text": "src/secret.py here"}],
+        repository=other_repo,
+    )
+    # 完全无 repo 关联的会话消息
+    unscoped_msg = await sync_to_async(_make_message)(
+        content="无关联会话提到 src/secret.py",
+        parts=[{"type": "text", "text": "src/secret.py here"}],
+        repository=None,
+    )
+
+    await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+
+    other_refreshed = await Message.objects.aget(id=other_repo_msg.id)
+    assert "src/secret.py" in other_refreshed.content  # 他仓记录原样保留
+    unscoped_refreshed = await Message.objects.aget(id=unscoped_msg.id)
+    assert "src/secret.py" in unscoped_refreshed.content  # 无关联记录原样保留
 
 
 async def test_sensitive_returns_caveat_and_unscrubbed(repository: Any) -> None:
