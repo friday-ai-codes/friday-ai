@@ -4,7 +4,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import GitCredential, Repository
+from .models import GitCredential, RepoExclusionRule, Repository
 
 # SSH 仓库地址的两种形态：scp 风格（git@host:group/repo.git）与
 # ssh:// 协议（ssh://git@host[:port]/group/repo.git，端口为 ssh 端口需丢弃）。
@@ -132,9 +132,7 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
         error_messages={"empty": "仓库必须至少关联一个空间"},
     )
     # 前端从 test-connection 的 head_branch 带入（display-only 缓存字段）
-    remote_head_branch = serializers.CharField(
-        required=False, allow_blank=True, max_length=100
-    )
+    remote_head_branch = serializers.CharField(required=False, allow_blank=True, max_length=100)
 
     class Meta:
         model = Repository
@@ -166,6 +164,41 @@ class RepositoryWithSpacesSerializer(RepositorySerializer):
 
     def get_spaces(self, obj):
         return [{"id": str(p.id), "name": p.name} for p in obj.projects.all()]
+
+
+class RepoExclusionRuleSerializer(serializers.ModelSerializer):
+    """per-repo 排除规则序列化器（Plan 22-05）。
+
+    保存时 fail-loud 校验（对齐 D-02 / T-22-17）：
+    - ``rule_type=regex`` 用 ``re.compile`` 校验语法，非法 → 400 ValidationError（不写库）。
+    - pattern 非空 + 长度上限（防 ReDoS 灾难性回溯的超长 pattern）。
+
+    ``source`` 可写但默认 ``user``；``source=global + enabled=False`` 为「关闭某条全局
+    默认」的 override 标记（视图据此与匹配器同源剔除）。
+    """
+
+    class Meta:
+        model = RepoExclusionRule
+        fields = ["id", "pattern", "rule_type", "enabled", "source", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_pattern(self, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            raise serializers.ValidationError("规则模式不能为空")
+        if len(v) > 500:
+            raise serializers.ValidationError("规则模式过长（最多 500 字符）")
+        return v
+
+    def validate(self, attrs: dict) -> dict:
+        rule_type = attrs.get("rule_type") or RepoExclusionRule.RuleType.GLOB
+        pattern = attrs.get("pattern", "")
+        if rule_type == RepoExclusionRule.RuleType.REGEX:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise serializers.ValidationError({"pattern": f"非法正则表达式：{exc}"}) from exc
+        return attrs
 
 
 class GitCredentialSerializer(serializers.ModelSerializer):

@@ -3,6 +3,7 @@
 from adrf.routers import DefaultRouter
 from django.urls import include, path
 
+from .graph_search_views import GraphSearchView
 from .index_views import (
     BranchIndexListView,
     CodeSearchView,
@@ -24,7 +25,6 @@ from .index_views import (
     RepositoryWebhookView,
     RerankerHealthView,
 )
-from .graph_search_views import GraphSearchView
 from .refresh_remote_head_views import RefreshRemoteHeadView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
@@ -38,6 +38,8 @@ from .tree_views import (
 )
 from .views import (
     CacheManagementView,
+    RepositoryExclusionRuleDetailView,
+    RepositoryExclusionRulesView,
     RepositorySpacesView,
     RepositoryViewSet,
     SetAccessTokenView,
@@ -231,6 +233,17 @@ urlpatterns = [
         "<uuid:repository_id>/sync-status/",
         SyncStatusView.as_view(),
         name="repository-sync-status",
+    ),
+    # Plan 22-05：per-repo 排除规则 CRUD（EXCL-01）
+    path(
+        "<uuid:repository_id>/exclusions/",
+        RepositoryExclusionRulesView.as_view(),
+        name="repository-exclusions",
+    ),
+    path(
+        "<uuid:repository_id>/exclusions/<uuid:rule_id>/",
+        RepositoryExclusionRuleDetailView.as_view(),
+        name="repository-exclusion-detail",
     ),
     # Hash 新鲜度立即刷新（implementation contract）
     path(

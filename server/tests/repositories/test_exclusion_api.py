@@ -73,14 +73,10 @@ class TestExclusionRulesCreate:
         assert body["rule_type"] == "glob"
         assert body["source"] == "user"
         assert "id" in body
-        assert RepoExclusionRule.objects.filter(
-            repository=repository, pattern="*.secret"
-        ).exists()
+        assert RepoExclusionRule.objects.filter(repository=repository, pattern="*.secret").exists()
         inv.assert_called_once()
 
-    def test_post_valid_regex_creates(
-        self, authenticated_client, repository: Repository
-    ) -> None:
+    def test_post_valid_regex_creates(self, authenticated_client, repository: Repository) -> None:
         resp = authenticated_client.post(
             EXCL_URL.format(repo_id=repository.id),
             {"pattern": r".*\.env$", "rule_type": "regex"},
@@ -91,9 +87,7 @@ class TestExclusionRulesCreate:
             repository=repository, rule_type="regex", pattern=r".*\.env$"
         ).exists()
 
-    def test_post_valid_dir_creates(
-        self, authenticated_client, repository: Repository
-    ) -> None:
+    def test_post_valid_dir_creates(self, authenticated_client, repository: Repository) -> None:
         resp = authenticated_client.post(
             EXCL_URL.format(repo_id=repository.id),
             {"pattern": "dist/", "rule_type": "dir"},
@@ -112,15 +106,11 @@ class TestExclusionRulesCreate:
             )
         assert resp.status_code == 400
         # fail-loud：非法 regex 不写库
-        assert not RepoExclusionRule.objects.filter(
-            repository=repository, pattern="["
-        ).exists()
+        assert not RepoExclusionRule.objects.filter(repository=repository, pattern="[").exists()
         # 校验失败不应触发缓存失效
         inv.assert_not_called()
 
-    def test_post_empty_pattern_400(
-        self, authenticated_client, repository: Repository
-    ) -> None:
+    def test_post_empty_pattern_400(self, authenticated_client, repository: Repository) -> None:
         resp = authenticated_client.post(
             EXCL_URL.format(repo_id=repository.id),
             {"pattern": "   ", "rule_type": "glob"},
@@ -173,9 +163,7 @@ class TestExclusionRuleDelete:
         assert not RepoExclusionRule.objects.filter(id=rule.id).exists()
         inv.assert_called_once()
 
-    def test_delete_404_missing_rule(
-        self, authenticated_client, repository: Repository
-    ) -> None:
+    def test_delete_404_missing_rule(self, authenticated_client, repository: Repository) -> None:
         resp = authenticated_client.delete(
             EXCL_DETAIL_URL.format(
                 repo_id=repository.id,
@@ -184,12 +172,8 @@ class TestExclusionRuleDelete:
         )
         assert resp.status_code == 404
 
-    def test_delete_other_repo_rule_404(
-        self, authenticated_client, repository: Repository
-    ) -> None:
-        other = Repository.objects.create(
-            name="other", git_url="https://example.com/other.git"
-        )
+    def test_delete_other_repo_rule_404(self, authenticated_client, repository: Repository) -> None:
+        other = Repository.objects.create(name="other", git_url="https://example.com/other.git")
         rule = RepoExclusionRule.objects.create(
             repository=other, pattern="x/", rule_type="dir", source="user"
         )
