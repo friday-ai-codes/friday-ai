@@ -37,6 +37,40 @@ _DELETE_MAX_ATTEMPTS = 3
 _PROTECTED_DIR_NAMES = frozenset({".git"})
 
 
+def _is_redos_risky(pattern: str) -> bool:
+    """保守检测嵌套量词导致的灾难性回溯（语义对齐 server is_redos_risky，HI-01）。
+
+    prune 在 ``os.walk`` 上对每个文件跑 regex；一条灾难性 regex 会卡死整次 prune。
+    server 已在保存时拒绝高风险模式，这里再防一手：命中则跳过该条 regex（fail-open
+    该单条，但避免容器挂起）。
+    """
+    if not pattern:
+        return False
+    stack: list[int] = []
+    groups: list[tuple[int, int]] = []
+    esc = False
+    for idx, ch in enumerate(pattern):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if ch == "(":
+            stack.append(idx)
+        elif ch == ")" and stack:
+            groups.append((stack.pop(), idx))
+    n = len(pattern)
+    for open_idx, close_idx in groups:
+        body = pattern[open_idx + 1 : close_idx]
+        if not (re.search(r"[*+]", body) or re.search(r"\{\d*,\d*\}", body)):
+            continue
+        j = close_idx + 1
+        if j < n and pattern[j] in "*+{":
+            return True
+    return False
+
+
 class ExclusionPruneError(RuntimeError):
     """被排除文件持久无法删除（fail-closed）：使容器 setup 失败，绝不让其残留可读。"""
 
@@ -112,6 +146,10 @@ class _ContainerExclusionMatcher:
                 # 无路径分隔符的 glob 按 basename 命中任意子目录（BL-01，与 server 一致）。
                 self._glob_regexes.append((rx, "/" not in str(pattern)))
             elif rule_type == "regex":
+                # ReDoS 高风险（嵌套量词）→ 跳过该条，避免 prune walk 被回溯卡死（HI-01）。
+                if _is_redos_risky(str(pattern)):
+                    logger.warning("exclusion.redos_regex_skipped", pattern=str(pattern))
+                    continue
                 try:
                     self._regexes.append(re.compile(str(pattern)))
                 except re.error:

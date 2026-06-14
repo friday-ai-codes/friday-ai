@@ -74,6 +74,16 @@ class TestPruneExcluded:
         assert keep.exists()
         assert deleted == 3
 
+    def test_redos_regex_skipped_no_hang(self, tmp_path: Path) -> None:
+        # HI-01：嵌套量词 regex 被跳过（不编译进 walk 热路径，避免卡死）。
+        from core.exclusion import prune_excluded
+
+        keep = _write(tmp_path, "aaaa", "x")
+        # 高风险 regex 被跳过 → 该文件不被该规则命中（fail-open 单条，换取不挂起）。
+        deleted = prune_excluded(tmp_path, [{"pattern": "(a+)+$", "rule_type": "regex"}])
+        assert deleted == 0
+        assert keep.exists()
+
     def test_global_glob_case_insensitive_prune(self, tmp_path: Path) -> None:
         # ME-01：source="global" 安全默认大小写不敏感，挡住 .ENV / ID_RSA 变体。
         from core.exclusion import prune_excluded
