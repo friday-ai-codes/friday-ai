@@ -96,6 +96,15 @@ class TaskConfig(BaseSettings):
         description="RemoteTool schema 列表（FRIDAY_TASK_REMOTE_TOOLS JSON）",
     )
 
+    # Phase 22-04 排除规则下传（EXCL-02 容器读取面）。server 两条派发路径经
+    # FRIDAY_TASK_EXCLUDE_PATTERNS（JSON 规则列表 [{pattern, rule_type}]）注入；
+    # 容器 clone+checkout 后 prune 据此物理删除被排除文件，使 agent 不可见。
+    # 默认空 → 不删任何文件（向后兼容；未注入时行为与现状一致）。
+    exclude_patterns: list[dict] = Field(
+        default_factory=list,
+        description="排除规则列表（FRIDAY_TASK_EXCLUDE_PATTERNS JSON：[{pattern, rule_type}]）",
+    )
+
     # Callback configuration (可选 - 不设置则仅记录日志)
     callback_url: str = Field(
         default="",

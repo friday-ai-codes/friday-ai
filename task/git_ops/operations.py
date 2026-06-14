@@ -96,6 +96,17 @@ class GitOperations:
         )
         await self._clone_repo()
         await self._checkout_branch()
+
+        # Phase 22-04 / EXCL-02：clone+checkout 后按 exclude 规则物理删除被排除文件，使容器内
+        # agent 不可见（T-22-13）。prune 跳过 .git/ 保护 git 元数据（T-22-15）；被排除文件持久
+        # 删除失败 → ExclusionPruneError 向上传播使 setup 失败（fail-closed，T-22-16：宁可任务
+        # 失败也绝不让 agent 看到被排除文件）。explore/repo_summary 模式同样 prune（agent 仍读文件）。
+        from core.exclusion import prune_excluded
+
+        pruned_count = prune_excluded(self.workspace, self.config.exclude_patterns)
+        if pruned_count:
+            log.info("exclusion_prune_complete", pruned_count=pruned_count)
+
         log.info("Git setup complete", branch=self.config.git_branch)
 
     async def _setup_ssh_auth(self) -> None:
