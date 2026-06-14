@@ -4,12 +4,12 @@ milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
 stopped_at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search（认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）返回前挂 build_matcher_for_repo + is_excluded fail-closed，被排除文件不返回 content/path，total 由过滤后集合重算；补对称守护测试 TestCodeSearchViewExclusion（2 例）；tests/test_code_search_branch.py 6 passed + 与 retrieval_exclusion 合跑 15 passed；原子提交 56d230553（fix+test）/ a8f65548c（gap SUMMARY）；EXCL-02 全读取面 fail-closed 闭环
-last_updated: "2026-06-14T10:38:44.032Z"
-last_activity: 2026-06-14
+last_updated: "2026-06-14T14:54:07.977Z"
+last_activity: 2026-06-14 -- Phase 23 execution started
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 6
+  total_plans: 10
   completed_plans: 7
   percent: 20
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
-**Current focus:** Phase 22 — 排除配置与统一过滤（fail-closed）
+**Current focus:** Phase 23 — 清理对账（普通/敏感两模式）
 
 ## Current Position
 
-Phase: 23
-Plan: Not started
-Status: Executing Phase 22 — 全部 plan 已执行（待 verify/secure 收尾）
-Last activity: 2026-06-14
+Phase: 23 (清理对账（普通/敏感两模式）) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 23
+Last activity: 2026-06-14 -- Phase 23 execution started
 
 ## Milestone Overview (v0.5.0)
 
