@@ -13,6 +13,7 @@ import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue
 import ExclusionRulesPanel from '~/components/repository/ExclusionRulesPanel.vue'
 import ReconcilePanel from '~/components/repository/ReconcilePanel.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
+import SensitiveSuggestionsPanel from '~/components/repository/SensitiveSuggestionsPanel.vue'
 import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -607,6 +608,8 @@ function copyUrl() {
         <!-- ==================== 排除规则（EXCL-01 fail-closed） ==================== -->
         <section id="exclusions" class="scroll-mt-22 space-y-5">
           <ExclusionRulesPanel :repository-id="repository.id" />
+          <!-- AI 敏感文件建议（EXCL-03）：建议 + 确认闭环，挂在排除规则面板旁 -->
+          <SensitiveSuggestionsPanel :repo-id="repository.id" />
           <!-- 对账 / 清理（EXCL-04 / EXCL-06）：挂在排除规则面板旁 -->
           <ReconcilePanel :repository-id="repository.id" />
         </section>
