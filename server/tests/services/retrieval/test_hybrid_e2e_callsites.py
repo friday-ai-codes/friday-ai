@@ -50,8 +50,13 @@ from services.retrieval.types import (
 # ---------------------------------------------------------------------------
 
 
-def _l3_snapshot_with_items() -> LayerSnapshot:
-    """L3 LayerSnapshot 替身：含 2 个高分 item。"""
+def _l3_snapshot_with_items(repo_id: str = "repo-a") -> LayerSnapshot:
+    """L3 LayerSnapshot 替身：含 2 个高分 item。
+
+    item 的 ``repository_id`` 用传入的真实 repo_id（而非字面 "repo-a"）——
+    search_repository_code 的 EXCL-02 兜底过滤会按 item.repository_id 预取匹配器，
+    非法 id 会触发 fail-closed 丢弃；用真实 id 让良性 file_path 正常通过。
+    """
     return LayerSnapshot(
         layer="L3",
         status="ok",
@@ -64,7 +69,7 @@ def _l3_snapshot_with_items() -> LayerSnapshot:
                     "content": "def login(req):\n    return ok",
                     "language": "python",
                 },
-                "repository_id": "repo-a",
+                "repository_id": repo_id,
             },
             {
                 "score": 0.72,
@@ -73,7 +78,7 @@ def _l3_snapshot_with_items() -> LayerSnapshot:
                     "content": "class Session: pass",
                     "language": "python",
                 },
-                "repository_id": "repo-a",
+                "repository_id": repo_id,
             },
         ],
     )
@@ -84,7 +89,7 @@ def _rag_only_result(repo_id: str) -> RagSearchResult:
     return RagSearchResult(
         query="probe",
         repository_ids=[repo_id],
-        layers=[_l3_snapshot_with_items()],
+        layers=[_l3_snapshot_with_items(repo_id)],
         final_context="## L3 Related Code\n\n### src/auth/login.py (score: 0.850)\n",
         total_tokens=42,
     )
@@ -95,7 +100,7 @@ def _hybrid_result_with_graph(repo_id: str) -> HybridSearchResult:
     return HybridSearchResult(
         query="probe",
         repository_ids=[repo_id],
-        layers=[_l3_snapshot_with_items()],
+        layers=[_l3_snapshot_with_items(repo_id)],
         final_context=(
             "## L3 Related Code\n\n### src/auth/login.py (score: 0.850)\n\n"
             "## Graph Context\n\n"
@@ -279,7 +284,12 @@ def test_callsite_signature_unchanged() -> None:
 
     sig = inspect.signature(search_repository_code)
     expected_agent_params = {
-        "query", "repository_id", "space_id", "limit", "min_score", "branch",
+        "query",
+        "repository_id",
+        "space_id",
+        "limit",
+        "min_score",
+        "branch",
     }
     actual_agent_params = set(sig.parameters.keys())
     assert expected_agent_params == actual_agent_params, (
@@ -289,8 +299,14 @@ def test_callsite_signature_unchanged() -> None:
 
     hsig = inspect.signature(HybridSearchService.search)
     expected_hsearch_params = {
-        "self", "query", "repository_ids", "project_id", "branch_name",
-        "max_tokens", "top_k", "enable_graph_enrichment",
+        "self",
+        "query",
+        "repository_ids",
+        "project_id",
+        "branch_name",
+        "max_tokens",
+        "top_k",
+        "enable_graph_enrichment",
     }
     actual_hsearch_params = set(hsig.parameters.keys())
     assert expected_hsearch_params == actual_hsearch_params, (
@@ -340,8 +356,7 @@ def test_no_layered_search_direct_import_in_callsites() -> None:
     )
     matches = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
     assert not matches, (
-        f"agent/workflow/chat 三路径必须 0 直 import LayeredSearchService; "
-        f"命中文件: {matches}"
+        f"agent/workflow/chat 三路径必须 0 直 import LayeredSearchService; 命中文件: {matches}"
     )
 
 
