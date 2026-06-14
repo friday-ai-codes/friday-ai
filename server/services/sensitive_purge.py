@@ -34,11 +34,25 @@ from asgiref.sync import sync_to_async
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "SENSITIVE_PLANES_CAVEAT",
     "purge_sensitive_planes",
 ]
 
 # 敏感清理脱敏占位符（替换命中被排除文件正文的文本段）。
 REDACTION_PLACEHOLDER = "[已按敏感清理脱敏 / redacted]"
+
+# 如实声明敏感清理的范围边界（§9.1，绝不过度承诺）。落入返回 dict 经 run_cleanup /
+# 状态端点透传前端：清理只保证「Friday 操作记录中该文件正文尽力而为不可见」，
+# 不承诺 git object / 历史 / 备份层物理消失，且无精确 file 关联面为 best-effort 子串脱敏。
+SENSITIVE_PLANES_CAVEAT = (
+    "敏感清理已尽力清理 Friday 操作记录中的该文件正文（归档 diff / 任务结果 / 执行轨迹 / "
+    "消息正文段）。但请注意：本地 git object 与 Git 历史不承诺物理消失（靠工具层 denylist "
+    "兜底）；备份层不在应用层可控范围（基础设施层需手动处理）；prompt snapshot 等无精确文件"
+    "关联的面仅做 best-effort 子串脱敏，可能存在残留。如确需彻底清除，请同步处理 Git 历史与备份。"
+)
+
+# 无精确 file 关联、应用层不强保证的面——如实上报，不假装清除（T-23-11，§9.3 矩阵）。
+UNSCRUBBED_PLANES = ["prompt_snapshot", "backups", "git_objects"]
 
 
 def _normalize_repo_url(url: str) -> str:
@@ -314,6 +328,62 @@ async def _scrub_action_logs(repository_id: str, targets: set[str]) -> dict[str,
     return await sync_to_async(_work)()
 
 
+async def _scrub_loose_text_planes(repository_id: str, targets: set[str]) -> dict[str, int]:
+    """无精确 file 关联面（chat message parts / content）子串脱敏（best-effort）。
+
+    无稳定 repo↔message 关联键（``Conversation`` 绑 ``Project`` 而非 ``Repository``）→
+    **不做激进全删**（销毁需要的记录 = 过度清理威胁 T-23-13）。仅对文本中**精确包含**
+    被排除 file_path 子串的 parts 文件正文段 / content 脱敏（替换命中叶子），无法精确
+    定位的面（prompt snapshot / 备份 / git object）计入 ``unscrubbed`` 并文档化，绝不
+    整库清空（T-23-11）。
+    """
+
+    def _work() -> int:
+        from functools import reduce
+        from operator import or_
+
+        from django.db.models import Q
+
+        from chat.models import Message
+
+        if not targets:
+            return 0
+
+        scrubbed_ids: set[Any] = set()
+
+        # content 面：DB 子串过滤后逐条脱敏（命中则整段 content 替换为占位符）
+        content_q = reduce(or_, (Q(content__contains=t) for t in targets))
+        for msg in Message.objects.filter(content_q):
+            new_content, changed = _redact_value(msg.content, targets)
+            if changed:
+                msg.content = new_content
+                msg.save(update_fields=["content"])
+                scrubbed_ids.add(msg.id)
+
+        # parts 面：JSONField 子串无法跨库 portable 过滤 → 扫非空 parts 逐条 Python 判定，
+        # 只脱敏命中的文本叶子（part 级正文段），不动其余 part（best-effort，可控）。
+        for msg in Message.objects.exclude(parts=[]):
+            new_parts, changed = _redact_value(msg.parts, targets)
+            if changed:
+                msg.parts = new_parts
+                msg.save(update_fields=["parts"])
+                if msg.id not in scrubbed_ids:
+                    scrubbed_ids.add(msg.id)
+
+        if scrubbed_ids:
+            logger.info(
+                "purge.sensitive_plane",
+                plane="message_text",
+                repository_id=repository_id,
+                scrubbed=len(scrubbed_ids),
+                deleted=0,
+            )
+        return len(scrubbed_ids)
+
+    count = await sync_to_async(_work)()
+    return {"scrubbed": count, "deleted": 0}
+
+
 async def purge_sensitive_planes(repository_id: str, file_paths: list[str]) -> dict[str, Any]:
     """敏感清理入口：在普通排除清理之上，额外清理操作记录数据面（EXCL-05）。
 
@@ -326,8 +396,8 @@ async def purge_sensitive_planes(repository_id: str, file_paths: list[str]) -> d
         file_paths: 本轮普通清理已处理的被排除文件路径列表（file 级关联键）。
 
     Returns:
-        dict：``scrubbed``（各面计数）+ ``errors``（逐面隔离的失败）。
-        （Task 2 追加 ``unscrubbed`` 与 ``caveat``。）
+        dict：``scrubbed``（各面计数）+ ``unscrubbed``（应用层不强保证/无精确关联的面）
+        + ``caveat``（如实声明 git/备份不承诺物理消失）+ ``errors``（逐面隔离的失败）。
     """
     repo_id = str(repository_id)
     targets = {p for p in (file_paths or []) if p}
@@ -339,6 +409,7 @@ async def purge_sensitive_planes(repository_id: str, file_paths: list[str]) -> d
         ("code_change_archive", _scrub_code_change_archives),
         ("task_result", _scrub_task_results),
         ("action_log", _scrub_action_logs),
+        ("message_text", _scrub_loose_text_planes),
     )
     for name, fn in planes:
         try:
@@ -354,4 +425,9 @@ async def purge_sensitive_planes(repository_id: str, file_paths: list[str]) -> d
             errors.append(f"{name}:{type(exc).__name__}:{exc}")
             scrubbed[name] = {"scrubbed": 0, "deleted": 0}
 
-    return {"scrubbed": scrubbed, "errors": errors}
+    return {
+        "scrubbed": scrubbed,
+        "unscrubbed": list(UNSCRUBBED_PLANES),
+        "caveat": SENSITIVE_PLANES_CAVEAT,
+        "errors": errors,
+    }
