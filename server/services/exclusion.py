@@ -180,9 +180,17 @@ class ExclusionMatcher:
                 # 使内置默认 `.env` / `id_rsa` 命中 `server/.env`、`a/b/id_rsa`
                 # 等子目录密钥，而非仅匹配仓库根。
                 flags = re.IGNORECASE if case_insensitive else 0
-                self._glob_regexes.append(
-                    (re.compile(fnmatch.translate(spec.pattern), flags), "/" not in spec.pattern)
-                )
+                try:
+                    rx = re.compile(fnmatch.translate(spec.pattern), flags)
+                except re.error as exc:
+                    # ME-03：非法 glob 记录并跳过该条，而非令整器构造失败（否则该仓库
+                    # 所有读取面会因构造异常被整体 fail-closed 静默清空，难以定位）。
+                    # 与容器侧 _ContainerExclusionMatcher 对齐；保存侧已有 fail-loud 预校验。
+                    logger.warning(
+                        "exclusion.bad_glob_skipped", pattern=spec.pattern, error=str(exc)
+                    )
+                    continue
+                self._glob_regexes.append((rx, "/" not in spec.pattern))
             elif spec.rule_type == "regex":
                 # ReDoS 高风险（嵌套量词）→ 构造期 fail-loud，绝不编译进热路径（HI-01）。
                 if is_redos_risky(spec.pattern):
