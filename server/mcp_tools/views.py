@@ -30,6 +30,7 @@ from interactions.ledger import (
 from interactions.models import InteractionEvent, InteractionRun, RetrievalTrace, ToolCallRecord
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
+from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.qdrant_service import QdrantService
 from services.repo_mirror import (
     MirrorError,
@@ -144,6 +145,26 @@ def _first_error_detail(errors: Any) -> Any:
     if isinstance(errors, list):
         return [_first_error_detail(value) for value in errors]
     return str(errors)
+
+
+class _FailClosedMatcher:
+    """匹配器构造失败时的兜底：判定一切路径为「已排除」（fail-closed，T-22-25）。"""
+
+    def is_excluded(self, rel_path: str) -> bool:  # noqa: ARG002
+        return True
+
+
+async def _exclusion_matcher(repository_id: str) -> Any:
+    """获取仓库排除匹配器（EXCL-02 单一匹配器）；构造异常 → fail-closed 兜底匹配器。
+
+    所有 MCP 直读 bare 镜像 / 索引的工具（grep / get_file / list / find_related）
+    都经此入口取匹配器，再对读出路径做 ``is_excluded`` 拦截，绝不各自另写过滤。
+    """
+    try:
+        return await build_matcher_for_repo(repository_id)
+    except Exception:  # noqa: BLE001 — 构造失败一律 fail-closed（宁可多排不可漏）
+        logger.warning("exclusion.matcher_build_failed", repository_id=repository_id)
+        return _FailClosedMatcher()
 
 
 _MIRROR_ERROR_STATUS = {
@@ -540,6 +561,36 @@ class GrepRepositoryView(McpToolView):
 
     tool_name = "grep_repository"
 
+    async def _filter_grep_result(
+        self,
+        result: dict[str, Any],
+        repository_id: str,
+    ) -> dict[str, Any]:
+        """按排除匹配器过滤 grep_mirror 结果，重算计数（fail-closed）。"""
+        matcher = await _exclusion_matcher(repository_id)
+        orig_matches = result.get("matches") or []
+        orig_counts = result.get("file_counts") or []
+        kept_matches = [
+            m for m in orig_matches if not matcher.is_excluded(str(m.get("file_path", "")))
+        ]
+        kept_counts = [
+            f for f in orig_counts if not matcher.is_excluded(str(f.get("file_path", "")))
+        ]
+        if len(kept_matches) != len(orig_matches) or len(kept_counts) != len(orig_counts):
+            log_exclusion_blocked(
+                surface="grep_repository",
+                repository_id=repository_id,
+                rel_path="",
+            )
+        total_matches = sum(int(f.get("match_count", 0)) for f in kept_counts)
+        return {
+            **result,
+            "matches": kept_matches,
+            "file_counts": kept_counts,
+            "total_matches": total_matches,
+            "files_with_matches": len(kept_counts),
+        }
+
     async def post(self, request: Request) -> Response:
         run, err = await self._begin(request)
         if err is not None:
@@ -626,6 +677,10 @@ class GrepRepositoryView(McpToolView):
                     "error": exc.detail,
                 })
                 continue
+
+            # fail-closed 排除过滤（EXCL-02 / T-22-22）：剔除被排除文件的命中行与计数，
+            # total_matches / files_with_matches 用过滤后口径，避免泄漏被排除文件存在性。
+            result = await self._filter_grep_result(result, repository_id)
 
             entry: dict[str, Any] = {
                 "repository_id": repository_id,
@@ -769,6 +824,18 @@ class ListRepositoryFilesView(McpToolView):
             prefix = requested_path.rstrip("/") + "/"
             paths = [p for p in paths if p == requested_path or p.startswith(prefix)]
 
+        # fail-closed 排除过滤（EXCL-02 / T-22-23）：被排除文件不进 items；纯由被排除
+        # 文件构成的目录因其文件全部移除而不再生成目录项。
+        matcher = await _exclusion_matcher(repository_id)
+        kept_paths = [p for p in paths if not matcher.is_excluded(str(p))]
+        if len(kept_paths) != len(paths):
+            log_exclusion_blocked(
+                surface="list_repository_files",
+                repository_id=repository_id,
+                rel_path="",
+            )
+        paths = kept_paths
+
         items: list[dict[str, Any]] = []
         if recursive:
             for path in paths:
@@ -820,6 +887,30 @@ class GetRepositoryFileView(McpToolView):
 
     tool_name = "get_repository_file"
 
+    async def _excluded_response(
+        self,
+        repository_id: str,
+        *paths: str,
+    ) -> Response | None:
+        """对 requested / resolved 路径做 fail-closed 排除判定；命中 → 「已排除」错误。
+
+        resolved_path 必须复判（防后缀解析绕过，T-22-21）。命中绝不返回任何 content。
+        """
+        matcher = await _exclusion_matcher(repository_id)
+        for path in paths:
+            if path and matcher.is_excluded(str(path)):
+                log_exclusion_blocked(
+                    surface="get_repository_file",
+                    repository_id=repository_id,
+                    rel_path=str(path),
+                )
+                return error_response(
+                    "file_excluded",
+                    "文件已被排除策略屏蔽",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+        return None
+
     async def post(self, request: Request) -> Response:
         run, err = await self._begin(request)
         if err is not None:
@@ -850,6 +941,9 @@ class GetRepositoryFileView(McpToolView):
         )
         if mirror_hit is not None:
             resolved_path, full_text, snapshot = mirror_hit
+            excluded = await self._excluded_response(repository_id, file_path, resolved_path)
+            if excluded is not None:
+                return excluded
             all_lines = full_text.splitlines()
             total_lines = len(all_lines)
             slice_start = int(start_line) - 1 if start_line is not None else 0
@@ -900,6 +994,10 @@ class GetRepositoryFileView(McpToolView):
                 f"索引中找不到文件: {file_path}",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
+
+        excluded = await self._excluded_response(repository_id, file_path, resolved_path)
+        if excluded is not None:
+            return excluded
 
         chunks_raw.sort(key=lambda chunk: chunk.get("chunk_index", 0))
         selected: list[dict[str, Any]] = []
