@@ -2,13 +2,14 @@
 import type { ValidationIssue } from '~/stores/useWorkflowValidationStore'
 import { AlertCircle, AlertTriangle, ChevronDown } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '~/components/ui/collapsible'
+import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 
@@ -47,10 +48,24 @@ function describeLocation(issue: ValidationIssue): string {
   return issue.fieldPath || issue.reason
 }
 
-// Handle clicking an issue - TODO(D-06): integrate with X6 graph for centering
-function handleIssueClick(_issue: ValidationIssue) {
-  // X6 centering will be implemented when graph instance is available via provide/inject
-  // intentionally ignored
+// 画布聚焦：由 WorkflowCanvas（VueFlow 上下文内）经共同祖先 provide 的持有器注入。
+// 注入不可用 / 尚未注册时安全降级（no-op，不报错）。
+const workflowFocus = inject(WorkflowFocusKey, null)
+
+// 点击问题 → 定位到画布对应节点并居中。
+// issue 有 nodeId → 直接聚焦；仅有 edgeId → 取该边的 target（优先）/ source 节点再聚焦。
+function handleIssueClick(issue: ValidationIssue) {
+  const focus = workflowFocus?.focusNode
+  if (!focus)
+    return
+
+  let nodeId = issue.nodeId
+  if (!nodeId && issue.edgeId) {
+    const edge = workflowStore.edges.find(e => e.id === issue.edgeId)
+    nodeId = edge?.target || edge?.source
+  }
+  if (nodeId)
+    focus(nodeId)
 }
 
 // Panel open state - auto-open when issues exist

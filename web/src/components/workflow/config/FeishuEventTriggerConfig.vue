@@ -70,7 +70,7 @@ const feishuProjects = computed(() => {
 // Config Model
 // ============================================================================
 
-const { field, arrayField } = useConfigModel({
+const { field, arrayField, updateFields } = useConfigModel({
   config: () => props.config,
   emit: v => emit('update:config', v),
   schema: feishuEventTriggerConfigSchema,
@@ -122,7 +122,29 @@ function getStatusLabel(value: string): string {
 
 // 排除规则
 const excludeProjectIds = arrayField('exclude_project_ids', [])
-const excludeWorkItemPattern = field('exclude_work_item_pattern', '')
+
+// 排除工作项：统一输入框写入两个互斥后端字段。
+// 以 /pattern/flags 形式输入视为正则 → exclude_work_item_regex（去掉首尾斜杠存裸正则）；
+// 否则视为子串包含 → exclude_work_item_pattern。读取时正则字段优先并补回斜杠便于展示。
+const excludeWorkItemPatternRaw = field('exclude_work_item_pattern', '')
+const excludeWorkItemRegexRaw = field('exclude_work_item_regex', '')
+const excludeWorkItemPattern = computed<string>({
+  get() {
+    if (excludeWorkItemRegexRaw.value)
+      return `/${excludeWorkItemRegexRaw.value}/`
+    return excludeWorkItemPatternRaw.value
+  },
+  set(v: string) {
+    const match = v.match(/^\/(.+)\/([gimsuvy]*)$/)
+    if (v.startsWith('/') && match) {
+      // 单次 emit 同时更新两字段，避免连续 set 读到过期 config 互相覆盖
+      updateFields({ exclude_work_item_regex: match[1], exclude_work_item_pattern: '' })
+    }
+    else {
+      updateFields({ exclude_work_item_pattern: v, exclude_work_item_regex: '' })
+    }
+  },
+})
 
 // ============================================================================
 // 空间选择器

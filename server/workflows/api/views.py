@@ -93,6 +93,45 @@ logger = structlog.get_logger()
 _SHORT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{2,11}$")
 
 
+async def _map_project_ids_to_feishu_keys(project_ids: list) -> list[str]:
+    """把 Friday Project UUID 列表映射成飞书 project_key 列表。
+
+    - 非法 UUID 跳过并记 warning（避免 ``id__in`` 抛 ValidationError）；
+    - 映射不到 feishu_project_key（为空/None 或 Project 不存在）的 UUID 跳过并记 warning；
+    - 保持入参顺序、去重交给上层（这里仅做映射）。
+    """
+    if not project_ids:
+        return []
+
+    from projects.models import Project
+
+    valid_ids: list[uuid.UUID] = []
+    for pid in project_ids:
+        try:
+            valid_ids.append(uuid.UUID(str(pid)))
+        except (ValueError, TypeError, AttributeError):
+            logger.warning("trigger_sync_invalid_project_id", project_id=str(pid))
+
+    if not valid_ids:
+        return []
+
+    mapping: dict[str, str] = {
+        str(pid): key
+        async for pid, key in Project.objects.filter(id__in=valid_ids).values_list(
+            "id", "feishu_project_key"
+        )
+    }
+
+    keys: list[str] = []
+    for pid in project_ids:
+        key = mapping.get(str(pid))
+        if key:
+            keys.append(key)
+        else:
+            logger.warning("trigger_sync_project_key_unmapped", project_id=str(pid))
+    return keys
+
+
 async def async_sync_workflow_triggers(workflow: Workflow) -> None:
     """Sync feishu_event_trigger nodes to WorkflowTrigger table.
 
@@ -122,9 +161,32 @@ async def async_sync_workflow_triggers(workflow: Workflow) -> None:
                 statuses.append(config["filter_status_custom"])
             filter_config["cur_work_item_status.state_key"] = statuses
 
-        # TRIG-01 / OQ#1：project_ids / exclude_* 负向、跨 ID 空间（Space UUID）字段**不**写入
-        # 正向 filter_config —— `_matches_filter` 仅支持正向 include，写入会造成静默误匹配。
-        # 负向 / Space UUID 过滤留 v2（见 21-CONTEXT Deferred）。
+        # 负向 / 白名单过滤写入 _include / _exclude 子结构（保持正向键不变以向后兼容）。
+        # project_ids / exclude_project_ids 是 Friday Project UUID，需映射成飞书
+        # project_key 才能与 payload 对比（不同 ID 空间）；映射不到的 UUID 跳过并记 warning。
+        include_keys = await _map_project_ids_to_feishu_keys(config.get("project_ids") or [])
+        exclude_keys = await _map_project_ids_to_feishu_keys(
+            config.get("exclude_project_ids") or []
+        )
+        exclude_pattern = config.get("exclude_work_item_pattern") or ""
+        exclude_regex = config.get("exclude_work_item_regex") or ""
+
+        include_block: dict = {}
+        if include_keys:
+            include_block["project_keys"] = include_keys
+
+        exclude_block: dict = {}
+        if exclude_keys:
+            exclude_block["project_keys"] = exclude_keys
+        if exclude_pattern:
+            exclude_block["work_item_pattern"] = exclude_pattern
+        if exclude_regex:
+            exclude_block["work_item_regex"] = exclude_regex
+
+        if include_block:
+            filter_config["_include"] = include_block
+        if exclude_block:
+            filter_config["_exclude"] = exclude_block
 
         for et in event_type_list:
             configured_triggers.append(

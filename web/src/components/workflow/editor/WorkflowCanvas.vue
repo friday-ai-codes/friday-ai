@@ -12,7 +12,8 @@ import { Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, markRaw } from 'vue'
+import { computed, inject, markRaw, onBeforeUnmount } from 'vue'
+import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
@@ -136,6 +137,20 @@ function onConnect(connection: Connection) {
 function handleFitView() {
   fitView({ duration: 300 })
 }
+
+// 聚焦指定节点：选中 + 画布居中（仅 VueFlow 上下文内可调 fitView）。
+// 通过共同祖先 provide 的持有器暴露给兄弟组件 IssuesPanel。
+const workflowFocus = inject(WorkflowFocusKey, null)
+function focusNode(nodeId: string) {
+  store.selectNode(nodeId)
+  fitView({ nodes: [nodeId], padding: 0.5, maxZoom: 1.2, duration: 400 })
+}
+if (workflowFocus)
+  workflowFocus.focusNode = focusNode
+onBeforeUnmount(() => {
+  if (workflowFocus)
+    workflowFocus.focusNode = null
+})
 
 // MiniMap 双击检测：MiniMap 内部 pannable 事件会吞掉 dblclick，
 // 因此在 capture 阶段手动检测连续两次 click 的间隔 (< 300ms)
