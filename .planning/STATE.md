@@ -4,8 +4,8 @@ milestone: v0.4.0
 milestone_name: 工作流系统契约重构
 status: Awaiting next milestone
 stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-13T16:01:21.009Z"
-last_activity: 2026-06-13 — Milestone v0.4.0 completed and archived
+last_updated: "2026-06-14T05:40:00.000Z"
+last_activity: 2026-06-14 — 清理历史遗留 tech debt（W1/W2/W3 + Phase20/21 v2 + 实时 PAT 通道），4 个原子提交
 progress:
   total_phases: 5
   completed_phases: 5
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 Phase: Milestone v0.4.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-13 — Milestone v0.4.0 completed and archived
+Last activity: 2026-06-14 — 历史遗留 tech debt 清理（见下方 "Deferred Items" / "Resolved 2026-06-14"）
 
 ## Milestone Overview (v0.4.0)
 
@@ -92,7 +92,12 @@ None.
 
 [Issues that affect future work]
 
-- v0.2.0 follow-up（by-design）：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路端到端运行时休眠；接入后才点亮 MCPB-02 / RTOOL-02·03·04 运行时（受 PAT-02 约束）。候选下一里程碑工作。
+- ✅ ~~v0.2.0 follow-up：实时明文 PAT 通道（contextvar）未接入，RemoteTool 链路休眠~~ —
+  已于 2026-06-14 接入（commit 8cb50e928）：带 `friday_pat_` Bearer 的手动触发经请求级
+  ContextVar → start_execution → ExecutionContext 瞬态字段下传，AICodingNode 据此注入
+  `env_FRIDAY_TASK_USER_TOKEN`。明文绝不落库/进日志（PAT-02 守护测试通过）。
+  **剩余**：chat/MCP 编码 dispatch 路径（`coding_session_service`）的 PAT 注入未覆盖；
+  真实容器端 RTOOL-02/03/04 运行时仍需带 PAT 的真实 dispatch + 容器 E2E 人工验收（见 Deferred）。
 
 ### Quick Tasks Completed
 
@@ -110,35 +115,51 @@ None.
 
 ## Deferred Items
 
-Items acknowledged and deferred at milestone close.
+Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
+🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| verification | Phase 01 人工验收（01-VERIFICATION.md） | human_needed | 2026-06-09 (v0.1.0 close) |
-| verification | Phase 02 人工验收（02-VERIFICATION.md） | human_needed | 2026-06-09 (v0.1.0 close) |
-| verification | Phase 06 人工验收（06-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 07 人工验收（07-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 08 人工验收（08-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 09 人工验收（09-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 10 人工验收（10-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 11 人工验收（11-VERIFICATION.md） | human_needed | 2026-06-10 (v0.2.0 close) |
-| verification | Phase 14 真实 git platform 超大 diff 截断人工验收（TD-14） | human_needed | 2026-06-12 (v0.3.0 close) |
-| verification | Phase 17 人工验收（17-VERIFICATION.md / 17-HUMAN-UAT.md，3 pending） | human_needed | 2026-06-13 (v0.4.0 close) |
-| verification | Phase 18 真实容器回调续跑 E2E 人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
-| verification | Phase 19 画布编辑观感人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
-| verification | Phase 20 IssuesPanel 交互 + 模板端到端执行人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
-| verification | Phase 21 真实飞书事件触发 + WS 断线降级 + suspended 显示人工验收 | human_needed | 2026-06-13 (v0.4.0 close) |
-| tech_debt | VALIDATION.md（18-21）nyquist_compliant frontmatter 未翻转 true（Wave 0 测试实际全绿，文档收尾） | deferred | 2026-06-13 (v0.4.0 close) |
-| scope_v2 | Phase 21 project_ids/exclude_* 触发过滤（负向 + 跨 ID 空间，需扩 matches_event） | deferred | 2026-06-13 (v0.4.0 close) |
-| scope_v2 | Phase 20 input.*/trigger.* 严格静态校验 + IssuesPanel 点击画布居中 | deferred | 2026-06-13 (v0.4.0 close) |
-| quick_task | 260610-oug-url-https / 260611-ghb-workflow-card-uniform（状态 unknown） | deferred | 2026-06-13 (v0.4.0 close) |
+### ✅ Resolved 2026-06-14（历史遗留清理）
+
+| Category | Item | Resolution |
+|----------|------|------------|
+| tech_debt | VALIDATION.md（18-21）nyquist_compliant frontmatter 未翻转 | 回写 true（commit 37a3bd6b2，复核 tests/workflows/ 479 passed） |
+| tech_debt | v0.3.0 W1：交付知识 `searchDeliveryKnowledge` 无 UI 消费 | index 占位页改为真实搜索页（5435fef23），浏览器实测搜索/空态正常 |
+| tech_debt | v0.3.0 W2：timeline 节点级 provenance 未填充 | 前端渲染 node.provenance + 修后端 code_change 跨版本串味 bug（5435fef23） |
+| tech_debt | v0.3.0 W3：graph enrich/related 边类型 | related.py 多跳取真实 edge.relation + 前端 relation 标签（5435fef23） |
+| scope_v2 | Phase 21 project_ids/exclude_* 触发负向过滤 | _include/_exclude + Project UUID→feishu_project_key 映射（9ab638f13） |
+| scope_v2 | Phase 20 input.*/trigger.* 严格静态校验 + IssuesPanel 点击居中 | graph_validator 严格校验（宽松降级）+ provide/inject fitView 居中（9ab638f13） |
+| follow-up | v0.2.0 实时明文 PAT 通道未接入（RemoteTool 休眠） | ContextVar → ExecutionContext 瞬态字段下传，点亮 AICoding RTOOL（8cb50e928） |
+| quick_task | 260610-oug-url-https / 260611-ghb-workflow-card-uniform（状态 unknown） | 复核两者均有 SUMMARY.md，确认已完成（标记过时，非遗留） |
+
+### 🔒 需真实外部系统才能闭环（本地无法验证，保持 deferred）
+
+| Item | 需要的环境 |
+|------|-----------|
+| Phase 14 真实 git platform 超大 diff 截断（TD-14） | 真实 GitLab/GitHub 大 MR |
+| Phase 18 真实容器回调续跑 E2E | runner + Docker + 任务容器 + 真实编码 agent |
+| Phase 21 真实飞书事件触发 + WS 断线降级观感 | 真实飞书应用 + 事件推送 |
+| RTOOL-02/03/04 运行时（带 PAT 注入容器端到端） | 带 PAT 的真实 dispatch + 容器执行（通道已接入，待真实环境验收） |
+
+### 🖐 纯观感人工验收（可后续浏览器抽验；2026-06-14 已部分实测）
+
+| Item | 2026-06-14 状态 |
+|------|----------------|
+| Phase 17 变量所选即所得 / 端口防护 / 选择器去重（17-HUMAN-UAT 3 pending） | 有 P17 UAT 种子工作流；运行态错误展示由 tests/workflows 覆盖；未逐项点击 |
+| Phase 19 画布编辑观感 | ✅ 浏览器实测：节点库 + 画布编辑器正常渲染（全节点类型可见） |
+| Phase 20 IssuesPanel 交互 + 模板端到端执行 | ✅ 浏览器实测：编辑器打开 + 保存流程执行正常；校验逻辑由 graph_validator 测试覆盖 |
+| Phase 21 suspended 显示 | 有 P21 suspended UAT 种子工作流 + 执行记录；前端 ExecutionStatus 由 vitest 覆盖 |
+| Phase 01/02/06–11 人工验收 | 多为首启向导（需 no-superuser 全新实例）/ 身份令牌；本实例已有 superuser，需独立环境复验 |
 
 ## Session Continuity
 
-Last session: 2026-06-12
-Stopped at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
+Last session: 2026-06-14（历史遗留 tech debt 清理）
+Stopped at: 6 项遗留代码全部实现并原子提交（37a3bd6b2 / 5435fef23 / 9ab638f13 / 8cb50e928）；
+git 工作树干净；浏览器抽验 W1/P19/P20 正常
 Resume file: None
 
 ## Operator Next Steps
 
+- 真实环境人工验收 🔒 项（飞书/容器/git platform/带 PAT 容器 E2E），见 Deferred Items
+- 可选：chat/MCP 编码 dispatch 路径的 PAT 注入（PAT 通道已就绪，复用同一 ContextVar）
+- 可选：POLISH-PLAN.md P0-2b（~900 行 GSD 流程痕迹文案清洗）
 - Start the next milestone with /gsd-new-milestone
