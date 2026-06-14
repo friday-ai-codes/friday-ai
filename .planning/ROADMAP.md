@@ -22,7 +22,7 @@
 2. 被排除文件在索引扫描、MCP get_file/grep、RAG 检索、编码容器 clone 后均不可见。
 3. 工具层对命中路径 fail-closed（拒读，不降级泄漏）。
 
-**Plans:** 6 plans（Wave 1: 22-01；Wave 2: 22-02/04/05/06 并行；Wave 3: 22-03）
+**Plans:** 7/6 plans complete
 **Wave 1**
 
 - [x] 22-01-PLAN.md — 排除数据模型 + 单一匹配器 + 内置全局默认 + 设置键 ✅ (064ebdcc0)
@@ -83,7 +83,7 @@
 
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
-| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | Complete (6/6 plans) | — |
+| 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Not started | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |

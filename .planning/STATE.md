@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search REST 旁路面 fail-closed 排除，原子提交 56d230553（fix+守护测试）+ a8f65548c（gap SUMMARY）
-last_updated: "2026-06-14T10:20:00.000Z"
-last_activity: 2026-06-14 -- 闭合 Phase 22 EXCL-02 gap（CodeSearchView._search REST 读取面 fail-closed）
+stopped_at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search（认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）返回前挂 build_matcher_for_repo + is_excluded fail-closed，被排除文件不返回 content/path，total 由过滤后集合重算；补对称守护测试 TestCodeSearchViewExclusion（2 例）；tests/test_code_search_branch.py 6 passed + 与 retrieval_exclusion 合跑 15 passed；原子提交 56d230553（fix+test）/ a8f65548c（gap SUMMARY）；EXCL-02 全读取面 fail-closed 闭环
+last_updated: "2026-06-14T10:38:44.032Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 6
-  percent: 100
+  completed_plans: 7
+  percent: 20
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 22-01 ✅ / 22-02 ✅ / 22-03 ✅ / 22-04 ✅ / 22-05 ✅ / 22-06 ✅（全 6 plans 完成）
+Phase: 23
+Plan: Not started
 Status: Executing Phase 22 — 全部 plan 已执行（待 verify/secure 收尾）
-Last activity: 2026-06-14 -- 闭合 Phase 22 EXCL-02 gap（CodeSearchView._search REST 读取面 fail-closed，56d230553）
+Last activity: 2026-06-14
 
 ## Milestone Overview (v0.5.0)
 
