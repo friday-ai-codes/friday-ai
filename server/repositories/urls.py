@@ -38,8 +38,10 @@ from .tree_views import (
 )
 from .views import (
     CacheManagementView,
+    RepositoryCleanupStatusView,
     RepositoryExclusionRuleDetailView,
     RepositoryExclusionRulesView,
+    RepositoryReconcileView,
     RepositorySpacesView,
     RepositoryViewSet,
     SetAccessTokenView,
@@ -244,6 +246,17 @@ urlpatterns = [
         "<uuid:repository_id>/exclusions/<uuid:rule_id>/",
         RepositoryExclusionRuleDetailView.as_view(),
         name="repository-exclusion-detail",
+    ),
+    # Plan 23-02：对账 + 两模式清理 + 状态查询（EXCL-04 / EXCL-06）
+    path(
+        "<uuid:repository_id>/reconcile/status/",
+        RepositoryCleanupStatusView.as_view(),
+        name="repository-reconcile-status",
+    ),
+    path(
+        "<uuid:repository_id>/reconcile/",
+        RepositoryReconcileView.as_view(),
+        name="repository-reconcile",
     ),
     # Hash 新鲜度立即刷新（implementation contract）
     path(

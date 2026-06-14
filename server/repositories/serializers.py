@@ -7,7 +7,7 @@ from rest_framework import serializers
 
 from services.exclusion import is_redos_risky
 
-from .models import GitCredential, RepoExclusionRule, Repository
+from .models import CleanupRun, GitCredential, RepoExclusionRule, Repository
 
 # SSH 仓库地址的两种形态：scp 风格（git@host:group/repo.git）与
 # ssh:// 协议（ssh://git@host[:port]/group/repo.git，端口为 ssh 端口需丢弃）。
@@ -216,6 +216,54 @@ class RepoExclusionRuleSerializer(serializers.ModelSerializer):
             except re.error as exc:
                 raise serializers.ValidationError({"pattern": f"非法 glob 规则：{exc}"}) from exc
         return attrs
+
+
+class ReconcileReportSerializer(serializers.Serializer):
+    """对账结果出参（Plan 23-02，EXCL-06 / W3）。
+
+    序列化 ``services.purge_reconcile.ReconcileReport`` 数据类；``degraded`` / ``error``
+    必须随响应贯通到前端，使「匹配器构造失败 → 对账不可信」如实可见（W3，不谎报已一致）。
+    """
+
+    indexed_count = serializers.IntegerField()
+    excluded_paths = serializers.ListField(child=serializers.CharField())
+    match_count = serializers.IntegerField()
+    suggested_mode = serializers.CharField()
+    degraded = serializers.BooleanField()
+    error = serializers.CharField(allow_blank=True)
+
+
+class CleanupRequestSerializer(serializers.Serializer):
+    """清理请求入参（Plan 23-02）：``mode`` ∈ {normal, sensitive}，默认 normal。"""
+
+    mode = serializers.ChoiceField(
+        choices=["normal", "sensitive"],
+        required=False,
+        default="normal",
+    )
+
+
+class CleanupRunSerializer(serializers.ModelSerializer):
+    """清理运行记录出参（Plan 23-02，W1/W2）。
+
+    ``sensitive`` 原样透传 23-03 ``purge_sensitive_planes`` 返回 dict（含各面计数 +
+    unscrubbed + caveat），使后台敏感清理「哪些面未清」如实回流前端，不靠静态文案。
+    """
+
+    class Meta:
+        model = CleanupRun
+        fields = [
+            "id",
+            "mode",
+            "status",
+            "match_count",
+            "failures",
+            "sensitive",
+            "started_at",
+            "completed_at",
+            "error",
+        ]
+        read_only_fields = fields
 
 
 class GitCredentialSerializer(serializers.ModelSerializer):
