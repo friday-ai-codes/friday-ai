@@ -1231,6 +1231,25 @@ class IndexerService:
             # api_domains 随索引完成重算；失败不回滚索引。
             await self._refresh_tree_facts()
 
+            # EXCL-03（Plan 24-02）：全量索引完成后，best-effort 后台触发敏感文件检测。
+            # 经 run_in_background 脱离索引/请求生命周期派发，**不** await 其结果；
+            # 整段 try/except 吞派发自身异常——检测失败（或派发失败）绝不阻断索引
+            # success 终态（DOMAIN §9 D-04 fail-safe，T-24-05）。
+            try:
+                from services.background_runner import run_in_background
+                from services.sensitive_detect import detect_sensitive_files
+
+                run_in_background(
+                    lambda: detect_sensitive_files(self.repository_id, repo_path),
+                    name=f"sensitive-detect:{self.repository_id}",
+                )
+            except Exception:
+                logger.warning(
+                    "sensitive_detect_dispatch_failed",
+                    repository_id=self.repository_id,
+                    exc_info=True,
+                )
+
             return {
                 "status": "success",
                 "files_processed": total_files,
