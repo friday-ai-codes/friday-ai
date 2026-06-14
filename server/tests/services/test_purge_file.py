@@ -238,3 +238,43 @@ async def test_purge_file_never_indexed_no_error(repository: Any) -> None:
     assert result.chunk_registry_deleted == 0
     assert result.codegraph_deleted == 0
     assert not result.failures
+
+
+async def test_incremental_delete_path_converges_on_purge_file(
+    repository: Any, tmp_path: Any
+) -> None:
+    """run_incremental_index 的 DELETE 分支收敛到 purge_file（PF-03 收口）。
+
+    预置一条本地已不存在的 FileIndex（即「被删文件」），跑增量索引，断言其 DELETE
+    分支恰以 ``(repository_id, file_path)`` 调一次 ``purge_file``。
+    """
+    from unittest.mock import AsyncMock
+
+    from asgiref.sync import sync_to_async
+
+    from repositories.models import FileIndex
+    from services import indexer as ix
+    from services.exclusion import invalidate_matcher_cache
+    from services.indexer import IndexerService
+    from services.purge import PurgeResult
+
+    await sync_to_async(FileIndex.objects.create)(
+        repository=repository, file_path="gone.py", file_hash="old"
+    )
+    invalidate_matcher_cache(str(repository.id))
+
+    indexer = IndexerService(str(repository.id))
+
+    async def _noop(self: object, *a: object, **kw: object) -> None:
+        return None
+
+    mock_purge = AsyncMock(return_value=PurgeResult())
+    with (
+        patch.object(ix.IndexerService, "_ensure_collection", _noop),
+        patch.object(ix, "purge_file", new=mock_purge),
+    ):
+        result = await indexer.run_incremental_index(str(tmp_path))
+
+    assert result["status"] == "success"
+    assert result["deleted"] == 1
+    mock_purge.assert_awaited_once_with(str(repository.id), "gone.py")
