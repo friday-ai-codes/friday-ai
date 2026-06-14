@@ -49,11 +49,11 @@
 
 **Known deferred items at close:** 1 — Phase 14 真实 git platform 超大 diff 截断需 dev 环境人工验收（TD-14，详见 audit）
 
-**Known follow-ups (tech debt):**
+**Known follow-ups (tech debt):** — ✅ 全部已于 2026-06-14 解决（commit 5435fef23）
 
-- W1: 前端 `searchDeliveryKnowledge` 无 UI 消费（index 为占位页）
-- W2: timeline 节点级 `provenance` 未填充
-- W3: graph enrich 边类型统一标为 RELATES_TO
+- ~~W1: 前端 `searchDeliveryKnowledge` 无 UI 消费（index 为占位页）~~ → index 改为真实搜索页
+- ~~W2: timeline 节点级 `provenance` 未填充~~ → 前端渲染 + 修后端跨版本串味 bug
+- ~~W3: graph enrich 边类型统一标为 RELATES_TO~~ → related.py 多跳取真实 edge.relation + 前端 relation 标签
 
 ---
 
@@ -94,10 +94,12 @@
 
 **Known deferred items at close:** 6 — Phase 6-11 人工验收（UAT）顺延（自动化全绿，浏览器/容器级 E2E 待人工确认，详见 STATE.md Deferred Items）。
 
-**Known follow-ups (tech debt, by-design):**
+**Known follow-ups (tech debt, by-design):** — 部分已于 2026-06-14 解决
 
-- Phase 11 实时明文 PAT 通道（contextvar）未接入：_resolve_user_pat 恒返回 ''，RemoteTool 链路端到端休眠、ToolTokenBinding 暂未被执行路径消费（受 PAT-02 明文不落盘约束的有意推迟，Open-Q1 Option C）
-- MCPB-02 集成 PARTIAL：执行端点已按 PAT 认证为 owner，但 execute_tool 未接收 user 上下文
-- Nyquist 卫生：各阶段 *-VALIDATION.md frontmatter nyquist_compliant 仍为 false（仅标志位未回填）
+- ✅ ~~Phase 11 实时明文 PAT 通道（contextvar）未接入：_resolve_user_pat 恒返回 ''，RemoteTool 链路休眠~~
+  → 已接入（commit 8cb50e928）：请求级 ContextVar → ExecutionContext 瞬态字段，AICoding dispatch 注入 USER_TOKEN；
+  明文绝不落库/进日志。剩余：chat/MCP dispatch 路径未覆盖；带 PAT 容器端 E2E 待真实环境验收
+- MCPB-02 集成 PARTIAL：执行端点已按 PAT 认证为 owner，但 execute_tool 未接收 user 上下文（仍 deferred）
+- ✅ ~~Nyquist 卫生：各阶段 *-VALIDATION.md frontmatter nyquist_compliant 仍为 false~~ → v0.4.0 的 18-21 已回填（commit 37a3bd6b2）
 
 ---
