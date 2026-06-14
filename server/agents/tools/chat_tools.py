@@ -25,9 +25,50 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
+from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.qdrant_service import QdrantService
 
 logger = structlog.get_logger(__name__)
+
+
+async def _build_matcher_failclosed(repository_id: str) -> Any:
+    """获取仓库排除匹配器（EXCL-02 单一匹配器）；构造异常 → 返回 ``None``（fail-closed 兜底）。
+
+    调用方用 ``_matcher_excludes(matcher, path)`` 判定，``None`` 一律视为命中（拒读/过滤），
+    绝不在匹配器不可用时降级放行被排除文件。
+    """
+    try:
+        return await build_matcher_for_repo(repository_id)
+    except Exception:  # noqa: BLE001 — 构造失败一律 fail-closed
+        logger.warning("exclusion.matcher_build_failed", repository_id=repository_id)
+        return None
+
+
+def _matcher_excludes(matcher: Any, rel_path: str) -> bool:
+    """fail-closed 判定：``matcher`` 缺失或判定异常一律视为「已排除」。"""
+    if matcher is None:
+        return True
+    try:
+        return matcher.is_excluded(rel_path)
+    except Exception:  # noqa: BLE001 — 判定异常 → fail-closed
+        return True
+
+
+def _excluded_browse_result(repository_id: str, file_path: str) -> ToolResult:
+    """browse_file_content 命中排除的拒读返回（chunks=[]，绝不带任何明文）。"""
+    return ToolResult(
+        success=True,
+        output={
+            "data": {
+                "file_path": file_path,
+                "repository_id": repository_id,
+                "chunks": [],
+                "total_chunks": 0,
+            },
+            "error": "File is excluded by policy",
+        },
+    )
+
 
 # (collection_name) -> (expires_at_unix_ts, sorted_file_paths)
 # 60s TTL 足够覆盖一次 LLM 的连续 N 次失败重试；过期后再 scroll 一次。
@@ -40,10 +81,9 @@ _indexed_paths_cache: dict[str, tuple[float, list[str]]] = {}
 # 共享 scroll 辅助 — 按 collection 名 + file_path 拉取全部 chunk
 # ---------------------------------------------------------------------------
 
+
 @sync_to_async  # KEEP: Qdrant SDK 同步限制
-def _scroll_file_from_collection(
-    collection_name: str, file_path: str
-) -> list[dict[str, Any]]:
+def _scroll_file_from_collection(collection_name: str, file_path: str) -> list[dict[str, Any]]:
     """从指定 collection 按 file_path 拉取所有 chunk payload。"""
     try:
         client = QdrantService.get_client()
@@ -76,7 +116,9 @@ def _scroll_file_from_collection(
 
         return all_points
     except (ResponseHandlingException, UnexpectedResponse) as e:
-        logger.warning("qdrant_scroll_failed", collection=collection_name, file_path=file_path, error=str(e))
+        logger.warning(
+            "qdrant_scroll_failed", collection=collection_name, file_path=file_path, error=str(e)
+        )
         return []
 
 
@@ -126,7 +168,10 @@ def _list_indexed_paths(collection_name: str) -> list[str]:
 
 
 def _resolve_fuzzy_path(
-    requested: str, indexed_paths: list[str], *, max_candidates: int = 5,
+    requested: str,
+    indexed_paths: list[str],
+    *,
+    max_candidates: int = 5,
 ) -> list[str]:
     """从 indexed_paths 里找与 requested 路径"尾部对齐"的真实路径候选。
 
@@ -223,6 +268,15 @@ async def browse_file_content(
         branch=branch,
     )
 
+    # EXCL-02 fail-closed：入口即按 (repository_id, file_path) 判定排除，命中拒读，
+    # 绝不进入 scroll 返回任何 chunk 明文（T-22-08）。
+    matcher = await _build_matcher_failclosed(repository_id)
+    if _matcher_excludes(matcher, file_path):
+        log_exclusion_blocked(
+            surface="browse_file_content", repository_id=repository_id, rel_path=str(file_path)
+        )
+        return _excluded_browse_result(repository_id, file_path)
+
     chunks_raw: list[dict[str, Any]] = []
 
     # 分支路由：功能分支文件需要从 overlay collection 获取
@@ -283,6 +337,14 @@ async def browse_file_content(
         if len(candidates) == 1:
             # 唯一匹配：直接用真实路径重 scroll，对 LLM 透明
             resolved_path = candidates[0]
+            # 后缀解析出的真实路径必须复判（防止经 endswith 匹配绕过排除，T-22-09）。
+            if _matcher_excludes(matcher, resolved_path):
+                log_exclusion_blocked(
+                    surface="browse_file_content",
+                    repository_id=repository_id,
+                    rel_path=str(resolved_path),
+                )
+                return _excluded_browse_result(repository_id, resolved_path)
             logger.info(
                 "browse_file_content_fuzzy_resolved",
                 requested=file_path,
@@ -349,13 +411,15 @@ async def browse_file_content(
         if end_line is not None and chunk_start > end_line:
             continue
 
-        chunks.append({
-            "content": chunk.get("content", ""),
-            "chunk_index": chunk.get("chunk_index", 0),
-            "start_line": chunk.get("start_line"),
-            "end_line": chunk.get("end_line"),
-            "language": chunk.get("language", ""),
-        })
+        chunks.append(
+            {
+                "content": chunk.get("content", ""),
+                "chunk_index": chunk.get("chunk_index", 0),
+                "start_line": chunk.get("start_line"),
+                "end_line": chunk.get("end_line"),
+                "language": chunk.get("language", ""),
+            }
+        )
 
     logger.info(
         "browse_file_content_success",
@@ -402,9 +466,7 @@ async def browse_file_content(
             },
             "repository_id": {
                 "type": "string",
-                "description": (
-                    "可选：限定到单个仓库的 UUID。不传则列出空间下所有已索引仓库。"
-                ),
+                "description": ("可选：限定到单个仓库的 UUID。不传则列出空间下所有已索引仓库。"),
             },
             "branch": {
                 "type": "string",
@@ -542,12 +604,23 @@ async def list_space_structure(
                         if p in base_map:
                             merged_files.append(base_map[p])
                         else:
-                            merged_files.append({
-                                "path": p,
-                                "language": "",
-                                "repo_name": repo.name,
-                            })
+                            merged_files.append(
+                                {
+                                    "path": p,
+                                    "language": "",
+                                    "repo_name": repo.name,
+                                }
+                            )
                     files = merged_files
+
+        # EXCL-02 fail-closed：按各自 repo 的匹配器过滤被排除文件，不进入文件树。
+        repo_matcher = await _build_matcher_failclosed(repo_id)
+        kept_files = [f for f in files if not _matcher_excludes(repo_matcher, f["path"])]
+        if len(kept_files) != len(files):
+            log_exclusion_blocked(
+                surface="list_space_structure", repository_id=repo_id, rel_path=""
+            )
+        files = kept_files
 
         all_files.extend(files)
 
@@ -711,11 +784,13 @@ async def get_space_overview(
 
             return {
                 "file_count": len(file_paths),
-                "languages": dict(sorted(
-                    language_counts.items(),
-                    key=lambda x: x[1],
-                    reverse=True,
-                )),
+                "languages": dict(
+                    sorted(
+                        language_counts.items(),
+                        key=lambda x: x[1],
+                        reverse=True,
+                    )
+                ),
             }
         except (ResponseHandlingException, UnexpectedResponse) as e:
             logger.warning("qdrant_repo_stats_failed", repo_id=repo_id, error=str(e))
@@ -744,9 +819,7 @@ async def get_space_overview(
 
                 repo_id_str = str(repo.id)
                 if await is_branch_index_enabled_async(repo_id_str):
-                    _, branch_index = await resolve_branch_for_query(
-                        repo_id_str, branch
-                    )
+                    _, branch_index = await resolve_branch_for_query(repo_id_str, branch)
                     if (
                         branch_index
                         and not branch_index.is_base_branch
@@ -793,7 +866,6 @@ async def get_space_overview(
 # ============================================================================
 
 DEEP_ANALYSIS_TIMEOUT = 1800  # 30 分钟
-
 
 
 @tool(
@@ -886,14 +958,21 @@ async def deep_analysis(
 
     if repository_id:
         repos = [
-            repo async for repo in Repository.objects.filter(
-                id=repository_id, projects=project, is_deleted=False, index_status="indexed",
+            repo
+            async for repo in Repository.objects.filter(
+                id=repository_id,
+                projects=project,
+                is_deleted=False,
+                index_status="indexed",
             )
         ]
     else:
         repos = [
-            repo async for repo in Repository.objects.filter(
-                projects=project, is_deleted=False, index_status="indexed",
+            repo
+            async for repo in Repository.objects.filter(
+                projects=project,
+                is_deleted=False,
+                index_status="indexed",
             )[:1]
         ]
 
@@ -936,7 +1015,8 @@ async def deep_analysis(
     for _attempt in range(3):
         heartbeat_threshold = tz.now() - __import__("datetime").timedelta(seconds=120)
         online_runners = await Runner.objects.filter(
-            status="online", last_heartbeat__gte=heartbeat_threshold,
+            status="online",
+            last_heartbeat__gte=heartbeat_threshold,
         ).acount()
         if online_runners > 0:
             break
@@ -1028,6 +1108,7 @@ async def deep_analysis(
             # SSH URL → HTTPS（token 认证需要 HTTPS）
             if repo_url.startswith("git@"):
                 import re
+
                 m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
                 if m:
                     repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
