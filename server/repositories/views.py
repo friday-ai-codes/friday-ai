@@ -20,14 +20,17 @@ from rest_framework.response import Response
 
 from common.encryption import decrypt_value, encrypt_value
 from permissions.api_permissions import IsSuperUser
+from services.background_runner import run_in_background
 from services.dependency_cache import DependencyCacheManager
 from services.exclusion import get_global_default_specs, invalidate_matcher_cache
+from services.purge_reconcile import compute_reconciliation, run_cleanup
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
 
 from .models import (
     AISummaryStatus,
     AuthType,
+    CleanupRun,
     GitCredential,
     IndexHistory,
     IndexHistoryStatus,
@@ -38,7 +41,10 @@ from .models import (
     TriggerType,
 )
 from .serializers import (
+    CleanupRequestSerializer,
+    CleanupRunSerializer,
     GitCredentialSerializer,
+    ReconcileReportSerializer,
     RepoExclusionRuleSerializer,
     RepositoryCreateSerializer,
     RepositorySerializer,
@@ -1105,3 +1111,95 @@ class RepositoryExclusionRuleDetailView(APIView):
         await rule.adelete()
         invalidate_matcher_cache(str(repository_id))
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RepositoryReconcileView(APIView):
+    """对账（GET）/ 派发清理（POST）（Plan 23-02，EXCL-04 / EXCL-06）。
+
+    GET  /api/repositories/{id}/reconcile/
+        -> {indexed_count, excluded_paths, match_count, suggested_mode, degraded, error}
+        列出「已索引但现命中排除」的差异文件；匹配器构造失败时 ``degraded=true``（W3，
+        不谎报「已一致」假干净）。
+
+    POST /api/repositories/{id}/reconcile/   body: {mode?: "normal"|"sensitive"}
+        先建一条 ``CleanupRun(status=running)`` 拿 ``run_id``，再经 ``run_in_background``
+        派发后台 ``run_cleanup``（D-04，避免大仓清理阻塞请求线程，T-23-08），立即返回
+        202 + {mode, match_count, dispatched, run_id}。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        report = await compute_reconciliation(str(repository_id))
+        data = await sync_to_async(lambda: ReconcileReportSerializer(report).data)()
+        return Response(data)
+
+    async def post(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CleanupRequestSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        mode = serializer.validated_data["mode"]
+
+        # 命中数（供客户端即时展示将清理多少文件）；degraded 时为 0。
+        report = await compute_reconciliation(str(repository_id))
+
+        # 先落 running 行拿 run_id，后台 run_cleanup 据此更新（结果可经状态端点回流，W1/W2）
+        run = await CleanupRun.objects.acreate(
+            repository_id=repository_id,
+            mode=mode,
+            status=CleanupRun.Status.RUNNING,
+        )
+        run_id = str(run.id)
+        repo_id = str(repository_id)
+
+        run_in_background(
+            lambda: run_cleanup(repo_id, mode, cleanup_run_id=run_id),
+            name=f"cleanup:{repo_id}:{run_id}",
+        )
+
+        return Response(
+            {
+                "mode": mode,
+                "match_count": report.match_count,
+                "dispatched": True,
+                "run_id": run_id,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class RepositoryCleanupStatusView(APIView):
+    """最近一次清理运行状态（Plan 23-02，W1/W2）。
+
+    GET /api/repositories/{id}/reconcile/status/
+        -> 最近一条 ``CleanupRun`` 序列化（含 sensitive 的 unscrubbed/caveat 原样透传，
+           使后台敏感清理「哪些面未清」如实回流前端，不靠静态文案）；无记录 → {status: "none"}。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        run = (
+            await CleanupRun.objects.filter(repository_id=repository_id)
+            .order_by("-started_at")
+            .afirst()
+        )
+        if run is None:
+            return Response({"status": "none"})
+
+        data = await sync_to_async(lambda: CleanupRunSerializer(run).data)()
+        return Response(data)
