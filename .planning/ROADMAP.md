@@ -89,7 +89,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 24-04-PLAN.md — 前端建议面板（real_secret 高优先级告警 + 接受/忽略 + 页面挂载）
+- [x] 24-04-PLAN.md — 前端建议面板（real_secret 高优先级告警 + 接受/忽略 + 页面挂载） ✅ 2026-06-15
 
 ### Phase 25: Commit 历史索引 + 行号反查
 
@@ -115,7 +115,7 @@ Plans:
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | In progress (3/4) | — |
+| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | All plans done (4/4) | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
