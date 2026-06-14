@@ -26,9 +26,7 @@ OTHER = "src/keeps.py"
 FEATURE = "feat-x"
 
 
-def _seed_chunk(
-    repository: Any, *, file_path: str, branch_name: str = "", index: int = 0
-) -> Any:
+def _seed_chunk(repository: Any, *, file_path: str, branch_name: str = "", index: int = 0) -> Any:
     from code_relations.models import ChunkRegistry
 
     return ChunkRegistry.objects.create(
@@ -127,9 +125,7 @@ def _codegraph_rows(repository_id: str, file_path: str) -> int:
 
     return (
         Symbol.objects.filter(repository_id=repository_id, file_path=file_path).count()
-        + ImportEdge.objects.filter(
-            repository_id=repository_id, source_file=file_path
-        ).count()
+        + ImportEdge.objects.filter(repository_id=repository_id, source_file=file_path).count()
         + Endpoint.objects.filter(repository_id=repository_id, file_path=file_path).count()
         + CallEdge.objects.filter(repository_id=repository_id, caller_file=file_path).count()
     )
@@ -170,9 +166,7 @@ async def test_purge_file_clears_all_five_planes(repository: Any) -> None:
     target = await sync_to_async(_seed_chunk)(repository, file_path=PATH, branch_name="")
     await sync_to_async(_seed_chunk)(repository, file_path=PATH, branch_name=FEATURE, index=1)
     source = await sync_to_async(_seed_chunk)(repository, file_path=OTHER, index=2)
-    await sync_to_async(_seed_edge)(
-        repository, source=source.chunk_id, target=target.chunk_id
-    )
+    await sync_to_async(_seed_edge)(repository, source=source.chunk_id, target=target.chunk_id)
 
     # codegraph：base + feature
     await sync_to_async(_seed_codegraph)(repository, file_path=PATH, branch_name="")
@@ -191,26 +185,17 @@ async def test_purge_file_clears_all_five_planes(repository: Any) -> None:
     assert result.qdrant_overlays == 1
 
     # FileIndex / ChunkRegistry / ChunkEdge 无残留
+    assert await FileIndex.objects.filter(repository_id=repository.id, file_path=PATH).acount() == 0
     assert (
-        await FileIndex.objects.filter(
-            repository_id=repository.id, file_path=PATH
-        ).acount()
+        await ChunkRegistry.objects.filter(repository_id=repository.id, file_path=PATH).acount()
         == 0
     )
-    assert (
-        await ChunkRegistry.objects.filter(
-            repository_id=repository.id, file_path=PATH
-        ).acount()
-        == 0
+    assert await ChunkEdge.objects.filter(target_chunk_id=target.chunk_id).acount() == 0, (
+        "pre_delete 信号应清掉指向被删 chunk 的 ChunkEdge"
     )
-    assert (
-        await ChunkEdge.objects.filter(target_chunk_id=target.chunk_id).acount() == 0
-    ), "pre_delete 信号应清掉指向被删 chunk 的 ChunkEdge"
     # OTHER 上的源 chunk 不应被误删（repository_id 作用域）
     assert (
-        await ChunkRegistry.objects.filter(
-            repository_id=repository.id, file_path=OTHER
-        ).acount()
+        await ChunkRegistry.objects.filter(repository_id=repository.id, file_path=OTHER).acount()
         == 1
     )
 
