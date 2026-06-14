@@ -35,7 +35,7 @@ Last activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-0
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
-| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
+| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (1/4 plans done) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
