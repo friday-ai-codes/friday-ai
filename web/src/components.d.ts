@@ -307,6 +307,7 @@ declare module 'vue' {
     SelectSeparator: typeof import('./components/ui/select/SelectSeparator.vue')['default']
     SelectTrigger: typeof import('./components/ui/select/SelectTrigger.vue')['default']
     SelectValue: typeof import('./components/ui/select/SelectValue.vue')['default']
+    SensitiveSuggestionsPanel: typeof import('./components/repository/SensitiveSuggestionsPanel.vue')['default']
     Separator: typeof import('./components/ui/separator/Separator.vue')['default']
     SetupFeishuStep: typeof import('./components/setup/SetupFeishuStep.vue')['default']
     SetupProviderStep: typeof import('./components/setup/SetupProviderStep.vue')['default']
