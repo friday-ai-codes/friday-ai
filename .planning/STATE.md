@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 23-04——web/src/api/reconcile.ts（reconcileApi + ReconcileReport/CleanupDispatch/CleanupRun 类型，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 + degraded『对账不可信』警示并禁用清理 W3 + 普通/敏感双入口 §9.2 + 敏感强确认含不可逆/不承诺 git/备份物理消失 §9.1 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun.sensitive unscrubbed/caveat W1/W2）+ 仓库详情页挂载 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5）、eslint 0 错；原子提交 51cd36867 / baa35af01
-last_updated: "2026-06-14T16:37:51.268Z"
-last_activity: 2026-06-14 -- Phase 24 execution started
+stopped_at: 完成 24-01——SensitiveFileSuggestion 模型（repo FK + path + severity/detector/status + 脱敏 reason + unique(repo,path) + (repo,status) 索引）+ 迁移 0034（依赖 0033，makemigrations --check 干净）+ services/sensitive_detect.py 确定性检测器（独立有界遍历跳过 .git/node_modules + 1MiB/二进制/symlink；文件名启发式复用 BUILTIN_GLOBAL_DEFAULTS glob basename 大小写不敏感；内容扫描私钥/AWS/GitHub/Slack/通用赋值/高熵串；_redact_reason 仅类型+行号绝不含密钥本体 T-24-01；aupdate_or_create upsert + dismissed 不复扰 + real_secret 升级置 pending）+ 6 例守护测试全绿（含 value-not-in-reason 脱敏断言）；ruff 0 错、grep scan_directory 空；TDD 原子提交 69c5a2c17（模型迁移）/ 8c8cbf93d（RED）/ 851c88e6f（GREEN）
+last_updated: "2026-06-15T00:00:00.000Z"
+last_activity: 2026-06-15 -- Phase 24 Plan 01 完成（确定性敏感检测核心）
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 14
-  completed_plans: 11
-  percent: 40
+  completed_plans: 12
+  percent: 43
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 24 (敏感文件 AI 识别建议名单) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4（24-01 完成）
 Status: Executing Phase 24
-Last activity: 2026-06-14 -- Phase 24 execution started
+Last activity: 2026-06-15 -- Phase 24 Plan 01 完成（确定性敏感检测核心）
 
 ## Milestone Overview (v0.5.0)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-14 -- Phase 24 execution started
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
-| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
+| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | In progress (1/4) |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
@@ -89,6 +89,7 @@ Last activity: 2026-06-14 -- Phase 24 execution started
 | Phase 23 P02 | ~30min | 2 tasks | 7 files |
 | Phase 23 P03 | ~25min | 2 tasks | 2 files |
 | Phase 23 P04 | ~20min | 2 tasks | 5 files |
+| Phase 24 P01 | ~22min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 23]: 23-03: TaskResult/ActionLog 关联键 = _normalize_repo_url(session.repo_url)==_normalize_repo_url(repo.git_url)（去 .git/末尾斜杠/小写）；归一不匹配的记录完全不动（T-23-12 保守，宁漏勿误删他仓产物）
 - [Phase 23]: 23-03: message parts/content 无 repo 关联键（Conversation 绑 Project 非 Repository）→ best-effort 子串脱敏（_redact_value 只替换命中被排除路径的 str 叶子，保留同载荷其余字段，不整库清空 T-23-13）；prompt_snapshot/backups/git_objects 记 unscrubbed + SENSITIVE_PLANES_CAVEAT 如实声明 git object/历史/备份不承诺物理消失（§9.1 T-23-11，绝不假装清除）
 - [Phase 23]: 23-04: 前端 web/src/api/reconcile.ts + ReconcilePanel.vue 兑现 EXCL-06 可见闭环；degraded 前端落地——degraded=true → 显式『对账不可信』警示 + 禁用双清理按钮、绝不渲染空态/已一致（W3）；普通/敏感双入口分离（§9.2），敏感强确认直取 §9.1『不可逆 + 仅清 Friday 派生/操作记录可定位内容，不承诺从 git 历史或备份物理消失』
+- [Phase 24]: 24-01: 确定性检测器 services.sensitive_detect.detect_sensitive_files(repository_id, repo_path) async 入口——独立有界遍历（**不**复用 indexer 扩展名白名单扫描，否则漏 .env/id_rsa/*.pem）；遍历跳过集仅 .git/node_modules，**不**纳入 BUILTIN dir 默认（.ssh/secrets 恰是要识别的目标，偏离 PLAN 措辞 Rule 1）；1MiB+二进制 NUL 嗅探+symlink 跳过（T-24-02）
+- [Phase 24]: 24-01: reason 经唯一构造入口 _redact_reason(kind, line_no) 只写「类型+行号」，绝不回填命中文本/group 值（T-24-01）；审计 sensitive.detected 仅计数/severity。内容扫描模块级编译正则 _SECRET_PATTERNS（私钥块/AWS AKIA+赋值/GitHub gh[pousr]_/Slack xox/通用 api_key|secret|password|token 赋值）+ 高熵 Shannon≥4.0 跳注释行；content 命中即 real_secret，高熵单独命中降 likely_sensitive
+- [Phase 24]: 24-01: 持久化单一入口 _upsert_suggestion 经 aupdate_or_create(repository_id, path)——dismissed 仅在升级为 real_secret（旧非 real_secret）时重置 pending 打扰，否则保留 dismissed 不复扰；accepted 保留不动；severity 合并取最高（real_secret>likely_sensitive>config_review），detector 有内容命中取 content 否则 heuristic
+- [Phase 24]: 24-01: 文件名启发式复用 services.exclusion.BUILTIN_GLOBAL_DEFAULTS 的 glob 基线（_build_filename_globs 仅 glob 型，fnmatch.translate + re.IGNORECASE，basename 兜底 BL-01），命中返回 config_review 基线
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -209,10 +214,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 23 Plan 04 — 对账/清理前端面板，Phase 23 收官）
-Stopped at: 完成 23-04——web/src/api/reconcile.ts（reconcileApi + ReconcileReport/CleanupDispatch/CleanupRun 类型，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 + degraded『对账不可信』警示并禁用清理 W3 + 普通/敏感双入口 §9.2 + 敏感强确认含不可逆/不承诺 git/备份物理消失 §9.1 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun.sensitive unscrubbed/caveat W1/W2）+ 仓库详情页挂载 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5）、eslint 0 错；原子提交 51cd36867 / baa35af01
+Last session: 2026-06-15（Phase 24 Plan 01 — 确定性敏感检测核心：模型+迁移+检测器）
+Stopped at: 完成 24-01——SensitiveFileSuggestion 模型 + 迁移 0034 + services/sensitive_detect.py（独立有界遍历 + 文件名启发式复用 BUILTIN_GLOBAL_DEFAULTS + 内容密钥扫描 + _redact_reason 脱敏 + aupdate_or_create upsert/dismissed-respect/real_secret 升级）+ 6 例守护测试全绿；ruff 0 错、makemigrations --check 干净、grep scan_directory 空；TDD 原子提交 69c5a2c17 / 8c8cbf93d / 851c88e6f
 Resume file: None
-Next: Phase 23 全部完成（EXCL-04/05/06）。下一步 Phase 24（敏感文件 AI 识别建议名单，EXCL-03）— Not started；或 /gsd-plan-phase 24
+Next: Phase 24 Plan 02（run_full_index 后台 best-effort 触发 detect_sensitive_files + 可选 LLM 二分类 graceful 退化）；或 /gsd-execute-phase 24（Wave 2：24-02/24-03）
 
 ## Operator Next Steps
 
