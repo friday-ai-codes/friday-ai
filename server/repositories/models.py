@@ -889,3 +889,88 @@ class BranchFileIndex(models.Model):
 
     def __str__(self) -> str:
         return f"{self.file_path} ({self.change_type})"
+
+
+class SensitiveFileSuggestion(models.Model):
+    """敏感文件 AI 识别建议（Phase 24，EXCL-03）。
+
+    检测器（``services/sensitive_detect.py``）在索引阶段产出**建议名单**：识别疑似
+    含密钥 / 敏感信息的文件，供用户确认后接入 Phase 22 ``RepoExclusionRule``
+    （source="ai_suggested"）——**绝不静默删除 / 绝不自动建规则**（DOMAIN §9 D-03）。
+
+    upsert 锚点为 ``(repository, path)``：重复检测同一 path 更新而非重复插入；用户
+    ``dismissed`` 的不反复打扰，除非升级为 ``real_secret``（升级打扰，见检测器）。
+    """
+
+    class Severity(models.TextChoices):
+        """严重级别：命中真实密钥 / 疑似敏感 / 待复核配置（DOMAIN §9 D-02）。"""
+
+        REAL_SECRET = "real_secret", "命中真实密钥"
+        LIKELY_SENSITIVE = "likely_sensitive", "疑似敏感"
+        CONFIG_REVIEW = "config_review", "待复核配置"
+
+    class Detector(models.TextChoices):
+        """命中来源：文件名启发式 / 内容扫描 / LLM 分类。"""
+
+        HEURISTIC = "heuristic", "文件名启发式"
+        CONTENT = "content", "内容扫描"
+        LLM = "llm", "LLM 分类"
+
+    class Status(models.TextChoices):
+        """建议状态：待处理 / 已接受（建规则）/ 已忽略。"""
+
+        PENDING = "pending", "待处理"
+        ACCEPTED = "accepted", "已接受"
+        DISMISSED = "dismissed", "已忽略"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="sensitive_suggestions",
+    )
+    path = models.CharField(
+        max_length=500,
+        help_text="相对仓库根的 POSIX 路径（口径与 exclusion.normalize_rel_path 对齐）",
+    )
+    severity = models.CharField(
+        max_length=20,
+        choices=Severity.choices,
+    )
+    detector = models.CharField(
+        max_length=16,
+        choices=Detector.choices,
+    )
+    reason = models.TextField(
+        help_text=(
+            "脱敏命中描述：只记命中类型与位置（行号），"
+            "**绝不**包含密钥本体 / 命中文本原值（DOMAIN §9 D-04，T-24-01）"
+        ),
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    detected_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "repo_sensitive_file_suggestions"
+        verbose_name = "敏感文件建议"
+        verbose_name_plural = "敏感文件建议"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "path"],
+                name="uq_repo_sensitive_suggestion",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["repository", "status"],
+                name="idx_repo_sensitive_status",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.repository_id}:{self.path} ({self.severity}/{self.status})"
