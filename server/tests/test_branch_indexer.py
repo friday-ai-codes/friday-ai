@@ -33,9 +33,13 @@ class TestBaseBranchMetadata:
         embedding = [0.1] * 3
 
         points, _ = IndexerService._build_points(
-            [chunk], [embedding], None, False,
+            [chunk],
+            [embedding],
+            None,
+            False,
             repository_id="test-repo-uuid",
-            branch_name="main", is_base_branch=True,
+            branch_name="main",
+            is_base_branch=True,
         )
 
         assert len(points) == 1
@@ -49,7 +53,10 @@ class TestBaseBranchMetadata:
         embedding = [0.1] * 3
 
         points, _ = IndexerService._build_points(
-            [chunk], [embedding], None, False,
+            [chunk],
+            [embedding],
+            None,
+            False,
             repository_id="test-repo-uuid",
         )
 
@@ -67,9 +74,13 @@ class TestBaseBranchMetadata:
         with patch("qdrant_client.http.models.SparseVector") as mock_sv:
             mock_sv.return_value = MagicMock()
             points, _ = IndexerService._build_points(
-                [chunk], [embedding], [sparse], True,
+                [chunk],
+                [embedding],
+                [sparse],
+                True,
                 repository_id="test-repo-uuid",
-                branch_name="develop", is_base_branch=False,
+                branch_name="develop",
+                is_base_branch=False,
             )
 
         assert len(points) == 1
@@ -105,8 +116,10 @@ class TestBaseBranchMetadata:
         import httpx
 
         mock_client.create_payload_index.side_effect = UnexpectedResponse(
-            status_code=400, reason_phrase="Bad Request",
-            content=b"already exists", headers=httpx.Headers(),
+            status_code=400,
+            reason_phrase="Bad Request",
+            content=b"already exists",
+            headers=httpx.Headers(),
         )
 
         result = QdrantService.create_branch_payload_index("test_collection")
@@ -133,7 +146,11 @@ class TestBranchIndexRecord:
         return IndexerService(str(repository.id))
 
     @pytest.mark.asyncio
-    @patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="abc1234567890abcdef1234567890abcdef123456")
+    @patch(
+        "services.indexer._get_head_sha",
+        new_callable=AsyncMock,
+        return_value="abc1234567890abcdef1234567890abcdef123456",
+    )
     async def test_creates_branch_index_record(self, mock_sha, repository, indexer):
         """run_full_index 后应创建 RepositoryBranchIndex 记录。"""
         from repositories.models import BranchIndexStatus, RepositoryBranchIndex
@@ -146,7 +163,8 @@ class TestBranchIndexRecord:
         )
 
         record = await RepositoryBranchIndex.objects.aget(
-            repository=repository, branch_name="main",
+            repository=repository,
+            branch_name="main",
         )
         assert record.is_base_branch is True
         assert record.head_sha == "abc1234567890abcdef1234567890abcdef123456"
@@ -176,7 +194,8 @@ class TestBranchIndexRecord:
         )
 
         record = await RepositoryBranchIndex.objects.aget(
-            repository=repository, branch_name="main",
+            repository=repository,
+            branch_name="main",
         )
         assert record.effective_chunks_count == 99
         assert record.head_sha == "def456"
@@ -277,20 +296,38 @@ class TestOverlayIndex:
         return IndexerService(str(repository.id))
 
     @pytest.mark.asyncio
-    @patch("services.indexer.qdrant_upsert_vectors_by_name", new_callable=AsyncMock, return_value=True)
-    @patch("services.indexer.qdrant_create_collection_by_name", new_callable=AsyncMock, return_value=True)
+    @patch(
+        "services.indexer.qdrant_upsert_vectors_by_name", new_callable=AsyncMock, return_value=True
+    )
+    @patch(
+        "services.indexer.qdrant_create_collection_by_name",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
     @patch("services.indexer.QdrantService.create_branch_payload_index", return_value=True)
     @patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock)
     @patch("services.indexer._parse_git_diff_output")
     @patch("services.indexer.os.path.exists", return_value=True)
     @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
-    @patch("services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111")
+    @patch(
+        "services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111"
+    )
     @patch("services.indexer._fetch_branch", new_callable=AsyncMock, return_value=True)
     @patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True)
     async def test_run_branch_index_creates_overlay(
-        self, mock_shallow, mock_fetch_br, mock_deepen, mock_subprocess,
-        mock_exists, mock_parse, mock_embed, mock_branch_idx, mock_create_coll, mock_upsert,
-        repository, indexer,
+        self,
+        mock_shallow,
+        mock_fetch_br,
+        mock_deepen,
+        mock_subprocess,
+        mock_exists,
+        mock_parse,
+        mock_embed,
+        mock_branch_idx,
+        mock_create_coll,
+        mock_upsert,
+        repository,
+        indexer,
     ):
         """有差异的功能分支应创建 overlay collection 并记录 BranchFileIndex。"""
         from repositories.models import BranchIndexStatus, RepositoryBranchIndex
@@ -327,11 +364,87 @@ class TestOverlayIndex:
         mock_upsert.assert_called_once()
 
         record = await RepositoryBranchIndex.objects.aget(
-            repository=repository, branch_name="feature/x",
+            repository=repository,
+            branch_name="feature/x",
         )
         assert record.status == BranchIndexStatus.INDEXED
         assert record.is_base_branch is False
         assert record.collection_name is not None
+
+    @pytest.mark.asyncio
+    @patch(
+        "services.indexer.qdrant_upsert_vectors_by_name", new_callable=AsyncMock, return_value=True
+    )
+    @patch(
+        "services.indexer.qdrant_create_collection_by_name",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    @patch("services.indexer.QdrantService.create_branch_payload_index", return_value=True)
+    @patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock)
+    @patch("services.indexer._parse_git_diff_output")
+    @patch("services.indexer.os.path.exists", return_value=True)
+    @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
+    @patch(
+        "services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111"
+    )
+    @patch("services.indexer._fetch_branch", new_callable=AsyncMock, return_value=True)
+    @patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True)
+    async def test_run_branch_index_skips_excluded_files(
+        self,
+        mock_shallow,
+        mock_fetch_br,
+        mock_deepen,
+        mock_subprocess,
+        mock_exists,
+        mock_parse,
+        mock_embed,
+        mock_branch_idx,
+        mock_create_coll,
+        mock_upsert,
+        repository,
+        indexer,
+    ):
+        """ME-02：被排除文件（server/.env）不进入 overlay 索引，正常文件照常索引。"""
+        from services.exclusion import invalidate_matcher_cache
+
+        invalidate_matcher_cache(str(repository.id))
+
+        # diff 同时含被排除的 server/.env（builtin 默认）与正常 src/new.py。
+        mock_parse.return_value = [
+            FileDiff("server/.env", DiffAction.ADD),
+            FileDiff("src/new.py", DiffAction.ADD),
+        ]
+        mock_embed.return_value = [[0.1, 0.2, 0.3]]
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"feature_head_sha_abc", b""))
+        mock_proc.returncode = 0
+        mock_subprocess.return_value = mock_proc
+
+        indexer.parser = MagicMock()
+        chunk = MagicMock()
+        chunk.file_path = "src/new.py"
+        chunk.file_hash = "hash1"
+        chunk.language = "python"
+        chunk.node_type = "function"
+        chunk.start_line = 1
+        chunk.end_line = 5
+        chunk.content = "def new(): pass"
+        chunk.context_header = "module:new"
+        chunk.imports = ""
+        chunk.module_docstring = ""
+        chunk.sibling_signatures = ""
+        indexer.parser.parse_file_dual.return_value = ([chunk], None)
+
+        result = await indexer.run_branch_index("/tmp/fake", "feature/excl", repository)
+
+        assert result["status"] == "indexed"
+        # 仅正常文件被解析/索引；被排除文件从源头剔除（不调用 parse_file_dual）。
+        assert indexer.parser.parse_file_dual.call_count == 1
+        parsed_paths = [call.args[0] for call in indexer.parser.parse_file_dual.call_args_list]
+        assert all(".env" not in p for p in parsed_paths)
+        assert any(p.endswith("src/new.py") for p in parsed_paths)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -359,8 +472,14 @@ class TestInheritedFromBase:
     @patch("services.indexer._fetch_branch", new_callable=AsyncMock, return_value=True)
     @patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=False)
     async def test_no_diff_marks_inherited(
-        self, mock_shallow, mock_fetch_br, mock_merge, mock_subprocess,
-        mock_parse, repository, indexer,
+        self,
+        mock_shallow,
+        mock_fetch_br,
+        mock_merge,
+        mock_subprocess,
+        mock_parse,
+        repository,
+        indexer,
     ):
         """diff 为空时应标记 INHERITED，不创建 overlay collection。"""
         from repositories.models import BranchIndexStatus, RepositoryBranchIndex
@@ -376,7 +495,8 @@ class TestInheritedFromBase:
         assert result["diff_files"] == 0
 
         record = await RepositoryBranchIndex.objects.aget(
-            repository=repository, branch_name="feature/same",
+            repository=repository,
+            branch_name="feature/same",
         )
         assert record.status == BranchIndexStatus.INHERITED
         assert record.is_base_branch is False
@@ -440,7 +560,10 @@ class TestCloneAndIndexBranch:
     @patch("services.indexer.IndexerService.run_branch_index", new_callable=AsyncMock)
     @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
     async def test_branch_param_routes_to_run_branch_index(
-        self, mock_subprocess, mock_run_branch, repository,
+        self,
+        mock_subprocess,
+        mock_run_branch,
+        repository,
     ):
         """clone_and_index_repository 传入 branch 时应路由到 run_branch_index。"""
         from services.indexer import clone_and_index_repository
@@ -457,11 +580,15 @@ class TestCloneAndIndexBranch:
         mock_subprocess.return_value = mock_proc
 
         mock_run_branch.return_value = {
-            "status": "indexed", "diff_files": 3, "indexed_files": 2, "chunks_indexed": 10,
+            "status": "indexed",
+            "diff_files": 3,
+            "indexed_files": 2,
+            "chunks_indexed": 10,
         }
 
         result = await clone_and_index_repository(
-            str(repository.id), branch="feature/test",
+            str(repository.id),
+            branch="feature/test",
         )
 
         assert result["status"] == "indexed"
