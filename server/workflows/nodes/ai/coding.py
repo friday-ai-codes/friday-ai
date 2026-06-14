@@ -879,16 +879,17 @@ class AICodingNode(SubStepMixin, BaseNode):
         （PAT-02：明文绝不落盘、不可从 DB 取；AccessToken 仅存 sha256 哈希）。
         明文亦绝不进日志（调用方只记 has_user_token=bool）。
 
-        当前实现：无现成的实时请求线程明文通道（workflow dispatch 多为背景/飞书触发，
-        triggered_by / AgentSession.user 可能为 None，均非明文来源），故返回 ""，
-        下游省略 env_FRIDAY_TASK_USER_TOKEN，task 侧不挂 MCP server（向后兼容降级）。
-        机制已就绪：实时请求线程一旦经上下文变量提供明文 PAT，此处取之即可下传。
+        实现（RTOOL follow-up 已接入）：明文经 ``access_tokens.context`` 的请求级
+        ContextVar 在触发边界（``WorkflowViewSet.execute``）捕获，由
+        ``WorkflowEngine.start_execution`` 显式跨线程下传至本 ``ExecutionContext``
+        的瞬态字段 ``user_pat_plaintext``。此处仅读该内存字段，**绝不**从
+        AccessToken / 任何 DB 表读取（PAT-02），亦绝不进日志。
 
-        TODO(RTOOL follow-up)：接入实时请求线程明文 PAT 通道（如 contextvar），
-        对带 PAT 的实时 dispatch 自动注入；存量后台任务自动解析不在本期范围
-        （per Open Q1 裁决：机制完整 + 不违反 PAT-02）。
+        无实时明文来源（背景/飞书/定时触发、或 JWT 会话手动触发）时该字段为空串，
+        返回 "" → 下游省略 env_FRIDAY_TASK_USER_TOKEN，task 侧不挂 MCP server
+        （向后兼容降级，无回归）。
         """
-        return ""
+        return getattr(context, "user_pat_plaintext", "") or ""
 
     async def _run_repo_coding(
         self,
