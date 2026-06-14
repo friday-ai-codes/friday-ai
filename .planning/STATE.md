@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 23-02——对账 + 两模式清理服务/API 地基：compute_reconciliation（FileIndex ∪ ChunkRegistry ∩ 复用 22 build_matcher_for_repo，列已索引但现命中排除的差异；匹配器构造失败置 degraded+error 不谎报已一致，W3）+ run_cleanup(normal)（逐差异文件 23-01 purge_file 删净四面、对账归零，EXCL-04）+ CleanupRun 模型/迁移 0033 + RepositoryReconcileView(GET 差异/POST 派发后台返回 run_id)/RepositoryCleanupStatusView(GET 最近运行含 sensitive 未清面)+ 审计 purge.started/completed；敏感分支懒导入契约（23-03）就位落 CleanupRun.sensitive；守护测试 15 passed、ruff 干净、makemigrations --check 干净；原子提交 8f91c8cb7（test RED）/ 63f492be9（feat GREEN）/ b20f7bedf（feat API）
-last_updated: "2026-06-14T15:20:00.000Z"
-last_activity: 2026-06-14 -- 23-02 完成（对账 + 两模式清理服务/API + CleanupRun，EXCL-04/06）
+stopped_at: 完成 23-03——敏感清理操作记录数据面：services/sensitive_purge.py purge_sensitive_planes（兑现 23-02 sensitive 懒导入契约）。CodeChangeArchive file 级 scrub（按 diff --git 边界剔除被排除文件 diff 段 + 过滤 files 列表重算 file_count/additions/deletions/diff_size/compressed_size/sha256，decompress_diff/compress_diff 重压缩不调 parse_diff_files W4；仅含该文件整行删，含他文件不误删 T-23-13）+ TaskResult/ActionLog 经 _normalize_repo_url(session.repo_url)==git_url 关联本仓清理（modified_files/payload 命中剔除/脱敏，关联不确定保守不动 T-23-12）+ message parts/content 子串脱敏（无 repo 关联面 best-effort 命中叶子，prompt_snapshot/backups/git_objects 记 unscrubbed + SENSITIVE_PLANES_CAVEAT 如实不承诺 git/备份物理消失 §9.1 T-23-11）；逐面异常隔离 errors + purge.sensitive_plane 审计；守护测试 10 passed、23-02 回归 15 passed、ruff 干净、makemigrations --check 干净；原子提交 beca0283c / 869f534ac
+last_updated: "2026-06-14T15:35:00.000Z"
+last_activity: 2026-06-14 -- 23-03 完成（敏感清理操作记录数据面，EXCL-05）
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 9
-  percent: 30
+  completed_plans: 10
+  percent: 33
 ---
 
 # Project State
@@ -26,16 +26,16 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 23 (清理对账（普通/敏感两模式）) — EXECUTING
-Plan: 3 of 4 (23-01, 23-02 done)
+Plan: 4 of 4 (23-01, 23-02, 23-03 done)
 Status: Executing Phase 23
-Last activity: 2026-06-14 -- 23-02 完成（对账 + 两模式清理服务/API + CleanupRun，EXCL-04/06）
+Last activity: 2026-06-14 -- 23-03 完成（敏感清理操作记录数据面，EXCL-05）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
-| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (2/4 plans done) |
+| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (3/4 plans done) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
@@ -87,6 +87,7 @@ Last activity: 2026-06-14 -- 23-02 完成（对账 + 两模式清理服务/API +
 | Phase 22 P03 | ~35min | 3 tasks | 8 files |
 | Phase 23 P01 | ~10min | 2 tasks | 3 files |
 | Phase 23 P02 | ~30min | 2 tasks | 7 files |
+| Phase 23 P03 | ~25min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 23]: 23-02: run_cleanup 逐差异文件调 23-01 purge_file（best-effort 逐文件隔离），终态 failures 非空→failed 否则 completed；清理后 best-effort 后台调度 repo_summaries+repo_index_nodes 重建（可重建聚合，失败不致命）
 - [Phase 23]: 23-02: CleanupRun 持久化（status/mode/match_count/failures/sensitive/error，(repository,-started_at) 索引取最近一次）；清理经 run_in_background 后台派发（API 先建 running 行拿 run_id 立即 202，D-04/T-23-08），状态端点回流结果（含敏感 unscrubbed/caveat，W1/W2）
 - [Phase 23]: 23-02: 敏感模式懒导入契约 services.sensitive_purge.purge_sensitive_planes(repository_id, purged_paths)（23-03 提供，普通模式零依赖）；未就绪→failures + CleanupRun.error，普通清理结果不受损。审计事件 purge.started/purge.completed（mode/repository_id/match_count/failures）
+- [Phase 23]: 23-03: 敏感清理委托落点 services.sensitive_purge.purge_sensitive_planes —— 四面 helper（CodeChangeArchive/TaskResult/ActionLog/loose-text）逐面 try/except 隔离，返回 dict {scrubbed:{plane:{scrubbed,deleted}}, unscrubbed, caveat, errors} 落 CleanupRun.sensitive
+- [Phase 23]: 23-03: CodeChangeArchive file 级 scrub recompute **不调 parse_diff_files**（其解析平台 MRDiffFile 对象而非 unified-diff 文本，W4 类型不符）；改为过滤既有 files JSON 列表重算计数 + 按 `diff --git a/old b/new` 边界切段剔除目标文件 diff（new/old 任一命中即剔除），decompress_diff/compress_diff 重压缩；仅含被排除文件整行删，含他文件保留他文件部分（T-23-13 不误删）
+- [Phase 23]: 23-03: TaskResult/ActionLog 关联键 = _normalize_repo_url(session.repo_url)==_normalize_repo_url(repo.git_url)（去 .git/末尾斜杠/小写）；归一不匹配的记录完全不动（T-23-12 保守，宁漏勿误删他仓产物）
+- [Phase 23]: 23-03: message parts/content 无 repo 关联键（Conversation 绑 Project 非 Repository）→ best-effort 子串脱敏（_redact_value 只替换命中被排除路径的 str 叶子，保留同载荷其余字段，不整库清空 T-23-13）；prompt_snapshot/backups/git_objects 记 unscrubbed + SENSITIVE_PLANES_CAVEAT 如实声明 git object/历史/备份不承诺物理消失（§9.1 T-23-11，绝不假装清除）
 
 ### Pending Todos
 
@@ -201,9 +206,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 23 Plan 02 — 对账 + 两模式清理服务/API + CleanupRun）
-Stopped at: 完成 23-02——compute_reconciliation（已索引 ∪ ChunkRegistry ∩ 复用 22 匹配器列差异，构造失败 degraded 不谎报已一致 W3）+ run_cleanup(normal)（逐差异文件 purge_file 删净、对账归零 EXCL-04）+ CleanupRun 模型/迁移 0033 + RepositoryReconcileView(GET 差异/POST 派发后台返回 run_id)/RepositoryCleanupStatusView(GET 最近运行含敏感未清面)+ 审计 purge.started/completed；敏感懒导入契约（23-03）就位落 CleanupRun.sensitive；15 passed、ruff 干净、makemigrations --check 干净；原子提交 8f91c8cb7 / 63f492be9 / b20f7bedf
+Last session: 2026-06-14（Phase 23 Plan 03 — 敏感清理操作记录数据面）
+Stopped at: 完成 23-03——services/sensitive_purge.py purge_sensitive_planes（兑现 23-02 sensitive 懒导入契约）：CodeChangeArchive file 级 scrub（剔除被排除文件 diff 段 + 重算计数，仅含该文件整行删、含他文件不误删）+ TaskResult/ActionLog 经 repo_url↔git_url 归一关联本仓清理（关联不确定保守不动 T-23-12）+ message parts/content 子串脱敏（无 repo 关联面 best-effort，prompt_snapshot/backups/git_objects 记 unscrubbed + caveat §9.1 T-23-11）；逐面隔离 errors + purge.sensitive_plane 审计；守护测试 10 passed、23-02 回归 15 passed、ruff 干净、makemigrations --check 干净；原子提交 beca0283c / 869f534ac
 Resume file: None
+Next: 23-04（对账/清理前端面板 — 差异提示 + 普通/敏感双入口强确认 + 回显 sensitive scrubbed/unscrubbed/caveat），Phase 23 最后一个 plan
 
 ## Operator Next Steps
 

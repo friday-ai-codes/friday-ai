@@ -64,7 +64,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 23-03-PLAN.md — 敏感清理操作记录数据面（CodeChangeArchive/TaskResult/ActionLog 等，Wave 3）
+- [x] 23-03-PLAN.md — 敏感清理操作记录数据面（CodeChangeArchive/TaskResult/ActionLog 等，Wave 3）✅ (beca0283c/869f534ac)
 - [ ] 23-04-PLAN.md — 对账/清理前端面板（差异提示 + 普通/敏感双入口强确认，Wave 3）
 
 ### Phase 24: 敏感文件 AI 识别建议名单
