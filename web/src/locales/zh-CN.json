@@ -225,5 +225,50 @@
       "MODIFIES_CHUNK": "修改代码块",
       "RELATED": "相关"
     }
+  },
+  "exclusion": {
+    "title": "排除规则",
+    "subtitle": "命中规则的文件将对 Friday 不可见（索引 / 检索 / AI 代理 / 编码容器均不读取）",
+    "securityNote": "说明：排除仅保证这些文件对 Friday 不可见，并不会从 Git 仓库历史中物理删除。请勿据此认为敏感信息已被清除。",
+    "globalDefaults": {
+      "title": "全局默认（只读）",
+      "description": "开箱即用的安全默认（如 .env、*.pem、node_modules/ 等）；可针对本仓库关闭某条。",
+      "enabledHint": "已启用",
+      "disabledHint": "已对本仓库关闭"
+    },
+    "repoRules": {
+      "title": "本仓库规则",
+      "empty": "暂无自定义排除规则"
+    },
+    "ruleType": {
+      "label": "类型",
+      "dir": "目录前缀",
+      "glob": "glob 通配",
+      "regex": "正则"
+    },
+    "form": {
+      "patternLabel": "规则模式",
+      "patternPlaceholder": "如 *.secret、config/secrets/、.*\\.key$",
+      "add": "新增规则",
+      "adding": "添加中…"
+    },
+    "actions": {
+      "delete": "删除",
+      "deleteConfirmTitle": "删除排除规则",
+      "deleteConfirmDescription": "删除后该文件将重新对 Friday 可见，确认继续？"
+    },
+    "toast": {
+      "created": "排除规则已添加",
+      "deleted": "排除规则已删除",
+      "defaultDisabled": "已对本仓库关闭该全局默认",
+      "defaultEnabled": "已恢复该全局默认"
+    },
+    "error": {
+      "load": "加载排除规则失败",
+      "create": "添加排除规则失败",
+      "delete": "删除排除规则失败",
+      "toggle": "更新全局默认失败",
+      "emptyPattern": "请填写规则模式"
+    }
   }
 }
