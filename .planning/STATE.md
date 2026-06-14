@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: Phase 24 完成（EXCL-03 用户可见闭环达成）；下一步 Phase 25 / 26
+status: executing
 stopped_at: "完成 24-04——sensitiveSuggestionsApi 类型化 client（list/accept/dismiss）+ zh-CN sensitive.* 文案 + SensitiveSuggestionsPanel.vue（severity 排序、real_secret 高优先级 destructive 告警、accept 确认明示不自动删/引导清理面板、dismiss 即时更新、脱敏 reason）+ 仓库详情页 #exclusions section 挂载（ExclusionRulesPanel/ReconcilePanel 旁）+ 4 例守护测试全绿；vue-tsc 0 sensitive 错、eslint 0 错；原子提交 f7fbf8434（client+i18n）/ 3bd239566（面板+挂载+测试）。Phase 24 全部 4/4 完成，EXCL-03 闭环达成。"
-last_updated: "2026-06-14T22:27:48.209Z"
-last_activity: 2026-06-14
+last_updated: "2026-06-14T22:45:12.382Z"
+last_activity: 2026-06-14 -- Phase 25 execution started
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 14
+  total_plans: 18
   completed_plans: 15
   percent: 60
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
-**Current focus:** Phase 24 — 敏感文件 AI 识别建议名单
+**Current focus:** Phase 25 — Commit 历史索引 + 行号反查
 
 ## Current Position
 
-Phase: 25
-Plan: Not started
-Status: Phase 24 完成（EXCL-03 用户可见闭环达成）；下一步 Phase 25 / 26
-Last activity: 2026-06-14
+Phase: 25 (Commit 历史索引 + 行号反查) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 25
+Last activity: 2026-06-14 -- Phase 25 execution started
 
 ## Milestone Overview (v0.5.0)
 
