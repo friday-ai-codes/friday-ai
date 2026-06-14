@@ -239,3 +239,195 @@ async def test_sensitive_plane_isolation_on_failure(repository: Any, monkeypatch
     # 其余面仍产出计数
     assert "task_result" in result["scrubbed"]
     assert "action_log" in result["scrubbed"]
+
+
+# ============================================================================
+# Task 2: 无精确 file 关联面（message parts/content）+ caveat/unscrubbed + 端到端
+# ============================================================================
+
+
+def _make_message(*, content: str, parts: list[Any]) -> Any:
+    from chat.models import Conversation, Message
+
+    conv = Conversation.objects.create(title="t")
+    return Message.objects.create(
+        conversation=conv,
+        role=Message.Role.ASSISTANT,
+        content=content,
+        parts=parts,
+    )
+
+
+async def test_sensitive_message_parts_and_content_redacted(repository: Any) -> None:
+    """message content / parts 中子串命中被排除 file_path 的正文段被脱敏；无关消息不动。"""
+    from chat.models import Message
+    from services.sensitive_purge import purge_sensitive_planes
+
+    hit = await sync_to_async(_make_message)(
+        content="泄漏内容在 src/secret.py 中",
+        parts=[
+            {"type": "text", "text": "无关段保留"},
+            {"type": "tool_use", "input": {"file_path": "src/secret.py", "body": "KEY"}},
+        ],
+    )
+    untouched = await sync_to_async(_make_message)(
+        content="完全无关的消息", parts=[{"type": "text", "text": "hello"}]
+    )
+
+    result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+    assert result["scrubbed"]["message_text"]["scrubbed"] >= 1
+
+    hit_refreshed = await Message.objects.aget(id=hit.id)
+    assert "src/secret.py" not in hit_refreshed.content
+    # parts 命中叶子被脱敏，无关叶子保留
+    flattened = str(hit_refreshed.parts)
+    assert "src/secret.py" not in flattened
+    assert "无关段保留" in flattened
+
+    untouched_refreshed = await Message.objects.aget(id=untouched.id)
+    assert untouched_refreshed.content == "完全无关的消息"
+    assert untouched_refreshed.parts == [{"type": "text", "text": "hello"}]
+
+
+async def test_sensitive_returns_caveat_and_unscrubbed(repository: Any) -> None:
+    """返回 dict 携带非空 caveat + unscrubbed 如实上报无法精确定位的面（§9.1，T-23-11）。"""
+    from services.sensitive_purge import SENSITIVE_PLANES_CAVEAT, purge_sensitive_planes
+
+    result = await purge_sensitive_planes(str(repository.id), ["src/secret.py"])
+
+    assert result["caveat"] == SENSITIVE_PLANES_CAVEAT
+    assert result["caveat"]
+    assert "git" in result["caveat"] or "Git" in result["caveat"]
+    assert "备份" in result["caveat"]
+    assert "prompt_snapshot" in result["unscrubbed"]
+    assert "backups" in result["unscrubbed"]
+
+
+# --- 端到端：经 run_cleanup 跑普通清理 + 敏感面 ---
+
+
+class _QdrantSpy:
+    """同步 stub：捕获删除调用，返回成功（避免真实 Qdrant 依赖，对齐 23-02）。"""
+
+    def delete_by_file_path(self, repository_id: str, file_path: str) -> bool:
+        return True
+
+    def delete_by_payload_field(self, collection_name: str, field: str, value: str) -> bool:
+        return True
+
+
+@pytest.fixture
+def _block_background():
+    """阻断 pre_delete 信号后台投递 + 摘要重建后台调度，避免真实外部依赖（对齐 23-02）。"""
+    from unittest.mock import patch
+
+    with (
+        patch("code_relations.signals.run_in_background", return_value=None),
+        patch("services.background_runner.run_in_background", return_value=None),
+    ):
+        yield
+
+
+async def _seed_indexed_and_rule(repository: Any) -> None:
+    """构造已索引文件 + 命中 ``src/b.py`` 的 per-repo 排除规则（对齐 23-02）。"""
+    from code_relations.models import ChunkRegistry
+    from repositories.models import FileIndex, RepoExclusionRule
+    from services.exclusion import invalidate_matcher_cache
+
+    for p in ("src/a.py", "src/b.py"):
+        await sync_to_async(FileIndex.objects.create)(
+            repository=repository, file_path=p, file_hash="h"
+        )
+    await sync_to_async(ChunkRegistry.objects.create)(
+        chunk_id=__import__("uuid").uuid4(),
+        content_hash="0" * 64,
+        repository=repository,
+        branch_name="",
+        file_path="src/b.py",
+        chunk_index=0,
+    )
+    await sync_to_async(RepoExclusionRule.objects.create)(
+        repository=repository, pattern="b.py", rule_type="glob", source="user"
+    )
+    invalidate_matcher_cache(str(repository.id))
+
+
+async def test_end_to_end_sensitive_scrubs_operation_planes(
+    repository: Any, _block_background: Any
+) -> None:
+    """run_cleanup(mode="sensitive")：普通清理 + 敏感面，CleanupReport.sensitive 如实非空。"""
+    from unittest.mock import patch
+
+    from services.purge_reconcile import run_cleanup
+    from subagent.models import TaskResult
+
+    await _seed_indexed_and_rule(repository)
+    archive = await sync_to_async(_make_archive)(
+        repository, files=["src/b.py"], secret_path="src/b.py"
+    )
+
+    def _seed_tr() -> Any:
+        session = _make_session(repository.git_url)
+        return TaskResult.objects.create(
+            session=session,
+            result_type=TaskResult.ResultType.GIT,
+            modified_files=["src/b.py", "src/a.py"],
+            raw_output={},
+        )
+
+    tr = await sync_to_async(_seed_tr)()
+
+    with patch("services.purge.QdrantService", _QdrantSpy):
+        report = await run_cleanup(str(repository.id), mode="sensitive")
+
+    assert report.mode == "sensitive"
+    assert "src/b.py" in report.purged_paths
+    assert report.sensitive is not None
+    sensitive = report.sensitive
+    assert sensitive["caveat"]
+    assert "prompt_snapshot" in sensitive["unscrubbed"]
+    # 敏感面确有动作：归档整行删 + TaskResult 剔除
+    assert sensitive["scrubbed"]["code_change_archive"]["deleted"] == 1
+    assert sensitive["scrubbed"]["task_result"]["scrubbed"] == 1
+
+    from knowledge.models import CodeChangeArchive
+
+    assert await CodeChangeArchive.objects.filter(id=archive.id).acount() == 0
+    tr_refreshed = await TaskResult.objects.aget(id=tr.id)
+    assert tr_refreshed.modified_files == ["src/a.py"]
+
+
+async def test_end_to_end_normal_mode_leaves_operation_planes_untouched(
+    repository: Any, _block_background: Any
+) -> None:
+    """对照：run_cleanup(mode="normal") 不触碰操作记录面（archive/TaskResult 原样保留）。"""
+    from unittest.mock import patch
+
+    from knowledge.models import CodeChangeArchive
+    from services.purge_reconcile import run_cleanup
+    from subagent.models import TaskResult
+
+    await _seed_indexed_and_rule(repository)
+    archive = await sync_to_async(_make_archive)(
+        repository, files=["src/b.py"], secret_path="src/b.py"
+    )
+
+    def _seed_tr() -> Any:
+        session = _make_session(repository.git_url)
+        return TaskResult.objects.create(
+            session=session,
+            result_type=TaskResult.ResultType.GIT,
+            modified_files=["src/b.py"],
+            raw_output={},
+        )
+
+    tr = await sync_to_async(_seed_tr)()
+
+    with patch("services.purge.QdrantService", _QdrantSpy):
+        report = await run_cleanup(str(repository.id), mode="normal")
+
+    assert report.sensitive is None
+    # 操作记录面完全未动
+    assert await CodeChangeArchive.objects.filter(id=archive.id).acount() == 1
+    tr_refreshed = await TaskResult.objects.aget(id=tr.id)
+    assert tr_refreshed.modified_files == ["src/b.py"]
