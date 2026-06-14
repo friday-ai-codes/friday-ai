@@ -26,6 +26,8 @@ import json
 import math
 import os
 import re
+import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 import structlog
@@ -56,17 +58,65 @@ _DETECTOR_CONTENT = "content"
 _DETECTOR_LLM = "llm"
 
 # 遍历安全上限（T-24-02：避免遍历/读爆内存）。
-_MAX_FILE_BYTES = 1 * 1024 * 1024  # 单文件 1 MiB 上限
+_MAX_FILE_BYTES = (
+    1 * 1024 * 1024
+)  # 内容扫描上限：仅读取/扫描文件前 1 MiB（ME-01：大文件不整体跳过）
 _BINARY_SNIFF_BYTES = 8192  # NUL 嗅探的前缀字节数
 _MAX_SCAN_LINE_BYTES = 4096  # 单行扫描上限，避免极长单行（minified）拖垮正则
+
+# 自走遍历全局护栏（ME-02：防超大 monorepo 上 runaway IO/CPU/内存）。
+# 超限即停止遍历并记一次 ``sensitive.walk_truncated`` 可观测事件（best-effort，不报错）。
+_MAX_WALK_FILES = 200_000  # 最多访问（stat）的文件数
+_MAX_CANDIDATES = 5_000  # 最多累积的确定性候选数
+_WALK_TIME_BUDGET_SECONDS = 60.0  # 软时间预算（自遍历开始计）
 
 # 结构性目录：纯噪声 / 体量巨大，跳过遍历。
 #
 # 注意（偏离 PLAN 措辞，Rule 1）：**不**把 ``BUILTIN_GLOBAL_DEFAULTS`` 中 dir 型默认
 # （``.ssh/`` / ``secrets/``）纳入跳过集——那恰是要主动「识别」的敏感目录，跳过会让检测器
 # 漏掉 ``secrets/app.pem`` 等目标文件（与 behavior 守护测试冲突，亦违背检测器目的）。
-# 仅跳过 ``.git`` / ``node_modules`` 这类与敏感识别无关的结构性目录。
-_SKIP_DIRS = frozenset({".git", "node_modules"})
+# 仅跳过与敏感识别无关的结构性 / 构建产物 / 依赖目录（ME-02：纳入 dist/build/vendor/.venv 等）。
+_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "dist",
+        "build",
+        "vendor",
+        ".venv",
+        "venv",
+        "target",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".tox",
+        ".gradle",
+        ".idea",
+    }
+)
+
+# 可选 LLM 二分类候选的扩展名白名单：确定性段未命中、但「可疑」的配置/文档类文件
+# （ME-03：把这类子集组装为 AmbiguousCandidate 交可选 LLM 复判）。
+_AMBIGUOUS_EXTS = frozenset(
+    {
+        "cfg",
+        "conf",
+        "config",
+        "ini",
+        "env",
+        "yaml",
+        "yml",
+        "toml",
+        "properties",
+        "json",
+        "txt",
+        "md",
+        "xml",
+        "tfvars",
+    }
+)
+_MAX_AMBIGUOUS = 50  # 送可选 LLM 的最大模糊候选数（单次请求上限，控成本）
+_AMBIGUOUS_SAMPLE_BYTES = 4096  # 模糊候选采样字节数（仅供本地抽取布尔特征，绝不外送）
 
 
 @dataclass(frozen=True)
@@ -100,9 +150,7 @@ _AWS_ACCESS_KEY_RE = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
 _AWS_SECRET_ASSIGN_RE = re.compile(r"AWS_SECRET_ACCESS_KEY\s*[:=]")
 _GITHUB_TOKEN_RE = re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")
 _SLACK_TOKEN_RE = re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")
-_GENERIC_ASSIGN_RE = re.compile(
-    r"(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*\S{8,}"
-)
+_GENERIC_ASSIGN_RE = re.compile(r"(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*\S{8,}")
 
 # (正则, severity, 类型标签)。顺序仅影响 reason 拼接，severity 合并取最高。
 _SECRET_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
@@ -196,53 +244,96 @@ def _is_binary(prefix: bytes) -> bool:
     return b"\x00" in prefix
 
 
-def _walk_candidate_files(repo_path: str) -> list[tuple[str, str]]:
-    """独立有界遍历候选文件，返回 ``[(abs_path, rel_path), ...]``。
+def _candidate_from_abs(repo_path: str, abs_path: str) -> tuple[str, str, int] | None:
+    """对单个绝对路径做 fail-safe 校验，返回 ``(abs_path, rel_path, size)`` 或 ``None``。
 
-    - 跳过 ``_SKIP_DIRS`` 结构性目录（``.git`` / ``node_modules``）。
-    - 跳过超大文件（> 1 MiB）与二进制文件（NUL 嗅探）。
+    跳过软链接 / stat 失败 / 路径归一失败的项。**不**按文件大小跳过（ME-01：大文件仍
+    需跑文件名启发式；体量约束只作用于内容扫描，见 ``_classify_file``）。
+    """
+    try:
+        if os.path.islink(abs_path):
+            return None
+        if not os.path.isfile(abs_path):
+            return None
+        size = os.path.getsize(abs_path)
+    except OSError:
+        return None
+    rel = os.path.relpath(abs_path, repo_path)
+    norm = normalize_rel_path(rel)
+    if norm is None:
+        return None
+    return (abs_path, norm, size)
+
+
+def _walk_candidate_files(
+    repo_path: str, only_paths: Iterable[str] | None = None
+) -> Iterator[tuple[str, str, int]]:
+    """独立有界遍历候选文件，逐个 yield ``(abs_path, rel_path, size)``。
+
+    - ``only_paths`` 非空时（HI-01 增量/diff 路径）：仅遍历这些仓库相对路径对应的文件，
+      不做整仓 ``os.walk``（避免每次增量全仓重扫）。
+    - 否则整仓 ``os.walk``，跳过 ``_SKIP_DIRS`` 结构性 / 构建 / 依赖目录。
+    - **不**按文件大小跳过（ME-01）；二进制 / 内容上限约束由 ``_classify_file`` 处理。
     - rel_path 经 ``normalize_rel_path`` 归一；归一失败的路径跳过（fail-safe）。
     - **不**应用扩展名白名单、**不**用 ExclusionMatcher 过滤候选——被排除的恰是要识别的目标。
+
+    注：全局护栏（文件数 / 时间 / 候选数）由调用方 ``_scan_repository`` 施加。
     """
-    candidates: list[tuple[str, str]] = []
+    if only_paths is not None:
+        seen: set[str] = set()
+        for rel in only_paths:
+            norm = normalize_rel_path(rel)
+            if norm is None or norm in seen:
+                continue
+            seen.add(norm)
+            abs_path = os.path.join(repo_path, norm)
+            item = _candidate_from_abs(repo_path, abs_path)
+            if item is not None:
+                yield item
+        return
+
     for dirpath, dirnames, filenames in os.walk(repo_path):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
         for name in filenames:
             abs_path = os.path.join(dirpath, name)
-            try:
-                if os.path.islink(abs_path):
-                    continue
-                size = os.path.getsize(abs_path)
-            except OSError:
-                continue
-            if size > _MAX_FILE_BYTES:
-                continue
-            rel = os.path.relpath(abs_path, repo_path)
-            norm = normalize_rel_path(rel)
-            if norm is None:
-                continue
-            candidates.append((abs_path, norm))
-    return candidates
+            item = _candidate_from_abs(repo_path, abs_path)
+            if item is not None:
+                yield item
 
 
-def _classify_file(abs_path: str, rel_path: str) -> SuggestionCandidate | None:
-    """对单文件做文件名启发式 + 内容扫描，合并为单个候选（无命中返回 None）。"""
+def _classify_file(
+    abs_path: str, rel_path: str, size: int
+) -> tuple[SuggestionCandidate | None, AmbiguousCandidate | None]:
+    """对单文件做文件名启发式 + （有界）内容扫描。
+
+    返回 ``(candidate, ambiguous)``：
+    - ``candidate``：确定性命中（文件名启发式或内容扫描）的脱敏建议，无命中为 ``None``。
+    - ``ambiguous``：确定性未命中但属「可疑配置/文档类」的可选 LLM 复判候选（ME-03），
+      否则为 ``None``。两者互斥——确定性命中则不再视为 ambiguous。
+
+    ME-01：文件名启发式对**所有**文件执行（不受大小限制）；内容扫描仅读取并扫描文件前
+    ``_MAX_FILE_BYTES`` 字节（大文件读「有界前缀」而非整体跳过），既覆盖大型 ``.pem`` /
+    凭据转储的文件名命中，又约束读取体量。
+    """
     severity: str | None = _filename_severity(rel_path)
     reasons: list[str] = []
     detector = _DETECTOR_HEURISTIC
     if severity is not None:
         reasons.append(f"敏感文件名命中（{rel_path.rsplit('/', 1)[-1]}）")
 
+    text: str | None = None
     try:
         with open(abs_path, "rb") as fh:
             prefix = fh.read(_BINARY_SNIFF_BYTES)
             if _is_binary(prefix):
-                return _finalize(rel_path, severity, detector, reasons)
-            rest = fh.read(_MAX_FILE_BYTES)
+                # 二进制：仅依赖文件名启发式，不内容扫描、不作 ambiguous。
+                return _finalize(rel_path, severity, detector, reasons), None
+            # 仅读取前 _MAX_FILE_BYTES 字节（有界前缀）——大文件不整体读、不整体跳过。
+            rest = fh.read(max(_MAX_FILE_BYTES - len(prefix), 0))
         text = (prefix + rest).decode("utf-8", errors="replace")
     except OSError:
         # 读失败：退回到文件名启发式结果（若有）。
-        return _finalize(rel_path, severity, detector, reasons)
+        return _finalize(rel_path, severity, detector, reasons), None
 
     content_hits = _scan_content(text)
     if content_hits:
@@ -251,7 +342,27 @@ def _classify_file(abs_path: str, rel_path: str) -> SuggestionCandidate | None:
             severity = _merge_severity(severity, hit_severity)
             reasons.append(reason)
 
-    return _finalize(rel_path, severity, detector, reasons)
+    candidate = _finalize(rel_path, severity, detector, reasons)
+    if candidate is not None:
+        return candidate, None
+
+    # 确定性未命中：若是「可疑配置/文档类」文件，组装为可选 LLM 复判候选（ME-03）。
+    ambiguous = _maybe_ambiguous(rel_path, text)
+    return None, ambiguous
+
+
+def _maybe_ambiguous(rel_path: str, text: str | None) -> AmbiguousCandidate | None:
+    """确定性未命中时，判断是否为「可疑配置/文档类」文件并组装 ambiguous 候选。
+
+    ``sample_text`` 仅供 ``_build_llm_feature`` 在本地抽取布尔特征，**绝不**随 LLM 请求外送。
+    """
+    base = rel_path.rsplit("/", 1)[-1]
+    _, ext = os.path.splitext(base)
+    ext = ext.lstrip(".").lower()
+    if ext not in _AMBIGUOUS_EXTS:
+        return None
+    sample = (text or "")[:_AMBIGUOUS_SAMPLE_BYTES]
+    return AmbiguousCandidate(path=rel_path, severity=None, sample_text=sample)
 
 
 def _merge_severity(current: str | None, candidate: str) -> str:
@@ -268,9 +379,7 @@ def _finalize(
     if severity is None:
         return None
     reason = "；".join(dict.fromkeys(reasons)) if reasons else _redact_reason("敏感文件", 0)
-    return SuggestionCandidate(
-        path=rel_path, severity=severity, detector=detector, reason=reason
-    )
+    return SuggestionCandidate(path=rel_path, severity=severity, detector=detector, reason=reason)
 
 
 async def _upsert_suggestion(repository_id: str, candidate: SuggestionCandidate) -> None:
@@ -289,9 +398,7 @@ async def _upsert_suggestion(repository_id: str, candidate: SuggestionCandidate)
     status = SensitiveFileSuggestion.Status.PENDING
     if existing is not None:
         if existing.status == SensitiveFileSuggestion.Status.DISMISSED:
-            upgraded = (
-                candidate.severity == _REAL_SECRET and existing.severity != _REAL_SECRET
-            )
+            upgraded = candidate.severity == _REAL_SECRET and existing.severity != _REAL_SECRET
             status = (
                 SensitiveFileSuggestion.Status.PENDING
                 if upgraded
@@ -312,21 +419,81 @@ async def _upsert_suggestion(repository_id: str, candidate: SuggestionCandidate)
     )
 
 
-async def detect_sensitive_files(repository_id: str, repo_path: str) -> int:
-    """检测器入口：遍历仓库工作区 → 分类 → upsert 建议，返回入库/更新条数。
+def _scan_repository(
+    repository_id: str,
+    repo_path: str,
+    only_paths: Iterable[str] | None = None,
+) -> tuple[list[SuggestionCandidate], list[AmbiguousCandidate]]:
+    """纯只读扫描：遍历 + 分类，返回 ``(确定性候选, 可选 LLM 模糊候选)``。
 
-    逐文件 ``try/except`` 隔离（T-24-04）：单文件分类异常仅记 warning，不中断整仓检测。
-    审计事件仅含计数 / severity，无路径敏感内容、无密钥本体（T-24-01）。
+    **关键（BL-01）**：本函数为同步只读，**必须在仓库工作区目录仍存活时**被调用并跑完
+    （文件读取全部发生在此）；调用方应在删除临时克隆目录之前 join 本扫描结果。
+
+    全局护栏（ME-02）：访问文件数 / 累计候选数 / 软时间预算任一超限即停止遍历，并记一次
+    ``sensitive.walk_truncated`` 可观测事件。逐文件 ``try/except`` 隔离（T-24-04）。
     """
     candidates: list[SuggestionCandidate] = []
-    for abs_path, rel_path in _walk_candidate_files(repo_path):
+    ambiguous: list[AmbiguousCandidate] = []
+    files_seen = 0
+    started = time.monotonic()
+    truncated = False
+
+    for abs_path, rel_path, size in _walk_candidate_files(repo_path, only_paths):
+        files_seen += 1
+        if files_seen > _MAX_WALK_FILES:
+            truncated = True
+            break
+        if time.monotonic() - started > _WALK_TIME_BUDGET_SECONDS:
+            truncated = True
+            break
         try:
-            candidate = _classify_file(abs_path, rel_path)
+            candidate, amb = _classify_file(abs_path, rel_path, size)
         except Exception:  # noqa: BLE001 — 单文件失败隔离，不中断整仓（T-24-04）
             logger.warning("sensitive.classify_failed", repository_id=str(repository_id))
             continue
         if candidate is not None:
             candidates.append(candidate)
+            if len(candidates) >= _MAX_CANDIDATES:
+                truncated = True
+                break
+        elif amb is not None and len(ambiguous) < _MAX_AMBIGUOUS:
+            ambiguous.append(amb)
+
+    if truncated:
+        logger.warning(
+            "sensitive.walk_truncated",
+            repository_id=str(repository_id),
+            files_seen=files_seen,
+            candidates=len(candidates),
+            max_files=_MAX_WALK_FILES,
+            max_candidates=_MAX_CANDIDATES,
+            time_budget_seconds=_WALK_TIME_BUDGET_SECONDS,
+        )
+    return candidates, ambiguous
+
+
+async def detect_sensitive_files(
+    repository_id: str,
+    repo_path: str,
+    *,
+    only_paths: Iterable[str] | None = None,
+    enable_llm: bool = True,
+    node_config: dict | None = None,
+) -> int:
+    """检测器入口：遍历仓库工作区 → 分类 → upsert 建议，返回入库/更新条数。
+
+    - ``only_paths``（HI-01）：非空时仅检测这些仓库相对路径（增量/diff 路径只扫本次变更
+      文件，避免全仓重扫）；为 ``None`` 时整仓扫描（全量索引）。
+    - ``enable_llm``（ME-03）：默认启用可选 LLM 二分类对「确定性未命中但可疑」的配置/文档
+      子集复判；provider 缺失或调用失败一律 graceful 退化（确定性结果不受影响，T-24-07）。
+
+    生命周期（BL-01）：本协程的文件读取发生在同步 ``_scan_repository`` 中；调用方必须在临时
+    克隆目录删除**之前** await 本协程，确保检测读到真实文件而非已删除/空目录。
+
+    逐文件 ``try/except`` 隔离（T-24-04）：单文件分类异常仅记 warning，不中断整仓检测。
+    审计事件仅含计数 / severity，无路径敏感内容、无密钥本体（T-24-01）。
+    """
+    candidates, ambiguous = _scan_repository(repository_id, repo_path, only_paths)
 
     for candidate in candidates:
         await _upsert_suggestion(repository_id, candidate)
@@ -339,7 +506,17 @@ async def detect_sensitive_files(repository_id: str, repo_path: str) -> int:
         count=len(candidates),
         real_secret=real_secret,
         likely_sensitive=likely_sensitive,
+        ambiguous=len(ambiguous),
     )
+
+    # ME-03：可选 LLM 二分类（gated + graceful-degrade）。已在 _scan_repository 内（目录存活时）
+    # 采样 sample_text，故此处即便目录已删除也不再读盘。任何异常一律不冒泡（T-24-07）。
+    if enable_llm and ambiguous:
+        try:
+            await classify_ambiguous_files(repository_id, ambiguous, node_config=node_config)
+        except Exception:  # noqa: BLE001 — 可选增强失败绝不影响确定性结果（T-24-07）
+            logger.warning("sensitive.llm_stage_failed", repository_id=str(repository_id))
+
     return len(candidates)
 
 
@@ -463,7 +640,12 @@ async def classify_ambiguous_files(
         response = await model.ainvoke([system, human])
         verdicts = _parse_llm_verdicts(content_to_text(response.content))
     except Exception as exc:  # noqa: BLE001 — 任何异常一律 graceful 退化（T-24-07）
-        logger.warning("sensitive_llm_classify_failed", error=str(exc))
+        # LO-02：只记异常类型，不记 str(exc)——JSONDecodeError 文本可能带回被解析文档片段。
+        logger.warning(
+            "sensitive_llm_classify_failed",
+            repository_id=str(repository_id),
+            error_type=type(exc).__name__,
+        )
         return 0
 
     by_path = {c.path: c for c in ambiguous}
@@ -484,9 +666,7 @@ async def classify_ambiguous_files(
             await _upsert_suggestion(repository_id, candidate)
             applied += 1
         except Exception:  # noqa: BLE001 — 单条入库失败不中断其余（fail-safe）
-            logger.warning(
-                "sensitive.llm_upsert_failed", repository_id=str(repository_id)
-            )
+            logger.warning("sensitive.llm_upsert_failed", repository_id=str(repository_id))
 
     logger.info(
         "sensitive.llm_classified",
