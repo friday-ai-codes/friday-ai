@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-04（编码容器面 fail-closed 排除，wave 2），原子提交 08880763d / 1c925c804
-last_updated: "2026-06-14T09:10:00.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 04
+stopped_at: 完成 22-05（排除规则 REST API + 前端编辑入口，EXCL-01），原子提交 36112b4f6 / 22dd76679 / b8c2adc38
+last_updated: "2026-06-14T09:24:07.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 05
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 22-01 ✅ / 22-02 ✅ / 22-04 ✅ / 22-06 ✅（wave 2）；03/05 待执行
+Plan: 22-01 ✅ / 22-02 ✅ / 22-04 ✅ / 22-05 ✅ / 22-06 ✅（wave 2）；03 待执行
 Status: Executing Phase 22
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 04（编码容器面 clone 后 prune fail-closed 排除）
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 05（排除规则 REST API + 前端编辑入口，EXCL-01）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (4/6 plans) |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (5/6 plans) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |

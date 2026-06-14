@@ -31,7 +31,7 @@
 
 - [x] 22-02-PLAN.md — 索引扫描面 fail-closed 过滤（full+incremental，修 PF-04）✅ (428c25d0c)
 - [x] 22-04-PLAN.md — 编码容器 clone 后 prune（fail-closed）+ 两派发路径下传规则 ✅ (1c925c804)
-- [ ] 22-05-PLAN.md — 排除规则 REST API + 前端 per-repo 编辑入口
+- [x] 22-05-PLAN.md — 排除规则 REST API + 前端 per-repo 编辑入口 ✅ (b8c2adc38)
 - [x] 22-06-PLAN.md — 外部 MCP HTTP 工具（grep/get_file/list/find_related）bare 镜像读取面 fail-closed ✅ (1a0c6f0cd)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -79,7 +79,7 @@
 
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
-| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | In progress (4/6 plans) | — |
+| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | In progress (5/6 plans) | — |
 | 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Not started | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
