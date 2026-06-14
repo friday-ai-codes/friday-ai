@@ -1152,6 +1152,19 @@ class RepositoryReconcileView(APIView):
         # 命中数（供客户端即时展示将清理多少文件）；degraded 时为 0。
         report = await compute_reconciliation(str(repository_id))
 
+        # BL-01：对账诊断不可信（匹配器构造失败）时后端必须 fail-closed 拒绝派发——
+        # 不建 running 行、不派发后台清理，绝不依赖前端 TOCTOU 禁用（GET 与本次 POST
+        # 之间匹配器构造状态可能漂移）。返回 409 让前端显式展示 degraded + error。
+        if report.degraded:
+            return Response(
+                {
+                    "detail": "对账诊断不可信（排除匹配器构造失败），已拒绝派发清理（fail-closed）",
+                    "degraded": True,
+                    "error": report.error,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         # 先落 running 行拿 run_id，后台 run_cleanup 据此更新（结果可经状态端点回流，W1/W2）
         run = await CleanupRun.objects.acreate(
             repository_id=repository_id,
