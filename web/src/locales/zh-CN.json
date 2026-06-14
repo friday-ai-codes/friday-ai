@@ -311,5 +311,42 @@
       "caveatLabel": "边界说明",
       "loadError": "加载清理状态失败"
     }
+  },
+  "sensitive": {
+    "title": "AI 敏感文件建议",
+    "subtitle": "AI 自动识别可能含密钥 / 敏感信息的文件，按严重程度排序；接受将新增排除规则，但不会自动删除已索引内容",
+    "loading": "正在加载敏感文件建议…",
+    "loadError": "加载敏感文件建议失败",
+    "empty": "暂无待处理的敏感文件建议",
+    "severity": {
+      "real_secret": "真实密钥",
+      "likely_sensitive": "疑似敏感",
+      "config_review": "建议复核"
+    },
+    "detector": {
+      "heuristic": "启发式",
+      "content": "内容扫描",
+      "llm": "AI 识别"
+    },
+    "realSecretAlertTitle": "检测到真实密钥，高优先级",
+    "realSecretAlertDescription": "以下文件疑似包含真实密钥，请尽快处理：接受建议以将其排除，并在下方「对账与清理」面板显式清理已索引内容。",
+    "reasonLabel": "命中说明",
+    "actions": {
+      "accept": "接受",
+      "dismiss": "忽略"
+    },
+    "acceptConfirm": {
+      "title": "接受敏感文件建议",
+      "description": "将为该文件新增一条排除规则（来源：AI 建议），使其对 Friday 后续索引 / 检索不可见。注意：接受不会自动删除已索引内容，如需清除请在下方「对账与清理」面板显式执行。确认接受？",
+      "confirmText": "接受并建规则"
+    },
+    "toast": {
+      "accepted": "已接受建议并新增排除规则。如需清除已索引内容，请在下方「对账与清理」面板执行。",
+      "dismissed": "已忽略该建议"
+    },
+    "error": {
+      "accept": "接受建议失败",
+      "dismiss": "忽略建议失败"
+    }
   }
 }
