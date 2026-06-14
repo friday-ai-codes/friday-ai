@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 23-03——敏感清理操作记录数据面：services/sensitive_purge.py purge_sensitive_planes（兑现 23-02 sensitive 懒导入契约）。CodeChangeArchive file 级 scrub（按 diff --git 边界剔除被排除文件 diff 段 + 过滤 files 列表重算 file_count/additions/deletions/diff_size/compressed_size/sha256，decompress_diff/compress_diff 重压缩不调 parse_diff_files W4；仅含该文件整行删，含他文件不误删 T-23-13）+ TaskResult/ActionLog 经 _normalize_repo_url(session.repo_url)==git_url 关联本仓清理（modified_files/payload 命中剔除/脱敏，关联不确定保守不动 T-23-12）+ message parts/content 子串脱敏（无 repo 关联面 best-effort 命中叶子，prompt_snapshot/backups/git_objects 记 unscrubbed + SENSITIVE_PLANES_CAVEAT 如实不承诺 git/备份物理消失 §9.1 T-23-11）；逐面异常隔离 errors + purge.sensitive_plane 审计；守护测试 10 passed、23-02 回归 15 passed、ruff 干净、makemigrations --check 干净；原子提交 beca0283c / 869f534ac
-last_updated: "2026-06-14T15:35:00.000Z"
-last_activity: 2026-06-14 -- 23-03 完成（敏感清理操作记录数据面，EXCL-05）
+stopped_at: 完成 23-04——对账/清理前端面板（EXCL-06，Phase 23 收官）：web/src/api/reconcile.ts（reconcileApi getReconcile/cleanup/getCleanupStatus + ReconcileReport 含 degraded/error、CleanupRun 含 sensitive unscrubbed/caveat，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 match_count+excluded_paths 列表；degraded 显式『对账不可信』警示并禁用清理、不渲染空态 W3；普通/敏感双入口分离 §9.2，敏感强确认含『不可逆 + 不承诺 git/备份物理消失』§9.1；派发后第二个 useQuery 轮询 getCleanupStatus 按 status 回显，如实渲染 CleanupRun.sensitive 真实 unscrubbed 面 + caveat W1/W2 非静态文案）+ 挂载于仓库详情页 ExclusionRulesPanel 旁 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5，初版 createI18n messages 类型不符被门禁捕获修复）、eslint 0 错；原子提交 51cd36867 / baa35af01
+last_updated: "2026-06-14T15:55:00.000Z"
+last_activity: 2026-06-14 -- 23-04 完成（对账/清理前端面板，EXCL-06；Phase 23 全部完成）
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 10
-  completed_plans: 10
-  percent: 33
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 11
+  percent: 40
 ---
 
 # Project State
@@ -25,17 +25,17 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 23 (清理对账（普通/敏感两模式）) — EXECUTING
-Plan: 4 of 4 (23-01, 23-02, 23-03 done)
-Status: Executing Phase 23
-Last activity: 2026-06-14 -- 23-03 完成（敏感清理操作记录数据面，EXCL-05）
+Phase: 23 (清理对账（普通/敏感两模式）) — COMPLETE (4/4 plans)
+Plan: 4 of 4 done (23-01, 23-02, 23-03, 23-04 done)
+Status: Phase 23 complete — next Phase 24 (敏感文件 AI 识别建议名单) Not started
+Last activity: 2026-06-14 -- 23-04 完成（对账/清理前端面板，EXCL-06；Phase 23 收官）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
-| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (3/4 plans done) |
+| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
@@ -88,6 +88,7 @@ Last activity: 2026-06-14 -- 23-03 完成（敏感清理操作记录数据面，
 | Phase 23 P01 | ~10min | 2 tasks | 3 files |
 | Phase 23 P02 | ~30min | 2 tasks | 7 files |
 | Phase 23 P03 | ~25min | 2 tasks | 2 files |
+| Phase 23 P04 | ~20min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 23]: 23-03: CodeChangeArchive file 级 scrub recompute **不调 parse_diff_files**（其解析平台 MRDiffFile 对象而非 unified-diff 文本，W4 类型不符）；改为过滤既有 files JSON 列表重算计数 + 按 `diff --git a/old b/new` 边界切段剔除目标文件 diff（new/old 任一命中即剔除），decompress_diff/compress_diff 重压缩；仅含被排除文件整行删，含他文件保留他文件部分（T-23-13 不误删）
 - [Phase 23]: 23-03: TaskResult/ActionLog 关联键 = _normalize_repo_url(session.repo_url)==_normalize_repo_url(repo.git_url)（去 .git/末尾斜杠/小写）；归一不匹配的记录完全不动（T-23-12 保守，宁漏勿误删他仓产物）
 - [Phase 23]: 23-03: message parts/content 无 repo 关联键（Conversation 绑 Project 非 Repository）→ best-effort 子串脱敏（_redact_value 只替换命中被排除路径的 str 叶子，保留同载荷其余字段，不整库清空 T-23-13）；prompt_snapshot/backups/git_objects 记 unscrubbed + SENSITIVE_PLANES_CAVEAT 如实声明 git object/历史/备份不承诺物理消失（§9.1 T-23-11，绝不假装清除）
+- [Phase 23]: 23-04: 前端 web/src/api/reconcile.ts + ReconcilePanel.vue 兑现 EXCL-06 可见闭环；degraded 前端落地——degraded=true → 显式『对账不可信』警示 + 禁用双清理按钮、绝不渲染空态/已一致（W3）；普通/敏感双入口分离（§9.2），敏感强确认直取 §9.1『不可逆 + 仅清 Friday 派生/操作记录可定位内容，不承诺从 git 历史或备份物理消失』
+- [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
 
@@ -206,10 +209,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 23 Plan 03 — 敏感清理操作记录数据面）
-Stopped at: 完成 23-03——services/sensitive_purge.py purge_sensitive_planes（兑现 23-02 sensitive 懒导入契约）：CodeChangeArchive file 级 scrub（剔除被排除文件 diff 段 + 重算计数，仅含该文件整行删、含他文件不误删）+ TaskResult/ActionLog 经 repo_url↔git_url 归一关联本仓清理（关联不确定保守不动 T-23-12）+ message parts/content 子串脱敏（无 repo 关联面 best-effort，prompt_snapshot/backups/git_objects 记 unscrubbed + caveat §9.1 T-23-11）；逐面隔离 errors + purge.sensitive_plane 审计；守护测试 10 passed、23-02 回归 15 passed、ruff 干净、makemigrations --check 干净；原子提交 beca0283c / 869f534ac
+Last session: 2026-06-14（Phase 23 Plan 04 — 对账/清理前端面板，Phase 23 收官）
+Stopped at: 完成 23-04——web/src/api/reconcile.ts（reconcileApi + ReconcileReport/CleanupDispatch/CleanupRun 类型，对齐 23-02/23-03 契约）+ ReconcilePanel.vue（对账差异 + degraded『对账不可信』警示并禁用清理 W3 + 普通/敏感双入口 §9.2 + 敏感强确认含不可逆/不承诺 git/备份物理消失 §9.1 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun.sensitive unscrubbed/caveat W1/W2）+ 仓库详情页挂载 + zh-CN reconcile.* 文案 + 5 例守护测试全绿；vue-tsc reconcile 门禁 0 错（W5）、eslint 0 错；原子提交 51cd36867 / baa35af01
 Resume file: None
-Next: 23-04（对账/清理前端面板 — 差异提示 + 普通/敏感双入口强确认 + 回显 sensitive scrubbed/unscrubbed/caveat），Phase 23 最后一个 plan
+Next: Phase 23 全部完成（EXCL-04/05/06）。下一步 Phase 24（敏感文件 AI 识别建议名单，EXCL-03）— Not started；或 /gsd-plan-phase 24
 
 ## Operator Next Steps
 
