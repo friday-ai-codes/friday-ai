@@ -22,18 +22,25 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import math
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import structlog
 
 from services.exclusion import BUILTIN_GLOBAL_DEFAULTS, normalize_rel_path
+from services.provider_config import ProviderConfigService
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["SuggestionCandidate", "detect_sensitive_files"]
+__all__ = [
+    "AmbiguousCandidate",
+    "SuggestionCandidate",
+    "classify_ambiguous_files",
+    "detect_sensitive_files",
+]
 
 # severity 字面值（与 SensitiveFileSuggestion.Severity 对齐；本模块不导入模型以保持纯函数）。
 _REAL_SECRET = "real_secret"
@@ -46,6 +53,7 @@ _SEVERITY_RANK = {_REAL_SECRET: 3, _LIKELY_SENSITIVE: 2, _CONFIG_REVIEW: 1}
 # detector 字面值。
 _DETECTOR_HEURISTIC = "heuristic"
 _DETECTOR_CONTENT = "content"
+_DETECTOR_LLM = "llm"
 
 # 遍历安全上限（T-24-02：避免遍历/读爆内存）。
 _MAX_FILE_BYTES = 1 * 1024 * 1024  # 单文件 1 MiB 上限
@@ -69,6 +77,19 @@ class SuggestionCandidate:
     severity: str
     detector: str
     reason: str
+
+
+@dataclass(frozen=True)
+class AmbiguousCandidate:
+    """送入可选 LLM 二分类的「模糊」候选（启发式未覆盖但可疑的配置/文档文件）。
+
+    ``sample_text`` 仅供本模块**内部**抽取最小化布尔特征（如是否含 key/secret 关键字）；
+    它**绝不**随 LLM 请求外送（T-24-06）——见 ``_build_llm_feature``。
+    """
+
+    path: str
+    severity: str | None = None
+    sample_text: str = field(default="", repr=False)
 
 
 # === 内容扫描正则集（模块级常量，编译一次复用）=========================================
@@ -320,3 +341,157 @@ async def detect_sensitive_files(repository_id: str, repo_path: str) -> int:
         likely_sensitive=likely_sensitive,
     )
     return len(candidates)
+
+
+# === 可选 LLM 二分类段（Plan 24-02，D-01 增强）======================================
+# 确定性段「始终启用」；本段仅对「启发式未覆盖但可疑」的配置/文档子集**可选**调用：
+# provider 缺失 / 调用失败一律 graceful 退化为空增量，确定性结果绝不依赖 LLM 成功
+# （T-24-07）。强密钥（real_secret）绝不进候选、绝不外送；送 LLM 的仅「文件名 + 最小化
+# 布尔特征」，绝不含密钥本体（T-24-06）。
+
+# 最小化特征关键字：仅用于产出布尔信号，关键字命中与否本身不泄漏密钥值。
+_FEATURE_KEYWORDS = ("key", "secret", "token", "password", "credential", "passwd")
+
+_LLM_SYSTEM_PROMPT = (
+    "你是敏感文件审查助手。基于给定的文件名与最小化特征（扩展名、是否含密钥类关键字），"
+    "判断每个文件是否可能包含敏感信息（密钥/口令/凭据等）。"
+    "严格输出 JSON 数组，每项含：path（原样回传）、sensitive（布尔）、reason（中文一句，"
+    "**绝不**回显任何密钥值或文件内容）。除 JSON 外不要输出其他内容。"
+)
+
+
+def _build_llm_feature(candidate: AmbiguousCandidate) -> dict[str, object]:
+    """构造送 LLM 的最小化特征：仅文件名 + 扩展名 + 关键字布尔，**绝不含**正文/密钥值。
+
+    ``sample_text`` 只在此处用于计算布尔信号（是否含密钥类关键字），其原文不进入返回值。
+    """
+    base = candidate.path.rsplit("/", 1)[-1]
+    _, ext = os.path.splitext(base)
+    lowered = f"{base}\n{candidate.sample_text or ''}".lower()
+    has_keyword = any(kw in lowered for kw in _FEATURE_KEYWORDS)
+    return {
+        "path": candidate.path,
+        "ext": ext.lstrip("."),
+        "has_sensitive_keyword": has_keyword,
+    }
+
+
+def _parse_llm_verdicts(raw: str) -> list[dict]:
+    """解析 LLM 输出为判定数组；非 JSON / 非数组时尝试截取，失败抛由上层退化。"""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\[[\s\S]*\]", raw)
+        if not match:
+            raise
+        data = json.loads(match.group(0))
+    if not isinstance(data, list):
+        raise ValueError("LLM 输出必须是 JSON array")
+    return data
+
+
+def _redact_llm_reason(reason: str) -> str:
+    """LLM 中文理由兜底脱敏：截断长度 + 去除可能回显的高熵/密钥样 token。
+
+    即便 prompt 已要求不回显密钥，仍做服务端兜底——把疑似密钥/高熵串替换为占位，
+    确保入库 reason 绝不含密钥本体（T-24-06 纵深防御）。
+    """
+    text = (reason or "").strip()[:200]
+    if not text:
+        return "LLM 判定为疑似敏感"
+
+    def _scrub(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if _shannon_entropy(token) >= _HIGH_ENTROPY_THRESHOLD:
+            return "[已脱敏]"
+        return token
+
+    text = _HIGH_ENTROPY_TOKEN_RE.sub(_scrub, text)
+    for rx, _sev, _kind in _SECRET_PATTERNS:
+        text = rx.sub("[已脱敏]", text)
+    return text
+
+
+async def classify_ambiguous_files(
+    repository_id: str,
+    candidates: list[AmbiguousCandidate],
+    *,
+    node_config: dict | None = None,
+) -> int:
+    """可选 LLM 二分类：对模糊配置/文档候选判定是否疑似敏感，命中入库，返回新增条数。
+
+    fail-safe / 隐私不变量：
+    - ``real_secret`` 强命中显式排除，**绝不**进候选、绝不外送（T-24-06）。
+    - provider 缺失（``ProviderMissingError``）或任何调用/解析异常 → 返回 0，不冒泡，
+      确定性段结果不受影响（T-24-07）。
+    - 送 LLM 的 human 内容仅「文件名 + 最小化布尔特征」，不含密钥本体（T-24-06）。
+    - 仅产 ``likely_sensitive`` 的 pending 建议，绝不建规则 / 删数据（T-24-08）。
+    """
+    ambiguous = [c for c in candidates if c.severity != _REAL_SECRET]
+    if not ambiguous:
+        return 0
+
+    try:
+        from services.provider_config import ProviderMissingError
+
+        resolved = await ProviderConfigService.aresolve_or_error(node_config)
+        if isinstance(resolved, ProviderMissingError):
+            logger.info(
+                "sensitive.llm_skipped_no_provider",
+                repository_id=str(repository_id),
+                count=len(ambiguous),
+            )
+            return 0
+
+        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if not model_name:
+            logger.info(
+                "sensitive.llm_skipped_no_model",
+                repository_id=str(repository_id),
+            )
+            return 0
+
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agents.llm_factory import build_chat_model, content_to_text
+
+        features = [_build_llm_feature(c) for c in ambiguous]
+        system = SystemMessage(content=_LLM_SYSTEM_PROMPT)
+        human = HumanMessage(content=json.dumps(features, ensure_ascii=False))
+
+        model = build_chat_model(resolved, model_name, streaming=False)
+        response = await model.ainvoke([system, human])
+        verdicts = _parse_llm_verdicts(content_to_text(response.content))
+    except Exception as exc:  # noqa: BLE001 — 任何异常一律 graceful 退化（T-24-07）
+        logger.warning("sensitive_llm_classify_failed", error=str(exc))
+        return 0
+
+    by_path = {c.path: c for c in ambiguous}
+    applied = 0
+    for verdict in verdicts:
+        if not isinstance(verdict, dict):
+            continue
+        path = str(verdict.get("path", ""))
+        if path not in by_path or not bool(verdict.get("sensitive")):
+            continue
+        candidate = SuggestionCandidate(
+            path=path,
+            severity=_LIKELY_SENSITIVE,
+            detector=_DETECTOR_LLM,
+            reason=_redact_llm_reason(str(verdict.get("reason", ""))),
+        )
+        try:
+            await _upsert_suggestion(repository_id, candidate)
+            applied += 1
+        except Exception:  # noqa: BLE001 — 单条入库失败不中断其余（fail-safe）
+            logger.warning(
+                "sensitive.llm_upsert_failed", repository_id=str(repository_id)
+            )
+
+    logger.info(
+        "sensitive.llm_classified",
+        repository_id=str(repository_id),
+        candidates=len(ambiguous),
+        applied=applied,
+    )
+    return applied
