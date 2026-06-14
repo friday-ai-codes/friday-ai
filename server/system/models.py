@@ -75,6 +75,12 @@ class SettingKeys:
     # 由 knowledge.collection.ensure_delivery_knowledge_collection 写入/校验。
     KNOWLEDGE_COLLECTION_META = "knowledge_collection_meta"
 
+    # 代码索引排除规则全局默认（Phase 22 fail-closed，EXCL-01 单一事实源）。
+    # value 为 JSON 规则列表，结构 = ExclusionRuleSpec 序列化形
+    # （[{"pattern": str, "rule_type": "dir|glob|regex", "enabled": bool, "source": str}, ...]）。
+    # 与内置 BUILTIN_GLOBAL_DEFAULTS 取并集，由 services/exclusion.py 加载合并。
+    CODE_INDEX_EXCLUSION_GLOBAL_DEFAULTS = "code_index.exclusion.global_defaults"
+
     # RAG Enhancement Settings
     RERANKER_ENABLED = "reranker_enabled"
     RERANKER_API_URL = "reranker_api_url"
@@ -132,21 +138,15 @@ class ProviderCredential(models.Model):
     provider_type = models.CharField(
         max_length=32,
         db_index=True,
-        help_text=(
-            "Provider 类型字符串。本 phase 仅 'anthropic'，implementation 扩展为 5 种。"
-        ),
+        help_text=("Provider 类型字符串。本 phase 仅 'anthropic'，implementation 扩展为 5 种。"),
     )
     name = models.CharField(
         max_length=64,
         default="default",
-        help_text=(
-            "同 Provider 多凭证区分键（contract）。例 'openai-prod' / 'openai-dev'。"
-        ),
+        help_text=("同 Provider 多凭证区分键（contract）。例 'openai-prod' / 'openai-dev'。"),
     )
 
-    scope = models.CharField(
-        max_length=16, choices=Scope.choices, default=Scope.SYSTEM
-    )
+    scope = models.CharField(max_length=16, choices=Scope.choices, default=Scope.SYSTEM)
     scope_id = models.UUIDField(
         null=True,
         blank=True,
@@ -157,10 +157,7 @@ class ProviderCredential(models.Model):
     )
 
     encrypted_config = models.TextField(
-        help_text=(
-            "encrypt_value(json.dumps({...})) Fernet 整体加密；"
-            "service 层显式加解密。"
-        ),
+        help_text=("encrypt_value(json.dumps({...})) Fernet 整体加密；service 层显式加解密。"),
     )
 
     base_url = models.CharField(max_length=500, blank=True, default="")
