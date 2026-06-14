@@ -42,6 +42,8 @@ from .views import (
     RepositoryExclusionRuleDetailView,
     RepositoryExclusionRulesView,
     RepositoryReconcileView,
+    RepositorySensitiveSuggestionActionView,
+    RepositorySensitiveSuggestionsView,
     RepositorySpacesView,
     RepositoryViewSet,
     SetAccessTokenView,
@@ -246,6 +248,17 @@ urlpatterns = [
         "<uuid:repository_id>/exclusions/<uuid:rule_id>/",
         RepositoryExclusionRuleDetailView.as_view(),
         name="repository-exclusion-detail",
+    ),
+    # Plan 24-03：敏感文件 AI 建议 list / accept / dismiss（EXCL-03）
+    path(
+        "<uuid:repository_id>/sensitive-suggestions/",
+        RepositorySensitiveSuggestionsView.as_view(),
+        name="repository-sensitive-suggestions",
+    ),
+    path(
+        "<uuid:repository_id>/sensitive-suggestions/<uuid:suggestion_id>/action/",
+        RepositorySensitiveSuggestionActionView.as_view(),
+        name="repository-sensitive-suggestion-action",
     ),
     # Plan 23-02：对账 + 两模式清理 + 状态查询（EXCL-04 / EXCL-06）
     path(
