@@ -76,6 +76,8 @@ class CleanupReport:
     per_file: list[PurgeResult] = field(default_factory=list)
     sensitive: dict | None = None
     failures: list[str] = field(default_factory=list)
+    # 对账诊断不可信（匹配器构造失败）→ fail-closed 中止清理（BL-01，W3）。
+    degraded: bool = False
 
 
 async def _indexed_file_paths(repository_id: str) -> list[str]:
@@ -214,6 +216,34 @@ async def run_cleanup(
 
     if paths is None:
         recon = await compute_reconciliation(repo_id)
+        # BL-01：对账 degraded（匹配器构造失败）时诊断不可信，绝不静默以
+        # status=completed/match_count=0 收尾（否则把"未清"伪装成"已清"——
+        # 敏感模式下等于安全泄漏，违反 CLAUDE.md/AGENTS.md fail-closed 约束）。
+        # 此处是权威 fail-closed 收尾点，不依赖前端 TOCTOU 禁用（GET 正常→后台重算失败）。
+        if recon.degraded:
+            error = recon.error or "对账匹配器构造失败，诊断不可信，已中止清理（fail-closed）"
+            await _finalize_run(
+                run,
+                status="failed",
+                match_count=0,
+                failures=["reconcile_degraded"],
+                sensitive=None,
+                error=error,
+            )
+            logger.warning(
+                "cleanup.reconcile_degraded",
+                repository_id=repo_id,
+                mode=mode,
+                error=error,
+            )
+            log_purge_event(
+                "purge.completed",
+                mode=mode,
+                repository_id=repo_id,
+                match_count=0,
+                failures=["reconcile_degraded"],
+            )
+            return CleanupReport(mode=mode, failures=["reconcile_degraded"], degraded=True)
         paths = recon.excluded_paths
     target_paths = list(paths)
 
