@@ -720,6 +720,78 @@ class CorpusTreeSnapshot(models.Model):
         return f"CorpusTree v{self.version} ({'active' if self.is_active else 'inactive'})"
 
 
+class RepoExclusionRule(models.Model):
+    """per-repo 排除规则（Phase 22 fail-closed 单一事实源之一）。
+
+    规则需可枚举 / 可增删 / 可审计（Phase 23 对账依赖），故落表而非单 JSON 字段。
+    有效规则 = 全局默认（BUILTIN_GLOBAL_DEFAULTS ∪ SystemSetting JSON）∪ per-repo 规则；
+    其中 ``source="global" + enabled=False`` 的行表示「关闭某条全局默认」的 override 标记，
+    匹配器（services/exclusion.py）据此从有效集合中剔除同 pattern 的全局默认。
+
+    仅承诺「被排除文件对 Friday 不可见（fail-closed，INV-4）」，不承诺 git object 物理消失
+    （DOMAIN §9.1）。
+    """
+
+    class RuleType(models.TextChoices):
+        """规则类型：目录前缀 / glob 通配 / 正则（DOMAIN §9 D-02）。"""
+
+        DIR = "dir", "目录前缀"
+        GLOB = "glob", "glob 通配"
+        REGEX = "regex", "正则"
+
+    class Source(models.TextChoices):
+        """规则来源。"""
+
+        USER = "user", "用户配置"
+        AI_SUGGESTED = "ai_suggested", "AI 建议"
+        GLOBAL = "global", "全局默认 override 标记"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="exclusion_rules",
+    )
+    pattern = models.CharField(
+        max_length=500,
+        help_text="规则模式：dir 为目录前缀，glob 为通配模式，regex 为正则（相对仓库根 POSIX）",
+    )
+    rule_type = models.CharField(
+        max_length=16,
+        choices=RuleType.choices,
+        default=RuleType.GLOB,
+    )
+    enabled = models.BooleanField(default=True)
+    source = models.CharField(
+        max_length=16,
+        choices=Source.choices,
+        default=Source.USER,
+        help_text="source=global + enabled=False 表示关闭某条全局默认的 override 标记",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "repo_exclusion_rules"
+        verbose_name = "仓库排除规则"
+        verbose_name_plural = "仓库排除规则"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "rule_type", "pattern", "source"],
+                name="uq_repo_exclusion_rule",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["repository", "enabled"],
+                name="idx_repo_exclusion_enabled",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.repository_id}:{self.rule_type}:{self.pattern} ({self.source})"
+
+
 class BranchFileIndex(models.Model):
     """分支内文件级变更记录——追踪 overlay 中每个文件的变更类型。"""
 
