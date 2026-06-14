@@ -3205,22 +3205,34 @@ class IndexerService:
                         # contract：分支隔离维度。PK 仍是 chunk_id，feature chunk_id
                         # 已天然不同（分支命名空间），get_or_create 不跨分支覆盖 base。
                         "branch_name": row["branch_name"],
+                        # 行号回填（IDX-02）：1-based 闭区间，可为 None（历史/非 AST 回退）。
+                        "line_start": row["line_start"],
+                        "line_end": row["line_end"],
                     },
                 )
 
                 content_hash_changed = (not created) and obj.content_hash != new_hash
-                if content_hash_changed or (
+                # 行号位移（重切分导致 chunk 上下移）必须更新，否则 25-02 file:line
+                # 反查命中错位区间；额外纳入「仅行号变」判定，避免 hash/路径未变时漏更新。
+                line_changed = not created and (
+                    obj.line_start != row["line_start"] or obj.line_end != row["line_end"]
+                )
+                if content_hash_changed or line_changed or (
                     not created
                     and (obj.file_path != row["file_path"] or obj.chunk_index != row["chunk_index"])
                 ):
                     obj.content_hash = new_hash
                     obj.file_path = row["file_path"]
                     obj.chunk_index = row["chunk_index"]
+                    obj.line_start = row["line_start"]
+                    obj.line_end = row["line_end"]
                     obj.save(
                         update_fields=[
                             "content_hash",
                             "file_path",
                             "chunk_index",
+                            "line_start",
+                            "line_end",
                             "updated_at",
                         ]
                     )

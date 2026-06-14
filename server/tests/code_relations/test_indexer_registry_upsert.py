@@ -26,6 +26,8 @@ def _make_row(
     file_path: str = "src/a.py",
     chunk_index: int = 0,
     branch_name: str = "",
+    line_start: int | None = None,
+    line_end: int | None = None,
 ) -> dict:
     return {
         "chunk_id": chunk_id,
@@ -34,6 +36,8 @@ def _make_row(
         "file_path": file_path,
         "chunk_index": chunk_index,
         "branch_name": branch_name,
+        "line_start": line_start,
+        "line_end": line_end,
     }
 
 
