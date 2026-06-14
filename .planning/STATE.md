@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-06（MCP 工具读取面 fail-closed 排除，wave 2），原子提交 19b463dae / 7c553f10b / 1a0c6f0cd
-last_updated: "2026-06-14T08:53:00.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 06
+stopped_at: 完成 22-04（编码容器面 fail-closed 排除，wave 2），原子提交 08880763d / 1c925c804
+last_updated: "2026-06-14T09:10:00.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 04
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 22-01 ✅ / 22-02 ✅ / 22-06 ✅（wave 2，先于 03/04/05 完成）；03/04/05 待执行
+Plan: 22-01 ✅ / 22-02 ✅ / 22-04 ✅ / 22-06 ✅（wave 2）；03/05 待执行
 Status: Executing Phase 22
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 06（MCP 工具读取面 fail-closed 排除）
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 04（编码容器面 clone 后 prune fail-closed 排除）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (3/6 plans) |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (4/6 plans) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
@@ -82,6 +82,7 @@ Last activity: 2026-06-14 -- 完成 Phase 22 Plan 06（MCP 工具读取面 fail-
 |--------|-------|
 | Phase 22 P01 | ~9min | 2 tasks | 5 files |
 | Phase 22 P02 | ~6min | 2 tasks | 3 files |
+| Phase 22 P04 | ~13min | 2 tasks | 8 files |
 | Phase 22 P06 | ~9min | 2 tasks | 2 files |
 
 ## Accumulated Context
@@ -111,6 +112,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-02: PF-04 关闭——scan_directory 不再谎称 .gitignore，注释/docstring 如实描述「目录名 + 扩展名白名单 + 排除匹配器」
 - [Phase 22]: 22-06: MCP HTTP 直读面（grep/get_file/list/find_related）挂接单一匹配器 fail-closed；get_file 对 requested+resolved 双判定防后缀绕过；grep 过滤后重算 total/files_with_matches 避免泄漏存在性；matcher 构造异常用 _FailClosedMatcher 兜底（排除一切，不放行）
 - [Phase 22]: 22-06: 只在 view 层过滤（不改 repo_mirror.py 助手），不重复 22-03 已覆盖的 search_rag_chunks；为保持最小 diff 未对 views.py 跑整文件 ruff format（预存 I001/非规范，超范围）
+- [Phase 22]: 22-04: serialize_rules_for_repo 绝不返回空（异常/无配置回退 BUILTIN_GLOBAL_DEFAULTS），不下传 = 容器面裸奔；matcher 与容器下传共用 _resolve_effective_specs（单一合并真相，_load_specs_from_db 保留别名）
+- [Phase 22]: 22-04: 两条编码派发路径（chat build_dispatch_metadata + workflow _run_repo_coding）均无条件注入 env_FRIDAY_TASK_EXCLUDE_PATTERNS（仅规则模式，无凭证）
+- [Phase 22]: 22-04: task 容器侧独立轻量匹配器（不 import server，语义对齐 dir/glob/regex），prune_excluded clone 后删被排除文件、跳过任意层级 .git/（T-22-15）；删除重试 chmod +w → 持久失败抛 ExclusionPruneError 使 setup 失败（fail-closed，T-22-16，绝不残留可读）
 
 ### Pending Todos
 
@@ -182,9 +186,9 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 Plan 06 执行）
-Stopped at: 完成 22-06（MCP 工具读取面 fail-closed 排除，wave 2），原子提交 19b463dae / 7c553f10b / 1a0c6f0cd；
-11 守护测试全绿（含跨工具一致性），mcp_tools 全套 76 passed 无回归，rg is_excluded/build_matcher views.py 命中 13；03/04/05 待执行
+Last session: 2026-06-14（Phase 22 Plan 04 执行）
+Stopped at: 完成 22-04（编码容器面 fail-closed 排除，wave 2），原子提交 dec139c81/08880763d（server 注入）+ cc9daaea7/1c925c804（容器 prune）；
+server 4 守护 + task 9 守护全绿，回归 server coding_session_service 15 / exclusion_matcher 18 / coding passthrough+remote_tool 20 / task config+git_ops+guard 30 全绿；rg EXCLUDE_PATTERNS 命中两派发路径；03/05 待执行
 Resume file: None
 
 ## Operator Next Steps
