@@ -500,6 +500,47 @@ async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) 
     return proc.returncode == 0
 
 
+async def _unshallow_repo(repo_path: str, proxy_url: str | None = None) -> bool:
+    """补齐浅克隆的完整历史（commit 历史索引前置，BL-01）。best-effort，失败返回 False。
+
+    生产索引路径用 ``git clone --depth 1`` 创建浅克隆，其上 ``git log`` 仅能看到 HEAD 一个
+    commit；若直接在浅克隆上跑 commit 历史索引（``index_commits`` 读 git log），历史 commit
+    永远索引不到，且跨索引运行会静默丢失中间 commit（违反 T-25-09「绝不丢 commit」）。
+
+    这里在 commit 历史索引前 ``git fetch --unshallow origin`` 把当前分支历史补全。注意本地裸
+    镜像（``repo_mirror``）同样是 ``--depth 1`` 浅快照，无完整历史可复用，故只能就地 unshallow
+    这份临时克隆。整段 best-effort：超时 / 失败仅记 warning 返回 False，由调用方决定是否继续
+    （commit 索引随后按浅克隆降级，绝不阻断既有索引 success 终态）。
+    """
+    cmd: list[str] = ["git"]
+    if proxy_url:
+        cmd.extend(["-c", f"http.proxy={proxy_url}"])
+    cmd.extend(["fetch", "--unshallow", "origin"])
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=repo_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=300.0)
+    except asyncio.TimeoutError:
+        proc.kill()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+        logger.warning("commit_index_unshallow_timeout", repo_path=repo_path)
+        return False
+    if proc.returncode != 0:
+        logger.warning(
+            "commit_index_unshallow_failed",
+            stderr=stderr.decode(errors="ignore")[:200],
+        )
+        return False
+    return True
+
+
 async def _get_merge_base(repo_path: str, base_ref: str, feature_ref: str) -> str:
     """计算两个分支的 merge-base SHA。"""
     proc = await asyncio.create_subprocess_exec(
@@ -3217,9 +3258,16 @@ class IndexerService:
                 line_changed = not created and (
                     obj.line_start != row["line_start"] or obj.line_end != row["line_end"]
                 )
-                if content_hash_changed or line_changed or (
-                    not created
-                    and (obj.file_path != row["file_path"] or obj.chunk_index != row["chunk_index"])
+                if (
+                    content_hash_changed
+                    or line_changed
+                    or (
+                        not created
+                        and (
+                            obj.file_path != row["file_path"]
+                            or obj.chunk_index != row["chunk_index"]
+                        )
+                    )
                 ):
                     obj.content_hash = new_hash
                     obj.file_path = row["file_path"]
@@ -3749,6 +3797,10 @@ async def clone_and_index_repository(
             await _run_sensitive_detection(repository_id, temp_dir, index_result)
             # IDX-01（25-04）：base 索引（全量+增量）完成、rmtree 之前 best-effort 摄取 commit
             # 历史（读真实克隆的 git 历史）；失败仅 warning，绝不阻断索引 success（T-25-12）。
+            # BL-01：生产克隆是 `git clone --depth 1` 浅克隆，其 git log 只见 HEAD —— commit
+            # 历史索引前先 best-effort 补齐完整历史，否则历史 commit 永远索引不到并跨运行丢失。
+            if await _is_shallow_clone(temp_dir):
+                await _unshallow_repo(temp_dir, proxy_url)
             await _run_commit_index(repository_id, temp_dir)
 
         return index_result

@@ -29,7 +29,7 @@ import pytest
 
 from services import commit_index
 from services.commit_index import index_commits
-from services.indexer import _run_commit_index
+from services.indexer import _is_shallow_clone, _run_commit_index, _unshallow_repo
 from services.retrieval.rag_search import search_rag
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
@@ -66,6 +66,32 @@ def _init_repo(tmp_path: Path) -> Path:
     repo.mkdir()
     _git(repo, "init", "-q")
     return repo
+
+
+def _init_repo_at(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    return path
+
+
+def _shallow_clone(source: Path, dest: Path) -> None:
+    """用 file:// URI 做真实 ``--depth 1`` 浅克隆（本地路径克隆会忽略 --depth）。
+
+    复刻生产 ``clone_and_index_repository`` 的浅克隆形态，使测试真正经过浅克隆路径，
+    而非在全历史本地仓库上直接调 ``index_commits``（那会绕过 BL-01）。
+    """
+    env = {
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "PATH": os.environ.get("PATH", ""),
+    }
+    subprocess.run(
+        ["git", "clone", "--depth", "1", "--quiet", source.as_uri(), str(dest)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
 
 
 def _commit(repo: Path, files: dict[str, str], message: str) -> str:
@@ -311,3 +337,61 @@ async def test_incremental_only_indexes_new_commits(repository, tmp_path) -> Non
     commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
     assert len(commit_items) == 1
     assert commit_items[0]["payload"]["commit_sha"] == head3
+
+
+# ============================================================================
+# BL-01：commit 历史索引必须经真实 `--depth 1` 浅克隆路径（unshallow 后才见全历史）
+# ============================================================================
+
+
+async def test_shallow_clone_without_unshallow_only_indexes_head(repository, tmp_path) -> None:
+    """复现 BL-01 根因：在真实浅克隆上直接索引只能看到 HEAD 一个 commit。
+
+    这是先前集成测试的盲点——它直接对全历史本地仓库调 index_commits，绕过浅克隆给出虚假信心。
+    本用例用 file:// 真实浅克隆，证明不补齐历史时历史 commit 全部丢失。
+    """
+    source = _init_repo_at(tmp_path / "source")
+    _commit(source, {"a.py": "1\n"}, "first alphacommit")
+    _commit(source, {"b.py": "2\n"}, "second betacommit")
+    head = _commit(source, {"c.py": "3\n"}, "third gammacommit")
+
+    dest = tmp_path / "shallow"
+    _shallow_clone(source, dest)
+    assert await _is_shallow_clone(str(dest)) is True
+
+    points: list[dict[str, Any]] = []
+    result = await _run_index(repository, dest, points)
+
+    # 浅克隆 git log 仅见 HEAD → 只索引 1 个 commit，历史 commit 丢失（BL-01）
+    assert result["indexed"] == 1
+    assert {p["payload"]["commit_sha"] for p in points} == {head}
+
+
+async def test_shallow_clone_unshallow_indexes_full_history(repository, tmp_path) -> None:
+    """BL-01 修复：浅克隆经 `_unshallow_repo` 补齐历史后，commit 历史索引覆盖全部 commit。"""
+    source = _init_repo_at(tmp_path / "source")
+    h1 = _commit(source, {"a.py": "1\n"}, "first alphacommit")
+    h2 = _commit(source, {"b.py": "2\n"}, "second betacommit")
+    h3 = _commit(source, {"c.py": "3\n"}, "third gammacommit")
+
+    dest = tmp_path / "shallow"
+    _shallow_clone(source, dest)
+    assert await _is_shallow_clone(str(dest)) is True
+
+    # 修复动作：commit 索引前补齐完整历史（生产路径在 _run_commit_index 之前执行同样动作）
+    ok = await _unshallow_repo(str(dest))
+    assert ok is True
+    assert await _is_shallow_clone(str(dest)) is False
+
+    points: list[dict[str, Any]] = []
+    result = await _run_index(repository, dest, points)
+
+    # 全历史可见 → 三个 commit 全部索引，无中段丢失
+    assert result["indexed"] == 3
+    assert {p["payload"]["commit_sha"] for p in points} == {h1, h2, h3}
+
+    # 任一历史（非 HEAD）commit 都能经 search_rag 召回（证明历史确实入库）
+    snap = await _search_rag(repository, "alphacommit", points)
+    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
+    assert len(commit_items) == 1
+    assert commit_items[0]["payload"]["commit_sha"] == h1
