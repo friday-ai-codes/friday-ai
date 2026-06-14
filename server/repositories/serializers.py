@@ -1,5 +1,6 @@
 """Repositories serializers."""
 
+import fnmatch
 import re
 
 from rest_framework import serializers
@@ -207,6 +208,13 @@ class RepoExclusionRuleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"pattern": "正则含嵌套量词，可能触发灾难性回溯（ReDoS），已拒绝"}
                 )
+        elif rule_type == RepoExclusionRule.RuleType.GLOB:
+            # ME-03：glob 也 fail-loud 预校验（fnmatch.translate + re.compile），
+            # 避免非法 glob 入库后令该仓库匹配器每次构造都跳过该条/告警。
+            try:
+                re.compile(fnmatch.translate(pattern))
+            except re.error as exc:
+                raise serializers.ValidationError({"pattern": f"非法 glob 规则：{exc}"}) from exc
         return attrs
 
 

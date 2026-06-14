@@ -134,6 +134,28 @@ class TestExclusionRulesCreate:
         )
         assert resp.status_code == 400
 
+    def test_post_invalid_glob_failclosed_400(
+        self, authenticated_client, repository: Repository, monkeypatch
+    ) -> None:
+        # ME-03：glob 保存时 fail-loud 预校验，非法 glob → 400（不写库）。
+        import repositories.serializers as ser
+
+        real = ser.fnmatch.translate
+        monkeypatch.setattr(
+            ser.fnmatch,
+            "translate",
+            lambda p: "([unclosed" if p == "BADGLOB" else real(p),
+        )
+        resp = authenticated_client.post(
+            EXCL_URL.format(repo_id=repository.id),
+            {"pattern": "BADGLOB", "rule_type": "glob"},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert not RepoExclusionRule.objects.filter(
+            repository=repository, pattern="BADGLOB"
+        ).exists()
+
     def test_post_global_override_disables_default(
         self, authenticated_client, repository: Repository
     ) -> None:
