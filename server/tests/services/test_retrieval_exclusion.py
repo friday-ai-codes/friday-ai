@@ -17,6 +17,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from asgiref.sync import sync_to_async
 
 from services.exclusion import ExclusionMatcher, ExclusionRuleSpec
 from services.retrieval.rag_search import search_rag
@@ -284,3 +285,90 @@ async def test_graph_capable_failclosed_neighbor_on_matcher_error(
     # fail-closed：判定异常 → 邻居全部剔除，但不抛错
     assert "src/auth.py" not in result.graph_context
     assert {n.file_path for n in result.hop1_neighbors} == set()
+
+
+# ============================================================================
+# Task 3: 跨面 fail-closed 守护（索引扫描 + browse + RAG 同一文件均不可见）
+# ============================================================================
+
+_db = pytest.mark.django_db(transaction=True)
+
+
+def _write_guard_tree(root: str, secret_rel: str) -> None:
+    import os
+
+    with open(os.path.join(root, "app.py"), "w") as f:
+        f.write("def main():\n    return 1\n")
+    secret_full = os.path.join(root, secret_rel)
+    os.makedirs(os.path.dirname(secret_full) or root, exist_ok=True)
+    with open(secret_full, "w") as f:
+        f.write("API_KEY = 'crosssurfaceleak'\n")
+
+
+async def _assert_invisible_across_surfaces(
+    monkeypatch: pytest.MonkeyPatch, repository: Any, secret_rel: str
+) -> None:
+    """同一被排除文件在 索引扫描 / browse_file_content / RAG 三面均不可见。"""
+    import os
+    import tempfile
+
+    from agents.tools.chat_tools import browse_file_content
+    from services.code_parser import scan_directory
+    from services.exclusion import build_matcher_for_repo, invalidate_matcher_cache
+
+    repo_id = str(repository.id)
+    invalidate_matcher_cache(repo_id)
+
+    # --- 面 (a) 索引扫描：被排除文件不进入待索引集 ---
+    matcher = await build_matcher_for_repo(repo_id)
+    with tempfile.TemporaryDirectory() as tmp:
+        _write_guard_tree(tmp, secret_rel)
+        scanned = scan_directory(tmp, is_excluded_rel=matcher.is_excluded)
+        rel = {os.path.relpath(p, tmp).replace(os.sep, "/") for p in scanned}
+    assert "app.py" in rel
+    assert secret_rel not in rel
+
+    # --- 面 (b) browse_file_content：拒读，不返回明文 ---
+    monkeypatch.setattr(
+        "agents.tools.chat_tools._scroll_file_from_collection",
+        AsyncMock(return_value=[{"content": "API_KEY=crosssurfaceleak", "chunk_index": 0}]),
+    )
+    browse_res = await browse_file_content(repo_id, secret_rel)
+    assert browse_res.output["data"]["chunks"] == []
+    assert "excluded" in browse_res.output["error"].lower()
+    assert "crosssurfaceleak" not in str(browse_res.output)
+
+    # --- 面 (c) RAG 检索：结果不含被排除文件 ---
+    _patch_rag_deps(
+        monkeypatch,
+        results_by_repo={repo_id: [_item(secret_rel, score=0.95), _item("src/app.py", score=0.8)]},
+    )
+    snap = await search_rag("q", repo_ids=[repo_id])
+    rag_paths = {it["payload"]["file_path"] for it in snap.items}
+    assert secret_rel not in rag_paths
+    assert "src/app.py" in rag_paths
+
+
+@_db
+async def test_cross_surface_guard_builtin_default(
+    monkeypatch: pytest.MonkeyPatch, repository: Any
+) -> None:
+    """内置全局默认（开箱即用，无 per-repo 规则）即令敏感文件三面不可见。"""
+    # config/secret.json 命中内置 glob `*secret*.json`；.json 在扫描扩展名白名单内。
+    await _assert_invisible_across_surfaces(monkeypatch, repository, "config/secret.json")
+
+
+@_db
+async def test_cross_surface_guard_per_repo_rule(
+    monkeypatch: pytest.MonkeyPatch, repository: Any
+) -> None:
+    """per-repo 规则（EXCL-01 第二层）独立触发：*.private.js 三面不可见。"""
+    from repositories.models import RepoExclusionRule
+
+    await sync_to_async(RepoExclusionRule.objects.create)(
+        repository=repository,
+        pattern="*.private.js",
+        rule_type="glob",
+        source="user",
+    )
+    await _assert_invisible_across_surfaces(monkeypatch, repository, "app.private.js")
