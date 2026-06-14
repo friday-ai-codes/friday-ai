@@ -81,7 +81,8 @@ class _ContainerExclusionMatcher:
     """
 
     def __init__(self, rules: list[dict]) -> None:
-        self._dir_prefixes: list[str] = []
+        # dir：(归一前缀, 是否大小写不敏感)，语义对齐 server。
+        self._dir_prefixes: list[tuple[str, bool]] = []
         # glob：(编译正则, 是否按 basename 兜底匹配任意目录)，语义对齐 server（BL-01）。
         self._glob_regexes: list[tuple[re.Pattern[str], bool]] = []
         self._regexes: list[re.Pattern[str]] = []
@@ -90,17 +91,21 @@ class _ContainerExclusionMatcher:
             try:
                 rule_type = rule.get("rule_type")
                 pattern = rule.get("pattern")
+                source = rule.get("source")
             except AttributeError:
                 continue
             if not pattern or not rule_type:
                 continue
+            # source="global" 的安全默认大小写不敏感匹配（ME-01，与 server 一致）。
+            case_insensitive = source == "global"
             if rule_type == "dir":
                 norm = _normalize_rel_path(str(pattern).rstrip("/"))
                 if norm:
-                    self._dir_prefixes.append(norm)
+                    self._dir_prefixes.append((norm, case_insensitive))
             elif rule_type == "glob":
+                flags = re.IGNORECASE if case_insensitive else 0
                 try:
-                    rx = re.compile(fnmatch.translate(str(pattern)))
+                    rx = re.compile(fnmatch.translate(str(pattern)), flags)
                 except re.error:
                     logger.warning("exclusion.bad_glob_skipped", pattern=str(pattern))
                     continue
@@ -121,8 +126,9 @@ class _ContainerExclusionMatcher:
             norm = _normalize_rel_path(rel_path)
             if norm is None:
                 return True  # 归一越界 → fail-closed（保守删除）
-            for prefix in self._dir_prefixes:
-                if norm == prefix or norm.startswith(prefix + "/"):
+            for prefix, ci in self._dir_prefixes:
+                n, p = (norm.casefold(), prefix.casefold()) if ci else (norm, prefix)
+                if n == p or n.startswith(p + "/"):
                     return True
             base = norm.rsplit("/", 1)[-1]
             for rx, basename_only in self._glob_regexes:
