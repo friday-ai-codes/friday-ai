@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-05（排除规则 REST API + 前端编辑入口，EXCL-01），原子提交 36112b4f6 / 22dd76679 / b8c2adc38
-last_updated: "2026-06-14T09:24:07.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 05
+stopped_at: 完成 22-03（进程内 agent 工具面 + RAG chokepoint fail-closed 排除，EXCL-02），原子提交 a4ea109c0/0e9b80a26/d77d348e1（Task1）+ 1ca1793ca/5b3c2829b（Task2）+ 481ba91d6（Task3）
+last_updated: "2026-06-14T10:05:00.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 03（RAG/agent 工具读取面 fail-closed）
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 22-01 ✅ / 22-02 ✅ / 22-04 ✅ / 22-05 ✅ / 22-06 ✅（wave 2）；03 待执行
-Status: Executing Phase 22
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 05（排除规则 REST API + 前端编辑入口，EXCL-01）
+Plan: 22-01 ✅ / 22-02 ✅ / 22-03 ✅ / 22-04 ✅ / 22-05 ✅ / 22-06 ✅（全 6 plans 完成）
+Status: Executing Phase 22 — 全部 plan 已执行（待 verify/secure 收尾）
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 03（RAG 链路 chokepoint + 进程内 agent 工具读取面 fail-closed，EXCL-02）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (5/6 plans) |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
@@ -84,6 +84,7 @@ Last activity: 2026-06-14 -- 完成 Phase 22 Plan 05（排除规则 REST API + �
 | Phase 22 P02 | ~6min | 2 tasks | 3 files |
 | Phase 22 P04 | ~13min | 2 tasks | 8 files |
 | Phase 22 P06 | ~9min | 2 tasks | 2 files |
+| Phase 22 P03 | ~35min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-04: serialize_rules_for_repo 绝不返回空（异常/无配置回退 BUILTIN_GLOBAL_DEFAULTS），不下传 = 容器面裸奔；matcher 与容器下传共用 _resolve_effective_specs（单一合并真相，_load_specs_from_db 保留别名）
 - [Phase 22]: 22-04: 两条编码派发路径（chat build_dispatch_metadata + workflow _run_repo_coding）均无条件注入 env_FRIDAY_TASK_EXCLUDE_PATTERNS（仅规则模式，无凭证）
 - [Phase 22]: 22-04: task 容器侧独立轻量匹配器（不 import server，语义对齐 dir/glob/regex），prune_excluded clone 后删被排除文件、跳过任意层级 .git/（T-22-15）；删除重试 chmod +w → 持久失败抛 ExclusionPruneError 使 setup 失败（fail-closed，T-22-16，绝不残留可读）
+- [Phase 22]: 22-03: search_rag 是 RAG 单一 chokepoint——每 repo 预取 matcher、收集前过滤，覆盖 chat/agent/workflow 所有经 HybridSearchService 的调用方；图谱邻居（hop1/hop2/cross-repo）在 _search_graph_capable 预先剔除（渲染+返回字段双覆盖），无 repo 归属对 repo_ids matcher 做 any 命中（保守 fail-closed）
+- [Phase 22]: 22-03: browse_file_content 入口拒读 + fuzzy resolved_path 复判防后缀绕过（T-22-09），返回 chunks=[]+error 无明文；list_space_structure 文件树过滤；search_repository_code 兜底过滤防未来旁路回流；matcher 构造/判定异常一律 fail-closed
+- [Phase 22]: 22-03: ⚠️ 旁路读取面未覆盖（需收尾 plan）——index_views.py _vector_search 与 deprecated layered_search._l3_hybrid_search 直读 BranchAwareSearchService.search 不经 search_rag，被排除文件可漏出（见 22-03 SUMMARY Threat Flags / deferred-items.md）
 
 ### Pending Todos
 
@@ -186,9 +190,9 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 Plan 04 执行）
-Stopped at: 完成 22-04（编码容器面 fail-closed 排除，wave 2），原子提交 dec139c81/08880763d（server 注入）+ cc9daaea7/1c925c804（容器 prune）；
-server 4 守护 + task 9 守护全绿，回归 server coding_session_service 15 / exclusion_matcher 18 / coding passthrough+remote_tool 20 / task config+git_ops+guard 30 全绿；rg EXCLUDE_PATTERNS 命中两派发路径；03/05 待执行
+Last session: 2026-06-14（Phase 22 Plan 03 执行）
+Stopped at: 完成 22-03（RAG chokepoint + 图谱邻居 + 进程内 agent 工具读取面 fail-closed，EXCL-02）；
+新增守护 15 例（retrieval_exclusion 9 + tools_exclusion 6）全绿，回归 retrieval+codegraph 321 passed / indexer 02 + skeleton + graph golden 37 passed；byte-eq fixture 注入 no-op 匹配器保字节不漂移；遗留 index_views/layered_search 旁路面记 deferred-items；Phase 22 全 6 plans 已执行，待 verify/secure 收尾
 Resume file: None
 
 ## Operator Next Steps

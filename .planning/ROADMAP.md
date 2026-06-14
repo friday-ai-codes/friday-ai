@@ -36,7 +36,7 @@
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 22-03-PLAN.md — 进程内 chat/agent 工具（browse/树）+ RAG 检索 fail-closed + 跨面守护测试（依赖 22-02）
+- [x] 22-03-PLAN.md — 进程内 chat/agent 工具（browse/树）+ RAG 检索 fail-closed + 跨面守护测试（依赖 22-02）✅ (481ba91d6)
 
 ### Phase 23: 清理对账（普通/敏感两模式）
 
@@ -79,7 +79,7 @@
 
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
-| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | In progress (5/6 plans) | — |
+| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | Complete (6/6 plans) | — |
 | 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Not started | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
