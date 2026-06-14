@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: "完成 25-02——file:line → chunk_id 反查（IDX-02 后半）：find_chunk_at(repository_id, file_path, line, *, branch_name) service 按 1-based 闭区间命中覆盖该行的 chunk、最具体（区间最小）优先，复用 Phase 22 单一排除匹配器对被排除文件/构造/判定/归一异常全程 fail-closed 返回空（对齐 rag_search 范式，T-25-04）；GET /api/repositories/<id>/chunk-at/?path=&line= REST 端点 IsAuthenticated 保护，被排除文件与无命中对外同形返回空 chunks 不泄漏存在性（T-25-05），缺/非法 path/line→400、不存在仓库→404。20 例守护测试全绿（service 11 + view 9），urls import ok，mypy/ruff clean。原子提交 b2d03a3d1(test)/e9902388c(feat T1)/f6477be3b(feat T2)。"
-last_updated: "2026-06-14T23:05:00.000Z"
-last_activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id 反查）
+stopped_at: "完成 25-03——commit 历史索引（IDX-01）：Repository.commit_index_boundary_sha 字段 + migration 0035（nullable 无回填，独立于代码 chunk 边界 last_indexed_commit_sha）；services/commit_index.py::index_commits 摄取服务——git log（增量 boundary..HEAD / 首轮 --max-count=500 bounded，boundary 失效回退）→ git diff-tree 取变更文件 → Phase 22 单一匹配器 fail-closed 剔除被排除文件（T-25-08）→ 构建文档（message+author+committed_at+过滤后路径摘要，truncate_diff_lines 截断，不内联 diff 正文）→ embedding → 构建 hybrid/dense point（确定性 uuid5(ns, repo_id:sha) id + 合成 file_path=.friday/commits/{sha} 保 dedup，T-25-10）→ upsert kind=commit → upsert 成功才推进 boundary 到 HEAD（绝不丢 commit，T-25-09）。7 例守护测试全绿（真实临时 git 仓库驱动），makemigrations clean、mypy/ruff clean。原子提交 5a69406c7(feat 字段+migration)/6aa4d3dc1(feat 服务+测试)。"
+last_updated: "2026-06-15T07:20:00.000Z"
+last_activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-01）
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 18
-  completed_plans: 17
-  percent: 68
+  completed_plans: 18
+  percent: 72
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 25 (Commit 历史索引 + 行号反查) — EXECUTING
-Plan: 3 of 4 (25-01, 25-02 完成)
+Plan: 4 of 4 (25-01, 25-02, 25-03 完成)
 Status: Executing Phase 25
-Last activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id 反查）
+Last activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-01）
 
 ## Milestone Overview (v0.5.0)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id �
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
-| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (2/4 done) |
+| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (3/4 done) |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
 **Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
@@ -95,6 +95,7 @@ Last activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id �
 | Phase 24 P04 | ~10min | 2 tasks | 5 files |
 | Phase 25 P01 | ~9min | 2 tasks | 5 files |
 | Phase 25 P02 | ~5min | 2 tasks | 5 files |
+| Phase 25 P03 | ~13min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 25]: 25-01: _bulk_upsert_registry_atomic update 判定显式纳入「行号变化」（obj.line_start/line_end != row[...]），避免仅行号位移、hash/路径/index 未变时漏更新（否则 25-02 反查命中错位，T-25-03）；错乱区间（line_end<line_start）由既有 CheckConstraint 拒绝 IntegrityError（T-25-01），indexer 不静默落错；None 行号合法落 NULL（历史/非 AST 回退兼容，不强制回填历史）
 - [Phase 25]: 25-02: find_chunk_at(repository_id, file_path, line, *, branch_name) 反查入口先 build_matcher_for_repo 再查询——构造失败/路径归一 None/is_excluded 命中（含判定异常）一律 fail-closed 返回空 + log_exclusion_blocked(surface=chunk_at)，绝不放行（T-25-04，对齐 rag_search 范式）；查询条件含 line_start/line_end__isnull=False（NULL 历史 row 天然不命中）+ 闭区间 lte/gte；多 chunk 命中返回全部，按区间宽度 (line_end-line_start) 升序、次序稳定按 chunk_index（最具体优先，per Claude's Discretion）；仅读 ChunkRegistry 不触 Qdrant
 - [Phase 25]: 25-02: GET /api/repositories/<id>/chunk-at/?path=&line=&branch_name= 走独立 ChunkAtView APIView（adrf）+ 显式路由（router include 之后，UUID 通配安全），IsAuthenticated 保护（T-25-06）；被排除文件与无命中对外同形返回 {"chunks": []} 200 不泄漏存在性（T-25-05）；path 必填、line 正整数校验（<1/非法→400），不存在仓库→404；service 不抛 past view（normalize None→空，T-25-07）
+- [Phase 25]: 25-03: commit 历史索引专用边界 Repository.commit_index_boundary_sha（migration 0035 AddField，nullable 无回填）**独立于** last_indexed_commit_sha（代码 chunk 边界），绝不复用避免口径串味；index_commits 仅 upsert 成功才推进 boundary 到 HEAD（无新 commit/embedding 缺失/upsert 失败均不推进，绝不丢 commit，T-25-09）
+- [Phase 25]: 25-03: commit 文档落主 collection + payload kind=commit（与代码 chunk 同检索面经既有 search_rag 召回、可区分/过滤，无需改检索）；确定性 uuid5(ns, repo_id:sha) point id + 合成 file_path=.friday/commits/{sha}+chunk_index=0 保既有去重 key 唯一且不被排除规则误命中（T-25-10）；变更摘要复用 Phase 22 build_matcher_for_repo/is_excluded fail-closed 剔除被排除文件、只含路径不内联 diff 正文（T-25-08）
+- [Phase 25]: 25-03: 增量 git log boundary..HEAD，boundary 失效（force-push/rebase 报错）回退首轮 --max-count=COMMIT_INDEX_FIRST_RUN_CAP(500)+--no-merges bounded 全量（T-25-11）；--format 用 git 占位符 %x00(字段)/%x1e(记录) 而非内嵌真实 NUL（子进程参数不可含 NUL，否则 ValueError: embedded null byte），解析侧按实际字节切分；git diff-tree 加 --root 纳入根 commit；hybrid 判定/sparse 生成复用 IndexerService._is_hybrid_enabled/_generate_sparse_vectors 不另写
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -228,10 +232,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 25 Plan 02 — file:line → chunk_id 反查，IDX-02 后半）
-Stopped at: 完成 25-02——find_chunk_at service（区间命中 + 最具体优先 + 复用 Phase 22 matcher fail-closed）+ GET /api/repositories/<id>/chunk-at/ REST 端点（IsAuthenticated，被排除文件与无命中同形不泄漏存在性）。20 例守护测试全绿（service 11 + view 9），urls import ok，mypy/ruff clean。原子提交 b2d03a3d1(test)/e9902388c(feat T1)/f6477be3b(feat T2)。
+Last session: 2026-06-15（Phase 25 Plan 03 — commit 历史索引，IDX-01）
+Stopped at: 完成 25-03——Repository.commit_index_boundary_sha 字段 + migration 0035（nullable 无回填，独立于 last_indexed_commit_sha）+ services/commit_index.py::index_commits 摄取服务（git log 增量 boundary..HEAD / 首轮 bounded → 排除过滤截断 → embedding → upsert kind=commit 确定性 uuid5 point → upsert 成功才推进边界）。7 例守护测试全绿（真实临时 git 仓库），makemigrations clean、mypy/ruff clean。原子提交 5a69406c7(feat 字段+migration)/6aa4d3dc1(feat 服务+测试)。
 Resume file: None
-Next: Phase 25 Plan 03（IDX-01：commit 历史索引——遍历 git 历史按 commit 产出 RAG 文档，embedding 入库经 search_rag 可检索，增量感知）
+Next: Phase 25 Plan 04（IDX-01 Wave 2：commit 索引挂接全量/增量索引流程 + search_rag 召回端到端守护）
 
 ## Operator Next Steps
 
