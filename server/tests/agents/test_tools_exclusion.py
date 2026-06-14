@@ -22,9 +22,7 @@ from services.exclusion import ExclusionMatcher, ExclusionRuleSpec
 
 
 def _env_matcher() -> ExclusionMatcher:
-    return ExclusionMatcher(
-        [ExclusionRuleSpec(pattern=".env", rule_type="glob", source="global")]
-    )
+    return ExclusionMatcher([ExclusionRuleSpec(pattern=".env", rule_type="glob", source="global")])
 
 
 # ============================================================================
@@ -41,9 +39,7 @@ async def test_browse_file_content_rejects_excluded_no_plaintext(
         AsyncMock(return_value=_env_matcher()),
     )
     # 即使底层 scroll 能返回明文，也不应被调用到（入口即拒）。
-    scroll_mock = AsyncMock(
-        return_value=[{"content": "SECRET=supersecret", "chunk_index": 0}]
-    )
+    scroll_mock = AsyncMock(return_value=[{"content": "SECRET=supersecret", "chunk_index": 0}])
     monkeypatch.setattr("agents.tools.chat_tools._scroll_file_from_collection", scroll_mock)
     log_mock = MagicMock()
     monkeypatch.setattr("agents.tools.chat_tools.log_exclusion_blocked", log_mock)

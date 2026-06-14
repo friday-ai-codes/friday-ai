@@ -13,8 +13,44 @@ import structlog
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
+from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 
 logger = structlog.get_logger(__name__)
+
+
+async def _filter_excluded_results(
+    results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """EXCL-02 兜底过滤：剔除命中排除规则的结果项（防御未来不经 search_rag 的旁路回流）。
+
+    search_rag 已是 RAG 单一 chokepoint 并已过滤；此处对 ``file_path`` 再做一道
+    per-repo 匹配器过滤——匹配器构造 / 判定异常一律 fail-closed（丢弃该项）。
+    """
+    matchers: dict[str, Any] = {}
+    kept: list[dict[str, Any]] = []
+    for item in results:
+        repo_id = str(item.get("repository_id", ""))
+        if repo_id not in matchers:
+            try:
+                matchers[repo_id] = await build_matcher_for_repo(repo_id)
+            except Exception:  # noqa: BLE001 — 构造失败一律 fail-closed
+                logger.warning("exclusion.matcher_build_failed", repository_id=repo_id)
+                matchers[repo_id] = None
+        matcher = matchers[repo_id]
+        file_path = str(item.get("file_path", ""))
+        try:
+            excluded = matcher is None or matcher.is_excluded(file_path)
+        except Exception:  # noqa: BLE001 — 判定异常 → 丢弃该项（fail-closed）
+            excluded = True
+        if excluded:
+            log_exclusion_blocked(
+                surface="search_repository_code",
+                repository_id=repo_id,
+                rel_path=file_path,
+            )
+            continue
+        kept.append(item)
+    return kept
 
 
 @tool(
@@ -393,6 +429,9 @@ async def search_repository_code(
                         }
                     )
 
+    # EXCL-02 兜底过滤：剔除被排除文件（防御未来不经 search_rag 的旁路回流，T-22-10）。
+    all_results = await _filter_excluded_results(all_results)
+
     all_results.sort(key=lambda x: x["score"], reverse=True)
     all_results = all_results[:limit]
 
@@ -467,9 +506,7 @@ def _diagnose_empty_search(
     keyword_count = len([w for w in query.split() if w.strip()])
     has_uppercase_symbol = any(c.isupper() for c in query)
     has_dotted_id = "." in query and any(c.isalpha() for c in query)
-    is_pure_lowercase_words = (
-        not has_uppercase_symbol and not has_dotted_id and keyword_count >= 2
-    )
+    is_pure_lowercase_words = not has_uppercase_symbol and not has_dotted_id and keyword_count >= 2
 
     issues: list[str] = []
     suggestions: list[str] = []
@@ -502,15 +539,15 @@ def _diagnose_empty_search(
                 f"{l3_top_score:.3f}，远低于 min_score={min_score:.2f} —— "
                 f"说明 query 跟仓库内容相关性确实弱，降阈值救不回来。"
             )
-            suggestions.append("换更精准的 query（用代码符号），或确认该问题相关的仓库是否真的存在。")
+            suggestions.append(
+                "换更精准的 query（用代码符号），或确认该问题相关的仓库是否真的存在。"
+            )
         else:
             issues.append(
                 f"L3 hybrid 召回 {l3_raw_count} 条候选，最高分 {l3_top_score:.3f} "
                 f"略低于 min_score={min_score:.2f}（差 {gap:.3f}）。"
             )
-            suggestions.append(
-                f"用 min_score=0.3 重试当前 query，可能能拿到弱相关但有用的结果。"
-            )
+            suggestions.append(f"用 min_score=0.3 重试当前 query，可能能拿到弱相关但有用的结果。")
 
     if l3_raw_count == 0 and searched_repos > 0:
         issues.append(
@@ -524,8 +561,10 @@ def _diagnose_empty_search(
 
     if not issues:
         issues.append("query 形态没有明显问题，但确实没找到匹配 —— 可能该问题真的与索引内容无关。")
-        suggestions.append("尝试 list_space_repositories 看下当前 space 下有哪些仓库；"
-                          "也可能需要换用 browse_file_content 直接查看疑似相关文件。")
+        suggestions.append(
+            "尝试 list_space_repositories 看下当前 space 下有哪些仓库；"
+            "也可能需要换用 browse_file_content 直接查看疑似相关文件。"
+        )
 
     return {
         "summary": "⚠️ 检索返回 0 条结果，原因诊断如下：",
