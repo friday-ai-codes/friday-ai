@@ -21,8 +21,8 @@
 
 ### IDX — 索引增强
 
-- [ ] **IDX-01**：commit 历史（message / author / 变更）被索引为可语义检索的 RAG 内容。
-- [ ] **IDX-02**：`ChunkRegistry.line_start/line_end` 在索引时回填，并提供 `file:line → chunk_id` 查询能力。
+- [x] **IDX-01**：commit 历史（message / author / 变更）被索引为可语义检索的 RAG 内容。
+- [x] **IDX-02**：`ChunkRegistry.line_start/line_end` 在索引时回填，并提供 `file:line → chunk_id` 查询能力。
 
 ### REPO — 多仓
 

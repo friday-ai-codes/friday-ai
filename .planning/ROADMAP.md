@@ -95,7 +95,7 @@ Plans:
 
 **Goal:** commit 历史可检索 + 行级 → chunk 反查打底。
 **Requirements:** IDX-01, IDX-02
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 **Success criteria:**
 
 1. commit message/author/变更 可被语义检索召回。
@@ -128,7 +128,7 @@ Plans:
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Complete    | 2026-06-15 |
+| 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
 **Execution order:** 22 → 23（23 依赖 22 的配置源）；24 依赖 22；25、26 相对独立可并行。
