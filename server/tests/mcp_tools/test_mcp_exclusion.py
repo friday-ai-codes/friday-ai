@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import uuid
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -20,7 +22,9 @@ from unittest.mock import AsyncMock
 import pytest
 from rest_framework.test import APIClient
 
+from code_relations.models import ChunkRegistry
 from repositories.models import FileIndex
+from services.retrieval.types import NeighborMetadata
 
 pytestmark = pytest.mark.django_db
 
@@ -334,3 +338,136 @@ def test_list_recursive_excludes_files(
     paths = {item["path"] for item in response.json()["items"]}
     assert ".env" not in paths
     assert "src/main.py" in paths
+
+
+# === find_related_chunks（Task 2 防御性兜底）===
+
+
+def _patch_find_related(monkeypatch: pytest.MonkeyPatch, file_path: str) -> None:
+    find_mock = AsyncMock(
+        return_value=[
+            NeighborMetadata(
+                chunk_id=str(uuid.uuid4()),
+                file_path=file_path,
+                line_start=1,
+                line_end=2,
+                edge_type="CALL",
+                weight=0.7,
+                reason="via direct call",
+                hop=1,
+            )
+        ]
+    )
+    module = importlib.import_module("services.retrieval.find_related")
+    monkeypatch.setattr(module, "find_related", find_mock)
+
+
+def test_find_related_filters_excluded_neighbor(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """find_related_chunks 不返回被排除文件的邻居。"""
+    client, _ = mcp_client
+    ChunkRegistry.objects.create(
+        chunk_id=uuid.uuid4(),
+        content_hash="hash",
+        repository=indexed_repository,
+        branch_name="",
+        file_path="src/main.py",
+        chunk_index=0,
+    )
+    _patch_find_related(monkeypatch, ".env")
+
+    response = client.post(
+        "/api/mcp/tools/find_related_chunks/",
+        {"repository_id": str(indexed_repository.id), "file_path": "src/main.py", "hops": 1},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["related_chunks"] == []
+    assert ".env" not in json.dumps(body)
+
+
+# === 跨工具守护：同一被排除文件在四个 MCP 工具中均不可见 ===
+
+
+def test_excluded_file_invisible_across_all_mcp_tools(
+    mcp_client: tuple[APIClient, str],
+    indexed_repository: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """单一被排除文件（.env）在 grep / get_file / list / find_related 四面均不可见。"""
+    client, _ = mcp_client
+    secret_path = ".env"
+    secret_content = "API_TOKEN=crosstoolleak"
+
+    # 1) grep_repository
+    _patch_grep(
+        monkeypatch,
+        {
+            "engine": "git-grep",
+            "matches": [
+                {"file_path": secret_path, "line": 1, "kind": "match", "content": secret_content}
+            ],
+            "total_matches": 1,
+            "files_with_matches": 1,
+            "file_counts": [{"file_path": secret_path, "match_count": 1}],
+            "truncated": False,
+        },
+    )
+    grep_resp = client.post(
+        "/api/mcp/tools/grep_repository/",
+        {"repository_id": str(indexed_repository.id), "pattern": "API_TOKEN"},
+        format="json",
+    )
+    assert grep_resp.status_code == 200
+    assert "crosstoolleak" not in json.dumps(grep_resp.json())
+    assert secret_path not in json.dumps(grep_resp.json())
+
+    # 2) get_repository_file（镜像路径）
+    monkeypatch.setattr(
+        "mcp_tools.views.GetRepositoryFileView._read_from_mirror",
+        AsyncMock(return_value=(secret_path, secret_content + "\n", _snapshot())),
+    )
+    file_resp = client.post(
+        "/api/mcp/tools/get_repository_file/",
+        {"repository_id": str(indexed_repository.id), "file_path": secret_path},
+        format="json",
+    )
+    assert file_resp.status_code == 404
+    assert file_resp.json()["error_code"] == "file_excluded"
+    assert "crosstoolleak" not in json.dumps(file_resp.json())
+
+    # 3) list_repository_files
+    FileIndex.objects.create(
+        repository=indexed_repository, file_path=secret_path, file_hash="h-secret"
+    )
+    list_resp = client.post(
+        "/api/mcp/tools/list_repository_files/",
+        {"repository_id": str(indexed_repository.id), "recursive": True},
+        format="json",
+    )
+    assert list_resp.status_code == 200
+    assert secret_path not in {item["path"] for item in list_resp.json()["items"]}
+
+    # 4) find_related_chunks
+    ChunkRegistry.objects.create(
+        chunk_id=uuid.uuid4(),
+        content_hash="hash",
+        repository=indexed_repository,
+        branch_name="",
+        file_path="src/main.py",
+        chunk_index=0,
+    )
+    _patch_find_related(monkeypatch, secret_path)
+    related_resp = client.post(
+        "/api/mcp/tools/find_related_chunks/",
+        {"repository_id": str(indexed_repository.id), "file_path": "src/main.py", "hops": 1},
+        format="json",
+    )
+    assert related_resp.status_code == 200
+    assert related_resp.json()["related_chunks"] == []
+    assert secret_path not in json.dumps(related_resp.json())
