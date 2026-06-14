@@ -237,6 +237,29 @@ async def test_upsert_failure_keeps_boundary(repository, tmp_path) -> None:
     assert await _boundary(repository) is None
 
 
+async def test_message_with_separator_bytes_parsed_intact(repository, tmp_path) -> None:
+    """commit message 正文含分隔字节（旧 RS \\x1e / 新字段分隔 \\x1f）仍完整解析（ME-02）。
+
+    旧实现用 \\x00 分字段、\\x1e 分记录，正文里出现这些字节会把单 commit 拆断/截尾。
+    现在 `git log -z` + maxsplit=4 保证正文原样进入 message，不丢尾、不丢 commit。
+    """
+    repo = _init_repo(tmp_path)
+    # 正文嵌入：US(\x1f, 新字段分隔)、RS(\x1e, 旧记录分隔)、多行 —— 均不得破坏解析。
+    sentinel_msg = "title boundarytoken\nbody \x1f middle \x1e tail trailingtoken"
+    head = _commit(repo, {"a.py": "1\n"}, sentinel_msg)
+
+    points: list = []
+    result = await _run(repository, repo, points)
+
+    assert result["indexed"] == 1
+    assert len(points) == 1
+    payload = points[0]["payload"]
+    assert payload["commit_sha"] == head
+    # 正文首尾 token 都在 → 未被分隔字节截断
+    assert "boundarytoken" in payload["content"]
+    assert "trailingtoken" in payload["content"]
+
+
 async def test_empty_repo_returns_zero(repository, tmp_path) -> None:
     repo = _init_repo(tmp_path)  # 无任何 commit
 
