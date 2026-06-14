@@ -25,7 +25,7 @@
 **Plans:** 6 plans（Wave 1: 22-01；Wave 2: 22-02/04/05/06 并行；Wave 3: 22-03）
 **Wave 1**
 
-- [ ] 22-01-PLAN.md — 排除数据模型 + 单一匹配器 + 内置全局默认 + 设置键
+- [x] 22-01-PLAN.md — 排除数据模型 + 单一匹配器 + 内置全局默认 + 设置键 ✅ (064ebdcc0)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -79,7 +79,7 @@
 
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
-| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | Not started | — |
+| 22. 排除配置与统一过滤 | v0.5.0 | EXCL-01..02 | In progress (1/6 plans) | — |
 | 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Not started | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
