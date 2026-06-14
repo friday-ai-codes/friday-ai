@@ -167,16 +167,13 @@ class ExclusionMatcher:
             return True
 
 
-def _resolve_effective_specs(repository_id: str) -> list[ExclusionRuleSpec]:
-    """同步加载有效规则集合：builtin ∪ 全局设置 JSON ∪ per-repo，应用 global override。
+def get_global_default_specs() -> list[ExclusionRuleSpec]:
+    """全局默认有效规则：``BUILTIN_GLOBAL_DEFAULTS`` ∪ ``SystemSetting`` JSON。
 
-    **排除判定的单一真相合并**：匹配器（``build_matcher_for_repo``）与容器下传序列化
-    （``serialize_rules_for_repo``）共用本函数，避免两份合并逻辑漂移。
-
-    经 ``sync_to_async`` 在异步上下文调用。``source="global" + enabled=False`` 的
-    per-repo 行表示「关闭某条全局默认」的 override 标记，据此从全局集合剔除同 pattern 项。
+    **全局默认的单一读取入口**：配置 API（Plan 05）展示「只读全局默认」时复用本函数，
+    避免在视图层重新硬编码内置默认或重写 JSON 解析逻辑。同步函数，异步上下文经
+    ``sync_to_async`` 调用（读 ``SystemSetting`` 走 ORM）。
     """
-    from repositories.models import RepoExclusionRule
     from system.models import SettingKeys, SystemSetting
 
     global_specs: list[ExclusionRuleSpec] = list(BUILTIN_GLOBAL_DEFAULTS)
@@ -198,6 +195,22 @@ def _resolve_effective_specs(repository_id: str) -> list[ExclusionRuleSpec]:
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             # 全局默认配置损坏 → 记录但不致命（builtin 仍生效，保持 fail-closed）
             logger.warning("exclusion.global_defaults_parse_failed", error=str(exc))
+
+    return global_specs
+
+
+def _resolve_effective_specs(repository_id: str) -> list[ExclusionRuleSpec]:
+    """同步加载有效规则集合：builtin ∪ 全局设置 JSON ∪ per-repo，应用 global override。
+
+    **排除判定的单一真相合并**：匹配器（``build_matcher_for_repo``）与容器下传序列化
+    （``serialize_rules_for_repo``）共用本函数，避免两份合并逻辑漂移。
+
+    经 ``sync_to_async`` 在异步上下文调用。``source="global" + enabled=False`` 的
+    per-repo 行表示「关闭某条全局默认」的 override 标记，据此从全局集合剔除同 pattern 项。
+    """
+    from repositories.models import RepoExclusionRule
+
+    global_specs: list[ExclusionRuleSpec] = get_global_default_specs()
 
     repo_rules = list(RepoExclusionRule.objects.filter(repository_id=repository_id))
 

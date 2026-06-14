@@ -10,6 +10,7 @@ import structlog
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError
 from django.shortcuts import aget_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -20,6 +21,7 @@ from rest_framework.response import Response
 from common.encryption import decrypt_value, encrypt_value
 from permissions.api_permissions import IsSuperUser
 from services.dependency_cache import DependencyCacheManager
+from services.exclusion import get_global_default_specs, invalidate_matcher_cache
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
 
@@ -30,12 +32,14 @@ from .models import (
     IndexHistory,
     IndexHistoryStatus,
     IndexStatus,
+    RepoExclusionRule,
     Repository,
     RepositoryBranchIndex,
     TriggerType,
 )
 from .serializers import (
     GitCredentialSerializer,
+    RepoExclusionRuleSerializer,
     RepositoryCreateSerializer,
     RepositorySerializer,
     RepositoryWithSpacesSerializer,
@@ -166,9 +170,9 @@ def _parse_git_error(stderr: str) -> str:
         if "vscode-git" in lower_line or "econnrefused" in lower_line:
             continue
         if line.startswith("remote:"):
-            line = line[len("remote:"):].strip()
+            line = line[len("remote:") :].strip()
         if line.lower().startswith("fatal:"):
-            line = line[len("fatal:"):].strip()
+            line = line[len("fatal:") :].strip()
         if line.startswith("致命错误"):
             line = line.split("：", 1)[-1].strip()
         if line:
@@ -189,7 +193,11 @@ async def _validate_base_branch(
     env = _build_git_env(proxy_url)
     try:
         result = await sync_to_async(subprocess.run)(
-            cmd, capture_output=True, text=True, timeout=15, env=env,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
         )
         return bool(result.stdout.strip())
     except (subprocess.TimeoutExpired, Exception):
@@ -214,11 +222,11 @@ def _parse_ls_remote_refs(stdout: str) -> tuple[list[str], str | None]:
         left, ref = line.split("\t", 1)
         ref = ref.strip()
         if left.startswith("ref: refs/heads/") and ref == "HEAD":
-            head_branch = left[len("ref: refs/heads/"):].strip()
+            head_branch = left[len("ref: refs/heads/") :].strip()
         elif ref == "HEAD":
             head_sha = left.strip()
         elif ref.startswith("refs/heads/"):
-            name = ref[len("refs/heads/"):]
+            name = ref[len("refs/heads/") :]
             branches.append(name)
             sha_by_branch[name] = left.strip()
     if head_branch is None and head_sha:
@@ -251,27 +259,45 @@ async def _probe_branch_activity(
         with tempfile.TemporaryDirectory(prefix="friday-branch-probe-") as tmp:
             init = subprocess.run(
                 ["git", "init", "--bare", "--quiet", tmp],
-                capture_output=True, text=True, timeout=10, env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env,
             )
             if init.returncode != 0:
                 return {}
             fetch = subprocess.run(
                 [
-                    "git", "-C", tmp, "fetch", "--quiet",
-                    "--depth=1", "--filter=tree:0",
-                    auth_url, "+refs/heads/*:refs/heads/*",
+                    "git",
+                    "-C",
+                    tmp,
+                    "fetch",
+                    "--quiet",
+                    "--depth=1",
+                    "--filter=tree:0",
+                    auth_url,
+                    "+refs/heads/*:refs/heads/*",
                 ],
-                capture_output=True, text=True, timeout=timeout, env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
             )
             if fetch.returncode != 0:
                 return {}
             refs = subprocess.run(
                 [
-                    "git", "-C", tmp, "for-each-ref",
+                    "git",
+                    "-C",
+                    tmp,
+                    "for-each-ref",
                     "--format=%(committerdate:unix)\t%(refname:short)",
                     "refs/heads",
                 ],
-                capture_output=True, text=True, timeout=10, env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env,
             )
             if refs.returncode != 0:
                 return {}
@@ -451,10 +477,7 @@ class RepositoryViewSet(ModelViewSet):
 
         # 建立空间关联
         await ProjectRepository.objects.abulk_create(
-            [
-                ProjectRepository(project=space, repository=repository)
-                for space in spaces
-            ]
+            [ProjectRepository(project=space, repository=repository) for space in spaces]
         )
 
         # Create credential
@@ -482,9 +505,7 @@ class RepositoryViewSet(ModelViewSet):
         async def _auto_dispatch() -> None:
             from repositories.summary_service import dispatch_repo_summary
 
-            repo = await Repository.objects.filter(
-                id=repository_id, is_deleted=False
-            ).afirst()
+            repo = await Repository.objects.filter(id=repository_id, is_deleted=False).afirst()
             if repo is None or repo.ai_summary_status in (
                 AISummaryStatus.PENDING,
                 AISummaryStatus.RUNNING,
@@ -504,9 +525,7 @@ class RepositoryViewSet(ModelViewSet):
                     exc_info=True,
                 )
 
-        run_in_background(
-            _auto_dispatch, name=f"auto_repo_summary_{repository_id}"
-        )
+        run_in_background(_auto_dispatch, name=f"auto_repo_summary_{repository_id}")
 
     async def perform_aupdate(self, serializer):
         base_branch = serializer.validated_data.get("base_branch")
@@ -518,10 +537,7 @@ class RepositoryViewSet(ModelViewSet):
         old_index_status = instance.index_status
         old_last_indexed_commit_sha = instance.last_indexed_commit_sha
 
-        default_branch_changed = (
-            default_branch is not None
-            and default_branch != old_default_branch
-        )
+        default_branch_changed = default_branch is not None and default_branch != old_default_branch
         if default_branch_changed and old_index_status == IndexStatus.INDEXING:
             raise serializers.ValidationError(
                 {"default_branch": ["当前索引正在运行，请先停止索引后再切换默认分支"]}
@@ -605,10 +621,12 @@ class RepositoryViewSet(ModelViewSet):
         try:
             # KEEP: Docker SDK 同步客户端限制
             await sync_to_async(manager.client.volumes.get)(volume_name)
-            return Response({
-                "cached": True,
-                "volume": volume_name,
-            })
+            return Response(
+                {
+                    "cached": True,
+                    "volume": volume_name,
+                }
+            )
         except Exception:
             return Response({"cached": False})
 
@@ -678,17 +696,19 @@ class RepositoryViewSet(ModelViewSet):
                 recent_logs = logs[-30:]
 
         tree = repository.ai_summary_tree or []
-        return Response({
-            "status": repository.ai_summary_status,
-            "progress": None,
-            "summary": repository.ai_summary,
-            "generated_at": repository.ai_summary_generated_at,
-            "error": repository.ai_summary_error or None,
-            "has_tree": bool(tree),
-            "is_monorepo": repository.is_monorepo,
-            "tree_node_count": _count_nodes(tree),
-            "recent_logs": recent_logs,
-        })
+        return Response(
+            {
+                "status": repository.ai_summary_status,
+                "progress": None,
+                "summary": repository.ai_summary,
+                "generated_at": repository.ai_summary_generated_at,
+                "error": repository.ai_summary_error or None,
+                "has_tree": bool(tree),
+                "is_monorepo": repository.is_monorepo,
+                "tree_node_count": _count_nodes(tree),
+                "recent_logs": recent_logs,
+            }
+        )
 
     @action(detail=True, methods=["post"], url_path="generate-webhook-secret")
     async def generate_webhook_secret(self, request, pk=None):
@@ -754,10 +774,7 @@ class RepositorySpacesView(APIView):
 
     async def get(self, request, repository_id):
         repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
-        spaces = [
-            {"id": str(p.id), "name": p.name}
-            async for p in repository.projects.all()
-        ]
+        spaces = [{"id": str(p.id), "name": p.name} async for p in repository.projects.all()]
         return Response(spaces)
 
     async def put(self, request, repository_id):
@@ -822,9 +839,7 @@ class TestConnectionView(APIView):
             proxy_url = repository.proxy_url
 
             # Get token from credential
-            credential = await GitCredential.objects.filter(
-                repository=repository
-            ).afirst()
+            credential = await GitCredential.objects.filter(repository=repository).afirst()
             if not credential or not credential.encrypted_token:
                 return Response(
                     {"success": False, "error": "仓库未配置访问凭证"},
@@ -958,10 +973,12 @@ class CacheManagementView(APIView):
         repo_volumes = await repo_manager.list_cache_volumes()
         deps_volumes = await deps_manager.list_deps_volumes()
 
-        return Response({
-            "repo_caches": repo_volumes,
-            "deps_caches": deps_volumes,
-        })
+        return Response(
+            {
+                "repo_caches": repo_volumes,
+                "deps_caches": deps_volumes,
+            }
+        )
 
     async def delete(self, request):
         """清理缓存卷。
@@ -972,7 +989,119 @@ class CacheManagementView(APIView):
         dry_run = request.query_params.get("dry_run", "false").lower() == "true"
 
         pruned = await prune_cache_volumes(older_than_days, dry_run)
-        return Response({
-            "pruned": pruned,
-            "dry_run": dry_run,
-        })
+        return Response(
+            {
+                "pruned": pruned,
+                "dry_run": dry_run,
+            }
+        )
+
+
+class RepositoryExclusionRulesView(APIView):
+    """per-repo 排除规则列表 / 新增（Plan 22-05，EXCL-01）。
+
+    GET  /api/repositories/{id}/exclusions/
+        -> {global_defaults: [{pattern, rule_type, source:"global", enabled, override_id}],
+            rules: [per-repo RepoExclusionRule 序列化]}
+        global_defaults 来自 services.exclusion（builtin ∪ 全局设置），每条 ``enabled``
+        反映是否被 per-repo override 关闭；``override_id`` 指向关闭它的 override 行（用于再次启用）。
+
+    POST /api/repositories/{id}/exclusions/   body: {pattern, rule_type, enabled?, source?}
+        新增 per-repo 规则；rule_type=regex 时 re.compile 校验，非法 → 400（fail-loud，不写库）。
+        「关闭某条全局默认」= POST source="global" + enabled=False 的 override 行。
+        写成功后 invalidate_matcher_cache 使所有读取面即时读到新规则（T-22-18）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        repo_rules = [
+            r
+            async for r in RepoExclusionRule.objects.filter(repository_id=repository_id).order_by(
+                "created_at"
+            )
+        ]
+        # per-repo 关闭的全局默认 override：(rule_type, pattern) -> 该 override 行
+        disabled_overrides = {
+            (r.rule_type, r.pattern): r
+            for r in repo_rules
+            if r.source == RepoExclusionRule.Source.GLOBAL and not r.enabled
+        }
+
+        global_specs = await sync_to_async(get_global_default_specs)()
+        global_defaults = []
+        for spec in global_specs:
+            override = disabled_overrides.get((spec.rule_type, spec.pattern))
+            global_defaults.append(
+                {
+                    "pattern": spec.pattern,
+                    "rule_type": spec.rule_type,
+                    "source": "global",
+                    "enabled": override is None,
+                    "override_id": str(override.id) if override else None,
+                }
+            )
+
+        # rules 仅列 per-repo 实际规则（user / ai_suggested）；global override 标记不展示在此
+        user_rules = [r for r in repo_rules if r.source != RepoExclusionRule.Source.GLOBAL]
+        rules = await sync_to_async(
+            lambda: RepoExclusionRuleSerializer(user_rules, many=True).data
+        )()
+
+        return Response({"global_defaults": global_defaults, "rules": rules})
+
+    async def post(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = RepoExclusionRuleSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = dict(serializer.validated_data)
+
+        try:
+            rule = await RepoExclusionRule.objects.acreate(repository_id=repository_id, **data)
+        except IntegrityError:
+            return Response(
+                {"detail": "该排除规则已存在"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 规则变更后失效匹配器缓存，使各读取面即时读到新规则（T-22-18）
+        invalidate_matcher_cache(str(repository_id))
+
+        out = await sync_to_async(lambda: RepoExclusionRuleSerializer(rule).data)()
+        return Response(out, status=status.HTTP_201_CREATED)
+
+
+class RepositoryExclusionRuleDetailView(APIView):
+    """删除单条 per-repo 排除规则（Plan 22-05）。
+
+    DELETE /api/repositories/{id}/exclusions/{rule_id}/
+        删除该 per-repo 规则（含「关闭全局默认」的 override 行——删除即再次启用该全局默认）。
+        仅能删除属于本仓库的规则（越仓 → 404，T-22-19）。写成功后失效匹配器缓存。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def delete(self, request, repository_id, rule_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        rule = await RepoExclusionRule.objects.filter(
+            id=rule_id, repository_id=repository_id
+        ).afirst()
+        if rule is None:
+            return Response({"detail": "排除规则不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        await rule.adelete()
+        invalidate_matcher_cache(str(repository_id))
+        return Response(status=status.HTTP_204_NO_CONTENT)
