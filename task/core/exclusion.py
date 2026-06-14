@@ -82,7 +82,8 @@ class _ContainerExclusionMatcher:
 
     def __init__(self, rules: list[dict]) -> None:
         self._dir_prefixes: list[str] = []
-        self._glob_regexes: list[re.Pattern[str]] = []
+        # glob：(编译正则, 是否按 basename 兜底匹配任意目录)，语义对齐 server（BL-01）。
+        self._glob_regexes: list[tuple[re.Pattern[str], bool]] = []
         self._regexes: list[re.Pattern[str]] = []
 
         for rule in rules or []:
@@ -99,9 +100,12 @@ class _ContainerExclusionMatcher:
                     self._dir_prefixes.append(norm)
             elif rule_type == "glob":
                 try:
-                    self._glob_regexes.append(re.compile(fnmatch.translate(str(pattern))))
+                    rx = re.compile(fnmatch.translate(str(pattern)))
                 except re.error:
                     logger.warning("exclusion.bad_glob_skipped", pattern=str(pattern))
+                    continue
+                # 无路径分隔符的 glob 按 basename 命中任意子目录（BL-01，与 server 一致）。
+                self._glob_regexes.append((rx, "/" not in str(pattern)))
             elif rule_type == "regex":
                 try:
                     self._regexes.append(re.compile(str(pattern)))
@@ -120,8 +124,11 @@ class _ContainerExclusionMatcher:
             for prefix in self._dir_prefixes:
                 if norm == prefix or norm.startswith(prefix + "/"):
                     return True
-            for rx in self._glob_regexes:
+            base = norm.rsplit("/", 1)[-1]
+            for rx, basename_only in self._glob_regexes:
                 if rx.match(norm):
+                    return True
+                if basename_only and base != norm and rx.match(base):
                     return True
             for rx in self._regexes:
                 if rx.fullmatch(norm):

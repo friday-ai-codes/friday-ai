@@ -118,8 +118,9 @@ class ExclusionMatcher:
         self._repository_id = repository_id
         # dir：归一化为不含尾 "/" 的相对根前缀；匹配目录本身与其子树。
         self._dir_prefixes: list[str] = []
-        # glob：fnmatch.translate 编译为 full-string 匹配正则（相对仓库根，大小写敏感）。
-        self._glob_regexes: list[re.Pattern[str]] = []
+        # glob：(编译正则, 是否按 basename 兜底匹配任意目录)。无路径分隔符的 glob
+        # 按 basename 语义命中任意深度子目录（BL-01）。
+        self._glob_regexes: list[tuple[re.Pattern[str], bool]] = []
         # regex：对相对路径 fullmatch。
         self._regexes: list[re.Pattern[str]] = []
 
@@ -131,7 +132,12 @@ class ExclusionMatcher:
                 if norm:
                     self._dir_prefixes.append(norm)
             elif spec.rule_type == "glob":
-                self._glob_regexes.append(re.compile(fnmatch.translate(spec.pattern)))
+                # 无路径分隔符的 glob 按 basename 语义匹配任意目录（BL-01）：
+                # 使内置默认 `.env` / `id_rsa` 命中 `server/.env`、`a/b/id_rsa`
+                # 等子目录密钥，而非仅匹配仓库根。
+                self._glob_regexes.append(
+                    (re.compile(fnmatch.translate(spec.pattern)), "/" not in spec.pattern)
+                )
             elif spec.rule_type == "regex":
                 try:
                     self._regexes.append(re.compile(spec.pattern))
@@ -151,8 +157,12 @@ class ExclusionMatcher:
             for prefix in self._dir_prefixes:
                 if norm == prefix or norm.startswith(prefix + "/"):
                     return True
-            for rx in self._glob_regexes:
+            base = norm.rsplit("/", 1)[-1]
+            for rx, basename_only in self._glob_regexes:
                 if rx.match(norm):
+                    return True
+                # 无分隔符的 glob 再对 basename 跑一遍，命中任意子目录（BL-01）。
+                if basename_only and base != norm and rx.match(base):
                     return True
             for rx in self._regexes:
                 if rx.fullmatch(norm):
