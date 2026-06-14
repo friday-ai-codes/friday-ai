@@ -85,6 +85,23 @@ class TestGlobRule:
         assert m.is_excluded("config/app.env") is True
         assert m.is_excluded("other/app.env") is False
 
+    def test_invalid_glob_skipped_not_raised(self, monkeypatch) -> None:
+        # ME-03：非法 glob 跳过该条而非令整器构造失败；其余规则仍生效。
+        real = exclusion.fnmatch.translate
+        monkeypatch.setattr(
+            exclusion.fnmatch,
+            "translate",
+            lambda p: "([unclosed" if p == "BADGLOB" else real(p),
+        )
+        m = ExclusionMatcher(
+            [
+                ExclusionRuleSpec(pattern="BADGLOB", rule_type="glob", source="user"),
+                ExclusionRuleSpec(pattern="*.pem", rule_type="glob", source="user"),
+            ]
+        )
+        # 非法 glob 被跳过、不抛；合法规则仍命中。
+        assert m.is_excluded("certs/x.pem") is True
+
 
 class TestRegexRule:
     def test_fullmatch(self) -> None:
