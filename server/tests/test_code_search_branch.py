@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from repositories.index_views import SearchRequestSerializer
+from services.exclusion import ExclusionMatcher
 
 
 @pytest.mark.django_db
@@ -68,6 +69,11 @@ class TestCodeSearchViewBranch:
             patch(
                 "system.models.SystemSetting.objects",
             ) as mock_objects,
+            patch(
+                "services.exclusion.build_matcher_for_repo",
+                new_callable=AsyncMock,
+                return_value=ExclusionMatcher([], repository_id="repo-123"),
+            ),
         ):
             mock_qs = AsyncMock()
             mock_qs.afirst = AsyncMock(return_value=None)
@@ -118,6 +124,125 @@ class TestCodeSearchViewBranch:
             mock_service.assert_called_once()
             call_kwargs = mock_service.call_args.kwargs
             assert call_kwargs["branch_name"] is None
+
+
+@pytest.mark.django_db
+class TestCodeSearchViewExclusion:
+    """EXCL-02 守护：CodeSearchView._search 对被排除文件 fail-closed 不可见。
+
+    与 search_rag 守护测试（tests/services/test_retrieval_exclusion.py）对称：被排除
+    文件既不返回 content 也不返回 file_path；matcher 构造失败 → 整仓库结果不可见；
+    单项判定异常 → 丢弃该项。
+    """
+
+    @staticmethod
+    def _result(file_path: str, *, content: str, score: float = 0.9) -> dict[str, Any]:
+        return {
+            "id": file_path,
+            "score": score,
+            "payload": {
+                "file_path": file_path,
+                "content": content,
+                "language": "python",
+                "start_line": 1,
+                "end_line": 5,
+                "context_header": "",
+                "chunk_index": 0,
+            },
+        }
+
+    @staticmethod
+    def _matcher(repo_id: str = "repo-123") -> Any:
+        from services.exclusion import ExclusionMatcher, ExclusionRuleSpec
+
+        return ExclusionMatcher(
+            [ExclusionRuleSpec(pattern="*.env", rule_type="glob", source="global")],
+            repository_id=repo_id,
+        )
+
+    @pytest.mark.asyncio
+    async def test_excluded_file_not_returned(self) -> None:
+        """命中排除规则的文件不返回 content 也不返回 file_path；正常文件保留。"""
+        from repositories.index_views import CodeSearchView
+
+        view = CodeSearchView()
+        secret = "config/app.env"
+        results_in = [
+            self._result("src/app.py", content="def main(): pass"),
+            self._result(secret, content="API_KEY=codesearchleak"),
+        ]
+
+        with (
+            patch(
+                "repositories.index_views.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+                return_value=[0.1] * 768,
+            ),
+            patch(
+                "services.branch_search.BranchAwareSearchService.search",
+                new_callable=AsyncMock,
+                return_value=results_in,
+            ),
+            patch(
+                "services.reranker.RerankerService.is_enabled",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch("system.models.SystemSetting.objects") as mock_objects,
+            patch(
+                "services.exclusion.build_matcher_for_repo",
+                new_callable=AsyncMock,
+                return_value=self._matcher(),
+            ),
+        ):
+            mock_qs = AsyncMock()
+            mock_qs.afirst = AsyncMock(return_value=None)
+            mock_objects.filter.return_value = mock_qs
+
+            results = await view._search("repo-123", "secrets", 10, {})
+
+        paths = {r["file_path"] for r in results}
+        assert paths == {"src/app.py"}
+        assert secret not in paths
+        assert "codesearchleak" not in str(results)
+
+    @pytest.mark.asyncio
+    async def test_failclosed_on_matcher_build_error(self) -> None:
+        """build_matcher_for_repo 抛异常 → 整仓库结果不可见（fail-closed），不向上抛。"""
+        from repositories.index_views import CodeSearchView
+
+        view = CodeSearchView()
+
+        with (
+            patch(
+                "repositories.index_views.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+                return_value=[0.1] * 768,
+            ),
+            patch(
+                "services.branch_search.BranchAwareSearchService.search",
+                new_callable=AsyncMock,
+                return_value=[self._result("src/app.py", content="ok")],
+            ),
+            patch(
+                "services.reranker.RerankerService.is_enabled",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch("system.models.SystemSetting.objects") as mock_objects,
+            patch(
+                "services.exclusion.build_matcher_for_repo",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("db down"),
+            ),
+        ):
+            mock_qs = AsyncMock()
+            mock_qs.afirst = AsyncMock(return_value=None)
+            mock_objects.filter.return_value = mock_qs
+
+            results = await view._search("repo-123", "q", 10, {})
+
+        assert results == []
 
 
 @pytest.mark.skip(
