@@ -658,6 +658,13 @@ GOLDEN_ROUTE_TABLE: dict[str, list[RepoRouteResult]] = {
 }
 
 
+class _NoExclusionMatcher:
+    """no-op 排除匹配器替身（golden 环境 = 无排除规则配置，永不命中）。"""
+
+    def is_excluded(self, _rel_path: str) -> bool:
+        return False
+
+
 class _GoldenFakeQuerySet:
     """Symbol QuerySet 替身：支持 `.select_related(...)` 链与 list() 迭代/切片。"""
 
@@ -781,6 +788,12 @@ def golden_mock_environment_context():
             "edges": [dict(e) for e in result["edges"]],
         }
 
+    # Phase 22 EXCL-02：search_rag / hybrid_search 现在经 build_matcher_for_repo 过滤被排除
+    # 文件。golden 环境等价「无排除规则配置」——注入 no-op 匹配器，保证既有 byte-eq 不漂移
+    # （golden fixtures 的 file_path 均为良性，本就不命中内置默认）。
+    async def _golden_build_matcher(_repository_id: str) -> Any:
+        return _NoExclusionMatcher()
+
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch(
             "codegraph.services.repo_router.RepoRouter.route",
@@ -807,6 +820,14 @@ def golden_mock_environment_context():
         stack.enter_context(patch(
             "codegraph.services.graph_expansion.GraphExpansionService.expand",
             new=_golden_expand,
+        ))
+        stack.enter_context(patch(
+            "services.retrieval.rag_search.build_matcher_for_repo",
+            new=_golden_build_matcher,
+        ))
+        stack.enter_context(patch(
+            "services.retrieval.hybrid_search.build_matcher_for_repo",
+            new=_golden_build_matcher,
         ))
 
         yield GoldenMockEnv(
