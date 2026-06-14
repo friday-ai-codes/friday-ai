@@ -203,6 +203,27 @@
         "retry": "重试"
       },
       "loading": "正在加载实体详情…"
+    },
+    "search": {
+      "title": "交付知识搜索",
+      "placeholder": "输入关键词搜索需求、技术方案或代码变更…",
+      "button": "搜索",
+      "scoreLabel": "相关度",
+      "resultCount": "找到 {count} 条结果",
+      "initialTitle": "开始搜索交付知识",
+      "initialBody": "输入关键词以检索需求、技术方案与代码变更",
+      "emptyTitle": "未找到匹配结果",
+      "emptyBody": "换个关键词或调整历史视点后重试",
+      "loading": "正在搜索…"
+    },
+    "relation": {
+      "HAS_PLAN": "技术方案",
+      "IMPLEMENTED_BY": "代码变更",
+      "REFERENCES": "引用文档",
+      "RELATES_TO": "相关",
+      "DUPLICATE_OF": "重复",
+      "MODIFIES_CHUNK": "修改代码块",
+      "RELATED": "相关"
     }
   }
 }
