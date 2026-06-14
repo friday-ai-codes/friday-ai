@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4.0
-milestone_name: 工作流系统契约重构
-status: Awaiting next milestone
-stopped_at: v0.4.0 roadmap created (Phase 17–21, 24/24 requirements mapped)
-last_updated: "2026-06-14T05:40:00.000Z"
-last_activity: 2026-06-14 — 清理历史遗留 tech debt（W1/W2/W3 + Phase20/21 v2 + 实时 PAT 通道），4 个原子提交
+milestone: v0.5.0
+milestone_name: 索引检索地基与排除文件
+status: planning
+stopped_at: 6 项遗留代码全部实现并原子提交（37a3bd6b2 / 5435fef23 / 9ab638f13 / 8cb50e928）；
+last_updated: "2026-06-14T08:15:38.056Z"
+last_activity: 2026-06-14 — Milestone v0.5.0 started
 progress:
   total_phases: 5
-  completed_phases: 5
-  total_plans: 25
-  completed_plans: 25
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,27 +20,41 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.4.0 收敛工作流系统的编辑态与运行态契约——保存即合法、模板开箱能跑、变量所选即所得、执行状态真实可见。
-**Current focus:** Phase 21 — 触发模型与执行可观测
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
+**Current focus:** Phase 22 — 排除配置与统一过滤（fail-closed）
 
 ## Current Position
 
-Phase: Milestone v0.4.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-14 — 历史遗留 tech debt 清理（见下方 "Deferred Items" / "Resolved 2026-06-14"）
+Status: Planning（REQUIREMENTS/ROADMAP 已生成，待 plan-phase）
+Last activity: 2026-06-14 — Milestone v0.5.0 started
 
-## Milestone Overview (v0.4.0)
+## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 17 | 变量引用链路修复 | VAR-01..04 | Not started |
-| 18 | 执行引擎状态机修复 | ENG-01..05 | Not started |
-| 19 | 节点定义单一事实源 | SSOT-01..03 | Not started |
-| 20 | 保存即合法与模板修复 | VAL-01..03, TPL-01..03 | Not started |
-| 21 | 触发模型与执行可观测 | TRIG-01..03, OBS-01..03 | Not started |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | Not started |
+| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
+| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
+| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
+| 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
-**Execution order:** 17 → 18 → 19 → 20 → 21（19 可与 17/18 并行；20 依赖 17/18/19；21 依赖 17/18）
+**Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
+
+**前置修复（PREFLIGHT，里程碑内处理）:** PF-03（incremental 删除一致性）、PF-04（scan_directory 注释）、PF-05（delete_by_file_path overlay）。
+
+**设计底座:** `.planning/ROADMAP-vNext.md`（前瞻路线）、`.planning/DOMAIN-MODEL.md §9`（purge 矩阵/数据面/边界）、`.planning/PREFLIGHT.md`（风险台账）。
+
+## Milestone Overview (v0.4.0 — shipped 2026-06-13)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 17 | 变量引用链路修复 | VAR-01..04 | ✅ Complete |
+| 18 | 执行引擎状态机修复 | ENG-01..05 | ✅ Complete |
+| 19 | 节点定义单一事实源 | SSOT-01..03 | ✅ Complete |
+| 20 | 保存即合法与模板修复 | VAL-01..03, TPL-01..03 | ✅ Complete |
+| 21 | 触发模型与执行可观测 | TRIG-01..03, OBS-01..03 | ✅ Complete |
 
 ## Performance Metrics
 
