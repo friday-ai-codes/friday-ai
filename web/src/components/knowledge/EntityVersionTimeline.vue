@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import type { TimelineNode } from '~/api/knowledge'
+import type { ProvenanceLinks, TimelineNode } from '~/api/knowledge'
 import EntityKindBadge from './EntityKindBadge.vue'
 import ProvenanceLinkButton from './ProvenanceLinkButton.vue'
 
 defineProps<{
   nodes: TimelineNode[]
 }>()
+
+function hasProvenance(provenance?: ProvenanceLinks): boolean {
+  return Boolean(provenance && (provenance.feishu_url || provenance.mr_url || provenance.session_link))
+}
 </script>
 
 <template>
@@ -29,6 +33,11 @@ defineProps<{
           <p v-if="node.summary" class="text-xs text-muted-foreground line-clamp-3">
             {{ node.summary }}
           </p>
+          <ProvenanceLinkButton
+            v-if="hasProvenance(node.provenance)"
+            :provenance="node.provenance!"
+            :title="node.title"
+          />
           <ul v-if="node.code_changes?.length" class="pl-4 border-l border-border/50 space-y-2">
             <li v-for="cc in node.code_changes" :key="`${cc.entity_id}-${cc.version}`" class="text-sm">
               <EntityKindBadge :kind="cc.kind" />

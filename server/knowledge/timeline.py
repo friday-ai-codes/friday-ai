@@ -11,8 +11,8 @@ from django.db.models import Q
 from knowledge.access_scope import resolve_allowed_project_ids
 from knowledge.graph_store import require_aware
 from knowledge.metadata_hydrate import hydrate_entity_metadata
-from knowledge.models import EdgeRelation, KnowledgeEntity, KnowledgeEntityVersion, KnowledgeEdge
-from knowledge.retrieval_types import ProvenanceLinks, TimelineNodeDTO
+from knowledge.models import EdgeRelation, KnowledgeEdge, KnowledgeEntity, KnowledgeEntityVersion
+from knowledge.retrieval_types import EntityMetadata, ProvenanceLinks, TimelineNodeDTO
 
 __all__ = ["build_entity_timeline"]
 
@@ -40,13 +40,18 @@ def _version_queryset(
     return qs.order_by("version")
 
 
-async def _code_change_keys_for_version(
+async def _code_change_edges_for_entity(
     entity_id: uuid.UUID,
     *,
     as_of: datetime | None = None,
-) -> list[tuple[uuid.UUID, int]]:
-    """经 IMPLEMENTED_BY 出边反查 code_change entity。"""
-    keys: list[tuple[uuid.UUID, int]] = []
+) -> list[tuple[uuid.UUID, int, datetime]]:
+    """经 IMPLEMENTED_BY 出边反查 code_change entity。
+
+    返回 (target_id, target_version, edge_valid_at) 三元组；``edge_valid_at``
+    用于在 timeline 构建时按版本时间窗口归属（避免所有版本节点共享同一批
+    code_change，造成"串味"）。
+    """
+    edges: list[tuple[uuid.UUID, int, datetime]] = []
     qs = KnowledgeEdge.objects.filter(
         source_entity_id=entity_id,
         relation=EdgeRelation.IMPLEMENTED_BY,
@@ -67,8 +72,8 @@ async def _code_change_keys_for_version(
         target = edge.target_entity
         if target is None:
             continue
-        keys.append((target.id, target.current_version or 1))
-    return keys
+        edges.append((target.id, target.current_version or 1, edge.valid_at))
+    return edges
 
 
 async def build_entity_timeline(
@@ -90,13 +95,20 @@ async def build_entity_timeline(
     versions = await sync_to_async(list)(
         _version_queryset(entity_id, include_superseded, as_of=as_of)
     )
-    code_change_keys = await _code_change_keys_for_version(entity_id, as_of=as_of)
+    code_change_edges = await _code_change_edges_for_entity(entity_id, as_of=as_of)
 
     nodes: list[TimelineNodeDTO] = []
     for ver in versions:
         if not include_superseded and not ver.is_latest and ver.invalid_at is not None:
             continue
-        keys = code_change_keys
+        # 按版本时间窗口 [valid_at, invalid_at) 归属 code_change：边在该版本生效
+        # 期间变为有效才挂到此节点，避免不同版本节点共享同一批 code_change。
+        keys = [
+            (eid, ver_no)
+            for eid, ver_no, edge_valid_at in code_change_edges
+            if (ver.valid_at is None or edge_valid_at >= ver.valid_at)
+            and (ver.invalid_at is None or edge_valid_at < ver.invalid_at)
+        ]
         code_changes = []
         for eid, ver_no in keys:
             meta = await hydrate_entity_metadata(eid, ver_no, include_superseded=True)
@@ -104,8 +116,6 @@ async def build_entity_timeline(
                 # fallback：边存在但版本 hydrate 失败时仍挂接最小 metadata
                 target = await KnowledgeEntity.objects.filter(id=eid).afirst()
                 if target:
-                    from knowledge.retrieval_types import EntityMetadata, ProvenanceLinks
-
                     meta = EntityMetadata(
                         entity_id=target.id,
                         entity_kind=target.kind,

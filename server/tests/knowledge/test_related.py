@@ -58,3 +58,15 @@ async def test_related_as_of_filters(entity_factory, edge_factory, version_facto
 async def test_related_unauthorized(entity_factory, edge_factory, version_factory, project, other_user):
     wi, _, _ = await _chain(entity_factory, edge_factory, version_factory, project)
     assert await fetch_related_entities(wi.id, user=other_user) == []
+
+
+async def test_related_two_hop_relation_accurate(
+    entity_factory, edge_factory, version_factory, project, user, project_memberships
+):
+    """2-hop 实体的 relation 取真实边类型，不再恒为 rels[0]（HAS_PLAN）（W3 修复）。"""
+    wi, plan, code = await _chain(entity_factory, edge_factory, version_factory, project)
+    related = await fetch_related_entities(wi.id, user=user, direction="out", max_hops=2)
+    relation_by_id = {r.entity_id: r.relation for r in related}
+    # 1-hop：wi→plan 为 HAS_PLAN；2-hop：plan→code 为 IMPLEMENTED_BY（旧实现会误标 HAS_PLAN）
+    assert relation_by_id[plan.id] == EdgeRelation.HAS_PLAN
+    assert relation_by_id[code.id] == EdgeRelation.IMPLEMENTED_BY
