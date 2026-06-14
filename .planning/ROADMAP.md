@@ -56,7 +56,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 23-01-PLAN.md — 统一 purge_file 删除入口（PF-03 + PF-05 + overlay），删后四面无残留（Wave 1）
+- [x] 23-01-PLAN.md — 统一 purge_file 删除入口（PF-03 + PF-05 + overlay），删后四面无残留（Wave 1）✅ (6b481a8cf/d6ccf931b/972b720d5)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -99,7 +99,7 @@ Plans:
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
-| 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Not started | — |
+| 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | In progress (1/4 plans) | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |

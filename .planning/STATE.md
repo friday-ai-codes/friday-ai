@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search（认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）返回前挂 build_matcher_for_repo + is_excluded fail-closed，被排除文件不返回 content/path，total 由过滤后集合重算；补对称守护测试 TestCodeSearchViewExclusion（2 例）；tests/test_code_search_branch.py 6 passed + 与 retrieval_exclusion 合跑 15 passed；原子提交 56d230553（fix+test）/ a8f65548c（gap SUMMARY）；EXCL-02 全读取面 fail-closed 闭环
-last_updated: "2026-06-14T14:54:07.977Z"
-last_activity: 2026-06-14 -- Phase 23 execution started
+stopped_at: 完成 23-01——统一删除入口 services.purge.purge_file(repository_id, rel_path) + PurgeResult，覆盖 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面（PF-03 + PF-05 收口），三条索引删除路径（run_incremental_index / run_git_diff_index）DELETE 分支收敛改调 purge_file；删后五面无残留 + 幂等 + overlay + 增量收敛守护测试 5 例 + indexer_exclusion 共 10 passed；原子提交 6b481a8cf（test RED）/ d6ccf931b（feat GREEN）/ 972b720d5（feat 收敛）
+last_updated: "2026-06-14T15:06:00.000Z"
+last_activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-03/PF-05 收口）
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 20
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 23 (清理对账（普通/敏感两模式）) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4 (23-01 done)
 Status: Executing Phase 23
-Last activity: 2026-06-14 -- Phase 23 execution started
+Last activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-03/PF-05 收口）
 
 ## Milestone Overview (v0.5.0)
 
@@ -85,6 +85,7 @@ Last activity: 2026-06-14 -- Phase 23 execution started
 | Phase 22 P04 | ~13min | 2 tasks | 8 files |
 | Phase 22 P06 | ~9min | 2 tasks | 2 files |
 | Phase 22 P03 | ~35min | 3 tasks | 8 files |
+| Phase 23 P01 | ~10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-03: browse_file_content 入口拒读 + fuzzy resolved_path 复判防后缀绕过（T-22-09），返回 chunks=[]+error 无明文；list_space_structure 文件树过滤；search_repository_code 兜底过滤防未来旁路回流；matcher 构造/判定异常一律 fail-closed
 - [Phase 22]: 22-03: ⚠️ 旁路读取面未覆盖（需收尾 plan）——index_views.py _vector_search 与 deprecated layered_search._l3_hybrid_search 直读 BranchAwareSearchService.search 不经 search_rag，被排除文件可漏出（见 22-03 SUMMARY Threat Flags / deferred-items.md）
 - [Phase 22]: 22-GAP: ✅ 上述 index_views 旁路面（现 CodeSearchView._search，认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）已闭合——返回前挂 build_matcher_for_repo + is_excluded fail-closed（构造失败整仓库丢弃 / 单项判定异常丢弃 + log surface=code_search，total 由过滤后集合重算），补对称守护测试（56d230553）；layered_search._l3_hybrid_search 经 22-VERIFICATION 研判为 deprecated 内部 helper、生产不可达，非缺口
+- [Phase 23]: 23-01: 统一删除入口 services.purge.purge_file(repository_id, rel_path) + PurgeResult，是 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面的唯一删除收口点；Wave 2/3 清理与对账一键清理须复用，不得另起删除逻辑。best-effort 逐面隔离 + PurgeResult.failures（不静默假装全净）
+- [Phase 23]: 23-01: PF-03 收口——run_incremental_index / run_git_diff_index 的 DELETE 分支收敛到 purge_file（消除「只删 Qdrant 不删 FileIndex/ChunkRegistry」孤儿）；PF-05 收口——overlay 删除遍历 RepositoryBranchIndex.collection_name 逐删 file_path
+- [Phase 23]: 23-01: ChunkRegistry 删除务必走 queryset.adelete() 逐实例触发 pre_delete 信号联动清边（绝不绕过信号）；codegraph 分支枚举归一化（is_base/branch_name==base → ""，feature 用原名）避免 RepositoryBranchIndex(base="main") 与 codegraph(base="") 口径漂移漏删；保留 indexer 既有 codegraph 孤儿清理块（精确单分支删除，与 purge_file 幂等不冲突）
+- [Phase 23]: 23-01: ⚠️ purge_file 暂未覆盖 repo_summaries / index_nodes 面（DOMAIN §9.3 普通列其余面），后续清理 plan 如需可扩展
 
 ### Pending Todos
 
@@ -191,8 +196,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 EXCL-02 gap closure）
-Stopped at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search（认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）返回前挂 build_matcher_for_repo + is_excluded fail-closed，被排除文件不返回 content/path，total 由过滤后集合重算；补对称守护测试 TestCodeSearchViewExclusion（2 例）；tests/test_code_search_branch.py 6 passed + 与 retrieval_exclusion 合跑 15 passed；原子提交 56d230553（fix+test）/ a8f65548c（gap SUMMARY）；EXCL-02 全读取面 fail-closed 闭环
+Last session: 2026-06-14（Phase 23 Plan 01 — purge_file 统一删除入口）
+Stopped at: 完成 23-01——统一删除入口 services.purge.purge_file 覆盖 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面（PF-03 + PF-05 收口），三条索引删除路径 DELETE 分支收敛改调 purge_file；删后五面无残留 + 幂等 + 增量收敛守护测试 5 例 + indexer_exclusion 共 10 passed；原子提交 6b481a8cf / d6ccf931b / 972b720d5
 Resume file: None
 
 ## Operator Next Steps
