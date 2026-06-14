@@ -7,7 +7,13 @@ from rest_framework import serializers
 
 from services.exclusion import is_redos_risky
 
-from .models import CleanupRun, GitCredential, RepoExclusionRule, Repository
+from .models import (
+    CleanupRun,
+    GitCredential,
+    RepoExclusionRule,
+    Repository,
+    SensitiveFileSuggestion,
+)
 
 # SSH 仓库地址的两种形态：scp 风格（git@host:group/repo.git）与
 # ssh:// 协议（ssh://git@host[:port]/group/repo.git，端口为 ssh 端口需丢弃）。
@@ -216,6 +222,34 @@ class RepoExclusionRuleSerializer(serializers.ModelSerializer):
             except re.error as exc:
                 raise serializers.ValidationError({"pattern": f"非法 glob 规则：{exc}"}) from exc
         return attrs
+
+
+class SensitiveFileSuggestionSerializer(serializers.ModelSerializer):
+    """敏感文件 AI 识别建议序列化器（Plan 24-03，EXCL-03）。
+
+    建议由检测器（``services/sensitive_detect.py``）产出，API 层**只读**：所有字段
+    ``read_only``，状态仅经专用 accept/dismiss action 变更，不允许直接 PATCH 任意字段
+    （越权改 status / 篡改建议，T-24-09 / T-24-10）。
+
+    - ``reason`` 已脱敏：只含命中类型与行号，**绝不**回显密钥本体 / 命中文本原值
+      （DOMAIN §9 D-04，T-24-01 / T-24-11）。
+    - ``severity`` 取值 ``real_secret`` > ``likely_sensitive`` > ``config_review``，
+      列表按此优先级排序（real_secret 优先），供前端高优先展示真实密钥命中。
+    """
+
+    class Meta:
+        model = SensitiveFileSuggestion
+        fields = [
+            "id",
+            "path",
+            "severity",
+            "detector",
+            "reason",
+            "status",
+            "detected_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
 
 
 class ReconcileReportSerializer(serializers.Serializer):
