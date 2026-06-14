@@ -11,6 +11,7 @@ fundamentally different from AIAgentBaseNode's single SDK agent model.
 """
 
 import asyncio
+import json
 import re
 import uuid
 from typing import Any, ClassVar, Literal
@@ -953,6 +954,18 @@ class AICodingNode(SubStepMixin, BaseNode):
         if user_pat:
             tools_env["env_FRIDAY_TASK_USER_TOKEN"] = user_pat
 
+        # 排除规则下传（Phase 22-04 / EXCL-02 容器读取面，T-22-13/14）：与 chat 派发路径
+        # 一致地无条件注入有效排除规则（即便仅 builtin），容器侧 clone 后据此物理删除被排除
+        # 文件。不下传 = 容器内 agent 直接读到密钥/敏感文件（裸奔）。仅下传规则模式，无凭证。
+        from services.exclusion import serialize_rules_for_repo
+
+        exclude_env: dict[str, str] = {
+            "env_FRIDAY_TASK_EXCLUDE_PATTERNS": json.dumps(
+                await serialize_rules_for_repo(str(repository.id)),
+                ensure_ascii=False,
+            ),
+        }
+
         dispatch_task = DispatchTask(
             task_id=session_id,
             task_type="coding",
@@ -972,6 +985,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "git_credentials": git_credentials,
                 **anthropic_env,   # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
                 **tools_env,       # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
+                **exclude_env,     # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
             },
         )
 
