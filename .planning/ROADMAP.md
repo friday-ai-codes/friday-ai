@@ -110,7 +110,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 25-04-PLAN.md — IDX-01：commit 索引挂接全量/增量流程 + search_rag 召回端到端守护
+- [x] 25-04-PLAN.md — IDX-01：commit 索引挂接全量/增量流程 + search_rag 召回端到端守护 ✅ (daa1b198b)
 
 ### Phase 26: 多仓凭证统一 + MCP 多仓参数
 
@@ -128,7 +128,7 @@ Plans:
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Executing (3/4) | — |
+| 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Complete    | 2026-06-15 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
 **Execution order:** 22 → 23（23 依赖 22 的配置源）；24 依赖 22；25、26 相对独立可并行。
