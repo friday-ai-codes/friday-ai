@@ -71,7 +71,7 @@ Plans:
 
 **Goal:** 索引/描述生成阶段识别敏感文件，产出建议名单供用户确认。
 **Requirements:** EXCL-03
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 **Success criteria:**
 
 1. 能识别密钥/env/敏感信息类文件并给出建议名单。
@@ -115,7 +115,7 @@ Plans:
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | All plans done (4/4) | — |
+| 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
