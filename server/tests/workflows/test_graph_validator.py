@@ -382,8 +382,14 @@ class TestVariableRules:
         result = _validate(nodes, edges)
         assert _reasons(result).isdisjoint({"node_not_found", "field_not_found"})
 
-    def test_lenient_prefixes_skipped(self):
-        """input./trigger./global. 等宽松前缀不触发变量校验（D-03 宽松边界）。"""
+    def test_lenient_prefixes_skipped_when_schema_undetermined(self):
+        """schema 不可确定时 input./trigger./global. 仍不报（宽松降级，宁可漏报）。
+
+        新语义（Phase 20 收紧后）：input./trigger. 会在**能确定 schema 时**做字段校验，
+        但这里直接上游 / 入口 trigger 是 manual_trigger（输出端口无 schema），字段不可
+        枚举 → 字段层跳过；global. 始终宽松。故仍不应出现 node_not_found / field_not_found /
+        no_upstream_for_input。
+        """
         nodes = [
             {"id": "u1", "short_id": "trig", "node_type": "manual_trigger", "config": {}},
             {
@@ -395,7 +401,148 @@ class TestVariableRules:
         ]
         edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
         result = _validate(nodes, edges)
-        assert _reasons(result).isdisjoint({"node_not_found", "field_not_found"})
+        assert _reasons(result).isdisjoint(
+            {"node_not_found", "field_not_found", "no_upstream_for_input"}
+        )
+
+
+class TestInputTriggerVariableRules:
+    """input.* / trigger.* 严格校验（Phase 20 收紧），仅在能确定 schema 时报错。
+
+    用 feishu_event_trigger 作上游 / 入口 trigger —— 其输出端口含明确 schema
+    （work_item_id / project_key / ... ），可枚举字段集合，从而走严格路径。
+    """
+
+    @staticmethod
+    def _feishu_node(node_id: str, short_id: str) -> dict:
+        return {
+            "id": node_id,
+            "short_id": short_id,
+            "node_type": "feishu_event_trigger",
+            "config": {"event_type": "WorkitemStatusEvent"},
+        }
+
+    def test_input_existing_field_passes(self):
+        """input.<上游 schema 字段> 命中 → 无 input/变量类 error（正例）。"""
+        nodes = [
+            self._feishu_node("u1", "trig"),
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{input.work_item_id}}"},
+            },
+        ]
+        edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
+        result = _validate(nodes, edges)
+        assert _reasons(result).isdisjoint({"field_not_found", "no_upstream_for_input"})
+
+    def test_input_unknown_field_reports(self):
+        """input.<不存在字段> 且上游 schema 明确 → field_not_found（反例）。"""
+        nodes = [
+            self._feishu_node("u1", "trig"),
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{input.totally_bogus}}"},
+            },
+        ]
+        edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
+        result = _validate(nodes, edges)
+        assert "field_not_found" in _reasons(result)
+
+    def test_input_no_upstream_reports(self):
+        """节点使用 input.* 但无直接上游 → no_upstream_for_input。"""
+        nodes = [
+            self._feishu_node("u1", "trig"),
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{input.work_item_id}}"},
+            },
+        ]
+        # 注意：u2 无任何指向它的边（孤立）
+        edges = []
+        result = _validate(nodes, edges)
+        assert "no_upstream_for_input" in _reasons(result)
+
+    def test_input_unknown_field_skipped_when_upstream_no_schema(self):
+        """直接上游含无 schema 输出端口（http_request）→ input 字段层跳过（宽松降级）。"""
+        nodes = [
+            {"id": "u1", "short_id": "trig", "node_type": "manual_trigger", "config": {}},
+            {
+                "id": "u2",
+                "short_id": "h",
+                "node_type": "http_request",
+                "config": {"url": "https://example.com"},
+            },
+            {
+                "id": "u3",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{input.anything}}"},
+            },
+        ]
+        edges = [
+            {"id": "e1", "source_node_id": "u1", "target_node_id": "u2"},
+            {"id": "e2", "source_node_id": "u2", "target_node_id": "u3"},
+        ]
+        result = _validate(nodes, edges)
+        assert _reasons(result).isdisjoint({"field_not_found", "no_upstream_for_input"})
+
+    def test_trigger_existing_field_passes(self):
+        """trigger.<feishu schema 字段> 与通用字段命中 → 无 field_not_found（正例）。"""
+        nodes = [
+            self._feishu_node("u1", "trig"),
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {
+                    "user_prompt": "{{trigger.project_key}} {{trigger.raw_payload}} "
+                    "{{trigger.source}}"
+                },
+            },
+        ]
+        edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
+        result = _validate(nodes, edges)
+        assert "field_not_found" not in _reasons(result)
+
+    def test_trigger_unknown_field_reports(self):
+        """trigger.<不存在字段> 且入口 trigger schema 明确 → field_not_found（反例）。"""
+        nodes = [
+            self._feishu_node("u1", "trig"),
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{trigger.bogus_field}}"},
+            },
+        ]
+        edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
+        result = _validate(nodes, edges)
+        assert "field_not_found" in _reasons(result)
+
+    def test_trigger_skipped_when_multiple_triggers(self):
+        """多个 trigger 节点（无法确定来源）→ trigger.* 跳过校验（宁可漏报）。"""
+        nodes = [
+            self._feishu_node("u1", "t1"),
+            self._feishu_node("u2", "t2"),
+            {
+                "id": "u3",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "{{trigger.bogus_field}}"},
+            },
+        ]
+        edges = [
+            {"id": "e1", "source_node_id": "u1", "target_node_id": "u3"},
+            {"id": "e2", "source_node_id": "u2", "target_node_id": "u3"},
+        ]
+        result = _validate(nodes, edges)
+        assert "field_not_found" not in _reasons(result)
 
 
 class TestInformationDisclosure:

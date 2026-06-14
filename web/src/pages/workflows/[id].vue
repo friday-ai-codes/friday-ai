@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { WorkflowFocusContext } from '~/components/workflow/workflowFocus'
 import { storeToRefs } from 'pinia'
-import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, provide, reactive, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import ExecutionHistoryList from '~/components/execution/ExecutionHistoryList.vue'
@@ -25,6 +26,7 @@ import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/node-config/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
+import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
@@ -43,6 +45,11 @@ const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeTo
 const { nodes } = storeToRefs(store)
 const { handleError } = useErrorHandler()
 const { success, info } = useToast()
+
+// 画布聚焦持有器：WorkflowCanvas（VueFlow 上下文内）挂载后写入 focusNode，
+// 兄弟组件 IssuesPanel 注入后调用，实现"点击问题 → 画布居中"（provide/inject 跨兄弟）。
+const workflowFocus = reactive<WorkflowFocusContext>({ focusNode: null })
+provide(WorkflowFocusKey, workflowFocus)
 
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)

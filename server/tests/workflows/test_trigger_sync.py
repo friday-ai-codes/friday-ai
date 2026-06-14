@@ -5,11 +5,9 @@
 - 历史复数 `event_types` 数组兜底仍生成 trigger（Pitfall 1 回归保护）。
 - `filter_status` / `filter_project_key` / `filter_work_item_type` 正确写入 filter_config。
 - 同步生成的 trigger 与真实 payload 端到端匹配（matches_event）。
-- OQ#1 裁定：`project_ids` / `exclude_*` 负向 / 跨 ID 空间字段**不**写入正向 filter_config
-  （避免静默误匹配，留 v2）。
-
-注意：本文件为 TDD RED 阶段产物，多数用例在 21-03/04 实现前预期为**断言失败**，
-而非 collection/import error。转绿计划：21-03（同步修复）。
+- 负向 / 白名单字段（`project_ids` / `exclude_project_ids` / `exclude_work_item_*`）写入
+  `_include` / `_exclude` 子结构，不污染正向 filter_config；UUID 经 Project 映射成
+  飞书 project_key。
 """
 
 import pytest
@@ -127,21 +125,27 @@ async def test_e2e_match():
     assert trigger.matches_event("WorkitemStatusEvent", non_matching_payload) is False
 
 
-async def test_exclude_and_project_ids_not_in_filter_config():
-    """OQ#1 裁定：project_ids / exclude_* 负向、跨 ID 空间字段不得写入正向 filter_config。
+async def test_negative_fields_go_to_include_exclude_substructures():
+    """负向 / 白名单字段写入 _include / _exclude 子结构，不污染正向 filter_config。
 
-    `_matches_filter` 仅支持正向 include 语义，负向/Space UUID 字段若被正向写入会造成
-    静默误匹配。本用例锁死「这些键不出现在 filter_config」。修复前无 trigger 生成 → RED。
+    不变式（延续原 OQ#1 本意）：project_ids / exclude_project_ids / exclude_work_item_*
+    的**原始键**绝不作为正向顶层键出现——正向匹配遍历会跳过 `_` 开头特殊键，因此
+    负向字段必须落在 `_include` / `_exclude` 而非顶层，避免被当作普通字段路径静默误匹配。
+    project_ids（UUID）经 Project.feishu_project_key 映射成飞书 key。
     """
     workflow = await _make_workflow("Negative Fields WF")
+    # 真实 Project（带 feishu_project_key）供 UUID → key 映射
+    inc = await Project.objects.acreate(name="Inc Project", feishu_project_key="key-inc")
+    exc = await Project.objects.acreate(name="Exc Project", feishu_project_key="key-exc")
     await _make_trigger_node(
         workflow,
         {
             "event_type": "WorkitemStatusEvent",
             "filter_status": ["s1"],
-            "project_ids": ["space-uuid-aaa", "space-uuid-bbb"],
-            "exclude_project_ids": ["space-uuid-ccc"],
-            "exclude_work_item_pattern": "^TEST-",
+            "project_ids": [str(inc.id)],
+            "exclude_project_ids": [str(exc.id)],
+            "exclude_work_item_pattern": "TEST",
+            "exclude_work_item_regex": r"^\[草稿\]",
         },
     )
 
@@ -150,6 +154,36 @@ async def test_exclude_and_project_ids_not_in_filter_config():
     triggers = await _triggers(workflow)
     assert len(triggers) == 1
     fc = triggers[0].filter_config
+    # 原始负向键不得作为正向顶层键
     assert "project_ids" not in fc
     assert "exclude_project_ids" not in fc
     assert "exclude_work_item_pattern" not in fc
+    assert "exclude_work_item_regex" not in fc
+    # 正向键保留
+    assert fc.get("cur_work_item_status.state_key") == ["s1"]
+    # 映射进 _include / _exclude
+    assert fc["_include"]["project_keys"] == ["key-inc"]
+    assert fc["_exclude"]["project_keys"] == ["key-exc"]
+    assert fc["_exclude"]["work_item_pattern"] == "TEST"
+    assert fc["_exclude"]["work_item_regex"] == r"^\[草稿\]"
+
+
+async def test_unmapped_project_uuid_skipped():
+    """映射不到 feishu_project_key 的 UUID（Project 无 key / 非法 UUID）跳过，不写 _include。"""
+    workflow = await _make_workflow("Unmapped WF")
+    no_key = await Project.objects.acreate(name="NoKey Project")  # feishu_project_key=None
+    await _make_trigger_node(
+        workflow,
+        {
+            "event_type": "WorkitemStatusEvent",
+            "project_ids": [str(no_key.id), "not-a-uuid"],
+        },
+    )
+
+    await async_sync_workflow_triggers(workflow)
+
+    triggers = await _triggers(workflow)
+    assert len(triggers) == 1
+    fc = triggers[0].filter_config
+    # 无可映射 key → 不生成 _include 子结构
+    assert "_include" not in fc
