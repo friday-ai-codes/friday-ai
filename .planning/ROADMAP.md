@@ -46,11 +46,18 @@
 
 **Goal:** 新增排除后可清理存量派生数据，区分普通排除与敏感清理两模式 + 对账 UI。
 **Requirements:** EXCL-04, EXCL-05, EXCL-06（+ 修 PF-03, PF-05）
+**Plans:** 4 plans（3 waves）
 **Success criteria:**
 
 1. 普通排除清理删净 Qdrant（主+overlay）/ChunkRegistry/codegraph/摘要，无残留。
 2. 敏感清理额外覆盖 trace/TaskResult/CodeChangeArchive/prompt snapshot 等操作记录。
 3. UI 能对比规则 vs 已索引内容、提示差异、一键清理。
+
+Plans:
+- [ ] 23-01-PLAN.md — 统一 purge_file 删除入口（PF-03 + PF-05 + overlay），删后四面无残留（Wave 1）
+- [ ] 23-02-PLAN.md — 普通清理服务 + 对账计算 + reconcile/cleanup API（Wave 2）
+- [ ] 23-03-PLAN.md — 敏感清理操作记录数据面（CodeChangeArchive/TaskResult/ActionLog 等，Wave 3）
+- [ ] 23-04-PLAN.md — 对账/清理前端面板（差异提示 + 普通/敏感双入口强确认，Wave 3）
 
 ### Phase 24: 敏感文件 AI 识别建议名单
 
