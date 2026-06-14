@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: planning
-stopped_at: 6 项遗留代码全部实现并原子提交（37a3bd6b2 / 5435fef23 / 9ab638f13 / 8cb50e928）；
-last_updated: "2026-06-14T08:15:38.056Z"
-last_activity: 2026-06-14 — Milestone v0.5.0 started
+status: executing
+stopped_at: 完成 22-01（排除配置单一源 + 单一匹配器），原子提交 0fd29af1d / df0e98778 / 064ebdcc0
+last_updated: "2026-06-14T08:25:36.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 01
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 6
+  completed_plans: 1
+  percent: 17
 ---
 
 # Project State
@@ -25,16 +25,16 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Planning（REQUIREMENTS/ROADMAP 已生成，待 plan-phase）
-Last activity: 2026-06-14 — Milestone v0.5.0 started
+Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
+Plan: 2 of 6（22-01 ✅ 完成）
+Status: Executing Phase 22
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 01（排除配置单一源 + 单一匹配器）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | Not started |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (1/6 plans) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
@@ -76,6 +76,12 @@ Last activity: 2026-06-14 — Milestone v0.5.0 started
 | Phase 14 P05 | 12min | 2 tasks | 3 files |
 | Phase 14 P06 | 14min | 2 tasks | 5 files |
 
+**Milestone v0.5.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phase 22 P01 | ~9min | 2 tasks | 5 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -95,6 +101,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 14]: 14-05：飞书三 handler 只投三元组 ID（取材全在 normalizer 后台），文档拉取失败降级为缺段快照 + warning
 - [Phase ?]: 14-06: workflow mr_results 回退键按引擎实际落点 merge_requests（checker 建议的 succeeded_repos 实为计数 int）
 - [Phase ?]: 14-06: workflow 仓库归属经 output_data.pending_sessions 匹配 + session.repo_url 兜底（双源均服务端写入，T-14-22）
+- [Phase 22]: 22-01: 排除判定唯一入口 services.exclusion.is_excluded(repository_id, rel_path)，Wave 2 plans 直接引用不得另起炉灶；失败模式二分（构造期非法 regex fail-loud / 运行期 fail-closed True + exclusion.blocked 埋点）
+- [Phase 22]: 22-01: dir 规则 = 相对仓库根前缀（目录本身 + 子树）；glob 用 fnmatch.translate 大小写敏感跨 / 匹配；per-repo source=global+enabled=False 行作为关闭全局默认的 override 标记
+- [Phase 22]: 22-01: BUILTIN_GLOBAL_DEFAULTS 内置安全默认即使无任何配置也生效（向后兼容 + 开箱即用，per D-04）
 
 ### Pending Todos
 
@@ -166,9 +175,9 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（历史遗留 tech debt 清理）
-Stopped at: 6 项遗留代码全部实现并原子提交（37a3bd6b2 / 5435fef23 / 9ab638f13 / 8cb50e928）；
-git 工作树干净；浏览器抽验 W1/P19/P20 正常
+Last session: 2026-06-14（Phase 22 Plan 01 执行）
+Stopped at: 完成 22-01（排除配置单一源 + 单一匹配器），原子提交 0fd29af1d / df0e98778 / 064ebdcc0；
+18 单测全绿，makemigrations --check 干净
 Resume file: None
 
 ## Operator Next Steps
