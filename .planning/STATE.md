@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 24-03——敏感建议 REST API（list/accept/dismiss）：RepositorySensitiveSuggestionsView 按 severity 排序（real_secret 优先）+ ?status 过滤，默认仅 pending；RepositorySensitiveSuggestionActionView accept 经 aget_or_create 幂等创建 RepoExclusionRule(source=ai_suggested, rule_type=glob, pattern=path) + 标 accepted + invalidate_matcher_cache（T-22-18），dismiss 仅标 dismissed；accept 绝不触发删除/清理（守护断言无 CleanupRun 创建、run_cleanup 未调用 T-24-10），越仓 404（T-24-09）、非法 action 400；serializer 全字段 read_only、reason 脱敏（T-24-11）；12 例 guard 全绿 + 14 例既有 exclusion API 无回归；ruff 0 错；原子提交 e89ab30e0（feat serializer）/ 7aace8cd4（feat 视图+路由+测试）
-last_updated: "2026-06-15T01:15:00.000Z"
-last_activity: 2026-06-15 -- Phase 24 Plan 03 完成（敏感建议 REST API：list/accept/dismiss）
+stopped_at: 完成 24-04——前端敏感建议面板（EXCL-03 用户可见闭环）：sensitiveSuggestionsApi 类型化 client（list/accept/dismiss，契约对齐 24-03）+ zh-CN sensitive.* 文案；SensitiveSuggestionsPanel.vue 按 severity 排序渲染、real_secret 高优先级 destructive 告警（T-24-15）、accept 经 useConfirmDialog 明示「不自动删/需在清理面板显式执行」（T-24-14）后建 ai_suggested 规则 + invalidate 建议与 repository-exclusions、dismiss 即时更新、脱敏 reason（T-24-13）；挂载于仓库详情页 #exclusions section（ExclusionRulesPanel/ReconcilePanel 旁）；4 例守护测试全绿（真实 zh-CN 文案断言）、vue-tsc 0 sensitive 错、eslint 0 错；原子提交 f7fbf8434（client+i18n）/ 3bd239566（面板+挂载+测试）
+last_updated: "2026-06-15T01:20:00.000Z"
+last_activity: 2026-06-15 -- Phase 24 Plan 04 完成（前端敏感建议面板，EXCL-03 闭环达成；Phase 24 全部 4/4）
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 14
   completed_plans: 14
-  percent: 50
+  percent: 60
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 24 (敏感文件 AI 识别建议名单) — EXECUTING
-Plan: 4 of 4（24-01、24-02、24-03 完成）
-Status: Executing Phase 24
-Last activity: 2026-06-15 -- Phase 24 Plan 03 完成（敏感建议 REST API：list/accept/dismiss）
+Phase: 24 (敏感文件 AI 识别建议名单) — COMPLETE (4/4)
+Plan: 4 of 4 完成（24-01、24-02、24-03、24-04 全部完成）
+Status: Phase 24 完成（EXCL-03 用户可见闭环达成）；下一步 Phase 25 / 26
+Last activity: 2026-06-15 -- Phase 24 Plan 04 完成（前端敏感建议面板，EXCL-03 闭环）
 
 ## Milestone Overview (v0.5.0)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-15 -- Phase 24 Plan 03 完成（敏感建议 REST API：l
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
-| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | In progress (3/4) |
+| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
@@ -92,6 +92,7 @@ Last activity: 2026-06-15 -- Phase 24 Plan 03 完成（敏感建议 REST API：l
 | Phase 24 P01 | ~22min | 2 tasks | 4 files |
 | Phase 24 P02 | ~18min | 2 tasks | 4 files |
 | Phase 24 P03 | ~12min | 2 tasks | 4 files |
+| Phase 24 P04 | ~10min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 24]: 24-02: 可选 LLM 二分类 services.sensitive_detect.classify_ambiguous_files(repository_id, candidates: list[AmbiguousCandidate])——确定性段始终启用、LLM 段对 ambiguous 子集可选；aresolve_or_error→ProviderMissingError / 缺 default_model / 任何调用解析异常一律 return 0 graceful 退化不冒泡（T-24-07），确定性结果不依赖 LLM 成功
 - [Phase 24]: 24-02: 隐私加固（偏离 PLAN『截断 N 字符』措辞 Rule 2）——_build_llm_feature 只送「文件名+扩展名+has_sensitive_keyword 布尔」，sample_text 正文仅本地计算布尔信号绝不进请求；real_secret 强命中排除出候选；新增 _redact_llm_reason 对 LLM 理由做高熵串+_SECRET_PATTERNS 替换 [已脱敏] 服务端兜底（T-24-06 纵深防御）。命中产 likely_sensitive/detector=llm 经统一 _upsert_suggestion 入库，仅 pending 绝不建规则/删数据（T-24-08）
 - [Phase 24]: 24-03: 敏感建议 REST API 走独立 APIView + 显式 `<uuid:repository_id>/sensitive-suggestions/`(list) + `.../{suggestion_id}/action/`(action) 路由（对齐 Phase 22 exclusions idiom）；SensitiveFileSuggestionSerializer 全字段 read_only（状态仅经专用 action 改，禁直接 PATCH，T-24-09/10）；list 默认仅 pending、?status=all 全量，severity 优先级 Python 侧映射排序（real_secret>likely_sensitive>config_review）+ detected_at desc；accept 用 aget_or_create（唯一约束含 source）实现幂等避免二次 accept 500（T-24-12）→ 建 RepoExclusionRule(source=ai_suggested,rule_type=glob) + 标 accepted + invalidate_matcher_cache；accept 绝不删数据（NEVER silent-delete，response 仅附 cleanup_available 引导，删除仍由 Phase 23 reconcile/cleanup 显式触发 T-24-10）
+- [Phase 24]: 24-04: 前端 sensitiveSuggestionsApi（list/accept/dismiss）+ SensitiveSuggestionsPanel.vue 兑现 EXCL-03 用户可见闭环；real_secret 列表顶部 destructive 横幅 + 行内危险底色双重突出（data-testid=real-secret-alert 供测试稳定定位，T-24-15）；accept 经 useConfirmDialog 二次确认明示「新增排除规则、不会自动删除已索引内容、需在清理面板显式执行」（T-24-14），dismiss 无确认（无破坏性）；accept/dismiss 后 invalidate 自身建议 key + repository-exclusions key 使新建 ai_suggested 规则即时显现于排除面板；前端保序渲染后端已排序结果（不前端重排）；面板 prop 命名 repoId（依 PLAN，区别既有面板 repositoryId）；守护测试以真实 zh-CN.json 作 messages 断言告警/确认措辞防被改空（T-24-13 reason 仅渲染脱敏文本）
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -220,10 +222,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 24 Plan 03 — 敏感建议 REST API：list/accept/dismiss）
-Stopped at: 完成 24-03——SensitiveFileSuggestionSerializer（全 read_only、reason 脱敏 T-24-11）+ RepositorySensitiveSuggestionsView（severity 排序 real_secret 优先 + ?status 过滤，默认 pending）+ RepositorySensitiveSuggestionActionView（accept 幂等建 RepoExclusionRule(source=ai_suggested)+标 accepted+invalidate_matcher_cache；dismiss 仅标 dismissed；越仓 404、非法 action 400；绝不删数据 T-24-10）+ 路由 + 12 例 guard 全绿（含 accept 无 CleanupRun/run_cleanup 副作用、幂等、severity 排序）；14 例 exclusion API 无回归；ruff 0 错；原子提交 e89ab30e0 / 7aace8cd4
+Last session: 2026-06-15（Phase 24 Plan 04 — 前端敏感建议面板，EXCL-03 用户可见闭环）
+Stopped at: 完成 24-04——sensitiveSuggestionsApi 类型化 client（list/accept/dismiss）+ zh-CN sensitive.* 文案 + SensitiveSuggestionsPanel.vue（severity 排序、real_secret 高优先级 destructive 告警、accept 确认明示不自动删/引导清理面板、dismiss 即时更新、脱敏 reason）+ 仓库详情页 #exclusions section 挂载（ExclusionRulesPanel/ReconcilePanel 旁）+ 4 例守护测试全绿；vue-tsc 0 sensitive 错、eslint 0 错；原子提交 f7fbf8434（client+i18n）/ 3bd239566（面板+挂载+测试）。Phase 24 全部 4/4 完成，EXCL-03 闭环达成。
 Resume file: None
-Next: Phase 24 Plan 04（前端建议面板，消费 list/accept/dismiss API）；或 /gsd-execute-phase 24（Wave 3 收尾：24-04）
+Next: Phase 25（Commit 历史索引 + 行号反查，IDX-01..02）或 Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——25/26 相对独立可并行
 
 ## Operator Next Steps
 
