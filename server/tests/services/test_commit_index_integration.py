@@ -1,0 +1,313 @@
+"""commit 历史索引 → search_rag 召回端到端守护测试（IDX-01，per 25-04 PLAN）。
+
+把 25-03 的 ``index_commits`` 挂接进索引流程后，验证 commit 文档落主 collection 经既有
+``search_rag`` chokepoint 自然召回，且同受 Phase 22 排除约束。覆盖：
+
+- dispatch：``_run_commit_index`` best-effort —— ``index_commits`` 抛异常不冒泡（仅 warning，
+  绝不阻断索引 success，T-25-12）；正常路径在 rmtree 之前 await 完成（读真实克隆）。
+- 召回：含特定 message / author 的 commit 索引后，经 ``search_rag`` 用关键字 / author 召回到
+  对应 commit 文档（payload kind=commit、commit_sha 匹配）；不相关 query 不召回。
+- 排除：commit 改动含被排除文件（.env / *.pem）+ 普通文件，召回的 commit 文档摘要含普通文件、
+  **不含**被排除文件路径（fail-closed，T-25-13）。
+- 增量：同 HEAD 第二次 ``index_commits`` 0 条；新增 commit 后只 +1（T-25-14）。
+
+真实临时 git 仓库驱动 git log / diff-tree；mock embedding / sparse / qdrant upsert /
+BranchAwareSearchService.search（避免真实模型与向量库）。召回侧由 mock search 对捕获的
+commit point 按 query substring 命中其 content，模拟语义召回，从而验证 search_rag 的排除 /
+去重 chokepoint 对 commit 文档生效（合成 file_path ``.friday/commits/{sha}`` 不被排除）。
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from services import commit_index
+from services.commit_index import index_commits
+from services.indexer import _run_commit_index
+from services.retrieval.rag_search import search_rag
+
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
+
+
+# ============================================================================
+# 临时 git 仓库 helper（复用 25-03 test_commit_index.py 范式）
+# ============================================================================
+
+
+def _git(repo: Path, *args: str) -> str:
+    env = {
+        "GIT_AUTHOR_NAME": "Grace Hopper",
+        "GIT_AUTHOR_EMAIL": "grace@navy.example",
+        "GIT_COMMITTER_NAME": "Grace Hopper",
+        "GIT_COMMITTER_EMAIL": "grace@navy.example",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "PATH": os.environ.get("PATH", ""),
+    }
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _init_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    return repo
+
+
+def _commit(repo: Path, files: dict[str, str], message: str) -> str:
+    for rel, content in files.items():
+        fp = repo / rel
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(content)
+        _git(repo, "add", rel)
+    _git(repo, "commit", "-q", "-m", message)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _index_ctxs(recorder: list[dict[str, Any]]):
+    """patch index_commits 的重型外部依赖，把 upsert 的 points 收进 recorder。"""
+
+    def _capture(repository_id, points):  # noqa: ARG001
+        recorder.extend(points)
+        return True
+
+    return [
+        patch.object(
+            commit_index.EmbeddingService,
+            "generate_embeddings_batch",
+            new=AsyncMock(side_effect=lambda texts, **kw: [[0.1, 0.2, 0.3, 0.4] for _ in texts]),
+        ),
+        patch.object(commit_index, "_collection_is_hybrid", new=AsyncMock(return_value=False)),
+        patch.object(
+            commit_index.QdrantService,
+            "upsert_vectors",
+            new=MagicMock(side_effect=_capture),
+        ),
+    ]
+
+
+async def _run_index(repository, repo: Path, points: list[dict[str, Any]]) -> dict:
+    """跑 index_commits，捕获 upsert 的 commit point 进 points。"""
+    ctxs = _index_ctxs(points)
+    with ctxs[0], ctxs[1], ctxs[2]:
+        return await index_commits(str(repository.id), str(repo))
+
+
+def _patch_search(points: list[dict[str, Any]]):
+    """模拟 search_rag 召回面：mock embedding/sparse + BranchAwareSearchService.search。
+
+    search 对捕获的 commit point 按 query 是否 substring 命中其 ``content`` 返回结果，
+    模拟"语义召回到 commit 文档"，从而验证 search_rag 的排除/去重 chokepoint 对 commit 文档
+    生效（合成 file_path ``.friday/commits/{sha}`` 不被排除）。build_matcher_for_repo 用真实
+    实现（仅 builtin 全局默认）以真正经过排除过滤。
+    """
+    captured: dict[str, str] = {}
+
+    async def _embed(query: str) -> list[float]:
+        captured["q"] = query
+        return [0.1, 0.2, 0.3]
+
+    async def _search(repo_id: str, *a: Any, **kw: Any) -> list[dict[str, Any]]:
+        q = captured.get("q", "").lower()
+        out: list[dict[str, Any]] = []
+        for i, p in enumerate(points):
+            payload = p["payload"]
+            if q and q in str(payload.get("content", "")).lower():
+                out.append({"id": p["id"], "score": 0.9 - i * 0.01, "payload": payload})
+        return out
+
+    return [
+        patch(
+            "services.embedding.EmbeddingService.generate_embedding",
+            new=AsyncMock(side_effect=_embed),
+        ),
+        patch(
+            "services.sparse_encoder.SparseEncoderService.encode",
+            new=MagicMock(return_value={"indices": [1], "values": [1.0]}),
+        ),
+        patch(
+            "services.branch_search.BranchAwareSearchService.search",
+            new=AsyncMock(side_effect=_search),
+        ),
+    ]
+
+
+async def _search_rag(repository, query: str, points: list[dict[str, Any]]):
+    ctxs = _patch_search(points)
+    with ctxs[0], ctxs[1], ctxs[2]:
+        return await search_rag(query, repo_ids=[str(repository.id)])
+
+
+# ============================================================================
+# dispatch：_run_commit_index best-effort，失败不冒泡（T-25-12）
+# ============================================================================
+
+
+async def test_dispatch_swallows_index_commits_failure(repository) -> None:
+    """index_commits 抛异常 → _run_commit_index 不冒泡（返回 None，仅 warning）。"""
+    with patch.object(
+        commit_index,
+        "index_commits",
+        new=AsyncMock(side_effect=RuntimeError("qdrant down")),
+    ):
+        result = await _run_commit_index(str(repository.id), "/tmp/does-not-matter")
+
+    assert result is None
+
+
+async def test_dispatch_invokes_index_commits_before_rmtree(repository, tmp_path) -> None:
+    """正常路径：_run_commit_index await index_commits 完成（调用时克隆目录仍存在）。"""
+    repo = _init_repo(tmp_path)
+    _commit(repo, {"a.py": "1\n"}, "init")
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_index(repository_id: str, repo_path: str) -> dict[str, Any]:
+        seen["exists"] = os.path.isdir(repo_path)
+        return {"indexed": 1, "head": "abc", "boundary_from": None}
+
+    # _run_commit_index 内部 `from services.commit_index import index_commits`，
+    # 故 patch commit_index.index_commits 才生效。
+    with patch.object(commit_index, "index_commits", new=AsyncMock(side_effect=_fake_index)):
+        await _run_commit_index(str(repository.id), str(repo))
+
+    assert seen.get("exists") is True
+
+
+# ============================================================================
+# 召回：search_rag 用关键字 / author 召回 commit 文档
+# ============================================================================
+
+
+async def test_search_rag_recalls_commit_by_keyword(repository, tmp_path) -> None:
+    """含唯一关键字的 commit 索引后，经 search_rag 用关键字召回对应 commit 文档。"""
+    repo = _init_repo(tmp_path)
+    head = _commit(repo, {"src/auth.py": "x=1\n"}, "fix zorptastic login regression")
+
+    points: list[dict[str, Any]] = []
+    idx = await _run_index(repository, repo, points)
+    assert idx["indexed"] == 1
+
+    snap = await _search_rag(repository, "zorptastic", points)
+
+    assert snap.status == "ok"
+    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
+    assert len(commit_items) == 1
+    assert commit_items[0]["payload"]["commit_sha"] == head
+    assert "zorptastic" in commit_items[0]["payload"]["content"]
+
+
+async def test_search_rag_recalls_commit_by_author(repository, tmp_path) -> None:
+    """用 author 名作 query 亦可召回到 commit 文档（author 入文档内容）。"""
+    repo = _init_repo(tmp_path)
+    head = _commit(repo, {"src/app.py": "x=1\n"}, "routine change")
+
+    points: list[dict[str, Any]] = []
+    await _run_index(repository, repo, points)
+
+    snap = await _search_rag(repository, "Grace Hopper", points)
+
+    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
+    assert len(commit_items) == 1
+    assert commit_items[0]["payload"]["commit_sha"] == head
+    assert commit_items[0]["payload"]["author_name"] == "Grace Hopper"
+
+
+async def test_search_rag_no_recall_for_unrelated_query(repository, tmp_path) -> None:
+    """不相关 query 不召回 commit 文档（确保召回是 query 相关而非恒真）。"""
+    repo = _init_repo(tmp_path)
+    _commit(repo, {"src/app.py": "x=1\n"}, "fix login regression")
+
+    points: list[dict[str, Any]] = []
+    await _run_index(repository, repo, points)
+
+    snap = await _search_rag(repository, "absolutelynotpresentkeyword", points)
+
+    assert [it for it in snap.items if it["payload"].get("kind") == "commit"] == []
+
+
+# ============================================================================
+# 排除：被排除文件不出现在召回的 commit 文档摘要（fail-closed，T-25-13）
+# ============================================================================
+
+
+async def test_search_rag_recalled_commit_excludes_sensitive_files(repository, tmp_path) -> None:
+    """召回的 commit 文档 changed_files / content 含普通文件、不含被排除文件。"""
+    repo = _init_repo(tmp_path)
+    _commit(
+        repo,
+        {
+            "src/app.py": "x=1\n",
+            ".env": "SECRET=topsecretvalue\n",
+            "certs/server.pem": "PRIVATEKEY\n",
+        },
+        "add app and config",
+    )
+
+    points: list[dict[str, Any]] = []
+    await _run_index(repository, repo, points)
+
+    snap = await _search_rag(repository, "config", points)
+
+    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
+    assert len(commit_items) == 1
+    payload = commit_items[0]["payload"]
+    # 普通文件保留
+    assert "src/app.py" in payload["changed_files"]
+    assert "src/app.py" in payload["content"]
+    # 被排除文件全程不泄漏（摘要 / changed_files / content / 密钥内容）
+    assert ".env" not in payload["changed_files"]
+    assert "certs/server.pem" not in payload["changed_files"]
+    assert ".env" not in payload["content"]
+    assert "server.pem" not in payload["content"]
+    assert "topsecretvalue" not in payload["content"]
+
+
+# ============================================================================
+# 增量：二次同 HEAD 0 条，新增 commit 只 +1（T-25-14）
+# ============================================================================
+
+
+async def test_incremental_only_indexes_new_commits(repository, tmp_path) -> None:
+    """全量后二次同 HEAD 增量 0 条；新增 commit 后只 +1，且新 commit 可召回。"""
+    repo = _init_repo(tmp_path)
+    _commit(repo, {"a.py": "1\n"}, "first frobnicate")
+    head1 = _commit(repo, {"b.py": "2\n"}, "second change")
+
+    points1: list[dict[str, Any]] = []
+    r1 = await _run_index(repository, repo, points1)
+    assert r1["indexed"] == 2
+    assert r1["head"] == head1
+
+    # 二次同 HEAD：boundary..HEAD 空 → 0 条、不再 upsert
+    points2: list[dict[str, Any]] = []
+    r2 = await _run_index(repository, repo, points2)
+    assert r2["indexed"] == 0
+    assert points2 == []
+
+    # 新增 commit → 只索引新增 1 条
+    head3 = _commit(repo, {"c.py": "3\n"}, "third wibblesnew commit")
+    points3: list[dict[str, Any]] = []
+    r3 = await _run_index(repository, repo, points3)
+    assert r3["indexed"] == 1
+    assert points3[0]["payload"]["commit_sha"] == head3
+
+    # 新 commit 经 search_rag 用其唯一关键字可召回
+    snap = await _search_rag(repository, "wibblesnew", points3)
+    commit_items = [it for it in snap.items if it["payload"].get("kind") == "commit"]
+    assert len(commit_items) == 1
+    assert commit_items[0]["payload"]["commit_sha"] == head3
