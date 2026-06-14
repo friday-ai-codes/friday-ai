@@ -110,6 +110,22 @@ class TestExclusionRulesCreate:
         # 校验失败不应触发缓存失效
         inv.assert_not_called()
 
+    def test_post_redos_regex_failclosed_400(
+        self, authenticated_client, repository: Repository
+    ) -> None:
+        # HI-01：嵌套量词 ReDoS 高风险 regex 保存时 fail-loud（不写库）。
+        with patch("repositories.views.invalidate_matcher_cache") as inv:
+            resp = authenticated_client.post(
+                EXCL_URL.format(repo_id=repository.id),
+                {"pattern": "(a+)+$", "rule_type": "regex"},
+                format="json",
+            )
+        assert resp.status_code == 400
+        assert not RepoExclusionRule.objects.filter(
+            repository=repository, pattern="(a+)+$"
+        ).exists()
+        inv.assert_not_called()
+
     def test_post_empty_pattern_400(self, authenticated_client, repository: Repository) -> None:
         resp = authenticated_client.post(
             EXCL_URL.format(repo_id=repository.id),

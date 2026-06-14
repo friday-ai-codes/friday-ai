@@ -4,6 +4,8 @@ import re
 
 from rest_framework import serializers
 
+from services.exclusion import is_redos_risky
+
 from .models import GitCredential, RepoExclusionRule, Repository
 
 # SSH 仓库地址的两种形态：scp 风格（git@host:group/repo.git）与
@@ -171,7 +173,9 @@ class RepoExclusionRuleSerializer(serializers.ModelSerializer):
 
     保存时 fail-loud 校验（对齐 D-02 / T-22-17）：
     - ``rule_type=regex`` 用 ``re.compile`` 校验语法，非法 → 400 ValidationError（不写库）。
-    - pattern 非空 + 长度上限（防 ReDoS 灾难性回溯的超长 pattern）。
+    - ``rule_type=regex`` 额外做 ReDoS 静态启发式（``is_redos_risky``）拒绝嵌套量词模式。
+    - pattern 非空 + 长度上限（限制资源占用，**不能**防 ReDoS——见 HI-01；
+      ReDoS 由 ``is_redos_risky`` 拒绝嵌套量词把控，长度上限对 ``(a+)+`` 这类短模式无效）。
 
     ``source`` 可写但默认 ``user``；``source=global + enabled=False`` 为「关闭某条全局
     默认」的 override 标记（视图据此与匹配器同源剔除）。
@@ -198,6 +202,11 @@ class RepoExclusionRuleSerializer(serializers.ModelSerializer):
                 re.compile(pattern)
             except re.error as exc:
                 raise serializers.ValidationError({"pattern": f"非法正则表达式：{exc}"}) from exc
+            # HI-01：拒绝嵌套量词的 ReDoS 高风险模式（长度上限无法防短的灾难性回溯）。
+            if is_redos_risky(pattern):
+                raise serializers.ValidationError(
+                    {"pattern": "正则含嵌套量词，可能触发灾难性回溯（ReDoS），已拒绝"}
+                )
         return attrs
 
 

@@ -38,6 +38,46 @@ class InvalidExclusionRuleError(ValueError):
     """非法排除规则（如无法编译的 regex）。构造期 fail-loud，供保存 API 校验。"""
 
 
+def is_redos_risky(pattern: str) -> bool:
+    """保守检测「嵌套量词」导致的灾难性回溯（ReDoS），如 ``(a+)+`` / ``(.*a){15}``。
+
+    HI-01：排除 regex 在每文件扫描热路径上**同步无超时**执行，``re`` 不抛异常只挂起，
+    故必须在编译/保存前静态拒绝高风险模式。启发式：扫描每个 ``(...)`` 分组，若分组内部
+    含无界量词（``*`` ``+`` 或 ``{n,}``）且该分组整体后紧跟量词（``*`` ``+`` 或 ``{...}``），
+    判定为高风险。
+
+    **诚实声明**：这是缓解而非根除——更隐蔽的形态（跨嵌套组、交替歧义如 ``(a|a)*``）可能
+    漏报；但能挡住绝大多数误配/常见恶意模式，且不依赖运行期超时（线程内 signal 不可用）。
+    """
+    if not pattern:
+        return False
+    stack: list[int] = []
+    groups: list[tuple[int, int]] = []
+    esc = False
+    for idx, ch in enumerate(pattern):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if ch == "(":
+            stack.append(idx)
+        elif ch == ")" and stack:
+            groups.append((stack.pop(), idx))
+
+    n = len(pattern)
+    for open_idx, close_idx in groups:
+        body = pattern[open_idx + 1 : close_idx]
+        inner_unbounded = bool(re.search(r"[*+]", body)) or bool(re.search(r"\{\d*,\d*\}", body))
+        if not inner_unbounded:
+            continue
+        j = close_idx + 1
+        if j < n and pattern[j] in "*+{":
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class ExclusionRuleSpec:
     """单条排除规则的值对象（序列化形 = SystemSetting JSON 元素）。"""
@@ -144,6 +184,11 @@ class ExclusionMatcher:
                     (re.compile(fnmatch.translate(spec.pattern), flags), "/" not in spec.pattern)
                 )
             elif spec.rule_type == "regex":
+                # ReDoS 高风险（嵌套量词）→ 构造期 fail-loud，绝不编译进热路径（HI-01）。
+                if is_redos_risky(spec.pattern):
+                    raise InvalidExclusionRuleError(
+                        f"regex 排除规则含嵌套量词，可能触发灾难性回溯（ReDoS）: {spec.pattern!r}"
+                    )
                 try:
                     self._regexes.append(re.compile(spec.pattern))
                 except re.error as exc:

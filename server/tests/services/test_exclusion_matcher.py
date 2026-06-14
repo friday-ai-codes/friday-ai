@@ -97,6 +97,28 @@ class TestRegexRule:
         with pytest.raises(InvalidExclusionRuleError):
             ExclusionMatcher([ExclusionRuleSpec(pattern="(", rule_type="regex")])
 
+    def test_redos_regex_rejected_at_construction(self) -> None:
+        # HI-01：嵌套量词的 ReDoS 高风险 regex 构造期 fail-loud（绝不编译进热路径）。
+        for pat in ["(a+)+$", "(a*)*", "(.*a){15}", r"(\d+)+"]:
+            with pytest.raises(InvalidExclusionRuleError):
+                ExclusionMatcher([ExclusionRuleSpec(pattern=pat, rule_type="regex")])
+
+    def test_safe_regex_still_allowed(self) -> None:
+        # 正常 regex（无嵌套量词）不受影响。
+        from services.exclusion import is_redos_risky
+
+        for pat in [r"secret/.*\.json", r".*\.env$", r"(foo|bar)\.key", r"a+", r"(ab)?c"]:
+            assert is_redos_risky(pat) is False
+            ExclusionMatcher([ExclusionRuleSpec(pattern=pat, rule_type="regex")])
+
+    def test_is_redos_risky_detects_nested_quantifiers(self) -> None:
+        from services.exclusion import is_redos_risky
+
+        assert is_redos_risky("(a+)+") is True
+        assert is_redos_risky("(.*a){10,}") is True
+        assert is_redos_risky("(a*)*x") is True
+        assert is_redos_risky("plain") is False
+
 
 class TestFailClosed:
     def test_out_of_bounds_path_excluded(self) -> None:
