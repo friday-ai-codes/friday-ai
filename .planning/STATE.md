@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: "完成 24-04——sensitiveSuggestionsApi 类型化 client（list/accept/dismiss）+ zh-CN sensitive.* 文案 + SensitiveSuggestionsPanel.vue（severity 排序、real_secret 高优先级 destructive 告警、accept 确认明示不自动删/引导清理面板、dismiss 即时更新、脱敏 reason）+ 仓库详情页 #exclusions section 挂载（ExclusionRulesPanel/ReconcilePanel 旁）+ 4 例守护测试全绿；vue-tsc 0 sensitive 错、eslint 0 错；原子提交 f7fbf8434（client+i18n）/ 3bd239566（面板+挂载+测试）。Phase 24 全部 4/4 完成，EXCL-03 闭环达成。"
-last_updated: "2026-06-14T22:45:12.382Z"
-last_activity: 2026-06-14 -- Phase 25 execution started
+stopped_at: "完成 25-01——ChunkRegistry 行号回填（IDX-02 前半）：ChunkRegistryRow 新增 line_start/line_end（1-based 闭区间，nullable）；_build_points 透传 CodeChunk.start_line/end_line 进 registry_rows（与 Qdrant payload 同源）；_bulk_upsert_registry_atomic create+update 双路径落库，update 判定显式纳入行号变化（仅行号位移也更新）；复用既有 chunkreg_line_range_valid CheckConstraint 兜底错乱区间，无新 migration（per D-02）。9 例守护测试全绿（13 passed 含模型层），无回归（-k build_points/indexer 117 passed），mypy/ruff clean，makemigrations --check No changes。原子提交 19f9d0d4b(test)/e51db7eb5(feat T1)/3614a48cd(test)/cd14492cb(feat T2)。"
+last_updated: "2026-06-14T22:55:30.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回填）
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 18
-  completed_plans: 15
-  percent: 60
+  completed_plans: 16
+  percent: 64
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 25 (Commit 历史索引 + 行号反查) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4 (25-01 完成)
 Status: Executing Phase 25
-Last activity: 2026-06-14 -- Phase 25 execution started
+Last activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回填）
 
 ## Milestone Overview (v0.5.0)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-14 -- Phase 25 execution started
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
-| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
+| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (1/4 done) |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
 **Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
@@ -93,6 +93,7 @@ Last activity: 2026-06-14 -- Phase 25 execution started
 | Phase 24 P02 | ~18min | 2 tasks | 4 files |
 | Phase 24 P03 | ~12min | 2 tasks | 4 files |
 | Phase 24 P04 | ~10min | 2 tasks | 5 files |
+| Phase 25 P01 | ~9min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 24]: 24-02: 隐私加固（偏离 PLAN『截断 N 字符』措辞 Rule 2）——_build_llm_feature 只送「文件名+扩展名+has_sensitive_keyword 布尔」，sample_text 正文仅本地计算布尔信号绝不进请求；real_secret 强命中排除出候选；新增 _redact_llm_reason 对 LLM 理由做高熵串+_SECRET_PATTERNS 替换 [已脱敏] 服务端兜底（T-24-06 纵深防御）。命中产 likely_sensitive/detector=llm 经统一 _upsert_suggestion 入库，仅 pending 绝不建规则/删数据（T-24-08）
 - [Phase 24]: 24-03: 敏感建议 REST API 走独立 APIView + 显式 `<uuid:repository_id>/sensitive-suggestions/`(list) + `.../{suggestion_id}/action/`(action) 路由（对齐 Phase 22 exclusions idiom）；SensitiveFileSuggestionSerializer 全字段 read_only（状态仅经专用 action 改，禁直接 PATCH，T-24-09/10）；list 默认仅 pending、?status=all 全量，severity 优先级 Python 侧映射排序（real_secret>likely_sensitive>config_review）+ detected_at desc；accept 用 aget_or_create（唯一约束含 source）实现幂等避免二次 accept 500（T-24-12）→ 建 RepoExclusionRule(source=ai_suggested,rule_type=glob) + 标 accepted + invalidate_matcher_cache；accept 绝不删数据（NEVER silent-delete，response 仅附 cleanup_available 引导，删除仍由 Phase 23 reconcile/cleanup 显式触发 T-24-10）
 - [Phase 24]: 24-04: 前端 sensitiveSuggestionsApi（list/accept/dismiss）+ SensitiveSuggestionsPanel.vue 兑现 EXCL-03 用户可见闭环；real_secret 列表顶部 destructive 横幅 + 行内危险底色双重突出（data-testid=real-secret-alert 供测试稳定定位，T-24-15）；accept 经 useConfirmDialog 二次确认明示「新增排除规则、不会自动删除已索引内容、需在清理面板显式执行」（T-24-14），dismiss 无确认（无破坏性）；accept/dismiss 后 invalidate 自身建议 key + repository-exclusions key 使新建 ai_suggested 规则即时显现于排除面板；前端保序渲染后端已排序结果（不前端重排）；面板 prop 命名 repoId（依 PLAN，区别既有面板 repositoryId）；守护测试以真实 zh-CN.json 作 messages 断言告警/确认措辞防被改空（T-24-13 reason 仅渲染脱敏文本）
+- [Phase 25]: 25-01: ChunkRegistry 行号回填无新 migration（line_start/line_end + chunkreg_line_range_valid 约束已存在于 0003/0004，per D-02）；行号直接取 CodeChunk.start_line/end_line（1-based 闭区间），与同处写入 Qdrant payload start_line/end_line 同源保证两侧一致；ChunkRegistryRow TypedDict 新增 line_start/line_end 键作 _build_points→_bulk_upsert 同源契约（mypy 拦截漏传）
+- [Phase 25]: 25-01: _bulk_upsert_registry_atomic update 判定显式纳入「行号变化」（obj.line_start/line_end != row[...]），避免仅行号位移、hash/路径/index 未变时漏更新（否则 25-02 反查命中错位，T-25-03）；错乱区间（line_end<line_start）由既有 CheckConstraint 拒绝 IntegrityError（T-25-01），indexer 不静默落错；None 行号合法落 NULL（历史/非 AST 回退兼容，不强制回填历史）
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -222,10 +225,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 24 Plan 04 — 前端敏感建议面板，EXCL-03 用户可见闭环）
-Stopped at: 完成 24-04——sensitiveSuggestionsApi 类型化 client（list/accept/dismiss）+ zh-CN sensitive.* 文案 + SensitiveSuggestionsPanel.vue（severity 排序、real_secret 高优先级 destructive 告警、accept 确认明示不自动删/引导清理面板、dismiss 即时更新、脱敏 reason）+ 仓库详情页 #exclusions section 挂载（ExclusionRulesPanel/ReconcilePanel 旁）+ 4 例守护测试全绿；vue-tsc 0 sensitive 错、eslint 0 错；原子提交 f7fbf8434（client+i18n）/ 3bd239566（面板+挂载+测试）。Phase 24 全部 4/4 完成，EXCL-03 闭环达成。
+Last session: 2026-06-15（Phase 25 Plan 01 — ChunkRegistry 行号回填，IDX-02 前半）
+Stopped at: 完成 25-01——ChunkRegistryRow 新增 line_start/line_end（1-based 闭区间，nullable）；_build_points 透传 CodeChunk.start_line/end_line 进 registry_rows（与 Qdrant payload 同源）；_bulk_upsert_registry_atomic create+update 双路径落库，update 判定显式纳入行号变化；复用既有 chunkreg_line_range_valid CheckConstraint 兜底错乱区间，无新 migration（per D-02）。9 例守护测试全绿（13 passed 含模型层），无回归（117 passed），mypy/ruff clean，makemigrations --check No changes。原子提交 19f9d0d4b/e51db7eb5/3614a48cd/cd14492cb。
 Resume file: None
-Next: Phase 25（Commit 历史索引 + 行号反查，IDX-01..02）或 Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——25/26 相对独立可并行
+Next: Phase 25 Plan 02（IDX-02：find_chunk_at service + GET /api/repositories/<id>/chunk-at/，fail-closed 排除——基于本 plan 回填的 line_start/line_end）
 
 ## Operator Next Steps
 
