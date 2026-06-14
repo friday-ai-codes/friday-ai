@@ -21,6 +21,7 @@ from typing import Any
 
 import structlog
 
+from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.retrieval.types import LayerSnapshot
 
 logger = structlog.get_logger(__name__)
@@ -68,7 +69,9 @@ async def search_rag(
         if not query_dense:
             return LayerSnapshot(layer="L3", status="error", error="embedding generation failed")
 
-        query_sparse: dict[str, Any] | None = await sync_to_async(SparseEncoderService.encode)(query)
+        query_sparse: dict[str, Any] | None = await sync_to_async(SparseEncoderService.encode)(
+            query
+        )
         if not query_sparse or not query_sparse.get("indices"):
             query_sparse = None
 
@@ -76,16 +79,35 @@ async def search_rag(
         seen_keys: set[tuple[str, str, int]] = set()
 
         for repo_id in repo_ids:
+            # EXCL-02 单一 chokepoint：按 repo 预取匹配器（每 repo 一次），在收集前剔除被
+            # 排除文件项；构造失败 → 整 repo 结果 fail-closed 不可见（绝不降级泄漏明文）。
+            try:
+                matcher = await build_matcher_for_repo(repo_id)
+            except Exception as e:  # noqa: BLE001 — 构造失败一律 fail-closed
+                logger.warning("rag_search_matcher_build_failed", repo_id=repo_id, error=str(e))
+                log_exclusion_blocked(surface="rag", repository_id=repo_id, rel_path="")
+                continue
             try:
                 results = await BranchAwareSearchService.search(
-                    repo_id, query_dense,
+                    repo_id,
+                    query_dense,
                     query_sparse=query_sparse,
                     branch_name=branch_name,
                     top_k=top_k,
                 )
                 for r in results:
                     payload = r.get("payload", {})
-                    key = (repo_id, payload.get("file_path", ""), payload.get("chunk_index", 0))
+                    file_path = payload.get("file_path", "")
+                    try:
+                        excluded = matcher.is_excluded(file_path)
+                    except Exception:  # noqa: BLE001 — 判定异常 → 丢弃该项（fail-closed）
+                        excluded = True
+                    if excluded:
+                        log_exclusion_blocked(
+                            surface="rag", repository_id=repo_id, rel_path=str(file_path)
+                        )
+                        continue
+                    key = (repo_id, file_path, payload.get("chunk_index", 0))
                     if key not in seen_keys:
                         seen_keys.add(key)
                         all_results.append({**r, "repository_id": repo_id})
@@ -94,8 +116,10 @@ async def search_rag(
 
         all_results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         return LayerSnapshot(
-            layer="L3", status="ok",
-            result_count=len(all_results), items=all_results[:top_k],
+            layer="L3",
+            status="ok",
+            result_count=len(all_results),
+            items=all_results[:top_k],
         )
     except Exception as e:
         logger.warning("rag_search_failed", query=query[:100], error=str(e))
