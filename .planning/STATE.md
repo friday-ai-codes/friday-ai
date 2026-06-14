@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: "完成 25-03——commit 历史索引（IDX-01）：Repository.commit_index_boundary_sha 字段 + migration 0035（nullable 无回填，独立于代码 chunk 边界 last_indexed_commit_sha）；services/commit_index.py::index_commits 摄取服务——git log（增量 boundary..HEAD / 首轮 --max-count=500 bounded，boundary 失效回退）→ git diff-tree 取变更文件 → Phase 22 单一匹配器 fail-closed 剔除被排除文件（T-25-08）→ 构建文档（message+author+committed_at+过滤后路径摘要，truncate_diff_lines 截断，不内联 diff 正文）→ embedding → 构建 hybrid/dense point（确定性 uuid5(ns, repo_id:sha) id + 合成 file_path=.friday/commits/{sha} 保 dedup，T-25-10）→ upsert kind=commit → upsert 成功才推进 boundary 到 HEAD（绝不丢 commit，T-25-09）。7 例守护测试全绿（真实临时 git 仓库驱动），makemigrations clean、mypy/ruff clean。原子提交 5a69406c7(feat 字段+migration)/6aa4d3dc1(feat 服务+测试)。"
-last_updated: "2026-06-15T07:20:00.000Z"
-last_activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-01）
+stopped_at: "完成 25-04——commit 索引挂接索引流程（IDX-01 闭环）：services/indexer.py 新增模块级 _run_commit_index（best-effort try/except 吞异常 warning，绝不阻断索引 success，T-25-12），照搬 _run_sensitive_detection fail-safe 范式；clone_and_index_repository 仅 base 路径（if not branch:）在 _run_sensitive_detection 之后、finally rmtree(temp_dir) 之前 await _run_commit_index（读真实克隆 git 历史，沿用 Phase 24 BL-01 时序，全量+增量均流经，首轮/增量区分由 index_commits 内部 commit_index_boundary_sha 处理）。端到端守护测试 7 例全绿：dispatch 失败不冒泡 + rmtree 前完成；search_rag 用关键字/author 召回 kind=commit 文档、不相关 query 不召回；召回文档摘要含普通文件不含 .env/*.pem（fail-closed，T-25-13）；增量二次同 HEAD 0 条、新增 +1（T-25-14）。回归 test_retrieval_exclusion + test_commit_index 16 例绿，mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。"
+last_updated: "2026-06-15T07:30:00.000Z"
+last_activity: 2026-06-15 -- 完成 Phase 25 Plan 04（commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 18
   completed_plans: 18
-  percent: 72
+  percent: 80
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 25 (Commit 历史索引 + 行号反查) — EXECUTING
-Plan: 4 of 4 (25-01, 25-02, 25-03 完成)
-Status: Executing Phase 25
-Last activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-01）
+Phase: 25 (Commit 历史索引 + 行号反查) — COMPLETE (4/4)
+Plan: 4 of 4 完成（25-01, 25-02, 25-03, 25-04）
+Status: Phase 25 完成；下一步 Phase 26（多仓凭证统一 + MCP 多仓参数）
+Last activity: 2026-06-15 -- 完成 Phase 25 Plan 04（commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
 
 ## Milestone Overview (v0.5.0)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-0
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
-| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (3/4 done) |
+| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | All plans done (4/4) |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
 **Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
@@ -96,6 +96,7 @@ Last activity: 2026-06-15 -- 完成 Phase 25 Plan 03（commit 历史索引 IDX-0
 | Phase 25 P01 | ~9min | 2 tasks | 5 files |
 | Phase 25 P02 | ~5min | 2 tasks | 5 files |
 | Phase 25 P03 | ~13min | 2 tasks | 4 files |
+| Phase 25 P04 | ~10min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 25]: 25-03: commit 历史索引专用边界 Repository.commit_index_boundary_sha（migration 0035 AddField，nullable 无回填）**独立于** last_indexed_commit_sha（代码 chunk 边界），绝不复用避免口径串味；index_commits 仅 upsert 成功才推进 boundary 到 HEAD（无新 commit/embedding 缺失/upsert 失败均不推进，绝不丢 commit，T-25-09）
 - [Phase 25]: 25-03: commit 文档落主 collection + payload kind=commit（与代码 chunk 同检索面经既有 search_rag 召回、可区分/过滤，无需改检索）；确定性 uuid5(ns, repo_id:sha) point id + 合成 file_path=.friday/commits/{sha}+chunk_index=0 保既有去重 key 唯一且不被排除规则误命中（T-25-10）；变更摘要复用 Phase 22 build_matcher_for_repo/is_excluded fail-closed 剔除被排除文件、只含路径不内联 diff 正文（T-25-08）
 - [Phase 25]: 25-03: 增量 git log boundary..HEAD，boundary 失效（force-push/rebase 报错）回退首轮 --max-count=COMMIT_INDEX_FIRST_RUN_CAP(500)+--no-merges bounded 全量（T-25-11）；--format 用 git 占位符 %x00(字段)/%x1e(记录) 而非内嵌真实 NUL（子进程参数不可含 NUL，否则 ValueError: embedded null byte），解析侧按实际字节切分；git diff-tree 加 --root 纳入根 commit；hybrid 判定/sparse 生成复用 IndexerService._is_hybrid_enabled/_generate_sparse_vectors 不另写
+- [Phase 25]: 25-04: commit 索引唯一挂接点 services.indexer._run_commit_index——仅 base 路径（if not branch:）在 _run_sensitive_detection 之后、finally rmtree(temp_dir) 之前 await（沿用 Phase 24 BL-01 时序：index_commits 需读真实克隆 git 历史，绝不后台派发去遍历即将删除的目录）；全量+增量均流经此函数，首轮/增量区分由 index_commits 内部 commit_index_boundary_sha 处理；整段 try/except 吞异常仅 warning commit_index_dispatch_failed，commit 索引失败/缺供应商绝不阻断 return index_result 的 success 终态（best-effort，对齐 _run_sensitive_detection / T-25-12）
+- [Phase 25]: 25-04: 召回端到端守护无真实 Qdrant——捕获 index_commits upsert 的 commit point，mock BranchAwareSearchService.search 对其按 query substring 命中 content 返回，模拟语义召回；build_matcher_for_repo 用真实实现（仅 builtin 全局默认）真正经过 search_rag 排除/去重 chokepoint，验证合成 file_path=.friday/commits/{sha} 不被排除可召回、被排除文件不泄漏（T-25-13）、增量只新增（T-25-14）
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -232,10 +235,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 25 Plan 03 — commit 历史索引，IDX-01）
-Stopped at: 完成 25-03——Repository.commit_index_boundary_sha 字段 + migration 0035（nullable 无回填，独立于 last_indexed_commit_sha）+ services/commit_index.py::index_commits 摄取服务（git log 增量 boundary..HEAD / 首轮 bounded → 排除过滤截断 → embedding → upsert kind=commit 确定性 uuid5 point → upsert 成功才推进边界）。7 例守护测试全绿（真实临时 git 仓库），makemigrations clean、mypy/ruff clean。原子提交 5a69406c7(feat 字段+migration)/6aa4d3dc1(feat 服务+测试)。
+Last session: 2026-06-15（Phase 25 Plan 04 — commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
+Stopped at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
 Resume file: None
-Next: Phase 25 Plan 04（IDX-01 Wave 2：commit 索引挂接全量/增量索引流程 + search_rag 召回端到端守护）
+Next: Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——或 /gsd-complete-milestone 收口 v0.5.0 前再评估 26 范围
 
 ## Operator Next Steps
 
