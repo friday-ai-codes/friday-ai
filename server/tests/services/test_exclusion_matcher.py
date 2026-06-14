@@ -70,6 +70,21 @@ class TestGlobRule:
         assert m.is_excluded("certs/x.pem") is True
         assert m.is_excluded("certs/x.txt") is False
 
+    def test_bare_glob_matches_basename_in_any_dir(self) -> None:
+        # BL-01：无路径分隔符的 glob 按 basename 命中任意子目录（不止仓库根）。
+        m = ExclusionMatcher([ExclusionRuleSpec(pattern=".env", rule_type="glob")])
+        assert m.is_excluded(".env") is True
+        assert m.is_excluded("server/.env") is True
+        assert m.is_excluded("web/.env") is True
+        # 仍不误伤同名前缀文件
+        assert m.is_excluded("server/.env.example") is False
+
+    def test_glob_with_slash_keeps_path_semantics(self) -> None:
+        # 含分隔符的 glob 仍按相对路径语义，不做 basename 兜底。
+        m = ExclusionMatcher([ExclusionRuleSpec(pattern="config/*.env", rule_type="glob")])
+        assert m.is_excluded("config/app.env") is True
+        assert m.is_excluded("other/app.env") is False
+
 
 class TestRegexRule:
     def test_fullmatch(self) -> None:
@@ -112,6 +127,16 @@ class TestBuiltinDefaults:
         assert m.is_excluded(".env") is True
         assert m.is_excluded("node_modules/lib/index.js") is True
         assert m.is_excluded("src/main.py") is False
+
+    def test_builtin_matcher_blocks_subdir_secrets(self) -> None:
+        # BL-01：子目录密钥（server/.env、web/.env、子目录私钥）必须被内置默认排除。
+        m = ExclusionMatcher(BUILTIN_GLOBAL_DEFAULTS)
+        assert m.is_excluded("server/.env") is True
+        assert m.is_excluded("web/.env") is True
+        assert m.is_excluded("config/.env.production") is True
+        assert m.is_excluded("config/id_rsa") is True
+        assert m.is_excluded("a/b/id_ed25519") is True
+        assert m.is_excluded("deploy/keys/server.pem") is True
 
 
 class TestBuildMatcherForRepo:
