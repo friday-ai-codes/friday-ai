@@ -167,8 +167,11 @@ class ExclusionMatcher:
             return True
 
 
-def _load_specs_from_db(repository_id: str) -> list[ExclusionRuleSpec]:
+def _resolve_effective_specs(repository_id: str) -> list[ExclusionRuleSpec]:
     """同步加载有效规则集合：builtin ∪ 全局设置 JSON ∪ per-repo，应用 global override。
+
+    **排除判定的单一真相合并**：匹配器（``build_matcher_for_repo``）与容器下传序列化
+    （``serialize_rules_for_repo``）共用本函数，避免两份合并逻辑漂移。
 
     经 ``sync_to_async`` 在异步上下文调用。``source="global" + enabled=False`` 的
     per-repo 行表示「关闭某条全局默认」的 override 标记，据此从全局集合剔除同 pattern 项。
@@ -218,6 +221,33 @@ def _load_specs_from_db(repository_id: str) -> list[ExclusionRuleSpec]:
             )
         )
     return effective
+
+
+# 向后兼容别名：既有调用点 / 测试 patch 仍用 ``_load_specs_from_db`` 这个名字，
+# 它与 ``_resolve_effective_specs`` 指向同一实现（单一真相合并）。
+_load_specs_from_db = _resolve_effective_specs
+
+
+async def serialize_rules_for_repo(repository_id: str) -> list[dict[str, str]]:
+    """导出某仓库的有效排除规则（可 JSON 序列化），供编码容器下传过滤。
+
+    返回合并后的有效规则（builtin ∪ 全局设置 ∪ per-repo，已应用 global override），
+    每项 ``{"pattern", "rule_type"}``，与匹配器使用的有效规则集同源
+    （``_resolve_effective_specs``），避免双份真相。
+
+    **绝不返回空列表**：即便解析异常或无任何配置，也回退到 ``BUILTIN_GLOBAL_DEFAULTS``。
+    容器面默认 fail-closed —— 不下传 = 容器内不过滤，被排除文件对 agent 裸奔（T-22-14）。
+    """
+    try:
+        specs = await sync_to_async(_resolve_effective_specs)(repository_id)
+    except Exception:  # noqa: BLE001 — 合并/DB 异常也须给出内置默认（fail-closed，不裸奔）
+        logger.warning("exclusion.serialize_failed", repository_id=str(repository_id))
+        specs = list(BUILTIN_GLOBAL_DEFAULTS)
+
+    rules = [{"pattern": s.pattern, "rule_type": s.rule_type} for s in specs if s.enabled]
+    if not rules:
+        rules = [{"pattern": s.pattern, "rule_type": s.rule_type} for s in BUILTIN_GLOBAL_DEFAULTS]
+    return rules
 
 
 async def build_matcher_for_repo(repository_id: str) -> ExclusionMatcher:

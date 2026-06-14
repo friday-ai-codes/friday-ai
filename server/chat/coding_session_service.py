@@ -195,6 +195,16 @@ async def build_dispatch_metadata(
         ensure_ascii=False,
     )
 
+    # 排除规则下传（Phase 22-04 / EXCL-02 容器读取面，T-22-13/14）：编码容器内 agent
+    # 直接读真实工作树，必须在容器侧 clone 后按规则物理删除被排除文件。这里无条件下传
+    # 有效规则（即便仅 builtin），不下传 = 容器面裸奔。仅下传规则模式，不含任何凭证。
+    from services.exclusion import serialize_rules_for_repo
+
+    exclude_rules = await serialize_rules_for_repo(str(repository.id))
+    env_metadata["env_FRIDAY_TASK_EXCLUDE_PATTERNS"] = json.dumps(
+        exclude_rules, ensure_ascii=False
+    )
+
     return env_metadata, repo_url
 
 
