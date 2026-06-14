@@ -136,8 +136,6 @@ async def test_reconcile_degraded_when_matcher_build_fails(
 
 async def test_run_cleanup_normal_purges_and_reconcile_zeroes(repository: Any) -> None:
     """普通清理删净差异文件四面派生数据，写 CleanupRun，且对账归零（EXCL-04）。"""
-    from asgiref.sync import sync_to_async
-
     from code_relations.models import ChunkRegistry
     from repositories.models import CleanupRun, FileIndex
     from services.exclusion import invalidate_matcher_cache
@@ -211,8 +209,6 @@ async def test_sensitive_mode_missing_module_records_failure(
 ) -> None:
     """mode=sensitive 但敏感模块未就绪 → failures + CleanupRun.error，普通清理结果不受损。"""
     import sys
-
-    from asgiref.sync import sync_to_async
 
     from repositories.models import CleanupRun, FileIndex
     from services.purge_reconcile import run_cleanup

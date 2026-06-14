@@ -792,6 +792,77 @@ class RepoExclusionRule(models.Model):
         return f"{self.repository_id}:{self.rule_type}:{self.pattern} ({self.source})"
 
 
+class CleanupRun(models.Model):
+    """单次清理运行的持久化记录（Phase 23 Plan 02，W1/W2）。
+
+    清理在后台异步执行（D-04），API 立即返回 ``run_id``；其结果——尤其敏感清理「哪些
+    操作记录面已清 / 未清(unscrubbed) + caveat」——必须能回流前端，故每次清理落一条
+    ``CleanupRun``，状态查询端点据此如实展示进度/结果（不靠静态文案）。
+
+    ``sensitive`` 存 23-03 ``purge_sensitive_planes`` 返回 dict（各面计数 + unscrubbed +
+    caveat）；普通模式恒为 ``None``。``(repository, -started_at)`` 索引供「取最近一次」。
+    """
+
+    class Mode(models.TextChoices):
+        """清理模式：普通（仅派生索引面）/ 敏感（额外清操作记录面，23-03）。"""
+
+        NORMAL = "normal", "普通清理"
+        SENSITIVE = "sensitive", "敏感清理"
+
+    class Status(models.TextChoices):
+        """运行状态：进行中 / 完成 / 失败。"""
+
+        RUNNING = "running", "进行中"
+        COMPLETED = "completed", "已完成"
+        FAILED = "failed", "失败"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="cleanup_runs",
+    )
+    mode = models.CharField(
+        max_length=16,
+        choices=Mode.choices,
+        default=Mode.NORMAL,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.RUNNING,
+    )
+    match_count = models.IntegerField(default=0, help_text="本次清理命中（差异）文件数")
+    failures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="逐文件/逐面失败标记列表（best-effort，不阻断其余）",
+    )
+    sensitive = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="敏感清理结果 dict（各面计数 + unscrubbed + caveat），普通模式为 null",
+    )
+    error = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "cleanup_runs"
+        verbose_name = "清理运行记录"
+        verbose_name_plural = "清理运行记录"
+        indexes = [
+            models.Index(
+                fields=["repository", "-started_at"],
+                name="idx_cleanup_repo_started",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"CleanupRun({self.repository_id}, {self.mode}, {self.status})"
+
+
 class BranchFileIndex(models.Model):
     """分支内文件级变更记录——追踪 overlay 中每个文件的变更类型。"""
 
