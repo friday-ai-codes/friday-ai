@@ -38,6 +38,7 @@ from .models import (
     RepoExclusionRule,
     Repository,
     RepositoryBranchIndex,
+    SensitiveFileSuggestion,
     TriggerType,
 )
 from .serializers import (
@@ -49,6 +50,7 @@ from .serializers import (
     RepositoryCreateSerializer,
     RepositorySerializer,
     RepositoryWithSpacesSerializer,
+    SensitiveFileSuggestionSerializer,
 )
 
 logger = structlog.get_logger(__name__)
@@ -1111,6 +1113,126 @@ class RepositoryExclusionRuleDetailView(APIView):
         await rule.adelete()
         invalidate_matcher_cache(str(repository_id))
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# 严重级别排序权重：real_secret 优先 > likely_sensitive > config_review（DOMAIN §9 D-02）。
+_SENSITIVE_SEVERITY_ORDER = {
+    SensitiveFileSuggestion.Severity.REAL_SECRET: 0,
+    SensitiveFileSuggestion.Severity.LIKELY_SENSITIVE: 1,
+    SensitiveFileSuggestion.Severity.CONFIG_REVIEW: 2,
+}
+
+
+class RepositorySensitiveSuggestionsView(APIView):
+    """列出某仓库的 AI 敏感文件建议（Plan 24-03，EXCL-03）。
+
+    GET /api/repositories/{id}/sensitive-suggestions/?status=pending|accepted|dismissed|all
+        -> {suggestions: [SensitiveFileSuggestionSerializer ...]}
+        默认仅返回 ``status=pending`` 的建议；``?status=all`` 返回全部。
+        排序：severity real_secret > likely_sensitive > config_review，同级按
+        detected_at desc（最新优先）。仅以 repository_id 限定查询，不泄漏越仓建议
+        （T-24-09）。建议为只读视图，状态变更走专用 action 端点（T-24-10）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, repository_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        status_filter = request.query_params.get("status", "pending")
+        qs = SensitiveFileSuggestion.objects.filter(repository_id=repository_id)
+        if status_filter != "all":
+            qs = qs.filter(status=status_filter)
+
+        rows = [row async for row in qs]
+        # severity 优先 + detected_at desc：Python 侧稳定排序（建议规模有限，无需 DB 注解）。
+        rows.sort(
+            key=lambda r: (
+                _SENSITIVE_SEVERITY_ORDER.get(r.severity, 99),
+                -(r.detected_at.timestamp() if r.detected_at else 0),
+            )
+        )
+
+        suggestions = await sync_to_async(
+            lambda: SensitiveFileSuggestionSerializer(rows, many=True).data
+        )()
+        return Response({"suggestions": suggestions})
+
+
+class RepositorySensitiveSuggestionActionView(APIView):
+    """接受 / 忽略单条敏感文件建议（Plan 24-03，EXCL-03，D-03）。
+
+    POST /api/repositories/{id}/sensitive-suggestions/{suggestion_id}/action/
+        body: {action: "accept" | "dismiss"}
+
+    - ``accept``：幂等创建 ``RepoExclusionRule(source=ai_suggested, rule_type=glob,
+      pattern=suggestion.path)`` 并把建议标 ``accepted``，随后 ``invalidate_matcher_cache``
+      使各读取面即时生效。**绝不**在此路径触发任何删除 / 清理——已索引/派生数据的删除
+      仍由既有 Phase 23 reconcile/cleanup 由用户显式发起（NEVER silent-delete，T-24-10）。
+      重复 accept 不报错（``aget_or_create`` 幂等，T-24-12）。
+    - ``dismiss``：仅置建议 ``status=dismissed``，不建规则、不删数据。
+    - 越仓 / 不存在的 suggestion_id → 404（不泄漏存在性，T-24-09）；非法 action → 400。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request, repository_id, suggestion_id):
+        try:
+            await Repository.objects.aget(id=repository_id, is_deleted=False)
+        except Repository.DoesNotExist:
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        action_name = (request.data.get("action") or "").strip().lower()
+        if action_name not in ("accept", "dismiss"):
+            return Response(
+                {"detail": "action 必须为 accept 或 dismiss"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        suggestion = await SensitiveFileSuggestion.objects.filter(
+            id=suggestion_id, repository_id=repository_id
+        ).afirst()
+        if suggestion is None:
+            return Response({"detail": "敏感文件建议不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        if action_name == "dismiss":
+            suggestion.status = SensitiveFileSuggestion.Status.DISMISSED
+            await suggestion.asave(update_fields=["status", "updated_at"])
+            out = await sync_to_async(
+                lambda: SensitiveFileSuggestionSerializer(suggestion).data
+            )()
+            return Response({"suggestion": out})
+
+        # accept：幂等建 ai_suggested 排除规则（绝不删数据）
+        rule, _created = await RepoExclusionRule.objects.aget_or_create(
+            repository_id=repository_id,
+            rule_type=RepoExclusionRule.RuleType.GLOB,
+            pattern=suggestion.path,
+            source=RepoExclusionRule.Source.AI_SUGGESTED,
+            defaults={"enabled": True},
+        )
+        suggestion.status = SensitiveFileSuggestion.Status.ACCEPTED
+        await suggestion.asave(update_fields=["status", "updated_at"])
+
+        # 规则变更后失效匹配器缓存，使各读取面即时读到新规则（T-22-18）
+        invalidate_matcher_cache(str(repository_id))
+
+        suggestion_out = await sync_to_async(
+            lambda: SensitiveFileSuggestionSerializer(suggestion).data
+        )()
+        rule_out = await sync_to_async(lambda: RepoExclusionRuleSerializer(rule).data)()
+        return Response(
+            {
+                "suggestion": suggestion_out,
+                "rule": rule_out,
+                # 删除已索引/派生数据由既有 reconcile/cleanup 显式发起，前端可据此引导，
+                # 但此 accept 路径**不**自动派发任何清理（NEVER silent-delete）。
+                "cleanup_available": True,
+            }
+        )
 
 
 class RepositoryReconcileView(APIView):
