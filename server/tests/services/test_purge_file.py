@@ -240,6 +240,44 @@ async def test_purge_file_never_indexed_no_error(repository: Any) -> None:
     assert not result.failures
 
 
+def test_delete_by_file_path_missing_collection_is_idempotent_noop() -> None:
+    """ME-01：collection 不存在（404）视为幂等 no-op 返回 True，不误报删除失败——
+    否则对从未索引/已清净的仓库重复 purge 会把整个 CleanupRun 置 failed。"""
+    from unittest.mock import MagicMock
+
+    from qdrant_client.http.exceptions import UnexpectedResponse
+
+    from services.qdrant_service import QdrantService
+
+    fake_client = MagicMock()
+    fake_client.delete.side_effect = UnexpectedResponse(
+        404, "Not Found", b"Not found: Collection `repo_x` doesn't exist!", None
+    )
+
+    with patch.object(QdrantService, "get_client", return_value=fake_client):
+        assert QdrantService.delete_by_file_path("repo_x", "src/leak.py") is True
+        assert (
+            QdrantService.delete_by_payload_field("overlay_x", "file_path", "src/leak.py") is True
+        )
+
+
+def test_delete_by_file_path_real_failure_still_reports() -> None:
+    """对照：非 collection-not-found 的 UnexpectedResponse 仍如实返回 False（不掩盖真实失败）。"""
+    from unittest.mock import MagicMock
+
+    from qdrant_client.http.exceptions import UnexpectedResponse
+
+    from services.qdrant_service import QdrantService
+
+    fake_client = MagicMock()
+    fake_client.delete.side_effect = UnexpectedResponse(
+        500, "Internal Server Error", b"boom", None
+    )
+
+    with patch.object(QdrantService, "get_client", return_value=fake_client):
+        assert QdrantService.delete_by_file_path("repo_x", "src/leak.py") is False
+
+
 async def test_incremental_delete_path_converges_on_purge_file(
     repository: Any, tmp_path: Any
 ) -> None:

@@ -706,9 +706,25 @@ class QdrantService:
                 "error": str(e),
             }
 
+    @staticmethod
+    def _is_collection_not_found(exc: UnexpectedResponse) -> bool:
+        """判定 UnexpectedResponse 是否为「collection 不存在」（404）。
+
+        删除路径据此把「collection 不存在」识别为幂等 no-op（待删数据本就不存在），
+        而非真实删除失败——否则对「从未索引 / 已清净」的仓库重复 purge 会误报失败
+        （ME-01：违反 ``purge_file`` 幂等契约）。
+        """
+        if getattr(exc, "status_code", None) == 404:
+            return True
+        text = str(exc).lower()
+        return "doesn't exist" in text or "not found" in text or "not exist" in text
+
     @classmethod
     def delete_by_file_path(cls, repository_id: str, file_path: str) -> bool:
-        """Delete all vectors for a specific file path."""
+        """Delete all vectors for a specific file path.
+
+        幂等语义（ME-01）：collection 不存在视为成功 no-op（无残留可删），不计删除失败。
+        """
         client = cls.get_client()
         collection_name = cls.get_collection_name(repository_id)
 
@@ -728,6 +744,13 @@ class QdrantService:
             )
             return True
         except UnexpectedResponse as e:
+            if cls._is_collection_not_found(e):
+                logger.info(
+                    "delete_by_file_path_collection_absent",
+                    collection_name=collection_name,
+                    file_path=file_path,
+                )
+                return True  # 幂等 no-op：collection 不存在即无残留可删
             logger.error("delete_by_file_path_failed", error=str(e), file_path=file_path)
             return False
 
@@ -1103,6 +1126,13 @@ class QdrantService:
             )
             return True
         except UnexpectedResponse as e:
+            if cls._is_collection_not_found(e):
+                logger.info(
+                    "delete_by_payload_field_collection_absent",
+                    collection_name=collection_name,
+                    field=field,
+                )
+                return True  # 幂等 no-op：collection 不存在即无残留可删（ME-01）
             logger.warning(
                 "delete_by_payload_field_failed",
                 collection_name=collection_name,
