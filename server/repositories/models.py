@@ -218,6 +218,16 @@ class Repository(models.Model):
     )
     # 增量索引与自动触发字段
     last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
+    # commit 历史索引（IDX-01）专用增量边界，**独立于上方 last_indexed_commit_sha**
+    # （后者是代码 chunk 索引边界，由 _mark_indexed_after_vector 写入）。两者口径不同，
+    # 切勿混用：本字段记录 commit 历史已索引推进到的 commit SHA，NULL 表示尚未索引过
+    # 任何 commit 历史。index_commits 仅在 upsert 成功后才推进本字段。
+    commit_index_boundary_sha = models.CharField(
+        max_length=40,
+        blank=True,
+        null=True,
+        help_text="commit 历史索引已推进到的 commit SHA（增量边界）；NULL=未索引过 commit 历史",
+    )
     auto_index_enabled = models.BooleanField(default=False)
     # implementation-01：per-repo 自动构图开关，默认 True 保向后兼容。
     # indexer 主流程会在 _extract_and_write_graph 调用前以
