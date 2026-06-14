@@ -314,6 +314,15 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
         return {"indexed": 0, "head": head_sha, "boundary_from": boundary}
 
     embeddings = await EmbeddingService.generate_embeddings_batch(docs)
+    if len(embeddings) != len(docs):
+        # LO-01：供应商异常导致 embedding 列表短于 docs，zip 会静默丢尾 → point 数 < 应索引数，
+        # 经下方 succeeded==expected 判定自动「不推进边界」，下次整段重试（uuid5 去重）。
+        logger.warning(
+            "commit_index_embedding_count_mismatch",
+            repository_id=str(repository_id),
+            docs=len(docs),
+            embeddings=len(embeddings),
+        )
 
     hybrid = await _collection_is_hybrid()
     sparse_vectors: list[dict] | None = None
@@ -348,7 +357,18 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
             }
         )
 
+    # HI-01：本轮应索引（过滤 --no-merges 后解析出的）commit 数 vs 实际成功入库的 point 数。
+    # 任一 commit 在「逐条构建 / embedding / zip」环节被跳过都会使 succeeded < expected。
+    expected = len(commits)
+    succeeded = len(points)
+
     if not points:
+        # 全部 commit 都被跳过：不 upsert、不推进边界，下次整段重试（uuid5 去重，绝不丢 commit）。
+        logger.warning(
+            "commit_index_all_skipped_no_advance",
+            repository_id=str(repository_id),
+            expected=expected,
+        )
         return {"indexed": 0, "head": head_sha, "boundary_from": boundary}
 
     ok = await sync_to_async(QdrantService.upsert_vectors)(repository_id, points)
@@ -361,12 +381,26 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
         )
         return {"indexed": 0, "head": head_sha, "boundary_from": boundary}
 
+    if succeeded != expected:
+        # HI-01：有 commit 被跳过/失败 → 绝不把边界推到 HEAD（否则被跳过的 commit 落在
+        # (boundary, HEAD] 内永不重试 → 静默丢 commit）。保持边界，下次整段 boundary..HEAD
+        # 重试，确定性 uuid5 point id 保证已成功的不重复（T-25-09 advance-only-on-success）。
+        logger.warning(
+            "commit_index_partial_skip_no_advance",
+            repository_id=str(repository_id),
+            expected=expected,
+            succeeded=succeeded,
+            head=head_sha,
+            boundary_from=boundary,
+        )
+        return {"indexed": succeeded, "head": head_sha, "boundary_from": boundary}
+
     await Repository.objects.filter(id=repository_id).aupdate(commit_index_boundary_sha=head_sha)
     logger.info(
         "commit_index_done",
         repository_id=str(repository_id),
-        indexed=len(points),
+        indexed=succeeded,
         head=head_sha,
         boundary_from=boundary,
     )
-    return {"indexed": len(points), "head": head_sha, "boundary_from": boundary}
+    return {"indexed": succeeded, "head": head_sha, "boundary_from": boundary}

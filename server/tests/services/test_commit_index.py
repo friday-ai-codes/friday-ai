@@ -260,6 +260,44 @@ async def test_message_with_separator_bytes_parsed_intact(repository, tmp_path) 
     assert "trailingtoken" in payload["content"]
 
 
+async def test_partial_skip_does_not_advance_boundary(repository, tmp_path) -> None:
+    """部分 commit 被跳过（embedding None）→ 不推进边界，下次整段重试不丢 commit（HI-01）。"""
+    repo = _init_repo(tmp_path)
+    _commit(repo, {"a.py": "1\n"}, "older commit")
+    head = _commit(repo, {"b.py": "2\n"}, "newer commit")
+
+    captured: list = []
+
+    def _capture(repository_id, points):  # noqa: ARG001
+        captured.extend(points)
+        return True
+
+    # git log 新→旧：docs[0]=newer, docs[1]=older。令第 2 个（older）embedding 为 None → 被跳过。
+    bad_embeddings = AsyncMock(
+        side_effect=lambda texts, **kw: [[0.1, 0.2] if i == 0 else None for i in range(len(texts))]
+    )
+    with (
+        patch.object(
+            commit_index.EmbeddingService, "generate_embeddings_batch", new=bad_embeddings
+        ),
+        patch.object(commit_index, "_collection_is_hybrid", new=AsyncMock(return_value=False)),
+        patch.object(
+            commit_index.QdrantService, "upsert_vectors", new=MagicMock(side_effect=_capture)
+        ),
+    ):
+        result = await index_commits(str(repository.id), str(repo))
+
+    # 仅 newer 成功入库，但因有 commit 被跳过 → 边界绝不推进（避免 older 永久丢失）
+    assert result["indexed"] == 1
+    assert await _boundary(repository) is None
+
+    # 下次整段重试：embedding 全正常 → 两个 commit 都成功，边界这才推进到 HEAD
+    points2: list = []
+    r2 = await _run(repository, repo, points2)
+    assert r2["indexed"] == 2
+    assert await _boundary(repository) == head
+
+
 async def test_empty_repo_returns_zero(repository, tmp_path) -> None:
     repo = _init_repo(tmp_path)  # 无任何 commit
 
