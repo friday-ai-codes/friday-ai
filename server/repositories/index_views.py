@@ -36,6 +36,7 @@ class ServerSentEventRenderer(BaseRenderer):
         # 实际响应由 StreamingHttpResponse 直出，render() 不会被调用
         return data
 
+
 from repositories.models import (
     FileIndex,
     GraphBuildHistory,
@@ -82,9 +83,7 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
     files_processed = repository.indexed_files_processed or 0
 
     if total_chunks > 0:
-        embedding_pct = (
-            (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
-        )
+        embedding_pct = (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
         write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
         overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
     elif files_total > 0:
@@ -119,6 +118,7 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
         "indexed_files_total": files_total,
     }
 
+
 # NOTE: 历史上这里维护一个 _index_tasks set 配合 asyncio.create_task
 # 防 GC，但这种做法把后台 task 绑死在请求生命周期 → asgiref CurrentThreadExecutor
 # 关闭后 ORM 全炸。改走 services.background_runner 的常驻 worker loop。
@@ -139,7 +139,10 @@ _acquire_index_lock_async = sync_to_async(_acquire_index_lock)
 
 
 def _schedule_index(
-    repository_id: str, history_id: str, *, branch: str | None = None,
+    repository_id: str,
+    history_id: str,
+    *,
+    branch: str | None = None,
 ) -> Any:
     """把索引任务调度到独立 worker loop。
 
@@ -149,7 +152,9 @@ def _schedule_index(
     """
     return run_in_background(
         lambda: clone_and_index_repository(
-            repository_id, history_id=history_id, branch=branch,
+            repository_id,
+            history_id=history_id,
+            branch=branch,
         ),
         name=f"index-{repository_id}",
     )
@@ -435,9 +440,7 @@ class GraphRagStatusView(APIView):
             {
                 "edge_count": edge_count,
                 "status": graph_status,
-                "last_synced_at": (
-                    last_synced_at.isoformat() if last_synced_at else None
-                ),
+                "last_synced_at": (last_synced_at.isoformat() if last_synced_at else None),
             }
         )
 
@@ -491,9 +494,7 @@ class IndexStatusView(APIView):
 
         # 非索引中 → Qdrant 是唯一事实来源（Qdrant 不可用时安全降级，避免 500）
         try:
-            health = await sync_to_async(QdrantService.check_collection_health)(
-                str(repository_id)
-            )
+            health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
         except Exception as exc:
             logger.warning(
                 "index_status_qdrant_unavailable",
@@ -518,9 +519,7 @@ class IndexStatusView(APIView):
                 }
             )
             return Response(serializer.data)
-        qdrant_has_data = (
-            health.get("collection_exists") and health.get("points_count", 0) > 0
-        )
+        qdrant_has_data = health.get("collection_exists") and health.get("points_count", 0) > 0
 
         if qdrant_has_data:
             points_count = health.get("points_count", 0)
@@ -549,7 +548,9 @@ class IndexStatusView(APIView):
             {
                 "index_status": actual_status,
                 "last_indexed_at": repository.last_indexed_at,
-                "index_error": repository.index_error if actual_status == IndexStatus.FAILED else None,
+                "index_error": repository.index_error
+                if actual_status == IndexStatus.FAILED
+                else None,
                 "index_total_chunks": points_count,
                 "index_processed_chunks": points_count,
                 "index_write_total": points_count,
@@ -588,10 +589,7 @@ class IndexDeleteView(APIView):
         # （生产经 dispatch 走入）与 WSGIRequest（旧测试用 APIRequestFactory 直
         # 调 view）：前者读 ``query_params``，后者回退 ``GET``。
         query_params = getattr(request, "query_params", None) or request.GET
-        keep_graph = (
-            query_params.get("keep_graph", "").strip().lower()
-            in ("true", "1", "yes")
-        )
+        keep_graph = query_params.get("keep_graph", "").strip().lower() in ("true", "1", "yes")
         report = await cleanup_index(str(repository.id), keep_graph=keep_graph)
         logger.info(
             "index_delete_cleanup_complete",
@@ -707,9 +705,7 @@ class CodeSearchView(APIView):
         hybrid_setting = await SystemSetting.objects.filter(
             key=SettingKeys.HYBRID_SEARCH_ENABLED
         ).afirst()
-        hybrid_enabled = (
-            hybrid_setting.value == "true" if hybrid_setting else True
-        )
+        hybrid_enabled = hybrid_setting.value == "true" if hybrid_setting else True
 
         query_sparse = None
         if hybrid_enabled:
@@ -742,12 +738,45 @@ class CodeSearchView(APIView):
                     reranked_results.append(entry)
             search_results = reranked_results
 
+        # EXCL-02 fail-closed：这是 frontend-reachable 的认证 REST RAG 读取面
+        # （POST /api/repositories/<id>/search/，前端 searchCode 在用），不经统一
+        # search_rag chokepoint，必须在返回 content/file_path 前自挂同一匹配器过滤，
+        # 否则被排除文件明文与路径会原样泄漏。matcher 构造失败 → 整仓库结果不可见
+        # （fail-closed）；单项 file_path 缺失 / 判定异常 → 丢弃该项（fail-closed）。
+        from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
+
+        try:
+            matcher = await build_matcher_for_repo(str(repository_id))
+        except Exception as exc:  # noqa: BLE001 — 构造失败一律 fail-closed（不泄漏存在性）
+            logger.warning(
+                "code_search_matcher_build_failed",
+                repository_id=str(repository_id),
+                error=str(exc),
+            )
+            log_exclusion_blocked(
+                surface="code_search", repository_id=str(repository_id), rel_path=""
+            )
+            return []
+
         results = []
         for r in search_results:
             payload = r["payload"]
+            file_path = payload.get("file_path")
+            try:
+                # file_path 缺失 → is_excluded(None) 归一失败即 fail-closed（返回 True）。
+                excluded = matcher.is_excluded(file_path)
+            except Exception:  # noqa: BLE001 — 判定异常 → 丢弃该项（fail-closed）
+                excluded = True
+            if excluded:
+                log_exclusion_blocked(
+                    surface="code_search",
+                    repository_id=str(repository_id),
+                    rel_path=str(file_path),
+                )
+                continue
             results.append(
                 {
-                    "file_path": payload.get("file_path"),
+                    "file_path": file_path,
                     "score": r["score"],
                     "content": payload.get("content"),
                     "language": payload.get("language"),
@@ -1069,9 +1098,7 @@ class IndexProgressStreamView(APIView):
                 repo_payload = {
                     "index_status": repo.index_status,
                     "last_indexed_at": (
-                        repo.last_indexed_at.isoformat()
-                        if repo.last_indexed_at
-                        else None
+                        repo.last_indexed_at.isoformat() if repo.last_indexed_at else None
                     ),
                     "index_error": repo.index_error,
                     **progress,
@@ -1181,11 +1208,7 @@ async def _build_graph_payload(repo: Repository) -> dict[str, Any]:
 
     files_processed = int(repo.graph_files_processed or 0)
     files_total = int(repo.graph_files_total or 0)
-    percent = (
-        min(100, int(files_processed / files_total * 100))
-        if files_total > 0
-        else 0
-    )
+    percent = min(100, int(files_processed / files_total * 100)) if files_total > 0 else 0
 
     edge_count_so_far = 0
     if latest_any_graph is not None:
@@ -1204,11 +1227,7 @@ async def _build_graph_payload(repo: Repository) -> dict[str, Any]:
     else:
         started_at = None
 
-    error_message = (
-        latest_failed_graph.error_message
-        if latest_failed_graph is not None
-        else ""
-    )
+    error_message = latest_failed_graph.error_message if latest_failed_graph is not None else ""
 
     return {
         "status": repo.graph_build_status,
