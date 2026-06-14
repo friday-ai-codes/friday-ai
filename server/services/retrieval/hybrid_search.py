@@ -43,6 +43,7 @@ from services.code_intel.protocols import (
     BaseCodeProvider,
     GraphCapableProvider,
 )
+from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.retrieval._query_helpers import (
     extract_symbol_keywords,
     format_l3_section,
@@ -121,10 +122,7 @@ def _render_neighbor_line(neighbor: NeighborMetadata) -> str:
         location = f"`{neighbor.file_path}`"
     else:
         location = f"`{neighbor.file_path}:{neighbor.line_start}`"
-    return (
-        f"- {location} ({neighbor.edge_type}, w={neighbor.weight:.2f}): "
-        f"{neighbor.reason}"
-    )
+    return f"- {location} ({neighbor.edge_type}, w={neighbor.weight:.2f}): {neighbor.reason}"
 
 
 def _render_graph_context(
@@ -141,6 +139,7 @@ def _render_graph_context(
     - 全部空 → 返回 ``""``（**不写空 markdown 块**，避免污染 LLM 上下文）
     - 仅渲染非空段
     """
+
     def _filtered_sorted(items: list[NeighborMetadata]) -> list[NeighborMetadata]:
         valid = [n for n in items if n.file_path != "<unknown>"]
         return sorted(valid, key=lambda n: -n.weight)
@@ -169,6 +168,56 @@ def _render_graph_context(
         sections.extend(_render_neighbor_line(n) for n in cr)
         sections.append("")
     return "\n".join(sections).rstrip()
+
+
+async def _build_is_excluded_path(repo_ids: list[str]):
+    """合成跨 repo 的排除判定回调（EXCL-02 图谱邻居 fail-closed 过滤）。
+
+    邻居 metadata 不带 repository_id 归属，故对传入的 repo_ids 逐一取匹配器，
+    ``is_excluded_path(file_path)`` 对任一 repo 命中即剔除（any 命中，fail-closed）。
+    某 repo 匹配器构造失败 → 用 None 占位，判定时一律视为命中（fail-closed，
+    宁可多排不可漏），绝不放行被排除路径。
+    """
+    matchers: list[Any] = []
+    for rid in repo_ids:
+        try:
+            matchers.append(await build_matcher_for_repo(rid))
+        except Exception:  # noqa: BLE001 — 构造失败一律 fail-closed
+            logger.warning("hybrid_search_matcher_build_failed", repo_id=rid)
+            matchers.append(None)
+
+    def _is_excluded(file_path: str) -> bool:
+        for m in matchers:
+            if m is None:
+                return True  # 匹配器缺失 → fail-closed
+            try:
+                if m.is_excluded(file_path):
+                    return True
+            except Exception:  # noqa: BLE001 — 判定异常 → fail-closed
+                return True
+        return False
+
+    return _is_excluded
+
+
+def _filter_excluded_neighbors(
+    neighbors: list[NeighborMetadata],
+    is_excluded_path,
+    *,
+    repo_ids: list[str],
+) -> list[NeighborMetadata]:
+    """剔除命中排除规则的邻居（fail-closed）；命中即 log exclusion.blocked。"""
+    kept: list[NeighborMetadata] = []
+    for n in neighbors:
+        if is_excluded_path(n.file_path):
+            log_exclusion_blocked(
+                surface="rag",
+                repository_id=",".join(repo_ids),
+                rel_path=str(n.file_path),
+            )
+            continue
+        kept.append(n)
+    return kept
 
 
 class HybridSearchService:
@@ -200,8 +249,7 @@ class HybridSearchService:
         """
         if not isinstance(provider, BaseCodeProvider):
             raise TypeError(
-                "provider must implement BaseCodeProvider Protocol; "
-                f"got {type(provider).__name__}",
+                f"provider must implement BaseCodeProvider Protocol; got {type(provider).__name__}",
             )
         self._provider: BaseCodeProvider = provider
 
@@ -312,7 +360,9 @@ class HybridSearchService:
             ),
         )
         results = await asyncio.gather(
-            rag_task, symbol_task, return_exceptions=True,
+            rag_task,
+            symbol_task,
+            return_exceptions=True,
         )
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
         logger.info(
@@ -438,7 +488,10 @@ class HybridSearchService:
         budgets: dict[str, int] = HybridBudget.from_settings().allocate(max_tokens)
 
         rag_snapshot, symbol_results, symbol_failed, wave_0_ms = await self._run_wave_0(
-            query, repo_ids=repo_ids, branch_name=branch_name, top_k=top_k,
+            query,
+            repo_ids=repo_ids,
+            branch_name=branch_name,
+            top_k=top_k,
         )
 
         if rag_snapshot.status != "ok" or not rag_snapshot.items:
@@ -464,9 +517,7 @@ class HybridSearchService:
             )
 
         rag_chunk_ids: set[str] = {
-            str(item.get("id"))
-            for item in rag_snapshot.items
-            if item.get("id")
+            str(item.get("id")) for item in rag_snapshot.items if item.get("id")
         }
 
         hop1_neighbors, hop1_chunk_ids = await self._run_wave_1(rag_snapshot)
@@ -481,9 +532,7 @@ class HybridSearchService:
 
         # --- wave: 跨仓 API 扩散（implementation）---
         # ENABLE_CROSS_REPO_ENRICHMENT 唯一直读点（hybrid_search 模块）。
-        enable_cross: bool = bool(
-            getattr(settings, "ENABLE_CROSS_REPO_ENRICHMENT", True)
-        )
+        enable_cross: bool = bool(getattr(settings, "ENABLE_CROSS_REPO_ENRICHMENT", True))
         if enable_cross:
             logger.info("hybrid_search_wave_started", wave_id=3)
             t3 = time.perf_counter()
@@ -502,15 +551,26 @@ class HybridSearchService:
         else:
             cross_repo_neighbors = []
 
+        # EXCL-02 fail-closed：图谱邻居（hop1/hop2/cross-repo）渲染前剔除被排除 file_path。
+        # 邻居源自 Qdrant/ChunkEdge 残留数据，即便存量未清（Phase 23）读取面也绝不暴露。
+        is_excluded_path = await _build_is_excluded_path(repo_ids)
+        hop1_neighbors = _filter_excluded_neighbors(
+            hop1_neighbors, is_excluded_path, repo_ids=repo_ids
+        )
+        hop2_neighbors = _filter_excluded_neighbors(
+            hop2_neighbors, is_excluded_path, repo_ids=repo_ids
+        )
+        cross_repo_neighbors = _filter_excluded_neighbors(
+            cross_repo_neighbors, is_excluded_path, repo_ids=repo_ids
+        )
+
         graph_context_raw: str = _render_graph_context(
             hop1_neighbors, hop2_neighbors, cross_repo_neighbors
         )
         l3_markdown: str = format_l3_section(rag_snapshot.items)
         rag_section: str = trim_to_budget(l3_markdown, budgets["rag"])
         graph_section: str = (
-            trim_to_budget(graph_context_raw, budgets["graph"])
-            if graph_context_raw
-            else ""
+            trim_to_budget(graph_context_raw, budgets["graph"]) if graph_context_raw else ""
         )
 
         # 无 graph_section 时保 rag_section 原貌（含 trim_to_budget 产出的尾换行），
