@@ -1435,6 +1435,12 @@ class IndexerService:
 
         # 仅索引 ADD / UPDATE 文件
         files_to_index = [d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)]
+        # ME-02：分支 overlay 与全量/增量同口径应用排除过滤，从源头剔除被排除文件，
+        # 避免 `server/.env` 等被排除文件写入 overlay collection（fail-closed）。
+        branch_exclusion_matcher = await build_matcher_for_repo(self.repository_id)
+        files_to_index = [
+            d for d in files_to_index if not branch_exclusion_matcher.is_excluded(d.file_path)
+        ]
         points: list[dict] = []
 
         if files_to_index:
