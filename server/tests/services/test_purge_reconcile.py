@@ -196,6 +196,44 @@ async def test_cleanup_emits_audit_events(repository: Any) -> None:
     assert "purge.completed" in events
 
 
+async def test_run_cleanup_degraded_reconcile_fails_closed(
+    repository: Any, monkeypatch: Any
+) -> None:
+    """BL-01：对账 degraded（匹配器构造失败）时 run_cleanup 必须 fail-closed——
+    CleanupRun 落 status=failed（绝不 completed）、failures 记 reconcile_degraded、
+    error 非空，且不静默以 match_count=0/error="" 伪装"已清理完成"。"""
+    from asgiref.sync import sync_to_async
+
+    from repositories.models import CleanupRun, FileIndex
+    from services import purge_reconcile
+    from services.purge_reconcile import run_cleanup
+
+    await sync_to_async(FileIndex.objects.create)(
+        repository=repository, file_path="x.py", file_hash="h"
+    )
+
+    async def _boom(_repo_id: str) -> Any:
+        raise RuntimeError("matcher boom")
+
+    monkeypatch.setattr(purge_reconcile, "build_matcher_for_repo", _boom)
+
+    report = await run_cleanup(str(repository.id), mode="sensitive")
+
+    assert report.degraded is True
+    assert "reconcile_degraded" in report.failures
+    # 绝不静默"成功无命中"
+    assert report.purged_paths == []
+    assert report.sensitive is None
+
+    run = await CleanupRun.objects.filter(repository_id=repository.id).afirst()
+    assert run is not None
+    assert run.status == "failed"  # 绝不是 completed
+    assert run.match_count == 0
+    assert run.error  # 诊断不可信被如实落库
+    assert "reconcile_degraded" in run.failures
+    assert run.completed_at is not None
+
+
 async def test_run_cleanup_invalid_mode_raises(repository: Any) -> None:
     """非法 mode → ValueError。"""
     from services.purge_reconcile import run_cleanup
@@ -299,6 +337,33 @@ class TestReconcileAPI:
         assert run.mode == "sensitive"
         # 后台派发被调用一次，且带 name（cleanup_run_id 由闭包透传）
         bg.assert_called_once()
+
+    def test_post_degraded_refuses_dispatch(
+        self, authenticated_client: Any, repository: Any
+    ) -> None:
+        """BL-01：对账 degraded 时 POST 必须 fail-closed 拒绝派发——返回 409、
+        不建 running CleanupRun、不调用 run_in_background（不依赖前端 TOCTOU 禁用）。"""
+        from repositories.models import CleanupRun
+        from services import purge_reconcile
+
+        async def _boom(_repo_id: str) -> Any:
+            raise RuntimeError("matcher boom")
+
+        with patch.object(purge_reconcile, "build_matcher_for_repo", _boom):
+            with patch("repositories.views.run_in_background") as bg:
+                resp = authenticated_client.post(
+                    RECONCILE_URL.format(repo_id=repository.id),
+                    {"mode": "sensitive"},
+                    format="json",
+                )
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["degraded"] is True
+        assert body["error"]
+        # 不派发后台清理，不建 running 行
+        bg.assert_not_called()
+        assert CleanupRun.objects.filter(repository_id=repository.id).count() == 0
 
     def test_post_invalid_mode_400(self, authenticated_client: Any, repository: Any) -> None:
         resp = authenticated_client.post(
