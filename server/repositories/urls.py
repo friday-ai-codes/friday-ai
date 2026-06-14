@@ -3,6 +3,7 @@
 from adrf.routers import DefaultRouter
 from django.urls import include, path
 
+from .chunk_at_views import ChunkAtView
 from .graph_search_views import GraphSearchView
 from .index_views import (
     BranchIndexListView,
@@ -248,6 +249,12 @@ urlpatterns = [
         "<uuid:repository_id>/exclusions/<uuid:rule_id>/",
         RepositoryExclusionRuleDetailView.as_view(),
         name="repository-exclusion-detail",
+    ),
+    # Plan 25-02：file:line → chunk_id 反查（IDX-02），router include 之后，UUID 通配安全
+    path(
+        "<uuid:repository_id>/chunk-at/",
+        ChunkAtView.as_view(),
+        name="repository-chunk-at",
     ),
     # Plan 24-03：敏感文件 AI 建议 list / accept / dismiss（EXCL-03）
     path(
