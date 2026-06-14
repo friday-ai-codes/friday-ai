@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: "完成 25-01——ChunkRegistry 行号回填（IDX-02 前半）：ChunkRegistryRow 新增 line_start/line_end（1-based 闭区间，nullable）；_build_points 透传 CodeChunk.start_line/end_line 进 registry_rows（与 Qdrant payload 同源）；_bulk_upsert_registry_atomic create+update 双路径落库，update 判定显式纳入行号变化（仅行号位移也更新）；复用既有 chunkreg_line_range_valid CheckConstraint 兜底错乱区间，无新 migration（per D-02）。9 例守护测试全绿（13 passed 含模型层），无回归（-k build_points/indexer 117 passed），mypy/ruff clean，makemigrations --check No changes。原子提交 19f9d0d4b(test)/e51db7eb5(feat T1)/3614a48cd(test)/cd14492cb(feat T2)。"
-last_updated: "2026-06-14T22:55:30.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回填）
+stopped_at: "完成 25-02——file:line → chunk_id 反查（IDX-02 后半）：find_chunk_at(repository_id, file_path, line, *, branch_name) service 按 1-based 闭区间命中覆盖该行的 chunk、最具体（区间最小）优先，复用 Phase 22 单一排除匹配器对被排除文件/构造/判定/归一异常全程 fail-closed 返回空（对齐 rag_search 范式，T-25-04）；GET /api/repositories/<id>/chunk-at/?path=&line= REST 端点 IsAuthenticated 保护，被排除文件与无命中对外同形返回空 chunks 不泄漏存在性（T-25-05），缺/非法 path/line→400、不存在仓库→404。20 例守护测试全绿（service 11 + view 9），urls import ok，mypy/ruff clean。原子提交 b2d03a3d1(test)/e9902388c(feat T1)/f6477be3b(feat T2)。"
+last_updated: "2026-06-14T23:05:00.000Z"
+last_activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id 反查）
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 18
-  completed_plans: 16
-  percent: 64
+  completed_plans: 17
+  percent: 68
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 25 (Commit 历史索引 + 行号反查) — EXECUTING
-Plan: 2 of 4 (25-01 完成)
+Plan: 3 of 4 (25-01, 25-02 完成)
 Status: Executing Phase 25
-Last activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回填）
+Last activity: 2026-06-15 -- 完成 Phase 25 Plan 02（file:line → chunk_id 反查）
 
 ## Milestone Overview (v0.5.0)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回�
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
-| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (1/4 done) |
+| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Executing (2/4 done) |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
 
 **Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
@@ -94,6 +94,7 @@ Last activity: 2026-06-14 -- 完成 Phase 25 Plan 01（ChunkRegistry 行号回�
 | Phase 24 P03 | ~12min | 2 tasks | 4 files |
 | Phase 24 P04 | ~10min | 2 tasks | 5 files |
 | Phase 25 P01 | ~9min | 2 tasks | 5 files |
+| Phase 25 P02 | ~5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 24]: 24-04: 前端 sensitiveSuggestionsApi（list/accept/dismiss）+ SensitiveSuggestionsPanel.vue 兑现 EXCL-03 用户可见闭环；real_secret 列表顶部 destructive 横幅 + 行内危险底色双重突出（data-testid=real-secret-alert 供测试稳定定位，T-24-15）；accept 经 useConfirmDialog 二次确认明示「新增排除规则、不会自动删除已索引内容、需在清理面板显式执行」（T-24-14），dismiss 无确认（无破坏性）；accept/dismiss 后 invalidate 自身建议 key + repository-exclusions key 使新建 ai_suggested 规则即时显现于排除面板；前端保序渲染后端已排序结果（不前端重排）；面板 prop 命名 repoId（依 PLAN，区别既有面板 repositoryId）；守护测试以真实 zh-CN.json 作 messages 断言告警/确认措辞防被改空（T-24-13 reason 仅渲染脱敏文本）
 - [Phase 25]: 25-01: ChunkRegistry 行号回填无新 migration（line_start/line_end + chunkreg_line_range_valid 约束已存在于 0003/0004，per D-02）；行号直接取 CodeChunk.start_line/end_line（1-based 闭区间），与同处写入 Qdrant payload start_line/end_line 同源保证两侧一致；ChunkRegistryRow TypedDict 新增 line_start/line_end 键作 _build_points→_bulk_upsert 同源契约（mypy 拦截漏传）
 - [Phase 25]: 25-01: _bulk_upsert_registry_atomic update 判定显式纳入「行号变化」（obj.line_start/line_end != row[...]），避免仅行号位移、hash/路径/index 未变时漏更新（否则 25-02 反查命中错位，T-25-03）；错乱区间（line_end<line_start）由既有 CheckConstraint 拒绝 IntegrityError（T-25-01），indexer 不静默落错；None 行号合法落 NULL（历史/非 AST 回退兼容，不强制回填历史）
+- [Phase 25]: 25-02: find_chunk_at(repository_id, file_path, line, *, branch_name) 反查入口先 build_matcher_for_repo 再查询——构造失败/路径归一 None/is_excluded 命中（含判定异常）一律 fail-closed 返回空 + log_exclusion_blocked(surface=chunk_at)，绝不放行（T-25-04，对齐 rag_search 范式）；查询条件含 line_start/line_end__isnull=False（NULL 历史 row 天然不命中）+ 闭区间 lte/gte；多 chunk 命中返回全部，按区间宽度 (line_end-line_start) 升序、次序稳定按 chunk_index（最具体优先，per Claude's Discretion）；仅读 ChunkRegistry 不触 Qdrant
+- [Phase 25]: 25-02: GET /api/repositories/<id>/chunk-at/?path=&line=&branch_name= 走独立 ChunkAtView APIView（adrf）+ 显式路由（router include 之后，UUID 通配安全），IsAuthenticated 保护（T-25-06）；被排除文件与无命中对外同形返回 {"chunks": []} 200 不泄漏存在性（T-25-05）；path 必填、line 正整数校验（<1/非法→400），不存在仓库→404；service 不抛 past view（normalize None→空，T-25-07）
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 
 ### Pending Todos
@@ -225,10 +228,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 25 Plan 01 — ChunkRegistry 行号回填，IDX-02 前半）
-Stopped at: 完成 25-01——ChunkRegistryRow 新增 line_start/line_end（1-based 闭区间，nullable）；_build_points 透传 CodeChunk.start_line/end_line 进 registry_rows（与 Qdrant payload 同源）；_bulk_upsert_registry_atomic create+update 双路径落库，update 判定显式纳入行号变化；复用既有 chunkreg_line_range_valid CheckConstraint 兜底错乱区间，无新 migration（per D-02）。9 例守护测试全绿（13 passed 含模型层），无回归（117 passed），mypy/ruff clean，makemigrations --check No changes。原子提交 19f9d0d4b/e51db7eb5/3614a48cd/cd14492cb。
+Last session: 2026-06-15（Phase 25 Plan 02 — file:line → chunk_id 反查，IDX-02 后半）
+Stopped at: 完成 25-02——find_chunk_at service（区间命中 + 最具体优先 + 复用 Phase 22 matcher fail-closed）+ GET /api/repositories/<id>/chunk-at/ REST 端点（IsAuthenticated，被排除文件与无命中同形不泄漏存在性）。20 例守护测试全绿（service 11 + view 9），urls import ok，mypy/ruff clean。原子提交 b2d03a3d1(test)/e9902388c(feat T1)/f6477be3b(feat T2)。
 Resume file: None
-Next: Phase 25 Plan 02（IDX-02：find_chunk_at service + GET /api/repositories/<id>/chunk-at/，fail-closed 排除——基于本 plan 回填的 line_start/line_end）
+Next: Phase 25 Plan 03（IDX-01：commit 历史索引——遍历 git 历史按 commit 产出 RAG 文档，embedding 入库经 search_rag 可检索，增量感知）
 
 ## Operator Next Steps
 

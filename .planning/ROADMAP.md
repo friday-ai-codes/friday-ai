@@ -105,7 +105,7 @@ Plans:
 **Wave 1**
 
 - [x] 25-01-PLAN.md — IDX-02：索引时回填 ChunkRegistry.line_start/line_end（无需 migration，字段已存在）✅ (cd14492cb)
-- [ ] 25-02-PLAN.md — IDX-02：find_chunk_at service + GET /api/repositories/<id>/chunk-at/（fail-closed 排除）
+- [x] 25-02-PLAN.md — IDX-02：find_chunk_at service + GET /api/repositories/<id>/chunk-at/（fail-closed 排除）✅ (f6477be3b)
 - [ ] 25-03-PLAN.md — IDX-01：commit 历史摄取服务 + 增量边界字段 migration（kind=commit 入主 collection）
 
 **Wave 2** *(blocked on Wave 1 completion)*
