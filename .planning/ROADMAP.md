@@ -80,7 +80,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 24-01-PLAN.md — SensitiveFileSuggestion 模型 + 迁移 + 确定性检测器（启发式+内容扫描+upsert）
+- [x] 24-01-PLAN.md — SensitiveFileSuggestion 模型 + 迁移 + 确定性检测器（启发式+内容扫描+upsert） ✅ 2026-06-15
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -115,7 +115,7 @@ Plans:
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
+| 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | In progress (1/4) | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
 
