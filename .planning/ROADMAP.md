@@ -38,6 +38,10 @@
 
 - [x] 22-03-PLAN.md — 进程内 chat/agent 工具（browse/树）+ RAG 检索 fail-closed + 跨面守护测试（依赖 22-02）✅ (481ba91d6)
 
+**Gap closure** *(22-VERIFICATION 唯一阻断项，EXCL-02)*
+
+- [x] 22-GAP — `CodeSearchView._search`（REST `POST /api/repositories/<id>/search/` 旁路直读面）fail-closed：挂接 build_matcher_for_repo + is_excluded，被排除文件不返回 content/path + 守护测试 ✅ (56d230553)
+
 ### Phase 23: 清理对账（普通/敏感两模式）
 
 **Goal:** 新增排除后可清理存量派生数据，区分普通排除与敏感清理两模式 + 对账 UI。
