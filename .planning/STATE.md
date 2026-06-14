@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 23-01——统一删除入口 services.purge.purge_file(repository_id, rel_path) + PurgeResult，覆盖 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面（PF-03 + PF-05 收口），三条索引删除路径（run_incremental_index / run_git_diff_index）DELETE 分支收敛改调 purge_file；删后五面无残留 + 幂等 + overlay + 增量收敛守护测试 5 例 + indexer_exclusion 共 10 passed；原子提交 6b481a8cf（test RED）/ d6ccf931b（feat GREEN）/ 972b720d5（feat 收敛）
-last_updated: "2026-06-14T15:06:00.000Z"
-last_activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-03/PF-05 收口）
+stopped_at: 完成 23-02——对账 + 两模式清理服务/API 地基：compute_reconciliation（FileIndex ∪ ChunkRegistry ∩ 复用 22 build_matcher_for_repo，列已索引但现命中排除的差异；匹配器构造失败置 degraded+error 不谎报已一致，W3）+ run_cleanup(normal)（逐差异文件 23-01 purge_file 删净四面、对账归零，EXCL-04）+ CleanupRun 模型/迁移 0033 + RepositoryReconcileView(GET 差异/POST 派发后台返回 run_id)/RepositoryCleanupStatusView(GET 最近运行含 sensitive 未清面)+ 审计 purge.started/completed；敏感分支懒导入契约（23-03）就位落 CleanupRun.sensitive；守护测试 15 passed、ruff 干净、makemigrations --check 干净；原子提交 8f91c8cb7（test RED）/ 63f492be9（feat GREEN）/ b20f7bedf（feat API）
+last_updated: "2026-06-14T15:20:00.000Z"
+last_activity: 2026-06-14 -- 23-02 完成（对账 + 两模式清理服务/API + CleanupRun，EXCL-04/06）
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
-  percent: 20
+  completed_plans: 9
+  percent: 30
 ---
 
 # Project State
@@ -26,16 +26,16 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 23 (清理对账（普通/敏感两模式）) — EXECUTING
-Plan: 2 of 4 (23-01 done)
+Plan: 3 of 4 (23-01, 23-02 done)
 Status: Executing Phase 23
-Last activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-03/PF-05 收口）
+Last activity: 2026-06-14 -- 23-02 完成（对账 + 两模式清理服务/API + CleanupRun，EXCL-04/06）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
-| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (1/4 plans done) |
+| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | In progress (2/4 plans done) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
 | 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
@@ -86,6 +86,7 @@ Last activity: 2026-06-14 -- 23-01 完成（purge_file 统一删除入口，PF-0
 | Phase 22 P06 | ~9min | 2 tasks | 2 files |
 | Phase 22 P03 | ~35min | 3 tasks | 8 files |
 | Phase 23 P01 | ~10min | 2 tasks | 3 files |
+| Phase 23 P02 | ~30min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 23]: 23-01: PF-03 收口——run_incremental_index / run_git_diff_index 的 DELETE 分支收敛到 purge_file（消除「只删 Qdrant 不删 FileIndex/ChunkRegistry」孤儿）；PF-05 收口——overlay 删除遍历 RepositoryBranchIndex.collection_name 逐删 file_path
 - [Phase 23]: 23-01: ChunkRegistry 删除务必走 queryset.adelete() 逐实例触发 pre_delete 信号联动清边（绝不绕过信号）；codegraph 分支枚举归一化（is_base/branch_name==base → ""，feature 用原名）避免 RepositoryBranchIndex(base="main") 与 codegraph(base="") 口径漂移漏删；保留 indexer 既有 codegraph 孤儿清理块（精确单分支删除，与 purge_file 幂等不冲突）
 - [Phase 23]: 23-01: ⚠️ purge_file 暂未覆盖 repo_summaries / index_nodes 面（DOMAIN §9.3 普通列其余面），后续清理 plan 如需可扩展
+- [Phase 23]: 23-02: compute_reconciliation = FileIndex ∪ ChunkRegistry file_path 双源并 ∩ 复用 22 build_matcher_for_repo；degraded 仅由匹配器构造抛错触发（单文件 is_excluded 运行期异常由 matcher 内部 fail-closed 命中兜底，不污染 degraded），W3 贯通 dataclass→serializer→client 不谎报「已一致」假干净
+- [Phase 23]: 23-02: run_cleanup 逐差异文件调 23-01 purge_file（best-effort 逐文件隔离），终态 failures 非空→failed 否则 completed；清理后 best-effort 后台调度 repo_summaries+repo_index_nodes 重建（可重建聚合，失败不致命）
+- [Phase 23]: 23-02: CleanupRun 持久化（status/mode/match_count/failures/sensitive/error，(repository,-started_at) 索引取最近一次）；清理经 run_in_background 后台派发（API 先建 running 行拿 run_id 立即 202，D-04/T-23-08），状态端点回流结果（含敏感 unscrubbed/caveat，W1/W2）
+- [Phase 23]: 23-02: 敏感模式懒导入契约 services.sensitive_purge.purge_sensitive_planes(repository_id, purged_paths)（23-03 提供，普通模式零依赖）；未就绪→failures + CleanupRun.error，普通清理结果不受损。审计事件 purge.started/purge.completed（mode/repository_id/match_count/failures）
 
 ### Pending Todos
 
@@ -196,8 +201,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 23 Plan 01 — purge_file 统一删除入口）
-Stopped at: 完成 23-01——统一删除入口 services.purge.purge_file 覆盖 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面（PF-03 + PF-05 收口），三条索引删除路径 DELETE 分支收敛改调 purge_file；删后五面无残留 + 幂等 + 增量收敛守护测试 5 例 + indexer_exclusion 共 10 passed；原子提交 6b481a8cf / d6ccf931b / 972b720d5
+Last session: 2026-06-14（Phase 23 Plan 02 — 对账 + 两模式清理服务/API + CleanupRun）
+Stopped at: 完成 23-02——compute_reconciliation（已索引 ∪ ChunkRegistry ∩ 复用 22 匹配器列差异，构造失败 degraded 不谎报已一致 W3）+ run_cleanup(normal)（逐差异文件 purge_file 删净、对账归零 EXCL-04）+ CleanupRun 模型/迁移 0033 + RepositoryReconcileView(GET 差异/POST 派发后台返回 run_id)/RepositoryCleanupStatusView(GET 最近运行含敏感未清面)+ 审计 purge.started/completed；敏感懒导入契约（23-03）就位落 CleanupRun.sensitive；15 passed、ruff 干净、makemigrations --check 干净；原子提交 8f91c8cb7 / 63f492be9 / b20f7bedf
 Resume file: None
 
 ## Operator Next Steps
