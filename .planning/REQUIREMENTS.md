@@ -13,7 +13,7 @@
 ### EXCL — 排除文件
 
 - [x] **EXCL-01**：用户可配置 per-repo 排除规则（目录 / 通配 / 正则），并支持全局默认规则。（22-01 数据模型 + 全局默认键 + 内置默认；22-05 REST API CRUD + regex fail-loud + 缓存失效 + 仓库详情页编辑面板，闭环达成）
-- [ ] **EXCL-02**：被排除文件在 RAG 检索、MCP（get_file/grep/rag）、agent、编码容器中均 fail-closed 不可见（不降级泄漏）。
+- [x] **EXCL-02**：被排除文件在 RAG 检索、MCP（get_file/grep/rag）、agent、编码容器中均 fail-closed 不可见（不降级泄漏）。（22-VERIFICATION gap closed：CodeSearchView._search REST 旁路面挂接 build_matcher_for_repo + is_excluded，56d230553）
 - [ ] **EXCL-03**：索引/描述生成阶段 AI 识别敏感文件（密钥/env/敏感信息），产出建议名单供用户确认/增删，不静默删除。
 - [ ] **EXCL-04**：普通排除清理可删除已索引的派生数据（Qdrant 主+overlay、ChunkRegistry、codegraph、repo_summaries/index_nodes）。
 - [ ] **EXCL-05**：敏感清理在普通排除基础上额外清理操作记录数据面（message parts、agent trace、TaskResult、CodeChangeArchive diff、prompt snapshot、错误日志可控范围）。
