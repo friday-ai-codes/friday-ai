@@ -46,7 +46,7 @@
 
 **Goal:** 新增排除后可清理存量派生数据，区分普通排除与敏感清理两模式 + 对账 UI。
 **Requirements:** EXCL-04, EXCL-05, EXCL-06（+ 修 PF-03, PF-05）
-**Plans:** 4 plans（3 waves）
+**Plans:** 4/4 plans complete
 **Success criteria:**
 
 1. 普通排除清理删净 Qdrant（主+overlay）/ChunkRegistry/codegraph/摘要，无残留。
@@ -99,7 +99,7 @@ Plans:
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
-| 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Complete (4/4 plans) | — |
+| 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
