@@ -74,6 +74,22 @@ class TestPruneExcluded:
         assert keep.exists()
         assert deleted == 3
 
+    def test_global_glob_case_insensitive_prune(self, tmp_path: Path) -> None:
+        # ME-01：source="global" 安全默认大小写不敏感，挡住 .ENV / ID_RSA 变体。
+        from core.exclusion import prune_excluded
+
+        _write(tmp_path, "server/.ENV", "SECRET=1")
+        _write(tmp_path, "deploy/ID_RSA", "key")
+        rules = [
+            {"pattern": ".env", "rule_type": "glob", "source": "global"},
+            {"pattern": "id_rsa", "rule_type": "glob", "source": "global"},
+        ]
+        deleted = prune_excluded(tmp_path, rules)
+
+        assert not (tmp_path / "server" / ".ENV").exists()
+        assert not (tmp_path / "deploy" / "ID_RSA").exists()
+        assert deleted == 2
+
     def test_git_dir_preserved(self, tmp_path: Path) -> None:
         from core.exclusion import prune_excluded
 

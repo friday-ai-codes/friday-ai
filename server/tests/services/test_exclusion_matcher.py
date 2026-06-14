@@ -128,6 +128,24 @@ class TestBuiltinDefaults:
         assert m.is_excluded("node_modules/lib/index.js") is True
         assert m.is_excluded("src/main.py") is False
 
+    def test_builtin_matcher_case_insensitive_secrets(self) -> None:
+        # ME-01：内置安全默认大小写不敏感，挡住 .ENV / ID_RSA / Secret.PEM 变体。
+        m = ExclusionMatcher(BUILTIN_GLOBAL_DEFAULTS)
+        assert m.is_excluded(".ENV") is True
+        assert m.is_excluded("server/.Env") is True
+        assert m.is_excluded("config/ID_RSA") is True
+        assert m.is_excluded("certs/Secret.PEM") is True
+        # 大小写不敏感同样作用于 dir 安全默认
+        assert m.is_excluded("Node_Modules/x.js") is True
+
+    def test_user_glob_stays_case_sensitive(self) -> None:
+        # 用户自定义规则（source != global）保持既有大小写语义（D-02）。
+        m = ExclusionMatcher(
+            [ExclusionRuleSpec(pattern="*.secret", rule_type="glob", source="user")]
+        )
+        assert m.is_excluded("a.secret") is True
+        assert m.is_excluded("a.SECRET") is False
+
     def test_builtin_matcher_blocks_subdir_secrets(self) -> None:
         # BL-01：子目录密钥（server/.env、web/.env、子目录私钥）必须被内置默认排除。
         m = ExclusionMatcher(BUILTIN_GLOBAL_DEFAULTS)

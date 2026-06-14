@@ -116,8 +116,8 @@ class ExclusionMatcher:
 
     def __init__(self, rules: Iterable[ExclusionRuleSpec], repository_id: str = "") -> None:
         self._repository_id = repository_id
-        # dir：归一化为不含尾 "/" 的相对根前缀；匹配目录本身与其子树。
-        self._dir_prefixes: list[str] = []
+        # dir：(归一前缀, 是否大小写不敏感)。匹配目录本身与其子树。
+        self._dir_prefixes: list[tuple[str, bool]] = []
         # glob：(编译正则, 是否按 basename 兜底匹配任意目录)。无路径分隔符的 glob
         # 按 basename 语义命中任意深度子目录（BL-01）。
         self._glob_regexes: list[tuple[re.Pattern[str], bool]] = []
@@ -127,16 +127,21 @@ class ExclusionMatcher:
         for spec in rules:
             if not spec.enabled:
                 continue
+            # 内置安全默认 / 全局设置（source="global"）大小写不敏感匹配（ME-01）：
+            # 防 `.ENV` / `ID_RSA` / `Secret.PEM` 在大小写不敏感 FS（macOS/Windows）
+            # 上绕过；用户自定义规则仍遵循既有大小写语义（D-02）。
+            case_insensitive = spec.source == "global"
             if spec.rule_type == "dir":
                 norm = normalize_rel_path(spec.pattern.rstrip("/"))
                 if norm:
-                    self._dir_prefixes.append(norm)
+                    self._dir_prefixes.append((norm, case_insensitive))
             elif spec.rule_type == "glob":
                 # 无路径分隔符的 glob 按 basename 语义匹配任意目录（BL-01）：
                 # 使内置默认 `.env` / `id_rsa` 命中 `server/.env`、`a/b/id_rsa`
                 # 等子目录密钥，而非仅匹配仓库根。
+                flags = re.IGNORECASE if case_insensitive else 0
                 self._glob_regexes.append(
-                    (re.compile(fnmatch.translate(spec.pattern)), "/" not in spec.pattern)
+                    (re.compile(fnmatch.translate(spec.pattern), flags), "/" not in spec.pattern)
                 )
             elif spec.rule_type == "regex":
                 try:
@@ -154,8 +159,9 @@ class ExclusionMatcher:
             norm = normalize_rel_path(rel_path)
             if norm is None:
                 return True  # 归一越界 → fail-closed
-            for prefix in self._dir_prefixes:
-                if norm == prefix or norm.startswith(prefix + "/"):
+            for prefix, ci in self._dir_prefixes:
+                n, p = (norm.casefold(), prefix.casefold()) if ci else (norm, prefix)
+                if n == p or n.startswith(p + "/"):
                     return True
             base = norm.rsplit("/", 1)[-1]
             for rx, basename_only in self._glob_regexes:
@@ -267,9 +273,17 @@ async def serialize_rules_for_repo(repository_id: str) -> list[dict[str, str]]:
         logger.warning("exclusion.serialize_failed", repository_id=str(repository_id))
         specs = list(BUILTIN_GLOBAL_DEFAULTS)
 
-    rules = [{"pattern": s.pattern, "rule_type": s.rule_type} for s in specs if s.enabled]
+    # 携带 source：容器侧据此对 source="global" 的安全默认做大小写不敏感匹配（ME-01）。
+    rules = [
+        {"pattern": s.pattern, "rule_type": s.rule_type, "source": s.source}
+        for s in specs
+        if s.enabled
+    ]
     if not rules:
-        rules = [{"pattern": s.pattern, "rule_type": s.rule_type} for s in BUILTIN_GLOBAL_DEFAULTS]
+        rules = [
+            {"pattern": s.pattern, "rule_type": s.rule_type, "source": s.source}
+            for s in BUILTIN_GLOBAL_DEFAULTS
+        ]
     return rules
 
 
