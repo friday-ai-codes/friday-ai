@@ -44,12 +44,14 @@ COMMIT_INDEX_MAX_MESSAGE_LINES = 200
 # (repo, commit) 重索引命中同一 point，不产生重复（与代码 chunk 的 generate_chunk_id 同思路）。
 _COMMIT_ID_NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc25001")
 
-# git log 字段/记录分隔符：用 NUL 分隔字段、RS(\x1e) 分隔 commit，避免多行/含特殊字符的
-# message 破坏解析（%B 原始 body 可含换行，但不含 NUL/RS）。解析按实际字节切分；传给 git
-# 的 --format 用其占位符 %x00 / %x1e（子进程参数本身不能内嵌 NUL）。
-_FIELD_SEP = "\x00"
-_RECORD_SEP = "\x1e"
-_LOG_FORMAT = "%H%x00%an%x00%ae%x00%cI%x00%B%x1e"
+# git log 字段分隔符（ME-02 健壮性）：commit message 正文（%B）可含任意字节，旧版用
+# NUL 分字段、RS(\x1e) 分记录会被正文里的同字节碰撞，导致该 commit 被截断/丢弃。改为：
+# - 记录分隔：`git log -z` 用 NUL 终止每条 commit 记录（git 标准做法）；
+# - 字段分隔：US(\x1f)，且把 %B 放在**最后一个**字段，解析用 maxsplit=4 把「前 4 个分隔符」
+#   之后的全部内容（含正文里的 \x1f / \x1e / 换行）原样归入 body，杜绝正文碰撞丢尾。
+# 唯一无法覆盖的极端是正文内嵌 NUL（git 的 -z 机制本身亦无法区分），现实中不会由人/工具产生。
+_FIELD_SEP = "\x1f"
+_LOG_FORMAT = "%H%x1f%an%x1f%ae%x1f%cI%x1f%B"
 
 _GIT_TIMEOUT = 30.0
 
@@ -96,13 +98,17 @@ async def _get_head_sha(repo_path: str) -> str | None:
 
 
 def _parse_log(raw: str) -> list[_Commit]:
-    """解析 git log（_LOG_FORMAT）输出为 commit 列表。"""
+    """解析 `git log -z`（_LOG_FORMAT）输出为 commit 列表。
+
+    记录由 NUL 分隔（``-z``）；每条记录前 4 个 ``_FIELD_SEP`` 切出 sha/an/ae/cI，
+    剩余全部归 body（``maxsplit=4``），使正文里的分隔字节不再截断该 commit（ME-02）。
+    """
     commits: list[_Commit] = []
-    for record in raw.split(_RECORD_SEP):
-        record = record.strip("\n")
+    for record in raw.split("\x00"):
         if not record.strip():
             continue
-        fields = record.split(_FIELD_SEP)
+        # 仅切前 4 个分隔符；body（最后一段）保留正文内可能出现的 _FIELD_SEP / 旧 RS / 换行。
+        fields = record.split(_FIELD_SEP, 4)
         if len(fields) < 5:
             logger.warning("commit_index_parse_skip", reason="malformed_record")
             continue
@@ -125,7 +131,7 @@ async def _read_commits(repo_path: str, boundary: str | None) -> tuple[list[_Com
     """
     if boundary:
         code, out, err = await _run_git(
-            ["log", "--no-merges", f"--format={_LOG_FORMAT}", f"{boundary}..HEAD"],
+            ["log", "--no-merges", "-z", f"--format={_LOG_FORMAT}", f"{boundary}..HEAD"],
             repo_path,
         )
         if code == 0:
@@ -141,6 +147,7 @@ async def _read_commits(repo_path: str, boundary: str | None) -> tuple[list[_Com
         [
             "log",
             "--no-merges",
+            "-z",
             f"--max-count={COMMIT_INDEX_FIRST_RUN_CAP}",
             f"--format={_LOG_FORMAT}",
             "HEAD",
