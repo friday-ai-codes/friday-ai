@@ -1231,24 +1231,12 @@ class IndexerService:
             # api_domains 随索引完成重算；失败不回滚索引。
             await self._refresh_tree_facts()
 
-            # EXCL-03（Plan 24-02）：全量索引完成后，best-effort 后台触发敏感文件检测。
-            # 经 run_in_background 脱离索引/请求生命周期派发，**不** await 其结果；
-            # 整段 try/except 吞派发自身异常——检测失败（或派发失败）绝不阻断索引
-            # success 终态（DOMAIN §9 D-04 fail-safe，T-24-05）。
-            try:
-                from services.background_runner import run_in_background
-                from services.sensitive_detect import detect_sensitive_files
-
-                run_in_background(
-                    lambda: detect_sensitive_files(self.repository_id, repo_path),
-                    name=f"sensitive-detect:{self.repository_id}",
-                )
-            except Exception:
-                logger.warning(
-                    "sensitive_detect_dispatch_failed",
-                    repository_id=self.repository_id,
-                    exc_info=True,
-                )
+            # EXCL-03（Plan 24-02，BL-01）：敏感文件检测**不再**在此后台派发。
+            # 早前在此把检测协程经后台 runner 投递去遍历 repo_path，而上层
+            # ``clone_and_index_repository`` 在 ``finally`` 中 ``shutil.rmtree(temp_dir)``——
+            # 二者形成竞态，后台遍历几乎必然撞上已删除/正被删除的临时克隆目录 → 静默漏报全部
+            # 密钥。检测改由 ``clone_and_index_repository`` 在删除 temp_dir **之前**同步触发
+            # （只读 + 全局有界），确保读到真实克隆文件。详见模块级 ``_run_sensitive_detection``。
 
             return {
                 "status": "success",
@@ -3340,6 +3328,49 @@ class IndexerService:
         return points, registry_rows
 
 
+def _detection_only_paths(index_result: dict[str, Any]) -> list[str] | None:
+    """从 index_result 推导敏感检测的扫描范围（HI-01）。
+
+    - 增量 / git_diff 结果带 ``added_files`` / ``modified_files`` 列表 → 仅扫本次新增/修改
+      文件（避免每次增量全仓重扫）。删除文件不需扫描（已不在磁盘）。
+    - 全量索引结果不带这些列表 → 返回 ``None`` 表示整仓扫描。
+    """
+    if "added_files" in index_result or "modified_files" in index_result:
+        changed: list[str] = []
+        changed.extend(index_result.get("added_files") or [])
+        changed.extend(index_result.get("modified_files") or [])
+        return changed
+    return None
+
+
+async def _run_sensitive_detection(
+    repository_id: str, temp_dir: str, index_result: dict[str, Any]
+) -> None:
+    """EXCL-03（BL-01/HI-01）：在临时克隆目录删除**之前**同步触发敏感文件检测。
+
+    必须在 ``clone_and_index_repository`` 的 ``finally`` 执行 ``shutil.rmtree(temp_dir)``
+    之前 await 完成——检测器只读 + 全局有界（见 ``sensitive_detect``），await 它保证遍历的是
+    真实克隆文件而非已删除/空目录（修复后台派发与 rmtree 的竞态）。
+
+    全量索引扫全仓；增量/diff 仅扫本次变更文件。整段 best-effort，任何异常仅记 warning，
+    绝不阻断索引 success 终态（DOMAIN §9 D-04 fail-safe，T-24-05）。
+    """
+    try:
+        from services.sensitive_detect import detect_sensitive_files
+
+        only_paths = _detection_only_paths(index_result)
+        # 增量路径但本次无新增/修改文件 → 无需检测，直接返回。
+        if only_paths is not None and not only_paths:
+            return
+        await detect_sensitive_files(repository_id, temp_dir, only_paths=only_paths)
+    except Exception:
+        logger.warning(
+            "sensitive_detect_failed",
+            repository_id=repository_id,
+            exc_info=True,
+        )
+
+
 async def clone_and_index_repository(
     repository_id: str,
     *,
@@ -3663,6 +3694,12 @@ async def clone_and_index_repository(
                     history_update["error_message"] = f"[fallback] {fallback_reason}"
 
             await IndexHistory.objects.filter(id=history_id).aupdate(**history_update)
+
+        # EXCL-03（BL-01/HI-01）：在 finally 删除 temp_dir 之前同步触发敏感文件检测。
+        # 仅对 base 索引路径执行（功能分支 overlay 不在本阶段检测范围内）；全量扫全仓、
+        # 增量/diff 仅扫变更文件。best-effort，绝不阻断索引终态。
+        if not branch:
+            await _run_sensitive_detection(repository_id, temp_dir, index_result)
 
         return index_result
 

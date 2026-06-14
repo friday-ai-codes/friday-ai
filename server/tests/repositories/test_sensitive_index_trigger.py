@@ -1,189 +1,251 @@
-"""Phase 24 Plan 02 Task 1 — run_full_index 后台触发敏感检测 guard 测试（EXCL-03）。
+"""Phase 24（EXCL-03）敏感检测触发时机守护测试 —— BL-01/HI-01 修复后重写。
 
-覆盖 FINALIZING 末尾的检测派发（D-03 触发 + D-04 fail-safe）：
+历史背景：早前实现把 ``detect_sensitive_files`` 经 ``run_in_background`` 在
+``run_full_index`` 末尾后台派发，而 ``clone_and_index_repository`` 在 ``finally`` 里
+``shutil.rmtree(temp_dir)`` —— 二者竞态，后台遍历几乎必然撞上已删除目录 → 静默漏报全部
+密钥。旧守护测试用固定字符串 ``repo_path`` + mock ``detect_sensitive_files``，恰好绕开了
+这条真实交互，给了虚假信心。
 
-- **Section A 白盒源码断言**：``run_full_index`` 源码必须在 ``return success`` 前经
-  ``run_in_background`` 派发 ``detect_sensitive_files``，且整段包 try/except。
-- **Section B 功能集成断言**：模块内 ``_finalize_with_detection`` helper **字面复刻**
-  indexer.py FINALIZING 末尾的派发模板（含 ``return success``），mock
-  ``detect_sensitive_files`` 后验证：
-    1. 索引完成后 stub 收到 ``(repository_id, repo_path)``（经后台 runner 收敛）。
-    2. stub 抛异常时 helper 仍返回 ``status=="success"``（检测失败不阻断索引，T-24-05）。
-- **Section C 漂移 guard**：indexer.py 源码必须含派发模板关键 token。
+本测试改为**真实交互**：实际把 ``.env`` / ``id_rsa`` 落到临时目录，跑生产
+``_run_sensitive_detection`` + ``finally`` 删除时序，断言建议确实入库且目录已删除。
 
-测试用 ``background_runner._reset_for_tests`` / ``wait_for_pending`` 控制后台任务收敛。
+覆盖：
+- **Section A 源码 guard**：检测须在 ``clone_and_index_repository`` 删除 temp_dir **之前**
+  同步触发；``run_full_index`` 不再后台派发检测（防回退到竞态实现）。
+- **Section B 真实集成（BL-01）**：真实文件 + rmtree-in-finally 时序，建议入库 + 目录删除。
+- **Section C 漏报回归（BL-01）**：先删目录再检测 → 0 候选（复现竞态失败态，证明顺序的必要性）。
+- **Section D 增量范围（HI-01）**：``_detection_only_paths`` + ``only_paths`` 仅扫本次变更文件。
 """
 
 from __future__ import annotations
 
 import inspect
+import os
+import shutil
+import tempfile
+from typing import Any
 
 import pytest
-import structlog
+from asgiref.sync import sync_to_async
 
-from services import background_runner
-from services.background_runner import run_in_background, wait_for_pending
-from services.indexer import IndexerService
+from services.background_runner import run_in_background
 
-logger = structlog.get_logger(__name__)
+pytestmark = pytest.mark.django_db(transaction=True)
 
-
-# ---------------------------------------------------------------------------
-# Section B helper：字面复刻 indexer.py run_full_index FINALIZING 末尾派发模板。
-# 与 indexer.py 内联模板保持一致——任一处改动需双向同步（Section C token guard 兜底）。
-# ---------------------------------------------------------------------------
+AWS_SECRET_VALUE = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+PRIVATE_KEY_BODY = "b3BlbnNzaC1rZXktdjEAAAFAKEPRIVATEKEYBODYDONOTLOGabcdef0123456789"
 
 
-def _finalize_with_detection(repository_id: str, repo_path: str) -> dict:
-    """复刻 run_full_index 末尾：best-effort 派发检测 + return success。"""
-    try:
-        from services.background_runner import run_in_background
-        from services.sensitive_detect import detect_sensitive_files
+async def _make_repo() -> Any:
+    from repositories.models import Repository
 
-        run_in_background(
-            lambda: detect_sensitive_files(repository_id, repo_path),
-            name=f"sensitive-detect:{repository_id}",
+    return await sync_to_async(Repository.objects.create)(
+        name="Sensitive Trigger Repo",
+        git_url="https://example.com/sec/repo.git",
+        git_platform="github",
+        default_branch="main",
+    )
+
+
+async def _suggestions(repo_id: Any) -> list[Any]:
+    from repositories.models import SensitiveFileSuggestion
+
+    return await sync_to_async(
+        lambda: list(SensitiveFileSuggestion.objects.filter(repository_id=repo_id))
+    )()
+
+
+def _seed_repo_dir(root: str) -> None:
+    """在仓库目录落真实敏感文件：含 AWS key 的 .env + 私钥块 id_rsa。"""
+    with open(os.path.join(root, ".env"), "w", encoding="utf-8") as fh:
+        fh.write(f"AWS_SECRET_ACCESS_KEY={AWS_SECRET_VALUE}\n")
+    secrets_dir = os.path.join(root, "secrets")
+    os.makedirs(secrets_dir, exist_ok=True)
+    with open(os.path.join(secrets_dir, "id_rsa"), "w", encoding="utf-8") as fh:
+        fh.write(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            f"{PRIVATE_KEY_BODY}\n"
+            "-----END OPENSSH PRIVATE KEY-----\n"
         )
-    except Exception:
-        logger.warning(
-            "sensitive_detect_dispatch_failed",
-            repository_id=repository_id,
-            exc_info=True,
-        )
-
-    return {
-        "status": "success",
-        "files_processed": 0,
-        "chunks_indexed": 0,
-        "added": 0,
-    }
-
-
-@pytest.fixture(autouse=True)
-def _reset_background_runner():
-    """每例前后重置后台 runner，避免跨用例的 Future 串扰。"""
-    background_runner._reset_for_tests()
-    yield
-    background_runner._reset_for_tests()
 
 
 # ---------------------------------------------------------------------------
-# Section A：run_full_index 白盒源码结构断言
+# Section A：源码 guard —— 检测须在 rmtree 之前同步触发，且不再后台派发
 # ---------------------------------------------------------------------------
 
 
-def test_run_full_index_dispatches_detection_before_return() -> None:
-    """``run_full_index`` 必须在 ``return {"status": "success"`` 之前经
-    ``run_in_background`` 派发 ``detect_sensitive_files``，且包 try/except。
-    """
+def test_detection_runs_before_rmtree_in_clone_and_index() -> None:
+    """``clone_and_index_repository`` 必须在 ``shutil.rmtree(temp_dir)`` 之前触发检测。"""
+    from services.indexer import clone_and_index_repository
+
+    src = inspect.getsource(clone_and_index_repository)
+    detect_idx = src.find("_run_sensitive_detection(")
+    rmtree_idx = src.find("shutil.rmtree(temp_dir")
+
+    assert detect_idx >= 0, "clone_and_index_repository 缺少 _run_sensitive_detection 触发"
+    assert rmtree_idx >= 0, "clone_and_index_repository 缺少 shutil.rmtree(temp_dir)"
+    assert detect_idx < rmtree_idx, (
+        "敏感检测必须在 rmtree(temp_dir) 之前触发（否则遍历已删除目录 → 静默漏报，BL-01）"
+    )
+
+
+def test_run_full_index_no_longer_background_dispatches_detection() -> None:
+    """``run_full_index`` 不得再后台派发检测（防回退到与 rmtree 竞态的实现，BL-01）。"""
+    from services.indexer import IndexerService
+
     src = inspect.getsource(IndexerService.run_full_index)
-
-    dispatch_idx = src.find("detect_sensitive_files")
-    # FINALIZING 末尾的 success 返回是最后一处 success 字面量。
-    return_idx = src.rfind('"status": "success"')
-
-    assert dispatch_idx >= 0, "run_full_index 缺少 detect_sensitive_files 派发"
-    assert "run_in_background" in src, "run_full_index 缺少 run_in_background 派发"
-    assert return_idx >= 0, "run_full_index 缺少 success 返回"
-    assert dispatch_idx < return_idx, (
-        "detect_sensitive_files 派发应位于 return success 之前（FINALIZING 末尾）"
+    assert "detect_sensitive_files" not in src, (
+        "run_full_index 不应再直接派发 detect_sensitive_files —— 已上移至 "
+        "clone_and_index_repository 在 rmtree 前同步触发（BL-01）"
     )
 
-    # 派发段必须有 try/except 兜底（派发失败不阻断 success）。
-    pre_return = src[:return_idx]
-    sentinel = "sensitive_detect_dispatch_failed"
-    assert sentinel in pre_return, (
-        "run_full_index 派发段缺少 try/except 兜底日志 sensitive_detect_dispatch_failed"
+
+def test_detection_helper_is_awaited_not_fire_and_forget() -> None:
+    """``_run_sensitive_detection`` 调用须被 ``await``（同步收敛于 rmtree 之前）。"""
+    from services.indexer import clone_and_index_repository
+
+    src = inspect.getsource(clone_and_index_repository)
+    assert "await _run_sensitive_detection(" in src, (
+        "_run_sensitive_detection 必须被 await（不能 fire-and-forget，否则重蹈 BL-01 竞态）"
     )
 
 
 # ---------------------------------------------------------------------------
-# Section B：派发模板功能集成（成功触发 / 检测失败不阻断）
+# Section B：真实集成 —— 真实文件 + rmtree-in-finally 时序（BL-01）
 # ---------------------------------------------------------------------------
 
 
-def test_detection_dispatched_with_repository_id_and_repo_path(monkeypatch) -> None:
-    """索引完成后，detect_sensitive_files stub 应收到 (repository_id, repo_path)。"""
-    captured: dict[str, object] = {}
+async def test_detection_persists_before_temp_dir_removed() -> None:
+    """复刻 clone_and_index_repository 的「检测 → finally rmtree」时序（生产 helper）。
 
-    async def _stub(repository_id: str, repo_path: str) -> int:
-        captured["args"] = (repository_id, repo_path)
-        return 0
+    用真实临时目录 + 真实 .env/id_rsa + 生产 ``_run_sensitive_detection``（内部 await
+    真实 ``detect_sensitive_files``）。断言：建议在目录删除前确已入库，且目录已删除。
+    """
+    from services.indexer import _run_sensitive_detection
 
-    monkeypatch.setattr(
-        "services.sensitive_detect.detect_sensitive_files", _stub, raising=True
-    )
+    repo = await _make_repo()
+    temp_dir = tempfile.mkdtemp(prefix="friday_index_test_")
+    _seed_repo_dir(temp_dir)
 
-    result = _finalize_with_detection("repo-123", "/tmp/repo-abc")
-    assert result["status"] == "success"
+    # 全量索引语义：index_result 不带 added_files → only_paths=None → 整仓扫描。
+    index_result = {"status": "success", "files_processed": 2, "added": 2}
+    try:
+        await _run_sensitive_detection(str(repo.id), temp_dir, index_result)
+    finally:
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-    wait_for_pending(timeout=10.0)
-    assert captured.get("args") == ("repo-123", "/tmp/repo-abc")
+    # 目录确已删除（复刻生产 finally 行为）。
+    assert not os.path.exists(temp_dir)
 
+    rows = await _suggestions(repo.id)
+    paths = {r.path for r in rows}
+    # 检测在 rmtree 之前跑完 → 真实密钥被发现（修复前后台派发几乎必然漏报）。
+    assert ".env" in paths, "检测应在删除前发现 .env（BL-01 竞态修复）"
+    assert "secrets/id_rsa" in paths, "检测应在删除前发现 secrets/id_rsa（BL-01 竞态修复）"
 
-def test_index_returns_success_when_detection_raises(monkeypatch) -> None:
-    """检测 stub 抛异常时，索引仍返回 status==success（fail-safe，T-24-05）。"""
-
-    async def _boom(repository_id: str, repo_path: str) -> int:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(
-        "services.sensitive_detect.detect_sensitive_files", _boom, raising=True
-    )
-
-    result = _finalize_with_detection("repo-456", "/tmp/repo-xyz")
-    # 检测在后台异步执行，索引返回不依赖其结果。
-    assert result["status"] == "success"
-
-    # 后台 runner 吞掉异常（wait_for_pending 内部 except pass），不冒泡到调用方。
-    wait_for_pending(timeout=10.0)
+    env_row = next(r for r in rows if r.path == ".env")
+    assert env_row.severity == "real_secret"
+    # 脱敏不变量：密钥本体绝不入 reason。
+    assert AWS_SECRET_VALUE not in env_row.reason
 
 
-def test_dispatch_failure_does_not_break_success(monkeypatch) -> None:
-    """派发自身失败（run_in_background raise）也不得阻断 success 终态。"""
+async def test_detection_failure_does_not_propagate(monkeypatch) -> None:
+    """检测内部抛异常时，``_run_sensitive_detection`` 不冒泡（best-effort，T-24-05）。"""
+    from services import indexer
 
-    def _raise(*_args, **_kwargs):
-        raise RuntimeError("dispatch failed")
+    async def _boom(*_a, **_k):
+        raise RuntimeError("detector exploded")
 
-    monkeypatch.setattr(
-        "services.background_runner.run_in_background", _raise, raising=True
-    )
+    monkeypatch.setattr("services.sensitive_detect.detect_sensitive_files", _boom, raising=True)
 
-    # 模板内 from-import 取到 patch 后的 run_in_background → 抛异常被 try/except 吞。
-    result = _finalize_with_detection("repo-789", "/tmp/repo-fail")
-    assert result["status"] == "success"
+    # 不抛即通过（异常被 helper 内 try/except 吞掉并记 warning）。
+    await indexer._run_sensitive_detection("repo-x", "/tmp/does-not-matter", {"added": 1})
 
 
 # ---------------------------------------------------------------------------
-# Section C：indexer.py 派发模板 token 漂移 guard
+# Section C：漏报回归 —— 先删目录再检测应得 0 候选（复现竞态失败态）
 # ---------------------------------------------------------------------------
 
 
-def test_indexer_dispatch_template_tokens_present() -> None:
-    """indexer.py 必须含派发模板关键 token——防止与本测试 helper 漂移。"""
-    import services.indexer as indexer_module
+async def test_detection_after_dir_deleted_finds_nothing() -> None:
+    """显式复现 BL-01 失败态：目录已删除后再检测 → 0 候选（证明顺序的必要性）。"""
+    from services.sensitive_detect import detect_sensitive_files
 
-    src = inspect.getsource(indexer_module)
-    expected = [
-        "from services.background_runner import run_in_background",
-        "from services.sensitive_detect import detect_sensitive_files",
-        "run_in_background(",
-        "detect_sensitive_files(self.repository_id, repo_path)",
-        "sensitive-detect:",
-        "sensitive_detect_dispatch_failed",
-    ]
-    missing = [t for t in expected if t not in src]
-    assert not missing, f"indexer.py 派发模板缺失 token：{missing}"
+    repo = await _make_repo()
+    temp_dir = tempfile.mkdtemp(prefix="friday_index_race_")
+    _seed_repo_dir(temp_dir)
+    shutil.rmtree(temp_dir, ignore_errors=True)  # 模拟 rmtree 抢先
+
+    count = await detect_sensitive_files(str(repo.id), temp_dir)
+    assert count == 0
+    assert await _suggestions(repo.id) == []
+
+
+# ---------------------------------------------------------------------------
+# Section D：增量范围（HI-01）
+# ---------------------------------------------------------------------------
+
+
+def test_detection_only_paths_full_vs_incremental() -> None:
+    """``_detection_only_paths``：全量 → None（整仓）；增量/diff → 仅 added+modified。"""
+    from services.indexer import _detection_only_paths
+
+    # 全量索引结果不带文件列表 → None（整仓扫描）。
+    assert _detection_only_paths({"status": "success", "added": 3}) is None
+
+    # 增量/diff 结果 → 仅本次新增 + 修改（删除不扫）。
+    only = _detection_only_paths(
+        {
+            "added_files": ["a/.env"],
+            "modified_files": ["b/config.yaml"],
+            "deleted_files": ["c/old.txt"],
+        }
+    )
+    assert only is not None
+    assert set(only) == {"a/.env", "b/config.yaml"}
+
+
+async def test_incremental_detection_scoped_to_changed_files() -> None:
+    """``only_paths`` 仅检测本次变更文件——未变更的密钥文件不被重扫（HI-01）。"""
+    from services.sensitive_detect import detect_sensitive_files
+
+    repo = await _make_repo()
+    temp_dir = tempfile.mkdtemp(prefix="friday_index_incr_")
+    try:
+        # 两个密钥文件，但本次只「变更」了 changed.env。
+        with open(os.path.join(temp_dir, "changed.env"), "w", encoding="utf-8") as fh:
+            fh.write(f"AWS_SECRET_ACCESS_KEY={AWS_SECRET_VALUE}\n")
+        with open(os.path.join(temp_dir, "untouched.env"), "w", encoding="utf-8") as fh:
+            fh.write(f"AWS_SECRET_ACCESS_KEY={AWS_SECRET_VALUE}\n")
+
+        await detect_sensitive_files(str(repo.id), temp_dir, only_paths=["changed.env"])
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    paths = {r.path for r in await _suggestions(repo.id)}
+    assert "changed.env" in paths
+    assert "untouched.env" not in paths, "增量检测不应扫描未变更文件（HI-01 范围约束）"
+
+
+# ---------------------------------------------------------------------------
+# sanity：run_in_background 接收无参 factory（非 coroutine 本体）
+# ---------------------------------------------------------------------------
 
 
 def test_run_in_background_accepts_factory_not_coroutine() -> None:
-    """sanity：run_in_background 接收无参 factory（非 coroutine 本体）。"""
-    called: list[int] = []
+    from services import background_runner
 
-    async def _coro() -> int:
-        called.append(1)
-        return 42
+    background_runner._reset_for_tests()
+    try:
+        called: list[int] = []
 
-    fut = run_in_background(lambda: _coro(), name="sanity-check")
-    assert fut.result(timeout=10.0) == 42
-    assert called == [1]
+        async def _coro() -> int:
+            called.append(1)
+            return 42
+
+        fut = run_in_background(lambda: _coro(), name="sanity-check")
+        assert fut.result(timeout=10.0) == 42
+        assert called == [1]
+    finally:
+        background_runner._reset_for_tests()
