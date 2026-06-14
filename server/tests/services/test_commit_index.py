@@ -260,6 +260,41 @@ async def test_message_with_separator_bytes_parsed_intact(repository, tmp_path) 
     assert "trailingtoken" in payload["content"]
 
 
+async def test_incremental_batch_cap_paginates(repository, tmp_path) -> None:
+    """增量超大 backlog 按 CAP 分批推进、不丢中间 commit（ME-01）。
+
+    边界只推进到本批最旧一批的最新 commit；剩余的下一轮随边界续传，保证有界且无遗漏。
+    """
+    repo = _init_repo(tmp_path)
+    head0 = _commit(repo, {"a.py": "0\n"}, "base commit")
+
+    # 首轮：索引 base，边界到 head0
+    p0: list = []
+    r0 = await _run(repository, repo, p0)
+    assert r0["indexed"] == 1
+    assert await _boundary(repository) == head0
+
+    # 新增 3 个 commit（oldest→newest: c1, c2, head）
+    c1 = _commit(repo, {"a.py": "1\n"}, "delta one")
+    c2 = _commit(repo, {"a.py": "2\n"}, "delta two")
+    head = _commit(repo, {"a.py": "3\n"}, "delta three")
+
+    with patch.object(commit_index, "COMMIT_INDEX_INCREMENTAL_CAP", 2):
+        # 第一批：最旧 2 个（c1, c2），边界推进到 c2（**非** HEAD）
+        p1: list = []
+        r1 = await _run(repository, repo, p1)
+        assert r1["indexed"] == 2
+        assert {pt["payload"]["commit_sha"] for pt in p1} == {c1, c2}
+        assert await _boundary(repository) == c2
+
+        # 第二批：剩余 1 个（head），边界这才推进到 HEAD
+        p2: list = []
+        r2 = await _run(repository, repo, p2)
+        assert r2["indexed"] == 1
+        assert p2[0]["payload"]["commit_sha"] == head
+        assert await _boundary(repository) == head
+
+
 async def test_partial_skip_does_not_advance_boundary(repository, tmp_path) -> None:
     """部分 commit 被跳过（embedding None）→ 不推进边界，下次整段重试不丢 commit（HI-01）。"""
     repo = _init_repo(tmp_path)

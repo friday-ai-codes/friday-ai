@@ -35,6 +35,10 @@ logger = structlog.get_logger(__name__)
 
 # 首轮（无有效边界）全量索引的 commit 数上限，避免超大仓库历史一次性灌爆（per D-01/T-25-11）。
 COMMIT_INDEX_FIRST_RUN_CAP = 500
+# 增量单批上限（ME-01）：boundary..HEAD 一次最多索引这么多 commit（取最旧的一批），
+# 边界推进到本批最新 commit，剩余的下一轮随边界续传——保证 diff-tree 子进程数 / embedding
+# 批量 / 内存解析都有界，避免长期未索引后一次性灌入造成 OOM / 超时。
+COMMIT_INDEX_INCREMENTAL_CAP = 500
 # 变更文件路径摘要最大行数，超出经 truncate_diff_lines 截断（避免巨型 commit 摘要膨胀）。
 COMMIT_INDEX_MAX_SUMMARY_LINES = 200
 # commit message 入 payload 前的最大行数截断（与摘要复用同一截断 helper）。
@@ -120,28 +124,62 @@ def _parse_log(raw: str) -> list[_Commit]:
     return commits
 
 
-async def _read_commits(repo_path: str, boundary: str | None) -> tuple[list[_Commit], str | None]:
-    """读取待索引 commit 列表。
+async def _rev_list(repo_path: str, boundary: str) -> list[str] | None:
+    """列出 ``boundary..HEAD`` 的非 merge commit SHA（**oldest-first**）。
 
-    增量：boundary 非空且在仓库中存在 → ``boundary..HEAD``。
-    首轮 / boundary 失效（force-push/rebase 致 git log 报错）→ 回退 ``--max-count=CAP HEAD``。
-
-    Returns:
-        (commits, used_boundary)：used_boundary 为实际生效的增量下界（回退首轮时为 None）。
+    用于增量分批：仅取 SHA（cheap），据此切出「最旧的一批」并定位本批应推进到的边界。
+    boundary 失效（force-push/rebase 致 git 报错）返回 None（调用方回退首轮）。
     """
-    if boundary:
-        code, out, err = await _run_git(
-            ["log", "--no-merges", "-z", f"--format={_LOG_FORMAT}", f"{boundary}..HEAD"],
-            repo_path,
-        )
-        if code == 0:
-            return _parse_log(out), boundary
-        # boundary 不在仓库（force-push/rebase）→ git log 报错 → 回退首轮 bounded 全量。
+    code, out, err = await _run_git(
+        ["rev-list", "--no-merges", "--reverse", f"{boundary}..HEAD"],
+        repo_path,
+    )
+    if code != 0:
+        # boundary 不在仓库（force-push/rebase）→ rev-list 报错 → 交由调用方回退首轮。
         logger.warning(
             "commit_index_boundary_invalid",
             boundary=boundary,
             stderr=err.strip()[:200],
         )
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+async def _read_commits(
+    repo_path: str, boundary: str | None, head_sha: str
+) -> tuple[list[_Commit], str | None]:
+    """读取本轮待索引 commit，并给出「整批成功后应推进到的边界 SHA」。
+
+    增量（boundary 有效）：取 ``boundary..HEAD`` 中**最旧**的 ≤ ``COMMIT_INDEX_INCREMENTAL_CAP``
+    个 commit（ME-01 有界），advance_to = 本批最新 commit（整段 ≤ CAP 时即 HEAD）；剩余的
+    下一轮随边界续传。
+    首轮 / boundary 失效（force-push/rebase）：取**最近** ``COMMIT_INDEX_FIRST_RUN_CAP`` 个
+    commit，advance_to = HEAD。
+
+    Returns:
+        (commits, advance_to)：advance_to 为本批全部成功入库后边界应推进到的 SHA；
+        无 commit / 读取失败时 advance_to 不应被用于推进（调用方仅在 commits 非空时使用）。
+    """
+    if boundary:
+        shas = await _rev_list(repo_path, boundary)
+        if shas is not None:
+            if not shas:
+                return [], head_sha  # 增量已到 HEAD：无新 commit
+            if len(shas) > COMMIT_INDEX_INCREMENTAL_CAP:
+                # 仅取最旧一批；边界只推进到本批最新，剩余下轮续传（绝不跳过中间 commit）。
+                advance_to = shas[COMMIT_INDEX_INCREMENTAL_CAP - 1]
+                rng = f"{boundary}..{advance_to}"
+            else:
+                advance_to = head_sha
+                rng = f"{boundary}..HEAD"
+            code, out, err = await _run_git(
+                ["log", "--no-merges", "-z", f"--format={_LOG_FORMAT}", rng],
+                repo_path,
+            )
+            if code == 0:
+                return _parse_log(out), advance_to
+            logger.warning("commit_index_log_failed", stderr=err.strip()[:200])
+            # 落到首轮回退
 
     code, out, err = await _run_git(
         [
@@ -157,7 +195,7 @@ async def _read_commits(repo_path: str, boundary: str | None) -> tuple[list[_Com
     if code != 0:
         logger.warning("commit_index_log_failed", stderr=err.strip()[:200])
         return [], None
-    return _parse_log(out), None
+    return _parse_log(out), head_sha
 
 
 async def _changed_files(repo_path: str, sha: str) -> list[str]:
@@ -267,7 +305,7 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
         logger.info("commit_index_no_head", repository_id=str(repository_id))
         return {"indexed": 0, "head": None, "boundary_from": boundary}
 
-    commits, _used_boundary = await _read_commits(repo_path, boundary)
+    commits, advance_to = await _read_commits(repo_path, boundary, head_sha)
     if not commits:
         # 增量已到 HEAD（二次同 HEAD）/ 空范围：无新 commit，不 upsert、不改边界。
         logger.info(
@@ -395,12 +433,14 @@ async def index_commits(repository_id: str, repo_path: str) -> dict[str, Any]:
         )
         return {"indexed": succeeded, "head": head_sha, "boundary_from": boundary}
 
-    await Repository.objects.filter(id=repository_id).aupdate(commit_index_boundary_sha=head_sha)
+    # ME-01：边界推进到本批的 advance_to（整段 ≤ CAP 时即 HEAD；否则为本批最新，剩余下轮续传）。
+    await Repository.objects.filter(id=repository_id).aupdate(commit_index_boundary_sha=advance_to)
     logger.info(
         "commit_index_done",
         repository_id=str(repository_id),
         indexed=succeeded,
         head=head_sha,
         boundary_from=boundary,
+        boundary_to=advance_to,
     )
     return {"indexed": succeeded, "head": head_sha, "boundary_from": boundary}
