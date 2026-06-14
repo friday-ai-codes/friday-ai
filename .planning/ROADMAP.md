@@ -60,7 +60,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 23-02-PLAN.md — 普通清理服务 + 对账计算 + reconcile/cleanup API（Wave 2）
+- [x] 23-02-PLAN.md — 普通清理服务 + 对账计算 + reconcile/cleanup API（Wave 2）✅ (8f91c8cb7/63f492be9/b20f7bedf)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
