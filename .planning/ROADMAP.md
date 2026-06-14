@@ -78,9 +78,17 @@ Plans:
 2. 走"建议 + 提醒 + 用户确认"，不静默删除；真密钥高优先级告警。
 
 Plans:
+**Wave 1**
+
 - [ ] 24-01-PLAN.md — SensitiveFileSuggestion 模型 + 迁移 + 确定性检测器（启发式+内容扫描+upsert）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 24-02-PLAN.md — run_full_index 后台触发 + 可选 LLM 二分类（graceful 退化）
 - [ ] 24-03-PLAN.md — REST API：list / accept（建 ai_suggested 规则）/ dismiss，绝不静默删
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 24-04-PLAN.md — 前端建议面板（real_secret 高优先级告警 + 接受/忽略 + 页面挂载）
 
 ### Phase 25: Commit 历史索引 + 行号反查
