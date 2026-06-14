@@ -3,6 +3,7 @@
 import hashlib
 import os
 import re
+from collections.abc import Callable
 from typing import Any
 
 import structlog
@@ -388,9 +389,7 @@ class CodeParser:
 
         chunks: list[CodeChunk] = []
 
-        script_match = re.search(
-            r"<script[^>]*>(.*?)</script>", content, re.DOTALL | re.IGNORECASE
-        )
+        script_match = re.search(r"<script[^>]*>(.*?)</script>", content, re.DOTALL | re.IGNORECASE)
         if script_match:
             raw_script = script_match.group(1)
             script_content = raw_script.strip()
@@ -608,9 +607,7 @@ class CodeParser:
         if match:
             comment = match.group(1).strip()
             # 清理每行开头的 * 号
-            cleaned = "\n".join(
-                line.lstrip(" *") for line in comment.split("\n")
-            ).strip()
+            cleaned = "\n".join(line.lstrip(" *") for line in comment.split("\n")).strip()
             return cleaned[:200]
         return ""
 
@@ -642,8 +639,25 @@ class CodeParser:
 def scan_directory(
     directory: str,
     exclude_patterns: list[str] | None = None,
+    is_excluded_rel: Callable[[str], bool] | None = None,
 ) -> list[str]:
-    """Scan directory for supported source files."""
+    """扫描目录，返回受支持源文件的绝对路径列表。
+
+    过滤口径（如实描述，**不应用 .gitignore**，PF-04 修正）：
+    1. ``exclude_patterns``：按**目录名**粗粒度裁剪（默认 node_modules/.git/... 等）。
+    2. 扩展名白名单：仅保留 ``EXTENSION_TO_LANGUAGE`` 识别的源文件。
+    3. ``is_excluded_rel``（可选）：相对 ``directory`` 根的 **POSIX 路径**级排除判定，
+       由调用方注入（通常为 ``services.exclusion`` 单一匹配器的 ``is_excluded``，
+       保持纯函数 + 注入以避免循环导入）。命中即跳过；同时用于目录级提前剪枝。
+
+    fail-closed：``is_excluded_rel`` 判定抛异常时，视为命中（跳过该文件 / 剪掉该目录），
+    绝不因匹配器异常而把可能敏感的内容放进索引（T-22-07）。
+
+    Args:
+        directory: 待扫描目录（仓库根）。
+        exclude_patterns: 目录名黑名单；``None`` 时用内置默认。
+        is_excluded_rel: 可选相对路径排除回调；``None`` 时与历史行为字节等价（向后兼容）。
+    """
     if exclude_patterns is None:
         exclude_patterns = [
             "node_modules",
@@ -657,15 +671,37 @@ def scan_directory(
             ".nuxt",
         ]
 
+    def _rel_posix(abs_path: str) -> str:
+        return os.path.relpath(abs_path, directory).replace(os.sep, "/")
+
     files = []
     for root, dirs, filenames in os.walk(directory):
-        # Filter out excluded directories
-        dirs[:] = [d for d in dirs if d not in exclude_patterns]
+        # 目录名粗粒度裁剪（现状）+ 可选相对路径级排除提前剪枝（fail-closed）
+        kept_dirs: list[str] = []
+        for d in dirs:
+            if d in exclude_patterns:
+                continue
+            if is_excluded_rel is not None:
+                rel_dir = _rel_posix(os.path.join(root, d))
+                try:
+                    if is_excluded_rel(rel_dir):
+                        continue
+                except Exception:  # noqa: BLE001 — 判定异常 fail-closed：剪掉该子树
+                    continue
+            kept_dirs.append(d)
+        dirs[:] = kept_dirs
 
         for filename in filenames:
             file_path = os.path.join(root, filename)
             language = get_language_from_extension(file_path)
-            if language:
-                files.append(file_path)
+            if not language:
+                continue
+            if is_excluded_rel is not None:
+                try:
+                    if is_excluded_rel(_rel_posix(file_path)):
+                        continue
+                except Exception:  # noqa: BLE001 — 判定异常 fail-closed：跳过该文件
+                    continue
+            files.append(file_path)
 
     return files

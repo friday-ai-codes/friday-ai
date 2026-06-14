@@ -80,7 +80,9 @@ def qdrant_update_file_path(repository_id: str, old_path: str, new_path: str) ->
 
 
 @sync_to_async  # KEEP: Qdrant SDK 同步限制
-def qdrant_create_collection_by_name(collection_name: str, vector_size: int, hybrid: bool = False) -> bool:
+def qdrant_create_collection_by_name(
+    collection_name: str, vector_size: int, hybrid: bool = False
+) -> bool:
     return QdrantService.create_collection_by_name(collection_name, vector_size, hybrid=hybrid)
 
 
@@ -165,7 +167,8 @@ async def persist_vector_track_complete(repository_id: str, repo_path: str) -> s
     except Exception as e:
         logger.warning(
             "persist_vector_track_complete_failed",
-            repository_id=repository_id, error=str(e),
+            repository_id=repository_id,
+            error=str(e),
         )
         return None
 
@@ -203,7 +206,8 @@ async def update_current_indexing_file(
 
 
 async def get_files_last_commit(
-    repo_path: str, file_paths: list[str],
+    repo_path: str,
+    file_paths: list[str],
 ) -> dict[str, tuple[str, int]]:
     """批量获取一组文件各自最近一次 commit 的 (sha, author_timestamp_unix)。
 
@@ -224,7 +228,12 @@ async def get_files_last_commit(
     result: dict[str, tuple[str, int]] = {}
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "log", "--name-only", "--format=%H|%ct", "--no-renames", "HEAD",
+            "git",
+            "log",
+            "--name-only",
+            "--format=%H|%ct",
+            "--no-renames",
+            "HEAD",
             cwd=repo_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -441,7 +450,9 @@ class FileDiff:
 async def _get_head_sha(repo_path: str) -> str:
     """获取仓库当前 HEAD 的 commit SHA。"""
     proc = await asyncio.create_subprocess_exec(
-        "git", "rev-parse", "HEAD",
+        "git",
+        "rev-parse",
+        "HEAD",
         cwd=repo_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -455,7 +466,9 @@ async def _get_head_sha(repo_path: str) -> str:
 async def _is_shallow_clone(repo_path: str) -> bool:
     """检查仓库是否为 shallow clone。"""
     proc = await asyncio.create_subprocess_exec(
-        "git", "rev-parse", "--is-shallow-repository",
+        "git",
+        "rev-parse",
+        "--is-shallow-repository",
         cwd=repo_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -471,7 +484,8 @@ async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) 
         cmd.extend(["-c", f"http.proxy={proxy_url}"])
     cmd.extend(["fetch", "--depth=1", "origin", sha])
     proc = await asyncio.create_subprocess_exec(
-        *cmd, cwd=repo_path,
+        *cmd,
+        cwd=repo_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -487,7 +501,10 @@ async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) 
 async def _get_merge_base(repo_path: str, base_ref: str, feature_ref: str) -> str:
     """计算两个分支的 merge-base SHA。"""
     proc = await asyncio.create_subprocess_exec(
-        "git", "merge-base", base_ref, feature_ref,
+        "git",
+        "merge-base",
+        base_ref,
+        feature_ref,
         cwd=repo_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -505,7 +522,8 @@ async def _fetch_branch(repo_path: str, branch_name: str, proxy_url: str | None 
         cmd.extend(["-c", f"http.proxy={proxy_url}"])
     cmd.extend(["fetch", "--depth=1", "origin", f"{branch_name}:refs/remotes/origin/{branch_name}"])
     proc = await asyncio.create_subprocess_exec(
-        *cmd, cwd=repo_path,
+        *cmd,
+        cwd=repo_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -519,7 +537,10 @@ async def _fetch_branch(repo_path: str, branch_name: str, proxy_url: str | None 
 
 
 async def _deepen_for_merge_base(
-    repo_path: str, base_ref: str, feature_ref: str, proxy_url: str | None = None,
+    repo_path: str,
+    base_ref: str,
+    feature_ref: str,
+    proxy_url: str | None = None,
 ) -> str:
     """渐进加深 shallow clone 以获取可靠的 merge-base。
 
@@ -535,7 +556,8 @@ async def _deepen_for_merge_base(
         else:
             cmd.extend(["fetch", "--unshallow", "origin"])
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=repo_path,
+            *cmd,
+            cwd=repo_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -554,8 +576,12 @@ async def _deepen_for_merge_base(
     # 全部失败，回退到 base branch 的 tip SHA（tip-to-tip diff）
     logger.warning("merge_base_fallback_to_tip", base=base_ref, feature=feature_ref)
     proc = await asyncio.create_subprocess_exec(
-        "git", "rev-parse", f"refs/remotes/origin/{base_ref}",
-        cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "git",
+        "rev-parse",
+        f"refs/remotes/origin/{base_ref}",
+        cwd=repo_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
     if proc.returncode == 0:
@@ -733,9 +759,7 @@ class IndexerService:
             return True
 
         # 全局 flag 优先（更高 severity；先 disable 全局再看 per-repo 才合逻辑）
-        reason = (
-            "feature_flag_disabled" if not global_enabled else "auto_build_graph_disabled"
-        )
+        reason = "feature_flag_disabled" if not global_enabled else "auto_build_graph_disabled"
 
         # history_id fallback：未显式透传时取最近 RUNNING（与 line 2165 同模式）
         resolved_history_id = history_id
@@ -758,14 +782,15 @@ class IndexerService:
         )
 
         if resolved_history_id is not None:
-            await _update_history(
-                resolved_history_id, graph_build_status=GraphBuildStatus.SKIPPED
-            )
+            await _update_history(resolved_history_id, graph_build_status=GraphBuildStatus.SKIPPED)
 
         return False
 
     async def run_full_index(
-        self, repo_path: str, *, branch_name: str | None = None,
+        self,
+        repo_path: str,
+        *,
+        branch_name: str | None = None,
     ) -> dict[str, Any]:
         """Run full indexing for a repository.
 
@@ -830,7 +855,9 @@ class IndexerService:
             )
 
             # 预扫文件 hash + 决定 skip 名单（hash 命中 stored_records 视作已索引）
-            # 注：scan_directory 已应用 .gitignore 规则，可信任其结果即"应被索引集"
+            # 注：scan_directory 仅按目录名 + 扩展名白名单 + 排除匹配器过滤（**不应用
+            # .gitignore**，PF-04 修正）；被排除文件已在上面 scan_directory 阶段经
+            # is_excluded_rel 剔除，files 即"应被索引集"。
             file_hashes_local: dict[str, str] = {}
             files_to_process: list[tuple[str, str, str]] = []  # (abs_path, rel_path, hash)
             skipped_resume = 0
@@ -896,7 +923,8 @@ class IndexerService:
 
             # 一次性批量查 commit 信息（避免每次 flush 都 spawn git log）
             last_commit_map = await get_files_last_commit(
-                repo_path, [rel for rel, _, _ in file_payloads],
+                repo_path,
+                [rel for rel, _, _ in file_payloads],
             )
 
             total_chunks = sum(len(chunks) for _, _, chunks in file_payloads)
@@ -940,7 +968,8 @@ class IndexerService:
                 # 不切 stage，让外层"索引文件中..."文案保持稳定
                 rep_file = pending_files[-1][0]
                 await update_current_indexing_file(
-                    self.repository_id, file_path=rep_file,
+                    self.repository_id,
+                    file_path=rep_file,
                 )
 
                 texts = [_build_embedding_text(c) for c in pending_chunks]
@@ -951,7 +980,10 @@ class IndexerService:
                     sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
 
                 points, registry_rows = self._build_points(
-                    pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+                    pending_chunks,
+                    embeddings,
+                    sparse_vectors,
+                    hybrid_enabled,
                     repository_id=self.repository_id,
                     branch_name=branch_name,
                     is_base_branch=branch_name is not None,
@@ -969,7 +1001,8 @@ class IndexerService:
                     # 累加发生在 upsert 成功之后，这里预报"本批写入完后"的累计值，
                     # 避免文案显示落后一拍 / 永远卡在 1/1 的误导）。
                     chunks_after_this_batch = processed_chunks_total + min(
-                        i + upsert_batch_size, len(points),
+                        i + upsert_batch_size,
+                        len(points),
                     )
                     await update_index_stage(
                         self.repository_id,
@@ -1161,9 +1194,7 @@ class IndexerService:
                     gbh.status = GraphBuildHistoryStatus.FAILED
                     gbh.error_message = str(exc)[:1000]
                     gbh.finished_at = timezone.now()
-                    await gbh.asave(
-                        update_fields=["status", "error_message", "finished_at"]
-                    )
+                    await gbh.asave(update_fields=["status", "error_message", "finished_at"])
                     # implementation-01：失败终态写 Repository（保留
                     # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
                     await mark_repository_graph_terminal(
@@ -1270,7 +1301,10 @@ class IndexerService:
                 )
 
     async def run_branch_index(
-        self, repo_path: str, branch_name: str, repository: Repository,
+        self,
+        repo_path: str,
+        branch_name: str,
+        repository: Repository,
     ) -> dict[str, Any]:
         """功能分支 overlay 索引：merge-base + diff → overlay collection。
 
@@ -1291,9 +1325,14 @@ class IndexerService:
         base_branch = repository.default_branch
 
         # overlay 硬上限检查
-        overlay_count = await RepositoryBranchIndex.objects.filter(
-            repository=repository, is_base_branch=False,
-        ).exclude(status=BranchIndexStatus.INHERITED).acount()
+        overlay_count = (
+            await RepositoryBranchIndex.objects.filter(
+                repository=repository,
+                is_base_branch=False,
+            )
+            .exclude(status=BranchIndexStatus.INHERITED)
+            .acount()
+        )
         if overlay_count >= MAX_OVERLAY_COLLECTIONS_PER_REPO:
             raise BranchOverlayLimitExceeded(
                 f"仓库 {repository.name} 已有 {overlay_count} 个 overlay collection，"
@@ -1308,15 +1347,22 @@ class IndexerService:
         feature_ref = f"origin/{branch_name}"
         if is_shallow:
             merge_base_sha = await _deepen_for_merge_base(
-                repo_path, base_branch, feature_ref, repository.proxy_url,
+                repo_path,
+                base_branch,
+                feature_ref,
+                repository.proxy_url,
             )
         else:
             merge_base_sha = await _get_merge_base(repo_path, base_branch, feature_ref)
 
         # 获取 feature HEAD SHA
         proc = await asyncio.create_subprocess_exec(
-            "git", "rev-parse", feature_ref,
-            cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "git",
+            "rev-parse",
+            feature_ref,
+            cwd=repo_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
         if proc.returncode != 0:
@@ -1325,8 +1371,15 @@ class IndexerService:
 
         # git diff
         diff_proc = await asyncio.create_subprocess_exec(
-            "git", "diff", "--name-status", "--find-renames", merge_base_sha, feature_head,
-            cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "git",
+            "diff",
+            "--name-status",
+            "--find-renames",
+            merge_base_sha,
+            feature_head,
+            cwd=repo_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         diff_stdout, diff_stderr = await asyncio.wait_for(diff_proc.communicate(), timeout=30.0)
         if diff_proc.returncode != 0:
@@ -1337,7 +1390,8 @@ class IndexerService:
         # 无差异 → inherited_from_base
         if not diffs:
             await RepositoryBranchIndex.objects.aupdate_or_create(
-                repository=repository, branch_name=branch_name,
+                repository=repository,
+                branch_name=branch_name,
                 defaults={
                     "status": BranchIndexStatus.INHERITED,
                     "merge_base_sha": merge_base_sha,
@@ -1346,7 +1400,9 @@ class IndexerService:
                     "head_sha": feature_head,
                 },
             )
-            logger.info("branch_inherited_from_base", branch=branch_name, repository=repository.name)
+            logger.info(
+                "branch_inherited_from_base", branch=branch_name, repository=repository.name
+            )
             return {"status": "inherited", "diff_files": 0}
 
         # 有差异 → 创建/确保 overlay collection
@@ -1362,8 +1418,14 @@ class IndexerService:
 
         # checkout feature branch 文件
         checkout_proc = await asyncio.create_subprocess_exec(
-            "git", "checkout", feature_ref, "--", ".",
-            cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "git",
+            "checkout",
+            feature_ref,
+            "--",
+            ".",
+            cwd=repo_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         await asyncio.wait_for(checkout_proc.communicate(), timeout=60.0)
 
@@ -1389,12 +1451,18 @@ class IndexerService:
 
                 sparse_vectors: list[dict] | None = None
                 if hybrid_enabled:
-                    sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
+                    sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(
+                        texts_to_embed
+                    )
 
                 points, registry_rows = self._build_points(
-                    all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+                    all_chunks,
+                    embeddings,
+                    sparse_vectors,
+                    hybrid_enabled,
                     repository_id=self.repository_id,
-                    branch_name=branch_name, is_base_branch=False,
+                    branch_name=branch_name,
+                    is_base_branch=False,
                 )
 
                 # upsert to overlay collection
@@ -1413,7 +1481,8 @@ class IndexerService:
 
         # 记录 BranchFileIndex
         branch_index, _ = await RepositoryBranchIndex.objects.aupdate_or_create(
-            repository=repository, branch_name=branch_name,
+            repository=repository,
+            branch_name=branch_name,
             defaults={
                 "is_base_branch": False,
                 "head_sha": feature_head,
@@ -1455,9 +1524,7 @@ class IndexerService:
             graph_files = [d.file_path for d in files_to_index]
             # implementation-02：先按 deleted_file_paths 清图谱孤儿数据
             # （Symbol / ImportEdge / Endpoint 三件套），再写新图谱避免孤儿过渡态。
-            deleted_file_paths = [
-                d.file_path for d in diffs if d.action == DiffAction.DELETE
-            ]
+            deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
             if deleted_file_paths:
                 self._init_graph_services()
                 if self._graph_writer is not None:
@@ -1465,7 +1532,8 @@ class IndexerService:
                         # contract H-1：feature overlay 删除孤儿必须带 branch_name，
                         # 否则会误删 base 图谱行（run_branch_index 必为 feature 分支）。
                         await self._graph_writer.adelete_for_files(
-                            str(self.repository_id), deleted_file_paths,
+                            str(self.repository_id),
+                            deleted_file_paths,
                             branch_name=_resolve_write_branch(repository, branch_name),
                         )
                     except Exception:
@@ -1530,9 +1598,7 @@ class IndexerService:
                 gbh.status = GraphBuildHistoryStatus.FAILED
                 gbh.error_message = str(exc)[:1000]
                 gbh.finished_at = timezone.now()
-                await gbh.asave(
-                    update_fields=["status", "error_message", "finished_at"]
-                )
+                await gbh.asave(update_fields=["status", "error_message", "finished_at"])
                 # implementation-01：失败终态写 Repository（保留
                 # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
                 await mark_repository_graph_terminal(
@@ -1604,7 +1670,12 @@ class IndexerService:
         # 执行 git diff
         await update_index_stage(self.repository_id, IndexStage.COMPUTING_DIFF)
         proc = await asyncio.create_subprocess_exec(
-            "git", "diff", "--name-status", "--find-renames", from_sha, to_sha,
+            "git",
+            "diff",
+            "--name-status",
+            "--find-renames",
+            from_sha,
+            to_sha,
             cwd=repo_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -1619,12 +1690,8 @@ class IndexerService:
         # 时就能看到本次增量的"X 新增 / Y 修改 / Z 删除"和具体文件列表，
         # 而不必等到 indexing 整体完成。
         added_file_paths = [d.file_path for d in diffs if d.action == DiffAction.ADD]
-        modified_file_paths = [
-            d.file_path for d in diffs if d.action == DiffAction.UPDATE
-        ]
-        deleted_file_paths = [
-            d.file_path for d in diffs if d.action == DiffAction.DELETE
-        ]
+        modified_file_paths = [d.file_path for d in diffs if d.action == DiffAction.UPDATE]
+        deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
 
         # implementation（Pitfall 6）：行级 diff 采集，三态落库。
         # 在既有 --name-status 之后对同一对 SHA 追加 numstat（已 fetch 对象的 diff
@@ -1638,18 +1705,20 @@ class IndexerService:
         lines_deleted: int | None = None
         try:
             numstat_proc = await asyncio.create_subprocess_exec(
-                "git", "diff", "--numstat", "-z", "--find-renames", from_sha, to_sha,
+                "git",
+                "diff",
+                "--numstat",
+                "-z",
+                "--find-renames",
+                from_sha,
+                to_sha,
                 cwd=repo_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            numstat_out, _ = await asyncio.wait_for(
-                numstat_proc.communicate(), timeout=30.0
-            )
+            numstat_out, _ = await asyncio.wait_for(numstat_proc.communicate(), timeout=30.0)
             if numstat_proc.returncode == 0:
-                lines_added, lines_deleted = _parse_numstat_output(
-                    numstat_out.decode()
-                )
+                lines_added, lines_deleted = _parse_numstat_output(numstat_out.decode())
             else:
                 logger.warning(
                     "lines_diff_fallback",
@@ -1717,15 +1786,11 @@ class IndexerService:
         # 处理 rename（仅元数据更新）
         for diff in diffs:
             if diff.action == DiffAction.RENAME and diff.old_path:
-                await qdrant_update_file_path(
-                    self.repository_id, diff.old_path, diff.file_path
-                )
+                await qdrant_update_file_path(self.repository_id, diff.old_path, diff.file_path)
                 stats["renamed"] += 1
 
         # 处理新增和修改
-        files_to_index = [
-            d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)
-        ]
+        files_to_index = [d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)]
         if files_to_index:
             # === 文件级断点续传：用 FileIndex hash 过滤已成功完成的文件 ===
             # 上次中断时已成功 upsert 完成的文件会在 FileIndex 中留下 hash 记录，
@@ -1742,7 +1807,10 @@ class IndexerService:
             # contract：用 INDEXING_FILES 统一文案，避免 _flush_batch 内部 stage 切换抖动
             await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
             await update_current_indexing_file(
-                self.repository_id, file_path="", processed=0, total=len(files_to_index),
+                self.repository_id,
+                file_path="",
+                processed=0,
+                total=len(files_to_index),
             )
             file_payloads: list[tuple[Any, str, list[CodeChunk]]] = []  # (diff, hash, chunks)
             skipped_resume_count = 0
@@ -1827,9 +1895,13 @@ class IndexerService:
                     sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
 
                 points, registry_rows = self._build_points(
-                    pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+                    pending_chunks,
+                    embeddings,
+                    sparse_vectors,
+                    hybrid_enabled,
                     repository_id=self.repository_id,
-                    branch_name=branch_name, is_base_branch=is_base_branch,
+                    branch_name=branch_name,
+                    is_base_branch=is_base_branch,
                 )
 
                 # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
@@ -1842,7 +1914,8 @@ class IndexerService:
                     # contract：以全局 chunk 进度为 stage 口径（见 run_full_index._flush_batch
                     # 同款注释）。预报"本批写入完后"的累计值，避免文案永远 1/1。
                     chunks_after_this_batch = processed_chunks_total + min(
-                        i + upsert_batch_size, len(points),
+                        i + upsert_batch_size,
+                        len(points),
                     )
                     await update_index_stage(
                         self.repository_id,
@@ -1975,9 +2048,7 @@ class IndexerService:
             # 的 deleted_file_paths 已在 line ~1210 提早计算好）。
             # contract H-1：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
             # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
-            _repo_for_branch = await Repository.objects.filter(
-                id=self.repository_id
-            ).afirst()
+            _repo_for_branch = await Repository.objects.filter(id=self.repository_id).afirst()
             _write_branch = (
                 _resolve_write_branch(_repo_for_branch, branch_name)
                 if _repo_for_branch is not None
@@ -1988,7 +2059,8 @@ class IndexerService:
                 if self._graph_writer is not None:
                     try:
                         await self._graph_writer.adelete_for_files(
-                            str(self.repository_id), deleted_file_paths,
+                            str(self.repository_id),
+                            deleted_file_paths,
                             branch_name=_write_branch,
                         )
                     except Exception:
@@ -2053,9 +2125,7 @@ class IndexerService:
                 gbh.status = GraphBuildHistoryStatus.FAILED
                 gbh.error_message = str(exc)[:1000]
                 gbh.finished_at = timezone.now()
-                await gbh.asave(
-                    update_fields=["status", "error_message", "finished_at"]
-                )
+                await gbh.asave(update_fields=["status", "error_message", "finished_at"])
                 # implementation-01：失败终态写 Repository。
                 await mark_repository_graph_terminal(
                     self.repository_id,
@@ -2126,12 +2196,8 @@ class IndexerService:
                 from repositories.models import IndexHistory
 
                 pre_added = [d.file_path for d in diffs if d.action == DiffAction.ADD]
-                pre_modified = [
-                    d.file_path for d in diffs if d.action == DiffAction.UPDATE
-                ]
-                pre_deleted = [
-                    d.file_path for d in diffs if d.action == DiffAction.DELETE
-                ]
+                pre_modified = [d.file_path for d in diffs if d.action == DiffAction.UPDATE]
+                pre_deleted = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
                 await IndexHistory.objects.filter(id=history_id).aupdate(
                     files_added=len(pre_added),
                     files_modified=len(pre_modified),
@@ -2236,9 +2302,13 @@ class IndexerService:
                     if hybrid_enabled:
                         sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
                     points, registry_rows = self._build_points(
-                        pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+                        pending_chunks,
+                        embeddings,
+                        sparse_vectors,
+                        hybrid_enabled,
                         repository_id=self.repository_id,
-                        branch_name=branch_name, is_base_branch=is_base_branch,
+                        branch_name=branch_name,
+                        is_base_branch=is_base_branch,
                     )
                     # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
                     upsert_batch_size = 100
@@ -2250,7 +2320,8 @@ class IndexerService:
                         # contract：以全局 chunk 进度为 stage 口径（见 run_full_index._flush_batch
                         # 同款注释）。预报"本批写入完后"的累计值，避免文案永远 1/1。
                         chunks_after_this_batch = processed_chunks_total + min(
-                            i + upsert_batch_size, len(points),
+                            i + upsert_batch_size,
+                            len(points),
                         )
                         await update_index_stage(
                             self.repository_id,
@@ -2369,14 +2440,10 @@ class IndexerService:
                 await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
                 graph_files = [d.file_path for d in files_to_index]
                 # implementation-02：先按 deleted_file_paths 清孤儿
-                deleted_file_paths = [
-                    d.file_path for d in diffs if d.action == DiffAction.DELETE
-                ]
+                deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
                 # contract H-1：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
                 # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
-                _repo_for_branch = await Repository.objects.filter(
-                    id=self.repository_id
-                ).afirst()
+                _repo_for_branch = await Repository.objects.filter(id=self.repository_id).afirst()
                 _write_branch = (
                     _resolve_write_branch(_repo_for_branch, branch_name)
                     if _repo_for_branch is not None
@@ -2387,7 +2454,8 @@ class IndexerService:
                     if self._graph_writer is not None:
                         try:
                             await self._graph_writer.adelete_for_files(
-                                str(self.repository_id), deleted_file_paths,
+                                str(self.repository_id),
+                                deleted_file_paths,
                                 branch_name=_write_branch,
                             )
                         except Exception:
@@ -2462,9 +2530,7 @@ class IndexerService:
                     gbh.status = GraphBuildHistoryStatus.FAILED
                     gbh.error_message = str(exc)[:1000]
                     gbh.finished_at = timezone.now()
-                    await gbh.asave(
-                        update_fields=["status", "error_message", "finished_at"]
-                    )
+                    await gbh.asave(update_fields=["status", "error_message", "finished_at"])
                     # implementation-01：失败终态写 Repository。
                     await mark_repository_graph_terminal(
                         self.repository_id,
@@ -2572,9 +2638,7 @@ class IndexerService:
         老 collection 上 hybrid_search 走到 Qdrant 会 400 "Not existing
         vector name: sparse"，被 except 静默吞掉返回 0 结果）。
         """
-        setting = await SystemSetting.objects.filter(
-            key=SettingKeys.HYBRID_SEARCH_ENABLED
-        ).afirst()
+        setting = await SystemSetting.objects.filter(key=SettingKeys.HYBRID_SEARCH_ENABLED).afirst()
         return setting.value == "true" if setting else True
 
     @staticmethod
@@ -2585,8 +2649,13 @@ class IndexerService:
         return SparseEncoderService.encode_batch(texts)
 
     async def _extract_and_write_graph(
-        self, repo_path: str, file_paths: list[str], repository_id: str,
-        *, branch_name: str = "", history_id: str | None = None,
+        self,
+        repo_path: str,
+        file_paths: list[str],
+        repository_id: str,
+        *,
+        branch_name: str = "",
+        history_id: str | None = None,
     ) -> dict[str, Any]:
         """对指定文件列表执行图谱抽取并写入 Django ORM（双轨架构图谱轨）。
 
@@ -2688,7 +2757,8 @@ class IndexerService:
                     f"构建代码图谱... {index}/{total_graph_files}",
                 )
                 await update_current_indexing_file(
-                    self.repository_id, file_path=file_path,
+                    self.repository_id,
+                    file_path=file_path,
                 )
                 # 让 ASGI 线程池有机会处理 HTTP 请求 / SQLite 写锁释放窗口
                 await asyncio.sleep(0)
@@ -2820,6 +2890,7 @@ class IndexerService:
                         from codegraph.lsp.gopls_interface import (  # noqa: PLC0415
                             extract_interface_implementations,
                         )
+
                         workspace_root_path = _Path(repo_path)
                         impl_data = extract_interface_implementations(
                             workspace_root=workspace_root_path,
@@ -3103,29 +3174,23 @@ class IndexerService:
                 # 单 atomic 内 read-modify-write 不再跨 sync_to_async 边界，杜绝
                 # contract 描述的「A 读旧 hash → 别人插入 → B update_or_create 误判
                 # created=False 且 old_hash=None → 漏标 content_hash_changed」race。
-                obj, created = (
-                    ChunkRegistry.objects.select_for_update()
-                    .get_or_create(
-                        chunk_id=cid,
-                        defaults={
-                            "content_hash": new_hash,
-                            "repository_id": row["repository_id"],
-                            "file_path": row["file_path"],
-                            "chunk_index": row["chunk_index"],
-                            # contract：分支隔离维度。PK 仍是 chunk_id，feature chunk_id
-                            # 已天然不同（分支命名空间），get_or_create 不跨分支覆盖 base。
-                            "branch_name": row["branch_name"],
-                        },
-                    )
+                obj, created = ChunkRegistry.objects.select_for_update().get_or_create(
+                    chunk_id=cid,
+                    defaults={
+                        "content_hash": new_hash,
+                        "repository_id": row["repository_id"],
+                        "file_path": row["file_path"],
+                        "chunk_index": row["chunk_index"],
+                        # contract：分支隔离维度。PK 仍是 chunk_id，feature chunk_id
+                        # 已天然不同（分支命名空间），get_or_create 不跨分支覆盖 base。
+                        "branch_name": row["branch_name"],
+                    },
                 )
 
                 content_hash_changed = (not created) and obj.content_hash != new_hash
                 if content_hash_changed or (
                     not created
-                    and (
-                        obj.file_path != row["file_path"]
-                        or obj.chunk_index != row["chunk_index"]
-                    )
+                    and (obj.file_path != row["file_path"] or obj.chunk_index != row["chunk_index"])
                 ):
                     obj.content_hash = new_hash
                     obj.file_path = row["file_path"]
@@ -3189,9 +3254,7 @@ class IndexerService:
             if embedding is None:
                 continue
 
-            chunk_id = generate_chunk_id(
-                repository_id, chunk.file_path, chunk_index, _norm_branch
-            )
+            chunk_id = generate_chunk_id(repository_id, chunk.file_path, chunk_index, _norm_branch)
             content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest()
 
             payload: dict[str, Any] = {
@@ -3223,19 +3286,23 @@ class IndexerService:
             else:
                 vector = embedding
 
-            points.append({
-                "id": str(chunk_id),
-                "vector": vector,
-                "payload": payload,
-            })
-            registry_rows.append({
-                "chunk_id": chunk_id,
-                "content_hash": content_hash,
-                "repository_id": repository_id,
-                "file_path": chunk.file_path,
-                "chunk_index": chunk_index,
-                "branch_name": _norm_branch,
-            })
+            points.append(
+                {
+                    "id": str(chunk_id),
+                    "vector": vector,
+                    "payload": payload,
+                }
+            )
+            registry_rows.append(
+                {
+                    "chunk_id": chunk_id,
+                    "content_hash": content_hash,
+                    "repository_id": repository_id,
+                    "file_path": chunk.file_path,
+                    "chunk_index": chunk_index,
+                    "branch_name": _norm_branch,
+                }
+            )
 
         return points, registry_rows
 
@@ -3358,15 +3425,11 @@ async def clone_and_index_repository(
                         # 只在百分比真实变化时写 DB（≤101 次写入，可控）
                         if pct != last_pct:
                             last_pct = pct
-                            await update_index_stage(
-                                repository_id, f"克隆仓库中... {pct}%"
-                            )
+                            await update_index_stage(repository_id, f"克隆仓库中... {pct}%")
             return bytes(collected)
 
         try:
-            stderr_bytes = await asyncio.wait_for(
-                _stream_clone_progress(), timeout=300.0
-            )
+            stderr_bytes = await asyncio.wait_for(_stream_clone_progress(), timeout=300.0)
             await proc.wait()
         except asyncio.TimeoutError:
             proc.kill()
@@ -3425,8 +3488,11 @@ async def clone_and_index_repository(
                 if fetch_ok:
                     try:
                         index_result = await indexer.run_git_diff_index(
-                            temp_dir, last_sha, head_sha,
-                            branch_name=base_branch, is_base_branch=True,
+                            temp_dir,
+                            last_sha,
+                            head_sha,
+                            branch_name=base_branch,
+                            is_base_branch=True,
                             history_id=history_id,
                         )
                     except GitDiffError as e:
@@ -3436,11 +3502,14 @@ async def clone_and_index_repository(
                         if is_shallow:
                             logger.info("shallow_clone_fallback_to_full_index")
                             index_result = await indexer.run_full_index(
-                                temp_dir, branch_name=base_branch,
+                                temp_dir,
+                                branch_name=base_branch,
                             )
                         else:
                             index_result = await indexer.run_incremental_index(
-                                temp_dir, branch_name=base_branch, is_base_branch=True,
+                                temp_dir,
+                                branch_name=base_branch,
+                                is_base_branch=True,
                                 history_id=history_id,
                             )
                 else:
@@ -3450,11 +3519,14 @@ async def clone_and_index_repository(
                     if is_shallow:
                         logger.info("shallow_clone_fallback_to_full_index")
                         index_result = await indexer.run_full_index(
-                            temp_dir, branch_name=base_branch,
+                            temp_dir,
+                            branch_name=base_branch,
                         )
                     else:
                         index_result = await indexer.run_incremental_index(
-                            temp_dir, branch_name=base_branch, is_base_branch=True,
+                            temp_dir,
+                            branch_name=base_branch,
+                            is_base_branch=True,
                             history_id=history_id,
                         )
             elif collection_has_data:
@@ -3469,7 +3541,8 @@ async def clone_and_index_repository(
                     )
                     fallback_reason = "检测到未完成索引 checkpoint，按断点续传继续全量索引"
                     index_result = await indexer.run_full_index(
-                        temp_dir, branch_name=base_branch,
+                        temp_dir,
+                        branch_name=base_branch,
                     )
                 else:
                     logger.warning(
@@ -3479,7 +3552,8 @@ async def clone_and_index_repository(
                     await sync_to_async(QdrantService.delete_collection)(repository_id)
                     fallback_reason = "collection 存在但无 FileIndex checkpoint，清理后全量重建"
                     index_result = await indexer.run_full_index(
-                        temp_dir, branch_name=base_branch,
+                        temp_dir,
+                        branch_name=base_branch,
                     )
             else:
                 if last_sha:
@@ -3490,7 +3564,8 @@ async def clone_and_index_repository(
                     )
                     fallback_reason = "collection 为空，回退到全量索引"
                 index_result = await indexer.run_full_index(
-                    temp_dir, branch_name=base_branch,
+                    temp_dir,
+                    branch_name=base_branch,
                 )
 
             # base 路径：更新 last_indexed_commit_sha
@@ -3539,7 +3614,9 @@ async def clone_and_index_repository(
                 history_update["files_modified"] = files_modified
                 history_update["files_deleted"] = files_deleted
                 history_update["summary_text"] = _build_summary_text(
-                    files_added, files_modified, files_deleted,
+                    files_added,
+                    files_modified,
+                    files_deleted,
                 )
                 # contract（方案 A）：contract — 持久化变更文件路径列表到 IndexHistory.changed_files
                 history_update["changed_files"] = {
@@ -3552,9 +3629,7 @@ async def clone_and_index_repository(
                 if fallback_reason:
                     history_update["error_message"] = f"[fallback] {fallback_reason}"
 
-            await IndexHistory.objects.filter(id=history_id).aupdate(
-                **history_update
-            )
+            await IndexHistory.objects.filter(id=history_id).aupdate(**history_update)
 
         return index_result
 
@@ -3580,7 +3655,8 @@ async def clone_and_index_repository(
         if main_track_done:
             logger.warning(
                 "post_main_track_failure_treated_as_indexed",
-                repository_id=repository_id, error=str(e),
+                repository_id=repository_id,
+                error=str(e),
             )
             await update_index_stage(repository_id, "")
             await update_current_indexing_file(repository_id, file_path="")
