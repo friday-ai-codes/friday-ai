@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-03（进程内 agent 工具面 + RAG chokepoint fail-closed 排除，EXCL-02），原子提交 a4ea109c0/0e9b80a26/d77d348e1（Task1）+ 1ca1793ca/5b3c2829b（Task2）+ 481ba91d6（Task3）
-last_updated: "2026-06-14T10:05:00.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 03（RAG/agent 工具读取面 fail-closed）
+stopped_at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search REST 旁路面 fail-closed 排除，原子提交 56d230553（fix+守护测试）+ a8f65548c（gap SUMMARY）
+last_updated: "2026-06-14T10:20:00.000Z"
+last_activity: 2026-06-14 -- 闭合 Phase 22 EXCL-02 gap（CodeSearchView._search REST 读取面 fail-closed）
 progress:
   total_phases: 5
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
 Plan: 22-01 ✅ / 22-02 ✅ / 22-03 ✅ / 22-04 ✅ / 22-05 ✅ / 22-06 ✅（全 6 plans 完成）
 Status: Executing Phase 22 — 全部 plan 已执行（待 verify/secure 收尾）
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 03（RAG 链路 chokepoint + 进程内 agent 工具读取面 fail-closed，EXCL-02）
+Last activity: 2026-06-14 -- 闭合 Phase 22 EXCL-02 gap（CodeSearchView._search REST 读取面 fail-closed，56d230553）
 
 ## Milestone Overview (v0.5.0)
 
@@ -119,6 +119,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-03: search_rag 是 RAG 单一 chokepoint——每 repo 预取 matcher、收集前过滤，覆盖 chat/agent/workflow 所有经 HybridSearchService 的调用方；图谱邻居（hop1/hop2/cross-repo）在 _search_graph_capable 预先剔除（渲染+返回字段双覆盖），无 repo 归属对 repo_ids matcher 做 any 命中（保守 fail-closed）
 - [Phase 22]: 22-03: browse_file_content 入口拒读 + fuzzy resolved_path 复判防后缀绕过（T-22-09），返回 chunks=[]+error 无明文；list_space_structure 文件树过滤；search_repository_code 兜底过滤防未来旁路回流；matcher 构造/判定异常一律 fail-closed
 - [Phase 22]: 22-03: ⚠️ 旁路读取面未覆盖（需收尾 plan）——index_views.py _vector_search 与 deprecated layered_search._l3_hybrid_search 直读 BranchAwareSearchService.search 不经 search_rag，被排除文件可漏出（见 22-03 SUMMARY Threat Flags / deferred-items.md）
+- [Phase 22]: 22-GAP: ✅ 上述 index_views 旁路面（现 CodeSearchView._search，认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）已闭合——返回前挂 build_matcher_for_repo + is_excluded fail-closed（构造失败整仓库丢弃 / 单项判定异常丢弃 + log surface=code_search，total 由过滤后集合重算），补对称守护测试（56d230553）；layered_search._l3_hybrid_search 经 22-VERIFICATION 研判为 deprecated 内部 helper、生产不可达，非缺口
 
 ### Pending Todos
 
@@ -190,9 +191,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 Plan 03 执行）
-Stopped at: 完成 22-03（RAG chokepoint + 图谱邻居 + 进程内 agent 工具读取面 fail-closed，EXCL-02）；
-新增守护 15 例（retrieval_exclusion 9 + tools_exclusion 6）全绿，回归 retrieval+codegraph 321 passed / indexer 02 + skeleton + graph golden 37 passed；byte-eq fixture 注入 no-op 匹配器保字节不漂移；遗留 index_views/layered_search 旁路面记 deferred-items；Phase 22 全 6 plans 已执行，待 verify/secure 收尾
+Last session: 2026-06-14（Phase 22 EXCL-02 gap closure）
+Stopped at: 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）——CodeSearchView._search（认证 REST `POST /api/repositories/<id>/search/`，前端 searchCode 在用）返回前挂 build_matcher_for_repo + is_excluded fail-closed，被排除文件不返回 content/path，total 由过滤后集合重算；补对称守护测试 TestCodeSearchViewExclusion（2 例）；tests/test_code_search_branch.py 6 passed + 与 retrieval_exclusion 合跑 15 passed；原子提交 56d230553（fix+test）/ a8f65548c（gap SUMMARY）；EXCL-02 全读取面 fail-closed 闭环
 Resume file: None
 
 ## Operator Next Steps
