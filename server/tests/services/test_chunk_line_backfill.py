@@ -99,3 +99,169 @@ def test_build_points_registry_row_key_set_with_line_fields() -> None:
         "line_start",
         "line_end",
     }
+
+
+# ---------------------------------------------------------------------------
+# Task 2: _bulk_upsert_registry_atomic 落库行号（create + update）
+# ---------------------------------------------------------------------------
+
+
+def _make_registry_row(
+    *,
+    chunk_id,
+    repository_id: str,
+    content_hash: str = "a" * 64,
+    file_path: str = "src/a.py",
+    chunk_index: int = 0,
+    branch_name: str = "",
+    line_start: int | None = None,
+    line_end: int | None = None,
+) -> dict:
+    return {
+        "chunk_id": chunk_id,
+        "content_hash": content_hash,
+        "repository_id": repository_id,
+        "file_path": file_path,
+        "chunk_index": chunk_index,
+        "branch_name": branch_name,
+        "line_start": line_start,
+        "line_end": line_end,
+    }
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_upsert_create_writes_line_fields(repository) -> None:
+    """新 chunk get_or_create → 落库 row 的 line_start/line_end 等于传入值。"""
+    from code_relations.models import ChunkRegistry
+    from code_relations.utils import generate_chunk_id
+
+    cid = generate_chunk_id(str(repository.id), "src/foo.py", 0)
+    indexer = IndexerService(repository_id=str(repository.id))
+    row = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        file_path="src/foo.py",
+        line_start=5,
+        line_end=12,
+    )
+    await indexer._upsert_chunk_registry_batch([row])
+
+    obj = await ChunkRegistry.objects.aget(chunk_id=cid)
+    assert obj.line_start == 5
+    assert obj.line_end == 12
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_upsert_update_refreshes_line_fields_on_recut(repository) -> None:
+    """同 chunk_id 二次写入且 content_hash 变化（重切分行号位移 5→8）→ 落库行号更新为新值。"""
+    from code_relations.models import ChunkRegistry
+    from code_relations.utils import generate_chunk_id
+
+    cid = generate_chunk_id(str(repository.id), "src/foo.py", 0)
+    indexer = IndexerService(repository_id=str(repository.id))
+
+    row_v1 = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        content_hash="a" * 64,
+        file_path="src/foo.py",
+        line_start=5,
+        line_end=12,
+    )
+    await indexer._upsert_chunk_registry_batch([row_v1])
+
+    row_v2 = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        content_hash="b" * 64,
+        file_path="src/foo.py",
+        line_start=8,
+        line_end=15,
+    )
+    await indexer._upsert_chunk_registry_batch([row_v2])
+
+    obj = await ChunkRegistry.objects.aget(chunk_id=cid)
+    assert obj.line_start == 8
+    assert obj.line_end == 15
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_upsert_update_refreshes_line_fields_when_only_lines_move(repository) -> None:
+    """仅行号变化（hash/路径/index 未变）也必须触发 update，避免反查错位。"""
+    from code_relations.models import ChunkRegistry
+    from code_relations.utils import generate_chunk_id
+
+    cid = generate_chunk_id(str(repository.id), "src/foo.py", 0)
+    indexer = IndexerService(repository_id=str(repository.id))
+
+    row_v1 = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        content_hash="c" * 64,
+        file_path="src/foo.py",
+        line_start=1,
+        line_end=4,
+    )
+    await indexer._upsert_chunk_registry_batch([row_v1])
+
+    # content_hash 完全相同，仅行号位移（同内容在文件中整体下移）。
+    row_v2 = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        content_hash="c" * 64,
+        file_path="src/foo.py",
+        line_start=10,
+        line_end=13,
+    )
+    await indexer._upsert_chunk_registry_batch([row_v2])
+
+    obj = await ChunkRegistry.objects.aget(chunk_id=cid)
+    assert obj.line_start == 10
+    assert obj.line_end == 13
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_upsert_none_line_fields_persist_null(repository) -> None:
+    """传入 line_start=None/line_end=None → 落库 NULL，不违反 chunkreg_line_range_valid。"""
+    from code_relations.models import ChunkRegistry
+    from code_relations.utils import generate_chunk_id
+
+    cid = generate_chunk_id(str(repository.id), "src/legacy.py", 0)
+    indexer = IndexerService(repository_id=str(repository.id))
+    row = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        file_path="src/legacy.py",
+        line_start=None,
+        line_end=None,
+    )
+    await indexer._upsert_chunk_registry_batch([row])
+
+    obj = await ChunkRegistry.objects.aget(chunk_id=cid)
+    assert obj.line_start is None
+    assert obj.line_end is None
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_upsert_invalid_range_rejected_by_constraint(repository) -> None:
+    """line_end < line_start → IntegrityError（DB 约束兜底，indexer 不静默落错乱区间）。"""
+    from django.db.utils import IntegrityError
+
+    from code_relations.utils import generate_chunk_id
+
+    cid = generate_chunk_id(str(repository.id), "src/bad.py", 0)
+    indexer = IndexerService(repository_id=str(repository.id))
+    row = _make_registry_row(
+        chunk_id=cid,
+        repository_id=str(repository.id),
+        file_path="src/bad.py",
+        line_start=20,
+        line_end=5,
+    )
+    with pytest.raises(IntegrityError):
+        await indexer._upsert_chunk_registry_batch([row])
