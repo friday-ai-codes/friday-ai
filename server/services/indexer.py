@@ -44,6 +44,7 @@ from services.graph_builder import (
     mark_repository_graph_terminal,
     reset_repository_graph_progress,
 )
+from services.purge import purge_file
 from services.qdrant_service import QdrantService
 from system.models import SettingKeys, SystemSetting
 
@@ -1784,13 +1785,12 @@ class IndexerService:
 
         stats: dict[str, int] = {"added": 0, "updated": 0, "deleted": 0, "renamed": 0}
 
-        # 处理删除
+        # 处理删除：收敛到统一入口 purge_file（PF-03 + PF-05）——一次清净 Qdrant
+        # 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph，消除
+        # 「只删 Qdrant 不删 FileIndex/ChunkRegistry」的孤儿残留。
         for diff in diffs:
             if diff.action == DiffAction.DELETE:
-                await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
-                await FileIndex.objects.filter(
-                    repository_id=self.repository_id, file_path=diff.file_path
-                ).adelete()
+                await purge_file(self.repository_id, diff.file_path)
                 stats["deleted"] += 1
 
         # 处理 rename（仅元数据更新）
@@ -2227,10 +2227,13 @@ class IndexerService:
 
             stats = {"added": 0, "updated": 0, "deleted": 0, "skipped": 0}
 
-            # Process deletions
+            # Process deletions：收敛到统一入口 purge_file（PF-03 + PF-05）。
+            # 历史 bug：本路径原先只调 qdrant_delete_by_file_path，不删 FileIndex/
+            # ChunkRegistry，留下孤儿（PF-03）。改调 purge_file 一次清净五面（含
+            # overlay = PF-05）；下方 FileIndex 删除循环随之移除（已由 purge_file 覆盖）。
             for diff in diffs:
                 if diff.action == DiffAction.DELETE:
-                    await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
+                    await purge_file(self.repository_id, diff.file_path)
                     stats["deleted"] += 1
                 elif diff.action == DiffAction.SKIP:
                     stats["skipped"] += 1
@@ -2427,12 +2430,7 @@ class IndexerService:
                 stats=stats,
             )
 
-            # 删除已移除文件的 FileIndex 记录（add/update 已在 _flush_batch_inc 内写入）
-            for diff in diffs:
-                if diff.action == DiffAction.DELETE:
-                    await FileIndex.objects.filter(
-                        repository_id=self.repository_id, file_path=diff.file_path
-                    ).adelete()
+            # 已移除文件的 FileIndex 记录已由上方 purge_file 删净（PF-03），此处不再重复。
             # 兜底：理论上不会进入（_flush_batch_inc 已 flush），但保留以防遗漏（noop）
             for diff in diffs:
                 if diff.action in (DiffAction.ADD, DiffAction.UPDATE):
@@ -2452,7 +2450,10 @@ class IndexerService:
             if files_to_index and await self._should_build_graph(history_id):
                 await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
                 graph_files = [d.file_path for d in files_to_index]
-                # implementation-02：先按 deleted_file_paths 清孤儿
+                # implementation-02：先按 deleted_file_paths 清孤儿。
+                # 注：purge_file 已覆盖 codegraph 删除；此块保留以维持分支归一化语义
+                # （_write_branch 精确单分支删除），与 purge_file 幂等不冲突——重复
+                # adelete_for_files 为 no-op。
                 deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
                 # contract H-1：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
                 # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
