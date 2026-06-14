@@ -1122,6 +1122,21 @@ class FindRelatedChunksView(McpToolView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
         related_chunks = [_serialize_neighbor(neighbor) for neighbor in neighbors]
+        # fail-closed 排除过滤（EXCL-02 / T-22-24）：返回邻居前剔除被排除文件（防御性
+        # 兜底，与 22-03 hybrid_search 邻居过滤同口径，此 view 自行组装故需独立过滤）。
+        matcher = await _exclusion_matcher(repository_id)
+        kept_chunks = [
+            chunk
+            for chunk in related_chunks
+            if not matcher.is_excluded(str(chunk.get("file_path", "")))
+        ]
+        if len(kept_chunks) != len(related_chunks):
+            log_exclusion_blocked(
+                surface="find_related_chunks",
+                repository_id=repository_id,
+                rel_path="",
+            )
+        related_chunks = kept_chunks
         output_data = {
             "repository_id": repository_id,
             "branch": graph_branch or (repo.base_branch or repo.default_branch),
