@@ -1,10 +1,11 @@
 ---
 phase: 20
 slug: validation
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-13
+backfilled: 2026-06-14  # frontmatter 收尾：Wave 0 测试实际全绿（tests/workflows/ 479 passed 复核），回写遗漏标记
 ---
 
 # Phase 20 — Validation Strategy
