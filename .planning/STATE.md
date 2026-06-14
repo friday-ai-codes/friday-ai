@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-02（索引扫描面排除挂接 + PF-04），原子提交 d21f2915c / 580364312 / abc0e0452 / 428c25d0c
-last_updated: "2026-06-14T08:37:41.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 02
+stopped_at: 完成 22-06（MCP 工具读取面 fail-closed 排除，wave 2），原子提交 19b463dae / 7c553f10b / 1a0c6f0cd
+last_updated: "2026-06-14T08:53:00.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 06
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 3 of 6（22-01 ✅ 完成；22-02 ✅ 完成）
+Plan: 22-01 ✅ / 22-02 ✅ / 22-06 ✅（wave 2，先于 03/04/05 完成）；03/04/05 待执行
 Status: Executing Phase 22
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 02（索引扫描面排除挂接 + PF-04 修正）
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 06（MCP 工具读取面 fail-closed 排除）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (2/6 plans) |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (3/6 plans) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
@@ -82,6 +82,7 @@ Last activity: 2026-06-14 -- 完成 Phase 22 Plan 02（索引扫描面排除挂�
 |--------|-------|
 | Phase 22 P01 | ~9min | 2 tasks | 5 files |
 | Phase 22 P02 | ~6min | 2 tasks | 3 files |
+| Phase 22 P06 | ~9min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-02: scan_directory 用注入式 is_excluded_rel 回调（Callable，非 matcher 对象）保持纯函数无硬依赖避免循环导入；扫描期回调异常 fail-closed（跳过文件/剪子树）
 - [Phase 22]: 22-02: indexer full + incremental 两路径预取 build_matcher_for_repo（async）并注入同步 scan_directory，被排除文件从源头不进 files_to_process/local_hashes（存量清理留 Phase 23）
 - [Phase 22]: 22-02: PF-04 关闭——scan_directory 不再谎称 .gitignore，注释/docstring 如实描述「目录名 + 扩展名白名单 + 排除匹配器」
+- [Phase 22]: 22-06: MCP HTTP 直读面（grep/get_file/list/find_related）挂接单一匹配器 fail-closed；get_file 对 requested+resolved 双判定防后缀绕过；grep 过滤后重算 total/files_with_matches 避免泄漏存在性；matcher 构造异常用 _FailClosedMatcher 兜底（排除一切，不放行）
+- [Phase 22]: 22-06: 只在 view 层过滤（不改 repo_mirror.py 助手），不重复 22-03 已覆盖的 search_rag_chunks；为保持最小 diff 未对 views.py 跑整文件 ruff format（预存 I001/非规范，超范围）
 
 ### Pending Todos
 
@@ -179,9 +182,9 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 Plan 02 执行）
-Stopped at: 完成 22-02（索引扫描面排除挂接 + PF-04 修正），原子提交 d21f2915c / 580364312 / abc0e0452 / 428c25d0c；
-6 守护测试全绿，PF-04 grep gate 0 命中，抽样回归 55 passed
+Last session: 2026-06-14（Phase 22 Plan 06 执行）
+Stopped at: 完成 22-06（MCP 工具读取面 fail-closed 排除，wave 2），原子提交 19b463dae / 7c553f10b / 1a0c6f0cd；
+11 守护测试全绿（含跨工具一致性），mcp_tools 全套 76 passed 无回归，rg is_excluded/build_matcher views.py 命中 13；03/04/05 待执行
 Resume file: None
 
 ## Operator Next Steps
