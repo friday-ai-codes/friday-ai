@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 22-01（排除配置单一源 + 单一匹配器），原子提交 0fd29af1d / df0e98778 / 064ebdcc0
-last_updated: "2026-06-14T08:25:36.000Z"
-last_activity: 2026-06-14 -- 完成 Phase 22 Plan 01
+stopped_at: 完成 22-02（索引扫描面排除挂接 + PF-04），原子提交 d21f2915c / 580364312 / abc0e0452 / 428c25d0c
+last_updated: "2026-06-14T08:37:41.000Z"
+last_activity: 2026-06-14 -- 完成 Phase 22 Plan 02
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
-  percent: 17
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 22 (排除配置与统一过滤（fail-closed）) — EXECUTING
-Plan: 2 of 6（22-01 ✅ 完成）
+Plan: 3 of 6（22-01 ✅ 完成；22-02 ✅ 完成）
 Status: Executing Phase 22
-Last activity: 2026-06-14 -- 完成 Phase 22 Plan 01（排除配置单一源 + 单一匹配器）
+Last activity: 2026-06-14 -- 完成 Phase 22 Plan 02（索引扫描面排除挂接 + PF-04 修正）
 
 ## Milestone Overview (v0.5.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (1/6 plans) |
+| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | In progress (2/6 plans) |
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | Not started |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | Not started |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | Not started |
@@ -81,6 +81,7 @@ Last activity: 2026-06-14 -- 完成 Phase 22 Plan 01（排除配置单一源 + �
 | Metric | Value |
 |--------|-------|
 | Phase 22 P01 | ~9min | 2 tasks | 5 files |
+| Phase 22 P02 | ~6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 22]: 22-01: 排除判定唯一入口 services.exclusion.is_excluded(repository_id, rel_path)，Wave 2 plans 直接引用不得另起炉灶；失败模式二分（构造期非法 regex fail-loud / 运行期 fail-closed True + exclusion.blocked 埋点）
 - [Phase 22]: 22-01: dir 规则 = 相对仓库根前缀（目录本身 + 子树）；glob 用 fnmatch.translate 大小写敏感跨 / 匹配；per-repo source=global+enabled=False 行作为关闭全局默认的 override 标记
 - [Phase 22]: 22-01: BUILTIN_GLOBAL_DEFAULTS 内置安全默认即使无任何配置也生效（向后兼容 + 开箱即用，per D-04）
+- [Phase 22]: 22-02: scan_directory 用注入式 is_excluded_rel 回调（Callable，非 matcher 对象）保持纯函数无硬依赖避免循环导入；扫描期回调异常 fail-closed（跳过文件/剪子树）
+- [Phase 22]: 22-02: indexer full + incremental 两路径预取 build_matcher_for_repo（async）并注入同步 scan_directory，被排除文件从源头不进 files_to_process/local_hashes（存量清理留 Phase 23）
+- [Phase 22]: 22-02: PF-04 关闭——scan_directory 不再谎称 .gitignore，注释/docstring 如实描述「目录名 + 扩展名白名单 + 排除匹配器」
 
 ### Pending Todos
 
@@ -175,9 +179,9 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-14（Phase 22 Plan 01 执行）
-Stopped at: 完成 22-01（排除配置单一源 + 单一匹配器），原子提交 0fd29af1d / df0e98778 / 064ebdcc0；
-18 单测全绿，makemigrations --check 干净
+Last session: 2026-06-14（Phase 22 Plan 02 执行）
+Stopped at: 完成 22-02（索引扫描面排除挂接 + PF-04 修正），原子提交 d21f2915c / 580364312 / abc0e0452 / 428c25d0c；
+6 守护测试全绿，PF-04 grep gate 0 命中，抽样回归 55 passed
 Resume file: None
 
 ## Operator Next Steps
