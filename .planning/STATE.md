@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: executing
-stopped_at: "完成 25-04——commit 索引挂接索引流程（IDX-01 闭环）：services/indexer.py 新增模块级 _run_commit_index（best-effort try/except 吞异常 warning，绝不阻断索引 success，T-25-12），照搬 _run_sensitive_detection fail-safe 范式；clone_and_index_repository 仅 base 路径（if not branch:）在 _run_sensitive_detection 之后、finally rmtree(temp_dir) 之前 await _run_commit_index（读真实克隆 git 历史，沿用 Phase 24 BL-01 时序，全量+增量均流经，首轮/增量区分由 index_commits 内部 commit_index_boundary_sha 处理）。端到端守护测试 7 例全绿：dispatch 失败不冒泡 + rmtree 前完成；search_rag 用关键字/author 召回 kind=commit 文档、不相关 query 不召回；召回文档摘要含普通文件不含 .env/*.pem（fail-closed，T-25-13）；增量二次同 HEAD 0 条、新增 +1（T-25-14）。回归 test_retrieval_exclusion + test_commit_index 16 例绿，mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。"
-last_updated: "2026-06-15T07:30:00.000Z"
-last_activity: 2026-06-15 -- 完成 Phase 25 Plan 04（commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
+status: Phase 25 完成；下一步 Phase 26（多仓凭证统一 + MCP 多仓参数）
+stopped_at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
+last_updated: "2026-06-14T23:53:56.596Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 18
-  completed_plans: 18
+  completed_plans: 19
   percent: 80
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 25 (Commit 历史索引 + 行号反查) — COMPLETE (4/4)
-Plan: 4 of 4 完成（25-01, 25-02, 25-03, 25-04）
+Phase: 26
+Plan: Not started
 Status: Phase 25 完成；下一步 Phase 26（多仓凭证统一 + MCP 多仓参数）
-Last activity: 2026-06-15 -- 完成 Phase 25 Plan 04（commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
+Last activity: 2026-06-14
 
 ## Milestone Overview (v0.5.0)
 
