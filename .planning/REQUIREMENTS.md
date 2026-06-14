@@ -17,7 +17,7 @@
 - [ ] **EXCL-03**：索引/描述生成阶段 AI 识别敏感文件（密钥/env/敏感信息），产出建议名单供用户确认/增删，不静默删除。
 - [ ] **EXCL-04**：普通排除清理可删除已索引的派生数据（Qdrant 主+overlay、ChunkRegistry、codegraph、repo_summaries/index_nodes）。
 - [ ] **EXCL-05**：敏感清理在普通排除基础上额外清理操作记录数据面（message parts、agent trace、TaskResult、CodeChangeArchive diff、prompt snapshot、错误日志可控范围）。
-- [ ] **EXCL-06**：用户可在 UI 对比"当前排除规则 vs 已索引内容"，有差异时收到提示并可一键执行清理。
+- [x] **EXCL-06**：用户可在 UI 对比"当前排除规则 vs 已索引内容"，有差异时收到提示并可一键执行清理。
 
 ### IDX — 索引增强
 

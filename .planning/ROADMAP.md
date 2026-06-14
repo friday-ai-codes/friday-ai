@@ -65,7 +65,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 23-03-PLAN.md — 敏感清理操作记录数据面（CodeChangeArchive/TaskResult/ActionLog 等，Wave 3）✅ (beca0283c/869f534ac)
-- [ ] 23-04-PLAN.md — 对账/清理前端面板（差异提示 + 普通/敏感双入口强确认，Wave 3）
+- [x] 23-04-PLAN.md — 对账/清理前端面板（差异提示 + 普通/敏感双入口强确认 + 派发后状态回显未清面/caveat，Wave 3）✅ (51cd36867/baa35af01)
 
 ### Phase 24: 敏感文件 AI 识别建议名单
 
@@ -99,7 +99,7 @@ Plans:
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
 | 22. 排除配置与统一过滤 | v0.5.0 | 7/6 | Complete    | 2026-06-14 |
-| 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | In progress (1/4 plans) | — |
+| 23. 清理对账（两模式） | v0.5.0 | EXCL-04..06 | Complete (4/4 plans) | — |
 | 24. 敏感文件 AI 识别 | v0.5.0 | EXCL-03 | Not started | — |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | IDX-01..02 | Not started | — |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
