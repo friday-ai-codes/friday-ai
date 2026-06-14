@@ -10,6 +10,7 @@ import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import CredentialModal from '~/components/repository/CredentialModal.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
+import ExclusionRulesPanel from '~/components/repository/ExclusionRulesPanel.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
 import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
@@ -275,6 +276,7 @@ const sections = ref<NavSection[]>([
   { id: 'linked-projects', label: '关联空间', icon: 'icon-[lucide--folder]' },
   { id: 'credential', label: '凭证配置', icon: 'icon-[lucide--key]' },
   { id: 'webhook', label: 'Webhook 自动化', icon: 'icon-[lucide--webhook]' },
+  { id: 'exclusions', label: '排除规则', icon: 'icon-[lucide--eye-off]' },
   { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
 ])
 
@@ -599,6 +601,11 @@ function copyUrl() {
         <!-- ==================== Webhook 自动化 ==================== -->
         <section id="webhook" class="scroll-mt-22">
           <WebhookConfigPanel :repository="repository" @updated="repositoriesStore.fetchRepository(repositoryId)" />
+        </section>
+
+        <!-- ==================== 排除规则（EXCL-01 fail-closed） ==================== -->
+        <section id="exclusions" class="scroll-mt-22">
+          <ExclusionRulesPanel :repository-id="repository.id" />
         </section>
 
         <!-- ==================== 危险操作 ==================== -->

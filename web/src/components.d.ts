@@ -163,6 +163,7 @@ declare module 'vue' {
     EntityRelationTree: typeof import('./components/knowledge/EntityRelationTree.vue')['default']
     EntityVersionTimeline: typeof import('./components/knowledge/EntityVersionTimeline.vue')['default']
     ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
+    ExclusionRulesPanel: typeof import('./components/repository/ExclusionRulesPanel.vue')['default']
     ExecuteWorkflowModal: typeof import('./components/workflow/ExecuteWorkflowModal.vue')['default']
     ExecutionCard: typeof import('./components/execution/ExecutionCard.vue')['default']
     ExecutionDagView: typeof import('./components/execution/dag/ExecutionDagView.vue')['default']
