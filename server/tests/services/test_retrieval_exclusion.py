@@ -23,7 +23,9 @@ from services.retrieval.rag_search import search_rag
 from services.retrieval.types import LayerSnapshot, NeighborMetadata
 
 
-def _item(file_path: str, *, score: float, chunk_index: int = 0, content: str = "x") -> dict[str, Any]:
+def _item(
+    file_path: str, *, score: float, chunk_index: int = 0, content: str = "x"
+) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
         "score": score,
@@ -35,7 +37,9 @@ def _item(file_path: str, *, score: float, chunk_index: int = 0, content: str = 
     }
 
 
-def _patch_rag_deps(monkeypatch: pytest.MonkeyPatch, *, results_by_repo: dict[str, list[dict[str, Any]]]) -> None:
+def _patch_rag_deps(
+    monkeypatch: pytest.MonkeyPatch, *, results_by_repo: dict[str, list[dict[str, Any]]]
+) -> None:
     """patch embedding / sparse / BranchAwareSearchService.search 的重型副作用。"""
     monkeypatch.setattr(
         "services.embedding.EmbeddingService.generate_embedding",
@@ -56,8 +60,10 @@ def _patch_rag_deps(monkeypatch: pytest.MonkeyPatch, *, results_by_repo: dict[st
 
 
 def _builtin_matcher(repo_id: str = "") -> ExclusionMatcher:
+    # 用 ``*.env`` 让根 ``.env`` 与嵌套 / 同名变体（如 ``secrets.env``）均命中，
+    # 据此验证 hop1（``.env``）与 hop2（``secrets.env``）被排除邻居均被剔除。
     return ExclusionMatcher(
-        [ExclusionRuleSpec(pattern=".env", rule_type="glob", source="global")],
+        [ExclusionRuleSpec(pattern="*.env", rule_type="glob", source="global")],
         repository_id=repo_id,
     )
 
@@ -119,9 +125,7 @@ async def test_search_rag_builds_matcher_once_per_repo(monkeypatch: pytest.Monke
         },
     )
     build_mock = AsyncMock(side_effect=lambda rid: _builtin_matcher(rid))
-    monkeypatch.setattr(
-        "services.retrieval.rag_search.build_matcher_for_repo", build_mock
-    )
+    monkeypatch.setattr("services.retrieval.rag_search.build_matcher_for_repo", build_mock)
 
     await search_rag("q", repo_ids=["repo-a", "repo-b"])
 
@@ -223,9 +227,7 @@ async def _run_graph_capable(
             "services.retrieval.hybrid_search.build_matcher_for_repo",
             new=AsyncMock(return_value=matcher),
         ),
-        patch.object(
-            LocalProvider, "lookup_symbols", new=AsyncMock(return_value=[])
-        ),
+        patch.object(LocalProvider, "lookup_symbols", new=AsyncMock(return_value=[])),
     ):
         return await HybridSearchService(LocalProvider()).search(
             "q", repository_ids=["repo-a"], enable_graph_enrichment=True
@@ -240,14 +242,21 @@ async def test_graph_capable_filters_excluded_neighbors(
         monkeypatch,
         rag_items=[_item("src/app.py", score=0.9)],
         hop1=[_neighbor("src/auth.py", weight=0.9, hop=1), _neighbor(".env", weight=0.8, hop=1)],
-        hop2=[_neighbor("secrets.env", weight=0.5, hop=2)],
-        matcher=_builtin_matcher("repo-a"),
+        hop2=[_neighbor("config/secret.json", weight=0.5, hop=2)],
+        matcher=ExclusionMatcher(
+            [
+                ExclusionRuleSpec(pattern=".env", rule_type="glob", source="global"),
+                ExclusionRuleSpec(pattern="*secret*.json", rule_type="glob", source="global"),
+            ],
+            repository_id="repo-a",
+        ),
     )
 
     from services.retrieval.types import HybridSearchResult
 
     assert isinstance(result, HybridSearchResult)
     assert ".env" not in result.graph_context
+    assert "secret.json" not in result.graph_context
     assert ".env" not in result.final_context
     # 正常邻居保留
     assert "src/auth.py" in result.graph_context

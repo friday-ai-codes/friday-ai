@@ -57,6 +57,13 @@ from services.retrieval.types import (
     RagSearchResult,
 )
 
+
+class _NoExclusionMatcher:
+    """no-op 排除匹配器替身（golden 场景无排除规则，永不命中）。"""
+
+    def is_excluded(self, _rel_path: str) -> bool:
+        return False
+
 FIXTURE_DIR: Path = (
     Path(__file__).resolve().parent.parent.parent
     / "fixtures"
@@ -532,6 +539,13 @@ async def _run_scenario(
             new=AsyncMock(return_value=hop2_list),
         ),
         patch.object(LocalProvider, "lookup_symbols", new=lookup_mock),
+        # Phase 22 EXCL-02：graph_capable 路径经 build_matcher_for_repo 过滤被排除邻居。
+        # golden 场景的 file_path 均为良性（不命中内置默认），注入 no-op 匹配器保证
+        # 既有 byte-eq fixture 不漂移（repo_ids 为合成串，无法走真实 DB 匹配器）。
+        patch(
+            "services.retrieval.hybrid_search.build_matcher_for_repo",
+            new=AsyncMock(return_value=_NoExclusionMatcher()),
+        ),
     ]
 
     async def _call() -> RagSearchResult | HybridSearchResult:
