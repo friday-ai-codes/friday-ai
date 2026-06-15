@@ -44,7 +44,7 @@
 
 ### 一键摄取（ING）
 
-- [ ] **ING-01**: 给定 (看板URL, MR URL)，系统能拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
+- [x] **ING-01**: 给定 (看板URL, MR URL)，系统能拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
 
 ### 历史 diff 时效（HDIFF）
 
@@ -110,7 +110,7 @@
 | DOC-02 | Phase 30 | Complete |
 | REL-01 | Phase 31 | Complete |
 | REL-02 | Phase 31 | Complete |
-| ING-01 | Phase 32 | Pending |
+| ING-01 | Phase 32 | Complete |
 | HDIFF-01 | Phase 33 | Pending |
 | HDIFF-02 | Phase 33 | Pending |
 | RREF-01 | Phase 34 | Pending |
