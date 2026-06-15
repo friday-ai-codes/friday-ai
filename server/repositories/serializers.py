@@ -378,7 +378,7 @@ class GitInstanceCredentialWriteSerializer(serializers.Serializer):
         max_length=200, required=False, allow_blank=True, default=""
     )
     access_token = serializers.CharField(
-        write_only=True, required=False, allow_blank=False, trim_whitespace=True
+        write_only=True, required=False, allow_blank=True, trim_whitespace=True
     )
 
     def validate_host(self, value: str) -> str:
