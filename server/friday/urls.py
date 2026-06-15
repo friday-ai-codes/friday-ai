@@ -62,6 +62,8 @@ api_patterns = [
     path("knowledge/", include("knowledge.api.urls")),
     # Delivery 交付脊柱（Phase 28：手动 upsert + 读取 WorkItem）
     path("delivery/", include("delivery.urls")),
+    # 审计事件只读 REST API（list / detail，仅限 superuser）
+    path("", include("audit.api.urls")),
     # API Documentation
     path("schema", SpectacularAPIView.as_view(), name="schema"),
     path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
