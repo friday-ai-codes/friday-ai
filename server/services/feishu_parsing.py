@@ -19,6 +19,7 @@ helper used by BOTH client copies）。
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -402,3 +403,114 @@ def _field_value_as_url(fld: dict | None) -> str:
             if isinstance(candidate, str) and candidate:
                 return candidate
     return ""
+
+
+# === 关系派生（FIX-02 / PF-10）===
+
+# 关联字段 → 关系类型映射（DOMAIN §16 实测；未命中归 related）
+RELATION_TYPE_BY_FIELD: dict[str, str] = {
+    "field_caadeb": "belongs_to_project",  # 所属项目（父）
+    "planning_sprint": "sprint",  # 所属迭代
+    "planning_version": "version",  # 规划版本
+    "actual_online_version": "version",  # 上车版本
+}
+
+# 触发关系派生的字段类型（关联多选）
+RELATION_FIELD_TYPE_KEY = "work_item_related_multi_select"
+
+
+@dataclass
+class RelationSpec:
+    """派生自飞书关联字段的关系规格（对齐 DOMAIN §12.3 WorkItemRelation）。
+
+    本 phase 只产出"派生 RelationSpec 结构"，不落库（落库是 Phase 28）。
+    """
+
+    relation_type: str
+    source_field_key: str
+    target_external_id: int
+    origin: str = "feishu_field"
+
+
+def derive_relations_from_fields(feishu_fields: list[dict]) -> list[RelationSpec]:
+    """从关联多选字段派生关系规格（FIX-02 主路径，纯函数、无 DB、无网络）。
+
+    仅遍历 `field_type_key == work_item_related_multi_select` 的字段，对每个
+    `target_external_id` 产出一条 `RelationSpec`：relation_type 经
+    `RELATION_TYPE_BY_FIELD` 映射、未命中归 `related`；origin 固定 `feishu_field`。
+    空 `[]` 关联值不产出关系；非关联类型字段被忽略。
+
+    Args:
+        feishu_fields: `build_feishu_fields` 产出的完整字段对象列表。
+
+    Returns:
+        派生出的 `RelationSpec` 列表（DOMAIN §12.3）。
+    """
+    specs: list[RelationSpec] = []
+    for fld in feishu_fields or []:
+        if not isinstance(fld, dict):
+            continue
+        if fld.get("field_type_key") != RELATION_FIELD_TYPE_KEY:
+            continue
+        source_field_key = fld.get("field_key")
+        if not source_field_key:
+            continue
+        relation_type = RELATION_TYPE_BY_FIELD.get(source_field_key, "related")
+        for target_id in extract_related_ids(fld.get("field_value")):
+            specs.append(
+                RelationSpec(
+                    relation_type=relation_type,
+                    source_field_key=source_field_key,
+                    target_external_id=target_id,
+                    origin="feishu_field",
+                )
+            )
+    return specs
+
+
+# === 评论解析（FIX-03 / PF-11）===
+
+
+def parse_comments(data: Any) -> list[dict]:
+    """对齐飞书 `comment/list` 形状逐条解析评论（fail-soft）。
+
+    容错读取 `data["data"]["comments"]`（兼容现状 `data.get("data",{})
+    .get("comments",[])`）；逐条取 `id` / `content`(经 rich_text_to_markdown) /
+    `created_at` / `author`(author.name 缺省 "Unknown") / `thread_parent_id`
+    （父评论 id，无则空串）。`data` 为 None / 形状不符 → 返回 `[]`，不抛异常。
+
+    Args:
+        data: 飞书评论列表接口的解析后响应（可能为 None / 畸形）。
+
+    Returns:
+        扁平评论字典列表。
+    """
+    if not isinstance(data, dict):
+        return []
+
+    payload = data.get("data")
+    if not isinstance(payload, dict):
+        return []
+
+    raw_comments = payload.get("comments")
+    if not isinstance(raw_comments, list):
+        return []
+
+    comments: list[dict] = []
+    for item in raw_comments:
+        if not isinstance(item, dict):
+            continue
+        author = item.get("author")
+        author_name = "Unknown"
+        if isinstance(author, dict):
+            author_name = author.get("name") or "Unknown"
+        comments.append(
+            {
+                "id": item.get("id"),
+                "content": rich_text_to_markdown(item.get("content", {})),
+                "created_at": item.get("created_at"),
+                "author": author_name,
+                "thread_parent_id": item.get("parent_id") or item.get("thread_parent_id") or "",
+            }
+        )
+    return comments
