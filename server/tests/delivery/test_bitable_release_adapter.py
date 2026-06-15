@@ -87,6 +87,25 @@ async def test_ingest_preserves_raw_row_and_natural_key() -> None:
     assert record.status == "released"
 
 
+async def test_reingest_same_table_reuses_one_batch() -> None:
+    """重复摄取同一张表（同 app_token/table_id）复用同一 ReleaseBatch，不累积空批次（WR-02）。"""
+    records = [{"record_id": "rec1", "fields": {"status": "released"}}]
+    adapter = BitableReleaseAdapter(client=_FakeBitableClient(records))
+
+    batch1 = await adapter.ingest_from_table(
+        project=None, app_token=APP_TOKEN, table_id=TABLE_ID
+    )
+    batch2 = await adapter.ingest_from_table(
+        project=None, app_token=APP_TOKEN, table_id=TABLE_ID
+    )
+
+    # 二次摄取收敛回同一 batch（幂等）：仅 1 个 ReleaseBatch，无孤立空批次。
+    assert batch1.id == batch2.id
+    assert await ReleaseBatch.objects.acount() == 1
+    # 记录仍幂等收敛到这一复用 batch（1 条，挂在 batch2/batch1 上）。
+    assert await ReleaseRecord.objects.filter(batch=batch2).acount() == 1
+
+
 @pytest.mark.parametrize(
     "exc",
     [
