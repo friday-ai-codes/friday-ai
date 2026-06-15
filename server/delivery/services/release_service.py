@@ -247,6 +247,17 @@ class ReleaseService:
         if external_id is None:
             return None, None
 
+        # 占位反查对非整型容错：脏值（字符串/dict 等）只丢弃 work_item 占位，绝不丢整行
+        # ——raw_row 仍无损落库 + work_item=None（REL-01 无损意图，WR-03）。
+        try:
+            external_id = int(external_id)
+        except (TypeError, ValueError):
+            logger.info(
+                "release_record_workitem_external_id_invalid",
+                value=str(external_id),
+            )
+            return None, None
+
         matches = list(WorkItem.objects.filter(work_item_id=external_id)[:2])
         if not matches:
             logger.info(

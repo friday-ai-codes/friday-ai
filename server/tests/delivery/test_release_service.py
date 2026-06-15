@@ -187,6 +187,43 @@ async def test_ingest_malformed_row_does_not_rollback_batch() -> None:
 
 
 # ============================================================================
+# work_item_external_id 非整型容错（脏值不丢整行，WR-03）
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "dirty_value",
+    [
+        pytest.param("not-an-int", id="str"),
+        pytest.param({"k": "v"}, id="dict"),
+        pytest.param([1, 2], id="list"),
+    ],
+)
+async def test_non_integer_external_id_persists_record_lossless(dirty_value) -> None:
+    """work_item_external_id 非整型 → 仍无损落库（raw_row 保留 + work_item/external_id 留空），绝不丢行。"""
+    raw = {
+        "bitable_record_key": "app:tbl:dirty",
+        "work_item_external_id": dirty_value,
+        "status": "released",
+    }
+    service = ReleaseService()
+
+    batch = await service.ingest_batch(
+        raw_rows=[raw], source=ReleaseSource.BITABLE
+    )
+
+    # 整行未被丢弃：仍落 1 条 ReleaseRecord。
+    assert await ReleaseRecord.objects.filter(batch=batch).acount() == 1
+    record = await ReleaseRecord.objects.aget(bitable_record_key="app:tbl:dirty")
+    # raw_row 无损保留原始脏值（REL-01）。
+    assert record.raw_row == raw
+    # 占位字段对脏值容错：work_item 留空、external_id 留 null（不让脏值吃掉整行）。
+    assert record.work_item_id is None
+    assert record.work_item_external_id is None
+    assert record.status == "released"
+
+
+# ============================================================================
 # batch 级幂等（同 external_ref 收敛同批，不累积空批次，WR-02）
 # ============================================================================
 
