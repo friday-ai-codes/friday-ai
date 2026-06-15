@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: 方案编排
-status: planning
-last_updated: "2026-06-15T23:02:06.416Z"
-last_activity: 2026-06-15
+status: roadmap
+last_updated: "2026-06-16T00:00:00.000Z"
+last_activity: 2026-06-16
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,37 +19,51 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
-**Current focus:** Phase 35 — 截图识别需求
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession` 与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
+**Current focus:** Phase 36 — 前置修复 + 编排引擎骨架 + PlanSession 状态机
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (roadmap created, awaiting plan-phase)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-15 — Milestone v0.7.0 started
+Status: Roadmap created (Phases 36–42)
+Last activity: 2026-06-16 — Milestone v0.7.0 roadmap created
 
-## Milestone Overview (v0.6.0 — Phases 27–35)
+## Milestone Overview (v0.7.0 — Phases 36–42)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 27 | 飞书接口前置修复 | FIX-01..04 | Not started |
-| 28 | WorkItem 脊柱 + 单一 upsert 入口 | WIT-01..05 | Not started |
-| 29 | 评论事件流 | CMT-01..02 | Not started |
-| 30 | Document + REFERENCES 边 | DOC-01..02 | Not started |
-| 31 | Release 账本 + Bitable adapter 骨架 | REL-01..02 | Not started |
-| 32 | 一键摄取编排 | ING-01 | Not started |
-| 33 | 历史 diff 冻结 + bi-temporal 失效 | HDIFF-01..02 | Not started |
-| 34 | 评论入图 + 片段→需求反查 | RREF-01..02 | Not started |
-| 35 | 截图识别需求 | VIS-01 | Not started |
+| 36 | 前置修复 + 编排引擎骨架 + PlanSession 状态机 | PF-01, PF-02, ORCH-01, ORCH-02 | Not started |
+| 37 | canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | PLAN-01, PLAN-02, PLAN-03 | Not started |
+| 38 | 路由 + 召回接入 | ROUTE-01, RECALL-01 | Not started |
+| 39 | 并行调研子 agent | RESEARCH-01, RESEARCH-02, RESEARCH-03 | Not started |
+| 40 | 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | MERGE-01, MERGE-02, MERGE-03 | Not started |
+| 41 | HITL 澄清 + 事件 taxonomy + 工作流入口 | CLARIFY-01, ENTRY-01, EVENT-01 | Not started |
+| 42 | Chat 入口薄封装 | ENTRY-02 | Not started |
 
-**Execution order:** 27 → 28 → {29, 30, 31, 32} → {33, 34, 35}。依赖链：FIX(27) → WIT 脊柱(28) → {CMT(29) · DOC(30) · REL(31) · ING(32 需 30)} → {HDIFF(33) · RREF(34 需 29) · VIS(35) 相对靠后}。
+**Execution order:** 36 → 37 → 38 → 39 → 40 → 41 → 42（严格顺序）。依赖链：前置修复+引擎骨架(36) → canonical 方案脊柱(37) → 路由+召回(38) → 并行调研(39) → 架构师融合(40) → 澄清+事件+工作流入口(41) → Chat 入口(42)。每个 phase 都建立在前序编排骨架之上。
 
-**前置修复（PREFLIGHT，作 Phase 27 独立首 phase）:** PF-09（work_item_type 取数）、PF-10（关系字段派生）、PF-11（评论端点）、PF-12（完整 fields[] 元数据）；PF-08（历史 diff bi-temporal）在 Phase 33 内处理。
+**前置修复（PREFLIGHT，作 Phase 36 内 blocking 必修）:** PF-01（`search_code` 工具名漂移 + 未知工具静默 continue）、PF-02（`verify_plan` schema 漂移 `tasks` vs `execution_plan`）——方案质量 + PlanValidator 的地基，开工前必修。
 
-**被阻塞输入:** ① Bitable 开放平台 `tenant_access_token` 未到位 → Phase 31 仅 adapter 骨架 + 宽容模型（真实列映射 = v2 REL-03）；② 容器型工作项真实 `type_key` 未知。
+**UI 触面:** Phase 41（工作流入口：工作流节点 + 可能的 plan-session 视图）、Phase 42（Chat 入口薄封装：对话发起编排）标 UI hint。
 
-**设计底座:** `.planning/ROADMAP-vNext.md §v0.6`（前瞻路线）、`.planning/DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段 §12/§13/§16）、`.planning/PREFLIGHT.md`（PF-08~12）。不变量 INV-1（三元组唯一）/INV-3（knowledge 投影非事实源）/INV-6（落库只经 service）。
+**关键约束:** INV-2（方案可追溯到 `WorkItem`，chat 自然语言允许 null 但显式标记）、INV-5（对外暴露 progress/trace 事件非模型私有 CoT）、INV-6（方案解析/创建只经 `TechnicalPlanService`，禁旁路写表）。已锁决策：filter_then_container 调研、architect_subagent 融合 + 结构化 MergedPlan + PlanValidator、工作流+Chat 双入口复用同一 engine（工作流先行）、事件 taxonomy 本里程碑即落。
+
+**设计底座:** `.planning/ROADMAP-vNext.md §v0.7`（流水线 6 段/概念/现状坐标/已确认决策）、`.planning/DOMAIN-MODEL.md` §5（canonical TechnicalPlan + service + 迁移规则）/§6（编排状态机 + 子任务级状态 + 可靠恢复规则 + SDD 扩展点）/§7（PartialPlan/MergedPlan/PlanValidator schema）/§14（PlanSession 转移表）/§15（事件 payload 规格）、`.planning/PREFLIGHT.md`（PF-01/02）。
+
+## Milestone Overview (v0.6.0 — shipped 2026-06-15)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 27 | 飞书接口前置修复 | FIX-01..04 | ✅ Complete |
+| 28 | WorkItem 脊柱 + 单一 upsert 入口 | WIT-01..05 | ✅ Complete |
+| 29 | 评论事件流 | CMT-01..02 | ✅ Complete |
+| 30 | Document + REFERENCES 边 | DOC-01..02 | ✅ Complete |
+| 31 | Release 账本 + Bitable adapter 骨架 | REL-01..02 | ✅ Complete |
+| 32 | 一键摄取编排 | ING-01 | ✅ Complete |
+| 33 | 历史 diff 冻结 + bi-temporal 失效 | HDIFF-01..02 | ✅ Complete |
+| 34 | 评论入图 + 片段→需求反查 | RREF-01..02 | ✅ Complete |
+| 35 | 截图识别需求 | VIS-01 | ✅ Complete |
 
 ## Milestone Overview (v0.4.0 — shipped 2026-06-13)
 
@@ -286,11 +300,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T15:49:43.350Z
-Stopped at: Completed 30-03-PLAN.md
+Last session: 2026-06-16T00:00:00.000Z
+Stopped at: v0.7.0 roadmap created (Phases 36–42)
 Resume file: None
-Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
+Next: 规划 Phase 36（前置修复 PF-01/02 + 编排引擎骨架 + PlanSession 状态机）
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with /gsd-plan-phase 36

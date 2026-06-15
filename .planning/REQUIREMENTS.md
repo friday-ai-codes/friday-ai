@@ -120,4 +120,4 @@
 
 ---
 *Requirements defined: 2026-06-16*
-*Last updated: 2026-06-16 after milestone v0.7.0 definition*
+*Last updated: 2026-06-16 — traceability confirmed against ROADMAP.md (Phases 36–42, 19/19 mapped)*
