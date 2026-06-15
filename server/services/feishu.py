@@ -238,14 +238,17 @@ class FeishuClient:
                 },
             )
             # 可选端点（PF-10 实测返回 `Extra data` 非 JSON）：fail-soft 降级
+            # expect=dict：合法 JSON 但非 dict（如 []/标量）同样软失败，避免后续
+            # data.get("err_code") 抛 AttributeError（WR-01）
             data = safe_response_json(
                 response,
                 log_event="feishu_get_relations_parse_failed",
+                expect=dict,
                 project_key=project_key,
                 work_item_id=work_item_id,
             )
             if data is None:
-                return []  # 非 JSON → 已记 warning，降级返回空，绝不抛断
+                return []  # 非 JSON / 非 dict → 已记 warning，降级返回空，绝不抛断
 
             if data.get("err_code") != 0:
                 return []  # Graceful degradation
@@ -337,14 +340,17 @@ class FeishuClient:
                 },
             )
             # 可选列表端点（PF-11 实测响应形状漂移）：fail-soft 防御解析
+            # expect=dict：合法 JSON 但非 dict（如 []/标量）同样软失败，避免后续
+            # data.get("err_code") 抛 AttributeError（WR-01）
             data = safe_response_json(
                 response,
                 log_event="feishu_get_comments_parse_failed",
+                expect=dict,
                 project_key=project_key,
                 work_item_id=work_item_id,
             )
             if data is None:
-                return []  # 非 JSON → 已记 warning，降级返回空
+                return []  # 非 JSON / 非 dict → 已记 warning，降级返回空
 
             if data.get("err_code") != 0:
                 return []

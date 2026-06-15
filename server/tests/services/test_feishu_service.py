@@ -344,3 +344,54 @@ async def test_get_work_item_relations_parses_with_origin() -> None:
     assert relations[0]["relation_type"] == "parent"
     assert relations[0]["work_item_id"] == 7010938167
     assert relations[0]["origin"] == "feishu_relation_api"
+
+
+# === WR-01：合法 JSON 但非 dict（[]/标量）也 fail-soft，绝不抛 AttributeError ===
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_non_dict_json_returns_empty() -> None:
+    """get_comments 遇合法 JSON 但为 list（[]）→ 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(return_value=httpx.Response(200, json=[]))
+
+    client = _make_client()
+    result = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_scalar_json_returns_empty() -> None:
+    """get_comments 遇合法 JSON 但为标量字符串 → 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(return_value=httpx.Response(200, json="err"))
+
+    client = _make_client()
+    result = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_relations_non_dict_json_returns_empty() -> None:
+    """get_work_item_relations 遇合法 JSON 但为 list（[]）→ 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_relation_url("issue")).mock(return_value=httpx.Response(200, json=[]))
+
+    client = _make_client()
+    result = await client.get_work_item_relations(PROJECT_KEY, WORK_ITEM_ID, "issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_relations_scalar_json_returns_empty() -> None:
+    """get_work_item_relations 遇合法 JSON 但为数字标量 → 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_relation_url("issue")).mock(return_value=httpx.Response(200, json=123))
+
+    client = _make_client()
+    result = await client.get_work_item_relations(PROJECT_KEY, WORK_ITEM_ID, "issue")
+    assert result == []
