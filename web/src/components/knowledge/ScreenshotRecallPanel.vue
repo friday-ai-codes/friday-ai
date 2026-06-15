@@ -424,9 +424,9 @@ onBeforeUnmount(() => {
         </template>
       </template>
 
-      <!-- empty：初始 / 移除文件后 -->
+      <!-- empty：初始 / 移除文件后（error 态时不渲染，避免与错误文案双显，UX-1） -->
       <CompactEmptyState
-        v-else
+        v-else-if="!isError"
         icon="lucide--image"
         :title="t('screenshotRecall.empty.title')"
         :description="t('screenshotRecall.empty.body')"

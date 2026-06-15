@@ -204,5 +204,7 @@ describe('screenshotRecallPanel', () => {
     expect(wrapper.find('[data-testid="recall-error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain(zhCN.screenshotRecall.error)
     expect(handleErrorMock).toHaveBeenCalled()
+    // UX-1：首次失败时 error 与 empty 互斥，空态不应同时渲染。
+    expect(wrapper.find('[data-testid="recall-empty"]').exists()).toBe(false)
   })
 })
