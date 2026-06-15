@@ -200,7 +200,9 @@ Plans:
   2. 提取的语义转为文本 query，召回对应需求（复用现有 work_item/知识库 RAG）
   3. 全程不建图片向量库（视觉相似/标注向量库列 backlog）
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 35-01-PLAN.md — 后端 screenshot_recall 服务（vision 提语义 → 文本 query → 既有交付知识检索召回 work_item + graceful 降级）+ multipart REST 端点（IsAuthenticated + 双校验）
+- [ ] 35-02-PLAN.md — 前端「截图识需求」面板（拖拽/选择/粘贴上传 + 6 态状态机 + 召回列表/语义卡）+ i18n + 侧边栏入口
 **UI hint**: yes
 
 ### 📋 Next milestone
