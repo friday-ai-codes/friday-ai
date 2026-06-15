@@ -91,18 +91,29 @@ def require_aware(dt: datetime, field: str) -> datetime:
     return dt
 
 
-def bitemporal_as_of_q(as_of: datetime) -> Q:
+def bitemporal_as_of_q(as_of: datetime, *, business_only: bool = False) -> Q:
     """bi-temporal as-of 谓词（与 neighbors/traverse 语义一致，单一收口）。
 
+    默认（``business_only=False``）双时间线交集：
     ``valid_at<=as_of AND (invalid_at IS NULL OR invalid_at>as_of)
-    AND created_at<=as_of AND (expired_at IS NULL OR expired_at>as_of)``：
-    给定 ``as_of`` 取该时点"当年成立且当年有效"的边。提升为公开 helper
-    （HDIFF-02）：knowledge 内部 as-of 查询面（modifies_chunk）复用同一谓词，
+    AND created_at<=as_of AND (expired_at IS NULL OR expired_at>as_of)``——
+    给定 ``as_of`` 取该时点"当年成立且当年有效"的边（neighbors/traverse 复用）。
+
+    ``business_only=True`` 仅业务时间线 ``valid_at<=as_of AND (invalid_at IS NULL
+    OR invalid_at>as_of)``，去掉系统时间线（created_at/expired_at）约束（WR-02）：
+    一键摄取把回填历史边的 ``valid_at=merged_at``（很久以前）而
+    ``created_at=auto_now_add``（摄取当下），双时间线交集会令"两年前合并、今天才
+    摄取"的边在其**合并那年**的 ``as_of`` 下不可见；MODIFIES_CHUNK 历史 as-of 语义
+    定义为纯业务时间线，故走该分支。
+
+    提升为公开 helper（HDIFF-02）：knowledge 内部 as-of 查询面复用同一谓词，
     避免跨模块复刻 raw 过滤导致语义漂移（同 require_aware 公开理由）。
     """
+    business_q = Q(valid_at__lte=as_of) & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
+    if business_only:
+        return business_q
     return (
-        Q(valid_at__lte=as_of)
-        & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
+        business_q
         & Q(created_at__lte=as_of)
         & (Q(expired_at__isnull=True) | Q(expired_at__gt=as_of))
     )
@@ -142,7 +153,11 @@ class GraphStore(Protocol):
     async def expire_edge(self, edge_id: uuid.UUID, *, expired_at: datetime) -> None: ...
 
     async def chunk_in_edges(
-        self, chunk_id: uuid.UUID, *, as_of: datetime | None = None
+        self,
+        chunk_id: uuid.UUID,
+        *,
+        as_of: datetime | None = None,
+        business_only: bool = False,
     ) -> list[EdgeRecord]: ...
 
     async def neighbors(
@@ -262,7 +277,11 @@ class RelationalGraphStore:
         )
 
     async def chunk_in_edges(
-        self, chunk_id: uuid.UUID, *, as_of: datetime | None = None
+        self,
+        chunk_id: uuid.UUID,
+        *,
+        as_of: datetime | None = None,
+        business_only: bool = False,
     ) -> list[EdgeRecord]:
         """按 target_chunk_id 反查指向该 chunk 的入边（Phase 14 / ENH-01 / HDIFF-02）。
 
@@ -274,13 +293,16 @@ class RelationalGraphStore:
         默认（``as_of=None``）只返回当前有效边（``invalid_at IS NULL AND
         expired_at IS NULL``，既有调用方零回归）；``as_of`` 给定时按 bi-temporal
         as-of 语义返回该时点"当年成立且当年有效"的边（HDIFF-02 历史回溯）。
+        ``business_only=True``（仅 MODIFIES_CHUNK 历史 as-of 走此分支，WR-02）去掉
+        系统时间线约束，使回填历史边在其业务有效期内可见；默认 False 保持
+        neighbors/traverse 既有双时间线语义零回归。
         """
         qs = KnowledgeEdge.objects.filter(target_chunk_id=chunk_id)
         if as_of is None:
             qs = qs.filter(invalid_at__isnull=True, expired_at__isnull=True)
         else:
             require_aware(as_of, "as_of")
-            qs = qs.filter(bitemporal_as_of_q(as_of))
+            qs = qs.filter(bitemporal_as_of_q(as_of, business_only=business_only))
         qs = qs.select_related("source_entity")
         records = [
             EdgeRecord(
