@@ -4,9 +4,9 @@ from django.urls import path
 
 from .views import (
     AnalyzeRepositoryView,
-    CreateLearningCaseView,
-    CreateFeishuTechnicalPlanView,
     CreateCodingPlanView,
+    CreateFeishuTechnicalPlanView,
+    CreateLearningCaseView,
     CreateMergeRequestView,
     CreateWorkItemRepoTasksView,
     ExecuteCodingPlanView,
@@ -21,6 +21,7 @@ from .views import (
     GrepRepositoryView,
     ImproveCodingPlanView,
     ListRepositoryFilesView,
+    ReverseLookupView,
     RouteRepositoriesView,
     SearchDeliveryKnowledgeView,
     SearchLearningCasesView,
@@ -36,6 +37,7 @@ urlpatterns = [
     path("tools/get_repository_file/", GetRepositoryFileView.as_view(), name="mcp-tool-get-repository-file"),
     path("tools/grep_repository/", GrepRepositoryView.as_view(), name="mcp-tool-grep-repository"),
     path("tools/find_related_chunks/", FindRelatedChunksView.as_view(), name="mcp-tool-find-related-chunks"),
+    path("tools/reverse_lookup_requirements/", ReverseLookupView.as_view(), name="mcp-tool-reverse-lookup-requirements"),
     path("tools/analyze_repository/", AnalyzeRepositoryView.as_view(), name="mcp-tool-analyze-repository"),
     path("tools/create_coding_plan/", CreateCodingPlanView.as_view(), name="mcp-tool-create-coding-plan"),
     path("tools/improve_coding_plan/", ImproveCodingPlanView.as_view(), name="mcp-tool-improve-coding-plan"),
