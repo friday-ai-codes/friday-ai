@@ -17,8 +17,8 @@
 complete，缺正文（拉取失败降级）→ missing。失败策略沿用 §1.4 降级范式——缺段不缺
 实体，不抛、不回滚。
 
-**不 import knowledge.models / 不写 KnowledgeEntity**（INV-3：knowledge 投影由 30-03
-normalizer 经既有 ingestion 管线产出，DocumentService 只管操作态）。
+**不 import / 不写 knowledge 投影模型**（INV-3：knowledge 投影由 30-03 normalizer
+经既有 ingestion 管线产出，DocumentService 只管操作态）。
 """
 
 from __future__ import annotations
