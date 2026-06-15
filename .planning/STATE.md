@@ -4,14 +4,14 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: executing
 stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-06-15T04:45:00.000Z"
+last_updated: "2026-06-15T05:05:13.733Z"
 last_activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 14
+  completed_plans: 5
+  percent: 11
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 28 (WorkItem 脊柱 + 单一 upsert 入口) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 28 (28-01 complete)
+Plan: 3 of 3
+Status: Ready to execute
 Last activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
 
 Progress: [███░░░░░░░] 33%
@@ -263,7 +263,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T04:45:00.000Z
+Last session: 2026-06-15T05:05:13.726Z
 Stopped at: Completed 28-01-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
