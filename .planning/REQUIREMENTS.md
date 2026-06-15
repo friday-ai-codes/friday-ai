@@ -1,78 +1,76 @@
-# Requirements: Friday AI — v0.6.0 领域脊柱 + 知识图谱补全
+# Requirements: Friday AI — v0.7.0 方案编排（需求 → 主方案）
 
-**Defined:** 2026-06-15
-**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
+**Defined:** 2026-06-16
+**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把"需求 → 一份高质量多仓主技术方案"做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
 
-> 设计底座：`.planning/ROADMAP-vNext.md` §v0.6、`.planning/DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段附录）、`.planning/PREFLIGHT.md`（PF-08~12）。
-> 不变量：INV-1（飞书三元组唯一→单一 canonical WorkItem）、INV-3（knowledge 是检索投影非操作态事实源）、INV-6（落库只经 WorkItemService.upsert，禁旁路写表）。
+> 设计底座：`.planning/ROADMAP-vNext.md` §v0.7（流水线 6 段/概念/现状坐标/已确认决策）、`.planning/DOMAIN-MODEL.md` §5（canonical TechnicalPlan + service + 迁移规则）/§6（编排状态机 + 子任务级状态 + 可靠恢复规则 + SDD 扩展点）/§7（PartialPlan/MergedPlan/PlanValidator schema）/§14（PlanSession 转移表）/§15（事件 payload 规格）、`.planning/PREFLIGHT.md`（PF-01/02 必修）。
+> 不变量：INV-2（所有技术方案最终可追溯到 WorkItem，chat 自然语言例外可 null 但显式标记）、INV-5（对外暴露 progress/trace 事件非模型私有 CoT）、INV-6（技术方案解析/创建只经 TechnicalPlanService，禁旁路写表）。
 
 ## v1 Requirements
 
 本里程碑提交范围。每条映射到 roadmap 某个 phase。
 
-### 飞书接口前置修复（FIX）
+### 前置修复（PF）
 
-> should-fix-before-v0.6：`WorkItemService.upsert` 依赖这些飞书接口先修对（PF-09/10/11/12）。
+> should-fix-before-v0.7：方案质量与 PlanValidator 的地基（PF-01/02 已 verified，见 PREFLIGHT）。
 
-- [x] **FIX-01**: 系统按真实 `work_item_type`（issue / story / 容器型）拉取工作项与评论，不再默认 `story` 取错或取空（PF-09）
-- [x] **FIX-02**: 工作项间关系改为从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），失效的独立 relation 端点降级为可选（PF-10）
-- [x] **FIX-03**: 修复 `get_comments` 端点，能成功拉取并解析飞书工作项评论（PF-11）
-- [x] **FIX-04**: `get_work_item` 保留完整 `fields[]` 对象（`field_name`/`field_type_key`/`field_alias`），不再拍平丢元数据（PF-12）
+- [ ] **PF-01**: 修 `ai_plan_generation` 工具名漂移（`search_code` → 注册名 `search_repository_code`），并把 `build_langchain_tools` 对未知工具的静默 `continue` 改为 fail-loud（记 error），使 server 端方案生成的检索工具真正生效
+- [ ] **PF-02**: 修 `verify_plan` 校验字段从 `tasks` 对齐到 schema 实际的 `execution_plan`，使方案校验不再形同虚设（作为 v0.7 `PlanValidator` 的基础）
 
-### WorkItem 脊柱（WIT）
+### 编排引擎与状态机（ORCH）
 
-- [x] **WIT-01**: 同一飞书工作项无论从 webhook / 手动输入 / Bitable 导入 / MR反查进入，都收敛到唯一 canonical `WorkItem`（三元组幂等，INV-1）
-- [x] **WIT-02**: 所有 `WorkItem` 落库只经 `WorkItemService.upsert` 单一入口（INV-6），按 mirror/friday_enhanced/writeback 三分类刷新（sync 覆盖 mirror、绝不动 enhanced）
-- [x] **WIT-03**: 每次 upsert 按 facet 记录来源完整度 `WorkItemSyncState`（complete/partial/missing/stale），部分 facet 失败不回滚整体、落 error + 重试标记
-- [x] **WIT-04**: 系统从 story 关联字段正确派生父子/迭代/版本关系（`WorkItemRelation`），目标未落库时以 `target_external_id` 占位
-- [x] **WIT-05**: 工作项状态变更记为 append-only `WorkItemStatusEvent`（cur/pre state_key），非就地改写
+- [ ] **ORCH-01**: 立一个可复用的 `ai_plan_research` 编排 engine（工作流与 Chat 共用底层 orchestration 抽象），驱动"拆分 → 路由 → 召回 → 澄清 → 并行调研 → 融合"流水线
+- [ ] **ORCH-02**: `PlanSession` 编排状态机可持久化、可恢复（decomposing → routing → recalling → clarifying → researching → merging → done/failed），按 §14 转移表推进并落结构化错误
 
-### 评论事件流（CMT）
+### canonical 方案脊柱（PLAN）
 
-- [x] **CMT-01**: 工作项评论以 append-only `WorkItemCommentEvent` 流式入库（created/replied/edited/deleted/approval），保留可追溯历史
-- [x] **CMT-02**: 系统可从评论事件流投影出当前评论树（线程结构），编辑/删除作为事件不就地改写
+- [ ] **PLAN-01**: 立 canonical `TechnicalPlan`/`PlanVersion` 模型（origin/status 状态 + version + supersedes 版本链 + `content` 存 MergedPlan schema），方案最终可追溯到 `WorkItem`（INV-2，chat 自然语言允许 null）
+- [ ] **PLAN-02**: `TechnicalPlanService` 作为方案解析/创建/关联的唯一写入入口（`resolve`/`create_from`/`link`，INV-6），新编排经它 eager 创建 canonical
+- [ ] **PLAN-03**: 存量 3 路径（chat/mcp/workflow）经 service 挂软链 + eager 投影 + read-time lazy 迁移（不全量双写）；旧表迁移期只读、冲突以 canonical 为准、canonical 归档不级联删旧表
 
-### 文档（DOC）
+### 路由与召回（ROUTE / RECALL）
 
-- [x] **DOC-01**: 系统区分外部飞书文档与内部生成文档（`document_type`/`source_kind`/`content_storage`），PRD/技术方案落独立 `Document` 实体
-- [x] **DOC-02**: `feishu_document` normalizer 把飞书 docx（PRD/技术方案）摄取入库并建 `REFERENCES` 边关联 `WorkItem`
+- [ ] **ROUTE-01**: 编排接入 `RepoRouterV2`（能力树 + LLM），从需求路由出候选仓库 + confidence，写入 `PlanSession`
+- [ ] **RECALL-01**: 编排接入历史召回（`DeliveryKnowledgeSearchService`：相似需求/缺陷/复盘/技术方案），把召回上下文注入后续调研
 
-### Release 账本（REL）
+### 并行调研子 agent（RESEARCH）
 
-- [x] **REL-01**: Release 账本宽容模型（`ReleaseBatch`/`ReleaseRecord`/`ReleaseArtifact`）落地，保留 Bitable 原始行 `raw_row`，adapter 演进不丢数据
-- [x] **REL-02**: 飞书 Bitable client/adapter 骨架就位（开放平台 `tenant_access_token` 解析独立于项目 plugin token），natural key `{app_token}:{table_id}:{record_id}`（数据映射待开放平台凭证后填）
+- [ ] **RESEARCH-01**: 筛选后只对"需深入"的仓 fan-out 并行调研子 agent（filter_then_container：每仓独立 claude code 容器上下文隔离），产出结构化 `PartialPlan`（research_summary/proposed_changes/candidate_files/api_contracts_exposed/dependencies_on_other_repos）
+- [ ] **RESEARCH-02**: 单仓 `RepoResearchTask` 失败可单独重试，不重跑整个 `PlanSession`
+- [ ] **RESEARCH-03**: 仓库被重新索引（commit 变化）使关联 `PartialPlan.valid=False` 置 `stale`，融合前需重跑
 
-### 一键摄取（ING）
+### 架构师融合（MERGE）
 
-- [x] **ING-01**: 给定 (看板URL, MR URL)，系统能拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
+- [ ] **MERGE-01**: 起"架构师"融合子 agent，收齐 partial 产出结构化 `MergedPlan`（跨仓契约汇总 / 依赖 DAG / 数据迁移 / 兼容风险 / 发布顺序 / 回滚策略 / execution_plan），落 `PlanVersion`
+- [ ] **MERGE-02**: `PlanValidator` 能拦截契约不一致（暴露↔依赖不匹配）/ 依赖成环 / 迁移顺序不合理 / 发布顺序与依赖不一致 / 缺回滚的方案，失败落 `ArchitectMerge.validation_status=failed` + 报告
+- [ ] **MERGE-03**: 跨仓依赖在 `MergedPlan` 中显式建模（dependency_dag + execution_plan[].dependencies），为 v0.8 wave 编码提供拓扑
 
-### 历史 diff 时效（HDIFF）
+### 澄清与入口（CLARIFY / ENTRY）
 
-- [x] **HDIFF-01**: 历史 MR diff 冻结为 commit 锚定快照（用 MR `target_branch` + `merge_commit_sha`，不假设 master）
-- [x] **HDIFF-02**: master 演进后，重索引对账把过期 `MODIFIES_CHUNK` 边置 `invalid_at`，查询按 as-of 区分历史/当前（PF-08）
+- [ ] **CLARIFY-01**: HITL 澄清回路：编排在不清晰时发 `Clarification` 挂起等用户，回答后仅 `affected_partials` 内的 `RepoResearchTask` 重跑，其余 partial 复用
+- [ ] **ENTRY-01**: 工作流入口端到端跑通编排——一个需求经"拆分→路由→召回→澄清→并行调研→融合"产出一份带跨仓依赖的 `MergedPlan`（工作流先行）
+- [ ] **ENTRY-02**: Chat 入口薄封装复用同一底层 orchestration engine（不并行造两套编排）
 
-### 反查（RREF）
+### 事件 taxonomy（EVENT）
 
-- [x] **RREF-01**: 给定 code chunk / 模块，系统能反查关联的需求/文档（片段→需求反查 API/MCP，依赖 v0.5 行号回填）
-- [x] **RREF-02**: 评论摄取进知识投影（评论入图），可被检索关联到 `WorkItem`
-
-### 截图识别（VIS）
-
-- [x] **VIS-01**: 用户上传截图，系统经多模态 LLM 提取文字/UI/业务语义 → 文本 query → 召回对应需求（非图片向量库）
+- [ ] **EVENT-01**: 编排全程产出 §15 trace 事件（统一信封 `{event, session_id, work_item_id?, ts, payload}`，taxonomy：work_item.syncing / knowledge.recalling / repo.routing / repo.research.* / clarification.* / plan.merge.* / plan.validation.failed），为 v0.11 对外 adapter 沉淀稳定词表（INV-5，progress/trace 非 CoT）
 
 ## v2 Requirements
 
 延后到后续里程碑，已记录但不在本 roadmap。
 
-### 方案编排 / 编码（PLAN / CODE）— v0.7 / v0.8
+### 多仓编码（CODE）— v0.8
 
-- **PLAN-01**: canonical `TechnicalPlan` + `TechnicalPlanService` + 旧 3 路径软链/迁移（v0.7）
-- **PLAN-02**: `PlanSession` 编排状态机 + 并行调研子 agent + 架构师融合 + `PlanValidator`（v0.7）
-- **CODE-01**: `RepoCodingTask` 多仓 wave 编码 + 跨仓产物注入 + 融合 PR（v0.8）
+- **CODE-01**: `RepoCodingTask` 多仓 wave 编码（DAG 拓扑分层）+ 上游 `produced_artifacts` 注入下游 + 融合 PR（接 v0.7 `MergedPlan.execution_plan`）
+- **CODE-02**: 编码遇阻走 question 抛人（HITL 回路，非全自动 replan）
 
-### Bitable 数据落地（REL-x）— 待开放平台凭证
+### SDD / OpenSpec（SDD）— v0.9
 
-- **REL-03**: Bitable 真实多维表格列映射 + `ReleaseRecord` 粒度定型（需开放平台 `app_id/secret` + 列头/样例行）
+- **SDD-01**: `PlanSession` 对 SDD 仓库产 spec draft（v0.7 仅预留扩展点字段位，完整状态机/gate/评审在 v0.9）
+
+### 对外开放（OPEN）— v0.11
+
+- **OPEN-01**: 事件 taxonomy 经 adapter 对外透出为 OpenAI/Anthropic 兼容 progress/trace（复用 v0.7 EVENT-01 词表）
 
 ## Out of Scope
 
@@ -80,49 +78,46 @@
 
 | Feature | Reason |
 |---------|--------|
-| 图片向量库（视觉相似 / 标注重） | 截图识别走多模态 LLM（vision→文本→RAG），向量库太重且场景不匹配，留 backlog |
-| canonical `TechnicalPlan` / 方案编排 | v0.7 主题；本里程碑只立数据脊柱，不做方案生成收敛 |
-| 多仓 wave 编码 → 融合 PR | v0.8 主题 |
-| SDD / OpenSpec spec 状态机 | v0.9 主题；v0.6 不预埋 SDD 字段 |
-| 统一 `AuditEvent` 操作审计模型 | v0.10 横切治理 |
-| Bitable 真实数据全量入库 | 缺开放平台 `tenant_access_token` + 列结构样例；本里程碑只建 adapter 骨架 + 宽容模型 |
-| 容器型工作项类型完整支持 | 真实 `type_key` 未知（URL 段 `project` ≠ API type），待查"工作项类型"接口或字段反推后补 |
-| 评论触发方案再生成 | 评论事件边界本里程碑建好（挂 created/replied/approval），实际触发再生成属 v0.7 编排 |
+| 多仓 wave 编码 → 融合 PR | v0.8 主题；v0.7 只产方案（含 execution_plan 拓扑），不落代码 |
+| 编码中全自动 replan/回溯 | 最高阶能力，v0.8 用"抛 question 给人"过渡，全自动留 backlog |
+| SDD spec 完整状态机 / gate / 评审 / 验收 | v0.9 主题；v0.7 仅在 `PlanSession`/产物预留 SDD 扩展点字段位 |
+| 事件 taxonomy 对外 API adapter（OpenAI/Anthropic 透出） | v0.11 主题；v0.7 只产出内部 trace 事件，对外暴露是不同 adapter |
+| 标准双向 tool_calls 协议（客户端自带工具） | 等"客户端自带工具"诉求再做；v0.7 内部工具是服务端闭环 |
+| 全量双写新旧方案表 | 明确选 service 投影（eager + lazy migration），旧表为历史输入非并行事实源 |
+| 图片向量库 / 视觉精确定位 | 与 v0.7 无关，沿用 v0.6 决策留 backlog |
 
 ## Traceability
 
-哪个 phase 覆盖哪些需求。roadmap 创建时填充。
+哪个 phase 覆盖哪些需求。roadmap 创建时确认/调整（建议映射，v0.6 结束于 Phase 35，本里程碑从 Phase 36 续号）。
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 27 | Complete |
-| FIX-02 | Phase 27 | Complete |
-| FIX-03 | Phase 27 | Complete |
-| FIX-04 | Phase 27 | Complete |
-| WIT-01 | Phase 28 | Complete |
-| WIT-02 | Phase 28 | Complete |
-| WIT-03 | Phase 28 | Complete |
-| WIT-04 | Phase 28 | Complete |
-| WIT-05 | Phase 28 | Complete |
-| CMT-01 | Phase 29 | Complete |
-| CMT-02 | Phase 29 | Complete |
-| DOC-01 | Phase 30 | Complete |
-| DOC-02 | Phase 30 | Complete |
-| REL-01 | Phase 31 | Complete |
-| REL-02 | Phase 31 | Complete |
-| ING-01 | Phase 32 | Complete |
-| HDIFF-01 | Phase 33 | Complete |
-| HDIFF-02 | Phase 33 | Complete |
-| RREF-01 | Phase 34 | Complete |
-| RREF-02 | Phase 34 | Complete |
-| VIS-01 | Phase 35 | Complete |
+| PF-01 | Phase 36 | Pending |
+| PF-02 | Phase 36 | Pending |
+| ORCH-01 | Phase 36 | Pending |
+| ORCH-02 | Phase 36 | Pending |
+| PLAN-01 | Phase 37 | Pending |
+| PLAN-02 | Phase 37 | Pending |
+| PLAN-03 | Phase 37 | Pending |
+| ROUTE-01 | Phase 38 | Pending |
+| RECALL-01 | Phase 38 | Pending |
+| RESEARCH-01 | Phase 39 | Pending |
+| RESEARCH-02 | Phase 39 | Pending |
+| RESEARCH-03 | Phase 39 | Pending |
+| MERGE-01 | Phase 40 | Pending |
+| MERGE-02 | Phase 40 | Pending |
+| MERGE-03 | Phase 40 | Pending |
+| CLARIFY-01 | Phase 41 | Pending |
+| ENTRY-01 | Phase 41 | Pending |
+| EVENT-01 | Phase 41 | Pending |
+| ENTRY-02 | Phase 42 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 21 total
-- Mapped to phases: 21/21 ✓
+- v1 requirements: 19 total
+- Mapped to phases: 19/19 ✓
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-06-15*
-*Last updated: 2026-06-15 after milestone v0.6.0 definition*
+*Requirements defined: 2026-06-16*
+*Last updated: 2026-06-16 after milestone v0.7.0 definition*
