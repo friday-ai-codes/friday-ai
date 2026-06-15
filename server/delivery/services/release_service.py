@@ -74,7 +74,7 @@ class ReleaseService:
             收口后的 ``ReleaseBatch``（records 已落库）。
         """
         meta = batch_meta or {}
-        batch = await self._create_batch(source=source, batch_meta=meta)
+        batch = await self._resolve_batch(source=source, batch_meta=meta)
 
         success = 0
         for raw_row in raw_rows:
@@ -131,17 +131,49 @@ class ReleaseService:
         )
 
     @sync_to_async
-    def _create_batch(self, *, source: str, batch_meta: dict[str, Any]) -> ReleaseBatch:
-        """建一个 ReleaseBatch（batch_meta 原始内容落 raw_row 保留，REL-01）。"""
+    def _resolve_batch(self, *, source: str, batch_meta: dict[str, Any]) -> ReleaseBatch:
+        """幂等解析 ReleaseBatch（batch_meta 原始内容落 raw_row 保留，REL-01 / WR-02）。
+
+        非空 ``external_ref`` → 按其作 batch 稳定自然键 ``select_for_update().get_or_create``
+        收敛同批（条件唯一约束 ``uniq_release_batch_external_ref`` 防并发重复）：重复摄取
+        同一张表（external_ref=``{app_token}:{table_id}``）复用同一 ReleaseBatch，不累积
+        空批次、ingested 记录均挂回这一复用批次。已存在时刷新批次元信息（raw_row 无损覆盖
+        为最新，镜像 record 级 upsert）。空 ``external_ref``（如手动录入未给键）→ 直接 create
+        （豁免唯一，允许多批共存）。
+        """
+        external_ref = batch_meta.get("external_ref", "")
+        # TODO(REL-03): 批次级字段的真实 Bitable 列映射待开放平台凭证 + 列样例。
+        defaults = {
+            "source": source,
+            "name": batch_meta.get("name", ""),
+            "released_at": batch_meta.get("released_at"),
+            "raw_row": batch_meta,
+        }
+
         with transaction.atomic():
-            return ReleaseBatch.objects.create(
-                source=source,
-                # TODO(REL-03): 批次级字段的真实 Bitable 列映射待开放平台凭证 + 列样例。
-                name=batch_meta.get("name", ""),
-                released_at=batch_meta.get("released_at"),
-                external_ref=batch_meta.get("external_ref", ""),
-                raw_row=batch_meta,
-            )
+            if external_ref:
+                batch, created = ReleaseBatch.objects.select_for_update().get_or_create(
+                    external_ref=external_ref,
+                    defaults=defaults,
+                )
+                if not created:
+                    # 复用既有批次：刷新批次元信息（raw_row 无损覆盖为最新，REL-01）。
+                    batch.source = source
+                    batch.name = defaults["name"]
+                    batch.released_at = defaults["released_at"]
+                    batch.raw_row = batch_meta
+                    batch.save(
+                        update_fields=[
+                            "source",
+                            "name",
+                            "released_at",
+                            "raw_row",
+                            "updated_at",
+                        ]
+                    )
+                return batch
+            # 空 external_ref 无去重依据 → 直接 create（条件唯一约束豁免空键）。
+            return ReleaseBatch.objects.create(external_ref="", **defaults)
 
     @sync_to_async
     def _upsert_record(

@@ -184,3 +184,43 @@ async def test_ingest_malformed_row_does_not_rollback_batch() -> None:
     # batch 已建，两条有效行落库，畸形行被跳过（不冒泡致整批失败）。
     assert await ReleaseBatch.objects.filter(id=batch.id).aexists()
     assert await ReleaseRecord.objects.filter(batch=batch).acount() == 2
+
+
+# ============================================================================
+# batch 级幂等（同 external_ref 收敛同批，不累积空批次，WR-02）
+# ============================================================================
+
+
+async def test_ingest_batch_idempotent_by_external_ref() -> None:
+    """同非空 external_ref 二次 ingest_batch 收敛回同一 ReleaseBatch（不新建空批次）。"""
+    meta = {"external_ref": "app:tbl", "name": "first"}
+    service = ReleaseService()
+
+    batch1 = await service.ingest_batch(
+        raw_rows=[{"bitable_record_key": "app:tbl:r1", "v": 1}],
+        source=ReleaseSource.BITABLE,
+        batch_meta=meta,
+    )
+    batch2 = await service.ingest_batch(
+        raw_rows=[{"bitable_record_key": "app:tbl:r1", "v": 2}],
+        source=ReleaseSource.BITABLE,
+        batch_meta={"external_ref": "app:tbl", "name": "second"},
+    )
+
+    # 收敛同批：仅 1 个 ReleaseBatch（幂等，不累积空批次）。
+    assert batch1.id == batch2.id
+    assert await ReleaseBatch.objects.acount() == 1
+    # 已存在批次元信息刷新为最新（raw_row 无损覆盖）。
+    fresh = await ReleaseBatch.objects.aget(id=batch1.id)
+    assert fresh.name == "second"
+
+
+async def test_ingest_batch_empty_external_ref_not_deduped() -> None:
+    """空 external_ref 无去重依据 → 多批共存（豁免唯一约束）。"""
+    service = ReleaseService()
+
+    batch1 = await service.ingest_batch(raw_rows=[], source=ReleaseSource.MANUAL)
+    batch2 = await service.ingest_batch(raw_rows=[], source=ReleaseSource.MANUAL)
+
+    assert batch1.id != batch2.id
+    assert await ReleaseBatch.objects.acount() == 2
