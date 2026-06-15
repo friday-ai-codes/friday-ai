@@ -1,6 +1,7 @@
 """GitHub client implementation for PR operations."""
 
 import asyncio
+from datetime import timezone as dt_timezone
 
 import structlog
 from django.utils import timezone as dj_timezone
@@ -264,8 +265,9 @@ class GitHubClient(GitPlatformClient):
 
         复用 get_merge_request_diff 同款 `repo.get_pull` 范式取 PR 对象，读取
         merge_commit_sha / base.ref（target_branch）/ head.ref（source_branch）/
-        merged_at（PyGithub 返回 naive UTC datetime）；merged_at 非 None 时归一为
-        aware。GithubException / 通用异常各自降级返回 success=False，token 绝不入日志。
+        merged_at（PyGithub ≥2.0 返回 aware datetime；保留 naive→aware UTC 归一
+        作为防线，兼容旧版/异常返回 naive 的情形）。GithubException / 通用异常各自
+        降级返回 success=False，token 绝不入日志。
 
         Args:
             mr_id: PR 编号。
@@ -279,7 +281,8 @@ class GitHubClient(GitPlatformClient):
 
             merged_at = pr.merged_at
             if merged_at is not None and dj_timezone.is_naive(merged_at):
-                merged_at = dj_timezone.make_aware(merged_at, dj_timezone.utc)
+                # stdlib timezone.utc：django.utils.timezone.utc 自 Django 5.0 已删除
+                merged_at = dj_timezone.make_aware(merged_at, dt_timezone.utc)
 
             logger.info(
                 "github_pr_metadata_fetched",
