@@ -6,6 +6,8 @@
 from django.urls import path
 
 from delivery.api.views import (
+    IngestDispatchView,
+    IngestRunDetailView,
     WorkItemCommentTreeView,
     WorkItemDetailView,
     WorkItemPrdDocumentView,
@@ -25,4 +27,11 @@ urlpatterns = [
         name="work-item-prd-document",
     ),
     path("work-items/", WorkItemDetailView.as_view(), name="work-item-detail"),
+    # 一键摄取触发 + 状态回流（字面段在前；状态端点含 uuid run_id）
+    path("ingest/", IngestDispatchView.as_view(), name="ingest-dispatch"),
+    path(
+        "ingest/<uuid:run_id>/",
+        IngestRunDetailView.as_view(),
+        name="ingest-run-detail",
+    ),
 ]
