@@ -167,6 +167,36 @@ class TestAsOfQuery:
         historical = await amodifies_chunk_edges(repository_id=str(repo.id), as_of=timezone.now())
         assert [r.edge_id for r in historical] == [edge.id]
 
+    async def test_backfilled_edge_visible_at_as_of_before_created_at(self) -> None:
+        """WR-02：回填历史边（valid_at 在过去、created_at=摄取当下）在其"当年"as_of
+        （落在 valid_at 之后、created_at 之前）下可见——纯业务时间线 as-of，不混入
+        系统时间线 created_at 谓词（否则 created_at>as_of 误过滤）。chunk-scoped 与
+        repo-scoped 两条路径同款。"""
+        repo = await sync_to_async(_make_repo)("asof-backfill")
+        cid = await sync_to_async(_make_chunk)(repo)
+        # valid_at=两年前合并；created_at=auto_now_add=摄取当下（现在）
+        valid_at = timezone.now() - timedelta(days=730)
+        _, edge = await _make_modifies_chunk_edge(
+            repo=repo, target_chunk_id=cid, content_hash="a" * 64, event_time=valid_at
+        )
+
+        # as_of 落在合并那年（valid_at < as_of < created_at(现在)）
+        as_of = timezone.now() - timedelta(days=365)
+
+        # repo-scoped 路径：回填边在其当年可见
+        repo_scoped = await amodifies_chunk_edges(repository_id=str(repo.id), as_of=as_of)
+        assert [r.edge_id for r in repo_scoped] == [edge.id]
+
+        # chunk-scoped 路径（chunk_in_edges business_only=True）：同款可见
+        chunk_scoped = await amodifies_chunk_edges(target_chunk_id=cid, as_of=as_of)
+        assert [r.edge_id for r in chunk_scoped] == [edge.id]
+
+        # 合并之前的 as_of（< valid_at）：尚未成立，不可见
+        before_valid = await amodifies_chunk_edges(
+            repository_id=str(repo.id), as_of=valid_at - timedelta(days=1)
+        )
+        assert before_valid == []
+
 
 def _delete_chunk(chunk_id: uuid.UUID) -> None:
     """删除 ChunkRegistry 行（模拟文件删除 / chunk 收缩）。"""
