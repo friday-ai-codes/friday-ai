@@ -4,8 +4,8 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: verifying
 stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-06-15T05:19:30.083Z"
-last_activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
+last_updated: "2026-06-15T05:37:22.712Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 9
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 28 (WorkItem 脊柱 + 单一 upsert 入口) — EXECUTING
-Plan: 3 of 3
+Phase: 29
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
+Last activity: 2026-06-15
 
 Progress: [███░░░░░░░] 33%
 
