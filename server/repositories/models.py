@@ -627,6 +627,46 @@ class GitCredential(models.Model):
         return f"Credential for {self.repository.name}"
 
 
+class GitInstanceCredential(models.Model):
+    """Git 实例级凭证池（按 host 维度集中管理，per D-01）。
+
+    设计要点：
+    - 同一 Git 实例（host）下的多个仓库复用一份 access token，无需各仓重复粘贴；
+    - token 以 Fernet 密文存于 ``encrypted_token``，绝不存明文、绝不进日志；
+    - host 唯一约束（存归一化小写 host，含端口若有），避免错配他 host 凭证；
+    - 解析优先级（per-repo token 优先 → 实例池 fallback）见 ``services.git_credentials``。
+
+    本阶段聚焦 GitLab，``provider`` 字段保留以便后续扩展其他平台。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    host = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        help_text="归一化小写 host（含端口若有），如 gitlab.example.com 或 gitlab.example.com:8443",
+    )
+    provider = models.CharField(
+        max_length=20,
+        choices=GitPlatform.choices,
+        default=GitPlatform.GITLAB,
+    )
+    encrypted_token = models.TextField(help_text="Fernet 密文 access token，绝不存明文")
+    label = models.CharField(max_length=200, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "git_instance_credentials"
+        verbose_name = "Git 实例凭证"
+        verbose_name_plural = "Git 实例凭证"
+
+    def __str__(self) -> str:
+        # 绝不含 token：仅 provider + host
+        return f"{self.provider}:{self.host}"
+
+
 class RepositoryBranchIndex(models.Model):
     """分支索引记录——追踪每个分支的索引状态与 overlay collection 映射。"""
 
