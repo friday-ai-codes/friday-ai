@@ -4,13 +4,13 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: executing
 stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-06-15T07:52:24.216Z"
+last_updated: "2026-06-15T08:03:12.955Z"
 last_activity: 2026-06-15 -- Phase 30 execution started
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
   percent: 33
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 30 (Document + REFERENCES 边) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 30 execution started
 
@@ -118,6 +118,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 29 P29-01 | ~8min | 2 tasks | 4 files |
 | Phase 29 P02 | 18min | 2 tasks | 5 files |
 | Phase 30 P01 | 10min | 2 tasks | 4 files |
+| Phase 30 P02 | 25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -199,6 +200,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 29-02: 评论事件落库唯一收口 append_events（INV-6 精神），去重锚 get_or_create 幂等；ingest 复用 Phase 27 get_comments 降配不回滚
 - [Phase ?]: 29-02: 当前评论树为事件流读时投影 project_comment_tree（非事实表），编辑取最新/删除标记/线程层级/排序，绝不改事件行
 - [Phase 30]: Document/DocumentVersion 操作态实体落 delivery app，逐字段对齐 DOMAIN §3/§12.5；版本链 supersedes self FK + unique_together(document, version)；本 plan 仅建表无落库逻辑（守 INV-6）
+- [Phase 30]: DocumentService.upsert_from_feishu 单一写入入口（INV-6）：(feishu_tenant, external_ref) 去重 + content_hash 不翻版本 + supersedes 链 + facet 记录
+- [Phase 30]: feishu_tenant 由 doc URL host 派生；_content_hash 复用 knowledge sha256 但不 import（INV-3）
 
 ### Pending Todos
 
@@ -270,7 +273,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T07:52:07.284Z
+Last session: 2026-06-15T08:02:58.987Z
 Stopped at: Completed 29-01-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
