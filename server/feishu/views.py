@@ -883,6 +883,62 @@ class FeishuWebhookView(APIView):
             "workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type
         )
 
+    def _schedule_comment_append(self, project, payload) -> None:
+        """后台 append 评论事件（CMT-01，append-only 事件流，与 approval/knowledge 并存）。
+
+        沿用 ``_schedule_delivery_upsert`` 范式：webhook 只投三元组 + 评论文本，后台经
+        ``CommentEventService.append_webhook_comment`` 单一写入收口落库（INV-6），webhook
+        主响应不被阻塞（best-effort，脱离请求生命周期）。三元组不全（缺 work_item_id /
+        work_item_type_key）则跳过 + warning，不抛、不构造身份（沿用 INV-1 占位类型分裂防护）。
+        缺 canonical work_item 由 service 内跳过 + warning（不建 WorkItem）。
+
+        payload 仅取可得字段（comment_id/author/created_at/thread_parent_id），缺失留空/None，
+        不臆造 edited/deleted 信号（CONTEXT Grey Area 3）。
+        """
+        work_item_id = payload.get("id")
+        # canonical 身份只接受真实 type：缺 work_item_type_key 跳过（占位类型分裂实体违背 INV-1）
+        work_item_type = payload.get("work_item_type_key", "")
+        comment = payload.get("comment", "")
+
+        if not work_item_id or not work_item_type or not comment:
+            logger.warning(
+                "comment_append_skip_incomplete_identity",
+                work_item_id=work_item_id,
+                work_item_type=work_item_type,
+                has_comment=bool(comment),
+            )
+            return
+
+        # lazy import 防循环（delivery → feishu 反向依赖，同 _schedule_delivery_upsert）
+        from delivery.services import CommentEventService, WorkItemIdentity
+        from services.background_runner import run_in_background
+
+        identity = WorkItemIdentity(
+            feishu_project_key=project.feishu_project_key,
+            work_item_type=work_item_type,
+            work_item_id=int(work_item_id),
+        )
+        # payload 可得字段——不提供则空/None，不臆造
+        comment_id = str(payload.get("comment_id") or "")
+        author = str(payload.get("operator_id") or payload.get("author") or "")
+        created_at = payload.get("create_time") or payload.get("created_at")
+        thread_parent_id = str(
+            payload.get("reply_comment_id") or payload.get("thread_parent_id") or ""
+        )
+
+        run_in_background(
+            lambda: CommentEventService().append_webhook_comment(
+                identity,
+                comment_id=comment_id,
+                body=comment,
+                author=author,
+                thread_parent_id=thread_parent_id,
+                created_at=created_at,
+                source="feishu_webhook",
+            ),
+            name=f"comment-append:{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+        )
+
     async def _handle_workitem_comment(self, project, payload, trigger_log):
         """处理工作项评论事件。"""
         work_item_id = payload.get("id")
@@ -891,12 +947,13 @@ class FeishuWebhookView(APIView):
         if not work_item_id or not comment:
             return
 
-        comment_lower = comment.lower()
-        approval_keywords = ["通过", "批准", "approved", "lgtm", "ok", "\U0001f44d"]
-        rejection_keywords = ["驳回", "拒绝", "rejected", "需要修改", "不通过", "\U0001f44e"]
+        # approval 语义复用 29-02 classify_approval_semantic 作单一判定来源，
+        # 避免关键词在 webhook 与 service 两处漂移（CONTEXT Grey Area 3）。
+        from delivery.services import classify_approval_semantic
 
-        is_approved = any(kw in comment_lower for kw in approval_keywords)
-        is_rejected = any(kw in comment_lower for kw in rejection_keywords)
+        semantic = classify_approval_semantic(comment)
+        is_approved = semantic == "approve"
+        is_rejected = semantic == "reject"
 
         if is_approved or is_rejected:
             logger.info(
@@ -934,6 +991,10 @@ class FeishuWebhookView(APIView):
                     work_item_id=work_item_id,
                     error=str(e),
                 )
+
+        # CMT-01：在保留既有 approval 处理（及 knowledge 投影，INV-3）的同时，
+        # **追加**后台 append CommentEvent 事件流（approval 与否皆记录评论事件）。
+        self._schedule_comment_append(project, payload)
 
     async def _handle_workitem_update(self, project, payload, trigger_log):
         """处理工作项字段修改事件。"""
