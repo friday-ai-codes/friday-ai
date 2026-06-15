@@ -13,11 +13,37 @@ class RouteRepositoriesRequestSerializer(serializers.Serializer):
 
 
 class SearchRagChunksRequestSerializer(serializers.Serializer):
-    repository_id = serializers.UUIDField(required=True)
+    # 目标范围：repository_id（单仓便捷参数）/ repository_ids（显式多仓）/
+    # all_repositories（显式全量跨仓，受 max_repos 限制），三者至少给一种。
+    # 与 GrepRepositoryRequestSerializer 同语义：省略多仓参数 = 既有单仓行为。
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    repository_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=20,
+    )
+    all_repositories = serializers.BooleanField(required=False, default=False)
+    max_repos = serializers.IntegerField(required=False, default=10, min_value=1, max_value=20)
     query = serializers.CharField(required=True, allow_blank=False, max_length=1000)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
     top_k = serializers.IntegerField(required=False, default=30, min_value=1, max_value=50)
     max_tokens = serializers.IntegerField(required=False, default=8000, min_value=1, max_value=32000)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        targets = [str(rid) for rid in cast(list[object], attrs.get("repository_ids") or [])]
+        single = attrs.get("repository_id")
+        if single is not None and str(single) not in targets:
+            targets.insert(0, str(single))
+        if not targets and not attrs.get("all_repositories"):
+            raise serializers.ValidationError(
+                "必须提供 repository_id / repository_ids，或显式设置 all_repositories=true"
+            )
+        if str(attrs.get("branch") or "").strip() and len(targets) != 1:
+            raise serializers.ValidationError("branch 仅支持单仓检索时指定")
+        attrs["target_repository_ids"] = targets
+        return attrs
 
 
 class GetRepositoryRequestSerializer(serializers.Serializer):
@@ -446,8 +472,8 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": ["query", "ranked_repos", "total", "run_id"],
     },
     "search_rag_chunks": {
-        "request": ["repository_id", "query", "branch", "top_k", "max_tokens"],
-        "response": ["query", "repository_id", "branch", "results", "related_edges", "total_tokens", "run_id"],
+        "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "query", "branch", "top_k", "max_tokens"],
+        "response": ["query", "repository_id", "repository_ids", "branch", "results", "related_edges", "total_tokens", "run_id"],
     },
     "get_repository": {
         "request": ["repository_id"],
