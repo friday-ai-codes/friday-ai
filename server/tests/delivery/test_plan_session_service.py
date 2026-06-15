@@ -119,6 +119,40 @@ async def test_fail_from_any_status_with_dict_error() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_fail_from_failed_is_noop_preserves_first_error() -> None:
+    """IN-01：已 failed 的会话再 fail 为幂等 no-op，保留首个诊断 error（不被二次覆盖）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.RESEARCHING,
+    )
+    svc = PlanSessionService()
+    first_error = {"stage": "researching", "exc": "Timeout"}
+    await svc.transition(session, "fail", error=first_error)
+
+    # 二次 fail（不同 error）应为 no-op，首因保留
+    await svc.transition(session, "fail", error={"stage": "merging", "exc": "Other"})
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.FAILED
+    assert reloaded.error == first_error
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_fail_from_done_is_noop() -> None:
+    """IN-01：已 done 的会话误调 fail 为 no-op，不无声回落 failed。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.DONE,
+    )
+    svc = PlanSessionService()
+    await svc.transition(session, "fail", error={"exc": "spurious"})
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.DONE
+    assert reloaded.error == {}
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_fail_wraps_non_dict_error() -> None:
     """error 传非 dict 时包成 {'message': ...}。"""
     session = await PlanSession.objects.acreate(

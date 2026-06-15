@@ -156,7 +156,18 @@ class PlanSessionService:
             setattr(session, field, value)
 
     async def _fail(self, session: PlanSession, payload: dict[str, Any]) -> PlanSession:
-        """``fail`` 特判：任意状态 → failed + 落结构化 error（不可恢复错误）。"""
+        """``fail`` 特判：任意状态 → failed + 落结构化 error（不可恢复错误）。
+
+        IN-01 终态守护：已 ``done``/``failed`` 的会话再 ``fail`` 为幂等 no-op——
+        不把已 ``done`` 无声回落 ``failed``、不二次覆盖首个诊断 ``error``（保留首因）。
+        """
+        if session.status in (PlanSessionStatus.DONE, PlanSessionStatus.FAILED):
+            logger.info(
+                "plan_session_fail_noop_terminal",
+                session_id=str(session.id),
+                status=session.status,
+            )
+            return session
         raw_error = payload.get("error")
         error = raw_error if isinstance(raw_error, dict) else {"message": str(raw_error)}
         await self._fail_sync(session, error)
