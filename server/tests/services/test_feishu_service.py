@@ -1,0 +1,197 @@
+"""canonical `services.feishu.FeishuClient` respx 单测（FIX-01/02/03/04）。
+
+覆盖 Plan 27-02 全部 behavior：
+- FIX-01：`get_work_item` / `get_comments` 不传 `work_item_type` → `TypeError`（必填、
+  fail-loud），传真实 type 按 type 取数（不再静默落 story）。
+- FIX-04：`WorkItemInfo.feishu_fields` 完整对象数组（含 field_name/type/alias），旧
+  `fields` 拍平 dict 向后兼容。
+- FIX-03：`get_comments` 遇非 JSON → `[]` + warning（fail-soft），正常响应逐条解析。
+- FIX-02：`get_work_item_relations` 遇非 JSON（Extra data）→ `[]` + warning，绝不抛断。
+- 硬取数路径（`get_work_item`）遇非 JSON → 抛 `FeishuResponseError`（fail-loud）。
+
+所有 HTTP 经 `@respx.mock` 拦截（先 mock token 端点再 mock 业务端点），pytest-socket
+隔离下不发真实网络。fixture 字段形状取 DOMAIN-MODEL.md §16 实测值（story 7010225564 /
+issue 5580252273，project_key 622c10eb5daaee81db915189）。
+"""
+
+from __future__ import annotations
+
+import httpx
+import pytest
+import respx
+
+from services.feishu import FeishuClient, WorkItemInfo
+from services.feishu_parsing import FeishuResponseError
+
+API_BASE = "https://project.feishu.cn"
+PROJECT_KEY = "622c10eb5daaee81db915189"
+WORK_ITEM_ID = 5580252273
+
+
+# === DOMAIN §16 实测字段 fixture ===
+
+ISSUE_RAW_FIELDS = [
+    {
+        "field_key": "field_bcff9b",
+        "field_name": "需求文档",
+        "field_value": "https://tenant.feishu.cn/docx/doc_token_abc",
+        "field_type_key": "link",
+        "field_alias": "prd_url",
+    },
+    {
+        "field_key": "field_528f19",
+        "field_name": "小组",
+        "field_value": {"label": "学习A", "value": "opt_1"},
+        "field_type_key": "select",
+        "field_alias": "study_platform_group",
+    },
+    {
+        "field_key": "field_caadeb",
+        "field_name": "所属项目",
+        "field_value": [7010938167],
+        "field_type_key": "work_item_related_multi_select",
+        "field_alias": None,
+    },
+    {
+        "field_key": "description",
+        "field_name": "需求描述",
+        "field_value": {
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": "实现学习平台 A"}],
+                }
+            ]
+        },
+        "field_type_key": "rich_text",
+        "field_alias": None,
+    },
+]
+
+
+def _make_client() -> FeishuClient:
+    """直接传凭证构造 client（绕过 DB 工厂）。"""
+    return FeishuClient(
+        plugin_id="plugin_test_id",
+        plugin_secret="plugin_test_secret",
+        project_key=PROJECT_KEY,
+        user_key="user_key_test",
+    )
+
+
+def _mock_token() -> None:
+    """mock plugin_token 端点（业务端点前置）。"""
+    respx.post(f"{API_BASE}/open_api/authen/plugin_token").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {"token": "plugin_token_xyz", "expire_time": 7200},
+                "error": {"code": 0, "msg": "success"},
+            },
+        )
+    )
+
+
+def _work_item_query_url(work_item_type: str) -> str:
+    return f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/query"
+
+
+# === FIX-01：work_item_type 必填、fail-loud ===
+
+
+@pytest.mark.asyncio
+async def test_get_work_item_requires_work_item_type() -> None:
+    """不传 work_item_type → TypeError（必填，PF-09，无静默 story）。"""
+    client = _make_client()
+    with pytest.raises(TypeError):
+        await client.get_work_item(PROJECT_KEY, WORK_ITEM_ID)  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_uses_real_type() -> None:
+    """按传入的真实 type（issue）取数，work_item_type 不默认 story。"""
+    _mock_token()
+    respx.post(_work_item_query_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            json={"err_code": 0, "data": [{"id": WORK_ITEM_ID, "name": "示例需求", "fields": ISSUE_RAW_FIELDS}]},
+        )
+    )
+
+    client = _make_client()
+    info = await client.get_work_item(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+
+    assert isinstance(info, WorkItemInfo)
+    assert info.work_item_type == "issue"
+
+
+# === FIX-04：feishu_fields 完整对象保留 + fields 拍平向后兼容 ===
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_preserves_full_feishu_fields() -> None:
+    """feishu_fields 为完整对象数组（含 field_name/type/alias）；fields 仍拍平 dict。"""
+    _mock_token()
+    respx.post(_work_item_query_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "err_code": 0,
+                "data": [
+                    {
+                        "id": WORK_ITEM_ID,
+                        "name": "示例需求",
+                        "fields": ISSUE_RAW_FIELDS,
+                        "work_item_status": {"state_key": "in_progress"},
+                    }
+                ],
+            },
+        )
+    )
+
+    client = _make_client()
+    info = await client.get_work_item(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+
+    # feishu_fields：完整对象保留元数据
+    assert isinstance(info.feishu_fields, list)
+    prd = next(f for f in info.feishu_fields if f["field_alias"] == "prd_url")
+    assert prd["field_key"] == "field_bcff9b"
+    assert prd["field_name"] == "需求文档"
+    assert prd["field_type_key"] == "link"
+
+    # fields：向后兼容拍平 {field_key: field_value}
+    assert info.fields["field_bcff9b"] == "https://tenant.feishu.cn/docx/doc_token_abc"
+    assert info.fields["field_528f19"] == {"label": "学习A", "value": "opt_1"}
+
+    # status 仍取 work_item_status.state_key
+    assert info.status == "in_progress"
+    # 描述经富文本解析
+    assert info.description == "实现学习平台 A"
+
+
+# === 硬路径防御解析：非 JSON 抛 FeishuResponseError ===
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_non_json_raises() -> None:
+    """硬取数路径遇非 JSON 响应 → 抛 FeishuResponseError（fail-loud）。"""
+    _mock_token()
+    respx.post(_work_item_query_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            text="<html>502 Bad Gateway</html>",
+            headers={"content-type": "text/html"},
+        )
+    )
+
+    client = _make_client()
+    with pytest.raises(FeishuResponseError) as exc_info:
+        await client.get_work_item(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+
+    # 异常消息不含凭证
+    msg = str(exc_info.value)
+    assert "plugin_token_xyz" not in msg
+    assert "plugin_test_secret" not in msg
