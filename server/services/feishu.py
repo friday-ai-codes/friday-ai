@@ -237,7 +237,15 @@ class FeishuClient:
                     "X-USER-KEY": self.user_key or "",
                 },
             )
-            data = response.json()
+            # 可选端点（PF-10 实测返回 `Extra data` 非 JSON）：fail-soft 降级
+            data = safe_response_json(
+                response,
+                log_event="feishu_get_relations_parse_failed",
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
+            if data is None:
+                return []  # 非 JSON → 已记 warning，降级返回空，绝不抛断
 
             if data.get("err_code") != 0:
                 return []  # Graceful degradation
@@ -251,6 +259,8 @@ class FeishuClient:
                     "work_item_type": relation.get("work_item_type"),
                     "name": relation.get("name", ""),
                     "status": relation.get("status", ""),
+                    # 标注来源端点；主路径走 derive_relations_from_fields，不依赖此端点
+                    "origin": "feishu_relation_api",
                 })
 
             return relations
@@ -299,7 +309,7 @@ class FeishuClient:
         work_item_id: int,
         work_item_type: str,
         limit: int = 50,
-    ) -> list[dict]:
+    ) -> list[dict]:  # work_item_type 必填（FIX-01，无默认）
         """获取工作项评论列表。
 
         Args:
@@ -324,23 +334,20 @@ class FeishuClient:
                     "page_size": limit,
                 },
             )
-            data = response.json()
+            # 可选列表端点（PF-11 实测响应形状漂移）：fail-soft 防御解析
+            data = safe_response_json(
+                response,
+                log_event="feishu_get_comments_parse_failed",
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
+            if data is None:
+                return []  # 非 JSON → 已记 warning，降级返回空
 
             if data.get("err_code") != 0:
                 return []
 
-            comments = []
-            for item in data.get("data", {}).get("comments", []):
-                comments.append(
-                    {
-                        "id": item.get("id"),
-                        "content": self._parse_rich_text(item.get("content", {})),
-                        "created_at": item.get("created_at"),
-                        "author": item.get("author", {}).get("name", "Unknown"),
-                    }
-                )
-
-            return comments
+            return parse_comments(data)
 
     async def transition_status(
         self,
