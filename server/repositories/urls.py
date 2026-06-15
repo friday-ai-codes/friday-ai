@@ -39,6 +39,8 @@ from .tree_views import (
 )
 from .views import (
     CacheManagementView,
+    GitInstanceCredentialDetailView,
+    GitInstanceCredentialsView,
     RepositoryCleanupStatusView,
     RepositoryExclusionRuleDetailView,
     RepositoryExclusionRulesView,
@@ -114,6 +116,18 @@ urlpatterns = [
         "knowledge-tree/pin/",
         KnowledgeTreePinView.as_view(),
         name="knowledge-tree-pin",
+    ),
+    # Plan 26-04：实例级 Git 凭证 CRUD（REPO-01）——字面段须在 router 之前，
+    # 避免 "git-instance-credentials" 被当作 repository id 匹配。
+    path(
+        "git-instance-credentials/",
+        GitInstanceCredentialsView.as_view(),
+        name="git-instance-credentials",
+    ),
+    path(
+        "git-instance-credentials/<uuid:credential_id>/",
+        GitInstanceCredentialDetailView.as_view(),
+        name="git-instance-credential-detail",
     ),
     # Router URLs
     path("", include(router.urls)),
