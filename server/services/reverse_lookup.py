@@ -133,8 +133,27 @@ async def reverse_lookup(
                             )
                         )
 
+    # 同一 code_change 经多入参 chunk 命中、或同一 work_item 经多 tech_plan 抵达时会产生
+    # 重复 path 项，按字段元组去重并保序（IN-02：不改变输出形态，仅去除语义重复）
+    seen_paths: set[tuple[Any, ...]] = set()
+    deduped_paths: list[dict[str, Any]] = []
+    for p in paths:
+        key = (
+            p["chunk_id"],
+            p["code_change_id"],
+            p["tech_plan_id"],
+            p["work_item_id"],
+            p["document_id"],
+        )
+        if key not in seen_paths:
+            seen_paths.add(key)
+            deduped_paths.append(p)
+    paths = deduped_paths
+
     # 第三步：hydrate 实体 + 组装
-    entity_ids = set(work_item_ids) | set(document_ids) | tech_plan_ids | code_change_ids
+    # 仅 hydrate 需序列化的 id（work_item/document）；tech_plan/code_change 仅以 id 串入 paths，
+    # 无需取回实体（IN-01：避免多余取回体量）
+    entity_ids = set(work_item_ids) | set(document_ids)
     entities = await _hydrate_entities(entity_ids)
 
     related_work_items = [
