@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 26-05-PLAN.md（REPO-02 MCP RAG 多仓检索参数）；原子提交 b360d8c69/db1223306/3e31c4e81
-last_updated: "2026-06-15T00:32:04.919Z"
+stopped_at: 完成 26-02-PLAN.md（REPO-01 clone/index/mirror/graph 接线）；原子提交 d51fcf051/50f662a4d/de60e0663
+last_updated: "2026-06-15T00:42:57.962Z"
 last_activity: 2026-06-15 -- Phase 26 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
   percent: 80
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 26 (多仓凭证统一 + MCP 多仓参数) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 26 execution started
 
@@ -99,6 +99,7 @@ Last activity: 2026-06-15 -- Phase 26 execution started
 | Phase 25 P04 | ~10min | 2 tasks | 2 files |
 | Phase 26 P01 | 20 | 2 tasks | 4 files |
 | Phase 26 P05 | ~12min | 3 tasks | 4 files |
+| Phase 26 P02 | ~15min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 26-01: 实例凭证落在 repositories app，表 git_instance_credentials，host 唯一 + Fernet 加密 token
 - [Phase ?]: 26-01: 凭证解析单一入口 resolve_git_token_sync——per-repo token 优先 → 实例池 host fallback → None，Wave 2 统一调用
 - [Phase ?]: 26-05: search_rag_chunks 多仓参数（repository_ids/all_repositories/max_repos），mirror grep；多仓经 search_rag chokepoint 每仓 fail-closed，结果按 item.repository_id 标注来源
+- [Phase 26]: 26-02: clone/index、bare 镜像 fetch、图谱克隆三路径统一经凭证解析器取 token（aresolve_git_token / resolve_git_token_sync），消除内联 GitCredential→decrypt_value；per-repo 优先、host 实例池 fallback；同 host 多仓共享一份凭证；token 仅进单次 clone/fetch argv 不入日志
 
 ### Pending Todos
 
@@ -240,8 +242,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T00:32:04.911Z
-Stopped at: 完成 26-05-PLAN.md（REPO-02 MCP RAG 多仓检索参数）；原子提交 b360d8c69/db1223306/3e31c4e81
+Last session: 2026-06-15T00:42:57.956Z
+Stopped at: 完成 26-02-PLAN.md（REPO-01 clone/index/mirror/graph 接线）；原子提交 d51fcf051/50f662a4d/de60e0663
 Resume file: None
 Next: Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——或 /gsd-complete-milestone 收口 v0.5.0 前再评估 26 范围
 
