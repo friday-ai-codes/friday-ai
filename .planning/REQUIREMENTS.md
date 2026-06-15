@@ -49,7 +49,7 @@
 ### 历史 diff 时效（HDIFF）
 
 - [x] **HDIFF-01**: 历史 MR diff 冻结为 commit 锚定快照（用 MR `target_branch` + `merge_commit_sha`，不假设 master）
-- [ ] **HDIFF-02**: master 演进后，重索引对账把过期 `MODIFIES_CHUNK` 边置 `invalid_at`，查询按 as-of 区分历史/当前（PF-08）
+- [x] **HDIFF-02**: master 演进后，重索引对账把过期 `MODIFIES_CHUNK` 边置 `invalid_at`，查询按 as-of 区分历史/当前（PF-08）
 
 ### 反查（RREF）
 
@@ -112,7 +112,7 @@
 | REL-02 | Phase 31 | Complete |
 | ING-01 | Phase 32 | Complete |
 | HDIFF-01 | Phase 33 | Complete |
-| HDIFF-02 | Phase 33 | Pending |
+| HDIFF-02 | Phase 33 | Complete |
 | RREF-01 | Phase 34 | Pending |
 | RREF-02 | Phase 34 | Pending |
 | VIS-01 | Phase 35 | Pending |
