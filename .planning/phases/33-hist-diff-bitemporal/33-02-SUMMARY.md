@@ -73,8 +73,9 @@ completed: 2026-06-15
 Each task was committed atomically (TDD RED→GREEN for Task 1/2)：
 
 1. **Task 1: as-of 查询 helper** — `0e9d47d4` (test, RED) → `e335ca27` (feat, GREEN)
-2. **Task 2: 重索引对账置 invalid_at** — `b4ee1ee2` (test, RED) → `66d9733b` (feat, GREEN)
+2. **Task 2: 重索引对账置 invalid_at** — `4006600d`/`b4ee1ee2` (test, RED) → `66d9733b` (feat, GREEN)
 3. **Task 3: 挂载对账到 reindex base 钩子** — `ff02fade` (feat)
+4. **收尾去重: 去掉重复 TestReconcile 类** — `cb2bbde8` (fix)
 
 ## Files Created/Modified
 - `server/knowledge/modifies_chunk.py` —（新建）`amodifies_chunk_edges` as-of 查询 helper + `areconcile_modifies_chunk_edges` 重索引对账失效。
@@ -89,7 +90,16 @@ Each task was committed atomically (TDD RED→GREEN for Task 1/2)：
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 1 - Bug] Task 2 RED 阶段产生重复 `TestReconcile` 类**
+- **Found during:** 收尾自检（TDD Task 2 期间先后落了两版等价的 `TestReconcile`：一版用模块级 `_delete_chunk` helper（6 用例）、一版用内联 `ChunkRegistry` 删除（7 用例））。
+- **Issue:** 同名类二次定义触发 ruff `F811`（redefinition），且 pytest 下后定义遮蔽前者——同文件两个 `TestReconcile` 是真实缺陷。
+- **Fix:** 保留 helper 用法一致的那版（`_delete_chunk` 被引用），删除重复类；顺手删掉未被引用的 `_set_chunk_content_hash`（消除 unused-symbol）；`TestReconcileHookFailSafe` 原样保留。
+- **Files modified:** server/tests/knowledge/test_modifies_chunk_reconcile.py
+- **Commit:** `cb2bbde8`
+
+---
 
 （PLAN-CHECKER 澄清已遵守：target_chunk_id-scoped 走 `chunk_in_edges` chokepoint；repository_id-scoped 叠加同款 bi-temporal 谓词，并新增 `test_repository_scoped_as_of_and_current_view` 守护 repo 路径，避免欠规格。）
 
@@ -100,9 +110,9 @@ None —— 无悬空数据/占位渲染；`amodifies_chunk_edges` 为 CONTEXT �
 None —— 未引入计划 `<threat_model>` 之外的新信任边界。对账输入为本仓库自身 `ChunkRegistry` 状态（内部可信）；边失效唯一经 `graph_store.invalidate_edge` 收口（不裸写 update，不删除、不覆盖原失效时间，T-33-04）；整段 + 逐边 try/except 降级（T-33-05）；跨 repo 严格按 `source_entity.repository_id` 隔离、缺指纹保守不误失效（T-33-06）。
 
 ## Test Results
-- `pytest tests/knowledge/test_modifies_chunk_reconcile.py tests/knowledge/test_modifies_chunk.py tests/knowledge/test_graph_store.py tests/knowledge/test_diff_archive.py -q` → **70 passed, 1 deselected**。
-- `ruff check knowledge/modifies_chunk.py knowledge/graph_store.py services/indexer.py` → All checks passed。
-- 既有图查询/反查零回归（test_modifies_chunk / test_graph_store 全绿）。
+- 去重后：`pytest tests/knowledge/test_modifies_chunk_reconcile.py tests/knowledge/test_modifies_chunk.py -q --disable-socket` → **21 passed**（reconcile 文件 11 用例：4 AsOf + 6 Reconcile + 1 HookFailSafe；modifies_chunk 10 用例零回归）。
+- `ruff check tests/knowledge/test_modifies_chunk_reconcile.py` → All checks passed（无 F811）。
+- 既有图查询/反查零回归（test_modifies_chunk 全绿）。
 - （无关 `tests/knowledge/test_triggers.py` 失败按指示忽略，未触碰。）
 
 ## Next Phase Readiness
@@ -112,7 +122,7 @@ None —— 未引入计划 `<threat_model>` 之外的新信任边界。对账�
 ## Self-Check: PASSED
 
 - Files: `server/knowledge/modifies_chunk.py` / `server/tests/knowledge/test_modifies_chunk_reconcile.py` / `server/knowledge/graph_store.py` / `server/services/indexer.py` all FOUND.
-- Commits: `0e9d47d4` / `e335ca27` / `b4ee1ee2` / `66d9733b` / `ff02fade` all present in git log.
+- Commits: `0e9d47d4` / `e335ca27` / `4006600d` / `b4ee1ee2` / `66d9733b` / `ff02fade` / `cb2bbde8` all present in git log.
 
 ---
 *Phase: 33-hist-diff-bitemporal*
