@@ -18,15 +18,22 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
 from delivery.models import ReleaseBatch, ReleaseRecord
 from delivery.services import BitableReleaseAdapter
+from services.feishu_doc import FeishuDocAPIError
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 APP_TOKEN = "bascnAppTokenXYZ"
 TABLE_ID = "tblTableId123"
+
+
+def _make_token_error() -> FeishuDocAPIError:
+    """构造 token 取失败异常（list_records 内委托 FeishuDocClient 取 token 时可抛）。"""
+    return FeishuDocAPIError("获取 tenant_access_token 失败")
 
 
 class _FakeBitableClient:
@@ -39,6 +46,18 @@ class _FakeBitableClient:
         self, app_token: str, table_id: str, **kwargs: Any
     ) -> dict[str, Any]:
         return {"items": self._records, "has_more": False, "page_token": ""}
+
+
+class _RaisingBitableClient:
+    """注入式 fake client：list_records 抛指定异常（验证 adapter 降级不崩，WR-01）。"""
+
+    def __init__(self, exc: Exception):
+        self._exc = exc
+
+    async def list_records(
+        self, app_token: str, table_id: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        raise self._exc
 
 
 async def test_ingest_preserves_raw_row_and_natural_key() -> None:
@@ -66,6 +85,26 @@ async def test_ingest_preserves_raw_row_and_natural_key() -> None:
     assert record.raw_row["record"] == records[0]
     # 占位列映射从 fields 顶层同名键取值。
     assert record.status == "released"
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        pytest.param(_make_token_error(), id="token-fetch-FeishuDocAPIError"),
+        pytest.param(httpx.ConnectError("network down"), id="httpx-network-error"),
+        pytest.param(ValueError("Expecting value"), id="non-json-JSONDecodeError"),
+    ],
+)
+async def test_list_records_failure_degrades_to_none(exc: Exception) -> None:
+    """token / 网络 / 非 JSON 失败 → ingest_from_table 返回 None、不抛、DB 无新增（WR-01）。"""
+    adapter = BitableReleaseAdapter(client=_RaisingBitableClient(exc))
+
+    result = await adapter.ingest_from_table(
+        project=None, app_token=APP_TOKEN, table_id=TABLE_ID
+    )
+
+    assert result is None
+    assert await ReleaseBatch.objects.acount() == 0
 
 
 async def test_no_credentials_graceful_degradation(monkeypatch: Any) -> None:

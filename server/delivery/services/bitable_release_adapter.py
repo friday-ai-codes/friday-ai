@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import httpx
 import structlog
 
 from delivery.models import ReleaseSource, build_bitable_record_key
@@ -30,6 +31,7 @@ from services.feishu_bitable import (
     BitableClient,
     create_bitable_client_for_project,
 )
+from services.feishu_doc import FeishuDocAPIError
 
 if TYPE_CHECKING:
     from delivery.models import ReleaseBatch
@@ -95,8 +97,13 @@ class BitableReleaseAdapter:
 
         try:
             data = await client.list_records(app_token, table_id)
-        except BitableAPIError as exc:
-            # Bitable API 失败：降级不崩。
+        except (BitableAPIError, FeishuDocAPIError, httpx.HTTPError, ValueError) as exc:
+            # 外部失败统一降级不崩（对齐 doc tools / CONTEXT 范围守护）：
+            # - BitableAPIError：list_records 业务错误码 / 频控；
+            # - FeishuDocAPIError：token 取失败（list_records 内委托 FeishuDocClient 取 token）；
+            # - httpx.HTTPError：开放平台网络抖动（ConnectError/TimeoutException 等）；
+            # - ValueError：非 JSON HTTP 响应触发 response.json() 的 JSONDecodeError（其父类）。
+            # 只兜外部失败异常面，不过度吞编程错误（如 KeyError/AttributeError 仍冒泡暴露）。
             log.warning("bitable_list_records_failed", error=str(exc))
             return None
 
