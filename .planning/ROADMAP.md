@@ -130,7 +130,8 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 31-01-PLAN.md — Release 宽容模型三表（raw_row 无损）+ migration 0006 [BLOCKING] + 模型守护单测
+
+- [x] 31-01-PLAN.md — Release 宽容模型三表（raw_row 无损）+ migration 0006 [BLOCKING] + 模型守护单测
 - [ ] 31-02-PLAN.md — ReleaseService 账本单一写入入口（ingest/幂等/work_item 反查）+ INV-6 grep 守护 + 行为测试
 - [ ] 31-03-PLAN.md — BitableClient（开放平台 token 复用，解耦 plugin token）+ BitableReleaseAdapter 骨架 + respx/adapter 测试
 
@@ -207,7 +208,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 29. 评论事件流 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 30. Document + REFERENCES 边 | v0.6.0 | 4/4 | Complete    | 2026-06-15 |
-| 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
+| 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 1/3 | In Progress|  |
 | 32. 一键摄取编排 | v0.6.0 | 0/TBD | Not started | - |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
