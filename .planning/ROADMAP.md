@@ -72,7 +72,12 @@
   3. `PlanSession` 状态机可持久化、可从中断恢复，按 §14 转移表推进（decomposing → routing → recalling → clarifying → researching → merging → done/failed），不可恢复错误落结构化 `failed`
   4. 可复用 `ai_plan_research` 编排 engine 抽象就位，驱动流水线推进，工作流与 Chat 可共用同一底层（不为两入口造两套编排）
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 36-01-PLAN.md — 前置修复 PF-01（工具名漂移 + fail-loud）/ PF-02（verify_plan 对齐 execution_plan）+ 守护测试
+- [ ] 36-02-PLAN.md — PlanSession 模型（delivery app）+ migration + PlanSessionService 状态机单一入口（§14 _ALLOWED）+ INV-6 守护
+- [ ] 36-03-PLAN.md — ai_plan_research 编排 engine 骨架（入口无关 + 可注入协议）+ advance/resume/不旁路 status 测试
 
 ### Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移
 
@@ -167,7 +172,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 0/0 | Not started | - |
+| 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 0/3 | Planned | - |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 0/0 | Not started | - |
 | 38. 路由 + 召回接入 | v0.7.0 | 0/0 | Not started | - |
 | 39. 并行调研子 agent | v0.7.0 | 0/0 | Not started | - |
