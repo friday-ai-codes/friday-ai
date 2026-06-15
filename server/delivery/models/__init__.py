@@ -13,6 +13,11 @@ from delivery.models.document import (
     DocumentVersion,
 )
 from delivery.models.ingest_run import IngestRun, default_steps
+from delivery.models.plan_session import (
+    PlanSession,
+    PlanSessionEntrypoint,
+    PlanSessionStatus,
+)
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -54,6 +59,9 @@ __all__ = [
     "ContentStorage",
     "IngestRun",
     "default_steps",
+    "PlanSession",
+    "PlanSessionEntrypoint",
+    "PlanSessionStatus",
     "ReleaseBatch",
     "ReleaseRecord",
     "ReleaseArtifact",
