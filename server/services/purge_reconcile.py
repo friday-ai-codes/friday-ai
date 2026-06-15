@@ -41,6 +41,8 @@ from asgiref.sync import sync_to_async
 from services.exclusion import build_matcher_for_repo
 from services.purge import PurgeResult, purge_file
 
+from audit.emitter import emit_audit_event
+
 logger = structlog.get_logger(__name__)
 
 __all__ = [
@@ -308,6 +310,24 @@ async def run_cleanup(
         match_count=len(target_paths),
         failures=report.failures,
     )
+
+    # 审计：清理完成
+    try:
+        emit_audit_event(
+            action="cleanup.completed",
+            target_type="CleanupRun",
+            target_id=str(run.pk) if run else "",
+            after={
+                "mode": mode,
+                "status": final_status,
+                "match_count": len(target_paths),
+                "failure_count": len(report.failures),
+                "repository_id": repo_id,
+            },
+        )
+    except Exception:
+        logger.warning("audit_emit_failed", action="cleanup.completed", exc_info=True)
+
     return report
 
 

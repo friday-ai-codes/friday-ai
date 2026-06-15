@@ -20,6 +20,7 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 
+from audit.emitter import aemit_audit_event
 from common.encryption import encrypt_value
 from permissions.api_permissions import IsSuperUser
 
@@ -110,6 +111,18 @@ class SetupFeishuWizardView(APIView):
 
         await _write()
         logger.info("setup_feishu_configured", user_id=str(request.user.id))
+
+        # 审计：飞书配置
+        try:
+            await aemit_audit_event(
+                action="system_setting.updated",
+                target_type="SystemSetting",
+                target_id="FEISHU_CONFIG",
+                after={"keys_written": ["FEISHU_APP_ID", "FEISHU_APP_SECRET"]},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="system_setting.updated", exc_info=True)
+
         return Response({"feishu_configured": True}, status=status.HTTP_200_OK)
 
 
@@ -204,6 +217,18 @@ class SetupRagWizardView(APIView):
             user_id=str(request.user.id),
             written_keys=written_keys,
         )
+
+        # 审计：RAG 配置
+        try:
+            await aemit_audit_event(
+                action="system_setting.updated",
+                target_type="SystemSetting",
+                target_id="RAG_CONFIG",
+                after={"keys_written": written_keys},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="system_setting.updated", exc_info=True)
+
         return Response(
             {"rag_configured": True, "written_keys": written_keys},
             status=status.HTTP_200_OK,

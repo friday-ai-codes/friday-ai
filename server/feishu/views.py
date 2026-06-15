@@ -16,6 +16,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from audit.emitter import aemit_audit_event
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
@@ -679,6 +680,21 @@ class FeishuWebhookView(APIView):
 
         # Dispatch to workflow system (for all events)
         await self._dispatch_to_workflows(event_type, project, payload, trigger_log)
+
+        # 审计：飞书事件接收处理
+        try:
+            await aemit_audit_event(
+                action="feishu_sync.event_received",
+                target_type="FeishuEvent",
+                target_id=str(event_uuid) if event_uuid else "",
+                after={
+                    "event_type": event_type,
+                    "project_key": project_key,
+                    "work_item_id": str(work_item_id) if work_item_id else "",
+                },
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="feishu_sync.event_received", exc_info=True)
 
         return Response(
             {

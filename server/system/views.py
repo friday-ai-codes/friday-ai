@@ -2,12 +2,14 @@
 
 from uuid import UUID
 
+import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from audit.emitter import aemit_audit_event
 from permissions.api_permissions import IsSuperUser
 
 from .models import ProviderCredential, SettingKeys, SystemSetting
@@ -16,6 +18,8 @@ from .serializers import (
     SystemSettingSerializer,
     SystemSettingUpdateSerializer,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 class SettingsListCreateView(APIView):
@@ -49,6 +53,17 @@ class SettingsListCreateView(APIView):
             description=serializer.validated_data.get("description"),
         )
 
+        # 审计：创建系统设置
+        try:
+            await aemit_audit_event(
+                action="system_setting.created",
+                target_type="SystemSetting",
+                target_id=key,
+                after={"key": key, "description": serializer.validated_data.get("description", "")},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="system_setting.created", exc_info=True)
+
         return Response(
             SystemSettingSerializer(setting).data,
             status=status.HTTP_201_CREATED,
@@ -75,6 +90,7 @@ class SettingsDetailView(APIView):
         await sync_to_async(serializer.is_valid)(raise_exception=True)
 
         setting, created = await SystemSetting.objects.aget_or_create(key=key)
+        old_value = setting.value if not created else None
 
         value = serializer.validated_data.get("value")
 
@@ -83,6 +99,18 @@ class SettingsDetailView(APIView):
         if "description" in serializer.validated_data:
             setting.description = serializer.validated_data["description"]
         await setting.asave()
+
+        # 审计：更新系统设置
+        try:
+            await aemit_audit_event(
+                action="system_setting.updated",
+                target_type="SystemSetting",
+                target_id=key,
+                before={"key": key} if not created else {},
+                after={"key": key, "description": setting.description},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="system_setting.updated", exc_info=True)
 
         return Response(SystemSettingSerializer(setting).data)
 
@@ -96,6 +124,17 @@ class SettingsDetailView(APIView):
             )
 
         await setting.adelete()
+
+        # 审计：删除系统设置
+        try:
+            await aemit_audit_event(
+                action="system_setting.deleted",
+                target_type="SystemSetting",
+                target_id=key,
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="system_setting.deleted", exc_info=True)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -380,6 +419,21 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             user_id=str(self.request.user.id),
         )
 
+        # 审计：创建供应商凭证
+        try:
+            await aemit_audit_event(
+                action="provider_credential.created",
+                target_type="ProviderCredential",
+                target_id=str(serializer.instance.id),
+                after={
+                    "provider_type": serializer.validated_data.get("provider_type"),
+                    "scope": scope,
+                    "name": serializer.validated_data.get("name", ""),
+                },
+            )
+        except Exception:
+            _viewset_logger.warning("audit_emit_failed", action="provider_credential.created", exc_info=True)
+
     async def perform_aupdate(self, serializer) -> None:  # type: ignore[no-untyped-def]
         """更新前 scope 校验（若 scope 被修改）+ save + 结构化日志。
 
@@ -431,15 +485,43 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             user_id=str(self.request.user.id),
         )
 
+        # 审计：更新供应商凭证
+        try:
+            await aemit_audit_event(
+                action="provider_credential.updated",
+                target_type="ProviderCredential",
+                target_id=str(serializer.instance.id),
+                after={
+                    "provider_type": serializer.instance.provider_type,
+                    "scope": serializer.instance.scope,
+                    "name": serializer.instance.name,
+                },
+            )
+        except Exception:
+            _viewset_logger.warning("audit_emit_failed", action="provider_credential.updated", exc_info=True)
+
     async def perform_adestroy(self, instance) -> None:  # type: ignore[no-untyped-def]
         """硬删除凭证 + 结构化日志。"""
         credential_id = str(instance.id)
+        provider_type = instance.provider_type
+        name = instance.name
         await sync_to_async(instance.delete)()
         _viewset_logger.info(
             "provider_credential_deleted",
             credential_id=credential_id,
             user_id=str(self.request.user.id),
         )
+
+        # 审计：删除供应商凭证
+        try:
+            await aemit_audit_event(
+                action="provider_credential.deleted",
+                target_type="ProviderCredential",
+                target_id=credential_id,
+                before={"provider_type": provider_type, "name": name},
+            )
+        except Exception:
+            _viewset_logger.warning("audit_emit_failed", action="provider_credential.deleted", exc_info=True)
 
     # ------------------------------------------------------------------
     # implementation @action 扩展：contract toggle + contract refresh-models
@@ -464,6 +546,18 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             is_active=credential.is_active,
             user_id=str(request.user.id),
         )
+
+        # 审计：切换凭证启用状态
+        try:
+            await aemit_audit_event(
+                action="provider_credential.toggled",
+                target_type="ProviderCredential",
+                target_id=str(credential.id),
+                after={"is_active": credential.is_active},
+            )
+        except Exception:
+            _viewset_logger.warning("audit_emit_failed", action="provider_credential.toggled", exc_info=True)
+
         return Response({"is_active": credential.is_active})
 
     @action(detail=True, methods=["post"], url_path="set-default")
@@ -955,6 +1049,17 @@ class ProviderSetupWizardView(APIView):
             provider="anthropic",
             latency_ms=result.latency_ms,
         )
+
+        # 审计：向导创建供应商凭证
+        try:
+            await aemit_audit_event(
+                action="provider_credential.created",
+                target_type="ProviderCredential",
+                target_id=str(cred.id),
+                after={"provider_type": "anthropic", "name": cred.name, "scope": "system"},
+            )
+        except Exception:
+            _viewset_logger.warning("audit_emit_failed", action="provider_credential.created", exc_info=True)
 
         return Response(
             {

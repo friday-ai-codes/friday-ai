@@ -13,6 +13,8 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from audit.emitter import aemit_audit_event
+
 from .models import Invitation, UserSource
 from .permissions import SetupNotInitialized
 from .serializers import (
@@ -87,6 +89,19 @@ class LoginView(APIView):
             secure=settings.COOKIE_SECURE,
             max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds()),
         )
+
+        # 审计：登录成功
+        try:
+            await aemit_audit_event(
+                action="user.login",
+                target_type="User",
+                target_id=str(user.id),
+                actor_type="user",
+                actor_id=str(user.id),
+                actor_display=user.username,
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.login", exc_info=True)
 
         return response
 
@@ -208,6 +223,17 @@ class ProfileUpdateView(APIView):
         user.display_name = serializer.validated_data["display_name"]
         await user.asave(update_fields=["display_name"])
 
+        # 审计：更新个人资料
+        try:
+            await aemit_audit_event(
+                action="user.updated",
+                target_type="User",
+                target_id=str(user.id),
+                after={"display_name": user.display_name},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.updated", exc_info=True)
+
         data = await sync_to_async(lambda: MeSerializer(user).data)()
         return Response(data)
 
@@ -233,6 +259,17 @@ class InvitationView(APIView):
             created_by=request.user,
             email=serializer.validated_data.get("email", ""),
         )
+
+        # 审计：创建邀请
+        try:
+            await aemit_audit_event(
+                action="user.invitation_created",
+                target_type="Invitation",
+                target_id=str(invitation.id),
+                after={"email": invitation.email},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.invitation_created", exc_info=True)
 
         return Response(
             InvitationResponseSerializer(invitation).data,
@@ -299,6 +336,17 @@ class InvitationAcceptView(APIView):
         invitation.accepted_at = timezone.now()
         await sync_to_async(invitation.save)(update_fields=["accepted_at"])
 
+        # 审计：邀请注册用户
+        try:
+            await aemit_audit_event(
+                action="user.created",
+                target_type="User",
+                target_id=str(user.id),
+                after={"username": user.username, "source": UserSource.INVITATION.value},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.created", exc_info=True)
+
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -327,8 +375,21 @@ class UserDetailView(APIView):
 
         # 仅允许修改 is_active 字段
         if "is_active" in request.data:
+            old_is_active = target_user.is_active
             target_user.is_active = bool(request.data["is_active"])
             await target_user.asave(update_fields=["is_active"])
+
+            # 审计：用户状态变更
+            try:
+                await aemit_audit_event(
+                    action="user.updated",
+                    target_type="User",
+                    target_id=str(target_user.id),
+                    before={"is_active": old_is_active},
+                    after={"is_active": target_user.is_active},
+                )
+            except Exception:
+                logger.warning("audit_emit_failed", action="user.updated", exc_info=True)
 
         return Response(UserSerializer(target_user).data)
 
@@ -351,6 +412,16 @@ class ChangePasswordView(APIView):
         request.user.must_change_password = False
         await request.user.asave(update_fields=["password", "must_change_password"])
 
+        # 审计：密码修改
+        try:
+            await aemit_audit_event(
+                action="user.password_changed",
+                target_type="User",
+                target_id=str(request.user.id),
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.password_changed", exc_info=True)
+
         return Response({"message": "密码修改成功"})
 
 
@@ -366,6 +437,16 @@ class ForceChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.must_change_password = False
         await request.user.asave(update_fields=["password", "must_change_password"])
+
+        # 审计：强制密码修改
+        try:
+            await aemit_audit_event(
+                action="user.password_changed",
+                target_type="User",
+                target_id=str(request.user.id),
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.password_changed", exc_info=True)
 
         return Response({"message": "密码修改成功，请重新登录"})
 
@@ -404,6 +485,20 @@ class AdminProfileView(APIView):
             user.display_name = serializer.validated_data["display_name"]
         await user.asave()
 
+        # 审计：管理员更新 profile
+        try:
+            await aemit_audit_event(
+                action="user.updated",
+                target_type="User",
+                target_id=str(user.id),
+                after={
+                    "username": user.username,
+                    "display_name": user.display_name,
+                },
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.updated", exc_info=True)
+
         from .serializers import AdminProfileSerializer
 
         return Response(AdminProfileSerializer(user).data)
@@ -431,6 +526,16 @@ class AdminChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.must_change_password = False
         await request.user.asave(update_fields=["password", "must_change_password"])
+
+        # 审计：管理员密码修改
+        try:
+            await aemit_audit_event(
+                action="user.password_changed",
+                target_type="User",
+                target_id=str(request.user.id),
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.password_changed", exc_info=True)
 
         return Response({"message": "密码修改成功"})
 
@@ -532,6 +637,24 @@ class SetupInitView(APIView):
             )
 
         logger.info("setup_init_success", username=serializer.validated_data["username"])
+
+        # 审计：首启初始化创建管理员
+        try:
+            await aemit_audit_event(
+                action="user.created",
+                target_type="User",
+                target_id=str(user.id),
+                actor_type="system",
+                actor_id="system",
+                actor_display="首启向导",
+                after={
+                    "username": serializer.validated_data["username"],
+                    "display_name": serializer.validated_data.get("display_name", "系统管理员"),
+                    "source": UserSource.SYSTEM.value,
+                },
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="user.created", exc_info=True)
 
         # 创建成功后复用 LoginView 的 cookie-JWT 路径建立会话，使前端无需二次登录（ADMIN-03）。
         # must_change_password 保持 create_superuser 的默认 False，不强制改密（ADMIN-02）。
