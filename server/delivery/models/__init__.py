@@ -17,6 +17,14 @@ from delivery.models.relation import (
     RelationType,
     WorkItemRelation,
 )
+from delivery.models.release import (
+    ReleaseArtifact,
+    ReleaseArtifactType,
+    ReleaseBatch,
+    ReleaseRecord,
+    ReleaseSource,
+    build_bitable_record_key,
+)
 from delivery.models.status_event import WorkItemStatusEvent
 from delivery.models.sync_state import (
     SyncFacet,
@@ -43,4 +51,10 @@ __all__ = [
     "DocumentType",
     "DocumentSourceKind",
     "ContentStorage",
+    "ReleaseBatch",
+    "ReleaseRecord",
+    "ReleaseArtifact",
+    "ReleaseSource",
+    "ReleaseArtifactType",
+    "build_bitable_record_key",
 ]
