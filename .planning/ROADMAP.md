@@ -182,7 +182,11 @@ Plans:
   2. 评论摄取进知识投影（评论入图），可被检索关联到 `WorkItem`
   3. 反查结果可经 MCP/REST 暴露给 agent / 客户端调用
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 34-01-PLAN.md — RREF-01 片段→需求反查 service（复用 find_chunk_at + graph_store）+ REST + MCP 工具
+- [ ] 34-02-PLAN.md — RREF-02 评论入图：work_item 投影并入评论树 + 评论事件触发重投影
 
 ### Phase 35: 截图识别需求
 
