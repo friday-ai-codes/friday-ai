@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
+status: executing
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T12:14:34.877Z"
-last_activity: 2026-06-15
+last_updated: "2026-06-15T12:52:57.379Z"
+last_activity: 2026-06-15 -- Phase 33 execution started
 progress:
   total_phases: 9
   completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 21
+  completed_plans: 20
   percent: 67
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
-**Current focus:** Phase 32 — 一键摄取编排
+**Current focus:** Phase 33 — 历史 diff 冻结 + bi-temporal 失效
 
 ## Current Position
 
-Phase: 33
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
+Phase: 33 (历史 diff 冻结 + bi-temporal 失效) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 33 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -126,6 +126,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 32 P01 | 25m | 2 tasks | 7 files |
 | Phase 32 P02 | 40m | 2 tasks | 9 files |
 | Phase 32 P03 | 12m | 3 tasks | 7 files |
+| Phase 33 P01 | 30min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -214,6 +215,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: Release natural key 落独立字段 bitable_record_key（条件唯一），便于 31-03 幂等 upsert
 - [Phase ?]: 31-02: ReleaseService 消费预组装 bitable_record_key 作自然键唯一来源（不在服务内重拼接，归 31-03 adapter）
 - [Phase ?]: 32-03 前端一键摄取面板沿用派发→轮询范式（useMutation + 条件 refetchInterval），守护测试以真实 zh-CN.json 锁关键文案
+- [Phase ?]: 33-01: commit 锚定复用 CodeChangeArchive.commit_sha/base_branch（不新增字段/migration）；chunk_content_hash 冻结进 KnowledgeEdge.metadata 供 HDIFF-02 对账
 
 ### Pending Todos
 
@@ -285,7 +287,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T11:40:28.162Z
+Last session: 2026-06-15T12:52:21.682Z
 Stopped at: Completed 30-03-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）

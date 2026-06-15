@@ -168,7 +168,7 @@ Plans:
 
 **Plans**: 2 plans
 
-- [ ] 33-01-PLAN.md — commit 锚定冻结：MR 元数据拉取（merge_commit_sha/target_branch）+ 一键摄取 WR-02 修复 + MODIFIES_CHUNK 边冻结 chunk 指纹（HDIFF-01）
+- [x] 33-01-PLAN.md — commit 锚定冻结：MR 元数据拉取（merge_commit_sha/target_branch）+ 一键摄取 WR-02 修复 + MODIFIES_CHUNK 边冻结 chunk 指纹（HDIFF-01）
 - [ ] 33-02-PLAN.md — bi-temporal 失效对账：重索引钩子置过期边 invalid_at + as-of 查询 helper（HDIFF-02，PF-08）
 
 ### Phase 34: 评论入图 + 片段→需求反查
@@ -219,7 +219,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 30. Document + REFERENCES 边 | v0.6.0 | 4/4 | Complete    | 2026-06-15 |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
+| 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 1/2 | In Progress|  |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
 
