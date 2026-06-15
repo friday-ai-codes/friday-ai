@@ -16,12 +16,22 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
 from delivery.models import PlanSession, PlanSessionStatus
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["PlanSessionService"]
+__all__ = ["ConcurrentTransitionError", "PlanSessionService"]
+
+
+class ConcurrentTransitionError(RuntimeError):
+    """并发/陈旧状态转移被拒（WR-01）。
+
+    ``transition`` 以「DB 行 status == 预期 from_status」为条件原子更新；条件不满足
+    （影响行数 != 1）即说明 DB 行已被并发/陈旧推进改写或行不存在——拒绝盲写覆盖，
+    抛本异常（保 resume 安全：两个并发 advance 不能同时成功推进同一转移）。
+    """
 
 
 # DOMAIN §14 转移表的白名单（{from_status: {event: to_status}}）。
@@ -104,29 +114,46 @@ class PlanSessionService:
         if event == "fail":
             return await self._fail(session, payload)
 
-        allowed = _ALLOWED.get(session.status, {})
+        from_status = session.status
+        allowed = _ALLOWED.get(from_status, {})
         if event not in allowed:
             raise ValueError(
-                f"非法状态转移：from_status={str(session.status)} event={event}；"
+                f"非法状态转移：from_status={str(from_status)} event={event}；"
                 f"该状态合法 event={sorted(allowed)}"
             )
         to_status = allowed[event]
-        await self._apply_transition_sync(session, to_status, payload)
+        await self._apply_transition_sync(session, from_status, to_status, payload)
         await self._emit_event(event, session, payload)
         return session
 
     @sync_to_async
     def _apply_transition_sync(
-        self, session: PlanSession, to_status: str, payload: dict[str, Any]
+        self, session: PlanSession, from_status: str, to_status: str, payload: dict[str, Any]
     ) -> None:
-        """合法转移落库：set status + payload 中可落库字段 + save（update_fields 精确）。"""
-        session.status = to_status
-        update_fields = ["status", "updated_at"]
+        """合法转移落库：以 ``status == from_status`` 为前置条件的原子更新（WR-01 防 TOCTOU）。
+
+        用 ``filter(id=, status=from_status).update(...)`` 做条件更新并断言影响行数==1；
+        ==0 表示 DB 行 status 已被并发/陈旧 advance 改写或行不存在 → 抛
+        ``ConcurrentTransitionError``，**不盲写覆盖**（两个并发 advance 不能同时成功
+        推进同一转移，保 resume 安全）。``update()`` 不触发 ``auto_now``，故显式写
+        ``updated_at=timezone.now()``。更新成功后才同步内存态，保持与 DB 一致。
+        """
+        update_values: dict[str, Any] = {"status": to_status, "updated_at": timezone.now()}
         for field in _PERSISTABLE_FIELDS:
             if field in payload:
-                setattr(session, field, payload[field])
-                update_fields.append(field)
-        session.save(update_fields=update_fields)
+                update_values[field] = payload[field]
+        updated = PlanSession.objects.filter(id=session.id, status=from_status).update(
+            **update_values
+        )
+        if updated != 1:
+            raise ConcurrentTransitionError(
+                f"并发/陈旧状态转移被拒：session={session.id} "
+                f"expected_from={from_status} to={to_status}"
+                "（DB 行 status 已被并发推进改写或行不存在）"
+            )
+        session.status = to_status
+        for field, value in update_values.items():
+            setattr(session, field, value)
 
     async def _fail(self, session: PlanSession, payload: dict[str, Any]) -> PlanSession:
         """``fail`` 特判：任意状态 → failed + 落结构化 error（不可恢复错误）。"""
