@@ -61,6 +61,7 @@ def safe_response_json(
     response: httpx.Response,
     *,
     log_event: str,
+    expect: type | tuple[type, ...] | None = None,
     **log_ctx: Any,
 ) -> Any | None:
     """content-type 校验 + try/except 包裹 `response.json()`（fail-soft）。
@@ -68,13 +69,18 @@ def safe_response_json(
     非 JSON（content-type 不含 json，或 `.json()` 抛 JSONDecodeError/ValueError）
     → 记 `logger.warning(log_event, ...)` 并返回 `None`，绝不冒泡异常。
 
+    当传入 `expect` 时，对"合法 JSON 但类型不符"（如期望 dict 却返回 `[]`/标量）
+    同样按软失败处理：记 warning 并返回 `None`，避免调用方对非期望类型执行
+    `data.get(...)` 时抛 `AttributeError`（WR-01）。
+
     Args:
         response: 待解析的 httpx 响应（不可信外部输入）。
         log_event: 结构化日志事件名。
+        expect: 期望的解析结果类型（如 `dict`）；不符时 fail-soft 返回 None。
         **log_ctx: 附加日志上下文（绝不传凭证）。
 
     Returns:
-        解析后的 JSON 对象，或非 JSON 时返回 None。
+        解析后的 JSON 对象，或非 JSON / 类型不符时返回 None。
     """
     if not _looks_like_json(response):
         logger.warning(
@@ -88,7 +94,7 @@ def safe_response_json(
         return None
 
     try:
-        return response.json()
+        parsed = response.json()
     except (json.JSONDecodeError, ValueError):
         logger.warning(
             log_event,
@@ -98,6 +104,19 @@ def safe_response_json(
             **log_ctx,
         )
         return None
+
+    if expect is not None and not isinstance(parsed, expect):
+        logger.warning(
+            log_event,
+            reason="unexpected_payload_type",
+            payload_type=type(parsed).__name__,
+            status_code=response.status_code,
+            body_snippet=_response_snippet(response),
+            **log_ctx,
+        )
+        return None
+
+    return parsed
 
 
 def strict_response_json(
