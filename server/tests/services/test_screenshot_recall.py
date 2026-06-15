@@ -337,6 +337,32 @@ async def test_recall_maps_work_items_and_locks_entity_kind(monkeypatch) -> None
     assert item["source"] == "delivery_knowledge"
 
 
+async def test_recall_clamps_relevance_to_unit_interval(monkeypatch) -> None:
+    """融合分越界（>1 / <0）→ relevance 钳制到 [0,1]，且不破坏排序（WR-03）。"""
+    recorder_llm: dict = {}
+    _patch_vision_ok(
+        monkeypatch,
+        json.dumps({"text": "页", "ui_elements": "", "business_intent": "查询"}),
+        recorder_llm,
+    )
+    recorder_search: dict = {}
+    results = [
+        _make_search_result(source_id="WI-A", title="高分", score=1.42),
+        _make_search_result(source_id="WI-B", title="负分", score=-0.3),
+    ]
+    _patch_search(monkeypatch, results, recorder_search)
+
+    out = await recall_from_screenshot(
+        PNG_1X1, "image/png", user=SimpleNamespace(id=1)
+    )
+
+    assert out["degraded"] is False
+    assert out["results"][0]["relevance"] == pytest.approx(1.0)
+    assert out["results"][1]["relevance"] == pytest.approx(0.0)
+    # 钳制单调，保留原始顺序（WI-A 在前）。
+    assert [r["work_item_id"] for r in out["results"]] == ["WI-A", "WI-B"]
+
+
 async def test_recall_degraded_when_extract_fails(monkeypatch) -> None:
     """提取降级（ProviderMissingError）→ degraded=true + results=[] + degraded_reason。"""
 
