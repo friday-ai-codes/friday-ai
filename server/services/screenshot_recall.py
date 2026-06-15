@@ -260,6 +260,12 @@ async def recall_from_screenshot(
         return _degraded_result(degrade_reason or DEGRADE_EXTRACTION_FAILED)
 
     query = _build_query(semantics)
+    if not query.strip():
+        # WR-02：三段语义全空 → 空 query 的最近邻是退化/任意结果，跳过检索，
+        # 按「提取失败」降级返回（而非以空串误触发一次无意义的向量召回）。
+        logger.info("screenshot_recall.empty_query_skip")
+        return _degraded_result(DEGRADE_EXTRACTION_FAILED)
+
     results: list[dict] = []
     try:
         from knowledge.models import EntityKind
