@@ -268,6 +268,53 @@
       "pending": "等待中"
     }
   },
+  "screenshotRecall": {
+    "title": "截图识需求",
+    "subtitle": "上传界面/原型截图，自动提取语义并召回相关需求（不建图片向量库）",
+    "upload": {
+      "dropzoneTitle": "拖入截图，或点击选择",
+      "dropzoneHint": "支持 PNG / JPEG / WebP，单张 ≤ 10 MB；也可直接粘贴（Ctrl/Cmd+V）",
+      "selectButton": "选择截图",
+      "previewAlt": "截图预览",
+      "remove": "移除",
+      "submit": "开始识别",
+      "submitting": "识别中…"
+    },
+    "validation": {
+      "required": "请先上传截图",
+      "invalidType": "请上传图片文件（PNG / JPEG / WebP）",
+      "tooLarge": "图片超过 10 MB，请压缩后重试"
+    },
+    "empty": {
+      "title": "尚未上传截图",
+      "body": "将截图拖到上方区域、点击选择，或直接粘贴（Ctrl/Cmd+V），识别结果将在此显示"
+    },
+    "loading": "正在识别截图并召回需求…",
+    "error": "识别失败，请稍后重试",
+    "degraded": {
+      "title": "未配置多模态（vision）模型",
+      "body": "当前没有可用的视觉能力模型，无法从截图提取语义。请在系统设置配置具备视觉能力的模型后重试。",
+      "settingsLink": "前往系统设置"
+    },
+    "noResults": {
+      "title": "未召回到相关需求",
+      "body": "可尝试更清晰、信息更完整的截图后重试"
+    },
+    "semantics": {
+      "title": "识别到的语义",
+      "expand": "展开",
+      "collapse": "收起",
+      "text": "文字",
+      "uiElements": "UI 元素",
+      "businessIntent": "业务意图"
+    },
+    "results": {
+      "title": "召回的需求",
+      "relevance": "相关度 {percent}%",
+      "source": "来源",
+      "viewLink": "查看"
+    }
+  },
   "exclusion": {
     "title": "排除规则",
     "subtitle": "命中规则的文件将对 Friday 不可见（索引 / 检索 / AI 代理 / 编码容器均不读取）",
