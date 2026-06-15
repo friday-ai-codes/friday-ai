@@ -34,7 +34,7 @@
 
 ### 文档（DOC）
 
-- [ ] **DOC-01**: 系统区分外部飞书文档与内部生成文档（`document_type`/`source_kind`/`content_storage`），PRD/技术方案落独立 `Document` 实体
+- [x] **DOC-01**: 系统区分外部飞书文档与内部生成文档（`document_type`/`source_kind`/`content_storage`），PRD/技术方案落独立 `Document` 实体
 - [ ] **DOC-02**: `feishu_document` normalizer 把飞书 docx（PRD/技术方案）摄取入库并建 `REFERENCES` 边关联 `WorkItem`
 
 ### Release 账本（REL）
@@ -106,7 +106,7 @@
 | WIT-05 | Phase 28 | Complete |
 | CMT-01 | Phase 29 | Complete |
 | CMT-02 | Phase 29 | Complete |
-| DOC-01 | Phase 30 | Pending |
+| DOC-01 | Phase 30 | Complete |
 | DOC-02 | Phase 30 | Pending |
 | REL-01 | Phase 31 | Pending |
 | REL-02 | Phase 31 | Pending |
