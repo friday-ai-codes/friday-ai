@@ -8,9 +8,9 @@ from typing import Any
 from django.utils import timezone
 
 from chat.models import CodingSession
-from common.encryption import decrypt_value
 from mcp_tools.models import McpCodingExecutionTrace
-from repositories.models import GitCredential, Repository
+from repositories.models import Repository
+from services.git_credentials import aresolve_git_token
 from services.git_platform import get_git_platform_client
 from services.git_platform.models import MRCreateRequest
 
@@ -20,10 +20,10 @@ class MergeRequestToolError(Exception):
 
 
 async def _get_client(repository: Repository) -> Any:
-    credential = await GitCredential.objects.filter(repository=repository).afirst()
-    if credential is None or not credential.encrypted_token:
+    # Phase 26 REPO-01：统一经解析器取 token（per-repo 优先 → 同 host 实例凭证池 fallback）
+    token = await aresolve_git_token(repository)
+    if not token:
         raise MergeRequestToolError("仓库缺少 Git 平台访问凭据")
-    token = decrypt_value(credential.encrypted_token)
     return get_git_platform_client(repository, token)
 
 
