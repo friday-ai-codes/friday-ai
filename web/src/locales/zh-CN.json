@@ -226,6 +226,46 @@
       "RELATED": "相关"
     }
   },
+  "ingest": {
+    "title": "一键摄取",
+    "subtitle": "输入看板与 MR 链接，一次性拉取工作项、PRD/技术方案文档与 MR diff 并入库可检索",
+    "form": {
+      "boardUrlLabel": "看板 / 工作项 URL",
+      "boardUrlPlaceholder": "https://project.feishu.cn/{simple_name}/.../detail/{id}",
+      "mrUrlLabel": "MR / PR URL",
+      "mrUrlPlaceholder": "https://gitlab.example.com/group/repo/-/merge_requests/123",
+      "submit": "开始摄取",
+      "submitting": "摄取派发中…",
+      "errorRequired": "请输入链接",
+      "errorInvalidUrl": "请输入合法的 http(s) 链接"
+    },
+    "empty": {
+      "title": "尚未发起摄取",
+      "body": "填写上方两个链接并点击「开始摄取」，结果将在此显示"
+    },
+    "dispatch": {
+      "success": "摄取已在后台执行，结果将实时更新",
+      "failed": "摄取派发失败"
+    },
+    "run": {
+      "running": "摄取进行中…",
+      "completed": "摄取完成，相关内容已可检索",
+      "partial": "部分步骤未完成，可查看下方各步骤详情后重试",
+      "loadError": "加载摄取状态失败，请稍后重试",
+      "viewLink": "查看"
+    },
+    "steps": {
+      "workItem": "工作项",
+      "document": "PRD / 技术方案文档",
+      "mrDiff": "MR diff"
+    },
+    "status": {
+      "ok": "成功",
+      "failed": "失败",
+      "skipped": "已跳过",
+      "pending": "等待中"
+    }
+  },
   "exclusion": {
     "title": "排除规则",
     "subtitle": "命中规则的文件将对 Friday 不可见（索引 / 检索 / AI 代理 / 编码容器均不读取）",
