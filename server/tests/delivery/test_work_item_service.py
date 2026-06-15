@@ -13,6 +13,8 @@ fixture 字段形状取 DOMAIN §16 实测（story 7010225564：field_caadeb=[70
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -349,3 +351,145 @@ async def test_upsert_project_unconfigured_records_missing() -> None:
     state = await WorkItemSyncState.objects.aget(work_item=wi, facet=SyncFacet.BASIC_FIELDS)
     assert state.status == SyncStatus.MISSING
     assert "project" in state.error
+
+
+# ============================================================================
+# Task 3：关系派生持久化（占位/回填）+ 状态事件 append + relations facet
+# ============================================================================
+
+
+@respx.mock
+async def test_upsert_derives_relation_with_external_id_placeholder() -> None:
+    """WIT-04：field_caadeb=[id]（target 未落库）→ belongs_to_project + target_external_id 占位。"""
+    from delivery.models import RelationType, WorkItemRelation
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    _mock_work_item()
+
+    wi = await WorkItemService().upsert(_identity(), source="manual")
+
+    rel = await WorkItemRelation.objects.aget(source_work_item=wi)
+    assert rel.relation_type == RelationType.BELONGS_TO_PROJECT
+    assert rel.target_external_id == TARGET_PROJECT_ID
+    assert rel.target_work_item_id is None  # target 未落库 → 占位
+    assert rel.source_field_key == "field_caadeb"
+
+
+@respx.mock
+async def test_upsert_backfills_target_work_item() -> None:
+    """WIT-04 回填：先 upsert source 产占位，再 upsert id=target → 占位关系回填 target_work_item。"""
+    from delivery.models import WorkItem, WorkItemRelation
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+
+    # source 与 target 同 type=story → 同一 query URL，按请求 work_item_ids 分发响应
+    def _dispatch(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        wid = body["work_item_ids"][0]
+        if wid == TARGET_PROJECT_ID:
+            item = {
+                "id": TARGET_PROJECT_ID,
+                "name": "所属项目容器",
+                "fields": [],
+                "work_item_status": {"state_key": "open"},
+            }
+        else:
+            item = {
+                "id": STORY_ID,
+                "name": "实现学习平台 A",
+                "fields": _STORY_FIELDS,
+                "work_item_status": {"state_key": "fi46o4r6m"},
+            }
+        return httpx.Response(200, json={"err_code": 0, "data": [item]})
+
+    respx.post(f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/story/query").mock(
+        side_effect=_dispatch
+    )
+
+    service = WorkItemService()
+    source_wi = await service.upsert(_identity(), source="manual")
+    rel = await WorkItemRelation.objects.aget(source_work_item=source_wi)
+    assert rel.target_work_item_id is None  # 尚未落库
+
+    # upsert target（id=TARGET_PROJECT_ID）→ 回填占位
+    target_wi = await service.upsert(_identity(work_item_id=TARGET_PROJECT_ID), source="manual")
+    assert target_wi.work_item_id == TARGET_PROJECT_ID
+
+    rel = await WorkItemRelation.objects.aget(source_work_item=source_wi)
+    assert rel.target_work_item_id == target_wi.id
+    assert await WorkItem.objects.acount() == 2
+
+
+@respx.mock
+async def test_upsert_relation_idempotent_no_duplicate() -> None:
+    """重复 upsert 不产生重复 Relation（unique_together 走 update_or_create）。"""
+    from delivery.models import WorkItemRelation
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    _mock_work_item()
+
+    service = WorkItemService()
+    wi = await service.upsert(_identity(), source="manual")
+    await service.upsert(_identity(), source="feishu_webhook")
+
+    assert await WorkItemRelation.objects.filter(source_work_item=wi).acount() == 1
+
+
+@respx.mock
+async def test_upsert_relations_facet_complete() -> None:
+    """relations facet 派生成功后记 complete。"""
+    from delivery.models import SyncFacet, SyncStatus, WorkItemSyncState
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    _mock_work_item()
+
+    wi = await WorkItemService().upsert(_identity(), source="manual")
+
+    state = await WorkItemSyncState.objects.aget(work_item=wi, facet=SyncFacet.RELATIONS)
+    assert state.status == SyncStatus.COMPLETE
+
+
+@respx.mock
+async def test_upsert_status_change_appends_status_event() -> None:
+    """WIT-05：状态变更 append StatusEvent(pre/cur)，非就地改写；无变更不重复 append。"""
+    from delivery.models import WorkItemStatusEvent
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+
+    service = WorkItemService()
+
+    # 首次 upsert：state="A"（pre="" → cur="A"，append 1 条）
+    _mock_work_item(state_key="A")
+    wi = await service.upsert(_identity(), source="manual")
+    assert wi.status_state_key == "A"
+    assert await WorkItemStatusEvent.objects.filter(work_item=wi).acount() == 1
+
+    # 第二次 upsert：state="B"（pre="A" → cur="B"，新增 1 条）
+    respx.routes.clear()
+    _mock_token()
+    _mock_work_item(state_key="B")
+    wi = await service.upsert(_identity(), source="feishu_webhook")
+    assert wi.status_state_key == "B"  # mirror 更新为 B
+    events = [
+        e async for e in WorkItemStatusEvent.objects.filter(work_item=wi).order_by("ingested_at")
+    ]
+    assert len(events) == 2
+    assert events[1].pre_state_key == "A"
+    assert events[1].cur_state_key == "B"
+
+    # 第三次 upsert：state 仍="B"（无变更，不 append）
+    respx.routes.clear()
+    _mock_token()
+    _mock_work_item(state_key="B")
+    await service.upsert(_identity(), source="feishu_webhook")
+    assert await WorkItemStatusEvent.objects.filter(work_item=wi).acount() == 2
