@@ -284,6 +284,29 @@ function showError(step?: IngestStep): boolean {
           </li>
         </ul>
       </div>
+
+      <!-- 派发成功但首轮状态未到（runId 已置位、run 未到、非加载错误）：running 占位骨架 -->
+      <!-- 填补「派发成功 → 首个 getRun 返回」之间的结果区空窗，给予即时反馈。 -->
+      <div
+        v-else-if="!isRunError"
+        class="card p-5 space-y-4"
+        data-testid="ingest-running-placeholder"
+      >
+        <div class="flex items-center gap-2 text-sm font-medium">
+          <span class="icon-[lucide--loader-circle] animate-spin text-primary" aria-hidden="true" />
+          <span>{{ t('ingest.run.running') }}</span>
+        </div>
+        <ul class="space-y-3">
+          <li
+            v-for="row in stepRows"
+            :key="row.key"
+            class="flex items-start gap-2"
+          >
+            <span class="icon-[lucide--circle-dashed] text-muted-foreground mt-0.5 shrink-0" aria-hidden="true" />
+            <span class="text-sm font-medium">{{ row.label }}</span>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
