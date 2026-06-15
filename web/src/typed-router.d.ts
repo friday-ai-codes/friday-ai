@@ -80,6 +80,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/git-credentials/': RouteRecordInfo<
+      '/admin/git-credentials/',
+      '/admin/git-credentials',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/oidc': RouteRecordInfo<
       '/admin/oidc',
       '/admin/oidc',
@@ -452,6 +459,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/conversations.vue': {
       routes:
         | '/admin/conversations'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/git-credentials/index.vue': {
+      routes:
+        | '/admin/git-credentials/'
       views:
         | never
       pathParamNames:
