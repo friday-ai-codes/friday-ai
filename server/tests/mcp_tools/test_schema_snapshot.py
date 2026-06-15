@@ -33,6 +33,10 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
             "response": ["repository_id", "branch", "source", "related_chunks", "run_id"],
         },
+        "reverse_lookup_requirements": {
+            "request": ["repository_id", "file_path", "line", "chunk_id", "branch"],
+            "response": ["chunks", "related_work_items", "related_documents", "paths", "run_id"],
+        },
         "analyze_repository": {
             "request": ["repository_id", "branch", "focus", "context_chunks", "max_files"],
             "response": ["analysis_id", "repository_id", "branch", "analysis", "evidence", "run_id"],
