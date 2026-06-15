@@ -45,10 +45,20 @@ const i18n = createI18n({
   messages: { 'zh-CN': zhCN as any },
 })
 
+// 轻量 RouterLink 桩：渲染 <a> 暴露 to/data-testid，避免引入完整 vue-router（UX-2）。
+const RouterLinkStub = {
+  name: 'RouterLink',
+  props: { to: { type: [String, Object], required: true } },
+  template: '<a :data-to="typeof to === \'string\' ? to : JSON.stringify(to)"><slot /></a>',
+}
+
 function mountPanel() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return mount(ScreenshotRecallPanel, {
-    global: { plugins: [i18n, [VueQueryPlugin, { queryClient }]] },
+    global: {
+      plugins: [i18n, [VueQueryPlugin, { queryClient }]],
+      stubs: { RouterLink: RouterLinkStub },
+    },
   })
 }
 
@@ -152,7 +162,10 @@ describe('screenshotRecallPanel', () => {
     const degraded = wrapper.find('[data-testid="recall-degraded"]')
     expect(degraded.exists()).toBe(true)
     expect(degraded.text()).toContain(zhCN.screenshotRecall.degraded.title)
-    expect(wrapper.find('[data-testid="recall-degraded-link"]').exists()).toBe(true)
+    // UX-2：走 RouterLink（SPA 导航），to=/admin，而非整页刷新的裸 <a href>。
+    const link = wrapper.findComponent(RouterLinkStub)
+    expect(link.exists()).toBe(true)
+    expect(link.props('to')).toBe('/admin')
     // 降级非错误：不弹 error toast、不走 handleError、无 error 行
     expect(handleErrorMock).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="recall-error"]').exists()).toBe(false)
