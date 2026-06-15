@@ -3,9 +3,11 @@
 re-export ``WorkItemService`` / ``WorkItemIdentity``（WorkItem 单一写入入口，INV-6）
 + ``CommentEventService`` / ``classify_approval_semantic``（评论事件单一写入入口，CMT-01）
 + ``DocumentService`` / ``derive_feishu_tenant``（Document 单一写入入口，DOC-01/INV-6）
-+ ``ReleaseService``（Release 账本单一写入入口，REL-01/INV-6）。
++ ``ReleaseService``（Release 账本单一写入入口，REL-01/INV-6）
++ ``BitableReleaseAdapter``（Bitable 行 → ReleaseService 落库骨架，REL-02）。
 """
 
+from delivery.services.bitable_release_adapter import BitableReleaseAdapter
 from delivery.services.comment_event_service import (
     CommentEventService,
     classify_approval_semantic,
@@ -28,4 +30,5 @@ __all__ = [
     "DocumentService",
     "derive_feishu_tenant",
     "ReleaseService",
+    "BitableReleaseAdapter",
 ]
