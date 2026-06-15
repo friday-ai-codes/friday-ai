@@ -3,6 +3,7 @@
 import asyncio
 
 import structlog
+from django.utils import timezone as dj_timezone
 from github import Auth, Github, GithubException
 
 from .base import GitPlatformClient, truncate_diff_lines
@@ -13,6 +14,7 @@ from .models import (
     MRCreateResult,
     MRDiffFile,
     MRDiffResult,
+    MRMetadataResult,
 )
 
 logger = structlog.get_logger()
@@ -256,6 +258,63 @@ class GitHubClient(GitPlatformClient):
                 error=error_msg,
             )
             return MRDiffResult(success=False, error=error_msg)
+
+    async def get_merge_request_metadata(self, mr_id: str) -> MRMetadataResult:
+        """获取 GitHub PR 的 merge commit 元数据（HDIFF-01 历史 diff commit 锚定）。
+
+        复用 get_merge_request_diff 同款 `repo.get_pull` 范式取 PR 对象，读取
+        merge_commit_sha / base.ref（target_branch）/ head.ref（source_branch）/
+        merged_at（PyGithub 返回 naive UTC datetime）；merged_at 非 None 时归一为
+        aware。GithubException / 通用异常各自降级返回 success=False，token 绝不入日志。
+
+        Args:
+            mr_id: PR 编号。
+
+        Returns:
+            MRMetadataResult：未合并时 merge_commit_sha 为空字符串。
+        """
+        try:
+            repo = self._get_repo()
+            pr = await asyncio.to_thread(repo.get_pull, int(mr_id))
+
+            merged_at = pr.merged_at
+            if merged_at is not None and dj_timezone.is_naive(merged_at):
+                merged_at = dj_timezone.make_aware(merged_at, dj_timezone.utc)
+
+            logger.info(
+                "github_pr_metadata_fetched",
+                pr_number=mr_id,
+                has_merge_commit=bool(pr.merge_commit_sha),
+                target_branch=pr.base.ref if pr.base else "",
+            )
+
+            return MRMetadataResult(
+                success=True,
+                merge_commit_sha=pr.merge_commit_sha or "",
+                target_branch=pr.base.ref if pr.base else "",
+                source_branch=pr.head.ref if pr.head else "",
+                merged_at=merged_at,
+            )
+        except GithubException as e:
+            error_msg = f"Failed to fetch PR metadata: {e}"
+            logger.error(
+                "github_pr_metadata_error",
+                pr_number=mr_id,
+                owner=self.owner,
+                repo=self.repo_name,
+                error=error_msg,
+            )
+            return MRMetadataResult(success=False, error=error_msg)
+        except Exception as e:
+            error_msg = f"Unexpected error fetching PR metadata: {e}"
+            logger.error(
+                "github_pr_metadata_error",
+                pr_number=mr_id,
+                owner=self.owner,
+                repo=self.repo_name,
+                error=error_msg,
+            )
+            return MRMetadataResult(success=False, error=error_msg)
 
     async def get_branch_diff(
         self,
