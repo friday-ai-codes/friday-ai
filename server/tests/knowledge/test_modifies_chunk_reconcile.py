@@ -175,13 +175,6 @@ def _delete_chunk(chunk_id: uuid.UUID) -> None:
     ChunkRegistry.objects.filter(chunk_id=chunk_id).delete()
 
 
-def _set_chunk_content_hash(chunk_id: uuid.UUID, content_hash: str) -> None:
-    """更新 ChunkRegistry.content_hash（模拟同位置内容被新版本取代）。"""
-    from code_relations.models import ChunkRegistry
-
-    ChunkRegistry.objects.filter(chunk_id=chunk_id).update(content_hash=content_hash)
-
-
 class TestReconcile:
     """areconcile_modifies_chunk_edges：过期边置 invalid_at（置位不删）+ 双信号 + 降级 + 隔离。"""
 
@@ -297,122 +290,6 @@ class TestReconcile:
         assert invalidated == 1
         assert (await KnowledgeEdge.objects.aget(id=edge_a.id)).invalid_at is not None
         # repo_b 的边未被本 repo 对账触及
-        assert (await KnowledgeEdge.objects.aget(id=edge_b.id)).invalid_at is None
-
-
-class TestReconcile:
-    """areconcile_modifies_chunk_edges：过期边置 invalid_at（置位不删）。"""
-
-    async def test_chunk_deleted_invalidates_edge_without_delete(self) -> None:
-        """chunk 删除（target_chunk_id 不在 base ChunkRegistry）→ 边置 invalid_at，行仍在。"""
-        repo = await sync_to_async(_make_repo)("recon-deleted")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="a" * 64)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo, target_chunk_id=cid, content_hash="a" * 64, event_time=timezone.now()
-        )
-        from code_relations.models import ChunkRegistry
-
-        await sync_to_async(lambda: ChunkRegistry.objects.filter(chunk_id=cid).delete())()
-
-        count = await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now())
-        assert count == 1
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is not None  # 置位
-        # 边行未被删除（置位不删）
-        assert await KnowledgeEdge.objects.filter(id=edge.id).acount() == 1
-
-    async def test_content_hash_drift_invalidates_edge(self) -> None:
-        """同 chunk_id 但 content_hash 漂移（内容被新版本取代）→ 边失效。"""
-        repo = await sync_to_async(_make_repo)("recon-drift")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="new" + "0" * 61)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo,
-            target_chunk_id=cid,
-            content_hash="old" + "0" * 61,
-            event_time=timezone.now(),
-        )
-
-        count = await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now())
-        assert count == 1
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is not None
-
-    async def test_unchanged_chunk_not_invalidated_idempotent(self) -> None:
-        """content_hash 一致 → 不失效；二次对账仍 0 失效（幂等可重入）。"""
-        repo = await sync_to_async(_make_repo)("recon-unchanged")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="a" * 64)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo, target_chunk_id=cid, content_hash="a" * 64, event_time=timezone.now()
-        )
-
-        assert await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now()) == 0
-        assert await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now()) == 0
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is None
-
-    async def test_missing_fingerprint_conservative_no_invalidate(self) -> None:
-        """边 metadata 无 chunk_content_hash 且 chunk 仍存在 → 仅按存在性判定，不误失效。"""
-        repo = await sync_to_async(_make_repo)("recon-nohash")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="a" * 64)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo, target_chunk_id=cid, content_hash=None, event_time=timezone.now()
-        )
-
-        assert await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now()) == 0
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is None
-
-    async def test_invalid_at_greater_than_valid_at(self) -> None:
-        """时间次序：失效后 invalid_at > valid_at（kedge_valid_range 恒成立）。"""
-        repo = await sync_to_async(_make_repo)("recon-order")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="a" * 64)
-        t0 = timezone.now() - timedelta(hours=1)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo, target_chunk_id=cid, content_hash="old" + "0" * 61, event_time=t0
-        )
-        invalid_at = timezone.now()
-        await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=invalid_at)
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is not None
-        assert refreshed.invalid_at > refreshed.valid_at
-
-    async def test_future_valid_at_edge_degraded_per_edge(self) -> None:
-        """异常边（valid_at 在未来，invalid_at<=valid_at 触发约束）→ 逐边降级不掀翻批次。"""
-        repo = await sync_to_async(_make_repo)("recon-future")
-        cid = await sync_to_async(_make_chunk)(repo, content_hash="a" * 64)
-        future = timezone.now() + timedelta(days=30)
-        _, edge = await _make_modifies_chunk_edge(
-            repo=repo, target_chunk_id=cid, content_hash="old" + "0" * 61, event_time=future
-        )
-        # invalid_at 早于 valid_at → 该边逐边降级（warning），不抛
-        count = await areconcile_modifies_chunk_edges(str(repo.id), invalid_at=timezone.now())
-        assert count == 0  # 该异常边未成功失效
-        refreshed = await KnowledgeEdge.objects.aget(id=edge.id)
-        assert refreshed.invalid_at is None  # 约束拦截，未置位
-
-    async def test_cross_repo_isolation(self) -> None:
-        """跨 repo 隔离：另一 repo 的过期边不被本 repo 对账触及。"""
-        repo_a = await sync_to_async(_make_repo)("recon-iso-a")
-        repo_b = await sync_to_async(_make_repo)("recon-iso-b")
-        cid_a = await sync_to_async(_make_chunk)(repo_a, content_hash="a" * 64)
-        cid_b = await sync_to_async(_make_chunk)(repo_b, content_hash="b" * 64)
-        _, edge_a = await _make_modifies_chunk_edge(
-            repo=repo_a,
-            target_chunk_id=cid_a,
-            content_hash="old" + "0" * 61,
-            event_time=timezone.now(),
-        )
-        _, edge_b = await _make_modifies_chunk_edge(
-            repo=repo_b,
-            target_chunk_id=cid_b,
-            content_hash="old" + "0" * 61,
-            event_time=timezone.now(),
-        )
-
-        # 仅对账 repo_a → 仅 edge_a 失效，edge_b 不动
-        count = await areconcile_modifies_chunk_edges(str(repo_a.id), invalid_at=timezone.now())
-        assert count == 1
-        assert (await KnowledgeEdge.objects.aget(id=edge_a.id)).invalid_at is not None
         assert (await KnowledgeEdge.objects.aget(id=edge_b.id)).invalid_at is None
 
 
