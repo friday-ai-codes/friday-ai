@@ -12,40 +12,42 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.5.0 索引检索地基与排除文件（2026-06-15）
+**Latest shipped:** v0.6.0 领域脊柱 + 知识图谱补全（2026-06-15）
 
-里程碑演进：v0.3.0 交付知识图谱 → v0.4.0 工作流系统契约重构 → v0.5.0 索引/检索地基 + 排除文件。近两个里程碑要点：
+里程碑演进：v0.4.0 工作流系统契约重构 → v0.5.0 索引/检索地基 + 排除文件 → v0.6.0 领域脊柱 + 知识图谱补全。近三个里程碑要点：
 
 - **v0.4.0 工作流契约重构**：以后端节点 registry 为唯一事实源，`WorkflowGraphValidator` 保存即校验、内置模板开箱可跑、变量引用所选即所得、执行状态机（waiting_event/next_handle/trigger_data）修复、执行可观测（WS 断线降级轮询 + 节点错误展示）。
 - **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
+- **v0.6.0 领域脊柱 + 知识补全**：新增 `delivery` app 立起以飞书 work item 为中心的操作态脊柱——canonical `WorkItem` + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`/`WorkItemRelation`（字段派生）/`WorkItemStatusEvent`/`WorkItemCommentEvent`（append-only 评论流 + 当前树投影）；`Document`/`DocumentVersion`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边；Release 账本宽容模型 + 飞书 Bitable adapter 骨架；(看板URL+MR URL) 一键摄取编排；历史 diff 冻结 + bi-temporal 失效对账（PF-08）；评论入图 + 片段→需求反查 API/MCP；截图识别需求（多模态 LLM）。飞书接口前置修复 PF-09/10/11/12 已落地。
 
 **已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.6.0 领域脊柱 + 知识图谱补全
+## Current Milestone: v0.7.0 方案编排（需求 → 主方案）
 
-**Goal:** 立起 `delivery` 操作态脊柱（以飞书 work item 为中心），并把知识图谱补全到「可沉淀历史、可反查、可吃多源输入」——这是 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。详细数据模型见 `.planning/DOMAIN-MODEL.md`。
+**Goal:** 把"需求 → 一份高质量多仓主技术方案"做成可复用的 map-reduce 多 agent 编排引擎：拆分 → 路由 → 召回 → 澄清 → 并行调研（子 agent 容器隔离）→ 架构师融合主方案（结构化 `MergedPlan` + `PlanValidator`）。同时立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession`、事件 taxonomy。详细数据模型见 `.planning/DOMAIN-MODEL.md` §5/§6/§7/§14/§15。
 
 **Target features:**
 
-- 飞书接口前置修复（PF-09/10/11/12）：按真实 `work_item_type` 取数、关系改字段派生、修复评论端点、`get_work_item` 保留完整 `fields[]` 元数据 —— `WorkItem` upsert 的依赖
-- `WorkItem` 脊柱（delivery app）+ 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类（mirror/enhanced/writeback）+ `WorkItemSyncState` 来源完整度
-- `WorkItemRelation`：从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），独立 relation 端点降级
-- `WorkItemCommentEvent` 评论事件流（append-only）+ 当前评论树投影
-- `Document`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边
-- Release 账本宽容模型（`ReleaseBatch/Record/Artifact`）+ 飞书 Bitable client/adapter（骨架先行，开放平台凭证后填）
-- (看板URL + MR URL) → 一键摄取编排（拉看板 → PRD/技术方案文档 RAG → MR diff RAG）
-- 历史 diff 冻结 + bi-temporal 失效对账（PF-08，commit 锚定不追 master）
-- 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
-- 截图识别需求（多模态 LLM：vision → 文本 → RAG，非图片向量库）
+- 前置修复 PF-01/PF-02：`search_code` 工具名漂移（server 端检索工具静默失效）、`verify_plan` schema 漂移（`tasks` vs `execution_plan`，校验形同虚设）—— 方案质量 + PlanValidator 的地基
+- `ai_plan_research` 编排 engine 骨架 + `PlanSession` 状态机（decomposing→routing→recalling→clarifying→researching→merging→done/failed，可持久化可恢复）
+- canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService`（唯一写入入口 INV-6）+ 旧 3 路径（chat/mcp/workflow）软链/eager 投影/lazy 迁移（不全量双写）
+- 路由接入 `RepoRouterV2`（能力树 + LLM 快筛涉及哪些仓）+ 历史召回接入（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘）
+- 并行调研子 agent：`RepoResearchTask`/`PartialPlan` 结构化契约 + filter_then_container（只对需深入仓起 claude code 容器，上下文隔离）+ 单仓失败重试 + 仓库重索引使过期 partial stale 重跑
+- 架构师融合子 agent + `MergedPlan`（跨仓契约/依赖 DAG/迁移/兼容风险/发布顺序/回滚/execution_plan）+ `PlanValidator`（契约一致/依赖无环/迁移顺序/回滚完整）+ 跨仓依赖显式建模
+- HITL 澄清回路：`Clarification` + 回答后仅 `affected_partials` 重跑 + 工作流入口（先行）
+- 事件 taxonomy 产出（§15 trace 信封：work_item.syncing/repo.research.*/clarification.*/plan.merge.*/plan.validation.failed 等），v0.11 对外只是 adapter
+- Chat 入口薄封装（底层 orchestration engine 复用，工作流先行不并行造两入口）
+- SDD 扩展点预留：`PlanSession` 对 SDD 仓库可产 spec draft 字段位（v0.9 做全）
 
 **Key context:**
 
-- 设计底座已就绪：`ROADMAP-vNext.md` §v0.6（特性/现状坐标/决策）、`DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段附录）、`PREFLIGHT.md`（PF-08~12 风险台账）。
-- **不变量**：INV-1 飞书三元组唯一 → 一个 canonical `WorkItem`；INV-3 `knowledge` 是检索投影非操作态事实源；INV-6 落库只经 `WorkItemService.upsert` / `TechnicalPlanService`，禁旁路写表。
-- **被阻塞输入**：① Bitable 需开放平台 `tenant_access_token`（与项目 plugin token 不同租户/域），目前未到位 → Bitable adapter 先建骨架、数据后填；② 容器型工作项真实 `type_key` 未知。
-- 渐进迁移、不爆改：新增 `delivery` app 立操作态脊柱，`knowledge` 投影引用脊柱不重建。
+- 设计底座已就绪：`ROADMAP-vNext.md` §v0.7（流水线 6 段/概念/现状坐标/已确认决策）、`DOMAIN-MODEL.md` §5（canonical TechnicalPlan + service + 迁移规则）/§6（编排状态机 + 子任务级状态 + 可靠恢复规则）/§7（PartialPlan/MergedPlan/PlanValidator schema）/§14（PlanSession 转移表）/§15（事件 payload 规格）、`PREFLIGHT.md`（PF-01/02 必修）。
+- **不变量**：INV-2 所有技术方案最终可追溯到 `WorkItem`（chat 自然语言例外可 null 但显式标记）；INV-5 对外暴露 progress/trace 事件非模型私有 CoT；INV-6 技术方案解析/创建只经 `TechnicalPlanService`，禁旁路写表。
+- **已确认决策（vNext 决策日志）**：子 agent 走 filter_then_container；融合走 architect_subagent + 结构化 MergedPlan + PlanValidator；主入口工作流 + Chat 都要但底层 engine 复用、工作流先行；事件 taxonomy 本里程碑即落；连接（多仓融合+跨仓依赖）与隔离（子 agent 上下文）两者都要。
+- **依赖底座（已交付）**：v0.6 `delivery` 脊柱（WorkItem/Document/知识投影/历史召回）、v0.5 路由/索引/行号回填 + `DeliveryKnowledgeSearchService` + `RepoRouterV2` + chat `deep_analysis` 子 agent 容器（`SubAgentSession`/`BarrierManager`）+ `AICodingNode` 并行派发。
+- 渐进迁移、不爆改：canonical `TechnicalPlan` 立为新脊柱，存量 3 条 plan 路径挂软链逐步收敛；编排引擎抽成可复用 orchestration engine，避免拖累 v0.8 多仓编码。
 
 ## Requirements
 
@@ -84,27 +86,37 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **敏感文件 AI 识别**：确定性检测器（文件名启发式 + 密钥内容扫描 + 全程脱敏 reason）+ 可选 LLM 二分类 + 「建议+确认」REST/UI（接受幂等建 `ai_suggested` 排除规则，绝不静默删） — v0.5.0 (`server/services/sensitive_detect.py`)
 - ✓ **Commit 历史 RAG + 行级反查**：commit message/author/变更文件路径摘要入 Qdrant（kind=commit，增量 boundary..HEAD）；`ChunkRegistry` 行号回填 + `find_chunk_at` + `GET /api/repositories/<id>/chunk-at/` — v0.5.0
 - ✓ **多仓凭证统一 + MCP 多仓检索**：`GitInstanceCredential` 按 host 集中存（Fernet 加密）+ 单一解析器 `aresolve_git_token`（per-repo 优先 → host 实例池 fallback），全链路取 token 收口；MCP `search_rag_chunks` 多仓/全仓参数 — v0.5.0 (`server/repositories/`)
+- ✓ **飞书接口前置修复**：按真实 `work_item_type` 取数（不再默认 story 取错）、`get_work_item` 保留完整 `fields[]` 元数据、修复评论端点解析、工作项关系改 `work_item_related_multi_select` 字段派生（PF-09/10/11/12） — v0.6.0 (`server/services/feishu.py`, `server/feishu/client.py`)
+- ✓ **`WorkItem` 操作态脊柱**：新增 `delivery` app + canonical `WorkItem`（三元组唯一 INV-1）+ 单一 `WorkItemService.upsert` 入口（INV-6）+ source-of-truth 三分类（mirror/friday_enhanced/writeback）+ `WorkItemSyncState` facet 完整度 + `WorkItemRelation` 字段派生 + `WorkItemStatusEvent` append-only — v0.6.0 (`server/delivery/`)
+- ✓ **评论事件流**：append-only `WorkItemCommentEvent`（created/replied/edited/deleted/approval）+ `CommentEventService` 单一 append 入口 + 幂等去重 + 当前评论树读时投影 — v0.6.0 (`server/delivery/`)
+- ✓ **Document + REFERENCES**：`Document`/`DocumentVersion`（外部飞书/内部生成 + content_storage + supersedes 版本链）+ `DocumentService` 单一入口 + `feishu_document` normalizer 摄取 PRD/技术方案 + `REFERENCES` 边关联 `WorkItem` — v0.6.0 (`server/delivery/`, `server/knowledge/sources/`)
+- ✓ **Release 账本 + Bitable adapter 骨架**：宽容模型 `ReleaseBatch/Record/Artifact`（保留 `raw_row` 无损）+ `ReleaseService` 单一入口 + `BitableClient`（开放平台 token 独立解析）+ adapter 骨架 — v0.6.0 (`server/delivery/`)
+- ✓ **一键摄取编排**：(看板URL, MR URL) → `IngestRun` 状态机 → 拉看板工作项（upsert）+ PRD/技术方案文档（REFERENCES）+ MR diff（RAG）三步 best-effort + 前端 `/knowledge/ingest` 面板 — v0.6.0
+- ✓ **历史 diff 冻结 + bi-temporal 失效**：MR diff commit 锚定（`target_branch`+`merge_commit_sha` 不假设 master）+ `MODIFIES_CHUNK` 边冻结 chunk 指纹 + 重索引对账置 `invalid_at` + as-of 查询区分历史/当前（PF-08） — v0.6.0 (`server/knowledge/`)
+- ✓ **片段→需求反查 + 评论入图**：复用 `find_chunk_at` + graph_store 逐跳反查需求/文档（REST + MCP `reverse_lookup_requirements`，fail-closed）+ 评论摄取进 work_item 知识投影 — v0.6.0
+- ✓ **截图识别需求**：多模态 LLM（vision 提语义 → 文本 query → 既有交付知识检索召回 work_item）+ graceful 降级 + 前端「截图识需求」面板（非图片向量库） — v0.6.0
 
-### Active (v0.6.0)
+### Active (v0.7.0)
 
 <!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] 飞书接口前置修复（PF-09/10/11/12）：真实 work_item_type 取数、关系字段派生、评论端点修复、保留完整 fields[] 元数据
-- [ ] `WorkItem` 脊柱 + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`
-- [ ] `WorkItemRelation`（关联字段派生）+ `WorkItemCommentEvent` 评论事件流 + 当前树投影
-- [ ] `Document`（外部/内部）+ `feishu_document` normalizer + `REFERENCES` 边
-- [ ] Release 账本宽容模型 + 飞书 Bitable adapter（骨架先行）
-- [ ] (看板URL+MR URL) → 一键摄取编排
-- [ ] 历史 diff 冻结 + bi-temporal 失效对账（PF-08）
-- [ ] 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
-- [ ] 截图识别需求（多模态 LLM）
+- [ ] 前置修复 PF-01/PF-02（`search_code` 工具名漂移、`verify_plan` schema 漂移）
+- [ ] `ai_plan_research` 编排 engine 骨架 + `PlanSession` 状态机（可持久化可恢复）
+- [ ] canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService`（INV-6 唯一入口）+ 旧 3 路径软链/迁移
+- [ ] 路由（RepoRouterV2）+ 历史召回接入
+- [ ] 并行调研子 agent（`RepoResearchTask`/`PartialPlan` + filter_then_container 容器隔离 + 过期 invalidation）
+- [ ] 架构师融合 + `MergedPlan` + `PlanValidator` + 跨仓依赖建模
+- [ ] HITL 澄清（`Clarification` + affected_partials 重跑）+ 事件 taxonomy 产出 + 工作流入口
+- [ ] Chat 入口薄封装
 
 **Backlog 候选（未入本里程碑）：**
 
+- v0.8 多仓串行编码 → 融合 PR（`RepoCodingTask` wave/DAG/产物注入，接 v0.7 编排产物）
+- 编码中全自动 replan/回溯（v0.8 用「抛 question 给人」过渡，全自动留后续）
 - 接入实时明文 PAT 通道剩余路径（chat/MCP 编码 dispatch）+ RTOOL-02/03/04 容器端 E2E 真实环境验收
 - 令牌细粒度读写 scope / rotate / IP allowlist / 短 TTL 派生凭证（PATX-01~04）
-- 图片向量库（视觉相似/标注）— v0.6 截图走多模态 LLM，向量库留 backlog
-- 补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
+- 图片向量库（视觉相似/标注）；补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
+- Bitable 真实列映射（v2 REL-03，待开放平台凭证）
 
 ### Out of Scope
 
@@ -175,4 +187,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-15 — milestone v0.6.0 started*
+*Last updated: 2026-06-16 — milestone v0.7.0 started*
