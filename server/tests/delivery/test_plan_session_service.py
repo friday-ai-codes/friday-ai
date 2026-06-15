@@ -10,7 +10,10 @@ import pytest
 
 from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
 from delivery.services import PlanSessionService
-from delivery.services.plan_session_service import _ALLOWED
+from delivery.services.plan_session_service import (
+    _ALLOWED,
+    ConcurrentTransitionError,
+)
 
 
 def _all_allowed_cases() -> list[tuple[str, str, str]]:
@@ -70,6 +73,32 @@ async def test_create_session_default_and_persist_intermediate() -> None:
     reloaded = await PlanSession.objects.aget(id=session.id)
     assert reloaded.status == PlanSessionStatus.ROUTING
     assert reloaded.decomposition == decomposition
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_stale_transition_rejected_concurrency() -> None:
+    """WR-01：陈旧内存态推进被条件原子更新拒绝（TOCTOU 双推进防护）。
+
+    模拟并发：另一路已把 DB 行从 decomposing 推进到 routing；持有陈旧 session
+    （内存态仍 decomposing）的一方再 transition("decomposed") 必须被拒，且 DB 行
+    状态不被覆盖回 routing 之外（保 resume 安全）。
+    """
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.DECOMPOSING,
+    )
+    svc = PlanSessionService()
+
+    # 并发/先行 advance：直接把 DB 行推进到 routing（测试内绕过 service 模拟竞态）
+    await PlanSession.objects.filter(id=session.id).aupdate(status=PlanSessionStatus.ROUTING)
+
+    # 陈旧内存态（session.status 仍 decomposing）再推进 → 条件更新影响 0 行 → 拒绝
+    with pytest.raises(ConcurrentTransitionError):
+        await svc.transition(session, "decomposed")
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.ROUTING  # 未被陈旧推进覆盖
 
 
 @pytest.mark.django_db
