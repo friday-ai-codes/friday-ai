@@ -230,7 +230,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
-| 35. 截图识别需求 | v0.6.0 | 2/2 | Complete   | 2026-06-15 |
+| 35. 截图识别需求 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
 
 ---
 *Previous milestones archived in .planning/milestones/*
