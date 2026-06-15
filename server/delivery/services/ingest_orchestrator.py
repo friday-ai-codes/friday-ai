@@ -1,0 +1,305 @@
+"""一键摄取三步编排（Phase 32-02，ING-01 / CONTEXT Grey Area 1）。
+
+把不可信 ``(board_url, mr_url)`` 串成**既有能力**的三步摄取——本模块是 PURE
+ORCHESTRATION，绝不新建底层摄取/检索机制，只复用 P28 upsert / P30 normalizer /
+既有 diff RAG：
+
+1. **看板工作项**：``parse_board_url`` → ``WorkItemService().upsert``
+   （操作态脊柱单一写入口，INV-6 / source=``mr_reverse``）。
+2. **文档 + REFERENCES**：``ingest(IngestionRequest("feishu_document", ...))``——经
+   P30 ``feishu_document`` normalizer 同时让 work_item + document 实体进入 knowledge
+   可检索面 + ``REFERENCES`` 边（缺段不缺实体）。
+3. **MR diff**：``aresolve_repo_and_mr``（SSRF 边界，必须命中已落库 Repository）→
+   既有 ``archive_code_change`` 归档 → 组装 ``code_change`` ``IngestionEvent`` 经
+   ``ingest_events`` 入图（CodeChangeArchive + code_change 实体 + MODIFIES_CHUNK 边）。
+
+降级范式（§1.4，best-effort 步级隔离）：每步独立 try/except，任一步失败/跳过
+**不阻断**其余步骤，结构化结果逐步写入 ``IngestRun.steps`` 持久化（前端可逐步轮询
+真实进度）。编排级未捕获异常 → ``IngestRun.status=failed`` + 脱敏 error；正常跑完
+（含步级 failed/skipped）→ ``status=completed``（partial 由前端从 completed + 非 ok
+推导）。
+
+脱敏契约（T-32-02）：步级/编排级 error 落库前一律复用
+``WorkItemService._safe_error``（``_redact_secrets`` + 截断），diff 原文/响应 body
+绝不入 ``steps``；code_change payload 仅摘要（archive_id/commit_sha/统计）。
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+import structlog
+from asgiref.sync import sync_to_async
+from django.utils import timezone
+
+from delivery.models import IngestRun
+from delivery.services.ingest_parsing import aresolve_repo_and_mr, parse_board_url
+from delivery.services.work_item_service import (
+    WorkItemIdentity,
+    WorkItemService,
+    _redact_secrets,
+)
+
+logger = structlog.get_logger(__name__)
+
+__all__ = ["StepResult", "ingest_from_urls"]
+
+# steps[*].error 截断长度（脱敏：避免拼接大段不可信响应/凭证，对齐 T-28-07）
+_ERROR_SNIPPET_LIMIT = 500
+
+# 一键摄取触发器名（结构化日志/ingestion trigger 用）
+_TRIGGER = "one_click_ingest"
+# MR 反查摄取的 knowledge source_kind（与 task_result 的 "task_result" 区隔）
+_MR_SOURCE_KIND = "mr_ingest"
+
+
+@dataclass(frozen=True)
+class StepResult:
+    """单步结构化结果（落 ``IngestRun.steps[*]``，形状与 ``default_steps`` 对齐）。
+
+    ``status`` ∈ ok / failed / skipped / pending；``identifier`` 为关联对象标识
+    （work_item id / archive id 等），``link`` 为可选外链，``error`` 为脱敏后原因。
+    """
+
+    status: str
+    identifier: str = ""
+    link: str = ""
+    error: str = ""
+
+
+def _safe_error(exc: Exception) -> str:
+    """脱敏错误摘要：先抹凭证再截断（复用 work_item_service 的 ``_redact_secrets`` 范式）。
+
+    响应 body / 异常文本可能夹带凭证（误入的 token/secret/Authorization），先
+    ``_redact_secrets`` 抹掉键名命中的值与 ``Bearer`` 串再截断；先脱敏后截断避免截到
+    token 中段残留半截凭证。绝不向 ``steps[*].error`` 落原始凭证（T-32-02）。
+    """
+    return _redact_secrets(str(exc))[:_ERROR_SNIPPET_LIMIT]
+
+
+async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRun:
+    """一键摄取三步编排：写 ``IngestRun(run_id)``，best-effort 降级。
+
+    Args:
+        run_id: 已由 dispatch 端点建好的 ``IngestRun`` 主键（UUID str）。
+        board_url: 不可信看板/工作项 URL（解析仅抽标识符，不作抓取目标，T-32-01）。
+        mr_url: 不可信 MR/PR URL（必须匹配已落库 Repository 才走其凭证 client）。
+
+    Returns:
+        终态 ``IngestRun``（status=completed/failed，steps 三项结构化结果）。
+    """
+    run = await IngestRun.objects.aget(id=run_id)
+
+    try:
+        board = parse_board_url(board_url)
+
+        # === 步 1：工作项 upsert（操作态脊柱，INV-6）===
+        if board is None:
+            await _write_step(
+                run,
+                "work_item",
+                StepResult(
+                    status="skipped",
+                    error="board_url 无法解析（容器型/非标准形态不支持）",
+                ),
+            )
+        else:
+            try:
+                work_item = await WorkItemService().upsert(
+                    WorkItemIdentity(
+                        feishu_project_key=board.feishu_project_key,
+                        work_item_type=board.work_item_type,
+                        work_item_id=board.work_item_id,
+                    ),
+                    source="mr_reverse",
+                    fetch=True,
+                )
+                await _write_step(
+                    run,
+                    "work_item",
+                    StepResult(
+                        status="ok", identifier=str(work_item.id), link=board_url
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ingest_work_item_step_failed",
+                    run_id=str(run.id),
+                    error=_safe_error(exc),
+                    error_type=type(exc).__name__,
+                )
+                await _write_step(
+                    run, "work_item", StepResult(status="failed", error=_safe_error(exc))
+                )
+
+        # === 步 2：文档 + REFERENCES + work_item knowledge 投影（复用 P30 normalizer）===
+        # 本步经 feishu_document normalizer 同时让 work_item + document 实体进入
+        # knowledge 可检索面（缺段不缺实体）；board 解析失败则整步 skipped。
+        if board is None:
+            await _write_step(
+                run,
+                "document",
+                StepResult(status="skipped", error="board_url 无法解析，跳过文档摄取"),
+            )
+        else:
+            try:
+                from knowledge.ingestion import IngestionRequest, ingest
+
+                source_id = (
+                    f"{board.feishu_project_key}:{board.work_item_type}:{board.work_item_id}"
+                )
+                # 直接 await（非 aschedule_ingestion）以同步拿成败落 steps。
+                await ingest(
+                    IngestionRequest(
+                        source_kind="feishu_document",
+                        source_id=source_id,
+                        trigger=_TRIGGER,
+                    )
+                )
+                await _write_step(
+                    run, "document", StepResult(status="ok", identifier=source_id)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ingest_document_step_failed",
+                    run_id=str(run.id),
+                    error=_safe_error(exc),
+                    error_type=type(exc).__name__,
+                )
+                await _write_step(
+                    run, "document", StepResult(status="failed", error=_safe_error(exc))
+                )
+
+        # === 步 3：MR diff 归档 + 入图（复用既有 archive_code_change + ingest_events）===
+        await _ingest_mr_diff(run, mr_url)
+
+        # 三步跑完（即便含步级 failed/skipped）→ completed；partial 由前端推导。
+        run.status = IngestRun.Status.COMPLETED
+        run.completed_at = timezone.now()
+        await sync_to_async(run.save)(
+            update_fields=["status", "completed_at", "updated_at"]
+        )
+    except Exception as exc:
+        # 编排级未捕获异常（非步级降级）：整体 failed + 脱敏 error。
+        logger.exception("ingest_orchestration_failed", run_id=str(run.id))
+        run.status = IngestRun.Status.FAILED
+        run.error = _safe_error(exc)
+        run.completed_at = timezone.now()
+        await sync_to_async(run.save)(
+            update_fields=["status", "error", "completed_at", "updated_at"]
+        )
+
+    return run
+
+
+async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
+    """步 3：MR diff 归档 + code_change 入图（独立 try/except，best-effort）。
+
+    SSRF 边界（T-32-01）：``aresolve_repo_and_mr`` 必须命中已落库 Repository 才放行；
+    解析不出/不匹配 → skipped，绝不 fetch 任意用户 URL。``archive_code_change`` 内部
+    经项目加密凭证取 token，返回 None 时区分「重复幂等命中」（ok/skipped）与
+    「凭证缺失/拉取失败」（failed）。
+    """
+    try:
+        resolved = await aresolve_repo_and_mr(mr_url)
+        if resolved is None:
+            await _write_step(
+                run,
+                "mr_diff",
+                StepResult(
+                    status="skipped",
+                    error="mr_url 无法解析或未匹配到已落库仓库（SSRF 边界）",
+                ),
+            )
+            return
+
+        repository, mr_iid = resolved
+        from knowledge.diff_archive import archive_code_change
+        from knowledge.ingestion import IngestionEvent, ingest_events
+        from knowledge.models import CodeChangeArchive, EntityKind, EntityOrigin
+
+        source_id = f"{repository.id}:{mr_iid}"
+        # 合成稳定 natural key（不新建底层 MR 元数据拉取，保持「编排既有能力」边界）
+        commit_sha = f"mr-{mr_iid}"
+        event_time = timezone.now()
+
+        archive_result = await archive_code_change(
+            source_kind=_MR_SOURCE_KIND,
+            source_id=source_id,
+            repository=repository,
+            branch_name=f"mr/{mr_iid}",
+            base_branch=repository.default_branch,
+            commit_sha=commit_sha,
+            mr_url=mr_url,
+            mr_id=mr_iid,
+            event_time=event_time,
+        )
+
+        if archive_result is None:
+            # 返回 None：区分重复幂等命中（已归档）与凭证缺失/拉取失败。
+            duplicate = await CodeChangeArchive.objects.filter(
+                source_kind=_MR_SOURCE_KIND, source_id=source_id
+            ).afirst()
+            if duplicate is not None:
+                await _write_step(
+                    run,
+                    "mr_diff",
+                    StepResult(
+                        status="ok", identifier=str(duplicate.id), link=mr_url
+                    ),
+                )
+            else:
+                await _write_step(
+                    run,
+                    "mr_diff",
+                    StepResult(
+                        status="failed",
+                        error="MR diff 归档失败（凭证缺失或平台拉取失败）",
+                    ),
+                )
+            return
+
+        archive = archive_result.archive
+        # code_change 事件入图使之可检索；payload 仅摘要（diff 原文绝不进 payload，T-32-02）。
+        event = IngestionEvent(
+            kind=EntityKind.CODE_CHANGE,
+            origin=EntityOrigin.WORKFLOW,
+            source_kind=_MR_SOURCE_KIND,
+            source_id=source_id,
+            title=f"{repository.name} MR !{mr_iid}",
+            content=archive_result.content,
+            payload={
+                "archive_id": str(archive.id),
+                "commit_sha": commit_sha,
+                "mr_url": mr_url,
+                "mr_id": mr_iid,
+                "repository_id": str(repository.id),
+                "file_count": archive.file_count,
+                "total_additions": archive.total_additions,
+                "total_deletions": archive.total_deletions,
+            },
+            project_id=None,
+            repository_id=str(repository.id),
+            event_time=event_time,
+            edges=tuple(archive_result.edge_specs),
+        )
+        await ingest_events([event], trigger=_TRIGGER)
+        await _write_step(
+            run, "mr_diff", StepResult(status="ok", identifier=str(archive.id), link=mr_url)
+        )
+    except Exception as exc:
+        logger.warning(
+            "ingest_mr_diff_step_failed",
+            run_id=str(run.id),
+            error=_safe_error(exc),
+            error_type=type(exc).__name__,
+        )
+        await _write_step(
+            run, "mr_diff", StepResult(status="failed", error=_safe_error(exc))
+        )
+
+
+async def _write_step(run: IngestRun, key: str, result: StepResult) -> None:
+    """把单步结构化结果写回 ``run.steps[key]`` 并即时持久化（逐步可见）。"""
+    run.steps[key] = asdict(result)
+    await sync_to_async(run.save)(update_fields=["steps", "updated_at"])
