@@ -820,8 +820,11 @@ class FeishuWebhookView(APIView):
             )
         )
 
-        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）
-        self._schedule_delivery_upsert(project, work_item_id, work_item_type)
+        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）。
+        # canonical 身份只接受真实 type：不复用上面给 knowledge/fetch 的 "story" 兜底，
+        # 缺 work_item_type_key 时传 "" 让 _schedule_delivery_upsert 跳过——占位类型会把
+        # 同一工作项分裂成两个 canonical 实体，违背 INV-1（CR-01）。
+        self._schedule_delivery_upsert(project, work_item_id, payload.get("work_item_type_key", ""))
 
     async def _handle_workitem_status(self, project, payload, trigger_log):
         """处理工作项状态变更事件。"""
@@ -863,8 +866,10 @@ class FeishuWebhookView(APIView):
             )
         )
 
-        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）
-        self._schedule_delivery_upsert(project, work_item_id, work_item_type)
+        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）。
+        # canonical 身份只接受真实 type（缺 work_item_type_key 传 "" 走跳过分支，
+        # 避免占位类型分裂实体，违背 INV-1，CR-01）。
+        self._schedule_delivery_upsert(project, work_item_id, payload.get("work_item_type_key", ""))
 
     async def _handle_workflow_node_status(self, project, payload, trigger_log):
         """处理工作项节点流转事件。"""
