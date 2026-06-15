@@ -215,18 +215,36 @@ def _degraded_result(reason_code: str) -> dict:
     }
 
 
+def _clamp01(value) -> float:
+    """把分值收敛到 [0, 1]（WR-03）。
+
+    ``dto.score`` 为融合分（vector + recency），不保证落在 [0,1]，直接透出会让前端
+    ``相关度 %`` 超过 100%。在 API 边界统一钳制，保证语义为「相关度」的概率区间。
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
 def _to_recalled_requirement(dto) -> dict:
     """SearchResultDTO → 35-UI-SPEC RecalledRequirement 形状。
 
     work_item_id 取 ``entity.source_id`` 优先、回退 ``entity.entity_id``（PLAN-CHECKER
     WARNING #1：不假设序列化 dict 顶层有 source_id）；link 来自 ``provenance.feishu_url``。
+    relevance 经 ``_clamp01`` 钳制到 [0,1]（WR-03），不影响排序（单调钳制）。
     """
     entity = dto.entity
     work_item_id = str(getattr(entity, "source_id", "") or getattr(entity, "entity_id", "") or "")
     item: dict = {
         "work_item_id": work_item_id,
         "title": getattr(entity, "title", "") or "",
-        "relevance": dto.score,
+        "relevance": _clamp01(dto.score),
         "source": "delivery_knowledge",
     }
     feishu_url = getattr(getattr(entity, "provenance", None), "feishu_url", None)
