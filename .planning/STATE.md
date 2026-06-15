@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 26-04-PLAN.md（REPO-01 实例凭证 REST CRUD + 前端管理页）；原子提交 47a522210/4a1bd27c1/d18394869
-last_updated: "2026-06-15T01:08:00.000Z"
-last_activity: 2026-06-15 -- 完成 26-04-PLAN.md（实例凭证 REST CRUD、token write-only 加密不回显、IsSuperUser、前端管理页）
+stopped_at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件 ≥8 处内联取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
+last_updated: "2026-06-15T01:25:00.000Z"
+last_activity: 2026-06-15 -- 闭合 Phase 26 D-02 缺口：pr.py/coding_graph.py/code_review.py/summary_service.py/chat_tools.py/views.py(TestConn) 残留内联取 token 统一经 aresolve_git_token + gap 守护测试（6 测）
 progress:
   total_phases: 5
   completed_phases: 5
@@ -102,6 +102,7 @@ Last activity: 2026-06-15 -- 完成 26-04-PLAN.md（实例凭证 REST CRUD + 前
 | Phase 26 P02 | ~15min | 3 tasks | 4 files |
 | Phase 26 P03 | ~25min | 3 tasks | 7 files |
 | Phase 26 P04 | ~9min | 3 tasks | 9 files |
+| Phase 26 P06 (gap) | ~20min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 26]: 26-02: clone/index、bare 镜像 fetch、图谱克隆三路径统一经凭证解析器取 token（aresolve_git_token / resolve_git_token_sync），消除内联 GitCredential→decrypt_value；per-repo 优先、host 实例池 fallback；同 host 多仓共享一份凭证；token 仅进单次 clone/fetch argv 不入日志
 - [Phase 26]: 26-04: 实例凭证 REST CRUD——读/写序列化器分离（read 只含 has_token 布尔无明文 token、write access_token=write_only）；GitInstanceCredentialsView/DetailView 走 IsSuperUser，encrypt_value 写入、空 token 的 PATCH 不清空既有 token、日志仅记 host/has_token；host 唯一性视图层 aexists+IntegrityError 双兜底给中文报错；路由字面段须在 router include 之前；base-branch 校验改经 aresolve_git_token（实例池仓库也可校验），TestConnection 验证入参 token 流程不变；前端 /admin/git-credentials 管理页 token password 不回填、留空=不改、提交清空，列表仅 has_token 徽标；守护测试后端 8 + 前端 2 全绿（DB 密文/响应/日志/前端无明文 + 非管理员 403）
 - [Phase 26]: 26-03: git 平台 MR/PR 客户端（_get_client / create_mr_for_task / coding.py MR 段）+ 编码容器 dispatch token 注入（coding.py dispatch / coding_session_service 两处）+ diff archive 拉取五处取 token 统一经 aresolve_git_token，per-repo 优先 → host 实例池 fallback；解析器 None 时各调用方保留既有缺凭证报错/降级（行为不回退）；token 仅传 client/进 dispatch payload 不入日志；守护测试覆盖同 host 共享 + per-repo 优先 + 缺凭证报错不回退 + 不泄漏
+- [Phase 26]: 26-06(gap): 26-VERIFICATION 发现 26-02/03 之外仍有残留 6 文件 ≥8 处内联 decrypt_value(encrypted_token) 绕过解析器（pr.py PR+cross-ref、coding_graph.py 冲突预检+PR、code_review.py get_merge_request_diff、summary_service.py + chat_tools.py 两处容器 dispatch、views.py TestConnection 既有仓库分支）→ 全部改经 aresolve_git_token；TestConnection 仅『既有仓库 repository_id』分支接解析器、『用户当场输入 token』分支不变；code_review 去无用 select_related('credential')；缺凭证保留各自既有文案（行为不回退）；新建 test_git_credential_gap_wiring.py（dispatch 注入 + 平台 client 两类代表入口，6 测）；grep 确认全 server 除解析器自身已无 resolver-bypassing 取 token
 
 ### Pending Todos
 
@@ -246,10 +248,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T01:08:00.000Z
-Stopped at: 完成 26-04-PLAN.md（REPO-01 实例凭证 REST CRUD + 前端管理页）；原子提交 47a522210/4a1bd27c1/d18394869
+Last session: 2026-06-15T01:25:00.000Z
+Stopped at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
 Resume file: None
-Next: Phase 26 全部计划完成（5/5）——可 /gsd-complete-milestone 收口 v0.5.0
+Next: Phase 26 D-02 缺口已闭合——可重跑 verification → /gsd-complete-milestone 收口 v0.5.0
 
 ## Operator Next Steps
 
