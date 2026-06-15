@@ -15,6 +15,8 @@ export * from './gitInstanceCredentials'
 
 export * from './dashboard'
 
+export * from './ingest'
+
 export { default as knowledgeApi } from './knowledge'
 export * from './knowledge'
 
