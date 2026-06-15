@@ -12,6 +12,7 @@ from delivery.models.document import (
     DocumentType,
     DocumentVersion,
 )
+from delivery.models.ingest_run import IngestRun, default_steps
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -51,6 +52,8 @@ __all__ = [
     "DocumentType",
     "DocumentSourceKind",
     "ContentStorage",
+    "IngestRun",
+    "default_steps",
     "ReleaseBatch",
     "ReleaseRecord",
     "ReleaseArtifact",
