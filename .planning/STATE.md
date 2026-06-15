@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-06-15T04:25:46.282Z"
-last_activity: 2026-06-15
+status: executing
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-06-15T04:45:00.000Z"
+last_activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 11
+  total_plans: 6
+  completed_plans: 4
+  percent: 14
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
-**Current focus:** Phase 27 — 飞书接口前置修复
+**Current focus:** Phase 28 — WorkItem 脊柱 + 单一 upsert 入口
 
 ## Current Position
 
-Phase: 28
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
+Phase: 28 (WorkItem 脊柱 + 单一 upsert 入口) — EXECUTING
+Plan: 2 of 3
+Status: Executing Phase 28 (28-01 complete)
+Last activity: 2026-06-15 -- Completed 28-01 (delivery app + 4 models + migration)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Milestone Overview (v0.6.0 — Phases 27–35)
 
@@ -114,6 +114,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 27 P27-01 | ~15min | 3 tasks | 3 files |
 | Phase 27 P27-02 | 12min | 3 tasks | 2 files |
 | Phase 27 P27-03 | ~5min | 2 tasks | 2 files |
+| Phase 28 P28-01 | ~12min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -190,6 +191,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 26]: 26-06(gap): 26-VERIFICATION 发现 26-02/03 之外仍有残留 6 文件 ≥8 处内联 decrypt_value(encrypted_token) 绕过解析器（pr.py PR+cross-ref、coding_graph.py 冲突预检+PR、code_review.py get_merge_request_diff、summary_service.py + chat_tools.py 两处容器 dispatch、views.py TestConnection 既有仓库分支）→ 全部改经 aresolve_git_token；TestConnection 仅『既有仓库 repository_id』分支接解析器、『用户当场输入 token』分支不变；code_review 去无用 select_related('credential')；缺凭证保留各自既有文案（行为不回退）；新建 test_git_credential_gap_wiring.py（dispatch 注入 + 平台 client 两类代表入口，6 测）；grep 确认全 server 除解析器自身已无 resolver-bypassing 取 token
 - [Phase 27]: 27-02: get_work_item/get_comments 移除 work_item_type=story 默认改必填(fail-loud TypeError)，WorkItemInfo 新增带默认 feishu_fields(完整元数据)+fields 拍平双写向后兼容；接入 27-01 helper——硬路径 strict_response_json fail-loud、comments/relations 端点 safe_response_json fail-soft 返回[]，relations 标注 origin=feishu_relation_api；全 services.feishu 调用方已显式传 type，零回归
 - [Phase 27]: 27-03: near-dup feishu.client 接入 27-01 共享 helper，落 FIX-01/03/04，与 canonical services/feishu.py 同源同断言消除解析漂移；work_item_type 必填 fail-loud、WorkItemInfo 新增带默认 feishu_fields、get_comments safe_response_json fail-soft；本 client 无 relation 端点故不涉 FIX-02；全调用方已显式传 type 零回归
+- [Phase 28]: 28-01: 新建 delivery app（注册 INSTALLED_APPS 在 feishu 之后），models 包按实体拆 work_item/sync_state/relation/status_event + curated re-export；id 一律 UUIDField(default=uuid4)；INV-1 由 WorkItem.Meta.unique_together(feishu_project_key, work_item_type, work_item_id) 在 DB 层强制（测试以 pytest.raises(IntegrityError) 守护）；feishu_fields=JSONField(default=list)、field_provenance=JSONField(default=dict)；WorkItemOrigin 含 bitable_import/mr_reverse 枚举占位（真实调用方 Phase 31/32）；本 plan 只建表，落库逻辑归 28-02 service（INV-6）；模型层无 create/save 业务逻辑
 
 ### Pending Todos
 
@@ -261,11 +263,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T04:15:15.539Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-06-15T04:45:00.000Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None
-Next: 规划 Phase 27（飞书接口前置修复）
+Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
 
 ## Operator Next Steps
 
-- Plan the first phase with /gsd-plan-phase 27
+- Execute the next plan with /gsd-execute-phase 28 (Plan 28-02)

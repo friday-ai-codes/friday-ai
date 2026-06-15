@@ -77,7 +77,7 @@
 
 **Plans**: 3 plans
 
-- [ ] 28-01-PLAN.md — delivery app + 四模型（WorkItem/SyncState/Relation/StatusEvent）+ 初始 migration（INV-1 unique_together）
+- [x] 28-01-PLAN.md — delivery app + 四模型（WorkItem/SyncState/Relation/StatusEvent）+ 初始 migration（INV-1 unique_together）
 - [ ] 28-02-PLAN.md — WorkItemService.upsert 单一写入入口 + 派生（mirror-only/SyncState/Relation 占位/StatusEvent append）
 - [ ] 28-03-PLAN.md — 最小 REST + 飞书 webhook 接线后台 upsert + INV-6/INV-3 守护测试
 
@@ -190,7 +190,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
 | 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 0/3 | Planned | - |
+| 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 1/3 | In Progress | - |
 | 29. 评论事件流 | v0.6.0 | 0/TBD | Not started | - |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
