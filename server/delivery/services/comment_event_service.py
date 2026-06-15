@@ -97,7 +97,42 @@ class CommentEventService:
         Returns:
             本次**新建**事件数（重复摄取命中去重锚则不计）。
         """
-        return await self._append_events_sync(work_item, comments, source)
+        created_count = await self._append_events_sync(work_item, comments, source)
+        # 评论入图（RREF-02）：本次有新增事件才 best-effort 触发 work_item 重投影，
+        # 使评论进入 feishu_work_item 知识快照（created_count==0 幂等重摄不触发，
+        # 避免无谓重投影）。触发绝不阻塞/回滚评论落库（事实源优先，INV-3）。
+        if created_count > 0:
+            await self._schedule_work_item_reprojection(work_item)
+        return created_count
+
+    async def _schedule_work_item_reprojection(self, work_item: WorkItem) -> None:
+        """评论新增后 best-effort 触发 feishu_work_item 重投影（评论入快照，RREF-02）。
+
+        ``aschedule_ingestion`` 自身 ``transaction.on_commit`` + 后台投递 + 异常全吞，
+        故触发绝不阻塞/回滚评论落库；外层再裹 try/except 防御惰性 import 等异常
+        （delivery→knowledge 循环依赖经函数内惰性 import 规避）。
+        """
+        try:
+            from knowledge.ingestion import IngestionRequest, aschedule_ingestion
+
+            source_id = (
+                f"{work_item.feishu_project_key}:"
+                f"{work_item.work_item_type}:{work_item.work_item_id}"
+            )
+            await aschedule_ingestion(
+                IngestionRequest(
+                    source_kind="feishu_work_item",
+                    source_id=source_id,
+                    trigger="comment_event_appended",
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "comment_event_reprojection_schedule_failed",
+                work_item_id=str(work_item.id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
     @sync_to_async
     def _append_events_sync(self, work_item: WorkItem, comments: list[dict], source: str) -> int:
