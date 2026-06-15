@@ -4,13 +4,13 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: executing
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T09:48:00.794Z"
+last_updated: "2026-06-15T09:56:11.898Z"
 last_activity: 2026-06-15 -- Phase 31 execution started
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
   percent: 44
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 31 (Release 账本 + Bitable adapter 骨架) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 31 execution started
 
@@ -121,6 +121,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 30 P02 | 25min | 2 tasks | 4 files |
 | Phase 30 P30-03 | ~20min | 2 tasks | 3 files |
 | Phase 31 P31-01 | 5m | 3 tasks | 4 files |
+| Phase 31 P02 | 7m | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -207,6 +208,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: [Phase 30]: feishu_document normalizer 复用 feishu_work_item.normalize 锚事件 + _extract_doc_token/_fetch_doc_body 取材（不重写）；产出操作态 Document（DocumentService INV-6）+ knowledge document 实体 + work_item→REFERENCES→document 出边；feishu_work_item.py 不动（INV-3）
 - [Phase ?]: [Phase 30]: doc token 取自 wi 锚事件 payload 的 prd_url/tech_doc_url（避免重复 get_work_item）；同 docx 二次拉取为 accepted tradeoff；doc 拉取/操作态写入失败降级 warning，缺段不缺实体不抛不回滚
 - [Phase ?]: Release natural key 落独立字段 bitable_record_key（条件唯一），便于 31-03 幂等 upsert
+- [Phase ?]: 31-02: ReleaseService 消费预组装 bitable_record_key 作自然键唯一来源（不在服务内重拼接，归 31-03 adapter）
 
 ### Pending Todos
 
@@ -278,7 +280,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T09:47:15.801Z
+Last session: 2026-06-15T09:55:25.322Z
 Stopped at: Completed 30-03-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
