@@ -10,6 +10,9 @@ export { default as chatApi } from './chat'
 export * from './chat'
 export { ApiError } from './client'
 
+export { default as gitInstanceCredentialsApi } from './gitInstanceCredentials'
+export * from './gitInstanceCredentials'
+
 export * from './dashboard'
 
 export { default as knowledgeApi } from './knowledge'
