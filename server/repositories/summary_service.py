@@ -252,8 +252,7 @@ async def reconcile_ai_summary_status(repository: Repository) -> Repository:
 
 async def _build_env_metadata(repository: Repository) -> dict[str, str]:
     """构建 dispatch 所需的 metadata（参照 coding_session_service.build_dispatch_metadata）。"""
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
+    from services.git_credentials import aresolve_git_token
     from services.provider_config import aget_claude_code_runtime_config
 
     # Claude Code 任务容器统一凭证来源：优先读「Claude Code 编码配置」
@@ -282,15 +281,11 @@ async def _build_env_metadata(repository: Repository) -> dict[str, str]:
     if callback_token:
         env_metadata["env_FRIDAY_CALLBACK_TOKEN"] = callback_token
 
-    # Git 凭据
-    try:
-        cred = await GitCredential.objects.aget(repository=repository)
-        if cred.encrypted_token:
-            token = decrypt_value(cred.encrypted_token)
-            env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
-            env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
-            env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
-    except GitCredential.DoesNotExist:
-        pass
+    # Git 凭据：经统一解析器取 token（per-repo 优先 → host 实例池 fallback，D-02）
+    token = await aresolve_git_token(repository)
+    if token:
+        env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+        env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+        env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
 
     return env_metadata
