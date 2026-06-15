@@ -5,6 +5,8 @@ from typing import Any
 
 import gitlab
 import structlog
+from django.utils import timezone as dj_timezone
+from django.utils.dateparse import parse_datetime
 
 from .base import GitPlatformClient, truncate_diff_lines
 from .models import (
@@ -14,6 +16,7 @@ from .models import (
     MRCreateResult,
     MRDiffFile,
     MRDiffResult,
+    MRMetadataResult,
 )
 
 logger = structlog.get_logger()
@@ -255,6 +258,56 @@ class GitLabClient(GitPlatformClient):
                 error=error_msg,
             )
             return MRDiffResult(success=False, error=error_msg)
+
+    async def get_merge_request_metadata(self, mr_id: str) -> MRMetadataResult:
+        """获取 GitLab MR 的 merge commit 元数据（HDIFF-01 历史 diff commit 锚定）。
+
+        复用 get_merge_request_diff 同款 `project.mergerequests.get` 范式取 MR 对象，
+        读取 merge_commit_sha / target_branch / source_branch / merged_at；
+        merged_at（python-gitlab 返回 ISO8601 字符串）经 parse_datetime 解析，naive
+        结果归一为 aware（USE_TZ=True，下游 require_aware 拒 naive）。拉取失败一律
+        返回 success=False，token 绝不入日志。
+
+        Args:
+            mr_id: MR 的 IID（项目内编号）。
+
+        Returns:
+            MRMetadataResult：未合并时 merge_commit_sha 为空字符串。
+        """
+        try:
+            project = self._get_project()
+            mr = await asyncio.to_thread(project.mergerequests.get, int(mr_id))
+
+            merged_at_raw = getattr(mr, "merged_at", None)
+            merged_at = None
+            if merged_at_raw:
+                merged_at = parse_datetime(merged_at_raw)
+                if merged_at is not None and dj_timezone.is_naive(merged_at):
+                    merged_at = dj_timezone.make_aware(merged_at, dj_timezone.utc)
+
+            logger.info(
+                "gitlab_mr_metadata_fetched",
+                mr_id=mr_id,
+                has_merge_commit=bool(getattr(mr, "merge_commit_sha", None)),
+                target_branch=getattr(mr, "target_branch", "") or "",
+            )
+
+            return MRMetadataResult(
+                success=True,
+                merge_commit_sha=getattr(mr, "merge_commit_sha", None) or "",
+                target_branch=getattr(mr, "target_branch", None) or "",
+                source_branch=getattr(mr, "source_branch", None) or "",
+                merged_at=merged_at,
+            )
+        except Exception as e:
+            error_msg = f"Failed to fetch MR metadata: {e}"
+            logger.error(
+                "gitlab_mr_metadata_error",
+                mr_id=mr_id,
+                project=self.project_path,
+                error=error_msg,
+            )
+            return MRMetadataResult(success=False, error=error_msg)
 
     async def get_branch_diff(
         self,
