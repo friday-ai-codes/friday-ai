@@ -146,8 +146,14 @@ Plans:
   2. 同一摄取动作能拉取 PRD/技术方案文档并建 `REFERENCES` 边、拉取 MR diff 入 RAG
   3. 摄取完成后该需求及其关联文档/diff 均可被检索召回
 
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
+
+Plans:
+
+- [ ] 32-01-PLAN.md — IngestRun 状态模型 + 看板/MR URL 解析 helper（迁移 0008）
+- [ ] 32-02-PLAN.md — ingest_from_urls 三步编排（工作项/文档+REFERENCES/MR diff，best-effort）+ dispatch/status REST
+- [ ] 32-03-PLAN.md — 一键摄取前端面板 `/knowledge/ingest`（派发→轮询三步结果，i18n + 守护测试）
 
 ### Phase 33: 历史 diff 冻结 + bi-temporal 失效
 
@@ -209,7 +215,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 29. 评论事件流 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 30. Document + REFERENCES 边 | v0.6.0 | 4/4 | Complete    | 2026-06-15 |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 32. 一键摄取编排 | v0.6.0 | 0/TBD | Not started | - |
+| 32. 一键摄取编排 | v0.6.0 | 0/3 | Not started | - |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
