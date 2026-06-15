@@ -95,12 +95,32 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (待 roadmapper 填充) | — | Pending |
+| FIX-01 | Phase 27 | Pending |
+| FIX-02 | Phase 27 | Pending |
+| FIX-03 | Phase 27 | Pending |
+| FIX-04 | Phase 27 | Pending |
+| WIT-01 | Phase 28 | Pending |
+| WIT-02 | Phase 28 | Pending |
+| WIT-03 | Phase 28 | Pending |
+| WIT-04 | Phase 28 | Pending |
+| WIT-05 | Phase 28 | Pending |
+| CMT-01 | Phase 29 | Pending |
+| CMT-02 | Phase 29 | Pending |
+| DOC-01 | Phase 30 | Pending |
+| DOC-02 | Phase 30 | Pending |
+| REL-01 | Phase 31 | Pending |
+| REL-02 | Phase 31 | Pending |
+| ING-01 | Phase 32 | Pending |
+| HDIFF-01 | Phase 33 | Pending |
+| HDIFF-02 | Phase 33 | Pending |
+| RREF-01 | Phase 34 | Pending |
+| RREF-02 | Phase 34 | Pending |
+| VIS-01 | Phase 35 | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0（待 roadmap）
-- Unmapped: 21 ⚠️（待 roadmap）
+- Mapped to phases: 21/21 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-15*

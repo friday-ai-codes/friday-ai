@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-15T03:11:31.003Z"
 last_activity: 2026-06-15
 progress:
-  total_phases: 0
+  total_phases: 9
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,31 +19,39 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
-**Current focus:** Phase 26 — 多仓凭证统一 + MCP 多仓参数
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
+**Current focus:** Phase 27 — 飞书接口前置修复（PF-09/10/11/12）
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-15 — Milestone v0.6.0 started
+Phase: 27 of 35 (飞书接口前置修复)
+Plan: — (ready to plan)
+Status: Roadmap created — ready to plan Phase 27
+Last activity: 2026-06-15 — Milestone v0.6.0 roadmap created (Phases 27–35, 21/21 reqs mapped)
 
-## Milestone Overview (v0.5.0)
+Progress: [░░░░░░░░░░] 0%
+
+## Milestone Overview (v0.6.0 — Phases 27–35)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 22 | 排除配置与统一过滤（fail-closed） | EXCL-01..02 | All plans done (6/6) |
-| 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
-| 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
-| 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | All plans done (4/4) |
-| 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | All plans done (5/5) |
+| 27 | 飞书接口前置修复 | FIX-01..04 | Not started |
+| 28 | WorkItem 脊柱 + 单一 upsert 入口 | WIT-01..05 | Not started |
+| 29 | 评论事件流 | CMT-01..02 | Not started |
+| 30 | Document + REFERENCES 边 | DOC-01..02 | Not started |
+| 31 | Release 账本 + Bitable adapter 骨架 | REL-01..02 | Not started |
+| 32 | 一键摄取编排 | ING-01 | Not started |
+| 33 | 历史 diff 冻结 + bi-temporal 失效 | HDIFF-01..02 | Not started |
+| 34 | 评论入图 + 片段→需求反查 | RREF-01..02 | Not started |
+| 35 | 截图识别需求 | VIS-01 | Not started |
 
-**Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
+**Execution order:** 27 → 28 → {29, 30, 31, 32} → {33, 34, 35}。依赖链：FIX(27) → WIT 脊柱(28) → {CMT(29) · DOC(30) · REL(31) · ING(32 需 30)} → {HDIFF(33) · RREF(34 需 29) · VIS(35) 相对靠后}。
 
-**前置修复（PREFLIGHT，里程碑内处理）:** PF-03（incremental 删除一致性）、PF-04（scan_directory 注释）、PF-05（delete_by_file_path overlay）。
+**前置修复（PREFLIGHT，作 Phase 27 独立首 phase）:** PF-09（work_item_type 取数）、PF-10（关系字段派生）、PF-11（评论端点）、PF-12（完整 fields[] 元数据）；PF-08（历史 diff bi-temporal）在 Phase 33 内处理。
 
-**设计底座:** `.planning/ROADMAP-vNext.md`（前瞻路线）、`.planning/DOMAIN-MODEL.md §9`（purge 矩阵/数据面/边界）、`.planning/PREFLIGHT.md`（风险台账）。
+**被阻塞输入:** ① Bitable 开放平台 `tenant_access_token` 未到位 → Phase 31 仅 adapter 骨架 + 宽容模型（真实列映射 = v2 REL-03）；② 容器型工作项真实 `type_key` 未知。
+
+**设计底座:** `.planning/ROADMAP-vNext.md §v0.6`（前瞻路线）、`.planning/DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段 §12/§13/§16）、`.planning/PREFLIGHT.md`（PF-08~12）。不变量 INV-1（三元组唯一）/INV-3（knowledge 投影非事实源）/INV-6（落库只经 service）。
 
 ## Milestone Overview (v0.4.0 — shipped 2026-06-13)
 
@@ -247,11 +255,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T01:25:00.000Z
-Stopped at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
+Last session: 2026-06-15T03:11:00.000Z
+Stopped at: v0.6.0 roadmap 创建完成（Phases 27–35，21/21 v1 需求映射，回填 REQUIREMENTS.md traceability）
 Resume file: None
-Next: Phase 26 D-02 缺口已闭合——可重跑 verification → /gsd-complete-milestone 收口 v0.5.0
+Next: 规划 Phase 27（飞书接口前置修复）
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with /gsd-plan-phase 27
