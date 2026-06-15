@@ -49,9 +49,9 @@
 
 **依赖链：** Phase 1（AuditEvent 基础）→ Phase 2（全量覆盖 emit 点）、Phase 3（查询 UI + 导出）可并行。
 
-- [ ] **Phase 1: AuditEvent 模型 + emit 机制** - 统一审计模型（actor/action/target/before-after/timestamp/source）+ 请求上下文自动提取 actor + `emit_audit_event()` 双入口 + append-only 保护 (AUDIT-01..04)
-- [ ] **Phase 2: 全量敏感操作 emit 覆盖** - 九大类敏感操作（用户/供应商凭证/Git 凭证/仓库/排除规则/清理任务/访问令牌/系统设置/飞书同步）全部接入审计 emit (COV-01..09)
-- [ ] **Phase 3: 审计查询 UI + 导出** - 管理员可按 actor/action/target/时间过滤审计事件，分页表格展示 + 详情 before-after diff + CSV/JSON 导出 (UI-01..04)
+- [x] **Phase 1: AuditEvent 模型 + emit 机制** - 统一审计模型（actor/action/target/before-after/timestamp/source）+ 请求上下文自动提取 actor + `emit_audit_event()` 双入口 + append-only 保护 (AUDIT-01..04)
+- [x] **Phase 2: 全量敏感操作 emit 覆盖** - 九大类敏感操作（用户/供应商凭证/Git 凭证/仓库/排除规则/清理任务/访问令牌/系统设置/飞书同步）全部接入审计 emit (COV-01..09)
+- [x] **Phase 3: 审计查询 UI + 导出** - 管理员可按 actor/action/target/时间过滤审计事件，分页表格展示 + 详情 before-after diff + CSV/JSON 导出 (UI-01..04)
 
 ## Phase Details
 
