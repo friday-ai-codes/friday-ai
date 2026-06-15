@@ -8,6 +8,10 @@ from delivery.services.comment_event_service import (
     CommentEventService,
     classify_approval_semantic,
 )
+from delivery.services.comment_projection import (
+    aproject_comment_tree,
+    project_comment_tree,
+)
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
 __all__ = [
@@ -15,4 +19,6 @@ __all__ = [
     "WorkItemIdentity",
     "CommentEventService",
     "classify_approval_semantic",
+    "project_comment_tree",
+    "aproject_comment_tree",
 ]

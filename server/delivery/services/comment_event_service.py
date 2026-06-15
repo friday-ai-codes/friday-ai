@@ -79,9 +79,7 @@ def classify_approval_semantic(text: str | None) -> str:
 class CommentEventService:
     """评论事件落库唯一写入入口（INV-6 精神）。"""
 
-    async def append_events(
-        self, work_item: WorkItem, comments: list[dict], source: str
-    ) -> int:
+    async def append_events(self, work_item: WorkItem, comments: list[dict], source: str) -> int:
         """**评论事件落库的唯一写入收口**（append-only，幂等可重入）。
 
         遍历 ``parse_comments`` 形状的 dict（键：id/content/created_at/author/
@@ -101,9 +99,7 @@ class CommentEventService:
         return await self._append_events_sync(work_item, comments, source)
 
     @sync_to_async
-    def _append_events_sync(
-        self, work_item: WorkItem, comments: list[dict], source: str
-    ) -> int:
+    def _append_events_sync(self, work_item: WorkItem, comments: list[dict], source: str) -> int:
         """整批落库（同步循环 get_or_create），经 ``append_events`` 经 sync_to_async 桥接。"""
         created_count = 0
         for comment in comments or []:
@@ -193,9 +189,7 @@ class CommentEventService:
                 error_type=type(exc).__name__,
             )
             if work_item is not None:
-                await self._record_sync_state(
-                    work_item, SyncStatus.MISSING, source, error=error
-                )
+                await self._record_sync_state(work_item, SyncStatus.MISSING, source, error=error)
             return {"status": "error", "appended": 0, "error": error}
 
         if work_item is None:
