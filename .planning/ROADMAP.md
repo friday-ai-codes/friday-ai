@@ -166,7 +166,10 @@ Plans:
   2. master 演进后，重索引对账把过期 `MODIFIES_CHUNK` 边置 `invalid_at`
   3. 查询按 as-of 区分历史/当前关联（历史"当年成立"的边不污染当前视图）
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+- [ ] 33-01-PLAN.md — commit 锚定冻结：MR 元数据拉取（merge_commit_sha/target_branch）+ 一键摄取 WR-02 修复 + MODIFIES_CHUNK 边冻结 chunk 指纹（HDIFF-01）
+- [ ] 33-02-PLAN.md — bi-temporal 失效对账：重索引钩子置过期边 invalid_at + as-of 查询 helper（HDIFF-02，PF-08）
 
 ### Phase 34: 评论入图 + 片段→需求反查
 
