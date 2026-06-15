@@ -113,6 +113,47 @@ class TestHasTokenAndUpdate:
         assert cred.encrypted_token == original_encrypted
         assert decrypt_value(cred.encrypted_token) == PLAINTEXT_TOKEN
 
+    def test_patch_with_explicit_empty_token_keeps_existing(
+        self, authenticated_admin_client
+    ) -> None:
+        """LO-02：显式传空串 access_token 视为「保留既有 token」，不应 400 也不清空。"""
+        from common.encryption import encrypt_value
+
+        cred = GitInstanceCredential.objects.create(
+            host="gitlab.emptykeep.com",
+            encrypted_token=encrypt_value(PLAINTEXT_TOKEN),
+            label="old",
+        )
+        original_encrypted = cred.encrypted_token
+
+        resp = authenticated_admin_client.patch(
+            DETAIL_URL.format(cred_id=cred.id),
+            {"label": "renamed", "access_token": ""},
+            format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["label"] == "renamed"
+        assert resp.json()["has_token"] is True
+
+        cred.refresh_from_db()
+        assert cred.encrypted_token == original_encrypted
+        assert decrypt_value(cred.encrypted_token) == PLAINTEXT_TOKEN
+
+    def test_create_with_empty_token_still_rejected(
+        self, authenticated_admin_client
+    ) -> None:
+        """LO-02 回归：创建时空串 access_token 仍必填校验拒绝（保留 required-on-create）。"""
+        resp = authenticated_admin_client.post(
+            LIST_URL,
+            {"host": "gitlab.needtoken.com", "access_token": ""},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert "access_token" in resp.content.decode()
+        assert not GitInstanceCredential.objects.filter(
+            host="gitlab.needtoken.com"
+        ).exists()
+
     def test_patch_with_new_token_overwrites(self, authenticated_admin_client) -> None:
         from common.encryption import encrypt_value
 
