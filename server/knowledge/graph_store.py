@@ -43,6 +43,7 @@ __all__ = [
     "GraphStore",
     "RelationalGraphStore",
     "TraversalResult",
+    "bitemporal_as_of_q",
     "graph_store",
     "invalidate_entity_version",
     "require_aware",
@@ -90,6 +91,23 @@ def require_aware(dt: datetime, field: str) -> datetime:
     return dt
 
 
+def bitemporal_as_of_q(as_of: datetime) -> Q:
+    """bi-temporal as-of 谓词（与 neighbors/traverse 语义一致，单一收口）。
+
+    ``valid_at<=as_of AND (invalid_at IS NULL OR invalid_at>as_of)
+    AND created_at<=as_of AND (expired_at IS NULL OR expired_at>as_of)``：
+    给定 ``as_of`` 取该时点"当年成立且当年有效"的边。提升为公开 helper
+    （HDIFF-02）：knowledge 内部 as-of 查询面（modifies_chunk）复用同一谓词，
+    避免跨模块复刻 raw 过滤导致语义漂移（同 require_aware 公开理由）。
+    """
+    return (
+        Q(valid_at__lte=as_of)
+        & (Q(invalid_at__isnull=True) | Q(invalid_at__gt=as_of))
+        & Q(created_at__lte=as_of)
+        & (Q(expired_at__isnull=True) | Q(expired_at__gt=as_of))
+    )
+
+
 def _validate_relations(relations: list[str] | None) -> list[str] | None:
     """relations 白名单校验：逐值断言 ∈ EdgeRelation.values（T-12-01 防线）。"""
     if relations is None:
@@ -123,7 +141,9 @@ class GraphStore(Protocol):
 
     async def expire_edge(self, edge_id: uuid.UUID, *, expired_at: datetime) -> None: ...
 
-    async def chunk_in_edges(self, chunk_id: uuid.UUID) -> list[EdgeRecord]: ...
+    async def chunk_in_edges(
+        self, chunk_id: uuid.UUID, *, as_of: datetime | None = None
+    ) -> list[EdgeRecord]: ...
 
     async def neighbors(
         self,
@@ -241,18 +261,27 @@ class RelationalGraphStore:
             "knowledge_edge_expired", edge_id=str(edge_id), expired_at=expired_at.isoformat()
         )
 
-    async def chunk_in_edges(self, chunk_id: uuid.UUID) -> list[EdgeRecord]:
-        """按 target_chunk_id 反查指向该 chunk 的活跃入边（Phase 14 / ENH-01）。
+    async def chunk_in_edges(
+        self, chunk_id: uuid.UUID, *, as_of: datetime | None = None
+    ) -> list[EdgeRecord]:
+        """按 target_chunk_id 反查指向该 chunk 的入边（Phase 14 / ENH-01 / HDIFF-02）。
 
         chunk 反查唯一收口（P9 精神）：``KnowledgeEdge.objects.filter(
         target_chunk_id=...)`` 的 ORM 查询全仓只允许出现在本方法——
         调用方（"函数被哪些需求改过"反查链路）一律经本接口取边，
         再沿 ``source_id`` → ``traverse(direction="in")`` 回到需求实体。
-        默认只返回当前有效边（``invalid_at IS NULL AND expired_at IS NULL``）。
+
+        默认（``as_of=None``）只返回当前有效边（``invalid_at IS NULL AND
+        expired_at IS NULL``，既有调用方零回归）；``as_of`` 给定时按 bi-temporal
+        as-of 语义返回该时点"当年成立且当年有效"的边（HDIFF-02 历史回溯）。
         """
-        qs = KnowledgeEdge.objects.filter(
-            target_chunk_id=chunk_id, invalid_at__isnull=True, expired_at__isnull=True
-        ).select_related("source_entity")
+        qs = KnowledgeEdge.objects.filter(target_chunk_id=chunk_id)
+        if as_of is None:
+            qs = qs.filter(invalid_at__isnull=True, expired_at__isnull=True)
+        else:
+            require_aware(as_of, "as_of")
+            qs = qs.filter(bitemporal_as_of_q(as_of))
+        qs = qs.select_related("source_entity")
         records = [
             EdgeRecord(
                 edge_id=e.id,
