@@ -27,6 +27,7 @@ from .index_views import (
     RerankerHealthView,
 )
 from .refresh_remote_head_views import RefreshRemoteHeadView
+from .reverse_lookup_views import ReverseLookupView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
 from .tree_views import (
@@ -269,6 +270,12 @@ urlpatterns = [
         "<uuid:repository_id>/chunk-at/",
         ChunkAtView.as_view(),
         name="repository-chunk-at",
+    ),
+    # Plan 34-01：片段→需求反查（RREF-01），紧随 chunk-at，UUID 通配安全
+    path(
+        "<uuid:repository_id>/reverse-lookup/",
+        ReverseLookupView.as_view(),
+        name="repository-reverse-lookup",
     ),
     # Plan 24-03：敏感文件 AI 建议 list / accept / dismiss（EXCL-03）
     path(
