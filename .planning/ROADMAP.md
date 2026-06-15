@@ -37,7 +37,7 @@
 - [x] **Phase 29: 评论事件流** - append-only WorkItemCommentEvent 流式入库 + 当前评论树投影 (completed 2026-06-15)
 - [x] **Phase 30: Document + REFERENCES 边** - 外部飞书/内部生成文档区分 + feishu_document normalizer 摄取 PRD/技术方案 + 关联 WorkItem (completed 2026-06-15)
 - [x] **Phase 31: Release 账本 + Bitable adapter 骨架** - 宽容模型（保留 raw_row）+ 开放平台凭证独立解析的 Bitable client/adapter 骨架 (completed 2026-06-15)
-- [ ] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
+- [x] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索 (completed 2026-06-15)
 - [ ] **Phase 33: 历史 diff 冻结 + bi-temporal 失效** - commit 锚定快照 + 重索引对账置 invalid_at + as-of 区分历史/当前（PF-08）
 - [ ] **Phase 34: 评论入图 + 片段→需求反查** - 评论摄取进知识投影 + code chunk/模块 → 需求/文档反查 API/MCP（依赖 v0.5 行号回填）
 - [ ] **Phase 35: 截图识别需求** - 多模态 LLM：vision → 文本 query → 召回需求（非图片向量库）
@@ -153,7 +153,7 @@ Plans:
 
 - [x] 32-01-PLAN.md — IngestRun 状态模型 + 看板/MR URL 解析 helper（迁移 0008）
 - [x] 32-02-PLAN.md — ingest_from_urls 三步编排（工作项/文档+REFERENCES/MR diff，best-effort）+ dispatch/status REST
-- [ ] 32-03-PLAN.md — 一键摄取前端面板 `/knowledge/ingest`（派发→轮询三步结果，i18n + 守护测试）
+- [x] 32-03-PLAN.md — 一键摄取前端面板 `/knowledge/ingest`（派发→轮询三步结果，i18n + 守护测试）
 
 ### Phase 33: 历史 diff 冻结 + bi-temporal 失效
 
@@ -215,7 +215,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 29. 评论事件流 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 30. Document + REFERENCES 边 | v0.6.0 | 4/4 | Complete    | 2026-06-15 |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 32. 一键摄取编排 | v0.6.0 | 2/3 | In Progress|  |
+| 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete   | 2026-06-15 |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
