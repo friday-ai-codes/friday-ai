@@ -8,6 +8,7 @@ from django.urls import path
 from delivery.api.views import (
     IngestDispatchView,
     IngestRunDetailView,
+    ScreenshotRecallView,
     WorkItemCommentTreeView,
     WorkItemDetailView,
     WorkItemPrdDocumentView,
@@ -33,5 +34,11 @@ urlpatterns = [
         "ingest/<uuid:run_id>/",
         IngestRunDetailView.as_view(),
         name="ingest-run-detail",
+    ),
+    # 截图识别需求（字面段，multipart 上传 + IsAuthenticated）
+    path(
+        "screenshot-recall/",
+        ScreenshotRecallView.as_view(),
+        name="screenshot-recall",
     ),
 ]

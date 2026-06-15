@@ -13,7 +13,9 @@ from __future__ import annotations
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -22,6 +24,7 @@ from delivery.api.serializers import (
     DocumentSnapshotSerializer,
     IngestDispatchRequestSerializer,
     IngestRunSerializer,
+    ScreenshotRecallResultSerializer,
     WorkItemSerializer,
     WorkItemUpsertRequestSerializer,
 )
@@ -278,3 +281,69 @@ class IngestRunDetailView(APIView):
             )
         payload = await sync_to_async(lambda: IngestRunSerializer(run).data)()
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class ScreenshotRecallView(APIView):
+    """截图识别需求端点（POST multipart，IsAuthenticated，VIS-01 + 35-UI-SPEC）。
+
+    流程：multipart 上传截图（字段 ``screenshot``，兼容回退 ``image`` / ``file``）→ 后端
+    权威双校验（``validate_image_bytes`` 非持久化校验，仅 png/jpeg/webp ≤10MB，非图片/超大
+    即 400，不进 LLM，T-35-01）→ 调 ``recall_from_screenshot``（vision 提语义 → 文本 query →
+    既有交付知识检索召回 work_item，访问域经 ``request.user`` fail-closed，T-35-03）→ 200 透传
+    服务 result（``degraded`` 亦以 200 透传，由前端区分，非错误态）。
+
+    不持久化原图（瞬态 bytes → base64 inline，T-35-02）：校验/服务均不写盘、不建图片向量库。
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        summary="截图识别需求",
+        description=(
+            "上传界面/原型截图，经多模态 LLM 提取语义并召回相关 work_item 需求。"
+            "后端权威校验图片类型（PNG/JPEG/WebP）与大小（≤10MB）；无 vision 模型时返回 "
+            "degraded=true（200，非错误）。"
+        ),
+        responses={
+            200: ScreenshotRecallResultSerializer,
+            400: {"description": "缺文件 / 非图片 / 超大（code + error）"},
+        },
+        tags=["Delivery"],
+    )
+    async def post(self, request):
+        from chat.multimodal import (
+            SCREENSHOT_RECALL_MIME_TYPES,
+            ImageValidationError,
+            validate_image_bytes,
+        )
+        from services import screenshot_recall
+
+        uploaded = (
+            request.FILES.get("screenshot")
+            or request.FILES.get("image")
+            or request.FILES.get("file")
+        )
+        if uploaded is None:
+            return Response(
+                {"code": "missing_image", "error": "请上传截图文件"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = await sync_to_async(uploaded.read)()
+        try:
+            mime_type, _size = validate_image_bytes(
+                data,
+                declared_mime_type=getattr(uploaded, "content_type", "") or "",
+                allowed_mime_types=SCREENSHOT_RECALL_MIME_TYPES,
+            )
+        except ImageValidationError as exc:
+            return Response(
+                {"code": exc.code, "error": exc.message},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = await screenshot_recall.recall_from_screenshot(
+            data, mime_type, user=request.user
+        )
+        return Response(result, status=status.HTTP_200_OK)
