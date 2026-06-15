@@ -3481,15 +3481,14 @@ async def clone_and_index_repository(
         history_id: 可选的 IndexHistory 记录 ID，完成时更新状态
         branch: 可选的功能分支名称，非空时走 overlay 索引路径
     """
-    from common.encryption import decrypt_value
+    from services.git_credentials import aresolve_git_token
 
     async def get_repository_data():
         """Fetch repository and extract all needed data in async context."""
-        repo = await Repository.objects.select_related("credential").aget(id=repository_id)
-        credential = getattr(repo, "credential", None)
-        token = None
-        if credential and credential.encrypted_token:
-            token = decrypt_value(credential.encrypted_token)
+        repo = await Repository.objects.aget(id=repository_id)
+        # 统一经凭证解析器取 token（Phase 26 REPO-01）：per-repo 显式 token 优先，
+        # 无则按 host 命中实例凭证池；缺凭证返回 None（保留下游既有缺凭证报错）。
+        token = await aresolve_git_token(repo)
         return {
             "repository": repo,
             "git_url": repo.git_url,
