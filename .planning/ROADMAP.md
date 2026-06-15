@@ -39,7 +39,7 @@
 - [x] **Phase 31: Release 账本 + Bitable adapter 骨架** - 宽容模型（保留 raw_row）+ 开放平台凭证独立解析的 Bitable client/adapter 骨架 (completed 2026-06-15)
 - [x] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索 (completed 2026-06-15)
 - [x] **Phase 33: 历史 diff 冻结 + bi-temporal 失效** - commit 锚定快照 + 重索引对账置 invalid_at + as-of 区分历史/当前（PF-08） (completed 2026-06-15)
-- [ ] **Phase 34: 评论入图 + 片段→需求反查** - 评论摄取进知识投影 + code chunk/模块 → 需求/文档反查 API/MCP（依赖 v0.5 行号回填）
+- [x] **Phase 34: 评论入图 + 片段→需求反查** - 评论摄取进知识投影 + code chunk/模块 → 需求/文档反查 API/MCP（依赖 v0.5 行号回填） (completed 2026-06-15)
 - [ ] **Phase 35: 截图识别需求** - 多模态 LLM：vision → 文本 query → 召回需求（非图片向量库）
 
 ## Phase Details
@@ -187,7 +187,7 @@ Plans:
 Plans:
 
 - [x] 34-01-PLAN.md — RREF-01 片段→需求反查 service（复用 find_chunk_at + graph_store）+ REST + MCP 工具
-- [ ] 34-02-PLAN.md — RREF-02 评论入图：work_item 投影并入评论树 + 评论事件触发重投影
+- [x] 34-02-PLAN.md — RREF-02 评论入图：work_item 投影并入评论树 + 评论事件触发重投影
 
 ### Phase 35: 截图识别需求
 
@@ -225,7 +225,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
-| 34. 评论入图 + 片段→需求反查 | v0.6.0 | 1/2 | In Progress|  |
+| 34. 评论入图 + 片段→需求反查 | v0.6.0 | 2/2 | Complete   | 2026-06-15 |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
 
 ---

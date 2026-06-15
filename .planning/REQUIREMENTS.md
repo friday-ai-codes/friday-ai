@@ -54,7 +54,7 @@
 ### 反查（RREF）
 
 - [x] **RREF-01**: 给定 code chunk / 模块，系统能反查关联的需求/文档（片段→需求反查 API/MCP，依赖 v0.5 行号回填）
-- [ ] **RREF-02**: 评论摄取进知识投影（评论入图），可被检索关联到 `WorkItem`
+- [x] **RREF-02**: 评论摄取进知识投影（评论入图），可被检索关联到 `WorkItem`
 
 ### 截图识别（VIS）
 
@@ -114,7 +114,7 @@
 | HDIFF-01 | Phase 33 | Complete |
 | HDIFF-02 | Phase 33 | Complete |
 | RREF-01 | Phase 34 | Complete |
-| RREF-02 | Phase 34 | Pending |
+| RREF-02 | Phase 34 | Complete |
 | VIS-01 | Phase 35 | Pending |
 
 **Coverage:**
