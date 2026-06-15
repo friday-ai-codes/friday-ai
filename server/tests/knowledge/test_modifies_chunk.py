@@ -396,9 +396,7 @@ class TestResolutionLadder:
 
         # ③ 文件级降级：行号 NULL 的 chunk，content_hash 仍被戳记
         repo_file = await sync_to_async(_make_repo)("hash-file")
-        cid_file = await sync_to_async(_make_chunk)(
-            repo_file, chunk_index=0, content_hash="c" * 64
-        )
+        await sync_to_async(_make_chunk)(repo_file, chunk_index=0, content_hash="c" * 64)
         specs_file, _ = await resolve_modified_chunks(repo_file, [_file_diff()], COMMIT_SHA)
         assert len(specs_file) == 1
         assert specs_file[0].metadata is not None
