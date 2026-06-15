@@ -2,8 +2,8 @@
 
 import structlog
 
-from common.encryption import decrypt_value
 from repositories.models import Repository
+from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
 from workflows.models.coding_task import CodingTask
 
@@ -131,12 +131,10 @@ async def create_mr_for_task(
 
     repository: Repository = task.repository
 
-    # Get token from repository credential
-    credential = getattr(repository, "credential", None)
-    if not credential or not credential.encrypted_token:
+    # Phase 26 REPO-01：统一经解析器取 token（per-repo 优先 → 同 host 实例凭证池 fallback）
+    token = await aresolve_git_token(repository)
+    if not token:
         return MRCreateResult(success=False, error="No API token configured for repository")
-
-    token = decrypt_value(credential.encrypted_token)
 
     # Get platform client
     try:
