@@ -74,3 +74,15 @@ class AuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"AuditEvent({self.action}, {self.target_type}:{self.target_id})"
+
+    # ---- append-only 守护 ----
+
+    def save(self, *args, **kwargs):
+        """拒绝更新已有记录 —— 审计事件只能新增，不能修改。"""
+        if self.pk and AuditEvent.objects.filter(pk=self.pk).exists():
+            raise ValueError("AuditEvent is append-only — updates are not allowed")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """拒绝删除 —— 审计事件永久保留。"""
+        raise ValueError("AuditEvent is append-only — deletion is not allowed")
