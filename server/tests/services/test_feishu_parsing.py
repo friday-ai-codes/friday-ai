@@ -21,13 +21,16 @@ from services.feishu_parsing import (
     PRD_URL_ALIAS,
     PRD_URL_FIELD_KEY,
     FeishuResponseError,
+    RelationSpec,
     build_feishu_fields,
+    derive_relations_from_fields,
     extract_prd_url,
     extract_related_ids,
     extract_select_label,
     extract_tech_doc_url,
     find_field,
     flatten_fields,
+    parse_comments,
     rich_text_to_markdown,
     safe_response_json,
     strict_response_json,
@@ -280,3 +283,134 @@ def test_rich_text_to_markdown_heading_and_link() -> None:
         ]
     }
     assert rich_text_to_markdown(rich) == "## 标题\n[链接](https://x.com)"
+
+
+# === 关系派生（FIX-02）===
+
+
+def test_derive_relations_belongs_to_project() -> None:
+    """field_caadeb=[7010938167] → belongs_to_project（DOMAIN §16 实测）。"""
+    fields = build_feishu_fields(STORY_RAW_FIELDS)
+    specs = derive_relations_from_fields(fields)
+    project_specs = [s for s in specs if s.source_field_key == "field_caadeb"]
+    assert len(project_specs) == 1
+    spec = project_specs[0]
+    assert spec == RelationSpec(
+        relation_type="belongs_to_project",
+        source_field_key="field_caadeb",
+        target_external_id=7010938167,
+        origin="feishu_field",
+    )
+
+
+def test_derive_relations_sprint() -> None:
+    """planning_sprint=[6290075691] → sprint。"""
+    fields = build_feishu_fields(STORY_RAW_FIELDS)
+    specs = derive_relations_from_fields(fields)
+    sprint_specs = [s for s in specs if s.source_field_key == "planning_sprint"]
+    assert len(sprint_specs) == 1
+    assert sprint_specs[0].relation_type == "sprint"
+    assert sprint_specs[0].target_external_id == 6290075691
+
+
+def test_derive_relations_empty_value_skipped() -> None:
+    """空 [] 关联值（planning_version）不产出关系。"""
+    fields = build_feishu_fields(STORY_RAW_FIELDS)
+    specs = derive_relations_from_fields(fields)
+    assert not [s for s in specs if s.source_field_key == "planning_version"]
+
+
+def test_derive_relations_unknown_field_is_related() -> None:
+    """未知关联字段归 related。"""
+    fields = build_feishu_fields(
+        [
+            {
+                "field_key": "field_unknown",
+                "field_name": "未知关联",
+                "field_value": [111],
+                "field_type_key": "work_item_related_multi_select",
+                "field_alias": None,
+            }
+        ]
+    )
+    specs = derive_relations_from_fields(fields)
+    assert len(specs) == 1
+    assert specs[0].relation_type == "related"
+    assert specs[0].target_external_id == 111
+
+
+def test_derive_relations_ignores_non_relation_fields() -> None:
+    """非关联类型字段（select / multi_text）被忽略，不产出关系。"""
+    fields = build_feishu_fields(
+        [
+            {
+                "field_key": "field_528f19",
+                "field_name": "小组",
+                "field_value": {"label": "学习A", "value": "opt_1"},
+                "field_type_key": "select",
+                "field_alias": "study_platform_group",
+            },
+            {
+                "field_key": "description",
+                "field_name": "描述",
+                "field_value": "text",
+                "field_type_key": "multi_text",
+                "field_alias": None,
+            },
+        ]
+    )
+    assert derive_relations_from_fields(fields) == []
+
+
+# === 评论解析（FIX-03）===
+
+
+def test_parse_comments_shape() -> None:
+    """对齐 comment/list 形状逐条取 id/content/created_at/author/thread_parent_id。"""
+    data = {
+        "err_code": 0,
+        "data": {
+            "comments": [
+                {
+                    "id": "c1",
+                    "content": {
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "评论正文"}],
+                            }
+                        ]
+                    },
+                    "created_at": 1700000000,
+                    "author": {"name": "张三"},
+                    "parent_id": "c0",
+                }
+            ]
+        },
+    }
+    comments = parse_comments(data)
+    assert len(comments) == 1
+    c = comments[0]
+    assert c["id"] == "c1"
+    assert c["content"] == "评论正文"
+    assert c["created_at"] == 1700000000
+    assert c["author"] == "张三"
+    assert c["thread_parent_id"] == "c0"
+
+
+def test_parse_comments_author_fallback() -> None:
+    """缺 author.name → Unknown；无 parent → thread_parent_id 空串。"""
+    data = {"data": {"comments": [{"id": "c2", "content": "纯文本"}]}}
+    comments = parse_comments(data)
+    assert comments[0]["author"] == "Unknown"
+    assert comments[0]["thread_parent_id"] == ""
+    assert comments[0]["content"] == "纯文本"
+
+
+def test_parse_comments_none_returns_empty() -> None:
+    """data=None / 缺 comments 键 / 形状不符 → []，不抛异常。"""
+    assert parse_comments(None) == []
+    assert parse_comments({}) == []
+    assert parse_comments({"data": {}}) == []
+    assert parse_comments({"data": {"comments": "not a list"}}) == []
+    assert parse_comments("garbage") == []
