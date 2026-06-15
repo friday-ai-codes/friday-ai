@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime
 
 import structlog
+from django.db import IntegrityError
 
 from knowledge.graph_store import (
     EdgeRecord,
@@ -30,7 +31,7 @@ from knowledge.graph_store import (
 )
 from knowledge.models import EdgeRelation, KnowledgeEdge
 
-__all__ = ["amodifies_chunk_edges"]
+__all__ = ["amodifies_chunk_edges", "areconcile_modifies_chunk_edges"]
 
 logger = structlog.get_logger(__name__)
 
@@ -79,3 +80,83 @@ async def amodifies_chunk_edges(
         )
         async for e in qs
     ]
+
+
+async def areconcile_modifies_chunk_edges(repository_id: str, *, invalid_at: datetime) -> int:
+    """重索引对账：把指向已过期 chunk 版本的活跃 MODIFIES_CHUNK 边置 invalid_at。
+
+    过期双信号（取既有重索引可可靠提供者）：
+    ① 边 ``target_chunk_id`` 在当前 base ``ChunkRegistry``（branch_name=""）已不存在
+       （文件删除 / chunk 收缩）→ 过期；
+    ② 存在但 ``content_hash`` 漂移（边 metadata 冻结的 ``chunk_content_hash`` 非空且
+       ≠ 当前 ChunkRegistry.content_hash，同位置内容已被新版本取代）→ 过期。
+    边 metadata 缺 ``chunk_content_hash``（历史边 / 空串）→ 仅用①存在性判定，不因缺
+    指纹误失效（保守，T-33-06）。
+
+    边失效唯一经 ``graph_store.invalidate_edge`` 收口（置位不删除、仅 invalid_at IS
+    NULL 时写一次、不覆盖原失效时间，T-33-04）；逐边 try/except 降级——单边触发
+    ``kedge_valid_range``（invalid_at<=valid_at）等约束仅记 warning 跳过，不掀翻批次
+    （T-33-05，沿用 v0.5 best-effort 范式）。返回成功失效计数（结构化日志可观测）。
+    """
+    require_aware(invalid_at, "invalid_at")
+
+    from asgiref.sync import sync_to_async
+
+    from code_relations.models import ChunkRegistry
+
+    # ① 当前 repo base 命名空间 chunk 指纹快照：{chunk_id: content_hash}
+    current: dict[uuid.UUID, str] = await sync_to_async(
+        lambda: dict(
+            ChunkRegistry.objects.filter(
+                repository_id=repository_id, branch_name=""
+            ).values_list("chunk_id", "content_hash")
+        )
+    )()
+
+    # ② 该 repo 的活跃 MODIFIES_CHUNK 边（source_entity.repository 归属本 repo）；
+    # 先 materialize 再逐条置位——避免开着读游标的同时写库（SQLite 锁竞争）。
+    active = await sync_to_async(
+        lambda: list(
+            KnowledgeEdge.objects.filter(
+                relation=EdgeRelation.MODIFIES_CHUNK,
+                invalid_at__isnull=True,
+                expired_at__isnull=True,
+                source_entity__repository_id=repository_id,
+            ).values_list("id", "target_chunk_id", "metadata")
+        )
+    )()
+
+    checked = 0
+    invalidated = 0
+    for edge_id, cid, metadata in active:
+        checked += 1
+        if cid is None:
+            continue
+        # ③ 过期判定：不存在（信号①） 或 content_hash 漂移（信号②，需边有冻结指纹）
+        if cid in current:
+            frozen = (metadata or {}).get("chunk_content_hash")
+            stale = bool(frozen) and frozen != current[cid]
+        else:
+            stale = True
+        if not stale:
+            continue
+        # ④ 过期边逐条置位（唯一经 invalidate_edge），逐边隔离 best-effort
+        try:
+            await graph_store.invalidate_edge(edge_id, invalid_at=invalid_at)
+            invalidated += 1
+        except (IntegrityError, KnowledgeEdge.DoesNotExist) as exc:
+            logger.warning(
+                "knowledge_modifies_chunk_reconcile_edge_skipped",
+                repository_id=repository_id,
+                edge_id=str(edge_id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+    logger.info(
+        "knowledge_modifies_chunk_reconciled",
+        repository_id=repository_id,
+        checked=checked,
+        invalidated=invalidated,
+    )
+    return invalidated
