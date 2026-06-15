@@ -127,7 +127,12 @@
   2. 飞书 Bitable client/adapter 骨架就位，开放平台 `tenant_access_token` 凭证来源独立于项目 plugin token 解析
   3. Bitable 记录以 natural key `{app_token}:{table_id}:{record_id}` 标识（本 phase 不要求真实列结构全量映射——那是 v2 REL-03 待开放平台凭证）
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 31-01-PLAN.md — Release 宽容模型三表（raw_row 无损）+ migration 0006 [BLOCKING] + 模型守护单测
+- [ ] 31-02-PLAN.md — ReleaseService 账本单一写入入口（ingest/幂等/work_item 反查）+ INV-6 grep 守护 + 行为测试
+- [ ] 31-03-PLAN.md — BitableClient（开放平台 token 复用，解耦 plugin token）+ BitableReleaseAdapter 骨架 + respx/adapter 测试
 
 ### Phase 32: 一键摄取编排
 
