@@ -26,6 +26,11 @@ from runners.models import hash_token
 from .models import AccessToken, generate_pat
 from .serializers import AccessTokenCreateSerializer, AccessTokenSerializer
 
+import structlog
+from audit.emitter import aemit_audit_event
+
+logger = structlog.get_logger(__name__)
+
 # 默认过期时长：90 天（CONTEXT：缺省 90 天，可显式传 None 永不过期）。
 DEFAULT_EXPIRY = timedelta(days=90)
 
@@ -71,6 +76,18 @@ class AccessTokenViewSet(ModelViewSet):
         response_data = AccessTokenSerializer(token).data
         # 明文 token 仅此一次返回，不入任何 DB 字段（contract / contract）。
         response_data["token"] = plaintext
+
+        # 审计：创建访问令牌
+        try:
+            await aemit_audit_event(
+                action="access_token.created",
+                target_type="AccessToken",
+                target_id=str(token.id),
+                after={"name": data["name"], "token_prefix": plaintext[:12]},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="access_token.created", exc_info=True)
+
         return Response(response_data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -79,7 +96,20 @@ class AccessTokenViewSet(ModelViewSet):
         token = await self.aget_object()
         # 幂等保护：仅首次吊销写入 revoked_at；重复吊销保留首次时间戳，
         # 避免覆盖审计记录（重复 revoke 仍返回 200 + 当前序列化结果）。
-        if token.revoked_at is None:
+        revoked = token.revoked_at is None
+        if revoked:
             token.revoked_at = timezone.now()
             await token.asave(update_fields=["revoked_at"])
+
+            # 审计：吊销访问令牌
+            try:
+                await aemit_audit_event(
+                    action="access_token.revoked",
+                    target_type="AccessToken",
+                    target_id=str(token.id),
+                    after={"name": token.name},
+                )
+            except Exception:
+                logger.warning("audit_emit_failed", action="access_token.revoked", exc_info=True)
+
         return Response(AccessTokenSerializer(token).data)

@@ -28,6 +28,8 @@ from services.purge_reconcile import compute_reconciliation, run_cleanup
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
 
+from audit.emitter import aemit_audit_event
+
 from .models import (
     AISummaryStatus,
     AuthType,
@@ -508,6 +510,18 @@ class RepositoryViewSet(ModelViewSet):
 
         # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
         resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)()
+
+        # 审计：创建仓库
+        try:
+            await aemit_audit_event(
+                action="repository.created",
+                target_type="Repository",
+                target_id=str(repository.id),
+                after={"git_url": data.get("git_url", ""), "name": data.get("name", "")},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="repository.created", exc_info=True)
+
         return Response(resp_data, status=status.HTTP_201_CREATED)
 
     @staticmethod
@@ -601,7 +615,19 @@ class RepositoryViewSet(ModelViewSet):
     async def destroy(self, request, *args, **kwargs):
         """Soft delete the repository instead of hard delete."""
         repository = await self.aget_object()
+        repo_id = str(repository.id)
         await repository.asoft_delete()
+
+        # 审计：删除仓库
+        try:
+            await aemit_audit_event(
+                action="repository.deleted",
+                target_type="Repository",
+                target_id=repo_id,
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="repository.deleted", exc_info=True)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"])
@@ -1089,6 +1115,22 @@ class RepositoryExclusionRulesView(APIView):
         # 规则变更后失效匹配器缓存，使各读取面即时读到新规则（T-22-18）
         invalidate_matcher_cache(str(repository_id))
 
+        # 审计：创建排除规则
+        try:
+            await aemit_audit_event(
+                action="exclusion_rule.created",
+                target_type="RepoExclusionRule",
+                target_id=str(rule.id),
+                after={
+                    "pattern": rule.pattern,
+                    "rule_type": rule.rule_type,
+                    "source": rule.source,
+                    "repository_id": str(repository_id),
+                },
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="exclusion_rule.created", exc_info=True)
+
         out = await sync_to_async(lambda: RepoExclusionRuleSerializer(rule).data)()
         return Response(out, status=status.HTTP_201_CREATED)
 
@@ -1115,8 +1157,21 @@ class RepositoryExclusionRuleDetailView(APIView):
         if rule is None:
             return Response({"detail": "排除规则不存在"}, status=status.HTTP_404_NOT_FOUND)
 
+        rule_pattern = rule.pattern
         await rule.adelete()
         invalidate_matcher_cache(str(repository_id))
+
+        # 审计：删除排除规则
+        try:
+            await aemit_audit_event(
+                action="exclusion_rule.deleted",
+                target_type="RepoExclusionRule",
+                target_id=str(rule_id),
+                before={"pattern": rule_pattern, "repository_id": str(repository_id)},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="exclusion_rule.deleted", exc_info=True)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1191,6 +1246,18 @@ class GitInstanceCredentialsView(APIView):
             provider=credential.provider,
             has_token=True,
         )
+
+        # 审计：创建 Git 实例凭证
+        try:
+            await aemit_audit_event(
+                action="git_credential.created",
+                target_type="GitInstanceCredential",
+                target_id=str(credential.id),
+                after={"host": host, "provider": credential.provider, "has_token": True},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="git_credential.created", exc_info=True)
+
         out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
         return Response(out, status=status.HTTP_201_CREATED)
 
@@ -1264,6 +1331,18 @@ class GitInstanceCredentialDetailView(APIView):
             provider=credential.provider,
             token_changed=token_changed,
         )
+
+        # 审计：更新 Git 实例凭证
+        try:
+            await aemit_audit_event(
+                action="git_credential.updated",
+                target_type="GitInstanceCredential",
+                target_id=str(credential.id),
+                after={"host": credential.host, "provider": credential.provider, "token_changed": token_changed},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="git_credential.updated", exc_info=True)
+
         out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
         return Response(out)
 
@@ -1272,8 +1351,21 @@ class GitInstanceCredentialDetailView(APIView):
         if credential is None:
             return Response({"detail": "实例凭证不存在"}, status=status.HTTP_404_NOT_FOUND)
         host = credential.host
+        cred_id = str(credential.id)
         await credential.adelete()
         logger.info("git_instance_credential_deleted", host=host)
+
+        # 审计：删除 Git 实例凭证
+        try:
+            await aemit_audit_event(
+                action="git_credential.deleted",
+                target_type="GitInstanceCredential",
+                target_id=cred_id,
+                before={"host": host},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="git_credential.deleted", exc_info=True)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1382,6 +1474,17 @@ class RepositorySensitiveSuggestionActionView(APIView):
         # 规则变更后失效匹配器缓存，使各读取面即时读到新规则（T-22-18）
         invalidate_matcher_cache(str(repository_id))
 
+        # 审计：接受敏感文件建议
+        try:
+            await aemit_audit_event(
+                action="exclusion_rule.accepted",
+                target_type="SensitiveFileSuggestion",
+                target_id=str(suggestion.id),
+                after={"path": suggestion.path, "action": "accept", "repository_id": str(repository_id)},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="exclusion_rule.accepted", exc_info=True)
+
         suggestion_out = await sync_to_async(
             lambda: SensitiveFileSuggestionSerializer(suggestion).data
         )()
@@ -1462,6 +1565,17 @@ class RepositoryReconcileView(APIView):
             lambda: run_cleanup(repo_id, mode, cleanup_run_id=run_id),
             name=f"cleanup:{repo_id}:{run_id}",
         )
+
+        # 审计：派发清理任务
+        try:
+            await aemit_audit_event(
+                action="cleanup.started",
+                target_type="CleanupRun",
+                target_id=run_id,
+                after={"mode": mode, "match_count": report.match_count, "repository_id": repo_id},
+            )
+        except Exception:
+            logger.warning("audit_emit_failed", action="cleanup.started", exc_info=True)
 
         return Response(
             {
