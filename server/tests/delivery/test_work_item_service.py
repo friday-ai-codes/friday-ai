@@ -133,6 +133,23 @@ def test_derive_status_events_empty_without_history() -> None:
     assert derive_status_events(None) == []  # type: ignore[arg-type]
 
 
+def test_safe_error_redacts_secrets() -> None:
+    """_safe_error 抹掉误入异常消息的 token/secret/Bearer，仅留键名供排障（IN-04）。"""
+    from delivery.services import WorkItemService
+
+    msg = (
+        'feishu request failed: {"plugin_secret": "s3cr3t_value_xyz", '
+        '"access_token": "tok_abcdef123456"} Authorization: Bearer abc.def.ghi'
+    )
+    redacted = WorkItemService()._safe_error(Exception(msg))
+
+    assert "s3cr3t_value_xyz" not in redacted
+    assert "tok_abcdef123456" not in redacted
+    assert "abc.def.ghi" not in redacted
+    assert "plugin_secret" in redacted  # 键名保留供排障
+    assert "***" in redacted
+
+
 def test_work_item_synced_signal_importable() -> None:
     """work_item_synced 信号对象可 import（best-effort 事件位）。"""
     from django.dispatch import Signal
