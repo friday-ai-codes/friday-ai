@@ -40,7 +40,7 @@
 - [x] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索 (completed 2026-06-15)
 - [x] **Phase 33: 历史 diff 冻结 + bi-temporal 失效** - commit 锚定快照 + 重索引对账置 invalid_at + as-of 区分历史/当前（PF-08） (completed 2026-06-15)
 - [x] **Phase 34: 评论入图 + 片段→需求反查** - 评论摄取进知识投影 + code chunk/模块 → 需求/文档反查 API/MCP（依赖 v0.5 行号回填） (completed 2026-06-15)
-- [ ] **Phase 35: 截图识别需求** - 多模态 LLM：vision → 文本 query → 召回需求（非图片向量库）
+- [x] **Phase 35: 截图识别需求** - 多模态 LLM：vision → 文本 query → 召回需求（非图片向量库） (completed 2026-06-15)
 
 ## Phase Details
 
@@ -203,7 +203,7 @@ Plans:
 **Plans**: 2 plans
 
 - [x] 35-01-PLAN.md — 后端 screenshot_recall 服务（vision 提语义 → 文本 query → 既有交付知识检索召回 work_item + graceful 降级）+ multipart REST 端点（IsAuthenticated + 双校验）
-- [ ] 35-02-PLAN.md — 前端「截图识需求」面板（拖拽/选择/粘贴上传 + 6 态状态机 + 召回列表/语义卡）+ i18n + 侧边栏入口
+- [x] 35-02-PLAN.md — 前端「截图识需求」面板（拖拽/选择/粘贴上传 + 6 态状态机 + 召回列表/语义卡）+ i18n + 侧边栏入口
 
 **UI hint**: yes
 
@@ -230,7 +230,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
-| 35. 截图识别需求 | v0.6.0 | 1/2 | In Progress|  |
+| 35. 截图识别需求 | v0.6.0 | 2/2 | Complete   | 2026-06-15 |
 
 ---
 *Previous milestones archived in .planning/milestones/*
