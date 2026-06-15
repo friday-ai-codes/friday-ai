@@ -1,10 +1,13 @@
-"""审计上下文 ASGI 中间件 -- 从 HTTP 请求中提取 actor 信息并注入 contextvars。
+"""审计上下文 ASGI/WSGI 双模中间件 -- 从 HTTP 请求中提取 actor 信息并注入 contextvars。
 
-遵循 Django ASGI 中间件签名 ``(app) -> async __call__(scope, receive, send)``，
-与 ``runners/middleware.py`` 和 ``core/middleware.py`` 模式一致。
+ASGI 模式（生产）：遵循 ``(app) -> __call__(scope, receive, send)`` 签名，
+内部使用 async 处理；与 ``runners/middleware.py`` 和 ``core/middleware.py`` 模式一致。
+
+WSGI 模式（测试兼容）：当 Django 测试客户端以 WSGI 方式调用 ``__call__(self, request)``
+时，自动退化为同步中间件，仅设置 contextvar 并透传。
 
 注册位置：``MIDDLEWARE`` 列表中 ``AuthenticationMiddleware`` 之后。
-Django 的 ``AuthenticationMiddleware`` 在 scope 中填充 ``user`` 和 ``auth``，
+Django 的 ``AuthenticationMiddleware`` 在 scope/request 中填充 ``user``，
 本中间件在此基础上区分 JWT / PAT / 未认证。
 """
 
@@ -23,21 +26,34 @@ _NO_TOKEN = object()
 
 
 class AuditContextMiddleware:
-    """从 HTTP 请求 scope 提取 actor，设置到 contextvars。
+    """从 HTTP 请求 scope/request 提取 actor，设置到 contextvars。
 
-    - JWT 认证：``scope["user"]`` 为已认证 User 实例，``scope["auth"]`` 不是 AccessToken
+    - JWT 认证：``scope["user"]`` 为已认证 User 实例
     - PAT 认证：``scope["auth"]`` 为 AccessToken 实例（有 ``token_hash`` 属性）
     - 未认证：``scope["user"]`` 为 AnonymousUser 或 ``is_authenticated=False``
 
     中间件在 ``finally`` 块中清理 contextvar，确保异常时也不泄漏。
+
+    支持 ASGI 和 WSGI 两种调用模式：
+    - ASGI: ``__call__(scope, receive, send)`` -- 生产环境，返回 coroutine
+    - WSGI: ``__call__(request)`` -- Django 测试客户端兼容，返回 Response
     """
 
     def __init__(self, app: Callable[..., Any]) -> None:
         self.app = app
 
-    async def __call__(
+    def __call__(self, scope_or_request: Any, *args: Any) -> Any:
+        # ASGI 模式：3 个参数 (scope, receive, send)
+        if len(args) == 2:
+            return self._asgi_call(scope_or_request, args[0], args[1])
+
+        # WSGI 模式：1 个参数 (request)
+        return self._wsgi_call(scope_or_request)
+
+    async def _asgi_call(
         self, scope: dict[str, Any], receive: Callable, send: Callable
     ) -> Any:
+        """ASGI 模式处理路径。"""
         # 仅处理 HTTP 请求（跳过 WebSocket / lifespan 等）
         if scope.get("type") != "http":
             return await self.app(scope, receive, send)
@@ -51,12 +67,52 @@ class AuditContextMiddleware:
             if token is not _NO_TOKEN:
                 reset_current_actor(token)
 
+    def _wsgi_call(self, request: Any) -> Any:
+        """WSGI 模式：从 HttpRequest 对象提取 actor，设置 contextvar。"""
+        token = _NO_TOKEN
+        try:
+            actor = self._extract_actor_wsgi(request)
+            token = set_current_actor(actor)
+            return self.app(request)
+        finally:
+            if token is not _NO_TOKEN:
+                reset_current_actor(token)
+
+    @staticmethod
+    def _extract_actor_wsgi(request: Any) -> AuditActor:
+        """从 WSGI HttpRequest 提取 actor 信息。"""
+        user = getattr(request, "user", None)
+        ip_address = None
+        if hasattr(request, "META"):
+            x_forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+            if x_forwarded:
+                ip_address = x_forwarded.split(",")[0].strip()
+            else:
+                ip_address = request.META.get("REMOTE_ADDR")
+
+        if user is not None and getattr(user, "is_authenticated", False):
+            return AuditActor(
+                actor_type="user",
+                actor_id=str(user.pk),
+                actor_display=getattr(user, "username", "") or "",
+                ip_address=ip_address,
+                request_id="",
+            )
+
+        return AuditActor(
+            actor_type="system",
+            actor_id="anonymous",
+            actor_display="anonymous",
+            ip_address=ip_address,
+            request_id="",
+        )
+
     # ------------------------------------------------------------------
-    # 内部方法
+    # 内部方法（ASGI 模式）
     # ------------------------------------------------------------------
 
     def _extract_actor(self, scope: dict[str, Any]) -> AuditActor:
-        """从 scope 提取 actor 信息。"""
+        """从 ASGI scope 提取 actor 信息。"""
         user = scope.get("user")
         auth = scope.get("auth")
         ip_address = self._extract_ip(scope)
