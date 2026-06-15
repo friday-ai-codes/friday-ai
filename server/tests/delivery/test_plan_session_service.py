@@ -103,6 +103,20 @@ async def test_stale_transition_rejected_concurrency() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_create_session_rejects_invalid_entrypoint() -> None:
+    """IN-02：create_session 对非 workflow|chat 的 entrypoint 显式 raise（不静默落库）。"""
+    svc = PlanSessionService()
+    before = await PlanSession.objects.filter(entrypoint="bogus").acount()
+    with pytest.raises(ValueError) as exc_info:
+        await svc.create_session("bogus")
+    assert "entrypoint" in str(exc_info.value)
+    # 非法 entrypoint 在 create 前即 raise，未新增该 entrypoint 的行
+    after = await PlanSession.objects.filter(entrypoint="bogus").acount()
+    assert after == before
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_fail_from_any_status_with_dict_error() -> None:
     """fail 从任意状态 → failed + error JSON 落库。"""
     session = await PlanSession.objects.acreate(

@@ -18,7 +18,7 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
-from delivery.models import PlanSession, PlanSessionStatus
+from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
 
 logger = structlog.get_logger(__name__)
 
@@ -82,7 +82,16 @@ class PlanSessionService:
         decomposition: dict | None = None,
         event_time: Any = None,
     ) -> PlanSession:
-        """建 PlanSession（status 默认 decomposing）—— engine/入口层建会话的入口。"""
+        """建 PlanSession（status 默认 decomposing）—— engine/入口层建会话的入口。
+
+        IN-02：``entrypoint`` 须为 ``PlanSessionEntrypoint`` 合法值（workflow|chat），
+        否则 ``raise ValueError``（Django ``choices`` 仅 ``full_clean()`` 校验、``create()``
+        不触发，作为单一写入入口须显式校验，与状态机「非法即 raise」风格一致）。
+        """
+        if entrypoint not in PlanSessionEntrypoint.values:
+            raise ValueError(
+                f"非法 entrypoint={entrypoint!r}；合法值={list(PlanSessionEntrypoint.values)}"
+            )
         return await self._create_session_sync(entrypoint, work_item, decomposition, event_time)
 
     @sync_to_async
