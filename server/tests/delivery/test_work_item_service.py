@@ -218,6 +218,28 @@ def _mock_work_item(
     )
 
 
+def _mock_work_item_with_history(
+    state_key: str,
+    updated_at_ms: int,
+    history: list[dict],
+) -> None:
+    """mock 工作项端点，带顶层 updated_at（业务时间，§16）+ work_item_status.history[]。"""
+    item = {
+        "id": STORY_ID,
+        "name": "实现学习平台 A",
+        "updated_at": updated_at_ms,
+        "fields": [],
+        "work_item_status": {
+            "state_key": state_key,
+            "current_nodes": [{"id": "state_2", "name": "Sprint计划"}],
+            "history": history,
+        },
+    }
+    respx.post(f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/story/query").mock(
+        return_value=httpx.Response(200, json={"err_code": 0, "data": [item]})
+    )
+
+
 def _identity(work_item_type: str = "story", work_item_id: int = STORY_ID):
     from delivery.services import WorkItemIdentity
 
@@ -493,3 +515,68 @@ async def test_upsert_status_change_appends_status_event() -> None:
     _mock_work_item(state_key="B")
     await service.upsert(_identity(), source="feishu_webhook")
     assert await WorkItemStatusEvent.objects.filter(work_item=wi).acount() == 2
+
+
+@respx.mock
+async def test_upsert_status_event_uses_payload_time_and_dedups_history() -> None:
+    """WR-03：实时状态事件取 payload 业务时间（非 now()），与 history 回填同源去重。
+
+    - 同态重复 upsert 不重复 append（实时合成事件 event_time 与 history 条目同戳 → 去重命中）。
+    - 真实状态变更恰好新增 1 条事件，event_time 为 payload 派生的真实转移时间。
+    """
+    from datetime import UTC, datetime
+
+    from delivery.models import WorkItemStatusEvent
+    from delivery.services import WorkItemService
+
+    event_ms_a = 1700000000000
+    event_ms_b = 1700000600000
+    event_dt_a = datetime.fromtimestamp(event_ms_a / 1000, tz=UTC)
+    event_dt_b = datetime.fromtimestamp(event_ms_b / 1000, tz=UTC)
+
+    await _make_project()
+    service = WorkItemService()
+
+    # 首次：state="A"，history 含同态同戳条目 → 实时合成 + 历史回填收敛为 1 条
+    _mock_token()
+    _mock_work_item_with_history(
+        "A", event_ms_a, [{"state_key": "A", "updated_at": event_ms_a, "updated_by": "u1"}]
+    )
+    wi = await service.upsert(_identity(), source="manual")
+
+    events = [e async for e in WorkItemStatusEvent.objects.filter(work_item=wi)]
+    assert len(events) == 1
+    assert events[0].cur_state_key == "A"
+    assert events[0].event_time == event_dt_a  # payload 业务时间，非 timezone.now()
+
+    # 同态重复 upsert（payload 不变）→ 无重复事件
+    respx.routes.clear()
+    _mock_token()
+    _mock_work_item_with_history(
+        "A", event_ms_a, [{"state_key": "A", "updated_at": event_ms_a, "updated_by": "u1"}]
+    )
+    await service.upsert(_identity(), source="feishu_webhook")
+    assert await WorkItemStatusEvent.objects.filter(work_item=wi).acount() == 1
+
+    # 真实状态变更 A→B → 恰好新增 1 条，event_time = payload 派生真实转移时间
+    respx.routes.clear()
+    _mock_token()
+    _mock_work_item_with_history(
+        "B",
+        event_ms_b,
+        [
+            {"state_key": "A", "updated_at": event_ms_a, "updated_by": "u1"},
+            {"state_key": "B", "updated_at": event_ms_b, "updated_by": "u2"},
+        ],
+    )
+    wi = await service.upsert(_identity(), source="feishu_webhook")
+    assert wi.status_state_key == "B"
+
+    events = [
+        e
+        async for e in WorkItemStatusEvent.objects.filter(work_item=wi).order_by("event_time")
+    ]
+    assert len(events) == 2
+    b_event = next(e for e in events if e.cur_state_key == "B")
+    assert b_event.pre_state_key == "A"
+    assert b_event.event_time == event_dt_b

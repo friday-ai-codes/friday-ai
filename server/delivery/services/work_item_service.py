@@ -134,7 +134,10 @@ class WorkItemService:
 
         raw_item = self._raw_item(info)
         status_fields = derive_status_fields(raw_item)
-        await self._refresh_mirror(work_item, info, status_fields, source)
+        # 状态事件取飞书 payload 业务时间（顶层 updated_at，§16），与历史回填同源 →
+        # 实时合成事件与 history[] 回填走同一去重锚，避免 now() 戳并存重复（WR-03）。
+        event_time = self._parse_ms(raw_item.get("updated_at"))
+        await self._refresh_mirror(work_item, info, status_fields, source, event_time)
         await self._record_sync_state(
             work_item, SyncFacet.BASIC_FIELDS, SyncStatus.COMPLETE, source
         )
@@ -201,51 +204,72 @@ class WorkItemService:
 
     @sync_to_async
     def _refresh_mirror(
-        self, work_item: WorkItem, info: Any, status_fields: dict, source: str
+        self,
+        work_item: WorkItem,
+        info: Any,
+        status_fields: dict,
+        source: str,
+        event_time: Any = None,
     ) -> None:
-        """刷新 mirror 字段（显式 update_fields）+ field_provenance + last_synced_at。
+        """单锁原子刷新 mirror + 状态事件 append（§13.1 读改写，WR-01/WIT-05）。
+
+        回源（``get_work_item``）已在锁外完成；此处开**单个** ``transaction.atomic``
+        并对该行重新 ``select_for_update`` 上锁，在同一锁内读当前状态 → 比对 →
+        append ``WorkItemStatusEvent`` → 保存 mirror，三者原子完成（避免锁释放后用
+        过期内存态判断导致状态事件重复/漏记，WR-01）。状态事件 ``event_time`` 取飞书
+        payload 业务时间（与 history 回填同源），实时合成与历史回填走同一去重锚（WR-03）。
 
         **绝不写** friday_enhanced（business_line_normalized/module_normalized/
         internal_note）与 writeback（feishu_chat_id）——它们不在 update_fields 内。
+        per-facet ``WorkItemSyncState`` 写在本锁**之外**（保 WIT-03 部分失败隔离）。
         """
-        # 状态变更先 append StatusEvent（pre=旧/cur=新），再改 mirror（非就地覆盖历史，WIT-05）
+        feishu_fields = info.feishu_fields or []
         new_state_key = status_fields["status_state_key"]
         new_sub_stage = status_fields["status_sub_stage"]
-        if new_state_key and new_state_key != work_item.status_state_key:
-            WorkItemStatusEvent.objects.create(
-                work_item=work_item,
-                pre_state_key=work_item.status_state_key,
-                cur_state_key=new_state_key,
-                pre_sub_stage=work_item.status_sub_stage,
-                cur_sub_stage=new_sub_stage,
-                event_time=timezone.now(),
+
+        with transaction.atomic():
+            # 同一把锁内重取该行：当前状态判定 + 事件 append + mirror 保存原子完成
+            locked = WorkItem.objects.select_for_update().get(pk=work_item.pk)
+
+            # 状态变更先 append StatusEvent（pre=锁内旧态/cur=新），再改 mirror（WIT-05）
+            if new_state_key and new_state_key != locked.status_state_key:
+                WorkItemStatusEvent.objects.create(
+                    work_item=locked,
+                    pre_state_key=locked.status_state_key,
+                    cur_state_key=new_state_key,
+                    pre_sub_stage=locked.status_sub_stage,
+                    cur_sub_stage=new_sub_stage,
+                    event_time=event_time,
+                )
+
+            locked.title = info.name or ""
+            locked.feishu_fields = feishu_fields
+            locked.prd_url = extract_prd_url(feishu_fields) or ""
+            locked.tech_doc_url = extract_tech_doc_url(feishu_fields) or ""
+            locked.status_state_key = new_state_key
+            locked.status_sub_stage = new_sub_stage
+            locked.status_display_name = status_fields["status_display_name"]
+            locked.is_archived_state = status_fields["is_archived_state"]
+            locked.is_init_state = status_fields["is_init_state"]
+            locked.last_synced_at = timezone.now()
+
+            provenance = dict(locked.field_provenance or {})
+            for field in _MIRROR_FIELDS:
+                provenance[field] = source
+            locked.field_provenance = provenance
+
+            locked.save(
+                update_fields=[
+                    *_MIRROR_FIELDS,
+                    "last_synced_at",
+                    "field_provenance",
+                    "updated_at",
+                ]
             )
 
-        feishu_fields = info.feishu_fields or []
-        work_item.title = info.name or ""
-        work_item.feishu_fields = feishu_fields
-        work_item.prd_url = extract_prd_url(feishu_fields) or ""
-        work_item.tech_doc_url = extract_tech_doc_url(feishu_fields) or ""
-        work_item.status_state_key = status_fields["status_state_key"]
-        work_item.status_sub_stage = status_fields["status_sub_stage"]
-        work_item.status_display_name = status_fields["status_display_name"]
-        work_item.is_archived_state = status_fields["is_archived_state"]
-        work_item.is_init_state = status_fields["is_init_state"]
-        work_item.last_synced_at = timezone.now()
-
-        provenance = dict(work_item.field_provenance or {})
-        for field in _MIRROR_FIELDS:
-            provenance[field] = source
-        work_item.field_provenance = provenance
-
-        work_item.save(
-            update_fields=[
-                *_MIRROR_FIELDS,
-                "last_synced_at",
-                "field_provenance",
-                "updated_at",
-            ]
-        )
+        # 把锁内刷新结果同步回传入实例，供 upsert 返回 / 后续步骤读取最新值
+        for field in (*_MIRROR_FIELDS, "last_synced_at", "field_provenance"):
+            setattr(work_item, field, getattr(locked, field))
 
     @sync_to_async
     def _record_sync_state(
