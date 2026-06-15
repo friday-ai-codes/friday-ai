@@ -198,6 +198,7 @@ class ScreenshotRecallResultSerializer(serializers.Serializer):
     """截图识别结果（degraded 三态，文档化用）。"""
 
     degraded = serializers.BooleanField()
+    degraded_code = serializers.CharField(required=False)
     degraded_reason = serializers.CharField(required=False)
     semantics = ExtractedSemanticsSerializer(required=False, allow_null=True)
     query = serializers.CharField(required=False, allow_null=True)
