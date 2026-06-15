@@ -2,7 +2,8 @@
 
 re-export ``WorkItemService`` / ``WorkItemIdentity``（WorkItem 单一写入入口，INV-6）
 + ``CommentEventService`` / ``classify_approval_semantic``（评论事件单一写入入口，CMT-01）
-+ ``DocumentService`` / ``derive_feishu_tenant``（Document 单一写入入口，DOC-01/INV-6）。
++ ``DocumentService`` / ``derive_feishu_tenant``（Document 单一写入入口，DOC-01/INV-6）
++ ``ReleaseService``（Release 账本单一写入入口，REL-01/INV-6）。
 """
 
 from delivery.services.comment_event_service import (
@@ -14,6 +15,7 @@ from delivery.services.comment_projection import (
     project_comment_tree,
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
+from delivery.services.release_service import ReleaseService
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
 __all__ = [
@@ -25,4 +27,5 @@ __all__ = [
     "aproject_comment_tree",
     "DocumentService",
     "derive_feishu_tenant",
+    "ReleaseService",
 ]
