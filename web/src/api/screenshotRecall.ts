@@ -37,6 +37,8 @@ export interface RecalledRequirement {
 export interface ScreenshotRecallResult {
   /** 无 vision 模型 / 提取失败 → true（与召回异常区分）。 */
   degraded: boolean
+  /** 降级原因码：'no_vision_model'（配置问题）| 'extraction_failed'（运行期失败）。 */
+  degraded_code?: 'no_vision_model' | 'extraction_failed'
   /** 后端已脱敏的降级原因（可选）。 */
   degraded_reason?: string
   /** 提取到的语义（可选展示）。 */

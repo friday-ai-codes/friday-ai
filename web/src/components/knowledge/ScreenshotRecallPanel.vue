@@ -50,6 +50,23 @@ const hasSemantics = computed(() => {
   return !!s && !!(s.text || s.ui_elements || s.business_intent)
 })
 
+// 降级双因（WR-01）：extraction_failed 为运行期失败（模型已配置），不引导去系统设置，
+// 改提示重试；no_vision_model（或缺 code 的旧响应）走配置文案 + 系统设置入口。
+const isExtractionFailed = computed(
+  () => result.value?.degraded_code === 'extraction_failed',
+)
+const degradedTitle = computed(() =>
+  isExtractionFailed.value
+    ? t('screenshotRecall.degraded.extractionFailedTitle')
+    : t('screenshotRecall.degraded.title'),
+)
+const degradedBody = computed(() =>
+  isExtractionFailed.value
+    ? t('screenshotRecall.degraded.extractionFailedBody')
+    : t('screenshotRecall.degraded.body'),
+)
+const showSettingsLink = computed(() => !isExtractionFailed.value)
+
 // ==================== 文件释放（防 objectURL 内存泄漏，T-35F-03） ====================
 function revokePreview() {
   if (previewUrl.value) {
@@ -288,12 +305,13 @@ onBeforeUnmount(() => {
         >
           <div class="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
             <span class="icon-[lucide--alert-triangle]" aria-hidden="true" />
-            <span>{{ t('screenshotRecall.degraded.title') }}</span>
+            <span>{{ degradedTitle }}</span>
           </div>
           <p class="text-sm text-muted-foreground">
-            {{ t('screenshotRecall.degraded.body') }}
+            {{ degradedBody }}
           </p>
           <a
+            v-if="showSettingsLink"
             href="/admin"
             class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
             data-testid="recall-degraded-link"

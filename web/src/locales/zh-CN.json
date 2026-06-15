@@ -294,7 +294,9 @@
     "degraded": {
       "title": "未配置多模态（vision）模型",
       "body": "当前没有可用的视觉能力模型，无法从截图提取语义。请在系统设置配置具备视觉能力的模型后重试。",
-      "settingsLink": "前往系统设置"
+      "settingsLink": "前往系统设置",
+      "extractionFailedTitle": "截图语义提取失败",
+      "extractionFailedBody": "已配置视觉模型，但本次未能从截图提取出有效语义。请稍后重试，或更换更清晰、信息更完整的截图。"
     },
     "noResults": {
       "title": "未召回到相关需求",

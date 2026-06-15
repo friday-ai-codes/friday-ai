@@ -30,16 +30,30 @@ from services.provider_config import PROVIDER_REGISTRY, ProviderConfigService, P
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEGRADE_EXTRACTION_FAILED",
+    "DEGRADE_NO_VISION_MODEL",
     "ExtractedSemantics",
     "extract_semantics",
     "recall_from_screenshot",
 ]
 
-# 降级固定中文文案（脱敏，不回显原始异常 / 图片内容；对齐 35-UI-SPEC degraded.body 语义）。
-_DEGRADED_REASON = (
-    "当前未配置可用的多模态（vision）模型，无法从截图提取语义；"
-    "请在系统设置配置具备视觉能力的模型后重试。"
-)
+# 降级原因码（机器可判，供前端区分文案 / 是否展示「前往系统设置」入口；WR-01）。
+# - no_vision_model：无 provider / 无 default_model / 模型无 vision 能力（配置问题，可去系统设置修复）。
+# - extraction_failed：vision 模型调用或 JSON 解析失败 / 提取到空语义（运行期问题，配置无误时应重试）。
+DEGRADE_NO_VISION_MODEL = "no_vision_model"
+DEGRADE_EXTRACTION_FAILED = "extraction_failed"
+
+# 降级固定中文文案（脱敏，不回显原始异常 / 图片内容；按原因码区分，对齐 35-UI-SPEC degraded 语义）。
+_DEGRADED_REASONS: dict[str, str] = {
+    DEGRADE_NO_VISION_MODEL: (
+        "当前未配置可用的多模态（vision）模型，无法从截图提取语义；"
+        "请在系统设置配置具备视觉能力的模型后重试。"
+    ),
+    DEGRADE_EXTRACTION_FAILED: (
+        "已配置视觉模型，但本次未能从截图提取出有效语义；"
+        "请稍后重试，或更换更清晰、信息更完整的截图。"
+    ),
+}
 
 # vision 语义提取系统提示：严格输出 JSON {text, ui_elements, business_intent}。
 _SYSTEM_PROMPT = (
@@ -120,14 +134,17 @@ async def extract_semantics(
     mime_type: str,
     *,
     node_config: dict | None = None,
-) -> ExtractedSemantics | None:
-    """多模态 LLM 提取截图语义；任意降级条件/异常 → 返回 None（不抛，VIS-01 标准 1）。
+) -> tuple[ExtractedSemantics | None, str | None]:
+    """多模态 LLM 提取截图语义；任意降级条件/异常 → 不抛（VIS-01 标准 1）。
 
-    降级信号（一律返回 None）：
-    - ``ProviderMissingError``：无可用 provider 凭证。
-    - 无 ``extra["default_model"]``：未配置默认模型。
-    - 模型无 vision 能力（双判失败）。
-    - 模型调用或 JSON 解析异常。
+    返回 ``(semantics, degrade_reason)``：
+    - 成功 → ``(ExtractedSemantics, None)``。
+    - 配置类降级 → ``(None, DEGRADE_NO_VISION_MODEL)``：无可用 provider 凭证 /
+      无 ``extra["default_model"]`` / 模型无 vision 能力（双判失败）。
+    - 运行期降级 → ``(None, DEGRADE_EXTRACTION_FAILED)``：模型调用异常 / JSON 解析失败。
+
+    区分两类原因码（WR-01）：配置问题可引导用户去系统设置修复；运行期失败应提示重试，
+    避免「模型已配置但调用失败」时误导用户去配置模型。
 
     隐私：异常仅记 ``error_type``，不记 ``str(exc)``（防回显图片/密钥，T-35-04）。
     """
@@ -137,19 +154,19 @@ async def extract_semantics(
         resolved = await ProviderConfigService.aresolve_or_error(node_config)
         if isinstance(resolved, ProviderMissingError):
             logger.info("screenshot_recall.skipped_no_provider")
-            return None
+            return None, DEGRADE_NO_VISION_MODEL
 
         model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
         if not model_name:
             logger.info("screenshot_recall.skipped_no_model")
-            return None
+            return None, DEGRADE_NO_VISION_MODEL
 
         if not _model_supports_vision(resolved.provider_type, model_name):
             logger.info(
                 "screenshot_recall.skipped_no_vision",
                 provider_type=str(resolved.provider_type),
             )
-            return None
+            return None, DEGRADE_NO_VISION_MODEL
 
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -164,19 +181,38 @@ async def extract_semantics(
         )
         model = build_chat_model(resolved, model_name, streaming=False)
         response = await model.ainvoke([system, human])
-        return _parse_semantics_json(content_to_text(response.content))
+        parsed = _parse_semantics_json(content_to_text(response.content))
+        if parsed is None:
+            # 模型已配置但输出无法解析为语义 JSON → 运行期失败（非配置问题）。
+            logger.warning("screenshot_recall.parse_failed")
+            return None, DEGRADE_EXTRACTION_FAILED
+        return parsed, None
     except Exception as exc:  # noqa: BLE001 — 任何异常一律 graceful 降级（T-35-04）
         logger.warning(
             "screenshot_recall.extract_failed",
             error_type=type(exc).__name__,
         )
-        return None
+        return None, DEGRADE_EXTRACTION_FAILED
 
 
 def _build_query(semantics: ExtractedSemantics) -> str:
     """拼接三段非空语义为文本 query（段间换行）。"""
     segments = [semantics.text, semantics.ui_elements, semantics.business_intent]
     return "\n".join(seg.strip() for seg in segments if seg and seg.strip())
+
+
+def _degraded_result(reason_code: str) -> dict:
+    """构造降级返回（含原因码 + 已脱敏文案；对齐 35-UI-SPEC ScreenshotRecallResult）。"""
+    return {
+        "degraded": True,
+        "degraded_code": reason_code,
+        "degraded_reason": _DEGRADED_REASONS.get(
+            reason_code, _DEGRADED_REASONS[DEGRADE_EXTRACTION_FAILED]
+        ),
+        "semantics": None,
+        "query": None,
+        "results": [],
+    }
 
 
 def _to_recalled_requirement(dto) -> dict:
@@ -210,21 +246,18 @@ async def recall_from_screenshot(
     """截图 → vision 提语义 → 文本 query → 既有交付知识检索召回 work_item（结构化返回）。
 
     返回形状对齐 35-UI-SPEC ``ScreenshotRecallResult``：
-    - 提取降级（extract_semantics 返回 None）→ ``{degraded: true, degraded_reason, semantics: null,
-      query: null, results: []}``（不抛）。
+    - 提取降级（extract_semantics 失败）→ ``{degraded: true, degraded_code, degraded_reason,
+      semantics: null, query: null, results: []}``（不抛；``degraded_code`` 区分
+      no_vision_model / extraction_failed，WR-01）。
     - 提取成功但召回阶段异常 → ``{degraded: false, semantics, query, results: []}``（语义在、召回
       空，前端走 no-results 而非 error；不误判为 degraded）。
     - 正常 → ``{degraded: false, semantics, query, results: [...]}``。
     """
-    semantics = await extract_semantics(image_bytes, mime_type, node_config=node_config)
+    semantics, degrade_reason = await extract_semantics(
+        image_bytes, mime_type, node_config=node_config
+    )
     if semantics is None:
-        return {
-            "degraded": True,
-            "degraded_reason": _DEGRADED_REASON,
-            "semantics": None,
-            "query": None,
-            "results": [],
-        }
+        return _degraded_result(degrade_reason or DEGRADE_EXTRACTION_FAILED)
 
     query = _build_query(semantics)
     results: list[dict] = []

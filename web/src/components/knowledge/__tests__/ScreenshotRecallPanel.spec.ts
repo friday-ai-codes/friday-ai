@@ -158,6 +158,26 @@ describe('screenshotRecallPanel', () => {
     expect(wrapper.find('[data-testid="recall-error"]').exists()).toBe(false)
   })
 
+  it('e2: degraded(extraction_failed) → 重试文案，不渲染系统设置入口（WR-01）', async () => {
+    vi.mocked(screenshotRecallApi.recall).mockResolvedValue(makeResult({
+      degraded: true,
+      degraded_code: 'extraction_failed',
+      results: [],
+    }))
+
+    const wrapper = mountPanel()
+    await selectFile(wrapper, makeFile('shot.png', 'image/png', 2048))
+    await wrapper.find('[data-testid="recall-submit"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const degraded = wrapper.find('[data-testid="recall-degraded"]')
+    expect(degraded.exists()).toBe(true)
+    expect(degraded.text()).toContain(zhCN.screenshotRecall.degraded.extractionFailedTitle)
+    // 运行期失败：不引导去系统设置（配置无误）。
+    expect(wrapper.find('[data-testid="recall-degraded-link"]').exists()).toBe(false)
+  })
+
   it('f: no-results → search-x 空态', async () => {
     vi.mocked(screenshotRecallApi.recall).mockResolvedValue(makeResult({ degraded: false, results: [] }))
 

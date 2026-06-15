@@ -24,6 +24,8 @@ import pytest
 from services import screenshot_recall
 from services.provider_config import ProviderMissingError, ProviderType
 from services.screenshot_recall import (
+    DEGRADE_EXTRACTION_FAILED,
+    DEGRADE_NO_VISION_MODEL,
     ExtractedSemantics,
     extract_semantics,
     recall_from_screenshot,
@@ -97,8 +99,9 @@ async def test_extract_semantics_returns_three_segments(monkeypatch) -> None:
     )
     _patch_vision_ok(monkeypatch, payload, recorder)
 
-    result = await extract_semantics(PNG_1X1, "image/png")
+    result, reason = await extract_semantics(PNG_1X1, "image/png")
 
+    assert reason is None  # 成功路径无降级原因码（WR-01）。
     assert isinstance(result, ExtractedSemantics)
     assert result.text == "登录页标题：欢迎回来"
     assert result.ui_elements == "用户名输入框、密码输入框、登录按钮"
@@ -113,7 +116,8 @@ async def test_extract_semantics_tolerates_json_wrapped_in_text(monkeypatch) -> 
     payload = '这是结果：{"text": "标题", "ui_elements": "", "business_intent": "下单"} 完毕'
     _patch_vision_ok(monkeypatch, payload, recorder)
 
-    result = await extract_semantics(PNG_1X1, "image/png")
+    result, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert reason is None
     assert result is not None
     assert result.text == "标题"
     assert result.business_intent == "下单"
@@ -125,7 +129,7 @@ async def test_extract_semantics_tolerates_json_wrapped_in_text(monkeypatch) -> 
 
 
 async def test_extract_semantics_provider_missing_returns_none(monkeypatch) -> None:
-    """provider 未配置（ProviderMissingError）→ 返回 None（降级，不抛）。"""
+    """provider 未配置（ProviderMissingError）→ (None, no_vision_model)（降级，不抛）。"""
 
     async def _missing(*_a, **_k):
         return ProviderMissingError(
@@ -141,11 +145,13 @@ async def test_extract_semantics_provider_missing_returns_none(monkeypatch) -> N
         raising=True,
     )
 
-    assert await extract_semantics(PNG_1X1, "image/png") is None
+    sem, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert sem is None
+    assert reason == DEGRADE_NO_VISION_MODEL
 
 
 async def test_extract_semantics_no_default_model_returns_none(monkeypatch) -> None:
-    """resolved.extra 无 default_model → 返回 None。"""
+    """resolved.extra 无 default_model → (None, no_vision_model)。"""
 
     async def _resolve(*_a, **_k):
         return SimpleNamespace(provider_type=ProviderType.ANTHROPIC, extra={})
@@ -157,7 +163,9 @@ async def test_extract_semantics_no_default_model_returns_none(monkeypatch) -> N
         raising=True,
     )
 
-    assert await extract_semantics(PNG_1X1, "image/png") is None
+    sem, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert sem is None
+    assert reason == DEGRADE_NO_VISION_MODEL
 
 
 async def test_extract_semantics_text_only_model_returns_none(monkeypatch) -> None:
@@ -184,11 +192,13 @@ async def test_extract_semantics_text_only_model_returns_none(monkeypatch) -> No
         raising=True,
     )
 
-    assert await extract_semantics(PNG_1X1, "image/png") is None
+    sem, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert sem is None
+    assert reason == DEGRADE_NO_VISION_MODEL
 
 
 async def test_extract_semantics_invoke_raises_returns_none(monkeypatch) -> None:
-    """provider 可用但模型调用抛异常 → 退化为 None，不冒泡。"""
+    """provider 可用但模型调用抛异常 → (None, extraction_failed)，不冒泡（WR-01）。"""
 
     async def _resolve(*_a, **_k):
         return SimpleNamespace(
@@ -209,7 +219,19 @@ async def test_extract_semantics_invoke_raises_returns_none(monkeypatch) -> None
     )
     monkeypatch.setattr("agents.llm_factory.build_chat_model", _boom, raising=True)
 
-    assert await extract_semantics(PNG_1X1, "image/png") is None
+    sem, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert sem is None
+    assert reason == DEGRADE_EXTRACTION_FAILED
+
+
+async def test_extract_semantics_unparseable_output_is_extraction_failed(monkeypatch) -> None:
+    """模型已配置但输出无法解析为 JSON → (None, extraction_failed)（非配置降级，WR-01）。"""
+    recorder: dict = {}
+    _patch_vision_ok(monkeypatch, "这不是 JSON，只是一段普通文字。", recorder)
+
+    sem, reason = await extract_semantics(PNG_1X1, "image/png")
+    assert sem is None
+    assert reason == DEGRADE_EXTRACTION_FAILED
 
 
 # ===========================================================================
@@ -332,6 +354,7 @@ async def test_recall_degraded_when_extract_fails(monkeypatch) -> None:
         PNG_1X1, "image/png", user=SimpleNamespace(id=1)
     )
     assert out["degraded"] is True
+    assert out["degraded_code"] == DEGRADE_NO_VISION_MODEL
     assert out["results"] == []
     assert out["degraded_reason"]
     assert out["semantics"] is None
