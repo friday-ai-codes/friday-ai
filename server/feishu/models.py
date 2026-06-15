@@ -180,10 +180,19 @@ class ProcessedEvent(models.Model):
         return self.event_id
 
 
-# Key field constants for extracting from work item fields
+# Key field constants for extracting from work item fields.
+# 唯一事实源在 Django-free 的 services.feishu_parsing（避免 services→models 层级倒置）；
+# 此处反向 import 复用，保持既有 KeyFields.* 调用方向后兼容。
+from services.feishu_parsing import (  # noqa: E402
+    DESCRIPTION_FIELD_KEY,
+    PRD_URL_FIELD_KEY,
+    TECH_DOC_URL_FIELD_KEY,
+)
+
+
 class KeyFields:
     """Key field identifiers for work item fields."""
 
-    PRD_URL = "field_bcff9b"  # 需求文档链接
-    DESCRIPTION = "description"  # 需求描述
-    TECH_DOC_URL = "field_3f6667"  # 技术方案文档链接
+    PRD_URL = PRD_URL_FIELD_KEY  # 需求文档链接 field_bcff9b
+    DESCRIPTION = DESCRIPTION_FIELD_KEY  # 需求描述
+    TECH_DOC_URL = TECH_DOC_URL_FIELD_KEY  # 技术方案文档链接 field_3f6667
