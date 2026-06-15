@@ -47,6 +47,39 @@ class TestExtractGitHost:
             "gitlab.example.com:8443"
         )
 
+    def test_https_userinfo_with_port_preserved(self) -> None:
+        """HI-01：含 userinfo 的 HTTPS URL 不得被 SSH 正则误吞而丢端口（威胁 T-26-03）。"""
+        assert _extract_git_host(
+            "https://oauth2:tok@gitlab.example.com:8443/g/r.git"
+        ) == "gitlab.example.com:8443"
+        assert _extract_git_host(
+            "https://gitlab-ci-token@git.corp:8443/ns/repo.git"
+        ) == "git.corp:8443"
+
+    def test_https_userinfo_without_port_unchanged(self) -> None:
+        """无端口的 userinfo URL 仍解析出纯 host。"""
+        assert _extract_git_host(
+            "https://oauth2:tok@gitlab.example.com/g/r.git"
+        ) == "gitlab.example.com"
+
+    def test_http_scheme_with_userinfo(self) -> None:
+        assert _extract_git_host(
+            "http://user@git.internal:8080/ns/p.git"
+        ) == "git.internal:8080"
+
+    def test_ssh_scheme_strips_userinfo(self) -> None:
+        assert _extract_git_host(
+            "ssh://git@gitlab.example.com:22/ns/p.git"
+        ) == "gitlab.example.com:22"
+
+    def test_same_domain_different_port_distinct_hosts(self) -> None:
+        """同域不同端口必须解析为不同 host key，确保命中各自实例凭证（威胁 T-26-03）。"""
+        portless = _extract_git_host("https://oauth2:tok@gitlab.internal/ns/p.git")
+        ported = _extract_git_host("https://oauth2:tok@gitlab.internal:8443/ns/p.git")
+        assert portless == "gitlab.internal"
+        assert ported == "gitlab.internal:8443"
+        assert portless != ported
+
     def test_unparseable_returns_none(self) -> None:
         assert _extract_git_host("") is None
         assert _extract_git_host("not-a-url") is None
@@ -107,6 +140,39 @@ class TestResolveGitToken:
         """Test D：无 per-repo token 且 host 无实例凭证 → None。"""
         repo = _repo_factory("https://gitlab.other.com/ns/p.git")
         assert resolve_git_token_sync(repo) is None
+
+    def test_userinfo_url_with_port_hits_ported_instance(self, _repo_factory) -> None:
+        """HI-01：含 userinfo + 端口的仓库 URL 命中 host:port 实例凭证（威胁 T-26-03）。"""
+        repo = _repo_factory("https://oauth2:tok@gitlab.internal:8443/ns/p.git")
+        GitInstanceCredential.objects.create(
+            host="gitlab.internal:8443",
+            provider=GitPlatform.GITLAB,
+            encrypted_token=encrypt_value("ported-token"),
+        )
+        assert resolve_git_token_sync(repo) == "ported-token"
+
+    def test_same_domain_different_port_route_to_distinct_credentials(
+        self, _repo_factory
+    ) -> None:
+        """HI-01：同域不同端口路由到各自实例凭证，不串 token（威胁 T-26-03）。"""
+        repo_portless = _repo_factory(
+            "https://oauth2:tok@gitlab.internal/ns/a.git", name="a"
+        )
+        repo_ported = _repo_factory(
+            "https://oauth2:tok@gitlab.internal:8443/ns/b.git", name="b"
+        )
+        GitInstanceCredential.objects.create(
+            host="gitlab.internal",
+            provider=GitPlatform.GITLAB,
+            encrypted_token=encrypt_value("portless-token"),
+        )
+        GitInstanceCredential.objects.create(
+            host="gitlab.internal:8443",
+            provider=GitPlatform.GITLAB,
+            encrypted_token=encrypt_value("ported-token"),
+        )
+        assert resolve_git_token_sync(repo_portless) == "portless-token"
+        assert resolve_git_token_sync(repo_ported) == "ported-token"
 
     def test_per_repo_credential_without_token_falls_through(self, _repo_factory) -> None:
         """per-repo 凭证存在但无 token（如 SSH key）→ 落到实例池。"""

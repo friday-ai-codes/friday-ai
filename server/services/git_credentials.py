@@ -43,13 +43,20 @@ def _extract_git_host(git_url: str | None) -> str | None:
     if not git_url:
         return None
 
-    ssh_match = _SSH_RE.match(git_url.strip())
-    if ssh_match:
-        return ssh_match.group(1).lower()
+    url = git_url.strip()
 
-    parsed = urlparse(git_url.strip())
+    # scp 风格 SSH（git@host:path）没有 :// 协议头；带协议头的（https/http/ssh://）
+    # 一律走 urlparse，避免 SSH 正则误吞 https://user@host:port 的 userinfo 段而丢端口
+    # （威胁 T-26-03：同域不同端口错配凭证）。
+    if "://" not in url:
+        ssh_match = _SSH_RE.match(url)
+        if ssh_match:
+            return ssh_match.group(1).lower()
+
+    parsed = urlparse(url)
     if parsed.scheme and parsed.netloc:
-        # netloc 可能含 user@ 与端口；仅取 host[:port]，去掉可能的认证段
+        # netloc 可能含 user@ 与端口；仅取 host[:port]，去掉可能的认证段，
+        # 保留端口与实例凭证存储口径（host[:port]）一致。
         netloc = parsed.netloc.rsplit("@", 1)[-1]
         return netloc.lower()
 
