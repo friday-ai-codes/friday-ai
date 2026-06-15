@@ -253,15 +253,17 @@ class FeishuClient:
             relations = []
             # Parse relation types from response
             for relation in data.get("data", {}).get("relations", []):
-                relations.append({
-                    "relation_type": relation.get("relation_type", "related"),
-                    "work_item_id": relation.get("work_item_id"),
-                    "work_item_type": relation.get("work_item_type"),
-                    "name": relation.get("name", ""),
-                    "status": relation.get("status", ""),
-                    # 标注来源端点；主路径走 derive_relations_from_fields，不依赖此端点
-                    "origin": "feishu_relation_api",
-                })
+                relations.append(
+                    {
+                        "relation_type": relation.get("relation_type", "related"),
+                        "work_item_id": relation.get("work_item_id"),
+                        "work_item_type": relation.get("work_item_type"),
+                        "name": relation.get("name", ""),
+                        "status": relation.get("status", ""),
+                        # 标注来源端点；主路径走 derive_relations_from_fields，不依赖此端点
+                        "origin": "feishu_relation_api",
+                    }
+                )
 
             return relations
 
