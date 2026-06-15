@@ -70,6 +70,18 @@ class WorkItemCommentEvent(models.Model):
         indexes = [
             models.Index(fields=["work_item", "event_time"]),
         ]
+        # 去重锚 DB 级唯一约束：让 ``get_or_create`` 在并发/跨路径摄取
+        # （webhook 后台 append 与 ingest_comments 经 run_in_background 竞态）下落到
+        # 唯一索引兜底——check-then-insert 间隙的重复 INSERT 触发 IntegrityError，
+        # service 据此回退视作"已追加"，避免重复事件行（WR-02）。
+        # 注意：``event_time`` 可空，Postgres/SQLite 下 NULL 互不相等，故该约束对
+        # ``event_time IS NULL`` 的事件不强制唯一——跨路径应统一时间戳来源以减少锚漂移。
+        constraints = [
+            models.UniqueConstraint(
+                fields=["work_item", "feishu_comment_id", "event_type", "event_time"],
+                name="uniq_comment_event_anchor",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.work_item_id}:{self.feishu_comment_id}:{self.event_type}"

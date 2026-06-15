@@ -226,6 +226,56 @@ async def test_append_events_idempotent_dedup() -> None:
     assert await WorkItemCommentEvent.objects.filter(work_item=work_item).acount() == 2
 
 
+async def test_comment_event_unique_anchor_constraint() -> None:
+    """WR-02：去重锚 DB 级唯一约束生效——同锚（含非空 event_time）重复直插抛 IntegrityError。
+
+    绕过 ``get_or_create`` 直接 acreate 两条同锚行，验证
+    ``uniq_comment_event_anchor`` 在 DB 层兜底（NULL 互不相等，故用非空 event_time）。
+    """
+    from django.db import IntegrityError
+    from django.utils import timezone
+
+    from delivery.models import CommentEventType, WorkItemCommentEvent
+
+    work_item = await _make_work_item()
+    anchor = {
+        "work_item": work_item,
+        "feishu_comment_id": "dup1",
+        "event_type": CommentEventType.CREATED,
+        "event_time": timezone.now(),  # 非空：NULL 在唯一约束下互不相等
+    }
+    await WorkItemCommentEvent.objects.acreate(**anchor)
+    with pytest.raises(IntegrityError):
+        await WorkItemCommentEvent.objects.acreate(**anchor)
+
+
+async def test_append_events_graceful_when_anchor_preexists() -> None:
+    """WR-02：同锚行已存在时 append_events 视作"已追加"——created=0、不重复、不崩溃。"""
+    from datetime import UTC, datetime
+
+    from delivery.models import CommentEventType, WorkItemCommentEvent
+    from delivery.services import CommentEventService
+
+    work_item = await _make_work_item()
+    # 由毫秒值构造 event_time，确保与 append 路径的毫秒解析往返一致（避免锚漂移）
+    ms = 1700000000000
+    event_time = datetime.fromtimestamp(ms / 1000, tz=UTC)
+    # 预置一条同锚行（模拟另一路径已落库）
+    await WorkItemCommentEvent.objects.acreate(
+        work_item=work_item,
+        feishu_comment_id="c1",
+        event_type=CommentEventType.CREATED,
+        event_time=event_time,
+    )
+    created = await CommentEventService().append_events(
+        work_item,
+        [{"id": "c1", "content": "根评论", "created_at": ms, "thread_parent_id": ""}],
+        "manual",
+    )
+    assert created == 0  # 命中既有锚，不重复
+    assert await WorkItemCommentEvent.objects.filter(work_item=work_item).acount() == 1
+
+
 async def test_append_events_skips_missing_id() -> None:
     """缺 feishu_comment_id → 跳过（无去重锚，不构造无锚事件）。"""
     from delivery.models import WorkItemCommentEvent
