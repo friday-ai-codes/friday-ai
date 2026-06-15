@@ -106,6 +106,34 @@ async def test_execution_plan_item_missing_coding_instruction() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "execution_plan_value",
+    ["a string", {"a": 1}, 5],
+)
+@pytest.mark.asyncio
+async def test_execution_plan_truthy_non_list_is_fail_safe(execution_plan_value: Any) -> None:
+    """CR-01：execution_plan 为真值但非数组（str/dict/int）→ 不抛异常，记结构错误。
+
+    复现 T-36-01-01 半可信输入：LLM 把 execution_plan 写成对象/字符串/数字时，
+    工具必须恒 success=True 且 valid=False，绝不崩溃（AttributeError/TypeError）。
+    """
+    plan = {"title": "valid title", "execution_plan": execution_plan_value}
+    result = await verify_plan(plan)
+    assert result.success is True
+    assert result.output["valid"] is False
+    assert any(e["field"] == "execution_plan" for e in result.output["errors"])
+
+
+@pytest.mark.asyncio
+async def test_execution_plan_none_is_fail_safe() -> None:
+    """CR-01：execution_plan=None（假值）→ 记「缺少必填字段」，不重复记数组错误，不抛异常。"""
+    plan = {"title": "valid title", "execution_plan": None}
+    result = await verify_plan(plan)
+    assert result.success is True
+    assert result.output["valid"] is False
+    assert any(e["field"] == "execution_plan" for e in result.output["errors"])
+
+
 @pytest.mark.asyncio
 async def test_warnings_do_not_block() -> None:
     """校验通过时可有 warnings（不阻断 valid）。"""

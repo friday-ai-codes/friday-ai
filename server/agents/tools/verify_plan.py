@@ -47,7 +47,15 @@ async def verify_plan(plan: dict[str, Any]) -> ToolResult:
             errors.append({"field": f, "message": f"缺少必填字段: {f}"})
 
     execution_plan = plan.get("execution_plan", [])
-    if isinstance(execution_plan, list):
+    if not isinstance(execution_plan, list):
+        # execution_plan 为真值但非数组（str/dict/int 等常见 LLM 误产）：显式记结构错误
+        # 并归一为 []，避免 Layer 2 对 str/dict 抛 AttributeError、对 int 抛 TypeError
+        # （守 fail-safe 契约 T-36-01-01：工具恒 success=True，非法结构落 errors 不抛异常）。
+        # 假值（""/0/{}/None/[]）已被上方必填校验记「缺少必填字段」，此处不重复记。
+        if plan.get("execution_plan"):
+            errors.append({"field": "execution_plan", "message": "execution_plan 必须是数组"})
+        execution_plan = []
+    else:
         for i, item in enumerate(execution_plan):
             if not isinstance(item, dict):
                 errors.append({"field": f"execution_plan[{i}]", "message": "任务必须是对象"})
