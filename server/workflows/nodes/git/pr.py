@@ -5,8 +5,8 @@ from typing import Any, TypedDict
 
 import structlog
 
-from common.encryption import decrypt_value
-from repositories.models import GitCredential, Repository
+from repositories.models import Repository
+from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
 from workflows.nodes.base import (
     BaseNode,
@@ -164,19 +164,15 @@ class CreatePRNode(BaseNode):
         repo_name = repository.name
 
         try:
-            # Get credential and decrypt token
-            credential = await GitCredential.objects.filter(
-                repository=repository
-            ).afirst()
-            if not credential or not credential.encrypted_token:
+            # 经统一解析器取 token：per-repo 优先 → host 实例池 fallback（D-02）
+            token = await aresolve_git_token(repository)
+            if not token:
                 return PRCreateResult(
                     repository_id=repo_id,
                     repository_name=repo_name,
                     success=False,
                     error="No access token configured for repository",
                 )
-
-            token = decrypt_value(credential.encrypted_token)
 
             # Get platform client
             client = get_git_platform_client(repository, token)
@@ -358,11 +354,9 @@ class CreatePRNode(BaseNode):
                 # Build new body with cross-references
                 new_body = original_body + cross_ref_section
 
-                # Get credential and client
-                credential = await GitCredential.objects.filter(
-                    repository=repository
-                ).afirst()
-                if not credential or not credential.encrypted_token:
+                # 经统一解析器取 token：per-repo 优先 → host 实例池 fallback（D-02）
+                token = await aresolve_git_token(repository)
+                if not token:
                     logger.warning(
                         "cross_reference_skip_no_token",
                         pr_url=pr_url,
@@ -370,7 +364,6 @@ class CreatePRNode(BaseNode):
                     )
                     return pr_url, False
 
-                token = decrypt_value(credential.encrypted_token)
                 client = get_git_platform_client(repository, token)
 
                 # Update PR description based on platform

@@ -18,7 +18,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from common.encryption import decrypt_value, encrypt_value
+from common.encryption import encrypt_value
 from permissions.api_permissions import IsSuperUser
 from services.background_runner import run_in_background
 from services.dependency_cache import DependencyCacheManager
@@ -852,14 +852,13 @@ class TestConnectionView(APIView):
             git_url = repository.git_url
             proxy_url = repository.proxy_url
 
-            # Get token from credential
-            credential = await GitCredential.objects.filter(repository=repository).afirst()
-            if not credential or not credential.encrypted_token:
+            # 既有仓库：经统一解析器取 token（per-repo 优先 → host 实例池 fallback，D-02）
+            token = await aresolve_git_token(repository)
+            if not token:
                 return Response(
                     {"success": False, "error": "仓库未配置访问凭证"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            token = decrypt_value(credential.encrypted_token)
         else:
             # Test with provided data
             git_url = request.data.get("git_url")
