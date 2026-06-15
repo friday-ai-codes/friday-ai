@@ -121,7 +121,7 @@ Plans:
 1. 同一 GitLab 实例多仓可复用同一凭证。
 2. MCP RAG 工具支持多仓/全仓检索参数。
 
-**Plans:** 5/5 plans executed
+**Plans:** 6/5 plans complete
 Plans:
 **Wave 1**
 
@@ -143,7 +143,7 @@ Plans:
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 5/5 | Complete    | 2026-06-15 |
+| 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete    | 2026-06-15 |
 
 **Execution order:** 22 → 23（23 依赖 22 的配置源）；24 依赖 22；25、26 相对独立可并行。
 

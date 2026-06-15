@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: executing
-stopped_at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件 ≥8 处内联取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
-last_updated: "2026-06-15T01:25:00.000Z"
-last_activity: 2026-06-15 -- 闭合 Phase 26 D-02 缺口：pr.py/coding_graph.py/code_review.py/summary_service.py/chat_tools.py/views.py(TestConn) 残留内联取 token 统一经 aresolve_git_token + gap 守护测试（6 测）
+status: 26-04 完成；Phase 26 全部计划落地，v0.5.0 可评估收口
+stopped_at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
+last_updated: "2026-06-15T01:44:54.860Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 23
+  completed_plans: 25
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 26 (多仓凭证统一 + MCP 多仓参数) — COMPLETE (5/5 plans)
-Plan: 5 of 5
+Phase: 26
+Plan: Not started
 Status: 26-04 完成；Phase 26 全部计划落地，v0.5.0 可评估收口
-Last activity: 2026-06-15 -- 完成 26-04-PLAN.md（实例凭证 REST CRUD + 前端管理页，token 全程不明文）
+Last activity: 2026-06-15
 
 ## Milestone Overview (v0.5.0)
 
