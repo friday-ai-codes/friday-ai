@@ -29,8 +29,8 @@
 
 ### 评论事件流（CMT）
 
-- [ ] **CMT-01**: 工作项评论以 append-only `WorkItemCommentEvent` 流式入库（created/replied/edited/deleted/approval），保留可追溯历史
-- [ ] **CMT-02**: 系统可从评论事件流投影出当前评论树（线程结构），编辑/删除作为事件不就地改写
+- [x] **CMT-01**: 工作项评论以 append-only `WorkItemCommentEvent` 流式入库（created/replied/edited/deleted/approval），保留可追溯历史
+- [x] **CMT-02**: 系统可从评论事件流投影出当前评论树（线程结构），编辑/删除作为事件不就地改写
 
 ### 文档（DOC）
 
@@ -104,8 +104,8 @@
 | WIT-03 | Phase 28 | Complete |
 | WIT-04 | Phase 28 | Complete |
 | WIT-05 | Phase 28 | Complete |
-| CMT-01 | Phase 29 | Pending |
-| CMT-02 | Phase 29 | Pending |
+| CMT-01 | Phase 29 | Complete |
+| CMT-02 | Phase 29 | Complete |
 | DOC-01 | Phase 30 | Pending |
 | DOC-02 | Phase 30 | Pending |
 | REL-01 | Phase 31 | Pending |

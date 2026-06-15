@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-06-15T05:37:22.712Z"
-last_activity: 2026-06-15
+status: executing
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-06-15T05:56:02.797Z"
+last_activity: 2026-06-15 -- Phase 29 execution started
 progress:
   total_phases: 9
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
   percent: 22
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
-**Current focus:** Phase 28 — WorkItem 脊柱 + 单一 upsert 入口
+**Current focus:** Phase 29 — 评论事件流
 
 ## Current Position
 
-Phase: 29
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
+Phase: 29 (评论事件流) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 29 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -115,6 +115,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 27 P27-02 | 12min | 3 tasks | 2 files |
 | Phase 27 P27-03 | ~5min | 2 tasks | 2 files |
 | Phase 28 P28-01 | ~12min | 3 tasks | 12 files |
+| Phase 29 P29-01 | ~8min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 27]: 27-02: get_work_item/get_comments 移除 work_item_type=story 默认改必填(fail-loud TypeError)，WorkItemInfo 新增带默认 feishu_fields(完整元数据)+fields 拍平双写向后兼容；接入 27-01 helper——硬路径 strict_response_json fail-loud、comments/relations 端点 safe_response_json fail-soft 返回[]，relations 标注 origin=feishu_relation_api；全 services.feishu 调用方已显式传 type，零回归
 - [Phase 27]: 27-03: near-dup feishu.client 接入 27-01 共享 helper，落 FIX-01/03/04，与 canonical services/feishu.py 同源同断言消除解析漂移；work_item_type 必填 fail-loud、WorkItemInfo 新增带默认 feishu_fields、get_comments safe_response_json fail-soft；本 client 无 relation 端点故不涉 FIX-02；全调用方已显式传 type 零回归
 - [Phase 28]: 28-01: 新建 delivery app（注册 INSTALLED_APPS 在 feishu 之后），models 包按实体拆 work_item/sync_state/relation/status_event + curated re-export；id 一律 UUIDField(default=uuid4)；INV-1 由 WorkItem.Meta.unique_together(feishu_project_key, work_item_type, work_item_id) 在 DB 层强制（测试以 pytest.raises(IntegrityError) 守护）；feishu_fields=JSONField(default=list)、field_provenance=JSONField(default=dict)；WorkItemOrigin 含 bitable_import/mr_reverse 枚举占位（真实调用方 Phase 31/32）；本 plan 只建表，落库逻辑归 28-02 service（INV-6）；模型层无 create/save 业务逻辑
+- [Phase 29]: 29-01: append-only WorkItemCommentEvent 模型只建表+枚举（CommentEventType 五值/ApprovalSemantic 三值默认 none），模型层无 create/save/就地改写方法——落库归 29-02 CommentEventService 单一入口（守 INV-6）；编辑/删除作为新事件行（CMT-02，模型单测守护两行并存）；edited/deleted 留枚举占位 deferred；复用 status_event append-only 范式 + (work_item, event_time) 索引
 
 ### Pending Todos
 
@@ -263,8 +265,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T05:19:30.076Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-06-15T05:56:02.792Z
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
 
