@@ -20,6 +20,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError
 from django.utils import timezone
 
 from delivery.models import (
@@ -125,20 +126,26 @@ class CommentEventService:
             else:
                 event_type = CommentEventType.CREATED
 
-            _, created = WorkItemCommentEvent.objects.get_or_create(
-                work_item=work_item,
-                feishu_comment_id=feishu_comment_id,
-                event_type=event_type,
-                event_time=event_time,
-                defaults={
-                    "author": comment.get("author") or "",
-                    "body": body,
-                    "thread_parent_id": thread_parent_id,
-                    # parse_comments 当前不产 attachments → 默认 []（不臆造）
-                    "attachments": comment.get("attachments") or [],
-                    "approval_semantic": semantic,
-                },
-            )
+            try:
+                _, created = WorkItemCommentEvent.objects.get_or_create(
+                    work_item=work_item,
+                    feishu_comment_id=feishu_comment_id,
+                    event_type=event_type,
+                    event_time=event_time,
+                    defaults={
+                        "author": comment.get("author") or "",
+                        "body": body,
+                        "thread_parent_id": thread_parent_id,
+                        # parse_comments 当前不产 attachments → 默认 []（不臆造）
+                        "attachments": comment.get("attachments") or [],
+                        "approval_semantic": semantic,
+                    },
+                )
+            except IntegrityError:
+                # 并发竞态兜底：另一路径在 check-then-insert 间隙已落同锚行，
+                # uniq_comment_event_anchor 唯一约束拦下重复 INSERT（get_or_create 的
+                # 重试 get 极端下仍可能上抛）——视作"已追加"，不重复、不崩溃（WR-02）。
+                created = False
             if created:
                 created_count += 1
         return created_count
