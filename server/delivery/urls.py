@@ -5,9 +5,18 @@
 
 from django.urls import path
 
-from delivery.api.views import WorkItemDetailView, WorkItemUpsertView
+from delivery.api.views import (
+    WorkItemCommentTreeView,
+    WorkItemDetailView,
+    WorkItemUpsertView,
+)
 
 urlpatterns = [
     path("work-items/upsert/", WorkItemUpsertView.as_view(), name="work-item-upsert"),
+    path(
+        "work-items/comments/",
+        WorkItemCommentTreeView.as_view(),
+        name="work-item-comment-tree",
+    ),
     path("work-items/", WorkItemDetailView.as_view(), name="work-item-detail"),
 ]

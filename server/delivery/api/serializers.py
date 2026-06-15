@@ -71,3 +71,26 @@ class WorkItemUpsertRequestSerializer(serializers.Serializer):
     feishu_project_key = serializers.CharField(max_length=64)
     work_item_type = serializers.CharField(max_length=32)
     work_item_id = serializers.IntegerField(min_value=1)
+
+
+class CommentTreeNodeSerializer(serializers.Serializer):
+    """评论树节点只读序列化（递归子节点）。
+
+    输入为 ``project_comment_tree`` 产出的 dict 节点（非 ORM 实例），透传投影形状
+    （feishu_comment_id / author / body / event_type / approval_semantic /
+    is_deleted / event_time / thread_parent_id / children）；``event_time`` 经
+    ``DateTimeField`` 统一 ISO 序列化，``children`` 递归自引用。纯只读，无写入。
+    """
+
+    feishu_comment_id = serializers.CharField()
+    author = serializers.CharField(allow_blank=True)
+    body = serializers.CharField(allow_blank=True)
+    event_type = serializers.CharField()
+    approval_semantic = serializers.CharField()
+    is_deleted = serializers.BooleanField()
+    event_time = serializers.DateTimeField(allow_null=True)
+    thread_parent_id = serializers.CharField(allow_blank=True)
+    children = serializers.SerializerMethodField()
+
+    def get_children(self, obj: dict) -> list[dict]:
+        return CommentTreeNodeSerializer(obj.get("children", []), many=True).data
