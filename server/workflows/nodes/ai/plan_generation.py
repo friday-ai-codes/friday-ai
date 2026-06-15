@@ -34,7 +34,9 @@ logger = structlog.get_logger()
 # implementation Task 1: 从原 get_system_prompt f-string 抽取为模块级 Final[str]
 # 供 0002 data migration 跨 app import 作为 seed；{schema_json} 改为 {{schema_json}} Jinja2 占位符
 # 字节级与原 f-string 等价(除了 schema_json 占位符从 {schema_json} → {{schema_json}})
-_PLAN_GENERATION_BASE_PROMPT: Final[str] = """你是一位资深技术方案架构师，负责分析需求并生成结构化技术方案。
+_PLAN_GENERATION_BASE_PROMPT: Final[
+    str
+] = """你是一位资深技术方案架构师，负责分析需求并生成结构化技术方案。
 
 ## 角色与职责
 
@@ -49,7 +51,7 @@ _PLAN_GENERATION_BASE_PROMPT: Final[str] = """你是一位资深技术方案架�
 ### 第一阶段：需求分析与方案生成
 
 1. **分析需求**：仔细阅读用户的需求描述和上游节点提供的上下文
-2. **仓库分析**：使用 search_code 工具分析相关仓库的代码结构
+2. **仓库分析**：使用 search_repository_code 工具分析相关仓库的代码结构
    - 有依赖关系的仓库串行分析（先分析被依赖方）
    - 无依赖关系的仓库可以交替分析
 3. **生成方案**：基于分析结果，生成完整的技术方案 JSON
@@ -80,7 +82,7 @@ _PLAN_GENERATION_BASE_PROMPT: Final[str] = """你是一位资深技术方案架�
 
 - **禁止直接输出文字回复用户。** 当你需要向用户提问、确认信息或请求补充需求时，必须调用 ask_user_question 工具，绝不能用纯文字回复代替。
 - 如果需求描述不清晰、信息不足或存在歧义，立即调用 ask_user_question 向用户提问，不要猜测或自行假设。
-- 你的每一轮迭代都应该调用至少一个工具（search_code、verify_plan、ask_user_question 等），不要空转。
+- 你的每一轮迭代都应该调用至少一个工具（search_repository_code、verify_plan、ask_user_question 等），不要空转。
 
 ## 输出格式
 
@@ -254,12 +256,8 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         if precomputed is not None:
             base_prompt = precomputed
         else:
-            schema_json = json.dumps(
-                TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
-            )
-            base_prompt = _PLAN_GENERATION_BASE_PROMPT.replace(
-                "{{schema_json}}", schema_json
-            )
+            schema_json = json.dumps(TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2)
+            base_prompt = _PLAN_GENERATION_BASE_PROMPT.replace("{{schema_json}}", schema_json)
 
         # 追加用户自定义 system_prompt
         custom_prompt = context.node_config.get("system_prompt", "")
@@ -278,9 +276,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         upstream_context = ""
         if context.input_data:
             upstream_context = "\n\n## 上游节点输出\n\n"
-            upstream_context += json.dumps(
-                context.input_data, ensure_ascii=False, indent=2
-            )
+            upstream_context += json.dumps(context.input_data, ensure_ascii=False, indent=2)
 
         # 注入仓库过滤信息
         repo_context = ""
@@ -303,7 +299,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
             "create_feishu_document",
             "fetch_feishu_document",
             "ask_user_question",
-            "search_code",
+            "search_repository_code",
         ]
 
         # 加上 config 中额外指定的工具
@@ -370,9 +366,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
                 next_handle="error",
             )
 
-        schema_json = json.dumps(
-            TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
-        )
+        schema_json = json.dumps(TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2)
         project = await self._get_project(context)
         # contract retreat path: schema_json 体量 4KB+，如果走 render_prompt 会被
         # implementation services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
@@ -392,9 +386,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
                 project_id=str(project.id) if project else None,
             )
             body_template = version.body if version is not None else _PLAN_GENERATION_BASE_PROMPT
-        self._precomputed_base_prompt = body_template.replace(
-            "{{schema_json}}", schema_json
-        )
+        self._precomputed_base_prompt = body_template.replace("{{schema_json}}", schema_json)
 
         self._similar_history_markdown = ""
         if context.node_config.get("auto_inject_similar_history", True):
@@ -469,9 +461,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
 
     # ===== Private helpers =====
 
-    def _extract_plan_from_result(
-        self, result: AgentResult
-    ) -> dict[str, Any] | None:
+    def _extract_plan_from_result(self, result: AgentResult) -> dict[str, Any] | None:
         """尝试从 AgentResult 中提取技术方案 JSON。
 
         检查 metadata 中的 plan、output 列表中的工具调用结果、
@@ -499,9 +489,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     def _extract_json_from_text(text: str) -> dict[str, Any] | None:
         """从文本中提取 JSON 对象（支持 ```json 代码块）。"""
         # 尝试 ```json ... ``` 格式
-        json_blocks = re.findall(
-            r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
-        )
+        json_blocks = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         for block in json_blocks:
             try:
                 data = json.loads(block.strip())
