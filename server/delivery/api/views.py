@@ -259,6 +259,13 @@ class IngestRunDetailView(APIView):
 
     按 ``run_id`` 命中 ``IngestRun`` → ``IngestRunSerializer`` 回流真实步骤结果；
     不存在 → 404。
+
+    归属/范围说明（IN-01）：``IngestRun`` 无 owner/created_by 字段，本端点对所有已
+    登录用户开放读取，与同 app 其余只读详情端点（``WorkItemDetailView`` 等按业务键
+    命中、不按 ``request.user`` 过滤）的既有范式一致——内部团队工具 + 不可猜
+    UUIDv4 主键，威胁面有限；回流内容已脱敏（``steps[*].error`` / ``error`` 经
+    ``_safe_error``，不含明文凭证）。如未来引入按用户/项目的多租隔离，应在 ``IngestRun``
+    增 ``created_by`` 并在此按 ``request.user`` 过滤（当前刻意不过度设计）。
     """
 
     permission_classes = [IsAuthenticated]
