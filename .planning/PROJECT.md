@@ -23,29 +23,15 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.6.0 领域脊柱 + 知识图谱补全
+## Current Milestone: v0.10.0 操作审计治理
 
-**Goal:** 立起 `delivery` 操作态脊柱（以飞书 work item 为中心），并把知识图谱补全到「可沉淀历史、可反查、可吃多源输入」——这是 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。详细数据模型见 `.planning/DOMAIN-MODEL.md`。
+**Goal:** 横切治理能力——统一审计模型覆盖管理员/敏感操作，可查可追溯。
 
 **Target features:**
 
-- 飞书接口前置修复（PF-09/10/11/12）：按真实 `work_item_type` 取数、关系改字段派生、修复评论端点、`get_work_item` 保留完整 `fields[]` 元数据 —— `WorkItem` upsert 的依赖
-- `WorkItem` 脊柱（delivery app）+ 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类（mirror/enhanced/writeback）+ `WorkItemSyncState` 来源完整度
-- `WorkItemRelation`：从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），独立 relation 端点降级
-- `WorkItemCommentEvent` 评论事件流（append-only）+ 当前评论树投影
-- `Document`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边
-- Release 账本宽容模型（`ReleaseBatch/Record/Artifact`）+ 飞书 Bitable client/adapter（骨架先行，开放平台凭证后填）
-- (看板URL + MR URL) → 一键摄取编排（拉看板 → PRD/技术方案文档 RAG → MR diff RAG）
-- 历史 diff 冻结 + bi-temporal 失效对账（PF-08，commit 锚定不追 master）
-- 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
-- 截图识别需求（多模态 LLM：vision → 文本 → RAG，非图片向量库）
-
-**Key context:**
-
-- 设计底座已就绪：`ROADMAP-vNext.md` §v0.6（特性/现状坐标/决策）、`DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段附录）、`PREFLIGHT.md`（PF-08~12 风险台账）。
-- **不变量**：INV-1 飞书三元组唯一 → 一个 canonical `WorkItem`；INV-3 `knowledge` 是检索投影非操作态事实源；INV-6 落库只经 `WorkItemService.upsert` / `TechnicalPlanService`，禁旁路写表。
-- **被阻塞输入**：① Bitable 需开放平台 `tenant_access_token`（与项目 plugin token 不同租户/域），目前未到位 → Bitable adapter 先建骨架、数据后填；② 容器型工作项真实 `type_key` 未知。
-- 渐进迁移、不爆改：新增 `delivery` app 立操作态脊柱，`knowledge` 投影引用脊柱不重建。
+- 统一 `AuditEvent` 模型（DOMAIN-MODEL §11）：actor / action / target / before-after / 时间 / 来源
+- 全量覆盖敏感操作 emit 点（成员增删改、凭证操作、飞书同步、仓库权限、排除规则变更、清理任务、Agent API key、空间配置、用户启停）
+- 查询/审计 UI + 导出（按 actor/action/target/时间过滤）
 
 ## Requirements
 
@@ -85,26 +71,21 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **Commit 历史 RAG + 行级反查**：commit message/author/变更文件路径摘要入 Qdrant（kind=commit，增量 boundary..HEAD）；`ChunkRegistry` 行号回填 + `find_chunk_at` + `GET /api/repositories/<id>/chunk-at/` — v0.5.0
 - ✓ **多仓凭证统一 + MCP 多仓检索**：`GitInstanceCredential` 按 host 集中存（Fernet 加密）+ 单一解析器 `aresolve_git_token`（per-repo 优先 → host 实例池 fallback），全链路取 token 收口；MCP `search_rag_chunks` 多仓/全仓参数 — v0.5.0 (`server/repositories/`)
 
-### Active (v0.6.0)
+### Active (v0.10.0)
 
 <!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] 飞书接口前置修复（PF-09/10/11/12）：真实 work_item_type 取数、关系字段派生、评论端点修复、保留完整 fields[] 元数据
-- [ ] `WorkItem` 脊柱 + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`
-- [ ] `WorkItemRelation`（关联字段派生）+ `WorkItemCommentEvent` 评论事件流 + 当前树投影
-- [ ] `Document`（外部/内部）+ `feishu_document` normalizer + `REFERENCES` 边
-- [ ] Release 账本宽容模型 + 飞书 Bitable adapter（骨架先行）
-- [ ] (看板URL+MR URL) → 一键摄取编排
-- [ ] 历史 diff 冻结 + bi-temporal 失效对账（PF-08）
-- [ ] 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
-- [ ] 截图识别需求（多模态 LLM）
+- [ ] 统一 `AuditEvent` 模型 + emit 中间件/信号
+- [ ] 全量覆盖各敏感操作 emit 点（成员/凭证/飞书同步/仓库权限/排除规则/清理/API key/空间配置/用户启停）
+- [ ] 查询/审计 UI + 导出（按 actor/action/target/时间过滤）
 
 **Backlog 候选（未入本里程碑）：**
 
-- 接入实时明文 PAT 通道剩余路径（chat/MCP 编码 dispatch）+ RTOOL-02/03/04 容器端 E2E 真实环境验收
-- 令牌细粒度读写 scope / rotate / IP allowlist / 短 TTL 派生凭证（PATX-01~04）
-- 图片向量库（视觉相似/标注）— v0.6 截图走多模态 LLM，向量库留 backlog
-- 补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
+- v0.6.0 领域脊柱 + 知识图谱补全（Phases 27-35，主链里程碑）
+- v0.7.0 方案编排（需求→主方案，事件 taxonomy + orchestration engine）
+- v0.8.0 多仓编码→融合 PR（跨仓产物契约/DAG）
+- v0.9.0 SDD/OpenSpec（消费 v0.7/v0.8 预留扩展点）
+- v0.11.0 开放与协作（Agent API trace / Anthropic 兼容端点 / 飞书流式卡片）
 
 ### Out of Scope
 
@@ -175,4 +156,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-15 — milestone v0.6.0 started*
+*Last updated: 2026-06-15 — milestone v0.10.0 started*

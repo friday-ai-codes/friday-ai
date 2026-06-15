@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.6.0
-milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
-stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T10:25:53.012Z"
+milestone: v0.10.0
+milestone_name: 操作审计治理
+status: planning
+last_updated: "2026-06-15T10:42:36.466Z"
 last_activity: 2026-06-15
 progress:
-  total_phases: 9
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 56
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 32
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
-
-Progress: [███░░░░░░░] 33%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-15 — Milestone v0.10.0 started
 
 ## Milestone Overview (v0.6.0 — Phases 27–35)
 
