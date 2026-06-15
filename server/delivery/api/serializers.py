@@ -168,3 +168,37 @@ class IngestRunSerializer(serializers.ModelSerializer):
         model = IngestRun
         fields = ["run_id", "status", "steps", "started_at", "completed_at"]
         read_only_fields = fields
+
+
+# ============================================================================
+# 截图识别需求（Phase 35-01，VIS-01）—— 仅用于 drf-spectacular 文档，运行时直接透传
+# screenshot_recall 服务返回的 dict（形状对齐 35-UI-SPEC ScreenshotRecallResult）。
+# ============================================================================
+
+
+class ExtractedSemanticsSerializer(serializers.Serializer):
+    """多模态 LLM 提取的语义三段（文档化用）。"""
+
+    text = serializers.CharField(required=False, allow_blank=True)
+    ui_elements = serializers.CharField(required=False, allow_blank=True)
+    business_intent = serializers.CharField(required=False, allow_blank=True)
+
+
+class RecalledRequirementSerializer(serializers.Serializer):
+    """召回的单条需求（work_item，文档化用）。"""
+
+    work_item_id = serializers.CharField()
+    title = serializers.CharField(allow_blank=True)
+    link = serializers.CharField(required=False)
+    relevance = serializers.FloatField(required=False)
+    source = serializers.CharField(required=False)
+
+
+class ScreenshotRecallResultSerializer(serializers.Serializer):
+    """截图识别结果（degraded 三态，文档化用）。"""
+
+    degraded = serializers.BooleanField()
+    degraded_reason = serializers.CharField(required=False)
+    semantics = ExtractedSemanticsSerializer(required=False, allow_null=True)
+    query = serializers.CharField(required=False, allow_null=True)
+    results = RecalledRequirementSerializer(many=True)
