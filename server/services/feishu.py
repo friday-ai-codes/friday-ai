@@ -2,12 +2,20 @@
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import httpx
 
 from common.encryption import decrypt_value
+from services.feishu_parsing import (
+    build_feishu_fields,
+    flatten_fields,
+    parse_comments,
+    rich_text_to_markdown,
+    safe_response_json,
+    strict_response_json,
+)
 
 
 @dataclass
@@ -22,6 +30,8 @@ class WorkItemInfo:
     work_item_type: str
     fields: dict[str, Any]
     raw_response: Optional[str] = None  # 原始 JSON 响应，用于日志记录
+    # 完整字段对象数组（FIX-04，保留 field_name/type/alias 等元数据，向后兼容默认空）
+    feishu_fields: list[dict] = field(default_factory=list)
 
 
 class FeishuClient:
@@ -84,7 +94,11 @@ class FeishuClient:
                     "plugin_secret": self.plugin_secret,
                 },
             )
-            data = response.json()
+            data = strict_response_json(
+                response,
+                log_event="feishu_get_plugin_token_parse_failed",
+                plugin_id=self.plugin_id,
+            )
 
             # 飞书 API 响应结构: {"data": {...}, "error": {"code": 0, "msg": "success"}}
             error_code = data.get("error", {}).get("code", -1)
@@ -105,7 +119,7 @@ class FeishuClient:
         self,
         project_key: str,
         work_item_id: int,
-        work_item_type: str = "story",
+        work_item_type: str,
         fields: Optional[list[str]] = None,
     ) -> WorkItemInfo:
         """获取工作项详情。
@@ -144,7 +158,13 @@ class FeishuClient:
                 },
                 json=body,
             )
-            data = response.json()
+            # 硬取数路径：非 JSON 响应 fail-loud（抛 FeishuResponseError，带脱敏 body 片段）
+            data = strict_response_json(
+                response,
+                log_event="feishu_get_work_item_parse_failed",
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
 
             if data.get("err_code") != 0:
                 raise Exception(f"获取工作项失败: {data}")
@@ -155,18 +175,15 @@ class FeishuClient:
 
             item = items[0]
 
-            # 解析字段
-            fields_dict = {}
-            for field in item.get("fields", []):
-                field_key = field.get("field_key")
-                field_value = field.get("field_value")
-                if field_key:
-                    fields_dict[field_key] = field_value
+            # 解析字段：完整对象数组（FIX-04）+ 向后兼容拍平 dict 双写
+            raw_fields = item.get("fields", [])
+            feishu_fields = build_feishu_fields(raw_fields)
+            fields_dict = flatten_fields(raw_fields)
 
             # 获取描述字段
             description = ""
             if "description" in fields_dict:
-                description = self._parse_rich_text(fields_dict["description"])
+                description = rich_text_to_markdown(fields_dict["description"])
 
             # 获取状态
             status = ""
@@ -183,6 +200,7 @@ class FeishuClient:
                 work_item_type=work_item_type,
                 fields=fields_dict,
                 raw_response=json.dumps(data, ensure_ascii=False),
+                feishu_fields=feishu_fields,
             )
 
     async def get_work_item_relations(
@@ -442,7 +460,7 @@ class FeishuClient:
         return result
 
     def _parse_rich_text(self, rich_text: Any) -> str:
-        """解析飞书富文本为 Markdown。
+        """解析飞书富文本为 Markdown（薄封装，委托共享 helper 消除解析漂移）。
 
         Args:
             rich_text: 飞书 API 返回的富文本对象
@@ -450,77 +468,7 @@ class FeishuClient:
         Returns:
             Markdown 格式字符串
         """
-        if isinstance(rich_text, str):
-            return rich_text
-
-        if not isinstance(rich_text, dict):
-            return str(rich_text) if rich_text else ""
-
-        # 处理文档结构
-        content = rich_text.get("content", [])
-        if not content:
-            return ""
-
-        result = []
-        for block in content:
-            block_type = block.get("type", "")
-
-            if block_type == "paragraph":
-                text = self._parse_paragraph(block)
-                result.append(text)
-
-            elif block_type == "heading":
-                level = block.get("attrs", {}).get("level", 1)
-                text = self._parse_paragraph(block)
-                result.append(f"{'#' * level} {text}")
-
-            elif block_type == "bullet_list":
-                items = block.get("content", [])
-                for item in items:
-                    text = self._parse_paragraph(item)
-                    result.append(f"- {text}")
-
-            elif block_type == "ordered_list":
-                items = block.get("content", [])
-                for i, item in enumerate(items, 1):
-                    text = self._parse_paragraph(item)
-                    result.append(f"{i}. {text}")
-
-            elif block_type == "code_block":
-                code = self._parse_paragraph(block)
-                lang = block.get("attrs", {}).get("language", "")
-                result.append(f"```{lang}\n{code}\n```")
-
-            elif block_type == "image":
-                result.append("[Image]")
-
-        return "\n".join(result)
-
-    def _parse_paragraph(self, block: dict) -> str:
-        """解析段落内容为文本。"""
-        content = block.get("content", [])
-        texts = []
-
-        for node in content:
-            if node.get("type") == "text":
-                text = node.get("text", "")
-                marks = node.get("marks", [])
-
-                for mark in marks:
-                    mark_type = mark.get("type")
-                    if mark_type == "bold":
-                        text = f"**{text}**"
-                    elif mark_type == "italic":
-                        text = f"*{text}*"
-                    elif mark_type == "code":
-                        text = f"`{text}`"
-                    elif mark_type == "link":
-                        href = mark.get("attrs", {}).get("href", "")
-                        text = f"[{text}]({href})"
-
-                texts.append(text)
-
-        return "".join(texts)
+        return rich_text_to_markdown(rich_text)
 
     def _markdown_to_rich_text(self, markdown: str) -> dict:
         """将 Markdown 转换为飞书富文本格式。
