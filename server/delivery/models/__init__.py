@@ -1,5 +1,10 @@
 """delivery models package — curated re-export（DOMAIN §12.1–§12.4）。"""
 
+from delivery.models.comment_event import (
+    ApprovalSemantic,
+    CommentEventType,
+    WorkItemCommentEvent,
+)
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -23,4 +28,7 @@ __all__ = [
     "RelationType",
     "RelationOrigin",
     "WorkItemStatusEvent",
+    "WorkItemCommentEvent",
+    "CommentEventType",
+    "ApprovalSemantic",
 ]
