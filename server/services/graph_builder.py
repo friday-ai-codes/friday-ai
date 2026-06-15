@@ -166,24 +166,21 @@ async def prepare_repo_workdir_async(
         RuntimeError: ``git clone`` 失败或超时（被 graph_builder 主 try/except
             转为 ``GraphBuildHistory.status=FAILED + error_message``）。
     """
-    from common.encryption import decrypt_value
     from repositories.views import build_authenticated_git_url
+    from services.git_credentials import resolve_git_token_sync
 
     @sync_to_async
     def _fetch_repo_clone_params() -> tuple[str, str | None, str | None, str]:
         repo = (
-            Repository.objects.select_related("credential")
-            .filter(id=repository_id, is_deleted=False)
-            .first()
+            Repository.objects.filter(id=repository_id, is_deleted=False).first()
         )
         if repo is None:
             raise Repository.DoesNotExist(
                 f"Repository {repository_id} not found or deleted"
             )
-        credential = getattr(repo, "credential", None)
-        token: str | None = None
-        if credential and credential.encrypted_token:
-            token = decrypt_value(credential.encrypted_token)
+        # 统一经凭证解析器取 token（Phase 26 REPO-01）：per-repo 优先，
+        # 无则按 host 命中实例凭证池。本函数已是 @sync_to_async 同步上下文，用同步入口。
+        token: str | None = resolve_git_token_sync(repo)
         return repo.git_url, repo.proxy_url, token, repo.default_branch
 
     git_url, proxy_url, token, default_branch = await _fetch_repo_clone_params()
