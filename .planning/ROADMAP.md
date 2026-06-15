@@ -122,13 +122,17 @@ Plans:
 2. MCP RAG 工具支持多仓/全仓检索参数。
 
 **Plans:** 5 plans（2 waves）
-
 Plans:
+**Wave 1**
+
 - [ ] 26-01-PLAN.md — REPO-01: GitInstanceCredential 模型 + 迁移 0036 + 凭证解析器（per-repo 优先 → 实例池 host fallback）+ 单测
+- [ ] 26-05-PLAN.md — REPO-02: search_rag_chunks 多仓/全仓参数 + 合并检索 + 来源标注 + 跨仓 fail-closed 守护测试
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 26-02-PLAN.md — REPO-01: 解析器接入克隆/索引/bare 镜像/图谱克隆取 token 路径 + 守护测试
 - [ ] 26-03-PLAN.md — REPO-01: 解析器接入 git 平台客户端（MR/PR）/ 编码 dispatch / diff archive 取 token 路径 + 守护测试
 - [ ] 26-04-PLAN.md — REPO-01: 实例凭证 REST CRUD（token write-only 加密、IsSuperUser）+ 前端管理页（不回显）+ 守护测试
-- [ ] 26-05-PLAN.md — REPO-02: search_rag_chunks 多仓/全仓参数 + 合并检索 + 来源标注 + 跨仓 fail-closed 守护测试
 
 ## Progress
 

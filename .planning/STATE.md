@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: Phase 25 完成；下一步 Phase 26（多仓凭证统一 + MCP 多仓参数）
+status: executing
 stopped_at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
-last_updated: "2026-06-14T23:53:56.596Z"
-last_activity: 2026-06-14
+last_updated: "2026-06-15T00:14:29.613Z"
+last_activity: 2026-06-15 -- Phase 26 execution started
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 18
+  total_plans: 23
   completed_plans: 19
   percent: 80
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.5.0 补齐索引/检索地基——敏感文件全链路 fail-closed 不可见（两种 purge 模式）、commit 历史可检索、行级反查、多仓凭证统一。
-**Current focus:** Phase 25 — Commit 历史索引 + 行号反查
+**Current focus:** Phase 26 — 多仓凭证统一 + MCP 多仓参数
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
-Status: Phase 25 完成；下一步 Phase 26（多仓凭证统一 + MCP 多仓参数）
-Last activity: 2026-06-14
+Phase: 26 (多仓凭证统一 + MCP 多仓参数) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 26
+Last activity: 2026-06-15 -- Phase 26 execution started
 
 ## Milestone Overview (v0.5.0)
 
