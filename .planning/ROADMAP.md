@@ -34,7 +34,7 @@
 
 - [x] **Phase 27: 飞书接口前置修复** - 修对 work_item_type 取数 / 关系字段派生 / 评论端点 / 完整 fields[] 元数据（PF-09/10/11/12），WorkItem upsert 的依赖前置 (completed 2026-06-15)
 - [x] **Phase 28: WorkItem 脊柱 + 单一 upsert 入口** - delivery app 操作态脊柱：canonical WorkItem + WorkItemService.upsert + 三分类 + SyncState + Relation 派生 + StatusEvent (completed 2026-06-15)
-- [ ] **Phase 29: 评论事件流** - append-only WorkItemCommentEvent 流式入库 + 当前评论树投影
+- [x] **Phase 29: 评论事件流** - append-only WorkItemCommentEvent 流式入库 + 当前评论树投影 (completed 2026-06-15)
 - [ ] **Phase 30: Document + REFERENCES 边** - 外部飞书/内部生成文档区分 + feishu_document normalizer 摄取 PRD/技术方案 + 关联 WorkItem
 - [ ] **Phase 31: Release 账本 + Bitable adapter 骨架** - 宽容模型（保留 raw_row）+ 开放平台凭证独立解析的 Bitable client/adapter 骨架
 - [ ] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
@@ -96,7 +96,7 @@
 
 - [x] 29-01-PLAN.md — WorkItemCommentEvent 模型 + 0002 迁移 + 模型层 append-only 单测（CMT-01/02）
 - [x] 29-02-PLAN.md — CommentEventService 单一 append 入口 + 幂等去重 + 拉取摄取 + approval 判定 + 评论树投影
-- [ ] 29-03-PLAN.md — webhook 评论事件后台 append + 评论树只读 REST + INV-6 评论旁路写表守护
+- [x] 29-03-PLAN.md — webhook 评论事件后台 append + 评论树只读 REST + INV-6 评论旁路写表守护
 
 ### Phase 30: Document + REFERENCES 边
 
@@ -195,7 +195,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
 | 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 29. 评论事件流 | v0.6.0 | 2/3 | In Progress|  |
+| 29. 评论事件流 | v0.6.0 | 3/3 | Complete   | 2026-06-15 |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
 | 32. 一键摄取编排 | v0.6.0 | 0/TBD | Not started | - |
