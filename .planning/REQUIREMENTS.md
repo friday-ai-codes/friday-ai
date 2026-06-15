@@ -14,10 +14,10 @@
 
 > should-fix-before-v0.6：`WorkItemService.upsert` 依赖这些飞书接口先修对（PF-09/10/11/12）。
 
-- [ ] **FIX-01**: 系统按真实 `work_item_type`（issue / story / 容器型）拉取工作项与评论，不再默认 `story` 取错或取空（PF-09）
-- [ ] **FIX-02**: 工作项间关系改为从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），失效的独立 relation 端点降级为可选（PF-10）
-- [ ] **FIX-03**: 修复 `get_comments` 端点，能成功拉取并解析飞书工作项评论（PF-11）
-- [ ] **FIX-04**: `get_work_item` 保留完整 `fields[]` 对象（`field_name`/`field_type_key`/`field_alias`），不再拍平丢元数据（PF-12）
+- [x] **FIX-01**: 系统按真实 `work_item_type`（issue / story / 容器型）拉取工作项与评论，不再默认 `story` 取错或取空（PF-09）
+- [x] **FIX-02**: 工作项间关系改为从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），失效的独立 relation 端点降级为可选（PF-10）
+- [x] **FIX-03**: 修复 `get_comments` 端点，能成功拉取并解析飞书工作项评论（PF-11）
+- [x] **FIX-04**: `get_work_item` 保留完整 `fields[]` 对象（`field_name`/`field_type_key`/`field_alias`），不再拍平丢元数据（PF-12）
 
 ### WorkItem 脊柱（WIT）
 
@@ -95,10 +95,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 27 | Pending |
-| FIX-02 | Phase 27 | Pending |
-| FIX-03 | Phase 27 | Pending |
-| FIX-04 | Phase 27 | Pending |
+| FIX-01 | Phase 27 | Complete |
+| FIX-02 | Phase 27 | Complete |
+| FIX-03 | Phase 27 | Complete |
+| FIX-04 | Phase 27 | Complete |
 | WIT-01 | Phase 28 | Pending |
 | WIT-02 | Phase 28 | Pending |
 | WIT-03 | Phase 28 | Pending |
@@ -118,6 +118,7 @@
 | VIS-01 | Phase 35 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 21 total
 - Mapped to phases: 21/21 ✓
 - Unmapped: 0
