@@ -27,7 +27,7 @@
 ### REPO — 多仓
 
 - [x] **REPO-01**：GitLab access token 可统一/集中管理，同一 GitLab 实例的多个仓库可复用同一凭证。
-- [ ] **REPO-02**：MCP RAG 检索工具暴露多仓参数（多仓/全仓检索）。
+- [x] **REPO-02**：MCP RAG 检索工具暴露多仓参数（多仓/全仓检索）。
 
 ## Future Requirements（deferred）
 
