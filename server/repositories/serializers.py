@@ -10,6 +10,8 @@ from services.exclusion import is_redos_risky
 from .models import (
     CleanupRun,
     GitCredential,
+    GitInstanceCredential,
+    GitPlatform,
     RepoExclusionRule,
     Repository,
     SensitiveFileSuggestion,
@@ -325,3 +327,62 @@ class GitCredentialSerializer(serializers.ModelSerializer):
 
     def get_has_access_token(self, obj):
         return bool(obj.encrypted_token)
+
+
+class GitInstanceCredentialSerializer(serializers.ModelSerializer):
+    """实例级 Git 凭证只读序列化器（Plan 26-04，REPO-01，D-04）。
+
+    安全契约：**绝不**包含 ``encrypted_token`` / 任何明文 token 字段；token 是否
+    已配置仅以布尔 ``has_token`` 暴露（威胁 T-26-13）。所有 CRUD 响应统一经本序列化器，
+    确保 API 出口无明文 token。
+    """
+
+    has_token = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GitInstanceCredential
+        fields = [
+            "id",
+            "host",
+            "provider",
+            "label",
+            "has_token",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_has_token(self, obj) -> bool:
+        return bool(obj.encrypted_token)
+
+
+class GitInstanceCredentialWriteSerializer(serializers.Serializer):
+    """实例级 Git 凭证写入序列化器（Plan 26-04）。
+
+    - ``access_token`` 为 ``write_only``：仅入站、绝不回显（威胁 T-26-15）；视图侧
+      ``encrypt_value`` 加密后存入 ``encrypted_token``（威胁 T-26-14）。
+    - ``host`` 归一为小写并去空白，与 ``services.git_credentials._extract_git_host``
+      的解析口径一致，确保仓库按 host 命中实例凭证。唯一性由 DB 约束兜底，视图层
+      给中文友好报错。
+    - 创建时 ``host`` / ``access_token`` 必填（视图校验）；更新（partial）时 ``host``
+      可省略、``access_token`` 留空表示「不修改既有 token」。
+    """
+
+    host = serializers.CharField(max_length=255, required=False)
+    provider = serializers.ChoiceField(
+        choices=GitPlatform.choices,
+        required=False,
+        default=GitPlatform.GITLAB,
+    )
+    label = serializers.CharField(
+        max_length=200, required=False, allow_blank=True, default=""
+    )
+    access_token = serializers.CharField(
+        write_only=True, required=False, allow_blank=False, trim_whitespace=True
+    )
+
+    def validate_host(self, value: str) -> str:
+        v = (value or "").strip().lower()
+        if not v:
+            raise serializers.ValidationError("Git 实例 host 不能为空")
+        return v

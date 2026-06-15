@@ -23,6 +23,7 @@ from permissions.api_permissions import IsSuperUser
 from services.background_runner import run_in_background
 from services.dependency_cache import DependencyCacheManager
 from services.exclusion import get_global_default_specs, invalidate_matcher_cache
+from services.git_credentials import aresolve_git_token
 from services.purge_reconcile import compute_reconciliation, run_cleanup
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
@@ -32,6 +33,8 @@ from .models import (
     AuthType,
     CleanupRun,
     GitCredential,
+    GitInstanceCredential,
+    GitPlatform,
     IndexHistory,
     IndexHistoryStatus,
     IndexStatus,
@@ -45,6 +48,8 @@ from .serializers import (
     CleanupRequestSerializer,
     CleanupRunSerializer,
     GitCredentialSerializer,
+    GitInstanceCredentialSerializer,
+    GitInstanceCredentialWriteSerializer,
     ReconcileReportSerializer,
     RepoExclusionRuleSerializer,
     RepositoryCreateSerializer,
@@ -552,9 +557,10 @@ class RepositoryViewSet(ModelViewSet):
             )
 
         if base_branch:
-            credential = await GitCredential.objects.filter(repository=instance).afirst()
-            if credential and credential.encrypted_token:
-                token = decrypt_value(credential.encrypted_token)
+            # 经统一解析器取 token（per-repo 显式 token 优先 → host 实例凭证池 fallback），
+            # 使「无 per-repo token、仅靠实例池」的仓库也能做 base-branch 校验（Plan 26-04）。
+            token = await aresolve_git_token(instance)
+            if token:
                 is_valid = await _validate_base_branch(
                     git_url=instance.git_url,
                     token=token,
@@ -1112,6 +1118,163 @@ class RepositoryExclusionRuleDetailView(APIView):
 
         await rule.adelete()
         invalidate_matcher_cache(str(repository_id))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GitInstanceCredentialsView(APIView):
+    """实例级 Git 凭证列表 / 新建（Plan 26-04，REPO-01，D-01/D-04）。
+
+    GET  /api/repositories/git-instance-credentials/
+        -> [{id, host, provider, label, has_token, created_at, updated_at}]
+        响应统一经只读序列化器，**绝不**含明文 token（威胁 T-26-13）。
+
+    POST /api/repositories/git-instance-credentials/
+        body: {host, access_token, provider?, label?}
+        host 归一小写、access_token 经 encrypt_value 加密存 encrypted_token
+        （威胁 T-26-14）；host 重复 → 400 中文报错。
+
+    权限：仅 ``IsSuperUser`` 可访问（威胁 T-26-16）。日志绝不含 token（威胁 T-26-17）。
+    """
+
+    permission_classes = [IsSuperUser]
+
+    async def get(self, request):
+        creds = [
+            c
+            async for c in GitInstanceCredential.objects.all().order_by("host")
+        ]
+        data = await sync_to_async(
+            lambda: GitInstanceCredentialSerializer(creds, many=True).data
+        )()
+        return Response(data)
+
+    async def post(self, request):
+        serializer = GitInstanceCredentialWriteSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = dict(serializer.validated_data)
+
+        host = data.get("host")
+        access_token = data.get("access_token")
+        if not host:
+            return Response(
+                {"host": ["Git 实例 host 不能为空"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not access_token:
+            return Response(
+                {"access_token": ["创建实例凭证时 access_token 必填"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if await GitInstanceCredential.objects.filter(host=host).aexists():
+            return Response(
+                {"host": [f"实例 '{host}' 的凭证已存在，请编辑既有凭证"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            credential = await GitInstanceCredential.objects.acreate(
+                host=host,
+                provider=data.get("provider") or GitPlatform.GITLAB,
+                label=data.get("label", ""),
+                encrypted_token=encrypt_value(access_token),
+            )
+        except IntegrityError:
+            return Response(
+                {"host": [f"实例 '{host}' 的凭证已存在，请编辑既有凭证"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 日志仅记 host / has_token 布尔，绝不含 token 明文（威胁 T-26-17）。
+        logger.info(
+            "git_instance_credential_created",
+            host=host,
+            provider=credential.provider,
+            has_token=True,
+        )
+        out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
+        return Response(out, status=status.HTTP_201_CREATED)
+
+
+class GitInstanceCredentialDetailView(APIView):
+    """实例级 Git 凭证详情 / 更新 / 删除（Plan 26-04，REPO-01）。
+
+    GET    /api/repositories/git-instance-credentials/{credential_id}/  -> 只读序列化
+    PATCH  /  PUT  同 URL：更新 host/provider/label；``access_token`` 留空表示
+           **不修改既有 token**，非空则 encrypt_value 加密覆盖（威胁 T-26-14/15）。
+    DELETE /  同 URL：删除该实例凭证。
+
+    权限：仅 ``IsSuperUser`` 可访问（威胁 T-26-16）。响应绝不含明文 token。
+    """
+
+    permission_classes = [IsSuperUser]
+
+    async def get(self, request, credential_id):
+        credential = await GitInstanceCredential.objects.filter(id=credential_id).afirst()
+        if credential is None:
+            return Response({"detail": "实例凭证不存在"}, status=status.HTTP_404_NOT_FOUND)
+        out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
+        return Response(out)
+
+    async def put(self, request, credential_id):
+        return await self._update(request, credential_id)
+
+    async def patch(self, request, credential_id):
+        return await self._update(request, credential_id)
+
+    async def _update(self, request, credential_id):
+        credential = await GitInstanceCredential.objects.filter(id=credential_id).afirst()
+        if credential is None:
+            return Response({"detail": "实例凭证不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = GitInstanceCredentialWriteSerializer(data=request.data, partial=True)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        data = dict(serializer.validated_data)
+
+        new_host = data.get("host")
+        if new_host and new_host != credential.host:
+            if await GitInstanceCredential.objects.filter(host=new_host).aexists():
+                return Response(
+                    {"host": [f"实例 '{new_host}' 的凭证已存在，请编辑既有凭证"]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            credential.host = new_host
+        if "provider" in data and data.get("provider"):
+            credential.provider = data["provider"]
+        if "label" in data:
+            credential.label = data.get("label", "")
+
+        token_changed = False
+        access_token = data.get("access_token")
+        if access_token:
+            # 仅非空 token 才覆盖；留空保留既有 token（威胁 T-26-15）。
+            credential.encrypted_token = encrypt_value(access_token)
+            token_changed = True
+
+        try:
+            await credential.asave()
+        except IntegrityError:
+            return Response(
+                {"host": [f"实例 '{credential.host}' 的凭证已存在，请编辑既有凭证"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        logger.info(
+            "git_instance_credential_updated",
+            host=credential.host,
+            provider=credential.provider,
+            token_changed=token_changed,
+        )
+        out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
+        return Response(out)
+
+    async def delete(self, request, credential_id):
+        credential = await GitInstanceCredential.objects.filter(id=credential_id).afirst()
+        if credential is None:
+            return Response({"detail": "实例凭证不存在"}, status=status.HTTP_404_NOT_FOUND)
+        host = credential.host
+        await credential.adelete()
+        logger.info("git_instance_credential_deleted", host=host)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
