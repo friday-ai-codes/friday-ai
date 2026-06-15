@@ -20,32 +20,51 @@ from agents.tools.base import ToolResult, tool
         "properties": {
             "plan": {
                 "type": "object",
-                "description": "待验证的技术方案，需包含 title 和 tasks 字段",
+                "description": "待验证的技术方案，需包含 title 和 execution_plan 字段",
             },
         },
         "required": ["plan"],
     },
 )
 async def verify_plan(plan: dict[str, Any]) -> ToolResult:
-    """Validate a technical plan with three-layer checks."""
+    """Validate a technical plan with three-layer checks.
+
+    PF-02：校验字段对齐 canonical ``execution_plan`` schema（``technical_plan.py`` +
+    DOMAIN §7 MergedPlan.execution_plan：每任务含 ``repository_id`` + ``coding_instruction``）。
+    本 phase 只做最小 schema 对齐；契约一致/依赖成环/回滚完整等扩展校验留
+    Phase 40 PlanValidator（在此基础上扩展）。工具自身恒 ``success=True``，
+    校验结论在 output；output 形状恒为 ``{valid, errors, warnings, summary}``。
+    """
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
 
     # === Layer 1: Structure validation (blocking) ===
-    required_fields = ["title", "tasks"]
+    # 半可信输入：逐项 isinstance 校验 + .get 取值，非法结构落 errors 不抛异常
+    # （工具恒 success=True，security mitigation T-36-01-01）。
+    required_fields = ["title", "execution_plan"]
     for f in required_fields:
         if f not in plan or not plan[f]:
             errors.append({"field": f, "message": f"缺少必填字段: {f}"})
 
-    tasks = plan.get("tasks", [])
-    if isinstance(tasks, list):
-        for i, task in enumerate(tasks):
-            if not isinstance(task, dict):
-                errors.append({"field": f"tasks[{i}]", "message": "任务必须是对象"})
+    execution_plan = plan.get("execution_plan", [])
+    if isinstance(execution_plan, list):
+        for i, item in enumerate(execution_plan):
+            if not isinstance(item, dict):
+                errors.append({"field": f"execution_plan[{i}]", "message": "任务必须是对象"})
                 continue
-            if not task.get("instruction"):
+            if not item.get("repository_id"):
                 errors.append(
-                    {"field": f"tasks[{i}].instruction", "message": "任务缺少 instruction"}
+                    {
+                        "field": f"execution_plan[{i}].repository_id",
+                        "message": "任务缺少 repository_id",
+                    }
+                )
+            if not item.get("coding_instruction"):
+                errors.append(
+                    {
+                        "field": f"execution_plan[{i}].coding_instruction",
+                        "message": "任务缺少 coding_instruction",
+                    }
                 )
 
     # === Layer 2: Quality validation (warning) ===
@@ -54,13 +73,13 @@ async def verify_plan(plan: dict[str, Any]) -> ToolResult:
         if len(title) < 5:
             warnings.append({"field": "title", "message": "标题过短，建议至少 5 个字符"})
 
-        for i, task in enumerate(tasks):
-            instruction = task.get("instruction", "")
+        for i, item in enumerate(execution_plan):
+            instruction = item.get("coding_instruction", "")
             if len(instruction) < 20:
                 warnings.append(
                     {
-                        "field": f"tasks[{i}].instruction",
-                        "message": f"instruction 过短 ({len(instruction)} 字符)，建议至少 20 字符以确保清晰",
+                        "field": f"execution_plan[{i}].coding_instruction",
+                        "message": f"coding_instruction 过短 ({len(instruction)} 字符)，建议至少 20 字符以确保清晰",
                     }
                 )
 

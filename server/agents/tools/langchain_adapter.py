@@ -85,8 +85,9 @@ def build_langchain_tools(
     """按名从 ``_tool_registry`` 拉取 ToolDefinition 并包装为 LangChain StructuredTool。
 
     Args:
-        tool_names: 要桥接的工具名列表；不在 ``_tool_registry`` 的名字**静默跳过**
-            （向前兼容：允许节点声明白名单中偶有删除工具）。
+        tool_names: 要桥接的工具名列表；不在 ``_tool_registry`` 的名字 **fail-loud
+            raise ValueError**（PF-01：静默跳过正是检索工具从未生效的根因；白名单
+            正确性由调用方维护 + 守护测试断言，不靠 adapter 吞错）。
         injected_values: 运行时由闭包注入的字段（不应暴露给 LLM），例如
             ``{"project_id": ..., "session_id": ..., "conversation_id": ...}``。
             这些字段会从对应工具的 ``args_schema`` 中剔除 + 调用时合并到 kwargs
@@ -111,7 +112,12 @@ def build_langchain_tools(
 
     for tool_name in tool_names:
         if tool_name not in _tool_registry:
-            continue
+            # PF-01：未知工具 fail-loud，使白名单错误在装配期立即暴露，
+            # 不静默退化为「无检索工具」的劣化运行（security mitigation T-36-01-02）。
+            raise ValueError(
+                f"未知工具名 '{tool_name}'，不在 _tool_registry 中。"
+                f"可用工具：{sorted(_tool_registry)}"
+            )
         tool_def = _tool_registry[tool_name]
         properties = tool_def.parameters.get("properties", {})
 
