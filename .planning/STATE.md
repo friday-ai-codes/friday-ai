@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 26-03-PLAN.md（REPO-01 git 平台/dispatch/diff archive 接线）；原子提交 a4ff3965a/061c3a9f2/b592debac
-last_updated: "2026-06-15T00:52:00.000Z"
-last_activity: 2026-06-15 -- 完成 26-03-PLAN.md（git 平台/dispatch/diff archive 取 token 统一经解析器）
+stopped_at: 完成 26-04-PLAN.md（REPO-01 实例凭证 REST CRUD + 前端管理页）；原子提交 47a522210/4a1bd27c1/d18394869
+last_updated: "2026-06-15T01:08:00.000Z"
+last_activity: 2026-06-15 -- 完成 26-04-PLAN.md（实例凭证 REST CRUD、token write-only 加密不回显、IsSuperUser、前端管理页）
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 23
-  completed_plans: 23
-  percent: 83
+  completed_phases: 5
+  total_plans: 24
+  completed_plans: 24
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 26 (多仓凭证统一 + MCP 多仓参数) — EXECUTING
-Plan: 4 of 5
-Status: 26-03 完成；剩余 26-04（实例凭证 REST + 前端 CRUD）
-Last activity: 2026-06-15 -- 完成 26-03-PLAN.md（git 平台/dispatch/diff archive 取 token 统一经解析器）
+Phase: 26 (多仓凭证统一 + MCP 多仓参数) — COMPLETE (5/5 plans)
+Plan: 5 of 5
+Status: 26-04 完成；Phase 26 全部计划落地，v0.5.0 可评估收口
+Last activity: 2026-06-15 -- 完成 26-04-PLAN.md（实例凭证 REST CRUD + 前端管理页，token 全程不明文）
 
 ## Milestone Overview (v0.5.0)
 
@@ -38,7 +38,7 @@ Last activity: 2026-06-15 -- 完成 26-03-PLAN.md（git 平台/dispatch/diff arc
 | 23 | 清理对账（普通/敏感两模式） | EXCL-04..06 | All plans done (4/4) |
 | 24 | 敏感文件 AI 识别建议名单 | EXCL-03 | All plans done (4/4) |
 | 25 | Commit 历史索引 + 行号反查 | IDX-01..02 | All plans done (4/4) |
-| 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | Not started |
+| 26 | 多仓凭证统一 + MCP 多仓参数 | REPO-01..02 | All plans done (5/5) |
 
 **Execution order:** 22 → 23（23 依赖 22 配置源）；24 依赖 22；25、26 相对独立可并行。
 
@@ -101,6 +101,7 @@ Last activity: 2026-06-15 -- 完成 26-03-PLAN.md（git 平台/dispatch/diff arc
 | Phase 26 P05 | ~12min | 3 tasks | 4 files |
 | Phase 26 P02 | ~15min | 3 tasks | 4 files |
 | Phase 26 P03 | ~25min | 3 tasks | 7 files |
+| Phase 26 P04 | ~9min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 26-01: 凭证解析单一入口 resolve_git_token_sync——per-repo token 优先 → 实例池 host fallback → None，Wave 2 统一调用
 - [Phase ?]: 26-05: search_rag_chunks 多仓参数（repository_ids/all_repositories/max_repos），mirror grep；多仓经 search_rag chokepoint 每仓 fail-closed，结果按 item.repository_id 标注来源
 - [Phase 26]: 26-02: clone/index、bare 镜像 fetch、图谱克隆三路径统一经凭证解析器取 token（aresolve_git_token / resolve_git_token_sync），消除内联 GitCredential→decrypt_value；per-repo 优先、host 实例池 fallback；同 host 多仓共享一份凭证；token 仅进单次 clone/fetch argv 不入日志
+- [Phase 26]: 26-04: 实例凭证 REST CRUD——读/写序列化器分离（read 只含 has_token 布尔无明文 token、write access_token=write_only）；GitInstanceCredentialsView/DetailView 走 IsSuperUser，encrypt_value 写入、空 token 的 PATCH 不清空既有 token、日志仅记 host/has_token；host 唯一性视图层 aexists+IntegrityError 双兜底给中文报错；路由字面段须在 router include 之前；base-branch 校验改经 aresolve_git_token（实例池仓库也可校验），TestConnection 验证入参 token 流程不变；前端 /admin/git-credentials 管理页 token password 不回填、留空=不改、提交清空，列表仅 has_token 徽标；守护测试后端 8 + 前端 2 全绿（DB 密文/响应/日志/前端无明文 + 非管理员 403）
 - [Phase 26]: 26-03: git 平台 MR/PR 客户端（_get_client / create_mr_for_task / coding.py MR 段）+ 编码容器 dispatch token 注入（coding.py dispatch / coding_session_service 两处）+ diff archive 拉取五处取 token 统一经 aresolve_git_token，per-repo 优先 → host 实例池 fallback；解析器 None 时各调用方保留既有缺凭证报错/降级（行为不回退）；token 仅传 client/进 dispatch payload 不入日志；守护测试覆盖同 host 共享 + per-repo 优先 + 缺凭证报错不回退 + 不泄漏
 
 ### Pending Todos
@@ -244,10 +246,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T00:52:00.000Z
-Stopped at: 完成 26-03-PLAN.md（REPO-01 git 平台/dispatch/diff archive 接线）；原子提交 a4ff3965a/061c3a9f2/b592debac
+Last session: 2026-06-15T01:08:00.000Z
+Stopped at: 完成 26-04-PLAN.md（REPO-01 实例凭证 REST CRUD + 前端管理页）；原子提交 47a522210/4a1bd27c1/d18394869
 Resume file: None
-Next: 26-04（实例凭证 REST + 前端 CRUD）——或 /gsd-complete-milestone 收口 v0.5.0 前再评估剩余范围
+Next: Phase 26 全部计划完成（5/5）——可 /gsd-complete-milestone 收口 v0.5.0
 
 ## Operator Next Steps
 
