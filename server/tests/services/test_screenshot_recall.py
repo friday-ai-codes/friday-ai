@@ -360,6 +360,32 @@ async def test_recall_degraded_when_extract_fails(monkeypatch) -> None:
     assert out["semantics"] is None
 
 
+async def test_recall_empty_semantics_skips_search(monkeypatch) -> None:
+    """三段语义全空 → 不发起向量检索，按 extraction_failed 降级返回（WR-02）。"""
+    recorder_llm: dict = {}
+    # 模型返回合法 JSON 但三段全空（_parse_semantics_json 仍得非 None 空语义）。
+    _patch_vision_ok(
+        monkeypatch,
+        json.dumps({"text": "", "ui_elements": "", "business_intent": ""}),
+        recorder_llm,
+    )
+    from knowledge.retrieval import DeliveryKnowledgeSearchService
+
+    async def _must_not_call(self, *_a, **_k):
+        raise AssertionError("空 query 不应触发 search_similar")
+
+    monkeypatch.setattr(
+        DeliveryKnowledgeSearchService, "search_similar", _must_not_call, raising=True
+    )
+
+    out = await recall_from_screenshot(
+        PNG_1X1, "image/png", user=SimpleNamespace(id=1)
+    )
+    assert out["degraded"] is True
+    assert out["degraded_code"] == DEGRADE_EXTRACTION_FAILED
+    assert out["results"] == []
+
+
 async def test_recall_search_error_is_not_degraded(monkeypatch) -> None:
     """召回阶段异常 → degraded=false + results=[]（语义在、召回空，no-results 而非 error）。"""
     recorder_llm: dict = {}
