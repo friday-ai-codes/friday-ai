@@ -8,6 +8,7 @@ from django.urls import path
 from delivery.api.views import (
     WorkItemCommentTreeView,
     WorkItemDetailView,
+    WorkItemPrdDocumentView,
     WorkItemUpsertView,
 )
 
@@ -17,6 +18,11 @@ urlpatterns = [
         "work-items/comments/",
         WorkItemCommentTreeView.as_view(),
         name="work-item-comment-tree",
+    ),
+    path(
+        "work-items/prd-document/",
+        WorkItemPrdDocumentView.as_view(),
+        name="work-item-prd-document",
     ),
     path("work-items/", WorkItemDetailView.as_view(), name="work-item-detail"),
 ]

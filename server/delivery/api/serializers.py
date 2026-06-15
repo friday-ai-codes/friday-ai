@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from delivery.models import WorkItem, WorkItemSyncState
+from delivery.models import Document, WorkItem, WorkItemSyncState
 
 
 class WorkItemSyncStateSerializer(serializers.ModelSerializer):
@@ -94,3 +94,40 @@ class CommentTreeNodeSerializer(serializers.Serializer):
 
     def get_children(self, obj: dict) -> list[dict]:
         return CommentTreeNodeSerializer(obj.get("children", []), many=True).data
+
+
+class DocumentSnapshotSerializer(serializers.ModelSerializer):
+    """Document 只读快照序列化（元数据 + 当前版本正文，30-04）。
+
+    暴露 Document 操作态元数据 + 当前版本正文快照（``current_version.content``）。
+    纯只读：所有字段 read-only，落库只经 ``DocumentService``（INV-6）。``content``/
+    ``version`` 取自 ``current_version``——缺当前版本（降级占位）→ content="" / version=null，
+    不臆造。``current_version`` 须经 ``select_related`` 预取，避免 async 隐式同步访问。
+    """
+
+    content = serializers.SerializerMethodField()
+    version = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "document_type",
+            "source_kind",
+            "content_storage",
+            "external_ref",
+            "canonical_url",
+            "feishu_tenant",
+            "last_synced_at",
+            "content",
+            "version",
+        ]
+        read_only_fields = fields
+
+    def get_content(self, obj: Document) -> str:
+        current = obj.current_version
+        return current.content if current is not None else ""
+
+    def get_version(self, obj: Document) -> int | None:
+        current = obj.current_version
+        return current.version if current is not None else None
