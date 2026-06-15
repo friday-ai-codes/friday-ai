@@ -1,5 +1,36 @@
 # Milestones
 
+## v0.6.0 领域脊柱 + 知识图谱补全 (Shipped: 2026-06-15)
+
+**Phases completed:** 9 phases, 25 plans, 50 tasks
+
+**Key accomplishments:**
+
+- 1. [Rule 3 — 层级/去重，honoring plan-checker WARNING] 字段 key 常量落点 + feishu.models 反向 import
+- 1. [Rule 3 — 满足 plan Task 2 verify 门禁] feishu/client.py 顺带 ruff format 收敛两处预存多行表达式
+- 新建 delivery Django app 与四个操作态脊柱模型（canonical WorkItem + SyncState + Relation + StatusEvent），DB unique_together 强制 INV-1 三元组唯一，初始 migration 已应用建出四张表，7 个模型单测全绿。
+- 实现 WorkItem 唯一写入入口 `WorkItemService.upsert`（INV-6，DOMAIN §13.1 全步骤）：三元组幂等收敛、mirror-only 刷新结构性保护 friday_enhanced、per-facet WorkItemSyncState 且回源失败不整体回滚、关系派生 + target_external_id 占位/回填、状态变更 append-only StatusEvent；复用 Phase 27 feishu_parsing 派生，18 个 service 守护测试全绿（respx mock 回源，零真实网络）。
+- 把 28-02 的 `WorkItemService.upsert` 接到两条真实入口：① 最小 delivery REST（手动按三元组 upsert + 读取 WorkItem，adrf APIView，`IsAuthenticated`，写端点经单一 upsert 无旁路 ORM 写）；② 飞书 webhook 三个工作项 handler 紧随既有 knowledge ingestion 后经 `run_in_background` 后台调 `upsert(source="feishu_webhook")`（保留投影，INV-3）。补 INV-6 旁路写表 grep 守护（精确锚定零误伤）、INV-3 投影保留守护、跨入口收敛集成测试；delivery 全套 38 passed、webhook 回归全绿。
+- 新增 append-only `WorkItemCommentEvent` 模型 + 两枚举（CommentEventType / ApprovalSemantic），逐字段对齐 DOMAIN §12.4，0002 迁移已应用建出 `delivery_work_item_comment_event` 表（含 (work_item, event_time) 索引），模型层 5 个单测守护 append-only / 默认值 / CASCADE / 索引全绿。
+- 实现评论事件流服务层：`CommentEventService.append_events` 作为评论落库唯一写入收口（去重锚 get_or_create 幂等可重入），`ingest_comments` 复用 Phase 27 get_comments 拉取摄取（缺 project/work_item/回源失败降配 SyncState comments facet，不抛不回滚），`append_webhook_comment` 接线路径，`classify_approval_semantic` 审批语义单一判定（reject 优先），`project_comment_tree` 从事件流读时投影当前评论树（线程层级 + 编辑取最新 + 删除标记 + event_time 排序，绝不改事件行）——33 个守护测试全绿，无回归。
+- 把 29-02 评论事件流接到两条真实入口：① 飞书 webhook `_handle_workitem_comment` 在保留既有 approval（复用单一判定 `classify_approval_semantic`）+ knowledge 投影（INV-3）的同时，经 `run_in_background` 后台 `append_webhook_comment` 追加 CommentEvent（缺三元组/缺评论跳过+warning）；② 只读 REST `WorkItemCommentTreeView`（IsAuthenticated）按三元组返回 `project_comment_tree` 投影（含线程层级 + approval 语义，不旁路 fetch/落库）；并补 INV-6 评论旁路写表 grep 守护（精确锚定 + writer 自证）——delivery+approval 全套 97 passed，无回归。
+- 新增 `Document` / `DocumentVersion` 两个操作态实体落 delivery app，逐字段对齐 DOMAIN §3/§12.5：区分外部飞书文档与内部生成文档（document_type/source_kind/content_storage 三枚举），版本链经 supersedes self FK + unique_together(document, version)，work_item FK 关联脊柱；0004 迁移已 migrate 建出两表，7 个模型单测全绿，delivery 套件 101 个无回归。
+- 新增 `DocumentService.upsert_from_feishu` 作为 Document/DocumentVersion 落库的唯一写入收口（INV-6）：external_feishu 文档按 `(feishu_tenant, external_ref=doc_token)` 去重定位，`content_hash` 相等不翻版本、不等建新 `DocumentVersion` + supersedes 链并推进 `current_version`，落 `content_storage=both`、`feishu_tenant` 由 doc URL host 派生；摄取成功按 `document_type` 映射记 `WorkItemSyncState(prd_body|tech_doc)` facet 完整度（缺正文 missing）。配 Document/DocumentVersion 旁路写表 INV-6 grep 守护（精确锚定无误伤）。11 个 service 测试 + 2 个守护测试全绿，delivery 套件 114 passed 无回归。
+- 新增 `server/knowledge/sources/feishu_document.py` normalizer 并注册进 `get_normalizer` 注册表：从工作项三元组 + work_item 锚事件 payload 的 `prd_url`/`tech_doc_url` 提取飞书 doc token（复用 `_extract_doc_token`），经既有 `create_feishu_doc_client_for_project` + `get_document_content` 拉正文（复用 `_fetch_doc_body`，不重写取材），产出 ① 操作态 `Document`/`DocumentVersion`（经 30-02 `DocumentService` 单一入口 INV-6 + `work_item` FK）；② knowledge 投影 `KnowledgeEntity(kind=document)` + `KnowledgeEdge(relation=REFERENCES)` 连 work_item 实体 → document 实体（方向 work_item→document，对齐 mcp_plan HAS_PLAN 出边范式）。work_item 锚事件复用 `feishu_work_item.normalize` 产出（content 逐字一致 hash 相等不 clobber 既有快照），`feishu_work_item.py` 未修改（INV-3）。doc 拉取失败降级缺正文段 + warning，缺段不缺实体不抛不回滚。8 个 normalizer 守护测试全绿，knowledge + delivery 套件 392 passed（仅既有无关 test_triggers.py 1 failed，按指示忽略）。
+- 新增 `WorkItemPrdDocumentView`（adrf `APIView`，`IsAuthenticated`，async get）+ `DocumentSnapshotSerializer` + `work-items/prd-document/` 路由：给定带 `prd_url` 的 WorkItem（三元组），经独立操作态 `Document` 实体（`Document.objects.filter(work_item, document_type=prd).select_related("current_version").order_by("-updated_at").afirst()` → `current_version.content`）只读检索 PRD 正文快照——纯读已落库 Document，不旁路 fetch、不写表，兑现 DOC-02 成功标准 3。三元组校验、afirst 命中、404 语义沿用 28-03 既有 `WorkItemDetailView`/`WorkItemCommentTreeView` 范式；序列化全字段 read_only（INV-6），`content`/`version` 取自 `current_version`（缺 → `""`/null 不臆造）；支持可选 `?document_type=` 复用端点取其他类型快照（默认 prd，非法 400）。7 个检索守护测试全绿，delivery 套件 121 passed 无回归。
+- 1. [Rule 3 - Blocking] migration 文件名重命名
+- 1. [Contract resolution] 自然键消费方式改为消费预组装 key（非重拼接）
+- 1. [Rule 3 - Blocking] 新增 `knowledge.diff_archive.aarchive_exists` 以保 INV-3 守护
+- 1. [Rule 1 - Bug] 修正 `web/src/api/index.ts` 既有 perfectionist/sort-exports 报错
+- 给 git platform client 增加 `get_merge_request_metadata`（双客户端拉真实 `merge_commit_sha`/`target_branch`/`merged_at`），新增 `aresolve_mr_commit_anchor` 历史 commit 锚解析 helper，把一键摄取 MR 步从合成 `mr-{iid}` 改为真实 merge commit 锚定（WR-02），并在 MODIFIES_CHUNK 边 metadata 冻结 `chunk_content_hash` 指纹供 HDIFF-02 对账。
+- 为 MODIFIES_CHUNK 边落地 HDIFF-02：新增 `amodifies_chunk_edges` as-of 查询 helper（历史 as_of 见当年成立边、当前视图只见未失效边），新增 `areconcile_modifies_chunk_edges` 重索引对账（target_chunk_id 不存在 ∪ content_hash 漂移 → 经 `graph_store.invalidate_edge` 置 `invalid_at`，置位不删），并把对账挂在 `clone_and_index_repository` 收尾 base 路径作 best-effort 钩子（失败仅 warning，绝不阻断索引 success）。
+- 纯读片段→需求反查：复用 find_chunk_at + graph_store 反向多跳（chunk←code_change←tech_plan←work_item→document），fail-closed 排除 + 默认当前视图，经 REST(IsAuthenticated) 与 MCP 工具 reverse_lookup_requirements 暴露结构化 {chunks, related_work_items, related_documents, paths}
+- 把 Phase 29 `project_comment_tree(work_item)` 投影出的当前评论树文本并入 `feishu_work_item` 知识实体的投影内容（`## 评论` 段），并在评论事件流新增后 best-effort 触发 work_item 重投影——使评论经既有检索召回且天然关联到 WorkItem，不新增 EntityKind、无新 model、无 migration。
+- 1. [合并提交] Task 1 与 Task 2 共用同一新建服务模块 `screenshot_recall.py`，以单个 `feat` 提交交付。
+- 1. [选型] 降级卡片「前往系统设置」用 `<a href="/admin">` 而非 `RouterLink`。
+
+---
+
 ## v0.5.0 索引检索地基与排除文件 (Shipped: 2026-06-15)
 
 **Phases completed:** 5 phases, 23 plans, 54 tasks

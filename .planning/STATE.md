@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
+status: Awaiting next milestone
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T16:14:19.256Z"
-last_activity: 2026-06-15
+last_updated: "2026-06-15T16:20:48.450Z"
+last_activity: 2026-06-15 — Milestone v0.6.0 completed and archived
 progress:
   total_phases: 9
   completed_phases: 9
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 35
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
-
-Progress: [███░░░░░░░] 33%
+Phase: Milestone v0.6.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-15 — Milestone v0.6.0 completed and archived
 
 ## Milestone Overview (v0.6.0 — Phases 27–35)
 
@@ -296,4 +294,4 @@ Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
 
 ## Operator Next Steps
 
-- Execute the next plan with /gsd-execute-phase 28 (Plan 28-02)
+- Start the next milestone with /gsd-new-milestone
