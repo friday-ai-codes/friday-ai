@@ -223,20 +223,44 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
             return
 
         repository, mr_iid = resolved
-        from knowledge.diff_archive import aarchive_exists, archive_code_change
+        from knowledge.diff_archive import (
+            aarchive_exists,
+            archive_code_change,
+            aresolve_mr_commit_anchor,
+        )
         from knowledge.ingestion import IngestionEvent, ingest_events
 
         source_id = f"{repository.id}:{mr_iid}"
-        # 合成稳定 natural key（不新建底层 MR 元数据拉取，保持「编排既有能力」边界）
-        commit_sha = f"mr-{mr_iid}"
-        event_time = timezone.now()
+
+        # HDIFF-01 / WR-02：用真实 merge_commit_sha 锚定历史 diff，绝不再合成 mr-{iid}。
+        # 无法取得 merge_commit_sha（未合并 / 缺凭证 / 元数据拉取失败）→ 如实记 skipped
+        # 不静默沿用合成 commit_sha（避免伪历史快照污染对账，T-33-03）。
+        anchor = await aresolve_mr_commit_anchor(repository, mr_iid)
+        if anchor is None:
+            await _write_step(
+                run,
+                "mr_diff",
+                StepResult(
+                    status="skipped",
+                    error="无法获取 MR merge_commit_sha（未合并或元数据拉取失败），跳过 commit 锚定归档",
+                ),
+            )
+            return
+
+        # commit 锚定真实值：commit_sha=merge_commit_sha、base_branch=target_branch
+        # （绝不假设 master，DOMAIN §1.5）；valid_at 经 ingest_events→apply_edge_specs
+        # 锚定到 merged_at 业务时间。
+        commit_sha = anchor.merge_commit_sha
+        base_branch = anchor.target_branch
+        branch_name = anchor.source_branch or f"mr/{mr_iid}"
+        event_time = anchor.merged_at or timezone.now()
 
         archive_result = await archive_code_change(
             source_kind=_MR_SOURCE_KIND,
             source_id=source_id,
             repository=repository,
-            branch_name=f"mr/{mr_iid}",
-            base_branch=repository.default_branch,
+            branch_name=branch_name,
+            base_branch=base_branch,
             commit_sha=commit_sha,
             mr_url=mr_url,
             mr_id=mr_iid,
@@ -275,6 +299,7 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
             payload={
                 "archive_id": str(archive.id),
                 "commit_sha": commit_sha,
+                "target_branch": base_branch,
                 "mr_url": mr_url,
                 "mr_id": mr_iid,
                 "repository_id": str(repository.id),
