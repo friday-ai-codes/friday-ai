@@ -185,7 +185,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 34-01-PLAN.md — RREF-01 片段→需求反查 service（复用 find_chunk_at + graph_store）+ REST + MCP 工具
+
+- [x] 34-01-PLAN.md — RREF-01 片段→需求反查 service（复用 find_chunk_at + graph_store）+ REST + MCP 工具
 - [ ] 34-02-PLAN.md — RREF-02 评论入图：work_item 投影并入评论树 + 评论事件触发重投影
 
 ### Phase 35: 截图识别需求
@@ -224,7 +225,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 32. 一键摄取编排 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 2/2 | Complete    | 2026-06-15 |
-| 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
+| 34. 评论入图 + 片段→需求反查 | v0.6.0 | 1/2 | In Progress|  |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
 
 ---
