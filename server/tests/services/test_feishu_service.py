@@ -195,3 +195,153 @@ async def test_get_work_item_non_json_raises() -> None:
     msg = str(exc_info.value)
     assert "plugin_token_xyz" not in msg
     assert "plugin_test_secret" not in msg
+
+
+# === FIX-03：get_comments 防御解析 fail-soft + 正常解析 + type 必填 ===
+
+
+def _comment_list_url(work_item_type: str) -> str:
+    return (
+        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/"
+        f"{WORK_ITEM_ID}/comment/list"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_comments_requires_work_item_type() -> None:
+    """get_comments 不传 work_item_type → TypeError（与 get_work_item 一致，FIX-01）。"""
+    client = _make_client()
+    with pytest.raises(TypeError):
+        await client.get_comments(PROJECT_KEY, WORK_ITEM_ID)  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_non_json_returns_empty() -> None:
+    """get_comments 遇非 JSON（Extra data）→ 返回 [] 且不抛（fail-soft，FIX-03）。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            text="Extra data: line 1 column 5",
+            headers={"content-type": "text/plain"},
+        )
+    )
+
+    client = _make_client()
+    result = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_parses_normal_response() -> None:
+    """get_comments 正常响应逐条解析 id/content/created_at/author/thread_parent_id。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "err_code": 0,
+                "data": {
+                    "comments": [
+                        {
+                            "id": 1001,
+                            "content": {
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [{"type": "text", "text": "请尽快处理"}],
+                                    }
+                                ]
+                            },
+                            "created_at": 1700000000,
+                            "author": {"name": "张三"},
+                            "parent_id": "",
+                        },
+                        {
+                            "id": 1002,
+                            "content": "纯文本回复",
+                            "created_at": 1700000100,
+                            "author": {"name": "李四"},
+                            "parent_id": 1001,
+                        },
+                    ]
+                },
+            },
+        )
+    )
+
+    client = _make_client()
+    comments = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+
+    assert len(comments) == 2
+    assert comments[0]["id"] == 1001
+    assert comments[0]["content"] == "请尽快处理"
+    assert comments[0]["created_at"] == 1700000000
+    assert comments[0]["author"] == "张三"
+    assert comments[0]["thread_parent_id"] == ""
+    assert comments[1]["content"] == "纯文本回复"
+    assert comments[1]["thread_parent_id"] == 1001
+
+
+# === FIX-02：get_work_item_relations 端点降级 fail-soft（PF-10）===
+
+
+def _relation_url(work_item_type: str) -> str:
+    return (
+        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/"
+        f"{WORK_ITEM_ID}/relation"
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_relations_non_json_degrades() -> None:
+    """relations 端点遇非 JSON（Extra data）→ 返回 [] + warning，绝不抛（PF-10）。"""
+    _mock_token()
+    respx.get(_relation_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            text="Extra data: line 1 column 5",
+            headers={"content-type": "text/plain"},
+        )
+    )
+
+    client = _make_client()
+    result = await client.get_work_item_relations(PROJECT_KEY, WORK_ITEM_ID, "issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_work_item_relations_parses_with_origin() -> None:
+    """relations 正常响应解析，每项标注 origin=feishu_relation_api。"""
+    _mock_token()
+    respx.get(_relation_url("issue")).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "err_code": 0,
+                "data": {
+                    "relations": [
+                        {
+                            "relation_type": "parent",
+                            "work_item_id": 7010938167,
+                            "work_item_type": "project",
+                            "name": "所属项目",
+                            "status": "open",
+                        }
+                    ]
+                },
+            },
+        )
+    )
+
+    client = _make_client()
+    relations = await client.get_work_item_relations(PROJECT_KEY, WORK_ITEM_ID, "issue")
+
+    assert len(relations) == 1
+    assert relations[0]["relation_type"] == "parent"
+    assert relations[0]["work_item_id"] == 7010938167
+    assert relations[0]["origin"] == "feishu_relation_api"
