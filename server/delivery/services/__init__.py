@@ -18,6 +18,7 @@ from delivery.services.comment_projection import (
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
 from delivery.services.ingest_orchestrator import StepResult, ingest_from_urls
+from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.ingest_parsing import (
     BoardRef,
     MRRef,
@@ -46,4 +47,5 @@ __all__ = [
     "aresolve_repo_and_mr",
     "ingest_from_urls",
     "StepResult",
+    "PlanSessionService",
 ]
