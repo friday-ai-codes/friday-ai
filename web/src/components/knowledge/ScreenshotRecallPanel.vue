@@ -323,6 +323,15 @@ onBeforeUnmount(() => {
 
         <!-- success / no-results -->
         <template v-else>
+          <!-- 派生检索词（UX-3：回显本次召回所用 query 作为反馈） -->
+          <p
+            v-if="result.query"
+            class="text-xs text-muted-foreground break-words whitespace-pre-wrap"
+            data-testid="recall-query"
+          >
+            {{ t('screenshotRecall.results.query', { query: result.query }) }}
+          </p>
+
           <!-- 可选语义卡（默认折叠，三段任一为空不渲染该段） -->
           <div v-if="hasSemantics" class="card" data-testid="recall-semantics">
             <button

@@ -313,7 +313,7 @@
     "results": {
       "title": "召回的需求",
       "relevance": "相关度 {percent}%",
-      "source": "来源",
+      "query": "检索词：{query}",
       "viewLink": "查看"
     }
   },

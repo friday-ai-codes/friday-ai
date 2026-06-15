@@ -191,6 +191,25 @@ describe('screenshotRecallPanel', () => {
     expect(wrapper.find('[data-testid="recall-degraded-link"]').exists()).toBe(false)
   })
 
+  it('d2: success → 回显派生检索词，且死 key results.source 已移除（UX-3）', async () => {
+    vi.mocked(screenshotRecallApi.recall).mockResolvedValue(makeResult({
+      query: '登录页\n用户认证',
+      results: [{ work_item_id: 'WI-9', title: '登录改版', relevance: 0.5 }],
+    }))
+
+    const wrapper = mountPanel()
+    await selectFile(wrapper, makeFile('shot.png', 'image/png', 2048))
+    await wrapper.find('[data-testid="recall-submit"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const queryEl = wrapper.find('[data-testid="recall-query"]')
+    expect(queryEl.exists()).toBe(true)
+    expect(queryEl.text()).toContain('登录页')
+    // 死 key 已清理（防止回归）。
+    expect((zhCN.screenshotRecall.results as Record<string, unknown>).source).toBeUndefined()
+  })
+
   it('f: no-results → search-x 空态', async () => {
     vi.mocked(screenshotRecallApi.recall).mockResolvedValue(makeResult({ degraded: false, results: [] }))
 
