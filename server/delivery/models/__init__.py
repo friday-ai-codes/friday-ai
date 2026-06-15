@@ -5,6 +5,13 @@ from delivery.models.comment_event import (
     CommentEventType,
     WorkItemCommentEvent,
 )
+from delivery.models.document import (
+    ContentStorage,
+    Document,
+    DocumentSourceKind,
+    DocumentType,
+    DocumentVersion,
+)
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -31,4 +38,9 @@ __all__ = [
     "WorkItemCommentEvent",
     "CommentEventType",
     "ApprovalSemantic",
+    "Document",
+    "DocumentVersion",
+    "DocumentType",
+    "DocumentSourceKind",
+    "ContentStorage",
 ]
