@@ -550,13 +550,11 @@ async def archive_code_change(
         )
         return None
 
-    # ② 凭证 → client（DB 加密凭证经 service 层，锁定决策；不读 env）
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
+    # ② 凭证 → client（Phase 26 REPO-01：统一经解析器取 token，per-repo 优先 → 同 host 实例凭证池）
+    from services.git_credentials import aresolve_git_token
 
-    try:
-        cred = await GitCredential.objects.aget(repository=repository)
-    except GitCredential.DoesNotExist:
+    token = await aresolve_git_token(repository)
+    if not token:
         logger.warning(
             "knowledge_diff_archive_no_credential",
             source_kind=source_kind,
@@ -564,7 +562,6 @@ async def archive_code_change(
             repository_id=str(repository.pk) if repository else None,
         )
         return None
-    token = decrypt_value(cred.encrypted_token or "")
     client = get_git_platform_client(repository, token)
 
     # ③ 放大参数拉 diff（Pitfall 2：默认参数是 code_review 截断语义）

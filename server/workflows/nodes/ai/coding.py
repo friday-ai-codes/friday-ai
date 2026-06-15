@@ -19,7 +19,6 @@ from urllib.parse import urlparse
 
 import structlog
 
-from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_credentials import aresolve_git_token
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
@@ -919,13 +918,20 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         session_id = generate_execution_id()
 
-        # Git 凭证
+        # Git 凭证（Phase 26 REPO-01：统一经解析器取 token，无 per-repo token 时按 host 用实例凭证）
+        # token 非空才注入 access_token（与既有「无凭证」行为一致，绝不 log token）；
+        # ssl_verify 仍优先取 per-repo credential（存在时），纯靠实例池时取默认 "true"。
         git_credentials = {}
-        if repository.credential and repository.credential.encrypted_token:
-            token = decrypt_value(repository.credential.encrypted_token)
+        token = await aresolve_git_token(repository)
+        if token:
+            ssl_verify = (
+                str(repository.credential.ssl_verify).lower()
+                if repository.credential
+                else "true"
+            )
             git_credentials = {
                 "access_token": token,
-                "ssl_verify": str(repository.credential.ssl_verify).lower(),
+                "ssl_verify": ssl_verify,
             }
 
         # 构造 env_FRIDAY_TASK_CLAUDE_* 字段（contract 纠偏命名；Runner Docker executor

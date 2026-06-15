@@ -137,8 +137,7 @@ async def build_dispatch_metadata(
     Returns:
         (env_metadata, repo_url) 元组。
     """
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
+    from services.git_credentials import aresolve_git_token
     from services.provider_config import aget_claude_code_runtime_config
 
     # Claude Code 编码容器配置：优先读 Claude Code 专属配置（选定凭证 + opus/sonnet/haiku
@@ -168,21 +167,17 @@ async def build_dispatch_metadata(
 
     repo_url = repository.git_url
 
-    # Git 凭据
-    try:
-        cred = await GitCredential.objects.aget(repository=repository)
-        if cred.encrypted_token:
-            token = decrypt_value(cred.encrypted_token)
-            env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
-            env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
-            env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
-            # SSH URL -> HTTPS（token 认证需要 HTTPS）
-            if repo_url.startswith("git@"):
-                m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
-                if m:
-                    repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
-    except GitCredential.DoesNotExist:
-        pass
+    # Git 凭据（Phase 26 REPO-01：统一经解析器取 token，无 per-repo token 时按 host 用实例凭证）
+    token = await aresolve_git_token(repository)
+    if token:
+        env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+        env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+        env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
+        # SSH URL -> HTTPS（token 认证需要 HTTPS）
+        if repo_url.startswith("git@"):
+            m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
+            if m:
+                repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
 
     execution_spec = await build_coding_execution_spec(repository, coding_session)
 
@@ -284,9 +279,8 @@ async def dispatch_coding_task(
         ValueError: 分支名校验失败时抛出。
     """
     from chat.branch_service import validate_branch_name
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
     from runners.dispatcher import DispatchTask, get_dispatcher
+    from services.git_credentials import aresolve_git_token
     from services.git_platform import get_git_platform_client
 
     repo = coding_session.repository
@@ -309,13 +303,10 @@ async def dispatch_coding_task(
     # 做 remote uniqueness 校验，会把正确存在的工作分支误判为冲突。
     git_client = None
     if task_type != "coding_commit":
-        try:
-            cred = await GitCredential.objects.aget(repository=repo)
-            if cred.encrypted_token:
-                token = decrypt_value(cred.encrypted_token)
-                git_client = get_git_platform_client(repo, token)
-        except GitCredential.DoesNotExist:
-            pass
+        # Phase 26 REPO-01：统一经解析器取 token（per-repo 优先 → 同 host 实例凭证池 fallback）
+        token = await aresolve_git_token(repo)
+        if token:
+            git_client = get_git_platform_client(repo, token)
 
     # 排除自己：当前 coding_session 已经是 active 状态（confirm 阶段已切到
     # CONFIRMED；未来 dispatch_coding_task 在 DRAFT 期被调时也会撞自己），
