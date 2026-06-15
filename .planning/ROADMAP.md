@@ -35,7 +35,7 @@
 - [x] **Phase 27: 飞书接口前置修复** - 修对 work_item_type 取数 / 关系字段派生 / 评论端点 / 完整 fields[] 元数据（PF-09/10/11/12），WorkItem upsert 的依赖前置 (completed 2026-06-15)
 - [x] **Phase 28: WorkItem 脊柱 + 单一 upsert 入口** - delivery app 操作态脊柱：canonical WorkItem + WorkItemService.upsert + 三分类 + SyncState + Relation 派生 + StatusEvent (completed 2026-06-15)
 - [x] **Phase 29: 评论事件流** - append-only WorkItemCommentEvent 流式入库 + 当前评论树投影 (completed 2026-06-15)
-- [ ] **Phase 30: Document + REFERENCES 边** - 外部飞书/内部生成文档区分 + feishu_document normalizer 摄取 PRD/技术方案 + 关联 WorkItem
+- [x] **Phase 30: Document + REFERENCES 边** - 外部飞书/内部生成文档区分 + feishu_document normalizer 摄取 PRD/技术方案 + 关联 WorkItem (completed 2026-06-15)
 - [ ] **Phase 31: Release 账本 + Bitable adapter 骨架** - 宽容模型（保留 raw_row）+ 开放平台凭证独立解析的 Bitable client/adapter 骨架
 - [ ] **Phase 32: 一键摄取编排** - (看板URL, MR URL) → 拉看板工作项 + PRD/技术方案文档 + MR diff 并入库可检索
 - [ ] **Phase 33: 历史 diff 冻结 + bi-temporal 失效** - commit 锚定快照 + 重索引对账置 invalid_at + as-of 区分历史/当前（PF-08）
@@ -114,7 +114,7 @@
 - [x] 30-01-PLAN.md — Document/DocumentVersion 模型 + 0004 迁移（DOC-01 模型位：external/internal + document_type + content_storage + supersedes 版本链）
 - [x] 30-02-PLAN.md — DocumentService 单一写入入口（去重 + hash 不翻版本 + facet）+ Document INV-6 grep 守护
 - [x] 30-03-PLAN.md — feishu_document normalizer（复用取材产出操作态 Document + knowledge document 实体 + REFERENCES 边）+ 注册
-- [ ] 30-04-PLAN.md — PRD 正文快照只读 REST 检索端点（DOC-02 成功标准 3）
+- [x] 30-04-PLAN.md — PRD 正文快照只读 REST 检索端点（DOC-02 成功标准 3）
 
 ### Phase 31: Release 账本 + Bitable adapter 骨架
 
@@ -201,7 +201,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 29. 评论事件流 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 30. Document + REFERENCES 边 | v0.6.0 | 3/4 | In Progress|  |
+| 30. Document + REFERENCES 边 | v0.6.0 | 4/4 | Complete   | 2026-06-15 |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
 | 32. 一键摄取编排 | v0.6.0 | 0/TBD | Not started | - |
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
