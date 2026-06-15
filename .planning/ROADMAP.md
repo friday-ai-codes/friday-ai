@@ -92,7 +92,11 @@
   2. 系统可从评论事件流投影出当前评论树（线程结构），编辑/删除作为事件不就地改写
   3. 审批语义（approve/reject）作为事件被记录，为后续「评论触发方案再生成」提供清晰触发边界（v0.7 消费）
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+- [ ] 29-01-PLAN.md — WorkItemCommentEvent 模型 + 0002 迁移 + 模型层 append-only 单测（CMT-01/02）
+- [ ] 29-02-PLAN.md — CommentEventService 单一 append 入口 + 幂等去重 + 拉取摄取 + approval 判定 + 评论树投影
+- [ ] 29-03-PLAN.md — webhook 评论事件后台 append + 评论树只读 REST + INV-6 评论旁路写表守护
 
 ### Phase 30: Document + REFERENCES 边
 
@@ -191,7 +195,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
 | 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 29. 评论事件流 | v0.6.0 | 0/TBD | Not started | - |
+| 29. 评论事件流 | v0.6.0 | 0/3 | Not started | - |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
 | 32. 一键摄取编排 | v0.6.0 | 0/TBD | Not started | - |
