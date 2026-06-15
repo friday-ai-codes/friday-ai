@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
-stopped_at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
-last_updated: "2026-06-15T00:20:01.512Z"
+stopped_at: 完成 26-05-PLAN.md（REPO-02 MCP RAG 多仓检索参数）；原子提交 b360d8c69/db1223306/3e31c4e81
+last_updated: "2026-06-15T00:32:04.919Z"
 last_activity: 2026-06-15 -- Phase 26 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
   percent: 80
 ---
 
@@ -98,6 +98,7 @@ Last activity: 2026-06-15 -- Phase 26 execution started
 | Phase 25 P03 | ~13min | 2 tasks | 4 files |
 | Phase 25 P04 | ~10min | 2 tasks | 2 files |
 | Phase 26 P01 | 20 | 2 tasks | 4 files |
+| Phase 26 P05 | ~12min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
 - [Phase ?]: 26-01: 实例凭证落在 repositories app，表 git_instance_credentials，host 唯一 + Fernet 加密 token
 - [Phase ?]: 26-01: 凭证解析单一入口 resolve_git_token_sync——per-repo token 优先 → 实例池 host fallback → None，Wave 2 统一调用
+- [Phase ?]: 26-05: search_rag_chunks 多仓参数（repository_ids/all_repositories/max_repos），mirror grep；多仓经 search_rag chokepoint 每仓 fail-closed，结果按 item.repository_id 标注来源
 
 ### Pending Todos
 
@@ -238,8 +240,8 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T00:19:25.263Z
-Stopped at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
+Last session: 2026-06-15T00:32:04.911Z
+Stopped at: 完成 26-05-PLAN.md（REPO-02 MCP RAG 多仓检索参数）；原子提交 b360d8c69/db1223306/3e31c4e81
 Resume file: None
 Next: Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——或 /gsd-complete-milestone 收口 v0.5.0 前再评估 26 范围
 
