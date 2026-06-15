@@ -116,9 +116,7 @@ def _mock_token() -> None:
 
 
 def _comment_list_url() -> str:
-    return (
-        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/story/{STORY_ID}/comment/list"
-    )
+    return f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/story/{STORY_ID}/comment/list"
 
 
 def _mock_comments(comments: list[dict]) -> None:
@@ -161,12 +159,27 @@ async def test_append_events_event_type_derivation() -> None:
 
     work_item = await _make_work_item()
     comments = [
-        {"id": "c1", "content": "根评论", "created_at": 1700000000000, "author": "u1",
-         "thread_parent_id": ""},
-        {"id": "c2", "content": "回复一下", "created_at": 1700000100000, "author": "u2",
-         "thread_parent_id": "c1"},
-        {"id": "c3", "content": "通过", "created_at": 1700000200000, "author": "u3",
-         "thread_parent_id": ""},
+        {
+            "id": "c1",
+            "content": "根评论",
+            "created_at": 1700000000000,
+            "author": "u1",
+            "thread_parent_id": "",
+        },
+        {
+            "id": "c2",
+            "content": "回复一下",
+            "created_at": 1700000100000,
+            "author": "u2",
+            "thread_parent_id": "c1",
+        },
+        {
+            "id": "c3",
+            "content": "通过",
+            "created_at": 1700000200000,
+            "author": "u3",
+            "thread_parent_id": "",
+        },
     ]
     created = await CommentEventService().append_events(work_item, comments, "manual")
     assert created == 3
@@ -189,10 +202,20 @@ async def test_append_events_idempotent_dedup() -> None:
 
     work_item = await _make_work_item()
     comments = [
-        {"id": "c1", "content": "根评论", "created_at": 1700000000000, "author": "u1",
-         "thread_parent_id": ""},
-        {"id": "c2", "content": "驳回", "created_at": 1700000100000, "author": "u2",
-         "thread_parent_id": ""},
+        {
+            "id": "c1",
+            "content": "根评论",
+            "created_at": 1700000000000,
+            "author": "u1",
+            "thread_parent_id": "",
+        },
+        {
+            "id": "c2",
+            "content": "驳回",
+            "created_at": 1700000100000,
+            "author": "u2",
+            "thread_parent_id": "",
+        },
     ]
     service = CommentEventService()
     first = await service.append_events(work_item, comments, "manual")
@@ -226,8 +249,15 @@ async def test_append_events_reject_semantic_recorded() -> None:
     work_item = await _make_work_item()
     created = await CommentEventService().append_events(
         work_item,
-        [{"id": "c1", "content": "不通过", "created_at": 1700000000000, "author": "u1",
-          "thread_parent_id": ""}],
+        [
+            {
+                "id": "c1",
+                "content": "不通过",
+                "created_at": 1700000000000,
+                "author": "u1",
+                "thread_parent_id": "",
+            }
+        ],
         "manual",
     )
     assert created == 1
@@ -250,10 +280,12 @@ async def test_ingest_comments_success_complete_facet() -> None:
     await _make_project()
     work_item = await _make_work_item()
     _mock_token()
-    _mock_comments([
-        _raw_comment("c1", "根评论"),
-        _raw_comment("c2", "回复", parent_id="c1"),
-    ])
+    _mock_comments(
+        [
+            _raw_comment("c1", "根评论"),
+            _raw_comment("c2", "回复", parent_id="c1"),
+        ]
+    )
 
     result = await CommentEventService().ingest_comments(_identity(), "manual")
 
