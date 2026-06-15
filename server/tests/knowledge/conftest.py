@@ -123,14 +123,23 @@ def fake_git_platform(monkeypatch: pytest.MonkeyPatch):
     monkeypatch 目标为 diff_archive 模块属性（from-import 绑定符号即模块属性，
     可拦截——test_triggers.py 同款纪律）。``--disable-socket`` 是第二道保险。
     """
-    from services.git_platform.models import MRDiffResult
+    from services.git_platform.models import MRDiffResult, MRMetadataResult
 
     class FakeGitPlatformClient:
         def __init__(self) -> None:
             self.mr_diff_calls: list[dict] = []
             self.branch_diff_calls: list[dict] = []
+            self.mr_metadata_calls: list[str] = []
             self.mr_result = MRDiffResult(success=True, files=[])
             self.branch_result = MRDiffResult(success=True, files=[])
+            # HDIFF-01：默认返回可锚定的真实 merge commit 元数据（target_branch 非 master）
+            self.mr_metadata = MRMetadataResult(
+                success=True,
+                merge_commit_sha="deadbeef" * 5,
+                target_branch="release/v1",
+                source_branch="feat/x",
+                merged_at=timezone.now(),
+            )
 
         async def get_merge_request_diff(
             self, mr_id: str, max_files: int = 50, max_diff_lines: int = 500
@@ -139,6 +148,10 @@ def fake_git_platform(monkeypatch: pytest.MonkeyPatch):
                 {"mr_id": mr_id, "max_files": max_files, "max_diff_lines": max_diff_lines}
             )
             return self.mr_result
+
+        async def get_merge_request_metadata(self, mr_id: str) -> MRMetadataResult:
+            self.mr_metadata_calls.append(mr_id)
+            return self.mr_metadata
 
         async def get_branch_diff(
             self,
