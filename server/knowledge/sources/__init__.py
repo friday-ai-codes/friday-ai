@@ -24,6 +24,8 @@ _NORMALIZERS: dict[str, str] = {
     "workflow_plan": "knowledge.sources.workflow_plan",
     "task_result": "knowledge.sources.task_result",
     "feishu_work_item": "knowledge.sources.feishu_work_item",
+    # Phase 30 DOC-02：飞书 docx（PRD/技术方案）→ Document + REFERENCES 边投影。
+    "feishu_document": "knowledge.sources.feishu_document",
 }
 
 
