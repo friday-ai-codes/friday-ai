@@ -140,10 +140,15 @@ async def aschedule_ingestion(request: IngestionRequest) -> None:
         )
 
 
-async def ingest(request: IngestionRequest) -> None:
+async def ingest(request: IngestionRequest) -> int:
     """background worker 内执行的完整摄取（normalizer → ingest_events）。
 
     失败 raise（由 background_runner 的 ``background_task_failed`` 日志兜底）。
+
+    Returns:
+        normalizer 产出并交付 ``ingest_events`` 的事件数；normalizer 零产出
+        （如 Project 不存在 / 无可摄取文档）返回 ``0``。调用方据此区分「真正摄取」
+        与「静默零产出」（WR-01：避免零产出被误判为成功）。
     """
     normalize = get_normalizer(request.source_kind)
     events = await normalize(request)
@@ -154,8 +159,9 @@ async def ingest(request: IngestionRequest) -> None:
             source_kind=request.source_kind,
             source_id=request.source_id,
         )
-        return
+        return 0
     await ingest_events(events, trigger=request.trigger)
+    return len(events)
 
 
 @dataclass(frozen=True)

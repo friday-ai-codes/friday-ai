@@ -149,7 +149,10 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
                     f"{board.feishu_project_key}:{board.work_item_type}:{board.work_item_id}"
                 )
                 # 直接 await（非 aschedule_ingestion）以同步拿成败落 steps。
-                await ingest(
+                # WR-01：normalizer 零产出（Project 不存在 / 无可摄取文档）时 ingest()
+                # 静默返回 0，不抛异常——此处据真实产出数记 ok/skipped，避免「零实体
+                # 入库却显示成功」的 false-positive（对齐「结构化结果如实展示」目标）。
+                events_ingested = await ingest(
                     IngestionRequest(
                         source_kind="feishu_document",
                         source_id=source_id,
@@ -157,7 +160,13 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
                     )
                 )
                 await _write_step(
-                    run, "document", StepResult(status="ok", identifier=source_id)
+                    run,
+                    "document",
+                    StepResult(
+                        status="ok" if events_ingested else "skipped",
+                        identifier=source_id,
+                        error="" if events_ingested else "未找到可摄取的文档/项目",
+                    ),
                 )
             except Exception as exc:
                 logger.warning(
@@ -214,9 +223,8 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
             return
 
         repository, mr_iid = resolved
-        from knowledge.diff_archive import archive_code_change
+        from knowledge.diff_archive import aarchive_exists, archive_code_change
         from knowledge.ingestion import IngestionEvent, ingest_events
-        from knowledge.models import CodeChangeArchive, EntityKind, EntityOrigin
 
         source_id = f"{repository.id}:{mr_iid}"
         # 合成稳定 natural key（不新建底层 MR 元数据拉取，保持「编排既有能力」边界）
@@ -236,17 +244,12 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
         )
 
         if archive_result is None:
-            # 返回 None：区分重复幂等命中（已归档）与凭证缺失/拉取失败。
-            duplicate = await CodeChangeArchive.objects.filter(
-                source_kind=_MR_SOURCE_KIND, source_id=source_id
-            ).afirst()
-            if duplicate is not None:
+            # 返回 None：区分重复幂等命中（已归档，ok）与凭证缺失/拉取失败（failed）。
+            if await aarchive_exists(_MR_SOURCE_KIND, source_id):
                 await _write_step(
                     run,
                     "mr_diff",
-                    StepResult(
-                        status="ok", identifier=str(duplicate.id), link=mr_url
-                    ),
+                    StepResult(status="ok", identifier=source_id, link=mr_url),
                 )
             else:
                 await _write_step(
@@ -261,9 +264,10 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
 
         archive = archive_result.archive
         # code_change 事件入图使之可检索；payload 仅摘要（diff 原文绝不进 payload，T-32-02）。
+        # kind/origin 用字面值（INV-3：delivery 层不引用 knowledge 模型，读写收口在 knowledge）。
         event = IngestionEvent(
-            kind=EntityKind.CODE_CHANGE,
-            origin=EntityOrigin.WORKFLOW,
+            kind="code_change",
+            origin="workflow",
             source_kind=_MR_SOURCE_KIND,
             source_id=source_id,
             title=f"{repository.name} MR !{mr_iid}",
