@@ -20,11 +20,20 @@ from rest_framework.response import Response
 from delivery.api.serializers import (
     CommentTreeNodeSerializer,
     DocumentSnapshotSerializer,
+    IngestDispatchRequestSerializer,
+    IngestRunSerializer,
     WorkItemSerializer,
     WorkItemUpsertRequestSerializer,
 )
-from delivery.models import Document, DocumentType, WorkItem
-from delivery.services import WorkItemIdentity, WorkItemService, aproject_comment_tree
+from delivery.models import Document, DocumentType, IngestRun, WorkItem, default_steps
+from delivery.services import (
+    WorkItemIdentity,
+    WorkItemService,
+    aproject_comment_tree,
+    ingest_from_urls,
+    parse_board_url,
+)
+from services.background_runner import run_in_background
 
 logger = structlog.get_logger(__name__)
 
@@ -197,4 +206,68 @@ class WorkItemPrdDocumentView(APIView):
             )
 
         payload = await sync_to_async(lambda: DocumentSnapshotSerializer(document).data)()
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class IngestDispatchView(APIView):
+    """一键摄取触发端点（POST，IsAuthenticated，ING-01）。
+
+    校验 ``(board_url, mr_url)`` → 解析看板 URL 留痕 Project（可空）→ 建 running
+    ``IngestRun`` → 经 ``run_in_background`` 派发 ``ingest_from_urls`` 脱离请求生命周期
+    → 立即 202 返回 ``{run_id, dispatched}``（长摄取异步，避免请求阻塞，T-32-03/04）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request):
+        serializer = IngestDispatchRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        board_url = serializer.validated_data["board_url"]
+        mr_url = serializer.validated_data["mr_url"]
+
+        # 看板 URL 解析出的 Project 留痕（解析不出/未配置 → None，不阻断派发）
+        project = None
+        board = parse_board_url(board_url)
+        if board is not None:
+            from projects.models import Project
+
+            project = await Project.objects.filter(
+                feishu_project_key=board.feishu_project_key
+            ).afirst()
+
+        run = await sync_to_async(IngestRun.objects.create)(
+            board_url=board_url,
+            mr_url=mr_url,
+            status=IngestRun.Status.RUNNING,
+            steps=default_steps(),
+            project=project,
+        )
+
+        run_id = str(run.id)
+        run_in_background(
+            lambda: ingest_from_urls(run_id, board_url, mr_url),
+            name=f"ingest:{run_id}",
+        )
+        return Response(
+            {"run_id": run_id, "dispatched": True},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class IngestRunDetailView(APIView):
+    """一键摄取状态回流端点（GET，IsAuthenticated，只读不旁路触发，T-32-03）。
+
+    按 ``run_id`` 命中 ``IngestRun`` → ``IngestRunSerializer`` 回流真实步骤结果；
+    不存在 → 404。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, run_id):
+        run = await IngestRun.objects.filter(id=run_id).afirst()
+        if run is None:
+            return Response(
+                {"detail": "IngestRun 不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+        payload = await sync_to_async(lambda: IngestRunSerializer(run).data)()
         return Response(payload, status=status.HTTP_200_OK)

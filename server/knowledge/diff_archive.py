@@ -58,6 +58,7 @@ __all__ = [
     "SINGLE_FILE_GENERATED_LINE_THRESHOLD",
     "ArchiveResult",
     "FileDiff",
+    "aarchive_exists",
     "archive_code_change",
     "build_code_change_content",
     "compress_diff",
@@ -511,6 +512,18 @@ def _assemble_raw_diff(files: list[MRDiffFile]) -> tuple[str, dict[str, str]]:
         parts.append(text)
         raw_by_path[path] = text
     return "\n".join(parts), raw_by_path
+
+
+async def aarchive_exists(source_kind: str, source_id: str) -> bool:
+    """是否已存在归档行（按 source_kind+source_id；编排层区分重复幂等 vs 失败用）。
+
+    ``archive_code_change`` 在「重复幂等命中」与「凭证缺失/拉取失败」两种情形均返回
+    None；调用方（如一键摄取编排）经本只读 helper 区分二者，避免把 knowledge 模型
+    读访问散落进操作态 app（INV-3：knowledge 模型读写收口在 knowledge 层）。
+    """
+    return await CodeChangeArchive.objects.filter(
+        source_kind=source_kind, source_id=source_id
+    ).aexists()
 
 
 async def archive_code_change(

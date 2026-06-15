@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from delivery.models import Document, WorkItem, WorkItemSyncState
+from delivery.models import Document, IngestRun, WorkItem, WorkItemSyncState
 
 
 class WorkItemSyncStateSerializer(serializers.ModelSerializer):
@@ -131,3 +131,40 @@ class DocumentSnapshotSerializer(serializers.ModelSerializer):
     def get_version(self, obj: Document) -> int | None:
         current = obj.current_version
         return current.version if current is not None else None
+
+
+class IngestDispatchRequestSerializer(serializers.Serializer):
+    """一键摄取触发入参校验（32-02）：board_url + mr_url 必填且须为 http(s)。
+
+    不可信用户输入：仅在此校验非空 + http(s) 前缀（解析/SSRF 边界在编排层）；
+    校验错误用中文，对齐前端契约。
+    """
+
+    board_url = serializers.CharField(max_length=2000, trim_whitespace=True)
+    mr_url = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+    def _validate_http_url(self, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise serializers.ValidationError("URL 必须以 http(s):// 开头")
+        return value
+
+    def validate_board_url(self, value: str) -> str:
+        return self._validate_http_url(value)
+
+    def validate_mr_url(self, value: str) -> str:
+        return self._validate_http_url(value)
+
+
+class IngestRunSerializer(serializers.ModelSerializer):
+    """一键摄取运行记录只读序列化（32-02，字段名对齐 UI-SPEC ``IngestRun`` 契约）。
+
+    暴露 ``run_id``(=id) / ``status`` / ``steps``(三步结构化结果) /
+    ``started_at`` / ``completed_at``，供前端派发后轮询真实进度。纯只读。
+    """
+
+    run_id = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        model = IngestRun
+        fields = ["run_id", "status", "steps", "started_at", "completed_at"]
+        read_only_fields = fields
