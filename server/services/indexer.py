@@ -3466,6 +3466,36 @@ async def _run_commit_index(repository_id: str, repo_path: str) -> None:
         )
 
 
+async def _run_modifies_chunk_reconcile(repository_id: str) -> None:
+    """HDIFF-02：base 索引完成后对账失效过期 MODIFIES_CHUNK 边。
+
+    目标分支演进 / 文件重索引后，旧的 diff→chunk 关联当年成立但当前已过期；本钩子
+    把指向已过期 chunk 版本的活跃 MODIFIES_CHUNK 边 ``invalid_at`` 置位（置位不删除，
+    历史可追溯）。与 ``_run_sensitive_detection`` / ``_run_commit_index`` 同款
+    best-effort fail-safe（整段 try/except，失败仅 warning，绝不阻断索引 success
+    终态，对齐 D-04/T-25-12）。
+    """
+    try:
+        from django.utils import timezone
+
+        from knowledge.modifies_chunk import areconcile_modifies_chunk_edges
+
+        invalidated = await areconcile_modifies_chunk_edges(
+            repository_id, invalid_at=timezone.now()
+        )
+        logger.info(
+            "modifies_chunk_reconcile_completed",
+            repository_id=repository_id,
+            invalidated=invalidated,
+        )
+    except Exception as e:
+        logger.warning(
+            "modifies_chunk_reconcile_failed",
+            repository_id=repository_id,
+            error=str(e),
+        )
+
+
 async def clone_and_index_repository(
     repository_id: str,
     *,
@@ -3801,6 +3831,10 @@ async def clone_and_index_repository(
             if await _is_shallow_clone(temp_dir):
                 await _unshallow_repo(temp_dir, proxy_url)
             await _run_commit_index(repository_id, temp_dir)
+            # HDIFF-02：base 重索引完成后对账失效过期 MODIFIES_CHUNK 边（置位不删，
+            # best-effort，绝不阻断索引 success）。功能分支 overlay 不触发对账，
+            # 与上方 base-only 钩子一致。
+            await _run_modifies_chunk_reconcile(repository_id)
 
         return index_result
 
