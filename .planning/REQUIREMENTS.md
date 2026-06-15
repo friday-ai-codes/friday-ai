@@ -40,7 +40,7 @@
 ### Release 账本（REL）
 
 - [x] **REL-01**: Release 账本宽容模型（`ReleaseBatch`/`ReleaseRecord`/`ReleaseArtifact`）落地，保留 Bitable 原始行 `raw_row`，adapter 演进不丢数据
-- [ ] **REL-02**: 飞书 Bitable client/adapter 骨架就位（开放平台 `tenant_access_token` 解析独立于项目 plugin token），natural key `{app_token}:{table_id}:{record_id}`（数据映射待开放平台凭证后填）
+- [x] **REL-02**: 飞书 Bitable client/adapter 骨架就位（开放平台 `tenant_access_token` 解析独立于项目 plugin token），natural key `{app_token}:{table_id}:{record_id}`（数据映射待开放平台凭证后填）
 
 ### 一键摄取（ING）
 
@@ -109,7 +109,7 @@
 | DOC-01 | Phase 30 | Complete |
 | DOC-02 | Phase 30 | Complete |
 | REL-01 | Phase 31 | Complete |
-| REL-02 | Phase 31 | Pending |
+| REL-02 | Phase 31 | Complete |
 | ING-01 | Phase 32 | Pending |
 | HDIFF-01 | Phase 33 | Pending |
 | HDIFF-02 | Phase 33 | Pending |
