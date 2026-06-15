@@ -4,8 +4,8 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: verifying
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T13:13:40.405Z"
-last_activity: 2026-06-15 -- Phase 33 execution started
+last_updated: "2026-06-15T13:41:56.857Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 9
   completed_phases: 7
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 33 (历史 diff 冻结 + bi-temporal 失效) — EXECUTING
-Plan: 2 of 2
+Phase: 34
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-06-15 -- Phase 33 execution started
+Last activity: 2026-06-15
 
 Progress: [███░░░░░░░] 33%
 
