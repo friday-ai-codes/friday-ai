@@ -4,13 +4,13 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: executing
 stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-06-15T05:56:02.797Z"
+last_updated: "2026-06-15T06:07:24.948Z"
 last_activity: 2026-06-15 -- Phase 29 execution started
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 22
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 29 (评论事件流) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 29 execution started
 
@@ -116,6 +116,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 27 P27-03 | ~5min | 2 tasks | 2 files |
 | Phase 28 P28-01 | ~12min | 3 tasks | 12 files |
 | Phase 29 P29-01 | ~8min | 2 tasks | 4 files |
+| Phase 29 P02 | 18min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -194,6 +195,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 27]: 27-03: near-dup feishu.client 接入 27-01 共享 helper，落 FIX-01/03/04，与 canonical services/feishu.py 同源同断言消除解析漂移；work_item_type 必填 fail-loud、WorkItemInfo 新增带默认 feishu_fields、get_comments safe_response_json fail-soft；本 client 无 relation 端点故不涉 FIX-02；全调用方已显式传 type 零回归
 - [Phase 28]: 28-01: 新建 delivery app（注册 INSTALLED_APPS 在 feishu 之后），models 包按实体拆 work_item/sync_state/relation/status_event + curated re-export；id 一律 UUIDField(default=uuid4)；INV-1 由 WorkItem.Meta.unique_together(feishu_project_key, work_item_type, work_item_id) 在 DB 层强制（测试以 pytest.raises(IntegrityError) 守护）；feishu_fields=JSONField(default=list)、field_provenance=JSONField(default=dict)；WorkItemOrigin 含 bitable_import/mr_reverse 枚举占位（真实调用方 Phase 31/32）；本 plan 只建表，落库逻辑归 28-02 service（INV-6）；模型层无 create/save 业务逻辑
 - [Phase 29]: 29-01: append-only WorkItemCommentEvent 模型只建表+枚举（CommentEventType 五值/ApprovalSemantic 三值默认 none），模型层无 create/save/就地改写方法——落库归 29-02 CommentEventService 单一入口（守 INV-6）；编辑/删除作为新事件行（CMT-02，模型单测守护两行并存）；edited/deleted 留枚举占位 deferred；复用 status_event append-only 范式 + (work_item, event_time) 索引
+- [Phase ?]: 29-02: 评论事件落库唯一收口 append_events（INV-6 精神），去重锚 get_or_create 幂等；ingest 复用 Phase 27 get_comments 降配不回滚
+- [Phase ?]: 29-02: 当前评论树为事件流读时投影 project_comment_tree（非事实表），编辑取最新/删除标记/线程层级/排序，绝不改事件行
 
 ### Pending Todos
 
@@ -265,7 +268,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T05:56:02.792Z
+Last session: 2026-06-15T06:06:40.091Z
 Stopped at: Completed 29-01-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
