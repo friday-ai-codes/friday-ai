@@ -18,11 +18,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from delivery.api.serializers import (
+    CommentTreeNodeSerializer,
     WorkItemSerializer,
     WorkItemUpsertRequestSerializer,
 )
 from delivery.models import WorkItem
-from delivery.services import WorkItemIdentity, WorkItemService
+from delivery.services import WorkItemIdentity, WorkItemService, aproject_comment_tree
 
 logger = structlog.get_logger(__name__)
 
@@ -84,3 +85,49 @@ class WorkItemDetailView(APIView):
 
         payload = await sync_to_async(lambda: WorkItemSerializer(work_item).data)()
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class WorkItemCommentTreeView(APIView):
+    """按三元组返回当前评论树投影（只读，IsAuthenticated）。
+
+    只读端点：按三元组命中**已落库** WorkItem（不旁路 fetch / 不落库），经
+    ``project_comment_tree`` 从事件流读时投影当前评论树（CMT-02）。不存在 → 404。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request):
+        project_key = request.query_params.get("feishu_project_key")
+        work_item_type = request.query_params.get("work_item_type")
+        raw_id = request.query_params.get("work_item_id")
+        if not (project_key and work_item_type and raw_id):
+            return Response(
+                {
+                    "detail": (
+                        "缺少三元组参数（feishu_project_key / work_item_type / work_item_id）"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            work_item_id = int(raw_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "work_item_id 必须为整数"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        work_item = await WorkItem.objects.filter(
+            feishu_project_key=project_key,
+            work_item_type=work_item_type,
+            work_item_id=work_item_id,
+        ).afirst()
+        if work_item is None:
+            return Response({"detail": "WorkItem 不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        tree = await aproject_comment_tree(work_item)
+        comments = await sync_to_async(lambda: CommentTreeNodeSerializer(tree, many=True).data)()
+        return Response(
+            {"work_item_id": work_item.work_item_id, "comments": comments},
+            status=status.HTTP_200_OK,
+        )
