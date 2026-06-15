@@ -305,8 +305,15 @@ class FeishuClient:
                     "content": rich_content,
                 },
             )
-            data = response.json()
-            return data.get("err_code") == 0
+            # 防御式解析（CONTEXT：所有 .json() 加防御）：非 JSON/非 dict → 视为失败
+            data = safe_response_json(
+                response,
+                log_event="feishu_add_comment_parse_failed",
+                expect=dict,
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
+            return data is not None and data.get("err_code") == 0
 
     async def get_comments(
         self,
@@ -389,7 +396,13 @@ class FeishuClient:
                     "X-USER-KEY": self.user_key or "",
                 },
             )
-            data = response.json()
+            # 决策硬路径（需读取可用流转）：非 JSON fail-loud（与 get_work_item 一致）
+            data = strict_response_json(
+                response,
+                log_event="feishu_transition_status_parse_failed",
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
 
             if data.get("err_code") != 0:
                 raise Exception(f"获取状态流转失败: {data}")
@@ -419,7 +432,15 @@ class FeishuClient:
                     "transition_id": target_transition["id"],
                 },
             )
-            return response.json().get("err_code") == 0
+            # 执行流转结果：防御式解析，非 JSON/非 dict → 视为失败
+            result_data = safe_response_json(
+                response,
+                log_event="feishu_transition_status_parse_failed",
+                expect=dict,
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
+            return result_data is not None and result_data.get("err_code") == 0
 
     async def test_connection(self, project_key: Optional[str] = None) -> dict:
         """测试飞书连接和项目访问。
@@ -459,8 +480,16 @@ class FeishuClient:
                             "X-USER-KEY": self.user_key or "",
                         },
                     )
-                    data = response.json()
-                    if data.get("err_code") == 0:
+                    # 防御式解析（CONTEXT：所有 .json() 加防御）
+                    data = safe_response_json(
+                        response,
+                        log_event="feishu_test_connection_parse_failed",
+                        expect=dict,
+                        project_key=test_key,
+                    )
+                    if data is None:
+                        result["message"] = "项目访问失败: 响应非预期 JSON"
+                    elif data.get("err_code") == 0:
                         result["project_accessible"] = True
                         result["success"] = True
                         result["message"] = "连接测试成功"
