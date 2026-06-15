@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- 🚧 **v0.10.0 操作审计治理** — Phases 1–3 (in progress)
 - 🚧 **v0.6.0 领域脊柱 + 知识图谱补全** — Phases 27–35 (in progress)
 - ✅ **v0.5.0 索引检索地基与排除文件** — Phases 22–26 (shipped 2026-06-15) — [archive](./milestones/v0.5.0-ROADMAP.md)
 - ✅ **v0.4.0 工作流系统契约重构** — Phases 17–21 (shipped 2026-06-13) — [archive](./milestones/v0.4.0-ROADMAP.md)
@@ -42,7 +43,66 @@
 - [ ] **Phase 34: 评论入图 + 片段→需求反查** - 评论摄取进知识投影 + code chunk/模块 → 需求/文档反查 API/MCP（依赖 v0.5 行号回填）
 - [ ] **Phase 35: 截图识别需求** - 多模态 LLM：vision → 文本 query → 召回需求（非图片向量库）
 
+### 🚧 v0.10.0 操作审计治理 (In Progress)
+
+**Milestone Goal:** 横切治理能力——统一审计模型覆盖管理员/敏感操作，可查可追溯。
+
+**依赖链：** Phase 1（AuditEvent 基础）→ Phase 2（全量覆盖 emit 点）、Phase 3（查询 UI + 导出）可并行。
+
+- [ ] **Phase 1: AuditEvent 模型 + emit 机制** - 统一审计模型（actor/action/target/before-after/timestamp/source）+ 请求上下文自动提取 actor + `emit_audit_event()` 双入口 + append-only 保护 (AUDIT-01..04)
+- [ ] **Phase 2: 全量敏感操作 emit 覆盖** - 九大类敏感操作（用户/供应商凭证/Git 凭证/仓库/排除规则/清理任务/访问令牌/系统设置/飞书同步）全部接入审计 emit (COV-01..09)
+- [ ] **Phase 3: 审计查询 UI + 导出** - 管理员可按 actor/action/target/时间过滤审计事件，分页表格展示 + 详情 before-after diff + CSV/JSON 导出 (UI-01..04)
+
 ## Phase Details
+
+### Phase 1: AuditEvent 模型 + emit 机制
+
+**Goal**: 系统以统一 AuditEvent 模型记录审计事件，提供可靠的 emit 基础设施，使后续覆盖面与 UI 有统一数据源。
+**Depends on**: Nothing（首个 phase，审计基础设施）
+**Requirements**: AUDIT-01, AUDIT-02, AUDIT-03, AUDIT-04
+**Success Criteria** (what must be TRUE):
+
+  1. 系统以统一 `AuditEvent` 模型记录审计事件，包含 actor（操作者）、action（操作类型）、target（目标对象类型+ID）、before（变更前快照）、after（变更后快照）、timestamp（事件时间）、source（来源：api/system/scheduler）（AUDIT-01）
+  2. 系统自动从请求上下文提取 actor 信息——JWT 用户（request.user）、PAT 所有者（AccessToken.owner）、系统/定时任务操作（system actor）（AUDIT-02）
+  3. 各模块以统一的 `emit_audit_event()` 工具函数写入审计事件，同步与异步均可调用（AUDIT-03）
+  4. AuditEvent 记录只追加（append-only），REST API 与 Django admin 均不提供 DELETE/PATCH 端点，确保审计日志不可篡改（AUDIT-04）
+
+**Plans**: TBD
+
+### Phase 2: 全量敏感操作 emit 覆盖
+
+**Goal**: 系统中所有管理员/敏感操作均产生审计记录，消灭审计盲区——任何对安全相关资源的变更都可追溯。
+**Depends on**: Phase 1（需要 AuditEvent 模型 + emit_audit_event 函数）
+**Requirements**: COV-01, COV-02, COV-03, COV-04, COV-05, COV-06, COV-07, COV-08, COV-09
+**Success Criteria** (what must be TRUE):
+
+  1. 用户管理操作（创建/更新/删除/启用/禁用，含 is_superuser 变更）产生审计记录，记录 actor、action、target 及变更前后快照（COV-01）
+  2. 供应商凭证与 Git 实例凭证的创建/更新/删除产生审计记录（COV-02, COV-03）
+  3. 仓库配置变更、排除规则变更（含 AI 建议 accept/dismiss）产生审计记录（COV-04, COV-05）
+  4. 清理任务（purge_file / run_cleanup / sensitive_purge）、访问令牌操作、系统设置变更、飞书同步操作均产生审计记录（COV-06..09）
+  5. 全部九类敏感操作的 emit 点均有对应测试守护，确保新增敏感路径不遗漏
+
+**Plans**: TBD
+
+### Phase 3: 审计查询 UI + 导出
+
+**Goal**: 管理员可通过前端界面查询、过滤、查看审计事件详情并导出，完成审计治理的可见闭环。
+**Depends on**: Phase 1（需要 AuditEvent 模型做查询）
+**Requirements**: UI-01, UI-02, UI-03, UI-04
+**Success Criteria** (what must be TRUE):
+
+  1. 管理员可通过审计 UI 按 actor（操作者）、action（操作类型）、target（目标）、时间范围过滤审计事件（UI-01）
+  2. 审计事件列表以分页表格展示，每行显示操作者、操作类型、目标、时间、变更摘要（UI-02）
+  3. 点击审计事件可查看详情，包含完整的 before-after 变更对比（JSON diff 高亮）（UI-03）
+  4. 审计事件支持 CSV 和 JSON 格式导出，导出结果尊重当前过滤条件（UI-04）
+
+**Plans**: TBD
+**UI hint**: yes
+
+## Phase Details (v0.6.0)
+
+<details>
+<summary>v0.6.0 Phase Details (Phases 27–35)</summary>
 
 ### Phase 27: 飞书接口前置修复
 
@@ -189,6 +249,8 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+</details>
+
 ### 📋 Next milestone
 
 v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案）见 `ROADMAP-vNext.md` §v0.7。
@@ -213,6 +275,9 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 33. 历史 diff 冻结 + bi-temporal 失效 | v0.6.0 | 0/TBD | Not started | - |
 | 34. 评论入图 + 片段→需求反查 | v0.6.0 | 0/TBD | Not started | - |
 | 35. 截图识别需求 | v0.6.0 | 0/TBD | Not started | - |
+| 1. AuditEvent 模型 + emit 机制 | v0.10.0 | 0/TBD | Not started | - |
+| 2. 全量敏感操作 emit 覆盖 | v0.10.0 | 0/TBD | Not started | - |
+| 3. 审计查询 UI + 导出 | v0.10.0 | 0/TBD | Not started | - |
 
 ---
 *Previous milestones archived in .planning/milestones/*
