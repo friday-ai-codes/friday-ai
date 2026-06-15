@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: executing
+status: verifying
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T11:31:09.696Z"
+last_updated: "2026-06-15T11:40:58.909Z"
 last_activity: 2026-06-15 -- Phase 32 execution started
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 19
-  completed_plans: 18
-  percent: 56
+  completed_plans: 19
+  percent: 67
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 Phase: 32 (一键摄取编排) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-15 -- Phase 32 execution started
 
 Progress: [███░░░░░░░] 33%
@@ -125,6 +125,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 31 P03 | 6m | 3 tasks | 5 files |
 | Phase 32 P01 | 25m | 2 tasks | 7 files |
 | Phase 32 P02 | 40m | 2 tasks | 9 files |
+| Phase 32 P03 | 12m | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: [Phase 30]: doc token 取自 wi 锚事件 payload 的 prd_url/tech_doc_url（避免重复 get_work_item）；同 docx 二次拉取为 accepted tradeoff；doc 拉取/操作态写入失败降级 warning，缺段不缺实体不抛不回滚
 - [Phase ?]: Release natural key 落独立字段 bitable_record_key（条件唯一），便于 31-03 幂等 upsert
 - [Phase ?]: 31-02: ReleaseService 消费预组装 bitable_record_key 作自然键唯一来源（不在服务内重拼接，归 31-03 adapter）
+- [Phase ?]: 32-03 前端一键摄取面板沿用派发→轮询范式（useMutation + 条件 refetchInterval），守护测试以真实 zh-CN.json 锁关键文案
 
 ### Pending Todos
 
@@ -283,7 +285,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T11:31:00.883Z
+Last session: 2026-06-15T11:40:28.162Z
 Stopped at: Completed 30-03-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
