@@ -310,15 +310,15 @@ onBeforeUnmount(() => {
           <p class="text-sm text-muted-foreground">
             {{ degradedBody }}
           </p>
-          <a
+          <RouterLink
             v-if="showSettingsLink"
-            href="/admin"
+            to="/admin"
             class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
             data-testid="recall-degraded-link"
           >
             <span class="icon-[lucide--settings]" aria-hidden="true" />
             {{ t('screenshotRecall.degraded.settingsLink') }}
-          </a>
+          </RouterLink>
         </div>
 
         <!-- success / no-results -->
