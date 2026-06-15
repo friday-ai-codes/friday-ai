@@ -39,6 +39,12 @@ function focusField(id: string) {
 // ==================== 轮询态 ====================
 const runId = ref<string | null>(null)
 
+// 后台派发 worker 若在置终态前夭折，run 会永驻 running → 轮询无限不停（IN-02）。
+// 客户端兜底：自派发起累计轮询时长超上限即停轮并提示 timeout（reuse 错误渲染）。
+const POLL_TIMEOUT_MS = 2 * 60 * 1000
+const pollStartedAt = ref<number | null>(null)
+const isPollTimeout = ref(false)
+
 // ==================== 派发（POST /delivery/ingest/） ====================
 const dispatchMutation = useMutation({
   mutationFn: () => ingestApi.dispatch(boardUrl.value.trim(), mrUrl.value.trim()),
@@ -59,6 +65,8 @@ async function onSubmit() {
 
   try {
     const res = await dispatchMutation.mutateAsync()
+    isPollTimeout.value = false
+    pollStartedAt.value = Date.now()
     runId.value = res.run_id
     success(t('ingest.dispatch.success'))
   }
@@ -73,7 +81,16 @@ const runQuery = useQuery({
   queryFn: () => ingestApi.getRun(runId.value as string),
   enabled: computed(() => !!runId.value),
   // running 持续轮询；completed/failed 停轮（沿用 reconcile 范式）。
-  refetchInterval: query => (query.state.data?.status === 'running' ? 2000 : false),
+  // IN-02：running 但超出 POLL_TIMEOUT_MS（worker 夭折永驻 running）→ 停轮 + 置 timeout。
+  refetchInterval: (query) => {
+    if (query.state.data?.status !== 'running')
+      return false
+    if (pollStartedAt.value !== null && Date.now() - pollStartedAt.value > POLL_TIMEOUT_MS) {
+      isPollTimeout.value = true
+      return false
+    }
+    return 2000
+  },
 })
 
 const run = computed(() => runQuery.data.value ?? null)
@@ -216,12 +233,14 @@ function showError(step?: IngestStep): boolean {
         <!-- 顶部 run 状态行 -->
         <div class="space-y-1.5">
           <div class="flex items-center gap-2 text-sm font-medium">
-            <span v-if="run.status === 'running'" class="icon-[lucide--loader-circle] animate-spin text-primary" />
-            <span v-else-if="allOk" class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" />
-            <span v-else-if="run.status === 'failed'" class="icon-[lucide--alert-circle] text-destructive" />
-            <span v-else class="icon-[lucide--alert-triangle] text-amber-700 dark:text-amber-400" />
-            <span>
-              <template v-if="run.status === 'running'">{{ t('ingest.run.running') }}</template>
+            <span v-if="run.status === 'running' && isPollTimeout" class="icon-[lucide--alert-circle] text-destructive" aria-hidden="true" />
+            <span v-else-if="run.status === 'running'" class="icon-[lucide--loader-circle] animate-spin text-primary" aria-hidden="true" />
+            <span v-else-if="allOk" class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            <span v-else-if="run.status === 'failed'" class="icon-[lucide--alert-circle] text-destructive" aria-hidden="true" />
+            <span v-else class="icon-[lucide--alert-triangle] text-amber-700 dark:text-amber-400" aria-hidden="true" />
+            <span :class="{ 'text-destructive': run.status === 'running' && isPollTimeout }">
+              <template v-if="run.status === 'running' && isPollTimeout">{{ t('ingest.run.timeout') }}</template>
+              <template v-else-if="run.status === 'running'">{{ t('ingest.run.running') }}</template>
               <template v-else-if="allOk">{{ t('ingest.run.completed') }}</template>
               <template v-else-if="isPartial">{{ t('ingest.run.partial') }}</template>
               <template v-else-if="run.status === 'failed'">{{ t('ingest.run.failed') }}</template>
