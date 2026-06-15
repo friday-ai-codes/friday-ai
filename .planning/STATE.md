@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: executing
+status: verifying
 stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-06-15T04:07:43.063Z"
+last_updated: "2026-06-15T04:15:15.544Z"
 last_activity: 2026-06-15 -- Phase 27 execution started
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 11
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 Phase: 27 (飞书接口前置修复) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-15 -- Phase 27 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -113,6 +113,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 26 P06 (gap) | ~20min | 2 tasks | 7 files |
 | Phase 27 P27-01 | ~15min | 3 tasks | 3 files |
 | Phase 27 P27-02 | 12min | 3 tasks | 2 files |
+| Phase 27 P27-03 | ~5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -188,6 +189,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 26]: 26-03: git 平台 MR/PR 客户端（_get_client / create_mr_for_task / coding.py MR 段）+ 编码容器 dispatch token 注入（coding.py dispatch / coding_session_service 两处）+ diff archive 拉取五处取 token 统一经 aresolve_git_token，per-repo 优先 → host 实例池 fallback；解析器 None 时各调用方保留既有缺凭证报错/降级（行为不回退）；token 仅传 client/进 dispatch payload 不入日志；守护测试覆盖同 host 共享 + per-repo 优先 + 缺凭证报错不回退 + 不泄漏
 - [Phase 26]: 26-06(gap): 26-VERIFICATION 发现 26-02/03 之外仍有残留 6 文件 ≥8 处内联 decrypt_value(encrypted_token) 绕过解析器（pr.py PR+cross-ref、coding_graph.py 冲突预检+PR、code_review.py get_merge_request_diff、summary_service.py + chat_tools.py 两处容器 dispatch、views.py TestConnection 既有仓库分支）→ 全部改经 aresolve_git_token；TestConnection 仅『既有仓库 repository_id』分支接解析器、『用户当场输入 token』分支不变；code_review 去无用 select_related('credential')；缺凭证保留各自既有文案（行为不回退）；新建 test_git_credential_gap_wiring.py（dispatch 注入 + 平台 client 两类代表入口，6 测）；grep 确认全 server 除解析器自身已无 resolver-bypassing 取 token
 - [Phase 27]: 27-02: get_work_item/get_comments 移除 work_item_type=story 默认改必填(fail-loud TypeError)，WorkItemInfo 新增带默认 feishu_fields(完整元数据)+fields 拍平双写向后兼容；接入 27-01 helper——硬路径 strict_response_json fail-loud、comments/relations 端点 safe_response_json fail-soft 返回[]，relations 标注 origin=feishu_relation_api；全 services.feishu 调用方已显式传 type，零回归
+- [Phase 27]: 27-03: near-dup feishu.client 接入 27-01 共享 helper，落 FIX-01/03/04，与 canonical services/feishu.py 同源同断言消除解析漂移；work_item_type 必填 fail-loud、WorkItemInfo 新增带默认 feishu_fields、get_comments safe_response_json fail-soft；本 client 无 relation 端点故不涉 FIX-02；全调用方已显式传 type 零回归
 
 ### Pending Todos
 
@@ -259,7 +261,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T04:06:44.634Z
+Last session: 2026-06-15T04:15:15.539Z
 Stopped at: Completed 27-01-PLAN.md
 Resume file: None
 Next: 规划 Phase 27（飞书接口前置修复）
