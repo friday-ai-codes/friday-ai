@@ -211,7 +211,14 @@ async def test_three_steps_all_ok_persist_and_retrievable(
     assert edge.target_entity_id == doc_entity_id
 
     # 步 3：CodeChangeArchive 行 + code_change knowledge 实体
-    assert await CodeChangeArchive.objects.filter(source_kind="mr_ingest").aexists()
+    # HDIFF-01：commit 锚定真实 merge_commit_sha + target_branch（非合成 mr-5 / 非 master）
+    archive = await CodeChangeArchive.objects.aget(source_kind="mr_ingest")
+    assert archive.commit_sha == "deadbeef" * 5
+    assert archive.base_branch == "release/v1"
+    assert archive.commit_sha != f"mr-{MR_IID}"
+    # event_time（→ edge valid_at）锚定到 merge commit 业务时间（merged_at）
+    assert archive.event_time == fake_git_platform.mr_metadata.merged_at
+    assert fake_git_platform.mr_metadata_calls == [MR_IID]
     assert await KnowledgeEntity.objects.filter(kind=EntityKind.CODE_CHANGE).aexists()
 
 
@@ -301,12 +308,13 @@ async def test_document_step_zero_output_marks_skipped(
     assert result.steps["mr_diff"]["status"] == "ok"
 
 
-async def test_mr_archive_none_no_credential_marks_failed(
+async def test_mr_no_credential_marks_skipped(
     mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform
 ) -> None:
-    """archive_code_change 返回 None（凭证缺失，无既有归档）→ mr_diff failed；其余步 ok。"""
+    """凭证缺失 → 无法解析 commit 锚（merge_commit_sha 取不到）→ mr_diff skipped；
+    绝不合成归档；其余步 ok（WR-02：anchor 不可用如实降级）。"""
     await _make_project()
-    # 仓库存在但无凭证 → archive_code_change 缺凭证降级返回 None
+    # 仓库存在但无凭证 → aresolve_mr_commit_anchor 缺凭证返回 None（早于 archive）
     from repositories.models import Repository
 
     await Repository.objects.acreate(
@@ -322,9 +330,74 @@ async def test_mr_archive_none_no_credential_marks_failed(
     assert result.status == IngestRun.Status.COMPLETED
     assert result.steps["work_item"]["status"] == "ok"
     assert result.steps["document"]["status"] == "ok"
-    assert result.steps["mr_diff"]["status"] == "failed"
+    assert result.steps["mr_diff"]["status"] == "skipped"
     assert result.steps["mr_diff"]["error"]
     assert not await CodeChangeArchive.objects.filter(source_kind="mr_ingest").aexists()
+
+
+async def test_mr_anchor_unavailable_marks_skipped_no_synthetic_archive(
+    mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform
+) -> None:
+    """有凭证但 merge_commit_sha 取不到（未合并 / 元数据失败）→ mr_diff skipped + error，
+    绝不写入合成 mr-{iid} 归档（HDIFF-01 / WR-02 / T-33-03）；其余步不受影响。"""
+    from services.git_platform.models import MRMetadataResult
+
+    await _make_project()
+    await sync_to_async(_make_repo_with_credential)()
+    # anchor 不可用：success=True 但 merge_commit_sha 为空（未合并）
+    fake_git_platform.mr_metadata = MRMetadataResult(
+        success=True, merge_commit_sha="", target_branch="main"
+    )
+    run = await _make_run()
+
+    result = await ingest_from_urls(str(run.id), BOARD_URL, MR_URL)
+
+    assert result.status == IngestRun.Status.COMPLETED
+    assert result.steps["work_item"]["status"] == "ok"
+    assert result.steps["document"]["status"] == "ok"
+    assert result.steps["mr_diff"]["status"] == "skipped"
+    assert result.steps["mr_diff"]["error"]
+    # 绝不合成归档：既无真实 sha 也无 mr-5 合成行
+    assert not await CodeChangeArchive.objects.filter(source_kind="mr_ingest").aexists()
+    # diff 拉取从未发生（anchor 解析在 archive 之前短路）
+    assert fake_git_platform.mr_diff_calls == []
+
+
+async def test_mr_modifies_chunk_edge_valid_at_anchored_to_merged_at(
+    mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform
+) -> None:
+    """MODIFIES_CHUNK 边 valid_at 锚定到 merge commit 业务时间（merged_at）。"""
+    import uuid
+
+    from code_relations.models import ChunkRegistry
+
+    await _make_project()
+    repo = await sync_to_async(_make_repo_with_credential)()
+    fake_git_platform.mr_result = MRDiffResult(success=True, files=_MR_FILES)
+
+    # 行号级 chunk：与 _MR_FILES 中 src/auth.py 的 hunk（新侧 1..4）行区间重叠
+    cid = uuid.uuid4()
+    await ChunkRegistry.objects.acreate(
+        chunk_id=cid,
+        content_hash="f" * 64,
+        repository=repo,
+        branch_name="",
+        file_path="src/auth.py",
+        chunk_index=0,
+        line_start=1,
+        line_end=10,
+    )
+    run = await _make_run()
+
+    result = await ingest_from_urls(str(run.id), BOARD_URL, MR_URL)
+
+    assert result.steps["mr_diff"]["status"] == "ok"
+    edge = await KnowledgeEdge.objects.aget(
+        relation=EdgeRelation.MODIFIES_CHUNK, target_chunk_id=cid
+    )
+    assert edge.valid_at == fake_git_platform.mr_metadata.merged_at
+    # chunk 指纹冻结进边 metadata（HDIFF-01 → HDIFF-02 对账依据）
+    assert edge.metadata["chunk_content_hash"] == "f" * 64
 
 
 # ============================================================================
