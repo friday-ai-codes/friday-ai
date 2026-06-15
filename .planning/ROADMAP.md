@@ -133,6 +133,7 @@ Plans:
 - [x] 26-02-PLAN.md — REPO-01: 解析器接入克隆/索引/bare 镜像/图谱克隆取 token 路径 + 守护测试
 - [x] 26-03-PLAN.md — REPO-01: 解析器接入 git 平台客户端（MR/PR）/ 编码 dispatch / diff archive 取 token 路径 + 守护测试 ✅ (b592debac)
 - [x] 26-04-PLAN.md — REPO-01: 实例凭证 REST CRUD（token write-only 加密、IsSuperUser）+ 前端管理页（不回显）+ 守护测试 ✅ (d18394869)
+- [x] 26-06-GAP — REPO-01: 闭合 26-VERIFICATION 缺口——残留 6 文件 ≥8 处内联取 token（pr.py/coding_graph.py/code_review.py/summary_service.py/chat_tools.py/views.py TestConn）统一经解析器 + gap 守护测试 ✅ (b76a9f1d6, 39d351ad7)
 
 ## Progress
 
