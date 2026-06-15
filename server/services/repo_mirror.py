@@ -188,20 +188,18 @@ async def _has_commit(repo_dir: Path, sha: str) -> bool:
 
 @sync_to_async
 def _fetch_repo_params(repository_id: str) -> dict[str, Any]:
-    from common.encryption import decrypt_value
     from repositories.models import Repository
+    from services.git_credentials import resolve_git_token_sync
 
     repo = (
-        Repository.objects.select_related("credential")
-        .filter(id=repository_id, is_deleted=False)
-        .first()
+        Repository.objects.filter(id=repository_id, is_deleted=False).first()
     )
     if repo is None:
         raise MirrorError("repository_not_found", "仓库不存在")
-    credential = getattr(repo, "credential", None)
-    token: str | None = None
-    if credential and credential.encrypted_token:
-        token = decrypt_value(credential.encrypted_token)
+    # 统一经凭证解析器取 token（Phase 26 REPO-01）：per-repo 优先，无则按 host
+    # 命中实例凭证池。token 仍只进单次 fetch argv URL，绝不写镜像 git config。
+    # 本函数已是 @sync_to_async 同步上下文，用同步入口。
+    token: str | None = resolve_git_token_sync(repo)
     return {
         "git_url": repo.git_url,
         "proxy_url": repo.proxy_url,
