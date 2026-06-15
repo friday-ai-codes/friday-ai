@@ -102,6 +102,16 @@ class Document(models.Model):
             # 30-02 external_feishu 去重定位
             models.Index(fields=["feishu_tenant", "external_ref"]),
         ]
+        constraints = [
+            # external_feishu 去重键 DB 级唯一（WR-01）：并发摄取下 get_or_create 的
+            # SELECT FOR UPDATE 在目标行尚不存在时无行可锁，无约束会建出重复 Document。
+            # 条件限非空 external_ref——internal_generated / 空 ref 行豁免，不在空键上互撞。
+            models.UniqueConstraint(
+                fields=["feishu_tenant", "external_ref"],
+                condition=~models.Q(external_ref=""),
+                name="uniq_document_feishu_tenant_external_ref",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.document_type}/{self.source_kind}:{self.external_ref}"
