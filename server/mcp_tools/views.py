@@ -28,6 +28,13 @@ from interactions.ledger import (
     arecord_tool_call,
 )
 from interactions.models import InteractionEvent, InteractionRun, RetrievalTrace, ToolCallRecord
+from knowledge.exposure import (
+    parse_as_of,
+    serialize_related,
+    serialize_search_results,
+    serialize_timeline,
+)
+from knowledge.retrieval import DeliveryKnowledgeSearchService
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.branch_utils import resolve_branch_for_query
 from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
@@ -47,6 +54,11 @@ from .execution_service import (
     execution_trace_payload,
     refresh_execution_trace,
 )
+from .learning_case_service import (
+    LearningCaseError,
+    create_learning_case_from_technical_plan,
+    search_learning_cases,
+)
 from .merge_request_service import (
     MergeRequestToolError,
     create_merge_request,
@@ -63,20 +75,12 @@ from .planning_service import (
     build_repository_analysis,
     improve_coding_plan,
 )
-from knowledge.exposure import (
-    parse_as_of,
-    serialize_related,
-    serialize_search_results,
-    serialize_timeline,
-)
-from knowledge.retrieval import DeliveryKnowledgeSearchService
-
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
+    CreateCodingPlanRequestSerializer,
     CreateFeishuTechnicalPlanRequestSerializer,
     CreateLearningCaseRequestSerializer,
     CreateMergeRequestRequestSerializer,
-    CreateCodingPlanRequestSerializer,
     CreateWorkItemRepoTasksRequestSerializer,
     ExecuteCodingPlanRequestSerializer,
     ExecuteWorkItemRepoTasksRequestSerializer,
@@ -95,11 +99,6 @@ from .serializers import (
     SearchLearningCasesRequestSerializer,
     SearchRagChunksRequestSerializer,
     SummarizeBranchRequestSerializer,
-)
-from .learning_case_service import (
-    LearningCaseError,
-    create_learning_case_from_technical_plan,
-    search_learning_cases,
 )
 from .technical_plan_service import TechnicalPlanError, build_work_item_technical_plan
 from .work_item_context_service import WorkItemContextError, build_work_item_context
@@ -467,25 +466,75 @@ class SearchRagChunksView(McpToolView):
         assert input_data is not None
         started_at = time.perf_counter()
 
-        repository_id = str(input_data["repository_id"])
-        repo, err = await self._get_indexed_repo(repository_id)
-        if err is not None:
-            return err
-        assert repo is not None
-        graph_branch, _collection_name = await self._resolve_graph_branch(
-            repository_id, repo, input_data.get("branch")
-        )
+        # 目标范围解析（mirror grep_repository）：target_repository_ids 来自 serializer
+        # （repository_id 单仓便捷参数已并入头部）；all_repositories 时列已索引非删除仓。
+        # 访问范围 = 存在 + INDEXED + 非删除仓（复用既有权限模型，不新增 ACL）。
+        max_repos = int(input_data.get("max_repos", 10))
+        target_ids = [str(rid) for rid in input_data.get("target_repository_ids") or []]
+        if not target_ids and input_data.get("all_repositories"):
+            target_ids = [
+                str(rid)
+                async for rid in Repository.objects.filter(
+                    is_deleted=False, index_status=IndexStatus.INDEXED
+                )
+                .order_by("name")
+                .values_list("id", flat=True)[:max_repos]
+            ]
+            if not target_ids:
+                return error_response(
+                    "repository_not_found",
+                    "没有可检索的已索引仓库",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+        target_ids = target_ids[:max_repos]
+        single_target = len(target_ids) == 1
+
+        # 逐仓校验：单仓失败保留旧 404/400 行为；多仓某仓不存在/未索引则跳过
+        # （不越权、不致命），仅对通过校验的仓检索。
+        repos: dict[str, Repository] = {}
+        for repository_id in target_ids:
+            repo, repo_err = await self._get_indexed_repo(repository_id)
+            if repo_err is not None:
+                if single_target:
+                    return repo_err
+                continue
+            assert repo is not None
+            repos[repository_id] = repo
+        valid_ids = list(repos.keys())
+        if not valid_ids:
+            return error_response(
+                "repository_not_found",
+                "没有可检索的已索引仓库",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        # branch：单仓沿用既有图谱分支解析；多仓各仓走 base 分支
+        # （serializer 已禁多仓传 branch），故 branch_name=None。
+        graph_branch: str | None = None
+        if single_target:
+            only_id = valid_ids[0]
+            graph_branch, _collection_name = await self._resolve_graph_branch(
+                only_id, repos[only_id], input_data.get("branch")
+            )
 
         from services.code_intel import get_provider
         from services.retrieval import HybridSearchService
 
+        # 一次性多仓检索：search_rag 内部已逐仓 build_matcher_for_repo fail-closed 排除
+        # + 跨仓合并去重 + 每项打 repository_id，view 不再循环各仓、绝不绕过该 chokepoint。
         result = await HybridSearchService(get_provider()).search(
             str(input_data["query"]),
-            repository_ids=[repository_id],
+            repository_ids=valid_ids,
             branch_name=graph_branch,
             max_tokens=int(input_data["max_tokens"]),
             top_k=int(input_data["top_k"]),
         )
+
+        def _branch_for(repo_id: str) -> str | None:
+            """每项来源仓库的分支标签：单仓取 graph_branch，多仓取该仓 base 分支。"""
+            repo = repos.get(repo_id)
+            base = (repo.base_branch or repo.default_branch) if repo is not None else None
+            return (graph_branch or base) if single_target else base
 
         results: list[dict[str, Any]] = []
         for layer in getattr(result, "layers", []) or []:
@@ -493,10 +542,15 @@ class SearchRagChunksView(McpToolView):
                 continue
             for item in getattr(layer, "items", []) or []:
                 payload = item.get("payload", {}) or {}
+                # 来源仓库取 item 自带 repository_id（search_rag 已逐项打）；
+                # 单仓兼容旧 mock（无该字段）回退到唯一仓 id。
+                item_repo_id = str(
+                    item.get("repository_id") or (valid_ids[0] if single_target else "")
+                )
                 results.append({
                     "chunk_id": str(item.get("id") or payload.get("chunk_id", "")),
-                    "repo_id": repository_id,
-                    "branch": graph_branch or (repo.base_branch or repo.default_branch),
+                    "repo_id": item_repo_id,
+                    "branch": _branch_for(item_repo_id),
                     "file_path": payload.get("file_path", ""),
                     "line_start": payload.get("start_line"),
                     "line_end": payload.get("end_line"),
@@ -518,10 +572,13 @@ class SearchRagChunksView(McpToolView):
             (RetrievalTrace.Kind.CHUNK, chunk) for chunk in results
         ]
         traces.extend((RetrievalTrace.Kind.EDGE, edge) for edge in related_edges)
+        # 向后兼容：单仓保留既有 repository_id / branch 标量字段；多仓置 None。
+        # 新增 repository_ids 回显实际检索的来源仓范围（valid_ids）。
         output_data = {
             "query": input_data["query"],
-            "repository_id": repository_id,
-            "branch": graph_branch or (repo.base_branch or repo.default_branch),
+            "repository_id": valid_ids[0] if single_target else None,
+            "repository_ids": valid_ids,
+            "branch": _branch_for(valid_ids[0]) if single_target else None,
             "results": results,
             "related_edges": related_edges,
             "total_tokens": getattr(result, "total_tokens", 0) or 0,
