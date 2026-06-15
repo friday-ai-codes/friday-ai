@@ -33,6 +33,9 @@ _PRUNE_DIRS = {
 # 唯一允许写 WorkItem 的模块（相对 server/）
 _ALLOWED_WRITER = "delivery/services/work_item_service.py"
 
+# 唯一允许写 WorkItemCommentEvent 的模块（相对 server/，CMT-01/INV-6）
+_ALLOWED_COMMENT_WRITER = "delivery/services/comment_event_service.py"
+
 # 旁路写表模式（精确锚定，避免误伤 WorkItemService(/WorkItemRelation( 等长符号）：
 # A：WorkItem.objects.<write>（紧跟 ".objects" 确保是 WorkItem 类本体，非 WorkItemRelation）
 _RE_ORM_WRITE = re.compile(
@@ -43,6 +46,17 @@ _RE_ORM_WRITE = re.compile(
 _RE_INSTANTIATE = re.compile(r"\bWorkItem\s*\(")
 # C：链式实例化 + save（WorkItem(...).save(...)）
 _RE_INSTANCE_SAVE = re.compile(r"\bWorkItem\([^)]*\)\.save\(")
+
+# 评论事件旁路写表模式（同款精确锚定，避免误伤更长符号 / 读路径 .filter）：
+# A：WorkItemCommentEvent.objects.<write>（紧跟 ".objects" 确保是类本体；
+#    case-sensitive 天然排除事件字符串 "WorkitemCommentEvent"（小写 i））
+_RE_COMMENT_ORM_WRITE = re.compile(
+    r"\bWorkItemCommentEvent\.objects\.(?:create|bulk_create|get_or_create|update_or_create)\b"
+)
+# B：直接实例化 WorkItemCommentEvent(...)（"\s*\(" 紧跟；.objects.filter 等读路径不命中）
+_RE_COMMENT_INSTANTIATE = re.compile(r"\bWorkItemCommentEvent\s*\(")
+# C：链式实例化 + save（WorkItemCommentEvent(...).save(...)）
+_RE_COMMENT_INSTANCE_SAVE = re.compile(r"\bWorkItemCommentEvent\([^)]*\)\.save\(")
 
 
 def _iter_py_files() -> list[Path]:
@@ -58,6 +72,22 @@ def _iter_py_files() -> list[Path]:
 def _is_scanned_for_inv6(rel: str) -> bool:
     """INV-6 扫描范围：排除 tests/ / migrations/ / delivery/models/ 与 service 自身。"""
     if rel == _ALLOWED_WRITER:
+        return False
+    if rel.startswith("tests/") or "/tests/" in rel:
+        return False
+    if "/migrations/" in rel:
+        return False
+    if rel.startswith("delivery/models/"):
+        return False
+    return True
+
+
+def _is_scanned_for_comment_inv6(rel: str) -> bool:
+    """评论 INV-6 扫描范围：排除 tests/ / migrations/ / delivery/models/ 与 service 自身。
+
+    与 WorkItem INV-6 同款剪枝；comment 唯一 writer 为 comment_event_service.py。
+    """
+    if rel == _ALLOWED_COMMENT_WRITER:
         return False
     if rel.startswith("tests/") or "/tests/" in rel:
         return False
@@ -103,6 +133,47 @@ def test_inv6_writer_module_actually_writes() -> None:
     )
 
 
+def test_inv6_no_bypass_comment_event_write() -> None:
+    """INV-6：除 CommentEventService 外，server 源码无旁路 WorkItemCommentEvent 写表入口。
+
+    含 webhook 接线（feishu/views.py）、REST、projection 均不写表——评论事件落库
+    单一收口为 ``CommentEventService.append_events``（CMT-01）。命中即 fail 并列出文件:行。
+    """
+    violations: list[str] = []
+
+    for path in _iter_py_files():
+        rel = path.relative_to(SERVER_DIR).as_posix()
+        if not _is_scanned_for_comment_inv6(rel):
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # 跳过模型定义行（class WorkItemCommentEvent(models.Model):）
+            if line.lstrip().startswith("class WorkItemCommentEvent"):
+                continue
+            if (
+                _RE_COMMENT_ORM_WRITE.search(line)
+                or _RE_COMMENT_INSTANCE_SAVE.search(line)
+                or _RE_COMMENT_INSTANTIATE.search(line)
+            ):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not violations, (
+        "INV-6 违反：发现旁路 WorkItemCommentEvent 写表（落库只允许经 "
+        f"CommentEventService.append_events / {_ALLOWED_COMMENT_WRITER}）：\n"
+        + "\n".join(violations)
+    )
+
+
+def test_inv6_comment_writer_module_actually_writes() -> None:
+    """守护有效性：评论唯一 writer 确实包含 WorkItemCommentEvent 写表（否则断言形同虚设）。"""
+    writer = SERVER_DIR / _ALLOWED_COMMENT_WRITER
+    assert writer.exists(), f"{_ALLOWED_COMMENT_WRITER} 不存在"
+    text = writer.read_text(encoding="utf-8")
+    assert _RE_COMMENT_ORM_WRITE.search(text), (
+        "CommentEventService.append_events 应是唯一 WorkItemCommentEvent 写表点，"
+        "但未检出 WorkItemCommentEvent.objects.<write>"
+    )
+
+
 def test_inv3_feishu_ingestion_projection_preserved() -> None:
     """INV-3：飞书 webhook 既有 knowledge ingestion 投递仍在（投影未被 delivery 取代）。"""
     views = SERVER_DIR / "feishu" / "views.py"
@@ -112,6 +183,11 @@ def test_inv3_feishu_ingestion_projection_preserved() -> None:
     )
     # delivery upsert 与 ingestion 并存（接线点存在）
     assert "WorkItemService" in text, "feishu/views.py 未接线 delivery upsert"
+    # INV-3（评论接线）：评论 handler 仍保留既有 approval 调用 + 新增评论 append 接线并存
+    assert "FeishuApprovalHandler" in text, (
+        "INV-3 违反：feishu/views.py 评论 handler 不再保留既有 approval 处理"
+    )
+    assert "append_webhook_comment" in text, "feishu/views.py 未接线评论事件后台 append"
 
 
 def test_inv3_delivery_does_not_write_knowledge_models() -> None:
