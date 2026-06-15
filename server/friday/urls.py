@@ -60,6 +60,8 @@ api_patterns = [
     path("agents/", include("agents.urls")),
     # Knowledge retrieval（Phase 15 内部测试 REST）
     path("knowledge/", include("knowledge.api.urls")),
+    # Delivery 交付脊柱（Phase 28：手动 upsert + 读取 WorkItem）
+    path("delivery/", include("delivery.urls")),
     # API Documentation
     path("schema", SpectacularAPIView.as_view(), name="schema"),
     path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
