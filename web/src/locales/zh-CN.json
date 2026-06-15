@@ -348,5 +348,60 @@
       "accept": "接受建议失败",
       "dismiss": "忽略建议失败"
     }
+  },
+  "gitCredentials": {
+    "title": "Git 实例凭证",
+    "subtitle": "按 Git 实例（host）集中管理 access token，同一实例下的多个仓库复用一份凭证，无需逐仓粘贴。Token 加密存储、绝不回显。",
+    "loading": "正在加载实例凭证…",
+    "loadError": "加载实例凭证失败",
+    "empty": "尚未配置任何 Git 实例凭证",
+    "columns": {
+      "host": "实例 Host",
+      "provider": "平台",
+      "label": "备注",
+      "token": "Token",
+      "actions": "操作"
+    },
+    "tokenConfigured": "已配置",
+    "tokenMissing": "未配置",
+    "actions": {
+      "create": "新建实例凭证",
+      "edit": "编辑",
+      "delete": "删除",
+      "save": "保存",
+      "cancel": "取消",
+      "saving": "保存中…",
+      "deleteConfirmTitle": "删除实例凭证？",
+      "deleteConfirmDescription": "删除后该实例下未单独配置 token 的仓库将无法解析凭证。此操作不可撤销。",
+      "deleteConfirmText": "永久删除"
+    },
+    "form": {
+      "createTitle": "新建实例凭证",
+      "editTitle": "编辑实例凭证",
+      "host": "实例 Host",
+      "hostPlaceholder": "如 gitlab.example.com 或 gitlab.example.com:8443",
+      "hostHint": "Git 实例域名（含端口若有），将归一化为小写。",
+      "provider": "平台",
+      "label": "备注（可选）",
+      "labelPlaceholder": "便于识别的名称，如「公司内网 GitLab」",
+      "accessToken": "Access Token",
+      "accessTokenPlaceholderCreate": "粘贴 access token（提交后不再回显）",
+      "accessTokenPlaceholderEdit": "留空表示不修改",
+      "accessTokenHint": "Token 经 Fernet 加密存储，绝不明文落库或回显。"
+    },
+    "validation": {
+      "hostRequired": "请填写实例 Host",
+      "tokenRequired": "创建时必须填写 Access Token"
+    },
+    "toast": {
+      "created": "实例凭证已创建",
+      "updated": "实例凭证已更新",
+      "deleted": "实例凭证已删除"
+    },
+    "error": {
+      "create": "创建实例凭证失败",
+      "update": "更新实例凭证失败",
+      "delete": "删除实例凭证失败"
+    }
   }
 }
