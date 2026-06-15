@@ -94,6 +94,7 @@ from .serializers import (
     GrepRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
+    ReverseLookupRequestSerializer,
     RouteRepositoriesRequestSerializer,
     SearchDeliveryKnowledgeRequestSerializer,
     SearchLearningCasesRequestSerializer,
@@ -1261,6 +1262,57 @@ class FindRelatedChunksView(McpToolView):
             "line_end": symbol.end_line,
             "chunk_id": str(symbol.chunk_id),
         }
+
+
+class ReverseLookupView(McpToolView):
+    """片段→需求反查 MCP 工具（Phase 34 RREF-01）。
+
+    与 REST `repositories.reverse_lookup_views.ReverseLookupView` 同形返回，复用
+    `services.reverse_lookup.reverse_lookup`（纯读、fail-closed、默认当前视图）。
+    鉴权沿用基类 AccessToken/CookieJWT + IsAuthenticated。
+    """
+
+    tool_name = "reverse_lookup_requirements"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ReverseLookupRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.reverse_lookup import reverse_lookup
+
+        file_path = str(input_data.get("file_path") or "").strip() or None
+        chunk_id = str(input_data["chunk_id"]) if input_data.get("chunk_id") else None
+        result = await reverse_lookup(
+            str(input_data["repository_id"]),
+            file_path=file_path,
+            line=input_data.get("line"),
+            chunk_id=chunk_id,
+            branch_name=str(input_data.get("branch") or ""),
+        )
+        output_data = {**result, "run_id": str(run.run_id)}
+        traces: list[tuple[str, dict[str, Any]]] = [
+            (RetrievalTrace.Kind.EDGE, {"source": "reverse_lookup", **item})
+            for item in result["related_work_items"]
+        ]
+        traces.extend(
+            (RetrievalTrace.Kind.EDGE, {"source": "reverse_lookup", **item})
+            for item in result["related_documents"]
+        )
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
 
 
 class GetFeishuWorkItemContextView(McpToolView):

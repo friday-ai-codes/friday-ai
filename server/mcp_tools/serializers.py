@@ -176,6 +176,21 @@ class FindRelatedChunksRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class ReverseLookupRequestSerializer(serializers.Serializer):
+    repository_id = serializers.UUIDField(required=True)
+    file_path = serializers.CharField(required=False, allow_blank=True, default="")
+    line = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
+    chunk_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        has_file_line = bool(str(attrs.get("file_path") or "").strip()) and attrs.get("line") is not None
+        has_chunk = bool(attrs.get("chunk_id"))
+        if not has_file_line and not has_chunk:
+            raise serializers.ValidationError("必须提供 (file_path 且 line) 或 chunk_id")
+        return attrs
+
+
 class AnalyzeRepositoryRequestSerializer(serializers.Serializer):
     repository_id = serializers.UUIDField(required=True)
     branch = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
@@ -494,6 +509,10 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "find_related_chunks": {
         "request": ["repository_id", "branch", "chunk_id", "file_path", "symbol_name", "relation_types", "hops", "direction", "limit"],
         "response": ["repository_id", "branch", "source", "related_chunks", "run_id"],
+    },
+    "reverse_lookup_requirements": {
+        "request": ["repository_id", "file_path", "line", "chunk_id", "branch"],
+        "response": ["chunks", "related_work_items", "related_documents", "paths", "run_id"],
     },
     "analyze_repository": {
         "request": ["repository_id", "branch", "focus", "context_chunks", "max_files"],
