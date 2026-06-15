@@ -28,6 +28,13 @@ ALLOWED_IMAGE_MIME_TYPES: dict[str, str] = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+# 截图识别（Phase 35 VIS-01）后端权威允许集：与前端 / 35-UI-SPEC 一致，仅 png/jpeg/webp
+# （刻意排除 GIF —— 截图场景无动图诉求，且与上传 UI 的 accept 列表对齐）。
+SCREENSHOT_RECALL_MIME_TYPES: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_IMAGES_PER_MESSAGE = 4
 
@@ -79,14 +86,22 @@ def _raise(code: str, message: str) -> NoReturn:
     raise ImageValidationError(code, message)
 
 
-def store_image_bytes(
+def validate_image_bytes(
     data: bytes,
     *,
     declared_mime_type: str | None,
-    source: str,
-    filename: str = "",
-) -> StoredImage:
-    """校验并写入图片 bytes，返回可落库的相对 storage_ref。"""
+    allowed_mime_types: dict[str, str] | None = None,
+) -> tuple[str, int]:
+    """非持久化双校验：仅校验图片 bytes（空 / 超限 / MIME / sniff / 声明不一致），不写盘。
+
+    承载 ``store_image_bytes`` 原有的全部校验逻辑，返回 ``(mime_type, size_bytes)``；
+    非法时抛既有 ``ImageValidationError(code, message)``（code 不变，零行为回归）。
+
+    ``allowed_mime_types`` 为允许集（默认 ``ALLOWED_IMAGE_MIME_TYPES``，含 GIF）；调用方
+    可传入更窄的集合（如截图识别的 ``SCREENSHOT_RECALL_MIME_TYPES``，仅 png/jpeg/webp）以
+    收紧后端权威校验，与对应入口前端 accept 列表对齐（Phase 35 VIS-01）。
+    """
+    allowed = allowed_mime_types if allowed_mime_types is not None else ALLOWED_IMAGE_MIME_TYPES
     if not data:
         _raise("empty_image", "图片为空，请重新选择一张有效图片。")
     if len(data) > MAX_IMAGE_BYTES:
@@ -96,14 +111,25 @@ def store_image_bytes(
     sniffed = _sniff_image_mime(data)
     generic_declared = declared in {"", "application/octet-stream", "binary/octet-stream"}
 
-    if declared and declared not in ALLOWED_IMAGE_MIME_TYPES and not generic_declared:
+    if declared and declared not in allowed and not generic_declared:
         _raise("unsupported_mime_type", "不支持的图片格式，请使用 PNG、JPEG、GIF 或 WebP。")
-    if sniffed is None:
+    if sniffed is None or sniffed not in allowed:
         _raise("unsupported_mime_type", "图片格式不支持，或文件内容不是有效图片。")
-    if declared in ALLOWED_IMAGE_MIME_TYPES and declared != sniffed:
+    if declared in allowed and declared != sniffed:
         _raise("mime_mismatch", "图片声明格式与文件内容不一致，请重新上传。")
 
-    mime_type = sniffed
+    return sniffed, len(data)
+
+
+def store_image_bytes(
+    data: bytes,
+    *,
+    declared_mime_type: str | None,
+    source: str,
+    filename: str = "",
+) -> StoredImage:
+    """校验并写入图片 bytes，返回可落库的相对 storage_ref。"""
+    mime_type, _size = validate_image_bytes(data, declared_mime_type=declared_mime_type)
     ext = ALLOWED_IMAGE_MIME_TYPES[mime_type]
     root = _chat_images_root()
     root.mkdir(parents=True, exist_ok=True)
