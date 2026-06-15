@@ -1,0 +1,131 @@
+"""INV-6 旁路写表 grep 守护 + INV-3 投影保留守护（Phase 28-03 Task 3）。
+
+纯本地源码扫描，无 DB / 网络：
+
+- **INV-6**：WorkItem 落库只经 ``WorkItemService.upsert``。扫描 ``server/`` 源码
+  （排除 tests/ / migrations/ / delivery/models/ 与 service 自身），断言无旁路
+  ``WorkItem.objects.create``/.save() 直接写表入口；命中即 fail 并列出文件:行。
+- **INV-3**：飞书 webhook 既有 knowledge ingestion 投递保留（feishu/views.py 仍含
+  ``aschedule_ingestion``）；delivery app 不写 knowledge 模型（不 import knowledge.models）。
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+# server/ 根目录（tests/delivery/test_inv6_guard.py → parents[2]）
+SERVER_DIR = Path(__file__).resolve().parents[2]
+
+# 遍历时剪掉的目录（venv / 缓存 / 静态产物 / vcs）
+_PRUNE_DIRS = {
+    ".venv",
+    "node_modules",
+    "staticfiles",
+    "__pycache__",
+    ".git",
+    "htmlcov",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+}
+
+# 唯一允许写 WorkItem 的模块（相对 server/）
+_ALLOWED_WRITER = "delivery/services/work_item_service.py"
+
+# 旁路写表模式（精确锚定，避免误伤 WorkItemService(/WorkItemRelation( 等长符号）：
+# A：WorkItem.objects.<write>（紧跟 ".objects" 确保是 WorkItem 类本体，非 WorkItemRelation）
+_RE_ORM_WRITE = re.compile(
+    r"\bWorkItem\.objects\.(?:create|bulk_create|get_or_create|update_or_create)\b"
+)
+# B：直接实例化 WorkItem(...)（"\s*\(" 紧跟，天然排除 WorkItemService(/WorkItemRelation(/
+#    WorkItemSyncState(/WorkItemStatusEvent(/WorkItemSerializer(/WorkItemIdentity( 等）
+_RE_INSTANTIATE = re.compile(r"\bWorkItem\s*\(")
+# C：链式实例化 + save（WorkItem(...).save(...)）
+_RE_INSTANCE_SAVE = re.compile(r"\bWorkItem\([^)]*\)\.save\(")
+
+
+def _iter_py_files() -> list[Path]:
+    """遍历 server/ 下 .py 文件（剪掉 venv/缓存/静态目录）。"""
+    files: list[Path] = []
+    for path in SERVER_DIR.rglob("*.py"):
+        if any(part in _PRUNE_DIRS for part in path.relative_to(SERVER_DIR).parts):
+            continue
+        files.append(path)
+    return files
+
+
+def _is_scanned_for_inv6(rel: str) -> bool:
+    """INV-6 扫描范围：排除 tests/ / migrations/ / delivery/models/ 与 service 自身。"""
+    if rel == _ALLOWED_WRITER:
+        return False
+    if rel.startswith("tests/") or "/tests/" in rel:
+        return False
+    if "/migrations/" in rel:
+        return False
+    if rel.startswith("delivery/models/"):
+        return False
+    return True
+
+
+def test_inv6_no_bypass_work_item_write() -> None:
+    """INV-6：除 WorkItemService 外，server 源码无旁路 WorkItem 写表入口。"""
+    violations: list[str] = []
+
+    for path in _iter_py_files():
+        rel = path.relative_to(SERVER_DIR).as_posix()
+        if not _is_scanned_for_inv6(rel):
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # 跳过 class 定义行（class WorkItem(models.Model):）
+            if line.lstrip().startswith("class WorkItem"):
+                continue
+            if (
+                _RE_ORM_WRITE.search(line)
+                or _RE_INSTANCE_SAVE.search(line)
+                or _RE_INSTANTIATE.search(line)
+            ):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not violations, (
+        "INV-6 违反：发现旁路 WorkItem 写表（落库只允许经 "
+        f"WorkItemService.upsert / {_ALLOWED_WRITER}）：\n" + "\n".join(violations)
+    )
+
+
+def test_inv6_writer_module_actually_writes() -> None:
+    """守护有效性：唯一允许的 writer 确实包含 WorkItem 写表（否则上面的断言形同虚设）。"""
+    writer = SERVER_DIR / _ALLOWED_WRITER
+    assert writer.exists(), f"{_ALLOWED_WRITER} 不存在"
+    text = writer.read_text(encoding="utf-8")
+    assert "get_or_create" in text and ".save(" in text, (
+        "WorkItemService.upsert 应是唯一 WorkItem 写表点，但未检出 get_or_create/.save"
+    )
+
+
+def test_inv3_feishu_ingestion_projection_preserved() -> None:
+    """INV-3：飞书 webhook 既有 knowledge ingestion 投递仍在（投影未被 delivery 取代）。"""
+    views = SERVER_DIR / "feishu" / "views.py"
+    text = views.read_text(encoding="utf-8")
+    assert "aschedule_ingestion" in text, (
+        "INV-3 违反：feishu/views.py 不再投递 knowledge ingestion（投影被移除）"
+    )
+    # delivery upsert 与 ingestion 并存（接线点存在）
+    assert "WorkItemService" in text, "feishu/views.py 未接线 delivery upsert"
+
+
+def test_inv3_delivery_does_not_write_knowledge_models() -> None:
+    """INV-3：delivery app 不 import / 写 knowledge 模型（delivery 是操作态事实源，不双写）。"""
+    delivery_dir = SERVER_DIR / "delivery"
+    offenders: list[str] = []
+    for path in delivery_dir.rglob("*.py"):
+        if any(part in _PRUNE_DIRS for part in path.parts):
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "knowledge.models" in text or re.search(r"\bKnowledgeEntity\b", text):
+            offenders.append(path.relative_to(SERVER_DIR).as_posix())
+
+    assert not offenders, (
+        "INV-3 违反：delivery app 引用/写 knowledge 模型（应保持单向，不双写事实）：\n"
+        + "\n".join(offenders)
+    )
