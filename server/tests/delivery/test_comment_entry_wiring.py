@@ -72,6 +72,72 @@ async def test_comment_handler_wires_background_append() -> None:
     assert kwargs["source"] == "feishu_webhook"
 
 
+async def test_comment_handler_extracts_comment_id_from_alternate_key() -> None:
+    """WR-01：评论 id 在备选候选键（comment_id_str）下仍被取到并投递（非硬编码单键）。"""
+    from delivery.services import CommentEventService
+
+    view = _make_view()
+    project = SimpleNamespace(feishu_project_key=PROJECT_KEY)
+    # 无 comment_id，但提供备选键 comment_id_str
+    payload = {
+        "id": STORY_ID,
+        "work_item_type_key": "story",
+        "comment": "换个字段名也要能取到",
+        "comment_id_str": "cmt_alt_456",
+    }
+
+    captured: dict = {}
+
+    def _fake_rib(factory, *, name=None):
+        captured["factory"] = factory
+        return MagicMock()
+
+    with patch("services.background_runner.run_in_background", new=_fake_rib):
+        await view._handle_workitem_comment(project, payload, MagicMock())
+
+    assert "factory" in captured
+    with patch.object(
+        CommentEventService, "append_webhook_comment", new=AsyncMock(return_value=1)
+    ) as mock_append:
+        await captured["factory"]()
+    mock_append.assert_awaited_once()
+    assert mock_append.await_args.kwargs["comment_id"] == "cmt_alt_456"
+
+
+async def test_comment_handler_missing_comment_id_warns_but_still_delivers() -> None:
+    """WR-01：所有候选键均缺 → comment_id="" + 显式 warning，但仍投递（service 侧跳过），不崩溃。"""
+    from delivery.services import CommentEventService
+
+    view = _make_view()
+    project = SimpleNamespace(feishu_project_key=PROJECT_KEY)
+    payload = {
+        "id": STORY_ID,
+        "work_item_type_key": "story",
+        "comment": "无任何评论 id 字段",
+    }
+
+    captured: dict = {}
+
+    def _fake_rib(factory, *, name=None):
+        captured["factory"] = factory
+        return MagicMock()
+
+    with (
+        patch("services.background_runner.run_in_background", new=_fake_rib),
+        patch("feishu.views.logger.warning") as mock_warn,
+    ):
+        await view._handle_workitem_comment(project, payload, MagicMock())
+
+    # 顶层 id 是 work_item_id，不得被误当评论 id
+    with patch.object(
+        CommentEventService, "append_webhook_comment", new=AsyncMock(return_value=0)
+    ) as mock_append:
+        await captured["factory"]()
+    assert mock_append.await_args.kwargs["comment_id"] == ""
+    warn_events = [c.args[0] for c in mock_warn.call_args_list if c.args]
+    assert "comment_append_missing_comment_id" in warn_events
+
+
 async def test_comment_handler_preserves_approval_via_single_source() -> None:
     """approval 评论：复用 classify_approval_semantic → 既有 FeishuApprovalHandler 仍被调（零回归）。"""
     view = _make_view()

@@ -919,7 +919,21 @@ class FeishuWebhookView(APIView):
             work_item_id=int(work_item_id),
         )
         # payload 可得字段——不提供则空/None，不臆造
-        comment_id = str(payload.get("comment_id") or "")
+        # 飞书评论 webhook payload 的「评论 id」真实键名尚未经真实 payload 校验
+        # （PF-11 需 live-Feishu 人工 UAT 确认）。按候选键有序探测取首个非空值，避免
+        # 单一硬编码键与真实 payload 不匹配时整条评论被静默丢弃（WR-01）。
+        # 注意：顶层 ``id`` 是 work_item_id（见上 work_item_id = payload.get("id")），
+        # 故**不**纳入候选，以免把工作项 id 误当评论 id 写脏去重锚。
+        comment_id = ""
+        for _cid_key in ("comment_id", "comment_id_str", "comm_id"):
+            _cid = payload.get(_cid_key)
+            if _cid:
+                comment_id = str(_cid)
+                break
+        if not comment_id:
+            # 显式暴露字段名不匹配（区别于 service 内 comment_event_skip_missing_id），
+            # 便于生产侧发现 webhook 接线失效；仍投递（service 会跳过），不崩溃。
+            logger.warning("comment_append_missing_comment_id", work_item_id=work_item_id)
         author = str(payload.get("operator_id") or payload.get("author") or "")
         created_at = payload.get("create_time") or payload.get("created_at")
         thread_parent_id = str(
