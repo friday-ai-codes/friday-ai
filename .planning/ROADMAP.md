@@ -185,7 +185,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
-| 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete   | 2026-06-15 |
+| 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 0/TBD | Not started | - |
 | 29. 评论事件流 | v0.6.0 | 0/TBD | Not started | - |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
