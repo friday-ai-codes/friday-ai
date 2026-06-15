@@ -414,3 +414,20 @@ class TestReconcile:
         assert count == 1
         assert (await KnowledgeEdge.objects.aget(id=edge_a.id)).invalid_at is not None
         assert (await KnowledgeEdge.objects.aget(id=edge_b.id)).invalid_at is None
+
+
+class TestReconcileHookFailSafe:
+    """indexer._run_modifies_chunk_reconcile 钩子 best-effort 降级（不阻断索引）。"""
+
+    async def test_hook_swallows_reconcile_exception(self, monkeypatch) -> None:
+        """对账抛异常 → 钩子吞掉 + warning，绝不上抛（对齐 D-04/T-25-12 降级范式）。"""
+        from services import indexer
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("reconcile boom")
+
+        monkeypatch.setattr(
+            "knowledge.modifies_chunk.areconcile_modifies_chunk_edges", _boom
+        )
+        # 不抛即通过（best-effort 吞异常）
+        await indexer._run_modifies_chunk_reconcile("some-repo-id")
