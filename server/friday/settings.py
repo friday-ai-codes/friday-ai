@@ -120,6 +120,7 @@ INSTALLED_APPS = [
     "permissions",
     "orchestration",
     "interactions",
+    "audit",
     "access_tokens",
     "mcp_tools",
     "prompts",
