@@ -270,6 +270,37 @@ async def test_document_step_failure_does_not_block_mr(
     assert result.steps["mr_diff"]["status"] == "ok"
 
 
+async def test_document_step_zero_output_marks_skipped(
+    mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform,
+    monkeypatch,
+) -> None:
+    """normalizer 零产出（Project 不存在 / 无可摄取文档）→ document skipped（非 ok）+ error。
+
+    WR-01 守护：``ingest()`` 在 normalizer 返回 ``[]`` 时静默返回 0（不抛异常），
+    编排须据真实产出数记 ``skipped`` 而非 ``ok``，避免「零实体入库却显示成功」。
+    其余步不受影响（独立降级）。
+    """
+    await _make_project()
+    await sync_to_async(_make_repo_with_credential)()
+    fake_git_platform.mr_result = MRDiffResult(success=True, files=_MR_FILES)
+    run = await _make_run()
+
+    async def _ingest_empty(request):
+        return 0
+
+    monkeypatch.setattr("knowledge.ingestion.ingest", _ingest_empty)
+
+    result = await ingest_from_urls(str(run.id), BOARD_URL, MR_URL)
+
+    assert result.status == IngestRun.Status.COMPLETED
+    assert result.steps["document"]["status"] == "skipped"
+    assert result.steps["document"]["status"] != "ok"
+    assert result.steps["document"]["error"]
+    # 其余步未被阻断
+    assert result.steps["work_item"]["status"] == "ok"
+    assert result.steps["mr_diff"]["status"] == "ok"
+
+
 async def test_mr_archive_none_no_credential_marks_failed(
     mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform
 ) -> None:
