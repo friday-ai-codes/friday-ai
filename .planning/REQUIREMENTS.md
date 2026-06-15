@@ -21,11 +21,11 @@
 
 ### WorkItem 脊柱（WIT）
 
-- [ ] **WIT-01**: 同一飞书工作项无论从 webhook / 手动输入 / Bitable 导入 / MR反查进入，都收敛到唯一 canonical `WorkItem`（三元组幂等，INV-1）
-- [ ] **WIT-02**: 所有 `WorkItem` 落库只经 `WorkItemService.upsert` 单一入口（INV-6），按 mirror/friday_enhanced/writeback 三分类刷新（sync 覆盖 mirror、绝不动 enhanced）
-- [ ] **WIT-03**: 每次 upsert 按 facet 记录来源完整度 `WorkItemSyncState`（complete/partial/missing/stale），部分 facet 失败不回滚整体、落 error + 重试标记
-- [ ] **WIT-04**: 系统从 story 关联字段正确派生父子/迭代/版本关系（`WorkItemRelation`），目标未落库时以 `target_external_id` 占位
-- [ ] **WIT-05**: 工作项状态变更记为 append-only `WorkItemStatusEvent`（cur/pre state_key），非就地改写
+- [x] **WIT-01**: 同一飞书工作项无论从 webhook / 手动输入 / Bitable 导入 / MR反查进入，都收敛到唯一 canonical `WorkItem`（三元组幂等，INV-1）
+- [x] **WIT-02**: 所有 `WorkItem` 落库只经 `WorkItemService.upsert` 单一入口（INV-6），按 mirror/friday_enhanced/writeback 三分类刷新（sync 覆盖 mirror、绝不动 enhanced）
+- [x] **WIT-03**: 每次 upsert 按 facet 记录来源完整度 `WorkItemSyncState`（complete/partial/missing/stale），部分 facet 失败不回滚整体、落 error + 重试标记
+- [x] **WIT-04**: 系统从 story 关联字段正确派生父子/迭代/版本关系（`WorkItemRelation`），目标未落库时以 `target_external_id` 占位
+- [x] **WIT-05**: 工作项状态变更记为 append-only `WorkItemStatusEvent`（cur/pre state_key），非就地改写
 
 ### 评论事件流（CMT）
 
@@ -99,11 +99,11 @@
 | FIX-02 | Phase 27 | Complete |
 | FIX-03 | Phase 27 | Complete |
 | FIX-04 | Phase 27 | Complete |
-| WIT-01 | Phase 28 | Pending |
-| WIT-02 | Phase 28 | Pending |
-| WIT-03 | Phase 28 | Pending |
-| WIT-04 | Phase 28 | Pending |
-| WIT-05 | Phase 28 | Pending |
+| WIT-01 | Phase 28 | Complete |
+| WIT-02 | Phase 28 | Complete |
+| WIT-03 | Phase 28 | Complete |
+| WIT-04 | Phase 28 | Complete |
+| WIT-05 | Phase 28 | Complete |
 | CMT-01 | Phase 29 | Pending |
 | CMT-02 | Phase 29 | Pending |
 | DOC-01 | Phase 30 | Pending |
