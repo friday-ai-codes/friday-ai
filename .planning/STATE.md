@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
-status: verifying
+status: executing
 stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-06-15T06:38:10.302Z"
-last_activity: 2026-06-15
+last_updated: "2026-06-15T07:52:24.216Z"
+last_activity: 2026-06-15 -- Phase 30 execution started
 progress:
   total_phases: 9
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 13
+  completed_plans: 10
   percent: 33
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.6.0 立起以飞书 work item 为中心的 `delivery` 操作态脊柱，把知识图谱补全到"可沉淀历史、可反查、可吃多源输入"——作为 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。
-**Current focus:** Phase 29 — 评论事件流
+**Current focus:** Phase 30 — Document + REFERENCES 边
 
 ## Current Position
 
-Phase: 30
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-15
+Phase: 30 (Document + REFERENCES 边) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 30 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -117,6 +117,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 28 P28-01 | ~12min | 3 tasks | 12 files |
 | Phase 29 P29-01 | ~8min | 2 tasks | 4 files |
 | Phase 29 P02 | 18min | 2 tasks | 5 files |
+| Phase 30 P01 | 10min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -197,6 +198,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 29]: 29-01: append-only WorkItemCommentEvent 模型只建表+枚举（CommentEventType 五值/ApprovalSemantic 三值默认 none），模型层无 create/save/就地改写方法——落库归 29-02 CommentEventService 单一入口（守 INV-6）；编辑/删除作为新事件行（CMT-02，模型单测守护两行并存）；edited/deleted 留枚举占位 deferred；复用 status_event append-only 范式 + (work_item, event_time) 索引
 - [Phase ?]: 29-02: 评论事件落库唯一收口 append_events（INV-6 精神），去重锚 get_or_create 幂等；ingest 复用 Phase 27 get_comments 降配不回滚
 - [Phase ?]: 29-02: 当前评论树为事件流读时投影 project_comment_tree（非事实表），编辑取最新/删除标记/线程层级/排序，绝不改事件行
+- [Phase 30]: Document/DocumentVersion 操作态实体落 delivery app，逐字段对齐 DOMAIN §3/§12.5；版本链 supersedes self FK + unique_together(document, version)；本 plan 仅建表无落库逻辑（守 INV-6）
 
 ### Pending Todos
 
@@ -268,7 +270,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15T06:21:23.516Z
+Last session: 2026-06-15T07:52:07.284Z
 Stopped at: Completed 29-01-PLAN.md
 Resume file: None
 Next: 执行 Phase 28 Plan 02（WorkItemService.upsert 单一写入入口）
