@@ -33,6 +33,7 @@ from agents.tools.list_endpoints import list_endpoints
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.registry import ToolRegistry
 from agents.tools.repository_relevance import analyze_repository_relevance
+from agents.tools.send_plan_card import send_plan_card
 from agents.tools.space_tools import (
     get_repository_info,
     list_space_repositories,
@@ -79,6 +80,7 @@ __all__ = [
     "add_work_item_comment",
     # Feishu IM tools
     "send_card_message",
+    "send_plan_card",
     # Feishu document tools
     "fetch_feishu_document",
     "create_feishu_document",

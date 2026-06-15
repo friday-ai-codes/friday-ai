@@ -399,7 +399,7 @@ def test_get_enabled_tools_includes_defaults() -> None:
     assert "verify_plan" in tools
     assert "send_plan_card" in tools
     assert "create_feishu_document" in tools
-    assert "search_code" in tools
+    assert "search_repository_code" in tools
 
 
 def test_map_output_no_plan() -> None:

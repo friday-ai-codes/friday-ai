@@ -114,7 +114,7 @@ def tool(
 
     Example:
         @tool(
-            name="search_code",
+            name="search_repository_code",
             description="Search for code in the repository",
             category="PROJECT",
             parameters={
@@ -126,7 +126,7 @@ def tool(
                 "required": ["query"]
             }
         )
-        async def search_code(query: str, file_pattern: str = "**/*") -> ToolResult:
+        async def search_repository_code(query: str, file_pattern: str = "**/*") -> ToolResult:
             # Implementation
             return ToolResult(success=True, output=results)
     """
