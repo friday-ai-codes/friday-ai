@@ -92,6 +92,58 @@ def _format_custom_fields(fields: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+async def _resolve_work_item(project_key: str, work_item_type: str, work_item_id_raw: str):
+    """定位已落库的 delivery WorkItem（缺则 None；非法 id 不抛）。
+
+    与 ``feishu_document._resolve_work_item`` 同款三元组解析范式（int 转换失败
+    返回 None），供评论段投影取材——惰性 import delivery 规避 knowledge→delivery
+    循环依赖。
+    """
+    from delivery.models import WorkItem
+
+    try:
+        work_item_id = int(work_item_id_raw)
+    except (TypeError, ValueError):
+        return None
+    return await WorkItem.objects.filter(
+        feishu_project_key=project_key,
+        work_item_type=work_item_type,
+        work_item_id=work_item_id,
+    ).afirst()
+
+
+def _render_comment_section(tree: list[dict]) -> str:
+    """评论树（project_comment_tree 形状）→ 确定性 markdown；空树返回空串。
+
+    严格按 ``project_comment_tree`` 既有排序拍平（不重排），保证评论无变化时
+    渲染逐字一致（hash-no-version 守护）。每节点 ``- {author}: {body}``，
+    deleted 节点标 ``（已删除）``（保留占位维持线程结构），子回复缩进两空格。
+    """
+    lines: list[str] = []
+
+    def _walk(nodes: list[dict], depth: int) -> None:
+        indent = "  " * depth
+        for node in nodes:
+            author = node.get("author") or "匿名"
+            body = node.get("body") or ""
+            deleted = "（已删除）" if node.get("is_deleted") else ""
+            lines.append(f"{indent}- {author}{deleted}: {body}")
+            children = node.get("children") or []
+            if children:
+                _walk(children, depth + 1)
+
+    _walk(tree, 0)
+    return "\n".join(lines)
+
+
+def _count_comment_nodes(tree: list[dict]) -> int:
+    """递归统计评论树节点数（仅快照元数据，不影响 content hash）。"""
+    total = 0
+    for node in tree:
+        total += 1 + _count_comment_nodes(node.get("children") or [])
+    return total
+
+
 async def _fetch_doc_body(doc_client, token: str, *, request: IngestionRequest, label: str) -> str:
     """拉取单文档正文；失败 warning 降级返回空串（缺段不缺事件）。"""
     if doc_client is None or not token:
@@ -220,6 +272,33 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             for rel in relations
         )
         sections.append(f"## 关联工作项\n{relation_lines}")
+
+    # 评论段（RREF-02 评论入图）：并入当前评论树文本，使评论经既有检索召回且天然
+    # 关联到本 work_item 知识实体（不新增 EntityKind）。降级纪律（§1.4）：无 delivery
+    # WorkItem / 无评论 / 投影异常 → content 不含评论段 + warning，事件照常产出
+    # （缺段不缺实体），绝不抛、绝不回滚。空树不渲染空段。确定性渲染保证评论无变化
+    # 时 content 逐字一致（hash-no-version）。
+    comment_count = 0
+    try:
+        work_item_obj = await _resolve_work_item(project_key, work_item_type, work_item_id_raw)
+        if work_item_obj is not None:
+            from delivery.services import aproject_comment_tree
+
+            tree = await aproject_comment_tree(work_item_obj)
+            rendered = _render_comment_section(tree)
+            if rendered:
+                sections.append(f"## 评论\n{rendered}")
+                comment_count = _count_comment_nodes(tree)
+    except Exception as exc:
+        logger.warning(
+            "knowledge_normalize_comments_unavailable",
+            source_kind=request.source_kind,
+            source_id=request.source_id,
+            trigger=request.trigger,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+
     content = "\n\n".join(sections)
 
     return [
@@ -239,6 +318,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                 "prd_url": prd_url,
                 "tech_doc_url": tech_doc_url,
                 "relation_count": len(relations),
+                "comment_count": comment_count,
             },
             # T-14-20：project_id 恒带（Phase 15 检索权限过滤的前提）
             project_id=str(project.id),
