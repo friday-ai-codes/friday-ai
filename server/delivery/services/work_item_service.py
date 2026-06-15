@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -66,6 +67,29 @@ _UNINGESTED_FACETS = (SyncFacet.PRD_BODY, SyncFacet.TECH_DOC, SyncFacet.COMMENTS
 
 # SyncState.error 截断长度（脱敏：避免拼接大段不可信响应 / 凭证，T-28-07）
 _ERROR_SNIPPET_LIMIT = 500
+
+# 误拼进异常消息的凭证兜底脱敏：键名命中（token/secret/...）的值整体抹掉。
+# 上游 strict_response_json 已脱敏响应 body，本正则是 SyncState.error 落库前的最后一道防线。
+_SECRET_KV_RE = re.compile(
+    r"(?i)\b("
+    r"x-plugin-token|x-user-key|plugin[_-]?secret|plugin[_-]?token|"
+    r"access[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|secret[_-]?key|"
+    r"authorization|password|passwd|token|secret|apikey"
+    r")(\"?\s*[:=]\s*\"?)([^\s,\"'}\]]+)"  # 容忍 JSON "key": "value" 的引号/冒号/等号
+)
+# Bearer <token> 形式（HTTP Authorization header 误入错误串）。
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]+")
+
+
+def _redact_secrets(text: str) -> str:
+    """抹掉明显的凭证/令牌：``Bearer <token>`` + 键名命中的值，保留键名供排障。
+
+    先抹 ``Bearer`` 串再抹键值对——否则 ``Authorization: Bearer <tok>`` 会被键值正则
+    先吃掉 ``Bearer`` 字样而漏掉其后的 token。
+    """
+    text = _BEARER_RE.sub("Bearer ***", text)
+    text = _SECRET_KV_RE.sub(r"\1\2***", text)
+    return text
 
 
 @dataclass(frozen=True)
@@ -381,8 +405,13 @@ class WorkItemService:
         return {}
 
     def _safe_error(self, exc: Exception) -> str:
-        """脱敏错误摘要（截断；复用 feishu 既有脱敏，不拼凭证，T-28-07）。"""
-        return str(exc)[:_ERROR_SNIPPET_LIMIT]
+        """脱敏错误摘要：先抹凭证再截断长度上限（T-28-07）。
+
+        响应 body 可能夹带敏感串（误入异常消息的 token/secret/Authorization），故先
+        ``_redact_secrets`` 抹掉键名命中的值与 ``Bearer`` 串，再 ``[:limit]`` 截断；
+        先脱敏后截断避免截到 token 中段而残留半截凭证。绝不向 ``SyncState.error`` 落原始凭证。
+        """
+        return _redact_secrets(str(exc))[:_ERROR_SNIPPET_LIMIT]
 
     def _parse_ms(self, raw: Any):
         """毫秒时间戳 → aware UTC datetime；缺失/非法 → None（恒 aware，与 knowledge 对齐）。"""
