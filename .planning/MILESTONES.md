@@ -1,5 +1,39 @@
 # Milestones
 
+## v0.5.0 索引检索地基与排除文件 (Shipped: 2026-06-15)
+
+**Phases completed:** 5 phases, 23 plans, 54 tasks
+
+**Key accomplishments:**
+
+- 建立排除配置单一事实源（RepoExclusionRule + 全局默认 SystemSetting 键）与单一匹配器 `is_excluded(repository_id, rel_path)`：编译一次/复用、dir/glob/regex 三类规则、运行期 fail-closed、构造期非法 regex fail-loud，内置开箱即用安全默认。
+- 把 Plan 01 的单一匹配器挂接到索引扫描面（full + incremental 两条 `scan_directory` 路径），被排除文件从源头不进 `files_to_process` / `local_hashes`，fail-closed；同时修正 PF-04 —— `scan_directory` 不再谎称已应用 `.gitignore`，注释/docstring 如实描述「目录名 + 扩展名白名单 + 排除匹配器」真实口径。
+- 把 Plan 01 的单一匹配器挂接到 RAG 单一 chokepoint（`search_rag` + 图谱邻居 hop1/hop2/cross-repo 渲染）与进程内 chat/agent 工具读取面（`browse_file_content` 拒读、`list_space_structure` 文件树过滤、`search_repository_code` 兜底过滤）——被排除文件在检索 / 工具读取面 fail-closed 不可见，命中即拒读/丢弃，绝不降级泄漏明文；并落地跨面守护测试（索引扫描 + browse + RAG 三面同一文件均不可见）。
+- 把排除过滤延伸到编码容器读取面：server 两条编码派发路径（chat `build_dispatch_metadata` + workflow `AICodingNode._run_repo_coding`）无条件下传有效排除规则经 `env_FRIDAY_TASK_EXCLUDE_PATTERNS` 注入；task 容器在 clone+checkout 后按规则物理删除工作树中被排除文件（跳过 `.git/`），删除持久失败时 fail-closed 抛错使 setup 失败——绝不让容器内 agent 看到被排除文件。
+- 为排除配置提供 REST API（CRUD + regex fail-loud 校验 + 缓存失效）与仓库详情页最小编辑面板：列出全局默认（只读可关闭）+ per-repo 增删，保存即时生效，措辞如实（仅承诺 Friday 不可见，不承诺 git 物理删除），完成 EXCL-01「用户可配置」闭环。
+- 把外部暴露的 MCP HTTP 直读面（grep_repository / get_repository_file / list_repository_files / find_related_chunks）挂接 Plan 01 的单一匹配器，对被排除文件 fail-closed 不可见——镜像直读与索引回退两条路径都拦，关闭 bare-mirror 残留泄漏通道（EXCL-02 工具面补齐）。
+- 闭合 22-VERIFICATION 唯一阻断缺口（EXCL-02）：`CodeSearchView._search`（认证 REST 端点 `POST /api/repositories/<id>/search/`，前端 `searchCode` 在用）原直读 `BranchAwareSearchService.search` 返回 `content`/`file_path` 无任何 `is_excluded` 过滤，被排除文件明文与路径会经该 RAG 旁路直读面泄漏。本 gap 镜像 22-03 `search_rag` chokepoint 模式，给该端点自挂同一 `build_matcher_for_repo` + `matcher.is_excluded` 过滤——被排除文件 fail-closed 不可见，并补对称守护测试。
+- 统一文件删除入口 purge_file 一次删净 Qdrant 主+overlay / FileIndex / ChunkRegistry(+ChunkEdge) / codegraph 五面，三条索引删除路径收敛收口 PF-03 + PF-05，删后无残留 + 幂等有守护测试证明。
+- `compute_reconciliation`（已索引 ∪ ChunkRegistry ∩ 现行匹配器，列出已索引但现命中排除的差异，匹配器构造失败置 degraded 不谎报已一致）+ `run_cleanup(normal)`（逐差异文件 purge_file 删净四面、对账归零）+ `CleanupRun` 持久化 + 对账/清理/状态 REST API（GET 差异 / POST 派发后台返回 run_id / GET 状态回流敏感未清面）+ 审计埋点，敏感分支懒导入契约就位。
+- `purge_sensitive_planes` 在普通排除清理之上额外清操作记录面——CodeChangeArchive file 级 scrub（剔除被排除文件 diff 段 + 重算计数，仅含该文件整行删，含他文件不误删）、TaskResult/ActionLog 经 repo_url↔git_url 归一关联本仓的可控清理（关联不确定保守不动）、message parts/content 子串脱敏；无精确 file 关联面（prompt snapshot/备份/git object）如实记 unscrubbed + caveat 绝不假装清除，兑现 23-02 sensitive 懒导入契约。
+- `reconcileApi`（getReconcile/cleanup/getCleanupStatus，类型对齐 23-02/23-03 契约）+ `ReconcilePanel.vue`（对账差异展示 + degraded『对账不可信』警示并禁用清理 + 普通/敏感双清理入口分离 + 敏感强确认含不可逆/不承诺 git/备份物理消失如实措辞 + 派发后轮询 getCleanupStatus 如实回显 CleanupRun 真实 unscrubbed 面 + caveat）+ 仓库详情页挂载 + zh-CN 文案 + 5 例守护测试，兑现 EXCL-06 可见闭环（W1/W2/W3、§9.1/§9.2）。
+- SensitiveFileSuggestion 模型 + 迁移 0034 + services/sensitive_detect.py 确定性检测器（独立有界遍历 + 文件名启发式复用 Phase 22 基线 + 内容密钥扫描 + 全程脱敏 reason + aupdate_or_create upsert）
+- run_full_index FINALIZING 末尾经 run_in_background best-effort 触发确定性检测（检测失败不阻断索引 success），并新增可选 LLM 二分类段 classify_ambiguous_files（provider 缺失/失败 graceful 退化、强密钥绝不外送、最小化布尔特征）
+- 为 EXCL-03「建议 + 确认」面提供 REST 工作流：列出某仓 AI 敏感文件建议（severity 排序、real_secret 优先、`?status` 过滤），接受（→ 幂等创建 `RepoExclusionRule(source=ai_suggested, rule_type=glob)` + 标 accepted + `invalidate_matcher_cache`），忽略（标 dismissed）。全程绝不静默删除已索引/派生数据——删除仍由既有 Phase 23 reconcile/cleanup 用户显式触发。
+- 兑现 EXCL-03 用户可见闭环：仓库详情页排除区新增「AI 敏感文件建议」面板——按 severity 排序展示建议、real_secret 高优先级告警、接受（幂等建 `ai_suggested` 排除规则）/忽略（dismiss）操作，接受后引导用户用既有「对账与清理」面板做显式删除（绝不静默删）。接通 24-03 REST 契约与 Phase 22/23 既有面板。
+- 索引时把每个 chunk 的 1-based 闭区间源码起止行写入 ChunkRegistry（line_start/line_end），打通 `file:line → chunk_id` 反查的数据地基——create + update 双路径落库，重切分行号位移触发更新，复用既有 CheckConstraint 无新 migration
+- 给定 repo+file+line 定位覆盖该行的 chunk(s)：`find_chunk_at` 服务按 1-based 闭区间命中、最具体（区间最小）优先，复用 Phase 22 单一排除匹配器对被排除文件全程 fail-closed；`GET /api/repositories/<id>/chunk-at/` REST 端点认证保护，被排除文件与无命中对外同形返回空 chunks 不泄漏存在性。
+- git 历史按 commit 产出 RAG 文档（message + author + 变更文件路径摘要），经 Phase 22 单一匹配器 fail-closed 剔除被排除文件、截断、embedding 入 Qdrant 主 collection 并打 kind=commit payload，确定性 uuid5 point id + 合成 file_path 保 dedup，增量 boundary..HEAD 只索引新 commit、upsert 成功才推进边界。
+- 把 25-03 的 `index_commits` 以 best-effort 方式挂接进 `clone_and_index_repository`——仅 base 索引路径、紧随敏感检测之后、临时克隆 `rmtree` 之前 `await` 完成（沿用 Phase 24 BL-01 时序），全量与增量均流经；commit 索引失败仅 warning 绝不阻断索引 success；并以端到端守护测试验证 commit 文档经既有 `search_rag` 用关键字/author 召回、被排除文件不泄漏、增量只新增。
+- GitInstanceCredential 按 host 维度集中存 Fernet 加密 token，配套单一解析器 per-repo 优先 → 实例池 host fallback，多仓复用一份凭证且向后兼容
+- 把 26-01 解析器接入「克隆 / 索引 / bare 镜像 fetch / 图谱克隆」三条取 token 路径，消除散落的内联 `GitCredential → decrypt_value`，无 per-repo token 的同 host 多仓改为复用实例凭证，per-repo token 仍优先（向后兼容）
+- 把 26-01 解析器接入「git 平台 MR/PR 客户端 + 编码容器 dispatch 的 git token 注入 + diff archive 拉取」五处取 token 路径，无 per-repo token 的同 host 多仓改为按 host 复用实例凭证，per-repo token 仍优先（向后兼容）；token 绝不进日志
+- 实例级 Git 凭证 REST CRUD（token write-only Fernet 加密、IsSuperUser、API/DB/日志/前端全程无明文）+ Vue 3 管理页（has_token 徽标、token 不回显）+ base-branch 校验改经统一解析器
+- 为 MCP RAG 检索工具 `search_rag_chunks` 增加多仓（`repository_ids`）/ 全仓（`all_repositories`，受 `max_repos` 限制）检索参数，跨多仓合并召回并按 `item.repository_id` 标注结果来源仓库；多仓解析严格对齐 `grep_repository` 范式（serializer 产出 `target_repository_ids`，view 逐仓校验 + 一次性 `HybridSearchService.search(repository_ids=valid_ids)`），每仓仍经 Phase 22 `search_rag` chokepoint `build_matcher_for_repo` fail-closed 排除——被排除文件跨仓不可见；省略多仓参数时维持既有单仓行为与响应形状（向后兼容）。
+- 把 26-VERIFICATION 标记的残留 6 文件 ≥8 处内联 `decrypt_value(credential.encrypted_token)` 取 token 全部改经统一解析器 `aresolve_git_token`，使仅靠实例凭证池（无 per-repo token）的同 host 仓库在 PR 创建/cross-reference/冲突预检/code review diff 拉取/两处容器 dispatch/既有仓库测试连接路径不再失败或注入空 token
+
+---
+
 ## v0.4.0 工作流系统契约重构 (Shipped: 2026-06-13)
 
 **Phases completed:** 5 phases, 25 plans, 58 tasks
@@ -99,6 +133,7 @@
 - ✅ ~~Phase 11 实时明文 PAT 通道（contextvar）未接入：_resolve_user_pat 恒返回 ''，RemoteTool 链路休眠~~
   → 已接入（commit 8cb50e928）：请求级 ContextVar → ExecutionContext 瞬态字段，AICoding dispatch 注入 USER_TOKEN；
   明文绝不落库/进日志。剩余：chat/MCP dispatch 路径未覆盖；带 PAT 容器端 E2E 待真实环境验收
+
 - MCPB-02 集成 PARTIAL：执行端点已按 PAT 认证为 owner，但 execute_tool 未接收 user 上下文（仍 deferred）
 - ✅ ~~Nyquist 卫生：各阶段 *-VALIDATION.md frontmatter nyquist_compliant 仍为 false~~ → v0.4.0 的 18-21 已回填（commit 37a3bd6b2）
 

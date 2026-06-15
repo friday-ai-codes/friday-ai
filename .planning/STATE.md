@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
-status: 26-04 完成；Phase 26 全部计划落地，v0.5.0 可评估收口
+status: Awaiting next milestone
 stopped_at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
-last_updated: "2026-06-15T01:44:54.860Z"
-last_activity: 2026-06-15
+last_updated: "2026-06-15T01:51:08.955Z"
+last_activity: 2026-06-15 — Milestone v0.5.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
-Status: 26-04 完成；Phase 26 全部计划落地，v0.5.0 可评估收口
-Last activity: 2026-06-15
+Phase: Milestone v0.5.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-15 — Milestone v0.5.0 completed and archived
 
 ## Milestone Overview (v0.5.0)
 
@@ -255,7 +255,4 @@ Next: Phase 26 D-02 缺口已闭合——可重跑 verification → /gsd-complet
 
 ## Operator Next Steps
 
-- 真实环境人工验收 🔒 项（飞书/容器/git platform/带 PAT 容器 E2E），见 Deferred Items
-- 可选：chat/MCP 编码 dispatch 路径的 PAT 注入（PAT 通道已就绪，复用同一 ContextVar）
-- 可选：POLISH-PLAN.md P0-2b（~900 行 GSD 流程痕迹文案清洗）
 - Start the next milestone with /gsd-new-milestone
