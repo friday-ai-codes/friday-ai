@@ -1,6 +1,7 @@
 """Data models for Git platform operations."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -46,6 +47,24 @@ class MRDiffResult:
     files: list[MRDiffFile] = field(default_factory=list)
     error: str | None = None
     truncated: bool = False  # diff 是否因过大被截断
+
+
+@dataclass
+class MRMetadataResult:
+    """已合并 MR/PR 的元数据（HDIFF-01：历史 diff commit 锚定）。
+
+    供历史 diff 锚定到它真正合入的 commit 与目标分支——`merge_commit_sha` 作为
+    `CodeChangeArchive.commit_sha`，`target_branch` 作为 `base_branch`（绝不假设
+    master），`merged_at` 作为 MODIFIES_CHUNK 边 valid_at 的业务时间。拉取失败一律
+    返回 success=False，不上抛（与 MRDiffResult 同款降级风格）。
+    """
+
+    success: bool
+    merge_commit_sha: str = ""
+    target_branch: str = ""
+    source_branch: str = ""
+    merged_at: datetime | None = None
+    error: str = ""
 
 
 @dataclass

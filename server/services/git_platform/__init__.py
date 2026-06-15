@@ -8,13 +8,14 @@ from repositories.models import GitPlatform, Repository
 from .base import GitPlatformClient
 from .github_client import GitHubClient
 from .gitlab_client import GitLabClient
-from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult
+from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult, MRMetadataResult
 
 __all__ = [
     "MRCreateRequest",
     "MRCreateResult",
     "MRDiffFile",
     "MRDiffResult",
+    "MRMetadataResult",
     "GitPlatformClient",
     "GitLabClient",
     "GitHubClient",

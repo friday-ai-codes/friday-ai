@@ -2,7 +2,13 @@
 
 from abc import ABC, abstractmethod
 
-from .models import BranchCompareResult, MRCreateRequest, MRCreateResult, MRDiffResult
+from .models import (
+    BranchCompareResult,
+    MRCreateRequest,
+    MRCreateResult,
+    MRDiffResult,
+    MRMetadataResult,
+)
 
 
 def truncate_diff_lines(diff_text: str, max_diff_lines: int) -> tuple[str, bool]:
@@ -105,6 +111,25 @@ class GitPlatformClient(ABC):
         Returns:
             MRDiffResult 包含文件列表（含 per-file unified diff 文本）；
             超限或平台侧 patch 缺失时 truncated=True 响亮标记。
+        """
+        pass
+
+    @abstractmethod
+    async def get_merge_request_metadata(self, mr_id: str) -> MRMetadataResult:
+        """获取已合并 MR/PR 的元数据：merge commit sha + 目标/源分支 + 合并业务时间。
+
+        供历史 diff commit 锚定（HDIFF-01）：用真实 merge_commit_sha 作为归档
+        commit_sha、target_branch 作为 base_branch（绝不假设 master），merged_at
+        作为 MODIFIES_CHUNK 边 valid_at 的业务时间。抽象方法强制双子类实现，漏实现
+        即实例化 TypeError。拉取失败一律返回 success=False 不上抛（与
+        get_merge_request_diff 同款降级），token 绝不入日志。
+
+        Args:
+            mr_id: MR/PR 的 ID 或编号。
+
+        Returns:
+            MRMetadataResult 包含 merge_commit_sha/target_branch/source_branch/merged_at；
+            未合并或拉取失败时 success=False。
         """
         pass
 
