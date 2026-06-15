@@ -34,6 +34,8 @@ export * from './repoTree'
 export { default as runnersApi } from './runners'
 export * from './runners'
 
+export * from './screenshotRecall'
+
 export { default as settingsApi } from './settings'
 export * from './settings'
 
