@@ -116,6 +116,13 @@ class TestReverseLookupView:
         )
         assert resp.status_code == 400
 
+    def test_malformed_chunk_id_400(self, authenticated_client, repository: Repository) -> None:
+        # 畸形 chunk_id（非 UUID）应在 view 层 fail 到 400，而非穿透到 ORM 触 500（WR-01）
+        resp = authenticated_client.get(
+            URL.format(repo_id=repository.id), {"chunk_id": "not-a-uuid"}
+        )
+        assert resp.status_code == 400
+
     def test_excluded_file_no_existence_leak(
         self, authenticated_client, repository: Repository
     ) -> None:

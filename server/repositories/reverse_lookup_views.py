@@ -13,6 +13,8 @@ related_documents, paths}``（与 MCP 工具同形）。
 
 from __future__ import annotations
 
+import uuid
+
 from adrf.views import APIView
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
@@ -59,6 +61,17 @@ class ReverseLookupView(APIView):
                 {"error": "必须提供 (path 且 line) 或 chunk_id"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # chunk_id 必须为合法 UUID（ChunkRegistry.chunk_id 为 UUIDField，畸形值会触
+        # ValidationError → 500）；在 view 层 fail 到 400，与 line 校验/MCP 序列化器对齐
+        if chunk_id:
+            try:
+                uuid.UUID(chunk_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"error": "chunk_id 必须为合法 UUID"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         result = await reverse_lookup(
             str(repository_id),
