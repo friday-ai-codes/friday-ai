@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.5.0
-milestone_name: 索引检索地基与排除文件
-status: Awaiting next milestone
-stopped_at: 闭合 26-VERIFICATION D-02 缺口（残留 6 文件取 token 统一经解析器）；原子提交 b76a9f1d6/39d351ad7
-last_updated: "2026-06-15T01:51:08.955Z"
-last_activity: 2026-06-15 — Milestone v0.5.0 completed and archived
+milestone: v0.6.0
+milestone_name: 领域脊柱 + 知识图谱补全
+status: planning
+last_updated: "2026-06-15T03:11:31.003Z"
+last_activity: 2026-06-15
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 23
-  completed_plans: 25
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: Milestone v0.5.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-15 — Milestone v0.5.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-15 — Milestone v0.6.0 started
 
 ## Milestone Overview (v0.5.0)
 

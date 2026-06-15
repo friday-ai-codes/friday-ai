@@ -12,37 +12,40 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.3.0 交付知识图谱（2026-06-12）
+**Latest shipped:** v0.5.0 索引检索地基与排除文件（2026-06-15）
 
-在 v0.2.0「用户身份令牌与 Agent 工具打通」的基础上，v0.3.0 把需求/缺陷、技术方案、编码 diff 全链路 RAG 化，并以带时间语义（bi-temporal）的知识图谱关联：
+里程碑演进：v0.3.0 交付知识图谱 → v0.4.0 工作流系统契约重构 → v0.5.0 索引/检索地基 + 排除文件。近两个里程碑要点：
 
-- **知识模型与图存储**：四类实体 + bi-temporal 边 + supersedes 版本链 + GraphStore 递归 CTE 收口
-- **统一摄取与版本化**：幂等异步摄取管线（六类触发点），版本翻转与向量下线，全量 diff 归档与代码图谱对齐
-- **时间感知混合检索**：向量召回 + 图扩散 + 时间衰减 + LLM 二阶段分级，fail-closed 权限过滤
-- **多入口暴露**：MCP PAT 三工具 / chat agent tools / workflow 检索节点 / npm friday-knowledge skill
+- **v0.4.0 工作流契约重构**：以后端节点 registry 为唯一事实源，`WorkflowGraphValidator` 保存即校验、内置模板开箱可跑、变量引用所选即所得、执行状态机（waiting_event/next_handle/trigger_data）修复、执行可观测（WS 断线降级轮询 + 节点错误展示）。
+- **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
 
-**已知 follow-up（tech debt）：** v0.2.0 实时明文 PAT 通道未接入（RemoteTool 端到端休眠）；v0.3.0 W1-W3（前端知识检索 UI 占位、timeline provenance 未填充、graph enrich 边类型统一 RELATES_TO）；多阶段人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
+**已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.4.0 工作流系统契约重构 — 保存即合法、模板开箱能跑、执行真实可见
+## Current Milestone: v0.6.0 领域脊柱 + 知识图谱补全
 
-**Goal:** 收敛工作流系统的「编辑态契约」与「运行态契约」——以后端节点 registry 为唯一事实源，保存即校验、模板开箱能跑、变量引用所选即所得、执行状态真实可见，消灭「能保存、一执行就卡死/失败且不知道为什么」的体验。
+**Goal:** 立起 `delivery` 操作态脊柱（以飞书 work item 为中心），并把知识图谱补全到「可沉淀历史、可反查、可吃多源输入」——这是 v0.7/v0.8/v0.9 方案/编码/SDD 的数据底座。详细数据模型见 `.planning/DOMAIN-MODEL.md`。
 
 **Target features:**
 
-- 变量引用链路修复：short_id 保存同步（或保存时重写 config 引用），变量选择器所选引用执行时保证可解析；解析失败显式报错而非静默空值
-- 模板修复 + 模板可执行性校验：修正 4 个内置模板的字段/链路错误（`daily_summary` 引用不存在的 `output` 字段、`code_review_pipeline` 节点链路与实现不符等），新增模板变量路径/端口/config 字段校验测试
-- 节点定义单一事实源：前端节点面板/端口/表单 schema 全部以 `GET /api/node-types/` 为准，消除前端硬编码 registry 漂移（含幽灵节点 `fetch_project_info` → `fetch_space_info`）
-- 保存即合法：抽取 `WorkflowGraphValidator`（DAG 环/入口、edge 归属与 handle、config schema、变量引用），bulk-update / 导入 / 模板创建共用，前端 IssuesPanel 接真实校验结果
-- 执行引擎状态机修复：`waiting_event` 与完成判定对齐、主循环 `next_handle` 分支路由、`trigger_data` 注入执行上下文、死锁/挂起状态对前端可见
-- 触发模型清理：修复飞书 `event_type`/`event_types` 字段断裂（WorkflowTrigger 同步永远为空），`schedule` 假功能处理（实现或移除）
-- 执行可观测：WS 断线降级轮询、节点错误在执行详情页清晰展示
+- 飞书接口前置修复（PF-09/10/11/12）：按真实 `work_item_type` 取数、关系改字段派生、修复评论端点、`get_work_item` 保留完整 `fields[]` 元数据 —— `WorkItem` upsert 的依赖
+- `WorkItem` 脊柱（delivery app）+ 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类（mirror/enhanced/writeback）+ `WorkItemSyncState` 来源完整度
+- `WorkItemRelation`：从 `work_item_related_multi_select` 关联字段派生（所属项目/迭代/版本），独立 relation 端点降级
+- `WorkItemCommentEvent` 评论事件流（append-only）+ 当前评论树投影
+- `Document`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边
+- Release 账本宽容模型（`ReleaseBatch/Record/Artifact`）+ 飞书 Bitable client/adapter（骨架先行，开放平台凭证后填）
+- (看板URL + MR URL) → 一键摄取编排（拉看板 → PRD/技术方案文档 RAG → MR diff RAG）
+- 历史 diff 冻结 + bi-temporal 失效对账（PF-08，commit 锚定不追 master）
+- 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
+- 截图识别需求（多模态 LLM：vision → 文本 → RAG，非图片向量库）
 
 **Key context:**
 
-- 调研结论（2026-06-12 三路代码审计）：节点定义存在三套源（后端 registry / 前端 TS registry / node-definitions.json）互相漂移；保存几乎零校验、错误延迟到运行时且常被吞；自建流水线 bulk-update 无 short_id 重写逻辑（模板创建有 `_rewrite_template_refs`）；引擎 `_collect_inputs` 无视 `target_handle`、主循环不按 `next_handle` 路由
-- 保持 Django + vue-flow 既有栈；核心引擎（DAG/Engine/BaseNode）骨架保留，重点是契约收敛与校验前移，不是推倒重写
+- 设计底座已就绪：`ROADMAP-vNext.md` §v0.6（特性/现状坐标/决策）、`DOMAIN-MODEL.md`（脊柱/状态机/产物/事件 taxonomy/实测飞书字段附录）、`PREFLIGHT.md`（PF-08~12 风险台账）。
+- **不变量**：INV-1 飞书三元组唯一 → 一个 canonical `WorkItem`；INV-3 `knowledge` 是检索投影非操作态事实源；INV-6 落库只经 `WorkItemService.upsert` / `TechnicalPlanService`，禁旁路写表。
+- **被阻塞输入**：① Bitable 需开放平台 `tenant_access_token`（与项目 plugin token 不同租户/域），目前未到位 → Bitable adapter 先建骨架、数据后填；② 容器型工作项真实 `type_key` 未知。
+- 渐进迁移、不爆改：新增 `delivery` app 立操作态脊柱，`knowledge` 投影引用脊柱不重建。
 
 ## Requirements
 
@@ -73,25 +76,34 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **时间感知混合检索**：`DeliveryKnowledgeSearchService` 向量召回 + 图扩散 + 时间衰减 + LLM 二阶段分级，fail-closed 权限过滤 — v0.3.0
 - ✓ **知识多入口暴露**：MCP PAT 三工具 / chat agent tools / workflow 检索节点 + ai_plan_generation 飞轮 / npm friday-knowledge skill — v0.3.0
 - ✓ **前端只读时间线**：实体详情页 + 关联时间线 + as-of 时点查询，REST `/api/knowledge/*` — v0.3.0
+- ✓ **工作流契约收敛**：节点定义以后端 registry 为唯一事实源，`WorkflowGraphValidator` 保存即校验（DAG/edges/config/变量引用），内置模板开箱可跑，变量引用所选即所得（解析失败显式报错） — v0.4.0 (`server/workflows/`)
+- ✓ **执行引擎状态机 + 可观测**：waiting_event 完成判定、next_handle 分支路由、trigger_data 注入执行上下文、死锁/挂起可见；WS 断线降级轮询 + 节点错误展示 — v0.4.0
+- ✓ **触发模型清理**：飞书 event_type/event_types 字段断裂修复、schedule 假功能处理 — v0.4.0
+- ✓ **排除文件机制（fail-closed）**：排除配置单一事实源（`RepoExclusionRule` + 全局默认 `SystemSetting`）+ 单一匹配器 `is_excluded`，被排除文件在索引/RAG/MCP/grep/agent/容器六面均不可见（运行期 fail-closed、构造期非法 regex fail-loud） — v0.5.0 (`server/services/exclusion.py`)
+- ✓ **两种 purge 模式 + 对账清理**：统一删除入口 `purge_file`（Qdrant 主+overlay/ChunkRegistry/codegraph 五面）+ 普通排除 / 敏感清理双模式 + `compute_reconciliation`/`run_cleanup` 对账 + `ReconcilePanel` UI（如实声明不承诺 git 物理消失） — v0.5.0 (`server/services/purge.py`, `sensitive_purge.py`)
+- ✓ **敏感文件 AI 识别**：确定性检测器（文件名启发式 + 密钥内容扫描 + 全程脱敏 reason）+ 可选 LLM 二分类 + 「建议+确认」REST/UI（接受幂等建 `ai_suggested` 排除规则，绝不静默删） — v0.5.0 (`server/services/sensitive_detect.py`)
+- ✓ **Commit 历史 RAG + 行级反查**：commit message/author/变更文件路径摘要入 Qdrant（kind=commit，增量 boundary..HEAD）；`ChunkRegistry` 行号回填 + `find_chunk_at` + `GET /api/repositories/<id>/chunk-at/` — v0.5.0
+- ✓ **多仓凭证统一 + MCP 多仓检索**：`GitInstanceCredential` 按 host 集中存（Fernet 加密）+ 单一解析器 `aresolve_git_token`（per-repo 优先 → host 实例池 fallback），全链路取 token 收口；MCP `search_rag_chunks` 多仓/全仓参数 — v0.5.0 (`server/repositories/`)
 
-### Active (v0.4.0)
+### Active (v0.6.0)
 
 <!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] 变量引用链路：自建流水线 short_id 同步/重写，所选变量执行时保证可解析，解析失败显式报错
-- [ ] 内置模板修复 + 模板可执行性校验测试（变量路径/端口/config 字段）
-- [ ] 节点定义单一事实源：前端面板/端口/表单 schema 收敛到 `GET /api/node-types/`
-- [ ] 保存即合法：`WorkflowGraphValidator` 统一校验（DAG/edges/config/变量引用），保存与导入共用
-- [ ] 执行引擎状态机修复：waiting_event 完成判定、next_handle 路由、trigger_data 注入、死锁/挂起可见
-- [ ] 触发模型清理：飞书 event_type 字段断裂修复、schedule 假功能处理
-- [ ] 执行可观测：WS 断线降级轮询、节点错误清晰展示
+- [ ] 飞书接口前置修复（PF-09/10/11/12）：真实 work_item_type 取数、关系字段派生、评论端点修复、保留完整 fields[] 元数据
+- [ ] `WorkItem` 脊柱 + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`
+- [ ] `WorkItemRelation`（关联字段派生）+ `WorkItemCommentEvent` 评论事件流 + 当前树投影
+- [ ] `Document`（外部/内部）+ `feishu_document` normalizer + `REFERENCES` 边
+- [ ] Release 账本宽容模型 + 飞书 Bitable adapter（骨架先行）
+- [ ] (看板URL+MR URL) → 一键摄取编排
+- [ ] 历史 diff 冻结 + bi-temporal 失效对账（PF-08）
+- [ ] 评论入图 + 片段→需求反查 API/MCP（依赖 v0.5 行号回填）
+- [ ] 截图识别需求（多模态 LLM）
 
 **Backlog 候选（未入本里程碑）：**
 
-- 接入实时明文 PAT 通道（contextvar），点亮 RemoteTool 端到端链路 + 真实容器 E2E（兑现 MCPB-02 / RTOOL-02·03·04 运行时）
-- 令牌细粒度读写 scope / per-tool 权限（PATX-01）
-- 令牌 rotate / 续期 regenerate（PATX-02）、IP allowlist / 频率限额（PATX-03）
-- 注入容器改短 TTL 派生凭证 + tmpfs，替代直传 PAT（PATX-04）
+- 接入实时明文 PAT 通道剩余路径（chat/MCP 编码 dispatch）+ RTOOL-02/03/04 容器端 E2E 真实环境验收
+- 令牌细粒度读写 scope / rotate / IP allowlist / 短 TTL 派生凭证（PATX-01~04）
+- 图片向量库（视觉相似/标注）— v0.6 截图走多模态 LLM，向量库留 backlog
 - 补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
 
 ### Out of Scope
@@ -163,4 +175,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-12 — milestone v0.4.0 started*
+*Last updated: 2026-06-15 — milestone v0.6.0 started*
