@@ -4,8 +4,8 @@ milestone: v0.6.0
 milestone_name: 领域脊柱 + 知识图谱补全
 status: verifying
 stopped_at: Completed 30-03-PLAN.md
-last_updated: "2026-06-15T10:05:10.986Z"
-last_activity: 2026-06-15 -- Phase 31 execution started
+last_updated: "2026-06-15T10:25:53.012Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 9
   completed_phases: 5
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 31 (Release 账本 + Bitable adapter 骨架) — EXECUTING
-Plan: 3 of 3
+Phase: 32
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-06-15 -- Phase 31 execution started
+Last activity: 2026-06-15
 
 Progress: [███░░░░░░░] 33%
 
