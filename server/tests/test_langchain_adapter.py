@@ -1,7 +1,7 @@
 """LangChain adapter 单元测试（implementation contract）。
 
 覆盖 `agents.tools.langchain_adapter.build_langchain_tools` 的：
-- 空列表 / 未知工具静默跳过
+- 空列表 / 未知工具 fail-loud raise（PF-01：不再静默跳过）
 - 已知工具包装为 StructuredTool
 - injected_values 仅注入 properties 中存在的字段（避免污染不相关 args_schema）
 - hidden_fields 从 args_schema 剔除
@@ -60,18 +60,21 @@ def test_empty_tool_names_returns_empty_list() -> None:
 
 
 # ============================================================================
-# Test 2：未知工具名静默跳过（不 raise）
+# Test 2：未知工具名 fail-loud raise（PF-01：不再静默跳过）
 # ============================================================================
 
 
-def test_unknown_tool_silently_skipped() -> None:
-    result = build_langchain_tools(["definitely_not_a_real_tool_xyz"])
-    assert result == []
+def test_unknown_tool_fails_loud() -> None:
+    """未知工具名 → raise ValueError，错误消息含未知工具名（PF-01 根因修复）。"""
+    with pytest.raises(ValueError) as exc_info:
+        build_langchain_tools(["definitely_not_a_real_tool_xyz"])
+    assert "definitely_not_a_real_tool_xyz" in str(exc_info.value)
 
 
-def test_unknown_tool_mixed_with_known_returns_only_known(
+def test_unknown_tool_mixed_with_known_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """混入未知工具时整体 raise（不再返回部分结果）。"""
     async def _noop(**_kwargs: Any) -> ToolResult:
         return ToolResult(success=True, output={"ok": True})
 
@@ -81,9 +84,9 @@ def test_unknown_tool_mixed_with_known_returns_only_known(
         parameters={"type": "object", "properties": {}, "required": []},
         func=_noop,
     )
-    result = build_langchain_tools(["fake_known_tool_mix", "not_exist_tool_qqq"])
-    assert len(result) == 1
-    assert result[0].name == "fake_known_tool_mix"
+    with pytest.raises(ValueError) as exc_info:
+        build_langchain_tools(["fake_known_tool_mix", "not_exist_tool_qqq"])
+    assert "not_exist_tool_qqq" in str(exc_info.value)
 
 
 # ============================================================================
