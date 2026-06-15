@@ -666,3 +666,76 @@ class TestDiffArchiverService:
         assert call["max_files"] >= 1000
         assert call["max_diff_lines"] >= 100_000
         assert result.archive.truncated is True
+
+
+# ---------------------------------------------------------------------------
+# 33-01 Task 2：MR commit 锚解析 helper（HDIFF-01）
+# ---------------------------------------------------------------------------
+
+
+class TestMrCommitAnchor:
+    """aresolve_mr_commit_anchor 四分支（成功 / success=False / 空 sha / 缺凭证）。"""
+
+    async def test_anchor_resolves_real_merge_commit(self, fake_git_platform) -> None:
+        """① 正常：返回带 merge_commit_sha/target_branch/source_branch/merged_at 的 anchor。"""
+        from knowledge.diff_archive import aresolve_mr_commit_anchor
+
+        repo = await sync_to_async(_make_repo_with_credential)("anchor-ok")
+
+        anchor = await aresolve_mr_commit_anchor(repo, "9")
+
+        assert anchor is not None
+        assert anchor.merge_commit_sha == "deadbeef" * 5
+        assert anchor.target_branch == "release/v1"  # 非 master 假设
+        assert anchor.source_branch == "feat/x"
+        assert anchor.merged_at is not None
+        assert fake_git_platform.mr_metadata_calls == ["9"]
+
+    async def test_anchor_none_when_metadata_failed(self, fake_git_platform) -> None:
+        """② success=False → None + warning（不上抛）。"""
+        from structlog.testing import capture_logs
+
+        from knowledge.diff_archive import aresolve_mr_commit_anchor
+        from services.git_platform.models import MRMetadataResult
+
+        repo = await sync_to_async(_make_repo_with_credential)("anchor-fail")
+        fake_git_platform.mr_metadata = MRMetadataResult(success=False, error="boom")
+
+        with capture_logs() as cap:
+            anchor = await aresolve_mr_commit_anchor(repo, "9")
+
+        assert anchor is None
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_mr_anchor_unavailable" in warnings
+
+    async def test_anchor_none_when_empty_merge_commit(self, fake_git_platform) -> None:
+        """③ merge_commit_sha 为空（未合并）→ None。"""
+        from knowledge.diff_archive import aresolve_mr_commit_anchor
+        from services.git_platform.models import MRMetadataResult
+
+        repo = await sync_to_async(_make_repo_with_credential)("anchor-empty")
+        fake_git_platform.mr_metadata = MRMetadataResult(
+            success=True, merge_commit_sha="", target_branch="main"
+        )
+
+        anchor = await aresolve_mr_commit_anchor(repo, "9")
+
+        assert anchor is None
+
+    async def test_anchor_none_when_no_credential(self, fake_git_platform) -> None:
+        """④ 无凭证 → None + warning，绝不触达平台元数据拉取。"""
+        from structlog.testing import capture_logs
+
+        from knowledge.diff_archive import aresolve_mr_commit_anchor
+
+        repo = await sync_to_async(_make_repo_with_credential)(
+            "anchor-nocred", with_credential=False
+        )
+
+        with capture_logs() as cap:
+            anchor = await aresolve_mr_commit_anchor(repo, "9")
+
+        assert anchor is None
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_mr_anchor_no_credential" in warnings
+        assert fake_git_platform.mr_metadata_calls == []

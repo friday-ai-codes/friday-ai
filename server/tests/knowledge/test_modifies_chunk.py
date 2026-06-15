@@ -232,13 +232,21 @@ def _make_symbol(repo, *, start: int, end: int, chunk_id: uuid.UUID, name: str =
     )
 
 
-def _make_chunk(repo, *, line_start=None, line_end=None, chunk_index: int = 0) -> uuid.UUID:
+def _make_chunk(
+    repo,
+    *,
+    line_start=None,
+    line_end=None,
+    chunk_index: int = 0,
+    chunk_id: uuid.UUID | None = None,
+    content_hash: str = "0" * 64,
+) -> uuid.UUID:
     """ChunkRegistry sync 工厂（base 命名空间；行号可空 = 历史未回填形态）。"""
     from code_relations.models import ChunkRegistry
 
     entry = ChunkRegistry.objects.create(
-        chunk_id=uuid.uuid4(),
-        content_hash="0" * 64,
+        chunk_id=chunk_id or uuid.uuid4(),
+        content_hash=content_hash,
         repository=repo,
         branch_name="",
         file_path=FILE_PATH,
@@ -359,6 +367,43 @@ class TestResolutionLadder:
 
         assert specs == []
         assert all(fd.unresolved_symbols == [] for fd in file_diffs)
+
+    async def test_chunk_content_hash_frozen_in_metadata(self) -> None:
+        """HDIFF-01：symbol/line/file 三路径 spec.metadata 均含 chunk_content_hash，
+        registry 有行的路径其值 == ChunkRegistry.content_hash。"""
+        # ① 符号级：Symbol.chunk_id 同时有 ChunkRegistry 行（带指纹）
+        repo_sym = await sync_to_async(_make_repo)("hash-symbol")
+        cid_sym = uuid.uuid4()
+        await sync_to_async(_make_symbol)(repo_sym, start=1, end=20, chunk_id=cid_sym, name="login")
+        await sync_to_async(_make_chunk)(
+            repo_sym, chunk_id=cid_sym, line_start=1, line_end=20, content_hash="a" * 64
+        )
+        specs_sym, _ = await resolve_modified_chunks(repo_sym, [_file_diff()], COMMIT_SHA)
+        assert len(specs_sym) == 1
+        assert specs_sym[0].metadata is not None
+        assert specs_sym[0].metadata["chunk_content_hash"] == "a" * 64
+
+        # ② 行号级：ChunkRegistry 行重叠，content_hash 戳记
+        repo_line = await sync_to_async(_make_repo)("hash-line")
+        cid_line = await sync_to_async(_make_chunk)(
+            repo_line, line_start=1, line_end=30, content_hash="b" * 64
+        )
+        specs_line, _ = await resolve_modified_chunks(repo_line, [_file_diff()], COMMIT_SHA)
+        assert len(specs_line) == 1
+        assert specs_line[0].target_chunk_id == cid_line
+        assert specs_line[0].metadata is not None
+        assert specs_line[0].metadata["chunk_content_hash"] == "b" * 64
+
+        # ③ 文件级降级：行号 NULL 的 chunk，content_hash 仍被戳记
+        repo_file = await sync_to_async(_make_repo)("hash-file")
+        cid_file = await sync_to_async(_make_chunk)(
+            repo_file, chunk_index=0, content_hash="c" * 64
+        )
+        specs_file, _ = await resolve_modified_chunks(repo_file, [_file_diff()], COMMIT_SHA)
+        assert len(specs_file) == 1
+        assert specs_file[0].metadata is not None
+        assert specs_file[0].metadata["resolution"] == "file"
+        assert specs_file[0].metadata["chunk_content_hash"] == "c" * 64
 
     async def test_reverse_lookup_via_chunk_in_edges(self, entity_factory) -> None:
         """⑥ apply_edge_specs 写入对齐产物后，chunk_in_edges 反查 source 可达（ENH-01 验收）。"""
