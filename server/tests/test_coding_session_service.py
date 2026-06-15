@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -66,15 +66,15 @@ class TestBuildDispatchMetadata:
 
     @pytest.mark.asyncio
     async def test_build_dispatch_metadata_with_token(self, coding_session_with_repo):
-        """有 Git token 时 metadata 包含 access_token 和 auth_type。"""
+        """有 Git token 时 metadata 包含 access_token 和 auth_type。
+
+        Phase 26 REPO-01：token 经统一解析器 ``aresolve_git_token`` 取得（无论 per-repo
+        还是实例池），此处 mock 解析器返回明文 token。
+        """
         from chat.coding_session_service import build_dispatch_metadata
-        from repositories.models import GitCredential
 
         session = coding_session_with_repo
         repo = session.repository
-
-        mock_cred = MagicMock(spec=GitCredential)
-        mock_cred.encrypted_token = "encrypted_test_token"
 
         with (
             patch(
@@ -82,15 +82,12 @@ class TestBuildDispatchMetadata:
                 new_callable=AsyncMock,
                 return_value="test-api-key",
             ),
-            patch("repositories.models.GitCredential") as mock_git_cred_cls,
             patch(
-                "common.encryption.decrypt_value",
+                "services.git_credentials.aresolve_git_token",
+                new_callable=AsyncMock,
                 return_value="decrypted_token",
             ),
         ):
-            mock_git_cred_cls.objects.aget = AsyncMock(return_value=mock_cred)
-            mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
-
             env_metadata, repo_url = await build_dispatch_metadata(repo, session)
 
         assert "env_FRIDAY_TASK_GIT_ACCESS_TOKEN" in env_metadata
