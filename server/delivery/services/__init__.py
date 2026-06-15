@@ -17,6 +17,13 @@ from delivery.services.comment_projection import (
     project_comment_tree,
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
+from delivery.services.ingest_parsing import (
+    BoardRef,
+    MRRef,
+    aresolve_repo_and_mr,
+    parse_board_url,
+    parse_mr_url,
+)
 from delivery.services.release_service import ReleaseService
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
@@ -31,4 +38,9 @@ __all__ = [
     "derive_feishu_tenant",
     "ReleaseService",
     "BitableReleaseAdapter",
+    "BoardRef",
+    "MRRef",
+    "parse_board_url",
+    "parse_mr_url",
+    "aresolve_repo_and_mr",
 ]
