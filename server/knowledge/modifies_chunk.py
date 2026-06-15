@@ -2,11 +2,13 @@
 
 本模块是 knowledge 内部针对 ``MODIFIES_CHUNK``（diff→chunk 关联）边的时效治理面：
 
-- ``amodifies_chunk_edges``：as-of 查询 helper——历史 ``as_of`` 见"当年成立且当年
-  有效"的边；当前视图（``as_of=None``）默认只见未失效边（``invalid_at IS NULL``）。
-  target_chunk_id-scoped 查询经 ``graph_store.chunk_in_edges`` chunk 反查唯一收口；
-  repository_id-scoped 查询在 relation/repo 之上叠加**同一** bi-temporal 谓词
-  （``bitemporal_as_of_q``，与 neighbors/traverse 语义一致）。
+- ``amodifies_chunk_edges``：as-of 查询 helper——历史 ``as_of`` 见"当年成立"的边
+  （纯业务时间线 ``valid_at<=as_of<invalid_at``，WR-02：去系统时间线 created_at
+  约束，回填历史边在其合并那年可见）；当前视图（``as_of=None``）默认只见未失效边
+  （``invalid_at IS NULL``）。target_chunk_id-scoped 查询经
+  ``graph_store.chunk_in_edges`` chunk 反查唯一收口（``business_only=True``）；
+  repository_id-scoped 查询在 relation/repo 之上叠加 ``bitemporal_as_of_q(
+  business_only=True)`` 业务时间线谓词。
 - ``areconcile_modifies_chunk_edges``：重索引完成后对账——把指向**已过期 chunk
   版本**的活跃 MODIFIES_CHUNK 边 ``invalid_at`` 置位（置位不删除，保留历史可追溯）。
   过期双信号：① target_chunk_id 在当前 base ``ChunkRegistry`` 已不存在（文件删除/
@@ -45,15 +47,22 @@ async def amodifies_chunk_edges(
     """查询 MODIFIES_CHUNK 边（as-of bi-temporal，knowledge 内部查询面）。
 
     - ``as_of=None``（当前视图）：只返回 ``invalid_at IS NULL AND expired_at IS NULL``
-      的边；``as_of`` 给定：返回该时点"当年成立且当年有效"的边（naive 经
-      ``require_aware`` 拒绝）。
+      的边；``as_of`` 给定：返回该时点"当年成立"的边（naive 经 ``require_aware`` 拒绝）。
     - ``target_chunk_id`` 给定：经 ``graph_store.chunk_in_edges`` chunk 反查唯一收口
       取入边，再过滤 ``relation == MODIFIES_CHUNK``（chunk-lookup chokepoint 纪律）。
     - 否则（repository_id-scoped）：在 ``relation=MODIFIES_CHUNK`` +
-      可选 ``source_entity__repository_id`` 之上叠加**同一** bi-temporal 谓词。
+      可选 ``source_entity__repository_id`` 之上叠加业务时间线 as-of 谓词。
+
+    WR-02：MODIFIES_CHUNK 的历史 as-of 语义定义为**纯业务时间线**
+    （``valid_at<=as_of<invalid_at``），故 ``as_of`` 路径用 ``business_only=True``
+    去掉系统时间线（created_at）约束——否则"两年前合并、今天才回填摄取"的边
+    （``valid_at=merged_at`` 过去、``created_at`` 当下）在其合并那年的 ``as_of`` 下
+    会被 ``created_at>as_of`` 误过滤而不可见，与历史 as-of 成功标准相悖。
     """
     if target_chunk_id is not None:
-        records = await graph_store.chunk_in_edges(target_chunk_id, as_of=as_of)
+        records = await graph_store.chunk_in_edges(
+            target_chunk_id, as_of=as_of, business_only=True
+        )
         return [r for r in records if r.relation == EdgeRelation.MODIFIES_CHUNK]
 
     qs = KnowledgeEdge.objects.filter(relation=EdgeRelation.MODIFIES_CHUNK)
@@ -63,7 +72,7 @@ async def amodifies_chunk_edges(
         qs = qs.filter(invalid_at__isnull=True, expired_at__isnull=True)
     else:
         require_aware(as_of, "as_of")
-        qs = qs.filter(bitemporal_as_of_q(as_of))
+        qs = qs.filter(bitemporal_as_of_q(as_of, business_only=True))
     qs = qs.select_related("source_entity")
     return [
         EdgeRecord(
