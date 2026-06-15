@@ -58,7 +58,7 @@
 
 ### 截图识别（VIS）
 
-- [ ] **VIS-01**: 用户上传截图，系统经多模态 LLM 提取文字/UI/业务语义 → 文本 query → 召回对应需求（非图片向量库）
+- [x] **VIS-01**: 用户上传截图，系统经多模态 LLM 提取文字/UI/业务语义 → 文本 query → 召回对应需求（非图片向量库）
 
 ## v2 Requirements
 
@@ -115,7 +115,7 @@
 | HDIFF-02 | Phase 33 | Complete |
 | RREF-01 | Phase 34 | Complete |
 | RREF-02 | Phase 34 | Complete |
-| VIS-01 | Phase 35 | Pending |
+| VIS-01 | Phase 35 | Complete |
 
 **Coverage:**
 
