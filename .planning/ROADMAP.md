@@ -121,11 +121,11 @@ Plans:
 1. 同一 GitLab 实例多仓可复用同一凭证。
 2. MCP RAG 工具支持多仓/全仓检索参数。
 
-**Plans:** 5 plans（2 waves）
+**Plans:** 1/5 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 26-01-PLAN.md — REPO-01: GitInstanceCredential 模型 + 迁移 0036 + 凭证解析器（per-repo 优先 → 实例池 host fallback）+ 单测
+- [x] 26-01-PLAN.md — REPO-01: GitInstanceCredential 模型 + 迁移 0036 + 凭证解析器（per-repo 优先 → 实例池 host fallback）+ 单测
 - [ ] 26-05-PLAN.md — REPO-02: search_rag_chunks 多仓/全仓参数 + 合并检索 + 来源标注 + 跨仓 fail-closed 守护测试
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -142,7 +142,7 @@ Plans:
 | 23. 清理对账（两模式） | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete    | 2026-06-14 |
-| 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | REPO-01..02 | Not started | — |
+| 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 1/5 | In Progress|  |
 
 **Execution order:** 22 → 23（23 依赖 22 的配置源）；24 依赖 22；25、26 相对独立可并行。
 

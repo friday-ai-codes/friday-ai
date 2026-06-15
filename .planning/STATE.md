@@ -4,13 +4,13 @@ milestone: v0.5.0
 milestone_name: 索引检索地基与排除文件
 status: executing
 stopped_at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
-last_updated: "2026-06-15T00:14:29.613Z"
+last_updated: "2026-06-15T00:20:01.512Z"
 last_activity: 2026-06-15 -- Phase 26 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 23
-  completed_plans: 19
+  completed_plans: 20
   percent: 80
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 26 (多仓凭证统一 + MCP 多仓参数) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 26
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 26 execution started
 
 ## Milestone Overview (v0.5.0)
@@ -97,6 +97,7 @@ Last activity: 2026-06-15 -- Phase 26 execution started
 | Phase 25 P02 | ~5min | 2 tasks | 5 files |
 | Phase 25 P03 | ~13min | 2 tasks | 4 files |
 | Phase 25 P04 | ~10min | 2 tasks | 2 files |
+| Phase 26 P01 | 20 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -164,6 +165,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 25]: 25-04: commit 索引唯一挂接点 services.indexer._run_commit_index——仅 base 路径（if not branch:）在 _run_sensitive_detection 之后、finally rmtree(temp_dir) 之前 await（沿用 Phase 24 BL-01 时序：index_commits 需读真实克隆 git 历史，绝不后台派发去遍历即将删除的目录）；全量+增量均流经此函数，首轮/增量区分由 index_commits 内部 commit_index_boundary_sha 处理；整段 try/except 吞异常仅 warning commit_index_dispatch_failed，commit 索引失败/缺供应商绝不阻断 return index_result 的 success 终态（best-effort，对齐 _run_sensitive_detection / T-25-12）
 - [Phase 25]: 25-04: 召回端到端守护无真实 Qdrant——捕获 index_commits upsert 的 commit point，mock BranchAwareSearchService.search 对其按 query substring 命中 content 返回，模拟语义召回；build_matcher_for_repo 用真实实现（仅 builtin 全局默认）真正经过 search_rag 排除/去重 chokepoint，验证合成 file_path=.friday/commits/{sha} 不被排除可召回、被排除文件不泄漏（T-25-13）、增量只新增（T-25-14）
 - [Phase 23]: 23-04: 派发后双查询模式——mutation 成功 → 开启第二个 useQuery 轮询 getCleanupStatus（refetchInterval=(q)=> status==='running'?2000:false）+ invalidate reconcile 观察归零；CleanupRun.sensitive.unscrubbed/caveat 如实渲染真实后端结果（非静态文案，W1/W2）。测试以真实 zh-CN.json 作 i18n messages 守护威胁缓解措辞不被改空；W5 vue-tsc 门禁真实生效（spec createI18n messages 类型不符被捕获修复）
+- [Phase ?]: 26-01: 实例凭证落在 repositories app，表 git_instance_credentials，host 唯一 + Fernet 加密 token
+- [Phase ?]: 26-01: 凭证解析单一入口 resolve_git_token_sync——per-repo token 优先 → 实例池 host fallback → None，Wave 2 统一调用
 
 ### Pending Todos
 
@@ -235,7 +238,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-15（Phase 25 Plan 04 — commit 索引挂接 + search_rag 召回端到端守护，IDX-01 闭环）
+Last session: 2026-06-15T00:19:25.263Z
 Stopped at: 完成 25-04——services/indexer.py 新增 _run_commit_index（best-effort 吞异常仅 warning，绝不阻断索引 success，T-25-12）+ clone_and_index_repository 仅 base 路径在 _run_sensitive_detection 之后、rmtree 之前 await（沿用 Phase 24 BL-01 时序，读真实克隆 git 历史，全量+增量均流经）；端到端守护测试 7 例全绿（search_rag 关键字/author 召回 kind=commit、被排除文件不泄漏、增量只新增、dispatch 失败不冒泡），回归 16 例绿、mypy/ruff clean。原子提交 b8e652fc8(feat 派发挂接)/daa1b198b(test 端到端守护)。Phase 25 全部 4 plan 完成。
 Resume file: None
 Next: Phase 26（多仓凭证统一 + MCP 多仓参数，REPO-01..02）——或 /gsd-complete-milestone 收口 v0.5.0 前再评估 26 范围
