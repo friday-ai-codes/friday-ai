@@ -115,7 +115,10 @@ async def test_get_work_item_uses_real_type() -> None:
     respx.post(_work_item_query_url("issue")).mock(
         return_value=httpx.Response(
             200,
-            json={"err_code": 0, "data": [{"id": WORK_ITEM_ID, "name": "示例需求", "fields": ISSUE_RAW_FIELDS}]},
+            json={
+                "err_code": 0,
+                "data": [{"id": WORK_ITEM_ID, "name": "示例需求", "fields": ISSUE_RAW_FIELDS}],
+            },
         )
     )
 
@@ -202,8 +205,7 @@ async def test_get_work_item_non_json_raises() -> None:
 
 def _comment_list_url(work_item_type: str) -> str:
     return (
-        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/"
-        f"{WORK_ITEM_ID}/comment/list"
+        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/{WORK_ITEM_ID}/comment/list"
     )
 
 
@@ -289,10 +291,7 @@ async def test_get_comments_parses_normal_response() -> None:
 
 
 def _relation_url(work_item_type: str) -> str:
-    return (
-        f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/"
-        f"{WORK_ITEM_ID}/relation"
-    )
+    return f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/{WORK_ITEM_ID}/relation"
 
 
 @pytest.mark.asyncio
