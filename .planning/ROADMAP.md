@@ -53,7 +53,10 @@
   2. `get_work_item` 返回保留完整 `fields[]` 对象（`field_name`/`field_type_key`/`field_alias`），不再拍平成 `{field_key: field_value}` 丢元数据（PF-12）
   3. `get_comments` 端点修复后能成功拉取并解析飞书工作项评论（PF-11）
   4. 工作项间关系可从 `work_item_related_multi_select` 关联字段读出（所属项目/迭代/版本），失效的独立 relation 端点降级为可选（PF-10）
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 27-01-PLAN.md — 共享解析 helper（防御 JSON / 完整 fields[] / 关系派生 / 评论解析 纯函数 + 单测）
+- [ ] 27-02-PLAN.md — 接入 canonical client `services/feishu.py`（FIX-01/02/03/04）
+- [ ] 27-03-PLAN.md — 接入 near-dup client `feishu/client.py`（FIX-01/03/04，与 canonical 行为对齐）
 
 ### Phase 28: WorkItem 脊柱 + 单一 upsert 入口
 **Goal**: 新增 Django `delivery` app，立起操作态脊柱——唯一 canonical `WorkItem` + `WorkItemService.upsert` 单一写入入口 + source-of-truth 三分类（mirror/friday_enhanced/writeback）+ `WorkItemSyncState` 来源完整度 + `WorkItemRelation` 字段派生 + `WorkItemStatusEvent` 状态事件流。
@@ -154,7 +157,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 24. 敏感文件 AI 识别 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
-| 27. 飞书接口前置修复 | v0.6.0 | 0/TBD | Not started | - |
+| 27. 飞书接口前置修复 | v0.6.0 | 0/3 | Not started | - |
 | 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 0/TBD | Not started | - |
 | 29. 评论事件流 | v0.6.0 | 0/TBD | Not started | - |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
