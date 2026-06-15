@@ -116,6 +116,26 @@ def test_safe_response_json_extra_data_returns_none() -> None:
     assert safe_response_json(resp, log_event="feishu.test") is None
 
 
+def test_safe_response_json_expect_dict_list_returns_none() -> None:
+    """合法 JSON 但为 list（expect=dict）→ fail-soft 返回 None（WR-01）。"""
+    resp = _json_response([])  # 合法 JSON list
+    assert safe_response_json(resp, log_event="feishu.test", expect=dict) is None
+
+
+def test_safe_response_json_expect_dict_scalar_returns_none() -> None:
+    """合法 JSON 但为标量/字符串（expect=dict）→ fail-soft 返回 None（WR-01）。"""
+    resp_str = httpx.Response(200, json="err")  # 合法 JSON 字符串
+    resp_int = httpx.Response(200, json=123)  # 合法 JSON 数字
+    assert safe_response_json(resp_str, log_event="feishu.test", expect=dict) is None
+    assert safe_response_json(resp_int, log_event="feishu.test", expect=dict) is None
+
+
+def test_safe_response_json_expect_dict_passthrough() -> None:
+    """合法 JSON dict（expect=dict）→ 原样返回（类型匹配）。"""
+    resp = _json_response({"err_code": 0})
+    assert safe_response_json(resp, log_event="feishu.test", expect=dict) == {"err_code": 0}
+
+
 def test_strict_response_json_valid() -> None:
     """合法 JSON 响应返回 dict。"""
     resp = _json_response({"err_code": 0})

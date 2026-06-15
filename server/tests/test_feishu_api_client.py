@@ -293,3 +293,30 @@ async def test_get_comments_parses_normal_response() -> None:
     assert comments[0]["thread_parent_id"] == ""
     assert comments[1]["content"] == "纯文本回复"
     assert comments[1]["thread_parent_id"] == 1001
+
+
+# === WR-01：合法 JSON 但非 dict（[]/标量）也 fail-soft，绝不抛 AttributeError ===
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_non_dict_json_returns_empty() -> None:
+    """get_comments 遇合法 JSON 但为 list（[]）→ 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(return_value=httpx.Response(200, json=[]))
+
+    client = _make_client()
+    result = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+    assert result == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_comments_scalar_json_returns_empty() -> None:
+    """get_comments 遇合法 JSON 但为标量字符串 → 返回 [] 且不抛（WR-01）。"""
+    _mock_token()
+    respx.get(_comment_list_url("issue")).mock(return_value=httpx.Response(200, json="err"))
+
+    client = _make_client()
+    result = await client.get_comments(PROJECT_KEY, WORK_ITEM_ID, work_item_type="issue")
+    assert result == []
