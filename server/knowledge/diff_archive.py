@@ -41,7 +41,7 @@ import unidiff
 from knowledge.ingestion import EdgeSpec
 from knowledge.models import CodeChangeArchive, EdgeRelation
 from services.git_platform import get_git_platform_client
-from services.git_platform.models import MRDiffFile
+from services.git_platform.models import MRDiffFile, MRMetadataResult
 
 if TYPE_CHECKING:
     from repositories.models import Repository
@@ -60,6 +60,7 @@ __all__ = [
     "FileDiff",
     "aarchive_exists",
     "archive_code_change",
+    "aresolve_mr_commit_anchor",
     "build_code_change_content",
     "compress_diff",
     "decompress_diff",
@@ -326,6 +327,8 @@ def _chunk_edge_spec(
             "commit_sha": commit_sha,
             "resolution": resolution,
             "hunk_ranges": [[start, end] for start, end in hunk_ranges],
+            # HDIFF-01：冻结当年 chunk 版本指纹占位（resolve_modified_chunks 末尾批量回填）
+            "chunk_content_hash": "",
         },
     )
 
@@ -470,6 +473,19 @@ async def resolve_modified_chunks(
             edge_by_chunk.setdefault(chunk_id, spec)
         updated.append(replace(fd, unresolved_symbols=unresolved))
 
+    # HDIFF-01：批量回填 chunk_content_hash（冻结当年 chunk 版本指纹，供 HDIFF-02 对账
+    # 判定「已被新版本取代」）。registry 缺行（如对齐自 Symbol 但 registry 无对应行）
+    # → 保持占位 ""，不阻断建边。
+    if edge_by_chunk:
+        hash_by_chunk: dict[uuid.UUID, str] = {}
+        async for cid, content_hash in ChunkRegistry.objects.filter(
+            chunk_id__in=list(edge_by_chunk.keys())
+        ).values_list("chunk_id", "content_hash"):
+            hash_by_chunk[cid] = content_hash or ""
+        for chunk_id, spec in edge_by_chunk.items():
+            if spec.metadata is not None:
+                spec.metadata["chunk_content_hash"] = hash_by_chunk.get(chunk_id, "")
+
     logger.info(
         "knowledge_modified_chunks_resolved",
         commit_sha=commit_sha,
@@ -524,6 +540,46 @@ async def aarchive_exists(source_kind: str, source_id: str) -> bool:
     return await CodeChangeArchive.objects.filter(
         source_kind=source_kind, source_id=source_id
     ).aexists()
+
+
+async def aresolve_mr_commit_anchor(
+    repository: Repository, mr_id: str
+) -> MRMetadataResult | None:
+    """解析 MR/PR 的真实 commit 锚（HDIFF-01：历史 diff commit 锚定唯一 helper）。
+
+    复用 ``archive_code_change`` 同款 ②③ 取 client 范式：经 ``aresolve_git_token``
+    取 token（缺凭证 → warning ``knowledge_mr_anchor_no_credential`` 返回 None），
+    ``get_git_platform_client`` 建 client，拉 ``get_merge_request_metadata``。
+    result.success=False 或 merge_commit_sha 为空（未合并）→ warning
+    ``knowledge_mr_anchor_unavailable`` 返回 None；否则返回 result（含
+    merge_commit_sha/target_branch/source_branch/merged_at）。
+
+    任何降级路径仅 warning 不上抛；token 作用域限制在本函数内，绝不入日志
+    （结构化字段只含 mr_id/repository_id，T-33-01）。
+    """
+    from services.git_credentials import aresolve_git_token
+
+    token = await aresolve_git_token(repository)
+    if not token:
+        logger.warning(
+            "knowledge_mr_anchor_no_credential",
+            mr_id=mr_id,
+            repository_id=str(repository.pk) if repository else None,
+        )
+        return None
+
+    client = get_git_platform_client(repository, token)
+    result = await client.get_merge_request_metadata(mr_id)
+    if not result.success or not result.merge_commit_sha:
+        logger.warning(
+            "knowledge_mr_anchor_unavailable",
+            mr_id=mr_id,
+            repository_id=str(repository.pk) if repository else None,
+            success=result.success,
+            has_merge_commit=bool(result.merge_commit_sha),
+        )
+        return None
+    return result
 
 
 async def archive_code_change(
