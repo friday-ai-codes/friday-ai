@@ -283,3 +283,67 @@ async def test_backfill_work_item_when_previously_none() -> None:
     assert doc1.id == doc2.id
     refreshed = await Document.objects.aget(pk=doc1.id)
     assert refreshed.work_item_id == work_item.id
+
+
+# ============================================================================
+# WR-01: (feishu_tenant, external_ref) DB 级唯一约束（并发去重）
+# ============================================================================
+
+
+async def test_duplicate_external_ref_raises_integrity_error() -> None:
+    """同 (feishu_tenant, external_ref) 旁路直插第二行 → IntegrityError（约束生效，WR-01）。"""
+    from django.db import IntegrityError
+
+    await Document.objects.acreate(
+        document_type=DocumentType.PRD,
+        source_kind=DocumentSourceKind.EXTERNAL_FEISHU,
+        external_ref=DOC_TOKEN,
+        feishu_tenant="guanghe",
+    )
+    with pytest.raises(IntegrityError):
+        await Document.objects.acreate(
+            document_type=DocumentType.PRD,
+            source_kind=DocumentSourceKind.EXTERNAL_FEISHU,
+            external_ref=DOC_TOKEN,
+            feishu_tenant="guanghe",
+        )
+
+
+async def test_empty_external_ref_exempt_from_unique() -> None:
+    """空 external_ref 行豁免唯一约束（internal_generated / 无 token 不在空键互撞，WR-01）。"""
+    await Document.objects.acreate(
+        document_type=DocumentType.RELEASE_NOTE,
+        source_kind=DocumentSourceKind.INTERNAL_GENERATED,
+        external_ref="",
+        feishu_tenant="",
+    )
+    await Document.objects.acreate(
+        document_type=DocumentType.SDD_SPEC,
+        source_kind=DocumentSourceKind.INTERNAL_GENERATED,
+        external_ref="",
+        feishu_tenant="",
+    )
+    assert await Document.objects.filter(external_ref="").acount() == 2
+
+
+async def test_upsert_idempotent_under_unique_constraint() -> None:
+    """约束存在下 upsert_from_feishu 仍幂等收敛同一 Document（不抛、不建重复）。"""
+    service = DocumentService()
+    doc1 = await service.upsert_from_feishu(
+        work_item=None,
+        document_type=DocumentType.PRD,
+        doc_token=DOC_TOKEN,
+        content="正文",
+        canonical_url=PRD_URL,
+    )
+    doc2 = await service.upsert_from_feishu(
+        work_item=None,
+        document_type=DocumentType.PRD,
+        doc_token=DOC_TOKEN,
+        content="正文 v2",
+        canonical_url=PRD_URL,
+    )
+    assert doc1.id == doc2.id
+    assert (
+        await Document.objects.filter(feishu_tenant="guanghe", external_ref=DOC_TOKEN).acount() == 1
+    )
