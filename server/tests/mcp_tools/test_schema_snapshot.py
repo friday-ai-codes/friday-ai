@@ -10,8 +10,8 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "response": ["query", "ranked_repos", "total", "run_id"],
         },
         "search_rag_chunks": {
-            "request": ["repository_id", "query", "branch", "top_k", "max_tokens"],
-            "response": ["query", "repository_id", "branch", "results", "related_edges", "total_tokens", "run_id"],
+            "request": ["repository_id", "repository_ids", "all_repositories", "max_repos", "query", "branch", "top_k", "max_tokens"],
+            "response": ["query", "repository_id", "repository_ids", "branch", "results", "related_edges", "total_tokens", "run_id"],
         },
         "get_repository": {
             "request": ["repository_id"],
