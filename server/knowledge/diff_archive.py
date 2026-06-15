@@ -550,9 +550,13 @@ async def aresolve_mr_commit_anchor(
     复用 ``archive_code_change`` 同款 ②③ 取 client 范式：经 ``aresolve_git_token``
     取 token（缺凭证 → warning ``knowledge_mr_anchor_no_credential`` 返回 None），
     ``get_git_platform_client`` 建 client，拉 ``get_merge_request_metadata``。
-    result.success=False 或 merge_commit_sha 为空（未合并）→ warning
-    ``knowledge_mr_anchor_unavailable`` 返回 None；否则返回 result（含
+    result.success=False、merge_commit_sha 为空、或 merged_at 为 None（未真正合并）
+    → warning ``knowledge_mr_anchor_unavailable`` 返回 None；否则返回 result（含
     merge_commit_sha/target_branch/source_branch/merged_at）。
+
+    WR-01：GitHub 对**未合并但可合并**的 open PR 会返回瞬态 test-merge
+    ``merge_commit_sha``（非空）但 ``merged_at=None``，仅凭 sha 非空会冻结伪历史
+    快照；故必须以 ``merged_at is not None`` 作为"真正已合并"的判据。
 
     任何降级路径仅 warning 不上抛；token 作用域限制在本函数内，绝不入日志
     （结构化字段只含 mr_id/repository_id，T-33-01）。
@@ -570,13 +574,14 @@ async def aresolve_mr_commit_anchor(
 
     client = get_git_platform_client(repository, token)
     result = await client.get_merge_request_metadata(mr_id)
-    if not result.success or not result.merge_commit_sha:
+    if not result.success or not result.merge_commit_sha or result.merged_at is None:
         logger.warning(
             "knowledge_mr_anchor_unavailable",
             mr_id=mr_id,
             repository_id=str(repository.pk) if repository else None,
             success=result.success,
             has_merge_commit=bool(result.merge_commit_sha),
+            has_merged_at=result.merged_at is not None,
         )
         return None
     return result

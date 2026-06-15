@@ -722,6 +722,30 @@ class TestMrCommitAnchor:
 
         assert anchor is None
 
+    async def test_anchor_none_when_unmerged_test_merge_sha(self, fake_git_platform) -> None:
+        """WR-01：未合并 open PR 的瞬态 test-merge sha（非空）但 merged_at=None
+        → anchor None + warning（不冻结伪历史快照，如实 skipped）。"""
+        from structlog.testing import capture_logs
+
+        from knowledge.diff_archive import aresolve_mr_commit_anchor
+        from services.git_platform.models import MRMetadataResult
+
+        repo = await sync_to_async(_make_repo_with_credential)("anchor-unmerged")
+        fake_git_platform.mr_metadata = MRMetadataResult(
+            success=True,
+            merge_commit_sha="cafe" * 10,  # 非空瞬态 test-merge sha
+            target_branch="main",
+            source_branch="feat/x",
+            merged_at=None,  # 未真正合并
+        )
+
+        with capture_logs() as cap:
+            anchor = await aresolve_mr_commit_anchor(repo, "9")
+
+        assert anchor is None
+        warnings = [e["event"] for e in cap if e.get("log_level") == "warning"]
+        assert "knowledge_mr_anchor_unavailable" in warnings
+
     async def test_anchor_none_when_no_credential(self, fake_git_platform) -> None:
         """④ 无凭证 → None + warning，绝不触达平台元数据拉取。"""
         from structlog.testing import capture_logs
