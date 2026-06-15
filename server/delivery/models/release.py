@@ -73,6 +73,17 @@ class ReleaseBatch(models.Model):
         db_table = "delivery_release_batch"
         verbose_name = "上线批次"
         verbose_name_plural = "上线批次"
+        constraints = [
+            # 非空 external_ref DB 级唯一（支撑 batch 级幂等：重复摄取同一张表
+            # external_ref={app_token}:{table_id} 收敛同批，不累积空批次，WR-02）。
+            # 条件限非空——空键批次（如手动录入未给键）豁免，镜像 ReleaseRecord
+            # uniq_release_record_bitable_key 范式。
+            models.UniqueConstraint(
+                fields=["external_ref"],
+                condition=~models.Q(external_ref=""),
+                name="uniq_release_batch_external_ref",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.source}:{self.name or self.id}"

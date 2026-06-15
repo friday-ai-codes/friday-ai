@@ -113,10 +113,16 @@ class BitableReleaseAdapter:
         ]
 
         # 经 ReleaseService 收口落库（不旁路写 Release 表，守 INV-6）。
+        # external_ref 取 {app_token}:{table_id} 作 batch 稳定自然键：重复摄取同一张表
+        # 收敛回同一 ReleaseBatch（幂等，不累积空批次，WR-02）。
         batch = await self._service.ingest_batch(
             raw_rows=mapped_rows,
             source=source,
-            batch_meta={"app_token": app_token, "table_id": table_id},
+            batch_meta={
+                "app_token": app_token,
+                "table_id": table_id,
+                "external_ref": f"{app_token}:{table_id}",
+            },
         )
         log.info(
             "bitable_ingested",
