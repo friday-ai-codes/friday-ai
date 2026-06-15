@@ -33,7 +33,7 @@
 **依赖链：** FIX → WIT 脊柱 → {CMT 评论流 · DOC 文档 · REL Release 账本 · ING 一键摄取} → {HDIFF 历史 diff · RREF 反查 · VIS 截图}。
 
 - [x] **Phase 27: 飞书接口前置修复** - 修对 work_item_type 取数 / 关系字段派生 / 评论端点 / 完整 fields[] 元数据（PF-09/10/11/12），WorkItem upsert 的依赖前置 (completed 2026-06-15)
-- [ ] **Phase 28: WorkItem 脊柱 + 单一 upsert 入口** - delivery app 操作态脊柱：canonical WorkItem + WorkItemService.upsert + 三分类 + SyncState + Relation 派生 + StatusEvent
+- [x] **Phase 28: WorkItem 脊柱 + 单一 upsert 入口** - delivery app 操作态脊柱：canonical WorkItem + WorkItemService.upsert + 三分类 + SyncState + Relation 派生 + StatusEvent (completed 2026-06-15)
 - [ ] **Phase 29: 评论事件流** - append-only WorkItemCommentEvent 流式入库 + 当前评论树投影
 - [ ] **Phase 30: Document + REFERENCES 边** - 外部飞书/内部生成文档区分 + feishu_document normalizer 摄取 PRD/技术方案 + 关联 WorkItem
 - [ ] **Phase 31: Release 账本 + Bitable adapter 骨架** - 宽容模型（保留 raw_row）+ 开放平台凭证独立解析的 Bitable client/adapter 骨架
@@ -79,7 +79,7 @@
 
 - [x] 28-01-PLAN.md — delivery app + 四模型（WorkItem/SyncState/Relation/StatusEvent）+ 初始 migration（INV-1 unique_together）
 - [x] 28-02-PLAN.md — WorkItemService.upsert 单一写入入口 + 派生（mirror-only/SyncState/Relation 占位/StatusEvent append）
-- [ ] 28-03-PLAN.md — 最小 REST + 飞书 webhook 接线后台 upsert + INV-6/INV-3 守护测试
+- [x] 28-03-PLAN.md — 最小 REST + 飞书 webhook 接线后台 upsert + INV-6/INV-3 守护测试
 
 ### Phase 29: 评论事件流
 
@@ -190,7 +190,7 @@ v0.7.0 方案编排（需求 → 多 agent 调研 → 架构师融合主方案�
 | 25. Commit 历史索引 + 行号反查 | v0.5.0 | 4/4 | Complete | 2026-06-14 |
 | 26. 多仓凭证统一 + MCP 多仓参数 | v0.5.0 | 6/5 | Complete | 2026-06-15 |
 | 27. 飞书接口前置修复 | v0.6.0 | 3/3 | Complete    | 2026-06-15 |
-| 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 2/3 | In Progress|  |
+| 28. WorkItem 脊柱 + 单一 upsert 入口 | v0.6.0 | 3/3 | Complete   | 2026-06-15 |
 | 29. 评论事件流 | v0.6.0 | 0/TBD | Not started | - |
 | 30. Document + REFERENCES 边 | v0.6.0 | 0/TBD | Not started | - |
 | 31. Release 账本 + Bitable adapter 骨架 | v0.6.0 | 0/TBD | Not started | - |
