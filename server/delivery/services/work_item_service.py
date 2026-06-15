@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -30,12 +31,18 @@ from delivery.models import (
     SyncFacet,
     SyncStatus,
     WorkItem,
+    WorkItemRelation,
+    WorkItemStatusEvent,
     WorkItemSyncState,
 )
-from delivery.services.derivation import derive_status_fields
+from delivery.services.derivation import derive_status_events, derive_status_fields
 from delivery.signals import work_item_synced
 from services.feishu import create_feishu_client_for_project
-from services.feishu_parsing import extract_prd_url, extract_tech_doc_url
+from services.feishu_parsing import (
+    derive_relations_from_fields,
+    extract_prd_url,
+    extract_tech_doc_url,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -134,7 +141,32 @@ class WorkItemService:
         for facet in _UNINGESTED_FACETS:
             await self._record_sync_state(work_item, facet, SyncStatus.MISSING, source)
 
-        await self._emit(work_item, source, facets=[SyncFacet.BASIC_FIELDS.value])
+        # 状态历史回填（best-effort，去重）
+        await self._backfill_status_history(work_item, raw_item)
+
+        # 关系派生（步骤 4）——独立 facet，派生异常仅记 relations error，不掀翻 WorkItem
+        try:
+            await self._apply_relations(work_item, info, source)
+            await self._record_sync_state(
+                work_item, SyncFacet.RELATIONS, SyncStatus.COMPLETE, source
+            )
+        except Exception as exc:
+            error = self._safe_error(exc)
+            logger.warning(
+                "work_item_upsert_relations_failed",
+                work_item_id=str(work_item.id),
+                error=error,
+                error_type=type(exc).__name__,
+            )
+            await self._record_sync_state(
+                work_item, SyncFacet.RELATIONS, SyncStatus.MISSING, source, error=error
+            )
+
+        await self._emit(
+            work_item,
+            source,
+            facets=[SyncFacet.BASIC_FIELDS.value, SyncFacet.RELATIONS.value],
+        )
         return work_item
 
     # === 步骤实现 ===
@@ -176,6 +208,19 @@ class WorkItemService:
         **绝不写** friday_enhanced（business_line_normalized/module_normalized/
         internal_note）与 writeback（feishu_chat_id）——它们不在 update_fields 内。
         """
+        # 状态变更先 append StatusEvent（pre=旧/cur=新），再改 mirror（非就地覆盖历史，WIT-05）
+        new_state_key = status_fields["status_state_key"]
+        new_sub_stage = status_fields["status_sub_stage"]
+        if new_state_key and new_state_key != work_item.status_state_key:
+            WorkItemStatusEvent.objects.create(
+                work_item=work_item,
+                pre_state_key=work_item.status_state_key,
+                cur_state_key=new_state_key,
+                pre_sub_stage=work_item.status_sub_stage,
+                cur_sub_stage=new_sub_stage,
+                event_time=timezone.now(),
+            )
+
         feishu_fields = info.feishu_fields or []
         work_item.title = info.name or ""
         work_item.feishu_fields = feishu_fields
@@ -224,6 +269,62 @@ class WorkItemService:
             },
         )
 
+    @sync_to_async
+    def _apply_relations(self, work_item: WorkItem, info: Any, source: str) -> None:
+        """派生关系 → WorkItemRelation（占位/回填，复用 Phase 27 derive_relations_from_fields）。
+
+        - 每个 RelationSpec 经 update_or_create（unique_together 幂等）；target 已落库
+          （同 project_key + work_item_id=target_external_id）则连 target_work_item，否则占位。
+        - 反向回填：本次 upsert 的 WorkItem 作为他行占位 target_external_id（同 project_key）
+          的目标时，补连这些 WorkItemRelation.target_work_item（best-effort）。
+        """
+        specs = derive_relations_from_fields(info.feishu_fields or [])
+        for spec in specs:
+            target = WorkItem.objects.filter(
+                feishu_project_key=work_item.feishu_project_key,
+                work_item_id=spec.target_external_id,
+            ).first()
+            WorkItemRelation.objects.update_or_create(
+                source_work_item=work_item,
+                relation_type=spec.relation_type,
+                target_external_id=spec.target_external_id,
+                source_field_key=spec.source_field_key,
+                defaults={"origin": spec.origin, "target_work_item": target},
+            )
+
+        # 反向回填：他行以本 WorkItem 的 work_item_id 占位（同 project_key）→ 补连
+        WorkItemRelation.objects.filter(
+            target_work_item__isnull=True,
+            target_external_id=work_item.work_item_id,
+            source_work_item__feishu_project_key=work_item.feishu_project_key,
+        ).update(target_work_item=work_item)
+
+    @sync_to_async
+    def _backfill_status_history(self, work_item: WorkItem, raw_item: dict) -> None:
+        """从 work_item_status.history[] 回填历史 StatusEvent（去重，best-effort）。
+
+        去重键 (work_item, cur_state_key, event_time)；缺 state_key 跳过。本步骤不抛——
+        历史回填属增强，失败不影响主落库。
+        """
+        for event in derive_status_events(raw_item):
+            state_key = event.get("state_key") or ""
+            if not state_key:
+                continue
+            event_time = self._parse_ms(event.get("updated_at"))
+            exists = WorkItemStatusEvent.objects.filter(
+                work_item=work_item,
+                cur_state_key=state_key,
+                event_time=event_time,
+            ).exists()
+            if exists:
+                continue
+            WorkItemStatusEvent.objects.create(
+                work_item=work_item,
+                cur_state_key=state_key,
+                operator=event.get("updated_by") or "",
+                event_time=event_time,
+            )
+
     async def _emit(self, work_item: WorkItem, source: str, *, facets: list[str]) -> None:
         """best-effort 发 work_item_synced（订阅者异常吞掉 + warning，不影响落库）。"""
         try:
@@ -258,3 +359,18 @@ class WorkItemService:
     def _safe_error(self, exc: Exception) -> str:
         """脱敏错误摘要（截断；复用 feishu 既有脱敏，不拼凭证，T-28-07）。"""
         return str(exc)[:_ERROR_SNIPPET_LIMIT]
+
+    def _parse_ms(self, raw: Any):
+        """毫秒时间戳 → aware UTC datetime；缺失/非法 → None（恒 aware，与 knowledge 对齐）。"""
+        if raw is None:
+            return None
+        try:
+            ms = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if ms <= 0:
+            return None
+        try:
+            return datetime.fromtimestamp(ms / 1000, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
