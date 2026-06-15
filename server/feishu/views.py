@@ -578,9 +578,7 @@ class FeishuWebhookView(APIView):
         # project_simple_name（空间 URL 域名前缀）；用户在空间设置里配的
         # 通常是后者（UI 提示按 URL 前缀获取），两者任一命中即匹配成功。
         candidate_keys = [
-            key
-            for key in (payload.get("project_key"), payload.get("project_simple_name"))
-            if key
+            key for key in (payload.get("project_key"), payload.get("project_simple_name")) if key
         ]
         if not candidate_keys:
             await TriggerLog.objects.acreate(
@@ -771,6 +769,35 @@ class FeishuWebhookView(APIView):
             await trigger_log.asave()
             return None
 
+    def _schedule_delivery_upsert(self, project, work_item_id, work_item_type) -> None:
+        """后台投递 delivery upsert（操作态事实源，与 knowledge 投影并存，INV-3）。
+
+        沿用"webhook 只投三元组 ID、正文经 plugin token 后台权威回源"范式：webhook
+        主响应不被后台 upsert 阻塞/影响（best-effort，脱离请求生命周期）。三元组不全
+        （缺 work_item_id / work_item_type）则跳过投递并 warning，不抛、不构造身份。
+        """
+        if not work_item_id or not work_item_type:
+            logger.warning(
+                "delivery_upsert_skip_incomplete_identity",
+                work_item_id=work_item_id,
+                work_item_type=work_item_type,
+            )
+            return
+
+        # lazy import 防循环（delivery → feishu 反向依赖）
+        from delivery.services import WorkItemIdentity, WorkItemService
+        from services.background_runner import run_in_background
+
+        identity = WorkItemIdentity(
+            feishu_project_key=project.feishu_project_key,
+            work_item_type=work_item_type,
+            work_item_id=int(work_item_id),
+        )
+        run_in_background(
+            lambda: WorkItemService().upsert(identity, source="feishu_webhook", fetch=True),
+            name=f"delivery-upsert:{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+        )
+
     async def _handle_workitem_create(self, project, payload, trigger_log):
         """处理工作项创建事件。"""
         work_item_id = payload.get("id")
@@ -792,6 +819,9 @@ class FeishuWebhookView(APIView):
                 "feishu_workitem_create",
             )
         )
+
+        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）
+        self._schedule_delivery_upsert(project, work_item_id, work_item_type)
 
     async def _handle_workitem_status(self, project, payload, trigger_log):
         """处理工作项状态变更事件。"""
@@ -832,6 +862,9 @@ class FeishuWebhookView(APIView):
                 "feishu_workitem_status",
             )
         )
+
+        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）
+        self._schedule_delivery_upsert(project, work_item_id, work_item_type)
 
     async def _handle_workflow_node_status(self, project, payload, trigger_log):
         """处理工作项节点流转事件。"""
@@ -935,6 +968,10 @@ class FeishuWebhookView(APIView):
                 "feishu_workitem_update",
             )
         )
+
+        # delivery 操作态 upsert（与上方 knowledge 投影并存，INV-3）；
+        # 缺 work_item_type 已在上方 early-return 跳过（与 ingestion 同款防线）
+        self._schedule_delivery_upsert(project, work_item_id, work_item_type)
 
     async def _check_and_resume_suspended_workflows(
         self,
