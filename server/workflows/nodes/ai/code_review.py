@@ -24,10 +24,10 @@ from agents.langchain_runner import (
     LangChainAgentRunner,
     LangChainRunnerConfig,
 )
-from common.encryption import decrypt_value
 from prompts.keys import PromptSlugs
 from prompts.services import render_prompt
 from repositories.models import Repository
+from services.git_credentials import aresolve_git_token
 from services.git_platform import MRDiffResult, get_git_platform_client
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.base import (
@@ -591,9 +591,7 @@ class AICodeReviewNode(AIAgentBaseNode):
             MRDiffResult 或 None（仓库不存在时）
         """
         try:
-            repository = await Repository.objects.select_related(
-                "credential"
-            ).filter(
+            repository = await Repository.objects.filter(
                 id=repository_id, is_deleted=False
             ).afirst()
 
@@ -601,8 +599,9 @@ class AICodeReviewNode(AIAgentBaseNode):
                 log.warning("review_repository_not_found", repository_id=repository_id)
                 return None
 
-            credential = repository.credential
-            if not credential or not credential.encrypted_token:
+            # 经统一解析器取 token：per-repo 优先 → host 实例池 fallback（D-02）
+            token = await aresolve_git_token(repository)
+            if not token:
                 log.warning(
                     "review_no_credential",
                     repository_id=repository_id,
@@ -610,7 +609,6 @@ class AICodeReviewNode(AIAgentBaseNode):
                 )
                 return MRDiffResult(success=False, error="仓库未配置访问凭证")
 
-            token = decrypt_value(credential.encrypted_token)
             client = get_git_platform_client(repository, token)
 
             return await client.get_merge_request_diff(mr_id)

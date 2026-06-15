@@ -228,16 +228,15 @@ async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
     repo = coding_session.repository
 
     try:
-        from common.encryption import decrypt_value
-        from repositories.models import GitCredential
+        from services.git_credentials import aresolve_git_token
         from services.git_platform import get_git_platform_client
 
-        cred = await GitCredential.objects.filter(repository=repo).afirst()
-        if cred is None or not cred.encrypted_token:
+        # 经统一解析器取 token：per-repo 优先 → host 实例池 fallback（D-02）
+        token = await aresolve_git_token(repo)
+        if not token:
             logger.info("conflict_check_no_credential", coding_session_id=state["coding_session_id"])
             return {}
 
-        token = decrypt_value(cred.encrypted_token)
         client = get_git_platform_client(repo, token)
 
         result = await client.compare_branches(
@@ -558,8 +557,7 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
     创建 PR 路径: 通过 GitPlatformClient 创建 PR
     """
     from chat.coding_events import store_coding_complete_to_message
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
+    from services.git_credentials import aresolve_git_token
     from services.git_platform import get_git_platform_client
     from services.git_platform.models import MRCreateRequest
 
@@ -595,11 +593,9 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
         )
         return {"phase": "completed", "branch_url": branch_url}
 
-    # 创建 PR 路径
-    try:
-        cred = await GitCredential.objects.aget(repository=repo)
-        token = decrypt_value(cred.encrypted_token or "")
-    except GitCredential.DoesNotExist:
+    # 创建 PR 路径：经统一解析器取 token（per-repo 优先 → host 实例池 fallback，D-02）
+    token = await aresolve_git_token(repo)
+    if not token:
         error_msg = "Git 凭据未配置，无法创建 PR"
         await coding_session.amark_failed(error_msg)
         logger.warning(

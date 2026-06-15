@@ -1074,8 +1074,7 @@ async def deep_analysis(
     # 5. 从 ProviderCredential 获取 API 凭据 + Git 凭据，通过 metadata 注入容器
     # Claude Code 任务容器统一凭证来源：优先读「Claude Code 编码配置」
     # （选定凭证 + 三档映射）；未配置时 runtime_config 内部回退系统默认 anthropic 凭证。
-    from common.encryption import decrypt_value
-    from repositories.models import GitCredential
+    from services.git_credentials import aresolve_git_token
     from services.provider_config import aget_claude_code_runtime_config
 
     cc = await aget_claude_code_runtime_config()
@@ -1098,22 +1097,19 @@ async def deep_analysis(
     }
 
     repo_url = repo.git_url
-    try:
-        cred = await GitCredential.objects.aget(repository=repo)
-        if cred.encrypted_token:
-            token = decrypt_value(cred.encrypted_token)
-            env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
-            env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
-            env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
-            # SSH URL → HTTPS（token 认证需要 HTTPS）
-            if repo_url.startswith("git@"):
-                import re
+    # Git 凭据：经统一解析器取 token（per-repo 优先 → host 实例池 fallback，D-02）
+    token = await aresolve_git_token(repo)
+    if token:
+        env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+        env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+        env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
+        # SSH URL → HTTPS（token 认证需要 HTTPS）
+        if repo_url.startswith("git@"):
+            import re
 
-                m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
-                if m:
-                    repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
-    except GitCredential.DoesNotExist:
-        pass
+            m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
+            if m:
+                repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
 
     dispatch_task = DispatchTask(
         task_id=session_id,
