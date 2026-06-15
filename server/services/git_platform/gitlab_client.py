@@ -1,6 +1,7 @@
 """GitLab client implementation for MR operations."""
 
 import asyncio
+from datetime import timezone as dt_timezone
 from typing import Any
 
 import gitlab
@@ -283,7 +284,8 @@ class GitLabClient(GitPlatformClient):
             if merged_at_raw:
                 merged_at = parse_datetime(merged_at_raw)
                 if merged_at is not None and dj_timezone.is_naive(merged_at):
-                    merged_at = dj_timezone.make_aware(merged_at, dj_timezone.utc)
+                    # stdlib timezone.utc：django.utils.timezone.utc 自 Django 5.0 已删除
+                    merged_at = dj_timezone.make_aware(merged_at, dt_timezone.utc)
 
             logger.info(
                 "gitlab_mr_metadata_fetched",
