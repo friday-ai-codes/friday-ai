@@ -224,7 +224,7 @@ function showError(step?: IngestStep): boolean {
               <template v-if="run.status === 'running'">{{ t('ingest.run.running') }}</template>
               <template v-else-if="allOk">{{ t('ingest.run.completed') }}</template>
               <template v-else-if="isPartial">{{ t('ingest.run.partial') }}</template>
-              <template v-else-if="run.status === 'failed'">{{ t('ingest.run.partial') }}</template>
+              <template v-else-if="run.status === 'failed'">{{ t('ingest.run.failed') }}</template>
             </span>
           </div>
         </div>
