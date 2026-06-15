@@ -1,52 +1,28 @@
 ---
 phase: 26-multirepo-creds-mcp
-verified: 2026-06-15T01:16:44Z
-status: gaps_found
-score: 6/7 must-haves verified
+verified: 2026-06-15T01:29:37Z
+status: passed
+score: 7/7 must-haves verified
 overrides_applied: 0
-gaps:
-  - truth: "同一 GitLab 实例多仓可复用同一凭证（D-02：所有 git 平台 API / 容器 dispatch 取 token 路径统一经解析器，消除散落的 per-repo 取 token 逻辑）"
-    status: partial
-    reason: >-
-      解析器已接入 plan 显式列举的路径（clone/index、repo_mirror、graph、
-      mcp_tools/merge_request_service、workflows/mr_service、coding.py dispatch+MR、
-      coding_session_service、diff_archive、base-branch 校验），但仍有 ≥8 处内联
-      `decrypt_value(credential.encrypted_token)` 直读 per-repo 凭证、绕过解析器，
-      分布在 6 个 git 平台 API / 容器 dispatch 文件中。仅靠实例池（无 per-repo token）
-      的仓库在这些路径会失败（"凭据未配置"/注入空 token），与 26-03 SUMMARY
-      "消除了所有散落的内联 GitCredential → decrypt_value 取 token 逻辑" 的断言不符。
-    artifacts:
-      - path: "server/workflows/nodes/git/pr.py"
-        issue: "L179 / L373 PR(MR) 创建 + cross-reference 更新仍内联 decrypt_value(credential.encrypted_token)，未经 aresolve_git_token（git-platform MR/PR 客户端路径）"
-      - path: "server/orchestration/coding_graph.py"
-        issue: "L240 冲突预检 compare_branches、L601 PR 创建仍内联 decrypt_value(cred.encrypted_token)，实例池仓库 PR 创建会 'Git 凭据未配置，无法创建 PR'"
-      - path: "server/workflows/nodes/ai/code_review.py"
-        issue: "L613 get_merge_request_diff 仍内联 decrypt_value(credential.encrypted_token)，实例池仓库返回 '仓库未配置访问凭证'"
-      - path: "server/repositories/summary_service.py"
-        issue: "L289 容器 dispatch git token 注入仍内联 decrypt_value(cred.encrypted_token)，实例池仓库注入空 token"
-      - path: "server/agents/tools/chat_tools.py"
-        issue: "L1104 explore 模式容器 dispatch git token 注入仍内联 decrypt_value(cred.encrypted_token)，实例池仓库注入空 token"
-      - path: "server/repositories/views.py"
-        issue: "L862 TestConnectionView 既有仓库（repository_id）分支仍内联 decrypt_value，实例池仓库 '测试连接' 报 '仓库未配置访问凭证'（仅用户当场输入 token 分支应免接，既有仓库分支应经解析器）"
-    missing:
-      - "将上述 6 个文件的 git-token 内联解密替换为 aresolve_git_token(repo) / resolve_git_token_sync(repo)，保留各自既有缺凭证报错/降级文案（行为不回退）"
-      - "TestConnectionView 仅 'repository_id 既有仓库' 分支接解析器；'用户当场输入 token' 分支保持不变"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 6/7
+  gaps_closed:
+    - "同一 GitLab 实例多仓可复用同一凭证（D-02：所有 git 平台 API / 容器 dispatch 取 token 路径统一经解析器，消除散落的 per-repo 取 token 逻辑）"
+  gaps_remaining: []
+  regressions: []
 deferred:
   - truth: "管理员可在前端 /admin/git-credentials 页面完成实例凭证 CRUD（浏览器端交互观感）"
     addressed_in: "Deferred UAT (autonomous)"
     evidence: "前端页面 / API client / vitest 守护测试均已落地且通过；纯浏览器端交互观感按指示作非阻塞 UAT 处理"
-human_verification:
-  - test: "用浏览器打开 /admin/git-credentials，以管理员创建/编辑/删除一条实例凭证，确认 token 输入框为 password、不回显既有 token、列表仅显示 has_token 徽标"
-    expected: "CRUD 正常，token 全程不回显明文，文案为中文"
-    why_human: "纯前端浏览器交互观感，按指示作非阻塞 UAT（已有 vitest 守护测试通过）"
 ---
 
 # Phase 26: 多仓凭证统一 + MCP 多仓参数 Verification Report
 
 **Phase Goal:** GitLab 凭证统一池 + MCP RAG 多仓检索参数。
-**Verified:** 2026-06-15T01:16:44Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-06-15T01:29:37Z
+**Status:** passed
+**Re-verification:** Yes — after gap closure（commits b76a9f1d6 / 39d351ad7）
 
 ## Goal Achievement
 
@@ -59,10 +35,10 @@ human_verification:
 | 3 | 解析器接入 clone/index/repo_mirror/graph + plan 列举的 MR/PR 客户端 + coding dispatch + diff archive + base-branch 校验 | ✓ VERIFIED | grep `aresolve_git_token`/`resolve_git_token` 命中 indexer.py、repo_mirror.py、graph_builder.py、merge_request_service.py、mr_service.py、coding.py、coding_session_service.py、diff_archive.py、views.py L562 |
 | 4 | per-repo token 存在时所有接线路径仍优先用 per-repo token（向后兼容不回退） | ✓ VERIFIED | 解析器①分支优先返回 per-repo token；`test_git_credentials.py` + `test_git_credential_clone_wiring.py` + `test_git_credential_platform_wiring.py` 守护，33 passed |
 | 5 | 实例凭证 REST CRUD：token write-only/加密、IsSuperUser、响应/日志无明文；前端不回显 | ✓ VERIFIED | `views.py` L1124-1253（IsSuperUser、encrypt_value、空 token PATCH 不清空）；read 序列化器仅 has_token；`gitInstanceCredentials.ts` 读类型无 token 字段；`.vue` password 框不回填 |
-| 6 | **D-02：同一 GitLab 实例多仓可复用同一凭证——所有 git 平台 API / dispatch 取 token 路径统一经解析器，消除散落 per-repo 取 token 逻辑** | ✗ FAILED | 6 文件 ≥8 处内联 `decrypt_value(credential.encrypted_token)` 绕过解析器（见 Gaps）；实例池-only 仓库在 PR 创建/冲突预检/code review/2 处 dispatch/测试连接路径失败 |
-| 7 | REPO-02 `search_rag_chunks` 多仓/全仓参数、每仓 fail-closed 复用、单仓向后兼容、仅已索引授权仓 | ✓ VERIFIED | `serializers.py` L16-45（repository_ids/all_repositories/max_repos→target_repository_ids）；`views.py` L456-594（一次性 search_rag chokepoint、item.repository_id 标注、单仓标量回退）；chokepoint `rag_search.py` L85 逐仓 build_matcher_for_repo |
+| 6 | **D-02：同一 GitLab 实例多仓可复用同一凭证——所有 git 平台 API / dispatch 取 token 路径统一经解析器，消除散落 per-repo 取 token 逻辑** | ✓ VERIFIED（gap 已闭环） | grep `decrypt_value(.*encrypted_token` 非测试代码仅剩 `services/git_credentials.py`（解析器自身 L72/L86）；原 6 文件 8 处已改 `aresolve_git_token`：pr.py L168/L358、coding_graph.py L235/L597、code_review.py L603、summary_service.py L285、chat_tools.py L1101、views.py L856（TestConnection 既有仓库分支）、L562（base-branch）；None 分支降级文案保留不回退；`test_git_credential_gap_wiring.py` 6 passed |
+| 7 | REPO-02 `search_rag_chunks` 多仓/全仓参数、每仓 fail-closed 复用、单仓向后兼容、仅已索引授权仓 | ✓ VERIFIED | `serializers.py` L16-45（repository_ids/all_repositories/max_repos→target_repository_ids）；`views.py` L456-594（一次性 search_rag chokepoint、item.repository_id 标注、单仓标量回退）；chokepoint `rag_search.py` L85 逐仓 build_matcher_for_repo；5 守护测试全绿（回归未破） |
 
-**Score:** 6/7 truths verified
+**Score:** 7/7 truths verified
 
 ### Deferred Items
 
@@ -88,7 +64,7 @@ human_verification:
 | indexer/graph/repo_mirror | git_credentials 解析器 | clone 取 token | ✓ WIRED |
 | merge_request_service/mr_service/coding.py | aresolve_git_token | MR/PR client + dispatch | ✓ WIRED |
 | diff_archive / views.py(base-branch) | 解析器 | 取 token | ✓ WIRED |
-| **pr.py / coding_graph.py / code_review.py / summary_service.py / chat_tools.py / views.py(TestConn)** | 解析器 | 取 token | ✗ NOT_WIRED（内联 decrypt 绕过） |
+| **pr.py / coding_graph.py / code_review.py / summary_service.py / chat_tools.py / views.py(TestConn)** | aresolve_git_token | 取 token | ✓ WIRED（gap 闭环，内联 decrypt 已移除） |
 | mcp_tools/views.py | HybridSearchService.search(repository_ids=) → search_rag chokepoint | 多仓 fail-closed | ✓ WIRED |
 
 ### Behavioral Spot-Checks
@@ -96,34 +72,34 @@ human_verification:
 | Behavior | Command | Result | Status |
 | --- | --- | --- | --- |
 | REPO-01 解析器 + clone/平台接线 + REST CRUD 守护 | `pytest test_git_credentials* test_git_instance_credentials.py` | 28 passed | ✓ PASS |
-| REPO-02 多仓 RAG 守护 | `pytest test_search_rag_multi_repo.py` | 5 passed（共 33 passed） | ✓ PASS |
+| REPO-02 多仓 RAG 守护 | `pytest test_search_rag_multi_repo.py` | 5 passed | ✓ PASS |
+| REPO-01 gap 闭环接线守护（re-verify） | `pytest test_git_credential_gap_wiring.py + 5 套` | 39 passed | ✓ PASS |
 
 ### Anti-Patterns Found
 
-| File | Line | Pattern | Severity | Impact |
-| --- | --- | --- | --- | --- |
-| workflows/nodes/git/pr.py | 179, 373 | 内联 git-token decrypt 绕过解析器 | ⚠️ Warning | 实例池-only 仓 PR 创建/cross-ref 失败 |
-| orchestration/coding_graph.py | 240, 601 | 同上 | ⚠️ Warning | 冲突预检跳过 + PR 创建失败 |
-| workflows/nodes/ai/code_review.py | 613 | 同上 | ⚠️ Warning | MR diff 拉取失败 |
-| repositories/summary_service.py | 289 | dispatch token 内联 | ⚠️ Warning | 注入空 git token |
-| agents/tools/chat_tools.py | 1104 | dispatch token 内联 | ⚠️ Warning | 注入空 git token |
+无（re-verify）。原 6 文件 8 处内联 git-token decrypt 已全部移除并改经解析器；grep `decrypt_value(.*encrypted_token` 非测试代码仅剩解析器自身 `services/git_credentials.py` L72/L86。
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| REPO-01 | 26-01..04 | GitLab 凭证统一/集中管理，多仓复用 | ⚠️ PARTIAL | 模型/解析器/REST/前端齐备且已接入主索引/检索路径；但多处 git-platform/dispatch 路径仍绕过解析器，实例池-only 复用不完整 |
+| REPO-01 | 26-01..04 + gap 闭环 | GitLab 凭证统一/集中管理，多仓复用 | ✓ SATISFIED | 模型/解析器/REST/前端齐备；全部 git-platform / dispatch / clone / 检索取 token 路径统一经 `aresolve_git_token`，实例池-only 仓库可在所有路径复用同一凭证；grep 确认无解析器旁路残留 |
 | REPO-02 | 26-05 | MCP RAG 多仓/全仓参数 | ✓ SATISFIED | search_rag_chunks 多仓参数 + 跨仓 fail-closed + 单仓兼容，5 守护测试全绿 |
 
-### Gaps Summary
+### Gap Closure（Re-verification）
 
-REPO-02 完全达成。REPO-01 的数据/解析/REST/前端地基与 plan 显式列举的接线点均已验证落地且测试全绿，per-repo 优先与 token 不泄漏契约成立。
+初次验证的唯一阻断点——6 个 git 平台 API / 容器 dispatch 文件中 8 处内联 `decrypt_value(credential.encrypted_token)` 绕过统一解析器——已在 commits `b76a9f1d6` / `39d351ad7` 闭环：
 
-唯一阻断点：CONTEXT D-02 与 26-03 SUMMARY 均声称"消除所有散落的 per-repo 取 token 逻辑 / 统一经解析器"，但实际仍有 ≥8 处内联 `decrypt_value(credential.encrypted_token)` 分布于 6 个 git 平台 API / 容器 dispatch 文件（`pr.py`、`coding_graph.py`、`code_review.py`、`summary_service.py`、`chat_tools.py`、`views.py` TestConnection 既有仓库分支），绕过统一解析器。其后果是：一个仅靠实例凭证池（无 per-repo token）的仓库——恰是成功标准 1 承诺的场景——在"chat 编码 PR 创建 / 冲突预检 / 工作流 git PR 节点 / code review diff 拉取 / 两处容器派发 git token 注入 / 既有仓库测试连接"等路径仍会因缺 per-repo token 而失败或注入空 token。
+- `workflows/nodes/git/pr.py` L168 / L358、`orchestration/coding_graph.py` L235 / L597、`workflows/nodes/ai/code_review.py` L603、`repositories/summary_service.py` L285、`agents/tools/chat_tools.py` L1101、`repositories/views.py` L856（TestConnection 既有仓库分支）全部改经 `await aresolve_git_token(repo)`；各 None 分支保留既有缺凭证报错/降级文案（行为不回退），dispatch 路径仍仅 token 非空才注入。
+- grep `decrypt_value(.*encrypted_token`：非测试代码仅剩解析器自身 `services/git_credentials.py`（L72/L86）；其余命中均为测试断言/文档。
+- `test_git_credential_gap_wiring.py` 6 passed；连同既有 5 套守护测试合计 39 passed，REPO-02 多仓守护与回归未破。
 
-因此成功标准 1「同一 GitLab 实例多仓可复用同一凭证」仅部分达成。修复为机械替换（同 26-02/26-03 范式），不引入新设计。
+成功标准 1「同一 GitLab 实例多仓可复用同一凭证」与标准 2「MCP RAG 多仓/全仓参数」均完全达成。仅余前端浏览器交互观感按指示作非阻塞 UAT（已有 vitest 守护通过）。
+
+**最终状态：passed。**
 
 ---
 
-_Verified: 2026-06-15T01:16:44Z_
+_Initial verified: 2026-06-15T01:16:44Z（gaps_found）_
+_Re-verified: 2026-06-15T01:29:37Z（passed，gap 闭环）_
 _Verifier: Claude (gsd-verifier)_
