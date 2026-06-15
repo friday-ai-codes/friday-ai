@@ -13,11 +13,23 @@ fixture 字段形状取 DOMAIN §16 实测（story 7010225564：field_caadeb=[70
 
 from __future__ import annotations
 
+import httpx
+import pytest
+import respx
+
 from delivery.services.derivation import derive_status_events, derive_status_fields
+
+# 回源 upsert 测试经 sync_to_async / 异步 ORM 写库——须用 transaction=True
+# （TransactionTestCase 语义：每测试后 flush 表），否则跨线程连接写入不被主连接
+# 事务回滚清理，导致 Project.feishu_project_key 唯一约束跨测试冲突。
+# 纯函数派生测试不触 DB，不受影响。
+pytestmark = pytest.mark.django_db(transaction=True)
 
 # === DOMAIN §16 实测自然键 ===
 PROJECT_KEY = "622c10eb5daaee81db915189"
+API_BASE = "https://project.feishu.cn"
 STORY_ID = 7010225564
+TARGET_PROJECT_ID = 7010938167
 
 
 # ============================================================================
@@ -126,3 +138,214 @@ def test_work_item_synced_signal_importable() -> None:
     from delivery.signals import work_item_synced
 
     assert isinstance(work_item_synced, Signal)
+
+
+# ============================================================================
+# Task 2 / 3 共用：respx 回源 mock + 带凭证 Project fixture
+# ============================================================================
+
+# story 响应字段（含 work_item_related_multi_select → belongs_to_project 派生）
+_STORY_FIELDS = [
+    {
+        "field_key": "field_bcff9b",
+        "field_name": "需求文档",
+        "field_value": "https://tenant.feishu.cn/docx/doc_token_prd",
+        "field_type_key": "link",
+        "field_alias": "prd_url",
+    },
+    {
+        "field_key": "field_caadeb",
+        "field_name": "所属项目",
+        "field_value": [TARGET_PROJECT_ID],
+        "field_type_key": "work_item_related_multi_select",
+        "field_alias": None,
+    },
+]
+
+
+async def _make_project():
+    """创建带飞书插件凭证的 Project（供 create_feishu_client_for_project）。"""
+    from common.encryption import encrypt_value
+    from projects.models import Project
+
+    return await Project.objects.acreate(
+        name="study_platform",
+        feishu_project_key=PROJECT_KEY,
+        feishu_plugin_id="plugin_test_id",
+        feishu_plugin_secret_encrypted=encrypt_value("plugin_test_secret"),
+        feishu_user_key="user_key_test",
+    )
+
+
+def _mock_token() -> None:
+    """mock plugin_token 端点（业务端点前置）。"""
+    respx.post(f"{API_BASE}/open_api/authen/plugin_token").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {"token": "plugin_token_xyz", "expire_time": 7200},
+                "error": {"code": 0, "msg": "success"},
+            },
+        )
+    )
+
+
+def _mock_work_item(
+    work_item_type: str = "story",
+    *,
+    work_item_id: int = STORY_ID,
+    name: str = "实现学习平台 A",
+    state_key: str = "fi46o4r6m",
+    fields: list[dict] | None = None,
+    current_nodes: list[dict] | None = None,
+) -> None:
+    """mock 工作项 query 端点，返回单条 item（DOMAIN §16 形状）。"""
+    item = {
+        "id": work_item_id,
+        "name": name,
+        "fields": fields if fields is not None else _STORY_FIELDS,
+        "work_item_status": {
+            "state_key": state_key,
+            "current_nodes": current_nodes
+            if current_nodes is not None
+            else [{"id": "state_2", "name": "Sprint计划"}],
+        },
+    }
+    respx.post(f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/{work_item_type}/query").mock(
+        return_value=httpx.Response(200, json={"err_code": 0, "data": [item]})
+    )
+
+
+def _identity(work_item_type: str = "story", work_item_id: int = STORY_ID):
+    from delivery.services import WorkItemIdentity
+
+    return WorkItemIdentity(
+        feishu_project_key=PROJECT_KEY,
+        work_item_type=work_item_type,
+        work_item_id=work_item_id,
+    )
+
+
+# ============================================================================
+# Task 2：upsert 核心 —— 幂等收敛 + mirror-only + facet SyncState
+# ============================================================================
+
+
+@respx.mock
+async def test_upsert_idempotent_same_triple_multi_origin() -> None:
+    """WIT-01：同三元组连续 upsert（不同 origin）→ 唯一行，origin 保持首次值。"""
+    from delivery.models import WorkItem
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    _mock_work_item()
+
+    service = WorkItemService()
+    await service.upsert(_identity(), source="manual")
+    await service.upsert(_identity(), source="feishu_webhook")
+
+    assert await WorkItem.objects.acount() == 1
+    wi = await WorkItem.objects.aget(work_item_id=STORY_ID)
+    assert wi.origin == "manual"  # 首次创建的 origin 不被后续覆盖
+
+
+@respx.mock
+async def test_upsert_mirror_only_protects_enhanced() -> None:
+    """WIT-02：mirror 刷新只动 mirror 字段，friday_enhanced 被保护。"""
+    from asgiref.sync import sync_to_async
+
+    from delivery.models import WorkItem, WorkItemOrigin
+    from delivery.services import WorkItemService
+
+    await _make_project()
+
+    # 预置：库内已有该 WorkItem，带 enhanced 字段 + 旧 title
+    await WorkItem.objects.acreate(
+        feishu_project_key=PROJECT_KEY,
+        work_item_type="story",
+        work_item_id=STORY_ID,
+        origin=WorkItemOrigin.MANUAL,
+        title="旧标题",
+        internal_note="x",
+        business_line_normalized="L",
+    )
+
+    _mock_token()
+    _mock_work_item(name="新标题")
+
+    await WorkItemService().upsert(_identity(), source="feishu_webhook")
+
+    wi = await WorkItem.objects.aget(work_item_id=STORY_ID)
+    assert wi.title == "新标题"  # mirror 被刷新
+    assert wi.internal_note == "x"  # enhanced 原样保留
+    assert wi.business_line_normalized == "L"
+    assert wi.origin == WorkItemOrigin.MANUAL  # origin 不被覆盖
+    # 显式断言 sync_to_async 路径无副作用残留
+    assert await sync_to_async(lambda: wi.status_display_name)() == "Sprint计划"
+
+
+@respx.mock
+async def test_upsert_fetch_failure_records_facet_missing_no_rollback() -> None:
+    """WIT-03：回源失败 → basic_fields facet=missing/error，WorkItem 不整体回滚。"""
+    from delivery.models import SyncFacet, SyncStatus, WorkItem, WorkItemSyncState
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    # 回源返回非 JSON → get_work_item 抛 FeishuResponseError
+    respx.post(f"{API_BASE}/open_api/{PROJECT_KEY}/work_item/story/query").mock(
+        return_value=httpx.Response(
+            200, text="<html>502</html>", headers={"content-type": "text/html"}
+        )
+    )
+
+    wi = await WorkItemService().upsert(_identity(), source="feishu_webhook")
+
+    # WorkItem 行仍存在（已 get_or_create）
+    assert await WorkItem.objects.filter(work_item_id=STORY_ID).aexists()
+    state = await WorkItemSyncState.objects.aget(work_item=wi, facet=SyncFacet.BASIC_FIELDS)
+    assert state.status == SyncStatus.MISSING
+    assert state.error  # error 文本非空
+    # 凭证不入 error
+    assert "plugin_token_xyz" not in state.error
+    assert "plugin_test_secret" not in state.error
+
+
+@respx.mock
+async def test_upsert_success_records_sync_state_and_provenance() -> None:
+    """成功回源 → basic_fields=complete、last_synced_at、field_provenance 写入。"""
+    from delivery.models import SyncFacet, SyncStatus, WorkItemSyncState
+    from delivery.services import WorkItemService
+
+    await _make_project()
+    _mock_token()
+    _mock_work_item()
+
+    wi = await WorkItemService().upsert(_identity(), source="manual")
+
+    assert wi.last_synced_at is not None
+    assert wi.prd_url == "https://tenant.feishu.cn/docx/doc_token_prd"
+    assert wi.field_provenance.get("title") == "manual"
+    assert wi.field_provenance.get("status_state_key") == "manual"
+    # enhanced 字段不入 provenance
+    assert "internal_note" not in wi.field_provenance
+
+    state = await WorkItemSyncState.objects.aget(work_item=wi, facet=SyncFacet.BASIC_FIELDS)
+    assert state.status == SyncStatus.COMPLETE
+    assert state.last_synced_at is not None
+
+
+@respx.mock
+async def test_upsert_project_unconfigured_records_missing() -> None:
+    """project 未配置 → 仍建 WorkItem，basic_fields=missing + error，不抛。"""
+    from delivery.models import SyncFacet, SyncStatus, WorkItem, WorkItemSyncState
+    from delivery.services import WorkItemService
+
+    # 不创建 Project
+    wi = await WorkItemService().upsert(_identity(), source="manual")
+
+    assert await WorkItem.objects.filter(work_item_id=STORY_ID).aexists()
+    state = await WorkItemSyncState.objects.aget(work_item=wi, facet=SyncFacet.BASIC_FIELDS)
+    assert state.status == SyncStatus.MISSING
+    assert "project" in state.error
