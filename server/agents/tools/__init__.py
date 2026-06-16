@@ -16,6 +16,11 @@ from agents.tools.base import (
     tool,
 )
 from agents.tools.clarification import ask_clarification
+from agents.tools.delivery_knowledge_tools import (
+    get_entity_timeline,
+    get_related_entities,
+    search_delivery_knowledge,
+)
 from agents.tools.feishu_doc_tools import (
     create_feishu_document,
     fetch_feishu_document,
@@ -23,14 +28,10 @@ from agents.tools.feishu_doc_tools import (
 from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.find_api_callers import find_api_callers
 from agents.tools.find_api_handler import find_api_handler
-from agents.tools.delivery_knowledge_tools import (
-    get_entity_timeline,
-    get_related_entities,
-    search_delivery_knowledge,
-)
 from agents.tools.find_related_code import find_related_code
-from agents.tools.list_endpoints import list_endpoints
 from agents.tools.langchain_adapter import build_langchain_tools
+from agents.tools.list_endpoints import list_endpoints
+from agents.tools.plan_research_tools import start_plan_research
 from agents.tools.registry import ToolRegistry
 from agents.tools.repository_relevance import analyze_repository_relevance
 from agents.tools.send_plan_card import send_plan_card
@@ -88,4 +89,6 @@ __all__ = [
     "ask_user_question",
     # Plan verification tools
     "verify_plan",
+    # Plan orchestration chat entry (ENTRY-02)
+    "start_plan_research",
 ]
