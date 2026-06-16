@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.8.0
-milestone_name: 多仓串行编码 → 融合 PR
-status: Awaiting next milestone
-stopped_at: Milestone v0.8.0 收官归档（audit passed 9/9 + integration_ok + Nyquist 5/5；ROADMAP/REQUIREMENTS/AUDIT 已归档 milestones/，tag v0.8.0）
-last_updated: "2026-06-17T01:58:00.000Z"
-last_activity: 2026-06-16 — Milestone v0.8.0 completed and archived
+milestone: v0.9.0
+milestone_name: SDD / OpenSpec 支持
+status: planning
+last_updated: "2026-06-16T18:26:57.937Z"
+last_activity: 2026-06-16
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: Milestone v0.8.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-16 — Milestone v0.8.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-16 — Milestone v0.9.0 started
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
