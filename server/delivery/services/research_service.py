@@ -124,18 +124,39 @@ class ResearchService:
         return partial
 
     async def retry_task(self, task: RepoResearchTask) -> RepoResearchTask:
-        """单仓重试隔离（RESEARCH-02）：仅 failed task → pending + attempt+1。
+        """单仓重试/复位隔离（RESEARCH-02/03）：failed 或 stale task → pending + attempt+1。
 
-        以 ``filter(id, status=failed).update(status=pending, attempt=F+1)`` 条件更新，
-        影响行数 != 1 → ``raise ValueError``（非 failed 不可重试，镜像 PlanSessionService
-        条件更新 + 断言范式）。**绝不触碰其他 task / 不改 session.status**。
+        IN-01 守护：
+        - **session 状态前置校验**：仅当所属 ``PlanSession`` 仍在 ``researching`` 才允许
+          重试/复位——否则会在已 ``merging``/``done`` 的 session 下挂回 ``pending`` 任务，
+          制造「已推进 session 下挂 pending 子任务」的状态不一致；非 researching → ``raise``.
+        - **stale 复位入口**：``stale`` 任务（重索引失效，RESEARCH-03）与 ``failed`` 对等
+          可复位 pending 重派（融合前重跑），不再无恢复路径。
+
+        以 ``filter(id, status__in=[failed, stale]).update(status=pending, attempt=F+1)``
+        条件更新，影响行数 != 1 → ``raise ValueError``（非 failed/stale 不可重试，镜像
+        PlanSessionService 条件更新 + 断言范式）。**绝不触碰其他 task / 不改 session.status**。
         """
         return await self._retry_task_sync(task)
 
     @sync_to_async
     def _retry_task_sync(self, task: RepoResearchTask) -> RepoResearchTask:
+        from delivery.models import PlanSession, PlanSessionStatus
+
+        # session 状态前置校验（IN-01）：仅 researching 可重试/复位
+        session_status = (
+            PlanSession.objects.filter(id=task.session_id)
+            .values_list("status", flat=True)
+            .first()
+        )
+        if session_status != PlanSessionStatus.RESEARCHING:
+            raise ValueError(
+                f"RepoResearchTask {task.id} 所属 PlanSession 非 researching"
+                f"（status={session_status}），不可重试/复位"
+            )
         updated = RepoResearchTask.objects.filter(
-            id=task.id, status=RepoResearchTaskStatus.FAILED
+            id=task.id,
+            status__in=[RepoResearchTaskStatus.FAILED, RepoResearchTaskStatus.STALE],
         ).update(
             status=RepoResearchTaskStatus.PENDING,
             attempt=F("attempt") + 1,
@@ -143,7 +164,7 @@ class ResearchService:
         )
         if updated != 1:
             raise ValueError(
-                f"RepoResearchTask {task.id} 非 failed 态不可重试（当前 status={task.status}）"
+                f"RepoResearchTask {task.id} 非 failed/stale 态不可重试（当前 status={task.status}）"
             )
         task.refresh_from_db()
         return task
