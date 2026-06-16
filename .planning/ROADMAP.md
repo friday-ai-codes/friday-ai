@@ -109,7 +109,12 @@ Plans:
   2. 编排在 `recalling` 阶段接入历史召回（`DeliveryKnowledgeSearchService`：相似需求/缺陷/复盘/技术方案），把召回上下文注入后续调研
   3. 编排在该两段产出 `repo.routing` / `knowledge.recalling` trace 事件（§15 统一信封）
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 38-01-PLAN.md — PlanSession 字段扩展（routing/recall_context JSON + created_by FK）+ migration 0011 + PlanSessionService 持久化接线（INV-6）
+- [ ] 38-02-PLAN.md — 路由 adapter（ROUTE-01）RepoRouterV2Adapter + engine._route 接线 + repo.routing §15 事件
+- [ ] 38-03-PLAN.md — 召回 adapter（RECALL-01）DeliveryKnowledgeRecallAdapter（fail-closed）+ engine._recall 接线 + knowledge.recalling §15 事件
 
 ### Phase 39: 并行调研子 agent
 
@@ -179,7 +184,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 |-------|-----------|----------------|--------|-----------|
 | 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
-| 38. 路由 + 召回接入 | v0.7.0 | 0/0 | Not started | - |
+| 38. 路由 + 召回接入 | v0.7.0 | 0/3 | Planned | - |
 | 39. 并行调研子 agent | v0.7.0 | 0/0 | Not started | - |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 0/0 | Not started | - |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
