@@ -1,6 +1,6 @@
 """AIPlanResearchNode —— 方案编排工作流入口节点（ENTRY-01，DOMAIN §6/§14/§17B）。
 
-工作流入口：从节点配置/上游输入取需求建 ``PlanSession(entrypoint=workflow)``，注入真实
+工作流入口：从节点配置/上游输入取需求建 ``PlanSession``（entrypoint=workflow），注入真实
 adapters（路由/召回/调研/融合/澄清）构造 ``PlanOrchestrationEngine``，驱动 ``engine.advance``
 推进「拆分→路由→召回→澄清→并行调研→融合」流水线；在 clarifying（pending clarification）/
 researching（容器 fan-out 等待）处复用既有工作流 ``waiting_event`` 挂起、由 ask_user_question
@@ -161,7 +161,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 log.info(
                     "plan_research_suspended",
                     session_id=str(session.id),
-                    kind=suspend["output"].get("kind"),
+                    kind=suspend.output.get("kind"),
                 )
                 return suspend
 
