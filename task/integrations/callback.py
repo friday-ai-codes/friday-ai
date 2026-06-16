@@ -290,6 +290,55 @@ class CallbackClient:
             log.error("report_failed_failed", error=str(e))
             return False
 
+    async def report_question(
+        self,
+        question: str,
+        options: list[str] | None = None,
+        context: str = "",
+        code_snippet: str = "",
+        default_option: str = "",
+        timeout_minutes: int = 10,
+    ) -> bool:
+        """编码遇阻时向人发起提问（HITL）—— POST type=question 到统一回调端点。
+
+        复用既有 question 协议契约（server 端 QuestionPayloadSerializer + _handle_question），
+        不新增协议键。脱敏：question/context/code_snippet 正文绝不入日志，仅记 has_options/状态。
+        """
+        log = logger.bind(task_id=self.config.task_id)
+
+        if not self.enabled:
+            log.info("question_reported_standalone", has_options=bool(options))
+            return True
+
+        payload = {
+            "type": "question",
+            "session_id": self.config.task_id,
+            "token": self.config.callback_token,
+            "payload": {
+                "question": question,
+                "options": options or [],
+                "context": context,
+                "code_snippet": code_snippet,
+                "default_option": default_option,
+                "timeout_minutes": timeout_minutes,
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self._callback_endpoint(),
+                    json=payload,
+                    headers=self.headers,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+            log.info("question_reported", has_options=bool(options))
+            return True
+        except httpx.HTTPError as e:
+            log.error("report_question_failed", error=str(e))
+            return False
+
     async def report_suggested_commit_message(
         self,
         suggested_commit_message: str,

@@ -119,8 +119,10 @@ class TaskRunner:
             else:
                 log.info("Plan mode - staying on branch", branch=branch_name)
 
-            # Initialize Claude runner
-            self.claude = ClaudeRunner(self.config, self.git_ops.get_workspace_path())
+            # Initialize Claude runner（传入 callback 供 coding 遇阻 HITL 的 ask_user 发问）
+            self.claude = ClaudeRunner(
+                self.config, self.git_ops.get_workspace_path(), callback=self.callback
+            )
 
             # Execute based on mode
             if self.config.task_mode == "plan":
