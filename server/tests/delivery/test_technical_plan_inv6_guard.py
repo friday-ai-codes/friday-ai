@@ -1,4 +1,4 @@
-"""INV-6 守护：canonical TechnicalPlan/PlanVersion 落库只经 TechnicalPlanService。
+r"""INV-6 守护：canonical TechnicalPlan/PlanVersion 落库只经 TechnicalPlanService。
 
 纯本地源码扫描（无 DB / 网络），复刻 ``test_plan_session_inv6_guard.py`` 范式：
 扫描 ``server/`` 源码（剪 venv/缓存 + 排除 tests/ / migrations/ / delivery/models/
