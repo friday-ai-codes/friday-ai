@@ -308,6 +308,7 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
                 PlanSession,
                 PlanSessionEntrypoint,
                 PlanSessionStatus,
+                RepoResearchTask,
             )
             from orchestration.barrier import get_barrier_manager
             from orchestration.contracts import BlockingTaskResult
@@ -330,6 +331,15 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
             if str(plan_session.entrypoint) != str(PlanSessionEntrypoint.CHAT):
                 return
 
+            # b2. 归属校验（T-43-TAMPER 加固，WR-03）：交叉验证本 session 的 research_task 确属
+            #     该 plan_session，绝不单信 runner 可经 progress 篡改的 last_output.plan_session_id
+            #     —— 否则半可信 runner 可把 plan_session_id 指向他人受害 PlanSession 触发越权续驱。
+            research_task_id = lo.get("research_task_id")
+            if research_task_id:
+                task = await RepoResearchTask.objects.filter(id=research_task_id).afirst()
+                if task is None or str(task.session_id) != str(plan_session.id):
+                    return
+
             # c. 幂等短路：仅当全部调研终态才续驱（多仓逐个完成时只有最后一个真正续驱）
             if not await aall_research_tasks_terminal(plan_session.id):
                 return
@@ -339,6 +349,17 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
 
             # e. 先续驱到终态（43-02 同源 helper）
             plan_session = await adrive_plan_session_to_pause_or_terminal(engine, plan_session)
+
+            # e2. 终态守门（WR-02）：adrive 可能在非终态短路返回（clarifying-pending /
+            #     researching-在途），此时不构建 BlockingTaskResult、不通知 barrier——否则会以
+            #     success=False 提前把 chat 阻塞任务误解析为失败。仅 {DONE, FAILED} 才回灌。
+            if plan_session.status not in (PlanSessionStatus.DONE, PlanSessionStatus.FAILED):
+                log.info(
+                    "chat_plan_resume_resuspended",
+                    plan_session_id=str(plan_session.id),
+                    status=plan_session.status,
+                )
+                return
 
             # f. 再构建 BlockingTaskResult（复用 deep_analysis 回灌通道；A2：失败 output="")
             success = plan_session.status == PlanSessionStatus.DONE
@@ -737,12 +758,6 @@ async def _handle_completed(
     # 更新关联的 CodingSession（如果有）
     await _update_coding_session_on_complete(session)
 
-    # 触发 workflow 恢复（如果有 node_execution）
-    _schedule_workflow_resume(session, log)
-
-    # 触发 Agent 会话恢复（如果有 main_session 但无 node_execution）
-    _schedule_agent_session_resume(session, log)
-
     # repo_summary 完成写回 Repository
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         await _update_repository_on_summary_complete(session, p)
@@ -766,6 +781,16 @@ async def _handle_completed(
             session_id=session.session_id,
             error=str(exc),
         )
+
+    # CR-01：续驱调度必须在 _handle_research_completion 之后——它把 RepoResearchTask 翻终态
+    # 并将 chat 入口 session researching→merging。若在其之前调度（旧实现），fire-and-forget
+    # 的 _resume() 会与 research 完成处理在事件循环 await 点交错，可能在 task 翻终态前读到
+    # 非终态而 aall_research_tasks_terminal 短路返回 no-op，导致 chat 会话永久卡在 merging、
+    # barrier 永不被通知。research 状态落库后再调度，保证 _resume() 创建时 DB 状态已一致。
+    # 触发 workflow 恢复（如果有 node_execution）
+    _schedule_workflow_resume(session, log)
+    # 触发 Agent 会话恢复（如果有 main_session 但无 node_execution）
+    _schedule_agent_session_resume(session, log)
 
     log.info("callback_completed_ok", result_type=p["result_type"])
     return Response({"status": "ok"})
@@ -798,12 +823,6 @@ async def _handle_failed(
 
     await _send_failure_notification(session, error_msg)
 
-    # 触发 workflow 恢复（如果有 node_execution）
-    _schedule_workflow_resume(session, log)
-
-    # 触发 Agent 会话恢复
-    _schedule_agent_session_resume(session, log)
-
     # repo_summary 失败写回 Repository
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         await _update_repository_on_summary_fail(session, error_msg)
@@ -818,6 +837,16 @@ async def _handle_failed(
             session_id=session.session_id,
             error=str(exc),
         )
+
+    # CR-01：与 _handle_completed 对称——续驱调度移到 _handle_research_failure 之后，确保
+    # _resume() 创建时 RepoResearchTask 已翻 FAILED 终态 + session 已 researching→merging，
+    # 消除 fire-and-forget 续驱在 task 翻终态前短路 no-op 导致会话卡死的竞态。
+    # （_schedule_workflow_resume 自身有「所有 SubAgentSession 终态才续跑」二次 guard，
+    #   工作流路径不受顺序影响。）
+    # 触发 workflow 恢复（如果有 node_execution）
+    _schedule_workflow_resume(session, log)
+    # 触发 Agent 会话恢复
+    _schedule_agent_session_resume(session, log)
 
     log.info("callback_failed_ok", error=error_msg)
     return Response({"status": "ok"})
