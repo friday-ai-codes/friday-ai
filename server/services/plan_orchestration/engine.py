@@ -133,12 +133,25 @@ class PlanOrchestrationEngine:
         await self.session_service._emit_event("repo.routing", session, trace)
 
     async def _recall(self, session: PlanSession) -> None:
-        """召回 stage：调注入 recall → transition recalled（→ clarifying）。
+        """召回 stage（RECALL-01 已接入）：调注入 recall 取召回上下文 → 落库 → 发事件。
 
-        TODO(Phase 38)：DeliveryKnowledgeSearchService 历史/相似召回上下文注入。
+        1. ``result = await self.recall.recall(session)`` 取召回命中（`{hits, query, kinds}`）。
+        2. 经 ``transition(session, "recalled", recall_context=hits)`` 把命中列表落
+           ``PlanSession.recall_context`` 并按 §14 recalled 行转移 recalling → clarifying
+           （engine 不直接写 status，T-36-03-01）。
+        3. 产出 §15 ``knowledge.recalling`` trace 事件（payload `{query, kinds, hits}`，
+           hits 仅计数、不外泄命中明细 INV-5）经 ``_emit_event`` 钩子；真实 sink Phase 41
+           收口。``result`` 防御取值（注入 mock 可能返回精简 dict 或 list）。
         """
-        await self.recall.recall(session)
-        await self.session_service.transition(session, "recalled")
+        result = await self.recall.recall(session)
+        hits = result.get("hits", []) if isinstance(result, dict) else (result or [])
+        await self.session_service.transition(session, "recalled", recall_context=hits)
+        trace = {
+            "query": result.get("query", "") if isinstance(result, dict) else "",
+            "kinds": result.get("kinds", []) if isinstance(result, dict) else [],
+            "hits": len(hits),
+        }
+        await self.session_service._emit_event("knowledge.recalling", session, trace)
 
     async def _clarify(self, session: PlanSession) -> None:
         """澄清 stage：本 phase 无澄清逻辑，最小 pass-through → researching。
