@@ -4,6 +4,11 @@ curated re-export：``PlanOrchestrationEngine``（状态驱动推进器）+ 可�
 与骨架默认实现（38-41 逐步替换）。
 """
 
+from services.plan_orchestration.architect_merge_adapter import (
+    ArchitectMergeAdapter,
+    LLMMergedPlanSynthesizer,
+    MergedPlanSynthesizer,
+)
 from services.plan_orchestration.engine import PlanOrchestrationEngine
 from services.plan_orchestration.merged_plan import (
     MERGED_PLAN_FIELDS,
@@ -52,4 +57,7 @@ __all__ = [
     "validate_merged_plan",
     "CHECK_NAMES",
     "validate_plan",
+    "ArchitectMergeAdapter",
+    "MergedPlanSynthesizer",
+    "LLMMergedPlanSynthesizer",
 ]
