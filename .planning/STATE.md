@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.7.0
-milestone_name: 方案编排
-status: in_progress
-last_updated: "2026-06-16T06:00:00.000Z"
-last_activity: 2026-06-16 — Phase 42 complete (verification passed; v0.7.0 末 phase)
+milestone_name: 方案编排（需求 → 主方案）
+status: Awaiting next milestone
+stopped_at: Phase 42 complete (v0.7.0 末 phase；全 7 phases 编排能力交付完毕)
+last_updated: "2026-06-16T06:16:02.107Z"
+last_activity: 2026-06-16 — Milestone v0.7.0 completed and archived
 progress:
   total_phases: 7
   completed_phases: 7
@@ -24,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 42 ✅ complete — v0.7.0 末 phase（全 7 phases 完成）
-Plan: 42-01 ✅
-Status: Phase 42 ✅ complete (1/1 plan executed + verification passed: SC-1/2/3 all TRUE)
-Last activity: 2026-06-16 — Phase 42 executed + verified（Chat 入口薄封装：start_plan_research @tool 复用同一 engine + 入口无关一致性守护 + INV-2 null work_item）
+Phase: Milestone v0.7.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-16 — Milestone v0.7.0 completed and archived
 
 ## Milestone Overview (v0.7.0 — Phases 36–42)
 
@@ -310,4 +311,4 @@ Next: v0.7.0 里程碑过渡（由 orchestrator 管理，autonomous 模式本次
 
 ## Operator Next Steps
 
-- v0.7.0 里程碑全部 7 phases 完成；里程碑过渡/归档由 orchestrator 处理
+- Start the next milestone with /gsd-new-milestone
