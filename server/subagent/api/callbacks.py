@@ -1272,6 +1272,10 @@ async def _handle_research_completion(
         return
 
     from delivery.services import PlanSessionService, ResearchService
+    from delivery.services.event_taxonomy import (
+        EVENT_REPO_RESEARCH_COMPLETED,
+        EVENT_REPO_RESEARCH_FAILED,
+    )
     from services.plan_orchestration.research_aggregation import parse_partial_plan_content
 
     task, plan_session = await _aload_research_task(session)
@@ -1288,7 +1292,7 @@ async def _handle_research_completion(
         await research_service.mark_failed(task, {"reason": "empty_or_unparseable_result"})
         if plan_session is not None:
             await session_service._emit_event(
-                "repo.research.failed",
+                EVENT_REPO_RESEARCH_FAILED,
                 plan_session,
                 {
                     "repo_id": str(task.repository_id),
@@ -1300,7 +1304,7 @@ async def _handle_research_completion(
         await research_service.record_partial(task, content)
         if plan_session is not None:
             await session_service._emit_event(
-                "repo.research.completed",
+                EVENT_REPO_RESEARCH_COMPLETED,
                 plan_session,
                 {
                     "repo_id": str(task.repository_id),
@@ -1323,6 +1327,7 @@ async def _handle_research_failure(
         return
 
     from delivery.services import PlanSessionService, ResearchService
+    from delivery.services.event_taxonomy import EVENT_REPO_RESEARCH_FAILED
 
     task, plan_session = await _aload_research_task(session)
     if task is None:
@@ -1332,7 +1337,7 @@ async def _handle_research_failure(
     await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_msg})
     if plan_session is not None:
         await PlanSessionService()._emit_event(
-            "repo.research.failed",
+            EVENT_REPO_RESEARCH_FAILED,
             plan_session,
             {"repo_id": str(task.repository_id), "task_id": str(task.id), "error": error_msg},
         )

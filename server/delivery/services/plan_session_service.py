@@ -24,6 +24,7 @@ from delivery.models import (
     PlanSessionEvent,
     PlanSessionStatus,
 )
+from delivery.services.event_taxonomy import EVENT_PLAN_SESSION_FAILED
 
 logger = structlog.get_logger(__name__)
 
@@ -229,7 +230,7 @@ class PlanSessionService:
                 current_status=session.status,
             )
             return session
-        await self._emit_event("plan.session.failed", session, payload)
+        await self._emit_event(EVENT_PLAN_SESSION_FAILED, session, payload)
         return session
 
     @sync_to_async

@@ -19,6 +19,10 @@ import structlog
 
 from delivery.models import PlanSession, PlanSessionStatus
 from delivery.services import PlanSessionService
+from delivery.services.event_taxonomy import (
+    EVENT_KNOWLEDGE_RECALLING,
+    EVENT_REPO_ROUTING,
+)
 from services.plan_orchestration.protocols import (
     MergeProtocol,
     RecallProtocol,
@@ -136,7 +140,7 @@ class PlanOrchestrationEngine:
                 for c in candidates
             ]
         }
-        await self.session_service._emit_event("repo.routing", session, trace)
+        await self.session_service._emit_event(EVENT_REPO_ROUTING, session, trace)
 
     async def _recall(self, session: PlanSession) -> None:
         """召回 stage（RECALL-01 已接入）：调注入 recall 取召回上下文 → 落库 → 发事件。
@@ -157,7 +161,7 @@ class PlanOrchestrationEngine:
             "kinds": result.get("kinds", []) if isinstance(result, dict) else [],
             "hits": len(hits),
         }
-        await self.session_service._emit_event("knowledge.recalling", session, trace)
+        await self.session_service._emit_event(EVENT_KNOWLEDGE_RECALLING, session, trace)
 
     async def _clarify(self, session: PlanSession) -> None:
         """澄清 stage：本 phase 无澄清逻辑，最小 pass-through → researching。
