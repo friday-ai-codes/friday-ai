@@ -120,14 +120,16 @@ class PlanOrchestrationEngine:
            不直接写 status，T-36-03-01）。
         3. 产出 §15 ``repo.routing`` trace 事件（payload `{candidates:[{repo_id,
            confidence}]}`，不含 reasoning 等推理细节 INV-5）经 ``_emit_event`` 钩子；
-           真实 sink Phase 41 收口。``result`` 用 ``.get`` 防御（注入 mock 可能返回精简 dict）。
+           真实 sink Phase 41 收口。``result`` 经 ``isinstance(result, dict)`` 防御取值
+           （与 ``_recall`` 对称：注入/未来 router 返回非 dict 时不在转移已落库后崩 trace）。
         """
         result = await self.router.route(session)
         await self.session_service.transition(session, "routed", routing=result)
+        candidates = (result.get("candidates") or []) if isinstance(result, dict) else []
         trace = {
             "candidates": [
                 {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")}
-                for c in (result.get("candidates") or [])
+                for c in candidates
             ]
         }
         await self.session_service._emit_event("repo.routing", session, trace)
