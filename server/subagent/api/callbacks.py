@@ -653,6 +653,17 @@ async def _handle_completed(
     ):
         await _update_agent_session_cross_repo_relevance(session, p)
 
+    # plan_research 容器完成 → 落 PartialPlan + §15 事件 + barrier（Phase 39-04）。
+    # 独立 try/except swallow，绝不让回调失败（mirror cross_repo_relevance 钩子范式）。
+    try:
+        await _handle_research_completion(session, p, log)
+    except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_completed 主流程
+        logger.warning(
+            "research_completion_callback_failed",
+            session_id=session.session_id,
+            error=str(exc),
+        )
+
     log.info("callback_completed_ok", result_type=p["result_type"])
     return Response({"status": "ok"})
 
@@ -693,6 +704,17 @@ async def _handle_failed(
     # repo_summary 失败写回 Repository
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         await _update_repository_on_summary_fail(session, error_msg)
+
+    # plan_research 容器失败 → mark_failed + repo.research.failed + barrier（Phase 39-04）。
+    # 独立 try/except swallow，绝不让回调失败（failed 也是 barrier 终态，不卡死 merging）。
+    try:
+        await _handle_research_failure(session, p, log)
+    except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
+        logger.warning(
+            "research_failure_callback_failed",
+            session_id=session.session_id,
+            error=str(exc),
+        )
 
     log.info("callback_failed_ok", error=error_msg)
     return Response({"status": "ok"})
@@ -1183,6 +1205,132 @@ async def _update_agent_session_cross_repo_relevance(
             session_id=session.session_id,
             error=str(exc),
         )
+
+
+# === plan_research 容器回调 → PartialPlan 落库 + §15 事件 + barrier 触发 (Phase 39-04) ===
+
+
+def _is_plan_research(session: SubAgentSession) -> bool:
+    """路由判定：PLAN 任务 + last_output.source == plan_research。"""
+    return (
+        session.task_type == SubAgentSession.TaskType.PLAN
+        and isinstance(session.last_output, dict)
+        and session.last_output.get("source") == "plan_research"
+    )
+
+
+async def _aload_research_task(session: SubAgentSession):
+    """从 last_output 取 research_task_id → 读 RepoResearchTask（缺失/已终态返回 None）。
+
+    返回 ``(task, plan_session)``；任一不可用则对应位 None（调用方 no-op，幂等）。
+    """
+    from delivery.models import PlanSession, RepoResearchTask, RepoResearchTaskStatus
+
+    lo = session.last_output or {}
+    research_task_id = lo.get("research_task_id")
+    plan_session_id = lo.get("plan_session_id")
+    if not research_task_id:
+        return None, None
+    task = await RepoResearchTask.objects.filter(id=research_task_id).afirst()
+    if task is None or task.status in (
+        RepoResearchTaskStatus.DONE,
+        RepoResearchTaskStatus.FAILED,
+        RepoResearchTaskStatus.STALE,
+    ):
+        return None, None
+    plan_session = None
+    if plan_session_id:
+        plan_session = await PlanSession.objects.filter(id=plan_session_id).afirst()
+    return task, plan_session
+
+
+async def _trigger_research_barrier(plan_session) -> None:
+    """所有 RepoResearchTask 终态则推 research_complete（→ merging）；幂等安全。"""
+    if plan_session is None:
+        return
+    from services.plan_orchestration.research_aggregation import amaybe_complete_research
+
+    await amaybe_complete_research(plan_session)
+
+
+async def _handle_research_completion(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """plan_research 容器完成 → 解析结构化/降级 PartialPlan 落库 + §15 事件 + barrier。
+
+    空/不可解析 → mark_failed + repo.research.failed；否则 record_partial + repo.research.completed。
+    所有终态 → amaybe_complete_research（researching→merging）。非 plan_research 不触发。
+    """
+    if not _is_plan_research(session):
+        return
+
+    from delivery.services import PlanSessionService, ResearchService
+    from services.plan_orchestration.research_aggregation import parse_partial_plan_content
+
+    task, plan_session = await _aload_research_task(session)
+    if task is None:
+        return
+
+    research_service = ResearchService()
+    session_service = PlanSessionService()
+    content = parse_partial_plan_content(
+        p.get("output") or {}, repository_id=str(task.repository_id)
+    )
+
+    if content is None:
+        await research_service.mark_failed(task, {"reason": "empty_or_unparseable_result"})
+        if plan_session is not None:
+            await session_service._emit_event(
+                "repo.research.failed",
+                plan_session,
+                {
+                    "repo_id": str(task.repository_id),
+                    "task_id": str(task.id),
+                    "error": "empty_or_unparseable_result",
+                },
+            )
+    else:
+        await research_service.record_partial(task, content)
+        if plan_session is not None:
+            await session_service._emit_event(
+                "repo.research.completed",
+                plan_session,
+                {
+                    "repo_id": str(task.repository_id),
+                    "task_id": str(task.id),
+                    "summary": content.get("research_summary", ""),
+                    "candidate_files": content.get("candidate_files", []),
+                    "api_contracts_exposed": content.get("api_contracts_exposed", []),
+                },
+            )
+
+    await _trigger_research_barrier(plan_session)
+    log.info("research_completion_handled", task_id=str(task.id), failed=content is None)
+
+
+async def _handle_research_failure(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """plan_research 容器失败 → mark_failed + repo.research.failed + barrier（failed 也是终态）。"""
+    if not _is_plan_research(session):
+        return
+
+    from delivery.services import PlanSessionService, ResearchService
+
+    task, plan_session = await _aload_research_task(session)
+    if task is None:
+        return
+
+    error_msg = p.get("error", "Unknown error")
+    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_msg})
+    if plan_session is not None:
+        await PlanSessionService()._emit_event(
+            "repo.research.failed",
+            plan_session,
+            {"repo_id": str(task.repository_id), "task_id": str(task.id), "error": error_msg},
+        )
+    await _trigger_research_barrier(plan_session)
+    log.info("research_failure_handled", task_id=str(task.id))
 
 
 # 处理器映射
