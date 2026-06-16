@@ -32,6 +32,8 @@ from delivery.services.technical_plan_service import (
     PlanNotFound,
     PlanRef,
     TechnicalPlanService,
+    chat_codingplan_to_content,
+    mcp_plan_to_content,
 )
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
@@ -58,4 +60,6 @@ __all__ = [
     "PlanRef",
     "PlanContentInvalid",
     "PlanNotFound",
+    "chat_codingplan_to_content",
+    "mcp_plan_to_content",
 ]
