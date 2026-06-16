@@ -1703,9 +1703,13 @@ class AICodingNode(SubStepMixin, BaseNode):
             f"---\n*由 Friday AI 自动创建*"
         )
 
+        # PR-01：各仓 target_branch 优先用各仓自己的 default_branch，base_branch 降为
+        # node 级兜底（对齐 mr_service.create_mr_for_task 范式，per D-01）。
+        resolved_target = repository.default_branch or base_branch or "main"
+
         request = MRCreateRequest(
             source_branch=branch_name,
-            target_branch=base_branch,
+            target_branch=resolved_target,
             title=plan_title,
             description=body,
             reviewer_usernames=[],
