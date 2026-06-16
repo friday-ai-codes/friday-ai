@@ -145,3 +145,37 @@ async def test_default_policy_high_candidate_no_clarification() -> None:
 
     reloaded = await PlanSession.objects.aget(id=session.id)
     assert reloaded.status == PlanSessionStatus.RESEARCHING
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_real_policy_answered_round_advances_no_second_clarification() -> None:
+    """CR-01 回归：真实默认 policy 路径（非注入 always-False）下，policy 持续判「需澄清」
+    （routing 无 high/medium，答后信号不变），但一轮澄清答复后必须放行 researching、
+    **不再创建第二条 Clarification**（否则无限挂起，违反 §14「全部已答 → researching」）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        # routing 无 high/medium → 默认 policy 恒判需澄清（答后该信号不变）
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+    )
+    engine = PlanOrchestrationEngine(clarify=ClarifyAdapter())
+
+    # 第一轮 advance：policy 判需澄清 → 建 pending + 保持 clarifying 挂起
+    await engine.advance(session)
+    session = await PlanSession.objects.aget(id=session.id)
+    assert session.status == PlanSessionStatus.CLARIFYING
+    pending = await Clarification.objects.filter(
+        session_id=session.id, answered_at__isnull=True
+    ).afirst()
+    assert pending is not None
+
+    # 回答这条 pending Clarification（routing 信号未变）
+    await ClarificationService().answer_clarification(pending, "补充：涉及 repoX")
+
+    # 第二轮 advance：尽管 policy 仍会判需澄清，已答轮 → 放行 researching，不再追问
+    await engine.advance(session)
+    session = await PlanSession.objects.aget(id=session.id)
+    assert session.status == PlanSessionStatus.RESEARCHING
+    # 关键：未创建第二条 Clarification（仍只有首轮那 1 条）
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
