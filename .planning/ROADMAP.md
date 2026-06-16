@@ -49,7 +49,7 @@
 - [x] **Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度** - 立 `RepoCodingTask`（wave/`depends_on` DAG/`produced_artifacts`/`follow_openspec` 预留）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）+ wave N 全 done 才触发 wave N+1 (completed 2026-06-16)
 - [x] **Phase 45: 上游产物提取 + 注入下游 wave** - 上游 wave `produced_artifacts`（API 契约/OpenAPI/diff）提取 + 注入下游 wave prompt/global_context (completed 2026-06-16)
 - [x] **Phase 46: 多仓融合 PR + 跨仓 PR 关联** - 各仓产出关联 PR/MR（diff base 用各仓正确 `target_branch` 非假设 master）+ 跨仓 PR cross-ref 关联 — completed 2026-06-16
-- [ ] **Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）** - task 侧发起 question（复用已有 question 协议 + orchestrator resume）抛给用户/orchestrator，非全自动回溯重规划
+- [x] **Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）** - task 侧发起 question（复用已有 question 协议 + orchestrator resume）抛给用户/orchestrator，非全自动回溯重规划
 
 ## Phase Details
 
@@ -172,7 +172,7 @@ Plans:
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 3/3 | Complete|  |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 2/2 | Complete    | 2026-06-16 |
-| 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
+| 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 2/2 | Complete | 2026-06-17 |
 
 ---
 *Previous milestones archived in .planning/milestones/*
