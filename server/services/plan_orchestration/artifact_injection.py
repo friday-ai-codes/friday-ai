@@ -48,8 +48,9 @@ async def acollect_upstream_artifacts(task) -> list[dict]:
 
     async ORM 安全：``async for upstream in task.depends_on.all()`` 安全迭代正向 M2M +
     读 ``upstream.produced_artifacts``（JSON 列标量，已物化安全），**绝不**裸访问 lazy-FK。
-    跳过空 dict 与 ``available`` 为 False 的占位产物（无成功产物 → 下游注入段对其不渲染，
-    零回归）。返回前按 ``repository_id`` 排序保多上游渲染顺序确定性（Open Q2）。
+    跳过空 dict 与 ``available`` 非真（缺失或 False）的占位产物——fail-closed：无明确
+    ``available`` 标志即视为不可用（无成功产物 → 下游注入段对其不渲染，零回归）。返回前按
+    ``repository_id`` 排序保多上游渲染顺序确定性（Open Q2）。
 
     Args:
         task: 下游 ``RepoCodingTask`` 实例（其 ``depends_on`` 为上游仓级依赖边）。
@@ -60,8 +61,9 @@ async def acollect_upstream_artifacts(task) -> list[dict]:
     out: list[dict] = []
     async for upstream in task.depends_on.all():
         artifacts = upstream.produced_artifacts or {}
-        # 空 / 占位（available=False）跳过——下游注入段对其不渲染（零回归）。
-        if artifacts and artifacts.get("available", True):
+        # 空 / 占位（available 缺失或为 False）跳过——fail-closed：无明确 available 标志即视为
+        # 不可用（与提取端占位 {"available": False} 保守语义对齐），下游注入段对其不渲染（零回归）。
+        if artifacts and artifacts.get("available", False):
             out.append(artifacts)
     return sorted(out, key=lambda a: a.get("repository_id", ""))
 
