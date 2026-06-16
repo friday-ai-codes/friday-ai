@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
 status: executing
-stopped_at: Phase 45 Plan 03 完成（test_coding_wave.py 扩充端到端产物传递 + 幂等 + fail-soft 三集成测试，phase gate 360 passed/1 xfailed 零回归，Phase 45 全部 3 plan 收官）
-last_updated: "2026-06-16T15:40:00.000Z"
-last_activity: 2026-06-16 -- Phase 46 Plan 01 完成（PR-01 per-repo target_branch）
+stopped_at: Phase 46 Plan 02 完成（PR-02 跨仓 cross-ref + 方案/工作项追溯 helper + 接 _finalize_and_notify 全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
+last_updated: "2026-06-16T16:00:00.000Z"
+last_activity: 2026-06-16 -- Phase 46 Plan 02 完成（PR-02 跨仓 PR cross-ref + 追溯）
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
-  percent: 65
+  completed_plans: 14
+  percent: 70
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 46 (多仓融合 PR + 跨仓 PR 关联) — EXECUTING
-Plan: 2 of 2
-Status: Executing Phase 46 (Plan 01 完成)
-Last activity: 2026-06-16 -- Phase 46 Plan 01 完成（PR-01 per-repo target_branch）
+Phase: 46 (多仓融合 PR + 跨仓 PR 关联) — COMPLETE
+Plan: 2 of 2 (全部完成)
+Status: Phase 46 收官（Plan 01 + Plan 02 完成）；下一步 Phase 47（HITL-01）
+Last activity: 2026-06-16 -- Phase 46 Plan 02 完成（PR-02 跨仓 PR cross-ref + 追溯）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-16 -- Phase 46 Plan 01 完成（PR-01 per-repo target_bra
 | 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ✅ Complete |
 | 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ✅ Complete |
 | 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ✅ Complete |
-| 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | 🔄 In Progress (1/2) |
+| 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | ✅ Complete |
 | 47 | 编码遇阻 → question 抛人（HITL，非全自动 replan） | HITL-01 | ⬜ Not started |
 
 **Execution order:** 43 → 44 → 45 → 46 → 47（严格顺序）。依赖链：编码 env 对齐 + 通用 resume 回流地基(43) → RepoCodingTask + DAG 拓扑分层 + wave 调度(44) → 上游产物提取/注入下游(45) → 多仓融合 PR + 跨仓关联(46) → 编码遇阻 question 抛人(47)。PF-06（编码 env）+ RESUME-01（resume 通路）是 callback 驱动多 wave 的前置地基；每个 phase 建立在前序编码骨架之上。
@@ -176,6 +176,7 @@ Last activity: 2026-06-16 -- Phase 46 Plan 01 完成（PR-01 per-repo target_bra
 | Phase 44 P44-05 | ~22min | 3 tasks | 2 files |
 | Phase 45 P45-03 | ~12min | 2 tasks | 1 file |
 | Phase 46 P46-01 | ~5min | 2 tasks | 2 files |
+| Phase 46 P46-02 | ~14min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -285,6 +286,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 44]: 44-04: wave_progression 入口无关 wave 推进 helper（services.plan_orchestration）——`aadvance_coding_waves(plan_version_id, *, service)` 严格序「① 回填 running→终态（按服务端权威 SubAgentSession.status，completed→done/error|timeout|cancelled→failed，经 subagent_session_id 标量取，T-44-TAMPER）→ ② 传递闭包 BFS/worklist 沿 dependents 反向边多跳阻断全部 failed 上游的 pending 下游（seen 去重，链 A→B→C 单次内 B、C 全 blocked）→ ③ 决策出口」；执行序是 liveness 命门——阻断必须在任何 early-return 前完成否则未派发 pending 下游永不阻断→all_terminal 永不触发→死锁（T-44-DEADLOCK）；决策出口：RUNNING 在途 aexists()→waiting（**不**靠最小 pending wave 防抢先 return waiting 死锁）/ depends_on 全 done 的 pending→dispatch 最小 wave / 无 pending 无 running→all_terminal；`acurrent_wave_all_terminal` 终态含 failed（T-44-GATE 失败仓不永挂）仅供 RUNNING 在途 wave 求值；状态只经 RepoCodingTaskService 条件更新幂等（INV-6）+ wave 从 DB 重算非内存；复用 Phase 43 callback 驱动 resume 不造两套；6 测全绿（gate/失败隔离/单跳下游阻断/2 跳传递闭包 liveness/幂等 updated_at 不变/全终态收尾）。callback 接线归 plan 05
 - [Phase 44]: 44-05: AICodingNode wave 调度接线（消化 PF-07，Phase 44 收官）——`_execute_with_branch` 首发段经 `build_repo_waves` 分层 + 环 fail-fast（`error.reason=dependency_cycle` 不进 dispatch）+ `RepoCodingTaskService.create_tasks_for_plan` 建行（INV-6）后仅 dispatch 最小 wave + `mark_running`；wave 模式双 guard（plan_version 可解析 AND repo_waves 完整覆盖待编码仓），否则回退 legacy 全并行零回归（task 无 id→repo_waves 不覆盖时不误激活）；抽 `_resolve_anthropic_credentials`/`_dispatch_wave`/`_build_waiting_output` 首发与推进共用（不造两套），dispatch 失败仓 `mark_failed` 保 liveness；`_resume_after_containers` 按 `plan_version_id` 分流 wave/legacy，`_resume_wave` 经 `aadvance_coding_waves` 判 gate——`waiting`→`_resuspend_wave`（waiting != finalize）/`dispatch`→`_dispatch_next_wave`(复用 `_dispatch_wave`)+再 `waiting_event`/`all_terminal`→`_finalize_wave`，整段 fail-soft（aadvance 异常 swallow+warning 不回灌容器回调 5xx）；不双 backfill（aadvance 独占 running→终态回填，`_finalize_wave` 仅从 DB `RepoCodingTask` 全行重算 done/failed 捕获全 wave 结果）；部分成功收尾 done 出 MR/failed/blocked 如实标注(`upstream_failed`)/不自动回滚（v0.8 非目标）；wave N→N+1 由 Phase 43 `_schedule_workflow_resume` 容器回调触发节点重入自驱不另造调度（`while True`→有限收敛 `for`，上界=task 总数；无 sleep/timer/apscheduler）；4 集成测试全绿（零回归/多 wave 推进/部分成功阻断/环 fail-fast）+ test_coding_node 12 passed 零回归；340 passed 全量验收
 - [Phase 45]: 45-03: ARTIFACT-01/02 端到端集成验收（测试-only，无新增生产符号）——扩充 test_coding_wave.py 三测：test_artifact_passthrough（wave1 后端 done 含 openapi TaskResult → aadvance 回填触发提取落 produced_artifacts → wave2 前端 DispatchTask.prompt 含 api/openapi.yaml 契约 + 「上游产物」段 + raw_output 不泄漏，SC-3/T-45-10）；test_artifact_passthrough_idempotent（done 仓非 RUNNING → 复调 aadvance 不再提取 → produced_artifacts 含 extracted_at 逐字不漂移，覆盖写 no-op）；test_artifact_extract_fail_soft（monkeypatch build_produced_artifacts 抛错 → wave1 仍 DONE、wave2 仍 dispatch 且注入段空、produced_artifacts=={}、advance 不冒泡，容器回调不 5xx，T-45-09）；_settle_session 增 defaulted modified_files（默认 ["f.py"]）保既有 4 wave 测试零回归；phase gate 360 passed/1 xfailed（既有 xfail）+ INV-6 守护 + Phase 44 wave/coding 零回归
+- [Phase 46]: 46-02(PR-02): 新建可复用 helper `workflows/services/pr_cross_reference.py`（barrel 再导出）——`generate_cross_reference_section`（纯函数「## 关联 PR」、排除自身、单 PR 空段）+ `render_traceability_section`（async，`plan_version_id → PlanVersion → TechnicalPlan → WorkItem` 逐跳 `*_id` 标量 + `afirst`，链断/异常返回空、整函数 fail-soft，WorkItem 无 url 字段→三元组+标题、仅 prd_url 非空才附链接不臆造 URL）+ `add_cross_references`（async，自取 Repository + aresolve_git_token + get_git_platform_client，GitHub `_get_repo().get_pull().edit(body=)` / GitLab `_get_project().mergerequests.get().save()` 经 `asyncio.to_thread`，逐 PR try/except 隔离）；`_create_mr_for_repo` 成功返回加 `"description": body` 供回写拼原 body；`_finalize_and_notify` MR 循环后 `successful_mrs ≥2` 守门（D-05）→ `add_cross_references(..., plan_version_id=(plan_data or {}).get(...))` 整段 fail-soft（`# noqa: BLE001`，绝不上抛回灌 5xx，T-46-04）。D-09 备选落地：仅 wave 路径用新 helper，`CreatePRNode` 保持原样不改（同源标注 + 统一留 backlog），最小 diff/零回归；13 守护测试（纯函数/追溯真实 DB 链/回写 mock client/接线集成）+ test_coding_wave.py 7 零回归全绿。`test_batch_pr.py` 5 例 PRE-EXISTING 失败（Phase 26 移除 pr.py 的 GitCredential/decrypt_value 符号、stale patch target），out-of-scope 记 deferred-items.md
 - [Phase 46]: 46-01(PR-01): `_create_mr_for_repo` 内 `MRCreateRequest` 前新增 per-repo 解析 `resolved_target = repository.default_branch or base_branch or "main"`，`target_branch=base_branch` → `resolved_target`——各仓 MR 锚定各仓自己的 `Repository.default_branch`（修复多仓 default_branch 不一致时所有 MR 共用第一个仓 base_branch 打错目标分支病根）；fallback 链严格保序三级兜底保单仓/同 default_branch 多仓与 Phase 45 逐字等价（零回归命门）；不改 `_finalize_and_notify` 调用处 / `_execute_with_branch` node 级 base_branch / 缺凭证 fail-soft 分支（最小 diff）；守护测试 `test_coding_pr_target_branch.py` 直测私有方法（MagicMock 仓 + AsyncMock client 捕获 MRCreateRequest）4 测全绿（per-repo A=develop/B=release/x + 零回归 + fallback + 缺凭证 fail-soft），test_coding_wave.py 7 测零回归
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
@@ -358,10 +360,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T15:40:00.000Z
-Stopped at: Phase 46 Plan 01 完成（PR-01：_create_mr_for_repo per-repo target_branch 解析 + 守护测试 4 绿 / test_coding_wave.py 7 绿零回归）
+Last session: 2026-06-16T16:00:00.000Z
+Stopped at: Phase 46 Plan 02 完成（PR-02：可复用 helper pr_cross_reference + 接 _finalize_and_notify ≥2 守门全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
 Resume file: None
-Next: Phase 46 Plan 02（PR-02：共用 helper + 跨仓 PR cross-ref 关联）——`/gsd-execute-phase 46` 续跑
+Next: Phase 47（HITL-01：编码遇阻 question 抛人）——`/gsd-plan-phase 47` 起步
 
 ## Operator Next Steps
 
