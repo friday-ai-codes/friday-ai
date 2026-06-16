@@ -164,16 +164,11 @@ async def create_coding_plan(
                 success=False,
                 error=f"Repository not found: {repository_id}",
             )
-        repo_in_project = await project.repositories.filter(
-            id=repository_id
-        ).aexists()
+        repo_in_project = await project.repositories.filter(id=repository_id).aexists()
         if not repo_in_project:
             return ToolResult(
                 success=False,
-                error=(
-                    f"Repository {repository_id} does not belong to space "
-                    f"{space_id}"
-                ),
+                error=(f"Repository {repository_id} does not belong to space {space_id}"),
             )
 
     try:
@@ -211,10 +206,7 @@ async def create_coding_plan(
                 ),
             )
         final_recommended = valid_ids
-        recommended_repositories = [
-            {"id": str(r.id), "name": r.name}
-            for r in valid_repos
-        ]
+        recommended_repositories = [{"id": str(r.id), "name": r.name} for r in valid_repos]
         recommended_source = "explicit"
     else:
         latest_trace = (
@@ -267,9 +259,32 @@ async def create_coding_plan(
     # 调用以最新一次为准；空列表也写以清空旧值）
     if list(plan.recommended_repository_ids or []) != final_recommended:
         plan.recommended_repository_ids = final_recommended
-        await plan.asave(
-            update_fields=["recommended_repository_ids", "updated_at"]
-        )
+        await plan.asave(update_fields=["recommended_repository_ids", "updated_at"])
+
+    # Phase 37 canonical eager 投影示范（DOMAIN §5.3）：仅新建 plan 时投影 canonical
+    # TechnicalPlan + 回填 canonical_plan_id 软链。INV-2：chat 自然语言 work_item=None +
+    # origin=chat 显式标记。best-effort try/except 隔离——投影失败仅 warning，**绝不**
+    # 影响 CodingPlan 创建 / 工具返回（对齐 ingestion 派发的「失败不致命」范式）。
+    if plan_created:
+        try:
+            from delivery.services import (  # lazy import 防 chat→delivery 循环
+                TechnicalPlanService,
+                chat_codingplan_to_content,
+            )
+
+            _plan_svc = TechnicalPlanService()
+            _canonical = await _plan_svc.create_from(
+                origin="chat",
+                payload={"content": chat_codingplan_to_content(plan)},
+                work_item=None,
+            )
+            await _plan_svc.link(plan, _canonical)
+        except Exception as exc:  # noqa: BLE001 best-effort 隔离，不阻断创建
+            logger.warning(
+                "chat_eager_plan_projection_failed",
+                coding_plan_id=str(plan.id),
+                error=str(exc),
+            )
 
     logger.info(
         "create_coding_plan_completed",
@@ -293,10 +308,7 @@ async def create_coding_plan(
             "recommended_repository_ids": final_recommended,
             "recommended_repositories": recommended_repositories,
             "recommended_source": recommended_source,
-            "message": (
-                f"技术方案已创建，plan_id={plan.id}。"
-                "请在 UI 选择目标仓库后开始编码。"
-            ),
+            "message": (f"技术方案已创建，plan_id={plan.id}。请在 UI 选择目标仓库后开始编码。"),
         },
     )
 
@@ -337,8 +349,7 @@ async def create_coding_plan(
                     "required": ["file_path", "change_type"],
                 },
                 "description": (
-                    "更新后的影响文件列表"
-                    "（schema: [{file_path: str, change_type: str}]）"
+                    "更新后的影响文件列表（schema: [{file_path: str, change_type: str}]）"
                 ),
             },
         },
