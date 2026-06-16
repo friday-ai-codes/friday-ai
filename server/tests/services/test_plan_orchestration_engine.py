@@ -142,7 +142,8 @@ async def test_injected_protocol_mocks_called() -> None:
     research = AsyncMock()
     research.dispatch = AsyncMock(return_value={})
     merge = AsyncMock()
-    merge.merge = AsyncMock(return_value={})
+    # Phase 40：merge adapter 返回 {validation_status} 契约；passed → merging→done
+    merge.merge = AsyncMock(return_value={"validation_status": "passed", "attempt": 0})
     engine = PlanOrchestrationEngine(recall=recall, research=research, merge=merge)
 
     # recalling → recall.recall → clarifying
