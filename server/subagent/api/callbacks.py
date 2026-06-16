@@ -112,13 +112,20 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
         log.debug("has_node_execution_skip_agent_resume")
         return
 
-    if (
-        isinstance(session.last_output, dict)
-        and session.last_output.get("source") == "chat_deep_analysis"
-    ):
-        log.info("chat_deep_analysis_notify_barrier", session_id=session.session_id)
-        _notify_barrier_manager(session, log)
-        return
+    if isinstance(session.last_output, dict):
+        src = session.last_output.get("source")
+        if src == "chat_deep_analysis":
+            log.info("chat_deep_analysis_notify_barrier", session_id=session.session_id)
+            _notify_barrier_manager(session, log)
+            return
+        if src == "plan_research":
+            # plan_research 容器复用 AgentSession+SubAgentSession 底座，但调研结果
+            # 由 _handle_research_completion / _handle_research_failure（→ barrier）
+            # 唯一驱动，绝不能在此触发 SDKAgentRunner resume 合成 AgentSession——否则
+            # 每次调研容器完成/失败的 happy path 都会拉起一个无上下文的幽灵 agent
+            # 执行并双重处理同一回调（CR-01）。与 chat_deep_analysis 短路对称。
+            log.debug("plan_research_skip_agent_resume", session_id=session.session_id)
+            return
 
     # 检查是否有 main_session
     if not session.main_session_id:
