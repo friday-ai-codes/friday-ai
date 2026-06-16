@@ -1,0 +1,393 @@
+"""PR-02 守护测试：可复用跨仓 cross-ref + 方案/工作项追溯 helper（Phase 46-02）。
+
+覆盖 `workflows.services.pr_cross_reference` 三函数：
+
+- `generate_cross_reference_section`（纯函数）：多 PR → 段含兄弟仓链接、排除自身；
+  单 PR（无兄弟）→ 空段；段标题中文「## 关联 PR」。
+- `render_traceability_section`（async）：plan_version_id 为空 / 链断（pv 取不到）→ ""；
+  链全在 → 段含 TechnicalPlan 标识（id + version）+ WorkItem 三元组 + 标题（+ prd_url）。
+- `add_cross_references`（async）：GitHub mock `_get_repo().get_pull().edit(body=)`；
+  GitLab mock `_get_project().mergerequests.get().save()`；缺凭证 / 单 PR 回写异常 →
+  该 PR 标 False、不抛、其它 PR 不受影响（fail-soft）。
+
+以及 Task 2 集成：`AICodingNode._finalize_and_notify` 在 ≥2 成功仓时调 helper（守门 +
+整段 fail-soft）；单仓不回写；回写抛错收尾仍 completed。
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# generate_cross_reference_section（纯函数，无 DB / 无 IO）
+# ---------------------------------------------------------------------------
+
+
+def test_cross_reference_section_multi_excludes_self() -> None:
+    """多仓成功 → 段含其它兄弟仓链接、排除自身，标题为「## 关联 PR」。"""
+    from workflows.services.pr_cross_reference import generate_cross_reference_section
+
+    successful = [
+        {"repository_name": "frontend", "mr_url": "https://x/frontend/pull/1"},
+        {"repository_name": "backend", "mr_url": "https://x/backend/pull/2"},
+    ]
+
+    section = generate_cross_reference_section("https://x/frontend/pull/1", successful)
+
+    assert "## 关联 PR" in section
+    assert "[backend]" in section
+    assert "https://x/backend/pull/2" in section
+    # 排除自身。
+    assert "[frontend]" not in section
+
+
+def test_cross_reference_section_single_returns_empty() -> None:
+    """单仓（无兄弟）→ 返回空段。"""
+    from workflows.services.pr_cross_reference import generate_cross_reference_section
+
+    successful = [{"repository_name": "only", "mr_url": "https://x/only/pull/1"}]
+
+    assert generate_cross_reference_section("https://x/only/pull/1", successful) == ""
+
+
+# ---------------------------------------------------------------------------
+# render_traceability_section（async + 真实 DB 链）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_traceability_full_chain() -> None:
+    """链全在 → 段含 TechnicalPlan 标识 + WorkItem 三元组/标题/prd_url。"""
+    from delivery.models import (
+        PlanVersion,
+        TechnicalPlan,
+        TechnicalPlanOrigin,
+        WorkItem,
+        WorkItemOrigin,
+    )
+    from workflows.services.pr_cross_reference import render_traceability_section
+
+    wi = await WorkItem.objects.acreate(
+        feishu_project_key="proj",
+        work_item_type="story",
+        work_item_id=12345,
+        origin=WorkItemOrigin.MANUAL,
+        title="登录功能",
+        prd_url="https://feishu.example/prd/1",
+    )
+    tp = await TechnicalPlan.objects.acreate(
+        origin=TechnicalPlanOrigin.ORCHESTRATION, work_item=wi
+    )
+    pv = await PlanVersion.objects.acreate(plan=tp, version=3, content={})
+
+    section = await render_traceability_section(str(pv.id))
+
+    assert "## 关联方案 / 工作项" in section
+    assert str(tp.id) in section
+    assert "v3" in section
+    assert "story/12345" in section
+    assert "登录功能" in section
+    assert "https://feishu.example/prd/1" in section
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_traceability_no_work_item_still_renders_plan() -> None:
+    """方案无 work_item → 段含技术方案标识、无工作项行、不抛。"""
+    from delivery.models import PlanVersion, TechnicalPlan, TechnicalPlanOrigin
+    from workflows.services.pr_cross_reference import render_traceability_section
+
+    tp = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
+    pv = await PlanVersion.objects.acreate(plan=tp, version=1, content={})
+
+    section = await render_traceability_section(str(pv.id))
+
+    assert str(tp.id) in section
+    assert "工作项" not in section
+
+
+@pytest.mark.asyncio
+async def test_traceability_none_id_returns_empty() -> None:
+    """plan_version_id 为 None → 返回空段（fail-soft，不触 DB）。"""
+    from workflows.services.pr_cross_reference import render_traceability_section
+
+    assert await render_traceability_section(None) == ""
+    assert await render_traceability_section("") == ""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_traceability_broken_chain_returns_empty() -> None:
+    """plan_version_id 取不到对应 PlanVersion → 省略追溯段、不抛。"""
+    from workflows.services.pr_cross_reference import render_traceability_section
+
+    assert await render_traceability_section(str(uuid.uuid4())) == ""
+
+
+# ---------------------------------------------------------------------------
+# add_cross_references（async 回写编排，mock git client / token / Repository）
+# ---------------------------------------------------------------------------
+
+
+class _FakeGitHubClient:
+    """仅暴露 `_get_repo` → 被 hasattr 判定为 GitHub 平台。"""
+
+    def __init__(self, *, boom: bool = False) -> None:
+        self.pr = MagicMock()
+        if boom:
+            self.pr.edit = MagicMock(side_effect=RuntimeError("edit boom"))
+        self.repo_obj = MagicMock()
+        self.repo_obj.get_pull = MagicMock(return_value=self.pr)
+
+    def _get_repo(self) -> Any:
+        return self.repo_obj
+
+
+class _FakeGitLabClient:
+    """仅暴露 `_get_project` → 被 hasattr 判定为 GitLab 平台。"""
+
+    def __init__(self) -> None:
+        self.mr = MagicMock()
+        self.mr.save = MagicMock()
+        self.project = MagicMock()
+        self.project.mergerequests.get = MagicMock(return_value=self.mr)
+
+    def _get_project(self) -> Any:
+        return self.project
+
+
+def _patch_repo_lookup(repos: dict[str, Any]) -> Any:
+    """patch helper 内 Repository.objects.filter(id=...).afirst() → repos[str(id)]。"""
+    fake_model = MagicMock()
+
+    def _filter(*args: Any, **kwargs: Any) -> Any:
+        rid = str(kwargs.get("id"))
+        qs = MagicMock()
+
+        async def _afirst() -> Any:
+            return repos.get(rid)
+
+        qs.afirst = _afirst
+        return qs
+
+    fake_model.objects.filter.side_effect = _filter
+    return patch("workflows.services.pr_cross_reference.Repository", fake_model)
+
+
+async def _async_token(*args: Any, **kwargs: Any) -> str | None:
+    return "tok"
+
+
+async def _async_no_token(*args: Any, **kwargs: Any) -> str | None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_writeback_github_edit_called_with_sibling_and_traceability() -> None:
+    """GitHub：edit(body=) 被调，body 含兄弟链接 + 追溯段。"""
+    from workflows.services import pr_cross_reference
+
+    repo_a = MagicMock(id="A", name="frontend")
+    repo_b = MagicMock(id="B", name="backend")
+    client_a = _FakeGitHubClient()
+    client_b = _FakeGitHubClient()
+    clients = {"frontend": client_a, "backend": client_b}
+
+    successful = [
+        {
+            "repository_id": "A",
+            "repository_name": "frontend",
+            "mr_url": "https://x/frontend/pull/1",
+            "mr_id": "1",
+            "description": "原始描述A",
+        },
+        {
+            "repository_id": "B",
+            "repository_name": "backend",
+            "mr_url": "https://x/backend/pull/2",
+            "mr_id": "2",
+            "description": "原始描述B",
+        },
+    ]
+
+    with (
+        _patch_repo_lookup({"A": repo_a, "B": repo_b}),
+        patch.object(pr_cross_reference, "aresolve_git_token", _async_token),
+        patch.object(
+            pr_cross_reference,
+            "get_git_platform_client",
+            MagicMock(side_effect=lambda repo, token: clients[repo.name]),
+        ),
+        patch.object(
+            pr_cross_reference,
+            "render_traceability_section",
+            new=_make_async_return("\n---\n## 关联方案 / 工作项\n\n- 技术方案: `tp-1`"),
+        ),
+    ):
+        status = await pr_cross_reference.add_cross_references(
+            successful, plan_version_id="pv-1"
+        )
+
+    assert status["https://x/frontend/pull/1"] is True
+    assert status["https://x/backend/pull/2"] is True
+
+    body_a = client_a.pr.edit.call_args.kwargs["body"]
+    assert "原始描述A" in body_a
+    assert "[backend]" in body_a  # 兄弟链接
+    assert "关联方案" in body_a  # 追溯段
+    assert "[frontend]" not in body_a  # 排除自身
+
+
+@pytest.mark.asyncio
+async def test_writeback_gitlab_save_called() -> None:
+    """GitLab：mergerequests.get().save() 被调，description 含兄弟链接。"""
+    from workflows.services import pr_cross_reference
+
+    repo_a = MagicMock(id="A", name="svc-a")
+    repo_b = MagicMock(id="B", name="svc-b")
+    client_a = _FakeGitLabClient()
+    client_b = _FakeGitLabClient()
+    clients = {"svc-a": client_a, "svc-b": client_b}
+
+    successful = [
+        {
+            "repository_id": "A",
+            "repository_name": "svc-a",
+            "mr_url": "https://gl/svc-a/-/merge_requests/1",
+            "mr_id": "1",
+            "description": "",
+        },
+        {
+            "repository_id": "B",
+            "repository_name": "svc-b",
+            "mr_url": "https://gl/svc-b/-/merge_requests/2",
+            "mr_id": "2",
+            "description": "",
+        },
+    ]
+
+    with (
+        _patch_repo_lookup({"A": repo_a, "B": repo_b}),
+        patch.object(pr_cross_reference, "aresolve_git_token", _async_token),
+        patch.object(
+            pr_cross_reference,
+            "get_git_platform_client",
+            MagicMock(side_effect=lambda repo, token: clients[repo.name]),
+        ),
+        patch.object(
+            pr_cross_reference,
+            "render_traceability_section",
+            new=_make_async_return(""),
+        ),
+    ):
+        status = await pr_cross_reference.add_cross_references(
+            successful, plan_version_id=None
+        )
+
+    assert status["https://gl/svc-a/-/merge_requests/1"] is True
+    client_a.mr.save.assert_called_once()
+    assert "[svc-b]" in client_a.mr.description
+
+
+@pytest.mark.asyncio
+async def test_writeback_no_token_marks_false_no_throw() -> None:
+    """缺凭证仓 → 标 False、不构造 client、不抛。"""
+    from workflows.services import pr_cross_reference
+
+    repo_a = MagicMock(id="A", name="a")
+    repo_b = MagicMock(id="B", name="b")
+    successful = [
+        {
+            "repository_id": "A",
+            "repository_name": "a",
+            "mr_url": "urlA",
+            "mr_id": "1",
+            "description": "",
+        },
+        {
+            "repository_id": "B",
+            "repository_name": "b",
+            "mr_url": "urlB",
+            "mr_id": "2",
+            "description": "",
+        },
+    ]
+    get_client = MagicMock()
+
+    with (
+        _patch_repo_lookup({"A": repo_a, "B": repo_b}),
+        patch.object(pr_cross_reference, "aresolve_git_token", _async_no_token),
+        patch.object(pr_cross_reference, "get_git_platform_client", get_client),
+        patch.object(
+            pr_cross_reference, "render_traceability_section", new=_make_async_return("")
+        ),
+    ):
+        status = await pr_cross_reference.add_cross_references(
+            successful, plan_version_id=None
+        )
+
+    assert status == {"urlA": False, "urlB": False}
+    get_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_writeback_single_pr_failure_isolated() -> None:
+    """单 PR 回写抛错 → 该 PR 标 False，其它 PR 仍成功（fail-soft 隔离）。"""
+    from workflows.services import pr_cross_reference
+
+    repo_a = MagicMock(id="A", name="boom")
+    repo_b = MagicMock(id="B", name="ok")
+    client_a = _FakeGitHubClient(boom=True)
+    client_b = _FakeGitHubClient()
+    clients = {"boom": client_a, "ok": client_b}
+
+    successful = [
+        {
+            "repository_id": "A",
+            "repository_name": "boom",
+            "mr_url": "urlA",
+            "mr_id": "1",
+            "description": "",
+        },
+        {
+            "repository_id": "B",
+            "repository_name": "ok",
+            "mr_url": "urlB",
+            "mr_id": "2",
+            "description": "",
+        },
+    ]
+
+    with (
+        _patch_repo_lookup({"A": repo_a, "B": repo_b}),
+        patch.object(pr_cross_reference, "aresolve_git_token", _async_token),
+        patch.object(
+            pr_cross_reference,
+            "get_git_platform_client",
+            MagicMock(side_effect=lambda repo, token: clients[repo.name]),
+        ),
+        patch.object(
+            pr_cross_reference, "render_traceability_section", new=_make_async_return("")
+        ),
+    ):
+        status = await pr_cross_reference.add_cross_references(
+            successful, plan_version_id=None
+        )
+
+    assert status["urlA"] is False
+    assert status["urlB"] is True
+
+
+def _make_async_return(value: Any) -> Any:
+    """构造一个忽略入参、恒返回 value 的 async 替身。"""
+
+    async def _coro(*args: Any, **kwargs: Any) -> Any:
+        return value
+
+    return _coro
