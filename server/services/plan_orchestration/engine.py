@@ -24,10 +24,12 @@ from delivery.services.event_taxonomy import (
     EVENT_REPO_ROUTING,
 )
 from services.plan_orchestration.protocols import (
+    ClarifyProtocol,
     MergeProtocol,
     RecallProtocol,
     ResearchProtocol,
     RouterProtocol,
+    SkeletonClarify,
     SkeletonMerge,
     SkeletonRecall,
     SkeletonResearch,
@@ -54,6 +56,7 @@ class PlanOrchestrationEngine:
         recall: RecallProtocol | None = None,
         research: ResearchProtocol | None = None,
         merge: MergeProtocol | None = None,
+        clarify: ClarifyProtocol | None = None,
     ) -> None:
         # 依赖注入（入口无关）：缺省用骨架实现，38-41 注入真实/mock 替换。
         # engine 不接收任何 workflow/chat IO 对象（保持入口无关）。
@@ -62,6 +65,7 @@ class PlanOrchestrationEngine:
         self.recall = recall or SkeletonRecall()
         self.research = research or SkeletonResearch()
         self.merge = merge or SkeletonMerge()
+        self.clarify = clarify or SkeletonClarify()
 
     async def advance(self, session: PlanSession) -> PlanSession:
         """按 ``session.status`` 分派 stage handler 推进一步（状态驱动 resume）。
@@ -164,11 +168,31 @@ class PlanOrchestrationEngine:
         await self.session_service._emit_event(EVENT_KNOWLEDGE_RECALLING, session, trace)
 
     async def _clarify(self, session: PlanSession) -> None:
-        """澄清 stage：本 phase 无澄清逻辑，最小 pass-through → researching。
+        """澄清 stage（CLARIFY-01 已接入）：调注入 ClarifyProtocol 据判定做 §14 转移。
 
-        TODO(Phase 41)：Clarification 回路（有待澄清则 needs_clarification 自挂起）。
+        1. ``result = await self.clarify.clarify(session)`` 判定是否需澄清（adapter 已建
+           pending Clarification + emit clarification.asked 副作用，engine 仅 transition）。
+        2. ``needs_clarification`` 真 → ``transition("needs_clarification")``（clarifying→
+           clarifying 自挂起，§14「有待澄清」行），**不进 researching**；工作流入口节点据
+           pending clarification 挂 waiting_event 等用户答复。
+        3. 否（无待澄清/全部已答）→ ``transition("clarified")``（clarifying→researching，
+           §14「无待澄清/全部已答」行）。
+
+        engine **绝不直接 mutate session.status**（守 T-36-03-01 纯度守护）；adapter 真实
+        实现抛异常时由 advance 通用 except 落 failed（与其他 stage 一致）。
+        ``ConcurrentTransitionError`` 沿 ``_research``/``_merge`` 范式视为良性 no-op（防御）。
         """
-        await self.session_service.transition(session, "clarified")
+        from delivery.services.plan_session_service import ConcurrentTransitionError
+
+        result = await self.clarify.clarify(session)
+        needs = result.get("needs_clarification") if isinstance(result, dict) else False
+        try:
+            if needs:
+                await self.session_service.transition(session, "needs_clarification")
+            else:
+                await self.session_service.transition(session, "clarified")
+        except ConcurrentTransitionError:
+            logger.info("clarify_already_advanced_concurrently", session_id=str(session.id))
 
     async def _research(self, session: PlanSession) -> None:
         """调研 stage（RESEARCH-01/02/03 已接入）：dispatch 触发 fan-out，barrier 驱动转移。
