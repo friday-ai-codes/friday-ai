@@ -31,7 +31,7 @@
 ### 多仓融合 PR（PR）
 
 - [x] **PR-01**: 多仓产出关联的 PR/MR，各仓 diff base 用各仓正确的 `target_branch`（非假设 master，对齐 v0.6 坐实的 MR target_branch 锚定）
-- [ ] **PR-02**: 跨仓 PR 关联（cross-ref）——同一方案的多仓 PR 互相引用，可追溯到同一 `TechnicalPlan`/`WorkItem`
+- [x] **PR-02**: 跨仓 PR 关联（cross-ref）——同一方案的多仓 PR 互相引用，可追溯到同一 `TechnicalPlan`/`WorkItem`
 
 ### 编码遇阻 HITL（HITL）
 
@@ -78,7 +78,7 @@
 | ARTIFACT-01 | Phase 45 | Complete |
 | ARTIFACT-02 | Phase 45 | Complete |
 | PR-01 | Phase 46 | Complete |
-| PR-02 | Phase 46 | Pending |
+| PR-02 | Phase 46 | Complete |
 | HITL-01 | Phase 47 | Pending |
 
 **Coverage:**

@@ -48,7 +48,7 @@
 - [x] **Phase 43: 编码 env 对齐 + 通用 resume 回流地基** - 修 PF-06（workflow 编码路径 branch strategy / git token env 对齐 chat）+ 立通用 `coding`/`plan_session` → 工作流/会话 resume 回流通路（消化 v0.7 audit D-2），为 callback 驱动多 wave 铺底 (completed 2026-06-16)
 - [x] **Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度** - 立 `RepoCodingTask`（wave/`depends_on` DAG/`produced_artifacts`/`follow_openspec` 预留）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）+ wave N 全 done 才触发 wave N+1 (completed 2026-06-16)
 - [x] **Phase 45: 上游产物提取 + 注入下游 wave** - 上游 wave `produced_artifacts`（API 契约/OpenAPI/diff）提取 + 注入下游 wave prompt/global_context (completed 2026-06-16)
-- [ ] **Phase 46: 多仓融合 PR + 跨仓 PR 关联** - 各仓产出关联 PR/MR（diff base 用各仓正确 `target_branch` 非假设 master）+ 跨仓 PR cross-ref 关联
+- [x] **Phase 46: 多仓融合 PR + 跨仓 PR 关联** - 各仓产出关联 PR/MR（diff base 用各仓正确 `target_branch` 非假设 master）+ 跨仓 PR cross-ref 关联 — completed 2026-06-16
 - [ ] **Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）** - task 侧发起 question（复用已有 question 协议 + orchestrator resume）抛给用户/orchestrator，非全自动回溯重规划
 
 ## Phase Details
@@ -137,15 +137,15 @@ Plans:
   2. 跨仓 PR 互相引用（cross-ref），可追溯到同一 `TechnicalPlan`/`WorkItem`
   3. PR 创建复用既有 git 平台 client + `aresolve_git_token`（per-repo 优先 → host 实例池 fallback），缺凭证行为不回退
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 **Wave 1**
 
-- [ ] 46-01-PLAN.md — PR-01：各仓 MR target_branch 用各仓自己的 default_branch（per-repo 解析 + 零回归 + fail-soft）(wave 1)
+- [x] 46-01-PLAN.md — PR-01：各仓 MR target_branch 用各仓自己的 default_branch（per-repo 解析 + 零回归 + fail-soft）(wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 46-02-PLAN.md — PR-02：跨仓 PR cross-ref + 方案/工作项可追溯（提取共用 helper + 接 _finalize_and_notify，全程 fail-soft）(wave 2)
+- [x] 46-02-PLAN.md — PR-02：跨仓 PR cross-ref + 方案/工作项可追溯（提取共用 helper + 接 _finalize_and_notify，全程 fail-soft）(wave 2)
 
 **UI hint**: maybe（多仓 PR 关联结果展示可能复用既有执行/方案视图，reuse-first）
 
@@ -171,7 +171,7 @@ Plans:
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 3/3 | Complete|  |
-| 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 1/2 | In Progress | — |
+| 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 2/2 | Complete | 2026-06-16 |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
 
 ---
