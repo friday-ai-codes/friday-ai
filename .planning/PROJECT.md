@@ -25,11 +25,18 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: 规划中（v0.8.0 已交付）
+## Current Milestone: v0.9.0 SDD / OpenSpec 支持（重型）
 
-v0.8.0 多仓串行编码 → 融合 PR 已于 2026-06-17 收官归档（见 `.planning/milestones/v0.8.0-*`）。下一里程碑待 `/gsd-new-milestone` 规划。
+**Goal:** 让 spec-driven development 成为可治理的过程资产——仓库打标 → 方案产 spec → spec 状态机 + 编码前置 gate + 评审状态 → spec↔需求/PR 关联 → 交付验收。
 
-**候选方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.9 SDD / OpenSpec（`RepoCodingTask.follow_openspec` 扩展点已预留）、编码中全自动 replan/回溯（v0.8 用 HITL「抛 question 给人」过渡）、`coding.wave.*` 事件对外 adapter（v0.11）、chat 编码入口 cross-ref / 遇阻 HITL 接线收尾。
+**Target features:**
+- SDD 仓库自动打标（索引后检测 `openspec/` → `facets["methodology"]="SDD"`）+ 前端标签
+- 方案产 openspec spec draft（接 v0.7 `PlanSession` 扩展点）→ 落 `Document(sdd_spec)`
+- spec 状态机（draft→in_review→approved→implemented→archived）+ 评审记录 + 前端展示
+- 编码前置 gate（SDD 仓库编码前校验 spec 已 approved，消费 `RepoCodingTask.follow_openspec`）+ openspec skill 编码策略
+- spec↔需求/PR 关联 + 交付验收视图
+
+**Key context:** 重型里程碑，做完整 spec 生命周期与治理。复用 v0.7/v0.8 预留扩展点（`Document.SDD_SPEC` 枚举、`RepoCodingTask.follow_openspec` 字段、`Repository.facets` JSON、task `setting_sources=["project"]` 原生加载仓库内 `.claude/skills`）；核查发现这些为「字段/枚举占位」，检测钩子/产 spec 逻辑/system_prompt 注入点均需从零建。新增 spec 状态/评审为建模空白——spec 生命周期独立建模（`SddSpec`/评审记录），状态命名沿 vNext（`in_review`/`implemented`，区别于既有 `TechnicalPlan.status` 的 `under_review`/`superseded`，因 spec 语义确需 implemented）。spec 评审审计收口顺延 v0.10。设计底座见 `ROADMAP-vNext.md §v0.9`、`DOMAIN-MODEL.md §6.1/§3`。
 
 ## Requirements
 
@@ -175,4 +182,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-17 — after v0.8.0 milestone*
+*Last updated: 2026-06-17 — milestone v0.9.0 started*
