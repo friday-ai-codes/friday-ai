@@ -4,14 +4,14 @@ milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
 status: executing
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
-last_updated: "2026-06-16T10:04:24.029Z"
-last_activity: 2026-06-16 -- Phase 43 execution started
+last_updated: "2026-06-16T10:26:10.408Z"
+last_activity: 2026-06-16 -- 43-01 PF-06 编码 env 对齐完成（2 tasks，6 守护测试绿）
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 0
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 43 (env-resume) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 43 (43-01 complete)
+Plan: 3 of 4
+Status: Ready to execute
 Last activity: 2026-06-16 -- 43-01 PF-06 编码 env 对齐完成（2 tasks，6 守护测试绿）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
@@ -260,6 +260,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 43]: 43-01(PF-06): workflow 编码 `_run_repo_coding` 逐键对齐 chat `build_dispatch_metadata`——注入顶层 `env_FRIDAY_TASK_GIT_ACCESS_TOKEN/AUTH_TYPE("token")/SSL_VERIFY("false")`（token 非空时）+ `git@` SSH URL → HTTPS `repo_url` 改写；修复 nested `git_credentials` dict 不被 runner 消费（dead payload）的私有仓 clone 失败
 - [Phase 43]: 43-01(PF-06): `env_FRIDAY_TASK_BRANCH_STRATEGY`=本次调用 `branch_name`、`TARGET_BRANCH`=`base_branch`（多仓 fan-out per-repo，非 chat 单仓 execution_spec）无条件注入，修复容器侧落默认 `friday/task-{id}` 分支；SSL_VERIFY 取值对齐 chat 基线硬编码 `"false"`（Open Q1 RESOLVED），不取 per-repo credential.ssl_verify
 - [Phase 43]: 43-01(PF-06): token 为空降级不回退（不注入 access_token 键/不改写 repo_url）；nested `git_credentials` dict 零回归保留；dispatch 日志仅 `has_git_token` 布尔，token 绝不入日志；不改 task/runner（env 消费契约只读核对）；6 守护测试全绿（test_coding_node.py 12 passed+1 xfailed 无回归）
+- [Phase 43]: 43-02: 入口无关续驱 helper adrive_plan_session_to_pause_or_terminal——engine 由调用方传入，不造两套，状态只经 session_service.transition
+- [Phase 43]: 43-02: clarifying-pending 短路照搬节点/工具 _maybe_suspend，保护澄清 HITL（不回归）
 
 ### Pending Todos
 
@@ -331,7 +333,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T08:31:00.000Z
+Last session: 2026-06-16T10:25:34.029Z
 Stopped at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
 Resume file: None
 Next: 新会话 autonomous 跑 v0.8.0，或 `/gsd-plan-phase 43` 起步
