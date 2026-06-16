@@ -9,6 +9,10 @@ from services.plan_orchestration.merged_plan import (
     MERGED_PLAN_FIELDS,
     validate_merged_plan,
 )
+from services.plan_orchestration.plan_validator import (
+    CHECK_NAMES,
+    validate_plan,
+)
 from services.plan_orchestration.protocols import (
     MergeProtocol,
     RecallProtocol,
@@ -46,4 +50,6 @@ __all__ = [
     "parse_partial_plan_content",
     "MERGED_PLAN_FIELDS",
     "validate_merged_plan",
+    "CHECK_NAMES",
+    "validate_plan",
 ]
