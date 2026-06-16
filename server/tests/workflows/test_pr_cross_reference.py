@@ -22,7 +22,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # generate_cross_reference_section（纯函数，无 DB / 无 IO）
 # ---------------------------------------------------------------------------
@@ -109,7 +108,8 @@ async def test_traceability_no_work_item_still_renders_plan() -> None:
     section = await render_traceability_section(str(pv.id))
 
     assert str(tp.id) in section
-    assert "工作项" not in section
+    # 标题含「工作项」但不应有工作项数据行。
+    assert "- 工作项:" not in section
 
 
 @pytest.mark.asyncio
@@ -162,6 +162,13 @@ class _FakeGitLabClient:
         return self.project
 
 
+def _repo_mock(rid: str, name: str) -> MagicMock:
+    """构造仓库替身（``name`` 是 MagicMock 构造保留字，须创建后再赋值）。"""
+    repo = MagicMock(id=rid)
+    repo.name = name
+    return repo
+
+
 def _patch_repo_lookup(repos: dict[str, Any]) -> Any:
     """patch helper 内 Repository.objects.filter(id=...).afirst() → repos[str(id)]。"""
     fake_model = MagicMock()
@@ -193,8 +200,8 @@ async def test_writeback_github_edit_called_with_sibling_and_traceability() -> N
     """GitHub：edit(body=) 被调，body 含兄弟链接 + 追溯段。"""
     from workflows.services import pr_cross_reference
 
-    repo_a = MagicMock(id="A", name="frontend")
-    repo_b = MagicMock(id="B", name="backend")
+    repo_a = _repo_mock("A", "frontend")
+    repo_b = _repo_mock("B", "backend")
     client_a = _FakeGitHubClient()
     client_b = _FakeGitHubClient()
     clients = {"frontend": client_a, "backend": client_b}
@@ -249,8 +256,8 @@ async def test_writeback_gitlab_save_called() -> None:
     """GitLab：mergerequests.get().save() 被调，description 含兄弟链接。"""
     from workflows.services import pr_cross_reference
 
-    repo_a = MagicMock(id="A", name="svc-a")
-    repo_b = MagicMock(id="B", name="svc-b")
+    repo_a = _repo_mock("A", "svc-a")
+    repo_b = _repo_mock("B", "svc-b")
     client_a = _FakeGitLabClient()
     client_b = _FakeGitLabClient()
     clients = {"svc-a": client_a, "svc-b": client_b}
@@ -300,8 +307,8 @@ async def test_writeback_no_token_marks_false_no_throw() -> None:
     """缺凭证仓 → 标 False、不构造 client、不抛。"""
     from workflows.services import pr_cross_reference
 
-    repo_a = MagicMock(id="A", name="a")
-    repo_b = MagicMock(id="B", name="b")
+    repo_a = _repo_mock("A", "a")
+    repo_b = _repo_mock("B", "b")
     successful = [
         {
             "repository_id": "A",
@@ -341,8 +348,8 @@ async def test_writeback_single_pr_failure_isolated() -> None:
     """单 PR 回写抛错 → 该 PR 标 False，其它 PR 仍成功（fail-soft 隔离）。"""
     from workflows.services import pr_cross_reference
 
-    repo_a = MagicMock(id="A", name="boom")
-    repo_b = MagicMock(id="B", name="ok")
+    repo_a = _repo_mock("A", "boom")
+    repo_b = _repo_mock("B", "ok")
     client_a = _FakeGitHubClient(boom=True)
     client_b = _FakeGitHubClient()
     clients = {"boom": client_a, "ok": client_b}
