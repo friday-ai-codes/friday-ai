@@ -251,11 +251,18 @@ class AIPlanResearchNode(AIAgentBaseNode):
             ResearchDispatchAdapter,
         )
 
+        # CR-02：把本节点 NodeExecution id 透传给调研 dispatch——每个调研 SubAgentSession
+        # 据此关联 node_execution，容器完成回调经既有 _schedule_workflow_resume 重新驱动
+        # 本挂起节点（researching→merging→done），打通 researching 段 waiting_event 的
+        # resume 通路（mirror AICodingNode node_execution_id 注入）。
+        node_execution = getattr(context, "node_execution", None)
+        node_execution_id = str(node_execution.id) if node_execution is not None else ""
+
         return PlanOrchestrationEngine(
             session_service=PlanSessionService(),
             router=RepoRouterV2Adapter(),
             recall=DeliveryKnowledgeRecallAdapter(),
-            research=ResearchDispatchAdapter(),
+            research=ResearchDispatchAdapter(node_execution_id=node_execution_id),
             merge=ArchitectMergeAdapter(),
             clarify=ClarifyAdapter(),
         )

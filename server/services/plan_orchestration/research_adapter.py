@@ -51,11 +51,17 @@ class ResearchDispatchAdapter:
         deep_confidence: set[str] | None = None,
         session_service: PlanSessionService | None = None,
         research_service: ResearchService | None = None,
+        node_execution_id: str = "",
     ) -> None:
         # 「需深入」confidence 集合（默认 high+medium 起容器，可配——CONTEXT Claude's Discretion）
         self.deep_confidence = deep_confidence or {"high", "medium"}
         self.session_service = session_service or PlanSessionService()
         self.research_service = research_service or ResearchService()
+        # CR-02：工作流入口节点透传的 NodeExecution id（mirror AICodingNode）。非空时把每个
+        # 调研 SubAgentSession 关联到该 node_execution，使容器完成回调经既有
+        # ``_schedule_workflow_resume`` 自然重新驱动挂起的 WAITING_EVENT 节点
+        # （researching→merging→done）。Chat 入口（无 workflow 节点）留空，不影响。
+        self.node_execution_id = node_execution_id or ""
 
     async def dispatch(self, session: PlanSession) -> dict:
         """filter + fan-out 调度，返回 ``{dispatched, light, runner_offline, ...}``。"""
@@ -178,6 +184,9 @@ class ResearchDispatchAdapter:
             repo_url=repo_url,
             task_type=SubAgentSession.TaskType.PLAN,
             status=SubAgentSession.Status.PENDING,
+            # CR-02：关联工作流 node_execution（mirror AICodingNode）——容器完成回调据此经
+            # _schedule_workflow_resume 重新驱动挂起节点；Chat 入口无节点时为 None。
+            node_execution_id=self.node_execution_id or None,
             last_output={
                 "source": "plan_research",
                 "plan_session_id": str(session.id),
@@ -199,7 +208,7 @@ class ResearchDispatchAdapter:
             target_branch="",
             prompt=prompt,
             timeout=_RESEARCH_TIMEOUT,
-            node_execution_id="",
+            node_execution_id=self.node_execution_id or "",
             session_id=session_id,
             metadata=metadata,
         )

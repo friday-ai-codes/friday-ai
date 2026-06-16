@@ -123,7 +123,13 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
             # 由 _handle_research_completion / _handle_research_failure（→ barrier）
             # 唯一驱动，绝不能在此触发 SDKAgentRunner resume 合成 AgentSession——否则
             # 每次调研容器完成/失败的 happy path 都会拉起一个无上下文的幽灵 agent
-            # 执行并双重处理同一回调（CR-01）。与 chat_deep_analysis 短路对称。
+            # 执行并双重处理同一回调（Phase 39 CR-01）。与 chat_deep_analysis 短路对称。
+            #
+            # 注（Phase 41 CR-02）：工作流入口节点派发的调研容器会设置 node_execution_id，
+            # 故工作流路径已在本函数顶部 `if session.node_execution_id: return` 提前短路，
+            # 并改由 _schedule_workflow_resume 重新驱动挂起节点（researching→merging→done）。
+            # 本分支仅覆盖 Chat 入口（无 node_execution）下的 plan_research 容器——同样不在
+            # 此触发 agent resume（barrier 唯一驱动）。
             log.debug("plan_research_skip_agent_resume", session_id=session.session_id)
             return
 
