@@ -60,10 +60,16 @@ class ResearchDispatchAdapter:
 
         deep_repos: list[dict] = []
         light_repos: list[dict] = []
+        seen_repo_ids: set[str] = set()
         for c in candidates:
             repo_id = c.get("repo_id")
             if not repo_id:
                 continue
+            # IN-02：candidates 含重复 repo_id 时去重，防 light 路径对同一仓重复落 PartialPlan
+            repo_id_str = str(repo_id)
+            if repo_id_str in seen_repo_ids:
+                continue
+            seen_repo_ids.add(repo_id_str)
             confidence = (c.get("confidence") or "").lower()
             item = {"repository_id": str(repo_id), "routed_confidence": confidence}
             if confidence in self.deep_confidence:
@@ -97,8 +103,9 @@ class ResearchDispatchAdapter:
                 # failed + 发 repo.research.failed，继续其他仓——绝不上抛拖垮整个
                 # PlanSession（异常上抛会被 engine advance 的通用 except 转 fail）。
                 try:
-                    await self._dispatch_deep_task(session, task)
-                    dispatched_ids.append(str(task.id))
+                    dispatched = await self._dispatch_deep_task(session, task)
+                    if dispatched:
+                        dispatched_ids.append(str(task.id))
                 except Exception as exc:  # noqa: BLE001 — 单仓失败隔离，不波及其他仓
                     logger.warning(
                         "research_dispatch_failed",
@@ -131,14 +138,23 @@ class ResearchDispatchAdapter:
             "runner_offline": runner_offline,
         }
 
-    async def _dispatch_deep_task(self, session: PlanSession, task: Any) -> None:
-        """对单个需深入仓：建独立 SubAgentSession(PLAN) 容器 + 派发 + 回填 running + emit started。"""
+    async def _dispatch_deep_task(self, session: PlanSession, task: Any) -> bool:
+        """对单个需深入仓：建独立 SubAgentSession(PLAN) 容器 + 派发 + 回填 running + emit started。
+
+        返回是否真正派发容器。IN-03：仓缺 ``git_url`` 时直接判失败（mark_failed +
+        repo.research.failed），**不**起一个注定 clone 失败的占位 URL 容器（省一次调度）。
+        """
         from agents.models import AgentSession
         from runners.dispatcher import DispatchTask, get_dispatcher
         from subagent.models import SubAgentSession
 
         repo = await self._get_repository(task.repository_id)
         repo_url = getattr(repo, "git_url", "") if repo is not None else ""
+        if not repo_url:
+            # IN-03：缺 git_url 的仓不可调研，直接失败而非派发占位容器
+            await self.research_service.mark_failed(task, {"reason": "missing_git_url"})
+            await self._emit_failed(session, task, "missing_git_url")
+            return False
 
         session_id = f"research-{task.id.hex[:12]}"
         agent_session = await AgentSession.objects.acreate(
@@ -149,7 +165,7 @@ class ResearchDispatchAdapter:
         subagent_session = await SubAgentSession.objects.acreate(
             session_id=session_id,
             main_session=agent_session,
-            repo_url=repo_url or f"https://invalid/{task.repository_id}.git",
+            repo_url=repo_url,
             task_type=SubAgentSession.TaskType.PLAN,
             status=SubAgentSession.Status.PENDING,
             last_output={
@@ -181,6 +197,7 @@ class ResearchDispatchAdapter:
         await self.research_service.mark_running(task, subagent_session)
 
         await self._emit_started(session, task)
+        return True
 
     async def _emit_started(self, session: PlanSession, task: Any) -> None:
         """emit repo.research.started（payload {repo_id, task_id, focus}），best-effort。"""
