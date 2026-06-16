@@ -58,10 +58,14 @@ async def send_question_card_enhanced(
 
     log = logger.bind(session_id=session.session_id, question_id=question_id)
 
-    # 获取 chat_id
-    chat_id = ""
-    if session.main_session and session.main_session.metadata:
-        chat_id = session.main_session.metadata.get("chat_id", "")
+    # 获取 chat_id：统一经 _resolve_notification_chat_id（async 安全，经 main_session_id
+    # 标量 + afirst，避免裸访问 lazy-FK 抛 SynchronousOnlyOperation）。它先取
+    # main_session.metadata.chat_id（chat 编码路径，行为等价既有），为空再 fallback 到
+    # node_execution.node.config.chat_id（HITL-01b：wave 编码任务路由补齐）。
+    # lazy import 防 callbacks↔question_handler 循环。
+    from subagent.api.callbacks import _resolve_notification_chat_id
+
+    chat_id = await _resolve_notification_chat_id(session)
 
     if not chat_id:
         log.warning("question_no_chat_id")
