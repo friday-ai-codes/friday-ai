@@ -19,7 +19,7 @@ from typing import Any
 
 import structlog
 
-from delivery.models import PlanSession
+from delivery.models import PlanSession, RepoResearchTaskStatus
 from delivery.services import PlanSessionService, ResearchService
 
 logger = structlog.get_logger(__name__)
@@ -30,6 +30,11 @@ __all__ = ["ResearchDispatchAdapter"]
 _RUNNER_HEARTBEAT_WINDOW_SECONDS = 120
 # 调研容器超时（秒）
 _RESEARCH_TIMEOUT = 30 * 60
+
+# WR-01 resume-幂等：dispatch 仅处理「待派发 / 重索引过期」任务。已 running/done/failed
+# 的任务在 re-advance/resume 时跳过——既不重派已完成 deep 容器（重置进度、浪费容器、
+# 扰乱 barrier），也不为已处理 light 仓重复合成 PartialPlan。stale 须重跑（RESEARCH-03）。
+_DISPATCHABLE_STATUSES = (RepoResearchTaskStatus.PENDING, RepoResearchTaskStatus.STALE)
 
 
 class ResearchDispatchAdapter:
@@ -85,6 +90,9 @@ class ResearchDispatchAdapter:
                 session, deep_repos
             )
             for task in deep_tasks:
+                # WR-01 幂等：跳过已 running/done/failed 的任务（仅派发 pending/stale）
+                if task.status not in _DISPATCHABLE_STATUSES:
+                    continue
                 # WR-02 单仓错误隔离（RESEARCH-02）：任一仓 dispatch 异常仅标该 task
                 # failed + 发 repo.research.failed，继续其他仓——绝不上抛拖垮整个
                 # PlanSession（异常上抛会被 engine advance 的通用 except 转 fail）。
@@ -109,6 +117,9 @@ class ResearchDispatchAdapter:
                 session, light_repos
             )
             for task in light_tasks:
+                # WR-01 幂等：跳过已处理（done/running/failed）的 light 仓，不重复落 PartialPlan
+                if task.status not in _DISPATCHABLE_STATUSES:
+                    continue
                 repo = await self._get_repository(task.repository_id)
                 content = self._synthesize_light_partial(session, task, repo)
                 await self.research_service.record_partial(task, content)

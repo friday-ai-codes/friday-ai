@@ -218,6 +218,36 @@ async def test_emits_research_started(session_with_candidates) -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_idempotent_on_re_advance(session_with_candidates) -> None:
+    """WR-01：同一 session 二次 dispatch 不重派已 running 的 deep 容器、不为已 done 的
+    light 仓重复落 PartialPlan（resume-幂等）。"""
+    session, repo_high, repo_medium, repo_low = session_with_candidates
+    dispatcher, captured = _mock_dispatcher()
+    adapter = ResearchDispatchAdapter()
+
+    with (
+        patch("runners.dispatcher.get_dispatcher", return_value=dispatcher),
+        patch.object(ResearchDispatchAdapter, "_count_online_runners", new=AsyncMock(return_value=2)),
+    ):
+        result1 = await adapter.dispatch(session)
+        result2 = await adapter.dispatch(session)
+
+    # 第一次派发 2 个 deep 容器 + 1 个 light partial
+    assert len(result1["dispatched"]) == 2
+    assert len(result1["light"]) == 1
+    # 第二次 re-advance：deep 已 running、light 已 done → 全部跳过
+    assert result2["dispatched"] == []
+    assert result2["light"] == []
+    # 容器只派发一次（不重派）
+    assert dispatcher.dispatch.await_count == 2
+    # task 不重建（仍 3 个）
+    assert await RepoResearchTask.objects.filter(session=session).acount() == 3
+    # light partial 不重复累积（仍 1 条）
+    low_task = await RepoResearchTask.objects.aget(session=session, repository=repo_low)
+    assert await PartialPlan.objects.filter(research_task=low_task).acount() == 1
+
+
+@pytest.mark.asyncio
 async def test_per_repo_dispatch_isolation(session_with_candidates) -> None:
     """WR-02：一个 deep 仓 dispatch 抛异常仅标该 task failed，其它 deep 仓仍正常派发，
     整个 dispatch 不中断（RESEARCH-02 单仓隔离）。"""
