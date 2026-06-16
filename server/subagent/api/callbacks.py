@@ -130,7 +130,12 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
             # 并改由 _schedule_workflow_resume 重新驱动挂起节点（researching→merging→done）。
             # 本分支仅覆盖 Chat 入口（无 node_execution）下的 plan_research 容器——同样不在
             # 此触发 agent resume（barrier 唯一驱动）。
-            log.debug("plan_research_skip_agent_resume", session_id=session.session_id)
+            #
+            # RESUME-01 接线（消化 D-2 a/b）：委派到 _schedule_chat_plan_resume——所有调研
+            # 终态后续驱 engine 到 done 并经 barrier 回灌主方案。entrypoint==chat 守门在
+            # _schedule_chat_plan_resume 内做（不在此重复查询，分支保持薄）。
+            log.debug("plan_research_delegate_chat_resume", session_id=session.session_id)
+            _schedule_chat_plan_resume(session, log)
             return
 
     # 检查是否有 main_session
@@ -273,6 +278,91 @@ def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> Non
 
         except Exception as e:
             log.exception("workflow_resume_error", error=str(e))
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_resume())
+    except RuntimeError:
+        # 没有运行中的事件循环，创建新的
+        asyncio.run(_resume())
+
+
+def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> None:
+    """触发 chat 入口 plan_research 续驱 + barrier 回灌（RESUME-01 接线，消化 D-2 a/b）。
+
+    与 ``_schedule_workflow_resume`` 对称（fire-and-forget + 幂等 + fail-soft），但驱动的是
+    **chat 入口**（无 node_execution）的 ``PlanSession``：所有 RepoResearchTask 终态后，用
+    43-02 的同源续驱 helper ``adrive_plan_session_to_pause_or_terminal`` 把 engine 续驱到
+    ``done``（消化缺口 b：``amaybe_complete_research`` 只 researching→merging，chat 入口此后
+    无消费者驱动 ``engine.advance``），再经 ``BarrierManager.task_completed`` 回灌主方案到
+    chat 会话（消化缺口 a：chat barrier 从不被通知）。
+
+    安全（T-43-TAMPER）：以服务端权威字段 ``PlanSession.entrypoint == CHAT`` 守门——绝不信
+    runner 可经 progress 篡改的字段，不放大既有信任面（对齐 cross_repo_relevance 用权威字段
+    范式）。日志仅记 plan_session_id / status / barrier_satisfied 非敏感字段。
+    """
+
+    async def _resume() -> None:
+        try:
+            from delivery.models import (
+                PlanSession,
+                PlanSessionEntrypoint,
+                PlanSessionStatus,
+            )
+            from orchestration.barrier import get_barrier_manager
+            from orchestration.contracts import BlockingTaskResult
+            from services.plan_orchestration import (
+                aall_research_tasks_terminal,
+                adrive_plan_session_to_pause_or_terminal,
+                build_orchestration_engine,
+            )
+
+            # a. 取 plan_session（缺失/取不到 → no-op）
+            lo = session.last_output if isinstance(session.last_output, dict) else {}
+            plan_session_id = lo.get("plan_session_id")
+            if not plan_session_id:
+                return
+            plan_session = await PlanSession.objects.filter(id=plan_session_id).afirst()
+            if plan_session is None:
+                return
+
+            # b. 守门（T-43-TAMPER）：仅 chat 入口续驱，用服务端权威字段 entrypoint
+            if str(plan_session.entrypoint) != str(PlanSessionEntrypoint.CHAT):
+                return
+
+            # c. 幂等短路：仅当全部调研终态才续驱（多仓逐个完成时只有最后一个真正续驱）
+            if not await aall_research_tasks_terminal(plan_session.id):
+                return
+
+            # d. 构建 chat 入口 engine（无 node_execution_id），绝不新建第二个 engine 工厂
+            engine = build_orchestration_engine()
+
+            # e. 先续驱到终态（43-02 同源 helper）
+            plan_session = await adrive_plan_session_to_pause_or_terminal(engine, plan_session)
+
+            # f. 再构建 BlockingTaskResult（复用 deep_analysis 回灌通道；A2：失败 output="")
+            success = plan_session.status == PlanSessionStatus.DONE
+            output_text = str(plan_session.current_plan_version or "") if success else ""
+            error_text = "" if success else str(plan_session.error or {})
+            result: BlockingTaskResult = {
+                "task_id": str(plan_session.id),
+                "task_type": "plan_research",
+                "success": success,
+                "output": output_text,
+                "error": error_text,
+            }
+
+            # g. barrier 回灌（关键 Pitfall 3：task_id 用 str(plan_session.id) 而非 session_id；
+            #    chat barrier 注册键见 plan_research_tools.py:249）。barrier 已去重（幂等安全）。
+            satisfied = await get_barrier_manager().task_completed(str(plan_session.id), result)
+            log.info(
+                "chat_plan_resume_notified",
+                plan_session_id=str(plan_session.id),
+                status=plan_session.status,
+                barrier_satisfied=satisfied,
+            )
+        except Exception:
+            log.warning("chat_plan_resume_error", session_id=session.session_id)
 
     try:
         loop = asyncio.get_running_loop()
