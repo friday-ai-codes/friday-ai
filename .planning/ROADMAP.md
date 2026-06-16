@@ -96,7 +96,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 44-04-PLAN.md — wave_progression 入口无关推进 helper（gate/失败隔离/下游阻断/幂等）+ 测试（wave 3）
+- [x] 44-04-PLAN.md — wave_progression 入口无关推进 helper（gate/失败隔离/传递闭包下游阻断/幂等）+ 测试（wave 3）
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
