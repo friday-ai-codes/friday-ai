@@ -39,7 +39,7 @@ CHECK_NAMES = (
 
 
 def validate_plan(merged: Any) -> dict:
-    """对 §7 MergedPlan 跑非空 + 5 项跨仓语义校验，汇总结构化报告。
+    """对 §7 MergedPlan 跑非空 + 形状 + 5 项跨仓语义校验，汇总结构化报告。
 
     Returns:
         ``{"valid": bool, "errors": [{check, message}...], "warnings": [...]}``。
@@ -56,6 +56,7 @@ def validate_plan(merged: Any) -> dict:
 
     for check in (
         _check_non_empty_plan,
+        _check_field_shapes,
         _check_contract_consistency,
         _check_acyclic,
         _check_migration_order,
@@ -109,7 +110,7 @@ def _contract_key(item: Any) -> str:
     return str(item) if item else ""
 
 
-# ---- 前置校验：非空 ----
+# ---- 前置校验：非空 + 字段形状 ----
 
 
 def _check_non_empty_plan(merged: dict) -> tuple[list[dict], list[dict]]:
@@ -125,6 +126,42 @@ def _check_non_empty_plan(merged: dict) -> tuple[list[dict], list[dict]]:
             [],
         )
     return [], []
+
+
+def _check_field_shapes(merged: dict) -> tuple[list[dict], list[dict]]:
+    """⓪′ 跨仓字段形状校验：字段「存在但类型不符」记 error（WR-02）。
+
+    半可信防御原把类型不符字段一律当空处理（``dependency_dag`` 非 dict → ``{}``、
+    ``data_migrations``/``release_order`` 非 list → 跳过），导致一份真实成环/顺序倒置但
+    字段形状错误的方案因「形状不对」反而过验（false-pass）。此处区分「字段缺省（合法跳过）」
+    与「字段存在但形状非法（记 error，不再无声降级为空）」。
+    """
+    errors: list[dict] = []
+    dag = merged.get("dependency_dag")
+    if dag is not None and not isinstance(dag, dict):
+        errors.append(
+            {
+                "check": "dependency_cycle",
+                "message": "dependency_dag 形状非法（应为邻接表 dict），跨仓依赖/环检测无法执行",
+            }
+        )
+    migrations = merged.get("data_migrations")
+    if migrations is not None and not isinstance(migrations, list):
+        errors.append(
+            {
+                "check": "migration_order",
+                "message": "data_migrations 形状非法（应为 list），迁移顺序校验无法执行",
+            }
+        )
+    release = merged.get("release_order")
+    if release is not None and not isinstance(release, list):
+        errors.append(
+            {
+                "check": "release_order",
+                "message": "release_order 形状非法（应为 list），发布顺序校验无法执行",
+            }
+        )
+    return errors, []
 
 
 # ---- 5 项跨仓语义校验 ----
