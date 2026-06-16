@@ -7,6 +7,8 @@ create_session + resume 持久化 / fail 从任意态落 failed + error JSON。
 from __future__ import annotations
 
 import pytest
+from asgiref.sync import sync_to_async
+from django.contrib.auth import get_user_model
 
 from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
 from delivery.services import PlanSessionService
@@ -14,6 +16,11 @@ from delivery.services.plan_session_service import (
     _ALLOWED,
     ConcurrentTransitionError,
 )
+
+
+@sync_to_async
+def _create_user(username: str):
+    return get_user_model().objects.create(username=username)
 
 
 def _all_allowed_cases() -> list[tuple[str, str, str]]:
@@ -163,6 +170,63 @@ async def test_fail_from_done_is_noop() -> None:
     reloaded = await PlanSession.objects.aget(id=session.id)
     assert reloaded.status == PlanSessionStatus.DONE
     assert reloaded.error == {}
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_routed_persists_routing_field() -> None:
+    """routed 转移把 routing payload 落 PlanSession.routing（38-02 落库通道）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.ROUTING,
+    )
+    svc = PlanSessionService()
+    routing = {
+        "candidates": [{"repo_id": "r1", "confidence": "high"}],
+        "router_version": "v2",
+        "auto_selected": True,
+    }
+    await svc.transition(session, "routed", routing=routing)
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.RECALLING
+    assert reloaded.routing == routing
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_recalled_persists_recall_context_field() -> None:
+    """recalled 转移把 recall_context payload 落 PlanSession.recall_context（38-03 落库通道）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.RECALLING,
+    )
+    svc = PlanSessionService()
+    recall_context = [{"entity_id": "e1", "kind": "work_item", "title": "t", "score": 0.9}]
+    await svc.transition(session, "recalled", recall_context=recall_context)
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.CLARIFYING
+    assert reloaded.recall_context == recall_context
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_create_session_with_created_by_persists() -> None:
+    """create_session(created_by=user) 落 created_by FK（召回权限 actor 来源）。"""
+    user = await _create_user("orchestrator")
+    svc = PlanSessionService()
+    session = await svc.create_session(PlanSessionEntrypoint.WORKFLOW, created_by=user)
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.created_by_id == user.id
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_create_session_created_by_defaults_none() -> None:
+    """不传 created_by 时默认 None（nullable，系统/无交互用户场景）。"""
+    svc = PlanSessionService()
+    session = await svc.create_session(PlanSessionEntrypoint.CHAT)
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.created_by_id is None
 
 
 @pytest.mark.django_db
