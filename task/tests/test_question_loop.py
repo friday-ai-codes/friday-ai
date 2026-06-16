@@ -129,6 +129,8 @@ class TestAskUserAndWait:
         )
         assert answer == "用方案A"
         callback.report_question.assert_awaited_once()
+        # 消费后 answer.json 应被清除，避免多轮提问误读陈旧回答。
+        assert not (tmp_path / "answer.json").exists()
 
     @pytest.mark.asyncio
     async def test_timeout_with_default_returns_default(self, tmp_path):

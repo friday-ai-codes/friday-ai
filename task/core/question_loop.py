@@ -99,6 +99,11 @@ async def ask_user_and_wait(
     while now() < deadline:
         answer = _read_answer(answer_path)
         if answer:
+            # 消费后清除 answer.json，避免多轮提问时下一轮误读上一轮的陈旧回答。
+            try:
+                os.remove(answer_path)
+            except OSError:
+                pass
             log.info("ask_user_answer_received", has_answer=True)
             return answer
         # 心跳保活（失败不阻断等待）。
