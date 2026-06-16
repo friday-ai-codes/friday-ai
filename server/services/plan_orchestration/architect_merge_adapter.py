@@ -32,6 +32,7 @@ from delivery.models import (
 )
 from delivery.services import PlanSessionService, TechnicalPlanService
 from delivery.services.event_taxonomy import (
+    EVENT_CLARIFICATION_ASKED,
     EVENT_PLAN_MERGE_COMPLETED,
     EVENT_PLAN_MERGE_STARTED,
     EVENT_PLAN_VALIDATION_FAILED,
@@ -124,10 +125,18 @@ class ArchitectMergeAdapter:
         synthesizer: MergedPlanSynthesizer | None = None,
         session_service: PlanSessionService | None = None,
         plan_service: TechnicalPlanService | None = None,
+        clarification_service: Any = None,
     ) -> None:
         self.synthesizer = synthesizer or LLMMergedPlanSynthesizer()
         self.session_service = session_service or PlanSessionService()
         self.plan_service = plan_service or TechnicalPlanService()
+        # WR-02：merge 校验失败回退 clarifying 时经此建「描述校验失败」的 Clarification
+        # （INV-6 单一写入入口）。延迟默认构造避免 import 环（同 delivery app）。
+        if clarification_service is None:
+            from delivery.services import ClarificationService
+
+            clarification_service = ClarificationService()
+        self.clarification_service = clarification_service
 
     async def merge(self, session: PlanSession) -> dict:
         """融合一次：pass → 落 canonical + ArchitectMerge(passed)；fail → ArchitectMerge(failed)。"""
@@ -246,12 +255,50 @@ class ArchitectMergeAdapter:
         await self._emit(session, EVENT_PLAN_VALIDATION_FAILED, {"reasons": reasons})
         # back_target：partial stale/缺 → researching；否则默认 clarifying
         back_target = "researching" if has_stale else "clarifying"
+        # WR-02：回退 clarifying 时主动建一条「描述校验失败」的 pending Clarification，使回退
+        # 真正落到一次 HITL 澄清——否则默认 policy 下 CR-01 单轮 guard 会因无 pending、无已答而
+        # 重跑静态 policy（routing 有 high/medium、无 ambiguous → 不需澄清）直通 researching，
+        # 同批 partial 立即再次 merging 失败、空转一圈后 fail，§14「按报告回退重跑」沦为空操作。
+        # 仅在「仍可重试」（attempt < MAX）时建：attempt 已达上限时 engine 直接落 failed 终态
+        # （见 engine._merge），不应留孤儿 pending。有界性由 merge attempt 计数保证（重 merge
+        # 仍非法 → attempt>=MAX → failed 终态），不会无限循环。
+        if back_target == "clarifying" and attempt < self.MAX_MERGE_RETRIES:
+            await self._create_reclarify(session, report)
         return {
             "validation_status": "failed",
             "report": report,
             "back_target": back_target,
             "attempt": attempt,
         }
+
+    async def _create_reclarify(self, session: PlanSession, report: dict) -> None:
+        """WR-02：建「描述 merge 校验失败」的 pending Clarification（INV-6 经 service）+ emit asked。
+
+        best-effort：建/emit 失败仅 warning，绝不阻断 merge 返回（回退仍由 engine 据 attempt
+        有界）。无 affected_partials（不主动重跑 partial——有界：重 merge 用同批 partial，仍
+        非法则在 attempt>=MAX 落 failed 终态；避免对正确 partial 误失效）。
+        """
+        reasons = [
+            str(e.get("check"))
+            for e in report.get("errors", [])
+            if isinstance(e, dict) and e.get("check")
+        ]
+        reason_text = "、".join(reasons) if reasons else "方案校验未通过"
+        question = (
+            f"自动融合的跨仓方案未通过校验（{reason_text}）。"
+            "请补充澄清以便重新融合（如跨仓契约、依赖顺序或受影响的仓库）。"
+        )
+        try:
+            clar = await self.clarification_service.create_clarification(
+                session, question, []
+            )
+            await self._emit(
+                session,
+                EVENT_CLARIFICATION_ASKED,
+                {"clarification_id": str(clar.id), "question": question},
+            )
+        except Exception:  # noqa: BLE001 — 回退澄清 best-effort，绝不阻断 merge 返回
+            logger.warning("merge_reclarify_create_failed", session_id=str(session.id))
 
     async def _collect_valid_partials(self, session: PlanSession) -> list[dict]:
         """async 取 valid PartialPlan 的 content（join 过滤 + .values，禁裸 lazy-FK）。"""
