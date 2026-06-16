@@ -119,7 +119,9 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     async def execute(self, context: ExecutionContext) -> NodeResult:
         """建/恢复 PlanSession → 注入真实 adapters 驱动 engine.advance → 终态/挂起映射。"""
-        from delivery.models import PlanSession, PlanSessionStatus
+        from services.plan_orchestration import (
+            adrive_plan_session_to_pause_or_terminal,
+        )
 
         log = logger.bind(execution_id=context.execution_id, node_id=context.node_id)
 
@@ -138,34 +140,25 @@ class AIPlanResearchNode(AIAgentBaseNode):
         # 2. 注入真实 adapters 构造 engine（可被测试 override）
         engine = self._build_engine(context, session)
 
-        # 3. 驱动循环：advance + 重读 status，遇挂起条件 break 返回 waiting_event
-        terminal = {PlanSessionStatus.DONE, PlanSessionStatus.FAILED}
-        steps = 0
-        while session.status not in terminal:
-            steps += 1
-            if steps > _MAX_ADVANCE_STEPS:
-                log.warning("plan_research_advance_step_limit", session_id=str(session.id))
-                await engine.session_service.transition(
-                    session,
-                    "fail",
-                    error={"reason": "advance_step_limit", "steps": steps},
-                )
-                session = await PlanSession.objects.aget(id=session.id)
-                break
+        # 3. 复用 43-02 共享续驱 helper（不造两套循环）：advance 至「重挂起短路点」
+        #    （clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；step 上限由 helper
+        #    内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
+        session = await adrive_plan_session_to_pause_or_terminal(
+            engine, session, max_steps=_MAX_ADVANCE_STEPS
+        )
 
-            await engine.advance(session)
-            session = await PlanSession.objects.aget(id=session.id)
+        # 4. 入口私有挂起 marker 映射（保留）：helper 短路返回后再判一次，clarifying-pending /
+        #    researching-在途 处返回工作流 waiting_event marker。
+        suspend = await self._maybe_suspend(session)
+        if suspend is not None:
+            log.info(
+                "plan_research_suspended",
+                session_id=str(session.id),
+                kind=suspend.output.get("kind"),
+            )
+            return suspend
 
-            suspend = await self._maybe_suspend(session)
-            if suspend is not None:
-                log.info(
-                    "plan_research_suspended",
-                    session_id=str(session.id),
-                    kind=suspend.output.get("kind"),
-                )
-                return suspend
-
-        # 4. 终态映射
+        # 5. 终态映射
         return self._map_terminal(session)
 
     # ===== session 建/恢复 =====
