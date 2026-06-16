@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
 status: executing
-stopped_at: Phase 44 Plan 04 完成（wave_progression 入口无关推进 helper：回填→传递闭包阻断→决策出口 + 6 测全绿）
-last_updated: "2026-06-16T12:45:00.000Z"
-last_activity: 2026-06-16 -- Phase 44 Plan 04 完成（wave_progression 入口无关推进 helper：回填→传递闭包阻断→决策出口 + 6 测全绿）
+stopped_at: Phase 44 Plan 05 完成（AICodingNode wave 分批 dispatch + callback 驱动多 wave 推进 + 部分成功收尾 + 4 集成测试全绿，Phase 44 收官）
+last_updated: "2026-06-16T13:05:00.000Z"
+last_activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度接线：首发分批 dispatch + aadvance 推进 + 部分成功收尾，Phase 44 全部 5 plan 完成）
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 32
+  completed_plans: 9
+  percent: 40
 ---
 
 # Project State
@@ -25,17 +25,17 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 44 (RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度) — EXECUTING
-Plan: 5 of 5（44-01 / 44-02 / 44-03 / 44-04 已完成）
-Status: Executing Phase 44
-Last activity: 2026-06-16 -- Phase 44 Plan 04 完成（wave_progression 入口无关推进 helper：回填→传递闭包阻断→决策出口 + 6 测全绿）
+Phase: 44 (RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度) — COMPLETE（5/5 plan）
+Plan: 5 of 5 完成（44-01 / 44-02 / 44-03 / 44-04 / 44-05 全部完成）
+Status: Phase 44 收官；下一步 Phase 45（上游产物提取 + 注入下游 wave）
+Last activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度接线：首发分批 dispatch + aadvance 推进 + 部分成功收尾，Phase 44 全部 5 plan 完成）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ⬜ Not started |
-| 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ⬜ Not started |
+| 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ✅ Complete |
+| 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ✅ Complete |
 | 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ⬜ Not started |
 | 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | ⬜ Not started |
 | 47 | 编码遇阻 → question 抛人（HITL，非全自动 replan） | HITL-01 | ⬜ Not started |
@@ -173,6 +173,7 @@ Last activity: 2026-06-16 -- Phase 44 Plan 04 完成（wave_progression 入口�
 | Phase 44 P44-02 | ~6min | 2 tasks | 3 files |
 | Phase 44 P44-03 | ~7min | 3 tasks | 4 files |
 | Phase 44 P44-04 | ~8min | 2 tasks | 3 files |
+| Phase 44 P44-05 | ~22min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -280,6 +281,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 44]: 44-02: wave_layering 拓扑分层纯函数（services.plan_orchestration）——`build_repo_waves(execution_plan) -> ({repo_id: wave}, cycle_report|None)` 把 `execution_plan[].dependencies`（task id 引用，非 repository_id，schema 权威）建任务级 DAG，graphlib.TopologicalSorter Kahn 分层，仓 wave 取该仓所有 task 层级 **max**；空依赖退化全 wave 0（零回归命门）；环检测**复用** plan_validator.validate_plan（三色 DFS + 显式栈防 DoS）仅取 dependency_cycle 项 fail-fast 不重写；`build_repo_dep_edges` 仅跨仓成边（ra and rb and ra != rb）去同仓自环返回 sorted；半可信防御逐字对齐 plan_validator（.get(...) or []、缺 id 跳过、无效引用过滤、绝不抛）；纯函数无 IO/ORM/LLM 可与模型层并行；分层结果待 44-03 RepoCodingTaskService 写入 RepoCodingTask.wave/depends_on
 - [Phase 44]: 44-03: RepoCodingTaskService 单一写入入口（INV-6）——消费 44-02 build_repo_waves/build_repo_dep_edges 落 wave/depends_on；create_tasks_for_plan get_or_create 幂等（已存在仅 wave 漂移回填）+ 同步块内 depends_on.set(...) 连仓级 DAG 边（避免 async lazy 访问）+ 返回 {repository_id: task} 按仓可索引；mark_running/done/failed/blocked 状态推进，mark_done 仅 running→done、mark_blocked 仅 pending→failed 用条件 .filter(status=...).update(...) + 影响行数判定保重复 callback no-op + 已运行/终态不强翻（保在途结果）；mark_blocked error={reason:upstream_failed,upstream:[...]} 承载 WAVE-02 下游阻断；INV-6 grep 守护镜像 test_research_inv6_guard.py（单模型 RepoCodingTask，正则天然排除 RepoCodingTaskStatus( 枚举）断言除 service 外无旁路写；8 测全绿（service 6 + guard 2）
 - [Phase 44]: 44-04: wave_progression 入口无关 wave 推进 helper（services.plan_orchestration）——`aadvance_coding_waves(plan_version_id, *, service)` 严格序「① 回填 running→终态（按服务端权威 SubAgentSession.status，completed→done/error|timeout|cancelled→failed，经 subagent_session_id 标量取，T-44-TAMPER）→ ② 传递闭包 BFS/worklist 沿 dependents 反向边多跳阻断全部 failed 上游的 pending 下游（seen 去重，链 A→B→C 单次内 B、C 全 blocked）→ ③ 决策出口」；执行序是 liveness 命门——阻断必须在任何 early-return 前完成否则未派发 pending 下游永不阻断→all_terminal 永不触发→死锁（T-44-DEADLOCK）；决策出口：RUNNING 在途 aexists()→waiting（**不**靠最小 pending wave 防抢先 return waiting 死锁）/ depends_on 全 done 的 pending→dispatch 最小 wave / 无 pending 无 running→all_terminal；`acurrent_wave_all_terminal` 终态含 failed（T-44-GATE 失败仓不永挂）仅供 RUNNING 在途 wave 求值；状态只经 RepoCodingTaskService 条件更新幂等（INV-6）+ wave 从 DB 重算非内存；复用 Phase 43 callback 驱动 resume 不造两套；6 测全绿（gate/失败隔离/单跳下游阻断/2 跳传递闭包 liveness/幂等 updated_at 不变/全终态收尾）。callback 接线归 plan 05
+- [Phase 44]: 44-05: AICodingNode wave 调度接线（消化 PF-07，Phase 44 收官）——`_execute_with_branch` 首发段经 `build_repo_waves` 分层 + 环 fail-fast（`error.reason=dependency_cycle` 不进 dispatch）+ `RepoCodingTaskService.create_tasks_for_plan` 建行（INV-6）后仅 dispatch 最小 wave + `mark_running`；wave 模式双 guard（plan_version 可解析 AND repo_waves 完整覆盖待编码仓），否则回退 legacy 全并行零回归（task 无 id→repo_waves 不覆盖时不误激活）；抽 `_resolve_anthropic_credentials`/`_dispatch_wave`/`_build_waiting_output` 首发与推进共用（不造两套），dispatch 失败仓 `mark_failed` 保 liveness；`_resume_after_containers` 按 `plan_version_id` 分流 wave/legacy，`_resume_wave` 经 `aadvance_coding_waves` 判 gate——`waiting`→`_resuspend_wave`（waiting != finalize）/`dispatch`→`_dispatch_next_wave`(复用 `_dispatch_wave`)+再 `waiting_event`/`all_terminal`→`_finalize_wave`，整段 fail-soft（aadvance 异常 swallow+warning 不回灌容器回调 5xx）；不双 backfill（aadvance 独占 running→终态回填，`_finalize_wave` 仅从 DB `RepoCodingTask` 全行重算 done/failed 捕获全 wave 结果）；部分成功收尾 done 出 MR/failed/blocked 如实标注(`upstream_failed`)/不自动回滚（v0.8 非目标）；wave N→N+1 由 Phase 43 `_schedule_workflow_resume` 容器回调触发节点重入自驱不另造调度（`while True`→有限收敛 `for`，上界=task 总数；无 sleep/timer/apscheduler）；4 集成测试全绿（零回归/多 wave 推进/部分成功阻断/环 fail-fast）+ test_coding_node 12 passed 零回归；340 passed 全量验收
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
 ### Pending Todos
@@ -352,10 +354,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T12:45:00.000Z
-Stopped at: Phase 44 Plan 04 完成（wave_progression 入口无关推进 helper：回填→传递闭包阻断→决策出口 + 6 测全绿）
+Last session: 2026-06-16T13:05:00.000Z
+Stopped at: Phase 44 Plan 05 完成（AICodingNode wave 分批 dispatch + callback 驱动多 wave 推进 + 部分成功收尾 + 4 集成测试全绿，Phase 44 全部 5 plan 收官）
 Resume file: None
-Next: 执行 44-05（AICodingNode resume 段消费 aadvance_coding_waves：首发 dispatch + mark_running，判 gate→推下一 wave 或收尾，经 Phase 43 callback 触发节点重入自驱）——wave 4，blocked on wave 3 已完成
+Next: Phase 44 收官；启动 Phase 45（上游产物提取 + 注入下游 wave：ARTIFACT-01/02）——`/gsd-discuss-phase 45` / `/gsd-plan-phase 45` 起步
 
 ## Operator Next Steps
 
