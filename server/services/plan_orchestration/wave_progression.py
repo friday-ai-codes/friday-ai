@@ -142,6 +142,34 @@ async def _backfill_running_terminal(plan_version_id: Any, service: Any) -> None
         sess_status = str(sess.status)
         if sess_status in _SUBAGENT_DONE:
             await service.mark_done(task)
+            # ── ARTIFACT-01：产物提取落库（fail-soft，绝不阻塞 wave 推进 / 回调主流程）──
+            # 独立 try/except 不向 _backfill_running_terminal 外冒泡：提取失败时 task 仍正确
+            # done，仅 produced_artifacts 留空（下游注入段为空，零回归）。无 TaskResult →
+            # 纯函数自落 {"available": False} 占位（非异常路径，T-45-04）。
+            try:
+                from repositories.models import Repository
+                from services.plan_orchestration.artifact_extraction import (
+                    build_produced_artifacts,
+                )
+                from subagent.models import TaskResult
+
+                # async ORM 安全：复用已取出的 sess + *_id 标量 + afirst，绝不裸访问 lazy-FK。
+                tr = await TaskResult.objects.filter(session=sess).afirst()
+                repo = await Repository.objects.filter(id=task.repository_id).afirst()
+                repo_name = repo.name if repo else str(task.repository_id)
+                artifacts = build_produced_artifacts(
+                    repository_id=str(task.repository_id),
+                    repository_name=repo_name,
+                    task_result=tr,
+                )
+                await service.record_produced_artifacts(task, artifacts)
+            except Exception as exc:  # noqa: BLE001 — 提取降级，不影响 done 推进
+                # 仅记 task_id/error 字符串，绝不记产物正文 / token（T-45-01）。
+                logger.warning(
+                    "coding_artifact_extract_failed",
+                    task_id=str(task.id),
+                    error=str(exc),
+                )
         elif sess_status in _SUBAGENT_FAILED:
             await service.mark_failed(
                 task,
