@@ -49,7 +49,7 @@
 
 - [x] **CLARIFY-01**: HITL 澄清回路：编排在不清晰时发 `Clarification` 挂起等用户，回答后仅 `affected_partials` 内的 `RepoResearchTask` 重跑，其余 partial 复用
 - [x] **ENTRY-01**: 工作流入口端到端跑通编排——一个需求经"拆分→路由→召回→澄清→并行调研→融合"产出一份带跨仓依赖的 `MergedPlan`（工作流先行）
-- [ ] **ENTRY-02**: Chat 入口薄封装复用同一底层 orchestration engine（不并行造两套编排）
+- [x] **ENTRY-02**: Chat 入口薄封装复用同一底层 orchestration engine（不并行造两套编排）
 
 ### 事件 taxonomy（EVENT）
 
@@ -110,7 +110,7 @@
 | CLARIFY-01 | Phase 41 | Complete |
 | ENTRY-01 | Phase 41 | Complete |
 | EVENT-01 | Phase 41 | Complete |
-| ENTRY-02 | Phase 42 | Pending |
+| ENTRY-02 | Phase 42 | Complete |
 
 **Coverage:**
 

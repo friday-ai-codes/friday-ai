@@ -56,7 +56,7 @@
 - [x] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑 (completed 2026-06-16)
 - [x] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模 (completed 2026-06-16)
 - [x] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排 (completed 2026-06-16)
-- [ ] **Phase 42: Chat 入口薄封装** - Chat 入口薄封装复用同一底层 orchestration engine（工作流先行，不并行造两套编排）
+- [x] **Phase 42: Chat 入口薄封装** - Chat 入口薄封装复用同一底层 orchestration engine（工作流先行，不并行造两套编排） (completed 2026-06-16)
 
 ## Phase Details
 
@@ -188,7 +188,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 42-01-PLAN.md — 抽薄共享 helper（start_orchestration + build_orchestration_engine 两入口共用）+ chat 工具 start_plan_research（entrypoint=chat / work_item=None INV-2）复用同一 engine + SC-2 入口一致性/SC-3 守护测试
+- [x] 42-01-PLAN.md — 抽薄共享 helper（start_orchestration + build_orchestration_engine 两入口共用）+ chat 工具 start_plan_research（entrypoint=chat / work_item=None INV-2）复用同一 engine + SC-2 入口一致性/SC-3 守护测试
 
 **UI hint**: yes
 
@@ -208,7 +208,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 | 39. 并行调研子 agent | v0.7.0 | 4/4 | Complete | 2026-06-16 |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 2/2 | Complete | 2026-06-16 |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
-| 42. Chat 入口薄封装 | v0.7.0 | 0/0 | Not started | - |
+| 42. Chat 入口薄封装 | v0.7.0 | 1/1 | Complete | 2026-06-16 |
 
 ---
 *Previous milestones archived in .planning/milestones/*
