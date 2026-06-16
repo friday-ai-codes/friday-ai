@@ -18,7 +18,6 @@ from delivery.services.comment_projection import (
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
 from delivery.services.ingest_orchestrator import StepResult, ingest_from_urls
-from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.ingest_parsing import (
     BoardRef,
     MRRef,
@@ -26,7 +25,14 @@ from delivery.services.ingest_parsing import (
     parse_board_url,
     parse_mr_url,
 )
+from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.release_service import ReleaseService
+from delivery.services.technical_plan_service import (
+    PlanContentInvalid,
+    PlanNotFound,
+    PlanRef,
+    TechnicalPlanService,
+)
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
 __all__ = [
@@ -48,4 +54,8 @@ __all__ = [
     "ingest_from_urls",
     "StepResult",
     "PlanSessionService",
+    "TechnicalPlanService",
+    "PlanRef",
+    "PlanContentInvalid",
+    "PlanNotFound",
 ]
