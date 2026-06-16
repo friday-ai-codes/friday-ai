@@ -4,14 +4,14 @@ milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
 status: executing
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
-last_updated: "2026-06-16T12:25:24.000Z"
-last_activity: 2026-06-16 -- Phase 44 Plan 02 完成（wave_layering 拓扑分层纯函数 + 5 场景测试）
+last_updated: "2026-06-16T12:35:00.000Z"
+last_activity: 2026-06-16 -- Phase 44 Plan 03 完成（RepoCodingTaskService 单一写入入口 + INV-6 守护 + 8 测全绿）
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 24
+  completed_plans: 7
+  percent: 28
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 44 (RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度) — EXECUTING
-Plan: 3 of 5（44-01 / 44-02 已完成）
+Plan: 4 of 5（44-01 / 44-02 / 44-03 已完成）
 Status: Executing Phase 44
-Last activity: 2026-06-16 -- Phase 44 Plan 02 完成（wave_layering 拓扑分层纯函数 + 5 场景测试）
+Last activity: 2026-06-16 -- Phase 44 Plan 03 完成（RepoCodingTaskService 单一写入入口 + INV-6 守护 + 8 测全绿）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -171,6 +171,7 @@ Last activity: 2026-06-16 -- Phase 44 Plan 02 完成（wave_layering 拓扑分�
 |--------|-------|
 | Phase 44 P44-01 | ~8min | 3 tasks | 4 files |
 | Phase 44 P44-02 | ~6min | 2 tasks | 3 files |
+| Phase 44 P44-03 | ~7min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -276,6 +277,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 43]: 43-04(RESUME-01「不造两套」收尾): 工作流节点 plan_research.execute 与 chat 工具 start_plan_research 两处内联 advance 循环重构为复用 43-02 共享 helper adrive_plan_session_to_pause_or_terminal——节点/工具/回调消费者三处真正同源一份续驱逻辑；入口私有挂起 marker 映射（NodeResult/ToolResult via _maybe_suspend）各自保留，helper 短路返回后再跑一次 _maybe_suspend 即等价；step 上限处理下沉 helper（transition(fail)→_map_terminal failed 分支）；test_clarifying_suspends_waiting_event 红线零回归（11 测全绿）
 - [Phase 43]: 43-04: start_plan_research 占位文案/工具 description 由「自动回流尚未接入/当前不会自动继续」如实更新为「调研完成后将自动融合并返回 canonical 主方案」（43-03 已接通），仅改文案不动 marker/挂起协议（T-43-MISLEAD accept）
 - [Phase 44]: 44-02: wave_layering 拓扑分层纯函数（services.plan_orchestration）——`build_repo_waves(execution_plan) -> ({repo_id: wave}, cycle_report|None)` 把 `execution_plan[].dependencies`（task id 引用，非 repository_id，schema 权威）建任务级 DAG，graphlib.TopologicalSorter Kahn 分层，仓 wave 取该仓所有 task 层级 **max**；空依赖退化全 wave 0（零回归命门）；环检测**复用** plan_validator.validate_plan（三色 DFS + 显式栈防 DoS）仅取 dependency_cycle 项 fail-fast 不重写；`build_repo_dep_edges` 仅跨仓成边（ra and rb and ra != rb）去同仓自环返回 sorted；半可信防御逐字对齐 plan_validator（.get(...) or []、缺 id 跳过、无效引用过滤、绝不抛）；纯函数无 IO/ORM/LLM 可与模型层并行；分层结果待 44-03 RepoCodingTaskService 写入 RepoCodingTask.wave/depends_on
+- [Phase 44]: 44-03: RepoCodingTaskService 单一写入入口（INV-6）——消费 44-02 build_repo_waves/build_repo_dep_edges 落 wave/depends_on；create_tasks_for_plan get_or_create 幂等（已存在仅 wave 漂移回填）+ 同步块内 depends_on.set(...) 连仓级 DAG 边（避免 async lazy 访问）+ 返回 {repository_id: task} 按仓可索引；mark_running/done/failed/blocked 状态推进，mark_done 仅 running→done、mark_blocked 仅 pending→failed 用条件 .filter(status=...).update(...) + 影响行数判定保重复 callback no-op + 已运行/终态不强翻（保在途结果）；mark_blocked error={reason:upstream_failed,upstream:[...]} 承载 WAVE-02 下游阻断；INV-6 grep 守护镜像 test_research_inv6_guard.py（单模型 RepoCodingTask，正则天然排除 RepoCodingTaskStatus( 枚举）断言除 service 外无旁路写；8 测全绿（service 6 + guard 2）
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
 ### Pending Todos
@@ -348,10 +350,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T12:25:24.000Z
-Stopped at: Phase 44 Plan 02 完成（wave_layering 拓扑分层纯函数 + 5 场景测试全绿）
+Last session: 2026-06-16T12:35:00.000Z
+Stopped at: Phase 44 Plan 03 完成（RepoCodingTaskService 单一写入入口 + INV-6 守护 + 8 测全绿）
 Resume file: None
-Next: 执行 44-03（RepoCodingTaskService.create_tasks_for_plan，消费 build_repo_waves/build_repo_dep_edges 落 wave/depends_on，INV-6 单一写入入口）——wave 2，blocked on wave 1 已完成
+Next: 执行 44-04（wave_progression 入口无关推进 helper：gate/失败隔离/下游阻断/幂等，经 RepoCodingTaskService 回填终态/阻断下游）——wave 3，blocked on wave 2 已完成
 
 ## Operator Next Steps
 

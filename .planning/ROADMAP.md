@@ -92,7 +92,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 44-03-PLAN.md — RepoCodingTaskService 单一写入入口 + INV-6 守护 + 测试（wave 2）
+- [x] 44-03-PLAN.md — RepoCodingTaskService 单一写入入口 + INV-6 守护 + 测试（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
