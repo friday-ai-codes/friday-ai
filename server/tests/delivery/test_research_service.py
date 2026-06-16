@@ -292,3 +292,70 @@ async def test_invalidate_for_repo_stale() -> None:
     # 幂等：二次调用无新增失效
     count2 = await svc.invalidate_for_repo(str(repo_x.id))
     assert count2 == 0
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_skips_running_affected_task() -> None:
+    """WR-01：mark_stale 仅对已终态（done）affected 任务置 stale 重跑；正 running 的在途
+    任务不被置 stale（让其自然完成）——避免对在途容器同仓双派 + 晚到回调结果被静默丢弃。"""
+    session = await _make_session_async()
+    repo_done = await _make_repo_async()
+    repo_running = await _make_repo_async()
+    svc = ResearchService()
+
+    # 已 done 任务（有 valid partial）+ 正 running 任务（在途，无 partial）
+    task_done = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo_done, status=RepoResearchTaskStatus.DONE
+    )
+    await PartialPlan.objects.acreate(
+        research_task=task_done, content={"repository_id": str(repo_done.id)}, valid=True
+    )
+    task_running = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo_running, status=RepoResearchTaskStatus.RUNNING
+    )
+
+    invalidated = await svc.mark_stale([task_done.id, task_running.id])
+
+    # done 任务 → stale + 其 partial 失效（reason=clarification），计数=1
+    assert invalidated == 1
+    await task_done.arefresh_from_db()
+    assert task_done.status == RepoResearchTaskStatus.STALE
+    pd = await PartialPlan.objects.aget(research_task=task_done)
+    assert pd.valid is False
+    assert pd.invalidated_reason == "clarification"
+
+    # running 任务 → 保持 running（不置 stale，让在途容器自然完成）
+    await task_running.arefresh_from_db()
+    assert task_running.status == RepoResearchTaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_running_only_is_noop() -> None:
+    """WR-01：affected 全为在途 running 任务 → mark_stale 完全 no-op（不置 stale、计数=0）。"""
+    session = await _make_session_async()
+    repo = await _make_repo_async()
+    task_running = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.RUNNING
+    )
+
+    invalidated = await ResearchService().mark_stale([task_running.id])
+
+    assert invalidated == 0
+    await task_running.arefresh_from_db()
+    assert task_running.status == RepoResearchTaskStatus.RUNNING
+
+
+async def _make_session_async() -> PlanSession:
+    return await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    )
+
+
+async def _make_repo_async() -> Repository:
+    return await Repository.objects.acreate(
+        name=f"r-{uuid.uuid4().hex[:6]}",
+        git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )

@@ -177,6 +177,13 @@ class ResearchService:
         使其满足 §14「stale 须重跑后才满足 barrier」——由 researching 重派（ResearchDispatchAdapter
         的 DISPATCHABLE 含 stale）。**只触指定 task，绝不动其他**；已 stale 幂等跳过。
         返回失效 PartialPlan 计数。
+
+        WR-01 安全前置：仅把**已终态**（done/failed）的 affected 任务置 stale 重跑——
+        正 ``running``/``pending`` 的在途任务**不**置 stale（让其自然完成）。否则会出现：
+        running 任务被置 stale → researching 对同仓重派第二个容器；而原在途容器的晚到
+        完成回调进入 ``_aload_research_task`` 时因 task 已 stale（终态判定）被静默丢弃——
+        同仓双容器 + 丢弃一份结果。让在途任务自然完成可避免重复派发与结果丢弃；其结果
+        正常落库后若仍需失效，可由后续重索引/再澄清按需处理。
         """
         return await self._mark_stale_sync(task_ids)
 
@@ -184,13 +191,25 @@ class ResearchService:
     def _mark_stale_sync(self, task_ids: list) -> int:
         if not task_ids:
             return 0
+        # WR-01：只对已终态（done/failed）的 affected 任务置 stale 重跑，跳过在途
+        # （running/pending）任务——避免对在途容器同仓双派 + 晚到回调结果被静默丢弃。
+        terminal_ids = list(
+            RepoResearchTask.objects.filter(
+                id__in=task_ids,
+                status__in=[
+                    RepoResearchTaskStatus.DONE,
+                    RepoResearchTaskStatus.FAILED,
+                ],
+            ).values_list("id", flat=True)
+        )
+        if not terminal_ids:
+            return 0
         invalidated = PartialPlan.objects.filter(
-            research_task_id__in=task_ids, valid=True
+            research_task_id__in=terminal_ids, valid=True
         ).update(valid=False, invalidated_reason="clarification")
-        # 仅把指定 task 中非 stale 的置 stale（已 stale 幂等跳过）
-        RepoResearchTask.objects.filter(id__in=task_ids).exclude(
-            status=RepoResearchTaskStatus.STALE
-        ).update(status=RepoResearchTaskStatus.STALE, updated_at=timezone.now())
+        RepoResearchTask.objects.filter(id__in=terminal_ids).update(
+            status=RepoResearchTaskStatus.STALE, updated_at=timezone.now()
+        )
         return invalidated
 
     async def invalidate_for_repo(self, repository_id: str) -> int:
