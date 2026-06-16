@@ -85,8 +85,23 @@ class ResearchDispatchAdapter:
                 session, deep_repos
             )
             for task in deep_tasks:
-                await self._dispatch_deep_task(session, task)
-                dispatched_ids.append(str(task.id))
+                # WR-02 单仓错误隔离（RESEARCH-02）：任一仓 dispatch 异常仅标该 task
+                # failed + 发 repo.research.failed，继续其他仓——绝不上抛拖垮整个
+                # PlanSession（异常上抛会被 engine advance 的通用 except 转 fail）。
+                try:
+                    await self._dispatch_deep_task(session, task)
+                    dispatched_ids.append(str(task.id))
+                except Exception as exc:  # noqa: BLE001 — 单仓失败隔离，不波及其他仓
+                    logger.warning(
+                        "research_dispatch_failed",
+                        session_id=str(session.id),
+                        task_id=str(task.id),
+                        error=str(exc),
+                    )
+                    await self.research_service.mark_failed(
+                        task, {"reason": "dispatch_failed", "error": str(exc)}
+                    )
+                    await self._emit_failed(session, task, "dispatch_failed")
 
         # light path（low / 降级仓）：建 task + 合成轻量 PartialPlan（不起容器，省资源）
         if light_repos:
@@ -168,6 +183,22 @@ class ResearchDispatchAdapter:
         except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断调度
             logger.warning(
                 "repo_research_started_emit_failed",
+                session_id=str(session.id),
+                task_id=str(task.id),
+            )
+
+    async def _emit_failed(self, session: PlanSession, task: Any, reason: str) -> None:
+        """emit repo.research.failed（payload {repo_id, task_id, error}），best-effort。"""
+        payload = {
+            "repo_id": str(task.repository_id),
+            "task_id": str(task.id),
+            "error": reason,
+        }
+        try:
+            await self.session_service._emit_event("repo.research.failed", session, payload)
+        except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断调度
+            logger.warning(
+                "repo_research_failed_emit_failed",
                 session_id=str(session.id),
                 task_id=str(task.id),
             )
