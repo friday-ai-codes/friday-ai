@@ -15,6 +15,7 @@ from services.plan_orchestration.protocols import (
     SkeletonResearch,
     SkeletonRouter,
 )
+from services.plan_orchestration.repo_router_adapter import RepoRouterV2Adapter
 
 __all__ = [
     "PlanOrchestrationEngine",
@@ -26,4 +27,5 @@ __all__ = [
     "SkeletonRecall",
     "SkeletonResearch",
     "SkeletonMerge",
+    "RepoRouterV2Adapter",
 ]
