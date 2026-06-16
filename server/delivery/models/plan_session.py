@@ -18,6 +18,7 @@ TechnicalPlan 同 app）。状态机按 DOMAIN §14 转移表推进：
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 
@@ -69,8 +70,23 @@ class PlanSession(models.Model):
 
     # 中间产物（拆分结果：前后端/业务线/模块）
     decomposition = models.JSONField(default=dict)
+    # 路由候选仓结果（Phase 38-02 写入：候选 + confidence + router_version + auto_selected）
+    routing = models.JSONField(default=dict, blank=True)
+    # 召回上下文（Phase 38-03 写入精简命中列表 [{entity_id, kind, title, score}]；
+    # default=dict 仅占位与既有 JSON 字段范式一致，写入时按 list 覆盖）
+    recall_context = models.JSONField(default=dict, blank=True)
     # 不可恢复错误结构化落地
     error = models.JSONField(default=dict, blank=True)
+
+    # 发起编排的用户（召回 stage 作权限 actor，为空走 fail-closed 空召回）；
+    # null=True 满足系统/无交互用户场景，related_name="+" 不建反向访问器避免污染 user 模型
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
