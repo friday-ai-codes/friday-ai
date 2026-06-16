@@ -37,6 +37,13 @@ from delivery.models.sync_state import (
     SyncStatus,
     WorkItemSyncState,
 )
+from delivery.models.technical_plan import (
+    PlanExternalRef,
+    PlanVersion,
+    TechnicalPlan,
+    TechnicalPlanOrigin,
+    TechnicalPlanStatus,
+)
 from delivery.models.work_item import WorkItem, WorkItemOrigin
 
 __all__ = [
@@ -62,6 +69,11 @@ __all__ = [
     "PlanSession",
     "PlanSessionEntrypoint",
     "PlanSessionStatus",
+    "TechnicalPlan",
+    "TechnicalPlanOrigin",
+    "TechnicalPlanStatus",
+    "PlanVersion",
+    "PlanExternalRef",
     "ReleaseBatch",
     "ReleaseRecord",
     "ReleaseArtifact",

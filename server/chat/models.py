@@ -224,6 +224,15 @@ class CodingPlan(models.Model):
             "selected_by_user_final=True 的仓库（implementation）。"
         ),
     )
+    # canonical 软链（DOMAIN §5.2，Phase 37）：存 delivery.TechnicalPlan.id；
+    # **非跨 app 硬 FK**（避免 chat→delivery 耦合 + 循环依赖）——读写经 TechnicalPlanService。
+    canonical_plan_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="canonical 方案软链",
+        help_text="canonical delivery.TechnicalPlan.id 软链，非 FK（DOMAIN §5.2）",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
