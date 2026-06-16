@@ -128,7 +128,13 @@ Plans:
   3. 仓库被重新索引（commit 变化）使关联 `PartialPlan.valid=False` 置 `stale`，融合前需重跑
   4. 调研全程产出 `repo.research.started` / `repo.research.completed` / `repo.research.failed` trace 事件（§15）
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 39-01-PLAN.md — RepoResearchTask + PartialPlan 模型（delivery app §6/§7）+ migration 0013 + curated re-export + 模型守护
+- [ ] 39-02-PLAN.md — ResearchService 唯一写入入口（状态/单仓重试隔离 RESEARCH-02/重索引 stale RESEARCH-03）+ INV-6 grep 守护
+- [ ] 39-03-PLAN.md — ResearchDispatchAdapter filter_then_container fan-out（high/medium 起隔离容器、low 走轻量 partial，RESEARCH-01）+ engine._research 改造 + started 事件（mock dispatch 单测）
+- [ ] 39-04-PLAN.md — barrier 聚合 research_complete + 容器回调结果解析为 PartialPlan + completed/failed 事件 + 重索引 stale best-effort 钩子（mock callback 单测；真实容器 E2E deferred）
 
 ### Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖
 
@@ -185,7 +191,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 | 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 38. 路由 + 召回接入 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
-| 39. 并行调研子 agent | v0.7.0 | 0/0 | Not started | - |
+| 39. 并行调研子 agent | v0.7.0 | 0/4 | Not started | - |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 0/0 | Not started | - |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
 | 42. Chat 入口薄封装 | v0.7.0 | 0/0 | Not started | - |
