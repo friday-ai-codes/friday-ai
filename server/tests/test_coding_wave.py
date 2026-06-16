@@ -169,8 +169,18 @@ async def _make_plan_version() -> PlanVersion:
     return await PlanVersion.objects.acreate(plan=plan, version=1, content={})
 
 
-async def _settle_session(plan_version: PlanVersion, repo_id: str, *, ok: bool) -> None:
-    """把某仓 RepoCodingTask 关联的 SubAgentSession 置终态（模拟容器完成）。"""
+async def _settle_session(
+    plan_version: PlanVersion,
+    repo_id: str,
+    *,
+    ok: bool,
+    modified_files: list[str] | None = None,
+) -> None:
+    """把某仓 RepoCodingTask 关联的 SubAgentSession 置终态（模拟容器完成）。
+
+    ``modified_files`` 默认 ``["f.py"]``（既有 wave 测试零回归）；happy-path 产物传递测试
+    传入 openapi 契约文件名（如 ``["api/openapi.yaml"]``）以驱动 Plan 01 提取归类。
+    """
     task = await RepoCodingTask.objects.aget(plan_version=plan_version, repository_id=repo_id)
     sess = await SubAgentSession.objects.aget(id=task.subagent_session_id)
     sess.status = SubAgentSession.Status.COMPLETED if ok else SubAgentSession.Status.ERROR
@@ -180,7 +190,7 @@ async def _settle_session(plan_version: PlanVersion, repo_id: str, *, ok: bool) 
         await TaskResult.objects.acreate(
             session=sess,
             pr_url=f"https://mr/{repo_id}",
-            modified_files=["f.py"],
+            modified_files=modified_files if modified_files is not None else ["f.py"],
             raw_output={},
         )
 
@@ -403,3 +413,67 @@ async def test_dependency_cycle_fails_fast(_dispatched: list[Any]) -> None:
     assert result.next_handle == "error"
     assert _dispatched_repo_ids(_dispatched) == set()
     assert await RepoCodingTask.objects.acount() == 0
+
+
+def _wave_task(captured: list[Any], repo_id: str) -> Any:
+    """取捕获的某仓 DispatchTask（断言其 prompt / metadata）。"""
+    return next(t for t in captured if t.metadata["repository_id"] == repo_id)
+
+
+async def test_artifact_passthrough(_dispatched: list[Any]) -> None:
+    """端到端产物传递（SC-3）：wave1 后端仓 done（TaskResult 含 openapi 契约）→ aadvance
+    回填触发提取落 produced_artifacts → wave2 前端仓 dispatch 的 prompt 含上游契约文件名。
+    """
+    pv = await _make_plan_version()
+    repo_backend = await _make_repo("ap-backend")
+    repo_frontend = await _make_repo("ap-frontend")
+    id_be, id_fe = str(repo_backend.id), str(repo_frontend.id)
+    openapi_file = "api/openapi.yaml"
+
+    plan = {
+        "title": "artifact-passthrough",
+        "branch_name": "feat/ap",
+        "global_context": "跨仓契约传递",
+        "plan_version_id": str(pv.id),
+        "execution_plan": [
+            {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "建契约"},
+            {
+                "id": "t2",
+                "repository_id": id_fe,
+                "dependencies": ["t1"],  # 跨仓边：前端依赖后端
+                "name": "前端",
+                "coding_instruction": "消费契约",
+            },
+        ],
+    }
+    node = _make_node()
+    ne = await _make_node_execution()
+    ctx = _make_context(plan, ne)
+
+    # ── 首发：仅 dispatch wave0(后端仓) ──
+    r1: NodeResult = await node.execute(ctx)
+    assert r1.status == "waiting_event"
+    assert _dispatched_repo_ids(_dispatched) == {id_be}
+
+    # ── 后端容器完成（TaskResult.modified_files 含 openapi 契约）→ resume →
+    #     回填 done 触发提取落 produced_artifacts → dispatch wave1(前端仓) ──
+    await _settle_session(pv, id_be, ok=True, modified_files=[openapi_file, "src/app.py"])
+    _dispatched.clear()
+    _resume(ne, r1.output)
+    r2: NodeResult = await node.execute(ctx)
+
+    assert r2.status == "waiting_event"
+    assert _dispatched_repo_ids(_dispatched) == {id_fe}  # 仅 wave1 前端仓
+
+    # 提取落库正确：后端 task.produced_artifacts["openapi"] 含契约文件。
+    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    assert task_be.status == RepoCodingTaskStatus.DONE
+    assert task_be.produced_artifacts.get("available") is True
+    assert openapi_file in task_be.produced_artifacts["openapi"]
+
+    # 产物传递正确：前端 DispatchTask.prompt 含「上游产物」段 + 上游契约文件名。
+    fe_task = _wave_task(_dispatched, id_fe)
+    assert "上游产物" in fe_task.prompt
+    assert openapi_file in fe_task.prompt
+    # 仅传递白名单字段（路径），绝不内联 raw_output 正文（T-45-10）。
+    assert "raw_output" not in fe_task.prompt
