@@ -222,9 +222,6 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
       模拟容器完成回调 → barrier→merging；
       节点 resume（重执行）→ done + 产出 MergedPlan（plan_version_id 非空）。
     """
-    from workflows.nodes.ai.plan_research import AIPlanResearchNode
-    from workflows.nodes.base import ExecutionContext as _ExecCtx
-
     from projects.models import Project
     from subagent.models import SubAgentSession
     from workflows.models import (
@@ -233,6 +230,8 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
         WorkflowExecution,
         WorkflowNode,
     )
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+    from workflows.nodes.base import ExecutionContext as _ExecCtx
 
     repo_a = await _make_repo("repoA")
     repo_b = await _make_repo("repoB")
