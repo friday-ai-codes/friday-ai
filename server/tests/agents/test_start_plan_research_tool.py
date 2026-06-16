@@ -212,6 +212,39 @@ def test_start_plan_research_registered() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("blank", ["", "   ", "\n\t "])
+async def test_start_plan_research_blank_requirement_fail_closed(monkeypatch, blank) -> None:
+    """WR-02：空 / 纯空白 requirement_text → fail-closed（success=False），不建 session / 驱 engine
+    （与工作流节点 missing_requirement 对称）。"""
+    called = False
+
+    def _should_not_build(**kw):
+        nonlocal called
+        called = True
+        raise AssertionError("engine must not be built for blank requirement")
+
+    monkeypatch.setattr(
+        "services.plan_orchestration.build_orchestration_engine",
+        _should_not_build,
+    )
+
+    project, conv = await _make_project_and_conversation()
+    before = await PlanSession.objects.acount()
+
+    result = await start_plan_research(
+        requirement_text=blank,
+        space_id=str(project.id),
+        conversation_id=str(conv.id),
+    )
+
+    assert result.success is False
+    assert result.error
+    assert called is False
+    # 未建任何 PlanSession（薄守护，零编排）
+    assert await PlanSession.objects.acount() == before
+
+
+@pytest.mark.asyncio
 async def test_start_plan_research_inv2_null_work_item(monkeypatch) -> None:
     """SC-3 / INV-2：chat 自然语言需求（不传 work_item）→ session + canonical TechnicalPlan
     的 work_item 均为 None，且 entrypoint=chat 显式可追溯。"""
