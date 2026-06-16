@@ -142,3 +142,22 @@ class RepoCodingTaskService:
             error={"reason": "upstream_failed", "upstream": upstream_ids},
             updated_at=timezone.now(),
         )
+
+    async def record_produced_artifacts(self, task: RepoCodingTask, artifacts: dict) -> None:
+        """produced_artifacts 写库唯一入口（ARTIFACT-01，INV-6，幂等覆盖写）。
+
+        提取发生在 ``mark_done`` **之后**（task 已 done），故**不加** status guard——
+        用无条件 ``filter(id=...).update()`` 覆盖写：重复写同产物等价 no-op（幂等），写库与
+        状态解耦（Pitfall 4：若误加 ``status=RUNNING`` guard，done 仓影响 0 行写不进）。
+        用 ``.objects.filter().update()`` 而非 ``task.produced_artifacts=...; task.save()``，
+        既被既有 INV-6 grep 守护正向覆盖，又避开字段级旁路写盲区（D-14）。
+        """
+        await self._record_produced_artifacts_sync(task, artifacts)
+
+    @sync_to_async
+    def _record_produced_artifacts_sync(self, task: RepoCodingTask, artifacts: dict) -> int:
+        # 无 status guard（提取在 mark_done 后，task 已 done）；覆盖式幂等。
+        return RepoCodingTask.objects.filter(id=task.id).update(
+            produced_artifacts=artifacts,
+            updated_at=timezone.now(),
+        )

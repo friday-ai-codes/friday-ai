@@ -39,6 +39,11 @@ _RE_ORM_WRITE = re.compile(
 _RE_INSTANTIATE = re.compile(r"\bRepoCodingTask\s*\(")
 # C：链式实例化 + save
 _RE_INSTANCE_SAVE = re.compile(r"\bRepoCodingTask\([^)]*\)\.save\(")
+# D-14：字段级旁路写守护——实例属性赋值 `xxx.produced_artifacts = ...`（排除 `==` 比较）。
+#   service 的 `.objects.update(produced_artifacts=...)` 是 kwarg（无前导 `.`）不命中本正则；
+#   模型层 `produced_artifacts = models.JSONField(...)` 同样无前导 `.` 不命中——故两处天然安全。
+#   命中即「实例字段旁路写」（如 `task.produced_artifacts = {...}; task.save()`），必拦。
+_RE_FIELD_WRITE = re.compile(r"\.produced_artifacts\s*=(?!=)")
 
 
 def _iter_py_files() -> list[Path]:
@@ -86,6 +91,32 @@ def test_inv6_no_bypass_repo_coding_task_write() -> None:
     assert not violations, (
         "INV-6 违反：发现旁路 RepoCodingTask 写表（落库只允许经 "
         f"RepoCodingTaskService / {_ALLOWED_WRITER}）：\n" + "\n".join(violations)
+    )
+
+
+def test_inv6_no_bypass_produced_artifacts_field_write() -> None:
+    """INV-6 字段级守护（D-14）：``.produced_artifacts =`` 实例旁路写只允许在 service / models。
+
+    现有 grep 守护覆盖 ``.objects.<write>`` / 实例化 / 链式 save，但拦不住
+    ``some_task.produced_artifacts = {...}; some_task.save()`` 实例字段赋值旁路（Pitfall 6）。
+    本守护补盲区：除唯一 writer（service）与 ``delivery/models/``（模型字段定义）外，源码出现
+    带前导 ``.`` 的 ``produced_artifacts`` 赋值即 fail（``record_produced_artifacts`` 走
+    ``.objects.filter().update(produced_artifacts=...)`` kwarg，不触本正则）。
+    """
+    violations: list[str] = []
+
+    for path in _iter_py_files():
+        rel = path.relative_to(SERVER_DIR).as_posix()
+        if not _is_scanned(rel):
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if _RE_FIELD_WRITE.search(line):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not violations, (
+        "INV-6 违反（D-14 字段级）：发现 produced_artifacts 实例旁路写（落库只允许经 "
+        f"RepoCodingTaskService.record_produced_artifacts / {_ALLOWED_WRITER}）：\n"
+        + "\n".join(violations)
     )
 
 
