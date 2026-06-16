@@ -29,6 +29,7 @@ from delivery.services.ingest_parsing import (
 )
 from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.release_service import ReleaseService
+from delivery.services.repo_coding_task_service import RepoCodingTaskService
 from delivery.services.research_service import ResearchService
 from delivery.services.technical_plan_service import (
     PlanContentInvalid,
@@ -63,6 +64,7 @@ __all__ = [
     "StepResult",
     "PlanSessionService",
     "ResearchService",
+    "RepoCodingTaskService",
     "ClarificationService",
     "TechnicalPlanService",
     "PlanRef",
