@@ -398,3 +398,180 @@ def _make_async_return(value: Any) -> Any:
         return value
 
     return _coro
+
+
+# ---------------------------------------------------------------------------
+# Task 2 集成：_finalize_and_notify 接线（≥2 守门 + 整段 fail-soft）
+# ---------------------------------------------------------------------------
+
+
+def _finalize_context() -> Any:
+    """构造收尾用 ExecutionContext（node_execution=None → emit_sub_step / 持久化 noop）。"""
+    from workflows.nodes.base import ExecutionContext
+
+    return ExecutionContext(
+        execution_id="exec-pr02",
+        node_id="node-pr02",
+        node_config={"chat_id": ""},
+        input_data={},
+        workflow_context={},
+        previous_outputs={},
+        node_execution=None,  # type: ignore[arg-type]
+    )
+
+
+async def _make_repo_row(name: str) -> Any:
+    from repositories.models import Repository
+
+    return await Repository.objects.acreate(
+        name=f"{name}-{uuid.uuid4().hex[:6]}",
+        git_url=f"https://github.com/test/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )
+
+
+def _patch_create_mr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """patch _create_mr_for_repo → 返回带 description 的成功 mr dict（不触 git）。"""
+    from workflows.nodes.ai.coding import AICodingNode
+
+    async def _fake_mr(self: Any, *, repository: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "mr_url": f"https://x/{repository.name}/pull/1",
+            "mr_id": "1",
+            "has_conflicts": False,
+            "description": "原始描述",
+        }
+
+    monkeypatch.setattr(AICodingNode, "_create_mr_for_repo", _fake_mr)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_finalize_two_repos_triggers_cross_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    """≥2 成功仓 → 调 add_cross_references（带 plan_version_id），收尾 completed。"""
+    import structlog
+
+    from workflows.nodes.ai.coding import AICodingNode
+    from workflows.services import pr_cross_reference
+
+    _patch_create_mr(monkeypatch)
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_add(successful_mrs: list[dict[str, Any]], *, plan_version_id: Any) -> dict[str, bool]:
+        captured["mrs"] = successful_mrs
+        captured["plan_version_id"] = plan_version_id
+        return {}
+
+    monkeypatch.setattr(pr_cross_reference, "add_cross_references", _fake_add)
+
+    repo_a = await _make_repo_row("a")
+    repo_b = await _make_repo_row("b")
+    succeeded = [
+        {"repository_id": str(repo_a.id), "repository_name": repo_a.name, "output": {}},
+        {"repository_id": str(repo_b.id), "repository_name": repo_b.name, "output": {}},
+    ]
+
+    node = AICodingNode()
+    result = await node._finalize_and_notify(
+        context=_finalize_context(),
+        succeeded=succeeded,
+        failed_repos=[],
+        completed_session_ids=[],
+        branch_name="feat/x",
+        base_branch="main",
+        plan_title="方案",
+        plan_data={"plan_version_id": "pv-xyz"},
+        log=structlog.get_logger(),
+    )
+
+    assert result.status == "completed"
+    assert "mrs" in captured
+    assert len(captured["mrs"]) == 2
+    assert captured["plan_version_id"] == "pv-xyz"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_finalize_single_repo_no_cross_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单仓成功 → 不调 add_cross_references，收尾 completed（零回归 D-14）。"""
+    import structlog
+
+    from workflows.nodes.ai.coding import AICodingNode
+    from workflows.services import pr_cross_reference
+
+    _patch_create_mr(monkeypatch)
+
+    called = {"hit": False}
+
+    async def _fake_add(*args: Any, **kwargs: Any) -> dict[str, bool]:
+        called["hit"] = True
+        return {}
+
+    monkeypatch.setattr(pr_cross_reference, "add_cross_references", _fake_add)
+
+    repo_a = await _make_repo_row("solo")
+    succeeded = [
+        {"repository_id": str(repo_a.id), "repository_name": repo_a.name, "output": {}},
+    ]
+
+    node = AICodingNode()
+    result = await node._finalize_and_notify(
+        context=_finalize_context(),
+        succeeded=succeeded,
+        failed_repos=[],
+        completed_session_ids=[],
+        branch_name="feat/x",
+        base_branch="main",
+        plan_title="方案",
+        plan_data={"plan_version_id": "pv-xyz"},
+        log=structlog.get_logger(),
+    )
+
+    assert result.status == "completed"
+    assert called["hit"] is False
+    assert len(result.output["coding_result"]["merge_requests"]) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_finalize_cross_ref_failure_still_completed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """add_cross_references 抛错 → 收尾仍 completed、mr_results 仍在 output（D-15）。"""
+    import structlog
+
+    from workflows.nodes.ai.coding import AICodingNode
+    from workflows.services import pr_cross_reference
+
+    _patch_create_mr(monkeypatch)
+
+    async def _boom(*args: Any, **kwargs: Any) -> dict[str, bool]:
+        raise RuntimeError("cross-ref boom")
+
+    monkeypatch.setattr(pr_cross_reference, "add_cross_references", _boom)
+
+    repo_a = await _make_repo_row("a")
+    repo_b = await _make_repo_row("b")
+    succeeded = [
+        {"repository_id": str(repo_a.id), "repository_name": repo_a.name, "output": {}},
+        {"repository_id": str(repo_b.id), "repository_name": repo_b.name, "output": {}},
+    ]
+
+    node = AICodingNode()
+    result = await node._finalize_and_notify(
+        context=_finalize_context(),
+        succeeded=succeeded,
+        failed_repos=[],
+        completed_session_ids=[],
+        branch_name="feat/x",
+        base_branch="main",
+        plan_title="方案",
+        plan_data={"plan_version_id": "pv-xyz"},
+        log=structlog.get_logger(),
+    )
+
+    assert result.status == "completed"
+    assert len(result.output["coding_result"]["merge_requests"]) == 2
