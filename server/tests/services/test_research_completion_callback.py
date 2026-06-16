@@ -8,6 +8,7 @@ repo.research.failed / 所有终态触发 research_complete / 非 plan_research 
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,7 +30,11 @@ from subagent.models import SubAgentSession
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-async def _setup(last_output_extra: dict | None = None, status=PlanSessionStatus.RESEARCHING):
+async def _setup(
+    last_output_extra: dict | None = None,
+    status=PlanSessionStatus.RESEARCHING,
+    entrypoint=PlanSessionEntrypoint.CHAT,
+):
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}",
         git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -38,7 +43,7 @@ async def _setup(last_output_extra: dict | None = None, status=PlanSessionStatus
         index_status="indexed",
     )
     plan_session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=status
+        entrypoint=entrypoint, status=status
     )
     task = await RepoResearchTask.objects.acreate(
         session=plan_session, repository=repo, status=RepoResearchTaskStatus.RUNNING
@@ -67,6 +72,7 @@ def _log() -> Any:
     log = AsyncMock()
     log.info = lambda *a, **kw: None
     log.debug = lambda *a, **kw: None
+    log.warning = lambda *a, **kw: None
     return log
 
 
@@ -265,3 +271,283 @@ async def test_failed_callback_marks_task_failed() -> None:
     assert len(failed) == 1
     await plan_session.arefresh_from_db()
     assert plan_session.status == PlanSessionStatus.MERGING
+
+
+# === RESUME-01（43-03）：chat 入口续驱 + barrier 回灌闭环 / 回归 / 幂等 / fail-soft / 失败路径 ===
+
+
+async def _flush_pending() -> None:
+    """flush fire-and-forget create_task（含嵌套调度）直到无 pending —— 在断言前等续驱完成。"""
+    for _ in range(20):
+        pending = [
+            t
+            for t in asyncio.all_tasks()
+            if t is not asyncio.current_task() and not t.done()
+        ]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+def _passing_engine() -> Any:
+    """构造真实 engine，IO 边界 mock：research.dispatch no-op + merge validator 通过（→done）。
+
+    research.dispatch mock 成 no-op：fire-and-forget 续驱可能在 researching（任务已终态但
+    主流程 amaybe_complete_research 尚未把 session 推到 merging）的窗口运行，此时 engine 会
+    经 _research 再走一次 amaybe_complete_research（幂等去重）推进——等价生产真实 adapter。
+    """
+    from services.plan_orchestration import PlanOrchestrationEngine
+
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value=None)
+    merge = AsyncMock()
+    merge.merge = AsyncMock(return_value={"validation_status": "passed"})
+    return PlanOrchestrationEngine(research=research, merge=merge)
+
+
+def _failing_engine() -> Any:
+    """构造真实 engine，research.dispatch no-op + merge 限次回退耗尽（merging→failed 终态）。"""
+    from services.plan_orchestration import PlanOrchestrationEngine
+
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value=None)
+    merge = AsyncMock()
+    merge.merge = AsyncMock(
+        return_value={"validation_status": "failed", "attempt": 1, "report": {}}
+    )
+    return PlanOrchestrationEngine(research=research, merge=merge)
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_drives_to_done_and_notifies_barrier() -> None:
+    """chat 入口唯一调研完成 → 续驱 PlanSession 到 done + barrier task_completed 回灌（D-2 a/b）。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {
+        "result_type": "text",
+        "output": {
+            "research_summary": "改鉴权",
+            "candidate_files": ["auth.py"],
+            "proposed_changes": [{"file": "auth.py"}],
+        },
+    }
+    from subagent.api.callbacks import _handle_completed
+
+    barrier_mock = MagicMock()
+    barrier_mock.task_completed = AsyncMock(return_value=True)
+
+    with (
+        _PATCHES[0],
+        _PATCHES[1],  # 放开 _schedule_agent_session_resume —— 让真实分支委派跑
+        patch(
+            "services.plan_orchestration.build_orchestration_engine",
+            return_value=_passing_engine(),
+        ),
+        patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    await plan_session.arefresh_from_db()
+    assert plan_session.status == PlanSessionStatus.DONE
+    # barrier 回灌：task_id 用 str(plan_session.id)（Pitfall 3），success=True
+    barrier_mock.task_completed.assert_awaited_once()
+    call = barrier_mock.task_completed.await_args
+    assert call.args[0] == str(plan_session.id)
+    assert call.args[1]["task_id"] == str(plan_session.id)
+    assert call.args[1]["task_type"] == "plan_research"
+    assert call.args[1]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_workflow_entry_session_skips_chat_resume() -> None:
+    """回归守护：工作流入口（有 node_execution）不走 chat 续驱，仍由 _schedule_workflow_resume 处理。"""
+    from projects.models import Project
+    from workflows.models import (
+        NodeExecution,
+        Workflow,
+        WorkflowExecution,
+        WorkflowNode,
+    )
+
+    repo = await Repository.objects.acreate(
+        name=f"r-{uuid.uuid4().hex[:6]}",
+        git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )
+    plan_session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW, status=PlanSessionStatus.RESEARCHING
+    )
+    task = await RepoResearchTask.objects.acreate(
+        session=plan_session, repository=repo, status=RepoResearchTaskStatus.RUNNING
+    )
+    agent = await AgentSession.objects.acreate(session_id=f"agent-{uuid.uuid4().hex[:8]}")
+    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    workflow = await Workflow.objects.acreate(name="编排工作流", project=project)
+    wf_node = await WorkflowNode.objects.acreate(
+        workflow=workflow, node_type="ai_plan_research", name="AI 方案编排"
+    )
+    wf_exec = await WorkflowExecution.objects.acreate(
+        workflow=workflow, project=project, trigger_type="manual"
+    )
+    node_exec = await NodeExecution.objects.acreate(
+        workflow_execution=wf_exec, node=wf_node, status="running"
+    )
+    sub = await SubAgentSession.objects.acreate(
+        session_id=f"research-{uuid.uuid4().hex[:8]}",
+        main_session=agent,
+        repo_url=repo.git_url,
+        task_type=SubAgentSession.TaskType.PLAN,
+        status=SubAgentSession.Status.RUNNING,
+        node_execution=node_exec,
+        last_output={
+            "source": "plan_research",
+            "plan_session_id": str(plan_session.id),
+            "research_task_id": str(task.id),
+            "repository_id": str(repo.id),
+        },
+    )
+    payload = {"result_type": "text", "output": {"research_summary": "x"}}
+    from subagent.api.callbacks import _handle_completed
+
+    wf_spy = MagicMock()
+    chat_spy = MagicMock()
+    with (
+        _PATCHES[0],
+        patch("subagent.api.callbacks._schedule_workflow_resume", new=wf_spy),
+        patch("subagent.api.callbacks._schedule_chat_plan_resume", new=chat_spy),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    # 工作流入口经 node_execution 顶部短路 → 绝不走 chat 续驱，仍由 workflow resume 接管
+    chat_spy.assert_not_called()
+    wf_spy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_guards_non_chat_entrypoint() -> None:
+    """T-43-TAMPER：守门用服务端权威字段 entrypoint —— 非 chat（workflow）入口绝不续驱。"""
+    repo, plan_session, task, sub = await _setup(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW
+    )
+    payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
+    from subagent.api.callbacks import _handle_completed
+
+    barrier_mock = MagicMock()
+    barrier_mock.task_completed = AsyncMock(return_value=True)
+    engine_spy = MagicMock()
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        patch("services.plan_orchestration.build_orchestration_engine", new=engine_spy),
+        patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    # entrypoint 守门命中 → 绝不构建 engine、绝不 notify barrier（不放大信任面）
+    engine_spy.assert_not_called()
+    barrier_mock.task_completed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_idempotent_when_research_in_flight() -> None:
+    """幂等：多仓其一仍在途 → 不续驱、不 notify（aall_research_tasks_terminal 短路）。"""
+    repo, plan_session, task, sub = await _setup()
+    repo2 = await Repository.objects.acreate(
+        name=f"r-{uuid.uuid4().hex[:6]}",
+        git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )
+    await RepoResearchTask.objects.acreate(
+        session=plan_session, repository=repo2, status=RepoResearchTaskStatus.RUNNING
+    )
+    payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
+    from subagent.api.callbacks import _handle_completed
+
+    barrier_mock = MagicMock()
+    barrier_mock.task_completed = AsyncMock(return_value=True)
+    engine_spy = MagicMock()
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        patch("services.plan_orchestration.build_orchestration_engine", new=engine_spy),
+        patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    # 仍有在途调研 → 短路，不续驱、不 notify；session 留在 researching 等下次回调
+    engine_spy.assert_not_called()
+    barrier_mock.task_completed.assert_not_awaited()
+    await plan_session.arefresh_from_db()
+    assert plan_session.status == PlanSessionStatus.RESEARCHING
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_swallows_internal_error_returns_200() -> None:
+    """fail-soft：续驱内部抛异常 → swallow，_handle_completed 仍返 200。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
+    from subagent.api.callbacks import _handle_completed
+
+    async def _boom_drive(*a, **kw):
+        raise RuntimeError("drive failure")
+
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        patch(
+            "services.plan_orchestration.build_orchestration_engine",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "services.plan_orchestration.adrive_plan_session_to_pause_or_terminal",
+            new=_boom_drive,
+        ),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    # 续驱协程异常被 _resume 内 try/except swallow，回调主流程不受影响
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_failed_research_notifies_barrier_success_false() -> None:
+    """失败路径：plan_research 容器 failed → 续驱到 failed 终态 + barrier success=False 不卡死。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"error": "容器超时"}
+    from subagent.api.callbacks import _handle_failed
+
+    barrier_mock = MagicMock()
+    barrier_mock.task_completed = AsyncMock(return_value=True)
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        patch(
+            "services.plan_orchestration.build_orchestration_engine",
+            return_value=_failing_engine(),
+        ),
+        patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
+    ):
+        resp = await _handle_failed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    # 容器失败 → 调研终态（FAILED）→ 续驱仍触发 barrier 回灌（不卡在 researching/merging）
+    barrier_mock.task_completed.assert_awaited_once()
+    call = barrier_mock.task_completed.await_args
+    assert call.args[0] == str(plan_session.id)
+    assert call.args[1]["success"] is False
+    await plan_session.arefresh_from_db()
+    assert plan_session.status == PlanSessionStatus.FAILED
