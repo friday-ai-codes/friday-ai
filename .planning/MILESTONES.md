@@ -1,5 +1,26 @@
 # Milestones
 
+## v0.7.0 v0.7.0 (Shipped: 2026-06-16)
+
+**Phases completed:** 7 phases, 19 plans, 12 tasks
+
+**Key accomplishments:**
+
+- 1. [Rule 2/3 - Missing wiring surfaced by fail-loud] 补登记 send_plan_card
+- 1. [Rule 1 - Bug] _emit_event 日志 kwarg 与 structlog 保留键冲突
+- 1. [Rule 3 - Blocking] 模型导入校验改用 `manage.py shell -c`
+- 1. [Rule 1 - Bug] INV-6 guard 名字撞车豁免
+- 1. [Rule 1 - 文件定位] eager 投影接 coding_tools.py（非计划标注的 chat_tools.py）
+- 1. [Rule 3 - Blocking] engine.py 既有 import 排序告警
+- 1. [Rule 3 - Blocking] RECALL_ENTITY_KINDS 未在 package __init__ 导出
+- 1. [Rule 1 - 契约变更] 更新既有 engine 测试 merge mock
+- PlanSessionEvent append-only 模型把编排全程 §15 trace 事件持久化为统一信封行，event_taxonomy 稳定常量收口全 emit 点（消除 38/39/40 字符串漂移），_emit_event 升级为 best-effort 持久化。
+- Clarification 模型 + ClarificationService（INV-6）补齐 HITL 澄清回路：不清晰时建 pending 挂起 + emit clarification.asked，回答后仅 affected_partials 经 mark_stale 重跑、其余复用；engine._clarify 接真实可注入 ClarifyAdapter（needs-clarification policy）。
+- AIPlanResearchNode 把整条编排端到端串起：从需求建 PlanSession(entrypoint=workflow) 注入真实 adapters 驱动 engine.advance，经 拆分→路由→召回→澄清→并行调研→融合 产出带跨仓依赖的 canonical MergedPlan；clarifying/researching 处复用既有 waiting_event 挂起恢复。
+- Chat 经 `start_plan_research` @tool 复用与工作流入口完全相同的 `PlanOrchestrationEngine` 发起多仓方案编排——两入口共用 `start_orchestration` + `build_orchestration_engine` 薄 helper，验证入口无关一致性（结构等价 MergedPlan + 同序 §15 事件），并以 `work_item=None` + `entrypoint=chat` 落地 INV-2。
+
+---
+
 ## v0.6.0 领域脊柱 + 知识图谱补全 (Shipped: 2026-06-15)
 
 **Phases completed:** 9 phases, 25 plans, 50 tasks
