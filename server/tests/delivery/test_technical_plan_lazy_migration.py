@@ -105,6 +105,43 @@ async def test_lazy_mcp_builds_canonical_and_backfills() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_lazy_mcp_preserves_coding_instruction_and_files() -> None:
+    """WR-02：mcp ``plan_body.execution_plan`` 已含 coding_instruction/files/dependencies
+    时，canonical content 保真复用（DOMAIN §5.3 忠实取材），不被无条件丢弃。"""
+    svc = TechnicalPlanService()
+    mcp_plan = await _make_mcp_plan(
+        plan_body={
+            "execution_plan": [
+                {
+                    "id": "task-1",
+                    "name": "实现 A",
+                    "repository_id": "r1",
+                    "repository_name": "repo-a",
+                    "branch_strategy": "feature",
+                    "coding_instruction": "在 service 层加方法并补测试",
+                    "files": [
+                        {"path": "a.py", "action": "modify"},
+                        {"file_path": "b.py", "change_type": "add"},
+                    ],
+                    "dependencies": ["task-0"],
+                }
+            ]
+        }
+    )
+    canonical = await svc.resolve(PlanRef.for_mcp(mcp_plan.id))
+    v1 = await PlanVersion.objects.aget(id=canonical.current_version_id)
+    task = v1.content["execution_plan"][0]
+
+    assert task["coding_instruction"] == "在 service 层加方法并补测试"
+    assert task["files"] == [
+        {"path": "a.py", "action": "modify"},
+        {"path": "b.py", "action": "create"},
+    ]
+    assert task["dependencies"] == ["task-0"]
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_lazy_workflow_link_then_resolve_hit_else_not_found() -> None:
     svc = TechnicalPlanService()
     ref = PlanRef.for_workflow(uuid.uuid4(), "node-1")
