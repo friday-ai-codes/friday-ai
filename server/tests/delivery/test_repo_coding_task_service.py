@@ -145,6 +145,39 @@ async def test_mark_blocked_guard_running() -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_produced_artifacts() -> None:
+    """done task 写 produced_artifacts 成功（aget 重读相等）；重复写同产物幂等（值不变）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+    await svc.mark_running(task, None)
+    await svc.mark_done(task)
+
+    artifacts = {
+        "repository_id": rid,
+        "repository_name": "backend",
+        "available": True,
+        "branch": "feat/x",
+        "modified_files": ["api/openapi.yaml"],
+        "openapi": ["api/openapi.yaml"],
+        "diff_summary": {"files_changed": 1},
+    }
+    # done 状态（非 RUNNING）也能写入——无 status guard。
+    await svc.record_produced_artifacts(task, artifacts)
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.status == RepoCodingTaskStatus.DONE
+    assert reread.produced_artifacts == artifacts
+
+    # 重复写同产物 → 覆盖式幂等，值不变。
+    await svc.record_produced_artifacts(task, artifacts)
+    reread2 = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread2.produced_artifacts == artifacts
+
+
+@pytest.mark.asyncio
 async def test_mark_failed_wraps() -> None:
     """mark_failed(task, "boom") → error={"message":"boom"}（非 dict 包装）。"""
     plan_version = await _make_plan_version()
