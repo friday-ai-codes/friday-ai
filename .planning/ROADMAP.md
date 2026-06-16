@@ -114,9 +114,16 @@ Plans:
   3. 端到端：构造跨仓依赖方案，断言 wave2 容器 prompt / 上下文含 wave1 产出的契约（产物传递正确）
 
 **Plans:** 3 plans
+**Wave 1**
 
 - [ ] 45-01-PLAN.md — ARTIFACT-01：artifact_extraction.py 纯函数 + record_produced_artifacts 单一写入 + wave_progression 提取钩子 + INV-6 字段级守护（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 45-02-PLAN.md — ARTIFACT-02：artifact_injection.py 收集/渲染 + coding.py dispatch 链 defaulted 透传注入 + 零回归断言（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 45-03-PLAN.md — ARTIFACT-01+02：端到端产物传递集成（wave1 done→提取→wave2 prompt 含契约）+ 幂等/fail-soft + phase gate（wave 3）
 
 ### Phase 46: 多仓融合 PR + 跨仓 PR 关联
