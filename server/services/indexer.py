@@ -3496,6 +3496,31 @@ async def _run_modifies_chunk_reconcile(repository_id: str) -> None:
         )
 
 
+async def _run_research_stale_invalidation(repository_id: str) -> None:
+    """RESEARCH-03：base 索引完成后把该仓关联 PartialPlan 置 stale（融合前需重跑）。
+
+    仓库重索引（commit 变化）使既有调研产物过期：经 ``ResearchService.invalidate_for_repo``
+    把该 repository 关联且 valid 的 PartialPlan 置 ``valid=False`` + 对应 RepoResearchTask
+    →stale。与 ``_run_modifies_chunk_reconcile`` 同款 best-effort fail-safe（整段
+    try/except，失败仅 warning，**绝不抛、绝不阻断索引 success 终态**，对齐 D-04/Phase 24/25）。
+    """
+    try:
+        from delivery.services import ResearchService
+
+        invalidated = await ResearchService().invalidate_for_repo(repository_id)
+        logger.info(
+            "research_stale_invalidation_completed",
+            repository_id=repository_id,
+            invalidated=invalidated,
+        )
+    except Exception as e:
+        logger.warning(
+            "research_stale_invalidation_failed",
+            repository_id=repository_id,
+            error=str(e),
+        )
+
+
 async def clone_and_index_repository(
     repository_id: str,
     *,
@@ -3835,6 +3860,10 @@ async def clone_and_index_repository(
             # best-effort，绝不阻断索引 success）。功能分支 overlay 不触发对账，
             # 与上方 base-only 钩子一致。
             await _run_modifies_chunk_reconcile(repository_id)
+            # RESEARCH-03（39-04）：base 重索引完成后把过期 PartialPlan 置 stale（融合前重跑）。
+            # 纯 DB 操作（不读克隆目录），放在对账钩子之后；best-effort，绝不阻断索引 success。
+            # 功能分支 overlay 不触发，与上方 base-only 钩子一致。
+            await _run_research_stale_invalidation(repository_id)
 
         return index_result
 
