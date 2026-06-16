@@ -1,5 +1,9 @@
 """delivery models package — curated re-export（DOMAIN §12.1–§12.4）。"""
 
+from delivery.models.architect_merge import (
+    ArchitectMerge,
+    ArchitectMergeStatus,
+)
 from delivery.models.comment_event import (
     ApprovalSemantic,
     CommentEventType,
@@ -77,6 +81,8 @@ __all__ = [
     "RepoResearchTask",
     "RepoResearchTaskStatus",
     "PartialPlan",
+    "ArchitectMerge",
+    "ArchitectMergeStatus",
     "TechnicalPlan",
     "TechnicalPlanOrigin",
     "TechnicalPlanStatus",
