@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: 方案编排
 status: in_progress
-last_updated: "2026-06-16T01:00:00.000Z"
-last_activity: 2026-06-16 — Phase 36 complete (passed + reviewed + fixed)
+last_updated: "2026-06-16T02:00:00.000Z"
+last_activity: 2026-06-16 — Phase 37 complete (verification passed)
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 14
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 28
 ---
 
 # Project State
@@ -20,21 +20,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession` 与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
-**Current focus:** Phase 37 — canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移
+**Current focus:** Phase 38 — 路由 + 召回接入（next）
 
 ## Current Position
 
-Phase: 37 (next) — Phase 36 complete
+Phase: 38 (next) — Phase 37 complete
 Plan: —
-Status: Phase 36 ✅ complete (verification passed, code review fixed: CR-01/WR-01/IN-01/IN-02)
-Last activity: 2026-06-16 — Phase 36 executed + verified + reviewed + fixed
+Status: Phase 37 ✅ complete (3/3 plans executed + verification passed: SC-1..4 all TRUE)
+Last activity: 2026-06-16 — Phase 37 executed + verified（canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/lazy 迁移）
 
 ## Milestone Overview (v0.7.0 — Phases 36–42)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 36 | 前置修复 + 编排引擎骨架 + PlanSession 状态机 | PF-01, PF-02, ORCH-01, ORCH-02 | ✅ Complete |
-| 37 | canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | PLAN-01, PLAN-02, PLAN-03 | Not started |
+| 37 | canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | PLAN-01, PLAN-02, PLAN-03 | ✅ Complete |
 | 38 | 路由 + 召回接入 | ROUTE-01, RECALL-01 | Not started |
 | 39 | 并行调研子 agent | RESEARCH-01, RESEARCH-02, RESEARCH-03 | Not started |
 | 40 | 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | MERGE-01, MERGE-02, MERGE-03 | Not started |
