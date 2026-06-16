@@ -64,6 +64,12 @@
   2. 立通用 resume 回流通路：`coding`/`plan_session` 容器在途完成后，callback 能驱动对应工作流节点 / 会话续跑——消化 v0.7 audit D-2（chat deep-research 自动回流缺口），happy-path 与 deep-research 路径均可闭环
   3. resume 通路对工作流入口与 chat 入口一致可用、不重复造两套（复用既有 `waiting_event` + callback resume 范式）
 
+**Plans:** 4 plans（3 waves）
+- [ ] 43-01-PLAN.md — PF-06：`_run_repo_coding` 注入对称 git token env + branch env + SSH→HTTPS 改写（wave 1）
+- [ ] 43-02-PLAN.md — RESUME-01：抽入口无关共享续驱 helper `adrive_plan_session_to_pause_or_terminal` + 单测（wave 1）
+- [ ] 43-03-PLAN.md — RESUME-01：新增 `_schedule_chat_plan_resume` + 接线 plan_research 分支 + 闭环集成测试（wave 2）
+- [ ] 43-04-PLAN.md — RESUME-01：节点/工具 advance 循环复用共享 helper + 工具文案如实更新（wave 3）
+
 ### Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度
 
 **Goal**: 立 `RepoCodingTask` 操作态模型（wave / `depends_on` DAG / `produced_artifacts` / `follow_openspec` 预留 SDD 扩展点），把 `MergedPlan.execution_plan` 的 `dependencies` 真正消费——按跨仓依赖拓扑分层成 wave（消化 PF-07：`dependencies` 不再仅 schema 声明、下游不再无条件全并行），wave N 全部 done 才触发 wave N+1。
@@ -119,7 +125,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 0/? | Not started | — |
+| 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 0/4 | Planned | — |
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 0/? | Not started | — |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 0/? | Not started | — |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
