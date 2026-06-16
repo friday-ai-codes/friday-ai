@@ -47,7 +47,7 @@
 
 - [x] **Phase 43: 编码 env 对齐 + 通用 resume 回流地基** - 修 PF-06（workflow 编码路径 branch strategy / git token env 对齐 chat）+ 立通用 `coding`/`plan_session` → 工作流/会话 resume 回流通路（消化 v0.7 audit D-2），为 callback 驱动多 wave 铺底 (completed 2026-06-16)
 - [x] **Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度** - 立 `RepoCodingTask`（wave/`depends_on` DAG/`produced_artifacts`/`follow_openspec` 预留）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）+ wave N 全 done 才触发 wave N+1 (completed 2026-06-16)
-- [ ] **Phase 45: 上游产物提取 + 注入下游 wave** - 上游 wave `produced_artifacts`（API 契约/OpenAPI/diff）提取 + 注入下游 wave prompt/global_context
+- [x] **Phase 45: 上游产物提取 + 注入下游 wave** - 上游 wave `produced_artifacts`（API 契约/OpenAPI/diff）提取 + 注入下游 wave prompt/global_context (completed 2026-06-16)
 - [ ] **Phase 46: 多仓融合 PR + 跨仓 PR 关联** - 各仓产出关联 PR/MR（diff base 用各仓正确 `target_branch` 非假设 master）+ 跨仓 PR cross-ref 关联
 - [ ] **Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）** - task 侧发起 question（复用已有 question 协议 + orchestrator resume）抛给用户/orchestrator，非全自动回溯重规划
 
@@ -124,7 +124,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 45-03-PLAN.md — ARTIFACT-01+02：端到端产物传递集成（wave1 done→提取→wave2 prompt 含契约）+ 幂等/fail-soft + phase gate（wave 3）
+- [x] 45-03-PLAN.md — ARTIFACT-01+02：端到端产物传递集成（wave1 done→提取→wave2 prompt 含契约）+ 幂等/fail-soft + phase gate（wave 3）
 
 ### Phase 46: 多仓融合 PR + 跨仓 PR 关联
 
@@ -160,7 +160,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
-| 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 2/3 | In Progress|  |
+| 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 3/3 | Complete|  |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
 

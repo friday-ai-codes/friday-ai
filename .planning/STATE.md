@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: Phase 44 收官；下一步 Phase 45（上游产物提取 + 注入下游 wave）
-stopped_at: Phase 44 Plan 05 完成（AICodingNode wave 分批 dispatch + callback 驱动多 wave 推进 + 部分成功收尾 + 4 集成测试全绿，Phase 44 全部 5 plan 收官）
-last_updated: "2026-06-16T14:31:16.647Z"
-last_activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度接线：首发分批 dispatch + aadvance 推进 + 部分成功收尾，Phase 44 全部 5 plan 完成）
+status: Phase 45 收官（ARTIFACT-01/02 提取→注入端到端验收全绿）；下一步 Phase 46（多仓融合 PR + 跨仓 PR 关联）
+stopped_at: Phase 45 Plan 03 完成（test_coding_wave.py 扩充端到端产物传递 + 幂等 + fail-soft 三集成测试，phase gate 360 passed/1 xfailed 零回归，Phase 45 全部 3 plan 收官）
+last_updated: "2026-06-16T14:35:00.000Z"
+last_activity: 2026-06-16 -- Phase 45 Plan 03 完成（ARTIFACT-01/02 端到端集成验收：wave1 done→提取落 produced_artifacts→wave2 prompt 含上游契约 + 幂等 no-op + 提取异常 fail-soft，Phase 45 全部 3 plan 完成）
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 12
-  completed_plans: 11
-  percent: 40
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 14
+  percent: 60
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.8.0 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
-**Current focus:** Phase 44 — RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度
+**Current focus:** Phase 45 — 上游产物提取 + 注入下游 wave（ARTIFACT-01/02）— COMPLETE
 
 ## Current Position
 
-Phase: 44 (RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度) — COMPLETE（5/5 plan）
-Plan: 5 of 5 完成（44-01 / 44-02 / 44-03 / 44-04 / 44-05 全部完成）
-Status: Phase 44 收官；下一步 Phase 45（上游产物提取 + 注入下游 wave）
-Last activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度接线：首发分批 dispatch + aadvance 推进 + 部分成功收尾，Phase 44 全部 5 plan 完成）
+Phase: 45 (上游产物提取 + 注入下游 wave) — COMPLETE（3/3 plan）
+Plan: 3 of 3 完成（45-01 提取落库 / 45-02 注入下游 / 45-03 端到端集成验收 全部完成）
+Status: Phase 45 收官；下一步 Phase 46（多仓融合 PR + 跨仓 PR 关联）
+Last activity: 2026-06-16 -- Phase 45 Plan 03 完成（ARTIFACT-01/02 端到端集成验收：wave1 done→提取落 produced_artifacts→wave2 prompt 含上游契约 + 幂等 no-op + 提取异常 fail-soft，Phase 45 全部 3 plan 完成）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度�
 |-------|------|--------------|--------|
 | 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ✅ Complete |
 | 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ✅ Complete |
-| 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ⬜ Not started |
+| 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ✅ Complete |
 | 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | ⬜ Not started |
 | 47 | 编码遇阻 → question 抛人（HITL，非全自动 replan） | HITL-01 | ⬜ Not started |
 
@@ -174,6 +174,7 @@ Last activity: 2026-06-16 -- Phase 44 Plan 05 完成（AICodingNode wave 调度�
 | Phase 44 P44-03 | ~7min | 3 tasks | 4 files |
 | Phase 44 P44-04 | ~8min | 2 tasks | 3 files |
 | Phase 44 P44-05 | ~22min | 3 tasks | 2 files |
+| Phase 45 P45-03 | ~12min | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -282,6 +283,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 44]: 44-03: RepoCodingTaskService 单一写入入口（INV-6）——消费 44-02 build_repo_waves/build_repo_dep_edges 落 wave/depends_on；create_tasks_for_plan get_or_create 幂等（已存在仅 wave 漂移回填）+ 同步块内 depends_on.set(...) 连仓级 DAG 边（避免 async lazy 访问）+ 返回 {repository_id: task} 按仓可索引；mark_running/done/failed/blocked 状态推进，mark_done 仅 running→done、mark_blocked 仅 pending→failed 用条件 .filter(status=...).update(...) + 影响行数判定保重复 callback no-op + 已运行/终态不强翻（保在途结果）；mark_blocked error={reason:upstream_failed,upstream:[...]} 承载 WAVE-02 下游阻断；INV-6 grep 守护镜像 test_research_inv6_guard.py（单模型 RepoCodingTask，正则天然排除 RepoCodingTaskStatus( 枚举）断言除 service 外无旁路写；8 测全绿（service 6 + guard 2）
 - [Phase 44]: 44-04: wave_progression 入口无关 wave 推进 helper（services.plan_orchestration）——`aadvance_coding_waves(plan_version_id, *, service)` 严格序「① 回填 running→终态（按服务端权威 SubAgentSession.status，completed→done/error|timeout|cancelled→failed，经 subagent_session_id 标量取，T-44-TAMPER）→ ② 传递闭包 BFS/worklist 沿 dependents 反向边多跳阻断全部 failed 上游的 pending 下游（seen 去重，链 A→B→C 单次内 B、C 全 blocked）→ ③ 决策出口」；执行序是 liveness 命门——阻断必须在任何 early-return 前完成否则未派发 pending 下游永不阻断→all_terminal 永不触发→死锁（T-44-DEADLOCK）；决策出口：RUNNING 在途 aexists()→waiting（**不**靠最小 pending wave 防抢先 return waiting 死锁）/ depends_on 全 done 的 pending→dispatch 最小 wave / 无 pending 无 running→all_terminal；`acurrent_wave_all_terminal` 终态含 failed（T-44-GATE 失败仓不永挂）仅供 RUNNING 在途 wave 求值；状态只经 RepoCodingTaskService 条件更新幂等（INV-6）+ wave 从 DB 重算非内存；复用 Phase 43 callback 驱动 resume 不造两套；6 测全绿（gate/失败隔离/单跳下游阻断/2 跳传递闭包 liveness/幂等 updated_at 不变/全终态收尾）。callback 接线归 plan 05
 - [Phase 44]: 44-05: AICodingNode wave 调度接线（消化 PF-07，Phase 44 收官）——`_execute_with_branch` 首发段经 `build_repo_waves` 分层 + 环 fail-fast（`error.reason=dependency_cycle` 不进 dispatch）+ `RepoCodingTaskService.create_tasks_for_plan` 建行（INV-6）后仅 dispatch 最小 wave + `mark_running`；wave 模式双 guard（plan_version 可解析 AND repo_waves 完整覆盖待编码仓），否则回退 legacy 全并行零回归（task 无 id→repo_waves 不覆盖时不误激活）；抽 `_resolve_anthropic_credentials`/`_dispatch_wave`/`_build_waiting_output` 首发与推进共用（不造两套），dispatch 失败仓 `mark_failed` 保 liveness；`_resume_after_containers` 按 `plan_version_id` 分流 wave/legacy，`_resume_wave` 经 `aadvance_coding_waves` 判 gate——`waiting`→`_resuspend_wave`（waiting != finalize）/`dispatch`→`_dispatch_next_wave`(复用 `_dispatch_wave`)+再 `waiting_event`/`all_terminal`→`_finalize_wave`，整段 fail-soft（aadvance 异常 swallow+warning 不回灌容器回调 5xx）；不双 backfill（aadvance 独占 running→终态回填，`_finalize_wave` 仅从 DB `RepoCodingTask` 全行重算 done/failed 捕获全 wave 结果）；部分成功收尾 done 出 MR/failed/blocked 如实标注(`upstream_failed`)/不自动回滚（v0.8 非目标）；wave N→N+1 由 Phase 43 `_schedule_workflow_resume` 容器回调触发节点重入自驱不另造调度（`while True`→有限收敛 `for`，上界=task 总数；无 sleep/timer/apscheduler）；4 集成测试全绿（零回归/多 wave 推进/部分成功阻断/环 fail-fast）+ test_coding_node 12 passed 零回归；340 passed 全量验收
+- [Phase 45]: 45-03: ARTIFACT-01/02 端到端集成验收（测试-only，无新增生产符号）——扩充 test_coding_wave.py 三测：test_artifact_passthrough（wave1 后端 done 含 openapi TaskResult → aadvance 回填触发提取落 produced_artifacts → wave2 前端 DispatchTask.prompt 含 api/openapi.yaml 契约 + 「上游产物」段 + raw_output 不泄漏，SC-3/T-45-10）；test_artifact_passthrough_idempotent（done 仓非 RUNNING → 复调 aadvance 不再提取 → produced_artifacts 含 extracted_at 逐字不漂移，覆盖写 no-op）；test_artifact_extract_fail_soft（monkeypatch build_produced_artifacts 抛错 → wave1 仍 DONE、wave2 仍 dispatch 且注入段空、produced_artifacts=={}、advance 不冒泡，容器回调不 5xx，T-45-09）；_settle_session 增 defaulted modified_files（默认 ["f.py"]）保既有 4 wave 测试零回归；phase gate 360 passed/1 xfailed（既有 xfail）+ INV-6 守护 + Phase 44 wave/coding 零回归
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
 ### Pending Todos
@@ -354,11 +356,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T14:31:16.639Z
-Stopped at: Phase 44 Plan 05 完成（AICodingNode wave 分批 dispatch + callback 驱动多 wave 推进 + 部分成功收尾 + 4 集成测试全绿，Phase 44 全部 5 plan 收官）
+Last session: 2026-06-16T14:35:00.000Z
+Stopped at: Phase 45 Plan 03 完成（test_coding_wave.py 扩充端到端产物传递 + 幂等 + fail-soft 三集成测试，phase gate 360 passed/1 xfailed 零回归，Phase 45 全部 3 plan 收官）
 Resume file: None
-Next: Phase 44 收官；启动 Phase 45（上游产物提取 + 注入下游 wave：ARTIFACT-01/02）——`/gsd-discuss-phase 45` / `/gsd-plan-phase 45` 起步
+Next: Phase 45 收官；启动 Phase 46（多仓融合 PR + 跨仓 PR 关联：PR-01/02）——`/gsd-discuss-phase 46` / `/gsd-plan-phase 46` 起步
 
 ## Operator Next Steps
 
-- 新开会话运行 autonomous 跑完整个 v0.8.0 里程碑（Phases 43–47），或先 `/gsd-discuss-phase 43` / `/gsd-plan-phase 43` 起步
+- 新开会话运行 autonomous 跑完整个 v0.8.0 里程碑（Phases 43–47），或先 `/gsd-discuss-phase 46` / `/gsd-plan-phase 46` 起步
