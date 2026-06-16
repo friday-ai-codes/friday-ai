@@ -22,6 +22,7 @@ from delivery.models.plan_session import (
     PlanSessionEntrypoint,
     PlanSessionStatus,
 )
+from delivery.models.plan_session_event import PlanSessionEvent
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -78,6 +79,7 @@ __all__ = [
     "PlanSession",
     "PlanSessionEntrypoint",
     "PlanSessionStatus",
+    "PlanSessionEvent",
     "RepoResearchTask",
     "RepoResearchTaskStatus",
     "PartialPlan",
