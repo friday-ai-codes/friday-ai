@@ -26,7 +26,7 @@
 ### 上游产物传递（ARTIFACT）
 
 - [ ] **ARTIFACT-01**: 上游 wave 完成后提取 `produced_artifacts`（API 契约 / OpenAPI / diff）落 `RepoCodingTask.produced_artifacts`
-- [ ] **ARTIFACT-02**: 把上游 `produced_artifacts` 注入下游 wave 的 prompt / `global_context`，使下游仓编码能消费上游契约（如 wave1 后端 → wave2 前端）
+- [x] **ARTIFACT-02**: 把上游 `produced_artifacts` 注入下游 wave 的 prompt / `global_context`，使下游仓编码能消费上游契约（如 wave1 后端 → wave2 前端）
 
 ### 多仓融合 PR（PR）
 
@@ -76,7 +76,7 @@
 | WAVE-01 | Phase 44 | Pending |
 | WAVE-02 | Phase 44 | Pending |
 | ARTIFACT-01 | Phase 45 | Pending |
-| ARTIFACT-02 | Phase 45 | Pending |
+| ARTIFACT-02 | Phase 45 | Complete |
 | PR-01 | Phase 46 | Pending |
 | PR-02 | Phase 46 | Pending |
 | HITL-01 | Phase 47 | Pending |
