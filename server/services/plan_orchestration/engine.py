@@ -177,16 +177,26 @@ class PlanOrchestrationEngine:
         engine **绝不直接 mutate session.status**——只经 ``session_service.transition``
         （T-36-03-01 purity guard）。状态全持久化在 RepoResearchTask/PlanSession，可 resume。
         """
+        from delivery.services.plan_session_service import ConcurrentTransitionError
         from services.plan_orchestration.research_aggregation import (
             amaybe_complete_research,
         )
 
         await self.research.dispatch(session)
-        completed = await amaybe_complete_research(
-            session, session_service=self.session_service
-        )
-        if not completed:
-            await self.session_service.transition(session, "research_dispatched")
+        try:
+            completed = await amaybe_complete_research(
+                session, session_service=self.session_service
+            )
+            if not completed:
+                await self.session_service.transition(session, "research_dispatched")
+        except ConcurrentTransitionError:
+            # WR-03 良性并发：容器回调侧 barrier 已把 session 推进（research_complete→
+            # merging），engine 内存态 from_status=researching 的条件更新命中 0 行 → 视为
+            # 成功 no-op。**绝不**让该异常落到 advance 的通用 except → fail（否则 _fail
+            # 会把回调正确推进的 merging 错误覆盖回 failed，属状态损坏）。
+            logger.info(
+                "research_already_advanced_by_barrier", session_id=str(session.id)
+            )
 
     async def _merge(self, session: PlanSession) -> None:
         """融合 stage：调注入 merge → transition merged（→ done）。

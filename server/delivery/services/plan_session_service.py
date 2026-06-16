@@ -194,15 +194,47 @@ class PlanSessionService:
             return session
         raw_error = payload.get("error")
         error = raw_error if isinstance(raw_error, dict) else {"message": str(raw_error)}
-        await self._fail_sync(session, error)
+        applied = await self._fail_sync(session, error)
+        if not applied:
+            # WR-03：DB 行 status 已被并发/陈旧 advance 改写（如容器回调 barrier 把
+            # researching 推进到 merging）。条件更新命中 0 行 → **不盲写覆盖**已正确推进
+            # 的状态（否则把成功完成的编排错误置 failed，属状态损坏）。re-fetch DB status
+            # 同步内存态后放弃 fail（保留已推进状态），不发 failed 事件。
+            await self._refresh_status_sync(session)
+            logger.info(
+                "plan_session_fail_skip_concurrent_advance",
+                session_id=str(session.id),
+                current_status=session.status,
+            )
+            return session
         await self._emit_event("plan.session.failed", session, payload)
         return session
 
     @sync_to_async
-    def _fail_sync(self, session: PlanSession, error: dict[str, Any]) -> None:
+    def _fail_sync(self, session: PlanSession, error: dict[str, Any]) -> bool:
+        """以 ``status == 内存 from_status`` 为前置条件的原子 fail 更新（WR-03 防盲写覆盖）。
+
+        镜像 ``_apply_transition_sync`` 的 TOCTOU 防线：``filter(id, status=from_status)
+        .update(...)``；影响行数 != 1 表示 DB 行已被并发/陈旧 advance 改写或行不存在
+        → 返回 ``False``（**不盲写覆盖**，绝不把已推进状态回落 failed），由调用方放弃 fail。
+        ==1 才同步内存态并返回 ``True``。``update()`` 不触发 ``auto_now``，显式写 updated_at。
+        """
+        from_status = session.status
+        updated = PlanSession.objects.filter(id=session.id, status=from_status).update(
+            status=PlanSessionStatus.FAILED, error=error, updated_at=timezone.now()
+        )
+        if updated != 1:
+            return False
         session.status = PlanSessionStatus.FAILED
         session.error = error
-        session.save(update_fields=["status", "error", "updated_at"])
+        return True
+
+    @sync_to_async
+    def _refresh_status_sync(self, session: PlanSession) -> None:
+        """从 DB 重读 status 同步内存态（fail 被并发推进拒绝后，保持内存与 DB 一致）。"""
+        fresh = PlanSession.objects.filter(id=session.id).values("status").first()
+        if fresh is not None:
+            session.status = fresh["status"]
 
     async def _emit_event(
         self, event_name: str, session: PlanSession, payload: dict[str, Any]

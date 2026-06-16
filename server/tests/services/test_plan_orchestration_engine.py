@@ -182,6 +182,32 @@ async def test_clarify_pass_through() -> None:
     assert (await PlanSession.objects.aget(id=session.id)).status == PlanSessionStatus.RESEARCHING
 
 
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_research_concurrent_barrier_advance_not_overwritten_to_failed() -> None:
+    """WR-03：dispatch 后、engine transition 前容器回调 barrier 把 DB 推进 researching→
+    merging；engine 的陈旧条件转移被拒（ConcurrentTransitionError）视为良性 no-op，
+    绝不把已推进的 merging 覆盖回 failed（无状态损坏）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    )
+
+    async def _dispatch_then_barrier_advance(s):
+        # 模拟容器回调侧 barrier 抢先把 DB 推进 researching→merging（engine 内存态仍 researching）
+        await PlanSession.objects.filter(id=s.id).aupdate(status=PlanSessionStatus.MERGING)
+        return {}
+
+    research = AsyncMock()
+    research.dispatch = AsyncMock(side_effect=_dispatch_then_barrier_advance)
+    engine = PlanOrchestrationEngine(research=research)
+
+    await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    # 关键：状态保持 barrier 正确推进的 merging，未被错误覆盖为 failed
+    assert reloaded.status == PlanSessionStatus.MERGING
+
+
 def test_engine_does_not_write_status_directly() -> None:
     """源码守护：engine.py 不含直接 .status= 赋值（只经 transition 驱动）。"""
     text = ENGINE_PATH.read_text(encoding="utf-8")
