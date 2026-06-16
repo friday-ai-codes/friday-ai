@@ -46,6 +46,9 @@ from services.plan_orchestration.research_aggregation import (
     amaybe_complete_research,
     parse_partial_plan_content,
 )
+from services.plan_orchestration.resume import (
+    adrive_plan_session_to_pause_or_terminal,
+)
 
 __all__ = [
     "PlanOrchestrationEngine",
@@ -69,6 +72,7 @@ __all__ = [
     "aall_research_tasks_terminal",
     "amaybe_complete_research",
     "parse_partial_plan_content",
+    "adrive_plan_session_to_pause_or_terminal",
     "MERGED_PLAN_FIELDS",
     "validate_merged_plan",
     "CHECK_NAMES",
