@@ -139,6 +139,34 @@ def test_missing_execution_plan_rejected() -> None:
     assert "non_empty_plan" in _checks(report)
 
 
+def test_malformed_dependency_dag_rejected() -> None:
+    """WR-02：dependency_dag 形状非法（边列表而非邻接表 dict）→ dependency_cycle error，
+    而非被静默降级为空跳过（false-pass）。"""
+    content = _valid_merged_plan()
+    content["dependency_dag"] = [["a", "b"], ["b", "a"]]  # 边列表，非 dict
+    report = validate_plan(content)
+    assert report["valid"] is False
+    assert "dependency_cycle" in _checks(report)
+
+
+def test_malformed_data_migrations_rejected() -> None:
+    """WR-02：data_migrations 形状非法（非 list）→ migration_order error，不静默跳过。"""
+    content = _valid_merged_plan()
+    content["data_migrations"] = {"backend": 1}  # 应为 list
+    report = validate_plan(content)
+    assert report["valid"] is False
+    assert "migration_order" in _checks(report)
+
+
+def test_malformed_release_order_rejected() -> None:
+    """WR-02：release_order 形状非法（非 list）→ release_order error，不静默跳过。"""
+    content = _valid_merged_plan()
+    content["release_order"] = "backend,frontend"  # 应为 list
+    report = validate_plan(content)
+    assert report["valid"] is False
+    assert "release_order" in _checks(report)
+
+
 def test_non_dict_input_does_not_raise() -> None:
     """半可信非 dict 顶层 → valid=False，不抛异常。"""
     report = validate_plan(["not", "a", "dict"])
