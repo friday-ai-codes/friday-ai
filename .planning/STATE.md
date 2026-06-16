@@ -2,33 +2,33 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: Phase 46 收官（Plan 01 + Plan 02 完成）；下一步 Phase 47（HITL-01）
-stopped_at: Phase 46 Plan 02 完成（PR-02：可复用 helper pr_cross_reference + 接 _finalize_and_notify ≥2 守门全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
-last_updated: "2026-06-16T16:24:00.638Z"
-last_activity: 2026-06-16 -- Phase 47 planning complete
+status: Awaiting next milestone
+stopped_at: Milestone v0.8.0 收官归档（audit passed 9/9 + integration_ok + Nyquist 5/5；ROADMAP/REQUIREMENTS/AUDIT 已归档 milestones/，tag v0.8.0）
+last_updated: "2026-06-17T01:58:00.000Z"
+last_activity: 2026-06-16 — Milestone v0.8.0 completed and archived
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 80
+  completed_phases: 5
+  total_plans: 16
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
+See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.8.0 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
-**Current focus:** Phase 46 — 多仓融合 PR + 跨仓 PR 关联
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.8.0 已交付：把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
+**Current focus:** 规划下一里程碑（`/gsd-new-milestone`）；候选见 PROJECT.md Backlog / `ROADMAP-vNext.md`（v0.9 SDD/OpenSpec、编码全自动 replan、对外事件 adapter）。
 
 ## Current Position
 
-Phase: 47
-Plan: Not started
-Status: Phase 46 收官（Plan 01 + Plan 02 完成）；下一步 Phase 47（HITL-01）
-Last activity: 2026-06-16 -- Phase 47 planning complete
+Phase: Milestone v0.8.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-16 — Milestone v0.8.0 completed and archived
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -326,6 +326,19 @@ None.
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
+### 🔒 Acknowledged at v0.8.0 close（2026-06-17）
+
+里程碑关闭前 open artifact 审计 4 项，全部为既有/已知 deferred，确认后归档继续关闭：
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 43 43-UAT.md — 2 pending scenarios（真实 runner+Docker resume / deep-research 容器续驱 E2E） | deferred（里程碑级，需真实环境） |
+| verification_gap | Phase 43 43-VERIFICATION.md [human_needed]（同上真实容器 E2E 两项） | deferred（里程碑级，需真实环境） |
+| quick_task | 260610-oug-url-https [unknown] | 实为已完成（有 SUMMARY.md，标记过时） |
+| quick_task | 260611-ghb-workflow-card-uniform [unknown] | 实为已完成（有 SUMMARY.md，标记过时） |
+
+v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_session_service`）cross-ref / 遇阻 HITL 接线；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 修复；多仓 wave 编码/PR/HITL 真实 runner+Docker 容器 E2E。
+
 ### ✅ Resolved 2026-06-14（历史遗留清理）
 
 | Category | Item | Resolution |
@@ -367,4 +380,4 @@ Next: Phase 47（HITL-01：编码遇阻 question 抛人）——`/gsd-plan-phase
 
 ## Operator Next Steps
 
-- 新开会话运行 autonomous 跑完整个 v0.8.0 里程碑（Phases 43–47），或先 `/gsd-discuss-phase 46` / `/gsd-plan-phase 46` 起步
+- Start the next milestone with /gsd-new-milestone

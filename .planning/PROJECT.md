@@ -12,40 +12,24 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.7.0 方案编排（需求 → 主方案）（2026-06-16）
+**Latest shipped:** v0.8.0 多仓串行编码 → 融合 PR（2026-06-17）
 
-里程碑演进：v0.5.0 索引/检索地基 + 排除文件 → v0.6.0 领域脊柱 + 知识图谱补全 → v0.7.0 方案编排（需求 → 主方案）。近三个里程碑要点：
+里程碑演进：v0.6.0 领域脊柱 + 知识图谱补全 → v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR。近三个里程碑要点：
 
 - **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
 - **v0.6.0 领域脊柱 + 知识补全**：新增 `delivery` app 立起以飞书 work item 为中心的操作态脊柱——canonical `WorkItem` + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`/`WorkItemRelation`（字段派生）/`WorkItemStatusEvent`/`WorkItemCommentEvent`（append-only 评论流 + 当前树投影）；`Document`/`DocumentVersion`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边；Release 账本宽容模型 + 飞书 Bitable adapter 骨架；(看板URL+MR URL) 一键摄取编排；历史 diff 冻结 + bi-temporal 失效对账（PF-08）；评论入图 + 片段→需求反查 API/MCP；截图识别需求（多模态 LLM）。飞书接口前置修复 PF-09/10/11/12 已落地。
 - **v0.7.0 方案编排（需求 → 主方案）**：把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎——`PlanOrchestrationEngine`（入口无关 + 4 可注入 stage 协议）+ `PlanSession` 8 态状态机（拆分→路由→召回→澄清→并行调研→架构师融合，可持久化可恢复）；canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径软链/lazy 迁移；`RepoRouterV2` 路由 + `DeliveryKnowledgeSearchService` 召回接入；filter_then_container 并行调研子 agent（`RepoResearchTask`/`PartialPlan` + 单仓重试 + 重索引 stale 重跑）；架构师融合 + 结构化 `MergedPlan` + `PlanValidator`（5 类跨仓校验）+ 跨仓依赖 DAG 显式建模；HITL `Clarification` 澄清回路；§15 事件 taxonomy 全程持久化；工作流入口 + Chat 薄封装复用同一 engine。前置修复 PF-01/02 已落地。审计 passed（19/19 需求、INV-2/5/6 成立）。
+- **v0.8.0 多仓串行编码 → 融合 PR**：把 v0.7 产的 `MergedPlan.execution_plan` + 跨仓依赖 DAG 真正落成多仓代码——前置修复 PF-06（workflow 编码 `_run_repo_coding` dispatch env 对齐 chat 基线：git token + branch strategy + SSH→HTTPS，私有仓 clone + 正确目标分支）+ 通用 resume 回流通路 `adrive_plan_session_to_pause_or_terminal`（节点/工具/回调三处同源，消化 v0.7 audit D-2）；`RepoCodingTask` 操作态模型（plan_version/repository/wave/`depends_on` M2M self DAG/`produced_artifacts`/`follow_openspec` SDD 预留）+ 消费 `execution_plan[].dependencies` 经 graphlib Kahn 拓扑分层成 wave（消化 PF-07，不再全并行）；`RepoCodingTaskService` 单一写入入口（INV-6）+ `aadvance_coding_waves` wave 推进（回填→传递闭包阻断→决策，wave N done → N+1，失败隔离不死锁）；`AICodingNode` 按 wave 分批 dispatch + callback 重入自驱（不另造调度）；上游产物提取（OpenAPI/契约/diff）落 `produced_artifacts` → 注入下游 wave prompt/`global_context`；各仓 MR `target_branch` 锚定各仓 `default_branch` + 跨仓 PR cross-ref + 追溯 `TechnicalPlan`/`WorkItem`（`pr_cross_reference.py`，≥2 守门 fail-soft）；编码遇阻 task 侧 `ask_user` 抛 question 给人（心跳保活容器 RUNNING）+ orchestrator resume，非全自动 replan。审计 passed（9/9 需求、integration_ok、Nyquist 5/5）。
 
-**已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
+**已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境；chat 编码入口（`coding_session_service`）的 cross-ref / 遇阻 HITL 接线为 follow-up（helper 入口无关已就绪）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 失败待修；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.8.0 多仓串行编码 → 融合 PR
+## Current Milestone: 规划中（v0.8.0 已交付）
 
-**Goal:** 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码：按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人。**显式非目标：不做编码中全自动回溯重规划。** 详细数据模型见 `.planning/DOMAIN-MODEL.md` §6（`RepoCodingTask`：wave/`depends_on` DAG/`produced_artifacts`），前置修复台账见 `PREFLIGHT.md`（PF-06/07）。
+v0.8.0 多仓串行编码 → 融合 PR 已于 2026-06-17 收官归档（见 `.planning/milestones/v0.8.0-*`）。下一里程碑待 `/gsd-new-milestone` 规划。
 
-**Target features:**
-
-- 前置修复 PF-06：workflow 编码路径 `AICodingNode` 注入 branch strategy / git token env（对齐 chat 路径），私有仓 clone 成功 + 用正确目标分支
-- 通用 resume 回流通路：消化 v0.7 audit D-2（chat deep-research 自动回流接线缺口）——立 `coding`/`plan_session` → 工作流/会话的通用 resume 回流通路，为 callback 驱动的多 wave 铺底
-- `RepoCodingTask` 模型（plan_version/repository/wave/`depends_on` DAG/status/`produced_artifacts`/`follow_openspec` 预留 SDD 扩展点）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）
-- wave 式执行：wave N 全 done 才触发 wave N+1（拓扑顺序推进 + wave 失败/部分回滚语义）
-- 上游产物提取（API 契约/OpenAPI/diff）→ 注入下游 wave prompt/global_context
-- 多仓融合 PR：各仓产出关联 PR/MR，diff base 用各仓正确 `target_branch`（非假设 master）+ 跨仓 PR 关联（cross-ref）
-- 编码遇阻 → question 抛人：task 侧发起 question 抛给用户/orchestrator（复用已有 question 协议、补 task 侧发起 + orchestrator resume），非全自动 replan
-- SDD 扩展点预留：`RepoCodingTask.follow_openspec` 标记 → 编码容器注入 openspec 指引（v0.9 做全）
-
-**Key context:**
-
-- 设计底座已就绪：`ROADMAP-vNext.md` §v0.8（Target features/现状坐标/已确认决策/候选 phases）、`DOMAIN-MODEL.md` §6（`RepoCodingTask` wave/DAG/产物注入 + 可靠恢复规则 + SDD 扩展点）、`PREFLIGHT.md`（PF-06 should-fix-before-v0.8、PF-07 can-fix-in-milestone）。
-- **关键约束 / 非目标**：scope=`plan_to_pr`（主方案 → 多仓 wave 编码 → 融合 PR）；**不做编码中全自动回溯重规划**——编码遇阻走已有 question 协议抛给用户/orchestrator，全自动 replan 留 backlog 避免范围爆炸。
-- **复用底座（已交付）**：v0.7 canonical `TechnicalPlan`/`MergedPlan`（含 `execution_plan` 跨仓依赖拓扑）+ `PlanSession` 编排状态机 + §15 事件 taxonomy；既有 `DispatchTask` 协议、RemoteTool MCP、callback 驱动 workflow resume、`execution_plan` schema、`waiting_event`、`AICodingNode` 并行派发、chat `coding_session_service`（branch strategy / git token env 在 chat 路径已有）。
-- **现状缺口**：跨仓/跨任务上下文传递完全没有（`execution_plan[].dependencies` 仅 schema + prompt，`AICodingNode` 只按 `repository_id` 全并行不读 dependencies、不传产物）；动态重规划编码层几乎没有；workflow 编码路径 env 不一致（PF-06）；chat deep-research 自动回流缺口（v0.7 D-2）。
-- 复用 `waiting_event` + callback resume 扩成多 wave，避免另造调度；wave 失败的部分回滚语义需明确。
+**候选方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.9 SDD / OpenSpec（`RepoCodingTask.follow_openspec` 扩展点已预留）、编码中全自动 replan/回溯（v0.8 用 HITL「抛 question 给人」过渡）、`coding.wave.*` 事件对外 adapter（v0.11）、chat 编码入口 cross-ref / 遇阻 HITL 接线收尾。
 
 ## Requirements
 
@@ -99,21 +83,18 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **并行调研子 agent**：filter_then_container（high/medium 起隔离容器、low 轻量 partial）产结构化 `PartialPlan`（§7）+ 单仓 `RepoResearchTask` 失败隔离重试 + 仓库重索引使 `PartialPlan` 置 stale 融合前重跑 + barrier 聚合 — v0.7.0
 - ✓ **架构师融合 + PlanValidator**：架构师子 agent 收齐 partial 产结构化 `MergedPlan`（跨仓契约/依赖 DAG/迁移/兼容风险/发布顺序/回滚/execution_plan）落 canonical；`PlanValidator` 5 类拦截（契约一致/依赖成环 DFS 三色/迁移顺序/发布顺序/缺回滚）+ 限次回退；跨仓依赖 `dependency_dag` 显式建模为 v0.8 wave 编码铺底 — v0.7.0
 - ✓ **HITL 澄清 + 事件 taxonomy**：`Clarification` 挂起回路（回答后仅 affected_partials 重跑）+ `PlanSessionEvent` append-only 把 §15 trace 事件全程持久化为统一信封（稳定词表 event_taxonomy 收口全 emit 点，INV-5 progress/trace 非 CoT，为 v0.11 对外 adapter 备料） — v0.7.0
+- ✓ **编码 env 对齐 + 通用 resume 回流**：workflow 编码 `_run_repo_coding` dispatch 逐键对齐 chat 基线（顶层 `env_FRIDAY_TASK_GIT_*` token/auth + `BRANCH_STRATEGY`/`TARGET_BRANCH` + SSH→HTTPS 改写，私有仓 clone + 正确目标分支，PF-06）+ 入口无关续驱 helper `adrive_plan_session_to_pause_or_terminal`（节点/工具/回调三处同源，`_schedule_chat_plan_resume` 消化 v0.7 audit D-2 chat 自动回流缺口） — v0.8.0 (`server/workflows/nodes/ai/coding.py`, `server/services/plan_orchestration/resume.py`)
+- ✓ **多仓 wave 编码调度**：`RepoCodingTask` 操作态模型（plan_version/repository FK + wave int + `depends_on` M2M self DAG + `produced_artifacts`/`follow_openspec` 预留）+ 消费 `execution_plan[].dependencies` 经 graphlib Kahn 拓扑分层成 wave（同仓取 max，消化 PF-07）+ `RepoCodingTaskService` 单一写入入口（INV-6）+ `aadvance_coding_waves`（回填→传递闭包阻断→决策，wave N done → N+1、失败隔离不死锁）+ `AICodingNode` 按 wave 分批 dispatch + callback 重入自驱（不另造调度，空依赖退化全并行零回归） — v0.8.0 (`server/delivery/`, `server/services/plan_orchestration/wave_progression.py`)
+- ✓ **上游产物注入下游 wave**：上游 wave done 后提取 `produced_artifacts`（OpenAPI/API 契约/diff，路径启发式归类）落库（`record_produced_artifacts` 单一入口）→ 注入下游 wave prompt/`global_context`（`render_upstream_artifacts_section`，空段守卫零回归、raw_output 不泄漏、fail-soft） — v0.8.0 (`server/services/plan_orchestration/artifact_extraction.py`)
+- ✓ **多仓融合 PR + 跨仓关联**：各仓 MR `target_branch` 锚定各仓 `Repository.default_branch`（fallback `default_branch or base_branch or "main"`，非假设 master）+ 跨仓 PR cross-ref（`successful_mrs ≥2` 守门，回写「## 关联 PR」兄弟链接 + 「## 关联方案/工作项」追溯 `plan_version → TechnicalPlan → WorkItem`，全程 fail-soft，可复用 helper `pr_cross_reference.py`） — v0.8.0 (`server/workflows/services/pr_cross_reference.py`)
+- ✓ **编码遇阻 HITL 抛人**：编码容器遇阻给 agent `ask_user` 工具（复用既有 question 协议 + `answer.json` 共享卷回灌，心跳保活容器 RUNNING，超时 default 续跑/优雅失败绝不挂起）+ server 侧 `_resolve_notification_chat_id` 统一解析（chat 路径零回归 + node 级 chat_id fallback）+ 回答后既有 resume 推进 wave；**显式非目标：不做编码中全自动 replan** — v0.8.0 (`task/core/question_loop.py`, `server/.../question_handler.py`)
 
-### Active (v0.8.0)
+**Backlog 候选（下一里程碑）：**
 
-<!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
-
-- [ ] 前置修复 PF-06（workflow 编码路径 branch strategy / git token env 对齐）+ 通用 resume 回流通路（消化 v0.7 audit D-2）
-- [ ] `RepoCodingTask` 模型 + `execution_plan` DAG 拓扑分层 + wave 调度（消化 PF-07，不再全并行）
-- [ ] 上游产物提取（API 契约/diff）+ 注入下游 wave prompt/global_context
-- [ ] 多仓融合 PR（diff base 用各仓正确 target_branch）+ 跨仓 PR 关联
-- [ ] 编码遇阻 → question 抛人（HITL 回路，非全自动 replan）
-
-**Backlog 候选（未入本里程碑）：**
-
-- v0.9 SDD / OpenSpec（重型：打标 + 产 spec + 状态机/gate/评审 + spec↔需求/PR 关联 + 交付验收）——v0.8 仅在 `RepoCodingTask.follow_openspec` 预留扩展点字段位
-- 编码中全自动 replan/回溯（v0.8 用「抛 question 给人」过渡，全自动留后续）
+- v0.9 SDD / OpenSpec（重型：打标 + 产 spec + 状态机/gate/评审 + spec↔需求/PR 关联 + 交付验收）——v0.8 已预留 `RepoCodingTask.follow_openspec` 扩展点字段位
+- 编码中全自动 replan/回溯（v0.8 已用「抛 question 给人」HITL-01 过渡，全自动留后续）
+- chat 编码入口（`coding_session_service`）的跨仓 PR cross-ref / 遇阻 HITL 接线收尾（v0.8 优先 workflow wave 入口，helper 入口无关已就绪以便复用）
+- 多仓 wave 编码 / PR / HITL 的真实 runner+Docker 容器端到端验收（需真实环境）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 修复
 - 接入实时明文 PAT 通道剩余路径（chat/MCP 编码 dispatch）+ RTOOL-02/03/04 容器端 E2E 真实环境验收
 - 令牌细粒度读写 scope / rotate / IP allowlist / 短 TTL 派生凭证（PATX-01~04）
 - 图片向量库（视觉相似/标注）；补齐 v0.1.0 / v0.2.0 顺延的人工验收（UAT）
@@ -169,6 +150,12 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 用户令牌以直传 PAT 形态注入 task 容器，日志/审计脱敏 | 优先简单可落地；泄漏面以脱敏 + 后续短 TTL 缓解 | ✓ Validated（v0.2.0，Phase 11，机制层；运行时通道为 follow-up） |
 | skill/mcp 以持久绑定表绑定用户令牌；吊销令牌时在途任务跑完仅阻断新调用（graceful） | 绑定可见可管理；graceful 避免中断在途任务的复杂回滚 | ✓ Validated（v0.2.0，Phase 10-11） |
 | Open-Q1 Option C：完整交付 RemoteTool 机制 + 脱敏 + graceful，实时明文 PAT 通道留 follow-up | 受 PAT-02（明文绝不落盘/不读 DB）约束，机制先行、运行时通道待接入，不阻塞里程碑 | ⚠️ Revisit（v0.2.0 follow-up） |
+| 复用 `waiting_event` + callback resume 扩成多 wave，不另造调度 | `_schedule_workflow_resume` 容器回调触发节点重入自驱（`while True`→有界 `for`，无 sleep/timer/apscheduler）；wave N→N+1 自然推进 | ✓ Validated（v0.8.0，Phase 44） |
+| wave 分层用 task 级 DAG（`execution_plan[].dependencies`），仓 wave 取该仓所有 task 层级 max | dependencies 是 task id 引用（schema 权威），graphlib Kahn 分层；空依赖退化全 wave 0 保零回归 | ✓ Validated（v0.8.0，Phase 44） |
+| wave 失败部分回滚语义：done 出 MR、failed/blocked 如实标注（`upstream_failed`），不自动回滚 | v0.8 非目标不做自动回滚；传递闭包阻断下游 + liveness 命门（阻断必在 early-return 前完成防死锁） | ✓ Validated（v0.8.0，Phase 44） |
+| 各仓 MR `target_branch` 锚定各仓 `default_branch`（非假设 master），diff base per-repo | 对齐 v0.6 坐实的 MR target_branch 锚定；fallback `default_branch or base_branch or "main"` 保单仓/同 default 多仓零回归 | ✓ Validated（v0.8.0，Phase 46） |
+| 编码遇阻走 HITL「抛 question 给人」，不做编码中全自动回溯重规划 | 全自动 replan 范围爆炸风险高；复用既有 question 协议 + 容器心跳保活 RUNNING，回答后续跑；全自动留 backlog | ✓ Validated（v0.8.0，Phase 47） |
+| 跨阶段「不造两套」：续驱 helper / wave 推进 / 单一写入入口（INV-6）全程同源 | 节点/工具/回调三处复用同一 resume helper；状态只经 `RepoCodingTaskService` 条件更新；integration 审计 integration_ok | ✓ Validated（v0.8.0） |
 
 ## Evolution
 
@@ -188,4 +175,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-16 — milestone v0.8.0 started*
+*Last updated: 2026-06-17 — after v0.8.0 milestone*

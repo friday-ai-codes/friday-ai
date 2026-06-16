@@ -1,5 +1,27 @@
 # Milestones
 
+## v0.8.0 多仓串行编码 → 融合 PR (Shipped: 2026-06-17)
+
+**Phases completed:** 5 phases, 16 plans, 38 tasks
+**Audit:** passed — 9/9 requirements satisfied, integration_ok (5/5 flows), Nyquist 5/5 compliant (see [milestones/v0.8.0-MILESTONE-AUDIT.md](./milestones/v0.8.0-MILESTONE-AUDIT.md))
+**Known deferred items at close:** 4 (see STATE.md Deferred Items — Phase 43 真实容器 E2E human-needed/UAT ×2 + 2 stale-marked quick tasks 实为已完成)
+
+**Key accomplishments:**
+
+- 新增 `_schedule_chat_plan_resume`（mirror `_schedule_workflow_resume`：fire-and-forget + 幂等 + fail-soft），把 `_schedule_agent_session_resume` 的 `plan_research` 分支当前的提前 `return` 改为「entrypoint==CHAT 守门 → 经 43-02 同源 helper 续驱 engine 到 done → BarrierManager.task_completed(str(plan_session.id)) 回灌主方案」，一举消化 v0.7 audit D-2 两处缺口（a: chat barrier 从不被通知；b: chat 入口此后无消费者驱动 engine.advance 到 done）。
+- 把工作流节点（`plan_research.py`）与 chat 工具（`plan_research_tools.py`）两处逐行同构的内联 advance 循环，重构为复用 43-02 的共享 helper `adrive_plan_session_to_pause_or_terminal`——使节点 / 工具 / 43-03 回调消费者三处真正同源一份续驱逻辑；入口私有挂起 marker 映射（NodeResult / ToolResult via `_maybe_suspend`）各自保留，行为零回归；同步把 `start_plan_research` 占位文案 / 工具 description 由「自动回流尚未接入」如实更新为「调研完成后自动融合并返回 canonical 主方案」（43-03 已接通）。
+- RepoCodingTask 操作态模型落库（plan_version FK + repository FK + wave/depends_on M2M self DAG + produced_artifacts/follow_openspec 预留位 + attempt/error 可靠恢复），4 态枚举无 stale，迁移 0017 自动生成且 makemigrations --check 干净，模型层零业务方法守 INV-6
+- 把 `MergedPlan.execution_plan[].dependencies`（task id 引用）真正消费——graphlib Kahn 分层建 task-id DAG → 投影仓级 wave（同仓取 max）+ 跨仓 depends_on 边（去自环），复用 `plan_validator.validate_plan` 做 dependency_cycle fail-fast，空依赖退化单 wave 全并行（零回归）
+- 立 `RepoCodingTaskService` 单一写入入口（INV-6）——消费 44-02 拓扑分层结果，`create_tasks_for_plan` 幂等 get_or_create + 写 wave + 同步块内 `depends_on.set(...)` 连仓级 DAG 边；`mark_running/done/failed/blocked` 状态推进，`mark_done`（仅 running→done）/`mark_blocked`（仅 pending→failed）用条件更新 + 影响行数判定保重复 callback no-op；`mark_blocked` 承载 WAVE-02 下游阻断（`error={"reason":"upstream_failed","upstream":[...]}`）；配 INV-6 grep 守护断言除 service 外无旁路写表
+- 立 `wave_progression.py` 入口无关 wave 推进续驱——`aadvance_coding_waves` 严格按「① 回填 running→终态（按服务端权威 `SubAgentSession.status`）→ ② 传递闭包 BFS/worklist 沿 `dependents` 多跳阻断全部 failed 上游的下游 → ③ 决策出口（RUNNING 在途→waiting / 有 depends_on 全 done 的 pending→dispatch 最小 wave / 无 pending 无 running→all_terminal）」执行；阻断在任何 early-return 之前完成是 liveness 关键（链 A→B→C 单次内 B、C 全 blocked → 收尾可达不死锁，T-44-DEADLOCK）；状态只经 `RepoCodingTaskService` 条件更新幂等（INV-6），复用 Phase 43 callback 驱动 resume 不造两套
+- 把 `AICodingNode` 从「一把梭全并行 dispatch + 一次性 resume」改成「按拓扑 wave 分批 dispatch、wave N 全终态才推 N+1」——首发段 `_execute_with_branch` 经 `build_repo_waves` 分层 + 环 fail-fast + `RepoCodingTaskService.create_tasks_for_plan` 建行（INV-6）后仅 dispatch 最小 wave 并 `mark_running`；resume 段 `_resume_after_containers` 按 `plan_version_id` 分流 wave/legacy，wave 路径经 `aadvance_coding_waves` 判 gate → dispatch 下一 wave 再 `waiting_event`（不双 backfill、waiting != finalize）或 `_finalize_wave` 从 DB 重算 done/failed 走部分成功收尾（done 出 MR、failed/blocked 如实标注、不自动回滚）；空依赖 + 无 plan_version 退化为既有全并行字节级等价（零回归）；wave N→N+1 由 Phase 43 `_schedule_workflow_resume` 容器回调触发节点重入自驱，不另造调度（无 while True/sleep/timer）
+- 多仓 wave 编码收尾时各仓 MR 的 `target_branch` 改为锚定各仓自己的 `Repository.default_branch`（fallback 链 `default_branch or base_branch or "main"`），修复 default_branch 不一致时所有 MR 共用第一个仓 base_branch 打错目标分支的 PR-01 病根。
+- 多仓 wave 编码收尾批量建 MR 后，对成功名单（≥2 仓）回写描述追加「## 关联 PR」兄弟仓链接段（排除自身）+「## 关联方案 / 工作项」追溯段（plan_version_id → PlanVersion → TechnicalPlan → WorkItem），提取为可复用 helper `pr_cross_reference.py`，全程 fail-soft。
+- 编码容器遇阻时不再走 `report_failed` 死路——给编码 agent 一个 `ask_user` 工具，复用既有 question 协议契约（`type=question` + `answer.json` 共享卷回灌）向人发问并阻塞等待回答，等待期心跳保活使容器保持 RUNNING，回答后据此续跑；超时则 default 续跑或优雅失败，绝不挂起/replan。
+- server 侧 question 接收/回答回灌/resume 全部既有可复用——唯一缺口是 `send_question_card_enhanced` 只认 `main_session.metadata.chat_id`，wave 编码任务（node_execution）取不到 chat_id 不发卡。改为统一经 `_resolve_notification_chat_id` 解析（既零回归 chat 路径、又 fallback node 级 chat_id、并修复原直接访问 `session.main_session` 的 async lazy-FK 风险），并以测试坐实「遇阻 RUNNING → aadvance waiting（不 dead-end）→ 回答 completed → Phase 44 推进」与「no-replan 守护」。
+
+---
+
 ## v0.7.0 v0.7.0 (Shipped: 2026-06-16)
 
 **Phases completed:** 7 phases, 19 plans, 12 tasks
