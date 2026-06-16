@@ -54,7 +54,7 @@
 - [x] **Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移** - 立 canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径 eager 投影软链 + read-time lazy 迁移 (completed 2026-06-16)
 - [x] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案） (completed 2026-06-16)
 - [x] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑 (completed 2026-06-16)
-- [ ] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模
+- [x] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模 (completed 2026-06-16)
 - [ ] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排
 - [ ] **Phase 42: Chat 入口薄封装** - Chat 入口薄封装复用同一底层 orchestration engine（工作流先行，不并行造两套编排）
 
@@ -151,8 +151,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 40-01-PLAN.md — ArchitectMerge 模型 + migration 0014 + MergedPlan §7 schema 校验（复用 technical_plan）+ PlanValidator 5 项跨仓校验纯函数 + 模型/校验守护测试（MERGE-02/03 建模侧）
-- [ ] 40-02-PLAN.md — ArchitectMergeAdapter(MergeProtocol) 收齐 partial + 可注入 LLM 合成器产 MergedPlan + 经 TechnicalPlanService 落 canonical + engine._merge 接线（pass→done / 限次回退 clarifying·researching / 超限 failed）+ §15 事件 + INV-6 守护（MERGE-01/02/03）
+- [x] 40-01-PLAN.md — ArchitectMerge 模型 + migration 0014 + MergedPlan §7 schema 校验（复用 technical_plan）+ PlanValidator 5 项跨仓校验纯函数 + 模型/校验守护测试（MERGE-02/03 建模侧）
+- [x] 40-02-PLAN.md — ArchitectMergeAdapter(MergeProtocol) 收齐 partial + 可注入 LLM 合成器产 MergedPlan + 经 TechnicalPlanService 落 canonical + engine._merge 接线（pass→done / 限次回退 clarifying·researching / 超限 failed）+ §15 事件 + INV-6 守护（MERGE-01/02/03）
 
 ### Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口
 
@@ -196,7 +196,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 38. 路由 + 召回接入 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 39. 并行调研子 agent | v0.7.0 | 4/4 | Complete | 2026-06-16 |
-| 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 0/2 | Planned | - |
+| 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 2/2 | Complete | 2026-06-16 |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
 | 42. Chat 入口薄封装 | v0.7.0 | 0/0 | Not started | - |
 
