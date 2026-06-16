@@ -174,6 +174,28 @@ async def test_fail_from_done_is_noop() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_fail_skips_when_db_concurrently_advanced() -> None:
+    """WR-03：fail 时若 DB 行已被并发推进（内存态陈旧），条件更新拒绝盲写覆盖，
+    保留已推进状态（不回落 failed），并 re-fetch 同步内存态。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.RESEARCHING,
+    )
+    svc = PlanSessionService()
+    # 模拟容器回调 barrier 并发推进：DB 行 researching→merging（内存 session 仍 researching）
+    await PlanSession.objects.filter(id=session.id).aupdate(status=PlanSessionStatus.MERGING)
+
+    # 陈旧 fail 必须被条件更新拒绝，不得把 merging 覆盖回 failed
+    await svc.transition(session, "fail", error={"exc": "stale"})
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.MERGING  # 未被陈旧 fail 覆盖
+    assert reloaded.error == {}  # 首因未被写入
+    assert session.status == PlanSessionStatus.MERGING  # 内存态被 re-fetch 同步
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_routed_persists_routing_field() -> None:
     """routed 转移把 routing payload 落 PlanSession.routing（38-02 落库通道）。"""
     session = await PlanSession.objects.acreate(
