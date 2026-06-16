@@ -35,7 +35,7 @@
 
 ### 编码遇阻 HITL（HITL）
 
-- [ ] **HITL-01**: 编码遇阻走 question 抛人——task 侧发起 question（复用已有 question 协议，补 task 侧发起 + orchestrator resume），抛给用户/orchestrator 等回答后续跑；**非全自动回溯重规划**
+- [x] **HITL-01**: 编码遇阻走 question 抛人——task 侧发起 question（复用已有 question 协议，补 task 侧发起 + orchestrator resume），抛给用户/orchestrator 等回答后续跑；**非全自动回溯重规划**
 
 ## v2 Requirements
 
@@ -79,7 +79,7 @@
 | ARTIFACT-02 | Phase 45 | Complete |
 | PR-01 | Phase 46 | Complete |
 | PR-02 | Phase 46 | Complete |
-| HITL-01 | Phase 47 | Pending |
+| HITL-01 | Phase 47 | Complete |
 
 **Coverage:**
 
