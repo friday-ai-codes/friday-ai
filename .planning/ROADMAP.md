@@ -46,7 +46,7 @@
 **依赖链（严格顺序）：** 编码 env 对齐 + 通用 resume 回流地基(43) → RepoCodingTask + DAG 拓扑分层 + wave 调度(44) → 上游产物提取/注入下游(45) → 多仓融合 PR + 跨仓关联(46) → 编码遇阻 question 抛人(47)。PF-06（编码 env）+ RESUME-01（resume 通路）是 callback 驱动多 wave 的前置地基；44 立 RepoCodingTask 与 wave 调度；45 在 wave 之间传产物；46 把 wave 结果落 PR；47 补遇阻 HITL 回路（复用 43 的 resume 通路）。
 
 - [x] **Phase 43: 编码 env 对齐 + 通用 resume 回流地基** - 修 PF-06（workflow 编码路径 branch strategy / git token env 对齐 chat）+ 立通用 `coding`/`plan_session` → 工作流/会话 resume 回流通路（消化 v0.7 audit D-2），为 callback 驱动多 wave 铺底 (completed 2026-06-16)
-- [ ] **Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度** - 立 `RepoCodingTask`（wave/`depends_on` DAG/`produced_artifacts`/`follow_openspec` 预留）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）+ wave N 全 done 才触发 wave N+1
+- [x] **Phase 44: RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度** - 立 `RepoCodingTask`（wave/`depends_on` DAG/`produced_artifacts`/`follow_openspec` 预留）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）+ wave N 全 done 才触发 wave N+1 (completed 2026-06-16)
 - [ ] **Phase 45: 上游产物提取 + 注入下游 wave** - 上游 wave `produced_artifacts`（API 契约/OpenAPI/diff）提取 + 注入下游 wave prompt/global_context
 - [ ] **Phase 46: 多仓融合 PR + 跨仓 PR 关联** - 各仓产出关联 PR/MR（diff base 用各仓正确 `target_branch` 非假设 master）+ 跨仓 PR cross-ref 关联
 - [ ] **Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）** - task 侧发起 question（复用已有 question 协议 + orchestrator resume）抛给用户/orchestrator，非全自动回溯重规划
@@ -83,7 +83,7 @@
   3. wave N 全部 done 才触发 wave N+1，依赖未满足的仓不提前 dispatch（§14 RepoCodingTask 拓扑推进 + 可靠恢复）
   4. wave 失败 / 部分回滚语义明确：单 wave 内单仓失败的隔离边界与整体回滚语义有定义且有测试
 
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 Plans:
 **Wave 1**
 
@@ -100,7 +100,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 44-05-PLAN.md — AICodingNode wave 分批 dispatch + callback 驱动推进 + 集成测试（wave 4）
+- [x] 44-05-PLAN.md — AICodingNode wave 分批 dispatch + callback 驱动推进 + 集成测试（wave 4）
 
 ### Phase 45: 上游产物提取 + 注入下游 wave
 
@@ -146,7 +146,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
-| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 1/5 | In progress | — |
+| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 0/? | Not started | — |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
