@@ -27,6 +27,7 @@ from delivery.services.ingest_parsing import (
 )
 from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.release_service import ReleaseService
+from delivery.services.research_service import ResearchService
 from delivery.services.technical_plan_service import (
     PlanContentInvalid,
     PlanNotFound,
@@ -56,6 +57,7 @@ __all__ = [
     "ingest_from_urls",
     "StepResult",
     "PlanSessionService",
+    "ResearchService",
     "TechnicalPlanService",
     "PlanRef",
     "PlanContentInvalid",
