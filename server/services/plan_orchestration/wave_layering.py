@@ -102,6 +102,10 @@ def build_repo_dep_edges(execution_plan: list[dict]) -> dict[str, list[str]]:
     }
     edges: dict[str, set[str]] = {}
     for t in execution_plan:
+        # 与 build_repo_waves 同口径：无 id 任务不参与建边，否则会贡献仓级 depends_on 边
+        # 却因被分层排除而不抬高该仓 wave，造成「同 wave 跨仓依赖」绕过首发派发 wave 保证。
+        if not t.get("id"):
+            continue
         ra = t.get("repository_id", "")
         for dep in (t.get("dependencies") or []):
             rb = task_repo.get(dep, "")
