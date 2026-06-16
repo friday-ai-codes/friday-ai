@@ -13,6 +13,10 @@ from services.plan_orchestration.artifact_extraction import (
     build_produced_artifacts,
     classify_modified_files,
 )
+from services.plan_orchestration.artifact_injection import (
+    acollect_upstream_artifacts,
+    render_upstream_artifacts_section,
+)
 from services.plan_orchestration.clarify_adapter import (
     ClarifyAdapter,
     default_needs_clarification,
@@ -98,4 +102,6 @@ __all__ = [
     "aadvance_coding_waves",
     "build_produced_artifacts",
     "classify_modified_files",
+    "acollect_upstream_artifacts",
+    "render_upstream_artifacts_section",
 ]
