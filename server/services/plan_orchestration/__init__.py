@@ -9,6 +9,10 @@ from services.plan_orchestration.architect_merge_adapter import (
     LLMMergedPlanSynthesizer,
     MergedPlanSynthesizer,
 )
+from services.plan_orchestration.clarify_adapter import (
+    ClarifyAdapter,
+    default_needs_clarification,
+)
 from services.plan_orchestration.engine import PlanOrchestrationEngine
 from services.plan_orchestration.merged_plan import (
     MERGED_PLAN_FIELDS,
@@ -19,10 +23,12 @@ from services.plan_orchestration.plan_validator import (
     validate_plan,
 )
 from services.plan_orchestration.protocols import (
+    ClarifyProtocol,
     MergeProtocol,
     RecallProtocol,
     ResearchProtocol,
     RouterProtocol,
+    SkeletonClarify,
     SkeletonMerge,
     SkeletonRecall,
     SkeletonResearch,
@@ -43,10 +49,14 @@ __all__ = [
     "RecallProtocol",
     "ResearchProtocol",
     "MergeProtocol",
+    "ClarifyProtocol",
     "SkeletonRouter",
     "SkeletonRecall",
     "SkeletonResearch",
     "SkeletonMerge",
+    "SkeletonClarify",
+    "ClarifyAdapter",
+    "default_needs_clarification",
     "RepoRouterV2Adapter",
     "DeliveryKnowledgeRecallAdapter",
     "ResearchDispatchAdapter",
