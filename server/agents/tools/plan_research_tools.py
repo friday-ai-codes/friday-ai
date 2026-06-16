@@ -37,7 +37,8 @@ _MAX_ADVANCE_STEPS = 20
         "技术方案 / 跨仓方案编排 / 多仓协同改造方案」意图时调用。\n"
         "本工具复用与工作流入口完全相同的方案编排引擎："
         "拆分→路由→召回→澄清→并行调研→融合，产出 canonical 跨仓主方案（MergedPlan）。\n"
-        "若需要澄清会暂停并向用户提问；若需要深入调研会启动远程容器，完成后自动回流继续融合。"
+        "若需要澄清会暂停并向用户提问；若需要深入调研会启动远程容器并立即返回"
+        "（调研在途；本会话「调研完成后自动融合回流」能力尚未接入，后续里程碑接线）。"
     ),
     category="PROJECT",
     parameters={
@@ -246,9 +247,13 @@ async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | Non
                     "task_id": str(session.id),
                     "session_id": str(session.id),
                     "params": {"session_id": str(session.id)},
+                    # WR-01：如实表述当前能力——chat 入口「调研完成 → 自动续驱 engine /
+                    # resume chat graph 融合回流」尚未接线（见 deferred-items.md），故**不**承诺
+                    # 自动继续，仅陈述：已发起 + 调研在途 + 自动回流后续接入。
                     "placeholder": (
-                        f"已启动方案编排调研（session={session.id}），"
-                        "调研完成后将自动继续融合并返回主方案。"
+                        f"已发起跨仓方案编排调研（session={session.id}，状态={session.status}）；"
+                        "深入调研容器运行中。注意：本会话「调研完成后自动融合并返回主方案」"
+                        "的自动回流能力尚未接入（后续里程碑接线），当前不会自动继续。"
                     ),
                 },
             )
