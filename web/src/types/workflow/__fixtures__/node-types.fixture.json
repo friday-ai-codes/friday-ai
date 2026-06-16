@@ -1,5 +1,5 @@
 {
-  "node_count": 33,
+  "node_count": 34,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -88,6 +88,23 @@
     },
     {
       "node_type": "ai_plan_generation",
+      "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "ai_plan_research",
       "category": "ai",
       "inputs": [
         {
