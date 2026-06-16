@@ -187,7 +187,7 @@ async def _filter_repos_in_space(
     from repositories.models import Repository
 
     try:
-        return [
+        kept = [
             str(rid)
             async for rid in Repository.objects.filter(
                 id__in=include_repos, projects__id=space_id, is_deleted=False
@@ -196,6 +196,18 @@ async def _filter_repos_in_space(
     except Exception:  # noqa: BLE001 — best-effort 过滤，非法 UUID 等降级为空
         logger.warning("start_plan_research_repo_filter_failed", space_id=space_id)
         return []
+
+    # IN-01：区分「未传 include_repos」（上面已 return []）与「显式传了但全部不属于该 space /
+    # 含非法 UUID」——后者用户的显式限定意图被静默丢弃、回退全空间自动路由。记一条醒目日志
+    # （requested vs kept 计数）便于排查，避免「以为限定生效」的困惑。
+    if not kept:
+        logger.warning(
+            "start_plan_research_include_repos_all_filtered",
+            space_id=space_id,
+            requested=len(include_repos),
+            kept=0,
+        )
+    return kept
 
 
 async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | None:
