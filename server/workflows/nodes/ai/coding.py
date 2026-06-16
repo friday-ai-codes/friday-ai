@@ -534,6 +534,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         tasks_by_repo: dict[str, Any] | None,
         service: Any,
         log: Any,
+        upstream_artifacts_by_repo: dict[str, list[dict]] | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """dispatch 指定一批仓（单 wave），返回 ``(waiting_sessions, failed)``。
 
@@ -542,7 +543,11 @@ class AICodingNode(SubStepMixin, BaseNode):
         tasks_by_repo 非空）：dispatch 成功仓经 ``service.mark_running`` 回填 RUNNING +
         subagent_session；dispatch 失败仓经 ``service.mark_failed`` 标终态——否则该仓无容器
         回调，wave 永挂（liveness）。
+
+        ``upstream_artifacts_by_repo``（ARTIFACT-02）默认 None → 首发 wave 0 各仓注入 [] →
+        prompt 与 Phase 44 逐字一致（零回归命门，首发 ``_execute_with_branch`` 不传该参）。
         """
+        by_repo = upstream_artifacts_by_repo or {}
         coding_tasks = [
             self._run_repo_coding(
                 repository=repositories[repo_id],
@@ -555,6 +560,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 anthropic_api_key=anthropic_api_key,
                 anthropic_base_url=anthropic_base_url,
                 user_pat=user_pat,
+                upstream_artifacts=by_repo.get(repo_id, []),
             )
             for repo_id in repo_ids
         ]
@@ -882,6 +888,21 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
 
+        # ── ARTIFACT-02：唯一注入收集点（D-07）——沿直接 depends_on 收集上游产物 ──
+        # 整段 fail-soft：收集异常 → warning → 注入空段（零回归降级），绝不让容器回调 5xx
+        # 致重试风暴（T-45-08）。仅记 repo 数 / error 字符串，绝不记产物正文（T-45-07）。
+        upstream_by_repo: dict[str, list[dict]] = {}
+        try:
+            from services.plan_orchestration.artifact_injection import (
+                acollect_upstream_artifacts,
+            )
+
+            for repo_id, task in tasks_by_repo.items():
+                upstream_by_repo[repo_id] = await acollect_upstream_artifacts(task)
+        except Exception as exc:  # noqa: BLE001 — 注入降级，绝不阻塞 wave 推进 / 回调主流程
+            upstream_by_repo = {}
+            log.warning("coding_upstream_collect_failed", error=str(exc))
+
         waiting_sessions, failed = await self._dispatch_wave(
             repo_ids=[rid for rid in dispatch_repo_ids if rid in repositories],
             repo_groups=repo_groups,
@@ -897,6 +918,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             tasks_by_repo=tasks_by_repo,
             service=service,
             log=log,
+            upstream_artifacts_by_repo=upstream_by_repo,
         )
         log.info(
             "coding_wave_next_dispatched",
@@ -1347,6 +1369,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         anthropic_api_key: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         user_pat: str = "",  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
+        upstream_artifacts: list[dict] | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
     ) -> dict[str, Any]:
         """通过 TaskDispatcher 分发编码任务到 Runner。"""
         log = logger.bind(
@@ -1354,7 +1377,9 @@ class AICodingNode(SubStepMixin, BaseNode):
             repository_name=repository.name,
         )
 
-        prompt = self._build_coding_prompt(tasks, global_context, branch_name)
+        prompt = self._build_coding_prompt(
+            tasks, global_context, branch_name, upstream_artifacts=upstream_artifacts
+        )
 
         from runners.dispatcher import DispatchTask, get_dispatcher
         from subagent.models import SubAgentSession, generate_execution_id
@@ -1536,15 +1561,29 @@ class AICodingNode(SubStepMixin, BaseNode):
         tasks: list[dict[str, Any]],
         global_context: str,
         branch_name: str,
+        upstream_artifacts: list[dict] | None = None,
     ) -> str:
         """构建 SubAgent 编码 prompt。
 
-        合并该仓库所有任务的编码指令。
+        合并该仓库所有任务的编码指令。``upstream_artifacts`` 为 ARTIFACT-02 上游产物注入
+        （默认 None → 首发 wave 0 / 无上游 → 注入段不渲染 → 与 Phase 44 现行为逐字一致，
+        零回归命门）。
         """
+        from services.plan_orchestration.artifact_injection import (
+            render_upstream_artifacts_section,
+        )
+
         parts: list[str] = []
 
         if global_context:
             parts.append(f"# 项目背景\n\n{global_context}")
+
+        # ── ARTIFACT-02：上游产物段（D-08：global_context 之后、分支信息之前）──
+        # 空段（无上游 / 空产物）→ render 返回 "" → 守卫不 append（逐字对齐既有
+        # `if files_section:`，绝不让空段进 parts 否则多一个 "\n\n---\n\n" 分隔，零回归）。
+        upstream_section = render_upstream_artifacts_section(upstream_artifacts or [])
+        if upstream_section:
+            parts.append(upstream_section)
 
         parts.append(f"# 分支信息\n\n目标分支: `{branch_name}`")
 
