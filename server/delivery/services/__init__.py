@@ -17,6 +17,7 @@ from delivery.services.comment_projection import (
     project_comment_tree,
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
+from delivery.services.event_taxonomy import ALL_EVENTS, RESERVED_EVENTS, build_envelope
 from delivery.services.ingest_orchestrator import StepResult, ingest_from_urls
 from delivery.services.ingest_parsing import (
     BoardRef,
@@ -47,6 +48,9 @@ __all__ = [
     "aproject_comment_tree",
     "DocumentService",
     "derive_feishu_tenant",
+    "ALL_EVENTS",
+    "RESERVED_EVENTS",
+    "build_envelope",
     "ReleaseService",
     "BitableReleaseAdapter",
     "BoardRef",

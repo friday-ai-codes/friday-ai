@@ -18,7 +18,12 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
-from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
+from delivery.models import (
+    PlanSession,
+    PlanSessionEntrypoint,
+    PlanSessionEvent,
+    PlanSessionStatus,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -256,14 +261,40 @@ class PlanSessionService:
     async def _emit_event(
         self, event_name: str, session: PlanSession, payload: dict[str, Any]
     ) -> None:
-        """事件钩子占位（best-effort no-op + log）。
+        """事件钩子（Phase 41 EVENT-01）：持久化 §15 信封行 ``PlanSessionEvent``。
 
-        事件 taxonomy 真实发射在 Phase 41（DOMAIN §15）；本 phase 仅留钩子点，
-        **绝不抛出影响转移**（best-effort）。
+        持久化一行 ``PlanSessionEvent``（``event==event_name``、``session==session``、
+        ``work_item==session.work_item_id``、``payload==payload or {}``、``ts`` 默认 now），
+        §15 统一信封 ``{event, session_id, work_item_id?, ts, payload}`` 的列拆解形态。
+
+        **best-effort（绝不抛出影响转移）**：整体 try/except 包裹——DB 写失败只
+        ``logger.warning``，绝不重新抛出（编排可靠性优先于事件完整性，T-41-01-02）。
+        async 上下文禁裸 lazy-FK：用 ``session.work_item_id`` 标量（不访问
+        ``session.work_item``），规避 Phase 38 CR-01 类。
         """
         logger.info(
             "plan_session_event",
             event_name=event_name,
             session_id=str(session.id),
             status=session.status,
+        )
+        try:
+            await self._persist_event(event_name, session, payload)
+        except Exception as exc:  # noqa: BLE001 — best-effort：事件持久化失败绝不阻断转移
+            logger.warning(
+                "plan_session_event_persist_failed",
+                event_name=event_name,
+                session_id=str(session.id),
+                error=str(exc),
+            )
+
+    @sync_to_async
+    def _persist_event(
+        self, event_name: str, session: PlanSession, payload: dict[str, Any]
+    ) -> None:
+        PlanSessionEvent.objects.create(
+            session=session,
+            event=event_name,
+            work_item=session.work_item_id,
+            payload=payload or {},
         )
