@@ -151,20 +151,28 @@ class TechnicalPlanService:
     @sync_to_async
     def _create_from_sync(self, origin: str, content: dict, work_item: Any) -> TechnicalPlan:
         with transaction.atomic():
-            plan = TechnicalPlan.objects.create(
-                work_item=work_item,
-                origin=origin,
-                status=TechnicalPlanStatus.DRAFT,
-            )
-            v1 = PlanVersion.objects.create(
-                plan=plan,
-                version=1,
-                content=content,
-                content_hash=_content_hash(content),
-            )
-            plan.current_version = v1
-            plan.save(update_fields=["current_version", "updated_at"])
-            return plan
+            return self._create_canonical_sync(origin, content, work_item)
+
+    def _create_canonical_sync(self, origin: str, content: dict, work_item: Any) -> TechnicalPlan:
+        """同步建 canonical（plan + 首版 v1 + 置 current_version）；调用方负责事务边界。
+
+        供 ``_create_from_sync`` 与 lazy 迁移加锁路径复用——后者需在同一 ``transaction.atomic``
+        内「建 canonical + 回填软链」原子完成（WR-01：防并发/中断产生孤儿 canonical）。
+        """
+        plan = TechnicalPlan.objects.create(
+            work_item=work_item,
+            origin=origin,
+            status=TechnicalPlanStatus.DRAFT,
+        )
+        v1 = PlanVersion.objects.create(
+            plan=plan,
+            version=1,
+            content=content,
+            content_hash=_content_hash(content),
+        )
+        plan.current_version = v1
+        plan.save(update_fields=["current_version", "updated_at"])
+        return plan
 
     async def add_version(self, plan: TechnicalPlan, content: dict) -> PlanVersion:
         """加版本：hash 相等复用 current 不翻版本；不等建 supersedes 链并推进 current。"""
@@ -224,13 +232,35 @@ class TechnicalPlanService:
         except CodingPlan.DoesNotExist:
             raise PlanNotFound(ref) from None
         if old.canonical_plan_id:
+            # 已迁移：无锁快路径直接读 canonical（双检锁的乐观第一检）
             return await self._aget_plan(old.canonical_plan_id, ref)
-        content = chat_codingplan_to_content(old)
-        canonical = await self.create_from(
-            origin=TechnicalPlanOrigin.CHAT, payload={"content": content}, work_item=None
-        )
-        await self.link(old, canonical)
-        return canonical
+        # 未迁移：进入加锁 lazy 迁移（锁内复检软链，原子建 canonical + 回填，WR-01）
+        return await self._resolve_chat_lazy_sync(ref)
+
+    @sync_to_async
+    def _resolve_chat_lazy_sync(self, ref: PlanRef) -> TechnicalPlan:
+        """chat lazy 迁移：行锁 + 锁内复检软链 + 同事务建 canonical 并回填（WR-01）。
+
+        并发/陈旧 resolve 命中同一未迁移旧记录时，``select_for_update`` 串行化，后来者在锁内
+        复检 ``canonical_plan_id`` 已被前者写入 → 直接读现有 canonical，绝不重复创建。
+        """
+        from chat.models import CodingPlan  # lazy import 防循环
+
+        with transaction.atomic():
+            try:
+                old = CodingPlan.objects.select_for_update().get(id=ref.source_key)
+            except CodingPlan.DoesNotExist:
+                raise PlanNotFound(ref) from None
+            if old.canonical_plan_id:
+                return self._get_plan_sync(old.canonical_plan_id, ref)
+            content = chat_codingplan_to_content(old)
+            valid, err = validate_technical_plan(content)
+            if not valid:
+                raise PlanContentInvalid(f"content 校验失败：{err}")
+            canonical = self._create_canonical_sync(TechnicalPlanOrigin.CHAT, content, None)
+            old.canonical_plan_id = canonical.id
+            old.save(update_fields=["canonical_plan_id", "updated_at"])
+            return canonical
 
     async def _resolve_mcp(self, ref: PlanRef) -> TechnicalPlan:
         from mcp_tools.models import McpWorkItemTechnicalPlan  # lazy import 防循环
@@ -240,13 +270,31 @@ class TechnicalPlanService:
         except McpWorkItemTechnicalPlan.DoesNotExist:
             raise PlanNotFound(ref) from None
         if old.canonical_plan_id:
+            # 已迁移：无锁快路径直接读 canonical（双检锁的乐观第一检）
             return await self._aget_plan(old.canonical_plan_id, ref)
-        content = mcp_plan_to_content(old)
-        canonical = await self.create_from(
-            origin=TechnicalPlanOrigin.MCP, payload={"content": content}, work_item=None
-        )
-        await self.link(old, canonical)
-        return canonical
+        # 未迁移：进入加锁 lazy 迁移（锁内复检软链，原子建 canonical + 回填，WR-01）
+        return await self._resolve_mcp_lazy_sync(ref)
+
+    @sync_to_async
+    def _resolve_mcp_lazy_sync(self, ref: PlanRef) -> TechnicalPlan:
+        """mcp lazy 迁移：行锁 + 锁内复检软链 + 同事务建 canonical 并回填（WR-01）。"""
+        from mcp_tools.models import McpWorkItemTechnicalPlan  # lazy import 防循环
+
+        with transaction.atomic():
+            try:
+                old = McpWorkItemTechnicalPlan.objects.select_for_update().get(id=ref.source_key)
+            except McpWorkItemTechnicalPlan.DoesNotExist:
+                raise PlanNotFound(ref) from None
+            if old.canonical_plan_id:
+                return self._get_plan_sync(old.canonical_plan_id, ref)
+            content = mcp_plan_to_content(old)
+            valid, err = validate_technical_plan(content)
+            if not valid:
+                raise PlanContentInvalid(f"content 校验失败：{err}")
+            canonical = self._create_canonical_sync(TechnicalPlanOrigin.MCP, content, None)
+            old.canonical_plan_id = canonical.id
+            old.save(update_fields=["canonical_plan_id", "updated_at"])
+            return canonical
 
     async def _resolve_workflow(self, ref: PlanRef) -> TechnicalPlan:
         # workflow 无独立旧表：仅在 PlanExternalRef 命中时读 canonical，否则 PlanNotFound
@@ -263,6 +311,13 @@ class TechnicalPlanService:
     async def _aget_plan(self, plan_id: Any, ref: PlanRef) -> TechnicalPlan:
         try:
             return await TechnicalPlan.objects.aget(id=plan_id)
+        except TechnicalPlan.DoesNotExist:
+            raise PlanNotFound(ref) from None
+
+    def _get_plan_sync(self, plan_id: Any, ref: PlanRef) -> TechnicalPlan:
+        """``_aget_plan`` 的同步版（供 lazy 加锁路径在事务内复用）。"""
+        try:
+            return TechnicalPlan.objects.get(id=plan_id)
         except TechnicalPlan.DoesNotExist:
             raise PlanNotFound(ref) from None
 
