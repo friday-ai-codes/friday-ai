@@ -293,6 +293,76 @@ async def test_per_repo_dispatch_isolation(session_with_candidates) -> None:
 
 
 @pytest.mark.asyncio
+async def test_duplicate_candidates_deduped(db) -> None:
+    """IN-02：candidates 含重复 repo_id → 去重，同一 light 仓只落一条 PartialPlan、一个 task。"""
+    repo_low = await Repository.objects.acreate(
+        name=f"dup-low-{uuid.uuid4().hex[:6]}",
+        git_url=f"https://github.com/test/dup-{uuid.uuid4().hex[:6]}.git",
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.RESEARCHING,
+        routing={
+            "candidates": [
+                {"repo_id": str(repo_low.id), "confidence": "low"},
+                {"repo_id": str(repo_low.id), "confidence": "low"},  # 重复
+            ]
+        },
+    )
+    dispatcher, captured = _mock_dispatcher()
+    adapter = ResearchDispatchAdapter()
+
+    with patch("runners.dispatcher.get_dispatcher", return_value=dispatcher):
+        result = await adapter.dispatch(session)
+
+    assert len(result["light"]) == 1
+    assert await RepoResearchTask.objects.filter(session=session).acount() == 1
+    low_task = await RepoResearchTask.objects.aget(session=session, repository=repo_low)
+    assert await PartialPlan.objects.filter(research_task=low_task).acount() == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_git_url_fails_task_without_container(db) -> None:
+    """IN-03：deep 仓缺 git_url → mark_failed + repo.research.failed，不派占位 URL 容器。"""
+    repo = await Repository.objects.acreate(
+        name=f"nogit-{uuid.uuid4().hex[:6]}",
+        git_url="",  # 缺 git_url
+        git_platform="github",
+        default_branch="main",
+        index_status="indexed",
+    )
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.RESEARCHING,
+        routing={"candidates": [{"repo_id": str(repo.id), "confidence": "high"}]},
+    )
+    dispatcher, captured = _mock_dispatcher()
+    adapter = ResearchDispatchAdapter()
+    spy = AsyncMock()
+    adapter.session_service._emit_event = spy
+
+    with (
+        patch("runners.dispatcher.get_dispatcher", return_value=dispatcher),
+        patch.object(ResearchDispatchAdapter, "_count_online_runners", new=AsyncMock(return_value=1)),
+    ):
+        result = await adapter.dispatch(session)
+
+    # 不派容器、不计入 dispatched
+    assert dispatcher.dispatch.await_count == 0
+    assert result["dispatched"] == []
+    task = await RepoResearchTask.objects.aget(session=session, repository=repo)
+    assert task.status == RepoResearchTaskStatus.FAILED
+    assert task.error.get("reason") == "missing_git_url"
+    failed = [
+        c for c in spy.call_args_list if c.args and c.args[0] == "repo.research.failed"
+    ]
+    assert len(failed) == 1
+
+
+@pytest.mark.asyncio
 async def test_writes_only_via_service(session_with_candidates) -> None:
     """deep 仓 task 经 ResearchService 建（行为层确认；旁路由 39-02 INV-6 grep 守护兜底）。"""
     session, repo_high, repo_medium, repo_low = session_with_candidates
