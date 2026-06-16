@@ -14,6 +14,7 @@ fail-closed 权限过滤）的 adapter：召回相似需求/缺陷/复盘/技术
 from __future__ import annotations
 
 import structlog
+from asgiref.sync import sync_to_async
 
 from delivery.models import PlanSession
 from knowledge.models import EntityKind
@@ -43,8 +44,10 @@ class DeliveryKnowledgeRecallAdapter:
         """召回相似需求/缺陷/复盘/技术方案，返回 `{hits, query, kinds}`。
 
         空 query → 直接返回空 hits，不调检索。`repository_ids` 用路由候选仓收窄召回。
-        `user = session.created_by`（为 None 时透传，依赖 search_similar fail-closed 空召回）。
-        整段 try/except：任何异常 → log warning + 空 hits（best-effort 不阻断编排）。
+        actor 经 ``_resolve_actor``（``created_by_id`` 短路/同步 ORM 经 sync_to_async）解析
+        —— **绝不在 async 上下文懒加载 FK**（否则触发 SynchronousOnlyOperation）。actor 解析
+        与检索同处一个 try/except：任何异常（含 actor 解析失败）→ log warning + 空 hits
+        （best-effort 不阻断编排，守 RECALL-01：召回失败返回空、不冒泡破坏编排）。
         """
         kinds = [str(k) for k in RECALL_ENTITY_KINDS]
         query = (session.decomposition or {}).get("requirement_text", "")
@@ -55,11 +58,11 @@ class DeliveryKnowledgeRecallAdapter:
         repository_ids = (
             [c["repo_id"] for c in candidates if c.get("repo_id")] if candidates else None
         )
-        user = session.created_by
 
         try:
             from knowledge.retrieval import DeliveryKnowledgeSearchService
 
+            user = await self._resolve_actor(session)
             results = await DeliveryKnowledgeSearchService().search_similar(
                 query,
                 user=user,
@@ -75,6 +78,16 @@ class DeliveryKnowledgeRecallAdapter:
 
         hits = [self._map_hit(r) for r in results]
         return {"hits": hits, "query": query, "kinds": kinds}
+
+    @sync_to_async
+    def _resolve_actor(self, session: PlanSession):
+        """同步解析发起人 actor（召回权限 user）经 sync_to_async 桥接。
+
+        ``created_by_id`` 为空时 Django 短路返回 None（不查库，fail-closed 不伪造 actor）；
+        非空则同步 ORM 取关联 User —— 镜像 ``RepoRouterV2Adapter._project_repository_ids``
+        的 async ORM 范式，避免在 async 事件循环内懒加载 FK 触发 SynchronousOnlyOperation。
+        """
+        return session.created_by
 
     @staticmethod
     def _map_hit(result) -> dict:
