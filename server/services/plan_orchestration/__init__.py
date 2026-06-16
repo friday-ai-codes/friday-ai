@@ -9,6 +9,10 @@ from services.plan_orchestration.architect_merge_adapter import (
     LLMMergedPlanSynthesizer,
     MergedPlanSynthesizer,
 )
+from services.plan_orchestration.artifact_extraction import (
+    build_produced_artifacts,
+    classify_modified_files,
+)
 from services.plan_orchestration.clarify_adapter import (
     ClarifyAdapter,
     default_needs_clarification,
@@ -92,4 +96,6 @@ __all__ = [
     "build_repo_dep_edges",
     "acurrent_wave_all_terminal",
     "aadvance_coding_waves",
+    "build_produced_artifacts",
+    "classify_modified_files",
 ]
