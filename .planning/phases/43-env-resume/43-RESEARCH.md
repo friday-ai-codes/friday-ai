@@ -444,18 +444,23 @@ await get_barrier_manager().task_completed(str(plan_session.id), result)  # 已�
 | A2 | chat 入口续驱后用 `BlockingTaskResult.output` 回灌主方案摘要即满足 chat 呈现 | RESUME-01 步骤 2 | 若需更丰富的 RoutingDecisionPanel 式结构化回灌，需额外格式化（参考 cross_repo_relevance 的 TaskResult 追加范式 `callbacks.py:1197-1206`）。不阻塞闭环。 |
 | A3 | 多仓 `_run_repo_coding` 各仓 `branch_name` 即应作为该仓 `BRANCH_STRATEGY`（当前多仓共用同名 branch 是既有行为，本 phase 不改命名策略） | PF-06 多仓差异 | 若 Phase 44 引入 per-repo 独立分支命名需再调；本 phase 仅正确下传已解析值，不引入新策略。 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 三个 Open Question 的 Recommendation 均已被 Phase 43 plans 采纳，无遗留待决项。逐条解决记录如下：
 
 1. **`env_FRIDAY_TASK_GIT_SSL_VERIFY` 取值：chat 基线硬编码 `"false"` vs workflow 现有 nested dict 的 per-repo `credential.ssl_verify`？**
    - What we know：chat `build_dispatch_metadata:175` 硬编码 `"false"`；workflow nested dict（`coding.py:927-931`）取 per-repo `credential.ssl_verify`（fallback `"true"`）；task 默认 `git_ssl_verify=False`。
    - What's unclear：是否有依赖 per-repo `ssl_verify=true` 的内部仓。
    - Recommendation：对齐 chat 基线 `"false"`（CONTEXT「以 chat 为权威基线」）；如 planner 认为 per-repo 更稳，可传 `str(credential.ssl_verify).lower()`——两者都满足「token 认证 + 自签名证书」主场景。低风险，倾向 `"false"`。
+   - **RESOLVED：** 采纳推荐 → 43-01-PLAN.md Task 2 注入 `env_FRIDAY_TASK_GIT_SSL_VERIFY="false"`（对齐 chat 权威基线），Task 1 断言取值 `"false"`。
 
 2. **`_schedule_chat_plan_resume` 接线落点（选项 A vs B）。**
    - Recommendation：选项 A（`_schedule_agent_session_resume` plan_research 分支）——已覆盖 completed+failed 两路、改动最小、与 `_schedule_workflow_resume`/`_notify_barrier_manager` 并列语义最清晰。
+   - **RESOLVED：** 采纳选项 A → 43-03-PLAN.md Task 1 把 `_schedule_agent_session_resume` 的 plan_research 分支改为委派 `_schedule_chat_plan_resume`（entrypoint==chat 守门），天然覆盖 `_handle_completed`/`_handle_failed` 两路。
 
 3. **chat 入口最终主方案如何呈现回对话（输出格式）。**
    - Recommendation：复用 deep_analysis 既有回灌通道（`BlockingTaskResult.output` 文本 + 可选 plan_version_id），不新造前端组件（CONTEXT Discretion）。
+   - **RESOLVED：** 采纳推荐 → 43-03-PLAN.md Task 1 构建 `BlockingTaskResult`（`task_id=str(plan_session.id)`、`output=主方案摘要/plan_version_id`）经 `BarrierManager.task_completed` 走既有 deep_analysis 回灌通道，无新前端组件。
 
 ## Environment Availability
 
