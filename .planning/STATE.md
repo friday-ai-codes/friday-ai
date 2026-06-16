@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-16T18:26:57.937Z"
 last_activity: 2026-06-16
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,17 +19,42 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.8.0 已交付：把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
-**Current focus:** 规划下一里程碑（`/gsd-new-milestone`）；候选见 PROJECT.md Backlog / `ROADMAP-vNext.md`（v0.9 SDD/OpenSpec、编码全自动 replan、对外事件 adapter）。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.9.0 进行中：让 spec-driven development 成为可治理的过程资产——SDD 仓库打标 → 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审 → spec↔需求/PR 关联 → 交付验收。
+**Current focus:** v0.9.0 路线图已定（Phases 48–52）；下一步 `/gsd-plan-phase 48`（SDD 仓库检测 + facets 打标 + 前端标签）。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 48 (Not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-16 — Milestone v0.9.0 started
+Status: Roadmap drafted — ready to plan Phase 48
+Last activity: 2026-06-17 — Milestone v0.9.0 roadmap created (Phases 48–52)
 
-## Milestone Overview (v0.8.0 — Phases 43–47)
+## Milestone Overview (v0.9.0 — Phases 48–52)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ⬜ Not started |
+| 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ⬜ Not started |
+| 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ⬜ Not started |
+| 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ⬜ Not started |
+| 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ⬜ Not started |
+
+**Execution order:** 48 → 49 → 50 → 51 → 52（严格顺序）。依赖链：SDD 仓库打标(48) → SDD 仓库方案产 openspec spec draft(49) → spec 状态机 + 评审记录 + 前端展示(50) → 编码前置 gate + openspec 注入(51) → spec↔需求/PR 关联 + 交付验收视图(52)。每个 phase 建立在前序产物之上——无打标无从判定产 spec，无 spec 实体无从挂状态机，无 `approved` 状态无从 gate，无放行编码无实现 PR 可关联。
+
+**UI 触面（标 UI hint）:** Phase 48（仓库列表/详情方法论标签）、Phase 50（spec 列表/详情/状态流转 + 评审记录 UI，本里程碑最重前端）、Phase 52（交付验收视图，沿 spec→WorkItem→PR 链路追溯）。后续 `/gsd-ui-phase` 介入这三处。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+- **复用 v0.7/v0.8 预留扩展点**（DOMAIN §6.1）：`Document.SDD_SPEC` 枚举（§3/§12.5 已含）、`RepoCodingTask.follow_openspec` 字段（v0.8 Phase 44 已建，本里程碑首次消费）、`Repository.facets` JSON（通用字段已有）、task `setting_sources=["project"]`（容器原生加载仓库内 `.claude/skills`，v0.9 仅加 system_prompt 注入点）。**核查结论：均为「字段/枚举占位」**——openspec 检测钩子、产 spec 逻辑、system_prompt 注入点均需从零建。
+- **新增 spec 状态/评审为建模空白**：spec 生命周期独立建模（`SddSpec` + 评审记录实体），非复用 `TechnicalPlan`。
+- **spec 状态机命名沿 vNext**：`draft → in_review → approved → implemented → archived`——刻意区别于既有 `TechnicalPlan.status`（`draft|under_review|approved|superseded|archived`），spec 语义确需 `in_review`/`implemented`，不复用避免口径串味。
+- **INV-6 单一写入入口精神**：spec 创建/状态流转/评审写入收口到专用 service（如 `SddSpecService`），禁旁路写表；spec draft 经 `DocumentService` 单一入口落 `Document(sdd_spec)`。
+- **编码前置 gate fail-closed 语义**：未 `approved` 拦截且如实标注阻断原因，不静默放行；非 SDD 仓库零回归。
+- **审计收口顺延 v0.10**：spec 评审记录本里程碑自持久化即可，接入统一 `AuditEvent` 是 v0.10 横切治理范围（REQUIREMENTS Out of Scope 已明确）。
+- **显式非目标**：编码中全自动 replan / spec-code 双向 drift 检测 / openspec lint 深度校验 / 非 openspec 的其他 SDD 框架 / 多级会签审批流 / 新建独立 SDD 角色权限层（均列 v2 SDDX-* 或 Out of Scope）。
+
+**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.9`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md` §6.1（SDD 扩展点）/§3 + §12.5（`Document` 含 `sdd_spec` 枚举与字段详表）/§6（`RepoCodingTask.follow_openspec`）、`.planning/PROJECT.md`（Current Milestone v0.9.0 + Key context）。
+
+## Milestone Overview (v0.8.0 — Phases 43–47, shipped 2026-06-17)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -372,11 +397,11 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-16T16:00:00.000Z
-Stopped at: Phase 46 Plan 02 完成（PR-02：可复用 helper pr_cross_reference + 接 _finalize_and_notify ≥2 守门全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
+Last session: 2026-06-17 — v0.9.0 路线图创建（Phases 48–52，REQUIREMENTS traceability 11/11 校验通过）
+Stopped at: ROADMAP.md / STATE.md / REQUIREMENTS.md 已写入，里程碑 v0.9.0 phase 结构就绪
 Resume file: None
-Next: Phase 47（HITL-01：编码遇阻 question 抛人）——`/gsd-plan-phase 47` 起步
+Next: Phase 48（SDD-01/02：SDD 仓库检测 + facets 打标 + 前端标签）——`/gsd-plan-phase 48` 起步
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with /gsd-plan-phase 48
