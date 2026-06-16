@@ -52,7 +52,7 @@
 
 - [x] **Phase 36: 前置修复 + 编排引擎骨架 + PlanSession 状态机** - 修 PF-01/02（检索工具名漂移 / verify_plan schema 漂移）+ 立可复用 `ai_plan_research` 编排 engine + 可持久化可恢复的 `PlanSession` 状态机（§14） (completed 2026-06-16)
 - [x] **Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移** - 立 canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径 eager 投影软链 + read-time lazy 迁移 (completed 2026-06-16)
-- [ ] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案）
+- [x] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案） (completed 2026-06-16)
 - [ ] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑
 - [ ] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模
 - [ ] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排
@@ -112,9 +112,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 38-01-PLAN.md — PlanSession 字段扩展（routing/recall_context JSON + created_by FK）+ migration 0011 + PlanSessionService 持久化接线（INV-6）
-- [ ] 38-02-PLAN.md — 路由 adapter（ROUTE-01）RepoRouterV2Adapter + engine._route 接线 + repo.routing §15 事件
-- [ ] 38-03-PLAN.md — 召回 adapter（RECALL-01）DeliveryKnowledgeRecallAdapter（fail-closed）+ engine._recall 接线 + knowledge.recalling §15 事件
+- [x] 38-01-PLAN.md — PlanSession 字段扩展（routing/recall_context JSON + created_by FK）+ migration 0011 + PlanSessionService 持久化接线（INV-6）
+- [x] 38-02-PLAN.md — 路由 adapter（ROUTE-01）RepoRouterV2Adapter + engine._route 接线 + repo.routing §15 事件
+- [x] 38-03-PLAN.md — 召回 adapter（RECALL-01）DeliveryKnowledgeRecallAdapter（fail-closed）+ engine._recall 接线 + knowledge.recalling §15 事件
 
 ### Phase 39: 并行调研子 agent
 
@@ -184,7 +184,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 |-------|-----------|----------------|--------|-----------|
 | 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
-| 38. 路由 + 召回接入 | v0.7.0 | 0/3 | Planned | - |
+| 38. 路由 + 召回接入 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 39. 并行调研子 agent | v0.7.0 | 0/0 | Not started | - |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 0/0 | Not started | - |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
