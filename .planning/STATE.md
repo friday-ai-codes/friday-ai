@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: executing
-stopped_at: Phase 46 Plan 02 完成（PR-02 跨仓 cross-ref + 方案/工作项追溯 helper + 接 _finalize_and_notify 全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
-last_updated: "2026-06-16T16:00:00.000Z"
-last_activity: 2026-06-16 -- Phase 46 Plan 02 完成（PR-02 跨仓 PR cross-ref + 追溯）
+status: Phase 46 收官（Plan 01 + Plan 02 完成）；下一步 Phase 47（HITL-01）
+stopped_at: Phase 46 Plan 02 完成（PR-02：可复用 helper pr_cross_reference + 接 _finalize_and_notify ≥2 守门全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
+last_updated: "2026-06-16T16:06:02.438Z"
+last_activity: 2026-06-16
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 14
   completed_plans: 14
-  percent: 70
+  percent: 80
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 ## Current Position
 
-Phase: 46 (多仓融合 PR + 跨仓 PR 关联) — COMPLETE
-Plan: 2 of 2 (全部完成)
+Phase: 47
+Plan: Not started
 Status: Phase 46 收官（Plan 01 + Plan 02 完成）；下一步 Phase 47（HITL-01）
-Last activity: 2026-06-16 -- Phase 46 Plan 02 完成（PR-02 跨仓 PR cross-ref + 追溯）
+Last activity: 2026-06-16
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
