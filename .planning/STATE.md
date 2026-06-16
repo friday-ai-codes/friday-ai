@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: verifying
+status: executing
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
-last_updated: "2026-06-16T12:14:18.485Z"
-last_activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/工具 advance 循环复用共享 helper + 文案如实更新（2 tasks，11 测全绿）
+last_updated: "2026-06-16T12:20:00.000Z"
+last_activity: 2026-06-16 -- Phase 44 Plan 01 完成（RepoCodingTask 模型 + 迁移 0017 + 模型测试）
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 4
-  percent: 0
+  completed_phases: 1
+  total_plans: 9
+  completed_plans: 5
+  percent: 22
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.8.0 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
-**Current focus:** Phase 43 — env-resume
+**Current focus:** Phase 44 — RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度
 
 ## Current Position
 
-Phase: 43 (env-resume) — EXECUTING
-Plan: 4 of 4
-Status: All plans complete (43-01..43-04) — ready for phase verification
-Last activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/工具 advance 循环复用共享 helper + 文案如实更新（2 tasks，11 测全绿）
+Phase: 44 (RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度) — EXECUTING
+Plan: 2 of 5（44-01 已完成）
+Status: Executing Phase 44
+Last activity: 2026-06-16 -- Phase 44 Plan 01 完成（RepoCodingTask 模型 + 迁移 0017 + 模型测试）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -165,6 +165,12 @@ Last activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/�
 | Phase 33 P01 | 30min | 3 tasks | 12 files |
 | Phase 34 P34-01 | 22min | 3 tasks | 10 files |
 
+**Milestone v0.8.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phase 44 P44-01 | ~8min | 3 tasks | 4 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -268,6 +274,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 43]: 43-03: chat 入口 plan_research 续驱接线 — _schedule_chat_plan_resume（entrypoint==CHAT 守门 + 43-02 同源 helper 续驱到终态 + BarrierManager.task_completed(str(plan_session.id)) 回灌），消化 v0.7 audit D-2 a/b — chat 入口续驱与工作流入口共享 43-02 同源 helper + 单一 engine 工厂，不造两套；权威字段守门防 runner 篡改
 - [Phase 43]: 43-04(RESUME-01「不造两套」收尾): 工作流节点 plan_research.execute 与 chat 工具 start_plan_research 两处内联 advance 循环重构为复用 43-02 共享 helper adrive_plan_session_to_pause_or_terminal——节点/工具/回调消费者三处真正同源一份续驱逻辑；入口私有挂起 marker 映射（NodeResult/ToolResult via _maybe_suspend）各自保留，helper 短路返回后再跑一次 _maybe_suspend 即等价；step 上限处理下沉 helper（transition(fail)→_map_terminal failed 分支）；test_clarifying_suspends_waiting_event 红线零回归（11 测全绿）
 - [Phase 43]: 43-04: start_plan_research 占位文案/工具 description 由「自动回流尚未接入/当前不会自动继续」如实更新为「调研完成后将自动融合并返回 canonical 主方案」（43-03 已接通），仅改文案不动 marker/挂起协议（T-43-MISLEAD accept）
+- [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
 ### Pending Todos
 
@@ -339,10 +346,10 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T10:45:46.702Z
-Stopped at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
+Last session: 2026-06-16T12:20:00.000Z
+Stopped at: Phase 44 Plan 01 完成（RepoCodingTask 模型 + 迁移 0017 + 模型测试，4 测全绿）
 Resume file: None
-Next: 新会话 autonomous 跑 v0.8.0，或 `/gsd-plan-phase 43` 起步
+Next: 执行 44-02（wave_layering 拓扑分层纯函数）——与 44-01 同 wave 1
 
 ## Operator Next Steps
 

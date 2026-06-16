@@ -87,7 +87,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 44-01-PLAN.md — RepoCodingTask 模型 + barrel + 迁移 0017 + 模型测试（wave 1）
+- [x] 44-01-PLAN.md — RepoCodingTask 模型 + barrel + 迁移 0017 + 模型测试（wave 1）
 - [ ] 44-02-PLAN.md — wave_layering 拓扑分层纯函数（task-id DAG→仓级 wave）+ 测试（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -146,7 +146,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
-| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 0/5 | Not started | — |
+| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 1/5 | In progress | — |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 0/? | Not started | — |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
