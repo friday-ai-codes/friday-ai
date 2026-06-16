@@ -169,6 +169,30 @@ class ResearchService:
         task.refresh_from_db()
         return task
 
+    async def mark_stale(self, task_ids: list) -> int:
+        """澄清回答后置指定 RepoResearchTask → stale + 其 valid PartialPlan 失效（CLARIFY-01）。
+
+        与 ``invalidate_for_repo``（按 repo 重索引，reason=repo_reindexed）区别：本方法按
+        **指定 task_ids**（澄清 affected_partials）置 stale，``invalidated_reason="clarification"``，
+        使其满足 §14「stale 须重跑后才满足 barrier」——由 researching 重派（ResearchDispatchAdapter
+        的 DISPATCHABLE 含 stale）。**只触指定 task，绝不动其他**；已 stale 幂等跳过。
+        返回失效 PartialPlan 计数。
+        """
+        return await self._mark_stale_sync(task_ids)
+
+    @sync_to_async
+    def _mark_stale_sync(self, task_ids: list) -> int:
+        if not task_ids:
+            return 0
+        invalidated = PartialPlan.objects.filter(
+            research_task_id__in=task_ids, valid=True
+        ).update(valid=False, invalidated_reason="clarification")
+        # 仅把指定 task 中非 stale 的置 stale（已 stale 幂等跳过）
+        RepoResearchTask.objects.filter(id__in=task_ids).exclude(
+            status=RepoResearchTaskStatus.STALE
+        ).update(status=RepoResearchTaskStatus.STALE, updated_at=timezone.now())
+        return invalidated
+
     async def invalidate_for_repo(self, repository_id: str) -> int:
         """重索引 stale 失效（RESEARCH-03）：repository 关联 valid PartialPlan→失效 + task→stale。
 
