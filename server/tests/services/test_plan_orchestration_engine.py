@@ -96,6 +96,45 @@ async def test_route_persists_routing_and_emits_event() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_recall_persists_context_and_emits_event() -> None:
+    """_recall 捕获 recall 返回经 transition 落 recall_context 并发 knowledge.recalling 事件。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.RECALLING,
+    )
+    hits = [{"entity_id": "e1", "kind": "work_item", "title": "t", "score": 0.9}]
+    recall = AsyncMock()
+    recall.recall = AsyncMock(
+        return_value={
+            "hits": hits,
+            "query": "q",
+            "kinds": ["work_item", "tech_plan", "code_change"],
+        }
+    )
+    engine = PlanOrchestrationEngine(recall=recall)
+    spy = AsyncMock()
+    engine.session_service._emit_event = spy
+
+    await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.CLARIFYING
+    assert reloaded.recall_context == hits
+    emitted = [
+        call
+        for call in spy.call_args_list
+        if call.args and call.args[0] == "knowledge.recalling"
+    ]
+    assert len(emitted) == 1
+    assert emitted[0].args[2] == {
+        "query": "q",
+        "kinds": ["work_item", "tech_plan", "code_change"],
+        "hits": 1,
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_injected_protocol_mocks_called() -> None:
     """各 stage 注入对应 AsyncMock，advance 调用注入依赖并推进。"""
     recall = AsyncMock()
