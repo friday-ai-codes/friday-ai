@@ -31,6 +31,7 @@ from delivery.models import (
     PlanSession,
 )
 from delivery.services import PlanSessionService, TechnicalPlanService
+from services.plan_orchestration.merged_plan import validate_merged_plan
 from services.plan_orchestration.plan_validator import validate_plan
 
 logger = structlog.get_logger(__name__)
@@ -156,28 +157,68 @@ class ArchitectMergeAdapter:
                 "attempt": attempt,
             }
 
-        # 5. PlanValidator（40-01）
+        # 5. schema 闸口（§7，CR-01）—— 先过 validate_merged_plan，保证 schema 非法产物
+        #    （如 execution_plan 项缺 repository_id）走与 PlanValidator 失败相同的优雅降级分支
+        #    （ArchitectMerge(failed) + plan.validation.failed + §14 回退），而非在 _handle_pass
+        #    的 create_from 内二次抛 PlanContentInvalid 冒泡到 engine 崩成 terminal failed。
+        schema_ok, schema_err = validate_merged_plan(merged)
+        if not schema_ok:
+            report = {
+                "valid": False,
+                "errors": [
+                    {"check": "schema", "message": schema_err or "MergedPlan schema 非法"}
+                ],
+            }
+            return await self._handle_fail(session, report, attempt, has_stale)
+
+        # 6. PlanValidator（40-01，跨仓语义）
         report = validate_plan(merged)
         if report.get("valid"):
-            return await self._handle_pass(session, merged, report, attempt)
+            return await self._handle_pass(session, merged, report, attempt, has_stale)
         return await self._handle_fail(session, report, attempt, has_stale)
 
     async def _handle_pass(
-        self, session: PlanSession, merged: dict, report: dict, attempt: int
+        self,
+        session: PlanSession,
+        merged: dict,
+        report: dict,
+        attempt: int,
+        has_stale: bool,
     ) -> dict:
-        """通过分支：落 canonical（INV-6）+ 置 current_plan_version + ArchitectMerge(passed)。"""
+        """通过分支：落 canonical（INV-6）+ ArchitectMerge(passed) + 置 current_plan_version。
+
+        防御性（CR-01）：``create_from`` 内 ``validate_technical_plan`` 若因 schema 漂移
+        二次失败抛 ``PlanContentInvalid``（理论上已被 §7 schema 闸口拦截），转成验证失败
+        （failed report + §14 回退），绝不冒泡到 engine 通用 except 崩成 terminal failed。
+        """
         from delivery.models import WorkItem
+        from delivery.services.technical_plan_service import PlanContentInvalid
 
         # INV-2：work_item 可空（by id，不裸 lazy-FK）
         work_item = await WorkItem.objects.filter(id=session.work_item_id).afirst()
-        plan = await self.plan_service.create_from(
-            "orchestration", {"content": merged}, work_item=work_item
-        )
+        try:
+            plan = await self.plan_service.create_from(
+                "orchestration", {"content": merged}, work_item=work_item
+            )
+        except PlanContentInvalid as exc:
+            logger.warning(
+                "merge_canonical_schema_invalid",
+                session_id=str(session.id),
+                error=str(exc),
+            )
+            report = {
+                "valid": False,
+                "errors": [{"check": "schema", "message": str(exc)}],
+            }
+            return await self._handle_fail(session, report, attempt, has_stale)
+
         version_id = plan.current_version_id  # async 安全标量
-        await self.session_service.set_current_plan_version(session, version_id)
+        # IN-02：先落 ArchitectMerge(passed) 记账（引用 version_id），再置 session 指针——
+        # 后续步骤（指针/事件）失败也不致留「canonical 孤儿 + 无 ArchitectMerge 记录」。
         await self._record_merge(
             session, ArchitectMergeStatus.PASSED, version_id, report, attempt
         )
+        await self.session_service.set_current_plan_version(session, version_id)
         await self._emit(
             session, "plan.merge.completed", {"plan_version_id": str(version_id)}
         )
