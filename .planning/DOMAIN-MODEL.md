@@ -551,6 +551,7 @@ def link(old_record, canonical) -> None              # 回填 canonical_plan_id 
 | `plan.merge.started` | `{partials:[repo_id...]}` |
 | `plan.merge.completed` | `{plan_version_id}` |
 | `plan.validation.failed` | `{reasons:[...]}` |
+| `plan.session.failed` | `{error}` |
 | `coding.wave.started` | `{wave, repo_ids:[...]}` |
 | `coding.wave.completed` | `{wave, results:[{repo_id, mr_url?}]}` |
 
