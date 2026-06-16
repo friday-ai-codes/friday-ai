@@ -4,13 +4,13 @@ milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
 status: executing
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
-last_updated: "2026-06-16T10:26:10.408Z"
-last_activity: 2026-06-16 -- 43-01 PF-06 编码 env 对齐完成（2 tasks，6 守护测试绿）
+last_updated: "2026-06-16T10:46:30.973Z"
+last_activity: 2026-06-16 -- 43-03 RESUME-01 chat 入口续驱 + barrier 回灌接线完成（2 tasks，14 测全绿）
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 ## Current Position
 
 Phase: 43 (env-resume) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
-Last activity: 2026-06-16 -- 43-01 PF-06 编码 env 对齐完成（2 tasks，6 守护测试绿）
+Last activity: 2026-06-16 -- 43-03 RESUME-01 chat 入口续驱 + barrier 回灌接线完成（2 tasks，14 测全绿）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -262,6 +262,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 43]: 43-01(PF-06): token 为空降级不回退（不注入 access_token 键/不改写 repo_url）；nested `git_credentials` dict 零回归保留；dispatch 日志仅 `has_git_token` 布尔，token 绝不入日志；不改 task/runner（env 消费契约只读核对）；6 守护测试全绿（test_coding_node.py 12 passed+1 xfailed 无回归）
 - [Phase 43]: 43-02: 入口无关续驱 helper adrive_plan_session_to_pause_or_terminal——engine 由调用方传入，不造两套，状态只经 session_service.transition
 - [Phase 43]: 43-02: clarifying-pending 短路照搬节点/工具 _maybe_suspend，保护澄清 HITL（不回归）
+- [Phase 43]: 43-03(RESUME-01): 新增 _schedule_chat_plan_resume（mirror _schedule_workflow_resume：fire-and-forget + 幂等 + fail-soft）；_schedule_agent_session_resume 的 plan_research 分支由提前 return 改为委派到新函数，completed/failed 两路天然覆盖；消化 v0.7 audit D-2 缺口 a（chat barrier 从不被通知）+ b（chat 入口此后无消费者驱动 engine.advance 到 done）
+- [Phase 43]: 43-03(RESUME-01): 续驱→回灌严格时序（同协程顺序）——先 adrive_plan_session_to_pause_or_terminal 续驱到终态、再用终态 status 构建 BlockingTaskResult；barrier 回灌 task_id=str(plan_session.id)（chat barrier 注册键，非 session.session_id）；成功 output=current_plan_version 文本、失败 output=""（复用 deep_analysis 回灌通道）
+- [Phase 43]: 43-03(RESUME-01): T-43-TAMPER 守门以服务端权威字段 PlanSession.entrypoint==CHAT，不信 runner 可改字段；engine 由 build_orchestration_engine 单一工厂构造（无 node_execution_id 即 chat 入口），不造两套；日志仅记 plan_session_id/status/barrier_satisfied（T-43-INFO）；14 集成测试全绿（新增闭环/回归/幂等/fail-soft/失败路径 6 用例）
+- [Phase 43]: 43-03: chat 入口 plan_research 续驱接线 — _schedule_chat_plan_resume（entrypoint==CHAT 守门 + 43-02 同源 helper 续驱到终态 + BarrierManager.task_completed(str(plan_session.id)) 回灌），消化 v0.7 audit D-2 a/b — chat 入口续驱与工作流入口共享 43-02 同源 helper + 单一 engine 工厂，不造两套；权威字段守门防 runner 篡改
 
 ### Pending Todos
 
@@ -333,7 +337,7 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T10:25:34.029Z
+Last session: 2026-06-16T10:45:46.702Z
 Stopped at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
 Resume file: None
 Next: 新会话 autonomous 跑 v0.8.0，或 `/gsd-plan-phase 43` 起步
