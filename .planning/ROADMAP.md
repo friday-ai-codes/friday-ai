@@ -55,7 +55,7 @@
 - [x] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案） (completed 2026-06-16)
 - [x] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑 (completed 2026-06-16)
 - [x] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模 (completed 2026-06-16)
-- [ ] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排
+- [x] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排 (completed 2026-06-16)
 - [ ] **Phase 42: Chat 入口薄封装** - Chat 入口薄封装复用同一底层 orchestration engine（工作流先行，不并行造两套编排）
 
 ## Phase Details
@@ -165,8 +165,14 @@ Plans:
   2. 工作流入口端到端跑通编排——一个需求经「拆分→路由→召回→澄清→并行调研→融合」产出一份带跨仓依赖的 `MergedPlan`（工作流先行）
   3. 编排全程产出 §15 统一信封 trace 事件（`{event, session_id, work_item_id?, ts, payload}`，覆盖 work_item.syncing / knowledge.recalling / repo.routing / repo.research.* / clarification.* / plan.merge.* / plan.validation.failed），为 v0.11 对外 adapter 沉淀稳定词表（INV-5，progress/trace 非 CoT）
 
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 3 plans
+
+Plans:
+- [x] 41-01-PLAN.md — 事件 taxonomy 持久化（EVENT-01）：PlanSessionEvent 模型 + 迁移 0015 + PlanEvent §15 常量/信封 helper + 升级 _emit_event 持久化（best-effort）+ 全 emit 点锚定常量
+- [x] 41-02-PLAN.md — Clarification 回路（CLARIFY-01）：Clarification 模型 + 迁移 0016 + ClarificationService（INV-6）+ affected→stale 重跑 + ClarifyProtocol/Adapter + engine._clarify 真实接线
+- [x] 41-03-PLAN.md — 工作流入口节点（ENTRY-01）：AIPlanResearchNode 建 PlanSession + 注入真实 adapters 驱动 engine 端到端 + clarifying/researching waiting_event 挂起 + SC-2 端到端测试（IO 边界 mock）
+
+**UI hint**: yes（reuse-first：节点 config_schema/ports 即 SSOT 经既有节点编辑器自动渲染 + ask_user_question 澄清卡片复用，无新 Vue 组件）
 
 ### Phase 42: Chat 入口薄封装
 
@@ -197,7 +203,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 | 38. 路由 + 召回接入 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 39. 并行调研子 agent | v0.7.0 | 4/4 | Complete | 2026-06-16 |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 2/2 | Complete | 2026-06-16 |
-| 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
+| 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 42. Chat 入口薄封装 | v0.7.0 | 0/0 | Not started | - |
 
 ---
