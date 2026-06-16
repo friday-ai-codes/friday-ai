@@ -12,42 +12,40 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.6.0 领域脊柱 + 知识图谱补全（2026-06-15）
+**Latest shipped:** v0.7.0 方案编排（需求 → 主方案）（2026-06-16）
 
-里程碑演进：v0.4.0 工作流系统契约重构 → v0.5.0 索引/检索地基 + 排除文件 → v0.6.0 领域脊柱 + 知识图谱补全。近三个里程碑要点：
+里程碑演进：v0.5.0 索引/检索地基 + 排除文件 → v0.6.0 领域脊柱 + 知识图谱补全 → v0.7.0 方案编排（需求 → 主方案）。近三个里程碑要点：
 
-- **v0.4.0 工作流契约重构**：以后端节点 registry 为唯一事实源，`WorkflowGraphValidator` 保存即校验、内置模板开箱可跑、变量引用所选即所得、执行状态机（waiting_event/next_handle/trigger_data）修复、执行可观测（WS 断线降级轮询 + 节点错误展示）。
 - **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
 - **v0.6.0 领域脊柱 + 知识补全**：新增 `delivery` app 立起以飞书 work item 为中心的操作态脊柱——canonical `WorkItem` + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`/`WorkItemRelation`（字段派生）/`WorkItemStatusEvent`/`WorkItemCommentEvent`（append-only 评论流 + 当前树投影）；`Document`/`DocumentVersion`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边；Release 账本宽容模型 + 飞书 Bitable adapter 骨架；(看板URL+MR URL) 一键摄取编排；历史 diff 冻结 + bi-temporal 失效对账（PF-08）；评论入图 + 片段→需求反查 API/MCP；截图识别需求（多模态 LLM）。飞书接口前置修复 PF-09/10/11/12 已落地。
+- **v0.7.0 方案编排（需求 → 主方案）**：把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎——`PlanOrchestrationEngine`（入口无关 + 4 可注入 stage 协议）+ `PlanSession` 8 态状态机（拆分→路由→召回→澄清→并行调研→架构师融合，可持久化可恢复）；canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径软链/lazy 迁移；`RepoRouterV2` 路由 + `DeliveryKnowledgeSearchService` 召回接入；filter_then_container 并行调研子 agent（`RepoResearchTask`/`PartialPlan` + 单仓重试 + 重索引 stale 重跑）；架构师融合 + 结构化 `MergedPlan` + `PlanValidator`（5 类跨仓校验）+ 跨仓依赖 DAG 显式建模；HITL `Clarification` 澄清回路；§15 事件 taxonomy 全程持久化；工作流入口 + Chat 薄封装复用同一 engine。前置修复 PF-01/02 已落地。审计 passed（19/19 需求、INV-2/5/6 成立）。
 
 **已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.7.0 方案编排（需求 → 主方案）
+## Current Milestone: v0.8.0 多仓串行编码 → 融合 PR
 
-**Goal:** 把"需求 → 一份高质量多仓主技术方案"做成可复用的 map-reduce 多 agent 编排引擎：拆分 → 路由 → 召回 → 澄清 → 并行调研（子 agent 容器隔离）→ 架构师融合主方案（结构化 `MergedPlan` + `PlanValidator`）。同时立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession`、事件 taxonomy。详细数据模型见 `.planning/DOMAIN-MODEL.md` §5/§6/§7/§14/§15。
+**Goal:** 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码：按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人。**显式非目标：不做编码中全自动回溯重规划。** 详细数据模型见 `.planning/DOMAIN-MODEL.md` §6（`RepoCodingTask`：wave/`depends_on` DAG/`produced_artifacts`），前置修复台账见 `PREFLIGHT.md`（PF-06/07）。
 
 **Target features:**
 
-- 前置修复 PF-01/PF-02：`search_code` 工具名漂移（server 端检索工具静默失效）、`verify_plan` schema 漂移（`tasks` vs `execution_plan`，校验形同虚设）—— 方案质量 + PlanValidator 的地基
-- `ai_plan_research` 编排 engine 骨架 + `PlanSession` 状态机（decomposing→routing→recalling→clarifying→researching→merging→done/failed，可持久化可恢复）
-- canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService`（唯一写入入口 INV-6）+ 旧 3 路径（chat/mcp/workflow）软链/eager 投影/lazy 迁移（不全量双写）
-- 路由接入 `RepoRouterV2`（能力树 + LLM 快筛涉及哪些仓）+ 历史召回接入（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘）
-- 并行调研子 agent：`RepoResearchTask`/`PartialPlan` 结构化契约 + filter_then_container（只对需深入仓起 claude code 容器，上下文隔离）+ 单仓失败重试 + 仓库重索引使过期 partial stale 重跑
-- 架构师融合子 agent + `MergedPlan`（跨仓契约/依赖 DAG/迁移/兼容风险/发布顺序/回滚/execution_plan）+ `PlanValidator`（契约一致/依赖无环/迁移顺序/回滚完整）+ 跨仓依赖显式建模
-- HITL 澄清回路：`Clarification` + 回答后仅 `affected_partials` 重跑 + 工作流入口（先行）
-- 事件 taxonomy 产出（§15 trace 信封：work_item.syncing/repo.research.*/clarification.*/plan.merge.*/plan.validation.failed 等），v0.11 对外只是 adapter
-- Chat 入口薄封装（底层 orchestration engine 复用，工作流先行不并行造两入口）
-- SDD 扩展点预留：`PlanSession` 对 SDD 仓库可产 spec draft 字段位（v0.9 做全）
+- 前置修复 PF-06：workflow 编码路径 `AICodingNode` 注入 branch strategy / git token env（对齐 chat 路径），私有仓 clone 成功 + 用正确目标分支
+- 通用 resume 回流通路：消化 v0.7 audit D-2（chat deep-research 自动回流接线缺口）——立 `coding`/`plan_session` → 工作流/会话的通用 resume 回流通路，为 callback 驱动的多 wave 铺底
+- `RepoCodingTask` 模型（plan_version/repository/wave/`depends_on` DAG/status/`produced_artifacts`/`follow_openspec` 预留 SDD 扩展点）+ 按 `execution_plan[].dependencies` 拓扑分层（消化 PF-07，不再全并行）
+- wave 式执行：wave N 全 done 才触发 wave N+1（拓扑顺序推进 + wave 失败/部分回滚语义）
+- 上游产物提取（API 契约/OpenAPI/diff）→ 注入下游 wave prompt/global_context
+- 多仓融合 PR：各仓产出关联 PR/MR，diff base 用各仓正确 `target_branch`（非假设 master）+ 跨仓 PR 关联（cross-ref）
+- 编码遇阻 → question 抛人：task 侧发起 question 抛给用户/orchestrator（复用已有 question 协议、补 task 侧发起 + orchestrator resume），非全自动 replan
+- SDD 扩展点预留：`RepoCodingTask.follow_openspec` 标记 → 编码容器注入 openspec 指引（v0.9 做全）
 
 **Key context:**
 
-- 设计底座已就绪：`ROADMAP-vNext.md` §v0.7（流水线 6 段/概念/现状坐标/已确认决策）、`DOMAIN-MODEL.md` §5（canonical TechnicalPlan + service + 迁移规则）/§6（编排状态机 + 子任务级状态 + 可靠恢复规则）/§7（PartialPlan/MergedPlan/PlanValidator schema）/§14（PlanSession 转移表）/§15（事件 payload 规格）、`PREFLIGHT.md`（PF-01/02 必修）。
-- **不变量**：INV-2 所有技术方案最终可追溯到 `WorkItem`（chat 自然语言例外可 null 但显式标记）；INV-5 对外暴露 progress/trace 事件非模型私有 CoT；INV-6 技术方案解析/创建只经 `TechnicalPlanService`，禁旁路写表。
-- **已确认决策（vNext 决策日志）**：子 agent 走 filter_then_container；融合走 architect_subagent + 结构化 MergedPlan + PlanValidator；主入口工作流 + Chat 都要但底层 engine 复用、工作流先行；事件 taxonomy 本里程碑即落；连接（多仓融合+跨仓依赖）与隔离（子 agent 上下文）两者都要。
-- **依赖底座（已交付）**：v0.6 `delivery` 脊柱（WorkItem/Document/知识投影/历史召回）、v0.5 路由/索引/行号回填 + `DeliveryKnowledgeSearchService` + `RepoRouterV2` + chat `deep_analysis` 子 agent 容器（`SubAgentSession`/`BarrierManager`）+ `AICodingNode` 并行派发。
-- 渐进迁移、不爆改：canonical `TechnicalPlan` 立为新脊柱，存量 3 条 plan 路径挂软链逐步收敛；编排引擎抽成可复用 orchestration engine，避免拖累 v0.8 多仓编码。
+- 设计底座已就绪：`ROADMAP-vNext.md` §v0.8（Target features/现状坐标/已确认决策/候选 phases）、`DOMAIN-MODEL.md` §6（`RepoCodingTask` wave/DAG/产物注入 + 可靠恢复规则 + SDD 扩展点）、`PREFLIGHT.md`（PF-06 should-fix-before-v0.8、PF-07 can-fix-in-milestone）。
+- **关键约束 / 非目标**：scope=`plan_to_pr`（主方案 → 多仓 wave 编码 → 融合 PR）；**不做编码中全自动回溯重规划**——编码遇阻走已有 question 协议抛给用户/orchestrator，全自动 replan 留 backlog 避免范围爆炸。
+- **复用底座（已交付）**：v0.7 canonical `TechnicalPlan`/`MergedPlan`（含 `execution_plan` 跨仓依赖拓扑）+ `PlanSession` 编排状态机 + §15 事件 taxonomy；既有 `DispatchTask` 协议、RemoteTool MCP、callback 驱动 workflow resume、`execution_plan` schema、`waiting_event`、`AICodingNode` 并行派发、chat `coding_session_service`（branch strategy / git token env 在 chat 路径已有）。
+- **现状缺口**：跨仓/跨任务上下文传递完全没有（`execution_plan[].dependencies` 仅 schema + prompt，`AICodingNode` 只按 `repository_id` 全并行不读 dependencies、不传产物）；动态重规划编码层几乎没有；workflow 编码路径 env 不一致（PF-06）；chat deep-research 自动回流缺口（v0.7 D-2）。
+- 复用 `waiting_event` + callback resume 扩成多 wave，避免另造调度；wave 失败的部分回滚语义需明确。
 
 ## Requirements
 
@@ -95,23 +93,26 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **历史 diff 冻结 + bi-temporal 失效**：MR diff commit 锚定（`target_branch`+`merge_commit_sha` 不假设 master）+ `MODIFIES_CHUNK` 边冻结 chunk 指纹 + 重索引对账置 `invalid_at` + as-of 查询区分历史/当前（PF-08） — v0.6.0 (`server/knowledge/`)
 - ✓ **片段→需求反查 + 评论入图**：复用 `find_chunk_at` + graph_store 逐跳反查需求/文档（REST + MCP `reverse_lookup_requirements`，fail-closed）+ 评论摄取进 work_item 知识投影 — v0.6.0
 - ✓ **截图识别需求**：多模态 LLM（vision 提语义 → 文本 query → 既有交付知识检索召回 work_item）+ graceful 降级 + 前端「截图识需求」面板（非图片向量库） — v0.6.0
+- ✓ **方案编排引擎（map-reduce 多 agent）**：`PlanOrchestrationEngine`（入口无关 + 4 可注入 stage 协议）+ `PlanSession` 8 态状态机（拆分→路由→召回→澄清→并行调研→架构师融合，可持久化可恢复、条件更新防双推进）；工作流入口 + Chat 薄封装复用同一 engine（不造两套） — v0.7.0 (`server/services/plan_orchestration/`, `server/delivery/`)
+- ✓ **canonical 方案脊柱**：`TechnicalPlan`/`PlanVersion`（origin/status + supersedes 版本链 + content 存 MergedPlan schema）+ `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径（chat/mcp/workflow）软链 + read-time lazy 迁移（不全量双写）；方案可追溯 `WorkItem`（INV-2，chat 自然语言 null 显式标记） — v0.7.0
+- ✓ **路由 + 召回接入**：`RepoRouterV2Adapter`（能力树 + LLM 路由候选仓 + confidence）+ `DeliveryKnowledgeRecallAdapter`（相似需求/缺陷/复盘/方案召回，created_by 透传 fail-closed） — v0.7.0
+- ✓ **并行调研子 agent**：filter_then_container（high/medium 起隔离容器、low 轻量 partial）产结构化 `PartialPlan`（§7）+ 单仓 `RepoResearchTask` 失败隔离重试 + 仓库重索引使 `PartialPlan` 置 stale 融合前重跑 + barrier 聚合 — v0.7.0
+- ✓ **架构师融合 + PlanValidator**：架构师子 agent 收齐 partial 产结构化 `MergedPlan`（跨仓契约/依赖 DAG/迁移/兼容风险/发布顺序/回滚/execution_plan）落 canonical；`PlanValidator` 5 类拦截（契约一致/依赖成环 DFS 三色/迁移顺序/发布顺序/缺回滚）+ 限次回退；跨仓依赖 `dependency_dag` 显式建模为 v0.8 wave 编码铺底 — v0.7.0
+- ✓ **HITL 澄清 + 事件 taxonomy**：`Clarification` 挂起回路（回答后仅 affected_partials 重跑）+ `PlanSessionEvent` append-only 把 §15 trace 事件全程持久化为统一信封（稳定词表 event_taxonomy 收口全 emit 点，INV-5 progress/trace 非 CoT，为 v0.11 对外 adapter 备料） — v0.7.0
 
-### Active (v0.7.0)
+### Active (v0.8.0)
 
 <!-- 本里程碑正式需求由 REQUIREMENTS.md 管理（REQ-ID 级），此处为目标级摘要。 -->
 
-- [ ] 前置修复 PF-01/PF-02（`search_code` 工具名漂移、`verify_plan` schema 漂移）
-- [ ] `ai_plan_research` 编排 engine 骨架 + `PlanSession` 状态机（可持久化可恢复）
-- [ ] canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService`（INV-6 唯一入口）+ 旧 3 路径软链/迁移
-- [ ] 路由（RepoRouterV2）+ 历史召回接入
-- [ ] 并行调研子 agent（`RepoResearchTask`/`PartialPlan` + filter_then_container 容器隔离 + 过期 invalidation）
-- [ ] 架构师融合 + `MergedPlan` + `PlanValidator` + 跨仓依赖建模
-- [ ] HITL 澄清（`Clarification` + affected_partials 重跑）+ 事件 taxonomy 产出 + 工作流入口
-- [ ] Chat 入口薄封装
+- [ ] 前置修复 PF-06（workflow 编码路径 branch strategy / git token env 对齐）+ 通用 resume 回流通路（消化 v0.7 audit D-2）
+- [ ] `RepoCodingTask` 模型 + `execution_plan` DAG 拓扑分层 + wave 调度（消化 PF-07，不再全并行）
+- [ ] 上游产物提取（API 契约/diff）+ 注入下游 wave prompt/global_context
+- [ ] 多仓融合 PR（diff base 用各仓正确 target_branch）+ 跨仓 PR 关联
+- [ ] 编码遇阻 → question 抛人（HITL 回路，非全自动 replan）
 
 **Backlog 候选（未入本里程碑）：**
 
-- v0.8 多仓串行编码 → 融合 PR（`RepoCodingTask` wave/DAG/产物注入，接 v0.7 编排产物）
+- v0.9 SDD / OpenSpec（重型：打标 + 产 spec + 状态机/gate/评审 + spec↔需求/PR 关联 + 交付验收）——v0.8 仅在 `RepoCodingTask.follow_openspec` 预留扩展点字段位
 - 编码中全自动 replan/回溯（v0.8 用「抛 question 给人」过渡，全自动留后续）
 - 接入实时明文 PAT 通道剩余路径（chat/MCP 编码 dispatch）+ RTOOL-02/03/04 容器端 E2E 真实环境验收
 - 令牌细粒度读写 scope / rotate / IP allowlist / 短 TTL 派生凭证（PATX-01~04）
@@ -187,4 +188,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-16 — milestone v0.7.0 started*
+*Last updated: 2026-06-16 — milestone v0.8.0 started*

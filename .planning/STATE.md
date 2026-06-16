@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.7.0
-milestone_name: 方案编排（需求 → 主方案）
-status: Awaiting next milestone
-stopped_at: Phase 42 complete (v0.7.0 末 phase；全 7 phases 编排能力交付完毕)
-last_updated: "2026-06-16T06:16:02.107Z"
-last_activity: 2026-06-16 — Milestone v0.7.0 completed and archived
+milestone: v0.8.0
+milestone_name: 多仓串行编码 → 融合 PR
+status: planning
+last_updated: "2026-06-16T08:31:24.420Z"
+last_activity: 2026-06-16
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 19
-  completed_plans: 19
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,17 +19,41 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession` 与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
-**Current focus:** v0.7.0 全 7 phases 编排能力交付完毕（Phase 42 末 phase 已完成；里程碑过渡由 orchestrator 管理）
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.8.0 把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
+**Current focus:** v0.8.0 里程碑已定义（Phases 43–47，9 需求），待 `/gsd-plan-phase 43` 或 autonomous 开跑。v0.7.0 已交付归档（审计 passed 19/19、tag v0.7.0）。
 
 ## Current Position
 
-Phase: Milestone v0.7.0 complete
+Phase: Not started (roadmap defined, ready to plan Phase 43)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-16 — Milestone v0.7.0 completed and archived
+Status: Ready to build
+Last activity: 2026-06-16 — Milestone v0.8.0 started
 
-## Milestone Overview (v0.7.0 — Phases 36–42)
+## Milestone Overview (v0.8.0 — Phases 43–47)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ⬜ Not started |
+| 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ⬜ Not started |
+| 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ⬜ Not started |
+| 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | ⬜ Not started |
+| 47 | 编码遇阻 → question 抛人（HITL，非全自动 replan） | HITL-01 | ⬜ Not started |
+
+**Execution order:** 43 → 44 → 45 → 46 → 47（严格顺序）。依赖链：编码 env 对齐 + 通用 resume 回流地基(43) → RepoCodingTask + DAG 拓扑分层 + wave 调度(44) → 上游产物提取/注入下游(45) → 多仓融合 PR + 跨仓关联(46) → 编码遇阻 question 抛人(47)。PF-06（编码 env）+ RESUME-01（resume 通路）是 callback 驱动多 wave 的前置地基；每个 phase 建立在前序编码骨架之上。
+
+**前置修复（PREFLIGHT）:** PF-06（workflow 编码路径未注入 branch strategy / git token env，对齐 chat 路径——should-fix-before-v0.8，作 Phase 43）、PF-07（`execution_plan[].dependencies` 仅 schema 声明、下游全并行不读——can-fix-in-milestone，由 Phase 44 wave 拓扑分层消化）。
+
+**v0.7 结转 tech-debt（audit D-2）:** chat deep-research 自动回流接线缺口——主入口「工作流先行」已闭环，chat fire-and-forget 编排进 researching、容器在途完成后无消费者驱动续跑。由 Phase 43 RESUME-01 通用 resume 回流通路消化。
+
+**UI 触面:** Phase 46（多仓 PR 关联展示，maybe，reuse-first）、Phase 47（question 抛人复用 `ask_user_question` 澄清卡片，yes，无新 Vue 组件）。
+
+**关键约束 / 非目标:** scope=`plan_to_pr`（主方案 → 多仓 wave 编码 → 融合 PR）；**不做编码中全自动回溯重规划**——编码遇阻走已有 question 协议抛人，全自动 replan 留 backlog；diff base 用各仓正确 `target_branch`（非假设 master）；新模型经单一写入入口（INV-6 精神，禁旁路写表）。已锁决策：复用 `waiting_event` + callback resume 扩成多 wave 不另造调度；`RepoCodingTask.follow_openspec` 预留 SDD 扩展点（v0.9 做全）。
+
+**复用底座（v0.7 已交付）:** canonical `TechnicalPlan`/`MergedPlan`（含 `execution_plan` 跨仓依赖拓扑）+ `PlanSession` 编排状态机 + §15 事件 taxonomy；既有 `DispatchTask` 协议、RemoteTool MCP、callback 驱动 workflow resume、`waiting_event`、`AICodingNode` 并行派发、chat `coding_session_service`（branch strategy / git token env 在 chat 路径已有）。
+
+**设计底座:** `.planning/ROADMAP-vNext.md §v0.8`（Target features/现状坐标/已确认决策/候选 phases）、`.planning/DOMAIN-MODEL.md` §6（`RepoCodingTask` wave/`depends_on` DAG/`produced_artifacts` + 可靠恢复规则 + SDD 扩展点）/§14（RepoCodingTask 子任务级状态）、`.planning/PREFLIGHT.md`（PF-06/07）。
+
+## Milestone Overview (v0.7.0 — shipped 2026-06-16)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -304,11 +327,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T06:00:00.000Z
-Stopped at: Phase 42 complete (v0.7.0 末 phase；全 7 phases 编排能力交付完毕)
+Last session: 2026-06-16T08:31:00.000Z
+Stopped at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
 Resume file: None
-Next: v0.7.0 里程碑过渡（由 orchestrator 管理，autonomous 模式本次未执行）
+Next: 新会话 autonomous 跑 v0.8.0，或 `/gsd-plan-phase 43` 起步
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- 新开会话运行 autonomous 跑完整个 v0.8.0 里程碑（Phases 43–47），或先 `/gsd-discuss-phase 43` / `/gsd-plan-phase 43` 起步
