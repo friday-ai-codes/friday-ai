@@ -27,8 +27,9 @@ from typing import Any
 
 __all__ = ["CHECK_NAMES", "validate_plan"]
 
-# 5 项校验 check 名常量（供调用方/测试对齐）
+# 校验 check 名常量（供调用方/测试对齐）
 CHECK_NAMES = (
+    "non_empty_plan",
     "contract_consistency",
     "dependency_cycle",
     "migration_order",
@@ -38,7 +39,7 @@ CHECK_NAMES = (
 
 
 def validate_plan(merged: Any) -> dict:
-    """对 §7 MergedPlan 跑 5 项跨仓校验，汇总结构化报告。
+    """对 §7 MergedPlan 跑非空 + 5 项跨仓语义校验，汇总结构化报告。
 
     Returns:
         ``{"valid": bool, "errors": [{check, message}...], "warnings": [...]}``。
@@ -54,6 +55,7 @@ def validate_plan(merged: Any) -> dict:
         return {"valid": False, "errors": errors, "warnings": warnings}
 
     for check in (
+        _check_non_empty_plan,
         _check_contract_consistency,
         _check_acyclic,
         _check_migration_order,
@@ -107,7 +109,25 @@ def _contract_key(item: Any) -> str:
     return str(item) if item else ""
 
 
-# ---- 5 项校验 ----
+# ---- 前置校验：非空 ----
+
+
+def _check_non_empty_plan(merged: dict) -> tuple[list[dict], list[dict]]:
+    """⓪ execution_plan 非空：零任务「主方案」拒绝（WR-01）。
+
+    JSON Schema 对 execution_plan 仅要求 ``type: array`` 无 ``minItems``，空数组过 schema
+    闸口；其余跨仓检查对空集亦静默跳过 → 零可执行任务的 MergedPlan 会被当 canonical 落库 +
+    done。显式拦截，让架构师「不只是更贵的总结器」（DOMAIN §7 / 40-01 Task 2 behavior）。
+    """
+    if not _execution_plan(merged):
+        return (
+            [{"check": "non_empty_plan", "message": "execution_plan 为空（无可执行任务）"}],
+            [],
+        )
+    return [], []
+
+
+# ---- 5 项跨仓语义校验 ----
 
 
 def _check_contract_consistency(merged: dict) -> tuple[list[dict], list[dict]]:
