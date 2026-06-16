@@ -88,7 +88,7 @@ Plans:
 **Wave 1**
 
 - [x] 44-01-PLAN.md — RepoCodingTask 模型 + barrel + 迁移 0017 + 模型测试（wave 1）
-- [ ] 44-02-PLAN.md — wave_layering 拓扑分层纯函数（task-id DAG→仓级 wave）+ 测试（wave 1）
+- [x] 44-02-PLAN.md — wave_layering 拓扑分层纯函数（task-id DAG→仓级 wave）+ 测试（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
