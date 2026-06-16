@@ -5,12 +5,12 @@ milestone_name: 多仓串行编码 → 融合 PR
 status: executing
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
 last_updated: "2026-06-16T10:46:30.973Z"
-last_activity: 2026-06-16 -- 43-03 RESUME-01 chat 入口续驱 + barrier 回灌接线完成（2 tasks，14 测全绿）
+last_activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/工具 advance 循环复用共享 helper + 文案如实更新（2 tasks，11 测全绿）
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 Phase: 43 (env-resume) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-16 -- 43-03 RESUME-01 chat 入口续驱 + barrier 回灌接线完成（2 tasks，14 测全绿）
+Status: All plans complete (43-01..43-04) — ready for phase verification
+Last activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/工具 advance 循环复用共享 helper + 文案如实更新（2 tasks，11 测全绿）
 
 ## Milestone Overview (v0.8.0 — Phases 43–47)
 
@@ -266,6 +266,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 43]: 43-03(RESUME-01): 续驱→回灌严格时序（同协程顺序）——先 adrive_plan_session_to_pause_or_terminal 续驱到终态、再用终态 status 构建 BlockingTaskResult；barrier 回灌 task_id=str(plan_session.id)（chat barrier 注册键，非 session.session_id）；成功 output=current_plan_version 文本、失败 output=""（复用 deep_analysis 回灌通道）
 - [Phase 43]: 43-03(RESUME-01): T-43-TAMPER 守门以服务端权威字段 PlanSession.entrypoint==CHAT，不信 runner 可改字段；engine 由 build_orchestration_engine 单一工厂构造（无 node_execution_id 即 chat 入口），不造两套；日志仅记 plan_session_id/status/barrier_satisfied（T-43-INFO）；14 集成测试全绿（新增闭环/回归/幂等/fail-soft/失败路径 6 用例）
 - [Phase 43]: 43-03: chat 入口 plan_research 续驱接线 — _schedule_chat_plan_resume（entrypoint==CHAT 守门 + 43-02 同源 helper 续驱到终态 + BarrierManager.task_completed(str(plan_session.id)) 回灌），消化 v0.7 audit D-2 a/b — chat 入口续驱与工作流入口共享 43-02 同源 helper + 单一 engine 工厂，不造两套；权威字段守门防 runner 篡改
+- [Phase 43]: 43-04(RESUME-01「不造两套」收尾): 工作流节点 plan_research.execute 与 chat 工具 start_plan_research 两处内联 advance 循环重构为复用 43-02 共享 helper adrive_plan_session_to_pause_or_terminal——节点/工具/回调消费者三处真正同源一份续驱逻辑；入口私有挂起 marker 映射（NodeResult/ToolResult via _maybe_suspend）各自保留，helper 短路返回后再跑一次 _maybe_suspend 即等价；step 上限处理下沉 helper（transition(fail)→_map_terminal failed 分支）；test_clarifying_suspends_waiting_event 红线零回归（11 测全绿）
+- [Phase 43]: 43-04: start_plan_research 占位文案/工具 description 由「自动回流尚未接入/当前不会自动继续」如实更新为「调研完成后将自动融合并返回 canonical 主方案」（43-03 已接通），仅改文案不动 marker/挂起协议（T-43-MISLEAD accept）
 
 ### Pending Todos
 
