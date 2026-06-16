@@ -73,8 +73,8 @@ class PlanSession(models.Model):
     # 路由候选仓结果（Phase 38-02 写入：候选 + confidence + router_version + auto_selected）
     routing = models.JSONField(default=dict, blank=True)
     # 召回上下文（Phase 38-03 写入精简命中列表 [{entity_id, kind, title, score}]；
-    # default=dict 仅占位与既有 JSON 字段范式一致，写入时按 list 覆盖）
-    recall_context = models.JSONField(default=dict, blank=True)
+    # default=list 与持久化形状一致——空态与有值态顶层同为 list，避免下游消费类型漂移 WR-01）
+    recall_context = models.JSONField(default=list, blank=True)
     # 不可恢复错误结构化落地
     error = models.JSONField(default=dict, blank=True)
 
