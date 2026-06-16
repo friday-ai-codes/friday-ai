@@ -45,7 +45,31 @@ __all__ = [
     "PlanContentInvalid",
     "PlanNotFound",
     "TechnicalPlanService",
+    "chat_codingplan_to_content",
+    "mcp_plan_to_content",
 ]
+
+# execution_plan item.branch_strategy 合法枚举（对齐 workflows schema）
+_VALID_BRANCH_STRATEGIES = {"feature", "hotfix", "release"}
+# affected_files.change_type → files.action（schema action 枚举 create/modify/delete）
+_CHANGE_TYPE_TO_ACTION = {
+    "add": "create",
+    "create": "create",
+    "modify": "modify",
+    "change": "modify",
+    "update": "modify",
+    "delete": "delete",
+    "remove": "delete",
+}
+
+
+def _normalize_action(change_type: Any) -> str:
+    return _CHANGE_TYPE_TO_ACTION.get(str(change_type or "").lower(), "modify")
+
+
+def _normalize_branch_strategy(value: Any) -> str:
+    candidate = str(value or "").lower()
+    return candidate if candidate in _VALID_BRANCH_STRATEGIES else "feature"
 
 
 class PlanContentInvalid(ValueError):
@@ -201,7 +225,7 @@ class TechnicalPlanService:
             raise PlanNotFound(ref) from None
         if old.canonical_plan_id:
             return await self._aget_plan(old.canonical_plan_id, ref)
-        content = self._chat_codingplan_to_content(old)
+        content = chat_codingplan_to_content(old)
         canonical = await self.create_from(
             origin=TechnicalPlanOrigin.CHAT, payload={"content": content}, work_item=None
         )
@@ -217,7 +241,7 @@ class TechnicalPlanService:
             raise PlanNotFound(ref) from None
         if old.canonical_plan_id:
             return await self._aget_plan(old.canonical_plan_id, ref)
-        content = self._mcp_plan_to_content(old)
+        content = mcp_plan_to_content(old)
         canonical = await self.create_from(
             origin=TechnicalPlanOrigin.MCP, payload={"content": content}, work_item=None
         )
@@ -263,40 +287,93 @@ class TechnicalPlanService:
             defaults={"canonical": canonical},
         )
 
-    # ---- lazy 取材（37-02 最小合法 content；37-03 升级忠实映射）----
 
-    def _chat_codingplan_to_content(self, coding_plan: Any) -> dict:
-        """chat CodingPlan → 最小合法 content（满足 validate_technical_plan）。"""
-        title = coding_plan.title or (coding_plan.tech_plan or "")[:80] or "chat 方案"
-        summary = (coding_plan.tech_plan or "")[:200] or title
-        return {
-            "title": title,
-            "summary": summary,
-            "execution_plan": [
-                {
-                    "id": "chat-0",
-                    "name": title,
-                    "repository_id": "",
-                    "repository_name": "",
-                    "branch_strategy": "feature",
-                }
-            ],
-        }
+def chat_codingplan_to_content(coding_plan: Any) -> dict:
+    """chat ``CodingPlan`` → 忠实映射 content（满足 validate_technical_plan）。
 
-    def _mcp_plan_to_content(self, mcp_plan: Any) -> dict:
-        """mcp McpWorkItemTechnicalPlan → 最小合法 content（满足 validate_technical_plan）。"""
-        title = mcp_plan.title or "mcp 方案"
-        summary = (mcp_plan.markdown or "")[:200] or title
-        return {
-            "title": title,
-            "summary": summary,
-            "execution_plan": [
-                {
-                    "id": "mcp-0",
-                    "name": title,
-                    "repository_id": "",
-                    "repository_name": "",
-                    "branch_strategy": "feature",
-                }
-            ],
+    ``recommended_repository_ids`` 每个 repo 派生一个 execution_plan task；
+    ``affected_files``（``{file_path, change_type}``）映射成 task.files（``{path, action}``）。
+    无推荐仓库时给单个占位 task（保证 execution_plan 非空过 validate）。
+    """
+    title = coding_plan.title or (coding_plan.tech_plan or "")[:80] or "chat 方案"
+    summary = (coding_plan.tech_plan or "")[:200] or title
+    repo_ids = [str(r) for r in (coding_plan.recommended_repository_ids or []) if str(r)]
+    files = [
+        {
+            "path": str(f.get("file_path", "")),
+            "action": _normalize_action(f.get("change_type")),
         }
+        for f in (coding_plan.affected_files or [])
+        if isinstance(f, dict) and f.get("file_path")
+    ]
+    instruction = coding_plan.tech_plan or ""
+    if repo_ids:
+        execution_plan = [
+            {
+                "id": f"chat-{i}",
+                "name": title,
+                "repository_id": repo_id,
+                "repository_name": repo_id,
+                "branch_strategy": "feature",
+                "coding_instruction": instruction,
+                "files": files,
+            }
+            for i, repo_id in enumerate(repo_ids)
+        ]
+    else:
+        execution_plan = [
+            {
+                "id": "chat-0",
+                "name": title,
+                "repository_id": "",
+                "repository_name": "",
+                "branch_strategy": "feature",
+                "coding_instruction": instruction,
+                "files": files,
+            }
+        ]
+    return {"title": title, "summary": summary, "execution_plan": execution_plan}
+
+
+def mcp_plan_to_content(mcp_plan: Any) -> dict:
+    """mcp ``McpWorkItemTechnicalPlan`` → 忠实映射 content（满足 validate_technical_plan）。
+
+    优先复用 ``plan_body``（若已含 execution_plan 列表则归一化补全必填）；否则由
+    ``repository_tasks`` 映射成 execution_plan。title/summary 取 ``title`` / ``markdown[:200]``。
+    """
+    title = mcp_plan.title or "mcp 方案"
+    summary = (mcp_plan.markdown or "")[:200] or title
+    plan_body = mcp_plan.plan_body if isinstance(mcp_plan.plan_body, dict) else {}
+
+    raw_tasks: list = []
+    body_tasks = plan_body.get("execution_plan")
+    if isinstance(body_tasks, list) and body_tasks:
+        raw_tasks = body_tasks
+    elif isinstance(mcp_plan.repository_tasks, list):
+        raw_tasks = mcp_plan.repository_tasks
+
+    execution_plan = [
+        _normalize_exec_task(t, i, title) for i, t in enumerate(raw_tasks) if isinstance(t, dict)
+    ]
+    if not execution_plan:
+        execution_plan = [
+            {
+                "id": "mcp-0",
+                "name": title,
+                "repository_id": "",
+                "repository_name": "",
+                "branch_strategy": "feature",
+            }
+        ]
+    return {"title": title, "summary": summary, "execution_plan": execution_plan}
+
+
+def _normalize_exec_task(raw: dict, idx: int, default_name: str) -> dict:
+    """把半可信 task dict 归一化为合法 execution_plan item（补全必填 + 校正枚举）。"""
+    return {
+        "id": str(raw.get("id") or f"mcp-{idx}"),
+        "name": str(raw.get("name") or raw.get("repository_name") or default_name),
+        "repository_id": str(raw.get("repository_id") or ""),
+        "repository_name": str(raw.get("repository_name") or ""),
+        "branch_strategy": _normalize_branch_strategy(raw.get("branch_strategy")),
+    }
