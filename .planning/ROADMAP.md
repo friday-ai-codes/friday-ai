@@ -171,7 +171,7 @@ Plans:
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 3/3 | Complete|  |
-| 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
+| 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 1/2 | In Progress | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
 
 ---
