@@ -47,13 +47,13 @@
 
 ### 澄清与入口（CLARIFY / ENTRY）
 
-- [ ] **CLARIFY-01**: HITL 澄清回路：编排在不清晰时发 `Clarification` 挂起等用户，回答后仅 `affected_partials` 内的 `RepoResearchTask` 重跑，其余 partial 复用
-- [ ] **ENTRY-01**: 工作流入口端到端跑通编排——一个需求经"拆分→路由→召回→澄清→并行调研→融合"产出一份带跨仓依赖的 `MergedPlan`（工作流先行）
+- [x] **CLARIFY-01**: HITL 澄清回路：编排在不清晰时发 `Clarification` 挂起等用户，回答后仅 `affected_partials` 内的 `RepoResearchTask` 重跑，其余 partial 复用
+- [x] **ENTRY-01**: 工作流入口端到端跑通编排——一个需求经"拆分→路由→召回→澄清→并行调研→融合"产出一份带跨仓依赖的 `MergedPlan`（工作流先行）
 - [ ] **ENTRY-02**: Chat 入口薄封装复用同一底层 orchestration engine（不并行造两套编排）
 
 ### 事件 taxonomy（EVENT）
 
-- [ ] **EVENT-01**: 编排全程产出 §15 trace 事件（统一信封 `{event, session_id, work_item_id?, ts, payload}`，taxonomy：work_item.syncing / knowledge.recalling / repo.routing / repo.research.* / clarification.* / plan.merge.* / plan.validation.failed），为 v0.11 对外 adapter 沉淀稳定词表（INV-5，progress/trace 非 CoT）
+- [x] **EVENT-01**: 编排全程产出 §15 trace 事件（统一信封 `{event, session_id, work_item_id?, ts, payload}`，taxonomy：work_item.syncing / knowledge.recalling / repo.routing / repo.research.* / clarification.* / plan.merge.* / plan.validation.failed），为 v0.11 对外 adapter 沉淀稳定词表（INV-5，progress/trace 非 CoT）
 
 ## v2 Requirements
 
@@ -107,9 +107,9 @@
 | MERGE-01 | Phase 40 | Pending |
 | MERGE-02 | Phase 40 | Pending |
 | MERGE-03 | Phase 40 | Pending |
-| CLARIFY-01 | Phase 41 | Pending |
-| ENTRY-01 | Phase 41 | Pending |
-| EVENT-01 | Phase 41 | Pending |
+| CLARIFY-01 | Phase 41 | Complete |
+| ENTRY-01 | Phase 41 | Complete |
+| EVENT-01 | Phase 41 | Complete |
 | ENTRY-02 | Phase 42 | Pending |
 
 **Coverage:**
