@@ -31,6 +31,11 @@ from delivery.models.release import (
     ReleaseSource,
     build_bitable_record_key,
 )
+from delivery.models.research_task import (
+    PartialPlan,
+    RepoResearchTask,
+    RepoResearchTaskStatus,
+)
 from delivery.models.status_event import WorkItemStatusEvent
 from delivery.models.sync_state import (
     SyncFacet,
@@ -69,6 +74,9 @@ __all__ = [
     "PlanSession",
     "PlanSessionEntrypoint",
     "PlanSessionStatus",
+    "RepoResearchTask",
+    "RepoResearchTaskStatus",
+    "PartialPlan",
     "TechnicalPlan",
     "TechnicalPlanOrigin",
     "TechnicalPlanStatus",
