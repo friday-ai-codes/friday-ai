@@ -551,3 +551,106 @@ async def test_chat_resume_failed_research_notifies_barrier_success_false() -> N
     assert call.args[1]["success"] is False
     await plan_session.arefresh_from_db()
     assert plan_session.status == PlanSessionStatus.FAILED
+
+
+# === CR-01：续驱调度顺序回归（必须在 research 完成/失败处理之后调度，消除竞态） ===
+
+
+@pytest.mark.asyncio
+async def test_completed_schedules_resume_after_research_completion() -> None:
+    """CR-01：_handle_completed 必须在 _handle_research_completion（翻终态 + researching→
+    merging）之后才调度续驱。若在其之前调度（旧实现），fire-and-forget 的 _resume() 会在
+    task 翻终态前读到非终态而短路 no-op，导致 chat 会话永久卡在 merging、barrier 永不被通知。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
+    from subagent.api.callbacks import _handle_completed
+
+    order: list[str] = []
+
+    async def _research(*a: Any, **kw: Any) -> None:
+        order.append("research")
+
+    def _resume(*a: Any, **kw: Any) -> None:
+        order.append("resume")
+
+    with (
+        _PATCHES[0],
+        patch("subagent.api.callbacks._schedule_workflow_resume", new=_resume),
+        patch("subagent.api.callbacks._schedule_agent_session_resume", new=_resume),
+        patch("subagent.api.callbacks._handle_research_completion", new=_research),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+
+    assert resp.status_code == 200
+    # research 完成处理必须先于两处续驱调度
+    assert order == ["research", "resume", "resume"]
+
+
+@pytest.mark.asyncio
+async def test_failed_schedules_resume_after_research_failure() -> None:
+    """CR-01（失败路径对称）：_handle_failed 必须在 _handle_research_failure 之后才调度续驱。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"error": "容器超时"}
+    from subagent.api.callbacks import _handle_failed
+
+    order: list[str] = []
+
+    async def _research_fail(*a: Any, **kw: Any) -> None:
+        order.append("research")
+
+    def _resume(*a: Any, **kw: Any) -> None:
+        order.append("resume")
+
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume", new=_resume),
+        patch("subagent.api.callbacks._schedule_agent_session_resume", new=_resume),
+        patch("subagent.api.callbacks._handle_research_failure", new=_research_fail),
+    ):
+        resp = await _handle_failed(sub, payload, _log())
+
+    assert resp.status_code == 200
+    assert order == ["research", "resume", "resume"]
+
+
+@pytest.mark.asyncio
+async def test_chat_resume_drives_to_terminal_with_real_ordering() -> None:
+    """CR-01 端到端：不 mock _handle_research_completion，让真实 research 完成处理把 task
+    翻终态 + researching→merging 后再调度续驱；续驱必然 adrive 到 done 并 notify barrier
+    （即使两条 fire-and-forget 协程都跑，最终也驱动到终态，不卡死）。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {
+        "result_type": "text",
+        "output": {
+            "research_summary": "改鉴权",
+            "candidate_files": ["auth.py"],
+            "proposed_changes": [{"file": "auth.py"}],
+        },
+    }
+    from subagent.api.callbacks import _handle_completed
+
+    barrier_mock = MagicMock()
+    barrier_mock.task_completed = AsyncMock(return_value=True)
+
+    with (
+        _PATCHES[0],
+        _PATCHES[1],
+        patch(
+            "services.plan_orchestration.build_orchestration_engine",
+            return_value=_passing_engine(),
+        ),
+        patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+        await _flush_pending()
+
+    assert resp.status_code == 200
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.DONE
+    await plan_session.arefresh_from_db()
+    assert plan_session.status == PlanSessionStatus.DONE
+    barrier_mock.task_completed.assert_awaited_once()
+    call = barrier_mock.task_completed.await_args
+    assert call.args[0] == str(plan_session.id)
+    assert call.args[1]["success"] is True
