@@ -403,7 +403,7 @@ if len(successful_mrs) >= 2:  # D-05 守门
 
 **若 planner 选择内联镜像（D-09 备选）而非提取 helper：** A4 不影响——内联同样复制纯逻辑，须显式注释「同源 `CreatePRNode`」。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **WorkItem 飞书链接如何构造？**
    - What we know: `WorkItem` 存 `(feishu_project_key, work_item_type, work_item_id)` 三元组（`work_item.py:38-41`），**无** url 字段；`mr_service.build_mr_description` 用的是 `task.metadata["feishu_url"]`（chat 路径）。
