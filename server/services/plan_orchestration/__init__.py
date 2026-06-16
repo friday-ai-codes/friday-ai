@@ -5,6 +5,10 @@ curated re-export：``PlanOrchestrationEngine``（状态驱动推进器）+ 可�
 """
 
 from services.plan_orchestration.engine import PlanOrchestrationEngine
+from services.plan_orchestration.merged_plan import (
+    MERGED_PLAN_FIELDS,
+    validate_merged_plan,
+)
 from services.plan_orchestration.protocols import (
     MergeProtocol,
     RecallProtocol,
@@ -40,4 +44,6 @@ __all__ = [
     "aall_research_tasks_terminal",
     "amaybe_complete_research",
     "parse_partial_plan_content",
+    "MERGED_PLAN_FIELDS",
+    "validate_merged_plan",
 ]
