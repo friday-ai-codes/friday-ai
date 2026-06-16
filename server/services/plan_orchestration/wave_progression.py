@@ -154,7 +154,12 @@ async def _backfill_running_terminal(plan_version_id: Any, service: Any) -> None
                 from subagent.models import TaskResult
 
                 # async ORM 安全：复用已取出的 sess + *_id 标量 + afirst，绝不裸访问 lazy-FK。
-                tr = await TaskResult.objects.filter(session=sess).afirst()
+                # 显式 -created_at 排序（最新优先）保多 TaskResult 时选取确定性（不依赖 DB 默认序）。
+                tr = (
+                    await TaskResult.objects.filter(session=sess)
+                    .order_by("-created_at")
+                    .afirst()
+                )
                 repo = await Repository.objects.filter(id=task.repository_id).afirst()
                 repo_name = repo.name if repo else str(task.repository_id)
                 artifacts = build_produced_artifacts(
