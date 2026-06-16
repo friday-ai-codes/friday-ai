@@ -121,6 +121,24 @@ def test_rollback_completeness_missing_repo() -> None:
     assert "rollback_completeness" in _checks(report)
 
 
+def test_empty_execution_plan_rejected() -> None:
+    """WR-01：空 execution_plan（零可执行任务）→ non_empty_plan error。"""
+    content = _valid_merged_plan()
+    content["execution_plan"] = []
+    report = validate_plan(content)
+    assert report["valid"] is False
+    assert "non_empty_plan" in _checks(report)
+
+
+def test_missing_execution_plan_rejected() -> None:
+    """WR-01：缺 execution_plan 字段（当空）→ non_empty_plan error。"""
+    content = _valid_merged_plan()
+    del content["execution_plan"]
+    report = validate_plan(content)
+    assert report["valid"] is False
+    assert "non_empty_plan" in _checks(report)
+
+
 def test_non_dict_input_does_not_raise() -> None:
     """半可信非 dict 顶层 → valid=False，不抛异常。"""
     report = validate_plan(["not", "a", "dict"])
