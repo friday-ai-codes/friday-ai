@@ -280,10 +280,11 @@ async def create_coding_plan(
             )
             await _plan_svc.link(plan, _canonical)
         except Exception as exc:  # noqa: BLE001 best-effort 隔离，不阻断创建
+            # IN-03：仅记录异常类型，避免 PlanContentInvalid 等把被校验 content 片段写入日志
             logger.warning(
                 "chat_eager_plan_projection_failed",
                 coding_plan_id=str(plan.id),
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
 
     logger.info(
