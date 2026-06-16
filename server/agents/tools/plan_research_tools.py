@@ -73,6 +73,20 @@ async def start_plan_research(
     include_repos: list[str] | None = None,
 ) -> ToolResult:
     """Chat 入口薄封装：建 entrypoint=chat session + 复用同一 engine 驱动方案编排到终态 / 挂起。"""
+    # 0. 空需求 fail-closed 守护（与工作流节点 _create_session missing_requirement 对称）：
+    #    requirement_text 属半可信输入（chat LLM → 工具，见 threat model），空 / 纯空白即拒绝，
+    #    不建 session、不驱动 engine——避免浪费一次编排并落语义空洞的 PlanSession（WR-02）。
+    if not requirement_text or not requirement_text.strip():
+        logger.warning(
+            "start_plan_research_missing_requirement",
+            space_id=space_id,
+            conversation_id=conversation_id,
+        )
+        return ToolResult(
+            success=False,
+            error="缺少需求文本（requirement_text）",
+        )
+
     from delivery.models import PlanSession, PlanSessionStatus
     from services.plan_orchestration import (
         build_orchestration_engine,
