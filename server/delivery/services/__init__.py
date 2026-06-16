@@ -8,6 +8,7 @@ re-export ``WorkItemService`` / ``WorkItemIdentity``（WorkItem 单一写入入�
 """
 
 from delivery.services.bitable_release_adapter import BitableReleaseAdapter
+from delivery.services.clarification_service import ClarificationService
 from delivery.services.comment_event_service import (
     CommentEventService,
     classify_approval_semantic,
@@ -62,6 +63,7 @@ __all__ = [
     "StepResult",
     "PlanSessionService",
     "ResearchService",
+    "ClarificationService",
     "TechnicalPlanService",
     "PlanRef",
     "PlanContentInvalid",
