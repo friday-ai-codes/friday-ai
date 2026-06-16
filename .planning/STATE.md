@@ -7,7 +7,7 @@ last_updated: "2026-06-16T02:00:00.000Z"
 last_activity: 2026-06-16 — Phase 37 complete (verification passed)
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 6
   completed_plans: 6
   percent: 28
@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession` 与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
-**Current focus:** Phase 41 — HITL 澄清 + 事件 taxonomy + 工作流入口（next）
+**Current focus:** Phase 42 — Chat 入口薄封装（next，末 phase）
 
 ## Current Position
 
@@ -38,7 +38,7 @@ Last activity: 2026-06-16 — Phase 37 executed + verified（canonical Technical
 | 38 | 路由 + 召回接入 | ROUTE-01, RECALL-01 | ✅ Complete |
 | 39 | 并行调研子 agent | RESEARCH-01, RESEARCH-02, RESEARCH-03 | ✅ Complete |
 | 40 | 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | MERGE-01, MERGE-02, MERGE-03 | ✅ Complete |
-| 41 | HITL 澄清 + 事件 taxonomy + 工作流入口 | CLARIFY-01, ENTRY-01, EVENT-01 | Not started |
+| 41 | HITL 澄清 + 事件 taxonomy + 工作流入口 | CLARIFY-01, ENTRY-01, EVENT-01 | ✅ Complete |
 | 42 | Chat 入口薄封装 | ENTRY-02 | Not started |
 
 **Execution order:** 36 → 37 → 38 → 39 → 40 → 41 → 42（严格顺序）。依赖链：前置修复+引擎骨架(36) → canonical 方案脊柱(37) → 路由+召回(38) → 并行调研(39) → 架构师融合(40) → 澄清+事件+工作流入口(41) → Chat 入口(42)。每个 phase 都建立在前序编排骨架之上。
