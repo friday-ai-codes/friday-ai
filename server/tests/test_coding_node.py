@@ -9,11 +9,14 @@ implementation 引入 ProviderConfigService.aresolve_or_error 之后，AICodingN
 缺失分支（不破坏 missing-plan / empty-plan 等不依赖凭证的负向用例）。
 """
 
+import json
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import structlog
+from asgiref.sync import sync_to_async
 
 from services.provider_config import ProviderType, ResolvedProviderConfig
 from workflows.nodes.ai.coding import AICodingNode
@@ -361,3 +364,182 @@ class TestAICodingNode:
 
         assert len(output["failed_details"]) == 1
         assert output["failed_details"][0]["repository_name"] == "failed-repo"
+
+
+# ---------------------------------------------------------------------------
+# PF-06: _run_repo_coding dispatch metadata env 键集合断言（对齐 chat 基线）
+# ---------------------------------------------------------------------------
+
+# chat 路径 build_dispatch_metadata 的权威键集合（coding_session_service.py:173-187）
+GIT_TOKEN_KEY = "env_FRIDAY_TASK_GIT_ACCESS_TOKEN"
+GIT_AUTH_TYPE_KEY = "env_FRIDAY_TASK_GIT_AUTH_TYPE"
+GIT_SSL_VERIFY_KEY = "env_FRIDAY_TASK_GIT_SSL_VERIFY"
+BRANCH_STRATEGY_KEY = "env_FRIDAY_TASK_BRANCH_STRATEGY"
+TARGET_BRANCH_KEY = "env_FRIDAY_TASK_TARGET_BRANCH"
+
+_PF06_TOKEN = "glpat-pf06-controlled-token-xyz"
+
+
+async def _make_real_repo(git_url: str) -> Any:
+    """创建真实 Repository + GitCredential（供 _run_repo_coding 内 _create_session
+    的 ORM 写入与 credential 访问跑通）。返回 select_related('credential') 重载实例，
+    避免 async 上下文反向 OneToOne 触发 SynchronousOnlyOperation。"""
+    from common.encryption import encrypt_value
+    from repositories.models import AuthType, GitCredential, Repository
+
+    repo = await sync_to_async(Repository.objects.create)(
+        name=f"pf06-repo-{uuid.uuid4().hex[:8]}",
+        git_url=git_url,
+        default_branch="main",
+    )
+    await sync_to_async(GitCredential.objects.create)(
+        repository=repo,
+        auth_type=AuthType.ACCESS_TOKEN,
+        encrypted_token=encrypt_value("placeholder"),
+    )
+    return await Repository.objects.select_related("credential").aget(id=repo.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestRunRepoCodingPF06:
+    """PF-06：workflow 编码路径 dispatch metadata 须逐键对齐 chat 基线
+    （顶层 env_FRIDAY_TASK_GIT_* + BRANCH_STRATEGY/TARGET_BRANCH + SSH→HTTPS 改写）。
+
+    调用**真实** _run_repo_coding，仅 mock IO 边界：
+    - aresolve_git_token（受控 token）
+    - runners.dispatcher.get_dispatcher().dispatch（捕获 DispatchTask）
+    _create_session 的 ORM 写入跑真实 DB（transaction=True）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ssl_verify_attr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # 生产 coding.py 访问 credential.ssl_verify，但 GitCredential 模型未定义该字段 → 测试侧兜底。
+        from repositories.models import GitCredential
+
+        monkeypatch.setattr(GitCredential, "ssl_verify", True, raising=False)
+
+    @pytest.fixture
+    def _dispatched(self, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+        captured: list[Any] = []
+
+        class _FakeDispatcher:
+            async def dispatch(self, task: Any) -> None:
+                captured.append(task)
+
+        monkeypatch.setattr("runners.dispatcher.get_dispatcher", lambda: _FakeDispatcher())
+        return captured
+
+    def _patch_token(self, monkeypatch: pytest.MonkeyPatch, token: str) -> None:
+        async def _resolve(*args: Any, **kwargs: Any) -> str:
+            return token
+
+        monkeypatch.setattr("workflows.nodes.ai.coding.aresolve_git_token", _resolve)
+
+    async def _run(
+        self,
+        *,
+        git_url: str,
+        token: str,
+        branch_name: str = "feat/pf06-work",
+        base_branch: str = "develop",
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Any:
+        self._patch_token(monkeypatch, token)
+        repo = await _make_real_repo(git_url)
+        node = AICodingNode()
+        await node._run_repo_coding(
+            repository=repo,
+            tasks=[{"task_description": "do x"}],
+            branch_name=branch_name,
+            base_branch=base_branch,
+            global_context="ctx",
+            config={},
+        )
+
+    async def test_git_env_injected_when_token_present(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """token 非空 → metadata 含 GIT_ACCESS_TOKEN==token / AUTH_TYPE=='token' / SSL_VERIFY=='false'。"""
+        await self._run(
+            git_url="https://gitlab.example.com/org/repo.git",
+            token=_PF06_TOKEN,
+            monkeypatch=monkeypatch,
+        )
+        assert len(_dispatched) == 1
+        meta = _dispatched[0].metadata
+        assert meta[GIT_TOKEN_KEY] == _PF06_TOKEN
+        assert meta[GIT_AUTH_TYPE_KEY] == "token"
+        assert meta[GIT_SSL_VERIFY_KEY] == "false"
+
+    async def test_branch_strategy_and_target_branch_injected(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BRANCH_STRATEGY==本仓 branch_name、TARGET_BRANCH==base_branch（无条件注入）。"""
+        await self._run(
+            git_url="https://gitlab.example.com/org/repo.git",
+            token=_PF06_TOKEN,
+            branch_name="feat/pf06-mybranch",
+            base_branch="release/v1",
+            monkeypatch=monkeypatch,
+        )
+        assert len(_dispatched) == 1
+        meta = _dispatched[0].metadata
+        assert meta[BRANCH_STRATEGY_KEY] == "feat/pf06-mybranch"
+        assert meta[TARGET_BRANCH_KEY] == "release/v1"
+
+    async def test_ssh_https_rewrite_when_token_present(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """git@host:org/repo.git + token 非空 → DispatchTask.repo_url 改写为 https://host/org/repo.git。"""
+        await self._run(
+            git_url="git@gitlab.example.com:org/repo.git",
+            token=_PF06_TOKEN,
+            monkeypatch=monkeypatch,
+        )
+        assert len(_dispatched) == 1
+        assert _dispatched[0].repo_url == "https://gitlab.example.com/org/repo.git"
+
+    async def test_no_token_omits_access_key_and_keeps_repo_url(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """token 为空 → 不注入 access_token 键且 repo_url 原样不改写（降级不回退）。"""
+        await self._run(
+            git_url="git@gitlab.example.com:org/repo.git",
+            token="",
+            monkeypatch=monkeypatch,
+        )
+        assert len(_dispatched) == 1
+        meta = _dispatched[0].metadata
+        assert GIT_TOKEN_KEY not in meta
+        assert _dispatched[0].repo_url == "git@gitlab.example.com:org/repo.git"
+
+    async def test_no_token_leak_in_dispatch_logs(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dispatch 日志绝不含 token 明文，仅记 has_git_token 布尔。"""
+        with structlog.testing.capture_logs() as logs:
+            await self._run(
+                git_url="https://gitlab.example.com/org/repo.git",
+                token=_PF06_TOKEN,
+                monkeypatch=monkeypatch,
+            )
+        serialized = json.dumps(logs, default=str)
+        assert _PF06_TOKEN not in serialized, "token 明文绝不可进日志"
+        dispatch_events = [e for e in logs if e.get("event") == "task_dispatched_to_runner"]
+        assert dispatch_events, "应有 task_dispatched_to_runner 日志事件"
+        assert dispatch_events[0].get("has_git_token") is True
+
+    async def test_nested_git_credentials_retained(
+        self, _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """token 非空 → 既有 nested metadata['git_credentials'] dict 原样保留（零回归）。"""
+        await self._run(
+            git_url="https://gitlab.example.com/org/repo.git",
+            token=_PF06_TOKEN,
+            monkeypatch=monkeypatch,
+        )
+        assert len(_dispatched) == 1
+        git_credentials = _dispatched[0].metadata["git_credentials"]
+        assert isinstance(git_credentials, dict)
+        assert git_credentials.get("access_token") == _PF06_TOKEN
