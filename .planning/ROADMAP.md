@@ -53,7 +53,7 @@
 - [x] **Phase 36: 前置修复 + 编排引擎骨架 + PlanSession 状态机** - 修 PF-01/02（检索工具名漂移 / verify_plan schema 漂移）+ 立可复用 `ai_plan_research` 编排 engine + 可持久化可恢复的 `PlanSession` 状态机（§14） (completed 2026-06-16)
 - [x] **Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移** - 立 canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径 eager 投影软链 + read-time lazy 迁移 (completed 2026-06-16)
 - [x] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案） (completed 2026-06-16)
-- [ ] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑
+- [x] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑 (completed 2026-06-16)
 - [ ] **Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖** - 架构师子 agent 收齐 partial 产结构化 `MergedPlan`（契约/依赖 DAG/迁移/风险/发布顺序/回滚/execution_plan）+ `PlanValidator` 拦截 + 跨仓依赖显式建模
 - [ ] **Phase 41: HITL 澄清 + 事件 taxonomy + 工作流入口** - `Clarification` 挂起回路（仅 affected_partials 重跑）+ §15 trace 事件全程产出 + 工作流入口端到端跑通编排
 - [ ] **Phase 42: Chat 入口薄封装** - Chat 入口薄封装复用同一底层 orchestration engine（工作流先行，不并行造两套编排）
@@ -131,10 +131,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 39-01-PLAN.md — RepoResearchTask + PartialPlan 模型（delivery app §6/§7）+ migration 0013 + curated re-export + 模型守护
-- [ ] 39-02-PLAN.md — ResearchService 唯一写入入口（状态/单仓重试隔离 RESEARCH-02/重索引 stale RESEARCH-03）+ INV-6 grep 守护
-- [ ] 39-03-PLAN.md — ResearchDispatchAdapter filter_then_container fan-out（high/medium 起隔离容器、low 走轻量 partial，RESEARCH-01）+ engine._research 改造 + started 事件（mock dispatch 单测）
-- [ ] 39-04-PLAN.md — barrier 聚合 research_complete + 容器回调结果解析为 PartialPlan + completed/failed 事件 + 重索引 stale best-effort 钩子（mock callback 单测；真实容器 E2E deferred）
+- [x] 39-01-PLAN.md — RepoResearchTask + PartialPlan 模型（delivery app §6/§7）+ migration 0013 + curated re-export + 模型守护
+- [x] 39-02-PLAN.md — ResearchService 唯一写入入口（状态/单仓重试隔离 RESEARCH-02/重索引 stale RESEARCH-03）+ INV-6 grep 守护
+- [x] 39-03-PLAN.md — ResearchDispatchAdapter filter_then_container fan-out（high/medium 起隔离容器、low 走轻量 partial，RESEARCH-01）+ fan-out 建 task/回填 running + started 事件（mock dispatch 单测）
+- [x] 39-04-PLAN.md — barrier 聚合 research_complete + 容器回调结果解析为 PartialPlan（结构化+降级）+ completed/failed 事件 + 重索引 stale best-effort 钩子 + engine._research 接线（mock callback 单测；真实容器 E2E deferred）
 
 ### Phase 40: 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖
 
@@ -191,7 +191,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 | 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 38. 路由 + 召回接入 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
-| 39. 并行调研子 agent | v0.7.0 | 0/4 | Not started | - |
+| 39. 并行调研子 agent | v0.7.0 | 4/4 | Complete | 2026-06-16 |
 | 40. 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | v0.7.0 | 0/0 | Not started | - |
 | 41. HITL 澄清 + 事件 taxonomy + 工作流入口 | v0.7.0 | 0/0 | Not started | - |
 | 42. Chat 入口薄封装 | v0.7.0 | 0/0 | Not started | - |
