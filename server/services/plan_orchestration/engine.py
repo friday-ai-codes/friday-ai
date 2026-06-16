@@ -163,13 +163,30 @@ class PlanOrchestrationEngine:
         await self.session_service.transition(session, "clarified")
 
     async def _research(self, session: PlanSession) -> None:
-        """调研 stage：调注入 research → transition research_complete（→ merging）。
+        """调研 stage（RESEARCH-01/02/03 已接入）：dispatch 触发 fan-out，barrier 驱动转移。
 
-        本 phase 简化为 dispatch 后直接 research_complete；真实 fan-out/barrier 留 Phase 39。
-        TODO(Phase 39)：filter_then_container fan-out + BarrierManager。
+        1. ``await self.research.dispatch(session)``（39-03 adapter：filter + fan-out + 建
+           task + 派容器 + 轻量合成）。
+        2. ``amaybe_complete_research``：若所有 RepoResearchTask 已终态（如全为轻量仓 /
+           无需深入仓）→ 经 service 推 research_complete（researching→merging）。
+        3. 仍有 pending/running 深入仓在途 → ``transition(research_dispatched)``
+           （researching 自留等待，§14 fan-out 等待行）；后续由容器回调（39-04
+           ``_handle_research_completion`` → ``amaybe_complete_research``）驱动
+           research_complete（对齐既有 AICodingNode waiting_event/callback resume 范式）。
+
+        engine **绝不直接 mutate session.status**——只经 ``session_service.transition``
+        （T-36-03-01 purity guard）。状态全持久化在 RepoResearchTask/PlanSession，可 resume。
         """
+        from services.plan_orchestration.research_aggregation import (
+            amaybe_complete_research,
+        )
+
         await self.research.dispatch(session)
-        await self.session_service.transition(session, "research_complete")
+        completed = await amaybe_complete_research(
+            session, session_service=self.session_service
+        )
+        if not completed:
+            await self.session_service.transition(session, "research_dispatched")
 
     async def _merge(self, session: PlanSession) -> None:
         """融合 stage：调注入 merge → transition merged（→ done）。
