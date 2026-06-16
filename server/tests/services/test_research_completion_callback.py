@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -189,6 +189,55 @@ async def test_completion_exception_swallowed_returns_200() -> None:
         resp = await _handle_completed(sub, payload, _log())
 
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_plan_research_callback_does_not_resume_agent_session() -> None:
+    """CR-01：plan_research 容器完成回调**不得**触发 SDKAgentRunner resume 合成 AgentSession，
+    只走 _handle_research_completion（research 完成处理）驱动 barrier。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
+    from subagent.api.callbacks import _handle_completed
+
+    resume_spy = MagicMock()
+    research_spy = AsyncMock()
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_complete", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        # 不 patch _schedule_agent_session_resume —— 验证真实短路逻辑
+        patch("tasks.agent_tasks.schedule_resume_agent_session", new=resume_spy),
+        patch("subagent.api.callbacks._handle_research_completion", new=research_spy),
+    ):
+        resp = await _handle_completed(sub, payload, _log())
+
+    assert resp.status_code == 200
+    # 关键断言：合成 AgentSession 绝不被 resume（否则拉起幽灵 agent 执行）
+    resume_spy.assert_not_called()
+    # research 完成处理被调用（正确路径）
+    research_spy.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_plan_research_failed_callback_does_not_resume_agent_session() -> None:
+    """CR-01：plan_research 容器失败回调同样不得触发 agent resume，只走 research 失败处理。"""
+    repo, plan_session, task, sub = await _setup()
+    payload = {"error": "容器超时"}
+    from subagent.api.callbacks import _handle_failed
+
+    resume_spy = MagicMock()
+    research_fail_spy = AsyncMock()
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        patch("tasks.agent_tasks.schedule_resume_agent_session", new=resume_spy),
+        patch("subagent.api.callbacks._handle_research_failure", new=research_fail_spy),
+    ):
+        resp = await _handle_failed(sub, payload, _log())
+
+    assert resp.status_code == 200
+    resume_spy.assert_not_called()
+    research_fail_spy.assert_awaited_once()
 
 
 @pytest.mark.asyncio
