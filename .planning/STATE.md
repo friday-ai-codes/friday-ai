@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: Phase 45 收官（ARTIFACT-01/02 提取→注入端到端验收全绿）；下一步 Phase 46（多仓融合 PR + 跨仓 PR 关联）
-stopped_at: Phase 45 Plan 03 完成（test_coding_wave.py 扩充端到端产物传递 + 幂等 + fail-soft 三集成测试，phase gate 360 passed/1 xfailed 零回归，Phase 45 全部 3 plan 收官）
-last_updated: "2026-06-16T14:35:00.000Z"
-last_activity: 2026-06-16 -- Phase 45 Plan 03 完成（ARTIFACT-01/02 端到端集成验收：wave1 done→提取落 produced_artifacts→wave2 prompt 含上游契约 + 幂等 no-op + 提取异常 fail-soft，Phase 45 全部 3 plan 完成）
+status: Phase 45 VERIFIED PASSED（ARTIFACT-01/02 提取→注入端到端 + 代码审查修复后全绿，11/11 must-haves）；下一步 Phase 46（多仓融合 PR + 跨仓 PR 关联）
+stopped_at: Phase 45 收官（3/3 plan + 代码审查 5 项发现全修 + verifier passed；phase gate 365 passed/1 既存 xfailed 零回归）
+last_updated: "2026-06-16T15:10:00.000Z"
+last_activity: 2026-06-16 -- Phase 45 收官（ARTIFACT-01/02 端到端验收全绿 + 代码审查修复 MD-01/02 安全消毒&截断 + LW-01/02/03 健壮性 + verifier passed 11/11，Phase 45 全部 3 plan 完成）
 progress:
   total_phases: 5
   completed_phases: 3
