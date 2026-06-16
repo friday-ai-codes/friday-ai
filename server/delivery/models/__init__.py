@@ -37,6 +37,10 @@ from delivery.models.release import (
     ReleaseSource,
     build_bitable_record_key,
 )
+from delivery.models.repo_coding_task import (
+    RepoCodingTask,
+    RepoCodingTaskStatus,
+)
 from delivery.models.research_task import (
     PartialPlan,
     RepoResearchTask,
@@ -81,6 +85,8 @@ __all__ = [
     "PlanSessionEntrypoint",
     "PlanSessionStatus",
     "PlanSessionEvent",
+    "RepoCodingTask",
+    "RepoCodingTaskStatus",
     "RepoResearchTask",
     "RepoResearchTaskStatus",
     "PartialPlan",
