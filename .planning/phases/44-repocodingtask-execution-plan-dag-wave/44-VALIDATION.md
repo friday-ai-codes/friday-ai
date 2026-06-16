@@ -47,7 +47,7 @@ created: 2026-06-16
 | WAVE-02 | 失败隔离：单 wave 单仓 failed 不影响兄弟 | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_failure_isolation -x` | ❌ W0 | ⬜ pending |
 | WAVE-02 | 下游阻断：上游 failed → depends_on 链标 blocked 不 dispatch | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_downstream_blocked -x` | ❌ W0 | ⬜ pending |
 | WAVE-02 | 幂等：重复 callback / 并发 resume → no-op 不重复 dispatch | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_idempotent -x` | ❌ W0 | ⬜ pending |
-| WAVE-02 | 部分成功收尾：done 仓出 MR，failed/blocked 仓如实标注 | integration | `pytest tests/workflows/ -k coding_wave -x` | ❌ W0 | ⬜ pending |
+| WAVE-02 | 部分成功收尾：done 仓出 MR，failed/blocked 仓如实标注 | integration | `pytest tests/test_coding_wave.py -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

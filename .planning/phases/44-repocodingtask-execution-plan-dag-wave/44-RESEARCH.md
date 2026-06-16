@@ -394,17 +394,17 @@ async def acurrent_wave_all_terminal(plan_version_id, wave: int) -> bool:
 | A4 | chat 编码入口（`coding_session_service`）多 wave 接线非本 phase 硬验收项 | Architecture Map | 低——CONTEXT/Deferred 明确留 follow-up；底层 helper 入口无关即可 |
 | A5 | `delivery` app 无 admin.py（无 admin 注册约定），故新模型无需 admin 注册 | Environment | 低——已核实 `server/delivery/admin.py` 不存在，research_task 亦无 admin |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **wave 事件 emit 的归属对象（若接通）**
    - What we know: `EVENT_CODING_WAVE_STARTED/COMPLETED` 常量已预留；`PlanSessionService._emit_event(event, plan_session, payload)` 以 PlanSession 为对象。
    - What's unclear: RepoCodingTask 挂 `plan_version`，无直接 PlanSession 引用（PlanVersion → TechnicalPlan，与 PlanSession 是软引用 `current_plan_version`）。emit 通道需新建 or 经 plan_version 反查 session。
-   - Recommendation: 本 phase **不 emit**（保持 RESERVED），事件接通留 Phase 45/46（彼时产物注入也需事件）。若 planner 决定接，先核对 `_emit_event` 签名与 RepoCodingTask→PlanSession 的可达路径。
+   - RESOLVED: 本 phase **不 emit**（保持 RESERVED，plan 集未含 wave 事件 emit 任务），事件接通留 Phase 45/46（彼时产物注入也需事件）。若后续接，先核对 `_emit_event` 签名与 RepoCodingTask→PlanSession 的可达路径。
 
 2. **同仓多 task 的 prompt 合并粒度**
    - What we know: 现 `_run_repo_coding` 把一仓所有 task 合并成单 prompt 派一个容器（`_build_coding_prompt` 已合并）。wave 粒度 = 仓级。
    - What's unclear: 同仓 task 若分属不同 wave（理论可能：task A wave0、task B wave1 同仓），仓 wave 取 max 会让 A 也延后到 wave1。
-   - Recommendation: 仓 wave 取该仓 task 层级 max（CONTEXT 已定），一仓一容器一次性编全部 task（保持现 prompt 合并）。这是安全默认（依赖满足），代价是同仓低层 task 也等到高层——可接受（v0.8 不拆仓内并行）。
+   - RESOLVED: 仓 wave 取该仓 task 层级 max（CONTEXT 已定，plan 02 build_repo_waves 已采纳），一仓一容器一次性编全部 task（保持现 prompt 合并）。这是安全默认（依赖满足），代价是同仓低层 task 也等到高层——可接受（v0.8 不拆仓内并行）。
 
 ## Environment Availability
 
@@ -441,7 +441,7 @@ async def acurrent_wave_all_terminal(plan_version_id, wave: int) -> bool:
 | WAVE-02 | 失败隔离：单 wave 单仓 failed 不影响兄弟 | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_failure_isolation -x` | ❌ Wave 0 |
 | WAVE-02 | 下游阻断：上游 failed → depends_on 链标 blocked 不 dispatch | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_downstream_blocked -x` | ❌ Wave 0 |
 | WAVE-02 | 幂等：重复 callback / 并发 resume → no-op 不重复 dispatch | unit | `pytest tests/services/plan_orchestration/test_wave_progression.py::test_idempotent -x` | ❌ Wave 0 |
-| WAVE-02 | 部分成功收尾：done 仓出 MR，failed/blocked 仓如实标注 | integration | `pytest tests/workflows/ -k coding_wave -x` | ❌ Wave 0 |
+| WAVE-02 | 部分成功收尾：done 仓出 MR，failed/blocked 仓如实标注 | integration | `pytest tests/test_coding_wave.py -x` | ❌ Wave 0 |
 
 ### Sampling Rate
 - **Per task commit:** `uv run pytest tests/delivery/test_repo_coding_task_*.py tests/services/plan_orchestration/test_wave_*.py -x`
