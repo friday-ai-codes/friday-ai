@@ -218,6 +218,51 @@ async def test_emits_research_started(session_with_candidates) -> None:
 
 
 @pytest.mark.asyncio
+async def test_per_repo_dispatch_isolation(session_with_candidates) -> None:
+    """WR-02：一个 deep 仓 dispatch 抛异常仅标该 task failed，其它 deep 仓仍正常派发，
+    整个 dispatch 不中断（RESEARCH-02 单仓隔离）。"""
+    session, repo_high, repo_medium, repo_low = session_with_candidates
+    dispatcher, captured = _mock_dispatcher()
+    adapter = ResearchDispatchAdapter()
+
+    # 第一个被派发的 deep 仓抛异常，后续仓正常
+    original = adapter._dispatch_deep_task
+    call_state = {"n": 0}
+
+    async def _flaky(sess, task):
+        call_state["n"] += 1
+        if call_state["n"] == 1:
+            raise RuntimeError("dispatch boom")
+        return await original(sess, task)
+
+    adapter._dispatch_deep_task = _flaky
+
+    with (
+        patch("runners.dispatcher.get_dispatcher", return_value=dispatcher),
+        patch.object(ResearchDispatchAdapter, "_count_online_runners", new=AsyncMock(return_value=2)),
+    ):
+        result = await adapter.dispatch(session)
+
+    # 整个 dispatch 不抛（result 正常返回）
+    assert "dispatched" in result
+    # 两个 deep 仓：一个 failed、一个正常 running
+    deep_tasks = [
+        t
+        async for t in RepoResearchTask.objects.filter(
+            session=session, repository__in=[repo_high, repo_medium]
+        )
+    ]
+    statuses = sorted(t.status for t in deep_tasks)
+    assert RepoResearchTaskStatus.FAILED in statuses
+    assert RepoResearchTaskStatus.RUNNING in statuses
+    # failed 仓 error 记录 dispatch_failed
+    failed_task = next(t for t in deep_tasks if t.status == RepoResearchTaskStatus.FAILED)
+    assert failed_task.error.get("reason") == "dispatch_failed"
+    # 只成功派发一个仓
+    assert len(result["dispatched"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_writes_only_via_service(session_with_candidates) -> None:
     """deep 仓 task 经 ResearchService 建（行为层确认；旁路由 39-02 INV-6 grep 守护兜底）。"""
     session, repo_high, repo_medium, repo_low = session_with_candidates
