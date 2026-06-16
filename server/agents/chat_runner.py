@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field, create_model
 import agents.tools.chat_tools  # noqa: F401
 import agents.tools.clarification  # noqa: F401  # implementation
 import agents.tools.coding_tools  # noqa: F401
+import agents.tools.plan_research_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
 import agents.tools.repository_relevance  # noqa: F401
 import agents.tools.space_tools  # noqa: F401
 from agents.core.events import (
@@ -94,6 +95,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "ask_clarification",
     "create_coding_plan",
     "update_coding_plan",
+    # ENTRY-02：对话中发起多仓 / 跨仓方案编排（薄入口，复用同一编排 engine）
+    "start_plan_research",
 ]
 _DEEP_ANALYSIS_TOOL_NAMES = _INDEXED_TOOL_NAMES + ["deep_analysis"]
 
