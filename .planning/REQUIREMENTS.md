@@ -16,7 +16,7 @@
 > PF-06 should-fix-before-v0.8（多仓 wave 编码依赖私有仓 clone + 正确分支）；RESUME-01 消化 v0.7 audit D-2，是 callback 驱动多 wave 的通用回流通路。
 
 - [ ] **PF-06**: 修 workflow 编码路径 `AICodingNode` 未注入 branch strategy / git token env（chat 路径已有）——对齐 chat 路径的 env 注入，使私有仓 clone 成功且用正确目标分支（不再落默认 `friday/task-{id}`）
-- [ ] **RESUME-01**: 立通用 `coding`/`plan_session` → 工作流/会话的 resume 回流通路——消化 v0.7 audit D-2（chat fire-and-forget 编排进 researching、容器在途完成后无消费者驱动 engine 续跑的缺口），为 callback 驱动的多 wave 调度提供统一回流通路
+- [x] **RESUME-01**: 立通用 `coding`/`plan_session` → 工作流/会话的 resume 回流通路——消化 v0.7 audit D-2（chat fire-and-forget 编排进 researching、容器在途完成后无消费者驱动 engine 续跑的缺口），为 callback 驱动的多 wave 调度提供统一回流通路
 
 ### 多仓 wave 编码（WAVE）
 
@@ -72,7 +72,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | PF-06 | Phase 43 | Pending |
-| RESUME-01 | Phase 43 | Pending |
+| RESUME-01 | Phase 43 | Complete |
 | WAVE-01 | Phase 44 | Pending |
 | WAVE-02 | Phase 44 | Pending |
 | ARTIFACT-01 | Phase 45 | Pending |
