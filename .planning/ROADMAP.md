@@ -113,6 +113,12 @@ Plans:
   2. 下游 wave dispatch 时把上游 `produced_artifacts` 注入容器 prompt / `global_context`
   3. 端到端：构造跨仓依赖方案，断言 wave2 容器 prompt / 上下文含 wave1 产出的契约（产物传递正确）
 
+**Plans:** 3 plans
+
+- [ ] 45-01-PLAN.md — ARTIFACT-01：artifact_extraction.py 纯函数 + record_produced_artifacts 单一写入 + wave_progression 提取钩子 + INV-6 字段级守护（wave 1）
+- [ ] 45-02-PLAN.md — ARTIFACT-02：artifact_injection.py 收集/渲染 + coding.py dispatch 链 defaulted 透传注入 + 零回归断言（wave 2）
+- [ ] 45-03-PLAN.md — ARTIFACT-01+02：端到端产物传递集成（wave1 done→提取→wave2 prompt 含契约）+ 幂等/fail-soft + phase gate（wave 3）
+
 ### Phase 46: 多仓融合 PR + 跨仓 PR 关联
 
 **Goal**: 把多仓 wave 编码结果产出关联的 PR/MR——各仓 diff base 用各仓正确的 `target_branch`（非假设 master，对齐 v0.6 坐实的 MR target_branch 锚定），并做跨仓 PR 关联（cross-ref），可追溯到同一 `TechnicalPlan`/`WorkItem`。
