@@ -186,8 +186,8 @@ class AIPlanResearchNode(AIAgentBaseNode):
         return await PlanSession.objects.filter(id=session_id).afirst()
 
     async def _create_session(self, context: ExecutionContext, log: Any) -> Any:
-        """首次：解析需求 + include_repos + work_item 锚 + created_by，经 service 建 session。"""
-        from delivery.services import PlanSessionService
+        """首次：解析需求 + include_repos + work_item 锚 + created_by，经共享 helper 建 session。"""
+        from services.plan_orchestration import start_orchestration
 
         config = context.node_config or {}
         requirement_text = context.render_template(config.get("requirement_text", "") or "")
@@ -200,14 +200,14 @@ class AIPlanResearchNode(AIAgentBaseNode):
         work_item = await self._resolve_work_item(context)
         created_by = await self._get_user(context)
 
-        session = await PlanSessionService().create_session(
+        # 复用两入口共用的薄 helper（底层 engine 复用、不造两套）；entrypoint 仍为 workflow、
+        # decomposition 形态不变 → 行为零变更。
+        session = await start_orchestration(
             entrypoint="workflow",
+            requirement_text=requirement_text,
             work_item=work_item,
-            decomposition={
-                "requirement_text": requirement_text,
-                "include_repos": include_repos,
-            },
             created_by=created_by,
+            include_repos=include_repos,
         )
         log.info("plan_research_session_created", session_id=str(session.id))
         return session
@@ -240,32 +240,18 @@ class AIPlanResearchNode(AIAgentBaseNode):
     # ===== engine 构造（测试可 override） =====
 
     def _build_engine(self, context: ExecutionContext, session: Any) -> Any:
-        """注入真实 adapters 构造 PlanOrchestrationEngine（生产默认；测试可 monkeypatch override）。"""
-        from delivery.services import PlanSessionService
-        from services.plan_orchestration import (
-            ArchitectMergeAdapter,
-            ClarifyAdapter,
-            DeliveryKnowledgeRecallAdapter,
-            PlanOrchestrationEngine,
-            RepoRouterV2Adapter,
-            ResearchDispatchAdapter,
-        )
+        """经共享 helper 注入真实 adapters 构造 engine（生产默认；测试可 monkeypatch override）。"""
+        from services.plan_orchestration import build_orchestration_engine
 
         # CR-02：把本节点 NodeExecution id 透传给调研 dispatch——每个调研 SubAgentSession
         # 据此关联 node_execution，容器完成回调经既有 _schedule_workflow_resume 重新驱动
         # 本挂起节点（researching→merging→done），打通 researching 段 waiting_event 的
-        # resume 通路（mirror AICodingNode node_execution_id 注入）。
+        # resume 通路（mirror AICodingNode node_execution_id 注入）。chat 入口不传（走既有
+        # deep_analysis resume），故仅工作流入口在此透传 node_execution_id。
         node_execution = getattr(context, "node_execution", None)
         node_execution_id = str(node_execution.id) if node_execution is not None else ""
 
-        return PlanOrchestrationEngine(
-            session_service=PlanSessionService(),
-            router=RepoRouterV2Adapter(),
-            recall=DeliveryKnowledgeRecallAdapter(),
-            research=ResearchDispatchAdapter(node_execution_id=node_execution_id),
-            merge=ArchitectMergeAdapter(),
-            clarify=ClarifyAdapter(),
-        )
+        return build_orchestration_engine(node_execution_id=node_execution_id)
 
     # ===== 挂起判定 =====
 
