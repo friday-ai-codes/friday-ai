@@ -38,7 +38,7 @@ _MAX_ADVANCE_STEPS = 20
         "本工具复用与工作流入口完全相同的方案编排引擎："
         "拆分→路由→召回→澄清→并行调研→融合，产出 canonical 跨仓主方案（MergedPlan）。\n"
         "若需要澄清会暂停并向用户提问；若需要深入调研会启动远程容器并立即返回"
-        "（调研在途；本会话「调研完成后自动融合回流」能力尚未接入，后续里程碑接线）。"
+        "（调研在途；调研完成后将自动融合并返回 canonical 主方案）。"
     ),
     category="PROJECT",
     parameters={
@@ -88,8 +88,8 @@ async def start_plan_research(
             error="缺少需求文本（requirement_text）",
         )
 
-    from delivery.models import PlanSession, PlanSessionStatus
     from services.plan_orchestration import (
+        adrive_plan_session_to_pause_or_terminal,
         build_orchestration_engine,
         start_orchestration,
     )
@@ -121,35 +121,25 @@ async def start_plan_research(
     #    chat resume 走既有 deep_analysis / clarification 机制，不依赖 node_execution）。
     engine = build_orchestration_engine()
 
-    # 5. 驱动循环（mirror 工作流节点：终态集合 {DONE, FAILED} + 步数上限防死循环）。
-    terminal = {PlanSessionStatus.DONE, PlanSessionStatus.FAILED}
-    steps = 0
-    while session.status not in terminal:
-        steps += 1
-        if steps > _MAX_ADVANCE_STEPS:
-            logger.warning(
-                "start_plan_research_advance_step_limit", session_id=str(session.id)
-            )
-            await engine.session_service.transition(
-                session, "fail", error={"reason": "advance_step_limit", "steps": steps}
-            )
-            session = await PlanSession.objects.aget(id=session.id)
-            break
+    # 5. 复用 43-02 共享续驱 helper（与工作流节点 / 回调消费者同源，不造两套循环）：
+    #    advance 至「重挂起短路点」（clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；
+    #    step 上限由 helper 内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
+    session = await adrive_plan_session_to_pause_or_terminal(
+        engine, session, max_steps=_MAX_ADVANCE_STEPS
+    )
 
-        await engine.advance(session)
-        session = await PlanSession.objects.aget(id=session.id)
+    # 6. 入口私有挂起 marker 映射（保留）：helper 短路返回后再判一次，clarifying-pending /
+    #    researching-在途 处复用 chat 既有 HITL 返回挂起 marker（+ register_blocking_task）。
+    suspend = await _maybe_suspend(session, conversation_id)
+    if suspend is not None:
+        logger.info(
+            "start_plan_research_suspended",
+            session_id=str(session.id),
+            status=session.status,
+        )
+        return suspend
 
-        # 挂起复用 chat 既有 HITL（ask_clarification interrupt / deep_analysis fire-and-forget）
-        suspend = await _maybe_suspend(session, conversation_id)
-        if suspend is not None:
-            logger.info(
-                "start_plan_research_suspended",
-                session_id=str(session.id),
-                status=session.status,
-            )
-            return suspend
-
-    # 6. 终态映射
+    # 7. 终态映射
     return _map_terminal(session)
 
 
@@ -259,13 +249,12 @@ async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | Non
                     "task_id": str(session.id),
                     "session_id": str(session.id),
                     "params": {"session_id": str(session.id)},
-                    # WR-01：如实表述当前能力——chat 入口「调研完成 → 自动续驱 engine /
-                    # resume chat graph 融合回流」尚未接线（见 deferred-items.md），故**不**承诺
-                    # 自动继续，仅陈述：已发起 + 调研在途 + 自动回流后续接入。
+                    # WR-01：如实表述当前能力——43-03 已接通 chat 入口「调研完成 → 容器回调
+                    # 续驱 engine + barrier 回灌融合」自动回流通路，故如实陈述：已发起 + 调研
+                    # 在途 + 调研完成后自动融合回流。
                     "placeholder": (
                         f"已发起跨仓方案编排调研（session={session.id}，状态={session.status}）；"
-                        "深入调研容器运行中。注意：本会话「调研完成后自动融合并返回主方案」"
-                        "的自动回流能力尚未接入（后续里程碑接线），当前不会自动继续。"
+                        "深入调研容器运行中，调研完成后将自动融合并返回 canonical 主方案。"
                     ),
                 },
             )
