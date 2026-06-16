@@ -34,6 +34,10 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["PlanOrchestrationEngine"]
 
+# 融合验证失败的限次回退上限（CONTEXT 决策：默认 1 次重试，超限落 failed 终态防无限循环）。
+# 与 ArchitectMergeAdapter.MAX_MERGE_RETRIES 语义一致；engine 据 adapter 返回的 attempt 判限次。
+MAX_MERGE_RETRIES = 1
+
 
 class PlanOrchestrationEngine:
     """状态驱动的方案编排推进器（入口无关 + 可注入依赖）。"""
@@ -199,12 +203,58 @@ class PlanOrchestrationEngine:
             )
 
     async def _merge(self, session: PlanSession) -> None:
-        """融合 stage：调注入 merge → transition merged（→ done）。
+        """融合 stage（MERGE-01/02/03 已接入）：调注入 merge adapter 据结果做 §14 转移。
 
-        TODO(Phase 40)：架构师融合 + PlanValidator（失败按报告回退 clarifying/researching）。
+        三分支（adapter 已落 canonical/ArchitectMerge 副作用，engine 仅 transition）：
+
+        1. ``"passed"`` → ``transition("merged")``（merging→done，§14「融合+validator
+           通过 → done」行）。
+        2. ``"failed"`` 且 ``attempt < MAX_MERGE_RETRIES`` → 按 ``back_target`` 回退
+           （§14「PlanValidator 失败 → clarifying 或 researching 按报告回退重跑」）：
+           ``"researching"`` → ``transition("validation_failed_reresearch")``；否则
+           ``transition("validation_failed_reclarify")``。
+        3. ``"failed"`` 且 ``attempt >= MAX_MERGE_RETRIES`` → ``transition("fail")``
+           落 failed 终态（防无限循环，CONTEXT「默认 1 次重试，超限 failed」）。
+
+        engine **绝不直接 mutate session.status**（守 T-36-03-01 纯度守护）；adapter 已
+        graceful（不抛），故本 handler 不再吞异常。``result`` 经 ``isinstance`` 防御取值
+        （与 ``_route``/``_recall`` 对称）。``ConcurrentTransitionError`` 沿 ``_research``
+        范式视为良性 no-op（merging 通常无并发 barrier，但防御性处理）。
         """
-        await self.merge.merge(session)
-        await self.session_service.transition(session, "merged")
+        from delivery.services.plan_session_service import ConcurrentTransitionError
+
+        result = await self.merge.merge(session)
+        status = result.get("validation_status") if isinstance(result, dict) else None
+        attempt = result.get("attempt", 0) if isinstance(result, dict) else 0
+        try:
+            if status == "passed":
+                await self.session_service.transition(session, "merged")
+            elif attempt >= MAX_MERGE_RETRIES:
+                # 限次回退耗尽：落 failed 终态（防无限循环）
+                error = {
+                    "stage": str(PlanSessionStatus.MERGING),
+                    "reason": "merge_validation_exhausted",
+                    "report": result.get("report", {}) if isinstance(result, dict) else {},
+                }
+                await self.session_service.transition(session, "fail", error=error)
+            else:
+                back_target = (
+                    result.get("back_target", "clarifying")
+                    if isinstance(result, dict)
+                    else "clarifying"
+                )
+                if back_target == "researching":
+                    await self.session_service.transition(
+                        session, "validation_failed_reresearch"
+                    )
+                else:
+                    await self.session_service.transition(
+                        session, "validation_failed_reclarify"
+                    )
+        except ConcurrentTransitionError:
+            # merging 段并发推进良性 no-op（对齐 _research）：绝不让其落到 advance 通用
+            # except → fail（否则覆盖并发正确推进的状态，属状态损坏）。
+            logger.info("merge_already_advanced_concurrently", session_id=str(session.id))
 
     async def _work_item_title(self, session: PlanSession) -> str:
         """惰性取关联 work_item.title 作为需求文本回退源（async ORM）。"""
