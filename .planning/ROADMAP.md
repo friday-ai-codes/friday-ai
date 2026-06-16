@@ -113,14 +113,14 @@ Plans:
   2. 下游 wave dispatch 时把上游 `produced_artifacts` 注入容器 prompt / `global_context`
   3. 端到端：构造跨仓依赖方案，断言 wave2 容器 prompt / 上下文含 wave1 产出的契约（产物传递正确）
 
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 **Wave 1**
 
-- [ ] 45-01-PLAN.md — ARTIFACT-01：artifact_extraction.py 纯函数 + record_produced_artifacts 单一写入 + wave_progression 提取钩子 + INV-6 字段级守护（wave 1）
+- [x] 45-01-PLAN.md — ARTIFACT-01：artifact_extraction.py 纯函数 + record_produced_artifacts 单一写入 + wave_progression 提取钩子 + INV-6 字段级守护（wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 45-02-PLAN.md — ARTIFACT-02：artifact_injection.py 收集/渲染 + coding.py dispatch 链 defaulted 透传注入 + 零回归断言（wave 2）
+- [x] 45-02-PLAN.md — ARTIFACT-02：artifact_injection.py 收集/渲染 + coding.py dispatch 链 defaulted 透传注入 + 零回归断言（wave 2）
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -160,7 +160,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
 | 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 5/5 | Complete   | 2026-06-16 |
-| 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 0/? | Not started | — |
+| 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 2/3 | In Progress|  |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
 
