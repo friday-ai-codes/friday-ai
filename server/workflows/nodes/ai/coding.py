@@ -83,9 +83,7 @@ def _validate_anthropic_base_url(url: str) -> str:
             f"ANTHROPIC_BASE_URL scheme 必须是 http 或 https，实际：{parsed.scheme!r}"
         )
     if not parsed.netloc:
-        raise ProviderConfigError(
-            f"ANTHROPIC_BASE_URL 缺少 host：{stripped!r}"
-        )
+        raise ProviderConfigError(f"ANTHROPIC_BASE_URL 缺少 host：{stripped!r}")
     return stripped
 
 
@@ -230,9 +228,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 confirmed_branch = output_data.get("_confirmed_branch_name", "")
                 if confirmed_branch:
                     # 继续正常执行流程
-                    return await self._execute_with_branch(
-                        context, confirmed_branch, log
-                    )
+                    return await self._execute_with_branch(context, confirmed_branch, log)
 
         # 首次执行：初始化子步骤
         await self._init_sub_steps(context)
@@ -329,75 +325,27 @@ class AICodingNode(SubStepMixin, BaseNode):
             repo_count=len(repo_groups),
         )
 
-        # 5.0 解析 Anthropic 凭证
-        #     在 _run_repo_coding 分发循环之前外层一次性完成，避免每 repo 重复 DB 往返
-        #     （RESEARCH Open Question #1 推荐外层加载）。
-        #
-        #     优先级：「Claude Code 编码配置」（admin 设置页绑定的凭证）优先 ——
-        #     所有启动 Claude Code 容器的路径统一以 CC 配置为准；未配置（api_key 为空）
-        #     时回退原四层解析（node → project → system），保持向后兼容。
-        from services.provider_config import (
-            ProviderConfigService,
-            ProviderMissingError,
-            aget_claude_code_config,
-            aget_claude_code_runtime_config,
-        )
+        # 4.5 拓扑分层（消费 execution_plan[].dependencies = task id；wave 状态走 DB 不存内存，
+        #     不另造调度——wave N→N+1 由容器回调 _schedule_workflow_resume 触发节点重入自驱）。
+        from services.plan_orchestration import build_repo_dep_edges, build_repo_waves
 
-        resolved_api_key = ""
-        resolved_base_url = ""
-        credential_source = ""
-
-        # 仅当显式绑定了 credential_id 才走 CC 分支 ——
-        # runtime_config 未配置时内部回退系统默认凭证，直接判 api_key
-        # 会让未配置 CC 的实例绕过节点/空间级凭证（四层契约回归）。
-        cc_bound = bool((await aget_claude_code_config()).get("credential_id"))
-        cc = await aget_claude_code_runtime_config() if cc_bound else None
-        if cc is not None and cc["api_key"]:
-            resolved_api_key = cc["api_key"]
-            resolved_base_url = cc["base_url"]
-            credential_source = "claude_code_config"
-        else:
-            from workflows.models import WorkflowExecution
-
-            project = None
-            if context.workflow_execution:
-                we = await WorkflowExecution.objects.select_related(
-                    "workflow__project"
-                ).aget(id=context.workflow_execution.id)
-                project = we.workflow.project if we.workflow else None
-
-            # 强制 provider_type="anthropic"（Pitfall 5 缓解：防止上游 node_config 漂移
-            # 到非 Anthropic Provider；AICodingNode 容器永久 Anthropic-only）
-            anthropic_node_config = {
-                **(context.node_config or {}),
-                "provider_type": "anthropic",
-            }
-            resolved = await ProviderConfigService.aresolve_or_error(
-                node_config=anthropic_node_config,
-                conversation=None,              # AICodingNode 无 conversation 上下文
-                project=project,
+        repo_waves, cycle = build_repo_waves(execution_plan)
+        if cycle is not None:
+            # 依赖环 fail-fast：不进 dispatch（复用 plan_validator 三色 DFS，半可信 DoS 防御）。
+            log.warning("ai_coding_dependency_cycle", detail=cycle)
+            return NodeResult(
+                status="failed",
+                error="依赖环：" + str(cycle),
+                output={"error": cycle},
+                next_handle="error",
             )
-            if isinstance(resolved, ProviderMissingError):
-                raise ProviderConfigError(
-                    resolved.recommended_action or "Anthropic 凭证缺失"
-                )
-            # resolved: ResolvedProviderConfig —— api_key / base_url 为明文
-            resolved_api_key = resolved.api_key
-            resolved_base_url = resolved.base_url
-            credential_source = resolved.source
 
-        validated_base_url = _validate_anthropic_base_url(resolved_base_url)
-
-        # 只记 boolean / source，不记 api_key 明文值（security mitigation 缓解 + Pitfall 4 硬规则；
-        # 另有 implementation P5 redact_credentials structlog processor 对 api_key 字段名兜底脱敏）
-        log.info(
-            "anthropic_credential_resolved",
-            source=credential_source,
-            has_base_url=bool(validated_base_url),
-            has_api_key=bool(resolved_api_key),
+        # 5.0 解析 Anthropic 凭证（dispatch 循环外一次性完成，避免每 repo 重复 DB 往返）
+        resolved_api_key, validated_base_url = await self._resolve_anthropic_credentials(
+            context, log
         )
 
-        # 5. 并行分发（通过 TaskDispatcher → Runner）
+        # 5. 分发（按 wave 分批；wave N 全终态才推 N+1）
         from workflows.models.execution import SubStepStatus
 
         await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
@@ -412,52 +360,56 @@ class AICodingNode(SubStepMixin, BaseNode):
         # 无明文来源（背景/飞书触发）→ 返回 ""，下游省略 env_FRIDAY_TASK_USER_TOKEN（PAT-02）。
         user_pat = await self._resolve_user_pat(context)
 
-        coding_tasks = [
-            self._run_repo_coding(
-                repository=repositories[repo_id],
-                tasks=tasks,
-                branch_name=branch_name,
-                base_branch=base_branch,
-                global_context=global_context,
-                config=config,
-                node_execution_id=node_execution_id,
-                anthropic_api_key=resolved_api_key,
-                anthropic_base_url=validated_base_url,
-                user_pat=user_pat,
-            )
-            for repo_id, tasks in repo_groups.items()
-        ]
-        results: list[dict[str, Any] | BaseException] = await asyncio.gather(
-            *coding_tasks, return_exceptions=True
+        # wave 接线：plan_version 可解析且分层完整覆盖时建 RepoCodingTask 行（INV-6 单一写入），
+        # 仅 dispatch 当前（最小）wave；否则退化为现有全并行 dispatch 全部仓（零回归命门）。
+        plan_version_id = plan_data.get("plan_version_id")
+        plan_version = None
+        if plan_version_id:
+            from delivery.models import PlanVersion  # lazy import 防循环
+
+            plan_version = await PlanVersion.objects.filter(id=plan_version_id).afirst()
+
+        service = None
+        tasks_by_repo = None
+        # 分层须完整覆盖全部待编码仓（legacy/非 canonical plan_data 任务无 id → repo_waves
+        # 不覆盖该仓）才进 wave 模式，否则回退全并行保既有非编排路径零回归。
+        wave_mode = (
+            plan_version is not None
+            and bool(repo_waves)
+            and all(rid in repo_waves for rid in repo_groups)
         )
+        if wave_mode:
+            from delivery.services import RepoCodingTaskService
 
-        # 6. 分离 waiting_event / error
-        waiting_sessions: list[dict[str, Any]] = []
-        failed: list[dict[str, Any]] = []
+            service = RepoCodingTaskService()
+            repo_edges = build_repo_dep_edges(execution_plan)
+            tasks_by_repo = await service.create_tasks_for_plan(
+                plan_version, repo_waves, repo_edges
+            )
+            # 首发恒为最小 wave（空 deps → 全仓 wave=0 → 一次性 dispatch 全部 = 现行为等价）
+            current_wave = min(repo_waves.values())
+            dispatch_repo_ids = [rid for rid in repo_groups if repo_waves.get(rid) == current_wave]
+        else:
+            if plan_version_id:
+                log.warning("repo_coding_task_skipped_no_plan_version")
+            dispatch_repo_ids = list(repo_groups.keys())
 
-        group_keys = list(repo_groups.keys())
-        for i, result in enumerate(results):
-            repo_id = group_keys[i]
-            repo = repositories[repo_id]
-
-            if isinstance(result, BaseException):
-                failed.append({
-                    "repository_id": str(repo.id),
-                    "repository_name": repo.name,
-                    "error": _truncate(str(result), _MAX_ERROR_LENGTH),
-                })
-            elif isinstance(result, dict):
-                if result.get("status") == "error":
-                    failed.append({
-                        "repository_id": str(repo.id),
-                        "repository_name": repo.name,
-                        "error": _truncate(result.get("error", "未知错误"), _MAX_ERROR_LENGTH),
-                    })
-                elif result.get("status") == "waiting_event":
-                    waiting_sessions.append(result)
-                else:
-                    # 兼容旧模式（如果有）
-                    waiting_sessions.append(result)
+        waiting_sessions, failed = await self._dispatch_wave(
+            repo_ids=dispatch_repo_ids,
+            repo_groups=repo_groups,
+            repositories=repositories,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            global_context=global_context,
+            config=config,
+            node_execution_id=node_execution_id,
+            anthropic_api_key=resolved_api_key,
+            anthropic_base_url=validated_base_url,
+            user_pat=user_pat,
+            tasks_by_repo=tasks_by_repo,
+            service=service,
+            log=log,
+        )
 
         log.info(
             "ai_coding_dispatch_complete",
@@ -465,28 +417,20 @@ class AICodingNode(SubStepMixin, BaseNode):
             failed=len(failed),
         )
 
-        # 7. 如果有 waiting_event，挂起 workflow
+        # 7. 如果有 waiting_event，挂起 workflow（仅传无状态 plan_version_id 锚，wave 状态走 DB）
         if waiting_sessions:
             return NodeResult(
                 status="waiting_event",
-                output={
-                    "pending_sessions": [
-                        {
-                            "session_id": s["session_id"],
-                            "container_id": s["container_id"],
-                            "repository_id": s["repository_id"],
-                            "repository_name": s["repository_name"],
-                        }
-                        for s in waiting_sessions
-                    ],
-                    "failed_repos": failed,
-                    "plan_data": plan_data,
-                    "branch_name": branch_name,
-                    "base_branch": base_branch,
-                    "plan_title": plan_title,
-                    # 保存用于恢复后 MR 创建
-                    "repositories": {str(r.id): {"name": r.name, "id": str(r.id)} for r in repositories.values()},
-                },
+                output=self._build_waiting_output(
+                    waiting_sessions=waiting_sessions,
+                    failed=failed,
+                    plan_data=plan_data,
+                    branch_name=branch_name,
+                    base_branch=base_branch,
+                    plan_title=plan_title,
+                    repositories=repositories,
+                    plan_version_id=str(plan_version_id) if wave_mode else "",
+                ),
             )
 
         # 8. 如果全部失败，立即返回错误
@@ -505,13 +449,227 @@ class AICodingNode(SubStepMixin, BaseNode):
             next_handle="error",
         )
 
+    async def _resolve_anthropic_credentials(
+        self, context: ExecutionContext, log: Any
+    ) -> tuple[str, str]:
+        """解析 Anthropic 凭证，返回 ``(api_key, validated_base_url)``。
+
+        优先「Claude Code 编码配置」（admin 设置页绑定的凭证）——所有启动 Claude Code
+        容器的路径统一以 CC 配置为准；未配置（api_key 为空）时回退四层解析
+        （node → project → system），保持向后兼容。首发与 wave 推进共用（不造两套）。
+        """
+        from services.provider_config import (
+            ProviderConfigService,
+            ProviderMissingError,
+            aget_claude_code_config,
+            aget_claude_code_runtime_config,
+        )
+
+        resolved_api_key = ""
+        resolved_base_url = ""
+        credential_source = ""
+
+        # 仅当显式绑定了 credential_id 才走 CC 分支 —— runtime_config 未配置时内部回退
+        # 系统默认凭证，直接判 api_key 会让未配置 CC 的实例绕过节点/空间级凭证（四层契约回归）。
+        cc_bound = bool((await aget_claude_code_config()).get("credential_id"))
+        cc = await aget_claude_code_runtime_config() if cc_bound else None
+        if cc is not None and cc["api_key"]:
+            resolved_api_key = cc["api_key"]
+            resolved_base_url = cc["base_url"]
+            credential_source = "claude_code_config"
+        else:
+            from workflows.models import WorkflowExecution
+
+            project = None
+            if context.workflow_execution:
+                we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+                    id=context.workflow_execution.id
+                )
+                project = we.workflow.project if we.workflow else None
+
+            # 强制 provider_type="anthropic"（防止上游 node_config 漂移到非 Anthropic
+            # Provider；AICodingNode 容器永久 Anthropic-only）
+            anthropic_node_config = {
+                **(context.node_config or {}),
+                "provider_type": "anthropic",
+            }
+            resolved = await ProviderConfigService.aresolve_or_error(
+                node_config=anthropic_node_config,
+                conversation=None,  # AICodingNode 无 conversation 上下文
+                project=project,
+            )
+            if isinstance(resolved, ProviderMissingError):
+                raise ProviderConfigError(resolved.recommended_action or "Anthropic 凭证缺失")
+            # resolved: ResolvedProviderConfig —— api_key / base_url 为明文
+            resolved_api_key = resolved.api_key
+            resolved_base_url = resolved.base_url
+            credential_source = resolved.source
+
+        validated_base_url = _validate_anthropic_base_url(resolved_base_url)
+
+        # 只记 boolean / source，不记 api_key 明文值（security mitigation 缓解；另有 P5
+        # redact_credentials structlog processor 对 api_key 字段名兜底脱敏）。
+        log.info(
+            "anthropic_credential_resolved",
+            source=credential_source,
+            has_base_url=bool(validated_base_url),
+            has_api_key=bool(resolved_api_key),
+        )
+        return resolved_api_key, validated_base_url
+
+    async def _dispatch_wave(
+        self,
+        *,
+        repo_ids: list[str],
+        repo_groups: dict[str, list[dict[str, Any]]],
+        repositories: dict[str, Repository],
+        branch_name: str,
+        base_branch: str,
+        global_context: str,
+        config: dict[str, Any],
+        node_execution_id: str,
+        anthropic_api_key: str,
+        anthropic_base_url: str,
+        user_pat: str,
+        tasks_by_repo: dict[str, Any] | None,
+        service: Any,
+        log: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """dispatch 指定一批仓（单 wave），返回 ``(waiting_sessions, failed)``。
+
+        首发与 wave 推进共用此 helper（不造两套）。保留单仓异常隔离
+        （``asyncio.gather(..., return_exceptions=True)``）。wave 模式（service /
+        tasks_by_repo 非空）：dispatch 成功仓经 ``service.mark_running`` 回填 RUNNING +
+        subagent_session；dispatch 失败仓经 ``service.mark_failed`` 标终态——否则该仓无容器
+        回调，wave 永挂（liveness）。
+        """
+        coding_tasks = [
+            self._run_repo_coding(
+                repository=repositories[repo_id],
+                tasks=repo_groups[repo_id],
+                branch_name=branch_name,
+                base_branch=base_branch,
+                global_context=global_context,
+                config=config,
+                node_execution_id=node_execution_id,
+                anthropic_api_key=anthropic_api_key,
+                anthropic_base_url=anthropic_base_url,
+                user_pat=user_pat,
+            )
+            for repo_id in repo_ids
+        ]
+        results: list[dict[str, Any] | BaseException] = await asyncio.gather(
+            *coding_tasks, return_exceptions=True
+        )
+
+        waiting_sessions: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        failed_repo_ids: list[str] = []
+
+        for i, result in enumerate(results):
+            repo_id = repo_ids[i]
+            repo = repositories[repo_id]
+
+            if isinstance(result, BaseException):
+                failed.append(
+                    {
+                        "repository_id": str(repo.id),
+                        "repository_name": repo.name,
+                        "error": _truncate(str(result), _MAX_ERROR_LENGTH),
+                    }
+                )
+                failed_repo_ids.append(repo_id)
+            elif isinstance(result, dict):
+                if result.get("status") == "error":
+                    failed.append(
+                        {
+                            "repository_id": str(repo.id),
+                            "repository_name": repo.name,
+                            "error": _truncate(result.get("error", "未知错误"), _MAX_ERROR_LENGTH),
+                        }
+                    )
+                    failed_repo_ids.append(repo_id)
+                else:
+                    waiting_sessions.append(result)
+
+        # wave 模式：子任务级状态回填只经 service（INV-6）。
+        if service is not None and tasks_by_repo is not None:
+            from subagent.models import SubAgentSession
+
+            for s in waiting_sessions:
+                task = tasks_by_repo.get(s["repository_id"])
+                if task is None:
+                    continue
+                sess = await SubAgentSession.objects.filter(session_id=s["session_id"]).afirst()
+                if sess is not None:
+                    await service.mark_running(task, sess)
+            for rid in failed_repo_ids:
+                task = tasks_by_repo.get(rid)
+                if task is not None:
+                    await service.mark_failed(task, {"reason": "dispatch_failed"})
+
+        return waiting_sessions, failed
+
+    def _build_waiting_output(
+        self,
+        *,
+        waiting_sessions: list[dict[str, Any]],
+        failed: list[dict[str, Any]],
+        plan_data: dict[str, Any] | None,
+        branch_name: str,
+        base_branch: str,
+        plan_title: str,
+        repositories: dict[str, Repository],
+        plan_version_id: str,
+    ) -> dict[str, Any]:
+        """构建 waiting_event 的 output_data（wave 状态走 DB，仅传无状态 plan_version_id 锚）。"""
+        return {
+            "pending_sessions": [
+                {
+                    "session_id": s["session_id"],
+                    "container_id": s["container_id"],
+                    "repository_id": s["repository_id"],
+                    "repository_name": s["repository_name"],
+                }
+                for s in waiting_sessions
+            ],
+            "failed_repos": failed,
+            "plan_data": plan_data,
+            "branch_name": branch_name,
+            "base_branch": base_branch,
+            "plan_title": plan_title,
+            # 保存用于恢复后 MR 创建
+            "repositories": {
+                str(r.id): {"name": r.name, "id": str(r.id)} for r in repositories.values()
+            },
+            # wave 推进锚（无状态——resume 段从 DB 重算 wave）；legacy 模式为空串。
+            "plan_version_id": plan_version_id,
+        }
+
     async def _resume_after_containers(
         self,
         context: ExecutionContext,
         output_data: dict[str, Any],
         log: Any,
     ) -> NodeResult:
-        """容器完成后恢复 workflow 执行。
+        """容器完成后恢复 workflow 执行（wave 推进 / 单 wave 收尾分流）。
+
+        - **wave 模式**（output_data 带非空 plan_version_id）：经 ``aadvance_coding_waves``
+          判 gate → dispatch 下一 wave（再 waiting_event）或部分成功收尾。
+        - **legacy 模式**（无 plan_version_id：分支确认 / 非编排路径）：走现有一次性收尾。
+        """
+        plan_version_id = output_data.get("plan_version_id")
+        if plan_version_id:
+            return await self._resume_wave(context, output_data, plan_version_id, log)
+        return await self._resume_legacy(context, output_data, log)
+
+    async def _resume_legacy(
+        self,
+        context: ExecutionContext,
+        output_data: dict[str, Any],
+        log: Any,
+    ) -> NodeResult:
+        """单 wave 收尾（无 plan_version_id 的既有路径，零回归）。
 
         检查所有 pending_sessions 的状态，为成功的仓库创建 MR。
         """
@@ -521,7 +679,6 @@ class AICodingNode(SubStepMixin, BaseNode):
         base_branch = output_data.get("base_branch", "")
         plan_title = output_data.get("plan_title", "")
         plan_data = output_data.get("plan_data")
-        _repositories_info = output_data.get("repositories", {})
 
         # 查询每个 session 的结果
         from subagent.models import SubAgentSession, TaskResult
@@ -540,11 +697,13 @@ class AICodingNode(SubStepMixin, BaseNode):
                 ).afirst()
 
                 if not session:
-                    failed_repos.append({
-                        "repository_id": repo_id,
-                        "repository_name": repo_name,
-                        "error": "Session 不存在",
-                    })
+                    failed_repos.append(
+                        {
+                            "repository_id": repo_id,
+                            "repository_name": repo_name,
+                            "error": "Session 不存在",
+                        }
+                    )
                     continue
 
                 if session.status == SubAgentSession.Status.COMPLETED:
@@ -555,19 +714,290 @@ class AICodingNode(SubStepMixin, BaseNode):
                     ).afirst()
 
                     if task_result:
-                        succeeded.append({
+                        succeeded.append(
+                            {
+                                "repository_id": repo_id,
+                                "repository_name": repo_name,
+                                "tasks_completed": [],  # 从 task_result 解析
+                                "output": task_result.raw_output,
+                                "mr_url": task_result.pr_url,
+                                "mr_id": "",
+                                "files_changed": len(task_result.modified_files)
+                                if task_result.modified_files
+                                else 0,
+                                "insertions": 0,  # 从 raw_output 解析
+                                "deletions": 0,
+                            }
+                        )
+                    else:
+                        succeeded.append(
+                            {
+                                "repository_id": repo_id,
+                                "repository_name": repo_name,
+                                "tasks_completed": [],
+                                "output": {},
+                                "mr_url": "",
+                                "mr_id": "",
+                                "files_changed": 0,
+                                "insertions": 0,
+                                "deletions": 0,
+                            }
+                        )
+
+                elif session.status in (
+                    SubAgentSession.Status.ERROR,
+                    SubAgentSession.Status.TIMEOUT,
+                ):
+                    failed_repos.append(
+                        {
                             "repository_id": repo_id,
                             "repository_name": repo_name,
-                            "tasks_completed": [],  # 从 task_result 解析
+                            "error": session.last_error or f"容器状态: {session.status}",
+                        }
+                    )
+
+            except Exception as e:
+                log.exception("session_check_error", session_id=session_id)
+                failed_repos.append(
+                    {
+                        "repository_id": repo_id,
+                        "repository_name": repo_name,
+                        "error": str(e),
+                    }
+                )
+
+        log.info(
+            "resume_sessions_checked",
+            succeeded=len(succeeded),
+            failed=len(failed_repos),
+        )
+
+        return await self._finalize_and_notify(
+            context=context,
+            succeeded=succeeded,
+            failed_repos=failed_repos,
+            completed_session_ids=completed_session_ids,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            plan_title=plan_title,
+            plan_data=plan_data,
+            log=log,
+        )
+
+    async def _resume_wave(
+        self,
+        context: ExecutionContext,
+        output_data: dict[str, Any],
+        plan_version_id: Any,
+        log: Any,
+    ) -> NodeResult:
+        """wave 推进：经 ``aadvance_coding_waves`` 判 gate → 推下一 wave 或部分成功收尾。
+
+        整段 fail-soft（aadvance 异常 swallow + warning 降级 → 直接收尾），绝不让节点
+        重入异常回灌使容器回调 5xx（对齐 Pitfall 4；``_schedule_workflow_resume`` 本身
+        fire-and-forget 不改契约）。wave N→N+1 由下一轮容器回调重入驱动（**不另造调度**：
+        无轮询 / 无 sleep / 无定时器）。
+
+        有限收敛 ``for`` 循环（非调度循环）仅处理「本 wave 全 dispatch 失败（无容器回调可
+        驱动）」时**当轮**再 advance 阻断下游并收敛——每次 continue 都使一批 task 转终态，
+        迭代数 ≤ 本 plan_version 的 task 总数，必终止。
+        """
+        from delivery.models import RepoCodingTask
+        from services.plan_orchestration import aadvance_coding_waves
+
+        # 收敛上界 = task 总数（每次 continue 至少使一批 pending→failed，严格收敛）。
+        max_passes = (
+            await RepoCodingTask.objects.filter(plan_version_id=plan_version_id).acount() + 1
+        )
+        for _ in range(max_passes):
+            try:
+                result = await aadvance_coding_waves(plan_version_id)
+            except Exception as exc:  # noqa: BLE001 — 推进异常降级收尾，不回灌回调 5xx
+                log.warning("coding_wave_advance_failed", error=str(exc))
+                return await self._finalize_wave(context, output_data, plan_version_id, log)
+
+            # waiting：仍有 RUNNING 在途 task（aadvance 仅在 RUNNING 时返回 waiting）→ 重挂起
+            # 等下一次容器回调，绝不当作收尾触发（waiting != finalize）。
+            if result.get("waiting"):
+                log.info("coding_wave_still_running", plan_version_id=str(plan_version_id))
+                return self._resuspend_wave(output_data)
+
+            # dispatch：下一 wave 待派发 → dispatch + mark_running + 再 waiting_event 挂起。
+            if result.get("dispatch"):
+                waiting_sessions = await self._dispatch_next_wave(context, output_data, result, log)
+                if waiting_sessions:
+                    return NodeResult(
+                        status="waiting_event",
+                        output=self._build_resume_waiting_output(
+                            output_data, waiting_sessions, str(plan_version_id)
+                        ),
+                    )
+                # 本 wave 全 dispatch 失败（已标 failed）→ 当轮再 advance 阻断下游 / 收尾。
+                continue
+
+            # all_terminal（或无更多在途）→ 收尾。
+            return await self._finalize_wave(context, output_data, plan_version_id, log)
+
+        # 兜底（理论不可达：max_passes 已覆盖最坏全失败链）→ 收尾，绝不悬挂。
+        return await self._finalize_wave(context, output_data, plan_version_id, log)
+
+    async def _dispatch_next_wave(
+        self,
+        context: ExecutionContext,
+        output_data: dict[str, Any],
+        result: dict[str, Any],
+        log: Any,
+    ) -> list[dict[str, Any]]:
+        """dispatch aadvance 返回的下一 wave 仓（复用 _dispatch_wave），返回 waiting_sessions。"""
+        from delivery.services import RepoCodingTaskService
+        from workflows.models.execution import SubStepStatus
+
+        dispatch_tasks = result.get("dispatch", [])
+        tasks_by_repo = {str(t.repository_id): t for t in dispatch_tasks}
+        dispatch_repo_ids = list(tasks_by_repo.keys())
+
+        plan_data = output_data.get("plan_data") or {}
+        execution_plan: list[dict[str, Any]] = plan_data.get("execution_plan", [])
+        global_context: str = plan_data.get("global_context", "")
+        branch_name = output_data.get("branch_name", "")
+        base_branch = output_data.get("base_branch", "")
+
+        repo_groups = self._group_by_repository(execution_plan)
+        repositories = await self._fetch_repositories(set(dispatch_repo_ids))
+
+        service = RepoCodingTaskService()
+
+        # 仓被删 → 标 failed（避免该 task 永 pending 致 while 循环重派死循环，liveness）。
+        missing_ids = [rid for rid in dispatch_repo_ids if rid not in repositories]
+        for rid in missing_ids:
+            await service.mark_failed(tasks_by_repo[rid], {"reason": "repository_not_found"})
+
+        resolved_api_key, validated_base_url = await self._resolve_anthropic_credentials(
+            context, log
+        )
+        node_execution_id = ""
+        if context.node_execution:
+            node_execution_id = str(context.node_execution.id)
+        user_pat = await self._resolve_user_pat(context)
+
+        await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
+
+        waiting_sessions, failed = await self._dispatch_wave(
+            repo_ids=[rid for rid in dispatch_repo_ids if rid in repositories],
+            repo_groups=repo_groups,
+            repositories=repositories,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            global_context=global_context,
+            config=context.node_config,
+            node_execution_id=node_execution_id,
+            anthropic_api_key=resolved_api_key,
+            anthropic_base_url=validated_base_url,
+            user_pat=user_pat,
+            tasks_by_repo=tasks_by_repo,
+            service=service,
+            log=log,
+        )
+        log.info(
+            "coding_wave_next_dispatched",
+            wave=result.get("wave"),
+            waiting=len(waiting_sessions),
+            failed=len(failed),
+        )
+        return waiting_sessions
+
+    def _resuspend_wave(self, output_data: dict[str, Any]) -> NodeResult:
+        """仍有在途容器 → 重挂起（清除回调控制键），等下一次回调重入。"""
+        clean = {
+            k: v
+            for k, v in output_data.items()
+            if k not in ("_resume_from_callback", "_all_containers_completed", "_session_results")
+        }
+        return NodeResult(status="waiting_event", output=clean)
+
+    def _build_resume_waiting_output(
+        self,
+        output_data: dict[str, Any],
+        waiting_sessions: list[dict[str, Any]],
+        plan_version_id: str,
+    ) -> dict[str, Any]:
+        """下一 wave 挂起 output：复用既有无状态上下文，刷新 pending_sessions。"""
+        return {
+            "pending_sessions": [
+                {
+                    "session_id": s["session_id"],
+                    "container_id": s["container_id"],
+                    "repository_id": s["repository_id"],
+                    "repository_name": s["repository_name"],
+                }
+                for s in waiting_sessions
+            ],
+            "failed_repos": output_data.get("failed_repos", []),
+            "plan_data": output_data.get("plan_data"),
+            "branch_name": output_data.get("branch_name", ""),
+            "base_branch": output_data.get("base_branch", ""),
+            "plan_title": output_data.get("plan_title", ""),
+            "repositories": output_data.get("repositories", {}),
+            "plan_version_id": plan_version_id,
+        }
+
+    async def _finalize_wave(
+        self,
+        context: ExecutionContext,
+        output_data: dict[str, Any],
+        plan_version_id: Any,
+        log: Any,
+    ) -> NodeResult:
+        """wave 全终态收尾：从 DB（RepoCodingTask）重算 done/failed 仓，复用收尾段。
+
+        done 仓出 MR；failed 仓如实标注（``error.reason=upstream_failed`` 的为下游阻断仓）；
+        不自动回滚（v0.8 显式非目标，已成功仓分支 / 产物不回退）。
+        """
+        from delivery.models import RepoCodingTask, RepoCodingTaskStatus
+        from repositories.models import Repository
+        from subagent.models import SubAgentSession, TaskResult
+
+        branch_name = output_data.get("branch_name", "")
+        base_branch = output_data.get("base_branch", "")
+        plan_title = output_data.get("plan_title", "")
+        plan_data = output_data.get("plan_data")
+
+        succeeded: list[dict[str, Any]] = []
+        failed_repos: list[dict[str, Any]] = []
+        completed_session_ids: list[str] = []
+
+        async for task in RepoCodingTask.objects.filter(plan_version_id=plan_version_id):
+            repo_id = str(task.repository_id)
+            repo = await Repository.objects.filter(id=repo_id).afirst()
+            repo_name = repo.name if repo else repo_id
+
+            if task.status == RepoCodingTaskStatus.DONE:
+                task_result = None
+                sid = task.subagent_session_id
+                if sid:
+                    sess = await SubAgentSession.objects.filter(id=sid).afirst()
+                    if sess is not None:
+                        completed_session_ids.append(sess.session_id)
+                        task_result = await TaskResult.objects.filter(session=sess).afirst()
+                if task_result is not None:
+                    succeeded.append(
+                        {
+                            "repository_id": repo_id,
+                            "repository_name": repo_name,
+                            "tasks_completed": [],
                             "output": task_result.raw_output,
                             "mr_url": task_result.pr_url,
                             "mr_id": "",
-                            "files_changed": len(task_result.modified_files) if task_result.modified_files else 0,
-                            "insertions": 0,  # 从 raw_output 解析
+                            "files_changed": (
+                                len(task_result.modified_files) if task_result.modified_files else 0
+                            ),
+                            "insertions": 0,
                             "deletions": 0,
-                        })
-                    else:
-                        succeeded.append({
+                        }
+                    )
+                else:
+                    succeeded.append(
+                        {
                             "repository_id": repo_id,
                             "repository_name": repo_name,
                             "tasks_completed": [],
@@ -577,32 +1007,55 @@ class AICodingNode(SubStepMixin, BaseNode):
                             "files_changed": 0,
                             "insertions": 0,
                             "deletions": 0,
-                        })
-
-                elif session.status in (
-                    SubAgentSession.Status.ERROR,
-                    SubAgentSession.Status.TIMEOUT,
-                ):
-                    failed_repos.append({
+                        }
+                    )
+            elif task.status == RepoCodingTaskStatus.FAILED:
+                err = task.error if isinstance(task.error, dict) else {}
+                if err.get("reason") == "upstream_failed":
+                    upstream = ", ".join(err.get("upstream", []))
+                    msg = f"上游失败被阻断（upstream_failed）：{upstream}"
+                else:
+                    msg = str(err.get("error") or err.get("message") or err or "编码失败")
+                failed_repos.append(
+                    {
                         "repository_id": repo_id,
                         "repository_name": repo_name,
-                        "error": session.last_error or f"容器状态: {session.status}",
-                    })
-
-            except Exception as e:
-                log.exception("session_check_error", session_id=session_id)
-                failed_repos.append({
-                    "repository_id": repo_id,
-                    "repository_name": repo_name,
-                    "error": str(e),
-                })
+                        "error": _truncate(msg, _MAX_ERROR_LENGTH),
+                    }
+                )
 
         log.info(
-            "resume_sessions_checked",
+            "coding_wave_finalize",
             succeeded=len(succeeded),
             failed=len(failed_repos),
         )
 
+        return await self._finalize_and_notify(
+            context=context,
+            succeeded=succeeded,
+            failed_repos=failed_repos,
+            completed_session_ids=completed_session_ids,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            plan_title=plan_title,
+            plan_data=plan_data,
+            log=log,
+        )
+
+    async def _finalize_and_notify(
+        self,
+        *,
+        context: ExecutionContext,
+        succeeded: list[dict[str, Any]],
+        failed_repos: list[dict[str, Any]],
+        completed_session_ids: list[str],
+        branch_name: str,
+        base_branch: str,
+        plan_title: str,
+        plan_data: dict[str, Any] | None,
+        log: Any,
+    ) -> NodeResult:
+        """收尾段（单 wave / wave 全终态共用，不造两套）：done 仓出 MR + 飞书卡片 + 构建输出。"""
         # 为成功仓库创建 MR
         mr_results: list[dict[str, Any]] = []
         if succeeded:
@@ -623,10 +1076,9 @@ class AICodingNode(SubStepMixin, BaseNode):
                     mr_results.append({**result, **mr_result})
 
         # INGEST-02（14-06）：MR 创建之后的完成锚点（时序防线：归档不挂容器回调）。
-        # 修订定案——先持久化后投递：mr_results 序列化写进 node_execution.output_data，
-        # task_result normalizer 后台经 session.node_execution 重读（workflow 路径
-        # mr_url 权威源）；持久化失败 warning 降级（normalizer 侧 mr_url 降级空串），
-        # 不阻塞投递与节点完成。
+        # 先持久化后投递：mr_results 序列化写进 node_execution.output_data，task_result
+        # normalizer 后台经 session.node_execution 重读（workflow 路径 mr_url 权威源）；
+        # 持久化失败 warning 降级，不阻塞投递与节点完成。
         if completed_session_ids:
             serialized_mr_results = [
                 {
@@ -703,9 +1155,7 @@ class AICodingNode(SubStepMixin, BaseNode):
     # 方案解析
     # ------------------------------------------------------------------
 
-    def _extract_plan_data(
-        self, context: ExecutionContext
-    ) -> dict[str, Any] | None:
+    def _extract_plan_data(self, context: ExecutionContext) -> dict[str, Any] | None:
         """从上游输入提取技术方案数据。"""
         plan_data = context.get_input("plan")
         if plan_data and isinstance(plan_data, dict):
@@ -728,24 +1178,17 @@ class AICodingNode(SubStepMixin, BaseNode):
                 groups.setdefault(repo_id, []).append(task)
         return groups
 
-    async def _fetch_repositories(
-        self, repo_ids: set[str]
-    ) -> dict[str, Repository]:
+    async def _fetch_repositories(self, repo_ids: set[str]) -> dict[str, Repository]:
         """批量获取仓库对象。"""
         return {
-            str(r.id): r
-            async for r in Repository.objects.filter(
-                id__in=repo_ids, is_deleted=False
-            )
+            str(r.id): r async for r in Repository.objects.filter(id__in=repo_ids, is_deleted=False)
         }
 
     # ------------------------------------------------------------------
     # 分支名解析
     # ------------------------------------------------------------------
 
-    def _resolve_branch_name(
-        self, plan_data: dict[str, Any], context: ExecutionContext
-    ) -> str:
+    def _resolve_branch_name(self, plan_data: dict[str, Any], context: ExecutionContext) -> str:
         """从方案数据或 trigger 上下文解析分支名。
 
         Returns:
@@ -822,9 +1265,9 @@ class AICodingNode(SubStepMixin, BaseNode):
                 if context.workflow_execution:
                     from workflows.models import WorkflowExecution
 
-                    we = await WorkflowExecution.objects.select_related(
-                        "workflow__project"
-                    ).aget(id=context.workflow_execution.id)
+                    we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+                        id=context.workflow_execution.id
+                    )
                     project = we.workflow.project if we.workflow else None
 
                     if project:
@@ -901,9 +1344,9 @@ class AICodingNode(SubStepMixin, BaseNode):
         global_context: str,
         config: dict[str, Any],
         node_execution_id: str = "",
-        anthropic_api_key: str = "",        # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
-        anthropic_base_url: str = "",        # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
-        user_pat: str = "",                  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
+        anthropic_api_key: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
+        anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
+        user_pat: str = "",  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
     ) -> dict[str, Any]:
         """通过 TaskDispatcher 分发编码任务到 Runner。"""
         log = logger.bind(
@@ -1012,11 +1455,11 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "repository_name": repository.name,
                 "work_item_id": config.get("work_item_id", ""),
                 "git_credentials": git_credentials,
-                **git_env,         # PF-06：env_FRIDAY_TASK_GIT_ACCESS_TOKEN/AUTH_TYPE/SSL_VERIFY（token 非空时）
-                **branch_env,      # PF-06：env_FRIDAY_TASK_BRANCH_STRATEGY/TARGET_BRANCH（多仓 per-repo）
-                **anthropic_env,   # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
-                **tools_env,       # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
-                **exclude_env,     # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
+                **git_env,  # PF-06：env_FRIDAY_TASK_GIT_ACCESS_TOKEN/AUTH_TYPE/SSL_VERIFY（token 非空时）
+                **branch_env,  # PF-06：env_FRIDAY_TASK_BRANCH_STRATEGY/TARGET_BRANCH（多仓 per-repo）
+                **anthropic_env,  # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
+                **tools_env,  # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
+                **exclude_env,  # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
             },
         )
 
@@ -1029,14 +1472,16 @@ class AICodingNode(SubStepMixin, BaseNode):
             if node_execution_id:
                 from workflows.models import NodeExecution
 
-                node_exec = await NodeExecution.objects.filter(
-                    id=node_execution_id,
-                ).select_related("workflow_execution").afirst()
+                node_exec = (
+                    await NodeExecution.objects.filter(
+                        id=node_execution_id,
+                    )
+                    .select_related("workflow_execution")
+                    .afirst()
+                )
                 if node_exec and node_exec.workflow_execution:
                     main_session = await AgentSession.objects.filter(
-                        metadata__workflow_execution_id=str(
-                            node_exec.workflow_execution.id
-                        ),
+                        metadata__workflow_execution_id=str(node_exec.workflow_execution.id),
                     ).afirst()
 
             # main_session 是必需 FK，无法找到时创建占位
@@ -1107,17 +1552,13 @@ class AICodingNode(SubStepMixin, BaseNode):
         if len(tasks) == 1:
             task = tasks[0]
             task_name = task.get("name", "编码任务")
-            instruction = task.get("coding_instruction", "") or task.get(
-                "description", ""
-            )
+            instruction = task.get("coding_instruction", "") or task.get("description", "")
             parts.append(f"# 编码任务: {task_name}\n\n{instruction}")
         else:
             instructions: list[str] = []
             for i, task in enumerate(tasks, 1):
                 task_name = task.get("name", f"任务 {i}")
-                instruction = task.get("coding_instruction", "") or task.get(
-                    "description", ""
-                )
+                instruction = task.get("coding_instruction", "") or task.get("description", "")
                 instructions.append(f"## 任务 {i}: {task_name}\n\n{instruction}")
             parts.append("# 编码任务\n\n" + "\n\n---\n\n".join(instructions))
 
@@ -1204,9 +1645,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         client = get_git_platform_client(repository, token)
 
         # 构建 MR 描述
-        task_checklist = "\n".join(
-            f"- [x] {name}" for name in tasks_completed if name
-        )
+        task_checklist = "\n".join(f"- [x] {name}" for name in tasks_completed if name)
         summary_text = ""
         if isinstance(changes_summary, dict):
             files = changes_summary.get("files_changed", 0)
@@ -1310,9 +1749,9 @@ class AICodingNode(SubStepMixin, BaseNode):
 
             from workflows.models import WorkflowExecution as WE2
 
-            we = await WE2.objects.select_related(
-                "workflow__project"
-            ).aget(id=context.workflow_execution.id)
+            we = await WE2.objects.select_related("workflow__project").aget(
+                id=context.workflow_execution.id
+            )
             project = we.workflow.project if we.workflow else None
 
             if not project:
