@@ -141,3 +141,37 @@ async def test_openspec_as_file_is_not_tagged(tmp_path: Any) -> None:
     assert changed is False
     refreshed = await _refresh(repo.id)
     assert "methodology" not in refreshed.facets
+
+
+# ---------------------------------------------------------------------------
+# 挂接 fail-safe：检测异常不阻断索引 success（D-48-1，best-effort 不变量）
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_hook_runs_before_rmtree_in_clone_and_index() -> None:
+    """``_run_sdd_detect`` 必须在 ``shutil.rmtree(temp_dir)`` 之前被 await（探测真实目录）。"""
+    import inspect
+
+    from services.indexer import clone_and_index_repository
+
+    src = inspect.getsource(clone_and_index_repository)
+    detect_idx = src.find("_run_sdd_detect(repository_id, temp_dir)")
+    rmtree_idx = src.find("shutil.rmtree(temp_dir")
+
+    assert detect_idx >= 0, "clone_and_index_repository 缺少 _run_sdd_detect 触发"
+    assert rmtree_idx >= 0, "clone_and_index_repository 缺少 shutil.rmtree(temp_dir)"
+    assert detect_idx < rmtree_idx, "SDD 检测必须在 rmtree(temp_dir) 之前触发（否则探测已删除目录）"
+    assert "await _run_sdd_detect(" in src, "_run_sdd_detect 必须被 await（不能 fire-and-forget）"
+
+
+async def test_dispatch_swallows_detector_exception(monkeypatch: Any) -> None:
+    """检测内部抛异常时，``_run_sdd_detect`` 不冒泡（best-effort，绝不阻断索引 success）。"""
+    from services import indexer
+
+    async def _boom(*_a: Any, **_k: Any) -> bool:
+        raise RuntimeError("sdd detector exploded")
+
+    monkeypatch.setattr("services.sdd_detect.detect_and_tag_sdd", _boom, raising=True)
+
+    # 不抛即通过（异常被 helper 内 try/except 吞掉并记 sdd_detect_dispatch_failed warning）。
+    await indexer._run_sdd_detect("rid", "/tmp/does-not-matter")
