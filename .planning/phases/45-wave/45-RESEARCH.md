@@ -500,17 +500,19 @@ for repo_id, task in tasks_by_repo.items():
 | A5 | `record_produced_artifacts` 覆盖写（非 merge）——单仓单 done 只提取一次 | Pattern 3 | 低——CONTEXT Discretion 倾向覆盖；幂等重写同产物等价 |
 | A6 | 提取段 fail-soft 失败 → `produced_artifacts` 留空 dict → 下游注入段为空（可接受降级） | Pitfall 3 | 低——零回归路径；契约缺失只是下游少上下文，不阻塞编码 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **注入段在 prompt 中的精确插入位（global_context 之后 vs 分支信息之后）**
    - What we know: 当前 parts 顺序 `global_context → 分支 → 任务 → 文件 → 要求`（coding.py:1544-1578）；D-08 要求「项目背景之后、编码任务之前」。
    - What's unclear: 「分支信息」段夹在 global_context 与任务之间——上游产物段放 global_context 后（分支前）还是分支后（任务前）。
    - Recommendation: 放 global_context 之后、分支信息之前（最贴合 D-08「项目背景之后」字面），两者均满足「编码任务之前」。planner 按可读性定，零回归不受影响（空段不渲染）。
+   - RESOLVED: 计划 45-02-T2 采纳——上游产物段插在 global_context 之后、分支信息之前。
 
 2. **同一下游仓多上游产物的渲染顺序稳定性**
    - What we know: `acollect_upstream_artifacts` 用 `async for task.depends_on.all()`，顺序由 M2M 默认排序决定。
    - What's unclear: 多上游时渲染顺序是否需确定性（影响集成测试断言稳定）。
    - Recommendation: 收集后按 `repository_id` 排序再渲染（确定性，便于 D-13 断言）；planner 可在 `acollect_upstream_artifacts` 末尾 `sorted(out, key=lambda a: a.get("repository_id",""))`。
+   - RESOLVED: 计划 45-02-T1 采纳——`acollect_upstream_artifacts` 返回前按 `repository_id` 排序。
 
 ## Environment Availability
 

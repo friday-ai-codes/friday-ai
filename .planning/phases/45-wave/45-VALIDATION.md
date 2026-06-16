@@ -44,8 +44,8 @@ created: 2026-06-16
 | ARTIFACT-01 | `RepoCodingTaskService.record_produced_artifacts`：写 produced_artifacts（覆盖式幂等）（D-05/D-15） | unit | `pytest tests/delivery/test_repo_coding_task_service.py::test_record_produced_artifacts -x` | ❌ W0 | ⬜ pending |
 | ARTIFACT-01 | INV-6 守护：旁路写 `produced_artifacts` 被断言拦截（D-14） | unit | `pytest tests/delivery/test_repo_coding_task_inv6_guard.py -x` | ⚠️ extend | ⬜ pending |
 | ARTIFACT-02 | `render_upstream_artifacts_section`：多上游→段含各仓契约；空→空串（D-12） | unit | `pytest tests/services/plan_orchestration/test_artifact_injection.py::test_render_section -x` | ❌ W0 | ⬜ pending |
-| ARTIFACT-02 | `_build_coding_prompt`：带 upstream_artifacts→prompt 含「上游产物」段+契约文件名（D-12） | unit | `pytest tests/services/plan_orchestration/test_artifact_injection.py::test_prompt_injection -x` | ❌ W0 | ⬜ pending |
-| ARTIFACT-02 | `_build_coding_prompt`：不带 upstream_artifacts→prompt 与 Phase 44 现行为逐字一致（零回归）（D-12） | unit | `pytest tests/services/plan_orchestration/test_artifact_injection.py::test_no_regression -x` | ❌ W0 | ⬜ pending |
+| ARTIFACT-02 | `_build_coding_prompt`：带 upstream_artifacts→prompt 含「上游产物」段+契约文件名（D-12） | unit | `pytest tests/test_coding_node.py::test_prompt_injection -x` | ⚠️ extend | ⬜ pending |
+| ARTIFACT-02 | `_build_coding_prompt`：不带 upstream_artifacts→prompt 与 Phase 44 现行为逐字一致（零回归）（D-12） | unit | `pytest tests/test_coding_node.py::test_no_regression -x` | ⚠️ extend | ⬜ pending |
 | ARTIFACT-01+02 | 端到端：wave1 done→提取落 produced_artifacts→wave2 dispatch prompt/metadata 含 wave1 契约（D-13, SC-3） | integration | `pytest tests/test_coding_wave.py::test_artifact_passthrough -x` | ⚠️ extend | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -55,7 +55,8 @@ created: 2026-06-16
 ## Wave 0 Requirements
 
 - [ ] `tests/services/plan_orchestration/test_artifact_extraction.py` — `build_produced_artifacts` 纯函数（归类/无 TaskResult/空文件）
-- [ ] `tests/services/plan_orchestration/test_artifact_injection.py` — `render_upstream_artifacts_section` + `_build_coding_prompt` 注入/零回归
+- [ ] `tests/services/plan_orchestration/test_artifact_injection.py` — `render_upstream_artifacts_section` 纯函数注入段渲染
+- [ ] `tests/test_coding_node.py` — `_build_coding_prompt` 上游产物注入 + 零回归逐字断言（扩充既有 prompt 基线）
 - [ ] `tests/delivery/test_repo_coding_task_service.py` — `record_produced_artifacts`（扩充既有 service 测试）
 - [ ] `tests/delivery/test_repo_coding_task_inv6_guard.py` — INV-6 守护扩充 `produced_artifacts` 字段赋值拦截（镜像既有 guard）
 - [ ] `tests/test_coding_wave.py` — 端到端产物传递集成（扩充既有 wave 集成测试，复用 mock dispatcher + SubAgentSession + TaskResult fixture）
