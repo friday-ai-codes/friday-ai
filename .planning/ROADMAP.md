@@ -137,6 +137,12 @@ Plans:
   2. 跨仓 PR 互相引用（cross-ref），可追溯到同一 `TechnicalPlan`/`WorkItem`
   3. PR 创建复用既有 git 平台 client + `aresolve_git_token`（per-repo 优先 → host 实例池 fallback），缺凭证行为不回退
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 46-01-PLAN.md — PR-01：各仓 MR target_branch 用各仓自己的 default_branch（per-repo 解析 + 零回归 + fail-soft）(wave 1)
+- [ ] 46-02-PLAN.md — PR-02：跨仓 PR cross-ref + 方案/工作项可追溯（提取共用 helper + 接 _finalize_and_notify，全程 fail-soft）(wave 2)
+
 **UI hint**: maybe（多仓 PR 关联结果展示可能复用既有执行/方案视图，reuse-first）
 
 ### Phase 47: 编码遇阻 → question 抛人（HITL，非全自动 replan）
