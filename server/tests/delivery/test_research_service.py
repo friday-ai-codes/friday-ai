@@ -217,6 +217,44 @@ async def test_retry_non_failed_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_stale_task_resets_pending() -> None:
+    """IN-01：stale 任务（重索引失效）可经 retry_task 复位 pending（与 failed 对等的恢复路径）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    )
+    repo = await Repository.objects.acreate(
+        name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github", default_branch="main", index_status="indexed",
+    )
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.STALE
+    )
+    retried = await ResearchService().retry_task(task)
+    assert retried.status == RepoResearchTaskStatus.PENDING
+    assert retried.attempt == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_rejected_when_session_not_researching() -> None:
+    """IN-01：session 已 merging（barrier 已 fire）时 retry failed 任务被拒，避免状态不一致。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.MERGING
+    )
+    repo = await Repository.objects.acreate(
+        name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
+        git_platform="github", default_branch="main", index_status="indexed",
+    )
+    task = await RepoResearchTask.objects.acreate(
+        session=session, repository=repo, status=RepoResearchTaskStatus.FAILED
+    )
+    with pytest.raises(ValueError):
+        await ResearchService().retry_task(task)
+    # 任务未被复位
+    await task.arefresh_from_db()
+    assert task.status == RepoResearchTaskStatus.FAILED
+
+
+@pytest.mark.asyncio
 async def test_invalidate_for_repo_stale() -> None:
     """RESEARCH-03 核心：invalidate_for_repo(X) → partial 失效 + task stale + 计数=1；其他 repo 不受影响；幂等。"""
     session = await PlanSession.objects.acreate(
