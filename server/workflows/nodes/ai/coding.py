@@ -934,6 +934,30 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "ssl_verify": ssl_verify,
             }
 
+        # PF-06：逐键对齐 chat 路径 build_dispatch_metadata（coding_session_service.py:170-187）。
+        # 既有 nested git_credentials dict 被 runner 忽略（只 TrimPrefix 顶层 env_ string 键，见
+        # runner/internal/docker/executor.go），故必须额外注入顶层 env_FRIDAY_TASK_GIT_* 键，
+        # 否则私有仓 clone 走默认（无 token）失败。nested dict 原样保留以零回归。
+        repo_url = repository.git_url
+        git_env: dict[str, str] = {}
+        if token:
+            git_env["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+            git_env["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+            # 对齐 chat 权威基线硬编码 "false"（Open Q1 RESOLVED）；runner 仅透传非空 string。
+            git_env["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
+            # SSH URL -> HTTPS（token 认证需要 HTTPS）；正则锚定 git@host:path 无注入面。
+            if repo_url.startswith("git@"):
+                m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
+                if m:
+                    repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
+
+        # 分支 env（多仓 per-repo）：BRANCH_STRATEGY=本次调用的工作分支、TARGET_BRANCH=base 分支。
+        # 无条件注入——容器侧 branch_strategy 为空会回退默认 friday/task-{id}（PF-06 落默认分支根因）。
+        branch_env: dict[str, str] = {
+            "env_FRIDAY_TASK_BRANCH_STRATEGY": branch_name,
+            "env_FRIDAY_TASK_TARGET_BRANCH": base_branch,
+        }
+
         # 构造 env_FRIDAY_TASK_CLAUDE_* 字段（contract 纠偏命名；Runner Docker executor
         # `env_` 前缀自动 TrimPrefix 约定，见 runner/internal/docker/executor.go:84-95）
         #   - api_key 非空时写入 env_FRIDAY_TASK_CLAUDE_API_KEY
@@ -978,7 +1002,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             task_type="coding",
             tags=["coding"],
             image=config.get("container_image", "friday/claude-code:latest"),
-            repo_url=repository.git_url,
+            repo_url=repo_url,  # PF-06：SSH→HTTPS 改写后（token 认证需 HTTPS），不再直传 repository.git_url
             branch=base_branch,
             target_branch=branch_name,
             prompt=prompt,
@@ -990,6 +1014,8 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "repository_name": repository.name,
                 "work_item_id": config.get("work_item_id", ""),
                 "git_credentials": git_credentials,
+                **git_env,         # PF-06：env_FRIDAY_TASK_GIT_ACCESS_TOKEN/AUTH_TYPE/SSL_VERIFY（token 非空时）
+                **branch_env,      # PF-06：env_FRIDAY_TASK_BRANCH_STRATEGY/TARGET_BRANCH（多仓 per-repo）
                 **anthropic_env,   # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
                 **tools_env,       # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
                 **exclude_env,     # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
@@ -1041,6 +1067,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             log.info(
                 "task_dispatched_to_runner",
                 session_id=session_id,
+                has_git_token=bool(token),
                 has_tools_endpoint=bool(base),
                 has_user_token=bool(user_pat),
             )
