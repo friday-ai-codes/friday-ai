@@ -424,11 +424,34 @@ def mcp_plan_to_content(mcp_plan: Any) -> dict:
 
 
 def _normalize_exec_task(raw: dict, idx: int, default_name: str) -> dict:
-    """把半可信 task dict 归一化为合法 execution_plan item（补全必填 + 校正枚举）。"""
-    return {
+    """把半可信 task dict 归一化为合法 execution_plan item（补全必填 + 校正枚举）。
+
+    WR-02 / DOMAIN §5.3「忠实取材」：当 ``plan_body.execution_plan`` 已含
+    ``coding_instruction`` / ``files`` / ``dependencies`` 时保真复用（与 chat 取材一致），
+    仅在缺失时省略，绝不无条件丢弃。
+    """
+    task: dict[str, Any] = {
         "id": str(raw.get("id") or f"mcp-{idx}"),
         "name": str(raw.get("name") or raw.get("repository_name") or default_name),
         "repository_id": str(raw.get("repository_id") or ""),
         "repository_name": str(raw.get("repository_name") or ""),
         "branch_strategy": _normalize_branch_strategy(raw.get("branch_strategy")),
     }
+    if raw.get("coding_instruction"):
+        task["coding_instruction"] = str(raw["coding_instruction"])
+    if isinstance(raw.get("files"), list):
+        files = [
+            {
+                "path": str(f.get("path") or f.get("file_path") or ""),
+                "action": _normalize_action(f.get("action") or f.get("change_type")),
+            }
+            for f in raw["files"]
+            if isinstance(f, dict) and (f.get("path") or f.get("file_path"))
+        ]
+        if files:
+            task["files"] = files
+    if isinstance(raw.get("dependencies"), list):
+        deps = [str(d) for d in raw["dependencies"] if d]
+        if deps:
+            task["dependencies"] = deps
+    return task
