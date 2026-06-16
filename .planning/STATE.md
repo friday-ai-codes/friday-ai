@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: 多仓串行编码 → 融合 PR
-status: executing
+status: verifying
 stopped_at: v0.8.0 里程碑已定义（PROJECT/REQUIREMENTS/ROADMAP/STATE 已写并提交；Phases 43–47，9 需求 9/9 映射）
-last_updated: "2026-06-16T10:46:30.973Z"
+last_updated: "2026-06-16T12:14:18.485Z"
 last_activity: 2026-06-16 -- 43-04 RESUME-01「不造两套」收尾：节点/工具 advance 循环复用共享 helper + 文案如实更新（2 tasks，11 测全绿）
 progress:
   total_phases: 5
