@@ -36,7 +36,9 @@
   1. 索引完成后，仓库根含 `openspec/` 目录的仓库被自动写入 `facets["methodology"]="SDD"`；检测/打标失败为 best-effort，不阻断索引 success 终态
   2. 不含 `openspec/` 的仓库不被误标；重复索引幂等，标记不重复或漂移
   3. 用户在仓库列表与详情页可见 "SDD" 方法论标签，据此识别 spec-driven 仓库
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 48-01-PLAN.md — 后端 SDD 检测器 sdd_detect.py + 索引 FINALIZING best-effort 挂接（SDD-01）
+- [ ] 48-02-PLAN.md — 前端 SDD 方法论徽标 + i18n + 守护测试，接入知识树卡片/详情（SDD-02）
 **UI hint**: yes
 
 ### Phase 49: 方案产 openspec spec + Document(sdd_spec)
@@ -117,7 +119,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 0/TBD | Not started | - |
+| 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 0/2 | Not started | - |
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 0/TBD | Not started | - |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 0/TBD | Not started | - |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/TBD | Not started | - |
