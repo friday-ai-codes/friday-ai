@@ -1,9 +1,9 @@
 ---
 phase: 43
 slug: env-resume
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: planned
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-16
 ---
 
@@ -49,9 +49,11 @@ DB marker: `@pytest.mark.django_db(transaction=True)` (async + multi-coroutine c
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_coding_node.py` — extend with PF-06 dispatch metadata env assertions (git token env + branch strategy + target branch + SSH→HTTPS + no-token degrade + no-leak). Existing file with dispatch mock patterns (see `tests/chat/test_coding_exclusion_env.py` env-key style, `tests/test_coding_anthropic_base_url_passthrough.py`).
-- [ ] `tests/services/test_research_completion_callback.py` — extend with chat-entry resume + barrier reflow closed-loop tests (existing `_setup` chat-entry fixture + `_PATCHES` mock patterns; mock merge adapter to drive merging→done).
-- [ ] (If new helper module `services/plan_orchestration/resume.py`) `tests/services/test_plan_resume_driver.py` — unit tests for advance loop (terminal returns / researching-pending short-circuit / step-limit fail).
+> **No separate Wave 0 plan.** Test infrastructure is embedded via TDD inside the implementing plans — 43-01 Task 1 writes RED PF-06 assertions before Task 2 implements; 43-02 Task 2 unit-tests the shared helper; 43-03 Task 2 adds the closed-loop integration tests. The framework (pytest + asyncio + django + socket isolation) is already present, so the "Wave 0" coverage below is satisfied within Waves 1–2 rather than a dedicated wave.
+
+- [x] `tests/test_coding_node.py` — extend with PF-06 dispatch metadata env assertions (git token env + branch strategy + target branch + SSH→HTTPS + no-token degrade + no-leak). Existing file with dispatch mock patterns (see `tests/chat/test_coding_exclusion_env.py` env-key style, `tests/test_coding_anthropic_base_url_passthrough.py`). → **43-01 Task 1 (RED-first)**.
+- [x] `tests/services/test_research_completion_callback.py` — extend with chat-entry resume + barrier reflow closed-loop tests (existing `_setup` chat-entry fixture + `_PATCHES` mock patterns; mock merge adapter to drive merging→done). → **43-03 Task 2**.
+- [x] `tests/services/test_plan_resume_driver.py` (new, helper lands in `services/plan_orchestration/resume.py`) — unit tests for advance loop (terminal returns / researching-pending short-circuit / clarifying-pending short-circuit / step-limit fail). → **43-02 Task 2**.
 
 *Framework already present — no install needed.*
 
@@ -67,11 +69,13 @@ DB marker: `@pytest.mark.django_db(transaction=True)` (async + multi-coroutine c
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (every task across 43-01..43-04 carries an `<automated>` command)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (test infra embedded via TDD in implementing plans — no separate Wave 0 plan)
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s (quick run ~60-120s)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Note:** Test infrastructure is embedded via TDD inside the implementing plans (43-01 Task 1 is RED-first; 43-02/43-03 add helper unit + callback integration tests). No standalone Wave 0 plan is required; sampling continuity is satisfied because each implementing task has an `<automated>` verify.
+
+**Approval:** approved
