@@ -212,6 +212,118 @@ def _engine(*, router_candidates, synth, clarify) -> PlanOrchestrationEngine:
 
 
 @pytest.mark.asyncio
+async def test_research_suspend_resume_reaches_done_via_node_execution() -> None:
+    """CR-02：researching 段 waiting_event 的 resume 通路打通——
+
+    工作流入口节点派发的 deep 调研 SubAgentSession 关联到 node_execution（resume 钥匙，
+    mirror AICodingNode），容器完成回调即可经既有 ``_schedule_workflow_resume`` 重新驱动
+    挂起节点。本测试在 IO 边界 mock（dispatch/容器/LLM），覆盖：
+      首执行 → researching waiting_event + 调研 SubAgentSession.node_execution 已关联；
+      模拟容器完成回调 → barrier→merging；
+      节点 resume（重执行）→ done + 产出 MergedPlan（plan_version_id 非空）。
+    """
+    from workflows.nodes.ai.plan_research import AIPlanResearchNode
+    from workflows.nodes.base import ExecutionContext as _ExecCtx
+
+    from projects.models import Project
+    from subagent.models import SubAgentSession
+    from workflows.models import (
+        NodeExecution,
+        Workflow,
+        WorkflowExecution,
+        WorkflowNode,
+    )
+
+    repo_a = await _make_repo("repoA")
+    repo_b = await _make_repo("repoB")
+
+    # 工作流上下文链：Project → Workflow → WorkflowNode → WorkflowExecution → NodeExecution
+    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    workflow = await Workflow.objects.acreate(name="编排工作流", project=project)
+    wf_node = await WorkflowNode.objects.acreate(
+        workflow=workflow, node_type="ai_plan_research", name="AI 方案编排"
+    )
+    wf_exec = await WorkflowExecution.objects.acreate(
+        workflow=workflow, project=project, trigger_type="manual"
+    )
+    node_exec = await NodeExecution.objects.acreate(
+        workflow_execution=wf_exec, node=wf_node, status="running"
+    )
+
+    candidates = [
+        {"repo_id": str(repo_a.id), "confidence": "high"},
+        {"repo_id": str(repo_b.id), "confidence": "high"},
+    ]
+    synth = _FakeSynth(str(repo_a.id), str(repo_b.id))
+
+    router = AsyncMock()
+    router.route = AsyncMock(return_value={"candidates": candidates})
+    recall = AsyncMock()
+    recall.recall = AsyncMock(return_value={"hits": [], "query": "需求", "kinds": []})
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+
+    # 调研 adapter 透传 node_execution_id（CR-02 关键）
+    research = ResearchDispatchAdapter(node_execution_id=str(node_exec.id))
+    engine = PlanOrchestrationEngine(
+        session_service=PlanSessionService(),
+        router=router,
+        recall=recall,
+        research=research,
+        merge=ArchitectMergeAdapter(synthesizer=synth),
+        clarify=clarify,
+    )
+
+    node = AIPlanResearchNode()
+    node._build_engine = lambda context, session: engine  # type: ignore[assignment]
+    ctx = _ExecCtx(
+        execution_id=str(wf_exec.id),
+        node_id=str(wf_node.id),
+        node_config={"requirement_text": "为 A/B 两仓做跨仓方案"},
+        input_data={},
+        workflow_context={},
+        previous_outputs={},
+        node_execution=node_exec,
+    )
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock()
+    with (
+        patch("runners.dispatcher.get_dispatcher", return_value=dispatcher),
+        patch.object(
+            ResearchDispatchAdapter, "_count_online_runners", new=AsyncMock(return_value=1)
+        ),
+    ):
+        # 首执行：派 2 个 deep 容器 → researching waiting_event
+        result = await node.execute(ctx)
+        assert result.status == "waiting_event"
+        assert result.output["kind"] == "research"
+
+        # 调研 SubAgentSession 已关联 node_execution（resume 钥匙）
+        subs = [s async for s in SubAgentSession.objects.filter(node_execution=node_exec)]
+        assert len(subs) == 2
+        assert all(s.node_execution_id == node_exec.id for s in subs)
+        assert dispatcher.dispatch.await_count == 2
+
+        # 模拟工作流引擎持久化挂起输出到 node_execution.output_data（resume 前置：session_id）
+        node_exec.output_data = result.output
+        await node_exec.asave(update_fields=["output_data"])
+
+        # 模拟容器完成回调（barrier→merging）——mirror _schedule_workflow_resume 之前的回调链
+        session = await PlanSession.objects.aget(id=result.output["session_id"])
+        await _complete_running_tasks(session, exposer_id=str(repo_a.id))
+
+        # resume：重新执行节点（mirror _schedule_workflow_resume → _continue_after_node 重跑节点）
+        result2 = await node.execute(ctx)
+
+    assert result2.status == "completed"
+    assert result2.output["plan_version_id"]
+    session = await PlanSession.objects.aget(id=session.id)
+    assert session.status == PlanSessionStatus.DONE
+    assert session.current_plan_version is not None
+
+
+@pytest.mark.asyncio
 async def test_e2e_requirement_to_merged_plan_with_cross_repo_deps() -> None:
     """需求经六段编排 → 带跨仓依赖的 canonical MergedPlan + §15 事件覆盖（无澄清直通）。"""
     repo_a = await _make_repo("repoA")
