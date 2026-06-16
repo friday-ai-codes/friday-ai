@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import structlog
@@ -160,7 +161,12 @@ class ResearchDispatchAdapter:
             await self._emit_failed(session, task, "missing_git_url")
             return False
 
-        session_id = f"research-{task.id.hex[:12]}"
+        # session_id 须每次派发唯一：stale 重跑（澄清 affected 重派 / 重索引）会对同一 task
+        # 再次 dispatch，沿用确定性 ``research-{task}`` 会与上轮 AgentSession/SubAgentSession
+        # 的 session_id 冲突（UNIQUE constraint），单仓失败隔离把 task 误标 failed——破坏
+        # §14 affected 重跑。附 uuid 后缀保每次派发唯一；回调侧经 last_output.research_task_id
+        # 反查 task（不依赖 session_id 命名），故后缀不影响幂等/回调路由。
+        session_id = f"research-{task.id.hex[:12]}-{uuid.uuid4().hex[:6]}"
         agent_session = await AgentSession.objects.acreate(
             session_id=f"agent-{session_id}",
             status=AgentSession.Status.RUNNING,
