@@ -14,6 +14,10 @@ from services.plan_orchestration.clarify_adapter import (
     default_needs_clarification,
 )
 from services.plan_orchestration.engine import PlanOrchestrationEngine
+from services.plan_orchestration.entrypoint import (
+    build_orchestration_engine,
+    start_orchestration,
+)
 from services.plan_orchestration.merged_plan import (
     MERGED_PLAN_FIELDS,
     validate_merged_plan,
@@ -45,6 +49,8 @@ from services.plan_orchestration.research_aggregation import (
 
 __all__ = [
     "PlanOrchestrationEngine",
+    "start_orchestration",
+    "build_orchestration_engine",
     "RouterProtocol",
     "RecallProtocol",
     "ResearchProtocol",
