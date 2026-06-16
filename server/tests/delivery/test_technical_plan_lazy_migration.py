@@ -155,6 +155,45 @@ async def test_resolve_idempotent_no_rebuild() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_lazy_chat_race_single_canonical() -> None:
+    """WR-01：并发/陈旧 resolve 同一未迁移 chat 旧记录只产生单一 canonical。
+
+    模拟竞态后来者——前者已 resolve 建好 canonical 并回填软链，后者仍以「未迁移」直接进入
+    加锁 lazy 路径；锁内复检发现软链已存在 → 读现有 canonical，绝不重复创建。
+    """
+    svc = TechnicalPlanService()
+    chat_plan = await _make_chat_plan()
+    first = await svc.resolve(PlanRef.for_chat(chat_plan.id))
+    count_after_first = await sync_to_async(TechnicalPlan.objects.count)()
+    # 直接调用加锁 lazy（绕过 async 快路径，模拟陈旧并发后来者）
+    second = await svc._resolve_chat_lazy_sync(PlanRef.for_chat(chat_plan.id))
+    count_after_second = await sync_to_async(TechnicalPlan.objects.count)()
+
+    assert first.id == second.id
+    # 锁内复检命中软链 → 不新建 canonical（计数不增）
+    assert count_after_first == count_after_second
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_lazy_mcp_race_single_canonical() -> None:
+    """WR-01：并发/陈旧 resolve 同一未迁移 mcp 旧记录只产生单一 canonical。"""
+    svc = TechnicalPlanService()
+    mcp_plan = await _make_mcp_plan(
+        repository_tasks=[{"repository_id": "r1", "repository_name": "repo-a", "name": "改 A"}]
+    )
+    first = await svc.resolve(PlanRef.for_mcp(mcp_plan.id))
+    count_after_first = await sync_to_async(TechnicalPlan.objects.count)()
+    second = await svc._resolve_mcp_lazy_sync(PlanRef.for_mcp(mcp_plan.id))
+    count_after_second = await sync_to_async(TechnicalPlan.objects.count)()
+
+    assert first.id == second.id
+    # 锁内复检命中软链 → 不新建 canonical（计数不增）
+    assert count_after_first == count_after_second
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_conflict_canonical_wins() -> None:
     svc = TechnicalPlanService()
     chat_plan = await _make_chat_plan()
