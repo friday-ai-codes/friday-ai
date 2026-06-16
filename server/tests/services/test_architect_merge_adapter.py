@@ -70,6 +70,18 @@ def _cyclic_merged_plan() -> dict[str, Any]:
     return content
 
 
+def _schema_invalid_merged_plan() -> dict[str, Any]:
+    """schema 非法但跨仓语义可过：execution_plan 某项缺 repository_id（CR-01 破口场景）。
+
+    缺 repository_id 不触发 validate_plan 的任何跨仓 error（契约/回滚均不把该项计入），
+    但 validate_merged_plan → validate_technical_plan schema 必填校验会拒——必须被 §7
+    schema 闸口拦下走优雅降级，而非冲到 create_from 抛 PlanContentInvalid 崩 terminal。
+    """
+    content = _valid_merged_plan()
+    del content["execution_plan"][0]["repository_id"]
+    return content
+
+
 def _make_repo() -> Repository:
     return Repository.objects.create(
         name=f"repo-{uuid.uuid4().hex[:6]}",
@@ -155,6 +167,77 @@ async def test_merge_fail_path() -> None:
     assert merge_row.validation_report
     events = [c.args[0] for c in spy.call_args_list if c.args]
     assert "plan.validation.failed" in events
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_merge_schema_invalid_handled_as_failure() -> None:
+    """CR-01：schema 非法 MergedPlan（execution_plan 项缺 repository_id）被 §7 schema 闸口
+    拦为验证失败（failed report + plan.validation.failed 事件 + 无 canonical），而非冲到
+    create_from 抛 PlanContentInvalid 崩 terminal。"""
+    session = await _amake_session_with_partials()
+    adapter = ArchitectMergeAdapter(synthesizer=_synth(_schema_invalid_merged_plan()))
+    spy = AsyncMock()
+    adapter.session_service._emit_event = spy
+
+    result = await adapter.merge(session)
+
+    assert result["validation_status"] == "failed"
+    assert "back_target" in result
+    # 不落 canonical：current_plan_version 仍 None + ArchitectMerge(failed)
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.current_plan_version is None
+    merge_row = await ArchitectMerge.objects.aget(session_id=session.id)
+    assert merge_row.validation_status == ArchitectMergeStatus.FAILED
+    assert merge_row.merged_plan_version is None
+    # report 标记 schema check
+    checks = [e.get("check") for e in merge_row.validation_report.get("errors", [])]
+    assert "schema" in checks
+    events = [c.args[0] for c in spy.call_args_list if c.args]
+    assert "plan.validation.failed" in events
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_merge_create_from_schema_drift_degraded() -> None:
+    """CR-01 防御补强：即便产物过 §7 闸口 + 跨仓校验，create_from 内 validate_technical_plan
+    若漂移再抛 PlanContentInvalid，也转为验证失败（不崩 terminal、不留 canonical）。"""
+    from delivery.services.technical_plan_service import PlanContentInvalid
+
+    session = await _amake_session_with_partials()
+    plan_service = AsyncMock()
+    plan_service.create_from = AsyncMock(side_effect=PlanContentInvalid("schema drift"))
+    adapter = ArchitectMergeAdapter(
+        synthesizer=_synth(_valid_merged_plan()), plan_service=plan_service
+    )
+
+    result = await adapter.merge(session)
+
+    assert result["validation_status"] == "failed"
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.current_plan_version is None
+    merge_row = await ArchitectMerge.objects.aget(session_id=session.id)
+    assert merge_row.validation_status == ArchitectMergeStatus.FAILED
+    assert merge_row.merged_plan_version is None
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_e2e_engine_merge_schema_invalid_back_transition() -> None:
+    """CR-01 端到端：engine.advance(merging) → schema 非法 → session 回退 clarifying（§14），
+    **绝不**崩 terminal failed；ArchitectMerge(failed) + 无 canonical。"""
+    session = await _amake_session_with_partials()
+    adapter = ArchitectMergeAdapter(synthesizer=_synth(_schema_invalid_merged_plan()))
+    engine = PlanOrchestrationEngine(merge=adapter)
+
+    await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.CLARIFYING
+    assert reloaded.status != PlanSessionStatus.FAILED
+    assert reloaded.current_plan_version is None
+    merge_row = await ArchitectMerge.objects.aget(session_id=session.id)
+    assert merge_row.validation_status == ArchitectMergeStatus.FAILED
 
 
 @pytest.mark.django_db
