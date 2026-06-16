@@ -31,6 +31,7 @@ from delivery.models import (
     TechnicalPlanOrigin,
 )
 from repositories.models import Repository
+from services.plan_orchestration.wave_progression import aadvance_coding_waves
 from subagent.models import SubAgentSession, TaskResult
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.base import ExecutionContext, NodeResult
@@ -477,3 +478,117 @@ async def test_artifact_passthrough(_dispatched: list[Any]) -> None:
     assert openapi_file in fe_task.prompt
     # 仅传递白名单字段（路径），绝不内联 raw_output 正文（T-45-10）。
     assert "raw_output" not in fe_task.prompt
+
+
+async def test_artifact_passthrough_idempotent(_dispatched: list[Any]) -> None:
+    """幂等（D-15）：wave1 done 后重复触发回填/提取 → produced_artifacts 不漂移（no-op）。
+
+    回填仅遍历 RUNNING task + mark_done 条件更新（running→done），已 done 仓不再进提取段，
+    故重复 aadvance 对其 produced_artifacts 是覆盖写 no-op（含 extracted_at 不变）。
+    """
+    pv = await _make_plan_version()
+    repo_backend = await _make_repo("idem-backend")
+    repo_frontend = await _make_repo("idem-frontend")
+    id_be, id_fe = str(repo_backend.id), str(repo_frontend.id)
+
+    plan = {
+        "title": "idem",
+        "branch_name": "feat/idem",
+        "global_context": "",
+        "plan_version_id": str(pv.id),
+        "execution_plan": [
+            {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "a"},
+            {
+                "id": "t2",
+                "repository_id": id_fe,
+                "dependencies": ["t1"],
+                "name": "前端",
+                "coding_instruction": "b",
+            },
+        ],
+    }
+    node = _make_node()
+    ne = await _make_node_execution()
+    ctx = _make_context(plan, ne)
+
+    # 首发 → 后端 done → resume → 提取落库 + dispatch 前端。
+    r1: NodeResult = await node.execute(ctx)
+    await _settle_session(pv, id_be, ok=True, modified_files=["api/openapi.yaml"])
+    _dispatched.clear()
+    _resume(ne, r1.output)
+    await node.execute(ctx)
+
+    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    artifacts_first = dict(task_be.produced_artifacts)
+    assert artifacts_first.get("available") is True
+
+    # ── 重复触发回填/提取：后端已 done（非 RUNNING）→ 不再提取，前端仍 RUNNING → waiting ──
+    _dispatched.clear()
+    again = await aadvance_coding_waves(pv.id)
+    assert again.get("waiting") is True  # advance 不冒泡、不重复派发
+
+    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    # 覆盖写 no-op：produced_artifacts 逐字不漂移（含 extracted_at）。
+    assert task_be.produced_artifacts == artifacts_first
+    assert _dispatched_repo_ids(_dispatched) == set()  # 无重复异常派发
+
+
+async def test_artifact_extract_fail_soft(
+    _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fail-soft（D-15 / T-45-09）：提取链抛异常 → wave1 仍 done、wave 推进、wave2 仍 dispatch
+    且注入段为空，advance 不冒泡（容器回调不 5xx）。
+    """
+
+    def _boom(*args: Any, **kwargs: Any) -> dict:
+        raise RuntimeError("extract boom")
+
+    # _backfill_running_terminal 内局部 import build_produced_artifacts → patch 源模块属性。
+    monkeypatch.setattr(
+        "services.plan_orchestration.artifact_extraction.build_produced_artifacts",
+        _boom,
+    )
+
+    pv = await _make_plan_version()
+    repo_backend = await _make_repo("fs-backend")
+    repo_frontend = await _make_repo("fs-frontend")
+    id_be, id_fe = str(repo_backend.id), str(repo_frontend.id)
+
+    plan = {
+        "title": "fail-soft",
+        "branch_name": "feat/fs",
+        "global_context": "",
+        "plan_version_id": str(pv.id),
+        "execution_plan": [
+            {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "a"},
+            {
+                "id": "t2",
+                "repository_id": id_fe,
+                "dependencies": ["t1"],
+                "name": "前端",
+                "coding_instruction": "b",
+            },
+        ],
+    }
+    node = _make_node()
+    ne = await _make_node_execution()
+    ctx = _make_context(plan, ne)
+
+    # 首发 → 后端 done（提取将抛错）→ resume → advance 推进。
+    r1: NodeResult = await node.execute(ctx)
+    await _settle_session(pv, id_be, ok=True, modified_files=["api/openapi.yaml"])
+    _dispatched.clear()
+    _resume(ne, r1.output)
+    r2: NodeResult = await node.execute(ctx)  # 提取异常被 swallow，绝不冒泡
+
+    # wave 推进不失败：后端仍正确 done，前端正常 dispatch。
+    assert r2.status == "waiting_event"
+    assert _dispatched_repo_ids(_dispatched) == {id_fe}
+
+    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    assert task_be.status == RepoCodingTaskStatus.DONE
+    # 提取失败 → produced_artifacts 留空（未落库），下游注入段为空（零回归降级）。
+    assert task_be.produced_artifacts == {}
+
+    fe_task = _wave_task(_dispatched, id_fe)
+    assert "上游产物" not in fe_task.prompt  # 注入段为空
