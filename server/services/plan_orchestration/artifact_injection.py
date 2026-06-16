@@ -23,6 +23,25 @@ from __future__ import annotations
 
 __all__ = ["acollect_upstream_artifacts", "render_upstream_artifacts_section"]
 
+# 注入端显式上限（兑现 artifact_extraction docstring「无界展开由注入端截断」承诺，T-45-02）：
+# 每桶（OpenAPI / API 契约）最多渲染前 N 条，超出折叠为「… (+M more)」省略行，
+# 防半可信上游产物驱动的无界 prompt 膨胀。
+_MAX_FILES_PER_BUCKET = 50
+# 单条内联字符串最大长度（防超长路径撑爆 prompt）。
+_MAX_INLINE_LEN = 200
+
+
+def _safe_inline(value: object, *, max_len: int = _MAX_INLINE_LEN) -> str:
+    """半可信值消毒——去换行 + 转义反引号，确保渲染为惰性数据而非指令（T-45-05/06/07）。
+
+    上游 runner 容器产出半可信：反引号会提前闭合 Markdown code span、换行会注入伪标题 /
+    指令，使「数据」越权成下游 AI 编码 agent 的「指令」。统一把反引号替换为视觉近似的安全
+    字符、换行（``\\n`` / ``\\r``）压成空格，并截断长度，绝不让其逃逸成 Markdown 控制结构。
+    确定性、无副作用：相同输入恒得相同输出。
+    """
+    s = str(value).replace("`", "ʼ").replace("\r", " ").replace("\n", " ")
+    return s[:max_len]
+
 
 async def acollect_upstream_artifacts(task) -> list[dict]:
     """沿**直接** ``depends_on`` 反查上游 ``produced_artifacts``（D-06 仅直接依赖）。
@@ -54,7 +73,11 @@ def render_upstream_artifacts_section(artifacts: list[dict]) -> str:
     仓名（``repository_name`` 缺则 ``repository_id``）、分支 / MR（非空才出）、OpenAPI 与 API
     契约文件清单（非空才出标签 + 逐文件 ``  - `path```）、变更文件数（非 None 才出）。
 
-    安全（T-45-05）：仅渲染白名单结构化字段为 Markdown 数据，绝不内联产物正文。
+    安全（T-45-05/06/07）：所有半可信字段（仓名 / 分支 / MR / 文件路径）均过
+    :func:`_safe_inline` 消毒（去换行 + 转义反引号 + 截长），仅渲染白名单结构化字段为
+    Markdown **数据**，绝不内联产物正文，亦不让半可信内容越权成指令。
+    截断（T-45-02）：每桶（OpenAPI / API 契约）最多渲染前 ``_MAX_FILES_PER_BUCKET`` 条，
+    超出折叠为「``… (+M more)``」省略行，防无界 prompt 膨胀。
 
     Args:
         artifacts: 上游 ``produced_artifacts`` dict 列表（由 collect 收集排序）。
@@ -67,16 +90,19 @@ def render_upstream_artifacts_section(artifacts: list[dict]) -> str:
     lines = ["# 上游产物 / 上游契约", "", "下游仓编码可消费以下上游仓已产出的契约："]
     for a in artifacts:
         name = a.get("repository_name") or a.get("repository_id", "")
-        lines.append(f"\n## {name}")
+        lines.append(f"\n## {_safe_inline(name)}")
         if a.get("branch"):
-            lines.append(f"- 分支: `{a['branch']}`")
+            lines.append(f"- 分支: `{_safe_inline(a['branch'])}`")
         if a.get("mr_url"):
-            lines.append(f"- MR: {a['mr_url']}")
+            lines.append(f"- MR: {_safe_inline(a['mr_url'])}")
         for label, key in (("OpenAPI", "openapi"), ("API 契约", "api_contracts")):
             files = a.get(key) or []
             if files:
                 lines.append(f"- {label}:")
-                lines.extend(f"  - `{f}`" for f in files)
+                shown = files[:_MAX_FILES_PER_BUCKET]
+                lines.extend(f"  - `{_safe_inline(f)}`" for f in shown)
+                if len(files) > _MAX_FILES_PER_BUCKET:
+                    lines.append(f"  - … (+{len(files) - _MAX_FILES_PER_BUCKET} more)")
         changed = (a.get("diff_summary") or {}).get("files_changed")
         if changed is not None:
             lines.append(f"- 变更文件数: {changed}")
