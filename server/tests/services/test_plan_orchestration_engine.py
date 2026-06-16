@@ -173,13 +173,16 @@ async def test_injected_protocol_mocks_called() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
-async def test_clarify_pass_through() -> None:
-    """clarifying 骨架 pass-through → researching（Phase 41 真实回路前）。"""
+async def test_clarify_no_clarification_advances_to_researching() -> None:
+    """clarifying + 注入 clarify（不需澄清）→ researching（Phase 41 真实回路）。"""
     session = await PlanSession.objects.acreate(
         entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.CLARIFYING
     )
-    engine = PlanOrchestrationEngine()
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+    engine = PlanOrchestrationEngine(clarify=clarify)
     await engine.advance(session)
+    clarify.clarify.assert_awaited_once()
     assert (await PlanSession.objects.aget(id=session.id)).status == PlanSessionStatus.RESEARCHING
 
 

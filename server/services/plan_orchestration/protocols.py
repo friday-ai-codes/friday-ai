@@ -18,10 +18,12 @@ __all__ = [
     "RecallProtocol",
     "ResearchProtocol",
     "MergeProtocol",
+    "ClarifyProtocol",
     "SkeletonRouter",
     "SkeletonRecall",
     "SkeletonResearch",
     "SkeletonMerge",
+    "SkeletonClarify",
 ]
 
 
@@ -51,6 +53,18 @@ class MergeProtocol(Protocol):
     """架构师融合 stage 依赖（Phase 40 融合 + PlanValidator）。"""
 
     async def merge(self, session: PlanSession) -> dict: ...
+
+
+@runtime_checkable
+class ClarifyProtocol(Protocol):
+    """澄清 stage 依赖（Phase 41 HITL 澄清回路，needs-clarification policy 判定）。
+
+    返回 ``{"needs_clarification": bool, ...}``：True → engine 保持 clarifying 挂起
+    （建 pending Clarification + emit clarification.asked）；False → engine 转移 clarified
+    （clarifying→researching）。
+    """
+
+    async def clarify(self, session: PlanSession) -> dict: ...
 
 
 class SkeletonRouter:
@@ -84,4 +98,13 @@ class SkeletonMerge:
     async def merge(self, session: PlanSession) -> dict:
         raise NotImplementedError(
             "MergeProtocol.merge 未实现 —— Phase 40 架构师融合 + PlanValidator 接入"
+        )
+
+
+class SkeletonClarify:
+    """澄清骨架默认实现：显式 NotImplementedError（Phase 41 接入）。"""
+
+    async def clarify(self, session: PlanSession) -> dict:
+        raise NotImplementedError(
+            "ClarifyProtocol.clarify 未实现 —— Phase 41 HITL 澄清回路接入"
         )

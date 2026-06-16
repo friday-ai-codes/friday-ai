@@ -25,6 +25,7 @@ from asgiref.sync import sync_to_async
 from django.utils import timezone
 
 from delivery.models import Clarification
+from delivery.services.event_taxonomy import EVENT_CLARIFICATION_ANSWERED
 from delivery.services.research_service import ResearchService
 
 logger = structlog.get_logger(__name__)
@@ -35,8 +36,19 @@ __all__ = ["ClarificationService"]
 class ClarificationService:
     """Clarification 落库/状态变更唯一入口（INV-6 精神）。"""
 
-    def __init__(self, *, research_service: ResearchService | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        research_service: ResearchService | None = None,
+        session_service: Any = None,
+    ) -> None:
         self.research_service = research_service or ResearchService()
+        # 延迟默认构造避免 import 环（PlanSessionService 同 app）
+        if session_service is None:
+            from delivery.services.plan_session_service import PlanSessionService
+
+            session_service = PlanSessionService()
+        self.session_service = session_service
 
     async def create_clarification(
         self, session: Any, question: str, affected_task_ids: list | None = None
@@ -61,29 +73,61 @@ class ClarificationService:
         """写 answer/answered_at（幂等条件更新）+ 仅 affected_partials 经 stale 重跑。
 
         条件更新前置 ``answered_at IS NULL``（镜像 PlanSessionService 条件更新断言风格）：
-        重复答幂等 no-op（不二次覆盖首答、不重复 stale）。命中首答后取 affected_partials
-        对应 task → ``ResearchService.mark_stale``（仅触指定 task，绝不动其他）；无
-        affected_partials → 纯解除挂起（不触任何 task）。
+        重复答幂等 no-op（不二次覆盖首答、不重复 stale、不重复 emit）。命中首答后取
+        affected_partials 对应 task → ``ResearchService.mark_stale``（仅触指定 task，绝不动
+        其他）+ emit ``clarification.answered``（best-effort）；无 affected_partials → 纯解除
+        挂起（不触任何 task）但仍 emit answered。
         """
-        affected_ids = await self._answer_sync(clarification, answer)
+        answered, affected_ids = await self._answer_sync(clarification, answer)
+        if not answered:
+            return clarification
         if affected_ids:
             await self.research_service.mark_stale(affected_ids)
+        await self._emit_answered(clarification, answer, affected_ids)
         return clarification
 
     @sync_to_async
-    def _answer_sync(self, clarification: Clarification, answer: str) -> list:
+    def _answer_sync(self, clarification: Clarification, answer: str) -> tuple[bool, list]:
         now = timezone.now()
         updated = Clarification.objects.filter(
             id=clarification.id, answered_at__isnull=True
         ).update(answer=answer, answered_at=now)
         if updated != 1:
-            # 幂等 no-op：已答，不二次覆盖首答、不重复 stale
+            # 幂等 no-op：已答，不二次覆盖首答、不重复 stale/emit
             logger.info(
                 "clarification_answer_noop_already_answered",
                 clarification_id=str(clarification.id),
             )
-            return []
+            return False, []
         clarification.answer = answer
         clarification.answered_at = now
         # affected_partials 对应 task id（标量列表，不裸 lazy-FK）
-        return list(clarification.affected_partials.values_list("id", flat=True))
+        return True, list(clarification.affected_partials.values_list("id", flat=True))
+
+    async def _emit_answered(
+        self, clarification: Clarification, answer: str, affected_ids: list
+    ) -> None:
+        """emit clarification.answered（payload {clarification_id, answer, affected_partials}），best-effort。
+
+        async 安全：经 ``session_id`` 取 PlanSession（不裸 lazy-FK ``clarification.session``，
+        规避 Phase 38 CR-01 类）。事件持久化失败不阻断 answer 主流程。
+        """
+        from delivery.models import PlanSession
+
+        session = await PlanSession.objects.filter(id=clarification.session_id).afirst()
+        if session is None:
+            return
+        payload = {
+            "clarification_id": str(clarification.id),
+            "answer": answer,
+            "affected_partials": [str(tid) for tid in affected_ids],
+        }
+        try:
+            await self.session_service._emit_event(
+                EVENT_CLARIFICATION_ANSWERED, session, payload
+            )
+        except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断 answer
+            logger.warning(
+                "clarification_answered_emit_failed",
+                clarification_id=str(clarification.id),
+            )
