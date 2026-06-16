@@ -83,15 +83,25 @@ class RepoCodingTaskService:
             task.depends_on.set(dep_tasks)
         return tasks
 
-    async def mark_running(self, task: RepoCodingTask, subagent_session: Any) -> None:
-        """task.status→running，回填 subagent_session 外键（首发 dispatch 后）。"""
-        await self._mark_running_sync(task, subagent_session)
+    async def mark_running(self, task: RepoCodingTask, subagent_session: Any) -> int:
+        """task.status→running，回填 subagent_session 外键（首发 dispatch 后）。
+
+        条件更新仅 pending→running（与 ``mark_done`` / ``mark_blocked`` 同范式）：并发 / 重复
+        dispatch 下，仅首个 claim 影响 1 行，其余 no-op（影响 0 行）。返回影响行数，便于调用方
+        据此判定是否真正建容器（派发副作用幂等保护，WAVE-02）。
+        """
+        return await self._mark_running_sync(task, subagent_session)
 
     @sync_to_async
-    def _mark_running_sync(self, task: RepoCodingTask, subagent_session: Any) -> None:
-        task.status = RepoCodingTaskStatus.RUNNING
-        task.subagent_session = subagent_session
-        task.save(update_fields=["status", "subagent_session", "updated_at"])
+    def _mark_running_sync(self, task: RepoCodingTask, subagent_session: Any) -> int:
+        # 条件更新：仅 pending→running；影响行数 0 → no-op（重复 / 并发 dispatch 天然幂等）。
+        return RepoCodingTask.objects.filter(
+            id=task.id, status=RepoCodingTaskStatus.PENDING
+        ).update(
+            status=RepoCodingTaskStatus.RUNNING,
+            subagent_session=subagent_session,
+            updated_at=timezone.now(),
+        )
 
     async def mark_done(self, task: RepoCodingTask) -> None:
         """task.status→done（条件更新幂等：仅 running→done，重复 callback no-op）。"""
