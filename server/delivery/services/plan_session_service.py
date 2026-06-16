@@ -68,7 +68,14 @@ _ALLOWED: dict[str, dict[str, str]] = {
 }
 
 # transition payload 中允许落库的模型字段（仅与模型字段同名的键，半可信 payload 防越权写）
-_PERSISTABLE_FIELDS = ("decomposition", "current_plan_version", "event_time")
+# routing/recall_context 为 Phase 38-02/38-03 engine transition 落库的唯一通道
+_PERSISTABLE_FIELDS = (
+    "decomposition",
+    "routing",
+    "recall_context",
+    "current_plan_version",
+    "event_time",
+)
 
 
 class PlanSessionService:
@@ -81,18 +88,24 @@ class PlanSessionService:
         work_item: Any = None,
         decomposition: dict | None = None,
         event_time: Any = None,
+        created_by: Any = None,
     ) -> PlanSession:
         """建 PlanSession（status 默认 decomposing）—— engine/入口层建会话的入口。
 
         IN-02：``entrypoint`` 须为 ``PlanSessionEntrypoint`` 合法值（workflow|chat），
         否则 ``raise ValueError``（Django ``choices`` 仅 ``full_clean()`` 校验、``create()``
         不触发，作为单一写入入口须显式校验，与状态机「非法即 raise」风格一致）。
+
+        ``created_by`` 为发起编排的用户（可空）：召回 stage（38-03）作权限 actor，
+        为 None 时下游 search_similar fail-closed 返回空召回（不泄漏越权数据）。
         """
         if entrypoint not in PlanSessionEntrypoint.values:
             raise ValueError(
                 f"非法 entrypoint={entrypoint!r}；合法值={list(PlanSessionEntrypoint.values)}"
             )
-        return await self._create_session_sync(entrypoint, work_item, decomposition, event_time)
+        return await self._create_session_sync(
+            entrypoint, work_item, decomposition, event_time, created_by
+        )
 
     @sync_to_async
     def _create_session_sync(
@@ -101,12 +114,14 @@ class PlanSessionService:
         work_item: Any,
         decomposition: dict | None,
         event_time: Any,
+        created_by: Any,
     ) -> PlanSession:
         return PlanSession.objects.create(
             entrypoint=entrypoint,
             work_item=work_item,
             decomposition=decomposition or {},
             event_time=event_time,
+            created_by=created_by,
         )
 
     async def transition(self, session: PlanSession, event: str, **payload: Any) -> PlanSession:
