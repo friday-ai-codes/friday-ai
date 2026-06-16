@@ -9,6 +9,11 @@
 decomposition 标 ambiguous → 需澄清。Clarification 落库只经 ``ClarificationService``（INV-6）；
 emit 经 ``PlanSessionService._emit_event`` best-effort（绝不阻断）。
 
+**单轮 HITL 语义（CR-01）**：policy 仅在「本 session 尚无任何 Clarification」（首轮）时跑。
+若已存在「已答」Clarification 且无 pending → 视为澄清满足、直接放行 researching（§14
+「全部已答 → researching」），**不再重跑静态 policy**——否则因 routing/decomposition
+信号答后不变会反复追问、永远离不开 clarifying（无限挂起）。
+
 **async ORM 防裸 lazy-FK**（规避 Phase 38 CR-01 类）：用 ``session_id`` / ``.aexists`` /
 ``.values`` 标量，绝不裸访问 ``session.work_item`` 等同步 lazy-FK。
 """
@@ -89,7 +94,19 @@ class ClarifyAdapter:
         if has_pending:
             return {"needs_clarification": True, "pending": True}
 
-        # 2. 无 pending → 跑 policy
+        # 2. §14「全部已答 → researching」单轮 HITL 语义（CR-01 无限挂起修复）：
+        #    本 session 已存在「已答」Clarification 且当前无 pending —— 说明一轮澄清已完成。
+        #    此时直接放行进 researching，**不再重跑静态 policy**。默认 policy 的判定信号
+        #    （routing 无 high/medium、decomposition.ambiguous）不因用户答复而改变，若每次
+        #    答后重跑 policy 仍判「需澄清」便会反复新建 Clarification → 永远离不开 clarifying，
+        #    违反 §14「全部已答 → researching」。已答即视为澄清满足，放行下游。
+        has_answered = await Clarification.objects.filter(
+            session_id=session.id, answered_at__isnull=False
+        ).aexists()
+        if has_answered:
+            return {"needs_clarification": False}
+
+        # 3. 首轮（本 session 尚无任何 Clarification）→ 跑 policy 判定是否需澄清
         needs, question, affected_task_ids = self.policy(session)
         if not needs:
             return {"needs_clarification": False}
