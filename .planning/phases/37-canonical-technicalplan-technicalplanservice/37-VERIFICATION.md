@@ -1,86 +1,85 @@
 ---
 phase: 37-canonical-technicalplan-technicalplanservice
-status: verified
-verified_at: 2026-06-16
-method: goal-backward
+title: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移
+verified: 2026-06-16
+status: passed
+requirements: [PLAN-01, PLAN-02, PLAN-03]
 plans_executed: [37-01, 37-02, 37-03]
-result: PASS
+method: goal-backward
 ---
 
-# Phase 37 Verification — canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移
+# Phase 37 Verification
 
-**Goal（DOMAIN §5）**：立 canonical 方案脊柱与统一写入入口，把存量 3 条 plan 路径渐进收敛（不全量双写、不爆改）——canonical 唯一事实源落库 + service 唯一入口 + 旧路径软链/lazy 迁移。
+> 方法：goal-backward —— 从 phase 4 项成功标准倒推，逐项核验代码是否真正交付（非「任务做完」），附可复现证据。
 
-逐项 goal-backward 验证 4 条成功判据，全部 TRUE。
+## 结论
 
----
-
-## SC-1：canonical 方案可落库 + INV-2 — ✅ TRUE
-
-**判据**：canonical `TechnicalPlan`/`PlanVersion` 可持久化（origin/status/version/supersedes 版本链 + content=MergedPlan schema）；`TechnicalPlan.work_item` 可 null 且删 WorkItem 不删 plan（SET_NULL，INV-2）。
-
-**证据**：
-- 模型 `server/delivery/models/technical_plan.py`：`TechnicalPlan`（origin/status 枚举、current_version 循环 FK 经字符串引用）、`PlanVersion`（version + supersedes self FK + content JSONField + `unique_together(plan, version)`）、`PlanExternalRef`。
-- migration `delivery/migrations/0010_technicalplan_planversion_planexternalref.py` 单 migration 建 3 表，已 `migrate` 成功（apply OK）。
-- `work_item = FK(WorkItem, null=True, on_delete=SET_NULL)`。
-- 测试 `test_technical_plan_models.py`：`test_inv2_nullable_work_item_and_default_status`（work_item=None 合法、status 默认 draft）、`test_work_item_set_null_on_delete`（删 WorkItem→work_item_id 置 None、plan 存活）、`test_version_chain_supersedes_and_unique_together`、`test_plan_external_ref_unique_and_cascade` —— 全绿。
-- `makemigrations --check --dry-run` → No changes detected（schema 与模型一致）。
-
-## SC-2：方案落库唯一经 TechnicalPlanService + INV-6 无旁路 — ✅ TRUE
-
-**判据**：所有方案创建/版本/关联只经 `TechnicalPlanService`（INV-6），grep 守护无旁路写 `TechnicalPlan`/`PlanVersion`。
-
-**证据**：
-- service `server/delivery/services/technical_plan_service.py`：`create_from`（eager 建 plan+v1+current）/ `add_version`（hash 相等复用不翻版本 / 不等建 supersedes 链并推进 current）/ `archive` / `resolve` / `link`，唯一含 `TechnicalPlan.objects.create` + `PlanVersion.objects.create`。
-- content 校验复用 `workflows.schemas.technical_plan.validate_technical_plan`（PF-02），非法 `raise PlanContentInvalid` 不落库。
-- `content_hash` = 本地 `sha256(canonical JSON sort_keys)`，**不 import knowledge**（INV-3 边界）。
-- INV-6 守护 `test_technical_plan_inv6_guard.py`：`test_inv6_no_bypass_canonical_plan_write`（全 server/ 源码扫描无旁路写）+ `test_inv6_writer_module_actually_writes_canonical`（守护有效性）—— 全绿，含 37-03 chat 入口接线后仍通过（接线调 service 非旁路）。
-- service 行为 `test_technical_plan_service.py` 10 用例全绿（create_from/add_version/archive/resolve/link）。
-
-## SC-3：旧 3 路径软链 + eager 示范 + lazy 迁移 — ✅ TRUE
-
-**判据**：存量 3 路径首次读无 canonical → lazy 建 canonical + 回填软链（不全量双写）；至少一条旧路径 eager 投影示范挂软链。
-
-**证据**：
-- 软链字段：`chat.CodingPlan.canonical_plan_id` / `mcp_tools.McpWorkItemTechnicalPlan.canonical_plan_id`（UUIDField 软链，无跨 app 硬 FK；migration chat 0022 / mcp_tools 0008 已 apply）；workflow 经 `delivery.PlanExternalRef` 映射表。
-- lazy 迁移 `resolve`：忠实取材 `chat_codingplan_to_content` / `mcp_plan_to_content`，产物过 `validate_technical_plan`。
-- eager 示范：`agents/tools/coding_tools.py:create_coding_plan` 创建 CodingPlan 后 best-effort `create_from`+`link` 回填 `canonical_plan_id`（lazy import 防循环、try/except 不阻断）。
-- 测试 `test_technical_plan_lazy_migration.py`：`test_lazy_chat_builds_canonical_and_backfills` / `test_lazy_mcp_builds_canonical_and_backfills` / `test_lazy_workflow_link_then_resolve_hit_else_not_found`（含 PlanNotFound）+ `test_resolve_idempotent_no_rebuild`（再 resolve 读不重建）。
-- 测试 `test_chat_eager_projection.py`：`test_chat_create_entry_eager_projects_canonical`（入口建 plan→canonical_plan_id 自动回填 + TechnicalPlan(origin=chat, work_item=None)）+ `test_eager_projection_best_effort_does_not_block`（投影抛错 → CodingPlan 仍创建成功）—— 全绿。
-
-## SC-4：迁移期旧表只读历史 / 冲突以 canonical 为准 / 归档不级联 — ✅ TRUE
-
-**判据**：迁移期旧表只读历史、冲突以 canonical 为准、归档不级联删旧表（DOMAIN §5.4）。
-
-**证据**：
-- 冲突以 canonical 为准：`resolve` 软链命中分支直接读 canonical（不被旧记录覆盖）；`test_conflict_canonical_wins`（lazy 建后 add_version 改 canonical → 再 resolve 读 canonical 最新 current_version）。
-- 归档不级联：`archive` 仅置 `status=archived`，不触碰旧表 / 不删 PlanVersion；`test_archive_no_cascade_keeps_old_record_and_link`（archive 后 CodingPlan 仍在、canonical_plan_id 仍指向、PlanVersion 仍在）+ service 层 `test_archive_sets_status_no_cascade`。
-- 旧表只读：本 phase 未改旧表写入入口为操作 canonical（DOMAIN §5.4 旧表只读历史；编辑入口改操作 canonical 列 deferred 至后续），lazy 兜底保证不断层。
+**status: passed** —— 4 项成功标准全部 TRUE，证据见下。Phase 37 专项测试 26 项全绿，delivery + chat(coding_tools/coding_plan) + mcp_tools 回归 379 项全绿，`makemigrations --check` 全项目干净，INV-6 grep 守护无旁路写，archive 不级联删旧表。
 
 ---
 
-## Test Evidence Summary
+## 成功标准 1（PLAN-01）：canonical TechnicalPlan/PlanVersion 落库 + 可追溯 WorkItem（INV-2）
 
-- Phase-37 专项测试：`test_technical_plan_models.py`(6) + `test_technical_plan_service.py`(10) + `test_technical_plan_inv6_guard.py`(2) + `test_technical_plan_lazy_migration.py`(6) + `test_chat_eager_projection.py`(2) = **26 passed**。
-- 回归：`tests/delivery` + `tests/test_coding_tools.py` + `tests/test_coding_plan_model.py` + `tests/mcp_tools` = **379 passed**（无回归）。
-- migrations：delivery 0010 / chat 0022 / mcp_tools 0008 已生成并 apply；`makemigrations --check --dry-run` → **No changes detected**。
-- ruff format/check：新增模型/service/测试/接线文件全部通过（行宽 100）。
+**判定：✅ TRUE**
 
-## Locked Decisions Honored
+- **三模型落库**：`delivery/models/technical_plan.py` —— `TechnicalPlan`（UUID pk + `origin`(chat|mcp|workflow|orchestration) + `status`(draft|under_review|approved|superseded|archived，默认 draft) + `current_version` 循环 FK 经字符串前向引用 SET_NULL related_name="+"）、`PlanVersion`（`version` + `supersedes` self FK + `content` JSONField(§7 MergedPlan) + `content_hash` + `unique_together(plan, version)`）、`PlanExternalRef`（external_ref unique + canonical FK CASCADE）。
+- **INV-2 可追溯 + chat null**：`TechnicalPlan.work_item = FK(delivery.WorkItem, null=True, blank=True, on_delete=SET_NULL)`；删 WorkItem 不删 plan（SET_NULL）。守护测试断言 `create(origin="chat")` work_item=None 合法、status 默认 draft、删 WorkItem 后 plan 存活且 work_item_id 置 None。
+- **migration**：单 migration `delivery/migrations/0010_technicalplan_planversion_planexternalref.py` 建 3 表（循环 FK 经 AddField 编排）；随测试 DB 成功 apply。
+- **证据**：`pytest tests/delivery/test_technical_plan_models.py` → 6 passed（INV-2 / SET_NULL / 版本链 unique_together / PlanExternalRef unique+CASCADE / 软链字段 UUIDField 非 relation）。
 
-- ✅ canonical 落 delivery app + curated re-export + UUID pk
-- ✅ work_item nullable FK SET_NULL（INV-2）
-- ✅ current_version 循环 FK 经字符串前向引用单 migration
-- ✅ content 经 validate_technical_plan 校验（PF-02）
-- ✅ content_hash 本地 sha256 canonical JSON，不 import knowledge（INV-3）
-- ✅ chat/mcp canonical_plan_id 软链（无跨 app 硬 FK）；workflow 经 PlanExternalRef
-- ✅ TechnicalPlanService 唯一写入入口（INV-6）+ grep 守护
-- ✅ archive 不级联；hash 相等不翻新版本
+## 成功标准 2（PLAN-02）：所有方案创建/版本/关联只经 TechnicalPlanService（INV-6）
 
-## Deferred (out of this phase, per CONTEXT)
+**判定：✅ TRUE**
 
-- mcp/workflow 旧入口改 eager 投影（lazy 兜底；40/41 接 orchestration 时顺带）。
-- 架构师融合真实产 MergedPlan 落 canonical（Phase 40）。
-- 旧表编辑入口改为操作 canonical 列（DOMAIN §5.4 全量收敛，超本 phase 范围）。
+- **唯一写入入口**：`delivery/services/technical_plan_service.py` —— `create_from`（校验 content → 建 plan+v1+置 current_version）/ `add_version`（hash 相等复用不翻版本、不等建 supersedes 链推进 current）/ `archive` / `resolve` / `link`（service:128/169/197/209/269）。`create_from` content 经 `workflows.schemas.technical_plan.validate_technical_plan` 校验（PF-02 对齐 execution_plan），非法 raise `PlanContentInvalid` 不落库。
+- **content_hash 本地计算**：`_content_hash` = 本地 `sha256(canonical JSON sort_keys)`，**不 import knowledge**（INV-3 边界）；hash 相等绝不产生新版本（v0.3/v0.6 铁律）。
+- **INV-6 grep 守护**：`test_technical_plan_inv6_guard.py` 扫描 `server/` 源码，断言除 `delivery/services/technical_plan_service.py` 外无 `TechnicalPlan/PlanVersion` 旁路写（实例化 / `.objects.create` / `.save()`），排除 tests/migrations/models；并加「守护有效性」反测确认 writer 真写表。同名 dataclass `workflows/schemas/technical_plan.py` 文件白名单豁免（LLM 输出 schema，非 model）。
+- **证据**：`pytest tests/delivery/test_technical_plan_service.py tests/delivery/test_technical_plan_inv6_guard.py` → service 行为 + INV-6 守护全绿。
 
-**Verdict: PHASE 37 GOAL ACHIEVED — all 4 success criteria TRUE.**
+## 成功标准 3（PLAN-03）：3 路径 eager 投影软链 + read-time lazy 迁移（不全量双写）
+
+**判定：✅ TRUE**
+
+- **软链字段（无跨 app 硬 FK）**：`chat/models.py:229` `CodingPlan.canonical_plan_id` + `mcp_tools/models.py:381` `McpWorkItemTechnicalPlan.canonical_plan_id` 均为 `UUIDField(null, blank, db_index)`；workflow 经 `PlanExternalRef`（external_ref 映射表）。migration：chat 0022 + mcp_tools 0008。
+- **read-time lazy 迁移**：`resolve(PlanRef)` 按 §5.4 三优先级——软链命中直接 `aget` canonical（**幂等不重建**）/ 无 canonical 但旧记录完整 → lazy `create_from` + `link` 回填软链 / 找不到 → `raise PlanNotFound`。忠实取材 `chat_codingplan_to_content`（recommended_repository_ids 每仓一 task + affected_files→files + change_type→action 归一化）、`mcp_plan_to_content`（plan_body.execution_plan 优先复用、否则 repository_tasks 映射 + branch_strategy 校正），产物均过 `validate_technical_plan`。
+- **eager 投影示范**：chat `CodingPlan` 真实创建 chokepoint `agents/tools/coding_tools.py:create_coding_plan`（coding_tools.py:266-282）创建成功后 best-effort（lazy import + try/except 隔离，失败仅 warning，绝不阻断创建）调 `create_from(origin="chat", work_item=None)` + `link` 回填 `canonical_plan_id`。
+- **证据**：`pytest tests/delivery/test_technical_plan_lazy_migration.py tests/delivery/test_chat_eager_projection.py` → lazy 三路径建+回填 / 幂等再 resolve 读不重建 / eager 回填 + best-effort 守护全绿。
+
+## 成功标准 4：迁移期旧表只读、冲突以 canonical 为准、归档/删除不级联删旧表
+
+**判定：✅ TRUE**
+
+- **冲突以 canonical 为准**：resolve 软链命中分支直接读 canonical 最新 `current_version`，不被旧记录覆盖；lazy 测试覆盖「lazy 建 canonical 后 add_version 改 content 分叉 → resolve 仍读 canonical」。
+- **归档不级联**：`archive(plan)` 仅 `plan.status = ARCHIVED; plan.save(update_fields=["status","updated_at"])`（service:203-204），**不**触碰旧表 / 不删 PlanVersion；测试断言归档后旧 CodingPlan 仍在、canonical_plan_id 仍指向、PlanVersion 仍在。
+- **canonical 删除不影响旧表**：旧表为软引用 UUID（非 FK），canonical 删除不级联旧记录；PlanExternalRef 为 CASCADE（仅 workflow 映射随 canonical 删）。
+- **证据**：`test_technical_plan_lazy_migration.py` 冲突 + 归档不级联用例；`test_technical_plan_service.py` archive 用例（预先 link 的 CodingPlan.canonical_plan_id 仍非空）。
+
+---
+
+## 复现命令
+
+```bash
+cd server
+# Phase 37 专项测试（26 passed）
+uv run pytest tests/delivery/test_technical_plan_models.py tests/delivery/test_technical_plan_service.py \
+  tests/delivery/test_technical_plan_inv6_guard.py tests/delivery/test_technical_plan_lazy_migration.py \
+  tests/delivery/test_chat_eager_projection.py -q
+# 回归（delivery + chat + mcp，379 passed）
+uv run pytest tests/delivery tests/test_coding_tools.py tests/test_coding_plan_model.py tests/mcp_tools -q
+# 迁移一致性（No changes detected）
+uv run python manage.py makemigrations --check --dry-run
+# 格式/lint
+uv run ruff format --check delivery/models/technical_plan.py delivery/services/technical_plan_service.py agents/tools/coding_tools.py
+uv run ruff check delivery/models/technical_plan.py delivery/services/technical_plan_service.py agents/tools/coding_tools.py
+```
+
+## Deferred / 后续 phase 接入点（非本 phase 缺陷）
+
+- mcp/workflow 旧入口改 eager 投影（本 phase chat eager 示范 + 三路径 lazy 兜底；mcp/workflow eager 在 40/41 接 orchestration 时顺带）。
+- 架构师融合真实产 `MergedPlan` 落 canonical（Phase 40，本 phase 只立落库底座 + content schema 校验）。
+- PlanValidator 完整校验（Phase 40，在已对齐的 verify_plan/validate_technical_plan 基础上扩展）。
+- 旧表读写入口改为操作 canonical（DOMAIN §5.4：迁移期旧表只读历史）—— 逐步收敛，超本 phase 全量改造范围。
+
+## Gaps
+
+None —— 4 项成功标准全部满足，无阻断缺口。

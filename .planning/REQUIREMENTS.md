@@ -24,9 +24,9 @@
 
 ### canonical 方案脊柱（PLAN）
 
-- [ ] **PLAN-01**: 立 canonical `TechnicalPlan`/`PlanVersion` 模型（origin/status 状态 + version + supersedes 版本链 + `content` 存 MergedPlan schema），方案最终可追溯到 `WorkItem`（INV-2，chat 自然语言允许 null）
-- [ ] **PLAN-02**: `TechnicalPlanService` 作为方案解析/创建/关联的唯一写入入口（`resolve`/`create_from`/`link`，INV-6），新编排经它 eager 创建 canonical
-- [ ] **PLAN-03**: 存量 3 路径（chat/mcp/workflow）经 service 挂软链 + eager 投影 + read-time lazy 迁移（不全量双写）；旧表迁移期只读、冲突以 canonical 为准、canonical 归档不级联删旧表
+- [x] **PLAN-01**: 立 canonical `TechnicalPlan`/`PlanVersion` 模型（origin/status 状态 + version + supersedes 版本链 + `content` 存 MergedPlan schema），方案最终可追溯到 `WorkItem`（INV-2，chat 自然语言允许 null）
+- [x] **PLAN-02**: `TechnicalPlanService` 作为方案解析/创建/关联的唯一写入入口（`resolve`/`create_from`/`link`，INV-6），新编排经它 eager 创建 canonical
+- [x] **PLAN-03**: 存量 3 路径（chat/mcp/workflow）经 service 挂软链 + eager 投影 + read-time lazy 迁移（不全量双写）；旧表迁移期只读、冲突以 canonical 为准、canonical 归档不级联删旧表
 
 ### 路由与召回（ROUTE / RECALL）
 
@@ -96,9 +96,9 @@
 | PF-02 | Phase 36 | Pending |
 | ORCH-01 | Phase 36 | Pending |
 | ORCH-02 | Phase 36 | Pending |
-| PLAN-01 | Phase 37 | Pending |
-| PLAN-02 | Phase 37 | Pending |
-| PLAN-03 | Phase 37 | Pending |
+| PLAN-01 | Phase 37 | Complete |
+| PLAN-02 | Phase 37 | Complete |
+| PLAN-03 | Phase 37 | Complete |
 | ROUTE-01 | Phase 38 | Pending |
 | RECALL-01 | Phase 38 | Pending |
 | RESEARCH-01 | Phase 39 | Pending |
