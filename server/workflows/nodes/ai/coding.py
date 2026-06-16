@@ -1100,6 +1100,21 @@ class AICodingNode(SubStepMixin, BaseNode):
                     )
                     mr_results.append({**result, **mr_result})
 
+        # PR-02：成功创建 MR 的仓 ≥ 2 时，对成功名单回写描述追加「## 关联 PR」cross-ref 段
+        # （兄弟仓链接，排除自身）+「## 关联方案 / 工作项」追溯段。整段 fail-soft——回写在
+        # 容器回调链路执行，任一异常仅 warning 降级、绝不上抛回灌 5xx（T-46-04，Pitfall 1）。
+        successful_mrs = [r for r in mr_results if r.get("mr_url") and not r.get("error")]
+        if len(successful_mrs) >= 2:
+            try:
+                from workflows.services.pr_cross_reference import add_cross_references
+
+                await add_cross_references(
+                    successful_mrs,
+                    plan_version_id=(plan_data or {}).get("plan_version_id"),
+                )
+            except Exception as exc:  # noqa: BLE001 — cross-ref 增强 fail-soft
+                log.warning("coding_cross_reference_failed", error=str(exc))
+
         # INGEST-02（14-06）：MR 创建之后的完成锚点（时序防线：归档不挂容器回调）。
         # 先持久化后投递：mr_results 序列化写进 node_execution.output_data，task_result
         # normalizer 后台经 session.node_execution 重读（workflow 路径 mr_url 权威源）；
@@ -1736,6 +1751,8 @@ class AICodingNode(SubStepMixin, BaseNode):
                 "mr_url": result.mr_url,
                 "mr_id": result.mr_id,
                 "has_conflicts": result.has_conflicts,
+                # PR-02：保留原 body 供 cross-ref 回写时拼接（追加兄弟链接 + 追溯段）。
+                "description": body,
             }
         else:
             log.warning("mr_creation_failed", error=result.error)
