@@ -889,19 +889,22 @@ class AICodingNode(SubStepMixin, BaseNode):
         await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
 
         # ── ARTIFACT-02：唯一注入收集点（D-07）——沿直接 depends_on 收集上游产物 ──
-        # 整段 fail-soft：收集异常 → warning → 注入空段（零回归降级），绝不让容器回调 5xx
-        # 致重试风暴（T-45-08）。仅记 repo 数 / error 字符串，绝不记产物正文（T-45-07）。
+        # 逐仓 fail-soft：单仓收集异常 → warning → 仅该仓注入空段（零回归降级），不波及其余仓
+        # 已收集产物，绝不让容器回调 5xx 致重试风暴（T-45-08）。仅记 repo_id / error 字符串，
+        # 绝不记产物正文（T-45-07）。
         upstream_by_repo: dict[str, list[dict]] = {}
-        try:
-            from services.plan_orchestration.artifact_injection import (
-                acollect_upstream_artifacts,
-            )
+        from services.plan_orchestration.artifact_injection import (
+            acollect_upstream_artifacts,
+        )
 
-            for repo_id, task in tasks_by_repo.items():
+        for repo_id, task in tasks_by_repo.items():
+            try:
                 upstream_by_repo[repo_id] = await acollect_upstream_artifacts(task)
-        except Exception as exc:  # noqa: BLE001 — 注入降级，绝不阻塞 wave 推进 / 回调主流程
-            upstream_by_repo = {}
-            log.warning("coding_upstream_collect_failed", error=str(exc))
+            except Exception as exc:  # noqa: BLE001 — 单仓注入降级，绝不阻塞 wave 推进 / 回调主流程
+                upstream_by_repo[repo_id] = []
+                log.warning(
+                    "coding_upstream_collect_failed", repo_id=repo_id, error=str(exc)
+                )
 
         waiting_sessions, failed = await self._dispatch_wave(
             repo_ids=[rid for rid in dispatch_repo_ids if rid in repositories],
