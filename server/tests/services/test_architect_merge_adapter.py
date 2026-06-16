@@ -312,6 +312,87 @@ async def test_e2e_engine_merge_fail_reclarify() -> None:
     assert merge_row.validation_status == ArchitectMergeStatus.FAILED
 
 
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_merge_fail_reclarify_creates_clarification() -> None:
+    """WR-02：merge 校验失败回退 clarifying（attempt 0）→ 主动建一条描述校验失败的 pending
+    Clarification + emit clarification.asked，使回退落到真实 HITL 澄清（非空操作）。"""
+    from delivery.models import Clarification
+
+    session = await _amake_session_with_partials()
+    adapter = ArchitectMergeAdapter(synthesizer=_synth(_cyclic_merged_plan()))
+    spy = AsyncMock()
+    adapter.session_service._emit_event = spy
+
+    result = await adapter.merge(session)
+
+    assert result["validation_status"] == "failed"
+    assert result["back_target"] == "clarifying"
+    assert result["attempt"] == 0
+    clar = await Clarification.objects.filter(
+        session_id=session.id, answered_at__isnull=True
+    ).afirst()
+    assert clar is not None
+    assert "校验" in clar.question
+    events = [c.args[0] for c in spy.call_args_list if c.args]
+    assert "clarification.asked" in events
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_merge_fail_reclarify_bounded_when_attempt_exhausted() -> None:
+    """WR-02 有界：attempt 已达上限时不建回退 Clarification（engine 将直接落 failed 终态，
+    不应留孤儿 pending）——防无限循环。"""
+    from delivery.models import ArchitectMerge, ArchitectMergeStatus, Clarification
+
+    session = await _amake_session_with_partials()
+    # 预置一条 ArchitectMerge → 本次 merge 的 attempt = MAX_MERGE_RETRIES
+    await ArchitectMerge.objects.acreate(
+        session=session,
+        validation_status=ArchitectMergeStatus.FAILED,
+        validation_report={},
+        attempt=0,
+    )
+    adapter = ArchitectMergeAdapter(synthesizer=_synth(_cyclic_merged_plan()))
+
+    result = await adapter.merge(session)
+
+    assert result["attempt"] == ArchitectMergeAdapter.MAX_MERGE_RETRIES
+    # 未建回退 Clarification（有界，避免无限澄清循环）
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_merge_reclarify_meaningful_with_one_round_guard() -> None:
+    """WR-02 × CR-01：merge 失败回退 clarifying 建 pending → 真实 ClarifyAdapter 据 pending
+    保持 clarifying 挂起；答复后单轮 guard 放行 researching（不再追问）——回退真正驱动一轮
+    HITL 而非空转，且有界（不二次澄清）。"""
+    from delivery.models import Clarification
+    from delivery.services import ClarificationService
+    from services.plan_orchestration import ClarifyAdapter
+
+    session = await _amake_session_with_partials()
+    adapter = ArchitectMergeAdapter(synthesizer=_synth(_cyclic_merged_plan()))
+    engine = PlanOrchestrationEngine(merge=adapter, clarify=ClarifyAdapter())
+
+    # merging → 校验失败 → 回退 clarifying（WR-02 建 pending）
+    await engine.advance(session)
+    session = await PlanSession.objects.aget(id=session.id)
+    assert session.status == PlanSessionStatus.CLARIFYING
+    pending = await Clarification.objects.filter(
+        session_id=session.id, answered_at__isnull=True
+    ).afirst()
+    assert pending is not None
+
+    # 答复回退澄清 → 再 advance：单轮 guard 放行 researching，且不新建第二条澄清
+    await ClarificationService().answer_clarification(pending, "补充：复用既有契约 X")
+    await engine.advance(session)
+    session = await PlanSession.objects.aget(id=session.id)
+    assert session.status == PlanSessionStatus.RESEARCHING
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+
+
 # ---- async fixtures (ORM 建数据经 sync_to_async 桥接) ----
 
 from asgiref.sync import sync_to_async  # noqa: E402
