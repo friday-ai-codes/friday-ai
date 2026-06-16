@@ -19,7 +19,6 @@ import structlog
 
 from delivery.models import PlanSession, PlanSessionStatus
 from delivery.services import PlanSessionService
-
 from services.plan_orchestration.protocols import (
     MergeProtocol,
     RecallProtocol,
@@ -113,12 +112,25 @@ class PlanOrchestrationEngine:
         await self.session_service.transition(session, "decomposed", decomposition=decomposition)
 
     async def _route(self, session: PlanSession) -> None:
-        """路由 stage：调注入 router → transition routed（→ recalling）。
+        """路由 stage（ROUTE-01 已接入）：调注入 router 取候选仓 → 落库 → 发事件。
 
-        TODO(Phase 38)：RepoRouterV2 真实路由（候选仓 + confidence 写 decomposition）。
+        1. ``result = await self.router.route(session)`` 取候选仓 + confidence（精简 dict）。
+        2. 经 ``transition(session, "routed", routing=result)`` 把 result 落
+           ``PlanSession.routing`` 并按 §14 routed 行转移 routing → recalling（engine
+           不直接写 status，T-36-03-01）。
+        3. 产出 §15 ``repo.routing`` trace 事件（payload `{candidates:[{repo_id,
+           confidence}]}`，不含 reasoning 等推理细节 INV-5）经 ``_emit_event`` 钩子；
+           真实 sink Phase 41 收口。``result`` 用 ``.get`` 防御（注入 mock 可能返回精简 dict）。
         """
-        await self.router.route(session)
-        await self.session_service.transition(session, "routed")
+        result = await self.router.route(session)
+        await self.session_service.transition(session, "routed", routing=result)
+        trace = {
+            "candidates": [
+                {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")}
+                for c in (result.get("candidates") or [])
+            ]
+        }
+        await self.session_service._emit_event("repo.routing", session, trace)
 
     async def _recall(self, session: PlanSession) -> None:
         """召回 stage：调注入 recall → transition recalled（→ clarifying）。
