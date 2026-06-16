@@ -53,6 +53,10 @@ from services.plan_orchestration.wave_layering import (
     build_repo_dep_edges,
     build_repo_waves,
 )
+from services.plan_orchestration.wave_progression import (
+    aadvance_coding_waves,
+    acurrent_wave_all_terminal,
+)
 
 __all__ = [
     "PlanOrchestrationEngine",
@@ -86,4 +90,6 @@ __all__ = [
     "LLMMergedPlanSynthesizer",
     "build_repo_waves",
     "build_repo_dep_edges",
+    "acurrent_wave_all_terminal",
+    "aadvance_coding_waves",
 ]
