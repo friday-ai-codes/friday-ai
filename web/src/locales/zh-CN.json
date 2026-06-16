@@ -150,6 +150,12 @@
       "success": "配置完成，正在进入系统…"
     }
   },
+  "repositories": {
+    "tree": {
+      "sddBadge": "SDD",
+      "sddBadgeTitle": "Spec-Driven（openspec）仓库"
+    }
+  },
   "knowledge": {
     "entity": {
       "pageTitle": "交付知识",

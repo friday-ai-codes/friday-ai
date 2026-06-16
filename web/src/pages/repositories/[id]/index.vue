@@ -13,6 +13,7 @@ import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue
 import ExclusionRulesPanel from '~/components/repository/ExclusionRulesPanel.vue'
 import ReconcilePanel from '~/components/repository/ReconcilePanel.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
+import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue'
 import SensitiveSuggestionsPanel from '~/components/repository/SensitiveSuggestionsPanel.vue'
 import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
@@ -351,6 +352,7 @@ function copyUrl() {
                       class="ml-1.5 rounded-sm bg-emerald-500/15 px-1 py-px text-[9px] font-semibold tracking-wide text-emerald-600"
                     >HEAD</span>
                   </Badge>
+                  <SddMethodologyBadge :methodology="repository.methodology" />
                 </div>
                 <!-- Git URL -->
                 <div class="flex items-center gap-1.5 mt-1">
