@@ -381,23 +381,18 @@ _PF06_TOKEN = "glpat-pf06-controlled-token-xyz"
 
 
 async def _make_real_repo(git_url: str) -> Any:
-    """创建真实 Repository + GitCredential（供 _run_repo_coding 内 _create_session
-    的 ORM 写入与 credential 访问跑通）。返回 select_related('credential') 重载实例，
-    避免 async 上下文反向 OneToOne 触发 SynchronousOnlyOperation。"""
-    from common.encryption import encrypt_value
-    from repositories.models import AuthType, GitCredential, Repository
+    """创建并返回真实 Repository（供 _run_repo_coding 跑真实生产取数路径）。
 
-    repo = await sync_to_async(Repository.objects.create)(
+    WR-01 修复后生产代码不再访问 repository.credential（反向 OneToOne），故此处直接返回
+    未 select_related 的实例，如实复现生产异步取数路径——不再用 select_related 重载掩盖。
+    """
+    from repositories.models import Repository
+
+    return await sync_to_async(Repository.objects.create)(
         name=f"pf06-repo-{uuid.uuid4().hex[:8]}",
         git_url=git_url,
         default_branch="main",
     )
-    await sync_to_async(GitCredential.objects.create)(
-        repository=repo,
-        auth_type=AuthType.ACCESS_TOKEN,
-        encrypted_token=encrypt_value("placeholder"),
-    )
-    return await Repository.objects.select_related("credential").aget(id=repo.id)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -411,13 +406,6 @@ class TestRunRepoCodingPF06:
     - runners.dispatcher.get_dispatcher().dispatch（捕获 DispatchTask）
     _create_session 的 ORM 写入跑真实 DB（transaction=True）。
     """
-
-    @pytest.fixture(autouse=True)
-    def _ssl_verify_attr(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # 生产 coding.py 访问 credential.ssl_verify，但 GitCredential 模型未定义该字段 → 测试侧兜底。
-        from repositories.models import GitCredential
-
-        monkeypatch.setattr(GitCredential, "ssl_verify", True, raising=False)
 
     @pytest.fixture
     def _dispatched(self, monkeypatch: pytest.MonkeyPatch) -> list[Any]:

@@ -919,19 +919,17 @@ class AICodingNode(SubStepMixin, BaseNode):
         session_id = generate_execution_id()
 
         # Git 凭证（Phase 26 REPO-01：统一经解析器取 token，无 per-repo token 时按 host 用实例凭证）
-        # token 非空才注入 access_token（与既有「无凭证」行为一致，绝不 log token）；
-        # ssl_verify 仍优先取 per-repo credential（存在时），纯靠实例池时取默认 "true"。
+        # token 非空才注入 access_token（与既有「无凭证」行为一致，绝不 log token）。
+        # WR-01：ssl_verify 逐键对齐 chat 权威基线 build_dispatch_metadata
+        # （coding_session_service.py:175，token 认证恒 "false"）。绝不访问 repository.credential
+        # —— 它是 GitCredential 的反向 OneToOne，生产异步路径未 select_related 会触发
+        # SynchronousOnlyOperation，且 GitCredential 模型本就无 ssl_verify 字段（AttributeError）。
         git_credentials = {}
         token = await aresolve_git_token(repository)
         if token:
-            ssl_verify = (
-                str(repository.credential.ssl_verify).lower()
-                if repository.credential
-                else "true"
-            )
             git_credentials = {
                 "access_token": token,
-                "ssl_verify": ssl_verify,
+                "ssl_verify": "false",
             }
 
         # PF-06：逐键对齐 chat 路径 build_dispatch_metadata（coding_session_service.py:170-187）。
