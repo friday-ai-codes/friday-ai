@@ -31,6 +31,11 @@ from delivery.models import (
     PlanSession,
 )
 from delivery.services import PlanSessionService, TechnicalPlanService
+from delivery.services.event_taxonomy import (
+    EVENT_PLAN_MERGE_COMPLETED,
+    EVENT_PLAN_MERGE_STARTED,
+    EVENT_PLAN_VALIDATION_FAILED,
+)
 from services.plan_orchestration.merged_plan import validate_merged_plan
 from services.plan_orchestration.plan_validator import validate_plan
 
@@ -134,7 +139,7 @@ class ArchitectMergeAdapter:
 
         # 3. emit plan.merge.started（best-effort，不阻断）
         repo_ids = [str(p.get("repository_id", "")) for p in partials]
-        await self._emit(session, "plan.merge.started", {"partials": repo_ids})
+        await self._emit(session, EVENT_PLAN_MERGE_STARTED, {"partials": repo_ids})
 
         # 4. 合成（异常 → 降级失败分支）
         try:
@@ -149,7 +154,9 @@ class ArchitectMergeAdapter:
             await self._record_merge(
                 session, ArchitectMergeStatus.FAILED, None, report, attempt
             )
-            await self._emit(session, "plan.validation.failed", {"reasons": ["synthesis_failed"]})
+            await self._emit(
+                session, EVENT_PLAN_VALIDATION_FAILED, {"reasons": ["synthesis_failed"]}
+            )
             return {
                 "validation_status": "failed",
                 "report": report,
@@ -220,7 +227,7 @@ class ArchitectMergeAdapter:
         )
         await self.session_service.set_current_plan_version(session, version_id)
         await self._emit(
-            session, "plan.merge.completed", {"plan_version_id": str(version_id)}
+            session, EVENT_PLAN_MERGE_COMPLETED, {"plan_version_id": str(version_id)}
         )
         return {
             "validation_status": "passed",
@@ -236,7 +243,7 @@ class ArchitectMergeAdapter:
             session, ArchitectMergeStatus.FAILED, None, report, attempt
         )
         reasons = [e.get("check") for e in report.get("errors", []) if isinstance(e, dict)]
-        await self._emit(session, "plan.validation.failed", {"reasons": reasons})
+        await self._emit(session, EVENT_PLAN_VALIDATION_FAILED, {"reasons": reasons})
         # back_target：partial stale/缺 → researching；否则默认 clarifying
         back_target = "researching" if has_stale else "clarifying"
         return {

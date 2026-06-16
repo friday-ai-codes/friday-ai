@@ -21,6 +21,10 @@ import structlog
 
 from delivery.models import PlanSession, RepoResearchTaskStatus
 from delivery.services import PlanSessionService, ResearchService
+from delivery.services.event_taxonomy import (
+    EVENT_REPO_RESEARCH_FAILED,
+    EVENT_REPO_RESEARCH_STARTED,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -207,7 +211,7 @@ class ResearchDispatchAdapter:
             "focus": task.routed_confidence or "",
         }
         try:
-            await self.session_service._emit_event("repo.research.started", session, payload)
+            await self.session_service._emit_event(EVENT_REPO_RESEARCH_STARTED, session, payload)
         except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断调度
             logger.warning(
                 "repo_research_started_emit_failed",
@@ -223,7 +227,7 @@ class ResearchDispatchAdapter:
             "error": reason,
         }
         try:
-            await self.session_service._emit_event("repo.research.failed", session, payload)
+            await self.session_service._emit_event(EVENT_REPO_RESEARCH_FAILED, session, payload)
         except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断调度
             logger.warning(
                 "repo_research_failed_emit_failed",
