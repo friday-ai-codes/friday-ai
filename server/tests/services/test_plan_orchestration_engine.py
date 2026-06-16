@@ -62,6 +62,40 @@ async def test_resume_from_arbitrary_status() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
+async def test_route_persists_routing_and_emits_event() -> None:
+    """_route 捕获 router 返回经 transition 落 PlanSession.routing 并发 repo.routing 事件。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.ROUTING,
+    )
+    routing = {
+        "candidates": [{"repo_id": "r1", "confidence": "high", "repository_name": "N"}],
+        "router_version": "v2",
+        "auto_selected": True,
+    }
+    router = AsyncMock()
+    router.route = AsyncMock(return_value=routing)
+    engine = PlanOrchestrationEngine(router=router)
+    spy = AsyncMock()
+    engine.session_service._emit_event = spy
+
+    await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.RECALLING
+    assert reloaded.routing == routing
+    # transition 内部以 §14 event "routed" 调 _emit_event，此处用 any 匹配 repo.routing
+    emitted = [
+        call
+        for call in spy.call_args_list
+        if call.args and call.args[0] == "repo.routing"
+    ]
+    assert len(emitted) == 1
+    assert emitted[0].args[2] == {"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
 async def test_injected_protocol_mocks_called() -> None:
     """各 stage 注入对应 AsyncMock，advance 调用注入依赖并推进。"""
     recall = AsyncMock()
