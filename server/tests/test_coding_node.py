@@ -531,3 +531,94 @@ class TestRunRepoCodingPF06:
         git_credentials = _dispatched[0].metadata["git_credentials"]
         assert isinstance(git_credentials, dict)
         assert git_credentials.get("access_token") == _PF06_TOKEN
+
+
+# ---------------------------------------------------------------------------
+# _build_coding_prompt 上游产物注入 + 零回归（ARTIFACT-02，Phase 45-02）
+# ---------------------------------------------------------------------------
+
+
+def _expected_baseline_prompt(global_context: str, branch_name: str) -> str:
+    """直接构造 Phase 44 现行为 prompt 期望字符串（无文件、无上游、单任务）。
+
+    与 ``_build_coding_prompt`` parts 顺序逐字对齐，用于零回归 == 断言。
+    """
+    parts = [
+        f"# 项目背景\n\n{global_context}",
+        f"# 分支信息\n\n目标分支: `{branch_name}`",
+        "# 编码任务: Task A\n\nDo A",
+        (
+            "# 要求\n\n"
+            "- 确保类型检查通过\n"
+            "- 确保单元测试通过\n"
+            "- 每个任务至少一个 commit，commit message 清晰描述变更"
+        ),
+    ]
+    return "\n\n---\n\n".join(parts)
+
+
+_PROMPT_TASKS = [{"name": "Task A", "coding_instruction": "Do A"}]
+_UPSTREAM_ARTIFACTS = [
+    {
+        "repository_id": "r1",
+        "repository_name": "backend",
+        "branch": "feat/api",
+        "mr_url": "https://gitlab.example.com/mr/1",
+        "openapi": ["api/openapi.yaml"],
+        "api_contracts": ["proto/user.proto"],
+        "diff_summary": {"files_changed": 3},
+    }
+]
+
+
+class TestBuildCodingPromptUpstreamInjection:
+    """``_build_coding_prompt`` 上游产物注入段 + 首发零回归逐字断言。"""
+
+    def test_no_upstream_param_byte_identical_to_phase44(self) -> None:
+        """不传 upstream_artifacts（默认）→ prompt 与 Phase 44 现行为逐字一致（零回归命门）。"""
+        node = AICodingNode()
+        prompt = node._build_coding_prompt(
+            _PROMPT_TASKS, "This is a test project.", "feat/x"
+        )
+        assert prompt == _expected_baseline_prompt("This is a test project.", "feat/x")
+
+    def test_none_and_empty_upstream_byte_identical(self) -> None:
+        """upstream_artifacts=None 与 =[] 均与未传该参逐字一致（防空段漂移）。"""
+        node = AICodingNode()
+        expected = _expected_baseline_prompt("ctx", "br")
+        assert (
+            node._build_coding_prompt(_PROMPT_TASKS, "ctx", "br", upstream_artifacts=None)
+            == expected
+        )
+        assert (
+            node._build_coding_prompt(_PROMPT_TASKS, "ctx", "br", upstream_artifacts=[])
+            == expected
+        )
+
+    def test_with_upstream_includes_contract_section(self) -> None:
+        """带非空 upstream → prompt 含「上游产物」段 + 契约文件名。"""
+        node = AICodingNode()
+        prompt = node._build_coding_prompt(
+            _PROMPT_TASKS,
+            "This is a test project.",
+            "feat/x",
+            upstream_artifacts=_UPSTREAM_ARTIFACTS,
+        )
+        assert "# 上游产物 / 上游契约" in prompt
+        assert "backend" in prompt
+        assert "proto/user.proto" in prompt
+        assert "api/openapi.yaml" in prompt
+
+    def test_upstream_section_after_global_context_before_branch(self) -> None:
+        """上游产物段位于「项目背景」之后、「分支信息」之前（D-08 插入位）。"""
+        node = AICodingNode()
+        prompt = node._build_coding_prompt(
+            _PROMPT_TASKS,
+            "This is a test project.",
+            "feat/x",
+            upstream_artifacts=_UPSTREAM_ARTIFACTS,
+        )
+        idx_ctx = prompt.index("# 项目背景")
+        idx_upstream = prompt.index("# 上游产物 / 上游契约")
+        idx_branch = prompt.index("# 分支信息")
+        assert idx_ctx < idx_upstream < idx_branch
