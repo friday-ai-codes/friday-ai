@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: 方案编排
 status: in_progress
-last_updated: "2026-06-16T02:00:00.000Z"
-last_activity: 2026-06-16 — Phase 37 complete (verification passed)
+last_updated: "2026-06-16T06:00:00.000Z"
+last_activity: 2026-06-16 — Phase 42 complete (verification passed; v0.7.0 末 phase)
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 6
-  completed_plans: 6
-  percent: 28
+  completed_phases: 7
+  total_plans: 19
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-12 after v0.3.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码；v0.7.0 把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎（拆分 → 路由 → 召回 → 澄清 → 并行调研 → 架构师融合），并立 canonical `TechnicalPlan` 脊柱、编排状态机 `PlanSession` 与事件 taxonomy——作为 v0.8 多仓编码、v0.9 SDD 的方案底座。
-**Current focus:** Phase 42 — Chat 入口薄封装（next，末 phase）
+**Current focus:** v0.7.0 全 7 phases 编排能力交付完毕（Phase 42 末 phase 已完成；里程碑过渡由 orchestrator 管理）
 
 ## Current Position
 
-Phase: 38 (next) — Phase 37 complete
-Plan: —
-Status: Phase 37 ✅ complete (3/3 plans executed + verification passed: SC-1..4 all TRUE)
-Last activity: 2026-06-16 — Phase 37 executed + verified（canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/lazy 迁移）
+Phase: 42 ✅ complete — v0.7.0 末 phase（全 7 phases 完成）
+Plan: 42-01 ✅
+Status: Phase 42 ✅ complete (1/1 plan executed + verification passed: SC-1/2/3 all TRUE)
+Last activity: 2026-06-16 — Phase 42 executed + verified（Chat 入口薄封装：start_plan_research @tool 复用同一 engine + 入口无关一致性守护 + INV-2 null work_item）
 
 ## Milestone Overview (v0.7.0 — Phases 36–42)
 
@@ -39,7 +39,7 @@ Last activity: 2026-06-16 — Phase 37 executed + verified（canonical Technical
 | 39 | 并行调研子 agent | RESEARCH-01, RESEARCH-02, RESEARCH-03 | ✅ Complete |
 | 40 | 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | MERGE-01, MERGE-02, MERGE-03 | ✅ Complete |
 | 41 | HITL 澄清 + 事件 taxonomy + 工作流入口 | CLARIFY-01, ENTRY-01, EVENT-01 | ✅ Complete |
-| 42 | Chat 入口薄封装 | ENTRY-02 | Not started |
+| 42 | Chat 入口薄封装 | ENTRY-02 | ✅ Complete |
 
 **Execution order:** 36 → 37 → 38 → 39 → 40 → 41 → 42（严格顺序）。依赖链：前置修复+引擎骨架(36) → canonical 方案脊柱(37) → 路由+召回(38) → 并行调研(39) → 架构师融合(40) → 澄清+事件+工作流入口(41) → Chat 入口(42)。每个 phase 都建立在前序编排骨架之上。
 
@@ -229,6 +229,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase ?]: 32-03 前端一键摄取面板沿用派发→轮询范式（useMutation + 条件 refetchInterval），守护测试以真实 zh-CN.json 锁关键文案
 - [Phase ?]: 33-01: commit 锚定复用 CodeChangeArchive.commit_sha/base_branch（不新增字段/migration）；chunk_content_hash 冻结进 KnowledgeEdge.metadata 供 HDIFF-02 对账
 - [Phase 34]: 34-01: 片段→需求反查 service 复用 find_chunk_at + graph_store 逐跳 neighbors(direction in/out) 反向多跳，纯读/默认当前视图(as_of=None 排除失效边)/fail-closed；chunk_id 直接入参经 ChunkRegistry 复判 file_path 排除不绕过边界；REST(IsAuthenticated) + MCP reverse_lookup_requirements 同形结构化 {chunks,related_work_items,related_documents,paths}
+- [Phase 42]: 42-01: 抽薄共享 helper plan_orchestration/entrypoint.py（start_orchestration 薄包 create_session + build_orchestration_engine 注入与 Phase 41 完全相同的 5 真实 adapters），workflow 节点与 chat 工具同调一份——落「底层 engine 复用、不造两套」；helper 只建 session + 构建 engine，不驱动 advance（工作流 waiting_event / chat interrupt 两运行时不混进 helper）
+- [Phase 42]: 42-01: chat 工具 start_plan_research（@tool category=PROJECT，space_id/conversation_id MCP 适配层注入 LLM 不可见）薄封装——建 entrypoint=chat + work_item=None session（INV-2 自然语言需求显式可追溯，canonical 仍 origin=orchestration、work_item=None 即标记）+ 复用同一 engine 驱动；挂起复用 chat 既有 HITL（clarifying→ask_clarification interrupt marker / researching→deep_analysis fire-and-forget __blocking_task__ + register_blocking_task），绝不重实现 HITL
+- [Phase 42]: 42-01: 入口无关一致性守护（test_orchestration_entry_consistency）——同一 requirement 经 workflow/chat 两 entrypoint 产 dict 相等 MergedPlan content + 按 created_at 同序 §15 事件序列；无新模型/无 migration（makemigrations --check 干净）；真实 LLM/容器 E2E deferred（IO 边界 mock）
 
 ### Pending Todos
 
@@ -300,11 +303,11 @@ Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后�
 
 ## Session Continuity
 
-Last session: 2026-06-16T00:00:00.000Z
-Stopped at: v0.7.0 roadmap created (Phases 36–42)
+Last session: 2026-06-16T06:00:00.000Z
+Stopped at: Phase 42 complete (v0.7.0 末 phase；全 7 phases 编排能力交付完毕)
 Resume file: None
-Next: 规划 Phase 36（前置修复 PF-01/02 + 编排引擎骨架 + PlanSession 状态机）
+Next: v0.7.0 里程碑过渡（由 orchestrator 管理，autonomous 模式本次未执行）
 
 ## Operator Next Steps
 
-- Plan the first phase with /gsd-plan-phase 36
+- v0.7.0 里程碑全部 7 phases 完成；里程碑过渡/归档由 orchestrator 处理
