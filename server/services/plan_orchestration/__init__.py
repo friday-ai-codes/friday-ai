@@ -18,6 +18,11 @@ from services.plan_orchestration.protocols import (
 from services.plan_orchestration.recall_adapter import DeliveryKnowledgeRecallAdapter
 from services.plan_orchestration.repo_router_adapter import RepoRouterV2Adapter
 from services.plan_orchestration.research_adapter import ResearchDispatchAdapter
+from services.plan_orchestration.research_aggregation import (
+    aall_research_tasks_terminal,
+    amaybe_complete_research,
+    parse_partial_plan_content,
+)
 
 __all__ = [
     "PlanOrchestrationEngine",
@@ -32,4 +37,7 @@ __all__ = [
     "RepoRouterV2Adapter",
     "DeliveryKnowledgeRecallAdapter",
     "ResearchDispatchAdapter",
+    "aall_research_tasks_terminal",
+    "amaybe_complete_research",
+    "parse_partial_plan_content",
 ]
