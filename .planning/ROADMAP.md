@@ -83,6 +83,25 @@
   3. wave N 全部 done 才触发 wave N+1，依赖未满足的仓不提前 dispatch（§14 RepoCodingTask 拓扑推进 + 可靠恢复）
   4. wave 失败 / 部分回滚语义明确：单 wave 内单仓失败的隔离边界与整体回滚语义有定义且有测试
 
+**Plans:** 5 plans
+Plans:
+**Wave 1**
+
+- [ ] 44-01-PLAN.md — RepoCodingTask 模型 + barrel + 迁移 0017 + 模型测试（wave 1）
+- [ ] 44-02-PLAN.md — wave_layering 拓扑分层纯函数（task-id DAG→仓级 wave）+ 测试（wave 1）
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 44-03-PLAN.md — RepoCodingTaskService 单一写入入口 + INV-6 守护 + 测试（wave 2）
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 44-04-PLAN.md — wave_progression 入口无关推进 helper（gate/失败隔离/下游阻断/幂等）+ 测试（wave 3）
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 44-05-PLAN.md — AICodingNode wave 分批 dispatch + callback 驱动推进 + 集成测试（wave 4）
+
 ### Phase 45: 上游产物提取 + 注入下游 wave
 
 **Goal**: 把上游 wave 的产物（API 契约 / OpenAPI / diff）提取落 `RepoCodingTask.produced_artifacts`，并注入下游 wave 的 prompt / `global_context`，使下游仓编码能消费上游契约（如 wave1 后端 → 提取 API 契约 → 注入 wave2 前端 `global_context`）。
@@ -127,7 +146,7 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 43. 编码 env 对齐 + 通用 resume 回流地基 | v0.8.0 | 4/4 | Complete   | 2026-06-16 |
-| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 0/? | Not started | — |
+| 44. RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | v0.8.0 | 0/5 | Not started | — |
 | 45. 上游产物提取 + 注入下游 wave | v0.8.0 | 0/? | Not started | — |
 | 46. 多仓融合 PR + 跨仓 PR 关联 | v0.8.0 | 0/? | Not started | — |
 | 47. 编码遇阻 → question 抛人（HITL） | v0.8.0 | 0/? | Not started | — |
