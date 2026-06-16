@@ -50,7 +50,7 @@
 
 **依赖链（严格顺序）：** 前置修复+引擎骨架(36) → canonical 方案脊柱(37) → 路由+召回(38) → 并行调研(39) → 架构师融合(40) → 澄清+事件+工作流入口(41) → Chat 入口(42)。PF-01/02 为开工 blocking 必修；37 canonical 方案是 40 融合产物的落库底座；38 路由/召回喂给 39 调研；39 partial 喂给 40 融合；41 把入口+事件端到端串起。
 
-- [ ] **Phase 36: 前置修复 + 编排引擎骨架 + PlanSession 状态机** - 修 PF-01/02（检索工具名漂移 / verify_plan schema 漂移）+ 立可复用 `ai_plan_research` 编排 engine + 可持久化可恢复的 `PlanSession` 状态机（§14）
+- [x] **Phase 36: 前置修复 + 编排引擎骨架 + PlanSession 状态机** - 修 PF-01/02（检索工具名漂移 / verify_plan schema 漂移）+ 立可复用 `ai_plan_research` 编排 engine + 可持久化可恢复的 `PlanSession` 状态机（§14） (completed 2026-06-16)
 - [ ] **Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移** - 立 canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径 eager 投影软链 + read-time lazy 迁移
 - [ ] **Phase 38: 路由 + 召回接入** - 编排接入 `RepoRouterV2`（能力树+LLM 路由候选仓）+ 历史召回（`DeliveryKnowledgeSearchService` 相似需求/缺陷/复盘/方案）
 - [ ] **Phase 39: 并行调研子 agent** - filter_then_container 只对需深入仓 fan-out 隔离容器调研，产结构化 `PartialPlan` + 单仓失败重试 + 重索引使过期 partial 置 stale 重跑
@@ -75,9 +75,9 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 36-01-PLAN.md — 前置修复 PF-01（工具名漂移 + fail-loud）/ PF-02（verify_plan 对齐 execution_plan）+ 守护测试
-- [ ] 36-02-PLAN.md — PlanSession 模型（delivery app）+ migration + PlanSessionService 状态机单一入口（§14 _ALLOWED）+ INV-6 守护
-- [ ] 36-03-PLAN.md — ai_plan_research 编排 engine 骨架（入口无关 + 可注入协议）+ advance/resume/不旁路 status 测试
+- [x] 36-01-PLAN.md — 前置修复 PF-01（工具名漂移 + fail-loud）/ PF-02（verify_plan 对齐 execution_plan）+ 守护测试
+- [x] 36-02-PLAN.md — PlanSession 模型（delivery app）+ migration + PlanSessionService 状态机单一入口（§14 _ALLOWED）+ INV-6 守护
+- [x] 36-03-PLAN.md — ai_plan_research 编排 engine 骨架（入口无关 + 可注入协议）+ advance/resume/不旁路 status 测试
 
 ### Phase 37: canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移
 
@@ -172,7 +172,7 @@ v0.8.0 多仓串行编码 → 融合 PR（按 v0.7 `MergedPlan.execution_plan` �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 0/3 | Planned | - |
+| 36. 前置修复 + 编排引擎骨架 + PlanSession 状态机 | v0.7.0 | 3/3 | Complete | 2026-06-16 |
 | 37. canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | v0.7.0 | 0/0 | Not started | - |
 | 38. 路由 + 召回接入 | v0.7.0 | 0/0 | Not started | - |
 | 39. 并行调研子 agent | v0.7.0 | 0/0 | Not started | - |
