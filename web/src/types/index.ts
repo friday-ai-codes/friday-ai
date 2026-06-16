@@ -228,6 +228,8 @@ export interface Repository extends RepositoryBase {
   graph_files_processed: number
   graph_files_total: number
   graph_last_built_at: string | null
+  /** SDD-02：从 facets.methodology 派生的只读方法论标记（如 "SDD"）；无 facets 时为 null */
+  methodology?: string | null
 }
 
 /**
