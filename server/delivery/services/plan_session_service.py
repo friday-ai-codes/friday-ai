@@ -124,6 +124,23 @@ class PlanSessionService:
             created_by=created_by,
         )
 
+    async def set_current_plan_version(self, session: PlanSession, version_id: Any) -> PlanSession:
+        """窄方法：把 ``PlanSession.current_plan_version`` 写为指定 PlanVersion.id（不旁路模型写）。
+
+        merging 段架构师融合落 canonical 后须置 ``current_plan_version``，但该写入**不在
+        §14 转移点**（转移由 engine 做）——为不旁路模型写（INV-6 精神），融合 adapter 经本
+        窄方法写。``update()`` 条件更新（不触发 auto_now，显式写 updated_at）+ 同步内存态。
+        """
+        await self._set_current_plan_version_sync(session, version_id)
+        return session
+
+    @sync_to_async
+    def _set_current_plan_version_sync(self, session: PlanSession, version_id: Any) -> None:
+        PlanSession.objects.filter(id=session.id).update(
+            current_plan_version=version_id, updated_at=timezone.now()
+        )
+        session.current_plan_version = version_id
+
     async def transition(self, session: PlanSession, event: str, **payload: Any) -> PlanSession:
         """**status 唯一变更入口**：按 ``_ALLOWED``(§14) 校验并推进。
 
