@@ -188,3 +188,14 @@ async def test_resolve_unknown_source_raises_not_found() -> None:
     svc = TechnicalPlanService()
     with pytest.raises(PlanNotFound):
         await svc.resolve(PlanRef.for_chat(uuid.uuid4()))
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_resolve_non_uuid_source_raises_not_found() -> None:
+    """IN-01：非 UUID source_key 归一化为 PlanNotFound（不外泄 ValueError）。"""
+    svc = TechnicalPlanService()
+    with pytest.raises(PlanNotFound):
+        await svc.resolve(PlanRef.for_chat("not-a-uuid"))
+    with pytest.raises(PlanNotFound):
+        await svc.resolve(PlanRef.for_mcp("also-not-a-uuid"))
