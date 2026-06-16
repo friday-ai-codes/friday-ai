@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -224,9 +225,22 @@ class TechnicalPlanService:
             return await self._resolve_workflow(ref)
         raise ValueError(f"不支持的 resolve origin={ref.origin!r}")
 
+    @staticmethod
+    def _ensure_uuid_source_key(ref: PlanRef) -> None:
+        """chat/mcp 的 ``source_key`` 须为合法 UUID；非法 → ``PlanNotFound``（IN-01）。
+
+        旧记录 pk 为 UUID，传入非 UUID 字符串时 ORM 会抛 ``ValueError``/``ValidationError``，
+        绕过「找不到旧记录 → PlanNotFound」契约（DOMAIN §5.4 规则 3）。入口预校验归一化。
+        """
+        try:
+            uuid.UUID(str(ref.source_key))
+        except (ValueError, TypeError):
+            raise PlanNotFound(ref) from None
+
     async def _resolve_chat(self, ref: PlanRef) -> TechnicalPlan:
         from chat.models import CodingPlan  # lazy import 防循环
 
+        self._ensure_uuid_source_key(ref)
         try:
             old = await CodingPlan.objects.aget(id=ref.source_key)
         except CodingPlan.DoesNotExist:
@@ -265,6 +279,7 @@ class TechnicalPlanService:
     async def _resolve_mcp(self, ref: PlanRef) -> TechnicalPlan:
         from mcp_tools.models import McpWorkItemTechnicalPlan  # lazy import 防循环
 
+        self._ensure_uuid_source_key(ref)
         try:
             old = await McpWorkItemTechnicalPlan.objects.aget(id=ref.source_key)
         except McpWorkItemTechnicalPlan.DoesNotExist:
