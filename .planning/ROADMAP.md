@@ -185,7 +185,11 @@ Plans:
   2. Chat 发起的编排与工作流入口产出一致的 `MergedPlan` 与 §15 trace 事件（同一 engine、同一状态机）
   3. Chat 自然语言需求允许 `TechnicalPlan.work_item` 为 null 但显式标记（INV-2）
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 42-01-PLAN.md — 抽薄共享 helper（start_orchestration + build_orchestration_engine 两入口共用）+ chat 工具 start_plan_research（entrypoint=chat / work_item=None INV-2）复用同一 engine + SC-2 入口一致性/SC-3 守护测试
+
 **UI hint**: yes
 
 ### 📋 Next milestone
