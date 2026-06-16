@@ -29,6 +29,11 @@ from claude_agent_sdk import (
 )
 
 from .config import TaskConfig
+from .question_loop import (
+    ASK_USER_MCP_SERVER_NAME,
+    ask_user_allowed_tools,
+    build_ask_user_mcp_server,
+)
 from .remote_tools import (
     REMOTE_MCP_SERVER_NAME,
     build_remote_tools_mcp_server,
@@ -204,10 +209,16 @@ def _is_transient_claude_error(error: Exception) -> bool:
 class ClaudeRunner:
     """Run Claude Agent SDK for AI-powered development."""
 
-    def __init__(self, config: TaskConfig, workspace: Path):
-        """Initialize Claude runner with config and workspace path."""
+    def __init__(self, config: TaskConfig, workspace: Path, callback: Any = None):
+        """Initialize Claude runner with config and workspace path.
+
+        Args:
+            callback: 可选 CallbackClient —— coding 遇阻 HITL（ask_user）发问需要它；
+                未传入时不挂 ask_user 工具（向后兼容，编码行为零回归）。
+        """
         self.config = config
         self.workspace = workspace
+        self.callback = callback
         self.session_file = Path(config.session_dir) / f"{config.task_id}.json"
         self.mapping_file = Path(config.session_dir) / "mapping.json"
         # repo_summary 模式下由 submit_summary 工具 handler 填充的结构化结果
@@ -244,9 +255,27 @@ class ClaudeRunner:
 
         prompt = self._build_execute_prompt(plan)
 
+        # 遇阻 HITL（Phase 47）：挂载 ask_user 供编码 agent 遇阻向人提问。
+        # 向后兼容：无 callback / standalone 时 build_ask_user_mcp_server 返回 None，不挂工具。
+        extra_mcp_servers: dict[str, Any] | None = None
+        extra_allowed_tools: list[str] | None = None
+        ask_user_server = (
+            build_ask_user_mcp_server(self.config, self.callback)
+            if self.callback is not None
+            else None
+        )
+        if ask_user_server is not None:
+            extra_mcp_servers = {ASK_USER_MCP_SERVER_NAME: ask_user_server}
+            # allowed_tools 是排他白名单：挂 ask_user 时必须把编码内建工具一并列入，
+            # 否则会连带禁掉 Bash/Edit/Write 等编码必需工具（WR-02 同因）。_execute_claude
+            # 内对已存在项去重，故与 RemoteTool 白名单共存安全。
+            extra_allowed_tools = [*_BUILTIN_CODING_TOOLS, *ask_user_allowed_tools()]
+
         result = await self._execute_claude(
             prompt=prompt,
             permission_mode="bypassPermissions",
+            extra_mcp_servers=extra_mcp_servers,
+            extra_allowed_tools=extra_allowed_tools,
         )
 
         log.info("Execute mode completed", success=result.get("success", False))
