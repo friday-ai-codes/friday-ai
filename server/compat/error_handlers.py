@@ -27,3 +27,20 @@ def openai_error_response(
         {"error": {"message": message, "type": type_, "code": code}},
         status=http_status,
     )
+
+
+def anthropic_error_response(
+    message: str,
+    type_: str = "api_error",
+    http_status: int = 400,
+) -> Response:
+    """把异常翻译为 Anthropic ``{type:"error", error:{type, message}}`` 格式。
+
+    与 OpenAI ``openai_error_response`` 平行（不复用）；遵循 ASVS V8.3：不泄漏
+    stack trace，仅返回 ``{type, error:{type, message}}`` 结构。
+    """
+    logger.warning("anthropic_error_response", message=message, type_=type_)
+    return Response(
+        {"type": "error", "error": {"type": type_, "message": message}},
+        status=http_status,
+    )
