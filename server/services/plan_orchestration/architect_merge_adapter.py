@@ -5,6 +5,10 @@
 
 - **通过** → 经 ``TechnicalPlanService.create_from(origin="orchestration")`` 落 canonical
   ``PlanVersion`` + 置 ``PlanSession.current_plan_version`` + ``ArchitectMerge(passed)``；
+  ``_handle_pass`` 末尾在 ``EVENT_PLAN_MERGE_COMPLETED`` emit 之后 **best-effort** 调
+  ``spec_generation_hook``（D-49-5，默认 ``agenerate_specs_for_plan``，可注入 stub）逐
+  SDD 仓产 spec draft——整段 try/except 吞为 warning ``sdd_spec_generation_failed``，
+  **绝不阻断融合返回**（fail-soft，merge 始终返回 passed）；
 - **失败 / 合成异常** → ``ArchitectMerge(failed, report)`` + **不落 canonical**；返回带
   ``back_target`` 的失败结果（engine 据此 §14 回退）。
 
@@ -126,6 +130,7 @@ class ArchitectMergeAdapter:
         session_service: PlanSessionService | None = None,
         plan_service: TechnicalPlanService | None = None,
         clarification_service: Any = None,
+        spec_generation_hook: Any = None,
     ) -> None:
         self.synthesizer = synthesizer or LLMMergedPlanSynthesizer()
         self.session_service = session_service or PlanSessionService()
@@ -137,6 +142,13 @@ class ArchitectMergeAdapter:
 
             clarification_service = ClarificationService()
         self.clarification_service = clarification_service
+        # D-49-5：融合通过后 best-effort 产 SDD spec 的挂接 hook（默认真实实现，可注入 stub）。
+        # 延迟默认绑定避免 import 环（plan_orchestration.__init__ 加载期 re-export 本模块）。
+        if spec_generation_hook is None:
+            from services.plan_orchestration.spec_generation import agenerate_specs_for_plan
+
+            spec_generation_hook = agenerate_specs_for_plan
+        self.spec_generation_hook = spec_generation_hook
 
     async def merge(self, session: PlanSession) -> dict:
         """融合一次：pass → 落 canonical + ArchitectMerge(passed)；fail → ArchitectMerge(failed)。"""
@@ -238,6 +250,17 @@ class ArchitectMergeAdapter:
         await self._emit(
             session, EVENT_PLAN_MERGE_COMPLETED, {"plan_version_id": str(version_id)}
         )
+        # D-49-5：融合通过后 best-effort 产 SDD spec（仅对 SDD 仓，逐仓隔离在 hook 内）。
+        # 外层 try/except 是双保险——即便 hook 整体抛错（import/解析异常）也绝不冒泡阻断融合
+        # 返回路径，吞为 warning sdd_spec_generation_failed（merge 始终返回 passed）。
+        try:
+            await self.spec_generation_hook(version_id)
+        except Exception:  # noqa: BLE001 — spec 生成 best-effort，绝不阻断融合返回
+            logger.warning(
+                "sdd_spec_generation_failed",
+                session_id=str(session.id),
+                plan_version_id=str(version_id),
+            )
         return {
             "validation_status": "passed",
             "plan_version_id": str(version_id),
