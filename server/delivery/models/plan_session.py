@@ -68,6 +68,11 @@ class PlanSession(models.Model):
     # 软引用：存 Phase 37 canonical PlanVersion.id（UUID），不建 FK（避免 36↔37 迁移耦合）
     current_plan_version = models.UUIDField(null=True, blank=True)
 
+    # chat 入口发起编排时的会话软引用（chat.Conversation.id，UUID）；沿用 current_plan_version
+    # 「软引用不建跨 app FK」哲学，避免 delivery→chat 硬耦合。workflow 入口为空。
+    # 用途：会话列表反查「该会话是否产出了 SDD spec」（has_sdd_spec 徽标）。
+    conversation_id = models.UUIDField(null=True, blank=True, db_index=True)
+
     # 中间产物（拆分结果：前后端/业务线/模块）
     decomposition = models.JSONField(default=dict)
     # 路由候选仓结果（Phase 38-02 写入：候选 + confidence + router_version + auto_selected）
