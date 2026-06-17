@@ -1,15 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.9.0
-milestone_name: SDD / OpenSpec 支持
-status: in_progress
-last_updated: "2026-06-17T02:30:00.000Z"
-last_activity: 2026-06-17
+milestone_name: SDD / OpenSpec 支持（重型）
+status: Phase 51 shipped (3 plans / 2 waves, GATE-01/GATE-02 闭合：编码前置 gate fail-closed + openspec 注入链路)；下一步 Phase 52
+stopped_at: Phase 51 完成并提交（51-SUMMARY.md 已写），里程碑 v0.9.0 仅剩 Phase 52
+last_updated: "2026-06-17T04:10:00.000Z"
+last_activity: 2026-06-17 — Phase 51 编码前置 gate（follow_openspec=True 仓校验 SddSpec.APPROVED，未批准/异常 fail-closed mark_gate_blocked 拦截 + 单仓隔离 + aadvance 阻断下游）+ openspec 注入（dispatch env_FRIDAY_TASK_FOLLOW_OPENSPEC → task system_prompt openspec 段），非 SDD 仓零回归
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 15
+  completed_plans: 14
   percent: 60
 ---
 
@@ -24,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: 51 (Not started) — Phase 48/49/50 complete
+Phase: 52 (Not started) — Phase 48/49/50/51 complete
 Plan: —
-Status: Phase 50 shipped (5 plans, 后端 41 + 前端 16 测试 + WR-01 修复, SPECST-01/02/03 闭合)；下一步 Phase 51
-Last activity: 2026-06-17 — Phase 50 SddSpecReview 评审脊柱 + SddSpecService 状态机（5 流转 fail-loud 防双推进）+ /api/specs/ REST（superuser fail-closed）+ spec 治理前端（列表/详情/状态流转/评审）
+Status: Phase 51 shipped (3 plans / 2 waves, GATE-01/GATE-02 闭合)；下一步 Phase 52（spec↔需求/PR 关联 + 交付验收视图）
+Last activity: 2026-06-17 — Phase 51 编码前置 gate fail-closed + openspec 指引注入链路（server gate + dispatch env + task system_prompt），非 SDD 仓全链路零回归；后端 408 passed / task 185 passed
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
@@ -36,7 +37,7 @@ Last activity: 2026-06-17 — Phase 50 SddSpecReview 评审脊柱 + SddSpecServi
 | 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ✅ Complete (verify human_needed) |
 | 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ✅ Complete (verify human_needed) |
 | 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ✅ Complete (verify human_needed) |
-| 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ⬜ Not started |
+| 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ✅ Complete (容器 E2E human_needed) |
 | 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ⬜ Not started |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52（严格顺序）。依赖链：SDD 仓库打标(48) → SDD 仓库方案产 openspec spec draft(49) → spec 状态机 + 评审记录 + 前端展示(50) → 编码前置 gate + openspec 注入(51) → spec↔需求/PR 关联 + 交付验收视图(52)。每个 phase 建立在前序产物之上——无打标无从判定产 spec，无 spec 实体无从挂状态机，无 `approved` 状态无从 gate，无放行编码无实现 PR 可关联。
@@ -44,6 +45,7 @@ Last activity: 2026-06-17 — Phase 50 SddSpecReview 评审脊柱 + SddSpecServi
 **UI 触面（标 UI hint）:** Phase 48（仓库列表/详情方法论标签）、Phase 50（spec 列表/详情/状态流转 + 评审记录 UI，本里程碑最重前端）、Phase 52（交付验收视图，沿 spec→WorkItem→PR 链路追溯）。后续 `/gsd-ui-phase` 介入这三处。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
 - **复用 v0.7/v0.8 预留扩展点**（DOMAIN §6.1）：`Document.SDD_SPEC` 枚举（§3/§12.5 已含）、`RepoCodingTask.follow_openspec` 字段（v0.8 Phase 44 已建，本里程碑首次消费）、`Repository.facets` JSON（通用字段已有）、task `setting_sources=["project"]`（容器原生加载仓库内 `.claude/skills`，v0.9 仅加 system_prompt 注入点）。**核查结论：均为「字段/枚举占位」**——openspec 检测钩子、产 spec 逻辑、system_prompt 注入点均需从零建。
 - **新增 spec 状态/评审为建模空白**：spec 生命周期独立建模（`SddSpec` + 评审记录实体），非复用 `TechnicalPlan`。
 - **spec 状态机命名沿 vNext**：`draft → in_review → approved → implemented → archived`——刻意区别于既有 `TechnicalPlan.status`（`draft|under_review|approved|superseded|archived`），spec 语义确需 `in_review`/`implemented`，不复用避免口径串味。
@@ -202,6 +204,14 @@ Last activity: 2026-06-17 — Phase 50 SddSpecReview 评审脊柱 + SddSpecServi
 | Phase 46 P46-01 | ~5min | 2 tasks | 2 files |
 | Phase 46 P46-02 | ~14min | 2 tasks | 4 files |
 
+**Milestone v0.9.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phase 51 P51-01 | ~10min | 2 tasks | 3 files |
+| Phase 51 P51-02 | ~20min | 3 tasks | 3 files |
+| Phase 51 P51-03 | ~10min | 2 tasks | 5 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -314,6 +324,10 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 46]: 46-01(PR-01): `_create_mr_for_repo` 内 `MRCreateRequest` 前新增 per-repo 解析 `resolved_target = repository.default_branch or base_branch or "main"`，`target_branch=base_branch` → `resolved_target`——各仓 MR 锚定各仓自己的 `Repository.default_branch`（修复多仓 default_branch 不一致时所有 MR 共用第一个仓 base_branch 打错目标分支病根）；fallback 链严格保序三级兜底保单仓/同 default_branch 多仓与 Phase 45 逐字等价（零回归命门）；不改 `_finalize_and_notify` 调用处 / `_execute_with_branch` node 级 base_branch / 缺凭证 fail-soft 分支（最小 diff）；守护测试 `test_coding_pr_target_branch.py` 直测私有方法（MagicMock 仓 + AsyncMock client 捕获 MRCreateRequest）4 测全绿（per-repo A=develop/B=release/x + 零回归 + fallback + 缺凭证 fail-soft），test_coding_wave.py 7 测零回归
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
+- [Phase 51]: 51-01: create_tasks_for_plan 首次消费 follow_openspec——`_create_tasks_sync` 同步块内按 `Repository.facets.get("methodology")=="SDD"`（Phase 48 大写写入）置 defaults `follow_openspec`，已存在 task 的 wave/follow_openspec 漂移合并到同一 save 的 update_fields 幂等回填（相等不写）；facets 用 `.values_list("facets", flat=True).first()` 标量查（async 安全禁裸 lazy-FK，D-51-6）。新增 `mark_gate_blocked(task, reason, spec_status)`——gate 拦截唯一写入入口（INV-6），逐字镜像 `mark_blocked` 条件 `.filter(id, status=PENDING).update(status=FAILED, error={reason, spec_status})` 仅 pending→failed、非 pending/重复 no-op，error payload 携 reason（spec_not_approved / gate_error）+ spec_status（status|missing|unknown）；INV-6 grep 守护补正向断言 mark_gate_blocked 经 service
+- [Phase 51]: 51-02: AICodingNode `_apply_openspec_gate` 独立可测 helper（GATE-01 fail-closed）——仅 wave 模式（service+tasks_by_repo 非空）执行、legacy/非 wave 短路零回归（不触任何 SddSpec 查询）；follow_openspec=False 放行不查 spec，True 校验关联 SddSpec（plan_version_id × repository_id）`.order_by("-updated_at").afirst()` status==APPROVED 放行、未批准经 mark_gate_blocked(spec_not_approved, status|missing) 拦截；单仓 try/except fail-closed（gate_error,unknown）隔离异常绝不冒泡崩 wave；拦截仓并入 `_dispatch_wave` failed 返回 → aadvance 传递闭包阻断下游 upstream_failed。gate 在 _dispatch_wave 顶部一处生效（首发+wave 推进两路覆盖）。GATE-02 server 半：`_run_repo_coding` 加 `follow_openspec` 参数，approved SDD 仓 metadata 注入 `env_FRIDAY_TASK_FOLLOW_OPENSPEC="true"`（PF-06 逐键范式，openspec_env 与 git_env/anthropic_env 同形），非 SDD/legacy 不含该键；docstring 字面 SddSpec(...) 改全角括号避 INV-6 grep 误判（Rule 1 自修）
+- [Phase 51]: 51-03: task GATE-02 task 半——`TaskConfig.follow_openspec: bool=False`（env_prefix 自动映射 FRIDAY_TASK_FOLLOW_OPENSPEC，缺省 False 零回归）；`_get_system_prompt` 末尾 `if bool(self.config.follow_openspec): base + "\n\n" + self._openspec_guidance()` 条件追加，`_openspec_guidance` 独立 helper（静态中文 openspec 指引段，无外部输入拼接无注入面），缺省路径返回 base 逐字等现状；`.claude/skills` 复用既有 `setting_sources=["project"]` 原生加载不改；既有 test_callback.py 两处 MagicMock-config 用例显式 `config.follow_openspec=False` 防真值 Mock 误触 openspec 追加致零回归断言失真（T-51-MOCK）
+
 ### Pending Todos
 
 [From .planning/todos/pending/ — ideas captured during sessions]
@@ -397,11 +411,11 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-17 — v0.9.0 路线图创建（Phases 48–52，REQUIREMENTS traceability 11/11 校验通过）
-Stopped at: ROADMAP.md / STATE.md / REQUIREMENTS.md 已写入，里程碑 v0.9.0 phase 结构就绪
+Last session: 2026-06-17 — Phase 51 编码前置 gate + openspec 注入链路交付（GATE-01/GATE-02，3 plans / 2 waves，后端 408 passed / task 185 passed）
+Stopped at: Phase 51 完成并提交（51-SUMMARY.md 已写），里程碑 v0.9.0 仅剩 Phase 52
 Resume file: None
-Next: Phase 48（SDD-01/02：SDD 仓库检测 + facets 打标 + 前端标签）——`/gsd-plan-phase 48` 起步
+Next: Phase 52（LINK-01/02：spec↔需求/PR 关联 + 交付验收视图）——`/gsd-plan-phase 52` 起步
 
 ## Operator Next Steps
 
-- Plan the first phase with /gsd-plan-phase 48
+- Plan the next phase with /gsd-plan-phase 52
