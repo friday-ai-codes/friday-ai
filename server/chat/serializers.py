@@ -202,6 +202,10 @@ class ConversationListSerializer(serializers.Serializer):
     status = serializers.CharField()
     provider_credential_id = serializers.SerializerMethodField()
     is_archived = serializers.BooleanField(required=False)
+    # 列表徽标聚合标记（由 list_conversations annotate 注入；default=False 向后兼容）。
+    has_sdd_spec = serializers.BooleanField(required=False, default=False)
+    has_coding_plan = serializers.BooleanField(required=False, default=False)
+    has_coding_session = serializers.BooleanField(required=False, default=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
 
