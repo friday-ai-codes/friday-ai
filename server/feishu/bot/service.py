@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,22 +13,24 @@ from typing import Any
 import structlog
 from django.utils import timezone
 
-from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TOOL_USE_START
+from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TEXT_DELTA, TOOL_USE_START
 from chat.conversation_service import ConversationService, extract_reference_summaries
+from chat.models import Message
 from chat.multimodal import (
-    ImageValidationError,
     MAX_IMAGES_PER_MESSAGE,
+    ImageValidationError,
     build_image_part,
     store_image_bytes,
 )
-from chat.models import Message
 from chat.parts import TextPart, part_to_dict
 from feishu.cards.bot_cards import (
     build_answer_card,
+    build_answer_markdown,
     build_background_analysis_card,
     build_clarification_card,
     build_error_card,
     build_streaming_card,
+    build_streaming_card_v2,
     build_thinking_card,
     build_welcome_card,
 )
@@ -44,6 +47,47 @@ logger = structlog.get_logger(__name__)
 _GROUP_CONTEXT_MSG_LIMIT = 500
 WAITING_FINAL_ANSWER_POLL_ATTEMPTS = 10
 WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS = 1.0
+
+# CardKit 流式增量推送节流阈值（秒）：合并 ~300ms 内的 TEXT_DELTA，
+# 控制单卡写频率在飞书 10QPS 内（P-3）。测试可 patch 为 0 关闭节流。
+_CARDKIT_STREAM_THROTTLE_S = 0.3
+
+
+@dataclass(slots=True)
+class _CardKitStream:
+    """CardKit 流式卡片本轮会话态：card_id/element_id/message_id + 单调 sequence。
+
+    sequence 由 content PUT 与 settle 共享同一计数器（P-2），每次写前 +1、起始得 1，
+    保证飞书侧严格递增（否则触发 300317）。
+    """
+
+    card_id: str
+    element_id: str
+    message_id: str
+    sequence: int = 0
+
+    def next_sequence(self) -> int:
+        """返回下一个严格递增的 sequence（写前 +1，起始 1）。"""
+        self.sequence += 1
+        return self.sequence
+
+
+def _build_cardkit_closeout_card() -> dict[str, Any]:
+    """CardKit 流式成功后用于收口「思考中」卡的简洁终态卡（W-1）。
+
+    绝不复用 build_streaming_card([])（那渲染「思考中...」会留一张永久悬挂的旧卡）。
+    """
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "Friday"},
+            "template": "blue",
+            "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+        },
+        "elements": [
+            {"tag": "markdown", "content": "已回复，请见下方卡片 👇"},
+        ],
+    }
 
 _AUTO_MATCH_PROJECT_REASONS = {
     "explicit_alias_match",
@@ -267,6 +311,15 @@ class FeishuBotService:
             waiting_task_count = 0
             stream_started_at = timezone.now()
 
+            # CardKit 流式正文态（D-2 惰性创建 + fail-soft 降级）：
+            # 首个 TEXT_DELTA 才创建实体；任一步失败置 cardkit_disabled 切回既有 PATCH 路径。
+            cardkit: _CardKitStream | None = None
+            cardkit_disabled = False
+            cardkit_done = False
+            body = ""
+            last_push_at = 0.0
+            element_id = "md_body"
+
             async for event in ConversationService.send_message_stream(
                 conversation_id=str(thread.conversation_id),
                 content=llm_content,
@@ -282,6 +335,59 @@ class FeishuBotService:
                             thinking_card_id,
                             build_streaming_card(tool_names),
                         )
+                elif event.type == TEXT_DELTA:
+                    # P-1：流式正文只消费 TEXT_DELTA，绝不读 PART_DELTA（双轨共存否则正文翻倍）。
+                    delta = str(event.data.get("text") or "")
+                    if not delta:
+                        continue
+                    body += delta  # P-4：累积全量正文
+                    # D-2 惰性创建：首个有效 TEXT_DELTA 才建 CardKit 实体并下发。
+                    if cardkit is None and not cardkit_disabled:
+                        try:
+                            cid = await im_service.create_card_entity(
+                                build_streaming_card_v2(element_id=element_id),
+                                uuid=uuid.uuid4().hex,
+                            )
+                            mid = await im_service.send_card_entity(
+                                receive_id=message.chat_id,
+                                receive_id_type="chat_id",
+                                card_id=cid,
+                            )
+                            cardkit = _CardKitStream(
+                                card_id=cid,
+                                element_id=element_id,
+                                message_id=mid,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "feishu_cardkit_create_failed",
+                                chat_id=message.chat_id,
+                                exc_info=True,
+                            )
+                            cardkit = None
+                            cardkit_disabled = True
+                    # P-3 节流推送：合并 ~300ms 内的 delta，content 全量（P-4）、sequence 单调（P-2）。
+                    if cardkit is not None:
+                        now = time.monotonic()
+                        if now - last_push_at >= _CARDKIT_STREAM_THROTTLE_S:
+                            try:
+                                await im_service.stream_card_content(
+                                    card_id=cardkit.card_id,
+                                    element_id=cardkit.element_id,
+                                    content=body,
+                                    sequence=cardkit.next_sequence(),
+                                    uuid=uuid.uuid4().hex,
+                                )
+                                last_push_at = now
+                            except Exception:
+                                logger.warning(
+                                    "feishu_cardkit_stream_failed",
+                                    chat_id=message.chat_id,
+                                    card_id=cardkit.card_id,
+                                    exc_info=True,
+                                )
+                                cardkit = None
+                                cardkit_disabled = True
                 elif event.type == PHASE_TRANSITION:
                     last_run_phase = str(event.data.get("phase") or last_run_phase)
                     last_run_id = str(event.data.get("run_id") or last_run_id)
@@ -359,21 +465,78 @@ class FeishuBotService:
                     "output_tokens": usage.get("output_tokens", 0),
                     "cost_usd": cost_usd,
                 }
-            answer_card = build_answer_card(
-                question=display_question,
-                answer=final_answer,
-                references=references,
-                usage=usage_info,
-                compact=is_p2p,
-                matched_space_label=matched_space_label,
-            )
 
-            thread.last_bot_message_id = await self._replace_card(
-                im_service,
-                chat_id=message.chat_id,
-                card_message_id=thinking_card_id,
-                card=answer_card,
-            )
+            # D-3 终态：CardKit 可用且有正文 → 推终态全量 markdown + settle 收尾 + 收口 thinking 卡。
+            if cardkit is not None:
+                content_delivered = False
+                try:
+                    final_md = build_answer_markdown(
+                        final_answer,
+                        references,
+                        usage_info,
+                        matched_space_label,
+                    )
+                    await im_service.stream_card_content(
+                        card_id=cardkit.card_id,
+                        element_id=cardkit.element_id,
+                        content=final_md,
+                        sequence=cardkit.next_sequence(),
+                        uuid=uuid.uuid4().hex,
+                    )
+                    content_delivered = True  # 答案已在 CardKit 卡渲染（W-2 判定依据）
+                    # W-1：先收口 thinking 卡，绝不留「思考中」悬挂（即便 settle 失败也不悬挂）。
+                    await self._replace_card(
+                        im_service,
+                        chat_id=message.chat_id,
+                        card_message_id=thinking_card_id,
+                        card=_build_cardkit_closeout_card(),
+                    )
+                    await im_service.settle_card_stream(
+                        card_id=cardkit.card_id,
+                        sequence=cardkit.next_sequence(),
+                        uuid=uuid.uuid4().hex,
+                    )
+                    thread.last_bot_message_id = cardkit.message_id
+                    cardkit_done = True
+                except Exception:
+                    if content_delivered:
+                        # W-2：内容已送达，仅 settle 失败 → 仅 warning 视为 answered，
+                        # 不再补发 build_answer_card（避免答案重复两次）。
+                        logger.warning(
+                            "feishu_cardkit_settle_failed",
+                            chat_id=message.chat_id,
+                            card_id=cardkit.card_id,
+                            exc_info=True,
+                        )
+                        thread.last_bot_message_id = cardkit.message_id
+                        cardkit_done = True
+                    else:
+                        # 内容推送阶段失败 → 完全降级回既有 build_answer_card 路径。
+                        logger.warning(
+                            "feishu_cardkit_stream_failed",
+                            chat_id=message.chat_id,
+                            card_id=cardkit.card_id,
+                            exc_info=True,
+                        )
+                        cardkit_done = False
+
+            if not cardkit_done:
+                # 降级兜底（P-9）：CardKit 未启用/中途失效/终态内容推送失败 → 既有路径，答案/引用/usage 不丢。
+                answer_card = build_answer_card(
+                    question=display_question,
+                    answer=final_answer,
+                    references=references,
+                    usage=usage_info,
+                    compact=is_p2p,
+                    matched_space_label=matched_space_label,
+                )
+
+                thread.last_bot_message_id = await self._replace_card(
+                    im_service,
+                    chat_id=message.chat_id,
+                    card_message_id=thinking_card_id,
+                    card=answer_card,
+                )
 
             thread.status = FeishuBotThreadStatus.ACTIVE
             metadata["last_reference_count"] = len(references)
