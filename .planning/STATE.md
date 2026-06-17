@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.10.0
 milestone_name: 操作审计治理
-status: executing
-stopped_at: Phase 51 完成并提交（51-SUMMARY.md 已写），里程碑 v0.9.0 仅剩 Phase 52
-last_updated: "2026-06-17T08:02:42.320Z"
+status: verifying
+stopped_at: Completed 53-02-PLAN.md
+last_updated: "2026-06-17T08:13:32.526Z"
 last_activity: 2026-06-17 -- Phase 53 execution started
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
 Phase: 53 (AuditEvent 模型 + emit 地基) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-17 -- Phase 53 execution started
 
 ## Milestone Overview (v0.10.0 — Phases 53–55)
@@ -235,6 +235,7 @@ Last activity: 2026-06-17 -- Phase 53 execution started
 | Phase 51 P51-02 | ~20min | 3 tasks | 3 files |
 | Phase 51 P51-03 | ~10min | 2 tasks | 5 files |
 | Phase 53 P01 | 7 min | 3 tasks | 10 files |
+| Phase 53 P02 | 9 min | 4 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -351,6 +352,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 51]: 51-01: create_tasks_for_plan 首次消费 follow_openspec——`_create_tasks_sync` 同步块内按 `Repository.facets.get("methodology")=="SDD"`（Phase 48 大写写入）置 defaults `follow_openspec`，已存在 task 的 wave/follow_openspec 漂移合并到同一 save 的 update_fields 幂等回填（相等不写）；facets 用 `.values_list("facets", flat=True).first()` 标量查（async 安全禁裸 lazy-FK，D-51-6）。新增 `mark_gate_blocked(task, reason, spec_status)`——gate 拦截唯一写入入口（INV-6），逐字镜像 `mark_blocked` 条件 `.filter(id, status=PENDING).update(status=FAILED, error={reason, spec_status})` 仅 pending→failed、非 pending/重复 no-op，error payload 携 reason（spec_not_approved / gate_error）+ spec_status（status|missing|unknown）；INV-6 grep 守护补正向断言 mark_gate_blocked 经 service
 - [Phase 51]: 51-02: AICodingNode `_apply_openspec_gate` 独立可测 helper（GATE-01 fail-closed）——仅 wave 模式（service+tasks_by_repo 非空）执行、legacy/非 wave 短路零回归（不触任何 SddSpec 查询）；follow_openspec=False 放行不查 spec，True 校验关联 SddSpec（plan_version_id × repository_id）`.order_by("-updated_at").afirst()` status==APPROVED 放行、未批准经 mark_gate_blocked(spec_not_approved, status|missing) 拦截；单仓 try/except fail-closed（gate_error,unknown）隔离异常绝不冒泡崩 wave；拦截仓并入 `_dispatch_wave` failed 返回 → aadvance 传递闭包阻断下游 upstream_failed。gate 在 _dispatch_wave 顶部一处生效（首发+wave 推进两路覆盖）。GATE-02 server 半：`_run_repo_coding` 加 `follow_openspec` 参数，approved SDD 仓 metadata 注入 `env_FRIDAY_TASK_FOLLOW_OPENSPEC="true"`（PF-06 逐键范式，openspec_env 与 git_env/anthropic_env 同形），非 SDD/legacy 不含该键；docstring 字面 SddSpec(...) 改全角括号避 INV-6 grep 误判（Rule 1 自修）
 - [Phase 51]: 51-03: task GATE-02 task 半——`TaskConfig.follow_openspec: bool=False`（env_prefix 自动映射 FRIDAY_TASK_FOLLOW_OPENSPEC，缺省 False 零回归）；`_get_system_prompt` 末尾 `if bool(self.config.follow_openspec): base + "\n\n" + self._openspec_guidance()` 条件追加，`_openspec_guidance` 独立 helper（静态中文 openspec 指引段，无外部输入拼接无注入面），缺省路径返回 base 逐字等现状；`.claude/skills` 复用既有 `setting_sources=["project"]` 原生加载不改；既有 test_callback.py 两处 MagicMock-config 用例显式 `config.follow_openspec=False` 防真值 Mock 误触 openspec 追加致零回归断言失真（T-51-MOCK）
+- [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 
 ### Pending Todos
 
@@ -435,8 +437,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-17 — Phase 51 编码前置 gate + openspec 注入链路交付（GATE-01/GATE-02，3 plans / 2 waves，后端 408 passed / task 185 passed）
-Stopped at: Phase 51 完成并提交（51-SUMMARY.md 已写），里程碑 v0.9.0 仅剩 Phase 52
+Last session: 2026-06-17T08:13:20.054Z
+Stopped at: Completed 53-02-PLAN.md
 Resume file: None
 Next: Phase 52（LINK-01/02：spec↔需求/PR 关联 + 交付验收视图）——`/gsd-plan-phase 52` 起步
 
