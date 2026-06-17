@@ -3466,6 +3466,30 @@ async def _run_commit_index(repository_id: str, repo_path: str) -> None:
         )
 
 
+async def _run_sdd_detect(repository_id: str, repo_path: str) -> None:
+    """SDD-01（48-01）：在临时克隆目录删除**之前**同步触发 SDD 仓库检测。
+
+    与 ``_run_sensitive_detection`` / ``_run_commit_index`` 同款时序与 fail-safe 范式
+    （BL-01 修复经验）：必须在 ``clone_and_index_repository`` 的 ``finally`` 执行
+    ``shutil.rmtree(temp_dir)`` 之前 await 完成——检测器纯文件系统探测仓库根 ``openspec/``
+    （见 ``services.sdd_detect``），await 它保证探测的是真实克隆目录而非已删除/空目录。
+
+    整段 best-effort，任何异常仅记 warning ``sdd_detect_dispatch_failed``，**绝不重抛、
+    绝不阻断索引 success 终态**（对齐 D-04/T-25-12，与 ``_run_sensitive_detection`` /
+    ``_run_commit_index`` 同契约）。
+    """
+    try:
+        from services.sdd_detect import detect_and_tag_sdd
+
+        await detect_and_tag_sdd(repository_id, repo_path)
+    except Exception as e:
+        logger.warning(
+            "sdd_detect_dispatch_failed",
+            repository_id=repository_id,
+            error=str(e),
+        )
+
+
 async def _run_modifies_chunk_reconcile(repository_id: str) -> None:
     """HDIFF-02：base 索引完成后对账失效过期 MODIFIES_CHUNK 边。
 
@@ -3864,6 +3888,10 @@ async def clone_and_index_repository(
             # 纯 DB 操作（不读克隆目录），放在对账钩子之后；best-effort，绝不阻断索引 success。
             # 功能分支 overlay 不触发，与上方 base-only 钩子一致。
             await _run_research_stale_invalidation(repository_id)
+            # SDD-01（48-01）：base 索引完成、rmtree 之前 best-effort 探测仓库根 openspec/，
+            # 命中则标记 facets[methodology]=SDD。纯 os.path.isdir 探测真实克隆目录；失败仅
+            # warning，绝不阻断索引 success。功能分支 overlay 不触发，与上方 base-only 钩子一致。
+            await _run_sdd_detect(repository_id, temp_dir)
 
         return index_result
 

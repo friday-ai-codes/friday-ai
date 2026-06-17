@@ -16,6 +16,8 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
@@ -720,6 +722,22 @@ class FeishuWebhookView(APIView):
                 if len(executions) == 1:
                     trigger_log.workflow_execution = executions[0]
                     await trigger_log.asave(update_fields=["workflow_execution"])
+
+                # 审计：飞书 webhook 自动触发工作流（系统行为，actor=None）
+                await AuditService.aemit(
+                    action=taxonomy.ACTION_FEISHU_SYNC_TRIGGERED,
+                    actor=None,
+                    target_type="trigger_log",
+                    target_id=trigger_log.id,
+                    target_repr=trigger_log.work_item_name or event_type,
+                    metadata={
+                        "event_type": event_type,
+                        "project_id": str(project.id) if project else None,
+                        "execution_count": len(executions),
+                        "execution_ids": [str(e.id) for e in executions],
+                    },
+                    source="feishu_webhook",
+                )
             else:
                 # TRIG-03 / D-03：无匹配工作流不再恒 ACCEPTED，落 IGNORED + 可查原因。
                 trigger_log.status = TriggerLogStatus.IGNORED
@@ -1443,6 +1461,8 @@ class TriggerLogRetryView(APIView):
             await ProcessedEvent.objects.filter(event_id=event_uuid).adelete()
 
         original_log_id = str(log.id)
+        original_event_type = log.event_type
+        original_work_item = log.work_item_name
         raw_request_body = log.webhook_raw_request
         await log.adelete()
 
@@ -1461,6 +1481,20 @@ class TriggerLogRetryView(APIView):
 
         try:
             response = await webhook_view.post(mock_request)
+            # 审计：人工重试飞书触发（actor=操作者，区别于自动 webhook）
+            await AuditService.aemit(
+                action=taxonomy.ACTION_FEISHU_SYNC_TRIGGERED,
+                actor=request.user,
+                target_type="trigger_log",
+                target_id=original_log_id,
+                target_repr=original_work_item or original_event_type,
+                metadata={
+                    "event_type": original_event_type,
+                    "retry": True,
+                    "original_log_id": original_log_id,
+                },
+                source="api",
+            )
             return Response(
                 {
                     "status": "retried",

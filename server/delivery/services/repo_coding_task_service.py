@@ -57,8 +57,15 @@ class RepoCodingTaskService:
         repo_waves: dict[str, int],
         repo_dep_edges: dict[str, list[str]],
     ) -> dict[str, RepoCodingTask]:
+        # D-51-1：SDD 仓（Repository.facets.methodology=="SDD"，Phase 48 检测器大写写入）
+        # 首次消费 follow_openspec（v0.8 预留位）。facets 在同步块内按标量 *_id 查（async 安全），
+        # 绝不裸 lazy-FK（D-51-6）。lazy import 防 import 环。
+        from repositories.models import Repository
+
         tasks: dict[str, RepoCodingTask] = {}
         for repo_id, wave in repo_waves.items():
+            facets = Repository.objects.filter(id=repo_id).values_list("facets", flat=True).first()
+            is_sdd = (facets or {}).get("methodology") == "SDD"
             task, created = RepoCodingTask.objects.get_or_create(
                 plan_version=plan_version,
                 repository_id=repo_id,
@@ -66,12 +73,20 @@ class RepoCodingTaskService:
                     "status": RepoCodingTaskStatus.PENDING,
                     "wave": wave,
                     "attempt": 0,
+                    "follow_openspec": is_sdd,
                 },
             )
-            # 已存在且 wave 漂移 → 回填（幂等：相等则不写）。
-            if not created and task.wave != wave:
-                task.wave = wave
-                task.save(update_fields=["wave", "updated_at"])
+            # 已存在且 wave / follow_openspec 漂移 → 合并到同一 save 回填（幂等：相等则不写）。
+            if not created:
+                update_fields: list[str] = []
+                if task.wave != wave:
+                    task.wave = wave
+                    update_fields.append("wave")
+                if task.follow_openspec != is_sdd:
+                    task.follow_openspec = is_sdd
+                    update_fields.append("follow_openspec")
+                if update_fields:
+                    task.save(update_fields=[*update_fields, "updated_at"])
             tasks[repo_id] = task
 
         # depends_on 仓级 DAG 边：同步块内 set(...)（仅连同 plan_version 下已建 task）。
@@ -140,6 +155,27 @@ class RepoCodingTaskService:
         ).update(
             status=RepoCodingTaskStatus.FAILED,
             error={"reason": "upstream_failed", "upstream": upstream_ids},
+            updated_at=timezone.now(),
+        )
+
+    async def mark_gate_blocked(self, task: RepoCodingTask, reason: str, spec_status: str) -> int:
+        """编码前置 gate 拦截唯一写入入口（D-51-3 / INV-6）：仅 pending→failed + 结构化 error。
+
+        条件更新仅作用于 ``status=pending`` 的 task（影响行数 0 → no-op）：已运行 / 终态的
+        task 不强翻，避免覆盖在途结果；重复拦截同一已 blocked task 亦 no-op（幂等）。
+        ``error={"reason":<reason>, "spec_status":<status|missing>}`` 如实标注阻断原因
+        （``reason`` 形如 "spec_not_approved" / gate 异常路径 "gate_error"，由调用方 51-02 传入），
+        对齐既有 ``mark_blocked`` 条件更新范式。返回影响行数。
+        """
+        return await self._mark_gate_blocked_sync(task, reason, spec_status)
+
+    @sync_to_async
+    def _mark_gate_blocked_sync(self, task: RepoCodingTask, reason: str, spec_status: str) -> int:
+        return RepoCodingTask.objects.filter(
+            id=task.id, status=RepoCodingTaskStatus.PENDING
+        ).update(
+            status=RepoCodingTaskStatus.FAILED,
+            error={"reason": reason, "spec_status": spec_status},
             updated_at=timezone.now(),
         )
 

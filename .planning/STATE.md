@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.8.0
-milestone_name: 多仓串行编码 → 融合 PR
-status: Awaiting next milestone
-stopped_at: Milestone v0.8.0 收官归档（audit passed 9/9 + integration_ok + Nyquist 5/5；ROADMAP/REQUIREMENTS/AUDIT 已归档 milestones/，tag v0.8.0）
-last_updated: "2026-06-17T01:58:00.000Z"
-last_activity: 2026-06-16 — Milestone v0.8.0 completed and archived
+milestone: v0.10.0
+milestone_name: 操作审计治理
+status: complete
+stopped_at: v0.10.0 milestone audited + complete (PASSED)
+last_updated: "2026-06-17T10:05:00.000Z"
+last_activity: 2026-06-17 -- Phase 55 complete (audit 84 + frontend 4 tests green); milestone done
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
   percent: 100
 ---
 
@@ -18,19 +18,68 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
+See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.8.0 已交付：把 v0.7 产的主方案（`MergedPlan.execution_plan` + 跨仓依赖 DAG）落成多仓代码——按跨仓依赖分层 wave 执行、上游产物注入下游、关联多仓融合 PR、编码遇阻抛 question 给人（显式非目标：不做编码中全自动回溯重规划）。
-**Current focus:** 规划下一里程碑（`/gsd-new-milestone`）；候选见 PROJECT.md Backlog / `ROADMAP-vNext.md`（v0.9 SDD/OpenSpec、编码全自动 replan、对外事件 adapter）。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
+**Current focus:** v0.10.0 操作审计治理 —— 全部 phase 完成，待 milestone 收尾
 
 ## Current Position
 
-Phase: Milestone v0.8.0 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-16 — Milestone v0.8.0 completed and archived
+Phase: 55 (审计查询 API + 前端视图 + 导出) — ✅ VERIFIED PASSED
+Plan: 3 of 3 complete
+Status: 里程碑 v0.10.0 三个 phase 全部 verified passed；待 complete-milestone / cleanup
+Last activity: 2026-06-17 -- Phase 55 complete（后端 84 + 前端 4 测试绿）
 
-## Milestone Overview (v0.8.0 — Phases 43–47)
+## Milestone Overview (v0.10.0 — Phases 53–55)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ✅ Complete |
+| 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ✅ Complete |
+| 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ✅ Complete |
+
+**Execution order:** 53 → 54 → 55（严格顺序）。依赖链：统一 `AuditEvent` 模型 + 单一写入入口 + fail-soft emit 地基(53) → 各敏感操作经统一入口 emit 审计、v0.5 排除/清理埋点收口(54) → 审计查询 API + 前端视图 + 导出(55)。无模型/emit 地基无从 emit，无覆盖的审计数据无从查询展示。
+
+**UI 触面（标 UI hint）:** Phase 55（审计查询前端视图：列表/过滤/before-after 详情 + 导出，本里程碑唯一重前端）。后续 `/gsd-ui-phase` 可介入此处。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
+- **系统管理员 = 现有 `is_superuser`**：不新建审计角色/权限层（沿用既有里程碑「系统管理员=superuser」决策）；审计查询/导出 superuser fail-closed。
+- **审计为横切能力**：各功能产生敏感操作时 emit，本里程碑统一收口 + 补齐覆盖 + UI；emit 失败 best-effort 不阻断主操作（fail-soft）。
+- **不可篡改 = 应用层 append-only**：`AuditEvent` 无 update/delete 业务路径、写入经单一 service 入口（INV-6 精神，grep 守护无旁路写表）；密码学级防篡改（hash chain/WORM）留 v2（AUDITX-01）。
+- **凭证脱敏**：Provider/Git/飞书凭证、Agent API key/PAT 等敏感操作的审计 before/after 必须脱敏，绝不落明文 token（对齐既有 PAT-02 / 凭证加密约束）。
+- **v0.5 既有埋点收口**：现有分散的 `purge.started/purge.completed` 结构化日志、`TriggerLog`/`ActionLog` 等收口到统一 `AuditEvent` 表（DOMAIN §11；现状「无统一 Admin Audit 表」）。
+- **显式非目标 / Out of Scope**：新建独立审计角色、密码学级防篡改、实时告警/SIEM/webhook 外发、审计保留/归档/自动清理策略、读操作全量审计（均列 v2 AUDITX-* 或 Out of Scope，见 REQUIREMENTS.md）。
+
+**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.10`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）、`.planning/PREFLIGHT.md`（无映射 v0.10 的 blocking/should-fix 项）、`.planning/PROJECT.md`（Current Milestone v0.10.0 + Key context）。
+
+## Milestone Overview (v0.9.0 — Phases 48–52)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ✅ Complete (verify human_needed) |
+| 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ✅ Complete (verify human_needed) |
+| 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ✅ Complete (verify human_needed) |
+| 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ✅ Complete (容器 E2E human_needed) |
+| 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ✅ Complete (容器 E2E human_needed) |
+
+**Execution order:** 48 → 49 → 50 → 51 → 52（严格顺序）。依赖链：SDD 仓库打标(48) → SDD 仓库方案产 openspec spec draft(49) → spec 状态机 + 评审记录 + 前端展示(50) → 编码前置 gate + openspec 注入(51) → spec↔需求/PR 关联 + 交付验收视图(52)。每个 phase 建立在前序产物之上——无打标无从判定产 spec，无 spec 实体无从挂状态机，无 `approved` 状态无从 gate，无放行编码无实现 PR 可关联。
+
+**UI 触面（标 UI hint）:** Phase 48（仓库列表/详情方法论标签）、Phase 50（spec 列表/详情/状态流转 + 评审记录 UI，本里程碑最重前端）、Phase 52（交付验收视图，沿 spec→WorkItem→PR 链路追溯）。后续 `/gsd-ui-phase` 介入这三处。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
+- **复用 v0.7/v0.8 预留扩展点**（DOMAIN §6.1）：`Document.SDD_SPEC` 枚举（§3/§12.5 已含）、`RepoCodingTask.follow_openspec` 字段（v0.8 Phase 44 已建，本里程碑首次消费）、`Repository.facets` JSON（通用字段已有）、task `setting_sources=["project"]`（容器原生加载仓库内 `.claude/skills`，v0.9 仅加 system_prompt 注入点）。**核查结论：均为「字段/枚举占位」**——openspec 检测钩子、产 spec 逻辑、system_prompt 注入点均需从零建。
+- **新增 spec 状态/评审为建模空白**：spec 生命周期独立建模（`SddSpec` + 评审记录实体），非复用 `TechnicalPlan`。
+- **spec 状态机命名沿 vNext**：`draft → in_review → approved → implemented → archived`——刻意区别于既有 `TechnicalPlan.status`（`draft|under_review|approved|superseded|archived`），spec 语义确需 `in_review`/`implemented`，不复用避免口径串味。
+- **INV-6 单一写入入口精神**：spec 创建/状态流转/评审写入收口到专用 service（如 `SddSpecService`），禁旁路写表；spec draft 经 `DocumentService` 单一入口落 `Document(sdd_spec)`。
+- **编码前置 gate fail-closed 语义**：未 `approved` 拦截且如实标注阻断原因，不静默放行；非 SDD 仓库零回归。
+- **审计收口顺延 v0.10**：spec 评审记录本里程碑自持久化即可，接入统一 `AuditEvent` 是 v0.10 横切治理范围（REQUIREMENTS Out of Scope 已明确）。
+- **显式非目标**：编码中全自动 replan / spec-code 双向 drift 检测 / openspec lint 深度校验 / 非 openspec 的其他 SDD 框架 / 多级会签审批流 / 新建独立 SDD 角色权限层（均列 v2 SDDX-* 或 Out of Scope）。
+
+**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.9`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md` §6.1（SDD 扩展点）/§3 + §12.5（`Document` 含 `sdd_spec` 枚举与字段详表）/§6（`RepoCodingTask.follow_openspec`）、`.planning/PROJECT.md`（Current Milestone v0.9.0 + Key context）。
+
+## Milestone Overview (v0.8.0 — Phases 43–47, shipped 2026-06-17)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -178,6 +227,16 @@ Last activity: 2026-06-16 — Milestone v0.8.0 completed and archived
 | Phase 46 P46-01 | ~5min | 2 tasks | 2 files |
 | Phase 46 P46-02 | ~14min | 2 tasks | 4 files |
 
+**Milestone v0.9.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phase 51 P51-01 | ~10min | 2 tasks | 3 files |
+| Phase 51 P51-02 | ~20min | 3 tasks | 3 files |
+| Phase 51 P51-03 | ~10min | 2 tasks | 5 files |
+| Phase 53 P01 | 7 min | 3 tasks | 10 files |
+| Phase 53 P02 | 9 min | 4 tasks | 9 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -290,6 +349,11 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 46]: 46-01(PR-01): `_create_mr_for_repo` 内 `MRCreateRequest` 前新增 per-repo 解析 `resolved_target = repository.default_branch or base_branch or "main"`，`target_branch=base_branch` → `resolved_target`——各仓 MR 锚定各仓自己的 `Repository.default_branch`（修复多仓 default_branch 不一致时所有 MR 共用第一个仓 base_branch 打错目标分支病根）；fallback 链严格保序三级兜底保单仓/同 default_branch 多仓与 Phase 45 逐字等价（零回归命门）；不改 `_finalize_and_notify` 调用处 / `_execute_with_branch` node 级 base_branch / 缺凭证 fail-soft 分支（最小 diff）；守护测试 `test_coding_pr_target_branch.py` 直测私有方法（MagicMock 仓 + AsyncMock client 捕获 MRCreateRequest）4 测全绿（per-repo A=develop/B=release/x + 零回归 + fallback + 缺凭证 fail-soft），test_coding_wave.py 7 测零回归
 - [Phase 44]: 44-01: RepoCodingTask 逐项镜像 RepoResearchTask 形状立操作态模型——plan_version 用真实 FK（CASCADE, related_name=coding_tasks，区别于 PlanSession.current_plan_version 软 UUID 引用，本 phase 无 36↔37 迁移耦合约束）；状态 4 态去 stale（编码期无重索引语义）；新增 wave int / depends_on M2M self（symmetrical=False, related_name=dependents 有向 DAG）/ produced_artifacts JSON（Phase 45 才写内容）/ follow_openspec bool（v0.9 才消费）；模型层零业务方法守 INV-6；迁移 0017 用 makemigrations 自动生成（M2M self through 表须 Django 自动建），dependencies 含 delivery 0016 + repositories 0036 + subagent 0013
 
+- [Phase 51]: 51-01: create_tasks_for_plan 首次消费 follow_openspec——`_create_tasks_sync` 同步块内按 `Repository.facets.get("methodology")=="SDD"`（Phase 48 大写写入）置 defaults `follow_openspec`，已存在 task 的 wave/follow_openspec 漂移合并到同一 save 的 update_fields 幂等回填（相等不写）；facets 用 `.values_list("facets", flat=True).first()` 标量查（async 安全禁裸 lazy-FK，D-51-6）。新增 `mark_gate_blocked(task, reason, spec_status)`——gate 拦截唯一写入入口（INV-6），逐字镜像 `mark_blocked` 条件 `.filter(id, status=PENDING).update(status=FAILED, error={reason, spec_status})` 仅 pending→failed、非 pending/重复 no-op，error payload 携 reason（spec_not_approved / gate_error）+ spec_status（status|missing|unknown）；INV-6 grep 守护补正向断言 mark_gate_blocked 经 service
+- [Phase 51]: 51-02: AICodingNode `_apply_openspec_gate` 独立可测 helper（GATE-01 fail-closed）——仅 wave 模式（service+tasks_by_repo 非空）执行、legacy/非 wave 短路零回归（不触任何 SddSpec 查询）；follow_openspec=False 放行不查 spec，True 校验关联 SddSpec（plan_version_id × repository_id）`.order_by("-updated_at").afirst()` status==APPROVED 放行、未批准经 mark_gate_blocked(spec_not_approved, status|missing) 拦截；单仓 try/except fail-closed（gate_error,unknown）隔离异常绝不冒泡崩 wave；拦截仓并入 `_dispatch_wave` failed 返回 → aadvance 传递闭包阻断下游 upstream_failed。gate 在 _dispatch_wave 顶部一处生效（首发+wave 推进两路覆盖）。GATE-02 server 半：`_run_repo_coding` 加 `follow_openspec` 参数，approved SDD 仓 metadata 注入 `env_FRIDAY_TASK_FOLLOW_OPENSPEC="true"`（PF-06 逐键范式，openspec_env 与 git_env/anthropic_env 同形），非 SDD/legacy 不含该键；docstring 字面 SddSpec(...) 改全角括号避 INV-6 grep 误判（Rule 1 自修）
+- [Phase 51]: 51-03: task GATE-02 task 半——`TaskConfig.follow_openspec: bool=False`（env_prefix 自动映射 FRIDAY_TASK_FOLLOW_OPENSPEC，缺省 False 零回归）；`_get_system_prompt` 末尾 `if bool(self.config.follow_openspec): base + "\n\n" + self._openspec_guidance()` 条件追加，`_openspec_guidance` 独立 helper（静态中文 openspec 指引段，无外部输入拼接无注入面），缺省路径返回 base 逐字等现状；`.claude/skills` 复用既有 `setting_sources=["project"]` 原生加载不改；既有 test_callback.py 两处 MagicMock-config 用例显式 `config.follow_openspec=False` 防真值 Mock 误触 openspec 追加致零回归断言失真（T-51-MOCK）
+- [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
+
 ### Pending Todos
 
 [From .planning/todos/pending/ — ideas captured during sessions]
@@ -373,10 +437,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-16T16:00:00.000Z
-Stopped at: Phase 46 Plan 02 完成（PR-02：可复用 helper pr_cross_reference + 接 _finalize_and_notify ≥2 守门全程 fail-soft，13 守护测试 + test_coding_wave.py 7 零回归全绿，Phase 46 两 plan 收官）
+Last session: 2026-06-17T08:13:20.054Z
+Stopped at: Completed 53-02-PLAN.md
 Resume file: None
-Next: Phase 47（HITL-01：编码遇阻 question 抛人）——`/gsd-plan-phase 47` 起步
+Next: Phase 52（LINK-01/02：spec↔需求/PR 关联 + 交付验收视图）——`/gsd-plan-phase 52` 起步
 
 ## Operator Next Steps
 

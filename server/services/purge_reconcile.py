@@ -38,8 +38,44 @@ from dataclasses import dataclass, field
 import structlog
 from asgiref.sync import sync_to_async
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from services.exclusion import build_matcher_for_repo
 from services.purge import PurgeResult, purge_file
+
+# v0.5 既有 purge.* 结构化埋点收口到 AuditService 单一写入入口（INV-6 / Phase 54）：
+# event 字符串 → 具名 action 常量映射，在 run_cleanup 异步调用点经 aemit 落库。
+_PURGE_ACTION_MAP: dict[str, str] = {
+    "purge.started": taxonomy.ACTION_PURGE_STARTED,
+    "purge.completed": taxonomy.ACTION_PURGE_COMPLETED,
+}
+
+
+async def _emit_purge_audit(
+    event: str,
+    *,
+    mode: str,
+    repository_id: str,
+    match_count: int,
+    failures: list[str] | None = None,
+) -> None:
+    """把 purge.* 埋点收口到 AuditService（actor=None 系统清理，fail-soft 由入口兜底）。"""
+    action = _PURGE_ACTION_MAP.get(event)
+    if action is None:
+        return
+    await AuditService.aemit(
+        action=action,
+        actor=None,
+        target_type="repository",
+        target_id=repository_id,
+        metadata={
+            "mode": mode,
+            "match_count": match_count,
+            "failures": failures or [],
+        },
+        source="purge",
+    )
+
 
 logger = structlog.get_logger(__name__)
 
@@ -243,6 +279,13 @@ async def run_cleanup(
                 match_count=0,
                 failures=["reconcile_degraded"],
             )
+            await _emit_purge_audit(
+                "purge.completed",
+                mode=mode,
+                repository_id=repo_id,
+                match_count=0,
+                failures=["reconcile_degraded"],
+            )
             return CleanupReport(mode=mode, failures=["reconcile_degraded"], degraded=True)
         paths = recon.excluded_paths
     target_paths = list(paths)
@@ -251,6 +294,9 @@ async def run_cleanup(
     run_error = ""
 
     log_purge_event(
+        "purge.started", mode=mode, repository_id=repo_id, match_count=len(target_paths)
+    )
+    await _emit_purge_audit(
         "purge.started", mode=mode, repository_id=repo_id, match_count=len(target_paths)
     )
 
@@ -302,6 +348,13 @@ async def run_cleanup(
     )
 
     log_purge_event(
+        "purge.completed",
+        mode=mode,
+        repository_id=repo_id,
+        match_count=len(target_paths),
+        failures=report.failures,
+    )
+    await _emit_purge_audit(
         "purge.completed",
         mode=mode,
         repository_id=repo_id,

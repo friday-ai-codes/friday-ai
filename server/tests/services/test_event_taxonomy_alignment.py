@@ -27,6 +27,8 @@ _SESSION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "plan_session_servic
 # 41-02 落地后存在（顺序安全：缺失时覆盖检查跳过对应事件）
 _CLARIFY_ADAPTER = _SERVER_ROOT / "services" / "plan_orchestration" / "clarify_adapter.py"
 _CLARIFICATION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "clarification_service.py"
+# Phase 49 落地后存在（spec.drafted producer）
+_SPEC_GENERATION = _SERVER_ROOT / "services" / "plan_orchestration" / "spec_generation.py"
 
 _EMIT_FILES = [
     _ENGINE,
@@ -36,6 +38,7 @@ _EMIT_FILES = [
     _SESSION_SERVICE,
     _CLARIFY_ADAPTER,
     _CLARIFICATION_SERVICE,
+    _SPEC_GENERATION,
 ]
 
 # 事件 → 其 producer 源文件（覆盖性反查；文件不存在 → 跳过该事件，顺序安全）
@@ -51,6 +54,7 @@ _EVENT_PRODUCERS: dict[str, Path] = {
     "plan.session.failed": _SESSION_SERVICE,
     "clarification.asked": _CLARIFY_ADAPTER,
     "clarification.answered": _CLARIFICATION_SERVICE,
+    "spec.drafted": _SPEC_GENERATION,
 }
 
 # emit 调用：捕获事件参数（_emit_event 首参 / architect _emit 第二参）

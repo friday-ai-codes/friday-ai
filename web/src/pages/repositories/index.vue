@@ -5,6 +5,7 @@ import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
+import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -155,6 +156,7 @@ function formatIndexedTime(value: string) {
                   <span class="icon-[lucide--folder]" />
                   {{ repository.linked_spaces_count }} 个空间
                 </span>
+                <SddMethodologyBadge :methodology="repository.methodology" />
               </div>
             </div>
           </div>

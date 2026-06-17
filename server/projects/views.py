@@ -6,12 +6,14 @@ import structlog
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
-from django.db.models import Prefetch, Count
+from django.db.models import Count, Prefetch
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from common.encryption import encrypt_value
 from permissions.models import ProjectMembership, ProjectRole
 from permissions.services import PermissionService
@@ -29,15 +31,15 @@ from .serializers import (
     FeishuIMConfigSerializer,
     FeishuIMTestSerializer,
     GitCredentialSerializer,
+    RepositoryCreateSerializer,
+    RepositorySerializer,
+    RepositoryWithSpacesSerializer,
     SpaceCreateSerializer,
     SpaceRepositoryCreateSerializer,
     SpaceRepositorySerializer,
     SpaceRepositoryUpdateSerializer,
     SpaceSerializer,
     SpaceUpdateSerializer,
-    RepositoryCreateSerializer,
-    RepositorySerializer,
-    RepositoryWithSpacesSerializer,
     WebhookTokenSerializer,
     WebhookTokenUpdateSerializer,
 )
@@ -45,19 +47,19 @@ from .serializers import (
 logger = structlog.get_logger(__name__)
 
 
-from django.db.models import Prefetch, Count, Count
-
 class SpaceViewSet(ModelViewSet):
     """ViewSet for Space CRUD operations."""
 
-    queryset = Project.objects.prefetch_related(
-        Prefetch(
-            "repositories",
-            queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
-        ),
-    ).annotate(
-        execution_count=Count("workflow_executions", distinct=True)
-    ).all()
+    queryset = (
+        Project.objects.prefetch_related(
+            Prefetch(
+                "repositories",
+                queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
+            ),
+        )
+        .annotate(execution_count=Count("workflow_executions", distinct=True))
+        .all()
+    )
     serializer_class = SpaceSerializer
 
     def get_queryset(self):
@@ -117,13 +119,25 @@ class SpaceViewSet(ModelViewSet):
         project = await self.aget_object()
         repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
 
-        _, created = await ProjectRepository.objects.aget_or_create(
+        link, created = await ProjectRepository.objects.aget_or_create(
             project=project,
             repository=repository,
         )
 
         if not created:
             return Response({"message": "Already linked"})
+
+        # 审计：仓库关联空间
+        await AuditService.aemit(
+            action=taxonomy.ACTION_REPOSITORY_PERMISSION_CHANGED,
+            actor=request.user,
+            target_type="project_repository",
+            target_id=link.id,
+            target_repr=f"{repository.name} @ {project.name}",
+            after={"repo_id": str(repository.id), "project_id": str(project.id)},
+            metadata={"op": "linked"},
+            source="api",
+        )
         return Response({"message": "Linked successfully"}, status=status.HTTP_201_CREATED)
 
     @link_repository.mapping.delete
@@ -135,7 +149,21 @@ class SpaceViewSet(ModelViewSet):
             project=project,
             repository_id=repository_id,
         )
+        link_id = link.id
+        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.project_id)}
         await link.adelete()
+
+        # 审计：仓库解绑空间（删前快照）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_REPOSITORY_PERMISSION_CHANGED,
+            actor=request.user,
+            target_type="project_repository",
+            target_id=link_id,
+            target_repr=f"repo:{repository_id} @ {project.name}",
+            before=snapshot,
+            metadata={"op": "unlinked"},
+            source="api",
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     # === Feishu configuration ===
@@ -169,6 +197,21 @@ class SpaceViewSet(ModelViewSet):
             project.feishu_user_key = serializer.validated_data.get("user_key", "")
             await project.asave()
 
+            # 审计：空间飞书插件配置变更——仅记字段名集合 + has_secret，绝不记 secret 值
+            await AuditService.aemit(
+                action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+                actor=request.user,
+                target_type="project",
+                target_id=project.id,
+                target_repr=project.name,
+                after={
+                    "changed": ["feishu_plugin_id", "feishu_plugin_secret", "feishu_user_key"],
+                    "redacted": True,
+                },
+                metadata={"config_subtype": "feishu_plugin"},
+                source="api",
+            )
+
             return Response(FeishuConfigSerializer(project).data)
 
         # DELETE
@@ -176,6 +219,21 @@ class SpaceViewSet(ModelViewSet):
         project.feishu_plugin_secret_encrypted = None
         project.feishu_user_key = None
         await project.asave()
+
+        # 审计：空间飞书插件配置清空
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+            actor=request.user,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            before={
+                "changed": ["feishu_plugin_id", "feishu_plugin_secret", "feishu_user_key"],
+                "redacted": True,
+            },
+            metadata={"config_subtype": "feishu_plugin", "op": "cleared"},
+            source="api",
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="feishu-config/test")
@@ -266,6 +324,18 @@ class SpaceViewSet(ModelViewSet):
             )
         project.feishu_webhook_token = generate_webhook_token()
         await project.asave()
+
+        # 审计：webhook token 刷新——仅记字段名 + has_secret，绝不记 token 值
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+            actor=request.user,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            after={"changed": ["feishu_webhook_token"], "redacted": True},
+            metadata={"config_subtype": "webhook_token", "op": "refreshed"},
+            source="api",
+        )
         return Response(
             WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
         )
@@ -299,6 +369,18 @@ class SpaceViewSet(ModelViewSet):
 
         project.feishu_webhook_token = token
         await project.asave()
+
+        # 审计：webhook token 自定义更新——仅记字段名 + has_secret，绝不记 token 值
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+            actor=request.user,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            after={"changed": ["feishu_webhook_token"], "redacted": True},
+            metadata={"config_subtype": "webhook_token", "op": "updated"},
+            source="api",
+        )
         return Response(
             WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
         )
@@ -337,12 +419,36 @@ class SpaceViewSet(ModelViewSet):
             )
             await project.asave()
 
+            # 审计：空间飞书 IM 配置变更——仅记字段名 + has_secret，绝不记 app_secret 值
+            await AuditService.aemit(
+                action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+                actor=request.user,
+                target_type="project",
+                target_id=project.id,
+                target_repr=project.name,
+                after={"changed": ["feishu_app_id", "feishu_app_secret"], "redacted": True},
+                metadata={"config_subtype": "feishu_im"},
+                source="api",
+            )
+
             return Response(FeishuIMConfigSerializer(project).data)
 
         # DELETE
         project.feishu_app_id = None
         project.feishu_app_secret_encrypted = None
         await project.asave()
+
+        # 审计：空间飞书 IM 配置清空
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+            actor=request.user,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            before={"changed": ["feishu_app_id", "feishu_app_secret"], "redacted": True},
+            metadata={"config_subtype": "feishu_im", "op": "cleared"},
+            source="api",
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="feishu-im-config/test")
@@ -421,9 +527,11 @@ class SpaceViewSet(ModelViewSet):
                 )
 
         if request.method == "GET":
-            return Response({
-                "feishu_doc_folder_token": project.feishu_doc_folder_token,
-            })
+            return Response(
+                {
+                    "feishu_doc_folder_token": project.feishu_doc_folder_token,
+                }
+            )
 
         # PUT
         folder_token = request.data.get("feishu_doc_folder_token", "")
@@ -434,9 +542,23 @@ class SpaceViewSet(ModelViewSet):
             )
         project.feishu_doc_folder_token = folder_token
         await project.asave(update_fields=["feishu_doc_folder_token", "updated_at"])
-        return Response({
-            "feishu_doc_folder_token": project.feishu_doc_folder_token,
-        })
+
+        # 审计：空间飞书文档导出配置变更（folder_token 非密钥，记字段名集合）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_CONFIG_CHANGED,
+            actor=request.user,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            after={"changed": ["feishu_doc_folder_token"], "redacted": False},
+            metadata={"config_subtype": "feishu_doc"},
+            source="api",
+        )
+        return Response(
+            {
+                "feishu_doc_folder_token": project.feishu_doc_folder_token,
+            }
+        )
 
 
 class RepositoryViewSet(ModelViewSet):
@@ -624,6 +746,17 @@ class SpaceRepositoryListCreateView(APIView):
                     lambda l=link: SpaceRepositorySerializer(l).data  # noqa: E741
                 )()
                 created.append(data)
+                # 审计：批量关联中新建的每个仓库关联
+                await AuditService.aemit(
+                    action=taxonomy.ACTION_REPOSITORY_PERMISSION_CHANGED,
+                    actor=request.user,
+                    target_type="project_repository",
+                    target_id=link.id,
+                    target_repr=f"{repo.name} @ {project.name}",
+                    after={"repo_id": str(repo.id), "project_id": str(project.id)},
+                    metadata={"op": "linked"},
+                    source="api",
+                )
             else:
                 skipped.append(str(repo_id))
 
@@ -671,8 +804,22 @@ class SpaceRepositoryDetailView(APIView):
         serializer = SpaceRepositoryUpdateSerializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
 
+        old_level = link.permission_level
         link.permission_level = serializer.validated_data["permission_level"]
         await link.asave(update_fields=["permission_level"])
+
+        # 审计：仓库权限级别变更，仅在级别真正变化时 emit（值未变不记，SC-4）
+        if old_level != link.permission_level:
+            await AuditService.aemit(
+                action=taxonomy.ACTION_REPOSITORY_PERMISSION_CHANGED,
+                actor=request.user,
+                target_type="project_repository",
+                target_id=link.id,
+                target_repr=f"repo:{link.repository_id} @ {project.name}",
+                before={"permission_level": old_level},
+                after={"permission_level": link.permission_level},
+                source="api",
+            )
 
         data = await sync_to_async(lambda: SpaceRepositorySerializer(link).data)()
         return Response(data)
@@ -685,11 +832,25 @@ class SpaceRepositoryDetailView(APIView):
             return denied
 
         link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
+        link_id = link.id
+        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.project_id)}
         await link.adelete()
 
         logger.info(
             "space_repo_unlinked",
             space_id=str(space_id),
             link_id=str(pk),
+        )
+
+        # 审计：移除仓库关联（删前快照）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_REPOSITORY_PERMISSION_CHANGED,
+            actor=request.user,
+            target_type="project_repository",
+            target_id=link_id,
+            target_repr=f"repo:{snapshot['repo_id']} @ {project.name}",
+            before=snapshot,
+            metadata={"op": "unlinked"},
+            source="api",
         )
         return Response(status=status.HTTP_204_NO_CONTENT)

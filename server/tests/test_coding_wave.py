@@ -210,8 +210,21 @@ def _dispatched_repo_ids(captured: list[Any]) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-async def test_empty_deps_zero_regression(_dispatched: list[Any]) -> None:
-    """无 plan_version_id + 空依赖 → 一次性 dispatch 全部仓、不建 RepoCodingTask、单 resume 收尾。"""
+async def test_empty_deps_zero_regression(
+    _dispatched: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """无 plan_version_id + 空依赖 → 一次性 dispatch 全部仓、不建 RepoCodingTask、单 resume 收尾。
+
+    Phase 51 零回归门：legacy 非 wave 模式（tasks_by_repo=None）dispatch **不经 openspec gate、
+    不查 SddSpec**（gate helper 在该路径完全短路）。
+    """
+    from delivery.models import SddSpec
+
+    def _no_spec_query(*args: Any, **kwargs: Any):
+        raise AssertionError("legacy 非 wave 路径不应触发 SddSpec 查询（gate 须短路）")
+
+    monkeypatch.setattr(SddSpec.objects, "filter", _no_spec_query)
+
     repo_a = await _make_repo("zr-a")
     repo_b = await _make_repo("zr-b")
     id_a, id_b = str(repo_a.id), str(repo_b.id)

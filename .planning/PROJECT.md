@@ -12,24 +12,32 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.8.0 多仓串行编码 → 融合 PR（2026-06-17）
+**Latest shipped:** v0.9.0 SDD / OpenSpec 支持（重型）（2026-06-17）
 
-里程碑演进：v0.6.0 领域脊柱 + 知识图谱补全 → v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR。近三个里程碑要点：
+里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持。近四个里程碑要点：
 
 - **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
 - **v0.6.0 领域脊柱 + 知识补全**：新增 `delivery` app 立起以飞书 work item 为中心的操作态脊柱——canonical `WorkItem` + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`/`WorkItemRelation`（字段派生）/`WorkItemStatusEvent`/`WorkItemCommentEvent`（append-only 评论流 + 当前树投影）；`Document`/`DocumentVersion`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边；Release 账本宽容模型 + 飞书 Bitable adapter 骨架；(看板URL+MR URL) 一键摄取编排；历史 diff 冻结 + bi-temporal 失效对账（PF-08）；评论入图 + 片段→需求反查 API/MCP；截图识别需求（多模态 LLM）。飞书接口前置修复 PF-09/10/11/12 已落地。
 - **v0.7.0 方案编排（需求 → 主方案）**：把「需求 → 一份高质量多仓主技术方案」做成可复用的 map-reduce 多 agent 编排引擎——`PlanOrchestrationEngine`（入口无关 + 4 可注入 stage 协议）+ `PlanSession` 8 态状态机（拆分→路由→召回→澄清→并行调研→架构师融合，可持久化可恢复）；canonical `TechnicalPlan`/`PlanVersion` + `TechnicalPlanService` 唯一写入入口（INV-6）+ 旧 3 路径软链/lazy 迁移；`RepoRouterV2` 路由 + `DeliveryKnowledgeSearchService` 召回接入；filter_then_container 并行调研子 agent（`RepoResearchTask`/`PartialPlan` + 单仓重试 + 重索引 stale 重跑）；架构师融合 + 结构化 `MergedPlan` + `PlanValidator`（5 类跨仓校验）+ 跨仓依赖 DAG 显式建模；HITL `Clarification` 澄清回路；§15 事件 taxonomy 全程持久化；工作流入口 + Chat 薄封装复用同一 engine。前置修复 PF-01/02 已落地。审计 passed（19/19 需求、INV-2/5/6 成立）。
 - **v0.8.0 多仓串行编码 → 融合 PR**：把 v0.7 产的 `MergedPlan.execution_plan` + 跨仓依赖 DAG 真正落成多仓代码——前置修复 PF-06（workflow 编码 `_run_repo_coding` dispatch env 对齐 chat 基线：git token + branch strategy + SSH→HTTPS，私有仓 clone + 正确目标分支）+ 通用 resume 回流通路 `adrive_plan_session_to_pause_or_terminal`（节点/工具/回调三处同源，消化 v0.7 audit D-2）；`RepoCodingTask` 操作态模型（plan_version/repository/wave/`depends_on` M2M self DAG/`produced_artifacts`/`follow_openspec` SDD 预留）+ 消费 `execution_plan[].dependencies` 经 graphlib Kahn 拓扑分层成 wave（消化 PF-07，不再全并行）；`RepoCodingTaskService` 单一写入入口（INV-6）+ `aadvance_coding_waves` wave 推进（回填→传递闭包阻断→决策，wave N done → N+1，失败隔离不死锁）；`AICodingNode` 按 wave 分批 dispatch + callback 重入自驱（不另造调度）；上游产物提取（OpenAPI/契约/diff）落 `produced_artifacts` → 注入下游 wave prompt/`global_context`；各仓 MR `target_branch` 锚定各仓 `default_branch` + 跨仓 PR cross-ref + 追溯 `TechnicalPlan`/`WorkItem`（`pr_cross_reference.py`，≥2 守门 fail-soft）；编码遇阻 task 侧 `ask_user` 抛 question 给人（心跳保活容器 RUNNING）+ orchestrator resume，非全自动 replan。审计 passed（9/9 需求、integration_ok、Nyquist 5/5）。
+- **v0.9.0 SDD / OpenSpec 支持（重型）**：让 spec-driven development 成为可治理过程资产——SDD 仓库索引后检测 `openspec/` 自动打标 `facets["methodology"]="SDD"` + 前端徽标；SDD 仓方案融合（`ArchitectMergeAdapter._handle_pass` best-effort 挂接）逐仓产 openspec spec draft，落 `SddSpec` 脊柱 + `Document(sdd_spec, internal_generated)` 经 `DocumentService.create_internal_spec`/`SddSpecService` 双单一写入入口（INV-6），关联 WorkItem/PlanVersion + emit `spec.drafted`；spec 完整状态机（draft→in_review→approved→implemented→archived，单一 service 入口、非法流转 fail-loud、条件更新防双推进）+ `SddSpecReview` 不可篡改评审记录（approve/reject 单一事务驱动状态）+ `/api/specs/` REST（superuser fail-closed 分流）+ spec 治理前端（列表/详情/状态流转/评审时间线）；编码前置 gate（`follow_openspec=True` 仓 `_dispatch_wave` 前校验 `SddSpec.status==APPROVED`，未批准/异常 fail-closed `mark_gate_blocked` 拦截 + 单仓隔离 + 下游阻断）+ openspec 指引注入（dispatch `env_FRIDAY_TASK_FOLLOW_OPENSPEC` → task `system_prompt` openspec 段 + `setting_sources=["project"]` 原生加载 `.claude/skills`）；spec↔实现 PR 关联（`_finalize_and_notify` best-effort 回填 `link_implementation_pr` + approved→implemented）+ 交付验收视图（spec→WorkItem→PR 追溯面板，fail-soft 降级）。非 SDD 仓全链路零回归。审计 passed（11/11 需求、integration_ok、INV-6/INV-2 成立）。
 
 **已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境；chat 编码入口（`coding_session_service`）的 cross-ref / 遇阻 HITL 接线为 follow-up（helper 入口无关已就绪）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 失败待修；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: 规划中（v0.8.0 已交付）
+## Current Milestone: v0.10.0 操作审计治理
 
-v0.8.0 多仓串行编码 → 融合 PR 已于 2026-06-17 收官归档（见 `.planning/milestones/v0.8.0-*`）。下一里程碑待 `/gsd-new-milestone` 规划。
+**Goal:** 立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
 
-**候选方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.9 SDD / OpenSpec（`RepoCodingTask.follow_openspec` 扩展点已预留）、编码中全自动 replan/回溯（v0.8 用 HITL「抛 question 给人」过渡）、`coding.wave.*` 事件对外 adapter（v0.11）、chat 编码入口 cross-ref / 遇阻 HITL 接线收尾。
+**Target features:**
+- 统一 `AuditEvent` 模型（actor / action / target / before-after / source / 时间 / metadata）+ 单一写入入口（INV-6 精神）+ append-only 不可篡改 + emit 机制 fail-soft 不阻断主操作 + 凭证脱敏。
+- 全量覆盖敏感操作 emit：身份与权限类（成员增删改 / 用户启停 / 角色权限 / 空间配置 / 仓库权限）+ 凭证与数据治理类（Provider/Git/飞书凭证、Agent API key/PAT、飞书同步、排除规则变更、清理任务——v0.5 既有埋点收口统一表）。
+- 审计查询 REST API（按 actor/action/target/时间过滤 + 分页，superuser fail-closed）+ 前端审计视图（列表/过滤/before-after 详情）+ 导出（CSV/JSON）。
+
+**Key context:** 系统管理员 = 现有 `is_superuser`，不新建审计角色（沿用既有里程碑决策）；审计为横切能力，各功能产生敏感操作时 emit、本里程碑统一收口 + 补齐覆盖 + UI；v0.5 已有分散的 `purge.started/completed` 等结构化日志埋点与 `TriggerLog`/`ActionLog`，本里程碑收口到统一 `AuditEvent` 表。设计底座：`ROADMAP-vNext.md §v0.10`、`DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）。PREFLIGHT 无映射 v0.10 的 blocking/should-fix 项。
+
+**候选后续方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.11 开放与协作（Agent API trace 透出 + Anthropic 兼容端点 + 飞书原生流式卡片 + 工作流自动建群）、编码中全自动 replan/spec drift 检测、chat 编码入口 cross-ref/HITL 接线收尾。
 
 ## Requirements
 
@@ -89,9 +97,28 @@ v0.8.0 多仓串行编码 → 融合 PR 已于 2026-06-17 收官归档（见 `.p
 - ✓ **多仓融合 PR + 跨仓关联**：各仓 MR `target_branch` 锚定各仓 `Repository.default_branch`（fallback `default_branch or base_branch or "main"`，非假设 master）+ 跨仓 PR cross-ref（`successful_mrs ≥2` 守门，回写「## 关联 PR」兄弟链接 + 「## 关联方案/工作项」追溯 `plan_version → TechnicalPlan → WorkItem`，全程 fail-soft，可复用 helper `pr_cross_reference.py`） — v0.8.0 (`server/workflows/services/pr_cross_reference.py`)
 - ✓ **编码遇阻 HITL 抛人**：编码容器遇阻给 agent `ask_user` 工具（复用既有 question 协议 + `answer.json` 共享卷回灌，心跳保活容器 RUNNING，超时 default 续跑/优雅失败绝不挂起）+ server 侧 `_resolve_notification_chat_id` 统一解析（chat 路径零回归 + node 级 chat_id fallback）+ 回答后既有 resume 推进 wave；**显式非目标：不做编码中全自动 replan** — v0.8.0 (`task/core/question_loop.py`, `server/.../question_handler.py`)
 
-**Backlog 候选（下一里程碑）：**
+- ✓ **SDD 仓库检测 + 打标**：索引完成 FINALIZING best-effort 检测仓库根 `openspec/` → `facets["methodology"]="SDD"`（幂等不漂移、删除取消标记、尊重 `_pinned`、不阻断索引 success）+ 前端 `SddMethodologyBadge`（仓库列表/详情 + 知识树，serializer 只读 `methodology` 透出） — v0.9.0 (`server/services/sdd_detect.py`)
+- ✓ **方案产 openspec spec**：SDD 仓方案融合（`ArchitectMergeAdapter._handle_pass` best-effort 挂接，fail-soft 不阻断融合）逐仓经可注入 `SddSpecSynthesizer` 产 openspec change-proposal → 落 `SddSpec` 脊柱（每「方案版本×仓」一份，`unique_together` 幂等）+ `Document(sdd_spec, internal_generated)` 经 `DocumentService.create_internal_spec`/`SddSpecService.create_draft` 双单一写入入口（INV-6），关联 WorkItem/PlanVersion/Repository + emit `spec.drafted`；非 SDD/异常零回归 — v0.9.0 (`server/services/plan_orchestration/spec_generation.py`, `server/delivery/models/sdd_spec.py`)
+- ✓ **spec 状态机 + 评审**：`SddSpecService` 状态机（draft→in_review→approved→implemented→archived，合法流转表、非法流转 `SddSpecTransitionError` fail-loud、条件更新防双推进）+ `SddSpecReview` append-only 不可篡改评审记录（approve/reject 单一事务驱动状态）+ `/api/specs/` REST（list/detail/transition，approve/reject/archive/mark_implemented superuser fail-closed 分流，全 read_only 序列化器）+ spec 治理前端（列表/详情/状态徽标/评审时间线/状态流转操作按状态×权限显隐） — v0.9.0 (`server/delivery/services/sdd_spec_service.py`, `web/src/pages/specs/`)
+- ✓ **编码前置 gate + openspec 注入**：`RepoCodingTaskService.create_tasks_for_plan` 首次消费 `follow_openspec`（按 `facets.methodology=="SDD"` 置位）+ `AICodingNode._dispatch_wave` 前置 gate（`follow_openspec=True` 仓校验 `SddSpec.status==APPROVED` 才放行，未批准/异常 fail-closed `mark_gate_blocked` 拦截 + 单仓隔离不崩 wave + 下游传递闭包阻断）+ openspec 指引注入（dispatch `env_FRIDAY_TASK_FOLLOW_OPENSPEC` → task `TaskConfig.follow_openspec` → `_get_system_prompt` openspec 段 + `setting_sources=["project"]` 原生加载 `.claude/skills`）；非 SDD 仓零回归 — v0.9.0 (`server/workflows/nodes/ai/coding.py`, `task/core/executor.py`)
+- ✓ **spec↔PR 关联 + 交付验收视图**：`SddSpec.implementation_prs` + `SddSpecService.link_implementation_pr`（去重幂等 + approved→implemented，无 spec no-op）经 `_finalize_and_notify` best-effort 回填（fail-soft 绝不阻断 PR 创建/通知）+ `SddSpecDetailSerializer` 追溯摘要 + 前端 `SpecDeliveryPanel`（WorkItem→spec→PR 链路，缺数据降级占位） — v0.9.0 (`server/delivery/services/sdd_spec_service.py`, `web/src/components/...SpecDeliveryPanel.vue`)
 
-- v0.9 SDD / OpenSpec（重型：打标 + 产 spec + 状态机/gate/评审 + spec↔需求/PR 关联 + 交付验收）——v0.8 已预留 `RepoCodingTask.follow_openspec` 扩展点字段位
+### Active（v0.10.0 操作审计治理）
+
+<!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md -->
+
+- ☐ **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（INV-6 精神），append-only 不可篡改（无 update/delete 业务路径）
+- ☐ **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥字段脱敏不落明文
+- ☐ **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间配置变更、仓库权限变更（actor + 前后值）
+- ☐ **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider/Git 实例/飞书凭证增删改、Agent API key / PAT 操作、飞书同步、排除规则变更、清理任务（v0.5 排除/清理埋点收口统一表）
+- ☐ **AUDITUI-01**: 审计查询 REST API——按 actor/action/target/时间范围过滤 + 分页，superuser fail-closed 访问控制，记录只读
+- ☐ **AUDITUI-02**: 审计前端视图——列表/过滤/详情（before-after 对比）+ 导出（CSV/JSON）
+
+**Backlog 候选（后续里程碑）：**
+
+- v0.11 开放与协作（Agent API trace 透出 + Anthropic 兼容端点 + 飞书原生流式卡片 + 工作流自动建群）
+- 审计进阶（v2 AUDITX）：密码学级防篡改（hash chain / WORM）、实时告警 / SIEM / webhook 外发、审计保留/归档/自动清理策略
+- SDD 进阶（v2 SDDX）：openspec spec 内容 lint 深度校验、spec↔代码双向 drift 检测、非 openspec 的其他 SDD 框架适配
 - 编码中全自动 replan/回溯（v0.8 已用「抛 question 给人」HITL-01 过渡，全自动留后续）
 - chat 编码入口（`coding_session_service`）的跨仓 PR cross-ref / 遇阻 HITL 接线收尾（v0.8 优先 workflow wave 入口，helper 入口无关已就绪以便复用）
 - 多仓 wave 编码 / PR / HITL 的真实 runner+Docker 容器端到端验收（需真实环境）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 修复
@@ -156,6 +183,10 @@ v0.8.0 多仓串行编码 → 融合 PR 已于 2026-06-17 收官归档（见 `.p
 | 各仓 MR `target_branch` 锚定各仓 `default_branch`（非假设 master），diff base per-repo | 对齐 v0.6 坐实的 MR target_branch 锚定；fallback `default_branch or base_branch or "main"` 保单仓/同 default 多仓零回归 | ✓ Validated（v0.8.0，Phase 46） |
 | 编码遇阻走 HITL「抛 question 给人」，不做编码中全自动回溯重规划 | 全自动 replan 范围爆炸风险高；复用既有 question 协议 + 容器心跳保活 RUNNING，回答后续跑；全自动留 backlog | ✓ Validated（v0.8.0，Phase 47） |
 | 跨阶段「不造两套」：续驱 helper / wave 推进 / 单一写入入口（INV-6）全程同源 | 节点/工具/回调三处复用同一 resume helper；状态只经 `RepoCodingTaskService` 条件更新；integration 审计 integration_ok | ✓ Validated（v0.8.0） |
+| spec 生命周期独立建模（`SddSpec` + `SddSpecReview`），不复用 `TechnicalPlan` | spec 语义确需 `in_review`/`implemented` 态（区别于 `TechnicalPlan.status` 的 `under_review`/`superseded`），避免口径串味 | ✓ Validated（v0.9.0） |
+| spec 产出/评审全 best-effort fail-soft、编码 gate fail-closed | 产 spec/PR 回填绝不阻断融合/PR 主流程；gate 未批准/异常一律拦截不放行（未批准的 SDD 仓不得编码） | ✓ Validated（v0.9.0） |
+| spec 评审 approve/reject 限 superuser；spec 评审审计接入统一 `AuditEvent` 顺延 v0.10 | 复用「系统管理员=superuser，不新建角色」决策；本里程碑评审记录自持久化即留痕，统一审计是 v0.10 横切范围 | ✓ Validated（v0.9.0） |
+| 编码 openspec 策略优先复用仓库内 `.claude/skills`（`setting_sources=["project"]`）+ system_prompt 注入点 | task 容器已原生加载克隆仓库内 skill，Friday 侧仅加 `follow_openspec` 条件 prompt 段，改动极小 | ✓ Validated（v0.9.0） |
 
 ## Evolution
 
@@ -175,4 +206,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-17 — after v0.8.0 milestone*
+*Last updated: 2026-06-17 — start milestone v0.10.0 操作审计治理*

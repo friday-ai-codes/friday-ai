@@ -14,6 +14,7 @@ import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CapabilityTreeNode from '~/components/repository/CapabilityTreeNode.vue'
 import DomainTreeNode from '~/components/repository/DomainTreeNode.vue'
+import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue'
 import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 
@@ -364,6 +365,7 @@ const indexStatusDot: Record<string, string> = {
               <span v-if="!card.has_tree" class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 无树
               </span>
+              <SddMethodologyBadge :methodology="card.facets?.methodology" />
             </div>
             <p v-if="card.overview" class="mt-1 line-clamp-2 text-xs text-muted-foreground">
               {{ card.overview }}
@@ -393,14 +395,16 @@ const indexStatusDot: Record<string, string> = {
               查看仓库 →
             </RouterLink>
           </div>
-          <div v-if="Object.keys(repoTree.facets).length" class="mb-2 flex flex-wrap gap-1">
-            <span
-              v-for="(value, dim) in repoTree.facets"
-              :key="dim"
-              class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-            >
-              {{ dim }}: {{ value }}
-            </span>
+          <div v-if="Object.keys(repoTree.facets).length" class="mb-2 flex flex-wrap items-center gap-1">
+            <SddMethodologyBadge :methodology="repoTree.facets?.methodology" />
+            <template v-for="(value, dim) in repoTree.facets" :key="dim">
+              <span
+                v-if="!(dim === 'methodology' && value === 'SDD')"
+                class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {{ dim }}: {{ value }}
+              </span>
+            </template>
           </div>
           <div v-if="!repoTree.tree.length" class="py-8 text-center text-sm text-muted-foreground">
             该仓库尚未生成能力树（AI 描述状态: {{ repoTree.ai_summary_status }}）

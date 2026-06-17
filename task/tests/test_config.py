@@ -71,3 +71,35 @@ class TestTaskConfig:
                 session_dir=temp_session_dir,
             )
             assert config.task_mode == mode
+
+    def test_follow_openspec_default_false(self, temp_session_dir):
+        """follow_openspec 默认 False（零回归 —— 未注入 env / 未传参）。"""
+        config = TaskConfig(
+            task_id="test-001",
+            task_description="Test",
+            git_repo_url="git@github.com:test/repo.git",
+            session_dir=temp_session_dir,
+        )
+        assert config.follow_openspec is False
+
+    def test_follow_openspec_param_true(self, temp_session_dir):
+        """参数 follow_openspec=True → True。"""
+        config = TaskConfig(
+            task_id="test-001",
+            task_description="Test",
+            git_repo_url="git@github.com:test/repo.git",
+            follow_openspec=True,
+            session_dir=temp_session_dir,
+        )
+        assert config.follow_openspec is True
+
+    def test_follow_openspec_env_mapping(self, temp_session_dir, monkeypatch):
+        """env FRIDAY_TASK_FOLLOW_OPENSPEC=true → 经 env_prefix 自动映射 True。"""
+        monkeypatch.setenv("FRIDAY_TASK_FOLLOW_OPENSPEC", "true")
+        config = TaskConfig(
+            task_id="test-001",
+            task_description="Test",
+            git_repo_url="git@github.com:test/repo.git",
+            session_dir=temp_session_dir,
+        )
+        assert config.follow_openspec is True

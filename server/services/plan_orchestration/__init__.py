@@ -57,6 +57,11 @@ from services.plan_orchestration.research_aggregation import (
 from services.plan_orchestration.resume import (
     adrive_plan_session_to_pause_or_terminal,
 )
+from services.plan_orchestration.spec_generation import (
+    LLMSddSpecSynthesizer,
+    SddSpecSynthesizer,
+    agenerate_specs_for_plan,
+)
 from services.plan_orchestration.wave_layering import (
     build_repo_dep_edges,
     build_repo_waves,
@@ -96,6 +101,9 @@ __all__ = [
     "ArchitectMergeAdapter",
     "MergedPlanSynthesizer",
     "LLMMergedPlanSynthesizer",
+    "SddSpecSynthesizer",
+    "LLMSddSpecSynthesizer",
+    "agenerate_specs_for_plan",
     "build_repo_waves",
     "build_repo_dep_edges",
     "acurrent_wave_all_terminal",
