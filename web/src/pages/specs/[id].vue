@@ -9,6 +9,7 @@ import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue'
 import SddSpecStatusBadge from '~/components/spec/SddSpecStatusBadge.vue'
+import SpecDeliveryPanel from '~/components/spec/SpecDeliveryPanel.vue'
 import SpecReviewTimeline from '~/components/spec/SpecReviewTimeline.vue'
 import SpecTransitionActions from '~/components/spec/SpecTransitionActions.vue'
 
@@ -80,6 +81,9 @@ const heading = computed(
         </h2>
         <MarkdownRenderer :content="spec.body || ''" />
       </section>
+
+      <!-- 交付验收追溯面板（WorkItem → spec → 实现 PR 链路，LINK-02） -->
+      <SpecDeliveryPanel :spec="spec" />
 
       <!-- 评审历史 -->
       <section class="card p-5 space-y-3">
