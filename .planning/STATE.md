@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
-stopped_at: Completed 56-02-PLAN.md（compat 真实 RAG 检索 progress 透出，Phase 56 完成 2/2）
-last_updated: "2026-06-17T11:15:24Z"
-last_activity: 2026-06-17 -- Phase 56 Plan 02 完成（流式 RAG 检索 progress prelude，兑现 TRACE-01 可见效果）
+stopped_at: Completed 57-01-PLAN.md（Anthropic /v1/messages 非流式地基，Phase 57 1/2）
+last_updated: "2026-06-17T11:50:26Z"
+last_activity: 2026-06-17 -- Phase 57 Plan 01 完成（POST /v1/messages 非流式 + adapter 骨架，兑现 ANTHROPIC-01）
 progress:
   total_phases: 4
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 ## Current Position
 
-Phase: 56 (compat 内部工具调用 → progress/trace 事件透出) — COMPLETE (2/2 plans)
-Plan: 2 of 2 完成
-Status: Phase 56 complete; ready for Phase 57（Anthropic `/v1/messages`）
-Last activity: 2026-06-17 -- Phase 56 Plan 02 完成（流式 RAG 检索 progress prelude，兑现 TRACE-01 可见效果，tests/compat 55 passed）
+Phase: 57 (Anthropic 兼容端点 `/v1/messages`) — IN PROGRESS (1/2 plans)
+Plan: 1 of 2 完成（57-01 非流式地基）
+Status: 57-01 complete; ready for 57-02（流式 SSE + thinking block prelude，兑现 ANTHROPIC-02）
+Last activity: 2026-06-17 -- Phase 57 Plan 01 完成（POST /v1/messages 非流式 + anthropic_adapter 骨架，兑现 ANTHROPIC-01，tests/compat 94 passed）
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
@@ -258,6 +258,7 @@ Last activity: 2026-06-17 -- Phase 56 Plan 02 完成（流式 RAG 检索 progres
 |--------|-------|
 | Phase 56 P56-01 | 11 min | 3 tasks | 4 files |
 | Phase 56 P56-02 | 13 min | 3 tasks | 7 files |
+| Phase 57 P57-01 | 5 min | 3 tasks | 9 files |
 
 **Milestone v0.9.0:**
 
@@ -472,9 +473,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-17
-Stopped at: Completed 56-02-PLAN.md（流式 RAG 检索 progress prelude，Phase 56 完成 2/2）
+Stopped at: Completed 57-01-PLAN.md（Anthropic /v1/messages 非流式地基，Phase 57 1/2）
 Resume file: None
-Next: Phase 57（Anthropic 兼容端点 `/v1/messages`，复用 56 的 progress 透出抽象）——`/gsd-plan-phase 57`
+Next: 57-02（流式 SSE + thinking block prelude + 真实 RAG 检索 progress，兑现 ANTHROPIC-02）——`/gsd-execute-phase 57`
 
 ## Operator Next Steps
 
