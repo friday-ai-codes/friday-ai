@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     "channels",
     "django_apscheduler",
     "accounts",
+    "audit",
     "system",
     "repositories",
     "codegraph",
