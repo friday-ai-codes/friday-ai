@@ -57,8 +57,15 @@ class RepoCodingTaskService:
         repo_waves: dict[str, int],
         repo_dep_edges: dict[str, list[str]],
     ) -> dict[str, RepoCodingTask]:
+        # D-51-1：SDD 仓（Repository.facets.methodology=="SDD"，Phase 48 检测器大写写入）
+        # 首次消费 follow_openspec（v0.8 预留位）。facets 在同步块内按标量 *_id 查（async 安全），
+        # 绝不裸 lazy-FK（D-51-6）。lazy import 防 import 环。
+        from repositories.models import Repository
+
         tasks: dict[str, RepoCodingTask] = {}
         for repo_id, wave in repo_waves.items():
+            facets = Repository.objects.filter(id=repo_id).values_list("facets", flat=True).first()
+            is_sdd = (facets or {}).get("methodology") == "SDD"
             task, created = RepoCodingTask.objects.get_or_create(
                 plan_version=plan_version,
                 repository_id=repo_id,
@@ -66,12 +73,20 @@ class RepoCodingTaskService:
                     "status": RepoCodingTaskStatus.PENDING,
                     "wave": wave,
                     "attempt": 0,
+                    "follow_openspec": is_sdd,
                 },
             )
-            # 已存在且 wave 漂移 → 回填（幂等：相等则不写）。
-            if not created and task.wave != wave:
-                task.wave = wave
-                task.save(update_fields=["wave", "updated_at"])
+            # 已存在且 wave / follow_openspec 漂移 → 合并到同一 save 回填（幂等：相等则不写）。
+            if not created:
+                update_fields: list[str] = []
+                if task.wave != wave:
+                    task.wave = wave
+                    update_fields.append("wave")
+                if task.follow_openspec != is_sdd:
+                    task.follow_openspec = is_sdd
+                    update_fields.append("follow_openspec")
+                if update_fields:
+                    task.save(update_fields=[*update_fields, "updated_at"])
             tasks[repo_id] = task
 
         # depends_on 仓级 DAG 边：同步块内 set(...)（仅连同 plan_version 下已建 task）。
