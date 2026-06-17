@@ -10,8 +10,8 @@
 
 ### 审计模型与 emit 地基（AUDIT）
 
-- [ ] **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（service 收口，INV-6 精神），append-only 不可篡改——无 update/delete 业务路径，模型层守护
-- [ ] **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计事件，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥/明文 token 字段在审计记录中脱敏不落明文
+- [x] **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（service 收口，INV-6 精神），append-only 不可篡改——无 update/delete 业务路径，模型层守护
+- [x] **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计事件，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥/明文 token 字段在审计记录中脱敏不落明文
 
 ### 敏感操作全量覆盖（AUDITCOV）
 
@@ -45,8 +45,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIT-01 | Phase 53 | Pending |
-| AUDIT-02 | Phase 53 | Pending |
+| AUDIT-01 | Phase 53 | Complete |
+| AUDIT-02 | Phase 53 | Complete |
 | AUDITCOV-01 | Phase 54 | Pending |
 | AUDITCOV-02 | Phase 54 | Pending |
 | AUDITUI-01 | Phase 55 | Pending |
