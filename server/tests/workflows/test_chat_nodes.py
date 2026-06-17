@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.feishu_im import FeishuIMError
 from workflows.nodes.base import ExecutionContext
 from workflows.nodes.integrations.feishu_chat import (
+    CreateGroupChatNode,
     FetchGroupChatNode,
     JoinGroupChatNode,
 )
@@ -463,3 +465,320 @@ async def test_chat_question_node_output_includes_rounds_info() -> None:
     assert result.output["max_rounds"] == 3
     assert result.output["current_round"] == 1
     assert result.output["rounds"] == []
+
+
+# ==================== CreateGroupChatNode 测试 ====================
+
+
+def _make_create_context(config: dict) -> ExecutionContext:
+    """构建带 workflow_execution（含 project）的 CreateGroupChatNode 上下文。"""
+    mock_execution = MagicMock()
+    mock_execution.workflow = MagicMock()
+    mock_execution.workflow.project = MagicMock()
+    return _make_context(config=config, workflow_execution=mock_execution)
+
+
+def _mock_create_im_service(
+    create_chat_return: dict | None = None,
+    create_chat_side_effect: Exception | None = None,
+) -> AsyncMock:
+    """构建带 create_chat 的 AsyncMock FeishuIMService。"""
+    service = AsyncMock()
+    service.create_chat = AsyncMock(
+        return_value=create_chat_return,
+        side_effect=create_chat_side_effect,
+    )
+    return service
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_happy() -> None:
+    """建群成功 → completed + chat_id 一等字段 + source，create_chat 收到解析后的 user_id_list。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={"name": "需求群", "member_ids": "ou_a, ou_b"},
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "需求群", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.next_handle == "default"
+    assert result.output["chat_id"] == "oc_x"
+    assert result.output["source"] == "create_group_chat"
+    assert result.output["chat_name"] == "需求群"
+    # 群主为 bot 时飞书不返回 owner_id → 容错空串（P-3）
+    assert result.output["owner_id"] == ""
+    assert result.output["writeback"]["attempted"] is False
+
+    mock_service.create_chat.assert_called_once()
+    call_kwargs = mock_service.create_chat.call_args[1]
+    assert call_kwargs["user_id_list"] == ["ou_a", "ou_b"]
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_member_ids_comma() -> None:
+    """member_ids 逗号分隔形态 → user_id_list=["ou_a","ou_b"]。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": "ou_a, ou_b"})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert mock_service.create_chat.call_args[1]["user_id_list"] == ["ou_a", "ou_b"]
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_member_ids_json() -> None:
+    """member_ids JSON 列表形态 → user_id_list=["ou_a","ou_b"]。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": '["ou_a","ou_b"]'})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert mock_service.create_chat.call_args[1]["user_id_list"] == ["ou_a", "ou_b"]
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_member_ids_template() -> None:
+    """member_ids 模板形态（get_template_value 返回 list）→ user_id_list=["ou_a","ou_b"]。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={"name": "群", "member_ids": "{{nodes.x.member_ids}}"},
+    )
+    ctx.get_template_value = MagicMock(return_value=["ou_a", "ou_b"])
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert mock_service.create_chat.call_args[1]["user_id_list"] == ["ou_a", "ou_b"]
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_missing_name() -> None:
+    """缺群名 → failed + error handle，且不调 create_chat。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "", "member_ids": "ou_a"})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    assert result.error is not None
+    mock_service.create_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_missing_members() -> None:
+    """缺成员 → failed + error handle，且不调 create_chat。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": ""})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    mock_service.create_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_create_chat_error() -> None:
+    """create_chat 抛 FeishuIMError → failed + error handle（D-7 建群失败）。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": "ou_a"})
+    mock_service = _mock_create_im_service(
+        create_chat_side_effect=FeishuIMError("no permission", code=230002),
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=mock_service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    assert "no permission" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_writeback_happy() -> None:
+    """配置 work_item 标识 → writeback 被以三元组+chat_id 调用，节点 completed。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={
+            "name": "群",
+            "member_ids": "ou_a",
+            "project_key": "P",
+            "work_item_id": "123",
+            "work_item_type": "story",
+        },
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_writeback = AsyncMock(return_value=True)
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id",
+            mock_writeback,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["writeback"]["attempted"] is True
+    assert result.output["writeback"]["success"] is True
+    mock_writeback.assert_called_once_with("P", "story", 123, "oc_x")
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_writeback_fail_soft() -> None:
+    """writeback DB 异常 → 节点仍 completed 返回 chat_id，异常不冒泡（D-7 fail-soft）。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={
+            "name": "群",
+            "member_ids": "ou_a",
+            "project_key": "P",
+            "work_item_id": "123",
+        },
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_writeback = AsyncMock(side_effect=Exception("db down"))
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id",
+            mock_writeback,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["chat_id"] == "oc_x"
+    assert result.output["writeback"]["attempted"] is True
+    assert result.output["writeback"]["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_writeback_not_found() -> None:
+    """writeback 返回 False（WorkItem 不存在）→ completed + success False。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={
+            "name": "群",
+            "member_ids": "ou_a",
+            "project_key": "P",
+            "work_item_id": "123",
+        },
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_writeback = AsyncMock(return_value=False)
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id",
+            mock_writeback,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["writeback"]["attempted"] is True
+    assert result.output["writeback"]["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_no_writeback_config() -> None:
+    """未配 work_item 标识 → 不调 awriteback，completed + attempted False。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": "ou_a"})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_writeback = AsyncMock(return_value=True)
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id",
+            mock_writeback,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["writeback"]["attempted"] is False
+    mock_writeback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_group_chat_auto_registered() -> None:
+    """@register_node 自动注册：NodeRegistry.get("create_group_chat") 返回 CreateGroupChatNode。"""
+    from workflows.nodes.registry import NodeRegistry
+
+    assert NodeRegistry.get("create_group_chat") is CreateGroupChatNode
+    assert CreateGroupChatNode.node_type == "create_group_chat"
