@@ -21,7 +21,11 @@ from agents.core.events import (
     TOOL_USE_START,
     AgentEvent,
 )
-from compat.progress import make_reasoning_chunk, tool_event_to_progress
+from compat.progress import (
+    make_reasoning_chunk,
+    retrieval_to_progress,
+    tool_event_to_progress,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 6.1 纯函数映射单测
@@ -107,6 +111,77 @@ def test_progress_text_never_leaks_result_or_error_sentinel() -> None:
         out = tool_event_to_progress(evt)
         assert out is None
         assert sentinel not in (out or "")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Plan 02：retrieval_to_progress 纯函数（命中计数→progress 文本，非敏感）
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeLayer:
+    """鸭子类型层快照：仅暴露 result_count。"""
+
+    def __init__(self, result_count: int) -> None:
+        self.result_count = result_count
+
+
+class _FakeResult:
+    """鸭子类型检索结果：兼容 RagSearchResult / HybridSearchResult 字段子集。"""
+
+    def __init__(
+        self,
+        *,
+        final_context: str = "",
+        layers: list[_FakeLayer] | None = None,
+        repository_ids: list[str] | None = None,
+        query: str = "",
+    ) -> None:
+        self.final_context = final_context
+        self.layers = layers or []
+        self.repository_ids = repository_ids or []
+        self.query = query
+
+
+def test_retrieval_hit_returns_two_progress_texts() -> None:
+    """命中（final_context 非空 + layers result_count=3）→ 两条 progress，第二条含 N=3。"""
+    result = _FakeResult(final_context="ctx", layers=[_FakeLayer(3)])
+    assert retrieval_to_progress(result) == ["正在检索 RAG…", "检索完成，命中 3 处"]
+
+
+def test_retrieval_hit_sums_multiple_layers() -> None:
+    """多层 result_count 求和（2 + 5 = 7）。"""
+    result = _FakeResult(final_context="ctx", layers=[_FakeLayer(2), _FakeLayer(5)])
+    assert retrieval_to_progress(result) == ["正在检索 RAG…", "检索完成，命中 7 处"]
+
+
+def test_retrieval_empty_context_returns_empty() -> None:
+    """未命中（final_context 空）→ 空列表（不合成）。"""
+    assert retrieval_to_progress(_FakeResult(final_context="")) == []
+
+
+def test_retrieval_none_result_returns_empty() -> None:
+    """result 为 None → 空列表。"""
+    assert retrieval_to_progress(None) == []
+
+
+def test_retrieval_empty_layers_falls_back_to_repository_ids() -> None:
+    """layers 空、repository_ids=["a","b"] → N==2（回退计数）。"""
+    result = _FakeResult(final_context="ctx", layers=[], repository_ids=["a", "b"])
+    assert retrieval_to_progress(result) == ["正在检索 RAG…", "检索完成，命中 2 处"]
+
+
+def test_retrieval_progress_never_leaks_sentinel() -> None:
+    """sentinel 安全：final_context/query 含敏感串 → 两条 progress 文本均不含任一 sentinel。"""
+    result = _FakeResult(
+        final_context="SENTINEL_CTX_secret 代码上下文片段",
+        layers=[_FakeLayer(1)],
+        query="SENTINEL_QUERY 用户原始问题",
+    )
+    texts = retrieval_to_progress(result)
+    assert len(texts) == 2
+    joined = "".join(texts)
+    assert "SENTINEL_CTX_secret" not in joined
+    assert "SENTINEL_QUERY" not in joined
 
 
 # ──────────────────────────────────────────────────────────────────────────────

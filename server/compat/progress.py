@@ -25,7 +25,7 @@ from agents.core.events import TOOL_USE_START, AgentEvent
 
 from .streaming import sse_encode
 
-__all__ = ["make_reasoning_chunk", "tool_event_to_progress"]
+__all__ = ["make_reasoning_chunk", "retrieval_to_progress", "tool_event_to_progress"]
 
 
 # 工具名 → 中文高层语义映射表（纯数据常量）。
@@ -64,6 +64,41 @@ def tool_event_to_progress(evt: AgentEvent) -> str | None:
     if not tool_name:
         return None
     return _TOOL_PROGRESS_LABELS.get(tool_name)
+
+
+def retrieval_to_progress(result: Any | None) -> list[str]:
+    """把 RAG 检索结果派生为对外 progress 文本（b2 元数据驱动，命中计数→文本）。
+
+    背景（56-RESEARCH §3 D-1 Option B/b2）：compat 链路下 RAG/grep 检索是
+    `prepare_messages` 内、流式开始前的同步函数调用，**不**经 AgentEvent 流
+    （F-2）。故无法走 `tool_event_to_progress` 事件映射；改由 view 层据检索结果
+    的**非敏感命中计数**合成 prelude progress chunk，本函数负责该派生。
+
+    行为契约：
+    - 命中（`result.final_context` 非空）→ 返回两条：
+      `["正在检索 RAG…", f"检索完成，命中 {N} 处"]`。
+    - 未命中（`final_context` 为空 / `result` 为 None）→ 返回 `[]`（不合成，
+      保证无命中时 SSE 与现状逐字等价、不产空 chunk）。
+    - N 为**非敏感计数**：layers 非空时取 `sum(layer.result_count)`；layers 为空
+      时回退 `len(repository_ids)`（仍为非敏感标量）；保证 N 为非负 int。
+
+    安全（INV-5 / TRACE-02，硬约束）：只读 `final_context` 的**真值**（判空，
+    绝不读取其字符内容）与 `layers.result_count` / `repository_ids` 计数标量；
+    **绝不**内联 `final_context` 文本、`query` 原文、`items` 内代码片段或 score。
+    用 `getattr(..., default)` 鸭子类型读取，兼容 `RagSearchResult` 与
+    `HybridSearchResult`，不 import 具体类型避免耦合。
+    """
+    if result is None:
+        return []
+    if not getattr(result, "final_context", None):
+        return []
+    layers = getattr(result, "layers", None) or []
+    if layers:
+        count = sum(int(getattr(layer, "result_count", 0) or 0) for layer in layers)
+    else:
+        count = len(getattr(result, "repository_ids", None) or [])
+    count = max(int(count), 0)
+    return ["正在检索 RAG…", f"检索完成，命中 {count} 处"]
 
 
 def make_reasoning_chunk(common: dict[str, Any], text: str, include_usage: bool) -> bytes:
