@@ -336,7 +336,7 @@ class FeishuBotService:
                             build_streaming_card(tool_names),
                         )
                 elif event.type == TEXT_DELTA:
-                    # P-1：流式正文只消费 TEXT_DELTA，绝不读 PART_DELTA（双轨共存否则正文翻倍）。
+                    # P-1：流式正文只消费 TEXT_DELTA，绝不读 parts 双轨增量事件（否则正文翻倍）。
                     delta = str(event.data.get("text") or "")
                     if not delta:
                         continue

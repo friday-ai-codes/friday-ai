@@ -749,3 +749,184 @@ class TestFeishuBotPipeline:
         )
         assert "思考中" not in closeout_content
         assert "已回复" in closeout_content
+
+    async def test_cardkit_create_failure_falls_back_to_answer_card(self) -> None:
+        project = await Project.objects.acreate(name="Friday CKCreate", feishu_project_key="friday-ckcreate")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckcreate", root_message_id="msg_ckcreate")
+        await FeishuBotMessage.objects.acreate(
+            message_id="msg_ckcreate",
+            thread=thread,
+            chat_id="chat_ckcreate",
+            sender_open_id="ou_ckcreate",
+            message_type="text",
+            normalized_text="friday-ckcreate 解释一下",
+            quote_message_id="",
+            mentioned_bot=True,
+            raw_payload={},
+        )
+        im_service = _cardkit_im_service(
+            create_card_entity=AsyncMock(side_effect=FeishuIMError("租户未开通", code=99991672)),
+        )
+
+        async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+            async for event in _text_delta_stream(final_answer="降级后的回答"):
+                yield event
+
+        with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+            "feishu.bot.service.ConversationService.create_conversation",
+            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckcreate")),
+        ), patch(
+            "feishu.bot.service.ConversationService.send_message_stream",
+            new=fake_send_message_stream,
+        ), patch(
+            "feishu.bot.service._CARDKIT_STREAM_THROTTLE_S",
+            0,
+        ):
+            result = await FeishuBotService().process_message("msg_ckcreate")
+
+        # create 失败 → 绝不推流/收尾，完全降级出 build_answer_card（答案/引用/usage 不丢）
+        assert result["status"] == "answered"
+        im_service.stream_card_content.assert_not_awaited()
+        im_service.settle_card_stream.assert_not_awaited()
+        answer_card = im_service.update_card.await_args.args[1]
+        content = "\n".join(e.get("content", "") for e in answer_card["elements"] if isinstance(e, dict))
+        assert "降级后的回答" in content
+        assert "已参考上下文" in content
+
+    async def test_cardkit_stream_failure_midway_degrades(self) -> None:
+        project = await Project.objects.acreate(name="Friday CKStream", feishu_project_key="friday-ckstream")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckstream", root_message_id="msg_ckstream")
+        await FeishuBotMessage.objects.acreate(
+            message_id="msg_ckstream",
+            thread=thread,
+            chat_id="chat_ckstream",
+            sender_open_id="ou_ckstream",
+            message_type="text",
+            normalized_text="friday-ckstream 解释一下",
+            quote_message_id="",
+            mentioned_bot=True,
+            raw_payload={},
+        )
+        im_service = _cardkit_im_service(
+            stream_card_content=AsyncMock(side_effect=[True, FeishuIMError("rate limit", code=99991400)]),
+        )
+
+        async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+            async for event in _text_delta_stream(final_answer="中途失败后的回答"):
+                yield event
+
+        with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+            "feishu.bot.service.ConversationService.create_conversation",
+            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckstream")),
+        ), patch(
+            "feishu.bot.service.ConversationService.send_message_stream",
+            new=fake_send_message_stream,
+        ), patch(
+            "feishu.bot.service._CARDKIT_STREAM_THROTTLE_S",
+            0,
+        ):
+            result = await FeishuBotService().process_message("msg_ckstream")
+
+        # 中途推流失败 → 失效后不再推、终态不 settle、降级出 answer 卡
+        assert result["status"] == "answered"
+        assert im_service.stream_card_content.await_count == 2
+        im_service.settle_card_stream.assert_not_awaited()
+        answer_card = im_service.update_card.await_args.args[1]
+        content = "\n".join(e.get("content", "") for e in answer_card["elements"] if isinstance(e, dict))
+        assert "中途失败后的回答" in content
+        assert "已参考上下文" in content
+
+    async def test_cardkit_settle_failure_still_answers(self) -> None:
+        project = await Project.objects.acreate(name="Friday CKSettle", feishu_project_key="friday-cksettle")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_cksettle", root_message_id="msg_cksettle")
+        await FeishuBotMessage.objects.acreate(
+            message_id="msg_cksettle",
+            thread=thread,
+            chat_id="chat_cksettle",
+            sender_open_id="ou_cksettle",
+            message_type="text",
+            normalized_text="friday-cksettle 解释一下",
+            quote_message_id="",
+            mentioned_bot=True,
+            raw_payload={},
+        )
+        im_service = _cardkit_im_service(
+            settle_card_stream=AsyncMock(side_effect=FeishuIMError("settle fail", code=300317)),
+        )
+
+        async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+            async for event in _text_delta_stream(final_answer="你好"):
+                yield event
+
+        with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+            "feishu.bot.service.ConversationService.create_conversation",
+            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="cksettle")),
+        ), patch(
+            "feishu.bot.service.ConversationService.send_message_stream",
+            new=fake_send_message_stream,
+        ), patch(
+            "feishu.bot.service._CARDKIT_STREAM_THROTTLE_S",
+            0,
+        ):
+            result = await FeishuBotService().process_message("msg_cksettle")
+
+        await thread.arefresh_from_db()
+        # W-2：内容已送达，仅 settle 失败 → 视为 answered（CardKit message_id），绝不重复发 answer 卡
+        assert result["status"] == "answered"
+        assert thread.last_bot_message_id == "om_1"
+        im_service.settle_card_stream.assert_awaited_once()
+        # 仅 TOOL_USE_START + closeout 两次 update_card；绝无第二张 build_answer_card（无「已参考上下文」）
+        assert im_service.update_card.await_count == 2
+        for call in im_service.update_card.await_args_list:
+            card = call.args[1]
+            content = "\n".join(e.get("content", "") for e in card["elements"] if isinstance(e, dict))
+            assert "已参考上下文" not in content
+
+    async def test_waiting_stream_does_not_create_cardkit(self) -> None:
+        project = await Project.objects.acreate(name="Friday CKWait", feishu_project_key="friday-ckwait")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckwait", root_message_id="msg_ckwait")
+        await FeishuBotMessage.objects.acreate(
+            message_id="msg_ckwait",
+            thread=thread,
+            chat_id="chat_ckwait",
+            sender_open_id="ou_ckwait",
+            message_type="text",
+            normalized_text="friday-ckwait 做一次深度分析",
+            quote_message_id="",
+            mentioned_bot=True,
+            raw_payload={},
+        )
+        im_service = _cardkit_im_service(
+            send_card=AsyncMock(side_effect=["welcome_ckwait", "processing_ckwait"]),
+        )
+
+        async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+            async for event in _waiting_stream(blocking_task_count=2):
+                yield event
+
+        with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+            "feishu.bot.service.ConversationService.create_conversation",
+            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckwait")),
+        ), patch(
+            "feishu.bot.service.ConversationService.send_message_stream",
+            new=fake_send_message_stream,
+        ), patch(
+            "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_ATTEMPTS",
+            1,
+            create=True,
+        ), patch(
+            "feishu.bot.service.WAITING_FINAL_ANSWER_POLL_INTERVAL_SECONDS",
+            0,
+            create=True,
+        ):
+            result = await FeishuBotService().process_message("msg_ckwait")
+
+        # F-1 + P-9 边界：waiting 无 TEXT_DELTA → 绝不创建 CardKit 实体，走既有 background 卡
+        assert result["status"] == "waiting"
+        im_service.create_card_entity.assert_not_awaited()
+        im_service.send_card_entity.assert_not_awaited()
+        im_service.stream_card_content.assert_not_awaited()
+        im_service.settle_card_stream.assert_not_awaited()
+        waiting_card = im_service.update_card.await_args.args[1]
+        content = "\n".join(e.get("content", "") for e in waiting_card["elements"] if isinstance(e, dict))
+        assert "后台分析中" in content
