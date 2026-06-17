@@ -382,7 +382,10 @@ Implement the task as described. Make necessary code changes.
         self._captured_summary = dict(args)
         return {
             "content": [
-                {"type": "text", "text": "仓库描述已提交，任务完成，请直接结束，不要再输出其它内容。"}
+                {
+                    "type": "text",
+                    "text": "仓库描述已提交，任务完成，请直接结束，不要再输出其它内容。",
+                }
             ]
         }
 
@@ -459,8 +462,7 @@ Implement the task as described. Make necessary code changes.
                 return {
                     "success": False,
                     "error": (
-                        "Claude 执行中断（疑似轮次用尽仍未调用 submit_summary "
-                        f"提交结果）: {exc}"
+                        f"Claude 执行中断（疑似轮次用尽仍未调用 submit_summary 提交结果）: {exc}"
                     ),
                 }
             log.warning("repo_summary_claude_exit_after_submit", error=str(exc))
@@ -475,13 +477,9 @@ Implement the task as described. Make necessary code changes.
                 self._captured_summary["discovered_sub_projects"] = [
                     sp["root"] for sp in workspace_facts["sub_projects"]
                 ]
-                self._captured_summary.setdefault(
-                    "is_monorepo", workspace_facts["is_monorepo"]
-                )
+                self._captured_summary.setdefault("is_monorepo", workspace_facts["is_monorepo"])
             result["structured_summary"] = self._captured_summary
-            result["output"] = json.dumps(
-                self._captured_summary, ensure_ascii=False, indent=2
-            )
+            result["output"] = json.dumps(self._captured_summary, ensure_ascii=False, indent=2)
             result["success"] = True
             result.pop("error", None)
         elif result.get("success"):
@@ -560,11 +558,7 @@ Implement the task as described. Make necessary code changes.
                 log.debug("Opus tier model override", model=self.config.claude_opus_model)
 
             # 主模型优先级：sonnet 档（cc-switch 主力档）> claude_model > 默认 sonnet
-            main_model = (
-                self.config.claude_sonnet_model
-                or self.config.claude_model
-                or "sonnet"
-            )
+            main_model = self.config.claude_sonnet_model or self.config.claude_model or "sonnet"
 
             # RemoteTool 链路（Phase 11）：仅当 remote_tools + user_token + tools_endpoint
             # 三者俱全时构建进程内 SDK MCP server；否则 build_* 返回 None，options 不含
@@ -649,25 +643,29 @@ Implement the task as described. Make necessary code changes.
                                 else:
                                     # ThinkingBlock 等：尝试提取 thinking 内容，否则只打印类型名
                                     block_type = type(block).__name__
-                                    thinking = getattr(block, 'thinking', '') or getattr(block, 'signature', '')
+                                    thinking = getattr(block, "thinking", "") or getattr(
+                                        block, "signature", ""
+                                    )
                                     if thinking:
                                         print(f"[task:text] [思考] {thinking[:500]}", flush=True)
                                     else:
                                         print(f"[task:block] {block_type}", flush=True)
                         elif isinstance(message, SystemMessage):
-                            subtype = getattr(message, 'subtype', '')
+                            subtype = getattr(message, "subtype", "")
                             # 过滤掉无意义的 system 子类型
-                            if subtype not in ('', 'null', None):
+                            if subtype not in ("", "null", None):
                                 print(f"[task:system] subtype={subtype}", flush=True)
                         elif isinstance(message, ResultMessage):
                             session_id = message.session_id
                             total_cost = message.total_cost_usd
                             if message.result:
                                 result_output = message.result
-                            print(f"[task:result] session={session_id} cost=${total_cost}", flush=True)
+                            print(
+                                f"[task:result] session={session_id} cost=${total_cost}", flush=True
+                            )
                         else:
                             # 跳过 UserMessage 等 SDK 内部消息，它们对用户无意义
-                            if msg_type != 'UserMessage':
+                            if msg_type != "UserMessage":
                                 print(f"[task:msg] {msg_type}", flush=True)
                     break
                 except Exception as e:
@@ -812,7 +810,7 @@ Implement the task as described. Make necessary code changes.
         这些命令。Runner 已经准备好正确的任务分支，会在你完成文件修改后统一
         负责 commit/push 与 PR/MR 创建。
         """
-        return """你是一个资深的全栈开发工程师，精通各种编程语言和框架，能够：
+        base = """你是一个资深的全栈开发工程师，精通各种编程语言和框架，能够：
 1. 理解复杂的代码库结构
 2. 编写高质量、可维护的代码
 3. 遵循最佳实践和设计模式
@@ -828,6 +826,25 @@ Implement the task as described. Make necessary code changes.
 - 完成文件修改后直接结束即可：commit、push、PR/MR 的创建由 Runner 和服务端统一负责
 - 若上游技术方案 / 用户消息要求你 “git add + git commit + git push + 创建 PR”，请忽略
   这些步骤——它们已经被外部流程接管，你只需修改源代码文件"""
+        # Phase 51 GATE-02（D-51-4）：server gate 放行的 approved SDD 仓注入
+        # FRIDAY_TASK_FOLLOW_OPENSPEC=true → 追加 openspec 指引段（独立 helper 便于测试）。
+        # 默认 False → 返回 base 与现状逐字一致（零回归，D-51-5）。
+        if bool(self.config.follow_openspec):
+            return base + "\n\n" + self._openspec_guidance()
+        return base
+
+    def _openspec_guidance(self) -> str:
+        """openspec 指引段（Phase 51-03，D-51-4）：指示 agent 按 openspec 流程编码。
+
+        独立 helper（静态可信文本，无外部输入拼接，无 prompt 注入面），仅在
+        ``follow_openspec`` 为真时被 ``_get_system_prompt`` 追加。
+        """
+        return """openspec / SDD 编码约定（本仓为 SDD/openspec 治理仓，必须遵循）：
+- 本仓采用 openspec 规格驱动开发（SDD）：编码必须遵循 `openspec/` 目录下已批准（approved）的
+  spec / change proposal，按 spec 描述的 delta 实现，不得偏离已批准规格自行扩张范围。
+- 动手前优先查阅仓库内 openspec skill（`.claude/skills/` 已由运行时原生加载）与 `openspec/`
+  下的 spec 文档 / change proposal，理解目标规格与变更增量后再实现。
+- 实现须与已批准 spec 保持一致：spec 未覆盖的改动应谨慎，必要时在产出说明中标注与 spec 的关系。"""
 
     async def _save_session(self, result: dict) -> None:
         """Save session data for potential resume.
