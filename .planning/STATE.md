@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
-stopped_at: v0.10.0 归档完成；v0.11.0 里程碑定稿（PROJECT/REQUIREMENTS/ROADMAP/STATE）
-last_updated: "2026-06-17T10:51:14.792Z"
-last_activity: 2026-06-17 -- Phase 56 Plan 01 完成（compat progress 机制层）
+stopped_at: Completed 56-02-PLAN.md（compat 真实 RAG 检索 progress 透出，Phase 56 完成 2/2）
+last_updated: "2026-06-17T11:15:24Z"
+last_activity: 2026-06-17 -- Phase 56 Plan 02 完成（流式 RAG 检索 progress prelude，兑现 TRACE-01 可见效果）
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 13
+  completed_plans: 2
+  percent: 25
 ---
 
 # Project State
@@ -25,16 +25,16 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 ## Current Position
 
-Phase: 56 (compat 内部工具调用 → progress/trace 事件透出) — EXECUTING
-Plan: 2 of 2 (Plan 01 完成)
-Status: Executing Phase 56
-Last activity: 2026-06-17 -- Phase 56 Plan 01 完成（compat progress 纯函数机制层 + adapter 映射 + 四层守护测试，43 passed）
+Phase: 56 (compat 内部工具调用 → progress/trace 事件透出) — COMPLETE (2/2 plans)
+Plan: 2 of 2 完成
+Status: Phase 56 complete; ready for Phase 57（Anthropic `/v1/messages`）
+Last activity: 2026-06-17 -- Phase 56 Plan 02 完成（流式 RAG 检索 progress prelude，兑现 TRACE-01 可见效果，tests/compat 55 passed）
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | 🚧 Plan 01/02 完成 |
+| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ✅ Complete (2/2 plans) |
 | 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ⬜ Not started |
 | 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ⬜ Not started |
 | 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
@@ -252,6 +252,13 @@ Last activity: 2026-06-17 -- Phase 56 Plan 01 完成（compat progress 纯函数
 | Phase 46 P46-01 | ~5min | 2 tasks | 2 files |
 | Phase 46 P46-02 | ~14min | 2 tasks | 4 files |
 
+**Milestone v0.11.0:**
+
+| Metric | Value |
+|--------|-------|
+| Phase 56 P56-01 | 11 min | 3 tasks | 4 files |
+| Phase 56 P56-02 | 13 min | 3 tasks | 7 files |
+
 **Milestone v0.9.0:**
 
 | Metric | Value |
@@ -378,6 +385,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 51]: 51-02: AICodingNode `_apply_openspec_gate` 独立可测 helper（GATE-01 fail-closed）——仅 wave 模式（service+tasks_by_repo 非空）执行、legacy/非 wave 短路零回归（不触任何 SddSpec 查询）；follow_openspec=False 放行不查 spec，True 校验关联 SddSpec（plan_version_id × repository_id）`.order_by("-updated_at").afirst()` status==APPROVED 放行、未批准经 mark_gate_blocked(spec_not_approved, status|missing) 拦截；单仓 try/except fail-closed（gate_error,unknown）隔离异常绝不冒泡崩 wave；拦截仓并入 `_dispatch_wave` failed 返回 → aadvance 传递闭包阻断下游 upstream_failed。gate 在 _dispatch_wave 顶部一处生效（首发+wave 推进两路覆盖）。GATE-02 server 半：`_run_repo_coding` 加 `follow_openspec` 参数，approved SDD 仓 metadata 注入 `env_FRIDAY_TASK_FOLLOW_OPENSPEC="true"`（PF-06 逐键范式，openspec_env 与 git_env/anthropic_env 同形），非 SDD/legacy 不含该键；docstring 字面 SddSpec(...) 改全角括号避 INV-6 grep 误判（Rule 1 自修）
 - [Phase 51]: 51-03: task GATE-02 task 半——`TaskConfig.follow_openspec: bool=False`（env_prefix 自动映射 FRIDAY_TASK_FOLLOW_OPENSPEC，缺省 False 零回归）；`_get_system_prompt` 末尾 `if bool(self.config.follow_openspec): base + "\n\n" + self._openspec_guidance()` 条件追加，`_openspec_guidance` 独立 helper（静态中文 openspec 指引段，无外部输入拼接无注入面），缺省路径返回 base 逐字等现状；`.claude/skills` 复用既有 `setting_sources=["project"]` 原生加载不改；既有 test_callback.py 两处 MagicMock-config 用例显式 `config.follow_openspec=False` 防真值 Mock 误触 openspec 追加致零回归断言失真（T-51-MOCK）
 - [Phase 56]: 56-01: compat progress 纯函数机制层 server/compat/progress.py——tool_event_to_progress 仅读 tool_name 查中文映射表（search_rag/grep/get_file/仓库分析路由），TOOL_USE_RESULT/未知/缺名一律 None（保守静默 OQ-3），绝不读 tool_input/result/error（INV-5）；make_reasoning_chunk 复用 sse_encode 产 reasoning_content chunk（结构与 THINKING 逐字一致）；不 import §15 event_taxonomy（P-1，仅语义对齐）。translate_stream 新增 TOOL_USE_*→reasoning_content 分支（None 静默/非空 yield），绝不写 delta.tool_calls/finish_reason=tool_calls（TRACE-02）。**DEVIATION D-1**：compat _build_runner 不绑定 tools → TOOL_USE_* 永不发射 → 本 plan 恒走降级产 0 progress（机制预埋 + 前向兼容 + Phase 57 复用），可见效果由 Plan 02（真实 RAG 检索 progress 合成）兑现。tests/compat/ 17→43 passed
+- [Phase 56]: 56-02: compat 真实 RAG 检索 progress 透出（兑现 TRACE-01 可见效果，Option C 的 B 部分）——retrieval_to_progress(result)->list[str] 命中（final_context 非空）派生 ["正在检索 RAG…","检索完成，命中 N 处"]、未命中/None 返 []（N=sum(layers.result_count)，layers 空回退 len(repository_ids)，max(N,0)），只读非敏感计数标量绝不内联 final_context/query/items/score（INV-5）。request_handler 抽 _prepare 内核返回 (lc_messages, 检索结果|None)，prepare_messages 委托保留旧签名（4 测不回退），新增 prepare_messages_with_meta 暴露元数据。translate_stream 新增 prelude_texts（role chunk 后、正文前以 reasoning_content 透出；空则逐字等价）。views post 统一 prepare_messages_with_meta 单次检索，流式派生 prelude、非流式忽略 retr（content 零回归、不二次检索）。DEVIATION D-1 兑现：检索流前同步发生不发 AgentEvent（F-2），故 view 据非敏感计数元数据合成 progress（b2 元数据驱动）而非事件映射。tests/compat 43→55 passed。view 级 post(stream=True) 端到端断言两条检索 progress 先于正文且全流无 tool_calls
 - [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 
 ### Pending Todos
@@ -464,9 +472,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-17
-Stopped at: Completed 56-01-PLAN.md（compat progress 纯函数机制层 + adapter 映射 + 四层守护测试）
+Stopped at: Completed 56-02-PLAN.md（流式 RAG 检索 progress prelude，Phase 56 完成 2/2）
 Resume file: None
-Next: Phase 56 Plan 02（真实 RAG 检索 progress 合成，兑现 TRACE-01 可见效果 / Option B）——`/gsd-execute-phase 56`
+Next: Phase 57（Anthropic 兼容端点 `/v1/messages`，复用 56 的 progress 透出抽象）——`/gsd-plan-phase 57`
 
 ## Operator Next Steps
 
