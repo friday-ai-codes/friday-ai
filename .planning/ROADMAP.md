@@ -50,12 +50,11 @@
   2. spec draft 落 `Document(document_type=sdd_spec, source_kind=internal_generated)`，且经 `DocumentService` 单一入口写入（INV-6，禁旁路写表）
   3. 非 SDD 仓库的方案编排不产 spec（零回归）
   4. 产出的 spec draft 关联到来源 `WorkItem` 与 `PlanVersion`，可追溯其生成上下文
-**Plans**: 5 plans
-- [ ] 49-01-PLAN.md — SddSpec 脊柱模型 + status/change_kind 枚举 + curated re-export + 建表 migration（SPEC-01/SPEC-02）
-- [ ] 49-02-PLAN.md — DocumentService.create_internal_spec 内部生成文档单一写入入口（SPEC-01）
-- [ ] 49-03-PLAN.md — SddSpecService.create_draft（幂等）+ SddSpec INV-6 grep 守护（SPEC-01/SPEC-02）
-- [ ] 49-04-PLAN.md — spec_generation（SddSpecSynthesizer + agenerate_specs_for_plan）+ EVENT_SPEC_DRAFTED（SPEC-01）
-- [ ] 49-05-PLAN.md — ArchitectMergeAdapter._handle_pass best-effort 挂接 + 端到端/零回归/fail-soft/幂等测试（SPEC-01/SPEC-02）
+**Plans**: 4 plans
+- [ ] 49-01-PLAN.md — SddSpec 脊柱模型 + status/change_kind 枚举 + 建表 migration + DocumentService.create_internal_spec（数据底座，SPEC-01/SPEC-02）
+- [ ] 49-02-PLAN.md — SddSpecService.create_draft（幂等单一写入入口）+ SddSpec INV-6 grep 守护（SPEC-01/SPEC-02）
+- [ ] 49-03-PLAN.md — spec_generation（SddSpecSynthesizer + agenerate_specs_for_plan）+ EVENT_SPEC_DRAFTED + 对齐守护（SPEC-01/SPEC-02）
+- [ ] 49-04-PLAN.md — ArchitectMergeAdapter._handle_pass best-effort 挂接 + 端到端/零回归/fail-soft/幂等测试（SPEC-01/SPEC-02）
 
 ### Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示
 **Goal**: spec 具备完整可治理生命周期，评审留痕、用户可见可操作
@@ -125,7 +124,7 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 2/2 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 0/5 | Planned | - |
+| 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 0/4 | Planned | - |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 0/TBD | Not started | - |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/TBD | Not started | - |
 | 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/TBD | Not started | - |
