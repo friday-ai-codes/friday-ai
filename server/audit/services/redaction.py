@@ -24,37 +24,59 @@ __all__ = ["REDACTION_PLACEHOLDER", "_redact_audit_payload"]
 # 脱敏占位符（替换命中的敏感键值 / 值级密钥叶子）。
 REDACTION_PLACEHOLDER: Final[str] = "[已脱敏]"
 
-# ---- 敏感键名集（小写归一化后子串命中）----
-# 复刻 work_item_service._SECRET_KV_RE 键名集语义；归一化去分隔符后比较，命中
-# api_key / apikey / access_token / access-token 等书写变体。
-_SENSITIVE_KEY_TOKENS: Final[tuple[str, ...]] = (
-    "token",
-    "secret",
-    "password",
-    "passwd",
+# ---- 敏感键名集 ----
+# 复刻 work_item_service._SECRET_KV_RE 键名集语义。匹配采用「分段边界」而非裸子串，
+# 避免 token 误伤 LLM 域常见用量字段（prompt_tokens / tokens_used / max_tokens）。
+
+# 单词级敏感段：要求与 key 的某个**整段**（按 _ / - / 空格 / camelCase 切分）相等才命中。
+# 因此 access_token / token 命中，而 prompt_tokens（段为 "tokens"）/ max_tokens 不命中。
+_SENSITIVE_WORD_SEGMENTS: Final[frozenset[str]] = frozenset(
+    {
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "credential",
+        "authorization",
+    }
+)
+
+# 复合敏感词：本身已足够特异，按归一化（去分隔符）后子串命中，覆盖 api_key / apikey /
+# access_token / access-token 等书写变体；不会误伤计数类字段（prompttokens 不含这些复合词）。
+_SENSITIVE_COMPOUND_TOKENS: Final[tuple[str, ...]] = (
     "apikey",  # api_key / api-key 归一化后形态
     "accesstoken",
     "refreshtoken",
     "accesskey",
     "secretkey",
     "privatekey",
-    "credential",
-    "authorization",
     "encryptedconfig",
     "tokenhash",
     "appsecret",
 )
 
 
-def _normalize_key(key: str) -> str:
-    """键名归一化：转小写 + 去除 ``_`` / ``-`` / 空格分隔符，便于变体子串匹配。"""
-    return re.sub(r"[\s_\-]", "", key.lower())
+def _key_segments(key: str) -> list[str]:
+    """把键名切分为小写分段：先在 camelCase 边界插入分隔符，再按 ``_`` / ``-`` / 空格切分。
+
+    例：``accessToken`` → ``["access", "token"]``；``prompt_tokens`` → ``["prompt", "tokens"]``。
+    """
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+    s = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", s)
+    return [seg for seg in re.split(r"[\s_\-]+", s.lower()) if seg]
 
 
 def _is_sensitive_key(key: str) -> bool:
-    """键名（归一化后）命中任一敏感 token 子串 → True。"""
-    normalized = _normalize_key(key)
-    return any(token in normalized for token in _SENSITIVE_KEY_TOKENS)
+    """敏感键判定：任一整段命中单词级敏感段，或归一化后含任一复合敏感词 → True。
+
+    分段整词匹配避免 ``token`` 误伤 ``prompt_tokens`` / ``tokens_used`` / ``max_tokens``，
+    同时 ``access_token`` / ``api_key`` / ``secret`` / ``password`` 仍命中。
+    """
+    segments = _key_segments(key)
+    if any(seg in _SENSITIVE_WORD_SEGMENTS for seg in segments):
+        return True
+    normalized = "".join(segments)
+    return any(token in normalized for token in _SENSITIVE_COMPOUND_TOKENS)
 
 
 # ---- 值级密钥/高熵兜底（复刻 sensitive_detect._SECRET_PATTERNS，不 import）----
