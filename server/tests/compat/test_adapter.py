@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncGenerator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from django.test import AsyncClient
 
 from agents.core.events import (
     ERROR,
@@ -324,6 +326,243 @@ async def test_zero_regression_text_delta_sequence_no_extra_chunk() -> None:
     for c in chunks:
         for choice in c.get("choices", []):
             assert not choice.get("delta", {}).get("reasoning_content")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Plan 02：流式检索 progress prelude 集成测（6.2）+ 零回归 byte-eq（6.3）+ sentinel（6.4）
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _strip_volatile(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """去掉 id/created（随机/时钟）后用于 byte-eq 结构等价比较。"""
+    out: list[dict[str, Any]] = []
+    for c in chunks:
+        cc = dict(c)
+        cc.pop("id", None)
+        cc.pop("created", None)
+        out.append(cc)
+    return out
+
+
+def _ordered_deltas(sse_text: str) -> list[tuple[str, str]]:
+    """解析 SSE 文本，按序返回 (kind, text) 列表，kind ∈ {reasoning, content}。"""
+    ordered: list[tuple[str, str]] = []
+    for line in sse_text.split("\n"):
+        if not line.startswith("data: ") or "[DONE]" in line:
+            continue
+        try:
+            payload = json.loads(line[6:].strip())
+        except (ValueError, json.JSONDecodeError):
+            continue
+        for choice in payload.get("choices") or []:
+            delta = choice.get("delta", {})
+            if delta.get("reasoning_content"):
+                ordered.append(("reasoning", delta["reasoning_content"]))
+            elif delta.get("content"):
+                ordered.append(("content", delta["content"]))
+    return ordered
+
+
+@pytest.mark.asyncio
+async def test_prelude_texts_emitted_before_body_ordered() -> None:
+    """6.2 / TRACE-01：prelude 两条 reasoning_content 在首个 content chunk 之前、有序透出。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文内容"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(
+            runner, "test", model="friday-default",
+            prelude_texts=["正在检索 RAG…", "检索完成，命中 3 处"],
+        )
+    )
+    first_content_idx: int | None = None
+    pre_reasoning: list[str] = []
+    for i, c in enumerate(chunks):
+        if not c.get("choices"):
+            continue
+        delta = c["choices"][0].get("delta", {})
+        if delta.get("content") and first_content_idx is None:
+            first_content_idx = i
+        if delta.get("reasoning_content") and first_content_idx is None:
+            pre_reasoning.append(delta["reasoning_content"])
+    assert first_content_idx is not None, "应有正文 content chunk"
+    assert pre_reasoning == ["正在检索 RAG…", "检索完成，命中 3 处"]
+    # prelude chunk 结构合法 + 全流无 tool_calls
+    for c in chunks:
+        for choice in c.get("choices", []):
+            assert "tool_calls" not in choice.get("delta", {})
+            assert choice.get("finish_reason") != "tool_calls"
+            if choice.get("delta", {}).get("reasoning_content"):
+                assert choice.get("finish_reason") is None
+                assert c["object"] == "chat.completion.chunk"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_view_stream_emits_rag_progress_before_body() -> None:
+    """6.2 / TRACE-01 view 级端到端：post(stream=True) 命中 RAG → 正文前两条检索 progress 有序、全流无 tool_calls。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 1, "output": 1}, "status": "completed"}),
+    )
+    search_result = SimpleNamespace(
+        final_context="相关代码上下文",
+        layers=[SimpleNamespace(result_count=3)],
+        repository_ids=[],
+        query="解释代码",
+    )
+    with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=runner), \
+         patch(
+             "compat.request_handler.LayeredSearchService.search",
+             new_callable=AsyncMock, return_value=search_result,
+         ):
+        client = AsyncClient()
+        response = await client.post(
+            "/v1/chat/completions",
+            data=json.dumps({
+                "model": "friday-default",
+                "messages": [{"role": "user", "content": "解释代码"}],
+                "stream": True,
+            }),
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200
+    raw_parts: list[bytes] = []
+    async for chunk in response.streaming_content:
+        raw_parts.append(chunk)
+    sse_text = b"".join(raw_parts).decode()
+
+    ordered = _ordered_deltas(sse_text)
+    first_content = next((i for i, (k, _) in enumerate(ordered) if k == "content"), None)
+    assert first_content is not None, "应有正文 content"
+    pre = [t for (k, t) in ordered[:first_content] if k == "reasoning"]
+    assert pre == ["正在检索 RAG…", "检索完成，命中 3 处"]
+    # 全流无 tool_calls / finish_reason==tool_calls
+    for line in sse_text.split("\n"):
+        if not line.startswith("data: ") or "[DONE]" in line:
+            continue
+        try:
+            payload = json.loads(line[6:].strip())
+        except (ValueError, json.JSONDecodeError):
+            continue
+        for choice in payload.get("choices") or []:
+            assert "tool_calls" not in choice.get("delta", {})
+            assert choice.get("finish_reason") != "tool_calls"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_view_non_stream_content_zero_regression() -> None:
+    """6.3 / D-3 / P-6：非流式聚合命中 RAG 时 message.content 逐字不变，且不引入检索 progress。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "Hello, "}),
+        AgentEvent(type=TEXT_DELTA, data={"text": "world!"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 5, "output": 3}, "status": "completed"}),
+    )
+    search_result = SimpleNamespace(
+        final_context="相关代码上下文",
+        layers=[SimpleNamespace(result_count=3)],
+        repository_ids=[],
+        query="Say hello",
+    )
+    with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=runner), \
+         patch(
+             "compat.request_handler.LayeredSearchService.search",
+             new_callable=AsyncMock, return_value=search_result,
+         ):
+        client = AsyncClient()
+        response = await client.post(
+            "/v1/chat/completions",
+            data=json.dumps({
+                "model": "friday-default",
+                "messages": [{"role": "user", "content": "Say hello"}],
+                "stream": False,
+            }),
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200
+    data = json.loads(response.content)
+    message = data["choices"][0]["message"]
+    assert message["content"] == "Hello, world!"
+    # 非流式不传 prelude → 绝不引入检索 progress（content 不被污染）
+    assert "reasoning_content" not in message
+
+
+@pytest.mark.asyncio
+async def test_prelude_none_and_empty_byte_equivalent() -> None:
+    """6.3：prelude_texts=None / [] 与不传该参数（Plan 01 现状）结构逐字等价、不新增 chunk。"""
+
+    def _events() -> list[AgentEvent]:
+        return [
+            AgentEvent(type=TEXT_DELTA, data={"text": "Hello"}),
+            AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+        ]
+
+    default_chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "t", model="m")
+    )
+    none_chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "t", model="m", prelude_texts=None)
+    )
+    empty_chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "t", model="m", prelude_texts=[])
+    )
+    assert _strip_volatile(none_chunks) == _strip_volatile(default_chunks)
+    assert _strip_volatile(empty_chunks) == _strip_volatile(default_chunks)
+    assert len(default_chunks) == 3  # role + content + finish（无新增 progress chunk）
+
+
+@pytest.mark.asyncio
+async def test_prelude_include_usage_consistency() -> None:
+    """include_usage=True：每条 prelude reasoning chunk 带 usage=None，末尾仍恰好一个 choices=[] usage chunk。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "hi"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 3, "output": 2}, "status": "completed"}),
+    )
+    chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(
+            runner, "test", model="friday-default", include_usage=True,
+            prelude_texts=["正在检索 RAG…", "检索完成，命中 2 处"],
+        )
+    )
+    prelude_chunks = [
+        c for c in chunks
+        if c.get("choices") and c["choices"][0].get("delta", {}).get("reasoning_content")
+    ]
+    assert len(prelude_chunks) == 2
+    for c in prelude_chunks:
+        assert "usage" in c
+        assert c["usage"] is None
+    usage_chunks = [c for c in chunks if c.get("choices") == []]
+    assert len(usage_chunks) == 1
+    assert usage_chunks[0]["usage"]["total_tokens"] == 5
+
+
+@pytest.mark.asyncio
+async def test_prelude_sentinel_never_leaks_full_stream() -> None:
+    """6.4：retrieval_to_progress 输入含 SENTINEL_CTX/SENTINEL_Q → 派生 prelude 全量 SSE 不含任一 sentinel。"""
+    from compat.progress import retrieval_to_progress
+
+    result = SimpleNamespace(
+        final_context="SENTINEL_CTX_secret 敏感代码片段",
+        layers=[SimpleNamespace(result_count=1)],
+        repository_ids=[],
+        query="SENTINEL_Q 用户原始问题",
+    )
+    prelude = retrieval_to_progress(result)
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    raw = await _collect_raw(
+        OpenAICompatAdapter.translate_stream(runner, "t", model="m", prelude_texts=prelude)
+    )
+    text = raw.decode()
+    assert "SENTINEL_CTX_secret" not in text
+    assert "SENTINEL_Q" not in text
 
 
 # ──────────────────────────────────────────────────────────────────────────────
