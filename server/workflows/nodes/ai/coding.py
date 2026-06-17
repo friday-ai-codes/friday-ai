@@ -1219,6 +1219,25 @@ class AICodingNode(SubStepMixin, BaseNode):
             except Exception as exc:  # noqa: BLE001 — cross-ref 增强 fail-soft
                 log.warning("coding_cross_reference_failed", error=str(exc))
 
+        # LINK-01（52-01，D-52-3）：spec↔实现 PR 回填。逐 successful_mr best-effort 调
+        # SddSpecService.link_implementation_pr——SDD 仓回填 PR + 转 implemented，非 SDD
+        # 仓 no-op（零回归）。整段 try/except 吞为 warning，绝不阻断 PR 创建/通知/节点完成
+        # （镜像上方 cross-ref fail-soft 范式）。plan_version_id 缺失则跳过（与 cross-ref 同锚）。
+        link_plan_version_id = (plan_data or {}).get("plan_version_id")
+        if link_plan_version_id and successful_mrs:
+            try:
+                from delivery.services import SddSpecService  # lazy import 防循环
+
+                spec_service = SddSpecService()
+                for mr in successful_mrs:
+                    await spec_service.link_implementation_pr(
+                        plan_version_id=link_plan_version_id,
+                        repository_id=mr["repository_id"],
+                        pr_url=mr["mr_url"],
+                    )
+            except Exception as exc:  # noqa: BLE001 — spec↔PR 回填 fail-soft
+                log.warning("sdd_spec_pr_link_failed", error=str(exc))
+
         # INGEST-02（14-06）：MR 创建之后的完成锚点（时序防线：归档不挂容器回调）。
         # 先持久化后投递：mr_results 序列化写进 node_execution.output_data，task_result
         # normalizer 后台经 session.node_execution 重读（workflow 路径 mr_url 权威源）；
