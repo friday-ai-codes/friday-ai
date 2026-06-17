@@ -97,13 +97,15 @@ class AuditService:
                     actor_repr=_actor_repr(actor),
                     action=action,
                     target_type=target_type,
-                    target_id=str(target_id) if target_id != "" else "",
+                    # LOW-1：None / "" 均落空串（避免显式 target_id=None 被存成字面量 "None"）
+                    target_id="" if target_id in ("", None) else str(target_id),
                     target_repr=target_repr,
-                    before=_redact_audit_payload(before or {}),
-                    after=_redact_audit_payload(after or {}),
+                    # LOW-3：仅 None 视为"未提供"补 {}，保留 [] / 0 / False 等假值的语义
+                    before=_redact_audit_payload({} if before is None else before),
+                    after=_redact_audit_payload({} if after is None else after),
                     source=source,
                     occurred_at=occurred_at or timezone.now(),
-                    metadata=_redact_audit_payload(metadata or {}),
+                    metadata=_redact_audit_payload({} if metadata is None else metadata),
                 )
         except Exception:  # noqa: BLE001 — fail-soft，绝不冒泡阻断主操作；不记敏感载荷
             logger.warning("audit.emit_failed", action=action, target_type=target_type)
