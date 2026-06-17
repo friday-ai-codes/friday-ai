@@ -12,7 +12,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from services.feishu_im import FeishuIMClient, FeishuIMError, FeishuIMService
+from services.feishu_im import (
+    FeishuIMClient,
+    FeishuIMError,
+    FeishuIMService,
+    RateLimitError,
+)
 
 
 def _make_client() -> FeishuIMClient:
@@ -164,6 +169,131 @@ async def test_add_bot_to_chat_permission_denied():
 
         with pytest.raises(FeishuIMError, match="Bot 加入群聊失败"):
             await client.add_bot_to_chat("oc_restricted")
+
+
+# ============================================================================
+# create_chat（建群即拉人单步）
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_chat_success():
+    """create_chat 成功建群并返回含 chat_id 的 data；端点/params/body 形状正确。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 0, "data": {"chat_id": "oc_new", "name": "需求群"}}
+        )
+
+        result = await client.create_chat("需求群", user_id_list=["ou_a", "ou_b"])
+
+    assert result["chat_id"] == "oc_new"
+    assert mock_http.post.await_args.args[0].endswith("/im/v1/chats")
+    assert mock_http.post.await_args.kwargs["params"] == {"user_id_type": "open_id"}
+    assert mock_http.post.await_args.kwargs["json"]["name"] == "需求群"
+    assert mock_http.post.await_args.kwargs["json"]["user_id_list"] == ["ou_a", "ou_b"]
+
+
+@pytest.mark.asyncio
+async def test_create_chat_omits_empty_fields():
+    """create_chat 不传 owner_id/description 时 body 不含这两个字段。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 0, "data": {"chat_id": "oc_new"}}
+        )
+
+        await client.create_chat("群", user_id_list=["ou_a"])
+
+    body = mock_http.post.await_args.kwargs["json"]
+    assert "owner_id" not in body
+    assert "description" not in body
+
+
+@pytest.mark.asyncio
+async def test_create_chat_user_id_type_passthrough():
+    """create_chat 透传 user_id_type 到 query。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 0, "data": {"chat_id": "oc_new"}}
+        )
+
+        await client.create_chat("群", user_id_list=["u1"], user_id_type="user_id")
+
+    assert mock_http.post.await_args.kwargs["params"]["user_id_type"] == "user_id"
+
+
+@pytest.mark.asyncio
+async def test_create_chat_owner_and_set_bot_manager():
+    """create_chat 带 owner_id + set_bot_manager 时 body 含 owner_id、query 含 set_bot_manager。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 0, "data": {"chat_id": "oc_new"}}
+        )
+
+        await client.create_chat(
+            "群",
+            user_id_list=["ou_a"],
+            owner_id="ou_owner",
+            set_bot_manager=True,
+        )
+
+    assert mock_http.post.await_args.kwargs["json"]["owner_id"] == "ou_owner"
+    assert "set_bot_manager" in mock_http.post.await_args.kwargs["params"]
+
+
+@pytest.mark.asyncio
+async def test_create_chat_api_error():
+    """create_chat code!=0 时抛出 FeishuIMError 并带 code。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 230002, "msg": "no permission"}
+        )
+
+        with pytest.raises(FeishuIMError, match="创建群聊失败") as exc_info:
+            await client.create_chat("群", user_id_list=["ou_a"])
+
+    assert exc_info.value.code == 230002
+
+
+@pytest.mark.asyncio
+async def test_create_chat_rate_limit():
+    """create_chat 触发 rate limit（99991400）时抛出 RateLimitError。"""
+    client = _make_client()
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post.return_value = _mock_response(
+            {"code": 99991400, "msg": "rate limit"}
+        )
+
+        with pytest.raises(RateLimitError):
+            await client.create_chat("群", user_id_list=["ou_a"])
 
 
 # ============================================================================

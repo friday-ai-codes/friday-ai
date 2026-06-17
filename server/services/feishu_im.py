@@ -832,6 +832,89 @@ class FeishuIMClient:
             log.warning("bot_join_chat_failed", error=str(e), code=e.code)
             return {"success": False, "already_member": False, "error": str(e)}
 
+    async def create_chat(
+        self,
+        name: str,
+        *,
+        user_id_list: list[str] | None = None,
+        bot_id_list: list[str] | None = None,
+        owner_id: str = "",
+        description: str = "",
+        user_id_type: Literal["open_id", "union_id", "user_id"] = "open_id",
+        set_bot_manager: bool = False,
+    ) -> dict[str, Any]:
+        """创建群聊（建群即拉人单步，POST /im/v1/chats）。
+
+        一次请求完成建群 + 拉人 + 拉 bot——body 带 ``user_id_list``（≤50）/
+        ``bot_id_list``（≤5），不做建群后第二次 add_chat_members。手写 httpx
+        复用 ``get_tenant_access_token`` + ``httpx.AsyncClient``，与 ``add_bot_to_chat``
+        同构（仅 raise RateLimitError，不加 @retry 避免单测真实 sleep）。
+
+        Args:
+            name: 群名称（恒放进 body）。
+            user_id_list: 初始成员 ID 列表（≤50，非空才放进 body）。
+            bot_id_list: 初始机器人 App ID 列表（≤5，非空才放进 body）。
+            owner_id: 群主 ID（非空才放进 body；省略时由建群的 bot 自动成为群主）。
+            description: 群描述（非空才放进 body）。
+            user_id_type: 成员/群主 ID 类型（默认 open_id，透传到 query）。
+            set_bot_manager: 是否把建群机器人设为管理员（仅 owner_id 非空时随 query 下发）。
+
+        Returns:
+            API 响应的 data 字段（含 chat_id 及群元信息）。
+
+        Raises:
+            RateLimitError: 触发 rate limit（99991400）。
+            FeishuIMError: API 调用失败（code != 0）。
+        """
+        token = await self.get_tenant_access_token()
+        log = logger.bind(app_id=self.app_id, chat_name=name)
+
+        params: dict[str, Any] = {"user_id_type": user_id_type}
+        # set_bot_manager 仅在指定群主且需要建群 bot 兼任管理员时随 query 下发
+        if owner_id and set_bot_manager:
+            params["set_bot_manager"] = "true"
+
+        # body 仅放非空字段：name 恒放，其余非空才放（避免空值污染 payload）
+        payload: dict[str, Any] = {"name": name}
+        if user_id_list:
+            payload["user_id_list"] = user_id_list
+        if bot_id_list:
+            payload["bot_id_list"] = bot_id_list
+        if owner_id:
+            payload["owner_id"] = owner_id
+        if description:
+            payload["description"] = description
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/im/v1/chats",
+                params=params,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            data = response.json()
+
+            code = data.get("code", -1)
+
+            if code == 99991400 or "rate limit" in str(data).lower():
+                log.warning("rate_limit_hit", response=data)
+                raise RateLimitError(
+                    f"Rate limit exceeded: {data.get('msg', data)}", code=code
+                )
+
+            if code != 0:
+                log.error("create_chat_failed", response=data)
+                raise FeishuIMError(
+                    f"创建群聊失败: {data.get('msg', data)}", code=code
+                )
+
+            result: dict[str, Any] = data.get("data", {})
+            log.info("chat_created", chat_id=result.get("chat_id", ""))
+            return result
+
 
 async def _aget_system_feishu_credentials() -> tuple[str, str] | None:
     """Load system-level Feishu IM credentials if configured."""
@@ -983,6 +1066,28 @@ class FeishuIMService:
     async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
         """确保 Bot 在指定群聊中（委托给 client）。"""
         return await self.client.ensure_bot_in_chat(chat_id)
+
+    async def create_chat(
+        self,
+        name: str,
+        *,
+        user_id_list: list[str] | None = None,
+        bot_id_list: list[str] | None = None,
+        owner_id: str = "",
+        description: str = "",
+        user_id_type: Literal["open_id", "union_id", "user_id"] = "open_id",
+        set_bot_manager: bool = False,
+    ) -> dict[str, Any]:
+        """创建群聊（建群即拉人单步，委托给 client）。"""
+        return await self.client.create_chat(
+            name,
+            user_id_list=user_id_list,
+            bot_id_list=bot_id_list,
+            owner_id=owner_id,
+            description=description,
+            user_id_type=user_id_type,
+            set_bot_manager=set_bot_manager,
+        )
 
     async def get_chat_history(
         self,
