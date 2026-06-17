@@ -41,7 +41,15 @@ export interface SddSpec {
   updated_at: string
 }
 
-/** spec 详情（正文 + 评审历史 + 关联摘要）。 */
+/** 实现 PR 关联项（Phase 52 D-52-4，spec→PR 追溯，对齐后端 implementation_prs 元素）。 */
+export interface ImplementationPr {
+  pr_url: string
+  repository_id: string
+  /** 关联时间（ISO8601）。 */
+  linked_at: string
+}
+
+/** spec 详情（正文 + 评审历史 + 关联摘要 + 实现 PR 追溯）。 */
 export interface SddSpecDetail extends SddSpec {
   /** spec 正文 markdown（缺失为 null）。 */
   body: string | null
@@ -50,9 +58,12 @@ export interface SddSpecDetail extends SddSpec {
   /** 关联摘要（缺失项不返回）。 */
   relations: {
     repository?: { id: string, name: string, methodology?: string | null }
-    work_item?: { id: string, title: string }
+    /** 关联需求摘要；url 取 prd_url（可能为空串）。无 work_item 时该键缺失。 */
+    work_item?: { id: string, title: string, url: string }
     plan_version?: { id: string, version: number }
   }
+  /** 实现 PR 列表（Phase 52 LINK-01；无回填 → []）。 */
+  implementation_prs?: ImplementationPr[]
 }
 
 /** list 过滤参数。 */
