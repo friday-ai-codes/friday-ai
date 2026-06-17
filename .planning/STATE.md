@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: SDD / OpenSpec 支持
-status: planning
-last_updated: "2026-06-16T18:26:57.937Z"
-last_activity: 2026-06-16
+status: in_progress
+last_updated: "2026-06-17T01:40:00.000Z"
+last_activity: 2026-06-17
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 20
 ---
 
 # Project State
@@ -20,20 +20,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.9.0 进行中：让 spec-driven development 成为可治理的过程资产——SDD 仓库打标 → 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审 → spec↔需求/PR 关联 → 交付验收。
-**Current focus:** v0.9.0 路线图已定（Phases 48–52）；下一步 `/gsd-plan-phase 48`（SDD 仓库检测 + facets 打标 + 前端标签）。
+**Current focus:** v0.9.0 自治执行中。Phase 48（SDD 检测 + facets 打标 + 前端标签）已交付（verify human_needed：仅余真实容器/索引 E2E）。下一步 Phase 49（方案产 openspec spec + Document(sdd_spec)）。
 
 ## Current Position
 
-Phase: 48 (Not started)
+Phase: 49 (Not started) — Phase 48 complete
 Plan: —
-Status: Roadmap drafted — ready to plan Phase 48
-Last activity: 2026-06-17 — Milestone v0.9.0 roadmap created (Phases 48–52)
+Status: Phase 48 shipped (7 commits + IN-01 fix)；执行 Phase 49
+Last activity: 2026-06-17 — Phase 48 SDD 检测/打标/徽标交付（verify human_needed, review issues_found 0 BLOCKER）
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ⬜ Not started |
+| 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ✅ Complete (verify human_needed) |
 | 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ⬜ Not started |
 | 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ⬜ Not started |
 | 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ⬜ Not started |
