@@ -85,7 +85,10 @@ async def test_emit_event_best_effort_swallows_db_error() -> None:
 
 
 def test_all_events_equals_v07_orchestration_set() -> None:
-    """ALL_EVENTS 逐一对账 §15 v0.7 编排实际产出事件全集（无 work_item.syncing / coding.wave.*）。"""
+    """ALL_EVENTS 逐一对账编排产出事件全集：v0.7 §15 基线 + v0.9 新增 spec.drafted（Phase 49）。
+
+    （仍无 work_item.syncing / coding.wave.*——后者非 PlanSessionEvent 信封事件。）
+    """
     assert ALL_EVENTS == frozenset(
         {
             "knowledge.recalling",
@@ -99,5 +102,7 @@ def test_all_events_equals_v07_orchestration_set() -> None:
             "plan.merge.completed",
             "plan.validation.failed",
             "plan.session.failed",
+            # v0.9 Phase 49：SDD 仓融合后产 spec draft 事件
+            "spec.drafted",
         }
     )
