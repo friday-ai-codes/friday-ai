@@ -141,6 +141,96 @@ class DocumentService:
 
         return document
 
+    async def create_internal_spec(
+        self,
+        *,
+        work_item: WorkItem | None,
+        repository_label: str,
+        content: str,
+        title: str = "",
+        document: Document | None = None,
+    ) -> Document:
+        """**内部生成文档（spec 正文）落库的唯一写入收口**（D-49-2，INV-6）。
+
+        与 ``upsert_from_feishu``（external_feishu）并列——二者都收口于 DocumentService，
+        禁旁路写 Document/DocumentVersion（test_document_inv6_guard 守护）。内部文档
+        ``external_ref=""`` / ``feishu_tenant=""``（豁免飞书去重唯一约束
+        ``~Q(external_ref="")``），不派生 feishu_tenant、不记 WorkItemSyncState facet
+        （facet 仅 prd/tech_plan）。
+
+        Args:
+            work_item: 关联交付脊柱（SPEC-02 追溯）；None=chat 自然语言需求（INV-2）。
+            repository_label: SDD 仓标识（仅入日志上下文；内部 spec 无 external_ref，
+                不持久化为 external_ref——不得伪造破坏豁免语义）。
+            content: spec 正文快照；空串合法（缺段不缺实体）。
+            title: 预留位（本 phase 未持久化为独立字段）。
+            document: 既有 Document（version-existing 路径，供 SddSpecService 幂等/版本
+                复用）；None=首建。
+
+        Returns:
+            落库后的 Document 实例。
+        """
+        logger.info(
+            "create_internal_spec",
+            repository_label=repository_label,
+            work_item_id=str(work_item.id) if work_item is not None else None,
+            existing_document=str(document.id) if document is not None else None,
+        )
+        return await self._create_internal_spec_locked(
+            work_item=work_item,
+            content=content,
+            document=document,
+        )
+
+    @sync_to_async
+    def _create_internal_spec_locked(
+        self,
+        *,
+        work_item: WorkItem | None,
+        content: str,
+        document: Document | None,
+    ) -> Document:
+        """单锁原子：首建 internal Document / 既有 document 取锁 → hash 判定翻版本。
+
+        ``document is None``：建 Document(sdd_spec, internal_generated, snapshot,
+        external_ref="", feishu_tenant="")。``document`` 给定：``select_for_update``
+        取锁，work_item 先前 None 现非空则补连。版本范式与 ``_upsert_locked`` 一致：
+        current content_hash 相等不翻版本，否则建 version+1 接 supersedes 链并推进
+        current_version。
+        """
+        new_hash = _content_hash(content)
+        with transaction.atomic():
+            if document is None:
+                document = Document.objects.create(
+                    document_type=DocumentType.SDD_SPEC,
+                    source_kind=DocumentSourceKind.INTERNAL_GENERATED,
+                    content_storage=ContentStorage.SNAPSHOT,
+                    external_ref="",
+                    feishu_tenant="",
+                    work_item=work_item,
+                )
+            else:
+                document = Document.objects.select_for_update().get(id=document.id)
+                if document.work_item_id is None and work_item is not None:
+                    document.work_item = work_item
+                    document.save(update_fields=["work_item", "updated_at"])
+
+            cur = document.current_version
+            # hash 相等不翻版本（knowledge 铁律）
+            if cur is not None and cur.content_hash == new_hash:
+                return document
+
+            new_version = DocumentVersion.objects.create(
+                document=document,
+                version=(cur.version + 1 if cur else 1),
+                supersedes=cur,
+                content=content,
+                content_hash=new_hash,
+            )
+            document.current_version = new_version
+            document.save(update_fields=["current_version", "updated_at"])
+            return document
+
     @sync_to_async
     def _upsert_locked(
         self,
