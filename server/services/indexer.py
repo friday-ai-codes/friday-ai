@@ -1879,7 +1879,10 @@ class IndexerService:
                     processed=parse_idx,
                 )
                 full_path = os.path.join(repo_path, diff.file_path)
-                if not os.path.exists(full_path):
+                # isfile 而非 exists：git diff 的变更条目可能是 submodule（gitlink）
+                # 或已变成目录的路径，exists 对目录也为 True，会让下方 compute_file_hash
+                # 用 open() 读目录抛 [Errno 21] Is a directory，导致整个索引失败。
+                if not os.path.isfile(full_path):
                     continue
                 current_hash = compute_file_hash(full_path)
                 if stored_hashes.get(diff.file_path) == current_hash:
@@ -2312,7 +2315,9 @@ class IndexerService:
                         processed=parse_idx,
                     )
                     full_path = os.path.join(repo_path, diff.file_path)
-                    if not os.path.exists(full_path):
+                    # isfile 而非 exists：防御 submodule / 目录路径混入，避免
+                    # compute_file_hash 用 open() 读目录抛 [Errno 21] Is a directory。
+                    if not os.path.isfile(full_path):
                         continue
                     file_hash = local_hashes.get(diff.file_path) or compute_file_hash(full_path)
                     chunks, _bundle = self.parser.parse_file_dual(
