@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
-stopped_at: Completed 59-01-PLAN.md（建群封装 + writeback 入口：create_chat + awriteback_feishu_chat_id，Phase 59 1/2）
-last_updated: "2026-06-17T13:18:13Z"
-last_activity: 2026-06-17 -- Completed Phase 59 Plan 01
+stopped_at: Completed 59-02-PLAN.md（CreateGroupChatNode 节点接线：建群→chat_id→可选 writeback fail-soft，Phase 59 2/2）
+last_updated: "2026-06-17T13:25:42Z"
+last_activity: 2026-06-17 -- Completed Phase 59 Plan 02
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 ## Current Position
 
-Phase: 59 (工作流自动建群节点) — EXECUTING
-Plan: 2 of 2 (next)
-Status: Executing Phase 59 — Plan 01 complete
-Last activity: 2026-06-17 -- Completed 59-01 (建群封装 + writeback 入口)
+Phase: 59 (工作流自动建群节点) — COMPLETE (2/2 plans)
+Plan: 2 of 2 (done)
+Status: Phase 59 complete — v0.11.0 里程碑 4 phases 全部 Complete
+Last activity: 2026-06-17 -- Completed 59-02 (CreateGroupChatNode 节点接线)
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-17 -- Completed 59-01 (建群封装 + writeback 入口)
 | 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ✅ Complete (2/2 plans) |
 | 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ✅ Complete (2/2 plans) |
 | 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ✅ Complete (2/2 plans) |
-| 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
+| 59 | 工作流自动建群节点 | GROUP-01 | ✅ Complete (2/2 plans) |
 
 **Execution order:** 56 → 57 → 58 → 59。依赖链：先把内部工具调用经 §15 事件 taxonomy 映射为 OpenAI 兼容 progress/trace 透出 adapter(56) → Anthropic `/v1/messages` 端点复用同一 taxonomy→thinking block adapter(57，依赖 56 的透出抽象)；飞书原生流式卡片(58) 与工作流自动建群(59) 相对独立（依赖既有飞书机器人对话 / 飞书 client + 节点机制），排在 Agent API 两 phase 之后。
 
@@ -262,6 +262,7 @@ Last activity: 2026-06-17 -- Completed 59-01 (建群封装 + writeback 入口)
 | Phase 57 P57-02 | 8 min | 2 tasks | 4 files |
 | Phase 58 P58-01 | 14 min | 2 tasks | 4 files |
 | Phase 59 P59-01 | 4 min | 2 tasks | 5 files |
+| Phase 59 P59-02 | 5 min | 1 task | 2 files |
 
 **Milestone v0.9.0:**
 
@@ -393,6 +394,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 56]: 56-02: compat 真实 RAG 检索 progress 透出（兑现 TRACE-01 可见效果，Option C 的 B 部分）——retrieval_to_progress(result)->list[str] 命中（final_context 非空）派生 ["正在检索 RAG…","检索完成，命中 N 处"]、未命中/None 返 []（N=sum(layers.result_count)，layers 空回退 len(repository_ids)，max(N,0)），只读非敏感计数标量绝不内联 final_context/query/items/score（INV-5）。request_handler 抽 _prepare 内核返回 (lc_messages, 检索结果|None)，prepare_messages 委托保留旧签名（4 测不回退），新增 prepare_messages_with_meta 暴露元数据。translate_stream 新增 prelude_texts（role chunk 后、正文前以 reasoning_content 透出；空则逐字等价）。views post 统一 prepare_messages_with_meta 单次检索，流式派生 prelude、非流式忽略 retr（content 零回归、不二次检索）。DEVIATION D-1 兑现：检索流前同步发生不发 AgentEvent（F-2），故 view 据非敏感计数元数据合成 progress（b2 元数据驱动）而非事件映射。tests/compat 43→55 passed。view 级 post(stream=True) 端到端断言两条检索 progress 先于正文且全流无 tool_calls
 - [Phase 58]: 58-01: CardKit 封装层（Wave 1）——FeishuIMClient 手写 httpx 新增 4 个 CardKit v1 方法（create_card_entity POST /cardkit/v1/cards 建实体返 card_id / send_card_entity 复用 send_message interactive 引用 card_id / stream_card_content PUT elements/{id}/content 全量文本+sequence / settle_card_stream PATCH settings streaming_mode=false），复用 get_tenant_access_token + httpx.AsyncClient + structlog，不引 lark-oapi cardkit SDK、不新建 feishu_cardkit.py（直接进 feishu_im.py 与 send_card/update_card 同类，D-1）；code!=0 统一抛 FeishuIMError（F-5 降级判定基础）；FeishuIMService 4 同构委托。sequence 由调用方严格递增透传、方法层不内置计数器（P-2 留 Wave 2）；content 全量非 delta 不做累积（P-4）；uuid 关键字默认空串非空才写 body（D-6 幂等）。bot_cards 新增 build_streaming_card_v2（schema 2.0 流式卡 + config.streaming_mode/update_multi/streaming_config + 单 markdown 元素带 element_id）+ build_answer_markdown（终态 answer+引用+usage 单 markdown 串，复用 _reference_lines + usage 行格式与 build_answer_card 逐字一致保降级一致，D-3）。零回归：send_card/update_card/send_message/get_tenant_access_token + 既有所有 builder 符号逐字不变。新建 test_feishu_cardkit.py（respx 形状单测，token 缓存预置避真实鉴权，10 例）；31 passed（cardkit+bot_cards+card_retry）
 - [Phase 59]: 59-01: 建群封装 + writeback 入口（Wave 1）——FeishuIMClient.create_chat 手写 httpx 一次 `POST /im/v1/chats` 建群即拉人单步（body 仅放非空字段：name 恒放 + user_id_list≤50 + bot_id_list≤5 + 可选 owner_id/description；query user_id_type 默认 open_id，set_bot_manager 仅 owner_id 非空且需设管理员时下发 "true"），复用 get_tenant_access_token + httpx + structlog，对齐 add_bot_to_chat（NOTE-1：仅 raise RateLimitError，不加 @retry 避免单测真实 sleep）；code!=0→FeishuIMError、99991400→RateLimitError、成功取 data（含 chat_id）；FeishuIMService.create_chat 同构委托。WorkItemService.awriteback_feishu_chat_id（feishu_chat_id writeback 单一入口，INV-6/P-5）——三元组定位 + save(update_fields=["feishu_chat_id","updated_at"])，WorkItem 不存在返回 False 不抛（fail-soft 留调用方）、DB 异常不吞；@sync_to_async 包同步块；feishu_chat_id 绝不进 _MIRROR_FIELDS、绝不在 _refresh_mirror 写（否则 sync 覆盖回空）。INV-6 grep 守护扩 feishu_chat_id（正则 `\.feishu_chat_id\s*=\s*[^=]` 排除比较；旁路写禁止 + writer-actually-writes 正向有效性，复用 _is_scanned_for_inv6 剪枝）。零回归：add_bot_to_chat/ensure_bot_in_chat/get_chat_members/_refresh_mirror/_MIRROR_FIELDS/upsert 逐字不变（diff 纯新增）；411 passed。Wave 2（59-02）在 feishu_chat.py 新增 CreateGroupChatNode 接线消费
+- [Phase 59]: 59-02: CreateGroupChatNode 节点接线（Wave 2，兑现 GROUP-01 SC-1/2/3）——feishu_chat.py 新增 `CreateGroupChatNode`（@register_node 自动注册 `create_group_chat`，全局唯一不撞 fetch/join_group_chat；`NodeCategory.INTEGRATION`/`execution_mode="server_local"`，镜像 Fetch/Join 节点结构 + 全中文 config_schema），inputs=[default]、outputs=[default(成功),error(失败)]。execute：render 群名 + `_parse_id_list`（member_ids 三形态：模板 get_template_value 保留 list / JSON 列表兼容单引号 / 逗号分隔，逐项 strip 去空，镜像 normalize_repositories）→ 缺群名 **或** 缺成员 → failed+error handle（D-4，建群+拉人核心空成员无意义）→ `FeishuIMService.create(project).create_chat(name, user_id_list=, owner_id=, description=, user_id_type=open_id)`（建群即拉人单步，消费 Wave 1）；`except FeishuIMError → failed+error handle`（D-7 建群失败）。输出 `{chat_id(一等),chat_name,owner_id(data.get 容错空串 P-3),source:"create_group_chat",writeback:{attempted,success}}`（D-8）。可选 writeback（D-7 fail-soft）：仅 project_key+work_item_id 均非空才触发，`int()` 失败 warning 跳过（attempted=False，P-11）；`WorkItemService().awriteback_feishu_chat_id(project_key,work_item_type,int(work_item_id),chat_id)`（函数级 import 避循环依赖）经 `try/except Exception`+log.warning 包裹——DB 异常/返回 False 节点**仍 completed** 返回 chat_id，绝不冒泡（P-6 INV-6 单一入口，节点无 WorkItem.objects/.save 直接写表）。绝不改 FetchGroupChatNode/JoinGroupChatNode（git diff 仅 import 行扩展 FeishuIMError）。测试 patch 源模块类属性 `delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id`（节点函数级 import，patch feishu_chat 模块不生效，NOTE-3）。新增 14 例（happy/三形态/缺参/建群失败/writeback happy·fail-soft·不存在·未配/自动注册）；34 passed（含既有零回归）+ Wave 1+2 60 passed
 - [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 
 ### Pending Todos
@@ -479,9 +481,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-17
-Stopped at: Completed 59-01-PLAN.md（建群封装 + writeback 入口：FeishuIMService.create_chat + WorkItemService.awriteback_feishu_chat_id，Phase 59 1/2）
+Stopped at: Completed 59-02-PLAN.md（Wave 2：CreateGroupChatNode 节点接线，建群→chat_id→可选 writeback fail-soft，Phase 59 2/2）
 Resume file: None
-Next: Phase 59 Plan 02（Wave 2：feishu_chat.py 新增 CreateGroupChatNode 接线消费 create_chat + 可选 writeback）——`/gsd-execute-phase 59`
+Next: Phase 59 完成、v0.11.0 里程碑 4 phases 全部 Complete——`/gsd-complete-milestone` 或 `/gsd-verify-work 59`
 
 ## Operator Next Steps
 

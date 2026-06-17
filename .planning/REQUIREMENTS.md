@@ -24,7 +24,7 @@
 
 ### 工作流自动建群（GROUP）
 
-- [ ] **GROUP-01**: 新增"自动建群"工作流节点——可创建飞书群并拉入指定成员（替代现仅能 `add_bot_to_chat` 加入已有群），群 chat_id 作为节点输出可供下游节点 / 写回 `WorkItem.feishu_chat_id` 使用
+- [x] **GROUP-01**: 新增"自动建群"工作流节点——可创建飞书群并拉入指定成员（替代现仅能 `add_bot_to_chat` 加入已有群），群 chat_id 作为节点输出可供下游节点 / 写回 `WorkItem.feishu_chat_id` 使用
 
 ## v2 Requirements
 
@@ -53,7 +53,7 @@
 | ANTHROPIC-01 | Phase 57 | Complete |
 | ANTHROPIC-02 | Phase 57 | Pending |
 | CARD-01 | Phase 58 | Complete |
-| GROUP-01 | Phase 59 | Pending |
+| GROUP-01 | Phase 59 | Complete |
 
 **Coverage:**
 
