@@ -128,6 +128,8 @@ def test_inv6_writer_actually_writes() -> None:
     assert re.search(r"\.status\s*=", text), (
         "RepoCodingTaskService 应写 RepoCodingTask.status，但未检出 .status= 赋值"
     )
-    assert _RE_ORM_WRITE.search(text), (
-        "RepoCodingTaskService 应包含 RepoCodingTask.objects.<write>"
+    assert _RE_ORM_WRITE.search(text), "RepoCodingTaskService 应包含 RepoCodingTask.objects.<write>"
+    # Phase 51：gate 拦截写入只经 service（D-51-3 / INV-6 唯一入口）。
+    assert "def mark_gate_blocked" in text, (
+        "RepoCodingTaskService 应提供 mark_gate_blocked（gate 拦截唯一写入入口）"
     )

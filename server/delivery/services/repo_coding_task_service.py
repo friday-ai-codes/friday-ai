@@ -158,6 +158,27 @@ class RepoCodingTaskService:
             updated_at=timezone.now(),
         )
 
+    async def mark_gate_blocked(self, task: RepoCodingTask, reason: str, spec_status: str) -> int:
+        """编码前置 gate 拦截唯一写入入口（D-51-3 / INV-6）：仅 pending→failed + 结构化 error。
+
+        条件更新仅作用于 ``status=pending`` 的 task（影响行数 0 → no-op）：已运行 / 终态的
+        task 不强翻，避免覆盖在途结果；重复拦截同一已 blocked task 亦 no-op（幂等）。
+        ``error={"reason":<reason>, "spec_status":<status|missing>}`` 如实标注阻断原因
+        （``reason`` 形如 "spec_not_approved" / gate 异常路径 "gate_error"，由调用方 51-02 传入），
+        对齐既有 ``mark_blocked`` 条件更新范式。返回影响行数。
+        """
+        return await self._mark_gate_blocked_sync(task, reason, spec_status)
+
+    @sync_to_async
+    def _mark_gate_blocked_sync(self, task: RepoCodingTask, reason: str, spec_status: str) -> int:
+        return RepoCodingTask.objects.filter(
+            id=task.id, status=RepoCodingTaskStatus.PENDING
+        ).update(
+            status=RepoCodingTaskStatus.FAILED,
+            error={"reason": reason, "spec_status": spec_status},
+            updated_at=timezone.now(),
+        )
+
     async def record_produced_artifacts(self, task: RepoCodingTask, artifacts: dict) -> None:
         """produced_artifacts 写库唯一入口（ARTIFACT-01，INV-6，幂等覆盖写）。
 
