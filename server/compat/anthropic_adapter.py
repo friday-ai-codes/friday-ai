@@ -11,10 +11,11 @@
 - 错误不泄漏 traceback（ASVS V8.3 / P-10）。
 
 DEVIATION D-1（同 Phase 56，见 57-RESEARCH §3 D-1）：compat ``_build_runner`` 不绑定
-tools，``TOOL_USE_*`` 在本链路永不发射；可见 trace（thinking block prelude + 检索命中
-计数）由 Plan 02 经 ``retrieval_to_progress`` 兑现。本 Plan 01 仅实现非流式聚合 +
-``translate_stream`` 文本/收尾路径，并为 Plan 02 的 prelude/TOOL_USE 扩展预留结构
-（index 单线性计数器、8 个事件骨架纯函数齐备）。
+tools，``TOOL_USE_*`` 在本链路永不发射；故可见 trace（thinking block prelude）由
+``translate_stream`` 的 ``prelude_texts`` 参数兑现——其内容由 view 层经 Phase 56 纯函数
+``retrieval_to_progress``（真实 RAG 命中计数）派生（Plan 02）。``translate_stream`` 的
+``TOOL_USE_*`` 分支调 ``tool_event_to_progress`` 为前向兼容**纯预埋**（当前永不触发，
+未来 compat 绑定工具时自动生效）。
 """
 
 from __future__ import annotations
@@ -24,8 +25,17 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA, THINKING
+from agents.core.events import (
+    ERROR,
+    MESSAGE_COMPLETE,
+    TEXT_DELTA,
+    THINKING,
+    TOOL_USE_RESULT,
+    TOOL_USE_START,
+)
 from agents.langchain_runner import LangChainAgentRunner
+
+from .progress import tool_event_to_progress
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SSE 双行帧编码 helper（绝不复用 OpenAI sse_encode）
@@ -156,22 +166,54 @@ class AnthropicCompatAdapter:
         prompt: str | list[Any],
         *,
         model: str,
+        prelude_texts: list[str] | None = None,
     ) -> AsyncGenerator[bytes, None]:
-        """翻译 AgentEvent 流为 Anthropic SSE 双行帧字节流（本 plan 仅 text/收尾路径）。
+        """翻译 AgentEvent 流为 Anthropic SSE 双行帧字节流（含 thinking block prelude）。
 
-        路径（无 prelude/TOOL_USE，Plan 02 扩展）：
-          message_start → content_block_start(text, index 0) → 每个 TEXT_DELTA 一个
-          text_delta(index 0) → content_block_stop(0) → message_delta(stop_reason +
-          累计 output_tokens) → message_stop。
+        ``prelude_texts``（命中 RAG 时由 view 经 ``retrieval_to_progress`` 派生的高层语义
+        文本，如「正在检索 RAG…/检索完成，命中 N 处」）非空时，在正文 text block 之前先发
+        一个 ``thinking`` content block 承载可见 trace（兑现 ANTHROPIC-02）；None/空时不发
+        thinking block，text block 占 index 0，与无 prelude 路径逐字等价（零回归 P-7）。
 
-        THINKING 及其余类型静默 continue（INV-5：THINKING 不外透；TOOL_USE_* 留 Plan 02）。
+        index 单线性计数（D-2）：``next_index`` 从 0 起；有 prelude 时 thinking block 占 0、
+        text block 紧随占 1；无 prelude 时 text block 占 0。同一时刻只一个 block open，开
+        text block 前已发 thinking block 的 content_block_stop。
+
+        完整路径（命中 RAG）：
+          message_start → content_block_start(thinking, 0) → thinking_delta×N →
+          content_block_stop(0) → content_block_start(text, 1) → text_delta×M →
+          content_block_stop(1) → message_delta(stop_reason + 累计 output_tokens) →
+          message_stop。
+
+        INV-5 硬约束：THINKING 事件静默 continue（绝不映射 thinking_delta）；thinking block
+        仅承载 retrieval_to_progress / tool_event_to_progress 的高层语义文本（命中计数/工具
+        名），绝不内联 final_context/query/tool_input/result/error/CoT 原文。
         ERROR → 发 error 事件后 return（不发 content_block_stop/message_delta/message_stop，
         不泄漏 traceback）。
         """
         msg_id = f"msg_{uuid.uuid4().hex[:24]}"
         yield anthropic_sse_encode("message_start", message_start_event(msg_id, model))
 
-        text_index = 0
+        # index 单线性计数（D-2）：有 prelude → thinking block 占 0、text block 紧随占 1；
+        # 无 prelude → text block 占 0。
+        next_index = 0
+        thinking_index: int | None = None
+        if prelude_texts:
+            thinking_index = next_index
+            yield anthropic_sse_encode(
+                "content_block_start", content_block_start(thinking_index, "thinking")
+            )
+            for text in prelude_texts:
+                yield anthropic_sse_encode(
+                    "content_block_delta",
+                    content_block_delta_thinking(thinking_index, text),
+                )
+            yield anthropic_sse_encode(
+                "content_block_stop", content_block_stop(thinking_index)
+            )
+            next_index += 1
+
+        text_index = next_index
         yield anthropic_sse_encode(
             "content_block_start", content_block_start(text_index, "text")
         )
@@ -185,6 +227,19 @@ class AnthropicCompatAdapter:
                     "content_block_delta",
                     content_block_delta_text(text_index, evt.data.get("text", "")),
                 )
+            elif evt.type in (TOOL_USE_START, TOOL_USE_RESULT):
+                # 前向兼容预埋（DEVIATION D-1，见 57-RESEARCH §3 D-1）：compat
+                # _build_runner 不绑定 tools（config.tools==[]）→ TOOL_USE_* 在本链路
+                # 永不发射，此分支当前运行时永不触发，仅为未来 compat 绑定工具时复用预留。
+                # 复用 progress.py 既有纯函数 tool_event_to_progress（仅读 tool_name 查中文
+                # 映射表，绝不读 tool_input/result/error，INV-5）；命中非空且 thinking block
+                # 已开（有 prelude）时在其内追加 thinking_delta，否则 continue（不产空 block）。
+                progress = tool_event_to_progress(evt)
+                if progress is not None and thinking_index is not None:
+                    yield anthropic_sse_encode(
+                        "content_block_delta",
+                        content_block_delta_thinking(thinking_index, progress),
+                    )
             elif evt.type == MESSAGE_COMPLETE:
                 stop_reason = _status_to_stop_reason(evt.data.get("status", "completed"))
                 _, output_tokens = _rename_usage(evt.data.get("usage"))
@@ -196,7 +251,7 @@ class AnthropicCompatAdapter:
                 )
                 return
             else:
-                # THINKING / TOOL_USE_* / 其余：静默 continue（INV-5；TOOL_USE 留 Plan 02）
+                # THINKING / 其余：静默 continue（INV-5：THINKING 绝不映射 thinking_delta）
                 continue
 
         yield anthropic_sse_encode("content_block_stop", content_block_stop(text_index))
