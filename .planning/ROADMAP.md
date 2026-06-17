@@ -24,7 +24,7 @@
 - [x] **Phase 49: 方案产 openspec spec + Document(sdd_spec)** - SDD 仓库方案编排融合阶段额外产 spec draft，落 `Document(sdd_spec)` 并关联来源 — completed 2026-06-17
 - [x] **Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示** - 完整 spec 生命周期状态机 + 不可篡改评审记录 + spec 列表/详情/状态流转 UI — completed 2026-06-17
 - [x] **Phase 51: 编码前置 gate + openspec skill 编码策略** - SDD 仓库编码前校验 spec 已 approved（gate）+ 容器注入 openspec 指引 — completed 2026-06-17
-- [ ] **Phase 52: spec↔需求/PR 关联 + 交付验收视图** - spec 挂 `WorkItem` + 关联实现 PR + 沿链路可追溯的交付验收视图
+- [x] **Phase 52: spec↔需求/PR 关联 + 交付验收视图** - spec 挂 `WorkItem` + 关联实现 PR + 沿链路可追溯的交付验收视图
 
 ## Phase Details
 
@@ -118,9 +118,9 @@
 
 **Plans**: 3 plans
 
-- [ ] 52-01-PLAN.md — 后端 SddSpec.implementation_prs 字段 + migration + SddSpecService.link_implementation_pr + _finalize_and_notify fail-soft 回填挂接（LINK-01）
-- [ ] 52-02-PLAN.md — 后端 SddSpecDetailSerializer 扩 implementation_prs + work_item url/title + plan_version 追溯摘要（LINK-01/LINK-02）
-- [ ] 52-03-PLAN.md — 前端 spec 详情页「交付验收」追溯面板（WorkItem→spec→PR）+ i18n + fail-soft 降级 + vitest（LINK-02）
+- [x] 52-01-PLAN.md — 后端 SddSpec.implementation_prs 字段 + migration + SddSpecService.link_implementation_pr + _finalize_and_notify fail-soft 回填挂接（LINK-01）
+- [x] 52-02-PLAN.md — 后端 SddSpecDetailSerializer 扩 implementation_prs + work_item url/title + plan_version 追溯摘要（LINK-01/LINK-02）
+- [x] 52-03-PLAN.md — 前端 spec 详情页「交付验收」追溯面板（WorkItem→spec→PR）+ i18n + fail-soft 降级 + vitest（LINK-02）
 
 **UI hint**: yes
 
@@ -161,7 +161,7 @@
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 4/4 | ✅ Complete | 2026-06-17 |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 5/5 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 3/3 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/3 | Planned | - |
+| 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 3/3 | Complete | - |
 
 所有先前里程碑（v0.1.0–v0.8.0，Phases 1–47）均已交付归档。
 
