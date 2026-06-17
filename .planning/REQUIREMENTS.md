@@ -10,8 +10,8 @@
 
 ### Agent API trace 透出（TRACE）
 
-- [ ] **TRACE-01**: 把内部工具调用（RAG 检索 / grep / 仓库分析等）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式响应中的 progress / `reasoning_summary` 文本，外部兼容调用方能看到"正在检索 RAG / grep / 分析仓库"等进度（adapter over 事件 taxonomy）
-- [ ] **TRACE-02**: 内部工具调用**绝不**以标准 `tool_calls` 形式回传给外部客户端（防规范客户端误判为挂起等待回传而卡死），也**不暴露**模型私有 CoT（INV-5）；透出机制以 adapter 实现，缺事件时优雅降级、不破坏既有 `/v1/chat/completions` 行为
+- [x] **TRACE-01**: 把内部工具调用（RAG 检索 / grep / 仓库分析等）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式响应中的 progress / `reasoning_summary` 文本，外部兼容调用方能看到"正在检索 RAG / grep / 分析仓库"等进度（adapter over 事件 taxonomy）
+- [x] **TRACE-02**: 内部工具调用**绝不**以标准 `tool_calls` 形式回传给外部客户端（防规范客户端误判为挂起等待回传而卡死），也**不暴露**模型私有 CoT（INV-5）；透出机制以 adapter 实现，缺事件时优雅降级、不破坏既有 `/v1/chat/completions` 行为
 
 ### Anthropic 兼容端点（ANTHROPIC）
 
@@ -48,8 +48,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRACE-01 | Phase 56 | Pending |
-| TRACE-02 | Phase 56 | Pending |
+| TRACE-01 | Phase 56 | Complete |
+| TRACE-02 | Phase 56 | Complete |
 | ANTHROPIC-01 | Phase 57 | Pending |
 | ANTHROPIC-02 | Phase 57 | Pending |
 | CARD-01 | Phase 58 | Pending |
