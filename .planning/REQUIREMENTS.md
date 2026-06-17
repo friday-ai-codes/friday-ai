@@ -31,8 +31,8 @@
 
 ### spec↔需求/PR 关联与交付验收（LINK）
 
-- [ ] **LINK-01**: spec 挂接到对应 `WorkItem`，并关联其实现 PR/MR（编码产出回填）
-- [ ] **LINK-02**: 用户可见交付验收视图，沿 spec → `WorkItem` → 实现 PR 链路追溯一次需求的 spec-driven 交付状态
+- [x] **LINK-01**: spec 挂接到对应 `WorkItem`，并关联其实现 PR/MR（编码产出回填）
+- [x] **LINK-02**: 用户可见交付验收视图，沿 spec → `WorkItem` → 实现 PR 链路追溯一次需求的 spec-driven 交付状态
 
 ## v2 Requirements
 
@@ -65,8 +65,8 @@
 | SPECST-03 | Phase 50 | Pending |
 | GATE-01 | Phase 51 | Complete |
 | GATE-02 | Phase 51 | Complete |
-| LINK-01 | Phase 52 | Pending |
-| LINK-02 | Phase 52 | Pending |
+| LINK-01 | Phase 52 | Complete |
+| LINK-02 | Phase 52 | Complete |
 
 **Coverage:**
 
