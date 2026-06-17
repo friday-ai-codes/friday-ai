@@ -217,7 +217,7 @@ describe('fE-04 既有组件接入 parts API', () => {
       result: '{"matches": []}',
     }
     const wrapper = mount(ChatToolCall, { props: { part } })
-    expect(wrapper.text()).toContain('搜索代码')
+    expect(wrapper.text()).toContain('RAG 代码检索')
     expect(wrapper.find('.tool-dot--done').exists()).toBe(true)
   })
 

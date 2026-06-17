@@ -23,6 +23,8 @@ export interface Conversation {
   status: ConversationStatus
   /** 对话级 pin 的 ProviderCredential UUID（null=未 pin） */
   provider_credential_id: string | null
+  /** 是否已归档（归档会话从默认列表隐藏） */
+  is_archived?: boolean
   created_at: string
   updated_at: string
 }

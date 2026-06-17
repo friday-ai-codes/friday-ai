@@ -47,6 +47,31 @@ export interface IngestDispatch {
   dispatched: boolean
 }
 
+/** 批量摄取一组 (看板, MR) 输入。 */
+export interface IngestBatchItem {
+  board_url: string
+  mr_url: string
+}
+
+/** POST `/delivery/ingest/batch/` 派发的即时响应（202）。 */
+export interface IngestBatchDispatch {
+  batch_id: string
+  runs: Array<{ run_id: string, board_url: string, mr_url: string }>
+}
+
+/** 批量摄取中单条 run 的状态（含原始 URL 供对应展示）。 */
+export interface IngestBatchRun extends IngestRun {
+  board_url: string
+  mr_url: string
+}
+
+/** 批量摄取聚合状态（任一 run running 则批 running，否则 completed）。 */
+export interface IngestBatchStatus {
+  batch_id: string
+  status: 'running' | 'completed'
+  runs: IngestBatchRun[]
+}
+
 export const ingestApi = {
   /** 派发后台摄取（202 + run_id），后台执行三步编排。 */
   dispatch: (boardUrl: string, mrUrl: string): Promise<IngestDispatch> =>
@@ -55,4 +80,12 @@ export const ingestApi = {
   /** 拉取某次摄取运行的真实步骤结果。 */
   getRun: (runId: string): Promise<IngestRun> =>
     get<IngestRun>(`/delivery/ingest/${runId}/`),
+
+  /** 批量派发后台摄取（202 + batch_id + runs），各组共享 batch_id 独立编排。 */
+  dispatchBatch: (items: IngestBatchItem[]): Promise<IngestBatchDispatch> =>
+    post<IngestBatchDispatch>('/delivery/ingest/batch/', { items }),
+
+  /** 拉取整批摄取的聚合状态与各 run 真实步骤结果。 */
+  getBatch: (batchId: string): Promise<IngestBatchStatus> =>
+    get<IngestBatchStatus>(`/delivery/ingest/batch/${batchId}/`),
 }

@@ -205,9 +205,9 @@ async function toggleGlobalDefault(rule: GlobalDefaultRule, enabled: boolean) {
                   {{ g.enabled ? t('exclusion.globalDefaults.enabledHint') : t('exclusion.globalDefaults.disabledHint') }}
                 </span>
                 <Switch
-                  :checked="g.enabled"
+                  :model-value="g.enabled"
                   :disabled="togglingPattern === g.pattern"
-                  @update:checked="(val: boolean) => toggleGlobalDefault(g, val)"
+                  @update:model-value="(val: boolean) => toggleGlobalDefault(g, val)"
                 />
               </div>
             </li>

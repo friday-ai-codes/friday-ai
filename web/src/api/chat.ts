@@ -215,11 +215,32 @@ export async function getFeishuExportAvailability(
   )
 }
 
+/** 对话列表查询参数 */
+export interface ListConversationsParams {
+  /** 关键词：匹配标题或消息内容（后端 q）。 */
+  q?: string
+  /** 最多返回条数（默认后端 50，最大 200）。 */
+  limit?: number
+  /** 仅返回已归档会话（「查看已归档」入口）。 */
+  archived?: boolean
+}
+
 /**
  * 获取对话列表
+ *
+ * 支持服务端关键词搜索（标题 + 消息内容）与 top N 限制；archived 仅取已归档。
  */
-export async function listConversations(): Promise<Conversation[]> {
-  return get<Conversation[]>('/chat/conversations/')
+export async function listConversations(
+  params: ListConversationsParams = {},
+): Promise<Conversation[]> {
+  const query: Record<string, string | number> = {}
+  if (params.q && params.q.trim())
+    query.q = params.q.trim()
+  if (params.limit != null)
+    query.limit = params.limit
+  if (params.archived)
+    query.archived = 1
+  return get<Conversation[]>('/chat/conversations/', query)
 }
 
 /**
@@ -264,6 +285,8 @@ export interface PatchConversationParams {
   title?: string
   /** 会话内切换空间；null 切回不绑定空间的通用对话 */
   space_id?: string | null
+  /** 归档开关：true 归档（从默认列表隐藏）/ false 取消归档 */
+  is_archived?: boolean
 }
 
 /**

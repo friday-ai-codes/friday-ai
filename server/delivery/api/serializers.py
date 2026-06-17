@@ -170,6 +170,101 @@ class IngestRunSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class IngestBatchItemSerializer(serializers.Serializer):
+    """批量摄取单组 ``(board_url, mr_url)`` 入参（复用单组 http(s) 校验）。"""
+
+    board_url = serializers.CharField(max_length=2000, trim_whitespace=True)
+    mr_url = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+    def _validate_http_url(self, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise serializers.ValidationError("URL 必须以 http(s):// 开头")
+        return value
+
+    def validate_board_url(self, value: str) -> str:
+        return self._validate_http_url(value)
+
+    def validate_mr_url(self, value: str) -> str:
+        return self._validate_http_url(value)
+
+
+class IngestBatchDispatchRequestSerializer(serializers.Serializer):
+    """批量摄取触发入参：``items`` 为 1..50 组 ``(board_url, mr_url)``。
+
+    每组校验同单组端点（非空 + http(s)）；空列表 / 超 50 组 → 400。各组失败
+    互不影响（每组独立 ``IngestRun``，共享 ``batch_id``，后台并行派发）。
+    """
+
+    items = IngestBatchItemSerializer(many=True, allow_empty=False, max_length=50)
+
+
+class IngestBatchRunSerializer(serializers.ModelSerializer):
+    """批量摄取中单条 run 的只读序列化（含原始 ``board_url`` / ``mr_url`` 供前端对应展示）。"""
+
+    run_id = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        model = IngestRun
+        fields = [
+            "run_id",
+            "board_url",
+            "mr_url",
+            "status",
+            "steps",
+            "started_at",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
+# ============================================================================
+# 上线文档（Bitable）同步：预览 + 批量入库
+# ============================================================================
+
+
+class ReleaseBitablePreviewRequestSerializer(serializers.Serializer):
+    """Bitable 预览入参：app_token / table_id（默认当前上线文档表）+ 分页。"""
+
+    app_token = serializers.CharField(max_length=255, required=False, default="")
+    table_id = serializers.CharField(max_length=255, required=False, default="")
+    page_token = serializers.CharField(
+        max_length=2000, required=False, allow_blank=True, default=""
+    )
+    page_size = serializers.IntegerField(required=False, default=20, min_value=1, max_value=100)
+
+
+class ReleaseBitableSyncRowSerializer(serializers.Serializer):
+    """批量同步单行入参（前端从预览勾选回传，内部已认证工具信任 payload）。"""
+
+    record_id = serializers.CharField(max_length=255)
+    mr_url = serializers.CharField(max_length=2000)
+    business = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True, default=""
+    )
+    kanban_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    category = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
+    release_date = serializers.IntegerField(required=False, allow_null=True, default=None)
+    feature_branch = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True, default=""
+    )
+    raw_fields = serializers.JSONField(required=False, default=dict)
+
+    def validate_mr_url(self, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise serializers.ValidationError("MR URL 必须以 http(s):// 开头")
+        return value
+
+
+class ReleaseBitableSyncRequestSerializer(serializers.Serializer):
+    """批量同步入参：app_token / table_id + 勾选的 1..100 行。"""
+
+    app_token = serializers.CharField(max_length=255, required=False, default="")
+    table_id = serializers.CharField(max_length=255, required=False, default="")
+    rows = ReleaseBitableSyncRowSerializer(many=True, allow_empty=False, max_length=100)
+
+
 # ============================================================================
 # 截图识别需求（Phase 35-01，VIS-01）—— 仅用于 drf-spectacular 文档，运行时直接透传
 # screenshot_recall 服务返回的 dict（形状对齐 35-UI-SPEC ScreenshotRecallResult）。

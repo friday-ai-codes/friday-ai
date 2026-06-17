@@ -26,6 +26,8 @@ export * from './logs'
 export { default as providerCredentialsApi } from './providerCredentials'
 export * from './providerCredentials'
 
+export * from './releaseBitable'
+
 export * from './repositories'
 
 export { default as repoTreeApi } from './repoTree'
@@ -33,8 +35,6 @@ export * from './repoTree'
 
 export { default as runnersApi } from './runners'
 export * from './runners'
-
-export * from './screenshotRecall'
 
 export { default as settingsApi } from './settings'
 export * from './settings'

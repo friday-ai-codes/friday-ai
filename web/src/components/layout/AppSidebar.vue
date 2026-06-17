@@ -82,9 +82,7 @@ const mainNavItems: NavItem[] = [
   { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
-  { to: '/knowledge', label: '交付知识', icon: 'lucide--book-open' },
-  { to: '/knowledge/ingest', label: '一键摄取', icon: 'lucide--download' },
-  { to: '/knowledge/screenshot', label: '截图识需求', icon: 'lucide--scan-search' },
+  { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
 ]
 
 const adminNavItems: NavItem[] = [

@@ -86,6 +86,9 @@ class Conversation(models.Model):
         help_text="contract pin 冻结判据；frozen 态（completed/stopped/error）拒绝修改 provider_credential_id",
     )
     is_deleted = models.BooleanField(default=False, db_index=True)
+    # 归档：与软删（is_deleted）正交 —— 归档的会话从默认列表隐藏，但不删除，
+    # 可由用户取消归档恢复。默认列表 filter(is_archived=False)。
+    is_archived = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
