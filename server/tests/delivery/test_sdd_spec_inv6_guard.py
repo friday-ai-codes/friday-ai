@@ -2,10 +2,11 @@ r"""INV-6 守护：SddSpec 落库只经 SddSpecService（Phase 49-02 Task 2）�
 
 纯本地源码扫描（无 DB / 网络），逐行镜像 ``test_architect_merge_inv6_guard.py`` 精确锚定
 范式：扫描 ``server/`` 源码（剪 venv/缓存 + 排除 tests/ / migrations/ / delivery/models/ 与
-writer 自身），断言无旁路 ``SddSpec.objects.<write>`` / 直接实例化 / 链式 save 入口；
-命中即 fail 列 ``文件:行``。
+writer 自身），断言无旁路 ``SddSpec`` / ``SddSpecReview`` ``.objects.<write>`` / 直接实例化 /
+链式 save 入口；命中即 fail 列 ``文件:行``。
 
-唯一允许写 ``SddSpec`` 的模块 = ``delivery/services/sdd_spec_service.py``。
+唯一允许写 ``SddSpec`` 与 ``SddSpecReview``（评审 append-only，D-50-2）的模块同为
+``delivery/services/sdd_spec_service.py``。
 
 精确锚定：负向前瞻 ``(?!Status|ChangeKind|Service|Synthesizer)`` 排除
 ``SddSpecStatus(`` / ``SddSpecChangeKind(`` / ``SddSpecService(`` / ``SddSpecSynthesizer(``；
@@ -31,7 +32,7 @@ _PRUNE_DIRS = {
     ".mypy_cache",
 }
 
-# 唯一允许写 SddSpec 的模块（相对 server/）
+# 唯一允许写 SddSpec / SddSpecReview 的模块（相对 server/，同 writer）
 _ALLOWED_WRITER = "delivery/services/sdd_spec_service.py"
 
 # A：SddSpec.objects.<write>
@@ -44,6 +45,16 @@ _RE_INSTANTIATE = re.compile(r"\bSddSpec(?!Status|ChangeKind|Service|Synthesizer
 _RE_INSTANCE_SAVE = re.compile(
     r"\bSddSpec(?!Status|ChangeKind|Service|Synthesizer)\([^)]*\)\.save\("
 )
+
+# SddSpecReview 旁路写守护（D-50-2，append-only 不可篡改；同 writer = SddSpecService）。
+# A'：SddSpecReview.objects.<write>
+_RE_REVIEW_ORM_WRITE = re.compile(
+    r"\bSddSpecReview\.objects\.(?:create|bulk_create|get_or_create|update_or_create|update)\b"
+)
+# B'：直接实例化 SddSpecReview(...)（无 Status/Service 等更长后缀，简单词边界即可）
+_RE_REVIEW_INSTANTIATE = re.compile(r"\bSddSpecReview\s*\(")
+# C'：链式实例化 + save
+_RE_REVIEW_INSTANCE_SAVE = re.compile(r"\bSddSpecReview\([^)]*\)\.save\(")
 
 
 def _iter_py_files() -> list[Path]:
@@ -84,6 +95,9 @@ def test_inv6_no_bypass_sdd_spec_write() -> None:
                 _RE_ORM_WRITE.search(line)
                 or _RE_INSTANCE_SAVE.search(line)
                 or _RE_INSTANTIATE.search(line)
+                or _RE_REVIEW_ORM_WRITE.search(line)
+                or _RE_REVIEW_INSTANCE_SAVE.search(line)
+                or _RE_REVIEW_INSTANTIATE.search(line)
             ):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 
@@ -100,4 +114,14 @@ def test_inv6_sdd_spec_writer_actually_writes() -> None:
     text = writer.read_text(encoding="utf-8")
     assert _RE_ORM_WRITE.search(text), (
         "SddSpecService 应是唯一 SddSpec 写表点，但未检出 SddSpec.objects.<write>"
+    )
+
+
+def test_inv6_sdd_spec_review_writer_actually_writes() -> None:
+    """守护有效性：唯一 writer 确实含 SddSpecReview.objects.create，防守护形同虚设。"""
+    writer = SERVER_DIR / _ALLOWED_WRITER
+    assert writer.exists(), f"{_ALLOWED_WRITER} 不存在"
+    text = writer.read_text(encoding="utf-8")
+    assert _RE_REVIEW_ORM_WRITE.search(text), (
+        "SddSpecService 应是唯一 SddSpecReview 写表点，但未检出 SddSpecReview.objects.<write>"
     )
