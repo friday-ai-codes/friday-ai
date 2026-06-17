@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
-stopped_at: Completed 57-02-PLAN.md（Anthropic /v1/messages 流式 SSE + thinking block trace，Phase 57 2/2 — 完成）
-last_updated: "2026-06-17T12:00:00Z"
-last_activity: 2026-06-17 -- Phase 57 Plan 02 完成（POST /v1/messages 流式 SSE + thinking block prelude trace，兑现 ANTHROPIC-02，tests/compat 109 passed）
+stopped_at: Completed 58-01-PLAN.md（CardKit 封装层：FeishuIMClient/Service 4 端点 + bot_cards 2 helper，Phase 58 1/2）
+last_updated: "2026-06-17T12:50:00.000Z"
+last_activity: 2026-06-17 -- Completed 58-01 (CardKit 封装层)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
-  percent: 50
+  total_plans: 7
+  completed_plans: 5
+  percent: 57
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.11.0：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（INV-5 非 CoT、不误用 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，飞书机器人对话改走原生 CardKit 流式卡片，工作流自动建群节点。
-**Current focus:** Phase 56 — compat 内部工具调用 → progress/trace 事件透出
+**Current focus:** Phase 58 — 飞书原生流式卡片（CardKit）
 
 ## Current Position
 
-Phase: 57 (Anthropic 兼容端点 `/v1/messages`) — ✅ COMPLETE (2/2 plans)
-Plan: 2 of 2 完成（57-02 流式 SSE + thinking block trace）
-Status: 57 complete（ANTHROPIC-01/02 均兑现）; ready for Phase 58（飞书原生流式卡片 CardKit）
-Last activity: 2026-06-17 -- Phase 57 Plan 02 完成（POST /v1/messages 流式 SSE + thinking block prelude trace，兑现 ANTHROPIC-02，tests/compat 109 passed）
+Phase: 58 (飞书原生流式卡片（CardKit）) — EXECUTING
+Plan: 2 of 2
+Status: Executing Phase 58（58-01 完成，待 58-02）
+Last activity: 2026-06-17 -- Completed 58-01 (CardKit 封装层)
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-17 -- Phase 57 Plan 02 完成（POST /v1/messages 流式 
 |-------|------|--------------|--------|
 | 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ✅ Complete (2/2 plans) |
 | 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ✅ Complete (2/2 plans) |
-| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ⬜ Not started |
+| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | 🔄 In Progress (1/2 plans) |
 | 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
 
 **Execution order:** 56 → 57 → 58 → 59。依赖链：先把内部工具调用经 §15 事件 taxonomy 映射为 OpenAI 兼容 progress/trace 透出 adapter(56) → Anthropic `/v1/messages` 端点复用同一 taxonomy→thinking block adapter(57，依赖 56 的透出抽象)；飞书原生流式卡片(58) 与工作流自动建群(59) 相对独立（依赖既有飞书机器人对话 / 飞书 client + 节点机制），排在 Agent API 两 phase 之后。
@@ -260,6 +260,7 @@ Last activity: 2026-06-17 -- Phase 57 Plan 02 完成（POST /v1/messages 流式 
 | Phase 56 P56-02 | 13 min | 3 tasks | 7 files |
 | Phase 57 P57-01 | 5 min | 3 tasks | 9 files |
 | Phase 57 P57-02 | 8 min | 2 tasks | 4 files |
+| Phase 58 P58-01 | 14 min | 2 tasks | 4 files |
 
 **Milestone v0.9.0:**
 
@@ -389,6 +390,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 56]: 56-01: compat progress 纯函数机制层 server/compat/progress.py——tool_event_to_progress 仅读 tool_name 查中文映射表（search_rag/grep/get_file/仓库分析路由），TOOL_USE_RESULT/未知/缺名一律 None（保守静默 OQ-3），绝不读 tool_input/result/error（INV-5）；make_reasoning_chunk 复用 sse_encode 产 reasoning_content chunk（结构与 THINKING 逐字一致）；不 import §15 event_taxonomy（P-1，仅语义对齐）。translate_stream 新增 TOOL_USE_*→reasoning_content 分支（None 静默/非空 yield），绝不写 delta.tool_calls/finish_reason=tool_calls（TRACE-02）。**DEVIATION D-1**：compat _build_runner 不绑定 tools → TOOL_USE_* 永不发射 → 本 plan 恒走降级产 0 progress（机制预埋 + 前向兼容 + Phase 57 复用），可见效果由 Plan 02（真实 RAG 检索 progress 合成）兑现。tests/compat/ 17→43 passed
 - [Phase 57]: 57-02: Anthropic /v1/messages 流式 SSE + thinking block trace（兑现 ANTHROPIC-02）——translate_stream 加 prelude_texts，命中 RAG 时在正文 text block 前发 thinking content block（index 单线性计数：thinking 0、text 紧随；content_block_start(thinking,0)→thinking_delta×N→content_block_stop(0)），承载 retrieval_to_progress 命中计数 trace；无 prelude 时不发 thinking block、text 占 0，与 Plan 01 byte-eq 零回归（None/[]/省略三者结构等价）。新增 TOOL_USE_START/RESULT 前向兼容分支复用 progress.py 的 tool_event_to_progress（DEVIATION D-1：compat 无 tools 永不触发，纯预埋，仅 thinking block 已开时 emit）。MessagesView.post 经 prepare_messages_with_meta 单次检索取 (lc_messages,retr)，流式 prelude_texts=retrieval_to_progress(retr)→StreamingHttpResponse 经 _stream_anthropic 包 translate_stream(prelude_texts=...)，非流式保持 aggregate_message 忽略 retr（content 零回归命门）。_stream_anthropic 异常→anthropic_error_event 不泄漏 traceback、不发 message_stop，Anthropic 流不发 [DONE] 以 message_stop 收尾。INV-5/TRACE-02：THINKING 静默 continue、绝不发 tool_use block、sentinel（CTX/Q/CoT）全流不外透仅命中计数语义。progress.py 逐字不改、OpenAI 端点零回归，tests/compat 94→109 passed。view 级流式集成测断言 thinking_delta 严格先于首个 text_delta
 - [Phase 56]: 56-02: compat 真实 RAG 检索 progress 透出（兑现 TRACE-01 可见效果，Option C 的 B 部分）——retrieval_to_progress(result)->list[str] 命中（final_context 非空）派生 ["正在检索 RAG…","检索完成，命中 N 处"]、未命中/None 返 []（N=sum(layers.result_count)，layers 空回退 len(repository_ids)，max(N,0)），只读非敏感计数标量绝不内联 final_context/query/items/score（INV-5）。request_handler 抽 _prepare 内核返回 (lc_messages, 检索结果|None)，prepare_messages 委托保留旧签名（4 测不回退），新增 prepare_messages_with_meta 暴露元数据。translate_stream 新增 prelude_texts（role chunk 后、正文前以 reasoning_content 透出；空则逐字等价）。views post 统一 prepare_messages_with_meta 单次检索，流式派生 prelude、非流式忽略 retr（content 零回归、不二次检索）。DEVIATION D-1 兑现：检索流前同步发生不发 AgentEvent（F-2），故 view 据非敏感计数元数据合成 progress（b2 元数据驱动）而非事件映射。tests/compat 43→55 passed。view 级 post(stream=True) 端到端断言两条检索 progress 先于正文且全流无 tool_calls
+- [Phase 58]: 58-01: CardKit 封装层（Wave 1）——FeishuIMClient 手写 httpx 新增 4 个 CardKit v1 方法（create_card_entity POST /cardkit/v1/cards 建实体返 card_id / send_card_entity 复用 send_message interactive 引用 card_id / stream_card_content PUT elements/{id}/content 全量文本+sequence / settle_card_stream PATCH settings streaming_mode=false），复用 get_tenant_access_token + httpx.AsyncClient + structlog，不引 lark-oapi cardkit SDK、不新建 feishu_cardkit.py（直接进 feishu_im.py 与 send_card/update_card 同类，D-1）；code!=0 统一抛 FeishuIMError（F-5 降级判定基础）；FeishuIMService 4 同构委托。sequence 由调用方严格递增透传、方法层不内置计数器（P-2 留 Wave 2）；content 全量非 delta 不做累积（P-4）；uuid 关键字默认空串非空才写 body（D-6 幂等）。bot_cards 新增 build_streaming_card_v2（schema 2.0 流式卡 + config.streaming_mode/update_multi/streaming_config + 单 markdown 元素带 element_id）+ build_answer_markdown（终态 answer+引用+usage 单 markdown 串，复用 _reference_lines + usage 行格式与 build_answer_card 逐字一致保降级一致，D-3）。零回归：send_card/update_card/send_message/get_tenant_access_token + 既有所有 builder 符号逐字不变。新建 test_feishu_cardkit.py（respx 形状单测，token 缓存预置避真实鉴权，10 例）；31 passed（cardkit+bot_cards+card_retry）
 - [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 
 ### Pending Todos
@@ -475,9 +477,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-17
-Stopped at: Completed 57-02-PLAN.md（Anthropic /v1/messages 流式 SSE + thinking block trace，Phase 57 2/2 — 完成）
+Stopped at: Completed 58-01-PLAN.md（CardKit 封装层：FeishuIMClient/Service 4 端点 + bot_cards 2 helper，Phase 58 1/2）
 Resume file: None
-Next: Phase 58（飞书原生流式卡片 CardKit，CARD-01）——`/gsd-plan-phase 58` → `/gsd-execute-phase 58`
+Next: Phase 58 Plan 02（bot/service.py 流式段接 TEXT_DELTA + fail-soft 降级）——`/gsd-execute-phase 58`
 
 ## Operator Next Steps
 
