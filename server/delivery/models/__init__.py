@@ -51,6 +51,10 @@ from delivery.models.sdd_spec import (
     SddSpecChangeKind,
     SddSpecStatus,
 )
+from delivery.models.sdd_spec_review import (
+    ReviewDecision,
+    SddSpecReview,
+)
 from delivery.models.status_event import WorkItemStatusEvent
 from delivery.models.sync_state import (
     SyncFacet,
@@ -98,6 +102,8 @@ __all__ = [
     "SddSpec",
     "SddSpecStatus",
     "SddSpecChangeKind",
+    "SddSpecReview",
+    "ReviewDecision",
     "ArchitectMerge",
     "ArchitectMergeStatus",
     "Clarification",
