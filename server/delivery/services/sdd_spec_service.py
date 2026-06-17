@@ -24,17 +24,128 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
+from django.utils import timezone
 
-from delivery.models import SddSpec, SddSpecStatus
+from delivery.models import ReviewDecision, SddSpec, SddSpecReview, SddSpecStatus
 from delivery.services.document_service import DocumentService
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["SddSpecService"]
+__all__ = ["SddSpecService", "SddSpecTransitionError"]
+
+
+class SddSpecTransitionError(Exception):
+    """spec 状态流转非法 / 竞态双推进 fail-loud（前端/API 转 400，D-50-1）。"""
 
 
 class SddSpecService:
-    """SddSpec 唯一写入入口（INV-6）。本 phase 仅 create_draft。"""
+    """SddSpec 唯一写入入口（INV-6）：create_draft + 状态机流转（plan 50-02）。
+
+    状态流转（D-50-1）经条件 ``.filter(status=from).update(status=to)`` + 影响行数判定：
+    非法源状态 / 竞态双推进影响 0 行 → ``SddSpecTransitionError``（幂等 fail-loud，
+    复用 RepoCodingTaskService 范式）。``approve`` / ``reject`` 在单一 ``transaction.atomic``
+    内建 ``SddSpecReview`` + 驱动状态——更新 0 行回滚评审（不留孤儿，T-50-04）。
+    本 service 是 ``SddSpecReview`` 唯一写入点（INV-6）。
+    """
+
+    # 简单流转合法表（archive 特殊处理：任意非 archived → archived）。
+    _LEGAL_TRANSITIONS: dict[str, tuple[str, str]] = {
+        "submit_for_review": (SddSpecStatus.DRAFT, SddSpecStatus.IN_REVIEW),
+        "mark_implemented": (SddSpecStatus.APPROVED, SddSpecStatus.IMPLEMENTED),
+    }
+
+    # ---- 状态机流转（D-50-1） ----
+
+    async def submit_for_review(self, spec_id: Any) -> None:
+        """draft → in_review（任意认证用户，权限分流在 API 层 D-50-3）。"""
+        await self._simple_transition(spec_id, "submit_for_review")
+
+    async def mark_implemented(self, spec_id: Any) -> None:
+        """approved → implemented（手动入口；Phase 51/52 编码/PR 触发）。"""
+        await self._simple_transition(spec_id, "mark_implemented")
+
+    async def approve(self, spec_id: Any, reviewer: Any, comment: str = "") -> None:
+        """in_review → approved，单一事务原子建 approve 评审 + 驱动状态。"""
+        await self._review_transition(
+            spec_id,
+            reviewer=reviewer,
+            decision=ReviewDecision.APPROVE,
+            comment=comment,
+            from_status=SddSpecStatus.IN_REVIEW,
+            to_status=SddSpecStatus.APPROVED,
+            action="approve",
+        )
+
+    async def reject(self, spec_id: Any, reviewer: Any, comment: str) -> None:
+        """in_review → draft（退回修订），单一事务原子建 reject 评审 + 驱动状态。"""
+        await self._review_transition(
+            spec_id,
+            reviewer=reviewer,
+            decision=ReviewDecision.REJECT,
+            comment=comment,
+            from_status=SddSpecStatus.IN_REVIEW,
+            to_status=SddSpecStatus.DRAFT,
+            action="reject",
+        )
+
+    async def archive(self, spec_id: Any) -> None:
+        """任意非 archived → archived（手动归档，终态）。"""
+        await self._archive(spec_id)
+
+    @staticmethod
+    def _raise_transition_error(spec_id: Any, action: str, expected: str) -> None:
+        """0 行更新时读当前状态拼 fail-loud 消息（含 action + 当前状态，sync 上下文）。"""
+        current = (
+            SddSpec.objects.filter(id=spec_id).values_list("status", flat=True).first()
+        )
+        raise SddSpecTransitionError(
+            f"非法流转：action={action}，期望源状态={expected}，当前状态={current}（spec={spec_id}）"
+        )
+
+    @sync_to_async
+    def _simple_transition(self, spec_id: Any, action: str) -> None:
+        from_status, to_status = self._LEGAL_TRANSITIONS[action]
+        updated = SddSpec.objects.filter(id=spec_id, status=from_status).update(
+            status=to_status, updated_at=timezone.now()
+        )
+        if updated == 0:
+            self._raise_transition_error(spec_id, action, from_status)
+
+    @sync_to_async
+    def _archive(self, spec_id: Any) -> None:
+        updated = (
+            SddSpec.objects.filter(id=spec_id)
+            .exclude(status=SddSpecStatus.ARCHIVED)
+            .update(status=SddSpecStatus.ARCHIVED, updated_at=timezone.now())
+        )
+        if updated == 0:
+            self._raise_transition_error(spec_id, "archive", "非 archived")
+
+    @sync_to_async
+    def _review_transition(
+        self,
+        spec_id: Any,
+        *,
+        reviewer: Any,
+        decision: str,
+        comment: str,
+        from_status: str,
+        to_status: str,
+        action: str,
+    ) -> None:
+        # 单一事务：先建评审，再条件更新；更新 0 行 raise → 回滚评审（无孤儿，T-50-04）。
+        with transaction.atomic():
+            SddSpecReview.objects.create(
+                spec_id=spec_id,
+                reviewer=reviewer,
+                decision=decision,
+                comment=comment,
+            )
+            updated = SddSpec.objects.filter(id=spec_id, status=from_status).update(
+                status=to_status, updated_at=timezone.now()
+            )
+            if updated == 0:
+                self._raise_transition_error(spec_id, action, from_status)
 
     async def create_draft(
         self,
