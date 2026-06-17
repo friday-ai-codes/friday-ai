@@ -298,6 +298,7 @@ declare module 'vue' {
     ScreenshotRecallPanel: typeof import('./components/knowledge/ScreenshotRecallPanel.vue')['default']
     ScrollArea: typeof import('./components/ui/scroll-area/ScrollArea.vue')['default']
     ScrollBar: typeof import('./components/ui/scroll-area/ScrollBar.vue')['default']
+    SddMethodologyBadge: typeof import('./components/repository/SddMethodologyBadge.vue')['default']
     Select: typeof import('./components/ui/select/Select.vue')['default']
     SelectContent: typeof import('./components/ui/select/SelectContent.vue')['default']
     SelectGroup: typeof import('./components/ui/select/SelectGroup.vue')['default']
