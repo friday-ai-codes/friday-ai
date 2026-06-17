@@ -83,7 +83,7 @@ const mainNavItems: NavItem[] = [
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
   { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
-  { to: '/specs', label: 'spec 治理', icon: 'lucide--file-check-2' },
+  { to: '/specs', label: 'SDD', icon: 'lucide--scroll-text' },
 ]
 
 const adminNavItems: NavItem[] = [
