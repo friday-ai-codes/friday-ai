@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
-status: executing
-stopped_at: Completed 59-02-PLAN.md（CreateGroupChatNode 节点接线：建群→chat_id→可选 writeback fail-soft，Phase 59 2/2）
-last_updated: "2026-06-17T13:25:42Z"
-last_activity: 2026-06-17 -- Completed Phase 59 Plan 02
+status: shipped
+stopped_at: v0.11.0 里程碑收官——4 phases / 8 plans 全部 Complete，里程碑审计 PASS
+last_updated: "2026-06-17T14:10:00Z"
+last_activity: 2026-06-17 -- v0.11.0 milestone audit PASS（6/6 需求交付，INV-5/INV-6 成立）
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 9
+  total_plans: 8
   completed_plans: 8
-  percent: 89
+  percent: 100
 ---
 
 # Project State
