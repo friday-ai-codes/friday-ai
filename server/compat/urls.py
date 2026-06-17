@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import ChatCompletionsView, ModelsView
+from .views import ChatCompletionsView, MessagesView, ModelsView
 
 urlpatterns = [
     # 双路由兼容策略：OpenAI SDK 默认不带末尾斜杠，project instructions 要求带斜杠
@@ -9,4 +9,6 @@ urlpatterns = [
     path("chat/completions/", ChatCompletionsView.as_view()),
     path("models", ModelsView.as_view()),
     path("models/", ModelsView.as_view()),
+    path("messages", MessagesView.as_view()),
+    path("messages/", MessagesView.as_view()),
 ]
