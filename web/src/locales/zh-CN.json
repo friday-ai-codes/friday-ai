@@ -189,6 +189,16 @@
       "decisionReject": "驳回",
       "unknownReviewer": "未知用户"
     },
+    "delivery": {
+      "title": "交付验收",
+      "workItemLabel": "需求",
+      "specLabel": "规格",
+      "prsLabel": "实现 PR",
+      "workItemUnlinked": "未关联需求",
+      "planVersionUnlinked": "未关联方案",
+      "prsEmpty": "暂无实现 PR",
+      "linkedAt": "已关联于 {time}"
+    },
     "actions": {
       "submit": "提交评审",
       "approve": "批准",
