@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from feishu.cards.bot_cards import (
     build_answer_card,
+    build_answer_markdown,
     build_clarification_card,
     build_error_card,
     build_processing_card,
+    build_streaming_card_v2,
     build_welcome_card,
 )
 
@@ -45,6 +47,54 @@ def test_compact_answer_card_can_render_auto_matched_space() -> None:
 
     assert "已自动匹配「learning-platform」空间" in content
     assert "我是 Friday。" in content
+
+
+def test_streaming_card_v2_is_schema_2_0_with_streaming_element() -> None:
+    card = build_streaming_card_v2()
+
+    assert card["schema"] == "2.0"
+    assert card["config"]["streaming_mode"] is True
+    assert card["config"]["update_multi"] is True
+    assert "streaming_config" in card["config"]
+    element = card["body"]["elements"][0]
+    assert element["tag"] == "markdown"
+    assert element["element_id"] == "md_body"
+    assert element["content"] == "思考中..."
+    assert 1 <= len(element["element_id"]) <= 20
+
+
+def test_streaming_card_v2_honors_custom_element_id() -> None:
+    card = build_streaming_card_v2(initial_text="开始", element_id="md_x")
+
+    element = card["body"]["elements"][0]
+    assert element["element_id"] == "md_x"
+    assert element["content"] == "开始"
+
+
+def test_answer_markdown_contains_answer_references_and_usage() -> None:
+    result = build_answer_markdown(
+        answer="请先检查 websocket handler。",
+        references=[{"repository": "server", "path": "feishu/websocket_client.py"}],
+        usage={"input_tokens": 100, "output_tokens": 50, "cost_usd": 0.0012},
+        matched_space_label="learning-platform",
+    )
+
+    assert isinstance(result, str)
+    assert "**回答**" in result
+    assert "请先检查 websocket handler。" in result
+    assert "已参考上下文" in result
+    assert "server" in result
+    assert "💰" in result
+    assert "100" in result
+    assert "已自动匹配「learning-platform」空间" in result
+
+
+def test_answer_markdown_handles_empty_references_fallback() -> None:
+    result = build_answer_markdown(answer="只基于概览。", references=[])
+
+    assert isinstance(result, str)
+    assert "未引用具体代码上下文" in result
+    assert "💰" not in result
 
 
 def test_welcome_clarification_and_error_cards_expose_expected_copy() -> None:
