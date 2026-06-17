@@ -155,7 +155,7 @@
 | 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 2/2 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 4/4 | ✅ Complete | 2026-06-17 |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 5/5 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 4/3 | Complete   | 2026-06-17 |
+| 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 3/3 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/TBD | Not started | - |
 
 所有先前里程碑（v0.1.0–v0.8.0，Phases 1–47）均已交付归档。

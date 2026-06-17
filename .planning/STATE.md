@@ -8,10 +8,10 @@ last_updated: "2026-06-17T04:10:00.000Z"
 last_activity: 2026-06-17 — Phase 51 编码前置 gate（follow_openspec=True 仓校验 SddSpec.APPROVED，未批准/异常 fail-closed mark_gate_blocked 拦截 + 单仓隔离 + aadvance 阻断下游）+ openspec 注入（dispatch env_FRIDAY_TASK_FOLLOW_OPENSPEC → task system_prompt openspec 段），非 SDD 仓零回归
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 15
+  completed_phases: 4
+  total_plans: 14
   completed_plans: 14
-  percent: 60
+  percent: 80
 ---
 
 # Project State
