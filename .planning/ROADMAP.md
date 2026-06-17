@@ -82,7 +82,10 @@
   2. spec 已 `approved` 的 SDD 仓库编码正常放行派发
   3. SDD 仓库编码容器注入 openspec 指引（task `system_prompt` 按仓库类型注入点 + 复用 `setting_sources=["project"]` 原生加载仓库内 `.claude/skills`），编码遵循 openspec 流程
   4. 非 SDD 仓库编码不受 gate 与注入影响（零回归）
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 51-01-PLAN.md — RepoCodingTaskService follow_openspec 置位 + mark_gate_blocked 单一写入入口（GATE-01）
+- [ ] 51-02-PLAN.md — AICodingNode._dispatch_wave 前置 gate（fail-closed + 单仓隔离 + 下游阻断）+ env_FRIDAY_TASK_FOLLOW_OPENSPEC 注入（GATE-01/GATE-02）
+- [ ] 51-03-PLAN.md — task TaskConfig.follow_openspec + _get_system_prompt openspec 指引段（复用 setting_sources 原生加载 .claude/skills）（GATE-02）
 
 ### Phase 52: spec↔需求/PR 关联 + 交付验收视图
 **Goal**: 沿 spec → 需求 → 实现 PR 的完整链路可追溯一次 spec-driven 交付状态
@@ -131,7 +134,7 @@
 | 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 2/2 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 4/4 | ✅ Complete | 2026-06-17 |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 5/5 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/TBD | Not started | - |
+| 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/3 | Not started | - |
 | 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/TBD | Not started | - |
 
 所有先前里程碑（v0.1.0–v0.8.0，Phases 1–47）均已交付归档。
