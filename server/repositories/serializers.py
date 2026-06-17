@@ -118,7 +118,6 @@ class RepositorySerializer(serializers.ModelSerializer):
             "graph_files_processed",
             "graph_files_total",
             "graph_last_built_at",
-            "methodology",
         ]
 
     def get_has_credential(self, obj: Repository) -> bool:
