@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: SDD / OpenSpec 支持
 status: in_progress
-last_updated: "2026-06-17T01:40:00.000Z"
+last_updated: "2026-06-17T02:30:00.000Z"
 last_activity: 2026-06-17
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 20
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 40
 ---
 
 # Project State
@@ -20,21 +20,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.9.0 进行中：让 spec-driven development 成为可治理的过程资产——SDD 仓库打标 → 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审 → spec↔需求/PR 关联 → 交付验收。
-**Current focus:** v0.9.0 自治执行中。Phase 48（SDD 检测 + facets 打标 + 前端标签）已交付（verify human_needed：仅余真实容器/索引 E2E）。下一步 Phase 49（方案产 openspec spec + Document(sdd_spec)）。
+**Current focus:** v0.9.0 自治执行中。Phase 48（SDD 检测/打标/标签）+ Phase 49（方案产 openspec spec + Document(sdd_spec)）已交付。下一步 Phase 50（spec 状态机 + 变更记录 + 评审状态 + 前端展示）。
 
 ## Current Position
 
-Phase: 49 (Not started) — Phase 48 complete
+Phase: 50 (Not started) — Phase 48/49 complete
 Plan: —
-Status: Phase 48 shipped (7 commits + IN-01 fix)；执行 Phase 49
-Last activity: 2026-06-17 — Phase 48 SDD 检测/打标/徽标交付（verify human_needed, review issues_found 0 BLOCKER）
+Status: Phase 49 shipped (4 plans / 11 commits, 61 tests pass, SPEC-01/SPEC-02 闭合)；下一步 Phase 50
+Last activity: 2026-06-17 — Phase 49 SddSpec 脊柱 + create_internal_spec/create_draft 双 INV-6 收口 + spec_generation + 融合 best-effort 挂接（fail-soft 零回归）
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ✅ Complete (verify human_needed) |
-| 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ⬜ Not started |
+| 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ✅ Complete |
 | 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ⬜ Not started |
 | 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ⬜ Not started |
 | 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ⬜ Not started |
