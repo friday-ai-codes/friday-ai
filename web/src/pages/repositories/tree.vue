@@ -82,8 +82,13 @@ const visibleRepoIds = computed<string[]>(() => {
 const facetFilters = ref<Record<string, string>>({})
 
 const facetFilterOptions = computed<Record<string, string[]>>(() => {
+  // 仅基于当前可见仓库（已选业务域/分组）计算过滤维度，
+  // 避免未选域时按全量数据渲染出一堆“空”的过滤器。
   const options: Record<string, Set<string>> = {}
-  for (const card of Object.values(repoMap.value)) {
+  for (const id of visibleRepoIds.value) {
+    const card = repoMap.value[id]
+    if (!card)
+      continue
     for (const [dim, value] of Object.entries(card.facets ?? {})) {
       if (!options[dim])
         options[dim] = new Set()
@@ -91,7 +96,10 @@ const facetFilterOptions = computed<Record<string, string[]>>(() => {
     }
   }
   return Object.fromEntries(
-    Object.entries(options).map(([dim, values]) => [dim, [...values].sort()]),
+    Object.entries(options)
+      .map(([dim, values]) => [dim, [...values].sort()] as [string, string[]])
+      // 只有存在 2 个及以上取值的维度才值得提供过滤器
+      .filter(([, values]) => values.length > 1),
   )
 })
 
