@@ -137,6 +137,12 @@ class SpecTransitionView(APIView):
             )
 
         comment = request.data.get("comment") or ""
+        # WR-01：comment 须为字符串——非字符串（数字/列表等）下 .strip() 会抛 500，显式 400 兜底。
+        if not isinstance(comment, str):
+            return Response(
+                {"error": "comment 必须为字符串"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if action == "reject" and not comment.strip():
             return Response(
                 {"error": "驳回必须填写评审意见"},
