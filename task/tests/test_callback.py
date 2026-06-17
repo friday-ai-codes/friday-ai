@@ -37,9 +37,7 @@ class TestCallbackClient:
         assert "Authorization" in client.headers
 
     @pytest.mark.asyncio
-    async def test_report_completed_lifts_git_metadata_to_payload(
-        self, mock_config, monkeypatch
-    ):
+    async def test_report_completed_lifts_git_metadata_to_payload(self, mock_config, monkeypatch):
         """completed 帧必须把真实 branch/commit 放到服务端 serializer 读取的位置。"""
         sent_payloads = []
 
@@ -155,9 +153,7 @@ class TestRunExecuteModeReportsCompleted:
 
         runner = TaskRunner(config)
         runner.git_ops = AsyncMock()
-        runner.git_ops.setup_task_branch = AsyncMock(
-            return_value="feature/demo-task-branch"
-        )
+        runner.git_ops.setup_task_branch = AsyncMock(return_value="feature/demo-task-branch")
         runner.git_ops.get_workspace_path = MagicMock(return_value="/tmp/workspace")
         runner.git_ops.cleanup = MagicMock()
         runner.git_ops.restore_task_branch = AsyncMock(return_value=True)
@@ -181,9 +177,7 @@ class TestRunExecuteModeReportsCompleted:
             branch_strategy="feature/demo-task-branch",
             task_id="legacy-001",
         )
-        runner.git_ops.push_branch_with_retry.assert_awaited_once_with(
-            "feature/demo-task-branch"
-        )
+        runner.git_ops.push_branch_with_retry.assert_awaited_once_with("feature/demo-task-branch")
 
     @pytest.mark.asyncio
     async def test_run_refuses_protected_work_branch_before_claude(self):
@@ -237,7 +231,9 @@ class TestRunExecuteModeReportsCompleted:
         runner.git_ops.commit_changes = AsyncMock(return_value="deadbeef")
         runner.git_ops.push_branch_with_retry = AsyncMock()
         runner.git_ops.get_modified_files = AsyncMock(return_value=["auth.py", "models.py"])
-        runner.git_ops.get_diff_summary = AsyncMock(return_value="2 files changed, 100 insertions(+)")
+        runner.git_ops.get_diff_summary = AsyncMock(
+            return_value="2 files changed, 100 insertions(+)"
+        )
         runner.callback = AsyncMock()
         runner.claude = MagicMock()
         runner.claude.get_session_summary = AsyncMock(return_value="plan summary")
@@ -410,6 +406,8 @@ class TestClaudeExecuteModeKeepsBash:
         config.task_id = "exec-tool"
         config.task_mode = "execute"
         config.session_dir = "/tmp"
+        # 防 MagicMock 真值属性误触 openspec 追加（Phase 51-03 D-51-5）。
+        config.follow_openspec = False
 
         runner = executor_module.ClaudeRunner(config, Path("/tmp"))
         await runner.run_execute_mode(plan="any")
@@ -427,7 +425,11 @@ class TestClaudeExecuteModeKeepsBash:
 
         from core.executor import ClaudeRunner
 
-        runner = ClaudeRunner(MagicMock(), Path("/tmp"))
+        # 显式设 follow_openspec=False：MagicMock 默认属性是真值 Mock，会误触 openspec
+        # 追加破坏零回归断言（Phase 51-03 D-51-5 / T-51-MOCK）。
+        config = MagicMock()
+        config.follow_openspec = False
+        runner = ClaudeRunner(config, Path("/tmp"))
         prompt = runner._get_system_prompt()
 
         assert "Runner" in prompt
