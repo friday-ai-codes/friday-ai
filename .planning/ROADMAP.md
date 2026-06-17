@@ -25,7 +25,7 @@
 - [x] **Phase 56: compat 内部工具调用 → progress/trace 事件透出** (2/2 plans, complete 2026-06-17) - OpenAI 兼容流式响应把内部工具调用经 §15 taxonomy 映射为 progress/`reasoning_summary`，不暴露 CoT、不误用 tool_calls（INV-5），缺事件优雅降级零回归 — TRACE-01, TRACE-02
 - [x] **Phase 57: Anthropic 兼容端点 `/v1/messages`** (2/2 plans, complete 2026-06-17) - 新增 Anthropic Messages 形状映射端点（复用既有 chat/agent 内核），非流式 + 流式（SSE）可用，trace 经 thinking block adapter 复用 Phase 56 retrieval_to_progress 命中计数（INV-5 非 CoT、不发 tool_use block） — ANTHROPIC-01, ANTHROPIC-02
 - [x] **Phase 58: 飞书原生流式卡片（CardKit）** (2/2 plans, complete 2026-06-17) - 飞书机器人对话回复改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换），体验顺滑无全量重绘 — CARD-01
-- [ ] **Phase 59: 工作流自动建群节点** (TBD plans) - 新增"自动建群"工作流节点：创建飞书群 + 拉入成员（替代仅 `add_bot_to_chat`），群 chat_id 作节点输出供下游/写回 `WorkItem.feishu_chat_id` — GROUP-01
+- [ ] **Phase 59: 工作流自动建群节点** (1/2 plans, in progress) - 新增"自动建群"工作流节点：创建飞书群 + 拉入成员（替代仅 `add_bot_to_chat`），群 chat_id 作节点输出供下游/写回 `WorkItem.feishu_chat_id` — GROUP-01
 
 ## Phase Details
 
