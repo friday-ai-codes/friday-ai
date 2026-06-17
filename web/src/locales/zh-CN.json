@@ -151,8 +151,8 @@
     }
   },
   "specs": {
-    "title": "spec 治理",
-    "subtitle": "查看与评审 spec-driven 开发的需求规格，按状态流转生命周期",
+    "title": "SDD",
+    "subtitle": "Spec-Driven Development（规格驱动开发）：查看与评审需求规格，按状态流转生命周期",
     "loading": "正在加载 spec…",
     "loadError": "加载 spec 失败，请稍后重试",
     "empty": "暂无 spec",
