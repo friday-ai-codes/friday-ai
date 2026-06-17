@@ -23,7 +23,7 @@
 
 - [x] **Phase 53: `AuditEvent` 模型 + emit 地基** (2/2 plans) - 统一审计模型（actor/action/target/before-after/source/时间）+ 单一写入入口 + append-only 不可篡改 + fail-soft emit 机制 + 凭证脱敏 — AUDIT-01, AUDIT-02 — completed 2026-06-17
 - [x] **Phase 54: 敏感操作全量覆盖 emit** (2/2 plans) - 身份与权限类 + 凭证与数据治理类敏感操作经统一入口 emit 审计；v0.5 排除/清理埋点收口统一表 — AUDITCOV-01, AUDITCOV-02 — completed 2026-06-17
-- [ ] **Phase 55: 审计查询 API + 前端视图 + 导出** - 审计查询 REST（过滤+分页，superuser fail-closed）+ 前端列表/过滤/before-after 详情 + CSV/JSON 导出 — AUDITUI-01, AUDITUI-02
+- [x] **Phase 55: 审计查询 API + 前端视图 + 导出** (3/3 plans) - 审计查询 REST（过滤+分页，superuser fail-closed）+ 前端列表/过滤/before-after 详情 + CSV/JSON 导出 — AUDITUI-01, AUDITUI-02 — completed 2026-06-17
 
 ## Phase Details
 
