@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.10.0
 milestone_name: 操作审计治理
-status: milestone-complete
-stopped_at: Phase 55 verified (passed) -- milestone v0.10.0 phases all complete
+status: complete
+stopped_at: v0.10.0 milestone audited + complete (PASSED)
 last_updated: "2026-06-17T10:05:00.000Z"
 last_activity: 2026-06-17 -- Phase 55 complete (audit 84 + frontend 4 tests green); milestone done
 progress:
