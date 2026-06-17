@@ -95,6 +95,7 @@ class PlanSessionService:
         decomposition: dict | None = None,
         event_time: Any = None,
         created_by: Any = None,
+        conversation_id: Any = None,
     ) -> PlanSession:
         """建 PlanSession（status 默认 decomposing）—— engine/入口层建会话的入口。
 
@@ -110,7 +111,7 @@ class PlanSessionService:
                 f"非法 entrypoint={entrypoint!r}；合法值={list(PlanSessionEntrypoint.values)}"
             )
         return await self._create_session_sync(
-            entrypoint, work_item, decomposition, event_time, created_by
+            entrypoint, work_item, decomposition, event_time, created_by, conversation_id
         )
 
     @sync_to_async
@@ -121,6 +122,7 @@ class PlanSessionService:
         decomposition: dict | None,
         event_time: Any,
         created_by: Any,
+        conversation_id: Any = None,
     ) -> PlanSession:
         return PlanSession.objects.create(
             entrypoint=entrypoint,
@@ -128,6 +130,7 @@ class PlanSessionService:
             decomposition=decomposition or {},
             event_time=event_time,
             created_by=created_by,
+            conversation_id=conversation_id,
         )
 
     async def set_current_plan_version(self, session: PlanSession, version_id: Any) -> PlanSession:
