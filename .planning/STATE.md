@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.10.0
 milestone_name: 操作审计治理
-status: verifying
-stopped_at: Completed 53-02-PLAN.md
+status: discussing
+stopped_at: Phase 53 verified (passed) -- starting Phase 54
 last_updated: "2026-06-17T08:13:32.526Z"
-last_activity: 2026-06-17 -- Phase 53 execution started
+last_activity: 2026-06-17 -- Phase 53 complete (35 tests green), Phase 54 discuss
 progress:
   total_phases: 3
   completed_phases: 1
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
-**Current focus:** Phase 53 — AuditEvent 模型 + emit 地基
+**Current focus:** Phase 54 — 敏感操作全量覆盖 emit
 
 ## Current Position
 
-Phase: 53 (AuditEvent 模型 + emit 地基) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-06-17 -- Phase 53 execution started
+Phase: 54 (敏感操作全量覆盖 emit) — DISCUSSING
+Plan: 0 of ?
+Status: Phase 53 verified passed (35 tests green); starting Phase 54 smart discuss
+Last activity: 2026-06-17 -- Phase 53 complete, Phase 54 discuss
 
 ## Milestone Overview (v0.10.0 — Phases 53–55)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ⬜ Not started |
+| 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ✅ Complete |
 | 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ⬜ Not started |
 | 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ⬜ Not started |
 
