@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.10.0
 milestone_name: 操作审计治理
 status: discussing
-stopped_at: Phase 53 verified (passed) -- starting Phase 54
-last_updated: "2026-06-17T08:13:32.526Z"
-last_activity: 2026-06-17 -- Phase 53 complete (35 tests green), Phase 54 discuss
+stopped_at: Phase 54 verified (passed) -- starting Phase 55
+last_updated: "2026-06-17T09:50:00.000Z"
+last_activity: 2026-06-17 -- Phase 54 complete (audit 66 tests green), Phase 55 discuss
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 33
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 66
 ---
 
 # Project State
@@ -21,21 +21,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
-**Current focus:** Phase 54 — 敏感操作全量覆盖 emit
+**Current focus:** Phase 55 — 审计查询 API + 前端视图 + 导出
 
 ## Current Position
 
-Phase: 54 (敏感操作全量覆盖 emit) — DISCUSSING
+Phase: 55 (审计查询 API + 前端视图 + 导出) — DISCUSSING
 Plan: 0 of ?
-Status: Phase 53 verified passed (35 tests green); starting Phase 54 smart discuss
-Last activity: 2026-06-17 -- Phase 53 complete, Phase 54 discuss
+Status: Phase 54 verified passed (audit 66 tests green); starting Phase 55 smart discuss
+Last activity: 2026-06-17 -- Phase 54 complete, Phase 55 discuss
 
 ## Milestone Overview (v0.10.0 — Phases 53–55)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ✅ Complete |
-| 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ⬜ Not started |
+| 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ✅ Complete |
 | 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ⬜ Not started |
 
 **Execution order:** 53 → 54 → 55（严格顺序）。依赖链：统一 `AuditEvent` 模型 + 单一写入入口 + fail-soft emit 地基(53) → 各敏感操作经统一入口 emit 审计、v0.5 排除/清理埋点收口(54) → 审计查询 API + 前端视图 + 导出(55)。无模型/emit 地基无从 emit，无覆盖的审计数据无从查询展示。
