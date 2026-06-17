@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.10.0
 milestone_name: 操作审计治理
-status: discussing
-stopped_at: Phase 54 verified (passed) -- starting Phase 55
-last_updated: "2026-06-17T09:50:00.000Z"
-last_activity: 2026-06-17 -- Phase 54 complete (audit 66 tests green), Phase 55 discuss
+status: milestone-complete
+stopped_at: Phase 55 verified (passed) -- milestone v0.10.0 phases all complete
+last_updated: "2026-06-17T10:05:00.000Z"
+last_activity: 2026-06-17 -- Phase 55 complete (audit 84 + frontend 4 tests green); milestone done
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 66
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
-**Current focus:** Phase 55 — 审计查询 API + 前端视图 + 导出
+**Current focus:** v0.10.0 操作审计治理 —— 全部 phase 完成，待 milestone 收尾
 
 ## Current Position
 
-Phase: 55 (审计查询 API + 前端视图 + 导出) — DISCUSSING
-Plan: 0 of ?
-Status: Phase 54 verified passed (audit 66 tests green); starting Phase 55 smart discuss
-Last activity: 2026-06-17 -- Phase 54 complete, Phase 55 discuss
+Phase: 55 (审计查询 API + 前端视图 + 导出) — ✅ VERIFIED PASSED
+Plan: 3 of 3 complete
+Status: 里程碑 v0.10.0 三个 phase 全部 verified passed；待 complete-milestone / cleanup
+Last activity: 2026-06-17 -- Phase 55 complete（后端 84 + 前端 4 测试绿）
 
 ## Milestone Overview (v0.10.0 — Phases 53–55)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-17 -- Phase 54 complete, Phase 55 discuss
 |-------|------|--------------|--------|
 | 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ✅ Complete |
 | 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ✅ Complete |
-| 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ⬜ Not started |
+| 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ✅ Complete |
 
 **Execution order:** 53 → 54 → 55（严格顺序）。依赖链：统一 `AuditEvent` 模型 + 单一写入入口 + fail-soft emit 地基(53) → 各敏感操作经统一入口 emit 审计、v0.5 排除/清理埋点收口(54) → 审计查询 API + 前端视图 + 导出(55)。无模型/emit 地基无从 emit，无覆盖的审计数据无从查询展示。
 
