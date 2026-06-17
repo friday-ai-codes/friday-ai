@@ -1353,7 +1353,8 @@ class GitInstanceCredentialDetailView(APIView):
             after={
                 "host": credential.host,
                 "provider": credential.provider,
-                "token_changed": token_changed,
+                # 键名避开脱敏关键词（"token" 会被入口脱敏）：用 rotated 表「是否换密钥」
+                "rotated": token_changed,
             },
             source="api",
         )

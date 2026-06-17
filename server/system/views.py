@@ -489,6 +489,63 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         )
 
     # ------------------------------------------------------------------
+    # 同步 perform_* 覆盖：本 ViewSet 经 rest_framework.DefaultRouter 路由，POST/PUT/PATCH/
+    # DELETE 实际分派到 DRF 同步 create/update/destroy → perform_create/update/destroy（非
+    # adrf 异步 perform_a*）。审计 emit 必须落在真正执行的同步面，故同步面用 AuditService.emit
+    # 收口（与上面异步 perform_a* 互斥执行，单请求只走一条路径，不会双写）。
+    # ------------------------------------------------------------------
+
+    def perform_create(self, serializer) -> None:  # type: ignore[no-untyped-def]
+        serializer.save()
+        instance = serializer.instance
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_CREATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=instance.id,
+            target_repr=f"{instance.provider_type}:{instance.name}",
+            after={
+                "provider_type": instance.provider_type,
+                "scope": instance.scope,
+                "scope_id": str(instance.scope_id) if instance.scope_id else None,
+                "name": instance.name,
+            },
+            source="api",
+        )
+
+    def perform_update(self, serializer) -> None:  # type: ignore[no-untyped-def]
+        serializer.save()
+        updated = serializer.instance
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=updated.id,
+            target_repr=f"{updated.provider_type}:{updated.name}",
+            after={"changed": sorted(serializer.validated_data.keys())},
+            source="api",
+        )
+
+    def perform_destroy(self, instance) -> None:  # type: ignore[no-untyped-def]
+        snapshot = {
+            "provider_type": instance.provider_type,
+            "scope": instance.scope,
+            "name": instance.name,
+        }
+        target_pk = instance.id
+        target_repr = f"{instance.provider_type}:{instance.name}"
+        instance.delete()
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_DELETED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=target_pk,
+            target_repr=target_repr,
+            before=snapshot,
+            source="api",
+        )
+
+    # ------------------------------------------------------------------
     # implementation @action 扩展：contract toggle + contract refresh-models
     # ------------------------------------------------------------------
 

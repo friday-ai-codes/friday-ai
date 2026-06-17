@@ -11,7 +11,8 @@
 - ``ALL_ACTIONS``：audit 词表 action 全集——供守护测试断言命名规范与种子覆盖。
 - ``RESERVED_ACTIONS``：v0.5 既有埋点收口预留位。Phase 54 已把 ``purge.started`` /
   ``purge.completed`` 提升为具名 ``ACTION_PURGE_*`` 常量并纳入 ``ALL_ACTIONS``（接线见
-  ``services/purge_reconcile.py:log_purge_event``），故 RESERVED 现为空集预留位
+  ``services/purge_reconcile.py:run_cleanup`` 经 ``_emit_purge_audit`` 收口 AuditService），
+  故 RESERVED 现为空集预留位
   （对齐 ``event_taxonomy.RESERVED_EVENTS`` 范式，留待后续里程碑新增埋点收口）。
 """
 
