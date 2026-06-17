@@ -230,6 +230,58 @@ async def test_record_produced_artifacts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mark_gate_blocked_pending() -> None:
+    """pending task mark_gate_blocked → failed + error={reason, spec_status}（D-51-3）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+
+    affected = await svc.mark_gate_blocked(task, "spec_not_approved", "draft")
+    assert affected == 1
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.status == RepoCodingTaskStatus.FAILED
+    assert reread.error == {"reason": "spec_not_approved", "spec_status": "draft"}
+
+
+@pytest.mark.asyncio
+async def test_mark_gate_blocked_guard_running() -> None:
+    """已运行 task mark_gate_blocked → no-op（仅 pending 生效），不强翻在途。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+    await svc.mark_running(task, None)
+
+    affected = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert affected == 0
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.status == RepoCodingTaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_mark_gate_blocked_idempotent() -> None:
+    """重复 mark_gate_blocked 同一已 blocked task → 影响 0 行（status 已 failed 不匹配 pending）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+
+    first = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert first == 1
+    second = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert second == 0
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.error == {"reason": "spec_not_approved", "spec_status": "missing"}
+
+
+@pytest.mark.asyncio
 async def test_mark_failed_wraps() -> None:
     """mark_failed(task, "boom") → error={"message":"boom"}（非 dict 包装）。"""
     plan_version = await _make_plan_version()
