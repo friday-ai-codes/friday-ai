@@ -15,7 +15,7 @@
 
 ### Anthropic 兼容端点（ANTHROPIC）
 
-- [ ] **ANTHROPIC-01**: 新增 Anthropic 兼容 `/v1/messages` 端点——请求 / 响应按 Anthropic Messages 形状映射（system / messages / max_tokens 等），复用既有 chat / agent 内核，非流式响应可用
+- [x] **ANTHROPIC-01**: 新增 Anthropic 兼容 `/v1/messages` 端点——请求 / 响应按 Anthropic Messages 形状映射（system / messages / max_tokens 等），复用既有 chat / agent 内核，非流式响应可用
 - [ ] **ANTHROPIC-02**: `/v1/messages` 流式（SSE）可用，trace / progress 经 thinking block adapter 透出（复用 TRACE-01 的同一事件 taxonomy 映射，INV-5 非原始 CoT）
 
 ### 飞书原生流式卡片（CARD）
@@ -50,7 +50,7 @@
 |-------------|-------|--------|
 | TRACE-01 | Phase 56 | Complete |
 | TRACE-02 | Phase 56 | Complete |
-| ANTHROPIC-01 | Phase 57 | Pending |
+| ANTHROPIC-01 | Phase 57 | Complete |
 | ANTHROPIC-02 | Phase 57 | Pending |
 | CARD-01 | Phase 58 | Pending |
 | GROUP-01 | Phase 59 | Pending |
