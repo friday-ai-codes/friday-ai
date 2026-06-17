@@ -80,6 +80,37 @@ def _content_blocks(content: object) -> str | list[str | dict[Any, Any]]:
     return blocks
 
 
+def anthropic_to_openai_messages(system: object, messages: list[dict]) -> list[dict]:
+    """把 Anthropic Messages 形状摊平为 ``prepare_messages_with_meta`` 期望的 ``[{role, content}]``。
+
+    规整规则：
+      ① ``system`` 非空（string 或 content blocks）→ 用 ``_content_text`` 摊平为纯文本，
+         在结果列表首位插入 ``{"role":"system","content":<摊平文本>}``（摊平为空串则不插入）。
+      ② ``messages`` 逐条透传 ``{"role": m["role"], "content": <规整 content>}``：content
+         为 str 直接透传；content 为 blocks 列表时仅保留 text part 并规整为 OpenAI 形状
+         ``{"type":"text","text":...}``（Anthropic text block 本就是该形状，原样保留；
+         非 text part 本 phase 丢弃——image 全量对齐属 Out of Scope）。
+
+    规整后完全委托 ``prepare_messages_with_meta``（不重写 RAG 注入/检索内核），RAG query
+    取最后一条 user message 由内核处理。
+    """
+    result: list[dict] = []
+    system_text = _content_text(system)
+    if system_text:
+        result.append({"role": "system", "content": system_text})
+    for m in messages:
+        content = m.get("content", "")
+        if isinstance(content, list):
+            normalized: list[dict] = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    normalized.append({"type": "text", "text": str(part.get("text", ""))})
+            result.append({"role": m.get("role", ""), "content": normalized})
+        else:
+            result.append({"role": m.get("role", ""), "content": content})
+    return result
+
+
 async def _prepare(
     messages: list[dict],
     repository_ids: list[str] | None,
