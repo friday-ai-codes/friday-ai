@@ -2,9 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
-status: planning
-last_updated: "2026-06-17T10:20:17.607Z"
-last_activity: 2026-06-17
+status: executing
+stopped_at: v0.10.0 归档完成；v0.11.0 里程碑定稿（PROJECT/REQUIREMENTS/ROADMAP/STATE）
+last_updated: "2026-06-17T10:50:48.633Z"
+last_activity: 2026-06-17 — Milestone v0.11.0 started（PROJECT/REQUIREMENTS/ROADMAP 已定稿）
 progress:
   total_phases: 0
   completed_phases: 0
