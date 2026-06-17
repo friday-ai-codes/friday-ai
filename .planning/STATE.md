@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: SDD / OpenSpec 支持（重型）
-status: Phase 52 shipped (3 plans / 2 waves, LINK-01/LINK-02 闭合：spec↔PR 回填 + 交付验收追溯视图)；里程碑 v0.9.0 全 5 phase 完成
-stopped_at: Phase 52 完成并提交（52-SUMMARY.md 已写），里程碑 v0.9.0 全部 phase 交付完毕，待里程碑审计/收官
-last_updated: "2026-06-17T05:15:00.000Z"
-last_activity: 2026-06-17 — Phase 52 spec↔PR 关联（SddSpec.implementation_prs JSON + SddSpecService.link_implementation_pr 单一写入入口 + _finalize_and_notify best-effort fail-soft 回填）+ 交付验收视图（SddSpecDetailSerializer 扩追溯摘要 + 前端 SpecDeliveryPanel WorkItem→spec→PR 链路 fail-soft 降级），非 SDD 仓零回归
+status: Awaiting next milestone
+stopped_at: Milestone v0.9.0 SDD / OpenSpec 收官归档（audit passed 11/11 + integration_ok + INV-6/INV-2；ROADMAP/REQUIREMENTS/AUDIT 已归档 milestones/，Phases 48–52 全交付）
+last_updated: "2026-06-17T06:00:00.000Z"
+last_activity: 2026-06-17 — Milestone v0.9.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
+  total_plans: 18
+  completed_plans: 18
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: 52 (Complete) — Phase 48/49/50/51/52 all complete (v0.9.0 全 phase 交付)
-Plan: 3/3 (52-01/52-02/52-03 shipped)
-Status: Phase 52 shipped (3 plans / 2 waves, LINK-01/LINK-02 闭合)；里程碑 v0.9.0 全部 5 phase 完成，待里程碑审计/收官
-Last activity: 2026-06-17 — Phase 52 spec↔PR 回填（implementation_prs JSON + link_implementation_pr 单一写入入口 + _finalize_and_notify fail-soft）+ detail serializer 追溯摘要 + 前端 SpecDeliveryPanel 交付验收面板（fail-soft 降级），非 SDD 仓零回归
+Phase: Milestone v0.9.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-17 — Milestone v0.9.0 completed and archived
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
@@ -418,4 +418,4 @@ Next: Phase 52（LINK-01/02：spec↔需求/PR 关联 + 交付验收视图）—
 
 ## Operator Next Steps
 
-- Plan the next phase with /gsd-plan-phase 52
+- Start the next milestone with /gsd-new-milestone
