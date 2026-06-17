@@ -52,6 +52,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/audit/': RouteRecordInfo<
+      '/admin/audit/',
+      '/admin/audit',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/components/FeishuIMConfigSection': RouteRecordInfo<
       '/admin/components/FeishuIMConfigSection',
       '/admin/components/FeishuIMConfigSection',
@@ -455,6 +462,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/index.vue': {
       routes:
         | '/admin/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/audit/index.vue': {
+      routes:
+        | '/admin/audit/'
       views:
         | never
       pathParamNames:
