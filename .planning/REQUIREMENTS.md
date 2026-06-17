@@ -2,78 +2,61 @@
 
 **Defined:** 2026-06-17
 **Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**Milestone:** v0.9.0 — SDD / OpenSpec 支持（重型）
+**Milestone:** v0.10.0 — 操作审计治理
 
-> 让 spec-driven development 成为可治理的过程资产：仓库打标 → 方案产 spec → spec 状态机 + 编码前置 gate + 评审状态 → spec↔需求/PR 关联 → 交付验收。v0.7/v0.8 已预留扩展点（`Document.SDD_SPEC` 枚举、`RepoCodingTask.follow_openspec` 字段、`Repository.facets` JSON、task `setting_sources=["project"]`），本里程碑做完整生命周期与治理。设计底座：`ROADMAP-vNext.md §v0.9`、`DOMAIN-MODEL.md §6.1/§3`。
+> 横切治理能力——立起统一 `AuditEvent` 审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出，使敏感操作可查、可追溯、可审计。系统管理员 = 现有 `is_superuser`（不新建角色）；审计为横切能力，各功能产生敏感操作时 emit，本里程碑统一收口 + 补齐覆盖 + UI；v0.5 既有分散埋点（`purge.started/completed` 结构化日志、`TriggerLog`/`ActionLog`）收口到统一表。设计底座：`ROADMAP-vNext.md §v0.10`、`DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）。PREFLIGHT 无映射 v0.10 的 blocking/should-fix 项。
 
 ## v1 Requirements
 
-### SDD 仓库打标（SDD）
+### 审计模型与 emit 地基（AUDIT）
 
-- [ ] **SDD-01**: 索引完成后系统自动检测仓库根 `openspec/` 目录，命中则写 `Repository.facets["methodology"]="SDD"`（best-effort，不阻断索引 success）
-- [ ] **SDD-02**: 用户在仓库列表/详情看到 SDD 方法论标签，可据此识别 spec-driven 仓库
+- [ ] **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（service 收口，INV-6 精神），append-only 不可篡改——无 update/delete 业务路径，模型层守护
+- [ ] **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计事件，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥/明文 token 字段在审计记录中脱敏不落明文
 
-### 方案产 spec（SPEC）
+### 敏感操作全量覆盖（AUDITCOV）
 
-- [x] **SPEC-01**: SDD 仓库的方案编排（`PlanSession` 融合阶段）额外产出 openspec 格式 spec draft（change proposal / spec delta），落 `Document(document_type=sdd_spec, source_kind=internal_generated)` 并经 `DocumentService` 单一入口写入（INV-6）
-- [x] **SPEC-02**: 产出的 spec draft 关联到来源 `WorkItem` 与 `PlanVersion`，可追溯生成上下文
+- [ ] **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间（Project）配置变更、仓库权限变更，记录 actor + 目标 + 前后值
+- [ ] **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider 凭证 / Git 实例凭证 / 飞书凭证增删改、Agent API key / PAT 创建吊销、飞书同步、排除规则变更、清理任务（v0.5 既有排除/清理埋点收口到统一 `AuditEvent` 表）
 
-### spec 状态机与评审（SPECST）
+### 审计查询与导出（AUDITUI）
 
-- [ ] **SPECST-01**: spec 有完整状态机 `draft → in_review → approved → implemented → archived`，状态流转经单一 service 入口、非法流转被拒
-- [ ] **SPECST-02**: spec 评审产生不可篡改记录（reviewer / decision approve|reject / comment / time），审批驱动状态流转
-- [ ] **SPECST-03**: 用户在前端可见 spec 列表 / 详情 / 状态与评审记录，并能发起状态流转（提交评审 / 批准 / 驳回）
-
-### 编码前置 gate（GATE）
-
-- [x] **GATE-01**: SDD 仓库（`follow_openspec=True`）编码派发前校验关联 spec 已 `approved`，未批准则拦截编码（gate）并如实标注阻断原因，不静默放行
-- [x] **GATE-02**: SDD 仓库编码容器注入 openspec 指引（task `system_prompt` 按仓库类型注入点 + 复用 `setting_sources=["project"]` 原生加载仓库内 `.claude/skills`），使编码遵循 openspec 流程
-
-### spec↔需求/PR 关联与交付验收（LINK）
-
-- [x] **LINK-01**: spec 挂接到对应 `WorkItem`，并关联其实现 PR/MR（编码产出回填）
-- [x] **LINK-02**: 用户可见交付验收视图，沿 spec → `WorkItem` → 实现 PR 链路追溯一次需求的 spec-driven 交付状态
+- [ ] **AUDITUI-01**: 审计查询 REST API——按 actor / action / target / 时间范围过滤 + 分页，superuser fail-closed 访问控制，记录对外只读（无创建/编辑/删除入口）
+- [ ] **AUDITUI-02**: 审计前端视图——列表 / 过滤 / 详情（before-after 对比）+ 导出（CSV/JSON）
 
 ## v2 Requirements
 
-### SDD 进阶（SDDX）
+### 审计进阶（AUDITX）
 
-- **SDDX-01**: openspec spec 自动校验/lint（格式与 spec delta 合法性深度校验）
-- **SDDX-02**: spec 与代码实现的双向 drift 检测（实现偏离 approved spec 时告警）
-- **SDDX-03**: 非 openspec 的其他 SDD 方法论适配（当前仅 openspec）
+- **AUDITX-01**: 审计日志密码学级防篡改（hash chain / WORM 存储），抵御 DB 直接篡改
+- **AUDITX-02**: 实时告警 / SIEM 集成 / webhook 外发（敏感操作触发主动告警）
+- **AUDITX-03**: 审计日志保留策略 / 归档 / 自动清理（按时间或容量）
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| 编码中全自动 replan/回溯（实现偏离 spec 自动改方案） | 沿用 v0.8 决策：全自动 replan 范围爆炸，spec drift 走告警/HITL，不在本里程碑 |
-| openspec 之外的 SDD 框架（自研 spec 格式/RFC 流程等） | 当前生态以 openspec 为主，先做 openspec；多框架适配留 v2（SDDX-03） |
-| spec 评审的细粒度多级审批流（多评审人会签/分级） | 单评审 approve/reject 足够；复杂审批流非当前治理诉求 |
-| 新建独立 SDD 角色/权限层 | 复用既有 superuser / 空间 admin 权限；不新建角色（与既有里程碑决策一致） |
-| 把 spec 评审操作接入统一审计 `AuditEvent` | 审计为独立里程碑 v0.10；本里程碑评审记录自持久化，审计收口顺延 v0.10 |
+| 新建独立审计角色 / 权限层（非 superuser 的审计查看角色） | 复用既有 `is_superuser`，不新建角色（与既有里程碑「系统管理员=superuser」决策一致） |
+| 密码学级防篡改（hash chain / WORM） | 应用层 append-only（无 update/delete 业务路径）即满足「不可篡改」治理诉求；密码学防篡改成本高，留 v2（AUDITX-01） |
+| 实时告警 / SIEM / 外部 webhook 外发 | 本里程碑聚焦「留痕 + 查询 + 导出」，主动告警是独立能力，留 v2（AUDITX-02） |
+| 审计日志保留 / 归档 / 自动清理策略 | 先做全量留痕与查询，保留治理留 v2（AUDITX-03） |
+| 读操作 / 普通业务操作的全量审计 | 审计聚焦敏感/管理操作；全量操作日志会产生噪音且与现有 `ActionLog`/structlog 重叠 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SDD-01 | Phase 48 | Pending |
-| SDD-02 | Phase 48 | Pending |
-| SPEC-01 | Phase 49 | ✅ Complete |
-| SPEC-02 | Phase 49 | ✅ Complete |
-| SPECST-01 | Phase 50 | Pending |
-| SPECST-02 | Phase 50 | Pending |
-| SPECST-03 | Phase 50 | Pending |
-| GATE-01 | Phase 51 | Complete |
-| GATE-02 | Phase 51 | Complete |
-| LINK-01 | Phase 52 | Complete |
-| LINK-02 | Phase 52 | Complete |
+| AUDIT-01 | Phase 53 | Pending |
+| AUDIT-02 | Phase 53 | Pending |
+| AUDITCOV-01 | Phase 54 | Pending |
+| AUDITCOV-02 | Phase 54 | Pending |
+| AUDITUI-01 | Phase 55 | Pending |
+| AUDITUI-02 | Phase 55 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 11 total
-- Mapped to phases: 11
+- v1 requirements: 6 total
+- Mapped to phases: 6
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-06-17*
-*Last updated: 2026-06-17 after milestone v0.9.0 definition*
+*Requirements defined: 2026-06-17 for milestone v0.10.0*

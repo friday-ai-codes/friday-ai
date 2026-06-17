@@ -26,11 +26,18 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: 规划中（v0.9.0 已交付）
+## Current Milestone: v0.10.0 操作审计治理
 
-v0.9.0 SDD / OpenSpec 支持（重型）已于 2026-06-17 收官归档（见 `.planning/milestones/v0.9.0-*`，audit passed 11/11 + integration_ok）。下一里程碑待 `/gsd-new-milestone` 规划。
+**Goal:** 立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
 
-**候选方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.10 操作审计治理（统一 `AuditEvent` 模型 + 全量敏感操作 emit + 查询 UI；spec 评审/排除清理等埋点收口）、v0.11 开放与协作（Agent API trace 透出 + Anthropic 兼容端点 + 飞书原生流式卡片 + 工作流自动建群）、编码中全自动 replan/spec drift 检测、chat 编码入口 cross-ref/HITL 接线收尾。
+**Target features:**
+- 统一 `AuditEvent` 模型（actor / action / target / before-after / source / 时间 / metadata）+ 单一写入入口（INV-6 精神）+ append-only 不可篡改 + emit 机制 fail-soft 不阻断主操作 + 凭证脱敏。
+- 全量覆盖敏感操作 emit：身份与权限类（成员增删改 / 用户启停 / 角色权限 / 空间配置 / 仓库权限）+ 凭证与数据治理类（Provider/Git/飞书凭证、Agent API key/PAT、飞书同步、排除规则变更、清理任务——v0.5 既有埋点收口统一表）。
+- 审计查询 REST API（按 actor/action/target/时间过滤 + 分页，superuser fail-closed）+ 前端审计视图（列表/过滤/before-after 详情）+ 导出（CSV/JSON）。
+
+**Key context:** 系统管理员 = 现有 `is_superuser`，不新建审计角色（沿用既有里程碑决策）；审计为横切能力，各功能产生敏感操作时 emit、本里程碑统一收口 + 补齐覆盖 + UI；v0.5 已有分散的 `purge.started/completed` 等结构化日志埋点与 `TriggerLog`/`ActionLog`，本里程碑收口到统一 `AuditEvent` 表。设计底座：`ROADMAP-vNext.md §v0.10`、`DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）。PREFLIGHT 无映射 v0.10 的 blocking/should-fix 项。
+
+**候选后续方向（见 Backlog / `ROADMAP-vNext.md`）：** v0.11 开放与协作（Agent API trace 透出 + Anthropic 兼容端点 + 飞书原生流式卡片 + 工作流自动建群）、编码中全自动 replan/spec drift 检测、chat 编码入口 cross-ref/HITL 接线收尾。
 
 ## Requirements
 
@@ -96,10 +103,21 @@ v0.9.0 SDD / OpenSpec 支持（重型）已于 2026-06-17 收官归档（见 `.p
 - ✓ **编码前置 gate + openspec 注入**：`RepoCodingTaskService.create_tasks_for_plan` 首次消费 `follow_openspec`（按 `facets.methodology=="SDD"` 置位）+ `AICodingNode._dispatch_wave` 前置 gate（`follow_openspec=True` 仓校验 `SddSpec.status==APPROVED` 才放行，未批准/异常 fail-closed `mark_gate_blocked` 拦截 + 单仓隔离不崩 wave + 下游传递闭包阻断）+ openspec 指引注入（dispatch `env_FRIDAY_TASK_FOLLOW_OPENSPEC` → task `TaskConfig.follow_openspec` → `_get_system_prompt` openspec 段 + `setting_sources=["project"]` 原生加载 `.claude/skills`）；非 SDD 仓零回归 — v0.9.0 (`server/workflows/nodes/ai/coding.py`, `task/core/executor.py`)
 - ✓ **spec↔PR 关联 + 交付验收视图**：`SddSpec.implementation_prs` + `SddSpecService.link_implementation_pr`（去重幂等 + approved→implemented，无 spec no-op）经 `_finalize_and_notify` best-effort 回填（fail-soft 绝不阻断 PR 创建/通知）+ `SddSpecDetailSerializer` 追溯摘要 + 前端 `SpecDeliveryPanel`（WorkItem→spec→PR 链路，缺数据降级占位） — v0.9.0 (`server/delivery/services/sdd_spec_service.py`, `web/src/components/...SpecDeliveryPanel.vue`)
 
-**Backlog 候选（下一里程碑）：**
+### Active（v0.10.0 操作审计治理）
 
-- v0.10 操作审计治理（统一 `AuditEvent` + 全量敏感操作 emit + 查询/审计 UI；v0.9 spec 评审 / v0.5 排除清理等敏感操作埋点收口）
+<!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md -->
+
+- ☐ **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（INV-6 精神），append-only 不可篡改（无 update/delete 业务路径）
+- ☐ **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥字段脱敏不落明文
+- ☐ **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间配置变更、仓库权限变更（actor + 前后值）
+- ☐ **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider/Git 实例/飞书凭证增删改、Agent API key / PAT 操作、飞书同步、排除规则变更、清理任务（v0.5 排除/清理埋点收口统一表）
+- ☐ **AUDITUI-01**: 审计查询 REST API——按 actor/action/target/时间范围过滤 + 分页，superuser fail-closed 访问控制，记录只读
+- ☐ **AUDITUI-02**: 审计前端视图——列表/过滤/详情（before-after 对比）+ 导出（CSV/JSON）
+
+**Backlog 候选（后续里程碑）：**
+
 - v0.11 开放与协作（Agent API trace 透出 + Anthropic 兼容端点 + 飞书原生流式卡片 + 工作流自动建群）
+- 审计进阶（v2 AUDITX）：密码学级防篡改（hash chain / WORM）、实时告警 / SIEM / webhook 外发、审计保留/归档/自动清理策略
 - SDD 进阶（v2 SDDX）：openspec spec 内容 lint 深度校验、spec↔代码双向 drift 检测、非 openspec 的其他 SDD 框架适配
 - 编码中全自动 replan/回溯（v0.8 已用「抛 question 给人」HITL-01 过渡，全自动留后续）
 - chat 编码入口（`coding_session_service`）的跨仓 PR cross-ref / 遇阻 HITL 接线收尾（v0.8 优先 workflow wave 入口，helper 入口无关已就绪以便复用）
@@ -188,4 +206,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-17 — after v0.9.0 milestone*
+*Last updated: 2026-06-17 — start milestone v0.10.0 操作审计治理*
