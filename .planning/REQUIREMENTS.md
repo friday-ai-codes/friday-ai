@@ -26,8 +26,8 @@
 
 ### 编码前置 gate（GATE）
 
-- [ ] **GATE-01**: SDD 仓库（`follow_openspec=True`）编码派发前校验关联 spec 已 `approved`，未批准则拦截编码（gate）并如实标注阻断原因，不静默放行
-- [ ] **GATE-02**: SDD 仓库编码容器注入 openspec 指引（task `system_prompt` 按仓库类型注入点 + 复用 `setting_sources=["project"]` 原生加载仓库内 `.claude/skills`），使编码遵循 openspec 流程
+- [x] **GATE-01**: SDD 仓库（`follow_openspec=True`）编码派发前校验关联 spec 已 `approved`，未批准则拦截编码（gate）并如实标注阻断原因，不静默放行
+- [x] **GATE-02**: SDD 仓库编码容器注入 openspec 指引（task `system_prompt` 按仓库类型注入点 + 复用 `setting_sources=["project"]` 原生加载仓库内 `.claude/skills`），使编码遵循 openspec 流程
 
 ### spec↔需求/PR 关联与交付验收（LINK）
 
@@ -63,12 +63,13 @@
 | SPECST-01 | Phase 50 | Pending |
 | SPECST-02 | Phase 50 | Pending |
 | SPECST-03 | Phase 50 | Pending |
-| GATE-01 | Phase 51 | Pending |
-| GATE-02 | Phase 51 | Pending |
+| GATE-01 | Phase 51 | Complete |
+| GATE-02 | Phase 51 | Complete |
 | LINK-01 | Phase 52 | Pending |
 | LINK-02 | Phase 52 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 11 total
 - Mapped to phases: 11
 - Unmapped: 0 ✓
