@@ -65,7 +65,12 @@
   2. spec 评审产生不可篡改记录（reviewer / decision approve|reject / comment / time），审批驱动状态流转
   3. 用户在前端可见 spec 列表 / 详情 / 当前状态与评审记录
   4. 用户可在前端发起状态流转（提交评审 / 批准 / 驳回）并看到结果
-**Plans**: TBD
+**Plans**: 5 plans
+- [ ] 50-01-PLAN.md — SddSpecReview append-only 模型 + ReviewDecision 枚举 + re-export + migration（SPECST-02）
+- [ ] 50-02-PLAN.md — SddSpecService 状态机流转 + SddSpecTransitionError + 单一事务评审驱动 + INV-6 守护扩展（SPECST-01/02）
+- [ ] 50-03-PLAN.md — /api/specs/ REST（list/detail/transition）+ 权限分流 + read_only 序列化器（SPECST-01/02/03）
+- [ ] 50-04-PLAN.md — 前端基础：api/specs.ts + 类型 + SddSpecStatusBadge + SpecReviewTimeline + specs i18n（SPECST-03）
+- [ ] 50-05-PLAN.md — 前端页面：列表/详情 + SpecTransitionActions/SpecReviewDialog + 侧边栏入口（SPECST-03）
 **UI hint**: yes
 
 ### Phase 51: 编码前置 gate + openspec skill 编码策略
