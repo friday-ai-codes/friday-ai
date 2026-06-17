@@ -700,7 +700,17 @@ class AICodingNode(SubStepMixin, BaseNode):
                 blocked_reason = "gate_error"
                 spec_status = "unknown"
 
-            await service.mark_gate_blocked(task, blocked_reason, spec_status)
+            # WR-01：拦截写入也纳入单仓隔离边界——写入抖动绝不向外冒泡牵连整 wave。
+            # 写入失败时仍把该仓计入 gate_blocked_failed（本轮 fail-closed 不 dispatch、
+            # 下游照常阻断）；DB 态短暂留 pending 由后续 aadvance 重算兜底。
+            try:
+                await service.mark_gate_blocked(task, blocked_reason, spec_status)
+            except Exception as exc:  # noqa: BLE001 — 拦截写入 fail-closed 隔离，绝不崩整 wave
+                log.warning(
+                    "coding_openspec_gate_block_write_failed",
+                    repo_id=repo_id,
+                    error=str(exc),
+                )
             repo = repositories.get(repo_id)
             gate_blocked_failed.append(
                 {
