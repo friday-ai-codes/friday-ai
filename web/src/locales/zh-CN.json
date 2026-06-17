@@ -586,5 +586,56 @@
       "update": "更新实例凭证失败",
       "delete": "删除实例凭证失败"
     }
+  },
+  "audit": {
+    "title": "操作审计",
+    "subtitle": "查询敏感操作的不可篡改审计记录（仅超级管理员可见）",
+    "loading": "加载审计记录中…",
+    "loadError": "加载审计记录失败",
+    "empty": "暂无审计记录",
+    "systemActor": "系统",
+    "filters": {
+      "all": "全部",
+      "action": "动作",
+      "source": "来源",
+      "actorId": "操作者 ID",
+      "actorIdPlaceholder": "用户 UUID",
+      "targetType": "目标类型",
+      "targetTypePlaceholder": "如 user / credential",
+      "targetId": "目标 ID",
+      "q": "关键词",
+      "qPlaceholder": "搜索操作者 / 目标名称",
+      "from": "开始时间",
+      "to": "结束时间",
+      "search": "查询",
+      "reset": "重置"
+    },
+    "columns": {
+      "time": "时间",
+      "actor": "操作者",
+      "action": "动作",
+      "target": "目标",
+      "source": "来源",
+      "detail": "详情"
+    },
+    "pagination": {
+      "range": "第 {start}–{end} 条 / 共 {total} 条",
+      "perPage": "每页 {size} 条",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "detail": {
+      "title": "审计详情",
+      "before": "操作前",
+      "after": "操作后",
+      "metadata": "附加上下文",
+      "recordedAt": "落库时间"
+    },
+    "export": {
+      "csv": "导出 CSV",
+      "json": "导出 JSON",
+      "success": "导出已开始下载",
+      "error": "导出失败"
+    }
   }
 }
