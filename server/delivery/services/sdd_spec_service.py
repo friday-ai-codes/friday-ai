@@ -2,7 +2,7 @@
 
 所有 ``SddSpec`` 落库只经本 service（旁路写表由 test_sdd_spec_inv6_guard grep 守护）。
 本 phase 仅实现 ``create_draft``：经 ``DocumentService.create_internal_spec`` 落 spec 正文
-``Document(sdd_spec)``，再幂等建/取 ``SddSpec(status=draft)`` 并连
+文档（sdd_spec 类型），再幂等建/取 ``SddSpec(status=draft)`` 并连
 document/work_item/plan_version/repository。
 
 **状态流转 / 评审写入方法归 Phase 50，本 phase 不实现。**
