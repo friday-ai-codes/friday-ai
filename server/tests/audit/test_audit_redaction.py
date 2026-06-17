@@ -45,6 +45,38 @@ def test_key_name_hit():
     assert out["name"] == "alice"
 
 
+def test_sensitive_keys_still_redacted():
+    """MEDIUM-2：真正的敏感键名仍命中脱敏（分段/复合匹配不放过）。"""
+    payload = {
+        "token": "x",
+        "access_token": "x",
+        "refresh_token": "x",
+        "api_key": "x",
+        "apiKey": "x",
+        "secret": "x",
+        "password": "x",
+        "app_secret": "x",
+        "private_key": "x",
+        "encrypted_config": "x",
+    }
+    out = _redact_audit_payload(payload)
+    for key in payload:
+        assert out[key] == REDACTION_PLACEHOLDER, f"敏感键 {key} 未脱敏"
+
+
+def test_benign_count_keys_not_redacted():
+    """MEDIUM-2：LLM 用量/计数类字段（含 token 子串）不应被过度脱敏。"""
+    payload = {
+        "prompt_tokens": 1500,
+        "tokens_used": 42,
+        "max_tokens": 4096,
+        "completion_tokens": 300,
+        "promptTokens": 1500,
+    }
+    out = _redact_audit_payload(payload)
+    assert out == payload
+
+
 def test_value_level_secret():
     """键名未命中但值命中密钥模式（GitHub token / 私钥块）→ 值被替换。"""
     gh = _redact_audit_payload({"note": "ghp_AAAABBBBCCCCDDDDEEEE1234"})
