@@ -332,14 +332,30 @@ class ConversationListView(APIView):
 
     @extend_schema(
         summary="获取对话列表",
-        description="返回未删除的对话列表，按 updated_at 降序排列",
+        description=(
+            "返回未删除、未归档的对话列表，按 updated_at 降序，默认取前 50 条。"
+            "支持 ?q= 关键词搜索（匹配标题或消息内容）、?limit= 自定义条数。"
+        ),
         responses={200: ConversationListSerializer(many=True)},
         tags=["Conversations"],
     )
     async def get(self, request):
-        """获取对话列表。"""
+        """获取对话列表（支持内容搜索 + top N）。"""
+        q = request.query_params.get("q") or request.query_params.get("search")
+        limit_raw = request.query_params.get("limit")
+        try:
+            limit = int(limit_raw) if limit_raw else 50
+        except (TypeError, ValueError):
+            limit = 50
+        # 兜底裁剪到合理范围，防止超大 limit 拖垮内容搜索 join。
+        limit = max(1, min(limit, 200))
+        # ?archived=1 → 仅返回已归档会话（「查看已归档」入口）。
+        archived_raw = (request.query_params.get("archived") or "").lower()
+        archived_only = archived_raw in {"1", "true", "yes"}
         # owner gate（ISO-02）：已认证用户仅列自己的会话，无 superuser bypass。
-        conversations = await ConversationService.list_conversations(request.user)
+        conversations = await ConversationService.list_conversations(
+            request.user, query=q, limit=limit, archived_only=archived_only,
+        )
         serializer = ConversationListSerializer(conversations, many=True)
         return Response(serializer.data)
 
@@ -664,6 +680,10 @@ class ConversationDetailView(APIView):
         if "title" in data:
             conversation.title = data["title"]
             updated_fields.append("title")
+        if "is_archived" in data:
+            # 归档与 frozen 正交：任何状态都可归档/取消归档。
+            conversation.is_archived = data["is_archived"]
+            updated_fields.append("is_archived")
 
         if updated_fields:
             updated_fields.append("updated_at")
@@ -691,6 +711,7 @@ class ConversationDetailView(APIView):
                     if conversation.provider_credential_id_id
                     else None
                 ),
+                "is_archived": conversation.is_archived,
                 "created_at": conversation.created_at,
                 "updated_at": conversation.updated_at,
                 "messages": [],

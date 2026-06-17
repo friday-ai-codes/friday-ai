@@ -105,8 +105,8 @@ describe('chatMessageBubble parts rendering ', () => {
     expect(wrapper.find('.tpg').exists()).toBe(true)
     const html = flow.html()
     const textIdx1 = html.indexOf('先思考一下')
-    // 收起态头部预览展示 toolAction（含「搜索」）—— 用此作为过程面板锚点
-    const procIdx = html.indexOf('搜索')
+    // 收起态头部预览展示 toolAction（含「检索」）—— 用此作为过程面板锚点
+    const procIdx = html.indexOf('检索')
     const textIdx2 = html.indexOf('基于结果')
     expect(textIdx1).toBeGreaterThan(-1)
     expect(procIdx).toBeGreaterThan(-1)
@@ -149,7 +149,7 @@ describe('chatMessageBubble parts rendering ', () => {
     // 展开容器 → 步骤行显示中文标签
     await wrapper.find('.tpg-head').trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.tpg-row-label').text()).toBe('搜索代码')
+    expect(wrapper.find('.tpg-row-label').text()).toBe('RAG 代码检索')
   })
 
   it('4. thinking part renders timeline-step--thinking', async () => {
@@ -271,7 +271,7 @@ describe('chatMessageBubble parts rendering ', () => {
     expect(wrapper.html()).toContain('entrance')
     await wrapper.find('.tpg-head').trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.tpg-row-label').text()).toBe('仓库相关性分析')
+    expect(wrapper.find('.tpg-row-label').text()).toBe('仓库分级路由')
     expect(wrapper.html()).not.toContain('analyze_repository_relevance')
   })
 

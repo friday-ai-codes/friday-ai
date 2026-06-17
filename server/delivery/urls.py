@@ -6,8 +6,12 @@
 from django.urls import path
 
 from delivery.api.views import (
+    IngestBatchDetailView,
+    IngestBatchDispatchView,
     IngestDispatchView,
     IngestRunDetailView,
+    ReleaseBitablePreviewView,
+    ReleaseBitableSyncView,
     ScreenshotRecallView,
     WorkItemCommentTreeView,
     WorkItemDetailView,
@@ -28,12 +32,34 @@ urlpatterns = [
         name="work-item-prd-document",
     ),
     path("work-items/", WorkItemDetailView.as_view(), name="work-item-detail"),
-    # 一键摄取触发 + 状态回流（字面段在前；状态端点含 uuid run_id）
+    # 批量摄取触发 + 状态回流（字面段 batch/ 必须在 <uuid:run_id> 之前注册）
+    path(
+        "ingest/batch/",
+        IngestBatchDispatchView.as_view(),
+        name="ingest-batch-dispatch",
+    ),
+    path(
+        "ingest/batch/<uuid:batch_id>/",
+        IngestBatchDetailView.as_view(),
+        name="ingest-batch-detail",
+    ),
+    # 单组摄取触发 + 状态回流（字面段在前；状态端点含 uuid run_id）
     path("ingest/", IngestDispatchView.as_view(), name="ingest-dispatch"),
     path(
         "ingest/<uuid:run_id>/",
         IngestRunDetailView.as_view(),
         name="ingest-run-detail",
+    ),
+    # 上线文档（Bitable）同步：预览（只读） + 批量入库
+    path(
+        "release/bitable/preview/",
+        ReleaseBitablePreviewView.as_view(),
+        name="release-bitable-preview",
+    ),
+    path(
+        "release/bitable/sync/",
+        ReleaseBitableSyncView.as_view(),
+        name="release-bitable-sync",
     ),
     # 截图识别需求（字面段，multipart 上传 + IsAuthenticated）
     path(

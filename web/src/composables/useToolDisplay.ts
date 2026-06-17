@@ -27,14 +27,18 @@ export const TOOL_LABELS: Record<string, string> = {
   get_space_overview: '空间概览',
   list_space_repositories: '仓库列表',
   get_repository_info: '仓库信息',
-  search_repository_code: '搜索代码',
-  search_code: '搜索代码',
+  // search_repository_code 是混合 RAG 检索（dense embedding + BM25 sparse + 符号精确匹配
+  // + L4 图谱扩展），标签点明 RAG 让用户看清「这是语义检索仓库」而非普通文本搜索。
+  search_repository_code: 'RAG 代码检索',
+  search_code: 'RAG 代码检索',
   list_project_structure: '空间结构',
   get_project_overview: '空间概览',
   list_project_repositories: '仓库列表',
   // 相关性 / 代码关系 / 接口
-  analyze_repository_relevance: '仓库相关性分析',
-  find_related_code: '查找关联代码',
+  analyze_repository_relevance: '仓库分级路由',
+  // find_related_code 走 chunk 级代码图谱（CALL/IMPORT/TEST_OF…）沿关系召回关联代码，
+  // 区别于 RAG 模糊召回，标签点明用了图谱能力。
+  find_related_code: '关联代码查找召回',
   list_endpoints: '接口列表',
   find_api_handler: '查找接口实现',
   find_api_callers: '查找接口调用方',
@@ -254,10 +258,10 @@ export function toolAction(
       const repo = searchedRepoLabel(input, repoNames)
       const qPart = q ? `「${truncate(q, 32)}」` : ''
       if (qPart && repo)
-        return `在 ${repo} 搜索 ${qPart}`
+        return `在 ${repo} RAG 检索 ${qPart}`
       if (qPart)
-        return `搜索 ${qPart}`
-      return repo ? `在 ${repo} 搜索代码` : '搜索代码'
+        return `RAG 检索 ${qPart}`
+      return repo ? `在 ${repo} RAG 检索代码` : 'RAG 代码检索'
     }
     case 'analyze_repository_relevance': {
       const cands = relevanceCandidates(result)
@@ -268,11 +272,13 @@ export function toolAction(
         return `关联到 ${head}${more}`
       }
       const q = (input?.query as string) || ''
-      return q ? `分析「${truncate(q, 32)}」相关仓库` : '仓库相关性分析'
+      return q ? `分析「${truncate(q, 32)}」相关仓库` : '仓库分级路由'
     }
     case 'find_related_code': {
       const sym = (input?.symbol_name as string) || (input?.symbol as string) || ''
-      return sym ? `关联代码：${sym}` : '查找关联代码'
+      const file = (input?.file_path as string) || ''
+      const anchor = sym || (file ? truncate(file, 32) : '')
+      return anchor ? `关联代码查找召回：${anchor}` : '关联代码查找召回'
     }
     case 'find_api_handler':
     case 'find_api_callers': {
