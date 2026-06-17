@@ -21,7 +21,7 @@
 **Milestone Goal:** 让 spec-driven development 成为可治理的过程资产——仓库打标（检测 `openspec/`）→ 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审状态 → spec↔需求/PR 关联 → 交付验收。复用 v0.7/v0.8 预留扩展点（`Document.SDD_SPEC` 枚举、`RepoCodingTask.follow_openspec` 字段、`Repository.facets` JSON、task `setting_sources=["project"]`），做完整 spec 生命周期与治理。
 
 - [x] **Phase 48: SDD 仓库检测 + facets 打标 + 前端标签** - 索引后检测 `openspec/` → `facets["methodology"]="SDD"` + 列表/详情方法论标签 — completed 2026-06-17
-- [ ] **Phase 49: 方案产 openspec spec + Document(sdd_spec)** - SDD 仓库方案编排融合阶段额外产 spec draft，落 `Document(sdd_spec)` 并关联来源
+- [x] **Phase 49: 方案产 openspec spec + Document(sdd_spec)** - SDD 仓库方案编排融合阶段额外产 spec draft，落 `Document(sdd_spec)` 并关联来源 — completed 2026-06-17
 - [ ] **Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示** - 完整 spec 生命周期状态机 + 不可篡改评审记录 + spec 列表/详情/状态流转 UI
 - [ ] **Phase 51: 编码前置 gate + openspec skill 编码策略** - SDD 仓库编码前校验 spec 已 approved（gate）+ 容器注入 openspec 指引
 - [ ] **Phase 52: spec↔需求/PR 关联 + 交付验收视图** - spec 挂 `WorkItem` + 关联实现 PR + 沿链路可追溯的交付验收视图
@@ -51,10 +51,10 @@
   3. 非 SDD 仓库的方案编排不产 spec（零回归）
   4. 产出的 spec draft 关联到来源 `WorkItem` 与 `PlanVersion`，可追溯其生成上下文
 **Plans**: 4 plans
-- [ ] 49-01-PLAN.md — SddSpec 脊柱模型 + status/change_kind 枚举 + 建表 migration + DocumentService.create_internal_spec（数据底座，SPEC-01/SPEC-02）
-- [ ] 49-02-PLAN.md — SddSpecService.create_draft（幂等单一写入入口）+ SddSpec INV-6 grep 守护（SPEC-01/SPEC-02）
-- [ ] 49-03-PLAN.md — spec_generation（SddSpecSynthesizer + agenerate_specs_for_plan）+ EVENT_SPEC_DRAFTED + 对齐守护（SPEC-01/SPEC-02）
-- [ ] 49-04-PLAN.md — ArchitectMergeAdapter._handle_pass best-effort 挂接 + 端到端/零回归/fail-soft/幂等测试（SPEC-01/SPEC-02）
+- [x] 49-01-PLAN.md — SddSpec 脊柱模型 + status/change_kind 枚举 + 建表 migration + DocumentService.create_internal_spec（数据底座，SPEC-01/SPEC-02）
+- [x] 49-02-PLAN.md — SddSpecService.create_draft（幂等单一写入入口）+ SddSpec INV-6 grep 守护（SPEC-01/SPEC-02）
+- [x] 49-03-PLAN.md — spec_generation（SddSpecSynthesizer + agenerate_specs_for_plan）+ EVENT_SPEC_DRAFTED + 对齐守护（SPEC-01/SPEC-02）
+- [x] 49-04-PLAN.md — ArchitectMergeAdapter._handle_pass best-effort 挂接 + 端到端/零回归/fail-soft/幂等测试（SPEC-01/SPEC-02）
 
 ### Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示
 **Goal**: spec 具备完整可治理生命周期，评审留痕、用户可见可操作
@@ -124,7 +124,7 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 2/2 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 0/4 | Planned | - |
+| 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 4/4 | ✅ Complete | 2026-06-17 |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 0/TBD | Not started | - |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/TBD | Not started | - |
 | 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/TBD | Not started | - |

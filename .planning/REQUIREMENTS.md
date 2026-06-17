@@ -15,8 +15,8 @@
 
 ### 方案产 spec（SPEC）
 
-- [ ] **SPEC-01**: SDD 仓库的方案编排（`PlanSession` 融合阶段）额外产出 openspec 格式 spec draft（change proposal / spec delta），落 `Document(document_type=sdd_spec, source_kind=internal_generated)` 并经 `DocumentService` 单一入口写入（INV-6）
-- [ ] **SPEC-02**: 产出的 spec draft 关联到来源 `WorkItem` 与 `PlanVersion`，可追溯生成上下文
+- [x] **SPEC-01**: SDD 仓库的方案编排（`PlanSession` 融合阶段）额外产出 openspec 格式 spec draft（change proposal / spec delta），落 `Document(document_type=sdd_spec, source_kind=internal_generated)` 并经 `DocumentService` 单一入口写入（INV-6）
+- [x] **SPEC-02**: 产出的 spec draft 关联到来源 `WorkItem` 与 `PlanVersion`，可追溯生成上下文
 
 ### spec 状态机与评审（SPECST）
 
@@ -58,8 +58,8 @@
 |-------------|-------|--------|
 | SDD-01 | Phase 48 | Pending |
 | SDD-02 | Phase 48 | Pending |
-| SPEC-01 | Phase 49 | Pending |
-| SPEC-02 | Phase 49 | Pending |
+| SPEC-01 | Phase 49 | ✅ Complete |
+| SPEC-02 | Phase 49 | ✅ Complete |
 | SPECST-01 | Phase 50 | Pending |
 | SPECST-02 | Phase 50 | Pending |
 | SPECST-03 | Phase 50 | Pending |
