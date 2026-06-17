@@ -25,8 +25,13 @@ def test_all_actions_contains_seeds():
 
 
 def test_reserved_disjoint_from_all():
-    """RESERVED_ACTIONS（purge.* 预留）与 ALL_ACTIONS 不相交。"""
+    """RESERVED_ACTIONS 与 ALL_ACTIONS 不相交（空集天然不相交）。"""
     assert RESERVED_ACTIONS.isdisjoint(ALL_ACTIONS), (
         f"RESERVED 与 ALL_ACTIONS 不应相交：{RESERVED_ACTIONS & ALL_ACTIONS}"
     )
-    assert {"purge.started", "purge.completed"} <= RESERVED_ACTIONS
+
+
+def test_purge_actions_promoted_into_all():
+    """Phase 54：purge.started/completed 提升为具名常量纳入 ALL_ACTIONS，RESERVED 清空。"""
+    assert {"purge.started", "purge.completed"} <= ALL_ACTIONS
+    assert RESERVED_ACTIONS == frozenset()

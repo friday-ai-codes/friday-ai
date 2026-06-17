@@ -8,13 +8,11 @@
 既成事实。
 
 常量集说明：
-- ``ALL_ACTIONS``：本 phase（v0.x audit 地基）定义的种子 action 全集——供守护测试断言
-  命名规范与种子覆盖。具体 action 值由 Phase 54 各埋点补充消费。
-- ``RESERVED_ACTIONS``：v0.5 既有埋点收口预留（``purge.started`` / ``purge.completed``，
-  见 ``services/purge_reconcile.py``）——Phase 54 接线，**非本 phase** 产出，故不计入
-  ``ALL_ACTIONS`` 词表（对齐 ``event_taxonomy.RESERVED_EVENTS`` 范式）。
-
-说明：本 phase 仅定义稳定容器 + 种子/预留常量，具体 action 值由 Phase 54 各埋点补充消费。
+- ``ALL_ACTIONS``：audit 词表 action 全集——供守护测试断言命名规范与种子覆盖。
+- ``RESERVED_ACTIONS``：v0.5 既有埋点收口预留位。Phase 54 已把 ``purge.started`` /
+  ``purge.completed`` 提升为具名 ``ACTION_PURGE_*`` 常量并纳入 ``ALL_ACTIONS``（接线见
+  ``services/purge_reconcile.py:log_purge_event``），故 RESERVED 现为空集预留位
+  （对齐 ``event_taxonomy.RESERVED_EVENTS`` 范式，留待后续里程碑新增埋点收口）。
 """
 
 from __future__ import annotations
@@ -37,6 +35,8 @@ __all__ = [
     "ACTION_PAT_REVOKED",
     "ACTION_FEISHU_SYNC_TRIGGERED",
     "ACTION_EXCLUSION_RULE_CHANGED",
+    "ACTION_PURGE_STARTED",
+    "ACTION_PURGE_COMPLETED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -60,6 +60,10 @@ ACTION_PAT_REVOKED: Final[str] = "pat.revoked"
 ACTION_FEISHU_SYNC_TRIGGERED: Final[str] = "feishu_sync.triggered"
 ACTION_EXCLUSION_RULE_CHANGED: Final[str] = "exclusion_rule.changed"
 
+# ---- 清理/数据治理类 action 常量（Phase 54 自 v0.5 purge 埋点收口提升）----
+ACTION_PURGE_STARTED: Final[str] = "purge.started"
+ACTION_PURGE_COMPLETED: Final[str] = "purge.completed"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -78,13 +82,11 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PAT_REVOKED,
         ACTION_FEISHU_SYNC_TRIGGERED,
         ACTION_EXCLUSION_RULE_CHANGED,
+        ACTION_PURGE_STARTED,
+        ACTION_PURGE_COMPLETED,
     }
 )
 
-# v0.5 既有埋点收口预留（Phase 54 接线，非本 phase 产出）——不计入 ALL_ACTIONS 词表
-RESERVED_ACTIONS: Final[frozenset[str]] = frozenset(
-    {
-        "purge.started",
-        "purge.completed",
-    }
-)
+# v0.5 既有埋点收口预留位——purge.* 已于 Phase 54 提升为具名常量纳入 ALL_ACTIONS，
+# 现为空集预留（留待后续里程碑新增埋点收口，对齐 event_taxonomy.RESERVED_EVENTS 范式）。
+RESERVED_ACTIONS: Final[frozenset[str]] = frozenset()
