@@ -23,7 +23,8 @@ from services.provider_config import ProviderConfigService, ProviderMissingError
 from .adapter import OpenAICompatAdapter
 from .auth import OptionalBearerTokenAuth
 from .error_handlers import openai_error_response
-from .request_handler import prepare_messages
+from .progress import retrieval_to_progress
+from .request_handler import prepare_messages_with_meta
 from .schemas import ChatCompletionsRequestSerializer
 
 logger = structlog.get_logger(__name__)
@@ -65,7 +66,10 @@ class ChatCompletionsView(APIView):
             )
         params = serializer.validated_data
 
-        lc_messages = await prepare_messages(
+        # Plan 02：统一经 prepare_messages_with_meta 取 (lc_messages, 检索结果)。
+        # 两路径共用同一 lc_messages（非流式 content 零回归命门）；retr 仅供流式派生
+        # prelude progress，非流式忽略（不合成检索 progress、不污染 message.content）。
+        lc_messages, retr = await prepare_messages_with_meta(
             messages=params["messages"],
             repository_ids=[str(rid) for rid in params.get("repository_ids") or []],
             project_id=str(params["project_id"]) if params.get("project_id") else None,
@@ -84,8 +88,12 @@ class ChatCompletionsView(APIView):
         model_name = "friday-default"
 
         if params.get("stream"):
+            # 命中 RAG（retr 非 None）时派生 prelude progress（正文前以 reasoning_content 透出）。
+            prelude_texts = retrieval_to_progress(retr)
             return StreamingHttpResponse(
-                streaming_content=self._stream_chunks(runner, lc_messages, params, model_name),
+                streaming_content=self._stream_chunks(
+                    runner, lc_messages, params, model_name, prelude_texts
+                ),
                 content_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
@@ -140,12 +148,18 @@ class ChatCompletionsView(APIView):
         lc_messages: list,
         params: dict,
         model_name: str,
+        prelude_texts: list[str] | None = None,
     ):
-        """逐 chunk yield OpenAI SSE 格式字节流（含末尾 [DONE] 哨兵）（work item）。"""
+        """逐 chunk yield OpenAI SSE 格式字节流（含末尾 [DONE] 哨兵）（work item）。
+
+        Plan 02：``prelude_texts`` 非空时（命中 RAG），adapter 在正文前以
+        ``reasoning_content`` 透出检索 progress；None/空则与现状逐字等价。
+        """
         include_usage: bool = (params.get("stream_options") or {}).get("include_usage", False)
         try:
             async for chunk_bytes in OpenAICompatAdapter.translate_stream(
-                runner, lc_messages, model=model_name, include_usage=include_usage
+                runner, lc_messages, model=model_name, include_usage=include_usage,
+                prelude_texts=prelude_texts,
             ):
                 yield chunk_bytes
             yield b"data: [DONE]\n\n"

@@ -43,9 +43,9 @@ async def test_chat_completions_stream_format() -> None:
     )
 
     with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=mock_runner), \
-         patch("compat.views.prepare_messages", new_callable=AsyncMock) as mock_prepare:
+         patch("compat.views.prepare_messages_with_meta", new_callable=AsyncMock) as mock_prepare:
         from langchain_core.messages import HumanMessage
-        mock_prepare.return_value = [HumanMessage(content="你好世界")]
+        mock_prepare.return_value = ([HumanMessage(content="你好世界")], None)
 
         client = AsyncClient()
         response = await client.post(
@@ -97,9 +97,9 @@ async def test_non_streaming_response() -> None:
     )
 
     with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=mock_runner), \
-         patch("compat.views.prepare_messages", new_callable=AsyncMock) as mock_prepare:
+         patch("compat.views.prepare_messages_with_meta", new_callable=AsyncMock) as mock_prepare:
         from langchain_core.messages import HumanMessage
-        mock_prepare.return_value = [HumanMessage(content="Say hello")]
+        mock_prepare.return_value = ([HumanMessage(content="Say hello")], None)
 
         client = AsyncClient()
         response = await client.post(

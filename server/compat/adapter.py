@@ -38,12 +38,19 @@ class OpenAICompatAdapter:
         *,
         model: str,
         include_usage: bool = False,
+        prelude_texts: list[str] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """翻译 AgentEvent 流为 OpenAI SSE chunk 字节流。
 
         关键约束（Pitfall 1 / contract）：
         - include_usage=False：所有 chunk 不带 usage 字段
         - include_usage=True：中间 chunk usage=null，最后追加 choices=[] + usage 非空 chunk
+
+        prelude_texts（Plan 02 / TRACE-01 可见效果）：可选 progress 文本列表，在
+        role=assistant 首 chunk 之后、runner 正文流之前逐条以 ``delta.reasoning_content``
+        透出（复用 ``make_reasoning_chunk``）。仅 view 层在**命中 RAG 时**注入（由
+        ``retrieval_to_progress`` 派生命中计数语义，绝不内联 final_context/query，INV-5）；
+        为 None/空时不产任何 chunk —— 与 Plan 01 行为逐字等价（既有测试不回退）。
         """
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
@@ -59,6 +66,11 @@ class OpenAICompatAdapter:
             **common,
             "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
         })
+
+        # prelude：role chunk 之后、正文之前透出检索 progress（TRACE-01 可见）。
+        # 空/None → 不产任何 chunk（零回归 byte-eq）。
+        for text in prelude_texts or []:
+            yield make_reasoning_chunk(common, text, include_usage)
 
         finish_reason: Literal["stop", "length", "tool_calls"] = "stop"
         final_usage: dict[str, Any] | None = None

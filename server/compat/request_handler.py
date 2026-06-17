@@ -80,16 +80,21 @@ def _content_blocks(content: object) -> str | list[str | dict[Any, Any]]:
     return blocks
 
 
-async def prepare_messages(
+async def _prepare(
     messages: list[dict],
     repository_ids: list[str] | None,
     project_id: str | None,
-) -> list[BaseMessage]:
-    """把 OpenAI messages 转换为 LangChain BaseMessage，并前置插入 RAG system message。
+) -> tuple[list[BaseMessage], Any | None]:
+    """检索内核：把 OpenAI messages 转 LangChain BaseMessage + 执行 RAG，返回 (lc_messages, 检索结果或 None)。
+
+    Plan 02 抽离：原 ``prepare_messages`` 主体下沉至此，额外把**检索结果**一并返回，
+    供流式路径（``prepare_messages_with_meta``）派生 prelude progress（命中计数语义）。
+    ``prepare_messages`` 委托本函数并仅取 lc_messages（旧签名/字节级行为不变）。
 
     contract：最后一条 user/developer message 作为 query 调 HybridSearchService.search()
     （经 ``LayeredSearchService`` thin wrapper delegate），final_context 非空时包装为
-    SystemMessage 前置；检索失败降级为 plain LLM 调用。
+    SystemMessage 前置并返回 ``(messages_with_ctx, result)``；命中为空 / 无 query /
+    检索失败一律降级为 ``(lc_messages, None)``（plain LLM 调用，与现状字节级一致）。
 
     contract 三层 fallback：
     1. explicit repository_ids 非空 → 直接传入
@@ -114,7 +119,7 @@ async def prepare_messages(
         None,
     )
     if not last_user:
-        return lc_messages
+        return lc_messages, None
 
     try:
         # TODO(security mitigation/work item): repository_ids 存在 IDOR 风险——未验证每个 UUID 是否属于调用方
@@ -132,9 +137,37 @@ async def prepare_messages(
                     f"{result.final_context}"
                 )
             )
-            return [ctx_msg, *lc_messages]
+            return [ctx_msg, *lc_messages], result
     except Exception as e:
         # contract 降级路径：检索失败不抛错，回退 plain LLM 调用
         logger.warning("compat_hybrid_search_failed", error=str(e))
 
+    return lc_messages, None
+
+
+async def prepare_messages(
+    messages: list[dict],
+    repository_ids: list[str] | None,
+    project_id: str | None,
+) -> list[BaseMessage]:
+    """把 OpenAI messages 转换为 LangChain BaseMessage，并前置插入 RAG system message。
+
+    Plan 02：委托 ``_prepare`` 并**仅返回 lc_messages**——旧签名/字节级行为不变，
+    既有 4 个 request_handler 测试不回退。需要检索元数据的流式路径请改用
+    ``prepare_messages_with_meta``。
+    """
+    lc_messages, _ = await _prepare(messages, repository_ids, project_id)
     return lc_messages
+
+
+async def prepare_messages_with_meta(
+    messages: list[dict],
+    repository_ids: list[str] | None,
+    project_id: str | None,
+) -> tuple[list[BaseMessage], Any | None]:
+    """同 ``prepare_messages``，但额外返回检索结果（或 None）供流式路径派生 prelude progress。
+
+    返回 ``(lc_messages, result_or_none)``：``result`` 非 None 即命中 RAG，view 层据其
+    经 ``retrieval_to_progress`` 派生"命中 N 处"progress；None 表示未命中/降级，不合成。
+    """
+    return await _prepare(messages, repository_ids, project_id)
