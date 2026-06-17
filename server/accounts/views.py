@@ -13,6 +13,9 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
+
 from .models import Invitation, UserSource
 from .permissions import SetupNotInitialized
 from .serializers import (
@@ -299,6 +302,17 @@ class InvitationAcceptView(APIView):
         invitation.accepted_at = timezone.now()
         await sync_to_async(invitation.save)(update_fields=["accepted_at"])
 
+        # 审计：邀请注册建用户（公开端点，request.user 为匿名 → actor=None）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_MEMBER_CREATED,
+            actor=request.user if request.user.is_authenticated else None,
+            target_type="user",
+            target_id=user.id,
+            target_repr=user.username,
+            after={"username": user.username, "source": user.source, "email": user.email},
+            source="invitation",
+        )
+
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -327,8 +341,28 @@ class UserDetailView(APIView):
 
         # 仅允许修改 is_active 字段
         if "is_active" in request.data:
-            target_user.is_active = bool(request.data["is_active"])
+            old_active = target_user.is_active
+            new_active = bool(request.data["is_active"])
+            target_user.is_active = new_active
             await target_user.asave(update_fields=["is_active"])
+
+            # 审计：仅在 is_active 真正变更时 emit（值未变不记，SC-4 噪音控制）
+            if new_active != old_active:
+                action = (
+                    taxonomy.ACTION_USER_ACTIVATED
+                    if new_active
+                    else taxonomy.ACTION_USER_DEACTIVATED
+                )
+                await AuditService.aemit(
+                    action=action,
+                    actor=request.user,
+                    target_type="user",
+                    target_id=target_user.id,
+                    target_repr=target_user.username,
+                    before={"is_active": old_active},
+                    after={"is_active": new_active},
+                    source="api",
+                )
 
         return Response(UserSerializer(target_user).data)
 
@@ -398,11 +432,35 @@ class AdminProfileView(APIView):
         await sync_to_async(serializer.is_valid)(raise_exception=True)
 
         user = request.user
+        # 写前快照，构造仅含实际变更字段的 before/after diff（非整对象 dump）
+        before_diff: dict = {}
+        after_diff: dict = {}
         if "username" in serializer.validated_data:
-            user.username = serializer.validated_data["username"]
+            new_username = serializer.validated_data["username"]
+            if new_username != user.username:
+                before_diff["username"] = user.username
+                after_diff["username"] = new_username
+            user.username = new_username
         if "display_name" in serializer.validated_data:
-            user.display_name = serializer.validated_data["display_name"]
+            new_display = serializer.validated_data["display_name"]
+            if new_display != user.display_name:
+                before_diff["display_name"] = user.display_name
+                after_diff["display_name"] = new_display
+            user.display_name = new_display
         await user.asave()
+
+        # 审计：管理员身份资料变更（用户名/显示名属安全相关身份变更）；无字段实际变更则不 emit
+        if after_diff:
+            await AuditService.aemit(
+                action=taxonomy.ACTION_MEMBER_UPDATED,
+                actor=request.user,
+                target_type="user",
+                target_id=user.id,
+                target_repr=user.username,
+                before=before_diff,
+                after=after_diff,
+                source="api",
+            )
 
         from .serializers import AdminProfileSerializer
 
@@ -487,12 +545,26 @@ def _atomic_create_superuser(username: str, password: str, display_name: str):
     with transaction.atomic():
         if User.objects.filter(is_superuser=True).exists():
             return None
-        return User.objects.create_superuser(
+        user = User.objects.create_superuser(
             username=username,
             password=password,
             display_name=display_name,
             source=UserSource.SYSTEM.value,
         )
+        # 审计：首启建 superuser（无 human actor → actor=None）。处于显式 atomic 块且为 sync 路径，
+        # 用 on_commit + sync emit——事务回滚则不留审计行（只记真正提交的事实）。
+        transaction.on_commit(
+            lambda: AuditService.emit(
+                action=taxonomy.ACTION_MEMBER_CREATED,
+                actor=None,
+                target_type="user",
+                target_id=user.id,
+                target_repr=user.username,
+                after={"username": user.username, "source": "system", "is_superuser": True},
+                source="system",
+            )
+        )
+        return user
 
 
 class SetupInitView(APIView):
