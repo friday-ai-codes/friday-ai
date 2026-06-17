@@ -220,20 +220,6 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
-    '/knowledge/ingest': RouteRecordInfo<
-      '/knowledge/ingest',
-      '/knowledge/ingest',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    '/knowledge/screenshot': RouteRecordInfo<
-      '/knowledge/screenshot',
-      '/knowledge/screenshot',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
     '/login': RouteRecordInfo<
       '/login',
       '/login',
@@ -658,22 +644,6 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | 'id'
-    }
-    'src/pages/knowledge/ingest.vue': {
-      routes:
-        | '/knowledge/ingest'
-      views:
-        | never
-      pathParamNames:
-        | never
-    }
-    'src/pages/knowledge/screenshot.vue': {
-      routes:
-        | '/knowledge/screenshot'
-      views:
-        | never
-      pathParamNames:
-        | never
     }
     'src/pages/login.vue': {
       routes:

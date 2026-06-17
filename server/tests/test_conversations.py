@@ -162,6 +162,142 @@ class TestConversationList:
         # 最新创建的排在前面
         assert response.data[0]["title"] == "对话 2"
 
+    def test_list_defaults_to_top_50(self, api_client, test_project):
+        """默认仅返回最近 50 条（top N）。"""
+        for i in range(55):
+            Conversation.objects.create(project=test_project, title=f"对话 {i}")
+
+        response = api_client.get("/api/chat/conversations/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 50
+
+    def test_list_custom_limit(self, api_client, test_project):
+        """支持 ?limit= 自定义条数。"""
+        for i in range(10):
+            Conversation.objects.create(project=test_project, title=f"对话 {i}")
+
+        response = api_client.get("/api/chat/conversations/?limit=3")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 3
+
+    def test_list_search_by_title(self, api_client, test_project):
+        """?q= 命中标题。"""
+        Conversation.objects.create(project=test_project, title="研发周报")
+        Conversation.objects.create(project=test_project, title="刷题需求")
+
+        response = api_client.get("/api/chat/conversations/?q=周报")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["title"] == "研发周报"
+
+    def test_list_search_by_message_content(self, api_client, test_project):
+        """?q= 命中消息内容（标题不含关键词也能搜到）。"""
+        hit = Conversation.objects.create(project=test_project, title="无关标题")
+        Message.objects.create(
+            conversation=hit,
+            role=Message.Role.ASSISTANT,
+            content="思维培优的判断依据是 isThinking 查询参数",
+        )
+        Conversation.objects.create(project=test_project, title="另一个对话")
+
+        response = api_client.get("/api/chat/conversations/?q=isThinking")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["id"] == str(hit.id)
+
+    def test_list_search_dedups_multiple_message_hits(self, api_client, test_project):
+        """同一会话多条消息命中关键词时不重复返回。"""
+        conv = Conversation.objects.create(project=test_project, title="标题含关键词abc")
+        Message.objects.create(conversation=conv, role=Message.Role.USER, content="abc 1")
+        Message.objects.create(conversation=conv, role=Message.Role.ASSISTANT, content="abc 2")
+
+        response = api_client.get("/api/chat/conversations/?q=abc")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+
+    def test_list_excludes_archived(self, api_client, test_project):
+        """归档的对话默认不出现在列表。"""
+        Conversation.objects.create(project=test_project, title="正常对话")
+        Conversation.objects.create(
+            project=test_project, title="归档对话", is_archived=True,
+        )
+
+        response = api_client.get("/api/chat/conversations/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["title"] == "正常对话"
+
+    def test_list_archived_only(self, api_client, test_project):
+        """?archived=1 仅返回已归档会话。"""
+        Conversation.objects.create(project=test_project, title="正常对话")
+        Conversation.objects.create(
+            project=test_project, title="归档对话", is_archived=True,
+        )
+
+        response = api_client.get("/api/chat/conversations/?archived=1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["title"] == "归档对话"
+        assert response.data[0]["is_archived"] is True
+
+
+@pytest.mark.django_db(transaction=True)
+class TestConversationPatchTitleArchive:
+    """PATCH /api/chat/conversations/{id}/ 改名 / 归档。"""
+
+    def test_patch_rename(self, api_client, conversation):
+        """改标题成功并落库。"""
+        response = api_client.patch(
+            f"/api/chat/conversations/{conversation.id}/",
+            {"title": "新标题"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["title"] == "新标题"
+        conversation.refresh_from_db()
+        assert conversation.title == "新标题"
+
+    def test_patch_archive_then_excluded_from_list(self, api_client, conversation):
+        """归档后从列表消失，但记录仍在（未软删）。"""
+        response = api_client.patch(
+            f"/api/chat/conversations/{conversation.id}/",
+            {"is_archived": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_archived"] is True
+        conversation.refresh_from_db()
+        assert conversation.is_archived is True
+        assert conversation.is_deleted is False
+
+        list_resp = api_client.get("/api/chat/conversations/")
+        assert len(list_resp.data) == 0
+
+    def test_patch_unarchive(self, api_client, conversation):
+        """取消归档后重新出现在列表。"""
+        conversation.is_archived = True
+        conversation.save(update_fields=["is_archived"])
+
+        response = api_client.patch(
+            f"/api/chat/conversations/{conversation.id}/",
+            {"is_archived": False},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_archived"] is False
+        list_resp = api_client.get("/api/chat/conversations/")
+        assert len(list_resp.data) == 1
+
 
 # ============================================================================
 # 对话详情测试

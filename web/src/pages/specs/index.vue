@@ -72,7 +72,7 @@ function goDetail(id: string) {
 <template>
   <PageContainer>
     <PageHeader
-      icon="lucide--file-check-2"
+      icon="lucide--scroll-text"
       :title="t('specs.title')"
       :description="t('specs.subtitle')"
     />
@@ -115,7 +115,7 @@ function goDetail(id: string) {
     </div>
     <EmptyState
       v-else-if="isEmpty"
-      icon="lucide--file-check-2"
+      icon="lucide--scroll-text"
       :title="t('specs.empty')"
       :description="isFiltered ? t('specs.emptyFiltered') : t('specs.emptyDescription')"
     />

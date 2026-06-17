@@ -1768,16 +1768,74 @@ class ConversationService:
             await _mark_error("处理你的答复时出现异常，请重新发送消息。")
 
     @staticmethod
-    async def list_conversations(user: Any = None) -> list[Conversation]:
+    async def list_conversations(
+        user: Any = None,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+        include_archived: bool = False,
+        archived_only: bool = False,
+    ) -> list[Conversation]:
         """返回未删除对话列表，按 updated_at 降序。
 
         owner-scoped（ISO-02）：已认证用户仅列自己的会话（``created_by=user``）；
         未认证（开放模式）维持现状列全部。无管理员特权 bypass（ISO-03）。
+
+        Args:
+            query: 搜索关键词。非空时匹配 title **或** 任意消息 content（``messages__
+                content__icontains``）—— 用户诉求「能搜到会话里面的内容」。
+            limit: 最多返回多少条（默认 50，左侧列表 top 50）。<=0 表示不限。
+            include_archived: 是否包含已归档会话（默认隐藏归档）。
+            archived_only: 仅返回已归档会话（「查看已归档」入口）；优先级高于
+                ``include_archived``。
         """
+        from django.db.models import Exists, OuterRef, Q
+
+        from chat.models import CodingPlan, CodingSession
+        from delivery.models import PlanSession, SddSpec
+
         qs = Conversation.objects.filter(is_deleted=False)
+        if archived_only:
+            qs = qs.filter(is_archived=True)
+        elif not include_archived:
+            qs = qs.filter(is_archived=False)
         if getattr(user, "is_authenticated", False):
             qs = qs.filter(created_by=user)
-        return [c async for c in qs.order_by("-updated_at")]
+
+        q = (query or "").strip()
+        if q:
+            # title 或消息内容命中即返回；join messages 会产生重复行，distinct 去重。
+            qs = qs.filter(
+                Q(title__icontains=q) | Q(messages__content__icontains=q)
+            ).distinct()
+
+        # 列表徽标聚合（SDD / 技术方案 / 编码）：Exists 子查询，不引入 N+1、async 安全
+        # （annotate 出的布尔是实例列，序列化器直接读属性不触发 sync ORM）。
+        qs = qs.annotate(
+            has_coding_plan=Exists(
+                CodingPlan.objects.filter(conversation_id=OuterRef("pk"))
+            ),
+            has_coding_session=Exists(
+                CodingSession.objects.filter(conversation_id=OuterRef("pk"))
+            ),
+            # SDD spec 反查：conversation → PlanSession(软引用会话) 且其 current_plan_version
+            # 命中某条 SddSpec.plan_version（UUID 相等匹配，无需跨 app FK）。单层 OuterRef
+            # 关联会话，内层 __in 为非关联子查询（全部 spec 的 plan_version 集合）。
+            has_sdd_spec=Exists(
+                PlanSession.objects.filter(
+                    conversation_id=OuterRef("pk"),
+                    current_plan_version__isnull=False,
+                    current_plan_version__in=SddSpec.objects.filter(
+                        plan_version__isnull=False
+                    ).values("plan_version_id"),
+                )
+            ),
+        )
+
+        qs = qs.order_by("-updated_at")
+        if limit and limit > 0:
+            qs = qs[:limit]
+        return [c async for c in qs]
 
     @staticmethod
     async def get_conversation_with_messages(
@@ -1839,6 +1897,30 @@ class ConversationService:
         orch_status: str | None = None
         orch_run_id = ""
         task_progress: dict[str, int] | None = None
+
+        # 孤儿 run（zombie）恢复：graph 已在 checkpoint 跑完终态，但收尾 task 被
+        # 热重载 / 进程退出杀掉（详见 chat/recovery.py）→ 从 checkpoint 兜底落库，
+        # 避免前端永久卡在「正在整理回答…」+ 空气泡。命中后 re-fetch 拿到终态行，
+        # 走下面的 hydrateMessages 路径渲染 final assistant message。
+        if orch_run is not None and orch_run.status in {
+            OrchestrationRun.Status.RUNNING,
+            OrchestrationRun.Status.WAITING,
+        }:
+            from chat.recovery import recover_orphaned_run
+
+            try:
+                if await recover_orphaned_run(orch_run):
+                    refreshed = await OrchestrationRun.objects.filter(
+                        id=orch_run.id,
+                    ).afirst()
+                    if refreshed is not None:
+                        orch_run = refreshed
+            except Exception:
+                logger.warning(
+                    "conversation_runtime_recovery_failed",
+                    conversation_id=conversation_id,
+                    exc_info=True,
+                )
 
         if orch_run is not None:
             if orch_run.status in terminal_statuses:

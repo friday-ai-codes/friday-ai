@@ -24,8 +24,9 @@ const RELEVANCE_RESULT = JSON.stringify({
 
 describe('useToolDisplay', () => {
   it('toolLabel 去除 mcp__ 前缀并映射中文', () => {
-    expect(toolLabel('mcp__chat-tools__search_repository_code')).toBe('搜索代码')
-    expect(toolLabel('analyze_repository_relevance')).toBe('仓库相关性分析')
+    expect(toolLabel('mcp__chat-tools__search_repository_code')).toBe('RAG 代码检索')
+    expect(toolLabel('analyze_repository_relevance')).toBe('仓库分级路由')
+    expect(toolLabel('find_related_code')).toBe('关联代码查找召回')
   })
 
   it('relevanceCandidates 解析 {data:{candidates}} 结构', () => {
@@ -57,7 +58,7 @@ describe('useToolDisplay', () => {
     expect(label).toBe('abcdef01…')
   })
 
-  it('toolAction(search)：把 repository_id 渲染成仓库名称', () => {
+  it('toolAction(search)：把 repository_id 渲染成仓库名称 + 点明 RAG 检索', () => {
     const action = toolAction(
       'search_repository_code',
       { query: 'entrance', repository_id: 'uuid-a' },
@@ -66,7 +67,13 @@ describe('useToolDisplay', () => {
     )
     expect(action).toContain('study-app')
     expect(action).toContain('entrance')
+    expect(action).toContain('RAG')
     expect(action).not.toContain('uuid-a')
+  })
+
+  it('toolAction(find_related_code)：点明关联代码查找召回 + 锚点符号', () => {
+    expect(toolAction('find_related_code', { symbol_name: 'UserService' })).toBe('关联代码查找召回：UserService')
+    expect(toolAction('find_related_code', {})).toBe('关联代码查找召回')
   })
 
   it('toolAction(relevance)：摘要列出关联到的仓库名称', () => {

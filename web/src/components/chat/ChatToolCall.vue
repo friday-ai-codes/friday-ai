@@ -39,7 +39,7 @@ const TOOL_LABELS: Record<string, { label: string, icon: string }> = {
   browse_file_content: { label: '浏览文件', icon: 'icon-[lucide--file-text]' },
   list_project_structure: { label: '项目结构', icon: 'icon-[lucide--folder-tree]' },
   get_project_overview: { label: '项目概览', icon: 'icon-[lucide--layout-dashboard]' },
-  search_repository_code: { label: '搜索代码', icon: 'icon-[lucide--search]' },
+  search_repository_code: { label: 'RAG 代码检索', icon: 'icon-[lucide--search]' },
   list_project_repositories: { label: '仓库列表', icon: 'icon-[lucide--git-branch]' },
   get_repository_info: { label: '仓库信息', icon: 'icon-[lucide--info]' },
 }
@@ -60,7 +60,7 @@ const actionDescription = computed(() => {
   switch (bare) {
     case 'search_repository_code': {
       const q = (inp.query as string) || ''
-      return q ? `搜索「${q.slice(0, 50)}${q.length > 50 ? '...' : ''}」` : ''
+      return q ? `RAG 检索「${q.slice(0, 50)}${q.length > 50 ? '...' : ''}」` : ''
     }
     case 'browse_file_content': {
       const path = (inp.file_path as string) || (inp.path as string) || ''

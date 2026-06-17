@@ -157,6 +157,8 @@ class ConversationPatchSerializer(serializers.Serializer):
     )
     title = serializers.CharField(required=False, max_length=500)
     space_id = serializers.UUIDField(required=False, allow_null=True)
+    # 归档开关：true 归档（从默认列表隐藏）/ false 取消归档。不受 frozen 限制。
+    is_archived = serializers.BooleanField(required=False)
 
     def validate_provider_credential_id(self, value):
         """FK 存在性 + is_active 校验，防止指向已软删 / 已禁用凭证（security mitigation-02）。"""
@@ -199,6 +201,11 @@ class ConversationListSerializer(serializers.Serializer):
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()
     provider_credential_id = serializers.SerializerMethodField()
+    is_archived = serializers.BooleanField(required=False)
+    # 列表徽标聚合标记（由 list_conversations annotate 注入；default=False 向后兼容）。
+    has_sdd_spec = serializers.BooleanField(required=False, default=False)
+    has_coding_plan = serializers.BooleanField(required=False, default=False)
+    has_coding_session = serializers.BooleanField(required=False, default=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
 

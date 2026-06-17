@@ -151,8 +151,8 @@
     }
   },
   "specs": {
-    "title": "spec 治理",
-    "subtitle": "查看与评审 spec-driven 开发的需求规格，按状态流转生命周期",
+    "title": "SDD",
+    "subtitle": "Spec-Driven Development（规格驱动开发）：查看与评审需求规格，按状态流转生命周期",
     "loading": "正在加载 spec…",
     "loadError": "加载 spec 失败，请稍后重试",
     "empty": "暂无 spec",
@@ -243,8 +243,15 @@
     }
   },
   "knowledge": {
+    "pageTitle": "知识",
+    "pageDescription": "检索历史需求、技术方案与代码变更，或批量摄取看板与 MR 入库可检索",
+    "tabs": {
+      "search": "搜索",
+      "ingest": "批量摄取",
+      "release": "上线同步"
+    },
     "entity": {
-      "pageTitle": "交付知识",
+      "pageTitle": "知识",
       "sections": {
         "metadata": "基本信息",
         "timeline": "版本历史",
@@ -291,18 +298,18 @@
       "error": {
         "notFound": "实体不存在或你无权访问",
         "notFoundAction": "返回上一页",
-        "loadFailed": "加载交付知识失败，请稍后重试",
+        "loadFailed": "加载知识失败，请稍后重试",
         "retry": "重试"
       },
       "loading": "正在加载实体详情…"
     },
     "search": {
-      "title": "交付知识搜索",
+      "title": "知识搜索",
       "placeholder": "输入关键词搜索需求、技术方案或代码变更…",
       "button": "搜索",
       "scoreLabel": "相关度",
       "resultCount": "找到 {count} 条结果",
-      "initialTitle": "开始搜索交付知识",
+      "initialTitle": "开始搜索知识",
       "initialBody": "输入关键词以检索需求、技术方案与代码变更",
       "emptyTitle": "未找到匹配结果",
       "emptyBody": "换个关键词或调整历史视点后重试",
@@ -319,8 +326,24 @@
     }
   },
   "ingest": {
-    "title": "一键摄取",
-    "subtitle": "输入看板与 MR 链接，一次性拉取工作项、PRD/技术方案文档与 MR diff 并入库可检索",
+    "title": "批量摄取",
+    "subtitle": "按组填入看板与 MR 链接，可一次提交多组，批量拉取工作项、PRD/技术方案文档与 MR diff 并入库可检索",
+    "batch": {
+      "rowLabel": "第 {n} 组",
+      "addRow": "添加一组",
+      "removeRow": "移除该组",
+      "submit": "开始批量摄取",
+      "submitting": "批量派发中…",
+      "dispatchSuccess": "已提交 {count} 组摄取，将在后台执行并实时更新",
+      "dispatchFailed": "批量摄取派发失败",
+      "runningOverall": "批量摄取进行中…（已完成 {ok}/{total} 组）",
+      "completedOverall": "批量摄取完成（成功 {ok}/{total} 组，相关内容已可检索）",
+      "loadError": "加载批量摄取状态失败，请稍后重试",
+      "empty": {
+        "title": "尚未发起批量摄取",
+        "body": "填写上方各组链接并点击「开始批量摄取」，结果将在此分组显示"
+      }
+    },
     "form": {
       "boardUrlLabel": "看板 / 工作项 URL",
       "boardUrlPlaceholder": "https://project.feishu.cn/{simple_name}/.../detail/{id}",
@@ -360,53 +383,45 @@
       "pending": "等待中"
     }
   },
-  "screenshotRecall": {
-    "title": "截图识需求",
-    "subtitle": "上传界面/原型截图，自动提取语义并召回相关需求（不建图片向量库）",
-    "upload": {
-      "dropzoneTitle": "拖入截图，或点击选择",
-      "dropzoneHint": "支持 PNG / JPEG / WebP，单张 ≤ 10 MB；也可直接粘贴（Ctrl/Cmd+V）",
-      "selectButton": "选择截图",
-      "previewAlt": "截图预览",
-      "remove": "移除",
-      "submit": "开始识别",
-      "submitting": "识别中…"
-    },
-    "validation": {
-      "required": "请先上传截图",
-      "invalidType": "请上传图片文件（PNG / JPEG / WebP）",
-      "tooLarge": "图片超过 10 MB，请压缩后重试"
-    },
+  "release": {
+    "title": "上线文档同步",
+    "subtitle": "从飞书上线文档拉取上线业务与 MR，勾选后批量入库（知识库 + 上线账本）",
+    "load": "加载上线文档",
+    "reload": "重新加载",
+    "loadMore": "加载更多",
+    "loadError": "加载上线文档失败，请稍后重试",
+    "fromBranch": "来自分支",
+    "noMr": "无 MR",
+    "repoUnmatched": "未匹配仓库",
+    "loadedCount": "已加载 {loaded} 条",
+    "ofTotal": "共 {total}",
+    "selectedCount": "已选 {count} 条",
+    "startSync": "开始同步所选",
+    "syncing": "派发中…",
+    "clearSelection": "清空选择",
+    "dispatchSuccess": "已提交 {count} 条上线记录同步，将在后台执行并实时更新",
+    "dispatchFailed": "同步派发失败",
     "empty": {
-      "title": "尚未上传截图",
-      "body": "将截图拖到上方区域、点击选择，或直接粘贴（Ctrl/Cmd+V），识别结果将在此显示"
+      "title": "尚未加载上线文档",
+      "body": "点击「加载上线文档」从飞书多维表格拉取上线记录"
     },
-    "loading": "正在识别截图并召回需求…",
-    "error": "识别失败，请稍后重试",
-    "degraded": {
-      "title": "未配置多模态（vision）模型",
-      "body": "当前没有可用的视觉能力模型，无法从截图提取语义。请在系统设置配置具备视觉能力的模型后重试。",
-      "settingsLink": "前往系统设置",
-      "extractionFailedTitle": "截图语义提取失败",
-      "extractionFailedBody": "已配置视觉模型，但本次未能从截图提取出有效语义。请稍后重试，或更换更清晰、信息更完整的截图。"
+    "noRows": {
+      "title": "未解析到可同步的上线记录",
+      "body": "该页没有带 MR 的上线行，可继续加载更多"
     },
-    "noResults": {
-      "title": "未召回到相关需求",
-      "body": "可尝试更清晰、信息更完整的截图后重试"
+    "table": {
+      "business": "上线业务",
+      "mr": "MR / 仓库",
+      "kanban": "看板 id",
+      "category": "分类",
+      "date": "上线日期",
+      "selectAll": "全选本页"
     },
-    "semantics": {
-      "title": "识别到的语义",
-      "expand": "展开",
-      "collapse": "收起",
-      "text": "文字",
-      "uiElements": "UI 元素",
-      "businessIntent": "业务意图"
-    },
-    "results": {
-      "title": "召回的需求",
-      "relevance": "相关度 {percent}%",
-      "query": "检索词：{query}",
-      "viewLink": "查看"
+    "progress": {
+      "overall": "同步进行中…（完成 {ok}/{total}）",
+      "done": "同步完成（成功 {ok}/{total}）",
+      "ledger": "上线账本",
+      "knowledge": "知识库"
     }
   },
   "exclusion": {
