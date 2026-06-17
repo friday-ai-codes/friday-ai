@@ -36,6 +36,8 @@ export * from './runners'
 
 export * from './screenshotRecall'
 
+export * from './specs'
+
 export { default as settingsApi } from './settings'
 export * from './settings'
 
