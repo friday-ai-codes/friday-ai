@@ -147,6 +147,74 @@ class SddSpecService:
             if updated == 0:
                 self._raise_transition_error(spec_id, action, from_status)
 
+    # ---- spec→实现 PR 关联（Phase 52 D-52-2，LINK-01，INV-6） ----
+
+    async def link_implementation_pr(
+        self, *, plan_version_id: Any, repository_id: Any, pr_url: str
+    ) -> None:
+        """回填 spec→实现 PR 关联（spec→PR 唯一写入入口，INV-6，D-52-2）。
+
+        按 ``(plan_version_id, repository_id)`` 命中 SddSpec：追加 PR ref（按 ``pr_url``
+        去重幂等），且 spec 当前 ``approved`` → 经 ``mark_implemented`` 语义流转
+        （approved→implemented）；非 approved → 仅记 PR ref 不强转状态（宽容 warning）。
+        无 SddSpec（非 SDD 仓）→ no-op（零回归，D-52-5）。append + 状态流转在单一
+        ``transaction.atomic`` 内（INV-6）。
+
+        Args:
+            plan_version_id: 来源 PlanVersion.id 标量（幂等键之一，async 安全用标量）。
+            repository_id: 产 PR 的仓 Repository.id 标量（幂等键之一）。
+            pr_url: 实现 PR/MR 链接（去重键）。
+        """
+        await self._link_implementation_pr(
+            plan_version_id=plan_version_id,
+            repository_id=repository_id,
+            pr_url=pr_url,
+        )
+
+    @sync_to_async
+    def _link_implementation_pr(
+        self, *, plan_version_id: Any, repository_id: Any, pr_url: str
+    ) -> None:
+        # approved→implemented 复用 _LEGAL_TRANSITIONS 源/目标常量作单一真相（不重复硬编码）。
+        from_status, to_status = self._LEGAL_TRANSITIONS["mark_implemented"]
+        with transaction.atomic():
+            spec = (
+                SddSpec.objects.select_for_update()
+                .filter(plan_version_id=plan_version_id, repository_id=repository_id)
+                .first()
+            )
+            if spec is None:
+                # 非 SDD 仓无 spec → no-op（无写入、无异常，零回归 D-52-5）。
+                return
+
+            prs = list(spec.implementation_prs or [])
+            already_linked = any(p.get("pr_url") == pr_url for p in prs)
+            if not already_linked:
+                prs.append(
+                    {
+                        "pr_url": pr_url,
+                        "repository_id": str(repository_id),
+                        "linked_at": timezone.now().isoformat(),
+                    }
+                )
+                spec.implementation_prs = prs
+                spec.save(update_fields=["implementation_prs", "updated_at"])
+
+            # 状态流转：仅 approved → implemented；非 approved 宽容不强转（记 warning）。
+            if spec.status == from_status:
+                SddSpec.objects.filter(id=spec.id, status=from_status).update(
+                    status=to_status, updated_at=timezone.now()
+                )
+            elif not already_linked:
+                logger.warning(
+                    "sdd_spec_pr_link_non_approved",
+                    plan_version_id=str(plan_version_id),
+                    repository_id=str(repository_id),
+                    pr_url=pr_url,
+                    spec_id=str(spec.id),
+                    status=spec.status,
+                )
+
     async def create_draft(
         self,
         *,
