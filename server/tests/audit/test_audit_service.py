@@ -84,3 +84,21 @@ def test_emit_default_occurred_at():
     AuditService.emit(action="pat.created")
     event = AuditEvent.objects.get(action="pat.created")
     assert event.occurred_at is not None
+
+
+@pytest.mark.django_db
+def test_emit_target_id_none_stored_as_empty():
+    """LOW-1：显式 target_id=None 落空串，而非字面量 "None"。"""
+    AuditService.emit(action="purge.started", target_id=None)
+    event = AuditEvent.objects.get(action="purge.started")
+    assert event.target_id == ""
+
+
+@pytest.mark.django_db
+def test_emit_preserves_empty_collection_payload():
+    """LOW-3：after=[] 等假值但有语义的入参被保留（不被吞成 {}）。"""
+    AuditService.emit(action="member.created", before=[], after=[], metadata=[])
+    event = AuditEvent.objects.get(action="member.created")
+    assert event.before == []
+    assert event.after == []
+    assert event.metadata == []
