@@ -1,34 +1,56 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.9.0
-milestone_name: SDD / OpenSpec 支持（重型）
-status: Awaiting next milestone
-stopped_at: Milestone v0.9.0 SDD / OpenSpec 收官归档（audit passed 11/11 + integration_ok + INV-6/INV-2；ROADMAP/REQUIREMENTS/AUDIT 已归档 milestones/，Phases 48–52 全交付）
-last_updated: "2026-06-17T06:00:00.000Z"
-last_activity: 2026-06-17 — Milestone v0.9.0 completed and archived
+milestone: v0.10.0
+milestone_name: 操作审计治理
+status: planning
+last_updated: "2026-06-17T07:20:09.310Z"
+last_activity: 2026-06-17
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 18
-  completed_plans: 18
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
+See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.9.0 进行中：让 spec-driven development 成为可治理的过程资产——SDD 仓库打标 → 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审 → spec↔需求/PR 关联 → 交付验收。
-**Current focus:** v0.9.0 自治执行中。Phase 48/49/50 已交付。下一步 Phase 51（编码前置 gate + openspec skill 编码策略）。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
+**Current focus:** v0.10.0 已规划完成（Phases 53–55），待执行。下一步 `/gsd-plan-phase 53`（`AuditEvent` 模型 + emit 地基），或 autonomous 跑完整个里程碑。
 
 ## Current Position
 
-Phase: Milestone v0.9.0 complete
+Phase: Not started (roadmap ready)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-17 — Milestone v0.9.0 completed and archived
+Status: Roadmap ready — awaiting plan-phase / autonomous
+Last activity: 2026-06-17 — Milestone v0.10.0 planned (Phases 53–55)
+
+## Milestone Overview (v0.10.0 — Phases 53–55)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ⬜ Not started |
+| 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ⬜ Not started |
+| 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ⬜ Not started |
+
+**Execution order:** 53 → 54 → 55（严格顺序）。依赖链：统一 `AuditEvent` 模型 + 单一写入入口 + fail-soft emit 地基(53) → 各敏感操作经统一入口 emit 审计、v0.5 排除/清理埋点收口(54) → 审计查询 API + 前端视图 + 导出(55)。无模型/emit 地基无从 emit，无覆盖的审计数据无从查询展示。
+
+**UI 触面（标 UI hint）:** Phase 55（审计查询前端视图：列表/过滤/before-after 详情 + 导出，本里程碑唯一重前端）。后续 `/gsd-ui-phase` 可介入此处。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
+- **系统管理员 = 现有 `is_superuser`**：不新建审计角色/权限层（沿用既有里程碑「系统管理员=superuser」决策）；审计查询/导出 superuser fail-closed。
+- **审计为横切能力**：各功能产生敏感操作时 emit，本里程碑统一收口 + 补齐覆盖 + UI；emit 失败 best-effort 不阻断主操作（fail-soft）。
+- **不可篡改 = 应用层 append-only**：`AuditEvent` 无 update/delete 业务路径、写入经单一 service 入口（INV-6 精神，grep 守护无旁路写表）；密码学级防篡改（hash chain/WORM）留 v2（AUDITX-01）。
+- **凭证脱敏**：Provider/Git/飞书凭证、Agent API key/PAT 等敏感操作的审计 before/after 必须脱敏，绝不落明文 token（对齐既有 PAT-02 / 凭证加密约束）。
+- **v0.5 既有埋点收口**：现有分散的 `purge.started/purge.completed` 结构化日志、`TriggerLog`/`ActionLog` 等收口到统一 `AuditEvent` 表（DOMAIN §11；现状「无统一 Admin Audit 表」）。
+- **显式非目标 / Out of Scope**：新建独立审计角色、密码学级防篡改、实时告警/SIEM/webhook 外发、审计保留/归档/自动清理策略、读操作全量审计（均列 v2 AUDITX-* 或 Out of Scope，见 REQUIREMENTS.md）。
+
+**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.10`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）、`.planning/PREFLIGHT.md`（无映射 v0.10 的 blocking/should-fix 项）、`.planning/PROJECT.md`（Current Milestone v0.10.0 + Key context）。
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
