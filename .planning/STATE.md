@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
-stopped_at: Completed 58-01-PLAN.md（CardKit 封装层：FeishuIMClient/Service 4 端点 + bot_cards 2 helper，Phase 58 1/2）
-last_updated: "2026-06-17T12:50:00.000Z"
-last_activity: 2026-06-17 -- Completed 58-01 (CardKit 封装层)
+stopped_at: Completed 58-02-PLAN.md（bot 接线 + fail-soft 降级：流式段 TEXT_DELTA → CardKit 增量推送，Phase 58 2/2，CARD-01 Complete）
+last_updated: "2026-06-17T12:52:23.000Z"
+last_activity: 2026-06-17 -- Completed 58-02 (bot 接线 + fail-soft 降级，Phase 58 完成)
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 5
-  percent: 57
+  completed_plans: 6
+  percent: 71
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 ## Current Position
 
-Phase: 58 (飞书原生流式卡片（CardKit）) — EXECUTING
+Phase: 58 (飞书原生流式卡片（CardKit）) — COMPLETE
 Plan: 2 of 2
-Status: Executing Phase 58（58-01 完成，待 58-02）
-Last activity: 2026-06-17 -- Completed 58-01 (CardKit 封装层)
+Status: Phase 58 完成（58-01 封装层 + 58-02 bot 接线/fail-soft 降级，CARD-01 Complete），待 Phase 59
+Last activity: 2026-06-17 -- Completed 58-02 (bot 接线 + fail-soft 降级)
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-17 -- Completed 58-01 (CardKit 封装层)
 |-------|------|--------------|--------|
 | 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ✅ Complete (2/2 plans) |
 | 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ✅ Complete (2/2 plans) |
-| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | 🔄 In Progress (1/2 plans) |
+| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ✅ Complete (2/2 plans) |
 | 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
 
 **Execution order:** 56 → 57 → 58 → 59。依赖链：先把内部工具调用经 §15 事件 taxonomy 映射为 OpenAI 兼容 progress/trace 透出 adapter(56) → Anthropic `/v1/messages` 端点复用同一 taxonomy→thinking block adapter(57，依赖 56 的透出抽象)；飞书原生流式卡片(58) 与工作流自动建群(59) 相对独立（依赖既有飞书机器人对话 / 飞书 client + 节点机制），排在 Agent API 两 phase 之后。
