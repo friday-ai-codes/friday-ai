@@ -195,13 +195,16 @@ class SddSpecDetailSerializer(SddSpecListSerializer):
 
     在列表字段上加：``body``（spec 正文，取 ``document.current_version.content``，
     缺失回 None）、``reviews``（嵌套评审历史，倒序由模型 Meta.ordering 保证）、
-    ``relations``（repository/work_item/plan_version 关联摘要；缺失项不输出）。
+    ``relations``（repository/work_item/plan_version 关联摘要；缺失项不输出）、
+    ``implementation_prs``（实现 PR 列表，Phase 52 D-52-4，LINK-01；直接映射模型 JSON 列，
+    缺省 default=list → 空列表，天然 fail-soft）。
     关联预取（select_related/prefetch）由 view 层负责，序列化器不触发额外懒查询。
     """
 
     body = serializers.SerializerMethodField()
     reviews = SddSpecReviewSerializer(many=True, read_only=True)
     relations = serializers.SerializerMethodField()
+    implementation_prs = serializers.JSONField(read_only=True)
 
     class Meta(SddSpecListSerializer.Meta):
         fields = [
@@ -209,6 +212,7 @@ class SddSpecDetailSerializer(SddSpecListSerializer):
             "body",
             "reviews",
             "relations",
+            "implementation_prs",
         ]
         read_only_fields = fields
 
@@ -232,6 +236,8 @@ class SddSpecDetailSerializer(SddSpecListSerializer):
             relations["work_item"] = {
                 "id": str(obj.work_item_id),
                 "title": obj.work_item.title,
+                # url 取 prd_url（无则空串，对齐 pr_cross_reference 不构造臆造 URL 范式）。
+                "url": obj.work_item.prd_url or "",
             }
         if obj.plan_version_id is not None:
             relations["plan_version"] = {
