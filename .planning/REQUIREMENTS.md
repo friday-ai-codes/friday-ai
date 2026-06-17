@@ -15,13 +15,13 @@
 
 ### 敏感操作全量覆盖（AUDITCOV）
 
-- [ ] **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间（Project）配置变更、仓库权限变更，记录 actor + 目标 + 前后值
-- [ ] **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider 凭证 / Git 实例凭证 / 飞书凭证增删改、Agent API key / PAT 创建吊销、飞书同步、排除规则变更、清理任务（v0.5 既有排除/清理埋点收口到统一 `AuditEvent` 表）
+- [x] **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间（Project）配置变更、仓库权限变更，记录 actor + 目标 + 前后值
+- [x] **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider 凭证 / Git 实例凭证 / 飞书凭证增删改、Agent API key / PAT 创建吊销、飞书同步、排除规则变更、清理任务（v0.5 既有排除/清理埋点收口到统一 `AuditEvent` 表）
 
 ### 审计查询与导出（AUDITUI）
 
-- [ ] **AUDITUI-01**: 审计查询 REST API——按 actor / action / target / 时间范围过滤 + 分页，superuser fail-closed 访问控制，记录对外只读（无创建/编辑/删除入口）
-- [ ] **AUDITUI-02**: 审计前端视图——列表 / 过滤 / 详情（before-after 对比）+ 导出（CSV/JSON）
+- [x] **AUDITUI-01**: 审计查询 REST API——按 actor / action / target / 时间范围过滤 + 分页，superuser fail-closed 访问控制，记录对外只读（无创建/编辑/删除入口）
+- [x] **AUDITUI-02**: 审计前端视图——列表 / 过滤 / 详情（before-after 对比）+ 导出（CSV/JSON）
 
 ## v2 Requirements
 
@@ -47,10 +47,10 @@
 |-------------|-------|--------|
 | AUDIT-01 | Phase 53 | Complete |
 | AUDIT-02 | Phase 53 | Complete |
-| AUDITCOV-01 | Phase 54 | Pending |
-| AUDITCOV-02 | Phase 54 | Pending |
-| AUDITUI-01 | Phase 55 | Pending |
-| AUDITUI-02 | Phase 55 | Pending |
+| AUDITCOV-01 | Phase 54 | Complete |
+| AUDITCOV-02 | Phase 54 | Complete |
+| AUDITUI-01 | Phase 55 | Complete |
+| AUDITUI-02 | Phase 55 | Complete |
 
 **Coverage:**
 
