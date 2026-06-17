@@ -23,6 +23,7 @@ from agents.core.events import (
     MESSAGE_COMPLETE,
     TEXT_DELTA,
     THINKING,
+    TOOL_USE_START,
     AgentEvent,
 )
 from compat.anthropic_adapter import (
@@ -288,3 +289,222 @@ async def test_aggregate_message_error_raises() -> None:
     runner = _make_runner(AgentEvent(type=ERROR, data={"message": "boom"}))
     with pytest.raises(RuntimeError, match="boom"):
         await aggregate_message(runner, "test", model="friday-default")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Plan 02：thinking block prelude（ANTHROPIC-02）
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_prelude_thinking_before_text() -> None:
+    """命中 RAG（prelude 非空）→ thinking block(index 0) 先于 text block(index 1)（6.2）。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "你好"}),
+        AgentEvent(type=TEXT_DELTA, data={"text": "世界"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {"input": 5, "output": 2}}),
+    )
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            runner,
+            "test",
+            model="friday-default",
+            prelude_texts=["正在检索 RAG…", "检索完成，命中 1 处"],
+        )
+    )
+    types = [e["type"] for e in events]
+    assert types == [
+        "message_start",
+        "content_block_start",  # thinking, index 0
+        "content_block_delta",  # thinking_delta
+        "content_block_delta",  # thinking_delta
+        "content_block_stop",  # index 0
+        "content_block_start",  # text, index 1
+        "content_block_delta",  # text_delta
+        "content_block_delta",  # text_delta
+        "content_block_stop",  # index 1
+        "message_delta",
+        "message_stop",
+    ]
+    # thinking block 占 index 0、承载 prelude 文本
+    assert events[1]["index"] == 0
+    assert events[1]["content_block"]["type"] == "thinking"
+    assert events[2]["delta"]["type"] == "thinking_delta"
+    assert events[2]["delta"]["thinking"] == "正在检索 RAG…"
+    assert events[3]["delta"]["thinking"] == "检索完成，命中 1 处"
+    assert events[4]["index"] == 0
+    # text block 顺延占 index 1、承载正文
+    assert events[5]["index"] == 1
+    assert events[5]["content_block"]["type"] == "text"
+    assert events[6]["delta"]["type"] == "text_delta"
+    assert events[6]["delta"]["text"] == "你好"
+    # message_delta 收尾
+    assert events[-2]["delta"]["stop_reason"] == "end_turn"
+    assert events[-2]["usage"]["output_tokens"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prelude", [None, []])
+async def test_translate_stream_no_prelude_degrades(prelude) -> None:
+    """无 prelude（None/[]）→ 无 thinking block、text block 占 index 0、序列合法（P-7）。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {"input": 1, "output": 1}}),
+    )
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            runner, "test", model="friday-default", prelude_texts=prelude
+        )
+    )
+    types = [e["type"] for e in events]
+    assert types == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+    assert events[1]["index"] == 0
+    assert events[1]["content_block"]["type"] == "text"
+    # 无 thinking block
+    assert all(
+        e.get("content_block", {}).get("type") != "thinking"
+        for e in events
+        if e["type"] == "content_block_start"
+    )
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_prelude_none_byte_eq_default() -> None:
+    """prelude_texts=None / 省略 / [] 三者输出结构逐字等价（去 msg_id 后）（6.3 零回归）。"""
+
+    def _make() -> Any:
+        return _make_runner(
+            AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+            AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {"input": 1, "output": 1}}),
+        )
+
+    async def _collect_norm(prelude_kw: dict) -> str:
+        raw = b""
+        async for chunk in AnthropicCompatAdapter.translate_stream(
+            _make(), "test", model="friday-default", **prelude_kw
+        ):
+            raw += chunk
+        text = raw.decode()
+        # 去掉随机 msg_id 以做结构等价比较
+        import re
+
+        return re.sub(r"msg_[0-9a-f]+", "msg_X", text)
+
+    omitted = await _collect_norm({})
+    none_kw = await _collect_norm({"prelude_texts": None})
+    empty_kw = await _collect_norm({"prelude_texts": []})
+    assert omitted == none_kw == empty_kw
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_prelude_no_tool_use_block() -> None:
+    """含 prelude 全流任一 content_block.type ∈ {text,thinking}，绝无 tool_use（TRACE-02/P-5）。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {}}),
+    )
+    raw = b""
+    async for chunk in AnthropicCompatAdapter.translate_stream(
+        runner, "test", model="friday-default", prelude_texts=["正在检索 RAG…"]
+    ):
+        raw += chunk
+    text = raw.decode()
+    assert "tool_use" not in text
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            _make_runner(
+                AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+                AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {}}),
+            ),
+            "test",
+            model="friday-default",
+            prelude_texts=["正在检索 RAG…"],
+        )
+    )
+    for e in events:
+        if e["type"] == "content_block_start":
+            assert e["content_block"]["type"] in {"text", "thinking"}
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_tool_use_forward_compat_hit() -> None:
+    """TOOL_USE 前向兼容预埋：命中工具名 → thinking block 内多一条 thinking_delta（预埋验证）。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "search_rag"}),
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {"input": 1, "output": 1}}),
+    )
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            runner, "test", model="friday-default", prelude_texts=["x"]
+        )
+    )
+    thinking_deltas = [
+        e["delta"]["thinking"]
+        for e in events
+        if e["type"] == "content_block_delta" and e["delta"]["type"] == "thinking_delta"
+    ]
+    # prelude 一条 "x" + TOOL_USE_START search_rag 命中映射 "正在检索 RAG"
+    assert thinking_deltas == ["x", "正在检索 RAG"]
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_tool_use_forward_compat_unknown_noop() -> None:
+    """TOOL_USE 未知工具名 → tool_event_to_progress 返 None → 无新增 thinking_delta。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "unknown_tool"}),
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {}}),
+    )
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            runner, "test", model="friday-default", prelude_texts=["x"]
+        )
+    )
+    thinking_deltas = [
+        e["delta"]["thinking"]
+        for e in events
+        if e["type"] == "content_block_delta" and e["delta"]["type"] == "thinking_delta"
+    ]
+    assert thinking_deltas == ["x"]
+
+
+@pytest.mark.asyncio
+async def test_translate_stream_prelude_thinking_not_leak_cot() -> None:
+    """含 prelude 下注入 THINKING(CoT) → 全流不含 CoT、无 thinking_delta 承载 CoT（INV-5/P-3）。"""
+    runner = _make_runner(
+        AgentEvent(type=THINKING, data={"thinking": "SENTINEL_COT"}),
+        AgentEvent(type=TEXT_DELTA, data={"text": "正文"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed", "usage": {}}),
+    )
+    raw = b""
+    async for chunk in AnthropicCompatAdapter.translate_stream(
+        runner, "test", model="friday-default", prelude_texts=["正在检索 RAG…"]
+    ):
+        raw += chunk
+    text = raw.decode()
+    assert "SENTINEL_COT" not in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["interrupted", "max_iterations"])
+async def test_translate_stream_prelude_status_maps_end_turn(status: str) -> None:
+    """含 prelude 路径再验：interrupted/max_iterations → stop_reason==end_turn。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "x"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"status": status, "usage": {"input": 1, "output": 1}}),
+    )
+    events = await _collect_events(
+        AnthropicCompatAdapter.translate_stream(
+            runner, "test", model="friday-default", prelude_texts=["命中 1 处"]
+        )
+    )
+    delta = next(e for e in events if e["type"] == "message_delta")
+    assert delta["delta"]["stop_reason"] == "end_turn"
