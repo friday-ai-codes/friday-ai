@@ -9,7 +9,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agents.core.events import MESSAGE_COMPLETE, PHASE_TRANSITION, TOOL_USE_START, AgentEvent
+from agents.core.events import (
+    MESSAGE_COMPLETE,
+    PART_DELTA,
+    PHASE_TRANSITION,
+    TEXT_DELTA,
+    TOOL_USE_START,
+    AgentEvent,
+)
 from agents.models import AgentSession, ToolCallLog
 from chat.models import Conversation, Message
 from feishu.bot.service import FeishuBotService
@@ -98,6 +105,51 @@ async def _waiting_stream(
             "blocking_task_count": blocking_task_count,
         },
     )
+
+
+async def _text_delta_stream(
+    *,
+    final_answer: str = "你好",
+    session_id: str = "",
+    tool_name: str = "browse_file_content",
+    include_part_delta: bool = False,
+) -> AsyncGenerator[AgentEvent, None]:
+    """构造 TOOL_USE_START + 多个 TEXT_DELTA(+可选 PART_DELTA) + MESSAGE_COMPLETE 流。
+
+    include_part_delta=True 时混入 PART_DELTA（双轨），用于验证 bot 绝不消费 PART_DELTA
+    导致正文翻倍（P-1）。
+    """
+    yield AgentEvent(type=TOOL_USE_START, data={"tool_name": tool_name, "tool_call_id": "toolu_1"})
+    yield AgentEvent(type=TEXT_DELTA, data={"text": "你", "model": "test-model", "session_id": session_id})
+    yield AgentEvent(type=TEXT_DELTA, data={"text": "好", "model": "test-model", "session_id": session_id})
+    if include_part_delta:
+        yield AgentEvent(type=PART_DELTA, data={"text": "不应消费", "delta": "不应消费"})
+    yield AgentEvent(
+        type=MESSAGE_COMPLETE,
+        data={
+            "session_id": session_id,
+            "final_answer": final_answer,
+            "usage": {"input_tokens": 100, "output_tokens": 20},
+            "cost_usd": 0.001,
+            "status": "completed",
+            "model": "test-model",
+        },
+    )
+
+
+def _cardkit_im_service(**overrides: Any) -> SimpleNamespace:
+    """构造带 CardKit 4 方法的 fake im_service（默认全成功，可按需 override）。"""
+    defaults: dict[str, Any] = {
+        "send_card": AsyncMock(side_effect=["welcome_ck", "processing_ck"]),
+        "update_card": AsyncMock(return_value=True),
+        "get_chat_history": AsyncMock(return_value=[]),
+        "create_card_entity": AsyncMock(return_value="c_1"),
+        "send_card_entity": AsyncMock(return_value="om_1"),
+        "stream_card_content": AsyncMock(return_value=True),
+        "settle_card_stream": AsyncMock(return_value=True),
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -624,3 +676,76 @@ class TestFeishuBotPipeline:
         final_card = im_service.update_card.await_args.args[1]
         content = "\n".join(element.get("content", "") for element in final_card["elements"] if isinstance(element, dict))
         assert "已自动匹配「friday-explicit」空间" in content
+
+    async def test_text_delta_stream_drives_cardkit_incremental(self) -> None:
+        project = await Project.objects.acreate(name="Friday Stream", feishu_project_key="friday-stream")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_stream", root_message_id="msg_stream")
+        await FeishuBotMessage.objects.acreate(
+            message_id="msg_stream",
+            thread=thread,
+            chat_id="chat_stream",
+            sender_open_id="ou_stream",
+            message_type="text",
+            normalized_text="friday-stream 解释一下这段逻辑",
+            quote_message_id="",
+            mentioned_bot=True,
+            raw_payload={},
+        )
+        im_service = _cardkit_im_service()
+
+        async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+            async for event in _text_delta_stream(final_answer="你好", include_part_delta=True):
+                yield event
+
+        with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+            "feishu.bot.service.ConversationService.create_conversation",
+            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="stream")),
+        ), patch(
+            "feishu.bot.service.ConversationService.send_message_stream",
+            new=fake_send_message_stream,
+        ), patch(
+            "feishu.bot.service._CARDKIT_STREAM_THROTTLE_S",
+            0,
+        ):
+            result = await FeishuBotService().process_message("msg_stream")
+
+        await thread.arefresh_from_db()
+        assert result["status"] == "answered"
+        # CardKit message_id 作为 last_bot_message_id（W-2/D-3）
+        assert thread.last_bot_message_id == "om_1"
+
+        # 惰性创建：首个 TEXT_DELTA 触发一次 create + send，且 create 的是 schema 2.0 卡
+        im_service.create_card_entity.assert_awaited_once()
+        im_service.send_card_entity.assert_awaited_once()
+        assert im_service.create_card_entity.await_args.args[0]["schema"] == "2.0"
+
+        # content 累积全量前缀；终态含 build_answer_markdown 输出
+        contents = [call.kwargs["content"] for call in im_service.stream_card_content.await_args_list]
+        assert contents[0] == "你"
+        assert "你好" in contents[-1]
+        assert "**回答**" in contents[-1]
+        # P-1 防翻倍：PART_DELTA 文本未被累积、正文不重复
+        assert "你好你好" not in contents[-1]
+        assert "不应消费" not in contents[-1]
+
+        # sequence 严格递增（content PUT 与 settle 共享单调计数器）
+        sequences = [call.kwargs["sequence"] for call in im_service.stream_card_content.await_args_list]
+        settle_seq = im_service.settle_card_stream.await_args.kwargs["sequence"]
+        all_seq = [*sequences, settle_seq]
+        assert all_seq == sorted(all_seq)
+        assert len(set(all_seq)) == len(all_seq)
+        im_service.settle_card_stream.assert_awaited_once()
+
+        # 工具进度仍走 thinking 卡（D-4）；终态收口 thinking 卡不留「思考中」（W-1）
+        assert im_service.update_card.await_count == 2
+        tool_card = im_service.update_card.await_args_list[0].args[1]
+        tool_content = "\n".join(
+            e.get("content", "") for e in tool_card["elements"] if isinstance(e, dict)
+        )
+        assert "浏览文件" in tool_content
+        closeout_card = im_service.update_card.await_args_list[1].args[1]
+        closeout_content = "\n".join(
+            e.get("content", "") for e in closeout_card["elements"] if isinstance(e, dict)
+        )
+        assert "思考中" not in closeout_content
+        assert "已回复" in closeout_content
