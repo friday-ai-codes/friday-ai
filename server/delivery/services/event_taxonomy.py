@@ -32,6 +32,7 @@ __all__ = [
     "EVENT_PLAN_MERGE_COMPLETED",
     "EVENT_PLAN_VALIDATION_FAILED",
     "EVENT_PLAN_SESSION_FAILED",
+    "EVENT_SPEC_DRAFTED",
     "EVENT_CODING_WAVE_STARTED",
     "EVENT_CODING_WAVE_COMPLETED",
     "ALL_EVENTS",
@@ -57,6 +58,10 @@ EVENT_PLAN_MERGE_COMPLETED: Final[str] = "plan.merge.completed"
 EVENT_PLAN_VALIDATION_FAILED: Final[str] = "plan.validation.failed"
 EVENT_PLAN_SESSION_FAILED: Final[str] = "plan.session.failed"
 
+# v0.9 SDD spec 产出，payload {spec_id, repository_id, plan_version_id}
+# （producer = Plan 03 spec_generation.py，融合通过后逐 SDD 仓 best-effort emit）
+EVENT_SPEC_DRAFTED: Final[str] = "spec.drafted"
+
 # v0.8 wave 编码产出——常量预留（OUT OF SCOPE 本 phase），不计入 ALL_EVENTS
 EVENT_CODING_WAVE_STARTED: Final[str] = "coding.wave.started"
 EVENT_CODING_WAVE_COMPLETED: Final[str] = "coding.wave.completed"
@@ -75,6 +80,7 @@ ALL_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_PLAN_MERGE_COMPLETED,
         EVENT_PLAN_VALIDATION_FAILED,
         EVENT_PLAN_SESSION_FAILED,
+        EVENT_SPEC_DRAFTED,
     }
 )
 
