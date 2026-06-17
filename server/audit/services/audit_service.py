@@ -23,6 +23,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.db import transaction
 from django.utils import timezone
 
 from audit.models import AuditEvent
@@ -77,23 +78,33 @@ class AuditService:
         ``_redact_audit_payload`` 兜底。fail-soft：整段 try/except 吞异常 + warning，
         绝不冒泡阻断主操作。
 
-        事务边界：建议调用方在**主操作成功后**调用（如 ``transaction.on_commit``），
-        避免 emit 与主操作同事务回滚——具体由 Phase 54 各调用方按场景处理。
+        事务安全：``create`` 包在 ``transaction.atomic()`` 内——若调用方已处于事务中，
+        它创建 savepoint，create 失败只回滚到该 savepoint 而**不污染外层事务**（避免
+        "current transaction is aborted" 反噬主操作）；若处于 autocommit 则自成独立事务。
+        这从机制上闭合「emit 失败间接阻断/回滚主操作」的残余风险。
+
+        **强约束**：调用方仍应在**主操作成功后**才 emit，最佳实践是
+        ``transaction.on_commit(lambda: AuditService.emit(...))``——审计只记真正提交的
+        事实，且彻底脱离主事务生命周期。本入口的 savepoint 兜底是纵深防御，不替代
+        on_commit 约定；Phase 54 接线评审须把 on_commit 列为硬性检查项。
         """
         try:
-            AuditEvent.objects.create(
-                actor_id=_actor_id(actor),
-                actor_repr=_actor_repr(actor),
-                action=action,
-                target_type=target_type,
-                target_id=str(target_id) if target_id != "" else "",
-                target_repr=target_repr,
-                before=_redact_audit_payload(before or {}),
-                after=_redact_audit_payload(after or {}),
-                source=source,
-                occurred_at=occurred_at or timezone.now(),
-                metadata=_redact_audit_payload(metadata or {}),
-            )
+            # atomic：调用方已在事务内则建 savepoint，create 失败仅回滚 savepoint，
+            # 不把外层事务标记为 broken（fail-soft 不污染主操作事务）。
+            with transaction.atomic():
+                AuditEvent.objects.create(
+                    actor_id=_actor_id(actor),
+                    actor_repr=_actor_repr(actor),
+                    action=action,
+                    target_type=target_type,
+                    target_id=str(target_id) if target_id != "" else "",
+                    target_repr=target_repr,
+                    before=_redact_audit_payload(before or {}),
+                    after=_redact_audit_payload(after or {}),
+                    source=source,
+                    occurred_at=occurred_at or timezone.now(),
+                    metadata=_redact_audit_payload(metadata or {}),
+                )
         except Exception:  # noqa: BLE001 — fail-soft，绝不冒泡阻断主操作；不记敏感载荷
             logger.warning("audit.emit_failed", action=action, target_type=target_type)
 

@@ -7,6 +7,7 @@ async aemit fail-soft / 入口强制脱敏（DB 无明文终极防线）。
 import json
 
 import pytest
+from django.db import connection
 from structlog.testing import capture_logs
 
 from audit.models import AuditEvent
@@ -43,6 +44,27 @@ def test_main_op_not_blocked(monkeypatch):
         return result
 
     assert main_op() == "computed"
+
+
+@pytest.mark.django_db
+def test_emit_db_failure_does_not_poison_outer_transaction(monkeypatch):
+    """MEDIUM-3：emit 内 create 触发真实 DB 错误时，savepoint 兜底不污染外层事务。
+
+    django_db 测试本身运行在外层事务里。若 create 失败未被 savepoint 隔离，会把外层
+    事务标记为 broken，后续任意 ORM 调用将抛 TransactionManagementError。本测试用一条
+    会触发 NOT NULL 约束失败的原始 INSERT 模拟真实 DB 级失败，验证 emit 后外层事务仍可用。
+    """
+
+    def _bad_insert(*args, **kwargs):
+        # 仅给 id、缺 NOT NULL 列 → 触发真实 DB 级 IntegrityError（非纯 Python 异常）
+        with connection.cursor() as cur:
+            cur.execute("INSERT INTO audit_event (id) VALUES ('poison-probe')")
+
+    monkeypatch.setattr(AuditEvent.objects, "create", _bad_insert)
+    AuditService.emit(action="member.created", target_type="user")
+
+    # 若外层事务被污染，这条 SELECT 会抛 TransactionManagementError
+    assert AuditEvent.objects.count() == 0
 
 
 @pytest.mark.django_db(transaction=True)
