@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: SDD / OpenSpec 支持（重型）
-status: Phase 51 shipped (3 plans / 2 waves, GATE-01/GATE-02 闭合：编码前置 gate fail-closed + openspec 注入链路)；下一步 Phase 52
-stopped_at: Phase 51 完成并提交（51-SUMMARY.md 已写），里程碑 v0.9.0 仅剩 Phase 52
-last_updated: "2026-06-17T04:10:00.000Z"
-last_activity: 2026-06-17 — Phase 51 编码前置 gate（follow_openspec=True 仓校验 SddSpec.APPROVED，未批准/异常 fail-closed mark_gate_blocked 拦截 + 单仓隔离 + aadvance 阻断下游）+ openspec 注入（dispatch env_FRIDAY_TASK_FOLLOW_OPENSPEC → task system_prompt openspec 段），非 SDD 仓零回归
+status: Phase 52 shipped (3 plans / 2 waves, LINK-01/LINK-02 闭合：spec↔PR 回填 + 交付验收追溯视图)；里程碑 v0.9.0 全 5 phase 完成
+stopped_at: Phase 52 完成并提交（52-SUMMARY.md 已写），里程碑 v0.9.0 全部 phase 交付完毕，待里程碑审计/收官
+last_updated: "2026-06-17T05:15:00.000Z"
+last_activity: 2026-06-17 — Phase 52 spec↔PR 关联（SddSpec.implementation_prs JSON + SddSpecService.link_implementation_pr 单一写入入口 + _finalize_and_notify best-effort fail-soft 回填）+ 交付验收视图（SddSpecDetailSerializer 扩追溯摘要 + 前端 SpecDeliveryPanel WorkItem→spec→PR 链路 fail-soft 降级），非 SDD 仓零回归
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 80
+  completed_phases: 5
+  total_plans: 17
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: 52 (Not started) — Phase 48/49/50/51 complete
-Plan: —
-Status: Phase 51 shipped (3 plans / 2 waves, GATE-01/GATE-02 闭合)；下一步 Phase 52（spec↔需求/PR 关联 + 交付验收视图）
-Last activity: 2026-06-17 — Phase 51 编码前置 gate fail-closed + openspec 指引注入链路（server gate + dispatch env + task system_prompt），非 SDD 仓全链路零回归；后端 408 passed / task 185 passed
+Phase: 52 (Complete) — Phase 48/49/50/51/52 all complete (v0.9.0 全 phase 交付)
+Plan: 3/3 (52-01/52-02/52-03 shipped)
+Status: Phase 52 shipped (3 plans / 2 waves, LINK-01/LINK-02 闭合)；里程碑 v0.9.0 全部 5 phase 完成，待里程碑审计/收官
+Last activity: 2026-06-17 — Phase 52 spec↔PR 回填（implementation_prs JSON + link_implementation_pr 单一写入入口 + _finalize_and_notify fail-soft）+ detail serializer 追溯摘要 + 前端 SpecDeliveryPanel 交付验收面板（fail-soft 降级），非 SDD 仓零回归
 
 ## Milestone Overview (v0.9.0 — Phases 48–52)
 
@@ -38,7 +38,7 @@ Last activity: 2026-06-17 — Phase 51 编码前置 gate fail-closed + openspec 
 | 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ✅ Complete (verify human_needed) |
 | 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ✅ Complete (verify human_needed) |
 | 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ✅ Complete (容器 E2E human_needed) |
-| 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ⬜ Not started |
+| 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ✅ Complete (容器 E2E human_needed) |
 
 **Execution order:** 48 → 49 → 50 → 51 → 52（严格顺序）。依赖链：SDD 仓库打标(48) → SDD 仓库方案产 openspec spec draft(49) → spec 状态机 + 评审记录 + 前端展示(50) → 编码前置 gate + openspec 注入(51) → spec↔需求/PR 关联 + 交付验收视图(52)。每个 phase 建立在前序产物之上——无打标无从判定产 spec，无 spec 实体无从挂状态机，无 `approved` 状态无从 gate，无放行编码无实现 PR 可关联。
 
