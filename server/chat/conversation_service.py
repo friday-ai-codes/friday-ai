@@ -1789,7 +1789,10 @@ class ConversationService:
             archived_only: 仅返回已归档会话（「查看已归档」入口）；优先级高于
                 ``include_archived``。
         """
-        from django.db.models import Q
+        from django.db.models import Exists, OuterRef, Q
+
+        from chat.models import CodingPlan, CodingSession
+        from delivery.models import PlanSession, SddSpec
 
         qs = Conversation.objects.filter(is_deleted=False)
         if archived_only:
@@ -1805,6 +1808,29 @@ class ConversationService:
             qs = qs.filter(
                 Q(title__icontains=q) | Q(messages__content__icontains=q)
             ).distinct()
+
+        # 列表徽标聚合（SDD / 技术方案 / 编码）：Exists 子查询，不引入 N+1、async 安全
+        # （annotate 出的布尔是实例列，序列化器直接读属性不触发 sync ORM）。
+        qs = qs.annotate(
+            has_coding_plan=Exists(
+                CodingPlan.objects.filter(conversation_id=OuterRef("pk"))
+            ),
+            has_coding_session=Exists(
+                CodingSession.objects.filter(conversation_id=OuterRef("pk"))
+            ),
+            # SDD spec 反查：conversation → PlanSession(软引用会话) 且其 current_plan_version
+            # 命中某条 SddSpec.plan_version（UUID 相等匹配，无需跨 app FK）。单层 OuterRef
+            # 关联会话，内层 __in 为非关联子查询（全部 spec 的 plan_version 集合）。
+            has_sdd_spec=Exists(
+                PlanSession.objects.filter(
+                    conversation_id=OuterRef("pk"),
+                    current_plan_version__isnull=False,
+                    current_plan_version__in=SddSpec.objects.filter(
+                        plan_version__isnull=False
+                    ).values("plan_version_id"),
+                )
+            ),
+        )
 
         qs = qs.order_by("-updated_at")
         if limit and limit > 0:
