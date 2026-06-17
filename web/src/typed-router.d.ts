@@ -388,6 +388,20 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
+    '/specs/': RouteRecordInfo<
+      '/specs/',
+      '/specs',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/specs/[id]': RouteRecordInfo<
+      '/specs/[id]',
+      '/specs/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     '/workflows/': RouteRecordInfo<
       '/workflows/',
       '/workflows',
@@ -829,6 +843,22 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | never
+    }
+    'src/pages/specs/index.vue': {
+      routes:
+        | '/specs/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/specs/[id].vue': {
+      routes:
+        | '/specs/[id]'
+      views:
+        | never
+      pathParamNames:
+        | 'id'
     }
     'src/pages/workflows/index.vue': {
       routes:
