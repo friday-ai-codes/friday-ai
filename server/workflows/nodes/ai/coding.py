@@ -652,7 +652,7 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         - ``follow_openspec=False`` 仓直接放行（非 SDD/legacy 零回归，**不触发任何 SddSpec
           查询**）。
-        - ``follow_openspec=True`` 仓校验关联 ``SddSpec(plan_version_id, repository_id)`` 已
+        - ``follow_openspec=True`` 仓校验关联 ``SddSpec``（按 plan_version_id × repository_id）已
           ``APPROVED``：已批准放行；未批准（无 spec / 非 approved）经
           ``service.mark_gate_blocked(task, "spec_not_approved", <status|missing>)`` 拦截。
         - 单仓 gate 校验抛异常 → 保守 fail-closed（``mark_gate_blocked(task, "gate_error",
