@@ -116,7 +116,12 @@
   2. 用户可见交付验收视图，沿 spec → `WorkItem` → 实现 PR 链路追溯一次需求的 spec-driven 交付状态
   3. 关联回填全程 fail-soft，链断 / 缺数据时降级展示而非报错
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+- [ ] 52-01-PLAN.md — 后端 SddSpec.implementation_prs 字段 + migration + SddSpecService.link_implementation_pr + _finalize_and_notify fail-soft 回填挂接（LINK-01）
+- [ ] 52-02-PLAN.md — 后端 SddSpecDetailSerializer 扩 implementation_prs + work_item url/title + plan_version 追溯摘要（LINK-01/LINK-02）
+- [ ] 52-03-PLAN.md — 前端 spec 详情页「交付验收」追溯面板（WorkItem→spec→PR）+ i18n + fail-soft 降级 + vitest（LINK-02）
+
 **UI hint**: yes
 
 <details>
@@ -156,7 +161,7 @@
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 4/4 | ✅ Complete | 2026-06-17 |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 5/5 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 3/3 | ✅ Complete (verify human_needed) | 2026-06-17 |
-| 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/TBD | Not started | - |
+| 52. spec↔需求/PR 关联 + 交付验收视图 | v0.9.0 | 0/3 | Planned | - |
 
 所有先前里程碑（v0.1.0–v0.8.0，Phases 1–47）均已交付归档。
 
