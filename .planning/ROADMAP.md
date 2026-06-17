@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.11.0 开放与协作** — Phases 56–59 (planning)
+- ✅ **v0.11.0 开放与协作** — Phases 56–59 (shipped 2026-06-17) — 里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [audit](./milestones/v0.11.0-MILESTONE-AUDIT.md)
 - ✅ **v0.10.0 操作审计治理** — Phases 53–55 (shipped 2026-06-17) — [archive](./milestones/v0.10.0-ROADMAP.md)
 - ✅ **v0.9.0 SDD / OpenSpec 支持（重型）** — Phases 48–52 (shipped 2026-06-17) — [archive](./milestones/v0.9.0-ROADMAP.md)
 - ✅ **v0.8.0 多仓串行编码 → 融合 PR** — Phases 43–47 (shipped 2026-06-17) — [archive](./milestones/v0.8.0-ROADMAP.md)
@@ -18,7 +18,7 @@
 
 ## Phases
 
-### 🚧 v0.11.0 开放与协作 (Planning)
+### ✅ v0.11.0 开放与协作 (Shipped 2026-06-17 — 审计 PASS)
 
 **Milestone Goal:** 对外开放与协作层——把内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（复用 v0.7 起沉淀的 §15 事件 taxonomy，INV-5 非模型私有 CoT、不误用标准 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，把飞书机器人对话改走原生 CardKit 流式卡片，并提供工作流自动建群节点。设计底座：`ROADMAP-vNext.md §v0.11`、`DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格）。`PREFLIGHT.md` 无映射 v0.11 的 blocking/should-fix 项。
 
@@ -124,7 +124,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.10.0（Phases 1–55）均已交付归档。**当前里程碑 v0.11.0 开放与协作（Phases 56–59）规划完成，待执行**——`/gsd-plan-phase 56` 起步，或 autonomous 跑完整个里程碑。v0.11 为 `ROADMAP-vNext.md` 前瞻路线的收官里程碑。
+里程碑 v0.1.0–v0.11.0（Phases 1–59）均已交付。**v0.11.0 开放与协作（Phases 56–59）已收官**——4 phases / 8 plans 全部 Complete，里程碑审计 PASS（TRACE-01/02、ANTHROPIC-01/02、CARD-01、GROUP-01 共 6/6 需求交付，INV-5/INV-6 成立）。v0.11 为 `ROADMAP-vNext.md` 前瞻路线的收官里程碑。
 
 ---
 *Previous milestones archived in .planning/milestones/*
