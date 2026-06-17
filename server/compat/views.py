@@ -21,7 +21,12 @@ from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
 from services.provider_config import ProviderConfigService, ProviderMissingError
 
 from .adapter import OpenAICompatAdapter
-from .anthropic_adapter import aggregate_message
+from .anthropic_adapter import (
+    AnthropicCompatAdapter,
+    aggregate_message,
+    anthropic_error_event,
+    anthropic_sse_encode,
+)
 from .auth import OptionalBearerTokenAuth
 from .error_handlers import anthropic_error_response, openai_error_response
 from .progress import retrieval_to_progress
@@ -181,10 +186,13 @@ class ChatCompletionsView(APIView):
 
 
 class MessagesView(APIView):
-    """POST /v1/messages — Anthropic Messages 兼容入口（57-01，本 plan 仅非流式）。
+    """POST /v1/messages — Anthropic Messages 兼容入口（57-02：非流式 + 流式 SSE）。
 
     复用 Phase 56 内核：``anthropic_to_openai_messages`` 规整 → ``prepare_messages_with_meta``
-    检索注入 → ``aggregate_message`` 聚合为 Anthropic Messages 形状。流式分支留 Plan 02。
+    单次检索 → 流式经 ``AnthropicCompatAdapter.translate_stream``（命中 RAG 时由
+    ``retrieval_to_progress`` 派生 thinking block prelude）/ 非流式经 ``aggregate_message``
+    聚合为 Anthropic Messages 形状。两路径共用同一 ``lc_messages``（非流式 content 零回归
+    命门）；retr 仅供流式派生 prelude，非流式忽略（不合成 trace、不污染 content，P-8）。
     """
 
     # Pitfall 6 / P-9：不走 JWT，避免 async 上下文 lazy-load user 的 SynchronousOnlyOperation
@@ -202,9 +210,9 @@ class MessagesView(APIView):
         params = serializer.validated_data
 
         # 规整 Anthropic 形状 → OpenAI [{role, content}]，再完全委托既有检索内核。
-        # retr 非流式忽略（不合成 trace、不污染 content，P-8）。
+        # 单次检索取 (lc_messages, retr)，两路径共用 lc_messages（非流式 content 零回归命门）。
         oai_messages = anthropic_to_openai_messages(params.get("system"), params["messages"])
-        lc_messages, _retr = await prepare_messages_with_meta(
+        lc_messages, retr = await prepare_messages_with_meta(
             messages=oai_messages,
             repository_ids=[str(rid) for rid in params.get("repository_ids") or []],
             project_id=str(params["project_id"]) if params.get("project_id") else None,
@@ -221,8 +229,19 @@ class MessagesView(APIView):
         # Q-02 方案 (a)：固定 friday-default，忽略客户端传入 model 字段
         model_name = "friday-default"
 
-        # TODO(Plan 02 57-02)：流式 SSE 接线 + thinking block prelude。本 plan stream=True
-        # 暂走非流式聚合（功能可用，Plan 02 替换为真正的 Anthropic SSE 双行帧流）。
+        if params.get("stream"):
+            # 命中 RAG（retr 非空）时派生 prelude progress（正文前以 thinking block 透出）；
+            # 未命中→[]→不发 thinking block（优雅降级 P-7）。
+            prelude_texts = retrieval_to_progress(retr)
+            return StreamingHttpResponse(
+                streaming_content=self._stream_anthropic(
+                    runner, lc_messages, model_name, prelude_texts
+                ),
+                content_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
+        # 非流式：retr 忽略（不传 prelude、content 零污染，P-8）。
         try:
             message = await aggregate_message(runner, lc_messages, model=model_name)
         except RuntimeError as exc:
@@ -232,6 +251,28 @@ class MessagesView(APIView):
                 http_status=500,
             )
         return Response(message)
+
+    async def _stream_anthropic(
+        self,
+        runner: LangChainAgentRunner,
+        lc_messages: list,
+        model_name: str,
+        prelude_texts: list[str] | None = None,
+    ):
+        """逐帧 yield Anthropic SSE 双行帧字节流（命中 RAG 时含 thinking block prelude）。
+
+        Anthropic 流**不发** ``[DONE]``，以 ``translate_stream`` 内的 ``message_stop`` 收尾。
+        流式异常 → logger.exception（仅服务端）+ ``event: error`` 帧（不泄漏 traceback，
+        不发 message_stop，P-10）。
+        """
+        try:
+            async for chunk in AnthropicCompatAdapter.translate_stream(
+                runner, lc_messages, model=model_name, prelude_texts=prelude_texts
+            ):
+                yield chunk
+        except Exception as exc:
+            logger.exception("anthropic_stream_error", error=str(exc))
+            yield anthropic_sse_encode("error", anthropic_error_event("内部错误"))
 
 
 class ModelsView(APIView):
