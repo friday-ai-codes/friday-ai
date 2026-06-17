@@ -337,6 +337,7 @@ declare module 'vue' {
     SpaceMultiSelect: typeof import('./components/repository/SpaceMultiSelect.vue')['default']
     SpacePromptsModal: typeof import('./components/space/SpacePromptsModal.vue')['default']
     SpaceProvidersModal: typeof import('./components/space/SpaceProvidersModal.vue')['default']
+    SpecDeliveryPanel: typeof import('./components/spec/SpecDeliveryPanel.vue')['default']
     SpecReviewDialog: typeof import('./components/spec/SpecReviewDialog.vue')['default']
     SpecReviewTimeline: typeof import('./components/spec/SpecReviewTimeline.vue')['default']
     SpecTransitionActions: typeof import('./components/spec/SpecTransitionActions.vue')['default']
