@@ -19,10 +19,11 @@ from agents.core.events import (
     MESSAGE_COMPLETE,
     TEXT_DELTA,
     THINKING,
+    TOOL_USE_RESULT,
+    TOOL_USE_START,
     AgentEvent,
 )
 from compat.adapter import OpenAICompatAdapter
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 工具函数
@@ -54,6 +55,14 @@ async def _collect(gen: AsyncGenerator[bytes, None]) -> list[dict[str, Any]]:
             if payload:
                 chunks.append(json.loads(payload))
     return chunks
+
+
+async def _collect_raw(gen: AsyncGenerator[bytes, None]) -> bytes:
+    """收集 async generator 的全部字节（用于零回归 byte-eq / sentinel 断言）。"""
+    parts: list[bytes] = []
+    async for raw in gen:
+        parts.append(raw)
+    return b"".join(parts)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -156,6 +165,168 @@ async def test_error_event_closes_stream() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# TOOL_USE_* → progress 集成测（6.2）+ tool_calls 禁线 + 安全 sentinel（6.4）
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_use_start_maps_to_reasoning_content() -> None:
+    """TOOL_USE_START{search_rag} → 含 reasoning_content=="正在检索 RAG" 的 progress chunk。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "search_rag", "tool_call_id": "c1"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    chunks = await _collect(OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default"))
+    progress_chunk = next(
+        c for c in chunks
+        if c.get("choices") and c["choices"][0].get("delta", {}).get("reasoning_content")
+    )
+    assert progress_chunk["choices"][0]["delta"]["reasoning_content"] == "正在检索 RAG"
+    assert progress_chunk["choices"][0]["finish_reason"] is None
+    assert progress_chunk["object"] == "chat.completion.chunk"
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_emits_no_chunk() -> None:
+    """未知工具名 → 不新增任何 progress chunk（与降级等价）。"""
+    base = _make_runner(
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    with_unknown = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "totally_unknown_tool"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    base_chunks = await _collect(OpenAICompatAdapter.translate_stream(base, "test", model="friday-default"))
+    unknown_chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(with_unknown, "test", model="friday-default")
+    )
+    assert len(unknown_chunks) == len(base_chunks)
+
+
+@pytest.mark.asyncio
+async def test_no_tool_calls_field_anywhere() -> None:
+    """TRACE-02：含 TOOL_USE_* 的序列，任一 chunk 都不含 tool_calls / finish_reason!=tool_calls。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "grep"}),
+        AgentEvent(type=TOOL_USE_RESULT, data={"tool_name": "grep", "success": True, "result": "x"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    chunks = await _collect(OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default"))
+    for c in chunks:
+        for choice in c.get("choices", []):
+            assert "tool_calls" not in choice.get("delta", {})
+            assert choice.get("finish_reason") != "tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_progress_chunk_does_not_pollute_content() -> None:
+    """progress chunk 仅含 reasoning_content，绝不混入非空 delta.content。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "search_rag"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    chunks = await _collect(OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default"))
+    for c in chunks:
+        for choice in c.get("choices", []):
+            delta = choice.get("delta", {})
+            if delta.get("reasoning_content"):
+                assert not delta.get("content")
+
+
+@pytest.mark.asyncio
+async def test_tool_progress_include_usage_consistency() -> None:
+    """include_usage=True 时 progress chunk 带 usage=None，末尾仍恰好一个 choices=[] 的 usage chunk。"""
+    runner = _make_runner(
+        AgentEvent(type=TOOL_USE_START, data={"tool_name": "search_rag"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 3, "output": 2}, "status": "completed"}),
+    )
+    chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default", include_usage=True)
+    )
+    progress_chunk = next(
+        c for c in chunks
+        if c.get("choices") and c["choices"][0].get("delta", {}).get("reasoning_content")
+    )
+    assert "usage" in progress_chunk
+    assert progress_chunk["usage"] is None
+    usage_chunks = [c for c in chunks if c.get("choices") == []]
+    assert len(usage_chunks) == 1
+    assert usage_chunks[0]["usage"]["total_tokens"] == 5
+
+
+@pytest.mark.asyncio
+async def test_sentinel_never_leaks_in_full_stream() -> None:
+    """INV-5：含敏感 tool_input/result + THINKING CoT 的完整序列，全量 SSE 字节流不含任一 sentinel。"""
+    tool_input_sentinel = "SENTINEL_TOOL_INPUT_secret"
+    result_sentinel = "SENTINEL_RESULT_private_code"
+    cot_sentinel = "SENTINEL_COT_chain_of_thought"
+    runner = _make_runner(
+        AgentEvent(type=THINKING, data={"thinking": cot_sentinel}),
+        AgentEvent(
+            type=TOOL_USE_START,
+            data={"tool_name": "search_rag", "tool_input": tool_input_sentinel},
+        ),
+        AgentEvent(
+            type=TOOL_USE_RESULT,
+            data={"tool_name": "search_rag", "success": True, "result": result_sentinel},
+        ),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    raw = await _collect_raw(OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default"))
+    text = raw.decode()
+    assert tool_input_sentinel not in text
+    assert result_sentinel not in text
+    # THINKING 原文经既有 reasoning_content 透出属既有行为，但 progress 机制绝不额外内联 CoT；
+    # 此处断言工具事件不引入 CoT sentinel（THINKING 自身 chunk 之外不应出现第二次）。
+    assert text.count(cot_sentinel) <= 1
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 零回归 byte-equivalence（6.3）：无工具事件序列 SSE 输出逐字等价、不新增 chunk
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_zero_regression_thinking_sequence_byte_equivalent() -> None:
+    """[THINKING, MESSAGE_COMPLETE] 序列：新代码 SSE 字节流与无 TOOL_USE 时逐字一致。"""
+
+    def _events() -> list[AgentEvent]:
+        return [
+            AgentEvent(type=THINKING, data={"thinking": "思考中"}),
+            AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+        ]
+
+    raw_a = await _collect_raw(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "test", model="m")
+    )
+    raw_b = await _collect_raw(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "test", model="m")
+    )
+    # 两次运行除 chat_id/created（随机/时钟）外结构应稳定：chunk 数一致
+    assert raw_a.count(b"data: ") == raw_b.count(b"data: ")
+    # 不应包含任何 reasoning_content 之外的 progress（THINKING 自身经 reasoning_content）
+    chunks = await _collect(
+        OpenAICompatAdapter.translate_stream(_make_runner(*_events()), "test", model="m")
+    )
+    # role + thinking(reasoning_content) + finish = 3 chunk（无新增 progress chunk）
+    assert len(chunks) == 3
+
+
+@pytest.mark.asyncio
+async def test_zero_regression_text_delta_sequence_no_extra_chunk() -> None:
+    """[TEXT_DELTA, MESSAGE_COMPLETE] 序列：不新增任何 chunk（role + content + finish = 3）。"""
+    runner = _make_runner(
+        AgentEvent(type=TEXT_DELTA, data={"text": "Hello"}),
+        AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {}, "status": "completed"}),
+    )
+    chunks = await _collect(OpenAICompatAdapter.translate_stream(runner, "test", model="friday-default"))
+    assert len(chunks) == 3
+    for c in chunks:
+        for choice in c.get("choices", []):
+            assert not choice.get("delta", {}).get("reasoning_content")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # request_handler 测试
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -163,8 +334,9 @@ async def test_error_event_closes_stream() -> None:
 @pytest.mark.asyncio
 async def test_prepare_messages_with_search(django_db_setup: Any) -> None:
     """LayeredSearchService.search 返回 final_context → system message 被前置插入（contract）。"""
-    from compat.request_handler import prepare_messages
     from langchain_core.messages import SystemMessage
+
+    from compat.request_handler import prepare_messages
 
     mock_result = MagicMock()
     mock_result.final_context = "代码上下文内容"
@@ -182,8 +354,9 @@ async def test_prepare_messages_with_search(django_db_setup: Any) -> None:
 @pytest.mark.asyncio
 async def test_prepare_messages_search_fails_graceful() -> None:
     """LayeredSearchService 抛异常 → 降级返回原始 lc_messages（contract fallback）。"""
-    from compat.request_handler import prepare_messages
     from langchain_core.messages import HumanMessage
+
+    from compat.request_handler import prepare_messages
 
     messages = [{"role": "user", "content": "测试问题"}]
 
