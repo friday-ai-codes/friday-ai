@@ -261,17 +261,141 @@ export const useChatStore = defineStore('chat', () => {
   // Actions
   // ========================================================================
 
+  // 左侧列表默认展示最近 50 条会话（后端 top N）。
+  const CONVERSATION_LIST_LIMIT = 50
+
   async function fetchConversations() {
     loading.value = true
     error.value = null
     try {
-      conversations.value = await listConversations()
+      conversations.value = await listConversations({ limit: CONVERSATION_LIST_LIMIT })
     }
     catch (e) {
       error.value = e instanceof Error ? e.message : '获取对话列表失败'
     }
     finally {
       loading.value = false
+    }
+  }
+
+  // 已归档会话列表（「查看已归档」入口；与默认列表分开存放）。
+  const archivedConversations = ref<Conversation[]>([])
+  const archivedLoading = ref(false)
+
+  async function fetchArchivedConversations() {
+    archivedLoading.value = true
+    try {
+      archivedConversations.value = await listConversations({
+        archived: true,
+        limit: CONVERSATION_LIST_LIMIT,
+      })
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : '获取已归档对话失败'
+    }
+    finally {
+      archivedLoading.value = false
+    }
+  }
+
+  // 会话搜索：服务端匹配标题 + 消息内容（用户诉求「能搜到会话里面的内容」）。
+  // 与 conversations（默认列表）分开存放，避免搜索结果污染主列表。
+  const conversationSearchResults = ref<Conversation[]>([])
+  const conversationSearching = ref(false)
+  let searchSeq = 0
+
+  async function searchConversations(keyword: string) {
+    const q = keyword.trim()
+    if (!q) {
+      conversationSearchResults.value = []
+      conversationSearching.value = false
+      return
+    }
+    const seq = ++searchSeq
+    conversationSearching.value = true
+    try {
+      const results = await listConversations({ q, limit: CONVERSATION_LIST_LIMIT })
+      // 丢弃过期请求结果（用户快速输入时只认最后一次）。
+      if (seq === searchSeq)
+        conversationSearchResults.value = results
+    }
+    catch (e) {
+      if (seq === searchSeq)
+        error.value = e instanceof Error ? e.message : '搜索对话失败'
+    }
+    finally {
+      if (seq === searchSeq)
+        conversationSearching.value = false
+    }
+  }
+
+  function clearConversationSearch() {
+    searchSeq++
+    conversationSearchResults.value = []
+    conversationSearching.value = false
+  }
+
+  /** 同步更新某条会话在主列表 + 搜索结果里的字段（保持两处一致）。 */
+  function patchConversationLocal(id: string, patch: Partial<Conversation>) {
+    const apply = (list: Conversation[]) => {
+      const idx = list.findIndex(c => c.id === id)
+      if (idx !== -1)
+        list[idx] = { ...list[idx], ...patch }
+    }
+    apply(conversations.value)
+    apply(conversationSearchResults.value)
+    if (pendingConversation.value?.id === id)
+      pendingConversation.value = { ...pendingConversation.value, ...patch }
+  }
+
+  /** 重命名会话（PATCH title），成功后同步本地列表。 */
+  async function renameConversation(id: string, title: string) {
+    const trimmed = title.trim()
+    if (!trimmed)
+      return
+    try {
+      await patchConversation(id, { title: trimmed })
+      patchConversationLocal(id, { title: trimmed })
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : '重命名失败'
+      throw e
+    }
+  }
+
+  /**
+   * 归档 / 取消归档会话，维护「活跃列表」与「已归档列表」两边一致：
+   * - 归档：从活跃列表 / 搜索结果移除，置顶进已归档列表。
+   * - 取消归档：从已归档列表移除，置顶回活跃列表。
+   */
+  async function archiveConversation(id: string, archived = true) {
+    try {
+      await patchConversation(id, { is_archived: archived })
+      if (archived) {
+        const item
+          = conversations.value.find(c => c.id === id)
+            ?? conversationSearchResults.value.find(c => c.id === id)
+        conversations.value = conversations.value.filter(c => c.id !== id)
+        conversationSearchResults.value = conversationSearchResults.value.filter(c => c.id !== id)
+        if (item && !archivedConversations.value.some(c => c.id === id))
+          archivedConversations.value = [{ ...item, is_archived: true }, ...archivedConversations.value]
+        if (currentConversationId.value === id) {
+          currentConversationId.value = null
+          messages.value = []
+        }
+      }
+      else {
+        const item = archivedConversations.value.find(c => c.id === id)
+        archivedConversations.value = archivedConversations.value.filter(c => c.id !== id)
+        if (item && !conversations.value.some(c => c.id === id))
+          conversations.value = [{ ...item, is_archived: false }, ...conversations.value]
+        else
+          patchConversationLocal(id, { is_archived: false })
+      }
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : '归档失败'
+      throw e
     }
   }
 
@@ -342,6 +466,8 @@ export const useChatStore = defineStore('chat', () => {
     try {
       await deleteConversation(id)
       conversations.value = conversations.value.filter(c => c.id !== id)
+      conversationSearchResults.value = conversationSearchResults.value.filter(c => c.id !== id)
+      archivedConversations.value = archivedConversations.value.filter(c => c.id !== id)
       if (currentConversationId.value === id) {
         currentConversationId.value = null
         messages.value = []
@@ -2417,11 +2543,22 @@ export const useChatStore = defineStore('chat', () => {
     // Getters
     currentConversation,
     hasConversation,
+    // 会话搜索（标题 + 内容）
+    conversationSearchResults,
+    conversationSearching,
+    searchConversations,
+    clearConversationSearch,
+    // 已归档会话
+    archivedConversations,
+    archivedLoading,
+    fetchArchivedConversations,
     // Actions
     fetchConversations,
     selectConversation,
     createNewConversation,
     removeConversation,
+    renameConversation,
+    archiveConversation,
     patchConversationCredential,
     patchConversationProviderAndModel,
     switchConversationSpace,

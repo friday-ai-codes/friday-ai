@@ -55,6 +55,9 @@ class IngestRun(models.Model):
         FAILED = "failed", "失败"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # 批量摄取分组键（同一次「批量摄取」派发的多条 run 共享一个 batch_id）。
+    # 单条（旧 /ingest/ 端点）留空——批量为可选分组，不引入新表，聚合状态读时计算。
+    batch_id = models.UUIDField(null=True, blank=True, db_index=True)
     # 原始用户输入，留痕（不可信输入，仅记录；解析见 ingest_parsing）
     board_url = models.TextField(blank=True)
     mr_url = models.TextField(blank=True)

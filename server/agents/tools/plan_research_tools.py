@@ -109,12 +109,14 @@ async def start_plan_research(
     filtered_repos = await _filter_repos_in_space(space_id, include_repos)
 
     # 3. 建 session：work_item=None 即 INV-2 自然语言需求显式标记（entrypoint=chat 可追溯）。
+    #    conversation_id 软引用会话，供会话列表反查「该会话是否产出 SDD spec」（has_sdd_spec 徽标）。
     session = await start_orchestration(
         entrypoint="chat",
         requirement_text=requirement_text,
         work_item=None,
         created_by=created_by,
         include_repos=filtered_repos,
+        conversation_id=conversation_id or None,
     )
 
     # 4. 构建 engine：与工作流节点同一 build_orchestration_engine（无 node_execution_id；

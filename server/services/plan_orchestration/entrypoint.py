@@ -32,12 +32,14 @@ async def start_orchestration(
     work_item: Any = None,
     created_by: Any = None,
     include_repos: list[str] | None = None,
+    conversation_id: Any = None,
 ) -> PlanSession:
     """按统一 decomposition 形态建 ``PlanSession``（两入口共用，ENTRY-02）。
 
     薄包 ``PlanSessionService.create_session``：``entrypoint`` 合法性（workflow|chat）由
     create_session 既有校验（非法 ``raise ValueError``），helper 不重复校验，也不驱动 engine。
     INV-2：chat 入口传 ``work_item=None`` 即「自然语言需求」显式标记（entrypoint=chat 可追溯）。
+    ``conversation_id`` 仅 chat 入口传（软引用会话，供会话列表反查 SDD spec），workflow 入口为空。
     """
     from delivery.services import PlanSessionService
 
@@ -49,6 +51,7 @@ async def start_orchestration(
             "include_repos": include_repos or [],
         },
         created_by=created_by,
+        conversation_id=conversation_id,
     )
 
 
