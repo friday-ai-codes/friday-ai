@@ -1,5 +1,21 @@
 # Milestones
 
+## v0.10.0 操作审计治理 (Shipped: 2026-06-17)
+
+**Phases completed:** 3 phases, 7 plans, 7 tasks
+
+**Key accomplishments:**
+
+- 新建零业务依赖的 audit 横切 Django app，落 AuditEvent append-only 不可篡改模型（actor 标量软引用 + 双时间戳 + 5 查询索引 + 模型层 save/delete 守护）与 0001_initial 迁移
+- AuditService 单一写入入口（emit/aemit）落地：唯一 AuditEvent writer（INV-6）+ 入口强制脱敏（key-name/值级密钥/高熵）+ fail-soft 吞异常不阻断主操作 + 稳定 action taxonomy 容器，配 INV-6 grep 守护
+- 把 Phase 53 的 AuditService.aemit/emit 单一写入入口接线到 accounts（建用户/启停/改资料/首启 superuser）+ projects/members（成员增删改 + 角色变更）+ projects（空间配置 + 仓库权限/关联变更），产出全量审计记录（actor=request.user + 目标 + 前后值），凭证型字段仅记字段名 + redacted 布尔。
+- 把 AuditService 接线到 Provider/Git 实例/per-repo Git/PAT/飞书凭证与同步、排除规则增删，并把 v0.5 purge 埋点收口到 AuditEvent 单一写入入口，产出全量审计记录且凭证字段在 DB 绝无明文。
+- 审计查询列表 + 详情 REST（IsSuperUser fail-closed、只读、过滤 + offset/limit 分页），挂 `/api/audit/`。
+- CSV / JSON 流式导出（IsSuperUser、复用列表过滤、max_rows 上限），`GET /api/audit/events/export/?fmt=csv|json`。
+- `/admin/audit` superuser 审计页：过滤 + 表格 + 分页 + before/after 详情弹窗 + CSV/JSON 导出 + 侧栏入口 + i18n。
+
+---
+
 ## v0.9.0 v0.9.0 (Shipped: 2026-06-17)
 
 **Phases completed:** 5 phases, 18 plans, 38 tasks
