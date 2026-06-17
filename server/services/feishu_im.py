@@ -321,6 +321,199 @@ class FeishuIMClient:
                 log.warning("card_update_failed", response=data)
                 return False
 
+    # ------------------------------------------------------------------
+    # CardKit v1 原生流式卡片方法（手写 httpx，复用 get_tenant_access_token）
+    #
+    # 与既有 send_card/update_card 同类，独立新增、互不影响：
+    #   create_card_entity → send_card_entity → stream_card_content → settle_card_stream
+    # content 为「全量文本」（非增量），sequence 由调用方严格递增传入。
+    # ------------------------------------------------------------------
+
+    async def create_card_entity(
+        self,
+        card_json_2_0: dict[str, Any],
+        *,
+        uuid: str = "",
+    ) -> str:
+        """创建 CardKit 流式卡片实体。
+
+        Args:
+            card_json_2_0: schema 2.0 卡片 JSON（含 config.streaming_mode=true）
+            uuid: 幂等键，非空时随请求下发，防重试重复创建
+
+        Returns:
+            card_id: 卡片实体 ID，用于后续下发与增量推送
+
+        Raises:
+            FeishuIMError: API 返回 code!=0（如租户未开通 cardkit）
+        """
+        token = await self.get_tenant_access_token()
+        log = logger.bind(app_id=self.app_id)
+
+        body: dict[str, Any] = {
+            "type": "card_json",
+            "data": json.dumps(card_json_2_0, ensure_ascii=False),
+        }
+        if uuid:
+            body["uuid"] = uuid
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/cardkit/v1/cards",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            data = response.json()
+
+            code = data.get("code", -1)
+            if code != 0:
+                log.error("create_card_entity_failed", response=data)
+                raise FeishuIMError(
+                    f"创建 CardKit 卡片实体失败: {data.get('msg', data)}", code=code
+                )
+
+            card_id = data.get("data", {}).get("card_id", "")
+            log.info("card_entity_created", card_id=card_id)
+            return card_id
+
+    async def send_card_entity(
+        self,
+        receive_id: str,
+        receive_id_type: Literal["chat_id", "open_id", "user_id"],
+        card_id: str,
+    ) -> str:
+        """下发 CardKit 卡片实体（复用 send_message，interactive 引用 card_id）。
+
+        Args:
+            receive_id: 接收者 ID
+            receive_id_type: ID 类型（chat_id, open_id, user_id）
+            card_id: create_card_entity 返回的卡片实体 ID
+
+        Returns:
+            message_id: 消息 ID
+        """
+        result = await self.send_message(
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            msg_type="interactive",
+            content={"type": "card", "data": {"card_id": card_id}},
+        )
+        return result.get("message_id", "")
+
+    async def stream_card_content(
+        self,
+        card_id: str,
+        element_id: str,
+        content: str,
+        sequence: int,
+        *,
+        uuid: str = "",
+    ) -> bool:
+        """增量推送流式文本（全量文本 + 严格递增 sequence）。
+
+        content 是「新的全量文本」（非 delta），方法不做累积——累积是调用方职责。
+        sequence 由调用方严格递增传入（同一卡片所有写操作共享单调计数器）。
+
+        Args:
+            card_id: 卡片实体 ID
+            element_id: 可流式文本元素的 element_id（1~20 字符）
+            content: 全量文本内容
+            sequence: 严格递增的序号（int）
+            uuid: 幂等键，非空时随请求下发
+
+        Returns:
+            True 表示推送成功
+
+        Raises:
+            FeishuIMError: API 返回 code!=0（如 300317 sequence 未递增）
+        """
+        token = await self.get_tenant_access_token()
+        log = logger.bind(card_id=card_id, element_id=element_id, sequence=sequence)
+
+        body: dict[str, Any] = {"content": content, "sequence": sequence}
+        if uuid:
+            body["uuid"] = uuid
+
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{self.OPEN_API_BASE}/cardkit/v1/cards/{card_id}/elements/{element_id}/content",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            data = response.json()
+
+            code = data.get("code", -1)
+            if code != 0:
+                log.error("stream_card_content_failed", response=data)
+                raise FeishuIMError(
+                    f"推送 CardKit 流式内容失败: {data.get('msg', data)}", code=code
+                )
+
+            log.info("card_content_streamed")
+            return True
+
+    async def settle_card_stream(
+        self,
+        card_id: str,
+        sequence: int,
+        *,
+        uuid: str = "",
+    ) -> bool:
+        """关闭流式模式（收尾），streaming_mode=false。
+
+        与 stream_card_content 共享同一单调 sequence。
+
+        Args:
+            card_id: 卡片实体 ID
+            sequence: 严格递增的序号（int）
+            uuid: 幂等键，非空时随请求下发
+
+        Returns:
+            True 表示收尾成功
+
+        Raises:
+            FeishuIMError: API 返回 code!=0
+        """
+        token = await self.get_tenant_access_token()
+        log = logger.bind(card_id=card_id, sequence=sequence)
+
+        body: dict[str, Any] = {
+            "settings": json.dumps(
+                {"config": {"streaming_mode": False, "update_multi": True}},
+                ensure_ascii=False,
+            ),
+            "sequence": sequence,
+        }
+        if uuid:
+            body["uuid"] = uuid
+
+        async with httpx.AsyncClient() as client:
+            response = await client.patch(
+                f"{self.OPEN_API_BASE}/cardkit/v1/cards/{card_id}/settings",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            data = response.json()
+
+            code = data.get("code", -1)
+            if code != 0:
+                log.error("settle_card_stream_failed", response=data)
+                raise FeishuIMError(
+                    f"关闭 CardKit 流式失败: {data.get('msg', data)}", code=code
+                )
+
+            log.info("card_stream_settled")
+            return True
+
     async def get_chat_history(
         self,
         chat_id: str,
@@ -736,6 +929,56 @@ class FeishuIMService:
 
     async def update_card(self, message_id: str, card: dict[str, Any]) -> bool:
         return await self.client.update_card(message_id=message_id, card=card)
+
+    async def create_card_entity(
+        self,
+        card_json_2_0: dict[str, Any],
+        *,
+        uuid: str = "",
+    ) -> str:
+        """委托 client 创建 CardKit 流式卡片实体。"""
+        return await self.client.create_card_entity(card_json_2_0, uuid=uuid)
+
+    async def send_card_entity(
+        self,
+        receive_id: str,
+        receive_id_type: Literal["chat_id", "open_id", "user_id"],
+        card_id: str,
+    ) -> str:
+        """委托 client 下发 CardKit 卡片实体。"""
+        return await self.client.send_card_entity(
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            card_id=card_id,
+        )
+
+    async def stream_card_content(
+        self,
+        card_id: str,
+        element_id: str,
+        content: str,
+        sequence: int,
+        *,
+        uuid: str = "",
+    ) -> bool:
+        """委托 client 增量推送流式文本。"""
+        return await self.client.stream_card_content(
+            card_id=card_id,
+            element_id=element_id,
+            content=content,
+            sequence=sequence,
+            uuid=uuid,
+        )
+
+    async def settle_card_stream(
+        self,
+        card_id: str,
+        sequence: int,
+        *,
+        uuid: str = "",
+    ) -> bool:
+        """委托 client 关闭 CardKit 流式模式（收尾）。"""
+        return await self.client.settle_card_stream(card_id, sequence, uuid=uuid)
 
     async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
         """确保 Bot 在指定群聊中（委托给 client）。"""
