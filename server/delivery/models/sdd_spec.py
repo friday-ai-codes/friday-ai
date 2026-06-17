@@ -89,6 +89,11 @@ class SddSpec(models.Model):
         choices=SddSpecChangeKind.choices,
         default=SddSpecChangeKind.PROPOSAL,
     )
+    # spec→实现 PR 关联（Phase 52 D-52-1，LINK-01）：编码产出的 PR 回填于此，元素形如
+    # ``{pr_url, repository_id, linked_at}``（linked_at 为 ISO8601 字符串）。spec→WorkItem
+    # 关联已由 work_item FK 承载，本字段只补 spec→PR。写入只经 SddSpecService
+    # .link_implementation_pr（INV-6）；default=list 既有行天然降级为空列表（nullable 无回填）。
+    implementation_prs = models.JSONField(default=list)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
