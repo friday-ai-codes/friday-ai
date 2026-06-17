@@ -96,9 +96,14 @@ class SddSpecService:
         document: Any,
         change_kind: str,
     ) -> SddSpec:
-        """原子建/取 SddSpec（get_or_create 兜底 unique_together 竞态）。"""
+        """原子建/取 SddSpec（get_or_create 兜底 unique_together 竞态）。
+
+        WR-01：并发竞态下 get_or_create 命中他者已建的 SddSpec 时，本次步骤 2 落的
+        Document 不会被任何 SddSpec 引用 → 同事务内删除该孤儿（级联清 DocumentVersion），
+        避免泄漏无引用的 sdd_spec Document。
+        """
         with transaction.atomic():
-            spec, _created = SddSpec.objects.get_or_create(
+            spec, created = SddSpec.objects.get_or_create(
                 plan_version_id=plan_version_id,
                 repository=repository,
                 defaults={
@@ -108,4 +113,8 @@ class SddSpecService:
                     "status": SddSpecStatus.DRAFT,
                 },
             )
+            if not created and document is not None and spec.document_id != document.id:
+                from delivery.models import Document
+
+                Document.objects.filter(id=document.id).delete()
             return spec
