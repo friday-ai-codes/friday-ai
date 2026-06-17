@@ -20,7 +20,7 @@
 
 ### 飞书原生流式卡片（CARD）
 
-- [ ] **CARD-01**: 飞书机器人对话回复改走原生 CardKit 流式卡片（增量更新，替代现有 PATCH 全量替换），流式体验顺滑、无明显闪烁 / 全量重绘
+- [x] **CARD-01**: 飞书机器人对话回复改走原生 CardKit 流式卡片（增量更新，替代现有 PATCH 全量替换），流式体验顺滑、无明显闪烁 / 全量重绘
 
 ### 工作流自动建群（GROUP）
 
@@ -52,7 +52,7 @@
 | TRACE-02 | Phase 56 | Complete |
 | ANTHROPIC-01 | Phase 57 | Complete |
 | ANTHROPIC-02 | Phase 57 | Pending |
-| CARD-01 | Phase 58 | Pending |
+| CARD-01 | Phase 58 | Complete |
 | GROUP-01 | Phase 59 | Pending |
 
 **Coverage:**
