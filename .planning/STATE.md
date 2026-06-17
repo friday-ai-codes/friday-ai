@@ -384,6 +384,7 @@ None.
 | 260611-g31 | 打磨工作流列表与执行监控界面视觉 | 2026-06-11 | 9bc59746 | [260611-g31-workflow-execution-polish](./quick/260611-g31-workflow-execution-polish/) |
 | 260611-ghb | 统一工作流卡片高度并收纳节点标签 | 2026-06-11 | c7af69b6 | [260611-ghb-workflow-card-uniform](./quick/260611-ghb-workflow-card-uniform/) |
 | 260612-cifix | 修复 CI：smoke 列表移除已删除的 test_tool_bindings.py | 2026-06-12 | ec839757 | — |
+| 20260617-csb | 会话列表 SDD/技术方案/编码徽标（PlanSession.conversation_id 软引用 + list annotate）+ 仓库卡片 SDD 强调/水印 | 2026-06-17 | (pending) | [20260617-conversation-sdd-coding-badges](./quick/20260617-conversation-sdd-coding-badges/) |
 
 ## Deferred Items
 
