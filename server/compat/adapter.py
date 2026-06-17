@@ -19,11 +19,13 @@ from agents.core.events import (
     MESSAGE_COMPLETE,
     TEXT_DELTA,
     THINKING,
-    AgentEvent,
+    TOOL_USE_RESULT,
+    TOOL_USE_START,
 )
 from agents.langchain_runner import LangChainAgentRunner
 
-from .streaming import _omit, sse_encode
+from .progress import make_reasoning_chunk, tool_event_to_progress
+from .streaming import sse_encode
 
 
 class OpenAICompatAdapter:
@@ -121,9 +123,20 @@ class OpenAICompatAdapter:
                 }, ensure_ascii=False).encode() + b"\n\n"
                 return
 
+            elif evt.type in (TOOL_USE_START, TOOL_USE_RESULT):
+                # 内部工具事件 → delta.reasoning_content progress（TRACE-01 机制）。
+                # 仅 helper 命中（TOOL_USE_START 且工具名在映射表）才 emit；返 None
+                # 则 continue，与现状降级逐字等价、不产空 chunk。绝不写 delta.tool_calls /
+                # finish_reason=tool_calls（TRACE-02 / INV-5）。
+                # DEVIATION（56-RESEARCH D-1）：当前 compat _build_runner 不绑定 tools，
+                # 此分支为前向兼容 / Phase 57 复用预埋；真实 RAG 检索 progress 由 Plan 02
+                # 在 view 层合成。
+                progress = tool_event_to_progress(evt)
+                if progress is not None:
+                    yield make_reasoning_chunk(common, progress, include_usage)
+
             else:
-                # TOOL_USE_START / TOOL_USE_RESULT / BUDGET_WARNING / 其他：暂不 emit
-                # work item (tool_calls 双向映射) 时再补
+                # BUDGET_WARNING / 其余未知类型：静默降级（TOOL_USE_* 已独立分支映射）
                 continue
 
         # Pitfall 1：include_usage=True 时最后追加 choices=[] + usage 非空 chunk
