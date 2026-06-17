@@ -121,11 +121,19 @@ function formatIndexedTime(value: string) {
         v-for="repository in repositoriesStore.repositories"
         :key="repository.id"
         class="repo-card group relative flex min-h-[220px] flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20"
+        :class="{ 'repo-card--sdd': repository.methodology === 'SDD' }"
       >
         <div
           class="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b"
           :class="indexPanelClasses[repository.index_status] || indexPanelClasses.not_indexed"
         />
+
+        <!-- SDD 项目专属：镂空绿色半透明水印（aria-hidden，纯装饰，置于内容下层） -->
+        <span
+          v-if="repository.methodology === 'SDD'"
+          aria-hidden="true"
+          class="sdd-watermark"
+        >SDD</span>
 
         <RouterLink
           :to="`/repositories/${repository.id}`"
@@ -255,5 +263,50 @@ function formatIndexedTime(value: string) {
 .repo-meta-item > :global([class*='icon-']) {
   flex-shrink: 0;
   font-size: 0.875rem;
+}
+
+/* ==================== SDD 项目卡片专属强调 ==================== */
+/* emerald 边框 + 斜向淡绿底色，与普通卡片一眼区分（领导重点关注 SDD） */
+.repo-card--sdd {
+  border-color: hsl(160 84% 39% / 0.5);
+  background-image: linear-gradient(135deg, hsl(152 76% 96% / 0.85), transparent 58%);
+}
+
+.repo-card--sdd:hover {
+  border-color: hsl(160 84% 39% / 0.72);
+}
+
+:global(.dark) .repo-card--sdd {
+  border-color: hsl(160 84% 45% / 0.38);
+  background-image: linear-gradient(135deg, hsl(160 84% 30% / 0.14), transparent 58%);
+}
+
+:global(.dark) .repo-card--sdd:hover {
+  border-color: hsl(160 84% 50% / 0.55);
+}
+
+/* 镂空（描边）半透明 SDD 水印：bleed 出卡片右下角，overflow-hidden 裁切 */
+.sdd-watermark {
+  position: absolute;
+  right: -0.5rem;
+  bottom: -1.75rem;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 7rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  color: transparent;
+  -webkit-text-stroke: 2px hsl(160 84% 39% / 0.16);
+  pointer-events: none;
+  user-select: none;
+}
+
+:global(.dark) .sdd-watermark {
+  -webkit-text-stroke-color: hsl(160 84% 52% / 0.22);
 }
 </style>
