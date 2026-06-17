@@ -20,7 +20,7 @@
 
 **Milestone Goal:** 让 spec-driven development 成为可治理的过程资产——仓库打标（检测 `openspec/`）→ 方案产 openspec spec → spec 状态机 + 编码前置 gate + 评审状态 → spec↔需求/PR 关联 → 交付验收。复用 v0.7/v0.8 预留扩展点（`Document.SDD_SPEC` 枚举、`RepoCodingTask.follow_openspec` 字段、`Repository.facets` JSON、task `setting_sources=["project"]`），做完整 spec 生命周期与治理。
 
-- [ ] **Phase 48: SDD 仓库检测 + facets 打标 + 前端标签** - 索引后检测 `openspec/` → `facets["methodology"]="SDD"` + 列表/详情方法论标签
+- [x] **Phase 48: SDD 仓库检测 + facets 打标 + 前端标签** - 索引后检测 `openspec/` → `facets["methodology"]="SDD"` + 列表/详情方法论标签 — completed 2026-06-17
 - [ ] **Phase 49: 方案产 openspec spec + Document(sdd_spec)** - SDD 仓库方案编排融合阶段额外产 spec draft，落 `Document(sdd_spec)` 并关联来源
 - [ ] **Phase 50: spec 状态机 + 变更记录 + 评审状态 + 前端展示** - 完整 spec 生命周期状态机 + 不可篡改评审记录 + spec 列表/详情/状态流转 UI
 - [ ] **Phase 51: 编码前置 gate + openspec skill 编码策略** - SDD 仓库编码前校验 spec 已 approved（gate）+ 容器注入 openspec 指引
@@ -37,8 +37,8 @@
   2. 不含 `openspec/` 的仓库不被误标；重复索引幂等，标记不重复或漂移
   3. 用户在仓库列表与详情页可见 "SDD" 方法论标签，据此识别 spec-driven 仓库
 **Plans**: 2 plans
-- [ ] 48-01-PLAN.md — 后端 SDD 检测器 sdd_detect.py + 索引 FINALIZING best-effort 挂接（SDD-01）
-- [ ] 48-02-PLAN.md — 前端 SDD 方法论徽标 + i18n + 守护测试，接入知识树卡片/详情（SDD-02）
+- [x] 48-01-PLAN.md — 后端 SDD 检测器 sdd_detect.py + 索引 FINALIZING best-effort 挂接（SDD-01）
+- [x] 48-02-PLAN.md — 前端 SDD 方法论徽标 + i18n + 守护测试，接入知识树卡片/详情（SDD-02）
 **UI hint**: yes
 
 ### Phase 49: 方案产 openspec spec + Document(sdd_spec)
@@ -119,7 +119,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 0/2 | Not started | - |
+| 48. SDD 仓库检测 + facets 打标 + 前端标签 | v0.9.0 | 2/2 | ✅ Complete (verify human_needed) | 2026-06-17 |
 | 49. 方案产 openspec spec + Document(sdd_spec) | v0.9.0 | 0/TBD | Not started | - |
 | 50. spec 状态机 + 变更记录 + 评审状态 + 前端展示 | v0.9.0 | 0/TBD | Not started | - |
 | 51. 编码前置 gate + openspec skill 编码策略 | v0.9.0 | 0/TBD | Not started | - |
