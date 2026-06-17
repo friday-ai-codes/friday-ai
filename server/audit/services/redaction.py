@@ -100,7 +100,10 @@ def _redact_audit_payload(payload: Any) -> Any:
     """递归脱敏审计载荷：key-name 命中整体抹值，值级密钥/高熵只抹命中叶子。
 
     - dict：``_is_sensitive_key(k)`` → 值整体替换占位符（无论类型）；否则对 v 递归。
-    - list：逐元素递归。
+    - list / tuple / set / frozenset：逐元素递归并**归一化为 list**。
+      Django ``JSONField`` 默认 ``json.dumps`` 会把 tuple 序列化为 JSON 数组而成功落库，
+      若不递归则 tuple 内明文密钥会绕过脱敏落明文（违背 SC-4「绝不落明文」/ PAT-02）；
+      set/frozenset 同样归一化递归后再交给 JSON 序列化，避免「可落库 + 未脱敏」泄漏路径。
     - str 叶子：走 ``_redact_str`` 值级判定。
     - 其余标量（int/bool/None/float）：原样返回。
     - 入参非 dict/list 时也安全（兜底按标量/str 处理）。
@@ -115,8 +118,9 @@ def _redact_audit_payload(payload: Any) -> Any:
             else:
                 out[k] = _redact_audit_payload(v)
         return out
-    if isinstance(payload, list):
-        return [_redact_audit_payload(item) for item in payload]
     if isinstance(payload, str):
         return _redact_str(payload)[0]
+    # str/bytes 已在上面单独处理；其余可迭代（list/tuple/set/frozenset）统一归一化为 list 后递归
+    if isinstance(payload, (list, tuple, set, frozenset)):
+        return [_redact_audit_payload(item) for item in payload]
     return payload

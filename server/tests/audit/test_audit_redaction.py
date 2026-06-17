@@ -82,3 +82,20 @@ def test_non_string_scalars_preserved():
     payload = {"count": 3, "enabled": True, "missing": None, "ratio": 1.5}
     out = _redact_audit_payload(payload)
     assert out == {"count": 3, "enabled": True, "missing": None, "ratio": 1.5}
+
+
+def test_tuple_value_recursed_and_normalized():
+    """MEDIUM-1：tuple 值递归脱敏并归一化为 list，明文密钥不绕过（PAT-02 / SC-4）。"""
+    out = _redact_audit_payload({"data": ("ghp_AAAABBBBCCCCDDDDEEEE1234",)})
+    assert out["data"] == [REDACTION_PLACEHOLDER]
+    assert isinstance(out["data"], list)
+
+
+def test_set_value_recursed_and_normalized():
+    """MEDIUM-1：set/frozenset 值递归脱敏并归一化为 list（避免「可落库+未脱敏」泄漏）。"""
+    out = _redact_audit_payload({"data": {"ghp_AAAABBBBCCCCDDDDEEEE1234"}})
+    assert out["data"] == [REDACTION_PLACEHOLDER]
+    assert isinstance(out["data"], list)
+
+    fout = _redact_audit_payload({"data": frozenset({"ghp_AAAABBBBCCCCDDDDEEEE1234"})})
+    assert fout["data"] == [REDACTION_PLACEHOLDER]
