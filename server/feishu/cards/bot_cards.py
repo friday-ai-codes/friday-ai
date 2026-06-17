@@ -222,6 +222,79 @@ def build_answer_card(
     }
 
 
+def build_streaming_card_v2(
+    initial_text: str = "思考中...",
+    element_id: str = "md_body",
+) -> dict[str, Any]:
+    """构建 schema 2.0 流式卡片实体（供 CardKit create_card_entity 使用）。
+
+    含单个可流式 markdown 元素（带开发者自定义 element_id），CardKit 增量推送
+    经 stream_card_content 更新该 element 的全量文本。
+
+    Args:
+        initial_text: 初始文本（创建时占位，后续被流式 content 覆盖）
+        element_id: 可流式文本元素的 element_id（1~20 字符）
+
+    Returns:
+        schema 2.0 卡片 dict（schema=="2.0" + config.streaming_mode=true）
+    """
+    return {
+        "schema": "2.0",
+        "config": {
+            "streaming_mode": True,
+            "update_multi": True,
+            "streaming_config": {
+                "print_frequency_ms": {"default": 70, "android": 70, "ios": 70, "pc": 70},
+                "print_step": {"default": 1, "android": 1, "ios": 1, "pc": 1},
+                "print_strategy": "fast",
+            },
+        },
+        "header": {
+            "title": {"tag": "plain_text", "content": "Friday"},
+            "template": "blue",
+            "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+        },
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": initial_text, "element_id": element_id},
+            ],
+        },
+    }
+
+
+def build_answer_markdown(
+    answer: str,
+    references: list[dict[str, Any]],
+    usage: dict[str, Any] | None = None,
+    matched_space_label: str = "",
+) -> str:
+    """构建终态单 markdown 字符串（供 CardKit content PUT 收尾）。
+
+    复用 `_reference_lines` 与 build_answer_card 的 usage 行格式，拼成 answer +
+    引用 + usage 的单串，`---` 作区块分隔。与 build_answer_card 降级路径表达一致。
+
+    Args:
+        answer: 回答正文
+        references: 引用上下文列表（内部截断 references[:5]）
+        usage: token / 成本统计（可选）
+        matched_space_label: 自动匹配的空间名（非空时作首行）
+
+    Returns:
+        终态 markdown 字符串
+    """
+    blocks: list[str] = []
+    if matched_space_label:
+        blocks.append(f"已自动匹配「{matched_space_label}」空间")
+    blocks.append(f"**回答**\n{answer}")
+    blocks.append(f"---\n**已参考上下文**\n{_reference_lines(references)}")
+    if usage:
+        input_t = usage.get("input_tokens", 0)
+        output_t = usage.get("output_tokens", 0)
+        cost = usage.get("cost_usd", 0)
+        blocks.append(f"---\n💰 输入 {input_t} / 输出 {output_t} tokens · ${cost:.4f}")
+    return "\n\n".join(blocks)
+
+
 def build_error_card(question: str, hint_text: str) -> dict[str, Any]:
     hint = hint_text or "请稍后重试，并尽量补充项目/仓库信息。"
     return {
