@@ -196,6 +196,72 @@ class WorkItemService:
         )
         return work_item
 
+    async def awriteback_feishu_chat_id(
+        self,
+        feishu_project_key: str,
+        work_item_type: str,
+        work_item_id: int,
+        chat_id: str,
+    ) -> bool:
+        """把建群 chat_id 写回 WorkItem.feishu_chat_id（writeback 单一入口，INV-6）。
+
+        ``feishu_chat_id`` 属 writeback 字段（独立来源），**绝不**进 ``_MIRROR_FIELDS``、
+        **绝不**在 ``_refresh_mirror`` 内写——否则下次 sync 的 mirror 刷新会把它覆盖回空
+        （P-5）。本方法是它唯一的合规写入路径：三元组定位 WorkItem，仅写
+        ``feishu_chat_id`` + ``updated_at``（显式 update_fields，不动其他字段）。
+
+        WorkItem 不存在时返回 ``False`` 不抛（供调用方 fail-soft 判定）；DB 异常
+        不吞（由调用方 fail-soft 捕获）。
+
+        Args:
+            feishu_project_key: 飞书空间 Key（三元组之一）。
+            work_item_type: 工作项类型（三元组之一）。
+            work_item_id: 工作项 ID（三元组之一）。
+            chat_id: 建群返回的群聊 ID。
+
+        Returns:
+            命中并写入返回 True；WorkItem 不存在返回 False。
+        """
+        return await self._writeback_feishu_chat_id_sync(
+            feishu_project_key, work_item_type, work_item_id, chat_id
+        )
+
+    @sync_to_async
+    def _writeback_feishu_chat_id_sync(
+        self,
+        feishu_project_key: str,
+        work_item_type: str,
+        work_item_id: int,
+        chat_id: str,
+    ) -> bool:
+        """三元组定位 + save(update_fields=[feishu_chat_id, updated_at])（同步块）。
+
+        与 ``_get_or_create_locked`` / ``_refresh_mirror`` 的 ``@sync_to_async`` 私有
+        同步块同款风格。命中 None → 返回 False；命中 → 仅写 feishu_chat_id + updated_at。
+        """
+        work_item = WorkItem.objects.filter(
+            feishu_project_key=feishu_project_key,
+            work_item_type=work_item_type,
+            work_item_id=work_item_id,
+        ).first()
+        if work_item is None:
+            logger.warning(
+                "feishu_chat_id_writeback_target_missing",
+                feishu_project_key=feishu_project_key,
+                work_item_type=work_item_type,
+                work_item_id=work_item_id,
+            )
+            return False
+
+        work_item.feishu_chat_id = chat_id
+        work_item.save(update_fields=["feishu_chat_id", "updated_at"])
+        logger.info(
+            "feishu_chat_id_writeback",
+            work_item_id=work_item_id,
+            chat_id=chat_id,
+        )
+        return True
+
     # === 步骤实现 ===
 
     async def _resolve_project(self, project_key: str):

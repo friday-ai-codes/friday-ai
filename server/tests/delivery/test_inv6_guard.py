@@ -58,6 +58,11 @@ _RE_COMMENT_INSTANTIATE = re.compile(r"\bWorkItemCommentEvent\s*\(")
 # C：链式实例化 + save（WorkItemCommentEvent(...).save(...)）
 _RE_COMMENT_INSTANCE_SAVE = re.compile(r"\bWorkItemCommentEvent\([^)]*\)\.save\(")
 
+# feishu_chat_id writeback 旁路写表模式（D-6/INV-6/P-5）：
+# 唯一允许写 feishu_chat_id 的模块即 WorkItem 唯一 writer（work_item_service.py）。
+# 锚 `.feishu_chat_id =` 赋值（排除 ==/!=/>= 等比较，只命中单 `=` 赋值）。
+_RE_CHAT_ID_WRITE = re.compile(r"\.feishu_chat_id\s*=\s*[^=]")
+
 
 def _iter_py_files() -> list[Path]:
     """遍历 server/ 下 .py 文件（剪掉 venv/缓存/静态目录）。"""
@@ -130,6 +135,50 @@ def test_inv6_writer_module_actually_writes() -> None:
     text = writer.read_text(encoding="utf-8")
     assert "get_or_create" in text and ".save(" in text, (
         "WorkItemService.upsert 应是唯一 WorkItem 写表点，但未检出 get_or_create/.save"
+    )
+
+
+def test_inv6_no_bypass_feishu_chat_id_write() -> None:
+    """INV-6/P-5：除 WorkItemService 外，server 源码无旁路写 feishu_chat_id。
+
+    ``feishu_chat_id`` 是 writeback 字段，唯一合规写入路径为
+    ``WorkItemService.awriteback_feishu_chat_id``（落点 work_item_service.py）。
+    任何其它模块出现 ``.feishu_chat_id =`` 赋值即视为旁路（可能污染 mirror /
+    绕过单一入口），命中即 fail 并列出文件:行。
+    """
+    violations: list[str] = []
+
+    for path in _iter_py_files():
+        rel = path.relative_to(SERVER_DIR).as_posix()
+        # 复用 WorkItem INV-6 剪枝：排除 tests/ / migrations/ / models/ 与唯一 writer
+        if not _is_scanned_for_inv6(rel):
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if _RE_CHAT_ID_WRITE.search(line):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not violations, (
+        "INV-6 违反：发现旁路写 feishu_chat_id（writeback 只允许经 "
+        f"WorkItemService.awriteback_feishu_chat_id / {_ALLOWED_WRITER}）：\n"
+        + "\n".join(violations)
+    )
+
+
+def test_inv6_feishu_chat_id_writer_actually_writes() -> None:
+    """守护有效性：唯一 writer 确实写 feishu_chat_id（否则上面的断言形同虚设）。"""
+    writer = SERVER_DIR / _ALLOWED_WRITER
+    assert writer.exists(), f"{_ALLOWED_WRITER} 不存在"
+    text = writer.read_text(encoding="utf-8")
+    assert "awriteback_feishu_chat_id" in text, (
+        "work_item_service.py 应含 feishu_chat_id writeback 单一入口 "
+        "awriteback_feishu_chat_id"
+    )
+    assert _RE_CHAT_ID_WRITE.search(text), (
+        "work_item_service.py 应实际写 .feishu_chat_id（赋值），但未检出"
+    )
+    assert 'update_fields=["feishu_chat_id"' in text, (
+        "feishu_chat_id 写回应显式 save(update_fields=[\"feishu_chat_id\", ...])，"
+        "避免污染其它字段"
     )
 
 
