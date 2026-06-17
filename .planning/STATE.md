@@ -1,34 +1,58 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.10.0
-milestone_name: 操作审计治理
-status: complete
-stopped_at: v0.10.0 milestone audited + complete (PASSED)
-last_updated: "2026-06-17T10:05:00.000Z"
-last_activity: 2026-06-17 -- Phase 55 complete (audit 84 + frontend 4 tests green); milestone done
+milestone: v0.11.0
+milestone_name: 开放与协作
+status: planning
+last_updated: "2026-06-17T10:20:17.607Z"
+last_activity: 2026-06-17
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.10.0)
+See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.10.0：立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。
-**Current focus:** v0.10.0 操作审计治理 —— 全部 phase 完成，待 milestone 收尾
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.11.0：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（INV-5 非 CoT、不误用 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，飞书机器人对话改走原生 CardKit 流式卡片，工作流自动建群节点。
+**Current focus:** v0.11.0 开放与协作 —— 里程碑规划完成（Phases 56–59），待执行（autonomous 或 `/gsd-plan-phase 56`）
 
 ## Current Position
 
-Phase: 55 (审计查询 API + 前端视图 + 导出) — ✅ VERIFIED PASSED
-Plan: 3 of 3 complete
-Status: 里程碑 v0.10.0 三个 phase 全部 verified passed；待 complete-milestone / cleanup
-Last activity: 2026-06-17 -- Phase 55 complete（后端 84 + 前端 4 测试绿）
+Phase: Not started (roadmap ready — Phases 56–59)
+Plan: —
+Status: Planned, ready to execute
+Last activity: 2026-06-17 — Milestone v0.11.0 started（PROJECT/REQUIREMENTS/ROADMAP 已定稿）
+
+## Milestone Overview (v0.11.0 — Phases 56–59)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ⬜ Not started |
+| 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ⬜ Not started |
+| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ⬜ Not started |
+| 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
+
+**Execution order:** 56 → 57 → 58 → 59。依赖链：先把内部工具调用经 §15 事件 taxonomy 映射为 OpenAI 兼容 progress/trace 透出 adapter(56) → Anthropic `/v1/messages` 端点复用同一 taxonomy→thinking block adapter(57，依赖 56 的透出抽象)；飞书原生流式卡片(58) 与工作流自动建群(59) 相对独立（依赖既有飞书机器人对话 / 飞书 client + 节点机制），排在 Agent API 两 phase 之后。
+
+**UI 触面:** 本里程碑无 Web 前端重触面——56/57 为后端 compat 端点；58 为飞书侧卡片（非 Web 前端）；59 为工作流节点（复用既有节点配置 UI）。`/gsd-ui-phase` 预计不介入。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
+- **INV-5 对外只透出 progress/trace，非模型私有 CoT**：内部工具调用对外封装为 `reasoning_summary` / thinking block（progress/trace 事件），**绝不用标准 `tool_calls` 回传**——内部工具是服务端闭环执行，回传标准 tool_calls 会让规范客户端误判挂起等待 → 卡死。
+- **复用 v0.7 起的 §15 事件 taxonomy**（`PlanSessionEvent` / `event_taxonomy`，DOMAIN §10/§15）：对外 OpenAI/Anthropic 端点只是不同 adapter，不另建词表；taxonomy 已在 v0.7 稳定落地。
+- **既有 compat 零回归**：`/v1/chat/completions` 流式 + `reasoning_content` 已有，透出机制以 adapter 叠加、缺事件优雅降级，绝不破坏既有行为。
+- **代码现状坐标**：OpenAI compat 已有（`tool_calls` 完全没有、`adapter.py` 明确 continue 跳过、无 Anthropic 端点）；机器人对话已有（双向、群聊需 @），流式卡片部分有（PATCH 全量替换，非原生 CardKit）；自动建群完全没有（仅 `add_bot_to_chat` 加入已有群）。
+- **群 chat_id 写回**：自动建群节点的 chat_id 可写回 `WorkItem.feishu_chat_id`（DOMAIN §1.2 writeback 字段），失败 fail-soft 不阻断工作流。
+- **显式非目标 / Out of Scope**：标准双向 `tool_calls`（客户端自带工具回传）、暴露原始 CoT、Anthropic 端点工具/多模态全量对齐、飞书卡片交互组件/多卡片编排（均列 v2 OPENX-* 或 Out of Scope，见 REQUIREMENTS.md）。
+- **i18n**：飞书卡片/节点文案接入既有 i18n，默认中文。
+
+**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.11`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格 + 对外 adapter 映射）、`.planning/PREFLIGHT.md`（无映射 v0.11 的 blocking/should-fix 项）、`.planning/PROJECT.md`（Current Milestone v0.11.0 + Key context）。
 
 ## Milestone Overview (v0.10.0 — Phases 53–55)
 
@@ -437,11 +461,12 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-17T08:13:20.054Z
-Stopped at: Completed 53-02-PLAN.md
+Last session: 2026-06-17
+Stopped at: v0.10.0 归档完成；v0.11.0 里程碑定稿（PROJECT/REQUIREMENTS/ROADMAP/STATE）
 Resume file: None
-Next: Phase 52（LINK-01/02：spec↔需求/PR 关联 + 交付验收视图）——`/gsd-plan-phase 52` 起步
+Next: Phase 56（TRACE-01/02：compat 内部工具调用 → progress/trace 事件透出）——`/gsd-plan-phase 56` 起步
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- v0.11.0 里程碑已定稿，Phases 56–59 待执行。
+- 新会话 autonomous 跑完整个里程碑：`/gsd-autonomous`（或逐 phase `/gsd-plan-phase 56` → `/gsd-execute-phase 56` …）。
