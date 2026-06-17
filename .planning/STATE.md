@@ -4,14 +4,14 @@ milestone: v0.11.0
 milestone_name: 开放与协作
 status: executing
 stopped_at: v0.10.0 归档完成；v0.11.0 里程碑定稿（PROJECT/REQUIREMENTS/ROADMAP/STATE）
-last_updated: "2026-06-17T10:50:48.633Z"
-last_activity: 2026-06-17 — Milestone v0.11.0 started（PROJECT/REQUIREMENTS/ROADMAP 已定稿）
+last_updated: "2026-06-17T10:51:14.792Z"
+last_activity: 2026-06-17 -- Phase 56 Plan 01 完成（compat progress 机制层）
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 13
 ---
 
 # Project State
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.11.0：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（INV-5 非 CoT、不误用 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，飞书机器人对话改走原生 CardKit 流式卡片，工作流自动建群节点。
-**Current focus:** v0.11.0 开放与协作 —— 里程碑规划完成（Phases 56–59），待执行（autonomous 或 `/gsd-plan-phase 56`）
+**Current focus:** Phase 56 — compat 内部工具调用 → progress/trace 事件透出
 
 ## Current Position
 
-Phase: Not started (roadmap ready — Phases 56–59)
-Plan: —
-Status: Planned, ready to execute
-Last activity: 2026-06-17 — Milestone v0.11.0 started（PROJECT/REQUIREMENTS/ROADMAP 已定稿）
+Phase: 56 (compat 内部工具调用 → progress/trace 事件透出) — EXECUTING
+Plan: 2 of 2 (Plan 01 完成)
+Status: Executing Phase 56
+Last activity: 2026-06-17 -- Phase 56 Plan 01 完成（compat progress 纯函数机制层 + adapter 映射 + 四层守护测试，43 passed）
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ⬜ Not started |
+| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | 🚧 Plan 01/02 完成 |
 | 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ⬜ Not started |
 | 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ⬜ Not started |
 | 59 | 工作流自动建群节点 | GROUP-01 | ⬜ Not started |
@@ -377,6 +377,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 51]: 51-01: create_tasks_for_plan 首次消费 follow_openspec——`_create_tasks_sync` 同步块内按 `Repository.facets.get("methodology")=="SDD"`（Phase 48 大写写入）置 defaults `follow_openspec`，已存在 task 的 wave/follow_openspec 漂移合并到同一 save 的 update_fields 幂等回填（相等不写）；facets 用 `.values_list("facets", flat=True).first()` 标量查（async 安全禁裸 lazy-FK，D-51-6）。新增 `mark_gate_blocked(task, reason, spec_status)`——gate 拦截唯一写入入口（INV-6），逐字镜像 `mark_blocked` 条件 `.filter(id, status=PENDING).update(status=FAILED, error={reason, spec_status})` 仅 pending→failed、非 pending/重复 no-op，error payload 携 reason（spec_not_approved / gate_error）+ spec_status（status|missing|unknown）；INV-6 grep 守护补正向断言 mark_gate_blocked 经 service
 - [Phase 51]: 51-02: AICodingNode `_apply_openspec_gate` 独立可测 helper（GATE-01 fail-closed）——仅 wave 模式（service+tasks_by_repo 非空）执行、legacy/非 wave 短路零回归（不触任何 SddSpec 查询）；follow_openspec=False 放行不查 spec，True 校验关联 SddSpec（plan_version_id × repository_id）`.order_by("-updated_at").afirst()` status==APPROVED 放行、未批准经 mark_gate_blocked(spec_not_approved, status|missing) 拦截；单仓 try/except fail-closed（gate_error,unknown）隔离异常绝不冒泡崩 wave；拦截仓并入 `_dispatch_wave` failed 返回 → aadvance 传递闭包阻断下游 upstream_failed。gate 在 _dispatch_wave 顶部一处生效（首发+wave 推进两路覆盖）。GATE-02 server 半：`_run_repo_coding` 加 `follow_openspec` 参数，approved SDD 仓 metadata 注入 `env_FRIDAY_TASK_FOLLOW_OPENSPEC="true"`（PF-06 逐键范式，openspec_env 与 git_env/anthropic_env 同形），非 SDD/legacy 不含该键；docstring 字面 SddSpec(...) 改全角括号避 INV-6 grep 误判（Rule 1 自修）
 - [Phase 51]: 51-03: task GATE-02 task 半——`TaskConfig.follow_openspec: bool=False`（env_prefix 自动映射 FRIDAY_TASK_FOLLOW_OPENSPEC，缺省 False 零回归）；`_get_system_prompt` 末尾 `if bool(self.config.follow_openspec): base + "\n\n" + self._openspec_guidance()` 条件追加，`_openspec_guidance` 独立 helper（静态中文 openspec 指引段，无外部输入拼接无注入面），缺省路径返回 base 逐字等现状；`.claude/skills` 复用既有 `setting_sources=["project"]` 原生加载不改；既有 test_callback.py 两处 MagicMock-config 用例显式 `config.follow_openspec=False` 防真值 Mock 误触 openspec 追加致零回归断言失真（T-51-MOCK）
+- [Phase 56]: 56-01: compat progress 纯函数机制层 server/compat/progress.py——tool_event_to_progress 仅读 tool_name 查中文映射表（search_rag/grep/get_file/仓库分析路由），TOOL_USE_RESULT/未知/缺名一律 None（保守静默 OQ-3），绝不读 tool_input/result/error（INV-5）；make_reasoning_chunk 复用 sse_encode 产 reasoning_content chunk（结构与 THINKING 逐字一致）；不 import §15 event_taxonomy（P-1，仅语义对齐）。translate_stream 新增 TOOL_USE_*→reasoning_content 分支（None 静默/非空 yield），绝不写 delta.tool_calls/finish_reason=tool_calls（TRACE-02）。**DEVIATION D-1**：compat _build_runner 不绑定 tools → TOOL_USE_* 永不发射 → 本 plan 恒走降级产 0 progress（机制预埋 + 前向兼容 + Phase 57 复用），可见效果由 Plan 02（真实 RAG 检索 progress 合成）兑现。tests/compat/ 17→43 passed
 - [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 
 ### Pending Todos
@@ -463,9 +464,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-17
-Stopped at: v0.10.0 归档完成；v0.11.0 里程碑定稿（PROJECT/REQUIREMENTS/ROADMAP/STATE）
+Stopped at: Completed 56-01-PLAN.md（compat progress 纯函数机制层 + adapter 映射 + 四层守护测试）
 Resume file: None
-Next: Phase 56（TRACE-01/02：compat 内部工具调用 → progress/trace 事件透出）——`/gsd-plan-phase 56` 起步
+Next: Phase 56 Plan 02（真实 RAG 检索 progress 合成，兑现 TRACE-01 可见效果 / Option B）——`/gsd-execute-phase 56`
 
 ## Operator Next Steps
 
