@@ -2,55 +2,58 @@
 
 **Defined:** 2026-06-17
 **Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码。
-**Milestone:** v0.10.0 — 操作审计治理
+**Milestone:** v0.11.0 — 开放与协作
 
-> 横切治理能力——立起统一 `AuditEvent` 审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出，使敏感操作可查、可追溯、可审计。系统管理员 = 现有 `is_superuser`（不新建角色）；审计为横切能力，各功能产生敏感操作时 emit，本里程碑统一收口 + 补齐覆盖 + UI；v0.5 既有分散埋点（`purge.started/completed` 结构化日志、`TriggerLog`/`ActionLog`）收口到统一表。设计底座：`ROADMAP-vNext.md §v0.10`、`DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）。PREFLIGHT 无映射 v0.10 的 blocking/should-fix 项。
+> 对外开放与协作层：把内部工具调用（RAG/grep/仓库分析）作为 **progress/trace 事件**透出给 OpenAI/Anthropic 兼容调用方（复用 v0.7 起沉淀的 §15 事件 taxonomy，**INV-5：透出 progress/trace 非模型私有 CoT、不误用标准 tool_calls**），新增 Anthropic 兼容 `/v1/messages` 端点，把飞书机器人对话改走原生 CardKit 流式卡片，并提供工作流自动建群节点。设计底座：`ROADMAP-vNext.md §v0.11`、`DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格）。`PREFLIGHT.md` 无映射 v0.11 的 blocking / should-fix 项。
 
 ## v1 Requirements
 
-### 审计模型与 emit 地基（AUDIT）
+### Agent API trace 透出（TRACE）
 
-- [x] **AUDIT-01**: 统一 `AuditEvent` 模型（actor / action / target_type / target_id / target_repr / before / after / source / occurred_at / metadata），落库经单一写入入口（service 收口，INV-6 精神），append-only 不可篡改——无 update/delete 业务路径，模型层守护
-- [x] **AUDIT-02**: 统一 emit 机制（service helper / Django signal）以稳定 action taxonomy 记录审计事件，emit 失败 best-effort 不阻断主操作（fail-soft），凭证/密钥/明文 token 字段在审计记录中脱敏不落明文
+- [ ] **TRACE-01**: 把内部工具调用（RAG 检索 / grep / 仓库分析等）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式响应中的 progress / `reasoning_summary` 文本，外部兼容调用方能看到"正在检索 RAG / grep / 分析仓库"等进度（adapter over 事件 taxonomy）
+- [ ] **TRACE-02**: 内部工具调用**绝不**以标准 `tool_calls` 形式回传给外部客户端（防规范客户端误判为挂起等待回传而卡死），也**不暴露**模型私有 CoT（INV-5）；透出机制以 adapter 实现，缺事件时优雅降级、不破坏既有 `/v1/chat/completions` 行为
 
-### 敏感操作全量覆盖（AUDITCOV）
+### Anthropic 兼容端点（ANTHROPIC）
 
-- [x] **AUDITCOV-01**: 身份与权限类操作 emit 审计——成员/用户增删改、用户启停、角色/权限变更、空间（Project）配置变更、仓库权限变更，记录 actor + 目标 + 前后值
-- [x] **AUDITCOV-02**: 凭证与数据治理类操作 emit 审计——Provider 凭证 / Git 实例凭证 / 飞书凭证增删改、Agent API key / PAT 创建吊销、飞书同步、排除规则变更、清理任务（v0.5 既有排除/清理埋点收口到统一 `AuditEvent` 表）
+- [ ] **ANTHROPIC-01**: 新增 Anthropic 兼容 `/v1/messages` 端点——请求 / 响应按 Anthropic Messages 形状映射（system / messages / max_tokens 等），复用既有 chat / agent 内核，非流式响应可用
+- [ ] **ANTHROPIC-02**: `/v1/messages` 流式（SSE）可用，trace / progress 经 thinking block adapter 透出（复用 TRACE-01 的同一事件 taxonomy 映射，INV-5 非原始 CoT）
 
-### 审计查询与导出（AUDITUI）
+### 飞书原生流式卡片（CARD）
 
-- [x] **AUDITUI-01**: 审计查询 REST API——按 actor / action / target / 时间范围过滤 + 分页，superuser fail-closed 访问控制，记录对外只读（无创建/编辑/删除入口）
-- [x] **AUDITUI-02**: 审计前端视图——列表 / 过滤 / 详情（before-after 对比）+ 导出（CSV/JSON）
+- [ ] **CARD-01**: 飞书机器人对话回复改走原生 CardKit 流式卡片（增量更新，替代现有 PATCH 全量替换），流式体验顺滑、无明显闪烁 / 全量重绘
+
+### 工作流自动建群（GROUP）
+
+- [ ] **GROUP-01**: 新增"自动建群"工作流节点——可创建飞书群并拉入指定成员（替代现仅能 `add_bot_to_chat` 加入已有群），群 chat_id 作为节点输出可供下游节点 / 写回 `WorkItem.feishu_chat_id` 使用
 
 ## v2 Requirements
 
-### 审计进阶（AUDITX）
+### 开放进阶（OPENX）
 
-- **AUDITX-01**: 审计日志密码学级防篡改（hash chain / WORM 存储），抵御 DB 直接篡改
-- **AUDITX-02**: 实时告警 / SIEM 集成 / webhook 外发（敏感操作触发主动告警）
-- **AUDITX-03**: 审计日志保留策略 / 归档 / 自动清理（按时间或容量）
+- **OPENX-01**: 标准双向 `tool_calls` 协议（支持"客户端自带工具"由外部客户端执行并回传）——仅当出现该诉求再做（v0.11 明确不做，见 Out of Scope）
+- **OPENX-02**: Anthropic 端点的工具使用 / 多模态 content block 全量对齐（本里程碑仅覆盖文本 messages + trace 透出）
+- **OPENX-03**: 飞书卡片交互组件（按钮 / 表单回调）与多卡片会话编排（本里程碑仅做流式文本卡片）
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| 新建独立审计角色 / 权限层（非 superuser 的审计查看角色） | 复用既有 `is_superuser`，不新建角色（与既有里程碑「系统管理员=superuser」决策一致） |
-| 密码学级防篡改（hash chain / WORM） | 应用层 append-only（无 update/delete 业务路径）即满足「不可篡改」治理诉求；密码学防篡改成本高，留 v2（AUDITX-01） |
-| 实时告警 / SIEM / 外部 webhook 外发 | 本里程碑聚焦「留痕 + 查询 + 导出」，主动告警是独立能力，留 v2（AUDITX-02） |
-| 审计日志保留 / 归档 / 自动清理策略 | 先做全量留痕与查询，保留治理留 v2（AUDITX-03） |
-| 读操作 / 普通业务操作的全量审计 | 审计聚焦敏感/管理操作；全量操作日志会产生噪音且与现有 `ActionLog`/structlog 重叠 |
+| 标准双向 `tool_calls`（客户端自带工具回传执行） | 内部工具是服务端闭环执行，回传标准 tool_calls 会让规范客户端误判挂起等待 → 卡死；统一透出为 progress/trace（INV-5）。客户端自带工具留 v2（OPENX-01，已与用户确认） |
+| 暴露模型私有 CoT / 原始 thinking 链 | INV-5：对外只暴露 progress/trace 事件（reasoning_summary / thinking block adapter），非模型私有推理链 |
+| 新建独立事件 taxonomy | 复用 v0.7 起沉淀的 §15 事件词表（`PlanSessionEvent` / `event_taxonomy`），对外只是不同 adapter；taxonomy 已在 v0.7 稳定落地 |
+| 飞书卡片交互组件 / 多卡片编排 | 本里程碑聚焦流式文本卡片体验，交互组件留 v2（OPENX-03） |
+| Anthropic 端点工具 / 多模态 content block 全量对齐 | 本里程碑覆盖文本 messages + 流式 trace 透出；工具 / 多模态对齐留 v2（OPENX-02） |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIT-01 | Phase 53 | Complete |
-| AUDIT-02 | Phase 53 | Complete |
-| AUDITCOV-01 | Phase 54 | Complete |
-| AUDITCOV-02 | Phase 54 | Complete |
-| AUDITUI-01 | Phase 55 | Complete |
-| AUDITUI-02 | Phase 55 | Complete |
+| TRACE-01 | Phase 56 | Pending |
+| TRACE-02 | Phase 56 | Pending |
+| ANTHROPIC-01 | Phase 57 | Pending |
+| ANTHROPIC-02 | Phase 57 | Pending |
+| CARD-01 | Phase 58 | Pending |
+| GROUP-01 | Phase 59 | Pending |
 
 **Coverage:**
 
@@ -59,4 +62,4 @@
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-06-17 for milestone v0.10.0*
+*Requirements defined: 2026-06-17 for milestone v0.11.0*
