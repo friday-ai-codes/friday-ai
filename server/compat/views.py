@@ -21,11 +21,12 @@ from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
 from services.provider_config import ProviderConfigService, ProviderMissingError
 
 from .adapter import OpenAICompatAdapter
+from .anthropic_adapter import aggregate_message
 from .auth import OptionalBearerTokenAuth
-from .error_handlers import openai_error_response
+from .error_handlers import anthropic_error_response, openai_error_response
 from .progress import retrieval_to_progress
-from .request_handler import prepare_messages_with_meta
-from .schemas import ChatCompletionsRequestSerializer
+from .request_handler import anthropic_to_openai_messages, prepare_messages_with_meta
+from .schemas import AnthropicMessagesRequestSerializer, ChatCompletionsRequestSerializer
 
 logger = structlog.get_logger(__name__)
 
@@ -177,6 +178,60 @@ class ChatCompletionsView(APIView):
                 + b"\n\n"
             )
             yield b"data: [DONE]\n\n"
+
+
+class MessagesView(APIView):
+    """POST /v1/messages — Anthropic Messages 兼容入口（57-01，本 plan 仅非流式）。
+
+    复用 Phase 56 内核：``anthropic_to_openai_messages`` 规整 → ``prepare_messages_with_meta``
+    检索注入 → ``aggregate_message`` 聚合为 Anthropic Messages 形状。流式分支留 Plan 02。
+    """
+
+    # Pitfall 6 / P-9：不走 JWT，避免 async 上下文 lazy-load user 的 SynchronousOnlyOperation
+    authentication_classes: list = []
+    permission_classes = [OptionalBearerTokenAuth]
+
+    async def post(self, request: Any) -> Any:  # type: ignore[override]
+        serializer = AnthropicMessagesRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return anthropic_error_response(
+                message=str(serializer.errors),
+                type_="invalid_request_error",
+                http_status=400,
+            )
+        params = serializer.validated_data
+
+        # 规整 Anthropic 形状 → OpenAI [{role, content}]，再完全委托既有检索内核。
+        # retr 非流式忽略（不合成 trace、不污染 content，P-8）。
+        oai_messages = anthropic_to_openai_messages(params.get("system"), params["messages"])
+        lc_messages, _retr = await prepare_messages_with_meta(
+            messages=oai_messages,
+            repository_ids=[str(rid) for rid in params.get("repository_ids") or []],
+            project_id=str(params["project_id"]) if params.get("project_id") else None,
+        )
+
+        runner = await _build_runner()
+        if runner is None:
+            return anthropic_error_response(
+                message="LLM 提供商凭证未配置，请在系统设置添加 Provider Credential",
+                type_="api_error",
+                http_status=503,
+            )
+
+        # Q-02 方案 (a)：固定 friday-default，忽略客户端传入 model 字段
+        model_name = "friday-default"
+
+        # TODO(Plan 02 57-02)：流式 SSE 接线 + thinking block prelude。本 plan stream=True
+        # 暂走非流式聚合（功能可用，Plan 02 替换为真正的 Anthropic SSE 双行帧流）。
+        try:
+            message = await aggregate_message(runner, lc_messages, model=model_name)
+        except RuntimeError as exc:
+            return anthropic_error_response(
+                message=str(exc),
+                type_="api_error",
+                http_status=500,
+            )
+        return Response(message)
 
 
 class ModelsView(APIView):
