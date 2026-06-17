@@ -105,6 +105,7 @@ declare module 'vue' {
     ContextInspector: typeof import('./components/workflow/ContextInspector.vue')['default']
     ContextRetrievalConfig: typeof import('./components/workflow/config/ContextRetrievalConfig.vue')['default']
     ControlNode: typeof import('./components/workflow/editor/nodes/ControlNode.vue')['default']
+    ConversationBadges: typeof import('./components/chat/ConversationBadges.vue')['default']
     CostSummaryBar: typeof import('./components/execution/CostSummaryBar.vue')['default']
     CreateBranchConfig: typeof import('./components/workflow/config/CreateBranchConfig.vue')['default']
     CreatePRConfig: typeof import('./components/workflow/config/CreatePRConfig.vue')['default']

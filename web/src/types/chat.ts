@@ -25,6 +25,12 @@ export interface Conversation {
   provider_credential_id: string | null
   /** 是否已归档（归档会话从默认列表隐藏） */
   is_archived?: boolean
+  /** 该会话的方案编排是否产出了 SDD spec（列表 annotate，缺省 false） */
+  has_sdd_spec?: boolean
+  /** 该会话是否产生过技术方案 CodingPlan（列表 annotate，缺省 false） */
+  has_coding_plan?: boolean
+  /** 该会话是否进行过容器编码 CodingSession（列表 annotate，缺省 false） */
+  has_coding_session?: boolean
   created_at: string
   updated_at: string
 }

@@ -330,6 +330,12 @@ async function handleDelete(conv: Conversation) {
                   {{ conv.title }}
                 </p>
 
+                <!-- SDD / 编码 / 方案 徽标（非重命名态显示） -->
+                <ConversationBadges
+                  v-if="renamingId !== conv.id"
+                  :conversation="conv"
+                />
+
                 <!-- ⋯ 更多操作（hover 显示） -->
                 <DropdownMenu v-if="renamingId !== conv.id">
                   <DropdownMenuTrigger as-child>
