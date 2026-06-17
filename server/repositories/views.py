@@ -18,6 +18,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from common.encryption import encrypt_value
 from permissions.api_permissions import IsSuperUser
 from services.background_runner import run_in_background
@@ -502,6 +504,17 @@ class RepositoryViewSet(ModelViewSet):
             git_user_email=git_user_email,
         )
 
+        # 审计：建仓附带 per-repo Git 凭证创建（token 密文绝不入载荷，仅记 provided 布尔）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_CREATED,
+            actor=self.request.user,
+            target_type="git_credential",
+            target_id=repository.id,
+            target_repr=repository.name,
+            after={"provided": True, "git_user_name": git_user_name},
+            source="api",
+        )
+
         # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort：
         # Runner 离线 / AI 凭证未配置等失败只记日志，不阻塞建仓响应）。
         self._schedule_auto_summary(str(repository.id))
@@ -594,6 +607,16 @@ class RepositoryViewSet(ModelViewSet):
             credential = await GitCredential.objects.filter(repository=repository).afirst()
             if credential:
                 await credential.adelete()
+                # 审计：per-repo Git 凭证删除
+                await AuditService.aemit(
+                    action=taxonomy.ACTION_CREDENTIAL_DELETED,
+                    actor=request.user,
+                    target_type="git_credential",
+                    target_id=repository.id,
+                    target_repr=repository.name,
+                    before={"provided": True},
+                    source="api",
+                )
             return Response(status=status.HTTP_204_NO_CONTENT)
         else:
             return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
@@ -763,6 +786,16 @@ class SetAccessTokenView(APIView):
             existing_credential.git_user_name = git_user_name
             existing_credential.git_user_email = git_user_email
             await existing_credential.asave()
+            # 审计：per-repo Git 凭证更新（token 密文绝不入载荷）
+            await AuditService.aemit(
+                action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+                actor=request.user,
+                target_type="git_credential",
+                target_id=repository.id,
+                target_repr=repository.name,
+                after={"provided": True, "git_user_name": git_user_name},
+                source="api",
+            )
             return Response(GitCredentialSerializer(existing_credential).data)
         else:
             credential = await GitCredential.objects.acreate(
@@ -771,6 +804,16 @@ class SetAccessTokenView(APIView):
                 encrypted_token=encrypt_value(token),
                 git_user_name=git_user_name,
                 git_user_email=git_user_email,
+            )
+            # 审计：per-repo Git 凭证创建
+            await AuditService.aemit(
+                action=taxonomy.ACTION_CREDENTIAL_CREATED,
+                actor=request.user,
+                target_type="git_credential",
+                target_id=repository.id,
+                target_repr=repository.name,
+                after={"provided": True, "git_user_name": git_user_name},
+                source="api",
             )
             return Response(
                 GitCredentialSerializer(credential).data, status=status.HTTP_201_CREATED
@@ -1089,6 +1132,23 @@ class RepositoryExclusionRulesView(APIView):
         # 规则变更后失效匹配器缓存，使各读取面即时读到新规则（T-22-18）
         invalidate_matcher_cache(str(repository_id))
 
+        # 审计：排除规则新增
+        await AuditService.aemit(
+            action=taxonomy.ACTION_EXCLUSION_RULE_CHANGED,
+            actor=request.user,
+            target_type="repo_exclusion_rule",
+            target_id=rule.id,
+            target_repr=f"{repository_id}:{rule.pattern}",
+            after={
+                "pattern": rule.pattern,
+                "rule_type": rule.rule_type,
+                "enabled": rule.enabled,
+                "source": rule.source,
+            },
+            metadata={"op": "created"},
+            source="api",
+        )
+
         out = await sync_to_async(lambda: RepoExclusionRuleSerializer(rule).data)()
         return Response(out, status=status.HTTP_201_CREATED)
 
@@ -1115,8 +1175,22 @@ class RepositoryExclusionRuleDetailView(APIView):
         if rule is None:
             return Response({"detail": "排除规则不存在"}, status=status.HTTP_404_NOT_FOUND)
 
+        rule_pk = rule.id
+        snapshot = {"pattern": rule.pattern, "rule_type": rule.rule_type}
         await rule.adelete()
         invalidate_matcher_cache(str(repository_id))
+
+        # 审计：排除规则删除（删前快照）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_EXCLUSION_RULE_CHANGED,
+            actor=request.user,
+            target_type="repo_exclusion_rule",
+            target_id=rule_pk,
+            target_repr=f"{repository_id}:{snapshot['pattern']}",
+            before=snapshot,
+            metadata={"op": "deleted"},
+            source="api",
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1138,13 +1212,8 @@ class GitInstanceCredentialsView(APIView):
     permission_classes = [IsSuperUser]
 
     async def get(self, request):
-        creds = [
-            c
-            async for c in GitInstanceCredential.objects.all().order_by("host")
-        ]
-        data = await sync_to_async(
-            lambda: GitInstanceCredentialSerializer(creds, many=True).data
-        )()
+        creds = [c async for c in GitInstanceCredential.objects.all().order_by("host")]
+        data = await sync_to_async(lambda: GitInstanceCredentialSerializer(creds, many=True).data)()
         return Response(data)
 
     async def post(self, request):
@@ -1190,6 +1259,16 @@ class GitInstanceCredentialsView(APIView):
             host=host,
             provider=credential.provider,
             has_token=True,
+        )
+        # 审计：Git 实例凭证创建（token 密文绝不入载荷，仅记 provided 布尔）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_CREATED,
+            actor=request.user,
+            target_type="git_instance_credential",
+            target_id=credential.id,
+            target_repr=host,
+            after={"host": host, "provider": credential.provider, "provided": True},
+            source="api",
         )
         out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
         return Response(out, status=status.HTTP_201_CREATED)
@@ -1264,6 +1343,21 @@ class GitInstanceCredentialDetailView(APIView):
             provider=credential.provider,
             token_changed=token_changed,
         )
+        # 审计：Git 实例凭证更新（token_changed 标识是否换密钥，密文不入载荷）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+            actor=request.user,
+            target_type="git_instance_credential",
+            target_id=credential.id,
+            target_repr=credential.host,
+            after={
+                "host": credential.host,
+                "provider": credential.provider,
+                # 键名避开脱敏关键词（"token" 会被入口脱敏）：用 rotated 表「是否换密钥」
+                "rotated": token_changed,
+            },
+            source="api",
+        )
         out = await sync_to_async(lambda: GitInstanceCredentialSerializer(credential).data)()
         return Response(out)
 
@@ -1272,8 +1366,20 @@ class GitInstanceCredentialDetailView(APIView):
         if credential is None:
             return Response({"detail": "实例凭证不存在"}, status=status.HTTP_404_NOT_FOUND)
         host = credential.host
+        provider = credential.provider
+        cred_pk = credential.id
         await credential.adelete()
         logger.info("git_instance_credential_deleted", host=host)
+        # 审计：Git 实例凭证删除（删前快照）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_DELETED,
+            actor=request.user,
+            target_type="git_instance_credential",
+            target_id=cred_pk,
+            target_repr=host,
+            before={"host": host, "provider": provider},
+            source="api",
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1363,9 +1469,7 @@ class RepositorySensitiveSuggestionActionView(APIView):
         if action_name == "dismiss":
             suggestion.status = SensitiveFileSuggestion.Status.DISMISSED
             await suggestion.asave(update_fields=["status", "updated_at"])
-            out = await sync_to_async(
-                lambda: SensitiveFileSuggestionSerializer(suggestion).data
-            )()
+            out = await sync_to_async(lambda: SensitiveFileSuggestionSerializer(suggestion).data)()
             return Response({"suggestion": out})
 
         # accept：幂等建 ai_suggested 排除规则（绝不删数据）

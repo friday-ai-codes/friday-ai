@@ -1,5 +1,28 @@
 # Milestones
 
+## v0.9.0 v0.9.0 (Shipped: 2026-06-17)
+
+**Phases completed:** 5 phases, 18 plans, 38 tasks
+
+**Key accomplishments:**
+
+- 范围扩展（orchestrator 决策，非偏差）
+- 新建 SddSpec 脊柱模型（5 态枚举 + unique_together 幂等键 + 0018 迁移）与 DocumentService.create_internal_spec 内部生成文档单一写入入口（INV-6）
+- SddSpecService.create_draft 幂等单一写入入口（命中既有 SddSpec 短路返回不留孤儿 Document）+ SddSpec INV-6 grep 守护
+- agenerate_specs_for_plan 逐 SDD 仓产 openspec spec（可注入 SddSpecSynthesizer + LLMSddSpecSynthesizer），逐仓 try/except 隔离 + emit spec.drafted；event taxonomy 对齐守护同步更新
+- ArchitectMergeAdapter._handle_pass 在 merge.completed 之后 best-effort 调 spec 生成 hook（默认 agenerate_specs_for_plan，可注入 stub），整段 try/except 吞 warning 绝不阻断融合返回；全链路守护封板 Phase 49
+- SDD 仓库方案融合通过后 best-effort 逐仓产 openspec spec draft：落 SddSpec(draft) 脊柱 + Document(sdd_spec, internal_generated) 经双单一写入入口（INV-6），关联 WorkItem/PlanVersion/Repository 并 emit spec.drafted；非 SDD / 异常零回归 fail-soft
+- RepoCodingTaskService 首次消费 follow_openspec（按 Repository.facets.methodology==SDD 置位 + 漂移回填）并新增 mark_gate_blocked gate 拦截唯一写入入口（条件 pending→failed + {reason, spec_status} 结构化诊断）
+- AICodingNode._dispatch_wave 加 fail-closed openspec gate（follow_openspec=True 仓强制 SddSpec.status==APPROVED 才放行，未批准/异常经 mark_gate_blocked 拦截不 dispatch，单仓异常隔离不崩 wave）+ approved SDD 仓 dispatch metadata 注入 env_FRIDAY_TASK_FOLLOW_OPENSPEC=true
+- TaskConfig 加 follow_openspec 字段（经 env_prefix 映射 FRIDAY_TASK_FOLLOW_OPENSPEC，默认 False），_get_system_prompt 在 follow_openspec 为真时追加独立 _openspec_guidance helper 文本（指示 agent 遵循 openspec/ 下已批准 spec、优先查仓库内 openspec skill 按 delta 实现），缺省路径逐字等现状
+- SDD 仓编码前强制 spec 已 approved 才放行（follow_openspec=True 仓校验 SddSpec.status==APPROVED，未批准/校验异常 fail-closed 经 mark_gate_blocked 拦截不 dispatch、单仓隔离不崩 wave、并经 aadvance 传递闭包阻断下游），并通过 dispatch env → task system_prompt 注入 openspec 指引使 approved SDD 仓按 openspec 流程编码；非 SDD 仓全链路零回归
+- SddSpec.implementation_prs JSON 字段 + SddSpecService.link_implementation_pr 单一写入入口（pr_url 去重幂等 + approved→implemented）+ AICodingNode 收尾 best-effort 回填挂接（fail-soft 零回归）
+- SddSpecDetailSerializer 暴露 implementation_prs（实现 PR 列表）+ work_item url(取 prd_url)/title + plan_version 摘要，形成 spec → 需求 → PR 完整追溯 JSON；缺数据降级（[]/省键）不报错
+- SpecDeliveryPanel.vue 沿 WorkItem（需求，可点 prd_url）→ spec（状态徽标）→ 实现 PR 列表（pr_url 可点）渲染交付验收闭环；缺数据 fail-soft 降级真实中文占位；真实 zh-CN.json 文案接通
+- 让 SDD spec 沿 spec → 需求(WorkItem) → 实现 PR 形成可追溯交付验收闭环：编码产出的 PR 经单一写入入口幂等回填到 spec（approved→implemented），detail API 暴露完整追溯 JSON，前端 SpecDeliveryPanel 沿链路 fail-soft 渲染交付验收视图——非 SDD 仓全链路零回归
+
+---
+
 ## v0.8.0 多仓串行编码 → 融合 PR (Shipped: 2026-06-17)
 
 **Phases completed:** 5 phases, 16 plans, 38 tasks

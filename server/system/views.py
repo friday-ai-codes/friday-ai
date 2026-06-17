@@ -8,6 +8,8 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from permissions.api_permissions import IsSuperUser
 
 from .models import ProviderCredential, SettingKeys, SystemSetting
@@ -379,6 +381,22 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             scope_id=str(scope_id) if scope_id else None,
             user_id=str(self.request.user.id),
         )
+        # 审计：Provider 凭证创建（仅记非敏感标识，encrypted_config/api_key 绝不入载荷）
+        instance = serializer.instance
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_CREATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=instance.id,
+            target_repr=f"{instance.provider_type}:{instance.name}",
+            after={
+                "provider_type": instance.provider_type,
+                "scope": instance.scope,
+                "scope_id": str(instance.scope_id) if instance.scope_id else None,
+                "name": instance.name,
+            },
+            source="api",
+        )
 
     async def perform_aupdate(self, serializer) -> None:  # type: ignore[no-untyped-def]
         """更新前 scope 校验（若 scope 被修改）+ save + 结构化日志。
@@ -430,15 +448,101 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             credential_id=str(serializer.instance.id),
             user_id=str(self.request.user.id),
         )
+        # 审计：Provider 凭证更新——仅记变更字段名集合（不含任何密文值）
+        updated = serializer.instance
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=updated.id,
+            target_repr=f"{updated.provider_type}:{updated.name}",
+            after={"changed": sorted(serializer.validated_data.keys())},
+            source="api",
+        )
 
     async def perform_adestroy(self, instance) -> None:  # type: ignore[no-untyped-def]
         """硬删除凭证 + 结构化日志。"""
         credential_id = str(instance.id)
+        # 删前快照（非敏感标识）
+        snapshot = {
+            "provider_type": instance.provider_type,
+            "scope": instance.scope,
+            "name": instance.name,
+        }
+        target_pk = instance.id
+        target_repr = f"{instance.provider_type}:{instance.name}"
         await sync_to_async(instance.delete)()
         _viewset_logger.info(
             "provider_credential_deleted",
             credential_id=credential_id,
             user_id=str(self.request.user.id),
+        )
+        # 审计：Provider 凭证删除
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_DELETED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=target_pk,
+            target_repr=target_repr,
+            before=snapshot,
+            source="api",
+        )
+
+    # ------------------------------------------------------------------
+    # 同步 perform_* 覆盖：本 ViewSet 经 rest_framework.DefaultRouter 路由，POST/PUT/PATCH/
+    # DELETE 实际分派到 DRF 同步 create/update/destroy → perform_create/update/destroy（非
+    # adrf 异步 perform_a*）。审计 emit 必须落在真正执行的同步面，故同步面用 AuditService.emit
+    # 收口（与上面异步 perform_a* 互斥执行，单请求只走一条路径，不会双写）。
+    # ------------------------------------------------------------------
+
+    def perform_create(self, serializer) -> None:  # type: ignore[no-untyped-def]
+        serializer.save()
+        instance = serializer.instance
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_CREATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=instance.id,
+            target_repr=f"{instance.provider_type}:{instance.name}",
+            after={
+                "provider_type": instance.provider_type,
+                "scope": instance.scope,
+                "scope_id": str(instance.scope_id) if instance.scope_id else None,
+                "name": instance.name,
+            },
+            source="api",
+        )
+
+    def perform_update(self, serializer) -> None:  # type: ignore[no-untyped-def]
+        serializer.save()
+        updated = serializer.instance
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=updated.id,
+            target_repr=f"{updated.provider_type}:{updated.name}",
+            after={"changed": sorted(serializer.validated_data.keys())},
+            source="api",
+        )
+
+    def perform_destroy(self, instance) -> None:  # type: ignore[no-untyped-def]
+        snapshot = {
+            "provider_type": instance.provider_type,
+            "scope": instance.scope,
+            "name": instance.name,
+        }
+        target_pk = instance.id
+        target_repr = f"{instance.provider_type}:{instance.name}"
+        instance.delete()
+        AuditService.emit(
+            action=taxonomy.ACTION_CREDENTIAL_DELETED,
+            actor=self.request.user,
+            target_type="provider_credential",
+            target_id=target_pk,
+            target_repr=target_repr,
+            before=snapshot,
+            source="api",
         )
 
     # ------------------------------------------------------------------
@@ -456,6 +560,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         不做硬删，保留配置 + available_models 等历史状态，便于随时恢复。
         """
         credential = await self.aget_object()
+        old_active = credential.is_active
         credential.is_active = not credential.is_active
         await sync_to_async(credential.save)(update_fields=["is_active", "updated_at"])
         _viewset_logger.info(
@@ -463,6 +568,18 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
             credential_id=str(credential.id),
             is_active=credential.is_active,
             user_id=str(request.user.id),
+        )
+        # 审计：Provider 凭证软禁用/启用 toggle（值必变）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+            actor=request.user,
+            target_type="provider_credential",
+            target_id=credential.id,
+            target_repr=f"{credential.provider_type}:{credential.name}",
+            before={"is_active": old_active},
+            after={"is_active": credential.is_active},
+            metadata={"op": "toggle_active"},
+            source="api",
         )
         return Response({"is_active": credential.is_active})
 
@@ -484,6 +601,8 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         if credential.scope == "system" and not request.user.is_superuser:
             raise PermissionDenied("仅系统管理员可设置系统级默认凭证")
 
+        actor = request.user
+
         @sync_to_async
         def _set_default_atomic() -> None:
             from django.db import transaction
@@ -498,6 +617,23 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
                 ).exclude(id=credential.id).update(is_default=False)
                 credential.is_default = True
                 credential.save(update_fields=["is_default", "updated_at"])
+                # 审计：设默认在显式 atomic 块内——用 on_commit + sync emit，回滚则不留审计行
+                transaction.on_commit(
+                    lambda: AuditService.emit(
+                        action=taxonomy.ACTION_CREDENTIAL_UPDATED,
+                        actor=actor,
+                        target_type="provider_credential",
+                        target_id=credential.id,
+                        target_repr=f"{credential.provider_type}:{credential.name}",
+                        after={
+                            "is_default": True,
+                            "scope": credential.scope,
+                            "provider_type": credential.provider_type,
+                        },
+                        metadata={"op": "set_default"},
+                        source="api",
+                    )
+                )
 
         await _set_default_atomic()
         _viewset_logger.info(

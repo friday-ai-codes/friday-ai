@@ -25,13 +25,14 @@ from repositories.models import Repository
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-async def _make_repo() -> Repository:
+async def _make_repo(facets: dict | None = None) -> Repository:
     return await Repository.objects.acreate(
         name=f"repo-{uuid.uuid4().hex[:6]}",
         git_url=f"https://github.com/test/{uuid.uuid4().hex[:6]}.git",
         git_platform="github",
         default_branch="main",
         index_status="indexed",
+        facets=facets or {},
     )
 
 
@@ -74,6 +75,57 @@ async def test_create_idempotent() -> None:
     assert dep_ids == [str(first[rid_b].id)]
     # 反向无边。
     assert await _depends_on_ids(first[rid_b]) == []
+
+
+@pytest.mark.asyncio
+async def test_follow_openspec_sdd_repo() -> None:
+    """SDD 仓（facets.methodology==SDD）建任务 → follow_openspec=True（D-51-1 首次消费）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo(facets={"methodology": "SDD"})
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    reread = await RepoCodingTask.objects.aget(id=tasks[rid].id)
+    assert reread.follow_openspec is True
+
+
+@pytest.mark.asyncio
+async def test_follow_openspec_non_sdd_repo() -> None:
+    """非 SDD 仓（facets 缺失 / methodology!=SDD）→ follow_openspec=False（零回归）。"""
+    plan_version = await _make_plan_version()
+    repo_empty = await _make_repo()  # facets={}
+    repo_other = await _make_repo(facets={"methodology": "TDD"})
+    rid_empty, rid_other = str(repo_empty.id), str(repo_other.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid_empty: 0, rid_other: 0}, {})
+    assert (await RepoCodingTask.objects.aget(id=tasks[rid_empty].id)).follow_openspec is False
+    assert (await RepoCodingTask.objects.aget(id=tasks[rid_other].id)).follow_openspec is False
+
+
+@pytest.mark.asyncio
+async def test_follow_openspec_drift_backfill() -> None:
+    """已存在 task 的 follow_openspec 与当前 facets 推导值漂移 → 回填，重复调用幂等不重复写。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()  # 初始非 SDD
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    assert (await RepoCodingTask.objects.aget(id=tasks[rid].id)).follow_openspec is False
+
+    # 后打 SDD 标 → 再次建任务应回填 follow_openspec=True（漂移回填）。
+    repo.facets = {"methodology": "SDD"}
+    await repo.asave(update_fields=["facets"])
+    await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    reread = await RepoCodingTask.objects.aget(id=tasks[rid].id)
+    assert reread.follow_openspec is True
+    # 行未重建（幂等）。
+    assert await RepoCodingTask.objects.filter(plan_version=plan_version).acount() == 1
+
+    # 重复调用（值相等）→ updated_at 不变（相等不写）。
+    before = reread.updated_at
+    await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    reread2 = await RepoCodingTask.objects.aget(id=tasks[rid].id)
+    assert reread2.updated_at == before
 
 
 @pytest.mark.asyncio
@@ -175,6 +227,58 @@ async def test_record_produced_artifacts() -> None:
     await svc.record_produced_artifacts(task, artifacts)
     reread2 = await RepoCodingTask.objects.aget(id=task.id)
     assert reread2.produced_artifacts == artifacts
+
+
+@pytest.mark.asyncio
+async def test_mark_gate_blocked_pending() -> None:
+    """pending task mark_gate_blocked → failed + error={reason, spec_status}（D-51-3）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+
+    affected = await svc.mark_gate_blocked(task, "spec_not_approved", "draft")
+    assert affected == 1
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.status == RepoCodingTaskStatus.FAILED
+    assert reread.error == {"reason": "spec_not_approved", "spec_status": "draft"}
+
+
+@pytest.mark.asyncio
+async def test_mark_gate_blocked_guard_running() -> None:
+    """已运行 task mark_gate_blocked → no-op（仅 pending 生效），不强翻在途。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+    await svc.mark_running(task, None)
+
+    affected = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert affected == 0
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.status == RepoCodingTaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_mark_gate_blocked_idempotent() -> None:
+    """重复 mark_gate_blocked 同一已 blocked task → 影响 0 行（status 已 failed 不匹配 pending）。"""
+    plan_version = await _make_plan_version()
+    repo = await _make_repo()
+    rid = str(repo.id)
+    svc = RepoCodingTaskService()
+    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    task = tasks[rid]
+
+    first = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert first == 1
+    second = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
+    assert second == 0
+    reread = await RepoCodingTask.objects.aget(id=task.id)
+    assert reread.error == {"reason": "spec_not_approved", "spec_status": "missing"}
 
 
 @pytest.mark.asyncio

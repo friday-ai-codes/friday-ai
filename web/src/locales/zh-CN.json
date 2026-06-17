@@ -150,6 +150,98 @@
       "success": "配置完成，正在进入系统…"
     }
   },
+  "specs": {
+    "title": "spec 治理",
+    "subtitle": "查看与评审 spec-driven 开发的需求规格，按状态流转生命周期",
+    "loading": "正在加载 spec…",
+    "loadError": "加载 spec 失败，请稍后重试",
+    "empty": "暂无 spec",
+    "emptyDescription": "为 SDD 仓库编排方案后，系统会自动产出 spec draft；产出后将在此列出",
+    "emptyFiltered": "当前筛选条件下没有匹配的 spec，试试调整状态 / 仓库筛选",
+    "filter": {
+      "status": "状态",
+      "repository": "仓库",
+      "all": "全部"
+    },
+    "columns": {
+      "title": "spec 标题",
+      "repository": "仓库",
+      "status": "状态",
+      "updatedAt": "更新时间"
+    },
+    "status": {
+      "draft": "草稿",
+      "in_review": "评审中",
+      "approved": "已批准",
+      "implemented": "已实现",
+      "archived": "已归档"
+    },
+    "detail": {
+      "body": "spec 正文",
+      "relations": "关联",
+      "workItem": "关联需求",
+      "planVersion": "关联方案",
+      "repository": "所属仓库",
+      "reviewHistory": "评审历史",
+      "reviewEmpty": "暂无评审记录",
+      "reviewer": "评审人",
+      "decisionApprove": "批准",
+      "decisionReject": "驳回",
+      "unknownReviewer": "未知用户"
+    },
+    "delivery": {
+      "title": "交付验收",
+      "workItemLabel": "需求",
+      "specLabel": "规格",
+      "prsLabel": "实现 PR",
+      "workItemUnlinked": "未关联需求",
+      "planVersionUnlinked": "未关联方案",
+      "prsEmpty": "暂无实现 PR",
+      "linkedAt": "已关联于 {time}"
+    },
+    "actions": {
+      "submit": "提交评审",
+      "approve": "批准",
+      "reject": "驳回",
+      "markImplemented": "标记已实现",
+      "archive": "归档",
+      "awaitingReview": "等待管理员评审"
+    },
+    "reviewDialog": {
+      "approveTitle": "批准 spec",
+      "approveDescription": "批准后将进入 approved 状态，可附评审意见。确认批准？",
+      "rejectTitle": "驳回 spec",
+      "rejectDescription": "将退回 draft 并要求修订，请填写驳回意见。确认驳回？",
+      "commentLabel": "评审意见",
+      "commentOptional": "可选：填写批准意见",
+      "commentRequired": "请填写驳回意见",
+      "confirm": "确认",
+      "cancel": "取消"
+    },
+    "confirm": {
+      "archiveTitle": "归档 spec",
+      "archiveDescription": "归档后不可再流转，且不在常规列表突出展示。确认归档？",
+      "archiveConfirmText": "确认归档",
+      "implementTitle": "标记为已实现",
+      "implementDescription": "确认该 spec 已落地实现？"
+    },
+    "toast": {
+      "submitted": "已提交评审",
+      "approved": "已批准",
+      "rejected": "已驳回，已退回草稿",
+      "implemented": "已标记为已实现",
+      "archived": "已归档"
+    },
+    "error": {
+      "transition": "操作失败：当前状态不允许该流转，请刷新后重试"
+    }
+  },
+  "repositories": {
+    "tree": {
+      "sddBadge": "SDD",
+      "sddBadgeTitle": "Spec-Driven（openspec）仓库"
+    }
+  },
   "knowledge": {
     "pageTitle": "知识",
     "pageDescription": "检索历史需求、技术方案与代码变更，或批量摄取看板与 MR 入库可检索",
@@ -508,6 +600,57 @@
       "create": "创建实例凭证失败",
       "update": "更新实例凭证失败",
       "delete": "删除实例凭证失败"
+    }
+  },
+  "audit": {
+    "title": "操作审计",
+    "subtitle": "查询敏感操作的不可篡改审计记录（仅超级管理员可见）",
+    "loading": "加载审计记录中…",
+    "loadError": "加载审计记录失败",
+    "empty": "暂无审计记录",
+    "systemActor": "系统",
+    "filters": {
+      "all": "全部",
+      "action": "动作",
+      "source": "来源",
+      "actorId": "操作者 ID",
+      "actorIdPlaceholder": "用户 UUID",
+      "targetType": "目标类型",
+      "targetTypePlaceholder": "如 user / credential",
+      "targetId": "目标 ID",
+      "q": "关键词",
+      "qPlaceholder": "搜索操作者 / 目标名称",
+      "from": "开始时间",
+      "to": "结束时间",
+      "search": "查询",
+      "reset": "重置"
+    },
+    "columns": {
+      "time": "时间",
+      "actor": "操作者",
+      "action": "动作",
+      "target": "目标",
+      "source": "来源",
+      "detail": "详情"
+    },
+    "pagination": {
+      "range": "第 {start}–{end} 条 / 共 {total} 条",
+      "perPage": "每页 {size} 条",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "detail": {
+      "title": "审计详情",
+      "before": "操作前",
+      "after": "操作后",
+      "metadata": "附加上下文",
+      "recordedAt": "落库时间"
+    },
+    "export": {
+      "csv": "导出 CSV",
+      "json": "导出 JSON",
+      "success": "导出已开始下载",
+      "error": "导出失败"
     }
   }
 }

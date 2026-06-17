@@ -105,6 +105,14 @@ class TaskConfig(BaseSettings):
         description="排除规则列表（FRIDAY_TASK_EXCLUDE_PATTERNS JSON：[{pattern, rule_type}]）",
     )
 
+    # Phase 51 GATE-02：SDD/openspec 仓标记（D-51-4）。经 env_prefix 自动映射
+    # FRIDAY_TASK_FOLLOW_OPENSPEC。默认 False → system_prompt 与现状逐字一致（零回归）；
+    # 为真（server gate 放行的 approved SDD 仓注入 "true"）时 _get_system_prompt 追加 openspec 指引段。
+    follow_openspec: bool = Field(
+        default=False,
+        description="SDD/openspec 仓标记：为真时 system_prompt 追加 openspec 指引段（server gate 放行的 approved SDD 仓注入 FRIDAY_TASK_FOLLOW_OPENSPEC=true）",
+    )
+
     # Callback configuration (可选 - 不设置则仅记录日志)
     callback_url: str = Field(
         default="",

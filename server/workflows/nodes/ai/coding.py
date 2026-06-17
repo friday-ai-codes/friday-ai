@@ -547,6 +547,17 @@ class AICodingNode(SubStepMixin, BaseNode):
         ``upstream_artifacts_by_repo``（ARTIFACT-02）默认 None → 首发 wave 0 各仓注入 [] →
         prompt 与 Phase 44 逐字一致（零回归命门，首发 ``_execute_with_branch`` 不传该参）。
         """
+        # ── Phase 51 GATE-01：dispatch 前 openspec gate（fail-closed + 单仓隔离，D-51-2）──
+        # 仅 wave 模式实际执行；legacy/非 wave 短路零回归。被拦截仓经 mark_gate_blocked 标
+        # 终态并移出 dispatch 列表，并入 failed 返回（经 aadvance 传递闭包阻断下游）。
+        repo_ids, gate_blocked_failed = await self._apply_openspec_gate(
+            repo_ids=repo_ids,
+            repositories=repositories,
+            tasks_by_repo=tasks_by_repo,
+            service=service,
+            log=log,
+        )
+
         by_repo = upstream_artifacts_by_repo or {}
         coding_tasks = [
             self._run_repo_coding(
@@ -561,6 +572,13 @@ class AICodingNode(SubStepMixin, BaseNode):
                 anthropic_base_url=anthropic_base_url,
                 user_pat=user_pat,
                 upstream_artifacts=by_repo.get(repo_id, []),
+                # GATE-02：仅「通过 gate 且 follow_openspec=True」的仓（天然 = approved SDD 仓）
+                # 注入 env（默认 False 保非 wave/legacy 零回归）。
+                follow_openspec=(
+                    bool(getattr(tasks_by_repo.get(repo_id), "follow_openspec", False))
+                    if tasks_by_repo
+                    else False
+                ),
             )
             for repo_id in repo_ids
         ]
@@ -614,7 +632,95 @@ class AICodingNode(SubStepMixin, BaseNode):
                 if task is not None:
                     await service.mark_failed(task, {"reason": "dispatch_failed"})
 
+        # gate 拦截仓并入 failed 返回（首发「全拦截无 waiting」与 waiting_output failed_repos
+        # 展示一致；被拦截仓 task 已 failed → 后续 aadvance 传递闭包阻断其下游）。
+        failed.extend(gate_blocked_failed)
         return waiting_sessions, failed
+
+    async def _apply_openspec_gate(
+        self,
+        *,
+        repo_ids: list[str],
+        repositories: dict[str, Repository],
+        tasks_by_repo: dict[str, Any] | None,
+        service: Any,
+        log: Any,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """编码前置 openspec gate（GATE-01，fail-closed + 单仓隔离，D-51-2/D-51-5）。
+
+        返回 ``(passed_repo_ids, gate_blocked_failed)``：
+
+        - ``follow_openspec=False`` 仓直接放行（非 SDD/legacy 零回归，**不触发任何 SddSpec
+          查询**）。
+        - ``follow_openspec=True`` 仓校验关联 ``SddSpec``（按 plan_version_id × repository_id）已
+          ``APPROVED``：已批准放行；未批准（无 spec / 非 approved）经
+          ``service.mark_gate_blocked(task, "spec_not_approved", <status|missing>)`` 拦截。
+        - 单仓 gate 校验抛异常 → 保守 fail-closed（``mark_gate_blocked(task, "gate_error",
+          "unknown")`` + log.warning），异常绝不向外冒泡、不波及其余仓 dispatch（绝不崩整 wave）。
+
+        仅当 ``service`` 与 ``tasks_by_repo`` 均非空（wave 模式）实际执行 gate，否则原样返回
+        ``repo_ids`` + 空 failed（零回归短路命门）。async ORM 安全：用 ``task.plan_version_id``
+        / ``task.repository_id`` 标量 + ``afirst``，绝不裸 lazy-FK（D-51-6）。
+        """
+        # 零回归短路：legacy / 非 wave 路径完全不经 gate（D-51-5 命门）。
+        if service is None or tasks_by_repo is None:
+            return list(repo_ids), []
+
+        from delivery.models import SddSpec, SddSpecStatus  # lazy import 防循环
+
+        passed_repo_ids: list[str] = []
+        gate_blocked_failed: list[dict[str, Any]] = []
+
+        for repo_id in repo_ids:
+            task = tasks_by_repo.get(repo_id)
+            # 无 task（理论不应发生）或 follow_openspec=False → 放行（非 SDD 零回归，不查 spec）。
+            if task is None or not getattr(task, "follow_openspec", False):
+                passed_repo_ids.append(repo_id)
+                continue
+
+            blocked_reason = "spec_not_approved"
+            spec_status = "missing"
+            try:
+                spec = (
+                    await SddSpec.objects.filter(
+                        plan_version_id=task.plan_version_id,
+                        repository_id=task.repository_id,
+                    )
+                    .order_by("-updated_at")
+                    .afirst()
+                )
+                if spec is not None and spec.status == SddSpecStatus.APPROVED:
+                    passed_repo_ids.append(repo_id)
+                    continue
+                # 未批准（无 spec / draft / in_review / 其它非 approved）→ 拦截。
+                spec_status = str(spec.status) if spec is not None else "missing"
+            except Exception as exc:  # noqa: BLE001 — gate fail-closed 隔离，绝不崩整 wave
+                # 仅记 repo_id / error 字符串，绝不记 spec 正文（T-51-FAILOPEN）。
+                log.warning("coding_openspec_gate_error", repo_id=repo_id, error=str(exc))
+                blocked_reason = "gate_error"
+                spec_status = "unknown"
+
+            # WR-01：拦截写入也纳入单仓隔离边界——写入抖动绝不向外冒泡牵连整 wave。
+            # 写入失败时仍把该仓计入 gate_blocked_failed（本轮 fail-closed 不 dispatch、
+            # 下游照常阻断）；DB 态短暂留 pending 由后续 aadvance 重算兜底。
+            try:
+                await service.mark_gate_blocked(task, blocked_reason, spec_status)
+            except Exception as exc:  # noqa: BLE001 — 拦截写入 fail-closed 隔离，绝不崩整 wave
+                log.warning(
+                    "coding_openspec_gate_block_write_failed",
+                    repo_id=repo_id,
+                    error=str(exc),
+                )
+            repo = repositories.get(repo_id)
+            gate_blocked_failed.append(
+                {
+                    "repository_id": str(repo.id) if repo is not None else repo_id,
+                    "repository_name": repo.name if repo is not None else repo_id,
+                    "error": blocked_reason,
+                }
+            )
+
+        return passed_repo_ids, gate_blocked_failed
 
     def _build_waiting_output(
         self,
@@ -902,9 +1008,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 upstream_by_repo[repo_id] = await acollect_upstream_artifacts(task)
             except Exception as exc:  # noqa: BLE001 — 单仓注入降级，绝不阻塞 wave 推进 / 回调主流程
                 upstream_by_repo[repo_id] = []
-                log.warning(
-                    "coding_upstream_collect_failed", repo_id=repo_id, error=str(exc)
-                )
+                log.warning("coding_upstream_collect_failed", repo_id=repo_id, error=str(exc))
 
         waiting_sessions, failed = await self._dispatch_wave(
             repo_ids=[rid for rid in dispatch_repo_ids if rid in repositories],
@@ -1114,6 +1218,25 @@ class AICodingNode(SubStepMixin, BaseNode):
                 )
             except Exception as exc:  # noqa: BLE001 — cross-ref 增强 fail-soft
                 log.warning("coding_cross_reference_failed", error=str(exc))
+
+        # LINK-01（52-01，D-52-3）：spec↔实现 PR 回填。逐 successful_mr best-effort 调
+        # SddSpecService.link_implementation_pr——SDD 仓回填 PR + 转 implemented，非 SDD
+        # 仓 no-op（零回归）。整段 try/except 吞为 warning，绝不阻断 PR 创建/通知/节点完成
+        # （镜像上方 cross-ref fail-soft 范式）。plan_version_id 缺失则跳过（与 cross-ref 同锚）。
+        link_plan_version_id = (plan_data or {}).get("plan_version_id")
+        if link_plan_version_id and successful_mrs:
+            try:
+                from delivery.services import SddSpecService  # lazy import 防循环
+
+                spec_service = SddSpecService()
+                for mr in successful_mrs:
+                    await spec_service.link_implementation_pr(
+                        plan_version_id=link_plan_version_id,
+                        repository_id=mr["repository_id"],
+                        pr_url=mr["mr_url"],
+                    )
+            except Exception as exc:  # noqa: BLE001 — spec↔PR 回填 fail-soft
+                log.warning("sdd_spec_pr_link_failed", error=str(exc))
 
         # INGEST-02（14-06）：MR 创建之后的完成锚点（时序防线：归档不挂容器回调）。
         # 先持久化后投递：mr_results 序列化写进 node_execution.output_data，task_result
@@ -1387,7 +1510,9 @@ class AICodingNode(SubStepMixin, BaseNode):
         anthropic_api_key: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         anthropic_base_url: str = "",  # work item W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
         user_pat: str = "",  # RTOOL-03 机会性 PAT：仅实时请求线程明文，绝不落盘/绝不从 DB 取（PAT-02 + Open Q1 Option C）
-        upstream_artifacts: list[dict] | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
+        upstream_artifacts: list[dict]
+        | None = None,  # ARTIFACT-02：上游产物注入（默认 None → 零回归）
+        follow_openspec: bool = False,  # GATE-02：approved SDD 仓注入 openspec env（默认 False 保非 wave/legacy 零回归）
     ) -> dict[str, Any]:
         """通过 TaskDispatcher 分发编码任务到 Runner。"""
         log = logger.bind(
@@ -1481,6 +1606,12 @@ class AICodingNode(SubStepMixin, BaseNode):
             ),
         }
 
+        # GATE-02（D-51-4）：approved SDD 仓注入 openspec 布尔信号（对齐 PF-06 逐键 env 范式，
+        # 不改既有键）；follow_openspec=False / legacy 仓不含该键 → 与 v0.8 metadata 逐字一致（零回归）。
+        openspec_env: dict[str, str] = {}
+        if follow_openspec:
+            openspec_env["env_FRIDAY_TASK_FOLLOW_OPENSPEC"] = "true"
+
         dispatch_task = DispatchTask(
             task_id=session_id,
             task_type="coding",
@@ -1503,6 +1634,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 **anthropic_env,  # env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
                 **tools_env,  # RTOOL-03：env_FRIDAY_TASK_TOOLS_ENDPOINT + 机会性 env_FRIDAY_TASK_USER_TOKEN
                 **exclude_env,  # Phase 22-04：env_FRIDAY_TASK_EXCLUDE_PATTERNS（容器侧 prune）
+                **openspec_env,  # Phase 51 GATE-02：env_FRIDAY_TASK_FOLLOW_OPENSPEC（仅 approved SDD 仓）
             },
         )
 

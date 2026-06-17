@@ -46,6 +46,15 @@ from delivery.models.research_task import (
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
+from delivery.models.sdd_spec import (
+    SddSpec,
+    SddSpecChangeKind,
+    SddSpecStatus,
+)
+from delivery.models.sdd_spec_review import (
+    ReviewDecision,
+    SddSpecReview,
+)
 from delivery.models.status_event import WorkItemStatusEvent
 from delivery.models.sync_state import (
     SyncFacet,
@@ -90,6 +99,11 @@ __all__ = [
     "RepoResearchTask",
     "RepoResearchTaskStatus",
     "PartialPlan",
+    "SddSpec",
+    "SddSpecStatus",
+    "SddSpecChangeKind",
+    "SddSpecReview",
+    "ReviewDecision",
     "ArchitectMerge",
     "ArchitectMergeStatus",
     "Clarification",

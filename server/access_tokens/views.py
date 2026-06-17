@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, cast
 
-from accounts.models import User
 from adrf.viewsets import ModelViewSet
 from django.utils import timezone
 from rest_framework import status
@@ -21,6 +20,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from accounts.models import User
+from audit.services import taxonomy
+from audit.services.audit_service import AuditService
 from runners.models import hash_token
 
 from .models import AccessToken, generate_pat
@@ -39,9 +41,7 @@ class AccessTokenViewSet(ModelViewSet):
 
     def get_queryset(self) -> Any:
         # 跨用户隔离：用户只能看见/操作自己创建的 token（安全域 V4）。
-        return AccessToken.objects.filter(created_by=self.request.user).order_by(
-            "-created_at"
-        )
+        return AccessToken.objects.filter(created_by=self.request.user).order_by("-created_at")
 
     async def acreate(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         serializer = AccessTokenCreateSerializer(data=request.data)
@@ -68,6 +68,22 @@ class AccessTokenViewSet(ModelViewSet):
             created_by=user,
         )
 
+        # 审计：PAT 创建（明文 / token_hash 绝不入载荷，仅记前后缀指纹）
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PAT_CREATED,
+            actor=request.user,
+            target_type="pat",
+            target_id=token.id,
+            target_repr=token.name,
+            after={
+                "name": token.name,
+                "token_prefix": token.token_prefix,
+                "token_suffix": token.token_suffix,
+                "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+            },
+            source="api",
+        )
+
         response_data = AccessTokenSerializer(token).data
         # 明文 token 仅此一次返回，不入任何 DB 字段（contract / contract）。
         response_data["token"] = plaintext
@@ -82,4 +98,14 @@ class AccessTokenViewSet(ModelViewSet):
         if token.revoked_at is None:
             token.revoked_at = timezone.now()
             await token.asave(update_fields=["revoked_at"])
+            # 审计：PAT 吊销——仅首吊 emit（幂等，重复 revoke 不重复记）
+            await AuditService.aemit(
+                action=taxonomy.ACTION_PAT_REVOKED,
+                actor=request.user,
+                target_type="pat",
+                target_id=token.id,
+                target_repr=token.name,
+                after={"revoked_at": token.revoked_at.isoformat()},
+                source="api",
+            )
         return Response(AccessTokenSerializer(token).data)

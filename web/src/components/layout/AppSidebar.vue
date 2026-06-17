@@ -83,6 +83,7 @@ const mainNavItems: NavItem[] = [
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
   { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
+  { to: '/specs', label: 'spec 治理', icon: 'lucide--file-check-2' },
 ]
 
 const adminNavItems: NavItem[] = [
@@ -91,6 +92,7 @@ const adminNavItems: NavItem[] = [
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
   { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
   { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
+  { to: '/admin/audit', label: '操作审计', icon: 'lucide--shield-check' },
   { to: '/codegraph/galaxy', label: 'Galaxy 图谱', icon: 'lucide--sparkles' },
   { to: '/codegraph/playground', label: 'Playground', icon: 'lucide--flask-conical' },
 ]

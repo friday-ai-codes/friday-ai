@@ -52,6 +52,8 @@ api_patterns = [
     path("runners/", include("runners.urls")),
     # Access Tokens（外部 MCP/Skill 统一鉴权凭证）
     path("access-tokens/", include("access_tokens.urls")),
+    # 操作审计查询/导出（v0.10.0 AUDITUI；只读，IsSuperUser fail-closed）
+    path("audit/", include("audit.urls")),
     # MCP read tools（外部仓库智能只读工具）
     path("mcp/", include("mcp_tools.urls")),
     # Tool bindings + RemoteTool execute（Phase 10：令牌绑定 CRUD + PAT 执行端点）
@@ -62,6 +64,8 @@ api_patterns = [
     path("knowledge/", include("knowledge.api.urls")),
     # Delivery 交付脊柱（Phase 28：手动 upsert + 读取 WorkItem）
     path("delivery/", include("delivery.urls")),
+    # SDD spec 治理（Phase 50：状态机流转 + 评审；list/detail/transition）
+    path("specs/", include("delivery.spec_urls")),
     # API Documentation
     path("schema", SpectacularAPIView.as_view(), name="schema"),
     path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

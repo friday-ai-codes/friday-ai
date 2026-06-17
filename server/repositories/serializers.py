@@ -52,6 +52,9 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     has_credential = serializers.SerializerMethodField()
     linked_spaces_count = serializers.SerializerMethodField()
+    # SDD-02（48-02）：从 facets["methodology"] 派生的只读方法论字段（无 facets 时为 null），
+    # 让标准 /repositories 列表/详情也能透出 SDD 标记（不仅限知识树）。
+    methodology = serializers.SerializerMethodField()
 
     class Meta:
         model = Repository
@@ -73,6 +76,7 @@ class RepositorySerializer(serializers.ModelSerializer):
             "updated_at",
             "has_credential",
             "linked_spaces_count",
+            "methodology",
             "ai_summary",
             "ai_summary_status",
             "ai_summary_generated_at",
@@ -118,6 +122,10 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     def get_has_credential(self, obj: Repository) -> bool:
         return hasattr(obj, "credential") and obj.credential is not None
+
+    def get_methodology(self, obj: Repository) -> str | None:
+        """从 facets 派生只读 methodology（如 "SDD"）；无 facets 或未打标时为 None。"""
+        return (obj.facets or {}).get("methodology")
 
     def get_linked_spaces_count(self, obj: Repository) -> int:
         """返回关联到此仓库的空间数量。"""

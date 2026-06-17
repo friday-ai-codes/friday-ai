@@ -7,9 +7,18 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
-from delivery.models import Document, IngestRun, WorkItem, WorkItemSyncState
+from delivery.models import (
+    Document,
+    IngestRun,
+    SddSpec,
+    SddSpecReview,
+    WorkItem,
+    WorkItemSyncState,
+)
 
 
 class WorkItemSyncStateSerializer(serializers.ModelSerializer):
@@ -131,6 +140,111 @@ class DocumentSnapshotSerializer(serializers.ModelSerializer):
     def get_version(self, obj: Document) -> int | None:
         current = obj.current_version
         return current.version if current is not None else None
+
+
+class SddSpecReviewSerializer(serializers.ModelSerializer):
+    """SddSpecReview 只读序列化（Phase 50-03，D-50-4）。
+
+    reviewer 展示为用户标识（username）；用户被删（SET_NULL）→ reviewer 为 None → 回 null。
+    纯只读：评审记录 append-only，落库只经 ``SddSpecService.approve/reject``（INV-6）。
+    """
+
+    reviewer = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SddSpecReview
+        fields = ["id", "reviewer", "decision", "comment", "created_at"]
+        read_only_fields = fields
+
+    def get_reviewer(self, obj: SddSpecReview) -> str | None:
+        return obj.reviewer.get_username() if obj.reviewer_id else None
+
+
+class SddSpecListSerializer(serializers.ModelSerializer):
+    """SddSpec 列表轻量只读序列化（Phase 50-03，D-50-4）。
+
+    列表项不含正文/评审历史（detail 才展开）。状态一律 read_only：状态仅经
+    ``transition`` action 改，禁直接 PATCH（对齐 Phase 24 范式）。
+    """
+
+    repository_id = serializers.UUIDField(read_only=True)
+    repository_name = serializers.CharField(source="repository.name", read_only=True)
+    work_item = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SddSpec
+        fields = [
+            "id",
+            "status",
+            "change_kind",
+            "repository_id",
+            "repository_name",
+            "work_item",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_work_item(self, obj: SddSpec) -> dict[str, Any] | None:
+        if obj.work_item_id is None:
+            return None
+        return {"id": str(obj.work_item_id), "title": obj.work_item.title}
+
+
+class SddSpecDetailSerializer(SddSpecListSerializer):
+    """SddSpec 详情只读序列化（正文 + 评审历史 + 关联摘要，D-50-4）。
+
+    在列表字段上加：``body``（spec 正文，取 ``document.current_version.content``，
+    缺失回 None）、``reviews``（嵌套评审历史，倒序由模型 Meta.ordering 保证）、
+    ``relations``（repository/work_item/plan_version 关联摘要；缺失项不输出）、
+    ``implementation_prs``（实现 PR 列表，Phase 52 D-52-4，LINK-01；直接映射模型 JSON 列，
+    缺省 default=list → 空列表，天然 fail-soft）。
+    关联预取（select_related/prefetch）由 view 层负责，序列化器不触发额外懒查询。
+    """
+
+    body = serializers.SerializerMethodField()
+    reviews = SddSpecReviewSerializer(many=True, read_only=True)
+    relations = serializers.SerializerMethodField()
+    implementation_prs = serializers.JSONField(read_only=True)
+
+    class Meta(SddSpecListSerializer.Meta):
+        fields = [
+            *SddSpecListSerializer.Meta.fields,
+            "body",
+            "reviews",
+            "relations",
+            "implementation_prs",
+        ]
+        read_only_fields = fields
+
+    def get_body(self, obj: SddSpec) -> str | None:
+        doc = obj.document
+        if doc is None:
+            return None
+        current = doc.current_version
+        return current.content if current is not None else None
+
+    def get_relations(self, obj: SddSpec) -> dict[str, Any]:
+        relations: dict[str, Any] = {}
+        repo = obj.repository
+        if repo is not None:
+            relations["repository"] = {
+                "id": str(repo.id),
+                "name": repo.name,
+                "methodology": (repo.facets or {}).get("methodology"),
+            }
+        if obj.work_item_id is not None:
+            relations["work_item"] = {
+                "id": str(obj.work_item_id),
+                "title": obj.work_item.title,
+                # url 取 prd_url（无则空串，对齐 pr_cross_reference 不构造臆造 URL 范式）。
+                "url": obj.work_item.prd_url or "",
+            }
+        if obj.plan_version_id is not None:
+            relations["plan_version"] = {
+                "id": str(obj.plan_version_id),
+                "version": obj.plan_version.version,
+            }
+        return relations
 
 
 class IngestDispatchRequestSerializer(serializers.Serializer):
