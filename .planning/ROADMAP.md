@@ -21,7 +21,7 @@
 
 **Milestone Goal:** 立起统一 `AuditEvent` 横切审计模型，对成员/凭证/飞书同步/仓库权限/排除规则/清理任务/API key 等敏感操作做不可篡改留痕，并提供查询/导出——可查、可追溯、可审计。系统管理员 = 现有 `is_superuser`（不新建角色）；v0.5 既有分散埋点（`purge.started/completed`、`TriggerLog`/`ActionLog`）收口到统一表。设计底座：`ROADMAP-vNext.md §v0.10`、`DOMAIN-MODEL.md §11`。
 
-- [ ] **Phase 53: `AuditEvent` 模型 + emit 地基** - 统一审计模型（actor/action/target/before-after/source/时间）+ 单一写入入口 + append-only 不可篡改 + fail-soft emit 机制 + 凭证脱敏 — AUDIT-01, AUDIT-02
+- [x] **Phase 53: `AuditEvent` 模型 + emit 地基** (2/2 plans) - 统一审计模型（actor/action/target/before-after/source/时间）+ 单一写入入口 + append-only 不可篡改 + fail-soft emit 机制 + 凭证脱敏 — AUDIT-01, AUDIT-02 — completed 2026-06-17
 - [ ] **Phase 54: 敏感操作全量覆盖 emit** - 身份与权限类 + 凭证与数据治理类敏感操作经统一入口 emit 审计；v0.5 排除/清理埋点收口统一表 — AUDITCOV-01, AUDITCOV-02
 - [ ] **Phase 55: 审计查询 API + 前端视图 + 导出** - 审计查询 REST（过滤+分页，superuser fail-closed）+ 前端列表/过滤/before-after 详情 + CSV/JSON 导出 — AUDITUI-01, AUDITUI-02
 
