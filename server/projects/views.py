@@ -206,7 +206,7 @@ class SpaceViewSet(ModelViewSet):
                 target_repr=project.name,
                 after={
                     "changed": ["feishu_plugin_id", "feishu_plugin_secret", "feishu_user_key"],
-                    "has_secret": True,
+                    "redacted": True,
                 },
                 metadata={"config_subtype": "feishu_plugin"},
                 source="api",
@@ -229,7 +229,7 @@ class SpaceViewSet(ModelViewSet):
             target_repr=project.name,
             before={
                 "changed": ["feishu_plugin_id", "feishu_plugin_secret", "feishu_user_key"],
-                "has_secret": True,
+                "redacted": True,
             },
             metadata={"config_subtype": "feishu_plugin", "op": "cleared"},
             source="api",
@@ -332,7 +332,7 @@ class SpaceViewSet(ModelViewSet):
             target_type="project",
             target_id=project.id,
             target_repr=project.name,
-            after={"changed": ["feishu_webhook_token"], "has_secret": True},
+            after={"changed": ["feishu_webhook_token"], "redacted": True},
             metadata={"config_subtype": "webhook_token", "op": "refreshed"},
             source="api",
         )
@@ -377,7 +377,7 @@ class SpaceViewSet(ModelViewSet):
             target_type="project",
             target_id=project.id,
             target_repr=project.name,
-            after={"changed": ["feishu_webhook_token"], "has_secret": True},
+            after={"changed": ["feishu_webhook_token"], "redacted": True},
             metadata={"config_subtype": "webhook_token", "op": "updated"},
             source="api",
         )
@@ -426,7 +426,7 @@ class SpaceViewSet(ModelViewSet):
                 target_type="project",
                 target_id=project.id,
                 target_repr=project.name,
-                after={"changed": ["feishu_app_id", "feishu_app_secret"], "has_secret": True},
+                after={"changed": ["feishu_app_id", "feishu_app_secret"], "redacted": True},
                 metadata={"config_subtype": "feishu_im"},
                 source="api",
             )
@@ -445,7 +445,7 @@ class SpaceViewSet(ModelViewSet):
             target_type="project",
             target_id=project.id,
             target_repr=project.name,
-            before={"changed": ["feishu_app_id", "feishu_app_secret"], "has_secret": True},
+            before={"changed": ["feishu_app_id", "feishu_app_secret"], "redacted": True},
             metadata={"config_subtype": "feishu_im", "op": "cleared"},
             source="api",
         )
@@ -550,7 +550,7 @@ class SpaceViewSet(ModelViewSet):
             target_type="project",
             target_id=project.id,
             target_repr=project.name,
-            after={"changed": ["feishu_doc_folder_token"], "has_secret": False},
+            after={"changed": ["feishu_doc_folder_token"], "redacted": False},
             metadata={"config_subtype": "feishu_doc"},
             source="api",
         )
