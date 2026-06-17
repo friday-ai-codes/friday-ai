@@ -59,7 +59,7 @@ class LLMSddSpecSynthesizer:
         system = SystemMessage(content=self._system_prompt())
         human = HumanMessage(content=self._build_prompt(requirement, merged_plan, repository))
         response = await model.ainvoke([system, human])
-        content = _content_to_text(response.content).strip()
+        content = _strip_code_fences(_content_to_text(response.content).strip())
         if not content:
             raise ValueError("spec_synthesis_empty")
         return content
@@ -182,6 +182,23 @@ async def agenerate_specs_for_plan(
                 error=str(exc),
             )
     return produced
+
+
+def _strip_code_fences(text: str) -> str:
+    """剥离 LLM 可能包裹的 ``` 代码块围栏（IN-01 健壮性）。
+
+    模型偶尔无视「不要代码块包裹」指令，把整段 markdown 包进 ```markdown ... ```。
+    仅当整段被单一围栏包裹时剥离（首行 ``` 开头、末行 ``` 收尾）；否则原样返回，
+    避免误伤正文中合法的内嵌代码块。
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2 or not lines[-1].strip().startswith("```"):
+        return stripped
+    # 去首行（```lang）与末行（```），保中间正文
+    return "\n".join(lines[1:-1]).strip()
 
 
 def _content_to_text(content: Any) -> str:
