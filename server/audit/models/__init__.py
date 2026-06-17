@@ -1,5 +1,8 @@
-"""audit models package — curated re-export。
+"""audit models package — curated re-export（对齐 delivery 范式）。"""
 
-Task 1 仅建包占位；具体 ``AuditEvent`` / ``AuditEventImmutableError`` re-export
-由 Task 2 落 ``audit.models.audit_event`` 后补全。
-"""
+from audit.models.audit_event import AuditEvent, AuditEventImmutableError
+
+__all__ = [
+    "AuditEvent",
+    "AuditEventImmutableError",
+]
