@@ -19,6 +19,7 @@ app_id/app_secret，2h 缓存自动刷新）——为真正 DRY，内部组合�
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -92,6 +93,7 @@ class BitableClient:
         *,
         page_token: str | None = None,
         page_size: int = 100,
+        sort: list[str] | None = None,
     ) -> dict[str, Any]:
         """列出 Bitable 表记录（骨架：打通 token + 开放平台端点形状）。
 
@@ -104,6 +106,8 @@ class BitableClient:
             table_id: 数据表 id。
             page_token: 分页游标（可选）。
             page_size: 单页大小（默认 100）。
+            sort: 排序参数（开放平台格式 ``["字段名 DESC", ...]``）。非空时开放平台
+                视为对全表过滤、忽略 view_id（本 client 不传 view_id，无影响）。
 
         Returns:
             开放平台返回的原始 ``data`` 字典。
@@ -117,6 +121,9 @@ class BitableClient:
         params: dict[str, Any] = {"page_size": page_size}
         if page_token:
             params["page_token"] = page_token
+        if sort:
+            # 开放平台 sort 为 JSON 字符串数组（httpx 自动 URL 编码）。
+            params["sort"] = json.dumps(sort, ensure_ascii=False)
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
