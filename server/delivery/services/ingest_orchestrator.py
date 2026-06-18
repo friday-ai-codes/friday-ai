@@ -42,7 +42,7 @@ from delivery.services.work_item_service import (
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["StepResult", "ingest_from_urls"]
+__all__ = ["StepResult", "ingest_from_urls", "ingest_from_refs", "build_board_url"]
 
 # steps[*].error 截断长度（脱敏：避免拼接大段不可信响应/凭证，对齐 T-28-07）
 _ERROR_SNIPPET_LIMIT = 500
@@ -77,8 +77,17 @@ def _safe_error(exc: Exception) -> str:
     return _redact_secrets(str(exc))[:_ERROR_SNIPPET_LIMIT]
 
 
+def build_board_url(feishu_project_key: str, work_item_type: str, work_item_id: int) -> str:
+    """由三元组拼飞书工作项详情 URL（仅作展示/留痕，缺段返回空串）。"""
+    if not feishu_project_key or not work_item_type or not work_item_id:
+        return ""
+    return (
+        f"https://project.feishu.cn/{feishu_project_key}/{work_item_type}/detail/{work_item_id}"
+    )
+
+
 async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRun:
-    """一键摄取三步编排：写 ``IngestRun(run_id)``，best-effort 降级。
+    """一键摄取三步编排（URL 入口）：解析看板 URL → 委托 ``ingest_from_refs``。
 
     Args:
         run_id: 已由 dispatch 端点建好的 ``IngestRun`` 主键（UUID str）。
@@ -88,28 +97,77 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
     Returns:
         终态 ``IngestRun``（status=completed/failed，steps 三项结构化结果）。
     """
-    run = await IngestRun.objects.aget(id=run_id)
-
     try:
         board = parse_board_url(board_url)
+    except Exception as exc:
+        # 解析阶段未捕获异常（编排级）：整体 failed + 脱敏 error，不冒泡。
+        run = await IngestRun.objects.aget(id=run_id)
+        logger.exception("ingest_orchestration_failed", run_id=str(run.id))
+        run.status = IngestRun.Status.FAILED
+        run.error = _safe_error(exc)
+        run.completed_at = timezone.now()
+        await sync_to_async(run.save)(
+            update_fields=["status", "error", "completed_at", "updated_at"]
+        )
+        return run
 
+    if board is None:
+        return await ingest_from_refs(
+            run_id,
+            feishu_project_key="",
+            work_item_type="",
+            work_item_id=0,
+            mr_url=mr_url,
+            board_url=board_url,
+            missing_item_reason="board_url 无法解析（容器型/非标准形态不支持）",
+        )
+    return await ingest_from_refs(
+        run_id,
+        feishu_project_key=board.feishu_project_key,
+        work_item_type=board.work_item_type,
+        work_item_id=board.work_item_id,
+        mr_url=mr_url,
+        board_url=board_url,
+    )
+
+
+async def ingest_from_refs(
+    run_id: str,
+    *,
+    feishu_project_key: str,
+    work_item_type: str,
+    work_item_id: int,
+    mr_url: str = "",
+    board_url: str = "",
+    missing_item_reason: str = "",
+) -> IngestRun:
+    """三步摄取编排（三元组入口）：写 ``IngestRun(run_id)``，best-effort 降级。
+
+    复用既有能力的三步：工作项 upsert / 文档+REFERENCES / MR diff。三元组齐全才跑步
+    1/2，否则 skipped；``mr_url`` 为空则步 3 skipped。供 URL 入口与 JSON 批量摄取共用。
+    """
+    run = await IngestRun.objects.aget(id=run_id)
+    has_item = bool(feishu_project_key and work_item_type and work_item_id)
+    link = board_url or build_board_url(feishu_project_key, work_item_type, work_item_id)
+
+    try:
         # === 步 1：工作项 upsert（操作态脊柱，INV-6）===
-        if board is None:
+        if not has_item:
             await _write_step(
                 run,
                 "work_item",
                 StepResult(
                     status="skipped",
-                    error="board_url 无法解析（容器型/非标准形态不支持）",
+                    error=missing_item_reason or "缺少工作项标识（空间/ID），跳过工作项摄取",
                 ),
             )
         else:
             try:
                 work_item = await WorkItemService().upsert(
                     WorkItemIdentity(
-                        feishu_project_key=board.feishu_project_key,
-                        work_item_type=board.work_item_type,
-                        work_item_id=board.work_item_id,
+                        feishu_project_key=feishu_project_key,
+                        work_item_type=work_item_type,
+                        work_item_id=work_item_id,
                     ),
                     source="mr_reverse",
                     fetch=True,
@@ -117,9 +175,7 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
                 await _write_step(
                     run,
                     "work_item",
-                    StepResult(
-                        status="ok", identifier=str(work_item.id), link=board_url
-                    ),
+                    StepResult(status="ok", identifier=str(work_item.id), link=link),
                 )
             except Exception as exc:
                 logger.warning(
@@ -133,21 +189,20 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
                 )
 
         # === 步 2：文档 + REFERENCES + work_item knowledge 投影（复用 P30 normalizer）===
-        # 本步经 feishu_document normalizer 同时让 work_item + document 实体进入
-        # knowledge 可检索面（缺段不缺实体）；board 解析失败则整步 skipped。
-        if board is None:
+        if not has_item:
             await _write_step(
                 run,
                 "document",
-                StepResult(status="skipped", error="board_url 无法解析，跳过文档摄取"),
+                StepResult(
+                    status="skipped",
+                    error=missing_item_reason or "缺少工作项标识，跳过文档摄取",
+                ),
             )
         else:
             try:
                 from knowledge.ingestion import IngestionRequest, ingest
 
-                source_id = (
-                    f"{board.feishu_project_key}:{board.work_item_type}:{board.work_item_id}"
-                )
+                source_id = f"{feishu_project_key}:{work_item_type}:{work_item_id}"
                 # 直接 await（非 aschedule_ingestion）以同步拿成败落 steps。
                 # WR-01：normalizer 零产出（Project 不存在 / 无可摄取文档）时 ingest()
                 # 静默返回 0，不抛异常——此处据真实产出数记 ok/skipped，避免「零实体
@@ -179,8 +234,13 @@ async def ingest_from_urls(run_id: str, board_url: str, mr_url: str) -> IngestRu
                     run, "document", StepResult(status="failed", error=_safe_error(exc))
                 )
 
-        # === 步 3：MR diff 归档 + 入图（复用既有 archive_code_change + ingest_events）===
-        await _ingest_mr_diff(run, mr_url)
+        # === 步 3：MR diff 归档 + 入图（mr_url 为空则 skipped）===
+        if mr_url:
+            await _ingest_mr_diff(run, mr_url)
+        else:
+            await _write_step(
+                run, "mr_diff", StepResult(status="skipped", error="无 MR 链接")
+            )
 
         # 三步跑完（即便含步级 failed/skipped）→ completed；partial 由前端推导。
         run.status = IngestRun.Status.COMPLETED

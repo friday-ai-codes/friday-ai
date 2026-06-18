@@ -183,7 +183,7 @@ describe('/admin/conversations 管理员只读会话后台', () => {
     await flushPromises()
 
     const forkBtn = wrapper.findAll('button').find(b =>
-      /fork|复制到我的名下|复制到我名下|复制到自己/i.test(b.text()),
+      /fork|克隆|复制到我的名下|复制到我名下|复制到自己/i.test(b.text()),
     )
     expect(forkBtn).toBeDefined()
 

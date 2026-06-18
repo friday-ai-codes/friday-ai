@@ -14,18 +14,30 @@ import {
 } from '~/components/ui/tooltip'
 import { usePermission } from '~/composables/usePermission'
 import { useAuthStore } from '~/stores/auth'
+import { useNotificationsStore } from '~/stores/notifications'
 
 interface NavItem {
   to: string
   label: string
   icon: string
   exact?: boolean
+  /** 该入口展示的未读角标数（如消息中心），0 不展示 */
+  badge?: () => number
 }
 
 const authStore = useAuthStore()
 const router = useRouter()
 const { isSystemAdmin } = usePermission()
+const notificationsStore = useNotificationsStore()
 const appVersion = __APP_VERSION__
+
+/** 侧边栏入口未读角标（消息中心）。 */
+function navBadge(item: NavItem): number {
+  return item.badge ? item.badge() : 0
+}
+function badgeText(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
 
 // ==================== 版本号悬停展示当前版本 changelog ====================
 // 数据来源：GitHub Release（git-cliff 生成的 release notes），首次悬停时懒加载并缓存
@@ -76,6 +88,7 @@ const chatNavItem: NavItem = { to: '/chat', label: 'AI 对话', icon: 'lucide--m
 
 const mainNavItems: NavItem[] = [
   { to: '/', label: '首页', icon: 'lucide--home', exact: true },
+  { to: '/notifications', label: '消息中心', icon: 'lucide--inbox', badge: () => notificationsStore.totalUnread },
   { to: '/spaces', label: '空间', icon: 'lucide--folder-git-2' },
   { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
   { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
@@ -93,6 +106,8 @@ const adminNavItems: NavItem[] = [
   { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
   { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
   { to: '/admin/audit', label: '操作审计', icon: 'lucide--shield-check' },
+  { to: '/admin/feedback', label: '反馈管理', icon: 'lucide--message-square-warning' },
+  { to: '/admin/announcements', label: '系统公告', icon: 'lucide--megaphone' },
   { to: '/codegraph/galaxy', label: 'Galaxy 图谱', icon: 'lucide--sparkles' },
   { to: '/codegraph/playground', label: 'Playground', icon: 'lucide--flask-conical' },
 ]
@@ -206,15 +221,20 @@ async function handleLogout() {
               <TooltipTrigger as-child>
                 <a
                   :href="href"
-                  class="flex items-center justify-center h-10 rounded-xl transition-all duration-200 mb-0.5"
+                  class="relative flex items-center justify-center h-10 rounded-xl transition-all duration-200 mb-0.5"
                   :class="(item.exact ? isExactActive : isActive) ? 'sidebar-s2a-link-active' : 'sidebar-s2a-link'"
                   @click="navigate"
                 >
                   <span class="text-lg" :class="[`icon-[${item.icon}]`]" />
+                  <span
+                    v-if="navBadge(item) > 0"
+                    class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"
+                    aria-hidden="true"
+                  />
                 </a>
               </TooltipTrigger>
               <TooltipContent side="right">
-                {{ item.label }}
+                {{ item.label }}{{ navBadge(item) > 0 ? ` · ${badgeText(navBadge(item))}` : '' }}
               </TooltipContent>
             </Tooltip>
 
@@ -227,6 +247,13 @@ async function handleLogout() {
             >
               <span class="text-lg shrink-0" :class="[`icon-[${item.icon}]`]" />
               <span class="truncate">{{ item.label }}</span>
+              <span
+                v-if="navBadge(item) > 0"
+                class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white tabular-nums"
+                :aria-label="`${navBadge(item)} 条未读`"
+              >
+                {{ badgeText(navBadge(item)) }}
+              </span>
             </a>
           </RouterLink>
         </template>

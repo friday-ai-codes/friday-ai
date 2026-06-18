@@ -3,6 +3,7 @@ import type { ColumnDef } from '@tanstack/vue-table'
 import type { Invitation, SystemUser, UserSource } from '~/types'
 import { h } from 'vue'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
+import UserPermissionsModal from '~/components/admin/UserPermissionsModal.vue'
 import DataTable from '~/components/common/DataTable.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -11,7 +12,9 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 import { useToast } from '~/composables/useToast'
+import { useAuthStore } from '~/stores/auth'
 
 definePage({
   meta: { requiresAdmin: true },
@@ -19,10 +22,35 @@ definePage({
 
 const { handleError } = useErrorHandler()
 const { success } = useToast()
+const auth = useAuthStore()
+
+// 搜索/排序/分页/每页大小持久化到 URL（刷新可恢复）
+const { pagination, sorting, globalFilter } = useTableUrlState()
 
 const users = ref<SystemUser[]>([])
 const loading = ref(true)
 const saving = ref(false)
+
+// 权限编辑弹窗
+const editingUser = ref<SystemUser | null>(null)
+const permissionsOpen = ref(false)
+
+// 当前登录用户 id 与系统超管数量：用于「不能取消自己」「保留最后一个超管」的前端防护
+const currentUserId = computed(() => auth.user?.id)
+const superuserCount = computed(() => users.value.filter(u => u.is_superuser).length)
+
+function openPermissions(user: SystemUser) {
+  editingUser.value = user
+  permissionsOpen.value = true
+}
+
+function onUserUpdated(updated: SystemUser) {
+  // 整体重建数组引用，确保 DataTable 立即重算（角色徽章、超管计数实时刷新）
+  users.value = users.value.map(u => (u.id === updated.id ? updated : u))
+  // 同步弹窗持有的用户对象，避免重开时仍显示旧状态
+  if (editingUser.value?.id === updated.id)
+    editingUser.value = updated
+}
 
 // 邀请创建
 const inviteEmail = ref('')
@@ -181,17 +209,33 @@ const columns: ColumnDef<SystemUser>[] = [
     id: 'actions',
     header: '操作',
     cell: ({ row }) => {
-      if (row.original.is_superuser)
-        return null
-      return h(Button, {
-        variant: 'secondary',
+      const user = row.original
+      const btns = []
+
+      // 启用/禁用：仅普通用户可切换（超管不提供禁用入口，与原行为一致）
+      if (!user.is_superuser) {
+        btns.push(h(Button, {
+          variant: 'secondary',
+          size: 'sm',
+          disabled: saving.value,
+          onClick: (e: Event) => {
+            e.stopPropagation()
+            toggleUserActive(user)
+          },
+        }, () => user.is_active ? '禁用' : '启用'))
+      }
+
+      // 编辑权限：在弹窗里统一管理超管开关 + 各空间角色
+      btns.push(h(Button, {
+        variant: 'outline',
         size: 'sm',
-        disabled: saving.value,
         onClick: (e: Event) => {
           e.stopPropagation()
-          toggleUserActive(row.original)
+          openPermissions(user)
         },
-      }, () => row.original.is_active ? '禁用' : '启用')
+      }, () => '编辑权限'))
+
+      return h('div', { class: 'flex items-center justify-end gap-2' }, btns)
     },
     enableSorting: false,
     enableHiding: false,
@@ -281,10 +325,24 @@ const columns: ColumnDef<SystemUser>[] = [
 
     <!-- 用户列表 DataTable -->
     <DataTable
+      v-model:pagination="pagination"
+      v-model:sorting="sorting"
+      v-model:global-filter="globalFilter"
       :data="users"
       :columns="columns"
       table-id="admin-users-list"
       :loading="loading"
+      search-placeholder="搜索用户名、显示名…"
+    />
+
+    <!-- 权限编辑弹窗 -->
+    <UserPermissionsModal
+      v-if="editingUser"
+      v-model:open="permissionsOpen"
+      :user="editingUser"
+      :current-user-id="currentUserId"
+      :superuser-count="superuserCount"
+      @updated="onUserUpdated"
     />
   </PageContainer>
 </template>

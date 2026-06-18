@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 import { usePromptsStore } from '~/stores/prompts'
 
 definePage({ meta: { requiresAdmin: true } })
@@ -46,8 +47,15 @@ const store = usePromptsStore()
 const { systemList, loading } = storeToRefs(store)
 const { handleError } = useErrorHandler()
 
-// category 过滤（前端状态 → 触发后端二次 fetch，符合 D-02 决策）
-const categoryFilter = ref<PromptCategory | 'all'>('all')
+// category 过滤（前端状态 → 触发后端二次 fetch，符合 D-02 决策）；
+// 连同搜索/排序/分页/每页大小一并持久化到 URL（刷新可恢复）
+const { pagination, sorting, globalFilter, facets } = useTableUrlState({
+  facets: { category: { type: 'single', default: 'all' } },
+})
+const categoryFilter = computed<PromptCategory | 'all'>({
+  get: () => facets.category as PromptCategory | 'all',
+  set: v => (facets.category = v),
+})
 
 // Sheet 状态
 const sheetOpen = ref(false)
@@ -158,10 +166,14 @@ const columns: ColumnDef<PromptListItem>[] = [
     </PageHeader>
 
     <DataTable
+      v-model:pagination="pagination"
+      v-model:sorting="sorting"
+      v-model:global-filter="globalFilter"
       :data="systemList"
       :columns="columns"
       table-id="admin-prompts-list"
       :loading="loading"
+      search-placeholder="搜索 slug、标题…"
       :on-row-click="openRow"
     >
       <template #filters>

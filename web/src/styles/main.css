@@ -18,7 +18,9 @@
 @source inline("icon-[lucide--messages-square] icon-[lucide--workflow] icon-[lucide--bot] icon-[lucide--shield-check] icon-[lucide--map-pin] icon-[lucide--zap-off]");
 @source inline("icon-[lucide--flask-conical] icon-[lucide--folder-tree] icon-[lucide--book-open]");
 /* 侧边栏导航 + 用户菜单图标（AppSidebar.vue 动态拼接 icon-[${item.icon}]，需 safelist） */
-@source inline("icon-[lucide--message-circle] icon-[lucide--home] icon-[lucide--git-branch] icon-[lucide--play-circle] icon-[lucide--bar-chart-3] icon-[lucide--scroll-text] icon-[lucide--server] icon-[lucide--users] icon-[lucide--panel-left-close] icon-[lucide--panel-left-open] icon-[lucide--chevrons-up-down] icon-[lucide--user] icon-[lucide--log-out]");
+@source inline("icon-[lucide--message-circle] icon-[lucide--home] icon-[lucide--git-branch] icon-[lucide--play-circle] icon-[lucide--bar-chart-3] icon-[lucide--scroll-text] icon-[lucide--server] icon-[lucide--users] icon-[lucide--panel-left-close] icon-[lucide--panel-left-open] icon-[lucide--chevrons-up-down] icon-[lucide--user] icon-[lucide--log-out] icon-[lucide--message-square-warning]");
+/* 反馈模块：动态拼接的分类图标（feedbackStyles.ts -> :class），需 safelist */
+@source inline("icon-[lucide--bug] icon-[lucide--circle-help] icon-[lucide--lightbulb] icon-[lucide--tag] icon-[lucide--inbox] icon-[lucide--message-square-warning] icon-[lucide--search] icon-[lucide--rotate-ccw] icon-[lucide--chevron-left] icon-[lucide--chevron-right]");
 
 /*
  * Friday AI 配色方案 — Sub2API Teal/Cyan 风格

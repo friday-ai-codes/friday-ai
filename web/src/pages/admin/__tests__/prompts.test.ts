@@ -57,6 +57,16 @@ vi.mock('~/composables/useErrorHandler', () => ({
   useErrorHandler: () => ({ handleError: mocks.handleErrorMock }),
 }))
 
+// 页面经 useTableUrlState 持久化筛选/分页到 URL，需提供 vue-router 上下文
+vi.mock('vue-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-router')>()
+  return {
+    ...actual,
+    useRoute: () => ({ query: {}, params: {}, path: '/admin/prompts' }),
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  }
+})
+
 // pinia storeToRefs 对真实 vue ref 是 identity 行为，这里 mock 为 identity
 // 以免 createTestingPinia 之外的 setup-syntax store 解构错误。
 vi.mock('pinia', async () => {

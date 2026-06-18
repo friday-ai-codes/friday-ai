@@ -19,7 +19,12 @@ from delivery.services.comment_projection import (
 )
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
 from delivery.services.event_taxonomy import ALL_EVENTS, RESERVED_EVENTS, build_envelope
-from delivery.services.ingest_orchestrator import StepResult, ingest_from_urls
+from delivery.services.ingest_orchestrator import (
+    StepResult,
+    build_board_url,
+    ingest_from_refs,
+    ingest_from_urls,
+)
 from delivery.services.ingest_parsing import (
     BoardRef,
     MRRef,
@@ -32,6 +37,7 @@ from delivery.services.release_service import ReleaseService
 from delivery.services.repo_coding_task_service import RepoCodingTaskService
 from delivery.services.research_service import ResearchService
 from delivery.services.sdd_spec_service import SddSpecService, SddSpecTransitionError
+from delivery.services.space_resolver import SpaceResolution, aresolve_space
 from delivery.services.technical_plan_service import (
     PlanContentInvalid,
     PlanNotFound,
@@ -62,6 +68,10 @@ __all__ = [
     "parse_mr_url",
     "aresolve_repo_and_mr",
     "ingest_from_urls",
+    "ingest_from_refs",
+    "build_board_url",
+    "aresolve_space",
+    "SpaceResolution",
     "StepResult",
     "PlanSessionService",
     "ResearchService",

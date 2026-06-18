@@ -55,6 +55,9 @@ watch(status, (val) => {
   }
 })
 
+// 搜索/排序/分页/每页大小持久化到 URL（刷新可恢复）
+const { pagination, sorting, globalFilter } = useTableUrlState()
+
 const loading = ref(true)
 onMounted(async () => {
   try {
@@ -242,10 +245,14 @@ const columns: ColumnDef<Runner>[] = [
 
     <!-- DataTable — 集成搜索/排序/分页/列可见性 -->
     <DataTable
+      v-model:pagination="pagination"
+      v-model:sorting="sorting"
+      v-model:global-filter="globalFilter"
       :data="runnersStore.runners"
       :columns="columns"
       table-id="runners-list"
       :loading="loading"
+      search-placeholder="搜索 Runner..."
       :on-row-click="(runner) => router.push(`/runners/${runner.id}`)"
     />
 

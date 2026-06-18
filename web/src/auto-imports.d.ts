@@ -276,6 +276,7 @@ declare global {
   const useNetwork: typeof import('@vueuse/core').useNetwork
   const useNodeMeta: typeof import('./composables/useNodeMeta').useNodeMeta
   const useNodeTypesStore: typeof import('./stores/useNodeTypesStore').useNodeTypesStore
+  const useNotificationsStore: typeof import('./stores/notifications').useNotificationsStore
   const useNow: typeof import('@vueuse/core').useNow
   const useObjectUrl: typeof import('@vueuse/core').useObjectUrl
   const useOffsetPagination: typeof import('@vueuse/core').useOffsetPagination
@@ -330,6 +331,7 @@ declare global {
   const useSupported: typeof import('@vueuse/core').useSupported
   const useSwipe: typeof import('@vueuse/core').useSwipe
   const useSystemHealth: typeof import('./composables/useSystemHealth').useSystemHealth
+  const useTableUrlState: typeof import('./composables/useTableUrlState').useTableUrlState
   const useTemplateRef: typeof import('vue').useTemplateRef
   const useTemplateRefsList: typeof import('@vueuse/core').useTemplateRefsList
   const useTextDirection: typeof import('@vueuse/core').useTextDirection
@@ -444,6 +446,9 @@ declare global {
   export type { UseSystemHealthReturn } from './composables/useSystemHealth'
   import('./composables/useSystemHealth')
   // @ts-ignore
+  export type { FacetSpec, TableUrlStateOptions } from './composables/useTableUrlState'
+  import('./composables/useTableUrlState')
+  // @ts-ignore
   export type { RelevanceCandidate } from './composables/useToolDisplay'
   import('./composables/useToolDisplay')
   // @ts-ignore
@@ -452,6 +457,9 @@ declare global {
   // @ts-ignore
   export type { CredentialMissingPayload, ContextExceededPayload } from './stores/chat'
   import('./stores/chat')
+  // @ts-ignore
+  export type { NotificationWsStatus, FeedItem } from './stores/notifications'
+  import('./stores/notifications')
   // @ts-ignore
   export type { MergedSpaceListItem } from './stores/prompts'
   import('./stores/prompts')
@@ -744,6 +752,7 @@ declare module 'vue' {
     readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
     readonly useNodeMeta: UnwrapRef<typeof import('./composables/useNodeMeta')['useNodeMeta']>
     readonly useNodeTypesStore: UnwrapRef<typeof import('./stores/useNodeTypesStore')['useNodeTypesStore']>
+    readonly useNotificationsStore: UnwrapRef<typeof import('./stores/notifications')['useNotificationsStore']>
     readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
     readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>
     readonly useOffsetPagination: UnwrapRef<typeof import('@vueuse/core')['useOffsetPagination']>
@@ -798,6 +807,7 @@ declare module 'vue' {
     readonly useSupported: UnwrapRef<typeof import('@vueuse/core')['useSupported']>
     readonly useSwipe: UnwrapRef<typeof import('@vueuse/core')['useSwipe']>
     readonly useSystemHealth: UnwrapRef<typeof import('./composables/useSystemHealth')['useSystemHealth']>
+    readonly useTableUrlState: UnwrapRef<typeof import('./composables/useTableUrlState')['useTableUrlState']>
     readonly useTemplateRef: UnwrapRef<typeof import('vue')['useTemplateRef']>
     readonly useTemplateRefsList: UnwrapRef<typeof import('@vueuse/core')['useTemplateRefsList']>
     readonly useTextDirection: UnwrapRef<typeof import('@vueuse/core')['useTextDirection']>

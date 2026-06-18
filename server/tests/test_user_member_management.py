@@ -247,6 +247,83 @@ class TestUserManagement:
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["is_active"] is True
 
+    def test_admin_can_grant_superuser(self, authenticated_admin_client, user):
+        """超级管理员可授予普通用户超级管理员身份。"""
+        resp = authenticated_admin_client.patch(
+            f"/api/auth/users/{user.pk}/",
+            {"is_superuser": True},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["is_superuser"] is True
+        user.refresh_from_db()
+        assert user.is_superuser is True
+
+    def test_admin_can_revoke_other_superuser(self, authenticated_admin_client, user):
+        """系统仍有其他超管时，可取消某个超管的身份。"""
+        user.is_superuser = True
+        user.save()
+        resp = authenticated_admin_client.patch(
+            f"/api/auth/users/{user.pk}/",
+            {"is_superuser": False},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["is_superuser"] is False
+        user.refresh_from_db()
+        assert user.is_superuser is False
+
+    def test_admin_cannot_revoke_own_superuser(self, authenticated_admin_client, admin_user, user):
+        """超级管理员不能取消自己的超级管理员身份（防误操作锁死）。"""
+        # 另造一个超管以排除「最后一个超管」因素，单独验证自我保护
+        user.is_superuser = True
+        user.save()
+        resp = authenticated_admin_client.patch(
+            f"/api/auth/users/{admin_user.pk}/",
+            {"is_superuser": False},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        admin_user.refresh_from_db()
+        assert admin_user.is_superuser is True
+
+    def test_cannot_revoke_last_superuser(self, authenticated_admin_client, admin_user):
+        """系统必须保留至少一个超级管理员：取消最后一个超管被拒。"""
+        resp = authenticated_admin_client.patch(
+            f"/api/auth/users/{admin_user.pk}/",
+            {"is_superuser": False},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        admin_user.refresh_from_db()
+        assert admin_user.is_superuser is True
+
+    def test_non_admin_cannot_grant_superuser(self, authenticated_client, other_user):
+        """非超级管理员无法授予超管身份。"""
+        resp = authenticated_client.patch(
+            f"/api/auth/users/{other_user.pk}/",
+            {"is_superuser": True},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        other_user.refresh_from_db()
+        assert other_user.is_superuser is False
+
+    def test_admin_can_get_user_memberships(self, authenticated_admin_client, user, project):
+        """超级管理员可查询某用户的跨空间成员关系。"""
+        ProjectMembership.objects.create(user=user, project=project, role="member")
+        resp = authenticated_admin_client.get(f"/api/auth/users/{user.pk}/memberships/")
+        assert resp.status_code == status.HTTP_200_OK
+        assert len(resp.data) == 1
+        assert resp.data[0]["space_id"] == str(project.pk)
+        assert resp.data[0]["space_name"] == project.name
+        assert resp.data[0]["role"] == "member"
+
+    def test_non_admin_cannot_get_user_memberships(self, authenticated_client, other_user):
+        """非超级管理员无法查询他人成员关系。"""
+        resp = authenticated_client.get(f"/api/auth/users/{other_user.pk}/memberships/")
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
 
 # ============================================================================
 # 项目成员 CRUD 测试

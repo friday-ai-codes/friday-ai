@@ -2,8 +2,8 @@
 import type { ColumnDef, RowSelectionState } from '@tanstack/vue-table'
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, h, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, h, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import api from '~/api/client'
 import DataTable from '~/components/common/DataTable.vue'
@@ -28,12 +28,12 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 import { getStatusConfig } from '~/config/status'
 import { useAuthStore } from '~/stores/auth'
 import { useSpacesStore } from '~/stores/spaces'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 
-const route = useRoute()
 const router = useRouter()
 const spacesStore = useSpacesStore()
 const workflowsStore = useWorkflowsStore()
@@ -42,11 +42,19 @@ const queryClient = useQueryClient()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-// Filters
-const statusFilter = ref<string>(route.query.status as string || 'all')
-const spaceFilter = ref<string>(route.query.space_id as string || 'all')
-const workflowFilter = ref<string>(route.query.workflow_id as string || 'all')
-const timeRangeFilter = ref<string>(route.query.days as string || '7')
+// Filters + 表格状态全部持久化到 URL（刷新可恢复）；computed 代理保持下方命名引用不变。
+const { pagination, sorting, globalFilter, facets } = useTableUrlState({
+  facets: {
+    status: { type: 'single', default: 'all' },
+    space_id: { type: 'single', default: 'all' },
+    workflow_id: { type: 'single', default: 'all' },
+    days: { type: 'single', default: '7' },
+  },
+})
+const statusFilter = computed<string>({ get: () => facets.status, set: v => (facets.status = v) })
+const spaceFilter = computed<string>({ get: () => facets.space_id, set: v => (facets.space_id = v) })
+const workflowFilter = computed<string>({ get: () => facets.workflow_id, set: v => (facets.workflow_id = v) })
+const timeRangeFilter = computed<string>({ get: () => facets.days, set: v => (facets.days = v) })
 
 // 时间范围选项
 const timeRangeOptions = [
@@ -195,20 +203,6 @@ const filteredExecutions = computed(() => {
       : execs.filter(e => e.status === statusFilter.value)
   }
   return execs
-})
-
-// Watch filters and update URL
-watch([statusFilter, spaceFilter, workflowFilter, timeRangeFilter], () => {
-  const query: Record<string, string> = {}
-  if (statusFilter.value && statusFilter.value !== 'all')
-    query.status = statusFilter.value
-  if (spaceFilter.value && spaceFilter.value !== 'all')
-    query.space_id = spaceFilter.value
-  if (workflowFilter.value && workflowFilter.value !== 'all')
-    query.workflow_id = workflowFilter.value
-  if (timeRangeFilter.value && timeRangeFilter.value !== '7')
-    query.days = timeRangeFilter.value
-  router.replace({ query })
 })
 
 // --- admin 批量删除 ---
@@ -467,6 +461,9 @@ const columns: ColumnDef<WorkflowExecution>[] = [
     <!-- DataTable -- 集成搜索/排序/分页/列可见性/批量选择 -->
     <DataTable
       v-model:row-selection="rowSelection"
+      v-model:pagination="pagination"
+      v-model:sorting="sorting"
+      v-model:global-filter="globalFilter"
       :data="filteredExecutions"
       :columns="columns"
       table-id="executions-list"

@@ -339,7 +339,7 @@ class UserDetailView(APIView):
         except User.DoesNotExist:
             return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
 
-        # 仅允许修改 is_active 字段
+        # 允许修改 is_active（启用/禁用）字段
         if "is_active" in request.data:
             old_active = target_user.is_active
             new_active = bool(request.data["is_active"])
@@ -364,7 +364,84 @@ class UserDetailView(APIView):
                     source="api",
                 )
 
+        # 允许授予/取消超级管理员身份（带防锁死保护）：
+        # 取消时禁止取消自己，且系统必须保留至少一个超管，避免无人可管理实例。
+        if "is_superuser" in request.data:
+            old_super = target_user.is_superuser
+            new_super = bool(request.data["is_superuser"])
+
+            if old_super and not new_super:
+                if target_user.pk == request.user.pk:
+                    return Response(
+                        {"detail": "不能取消自己的超级管理员身份"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                superuser_count = await sync_to_async(
+                    User.objects.filter(is_superuser=True).count
+                )()
+                if superuser_count <= 1:
+                    return Response(
+                        {"detail": "系统必须保留至少一个超级管理员"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            # 审计：仅在身份真正变更时 emit（值未变不记，SC-4 噪音控制）
+            if new_super != old_super:
+                target_user.is_superuser = new_super
+                await target_user.asave(update_fields=["is_superuser"])
+
+                await AuditService.aemit(
+                    action=taxonomy.ACTION_ROLE_CHANGED,
+                    actor=request.user,
+                    target_type="user",
+                    target_id=target_user.id,
+                    target_repr=target_user.username,
+                    before={"is_superuser": old_super},
+                    after={"is_superuser": new_super},
+                    source="api",
+                )
+
         return Response(UserSerializer(target_user).data)
+
+
+class UserMembershipsView(APIView):
+    """指定用户的跨空间成员关系列表（仅超级管理员）。
+
+    供用户管理界面「编辑权限」弹窗一次性拉取某用户在所有空间的角色，
+    避免前端按空间逐个查询造成 N+1。增删改仍复用 /api/spaces/{id}/members/ 端点。
+    """
+
+    async def get(self, request, user_id: str):
+        if not request.user.is_superuser:
+            return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            target_user = await sync_to_async(User.objects.get)(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        # 不在模块顶层 import，避免 accounts ↔ permissions 潜在循环依赖（对齐 MeSerializer 写法）
+        from permissions.models import ProjectMembership
+
+        def _serialize() -> list[dict]:
+            qs = (
+                ProjectMembership.objects.filter(user=target_user)
+                .select_related("project")
+                .order_by("joined_at")
+            )
+            return [
+                {
+                    "id": str(m.id),
+                    "space_id": str(m.project_id),
+                    "space_name": m.project.name,
+                    "role": m.role,
+                    "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+                }
+                for m in qs
+            ]
+
+        data = await sync_to_async(_serialize)()
+        return Response(data)
 
 
 class ChangePasswordView(APIView):
