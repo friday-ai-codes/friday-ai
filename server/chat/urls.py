@@ -9,6 +9,7 @@ from .views import (
     ChatInterruptView,
     ChatStreamView,
     ClarificationAnswerView,
+    ClarificationSkipView,
     CodingPlanDetailView,
     CodingPlanListView,
     CodingPlanSessionsBatchCreateView,
@@ -177,5 +178,11 @@ urlpatterns = [
         "clarifications/<str:clarification_id>/answer/",
         ClarificationAnswerView.as_view(),
         name="chat-clarification-answer",
+    ),
+    # 协商跳过 endpoint（按 conversation 维度，兜底卡片漏发时仍可跳过）
+    path(
+        "conversations/<uuid:conversation_id>/clarification/skip/",
+        ClarificationSkipView.as_view(),
+        name="conversation-clarification-skip",
     ),
 ]

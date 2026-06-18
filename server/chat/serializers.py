@@ -534,6 +534,7 @@ class CodingSessionSerializer(serializers.Serializer):
     revision_count = serializers.IntegerField(read_only=True)
     repository_id = serializers.UUIDField(read_only=True)
     branch_name = serializers.CharField(read_only=True)
+    target_branch = serializers.CharField(read_only=True, allow_blank=True)
     pr_url = serializers.URLField(read_only=True, allow_blank=True)
     error_message = serializers.CharField(read_only=True, allow_blank=True)
     confirmation_step = serializers.CharField(read_only=True, allow_blank=True)
@@ -569,6 +570,13 @@ class CodingSessionsBatchCreateRequestSerializer(serializers.Serializer):
             "可选分支模板。支持占位符 ${repo} → repository.name。"
             "为空时按 CodingPlan title 推断。"
         ),
+    )
+    target_branch = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=255,
+        help_text="PR 目标分支，统一应用到本次 fan-out 的所有仓库；为空时回退默认 develop。",
     )
 
 

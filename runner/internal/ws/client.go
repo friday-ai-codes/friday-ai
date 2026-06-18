@@ -74,6 +74,8 @@ type SchedulerService interface {
 	RegisterContainer(taskID, containerID string)
 	UnregisterContainer(taskID string)
 	GetAllContainerIDs() []string
+	GetRunningTaskIDs() []string
+	IsTaskActive(taskID string) bool
 	ActiveCount() int
 	IsAccepting() bool
 	StopAccepting()
@@ -203,6 +205,8 @@ func connectAndServe(ctx context.Context, cfg Config, cb CallbackService, queue 
 
 	hello := NewRequest(TypeRunnerHello, map[string]any{
 		"name": cfg.Name, "version": cfg.Version, "concurrent": cfg.Concurrent,
+		// 重连时上报仍在跑的任务，server 据此跳过重派发（避免重复容器）。
+		"running_tasks": cfg.Scheduler.GetRunningTaskIDs(),
 	})
 	if err := wsjson.Write(ctx, c, hello); err != nil {
 		return err
@@ -300,6 +304,18 @@ func handleTaskAssign(_ context.Context, c *websocket.Conn, raw json.RawMessage,
 		if err := wsjson.Write(context.Background(), c, resp); err != nil {
 			queue.Push(resp)
 		}
+		return
+	}
+
+	// 幂等去重：同一 task 已在调度/运行中（多见于 WS 重连后 server 的恢复重派发），
+	// 直接回 accepted 但不再 Submit，避免对同一任务起第二个容器。回 accepted 而非
+	// rejected 是为了不触发 server 端 on_task_rejected 的 requeue 循环。
+	if taskID != "" && sched.IsTaskActive(taskID) {
+		resp := NewResponse(envelope.ID, TypeTaskAccepted, map[string]any{"task_id": taskID})
+		if err := wsjson.Write(context.Background(), c, resp); err != nil {
+			queue.Push(resp)
+		}
+		log.Info().Str("task_id", taskID).Msg("task_assign_deduped")
 		return
 	}
 

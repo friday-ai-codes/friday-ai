@@ -26,6 +26,7 @@ const chatStore = useChatStore()
 const selectedId = ref<string>('')
 const freeformText = ref<string>('')
 const submitting = ref(false)
+const skipping = ref(false)
 const errorMessage = ref<string>('')
 
 const isAnswered = computed(() => props.payload.status === 'answered')
@@ -83,6 +84,27 @@ async function submit() {
   }
   finally {
     submitting.value = false
+  }
+}
+
+/**
+ * 跳过本次澄清：不提交答复，让后端基于现有信息直接作答。
+ * 走 conversation 维度的 skip endpoint（store action 已封装乐观更新 + 轮询）。
+ */
+async function skip() {
+  if (submitting.value || skipping.value)
+    return
+  skipping.value = true
+  errorMessage.value = ''
+  try {
+    await chatStore.skipClarification()
+  }
+  catch (err: unknown) {
+    const e = err as { message?: string }
+    errorMessage.value = e?.message || '跳过失败，请重试'
+  }
+  finally {
+    skipping.value = false
   }
 }
 </script>
@@ -173,9 +195,18 @@ async function submit() {
     </div>
 
     <!-- 底部操作区 -->
-    <div v-if="!isAnswered" class="px-4 pb-4 pt-2">
+    <div v-if="!isAnswered" class="px-4 pb-4 pt-2 flex items-center gap-2">
       <Button
-        class="w-full"
+        variant="ghost"
+        class="shrink-0 text-muted-foreground"
+        :disabled="submitting || skipping"
+        @click="skip"
+      >
+        <span v-if="skipping" class="icon-[lucide--loader-2] animate-spin mr-2" />
+        跳过
+      </Button>
+      <Button
+        class="flex-1"
         :disabled="!canSubmit"
         @click="submit"
       >

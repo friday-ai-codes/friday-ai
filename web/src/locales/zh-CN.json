@@ -244,10 +244,10 @@
   },
   "knowledge": {
     "pageTitle": "知识",
-    "pageDescription": "检索历史需求、技术方案与代码变更，或批量摄取看板与 MR 入库可检索",
+    "pageDescription": "检索历史需求、技术方案与代码变更，或粘贴链接批量爬取关联看板与 MR 入库可检索",
     "tabs": {
       "search": "搜索",
-      "ingest": "批量摄取",
+      "ingest": "看板与 MR 批量爬取关联",
       "release": "上线同步",
       "tree": "知识树"
     },

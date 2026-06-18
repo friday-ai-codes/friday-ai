@@ -497,6 +497,7 @@ function handleExportSuccess(
             :phase="chatStore.currentPhase"
             :task-progress="chatStore.taskProgress"
             :is-interrupting="chatStore.isInterrupting"
+            @skip="chatStore.skipClarification()"
           />
         </Transition>
       </div>

@@ -1048,7 +1048,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
               :target-repositories="codingPlanData.targetRepositories"
               :available-repositories="codingPlanData.targetRepositories"
               :recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
-              @confirm="(_planId, sessionId, branchName) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName)"
+              @confirm="(_planId, sessionId, branchName, targetBranch) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName, targetBranch)"
             />
             <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
               <div class="tool-detail-section">

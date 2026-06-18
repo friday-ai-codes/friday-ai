@@ -29,9 +29,17 @@ _CHORE_KEYWORDS: set[str] = {
     "重构", "清理", "迁移", "chore", "refactor", "cleanup", "migrate", "ci", "docs",
 }
 
+_TEST_KEYWORDS: set[str] = {
+    "测试", "单测", "用例", "test", "tests", "testing", "ut", "e2e",
+}
+
 # ---------------------------------------------------------------------------
 # 保护分支
 # ---------------------------------------------------------------------------
+
+# PR 默认目标分支：团队工作流默认并入 develop，而非 master。用户未在前端选择 /
+# 旧数据为空时回退到此值。集中定义避免多处 "develop" 字面量漂移。
+DEFAULT_TARGET_BRANCH = "develop"
 
 DEFAULT_PROTECTED_BRANCHES: set[str] = {"main", "master", "develop"}
 
@@ -53,10 +61,12 @@ _STOP_WORDS: set[str] = {
 # 分支名字符集正则
 # ---------------------------------------------------------------------------
 
-_VALID_BRANCH_CHARS = re.compile(r"^[a-zA-Z0-9._/\-]+$")
+# 允许中文：Python re 的 \w（默认 Unicode）匹配中文/字母/数字/下划线，再额外允许
+# . / -。空格与 git 保留符号（~ ^ : ? * [ ] \ 等）不在白名单内，天然被拒。
+_VALID_BRANCH_CHARS = re.compile(r"^[\w./\-]+$", re.UNICODE)
 
-# 英文关键词提取正则：>= 2 字符的英文词，或单个英文字母
-_ENGLISH_WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]|[a-zA-Z]")
+# 分支名片段清洗：去掉空格与 git 保留 / 易出问题的符号（生成简短名时用）。
+_BRANCH_SEGMENT_STRIP = re.compile(r"[\s~^:?*\[\]\\@{}()，。、！？；：'\"<>|#$%&+=]+")
 
 
 # ---------------------------------------------------------------------------
@@ -80,19 +90,23 @@ class BranchValidationResult:
 def infer_branch_type(tech_plan: str) -> str:
     """根据 tech_plan 关键词推断分支类型。
 
-    优先级：fix > chore > feat（默认）。
+    优先级：fix > test > chore > feat（默认）。
 
     Args:
         tech_plan: 技术方案文本。
 
     Returns:
-        分支类型字符串："feat" | "fix" | "chore"。
+        分支类型字符串："feat" | "fix" | "chore" | "test"。
     """
     lower = tech_plan.lower()
 
     for kw in _FIX_KEYWORDS:
         if kw in lower:
             return "fix"
+
+    for kw in _TEST_KEYWORDS:
+        if kw in lower:
+            return "test"
 
     for kw in _CHORE_KEYWORDS:
         if kw in lower:
@@ -101,57 +115,101 @@ def infer_branch_type(tech_plan: str) -> str:
     return "feat"
 
 
-def generate_short_description(tech_plan: str) -> str:
-    """从 tech_plan 提取英文 kebab-case 短描述。
+def sanitize_branch_segment(text: str, *, max_chars: int = 10) -> str:
+    """把任意文本清洗为分支名可用的简短片段。
 
-    提取英文关键词，过滤停用词，取前 4 个拼接为 kebab-case。
-    work item 编码后截断至 40 字节，在最后一个 '-' 处截断以避免断词。
-    无法提取时返回 "task" 作为兜底。
+    去除空格与 git 保留 / 易出问题符号，按字符截断到 ``max_chars``（中文优先，
+    1 个汉字算 1 字）。清洗后为空返回空串，由调用方决定兜底。
+    """
+    if not text:
+        return ""
+    # 取首个非空行，剥离常见 markdown 标记
+    for raw_line in text.splitlines():
+        line = re.sub(r"^#{1,6}\s*", "", raw_line).strip()
+        line = line.strip("*`>-_ \t")
+        if line:
+            text = line
+            break
+    cleaned = _BRANCH_SEGMENT_STRIP.sub("", text)
+    cleaned = cleaned.strip("./-")
+    return cleaned[:max_chars]
+
+
+def generate_short_description(tech_plan: str) -> str:
+    """从 tech_plan 规则提取简短名称（中文优先，<=10 字）。
+
+    同步快速路径 / AI 生成失败时的兜底：取首个有意义行清洗截断。无法提取时返回
+    "task"。AI 生成走 ``agenerate_short_description``。
 
     Args:
         tech_plan: 技术方案文本。
 
     Returns:
-        kebab-case 短描述（仅含 [a-z0-9-]，<= 40 字节）。
+        简短名称（中文/字母数字，<=10 字），无内容时 "task"。
     """
-    # 提取英文词（>= 2 字符优先，也接受单字母）
-    raw_words = _ENGLISH_WORD_RE.findall(tech_plan)
+    return sanitize_branch_segment(tech_plan, max_chars=10) or "task"
 
-    # 过滤停用词，转小写
-    words = [w.lower() for w in raw_words if w.lower() not in _STOP_WORDS]
 
-    if not words:
-        return "task"
+async def agenerate_short_description(tech_plan: str) -> str:
+    """用 LLM 从技术方案生成 <=10 字简短中文分支描述；失败回退规则提取。"""
+    fallback = generate_short_description(tech_plan)
+    if not (tech_plan or "").strip():
+        return fallback
 
-    # 取前 4 个拼接
-    desc = "-".join(words[:4])
+    try:
+        import anthropic
 
-    # work item 截断至 40 字节
-    if len(desc.encode("utf-8")) > 40:
-        encoded = desc.encode("utf-8")[:40]
-        # 解码回字符串（可能截断在中间，但 kebab-case 只有 ASCII，不会有问题）
-        truncated = encoded.decode("utf-8", errors="ignore")
-        # 在最后一个 '-' 处截断以避免断词
-        last_dash = truncated.rfind("-")
-        if last_dash > 0:
-            truncated = truncated[:last_dash]
-        desc = truncated
+        from services.provider_config import aget_claude_code_runtime_config
 
-    return desc
+        cc = await aget_claude_code_runtime_config()
+        api_key = cc["api_key"]
+        if not api_key:
+            return fallback
+        base_url = cc["base_url"]
+        model = (
+            cc["haiku_model"]
+            or cc["default_model"]
+            or cc["sonnet_model"]
+            or "claude-haiku-4-5"
+        )
+        client = (
+            anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url)
+            if base_url
+            else anthropic.AsyncAnthropic(api_key=api_key)
+        )
+        prompt = (
+            "根据以下技术方案，生成一个用于 git 分支名的简短中文描述。\n"
+            "要求：10 个汉字以内，只概括核心改动，不要标点、不要空格、不要引号、"
+            "不要前后缀，只输出描述本身。\n\n"
+            f"技术方案：\n{tech_plan[:1500]}"
+        )
+        resp = await client.messages.create(
+            model=model,
+            max_tokens=50,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()  # type: ignore[union-attr]
+        cleaned = sanitize_branch_segment(text, max_chars=10)
+        return cleaned or fallback
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("branch_short_desc_ai_failed", error=str(exc))
+        return fallback
 
 
 def generate_branch_name(branch_type: str, short_desc: str) -> str:
-    """拼接 {type}{YYYYMMDD}.{desc} 格式分支名。
+    """拼接 {type}/{yymmdd}.{desc} 格式分支名。
+
+    示例：``feat/260618.修复若干bug``。
 
     Args:
-        branch_type: 分支类型（feat/fix/chore）。
-        short_desc: kebab-case 短描述。
+        branch_type: 分支类型（feat/fix/chore/test）。
+        short_desc: 简短名称（中文优先）。
 
     Returns:
         格式化的分支名。
     """
-    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    return f"{branch_type}{date_str}.{short_desc}"
+    date_str = datetime.now(timezone.utc).strftime("%y%m%d")
+    return f"{branch_type}/{date_str}.{short_desc}"
 
 
 async def validate_branch_name(
@@ -238,15 +296,18 @@ async def validate_branch_name(
         CodingSession.Status.CONFIRMED,
         CodingSession.Status.RUNNING,
     ]
+    # 唯一性按 (repository, branch_name) 维度：不同仓库允许同名分支（一次技术方案
+    # 多仓 fan-out 统一分支名的前提），仅同一仓库内同名活跃会话才算冲突。
     conflict_qs = CodingSession.objects.filter(
         branch_name=branch_name,
+        repository_id=repository_id,
         status__in=active_statuses,
     )
     if exclude_session_id is not None:
         conflict_qs = conflict_qs.exclude(id=exclude_session_id)
     db_conflict = await conflict_qs.aexists()
     if db_conflict:
-        errors.append(f"分支名 '{branch_name}' 已被活跃的编码会话使用")
+        errors.append(f"分支名 '{branch_name}' 已被该仓库活跃的编码会话使用")
 
     # 9. Remote refs 唯一性校验
     if git_client is not None:
@@ -269,7 +330,10 @@ async def validate_branch_name(
 
 
 def generate_default_branch_name(tech_plan: str) -> tuple[str, str, str]:
-    """便捷入口：根据 tech_plan 生成默认分支名。
+    """便捷入口（同步）：根据 tech_plan 规则生成默认分支名。
+
+    用于同步调用点（如 mcp_tools），不调用 LLM；简短名走规则提取。
+    async 上下文优先用 ``agenerate_default_branch_name`` 拿 AI 生成的中文名。
 
     Args:
         tech_plan: 技术方案文本。
@@ -279,5 +343,17 @@ def generate_default_branch_name(tech_plan: str) -> tuple[str, str, str]:
     """
     branch_type = infer_branch_type(tech_plan)
     short_desc = generate_short_description(tech_plan)
+    branch_name = generate_branch_name(branch_type, short_desc)
+    return branch_name, branch_type, short_desc
+
+
+async def agenerate_default_branch_name(tech_plan: str) -> tuple[str, str, str]:
+    """便捷入口（async）：用 LLM 生成简短中文名拼默认分支名。
+
+    Returns:
+        (branch_name, branch_type, short_desc) 三元组。
+    """
+    branch_type = infer_branch_type(tech_plan)
+    short_desc = await agenerate_short_description(tech_plan)
     branch_name = generate_branch_name(branch_type, short_desc)
     return branch_name, branch_type, short_desc
