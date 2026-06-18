@@ -16,6 +16,8 @@ export interface ReleaseBitableRow {
   kanban_id: number | null
   /** 看板 id 来源：'看板id' 列 或 'feature分支'。 */
   kanban_source: string
+  /** 看板 id 对应的飞书项目工作项详情 URL（无空间 key 时为空串）。 */
+  kanban_url: string
   category: string
   /** 上线日期（ms epoch）。 */
   release_date: number | null

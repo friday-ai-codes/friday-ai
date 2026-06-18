@@ -18,6 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from delivery.models import IngestRun, ReleaseBatch
 from delivery.services.release_bitable_sync import (
+    build_kanban_url,
     extract_kanban_id,
     parse_release_row,
 )
@@ -72,8 +73,18 @@ def test_extract_kanban_id_none() -> None:
     assert source == ""
 
 
+def test_build_kanban_url() -> None:
+    """看板 id + 空间 key → 飞书工作项详情 URL；缺任一 → 空串。"""
+    assert (
+        build_kanban_url(6764053712, "abc123")
+        == "https://project.feishu.cn/abc123/issue/detail/6764053712"
+    )
+    assert build_kanban_url(None, "abc123") == ""
+    assert build_kanban_url(6764053712, "") == ""
+
+
 def test_parse_release_row_basic() -> None:
-    """完整行：抽业务/MR/看板id/分类/日期 + 命中仓库。"""
+    """完整行：抽业务/MR/看板id/分类/日期 + 命中仓库 + 看板 URL。"""
     record = {
         "record_id": "recABC",
         "fields": {
@@ -85,16 +96,29 @@ def test_parse_release_row_basic() -> None:
             "上线日期": 1722182400000,
         },
     }
-    row = parse_release_row(record, repo_index=REPO_INDEX)
+    row = parse_release_row(record, repo_index=REPO_INDEX, feishu_project_key="abc123")
     assert row is not None
     assert row.business == "NPC切图替换需求"
     assert row.mr_url == MR_URL
     assert row.kanban_id == 6764053712
+    assert row.kanban_url == "https://project.feishu.cn/abc123/issue/detail/6764053712"
     assert row.category == "前端"
     assert row.release_date == 1722182400000
     assert row.repo_matched is True
     assert row.repo_name == "space-admin"
     assert row.ingestable is True
+
+
+def test_parse_release_row_no_project_key_empty_url() -> None:
+    """无飞书空间 key → kanban_url 为空串（前端降级为纯文本）。"""
+    record = {
+        "record_id": "recABC",
+        "fields": {"上线业务": "x", "看板id": "6764053712"},
+    }
+    row = parse_release_row(record, repo_index=REPO_INDEX)
+    assert row is not None
+    assert row.kanban_id == 6764053712
+    assert row.kanban_url == ""
 
 
 def test_parse_release_row_unmatched_repo_not_ingestable() -> None:

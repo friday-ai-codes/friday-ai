@@ -391,6 +391,7 @@
     "loadMore": "加载更多",
     "loadError": "加载上线文档失败，请稍后重试",
     "fromBranch": "来自分支",
+    "openKanban": "打开飞书工作项",
     "noMr": "无 MR",
     "repoUnmatched": "未匹配仓库",
     "loadedCount": "已加载 {loaded} 条",

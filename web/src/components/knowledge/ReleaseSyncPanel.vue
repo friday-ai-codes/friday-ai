@@ -317,7 +317,18 @@ watch(batchId, (v) => {
                     </TableCell>
                     <TableCell>
                       <div v-if="row.kanban_id" class="flex flex-col">
-                        <span class="font-mono text-xs">{{ row.kanban_id }}</span>
+                        <a
+                          v-if="row.kanban_url"
+                          :href="row.kanban_url"
+                          target="_blank"
+                          rel="noopener"
+                          class="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                          :title="t('release.openKanban')"
+                        >
+                          <span class="icon-[lucide--external-link] shrink-0 text-[11px]" />
+                          {{ row.kanban_id }}
+                        </a>
+                        <span v-else class="font-mono text-xs">{{ row.kanban_id }}</span>
                         <span v-if="row.kanban_source === 'feature分支'" class="text-[10px] text-muted-foreground">{{ t('release.fromBranch') }}</span>
                       </div>
                       <span v-else class="text-xs text-muted-foreground">—</span>

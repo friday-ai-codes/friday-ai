@@ -83,6 +83,26 @@ async def test_list_records_endpoint_shape_returns_raw_data() -> None:
 
 
 @respx.mock
+async def test_list_records_passes_sort_param() -> None:
+    """sort 入参以开放平台 JSON 字符串数组形态进 query（``["字段 DESC"]``）。"""
+    _mock_token()
+    route = respx.get(
+        f"{OPEN_API_BASE}/bitable/v1/apps/{APP_TOKEN}/tables/{TABLE_ID}/records"
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"code": 0, "data": {"items": [], "has_more": False}}
+        )
+    )
+    client = BitableClient(app_id="app", app_secret="secret")
+
+    await client.list_records(APP_TOKEN, TABLE_ID, sort=["上线日期 DESC"])
+
+    assert route.called
+    # httpx 解码后 query 携带 JSON 数组字符串（开放平台 sort 契约）。
+    assert route.calls.last.request.url.params.get("sort") == '["上线日期 DESC"]'
+
+
+@respx.mock
 async def test_token_cached_single_network_call() -> None:
     """二次取 token 命中缓存，不再打网络（call_count == 1）。"""
     route = _mock_token()

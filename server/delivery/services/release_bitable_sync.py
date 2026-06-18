@@ -59,6 +59,8 @@ __all__ = [
     "DEFAULT_BITABLE_APP_TOKEN",
     "DEFAULT_BITABLE_TABLE_ID",
     "aget_bitable_client",
+    "aget_feishu_project_key",
+    "build_kanban_url",
     "fetch_preview",
     "parse_release_row",
     "extract_kanban_id",
@@ -77,10 +79,22 @@ _COL_BRANCH = "feature分支"
 _COL_CATEGORY = "上线分类"
 _COL_DATE = "上线日期"
 
+# 预览默认按上线日期倒序（最近上线优先）：开放平台 GET 列出记录默认按记录创建顺序
+# （最早在前），导致首页全是 24 年的历史行、缺 feature 分支 → 看板id 一片空。倒序后
+# 首页即最近上线、带 m-<数字> 分支的行，看板id 才能解析出来（用户反馈核心）。
+_RELEASE_SORT = [f"{_COL_DATE} DESC"]
+
 # 看板 id 至少 4 位数字（规避 tag 版本等小数字误命中）。
-_KANBAN_BRANCH_PREFIX_RE = re.compile(r"m-(\d{4,})", re.IGNORECASE)
-_KANBAN_BRANCH_SUFFIX_RE = re.compile(r"(\d{4,})-m(?![0-9])", re.IGNORECASE)
+# 前缀 ``m-<数字>``：``m`` 须为词首（前界非字母数字），避免 ``system-12345`` 误命中。
+# 后缀 ``<数字>-m``：``m`` 后须为 token 边界（非字母数字），避免 ``12345-master`` 误命中。
+_KANBAN_BRANCH_PREFIX_RE = re.compile(r"(?<![a-z0-9])m-(\d{4,})", re.IGNORECASE)
+_KANBAN_BRANCH_SUFFIX_RE = re.compile(r"(\d{4,})-m(?![a-z0-9])", re.IGNORECASE)
 _DIGITS_RE = re.compile(r"\d{4,}")
+
+
+# 飞书项目工作项详情 URL 模板（沿用 mcp_tools/work_item_context_service 既有约定：
+# URL type 段用通用 ``issue`` 重定向即可，无需 API type_key，PF-09）。
+_KANBAN_URL_TEMPLATE = "https://project.feishu.cn/{key}/issue/detail/{id}"
 
 
 @dataclass(frozen=True)
@@ -92,6 +106,7 @@ class ReleaseRowPreview:
     mr_url: str
     kanban_id: int | None
     kanban_source: str
+    kanban_url: str
     category: str
     release_date: int | None  # ms epoch
     feature_branch: str
@@ -153,14 +168,23 @@ def extract_kanban_id(kanban_value: Any, branch_value: Any) -> tuple[int | None,
     return None, ""
 
 
+def build_kanban_url(kanban_id: int | None, feishu_project_key: str) -> str:
+    """看板 id + 飞书空间 key → 工作项详情 URL；缺任一 → 空串（前端据此降级为纯文本）。"""
+    if kanban_id is None or not feishu_project_key:
+        return ""
+    return _KANBAN_URL_TEMPLATE.format(key=feishu_project_key, id=kanban_id)
+
+
 def parse_release_row(
     record: dict[str, Any],
     *,
     repo_index: dict[tuple[str, str], str],
+    feishu_project_key: str = "",
 ) -> ReleaseRowPreview | None:
     """把一条 Bitable record 解析成 ``ReleaseRowPreview``；纯父记录/空行 → None。
 
-    跳过既无「上线业务」又无 MR 的行（父记录/聚合行）。
+    跳过既无「上线业务」又无 MR 的行（父记录/聚合行）。``feishu_project_key`` 非空时
+    据看板 id 拼工作项详情 URL（供前端点击直达飞书项目；为空则不出链接）。
     """
     fields = record.get("fields", {}) or {}
     record_id = record.get("record_id") or record.get("id") or ""
@@ -195,6 +219,7 @@ def parse_release_row(
         mr_url=mr_url,
         kanban_id=kanban_id,
         kanban_source=kanban_source,
+        kanban_url=build_kanban_url(kanban_id, feishu_project_key),
         category=_as_text(fields.get(_COL_CATEGORY)).strip(),
         release_date=release_date,
         feature_branch=feature_branch,
@@ -215,6 +240,20 @@ async def aget_bitable_client() -> BitableClient | None:
     if credentials:
         return BitableClient(app_id=credentials[0], app_secret=credentials[1])
     return None
+
+
+async def aget_feishu_project_key() -> str:
+    """取一个飞书空间 key（``Project.feishu_project_key``）用于拼看板 URL；无 → 空串。
+
+    看板 id 是飞书项目工作项 id，URL 需空间 simple_name（即 ``feishu_project_key``）。
+    本部署通常单飞书空间，取首个已配 key 的 Project 即可；无则返回空串（前端降级为纯文本）。
+    """
+    from projects.models import Project
+
+    project = await Project.objects.filter(
+        feishu_project_key__isnull=False
+    ).exclude(feishu_project_key="").afirst()
+    return project.feishu_project_key if project else ""
 
 
 async def _abuild_repo_index() -> dict[tuple[str, str], str]:
@@ -252,13 +291,20 @@ async def fetch_preview(
         )
 
     data = await client.list_records(
-        app_token, table_id, page_token=page_token, page_size=page_size
+        app_token,
+        table_id,
+        page_token=page_token,
+        page_size=page_size,
+        sort=_RELEASE_SORT,
     )
     repo_index = await _abuild_repo_index()
+    feishu_project_key = await aget_feishu_project_key()
 
     rows: list[dict[str, Any]] = []
     for record in data.get("items", []):
-        parsed = parse_release_row(record, repo_index=repo_index)
+        parsed = parse_release_row(
+            record, repo_index=repo_index, feishu_project_key=feishu_project_key
+        )
         if parsed is None:
             continue
         rows.append(
@@ -268,6 +314,7 @@ async def fetch_preview(
                 "mr_url": parsed.mr_url,
                 "kanban_id": parsed.kanban_id,
                 "kanban_source": parsed.kanban_source,
+                "kanban_url": parsed.kanban_url,
                 "category": parsed.category,
                 "release_date": parsed.release_date,
                 "feature_branch": parsed.feature_branch,
