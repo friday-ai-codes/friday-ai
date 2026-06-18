@@ -435,29 +435,24 @@ def _sanitize_repo_name_for_branch(repo_name: str) -> str:
 
 def _build_branch_name_for_repo(
     *,
-    plan: CodingPlan,
     repo_name: str,
     branch_template: str,
+    shared_branch_name: str,
 ) -> str:
-    """按模板渲染分支名；模板为空则按 plan.tech_plan 推断 + 自动追加 repo 后缀。
+    """渲染单仓分支名。
 
-    - 模板为空 → 按 ``generate_default_branch_name(plan.tech_plan)`` 推断默认前缀，
-      并自动追加 ``.<repo>`` 后缀（确保多 repo fan-out 时分支名彼此唯一，避免被
-      ``validate_branch_name`` 的 DB 唯一性校验拦截）。
-    - 模板含 ``${repo}`` 占位符 → ``Template.safe_substitute(repo=...)`` 渲染；
-      由调用方保证占位符存在。
-    - 模板不含占位符 → 直接返回模板（多 repo 共享同名分支会被 work item unique 约束
-      或分支名校验阻止，由调用方收集 failed 时给出可读 error）。
+    - 模板含 ``${repo}`` 占位符 → ``Template.safe_substitute(repo=...)`` 渲染（per-repo
+      不同名，兼容旧用法）。
+    - 模板不含占位符（含为空）→ 返回 ``shared_branch_name``：一次技术方案的所有仓库
+      统一使用同一个分支名（``{type}/{yymmdd}.{中文名}``）。唯一性按 (repo, branch)
+      维度保证，不再追加 ``.<repo>`` 后缀。
     """
-    from chat.branch_service import generate_default_branch_name
-
-    safe_repo = _sanitize_repo_name_for_branch(repo_name)
-    if branch_template:
+    if branch_template and "${repo}" in branch_template:
+        safe_repo = _sanitize_repo_name_for_branch(repo_name)
         return Template(branch_template).safe_substitute(repo=safe_repo)
-    default_branch, _branch_type, _short_desc = generate_default_branch_name(
-        plan.tech_plan
-    )
-    return f"{default_branch}.{safe_repo}"
+    if branch_template:
+        return branch_template
+    return shared_branch_name
 
 
 async def create_sessions_for_plan(
@@ -526,11 +521,23 @@ async def create_sessions_for_plan(
             )
             valid_repo_map.pop(rid, None)
 
+    # 生成本次 fan-out 统一默认分支名（多仓共用 {type}/{yymmdd}.{简短中文名}）。
+    # 仅在未提供模板时调用 LLM 生成中文名；模板模式按模板渲染（兼容 ${repo}）。
+    shared_branch_name = ""
+    if not branch_template:
+        from chat.branch_service import agenerate_default_branch_name
+
+        shared_branch_name, _bt, _sd = await agenerate_default_branch_name(
+            plan.tech_plan
+        )
+
     # 3) 逐仓库创建（独立事务）
     for rid, repo in valid_repo_map.items():
         try:
             branch_name = _build_branch_name_for_repo(
-                plan=plan, repo_name=repo.name, branch_template=branch_template
+                repo_name=repo.name,
+                branch_template=branch_template,
+                shared_branch_name=shared_branch_name,
             )
         except Exception as exc:
             result.failed.append(

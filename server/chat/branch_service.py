@@ -29,8 +29,9 @@ _CHORE_KEYWORDS: set[str] = {
     "重构", "清理", "迁移", "chore", "refactor", "cleanup", "migrate", "ci", "docs",
 }
 
+# 注意：关键词用子串匹配，过短词（如 "ut"）会误命中 "auth"/"input"，故不收录。
 _TEST_KEYWORDS: set[str] = {
-    "测试", "单测", "用例", "test", "tests", "testing", "ut", "e2e",
+    "测试", "单测", "用例", "test", "tests", "testing", "e2e",
 }
 
 # ---------------------------------------------------------------------------
