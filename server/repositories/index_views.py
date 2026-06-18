@@ -143,21 +143,36 @@ def _schedule_index(
     history_id: str,
     *,
     branch: str | None = None,
+    trigger: str = "manual",
 ) -> Any:
-    """把索引任务调度到独立 worker loop。
+    """把索引任务调度到独立 worker loop（登记为可恢复任务）。
 
     返回 concurrent.futures.Future（调用方一般不用 await，仅作可观测性）。
     必须传 factory 而不是 coroutine：coroutine 只能在创建它的 loop 上 await，
     跨线程提交需要由 worker loop 在自己上下文里实例化 coroutine。
+
+    经 ``submit_resumable`` 登记 ``ResumableTask(kind=index)``：进程 / Pod 重启后
+    由 RecoveryScheduler 自动续跑，复用 ``FileIndex`` 跳过已完成文件。
     """
-    return run_in_background(
-        lambda: clone_and_index_repository(
+    from resumable.models import ResumableTaskKind
+    from resumable.service import wrap_resumable
+
+    wrapped = wrap_resumable(
+        kind=ResumableTaskKind.INDEX,
+        target_id=str(repository_id),
+        payload={
+            "repository_id": str(repository_id),
+            "branch": branch,
+            "trigger": trigger,
+        },
+        name=f"index-{repository_id}",
+        coro_factory=lambda: clone_and_index_repository(
             repository_id,
             history_id=history_id,
             branch=branch,
         ),
-        name=f"index-{repository_id}",
     )
+    return run_in_background(wrapped, name=f"index-{repository_id}")
 
 
 class IndexStatusSerializer(serializers.Serializer):

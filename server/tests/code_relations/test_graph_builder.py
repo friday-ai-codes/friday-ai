@@ -519,6 +519,7 @@ async def test_branch_param_clones_branch_and_writes_history(
         repository_id: str,
         branch_name: str = "",
         history_id: str | None = None,
+        skip_unchanged: bool = False,
     ) -> dict[str, Any]:
         captured_file_paths.append(list(file_paths))
         # feature 路径图谱行须带该分支 branch_name（不污染 base）
@@ -585,6 +586,7 @@ async def test_no_branch_backward_compat(
         repository_id: str,
         branch_name: str = "",
         history_id: str | None = None,
+        skip_unchanged: bool = False,
     ) -> dict[str, Any]:
         captured_file_paths.append(list(file_paths))
         # base 路径图谱行 branch_name 恒为 ""（字节不变）

@@ -9,6 +9,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: friday-redis
+    # 开启 AOF 持久化作为额外保险（Redis 在本项目仅承担 Channel Layer 消息总线
+    # 与可选的恢复分布式锁；业务"断点恢复"真相源在 DB/Qdrant/文件系统，不依赖
+    # Redis 数据）。AOF 让升级 / 重启后 Redis 自身状态更稳，并不改变恢复语义。
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:

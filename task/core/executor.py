@@ -580,6 +580,14 @@ Implement the task as described. Make necessary code changes.
                 env=env_vars,
                 extra_args={"debug-to-stderr": None},
             )
+            # resume 续跑：transcript 已由 runner 在本次执行前还原到 SDK project 目录，
+            # 这里传入 resume=session_id 让 SDK 接续上次对话（continue 语义，不 fork）。
+            if self.config.resume_session_id:
+                options_kwargs["resume"] = self.config.resume_session_id
+                log.info(
+                    "claude_sdk_resume_enabled",
+                    resume_session_id=self.config.resume_session_id,
+                )
             mcp_servers: dict[str, Any] = {}
             allowed_tools: list[str] = []
             if mcp_server is not None:

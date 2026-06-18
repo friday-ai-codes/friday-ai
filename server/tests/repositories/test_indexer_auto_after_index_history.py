@@ -84,15 +84,24 @@ def test_callsite_creates_running_history_with_auto_after_index_trigger(
     )
 
     pre_segment = src[:extract_idx]
-    assert "GraphBuildHistory.objects.acreate" in pre_segment, (
-        f"{method_name} 缺少 GraphBuildHistory.objects.acreate（创建 RUNNING 行）"
+    # 创建 RUNNING 行已集中到去重 helper `_acreate_auto_graph_history()`：
+    # 4 callsite 均改为调用 helper（避免并发索引产生重复 RUNNING 行）。
+    assert "self._acreate_auto_graph_history()" in pre_segment, (
+        f"{method_name} 缺少 self._acreate_auto_graph_history()（创建/复用 RUNNING 行）"
     )
-    assert "GraphBuildHistoryTrigger.AUTO_AFTER_INDEX" in pre_segment, (
-        f"{method_name} 缺少 trigger_type=AUTO_AFTER_INDEX"
+
+
+def test_acreate_auto_graph_history_helper_creates_running_auto_after_index() -> None:
+    """去重 helper 源码须声明 ``status=RUNNING`` + ``trigger=AUTO_AFTER_INDEX``，
+    并在锁内先查既有 RUNNING 行去重（避免并发重复 RUNNING 行）。
+    """
+    src = inspect.getsource(IndexerService._acreate_auto_graph_history)
+    assert "GraphBuildHistoryStatus.RUNNING" in src, "helper 缺少 status=RUNNING"
+    assert "GraphBuildHistoryTrigger.AUTO_AFTER_INDEX" in src, (
+        "helper 缺少 trigger=AUTO_AFTER_INDEX"
     )
-    assert "GraphBuildHistoryStatus.RUNNING" in pre_segment, (
-        f"{method_name} 缺少 status=RUNNING（创建即 RUNNING）"
-    )
+    assert "select_for_update" in src, "helper 缺少行锁串行化（去重并发创建）"
+    assert "GraphBuildHistory.objects.create" in src, "helper 缺少创建逻辑"
 
 
 @pytest.mark.parametrize("method_name", CALLSITE_METHODS)
@@ -124,24 +133,28 @@ def test_callsite_gating_precedes_history_create(method_name: str) -> None:
     src = inspect.getsource(method)
 
     gating_idx = src.find("_should_build_graph")
-    acreate_idx = src.find("GraphBuildHistory.objects.acreate")
+    acreate_idx = src.find("self._acreate_auto_graph_history()")
     assert gating_idx >= 0, f"{method_name} 缺少 _should_build_graph gating"
-    assert acreate_idx >= 0, f"{method_name} 缺少 GraphBuildHistory.objects.acreate"
+    assert acreate_idx >= 0, f"{method_name} 缺少 self._acreate_auto_graph_history()"
     assert gating_idx < acreate_idx, (
-        f"{method_name} acreate 出现在 _should_build_graph gating 之前——"
-        f"会创建被跳过路径的空 history 行"
+        f"{method_name} _acreate_auto_graph_history 出现在 _should_build_graph gating "
+        f"之前——会创建被跳过路径的空 history 行"
     )
 
 
 def test_module_has_exactly_four_auto_after_index_callsites() -> None:
-    """``indexer.py`` 整体只允许 4 处 AUTO_AFTER_INDEX 字面量（与 4 callsite 对齐）。"""
+    """``indexer.py`` 4 处 callsite 均通过去重 helper 创建 RUNNING 行（与 4 callsite 对齐）。"""
     import services.indexer as indexer_module
 
     src = inspect.getsource(indexer_module)
-    count = src.count("GraphBuildHistoryTrigger.AUTO_AFTER_INDEX")
-    assert count == 4, (
-        f"AUTO_AFTER_INDEX 字面量应有 4 处（4 callsite 一一对应），"
-        f"实际 {count} 处"
+    # helper 调用出现 4 次（4 callsite）+ 1 次定义（async def）= 5 处文本匹配
+    call_count = src.count("self._acreate_auto_graph_history()")
+    assert call_count == 4, (
+        f"_acreate_auto_graph_history() 调用应有 4 处（4 callsite 一一对应），"
+        f"实际 {call_count} 处"
+    )
+    assert "async def _acreate_auto_graph_history" in src, (
+        "去重 helper _acreate_auto_graph_history 定义缺失"
     )
 
 
@@ -542,7 +555,8 @@ def test_wrapper_template_keywords_present_in_indexer_source() -> None:
 
     src = inspect.getsource(indexer_module)
     expected_tokens = [
-        "GraphBuildHistory.objects.acreate",
+        "self._acreate_auto_graph_history()",
+        "GraphBuildHistory.objects.create",
         "GraphBuildHistoryStatus.RUNNING",
         "GraphBuildHistoryStatus.COMPLETED",
         "GraphBuildHistoryStatus.FAILED",

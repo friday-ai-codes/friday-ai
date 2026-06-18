@@ -168,8 +168,23 @@ async def trigger_auto_index(
     )
 
     history_id_str = str(history.id)
+    from resumable.models import ResumableTaskKind
+    from resumable.service import wrap_resumable
+
     run_in_background(
-        lambda: clone_and_index_repository(repo_id, history_id=history_id_str),
+        wrap_resumable(
+            kind=ResumableTaskKind.INDEX,
+            target_id=str(repo_id),
+            payload={
+                "repository_id": str(repo_id),
+                "branch": None,
+                "trigger": tt,
+            },
+            name=f"auto-index-{repo_id}",
+            coro_factory=lambda: clone_and_index_repository(
+                repo_id, history_id=history_id_str
+            ),
+        ),
         name=f"auto-index-{repo_id}",
     )
 

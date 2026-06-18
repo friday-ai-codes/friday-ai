@@ -50,6 +50,15 @@ class CompletedPayloadSerializer(serializers.Serializer):
         default=list,
         child=serializers.DictField(),
     )
+    # Claude Code SDK 会话恢复支撑（resume）：容器编码结束附带 SDK session_id 与
+    # transcript（jsonl 文本）。server 落库到关联 CodingSession，供 7 天内 re-dispatch
+    # resume 续跑。容器侧已按大小上限截断；二者均可选，缺失则该会话仅能语义重建。
+    sdk_session_id = serializers.CharField(
+        required=False, default="", allow_blank=True, max_length=128
+    )
+    sdk_transcript = serializers.CharField(
+        required=False, default="", allow_blank=True, trim_whitespace=False
+    )
 
 
 class FailedPayloadSerializer(serializers.Serializer):

@@ -35,7 +35,22 @@ class RepositoriesConfig(AppConfig):
                 Repository,
             )
 
-            stuck_count = Repository.objects.filter(index_status=IndexStatus.INDEXING).update(
+            # 断点恢复：有可恢复 ResumableTask(kind=index) 的仓库交给
+            # RecoveryScheduler 自动续跑，不在此无脑标 FAILED（避免与续跑互踩）。
+            # 表/应用未就绪时退化为空集合（保持旧行为）。
+            recoverable_ids: set[str] = set()
+            try:
+                from resumable.models import ResumableTaskKind
+                from resumable.recovery import recoverable_target_ids
+
+                recoverable_ids = recoverable_target_ids(ResumableTaskKind.INDEX)
+            except Exception:
+                recoverable_ids = set()
+
+            stuck_qs = Repository.objects.filter(index_status=IndexStatus.INDEXING)
+            if recoverable_ids:
+                stuck_qs = stuck_qs.exclude(id__in=recoverable_ids)
+            stuck_count = stuck_qs.update(
                 index_status=IndexStatus.FAILED,
                 index_error="索引任务因服务重启而中断，请重新开始索引",
             )

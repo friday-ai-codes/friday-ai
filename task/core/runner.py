@@ -124,6 +124,11 @@ class TaskRunner:
                 self.config, self.git_ops.get_workspace_path(), callback=self.callback
             )
 
+            # resume 续跑：若配置了 resume_session_id，把 server 经 env 分片下发的
+            # transcript 还原到 SDK project 目录，供 executor 的 ClaudeAgentOptions(resume) 接续。
+            if self.config.resume_session_id:
+                self._restore_resume_transcript(log)
+
             # Execute based on mode
             if self.config.task_mode == "plan":
                 return await self._run_plan_mode(log, branch_name)
@@ -256,6 +261,54 @@ class TaskRunner:
         log.info("repo_summary_completed", output_length=len(sanitized))
         return 0
 
+    def _load_resume_transcript(self) -> str:
+        """从 env 重组 resume transcript（server 经 dispatch metadata 分片下发）。
+
+        单环境变量受 MAX_ARG_STRLEN(~128KB) 限制，故大 transcript 拆成
+        ``FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS`` 个 ``FRIDAY_TASK_RESUME_TRANSCRIPT_{i}``；
+        兼容单值 ``FRIDAY_TASK_RESUME_TRANSCRIPT``。缺失返回空串（走语义重建回退）。
+        """
+        single = os.environ.get("FRIDAY_TASK_RESUME_TRANSCRIPT", "")
+        if single:
+            return single
+
+        try:
+            chunk_count = int(os.environ.get("FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS", "0"))
+        except ValueError:
+            chunk_count = 0
+        if chunk_count <= 0:
+            return ""
+
+        parts = [
+            os.environ.get(f"FRIDAY_TASK_RESUME_TRANSCRIPT_{i}", "")
+            for i in range(chunk_count)
+        ]
+        return "".join(parts)
+
+    def _restore_resume_transcript(self, log: BoundLogger) -> None:
+        """把 resume transcript 还原到本地 SDK project 目录（fail-soft）。"""
+        from core.sdk_sessions import write_transcript
+
+        transcript = self._load_resume_transcript()
+        if not transcript:
+            log.info(
+                "resume_transcript_absent",
+                resume_session_id=self.config.resume_session_id,
+            )
+            return
+
+        restored = write_transcript(
+            self.config.resume_session_id or "",
+            str(self.git_ops.get_workspace_path()),
+            transcript,
+        )
+        log.info(
+            "resume_transcript_restore",
+            resume_session_id=self.config.resume_session_id,
+            restored=restored,
+            size=len(transcript),
+        )
+
     async def _run_execute_mode(self, log, branch_name: str) -> int:
         """Run in execute mode to implement changes.
 
@@ -355,6 +408,17 @@ class TaskRunner:
             diff_summary=diff_summary,
         )
 
+        # resume 支撑：读出本次 SDK 会话 transcript，随 completed 帧上传 server 落库，
+        # 供 7 天内改方案/回溯续跑（read 失败仅丢恢复能力，不影响主流程）。
+        sdk_session_id = str(result.get("session_id") or "")
+        sdk_transcript = ""
+        if sdk_session_id:
+            from core.sdk_sessions import read_transcript
+
+            sdk_transcript = read_transcript(
+                sdk_session_id, str(self.git_ops.get_workspace_path())
+            )
+
         # implementation contract: 显式发 completed 帧携带 git 元数据。
         # progress 帧（push_complete / suggested_commit_message / execution_complete）
         # 上面已经发过，server 端 progress 渲染依赖；此处补 completed 帧让 server
@@ -369,6 +433,8 @@ class TaskRunner:
                 "task_type": "coding",
             },
             result_type="text",
+            sdk_session_id=sdk_session_id,
+            sdk_transcript=sdk_transcript,
         )
 
         log.info("Execute mode completed successfully", commit=commit_sha[:8])

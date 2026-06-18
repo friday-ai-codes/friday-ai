@@ -425,6 +425,33 @@ class CodingSession(models.Model):
         verbose_name="Diff 摘要",
         help_text="相对 base 分支的文件变更统计，支持页面刷新恢复",
     )
+    # Claude Code SDK 会话恢复（resume 支撑）：容器编码结束经 callback 回传。
+    # sdk_session_id 单独存字符串供 re-dispatch 注入 FRIDAY_TASK_RESUME_SESSION_ID；
+    # sdk_transcript 存 SDK 对话 transcript（jsonl 文本），resume 时容器从 server 拉回还原。
+    # 二者按 sdk_session_saved_at + 7 天定时清理（cleanup_coding_sessions）。
+    sdk_session_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Claude Code SDK 会话 ID",
+        help_text="容器 ResultMessage.session_id，用于 re-dispatch 时 resume 续跑",
+    )
+    sdk_transcript = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="SDK 会话 transcript",
+        help_text=(
+            "Claude Code SDK 对话 transcript（jsonl 文本）。resume 时容器拉回还原到"
+            " ~/.claude 后 ClaudeAgentOptions(resume=...) 续跑；超大小上限则置空走语义重建回退。"
+        ),
+    )
+    sdk_session_saved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="SDK 会话保存时间",
+        help_text="transcript 落库时间；7 天定时清理以此为准",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

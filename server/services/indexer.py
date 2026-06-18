@@ -829,6 +829,43 @@ class IndexerService:
 
         return False
 
+    async def _acreate_auto_graph_history(self) -> GraphBuildHistory:
+        """创建 auto_after_index 的 RUNNING GraphBuildHistory，去重并发重复行。
+
+        4 处 index 路径（full / branch / git_diff / incremental）在并发索引同一仓库
+        时，曾各自 ``acreate`` 出多条 RUNNING 行（已观测到同毫秒内 2 条）。多余的
+        RUNNING 行一旦其后台任务随进程重启丢失，就成了永久挡住 rebuild 的幽灵。
+
+        本 helper 在 Repository 行锁内先查是否已存在 RUNNING 的 auto_after_index
+        行：存在则复用，不再新建；否则创建。``select_for_update`` 在支持的后端
+        （PostgreSQL）下串行化并发索引任务，SQLite 下为安全 no-op（写事务本身串行）。
+        """
+        from django.db import transaction
+
+        def _locked_get_or_create() -> GraphBuildHistory:
+            with transaction.atomic():
+                Repository.objects.select_for_update().filter(
+                    id=self.repository_id
+                ).first()
+                existing = (
+                    GraphBuildHistory.objects.filter(
+                        repository_id=self.repository_id,
+                        status=GraphBuildHistoryStatus.RUNNING,
+                        trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+                    )
+                    .order_by("-started_at")
+                    .first()
+                )
+                if existing is not None:
+                    return existing
+                return GraphBuildHistory.objects.create(
+                    repository_id=self.repository_id,
+                    status=GraphBuildHistoryStatus.RUNNING,
+                    trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+                )
+
+        return await sync_to_async(_locked_get_or_create)()
+
     async def run_full_index(
         self,
         repo_path: str,
@@ -1177,11 +1214,7 @@ class IndexerService:
                 # GraphBuildHistory 行；薄壳 `_extract_and_write_graph` 不感知
                 # history（保 success criterion byte-equivalent），由 callsite 外层 wrap。
                 # 仍在 indexer 主任务（index-{repo_id}）内运行——不切新 task。
-                gbh = await GraphBuildHistory.objects.acreate(
-                    repository_id=self.repository_id,
-                    status=GraphBuildHistoryStatus.RUNNING,
-                    trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
-                )
+                gbh = await self._acreate_auto_graph_history()
                 # implementation-01：auto_after_index 路径入口 reset
                 # Repository 5 字段（与 manual 路径 build_graph_for_repository
                 # 入口对齐——保 view 层读 Repository.graph_* 字段统一）。
@@ -1604,11 +1637,7 @@ class IndexerService:
                         )
             # implementation-01..05：auto_after_index 路径写
             # GraphBuildHistory（与 callsite #1 共用模板）。
-            gbh = await GraphBuildHistory.objects.acreate(
-                repository_id=self.repository_id,
-                status=GraphBuildHistoryStatus.RUNNING,
-                trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
-            )
+            gbh = await self._acreate_auto_graph_history()
             # implementation-01：入口 reset Repository 5 字段。
             await reset_repository_graph_progress(self.repository_id)
             try:
@@ -2133,11 +2162,7 @@ class IndexerService:
                         )
             # implementation-01..05：auto_after_index 路径写
             # GraphBuildHistory（与 callsite #1 / #2 共用模板）。
-            gbh = await GraphBuildHistory.objects.acreate(
-                repository_id=self.repository_id,
-                status=GraphBuildHistoryStatus.RUNNING,
-                trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
-            )
+            gbh = await self._acreate_auto_graph_history()
             # implementation-01：入口 reset Repository 5 字段。
             await reset_repository_graph_progress(self.repository_id)
             try:
@@ -2534,11 +2559,7 @@ class IndexerService:
                             )
                 # implementation-01..05：auto_after_index 路径写
                 # GraphBuildHistory（与 callsite #1 / #2 / #3 共用模板）。
-                gbh = await GraphBuildHistory.objects.acreate(
-                    repository_id=self.repository_id,
-                    status=GraphBuildHistoryStatus.RUNNING,
-                    trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
-                )
+                gbh = await self._acreate_auto_graph_history()
                 # implementation-01：入口 reset Repository 5 字段
                 # （置于 update_graph_progress 之前——后者会覆盖 graph_stage
                 # 为 "building_graph"，最终生效）。
@@ -2723,6 +2744,7 @@ class IndexerService:
         *,
         branch_name: str = "",
         history_id: str | None = None,
+        skip_unchanged: bool = False,
     ) -> dict[str, Any]:
         """对指定文件列表执行图谱抽取并写入 Django ORM（双轨架构图谱轨）。
 
@@ -2817,6 +2839,29 @@ class IndexerService:
             _endpoint_rag_repo_name = ""
             _endpoint_rag_hybrid = False
 
+        # 图谱文件级断点（GraphFileIndex）：skip_unchanged=True 时载入该分支已写入
+        # 图谱的 {file_path: file_hash}，循环内 hash 命中即跳过（进程/Pod 重启续跑）。
+        # 无论是否 skip_unchanged，write_bundle 成功后都 upsert，供未来续跑使用。
+        from repositories.models import GraphFileIndex as _GraphFileIndex
+
+        _graph_done: dict[str, str] = {}
+        if skip_unchanged:
+            try:
+                _graph_done = {
+                    fp: fh
+                    async for fp, fh in _GraphFileIndex.objects.filter(
+                        repository_id=repository_id,
+                        branch_name=branch_name,
+                    ).values_list("file_path", "file_hash")
+                }
+            except Exception as _gfi_exc:  # noqa: BLE001
+                logger.warning(
+                    "graph_checkpoint_load_failed",
+                    repository_id=repository_id,
+                    error=str(_gfi_exc),
+                )
+                _graph_done = {}
+
         for index, file_path in enumerate(file_paths, start=1):
             if index % GRAPH_YIELD_EVERY == 0 or index == total_graph_files:
                 await update_index_stage(
@@ -2884,6 +2929,14 @@ class IndexerService:
             if not source.strip():
                 continue
 
+            # 图谱断点：hash 未变且已写入图谱 → 跳过（续跑场景免重复抽取/写库）。
+            _file_hash = hashlib.sha256(
+                source.encode("utf-8", "replace")
+            ).hexdigest()
+            if skip_unchanged and _graph_done.get(file_path) == _file_hash:
+                stats["files_processed"] += 1
+                continue
+
             # AST 解析 + 四维抽取 + 写入（per contract: 单文件失败不阻塞）
             try:
                 # 构建 FileContext
@@ -2934,6 +2987,22 @@ class IndexerService:
                 stats["total_imports"] += result.get("imports", 0)
                 stats["total_calls"] += result.get("calls", 0)
                 stats["total_endpoints"] += result.get("endpoints", 0)
+
+                # 图谱断点锚点：write_bundle 提交成功后才登记，保证 DB 一致性
+                # （崩溃在 write 后、upsert 前 → 续跑重做该文件，幂等安全）。
+                try:
+                    await _GraphFileIndex.objects.aupdate_or_create(
+                        repository_id=repository_id,
+                        branch_name=branch_name,
+                        file_path=file_path,
+                        defaults={"file_hash": _file_hash},
+                    )
+                except Exception as _gfi_w_exc:  # noqa: BLE001
+                    logger.debug(
+                        "graph_checkpoint_write_failed",
+                        file_path=file_path,
+                        error=str(_gfi_w_exc),
+                    )
 
                 # 收集当前文件 endpoint（含 best-effort symbol signature）
                 for _ep in bundle.endpoints:

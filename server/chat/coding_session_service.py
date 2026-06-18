@@ -292,6 +292,14 @@ async def dispatch_coding_task(
     # 2. 构建 metadata
     env_metadata, repo_url = await build_dispatch_metadata(repo, coding_session)
 
+    # SDK resume 续跑：仅对真正跑 SDK 编码的 coding 任务注入（coding_commit 仅 amend+push，
+    # 不跑 SDK，注入 transcript 既无用又徒增 ARG_MAX 压力）。默认安全：草稿/全新会话 sdk
+    # 字段为空 → build_resume_dispatch_env 返回 {}，dispatch 行为与现状逐字一致。
+    if task_type != "coding_commit":
+        from chat.sdk_resume import build_resume_dispatch_env
+
+        env_metadata.update(build_resume_dispatch_env(coding_session))
+
     # 合并 extra_metadata
     if extra_metadata:
         env_metadata.update(extra_metadata)

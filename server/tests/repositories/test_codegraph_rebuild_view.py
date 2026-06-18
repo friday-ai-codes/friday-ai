@@ -301,11 +301,16 @@ def test_cancel_409_when_only_completed_history(
     assert response.status_code == 409
 
 
-def test_cancel_targets_latest_running_history(
+def test_cancel_targets_all_running_history(
     authenticated_client: APIClient,
     repo: Repository,
 ) -> None:
-    """多 RUNNING 行（不同 started_at）→ 仅最新一行转 CANCELLED，更早的保留 RUNNING。"""
+    """多 RUNNING 行（不同 started_at）→ **全部**转 CANCELLED。
+
+    旧行为只翻最新一行，会把更早的 RUNNING 行遗留成永久挡住 rebuild 的幽灵
+    （并发 auto_after_index 已观测到同毫秒 2 行）。修复后 cancel 取消该仓库
+    全部 RUNNING 行。
+    """
 
     older_started = timezone.now() - timezone.timedelta(minutes=10)
     older = GraphBuildHistory.objects.create(
@@ -331,7 +336,7 @@ def test_cancel_targets_latest_running_history(
     newer.refresh_from_db()
     older.refresh_from_db()
     assert newer.status == GraphBuildHistoryStatus.CANCELLED
-    assert older.status == GraphBuildHistoryStatus.RUNNING
+    assert older.status == GraphBuildHistoryStatus.CANCELLED
 
 
 def test_cancel_404_on_missing_repository(
@@ -464,8 +469,9 @@ def test_history_list_serializer_fields_match(
     authenticated_client: APIClient,
     repo: Repository,
 ) -> None:
-    """单行 fixture 设全字段 —— 断言 result item 含 14 字段全集。"""
+    """单行 fixture 设全字段 —— 断言 result item 含 15 字段全集（含 duration_seconds）。"""
 
+    started = timezone.now() - timezone.timedelta(seconds=42)
     GraphBuildHistory.objects.create(
         repository=repo,
         trigger_type=GraphBuildHistoryTrigger.MANUAL,
@@ -477,7 +483,8 @@ def test_history_list_serializer_fields_match(
         imports_count=20,
         calls_count=30,
         endpoints_count=5,
-        finished_at=timezone.now(),
+        started_at=started,
+        finished_at=started + timezone.timedelta(seconds=42),
         error_message="",
     )
 
@@ -498,6 +505,7 @@ def test_history_list_serializer_fields_match(
         "endpoints_count",
         "started_at",
         "finished_at",
+        "duration_seconds",
         "error_message",
         "created_at",
     }
@@ -505,6 +513,8 @@ def test_history_list_serializer_fields_match(
         f"serializer 字段集合不匹配：缺 {expected_fields - set(item.keys())}，"
         f"多 {set(item.keys()) - expected_fields}"
     )
+    # 构建耗时 = finished_at - started_at
+    assert item["duration_seconds"] == 42.0
 
 
 def test_history_list_404_on_missing_repository(

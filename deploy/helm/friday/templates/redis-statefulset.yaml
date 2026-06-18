@@ -22,6 +22,9 @@ spec:
       containers:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          # 开启 AOF 持久化作为额外保险。Redis 仅承担 Channel Layer 消息总线与
+          # 可选的恢复分布式锁；业务断点恢复真相源在 DB/Qdrant，不依赖 Redis 数据。
+          args: ["redis-server", "--appendonly", "yes"]
           ports:
             - name: tcp-redis
               containerPort: 6379
