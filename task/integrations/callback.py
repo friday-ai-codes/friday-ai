@@ -222,25 +222,35 @@ class CallbackClient:
         self,
         output: dict[str, Any],
         result_type: str = "text",
+        sdk_session_id: str = "",
+        sdk_transcript: str = "",
     ) -> bool:
-        """通过新回调协议报告完成 — POST /api/containers/callback/。"""
+        """通过新回调协议报告完成 — POST /api/containers/callback/。
+
+        ``sdk_session_id`` / ``sdk_transcript`` 非空时随 payload 上传，供 server 落库到
+        CodingSession 支撑 7 天内 resume 续跑（仅编码任务有意义）。
+        """
         log = logger.bind(task_id=self.config.task_id, result_type=result_type)
 
         if not self.enabled:
             log.info("report_completed_standalone", output_keys=list(output.keys()))
             return True
 
+        inner_payload: dict[str, Any] = {
+            "result_type": result_type,
+            "output": output,
+            "branch_name": output.get("branch_name", ""),
+            "commit_sha": output.get("commit_sha", ""),
+            "modified_files": output.get("modified_files", []),
+        }
+        if sdk_session_id:
+            inner_payload["sdk_session_id"] = sdk_session_id
+            inner_payload["sdk_transcript"] = sdk_transcript
         payload = {
             "type": "completed",
             "session_id": self.config.task_id,
             "token": self.config.callback_token,
-            "payload": {
-                "result_type": result_type,
-                "output": output,
-                "branch_name": output.get("branch_name", ""),
-                "commit_sha": output.get("commit_sha", ""),
-                "modified_files": output.get("modified_files", []),
-            },
+            "payload": inner_payload,
         }
 
         try:

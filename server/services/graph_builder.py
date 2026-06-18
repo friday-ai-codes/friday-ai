@@ -326,6 +326,7 @@ async def build_graph_for_repository(
     trigger: str,
     history_id: str | None = None,
     branch: str | None = None,
+    skip_unchanged: bool = False,
 ) -> GraphBuildResult:
     """顶层 graph 构建入口（work item-01 / work item-02 / contract）。
 
@@ -411,7 +412,11 @@ async def build_graph_for_repository(
         from codegraph.services.graph_writer import GraphWriter
 
         graph_writer = GraphWriter()
-        if file_paths:
+        # skip_unchanged（断点续跑）时**跳过**前置全量删除：保留崩溃前已写入的
+        # 图谱数据，配合 GraphFileIndex 跳过已完成文件，实现文件级断点恢复。
+        # 非续跑（手动 rebuild / 全新构建）时：前置删全量孤儿 + 清空 GraphFileIndex
+        # 断点，保证是一次真正的全量重建。
+        if not skip_unchanged and file_paths:
             try:
                 await graph_writer.adelete_for_files(
                     repository_id, file_paths, branch_name=normalized_branch,
@@ -423,6 +428,20 @@ async def build_graph_for_repository(
                     "graph_pre_delete_failed",
                     repository_id=repository_id,
                     file_count=len(file_paths),
+                    error=str(exc),
+                )
+        if not skip_unchanged:
+            # 清空旧断点：全量重建从零登记，避免上一轮断点导致本轮误跳过。
+            try:
+                from repositories.models import GraphFileIndex
+
+                await GraphFileIndex.objects.filter(
+                    repository_id=repository_id, branch_name=normalized_branch,
+                ).adelete()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "graph_checkpoint_reset_failed",
+                    repository_id=repository_id,
                     error=str(exc),
                 )
 
@@ -447,6 +466,7 @@ async def build_graph_for_repository(
                 file_paths=file_paths,
                 repository_id=repository_id,
                 branch_name=normalized_branch,
+                skip_unchanged=skip_unchanged,
             )
 
         files_total = len(file_paths)

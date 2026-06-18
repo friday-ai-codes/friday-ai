@@ -168,6 +168,25 @@ def cleanup_orchestration_checkpoints_job():
         log.exception("job_error", error=str(e))
 
 
+def cleanup_coding_sessions_job():
+    """Job wrapper for cleanup_coding_sessions command (resume SDK session TTL).
+
+    与 cleanup_orchestration_checkpoints_job 同 call_command 模式（命令内部为同步
+    ORM update，无需 run_async_task 包装）。清理 7 天前编码会话的 SDK transcript/
+    session_id，防 DB 因 resume 持久化无限膨胀。
+    """
+    from django.core.management import call_command
+
+    log = logger.bind(job="cleanup_coding_sessions")
+    log.info("job_start")
+
+    try:
+        call_command("cleanup_coding_sessions")
+        log.info("job_complete")
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -306,6 +325,22 @@ class Command(BaseCommand):
             "job_registered",
             job="cleanup_orchestration_checkpoints",
             schedule="daily at 03:30",
+        )
+
+        # Cleanup coding session SDK resume data daily at 04:00 (7-day TTL)
+        # 选 04:00 错开 03:00/03:30 的 SQLite 清理，避免争写锁。
+        scheduler.add_job(
+            cleanup_coding_sessions_job,
+            trigger=CronTrigger(hour=4, minute=0),
+            id="cleanup_coding_sessions",
+            name="Cleanup coding session SDK resume data older than 7 days",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="cleanup_coding_sessions",
+            schedule="daily at 04:00",
         )
 
         # Delete old job executions weekly

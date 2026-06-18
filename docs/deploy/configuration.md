@@ -68,6 +68,19 @@ AI Provider Key、Git Token、飞书应用凭据等运行时凭据在 Web 界面
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis 连接 URL |
 | `WEBSOCKET_REQUIRE_TLS` | `false` | WebSocket TLS 要求（生产环境自动启用） |
 
+> Redis 在本项目中是**协调层**（WebSocket Channel Layer 消息总线，以及可选的恢复分布式锁），**不是状态真相源**。工作流、索引、图谱等业务状态的真相源在数据库（Postgres/SQLite）、Qdrant 与文件系统中；即使 Redis 重启丢失数据，业务断点恢复也不受影响。
+
+## 可恢复任务（断点恢复）
+
+长任务（索引、图谱构建等）会登记到 `ResumableTask`（DB 真相源）。进程被 `docker compose up -d` 升级、或 k8s Pod 被重建后，服务启动时由 `RecoveryScheduler` 扫描"租约已过期的运行中任务"并自动续跑（复用 `FileIndex` / `GraphFileIndex` 文件级断点跳过已完成文件）。也可手动触发：`python manage.py recover_tasks`。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RESUMABLE_RECOVERY_ON_STARTUP` | `true` | 启动时是否自动恢复未完成任务 |
+| `RESUMABLE_LEASE_TTL_SECONDS` | `90` | 任务租约 TTL；启动扫描只领取租约已过期的运行中任务 |
+| `RESUMABLE_HEARTBEAT_INTERVAL_SECONDS` | `30` | 运行中任务续租/心跳间隔 |
+| `RESUMABLE_USE_REDIS_LOCK` | `false` | 多副本/k8s 推荐开启：用 Redis 对"恢复扫描"做集群级互斥；关闭时由 DB 行级 CAS 保证 exactly-once |
+
 ## Qdrant
 
 | 变量 | 默认值 | 说明 |

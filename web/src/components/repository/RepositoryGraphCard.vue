@@ -71,6 +71,7 @@ const lastCompletedCounts = ref<{
   imports: number
   calls: number
   endpoints: number
+  durationSeconds: number | null
 } | null>(null)
 
 const rebuilding = ref(false)
@@ -113,6 +114,48 @@ const filesPercent = computed(() => {
 
 const indexBusy = computed(() => repository.value?.index_status === 'indexing')
 
+// ===== 构建耗时 =====
+
+/** 把秒数格式化为 ms / s / min（与 IndexHistoryList 同口径） */
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined)
+    return '—'
+  const ms = seconds * 1000
+  if (ms < 1000)
+    return `${Math.round(ms)}ms`
+  if (seconds < 60)
+    return `${seconds.toFixed(1)}s`
+  return `${(seconds / 60).toFixed(1)}min`
+}
+
+// running 实时计时：每秒 tick 一次，从 liveGraph.started_at 起算已用时
+const nowMs = ref(Date.now())
+let tickTimer: ReturnType<typeof setInterval> | null = null
+
+function startTick() {
+  if (tickTimer)
+    return
+  nowMs.value = Date.now()
+  tickTimer = setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+}
+
+function stopTick() {
+  if (tickTimer) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+const runningElapsedSeconds = computed<number | null>(() => {
+  const startedAt = liveGraph.value?.started_at
+  if (!startedAt)
+    return null
+  const elapsedMs = nowMs.value - new Date(startedAt).getTime()
+  return elapsedMs > 0 ? elapsedMs / 1000 : 0
+})
+
 // ===== 数据加载 =====
 
 async function loadRepository() {
@@ -137,6 +180,7 @@ async function loadLatestCompletedCounts() {
         imports: item.imports_count,
         calls: item.calls_count,
         endpoints: item.endpoints_count,
+        durationSeconds: item.duration_seconds,
       }
     }
     else {
@@ -151,6 +195,7 @@ async function loadLatestCompletedCounts() {
 // ===== SSE / polling =====
 
 function startStream() {
+  startTick()
   if (streamController)
     return
   streamController = connectGraphProgressStream(props.repositoryId, {
@@ -186,6 +231,7 @@ function stopStream() {
 }
 
 function startPollingFallback() {
+  startTick()
   if (pollInterval)
     return
   pollInterval = setInterval(async () => {
@@ -210,6 +256,7 @@ function stopPolling() {
 function stopAllWatchers() {
   stopStream()
   stopPolling()
+  stopTick()
 }
 
 // ===== 按钮交互 =====
@@ -391,6 +438,13 @@ onUnmounted(() => {
                 :style="{ width: `${percent}%` }"
               />
             </div>
+            <div
+              v-if="runningElapsedSeconds !== null"
+              class="flex items-center justify-end gap-1 text-[11px] text-muted-foreground tabular-nums"
+            >
+              <span class="icon-[lucide--timer]" />
+              已用时 {{ formatDuration(runningElapsedSeconds) }}
+            </div>
           </div>
         </div>
 
@@ -434,9 +488,15 @@ onUnmounted(() => {
               </p>
             </div>
           </div>
-          <p class="text-xs text-muted-foreground">
-            最近构建：<span class="text-foreground">{{ formatRelativeTime(repository?.graph_last_built_at) }}</span>
-          </p>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <p>
+              最近构建：<span class="text-foreground">{{ formatRelativeTime(repository?.graph_last_built_at) }}</span>
+            </p>
+            <p v-if="lastCompletedCounts?.durationSeconds != null" class="inline-flex items-center gap-1">
+              <span class="icon-[lucide--timer]" />
+              构建耗时：<span class="text-foreground tabular-nums">{{ formatDuration(lastCompletedCounts.durationSeconds) }}</span>
+            </p>
+          </div>
 
           <!-- Galaxy 入口 banner：原地全屏打开当前仓库图谱 -->
           <button

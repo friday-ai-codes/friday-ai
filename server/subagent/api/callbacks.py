@@ -50,6 +50,10 @@ _TERMINAL_STATUSES = {
 # 数据补充类回调绕过终态检查（它们不改变状态，只追加数据）
 _DATA_APPEND_TYPES = {CallbackType.ACTION_LOG, CallbackType.TOKEN_USAGE}
 
+# SDK transcript 落库上限（字符）。超限丢弃走语义重建回退，防 DB 单行膨胀 +
+# 留余量给 Django DATA_UPLOAD_MAX_MEMORY_SIZE（默认 2.5MB）。
+MAX_SDK_TRANSCRIPT_CHARS = 1_500_000
+
 
 def _notify_barrier_manager(session: SubAgentSession, log: BoundLogger) -> None:
     """通知 BarrierManager 任务完成/失败 — 由 chat_deep_analysis 回调触发。"""
@@ -553,12 +557,60 @@ class ContainerCallbackView(APIView):
 # === CodingSession 回调扩展 (implementation) ===
 
 
-async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
+async def _persist_sdk_session(
+    coding_session: Any,
+    sdk_session_id: str,
+    sdk_transcript: str,
+) -> None:
+    """落库 Claude Code SDK 会话数据到 CodingSession，支撑 7 天内 resume 续跑。
+
+    transcript 超 ``MAX_SDK_TRANSCRIPT_CHARS`` 则丢弃（仅留 session_id 也无法 resume，
+    一并置空 session_id 走语义重建回退），防 DB 单行膨胀。
+    """
+    from django.utils import timezone
+
+    if not sdk_session_id:
+        return
+
+    if sdk_transcript and len(sdk_transcript) > MAX_SDK_TRANSCRIPT_CHARS:
+        logger.warning(
+            "sdk_transcript_oversize_dropped",
+            coding_session_id=str(coding_session.id),
+            size=len(sdk_transcript),
+            cap=MAX_SDK_TRANSCRIPT_CHARS,
+        )
+        return
+
+    coding_session.sdk_session_id = sdk_session_id
+    coding_session.sdk_transcript = sdk_transcript
+    coding_session.sdk_session_saved_at = timezone.now()
+    await coding_session.asave(
+        update_fields=[
+            "sdk_session_id",
+            "sdk_transcript",
+            "sdk_session_saved_at",
+            "updated_at",
+        ]
+    )
+    logger.info(
+        "sdk_session_persisted",
+        coding_session_id=str(coding_session.id),
+        has_transcript=bool(sdk_transcript),
+    )
+
+
+async def _update_coding_session_on_complete(
+    session: SubAgentSession,
+    sdk_session_id: str = "",
+    sdk_transcript: str = "",
+) -> None:
     """容器完成回调 -- 根据 task_type 区分 Phase/2，resume CodingSession graph。
 
     Phase (coding): 提取 suggested_commit_message，resume graph 进入 awaiting_confirmation。
     Phase (coding_commit): resume graph 标记 completed。
     兼容旧流程: 非 graph 管理的 session 直接 amark_completed。
+
+    ``sdk_session_id`` / ``sdk_transcript`` 非空时落库到 CodingSession，供 resume 续跑。
     """
     from chat.coding_events import store_coding_complete_to_message
     from chat.models import CodingSession
@@ -568,6 +620,8 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
     ).afirst()
     if coding_session is None:
         return
+
+    await _persist_sdk_session(coding_session, sdk_session_id, sdk_transcript)
 
     task_result = await TaskResult.objects.filter(session=session).afirst()
     if (
@@ -755,8 +809,12 @@ async def _handle_completed(
     # 更新 session 状态
     await session.amark_completed()
 
-    # 更新关联的 CodingSession（如果有）
-    await _update_coding_session_on_complete(session)
+    # 更新关联的 CodingSession（如果有）+ 落库 SDK 会话恢复数据
+    await _update_coding_session_on_complete(
+        session,
+        sdk_session_id=str(p.get("sdk_session_id", "") or ""),
+        sdk_transcript=str(p.get("sdk_transcript", "") or ""),
+    )
 
     # repo_summary 完成写回 Repository
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:

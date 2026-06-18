@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "accounts",
     "audit",
     "system",
+    "resumable",
     "repositories",
     "codegraph",
     "code_relations",
@@ -194,6 +195,22 @@ WORKFLOW_IDEMPOTENCY_REDIS_URL = env.str(
     "WORKFLOW_IDEMPOTENCY_REDIS_URL",
     default=REDIS_CHANNEL_LAYER_URL,
 )
+
+# =============================================================================
+# 可恢复任务（断点恢复）
+# =============================================================================
+# 真相源 = DB（Postgres/SQLite）：长任务（索引 / 图谱构建等）登记到 ResumableTask，
+# 进程被 docker compose 升级、Pod 被 k8s 重建后由 RecoveryScheduler 自动续跑，
+# 断电不丢。Redis 仅在多副本部署时做"每轮恢复扫描"的集群级互斥（去重加速），
+# 不作为状态真相源 —— 关闭时正确性仍由 DB 行级 CAS 保证。
+RESUMABLE_RECOVERY_ON_STARTUP = env.bool("RESUMABLE_RECOVERY_ON_STARTUP", default=True)
+# 租约 TTL：运行中任务每 HEARTBEAT 秒续租到 now+TTL；启动扫描只领取已过期租约。
+RESUMABLE_LEASE_TTL_SECONDS = env.int("RESUMABLE_LEASE_TTL_SECONDS", default=90)
+RESUMABLE_HEARTBEAT_INTERVAL_SECONDS = env.int(
+    "RESUMABLE_HEARTBEAT_INTERVAL_SECONDS", default=30
+)
+# 可选：启用基于 Redis 的集群级恢复锁（多副本/k8s 推荐）。默认关闭走 DB CAS。
+RESUMABLE_USE_REDIS_LOCK = env.bool("RESUMABLE_USE_REDIS_LOCK", default=False)
 
 # 生产模式下要求 WebSocket 使用 TLS (wss://)
 # 默认值：仅生产环境启用，开发环境允许 ws://
@@ -497,6 +514,19 @@ GALAXY_CACHE_WARM_ON_STARTUP: bool = env.bool(
     "GALAXY_CACHE_WARM_ON_STARTUP", default=True
 )
 GALAXY_CACHE_DIR = DATA_DIR / "galaxy_cache"
+
+# 图谱构建孤儿行回收：后台构建任务（run_in_background）随进程内存存活，无法
+# 跨进程重启幸存。服务进程启动时把"超过该阈值仍处于 RUNNING 的 GraphBuildHistory"
+# 视为孤儿 → 标记 FAILED 并把对应 Repository.graph_build_status 由 RUNNING 归位
+# FAILED，避免幽灵 RUNNING 行永久卡住「准备中」并挡住 rebuild（graph already running）。
+# 设阈值（而非无脑回收所有 RUNNING）是为多 worker 部署留安全边界：刚被另一个
+# worker 创建的 RUNNING 行不应被新启动 worker 误杀。设 0 关闭该回收。
+GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP: bool = env.bool(
+    "GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP", default=True
+)
+GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES: int = env.int(
+    "GRAPH_BUILD_ORPHAN_TIMEOUT_MINUTES", default=30
+)
 
 # HybridSearchService 编排器 RAG/图谱 token 预算比例（per contract）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。

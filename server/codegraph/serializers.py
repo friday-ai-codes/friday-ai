@@ -88,10 +88,14 @@ class GraphBuildHistorySerializer(serializers.Serializer):
     字段口径与 ``IndexHistorySerializer``（``repositories/index_views.py:807``）同构 ——
     平铺 14 字段：id / trigger_type / status / 7 个 counts(files_* + symbols_count +
     imports_count + calls_count + endpoints_count) / started_at / finished_at /
-    error_message / created_at。
+    error_message / created_at，外加计算字段 ``duration_seconds``（构建耗时）。
 
     ``error_message`` 用 ``allow_blank=True``（与 model 的 ``default=""``
     语义对齐，区别于 ``IndexHistory.error_message`` 的 ``null=True`` 风格）。
+
+    ``duration_seconds``：``finished_at - started_at`` 的秒数（保留 1 位小数）；
+    仍在构建（无 ``finished_at``）或缺 ``started_at`` 时为 ``None``，由前端决定是否
+    改用「实时计时」展示。
     """
 
     id = serializers.UUIDField()
@@ -106,8 +110,17 @@ class GraphBuildHistorySerializer(serializers.Serializer):
     endpoints_count = serializers.IntegerField()
     started_at = serializers.DateTimeField(allow_null=True)
     finished_at = serializers.DateTimeField(allow_null=True)
+    duration_seconds = serializers.SerializerMethodField()
     error_message = serializers.CharField(allow_blank=True)
     created_at = serializers.DateTimeField()
+
+    def get_duration_seconds(self, obj: object) -> float | None:
+        """构建耗时（秒）：终态行才有；仍 RUNNING / 缺 started_at 时返 None。"""
+        started_at = getattr(obj, "started_at", None)
+        finished_at = getattr(obj, "finished_at", None)
+        if started_at is None or finished_at is None:
+            return None
+        return round((finished_at - started_at).total_seconds(), 1)
 
 
 __all__ = [

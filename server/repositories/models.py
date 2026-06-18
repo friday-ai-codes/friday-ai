@@ -146,6 +146,7 @@ class Repository(models.Model):
     credential: "GitCredential"
     index_history: "QuerySet[IndexHistory]"
     file_indexes: "QuerySet[FileIndex]"
+    graph_file_indexes: "QuerySet[GraphFileIndex]"
     branch_indexes: "QuerySet[RepositoryBranchIndex]"
     graph_build_histories: "QuerySet[GraphBuildHistory]"
 
@@ -594,6 +595,49 @@ class FileIndex(models.Model):
 
     def __str__(self) -> str:
         return f"{self.file_path} ({self.file_hash[:8]})"
+
+
+class GraphFileIndex(models.Model):
+    """图谱级文件断点锚点——记录某分支下已成功写入图谱的文件 hash。
+
+    与 ``FileIndex``（向量轨断点）口径一致，但服务于"图谱构建"轨：
+    ``_extract_and_write_graph`` 在 ``GraphWriter.write_bundle`` 成功**之后**
+    才 upsert 本行。进程 / Pod 重启后续跑时（skip_unchanged）据此跳过 hash 未变、
+    已写入图谱的文件，实现图谱构建的文件级断点恢复。
+
+    branch_name 维度与 codegraph 六模型同口径（""=base 分支）。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="graph_file_indexes",
+    )
+    file_path = models.CharField(max_length=1000)
+    file_hash = models.CharField(max_length=64)
+    branch_name = models.CharField(max_length=200, default="", blank=True)
+    built_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "graph_file_indexes"
+        verbose_name = "图谱文件断点"
+        verbose_name_plural = "图谱文件断点"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "branch_name", "file_path"],
+                name="uq_graph_repo_branch_file",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["repository", "branch_name"],
+                name="idx_graph_repo_branch",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.file_path}@{self.branch_name or 'base'} ({self.file_hash[:8]})"
 
 
 class GitCredential(models.Model):

@@ -271,6 +271,8 @@ export interface GraphBuildHistoryItem {
   endpoints_count: number
   started_at: string | null
   finished_at: string | null
+  /** 构建耗时（秒，保留 1 位小数）；仍在构建或缺 started_at 时为 null */
+  duration_seconds: number | null
   error_message: string
   created_at: string
 }

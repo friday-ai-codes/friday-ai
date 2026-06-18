@@ -705,12 +705,26 @@ class CodegraphRebuildView(APIView):
 
         repo_id_str = str(repository_id)
         history_id_str = str(history.id)
+
+        from resumable.models import ResumableTaskKind
+        from resumable.service import wrap_resumable
+
         run_in_background(
-            lambda: build_graph_for_repository(
-                repo_id_str,
-                trigger=GraphBuildHistoryTrigger.MANUAL,
-                history_id=history_id_str,
-                branch=branch_arg,
+            wrap_resumable(
+                kind=ResumableTaskKind.GRAPH,
+                target_id=repo_id_str,
+                payload={
+                    "repository_id": repo_id_str,
+                    "branch": branch_arg,
+                    "trigger": GraphBuildHistoryTrigger.MANUAL.value,
+                },
+                name=f"graph-build-{repo_id_str}",
+                coro_factory=lambda: build_graph_for_repository(
+                    repo_id_str,
+                    trigger=GraphBuildHistoryTrigger.MANUAL,
+                    history_id=history_id_str,
+                    branch=branch_arg,
+                ),
             ),
             name=f"graph-build-{repo_id_str}",
         )
@@ -762,15 +776,16 @@ class CodegraphCancelView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        history = (
-            await GraphBuildHistory.objects.filter(
-                repository_id=repository_id,
-                status=GraphBuildHistoryStatus.RUNNING,
-            )
-            .order_by("-started_at")
-            .afirst()
+        # 取消该仓库**全部** RUNNING 历史行，而非仅最新一条：indexer 的
+        # auto_after_index 路径在并发索引下可能瞬间创建多条 RUNNING 行（已观测到
+        # 同一毫秒内 2 条），若只翻最新一条，较早的那条会被永久遗留成幽灵 RUNNING，
+        # 永久挡住后续 rebuild（graph already running）。
+        running_qs = GraphBuildHistory.objects.filter(
+            repository_id=repository_id,
+            status=GraphBuildHistoryStatus.RUNNING,
         )
-        if history is None:
+        latest_running = await running_qs.order_by("-started_at").afirst()
+        if latest_running is None:
             logger.info(
                 "codegraph_cancel_conflict",
                 repository_id=str(repository_id),
@@ -783,9 +798,11 @@ class CodegraphCancelView(APIView):
 
         cancelled = cancel_background_task(f"graph-build-{repository_id}")
 
-        history.status = GraphBuildHistoryStatus.CANCELLED
-        history.finished_at = timezone.now()
-        await history.asave(update_fields=["status", "finished_at"])
+        cancelled_count = await running_qs.aupdate(
+            status=GraphBuildHistoryStatus.CANCELLED,
+            finished_at=timezone.now(),
+        )
+        history = latest_running
 
         # implementation-01 取消出口一致性（CONTEXT Grey Area 1
         # 决议）：除 history 行转 CANCELLED 外，同步把 Repository 进度字段
@@ -814,6 +831,7 @@ class CodegraphCancelView(APIView):
             history_id=str(history.id),
             trigger_type=history.trigger_type,
             background_task_cancelled=cancelled,
+            cancelled_history_rows=cancelled_count,
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)

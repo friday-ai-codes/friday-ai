@@ -385,11 +385,21 @@ async def _schedule_default_branch_rolling_index(
         started_at=timezone.now(),
     )
 
+    from resumable.models import ResumableTaskKind
+    from resumable.service import wrap_resumable
     from services.background_runner import run_in_background
     from services.indexer import clone_and_index_repository
 
     run_in_background(
-        lambda: clone_and_index_repository(repo_id, history_id=str(history.id)),
+        wrap_resumable(
+            kind=ResumableTaskKind.INDEX,
+            target_id=str(repo_id),
+            payload={"repository_id": str(repo_id), "branch": None, "trigger": "manual"},
+            name=f"index-{repo_id}",
+            coro_factory=lambda: clone_and_index_repository(
+                repo_id, history_id=str(history.id)
+            ),
+        ),
         name=f"index-{repo_id}",
     )
 

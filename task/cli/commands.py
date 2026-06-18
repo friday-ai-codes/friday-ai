@@ -261,13 +261,47 @@ def resume(
             sys.exit(1)
 
         session_info = mappings[session_id]
-        click.echo(f"恢复会话 {session_id} (任务: {session_info['task_id']})")
-        click.echo("注意: 完整的会话恢复需要原始 Git 配置，当前为简化实现。")
-        sys.exit(0)
+        task_id = session_info["task_id"]
+        task_file = Path(session_dir) / f"{task_id}.json"
+        if not task_file.exists():
+            click.echo(f"错误: 未找到任务会话文件 {task_file}", err=True)
+            sys.exit(1)
 
+        task_data = json.loads(task_file.read_text())
     except json.JSONDecodeError as e:
         click.echo(f"错误: 会话文件格式错误: {e}", err=True)
         sys.exit(1)
+
+    git_url = task_data.get("git_url", "")
+    if not git_url:
+        click.echo("错误: 会话缺少 git_url，无法恢复执行", err=True)
+        sys.exit(1)
+
+    click.echo(f"恢复会话 {session_id} (任务: {task_id})")
+
+    # CLI 在本机运行，transcript 已在本地 ~/.claude，无需还原；
+    # 仅重建 config 并设 resume_session_id 让 SDK 接续上次对话续跑。
+    run_mode = "execute" if mode == "exec" else "plan"
+    config = _build_config(
+        mode=run_mode,
+        task_id=task_id,
+        project_id=task_data.get("project_id", "cli"),
+        git_url=git_url,
+        branch=task_data.get("git_branch", "main"),
+        new_branch=None,
+        description=task_data.get("description", "") or "继续上次会话",
+        api_key=api_key,
+        base_url=base_url,
+        ssh_key=None,
+        access_token=None,
+        callback_url=None,
+        session_dir=session_dir,
+        ssl_verify=False,
+        resume_session=session_id,
+    )
+
+    exit_code = asyncio.run(_run_task(config))
+    sys.exit(exit_code)
 
 
 def _build_config(
