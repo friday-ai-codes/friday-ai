@@ -72,12 +72,19 @@ const columnVisibility = useLocalStorage<VisibilityState>(
   `datatable-visibility-${props.tableId}`,
   {},
 )
-const sorting = ref<SortingState>([])
-const globalFilter = ref('')
-const pagination = ref<PaginationState>({
-  pageIndex: 0,
-  pageSize: props.pageSize ?? 20,
+// 这些状态默认是组件内部 ref（defineModel 未绑定时退化为本地状态，向后兼容）；
+// 调用方可通过 v-model:pagination / v-model:sorting / v-model:global-filter 受控，
+// 用于把表格状态持久化到 URL（刷新可恢复）。
+const sorting = defineModel<SortingState>('sorting', { default: () => [] })
+const globalFilter = defineModel<string>('globalFilter', { default: '' })
+// defineModel 默认值不能引用 props（会被提升到 setup 外），故静态默认 20；
+// 下方对「未受控但传了 pageSize prop」的旧用法做一次初始化兼容。
+const pagination = defineModel<PaginationState>('pagination', {
+  default: () => ({ pageIndex: 0, pageSize: 20 }),
 })
+if (props.pageSize && props.pageSize !== 20 && pagination.value.pageSize === 20) {
+  pagination.value = { ...pagination.value, pageSize: props.pageSize }
+}
 const rowSelection = defineModel<RowSelectionState>('rowSelection', { default: () => ({}) })
 
 // --- useVueTable 初始化（getter 函数模式，保证响应性）---
@@ -130,8 +137,8 @@ const headerCheckboxState = computed<boolean | 'indeterminate'>(() => {
   return false
 })
 
-// 每页条数选择（字符串适配 Select 组件）
-const pageSizeStr = ref(String(props.pageSize ?? 20))
+// 每页条数选择（字符串适配 Select 组件）；从 pagination 派生，保证受控时同步
+const pageSizeStr = computed(() => String(pagination.value.pageSize))
 const effectivePageSizeOptions = computed(() => props.pageSizeOptions ?? [10, 20, 50, 100])
 
 // 分页信息
@@ -167,9 +174,7 @@ function goToPage(page: number) {
 }
 
 function handlePageSizeChange(val: unknown) {
-  const str = String(val)
-  pageSizeStr.value = str
-  pagination.value = { pageIndex: 0, pageSize: Number(str) }
+  pagination.value = { pageIndex: 0, pageSize: Number(val) }
 }
 
 /**

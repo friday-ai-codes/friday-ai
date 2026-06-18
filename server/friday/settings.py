@@ -102,6 +102,8 @@ INSTALLED_APPS = [
     "django_apscheduler",
     "accounts",
     "audit",
+    "notifications",
+    "feedback",
     "system",
     "resumable",
     "repositories",

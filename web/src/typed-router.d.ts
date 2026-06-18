@@ -52,6 +52,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/announcements/': RouteRecordInfo<
+      '/admin/announcements/',
+      '/admin/announcements',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/audit/': RouteRecordInfo<
       '/admin/audit/',
       '/admin/audit',
@@ -85,6 +92,20 @@ declare module 'vue-router/auto-routes' {
       '/admin/conversations',
       Record<never, never>,
       Record<never, never>,
+      | never
+    >,
+    '/admin/feedback/': RouteRecordInfo<
+      '/admin/feedback/',
+      '/admin/feedback',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/admin/feedback/[id]': RouteRecordInfo<
+      '/admin/feedback/[id]',
+      '/admin/feedback/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
       | never
     >,
     '/admin/git-credentials/': RouteRecordInfo<
@@ -192,6 +213,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/feedback/': RouteRecordInfo<
+      '/feedback/',
+      '/feedback',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/force-change-password': RouteRecordInfo<
       '/force-change-password',
       '/force-change-password',
@@ -253,6 +281,13 @@ declare module 'vue-router/auto-routes' {
       '/logs/work-items/:id',
       { id: ParamValue<true> },
       { id: ParamValue<false> },
+      | never
+    >,
+    '/notifications/': RouteRecordInfo<
+      '/notifications/',
+      '/notifications',
+      Record<never, never>,
+      Record<never, never>,
       | never
     >,
     '/oidc/callback': RouteRecordInfo<
@@ -453,6 +488,14 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/admin/announcements/index.vue': {
+      routes:
+        | '/admin/announcements/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
     'src/pages/admin/audit/index.vue': {
       routes:
         | '/admin/audit/'
@@ -492,6 +535,22 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | never
+    }
+    'src/pages/admin/feedback/index.vue': {
+      routes:
+        | '/admin/feedback/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/feedback/[id].vue': {
+      routes:
+        | '/admin/feedback/[id]'
+      views:
+        | never
+      pathParamNames:
+        | 'id'
     }
     'src/pages/admin/git-credentials/index.vue': {
       routes:
@@ -613,6 +672,14 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/feedback/index.vue': {
+      routes:
+        | '/feedback/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
     'src/pages/force-change-password.vue': {
       routes:
         | '/force-change-password'
@@ -684,6 +751,14 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | 'id'
+    }
+    'src/pages/notifications/index.vue': {
+      routes:
+        | '/notifications/'
+      views:
+        | never
+      pathParamNames:
+        | never
     }
     'src/pages/oidc/callback.vue': {
       routes:

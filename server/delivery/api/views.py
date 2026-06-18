@@ -26,9 +26,9 @@ from delivery.api.serializers import (
     IngestBatchRunSerializer,
     IngestDispatchRequestSerializer,
     IngestRunSerializer,
-    ReleaseBitablePreviewRequestSerializer,
-    ReleaseBitableSyncRequestSerializer,
+    JsonIngestRequestSerializer,
     ScreenshotRecallResultSerializer,
+    WorkItemArtifactsQuerySerializer,
     WorkItemSerializer,
     WorkItemUpsertRequestSerializer,
 )
@@ -387,127 +387,164 @@ class IngestBatchDetailView(APIView):
         )
 
 
-class ReleaseBitablePreviewView(APIView):
-    """上线文档（Bitable）预览端点（POST，IsAuthenticated，只读不落库）。
+class JsonIngestResolveView(APIView):
+    """JSON 批量摄取预览解析端点（POST，IsAuthenticated，只读不落库）。
 
-    分页拉飞书上线文档表 → 解析每行（上线业务 / MR / 看板id / 分类 / 上线日期 +
-    是否命中已落库仓库）→ 返回供前端「队列」展示勾选。绝不摄取、不写库。
+    把粘贴的若干 ``{space, work_item_id, work_item_type?, mr_url?}`` 逐项解析空间
+    （UUID / 飞书 key / 模糊名）→ 拼工作项三元组 + 详情 URL + 逐项校验，供前端预览/编辑。
     """
 
     permission_classes = [IsAuthenticated]
 
     async def post(self, request):
-        from delivery.services.release_bitable_sync import (
-            DEFAULT_BITABLE_APP_TOKEN,
-            DEFAULT_BITABLE_TABLE_ID,
-            fetch_preview,
-        )
+        from delivery.services.json_ingest import aresolve_items
 
-        serializer = ReleaseBitablePreviewRequestSerializer(data=request.data)
+        serializer = JsonIngestRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        app_token = data["app_token"] or DEFAULT_BITABLE_APP_TOKEN
-        table_id = data["table_id"] or DEFAULT_BITABLE_TABLE_ID
-        page_token = data["page_token"] or None
-
-        try:
-            result = await fetch_preview(
-                app_token=app_token,
-                table_id=table_id,
-                page_token=page_token,
-                page_size=data["page_size"],
-            )
-        except ValueError as exc:
-            # 未配置飞书开放平台凭证
-            return Response(
-                {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as exc:  # noqa: BLE001 — Bitable API / 网络失败如实回 502
-            logger.warning("release_bitable_preview_failed", error=str(exc))
-            return Response(
-                {"detail": f"读取上线文档失败：{exc}"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        return Response(result, status=status.HTTP_200_OK)
+        items = serializer.validated_data["items"]
+        resolved = await aresolve_items(items)
+        return Response({"items": resolved}, status=status.HTTP_200_OK)
 
 
-class ReleaseBitableSyncView(APIView):
-    """上线文档批量同步端点（POST，IsAuthenticated）。
+class JsonIngestBatchView(APIView):
+    """JSON 批量摄取派发端点（POST，IsAuthenticated）。
 
-    接收前端勾选的若干行 → 幂等取/建该表 ``ReleaseBatch`` → 每行建 running
-    ``IngestRun``（共享 batch_id，steps={release, mr_diff}）并经 ``run_in_background``
-    派发 ``sync_release_row``（落 Release 账本 + MR diff 入知识库）→ 立即 202。
+    逐项解析空间 → 对「可解析」项各建 running ``IngestRun``（共享 batch_id，
+    steps=work_item/document/mr_diff）→ 单后台协调器 ``run_json_batch`` 有界并发跑
+    （默认 3、最大 10）→ 202。不可解析项以 ``skipped`` 回报，不建 run。
 
-    进度复用 ``GET /delivery/ingest/batch/{batch_id}/`` 回流。
+    进度复用 ``GET /delivery/ingest/batch/{batch_id}/``；runs 带回三元组供前端拉关联文档。
     """
 
     permission_classes = [IsAuthenticated]
 
     async def post(self, request):
-        from delivery.services.release_bitable_sync import (
-            DEFAULT_BITABLE_APP_TOKEN,
-            DEFAULT_BITABLE_TABLE_ID,
-            aresolve_release_batch,
-            sync_release_row,
-        )
+        import uuid
 
-        serializer = ReleaseBitableSyncRequestSerializer(data=request.data)
+        from delivery.services.json_ingest import aresolve_items, run_json_batch
+
+        serializer = JsonIngestRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        items = serializer.validated_data["items"]
+        concurrency = serializer.validated_data["concurrency"]
 
-        app_token = data["app_token"] or DEFAULT_BITABLE_APP_TOKEN
-        table_id = data["table_id"] or DEFAULT_BITABLE_TABLE_ID
-        rows = data["rows"]
+        resolved = await aresolve_items(items)
 
-        batch = await aresolve_release_batch(app_token=app_token, table_id=table_id)
-        batch_id = str(batch.id)
-
+        batch_id = uuid.uuid4()
         runs_payload: list[dict] = []
-        for row in rows:
-            mr_url = row["mr_url"]
+        skipped: list[dict] = []
+        specs: list[dict] = []
+        for item in resolved:
+            if not item["resolved"]:
+                skipped.append(
+                    {
+                        "space": item["space"],
+                        "work_item_id": item["work_item_id"],
+                        "error": item["error"],
+                    }
+                )
+                continue
             run = await sync_to_async(IngestRun.objects.create)(
-                batch_id=batch.id,
-                board_url="",
-                mr_url=mr_url,
+                batch_id=batch_id,
+                board_url=item["board_url"],
+                mr_url=item["mr_url"],
                 status=IngestRun.Status.RUNNING,
-                steps={
-                    "release": {"status": "pending", "identifier": "", "link": "", "error": ""},
-                    "mr_diff": {"status": "pending", "identifier": "", "link": "", "error": ""},
-                },
+                steps=default_steps(),
             )
             run_id = str(run.id)
-            payload = {
-                "app_token": app_token,
-                "table_id": table_id,
-                "record_id": row["record_id"],
-                "mr_url": mr_url,
-                "business": row.get("business", ""),
-                "kanban_id": row.get("kanban_id"),
-                "category": row.get("category", ""),
-                "release_date": row.get("release_date"),
-                "feature_branch": row.get("feature_branch", ""),
-                "raw_fields": row.get("raw_fields") or {},
-            }
-            run_in_background(
-                lambda rid=run_id, p=payload: sync_release_row(rid, batch_id, p),
-                name=f"release-sync:{run_id}",
+            specs.append(
+                {
+                    "run_id": run_id,
+                    "feishu_project_key": item["feishu_project_key"],
+                    "work_item_type": item["work_item_type"],
+                    "work_item_id": item["work_item_id"],
+                    "mr_url": item["mr_url"],
+                    "board_url": item["board_url"],
+                }
             )
             runs_payload.append(
                 {
                     "run_id": run_id,
-                    "record_id": row["record_id"],
-                    "business": row.get("business", ""),
-                    "mr_url": mr_url,
-                    "kanban_id": row.get("kanban_id"),
+                    "feishu_project_key": item["feishu_project_key"],
+                    "work_item_type": item["work_item_type"],
+                    "work_item_id": item["work_item_id"],
+                    "mr_url": item["mr_url"],
+                    "board_url": item["board_url"],
+                    "space_name": item["space_name"],
                 }
             )
 
+        if specs:
+            run_in_background(
+                lambda s=specs, c=concurrency: run_json_batch(s, c),
+                name=f"json-ingest:{batch_id}",
+            )
+
         return Response(
-            {"batch_id": batch_id, "runs": runs_payload},
+            {"batch_id": str(batch_id), "runs": runs_payload, "skipped": skipped},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class WorkItemArtifactsView(APIView):
+    """工作项关联文档端点（GET，IsAuthenticated，只读，按三元组）。
+
+    返回工作项摘要 + 关联文档（PRD / 技术方案等）列表，供 JSON 批量摄取卡片在工作项
+    摄取后实时展开「关联内容」。只读：不旁路 fetch、不写库；正文走 ``WorkItemPrdDocumentView``。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    @sync_to_async
+    def _build_payload(work_item) -> dict:
+        documents: list[dict] = []
+        for doc in (
+            Document.objects.filter(work_item=work_item)
+            .select_related("current_version")
+            .order_by("-updated_at")
+        ):
+            current = doc.current_version
+            documents.append(
+                {
+                    "document_type": doc.document_type,
+                    "canonical_url": doc.canonical_url,
+                    "external_ref": doc.external_ref,
+                    "version": current.version if current is not None else None,
+                    "has_content": bool(current is not None and current.content),
+                    "last_synced_at": (
+                        doc.last_synced_at.isoformat() if doc.last_synced_at else None
+                    ),
+                }
+            )
+        return {
+            "work_item": {
+                "id": str(work_item.id),
+                "title": work_item.title,
+                "status_display_name": work_item.status_display_name,
+                "prd_url": work_item.prd_url,
+                "tech_doc_url": work_item.tech_doc_url,
+            },
+            "documents": documents,
+        }
+
+    async def get(self, request):
+        serializer = WorkItemArtifactsQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        work_item = await WorkItem.objects.filter(
+            feishu_project_key=data["feishu_project_key"],
+            work_item_type=data["work_item_type"],
+            work_item_id=data["work_item_id"],
+        ).afirst()
+        if work_item is None:
+            return Response(
+                {"detail": "WorkItem 不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        payload = await self._build_payload(work_item)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class ScreenshotRecallView(APIView):

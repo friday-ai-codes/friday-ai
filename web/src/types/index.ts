@@ -87,6 +87,17 @@ export interface SystemUser {
 }
 
 /**
+ * 某用户在单个空间的成员关系（管理员「编辑权限」弹窗使用）
+ */
+export interface AdminUserMembership {
+  id: string
+  space_id: string
+  space_name: string
+  role: 'admin' | 'member' | 'viewer'
+  joined_at: string | null
+}
+
+/**
  * 邀请令牌
  */
 export interface Invitation {

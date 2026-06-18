@@ -18,6 +18,7 @@ from .views import (
     SetupStatusView,
     UserDetailView,
     UserListView,
+    UserMembershipsView,
 )
 
 urlpatterns = [
@@ -37,6 +38,11 @@ urlpatterns = [
     # System user management
     path("users/", UserListView.as_view(), name="user-list"),
     path("users/<str:user_id>/", UserDetailView.as_view(), name="user-detail"),
+    path(
+        "users/<str:user_id>/memberships/",
+        UserMembershipsView.as_view(),
+        name="user-memberships",
+    ),
     # 首启向导：初始化状态（AllowAny 只读）
     path("setup/status/", SetupStatusView.as_view(), name="setup-status"),
     # 首启向导：初始化写入（fail-closed + 防重入）

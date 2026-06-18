@@ -34,6 +34,7 @@ from channels.auth import AuthMiddlewareStack  # noqa: E402
 from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
 
 from core.middleware import WSSEnforcementMiddleware  # noqa: E402
+from notifications.routing import websocket_urlpatterns as notification_ws_patterns  # noqa: E402
 from runners.routing import websocket_urlpatterns as runner_ws_patterns  # noqa: E402
 from workflows.routing import websocket_urlpatterns as workflow_ws_patterns  # noqa: E402
 
@@ -42,7 +43,9 @@ application = ProtocolTypeRouter(
         "http": django_asgi_app,
         "websocket": WSSEnforcementMiddleware(
             AuthMiddlewareStack(
-                URLRouter(runner_ws_patterns + workflow_ws_patterns)
+                URLRouter(
+                    runner_ws_patterns + workflow_ws_patterns + notification_ws_patterns
+                )
             )
         ),
     }

@@ -242,6 +242,10 @@ class AdminConversationListSerializer(serializers.Serializer):
     model = serializers.CharField(required=False, allow_blank=True)
     message_count = serializers.IntegerField(read_only=True)
     owner = serializers.SerializerMethodField()
+    # 列表徽标聚合标记（由 admin_list_conversations annotate 注入；default=False 向后兼容）。
+    has_sdd_spec = serializers.BooleanField(required=False, default=False)
+    has_coding_plan = serializers.BooleanField(required=False, default=False)
+    has_coding_session = serializers.BooleanField(required=False, default=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
 

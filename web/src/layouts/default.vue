@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import AppSidebar from '~/components/layout/AppSidebar.vue'
 import SystemHealthPopover from '~/components/layout/SystemHealthPopover.vue'
+import NotificationBell from '~/components/notifications/NotificationBell.vue'
 import { Toaster } from '~/components/ui/sonner'
+import { useNotificationsStore } from '~/stores/notifications'
 
 // WebSocket 实时监控：保留自动连接逻辑；状态展示由 SystemHealthPopover 聚合
 const { connect } = useRunnerMonitor()
+// 站内信：初始化未读数 + 建立 WS（覆盖 /chat 分支不渲染顶栏铃铛的情况）
+const notificationsStore = useNotificationsStore()
 onMounted(() => {
   connect()
+  notificationsStore.init().catch(() => {})
 })
 
 const route = useRoute()
@@ -41,6 +46,7 @@ const pageTitle = computed(() => {
               </h1>
             </div>
             <div class="flex items-center gap-3">
+              <NotificationBell />
               <SystemHealthPopover />
             </div>
           </div>

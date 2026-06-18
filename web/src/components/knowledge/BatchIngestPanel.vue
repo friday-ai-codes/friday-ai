@@ -1,356 +1,484 @@
 <script setup lang="ts">
-import type { IngestBatchRun, StepStatus } from '~/api/ingest'
+import type {
+  IngestBatchRun,
+  JsonIngestBatchRun,
+  ResolvedJsonItem,
+  StepStatus,
+  WorkItemArtifacts,
+} from '~/api/ingest'
 import { useMutation, useQuery } from '@tanstack/vue-query'
-import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, ref, watch } from 'vue'
 import { ingestApi } from '~/api/ingest'
-import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
+import JsonEditor from '~/components/execution/JsonEditor.vue'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 
-const { t } = useI18n()
 const { handleError } = useErrorHandler()
-const { success } = useToast()
+const { success, warning } = useToast()
 
-// ==================== 多组表单态 ====================
-interface RowForm {
-  boardUrl: string
-  mrUrl: string
-  boardError: string
-  mrError: string
+// ==================== JSON 编辑器 ====================
+const EXAMPLE_ITEMS = [
+  {
+    space: '学习工具',
+    work_item_id: 6935339052,
+    work_item_type: 'story',
+    mr_url: 'https://gitlab.example.com/group/repo/-/merge_requests/123',
+  },
+  { space: 'study_platform', work_item_id: 6994646102 },
+  { space: '00000000-0000-0000-0000-000000000000', work_item_id: 7010225564, work_item_type: 'issue' },
+]
+const EXAMPLE_JSON = JSON.stringify(EXAMPLE_ITEMS, null, 2)
+
+const jsonText = ref(EXAMPLE_JSON)
+const parseError = ref('')
+
+function downloadExample() {
+  const blob = new Blob([EXAMPLE_JSON], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'batch-ingest-example.json'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
-function emptyRow(): RowForm {
-  return { boardUrl: '', mrUrl: '', boardError: '', mrError: '' }
-}
+// ==================== 解析 / 校验 ====================
+const items = ref<ResolvedJsonItem[]>([])
 
-// 默认一组；用户可增删（批量摄取 = 1..N 组）
-const rows = ref<RowForm[]>([emptyRow()])
-
-const MAX_ROWS = 50
-
-function addRow() {
-  if (rows.value.length >= MAX_ROWS)
-    return
-  rows.value.push(emptyRow())
-}
-
-function removeRow(index: number) {
-  if (rows.value.length <= 1)
-    return
-  rows.value.splice(index, 1)
-}
-
-/** 仅作 http(s) 字符串校验，真实解析交后端（前端不直连飞书/git）。 */
-function validateUrl(value: string): string {
-  const trimmed = value.trim()
-  if (!trimmed)
-    return t('ingest.form.errorRequired')
-  if (!/^https?:\/\//i.test(trimmed))
-    return t('ingest.form.errorInvalidUrl')
-  return ''
-}
-
-// ==================== 轮询态 ====================
-const batchId = ref<string | null>(null)
-const POLL_TIMEOUT_MS = 5 * 60 * 1000
-const pollStartedAt = ref<number | null>(null)
-const isPollTimeout = ref(false)
-
-// ==================== 派发（POST /delivery/ingest/batch/） ====================
-const dispatchMutation = useMutation({
-  mutationFn: (items: { board_url: string, mr_url: string }[]) =>
-    ingestApi.dispatchBatch(items),
-})
-const isDispatching = computed(() => dispatchMutation.isPending.value)
-
-async function onSubmit() {
-  // 逐组校验，全部通过才派发（任一组非法 → 聚焦反馈，不派发）
-  let firstInvalid: number | null = null
-  rows.value.forEach((row, idx) => {
-    row.boardError = validateUrl(row.boardUrl)
-    row.mrError = validateUrl(row.mrUrl)
-    if ((row.boardError || row.mrError) && firstInvalid === null)
-      firstInvalid = idx
-  })
-  if (firstInvalid !== null)
-    return
-
-  const items = rows.value.map(r => ({
-    board_url: r.boardUrl.trim(),
-    mr_url: r.mrUrl.trim(),
+function itemsToInput(list: ResolvedJsonItem[]) {
+  return list.map(i => ({
+    space: i.space,
+    work_item_id: i.work_item_id,
+    work_item_type: i.work_item_type,
+    mr_url: i.mr_url,
   }))
+}
 
+const resolveMutation = useMutation({
+  mutationFn: (payload: ReturnType<typeof itemsToInput>) => ingestApi.resolveItems(payload),
+})
+const resolving = computed(() => resolveMutation.isPending.value)
+
+async function parseAndResolve() {
+  parseError.value = ''
+  let arr: unknown
   try {
-    const res = await dispatchMutation.mutateAsync(items)
-    isPollTimeout.value = false
-    pollStartedAt.value = Date.now()
-    batchId.value = res.batch_id
-    success(t('ingest.batch.dispatchSuccess', { count: items.length }))
+    arr = JSON.parse(jsonText.value)
+  }
+  catch (e: any) {
+    parseError.value = `JSON 解析失败：${e?.message || e}`
+    return
+  }
+  if (!Array.isArray(arr)) {
+    parseError.value = '顶层必须是数组（一组 { space, work_item_id, work_item_type?, mr_url? }）'
+    return
+  }
+  try {
+    const res = await resolveMutation.mutateAsync(arr as any)
+    items.value = res.items
   }
   catch (e) {
-    handleError(e, t('ingest.batch.dispatchFailed'))
+    handleError(e, '解析校验')
   }
 }
 
-// ==================== 状态回流（GET /delivery/ingest/batch/{batch_id}/） ====================
+async function revalidate() {
+  if (!items.value.length)
+    return
+  try {
+    const res = await resolveMutation.mutateAsync(itemsToInput(items.value))
+    items.value = res.items
+  }
+  catch (e) {
+    handleError(e, '重新校验')
+  }
+}
+
+function removeItem(idx: number) {
+  items.value.splice(idx, 1)
+}
+
+const resolvedCount = computed(() => items.value.filter(i => i.resolved).length)
+
+// ==================== 并发 + 派发 ====================
+const concurrency = ref(3)
+const batchId = ref<string | null>(null)
+const runTriple = ref<Record<string, JsonIngestBatchRun>>({})
+const skipped = ref<Array<{ space: string, work_item_id: number, error: string }>>([])
+
+const dispatchMutation = useMutation({
+  mutationFn: (payload: { list: ReturnType<typeof itemsToInput>, c: number }) =>
+    ingestApi.dispatchJsonBatch(payload.list, payload.c),
+})
+const dispatching = computed(() => dispatchMutation.isPending.value)
+
+async function startSync() {
+  if (!resolvedCount.value)
+    return
+  try {
+    const res = await dispatchMutation.mutateAsync({
+      list: itemsToInput(items.value),
+      c: concurrency.value,
+    })
+    runTriple.value = Object.fromEntries(res.runs.map(r => [r.run_id, r]))
+    skipped.value = res.skipped
+    artifactsByRun.value = {}
+    if (!res.runs.length) {
+      batchId.value = null
+      warning('没有可摄取的有效项（请先解决解析错误）')
+      return
+    }
+    batchId.value = res.batch_id
+    pollStartedAt.value = Date.now()
+    success(`已派发 ${res.runs.length} 条摄取，将在后台执行并实时更新`)
+  }
+  catch (e) {
+    handleError(e, '同步派发')
+  }
+}
+
+// ==================== 进度轮询 ====================
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
+const pollStartedAt = ref<number | null>(null)
+
 const batchQuery = useQuery({
-  queryKey: computed(() => ['ingest-batch', batchId.value]),
+  queryKey: computed(() => ['json-ingest-batch', batchId.value]),
   queryFn: () => ingestApi.getBatch(batchId.value as string),
   enabled: computed(() => !!batchId.value),
   refetchInterval: (query) => {
     if (query.state.data?.status !== 'running')
       return false
-    if (pollStartedAt.value !== null && Date.now() - pollStartedAt.value > POLL_TIMEOUT_MS) {
-      isPollTimeout.value = true
+    if (pollStartedAt.value !== null && Date.now() - pollStartedAt.value > POLL_TIMEOUT_MS)
       return false
-    }
     return 2500
   },
 })
 
-const batch = computed(() => batchQuery.data.value ?? null)
-const isBatchError = computed(() => batchQuery.isError.value)
+const progressRuns = computed<IngestBatchRun[]>(() => batchQuery.data.value?.runs ?? [])
+const okCount = computed(() => progressRuns.value.filter(r => r.status === 'completed').length)
+const isRunning = computed(() => batchQuery.data.value?.status === 'running')
 
-/** 固定三步顺序：工作项 → 文档 → MR diff。 */
-function stepRows(run: IngestBatchRun) {
-  return [
-    { key: 'work_item', label: t('ingest.steps.workItem'), step: run.steps?.work_item },
-    { key: 'document', label: t('ingest.steps.document'), step: run.steps?.document },
-    { key: 'mr_diff', label: t('ingest.steps.mrDiff'), step: run.steps?.mr_diff },
-  ] as const
+// ==================== 关联文档（实时） ====================
+const artifactsByRun = ref<Record<string, WorkItemArtifacts>>({})
+const artifactFetching = new Set<string>()
+
+watch(progressRuns, async (runs) => {
+  for (const run of runs) {
+    const rid = run.run_id
+    const triple = runTriple.value[rid]
+    if (!triple || !triple.feishu_project_key)
+      continue
+    const stepOk = run.steps?.work_item?.status === 'ok' || run.steps?.document?.status === 'ok'
+    if (!stepOk || artifactsByRun.value[rid] || artifactFetching.has(rid))
+      continue
+    artifactFetching.add(rid)
+    try {
+      const art = await ingestApi.getWorkItemArtifacts(
+        triple.feishu_project_key,
+        triple.work_item_type,
+        triple.work_item_id,
+      )
+      artifactsByRun.value = { ...artifactsByRun.value, [rid]: art }
+    }
+    catch {
+      // 工作项尚未落库 / 404：保持未取，下一轮轮询再试
+      artifactFetching.delete(rid)
+      continue
+    }
+    artifactFetching.delete(rid)
+  }
+}, { deep: true })
+
+// ==================== 展示辅助 ====================
+const DOC_TYPE_LABEL: Record<string, string> = {
+  prd: '需求文档',
+  tech_plan: '技术方案',
 }
 
-function runIsAllOk(run: IngestBatchRun): boolean {
-  return run.status === 'completed'
-    && (['work_item', 'document', 'mr_diff'] as const).every(k => run.steps?.[k]?.status === 'ok')
+function docTypeLabel(type: string): string {
+  return DOC_TYPE_LABEL[type] ?? type
 }
 
-function runIsPartial(run: IngestBatchRun): boolean {
-  return run.status === 'completed' && !runIsAllOk(run)
+function stepStatus(run: IngestBatchRun, key: 'work_item' | 'document' | 'mr_diff'): StepStatus {
+  return (run.steps?.[key]?.status ?? 'pending') as StepStatus
 }
 
-function statusLabel(status?: StepStatus): string {
-  return t(`ingest.status.${status ?? 'pending'}`)
-}
-
-function statusTextClass(status?: StepStatus): string {
+function statusIcon(status: StepStatus): string {
   switch (status) {
-    case 'ok':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'failed':
-      return 'text-destructive'
-    case 'skipped':
-      return 'text-amber-700 dark:text-amber-400'
-    default:
-      return 'text-muted-foreground'
+    case 'ok': return 'icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400'
+    case 'failed': return 'icon-[lucide--alert-circle] text-destructive'
+    case 'skipped': return 'icon-[lucide--minus-circle] text-amber-700 dark:text-amber-400'
+    default: return 'icon-[lucide--circle-dashed] text-muted-foreground'
   }
 }
 
-function statusIconClass(status?: StepStatus): string {
-  switch (status) {
-    case 'ok':
-      return 'icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400'
-    case 'failed':
-      return 'icon-[lucide--alert-circle] text-destructive'
-    case 'skipped':
-      return 'icon-[lucide--minus-circle] text-amber-700 dark:text-amber-400'
-    default:
-      return 'icon-[lucide--circle-dashed] text-muted-foreground'
-  }
+function runTitle(run: IngestBatchRun): string {
+  const triple = runTriple.value[run.run_id]
+  if (triple)
+    return `${triple.space_name} · ${triple.work_item_type} #${triple.work_item_id}`
+  return run.board_url || run.run_id
 }
-
-function showError(status?: StepStatus, error?: string): boolean {
-  return !!error && (status === 'failed' || status === 'skipped')
-}
-
-// ==================== 汇总计数 ====================
-const okCount = computed(() => batch.value?.runs.filter(runIsAllOk).length ?? 0)
-const totalCount = computed(() => batch.value?.runs.length ?? 0)
 </script>
 
 <template>
-  <div class="space-y-8">
-    <!-- ==================== 表单卡片 ==================== -->
+  <div class="space-y-5">
+    <!-- ==================== JSON 输入 ==================== -->
     <div class="card">
-      <div class="px-5 py-3.5 border-b border-border/50">
-        <div class="flex items-center gap-2">
-          <span class="icon-[lucide--download] text-primary" />
-          <h3 class="text-sm font-semibold">
-            {{ t('ingest.title') }}
-          </h3>
+      <div class="px-5 py-3.5 border-b border-border/50 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="icon-[lucide--braces] text-primary" />
+            <h3 class="text-sm font-semibold">
+              JSON 批量摄取
+            </h3>
+          </div>
+          <p class="text-xs text-muted-foreground mt-0.5">
+            粘贴一组 <code class="text-[11px]">{ space, work_item_id, work_item_type?, mr_url? }</code>；空间可填名称（模糊匹配）/ 系统 id / 飞书 key。MR 选填。
+          </p>
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">
-          {{ t('ingest.subtitle') }}
-        </p>
+        <Button variant="outline" size="sm" class="h-8 shrink-0" @click="downloadExample">
+          <span class="icon-[lucide--download] mr-1.5" />
+          下载示例
+        </Button>
       </div>
 
-      <form class="p-5 space-y-4" @submit.prevent="onSubmit">
-        <div
-          v-for="(row, index) in rows"
-          :key="index"
-          class="rounded-lg border border-border/50 p-4 space-y-3 relative"
-          :data-testid="`batch-ingest-row-${index}`"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-muted-foreground">
-              {{ t('ingest.batch.rowLabel', { n: index + 1 }) }}
-            </span>
-            <button
-              v-if="rows.length > 1"
-              type="button"
-              class="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-              :title="t('ingest.batch.removeRow')"
-              @click="removeRow(index)"
-            >
-              <span class="icon-[lucide--trash-2] text-sm" />
-            </button>
-          </div>
-
-          <div class="space-y-1.5">
-            <Label :for="`batch-board-url-${index}`">{{ t('ingest.form.boardUrlLabel') }}</Label>
-            <Input
-              :id="`batch-board-url-${index}`"
-              v-model="row.boardUrl"
-              :data-testid="`batch-board-url-${index}`"
-              :placeholder="t('ingest.form.boardUrlPlaceholder')"
-              :aria-invalid="!!row.boardError"
-            />
-            <p v-if="row.boardError" class="text-xs text-destructive">
-              {{ row.boardError }}
-            </p>
-          </div>
-
-          <div class="space-y-1.5">
-            <Label :for="`batch-mr-url-${index}`">{{ t('ingest.form.mrUrlLabel') }}</Label>
-            <Input
-              :id="`batch-mr-url-${index}`"
-              v-model="row.mrUrl"
-              :data-testid="`batch-mr-url-${index}`"
-              :placeholder="t('ingest.form.mrUrlPlaceholder')"
-              :aria-invalid="!!row.mrError"
-            />
-            <p v-if="row.mrError" class="text-xs text-destructive">
-              {{ row.mrError }}
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            class="w-full sm:w-auto"
-            data-testid="batch-add-row"
-            :disabled="rows.length >= MAX_ROWS"
-            @click="addRow"
-          >
-            <span class="icon-[lucide--plus] mr-1.5" />
-            {{ t('ingest.batch.addRow') }}
-          </Button>
-
-          <Button
-            type="submit"
-            class="w-full sm:w-auto"
-            data-testid="batch-ingest-submit"
-            :disabled="isDispatching"
-          >
-            <span v-if="isDispatching" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
-            {{ isDispatching ? t('ingest.batch.submitting') : t('ingest.batch.submit') }}
+      <div class="p-5 space-y-3">
+        <JsonEditor v-model="jsonText" height="220px" />
+        <p v-if="parseError" class="text-xs text-destructive">
+          {{ parseError }}
+        </p>
+        <div class="flex items-center gap-2">
+          <Button :disabled="resolving" @click="parseAndResolve">
+            <span v-if="resolving" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
+            <span v-else class="icon-[lucide--list-checks] mr-1.5" />
+            解析 / 校验
           </Button>
         </div>
-      </form>
+      </div>
     </div>
 
-    <!-- ==================== 结果区 / 空态 ==================== -->
-    <div aria-live="polite">
-      <p v-if="isBatchError" class="text-xs text-destructive mb-3" data-testid="batch-ingest-load-error">
-        {{ t('ingest.batch.loadError') }}
-      </p>
+    <!-- ==================== 解析后可编辑列表 ==================== -->
+    <div v-if="items.length" class="card">
+      <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between gap-3 flex-wrap">
+        <span class="text-sm font-medium">
+          待摄取（{{ items.length }}，可摄取 {{ resolvedCount }}）
+        </span>
+        <Button variant="outline" size="sm" class="h-8" :disabled="resolving" @click="revalidate">
+          <span class="icon-[lucide--refresh-cw] mr-1.5" :class="{ 'animate-spin': resolving }" />
+          重新校验
+        </Button>
+      </div>
 
-      <CompactEmptyState
-        v-if="!batchId"
-        icon="lucide--inbox"
-        :title="t('ingest.batch.empty.title')"
-        :description="t('ingest.batch.empty.body')"
-      />
+      <div class="p-3 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-muted-foreground border-b border-border/50">
+              <th class="px-2 py-2 font-medium">
+                空间
+              </th>
+              <th class="px-2 py-2 font-medium">
+                匹配
+              </th>
+              <th class="px-2 py-2 font-medium">
+                类型
+              </th>
+              <th class="px-2 py-2 font-medium">
+                工作项 ID
+              </th>
+              <th class="px-2 py-2 font-medium">
+                MR（选填）
+              </th>
+              <th class="px-2 py-2 font-medium">
+                状态
+              </th>
+              <th class="px-2 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(item, idx) in items"
+              :key="idx"
+              class="border-b border-border/30 align-top"
+            >
+              <td class="px-2 py-1.5">
+                <input
+                  v-model="item.space"
+                  class="w-32 h-8 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary/40"
+                >
+              </td>
+              <td class="px-2 py-1.5">
+                <div v-if="item.space_name" class="text-xs">
+                  <div class="font-medium truncate max-w-[140px]">
+                    {{ item.space_name }}
+                  </div>
+                  <div class="font-mono text-[10px] text-muted-foreground truncate max-w-[140px]">
+                    {{ item.feishu_project_key }}
+                  </div>
+                </div>
+                <span v-else class="text-xs text-muted-foreground">—</span>
+              </td>
+              <td class="px-2 py-1.5">
+                <input
+                  v-model="item.work_item_type"
+                  class="w-20 h-8 rounded border border-border bg-background px-2 text-xs font-mono outline-none focus:ring-1 focus:ring-primary/40"
+                >
+              </td>
+              <td class="px-2 py-1.5">
+                <input
+                  v-model.number="item.work_item_id"
+                  type="number"
+                  class="w-32 h-8 rounded border border-border bg-background px-2 text-xs font-mono outline-none focus:ring-1 focus:ring-primary/40"
+                >
+              </td>
+              <td class="px-2 py-1.5">
+                <input
+                  v-model="item.mr_url"
+                  placeholder="可选"
+                  class="w-48 h-8 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary/40"
+                >
+              </td>
+              <td class="px-2 py-1.5">
+                <span
+                  v-if="item.resolved"
+                  class="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400"
+                >
+                  <span class="icon-[lucide--check-circle-2]" /> 就绪
+                </span>
+                <span
+                  v-else
+                  class="inline-flex items-center gap-1 text-[11px] text-destructive"
+                  :title="item.error"
+                >
+                  <span class="icon-[lucide--alert-triangle]" /> {{ item.error || '不可摄取' }}
+                </span>
+              </td>
+              <td class="px-2 py-1.5 text-right">
+                <button
+                  class="text-muted-foreground hover:text-destructive transition-colors"
+                  @click="removeItem(idx)"
+                >
+                  <span class="icon-[lucide--trash-2] h-4 w-4" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <div v-else-if="batch" class="space-y-4" data-testid="batch-ingest-results">
-        <!-- 批量总状态行 -->
-        <div class="flex items-center gap-2 text-sm font-medium">
-          <span v-if="batch.status === 'running' && isPollTimeout" class="icon-[lucide--alert-circle] text-destructive" aria-hidden="true" />
-          <span v-else-if="batch.status === 'running'" class="icon-[lucide--loader-circle] animate-spin text-primary" aria-hidden="true" />
-          <span v-else class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-          <span :class="{ 'text-destructive': batch.status === 'running' && isPollTimeout }">
-            <template v-if="batch.status === 'running' && isPollTimeout">{{ t('ingest.run.timeout') }}</template>
-            <template v-else-if="batch.status === 'running'">{{ t('ingest.batch.runningOverall', { ok: okCount, total: totalCount }) }}</template>
-            <template v-else>{{ t('ingest.batch.completedOverall', { ok: okCount, total: totalCount }) }}</template>
-          </span>
-        </div>
+      <div class="px-5 py-3.5 border-t border-border/50 flex items-center justify-between gap-3 flex-wrap">
+        <label class="flex items-center gap-2 text-xs text-muted-foreground">
+          并发数
+          <input
+            v-model.number="concurrency"
+            type="number"
+            min="1"
+            max="10"
+            class="w-16 h-8 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary/40"
+          >
+          <span class="text-[11px]">（1–10，默认 3；命中限流会自动等待重试）</span>
+        </label>
+        <Button :disabled="dispatching || !resolvedCount" @click="startSync">
+          <span v-if="dispatching" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
+          <span v-else class="icon-[lucide--play] mr-1.5" />
+          {{ dispatching ? '派发中…' : `同步（${resolvedCount}）` }}
+        </Button>
+      </div>
+    </div>
 
-        <!-- 每组结果卡片 -->
-        <div
-          v-for="(run, idx) in batch.runs"
-          :key="run.run_id"
-          class="card p-4 space-y-3"
-          :data-testid="`batch-run-${idx}`"
-        >
-          <div class="flex items-center gap-2 text-sm font-medium">
-            <span v-if="run.status === 'running'" class="icon-[lucide--loader-circle] animate-spin text-primary" aria-hidden="true" />
-            <span v-else-if="runIsAllOk(run)" class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-            <span v-else-if="run.status === 'failed'" class="icon-[lucide--alert-circle] text-destructive" aria-hidden="true" />
-            <span v-else-if="runIsPartial(run)" class="icon-[lucide--alert-triangle] text-amber-700 dark:text-amber-400" aria-hidden="true" />
-            <span>{{ t('ingest.batch.rowLabel', { n: idx + 1 }) }}</span>
+    <!-- ==================== 跳过项（不可摄取） ==================== -->
+    <div v-if="skipped.length" class="card border-amber-500/30 p-4">
+      <div class="text-sm font-medium text-amber-700 dark:text-amber-400 mb-2">
+        已跳过 {{ skipped.length }} 项（无法解析）
+      </div>
+      <ul class="space-y-1 text-xs text-muted-foreground">
+        <li v-for="(s, i) in skipped" :key="i">
+          <span class="font-mono">{{ s.space || '(空)' }} #{{ s.work_item_id }}</span> — {{ s.error }}
+        </li>
+      </ul>
+    </div>
+
+    <!-- ==================== 摄取进度 + 关联文档 ==================== -->
+    <div v-if="batchId && progressRuns.length" class="card" data-testid="json-ingest-progress">
+      <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2 text-sm font-medium">
+        <span v-if="isRunning" class="icon-[lucide--loader-circle] animate-spin text-primary" />
+        <span v-else class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" />
+        <span>
+          <template v-if="isRunning">摄取进行中…（完成 {{ okCount }}/{{ progressRuns.length }}）</template>
+          <template v-else>摄取完成（成功 {{ okCount }}/{{ progressRuns.length }}）</template>
+        </span>
+      </div>
+      <ul class="divide-y divide-border/40">
+        <li v-for="run in progressRuns" :key="run.run_id" class="px-5 py-3 space-y-2">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <span class="text-sm font-medium truncate max-w-[55%]">{{ runTitle(run) }}</span>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="inline-flex items-center gap-1">
+                <span :class="statusIcon(stepStatus(run, 'work_item'))" /> 工作项
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <span :class="statusIcon(stepStatus(run, 'document'))" /> 文档
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <span :class="statusIcon(stepStatus(run, 'mr_diff'))" /> MR
+              </span>
+            </div>
           </div>
 
-          <code class="block text-xs font-mono break-all text-muted-foreground">{{ run.board_url }}</code>
-          <code class="block text-xs font-mono break-all text-muted-foreground">{{ run.mr_url }}</code>
-
-          <ul class="space-y-2.5 pt-1">
-            <li
-              v-for="srow in stepRows(run)"
-              :key="srow.key"
-              class="flex items-start gap-2 flex-wrap"
-            >
-              <span class="mt-0.5 shrink-0" :class="statusIconClass(srow.step?.status)" />
-              <div class="min-w-0 space-y-0.5">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-sm">{{ srow.label }}</span>
-                  <span class="text-xs" :class="statusTextClass(srow.step?.status)">
-                    {{ statusLabel(srow.step?.status) }}
-                  </span>
-                </div>
-                <a
-                  v-if="srow.step?.link"
-                  :href="srow.step.link"
-                  target="_blank"
-                  rel="noopener"
-                  class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  <span class="icon-[lucide--external-link]" />
-                  {{ t('ingest.run.viewLink') }}
-                </a>
-                <p v-if="showError(srow.step?.status, srow.step?.error)" class="text-xs text-destructive break-words">
-                  {{ srow.step?.error }}
-                </p>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- 派发成功但首轮状态未到：running 占位 -->
-      <div
-        v-else-if="!isBatchError"
-        class="card p-5 flex items-center gap-2 text-sm font-medium"
-        data-testid="batch-ingest-running-placeholder"
-      >
-        <span class="icon-[lucide--loader-circle] animate-spin text-primary" aria-hidden="true" />
-        <span>{{ t('ingest.run.running') }}</span>
-      </div>
+          <!-- 关联内容（PRD / 技术方案 等，实时展开） -->
+          <div
+            v-if="artifactsByRun[run.run_id]"
+            class="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2"
+          >
+            <div class="flex items-center gap-2 text-xs">
+              <span class="icon-[lucide--link] text-muted-foreground" />
+              <span class="font-medium">{{ artifactsByRun[run.run_id].work_item.title || '工作项' }}</span>
+              <span v-if="artifactsByRun[run.run_id].work_item.status_display_name" class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {{ artifactsByRun[run.run_id].work_item.status_display_name }}
+              </span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <a
+                v-if="artifactsByRun[run.run_id].work_item.prd_url"
+                :href="artifactsByRun[run.run_id].work_item.prd_url"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <span class="icon-[lucide--file-text]" /> 需求文档
+              </a>
+              <a
+                v-if="artifactsByRun[run.run_id].work_item.tech_doc_url"
+                :href="artifactsByRun[run.run_id].work_item.tech_doc_url"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <span class="icon-[lucide--file-code-2]" /> 技术方案
+              </a>
+              <a
+                v-for="(doc, di) in artifactsByRun[run.run_id].documents"
+                :key="di"
+                :href="doc.canonical_url || undefined"
+                :target="doc.canonical_url ? '_blank' : undefined"
+                rel="noopener"
+                class="inline-flex items-center gap-1 rounded bg-background border border-border/60 px-2 py-0.5 text-[11px]"
+                :class="doc.canonical_url ? 'text-primary hover:underline' : 'text-muted-foreground'"
+              >
+                <span class="icon-[lucide--file]" />
+                {{ docTypeLabel(doc.document_type) }}
+                <span v-if="doc.has_content" class="icon-[lucide--check] text-emerald-500" />
+              </a>
+              <span
+                v-if="!artifactsByRun[run.run_id].work_item.prd_url && !artifactsByRun[run.run_id].work_item.tech_doc_url && !artifactsByRun[run.run_id].documents.length"
+                class="text-xs text-muted-foreground"
+              >
+                暂无关联文档
+              </span>
+            </div>
+          </div>
+        </li>
+      </ul>
     </div>
   </div>
 </template>

@@ -332,51 +332,31 @@ class IngestBatchRunSerializer(serializers.ModelSerializer):
 
 
 # ============================================================================
-# 上线文档（Bitable）同步：预览 + 批量入库
+# JSON 批量摄取（空间 + 工作项 id + 可选类型/ MR）
 # ============================================================================
 
 
-class ReleaseBitablePreviewRequestSerializer(serializers.Serializer):
-    """Bitable 预览入参：app_token / table_id（默认当前上线文档表）+ 分页。"""
+class JsonIngestRequestSerializer(serializers.Serializer):
+    """JSON 批量摄取入参：1..200 条宽松 item + 可选并发数。
 
-    app_token = serializers.CharField(max_length=255, required=False, default="")
-    table_id = serializers.CharField(max_length=255, required=False, default="")
-    page_token = serializers.CharField(
-        max_length=2000, required=False, allow_blank=True, default=""
+    item 保持宽松（``DictField``）以便 resolve 预览能逐项回报错误（空间/ID 非法不应
+    整请求 400）；权威校验在 ``aresolve_items`` 内逐项进行。
+    """
+
+    items = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False,
+        max_length=200,
     )
-    page_size = serializers.IntegerField(required=False, default=20, min_value=1, max_value=100)
+    concurrency = serializers.IntegerField(required=False, default=3, min_value=1, max_value=10)
 
 
-class ReleaseBitableSyncRowSerializer(serializers.Serializer):
-    """批量同步单行入参（前端从预览勾选回传，内部已认证工具信任 payload）。"""
+class WorkItemArtifactsQuerySerializer(serializers.Serializer):
+    """工作项关联文档查询入参（三元组）。"""
 
-    record_id = serializers.CharField(max_length=255)
-    mr_url = serializers.CharField(max_length=2000)
-    business = serializers.CharField(
-        max_length=1000, required=False, allow_blank=True, default=""
-    )
-    kanban_id = serializers.IntegerField(required=False, allow_null=True, default=None)
-    category = serializers.CharField(
-        max_length=255, required=False, allow_blank=True, default=""
-    )
-    release_date = serializers.IntegerField(required=False, allow_null=True, default=None)
-    feature_branch = serializers.CharField(
-        max_length=1000, required=False, allow_blank=True, default=""
-    )
-    raw_fields = serializers.JSONField(required=False, default=dict)
-
-    def validate_mr_url(self, value: str) -> str:
-        if not value.startswith(("http://", "https://")):
-            raise serializers.ValidationError("MR URL 必须以 http(s):// 开头")
-        return value
-
-
-class ReleaseBitableSyncRequestSerializer(serializers.Serializer):
-    """批量同步入参：app_token / table_id + 勾选的 1..100 行。"""
-
-    app_token = serializers.CharField(max_length=255, required=False, default="")
-    table_id = serializers.CharField(max_length=255, required=False, default="")
-    rows = ReleaseBitableSyncRowSerializer(many=True, allow_empty=False, max_length=100)
+    feishu_project_key = serializers.CharField(max_length=64)
+    work_item_type = serializers.CharField(max_length=32)
+    work_item_id = serializers.IntegerField(min_value=1)
 
 
 # ============================================================================

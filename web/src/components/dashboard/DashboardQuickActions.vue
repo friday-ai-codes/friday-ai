@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { gsap } from 'gsap'
-import { ref } from 'vue'
-
 export interface QuickAction {
   icon: string
   title: string
@@ -14,24 +11,12 @@ defineProps<{
   actions: QuickAction[]
 }>()
 
-// 快捷操作按钮弹性错拍入场
-const rootEl = ref<HTMLElement | null>(null)
-useGsapReveal(rootEl, () => {
-  gsap.from('.quick-action', {
-    y: 10,
-    scale: 0.92,
-    autoAlpha: 0,
-    duration: 0.4,
-    stagger: 0.05,
-    delay: 0.35,
-    ease: 'back.out(1.6)',
-    clearProps: 'all',
-  })
-})
+// 快捷操作按钮（.quick-action）的入场动效由首页主时间线（index.vue）统一编排，
+// 此处不再单独起动画，避免多条独立时间线导致出现顺序错乱。
 </script>
 
 <template>
-  <section ref="rootEl" class="flex flex-wrap gap-3">
+  <section class="flex flex-wrap gap-3">
     <RouterLink
       v-for="action in actions"
       :key="action.title"

@@ -24,12 +24,26 @@ const heroRingsEl = ref<HTMLElement | null>(null)
 useLottie(heroRingsEl, pulseRingsAnimation)
 
 useGsapReveal(pageEl, () => {
+  // 单条主时间线统一编排入场顺序：hero → 各 section 依次浮入，
+  // section 内部的卡片/按钮紧随其所属 section 错拍浮现（卡片 → 内容 两级节奏）。
+  // 关键：所有节奏都挂在同一条时间线上，避免子组件各起独立时间线 + 固定 delay
+  // 导致内部内容比外壳还先就位、整体出现顺序错乱。
   // clearProps：每个目标播完即移除内联样式，避免 HMR / 中断场景下
-  // from() 写入的 opacity/visibility 滞留在元素上导致区块「消失」
-  gsap.timeline()
-    .from('.hero-logo', { y: 20, scale: 0.78, autoAlpha: 0, duration: 0.6, ease: 'back.out(1.7)', clearProps: 'all' })
-    .from('.hero-line', { y: 14, autoAlpha: 0, duration: 0.45, stagger: 0.09, ease: 'power2.out', clearProps: 'all' }, '-=0.3')
-    .from('.dash-section', { y: 26, autoAlpha: 0, duration: 0.5, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }, '-=0.2')
+  // from() 写入的 opacity/visibility 滞留在元素上导致区块「消失」。
+  const tl = gsap.timeline({ defaults: { ease: 'power2.out' } })
+  tl.from('.hero-logo', { y: 20, scale: 0.78, autoAlpha: 0, duration: 0.6, ease: 'back.out(1.7)', clearProps: 'all' })
+    .from('.hero-line', { y: 14, autoAlpha: 0, duration: 0.45, stagger: 0.09, clearProps: 'all' }, '-=0.3')
+
+  const sections = gsap.utils.toArray<HTMLElement>('.dash-section')
+  sections.forEach((section, i) => {
+    // 先让 section 外壳浮入
+    tl.from(section, { y: 26, autoAlpha: 0, duration: 0.5, clearProps: 'all' }, i === 0 ? '-=0.2' : '-=0.3')
+    // 再让该 section 内部的卡片/按钮错拍浮现（数据驱动的列表行由 useListReveal 处理）
+    const cells = section.querySelectorAll('.kpi-cell, .quick-action')
+    if (cells.length > 0) {
+      tl.from(cells, { y: 12, autoAlpha: 0, duration: 0.4, stagger: 0.05, clearProps: 'all' }, '-=0.28')
+    }
+  })
 })
 
 const executionsStore = useExecutionsStore()

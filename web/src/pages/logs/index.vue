@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 
 useHead({
   title: '触发日志 - Friday AI',
@@ -28,10 +29,18 @@ const route = useRoute()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-// 过滤器
-const projectFilter = ref('__all__')
-const statusFilter = ref('__all__')
-const timeRangeFilter = ref('7')
+// 过滤器 + 表格状态全部持久化到 URL（刷新可恢复）；用 computed 代理保持下方
+// fetchLogs / watch / 模板对 projectFilter 等命名的引用不变。
+const { pagination, sorting, globalFilter, facets } = useTableUrlState({
+  facets: {
+    status: { type: 'single', default: '__all__' },
+    space_id: { type: 'single', default: '__all__' },
+    days: { type: 'single', default: '7' },
+  },
+})
+const statusFilter = computed<string>({ get: () => facets.status, set: v => (facets.status = v) })
+const projectFilter = computed<string>({ get: () => facets.space_id, set: v => (facets.space_id = v) })
+const timeRangeFilter = computed<string>({ get: () => facets.days, set: v => (facets.days = v) })
 
 // 时间范围选项
 const timeRangeOptions = [
@@ -301,6 +310,9 @@ const columns: ColumnDef<TriggerLog>[] = [
 
     <!-- DataTable -- 集成搜索/排序/分页/列可见性 -->
     <DataTable
+      v-model:pagination="pagination"
+      v-model:sorting="sorting"
+      v-model:global-filter="globalFilter"
       class="mt-5"
       :data="triggerLogs"
       :columns="columns"

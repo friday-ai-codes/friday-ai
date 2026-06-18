@@ -201,6 +201,7 @@ class ReleaseService:
             "work_item_external_id": external_id,
             "status": raw_row.get("status", ""),
             "note": raw_row.get("note", ""),
+            "release_date": self._coerce_release_date(raw_row.get("release_date")),
         }
 
         with transaction.atomic():
@@ -216,6 +217,7 @@ class ReleaseService:
                     record.work_item_external_id = external_id
                     record.status = mirror["status"]
                     record.note = mirror["note"]
+                    record.release_date = mirror["release_date"]
                     record.save(
                         update_fields=[
                             "raw_row",
@@ -223,6 +225,7 @@ class ReleaseService:
                             "work_item_external_id",
                             "status",
                             "note",
+                            "release_date",
                             "updated_at",
                         ]
                     )
@@ -233,6 +236,18 @@ class ReleaseService:
                 )
 
         return record
+
+    @staticmethod
+    def _coerce_release_date(value: Any) -> int | None:
+        """``release_date`` 容错为 ms epoch 整数；非数字 → None（不丢整行）。"""
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
 
     def _resolve_work_item(
         self, raw_row: dict[str, Any]

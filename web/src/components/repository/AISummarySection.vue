@@ -323,7 +323,7 @@ onUnmounted(() => {
             <Badge variant="secondary" class="text-[10px]">{{ treeNodeCount }} 个节点</Badge>
             <Badge v-if="isMonorepo" variant="secondary" class="text-[10px]">monorepo</Badge>
             <RouterLink
-              to="/repositories/tree"
+              :to="{ path: '/knowledge', query: { tab: 'tree' } }"
               class="ml-auto text-xs text-primary hover:underline"
             >
               在知识树中查看 →

@@ -3,7 +3,7 @@
  * 封装用户管理和邀请相关的 API 调用
  */
 
-import type { Invitation, MeUser, SystemUser } from '~/types'
+import type { AdminUserMembership, Invitation, MeUser, SystemUser } from '~/types'
 import { get, patch, post } from './client'
 
 /**
@@ -54,10 +54,20 @@ export async function listUsers(): Promise<SystemUser[]> {
 }
 
 /**
- * 更新用户状态（启用/禁用，仅超级管理员）
+ * 更新用户状态（启用/禁用、授予/取消超级管理员，仅超级管理员）
  */
-export async function updateUser(userId: string, data: { is_active: boolean }): Promise<SystemUser> {
+export async function updateUser(
+  userId: string,
+  data: { is_active?: boolean, is_superuser?: boolean },
+): Promise<SystemUser> {
   return patch<SystemUser>(`/auth/users/${userId}/`, data)
+}
+
+/**
+ * 获取指定用户的跨空间成员关系（仅超级管理员）
+ */
+export async function getUserMemberships(userId: string): Promise<AdminUserMembership[]> {
+  return get<AdminUserMembership[]>(`/auth/users/${userId}/memberships/`)
 }
 
 export default {
@@ -68,4 +78,5 @@ export default {
   acceptInvitation,
   listUsers,
   updateUser,
+  getUserMemberships,
 }

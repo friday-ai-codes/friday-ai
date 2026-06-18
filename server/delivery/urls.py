@@ -10,9 +10,10 @@ from delivery.api.views import (
     IngestBatchDispatchView,
     IngestDispatchView,
     IngestRunDetailView,
-    ReleaseBitablePreviewView,
-    ReleaseBitableSyncView,
+    JsonIngestBatchView,
+    JsonIngestResolveView,
     ScreenshotRecallView,
+    WorkItemArtifactsView,
     WorkItemCommentTreeView,
     WorkItemDetailView,
     WorkItemPrdDocumentView,
@@ -31,6 +32,11 @@ urlpatterns = [
         WorkItemPrdDocumentView.as_view(),
         name="work-item-prd-document",
     ),
+    path(
+        "work-items/artifacts/",
+        WorkItemArtifactsView.as_view(),
+        name="work-item-artifacts",
+    ),
     path("work-items/", WorkItemDetailView.as_view(), name="work-item-detail"),
     # 批量摄取触发 + 状态回流（字面段 batch/ 必须在 <uuid:run_id> 之前注册）
     path(
@@ -43,23 +49,23 @@ urlpatterns = [
         IngestBatchDetailView.as_view(),
         name="ingest-batch-detail",
     ),
+    # JSON 批量摄取：解析预览 + 派发（字面段，须在 <uuid:run_id> 之前）
+    path(
+        "ingest/resolve/",
+        JsonIngestResolveView.as_view(),
+        name="ingest-json-resolve",
+    ),
+    path(
+        "ingest/batch-json/",
+        JsonIngestBatchView.as_view(),
+        name="ingest-json-batch",
+    ),
     # 单组摄取触发 + 状态回流（字面段在前；状态端点含 uuid run_id）
     path("ingest/", IngestDispatchView.as_view(), name="ingest-dispatch"),
     path(
         "ingest/<uuid:run_id>/",
         IngestRunDetailView.as_view(),
         name="ingest-run-detail",
-    ),
-    # 上线文档（Bitable）同步：预览（只读） + 批量入库
-    path(
-        "release/bitable/preview/",
-        ReleaseBitablePreviewView.as_view(),
-        name="release-bitable-preview",
-    ),
-    path(
-        "release/bitable/sync/",
-        ReleaseBitableSyncView.as_view(),
-        name="release-bitable-sync",
     ),
     # 截图识别需求（字面段，multipart 上传 + IsAuthenticated）
     path(

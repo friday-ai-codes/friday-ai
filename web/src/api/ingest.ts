@@ -72,6 +72,73 @@ export interface IngestBatchStatus {
   runs: IngestBatchRun[]
 }
 
+// ============================================================================
+// JSON 批量摄取（空间 + 工作项 id + 可选类型/ MR）
+// ============================================================================
+
+/** JSON 导入的单条原始输入（空间可写 名/系统 id/飞书 key；类型/ MR 可选）。 */
+export interface JsonIngestItem {
+  space: string
+  work_item_id: number | string
+  work_item_type?: string
+  mr_url?: string
+}
+
+/** 后端逐项解析结果（resolve 预览 / 编辑列表用）。 */
+export interface ResolvedJsonItem {
+  space: string
+  space_id: string
+  space_name: string
+  feishu_project_key: string
+  work_item_id: number
+  work_item_type: string
+  mr_url: string
+  board_url: string
+  match_reason: string
+  resolved: boolean
+  error: string
+}
+
+/** JSON 批量摄取派发的单条 run（带回工作项三元组供拉关联文档）。 */
+export interface JsonIngestBatchRun {
+  run_id: string
+  feishu_project_key: string
+  work_item_type: string
+  work_item_id: number
+  mr_url: string
+  board_url: string
+  space_name: string
+}
+
+/** POST `/delivery/ingest/batch-json/` 派发响应（202）。 */
+export interface JsonIngestBatchDispatch {
+  batch_id: string
+  runs: JsonIngestBatchRun[]
+  skipped: Array<{ space: string, work_item_id: number, error: string }>
+}
+
+/** 工作项关联文档（单条）。 */
+export interface WorkItemArtifactDocument {
+  document_type: string
+  canonical_url: string
+  external_ref: string
+  version: number | null
+  has_content: boolean
+  last_synced_at: string | null
+}
+
+/** 工作项摘要 + 关联文档列表（GET `/delivery/work-items/artifacts/`）。 */
+export interface WorkItemArtifacts {
+  work_item: {
+    id: string
+    title: string
+    status_display_name: string
+    prd_url: string
+    tech_doc_url: string
+  }
+  documents: WorkItemArtifactDocument[]
+}
+
 export const ingestApi = {
   /** 派发后台摄取（202 + run_id），后台执行三步编排。 */
   dispatch: (boardUrl: string, mrUrl: string): Promise<IngestDispatch> =>
@@ -88,4 +155,27 @@ export const ingestApi = {
   /** 拉取整批摄取的聚合状态与各 run 真实步骤结果。 */
   getBatch: (batchId: string): Promise<IngestBatchStatus> =>
     get<IngestBatchStatus>(`/delivery/ingest/batch/${batchId}/`),
+
+  /** 解析预览 JSON 导入项（逐项空间解析 + 校验，不落库）。 */
+  resolveItems: (items: JsonIngestItem[]): Promise<{ items: ResolvedJsonItem[] }> =>
+    post<{ items: ResolvedJsonItem[] }>('/delivery/ingest/resolve/', { items }),
+
+  /** 派发 JSON 批量摄取（可解析项建 run + 有界并发；不可解析项 skipped 回报）。 */
+  dispatchJsonBatch: (
+    items: JsonIngestItem[],
+    concurrency: number,
+  ): Promise<JsonIngestBatchDispatch> =>
+    post<JsonIngestBatchDispatch>('/delivery/ingest/batch-json/', { items, concurrency }),
+
+  /** 按三元组拉取工作项摘要 + 关联文档（PRD/技术方案等）。 */
+  getWorkItemArtifacts: (
+    feishuProjectKey: string,
+    workItemType: string,
+    workItemId: number,
+  ): Promise<WorkItemArtifacts> =>
+    get<WorkItemArtifacts>('/delivery/work-items/artifacts/', {
+      feishu_project_key: feishuProjectKey,
+      work_item_type: workItemType,
+      work_item_id: workItemId,
+    }),
 }

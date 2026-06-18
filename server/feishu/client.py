@@ -6,6 +6,12 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from common.encryption import decrypt_value
 from services.feishu_parsing import (
@@ -16,6 +22,30 @@ from services.feishu_parsing import (
     safe_response_json,
     strict_response_json,
 )
+
+
+class _FeishuRateLimited(Exception):
+    """飞书项目 API 429 限流标记（仅用于触发退避重试）。"""
+
+
+@retry(
+    retry=retry_if_exception_type(_FeishuRateLimited),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
+async def _apost_feishu_project(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, Any],
+) -> httpx.Response:
+    """POST 飞书项目 API；遇 HTTP 429 指数退避重试（限流时等待而非直接失败）。"""
+    response = await client.post(url, headers=headers, json=json)
+    if response.status_code == 429:
+        raise _FeishuRateLimited(f"feishu project api rate limited: {url}")
+    return response
 
 # 取数 / 解析以 services/feishu.py + services/feishu_parsing.py 为 canonical。
 # 本文件为近重复兼容副本（webhook / workflow 路径在用），三项修复（FIX-01/03/04）
@@ -159,7 +189,8 @@ class FeishuClient:
             body["fields"] = fields
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            response = await _apost_feishu_project(
+                client,
                 f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/query",
                 headers={
                     "X-PLUGIN-TOKEN": token,

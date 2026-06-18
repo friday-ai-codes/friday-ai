@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 import { PLATFORM_LABELS } from '~/types'
 
 useHead({
@@ -27,6 +28,25 @@ const { handleError } = useErrorHandler()
 
 // 加载仓库列表
 const loading = ref(true)
+
+// 搜索 + 分页（卡片网格客户端分页），状态持久化到 URL（刷新可恢复）
+const { pagination, globalFilter } = useTableUrlState({ pageSize: 12, sort: false })
+
+const filteredRepositories = computed(() => {
+  const q = globalFilter.value.trim().toLowerCase()
+  if (!q)
+    return repositoriesStore.repositories
+  return repositoriesStore.repositories.filter((r) => {
+    const platformLabel = PLATFORM_LABELS[r.git_platform] ?? r.git_platform
+    return [r.name, r.git_url, r.default_branch, platformLabel]
+      .some(field => String(field ?? '').toLowerCase().includes(q))
+  })
+})
+
+const pagedRepositories = computed(() => {
+  const start = pagination.value.pageIndex * pagination.value.pageSize
+  return filteredRepositories.value.slice(start, start + pagination.value.pageSize)
+})
 
 onMounted(async () => {
   try {
@@ -90,7 +110,7 @@ function formatIndexedTime(value: string) {
       description="管理您的 Git 仓库和凭证配置"
     >
       <template #actions>
-        <Button variant="outline" @click="router.push('/repositories/tree')">
+        <Button variant="outline" @click="router.push({ path: '/knowledge', query: { tab: 'tree' } })">
           <span class="icon-[lucide--folder-tree]" />
           知识树
         </Button>

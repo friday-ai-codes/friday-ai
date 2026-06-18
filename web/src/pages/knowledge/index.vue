@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import type { ProvenanceLinks } from '~/api/knowledge'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { knowledgeApi } from '~/api'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
+import KnowledgeTreePanel from '~/components/knowledge/KnowledgeTreePanel.vue'
 import ProvenanceLinkButton from '~/components/knowledge/ProvenanceLinkButton.vue'
-import ReleaseSyncPanel from '~/components/knowledge/ReleaseSyncPanel.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -20,9 +20,30 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 
 const { t } = useI18n()
 const queryClient = useQueryClient()
+const route = useRoute()
+const router = useRouter()
 
-const activeTab = ref<'search' | 'ingest' | 'release'>('search')
+type KnowledgeTab = 'tree' | 'ingest' | 'search'
+const TABS: KnowledgeTab[] = ['tree', 'ingest', 'search']
+
+function normalizeTab(value: unknown): KnowledgeTab {
+  return TABS.includes(value as KnowledgeTab) ? (value as KnowledgeTab) : 'tree'
+}
+
+// 默认进入「知识树」；与路由 ?tab= 双向同步，支持深链。
+const activeTab = ref<KnowledgeTab>(normalizeTab(route.query.tab))
 const showFilters = ref(false)
+
+watch(() => route.query.tab, (v) => {
+  const next = normalizeTab(v)
+  if (next !== activeTab.value)
+    activeTab.value = next
+})
+
+watch(activeTab, (v) => {
+  if (route.query.tab !== v)
+    router.replace({ query: { ...route.query, tab: v } })
+})
 
 // 输入框当前值与「已提交」查询词分离：仅点击搜索 / 回车时提交，避免输入即触发请求。
 const queryInput = ref('')
@@ -83,17 +104,17 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
 
     <Tabs v-model="activeTab" class="mt-5">
       <TabsList>
-        <TabsTrigger value="search">
-          <span class="icon-[lucide--search]" />
-          {{ t('knowledge.tabs.search') }}
+        <TabsTrigger value="tree">
+          <span class="icon-[lucide--folder-tree]" />
+          {{ t('knowledge.tabs.tree') }}
         </TabsTrigger>
         <TabsTrigger value="ingest">
           <span class="icon-[lucide--download]" />
           {{ t('knowledge.tabs.ingest') }}
         </TabsTrigger>
-        <TabsTrigger value="release">
-          <span class="icon-[lucide--cloud-download]" />
-          {{ t('knowledge.tabs.release') }}
+        <TabsTrigger value="search">
+          <span class="icon-[lucide--search]" />
+          {{ t('knowledge.tabs.search') }}
         </TabsTrigger>
       </TabsList>
 
@@ -204,8 +225,8 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
         </div>
       </TabsContent>
 
-      <TabsContent value="release" class="mt-5">
-        <ReleaseSyncPanel />
+      <TabsContent value="tree" class="mt-5">
+        <KnowledgeTreePanel />
       </TabsContent>
     </Tabs>
   </PageContainer>

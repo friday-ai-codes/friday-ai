@@ -933,12 +933,35 @@ class ConversationService:
         Returns:
             按 updated_at 降序排列的会话列表（每条带 message_count 注解）。
         """
-        from django.db.models import Count
+        from django.db.models import Count, Exists, OuterRef
+
+        from chat.models import CodingPlan, CodingSession
+        from delivery.models import PlanSession, SddSpec
 
         qs = (
             Conversation.objects.filter(is_deleted=False)
             .select_related("created_by", "project")
             .annotate(message_count=Count("messages"))
+            # 列表徽标聚合（SDD / 技术方案 / 编码）：与 owner-scoped list_conversations
+            # 同源的 Exists 子查询，不引入 N+1、async 安全（annotate 出的布尔是实例列，
+            # 序列化器直接读属性不触发 sync ORM）。
+            .annotate(
+                has_coding_plan=Exists(
+                    CodingPlan.objects.filter(conversation_id=OuterRef("pk"))
+                ),
+                has_coding_session=Exists(
+                    CodingSession.objects.filter(conversation_id=OuterRef("pk"))
+                ),
+                has_sdd_spec=Exists(
+                    PlanSession.objects.filter(
+                        conversation_id=OuterRef("pk"),
+                        current_plan_version__isnull=False,
+                        current_plan_version__in=SddSpec.objects.filter(
+                            plan_version__isnull=False
+                        ).values("plan_version_id"),
+                    )
+                ),
+            )
         )
         if owner_id:
             qs = qs.filter(created_by_id=owner_id)

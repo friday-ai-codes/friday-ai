@@ -54,6 +54,16 @@ api_patterns = [
     path("access-tokens/", include("access_tokens.urls")),
     # 操作审计查询/导出（v0.10.0 AUDITUI；只读，IsSuperUser fail-closed）
     path("audit/", include("audit.urls")),
+    # 站内信通知（owner-scoped；列表/未读数/已读）
+    path("notifications/", include("notifications.urls")),
+    # 系统公告（用户端，owner-scoped 可见性；列表/未读数/弹窗/已读）
+    path("announcements/", include("notifications.announcement_urls")),
+    # 系统公告管理端（IsSuperUser；CRUD + 已读状态）
+    path("admin/announcements/", include("notifications.admin_urls")),
+    # 用户反馈（提交/列表/详情/附件上传）
+    path("feedback/", include("feedback.urls")),
+    # 用户反馈管理端（IsSuperUser；列表/详情/回复/改状态）
+    path("admin/feedback/", include("feedback.admin_urls")),
     # MCP read tools（外部仓库智能只读工具）
     path("mcp/", include("mcp_tools.urls")),
     # Tool bindings + RemoteTool execute（Phase 10：令牌绑定 CRUD + PAT 执行端点）

@@ -110,6 +110,9 @@ class ReleaseRecord(models.Model):
     work_item_external_id = models.BigIntegerField(null=True, blank=True)
     status = models.CharField(max_length=64, blank=True, default="")
     note = models.TextField(blank=True, default="")
+    # 上线日期（ms epoch）——从 Bitable「上线日期」列派生，用于看板按时间倒序与展示。
+    # 可空：旧行 / 无日期行豁免；建索引支撑排序。
+    release_date = models.BigIntegerField(null=True, blank=True)
     # Bitable natural key {app_token}:{table_id}:{record_id} 落地点（独立字段，便于
     # 幂等 upsert，不复用 external_ref）；非空时 DB 级条件唯一。
     bitable_record_key = models.CharField(max_length=255, blank=True, default="")
@@ -127,6 +130,8 @@ class ReleaseRecord(models.Model):
             # 反查路径：经 work_item / work_item_external_id 关联交付脊柱
             models.Index(fields=["work_item"]),
             models.Index(fields=["work_item_external_id"]),
+            # 看板按上线日期倒序（同 batch 下分页排序）
+            models.Index(fields=["batch", "-release_date"]),
         ]
         constraints = [
             # 非空 natural key DB 级唯一（支撑 31-03 adapter 幂等 upsert）。

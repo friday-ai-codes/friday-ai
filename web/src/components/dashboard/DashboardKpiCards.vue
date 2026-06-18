@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { TransitionPresets, useTransition } from '@vueuse/core'
-import { gsap } from 'gsap'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 export interface KpiStat {
   title: string
@@ -48,24 +47,13 @@ watch(() => props.stats.map(s => s.value), (newValues) => {
   }
 }, { deep: true })
 
-// 格子入场 stagger：与父级 section 浮入错开一拍，形成「卡片 → 内容」两级节奏
-const rootEl = ref<HTMLElement | null>(null)
-useGsapReveal(rootEl, () => {
-  gsap.from('.kpi-cell', {
-    y: 14,
-    autoAlpha: 0,
-    duration: 0.45,
-    stagger: 0.06,
-    delay: 0.25,
-    ease: 'power2.out',
-    clearProps: 'all',
-  })
-})
+// 入场动效（.kpi-cell 错拍浮现）由首页主时间线（index.vue）统一编排，
+// 此处不再单独起动画，避免多条独立时间线导致出现顺序错乱。
 </script>
 
 <template>
   <!-- 单卡分格 KPI strip：格子间用 1px 分隔线，避免 6 张独立小卡片的拥挤感 -->
-  <section ref="rootEl" class="card overflow-hidden" aria-label="数据总览">
+  <section class="card overflow-hidden" aria-label="数据总览">
     <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-px bg-border/60">
       <RouterLink
         v-for="(stat, index) in stats"

@@ -28,6 +28,10 @@ export interface AdminConversationListItem {
   owner: AdminConversationOwner | null
   space_id: string
   model?: string
+  /** 列表徽标聚合：是否产出过 SDD spec / 技术方案 / 编码会话。 */
+  has_sdd_spec?: boolean
+  has_coding_plan?: boolean
+  has_coding_session?: boolean
   created_at: string
   updated_at: string
 }

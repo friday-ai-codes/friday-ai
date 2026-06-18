@@ -4,10 +4,43 @@ from typing import Any, Callable
 
 import httpx
 import structlog
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from system.models import SettingKeys, SystemSetting
 
 logger = structlog.get_logger(__name__)
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    """429 / Too Many Requests → 退避重试（embedding 服务限流时等待而非直接失败）。"""
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response is not None
+        and exc.response.status_code == 429
+    )
+
+
+@retry(
+    retry=retry_if_exception(_is_rate_limited),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
+async def _apost_embedding(
+    client: httpx.AsyncClient,
+    api_url: str,
+    request_body: dict[str, Any],
+    headers: dict[str, str],
+) -> httpx.Response:
+    """POST embedding 请求；遇 429 指数退避重试（允许并发下的限流等待）。"""
+    response = await client.post(api_url, json=request_body, headers=headers)
+    response.raise_for_status()
+    return response
 
 
 class EmbeddingService:
@@ -120,8 +153,7 @@ class EmbeddingService:
 
                 request_body = cls._build_request_body(api_url, model, text)
 
-                response = await client.post(api_url, json=request_body, headers=headers)
-                response.raise_for_status()
+                response = await _apost_embedding(client, api_url, request_body, headers)
                 data = response.json()
 
                 embedding = cls._extract_embedding(data)
@@ -175,8 +207,7 @@ class EmbeddingService:
                 for idx, text in enumerate(texts):
                     try:
                         request_body = cls._build_request_body(api_url, model, text)
-                        response = await client.post(api_url, json=request_body, headers=headers)
-                        response.raise_for_status()
+                        response = await _apost_embedding(client, api_url, request_body, headers)
                         data = response.json()
 
                         embedding = cls._extract_embedding(data)
@@ -200,8 +231,7 @@ class EmbeddingService:
                 try:
                     async with httpx.AsyncClient(timeout=120.0) as client:
                         request_body = cls._build_batch_request_body(api_url, model, batch)
-                        response = await client.post(api_url, json=request_body, headers=headers)
-                        response.raise_for_status()
+                        response = await _apost_embedding(client, api_url, request_body, headers)
                         data = response.json()
 
                         batch_embeddings = cls._extract_batch_embeddings(data)
