@@ -39,8 +39,14 @@ class TestBranchTypeInference:
         assert infer_branch_type("chore: update deps") == "chore"
         assert infer_branch_type("refactor the auth module") == "chore"
 
+    def test_test_keywords(self) -> None:
+        """tech_plan 包含测试相关关键词时返回 'test'。"""
+        assert infer_branch_type("补充单元测试") == "test"
+        assert infer_branch_type("add e2e tests") == "test"
+        assert infer_branch_type("完善用例覆盖") == "test"
+
     def test_default_feat(self) -> None:
-        """不含 fix/chore 关键词时返回 'feat'。"""
+        """不含 fix/chore/test 关键词时返回 'feat'。"""
         assert infer_branch_type("实现用户认证模块") == "feat"
         assert infer_branch_type("add new dashboard page") == "feat"
         assert infer_branch_type("新增导出功能") == "feat"
@@ -59,30 +65,31 @@ class TestBranchTypeInference:
 
 
 class TestShortDescription:
-    """测试 generate_short_description 从 tech_plan 提取英文 kebab-case 短描述。"""
+    """测试 generate_short_description 规则提取简短名称（中文优先，<=10 字）。"""
 
-    def test_english_extraction(self) -> None:
-        """从中英混合 tech_plan 提取英文关键词。"""
-        result = generate_short_description("实现 user-auth 模块")
-        assert "user-auth" in result
+    def test_chinese_extraction(self) -> None:
+        """中文方案提取首行核心描述，去空格、<=10 字。"""
+        result = generate_short_description("实现 用户登录 模块")
+        assert " " not in result
+        assert len(result) <= 10
+        assert "用户登录" in result
 
-    def test_kebab_case(self) -> None:
-        """输出仅包含 [a-z0-9-] 字符。"""
-        import re
-
-        result = generate_short_description("implement UserAuth Module with OAuth2")
-        assert re.fullmatch(r"[a-z0-9-]+", result), f"非法字符: {result}"
+    def test_strips_markdown_heading(self) -> None:
+        """剥离 markdown 标题标记，仅保留正文。"""
+        result = generate_short_description("# 修复购物车结算异常\n详细说明……")
+        assert not result.startswith("#")
+        assert " " not in result
+        assert len(result) <= 10
 
     def test_max_length(self) -> None:
-        """超过 40 字节时截断。"""
-        long_plan = "implement " + " ".join(f"word{i}" for i in range(20))
-        result = generate_short_description(long_plan)
-        assert len(result.encode("utf-8")) <= 40
+        """超过 10 字时按字符截断。"""
+        result = generate_short_description("一二三四五六七八九十十一十二")
+        assert len(result) <= 10
 
     def test_empty_fallback(self) -> None:
-        """无法提取关键词时返回 'task' 作为兜底。"""
+        """空内容返回 'task' 兜底；纯中文返回中文简短名（不再 task）。"""
         assert generate_short_description("") == "task"
-        assert generate_short_description("这是一个纯中文描述") == "task"
+        assert generate_short_description("这是一个纯中文描述") == "这是一个纯中文描述"
 
 
 # ============================================================================
@@ -91,26 +98,26 @@ class TestShortDescription:
 
 
 class TestBranchNameGeneration:
-    """测试 generate_branch_name 拼接 {type}{YYYYMMDD}.{desc} 格式分支名。"""
+    """测试 generate_branch_name 拼接 {type}/{yymmdd}.{desc} 格式分支名。"""
 
     def test_format(self) -> None:
-        """返回 '{type}{YYYYMMDD}.{desc}' 格式。"""
+        """返回 '{type}/{yymmdd}.{desc}' 格式（支持中文 desc）。"""
         import re
 
-        result = generate_branch_name("feat", "user-auth")
-        assert re.fullmatch(r"feat\d{8}\.user-auth", result), f"格式不匹配: {result}"
+        result = generate_branch_name("feat", "用户登录")
+        assert re.fullmatch(r"feat/\d{6}\.用户登录", result), f"格式不匹配: {result}"
 
     def test_date_utc(self) -> None:
-        """使用 UTC 日期。"""
+        """使用 UTC 日期（6 位 yymmdd）+ type/ 前缀。"""
         from datetime import datetime as real_datetime
 
         fixed_dt = real_datetime(2026, 4, 9, 12, 0, 0, tzinfo=timezone.utc)
         with patch("chat.branch_service.datetime") as mock_dt:
             mock_dt.now.return_value = fixed_dt
             mock_dt.side_effect = lambda *a, **kw: real_datetime(*a, **kw)
-            result = generate_branch_name("fix", "login-bug")
+            result = generate_branch_name("fix", "登录崩溃")
             mock_dt.now.assert_called_once_with(timezone.utc)
-            assert result == "fix20260409.login-bug"
+            assert result == "fix/260409.登录崩溃"
 
 
 # ============================================================================

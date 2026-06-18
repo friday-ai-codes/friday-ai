@@ -533,13 +533,16 @@ const badgeText = computed(() => {
                 <SelectItem value="chore">
                   chore
                 </SelectItem>
+                <SelectItem value="test">
+                  test
+                </SelectItem>
               </SelectContent>
             </Select>
-            <span class="text-xs font-mono text-muted-foreground shrink-0 pb-2">{{ branchDate }}.</span>
+            <span class="text-xs font-mono text-muted-foreground shrink-0 pb-2">/{{ branchDate }}.</span>
             <Input
               v-model="shortDesc"
               class="flex-1 h-9 font-mono text-sm"
-              placeholder="简短描述（英文）"
+              placeholder="简短描述（中文优先）"
               :disabled="isConfirming"
             />
           </div>

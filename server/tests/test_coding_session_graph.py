@@ -50,6 +50,8 @@ def mock_coding_session() -> MagicMock:
     session.repository.git_url = "https://github.com/test/repo.git"
     session.repository.git_platform = "github"
     session.branch_name = "feat20260409.test-feature"
+    # 用户选定的 PR 目标分支（真实字符串，避免 MagicMock 进入 graph state 无法序列化）。
+    session.target_branch = "main"
     session.affected_files = [{"path": "src/main.py", "change_type": "modify"}]
     session.confirmed_commit_message = ""
     session.suggested_pr_title = ""

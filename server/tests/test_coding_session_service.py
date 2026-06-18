@@ -148,7 +148,8 @@ class TestBuildDispatchMetadata:
 
         assert spec.base_branch == "master"
         assert spec.work_branch == "feat20260409.test"
-        assert spec.target_branch == "master"
+        # target_branch 取 session.target_branch（未设）→ 回退默认 develop（团队工作流）。
+        assert spec.target_branch == "develop"
         assert spec.affected_files == plan.affected_files
 
     @pytest.mark.asyncio
@@ -183,7 +184,8 @@ class TestBuildDispatchMetadata:
             )
 
         assert env_metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] == "feat20260409.test"
-        assert env_metadata["env_FRIDAY_TASK_TARGET_BRANCH"] == "master"
+        # 未设 session.target_branch → 容器目标分支回退默认 develop。
+        assert env_metadata["env_FRIDAY_TASK_TARGET_BRANCH"] == "develop"
         assert env_metadata["execution_spec"]["base_branch"] == "master"
         assert env_metadata["execution_spec"]["work_branch"] == "feat20260409.test"
         affected_files = json.loads(env_metadata["env_FRIDAY_TASK_AFFECTED_FILES"])
