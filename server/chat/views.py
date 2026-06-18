@@ -1810,6 +1810,13 @@ class CodingSessionConfirmView(APIView):
             coding_session.branch_name = branch_name
             await coding_session.asave(update_fields=["branch_name", "updated_at"])
 
+        # 处理前端传入的 PR 目标分支（用户在 TechPlanCard 选定，默认 develop）。
+        # 落到 CodingSession.target_branch，后续 PR 创建时使用，确保不会误并入 master。
+        target_branch = request.data.get("target_branch") if request.data else None
+        if target_branch:
+            coding_session.target_branch = str(target_branch).strip()
+            await coding_session.asave(update_fields=["target_branch", "updated_at"])
+
         # 2. 状态机校验：draft 首次确认；confirmed 但尚未创建 subagent 的中间态
         #    允许幂等重启 graph，修复 view 已写 confirmed、后台任务未跑到 dispatch 的卡住状态。
         should_start_graph = False
@@ -2049,7 +2056,7 @@ class PRConfirmView(APIView):
             )
 
         # contract: 构建 branch_url
-        from orchestration.coding_graph import build_branch_url
+        from orchestration.coding_graph import _resolve_target_branch, build_branch_url
 
         branch_url = build_branch_url(
             coding_session.repository.git_url,
@@ -2060,7 +2067,7 @@ class PRConfirmView(APIView):
         return Response({
             "suggested_pr_title": coding_session.suggested_pr_title,
             "suggested_pr_description": coding_session.suggested_pr_description,
-            "target_branch": coding_session.repository.default_branch,
+            "target_branch": _resolve_target_branch(coding_session),
             "branch_url": branch_url,
         })
 
@@ -2476,6 +2483,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
             plan=plan,
             repository_ids=req_ser.validated_data["repository_ids"],
             branch_template=req_ser.validated_data.get("branch_template", ""),
+            target_branch=req_ser.validated_data.get("target_branch", ""),
         )
 
         # 6) dataclass -> dict -> serializer
@@ -2794,6 +2802,148 @@ class ClarificationAnswerView(APIView):
                 "freeform_text": freeform,
                 "answered_at": now.isoformat(),
                 "inferred_state": implies,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# 用户主动跳过澄清时注入给 LLM 的指令文本：作为 resume 后的 user turn，
+# 让模型不再追问、直接基于已检索/分析到的内容给出最佳回答。
+_CLARIFICATION_SKIP_INSTRUCTION = (
+    "用户选择跳过这个澄清问题，不再补充信息。"
+    "请不要再追问，直接基于目前已经检索和分析到的内容，给出你能给出的最佳回答；"
+    "如有不确定之处，可在回答中说明假设。"
+)
+
+
+class ClarificationSkipView(APIView):
+    """POST /api/chat/conversations/<uuid:conversation_id>/clarification/skip/
+
+    用户在「等待澄清」态下选择跳过的兜底出口。典型场景：编排层自动构造的
+    clarification 漏发卡片 payload（如深度分析子代理发起的追问），导致 run
+    永久卡在 ``waiting_clarification`` 而前端无卡可答、既不能结束也无法选择。
+
+    本 endpoint 不依赖前端持有 ``clarification_id`` —— 按 conversation 维度
+    定位等待中的 run，完成：
+
+    1. owner gate 校验会话归属（越权/不存在统一 404）；
+    2. 找到该会话最近一条未答复的 ``ConversationIntentTrace``（若有）标记为
+       已跳过（落审计 + 幂等）；
+    3. 落一条 ``Message(role=user)`` 作为「已跳过追问」的可见气泡；
+    4. 后台 ``resume_clarification_run`` 唤醒 graph —— 注入跳过指令作为新的
+       user turn，让 LLM 基于现有信息直接作答。
+
+    设计与 ``ClarificationAnswerView`` 对齐：resume 后台 task 走
+    ``_BACKGROUND_TASKS`` 强引用 + 干净 contextvars，防 asyncio GC 中止 /
+    ``CurrentThreadExecutor already quit``。
+    """
+
+    authentication_classes = [OptionalJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request, conversation_id):  # type: ignore[override,no-untyped-def]
+        from chat.models import ConversationIntentTrace, Message
+        from orchestration.models import OrchestrationRun
+
+        # owner gate（ISO-04）：owner-scoped 存在性校验，越权/不存在统一 404。
+        try:
+            conversation = await ConversationService.aget_for_user(
+                str(conversation_id), request.user
+            )
+        except Conversation.DoesNotExist:
+            return Response(
+                {"detail": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 仅当确有等待澄清的 run 时才执行跳过；否则幂等返回，避免误触把一个
+        # 正常会话强行 resume。
+        #
+        # status 同时匹配 WAITING 与 RUNNING：正常路径会把 run 落成 WAITING；
+        # 但 dispatch 的后台 finalizer 若被中途打断（如 dev reload / SSE 异常
+        # 断开后台任务被回收），run 会停在 ``status=running, phase=waiting_clarification``
+        # 且无 ConversationIntentTrace —— 这正是「无卡可答、永久等待」的孤儿态，
+        # 跳过出口必须能覆盖它。
+        waiting_run = await OrchestrationRun.objects.filter(
+            conversation=conversation,
+            status__in=[
+                OrchestrationRun.Status.WAITING,
+                OrchestrationRun.Status.RUNNING,
+            ],
+            phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
+        ).order_by("-created_at").afirst()
+        if waiting_run is None:
+            return Response(
+                {"status": "no_pending"},
+                status=status.HTTP_200_OK,
+            )
+
+        # 最近一条未答复 trace（可能不存在：waiting_clarification_without_clarification_id
+        # 的退化场景）。有则标记已跳过 + 落审计；无则仍可凭 waiting_run 直接 resume。
+        trace = await ConversationIntentTrace.objects.filter(
+            conversation=conversation,
+            answered_at__isnull=True,
+        ).order_by("-created_at").afirst()
+
+        now = timezone.now()
+        clarification_id = trace.clarification_id if trace else None
+        if trace is not None:
+            await ConversationIntentTrace.objects.filter(pk=trace.pk).aupdate(
+                selected_option_id="",
+                freeform_answer=_CLARIFICATION_SKIP_INSTRUCTION,
+                inferred_state={},
+                answered_at=now,
+            )
+
+        await Message.objects.acreate(
+            conversation=conversation,
+            role=Message.Role.USER,
+            content="（已跳过追问，请基于现有信息继续回答）",
+            metadata={
+                "kind": "clarification_skip",
+                "clarification_id": clarification_id or "",
+            },
+        )
+
+        thread_id = str(conversation.id)
+        resume_payload = {
+            "clarification_id": clarification_id,
+            "selected_option_id": None,
+            "selected_option_label": None,
+            "freeform_text": _CLARIFICATION_SKIP_INSTRUCTION,
+            "implies": {},
+            "skipped": True,
+        }
+
+        async def _resume_graph() -> None:
+            try:
+                await ConversationService.resume_clarification_run(
+                    thread_id, resume_payload,
+                )
+            except Exception:
+                logger.exception(
+                    "clarification_skip_resume_failed",
+                    clarification_id=clarification_id,
+                    thread_id=thread_id,
+                )
+
+        # 同 ClarificationAnswerView：干净 contextvars 上下文启动，防请求结束后
+        # 后台任务向已退出的 CurrentThreadExecutor 提交工作而抛错。
+        task = asyncio.create_task(_resume_graph(), context=contextvars.Context())
+        _BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+        logger.info(
+            "clarification_skip_recorded",
+            clarification_id=clarification_id,
+            conversation_id=thread_id,
+        )
+
+        return Response(
+            {
+                "status": "skipped",
+                "clarification_id": clarification_id,
+                "answered_at": now.isoformat(),
             },
             status=status.HTTP_200_OK,
         )

@@ -109,8 +109,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await _alog_runner_event(
             self.runner.id, "connected", {"version": payload.get("version", "")}
         )
-        # 重连时恢复未完成任务关联
-        await self._recover_pending_tasks()
+        # 重连时恢复未完成任务关联。runner 在 hello 里上报仍在跑的 task_id 列表
+        # （running_tasks）；recovery 只对「runner 没在跑」的任务重派发，避免对
+        # 旧容器还活着的任务再起第二个容器（历史 non-fast-forward 冲突的根因）。
+        running_tasks = payload.get("running_tasks") or []
+        await self._recover_pending_tasks(running_tasks=running_tasks)
         # 触发分发器检查待分发队列
         from runners.dispatcher import get_dispatcher
 
@@ -572,13 +575,24 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         self.runner.channel_name = ""
         await self.runner.asave(update_fields=["status", "channel_name", "updated_at"])
 
-    async def _recover_pending_tasks(self) -> None:
+    async def _recover_pending_tasks(self, running_tasks: list[str] | None = None) -> None:
         """重连时恢复未完成任务关联。
 
-        查询该 Runner 所有 assigned/running 状态的任务，
-        对仍有效的任务重新发送 dispatch 消息。
+        查询该 Runner 所有 assigned/running 状态的任务：
+        - 任务已在终态：标记 assignment 为 failed（清理脏关联）。
+        - runner 仍在跑该任务（session_id 在 ``running_tasks`` 上报列表里）：**不重派发**，
+          旧容器会自己完成并通过补发的 WS 消息上报；重派发会起第二个容器导致
+          push non-fast-forward 冲突（历史 bug 根因）。
+        - 否则（容器确已消失，如 runner 进程重启被 StartupCleanup 清掉）：重新 dispatch。
+
+        Args:
+            running_tasks: runner 在 hello 中上报的、当前仍在运行的 task_id 列表。
+                旧版 runner（未上报）传 None/空列表时退化为旧行为（全部重派发），
+                此时由 dispatcher 的 DB CAS 幂等兜底防止重复 active assignment。
         """
         from runners.models import RunnerTaskAssignment
+
+        running_set = set(running_tasks or [])
 
         pending_assignments = RunnerTaskAssignment.objects.filter(
             runner=self.runner,
@@ -586,6 +600,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         ).select_related("session")
 
         recovered_count = 0
+        skipped_count = 0
         async for assignment in pending_assignments:
             session = assignment.session
             if not session or session.status in _TERMINAL_STATUSES:
@@ -595,7 +610,12 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
                 await assignment.asave(update_fields=["status", "completed_at"])
                 continue
 
-            # 重新分发任务
+            # runner 仍在跑该任务 → 旧容器还活着，跳过重派发，等它自己完成。
+            if session.session_id in running_set:
+                skipped_count += 1
+                continue
+
+            # 重新分发任务（容器确已消失）
             dispatch_task = await self._rebuild_dispatch_task(session.session_id)
             if dispatch_task:
                 from runners.dispatcher import get_dispatcher
@@ -603,11 +623,12 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
                 await get_dispatcher().dispatch(dispatch_task)
                 recovered_count += 1
 
-        if recovered_count > 0:
+        if recovered_count > 0 or skipped_count > 0:
             logger.info(
                 "runner_tasks_recovered",
                 runner_id=str(self.runner.id),
                 recovered_count=recovered_count,
+                skipped_running=skipped_count,
             )
 
 

@@ -56,6 +56,16 @@ class TaskDispatcher:
 
         for runner in runners:
             if runner.current_tasks < runner.concurrent:
+                # 幂等兜底：同一 session 已有 active(assigned/running) assignment 时
+                # 不重复派发（多见于 WS 重连恢复 / 并发触发），避免起第二个容器导致
+                # push non-fast-forward 冲突，也避免 current_tasks 被重复 +1。
+                if await self._has_active_assignment(task.session_id):
+                    self._log.info(
+                        "dispatch_skipped_active_assignment",
+                        task_id=task.task_id,
+                        session_id=task.session_id,
+                    )
+                    return True
                 channel_layer = get_channel_layer()
                 await channel_layer.send(
                     runner.channel_name,
@@ -134,6 +144,18 @@ class TaskDispatcher:
         await Runner.objects.filter(id=runner.id).aupdate(
             current_tasks=db_models.F("current_tasks") + 1
         )
+
+    async def _has_active_assignment(self, session_id: str) -> bool:
+        """该 session 是否已有 assigned/running 的 assignment（派发幂等判据）。"""
+        from runners.models import RunnerTaskAssignment
+
+        return await RunnerTaskAssignment.objects.filter(
+            session__session_id=session_id,
+            status__in=[
+                RunnerTaskAssignment.Status.ASSIGNED,
+                RunnerTaskAssignment.Status.RUNNING,
+            ],
+        ).aexists()
 
     async def _create_assignment(self, runner: object, task: DispatchTask) -> None:
         from runners.models import RunnerTaskAssignment

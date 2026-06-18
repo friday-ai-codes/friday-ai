@@ -135,11 +135,30 @@ function formatIndexedTime(value: string) {
       @action="openCreateRepository()"
     />
 
-    <!-- 仓库列表 -->
-    <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      <article
-        v-for="repository in repositoriesStore.repositories"
-        :key="repository.id"
+    <template v-else>
+      <!-- 搜索栏 -->
+      <div class="relative w-full sm:w-72">
+        <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
+        <input
+          v-model="globalFilter"
+          placeholder="搜索仓库名、地址、分支…"
+          class="flex h-9 w-full rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
+        >
+      </div>
+
+      <!-- 搜索无结果 -->
+      <EmptyState
+        v-if="filteredRepositories.length === 0"
+        icon="lucide--search-x"
+        title="无匹配仓库"
+        description="试试更换关键词或清空搜索"
+      />
+
+      <!-- 仓库列表 -->
+      <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <article
+          v-for="repository in pagedRepositories"
+          :key="repository.id"
         class="repo-card group relative flex min-h-[220px] flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20"
         :class="{ 'repo-card--sdd': repository.methodology === 'SDD' }"
       >
@@ -250,8 +269,16 @@ function formatIndexedTime(value: string) {
             </TooltipProvider>
           </div>
         </div>
-      </article>
-    </div>
+        </article>
+      </div>
+
+      <!-- 分页器（仅有结果时显示） -->
+      <GridPager
+        v-if="filteredRepositories.length > 0"
+        v-model:pagination="pagination"
+        :total="filteredRepositories.length"
+      />
+    </template>
   </PageContainer>
 </template>
 

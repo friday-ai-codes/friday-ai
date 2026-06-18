@@ -8,6 +8,7 @@ import type {
 } from '~/api/ingest'
 import { useMutation, useQuery } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ingestApi } from '~/api/ingest'
 import JsonEditor from '~/components/execution/JsonEditor.vue'
 import { Button } from '~/components/ui/button'
@@ -16,6 +17,54 @@ import { useToast } from '~/composables/useToast'
 
 const { handleError } = useErrorHandler()
 const { success, warning } = useToast()
+const router = useRouter()
+
+// ==================== URL 爬取（飞书文档 / 多维表格 / wiki / 通用链接） ====================
+const crawlInput = ref('')
+const crawlMessage = ref('')
+const crawlMessageKind = ref<'empty' | 'error' | ''>('')
+const feishuNotConfigured = ref(false)
+const feishuDeeplink = ref('/admin#integration')
+
+const crawlMutation = useMutation({
+  mutationFn: (url: string) => ingestApi.crawlUrl(url),
+})
+const crawling = computed(() => crawlMutation.isPending.value)
+
+async function doCrawl() {
+  const url = crawlInput.value.trim()
+  if (!url)
+    return
+  crawlMessage.value = ''
+  crawlMessageKind.value = ''
+  feishuNotConfigured.value = false
+  try {
+    const res = await crawlMutation.mutateAsync(url)
+    if (res.status === 'feishu_not_configured') {
+      feishuNotConfigured.value = true
+      feishuDeeplink.value = res.settings_deeplink || '/admin#integration'
+      crawlMessage.value = res.message
+      return
+    }
+    if (res.status === 'ok' && res.items.length) {
+      // 爬出来的内容转成 JSON 回填编辑器，再走既有 resolve/校验链。
+      jsonText.value = JSON.stringify(res.items, null, 2)
+      await parseAndResolve()
+      success(res.message || `已爬取 ${res.items.length} 条`)
+      return
+    }
+    // empty / error：展示可读提示
+    crawlMessageKind.value = res.status === 'empty' ? 'empty' : 'error'
+    crawlMessage.value = res.message || '信息源无法获取到对应的内容'
+  }
+  catch (e) {
+    handleError(e, 'URL 爬取')
+  }
+}
+
+function goConfigureFeishu() {
+  router.push(feishuDeeplink.value)
+}
 
 // ==================== JSON 编辑器 ====================
 const EXAMPLE_ITEMS = [
@@ -126,12 +175,12 @@ async function startSync() {
     artifactsByRun.value = {}
     if (!res.runs.length) {
       batchId.value = null
-      warning('没有可摄取的有效项（请先解决解析错误）')
+      warning('没有可关联的有效项（请先解决解析错误）')
       return
     }
     batchId.value = res.batch_id
     pollStartedAt.value = Date.now()
-    success(`已派发 ${res.runs.length} 条摄取，将在后台执行并实时更新`)
+    success(`已派发 ${res.runs.length} 条关联，将在后台执行并实时更新`)
   }
   catch (e) {
     handleError(e, '同步派发')
@@ -223,6 +272,65 @@ function runTitle(run: IngestBatchRun): string {
 
 <template>
   <div class="space-y-5">
+    <!-- ==================== URL 爬取（飞书文档 / 多维表格 / wiki / 通用链接） ==================== -->
+    <div class="card">
+      <div class="px-5 py-3.5 border-b border-border/50">
+        <div class="flex items-center gap-2">
+          <span class="icon-[lucide--link-2] text-primary" />
+          <h3 class="text-sm font-semibold">
+            链接爬取
+          </h3>
+        </div>
+        <p class="text-xs text-muted-foreground mt-0.5">
+          粘贴一个飞书文档 / 多维表格 / wiki 链接（或通用 http(s) 链接），自动抓取内容并用 AI 解析出看板工作项与 MR 关联，回填到下方「待爬取」列表。
+        </p>
+      </div>
+
+      <div class="p-5 space-y-3">
+        <div class="flex items-center gap-2">
+          <input
+            v-model="crawlInput"
+            type="url"
+            placeholder="https://xxx.feishu.cn/base/... 或 /docx/... 或 /wiki/..."
+            class="flex-1 h-9 rounded border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary/40"
+            :disabled="crawling"
+            @keydown.enter="doCrawl"
+          >
+          <Button :disabled="crawling || !crawlInput.trim()" @click="doCrawl">
+            <span v-if="crawling" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
+            <span v-else class="icon-[lucide--sparkles] mr-1.5" />
+            {{ crawling ? '爬取中…' : '爬取' }}
+          </Button>
+        </div>
+
+        <!-- 未配置飞书：引导去系统设置 -->
+        <div
+          v-if="feishuNotConfigured"
+          class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-2"
+        >
+          <span class="icon-[lucide--alert-triangle] text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-amber-700 dark:text-amber-400">
+              {{ crawlMessage }}
+            </p>
+            <Button variant="outline" size="sm" class="h-7 mt-2" @click="goConfigureFeishu">
+              <span class="icon-[lucide--settings] mr-1.5" />
+              去配置飞书应用
+            </Button>
+          </div>
+        </div>
+
+        <!-- 解析为空 / 出错提示 -->
+        <p
+          v-else-if="crawlMessage"
+          class="text-xs"
+          :class="crawlMessageKind === 'error' ? 'text-destructive' : 'text-muted-foreground'"
+        >
+          {{ crawlMessage }}
+        </p>
+      </div>
+    </div>
+
     <!-- ==================== JSON 输入 ==================== -->
     <div class="card">
       <div class="px-5 py-3.5 border-b border-border/50 flex items-start justify-between gap-3 flex-wrap">
@@ -230,7 +338,7 @@ function runTitle(run: IngestBatchRun): string {
           <div class="flex items-center gap-2">
             <span class="icon-[lucide--braces] text-primary" />
             <h3 class="text-sm font-semibold">
-              JSON 批量摄取
+              JSON 批量录入
             </h3>
           </div>
           <p class="text-xs text-muted-foreground mt-0.5">
@@ -262,7 +370,7 @@ function runTitle(run: IngestBatchRun): string {
     <div v-if="items.length" class="card">
       <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between gap-3 flex-wrap">
         <span class="text-sm font-medium">
-          待摄取（{{ items.length }}，可摄取 {{ resolvedCount }}）
+          待爬取（{{ items.length }}，可关联 {{ resolvedCount }}）
         </span>
         <Button variant="outline" size="sm" class="h-8" :disabled="resolving" @click="revalidate">
           <span class="icon-[lucide--refresh-cw] mr-1.5" :class="{ 'animate-spin': resolving }" />
@@ -381,7 +489,7 @@ function runTitle(run: IngestBatchRun): string {
         <Button :disabled="dispatching || !resolvedCount" @click="startSync">
           <span v-if="dispatching" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
           <span v-else class="icon-[lucide--play] mr-1.5" />
-          {{ dispatching ? '派发中…' : `同步（${resolvedCount}）` }}
+          {{ dispatching ? '派发中…' : `开始关联（${resolvedCount}）` }}
         </Button>
       </div>
     </div>
@@ -404,8 +512,8 @@ function runTitle(run: IngestBatchRun): string {
         <span v-if="isRunning" class="icon-[lucide--loader-circle] animate-spin text-primary" />
         <span v-else class="icon-[lucide--check-circle-2] text-emerald-600 dark:text-emerald-400" />
         <span>
-          <template v-if="isRunning">摄取进行中…（完成 {{ okCount }}/{{ progressRuns.length }}）</template>
-          <template v-else>摄取完成（成功 {{ okCount }}/{{ progressRuns.length }}）</template>
+          <template v-if="isRunning">爬取关联进行中…（完成 {{ okCount }}/{{ progressRuns.length }}）</template>
+          <template v-else>爬取关联完成（成功 {{ okCount }}/{{ progressRuns.length }}）</template>
         </span>
       </div>
       <ul class="divide-y divide-border/40">

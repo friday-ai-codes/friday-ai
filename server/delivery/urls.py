@@ -8,6 +8,7 @@ from django.urls import path
 from delivery.api.views import (
     IngestBatchDetailView,
     IngestBatchDispatchView,
+    IngestCrawlView,
     IngestDispatchView,
     IngestRunDetailView,
     JsonIngestBatchView,
@@ -48,6 +49,12 @@ urlpatterns = [
         "ingest/batch/<uuid:batch_id>/",
         IngestBatchDetailView.as_view(),
         name="ingest-batch-detail",
+    ),
+    # URL 爬取：抓取飞书文档/多维表格/通用链接 → AI 抽成可关联条目（字面段）
+    path(
+        "ingest/crawl/",
+        IngestCrawlView.as_view(),
+        name="ingest-crawl",
     ),
     # JSON 批量摄取：解析预览 + 派发（字面段，须在 <uuid:run_id> 之前）
     path(

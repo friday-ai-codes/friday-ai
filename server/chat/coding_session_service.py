@@ -110,14 +110,19 @@ async def build_coding_execution_spec(
         plan = await CodingPlan.objects.only("affected_files").aget(id=coding_plan_id)
         affected_files = list(plan.affected_files or [])
 
+    from chat.branch_service import DEFAULT_TARGET_BRANCH
+
     default_branch = repository.default_branch
+    # base_branch 是容器 clone 的基线分支（仓库默认分支）；target_branch 是 PR 合并
+    # 目标，取用户在启动编码时选定的值，未选时回退默认 develop。
+    target_branch = (coding_session.target_branch or "").strip() or DEFAULT_TARGET_BRANCH
     return CodingExecutionSpec(
         repository_id=str(repository.id),
         repository_name=repository.name,
         repo_url=repository.git_url,
         base_branch=default_branch,
         work_branch=coding_session.branch_name,
-        target_branch=default_branch,
+        target_branch=target_branch,
         affected_files=affected_files,
     )
 
@@ -459,6 +464,7 @@ async def create_sessions_for_plan(
     plan: CodingPlan,
     repository_ids: list[UUID],
     branch_template: str = "",
+    target_branch: str = "",
 ) -> CodingSessionsBatchResult:
     """在已有 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
 
@@ -476,7 +482,10 @@ async def create_sessions_for_plan(
     "conversation__project")``，否则 ``plan.conversation.project`` 会触发同步
     DB 访问报错（async context）。
     """
-    from chat.branch_service import validate_branch_name
+    from chat.branch_service import DEFAULT_TARGET_BRANCH, validate_branch_name
+
+    # PR 目标分支：本次 fan-out 统一应用到所有仓库，用户未选时回退默认 develop。
+    resolved_target = (target_branch or "").strip() or DEFAULT_TARGET_BRANCH
 
     result = CodingSessionsBatchResult()
     if not repository_ids:
@@ -550,7 +559,9 @@ async def create_sessions_for_plan(
             continue
 
         @sync_to_async
-        def _atomic_create(repo_obj: Any = repo, br: str = branch_name) -> Any:
+        def _atomic_create(
+            repo_obj: Any = repo, br: str = branch_name, tb: str = resolved_target
+        ) -> Any:
             with transaction.atomic():
                 return CodingSession.objects.create(
                     conversation=plan.conversation,
@@ -559,6 +570,7 @@ async def create_sessions_for_plan(
                     tech_plan=plan.tech_plan,
                     affected_files=plan.affected_files,
                     branch_name=br,
+                    target_branch=tb,
                     status=CodingSession.Status.DRAFT,
                 )
 

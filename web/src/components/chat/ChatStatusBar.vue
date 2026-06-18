@@ -5,6 +5,16 @@ const props = defineProps<{
   isInterrupting: boolean
 }>()
 
+const emit = defineEmits<{
+  skip: []
+}>()
+
+// 仅在「等待澄清」态暴露跳过出口：卡片漏发 / 用户不想答时的兜底，
+// 让后端基于现有信息直接作答，避免永久卡在等待中。
+const canSkip = computed(() =>
+  props.phase === 'waiting_clarification' && !props.isInterrupting,
+)
+
 const phaseDisplay: Record<string, { text: string, icon: string }> = {
   planning: { text: '正在规划...', icon: 'icon-[lucide--brain]' },
   executing: { text: '正在执行...', icon: 'icon-[lucide--zap]' },
@@ -57,6 +67,15 @@ const progressDots = computed(() => {
             :class="done ? 'status-bar-dot--done' : 'status-bar-dot--pending'"
           />
         </div>
+      </template>
+
+      <!-- 等待澄清时的跳过出口 -->
+      <template v-if="canSkip">
+        <span class="status-bar-divider" />
+        <button type="button" class="status-bar-skip" @click="emit('skip')">
+          <span class="icon-[lucide--skip-forward] text-[0.6875rem]" />
+          跳过，直接回答
+        </button>
       </template>
     </div>
   </div>
@@ -122,6 +141,25 @@ const progressDots = computed(() => {
 
 .status-bar-dot--pending {
   background: hsl(214 32% 91%);
+}
+
+.status-bar-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: hsl(168 76% 38%);
+  border: 1px solid hsl(168 76% 42% / 0.3);
+  background: hsl(168 76% 42% / 0.06);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.status-bar-skip:hover {
+  background: hsl(168 76% 42% / 0.12);
+  border-color: hsl(168 76% 42% / 0.5);
 }
 
 @keyframes status-pulse {

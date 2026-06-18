@@ -400,8 +400,13 @@ export async function getCodingSession(sessionId: string): Promise<CodingSession
 export async function confirmCodingSessionWithBranch(
   sessionId: string,
   branchName?: string,
+  targetBranch?: string,
 ): Promise<CodingSessionResponse> {
-  const body = branchName ? { branch_name: branchName } : {}
+  const body: Record<string, string> = {}
+  if (branchName)
+    body.branch_name = branchName
+  if (targetBranch)
+    body.target_branch = targetBranch
   return post<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/confirm/`, body)
 }
 
@@ -483,7 +488,7 @@ export async function getDiffSummary(sessionId: string) {
  */
 export async function createSessionsForPlan(
   planId: string,
-  payload: { repository_ids: string[], branch_template?: string },
+  payload: { repository_ids: string[], branch_template?: string, target_branch?: string },
 ): Promise<CodingSessionsBatchCreateResponse> {
   return post<CodingSessionsBatchCreateResponse>(
     `/chat/coding-plans/${planId}/sessions/`,
@@ -505,6 +510,30 @@ export async function postClarificationAnswer(
   return post<ClarificationAnswerResponse>(
     `/chat/clarifications/${clarificationId}/answer/`,
     payload,
+  )
+}
+
+/** 跳过澄清的响应（按 conversation 维度，不依赖 clarification_id）。 */
+export interface ClarificationSkipResponse {
+  status: 'skipped' | 'no_pending'
+  clarification_id?: string | null
+  answered_at?: string
+}
+
+/**
+ * 跳过当前等待中的澄清提问。
+ * POST /api/chat/conversations/{conversation_id}/clarification/skip/
+ *
+ * 兜底场景：澄清卡片未能渲染导致 run 卡在 waiting_clarification。后端按
+ * conversation 定位等待中的 run，注入「跳过」指令后台 resume graph，让 LLM
+ * 基于现有信息直接作答。前端等 runtime polling 拿后续输出。
+ */
+export async function skipClarification(
+  conversationId: string,
+): Promise<ClarificationSkipResponse> {
+  return post<ClarificationSkipResponse>(
+    `/chat/conversations/${conversationId}/clarification/skip/`,
+    {},
   )
 }
 
@@ -539,4 +568,5 @@ export default {
   getConflictCheck,
   getDiffSummary,
   postClarificationAnswer,
+  skipClarification,
 }

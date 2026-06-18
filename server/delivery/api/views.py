@@ -21,6 +21,7 @@ from rest_framework.response import Response
 
 from delivery.api.serializers import (
     CommentTreeNodeSerializer,
+    CrawlRequestSerializer,
     DocumentSnapshotSerializer,
     IngestBatchDispatchRequestSerializer,
     IngestBatchRunSerializer,
@@ -404,6 +405,29 @@ class JsonIngestResolveView(APIView):
         items = serializer.validated_data["items"]
         resolved = await aresolve_items(items)
         return Response({"items": resolved}, status=status.HTTP_200_OK)
+
+
+class IngestCrawlView(APIView):
+    """URL 爬取端点（POST，IsAuthenticated）。
+
+    给一个链接（飞书文档 / 多维表格 / wiki / 通用 URL），后端 agent 抓取内容并用
+    系统默认 LLM 抽成 ``{space, work_item_id, work_item_type, mr_url}`` 列表，回填到
+    前端「待爬取」编辑表（再走既有 resolve/dispatch 流水线）。
+
+    同步返回（抓取 + 单次 AI 调用，秒级~数十秒）。结果 status：
+    ``ok`` / ``feishu_not_configured``（带系统设置深链）/ ``empty`` / ``error``。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request):
+        from delivery.services.crawl_service import crawl_url
+
+        serializer = CrawlRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        url = serializer.validated_data["url"]
+        result = await crawl_url(url)
+        return Response(result.to_dict(), status=status.HTTP_200_OK)
 
 
 class JsonIngestBatchView(APIView):

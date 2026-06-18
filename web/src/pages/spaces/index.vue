@@ -7,6 +7,7 @@ import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 import CreateSpaceModal from '~/components/space/CreateSpaceModal.vue'
 import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useTableUrlState } from '~/composables/useTableUrlState'
 
 useHead({
   title: '空间管理 - Friday AI',
@@ -18,6 +19,23 @@ const { handleError } = useErrorHandler()
 
 // 加载空间列表
 const loading = ref(true)
+
+// 搜索 + 分页（卡片网格客户端分页），状态持久化到 URL（刷新可恢复）
+const { pagination, globalFilter } = useTableUrlState({ pageSize: 12, sort: false })
+
+const filteredSpaces = computed(() => {
+  const q = globalFilter.value.trim().toLowerCase()
+  if (!q)
+    return spacesStore.spaces
+  return spacesStore.spaces.filter(s =>
+    [s.name, s.description].some(field => String(field ?? '').toLowerCase().includes(q)),
+  )
+})
+
+const pagedSpaces = computed(() => {
+  const start = pagination.value.pageIndex * pagination.value.pageSize
+  return filteredSpaces.value.slice(start, start + pagination.value.pageSize)
+})
 
 onMounted(async () => {
   try {
@@ -85,14 +103,33 @@ async function openCreateSpace() {
       @action="openCreateSpace"
     />
 
-    <!-- 空间列表 -->
-    <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <RouterLink
-        v-for="space in spacesStore.spaces"
-        :key="space.id"
-        :to="`/spaces/${space.id}`"
-        class="card card-interactive group flex flex-col"
-      >
+    <template v-else>
+      <!-- 搜索栏 -->
+      <div class="relative w-full sm:w-72">
+        <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
+        <input
+          v-model="globalFilter"
+          placeholder="搜索空间名、描述…"
+          class="flex h-9 w-full rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
+        >
+      </div>
+
+      <!-- 搜索无结果 -->
+      <EmptyState
+        v-if="filteredSpaces.length === 0"
+        icon="lucide--search-x"
+        title="无匹配空间"
+        description="试试更换关键词或清空搜索"
+      />
+
+      <!-- 空间列表 -->
+      <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <RouterLink
+          v-for="space in pagedSpaces"
+          :key="space.id"
+          :to="`/spaces/${space.id}`"
+          class="card card-interactive group flex flex-col"
+        >
         <div class="p-4 flex-1 space-y-3">
           <!-- 标题行 -->
           <div class="flex items-center gap-2.5">
@@ -142,7 +179,15 @@ async function openCreateSpace() {
             <span class="icon-[lucide--arrow-right]" />
           </span>
         </div>
-      </RouterLink>
-    </div>
+        </RouterLink>
+      </div>
+
+      <!-- 分页器（仅有结果时显示） -->
+      <GridPager
+        v-if="filteredSpaces.length > 0"
+        v-model:pagination="pagination"
+        :total="filteredSpaces.length"
+      />
+    </template>
   </PageContainer>
 </template>

@@ -290,7 +290,14 @@ class GitOperations:
 
         try:
             origin = self.repo.remotes.origin
-            push_infos = origin.push(branch_name, set_upstream=True)
+            # 使用 --force-with-lease 兜底：编码分支是 Friday 任务专用工作分支，
+            # 重跑同一技术方案 / 远端残留旧同名分支时，普通 push 会被 non-fast-forward
+            # 拒绝（历史 bug）。--force-with-lease 以「fetch 到的 remote-tracking ref」
+            # 为预期值覆盖：自己 setup 时 fetch 的基线被覆盖是预期的；但若期间被
+            # 其它进程推进（remote 与预期不符）仍会安全拒绝，不会盲目冲掉他人提交。
+            push_infos = origin.push(
+                branch_name, set_upstream=True, force_with_lease=True
+            )
         except GitCommandError as e:
             logger.error("Failed to push branch", error=str(e))
             raise

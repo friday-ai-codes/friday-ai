@@ -16,7 +16,8 @@ vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return {
     ...actual,
-    useRouter: vi.fn(() => ({ push: vi.fn() })),
+    useRoute: vi.fn(() => ({ query: {}, params: {}, path: '/repositories' })),
+    useRouter: vi.fn(() => ({ push: vi.fn(), replace: vi.fn() })),
   }
 })
 
@@ -107,6 +108,8 @@ describe('/repositories index page', () => {
           PageHeader: PageHeaderStub,
           RouterLink: RouterLinkStub,
           StatusBadge: StatusBadgeStub,
+          SddMethodologyBadge: PassthroughStub,
+          GridPager: PassthroughStub,
           Tooltip: PassthroughStub,
           TooltipContent: PassthroughStub,
           TooltipProvider: PassthroughStub,

@@ -814,6 +814,37 @@ async def _execute_with_results(
             "blocking_results": [],
         }
 
+    # 与 _execute_first_run 对齐：阻塞任务（如 deep_analysis）完成后，二次运行
+    # 里 LLM 仍可能调 ask_clarification 向用户澄清。此前本函数缺这段处理，导致
+    # 澄清被静默丢弃、直接落 finalizing —— run 不进 waiting_clarification、卡片
+    # 不弹、ConversationIntentTrace 不落，是「深度分析后追问无卡可答」的根因。
+    pending_clarification = _extract_pending_clarification(tool_calls_by_id)
+    if pending_clarification is not None:
+        logger.info(
+            "executing_node_pending_clarification_in_second_run",
+            clarification_id=pending_clarification.get("clarification_id"),
+            options_count=len(pending_clarification.get("options", [])),
+        )
+        await _persist_run_phase(run_id, RunPhase.WAITING_CLARIFICATION.value)
+        writer({
+            "type": PHASE_TRANSITION,
+            "data": {
+                "phase": "waiting_clarification",
+                "clarification_id": pending_clarification.get("clarification_id"),
+                "question": pending_clarification.get("question", ""),
+                "options": pending_clarification.get("options", []),
+                "allow_freeform": pending_clarification.get("allow_freeform", True),
+            },
+        })
+        return {
+            "phase": RunPhase.WAITING_CLARIFICATION.value,
+            "accumulated_thinking": all_thinking,
+            "tool_calls": all_tool_calls,
+            "pending_clarification": pending_clarification,
+            "agent_session_id": agent_session_id,
+            "blocking_results": [],
+        }
+
     result_metadata = _build_result_metadata(runner)
     result = runner.result
     final_answer = (result.final_answer if result else None) or ""

@@ -23,6 +23,7 @@ import {
   interruptConversation,
   listConversations,
   patchConversation,
+  skipClarification as apiSkipClarification,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
 import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
@@ -1773,7 +1774,11 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * 确认编码方案 — 调用 confirm API 并启动 runtime 轮询
    */
-  async function handleConfirmCodingSession(sessionId: string, branchName?: string) {
+  async function handleConfirmCodingSession(
+    sessionId: string,
+    branchName?: string,
+    targetBranch?: string,
+  ) {
     if (!currentConversationId.value)
       return
     if (activeCodingSession.value?.isConfirming)
@@ -1787,8 +1792,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const result = branchName
-        ? await apiConfirmCodingSessionWithBranch(sessionId, branchName)
+      const result = (branchName || targetBranch)
+        ? await apiConfirmCodingSessionWithBranch(sessionId, branchName, targetBranch)
         : await apiConfirmCodingSession(sessionId)
       activeCodingSession.value = {
         sessionId: result.id,
@@ -2390,6 +2395,7 @@ export const useChatStore = defineStore('chat', () => {
   async function submitRepoMultiSelector(
     repositoryIds: string[],
     branchTemplate?: string,
+    targetBranch?: string,
   ): Promise<{
     createdCount: number
     failedCount: number
@@ -2407,6 +2413,7 @@ export const useChatStore = defineStore('chat', () => {
       const resp = await createSessionsForPlan(planId, {
         repository_ids: repositoryIds,
         branch_template: branchTemplate,
+        target_branch: targetBranch,
       })
       for (const item of resp.created) {
         const confirmed = await apiConfirmCodingSession(item.session_id)
@@ -2497,6 +2504,38 @@ export const useChatStore = defineStore('chat', () => {
 
   function clearAllClarifications() {
     pendingClarifications.value = new Map()
+  }
+
+  /**
+   * 跳过当前等待中的澄清提问（兜底出口）。
+   *
+   * 适配 waiting_clarification 卡死场景：卡片漏发 / 用户不想答时，调后端
+   * 按 conversation 维度跳过，注入「跳过」指令让 LLM 基于现有信息直接作答。
+   * 乐观更新：移除待答卡片 + 进入「正在执行」过渡态，并 kick 一次 runtime
+   * 轮询拿 resume 后的最终回答（不依赖既有轮询是否在跑）。
+   */
+  async function skipClarification() {
+    const convId = currentConversationId.value
+    if (!convId)
+      return
+    try {
+      const resp = await apiSkipClarification(convId)
+      // no_pending：后端判定无等待中的 clarification（可能已被答复/已 resume），
+      // 仅清掉本地残留卡片，不强行改 phase。
+      if (resp.status === 'no_pending') {
+        pendingClarifications.value = new Map()
+        return
+      }
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : '跳过失败，请重试'
+      return
+    }
+    // 乐观更新：移除待答卡片 + 进入恢复执行过渡态，等待后台 resume 产出结果。
+    pendingClarifications.value = new Map()
+    currentPhase.value = 'executing'
+    restoredRuntimeConversationId.value = convId
+    scheduleRuntimePoll(convId, 1200)
   }
 
   return {
@@ -2614,6 +2653,7 @@ export const useChatStore = defineStore('chat', () => {
     upsertClarification,
     markClarificationAnswered,
     clearAllClarifications,
+    skipClarification,
     // 单测专用 SSE dispatch 入口
     //   生产路径走 sendMessage → connectSSE → onEvent callback；本字段把内部
     //   闭包暴露给 vitest，避免反射 / sendMessage mock 的开销。

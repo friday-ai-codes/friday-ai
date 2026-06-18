@@ -127,6 +127,33 @@ export interface WorkItemArtifactDocument {
   last_synced_at: string | null
 }
 
+// ============================================================================
+// URL 爬取（飞书文档 / 多维表格 / wiki / 通用链接 → AI 抽成可关联条目）
+// ============================================================================
+
+/** 爬取结果状态。 */
+export type CrawlStatus = 'ok' | 'feishu_not_configured' | 'empty' | 'error'
+
+/** 爬取出的单条原始条目（形状与 JsonIngestItem 对齐，可直接喂 resolve）。 */
+export interface CrawlItem {
+  space: string
+  work_item_id: number
+  work_item_type: string
+  mr_url: string
+}
+
+/** POST `/delivery/ingest/crawl/` 响应。 */
+export interface CrawlResult {
+  status: CrawlStatus
+  /** 来源类型：feishu_doc / feishu_bitable / feishu_wiki / generic。 */
+  source_kind: string
+  items: CrawlItem[]
+  /** 人类可读提示（empty/error/feishu_not_configured 时展示）。 */
+  message: string
+  /** feishu_not_configured 时的系统设置深链（如 `/admin#integration`）。 */
+  settings_deeplink: string
+}
+
 /** 工作项摘要 + 关联文档列表（GET `/delivery/work-items/artifacts/`）。 */
 export interface WorkItemArtifacts {
   work_item: {
@@ -159,6 +186,10 @@ export const ingestApi = {
   /** 解析预览 JSON 导入项（逐项空间解析 + 校验，不落库）。 */
   resolveItems: (items: JsonIngestItem[]): Promise<{ items: ResolvedJsonItem[] }> =>
     post<{ items: ResolvedJsonItem[] }>('/delivery/ingest/resolve/', { items }),
+
+  /** 爬取一个 URL（飞书文档/多维表格/wiki/通用链接）→ AI 抽成可关联条目。 */
+  crawlUrl: (url: string): Promise<CrawlResult> =>
+    post<CrawlResult>('/delivery/ingest/crawl/', { url }),
 
   /** 派发 JSON 批量摄取（可解析项建 run + 有界并发；不可解析项 skipped 回报）。 */
   dispatchJsonBatch: (

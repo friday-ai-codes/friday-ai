@@ -378,6 +378,13 @@ class CodingSession(models.Model):
         related_name="coding_sessions",
     )
     branch_name = models.CharField(max_length=255, blank=True, default="")
+    target_branch = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="PR 目标分支",
+        help_text="用户在启动编码时选定的合并目标分支，PR 创建时使用；为空时回退到仓库默认分支",
+    )
     subagent_session = models.OneToOneField(
         "subagent.SubAgentSession",
         on_delete=models.SET_NULL,

@@ -44,6 +44,14 @@ async def _get_coding_session(state: CodingSessionState) -> CodingSession:
     ).aget(id=state["coding_session_id"])
 
 
+def _resolve_target_branch(coding_session: CodingSession) -> str:
+    """解析 PR 目标分支：优先用户在启动编码时选定的值，否则回退默认 develop。"""
+    from chat.branch_service import DEFAULT_TARGET_BRANCH
+
+    selected = (coding_session.target_branch or "").strip()
+    return selected or DEFAULT_TARGET_BRANCH
+
+
 def _format_execution_spec(coding_session: CodingSession) -> str:
     """把结构化执行边界写进容器 prompt，避免依赖 Markdown 文案推断。"""
     repo = coding_session.repository
@@ -57,7 +65,7 @@ def _format_execution_spec(coding_session: CodingSession) -> str:
         f"- 仓库：{repo.name}\n"
         f"- 基础分支：{repo.default_branch}\n"
         f"- 工作分支：{coding_session.branch_name}\n"
-        f"- 目标分支：{repo.default_branch}\n"
+        f"- 目标分支：{_resolve_target_branch(coding_session)}\n"
         f"- 影响文件：\n{files_text}\n"
     )
 
@@ -518,7 +526,7 @@ async def generate_pr_draft_node(state: CodingSessionState) -> dict[str, Any]:
         "suggested_pr_description": description,
         "confirmed_pr_title": title,
         "confirmed_pr_description": description,
-        "target_branch": coding_session.repository.default_branch,
+        "target_branch": _resolve_target_branch(coding_session),
     }
 
 
@@ -607,7 +615,7 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
     client = get_git_platform_client(repo, token)
     mr_request = MRCreateRequest(
         source_branch=coding_session.branch_name,
-        target_branch=state.get("target_branch", repo.default_branch),
+        target_branch=state.get("target_branch") or _resolve_target_branch(coding_session),
         title=state["confirmed_pr_title"],
         description=state["confirmed_pr_description"],
     )

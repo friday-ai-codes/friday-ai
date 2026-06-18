@@ -518,6 +518,28 @@ async def _handle_waiting_state(
                 if chunk["type"] == "values":
                     final_state = chunk["data"]
 
+            # 阻塞任务（deep_analysis）完成后的二次运行里 LLM 可能再调
+            # ask_clarification（见 graph._execute_with_results）。此时 graph 在
+            # wait_clarification_node interrupt，final_state.phase=waiting_clarification。
+            # 必须走 clarification 等待收尾（落 WAITING + ConversationIntentTrace，
+            # 由 ClarificationAnswerView/SkipView 之后 resume），绝不能像正常完成
+            # 那样标 COMPLETED + finalize —— 否则会话被提前写成已完成、卡片不弹、
+            # trace 不落，重蹈「无卡可答、永久等待」覆辙。
+            if final_state.get("phase") == "waiting_clarification":
+                await _handle_waiting_clarification_state(
+                    state=final_state,
+                    orch_run=orch_run,
+                    conversation=conversation,
+                    triggering_message_id="",
+                    conv_id_str=conv_id_str,
+                )
+                logger.info(
+                    "barrier_resume_waiting_clarification",
+                    conversation_id=conv_id_str,
+                    session_id=session_id,
+                )
+                return
+
             await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
                 status=OrchestrationRun.Status.COMPLETED,
                 phase=final_state.get("phase", "completed"),
@@ -1642,9 +1664,16 @@ class ConversationService:
         ).aget(id=conversation_id, is_deleted=False)
         conv_id_str = str(conversation.id)
 
+        # status 同时匹配 WAITING 与 RUNNING：正常 dispatch 会把 run 落成
+        # WAITING，但后台 finalizer 被中途打断（dev reload / SSE 异常断开后台
+        # 任务回收）时 run 会停在 ``status=running, phase=waiting_clarification``
+        # 的孤儿态。resume / skip 必须能覆盖它，否则永久卡死。
         orch_run = await OrchestrationRun.objects.filter(
             conversation=conversation,
-            status=OrchestrationRun.Status.WAITING,
+            status__in=[
+                OrchestrationRun.Status.WAITING,
+                OrchestrationRun.Status.RUNNING,
+            ],
             phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
         ).order_by("-created_at").afirst()
         if orch_run is None:
@@ -2145,6 +2174,7 @@ class ConversationService:
                 "tech_plan": coding_session.tech_plan,
                 "affected_files": coding_session.affected_files,
                 "branch_name": coding_session.branch_name,
+                "target_branch": coding_session.target_branch,
                 "confirmation_step": coding_session.confirmation_step,
                 "suggested_commit_message": coding_session.suggested_commit_message,
                 "suggested_pr_title": coding_session.suggested_pr_title,
@@ -2225,6 +2255,7 @@ class ConversationService:
                         "repository_id": str(s.repository_id),
                         "repository_name": s.repository.name,
                         "branch_name": s.branch_name,
+                        "target_branch": s.target_branch,
                         "status": s.status,
                         "pr_url": s.pr_url,
                         "commit_sha": commit_sha,

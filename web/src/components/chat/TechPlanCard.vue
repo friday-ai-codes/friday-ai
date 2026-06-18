@@ -72,7 +72,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  confirm: [planId: string, sessionId: string | undefined, branchName?: string]
+  confirm: [planId: string, sessionId: string | undefined, branchName?: string, targetBranch?: string]
   // ：failed 状态下用户点击重试； 起当 codingPlanId
   // 存在时由 store.retrySingleRepository 接管，emit 仍保留作旧接口兜底。
   retry: [planId: string, sessionId: string | undefined]
@@ -119,6 +119,10 @@ const dialogOpen = ref(false)
 const dialogSelectedIds = ref<string[]>([])
 const branchTemplate = ref('')
 const normalizedBranchTemplate = computed(() => branchTemplate.value.trim() || undefined)
+// PR 目标分支：团队工作流默认并入 develop（非 master）。fan-out 时统一应用到所有仓库，
+// 用户可改。各仓远端分支列表不一致，故用可编辑输入框而非下拉。
+const targetBranch = ref('develop')
+const normalizedTargetBranch = computed(() => targetBranch.value.trim() || undefined)
 
 function openAppendDialog() {
   if (!props.codingPlanId)
@@ -133,7 +137,11 @@ async function handleMultiConfirm(repoIds: string[]) {
     return
   try {
     chatStore.openRepoMultiSelector(props.codingPlanId, repoIds)
-    const result = await chatStore.submitRepoMultiSelector(repoIds, normalizedBranchTemplate.value)
+    const result = await chatStore.submitRepoMultiSelector(
+      repoIds,
+      normalizedBranchTemplate.value,
+      normalizedTargetBranch.value,
+    )
     // coding-plan workflow 失败时把第一条 error 文案带进 toast，避免用户得开
     // DevTools 看 response 才知道为什么失败。
     const failSuffix = result.failedCount > 0
@@ -285,7 +293,7 @@ watch(() => props.branchName, (newVal) => {
 
 function handleConfirm() {
   const editedBranch = previewBranchName.value || undefined
-  emit('confirm', props.planId, props.sessionId, editedBranch)
+  emit('confirm', props.planId, props.sessionId, editedBranch, normalizedTargetBranch.value)
 }
 
 function handleRetry() {
@@ -476,6 +484,20 @@ const badgeText = computed(() => {
             单仓时填写完整分支名；多仓时可使用 <code>${repo}</code> 作为仓库名占位符。
           </p>
         </div>
+        <div class="space-y-2 mb-3">
+          <p class="text-xs text-muted-foreground font-medium">
+            目标分支（PR 合并目标）
+          </p>
+          <Input
+            v-model="targetBranch"
+            data-test="target-branch-input"
+            class="h-9 font-mono text-sm"
+            placeholder="develop"
+          />
+          <p class="text-xs text-muted-foreground/80">
+            PR 将合并到该分支，统一应用到本次所有选中仓库，默认 <code>develop</code>。
+          </p>
+        </div>
         <p class="text-xs text-muted-foreground font-medium mb-2">
           选择目标仓库
         </p>
@@ -527,6 +549,21 @@ const badgeText = computed(() => {
           <div v-if="previewBranchName" class="text-xs font-mono text-foreground bg-muted/50 rounded px-2 py-1">
             分支名预览: {{ previewBranchName }}
           </div>
+        </div>
+        <div class="space-y-2 mb-3">
+          <p class="text-xs text-muted-foreground font-medium">
+            目标分支（PR 合并目标）
+          </p>
+          <Input
+            v-model="targetBranch"
+            data-test="target-branch-input-single"
+            class="h-9 font-mono text-sm"
+            placeholder="develop"
+            :disabled="isConfirming"
+          />
+          <p class="text-xs text-muted-foreground/80">
+            PR 将合并到该分支，默认 <code>develop</code>。
+          </p>
         </div>
         <Button
           class="w-full"
@@ -633,6 +670,20 @@ const badgeText = computed(() => {
           />
           <p class="text-xs text-muted-foreground/80">
             单仓时填写完整分支名；多仓时可使用 <code>${repo}</code> 作为仓库名占位符。
+          </p>
+        </div>
+        <div class="space-y-2 mb-3">
+          <p class="text-xs text-muted-foreground font-medium">
+            目标分支（PR 合并目标）
+          </p>
+          <Input
+            v-model="targetBranch"
+            data-test="target-branch-input"
+            class="h-9 font-mono text-sm"
+            placeholder="develop"
+          />
+          <p class="text-xs text-muted-foreground/80">
+            PR 将合并到该分支，统一应用到本次所有选中仓库，默认 <code>develop</code>。
           </p>
         </div>
         <RepoMultiSelector

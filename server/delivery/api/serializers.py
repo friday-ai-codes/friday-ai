@@ -351,6 +351,12 @@ class JsonIngestRequestSerializer(serializers.Serializer):
     concurrency = serializers.IntegerField(required=False, default=3, min_value=1, max_value=10)
 
 
+class CrawlRequestSerializer(serializers.Serializer):
+    """URL 爬取入参：一个待爬取链接（飞书文档 / 多维表格 / wiki / 通用 URL）。"""
+
+    url = serializers.CharField(max_length=2048, trim_whitespace=True)
+
+
 class WorkItemArtifactsQuerySerializer(serializers.Serializer):
     """工作项关联文档查询入参（三元组）。"""
 

@@ -20,6 +20,11 @@ type TaskScheduler struct {
 	wg         sync.WaitGroup
 	accepting  atomic.Bool
 	containers sync.Map // task_id -> container_id
+	// active 跟踪「已接受到执行结束」整个生命周期内的 task_id（队列等待 / 容器
+	// 启动中 / 容器运行中都算 active）。比 containers 多覆盖「已 Submit 但容器还
+	// 没 StartContainer」的时间窗，用于：1) 收到重复 task.assign 时幂等去重；
+	// 2) 重连时 hello 上报正在跑的任务，让 server 精准判断是否需要重派发。
+	active     sync.Map // task_id -> struct{}
 	onTask     func(context.Context, ws.TaskPayload)
 	concurrent int
 }
@@ -43,6 +48,7 @@ func (s *TaskScheduler) SetTaskCallback(fn func(context.Context, ws.TaskPayload)
 
 // Submit 将任务加入 FIFO 队列。
 func (s *TaskScheduler) Submit(task ws.TaskPayload) {
+	s.active.Store(task.TaskID, struct{}{})
 	s.mu.Lock()
 	s.queue = append(s.queue, task)
 	s.mu.Unlock()
@@ -79,6 +85,7 @@ func (s *TaskScheduler) execute(ctx context.Context, task ws.TaskPayload) {
 		<-s.sem // release semaphore
 		s.wg.Done()
 		s.containers.Delete(task.TaskID)
+		s.active.Delete(task.TaskID)
 	}()
 	if s.onTask != nil {
 		s.onTask(ctx, task)
@@ -100,6 +107,25 @@ func (s *TaskScheduler) GetAllContainerIDs() []string {
 	var ids []string
 	s.containers.Range(func(_, v any) bool {
 		ids = append(ids, v.(string))
+		return true
+	})
+	return ids
+}
+
+// IsTaskActive 判断 task 是否已在调度中（队列等待 / 容器启动中 / 容器运行中）。
+// 用于幂等去重：server 重连恢复时若重复下发同一 task.assign，runner 据此忽略，
+// 避免对同一任务起第二个容器（历史 non-fast-forward 冲突的根因）。
+func (s *TaskScheduler) IsTaskActive(taskID string) bool {
+	_, ok := s.active.Load(taskID)
+	return ok
+}
+
+// GetRunningTaskIDs 返回当前仍在调度中的所有 task_id。
+// 重连时随 hello 上报，server 据此判断哪些任务旧容器还活着（不必重派发）。
+func (s *TaskScheduler) GetRunningTaskIDs() []string {
+	ids := make([]string, 0)
+	s.active.Range(func(k, _ any) bool {
+		ids = append(ids, k.(string))
 		return true
 	})
 	return ids
