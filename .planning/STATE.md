@@ -4,12 +4,12 @@ milestone: v0.12.0
 milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
 status: executing
 stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-19T19:35:04.781Z"
-last_activity: 2026-06-19 -- Phase 61 planning complete
+last_updated: "2026-06-19T19:35:14.990Z"
+last_activity: 2026-06-19 -- Phase 61 execution started
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 4
+  total_plans: 8
   completed_plans: 4
   percent: 20
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.12.0：把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 **durable 任务队列**——采用 Procrastinate，藏在 `DurableTaskService` 适配层后（Postgres→Procrastinate / SQLite→in-process 非 durable fallback）；统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor。
-**Current focus:** Phase 60 — durable 底座地基
+**Current focus:** Phase 61 — 迁移 index/graph + 收口 ResumableTask
 
 ## Current Position
 
-Phase: 61
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-19 -- Phase 61 planning complete
+Phase: 61 (迁移 index/graph + 收口 ResumableTask) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 61
+Last activity: 2026-06-19 -- Phase 61 execution started
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
