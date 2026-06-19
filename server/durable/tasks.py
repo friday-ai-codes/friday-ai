@@ -1,0 +1,65 @@
+"""durable 任务底座的 Procrastinate 任务定义（Postgres durable 路径）。
+
+本模块由 ``DurableConfig.ready()`` 在 procrastinate 后端真正启用时 import 触发
+``@app.task`` / ``@app.periodic`` 注册；SQLite / in-process fallback 路径永不
+import 本模块（无 ``procrastinate.contrib.django`` app）。
+
+适配层隔离：本模块与 ``durable.backends`` 是仅有的两处允许直接 import
+procrastinate 的 durable 业务代码（见 ``tests/durable/test_no_direct_import.py``
+允许清单）。业务侧入队仍只经 ``DurableTaskService``，看不见这些任务对象。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import structlog
+from procrastinate.contrib.django import app
+
+from durable.queues import QUEUE_MAINTENANCE
+
+logger = structlog.get_logger(__name__)
+
+
+@app.task(queue=QUEUE_MAINTENANCE)
+async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """最小可 defer 的烟囱 / 测试任务。
+
+    用于验证"入队 → worker 消费 → 完成"整条 durable 链路通畅（postgres_queue 测试
+    与运维冒烟用）。本阶段不接任何业务任务，迁移 index/graph/crawl 由 Phase 61/62 做。
+    """
+    logger.info("durable_ping", payload=payload)
+    return {"pong": True, "payload": payload}
+
+
+@app.periodic(cron="*/10 * * * *")
+@app.task(queueing_lock="retry_stalled_durable_jobs", pass_context=True)
+async def retry_stalled_durable_jobs(context: Any, timestamp: int) -> int:
+    """周期单例 stalled rescue（DURABLE-03），替代 flock 与"仅启动补扫"。
+
+    单例 leader 语义由两层叠加，**无需自写 leader 选举 / flock**：
+    - ``@app.periodic``：DB 保证每个 cron 周期只 defer 一份（即便多副本 worker，
+      天然单例）；
+    - ``queueing_lock="retry_stalled_durable_jobs"``：同名任务在 todo 唯一，慢处理
+      时也不堆积。
+
+    stalled 判定基于 worker heartbeat（``get_stalled_jobs`` 默认
+    ``seconds_since_heartbeat=30``），**绝不传 deprecated 的 ``nb_seconds``**——后者
+    按固定时长判定会误杀仍在跑的慢任务（违反 CONTEXT"慢≠死"约束）。
+
+    与 ``ProcrastinateBackend.retry_stalled`` 同算法：后者服务
+    ``DurableTaskService.retry_stalled`` 的直接路径（手动 / 运维触发），本 periodic
+    是多副本下持续 rescue 的 leader 路径；二者均基于 heartbeat、零 nb_seconds。
+    """
+    stalled_jobs = list(await app.job_manager.get_stalled_jobs())
+    retried = 0
+    for job in stalled_jobs:
+        await app.job_manager.retry_job(job)
+        retried += 1
+    logger.info(
+        "retry_stalled_durable_jobs_tick",
+        timestamp=timestamp,
+        stalled=len(stalled_jobs),
+        retried=retried,
+    )
+    return retried
