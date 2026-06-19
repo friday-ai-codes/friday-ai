@@ -474,21 +474,24 @@ FRIDAY_PROCESS_ROLE = env.str("FRIDAY_PROCESS_ROLE", default="web")  # web|worke
 | A4 | stalled rescue E2E 可用"伪造过期 heartbeat + get_stalled_jobs/retry_job"在 CI 逼近，无需真 kill 进程 | Validation Wave 0 | 中——若要求真实 kill-worker，CI 复杂度上升；建议规划确认 |
 | A5 | `addopts` 的 `-m` 需手动追加 `and not postgres_queue` | Pitfall 1 | 低——pytest marker 语义明确 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 1. **DURABLE-04 的 CI workflow 范围**
    - What we know: 所有 GitHub Actions workflow 已删（`5579e45f2`）；git 历史有完整 413 行 `ci.yaml` 可复原。
    - What's unclear: 是"复原完整 CI（server/web/runner/task/docs 多 job + security-scan + commit-message）"还是"只建一个聚焦 server+Postgres 的最小 workflow"。
    - Recommendation: 建最小聚焦 workflow（server-ci + postgres service），避免在本阶段顺带恢复无关的 web/runner/docs job；与 maintainer 确认是否要顺带恢复其余。
+   - **Resolution (adopted):** 建**最小聚焦** workflow——仅 `server-ci`（SQLite 默认）+ `postgres-queue`（postgres:17-alpine service）两 job，不顺带复原 web/runner/docs/security-scan。落地于 Plan 60-04。
 
 2. **stalled rescue 的 CI 可验证形态**
    - What we know: `get_stalled_jobs` 基于 worker heartbeat（30s 默认）。
    - What's unclear: CI 内能否真实 kill 一个 worker 并等心跳过期（耗时）。
    - Recommendation: postgres_queue 测试用受控 heartbeat 行 + 直接调 `get_stalled_jobs/retry_job` 验证语义；真实 kill-worker 留人工/容器 E2E（标 human_needed）。
+   - **Resolution (adopted):** **forged-heartbeat 自动化**（构造心跳过期行 + 直接 `get_stalled_jobs/retry_job`，纳入 postgres_queue CI，Plan 60-03 Task 3）；**真实 kill-worker E2E 留人工**（VALIDATION.md「Manual-Only Verifications」标 human_needed）。
 
 3. **既有 `runapscheduler` 9 个 cron job 的去向**
    - What we know: 本阶段只立 rescue 闭环，不迁移业务任务。
    - What's unclear: 现有 cron（session timeout/cache/poll repo updates 等）是否本阶段就迁到 procrastinate periodic。
    - Recommendation: 本阶段**保留** `runapscheduler` 原样（仅新增 durable rescue），cron 迁移留 Phase 63（DEPLOY-02 scheduler workload）。CONTEXT 范围支持此解读。
+   - **Resolution (adopted):** 本阶段**保留 `runapscheduler` 全部 cron 原样**，仅新增 durable `retry_stalled_durable_jobs` rescue；cron→procrastinate periodic 迁移**deferred 到 Phase 63**（DEPLOY-02 scheduler workload）。
 
 ## Sources
 
