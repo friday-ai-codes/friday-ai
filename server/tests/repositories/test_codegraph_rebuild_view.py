@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from django.test import override_settings
@@ -87,12 +87,14 @@ def test_rebuild_202_creates_running_history(
     repo: Repository,
 ) -> None:
     """POST rebuild → 202 + history_id；DB 新增 RUNNING + manual history；
-    ``run_in_background`` 被调一次且 task name == ``graph-build-{repo_id}``。"""
+    ``DurableTaskService.defer`` 被调一次（durable_graph + queue=graph +
+    idempotency_key=graph:{repo_id}）。"""
 
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
-    ) as mock_run_bg:
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
+    ) as mock_defer:
         response = authenticated_client.post(_rebuild_url(repo))
 
     assert response.status_code == 202, getattr(response, "data", response)
@@ -108,9 +110,11 @@ def test_rebuild_202_creates_running_history(
     assert row.status == GraphBuildHistoryStatus.RUNNING
     assert row.trigger_type == GraphBuildHistoryTrigger.MANUAL
 
-    mock_run_bg.assert_called_once()
-    _, kwargs = mock_run_bg.call_args
-    assert kwargs.get("name") == f"graph-build-{repo.id}"
+    mock_defer.assert_awaited_once()
+    args, kwargs = mock_defer.call_args
+    assert args[0] == "durable_graph"
+    assert kwargs.get("queue") == "graph"
+    assert kwargs.get("idempotency_key") == f"graph:{repo.id}"
 
 
 def test_rebuild_409_when_index_running(
@@ -126,9 +130,10 @@ def test_rebuild_409_when_index_running(
     )
 
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
-    ) as mock_run_bg:
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
+    ) as mock_defer:
         response = authenticated_client.post(_rebuild_url(repo))
 
     assert response.status_code == 409, getattr(response, "data", response)
@@ -136,7 +141,7 @@ def test_rebuild_409_when_index_running(
     assert "index running" in detail, f"detail 缺 'index running'：{detail!r}"
 
     assert GraphBuildHistory.objects.filter(repository=repo).count() == 0
-    mock_run_bg.assert_not_called()
+    mock_defer.assert_not_awaited()
 
 
 def test_rebuild_409_when_graph_already_running(
@@ -152,8 +157,9 @@ def test_rebuild_409_when_graph_already_running(
     )
 
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
     ):
         response = authenticated_client.post(_rebuild_url(repo))
 
@@ -169,8 +175,9 @@ def test_rebuild_403_when_codegraph_disabled(
     """settings.ENABLE_CODEGRAPH=False → 403 + detail 含 ``graph feature disabled``。"""
 
     with override_settings(ENABLE_CODEGRAPH=False), patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
     ):
         response = authenticated_client.post(_rebuild_url(repo))
 
@@ -186,8 +193,9 @@ def test_rebuild_404_on_missing_repository(
 
     missing_id = uuid.uuid4()
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
     ):
         response = authenticated_client.post(
             f"/api/repositories/{missing_id}/codegraph/rebuild/"
@@ -217,8 +225,9 @@ def test_rebuild_succeeds_when_auto_build_graph_disabled(
     repo.save(update_fields=["auto_build_graph_enabled"])
 
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
     ):
         response = authenticated_client.post(_rebuild_url(repo))
 
@@ -563,8 +572,9 @@ def test_cancel_then_rebuild_succeeds(
     assert cancel_resp.status_code == 204
 
     with patch(
-        "codegraph.views.run_in_background",
-        return_value=MagicMock(),
+        "durable.service.DurableTaskService.defer",
+        new_callable=AsyncMock,
+        return_value="graph:job",
     ):
         rebuild_resp = authenticated_client.post(_rebuild_url(repo))
     assert rebuild_resp.status_code == 202, getattr(rebuild_resp, "data", rebuild_resp)
