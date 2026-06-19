@@ -108,7 +108,7 @@ DJANGO_SETTINGS_MODULE = "friday.settings"
 pythonpath = ["."]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration and not slow'"
+addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration and not slow and not postgres_queue'"
 asyncio_mode = "auto"
 markers = [
     "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（implementation contract）",
@@ -116,6 +116,7 @@ markers = [
     "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（implementation）",
     "real_history_load: 关闭 test_chat_runner.py 的 _disable_history_load autouse mock，用于专测历史回灌逻辑本身",
     "no_workdir_stub: 关闭 test_graph_builder.py 的 prepare_repo_workdir autouse stub，用于专测 clone 命令本身（contract）",
+    "postgres_queue: 需真实 Postgres 的 durable 队列测试（GH Actions postgres:17-alpine service 跑 -m postgres_queue），默认/SQLite 套件经 addopts 排除（DURABLE-04）",
 ]
 
 [tool.coverage.run]
