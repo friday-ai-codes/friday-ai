@@ -21,8 +21,6 @@ from durable.queues import (
 )
 from durable.service import DurableTaskService
 
-default_app_config = "durable.apps.DurableConfig"
-
 __all__ = [
     "DurableTaskService",
     "QUEUE_INDEX",
