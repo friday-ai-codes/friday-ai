@@ -256,6 +256,23 @@ DURABLE_TASK_BACKEND = env.str("DURABLE_TASK_BACKEND", default="auto")
 # （DURABLE-02，Plan 60-02 消费）；默认 web 保持既有单进程部署零回归。
 FRIDAY_PROCESS_ROLE = env.str("FRIDAY_PROCESS_ROLE", default="web")
 
+# Procrastinate Django 集成的条件注册（DURABLE-01）：
+# 复用 durable.service 的唯一权威判定 _use_procrastinate（service 与 settings
+# 共用同一纯函数，禁止在此另写等价引擎/backend 判据）。仅当默认 DB 引擎含
+# postgresql 且 DURABLE_TASK_BACKEND ∈ {auto, procrastinate} 时，才把
+# procrastinate.contrib.django 加入 INSTALLED_APPS——这样 procrastinate 自带迁移
+# 创建的 procrastinate_* 表，只在后端真正启用时才存在。
+#
+# SQLite / auto+sqlite 永不追加：避免 Postgres-only 迁移在 SQLite migrate 失败
+# （Pitfall 3），也不会留下 orphan procrastinate_jobs 表。_use_procrastinate 是顶层
+# 零 settings 访问的纯函数，django.setup() 期 import 不触发循环 import。
+# 注意：Django 集成下 schema 由 procrastinate 自带迁移管理，绝不调用 procrastinate
+# CLI 的 schema 子命令。
+from durable.service import _use_procrastinate  # noqa: E402
+
+if _use_procrastinate(DATABASES["default"]["ENGINE"], DURABLE_TASK_BACKEND):
+    INSTALLED_APPS.append("procrastinate.contrib.django")
+
 # =============================================================================
 # Custom User Model
 # =============================================================================
