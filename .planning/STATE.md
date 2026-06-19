@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.12.0
 milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
-status: Roadmap drafted — ready for `/gsd-plan-phase 60`
+status: executing
 stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-19T17:41:48.348Z"
-last_activity: 2026-06-20 — Milestone v0.12.0 roadmap created (Phases 60–64)
+last_updated: "2026-06-19T17:42:43.605Z"
+last_activity: 2026-06-19 -- Phase 60 execution started
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
   percent: 0
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
 ## Current Position
 
-Phase: 60 (not started)
-Plan: —
-Status: Roadmap drafted — ready for `/gsd-plan-phase 60`
-Last activity: 2026-06-20 — Milestone v0.12.0 roadmap created (Phases 60–64)
+Phase: 60 (durable 底座地基) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 60
+Last activity: 2026-06-19 -- Phase 60 execution started
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
