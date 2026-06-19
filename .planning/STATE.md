@@ -4,8 +4,8 @@ milestone: v0.12.0
 milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
 status: executing
 stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-19T18:49:24.127Z"
-last_activity: 2026-06-19
+last_updated: "2026-06-19T19:35:04.781Z"
+last_activity: 2026-06-19 -- Phase 61 planning complete
 progress:
   total_phases: 5
   completed_phases: 1
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
 Phase: 61
 Plan: Not started
-Status: Executing Phase 60
-Last activity: 2026-06-19
+Status: Ready to execute
+Last activity: 2026-06-19 -- Phase 61 planning complete
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
