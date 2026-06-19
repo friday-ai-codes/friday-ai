@@ -23,12 +23,12 @@
 
 ### 迁移 index/graph + 收口 ResumableTask（MIGRATE）
 
-- [ ] **MIGRATE-01**: 代码库索引与知识图谱接入 durable queue——`repositories/views.py`、`tasks/index_trigger_tasks.py`、`resumable/handlers.py` 的 `run_in_background(wrap_resumable(...))` 改 `DurableTaskService.defer`（queue=index/graph，`idempotency_key=index:{repo_id}` / `graph:{repo_id}`）；`IndexHistory`/`GraphBuildHistory` 继续作进度/结果真相源；FileIndex/GraphFileIndex checkpoint 跳过保留。
-- [ ] **MIGRATE-02**: 一次性 migration command 把存量 PENDING/RUNNING `resumable_tasks`（index/graph）按 deterministic idempotency key 转 durable job（**不双跑**，旧行标 migrated/cancelled 记 legacy id）；`repositories.apps`/`codegraph.apps` 启动 reconcile 改为"仅确认无 durable job 接管时才把 RUNNING 标 FAILED"；`background_runner` 降级为仅 SQLite dev fallback / 少量非持久轻任务，生产 durable 任务不再三套并存。
+- [x] **MIGRATE-01**: 代码库索引与知识图谱接入 durable queue——`repositories/views.py`、`tasks/index_trigger_tasks.py`、`resumable/handlers.py` 的 `run_in_background(wrap_resumable(...))` 改 `DurableTaskService.defer`（queue=index/graph，`idempotency_key=index:{repo_id}` / `graph:{repo_id}`）；`IndexHistory`/`GraphBuildHistory` 继续作进度/结果真相源；FileIndex/GraphFileIndex checkpoint 跳过保留。
+- [x] **MIGRATE-02**: 一次性 migration command 把存量 PENDING/RUNNING `resumable_tasks`（index/graph）按 deterministic idempotency key 转 durable job（**不双跑**，旧行标 migrated/cancelled 记 legacy id）；`repositories.apps`/`codegraph.apps` 启动 reconcile 改为"仅确认无 durable job 接管时才把 RUNNING 标 FAILED"；`background_runner` 降级为仅 SQLite dev fallback / 少量非持久轻任务，生产 durable 任务不再三套并存。
 
 ### 幂等与外部副作用（IDEMP）
 
-- [ ] **IDEMP-01**: durable handler 幂等基线——index / graph / page_index 在 at-least-once 重复执行下经 checkpoint / deterministic key / upsert 结果一致；守护测试覆盖"同一任务重复投递/重复执行不产生重复数据或重复副作用"。
+- [x] **IDEMP-01**: durable handler 幂等基线——index / graph / page_index 在 at-least-once 重复执行下经 checkpoint / deterministic key / upsert 结果一致；守护测试覆盖"同一任务重复投递/重复执行不产生重复数据或重复副作用"。
 - [ ] **IDEMP-02**: 有外部副作用的任务（飞书通知 / 自动建群、MR/PR 创建）上 fencing token 或 outbox，确保 at-least-once 重复执行不产生重复外部动作（不重复发通知 / 不重复建群 / 不重复开 PR）。
 
 ### 爬取+入库 durable 队列（CRAWL）
@@ -76,9 +76,9 @@
 | DURABLE-02 | Phase 60 | Complete |
 | DURABLE-03 | Phase 60 | Complete |
 | DURABLE-04 | Phase 60 | Complete |
-| MIGRATE-01 | Phase 61 | Pending |
-| MIGRATE-02 | Phase 61 | Pending |
-| IDEMP-01 | Phase 61 | Pending |
+| MIGRATE-01 | Phase 61 | Complete |
+| MIGRATE-02 | Phase 61 | Complete |
+| IDEMP-01 | Phase 61 | Complete |
 | CRAWL-01 | Phase 62 | Pending |
 | CRAWL-02 | Phase 62 | Pending |
 | PAGEIDX-01 | Phase 62 | Pending |

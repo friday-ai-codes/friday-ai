@@ -28,7 +28,7 @@
   - [x] 60-02-PLAN.md — FRIDAY_PROCESS_ROLE 门禁三处 AppConfig.ready() 启动副作用（wave 2）
   - [x] 60-03-PLAN.md — Procrastinate 后端 + 独立 worker + 周期 stalled rescue 单例 + postgres_queue 测试（wave 2）
   - [x] 60-04-PLAN.md — Postgres 专项 CI workflow（postgres:17-alpine service + postgres_queue marker，wave 3）
-- [ ] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/4 plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01
+- [x] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/4 plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01 (completed 2026-06-19)
   - [x] 61-01-PLAN.md — durable index/graph/page_index 任务壳 + 双后端 payload adapter + DurableConfig.ready 注册修复（wave 1）
   - [x] 61-02-PLAN.md — 迁移全部 5 处 index/graph 入队点改 defer + deterministic key + 重复投递/执行幂等守护（wave 2）
   - [x] 61-03-PLAN.md — 启动 reconcile 改"仅无 durable job 接管才标 FAILED" + 同步判定 helper（wave 2）
@@ -179,7 +179,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 60. durable 底座地基 | 4/4 | Complete    | 2026-06-19 |
-| 61. 迁移 index/graph + 收口 ResumableTask | 4/4 | Complete   | 2026-06-19 |
+| 61. 迁移 index/graph + 收口 ResumableTask | 4/4 | Complete    | 2026-06-19 |
 | 62. 爬取+入库 durable 队列 + PageIndex 接入 | 0/? | Not started | - |
 | 63. 部署硬化 + 外部副作用 fencing | 0/? | Not started | - |
 | 64. runner k8s Job executor | 0/? | Not started | - |
