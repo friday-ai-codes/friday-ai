@@ -2,7 +2,7 @@
 phase: 60
 slug: durable
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-20
 ---
@@ -41,9 +41,9 @@ created: 2026-06-20
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 60-01-* | 01 | 1 | DURABLE-01 | — | fallback executor never reaches Postgres; defer/get/cancel work in-process | unit | `uv run pytest tests/durable/test_service_fallback.py -q` | ❌ W0 | ⬜ pending |
 | 60-01-* | 01 | 1 | DURABLE-01 | — | business code never imports procrastinate (grep guard) | unit | `uv run pytest tests/durable/test_no_direct_import.py -q` | ❌ W0 | ⬜ pending |
-| 60-02-* | 02 | 1 | DURABLE-02 | — | worker/migrate role skips web-only reconcile/sweep | unit | `uv run pytest tests/durable/test_process_role.py -q` | ❌ W0 | ⬜ pending |
+| 60-02-* | 02 | 2 | DURABLE-02 | — | worker/migrate role skips web-only reconcile/sweep | unit | `uv run pytest tests/durable/test_process_role.py -q` | ❌ W0 | ⬜ pending |
 | 60-03-* | 03 | 2 | DURABLE-01, DURABLE-03 | — | Procrastinate backend defer/priority/retry/stalled rescue + queueing_lock singleton | integration (postgres_queue) | `uv run pytest -m postgres_queue -q` | ❌ W0 | ⬜ pending |
-| 60-04-* | 04 | 2 | DURABLE-04 | — | Postgres CI job green; SQLite default path unaffected | manual/CI | GH Actions run | ❌ W0 | ⬜ pending |
+| 60-04-* | 04 | 3 | DURABLE-04 | — | Postgres CI job green; SQLite default path unaffected | manual/CI | GH Actions run | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -71,11 +71,11 @@ created: 2026-06-20
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved (revision 2026-06-20 — sign-off items 8a–8d met; Per-Task wave column reconciled to PLAN frontmatter 60-01:1 / 60-02:2 / 60-03:2 / 60-04:3)

@@ -23,7 +23,11 @@
 
 **Milestone Goal:** 把现有"可恢复长任务底座"（`server/resumable/`：DB 真相源 + lease/heartbeat + CAS claim + 启动恢复）演进为生产级 **durable 任务队列**——**采用 Procrastinate（3.8.1），藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。执行语义 **at-least-once**（不承诺 exactly-once）——靠 handler 幂等 + 外部副作用 fencing/outbox。
 
-- [ ] **Phase 60: durable 底座地基** (0/? plans) - 立 `DurableTaskService` 适配层（Postgres→Procrastinate / SQLite→in-process fallback）+ `FRIDAY_PROCESS_ROLE` 启动副作用门禁 + 周期 rescue/leader 单例（替代 flock 与仅启动补扫）+ Postgres 专项 CI；所有后续阶段的地基 — DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04
+- [ ] **Phase 60: durable 底座地基** (0/4 plans) - 立 `DurableTaskService` 适配层（Postgres→Procrastinate / SQLite→in-process fallback）+ `FRIDAY_PROCESS_ROLE` 启动副作用门禁 + 周期 rescue/leader 单例（替代 flock 与仅启动补扫）+ Postgres 专项 CI；所有后续阶段的地基 — DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04
+  - [ ] 60-01-PLAN.md — DurableTaskService 适配层 + in-process fallback + 队列常量 + roles helper + no-import 守护（wave 1）
+  - [ ] 60-02-PLAN.md — FRIDAY_PROCESS_ROLE 门禁三处 AppConfig.ready() 启动副作用（wave 2）
+  - [ ] 60-03-PLAN.md — Procrastinate 后端 + 独立 worker + 周期 stalled rescue 单例 + postgres_queue 测试（wave 2）
+  - [ ] 60-04-PLAN.md — Postgres 专项 CI workflow（postgres:17-alpine service + postgres_queue marker，wave 3）
 - [ ] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/? plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01
 - [ ] **Phase 62: 爬取+入库 durable 队列 + PageIndex 接入** (0/? plans) - 链接爬取+入库改 durable 任务（入队/开始/停止/重试/断点恢复，刷新与容器重建不丢，前后端可用，首个用户可见垂直切片）；PageIndex/TOC 按 hash 幂等接入 — CRAWL-01, CRAWL-02, PAGEIDX-01
 - [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/? plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
@@ -44,7 +48,11 @@
   4. kill 掉一个 worker 后，另一 worker 经周期 `retry_stalled_durable_jobs`（`queueing_lock` 单例 leader）接管在途 stalled 任务重投，多副本下只有一个 leader 扫 stalled（替代 flock 与仅启动补扫）
   5. Postgres 专项 CI job（GH Actions service container + `postgres_queue` marker）绿，覆盖 defer/priority/retry-backoff/stalled rescue/并发 worker 竞争/SQLite fallback，与默认 SQLite 测试路径共存
 
-**Plans**: TBD
+**Plans**: 4 plans (3 waves)
+- 60-01 (wave 1): DurableTaskService 适配层 + in-process fallback + 队列常量 + roles helper + no-import 守护 — DURABLE-01
+- 60-02 (wave 2): FRIDAY_PROCESS_ROLE 门禁三处 AppConfig.ready() 启动副作用 — DURABLE-02
+- 60-03 (wave 2): Procrastinate 后端 + 独立 worker + 周期 stalled rescue 单例 + postgres_queue 测试 — DURABLE-01, DURABLE-03
+- 60-04 (wave 3): Postgres 专项 CI workflow（postgres:17-alpine + postgres_queue marker）— DURABLE-04
 
 ### Phase 61: 迁移 index/graph + 收口 ResumableTask
 
@@ -157,7 +165,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 60. durable 底座地基 | 0/? | Not started | - |
+| 60. durable 底座地基 | 0/4 | Not started | - |
 | 61. 迁移 index/graph + 收口 ResumableTask | 0/? | Not started | - |
 | 62. 爬取+入库 durable 队列 + PageIndex 接入 | 0/? | Not started | - |
 | 63. 部署硬化 + 外部副作用 fencing | 0/? | Not started | - |

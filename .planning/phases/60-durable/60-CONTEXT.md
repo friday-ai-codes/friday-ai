@@ -23,7 +23,8 @@
 
 ### 队列后端与适配层（DURABLE-01）
 - 采用 **Procrastinate 3.8.1**，藏在 `DurableTaskService` 适配层后；业务代码绝不直接 import Procrastinate。
-- 后端选择点：`DATABASE_URL` 为 Postgres 且 `DURABLE_TASK_BACKEND=procrastinate` → Procrastinate；否则 → in-process 非 durable fallback。SQLite/无 `DATABASE_URL` 永远 fallback（dev 开箱即用，`make dev`/pytest 不需 Postgres）。
+- 后端选择点（**唯一权威判定** `durable.service._use_procrastinate(engine, backend)`，service 与 settings 共用同一函数）：当且仅当 默认 DB 引擎含 `postgresql` 且 `DURABLE_TASK_BACKEND ∈ {auto, procrastinate}` → Procrastinate（durable）；否则 → in-process 非 durable fallback。默认 `DURABLE_TASK_BACKEND=auto`。真值表：`auto`+Postgres → Procrastinate（**production 默认即 durable，开箱即用**）；`auto`+SQLite/无 `DATABASE_URL` → fallback（dev 开箱即用，`make dev`/pytest 不需 Postgres）；`procrastinate`+Postgres → Procrastinate；`procrastinate`+非 Postgres → fail-soft 回退 fallback + warning（不启动期 raise）；`inprocess`/`fallback` → 强制 fallback（即便 Postgres）。
+  - **Amended note（autonomous reconciliation）：** 原讨论稿曾写"`auto` 仅在显式 `=procrastinate` 时才启用"，与"production 默认 Postgres 应开箱即 durable"矛盾；规划阶段自主校正为上述 `auto`+Postgres→durable 语义，并令 settings.py 的 `procrastinate.contrib.django` 条件注册复用同一 `_use_procrastinate`，确保 procrastinate 表仅在后端真正启用时创建（无 orphan `procrastinate_jobs` 表）。CONTEXT 与 Plan 60-01/60-03 据此一致。
 - 统一接口签名：`defer(task, payload, *, queue, priority, idempotency_key, run_at) / get / cancel / retry_stalled`。
 - worker 必须**独立进程**：用 `get_worker_connector()` / 官方 management command，绝不直接拿 `DjangoConnector` 跑 worker（PoC 硬前置①）。
 - 先 `listen_notify=False` polling（低延迟唤醒留 v2 DURABLEX-01）。
