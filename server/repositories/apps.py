@@ -54,9 +54,32 @@ class RepositoriesConfig(AppConfig):
             except Exception:
                 recoverable_ids = set()
 
+            # durable 接管判定（MIGRATE-02）：标 RUNNING→FAILED 前先查该 repo 是否有
+            # 在途 durable index job（todo/doing/scheduled）。有接管则保留 INDEXING、
+            # 不收尾对应 IndexHistory RUNNING，绝不误杀在途任务（多副本下另一 worker
+            # 仍在跑）。非 durable 后端（SQLite/in-process）helper 恒 False → 维持旧
+            # "标 FAILED"零回归。
+            # N 处置：helper 首句 use_procrastinate_backend() 在非 durable 即短路返
+            # False（整段 O(1)、零 per-repo 查询）；durable 路径 N=单次启动卡住的
+            # INDEXING 仓库数，业务有界且小（个位数），逐 repo 调可接受。
+            durable_active_ids: set[str] = set()
+            try:
+                from durable.reconcile import has_active_durable_job_sync
+
+                candidate_ids = Repository.objects.filter(
+                    index_status=IndexStatus.INDEXING
+                ).values_list("id", flat=True)
+                for repo_id in candidate_ids:
+                    if has_active_durable_job_sync(f"index:{repo_id}"):
+                        durable_active_ids.add(str(repo_id))
+            except Exception:
+                durable_active_ids = set()
+
+            exclude_ids = recoverable_ids | durable_active_ids
+
             stuck_qs = Repository.objects.filter(index_status=IndexStatus.INDEXING)
-            if recoverable_ids:
-                stuck_qs = stuck_qs.exclude(id__in=recoverable_ids)
+            if exclude_ids:
+                stuck_qs = stuck_qs.exclude(id__in=exclude_ids)
             stuck_count = stuck_qs.update(
                 index_status=IndexStatus.FAILED,
                 index_error="索引任务因服务重启而中断，请重新开始索引",
@@ -69,10 +92,12 @@ class RepositoriesConfig(AppConfig):
                 )
 
             # 同步把孤儿 IndexHistory.RUNNING 标为 FAILED，避免"索引历史"列表里
-            # 永远在转圈的僵尸记录（容器更新 / 异常崩溃 / embedding 服务挂等场景）
-            stuck_history_count = IndexHistory.objects.filter(
-                status=IndexHistoryStatus.RUNNING
-            ).update(
+            # 永远在转圈的僵尸记录（容器更新 / 异常崩溃 / embedding 服务挂等场景）。
+            # 有在途 durable job 接管的仓库其 RUNNING 进度行同样保留（不误杀在途进度）。
+            history_qs = IndexHistory.objects.filter(status=IndexHistoryStatus.RUNNING)
+            if durable_active_ids:
+                history_qs = history_qs.exclude(repository_id__in=durable_active_ids)
+            stuck_history_count = history_qs.update(
                 status=IndexHistoryStatus.FAILED,
                 finished_at=timezone.now(),
                 error_message="索引任务因服务重启而中断，请重新开始索引",

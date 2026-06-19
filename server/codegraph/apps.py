@@ -64,7 +64,31 @@ def reconcile_orphaned_graph_builds(timeout_minutes: int | None = None) -> int:
     )
     if recoverable_ids:
         orphan_qs = orphan_qs.exclude(repository_id__in=recoverable_ids)
-    repo_ids = list(orphan_qs.values_list("repository_id", flat=True).distinct())
+
+    # durable 接管判定（MIGRATE-02）：回收 orphan RUNNING 前先查该 repo 是否有在途
+    # durable graph job（todo/doing/scheduled）。有接管则保留 RUNNING（不回收、不
+    # 归位仓库聚合态），绝不误杀在途任务。非 durable 后端（SQLite/in-process）helper
+    # 恒 False → 旧回收行为零回归。
+    # N 处置：helper 首句 use_procrastinate_backend() 在非 durable 即短路返 False
+    # （整段 O(1)、零 per-repo 查询）；durable 路径 N=单次启动命中的孤儿仓库数，
+    # 业务有界且小（个位数），逐 repo 调可接受。
+    candidate_repo_ids = list(
+        orphan_qs.values_list("repository_id", flat=True).distinct()
+    )
+    durable_active_ids: set = set()
+    try:
+        from durable.reconcile import has_active_durable_job_sync
+
+        for repo_id in candidate_repo_ids:
+            if has_active_durable_job_sync(f"graph:{repo_id}"):
+                durable_active_ids.add(repo_id)
+    except Exception:
+        durable_active_ids = set()
+
+    if durable_active_ids:
+        orphan_qs = orphan_qs.exclude(repository_id__in=durable_active_ids)
+
+    repo_ids = [rid for rid in candidate_repo_ids if rid not in durable_active_ids]
     reconciled = orphan_qs.update(
         status=GraphBuildHistoryStatus.FAILED,
         finished_at=now,
