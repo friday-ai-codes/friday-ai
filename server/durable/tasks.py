@@ -16,9 +16,67 @@ from typing import Any
 import structlog
 from procrastinate.contrib.django import app
 
-from durable.queues import QUEUE_MAINTENANCE
+from durable.queues import (
+    QUEUE_GRAPH,
+    QUEUE_INDEX,
+    QUEUE_MAINTENANCE,
+    QUEUE_PAGE_INDEX,
+)
 
 logger = structlog.get_logger(__name__)
+
+
+@app.task(name="durable_index", queue=QUEUE_INDEX)
+async def durable_index(
+    *,
+    repository_id: str,
+    history_id: str | None = None,
+    branch: str | None = None,
+    trigger: str = "manual",
+) -> dict[str, Any]:
+    """代码索引 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    显式 ``name="durable_index"`` 与 ``backends.defer`` 的裸名查找
+    （``app.tasks.get("durable_index")``）是同一 single source of truth（Phase 60
+    CR-01 教训）。keyword-only 形参与 payload 契约逐字一致，下游
+    ``DurableTaskService.defer("durable_index", {...})`` 经 ``defer_async(**payload)``
+    展开传入。
+    """
+    from durable.tasks_impl import run_index
+
+    return await run_index(
+        repository_id=repository_id,
+        history_id=history_id,
+        branch=branch,
+        trigger=trigger,
+    )
+
+
+@app.task(name="durable_graph", queue=QUEUE_GRAPH)
+async def durable_graph(
+    *,
+    repository_id: str,
+    history_id: str | None = None,
+    branch: str | None = None,
+    trigger: str = "manual",
+) -> Any:
+    """代码图谱构建 durable 任务（procrastinate 包壳，委托共用任务体）。"""
+    from durable.tasks_impl import run_graph
+
+    return await run_graph(
+        repository_id=repository_id,
+        history_id=history_id,
+        branch=branch,
+        trigger=trigger,
+    )
+
+
+@app.task(name="durable_page_index", queue=QUEUE_PAGE_INDEX)
+async def durable_page_index(**payload: Any) -> dict[str, Any]:
+    """页面级索引 durable 任务（占位包壳，委托共用任务体）。"""
+    from durable.tasks_impl import run_page_index
+
+    return await run_page_index(**payload)
 
 
 @app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)
