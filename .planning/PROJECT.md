@@ -12,9 +12,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.10.0 操作审计治理（2026-06-17）
+**Latest shipped:** v0.11.0 开放与协作（2026-06-17）
 
-里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理。近五个里程碑要点：
+里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
 - **v0.5.0 索引地基 + 排除文件**：排除配置单一事实源 + 单一匹配器 `is_excluded` 全链路 fail-closed（索引/RAG/MCP/grep/agent/容器六面不可见）；统一删除入口 `purge_file` + 两种 purge 模式（普通排除 / 敏感清理）+ 对账清理 UI；敏感文件 AI 识别建议名单；commit 历史 RAG 索引 + `ChunkRegistry` 行号回填 + `file:line→chunk` 反查；多仓 Git 凭证统一池（`GitInstanceCredential`）+ MCP 多仓检索参数。
 - **v0.6.0 领域脊柱 + 知识补全**：新增 `delivery` app 立起以飞书 work item 为中心的操作态脊柱——canonical `WorkItem` + 单一 `WorkItemService.upsert` 入口 + source-of-truth 三分类 + `WorkItemSyncState`/`WorkItemRelation`（字段派生）/`WorkItemStatusEvent`/`WorkItemCommentEvent`（append-only 评论流 + 当前树投影）；`Document`/`DocumentVersion`（外部飞书/内部生成）+ `feishu_document` normalizer + `REFERENCES` 边；Release 账本宽容模型 + 飞书 Bitable adapter 骨架；(看板URL+MR URL) 一键摄取编排；历史 diff 冻结 + bi-temporal 失效对账（PF-08）；评论入图 + 片段→需求反查 API/MCP；截图识别需求（多模态 LLM）。飞书接口前置修复 PF-09/10/11/12 已落地。
@@ -22,24 +22,28 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - **v0.8.0 多仓串行编码 → 融合 PR**：把 v0.7 产的 `MergedPlan.execution_plan` + 跨仓依赖 DAG 真正落成多仓代码——前置修复 PF-06（workflow 编码 `_run_repo_coding` dispatch env 对齐 chat 基线：git token + branch strategy + SSH→HTTPS，私有仓 clone + 正确目标分支）+ 通用 resume 回流通路 `adrive_plan_session_to_pause_or_terminal`（节点/工具/回调三处同源，消化 v0.7 audit D-2）；`RepoCodingTask` 操作态模型（plan_version/repository/wave/`depends_on` M2M self DAG/`produced_artifacts`/`follow_openspec` SDD 预留）+ 消费 `execution_plan[].dependencies` 经 graphlib Kahn 拓扑分层成 wave（消化 PF-07，不再全并行）；`RepoCodingTaskService` 单一写入入口（INV-6）+ `aadvance_coding_waves` wave 推进（回填→传递闭包阻断→决策，wave N done → N+1，失败隔离不死锁）；`AICodingNode` 按 wave 分批 dispatch + callback 重入自驱（不另造调度）；上游产物提取（OpenAPI/契约/diff）落 `produced_artifacts` → 注入下游 wave prompt/`global_context`；各仓 MR `target_branch` 锚定各仓 `default_branch` + 跨仓 PR cross-ref + 追溯 `TechnicalPlan`/`WorkItem`（`pr_cross_reference.py`，≥2 守门 fail-soft）；编码遇阻 task 侧 `ask_user` 抛 question 给人（心跳保活容器 RUNNING）+ orchestrator resume，非全自动 replan。审计 passed（9/9 需求、integration_ok、Nyquist 5/5）。
 - **v0.9.0 SDD / OpenSpec 支持（重型）**：让 spec-driven development 成为可治理过程资产——SDD 仓库索引后检测 `openspec/` 自动打标 `facets["methodology"]="SDD"` + 前端徽标；SDD 仓方案融合（`ArchitectMergeAdapter._handle_pass` best-effort 挂接）逐仓产 openspec spec draft，落 `SddSpec` 脊柱 + `Document(sdd_spec, internal_generated)` 经 `DocumentService.create_internal_spec`/`SddSpecService` 双单一写入入口（INV-6），关联 WorkItem/PlanVersion + emit `spec.drafted`；spec 完整状态机（draft→in_review→approved→implemented→archived，单一 service 入口、非法流转 fail-loud、条件更新防双推进）+ `SddSpecReview` 不可篡改评审记录（approve/reject 单一事务驱动状态）+ `/api/specs/` REST（superuser fail-closed 分流）+ spec 治理前端（列表/详情/状态流转/评审时间线）；编码前置 gate（`follow_openspec=True` 仓 `_dispatch_wave` 前校验 `SddSpec.status==APPROVED`，未批准/异常 fail-closed `mark_gate_blocked` 拦截 + 单仓隔离 + 下游阻断）+ openspec 指引注入（dispatch `env_FRIDAY_TASK_FOLLOW_OPENSPEC` → task `system_prompt` openspec 段 + `setting_sources=["project"]` 原生加载 `.claude/skills`）；spec↔实现 PR 关联（`_finalize_and_notify` best-effort 回填 `link_implementation_pr` + approved→implemented）+ 交付验收视图（spec→WorkItem→PR 追溯面板，fail-soft 降级）。非 SDD 仓全链路零回归。审计 passed（11/11 需求、integration_ok、INV-6/INV-2 成立）。
 - **v0.10.0 操作审计治理**：立起统一横切审计能力——新建零业务依赖的 `audit` Django app + `AuditEvent` append-only 不可篡改模型（actor 标量软引用 + 双时间戳 + 5 查询索引 + 模型层 save/delete 守护）+ `AuditService.emit/aemit` 唯一写入入口（INV-6）+ 入口强制脱敏（key-name / 值级密钥正则 / 高熵）+ fail-soft 吞异常不阻断主操作 + 稳定 action taxonomy；全量覆盖敏感操作 emit——身份与权限类（accounts 建用户/启停/改资料/首启 superuser + projects/members 成员增删改/角色变更 + 空间配置/仓库权限）+ 凭证与数据治理类（Provider/Git 实例/per-repo Git/PAT/飞书凭证与同步 + 排除规则增删 + v0.5 `purge` 埋点收口统一表），凭证字段 DB 绝无明文；审计查询 REST（`/api/audit/`，IsSuperUser fail-closed、只读、过滤 + 分页）+ CSV/JSON 流式导出 + `/admin/audit` superuser 审计页（过滤/表格/分页/before-after 详情弹窗/导出/侧栏入口/i18n）。审计 passed。
+- **v0.11.0 开放与协作**：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式 progress/`reasoning_summary`（INV-5 非 CoT、不误用 `tool_calls`）；新增 Anthropic 兼容 `/v1/messages` 端点（非流式 + SSE 流式 + thinking block trace）；飞书机器人对话改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换）；工作流自动建群节点（建群 + 拉人 + chat_id 写回 `WorkItem.feishu_chat_id` fail-soft）。审计 passed（6/6 需求，INV-5/INV-6 成立）。
 
 **已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境；chat 编码入口（`coding_session_service`）的 cross-ref / 遇阻 HITL 接线为 follow-up（helper 入口无关已就绪）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 失败待修；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.11.0 开放与协作
+## Current Milestone: v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）
 
-**Goal:** 对外开放与协作层——把内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方，新增 Anthropic 兼容 `/v1/messages` 端点，把飞书机器人对话改走原生 CardKit 流式卡片，并提供工作流自动建群节点。v0.11 为 `ROADMAP-vNext.md` 前瞻路线（v0.5→v0.11）的收官里程碑。
+**Goal:** 把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 durable 任务队列系统——**采用 Procrastinate，藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/dev 退化为 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以**「链接爬取+入库」durable 队列**为首个用户可见垂直切片；并完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。
 
 **Target features:**
-- Agent API trace 透出：内部工具调用（RAG/grep/仓库分析）经 v0.7 起沉淀的 §15 事件 taxonomy 映射为 OpenAI 兼容流式 progress / `reasoning_summary`，**不暴露原始 CoT、不误用标准 tool_calls**（INV-5）。
-- Anthropic 兼容端点 `/v1/messages`（Messages 形状映射，复用既有 chat/agent 内核）+ 流式（SSE），trace 经 thinking block adapter 复用同一 taxonomy 映射。
-- 飞书原生流式卡片（CardKit）：机器人对话回复增量更新，替代现 PATCH 全量替换，体验顺滑。
-- 工作流自动建群节点：创建飞书群 + 拉入成员（替代仅 `add_bot_to_chat`），群 chat_id 作输出供下游/写回 `WorkItem.feishu_chat_id`。
+- **durable 底座 + 适配层**：`DurableTaskService`（`defer/get/cancel/retry_stalled`）隔离队列实现；Postgres→Procrastinate 3.8.1、SQLite/无 `DATABASE_URL`→in-process 非 durable fallback；worker 用独立进程/worker connector（先 `listen_notify=False` polling）。
+- **启动副作用收口**：`FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 门禁 `repositories/codegraph/resumable` 的 `AppConfig.ready()`，worker/migrate 不跑 web-only startup jobs。
+- **周期 rescue + leader 单例**：内置 `retry_stalled_durable_jobs` 周期任务 + `queueing_lock` 单例（替代仅启动补扫与 `flock`），多副本只有一个 leader 扫 stalled。
+- **迁移 index/graph + 收口 ResumableTask**：现有 `wrap_resumable` 调用改 `DurableTaskService.defer`；一次性 migration command 转存量在途行（不双跑）；启动 reconcile 改为"仅无 durable job 接管才回收"；`background_runner` 降级为 dev fallback/轻任务。
+- **爬取+入库 durable 队列（用户可见）**：贴链接→入队→队列可见，开始/停止/重试/断点恢复，刷新与容器重建后不丢；PageIndex/TOC 按 target hash 幂等接入。
+- **部署硬化**：SIGTERM 优雅终止（停领+释放/缩短租约）；compose 与 helm 同构拆 web/worker/scheduler；`terminationGracePeriodSeconds` + PDB + KEDA Postgres scaler + 多副本 Redis channel layer 强约束。
+- **runner 改 k8s Job executor**：去 `/var/run/docker.sock`，经 k8s API 起 Job/Pod（RBAC/日志流/清理/回调契约），k0s/containerd 友好。
 
-**Key context:** **INV-5：对外只透出 progress/trace 事件，非模型私有 CoT；内部工具调用不用标准 `tool_calls`**（服务端闭环执行，回传标准 tool_calls 会让规范客户端误判挂起等待 → 卡死）。复用 v0.7 起稳定的 §15 事件 taxonomy（`PlanSessionEvent` / `event_taxonomy`），对外只是不同 adapter——不另建词表。代码现状坐标：OpenAI compat 已有（`/v1/chat/completions` 流式 + `reasoning_content`，`tool_calls` 完全没有、adapter.py 明确 continue 跳过、无 Anthropic 端点）；机器人对话已有（双向、群聊需 @），流式卡片部分有（PATCH 全量替换，非原生 CardKit）；自动建群完全没有（只能 `add_bot_to_chat` 加入已有群）。标准双向 tool_calls（客户端自带工具）仅在未来有此诉求才做（v2 OPENX-01）。i18n 默认中文。设计底座：`ROADMAP-vNext.md §v0.11`、`DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格）。`PREFLIGHT.md` 无映射 v0.11 的 blocking/should-fix 项。
+**Key context:** PoC 已 PASS（Procrastinate 3.8.1 / Python 3.14 / Django 6.0 / psycopg 3.3，adrf `defer_async`、worker queue/priority/periodic/retry/stalled rescue 实测通过）。**三条硬前置**：worker 必须独立进程（不能直接拿 DjangoConnector 跑 worker，用 `get_worker_connector()`/官方 management command）；SQLite 只能是非 durable dev fallback（真实 compose/helm 默认 Postgres，`docker-compose.yaml:37`/`settings.py:243`）；先收口 `AppConfig.ready()` 启动副作用（否则 worker/migrate 进程会跑业务 reconcile 误杀在途任务）。**执行语义 at-least-once，不承诺 exactly-once**：DB claim 保证"同一轮领取只一个成功"，但"慢≠死"误判 + 完成未标记即崩仍会重复执行——index/graph/crawl/page_index handler 必须幂等（checkpoint/deterministic key/upsert），外部副作用（飞书通知/建群/MR-PR 创建）上 fencing token 或 outbox。**一个底座、多条逻辑队列**（index/graph/crawl_ingest/page_index/maintenance），各自并发与伸缩，避免长任务堵短任务。**聊天/RAG 流式问答明确不进队列**（请求级，断开让用户重试）。i18n 默认中文。设计底座引用：本次 PoC 调研结论 + `server/resumable/`（现有 lease/CAS/recovery 范式）。
 
-**候选后续方向（见 Backlog / `ROADMAP-vNext.md` Deferred）：** 编码中全自动 replan/spec drift 检测、chat 编码入口 cross-ref/HITL 接线收尾、图片向量库、标准双向 tool_calls、审计/SDD 进阶（AUDITX/SDDX）。
+**候选后续方向（见 Backlog）：** Procrastinate `listen_notify=True` 低延迟唤醒、fencing→outbox 演进、workflow/RepoCodingTask 更深度接入、审计/SDD 进阶（AUDITX/SDDX）、图片向量库。
 
 ## Requirements
 
@@ -109,16 +113,42 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **敏感操作全量审计覆盖**：身份与权限类（accounts 建用户/启停/改资料/首启 superuser + projects/members 成员增删改/角色变更 + 空间配置/仓库权限）+ 凭证与数据治理类（Provider/Git 实例/per-repo Git/PAT/飞书凭证与同步 + 排除规则增删 + v0.5 `purge` 埋点收口统一表）经统一入口 emit，actor + 目标 + 前后值，凭证字段脱敏 — v0.10.0
 - ✓ **审计查询 + 前端视图 + 导出**：审计查询 REST（`/api/audit/`，IsSuperUser fail-closed、只读、按 actor/action/target/时间过滤 + 分页）+ CSV/JSON 流式导出（`/api/audit/events/export/`）+ `/admin/audit` superuser 审计页（过滤/表格/分页/before-after 详情弹窗/导出/侧栏入口/i18n） — v0.10.0 (`server/audit/`, `web/src/pages/admin/audit*`)
 
-### Active（v0.11.0 开放与协作）
+- ✓ **Agent API trace 透出**：内部工具调用（RAG/grep/仓库分析）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式 progress/`reasoning_summary`（`server/compat/progress.py`，INV-5 非 CoT、绝不发 `tool_calls`/`finish_reason=tool_calls`，缺事件优雅降级，`/v1/chat/completions` 零回归） — v0.11.0 (TRACE-01/02)
+- ✓ **Anthropic 兼容端点 `/v1/messages`**：Messages 形状映射（system/messages/max_tokens）复用既有 chat/agent 内核，非流式 + SSE 流式可用，trace 经 thinking block adapter 透出（复用同一 taxonomy，thinking block 严格先于首个 text，INV-5） — v0.11.0 (ANTHROPIC-01/02)
+- ✓ **飞书原生 CardKit 流式卡片**：机器人对话回复增量更新（CardKit v1 create/send/stream/settle 封装 + schema 2.0 流式卡），替代 PATCH 全量替换，失败降级既有卡片 — v0.11.0 (CARD-01, `server/services/feishu_im.py`)
+- ✓ **工作流自动建群节点**：`CreateGroupChatNode` 建飞书群 + 拉成员（`FeishuIMClient.create_chat` 建群即拉人）+ chat_id 输出 + 可选写回 `WorkItem.feishu_chat_id`（`WorkItemService.awriteback_feishu_chat_id` 单一入口 INV-6，fail-soft 不阻断） — v0.11.0 (GROUP-01)
+
+### Active（v0.12.0 弹性任务底座）
 
 <!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md -->
 
-- ☐ **TRACE-01**: 把内部工具调用（RAG/grep/仓库分析）经 §15 事件 taxonomy 映射为 OpenAI 兼容流式响应的 progress / `reasoning_summary` 文本，外部调用方可见"正在检索 RAG / grep / 分析仓库"进度
-- ☐ **TRACE-02**: 内部工具调用绝不以标准 `tool_calls` 回传（防规范客户端误判挂起卡死），不暴露模型私有 CoT（INV-5）；adapter 实现、缺事件优雅降级、既有 `/v1/chat/completions` 零回归
-- ☐ **ANTHROPIC-01**: 新增 Anthropic 兼容 `/v1/messages` 端点（Messages 形状映射，复用既有 chat/agent 内核），非流式响应可用
-- ☐ **ANTHROPIC-02**: `/v1/messages` 流式（SSE）可用，trace/progress 经 thinking block adapter 透出（复用 TRACE-01 同一事件 taxonomy 映射，INV-5）
-- ☐ **CARD-01**: 飞书机器人对话回复改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换），体验顺滑无全量重绘
-- ☐ **GROUP-01**: 新增"自动建群"工作流节点——创建飞书群 + 拉入成员（替代仅 `add_bot_to_chat`），群 chat_id 作输出供下游/写回 `WorkItem.feishu_chat_id`
+**durable 底座地基（DURABLE）**
+- ☐ **DURABLE-01**: `DurableTaskService` 适配层隔离队列实现——Postgres 走 Procrastinate 3.8.1、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback；统一 `defer/get/cancel/retry_stalled` + idempotency_key + queue/priority；worker 独立进程（worker connector，先 polling）
+- ☐ **DURABLE-02**: `FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 门禁 `repositories/codegraph/resumable` 的 `AppConfig.ready()` 启动副作用，worker/migrate 不跑 web-only reconcile/sweep
+- ☐ **DURABLE-03**: 内置 `retry_stalled_durable_jobs` 周期任务 + `queueing_lock` 单例（leader）扫 stalled 重投，替代仅启动补扫与 `flock` 本地锁；多副本只有一个 leader 执行
+- ☐ **DURABLE-04**: Postgres 专项 CI（GH Actions service container + `postgres_queue` marker）覆盖 defer/priority/retry/stalled rescue/并发 worker 竞争/SQLite fallback，与现有 SQLite 默认测试共存
+
+**迁移 index/graph + 收口 ResumableTask（MIGRATE）**
+- ☐ **MIGRATE-01**: index/graph 现有 `run_in_background(wrap_resumable(...))` 改 `DurableTaskService.defer`（queue=index/graph，deterministic idempotency_key），`IndexHistory`/`GraphBuildHistory` 仍为进度真相源
+- ☐ **MIGRATE-02**: 一次性 migration command 把存量 PENDING/RUNNING `resumable_tasks` 行按 idempotency key 转 durable job（不双跑，旧行标 migrated）；启动 reconcile 改为"仅无 durable job 接管才回收"；`background_runner` 降级为 dev fallback/轻任务
+
+**幂等（IDEMP）**
+- ☐ **IDEMP-01**: durable handler 幂等基线——index/graph/page_index 重复执行经 checkpoint/deterministic key/upsert 结果一致（at-least-once 安全），守护测试覆盖"重复投递不产生重复副作用"
+- ☐ **IDEMP-02**: 外部副作用任务（飞书通知/建群、MR/PR 创建）上 fencing token 或 outbox，重复执行不产生重复外部动作
+
+**爬取+入库 durable 队列（CRAWL / PAGEIDX）**
+- ☐ **CRAWL-01**: 链接爬取+入库改 durable 任务——后端入队/查询/开始/停止/重试/断点恢复，刷新与容器重建后状态不丢（DB 真相源），at-least-once 幂等入库
+- ☐ **CRAWL-02**: 前端爬取任务队列面板——贴链接入队、队列列表与状态、行内开始/停止/重试、刷新后从后端恢复（不再依赖组件内存）
+- ☐ **PAGEIDX-01**: PageIndex/TOC/summary/tree 生成接入 durable queue（`KnowledgeTreeRebuildView` 等裸 `background_runner` 路径），按 target hash 幂等
+
+**部署硬化（DEPLOY）**
+- ☐ **DEPLOY-01**: worker 优雅终止——SIGTERM 停领新活、跑完/释放或缩短在途租约让其他副本快速接管；helm `terminationGracePeriodSeconds` 配置
+- ☐ **DEPLOY-02**: compose 与 helm 同构拆 web/worker/scheduler（同镜像不同 command），scheduler 单例（leader）跑 cron/rescue
+- ☐ **DEPLOY-03**: KEDA Postgres scaler 按队列深度伸缩（支持 cooldown，按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（fail-closed 提示）
+
+**runner k8s Job executor（RUNNER）**
+- ☐ **RUNNER-01**: runner 抽象出 executor 接口（docker / k8s 两实现），与现有 server↔runner WebSocket/HTTP 回调契约解耦
+- ☐ **RUNNER-02**: k8s Job executor 实现——经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试，k0s/containerd 友好
 
 **Backlog 候选（后续里程碑）：**
 
@@ -196,6 +226,14 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 内部工具调用对外透出为 progress/trace（reasoning_summary / thinking block），**不用标准 tool_calls、不暴露 CoT** | 内部工具是服务端闭环执行；标准 tool_calls 会让规范客户端误判挂起等待回传 → 卡死；INV-5 仅透出 progress/trace 非模型私有推理链 | — Pending（v0.11.0） |
 | Agent API 对外复用 v0.7 起沉淀的 §15 事件 taxonomy，对外只是不同 adapter | taxonomy 已在 v0.7 稳定落地（`PlanSessionEvent`/`event_taxonomy`）；OpenAI/Anthropic 端点各做 adapter 映射，不另建词表 | — Pending（v0.11.0） |
 | 标准双向 `tool_calls`（客户端自带工具）留 v2，本里程碑不做 | 当前无"客户端自带工具"诉求；先做单向 progress/trace 透出满足开放需求 | — Pending（v0.11.0，OPENX-01） |
+| 采用 Procrastinate 作 durable queue，但藏在 `DurableTaskService` 适配层后 | PoC PASS（3.8.1/Py3.14/Django6/psycopg3.3）；适配层隔离实现，保留 SQLite dev 开箱路径与未来替换空间，业务代码不直接依赖 Procrastinate | — Pending（v0.12.0） |
+| 生产强制 durable（Postgres），SQLite 仅非 durable dev fallback；CI 增 Postgres 专项测试 | compose/helm 默认带 Postgres，durable 默认在线；SQLite 只影响 make dev/pytest；队列语义须在真实 Postgres 被测 | — Pending（v0.12.0） |
+| 不承诺 exactly-once，走 at-least-once + 幂等/fencing | DB claim 仅保证同轮单一领取；"慢≠死"误判与完成未标记即崩仍会重复执行——靠 checkpoint/upsert/deterministic key，外部副作用上 fencing/outbox | — Pending（v0.12.0） |
+| 一个底座、多条逻辑队列（index/graph/crawl_ingest/page_index/maintenance） | 不同队列独立并发与伸缩，避免长任务（索引）堵短任务（爬取/页面生成） | — Pending（v0.12.0） |
+| scheduler/rescue 单例改 DB leader（`queueing_lock`），弃用本地 `flock` | `flock` 仅单机有效、跨 Pod 失效；周期 rescue 与 cron 收敛到一个 leader workload | — Pending（v0.12.0） |
+| 收口 `ResumableTask`：Procrastinate/适配层接管生产职责，不三套并存 | `background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑 | — Pending（v0.12.0） |
+| workflow/RepoCodingTask 保留自有引擎，只做恢复桥接；chat/RAG 问答不进队列 | 有自有状态机的任务从持久化态重驱（非内存态恢复，`_debug_sessions` 丢失可降级）；流式问答请求级、断开让用户重试 | — Pending（v0.12.0） |
+| runner 改 k8s Job executor 纳入 v0.12.0（Phase 64），不拆后续里程碑 | 用户选 full 范围；k0s/containerd 下 docker.sock 是反模式，先抽 executor 接口再落 k8s 实现 | — Pending（v0.12.0） |
 
 ## Evolution
 
@@ -215,4 +253,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-17 — start milestone v0.11.0 开放与协作*
+*Last updated: 2026-06-20 — start milestone v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）*

@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.11.0
-milestone_name: 开放与协作
-status: shipped
-stopped_at: v0.11.0 里程碑收官——4 phases / 8 plans 全部 Complete，里程碑审计 PASS
-last_updated: "2026-06-17T14:10:00Z"
-last_activity: 2026-06-17 -- v0.11.0 milestone audit PASS（6/6 需求交付，INV-5/INV-6 成立）
+milestone: v0.12.0
+milestone_name: 弹性任务底座
+status: planning
+last_updated: "2026-06-19T16:35:02.496Z"
+last_activity: 2026-06-19
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
 
 ## Current Position
 
-Phase: 59 (工作流自动建群节点) — COMPLETE (2/2 plans)
-Plan: 2 of 2 (done)
-Status: Phase 59 complete — v0.11.0 里程碑 4 phases 全部 Complete
-Last activity: 2026-06-17 -- Completed 59-02 (CreateGroupChatNode 节点接线)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-19 — Milestone v0.12.0 started
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
