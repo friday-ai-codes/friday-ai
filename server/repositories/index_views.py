@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 import structlog
 from adrf.views import APIView
-from asgiref.sync import sync_to_async
+from asgiref.sync import async_to_sync, sync_to_async
 from django.conf import settings
 from django.db import transaction
 from django.http import StreamingHttpResponse
@@ -18,6 +18,8 @@ from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import BaseRenderer
 from rest_framework.response import Response
+
+from durable import QUEUE_INDEX, DurableTaskService
 
 
 class ServerSentEventRenderer(BaseRenderer):
@@ -50,9 +52,8 @@ from repositories.models import (
     TriggerType,
 )
 from repositories.services.index_cleanup import cleanup_index
-from services.background_runner import cancel_background_task, run_in_background
+from services.background_runner import cancel_background_task
 from services.embedding import EmbeddingService
-from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
 
 logger = structlog.get_logger(__name__)
@@ -144,35 +145,30 @@ def _schedule_index(
     *,
     branch: str | None = None,
     trigger: str = "manual",
-) -> Any:
-    """把索引任务调度到独立 worker loop（登记为可恢复任务）。
+) -> str:
+    """把索引任务投递到 durable 队列（QUEUE_INDEX），返回 durable job id。
 
-    返回 concurrent.futures.Future（调用方一般不用 await，仅作可观测性）。
-    必须传 factory 而不是 coroutine：coroutine 只能在创建它的 loop 上 await，
-    跨线程提交需要由 worker loop 在自己上下文里实例化 coroutine。
+    durable 入队 + deterministic idempotency_key（``index:{repo_id}``）做队列层去重，
+    与 ``_acquire_index_lock`` 的 select_for_update 业务防抖互补：同 repo 重复投递经
+    key 在途去重不产生重复 durable job；IndexHistory 仍在入队点创建并作进度真相源，
+    FileIndex hash checkpoint 在任务体内复用（重复执行不产生重复数据）。
 
-    经 ``submit_resumable`` 登记 ``ResumableTask(kind=index)``：进程 / Pod 重启后
-    由 RecoveryScheduler 自动续跑，复用 ``FileIndex`` 跳过已完成文件。
+    本函数为**同步上下文** helper，经 ``async_to_sync`` 桥接 async 的
+    ``DurableTaskService.defer``；调用方在 async view 中以
+    ``sync_to_async(_schedule_index)`` 包裹后 await（同 ``_acquire_index_lock_async`` 范式），
+    避免在事件循环线程上直接 ``async_to_sync``。返回值仅作可观测，调用方不再依赖 Future。
     """
-    from resumable.models import ResumableTaskKind
-    from resumable.service import wrap_resumable
-
-    wrapped = wrap_resumable(
-        kind=ResumableTaskKind.INDEX,
-        target_id=str(repository_id),
-        payload={
+    return async_to_sync(DurableTaskService.defer)(
+        "durable_index",
+        {
             "repository_id": str(repository_id),
+            "history_id": history_id,
             "branch": branch,
             "trigger": trigger,
         },
-        name=f"index-{repository_id}",
-        coro_factory=lambda: clone_and_index_repository(
-            repository_id,
-            history_id=history_id,
-            branch=branch,
-        ),
+        queue=QUEUE_INDEX,
+        idempotency_key=f"index:{repository_id}",
     )
-    return run_in_background(wrapped, name=f"index-{repository_id}")
 
 
 class IndexStatusSerializer(serializers.Serializer):
@@ -314,8 +310,9 @@ class IndexTriggerView(APIView):
             started_at=timezone.now(),
         )
 
-        # 启动后台索引任务（强引用保护）
-        _schedule_index(str(repository_id), str(history.id), branch=branch)
+        # 投递 durable 索引任务（同步 helper 经 sync_to_async 桥接，避免在事件循环线程上
+        # 直接 async_to_sync）。job_id 仅作可观测，调用方不依赖返回值。
+        await sync_to_async(_schedule_index)(str(repository_id), str(history.id), branch=branch)
 
         return Response(
             {
@@ -744,14 +741,16 @@ class CodeSearchView(APIView):
         if reranker_enabled and len(search_results) > top_k:
             documents = [r["payload"].get("content", "") for r in search_results]
             reranked = await RerankerService.rerank(query, documents, top_n=top_k)
-            reranked_results = []
-            for item in reranked:
-                idx = item["index"]
-                if idx < len(search_results):
-                    entry = search_results[idx]
-                    entry["score"] = item["relevance_score"]
-                    reranked_results.append(entry)
-            search_results = reranked_results
+            # fail-open：rerank 返回空（未配置 / 调用失败 / 响应不可解析）时保留召回原序。
+            if reranked:
+                reranked_results = []
+                for item in reranked:
+                    idx = item["index"]
+                    if idx < len(search_results):
+                        entry = search_results[idx]
+                        entry["score"] = item["relevance_score"]
+                        reranked_results.append(entry)
+                search_results = reranked_results
 
         # EXCL-02 fail-closed：这是 frontend-reachable 的认证 REST RAG 读取面
         # （POST /api/repositories/<id>/search/，前端 searchCode 在用），不经统一
