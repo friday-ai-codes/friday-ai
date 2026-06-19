@@ -180,7 +180,9 @@ async def trigger_auto_index(
             "repository_id": str(repo_id),
             "history_id": history_id_str,
             "branch": None,
-            "trigger": tt,
+            # 统一传字符串值（与其余入队点 #2/#4/#5 一致）：tt 为 TextChoices 枚举成员，
+            # .value 取其字符串值，避免将来 run_index 转发 trigger 或换非 str 枚举时埋雷。
+            "trigger": tt.value,
         },
         queue=QUEUE_INDEX,
         idempotency_key=f"index:{repo_id}",
