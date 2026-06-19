@@ -37,10 +37,11 @@ created: 2026-06-20
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
 |---------|------|------|-------------|-----------|-------------------|--------|
-| 61-* migrate enqueue (5 points) | 01 | 1 | MIGRATE-01 | unit/integration | `uv run pytest tests/durable -q` | ⬜ pending |
+| 61-* migrate enqueue (5 points) | 02 | 2 | MIGRATE-01 | unit/integration | `uv run pytest tests/durable -q` | ⬜ pending |
 | 61-* durable handlers + idempotency | 01/02 | 1/2 | IDEMP-01 | unit | duplicate-dispatch/duplicate-exec guard tests | ⬜ pending |
-| 61-* one-time migration command | 02 | 2 | MIGRATE-02 | integration | migrate command idempotent re-run test | ⬜ pending |
-| 61-* reconcile "no durable takeover" | 02 | 2 | MIGRATE-02 | unit | reconcile does not FAIL RUNNING with live durable job | ⬜ pending |
+| 61-* has_active_by_key facade (both backends) | 01 | 1 | MIGRATE-02 | unit | facade resolves active job by queueing_lock key | ⬜ pending |
+| 61-* one-time migration command | 04 | 3 | MIGRATE-02 | integration | migrate command idempotent re-run test | ⬜ pending |
+| 61-* reconcile "no durable takeover" | 03 | 2 | MIGRATE-02 | unit | reconcile does not FAIL RUNNING with live durable job | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

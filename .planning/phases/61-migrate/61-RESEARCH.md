@@ -460,22 +460,25 @@ def has_active_durable_job_sync(idempotency_key: str) -> bool:
 | A3 | 给 ResumableTask 加 `legacy_durable_job_id` 列 + `MIGRATED` 枚举（vs 复用 payload/CANCELLED）是更优落点 | Standard Stack Alternatives | Claude's Discretion；选 JSON 列也可，无功能风险 |
 | A4 | resume_index/resume_graph（入队点#5）迁移策略为"resume handler 也改 defer" | 接入点全清单 | 若选"recovery 对 index/graph 短路"亦可——二者都能达成不双跑 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`DurableConfig.ready()` 重构以支持 in-process handler 注册**
+1. **`DurableConfig.ready()` 重构以支持 in-process handler 注册** — **RESOLVED → Plan 61-01 Task 2**
    - What we know: 当前 `ready()` 在 `not use_procrastinate_backend()` 时直接 `return`（`apps.py:24`），SQLite dev 不注册任何业务 handler。
    - What's unclear: in-process 业务 handler 须在 SQLite 路径也注册才能跑——`ready()` 结构需调整（procrastinate-only 段 import tasks；通用段无条件 register_business_handlers）。
    - Recommendation: planner 在 `ready()` 中把 `register_business_handlers()`（in-process adapter）放在 role 门禁通过后、procrastinate 判定**之外**无条件执行；`import durable.tasks`（@app.task）仍只在 procrastinate 分支。
+   - **RESOLVED:** Plan 61-01 Task 2 重构 `DurableConfig.ready()`——无条件调 `register_business_handlers()`（in-process adapter 两后端均注册），`from durable import tasks`（@app.task）仅留 procrastinate 分支。
 
-2. **同步入队点的 async_to_sync 包装**
+2. **同步入队点的 async_to_sync 包装** — **RESOLVED → Plan 61-02**
    - What we know: 入队点 #1（`_schedule_index` 同步函数）、#5（`resume_index` 同步函数）当前同步调 `run_in_background`；#2/#3 在 async 函数内；#4 在 async view 内。
    - What's unclear: 逐点确认调用上下文，避免 async/sync 误用。
    - Recommendation: async 上下文直接 `await DurableTaskService.defer(...)`；sync 上下文 `async_to_sync(DurableTaskService.defer)(...)`。
+   - **RESOLVED:** Plan 61-02 逐点核对调用上下文——同步入队点（#1/#5）用 `async_to_sync(DurableTaskService.defer)`，async 入队点（#2/#3/#4）直接 `await`。
 
-3. **graph 队列是否需要承接 auto_after_index**
+3. **graph 队列是否需要承接 auto_after_index** — **RESOLVED → 保持现状（auto graph 在 index durable 任务体内）**
    - What we know: auto graph 在 indexer 进程内同步执行，非独立入队。
    - What's unclear: 是否希望把 auto graph 也拆成独立 durable graph job（更细粒度恢复）。
    - Recommendation: 本阶段**保持现状**（auto graph 在 index durable 任务体内），拆分留 backlog——避免范围蔓延。
+   - **RESOLVED:** 本阶段保持现状——auto graph 仍在 index durable 任务体内进程内触发，不拆独立 durable graph job（拆分留 backlog，避免范围蔓延）。
 
 ## Environment Availability
 
