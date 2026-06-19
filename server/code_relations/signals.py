@@ -21,8 +21,9 @@ ChunkRegistry 行被删除（增量索引重切分 / 文件被删 / 仓库被清
 **为什么 _schedule_reconcile 用 run_in_background 不用 asyncio.run**（per contract）：
 signal handler 是同步上下文；用 `asyncio.run` 会与现有 event loop 冲突
 （CurrentThreadExecutor already quit 类问题）。统一走 `services.background_runner.
-run_in_background` 投递到常驻 worker loop —— 与 `IndexTriggerView._schedule_index`
-同模式。
+run_in_background` 投递到常驻 worker loop。（注：index 入队已于 Phase 61 迁移到
+`DurableTaskService.defer`，`IndexTriggerView._schedule_index` 不再是 run_in_background
+范式；本处 edge reconcile 仍走 run_in_background 常驻 worker loop。）
 """
 
 from __future__ import annotations
