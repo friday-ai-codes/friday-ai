@@ -17,6 +17,13 @@ class RepositoriesConfig(AppConfig):
 
     def ready(self) -> None:
         """Reset stuck indexing status on startup."""
+        # 进程角色门禁（DURABLE-02）：仅 web 进程跑此 web-only 启动副作用，
+        # worker/migrate/test 进程短路（记 info 日志），避免误杀在途索引行。
+        from durable.roles import should_run_startup_side_effects
+
+        if not should_run_startup_side_effects(job="reset_stuck_indexing"):
+            return
+
         # Run in a separate thread to avoid "SynchronousOnlyOperation" error
         # when the ASGI server's event loop is already running.
         thread = threading.Thread(target=self._reset_stuck_indexing, daemon=True)
