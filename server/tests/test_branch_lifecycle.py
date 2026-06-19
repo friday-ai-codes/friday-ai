@@ -385,8 +385,11 @@ async def test_base_push_marks_overlays_stale(
         )
         return {"status": "success"}
 
+    # 迁移后 trigger_auto_index 改走 durable（in-process 后端执行 durable_index →
+    # run_index → services.indexer.clone_and_index_repository），patch seam 上移到
+    # services.indexer 才能拦截后台续跑路径。
     with patch(
-        "tasks.index_trigger_tasks.clone_and_index_repository",
+        "services.indexer.clone_and_index_repository",
         side_effect=_fake_clone,
     ):
         result = await trigger_auto_index(

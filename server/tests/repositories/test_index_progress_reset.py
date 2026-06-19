@@ -52,8 +52,11 @@ async def test_trigger_index_resets_progress_counters(stale_indexed_repo: Reposi
     async def fake_index(repo_id: str, *, history_id: str | None = None, branch: str | None = None) -> dict:
         return {"status": "success"}
 
+    # 迁移后入队改走 durable（in-process 后端执行 durable_index → run_index →
+    # services.indexer.clone_and_index_repository），patch seam 随之从
+    # repositories.index_views 上移到 services.indexer。
     with (
-        patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index),
+        patch("services.indexer.clone_and_index_repository", side_effect=fake_index),
         patch(
             "repositories.index_views._acquire_index_lock_async",
             return_value=stale_indexed_repo,

@@ -168,24 +168,22 @@ async def trigger_auto_index(
     )
 
     history_id_str = str(history.id)
-    from resumable.models import ResumableTaskKind
-    from resumable.service import wrap_resumable
 
-    run_in_background(
-        wrap_resumable(
-            kind=ResumableTaskKind.INDEX,
-            target_id=str(repo_id),
-            payload={
-                "repository_id": str(repo_id),
-                "branch": None,
-                "trigger": tt,
-            },
-            name=f"auto-index-{repo_id}",
-            coro_factory=lambda: clone_and_index_repository(
-                repo_id, history_id=history_id_str
-            ),
-        ),
-        name=f"auto-index-{repo_id}",
+    # durable 入队 + deterministic key 去重（index:{repo_id}）；保留上面的
+    # already_indexing / _is_duplicate 业务防抖（与队列层 key 去重互补）。
+    # IndexHistory 仍为进度真相源，FileIndex checkpoint 在任务体内复用。
+    from durable import QUEUE_INDEX, DurableTaskService
+
+    await DurableTaskService.defer(
+        "durable_index",
+        {
+            "repository_id": str(repo_id),
+            "history_id": history_id_str,
+            "branch": None,
+            "trigger": tt,
+        },
+        queue=QUEUE_INDEX,
+        idempotency_key=f"index:{repo_id}",
     )
 
     logger.info(
