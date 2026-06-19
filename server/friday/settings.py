@@ -106,6 +106,7 @@ INSTALLED_APPS = [
     "feedback",
     "system",
     "resumable",
+    "durable",
     "repositories",
     "codegraph",
     "code_relations",
@@ -242,6 +243,18 @@ RUNNER_REGISTRATION_TOKEN = env.str("RUNNER_REGISTRATION_TOKEN", default="")
 
 DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'friday.db'}"
 DATABASES = {"default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL)}
+
+# =============================================================================
+# durable 任务底座（DurableTaskService 适配层）
+# =============================================================================
+# 后端选择：auto=按 DB 引擎自动（Postgres→Procrastinate durable / 否则 in-process
+# fallback）/ procrastinate=强制 durable（需 Postgres，非 Postgres 时 fail-soft 回退）
+# / inprocess=强制进程内 fallback（即便 Postgres）。唯一权威判定见
+# durable.service._use_procrastinate（service 与 settings 共用同一函数）。
+DURABLE_TASK_BACKEND = env.str("DURABLE_TASK_BACKEND", default="auto")
+# 进程角色：web|worker|scheduler|migrate|test，门禁 AppConfig.ready() 启动副作用
+# （DURABLE-02，Plan 60-02 消费）；默认 web 保持既有单进程部署零回归。
+FRIDAY_PROCESS_ROLE = env.str("FRIDAY_PROCESS_ROLE", default="web")
 
 # =============================================================================
 # Custom User Model
