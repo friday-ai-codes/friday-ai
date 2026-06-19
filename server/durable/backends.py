@@ -267,10 +267,24 @@ class ProcrastinateBackend:
             return None
         from procrastinate.contrib.django import app
 
-        jobs = list(await app.job_manager.list_jobs_async(queueing_lock=idempotency_key))
+        # 按状态过滤取活跃 job：list_jobs_async(queueing_lock=...) 不限状态会返回该
+        # lock 下所有历史 job（含 succeeded/failed），jobs[0] 可能是早先已结束的同
+        # lock job，导致幂等 defer 返回陈旧 job 标识（WR-02）。优先 todo、其次 doing，
+        # 取最新一条（id 最大）作为"当前在队/在跑"的那条。
+        jobs = list(
+            await app.job_manager.list_jobs_async(
+                queueing_lock=idempotency_key, status="todo"
+            )
+        )
+        if not jobs:
+            jobs = list(
+                await app.job_manager.list_jobs_async(
+                    queueing_lock=idempotency_key, status="doing"
+                )
+            )
         if not jobs:
             return None
-        return str(jobs[0].id)
+        return str(max(jobs, key=lambda j: j.id).id)
 
     async def get(self, job_id: str) -> dict[str, Any]:
         # 非数字 / None job_id 优雅返回 unknown，对齐 in-process 后端"从不抛"语义
