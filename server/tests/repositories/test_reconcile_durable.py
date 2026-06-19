@@ -306,3 +306,92 @@ def test_reconcile_graph_marks_failed_when_no_durable(monkeypatch) -> None:
     repo.refresh_from_db()
     assert stale.status == GraphBuildHistoryStatus.FAILED
     assert repo.graph_build_status == RepositoryGraphStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# reconcile 级 Test 9：真实 Postgres 多仓库逐仓库 async_to_sync 路径不误杀（WR-02）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.postgres_queue
+@pytest.mark.enable_socket
+@pytest.mark.django_db(transaction=True)
+def test_reset_stuck_indexing_real_postgres_multi_repo_no_misfire(procrastinate_app) -> None:
+    """真实 Postgres、多仓库：repo_active 有在途 durable index job、repo_idle 无。
+
+    走 ``_reset_stuck_indexing`` → 对每个 INDEXING 候选仓库逐个 ``has_active_durable_job_sync``
+    （内部 ``async_to_sync(has_active_durable_job)`` 真实查 procrastinate async DB，
+    即 per-call new-loop 路径，**不 monkeypatch helper**）。断言 repo_active 保留
+    INDEXING / RUNNING（绝不误杀在途，锁定 SC3），repo_idle 标 FAILED（旧行为）。
+    关闭 WR-02 健壮性覆盖盲区："reconcile 在真实 Postgres 下逐仓库经 async_to_sync
+    多次查询"此前从未被集成验证。
+    """
+    from asgiref.sync import async_to_sync
+    from django.utils import timezone
+
+    from durable.queues import QUEUE_INDEX
+    from durable.service import DurableTaskService
+    from repositories.apps import RepositoriesConfig
+    from repositories.models import (
+        IndexHistory,
+        IndexHistoryStatus,
+        IndexStatus,
+        Repository,
+        TriggerType,
+    )
+
+    repo_active = Repository.objects.create(
+        name="durable-pg-active",
+        git_url="https://github.com/test/durable-pg-active.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXING,
+    )
+    repo_idle = Repository.objects.create(
+        name="durable-pg-idle",
+        git_url="https://github.com/test/durable-pg-idle.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXING,
+    )
+    history_active = IndexHistory.objects.create(
+        repository=repo_active,
+        trigger_type=TriggerType.MANUAL,
+        status=IndexHistoryStatus.RUNNING,
+        started_at=timezone.now(),
+    )
+    history_idle = IndexHistory.objects.create(
+        repository=repo_idle,
+        trigger_type=TriggerType.MANUAL,
+        status=IndexHistoryStatus.RUNNING,
+        started_at=timezone.now(),
+    )
+
+    # 仅 repo_active 落一个真实在途 durable index job（queueing_lock=index:{id}，
+    # 落 todo 即活跃集命中）；repo_idle 不投递，保持无在途。
+    async_to_sync(DurableTaskService.defer)(
+        "durable_index",
+        {
+            "repository_id": str(repo_active.id),
+            "history_id": str(history_active.id),
+            "branch": None,
+            "trigger": "manual",
+        },
+        queue=QUEUE_INDEX,
+        idempotency_key=f"index:{repo_active.id}",
+    )
+
+    RepositoriesConfig._reset_stuck_indexing()
+
+    repo_active.refresh_from_db()
+    repo_idle.refresh_from_db()
+    history_active.refresh_from_db()
+    history_idle.refresh_from_db()
+
+    # repo_active：有在途 durable job → 仓库 + History 均保留 RUNNING（不误杀）
+    assert repo_active.index_status == IndexStatus.INDEXING
+    assert history_active.status == IndexHistoryStatus.RUNNING
+    # repo_idle：无在途 → 标 FAILED（旧行为不留僵尸）
+    assert repo_idle.index_status == IndexStatus.FAILED
+    assert history_idle.status == IndexHistoryStatus.FAILED
+    assert history_idle.finished_at is not None
