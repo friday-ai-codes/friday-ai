@@ -54,3 +54,52 @@ jobs:
       # 无需显式 -m；该步骤即"SQLite 默认路径不受影响"的零回归门禁。
       - name: Pytest (SQLite 默认路径)
         run: uv run pytest
+
+  postgres-queue:
+    name: postgres-queue (durable Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    # 后端经唯一权威判定 _use_procrastinate：Postgres + DURABLE_TASK_BACKEND∈{auto,procrastinate}
+    # → 启用 Procrastinate 并注册 procrastinate.contrib.django（migrate 据此建 procrastinate 表）。
+    env:
+      DATABASE_URL: postgres://friday:friday@127.0.0.1:5432/friday_test
+      DURABLE_TASK_BACKEND: procrastinate
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: friday
+          POSTGRES_PASSWORD: friday
+          POSTGRES_DB: friday_test
+        ports:
+          - 5432:5432
+        # pg_isready health check：service 就绪前 job 步骤不会启动，避免连接竞态
+        options: >-
+          --health-cmd "pg_isready -U friday -d friday_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: server/.python-version
+          allow-prereleases: true
+      - name: Install dependencies (含 dev 组)
+        run: uv sync --locked --dev
+      # 迁移角色短路 web-only 启动副作用（DURABLE-02）；对真实 Postgres 建含
+      # procrastinate 的全部表，避免测试期 `relation "procrastinate_jobs" does not exist`（Pitfall 3）。
+      - name: Migrate (建 procrastinate 表)
+        env:
+          FRIDAY_PROCESS_ROLE: migrate
+        run: uv run python manage.py migrate --noinput
+      # --allow-hosts 放行 pytest-socket（默认 --disable-socket）对 127.0.0.1:5432 的 TCP 连接（Pitfall 2）。
+      # 覆盖 defer/priority/retry-backoff/stalled rescue(forged-heartbeat)/并发 worker 竞争/SQLite fallback 退化。
+      # 注：真实 kill-worker E2E 为 human_needed（见 60-VALIDATION.md），CI 以 forged-heartbeat 自动逼近 rescue。
+      - name: Pytest -m postgres_queue (durable Postgres 行为)
+        run: uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost
