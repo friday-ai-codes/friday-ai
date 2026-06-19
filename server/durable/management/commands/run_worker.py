@@ -63,7 +63,11 @@ class Command(BaseCommand):
         # get_worker_connector()：检测到 psycopg3 → 返回 PsycopgConnector（独立 async
         # 连接，专为长跑 worker）；绝不复用 DjangoConnector 跑 worker。
         connector = app.connector.get_worker_connector()
-        async with app.replace_connector(connector) as worker_app:
+        # app.replace_connector 是**同步** @contextlib.contextmanager（仅 __enter__/
+        # __exit__），必须用同步 `with`——官方 procrastinate worker 命令亦如此。误用
+        # async with 会因缺 __aenter__ 抛 TypeError、worker 一启动即崩（CR-02）。
+        # 在 async 函数内对同步 CM 用同步 with 合法：进入/退出只替换 connector、不阻塞。
+        with app.replace_connector(connector) as worker_app:
             # listen_notify=False 必须显式传入（锁定决策）：v1 走 polling，低延迟
             # NOTIFY 唤醒 deferred 到 v2（DURABLEX-01）。
             await worker_app.run_worker_async(queues=queues, listen_notify=False)
