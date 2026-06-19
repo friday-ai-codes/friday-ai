@@ -225,11 +225,15 @@ class ProcrastinateBackend:
         from procrastinate import exceptions
         from procrastinate.contrib.django import app
 
+        # 按调用方传入的稳定逻辑名查注册表：`durable.tasks` 的每个 @app.task 都显式
+        # 声明 `name=`（如 "durable_ping"），与此处查找键是同一 single source of
+        # truth——绝不依赖 procrastinate 默认的函数全路径注册名（会与逻辑名不匹配）。
         task_obj = app.tasks.get(task)
         if task_obj is None:
             raise KeyError(
                 f"durable 任务 {task!r} 未在 procrastinate app 注册"
-                "（确认 durable.tasks 已被 DurableConfig.ready() 导入触发 @app.task）"
+                "（确认 durable.tasks 已被 DurableConfig.ready() 导入触发 @app.task，"
+                "且 @app.task(name=...) 的显式名与本逻辑名一致）"
             )
 
         # 仅在显式给出时才透传对应配置项：queueing_lock 让同 key 在 todo 唯一（幂等

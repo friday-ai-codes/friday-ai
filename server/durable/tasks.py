@@ -21,7 +21,7 @@ from durable.queues import QUEUE_MAINTENANCE
 logger = structlog.get_logger(__name__)
 
 
-@app.task(queue=QUEUE_MAINTENANCE)
+@app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)
 async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """最小可 defer 的烟囱 / 测试任务。
 
@@ -33,7 +33,11 @@ async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 @app.periodic(cron="*/10 * * * *")
-@app.task(queueing_lock="retry_stalled_durable_jobs", pass_context=True)
+@app.task(
+    name="retry_stalled_durable_jobs",
+    queueing_lock="retry_stalled_durable_jobs",
+    pass_context=True,
+)
 async def retry_stalled_durable_jobs(context: Any, timestamp: int) -> int:
     """周期单例 stalled rescue（DURABLE-03），替代 flock 与"仅启动补扫"。
 
