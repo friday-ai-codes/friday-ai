@@ -133,3 +133,176 @@ def test_has_active_durable_job_sync_fail_safe(monkeypatch) -> None:
 
     monkeypatch.setattr(service.DurableTaskService, "has_active_by_key", _boom)
     assert has_active_durable_job_sync("index:R") is False
+
+
+# ---------------------------------------------------------------------------
+# reconcile 级 Test 5-6：repositories._reset_stuck_indexing 接入判定
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reset_stuck_indexing_keeps_running_when_durable_active(monkeypatch) -> None:
+    """有在途 durable index job（helper True）→ 仓库保留 INDEXING、IndexHistory 保留 RUNNING。"""
+    from django.utils import timezone
+
+    import durable.reconcile as reconcile_mod
+    from repositories.apps import RepositoriesConfig
+    from repositories.models import (
+        IndexHistory,
+        IndexHistoryStatus,
+        IndexStatus,
+        Repository,
+        TriggerType,
+    )
+
+    repo = Repository.objects.create(
+        name="durable-active-repo",
+        git_url="https://github.com/test/durable-active.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXING,
+    )
+    history = IndexHistory.objects.create(
+        repository=repo,
+        trigger_type=TriggerType.MANUAL,
+        status=IndexHistoryStatus.RUNNING,
+        started_at=timezone.now(),
+    )
+
+    monkeypatch.setattr(reconcile_mod, "has_active_durable_job_sync", lambda key: True)
+
+    RepositoriesConfig._reset_stuck_indexing()
+
+    repo.refresh_from_db()
+    history.refresh_from_db()
+    assert repo.index_status == IndexStatus.INDEXING
+    assert history.status == IndexHistoryStatus.RUNNING
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reset_stuck_indexing_marks_failed_when_no_durable(monkeypatch) -> None:
+    """无在途 durable job（helper False）→ 仓库 / IndexHistory 标 FAILED（旧行为不留僵尸）。"""
+    from django.utils import timezone
+
+    import durable.reconcile as reconcile_mod
+    from repositories.apps import RepositoriesConfig
+    from repositories.models import (
+        IndexHistory,
+        IndexHistoryStatus,
+        IndexStatus,
+        Repository,
+        TriggerType,
+    )
+
+    repo = Repository.objects.create(
+        name="no-durable-repo",
+        git_url="https://github.com/test/no-durable.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXING,
+    )
+    history = IndexHistory.objects.create(
+        repository=repo,
+        trigger_type=TriggerType.MANUAL,
+        status=IndexHistoryStatus.RUNNING,
+        started_at=timezone.now(),
+    )
+
+    monkeypatch.setattr(reconcile_mod, "has_active_durable_job_sync", lambda key: False)
+
+    RepositoriesConfig._reset_stuck_indexing()
+
+    repo.refresh_from_db()
+    history.refresh_from_db()
+    assert repo.index_status == IndexStatus.FAILED
+    assert history.status == IndexHistoryStatus.FAILED
+    assert history.finished_at is not None
+
+
+# ---------------------------------------------------------------------------
+# reconcile 级 Test 7-8：codegraph.reconcile_orphaned_graph_builds 接入判定
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reconcile_graph_keeps_running_when_durable_active(monkeypatch) -> None:
+    """有在途 durable graph job（helper True）→ orphan RUNNING 保留、仓库聚合态不归位。"""
+    from django.utils import timezone
+
+    import durable.reconcile as reconcile_mod
+    from codegraph.apps import reconcile_orphaned_graph_builds
+    from repositories.models import (
+        GraphBuildHistory,
+        GraphBuildHistoryStatus,
+        GraphBuildHistoryTrigger,
+        IndexStatus,
+        Repository,
+        RepositoryGraphStatus,
+    )
+
+    repo = Repository.objects.create(
+        name="durable-graph-active",
+        git_url="https://github.com/test/durable-graph.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXED,
+        graph_build_status=RepositoryGraphStatus.RUNNING,
+    )
+    stale = GraphBuildHistory.objects.create(
+        repository=repo,
+        trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+        status=GraphBuildHistoryStatus.RUNNING,
+        started_at=timezone.now() - timezone.timedelta(minutes=120),
+    )
+
+    monkeypatch.setattr(reconcile_mod, "has_active_durable_job_sync", lambda key: True)
+
+    reconciled = reconcile_orphaned_graph_builds(timeout_minutes=30)
+
+    assert reconciled == 0
+    stale.refresh_from_db()
+    repo.refresh_from_db()
+    assert stale.status == GraphBuildHistoryStatus.RUNNING
+    assert repo.graph_build_status == RepositoryGraphStatus.RUNNING
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reconcile_graph_marks_failed_when_no_durable(monkeypatch) -> None:
+    """无在途 durable graph job（helper False）→ orphan RUNNING 回收 FAILED（旧行为）。"""
+    from django.utils import timezone
+
+    import durable.reconcile as reconcile_mod
+    from codegraph.apps import reconcile_orphaned_graph_builds
+    from repositories.models import (
+        GraphBuildHistory,
+        GraphBuildHistoryStatus,
+        GraphBuildHistoryTrigger,
+        IndexStatus,
+        Repository,
+        RepositoryGraphStatus,
+    )
+
+    repo = Repository.objects.create(
+        name="no-durable-graph",
+        git_url="https://github.com/test/no-durable-graph.git",
+        git_platform="github",
+        default_branch="main",
+        index_status=IndexStatus.INDEXED,
+        graph_build_status=RepositoryGraphStatus.RUNNING,
+    )
+    stale = GraphBuildHistory.objects.create(
+        repository=repo,
+        trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+        status=GraphBuildHistoryStatus.RUNNING,
+        started_at=timezone.now() - timezone.timedelta(minutes=120),
+    )
+
+    monkeypatch.setattr(reconcile_mod, "has_active_durable_job_sync", lambda key: False)
+
+    reconciled = reconcile_orphaned_graph_builds(timeout_minutes=30)
+
+    assert reconciled == 1
+    stale.refresh_from_db()
+    repo.refresh_from_db()
+    assert stale.status == GraphBuildHistoryStatus.FAILED
+    assert repo.graph_build_status == RepositoryGraphStatus.FAILED
