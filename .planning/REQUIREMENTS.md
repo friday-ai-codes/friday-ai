@@ -16,10 +16,10 @@
 
 ### durable 底座地基（DURABLE）
 
-- [ ] **DURABLE-01**: `DurableTaskService` 适配层隔离队列实现——Postgres 走 Procrastinate 3.8.1、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback；统一接口 `defer(task, payload, *, queue, priority, idempotency_key, run_at) / get / cancel / retry_stalled`；worker 用独立进程/worker connector（先 `listen_notify=False` polling）。后端选择点：`DATABASE_URL` 为 Postgres 且 `DURABLE_TASK_BACKEND=procrastinate` 用 Procrastinate，否则 in-process fallback。
-- [ ] **DURABLE-02**: 引入 `FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 进程角色门禁，收口 `repositories.apps` / `codegraph.apps` / `resumable.apps` 的 `AppConfig.ready()` 启动副作用——worker/migrate 进程不跑 web-only 的 reconcile/sweep/startup jobs，消除"只迁队列表时业务表不存在"类 warning 与误杀风险。
-- [ ] **DURABLE-03**: 内置 `retry_stalled_durable_jobs` 周期任务，经 `queueing_lock` 单例（leader）调 `get_stalled_jobs()` + `retry_job()` 扫 stalled 重投，替代现有"仅启动后补扫 3 次"与 `runapscheduler` 的本地 `flock`；多副本下只有一个 leader 执行周期 rescue 与单例 cron。
-- [ ] **DURABLE-04**: 新增 Postgres 专项 CI（GitHub Actions service container `postgres:17-alpine` + pytest `postgres_queue` marker），覆盖 defer / priority / retry-backoff / stalled rescue / 并发 worker 竞争 / SQLite fallback；与现有 SQLite 默认测试路径共存（marker 分层，默认 job 仍走 SQLite）。
+- [x] **DURABLE-01**: `DurableTaskService` 适配层隔离队列实现——Postgres 走 Procrastinate 3.8.1、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback；统一接口 `defer(task, payload, *, queue, priority, idempotency_key, run_at) / get / cancel / retry_stalled`；worker 用独立进程/worker connector（先 `listen_notify=False` polling）。后端选择点：`DATABASE_URL` 为 Postgres 且 `DURABLE_TASK_BACKEND=procrastinate` 用 Procrastinate，否则 in-process fallback。
+- [x] **DURABLE-02**: 引入 `FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 进程角色门禁，收口 `repositories.apps` / `codegraph.apps` / `resumable.apps` 的 `AppConfig.ready()` 启动副作用——worker/migrate 进程不跑 web-only 的 reconcile/sweep/startup jobs，消除"只迁队列表时业务表不存在"类 warning 与误杀风险。
+- [x] **DURABLE-03**: 内置 `retry_stalled_durable_jobs` 周期任务，经 `queueing_lock` 单例（leader）调 `get_stalled_jobs()` + `retry_job()` 扫 stalled 重投，替代现有"仅启动后补扫 3 次"与 `runapscheduler` 的本地 `flock`；多副本下只有一个 leader 执行周期 rescue 与单例 cron。
+- [x] **DURABLE-04**: 新增 Postgres 专项 CI（GitHub Actions service container `postgres:17-alpine` + pytest `postgres_queue` marker），覆盖 defer / priority / retry-backoff / stalled rescue / 并发 worker 竞争 / SQLite fallback；与现有 SQLite 默认测试路径共存（marker 分层，默认 job 仍走 SQLite）。
 
 ### 迁移 index/graph + 收口 ResumableTask（MIGRATE）
 
@@ -72,10 +72,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DURABLE-01 | Phase 60 | Pending |
-| DURABLE-02 | Phase 60 | Pending |
-| DURABLE-03 | Phase 60 | Pending |
-| DURABLE-04 | Phase 60 | Pending |
+| DURABLE-01 | Phase 60 | Complete |
+| DURABLE-02 | Phase 60 | Complete |
+| DURABLE-03 | Phase 60 | Complete |
+| DURABLE-04 | Phase 60 | Complete |
 | MIGRATE-01 | Phase 61 | Pending |
 | MIGRATE-02 | Phase 61 | Pending |
 | IDEMP-01 | Phase 61 | Pending |

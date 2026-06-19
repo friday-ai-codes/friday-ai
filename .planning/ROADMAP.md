@@ -23,7 +23,7 @@
 
 **Milestone Goal:** 把现有"可恢复长任务底座"（`server/resumable/`：DB 真相源 + lease/heartbeat + CAS claim + 启动恢复）演进为生产级 **durable 任务队列**——**采用 Procrastinate（3.8.1），藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。执行语义 **at-least-once**（不承诺 exactly-once）——靠 handler 幂等 + 外部副作用 fencing/outbox。
 
-- [ ] **Phase 60: durable 底座地基** (0/4 plans) - 立 `DurableTaskService` 适配层（Postgres→Procrastinate / SQLite→in-process fallback）+ `FRIDAY_PROCESS_ROLE` 启动副作用门禁 + 周期 rescue/leader 单例（替代 flock 与仅启动补扫）+ Postgres 专项 CI；所有后续阶段的地基 — DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04
+- [x] **Phase 60: durable 底座地基** (0/4 plans) - 立 `DurableTaskService` 适配层（Postgres→Procrastinate / SQLite→in-process fallback）+ `FRIDAY_PROCESS_ROLE` 启动副作用门禁 + 周期 rescue/leader 单例（替代 flock 与仅启动补扫）+ Postgres 专项 CI；所有后续阶段的地基 — DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04 (completed 2026-06-19)
   - [x] 60-01-PLAN.md — DurableTaskService 适配层 + in-process fallback + 队列常量 + roles helper + no-import 守护（wave 1）
   - [x] 60-02-PLAN.md — FRIDAY_PROCESS_ROLE 门禁三处 AppConfig.ready() 启动副作用（wave 2）
   - [x] 60-03-PLAN.md — Procrastinate 后端 + 独立 worker + 周期 stalled rescue 单例 + postgres_queue 测试（wave 2）
@@ -166,7 +166,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 60. durable 底座地基 | 4/4 | Complete   | 2026-06-19 |
+| 60. durable 底座地基 | 4/4 | Complete    | 2026-06-19 |
 | 61. 迁移 index/graph + 收口 ResumableTask | 0/? | Not started | - |
 | 62. 爬取+入库 durable 队列 + PageIndex 接入 | 0/? | Not started | - |
 | 63. 部署硬化 + 外部副作用 fencing | 0/? | Not started | - |
