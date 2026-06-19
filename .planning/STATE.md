@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-19T16:35:02.496Z"
 last_activity: 2026-06-19
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,45 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-17 — start milestone v0.11.0)
+See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.11.0：对外开放与协作层——内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（INV-5 非 CoT、不误用 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，飞书机器人对话改走原生 CardKit 流式卡片，工作流自动建群节点。
-**Current focus:** Phase 59 — 工作流自动建群节点
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.12.0：把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 **durable 任务队列**——采用 Procrastinate，藏在 `DurableTaskService` 适配层后（Postgres→Procrastinate / SQLite→in-process 非 durable fallback）；统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor。
+**Current focus:** Phase 60 — durable 底座地基
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 60 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-19 — Milestone v0.12.0 started
+Status: Roadmap drafted — ready for `/gsd-plan-phase 60`
+Last activity: 2026-06-20 — Milestone v0.12.0 roadmap created (Phases 60–64)
+
+## Milestone Overview (v0.12.0 — Phases 60–64)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 60 | durable 底座地基 | DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04 | ⬜ Not started |
+| 61 | 迁移 index/graph + 收口 ResumableTask | MIGRATE-01, MIGRATE-02, IDEMP-01 | ⬜ Not started |
+| 62 | 爬取+入库 durable 队列 + PageIndex 接入 | CRAWL-01, CRAWL-02, PAGEIDX-01 | ⬜ Not started |
+| 63 | 部署硬化 + 外部副作用 fencing | DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02 | ⬜ Not started |
+| 64 | runner k8s Job executor | RUNNER-01, RUNNER-02 | ⬜ Not started |
+
+**Execution order:** 60 → 61 → 62 → 63 → 64（严格顺序，每阶段建立在前序底座之上）。依赖链：durable 底座地基(60，所有后续的地基) → 迁移 index/graph + 收口 ResumableTask + 幂等基线(61，迁移范式) → 爬取+入库 durable 队列 + PageIndex(62，首个用户可见垂直切片) → 部署硬化 + 外部副作用 fencing(63) → runner k8s Job executor(64，相对独立但排最后)。
+
+**UI 触面（标 UI hint）:** Phase 62（前端爬取任务队列面板 `BatchIngestPanel`，本里程碑唯一 Web 前端重触面）。其余为后端适配层/迁移(60/61)、部署编排(63，helm/compose)、Go runner(64)。
+
+**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
+
+- **采用 Procrastinate 3.8.1，藏在 `DurableTaskService` 适配层后**：业务代码不直接 import Procrastinate；Postgres→Procrastinate、SQLite/无 `DATABASE_URL`→in-process 非 durable fallback；统一接口 `defer/get/cancel/retry_stalled` + idempotency_key + queue/priority。
+- **三条硬前置（PoC 结论）**：① worker 必须独立进程（用 `get_worker_connector()`/官方 management command，不能直接拿 DjangoConnector 跑 worker）；② SQLite 只能是非 durable dev fallback（真实 compose/helm 默认 Postgres，`docker-compose.yaml:37`/`settings.py:243`）；③ 先收口 `AppConfig.ready()` 启动副作用（否则 worker/migrate 进程会跑业务 reconcile 误杀在途任务）。
+- **执行语义 at-least-once，不承诺 exactly-once**：DB claim 仅保证"同一轮领取只一个成功"；"慢≠死"误判 + 完成未标记即崩仍会重复执行——index/graph/crawl/page_index handler 必须幂等（checkpoint/deterministic key/upsert），外部副作用（飞书通知/建群、MR/PR 创建）上 fencing token 或 outbox。
+- **一个底座、多条逻辑队列**（index/graph/crawl_ingest/page_index/maintenance）：各自并发与伸缩，避免长任务（索引）堵短任务（爬取/页面生成）。
+- **scheduler/rescue 单例改 DB leader（`queueing_lock`），弃用本地 `flock`**：`flock` 仅单机有效、跨 Pod 失效；周期 rescue 与 cron 收敛到一个 leader workload。
+- **收口 `ResumableTask`**：Procrastinate/适配层接管生产职责，不三套并存；`background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑。
+- **聊天/RAG 流式问答明确不进队列**：请求级、流式、断开让用户重试。workflow execution / RepoCodingTask 保留自有引擎，只做"从持久化态重驱"的恢复桥接，不扁平成普通 job。
+- **i18n 默认中文**（爬取队列面板文案接入既有 vue-i18n）。
+- **显式非目标 / Out of Scope**：承诺 exactly-once、单一队列塞所有任务、聊天/RAG 进 durable 队列、workflow/RepoCodingTask 整体塞队列、引入 Celery/Temporal/Kafka 等重运维组件、SQLite 下 durable 保证、`listen_notify=True` 低延迟唤醒（留 v2 DURABLEX-01）。
+
+**设计底座引用:** 本里程碑前置 PoC 调研结论（Procrastinate 3.8.1 / Python 3.14 / Django 6.0 / psycopg 3.3，adrf `defer_async`、worker queue/priority/periodic/retry/stalled rescue 实测 PASS）+ 现有 `server/resumable/`（lease/CAS/recovery 范式）、`.planning/PROJECT.md`（Current Milestone v0.12.0 + Key context + Key Decisions 8 条 Pending）、`.planning/REQUIREMENTS.md`（16 v1 需求 + Out of Scope + Traceability）。
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
@@ -480,12 +508,13 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-17
-Stopped at: Completed 59-02-PLAN.md（Wave 2：CreateGroupChatNode 节点接线，建群→chat_id→可选 writeback fail-soft，Phase 59 2/2）
+Last session: 2026-06-20
+Stopped at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
 Resume file: None
-Next: Phase 59 完成、v0.11.0 里程碑 4 phases 全部 Complete——`/gsd-complete-milestone` 或 `/gsd-verify-work 59`
+Next: `/gsd-plan-phase 60`（durable 底座地基）
 
 ## Operator Next Steps
 
-- v0.11.0 里程碑已定稿，Phases 56–59 待执行。
-- 新会话 autonomous 跑完整个里程碑：`/gsd-autonomous`（或逐 phase `/gsd-plan-phase 56` → `/gsd-execute-phase 56` …）。
+- v0.12.0 里程碑 roadmap 已定稿，Phases 60–64 待规划/执行。
+- 逐 phase 推进：`/gsd-plan-phase 60` → `/gsd-execute-phase 60` …（严格顺序 60→61→62→63→64）。
+- 或新会话 autonomous 跑完整个里程碑：`/gsd-autonomous`。

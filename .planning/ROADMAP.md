@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- 🚧 **v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）** — Phases 60–64 (planning) — durable 任务队列 + 多副本竞争消费/周期 rescue/leader 选主/优雅终止/弹性伸缩 + runner k8s Job executor
 - ✅ **v0.11.0 开放与协作** — Phases 56–59 (shipped 2026-06-17) — 里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [audit](./milestones/v0.11.0-MILESTONE-AUDIT.md)
 - ✅ **v0.10.0 操作审计治理** — Phases 53–55 (shipped 2026-06-17) — [archive](./milestones/v0.10.0-ROADMAP.md)
 - ✅ **v0.9.0 SDD / OpenSpec 支持（重型）** — Phases 48–52 (shipped 2026-06-17) — [archive](./milestones/v0.9.0-ROADMAP.md)
@@ -14,74 +15,104 @@
 - ✅ **v0.2.0 用户身份令牌与 Agent 工具打通** — Phases 6–11 (shipped 2026-06-10) — [archive](./milestones/v0.2.0-ROADMAP.md)
 - ✅ **v0.1.0 首启初始化向导** — Phases 1–5 (shipped 2026-06-09) — [archive](./milestones/v0.1.0-ROADMAP.md)
 
-> 跨里程碑前瞻路线（v0.5–v0.11）与设计底座见 `ROADMAP-vNext.md`、`DOMAIN-MODEL.md`、`PREFLIGHT.md`。v0.11 为本前瞻路线的收官里程碑。
+> 跨里程碑前瞻路线（v0.5–v0.11）与设计底座见 `ROADMAP-vNext.md`、`DOMAIN-MODEL.md`、`PREFLIGHT.md`。本里程碑设计底座为前置 PoC 调研结论（Procrastinate 3.8.1 / Py3.14 / Django 6.0 / psycopg 3.3，PASS）+ 现有 `server/resumable/`（lease/CAS/recovery 范式）。
 
 ## Phases
 
-### ✅ v0.11.0 开放与协作 (Shipped 2026-06-17 — 审计 PASS)
+### 🚧 v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）(Phases 60–64 — planning)
 
-**Milestone Goal:** 对外开放与协作层——把内部工具调用（RAG/grep/仓库分析）作为 progress/trace 事件透出给 OpenAI/Anthropic 兼容调用方（复用 v0.7 起沉淀的 §15 事件 taxonomy，INV-5 非模型私有 CoT、不误用标准 tool_calls），新增 Anthropic 兼容 `/v1/messages` 端点，把飞书机器人对话改走原生 CardKit 流式卡片，并提供工作流自动建群节点。设计底座：`ROADMAP-vNext.md §v0.11`、`DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格）。`PREFLIGHT.md` 无映射 v0.11 的 blocking/should-fix 项。
+**Milestone Goal:** 把现有"可恢复长任务底座"（`server/resumable/`：DB 真相源 + lease/heartbeat + CAS claim + 启动恢复）演进为生产级 **durable 任务队列**——**采用 Procrastinate（3.8.1），藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。执行语义 **at-least-once**（不承诺 exactly-once）——靠 handler 幂等 + 外部副作用 fencing/outbox。
 
-- [x] **Phase 56: compat 内部工具调用 → progress/trace 事件透出** (2/2 plans, complete 2026-06-17) - OpenAI 兼容流式响应把内部工具调用经 §15 taxonomy 映射为 progress/`reasoning_summary`，不暴露 CoT、不误用 tool_calls（INV-5），缺事件优雅降级零回归 — TRACE-01, TRACE-02
-- [x] **Phase 57: Anthropic 兼容端点 `/v1/messages`** (2/2 plans, complete 2026-06-17) - 新增 Anthropic Messages 形状映射端点（复用既有 chat/agent 内核），非流式 + 流式（SSE）可用，trace 经 thinking block adapter 复用 Phase 56 retrieval_to_progress 命中计数（INV-5 非 CoT、不发 tool_use block） — ANTHROPIC-01, ANTHROPIC-02
-- [x] **Phase 58: 飞书原生流式卡片（CardKit）** (2/2 plans, complete 2026-06-17) - 飞书机器人对话回复改走原生 CardKit 流式增量卡片（替代 PATCH 全量替换），体验顺滑无全量重绘 — CARD-01
-- [x] **Phase 59: 工作流自动建群节点** (2/2 plans, complete 2026-06-17) - 新增"自动建群"工作流节点：创建飞书群 + 拉入成员（替代仅 `add_bot_to_chat`），群 chat_id 作节点输出供下游/写回 `WorkItem.feishu_chat_id` — GROUP-01
+- [ ] **Phase 60: durable 底座地基** (0/? plans) - 立 `DurableTaskService` 适配层（Postgres→Procrastinate / SQLite→in-process fallback）+ `FRIDAY_PROCESS_ROLE` 启动副作用门禁 + 周期 rescue/leader 单例（替代 flock 与仅启动补扫）+ Postgres 专项 CI；所有后续阶段的地基 — DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04
+- [ ] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/? plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01
+- [ ] **Phase 62: 爬取+入库 durable 队列 + PageIndex 接入** (0/? plans) - 链接爬取+入库改 durable 任务（入队/开始/停止/重试/断点恢复，刷新与容器重建不丢，前后端可用，首个用户可见垂直切片）；PageIndex/TOC 按 hash 幂等接入 — CRAWL-01, CRAWL-02, PAGEIDX-01
+- [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/? plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
+- [ ] **Phase 64: runner k8s Job executor** (0/? plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
 
 ## Phase Details
 
-### Phase 56: compat 内部工具调用 → progress/trace 事件透出
+### Phase 60: durable 底座地基
 
-**Goal**: OpenAI 兼容调用方能看到内部工具调用的进度，且绝不破坏规范客户端（不误用 tool_calls / 不泄漏 CoT）
-**Depends on**: Nothing（复用 v0.7 §15 事件 taxonomy `PlanSessionEvent`/`event_taxonomy` + 既有 `server/compat/` `/v1/chat/completions` 流式 + `reasoning_content`）
-**Requirements**: TRACE-01, TRACE-02
+**Goal**: 立起统一 durable 任务底座——`DurableTaskService` 适配层隔离队列实现 + 进程角色门禁收口启动副作用 + 周期 rescue/leader 单例，作为所有后续阶段的地基
+**Depends on**: Nothing（复用现有 `server/resumable/` lease/CAS/recovery 范式 + 前置 PoC PASS 结论；Postgres 默认部署 `docker-compose.yaml:37` / `settings.py:243`）
+**Requirements**: DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04
 **Success Criteria** (what must be TRUE):
 
-  1. 外部 OpenAI 兼容调用方在流式响应中能看到"正在检索 RAG / grep / 分析仓库"等 progress（映射为 `reasoning_summary` / progress 文本），来源是 §15 事件 taxonomy
-  2. 内部工具调用**绝不**以标准 `tool_calls` 字段回传（规范客户端不会误判挂起等待回传而卡死）
-  3. **不暴露**模型私有 CoT——仅透出 progress/trace 语义（INV-5）
-  4. 无事件可透出时优雅降级，既有 `/v1/chat/completions` 行为零回归
+  1. Postgres 部署下独立 worker 进程能消费 durable 任务，业务代码经 `DurableTaskService.defer/get/cancel/retry_stalled`（含 idempotency_key + queue/priority）入队/查询/取消，且不直接 import Procrastinate
+  2. 无 `DATABASE_URL`/SQLite dev 下退化为 in-process 非 durable fallback，`make dev`/pytest 开箱即用不需 Postgres
+  3. `FRIDAY_PROCESS_ROLE=worker|migrate` 进程不执行 `repositories/codegraph/resumable` 的 web-only reconcile/sweep/startup jobs（无"业务表不存在"warning、无误杀在途任务）
+  4. kill 掉一个 worker 后，另一 worker 经周期 `retry_stalled_durable_jobs`（`queueing_lock` 单例 leader）接管在途 stalled 任务重投，多副本下只有一个 leader 扫 stalled（替代 flock 与仅启动补扫）
+  5. Postgres 专项 CI job（GH Actions service container + `postgres_queue` marker）绿，覆盖 defer/priority/retry-backoff/stalled rescue/并发 worker 竞争/SQLite fallback，与默认 SQLite 测试路径共存
 
-**UI hint**: no
+**Plans**: TBD
 
-### Phase 57: Anthropic 兼容端点 `/v1/messages`
+### Phase 61: 迁移 index/graph + 收口 ResumableTask
 
-**Goal**: 提供 Anthropic Messages 兼容端点，文本对话 + 流式 trace 透出可用
-**Depends on**: Phase 56（复用 taxonomy → progress 透出 adapter，thinking block 复用同一映射）
-**Requirements**: ANTHROPIC-01, ANTHROPIC-02
+**Goal**: 把现有 index/graph 后台任务从 ResumableTask/background_runner 迁到 `DurableTaskService`，一次性迁移存量在途行（不三套并存），并建立 handler 幂等基线
+**Depends on**: Phase 60（依赖 `DurableTaskService` 适配层 + 进程角色门禁 + 周期 rescue）
+**Requirements**: MIGRATE-01, MIGRATE-02, IDEMP-01
 **Success Criteria** (what must be TRUE):
 
-  1. `POST /v1/messages` 按 Anthropic Messages 形状映射（system / messages / max_tokens 等）请求与非流式响应，复用既有 chat/agent 内核
-  2. `/v1/messages` 流式（SSE）可用（message_start / content_block_delta / message_stop 事件序列）
-  3. trace / progress 经 thinking block adapter 透出，复用 Phase 56 的同一 §15 事件 taxonomy 映射（INV-5 非原始 CoT）
-  4. 既有 OpenAI compat 端点零回归
+  1. 代码库索引与知识图谱经 `DurableTaskService.defer`（queue=index/graph，`idempotency_key=index:{repo_id}`/`graph:{repo_id}`）入队执行，`IndexHistory`/`GraphBuildHistory` 仍为进度/结果真相源，FileIndex/GraphFileIndex checkpoint 跳过保留
+  2. 升级时一次性 migration command 把存量 PENDING/RUNNING `resumable_tasks`（index/graph）按 deterministic idempotency key 转 durable job，旧行标 migrated/cancelled 记 legacy id（不双跑）
+  3. 启动 reconcile 改为"仅确认无 durable job 接管时才把 RUNNING 标 FAILED"，不再误杀在途任务；`background_runner` 降级为仅 SQLite dev fallback / 轻任务，生产 durable 任务不三套并存
+  4. index/graph handler 在重复投递/重复执行（at-least-once）下经 checkpoint/deterministic key/upsert 结果一致，守护测试覆盖"同一任务重复投递/重复执行不产生重复数据或重复副作用"
 
-**UI hint**: no
+**Plans**: TBD
 
-### Phase 58: 飞书原生流式卡片（CardKit）
+### Phase 62: 爬取+入库 durable 队列 + PageIndex 接入
 
-**Goal**: 飞书机器人对话回复走原生流式卡片，体验顺滑
-**Depends on**: Nothing（依赖既有飞书机器人双向对话 + 现 PATCH 流式卡片实现，本 phase 替换为原生 CardKit）
-**Requirements**: CARD-01
+**Goal**: 把链接爬取+入库改为 durable 任务（首个用户可见垂直切片，前后端贯通），并把 PageIndex/TOC 按 hash 幂等接入 durable queue
+**Depends on**: Phase 60（durable 底座）、Phase 61（迁移范式 + 幂等基线）
+**Requirements**: CRAWL-01, CRAWL-02, PAGEIDX-01
 **Success Criteria** (what must be TRUE):
 
-  1. 飞书机器人对话回复经原生 CardKit 流式接口增量更新（替代 PATCH 全量替换）
-  2. 流式过程无明显闪烁 / 全量重绘，体验顺滑
-  3. 流式失败 / 不支持时优雅降级到既有路径，对话回复不丢失
+  1. 用户贴链接后爬取+入库作为 durable 任务入队，后端支持入队/查询/开始/停止/重试/断点恢复，刷新页面与 `docker compose up -d`/Pod 重建后任务不丢、自动续跑（DB 真相源）
+  2. 前端爬取任务队列面板（`BatchIngestPanel`）可贴链接入队、展示队列列表 + 实时状态、行内开始/停止/重试，刷新后从后端恢复（不再依赖组件内存 `batchId`/`ref`），i18n 默认中文
+  3. 入库 at-least-once 幂等（复用现有 upsert/`IngestRun` 范式），重复执行不产生重复数据
+  4. PageIndex/TOC/summary/tree 生成接入 durable queue（收口 `tree_views.py` 等裸 `background_runner` 路径），按 target hash 幂等（hash 未变跳过），重复执行安全
 
-**UI hint**: no（飞书侧卡片，非 Web 前端）
+**Plans**: TBD
+**UI hint**: yes
 
-### Phase 59: 工作流自动建群节点
+### Phase 63: 部署硬化 + 外部副作用 fencing
 
-**Goal**: 工作流可自动创建飞书群并拉人，群可被下游消费
-**Depends on**: Nothing（依赖既有飞书 client + 工作流节点自动注册机制；可选写回 `WorkItem.feishu_chat_id`）
-**Requirements**: GROUP-01
+**Goal**: 完成多副本/弹性伸缩部署硬化（优雅终止 + compose/helm 拆 workload + KEDA/PDB/Redis 强约束），并给外部副作用任务上 fencing/outbox 确保 at-least-once 不产生重复外部动作
+**Depends on**: Phase 60（worker/scheduler 角色 + leader）、Phase 61（迁移完成）、Phase 62（多队列负载就绪）
+**Requirements**: DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
 **Success Criteria** (what must be TRUE):
 
-  1. 新增"自动建群"工作流节点可创建飞书群并拉入指定成员（替代仅能 `add_bot_to_chat` 加入已有群）
-  2. 新建群的 `chat_id` 作为节点输出可供下游节点引用
-  3. 可选把群 `chat_id` 写回 `WorkItem.feishu_chat_id`（writeback 字段，DOMAIN §1.2），失败 fail-soft 不阻断工作流
+  1. worker 捕获 SIGTERM 后停止领取新任务、跑完在途或释放/缩短租约让其他副本快速接管（非干等租约过期）；helm 为 worker 配 `terminationGracePeriodSeconds`（> 心跳间隔）
+  2. compose 与 helm 同构拆 web/worker/scheduler 三类 workload（同镜像不同 command + `FRIDAY_PROCESS_ROLE`），scheduler 单例 leader 承载 cron + 周期 rescue，compose 升级（`up -d` 拉新镜像重建）不破坏既有部署
+  3. KEDA Postgres scaler 按队列深度（`COUNT(status='todo')`）伸缩 worker（支持 cooldown 防抖、可按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（未开启时 fail-closed 提示）
+  4. 有外部副作用的任务（飞书通知/自动建群、MR/PR 创建）上 fencing token 或 outbox，at-least-once 重复执行不产生重复外部动作（不重复发通知/不重复建群/不重复开 PR）
 
-**UI hint**: no（工作流节点，复用既有节点配置 UI）
+**Plans**: TBD
+
+### Phase 64: runner k8s Job executor
+
+**Goal**: 把 runner 从硬绑 docker.sock 抽象为 executor 接口（docker/k8s 两实现），并落地 k8s Job executor，使任务容器可在 k0s/containerd 多副本环境经 k8s API 运行
+**Depends on**: Phase 60–63（相对独立，但排在底座/部署硬化之后最后执行；与现有 server↔runner WebSocket/HTTP 回调契约对接）
+**Requirements**: RUNNER-01, RUNNER-02
+**Success Criteria** (what must be TRUE):
+
+  1. runner 抽象出 executor 接口（docker / k8s 两实现），与现有 server↔runner WebSocket 派发 + HTTP 回调契约解耦，docker executor 行为零回归
+  2. k8s Job executor 经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），含 ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试
+  3. 在 k0s/containerd 环境可经 k8s Job executor 运行任务容器（不依赖 docker.sock）
+
+**Plans**: TBD
+
+<details>
+<summary>✅ v0.11.0 开放与协作 (Phases 56–59) — SHIPPED 2026-06-17 — 审计 PASS</summary>
+
+- [x] Phase 56: compat 内部工具调用 → progress/trace 事件透出 (2/2 plans) — TRACE-01, TRACE-02 — completed 2026-06-17
+- [x] Phase 57: Anthropic 兼容端点 `/v1/messages` (2/2 plans) — ANTHROPIC-01, ANTHROPIC-02 — completed 2026-06-17
+- [x] Phase 58: 飞书原生流式卡片（CardKit）(2/2 plans) — CARD-01 — completed 2026-06-17
+- [x] Phase 59: 工作流自动建群节点 (2/2 plans) — GROUP-01 — completed 2026-06-17
+
+里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [milestones/v0.11.0-MILESTONE-AUDIT.md](./milestones/v0.11.0-MILESTONE-AUDIT.md)。
+
+</details>
 
 <details>
 <summary>✅ v0.10.0 操作审计治理 (Phases 53–55) — SHIPPED 2026-06-17</summary>
@@ -124,7 +155,19 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.11.0（Phases 1–59）均已交付。**v0.11.0 开放与协作（Phases 56–59）已收官**——4 phases / 8 plans 全部 Complete，里程碑审计 PASS（TRACE-01/02、ANTHROPIC-01/02、CARD-01、GROUP-01 共 6/6 需求交付，INV-5/INV-6 成立）。v0.11 为 `ROADMAP-vNext.md` 前瞻路线的收官里程碑。
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 60. durable 底座地基 | 0/? | Not started | - |
+| 61. 迁移 index/graph + 收口 ResumableTask | 0/? | Not started | - |
+| 62. 爬取+入库 durable 队列 + PageIndex 接入 | 0/? | Not started | - |
+| 63. 部署硬化 + 外部副作用 fencing | 0/? | Not started | - |
+| 64. runner k8s Job executor | 0/? | Not started | - |
+
+**Execution order:** 60 → 61 → 62 → 63 → 64（严格顺序，每阶段建立在前序底座之上）。依赖链：durable 底座地基(60，所有后续的地基) → 迁移 index/graph + 收口 ResumableTask + 幂等基线(61，迁移范式) → 爬取+入库 durable 队列 + PageIndex（62，首个用户可见垂直切片，复用 61 范式）→ 部署硬化 + 外部副作用 fencing(63，多副本/弹性/优雅终止) → runner k8s Job executor(64，相对独立但排最后)。
+
+**UI 触面（标 UI hint）:** Phase 62（前端爬取任务队列面板 `BatchIngestPanel`：贴链接入队/队列列表+实时状态/行内开始停止重试/刷新后从后端恢复，本里程碑唯一 Web 前端重触面）。后续 `/gsd-ui-phase` 可介入此处。其余阶段为后端适配层/迁移(60/61)、部署编排（63，helm/compose 非 Web 前端）、Go runner（64）。
+
+里程碑 v0.1.0–v0.11.0（Phases 1–59）均已交付。v0.12.0 弹性任务底座（Phases 60–64）planning 中。
 
 ---
 *Previous milestones archived in .planning/milestones/*
