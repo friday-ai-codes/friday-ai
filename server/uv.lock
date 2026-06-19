@@ -551,6 +551,18 @@ wheels = [
 ]
 
 [[package]]
+name = "croniter"
+version = "6.2.2"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/df/de/5832661ed55107b8a09af3f0a2e71e0957226a59eb1dcf0a445cce6daf20/croniter-6.2.2.tar.gz", hash = "sha256:ba60832a5ec8e12e51b8691c3309a113d1cf6526bdf1a48150ce8ec7a532d0ab", size = 113762, upload-time = "2026-03-15T08:43:48.112Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/d0/39/783980e78cb92c2d7bdb1fc7dbc86e94ccc6d58224d76a7f1f51b6c51e30/croniter-6.2.2-py3-none-any.whl", hash = "sha256:a5d17b1060974d36251ea4faf388233eca8acf0d09cbd92d35f4c4ac8f279960", size = 45422, upload-time = "2026-03-15T08:43:46.626Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "46.0.3"
 source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
@@ -947,6 +959,7 @@ dependencies = [
     { name = "openai" },
     { name = "paramiko" },
     { name = "passlib", extra = ["argon2"] },
+    { name = "procrastinate", extra = ["django"] },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pygithub" },
@@ -1029,6 +1042,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.16.0" },
     { name = "paramiko", specifier = ">=4.0.0" },
     { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
+    { name = "procrastinate", extras = ["django"], specifier = ">=3.8.1,<3.9" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
     { name = "pygithub", specifier = ">=2.0.0" },
@@ -2628,6 +2642,29 @@ wheels = [
 ]
 
 [[package]]
+name = "procrastinate"
+version = "3.8.1"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+    { name = "asgiref" },
+    { name = "attrs" },
+    { name = "croniter" },
+    { name = "packaging" },
+    { name = "psycopg", extra = ["pool"] },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/8f/cd/cbb88b0f19fa94e8a610af2fd3844e96b70591f4263ef4c36f10e4ebe4e2/procrastinate-3.8.1.tar.gz", hash = "sha256:cf7f11dfd4247daa166e9b61a211f9d5b70512d86eccc2bf4298f6ad182a32fa", size = 85343, upload-time = "2026-04-08T06:24:21.385Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/c5/ef/05a54e7ef9328d3d91a1a3b84ccf08a578128a48c57cd1117d1fbd8e6f17/procrastinate-3.8.1-py3-none-any.whl", hash = "sha256:67db4e9f0243c45775c02a0090fb3bfc7877d496e6b279d960d9ad4b1fa2f185", size = 148736, upload-time = "2026-04-08T06:24:19.754Z" },
+]
+
+[package.optional-dependencies]
+django = [
+    { name = "django" },
+]
+
+[[package]]
 name = "propcache"
 version = "0.4.1"
 source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
@@ -2719,6 +2756,9 @@ wheels = [
 binary = [
     { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
 ]
+pool = [
+    { name = "psycopg-pool" },
+]
 
 [[package]]
 name = "psycopg-binary"
@@ -2736,6 +2776,18 @@ wheels = [
     { url = "https://mirrors.ustc.edu.cn/pypi/packages/fa/d0/c20f4e668e89494972e551c31be2a0016e3f50d552d7ae9ac07086407599/psycopg_binary-3.3.2-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:1586e220be05547c77afc326741dd41cc7fba38a81f9931f616ae98865439678", size = 3928660, upload-time = "2025-12-06T17:34:46.757Z" },
     { url = "https://mirrors.ustc.edu.cn/pypi/packages/0f/e1/99746c171de22539fd5eb1c9ca21dc805b54cfae502d7451d237d1dbc349/psycopg_binary-3.3.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:458696a5fa5dad5b6fb5d5862c22454434ce4fe1cf66ca6c0de5f904cbc1ae3e", size = 4239169, upload-time = "2025-12-06T17:34:49.751Z" },
     { url = "https://mirrors.ustc.edu.cn/pypi/packages/72/f7/212343c1c9cfac35fd943c527af85e9091d633176e2a407a0797856ff7b9/psycopg_binary-3.3.2-cp314-cp314-win_amd64.whl", hash = "sha256:04bb2de4ba69d6f8395b446ede795e8884c040ec71d01dd07ac2b2d18d4153d1", size = 3642122, upload-time = "2025-12-06T17:34:52.506Z" },
+]
+
+[[package]]
+name = "psycopg-pool"
+version = "3.3.1"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/90/82/7a23d26039827ecd4ebe93905651029ddd307c5182ad59296dfb6f67b528/psycopg_pool-3.3.1.tar.gz", hash = "sha256:b10b10b7a175d5cc1592147dc5b7eec8a9e0834eb3ed2c4a92c858e2f51eb63c", size = 31661, upload-time = "2026-05-01T23:31:59.809Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/37/ed/89c2c620af0e1660354cd8aabf9f5b21f911597ce22acb37c805d6c86bc8/psycopg_pool-3.3.1-py3-none-any.whl", hash = "sha256:2af5b432941c4c9ad5c87b3fa410aec910ec8f7c122855897983a06c45f2e4b5", size = 40023, upload-time = "2026-05-01T23:31:53.136Z" },
 ]
 
 [[package]]
