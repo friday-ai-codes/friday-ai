@@ -135,6 +135,23 @@ class DurableTaskService:
         return await in_process_backend.cancel(job_id)
 
     @staticmethod
+    async def has_active_by_key(idempotency_key: str) -> bool:
+        """按 idempotency_key（=queueing_lock）查是否有在途 job，区别于按数字 job id 的 `get`。
+
+        活跃集：procrastinate={todo, doing, scheduled}、in-process={pending, running}。
+        传 deterministic key（如 ``"index:{repo_id}"``）给 ``get`` 会因 ``int(job_id)``
+        失败恒返 unknown、令 reconcile 误判，本门面按 queueing_lock 查给出正确判定
+        （Plan 03 reconcile 不误杀在途任务的前置接口）。
+        """
+        if use_procrastinate_backend():
+            from durable.backends import procrastinate_backend
+
+            return await procrastinate_backend.has_active_by_key(idempotency_key)
+        from durable.backends import in_process_backend
+
+        return await in_process_backend.has_active_by_key(idempotency_key)
+
+    @staticmethod
     async def retry_stalled() -> int:
         """重投 stalled 任务，返回重投数量（in-process 后端恒为 0）。"""
         if use_procrastinate_backend():
