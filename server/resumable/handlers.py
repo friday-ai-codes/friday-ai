@@ -1,19 +1,25 @@
 """索引 / 图谱构建的恢复 handler。
 
-每个 handler 从 ``ResumableTask.payload`` 重建最小参数，经 ``submit_resumable``
-重新派发后台任务。续跑依赖底层 checkpoint 跳过已完成文件：
+迁移后 recovery 续驱也经 durable 单一入口（``DurableTaskService.defer``）：从
+``ResumableTask.payload`` 重建最小参数后投递 durable 任务，不再经旧 resumable 提交路径
+内联续跑。deterministic idempotency_key（``index:{repo_id}`` / ``graph:{repo_id}``）
+命中在途 durable job 即去重，避免与 durable stalled rescue 双跑（T-61-04）。续跑路径
+无既有 history → 传 ``history_id=None``，由任务体 service 自建 RUNNING 行。续跑依赖底层
+checkpoint 跳过已完成文件：
 
 - 索引：复用 ``FileIndex``（file_path + file_hash）跳过已 upsert 的文件。
 - 图谱：复用 ``GraphFileIndex`` 跳过 hash 未变、已写入图谱的文件。
+
+注：入队点 1-4 已改 durable，生产不再产生新的 index/graph ResumableTask 行，recovery
+续驱自然枯竭；保留 handler 注册但改走 defer —— 单一驱动入口、不双跑。
 """
 
 from __future__ import annotations
 
 import structlog
-from django.utils import timezone
+from asgiref.sync import async_to_sync
 
 from resumable.models import ResumableTask, ResumableTaskKind
-from resumable.service import submit_resumable
 
 logger = structlog.get_logger(__name__)
 
@@ -23,50 +29,25 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _run_index_resume(
-    repository_id: str, branch: str | None, trigger: str
-) -> object:
-    """恢复路径：新建一条 RUNNING IndexHistory 并续跑索引（FileIndex 跳过已完成）。"""
-    from repositories.models import (
-        IndexHistory,
-        IndexHistoryStatus,
-        IndexStatus,
-        Repository,
-        TriggerType,
-    )
-    from services.indexer import clone_and_index_repository
-
-    trigger_value = trigger if trigger in TriggerType.values else TriggerType.MANUAL
-
-    await Repository.objects.filter(id=repository_id).aupdate(
-        index_status=IndexStatus.INDEXING,
-        index_error=None,
-    )
-    history = await IndexHistory.objects.acreate(
-        repository_id=repository_id,
-        trigger_type=trigger_value,
-        status=IndexHistoryStatus.RUNNING,
-        started_at=timezone.now(),
-    )
-    return await clone_and_index_repository(
-        repository_id,
-        history_id=str(history.id),
-        branch=branch,
-    )
-
-
 def resume_index(task: ResumableTask) -> None:
+    """recovery 续驱索引：从 payload 重建后经 durable defer 单一入口投递（同步上下文）。"""
+    from durable import QUEUE_INDEX, DurableTaskService
+
     payload = task.payload or {}
     repository_id = str(payload.get("repository_id") or task.target_id)
     branch = payload.get("branch")
     trigger = payload.get("trigger", "manual")
 
-    submit_resumable(
-        kind=ResumableTaskKind.INDEX,
-        target_id=repository_id,
-        payload=payload,
-        name=f"index-{repository_id}",
-        coro_factory=lambda: _run_index_resume(repository_id, branch, trigger),
+    async_to_sync(DurableTaskService.defer)(
+        "durable_index",
+        {
+            "repository_id": repository_id,
+            "history_id": None,
+            "branch": branch,
+            "trigger": trigger,
+        },
+        queue=QUEUE_INDEX,
+        idempotency_key=f"index:{repository_id}",
     )
 
 
@@ -75,48 +56,25 @@ def resume_index(task: ResumableTask) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _run_graph_resume(
-    repository_id: str, branch: str | None, trigger: str
-) -> object:
-    """恢复路径：续跑图谱构建，跳过已写入文件（skip_unchanged=True）。
-
-    续跑会新建一条 GraphBuildHistory；先把该仓库残留的 RUNNING 历史行标记为
-    FAILED（superseded），避免重启后留下永远转圈的僵尸历史。
-    """
-    from django.utils import timezone
-
-    from repositories.models import GraphBuildHistory, GraphBuildHistoryStatus
-    from services.graph_builder import build_graph_for_repository
-
-    await GraphBuildHistory.objects.filter(
-        repository_id=repository_id,
-        status=GraphBuildHistoryStatus.RUNNING,
-    ).aupdate(
-        status=GraphBuildHistoryStatus.FAILED,
-        finished_at=timezone.now(),
-        error_message="构建在进程重启后被自动续跑取代（superseded by resume）。",
-    )
-
-    return await build_graph_for_repository(
-        repository_id,
-        trigger=trigger or "auto_after_index",
-        branch=branch,
-        skip_unchanged=True,
-    )
-
-
 def resume_graph(task: ResumableTask) -> None:
+    """recovery 续驱图谱：从 payload 重建后经 durable defer 单一入口投递（同步上下文）。"""
+    from durable import QUEUE_GRAPH, DurableTaskService
+
     payload = task.payload or {}
     repository_id = str(payload.get("repository_id") or task.target_id)
     branch = payload.get("branch")
     trigger = payload.get("trigger", "manual")
 
-    submit_resumable(
-        kind=ResumableTaskKind.GRAPH,
-        target_id=repository_id,
-        payload=payload,
-        name=f"graph-build-{repository_id}",
-        coro_factory=lambda: _run_graph_resume(repository_id, branch, trigger),
+    async_to_sync(DurableTaskService.defer)(
+        "durable_graph",
+        {
+            "repository_id": repository_id,
+            "history_id": None,
+            "branch": branch,
+            "trigger": trigger,
+        },
+        queue=QUEUE_GRAPH,
+        idempotency_key=f"graph:{repository_id}",
     )
 
 

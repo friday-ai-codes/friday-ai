@@ -49,7 +49,7 @@ from repositories.models import (
     RepositoryGraphStatus,
 )
 from repositories.permissions import RepositoryPermission
-from services.background_runner import cancel_background_task, run_in_background
+from services.background_runner import cancel_background_task
 
 logger = structlog.get_logger(__name__)
 
@@ -699,34 +699,24 @@ class CodegraphRebuildView(APIView):
         branch_arg = request_branch if isinstance(request_branch, str) else None
 
         # 事务已 commit（sync helper 退出 ``transaction.atomic`` block），现在
-        # 安全地调度后台 task。延迟 import service 入口以规避 module-level
-        # 循环依赖（views ↔ services）。
-        from services.graph_builder import build_graph_for_repository
+        # 安全地投递 durable 图谱任务。durable 入队 + deterministic key 去重
+        # （graph:{repo_id}）；GraphBuildHistory 仍在锁内创建并作真相源，
+        # GraphFileIndex checkpoint 在任务体内复用，202 响应契约（history_id）不变。
+        from durable import QUEUE_GRAPH, DurableTaskService
 
         repo_id_str = str(repository_id)
         history_id_str = str(history.id)
 
-        from resumable.models import ResumableTaskKind
-        from resumable.service import wrap_resumable
-
-        run_in_background(
-            wrap_resumable(
-                kind=ResumableTaskKind.GRAPH,
-                target_id=repo_id_str,
-                payload={
-                    "repository_id": repo_id_str,
-                    "branch": branch_arg,
-                    "trigger": GraphBuildHistoryTrigger.MANUAL.value,
-                },
-                name=f"graph-build-{repo_id_str}",
-                coro_factory=lambda: build_graph_for_repository(
-                    repo_id_str,
-                    trigger=GraphBuildHistoryTrigger.MANUAL,
-                    history_id=history_id_str,
-                    branch=branch_arg,
-                ),
-            ),
-            name=f"graph-build-{repo_id_str}",
+        await DurableTaskService.defer(
+            "durable_graph",
+            {
+                "repository_id": repo_id_str,
+                "history_id": history_id_str,
+                "branch": branch_arg,
+                "trigger": GraphBuildHistoryTrigger.MANUAL.value,
+            },
+            queue=QUEUE_GRAPH,
+            idempotency_key=f"graph:{repo_id_str}",
         )
 
         logger.info(
