@@ -13,6 +13,15 @@ class DurableConfig(AppConfig):
     verbose_name = "durable 任务底座"
 
     def ready(self) -> None:
+        # in-process 业务 handler 注册：**无条件执行**（纯注册、无 IO，所有 role / 后端
+        # 均安全）。关键修复——此前 SQLite / fallback 路径在 use_procrastinate_backend()
+        # 为 False 时直接 return，导致 dev / pytest 无任何业务 handler、durable_index
+        # 会走 in-process no-op。故把业务 handler 注册放在 role 门禁与 procrastinate
+        # 判定**之外**，确保两后端路径都注册。
+        from durable.handlers import register_business_handlers
+
+        register_business_handlers()
+
         # Procrastinate periodic / task 注册（stalled rescue 等）：仅在 procrastinate
         # 后端真正启用（Postgres + DURABLE_TASK_BACKEND∈{auto,procrastinate}）且当前
         # 进程角色需要跑任务时，才 import durable.tasks 触发 @app.task / @app.periodic
@@ -32,6 +41,7 @@ class DurableConfig(AppConfig):
         ):
             return
 
-        # 触发 @app.task / @app.periodic 注册（导入即注册到 procrastinate blueprint，
-        # 由 procrastinate.contrib.django.ready() 的 create_app 并入真实 App）。
+        # 触发 @app.task / @app.periodic 注册（@app.task 仅 procrastinate 分支注册；
+        # 导入即注册到 procrastinate blueprint，由 procrastinate.contrib.django.ready()
+        # 的 create_app 并入真实 App）。
         from durable import tasks  # noqa: F401
