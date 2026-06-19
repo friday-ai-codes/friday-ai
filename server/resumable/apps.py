@@ -35,6 +35,13 @@ class ResumableConfig(AppConfig):
         - 延迟首扫等 DB 就绪；并做几次递增间隔的补扫，覆盖"快速重启时老租约
           尚未过期"的窗口（lease TTL 默认 90s）。
         """
+        # 进程角色门禁（DURABLE-02）：role 是显式入口（worker/migrate/test 短路），
+        # 下方既有 argv 嗅探为兜底；两者任一拦截即不调度补扫线程。
+        from durable.roles import should_run_startup_side_effects
+
+        if not should_run_startup_side_effects(job="resumable_recovery"):
+            return
+
         argv0 = sys.argv[0] if sys.argv else ""
         if "pytest" in argv0 or "py.test" in argv0:
             return
