@@ -182,6 +182,17 @@ class InProcessBackend:
         # 的 periodic 任务（Plan 60-03）。
         return 0
 
+    async def has_active_by_key(self, idempotency_key: str) -> bool:
+        """按 idempotency_key 判定是否有在途 job（活跃集 in-process={pending, running}）。
+
+        in-process 后端 idempotency_key 即 job_id，直接读 ``_jobs[key]`` 状态——绝不走
+        数字 id 路径，与 procrastinate 后端的 ``has_active_by_key`` 语义对齐：终态
+        （succeeded / failed / cancelled）或 key 不存在均返 False。
+        """
+        with _jobs_lock:
+            state = _jobs.get(idempotency_key)
+        return bool(state and state.get("status") in {"pending", "running"})
+
 
 def _reset_for_tests() -> None:
     """测试钩子：清空 in-process job 状态注册表（handler 注册保留）。"""
@@ -250,7 +261,7 @@ class ProcrastinateBackend:
         except exceptions.AlreadyEnqueued:
             # queueing_lock 命中：todo 已有同 lock 的 job。幂等语义——不报错，
             # 查回既有 job 标识返回（记 info，便于观测）。
-            existing = await self._find_job_by_queueing_lock(idempotency_key)
+            existing = await self.find_job_by_queueing_lock(idempotency_key)
             logger.info(
                 "durable_procrastinate_already_enqueued",
                 task=task,
@@ -262,29 +273,49 @@ class ProcrastinateBackend:
         return str(job_id)
 
     @staticmethod
-    async def _find_job_by_queueing_lock(idempotency_key: str | None) -> str | None:
+    async def find_job_by_queueing_lock(idempotency_key: str | None) -> str | None:
+        """按 queueing_lock（=idempotency_key）查在途 job，返回其数字 job id（字符串）。
+
+        按状态过滤取活跃 job：list_jobs_async(queueing_lock=...) 不限状态会返回该
+        lock 下所有历史 job（含 succeeded/failed），jobs[0] 可能是早先已结束的同
+        lock job，导致幂等 defer 返回陈旧 job 标识（WR-02）。活跃集
+        ={todo, doing, scheduled}（scheduled 覆盖延迟 job），合并后取最新一条
+        （id 最大）作为"当前在队 / 在跑 / 待调度"的那条。
+
+        公开方法：既服务 ``defer`` 内 AlreadyEnqueued 兜底，也作为 ``has_active_by_key``
+        的判定基础——按 queueing_lock 查，区别于按数字 job id 的 ``get``。
+        """
         if idempotency_key is None:
             return None
         from procrastinate.contrib.django import app
 
-        # 按状态过滤取活跃 job：list_jobs_async(queueing_lock=...) 不限状态会返回该
-        # lock 下所有历史 job（含 succeeded/failed），jobs[0] 可能是早先已结束的同
-        # lock job，导致幂等 defer 返回陈旧 job 标识（WR-02）。优先 todo、其次 doing，
-        # 取最新一条（id 最大）作为"当前在队/在跑"的那条。
-        jobs = list(
-            await app.job_manager.list_jobs_async(
-                queueing_lock=idempotency_key, status="todo"
-            )
-        )
-        if not jobs:
-            jobs = list(
-                await app.job_manager.list_jobs_async(
-                    queueing_lock=idempotency_key, status="doing"
-                )
+        jobs: list[Any] = []
+        for status in ("todo", "doing", "scheduled"):
+            jobs.extend(
+                await app.job_manager.list_jobs_async(queueing_lock=idempotency_key, status=status)
             )
         if not jobs:
             return None
         return str(max(jobs, key=lambda j: j.id).id)
+
+    async def has_active_by_key(self, idempotency_key: str) -> bool:
+        """按 idempotency_key（=queueing_lock）判定是否有在途 job（活跃集 todo/doing/scheduled）。
+
+        区别于按数字 job id 的 ``get``：传 deterministic key（如 ``"index:{repo_id}"``）
+        给 ``get`` 会走 ``int(job_id)`` 失败而恒返 unknown，令 reconcile 误判恒 False、
+        误杀在途任务。本门面按 queueing_lock 查，是 Plan 03 reconcile 不误杀的正确接口。
+
+        fail-safe：整段吞异常返 False（判定接口不应因查询异常而崩坏调用方）。
+        """
+        try:
+            return await self.find_job_by_queueing_lock(idempotency_key) is not None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "durable_has_active_by_key_failed",
+                idempotency_key=idempotency_key,
+                error=str(exc),
+            )
+            return False
 
     async def get(self, job_id: str) -> dict[str, Any]:
         # 非数字 / None job_id 优雅返回 unknown，对齐 in-process 后端"从不抛"语义
