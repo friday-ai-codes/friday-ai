@@ -33,6 +33,9 @@ class ResumableTaskStatus(models.TextChoices):
     COMPLETED = "completed", "已完成"
     FAILED = "failed", "失败"
     CANCELLED = "cancelled", "已取消"
+    # 系统一次性迁移至 durable 队列（区别于用户主动 CANCELLED）；MIGRATED 行不再被
+    # recoverable_target_ids/recovery 重驱，避免与 durable 双跑。
+    MIGRATED = "migrated", "已迁移至 durable"
 
 
 class ResumableTask(models.Model):
@@ -60,6 +63,9 @@ class ResumableTask(models.Model):
     max_attempts = models.IntegerField(default=3)
     # 后台任务名（与 background_runner / cancel_background_task 对齐）。
     name = models.CharField(max_length=200, blank=True, default="")
+    # 一次性迁移产生的 durable job 标识（migrate_resumable_to_durable 写入），
+    # 仅用于可观测 / 排障关联，非迁移行为空串。
+    legacy_durable_job_id = models.CharField(max_length=200, blank=True, default="")
     last_error = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
