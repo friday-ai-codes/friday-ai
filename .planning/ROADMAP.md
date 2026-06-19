@@ -28,7 +28,10 @@
   - [x] 60-02-PLAN.md — FRIDAY_PROCESS_ROLE 门禁三处 AppConfig.ready() 启动副作用（wave 2）
   - [x] 60-03-PLAN.md — Procrastinate 后端 + 独立 worker + 周期 stalled rescue 单例 + postgres_queue 测试（wave 2）
   - [x] 60-04-PLAN.md — Postgres 专项 CI workflow（postgres:17-alpine service + postgres_queue marker，wave 3）
-- [ ] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/? plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01
+- [ ] **Phase 61: 迁移 index/graph + 收口 ResumableTask** (0/3 plans) - 把现有 index/graph 从 ResumableTask/background_runner 迁到 `DurableTaskService`；一次性迁移存量在途行（不双跑）；启动 reconcile 改为仅无 durable job 接管才回收；建立 handler 幂等基线 — MIGRATE-01, MIGRATE-02, IDEMP-01
+  - [ ] 61-01-PLAN.md — durable index/graph/page_index 任务层 + 双后端 payload adapter + DurableConfig.ready 双后端注册 + 幂等基线（wave 1）
+  - [ ] 61-02-PLAN.md — 迁移全部 5 处 index/graph 入队点改 DurableTaskService.defer + 重复投递去重/grep 零残留守护（wave 2）
+  - [ ] 61-03-PLAN.md — 一次性迁移命令 + ResumableTask MIGRATED/legacy id 迁移 + reconcile "无 durable 接管才标 FAILED" + background_runner 降级（wave 2）
 - [ ] **Phase 62: 爬取+入库 durable 队列 + PageIndex 接入** (0/? plans) - 链接爬取+入库改 durable 任务（入队/开始/停止/重试/断点恢复，刷新与容器重建不丢，前后端可用，首个用户可见垂直切片）；PageIndex/TOC 按 hash 幂等接入 — CRAWL-01, CRAWL-02, PAGEIDX-01
 - [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/? plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
 - [ ] **Phase 64: runner k8s Job executor** (0/? plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
@@ -67,7 +70,11 @@
   3. 启动 reconcile 改为"仅确认无 durable job 接管时才把 RUNNING 标 FAILED"，不再误杀在途任务；`background_runner` 降级为仅 SQLite dev fallback / 轻任务，生产 durable 任务不三套并存
   4. index/graph handler 在重复投递/重复执行（at-least-once）下经 checkpoint/deterministic key/upsert 结果一致，守护测试覆盖"同一任务重复投递/重复执行不产生重复数据或重复副作用"
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+
+- 61-01 (wave 1): durable index/graph/page_index 任务层 + 双后端 payload adapter + DurableConfig.ready 双后端注册 + has_active_durable_job 查询 + 幂等基线 — MIGRATE-01, IDEMP-01
+- 61-02 (wave 2): 迁移全部 5 处 index/graph 入队点改 DurableTaskService.defer + 重复投递去重/grep 零残留守护 — MIGRATE-01, IDEMP-01
+- 61-03 (wave 2): 一次性迁移命令 + ResumableTask MIGRATED/legacy id 迁移 + reconcile "无 durable 接管才标 FAILED" + background_runner 降级 — MIGRATE-02
 
 ### Phase 62: 爬取+入库 durable 队列 + PageIndex 接入
 
@@ -167,7 +174,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 60. durable 底座地基 | 4/4 | Complete    | 2026-06-19 |
-| 61. 迁移 index/graph + 收口 ResumableTask | 0/? | Not started | - |
+| 61. 迁移 index/graph + 收口 ResumableTask | 0/3 | Planned | - |
 | 62. 爬取+入库 durable 队列 + PageIndex 接入 | 0/? | Not started | - |
 | 63. 部署硬化 + 外部副作用 fencing | 0/? | Not started | - |
 | 64. runner k8s Job executor | 0/? | Not started | - |
