@@ -2,30 +2,30 @@
 phase: 60-durable
 plan: 03
 subsystem: infra
-tags: [procrastinate, durable-task-queue, postgres, worker, periodic, queueing-lock, stalled-rescue, pytest-marker]
+tags: [procrastinate, postgres, durable-task-queue, periodic, queueing-lock, worker, pytest-postgres-marker]
 
 # Dependency graph
 requires:
   - phase: 60-01
-    provides: DurableTaskService 门面 + _use_procrastinate 唯一判定 + ProcrastinateBackend stub + queues.py + roles.py + postgres_queue marker + no-direct-import 守护
+    provides: DurableTaskService 门面 + _use_procrastinate 唯一判定 + ProcrastinateBackend stub + queues.py + postgres_queue marker
 provides:
   - ProcrastinateBackend 真实实现（defer/get/cancel/retry_stalled 委托 procrastinate.contrib.django.app）
-  - settings.py 条件注册 procrastinate.contrib.django（复用 _use_procrastinate，仅 Postgres+procrastinate）
-  - durable.tasks：durable_ping 烟囱任务 + retry_stalled_durable_jobs（@app.periodic + queueing_lock 单例 leader rescue）
-  - run_worker 管理命令（get_worker_connector → PsycopgConnector，独立 worker 进程，listen_notify=False）
+  - settings.py 条件注册 procrastinate.contrib.django（复用 _use_procrastinate，仅 Postgres+backend∈{auto,procrastinate}）
+  - tasks.py：durable_ping 烟囱任务 + retry_stalled_durable_jobs（@app.periodic + queueing_lock 单例 leader）
+  - run_worker 管理命令（get_worker_connector → PsycopgConnector，显式 listen_notify=False）
   - DurableConfig.ready() 条件 import tasks 触发 @app.task/@app.periodic 注册
-  - postgres_queue 测试（test_procrastinate_backend / test_stalled_rescue）+ Postgres conftest fixtures
+  - postgres_queue 测试（defer/priority/run_at/worker-connector + forged-heartbeat rescue/queueing_lock/并发竞争）
 affects: [60-04 Postgres CI, 61 index/graph 迁移, 62 爬取队列, 63 部署硬化]
 
 # Tech tracking
 tech-stack:
   added: []
   patterns:
-    - "ProcrastinateBackend 全程仅在 backends.py 内 import procrastinate（适配层隔离命门），service 经局部 import 委托"
-    - "settings 与 service 共用 _use_procrastinate 纯函数做条件注册（无 orphan procrastinate 表）"
-    - "周期 stalled rescue = @app.periodic（DB 每周期单次 defer）+ queueing_lock（todo 不堆积）双层单例 leader，无自写 leader 选举/flock"
-    - "stalled 判定基于 worker heartbeat（get_stalled_jobs 默认 seconds_since_heartbeat=30），零 deprecated nb_seconds"
-    - "worker = 独立进程，get_worker_connector() → PsycopgConnector，绝不用 DjangoConnector 跑 worker"
+    - "settings 与 service 共用同一 _use_procrastinate 纯函数做 procrastinate.contrib.django 条件注册（无 orphan procrastinate 表）"
+    - "周期单例 leader = @app.periodic（DB 每周期单次 defer）+ queueing_lock（todo 不堆积），无自写 leader 选举/flock"
+    - "worker = 独立进程经 get_worker_connector()（PsycopgConnector），绝不用 DjangoConnector 跑 worker"
+    - "stalled 判定基于 worker heartbeat（get_stalled_jobs），零 deprecated nb_seconds"
+    - "postgres_queue 测试用 forged-heartbeat（回拨 procrastinate_workers.last_heartbeat）逼近 stalled rescue，不真 kill 进程"
 
 key-files:
   created:
@@ -42,113 +42,103 @@ key-files:
     - server/tests/durable/conftest.py
 
 key-decisions:
-  - "periodic rescue 体内直接调 get_stalled_jobs()/retry_job()（与 ProcrastinateBackend.retry_stalled 同算法、同 heartbeat 判定），保留 key_link 可 grep 性；两路径均零 nb_seconds"
-  - "settings 条件 INSTALLED_APPS.append('procrastinate.contrib.django') 放在 DATABASES + DURABLE_TASK_BACKEND 定义之后（二者均为 append 所需），复用 _use_procrastinate"
-  - "DurableConfig.ready() 任务注册角色门禁 allowed={web,worker,scheduler}，migrate/test 短路（复用 durable.roles）"
-  - "run_worker 非 Postgres 后端 CommandError 明确退出，绝不退化 DjangoConnector/in-process 跑 worker"
-  - "forged-heartbeat rescue 自动化：register_worker+fetch_job 占 doing → SQL 回拨 last_heartbeat → get_stalled_jobs/retry_job；真实 kill-worker E2E 标 manual-only（human_needed）"
+  - "settings.py 经 from durable.service import _use_procrastinate 复用同一判定，禁止内联等价判据"
+  - "run_worker 固定 listen_notify=False（v1 polling，NOTIFY 唤醒 deferred 到 v2 DURABLEX-01）；非 Postgres 时 CommandError 退出，绝不退化 DjangoConnector"
+  - "retry_stalled_durable_jobs 与 ProcrastinateBackend.retry_stalled 同算法（heartbeat 判定）；periodic 是多副本 leader 路径，后端方法服务手动/运维直接路径"
+  - "真实 kill-worker E2E 标 human_needed（VALIDATION Manual-Only），自动化以 forged-heartbeat 逼近"
 
 patterns-established:
-  - "postgres_queue 测试模块级 pytestmark=[postgres_queue, enable_socket, django_db(transaction=True)]，procrastinate_app fixture 非 Postgres pytest.skip（不报错）"
-  - "Postgres 专用 fixture（procrastinate_app / backdate_worker_heartbeat）集中在 tests/durable/conftest.py，仅 postgres_queue 测试消费"
+  - "durable 业务代码仅 backends.py / tasks.py / management/ 三处允许直接 import procrastinate（no-direct-import 守护允许清单）"
+  - "postgres_queue 测试模块级标记叠加：postgres_queue + enable_socket + django_db(transaction=True)"
 
 requirements-completed: [DURABLE-01, DURABLE-03]
 
 # Metrics
-duration: 18min
+duration: ~30min
 completed: 2026-06-20
 ---
 
-# Phase 60 Plan 03: Procrastinate 后端 + periodic 单例 rescue Summary
+# Phase 60 Plan 03: Procrastinate 后端 + periodic rescue 单例 Summary
 
-**ProcrastinateBackend 落地（defer/get/cancel/retry_stalled 委托 procrastinate.contrib.django.app）+ 独立 worker 进程命令（get_worker_connector → PsycopgConnector，listen_notify=False）+ retry_stalled_durable_jobs 周期单例 leader（@app.periodic + queueing_lock，heartbeat 判定 stalled）+ settings 复用 _use_procrastinate 条件注册 + postgres_queue 测试覆盖 defer/priority/run_at/worker-connector/forged-heartbeat rescue/queueing_lock/并发竞争。**
+**ProcrastinateBackend 落地 Postgres durable 路径（defer/get/cancel/retry_stalled 委托 procrastinate.contrib.django.app），独立 worker 进程命令（get_worker_connector → PsycopgConnector，listen_notify=False），retry_stalled_durable_jobs 周期单例 leader（@app.periodic + queueing_lock + heartbeat 判定），settings 复用 _use_procrastinate 条件注册 procrastinate.contrib.django，并以 postgres_queue 测试覆盖 defer/priority/run_at/worker-connector/forged-heartbeat rescue/queueing_lock/并发竞争。**
 
 ## Performance
 
-- **Duration:** ~18 min
-- **Started:** 2026-06-20T18:14Z (approx)
-- **Completed:** 2026-06-20T18:32Z (approx)
+- **Duration:** ~30 min（含 Wave 1/2 前序实现 + Task 3 测试收尾）
+- **Started:** 2026-06-20T01:56Z (approx)
+- **Completed:** 2026-06-20T02:25Z (approx)
 - **Tasks:** 3
 - **Files modified:** 10 (6 created, 4 modified)
 
 ## Accomplishments
-- `ProcrastinateBackend` 四方法真实实现：`defer` 经 `task.configure(queueing_lock=idempotency_key, priority, schedule_at=run_at).defer_async(**payload)`（`AlreadyEnqueued` 幂等吞并返回既有 job 标识）；`get`/`cancel`/`retry_stalled` 委托 `app.job_manager`。仍**仅在 backends.py 内** import procrastinate。
-- `settings.py` 复用 `durable.service._use_procrastinate` 同一权威判定条件注册 `procrastinate.contrib.django`：SQLite/auto+sqlite 永不追加（无 orphan `procrastinate_jobs` 表，规避 Pitfall 3），仅 Postgres+backend∈{auto,procrastinate} 时追加。
-- `durable.tasks`：`durable_ping` 烟囱任务 + `retry_stalled_durable_jobs`（`@app.periodic(cron="*/10 * * * *")` + `@app.task(queueing_lock="retry_stalled_durable_jobs", pass_context=True)`），基于 worker heartbeat 判定 stalled，**零 nb_seconds**（慢≠死）。
-- `run_worker` 管理命令：`get_worker_connector()` 拿 `PsycopgConnector` 独立 async 连接跑 worker，**显式 `listen_notify=False`**（v1 polling，NOTIFY 唤醒 deferred 到 v2 DURABLEX-01）；非 Postgres 后端明确中文 `CommandError` 退出，绝不退化 DjangoConnector。
-- `DurableConfig.ready()` 仅在 procrastinate 后端启用且角色∈{web,worker,scheduler} 时 `from durable import tasks` 触发注册；SQLite/migrate/test 短路零副作用。
-- `postgres_queue` 测试（8 例）覆盖 DURABLE-01 Postgres 半 + DURABLE-03 rescue/queueing_lock/并发；默认 SQLite 套件不命中（8 deselected），强制 `-m postgres_queue` 在无 Postgres 时优雅 skip（非 error）。
+- `ProcrastinateBackend` 四方法全部落地委托 `procrastinate.contrib.django.app`：`defer` 经 `task.configure(queueing_lock=idempotency_key, priority, schedule_at=run_at).defer_async(**payload)`，`AlreadyEnqueued` 按幂等吞并返回既有 job 标识；`retry_stalled` 基于 `get_stalled_jobs()`（heartbeat）+ `retry_job()`，源码零 `nb_seconds`。
+- `settings.py` 经 `from durable.service import _use_procrastinate` 复用同一权威判定，仅在 Postgres + backend∈{auto,procrastinate} 时 `INSTALLED_APPS.append("procrastinate.contrib.django")`；SQLite/auto+sqlite 永不追加，无 orphan procrastinate 表，迁移在 SQLite 安全（Pitfall 3）。
+- `tasks.py`：`durable_ping` 烟囱任务 + `retry_stalled_durable_jobs`（`@app.periodic(cron="*/10 * * * *")` + `@app.task(queueing_lock="retry_stalled_durable_jobs", pass_context=True)`），双层叠加实现单例 leader（DB 每周期单次 defer + queueing_lock 不堆积），无自写 leader/flock。
+- `run_worker` 管理命令：经 `app.connector.get_worker_connector()` 拿 `PsycopgConnector` 独立进程消费，`run_worker_async(..., listen_notify=False)` 显式锁定；非 Postgres 时 `CommandError` 明确中文退出，绝不退化 DjangoConnector 跑 worker（PoC 硬前置①）。
+- `DurableConfig.ready()` 仅在 procrastinate 后端启用且 role∈{web,worker,scheduler} 时 import `durable.tasks` 触发注册；SQLite/migrate/test 短路零副作用。
+- postgres_queue 测试两文件 8 用例：`test_procrastinate_backend.py`（defer 落库/priority 领取顺序/run_at→scheduled_at/get_worker_connector→PsycopgConnector）、`test_stalled_rescue.py`（forged-heartbeat rescue/重投保留 priority/queueing_lock 单例不堆积/并发竞争恰一领取）；模块级 `postgres_queue + enable_socket + django_db(transaction=True)`，无 Postgres 时经 `procrastinate_app` fixture `pytest.skip`。
 
 ## Task Commits
 
 Each task was committed atomically:
 
-1. **Task 1: ProcrastinateBackend + settings 条件注册** - `505277eca` (feat)
-2. **Task 2: periodic 单例 rescue + run_worker 命令 + apps.py 任务注册** - `351d07255` (feat)
-3. **Task 3: postgres_queue 测试 + conftest postgres fixtures** - `9c86d0f50` (test)
+1. **Task 1: settings 条件注册 + ProcrastinateBackend 实现** - `505277eca` (feat)
+2. **Task 2: periodic 单例 rescue + 独立 worker 命令 + tasks 条件注册** - `351d07255` (feat)
+3. **Task 3: postgres_queue 测试（defer/priority/run_at/worker-connector + stalled rescue）** - `9c86d0f50` (test)
 
-**Plan metadata:** 由 orchestrator 负责 STATE/ROADMAP；本 plan 不写。SUMMARY 单独提交。
-
-_Note: TDD 非本 plan 模式（后端 API 在 RESEARCH 已逐字锁定）。_
+_注：本 plan 不写 STATE.md / ROADMAP.md（由 orchestrator 负责）；无 plan-metadata 提交。_
 
 ## Files Created/Modified
-- `server/durable/backends.py` — `ProcrastinateBackend` 四方法真实实现（defer/get/cancel/retry_stalled），`AlreadyEnqueued` 幂等处理 + `_find_job_by_queueing_lock` 辅助
+- `server/durable/backends.py` — `ProcrastinateBackend` 四方法真实实现（stub→委托 procrastinate.contrib.django.app）
 - `server/durable/tasks.py` — `durable_ping` + `retry_stalled_durable_jobs`（periodic + queueing_lock 单例）
-- `server/durable/management/commands/run_worker.py` — 独立 worker 进程命令（`get_worker_connector`，`listen_notify=False`）
-- `server/durable/management/__init__.py`、`server/durable/management/commands/__init__.py` — 空包标记
-- `server/durable/apps.py` — `DurableConfig.ready()` 条件 import tasks（procrastinate 后端 + 角色门禁）
-- `server/friday/settings.py` — `_use_procrastinate` 条件 `INSTALLED_APPS.append("procrastinate.contrib.django")`
-- `server/tests/durable/conftest.py` — `procrastinate_app`（非 Postgres skip）+ `backdate_worker_heartbeat`（伪造心跳过期）fixtures
-- `server/tests/durable/test_procrastinate_backend.py` — defer 落库/priority 领取顺序/run_at 调度/get_worker_connector
-- `server/tests/durable/test_stalled_rescue.py` — forged-heartbeat 重投/priority 保留/queueing_lock 单例/并发竞争
+- `server/durable/apps.py` — `DurableConfig.ready()` 条件 import tasks 注册
+- `server/durable/management/{__init__,commands/__init__}.py` — 空包标记
+- `server/durable/management/commands/run_worker.py` — 独立 worker 进程命令（get_worker_connector / listen_notify=False）
+- `server/friday/settings.py` — 复用 `_use_procrastinate` 条件 `INSTALLED_APPS.append("procrastinate.contrib.django")`
+- `server/tests/durable/conftest.py` — Postgres 专用 fixture（`procrastinate_app` skip-if-not-postgres / `backdate_worker_heartbeat` forged-heartbeat）
+- `server/tests/durable/test_procrastinate_backend.py` — defer/priority/run_at/worker-connector（postgres_queue）
+- `server/tests/durable/test_stalled_rescue.py` — forged-heartbeat rescue/queueing_lock/并发竞争（postgres_queue）
 
 ## Decisions Made
-- **periodic 任务体内直接调 `get_stalled_jobs()`/`retry_job()`**（而非委托 `procrastinate_backend.retry_stalled()`）：满足 Task 2 acceptance 字面"体内调 get_stalled_jobs()/retry_job()"与 frontmatter key_link 的 `pattern: get_stalled_jobs|retry_job`（tasks.py 可直接 grep 命中），同时与 `ProcrastinateBackend.retry_stalled`（服务 `DurableTaskService.retry_stalled` 直接路径）保持**完全相同的算法**（heartbeat 判定、零 nb_seconds）；两者算法一致，差异仅为调用入口（手动/运维 vs 多副本周期 leader）。"复用同一实现"按"同算法/同判据"解读。
-- **settings 条件块落点**：放在 `DATABASES`（line 245）+ `DURABLE_TASK_BACKEND`（line 254）定义之后——append 需读引擎串与 backend 值，二者均在 `INSTALLED_APPS` 之后定义，故条件块紧跟 durable 设置段。仍满足 plan "在 INSTALLED_APPS 定义之后" 要求。
-- **`get` 经 `list_jobs_async(id=...)` 拼结构化 dict**（status/queue/priority/queueing_lock/scheduled_at/attempts）；未知 job 返回 `{"status": "unknown"}`（与 in-process 后端一致，不抛）。
+- **settings 复用 service 同一 `_use_procrastinate`（不内联）**：保证后端判据 single source of truth，procrastinate 表仅在后端真正启用时由迁移创建。
+- **`listen_notify=False` 显式锁定**：v1 走 polling，低延迟 NOTIFY 唤醒 deferred 到 v2（DURABLEX-01）；`run_worker` 与 docstring 双处标注。
+- **periodic + backend.retry_stalled 同算法、双入口**：periodic（`retry_stalled_durable_jobs`）是多副本持续 rescue 的 leader 路径；`ProcrastinateBackend.retry_stalled` 服务 `DurableTaskService.retry_stalled` 的手动/运维直接路径；二者均 heartbeat 判定、零 nb_seconds。
+- **forged-heartbeat 自动化逼近 stalled rescue**：回拨 `procrastinate_workers.last_heartbeat` 至 1 小时前，使其 doing job 在默认 `seconds_since_heartbeat=30` 下判为 stalled；真实 kill-worker E2E 标 human_needed。
 
 ## Deviations from Plan
 
-None - 三个任务的 acceptance 与 verify 命令全部一次通过，无 Rule 1/2/3 自动修复触发，无 Rule 4 架构变更。
-
-唯一需记录的取舍是上节「Decisions Made」第一条（periodic 体内直接调 vs 委托后端）——这是对 Task 1「供 periodic 复用同一实现」与 Task 2「体内调 get_stalled_jobs()/retry_job()」两处措辞张力的有意调和，按"同算法"而非"同代码对象"落地，无范围扩张、无架构变更。
-
----
-
-**Total deviations:** 0 自动修复（仅 1 处措辞调和，已记录）。
-**Impact on plan:** 完全按计划落地，SQLite 默认套件零回归。
+None - plan executed exactly as written. 无 Rule 1/2/3 自动修复触发；无 Rule 4 架构变更。
 
 ## Issues Encountered
-- **Procrastinate 3.8.1 API 确认**：`get_stalled_jobs`/`retry_job`/`cancel_job_by_id_async`/`list_jobs_async`/`defer_job_async` 均为 async；`get_stalled_jobs(seconds_since_heartbeat=30)` 为 heartbeat 判定（`nb_seconds` 已 deprecated）；`get_worker_connector()` 在 DjangoConnector 上存在 → 返回 `PsycopgConnector`；`procrastinate.contrib.django` 用 blueprint 模式（`@app.task` 在其 `ready()` 前注册到 blueprint，由 `create_app` 并入真实 App）——故 durable 在 INSTALLED_APPS 中先于（append 在末尾的）procrastinate.contrib.django，`durable.ready()` 的 `@app.task` 注册仍正确被并入。逐项经 `uv run python` 实测确认后再编码。
-
-## Manual-Only Verification (human_needed)
-- **真实 kill-worker → 另一 worker 经周期 leader rescue 接管在途 stalled 任务重投**（DURABLE-03）：需两个活 worker 进程 + 真实 Postgres + 等心跳过期，CI 昂贵/不稳。见 `60-VALIDATION.md`「Manual-Only Verifications」，标 human_needed。本 plan 的 `test_stalled_rescue.py` 用 forged-heartbeat（register_worker + fetch_job 占 doing → SQL 回拨 `last_heartbeat` → `get_stalled_jobs`/`retry_job`）自动化逼近，不真 kill 进程。
-
-## User Setup Required
-None — SQLite 默认路径无需外部服务。Postgres durable 后端 / worker 进程的实际运行验证由 Plan 60-04（Postgres CI，postgres:17-alpine service 跑 `-m postgres_queue`）落地；`postgres_queue` 测试在无 Postgres 的本地默认套件被 deselect（不影响 dev/pytest）。
+None — 三个任务的 acceptance 与 verify 命令全部通过；Tasks 1/2 在前序 wave 已提交实现，Task 3 完成测试收尾后提交。
 
 ## Verification Results
-- `uv run python manage.py check`（SQLite 默认）→ System check identified no issues，未注册 procrastinate.contrib.django。
-- `uv run pytest tests/durable/test_no_direct_import.py -q` → 1 passed（import 隔离守护绿，新增 tasks.py/management/ 在允许清单内）。
-- `uv run python manage.py run_worker --help` → 打印帮助（SQLite 下不触达 procrastinate）；`grep -n "listen_notify=False" run_worker.py` 命中。
-- `uv run pytest tests/durable -q` → **31 passed, 8 deselected**（postgres_queue 默认排除，SQLite 套件零回归）。
-- `uv run pytest tests/durable -m postgres_queue -q`（无 Postgres）→ **8 skipped, 31 deselected**（collected-but-skipped，非 error）。
-- `uv run pytest tests/durable -m postgres_queue --co -q` → 8 tests collected，无收集错误。
-- `uv run ruff check durable friday/settings.py tests/durable` → All checks passed。
-- `grep -rn "nb_seconds=" durable/` → 无命中（heartbeat 判定，绝不用 deprecated nb_seconds）。
-- `grep -n "_use_procrastinate" friday/settings.py` → import（line 271）+ 调用（line 273）命中，settings 内无另写等价判据。
+- `cd server && uv run python manage.py check`（SQLite 默认）→ **0 issues**，未尝试建 procrastinate 表。
+- `cd server && uv run pytest tests/durable -q`（SQLite）→ **31 passed, 8 deselected**（postgres_queue 两文件 8 用例被 addopts `not postgres_queue` 默认排除，非 errored）。
+- `cd server && uv run ruff check durable tests/durable` → All checks passed。
+- `cd server && uv run python manage.py run_worker --help` → 帮助正常打印。
+- `grep -n "listen_notify=False" durable/management/commands/run_worker.py` → 命中（实参与 docstring）。
+- `grep -n "_use_procrastinate" friday/settings.py` → 命中 import 与调用（settings 无另写等价判据）。
+- no-direct-import 守护：`test_no_direct_import.py` 绿（durable/tasks.py、durable/management/、friday/settings.py、tests/ 在允许清单内）。
+- Postgres 专项（本地无 Postgres，未执行；CI 在 Plan 60-04 强制）：`DATABASE_URL=postgres://... DURABLE_TASK_BACKEND=procrastinate uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost -q`。
+
+## Manual-Only / Deferred Verifications
+- **真实 kill-worker E2E**（kill 一个活 worker → 另一 worker 经周期 leader rescue 接管在途 stalled 重投）：需两个活 worker 进程 + 真实 Postgres + 等心跳过期，CI 昂贵/不稳，标 **human_needed**（见 60-VALIDATION.md「Manual-Only Verifications」），不在本自动化范围；自动化以 forged-heartbeat 逼近。
+- **Postgres CI job**（postgres:17-alpine service 跑 `-m postgres_queue`）：由 Plan 60-04 落地。
+
+## User Setup Required
+None — SQLite 默认路径无需外部服务。Postgres durable 后端 / worker 进程需部署侧配置 `DATABASE_URL=postgres://...`（+ 可选 `DURABLE_TASK_BACKEND=procrastinate`、worker 进程 `FRIDAY_PROCESS_ROLE=worker`），由后续部署阶段消费。
 
 ## Next Phase Readiness
-- ✅ Procrastinate durable 后端 + 独立 worker 命令 + periodic 单例 rescue 就位，DURABLE-01 Postgres 半 + DURABLE-03 闭环达成。
-- ✅ `postgres_queue` 测试就位，Plan 60-04 可直接建 postgres:17-alpine service CI job 跑 `-m postgres_queue --allow-hosts=127.0.0.1,localhost`。
-- ✅ `durable_ping` 烟囱任务 + 队列常量就位，Phase 61/62 在此之上接业务任务（index/graph/crawl 迁移）。
-- ⚠️ Postgres 路径未在本地实测（无本地 Postgres）；测试按 Procrastinate 3.8.1 公开 API 设计、SQLite 下 collected-but-skipped 已验证，真实 Postgres 全绿由 Plan 60-04 CI 强制。
-- ⚠️ 真实 kill-worker E2E 留人工（manual-only / human_needed）。
+- ✅ Postgres durable 入队/消费 + 周期单例 rescue 内核就位，Plan 60-04 可在此之上建最小聚焦 Postgres CI（server-ci SQLite + postgres-queue service 两 job）跑 `-m postgres_queue`。
+- ✅ `durable_ping` 烟囱任务 + queues 常量就位，Phase 61/62 迁移 index/graph/crawl 业务任务可经 `@app.task` 注册 + `DurableTaskService.defer` 入队。
+- ⚠️ 真实 kill-worker E2E 留人工验证；postgres_queue 套件本地未跑（无 Postgres），CI 强制在 Plan 60-04。
 
 ## Self-Check: PASSED
-- 6 个新增交付文件 + SUMMARY.md 全部存在（durable/tasks.py、management/commands/run_worker.py、两个空包 `__init__.py`、两个 postgres_queue 测试文件、60-03-SUMMARY.md）。
-- 3 个 task 提交（505277eca / 351d07255 / 9c86d0f50）经 `git cat-file -e` 确认存在。
-- 未修改 / 未 staging STATE.md / ROADMAP.md（仅提交各 task 文件 + SUMMARY；STATE/ROADMAP 的工作树改动为 plan 前既有，非本 plan 产生）。
+- 6 个新建文件 + 4 个修改文件全部存在并落地。
+- 3 个 task 提交（505277eca / 351d07255 / 9c86d0f50）经 git log 确认存在。
+- Task 3 提交 `9c86d0f50` 仅含 conftest.py + test_procrastinate_backend.py + test_stalled_rescue.py 三文件（无不相关文件混入）。
+- 未修改 STATE.md / ROADMAP.md（由 orchestrator 负责）。
 
 ---
 *Phase: 60-durable*
