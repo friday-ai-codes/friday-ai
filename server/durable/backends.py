@@ -273,9 +273,15 @@ class ProcrastinateBackend:
         return str(jobs[0].id)
 
     async def get(self, job_id: str) -> dict[str, Any]:
+        # 非数字 / None job_id 优雅返回 unknown，对齐 in-process 后端"从不抛"语义
+        # （WR-01）：幂等兜底路径可能返回非数字标识，直接 int() 会崩。
+        try:
+            jid = int(job_id)
+        except (TypeError, ValueError):
+            return {"job_id": job_id, "status": "unknown"}
         from procrastinate.contrib.django import app
 
-        jobs = list(await app.job_manager.list_jobs_async(id=int(job_id)))
+        jobs = list(await app.job_manager.list_jobs_async(id=jid))
         if not jobs:
             # 未知 / 已被清理的 job：返回结构化 unknown，不抛（与 in-process 一致）。
             return {"job_id": job_id, "status": "unknown"}
@@ -293,10 +299,15 @@ class ProcrastinateBackend:
         }
 
     async def cancel(self, job_id: str) -> bool:
+        # 非数字 / None job_id 优雅返回 False，对齐 in-process 后端"从不抛"语义（WR-01）。
+        try:
+            jid = int(job_id)
+        except (TypeError, ValueError):
+            return False
         from procrastinate.contrib.django import app
 
         # cancel_job_by_id_async 仅能取消尚未被领取（todo）的 job，返回是否成功。
-        return bool(await app.job_manager.cancel_job_by_id_async(int(job_id)))
+        return bool(await app.job_manager.cancel_job_by_id_async(jid))
 
     async def retry_stalled(self) -> int:
         from procrastinate.contrib.django import app
