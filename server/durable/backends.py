@@ -190,16 +190,26 @@ def _reset_for_tests() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Procrastinate 后端占位（真正实现由 Plan 60-03 落地）
+# Procrastinate durable 后端（Postgres 路径）
 # ---------------------------------------------------------------------------
 
 
 class ProcrastinateBackend:
-    """Procrastinate durable 后端占位。
+    """Procrastinate durable 后端：把统一接口委托给 `procrastinate.contrib.django.app`。
 
-    本 plan 仅保证符号存在，供 `service.py` 懒局部 import 选择后端时可解析；
-    SQLite / fallback 路径永不触达此类。所有方法体在 Plan 60-03 实现前抛
-    NotImplementedError，避免被误用。
+    适配层隔离的"命门"：**只有本模块**直接 import procrastinate，业务侧经
+    `DurableTaskService` 看不见队列实现。仅当 `_use_procrastinate()` 为真
+    （Postgres + backend∈{auto,procrastinate}）时才会被 `service.py` 局部 import
+    并触达——SQLite / fallback 路径永不到此。
+
+    `defer/get/cancel/retry_stalled` 全部异步委托 Procrastinate：
+    - `defer`：按 `task` 名取已注册任务，`configure(queueing_lock=idempotency_key,
+      priority=..., schedule_at=run_at)` 后 `defer_async(**payload)`；queueing_lock
+      命中（`AlreadyEnqueued`）按幂等语义吞并返回既有 job 标识。
+    - `retry_stalled`：`get_stalled_jobs()`（基于 worker heartbeat，**不传 deprecated
+      nb_seconds**，慢≠死）+ `retry_job()` 重投，返回重投计数；供
+      `DurableTaskService.retry_stalled` 直接路径与 `tasks.retry_stalled_durable_jobs`
+      periodic 复用同一实现。
     """
 
     async def defer(
@@ -212,16 +222,91 @@ class ProcrastinateBackend:
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
     ) -> str:
-        raise NotImplementedError("procrastinate backend 由 Plan 60-03 实现")
+        from procrastinate import exceptions
+        from procrastinate.contrib.django import app
+
+        task_obj = app.tasks.get(task)
+        if task_obj is None:
+            raise KeyError(
+                f"durable 任务 {task!r} 未在 procrastinate app 注册"
+                "（确认 durable.tasks 已被 DurableConfig.ready() 导入触发 @app.task）"
+            )
+
+        # 仅在显式给出时才透传对应配置项：queueing_lock 让同 key 在 todo 唯一（幂等
+        # 入队），schedule_at 落 run_at（延迟调度），priority 影响领取顺序。
+        configure_options: dict[str, Any] = {"queue": queue, "priority": priority}
+        if idempotency_key is not None:
+            configure_options["queueing_lock"] = idempotency_key
+        if run_at is not None:
+            configure_options["schedule_at"] = run_at
+
+        deferrer = task_obj.configure(**configure_options)
+        try:
+            job_id = await deferrer.defer_async(**payload)
+        except exceptions.AlreadyEnqueued:
+            # queueing_lock 命中：todo 已有同 lock 的 job。幂等语义——不报错，
+            # 查回既有 job 标识返回（记 info，便于观测）。
+            existing = await self._find_job_by_queueing_lock(idempotency_key)
+            logger.info(
+                "durable_procrastinate_already_enqueued",
+                task=task,
+                queue=queue,
+                idempotency_key=idempotency_key,
+                existing_job_id=existing,
+            )
+            return existing if existing is not None else str(idempotency_key)
+        return str(job_id)
+
+    @staticmethod
+    async def _find_job_by_queueing_lock(idempotency_key: str | None) -> str | None:
+        if idempotency_key is None:
+            return None
+        from procrastinate.contrib.django import app
+
+        jobs = list(await app.job_manager.list_jobs_async(queueing_lock=idempotency_key))
+        if not jobs:
+            return None
+        return str(jobs[0].id)
 
     async def get(self, job_id: str) -> dict[str, Any]:
-        raise NotImplementedError("procrastinate backend 由 Plan 60-03 实现")
+        from procrastinate.contrib.django import app
+
+        jobs = list(await app.job_manager.list_jobs_async(id=int(job_id)))
+        if not jobs:
+            # 未知 / 已被清理的 job：返回结构化 unknown，不抛（与 in-process 一致）。
+            return {"job_id": job_id, "status": "unknown"}
+        job = jobs[0]
+        status = job.status.value if hasattr(job.status, "value") else str(job.status)
+        return {
+            "job_id": str(job.id),
+            "status": status,
+            "task": job.task_name,
+            "queue": job.queue,
+            "priority": job.priority,
+            "queueing_lock": job.queueing_lock,
+            "scheduled_at": job.scheduled_at,
+            "attempts": job.attempts,
+        }
 
     async def cancel(self, job_id: str) -> bool:
-        raise NotImplementedError("procrastinate backend 由 Plan 60-03 实现")
+        from procrastinate.contrib.django import app
+
+        # cancel_job_by_id_async 仅能取消尚未被领取（todo）的 job，返回是否成功。
+        return bool(await app.job_manager.cancel_job_by_id_async(int(job_id)))
 
     async def retry_stalled(self) -> int:
-        raise NotImplementedError("procrastinate backend 由 Plan 60-03 实现")
+        from procrastinate.contrib.django import app
+
+        # 基于 worker heartbeat 判定 stalled（默认 seconds_since_heartbeat=30），
+        # 绝不传 deprecated 的 nb_seconds（会误杀仍在跑的慢任务，违反"慢≠死"）。
+        stalled_jobs = list(await app.job_manager.get_stalled_jobs())
+        count = 0
+        for job in stalled_jobs:
+            await app.job_manager.retry_job(job)
+            count += 1
+        if count:
+            logger.info("durable_procrastinate_retry_stalled", retried=count)
+        return count
 
 
 # 模块级单例：service.py 懒局部 import 这两个符号委托。
