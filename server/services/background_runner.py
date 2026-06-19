@@ -1,5 +1,18 @@
 """后台任务运行器：将耗时 coroutine 调度到独立线程的事件循环。
 
+定位降级（Phase 61 起）
+=======================
+自 durable 队列底座（Plan 61-01/02）接管生产 index/graph 任务后，``background_runner``
+**降级为仅 SQLite dev fallback / 少量非持久轻任务**：
+
+- 生产 index/graph 改走 durable（``DurableTaskService.defer`` → Postgres Procrastinate
+  worker），**不再经 background_runner / ResumableTask**，避免 background_runner /
+  ResumableTask / durable 三套并存。
+- 本运行器进程内执行、重启即丢，不提供 durable 持久化；只适合 SQLite dev/pytest 的
+  in-process fallback，以及无需断点恢复的轻任务。
+- **仅定位降级，运行逻辑零改动**：in-process durable 后端仍复用它（``durable.backends``
+  的 in-process 路径），既有调用方零回归。
+
 问题背景
 ========
 索引、overlay 重建等长任务之前用 `asyncio.create_task(coro)` 在 ASGI request
