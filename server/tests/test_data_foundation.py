@@ -119,69 +119,74 @@ class TestAsyncSubprocess:
 
 
 class TestBackgroundRunnerIntegration:
-    """验证 _schedule_index 把任务调度到独立 worker loop 而非请求 loop。
+    """验证 _schedule_index 把索引任务投递到 durable 队列（Phase 61 迁移后契约）。
 
     历史问题（2026-05-12）：原实现 `asyncio.create_task(...)` 把任务绑死在 ASGI
-    请求 event loop。HTTP 响应一返回，asgiref CurrentThreadExecutor 关闭 →
-    后台 task 后续 ORM `sync_to_async` 全部抛 `CurrentThreadExecutor already
-    quit or is broken`。
+    请求 event loop，HTTP 响应一返回 asgiref CurrentThreadExecutor 关闭 → 后台
+    task 后续 ORM `sync_to_async` 全炸。Phase 61 把入队迁移到 `DurableTaskService`：
+    `_schedule_index` 不再返回 `concurrent.futures.Future`，改返回 durable job id
+    字符串，并经 `DurableTaskService.defer("durable_index", ..., queue=QUEUE_INDEX,
+    idempotency_key="index:{repo_id}")` 投递（worker-loop 隔离语义下沉到 durable
+    in-process 后端层，另由 `test_background_runner_does_not_inherit_request_executor_context`
+    守护）。
     """
 
-    async def test_schedule_index_returns_concurrent_future(self):
-        """_schedule_index 返回 concurrent.futures.Future（来自 worker loop）。"""
-        from concurrent.futures import Future
+    async def test_schedule_index_defers_durable_index(self):
+        """_schedule_index 投递 durable_index 任务并返回 durable job id（不再返回 Future）。"""
+        from unittest.mock import AsyncMock
+
+        from asgiref.sync import sync_to_async
+
+        from durable import QUEUE_INDEX
+        from repositories.index_views import _schedule_index
+
+        with patch(
+            "durable.service.DurableTaskService.defer",
+            new_callable=AsyncMock,
+            return_value="index:fake-repo-id",
+        ) as mock_defer:
+            # _schedule_index 是同步 helper（内部 async_to_sync(defer)），调用方
+            # 经 sync_to_async 在工作线程执行，避免在事件循环线程上裸 async_to_sync
+            # 抛 RuntimeError（沿用生产 IndexTriggerView.post 范式）。
+            job_id = await sync_to_async(_schedule_index)("fake-repo-id", "fake-history-id")
+
+        assert job_id == "index:fake-repo-id"
+        mock_defer.assert_awaited_once()
+        args, kwargs = mock_defer.call_args
+        assert args[0] == "durable_index"
+        payload = args[1]
+        assert payload["repository_id"] == "fake-repo-id"
+        assert payload["history_id"] == "fake-history-id"
+        assert kwargs["queue"] == QUEUE_INDEX
+        assert kwargs["idempotency_key"] == "index:fake-repo-id"
+
+    async def test_schedule_index_forwards_branch_and_trigger(self):
+        """_schedule_index 把 branch / trigger 透传进 durable payload（缺省 branch=None、trigger=manual）。"""
+        from unittest.mock import AsyncMock
+
+        from asgiref.sync import sync_to_async
 
         from repositories.index_views import _schedule_index
 
-        async def fake_index(repo_id, *, history_id=None, branch=None):
-            return {"status": "success"}
-
         with patch(
-            "repositories.index_views.clone_and_index_repository",
-            side_effect=fake_index,
-        ):
-            future = _schedule_index("fake-repo-id", "fake-history-id")
-            try:
-                assert isinstance(future, Future)
-                # .result() 会阻塞直到 worker loop 完成 task —
-                # 之所以能成功跑完，正说明 task 在 worker loop 上运行。
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, future.result, 5.0,
-                )
-                assert result == {"status": "success"}
-            finally:
-                if not future.done():
-                    future.cancel()
+            "durable.service.DurableTaskService.defer",
+            new_callable=AsyncMock,
+            return_value="index:repo-x",
+        ) as mock_defer:
+            await sync_to_async(_schedule_index)("repo-1", "hist-1")
+            await sync_to_async(_schedule_index)(
+                "repo-2", "hist-2", branch="feature/x", trigger="webhook"
+            )
 
-    async def test_task_runs_on_worker_thread_not_request_thread(self):
-        """worker loop 跑在独立线程：task 看到的 thread ident 与请求线程不同。"""
-        import threading
+        first_payload = mock_defer.call_args_list[0].args[1]
+        assert first_payload["branch"] is None
+        assert first_payload["trigger"] == "manual"
 
-        from repositories.index_views import _schedule_index
-
-        request_thread_id = threading.get_ident()
-        observed: dict[str, int] = {}
-
-        async def fake_index(repo_id, *, history_id=None, branch=None):
-            observed["task_thread_id"] = threading.get_ident()
-            return {"status": "success"}
-
-        with patch(
-            "repositories.index_views.clone_and_index_repository",
-            side_effect=fake_index,
-        ):
-            future = _schedule_index("fake-repo-id", "fake-history-id")
-            try:
-                await asyncio.get_event_loop().run_in_executor(
-                    None, future.result, 5.0,
-                )
-            finally:
-                if not future.done():
-                    future.cancel()
-
-        assert observed.get("task_thread_id") not in (None, request_thread_id), (
-            "后台 task 必须运行在 worker 线程，不能复用请求线程"
-        )
+        second_call = mock_defer.call_args_list[1]
+        second_payload = second_call.args[1]
+        assert second_payload["branch"] == "feature/x"
+        assert second_payload["trigger"] == "webhook"
+        assert second_call.kwargs["idempotency_key"] == "index:repo-2"
 
     async def test_background_runner_does_not_inherit_request_executor_context(self):
         """后台 task 不应继承请求上下文里已关闭的 CurrentThreadExecutor。"""
@@ -263,14 +268,17 @@ class TestConcurrencyLock:
         assert result is None
 
     async def test_index_trigger_creates_index_history(self, repository):
-        """IndexTriggerView.post 触发时创建 IndexHistory 记录"""
+        """IndexTriggerView.post 触发时创建 IndexHistory 记录（durable defer 已 mock）。"""
         from repositories.index_views import IndexTriggerView
 
-        async def fake_index(repo_id, *, history_id=None):
-            return {"status": "success"}
-
         with (
-            patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index),
+            # 入队迁移到 durable：patch defer seam 而非旧 clone_and_index_repository，
+            # 避免触发真实 clone，并验证 view 仍创建 RUNNING IndexHistory 并返回 202。
+            patch(
+                "durable.service.DurableTaskService.defer",
+                new_callable=AsyncMock,
+                return_value="index:fake-job",
+            ),
             patch("repositories.index_views._acquire_index_lock_async", return_value=repository),
         ):
             from rest_framework.parsers import JSONParser
@@ -374,7 +382,13 @@ class TestRepositoryDefaultBranchUpdate:
         )
         assert serializer.is_valid(), serializer.errors
 
-        with patch("services.background_runner.run_in_background") as run_in_background:
+        # 默认分支变更后的滚动索引经 durable defer 入队（Phase 61 迁移）：
+        # patch defer seam 并断言被调用，而非旧 services.background_runner.run_in_background。
+        with patch(
+            "durable.service.DurableTaskService.defer",
+            new_callable=AsyncMock,
+            return_value="index:fake-job",
+        ) as mock_defer:
             await RepositoryViewSet().perform_aupdate(serializer)
 
         await repository.arefresh_from_db()
@@ -393,7 +407,9 @@ class TestRepositoryDefaultBranchUpdate:
         assert history.status == IndexHistoryStatus.RUNNING
         assert history.from_sha == "oldsha"
         assert branch_index.is_stale is True
-        assert run_in_background.called
+        mock_defer.assert_awaited_once()
+        assert mock_defer.call_args.args[0] == "durable_index"
+        assert mock_defer.call_args.kwargs["idempotency_key"] == f"index:{repository.id}"
 
 
 # ============================================================================
