@@ -131,6 +131,13 @@ class CodegraphConfig(AppConfig):
         import os
         import sys
 
+        # 进程角色门禁（DURABLE-02）：role 是显式入口（worker/migrate/test 短路），
+        # 下方既有 argv 嗅探为兜底；两者任一拦截即不调度 daemon 线程。
+        from durable.roles import should_run_startup_side_effects
+
+        if not should_run_startup_side_effects(job="galaxy_cache_warm"):
+            return
+
         argv0 = sys.argv[0] if sys.argv else ""
         if "pytest" in argv0 or "py.test" in argv0:
             return
@@ -183,6 +190,13 @@ class CodegraphConfig(AppConfig):
         """
         import os
         import sys
+
+        # 进程角色门禁（DURABLE-02）：role 是显式入口（worker/migrate/test 短路），
+        # 下方既有 argv 嗅探为兜底；两者任一拦截即不调度 daemon 线程。
+        from durable.roles import should_run_startup_side_effects
+
+        if not should_run_startup_side_effects(job="orphan_graph_reconcile"):
+            return
 
         argv0 = sys.argv[0] if sys.argv else ""
         if "pytest" in argv0 or "py.test" in argv0:
@@ -242,6 +256,7 @@ class CodegraphConfig(AppConfig):
         implementation 切 True 完成 Stage C 切换。
         """
         import structlog as _structlog
+
         from codegraph.extractors.registry import register_backend
         from codegraph.lsp.gopls_backend import make_gopls_backend
 
