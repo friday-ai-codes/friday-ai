@@ -1,0 +1,56 @@
+name: CI
+
+# 聚焦 server 的 durable 底座 CI（DURABLE-04）：
+#   - server-ci    默认 SQLite 路径（零回归基线，addopts 默认排除 postgres_queue）
+#   - postgres-queue  postgres:17-alpine service container 跑 -m postgres_queue
+# 仓库历史 workflow 已于 5579e45f2 整体删除；本文件从零创建，只覆盖 server +
+# Postgres 最小门禁，不顺带恢复 web/runner/docs/task/security-scan 等无关 job。
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/ci.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/ci.yaml"
+
+permissions:
+  contents: read
+
+# 同一分支/PR 的新 push 自动取消仍在进行的旧 run，避免重复占用与长时间空转
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-ci:
+    name: server-ci (SQLite 默认)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: server/.python-version
+          allow-prereleases: true
+      - name: Install dependencies (含 dev 组)
+        run: uv sync --locked --dev
+      - name: Django system check
+        run: uv run python manage.py check
+      # 全量 ruff 仍有大量历史遗留告警；作为 advisory baseline 不阻塞门禁，
+      # 与历史 ci.yaml 既有约定一致（聚焦阶段不顺带清理 legacy lint）。
+      - name: Ruff lint (advisory legacy baseline)
+        continue-on-error: true
+        run: uv run ruff check .
+      # 默认 addopts 即 SQLite 且 `-m 'not ... and not postgres_queue'`，
+      # 无需显式 -m；该步骤即"SQLite 默认路径不受影响"的零回归门禁。
+      - name: Pytest (SQLite 默认路径)
+        run: uv run pytest
