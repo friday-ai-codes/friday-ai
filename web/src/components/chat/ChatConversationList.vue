@@ -329,6 +329,12 @@ async function handleDelete(conv: Conversation) {
                 <p v-else class="chat-conversation-title flex-1 min-w-0">
                   {{ conv.title }}
                 </p>
+                <!-- 草稿态徽标：尚未成功发出首条消息的会话（如模型不支持图片导致首发失败后保留） -->
+                <span
+                  v-if="renamingId !== conv.id && conv.status === 'draft'"
+                  class="conv-draft-badge"
+                  title="草稿：尚未成功发送消息，可在会话内更换模型后重试"
+                >草稿</span>
 
                 <!-- SDD / 编码 / 方案 徽标（非重命名态显示） -->
                 <ConversationBadges
@@ -595,6 +601,17 @@ async function handleDelete(conv: Conversation) {
   height: 0.4375rem;
   border-radius: 9999px;
   flex-shrink: 0;
+}
+
+.conv-draft-badge {
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+  border: 1px solid hsl(214 32% 88%);
+  background: hsl(210 40% 96%);
+  padding: 0 0.3125rem;
+  font-size: 0.625rem;
+  line-height: 1.6;
+  color: hsl(215 16% 47%);
 }
 
 .conv-status-dot--running {

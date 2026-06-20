@@ -149,14 +149,29 @@ function getGroupColor(group: PaletteGroup): string {
   return getNodeVisual(group.items[0]?.type ?? '').color
 }
 
+/**
+ * 分类标签胶囊配色 — 之前返回空字符串导致「白字 + 透明背景」完全不可见。
+ * 现按节点色系给出柔和底色 + 同色系文字，保证可读且彼此区分。
+ */
 function getCategoryGradient(color: string): string {
-  const gradients: Record<string, string> = {
-    blue: '',
-    green: '',
-    purple: '',
-    orange: '',
+  const styles: Record<string, string> = {
+    blue: 'bg-blue-500/12 text-blue-600',
+    green: 'bg-emerald-500/12 text-emerald-600',
+    purple: 'bg-violet-500/12 text-violet-600',
+    orange: 'bg-amber-500/15 text-amber-600',
   }
-  return gradients[color] || gradients.blue
+  return styles[color] || styles.blue
+}
+
+/** 分类标签前的小圆点颜色，与胶囊配色呼应 */
+function getCategoryDot(color: string): string {
+  const dots: Record<string, string> = {
+    blue: 'bg-blue-500',
+    green: 'bg-emerald-500',
+    purple: 'bg-violet-500',
+    orange: 'bg-amber-500',
+  }
+  return dots[color] || dots.blue
 }
 </script>
 
@@ -170,7 +185,7 @@ function getCategoryGradient(color: string): string {
         </div>
         <div>
           <h3 class="text-base font-semibold flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full animate-pulse" />
+            <div class="w-2 h-2 rounded-full bg-primary animate-pulse" />
             节点库
           </h3>
           <p class="text-xs text-muted-foreground">
@@ -200,10 +215,11 @@ function getCategoryGradient(color: string): string {
       <!-- Recent Nodes -->
       <div v-if="recentNodes.length > 0 && !searchQuery">
         <div class="flex items-center gap-2 mb-2.5">
-          <div class="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-muted/80 text-muted-foreground shadow-sm">
+          <div class="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+            <span class="icon-[lucide--clock] text-[10px]" />
             最近使用
           </div>
-          <div class="flex-1 h-px" />
+          <div class="flex-1 h-px bg-border/60" />
         </div>
         <div class="space-y-1.5 mb-4">
           <NodePaletteItem
@@ -220,12 +236,13 @@ function getCategoryGradient(color: string): string {
         <!-- Category Header -->
         <div class="flex items-center gap-2 mb-2.5">
           <div
-            class="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white shadow-sm"
+            class="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full"
             :class="getCategoryGradient(getGroupColor(group))"
           >
+            <span class="size-1.5 rounded-full" :class="getCategoryDot(getGroupColor(group))" />
             {{ group.name }}
           </div>
-          <div class="flex-1 h-px" />
+          <div class="flex-1 h-px bg-border/60" />
         </div>
 
         <!-- Node Items -->

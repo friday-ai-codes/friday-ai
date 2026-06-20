@@ -125,7 +125,9 @@ class BitableClient:
             # 开放平台 sort 为 JSON 字符串数组（httpx 自动 URL 编码）。
             params["sort"] = json.dumps(sort, ensure_ascii=False)
 
-        async with httpx.AsyncClient() as client:
+        # 大表首页/复杂字段可能 >5s，显式给 30s（对齐 FeishuDocClient.get_document_content），
+        # 否则 httpx 默认 5s ReadTimeout 会被上层吞成「抓取信息源时出错」泛化提示。
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records",
                 headers={"Authorization": f"Bearer {token}"},
@@ -149,7 +151,7 @@ class BitableClient:
         """列出 Bitable 数据表（骨架，端点形状同 list_records，留 REL-03 演进）。"""
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables",
                 headers={"Authorization": f"Bearer {token}"},

@@ -1,10 +1,16 @@
 """5 Provider 健康检查 dispatch + 原子写入 ProviderCredential 三字段（contract / contract）。
 
 设计要点（provider health design）：
-- Anthropic 用 POST /v1/messages/count_tokens（稳定轻量；兼容网关支持度最好）
-- OpenAI Chat / Responses 两种走 GET /v1/models
-- Gemini 走 GET /v1beta/models?key=...（key 作为 query string）
-- Ollama 走 GET /api/tags（同次往返解析 models[].name 写入 available_models，contract 协同）
+- 统一策略：所有 Provider 都向**真实对话端点**发一条 "hello" 消息探活，
+  而非 count_tokens / /models / /api/tags 等轻量端点。原因：大量第三方
+  Anthropic/OpenAI 兼容网关只实现对话端点，轻量端点常返回 404；发真实
+  请求兼容性最好，且网关侧能观测到真实推理流量。
+  - Anthropic   → POST /v1/messages
+  - OpenAI Chat / Responses → POST /chat/completions
+  - Gemini      → POST /v1beta/models/{model}:generateContent?key=...
+  - Ollama      → POST /api/chat（stream=false）
+  注：available_models 不再由健康检查顺带写入，统一由 refresh-models 端点维护。
+- 探活请求统一 max_tokens 取小值（16），仅验证可达性，不关心回复长度。
 - 同步阻塞 + 5s timeout + httpx AsyncClient
 - 4 个 _ping_* 与 health_check 异常分支的 error 字段必须经 redact_secrets_in_text
   脱敏 + 500 字符截断后才入库（security mitigation 缓解契约；共 5 处调用点）
@@ -32,6 +38,10 @@ logger = structlog.get_logger(__name__)
 
 HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
 ERROR_TRUNCATE_LIMIT = 500
+
+# 探活消息内容与最大回复 token：仅验证可达性，不关心回复长度
+HEALTH_CHECK_PROBE_MESSAGE = "hello"
+HEALTH_CHECK_PROBE_MAX_TOKENS = 16
 
 
 @dataclass(frozen=True)
@@ -78,7 +88,7 @@ async def _ping_anthropic(
     cfg: dict[str, Any],
     override_model: str | None = None,
 ) -> HealthCheckResult:
-    """POST /v1/messages/count_tokens —— 稳定轻量端点（比 /v1/models 兼容网关更广）。"""
+    """POST /v1/messages —— 发一条 "hello" 真实对话探活（兼容网关支持度最好）。"""
     start = time.monotonic()
     api_key = cfg.get("api_key", "")
     base_url = (
@@ -87,18 +97,22 @@ async def _ping_anthropic(
     # default_model 为空时用 fallback（避免 400 unsupported_model）
     model = override_model or cred.default_model or "claude-3-5-haiku-20241022"
     resp = await client.post(
-        f"{base_url}/v1/messages/count_tokens",
+        f"{base_url}/v1/messages",
         headers={
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
-        json={"model": model, "messages": [{"role": "user", "content": "ping"}]},
+        json={
+            "model": model,
+            "max_tokens": HEALTH_CHECK_PROBE_MAX_TOKENS,
+            "messages": [{"role": "user", "content": HEALTH_CHECK_PROBE_MESSAGE}],
+        },
     )
     latency = int((time.monotonic() - start) * 1000)
     if resp.status_code == 200:
         body = resp.json() if resp.content else {}
-        if body.get("input_tokens", -1) >= 0:
+        if body.get("type") == "message" or "content" in body:
             return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
     return HealthCheckResult(
         ok=False,
@@ -114,38 +128,38 @@ async def _ping_openai(
     cfg: dict[str, Any],
     override_model: str | None = None,
 ) -> HealthCheckResult:
-    """GET /v1/models —— OpenAI Chat Completions 与 Responses API 共享。"""
+    """POST /chat/completions —— 发一条 "hello" 真实对话探活（Chat / Responses 共享）。"""
     start = time.monotonic()
     api_key = cfg.get("api_key", "")
     base_url = (
         cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
     ).rstrip("/")
-    headers = {"Authorization": f"Bearer {api_key}"}
+    model = override_model or cred.default_model
+    if not model:
+        return HealthCheckResult(
+            ok=False,
+            status="error",
+            latency_ms=0,
+            error="测试连接需要指定模型（请先配置默认模型）",
+        )
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     if cfg.get("organization_id"):
         headers["OpenAI-Organization"] = str(cfg["organization_id"])
 
-    # 若指定了模型，改走轻量 chat.completions 探活（比 /models 更精确）
-    if override_model:
-        resp = await client.post(
-            f"{base_url}/chat/completions",
-            headers={**headers, "Content-Type": "application/json"},
-            json={
-                "model": override_model,
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 1,
-            },
-        )
-    else:
-        resp = await client.get(f"{base_url}/models", headers=headers)
+    resp = await client.post(
+        f"{base_url}/chat/completions",
+        headers=headers,
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": HEALTH_CHECK_PROBE_MESSAGE}],
+            "max_tokens": HEALTH_CHECK_PROBE_MAX_TOKENS,
+        },
+    )
     latency = int((time.monotonic() - start) * 1000)
     if resp.status_code == 200:
         body = resp.json() if resp.content else {}
-        if override_model:
-            if "choices" in body:
-                return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
-        else:
-            if isinstance(body.get("data"), list) and len(body["data"]) > 0:
-                return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
+        if "choices" in body:
+            return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
     return HealthCheckResult(
         ok=False,
         status="error",
@@ -160,15 +174,30 @@ async def _ping_gemini(
     cfg: dict[str, Any],
     override_model: str | None = None,
 ) -> HealthCheckResult:
-    """GET /v1beta/models?key=... —— AI Studio 路径，key 走 query string。"""
+    """POST /v1beta/models/{model}:generateContent?key=... —— 发一条 "hello" 真实对话探活。"""
     start = time.monotonic()
     api_key = cfg.get("api_key", "")
     base_url = PROVIDER_REGISTRY[ProviderType.GEMINI].default_base_url.rstrip("/")
-    resp = await client.get(f"{base_url}/models", params={"key": api_key})
+    model = override_model or cred.default_model
+    if not model:
+        return HealthCheckResult(
+            ok=False,
+            status="error",
+            latency_ms=0,
+            error="测试连接需要指定模型（请先配置默认模型）",
+        )
+    resp = await client.post(
+        f"{base_url}/models/{model}:generateContent",
+        params={"key": api_key},
+        json={
+            "contents": [{"parts": [{"text": HEALTH_CHECK_PROBE_MESSAGE}]}],
+            "generationConfig": {"maxOutputTokens": HEALTH_CHECK_PROBE_MAX_TOKENS},
+        },
+    )
     latency = int((time.monotonic() - start) * 1000)
     if resp.status_code == 200:
         body = resp.json() if resp.content else {}
-        if isinstance(body.get("models"), list) and len(body["models"]) > 0:
+        if "candidates" in body:
             return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
     return HealthCheckResult(
         ok=False,
@@ -184,26 +213,40 @@ async def _ping_ollama(
     cfg: dict[str, Any],
     override_model: str | None = None,
 ) -> HealthCheckResult:
-    """GET /api/tags —— 同次往返解析 models[].name 填充 available_models（contract）。"""
+    """POST /api/chat —— 发一条 "hello" 真实对话探活（stream=false）。
+
+    available_models 不再在此填充，统一由 refresh-models 端点（/api/tags）维护。
+    """
     start = time.monotonic()
     base_url = (
         cfg.get("base_url") or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
     ).rstrip("/")
+    model = override_model or cred.default_model
+    if not model:
+        return HealthCheckResult(
+            ok=False,
+            status="error",
+            latency_ms=0,
+            error="测试连接需要指定模型（请先配置默认模型）",
+        )
     headers: dict[str, str] = {}
     if cfg.get("bearer_token"):
         headers["Authorization"] = f"Bearer {cfg['bearer_token']}"
-    resp = await client.get(f"{base_url}/api/tags", headers=headers)
+    resp = await client.post(
+        f"{base_url}/api/chat",
+        headers=headers,
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": HEALTH_CHECK_PROBE_MESSAGE}],
+            "stream": False,
+            "options": {"num_predict": HEALTH_CHECK_PROBE_MAX_TOKENS},
+        },
+    )
     latency = int((time.monotonic() - start) * 1000)
     if resp.status_code == 200:
         body = resp.json() if resp.content else {}
-        if isinstance(body.get("models"), list):
-            model_names = [m["name"] for m in body["models"] if isinstance(m, dict) and "name" in m]
-            return HealthCheckResult(
-                ok=True,
-                status="ok",
-                latency_ms=latency,
-                available_models=model_names,
-            )
+        if "message" in body or body.get("done") is True:
+            return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
     return HealthCheckResult(
         ok=False,
         status="error",

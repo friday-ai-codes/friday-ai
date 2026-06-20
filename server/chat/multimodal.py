@@ -287,16 +287,26 @@ def to_provider_content_blocks(
     *,
     provider_type: ProviderType,
     model: str,
+    available_models: Any = None,
 ) -> list[dict[str, Any]]:
     """把内部 parts 转成 provider 可接受的 content blocks。
 
     只有 text/image 会进入 prompt；tool_use/thinking 是 assistant 输出结构，不作为
     用户多模态请求块发送。
+
+    含图片时的能力门控必须与发送入口（``conversation_service.send_message_stream``）
+    一致：优先用凭证绑定模型的模态配置判定，避免全局推断把已配置 vision 的自定义
+    模型误判为 text-only（典型：anthropic 兼容代理下 ``mimo-v2.5-pro`` 等非
+    ``claude-`` 前缀模型）。``available_models`` 缺省时回退到全局推断（向后兼容）。
     """
     ordered = sorted(parts, key=_part_index)
     has_images = any(part.get("type") == "image" for part in ordered)
     if has_images:
-        ensure_vision_supported(provider_type, model)
+        ensure_image_input_supported(
+            provider_type=provider_type,
+            model=model,
+            available_models=available_models,
+        )
 
     blocks: list[dict[str, Any]] = []
     for part in ordered:

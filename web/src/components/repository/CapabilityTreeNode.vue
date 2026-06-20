@@ -13,9 +13,15 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(props.depth < 2)
+const rowEl = ref<HTMLElement | null>(null)
+const flashing = ref(false)
 
 const isStale = computed(() => (props.staleNodeIds ?? []).includes(props.node.node_id))
-const isHighlighted = computed(() => (props.highlightTitles ?? []).includes(props.node.title))
+// 高亮路径的末级即“目标节点”——需要滚动到位并闪烁提示（仅闪一下，不持续高亮）
+const isTarget = computed(() => {
+  const titles = props.highlightTitles ?? []
+  return titles.length > 0 && titles[titles.length - 1] === props.node.title
+})
 
 watch(
   () => props.highlightTitles,
@@ -23,6 +29,26 @@ watch(
     // 搜索定位：命中路径上的节点自动展开
     if (titles?.length && props.node.children.some(c => titles.includes(c.title)))
       expanded.value = true
+  },
+  { immediate: true },
+)
+
+// 目标节点：滚动居中并闪烁一下
+watch(
+  isTarget,
+  async (target) => {
+    if (!target)
+      return
+    await nextTick()
+    // 等待祖先展开后元素已在 DOM 中，再滚动到视图中央
+    setTimeout(() => {
+      rowEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      flashing.value = false
+      nextTick(() => {
+        flashing.value = true
+        setTimeout(() => { flashing.value = false }, 2200)
+      })
+    }, 120)
   },
   { immediate: true },
 )
@@ -37,8 +63,9 @@ const typeBadge: Record<string, { label: string, cls: string }> = {
 <template>
   <div :class="depth > 0 ? 'ml-4 border-l border-border/60 pl-3' : ''">
     <div
+      ref="rowEl"
       class="group flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60"
-      :class="isHighlighted ? 'bg-amber-500/10 ring-1 ring-amber-400/50' : ''"
+      :class="flashing ? 'kt-flash' : ''"
     >
       <button
         v-if="node.children.length"
@@ -102,3 +129,31 @@ const typeBadge: Record<string, { label: string, cls: string }> = {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 目标能力节点定位后的闪烁提示 */
+.kt-flash {
+  animation: kt-flash-pulse 2.2s ease-out;
+}
+
+@keyframes kt-flash-pulse {
+  0% {
+    background-color: rgba(251, 191, 36, 0.4);
+    box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.85);
+  }
+  30% {
+    background-color: rgba(251, 191, 36, 0.28);
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.55);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kt-flash {
+    animation: none;
+  }
+}
+</style>

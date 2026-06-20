@@ -87,6 +87,13 @@ class SettingKeys:
     RERANKER_API_KEY = "reranker_api_key"
     RERANKER_MODEL = "reranker_model"
     RERANKER_TOP_N = "reranker_top_n"
+    # Reranker provider 请求/响应格式适配。当前支持 "openai_compatible"
+    # （兼容 qwen3-rerank / SiliconFlow / Jina / Cohere 的 {model,query,documents,top_n} 体）。
+    RERANKER_PROVIDER = "reranker_provider"
+    # 模型重排前的候选 over-fetch 数量（召回多少条交给 reranker 精排）。
+    RERANK_FETCH_K = "rerank_fetch_k"
+    # 无 rerank 模型时的 model-free 启发式重排开关（业务降级，默认开启）。
+    HEURISTIC_RERANK_ENABLED = "heuristic_rerank_enabled"
     HYBRID_SEARCH_ENABLED = "hybrid_search_enabled"
     HYBRID_SEARCH_ALPHA = "hybrid_search_alpha"
 

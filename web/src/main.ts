@@ -22,6 +22,17 @@ import '~/styles/main.css'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: setupLayouts(routes),
+  // 页面切换时重置滚动位置：避免从「知识」底部切到「首页」仍停留在底部。
+  // 浏览器前进/后退恢复历史位置；带 hash 时锚点定位；其余一律回到顶部。
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition)
+      return savedPosition
+    if (to.hash)
+      return { el: to.hash, top: 80, behavior: 'smooth' }
+    if (to.path === from.path)
+      return {}
+    return { top: 0, left: 0 }
+  },
 })
 
 // Pinia 状态管理

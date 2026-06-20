@@ -11,6 +11,7 @@ import type {
 import { gsap } from 'gsap'
 import { Flip } from 'gsap/Flip'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import repoTreeApi from '~/api/repoTree'
 import KnowledgeGraphOverview from '~/components/knowledge/KnowledgeGraphOverview.vue'
 import CapabilityTreeNode from '~/components/repository/CapabilityTreeNode.vue'
@@ -73,6 +74,18 @@ async function loadView() {
 
 onMounted(loadView)
 watch(currentView, loadView)
+
+// ---------- 深链：从总览星图「在知识树查看」跳入指定仓库 / 能力节点 ----------
+const route = useRoute()
+function applyDeepLink() {
+  const repo = route.query.kt_repo
+  if (typeof repo === 'string' && repo) {
+    const node = typeof route.query.kt_node === 'string' ? route.query.kt_node : ''
+    openRepoTree(repo, node)
+  }
+}
+onMounted(applyDeepLink)
+watch(() => [route.query.kt_repo, route.query.kt_node], applyDeepLink)
 
 const currentDomain = computed(() => domainPath.value[domainPath.value.length - 1] ?? null)
 const rootDomains = computed(() => treeData.value?.tree ?? [])

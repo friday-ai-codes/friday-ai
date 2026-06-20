@@ -380,6 +380,97 @@ function selectedModelSupportsImage(): boolean {
 const supportsImageInput = computed(() => selectedModelSupportsImage())
 
 // ============================================================================
+// 模型能力徽章：在选择器里直观展示「图片 / 上下文窗口 / 工具 / 思考」等能力，
+// 帮助用户在切换模型前就知道它支持什么（避免发图后才发现模型不支持）。
+//   - 图片 / 上下文 / 工具：来自 AvailableModel 的 per-model 能力字段（真源）。
+//   - 思考：来自 Provider 类型 meta（supports_reasoning / supports_thinking）。
+// ============================================================================
+interface ModelCapabilityBadge {
+  key: string
+  icon: string
+  label: string
+  title: string
+}
+
+function formatContextLength(n?: number): string | null {
+  if (!n || n <= 0)
+    return null
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000
+    return `${Number.isInteger(v) ? v : v.toFixed(1)}M`
+  }
+  if (n >= 1000)
+    return `${Math.round(n / 1000)}K`
+  return `${n}`
+}
+
+function providerSupportsReasoning(providerType: string): boolean {
+  const meta = providerStore.providerTypes.find(p => p.provider_type === providerType)
+  return !!(meta?.supports_reasoning || meta?.supports_thinking)
+}
+
+// 推理能力目前只有 Provider 级 meta（无 per-model 字段）；对明显的非对话模型
+// （TTS / ASR / 向量 / 语音克隆等）跳过「思考」徽章，避免误标。
+function looksLikeNonChatModel(modelId: string): boolean {
+  return /(?:^|[-_/])(?:tts|asr|whisper|embed|embedding|rerank|voice|audio|image|vision-ocr)(?:[-_/]|$)/i.test(modelId)
+}
+
+function modelCapabilities(opt: CredentialModelOption): ModelCapabilityBadge[] {
+  const m = opt.model
+  const badges: ModelCapabilityBadge[] = []
+
+  const supportsImage = Array.isArray(m.input_modalities)
+    ? m.input_modalities.includes('image')
+    : m.supports_vision === true
+  if (supportsImage)
+    badges.push({ key: 'image', icon: 'icon-[lucide--image]', label: '图片', title: '支持图片输入（视觉）' })
+
+  const ctx = formatContextLength(m.context_length)
+  if (ctx) {
+    badges.push({
+      key: 'context',
+      icon: 'icon-[lucide--scan-text]',
+      label: ctx,
+      title: `上下文窗口 ${m.context_length?.toLocaleString()} tokens`,
+    })
+  }
+
+  if (m.supports_tools)
+    badges.push({ key: 'tools', icon: 'icon-[lucide--wrench]', label: '工具', title: '支持工具调用 / Function Calling' })
+
+  if (providerSupportsReasoning(opt.credential.provider_type) && !looksLikeNonChatModel(m.id))
+    badges.push({ key: 'reasoning', icon: 'icon-[lucide--brain]', label: '思考', title: '支持推理 / 深度思考' })
+
+  return badges
+}
+
+// 当前选中模型的能力（折叠态触发器内以纯图标紧凑展示）
+const currentCapabilities = computed<ModelCapabilityBadge[]>(() =>
+  currentSelectedOption.value ? modelCapabilities(currentSelectedOption.value) : [],
+)
+
+// 按 Provider（凭证）分组：组标题为 Provider 名，组内为该 Provider 的模型。
+// 复用 credentialModelOptions 既有排序（默认 Provider 置顶等），按首次出现顺序成组。
+interface CredentialModelGroup {
+  credential: ProviderCredentialDto
+  options: CredentialModelOption[]
+}
+const groupedModelOptions = computed<CredentialModelGroup[]>(() => {
+  const groups: CredentialModelGroup[] = []
+  const byId = new Map<string, CredentialModelGroup>()
+  for (const opt of credentialModelOptions.value) {
+    let group = byId.get(opt.credential.id)
+    if (!group) {
+      group = { credential: opt.credential, options: [] }
+      byId.set(opt.credential.id, group)
+      groups.push(group)
+    }
+    group.options.push(opt)
+  }
+  return groups
+})
+
+// ============================================================================
 // 发送按钮可用性派生（避免「亮色但点了没反应」的误导）
 // ============================================================================
 const hasDraftContent = computed(() => !!inputContent.value.trim() || pendingImages.value.length > 0)
@@ -920,6 +1011,15 @@ function toggleNotifications() {
                 <!-- 三态③：可用态 → 正常 dropdown -->
                 <button v-else class="model-selector" @click="toggleModelMenu">
                   <span class="model-label">{{ currentSelectionLabel }}</span>
+                  <span v-if="currentCapabilities.length" class="model-selector__caps" aria-hidden="true">
+                    <span
+                      v-for="cap in currentCapabilities"
+                      :key="cap.key"
+                      :class="cap.icon"
+                      class="model-selector__cap-icon"
+                      :title="cap.title"
+                    />
+                  </span>
                   <span
                     class="icon-[lucide--chevron-down] text-[11px] transition-transform"
                     :class="{ 'rotate-180': showModelMenu }"
@@ -942,23 +1042,40 @@ function toggleNotifications() {
                       class="model-menu"
                       :style="menuStyle"
                     >
-                      <button
-                        v-for="opt in credentialModelOptions"
-                        :key="opt.key"
-                        class="model-menu-item"
-                        :class="{ 'model-menu-item--active': opt.key === effectiveSelectionKey }"
-                        @click="onSelectCombination(opt)"
+                      <div
+                        v-for="group in groupedModelOptions"
+                        :key="group.credential.id"
+                        class="model-group"
                       >
-                        <span class="truncate">{{ opt.label }}</span>
-                        <span
-                          v-if="opt.key === defaultOptionKey"
-                          class="ml-1 shrink-0 rounded bg-primary/10 px-1 text-[10px] text-primary"
-                        >默认</span>
-                        <span
-                          v-if="opt.key === effectiveSelectionKey"
-                          class="icon-[lucide--check] text-xs text-primary shrink-0 ml-auto"
-                        />
-                      </button>
+                        <div class="model-group__header">
+                          <span class="model-group__name truncate">{{ group.credential.name }}</span>
+                          <span v-if="group.credential.is_default" class="model-group__default">默认</span>
+                        </div>
+                        <button
+                          v-for="opt in group.options"
+                          :key="opt.key"
+                          class="model-row"
+                          :class="{ 'model-row--active': opt.key === effectiveSelectionKey }"
+                          @click="onSelectCombination(opt)"
+                        >
+                          <span class="model-row__name">{{ opt.model.id }}</span>
+                          <span v-if="modelCapabilities(opt).length" class="model-row__caps">
+                            <span
+                              v-for="cap in modelCapabilities(opt)"
+                              :key="cap.key"
+                              class="model-cap"
+                              :title="cap.title"
+                            >
+                              <span :class="cap.icon" class="model-cap__icon" />
+                              <span v-if="cap.key === 'context'" class="model-cap__label">{{ cap.label }}</span>
+                            </span>
+                          </span>
+                          <span
+                            v-if="opt.key === effectiveSelectionKey"
+                            class="icon-[lucide--check] model-row__check"
+                          />
+                        </button>
+                      </div>
                     </div>
                   </Transition>
                 </Teleport>
@@ -1520,39 +1637,131 @@ function toggleNotifications() {
 
 /* 定位（position/right/bottom/min-width）由内联 menuStyle 提供（Teleport + fixed）。 */
 .model-menu {
-  min-width: 13rem;
-  max-height: 16rem;
+  min-width: 16.5rem;
+  max-height: 21rem;
   overflow-y: auto;
-  padding: 0.25rem;
-  border-radius: 0.75rem;
-  border: 1px solid hsl(214 32% 91%);
-  background: white;
+  padding: 0.375rem;
+  border-radius: 0.875rem;
+  border: 1px solid hsl(214 32% 91% / 0.9);
+  background: hsl(0 0% 100% / 0.98);
+  backdrop-filter: blur(8px);
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.08),
-    0 8px 32px rgba(0, 0, 0, 0.04);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px -8px rgba(15, 23, 42, 0.16);
   z-index: 9999;
 }
 
-.model-menu-item {
+/* ——— 分组（按 Provider）——— */
+.model-group + .model-group {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid hsl(214 32% 93%);
+}
+.model-group__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem 0.25rem;
+}
+.model-group__name {
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: hsl(215 16% 56%);
+}
+.model-group__default {
+  flex-shrink: 0;
+  border-radius: 0.3125rem;
+  background: hsl(168 64% 95%);
+  padding: 0 0.3125rem;
+  font-size: 0.5625rem;
+  line-height: 1.6;
+  font-weight: 600;
+  color: hsl(168 48% 34%);
+}
+
+/* ——— 单行模型项 ——— */
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: 0.4375rem 0.625rem;
   border-radius: 0.5rem;
   border: none;
   background: transparent;
-  color: hsl(215 28% 17%);
-  font-size: 0.8125rem;
   text-align: left;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.12s ease;
 }
-.model-menu-item:hover {
-  background: hsl(210 40% 96%);
+.model-row:hover {
+  background: hsl(214 32% 95% / 0.7);
 }
-.model-menu-item--active {
-  color: hsl(168 76% 42%);
+.model-row--active {
+  background: hsl(168 64% 96%);
+}
+.model-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: hsl(215 25% 24%);
+}
+.model-row--active .model-row__name {
+  color: hsl(168 52% 30%);
+  font-weight: 600;
+}
+.model-row__check {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  color: hsl(168 70% 40%);
+}
+
+/* 能力：右侧极简内联图标（context 带数字），统一中性灰、无 pill 底，更精致；
+   图标 + 文字并存（context）满足无障碍 color-not-only。 */
+.model-row__caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  flex-shrink: 0;
+  color: hsl(215 13% 60%);
+}
+.model-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+.model-cap__icon {
+  font-size: 0.875rem;
+}
+.model-cap__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.model-row--active .model-row__caps {
+  color: hsl(168 42% 40%);
+}
+
+/* 折叠态触发器内的能力图标（紧凑、纯图标、克制） */
+.model-selector__caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.125rem;
+  padding-left: 0.375rem;
+  border-left: 1px solid hsl(214 24% 88%);
+}
+.model-selector__cap-icon {
+  font-size: 0.8125rem;
+  color: hsl(215 12% 62%);
+}
+.model-selector:hover .model-selector__cap-icon {
+  color: hsl(215 18% 45%);
 }
 
 /* ======== 发送按钮 ======== */

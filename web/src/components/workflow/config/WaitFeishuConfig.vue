@@ -4,6 +4,13 @@ import { computed, ref, watch } from 'vue'
 
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import ConditionBuilder from './ConditionBuilder.vue'
 
@@ -119,23 +126,25 @@ const isCustomTimeout = computed(() => {
           </div>
           <div class="space-y-1.5">
             <Label class="text-sm">工作项类型</Label>
-            <select
-              v-model="workItemType"
-              class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 text-sm"
-            >
-              <option value="story">
-                需求 (story)
-              </option>
-              <option value="task">
-                任务 (task)
-              </option>
-              <option value="bug">
-                缺陷 (bug)
-              </option>
-              <option value="epic">
-                史诗 (epic)
-              </option>
-            </select>
+            <Select v-model="workItemType">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="选择类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="story">
+                  需求 (story)
+                </SelectItem>
+                <SelectItem value="task">
+                  任务 (task)
+                </SelectItem>
+                <SelectItem value="bug">
+                  缺陷 (bug)
+                </SelectItem>
+                <SelectItem value="epic">
+                  史诗 (epic)
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
@@ -164,28 +173,32 @@ const isCustomTimeout = computed(() => {
       <div class="grid grid-cols-2 gap-3">
         <div class="space-y-1.5">
           <Label class="text-sm">超时时间</Label>
-          <select
-            v-model="selectedTimeout"
-            class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 text-sm"
-          >
-            <option v-for="opt in timeoutOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-            <option v-if="isCustomTimeout" value="custom">
-              自定义 ({{ timeoutSeconds }}秒)
-            </option>
-          </select>
+          <Select v-model="selectedTimeout">
+            <SelectTrigger class="w-full bg-background/50">
+              <SelectValue placeholder="选择超时时间" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in timeoutOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </SelectItem>
+              <SelectItem v-if="isCustomTimeout" value="custom">
+                自定义 ({{ timeoutSeconds }}秒)
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div class="space-y-1.5">
           <Label class="text-sm">超时动作</Label>
-          <select
-            v-model="timeoutAction"
-            class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 text-sm"
-          >
-            <option v-for="opt in timeoutActionOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
+          <Select v-model="timeoutAction">
+            <SelectTrigger class="w-full bg-background/50">
+              <SelectValue placeholder="选择动作" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in timeoutActionOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

@@ -118,6 +118,9 @@ class ChatRunnerConfig:
     agent_session: Any = field(default=None)
     max_budget_usd: float | None = None
     default_search_branch: str | None = None
+    # 凭证绑定的模型清单（含 input_modalities / supports_vision 等能力配置）。
+    # 用于图片块构建时的能力门控，与发送入口的 available_models-aware 校验保持一致。
+    available_models: Any = field(default=None)
     # 凭证级上下文窗口（用户在凭证模型条目上配置的 context_length 解析结果）；
     # 0 = 未覆盖，_check_chat_context_window 回退 fixture。
     max_input_tokens: int = 0
@@ -154,6 +157,7 @@ def _build_human_message_content(
         input_parts,
         provider_type=config.provider_type,
         model=config.model,
+        available_models=config.available_models,
     )
     return cast(list[str | dict[Any, Any]], blocks)
 

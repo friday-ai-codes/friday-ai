@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 
 /**
- * ToolSelector - Lightweight tool multi-select component for AI Agent node.
- *
- * Uses native elements for better performance.
+ * ToolSelector - AI Agent 节点的轻量工具多选组件。
+ * 复选框统一使用 shadcn Checkbox（容器负责点击，Checkbox 设 pointer-events-none 避免双触发）。
  */
 
 interface Tool {
@@ -116,24 +116,23 @@ function selectAll() {
     <!-- Tools list with native scroll -->
     <div class="h-36 overflow-y-auto rounded-lg border border-border/50 bg-muted/30">
       <div class="p-1.5 space-y-0.5">
-        <label
+        <div
           v-for="tool in filteredTools"
           :key="tool.name"
           class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-muted/50"
+          @click="toggleTool(tool.name)"
         >
-          <input
-            type="checkbox"
-            :checked="isToolEnabled(tool.name)"
-            class="w-3.5 h-3.5 rounded border-border accent-primary shrink-0"
-            @change="toggleTool(tool.name)"
-          >
+          <Checkbox
+            :model-value="isToolEnabled(tool.name)"
+            class="size-3.5 shrink-0 pointer-events-none"
+          />
           <div class="flex-1 min-w-0">
             <div class="font-mono text-[11px] leading-tight">{{ tool.name }}</div>
             <div class="text-[10px] text-muted-foreground truncate leading-tight">
               {{ tool.description }}
             </div>
           </div>
-        </label>
+        </div>
 
         <!-- Empty state -->
         <div

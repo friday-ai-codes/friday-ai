@@ -63,7 +63,13 @@ async def search_rag(
 
         from services.branch_search import BranchAwareSearchService
         from services.embedding import EmbeddingService
+        from services.retrieval.rerank import get_rerank_plan, reorder
         from services.sparse_encoder import SparseEncoderService
+
+        # 重排计划：model 模式下 over-fetch 更多候选交给 reranker 精排；
+        # heuristic / off 模式按 top_k 召回（与历史行为一致）。读取失败已 fail-open。
+        plan = await get_rerank_plan()
+        fetch_k = max(top_k, plan.fetch_k) if plan.mode == "model" else top_k
 
         query_dense = await EmbeddingService.generate_embedding(query)
         if not query_dense:
@@ -93,7 +99,7 @@ async def search_rag(
                     query_dense,
                     query_sparse=query_sparse,
                     branch_name=branch_name,
-                    top_k=top_k,
+                    top_k=fetch_k,
                 )
                 for r in results:
                     payload = r.get("payload", {})
@@ -115,11 +121,18 @@ async def search_rag(
                 logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(e))
 
         all_results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        # 精排阶段（单一卡点）：model → 外部 reranker，heuristic → 词法重排，
+        # off → 原 score 截断。已 fail-open，异常退回 all_results[:top_k]。
+        rerank_meta: dict[str, Any] = {}
+        reordered = await reorder(
+            query, all_results, top_k=top_k, plan=plan, out_meta=rerank_meta
+        )
         return LayerSnapshot(
             layer="L3",
             status="ok",
             result_count=len(all_results),
-            items=all_results[:top_k],
+            items=reordered,
+            extra={"rerank": rerank_meta} if rerank_meta else None,
         )
     except Exception as e:
         logger.warning("rag_search_failed", query=query[:100], error=str(e))

@@ -127,6 +127,10 @@ async def build_sdk_config(
         force_deep_analysis=force_deep_analysis,
         # 凭证级上下文窗口（含用户配置的 context_length override）
         max_input_tokens=capabilities.max_input_tokens,
+        # 凭证绑定模型清单：让 runner 的图片块能力门控与发送入口
+        # （send_message_stream 的 ensure_image_input_supported）判定一致，
+        # 避免全局推断误判已配置 vision 的自定义模型。
+        available_models=getattr(credential, "available_models", None),
     )
 
     return config, agent_session

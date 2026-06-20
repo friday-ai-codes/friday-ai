@@ -7,7 +7,7 @@ import ClaudeCodeConfigPanel from '~/components/providers/ClaudeCodeConfigPanel.
 import ProviderSettings from '~/components/providers/ProviderSettings.vue'
 import GeneralSettings from '~/components/settings/GeneralSettings.vue'
 import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
-import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
+import RerankSettings from '~/components/settings/RerankSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
 import { Button } from '~/components/ui/button'
 
@@ -116,7 +116,7 @@ onMounted(() => {
         <!-- Tab: RAG 设置 -->
         <div v-show="activeTab === 'rag'" class="space-y-6">
           <VectorIndexSettings />
-          <RAGEnhancementSettings />
+          <RerankSettings />
         </div>
 
         <!-- Tab: 集成设置 -->

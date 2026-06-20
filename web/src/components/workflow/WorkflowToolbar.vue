@@ -72,7 +72,7 @@ function confirmEdit() {
 
 <template>
   <TooltipProvider>
-    <div class="h-14 flex items-center gap-4 px-4 mx-3 mt-3 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
+    <div class="h-14 flex items-center gap-4 px-4 mx-3 mt-3 rounded-2xl bg-card/80 backdrop-blur-md border border-border/60 shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
       <!-- Left: Back + Name -->
       <div class="flex items-center gap-3 flex-1 min-w-0">
         <!-- Back button -->
@@ -88,8 +88,8 @@ function confirmEdit() {
         </Tooltip>
 
         <!-- Workflow icon -->
-        <div class="p-1.5 rounded-lg bg-primary/10 flex-shrink-0">
-          <span class="icon-[lucide--workflow] text-lg text-amber-500" />
+        <div class="flex size-8 items-center justify-center rounded-xl gradient-primary shadow-sm flex-shrink-0">
+          <span class="icon-[lucide--workflow] text-base text-white" />
         </div>
 
         <!-- Name (read-only display) + Edit button -->

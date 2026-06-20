@@ -14,6 +14,7 @@ declare global {
   const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
   const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
   const asyncComputed: typeof import('@vueuse/core').asyncComputed
+  const attachZoomWithin: typeof import('./composables/useMediumZoom').attachZoomWithin
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const bareName: typeof import('./composables/useToolDisplay').bareName
   const checkMissingKeys: typeof import('./composables/useDownstreamVarCheck').checkMissingKeys
@@ -126,6 +127,7 @@ declare global {
   const refWithControl: typeof import('@vueuse/core').refWithControl
   const relevanceCandidates: typeof import('./composables/useToolDisplay').relevanceCandidates
   const repoInitial: typeof import('./composables/useToolDisplay').repoInitial
+  const rerankInfo: typeof import('./composables/useToolDisplay').rerankInfo
   const resolveComponent: typeof import('vue').resolveComponent
   const searchedRepoLabel: typeof import('./composables/useToolDisplay').searchedRepoLabel
   const setActivePinia: typeof import('pinia').setActivePinia
@@ -219,6 +221,7 @@ declare global {
   const useDocumentVisibility: typeof import('@vueuse/core').useDocumentVisibility
   const useDraggable: typeof import('@vueuse/core').useDraggable
   const useDropZone: typeof import('@vueuse/core').useDropZone
+  const useEditImages: typeof import('./composables/useEditImages').useEditImages
   const useElementBounding: typeof import('@vueuse/core').useElementBounding
   const useElementByPoint: typeof import('@vueuse/core').useElementByPoint
   const useElementHover: typeof import('@vueuse/core').useElementHover
@@ -253,6 +256,7 @@ declare global {
   const useInterval: typeof import('@vueuse/core').useInterval
   const useIntervalFn: typeof import('@vueuse/core').useIntervalFn
   const useKeyModifier: typeof import('@vueuse/core').useKeyModifier
+  const useKnowledgeCapabilities: typeof import('./composables/useKnowledgeCapabilities').useKnowledgeCapabilities
   const useKnowledgeOverview: typeof import('./composables/useKnowledgeOverview').useKnowledgeOverview
   const useLastChanged: typeof import('@vueuse/core').useLastChanged
   const useListReveal: typeof import('./composables/useMotion').useListReveal
@@ -369,6 +373,7 @@ declare global {
   const useWindowSize: typeof import('@vueuse/core').useWindowSize
   const useWorkflowValidationStore: typeof import('./stores/useWorkflowValidationStore').useWorkflowValidationStore
   const useWorkflowsStore: typeof import('./stores/useWorkflowsStore').useWorkflowsStore
+  const vMediumZoom: typeof import('./composables/useMediumZoom').vMediumZoom
   const watch: typeof import('vue').watch
   const watchArray: typeof import('@vueuse/core').watchArray
   const watchAtMost: typeof import('@vueuse/core').watchAtMost
@@ -416,6 +421,9 @@ declare global {
   export type { SourceChunk, DiffusionHop, DiffusionNodeData, DiffusionEdgeData } from './composables/useDiffusionGraph'
   import('./composables/useDiffusionGraph')
   // @ts-ignore
+  export type { EditImageItem } from './composables/useEditImages'
+  import('./composables/useEditImages')
+  // @ts-ignore
   export type { UseGalaxySigmaOptions } from './composables/useGalaxySigma'
   import('./composables/useGalaxySigma')
   // @ts-ignore
@@ -424,6 +432,9 @@ declare global {
   // @ts-ignore
   export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
   import('./composables/useIndexProgressStream')
+  // @ts-ignore
+  export type { StarNode, StarLink, CloudTerm, KnowledgeSearchItem } from './composables/useKnowledgeCapabilities'
+  import('./composables/useKnowledgeCapabilities')
   // @ts-ignore
   export type { FreshnessState } from './composables/useKnowledgeOverview'
   import('./composables/useKnowledgeOverview')
@@ -449,7 +460,7 @@ declare global {
   export type { FacetSpec, TableUrlStateOptions } from './composables/useTableUrlState'
   import('./composables/useTableUrlState')
   // @ts-ignore
-  export type { RelevanceCandidate } from './composables/useToolDisplay'
+  export type { RelevanceCandidate, RerankInfo } from './composables/useToolDisplay'
   import('./composables/useToolDisplay')
   // @ts-ignore
   export type { AnalyticsGrouping } from './stores/analyticsFilters'
@@ -490,6 +501,7 @@ declare module 'vue' {
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
+    readonly attachZoomWithin: UnwrapRef<typeof import('./composables/useMediumZoom')['attachZoomWithin']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly bareName: UnwrapRef<typeof import('./composables/useToolDisplay')['bareName']>
     readonly checkMissingKeys: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['checkMissingKeys']>
@@ -602,6 +614,7 @@ declare module 'vue' {
     readonly refWithControl: UnwrapRef<typeof import('@vueuse/core')['refWithControl']>
     readonly relevanceCandidates: UnwrapRef<typeof import('./composables/useToolDisplay')['relevanceCandidates']>
     readonly repoInitial: UnwrapRef<typeof import('./composables/useToolDisplay')['repoInitial']>
+    readonly rerankInfo: UnwrapRef<typeof import('./composables/useToolDisplay')['rerankInfo']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
     readonly searchedRepoLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['searchedRepoLabel']>
     readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
@@ -695,6 +708,7 @@ declare module 'vue' {
     readonly useDocumentVisibility: UnwrapRef<typeof import('@vueuse/core')['useDocumentVisibility']>
     readonly useDraggable: UnwrapRef<typeof import('@vueuse/core')['useDraggable']>
     readonly useDropZone: UnwrapRef<typeof import('@vueuse/core')['useDropZone']>
+    readonly useEditImages: UnwrapRef<typeof import('./composables/useEditImages')['useEditImages']>
     readonly useElementBounding: UnwrapRef<typeof import('@vueuse/core')['useElementBounding']>
     readonly useElementByPoint: UnwrapRef<typeof import('@vueuse/core')['useElementByPoint']>
     readonly useElementHover: UnwrapRef<typeof import('@vueuse/core')['useElementHover']>
@@ -729,6 +743,7 @@ declare module 'vue' {
     readonly useInterval: UnwrapRef<typeof import('@vueuse/core')['useInterval']>
     readonly useIntervalFn: UnwrapRef<typeof import('@vueuse/core')['useIntervalFn']>
     readonly useKeyModifier: UnwrapRef<typeof import('@vueuse/core')['useKeyModifier']>
+    readonly useKnowledgeCapabilities: UnwrapRef<typeof import('./composables/useKnowledgeCapabilities')['useKnowledgeCapabilities']>
     readonly useKnowledgeOverview: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['useKnowledgeOverview']>
     readonly useLastChanged: UnwrapRef<typeof import('@vueuse/core')['useLastChanged']>
     readonly useListReveal: UnwrapRef<typeof import('./composables/useMotion')['useListReveal']>
@@ -845,6 +860,7 @@ declare module 'vue' {
     readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>
     readonly useWorkflowValidationStore: UnwrapRef<typeof import('./stores/useWorkflowValidationStore')['useWorkflowValidationStore']>
     readonly useWorkflowsStore: UnwrapRef<typeof import('./stores/useWorkflowsStore')['useWorkflowsStore']>
+    readonly vMediumZoom: UnwrapRef<typeof import('./composables/useMediumZoom')['vMediumZoom']>
     readonly watch: UnwrapRef<typeof import('vue')['watch']>
     readonly watchArray: UnwrapRef<typeof import('@vueuse/core')['watchArray']>
     readonly watchAtMost: UnwrapRef<typeof import('@vueuse/core')['watchAtMost']>

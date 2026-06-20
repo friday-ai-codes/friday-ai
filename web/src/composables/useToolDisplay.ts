@@ -186,6 +186,50 @@ export function collectRepoNames(name: string, _input: Record<string, unknown> |
   return out
 }
 
+export interface RerankInfo {
+  mode: string
+  model?: string
+  candidates?: number
+  returned?: number
+  fallbackFrom?: string
+}
+
+/**
+ * 从 search_repository_code 结果里解析精排信息（search_rag 写入 metadata.rerank）。
+ * mode 缺失或为 'off' 时返回 null（不展示）。
+ */
+export function rerankInfo(result: unknown): RerankInfo | null {
+  const parsed = parseResult(result)
+  if (!parsed)
+    return null
+  const meta = (parsed.metadata as Record<string, unknown> | undefined) ?? parsed
+  const r = meta?.rerank as Record<string, unknown> | undefined
+  if (!r || typeof r !== 'object')
+    return null
+  const mode = String(r.mode ?? '')
+  if (!mode || mode === 'off')
+    return null
+  return {
+    mode,
+    model: typeof r.model === 'string' ? r.model : undefined,
+    candidates: typeof r.candidates === 'number' ? r.candidates : undefined,
+    returned: typeof r.returned === 'number' ? r.returned : undefined,
+    fallbackFrom: typeof r.fallback_from === 'string' ? r.fallback_from : undefined,
+  }
+}
+
+/** 把精排信息渲染成附加在检索摘要后的一段，例如「· 精排 50→10（qwen3-rerank）」。 */
+function rerankSuffix(result?: string): string {
+  const info = rerankInfo(result)
+  if (!info)
+    return ''
+  const who = info.mode === 'model' ? (info.model || '模型精排') : '启发式精排'
+  const count = (info.candidates != null && info.returned != null)
+    ? ` ${info.candidates}→${info.returned}`
+    : ''
+  return ` · 精排${count}（${who}）`
+}
+
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s
 }
@@ -257,11 +301,14 @@ export function toolAction(
       const q = (input?.query as string) || ''
       const repo = searchedRepoLabel(input, repoNames)
       const qPart = q ? `「${truncate(q, 32)}」` : ''
+      let base: string
       if (qPart && repo)
-        return `在 ${repo} RAG 检索 ${qPart}`
-      if (qPart)
-        return `RAG 检索 ${qPart}`
-      return repo ? `在 ${repo} RAG 检索代码` : 'RAG 代码检索'
+        base = `在 ${repo} RAG 检索 ${qPart}`
+      else if (qPart)
+        base = `RAG 检索 ${qPart}`
+      else
+        base = repo ? `在 ${repo} RAG 检索代码` : 'RAG 代码检索'
+      return base + rerankSuffix(result)
     }
     case 'analyze_repository_relevance': {
       const cands = relevanceCandidates(result)

@@ -5,6 +5,13 @@ import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 
 import { computed } from 'vue'
 import { Label } from '~/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { SliderSingle } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
@@ -99,6 +106,15 @@ const languageOptions = [
   { value: 'rust', label: 'Rust' },
   { value: 'vue', label: 'Vue' },
 ]
+
+// reka-ui 的 SelectItem 不允许空字符串值，用 'all' 哨兵映射「全部语言」(='')
+const ALL_LANGUAGES = 'all'
+const languageFilterModel = computed<string>({
+  get: () => (languageFilter.value as string) || ALL_LANGUAGES,
+  set: (v: string) => {
+    languageFilter.value = v === ALL_LANGUAGES ? '' : v
+  },
+})
 </script>
 
 <template>
@@ -195,14 +211,23 @@ const languageOptions = [
       <!-- 语言过滤 -->
       <div class="space-y-2">
         <Label>语言过滤</Label>
-        <select
-          v-model="languageFilter"
-          class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option v-for="opt in languageOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+        <Select v-model="languageFilterModel">
+          <SelectTrigger class="w-full">
+            <SelectValue placeholder="全部语言" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="ALL_LANGUAGES">
+              全部语言
+            </SelectItem>
+            <SelectItem
+              v-for="opt in languageOptions.filter(o => o.value)"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
         <p class="text-xs text-muted-foreground">
           可选，仅检索指定编程语言的代码
         </p>
