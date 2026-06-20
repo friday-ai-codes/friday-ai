@@ -1,58 +1,71 @@
-"""run_worker `--graceful-timeout` arg 透传守护（DEPLOY-01）。
+"""DEPLOY-01：run_worker ``--graceful-timeout`` 透传 ``shutdown_graceful_timeout`` 守护。
 
-纯 mock 单测（不连真实 Postgres）：mock `procrastinate.contrib.django.app`
-（含 `connector.get_worker_connector` 与同步 `replace_connector` 上下文管理器）
-+ mock `use_procrastinate_backend` 返回 True，断言 `run_worker_async` 被调用时
-kwargs 含 `shutdown_graceful_timeout`（传 `--graceful-timeout 110` → 110.0；
-不传 → None）且 `listen_notify=False` 保持显式不变。
-
-真实 SIGTERM drain E2E 不在自动化范围（见 63-VALIDATION Manual-Only，human_needed）。
+纯 mock 单测（不连真实 Postgres）：把 ``procrastinate.contrib.django.app`` 换成假对象
+（含 ``connector.get_worker_connector`` 与同步 ``replace_connector`` 上下文管理器 + AsyncMock
+``run_worker_async``），并把 ``use_procrastinate_backend`` 假成 True，断言 ``--graceful-timeout``
+的值原样透传到 ``run_worker_async(shutdown_graceful_timeout=...)``、不传时为 ``None``，且
+``listen_notify`` 始终显式 False（锁定决策）。优雅 drain 由 Procrastinate 内置
+``install_signal_handlers`` 提供，本测仅守护 arg 透传，不验证真实信号/drain（见 63-VALIDATION
+Manual-Only，标 human_needed）。
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import contextlib
+from collections.abc import Iterator
+from unittest import mock
 
 import pytest
 from django.core.management import call_command
 
 
-def _build_app_mock() -> tuple[MagicMock, AsyncMock]:
-    """构造 mock 的 procrastinate app：返回 (app_mock, run_worker_async_mock)。"""
-    run_worker_async = AsyncMock()
-    worker_app = MagicMock()
+def _make_fake_app() -> tuple[mock.MagicMock, mock.AsyncMock]:
+    """构造假的 procrastinate app：connector + 同步 replace_connector(CM) + AsyncMock run_worker_async。"""
+    run_worker_async = mock.AsyncMock(return_value=None)
+
+    worker_app = mock.MagicMock()
     worker_app.run_worker_async = run_worker_async
 
-    # replace_connector 是同步 contextmanager：__enter__ 返回 worker_app。
-    cm = MagicMock()
-    cm.__enter__ = MagicMock(return_value=worker_app)
-    cm.__exit__ = MagicMock(return_value=False)
+    @contextlib.contextmanager
+    def _replace_connector(_connector: object) -> Iterator[mock.MagicMock]:
+        # replace_connector 是同步 contextmanager（仅 __enter__/__exit__）——镜像真实实现，
+        # 防止误用 async with 的回归（CR-02）。
+        yield worker_app
 
-    app_mock = MagicMock()
-    app_mock.connector.get_worker_connector = MagicMock(return_value=MagicMock())
-    app_mock.replace_connector = MagicMock(return_value=cm)
-    return app_mock, run_worker_async
+    fake_app = mock.MagicMock()
+    fake_app.connector.get_worker_connector.return_value = mock.MagicMock()
+    fake_app.replace_connector.side_effect = _replace_connector
+
+    return fake_app, run_worker_async
 
 
-@pytest.mark.parametrize(
-    ("cli_args", "expected_timeout"),
-    [
-        (["--graceful-timeout", "110"], 110.0),
-        ([], None),
-    ],
-)
-def test_graceful_timeout_passed_to_run_worker_async(cli_args, expected_timeout) -> None:
-    """--graceful-timeout 透传为 run_worker_async(shutdown_graceful_timeout=...)。"""
-    app_mock, run_worker_async = _build_app_mock()
-
+@pytest.fixture
+def fake_run_worker_async() -> Iterator[mock.AsyncMock]:
+    """patch procrastinate app + use_procrastinate_backend，返回被 await 的 run_worker_async mock。"""
+    fake_app, run_worker_async = _make_fake_app()
     with (
-        patch("durable.service.use_procrastinate_backend", return_value=True),
-        patch("procrastinate.contrib.django.app", app_mock),
+        mock.patch("procrastinate.contrib.django.app", fake_app),
+        mock.patch("durable.service.use_procrastinate_backend", return_value=True),
     ):
-        call_command("run_worker", *cli_args)
+        yield run_worker_async
 
-    run_worker_async.assert_awaited_once()
-    kwargs = run_worker_async.await_args.kwargs
-    assert kwargs["shutdown_graceful_timeout"] == expected_timeout
-    # listen_notify 必须保持显式 False（锁定决策，零回归）。
+
+def test_graceful_timeout_passed_through(fake_run_worker_async: mock.AsyncMock) -> None:
+    """--graceful-timeout 110 → run_worker_async(shutdown_graceful_timeout=110.0)。"""
+    call_command("run_worker", "--queues", "maintenance", "--graceful-timeout", "110")
+
+    fake_run_worker_async.assert_awaited_once()
+    _, kwargs = fake_run_worker_async.call_args
+    assert kwargs["shutdown_graceful_timeout"] == 110.0
+    # listen_notify 始终显式 False（v1 polling 锁定决策，零回归）。
+    assert kwargs["listen_notify"] is False
+
+
+def test_graceful_timeout_defaults_to_none(fake_run_worker_async: mock.AsyncMock) -> None:
+    """不传 --graceful-timeout → run_worker_async(shutdown_graceful_timeout=None)（无限等到完成）。"""
+    call_command("run_worker", "--queues", "maintenance")
+
+    fake_run_worker_async.assert_awaited_once()
+    _, kwargs = fake_run_worker_async.call_args
+    assert kwargs["shutdown_graceful_timeout"] is None
     assert kwargs["listen_notify"] is False
