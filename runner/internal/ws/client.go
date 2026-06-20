@@ -94,6 +94,7 @@ type Config struct {
 	Scheduler       SchedulerService
 	CallbackFactory CallbackFactory
 	CallbackPort    int
+	CallbackHost    string
 	DefaultTimeout  int
 }
 
@@ -140,7 +141,13 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("生成 callback token 失败: %w", err)
 	}
 	callbackToken := base64.URLEncoding.EncodeToString(tokenBytes)
-	callbackURL := fmt.Sprintf("http://host.docker.internal:%d/callback", cfg.CallbackPort)
+	// docker 模式默认 host.docker.internal（零回归）；k8s 模式经 CallbackHost
+	// 注入 runner Pod 可达地址（FRIDAY_RUNNER_CALLBACK_HOST，通常为 runner Pod IP）。
+	callbackHost := cfg.CallbackHost
+	if callbackHost == "" {
+		callbackHost = "host.docker.internal"
+	}
+	callbackURL := fmt.Sprintf("http://%s:%d/callback", callbackHost, cfg.CallbackPort)
 
 	// 创建并启动 CallbackServer
 	cb := cfg.CallbackFactory(queue, callbackToken, cfg.CallbackPort)
