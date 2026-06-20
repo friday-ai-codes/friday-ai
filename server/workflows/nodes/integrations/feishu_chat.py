@@ -379,6 +379,46 @@ class CreateGroupChatNode(BaseNode):
         owner_id = context.render_template(config.get("owner_id", "")).strip()
         description = context.render_template(config.get("description", "")).strip()
 
+        # work_item 锚解析上移：建群前 fence 查询 + 建群后 writeback 复用同一组解析值
+        project_key = context.render_template(config.get("project_key", "")).strip()
+        work_item_id_str = context.render_template(config.get("work_item_id", "")).strip()
+        work_item_type = config.get("work_item_type", "story")
+        work_item_id: int | None = None
+        if project_key and work_item_id_str:
+            try:
+                work_item_id = int(work_item_id_str)
+            except ValueError:
+                log.warning("writeback_skipped_invalid_work_item_id", value=work_item_id_str)
+
+        # IDEMP-02：建群前查 WorkItem.feishu_chat_id，命中则复用既有群跳过 create_chat。
+        # 仅当 work_item 锚（project_key + 可解析 work_item_id）齐备时才查；
+        # 无锚 → 不查、照常建群（fence 退化 no-op）。查询 fail-soft，绝不阻断建群。
+        if project_key and work_item_id is not None:
+            from delivery.services.work_item_service import WorkItemService
+
+            try:
+                existing_chat_id = await WorkItemService().aget_feishu_chat_id(
+                    project_key, work_item_type, work_item_id
+                )
+            except Exception as e:  # noqa: BLE001 — fence 查询 fail-soft，绝不冒泡
+                log.warning("create_chat_fence_failed", error=str(e))
+                existing_chat_id = None
+
+            if existing_chat_id:
+                log.info("create_chat_dedup_reuse", chat_id=existing_chat_id)
+                return NodeResult(
+                    status="completed",
+                    output={
+                        "chat_id": existing_chat_id,
+                        "chat_name": name,
+                        "owner_id": "",
+                        "source": "create_group_chat",
+                        "deduplicated": True,
+                        "writeback": {"attempted": False, "success": False},
+                    },
+                    next_handle="default",
+                )
+
         # 建群（建群失败走 error handle，D-7）
         try:
             data = await im_service.create_chat(
@@ -399,30 +439,23 @@ class CreateGroupChatNode(BaseNode):
         chat_id = data.get("chat_id", "")
         log.info("create_chat_success", chat_id=chat_id)
 
-        # 可选 writeback（fail-soft，D-7）：仅当 project_key + work_item_id 均非空才执行
+        # 可选 writeback（fail-soft，D-7）：复用上面解析好的 work_item 锚
+        # （仅当 project_key + 可解析 work_item_id 均齐备才执行）
         writeback = {"attempted": False, "success": False}
-        project_key = context.render_template(config.get("project_key", "")).strip()
-        work_item_id_str = context.render_template(config.get("work_item_id", "")).strip()
-        work_item_type = config.get("work_item_type", "story")
 
-        if project_key and work_item_id_str:
+        if project_key and work_item_id is not None:
+            writeback["attempted"] = True
             try:
-                work_item_id = int(work_item_id_str)
-            except ValueError:
-                log.warning("writeback_skipped_invalid_work_item_id", value=work_item_id_str)
-            else:
-                writeback["attempted"] = True
-                try:
-                    from delivery.services.work_item_service import WorkItemService
+                from delivery.services.work_item_service import WorkItemService
 
-                    writeback["success"] = await WorkItemService().awriteback_feishu_chat_id(
-                        project_key,
-                        work_item_type,
-                        work_item_id,
-                        chat_id,
-                    )
-                except Exception as e:  # noqa: BLE001 — writeback fail-soft，绝不冒泡
-                    log.warning("writeback_feishu_chat_id_failed", error=str(e))
+                writeback["success"] = await WorkItemService().awriteback_feishu_chat_id(
+                    project_key,
+                    work_item_type,
+                    work_item_id,
+                    chat_id,
+                )
+            except Exception as e:  # noqa: BLE001 — writeback fail-soft，绝不冒泡
+                log.warning("writeback_feishu_chat_id_failed", error=str(e))
 
         return NodeResult(
             status="completed",
