@@ -1975,34 +1975,28 @@ export const useChatStore = defineStore('chat', () => {
       //
       //   * 成功（有任何流响应 / waiting 后台接管）→ 把 pendingConversation
       //     提升到 conversations 列表，不再清 pending 之外的状态。
-      //   * 彻底失败（有 error 且没收到任何流内容、也未进入 waiting）→ 清掉
-      //     刚创建的后端空会话，并 return 短路，避免下面合并逻辑误把空内容
-      //     当成消息塞进 messages。
+      //   * 首条消息失败（如模型不支持图片）→ **不再删除草稿会话**：保留它并
+      //     提升到侧栏（草稿态），让用户能在会话内换模型后直接重发（输入框文本/
+      //     图片由 ChatInput 在失败时保留）。早期版本会删掉刚建的草稿，导致
+      //     「图片对话发失败 → 刷新就没了」的体验问题。
       const hadStreamingResponse
         = !!streamingContent.value
           || streamingToolCalls.value.length > 0
           || currentPhase.value === 'waiting'
           || currentPhase.value === 'waiting_clarification'
-      if (createdForDraft && error.value && !hadStreamingResponse) {
-        pendingConversation.value = null
-        currentConversationId.value = null
-        syncConversationToURL(null)
-        if (materializedConversation) {
-          try {
-            await deleteConversation(materializedConversation.id)
-          }
-          catch {
-            // 清理后端空会话失败不覆盖原始错误。
-          }
-        }
-        // 失败短路：跳过下面 waiting / merge 路径，避免误把空 streaming 合并为消息。
-        return
-      }
       if (createdForDraft) {
         const committed = pendingConversation.value ?? materializedConversation
         if (committed && !conversations.value.some(c => c.id === committed.id))
           conversations.value.unshift(committed)
         pendingConversation.value = null
+        // 首条失败：记录失败内容供「重试」按钮使用，并短路掉下面 waiting / merge
+        // 逻辑（无任何流内容，避免把空消息塞进 messages）；会话本身保留为草稿。
+        if (error.value && !hadStreamingResponse) {
+          lastFailedContent.value = content
+          messages.value = messages.value.filter(m => m.id !== userMessage.id)
+          resetStreamingState()
+          return
+        }
       }
 
       // ↓↓↓ 以下保持 legacy 之前的 finally 结构不变（流式合并 / waiting 早退）↓↓↓
@@ -2100,7 +2094,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function editMessageAndFork(messageId: string, content: string) {
+  async function editMessageAndFork(
+    messageId: string,
+    content: string,
+    images?: ImagePart[],
+  ) {
     const trimmed = content.trim()
     if (!currentConversationId.value) {
       error.value = '当前没有活动对话，无法编辑历史提问'
@@ -2110,7 +2108,7 @@ export const useChatStore = defineStore('chat', () => {
       error.value = '当前正在生成回复，请稍后再编辑历史提问'
       return
     }
-    if (!trimmed) {
+    if (!trimmed && (!images || images.length === 0)) {
       error.value = '编辑后的内容不能为空'
       return
     }
@@ -2128,7 +2126,8 @@ export const useChatStore = defineStore('chat', () => {
       syncConversationToURL(forked.id)
       messages.value = [...forked.messages]
       upsertConversationAtTop(forked)
-      await sendMessage(trimmed)
+      // 纯图片（无文字）时给 sendMessage 一个兜底文案，与 ChatInput 行为一致
+      await sendMessage(trimmed || '请分析这张图片', undefined, images)
     }
     catch (e) {
       error.value = e instanceof Error ? e.message : '编辑历史提问失败'

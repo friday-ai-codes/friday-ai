@@ -77,7 +77,7 @@ def test_fork_user_message_copies_only_prior_history(api_client, source_conversa
     assert response.data["id"] != str(source_conversation.id)
     assert response.data["space_id"] == str(source_conversation.project_id)
     assert response.data["model"] == "claude-test"
-    assert response.data["title"] == "原始对话（编辑）"
+    assert response.data["title"] == "原始对话"
     assert [m["content"] for m in response.data["messages"]] == ["第一问", "第一答"]
 
     forked = Conversation.objects.get(id=response.data["id"])

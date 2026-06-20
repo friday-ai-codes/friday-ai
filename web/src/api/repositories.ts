@@ -430,13 +430,6 @@ export const repositoriesApi = {
   },
 
   /**
-   * Reranker API 健康检查（使用已保存配置）
-   */
-  checkRerankerHealth: async (): Promise<HealthCheckResponse> => {
-    return get<HealthCheckResponse>('/repositories/health/reranker/')
-  },
-
-  /**
    * Reranker API 健康检查（使用提供的配置，保存前测试）
    */
   testRerankerConnection: async (apiUrl: string, model: string, apiKey?: string): Promise<HealthCheckResponse> => {

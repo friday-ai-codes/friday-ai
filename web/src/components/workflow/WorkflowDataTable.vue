@@ -114,35 +114,58 @@ function hasNodes(workflow: Workflow): boolean {
     </div>
 
     <!-- Workflow Cards -->
-    <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div v-else class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
       <article
         v-for="workflow in workflows"
         :key="workflow.id"
-        class="workflow-card group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-lg border transition-all duration-200"
+        class="workflow-card workflow-card-shell group relative flex min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card transition-all duration-200"
         :class="[workflow.is_active
-          ? 'workflow-card-shell border-border/70 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]'
-          : 'workflow-card-shell border-border/50 bg-muted/25 opacity-80']"
+          ? 'border-border/70 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_18px_40px_rgba(15,23,42,0.10)]'
+          : 'border-dashed border-border/70 hover:-translate-y-0.5 hover:border-border']"
         @click="onCardClick(workflow)"
       >
+        <!-- 顶部品牌色高亮条（hover 时点亮，启用态常驻） -->
+        <div
+          class="absolute inset-x-0 top-0 h-1 transition-opacity duration-200"
+          :class="[workflow.is_active
+            ? 'gradient-primary opacity-70 group-hover:opacity-100'
+            : 'bg-muted-foreground/20 opacity-0 group-hover:opacity-60']"
+        />
+
         <!-- Content -->
-        <div class="workflow-card-content flex flex-1 flex-col gap-3 p-4">
+        <div class="workflow-card-content flex flex-1 flex-col gap-3 p-4 pt-5">
           <!-- Header: Icon + Name + Toggle -->
           <div class="flex items-start gap-3">
             <div
-              class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg ring-1"
-              :class="[workflow.is_active ? 'bg-primary/10 text-primary ring-primary/10' : 'bg-muted/50 text-muted-foreground ring-border/40']"
+              class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 transition-colors"
+              :class="[workflow.is_active ? 'bg-primary/10 text-primary ring-primary/15' : 'bg-muted/60 text-muted-foreground ring-border/50']"
             >
               <span class="icon-[lucide--workflow] text-lg" />
             </div>
 
             <div class="min-w-0 flex-1">
-              <h3
-                class="truncate text-base font-semibold leading-6 transition-colors"
-                :class="[workflow.is_active ? 'text-foreground group-hover:text-primary' : 'text-muted-foreground']"
-              >
-                {{ workflow.name }}
-              </h3>
-              <p class="workflow-card-description mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+              <div class="flex items-center gap-2">
+                <h3
+                  class="truncate text-base font-semibold leading-6 transition-colors"
+                  :class="[workflow.is_active ? 'text-foreground group-hover:text-primary' : 'text-foreground/80']"
+                >
+                  {{ workflow.name }}
+                </h3>
+                <!-- 状态徽章：颜色 + 文字双重表达，不只靠透明度（a11y: color-not-only） -->
+                <span
+                  class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none"
+                  :class="[workflow.is_active
+                    ? 'bg-emerald-500/12 text-emerald-600'
+                    : 'bg-muted text-muted-foreground']"
+                >
+                  <span
+                    class="size-1.5 rounded-full"
+                    :class="[workflow.is_active ? 'bg-emerald-500' : 'bg-muted-foreground/60']"
+                  />
+                  {{ workflow.is_active ? '已启用' : '已禁用' }}
+                </span>
+              </div>
+              <p class="workflow-card-description mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
                 {{ workflow.description || '暂无描述' }}
               </p>
             </div>
@@ -210,7 +233,7 @@ function hasNodes(workflow: Workflow): boolean {
         </div>
 
         <!-- 底部操作栏 -->
-        <div class="workflow-card-actions mt-auto flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2">
+        <div class="workflow-card-actions mt-auto flex items-center justify-between border-t border-border/60 bg-muted/25 px-4 py-2.5">
           <span class="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
             编辑流程
             <span class="icon-[lucide--arrow-right] transition-transform group-hover:translate-x-0.5" />
@@ -219,10 +242,14 @@ function hasNodes(workflow: Workflow): boolean {
           <div class="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger as-child>
+                <!-- 禁用态用「明确的灰色禁用样式」而非微弱的半透明主色，确保按钮始终可见 -->
                 <Button
                   variant="ghost"
                   size="sm"
-                  class="workflow-execute-button h-7 gap-1 px-2 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
+                  class="workflow-execute-button h-7 gap-1 px-2.5 text-xs font-medium disabled:!opacity-100"
+                  :class="workflow.is_active
+                    ? 'text-primary hover:bg-primary/10 hover:text-primary'
+                    : 'cursor-not-allowed text-muted-foreground/70 hover:bg-transparent'"
                   :disabled="!workflow.is_active"
                   @click="onExecuteClick($event, workflow)"
                 >
@@ -231,7 +258,7 @@ function hasNodes(workflow: Workflow): boolean {
                 </Button>
               </TooltipTrigger>
               <TooltipContent v-if="!workflow.is_active" side="top">
-                <p>工作流已禁用</p>
+                <p>工作流已禁用，启用后可执行</p>
               </TooltipContent>
             </Tooltip>
 

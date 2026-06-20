@@ -510,7 +510,10 @@ async def crawl_url(url: str) -> CrawlResult:
         )
     except Exception as exc:  # noqa: BLE001 — 外部抓取失败一律降级为可读提示
         logger.warning(
-            "crawl_fetch_failed", kind=kind, error_type=type(exc).__name__
+            "crawl_fetch_failed",
+            kind=kind,
+            error_type=type(exc).__name__,
+            error=str(exc),
         )
         return CrawlResult(
             status=CrawlStatus.ERROR,

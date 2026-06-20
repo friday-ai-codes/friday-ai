@@ -246,10 +246,101 @@
     "pageTitle": "知识",
     "pageDescription": "检索历史需求、技术方案与代码变更，或粘贴链接批量爬取关联看板与 MR 入库可检索",
     "tabs": {
+      "overview": "总览",
       "search": "搜索",
       "ingest": "看板与 MR 批量爬取关联",
       "release": "上线同步",
       "tree": "知识树"
+    },
+    "overview": {
+      "empty": {
+        "title": "知识库还很空",
+        "body": "先在「看板与 MR 批量爬取关联」里导入需求与代码变更，或为仓库建立能力树，这里就会展示全景"
+      },
+      "stats": {
+        "repos": "纳管仓库",
+        "domains": "业务域",
+        "treed": "已建能力树",
+        "monorepo": "Monorepo",
+        "capabilities": "业务能力",
+        "keywords": "关键词"
+      },
+      "coverage": {
+        "title": "能力覆盖",
+        "ring": "能力树",
+        "treed": "已建能力树",
+        "indexed": "已索引占比",
+        "monorepo": "Monorepo"
+      },
+      "expand": "展开",
+      "search": {
+        "placeholder": "搜索业务仓库、能力、关键词…",
+        "empty": "未找到与「{q}」匹配的仓库或能力",
+        "count": "{count} 条结果",
+        "navHint": "选择，回车进入"
+      },
+      "panorama": {
+        "title": "业务能力全景",
+        "hint": "下钻到真实业务粒度：子应用 / 模块 / 能力",
+        "loading": "正在聚合能力树…",
+        "weaving": "正在编织星图…",
+        "empty": "暂无能力树，先到知识树为仓库生成能力树",
+        "capUnit": "能力",
+        "termUnit": "词条"
+      },
+      "starfield": {
+        "title": "知识星图",
+        "subtitle": "真实业务能力网络 · 点击探索",
+        "hint": "拖拽旋转、滚轮缩放，点击节点进入详情",
+        "tip": "拖拽旋转 · 双指/滚轮缩放 · 点击节点看详情",
+        "galaxy": "代码依赖大图",
+        "legendRepo": "仓库",
+        "legendSubApp": "子应用",
+        "legendModule": "模块",
+        "legendCapability": "能力"
+      },
+      "cloud": {
+        "title": "知识词云",
+        "subtitle": "高频业务能力与关键词",
+        "hint": "按出现频次加权，点击词条进入知识树",
+        "tip": "点击展开查看完整词云"
+      },
+      "health": {
+        "title": "运行状态",
+        "total": "共 {count} 个仓库",
+        "healthy": "运行正常",
+        "running": "运行中"
+      },
+      "quick": {
+        "title": "快捷入口",
+        "tree": {
+          "title": "浏览知识树",
+          "body": "按业务域 / 分面下钻能力"
+        },
+        "search": {
+          "title": "搜索知识",
+          "body": "检索需求 / 方案 / 代码变更"
+        },
+        "ingest": {
+          "title": "导入关联",
+          "body": "批量爬取看板与 MR 入库"
+        }
+      },
+      "domains": {
+        "title": "业务域排行",
+        "hint": "按仓库体量",
+        "viewAll": "查看全部",
+        "repoUnit": "仓库",
+        "subUnit": "子域"
+      },
+      "facets": {
+        "title": "分面透视",
+        "hint": "切换维度查看分布",
+        "valueCount": "{count} 类",
+        "more": "另有 {count} 类",
+        "valueUnit": "个"
+      },
+      "snapshot": "域树快照 v{version} · 由 {by} 生成"
     },
     "entity": {
       "pageTitle": "知识",

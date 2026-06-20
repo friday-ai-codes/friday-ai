@@ -11,6 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '~/components/ui/popover'
+import { RadioGroup, RadioGroupItem } from '~/components/ui/radio-group'
 import { Separator } from '~/components/ui/separator'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { useSpacesStore } from '~/stores/spaces'
@@ -256,27 +257,24 @@ const regexValidation = computed(() => {
         <span class="text-destructive">*</span>
       </div>
 
-      <div class="space-y-1 p-3 rounded-xl border border-border/50 bg-background/30">
-        <label
+      <RadioGroup
+        v-model="eventType"
+        class="gap-1 p-3 rounded-xl border border-border/50 bg-background/30"
+      >
+        <Label
           v-for="option in FEISHU_EVENT_TYPE_OPTIONS"
           :key="option.value"
           :for="`event-${option.value}`"
-          class="flex items-start gap-3 p-2 rounded-lg border transition-colors cursor-pointer"
+          class="flex items-start gap-3 p-2 rounded-lg border transition-colors cursor-pointer font-normal"
           :class="eventType === option.value ? 'bg-primary/5 border-primary/20' : 'border-transparent hover:bg-muted/50'"
         >
-          <input
-            :id="`event-${option.value}`"
-            v-model="eventType"
-            type="radio"
-            :value="option.value"
-            class="mt-1 accent-primary"
-          >
+          <RadioGroupItem :id="`event-${option.value}`" :value="option.value" class="mt-1" />
           <div class="flex-1">
             <div class="text-sm font-medium">{{ option.label }}</div>
             <div class="text-xs text-muted-foreground">{{ option.description }}</div>
           </div>
-        </label>
-      </div>
+        </Label>
+      </RadioGroup>
     </div>
 
     <Separator class="bg-border/50" />
@@ -289,28 +287,25 @@ const regexValidation = computed(() => {
         <span class="text-destructive">*</span>
       </div>
 
-      <div class="p-3 rounded-xl border border-border/50 bg-background/30">
-        <label
+      <RadioGroup
+        v-model="workItemType"
+        class="gap-1 p-3 rounded-xl border border-border/50 bg-background/30"
+      >
+        <Label
           for="work-item-story"
-          class="flex items-center gap-3 p-2 rounded-lg border transition-colors cursor-pointer"
+          class="flex items-center gap-3 p-2 rounded-lg border transition-colors cursor-pointer font-normal"
           :class="workItemType === 'story' ? 'bg-primary/5 border-primary/20' : 'border-transparent hover:bg-muted/50'"
         >
-          <input
-            id="work-item-story"
-            v-model="workItemType"
-            type="radio"
-            value="story"
-            class="accent-primary"
-          >
+          <RadioGroupItem id="work-item-story" value="story" />
           <div class="flex-1">
             <div class="text-sm font-medium">需求 (Story)</div>
             <div class="text-xs text-muted-foreground">监听需求类型的工作项事件</div>
           </div>
-        </label>
+        </Label>
 
         <!-- 其他类型 - 即将支持 -->
         <div class="flex items-center gap-3 p-2 rounded-lg opacity-50 cursor-not-allowed">
-          <input type="radio" disabled class="accent-primary">
+          <RadioGroupItem value="bug" disabled />
           <div class="flex-1">
             <div class="text-sm font-medium flex items-center gap-2">
               缺陷 (Bug)
@@ -322,7 +317,7 @@ const regexValidation = computed(() => {
         </div>
 
         <div class="flex items-center gap-3 p-2 rounded-lg opacity-50 cursor-not-allowed">
-          <input type="radio" disabled class="accent-primary">
+          <RadioGroupItem value="task" disabled />
           <div class="flex-1">
             <div class="text-sm font-medium flex items-center gap-2">
               任务 (Task)
@@ -332,7 +327,7 @@ const regexValidation = computed(() => {
             </div>
           </div>
         </div>
-      </div>
+      </RadioGroup>
     </div>
 
     <Separator class="bg-border/50" />

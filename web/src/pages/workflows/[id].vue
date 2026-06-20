@@ -243,10 +243,10 @@ async function onUpdateIsActive(isActive: boolean) {
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-4rem)] w-full bg-background overflow-hidden relative">
+  <div class="flex flex-col h-[calc(100vh-4rem)] w-full bg-background bg-mesh-gradient overflow-hidden relative">
     <!-- 背景装饰 -->
     <div class="absolute inset-0 -z-10 overflow-hidden">
-      <div class="absolute inset-x-0 top-0 h-48 bg-linear-to-b from-primary/6 to-transparent" />
+      <div class="absolute inset-x-0 top-0 h-48 bg-linear-to-b from-primary/8 to-transparent" />
     </div>
 
     <!-- Toolbar -->

@@ -25,6 +25,9 @@ export enum SettingKey {
   RERANKER_API_KEY = 'reranker_api_key',
   RERANKER_MODEL = 'reranker_model',
   RERANKER_TOP_N = 'reranker_top_n',
+  RERANKER_PROVIDER = 'reranker_provider',
+  RERANK_FETCH_K = 'rerank_fetch_k',
+  HEURISTIC_RERANK_ENABLED = 'heuristic_rerank_enabled',
   HYBRID_SEARCH_ENABLED = 'hybrid_search_enabled',
   HYBRID_SEARCH_ALPHA = 'hybrid_search_alpha',
   // Feishu IM Settings

@@ -218,7 +218,7 @@ function handleBatchCopy() {
         variant="dots"
         :gap="35"
         :size="1.5"
-        color="#3b82f620"
+        color="#14b8a626"
       />
       <!-- @click.capture 在捕获阶段检测双击 — MiniMap 内部 pannable 会吞掉 dblclick -->
       <Panel position="bottom-right" @click.capture="handleMiniMapClickCapture">
@@ -248,10 +248,10 @@ function handleBatchCopy() {
           :y1="line.y1"
           :x2="line.x2"
           :y2="line.y2"
-          stroke="#3B82F6"
+          stroke="#14b8a6"
           stroke-width="1"
           stroke-dasharray="4 4"
-          opacity="0.6"
+          opacity="0.7"
         />
       </svg>
 

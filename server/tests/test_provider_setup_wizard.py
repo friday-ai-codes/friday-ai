@@ -19,7 +19,8 @@ from rest_framework.test import APIClient
 from common.encryption import decrypt_value
 
 WIZARD_URL = "/api/providers/setup-wizard/"
-COUNT_TOKENS = "https://api.anthropic.com/v1/messages/count_tokens"
+MESSAGES = "https://api.anthropic.com/v1/messages"
+_OK_MESSAGE = {"type": "message", "content": []}
 
 User = get_user_model()
 
@@ -47,7 +48,7 @@ class TestProviderSetupWizard:
         """PROV-01/05 + SEC-02：成功路径密文落库 + 设默认 + 绑 Claude Code。"""
         from system.models import ProviderCredential, SettingKeys, SystemSetting
 
-        respx.post(COUNT_TOKENS).mock(return_value=httpx.Response(200, json={"input_tokens": 6}))
+        respx.post(MESSAGES).mock(return_value=httpx.Response(200, json=_OK_MESSAGE))
 
         client = APIClient()
         client.force_authenticate(user=_superuser())
@@ -84,7 +85,7 @@ class TestProviderSetupWizard:
         """PROV-04：健康校验失败返回 400 + 可操作提示，且不落任何凭证。"""
         from system.models import ProviderCredential
 
-        respx.post(COUNT_TOKENS).mock(
+        respx.post(MESSAGES).mock(
             return_value=httpx.Response(401, json={"error": "invalid api key"})
         )
 
@@ -100,7 +101,7 @@ class TestProviderSetupWizard:
     @respx.mock
     def test_error_redacted(self) -> None:
         """安全：上游 body 含 sk-ant-* 明文时，响应错误须脱敏。"""
-        respx.post(COUNT_TOKENS).mock(
+        respx.post(MESSAGES).mock(
             return_value=httpx.Response(422, text='{"error":"bad key sk-ant-leak0987654321abcdef"}')
         )
         client = APIClient()
@@ -114,7 +115,7 @@ class TestProviderSetupWizard:
         """幂等：同 name 重复提交仅一行（update_or_create），不撞唯一约束。"""
         from system.models import ProviderCredential
 
-        respx.post(COUNT_TOKENS).mock(return_value=httpx.Response(200, json={"input_tokens": 6}))
+        respx.post(MESSAGES).mock(return_value=httpx.Response(200, json=_OK_MESSAGE))
         client = APIClient()
         client.force_authenticate(user=_superuser())
 

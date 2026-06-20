@@ -12,6 +12,7 @@ from langgraph.types import StreamWriter, interrupt
 
 from agents.chat_runner import ChatAnthropicRunner, ChatRunnerConfig
 from agents.core.events import (
+    ERROR,
     MESSAGE_COMPLETE,
     PHASE_TRANSITION,
     TASK_PROGRESS,
@@ -398,8 +399,25 @@ async def _build_chat_runner(
         # 透传前端「深度分析」开关 —— 否则 _build_tool_specs 拿不到 deep_analysis
         # 工具，LLM 看不见就不会调用，开关形同虚设。
         force_deep_analysis=bool(cfg.get("force_deep_analysis", False)),
+        # 绑定模型的能力清单：图片块构建的模态门控以此为准，缺失会让自定义
+        # vision 模型（如 mimo-v2.5）被误判为 text-only。必须由 graph_config
+        # 透传（executing_node 从 cfg 重建 ChatRunnerConfig，不复用 sdk_config 对象）。
+        available_models=cfg.get("available_models"),
     )
     return ChatAnthropicRunner(runner_config), agent_session_id
+
+
+def _user_facing_runner_error(exc: BaseException) -> str:
+    """把 chat runner 异常转成可直接展示给用户的文案。
+
+    仅对用户可读的领域异常（如图片不被模型支持）透传原文，其余降级为通用文案，
+    避免把内部 traceback / 实现细节泄漏到前端。
+    """
+    from chat.multimodal import ImageValidationError
+
+    if isinstance(exc, ImageValidationError):
+        return str(exc)
+    return "服务内部错误，请稍后重试"
 
 
 async def _run_chat_stream(
@@ -605,7 +623,7 @@ async def _execute_first_run(
         accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
             runner, state.get("user_message", ""), writer, run_id, input_parts,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "executing_node_chat_runner_error",
             session_id=cfg.get("session_id", ""),
@@ -613,6 +631,11 @@ async def _execute_first_run(
         # error 路径直接 END，不经过 finalizing_node —— 必须自行清掉 snapshot，
         # 否则前端 polling 会一直看到陈旧的 streaming_snapshot。
         await _clear_streaming_snapshot(run_id)
+        # 关键：向前端补发一个 SSE error 事件。否则 ERROR phase 直接 route END，
+        # SSE 流静默关闭、前端一个有内容的事件都收不到 —— 表现为「发出去没有任何
+        # 返回」。透传可读文案（如「当前模型不支持图片」）让用户能看到具体原因。
+        user_error = _user_facing_runner_error(exc)
+        writer({"type": ERROR, "data": {"message": user_error}})
         result = runner.result
         # parts contract：error 路径也要把 collector 已收集 parts
         # 透出供 finalize 落库（major #1 ERROR 路径 parts 携带契约）。
@@ -623,7 +646,7 @@ async def _execute_first_run(
             "accumulated_thinking": accumulated_thinking,
             "tool_calls": list(tool_calls_by_id.values()),
             "parts": err_parts,
-            "result_metadata": {"error": "Chat runner 运行异常"},
+            "result_metadata": {"error": user_error},
             "agent_session_id": agent_session_id,
         }
     finally:
@@ -771,19 +794,22 @@ async def _execute_with_results(
         accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
             runner, prompt, writer, run_id,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "executing_node_chat_runner_error_second_run",
             session_id=cfg.get("session_id", ""),
         )
         await _clear_streaming_snapshot(run_id)
+        # 同首次运行：补发 SSE error 事件，避免二次运行异常时前端静默无响应。
+        user_error = _user_facing_runner_error(exc)
+        writer({"type": ERROR, "data": {"message": user_error}})
         result = runner.result
         return {
             "phase": RunPhase.ERROR.value,
             "final_answer": (result.final_answer if result else None) or "",
             "accumulated_thinking": state.get("accumulated_thinking", []),
             "tool_calls": state.get("tool_calls", []),
-            "result_metadata": {"error": "Chat runner 二次运行异常"},
+            "result_metadata": {"error": user_error},
             "agent_session_id": agent_session_id,
             "blocking_results": [],
         }

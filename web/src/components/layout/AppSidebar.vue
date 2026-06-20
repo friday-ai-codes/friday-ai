@@ -88,15 +88,15 @@ const chatNavItem: NavItem = { to: '/chat', label: 'AI 对话', icon: 'lucide--m
 
 const mainNavItems: NavItem[] = [
   { to: '/', label: '首页', icon: 'lucide--home', exact: true },
-  { to: '/notifications', label: '消息中心', icon: 'lucide--inbox', badge: () => notificationsStore.totalUnread },
   { to: '/spaces', label: '空间', icon: 'lucide--folder-git-2' },
   { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
+  { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
   { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
   { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
-  { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
   { to: '/specs', label: 'SDD', icon: 'lucide--scroll-text' },
+  { to: '/notifications', label: '消息中心', icon: 'lucide--inbox', badge: () => notificationsStore.totalUnread },
 ]
 
 const adminNavItems: NavItem[] = [

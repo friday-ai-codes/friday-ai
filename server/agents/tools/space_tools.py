@@ -393,11 +393,16 @@ async def search_repository_code(
     # 收集 L3 原始返回的最高分（用于 0 结果时诊断 min_score 是否太高）
     l3_top_score: float | None = None
     l3_raw_count = 0
+    # 精排信息（reranker / 启发式）由 search_rag 写入 L3 snapshot.extra，
+    # 透传到工具结果 metadata 供对话展示「精排了哪一步」。
+    rerank_info: dict[str, Any] | None = None
 
     # 从 L3 层结果提取向量搜索结果 (保持向后兼容的返回格式)
     for layer in result.layers:
         if layer.layer == "L3" and layer.status == "ok":
             l3_raw_count = len(layer.items)
+            if isinstance(layer.extra, dict) and layer.extra.get("rerank"):
+                rerank_info = layer.extra["rerank"]
             for item in layer.items:
                 payload = item.get("payload", {})
                 score = item.get("score", 0.0)
@@ -450,6 +455,8 @@ async def search_repository_code(
         "context": final_context,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+    if rerank_info:
+        metadata["rerank"] = rerank_info
 
     # Phase P15：0 结果时主动返回诊断，避免 LLM 原样重试陷入循环。
     # 致敬 Claude Code issue #30150 的 progress metric / 失败诊断思路 —— 与其

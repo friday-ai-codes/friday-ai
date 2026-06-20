@@ -4,7 +4,9 @@ import type { ProcessStep } from './ToolProcessGroup.vue'
 import type { ConversationMessage, DeepAnalysisSession, ImagePart, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
 import { shallowRef } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
+import { useEditImages } from '~/composables/useEditImages'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import { vMediumZoom } from '~/composables/useMediumZoom'
 import { hydrateLegacyMessage } from '~/composables/useMessageParts'
 import { collectRepoNames, relevanceCandidates, repoInitial, toolAction, toolLabel } from '~/composables/useToolDisplay'
 import DeepAnalysisGroup from './DeepAnalysisGroup.vue'
@@ -54,18 +56,48 @@ const isEditingUserMessage = ref(false)
 const editedUserContent = ref('')
 const isSubmittingEdit = ref(false)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const editFileInput = ref<HTMLInputElement | null>(null)
+
+// 编辑态图片管理（已有图片 + 新贴图片），见 useEditImages
+const {
+  items: editImageItems,
+  seed: seedEditImages,
+  addFiles: addEditImageFiles,
+  handlePaste: handleEditPaste,
+  handleDrop: handleEditDrop,
+  remove: removeEditImage,
+  clear: clearEditImages,
+  resolveAll: resolveEditImages,
+  uploading: editImagesUploading,
+  count: editImagesCount,
+  isFull: editImagesFull,
+} = useEditImages()
 
 const canEditUserMessage = computed(() =>
   props.message.role === 'user' && !props.isStreaming,
 )
 
+// 内容或图片任一变化才视为「有改动」（允许仅增删图片就重新发送）
+const editDirty = computed(() => {
+  if (editedUserContent.value.trim() !== props.message.content.trim())
+    return true
+  if (editImageItems.value.length !== userImageParts.value.length)
+    return true
+  return editImageItems.value.some(i => i.kind === 'pending')
+})
+
 const editSubmitDisabled = computed(() => {
-  const trimmed = editedUserContent.value.trim()
-  return isSubmittingEdit.value || !trimmed || trimmed === props.message.content.trim()
+  if (isSubmittingEdit.value || editImagesUploading.value)
+    return true
+  const hasContent = !!editedUserContent.value.trim() || editImagesCount.value > 0
+  if (!hasContent)
+    return true
+  return !editDirty.value
 })
 
 function startEditingUserMessage() {
   editedUserContent.value = props.message.content
+  seedEditImages(userImageParts.value, userImageSrc)
   isEditingUserMessage.value = true
   nextTick(() => {
     const el = editTextareaRef.value
@@ -79,6 +111,21 @@ function startEditingUserMessage() {
 function cancelEditingUserMessage() {
   isEditingUserMessage.value = false
   editedUserContent.value = ''
+  clearEditImages()
+}
+
+function openEditFilePicker() {
+  if (editImagesFull.value)
+    return
+  editFileInput.value?.click()
+}
+
+function handleEditFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files)
+    addEditImageFiles(Array.from(input.files))
+  if (editFileInput.value)
+    editFileInput.value.value = ''
 }
 
 async function submitUserMessageEdit() {
@@ -86,7 +133,8 @@ async function submitUserMessageEdit() {
     return
   isSubmittingEdit.value = true
   try {
-    await chatStore.editMessageAndFork(props.message.id, editedUserContent.value)
+    const images = await resolveEditImages()
+    await chatStore.editMessageAndFork(props.message.id, editedUserContent.value, images)
     cancelEditingUserMessage()
   }
   finally {
@@ -843,18 +891,70 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   <!-- ======================== 用户消息 ======================== -->
   <div v-if="message.role === 'user'" class="user-message-row">
     <div class="user-message-stack">
-      <div v-if="isEditingUserMessage" class="user-edit-panel">
+      <div
+        v-if="isEditingUserMessage"
+        class="user-edit-panel"
+        @paste="handleEditPaste"
+        @dragover.prevent
+        @drop.prevent="handleEditDrop"
+      >
         <textarea
           ref="editTextareaRef"
           v-model="editedUserContent"
           data-test="edit-user-message-input"
           class="user-edit-textarea"
-          rows="4"
+          rows="3"
+          placeholder="编辑消息，可粘贴或添加图片…"
           aria-label="编辑用户消息"
           @keydown="handleUserEditKeydown"
         />
+
+        <!-- 图片预览：已有图片 + 新贴图片，可逐个移除 -->
+        <div v-if="editImageItems.length > 0" class="edit-image-strip">
+          <div
+            v-for="img in editImageItems"
+            :key="img.id"
+            class="edit-image-chip"
+            :class="{ 'edit-image-chip--error': img.status === 'error' }"
+          >
+            <img :src="img.previewUrl" alt="" class="edit-image-thumb">
+            <span v-if="img.status === 'uploading'" class="edit-image-overlay">
+              <span class="icon-[lucide--loader-circle] animate-spin text-[14px]" />
+            </span>
+            <button
+              type="button"
+              class="edit-image-remove"
+              title="移除图片"
+              :disabled="img.status === 'uploading'"
+              @click="removeEditImage(img.id)"
+            >
+              <span class="icon-[lucide--x] text-[11px]" />
+            </button>
+          </div>
+        </div>
+
+        <input
+          ref="editFileInput"
+          type="file"
+          class="sr-only"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          @change="handleEditFileSelect"
+        >
+
         <div class="user-edit-actions">
-          <span class="user-edit-hint">⌘ + Enter 重新发送 · Esc 取消</span>
+          <div class="user-edit-actions-left">
+            <button
+              type="button"
+              class="user-edit-icon-btn"
+              title="添加图片"
+              :disabled="editImagesFull"
+              @click="openEditFilePicker"
+            >
+              <span class="icon-[lucide--image-plus] text-[14px]" />
+            </button>
+            <span class="user-edit-hint">⌘ + Enter 发送 · Esc 取消 · 可粘贴图片</span>
+          </div>
           <div class="flex items-center gap-2">
             <button
               type="button"
@@ -886,6 +986,7 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
           <img
             v-for="part in userImageParts"
             :key="part.id"
+            v-medium-zoom
             class="image-preview-thumb"
             :src="userImageSrc(part)"
             :alt="part.alt_text || '图片'"
@@ -1225,6 +1326,19 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   background: hsl(210 40% 96%);
   object-fit: cover;
   box-shadow: 0 1px 2px hsl(215 28% 17% / 0.06);
+  cursor: zoom-in;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.image-preview-thumb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px hsl(215 28% 17% / 0.12);
+}
+/* medium-zoom 放大时的图层在 body 上，保证盖过对话内容 */
+:global(.medium-zoom-overlay),
+:global(.medium-zoom-image--opened) {
+  z-index: 999;
 }
 
 .user-edit-trigger {
@@ -1270,13 +1384,13 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
 .user-edit-textarea {
   display: block;
   width: 100%;
-  min-height: 6rem;
+  min-height: 3.25rem;
   max-height: 18rem;
   resize: vertical;
   border: none;
   outline: none;
   background: transparent;
-  padding: 0.875rem 1rem 0.375rem;
+  padding: 0.75rem 1rem 0.25rem;
   color: hsl(215 28% 18%);
   font-size: 0.9rem;
   font-weight: 450;
@@ -1284,13 +1398,109 @@ const suppressTypingCursor = computed(() => chatStore.currentPhase === 'waiting_
   white-space: pre-wrap;
   text-align: left;
 }
+.user-edit-textarea::placeholder {
+  color: hsl(215 16% 62%);
+}
+
+/* 编辑态图片预览条 */
+.edit-image-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem 0.125rem;
+}
+
+.edit-image-chip {
+  position: relative;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  border: 1px solid hsl(214 32% 86% / 0.9);
+  background: hsl(210 40% 96%);
+}
+.edit-image-chip--error {
+  border-color: hsl(0 72% 51% / 0.4);
+}
+
+.edit-image-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.edit-image-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(215 28% 17% / 0.45);
+  color: white;
+}
+
+.edit-image-remove {
+  position: absolute;
+  top: 0.1875rem;
+  right: 0.1875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background: hsl(215 28% 17% / 0.62);
+  color: white;
+  transition:
+    background-color 0.15s ease,
+    opacity 0.15s ease;
+}
+.edit-image-remove:hover:not(:disabled) {
+  background: hsl(0 72% 51%);
+}
+.edit-image-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .user-edit-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.375rem 0.625rem 0.625rem 1rem;
+  padding: 0.375rem 0.625rem 0.625rem 0.625rem;
+  border-top: 1px solid hsl(214 32% 91% / 0.6);
+  margin-top: 0.25rem;
+}
+
+.user-edit-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.user-edit-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 0.5rem;
+  color: hsl(215 16% 50%);
+  flex-shrink: 0;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.user-edit-icon-btn:hover:not(:disabled) {
+  background: hsl(168 76% 42% / 0.1);
+  color: hsl(168 76% 34%);
+}
+.user-edit-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .user-edit-hint {

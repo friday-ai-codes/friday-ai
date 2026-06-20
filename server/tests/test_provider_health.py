@@ -58,8 +58,8 @@ class TestHealthCheckAnthropic:
             "anthropic",
             {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
         )
-        respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
-            return_value=httpx.Response(200, json={"input_tokens": 8})
+        respx.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(200, json={"type": "message", "content": []})
         )
         result = await health_check(cred)
         assert result.ok is True
@@ -73,6 +73,24 @@ class TestHealthCheckAnthropic:
         assert refreshed.last_health_check_error == ""
 
     @respx.mock
+    async def test_probe_sends_hello_to_messages(self) -> None:
+        """探活请求发到 /v1/messages，body 含 hello 消息与 max_tokens。"""
+        from services.provider_health import health_check
+
+        cred = await sync_to_async(_make_credential)(
+            "anthropic",
+            {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
+        )
+        route = respx.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(200, json={"type": "message", "content": []})
+        )
+        await health_check(cred)
+        assert route.called
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["messages"][0]["content"] == "hello"
+        assert sent_body["max_tokens"] == 16
+
+    @respx.mock
     async def test_error_body_redacted_T225_02(self) -> None:
         from services.provider_health import health_check
         from system.models import ProviderCredential
@@ -82,7 +100,7 @@ class TestHealthCheckAnthropic:
             {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
         )
         # 故意构造上游 422 body 含 sk-ant-* 明文
-        respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
+        respx.post("https://api.anthropic.com/v1/messages").mock(
             return_value=httpx.Response(
                 422,
                 text='{"error":"invalid api_key sk-ant-leaktest1234567890"}',
@@ -107,8 +125,8 @@ class TestHealthCheckAnthropic:
             {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
             default_model="",
         )
-        route = respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
-            return_value=httpx.Response(200, json={"input_tokens": 5})
+        route = respx.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(200, json={"type": "message", "content": []})
         )
         await health_check(cred)
         assert route.called
@@ -131,15 +149,19 @@ class TestHealthCheckOpenAI:
         cred = await sync_to_async(_make_credential)(
             "openai_chat",
             {"api_key": "sk-openai-test-1234567890"},
+            default_model="gpt-4o",
         )
-        respx.get("https://api.openai.com/v1/models").mock(
+        route = respx.post("https://api.openai.com/v1/chat/completions").mock(
             return_value=httpx.Response(
-                200, json={"data": [{"id": "gpt-5"}, {"id": "gpt-4o"}]}
+                200, json={"choices": [{"message": {"content": "hi"}}]}
             )
         )
         result = await health_check(cred)
         assert result.ok is True
         assert result.status == "ok"
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["model"] == "gpt-4o"
+        assert sent_body["messages"][0]["content"] == "hello"
 
     @respx.mock
     async def test_openai_responses_ok(self) -> None:
@@ -148,12 +170,30 @@ class TestHealthCheckOpenAI:
         cred = await sync_to_async(_make_credential)(
             "openai_responses",
             {"api_key": "sk-openai-test-1234567890"},
+            default_model="gpt-4o",
         )
-        respx.get("https://api.openai.com/v1/models").mock(
-            return_value=httpx.Response(200, json={"data": [{"id": "gpt-5"}]})
+        respx.post("https://api.openai.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200, json={"choices": [{"message": {"content": "hi"}}]}
+            )
         )
         result = await health_check(cred)
         assert result.ok is True
+
+    @respx.mock
+    async def test_openai_missing_model_errors(self) -> None:
+        """default_model 为空且未传 override → 返回 error 提示配置模型，不发请求。"""
+        from services.provider_health import health_check
+
+        cred = await sync_to_async(_make_credential)(
+            "openai_chat",
+            {"api_key": "sk-openai-test-1234567890"},
+            default_model="",
+        )
+        result = await health_check(cred)
+        assert result.ok is False
+        assert result.status == "error"
+        assert "模型" in result.error
 
 
 # ============================================================================
@@ -171,20 +211,23 @@ class TestHealthCheckGemini:
         cred = await sync_to_async(_make_credential)(
             "gemini",
             {"api_key": "fixture-gemini-api-key"},
+            default_model="gemini-2.5-flash",
         )
-        respx.get(
-            "https://generativelanguage.googleapis.com/v1beta/models"
+        route = respx.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         ).mock(
             return_value=httpx.Response(
-                200, json={"models": [{"name": "models/gemini-2.5-flash"}]}
+                200, json={"candidates": [{"content": {"parts": [{"text": "hi"}]}}]}
             )
         )
         result = await health_check(cred)
         assert result.ok is True
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["contents"][0]["parts"][0]["text"] == "hello"
 
 
 # ============================================================================
-# Ollama（contract 协同：available_models 写入）
+# Ollama（/api/chat 发 hello 探活）
 # ============================================================================
 
 
@@ -192,32 +235,31 @@ class TestHealthCheckGemini:
 @pytest.mark.django_db(transaction=True)
 class TestHealthCheckOllama:
     @respx.mock
-    async def test_ollama_writes_available_models_PROV_06(self) -> None:
+    async def test_ollama_ok(self) -> None:
         from services.provider_health import health_check
-        from system.models import ProviderCredential
 
         cred = await sync_to_async(_make_credential)(
             "ollama",
             {"base_url": "http://localhost:11434"},
+            default_model="llama3.2:latest",
         )
-        respx.get("http://localhost:11434/api/tags").mock(
+        route = respx.post("http://localhost:11434/api/chat").mock(
             return_value=httpx.Response(
                 200,
                 json={
-                    "models": [
-                        {"name": "llama3.2:latest"},
-                        {"name": "qwen2.5:7b"},
-                    ]
+                    "model": "llama3.2:latest",
+                    "message": {"role": "assistant", "content": "hi"},
+                    "done": True,
                 },
             )
         )
         result = await health_check(cred)
         assert result.ok is True
-        assert result.available_models == ["llama3.2:latest", "qwen2.5:7b"]
-
-        # contract 协同：DB 字段同次往返写入
-        refreshed = await ProviderCredential.objects.aget(id=cred.id)
-        assert refreshed.available_models == ["llama3.2:latest", "qwen2.5:7b"]
+        assert result.status == "ok"
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["model"] == "llama3.2:latest"
+        assert sent_body["messages"][0]["content"] == "hello"
+        assert sent_body["stream"] is False
 
 
 # ============================================================================
@@ -236,7 +278,7 @@ class TestHealthCheckErrorPaths:
             "anthropic",
             {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
         )
-        respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
+        respx.post("https://api.anthropic.com/v1/messages").mock(
             side_effect=httpx.TimeoutException("timeout")
         )
         result = await health_check(cred)
@@ -250,8 +292,9 @@ class TestHealthCheckErrorPaths:
         cred = await sync_to_async(_make_credential)(
             "ollama",
             {"base_url": "http://unreachable.localtest.me:11434"},
+            default_model="llama3.2:latest",
         )
-        respx.get("http://unreachable.localtest.me:11434/api/tags").mock(
+        respx.post("http://unreachable.localtest.me:11434/api/chat").mock(
             side_effect=httpx.ConnectError("Name or service not known")
         )
         result = await health_check(cred)
@@ -374,8 +417,8 @@ class TestTestConnectionEndpoint:
             "anthropic",
             {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
         )
-        respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
-            return_value=httpx.Response(200, json={"input_tokens": 8})
+        respx.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(200, json={"type": "message", "content": []})
         )
 
         client = APIClient()

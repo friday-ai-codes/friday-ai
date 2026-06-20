@@ -5,6 +5,13 @@ import { computed } from 'vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 
 interface Condition {
   field: string
@@ -85,18 +92,19 @@ function removeCondition(index: number) {
     <!-- Logic toggle -->
     <div class="flex items-center gap-2">
       <Label class="text-sm text-muted-foreground">满足</Label>
-      <select
-        :value="logic"
-        class="h-8 rounded-lg border border-border/50 bg-background/50 px-3 text-sm focus:border-primary/50 focus:outline-none transition-colors"
-        @change="updateLogic(($event.target as HTMLSelectElement).value as 'and' | 'or')"
-      >
-        <option value="and">
-          所有
-        </option>
-        <option value="or">
-          任一
-        </option>
-      </select>
+      <Select :model-value="logic" @update:model-value="updateLogic($event as 'and' | 'or')">
+        <SelectTrigger size="sm" class="bg-background/50">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="and">
+            所有
+          </SelectItem>
+          <SelectItem value="or">
+            任一
+          </SelectItem>
+        </SelectContent>
+      </Select>
       <Label class="text-sm text-muted-foreground">条件时继续</Label>
     </div>
 
@@ -119,33 +127,38 @@ function removeCondition(index: number) {
                 class="h-8 text-sm bg-background/50"
                 @update:model-value="updateCondition(index, { field: $event as string })"
               />
-              <select
+              <Select
                 v-else
-                :value="condition.field"
-                class="w-full h-8 rounded-lg border border-border/50 bg-background/50 px-2 text-sm"
-                @change="updateCondition(index, { field: ($event.target as HTMLSelectElement).value })"
+                :model-value="condition.field"
+                @update:model-value="updateCondition(index, { field: $event as string })"
               >
-                <option value="">
-                  选择字段
-                </option>
-                <option v-for="field in availableFields" :key="field.key" :value="field.key">
-                  {{ field.name }}
-                </option>
-              </select>
+                <SelectTrigger size="sm" class="w-full bg-background/50">
+                  <SelectValue placeholder="选择字段" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="field in availableFields" :key="field.key" :value="field.key">
+                    {{ field.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <!-- Operator selector -->
             <div>
               <Label class="text-xs text-muted-foreground mb-1 block">条件</Label>
-              <select
-                :value="condition.operator"
-                class="w-full h-8 rounded-lg border border-border/50 bg-background/50 px-2 text-sm"
-                @change="updateCondition(index, { operator: ($event.target as HTMLSelectElement).value })"
+              <Select
+                :model-value="condition.operator"
+                @update:model-value="updateCondition(index, { operator: $event as string })"
               >
-                <option v-for="op in operators" :key="op.value" :value="op.value">
-                  {{ op.label }}
-                </option>
-              </select>
+                <SelectTrigger size="sm" class="w-full bg-background/50">
+                  <SelectValue placeholder="选择条件" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="op in operators" :key="op.value" :value="op.value">
+                    {{ op.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -10,6 +10,7 @@ import PageHeader from '~/components/common/PageHeader.vue'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
+import KnowledgeDashboard from '~/components/knowledge/KnowledgeDashboard.vue'
 import KnowledgeTreePanel from '~/components/knowledge/KnowledgeTreePanel.vue'
 import ProvenanceLinkButton from '~/components/knowledge/ProvenanceLinkButton.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -23,14 +24,14 @@ const queryClient = useQueryClient()
 const route = useRoute()
 const router = useRouter()
 
-type KnowledgeTab = 'tree' | 'ingest' | 'search'
-const TABS: KnowledgeTab[] = ['tree', 'ingest', 'search']
+type KnowledgeTab = 'overview' | 'tree' | 'ingest' | 'search'
+const TABS: KnowledgeTab[] = ['overview', 'tree', 'ingest', 'search']
 
 function normalizeTab(value: unknown): KnowledgeTab {
-  return TABS.includes(value as KnowledgeTab) ? (value as KnowledgeTab) : 'tree'
+  return TABS.includes(value as KnowledgeTab) ? (value as KnowledgeTab) : 'overview'
 }
 
-// 默认进入「知识树」；与路由 ?tab= 双向同步，支持深链。
+// 默认进入「总览」；与路由 ?tab= 双向同步，支持深链。
 const activeTab = ref<KnowledgeTab>(normalizeTab(route.query.tab))
 const showFilters = ref(false)
 
@@ -104,6 +105,10 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
 
     <Tabs v-model="activeTab" class="mt-5">
       <TabsList>
+        <TabsTrigger value="overview">
+          <span class="icon-[lucide--layout-dashboard]" />
+          {{ t('knowledge.tabs.overview') }}
+        </TabsTrigger>
         <TabsTrigger value="tree">
           <span class="icon-[lucide--folder-tree]" />
           {{ t('knowledge.tabs.tree') }}
@@ -117,6 +122,10 @@ const hasSearched = computed(() => submittedQuery.value.length > 0)
           {{ t('knowledge.tabs.search') }}
         </TabsTrigger>
       </TabsList>
+
+      <TabsContent value="overview" class="mt-5">
+        <KnowledgeDashboard @navigate="activeTab = $event" />
+      </TabsContent>
 
       <TabsContent value="search" class="mt-5 space-y-5">
         <!-- 搜索栏（带前置图标，突出主操作） -->

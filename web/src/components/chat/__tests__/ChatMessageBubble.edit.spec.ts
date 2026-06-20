@@ -94,7 +94,7 @@ describe('chatMessageBubble edit user message', () => {
     await wrapper.find('[data-test="edit-user-message-input"]').setValue('编辑后的问题')
     await wrapper.find('[data-test="submit-user-message-edit"]').trigger('click')
 
-    expect(editSpy).toHaveBeenCalledWith('msg-user', '编辑后的问题')
+    expect(editSpy).toHaveBeenCalledWith('msg-user', '编辑后的问题', [])
   })
 
   it('disables submit for unchanged or blank content and Escape cancels', async () => {

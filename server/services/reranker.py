@@ -71,7 +71,11 @@ class RerankerService:
 
         if not api_url:
             logger.error("reranker_api_url_not_configured")
-            return [{"index": i, "relevance_score": 0.0} for i in range(len(documents))]
+            # fail-open：返回空列表让调用方保留召回原序，绝不用 0 分打乱排序。
+            return []
+
+        if not documents:
+            return []
 
         if top_n is None:
             top_n = config.get("top_n", 10)
@@ -95,7 +99,15 @@ class RerankerService:
 
                 response = await client.post(api_url, json=request_body, headers=headers)
                 response.raise_for_status()
-                data = response.json()
+                try:
+                    data = response.json()
+                except ValueError:
+                    logger.error(
+                        "reranker_non_json_response",
+                        content_type=response.headers.get("content-type", ""),
+                        body=response.text[:200],
+                    )
+                    return []
 
                 # 解析响应：支持 Jina/Cohere 格式
                 results: list[dict[str, Any]] = []
@@ -114,13 +126,13 @@ class RerankerService:
                         })
                 else:
                     logger.error("unexpected_reranker_response", data=str(data)[:200])
-                    return [{"index": i, "relevance_score": 0.0} for i in range(min(top_n, len(documents)))]
+                    return []
 
                 return results
 
         except httpx.HTTPError as e:
             logger.error("reranker_api_failed", error=str(e))
-            return [{"index": i, "relevance_score": 0.0} for i in range(min(top_n, len(documents)))]
+            return []
 
     @classmethod
     async def test_connection(cls) -> dict[str, Any]:
@@ -167,11 +179,22 @@ class RerankerService:
                     body = response.text[:200]
                     return {"status": "error", "message": f"HTTP {response.status_code}: {body}"}
 
-                data = response.json()
-                if "results" in data or "data" in data:
+                content_type = response.headers.get("content-type", "")
+                try:
+                    data = response.json()
+                except ValueError:
+                    snippet = response.text[:200].replace("\n", " ")
+                    hint = ""
+                    if "html" in content_type.lower() or snippet.lstrip().startswith("<"):
+                        hint = "（返回了 HTML 页面，API 地址可能不对，Rerank 端点通常以 /v1/rerank 结尾）"
+                    return {
+                        "status": "error",
+                        "message": f"响应不是 JSON{hint}。content-type={content_type}；片段: {snippet}",
+                    }
+
+                if isinstance(data, dict) and ("results" in data or "data" in data):
                     return {"status": "healthy", "model": model}
-                else:
-                    return {"status": "error", "message": f"响应格式不支持: {str(data)[:200]}"}
+                return {"status": "error", "message": f"响应格式不支持: {str(data)[:200]}"}
 
         except httpx.HTTPError as e:
             return {"status": "error", "message": f"连接失败: {e}"}

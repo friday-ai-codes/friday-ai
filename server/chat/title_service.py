@@ -113,10 +113,13 @@ async def generate_title(
         )
 
         # implementation contract：build_chat_model seam + 单 turn ainvoke（非 streaming）
+        # max_output_tokens 不能太小：推理（reasoning）模型（如 mimo-v2.5-pro）会先产出
+        # reasoning 块再输出正文，50 token 会被思考过程全部吃掉（stop_reason=max_tokens）
+        # 导致没有 text 块、标题恒为空。给到 1024 让 reasoning 后仍有余量产出标题文字。
         chat_model = build_chat_model(
             resolved,
             model,
-            max_output_tokens=50,
+            max_output_tokens=1024,
             streaming=False,
         )
         ai_msg = await chat_model.ainvoke([HumanMessage(content=rendered_prompt)])

@@ -5,6 +5,13 @@ import { computed, ref } from 'vue'
 
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
@@ -204,16 +211,20 @@ const useUiSchema = computed(() => {
               </div>
 
               <!-- select -->
-              <select
+              <Select
                 v-else-if="getUiWidgetType(fieldKey) === 'select'"
-                class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 py-1 text-sm focus:border-primary/50 focus:outline-none transition-colors"
-                :value="nodeConfig[fieldKey] ?? ''"
-                @change="emit('updateConfigValue', fieldKey, ($event.target as HTMLSelectElement).value)"
+                :model-value="nodeConfig[fieldKey] ?? ''"
+                @update:model-value="emit('updateConfigValue', fieldKey, $event)"
               >
-                <option v-for="opt in (getFieldEnum(fieldKey) ?? [])" :key="opt" :value="opt">
-                  {{ opt }}
-                </option>
-              </select>
+                <SelectTrigger class="w-full bg-background/50">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in (getFieldEnum(fieldKey) ?? [])" :key="opt" :value="opt">
+                    {{ opt }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
 
               <!-- json-editor / fallback -->
               <Textarea
@@ -278,16 +289,20 @@ const useUiSchema = computed(() => {
             />
             <span class="text-sm text-muted-foreground">{{ uiSchema.fields?.[fieldKey]?.help }}</span>
           </div>
-          <select
+          <Select
             v-else-if="getUiWidgetType(fieldKey) === 'select'"
-            class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 py-1 text-sm focus:border-primary/50 focus:outline-none transition-colors"
-            :value="nodeConfig[fieldKey] ?? ''"
-            @change="emit('updateConfigValue', fieldKey, ($event.target as HTMLSelectElement).value)"
+            :model-value="nodeConfig[fieldKey] ?? ''"
+            @update:model-value="emit('updateConfigValue', fieldKey, $event)"
           >
-            <option v-for="opt in (getFieldEnum(fieldKey) ?? [])" :key="opt" :value="opt">
-              {{ opt }}
-            </option>
-          </select>
+            <SelectTrigger class="w-full bg-background/50">
+              <SelectValue placeholder="请选择" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in (getFieldEnum(fieldKey) ?? [])" :key="opt" :value="opt">
+                {{ opt }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Textarea
             v-else
             :model-value="typeof nodeConfig[fieldKey] === 'object' ? JSON.stringify(nodeConfig[fieldKey], null, 2) : String(nodeConfig[fieldKey] ?? '')"
@@ -350,16 +365,20 @@ const useUiSchema = computed(() => {
       </div>
 
       <!-- Select -->
-      <select
+      <Select
         v-else-if="getFieldType(propSchema) === 'select'"
-        class="w-full h-9 rounded-xl border border-border/50 bg-background/50 px-3 py-1 text-sm focus:border-primary/50 focus:outline-none transition-colors"
-        :value="nodeConfig[propKey] || propSchema.default"
-        @change="emit('updateConfigValue', String(propKey), ($event.target as HTMLSelectElement).value)"
+        :model-value="nodeConfig[propKey] || propSchema.default"
+        @update:model-value="emit('updateConfigValue', String(propKey), $event)"
       >
-        <option v-for="opt in propSchema.enum" :key="opt" :value="opt">
-          {{ opt }}
-        </option>
-      </select>
+        <SelectTrigger class="w-full bg-background/50">
+          <SelectValue placeholder="请选择" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="opt in propSchema.enum" :key="opt" :value="opt">
+            {{ opt }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
 
       <!-- Object/Array - JSON editor -->
       <Textarea

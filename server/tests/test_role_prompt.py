@@ -84,15 +84,15 @@ class TestBuildSystemPrompt:
         assert "TestProject" in prompt
 
     async def test_all_roles_have_reasonable_length(self) -> None:
-        """所有角色 prompt 长度在合理范围内。
+        """所有角色 prompt 不为空、且不至于失控膨胀（仅作下限保护 + 宽松上限兜底）。
 
-        implementation 在 developer / strategy / coding_guidance 各
-        追加「准确性优先」段后，整体长度从 ~1100 增长到 ~3000+；上限同步
-        放宽至 5000 留足后续 INTENT/RELEV phase 增量注入空间。
+        在 1M 上下文模型成为常态后，system prompt「该完整就完整」，不再为省 token
+        而硬压长度——身份 / 能力 / 通用准则 / 策略 / 编码指引齐备更重要。这里只保留
+        一个宽松上限（20000）防止意外把整篇文档塞进 prompt 的失控情形。
         """
         for role in ROLE_PROMPTS:
             prompt = await _build_system_prompt("P", "proj-1", role=role)
-            assert 80 < len(prompt) < 5000, (
+            assert 80 < len(prompt) < 20000, (
                 f"Role '{role}' prompt length {len(prompt)} out of range"
             )
 
