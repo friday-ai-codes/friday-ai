@@ -51,6 +51,11 @@ spec:
           # 直接使用 env 而非 envFrom，避免 pre-install hook 阶段 ConfigMap/Secret 尚未创建的问题
           # 迁移仅需可启动的非空 SECRET_KEY/加密 key，无需与运行时一致（migrate 不触发加密）
           env:
+            # 迁移 Job 显式声明 migrate 角色，抑制 web-only 启动副作用（reconcile/sweep），
+            # 与 CI（FRIDAY_PROCESS_ROLE=migrate）及 Phase 60 进程角色门禁契约对齐，避免在迁移
+            # 工作负载里误跑 repositories.reset_stuck_indexing 等 web-only reconcile。
+            - name: FRIDAY_PROCESS_ROLE
+              value: "migrate"
             - name: SECRET_KEY
               value: {{ .Values.server.secretKey | default (randAlphaNum 50) | quote }}
             - name: FRIDAY_ENCRYPTION_KEY
