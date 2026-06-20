@@ -173,19 +173,27 @@ class KnowledgeTreeSearchView(APIView):
 
 
 class KnowledgeTreeRebuildView(APIView):
-    """全量重建域树（admin）：LLM 聚类后台执行。"""
+    """全量重建域树（admin）：经 durable QUEUE_PAGE_INDEX 持久化执行。"""
 
     permission_classes = [IsAdminUser]
 
     async def post(self, request: Any) -> Response:
         from codegraph.services.corpus_tree import CorpusTreeService
-        from services.background_runner import run_in_background
+        from durable import QUEUE_PAGE_INDEX, DurableTaskService
 
-        run_in_background(
-            lambda: CorpusTreeService.build_full(),
-            name="corpus_tree_full_rebuild",
+        # 入队点算 target hash：run_page_index 据此 hash 跳过（未变不重建重 LLM 聚类，T-62-05 DoS）。
+        target_hash = await CorpusTreeService.compute_source_hash()
+        key = "page_index:corpus_tree"
+        job_id = await DurableTaskService.defer(
+            "durable_page_index",
+            {"target_id": "corpus_tree", "target_hash": target_hash},
+            queue=QUEUE_PAGE_INDEX,
+            idempotency_key=key,
         )
-        return Response({"status": "rebuild_started"}, status=status.HTTP_202_ACCEPTED)
+        return Response(
+            {"status": "rebuild_started", "job_id": job_id},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class PinRepositorySerializer(serializers.Serializer):
