@@ -65,9 +65,23 @@ runner:
     pullPolicy: IfNotPresent
   registrationToken: "" # RUNNER_REGISTRATION_TOKEN
   name: "k8s-runner"
+  # -- executor 类型：docker（默认）| kubernetes。kubernetes 接受 k8s 别名
+  # （与 runner 端 resolveExecutorKind 归一一致；模板对二者等价处理，不会出现
+  # k8s 值渲染成 docker 形态却跑 k8s 逻辑的偏差）。
   executor: "docker"
+  # docker executor 专用：仅 executor=docker 时挂载 docker.sock 与 supplementalGroups
   dockerSocketPath: /var/run/docker.sock
   dockerGID: 999
+  # -- Kubernetes executor 配置（仅 executor=kubernetes/k8s 时生效）
+  k8s:
+    namespace: "" # 留空走 downward API（Pod 所在 namespace）
+    backoffLimit: 0 # Job 重试次数；0=失败留存调试（对齐 docker）
+    ttlSecondsAfterFinished: 3600 # 完成 Job 的被动 TTL 清理兜底（秒）
+    serviceAccountName: "" # 留空用 <fullname>-runner
+    imagePullSecret: "" # 私有 registry 拉取密钥（可选）
+  # -- runner RBAC（仅 executor=kubernetes/k8s 时渲染 SA + namespaced Role + RoleBinding）
+  rbac:
+    create: true
   resources:
     requests:
       cpu: 50m

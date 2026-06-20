@@ -1,0 +1,46 @@
+{{- if and .Values.runner.enabled (eq (include "friday.runner.isK8s" .) "true") .Values.runner.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "friday.runner.serviceAccountName" . }}
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "friday.fullname" . }}-runner
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+rules:
+  # 任务容器以 batch/v1 Job 形态运行：创建/查询/监听/删除本 namespace 的 Job。
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # WaitContainer/StreamLogs/answerEndpoint 需查询 Job 关联的 Pod（取终态/Pod IP）。
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # StreamLogs 经 Pods/log 子资源拉取容器日志流。
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "friday.fullname" . }}-runner
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "friday.fullname" . }}-runner
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "friday.runner.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

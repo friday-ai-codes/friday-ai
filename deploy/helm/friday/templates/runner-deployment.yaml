@@ -1,4 +1,5 @@
 {{- if .Values.runner.enabled }}
+{{- $isK8s := eq (include "friday.runner.isK8s" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,10 +19,16 @@ spec:
         {{- include "friday.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: runner
     spec:
+      {{- if $isK8s }}
+      serviceAccountName: {{ include "friday.runner.serviceAccountName" . }}
+      securityContext:
+        runAsUser: 65534
+      {{- else }}
       securityContext:
         runAsUser: 65534
         supplementalGroups:
           - {{ .Values.runner.dockerGID }}
+      {{- end }}
       containers:
         - name: runner
           image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag | default .Chart.AppVersion }}"
@@ -38,16 +45,39 @@ spec:
               value: {{ .Values.runner.name | quote }}
             - name: FRIDAY_RUNNER_EXECUTOR
               value: {{ .Values.runner.executor | quote }}
+            {{- if $isK8s }}
+            # task→runner 回调 host：取本 runner Pod IP（downward API），令任务容器经 Pod IP 回调可达。
+            - name: FRIDAY_RUNNER_CALLBACK_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: FRIDAY_RUNNER_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: FRIDAY_RUNNER_K8S_TTL
+              value: {{ .Values.runner.k8s.ttlSecondsAfterFinished | quote }}
+            - name: FRIDAY_RUNNER_K8S_BACKOFF_LIMIT
+              value: {{ .Values.runner.k8s.backoffLimit | quote }}
+            {{- if .Values.runner.k8s.imagePullSecret }}
+            - name: FRIDAY_RUNNER_K8S_IMAGE_PULL_SECRET
+              value: {{ .Values.runner.k8s.imagePullSecret | quote }}
+            {{- end }}
+            {{- end }}
+          {{- if not $isK8s }}
           volumeMounts:
             - name: docker-sock
               mountPath: /var/run/docker.sock
+          {{- end }}
           {{- with .Values.runner.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      {{- if not $isK8s }}
       volumes:
         - name: docker-sock
           hostPath:
             path: {{ .Values.runner.dockerSocketPath }}
             type: Socket
+      {{- end }}
 {{- end }}
