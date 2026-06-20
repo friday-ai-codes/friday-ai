@@ -178,15 +178,14 @@ class KnowledgeTreeRebuildView(APIView):
     permission_classes = [IsAdminUser]
 
     async def post(self, request: Any) -> Response:
-        from codegraph.services.corpus_tree import CorpusTreeService
         from durable import QUEUE_PAGE_INDEX, DurableTaskService
 
-        # 入队点算 target hash：run_page_index 据此 hash 跳过（未变不重建重 LLM 聚类，T-62-05 DoS）。
-        target_hash = await CorpusTreeService.compute_source_hash()
+        # 不传入队时刻 target_hash：run_page_index 在执行时以「上次构建快照的 source_hash」
+        # 为基线自行判定（首次/有变则建，未变则跳过），入队点传指纹会因同源恒等致恒跳过（CR-01）。
         key = "page_index:corpus_tree"
         job_id = await DurableTaskService.defer(
             "durable_page_index",
-            {"target_id": "corpus_tree", "target_hash": target_hash},
+            {"target_id": "corpus_tree"},
             queue=QUEUE_PAGE_INDEX,
             idempotency_key=key,
         )

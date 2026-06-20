@@ -80,6 +80,25 @@ class CorpusTreeService:
         }
 
     @classmethod
+    async def get_active_source_hash(cls) -> str | None:
+        """当前 active 快照落库的 ``source_hash``（上一次已构建基线）。
+
+        无 active 快照（**首次构建**）返回 ``None``，供 run_page_index 区分「首次必建」与
+        「自上次构建以来未变则跳过」——比对参照是「上次构建快照」而非「入队时刻指纹」，
+        避免入队==执行同值导致的恒跳过（CR-01）。
+        """
+        from repositories.models import CorpusTreeSnapshot
+
+        snapshot = (
+            await CorpusTreeSnapshot.objects.filter(is_active=True)
+            .only("source_hash")
+            .afirst()
+        )
+        if snapshot is None:
+            return None
+        return snapshot.source_hash or ""
+
+    @classmethod
     async def compute_source_hash(cls) -> str:
         """全仓输入（id/ai_summary/facets）确定性指纹，供 run_page_index 按 hash 跳过重建。
 
