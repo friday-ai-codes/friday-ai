@@ -557,14 +557,28 @@ class IngestQueueView(APIView):
         def _build() -> list[dict]:
             from collections import OrderedDict
 
-            groups: "OrderedDict[object, list[IngestRun]]" = OrderedDict()
-            for run in IngestRun.objects.filter(batch_id__isnull=False).order_by(
-                "-started_at"
-            ):
+            from django.db.models import Max
+
+            # 先在 DB 层取「最近 N 批」的 batch_id（按各批最新 started_at 倒序 + LIMIT），
+            # 再仅拉这些批次的行——避免把全表 IngestRun 读进内存（WR-01，T-62-04）。
+            recent = (
+                IngestRun.objects.filter(batch_id__isnull=False)
+                .values("batch_id")
+                .annotate(last_started=Max("started_at"))
+                .order_by("-last_started")[:_QUEUE_LIST_LIMIT]
+            )
+            recent_batch_ids = [row["batch_id"] for row in recent]
+            # 预置顺序（最近批在前），保证输出顺序稳定。
+            groups: "OrderedDict[object, list[IngestRun]]" = OrderedDict(
+                (bid, []) for bid in recent_batch_ids
+            )
+            for run in IngestRun.objects.filter(
+                batch_id__in=recent_batch_ids
+            ).order_by("-started_at"):
                 groups.setdefault(run.batch_id, []).append(run)
 
             items: list[dict] = []
-            for batch_id, batch_runs in list(groups.items())[:_QUEUE_LIST_LIMIT]:
+            for batch_id, batch_runs in groups.items():
                 total = len(batch_runs)
                 done = sum(
                     1 for r in batch_runs if r.status == IngestRun.Status.COMPLETED
