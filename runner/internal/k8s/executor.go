@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -173,36 +174,92 @@ func (k *KubernetesExecutor) pollAnswerEndpoint(ctx context.Context, jobName str
 // WaitContainer watch Job 的 Pod，取 terminated exitCode。
 // 超时返回 (-1, "", nil) 并 best-effort 删 Job（对齐 docker：吞错由 exitCode 表达，
 // 仅 API 调用错误才返 err，避免与 ws/client.go 调用方判定分叉，Pitfall 1）。logs 恒空。
+//
+// k8s watch 不是长生命周期保证：apiserver 会按 minRequestTimeout 主动断流，
+// 任何瞬时网络抖动也会关闭 channel。绝不把 channel 关闭当作任务终止——否则长任务
+// （AI coding，默认 1800s，可超 watch 窗口）会被误判为 timeout/failed，且因 taskFailed
+// 留真导致仍在运行的 Job 泄漏（CR-01）。这里用「List 捕获已终态 + Watch + channel 关闭重建」
+// 的循环：仅在 (a) Pod 真正 Terminated（返回真实 exitCode）、(b) 调用方超时（返回 (-1,"",nil)
+// 并删 Job）、(c) ctx 取消 时退出。channel 关闭只触发 re-watch，不返回。所有等待均受 wctx 有界。
 func (k *KubernetesExecutor) WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (int, string, error) {
 	ns, jobName := splitID(containerID)
 	wctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	sel := labelKeyJob + "=" + jobName
-	w, err := k.cs.CoreV1().Pods(ns).Watch(wctx, metav1.ListOptions{LabelSelector: sel})
-	if err != nil {
-		return -1, "", err
-	}
-	defer w.Stop()
+	for {
+		// 先 List 捕获 watch 间隙/启动前已发生的 Terminated（避免漏检），
+		// 并以其 resourceVersion 作为 watch 起点，衔接 List→Watch 不丢事件。
+		pods, err := k.cs.CoreV1().Pods(ns).List(wctx, metav1.ListOptions{LabelSelector: sel})
+		if err != nil {
+			if wctx.Err() != nil {
+				_ = k.deleteJob(context.Background(), ns, jobName)
+				return -1, "", nil
+			}
+			return -1, "", err
+		}
+		for i := range pods.Items {
+			if code, ok := terminatedExitCode(&pods.Items[i]); ok {
+				return code, "", nil
+			}
+		}
 
+		w, err := k.cs.CoreV1().Pods(ns).Watch(wctx, metav1.ListOptions{
+			LabelSelector:   sel,
+			ResourceVersion: pods.ResourceVersion,
+		})
+		if err != nil {
+			if wctx.Err() != nil {
+				_ = k.deleteJob(context.Background(), ns, jobName)
+				return -1, "", nil
+			}
+			return -1, "", err
+		}
+
+		code, done, timedOut := drainWatch(wctx, w)
+		w.Stop()
+		switch {
+		case done:
+			return code, "", nil
+		case timedOut:
+			_ = k.deleteJob(context.Background(), ns, jobName)
+			return -1, "", nil
+		}
+		// channel 关闭但未超时 → 回到循环顶部 re-watch（先 List 再 Watch）。
+	}
+}
+
+// drainWatch 消费一个 watch channel：Pod Terminated → (exitCode,true,false)；
+// wctx 超时/取消 → (-1,false,true)；channel 关闭（!ok）→ (-1,false,false) 表示需 re-watch。
+func drainWatch(wctx context.Context, w watch.Interface) (exitCode int, done, timedOut bool) {
 	for {
 		select {
 		case <-wctx.Done():
-			_ = k.deleteJob(context.Background(), ns, jobName)
-			return -1, "", nil
+			return -1, false, true
 		case ev, ok := <-w.ResultChan():
 			if !ok {
-				return -1, "", nil
+				return -1, false, false
 			}
 			pod, _ := ev.Object.(*corev1.Pod)
-			if pod == nil || len(pod.Status.ContainerStatuses) == 0 {
+			if pod == nil {
 				continue
 			}
-			if t := pod.Status.ContainerStatuses[0].State.Terminated; t != nil {
-				return int(t.ExitCode), "", nil
+			if code, term := terminatedExitCode(pod); term {
+				return code, true, false
 			}
 		}
 	}
+}
+
+// terminatedExitCode 提取 Pod 首容器的终止 exitCode；未终止返回 (0,false)。
+func terminatedExitCode(pod *corev1.Pod) (int, bool) {
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return 0, false
+	}
+	if t := pod.Status.ContainerStatuses[0].State.Terminated; t != nil {
+		return int(t.ExitCode), true
+	}
+	return 0, false
 }
 
 // StreamLogs 经 Pods.GetLogs(Follow) 逐行回调 onLine。ctx 取消即止。
