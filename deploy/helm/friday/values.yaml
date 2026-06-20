@@ -49,6 +49,11 @@ web:
     limits:
       cpu: 500m
       memory: 128Mi
+  # -- web PodDisruptionBudget（默认 off）。多副本时启用保驱逐期最小可用。
+  # 设 maxUnavailable 优先，否则用 minAvailable。
+  pdb:
+    enabled: false
+    minAvailable: 1
 # -- Runner 配置
 runner:
   enabled: true
@@ -74,7 +79,6 @@ runner:
 # 可独立水平伸缩。优雅终止不变式：
 #   terminationGracePeriodSeconds(120) > gracefulTimeout(110) > 心跳(10s)/stalled(30s)
 # 即 SIGTERM 后 worker 有 gracefulTimeout 秒 drain 在途 job，再留余量供 k8s SIGKILL。
-# worker.keda / worker.pdb 段留给后续 plan（本 plan 不引入，避免冲突）。
 worker:
   enabled: true
   replicaCount: 1
@@ -83,6 +87,16 @@ worker:
   # 必须 > gracefulTimeout，给在途 job drain + k8s 收尾留窗口
   terminationGracePeriodSeconds: 120
   resources: {}
+  # KEDA postgresql scaler（按 procrastinate_jobs todo 队列深度伸缩 worker）。
+  # 默认 off：仅在已安装 KEDA operator 的集群启用，否则非 KEDA 集群 apply 会失败。
+  keda:
+    enabled: false
+    pollingInterval: 30 # 轮询队列深度间隔（秒）
+    cooldownPeriod: 300 # 缩容前的冷却期（秒），防抖
+    minReplicaCount: 1 # 禁 0：worker 须持续驱动 durable rescue（不 scale-to-zero）
+    maxReplicaCount: 5
+    jobsPerReplica: 10 # 每副本可消化的 todo job 数（决定伸缩斜率）
+    query: "" # 留空用模板默认全队列 todo 深度；按 queue 维度伸缩时自定义（加 AND queue_name = '...'）
   # -- KEDA 队列深度伸缩（默认 off）。仅在已安装 KEDA operator 的集群启用；
   # 非 KEDA 集群保持 off，否则 apply ScaledObject 会因缺 CRD 整体失败。
   keda:
@@ -93,6 +107,11 @@ worker:
     maxReplicaCount: 5
     jobsPerReplica: 10 # 每副本目标消化的 todo job 数（深度/此值 = 目标副本数）
     query: "" # 留空用模板默认 todo 深度查询；按 queue 维度时覆盖（追加 queue_name 过滤）
+  # -- worker PodDisruptionBudget（默认 off）。多副本时启用保驱逐期最小可用。
+  # 设 minAvailable 优先，否则用 maxUnavailable。
+  pdb:
+    enabled: false
+    maxUnavailable: 1
 # -- Scheduler 配置（apscheduler cron 单例 leader，同 server 镜像 + runapscheduler + role=scheduler）
 # 强制单实例：replicas 在模板内硬编码为 1 + strategy=Recreate（不暴露 replicaCount），
 # 防滚动期双实例重复跑 cron。durable 周期 rescue 不在此（由 worker periodic deferrer 承载）。

@@ -1,0 +1,21 @@
+{{- if .Values.web.pdb.enabled }}
+# web PodDisruptionBudget（DEPLOY-03，values-gated 默认 off）：滚动/驱逐时保
+# 最小可用 web（nginx）副本。component label 对齐 web-deployment.yaml 的 web。
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "friday.fullname" . }}-web
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  {{- if .Values.web.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.web.pdb.maxUnavailable }}
+  {{- else }}
+  minAvailable: {{ .Values.web.pdb.minAvailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+{{- end }}

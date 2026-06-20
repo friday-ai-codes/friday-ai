@@ -1,3 +1,14 @@
+{{- /*
+  模板期 fail-closed（DEPLOY-03 / T-63-05）：web/server 层真正多进程
+  （server.replicaCount>1 或 gunicornWorkers>1）且既无内置 Redis 也无外接 Redis
+  时硬失败 —— 多副本/多 worker 误用内存 channel layer 会静默丢 WebSocket 跨副本消息。
+  触发条件与下方注入的 FRIDAY_EXPECT_MULTI_REPLICA、settings 运行期校验同源（web 层），
+  避免"模板通过、运行期崩"的不对称。注意用 worker.enabled 会误伤"单 server + 关
+  Redis + 默认开 worker"部署（configmap 为所有 workload 共享），故只看 web 层。
+*/ -}}
+{{- if and (or (gt (int .Values.server.replicaCount) 1) (gt (int .Values.server.gunicornWorkers) 1)) (not .Values.redis.enabled) (not .Values.externalRedis.url) }}
+{{- fail "server.replicaCount>1 或 server.gunicornWorkers>1 需启用 redis.enabled 或配置 externalRedis.url（多副本/多 worker channel layer 强约束，否则 WS 跨副本丢消息）" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,6 +23,11 @@ data:
   FRIDAY_ADMIN_USERNAME: {{ .Values.server.adminUsername | quote }}
   FRIDAY_RUNNER_NAME: {{ .Values.runner.name | quote }}
   FRIDAY_RUNNER_EXECUTOR: {{ .Values.runner.executor | quote }}
+  # 多副本信号（DEPLOY-03）：web/server 层多进程（replicaCount>1 或 gunicornWorkers>1）
+  # 时声明 multi-replica，供 settings 运行期 _require_redis_for_multi_replica 消费。
+  # 只看 web 层（不含 worker.enabled）：configmap 由全部 workload 共享，若按 worker.enabled
+  # 声明会让"单 server + 关 Redis + 默认开 worker"部署的 web pod 启动即崩。
+  FRIDAY_EXPECT_MULTI_REPLICA: {{ if or (gt (int .Values.server.replicaCount) 1) (gt (int .Values.server.gunicornWorkers) 1) }}"true"{{ else }}"false"{{ end }}
   {{- if .Values.qdrant.enabled }}
   # 内置 Qdrant：env 注入内部 Service 地址，server 直连、前端锁定配置（env 优先）
   QDRANT_URL: {{ printf "http://%s-qdrant:6333" (include "friday.fullname" .) | quote }}
