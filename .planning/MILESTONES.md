@@ -1,5 +1,29 @@
 # Milestones
 
+## v0.12.0 弹性任务底座（durable 任务队列与多副本就绪） (Shipped: 2026-06-20)
+
+**Phases completed:** 5 phases, 16 plans, 43 tasks
+
+**Key accomplishments:**
+
+- DurableTaskService 适配层立起：唯一权威 `_use_procrastinate` 后端判定 + 复用 background_runner 的 SQLite in-process fallback + 队列常量/进程角色 helper + no-direct-import 守护与 postgres_queue marker，procrastinate[django] 3.8.1 落地。
+- 三处 `AppConfig.ready()` 的 web-only 启动副作用（repositories `_reset_stuck_indexing`、codegraph galaxy warm + orphan graph reconcile、resumable `_schedule_recovery`）接入 60-01 的 `durable.roles.should_run_startup_side_effects` 门禁：worker/migrate/test 进程短路并记 info 日志，handler/backend 注册无条件保留，web 默认零回归。
+- ProcrastinateBackend 落地 Postgres durable 路径（defer/get/cancel/retry_stalled 委托 procrastinate.contrib.django.app），独立 worker 进程命令（get_worker_connector → PsycopgConnector，listen_notify=False），retry_stalled_durable_jobs 周期单例 leader（@app.periodic + queueing_lock + heartbeat 判定），settings 复用 _use_procrastinate 条件注册 procrastinate.contrib.django，并以 postgres_queue 测试覆盖 defer/priority/run_at/worker-connector/forged-heartbeat rescue/queueing_lock/并发竞争。
+- 从零创建 `.github/workflows/ci.yaml`（仓库 workflow 已于 5579e45f2 全删）：`server-ci` 跑 SQLite 默认路径作零回归门禁（addopts 默认排除 postgres_queue），`postgres-queue` 用 postgres:17-alpine service container + migrate + `uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost` 跑 Plan 03 的 durable Postgres 行为，两 job 经 marker 分层共存；聚焦 server+Postgres，不恢复历史无关 job。
+- index/graph/page_index 三个 durable 任务在 procrastinate（defer_async(
+- 5 处生产 index/graph 入队点（含 CONTEXT 漏列的 index_views/codegraph）全部从 `run_in_background(wrap_resumable(...))` / `submit_resumable(...)` 改为 `DurableTaskService.defer`，统一 queue 常量 + deterministic idempotency_key（index:/graph:{repo_id}），recovery resume 收敛为 durable 单一驱动入口，生产入队路径零 resumable 提交残留
+- 新增 `durable/reconcile.py` 在途判定 helper（经 `DurableTaskService.has_active_by_key` 按 queueing_lock 查、async_to_sync 同步入口、对 procrastinate 零直接依赖），并把 repositories/codegraph 两处启动 reconcile 改为"标 RUNNING→FAILED 前先查 durable job 接管，有在途（todo/doing/scheduled）则保留 RUNNING"，非 durable 后端维持旧标 FAILED 行为零回归。
+- 新增 `ResumableTaskStatus.MIGRATED` + `legacy_durable_job_id` 列（migration 0002），实现一次性迁移命令 `migrate_resumable_to_durable`——按 deterministic key（`index:/graph:{target_id}`）把存量 PENDING/RUNNING 的 index/graph `resumable_tasks` defer 成 durable job、旧行标 MIGRATED 记 legacy id（不双跑、幂等可重入、SQLite 安全降级），并把 `background_runner` 注释降级为 dev fallback / 轻任务定位
+- run_crawl_ingest 双后端 durable 任务（薄封装天然幂等的 ingest_from_urls）+ IngestRun 扩 QUEUED/STOPPED 状态与 durable_job_id/idempotency_key 列 + delivery 队列动作端点（enqueue/list/detail/start/stop/retry），状态以 IngestRun(DB) 为唯一真相源、刷新/重建可恢复
+- run_page_index 由占位 noop 填充为真实生成（CorpusTreeService.build_full + target-hash 跳过）+ CorpusTreeSnapshot.source_hash 列与确定性指纹 helper + KnowledgeTreeRebuildView 裸 run_in_background 收口到 DurableTaskService.defer(QUEUE_PAGE_INDEX)，按 target hash 幂等（未变跳过、变则重建落 source_hash），重复执行无重复 snapshot
+- run_worker 暴露 `--graceful-timeout`（透传 Procrastinate `shutdown_graceful_timeout`，零信号代码）+ helm/compose 同构拆出独立 worker/scheduler workload（scheduler 单例 replicas=1+Recreate 首次承载 apscheduler cron），优雅终止不变式 terminationGracePeriodSeconds>graceful>心跳成立。
+- 给 worker 加 KEDA postgresql scaler（按 `procrastinate_jobs status='todo'` 队列深度伸缩、minReplicaCount>=1 禁 scale-to-zero、凭证经 TriggerAuthentication）+ web/worker PodDisruptionBudget + 把"多副本误用内存 channel layer 静默丢 WS"从注释约束升级为 settings 运行期 + helm 模板期双层 fail-closed；KEDA/PDB 全 values-gated 默认 off，默认安装/单副本零回归。
+- 给 MR/PR 创建与飞书建群上 reuse-first 幂等围栏：创建前查既有 open MR / WorkItem.feishu_chat_id，命中即复用不重复执行，无 outbox 表，全程 fail-soft。
+- KubernetesExecutor 经 client-go 以 batch/v1 Job 跑任务容器（StartContainer/WaitContainer/StreamLogs），executor 选择接通 docker 默认零回归，callbackURL host 可配置
+- KubernetesExecutor 补齐 Remove/StartupCleanup/ZombieScan/ReadContainerFile（friday.runner label 隔离多副本、僵尸 Job 回收推 TaskFailed、产物读取 best-effort 退化），并落地 values-gated runner SA + 最小权限 Role/RoleBinding、k8s 模式去 docker.sock 并经 downward-API podIP 注入回调 host
+
+---
+
 ## v0.10.0 操作审计治理 (Shipped: 2026-06-17)
 
 **Phases completed:** 3 phases, 7 plans, 7 tasks

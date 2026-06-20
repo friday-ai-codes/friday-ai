@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.12.0
 milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
-status: executing
+status: Awaiting next milestone
 stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-20T19:44:49.536Z"
-last_activity: 2026-06-20
+last_updated: "2026-06-20T19:52:46.689Z"
+last_activity: 2026-06-20 — Milestone v0.12.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
 ## Current Position
 
-Phase: 64
-Plan: Not started
-Status: Executing Phase 64
-Last activity: 2026-06-20
+Phase: Milestone v0.12.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-20 — Milestone v0.12.0 completed and archived
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
@@ -462,6 +462,23 @@ None.
 Items acknowledged and deferred at milestone close. 2026-06-14 复盘清理后分三类：✅ 已解决、
 🔒 需外部系统/全新实例（本地无法闭环）、🖐 纯观感人工验收（可后续浏览器抽验）。
 
+### 🔒 Acknowledged at v0.12.0 close（2026-06-20）
+
+里程碑关闭前 open artifact 审计 12 项，全部为既有/已知 deferred（真机/真实平台运行期人工验收 + 既有 stale quick task），确认后归档继续关闭。代码层 16/16 需求满足、跨阶段 integration_ok。
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 60 60-UAT.md — 4 pending（真实 Postgres postgres_queue 实跑 / forged-heartbeat rescue / 真实 kill-worker E2E / GH Actions postgres-queue 绿灯） | deferred（需真实 Postgres + CI） |
+| uat_gap | Phase 61 61-UAT.md — 3 pending（真实升级迁移 / queueing_lock 去重 / 多副本 reconcile 不误杀） | deferred（需真实 Postgres） |
+| uat_gap | Phase 62 62-UAT.md — 3 pending（容器/Pod 重启队列恢复+续跑 / 并发 at-least-once / 知识树重建端到端） | deferred（需真实 Postgres + 容器重启） |
+| uat_gap | Phase 63 63-UAT.md — 5 pending（worker SIGTERM drain / compose up -d 升级 / scheduler 单例滚动 / KEDA 伸缩 / 真实 Git·飞书去重） | deferred（需真实集群/平台） |
+| uat_gap | Phase 64 64-UAT.md — 3 pending（k0s/containerd 经 k8s Job 跑通 / 日志·退出码·清理 / 重试+activeDeadline） | deferred（需真实 k0s/containerd 集群） |
+| verification_gap | Phase 60–64 *-VERIFICATION.md [human_needed] ×5 | deferred（同上真机/真实平台运行期，代码层 must-haves 全过） |
+| quick_task | 260610-oug-url-https [unknown] | 实为已完成（2026-06-14 复核确认，标记过时） |
+| quick_task | 260611-ghb-workflow-card-uniform [unknown] | 实为已完成（2026-06-14 复核确认，标记过时） |
+
+**v0.12.0 已知 v2 限制（accepted，非 gap）:** k8s HITL answer 端到端 / k8s `ReadContainerFile` 产物读取（需 task 容器改动或 RWX 卷）；durable handler / k8s Job 的 secret 经 env 注入（与 docker 行为一致，RBAC 缓解，Secret-based env 留 v2）。
+
 ### 🔒 Acknowledged at v0.8.0 close（2026-06-17）
 
 里程碑关闭前 open artifact 审计 4 项，全部为既有/已知 deferred，确认后归档继续关闭：
@@ -516,6 +533,4 @@ Next: `/gsd-plan-phase 60`（durable 底座地基）
 
 ## Operator Next Steps
 
-- v0.12.0 里程碑 roadmap 已定稿，Phases 60–64 待规划/执行。
-- 逐 phase 推进：`/gsd-plan-phase 60` → `/gsd-execute-phase 60` …（严格顺序 60→61→62→63→64）。
-- 或新会话 autonomous 跑完整个里程碑：`/gsd-autonomous`。
+- Start the next milestone with /gsd-new-milestone

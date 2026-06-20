@@ -28,7 +28,9 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）
+## Current Milestone: v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）— ✅ SHIPPED 2026-06-20
+
+> 已交付 Phases 60–64（16/16 需求代码层满足、integration_ok、审计 tech_debt）。遗留为真机/真实平台运行期人工验收（见 STATE.md Deferred Items）。下一里程碑待规划。
 
 **Goal:** 把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 durable 任务队列系统——**采用 Procrastinate，藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/dev 退化为 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以**「链接爬取+入库」durable 队列**为首个用户可见垂直切片；并完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。
 
@@ -226,14 +228,14 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 内部工具调用对外透出为 progress/trace（reasoning_summary / thinking block），**不用标准 tool_calls、不暴露 CoT** | 内部工具是服务端闭环执行；标准 tool_calls 会让规范客户端误判挂起等待回传 → 卡死；INV-5 仅透出 progress/trace 非模型私有推理链 | — Pending（v0.11.0） |
 | Agent API 对外复用 v0.7 起沉淀的 §15 事件 taxonomy，对外只是不同 adapter | taxonomy 已在 v0.7 稳定落地（`PlanSessionEvent`/`event_taxonomy`）；OpenAI/Anthropic 端点各做 adapter 映射，不另建词表 | — Pending（v0.11.0） |
 | 标准双向 `tool_calls`（客户端自带工具）留 v2，本里程碑不做 | 当前无"客户端自带工具"诉求；先做单向 progress/trace 透出满足开放需求 | — Pending（v0.11.0，OPENX-01） |
-| 采用 Procrastinate 作 durable queue，但藏在 `DurableTaskService` 适配层后 | PoC PASS（3.8.1/Py3.14/Django6/psycopg3.3）；适配层隔离实现，保留 SQLite dev 开箱路径与未来替换空间，业务代码不直接依赖 Procrastinate | — Pending（v0.12.0） |
-| 生产强制 durable（Postgres），SQLite 仅非 durable dev fallback；CI 增 Postgres 专项测试 | compose/helm 默认带 Postgres，durable 默认在线；SQLite 只影响 make dev/pytest；队列语义须在真实 Postgres 被测 | — Pending（v0.12.0） |
-| 不承诺 exactly-once，走 at-least-once + 幂等/fencing | DB claim 仅保证同轮单一领取；"慢≠死"误判与完成未标记即崩仍会重复执行——靠 checkpoint/upsert/deterministic key，外部副作用上 fencing/outbox | — Pending（v0.12.0） |
-| 一个底座、多条逻辑队列（index/graph/crawl_ingest/page_index/maintenance） | 不同队列独立并发与伸缩，避免长任务（索引）堵短任务（爬取/页面生成） | — Pending（v0.12.0） |
-| scheduler/rescue 单例改 DB leader（`queueing_lock`），弃用本地 `flock` | `flock` 仅单机有效、跨 Pod 失效；周期 rescue 与 cron 收敛到一个 leader workload | — Pending（v0.12.0） |
-| 收口 `ResumableTask`：Procrastinate/适配层接管生产职责，不三套并存 | `background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑 | — Pending（v0.12.0） |
-| workflow/RepoCodingTask 保留自有引擎，只做恢复桥接；chat/RAG 问答不进队列 | 有自有状态机的任务从持久化态重驱（非内存态恢复，`_debug_sessions` 丢失可降级）；流式问答请求级、断开让用户重试 | — Pending（v0.12.0） |
-| runner 改 k8s Job executor 纳入 v0.12.0（Phase 64），不拆后续里程碑 | 用户选 full 范围；k0s/containerd 下 docker.sock 是反模式，先抽 executor 接口再落 k8s 实现 | — Pending（v0.12.0） |
+| 采用 Procrastinate 作 durable queue，但藏在 `DurableTaskService` 适配层后 | PoC PASS（3.8.1/Py3.14/Django6/psycopg3.3）；适配层隔离实现，保留 SQLite dev 开箱路径与未来替换空间，业务代码不直接依赖 Procrastinate | ✓ Shipped v0.12.0 |
+| 生产强制 durable（Postgres），SQLite 仅非 durable dev fallback；CI 增 Postgres 专项测试 | compose/helm 默认带 Postgres，durable 默认在线；SQLite 只影响 make dev/pytest；队列语义须在真实 Postgres 被测 | ✓ Shipped v0.12.0 |
+| 不承诺 exactly-once，走 at-least-once + 幂等/fencing | DB claim 仅保证同轮单一领取；"慢≠死"误判与完成未标记即崩仍会重复执行——靠 checkpoint/upsert/deterministic key，外部副作用上 fencing/outbox | ✓ Shipped v0.12.0 |
+| 一个底座、多条逻辑队列（index/graph/crawl_ingest/page_index/maintenance） | 不同队列独立并发与伸缩，避免长任务（索引）堵短任务（爬取/页面生成） | ✓ Shipped v0.12.0 |
+| scheduler/rescue 单例改 DB leader（`queueing_lock`），弃用本地 `flock` | `flock` 仅单机有效、跨 Pod 失效；周期 rescue 与 cron 收敛到一个 leader workload | ✓ Shipped v0.12.0 |
+| 收口 `ResumableTask`：Procrastinate/适配层接管生产职责，不三套并存 | `background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑 | ✓ Shipped v0.12.0 |
+| workflow/RepoCodingTask 保留自有引擎，只做恢复桥接；chat/RAG 问答不进队列 | 有自有状态机的任务从持久化态重驱（非内存态恢复，`_debug_sessions` 丢失可降级）；流式问答请求级、断开让用户重试 | ✓ Shipped v0.12.0 |
+| runner 改 k8s Job executor 纳入 v0.12.0（Phase 64），不拆后续里程碑 | 用户选 full 范围；k0s/containerd 下 docker.sock 是反模式，先抽 executor 接口再落 k8s 实现 | ✓ Shipped v0.12.0 |
 
 ## Evolution
 
