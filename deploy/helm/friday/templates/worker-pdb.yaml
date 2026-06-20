@@ -1,0 +1,21 @@
+{{- if .Values.worker.pdb.enabled }}
+# worker PodDisruptionBudget（DEPLOY-03，values-gated 默认 off）：滚动/驱逐时保
+# 最小可用 worker 副本。scheduler 不配 PDB（单例 replicas=1，PDB 与单例冲突会阻塞驱逐）。
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "friday.fullname" . }}-worker
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if .Values.worker.pdb.minAvailable }}
+  minAvailable: {{ .Values.worker.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.worker.pdb.maxUnavailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+{{- end }}
