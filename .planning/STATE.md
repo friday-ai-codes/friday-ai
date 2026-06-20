@@ -4,14 +4,14 @@ milestone: v0.12.0
 milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
 status: executing
 stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-20T18:00:29.875Z"
-last_activity: 2026-06-20 -- Phase 63 planning complete
+last_updated: "2026-06-20T18:37:59.681Z"
+last_activity: 2026-06-20
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
-  percent: 60
+  completed_phases: 4
+  total_plans: 14
+  completed_plans: 14
+  percent: 80
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.12.0：把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 **durable 任务队列**——采用 Procrastinate，藏在 `DurableTaskService` 适配层后（Postgres→Procrastinate / SQLite→in-process 非 durable fallback）；统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor。
-**Current focus:** Phase 62 — 爬取+入库 durable 队列 + PageIndex 接入
+**Current focus:** Phase 63 — 部署硬化 + 外部副作用 fencing
 
 ## Current Position
 
-Phase: 63
+Phase: 64
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-20 -- Phase 63 planning complete
+Status: Executing Phase 63
+Last activity: 2026-06-20
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
