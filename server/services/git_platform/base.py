@@ -43,6 +43,28 @@ class GitPlatformClient(ABC):
         """
         pass
 
+    async def find_open_merge_request(
+        self, source_branch: str, target_branch: str
+    ) -> MRCreateResult | None:
+        """查同 source→target 分支是否已有 open 的 MR/PR（IDEMP-02 reuse-first fence）。
+
+        创建 MR/PR 前的前置去重查询：命中既有 open MR/PR 即复用其 URL/ID 不重复创建。
+
+        **刻意不设为 @abstractmethod**：新增抽象方法会让所有既有子类实例化抛
+        ``TypeError``（漏实现），破坏既有调用方。改为带默认 ``return None`` 的普通
+        async 方法——子类按平台覆盖，未覆盖的实现自然退化为"查不到 → 照常创建"，
+        零回归。
+
+        Args:
+            source_branch: 功能（变更侧）分支名。
+            target_branch: 目标（base）分支名。
+
+        Returns:
+            命中既有 open MR/PR → ``MRCreateResult(success=True, mr_url=..., mr_id=...)``；
+            无既有 / 平台异常（fail-soft）→ ``None``（绝不上抛，不阻断后续创建）。
+        """
+        return None
+
     @abstractmethod
     async def get_user_id_by_username(self, username: str) -> int | None:
         """Resolve a username to the platform's user ID.

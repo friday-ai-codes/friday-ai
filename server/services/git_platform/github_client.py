@@ -85,6 +85,61 @@ class GitHubClient(GitPlatformClient):
         except GithubException:
             return False
 
+    async def find_open_merge_request(
+        self, source_branch: str, target_branch: str
+    ) -> MRCreateResult | None:
+        """查 GitHub 同 source→target 的 open PR（IDEMP-02 reuse-first fence）。
+
+        包装 ``repo.get_pulls(state="open", head=f"{owner}:{source}", base=target)``，
+        命中首个 → 复用其 html_url/number；空 → None；平台异常 fail-soft 返回 None
+        （绝不上抛，让调用方照常尝试创建）。token 绝不入日志。
+
+        Args:
+            source_branch: 功能（变更侧）分支名。
+            target_branch: 目标（base）分支名。
+
+        Returns:
+            命中 → MRCreateResult(success=True, mr_url=..., mr_id=...)；无/异常 → None。
+        """
+        try:
+            repo = self._get_repo()
+            pulls = await asyncio.to_thread(
+                lambda: list(
+                    repo.get_pulls(
+                        state="open",
+                        head=f"{self.owner}:{source_branch}",
+                        base=target_branch,
+                    )
+                )
+            )
+            if not pulls:
+                return None
+            pr = pulls[0]
+            logger.info(
+                "github_open_pr_found",
+                source=source_branch,
+                target=target_branch,
+                pr_number=pr.number,
+            )
+            return MRCreateResult(success=True, mr_url=pr.html_url, mr_id=str(pr.number))
+        except GithubException as e:
+            # token 绝不入日志，仅记分支与 error（fail-soft，不阻断创建）
+            logger.warning(
+                "github_find_open_pr_failed",
+                source=source_branch,
+                target=target_branch,
+                error=str(e),
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                "github_find_open_pr_error",
+                source=source_branch,
+                target=target_branch,
+                error=str(e),
+            )
+            return None
+
     async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
         """Create a GitHub pull request with optional reviewers.
 
