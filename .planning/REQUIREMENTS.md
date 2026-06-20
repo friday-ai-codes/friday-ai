@@ -45,8 +45,8 @@
 
 ### runner k8s Job executor（RUNNER）
 
-- [ ] **RUNNER-01**: runner 抽象出 executor 接口（docker / k8s 两实现），与现有 server↔runner WebSocket 派发 + HTTP 回调契约解耦，docker executor 行为零回归。
-- [ ] **RUNNER-02**: k8s Job executor 实现——经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），含 ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试；在 k0s/containerd 环境可用。
+- [x] **RUNNER-01**: runner 抽象出 executor 接口（docker / k8s 两实现），与现有 server↔runner WebSocket 派发 + HTTP 回调契约解耦，docker executor 行为零回归。
+- [x] **RUNNER-02**: k8s Job executor 实现——经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），含 ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试；在 k0s/containerd 环境可用。
 
 ## v2 Requirements
 
@@ -86,8 +86,8 @@
 | DEPLOY-02 | Phase 63 | Complete |
 | DEPLOY-03 | Phase 63 | Complete |
 | IDEMP-02 | Phase 63 | Complete |
-| RUNNER-01 | Phase 64 | Pending |
-| RUNNER-02 | Phase 64 | Pending |
+| RUNNER-01 | Phase 64 | Complete |
+| RUNNER-02 | Phase 64 | Complete |
 
 **Coverage:**
 

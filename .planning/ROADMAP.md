@@ -41,7 +41,7 @@
   - [x] 62-02-PLAN.md — 填充 run_page_index(build_full + target-hash 跳过) + CorpusTreeSnapshot.source_hash + tree_views.py 裸 background_runner → durable defer（wave 2）
   - [x] 62-03-PLAN.md — BatchIngestPanel 后端恢复队列 + 行内开始/停止/重试 + zh-CN.json crawlQueue.* + vitest 守护（wave 2）
 - [x] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/3 plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02 (completed 2026-06-20)
-- [ ] **Phase 64: runner k8s Job executor** (0/2 plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
+- [x] **Phase 64: runner k8s Job executor** (0/2 plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02 (completed 2026-06-20)
 
 ## Phase Details
 
@@ -197,7 +197,7 @@
 | 61. 迁移 index/graph + 收口 ResumableTask | 4/4 | Complete    | 2026-06-19 |
 | 62. 爬取+入库 durable 队列 + PageIndex 接入 | 3/3 | Complete    | 2026-06-20 |
 | 63. 部署硬化 + 外部副作用 fencing | 3/3 | Complete    | 2026-06-20 |
-| 64. runner k8s Job executor | 0/? | Not started | - |
+| 64. runner k8s Job executor | 2/2 | Complete    | 2026-06-20 |
 
 **Execution order:** 60 → 61 → 62 → 63 → 64（严格顺序，每阶段建立在前序底座之上）。依赖链：durable 底座地基(60，所有后续的地基) → 迁移 index/graph + 收口 ResumableTask + 幂等基线(61，迁移范式) → 爬取+入库 durable 队列 + PageIndex（62，首个用户可见垂直切片，复用 61 范式）→ 部署硬化 + 外部副作用 fencing(63，多副本/弹性/优雅终止) → runner k8s Job executor(64，相对独立但排最后)。
 
