@@ -776,6 +776,113 @@ async def test_create_group_chat_no_writeback_config() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_group_fenced() -> None:
+    """IDEMP-02：已有 feishu_chat_id → 复用既有群，create_chat 未被调用。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={
+            "name": "群",
+            "member_ids": "ou_a",
+            "project_key": "P",
+            "work_item_id": "123",
+            "work_item_type": "story",
+        },
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_new", "name": "群", "owner_id": ""},
+    )
+    mock_aget = AsyncMock(return_value="oc_existing")
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.aget_feishu_chat_id",
+            mock_aget,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.next_handle == "default"
+    assert result.output["chat_id"] == "oc_existing"
+    assert result.output["deduplicated"] is True
+    assert result.output["writeback"]["attempted"] is False
+    mock_aget.assert_called_once_with("P", "story", 123)
+    mock_service.create_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_group_no_anchor_creates() -> None:
+    """无 work_item 锚 → 不查 fence、照常建群（现状零回归）。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(config={"name": "群", "member_ids": "ou_a"})
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_aget = AsyncMock(return_value="oc_should_not_be_used")
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.aget_feishu_chat_id",
+            mock_aget,
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["chat_id"] == "oc_x"
+    assert "deduplicated" not in result.output
+    mock_aget.assert_not_called()
+    mock_service.create_chat.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_group_fence_failsoft() -> None:
+    """fence 查询抛异常 → 节点仍照常建群（fail-soft 不阻断）。"""
+    node = CreateGroupChatNode()
+    ctx = _make_create_context(
+        config={
+            "name": "群",
+            "member_ids": "ou_a",
+            "project_key": "P",
+            "work_item_id": "123",
+        },
+    )
+    mock_service = _mock_create_im_service(
+        create_chat_return={"chat_id": "oc_x", "name": "群", "owner_id": ""},
+    )
+    mock_aget = AsyncMock(side_effect=Exception("db down"))
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=mock_service,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.aget_feishu_chat_id",
+            mock_aget,
+        ),
+        patch(
+            "delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id",
+            AsyncMock(return_value=True),
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["chat_id"] == "oc_x"
+    assert "deduplicated" not in result.output
+    mock_service.create_chat.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_create_group_chat_auto_registered() -> None:
     """@register_node 自动注册：NodeRegistry.get("create_group_chat") 返回 CreateGroupChatNode。"""
     from workflows.nodes.registry import NodeRegistry

@@ -226,6 +226,54 @@ class WorkItemService:
             feishu_project_key, work_item_type, work_item_id, chat_id
         )
 
+    async def aget_feishu_chat_id(
+        self,
+        feishu_project_key: str,
+        work_item_type: str,
+        work_item_id: int,
+    ) -> str | None:
+        """读 WorkItem.feishu_chat_id（建群前 reuse-first fence 查询，IDEMP-02）。
+
+        仅读不写：三元组定位 WorkItem，返回非空 ``feishu_chat_id`` 或 ``None``。
+        与 ``awriteback_feishu_chat_id`` 对称——绝不触 ``_refresh_mirror`` /
+        ``_MIRROR_FIELDS``。WorkItem 不存在 / 字段空 → ``None``；DB 异常不吞
+        （与 writeback 风格一致，由调用方 fail-soft 捕获）。
+
+        Args:
+            feishu_project_key: 飞书空间 Key（三元组之一）。
+            work_item_type: 工作项类型（三元组之一）。
+            work_item_id: 工作项 ID（三元组之一）。
+
+        Returns:
+            命中且 feishu_chat_id 非空 → chat_id 字符串；否则 None。
+        """
+        return await self._get_feishu_chat_id_sync(
+            feishu_project_key, work_item_type, work_item_id
+        )
+
+    @sync_to_async
+    def _get_feishu_chat_id_sync(
+        self,
+        feishu_project_key: str,
+        work_item_type: str,
+        work_item_id: int,
+    ) -> str | None:
+        """三元组定位 + values_list("feishu_chat_id").first()（同步块，仅读）。
+
+        与 ``_writeback_feishu_chat_id_sync`` 同款 ``@sync_to_async`` 私有同步块风格；
+        命中空/None → 返回 None（含 chat_id 为空串的归一）。
+        """
+        chat_id = (
+            WorkItem.objects.filter(
+                feishu_project_key=feishu_project_key,
+                work_item_type=work_item_type,
+                work_item_id=work_item_id,
+            )
+            .values_list("feishu_chat_id", flat=True)
+            .first()
+        )
+        return chat_id or None
+
     @sync_to_async
     def _writeback_feishu_chat_id_sync(
         self,
