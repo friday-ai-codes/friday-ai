@@ -357,6 +357,27 @@ class CrawlRequestSerializer(serializers.Serializer):
     url = serializers.CharField(max_length=2048, trim_whitespace=True)
 
 
+class IngestQueueItemSerializer(serializers.Serializer):
+    """爬取入库队列单批聚合项只读序列化（Phase 62-01，CRAWL-01）。
+
+    承载从 ``IngestRun``（DB 真相源）按 ``batch_id`` 分组重建的聚合形状，**不依赖任何
+    内存态**——刷新页面 / 容器重建后队列可经 list 端点完整恢复。``status`` 为该批聚合态
+    （优先级 running>queued>stopped>failed>completed）；``total`` 行数、``done`` 已完成行数、
+    ``url_count`` 该批 URL 集合数（=行数）；时间戳取该批 min(started_at)/max(updated_at)。
+    """
+
+    batch_id = serializers.UUIDField()
+    status = serializers.CharField()
+    total = serializers.IntegerField()
+    done = serializers.IntegerField()
+    url_count = serializers.IntegerField()
+    durable_job_id = serializers.CharField(allow_blank=True)
+    idempotency_key = serializers.CharField(allow_blank=True)
+    started_at = serializers.DateTimeField(allow_null=True)
+    updated_at = serializers.DateTimeField(allow_null=True)
+    error = serializers.CharField(allow_blank=True)
+
+
 class WorkItemArtifactsQuerySerializer(serializers.Serializer):
     """工作项关联文档查询入参（三元组）。"""
 

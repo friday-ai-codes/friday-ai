@@ -26,6 +26,7 @@ from delivery.api.serializers import (
     IngestBatchDispatchRequestSerializer,
     IngestBatchRunSerializer,
     IngestDispatchRequestSerializer,
+    IngestQueueItemSerializer,
     IngestRunSerializer,
     JsonIngestRequestSerializer,
     ScreenshotRecallResultSerializer,
@@ -507,6 +508,306 @@ class JsonIngestBatchView(APIView):
         return Response(
             {"batch_id": str(batch_id), "runs": runs_payload, "skipped": skipped},
             status=status.HTTP_202_ACCEPTED,
+        )
+
+
+def _aggregate_queue_status(runs: list[IngestRun]) -> str:
+    """按优先级 running>queued>stopped>failed>completed 聚合该批 status。
+
+    任一行 RUNNING → running；否则任一 QUEUED → queued；依次 stopped/failed；全
+    COMPLETED → completed。供 list 聚合与 detail 聚合共用同一判定（DB 真相源、不依赖内存）。
+    """
+    statuses = {run.status for run in runs}
+    if IngestRun.Status.RUNNING in statuses:
+        return "running"
+    if IngestRun.Status.QUEUED in statuses:
+        return "queued"
+    if IngestRun.Status.STOPPED in statuses:
+        return "stopped"
+    if IngestRun.Status.FAILED in statuses:
+        return "failed"
+    return "completed"
+
+
+# list 端点按最近 N 批返回（OQ-4 per-batch 粒度；A4 内部工具无分页，N=50 上限避免大查询）
+_QUEUE_LIST_LIMIT = 50
+
+
+class IngestQueueView(APIView):
+    """爬取入库队列端点（GET=list / POST=enqueue，IsAuthenticated，CRAWL-01）。
+
+    同一 path ``ingest/queue/`` 由单一 view 承载两动作（同 path 两 view 不可，故合并）：
+
+    - ``get``（list）：从 ``IngestRun``（DB）按 ``batch_id`` 分组重建队列列表（聚合
+      status/progress/durable_job_id/时间戳）——CRAWL-01 断点恢复命门，**不依赖任何内存态**，
+      刷新 / 容器重建后队列可恢复。
+    - ``post``（enqueue）：镜像 ``JsonIngestBatchView``——``aresolve_items`` 解析 → 对
+      resolved 项建 ``IngestRun(QUEUED)`` 共享 batch_id → ``DurableTaskService.defer``
+      （``QUEUE_CRAWL_INGEST``，deterministic ``idempotency_key="crawl_ingest:{batch_id}"``）
+      → 回写 durable_job_id/idempotency_key → 202。不可解析项以 ``skipped`` 回报不建行。
+
+    归属/范围说明沿用 ``IngestRunDetailView``（``IngestRun`` 无 owner + 不可猜 UUIDv4，
+    内部团队工具，全端点 IsAuthenticated）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request):
+        @sync_to_async
+        def _build() -> list[dict]:
+            from collections import OrderedDict
+
+            groups: "OrderedDict[object, list[IngestRun]]" = OrderedDict()
+            for run in IngestRun.objects.filter(batch_id__isnull=False).order_by(
+                "-started_at"
+            ):
+                groups.setdefault(run.batch_id, []).append(run)
+
+            items: list[dict] = []
+            for batch_id, batch_runs in list(groups.items())[:_QUEUE_LIST_LIMIT]:
+                total = len(batch_runs)
+                done = sum(
+                    1 for r in batch_runs if r.status == IngestRun.Status.COMPLETED
+                )
+                items.append(
+                    {
+                        "batch_id": batch_id,
+                        "status": _aggregate_queue_status(batch_runs),
+                        "total": total,
+                        "done": done,
+                        "url_count": total,
+                        "durable_job_id": next(
+                            (r.durable_job_id for r in batch_runs if r.durable_job_id),
+                            "",
+                        ),
+                        "idempotency_key": next(
+                            (r.idempotency_key for r in batch_runs if r.idempotency_key),
+                            "",
+                        ),
+                        "started_at": min(r.started_at for r in batch_runs),
+                        "updated_at": max(r.updated_at for r in batch_runs),
+                        "error": next((r.error for r in batch_runs if r.error), ""),
+                    }
+                )
+            return IngestQueueItemSerializer(items, many=True).data
+
+        items = await _build()
+        return Response({"items": items}, status=status.HTTP_200_OK)
+
+    async def post(self, request):
+        import uuid
+
+        from delivery.services.json_ingest import aresolve_items
+        from durable import QUEUE_CRAWL_INGEST, DurableTaskService
+
+        serializer = JsonIngestRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data["items"]
+        concurrency = serializer.validated_data["concurrency"]
+
+        resolved = await aresolve_items(items)
+
+        batch_id = uuid.uuid4()
+        key = f"crawl_ingest:{batch_id}"
+        runs_payload: list[dict] = []
+        skipped: list[dict] = []
+        created_ids: list = []
+        for item in resolved:
+            if not item["resolved"]:
+                skipped.append(
+                    {
+                        "space": item["space"],
+                        "work_item_id": item["work_item_id"],
+                        "error": item["error"],
+                    }
+                )
+                continue
+            run = await sync_to_async(IngestRun.objects.create)(
+                batch_id=batch_id,
+                board_url=item["board_url"],
+                mr_url=item["mr_url"],
+                status=IngestRun.Status.QUEUED,
+                steps=default_steps(),
+                idempotency_key=key,
+            )
+            created_ids.append(run.id)
+            runs_payload.append(
+                {
+                    "run_id": str(run.id),
+                    "feishu_project_key": item["feishu_project_key"],
+                    "work_item_type": item["work_item_type"],
+                    "work_item_id": item["work_item_id"],
+                    "mr_url": item["mr_url"],
+                    "board_url": item["board_url"],
+                    "space_name": item["space_name"],
+                }
+            )
+
+        if not created_ids:
+            # 全部不可解析：不派发，返回 202 + skipped（前端据此提示逐项错误）。
+            return Response(
+                {
+                    "batch_id": str(batch_id),
+                    "runs": [],
+                    "skipped": skipped,
+                    "dispatched": False,
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        # delivery 端点为 async，直接 await defer（无需 async_to_sync，研究 Pitfall 6）。
+        job_id = await DurableTaskService.defer(
+            "durable_crawl_ingest",
+            {"batch_id": str(batch_id), "concurrency": concurrency},
+            queue=QUEUE_CRAWL_INGEST,
+            idempotency_key=key,
+        )
+        await sync_to_async(
+            lambda: IngestRun.objects.filter(id__in=created_ids).update(
+                durable_job_id=job_id
+            )
+        )()
+
+        return Response(
+            {
+                "batch_id": str(batch_id),
+                "runs": runs_payload,
+                "skipped": skipped,
+                "dispatched": True,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class IngestQueueDetailView(APIView):
+    """队列单批明细端点（GET，IsAuthenticated，只读，CRAWL-01）。
+
+    复用 ``IngestBatchDetailView`` 聚合范式：按 ``batch_id`` 返回该批各 run 明细
+    （``IngestBatchRunSerializer``）+ 聚合 status（同 list 优先级判定）。该批无 run → 404。
+    归属/范围说明同 ``IngestRunDetailView``。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def get(self, request, batch_id):
+        runs = [
+            run
+            async for run in IngestRun.objects.filter(batch_id=batch_id).order_by(
+                "started_at"
+            )
+        ]
+        if not runs:
+            return Response(
+                {"detail": "队列批次不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+        runs_payload = await sync_to_async(
+            lambda: IngestBatchRunSerializer(runs, many=True).data
+        )()
+        return Response(
+            {
+                "batch_id": str(batch_id),
+                "status": _aggregate_queue_status(runs),
+                "runs": runs_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class IngestQueueActionView(APIView):
+    """队列动作端点（POST，IsAuthenticated，start/stop/retry，CRAWL-01）。
+
+    ``action`` ∈ {start, stop, retry}，非法值 400；该批不存在 → 404。
+
+    - ``stop``：``DurableTaskService.cancel(durable_job_id)``（best-effort，仅 todo 可取消，
+      **不承诺中断 doing**，研究 Pitfall 2）+ 把非终态行（QUEUED/RUNNING）置 ``STOPPED``
+      （终态可重投）。
+    - ``start`` / ``retry``：把 QUEUED/STOPPED/FAILED 行置回 QUEUED，以同
+      ``idempotency_key="crawl_ingest:{batch_id}"`` 重新 ``defer``（queueing_lock 命中即
+      幂等吞并，终态则建新 job，研究 Pattern 3），回写 durable_job_id。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    async def _redefer_batch(batch_id, runs: list[IngestRun]) -> str:
+        from delivery.services.json_ingest import DEFAULT_CONCURRENCY
+        from durable import QUEUE_CRAWL_INGEST, DurableTaskService
+
+        redefer_ids = [
+            r.id
+            for r in runs
+            if r.status
+            in {
+                IngestRun.Status.QUEUED,
+                IngestRun.Status.STOPPED,
+                IngestRun.Status.FAILED,
+            }
+        ]
+        await sync_to_async(
+            lambda: IngestRun.objects.filter(id__in=redefer_ids).update(
+                status=IngestRun.Status.QUEUED
+            )
+        )()
+
+        key = f"crawl_ingest:{batch_id}"
+        job_id = await DurableTaskService.defer(
+            "durable_crawl_ingest",
+            {"batch_id": str(batch_id), "concurrency": DEFAULT_CONCURRENCY},
+            queue=QUEUE_CRAWL_INGEST,
+            idempotency_key=key,
+        )
+        all_ids = [r.id for r in runs]
+        await sync_to_async(
+            lambda: IngestRun.objects.filter(id__in=all_ids).update(
+                durable_job_id=job_id, idempotency_key=key
+            )
+        )()
+        return job_id
+
+    async def post(self, request, batch_id, action):
+        from durable import DurableTaskService
+
+        if action not in {"start", "stop", "retry"}:
+            return Response(
+                {"detail": "非法 action（仅 start/stop/retry）"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        runs = [run async for run in IngestRun.objects.filter(batch_id=batch_id)]
+        if not runs:
+            return Response(
+                {"detail": "队列批次不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        if action == "stop":
+            job_id = next((r.durable_job_id for r in runs if r.durable_job_id), "")
+            if job_id:
+                await DurableTaskService.cancel(job_id)
+            nonterminal_ids = [
+                r.id
+                for r in runs
+                if r.status in {IngestRun.Status.QUEUED, IngestRun.Status.RUNNING}
+            ]
+            await sync_to_async(
+                lambda: IngestRun.objects.filter(id__in=nonterminal_ids).update(
+                    status=IngestRun.Status.STOPPED
+                )
+            )()
+            return Response(
+                {"batch_id": str(batch_id), "action": "stop", "stopped": len(nonterminal_ids)},
+                status=status.HTTP_200_OK,
+            )
+
+        # start / retry：同 key 重新 defer（queueing_lock 幂等）。
+        job_id = await self._redefer_batch(batch_id, runs)
+        return Response(
+            {
+                "batch_id": str(batch_id),
+                "action": action,
+                "durable_job_id": job_id,
+                "dispatched": True,
+            },
+            status=status.HTTP_200_OK,
         )
 
 

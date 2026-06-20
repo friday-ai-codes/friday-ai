@@ -10,6 +10,9 @@ from delivery.api.views import (
     IngestBatchDispatchView,
     IngestCrawlView,
     IngestDispatchView,
+    IngestQueueActionView,
+    IngestQueueDetailView,
+    IngestQueueView,
     IngestRunDetailView,
     JsonIngestBatchView,
     JsonIngestResolveView,
@@ -61,6 +64,23 @@ urlpatterns = [
         "ingest/resolve/",
         JsonIngestResolveView.as_view(),
         name="ingest-json-resolve",
+    ),
+    # 爬取入库 durable 队列：入队/列表（GET=list/POST=enqueue）+ 单批明细 + 动作
+    # （字面段 queue/ 在 <uuid:batch_id> 前；动作段 <str:action> 在 <uuid> 后）
+    path(
+        "ingest/queue/",
+        IngestQueueView.as_view(),
+        name="ingest-queue",
+    ),
+    path(
+        "ingest/queue/<uuid:batch_id>/",
+        IngestQueueDetailView.as_view(),
+        name="ingest-queue-detail",
+    ),
+    path(
+        "ingest/queue/<uuid:batch_id>/<str:action>/",
+        IngestQueueActionView.as_view(),
+        name="ingest-queue-action",
     ),
     path(
         "ingest/batch-json/",
