@@ -46,6 +46,9 @@ def _make_client() -> AsyncMock:
         mr_id="1",
         has_conflicts=False,
     )
+    # IDEMP-02：默认无既有 open MR，确保走创建路径（否则 AsyncMock 自动桩会被
+    # 误判为命中既有 MR 而跳过 create_merge_request，干扰 target_branch 断言）。
+    client.find_open_merge_request = AsyncMock(return_value=None)
     return client
 
 

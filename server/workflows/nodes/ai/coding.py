@@ -1862,6 +1862,24 @@ class AICodingNode(SubStepMixin, BaseNode):
             reviewer_usernames=[],
         )
 
+        # IDEMP-02：创建前查同 source→target 的 open MR/PR，命中则复用不重复创建。
+        # find_open_merge_request 本身已 fail-soft（异常返回 None），无需额外 try。
+        existing = await client.find_open_merge_request(branch_name, resolved_target)
+        if existing and existing.success:
+            log.info(
+                "mr_dedup_reuse_existing",
+                mr_url=existing.mr_url,
+                mr_id=existing.mr_id,
+            )
+            return {
+                "mr_url": existing.mr_url,
+                "mr_id": existing.mr_id,
+                "has_conflicts": False,
+                # PR-02：保留 body 供 cross-ref 回写拼接；deduplicated 标记复用路径。
+                "description": body,
+                "deduplicated": True,
+            }
+
         try:
             result: MRCreateResult = await client.create_merge_request(request)
         except Exception as e:
