@@ -87,16 +87,6 @@ worker:
   # 必须 > gracefulTimeout，给在途 job drain + k8s 收尾留窗口
   terminationGracePeriodSeconds: 120
   resources: {}
-  # KEDA postgresql scaler（按 procrastinate_jobs todo 队列深度伸缩 worker）。
-  # 默认 off：仅在已安装 KEDA operator 的集群启用，否则非 KEDA 集群 apply 会失败。
-  keda:
-    enabled: false
-    pollingInterval: 30 # 轮询队列深度间隔（秒）
-    cooldownPeriod: 300 # 缩容前的冷却期（秒），防抖
-    minReplicaCount: 1 # 禁 0：worker 须持续驱动 durable rescue（不 scale-to-zero）
-    maxReplicaCount: 5
-    jobsPerReplica: 10 # 每副本可消化的 todo job 数（决定伸缩斜率）
-    query: "" # 留空用模板默认全队列 todo 深度；按 queue 维度伸缩时自定义（加 AND queue_name = '...'）
   # -- KEDA 队列深度伸缩（默认 off）。仅在已安装 KEDA operator 的集群启用；
   # 非 KEDA 集群保持 off，否则 apply ScaledObject 会因缺 CRD 整体失败。
   keda:
