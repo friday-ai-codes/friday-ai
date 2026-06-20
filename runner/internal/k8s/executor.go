@@ -3,7 +3,6 @@ package k8s
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,9 +20,6 @@ import (
 	"github.com/friday-ai-codes/friday-ai/runner/internal/exec"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
-
-// ErrNotImplemented 标记本 plan 暂未实现、留待 64-02 的方法。
-var ErrNotImplemented = errors.New("kubernetes executor: not implemented")
 
 // 编译期接口检查
 var _ ws.ExecutorService = (*KubernetesExecutor)(nil)
@@ -266,20 +262,107 @@ func (k *KubernetesExecutor) deleteJob(ctx context.Context, ns, jobName string) 
 	return nil
 }
 
-// 以下方法留待 64-02 实现，暂返回 ErrNotImplemented 以满足编译期接口检查。
+// runnerSelector 构造仅命中本 runner（friday.runner=<name>）任务 Job 的 label selector，
+// 用于 StartupCleanup/ZombieScan 隔离多副本，避免误杀同 namespace 其他 runner 在途 Job（Pitfall 3）。
+func (k *KubernetesExecutor) runnerSelector() string {
+	return fmt.Sprintf("%s=%s,%s=%s", labelKeyApp, labelApp, labelKeyRunner, sanitizeName(k.runnerName))
+}
 
+// RemoveContainer 删除 Job（PropagationBackground 连带删 Pod），NotFound 吞错（对齐 docker
+// ContainerRemove(Force) + IsErrNotFound）。containerID 形态 "<namespace>/<jobName>"。
+func (k *KubernetesExecutor) RemoveContainer(ctx context.Context, containerID string) error {
+	ns, jobName := splitID(containerID)
+	if ns == "" {
+		ns = k.namespace
+	}
+	return k.deleteJob(ctx, ns, jobName)
+}
+
+// StartupCleanup 仅清理本 runner（friday.runner=<name>）残留 Job，返回成功删除计数。
+// 必须带 friday.runner 限定，避免同 namespace 多副本误杀彼此在途 Job（Pitfall 3 / T-64-05）。
+func (k *KubernetesExecutor) StartupCleanup(ctx context.Context) (int, error) {
+	jobs, err := k.cs.BatchV1().Jobs(k.namespace).List(ctx, metav1.ListOptions{LabelSelector: k.runnerSelector()})
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range jobs.Items {
+		name := jobs.Items[i].Name
+		if derr := k.deleteJob(ctx, k.namespace, name); derr != nil {
+			log.Warn().Str("job", k.namespace+"/"+name).Err(derr).Msg("k8s_cleanup_remove_failed")
+			continue
+		}
+		count++
+	}
+	log.Info().Int("count", count).Msg("k8s_startup_cleanup_completed")
+	return count, nil
+}
+
+// ZombieScan 按 friday.runner label 扫描本 runner 的 Job：
+//   - 活跃（Succeeded==0 && Failed==0）且不在 known（ns/jobName 集）且超 zombieThreshold 秒
+//     → 删除 Job 并推 TypeTaskFailed（对齐 docker 僵尸 kill）；
+//   - 已终态（Succeeded>0 || Failed>0）且完成超 retainHours 小时 → 删除 Job。
+//
+// best-effort：单个 API error 仅 log 不中断，整体返回 nil（与 docker ZombieScan 一致）。
+func (k *KubernetesExecutor) ZombieScan(ctx context.Context, knownIDs []string, queue *ws.MessageQueue, zombieThreshold, retainHours float64) error {
+	jobs, err := k.cs.BatchV1().Jobs(k.namespace).List(ctx, metav1.ListOptions{LabelSelector: k.runnerSelector()})
+	if err != nil {
+		return err
+	}
+	known := make(map[string]struct{}, len(knownIDs))
+	for _, id := range knownIDs {
+		known[id] = struct{}{}
+	}
+	now := time.Now().UTC()
+
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
+		id := k.namespace + "/" + job.Name
+		taskID := job.Labels[labelKeyTask]
+		terminal := job.Status.Succeeded > 0 || job.Status.Failed > 0
+
+		if !terminal {
+			if _, ok := known[id]; ok {
+				continue
+			}
+			age := now.Sub(job.CreationTimestamp.Time).Seconds()
+			if age <= zombieThreshold {
+				continue
+			}
+			if derr := k.deleteJob(ctx, k.namespace, job.Name); derr != nil {
+				log.Warn().Str("job", id).Err(derr).Msg("zombie_delete_failed")
+				continue
+			}
+			queue.Push(ws.NewMessage(ws.TypeTaskFailed, map[string]any{
+				"task_id": taskID, "exit_code": -1,
+				"error":       "zombie job killed",
+				"duration_ms": int(age * 1000), "logs": "",
+			}))
+			log.Warn().Str("task_id", taskID).Str("job", id).Msg("zombie_killed")
+			continue
+		}
+
+		// 已终态：完成超保留期则删除。CompletionTime 可能为 nil（如 Failed Job），回退创建时间。
+		completed := job.CreationTimestamp.Time
+		if job.Status.CompletionTime != nil {
+			completed = job.Status.CompletionTime.Time
+		}
+		if now.Sub(completed).Hours() > retainHours {
+			if derr := k.deleteJob(ctx, k.namespace, job.Name); derr != nil {
+				log.Warn().Str("job", id).Err(derr).Msg("retained_job_delete_failed")
+				continue
+			}
+			log.Info().Str("task_id", taskID).Str("job", id).Msg("job_cleaned")
+		}
+	}
+	return nil
+}
+
+// ReadContainerFile 在 k8s 下 best-effort 退化：Job 的 restartPolicy=Never，容器完成后即终止，
+// exec/cp 对已退出 Pod 恒失败，故直接返回错误，让 ws/client.go 既有 log.Warn 容错生效
+// （text_output 退化为空、output=nil，任务仍按 exitCode 判 completed，不阻断主流程）。
+// 绝不为读文件 exec 已退出容器（恒失败）。完整产物读取（callback 回传 / RWX 共享卷）
+// 超出本阶段不动 task 约束（Open Q4），属已知限制。
 func (k *KubernetesExecutor) ReadContainerFile(_ context.Context, _, _ string) (string, error) {
-	return "", ErrNotImplemented
-}
-
-func (k *KubernetesExecutor) RemoveContainer(_ context.Context, _ string) error {
-	return ErrNotImplemented
-}
-
-func (k *KubernetesExecutor) StartupCleanup(_ context.Context) (int, error) {
-	return 0, ErrNotImplemented
-}
-
-func (k *KubernetesExecutor) ZombieScan(_ context.Context, _ []string, _ *ws.MessageQueue, _, _ float64) error {
-	return ErrNotImplemented
+	return "", fmt.Errorf("kubernetes executor: ReadContainerFile 未支持已退出 Pod 产物读取（k8s 已知限制）")
 }

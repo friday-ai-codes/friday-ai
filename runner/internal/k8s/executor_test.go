@@ -5,13 +5,30 @@ import (
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/friday-ai-codes/friday-ai/runner/internal/exec"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
+
+// newJob 构造一个带本 runner label 的 Job，供生命周期单测预置。
+func newJob(ns, name, runner string, labelsExtra map[string]string) *batchv1.Job {
+	labels := map[string]string{
+		labelKeyApp:    labelApp,
+		labelKeyRunner: sanitizeName(runner),
+		labelKeyJob:    name,
+	}
+	for k, v := range labelsExtra {
+		labels[k] = v
+	}
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels},
+	}
+}
 
 // newFast 构造一个 poll 间隔极小的 executor，避免单测受有界 poll 拖慢。
 func newFast(cs *fake.Clientset, cfg Config) *KubernetesExecutor {
@@ -190,6 +207,144 @@ func TestBuildJobSpec(t *testing.T) {
 	}
 	if job.Spec.Template.Spec.Containers[0].Image != "img:1" {
 		t.Fatalf("image = %q, want img:1", job.Spec.Template.Spec.Containers[0].Image)
+	}
+}
+
+func TestRemoveContainerDeletesJobAndSwallowsNotFound(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	job := newJob("friday", "friday-task-abc", "r1", nil)
+	if _, err := cs.BatchV1().Jobs("friday").Create(context.Background(), job, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := k.RemoveContainer(context.Background(), "friday/friday-task-abc"); err != nil {
+		t.Fatalf("RemoveContainer err: %v", err)
+	}
+	if _, err := cs.BatchV1().Jobs("friday").Get(context.Background(), "friday-task-abc", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("Job 应已删除，got err=%v", err)
+	}
+
+	// 第二次删除（已不存在）应吞 NotFound 返 nil，对齐 docker。
+	if err := k.RemoveContainer(context.Background(), "friday/friday-task-abc"); err != nil {
+		t.Fatalf("RemoveContainer NotFound 应吞错返 nil，got %v", err)
+	}
+}
+
+func TestStartupCleanupOnlyRemovesOwnRunnerJobs(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	// 本 runner 两个 Job + 他 runner 一个 Job（同 namespace）。
+	mine1 := newJob("friday", "friday-task-mine1", "r1", nil)
+	mine2 := newJob("friday", "friday-task-mine2", "r1", nil)
+	other := newJob("friday", "friday-task-other", "r2", nil)
+	for _, j := range []*batchv1.Job{mine1, mine2, other} {
+		if _, err := cs.BatchV1().Jobs("friday").Create(context.Background(), j, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count, err := k.StartupCleanup(context.Background())
+	if err != nil {
+		t.Fatalf("StartupCleanup err: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("cleanup count = %d, want 2（仅本 runner）", count)
+	}
+
+	remaining, err := cs.BatchV1().Jobs("friday").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining.Items) != 1 || remaining.Items[0].Name != "friday-task-other" {
+		t.Fatalf("应仅保留他 runner 的 Job，remaining=%v", remaining.Items)
+	}
+}
+
+func TestZombieScanKillsActiveUnknownAndKeepsKnown(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	old := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+
+	// 活跃僵尸：不在 known、超龄、无终态 → 应删除 + 推 TaskFailed。
+	zombie := newJob("friday", "friday-task-zombie", "r1", map[string]string{labelKeyTask: "task-zombie"})
+	zombie.CreationTimestamp = old
+	// 活跃已知：在 known → 不动。
+	knownJob := newJob("friday", "friday-task-known", "r1", map[string]string{labelKeyTask: "task-known"})
+	knownJob.CreationTimestamp = old
+	for _, j := range []*batchv1.Job{zombie, knownJob} {
+		if _, err := cs.BatchV1().Jobs("friday").Create(context.Background(), j, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	queue := ws.NewMessageQueue(10)
+	known := []string{"friday/friday-task-known"}
+	if err := k.ZombieScan(context.Background(), known, queue, 3600, 1); err != nil {
+		t.Fatalf("ZombieScan err: %v", err)
+	}
+
+	// zombie 应被删，known 应保留。
+	if _, err := cs.BatchV1().Jobs("friday").Get(context.Background(), "friday-task-zombie", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("zombie Job 应被删除，got err=%v", err)
+	}
+	if _, err := cs.BatchV1().Jobs("friday").Get(context.Background(), "friday-task-known", metav1.GetOptions{}); err != nil {
+		t.Fatalf("known Job 不应被删除，got err=%v", err)
+	}
+
+	msgs := queue.Drain()
+	if len(msgs) != 1 {
+		t.Fatalf("应推 1 条 TaskFailed，got %d", len(msgs))
+	}
+	if msgs[0].Type != ws.TypeTaskFailed {
+		t.Fatalf("消息类型 = %q, want %q", msgs[0].Type, ws.TypeTaskFailed)
+	}
+	payload, _ := msgs[0].Payload.(map[string]any)
+	if payload["task_id"] != "task-zombie" {
+		t.Fatalf("TaskFailed task_id = %v, want task-zombie", payload["task_id"])
+	}
+	if payload["exit_code"] != -1 {
+		t.Fatalf("TaskFailed exit_code = %v, want -1", payload["exit_code"])
+	}
+}
+
+func TestZombieScanRemovesTerminalRetainedJob(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	doneAt := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	finished := newJob("friday", "friday-task-done", "r1", map[string]string{labelKeyTask: "task-done"})
+	finished.Status.Succeeded = 1
+	finished.Status.CompletionTime = &doneAt
+	if _, err := cs.BatchV1().Jobs("friday").Create(context.Background(), finished, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	queue := ws.NewMessageQueue(10)
+	if err := k.ZombieScan(context.Background(), nil, queue, 3600, 1); err != nil {
+		t.Fatalf("ZombieScan err: %v", err)
+	}
+	if _, err := cs.BatchV1().Jobs("friday").Get(context.Background(), "friday-task-done", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("超保留期的终态 Job 应被删除，got err=%v", err)
+	}
+	if queue.Len() != 0 {
+		t.Fatalf("终态清理不应推 TaskFailed，got %d", queue.Len())
+	}
+}
+
+func TestReadContainerFileDegradesGracefully(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	out, err := k.ReadContainerFile(context.Background(), "friday/friday-task-abc", "/app/sessions/x.json")
+	if err == nil {
+		t.Fatal("ReadContainerFile 应返回非 nil err（k8s 退化语义）")
+	}
+	if out != "" {
+		t.Fatalf("ReadContainerFile 应返回空串，got %q", out)
 	}
 }
 
