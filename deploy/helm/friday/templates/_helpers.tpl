@@ -54,6 +54,24 @@ Secret 名称：existingSecret 优先，否则使用 Chart 创建的 <fullname>-
 {{- end }}
 {{- end }}
 {{/*
+Runner executor 是否为 k8s 模式：归一 kubernetes/k8s 两种写法，
+与 runner 端 resolveExecutorKind 行为一致（避免 k8s 值渲染成 docker 形态却跑 k8s 逻辑）。
+返回字符串 "true"/"false"，调用方用 `eq (include ...) "true"` 判定。
+*/}}
+{{- define "friday.runner.isK8s" -}}
+{{- or (eq .Values.runner.executor "kubernetes") (eq .Values.runner.executor "k8s") -}}
+{{- end }}
+{{/*
+Runner ServiceAccount 名称：runner.k8s.serviceAccountName 优先，否则 <fullname>-runner
+*/}}
+{{- define "friday.runner.serviceAccountName" -}}
+{{- if .Values.runner.k8s.serviceAccountName }}
+{{- .Values.runner.k8s.serviceAccountName }}
+{{- else }}
+{{- printf "%s-runner" (include "friday.fullname" .) }}
+{{- end }}
+{{- end }}
+{{/*
 数据库 Host：postgresql.enabled 时返回内部 Service 名称
 */}}
 {{- define "friday.databaseHost" -}}
