@@ -48,11 +48,18 @@ class IngestRun(models.Model):
     """
 
     class Status(models.TextChoices):
-        """运行状态：进行中 / 完成 / 失败。"""
+        """运行状态：排队中 / 进行中 / 完成 / 失败 / 已停止。
 
+        durable 队列化（Phase 62-01，CRAWL-01）新增 ``QUEUED``（入队待领）与
+        ``STOPPED``（用户停止的终态，可重投）。保留 RUNNING/COMPLETED/FAILED 既有语义
+        不动——存量行（单条 /ingest/ 与旧批量）无须回填（OQ-1：最小扩列、兼容存量不回退）。
+        """
+
+        QUEUED = "queued", "排队中"
         RUNNING = "running", "进行中"
         COMPLETED = "completed", "已完成"
         FAILED = "failed", "失败"
+        STOPPED = "stopped", "已停止"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # 批量摄取分组键（同一次「批量摄取」派发的多条 run 共享一个 batch_id）。
@@ -78,6 +85,13 @@ class IngestRun(models.Model):
     )
     # 编排级致命失败摘要（已脱敏，best-effort 步级错误落 steps）
     error = models.TextField(blank=True, default="")
+    # durable 队列化（Phase 62-01）：本批对应的 durable job 标识（stop=cancel 据此取消）。
+    # 存量行留空（兼容不回退）；in-process 后端取 idempotency_key 作 job_id，procrastinate
+    # 取数字 job id 字符串。
+    durable_job_id = models.CharField(max_length=64, blank=True, default="")
+    # 入队幂等键（=queueing_lock，按 batch 派生 ``crawl_ingest:{batch_id}``）：同 key
+    # 重复 defer 不堆积/不双跑（at-least-once 幂等命门），db_index 供 list/对账按 key 查。
+    idempotency_key = models.CharField(max_length=128, blank=True, default="", db_index=True)
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
