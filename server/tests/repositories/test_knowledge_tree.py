@@ -4,7 +4,8 @@
 
 - POST knowledge-tree/rebuild/ 经 ``DurableTaskService.defer`` 入队，捕获入参契约
   （task=``durable_page_index``、queue=``page_index``、idempotency_key=
-  ``page_index:corpus_tree``、payload 含 target_hash），返回 202 + job_id；
+  ``page_index:corpus_tree``、payload 仅含 ``target_id``、**不含自我否定的 target_hash**，
+  CR-01），返回 202 + job_id；
 - 保持 ``IsAdminUser``：普通用户 / 未认证不放行；
 - 源码契约：rebuild 路径无 ``run_in_background(`` 残留、文件内无 ``import procrastinate``。
 """
@@ -29,12 +30,12 @@ def _admin_client(admin_user) -> APIClient:
 
 
 def test_rebuild_defers_to_durable_page_index(admin_user) -> None:
-    """admin POST rebuild → 202 + job_id；defer 入参契约（durable_page_index / page_index 队列 / 幂等键 / target_hash）。"""
+    """admin POST rebuild → 202 + job_id；defer 入参契约（durable_page_index / page_index 队列 / 幂等键）。
+
+    payload **仅含 ``target_id``、不含 target_hash**：run_page_index 在执行时以「上次构建快照
+    的 source_hash」为基线自判（CR-01），入队点不再传同源恒等的当前指纹。
+    """
     with patch(
-        "codegraph.services.corpus_tree.CorpusTreeService.compute_source_hash",
-        new_callable=AsyncMock,
-        return_value="HASH-Y",
-    ), patch(
         "durable.service.DurableTaskService.defer",
         new_callable=AsyncMock,
         return_value="page_index:corpus_tree",
@@ -48,7 +49,8 @@ def test_rebuild_defers_to_durable_page_index(admin_user) -> None:
     mock_defer.assert_awaited_once()
     args, kwargs = mock_defer.call_args
     assert args[0] == "durable_page_index"
-    assert args[1] == {"target_id": "corpus_tree", "target_hash": "HASH-Y"}
+    assert args[1] == {"target_id": "corpus_tree"}
+    assert "target_hash" not in args[1]
     assert kwargs.get("queue") == "page_index"
     assert kwargs.get("idempotency_key") == "page_index:corpus_tree"
 

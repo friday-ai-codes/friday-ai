@@ -128,23 +128,32 @@ async def run_crawl_ingest(*, batch_id: str, concurrency: int = 3) -> dict[str, 
 
 
 async def run_page_index(
-    *, target_id: str | None = None, target_hash: str = "", **kwargs: Any
+    *, target_id: str | None = None, **kwargs: Any
 ) -> dict[str, Any]:
-    """页面级索引 / 全局知识树生成任务体（Phase 62-02，PAGEIDX-01）：真实生成 + target-hash 跳过。
+    """页面级索引 / 全局知识树生成任务体（Phase 62-02，PAGEIDX-01）：真实生成 + 自上次构建跳过。
 
-    先算当前全仓输入指纹 ``current = CorpusTreeService.compute_source_hash()``：
+    比对基线是**上一次已构建 active 快照的 ``source_hash``**（而非入队时刻传入的指纹）：
 
-    - 若入参 ``target_hash`` 非空且等于 ``current`` → 返回 ``skipped``，**不调
-      ``build_full``**（hash 未变即域树输入未变，重复执行无重复 snapshot——研究 Pitfall 4）；
-    - 否则调用天然幂等的 ``CorpusTreeService.build_full()``（unassigned 兜底 + 沿用旧 pin），
-      build_full 自身落新 snapshot（写 ``source_hash`` 供下次比对），本任务体不旁路写库。
+    - 算执行时刻当前全仓输入指纹 ``current = compute_source_hash()``；
+    - 取上次构建基线 ``baseline = get_active_source_hash()``（无 active 快照即**首次构建**，
+      返回 ``None``）；
+    - 仅当存在基线且 ``baseline == current``（自上次构建以来输入未变）→ 返回 ``skipped``，
+      **不调 ``build_full``**（重复执行无重复 snapshot、不重跑 LLM 聚类——研究 Pitfall 4 /
+      T-62-05 DoS）；
+    - 首次构建（无基线）或 ``current != baseline``（输入已变）→ 调天然幂等的
+      ``CorpusTreeService.build_full()``（unassigned 兜底 + 沿用旧 pin），build_full 自身落新
+      snapshot（写 ``source_hash`` 供下次比对），本任务体不旁路写库；返回值直接采用 build_full
+      落库所用 ``source_hash``，避免与落库值分叉（IN-01）。
 
-    keyword-only + ``**kwargs`` 容错对齐双后端 payload 契约、向后兼容旧占位调用方。
+    ⚠️ 不再消费入参 ``target_hash``：入队时刻指纹与执行时刻指纹同源恒等，作基线必致恒跳过
+    （CR-01）。``**kwargs`` 吞掉历史 payload 里的 ``target_hash`` 等键，向后兼容旧调用方。
+    keyword-only + ``**kwargs`` 容错对齐双后端 payload 契约。
     """
     from codegraph.services.corpus_tree import CorpusTreeService
 
     current = await CorpusTreeService.compute_source_hash()
-    if target_hash and target_hash == current:
+    baseline = await CorpusTreeService.get_active_source_hash()
+    if baseline is not None and baseline == current:
         logger.info(
             "durable_page_index_skipped", target_id=target_id, reason="hash_unchanged"
         )
@@ -156,4 +165,8 @@ async def run_page_index(
         target_id=target_id,
         status=result.get("status"),
     )
-    return {"status": result.get("status"), "target_id": target_id, "source_hash": current}
+    return {
+        "status": result.get("status"),
+        "target_id": target_id,
+        "source_hash": result.get("source_hash", current),
+    }
