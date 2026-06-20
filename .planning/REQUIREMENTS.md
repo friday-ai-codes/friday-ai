@@ -29,7 +29,7 @@
 ### 幂等与外部副作用（IDEMP）
 
 - [x] **IDEMP-01**: durable handler 幂等基线——index / graph / page_index 在 at-least-once 重复执行下经 checkpoint / deterministic key / upsert 结果一致；守护测试覆盖"同一任务重复投递/重复执行不产生重复数据或重复副作用"。
-- [ ] **IDEMP-02**: 有外部副作用的任务（飞书通知 / 自动建群、MR/PR 创建）上 fencing token 或 outbox，确保 at-least-once 重复执行不产生重复外部动作（不重复发通知 / 不重复建群 / 不重复开 PR）。
+- [x] **IDEMP-02**: 有外部副作用的任务（飞书通知 / 自动建群、MR/PR 创建）上 fencing token 或 outbox，确保 at-least-once 重复执行不产生重复外部动作（不重复发通知 / 不重复建群 / 不重复开 PR）。
 
 ### 爬取+入库 durable 队列（CRAWL）
 
@@ -39,9 +39,9 @@
 
 ### 部署硬化（DEPLOY）
 
-- [ ] **DEPLOY-01**: worker 优雅终止——捕获 SIGTERM 后停止领取新任务、跑完在途或释放/缩短租约让其他副本快速接管（非干等租约过期）；helm 为 worker 配 `terminationGracePeriodSeconds`（> 心跳间隔）。
-- [ ] **DEPLOY-02**: compose 与 helm 同构拆 web / worker / scheduler 三类 workload（同镜像不同 command + `FRIDAY_PROCESS_ROLE`）；scheduler 单例（leader）承载 cron + 周期 rescue；compose 升级（`up -d` 拉新镜像重建）迁移顺序与服务编排不破坏既有部署。
-- [ ] **DEPLOY-03**: KEDA Postgres scaler 按队列深度（`COUNT(status='todo')` 等）伸缩 worker（支持 cooldown 防抖、可按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（未开启时 fail-closed 提示，对齐 `values.yaml` 既有约束）。
+- [x] **DEPLOY-01**: worker 优雅终止——捕获 SIGTERM 后停止领取新任务、跑完在途或释放/缩短租约让其他副本快速接管（非干等租约过期）；helm 为 worker 配 `terminationGracePeriodSeconds`（> 心跳间隔）。
+- [x] **DEPLOY-02**: compose 与 helm 同构拆 web / worker / scheduler 三类 workload（同镜像不同 command + `FRIDAY_PROCESS_ROLE`）；scheduler 单例（leader）承载 cron + 周期 rescue；compose 升级（`up -d` 拉新镜像重建）迁移顺序与服务编排不破坏既有部署。
+- [x] **DEPLOY-03**: KEDA Postgres scaler 按队列深度（`COUNT(status='todo')` 等）伸缩 worker（支持 cooldown 防抖、可按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（未开启时 fail-closed 提示，对齐 `values.yaml` 既有约束）。
 
 ### runner k8s Job executor（RUNNER）
 
@@ -82,10 +82,10 @@
 | CRAWL-01 | Phase 62 | Complete |
 | CRAWL-02 | Phase 62 | Complete |
 | PAGEIDX-01 | Phase 62 | Complete |
-| DEPLOY-01 | Phase 63 | Pending |
-| DEPLOY-02 | Phase 63 | Pending |
-| DEPLOY-03 | Phase 63 | Pending |
-| IDEMP-02 | Phase 63 | Pending |
+| DEPLOY-01 | Phase 63 | Complete |
+| DEPLOY-02 | Phase 63 | Complete |
+| DEPLOY-03 | Phase 63 | Complete |
+| IDEMP-02 | Phase 63 | Complete |
 | RUNNER-01 | Phase 64 | Pending |
 | RUNNER-02 | Phase 64 | Pending |
 
