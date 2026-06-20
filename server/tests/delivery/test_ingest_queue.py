@@ -338,6 +338,35 @@ async def test_start_redefers(stub_durable) -> None:
     assert run.status == IngestRun.Status.QUEUED
 
 
+async def test_retry_all_completed_skips_dispatch(stub_durable) -> None:
+    """全部 COMPLETED 的批 retry → 不 defer、dispatched=False（IN-02 空操作短路）。"""
+    headers = await _make_user_headers()
+    batch_id = uuid.uuid4()
+    await IngestRun.objects.acreate(
+        batch_id=batch_id,
+        board_url=BOARD_URL_1,
+        mr_url=MR_URL_1,
+        status=IngestRun.Status.COMPLETED,
+        idempotency_key=f"crawl_ingest:{batch_id}",
+    )
+
+    client = AsyncClient()
+    resp = await client.post(
+        f"/api/delivery/ingest/queue/{batch_id}/retry/",
+        content_type="application/json",
+        headers=headers,
+    )
+
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["dispatched"] is False
+    assert body["durable_job_id"] == ""
+    stub_durable["defer"].assert_not_awaited()
+    # COMPLETED 行不被改动。
+    run = await IngestRun.objects.aget(batch_id=batch_id)
+    assert run.status == IngestRun.Status.COMPLETED
+
+
 async def test_action_invalid_400(stub_durable) -> None:
     """非法 action → 400。"""
     headers = await _make_user_headers()

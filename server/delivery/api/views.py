@@ -757,6 +757,10 @@ class IngestQueueActionView(APIView):
                 IngestRun.Status.FAILED,
             }
         ]
+        if not redefer_ids:
+            # 全部 COMPLETED：无行需重置，短路不 defer——避免派发一个查不到 active 行、
+            # 必返回 count:0 的空操作 durable job（IN-02）。
+            return ""
         await sync_to_async(
             lambda: IngestRun.objects.filter(id__in=redefer_ids).update(
                 status=IngestRun.Status.QUEUED
@@ -812,14 +816,15 @@ class IngestQueueActionView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # start / retry：同 key 重新 defer（queueing_lock 幂等）。
+        # start / retry：同 key 重新 defer（queueing_lock 幂等）。全 COMPLETED 批无行可重投，
+        # _redefer_batch 返回空串、不 defer，此时 dispatched=False（IN-02）。
         job_id = await self._redefer_batch(batch_id, runs)
         return Response(
             {
                 "batch_id": str(batch_id),
                 "action": action,
                 "durable_job_id": job_id,
-                "dispatched": True,
+                "dispatched": bool(job_id),
             },
             status=status.HTTP_200_OK,
         )
