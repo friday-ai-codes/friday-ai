@@ -154,6 +154,58 @@ export interface CrawlResult {
   settings_deeplink: string
 }
 
+// ============================================================================
+// 爬取入库 durable 队列（Phase 62-01/62-03，CRAWL-01/CRAWL-02）
+// ============================================================================
+
+/**
+ * 单批队列聚合状态（与后端 `_aggregate_queue_status` 优先级一致：
+ * running>queued>stopped>failed>completed）。
+ */
+export type CrawlQueueStatus = 'queued' | 'running' | 'stopped' | 'failed' | 'completed'
+
+/**
+ * 爬取入库队列单批聚合项（字段对齐后端 `IngestQueueItemSerializer`）。
+ *
+ * 真相源 = `IngestRun`（DB）按 `batch_id` 分组重建——**不依赖任何前端内存态**，
+ * 刷新页面 / 容器重建后可经 list 端点完整恢复。
+ */
+export interface CrawlQueueItem {
+  batch_id: string
+  status: CrawlQueueStatus
+  /** 该批行数。 */
+  total: number
+  /** 已完成行数。 */
+  done: number
+  /** 该批 URL 集合数（= 行数）。 */
+  url_count: number
+  durable_job_id: string
+  idempotency_key: string
+  /** 该批 min(started_at)；空批为 null。 */
+  started_at: string | null
+  /** 该批 max(updated_at)；空批为 null。 */
+  updated_at: string | null
+  /** 失败原因（后端已脱敏）；无则空串。 */
+  error: string
+}
+
+/** POST `/delivery/ingest/queue/` 入队的即时响应（202）。 */
+export interface CrawlQueueEnqueueResult {
+  batch_id: string
+  runs: JsonIngestBatchRun[]
+  skipped: Array<{ space: string, work_item_id: number, error: string }>
+  dispatched: boolean
+}
+
+/** 队列动作（start/retry）的即时响应（200）。 */
+export interface CrawlQueueActionResult {
+  batch_id: string
+  action: string
+  durable_job_id?: string
+  stopped?: number
+  dispatched?: boolean
+}
+
 /** 工作项摘要 + 关联文档列表（GET `/delivery/work-items/artifacts/`）。 */
 export interface WorkItemArtifacts {
   work_item: {
@@ -190,6 +242,34 @@ export const ingestApi = {
   /** 爬取一个 URL（飞书文档/多维表格/wiki/通用链接）→ AI 抽成可关联条目。 */
   crawlUrl: (url: string): Promise<CrawlResult> =>
     post<CrawlResult>('/delivery/ingest/crawl/', { url }),
+
+  /**
+   * 拉取爬取入库队列列表（DB 真相源，按 batch_id 分组聚合）。
+   *
+   * 后端响应形如 `{ items: CrawlQueueItem[] }`，此处解包为裸数组供面板直接消费；
+   * 刷新页面 / 容器重建后由此端点恢复队列，**不依赖任何前端内存态**（CRAWL-02）。
+   */
+  listQueue: (): Promise<CrawlQueueItem[]> =>
+    get<{ items: CrawlQueueItem[] }>('/delivery/ingest/queue/').then(r => r.items ?? []),
+
+  /** 入队一组爬取条目（复用 JsonIngestItem 入参形状），后台 durable 执行。 */
+  enqueueQueue: (
+    items: JsonIngestItem[],
+    concurrency?: number,
+  ): Promise<CrawlQueueEnqueueResult> =>
+    post<CrawlQueueEnqueueResult>('/delivery/ingest/queue/', { items, concurrency }),
+
+  /** 开始 / 续跑某批（QUEUED/STOPPED/FAILED 行重新 defer，同 idempotency_key 幂等）。 */
+  startRun: (batchId: string): Promise<CrawlQueueActionResult> =>
+    post<CrawlQueueActionResult>(`/delivery/ingest/queue/${batchId}/start/`),
+
+  /** 停止某批（best-effort cancel + 非终态行置 STOPPED，破坏性，可重投）。 */
+  stopRun: (batchId: string): Promise<CrawlQueueActionResult> =>
+    post<CrawlQueueActionResult>(`/delivery/ingest/queue/${batchId}/stop/`),
+
+  /** 重试某批（同 idempotency_key 重新 defer，非破坏性）。 */
+  retryRun: (batchId: string): Promise<CrawlQueueActionResult> =>
+    post<CrawlQueueActionResult>(`/delivery/ingest/queue/${batchId}/retry/`),
 
   /** 派发 JSON 批量摄取（可解析项建 run + 有界并发；不可解析项 skipped 回报）。 */
   dispatchJsonBatch: (

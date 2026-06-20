@@ -607,6 +607,56 @@
       "loadError": "加载清理状态失败"
     }
   },
+  "crawlQueue": {
+    "title": "链接爬取入库",
+    "subtitle": "粘贴飞书文档 / 多维表格 / wiki / 通用链接，入队后台爬取并入库；刷新或重启后任务不丢、自动续跑",
+    "input": {
+      "placeholder": "https://xxx.feishu.cn/docx/... 或 /base/... 或 /wiki/...",
+      "enqueue": "入队",
+      "enqueuing": "入队中…"
+    },
+    "enqueued": "已入队，将在后台爬取入库并实时更新",
+    "enqueueFailed": "入队失败，请稍后重试",
+    "loading": "正在加载队列…",
+    "loadError": "加载爬取队列失败，请稍后重试",
+    "retryLoad": "重试加载",
+    "refresh": "刷新",
+    "listTitle": "队列（{count}）",
+    "empty": {
+      "title": "队列为空",
+      "body": "在上方粘贴链接并点击「入队」，任务将在此显示并实时更新状态"
+    },
+    "item": {
+      "urlSummary": "{count} 个链接",
+      "progress": "{done}/{total}",
+      "enqueuedAt": "入队 {time}",
+      "updatedAt": "更新 {time}",
+      "error": "失败原因：{message}"
+    },
+    "status": {
+      "queued": "排队中",
+      "running": "进行中",
+      "stopped": "已停止",
+      "failed": "失败",
+      "completed": "已完成"
+    },
+    "actions": {
+      "start": "开始",
+      "stop": "停止",
+      "retry": "重试",
+      "starting": "开始中…",
+      "stopping": "停止中…",
+      "retrying": "重试中…"
+    },
+    "stopConfirm": {
+      "title": "停止该爬取任务",
+      "description": "将停止该任务的后台爬取与入库（已入库部分保留，幂等可重投）。停止后该任务进入「已停止」终态，可随时重试。确认停止？",
+      "confirmText": "停止任务"
+    },
+    "feishuNotConfigured": {
+      "configure": "去配置飞书应用"
+    }
+  },
   "sensitive": {
     "title": "AI 敏感文件建议",
     "subtitle": "AI 自动识别可能含密钥 / 敏感信息的文件，按严重程度排序；接受将新增排除规则，但不会自动删除已索引内容",
