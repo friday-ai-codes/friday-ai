@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -9,7 +10,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 
 	"github.com/friday-ai-codes/friday-ai/runner/internal/exec"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
@@ -151,6 +154,82 @@ func TestWaitContainerTimeoutReturnsMinusOne(t *testing.T) {
 	}
 	if logs != "" {
 		t.Fatalf("logs = %q, want empty", logs)
+	}
+}
+
+// TestWaitContainerReWatchesOnClosedChannel 验证 CR-01：watch channel 中途关闭
+// （server-side watch 超时/瞬时抖动）不得被当作任务终止——必须 re-watch 继续等待，
+// 真实终止仍能被检测，且仍在运行的任务不会被误判 failed、其 Job 不会泄漏。
+func TestWaitContainerReWatchesOnClosedChannel(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
+
+	jobName := makeJobName("coding-rewatch")
+	containerID := "friday/" + jobName
+
+	var watchCount int32
+	first := watch.NewFake()
+	second := watch.NewFake()
+	cs.PrependWatchReactor("pods", func(ktesting.Action) (bool, watch.Interface, error) {
+		switch atomic.AddInt32(&watchCount, 1) {
+		case 1:
+			// 模拟 server-side watch 超时：建立后短暂即关闭 channel（不投递终止）。
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				first.Stop()
+			}()
+			return true, first, nil
+		default:
+			return true, second, nil
+		}
+	})
+
+	resultCh := make(chan int, 1)
+	go func() {
+		code, logs, err := k.WaitContainer(context.Background(), containerID, 5*time.Second)
+		if err != nil {
+			t.Errorf("WaitContainer err: %v", err)
+		}
+		if logs != "" {
+			t.Errorf("logs = %q, want empty", logs)
+		}
+		resultCh <- code
+	}()
+
+	// 等第一个 watch 关闭并触发 re-watch；此时绝不能已返回（否则即 CR-01 的误判）。
+	time.Sleep(80 * time.Millisecond)
+	select {
+	case c := <-resultCh:
+		t.Fatalf("watch 关闭后 WaitContainer 过早返回 code=%d，应 re-watch 继续等待", c)
+	default:
+	}
+	if atomic.LoadInt32(&watchCount) < 2 {
+		t.Fatalf("应在 channel 关闭后重建 watch，watchCount=%d", atomic.LoadInt32(&watchCount))
+	}
+
+	// 经第二个（重建后的）watch 投递真实终止，应被检测并返回真实 exitCode。
+	second.Modify(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName + "-pod",
+			Namespace: "friday",
+			Labels:    map[string]string{labelKeyJob: jobName},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{{
+				State: corev1.ContainerState{
+					Terminated: &corev1.ContainerStateTerminated{ExitCode: 9},
+				},
+			}},
+		},
+	})
+
+	select {
+	case code := <-resultCh:
+		if code != 9 {
+			t.Fatalf("re-watch 后 exitCode = %d, want 9", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("re-watch 后未检测到真实终止")
 	}
 }
 
