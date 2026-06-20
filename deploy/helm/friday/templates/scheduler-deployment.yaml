@@ -1,0 +1,69 @@
+{{- if .Values.scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "friday.fullname" . }}-scheduler
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  # scheduler 必须单例：replicas 硬编码 1（不暴露 replicaCount），strategy=Recreate
+  # 防滚动更新期新旧 Pod 重叠导致两份 runapscheduler 并存重复跑 cron（重复通知 /
+  # backfill OOM）。apscheduler DjangoJobStore 跨进程共享 job，单例靠编排层保证。
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      labels:
+        {{- include "friday.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.scheduler.terminationGracePeriodSeconds }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -d "$DATABASE_URL"; do
+                echo "等待数据库就绪..."
+                sleep 2
+              done
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+      {{- end }}
+      containers:
+        - name: scheduler
+          # 同 server 镜像；首次让 apscheduler cron（10 recurring + 1 one-shot）真正运行。
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command: ["python", "manage.py", "runapscheduler"]
+          env:
+            - name: FRIDAY_PROCESS_ROLE
+              value: scheduler
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+          volumeMounts:
+            - name: server-data
+              mountPath: /app/data
+          {{- with .Values.scheduler.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: server-data
+          emptyDir: {}
+{{- end }}

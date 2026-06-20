@@ -70,6 +70,26 @@ runner:
     limits:
       cpu: 500m
       memory: 128Mi
+# -- Worker 配置（durable 队列消费进程，同 server 镜像 + run_worker + role=worker）
+# 可独立水平伸缩。优雅终止不变式：
+#   terminationGracePeriodSeconds(120) > gracefulTimeout(110) > 心跳(10s)/stalled(30s)
+# 即 SIGTERM 后 worker 有 gracefulTimeout 秒 drain 在途 job，再留余量供 k8s SIGKILL。
+# worker.keda / worker.pdb 段留给后续 plan（本 plan 不引入，避免冲突）。
+worker:
+  enabled: true
+  replicaCount: 1
+  # 收到 SIGTERM 后等在途 job 完成的最大秒数（透传 run_worker --graceful-timeout）
+  gracefulTimeout: 110
+  # 必须 > gracefulTimeout，给在途 job drain + k8s 收尾留窗口
+  terminationGracePeriodSeconds: 120
+  resources: {}
+# -- Scheduler 配置（apscheduler cron 单例 leader，同 server 镜像 + runapscheduler + role=scheduler）
+# 强制单实例：replicas 在模板内硬编码为 1 + strategy=Recreate（不暴露 replicaCount），
+# 防滚动期双实例重复跑 cron。durable 周期 rescue 不在此（由 worker periodic deferrer 承载）。
+scheduler:
+  enabled: true
+  terminationGracePeriodSeconds: 60
+  resources: {}
 # -- PostgreSQL 内置部署
 postgresql:
   enabled: true
