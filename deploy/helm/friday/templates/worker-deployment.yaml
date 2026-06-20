@@ -1,0 +1,72 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "friday.fullname" . }}-worker
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "friday.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "friday.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      # terminationGracePeriodSeconds(默认 120) > gracefulTimeout(110) > 心跳(10s)/
+      # stalled(30s)：保证 worker 收到 SIGTERM 后有足够窗口 drain 在途 job，超时再
+      # SIGKILL；剩余在途靠 heartbeat-stalled + 周期 rescue 兜底重投（DEPLOY-01）。
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -d "$DATABASE_URL"; do
+                echo "等待数据库就绪..."
+                sleep 2
+              done
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+      {{- end }}
+      containers:
+        - name: worker
+          # 同 server 镜像（同镜像 + 不同 command + role 拆 workload）
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          # 迁移由 Helm pre-upgrade hook Job 处理（migration-job.yaml），worker 在迁移后
+          # 才 apply，无需自 migrate；直接跑 run_worker 消费 durable 队列。
+          command: ["python", "manage.py", "run_worker"]
+          args:
+            - "--graceful-timeout"
+            - "{{ .Values.worker.gracefulTimeout }}"
+          env:
+            - name: FRIDAY_PROCESS_ROLE
+              value: worker
+          envFrom:
+            - configMapRef:
+                name: {{ include "friday.fullname" . }}-config
+            - secretRef:
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+          volumeMounts:
+            - name: server-data
+              mountPath: /app/data
+          {{- with .Values.worker.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: server-data
+          emptyDir: {}
+{{- end }}
