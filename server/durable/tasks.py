@@ -17,6 +17,7 @@ import structlog
 from procrastinate.contrib.django import app
 
 from durable.queues import (
+    QUEUE_CRAWL_INGEST,
     QUEUE_GRAPH,
     QUEUE_INDEX,
     QUEUE_MAINTENANCE,
@@ -77,6 +78,19 @@ async def durable_page_index(**payload: Any) -> dict[str, Any]:
     from durable.tasks_impl import run_page_index
 
     return await run_page_index(**payload)
+
+
+@app.task(name="durable_crawl_ingest", queue=QUEUE_CRAWL_INGEST)
+async def durable_crawl_ingest(**payload: Any) -> dict[str, Any]:
+    """爬取批次入库 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    逐字镜像 ``durable_page_index`` 包壳：显式 ``name="durable_crawl_ingest"`` 与
+    ``backends.defer`` 裸名查找（``app.tasks.get("durable_crawl_ingest")``）同源；payload
+    仅 ``batch_id`` / ``concurrency``，经 ``defer_async(**payload)`` 展开传入。
+    """
+    from durable.tasks_impl import run_crawl_ingest
+
+    return await run_crawl_ingest(**payload)
 
 
 @app.task(name="durable_ping", queue=QUEUE_MAINTENANCE)
