@@ -45,11 +45,20 @@ def test_ingest_run_defaults():
 
 
 def test_ingest_run_status_choices():
-    """Status 枚举与 UI-SPEC 严格对齐（running/completed/failed，无 none）。"""
+    """Status 枚举：既有 running/completed/failed + Phase 62-01 durable 队列化新增 queued/stopped。"""
     assert IngestRun.Status.RUNNING == "running"
     assert IngestRun.Status.COMPLETED == "completed"
     assert IngestRun.Status.FAILED == "failed"
-    assert {c[0] for c in IngestRun.Status.choices} == {"running", "completed", "failed"}
+    # Phase 62-01（CRAWL-01）：QUEUED 入队待领 + STOPPED 用户停止终态（可重投）。
+    assert IngestRun.Status.QUEUED == "queued"
+    assert IngestRun.Status.STOPPED == "stopped"
+    assert {c[0] for c in IngestRun.Status.choices} == {
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "stopped",
+    }
 
 
 def test_ingest_run_steps_persist_structured_results():
