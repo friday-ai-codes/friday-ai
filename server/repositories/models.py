@@ -802,6 +802,12 @@ class CorpusTreeSnapshot(models.Model):
         default="llm_full",
         help_text="构建方式：llm_full（全量聚类）/ incremental（增量归类）/ manual",
     )
+    source_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="构建时全仓输入（id/ai_summary/facets）指纹，供 run_page_index 按 hash 跳过重建",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
