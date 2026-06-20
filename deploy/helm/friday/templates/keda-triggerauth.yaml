@@ -1,0 +1,17 @@
+{{- if .Values.worker.keda.enabled }}
+# KEDA TriggerAuthentication：把 postgresql scaler 所需的 DB 连接串经 secret 注入，
+# 复用 chart secret 的 DATABASE_URL（full connection string）。绝不在 ScaledObject
+# metadata 或 values 明文 DB 密码（DEPLOY-03 T-63-04 / keda #3612）。
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "friday.fullname" . }}-keda-pg-auth
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name: {{ include "friday.secretName" . }}
+      key: DATABASE_URL
+{{- end }}
