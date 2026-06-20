@@ -40,7 +40,7 @@
   - [x] 62-01-PLAN.md — run_crawl_ingest durable 任务体 + IngestRun 扩列(QUEUED/STOPPED/durable_job_id/idempotency_key)迁移 + 队列动作端点(enqueue/list/detail/start/stop/retry) + 幂等守护（wave 1）
   - [x] 62-02-PLAN.md — 填充 run_page_index(build_full + target-hash 跳过) + CorpusTreeSnapshot.source_hash + tree_views.py 裸 background_runner → durable defer（wave 2）
   - [x] 62-03-PLAN.md — BatchIngestPanel 后端恢复队列 + 行内开始/停止/重试 + zh-CN.json crawlQueue.* + vitest 守护（wave 2）
-- [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/? plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
+- [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/3 plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
 - [ ] **Phase 64: runner k8s Job executor** (0/? plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
 
 ## Phase Details
@@ -116,7 +116,11 @@
   3. KEDA Postgres scaler 按队列深度（`COUNT(status='todo')`）伸缩 worker（支持 cooldown 防抖、可按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（未开启时 fail-closed 提示）
   4. 有外部副作用的任务（飞书通知/自动建群、MR/PR 创建）上 fencing token 或 outbox，at-least-once 重复执行不产生重复外部动作（不重复发通知/不重复建群/不重复开 PR）
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+
+- 63-01 (wave 1): run_worker --graceful-timeout + helm worker/scheduler-deployment（scheduler replicas=1 Recreate + runapscheduler cron 接线）+ compose worker/scheduler service — DEPLOY-01, DEPLOY-02
+- 63-03 (wave 1): 外部副作用 fencing（MR/PR existing-by-branch 复用 + 建群 feishu_chat_id 前置查）— IDEMP-02
+- 63-02 (wave 2): KEDA ScaledObject（procrastinate_jobs todo 深度）+ PDB（worker/web）+ 多副本无 Redis 双层 fail-closed（settings + helm），values-gated 默认 off — DEPLOY-03
 
 ### Phase 64: runner k8s Job executor
 
