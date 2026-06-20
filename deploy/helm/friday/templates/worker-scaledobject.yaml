@@ -1,0 +1,33 @@
+{{- if .Values.worker.keda.enabled }}
+# KEDA ScaledObject：按 procrastinate_jobs 队列深度（status='todo'）伸缩 worker。
+# values-gated 默认 off —— 仅在已安装 KEDA operator 的集群启用，避免非 KEDA 集群
+# apply 时因缺 CRD（keda.sh/v1alpha1）整体失败（DEPLOY-03 / 默认安装零渲染）。
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "friday.fullname" . }}-worker
+  labels:
+    {{- include "friday.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  # 伸缩目标 = 63-01 产出的 worker Deployment（同名 {fullname}-worker）
+  scaleTargetRef:
+    name: {{ include "friday.fullname" . }}-worker
+  pollingInterval: {{ .Values.worker.keda.pollingInterval | default 30 }}
+  cooldownPeriod: {{ .Values.worker.keda.cooldownPeriod | default 300 }}
+  # 禁 scale-to-zero：worker 的 periodic deferrer 持续驱动 durable rescue
+  # （retry_stalled_durable_jobs），缩到 0 会让 rescue 停摆、stalled job 永挂。
+  minReplicaCount: {{ .Values.worker.keda.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.worker.keda.maxReplicaCount | default 5 }}
+  triggers:
+    - type: postgresql
+      metadata:
+        # 队列深度伸缩：todo 数 / 每副本可消化量（jobsPerReplica），COALESCE 防 null。
+        # 按 queue 维度时用 worker.keda.query override，追加 AND queue_name = '...'。
+        query: {{ .Values.worker.keda.query | default (printf "SELECT COALESCE(ceil(COUNT(*)::decimal / %d), 0) FROM procrastinate_jobs WHERE status = 'todo'" (int (.Values.worker.keda.jobsPerReplica | default 10))) | quote }}
+        targetQueryValue: "1"
+      # DB 凭证经 TriggerAuthentication（secretTargetRef → DATABASE_URL），
+      # 绝不在 metadata 明文连接串/密码（keda #3612 / RESEARCH Security V7）。
+      authenticationRef:
+        name: {{ include "friday.fullname" . }}-keda-pg-auth
+{{- end }}

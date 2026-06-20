@@ -83,6 +83,16 @@ worker:
   # 必须 > gracefulTimeout，给在途 job drain + k8s 收尾留窗口
   terminationGracePeriodSeconds: 120
   resources: {}
+  # -- KEDA 队列深度伸缩（默认 off）。仅在已安装 KEDA operator 的集群启用；
+  # 非 KEDA 集群保持 off，否则 apply ScaledObject 会因缺 CRD 整体失败。
+  keda:
+    enabled: false
+    pollingInterval: 30 # 查询队列深度的间隔秒数
+    cooldownPeriod: 300 # 缩容前的冷却秒数（防抖）
+    minReplicaCount: 1 # 禁 scale-to-zero：保 periodic deferrer 驱动 rescue
+    maxReplicaCount: 5
+    jobsPerReplica: 10 # 每副本目标消化的 todo job 数（深度/此值 = 目标副本数）
+    query: "" # 留空用模板默认 todo 深度查询；按 queue 维度时覆盖（追加 queue_name 过滤）
 # -- Scheduler 配置（apscheduler cron 单例 leader，同 server 镜像 + runapscheduler + role=scheduler）
 # 强制单实例：replicas 在模板内硬编码为 1 + strategy=Recreate（不暴露 replicaCount），
 # 防滚动期双实例重复跑 cron。durable 周期 rescue 不在此（由 worker periodic deferrer 承载）。
