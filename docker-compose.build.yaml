@@ -12,6 +12,13 @@ services:
     environment:
       - FRIDAY_RUNNER_IMAGE=friday-task:local
 
+  # worker/scheduler 复用 server 构建产物（friday-server:local），无需独立 build context。
+  worker:
+    image: friday-server:local
+
+  scheduler:
+    image: friday-server:local
+
   web:
     build:
       context: ./web

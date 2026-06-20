@@ -76,6 +76,63 @@ services:
       retries: 5
       start_period: 30s
 
+  # durable 队列消费 worker（同 server 镜像 + run_worker + role=worker，可多副本）。
+  # 优雅终止：收到 SIGTERM 后 Procrastinate 内置信号处理停领取并 drain 在途 job，
+  # --graceful-timeout 110 控制等待上限；stop_grace_period 120s（> 110）给 compose
+  # 收尾余量，对齐 helm terminationGracePeriodSeconds。
+  worker:
+    image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/server:${FRIDAY_IMAGE_TAG:-latest}
+    container_name: friday-worker
+    command: ["python", "manage.py", "run_worker", "--graceful-timeout", "110"]
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DEBUG=${DEBUG:-false}
+      - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
+      - FRIDAY_PROCESS_ROLE=worker
+      - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-friday-local}
+      - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
+    networks:
+      - friday-network
+    # worker 不自 migrate：依赖 server（其 entrypoint 先跑 migrate 再 healthy），
+    # 保证首次 up -d 时 procrastinate_jobs 等表已建，避免 worker 起在迁移前崩循环。
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 120s
+
+  # apscheduler cron 单例 scheduler（同 server 镜像 + runapscheduler + role=scheduler）。
+  # 首次让 10+1 个 cron 真正运行；单机 compose 默认启用，可用 --scale scheduler=0 关。
+  scheduler:
+    image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/server:${FRIDAY_IMAGE_TAG:-latest}
+    container_name: friday-scheduler
+    command: ["python", "manage.py", "runapscheduler"]
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DEBUG=${DEBUG:-false}
+      - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
+      - FRIDAY_PROCESS_ROLE=scheduler
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-friday-local}
+      - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
+    networks:
+      - friday-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
   web:
     image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/web:${FRIDAY_IMAGE_TAG:-latest}
     container_name: friday-web
