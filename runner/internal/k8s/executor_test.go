@@ -38,7 +38,6 @@ func newJob(ns, name, runner string, labelsExtra map[string]string) *batchv1.Job
 func newFast(cs *fake.Clientset, cfg Config) *KubernetesExecutor {
 	k := NewWithClientset(cs, cfg)
 	k.pollInterval = time.Millisecond
-	k.answerPollMax = 2
 	k.logPollMax = 3
 	return k
 }
