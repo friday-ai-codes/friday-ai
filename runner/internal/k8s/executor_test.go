@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -411,6 +412,32 @@ func TestZombieScanRemovesTerminalRetainedJob(t *testing.T) {
 	}
 	if queue.Len() != 0 {
 		t.Fatalf("终态清理不应推 TaskFailed，got %d", queue.Len())
+	}
+}
+
+// TestMakeJobNameDisambiguatesSanitizeCollisions 验证 WR-02：不同 taskID 即便
+// sanitize 后塌缩成同名，也必须产出不同 jobName（靠源 taskID 的 sha8 后缀），
+// 避免 Jobs.Create AlreadyExists；同时保持确定性、≤63、带前缀。
+func TestMakeJobNameDisambiguatesSanitizeCollisions(t *testing.T) {
+	// 三个 taskID sanitize 后都塌缩为 "task-1"。
+	ids := []string{"Task_1", "task.1", "task/1"}
+	names := make(map[string]string, len(ids))
+	for _, id := range ids {
+		name := makeJobName(id)
+		if len(name) > 63 {
+			t.Fatalf("makeJobName(%q)=%q 超过 63 字符", id, name)
+		}
+		if !strings.HasPrefix(name, jobNamePrefix) {
+			t.Fatalf("makeJobName(%q)=%q 缺少前缀 %q", id, name, jobNamePrefix)
+		}
+		if prev, ok := names[name]; ok {
+			t.Fatalf("sanitize 冲突未被区分：%q 与 %q 都映射到 jobName %q", id, prev, name)
+		}
+		names[name] = id
+	}
+	// 确定性：同一 taskID 多次调用结果一致。
+	if a, b := makeJobName("Task_1"), makeJobName("Task_1"); a != b {
+		t.Fatalf("makeJobName 非确定性：%q != %q", a, b)
 	}
 }
 

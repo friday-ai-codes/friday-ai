@@ -100,17 +100,16 @@ func sanitizeName(s string) string {
 	return out
 }
 
-// makeJobName 生成确定性 jobName：friday-task-<sanitized taskID>，超长时截断 + 短哈希保唯一。
+// makeJobName 生成确定性 jobName：friday-task-<sanitized taskID>-<sha8(raw taskID)>。
+// 始终拼接源 taskID 的短哈希后缀（WR-02）：sanitizeName 把所有非 [a-z0-9] 规整为 -，
+// 不同 taskID（如 Task_1 / task.1 / task-1）会塌缩成同名，仅在超长时补哈希无法避免
+// 这类 sanitize 冲突 → 第二个 Jobs.Create 报 AlreadyExists 致任务失败。无条件以源
+// taskID 的 sha8 区分，保证不同 taskID 永不撞名，同时确定性可重 get/list 且 ≤63、DNS-1123 合法。
 func makeJobName(taskID string) string {
-	sanitized := sanitizeName(taskID)
-	name := jobNamePrefix + sanitized
-	if len(name) <= 63 {
-		return name
-	}
 	sum := sha256.Sum256([]byte(taskID))
 	short := hex.EncodeToString(sum[:])[:8]
 	maxBody := 63 - len(jobNamePrefix) - 1 - len(short)
-	body := sanitized
+	body := sanitizeName(taskID)
 	if len(body) > maxBody {
 		body = strings.Trim(body[:maxBody], "-")
 	}
