@@ -72,7 +72,7 @@ async def test_graph_adapter_calls_task_with_expanded_kwargs(settings, monkeypat
 
 
 async def test_page_index_idempotent_when_hash_unchanged(monkeypatch) -> None:
-    """run_page_index：target_hash 命中当前 hash → 连续两次恒等 skipped，不调 build_full。"""
+    """run_page_index：上次构建基线 == 当前 hash → 连续两次恒等 skipped，不调 build_full。"""
     from codegraph.services.corpus_tree import CorpusTreeService
     from durable.tasks_impl import run_page_index
 
@@ -81,9 +81,13 @@ async def test_page_index_idempotent_when_hash_unchanged(monkeypatch) -> None:
     monkeypatch.setattr(
         CorpusTreeService, "compute_source_hash", AsyncMock(return_value="H")
     )
+    # 比对基线是「上次构建 active 快照的 source_hash」（CR-01），桩为同值即未变。
+    monkeypatch.setattr(
+        CorpusTreeService, "get_active_source_hash", AsyncMock(return_value="H")
+    )
 
-    first = await run_page_index(target_id="page-1", target_hash="H")
-    second = await run_page_index(target_id="page-1", target_hash="H")
+    first = await run_page_index(target_id="page-1")
+    second = await run_page_index(target_id="page-1")
 
     expected = {"status": "skipped", "reason": "hash_unchanged", "target_id": "page-1"}
     assert first == second == expected
