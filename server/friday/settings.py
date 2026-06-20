@@ -191,6 +191,34 @@ else:
         },
     }
 
+
+def _require_redis_for_multi_replica(*, expect_multi: bool, use_redis: bool) -> None:
+    """多副本 / 多 worker 部署必须启用 Redis channel layer 的运行期 fail-closed 校验。
+
+    抽成无副作用纯函数（不读 env、不触全局），便于单测直接断言而不必重载整个
+    settings 模块。``expect_multi=True``（声明多副本/多进程）且未启用 Redis channel
+    layer 时 raise ``ImproperlyConfigured``；否则 return None。
+    """
+    if expect_multi and not use_redis:
+        raise ImproperlyConfigured(
+            "多副本 / 多 worker 部署必须启用 Redis channel layer"
+            "（USE_REDIS_CHANNEL_LAYER=true + REDIS_URL），否则 WebSocket 推送跨副本丢消息；"
+            "单副本单 worker 才可用内存 channel layer。"
+        )
+
+
+# 多副本信号：helm configmap 在 server.replicaCount>1 / gunicornWorkers>1 时注入
+# FRIDAY_EXPECT_MULTI_REPLICA=true；单进程多 gunicorn worker 同样需共享 channel layer，
+# 故 GUNICORN_WORKERS>1 也触发校验。与 helm 模板期 fail 条件同源（web/server 层），
+# 避免"模板通过、运行期崩"的不对称。
+_EXPECT_MULTI_REPLICA = (
+    env.bool("FRIDAY_EXPECT_MULTI_REPLICA", default=False)
+    or env.int("GUNICORN_WORKERS", default=1) > 1
+)
+_require_redis_for_multi_replica(
+    expect_multi=_EXPECT_MULTI_REPLICA, use_redis=USE_REDIS_CHANNEL_LAYER
+)
+
 # Workflow idempotency backend migration entrypoint.
 # Current default remains in-memory for compatibility.
 WORKFLOW_IDEMPOTENCY_BACKEND = env.str("WORKFLOW_IDEMPOTENCY_BACKEND", default="memory")
