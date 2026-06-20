@@ -111,6 +111,51 @@ class GitLabClient(GitPlatformClient):
         except Exception:
             return False
 
+    async def find_open_merge_request(
+        self, source_branch: str, target_branch: str
+    ) -> MRCreateResult | None:
+        """查 GitLab 同 source→target 的 open MR（IDEMP-02 reuse-first fence）。
+
+        包装 ``project.mergerequests.list(source_branch=, target_branch=, state="opened")``，
+        命中首个 → 复用其 web_url/iid；空 → None；平台异常 fail-soft 返回 None
+        （绝不上抛，让调用方照常尝试创建）。token 绝不入日志。
+
+        Args:
+            source_branch: 功能（变更侧）分支名。
+            target_branch: 目标（base）分支名。
+
+        Returns:
+            命中 → MRCreateResult(success=True, mr_url=..., mr_id=...)；无/异常 → None。
+        """
+        try:
+            project = self._get_project()
+            mrs = await asyncio.to_thread(
+                project.mergerequests.list,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                state="opened",
+                get_all=False,
+            )
+            if not mrs:
+                return None
+            mr = mrs[0]
+            logger.info(
+                "gitlab_open_mr_found",
+                source=source_branch,
+                target=target_branch,
+                mr_id=mr.iid,
+            )
+            return MRCreateResult(success=True, mr_url=mr.web_url, mr_id=str(mr.iid))
+        except Exception as e:
+            # token 绝不入日志，仅记分支与 error（fail-soft，不阻断创建）
+            logger.warning(
+                "gitlab_find_open_mr_failed",
+                source=source_branch,
+                target=target_branch,
+                error=str(e),
+            )
+            return None
+
     async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
         """Create a GitLab merge request with optional reviewers.
 
