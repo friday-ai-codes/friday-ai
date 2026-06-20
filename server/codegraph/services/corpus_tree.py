@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid as uuid_mod
@@ -77,6 +78,34 @@ class CorpusTreeService:
             "built_by": snapshot.built_by,
             "created_at": snapshot.created_at.isoformat(),
         }
+
+    @classmethod
+    async def compute_source_hash(cls) -> str:
+        """全仓输入（id/ai_summary/facets）确定性指纹，供 run_page_index 按 hash 跳过重建。
+
+        取材沿用 ``build_full`` 的 ``.only("id","name","ai_summary","facets")``（剔除
+        ``_`` 前缀私有 facet 键），按 repo_id 排序后 ``json.dumps(..., sort_keys=True)``
+        → ``sha256``。相同仓库集合恒等同值；任一仓 ai_summary / facets 变化 → hash 变化。
+        """
+        from repositories.models import Repository
+
+        items: list[dict[str, Any]] = []
+        async for r in Repository.objects.filter(is_deleted=False).only(
+            "id", "name", "ai_summary", "facets"
+        ):
+            facets = {
+                k: v for k, v in (r.facets or {}).items() if not str(k).startswith("_")
+            }
+            items.append(
+                {
+                    "id": str(r.id),
+                    "ai_summary": r.ai_summary or "",
+                    "facets": facets,
+                }
+            )
+        items.sort(key=lambda x: x["id"])
+        payload = json.dumps(items, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     # ------------------------------------------------------------------
     # 全量聚类
@@ -141,14 +170,17 @@ class CorpusTreeService:
         if overrides:
             cls._apply_overrides(tree, overrides)
 
+        # 构建时算得输入指纹，落 snapshot 供下次比对（run_page_index hash 跳过依据）。
+        source_hash = await cls.compute_source_hash()
         snapshot = await cls._activate_new_snapshot(
-            tree, overrides, built_by="llm_full"
+            tree, overrides, built_by="llm_full", source_hash=source_hash
         )
         return {
             "status": "ok",
             "snapshot_id": str(snapshot.id),
             "domain_count": len(tree),
             "unassigned_count": len(unassigned),
+            "source_hash": source_hash,
         }
 
     # ------------------------------------------------------------------
@@ -282,6 +314,7 @@ class CorpusTreeService:
         overrides: dict[str, str],
         *,
         built_by: str,
+        source_hash: str = "",
     ):
         from repositories.models import CorpusTreeSnapshot
 
@@ -293,6 +326,7 @@ class CorpusTreeService:
             manual_overrides=overrides,
             is_active=True,
             built_by=built_by,
+            source_hash=source_hash,
         )
         await CorpusTreeSnapshot.objects.filter(is_active=True).exclude(
             id=snapshot.id

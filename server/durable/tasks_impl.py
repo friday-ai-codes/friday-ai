@@ -127,12 +127,33 @@ async def run_crawl_ingest(*, batch_id: str, concurrency: int = 3) -> dict[str, 
     return {"status": "ok", "batch_id": batch_id, "count": len(runs)}
 
 
-async def run_page_index(*, target_id: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    """页面级索引占位任务体（Phase 62 接入实际 ingest）。
+async def run_page_index(
+    *, target_id: str | None = None, target_hash: str = "", **kwargs: Any
+) -> dict[str, Any]:
+    """页面级索引 / 全局知识树生成任务体（Phase 62-02，PAGEIDX-01）：真实生成 + target-hash 跳过。
 
-    当前仅记一条 debug 后返回恒等 dict，**不做任何写库 / 外部副作用**——重复执行
-    恒等返回、零副作用即天然幂等（per CONTEXT「占位 handler + 幂等测试，实际接入留
-    Phase 62」）。
+    先算当前全仓输入指纹 ``current = CorpusTreeService.compute_source_hash()``：
+
+    - 若入参 ``target_hash`` 非空且等于 ``current`` → 返回 ``skipped``，**不调
+      ``build_full``**（hash 未变即域树输入未变，重复执行无重复 snapshot——研究 Pitfall 4）；
+    - 否则调用天然幂等的 ``CorpusTreeService.build_full()``（unassigned 兜底 + 沿用旧 pin），
+      build_full 自身落新 snapshot（写 ``source_hash`` 供下次比对），本任务体不旁路写库。
+
+    keyword-only + ``**kwargs`` 容错对齐双后端 payload 契约、向后兼容旧占位调用方。
     """
-    logger.debug("durable_page_index_noop", target_id=target_id, extra=kwargs or None)
-    return {"status": "noop", "target_id": target_id}
+    from codegraph.services.corpus_tree import CorpusTreeService
+
+    current = await CorpusTreeService.compute_source_hash()
+    if target_hash and target_hash == current:
+        logger.info(
+            "durable_page_index_skipped", target_id=target_id, reason="hash_unchanged"
+        )
+        return {"status": "skipped", "reason": "hash_unchanged", "target_id": target_id}
+
+    result = await CorpusTreeService.build_full()
+    logger.info(
+        "durable_page_index_built",
+        target_id=target_id,
+        status=result.get("status"),
+    )
+    return {"status": result.get("status"), "target_id": target_id, "source_hash": current}
