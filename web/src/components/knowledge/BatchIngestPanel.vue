@@ -27,9 +27,10 @@ const QUEUE_KEY = ['crawl-ingest-queue'] as const
 const queueQuery = useQuery({
   queryKey: QUEUE_KEY,
   queryFn: () => ingestApi.listQueue(),
-  // 存在 running/queued 项 → 2s 轮询；全部终态停轮（沿用 ReconcilePanel 范式）。
+  // 仅存在 running 项 → 2s 轮询；否则停轮（契约：queued 未点开始不会自行推进，
+  // 纳入轮询将永久空转，故按 UI-SPEC 仅 running 触发，沿用 ReconcilePanel 范式）。
   refetchInterval: query =>
-    (query.state.data?.some(r => r.status === 'running' || r.status === 'queued') ? 2000 : false),
+    (query.state.data?.some(r => r.status === 'running') ? 2000 : false),
 })
 
 const queueItems = computed<CrawlQueueItem[]>(() => queueQuery.data.value ?? [])
@@ -280,8 +281,9 @@ function fmtTime(iso: string | null): string {
       </Button>
     </div>
 
-    <!-- loading：骨架占位 -->
-    <div v-if="isLoading" class="p-5 space-y-3">
+    <!-- loading：骨架占位（含读屏可读 loading 文案，对视觉无侵入） -->
+    <div v-if="isLoading" class="p-5 space-y-3" role="status" aria-live="polite">
+      <span class="sr-only">{{ t('crawlQueue.loading') }}</span>
       <Skeleton v-for="n in 3" :key="n" class="h-14 w-full" />
     </div>
 
@@ -315,7 +317,7 @@ function fmtTime(iso: string | null): string {
       >
         <!-- 第一行：url 集合摘要 + 状态徽标 -->
         <div class="flex items-center justify-between gap-3 flex-wrap">
-          <span class="text-sm font-medium truncate max-w-[55%]" :title="item.batch_id">
+          <span class="text-sm font-medium truncate max-w-[55%]">
             {{ t('crawlQueue.item.urlSummary', { count: item.url_count }) }}
           </span>
           <Badge
