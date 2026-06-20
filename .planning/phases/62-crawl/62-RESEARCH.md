@@ -376,24 +376,28 @@ const queueQuery = useQuery({
 
 **确认建议:** A1/A2/A3 应在 plan-phase 经 Claude's Discretion 决策落地（CONTEXT 已授权 Claude 决断这三项）。A5 影响动作端点粒度，建议 plan 时明确。
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **OQ-1: `IngestRun` 扩列范围**
    - What we know: 现模型有 status(RUNNING/COMPLETED/FAILED)/batch_id/steps/board_url/mr_url/project/error/时间戳（`ingest_run.py:50`）。
    - What's unclear: 加 `durable_job_id` + `idempotency_key` + `QUEUED`/`STOPPED` 是否够，是否需 `concurrency`/`source_url`/`crawl_url` 留痕列。
    - Recommendation: 最小扩列（durable_job_id/idempotency_key/2 状态）+ migration 兼容存量；其余按需。
+   - **RESOLVED:** 采纳最小扩列 → 62-01（`IngestRun.Status` 加 `QUEUED`/`STOPPED` + `durable_job_id` + `idempotency_key(db_index)` 列 + migration 0024，default 兼容存量不回退）。
 
 2. **OQ-2: per-repo PageIndex（dispatch_repo_summary）是否本阶段收口**
    - What we know: `repositories/views.py:562` `_schedule_auto_summary` → `dispatch_repo_summary` 经 Runner 容器（DispatchTask，跨进程），与本地 durable 任务模型不同；CONTEXT 措辞「`tree_views.py` 等裸 background_runner」。
    - What's unclear: 「等」是否含 per-repo summary 的 `_schedule_auto_summary`。
    - Recommendation: 本阶段先收口 `tree_views.py`（`CorpusTreeService.build_full`，纯本地 LLM 任务）；per-repo summary dispatch 的 durable 化（让 dispatch 步骤本身可重启续跑）作为 stretch，若纳入需把「建 session + dispatch」封进 page_index 任务体并按 repo file-set hash 跳过。
+   - **RESOLVED:** per-repo summary durable 化**不在 Phase 62 范围**（保持 `_schedule_auto_summary` 经 Runner 容器现状）；仅收口 `tree_views.py` 的 `build_full`，per-repo dispatch durable 化跟踪到后续 Phase 63（部署/runner dispatch 区域）。
 
 3. **OQ-3: page_index target hash 精确定义**
    - What we know: 域树输入 = 全仓 `ai_summary` + `facets`（`corpus_tree.py:104`）；per-repo 树输入 = 仓库源码（FileIndex paths）。
    - What's unclear: hash 存哪（`CorpusTreeSnapshot.source_hash` 新列 vs `metadata` JSON）。
    - Recommendation: 加 `CorpusTreeSnapshot.source_hash` 列（或写入既有 metadata），构建后落值，下次 defer 前比对。
+   - **RESOLVED:** target hash = 全仓 `(id, ai_summary, facets)` 排序后 sha256（域树输入指纹），存于 `CorpusTreeSnapshot.source_hash` 新列 → 62-02（构建时落值，下次 defer 前比对跳过）。
 
 4. **OQ-4: 队列粒度（per-batch vs per-run job）** — 见 A5；建议 per-batch（与现 `run_json_batch` 批语义一致），行内 start/stop 作用于整批。
+   - **RESOLVED:** 采纳 per-batch 粒度 → 62-01（一批一个 durable job，`idempotency_key=crawl_ingest:{batch_id}`，行内 start/stop/retry 作用于整批）。
 
 ## Environment Availability
 
