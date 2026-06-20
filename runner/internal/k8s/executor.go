@@ -27,7 +27,6 @@ var _ ws.ExecutorService = (*KubernetesExecutor)(nil)
 
 const (
 	defaultPollInterval = 500 * time.Millisecond
-	defaultAnswerPollN  = 10 // *500ms ≈ 5s，best-effort 拿 Pod IP 的上限
 	defaultLogPollN     = 30 // *500ms ≈ 15s，等 Pod 离开 Pending 的上限
 )
 
@@ -53,9 +52,8 @@ type KubernetesExecutor struct {
 	imagePullSecret string
 
 	// poll 参数全部有界，避免在 fake clientset / Pod 未就绪时挂死。
-	pollInterval  time.Duration
-	answerPollMax int
-	logPollMax    int
+	pollInterval time.Duration
+	logPollMax   int
 }
 
 // New 构造 KubernetesExecutor：优先 in-cluster config，回退 kubeconfig（dev）。
@@ -94,7 +92,6 @@ func newExecutor(cs kubernetes.Interface, cfg Config, ns string) *KubernetesExec
 		ttlSeconds:      cfg.TTLSeconds,
 		imagePullSecret: cfg.ImagePullSecret,
 		pollInterval:    defaultPollInterval,
-		answerPollMax:   defaultAnswerPollN,
 		logPollMax:      defaultLogPollN,
 	}
 }
@@ -130,8 +127,13 @@ func (k *KubernetesExecutor) config() Config {
 }
 
 // StartContainer 创建 batch/v1 Job 运行任务容器。containerID = "<ns>/<jobName>"。
-// env 复用共享 exec.BuildContainerEnv（无前缀漂移）。answerEndpoint best-effort：
-// 有界 poll Pod IP，拿不到返回空（对齐 docker inspect 失败回退，不阻断主流程）。
+// env 复用共享 exec.BuildContainerEnv（无前缀漂移）。
+//
+// answerEndpoint 在 k8s 下恒空（WR-01）：HITL/answer 投递是本阶段已知未支持限制，
+// 而新建 Job 的 Pod 几乎不可能在数秒内被调度并分到 IP，旧逻辑同步 poll Pod IP（≈5s）
+// 几乎必然耗尽预算返回空串，却串行卡在调度热路径上、给每个 k8s 任务派发凭空增加数秒
+// 时延。这里直接返回空（runTask 仅在 answer_endpoint 非空时才推送），消除该税；
+// 待 HITL 真正接入时再以惰性/异步方式解析 IP。
 func (k *KubernetesExecutor) StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (string, string, error) {
 	jobName := makeJobName(task.TaskID)
 	env := toEnvVars(exec.BuildContainerEnv(task, callbackURL, callbackToken))
@@ -141,34 +143,11 @@ func (k *KubernetesExecutor) StartContainer(ctx context.Context, task ws.TaskPay
 		return "", "", fmt.Errorf("创建 Job 失败: %w", err)
 	}
 	containerID := k.namespace + "/" + jobName
-	answerEndpoint := k.pollAnswerEndpoint(ctx, jobName)
 	log.Info().
 		Str("task_id", task.TaskID).
 		Str("job", containerID).
-		Str("answer_endpoint", answerEndpoint).
 		Msg("k8s_job_started")
-	return containerID, answerEndpoint, nil
-}
-
-// pollAnswerEndpoint 有界 poll Job 的 Pod，拿到 Pod IP 即拼 answerEndpoint，否则返回空。
-func (k *KubernetesExecutor) pollAnswerEndpoint(ctx context.Context, jobName string) string {
-	sel := labelKeyJob + "=" + jobName
-	for i := 0; i < k.answerPollMax; i++ {
-		pods, err := k.cs.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
-		if err == nil {
-			for idx := range pods.Items {
-				if ip := pods.Items[idx].Status.PodIP; ip != "" {
-					return fmt.Sprintf("http://%s:%d/answer", ip, answerPort)
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ""
-		case <-time.After(k.pollInterval):
-		}
-	}
-	return ""
+	return containerID, "", nil
 }
 
 // WaitContainer watch Job 的 Pod，取 terminated exitCode。
