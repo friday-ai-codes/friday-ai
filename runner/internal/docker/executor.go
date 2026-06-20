@@ -4,10 +4,8 @@ import (
 	"archive/tar"
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -19,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/friday-ai-codes/friday-ai/runner/internal/exec"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
 
@@ -116,63 +115,10 @@ func (e *DockerExecutor) ensureImage(ctx context.Context, ref string) error {
 	return nil
 }
 
+// buildContainerEnv 薄委托共享的 exec.BuildContainerEnv，保持函数名/签名不变以使
+// docker executor_test.go 逐字不改（零回归命门，Pitfall 6）。
 func buildContainerEnv(task ws.TaskPayload, callbackURL, callbackToken string) []string {
-	remoteTools, _ := json.Marshal(task.Payload["remote_tools"])
-	prompt, _ := task.Payload["prompt"].(string)
-	taskMode := taskModeForPython(task.TaskType)
-	env := []string{
-		// 旧协议变量（兼容已有代码）
-		"FRIDAY_SESSION_ID=" + task.TaskID,
-		"FRIDAY_TASK_TYPE=" + task.TaskType,
-		"FRIDAY_CALLBACK_URL=" + callbackURL,
-		"FRIDAY_CALLBACK_TOKEN=" + callbackToken,
-		"FRIDAY_GIT_REPO_URL=" + task.RepoURL,
-		"FRIDAY_GIT_BRANCH=" + task.Branch,
-		fmt.Sprintf("FRIDAY_TASK_TIMEOUT=%d", task.Timeout),
-		"FRIDAY_ANSWER_PORT=8977",
-		"FRIDAY_REMOTE_TOOLS=" + string(remoteTools),
-		// git-wrapper.sh 读取该变量，必须保留 coding/coding_commit 语义来拦截 git 写操作。
-		"FRIDAY_TASK_MODE=" + task.TaskType,
-		// pydantic TaskConfig 需要 FRIDAY_TASK_ 前缀
-		"FRIDAY_TASK_TASK_ID=" + task.TaskID,
-		"FRIDAY_TASK_TASK_DESCRIPTION=" + prompt,
-		"FRIDAY_TASK_TASK_MODE=" + taskMode,
-		"FRIDAY_TASK_TASK_TYPE=" + task.TaskType,
-		"FRIDAY_TASK_GIT_REPO_URL=" + task.RepoURL,
-		"FRIDAY_TASK_GIT_BRANCH=" + task.Branch,
-		"FRIDAY_TASK_CALLBACK_URL=" + callbackURL,
-		"FRIDAY_TASK_CALLBACK_TOKEN=" + callbackToken,
-		// 前缀修复（Pitfall 2）：TaskConfig 只认 FRIDAY_TASK_ 前缀，与旧 FRIDAY_REMOTE_TOOLS 同源同值。
-		"FRIDAY_TASK_REMOTE_TOOLS=" + string(remoteTools),
-		fmt.Sprintf("FRIDAY_TASK_EXECUTION_TIMEOUT=%d", task.Timeout),
-		"GIT_SSL_NO_VERIFY=true",
-		"CLAUDE_CODE_DISABLE_NONINTERACTIVE_SUBAGENTS=true",
-		// 关闭 claude CLI 遥测/统计/bootstrap 等非必要外联：
-		// ANTHROPIC_BASE_URL 指向第三方代理时这些端点持续 403 刷屏。
-		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
-	}
-	// 从 task.Payload["metadata"] 中提取 env_ 前缀的字段注入容器环境变量
-	// 服务端通过 DispatchTask.metadata 传入，例如 {"env_FRIDAY_TASK_CLAUDE_API_KEY": "sk-..."}
-	if meta, ok := task.Payload["metadata"].(map[string]any); ok {
-		for k, v := range meta {
-			if strings.HasPrefix(k, "env_") {
-				envKey := strings.TrimPrefix(k, "env_")
-				if s, ok := v.(string); ok && s != "" {
-					env = append(env, envKey+"="+s)
-				}
-			}
-		}
-	}
-	return env
-}
-
-func taskModeForPython(taskType string) string {
-	switch taskType {
-	case "coding", "coding_commit":
-		return "execute"
-	default:
-		return taskType
-	}
+	return exec.BuildContainerEnv(task, callbackURL, callbackToken)
 }
 
 func (e *DockerExecutor) WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (int, string, error) {
