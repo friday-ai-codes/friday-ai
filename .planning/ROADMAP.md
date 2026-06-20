@@ -36,7 +36,10 @@
   - [x] 61-01-PLAN.md — durable index/graph/page_index 任务层 + 双后端 payload adapter + DurableConfig.ready 双后端注册 + 幂等基线（wave 1）
   - [x] 61-02-PLAN.md — 迁移全部 5 处 index/graph 入队点改 DurableTaskService.defer + 重复投递去重/grep 零残留守护（wave 2）
   - [x] 61-03-PLAN.md — 一次性迁移命令 + ResumableTask MIGRATED/legacy id 迁移 + reconcile "无 durable 接管才标 FAILED" + background_runner 降级（wave 2）
-- [ ] **Phase 62: 爬取+入库 durable 队列 + PageIndex 接入** (0/? plans) - 链接爬取+入库改 durable 任务（入队/开始/停止/重试/断点恢复，刷新与容器重建不丢，前后端可用，首个用户可见垂直切片）；PageIndex/TOC 按 hash 幂等接入 — CRAWL-01, CRAWL-02, PAGEIDX-01
+- [ ] **Phase 62: 爬取+入库 durable 队列 + PageIndex 接入** (0/3 plans) - 链接爬取+入库改 durable 任务（入队/开始/停止/重试/断点恢复，刷新与容器重建不丢，前后端可用，首个用户可见垂直切片）；PageIndex/TOC 按 hash 幂等接入 — CRAWL-01, CRAWL-02, PAGEIDX-01
+  - [ ] 62-01-PLAN.md — run_crawl_ingest durable 任务体 + IngestRun 扩列(QUEUED/STOPPED/durable_job_id/idempotency_key)迁移 + 队列动作端点(enqueue/list/detail/start/stop/retry) + 幂等守护（wave 1）
+  - [ ] 62-02-PLAN.md — 填充 run_page_index(build_full + target-hash 跳过) + CorpusTreeSnapshot.source_hash + tree_views.py 裸 background_runner → durable defer（wave 2）
+  - [ ] 62-03-PLAN.md — BatchIngestPanel 后端恢复队列 + 行内开始/停止/重试 + zh-CN.json crawlQueue.* + vitest 守护（wave 2）
 - [ ] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/? plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02
 - [ ] **Phase 64: runner k8s Job executor** (0/? plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
 
@@ -93,7 +96,12 @@
   3. 入库 at-least-once 幂等（复用现有 upsert/`IngestRun` 范式），重复执行不产生重复数据
   4. PageIndex/TOC/summary/tree 生成接入 durable queue（收口 `tree_views.py` 等裸 `background_runner` 路径），按 target hash 幂等（hash 未变跳过），重复执行安全
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+
+- 62-01 (wave 1): run_crawl_ingest durable 任务体 + IngestRun 扩列迁移 + 队列动作端点 + 幂等守护 — CRAWL-01
+- 62-02 (wave 2): run_page_index 真实生成(build_full + target-hash 跳过) + source_hash 列 + tree_views durable defer — PAGEIDX-01
+- 62-03 (wave 2): BatchIngestPanel 后端恢复队列 + 行内动作 + zh-CN.json + vitest 守护 — CRAWL-02
+
 **UI hint**: yes
 
 ### Phase 63: 部署硬化 + 外部副作用 fencing
