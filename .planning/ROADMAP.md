@@ -41,7 +41,7 @@
   - [x] 62-02-PLAN.md — 填充 run_page_index(build_full + target-hash 跳过) + CorpusTreeSnapshot.source_hash + tree_views.py 裸 background_runner → durable defer（wave 2）
   - [x] 62-03-PLAN.md — BatchIngestPanel 后端恢复队列 + 行内开始/停止/重试 + zh-CN.json crawlQueue.* + vitest 守护（wave 2）
 - [x] **Phase 63: 部署硬化 + 外部副作用 fencing** (0/3 plans) - worker 优雅终止（SIGTERM 释放租约）；compose 与 helm 同构拆 web/worker/scheduler；KEDA Postgres scaler + PDB + 多副本 Redis channel layer 强约束；外部副作用（飞书通知/建群、MR/PR 创建）上 fencing/outbox — DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02 (completed 2026-06-20)
-- [ ] **Phase 64: runner k8s Job executor** (0/? plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
+- [ ] **Phase 64: runner k8s Job executor** (0/2 plans) - runner 抽 executor 接口（docker/k8s 两实现，docker 零回归）+ k8s Job executor 实现（去 docker.sock，经 k8s API 起 Job/Pod，RBAC/日志流/清理，k0s/containerd 友好）；相对独立排最后 — RUNNER-01, RUNNER-02
 
 ## Phase Details
 
@@ -133,7 +133,10 @@
   2. k8s Job executor 经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），含 ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试
   3. 在 k0s/containerd 环境可经 k8s Job executor 运行任务容器（不依赖 docker.sock）
 
-**Plans**: TBD
+**Plans**: 2 plans (2 waves)
+
+- 64-01 (wave 1): client-go 依赖 + 共享 BuildContainerEnv（docker 零回归）+ executor 选择接通（k8s/kubernetes 归一）+ KubernetesExecutor 核心三方法（StartContainer/WaitContainer/StreamLogs）+ callbackURL host 可配置 + fake/选择单测 — RUNNER-01, RUNNER-02
+- 64-02 (wave 2): KubernetesExecutor 生命周期四方法（Remove/StartupCleanup/ZombieScan/ReadContainerFile）+ helm runner SA/RBAC（values-gated）+ k8s 模式去 docker.sock + Pod IP 回调 host 注入 + 生命周期/helm 渲染验证 — RUNNER-02
 
 <details>
 <summary>✅ v0.11.0 开放与协作 (Phases 56–59) — SHIPPED 2026-06-17 — 审计 PASS</summary>
