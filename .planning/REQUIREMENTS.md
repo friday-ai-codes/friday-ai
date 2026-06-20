@@ -33,9 +33,9 @@
 
 ### 爬取+入库 durable 队列（CRAWL）
 
-- [ ] **CRAWL-01**: 链接爬取+入库改 durable 任务——后端支持入队 / 查询 / 开始 / 停止 / 重试 / 断点恢复；状态以 DB 为真相源，刷新页面与 `docker compose up -d`/Pod 重建后任务不丢、自动续跑；入库 at-least-once 幂等（复用现有 upsert/`IngestRun` 范式）。
-- [ ] **CRAWL-02**: 前端爬取任务队列面板（`BatchIngestPanel`）——贴链接入队、队列列表 + 实时状态、行内开始/停止/重试、刷新后从后端恢复（不再依赖组件内存 `batchId`/`ref`）；`feishu_not_configured` 引导深链保留；i18n 默认中文。
-- [ ] **PAGEIDX-01**: PageIndex / TOC / summary / tree 生成接入 durable queue（收口 `repositories/tree_views.py` 等裸 `background_runner` 路径），按 target hash 幂等（hash 未变跳过），重复执行安全。
+- [x] **CRAWL-01**: 链接爬取+入库改 durable 任务——后端支持入队 / 查询 / 开始 / 停止 / 重试 / 断点恢复；状态以 DB 为真相源，刷新页面与 `docker compose up -d`/Pod 重建后任务不丢、自动续跑；入库 at-least-once 幂等（复用现有 upsert/`IngestRun` 范式）。
+- [x] **CRAWL-02**: 前端爬取任务队列面板（`BatchIngestPanel`）——贴链接入队、队列列表 + 实时状态、行内开始/停止/重试、刷新后从后端恢复（不再依赖组件内存 `batchId`/`ref`）；`feishu_not_configured` 引导深链保留；i18n 默认中文。
+- [x] **PAGEIDX-01**: PageIndex / TOC / summary / tree 生成接入 durable queue（收口 `repositories/tree_views.py` 等裸 `background_runner` 路径），按 target hash 幂等（hash 未变跳过），重复执行安全。
 
 ### 部署硬化（DEPLOY）
 
@@ -79,9 +79,9 @@
 | MIGRATE-01 | Phase 61 | Complete |
 | MIGRATE-02 | Phase 61 | Complete |
 | IDEMP-01 | Phase 61 | Complete |
-| CRAWL-01 | Phase 62 | Pending |
-| CRAWL-02 | Phase 62 | Pending |
-| PAGEIDX-01 | Phase 62 | Pending |
+| CRAWL-01 | Phase 62 | Complete |
+| CRAWL-02 | Phase 62 | Complete |
+| PAGEIDX-01 | Phase 62 | Complete |
 | DEPLOY-01 | Phase 63 | Pending |
 | DEPLOY-02 | Phase 63 | Pending |
 | DEPLOY-03 | Phase 63 | Pending |
