@@ -38,6 +38,15 @@ type Config struct {
 	BackoffLimit    int32
 	TTLSeconds      int32
 	ImagePullSecret string
+
+	// ActiveDeadlineSeconds >0 时作为 Job 级超时兜底（秒）：runner 永久丢失时由
+	// k8s 主动终止超期任务 Job，不再单纯依赖 runner 存活或重启扫描。0=禁用（默认安全）。
+	ActiveDeadlineSeconds int64
+	// 任务 Pod 的资源 requests/limits（values 注入，留空=不设置，行为同旧版）。
+	CPURequest    string
+	MemoryRequest string
+	CPULimit      string
+	MemoryLimit   string
 }
 
 // KubernetesExecutor 经 k8s API（client-go）以 Job 形态运行任务容器。
@@ -50,6 +59,12 @@ type KubernetesExecutor struct {
 	backoffLimit    int32
 	ttlSeconds      int32
 	imagePullSecret string
+
+	activeDeadlineSeconds int64
+	cpuRequest            string
+	memoryRequest         string
+	cpuLimit              string
+	memoryLimit           string
 
 	// poll 参数全部有界，避免在 fake clientset / Pod 未就绪时挂死。
 	pollInterval time.Duration
@@ -84,15 +99,20 @@ func NewWithClientset(cs kubernetes.Interface, cfg Config) *KubernetesExecutor {
 
 func newExecutor(cs kubernetes.Interface, cfg Config, ns string) *KubernetesExecutor {
 	return &KubernetesExecutor{
-		cs:              cs,
-		namespace:       ns,
-		defaultImage:    cfg.DefaultImage,
-		runnerName:      cfg.RunnerName,
-		backoffLimit:    cfg.BackoffLimit,
-		ttlSeconds:      cfg.TTLSeconds,
-		imagePullSecret: cfg.ImagePullSecret,
-		pollInterval:    defaultPollInterval,
-		logPollMax:      defaultLogPollN,
+		cs:                    cs,
+		namespace:             ns,
+		defaultImage:          cfg.DefaultImage,
+		runnerName:            cfg.RunnerName,
+		backoffLimit:          cfg.BackoffLimit,
+		ttlSeconds:            cfg.TTLSeconds,
+		imagePullSecret:       cfg.ImagePullSecret,
+		activeDeadlineSeconds: cfg.ActiveDeadlineSeconds,
+		cpuRequest:            cfg.CPURequest,
+		memoryRequest:         cfg.MemoryRequest,
+		cpuLimit:              cfg.CPULimit,
+		memoryLimit:           cfg.MemoryLimit,
+		pollInterval:          defaultPollInterval,
+		logPollMax:            defaultLogPollN,
 	}
 }
 
@@ -117,12 +137,17 @@ func detectNamespace() string {
 
 func (k *KubernetesExecutor) config() Config {
 	return Config{
-		Namespace:       k.namespace,
-		DefaultImage:    k.defaultImage,
-		RunnerName:      k.runnerName,
-		BackoffLimit:    k.backoffLimit,
-		TTLSeconds:      k.ttlSeconds,
-		ImagePullSecret: k.imagePullSecret,
+		Namespace:             k.namespace,
+		DefaultImage:          k.defaultImage,
+		RunnerName:            k.runnerName,
+		BackoffLimit:          k.backoffLimit,
+		TTLSeconds:            k.ttlSeconds,
+		ImagePullSecret:       k.imagePullSecret,
+		ActiveDeadlineSeconds: k.activeDeadlineSeconds,
+		CPURequest:            k.cpuRequest,
+		MemoryRequest:         k.memoryRequest,
+		CPULimit:              k.cpuLimit,
+		MemoryLimit:           k.memoryLimit,
 	}
 }
 

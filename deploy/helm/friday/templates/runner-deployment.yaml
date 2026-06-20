@@ -63,6 +63,33 @@ spec:
             - name: FRIDAY_RUNNER_K8S_IMAGE_PULL_SECRET
               value: {{ .Values.runner.k8s.imagePullSecret | quote }}
             {{- end }}
+            {{- if gt (int .Values.runner.k8s.activeDeadlineSeconds) 0 }}
+            # 任务 Job 级超时兜底：runner 永久丢失时由 k8s 主动终止超期 Job。
+            - name: FRIDAY_RUNNER_K8S_ACTIVE_DEADLINE
+              value: {{ .Values.runner.k8s.activeDeadlineSeconds | quote }}
+            {{- end }}
+            {{- with .Values.runner.k8s.taskResources }}
+            {{- with .requests }}
+            {{- if .cpu }}
+            - name: FRIDAY_RUNNER_K8S_CPU_REQUEST
+              value: {{ .cpu | quote }}
+            {{- end }}
+            {{- if .memory }}
+            - name: FRIDAY_RUNNER_K8S_MEMORY_REQUEST
+              value: {{ .memory | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .limits }}
+            {{- if .cpu }}
+            - name: FRIDAY_RUNNER_K8S_CPU_LIMIT
+              value: {{ .cpu | quote }}
+            {{- end }}
+            {{- if .memory }}
+            - name: FRIDAY_RUNNER_K8S_MEMORY_LIMIT
+              value: {{ .memory | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- end }}
           {{- if not $isK8s }}
           volumeMounts:

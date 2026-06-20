@@ -7,6 +7,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
@@ -47,10 +48,24 @@ func buildJobSpec(cfg Config, task ws.TaskPayload, jobName string, env []corev1.
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Env:             env,
 			Ports:           []corev1.ContainerPort{{ContainerPort: answerPort}},
+			Resources:       buildResources(cfg),
 		}},
 	}
 	if cfg.ImagePullSecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: cfg.ImagePullSecret}}
+	}
+	jobSpec := batchv1.JobSpec{
+		BackoffLimit:            &backoff,
+		TTLSecondsAfterFinished: &ttl,
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{Labels: labels},
+			Spec:       podSpec,
+		},
+	}
+	// values-gated 兜底：>0 时由 k8s 主动终止超期任务 Job（runner 永久丢失也不悬挂）。
+	if cfg.ActiveDeadlineSeconds > 0 {
+		add := cfg.ActiveDeadlineSeconds
+		jobSpec.ActiveDeadlineSeconds = &add
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,15 +73,39 @@ func buildJobSpec(cfg Config, task ws.TaskPayload, jobName string, env []corev1.
 			Namespace: cfg.Namespace,
 			Labels:    labels,
 		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoff,
-			TTLSecondsAfterFinished: &ttl,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec:       podSpec,
-			},
-		},
+		Spec: jobSpec,
 	}
+}
+
+// buildResources 由 values 注入的 requests/limits 装配 ResourceRequirements。
+// 各项留空或无法解析则跳过，全空时返回零值（不设置 resources，行为同旧版）。
+func buildResources(cfg Config) corev1.ResourceRequirements {
+	var res corev1.ResourceRequirements
+	if rl := buildResourceList(cfg.CPURequest, cfg.MemoryRequest); len(rl) > 0 {
+		res.Requests = rl
+	}
+	if rl := buildResourceList(cfg.CPULimit, cfg.MemoryLimit); len(rl) > 0 {
+		res.Limits = rl
+	}
+	return res
+}
+
+func buildResourceList(cpu, memory string) corev1.ResourceList {
+	rl := corev1.ResourceList{}
+	if cpu != "" {
+		if q, err := resource.ParseQuantity(cpu); err == nil {
+			rl[corev1.ResourceCPU] = q
+		}
+	}
+	if memory != "" {
+		if q, err := resource.ParseQuantity(memory); err == nil {
+			rl[corev1.ResourceMemory] = q
+		}
+	}
+	if len(rl) == 0 {
+		return nil
+	}
+	return rl
 }
 
 // toEnvVars 将 docker 形态的 []string("K=V") 适配为 []corev1.EnvVar。
