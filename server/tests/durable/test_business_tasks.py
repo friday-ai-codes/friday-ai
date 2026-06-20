@@ -67,19 +67,27 @@ async def test_graph_adapter_calls_task_with_expanded_kwargs(settings, monkeypat
 
 
 # ---------------------------------------------------------------------------
-# Test 3：page_index 占位 handler 幂等（恒等返回、零副作用）
+# Test 3：page_index hash 未变重复执行幂等（恒等 skipped、不调 build_full）
 # ---------------------------------------------------------------------------
 
 
-async def test_page_index_placeholder_is_idempotent() -> None:
-    """run_page_index 连续两次返回等值 dict，无任何写库 / 外部副作用。"""
+async def test_page_index_idempotent_when_hash_unchanged(monkeypatch) -> None:
+    """run_page_index：target_hash 命中当前 hash → 连续两次恒等 skipped，不调 build_full。"""
+    from codegraph.services.corpus_tree import CorpusTreeService
     from durable.tasks_impl import run_page_index
 
-    first = await run_page_index(target_id="page-1")
-    second = await run_page_index(target_id="page-1")
+    build_spy = AsyncMock(return_value={"status": "ok"})
+    monkeypatch.setattr(CorpusTreeService, "build_full", build_spy)
+    monkeypatch.setattr(
+        CorpusTreeService, "compute_source_hash", AsyncMock(return_value="H")
+    )
 
-    assert first == second == {"status": "noop", "target_id": "page-1"}
-    # 占位 handler 仅返回纯 dict，本身无副作用——恒等返回即天然幂等。
+    first = await run_page_index(target_id="page-1", target_hash="H")
+    second = await run_page_index(target_id="page-1", target_hash="H")
+
+    expected = {"status": "skipped", "reason": "hash_unchanged", "target_id": "page-1"}
+    assert first == second == expected
+    build_spy.assert_not_called()
     assert isinstance(first, dict)
 
 
