@@ -59,12 +59,17 @@ var runCmd = &cobra.Command{
 			executor = exec
 		case "kubernetes":
 			exec, err := k8s.New(k8s.Config{
-				Namespace:       config.GetK8sNamespace(),
-				DefaultImage:    config.GetDefaultImage(),
-				RunnerName:      config.GetRunnerName(),
-				BackoffLimit:    int32(config.GetK8sBackoffLimit()),
-				TTLSeconds:      int32(config.GetK8sTTLSeconds()),
-				ImagePullSecret: config.GetK8sImagePullSecret(),
+				Namespace:             config.GetK8sNamespace(),
+				DefaultImage:          config.GetDefaultImage(),
+				RunnerName:            config.GetRunnerName(),
+				BackoffLimit:          int32(config.GetK8sBackoffLimit()),
+				TTLSeconds:            int32(config.GetK8sTTLSeconds()),
+				ImagePullSecret:       config.GetK8sImagePullSecret(),
+				ActiveDeadlineSeconds: config.GetK8sActiveDeadline(),
+				CPURequest:            config.GetK8sCPURequest(),
+				MemoryRequest:         config.GetK8sMemoryRequest(),
+				CPULimit:              config.GetK8sCPULimit(),
+				MemoryLimit:           config.GetK8sMemoryLimit(),
 			})
 			if err != nil {
 				return fmt.Errorf("初始化 Kubernetes 执行器失败: %w", err)

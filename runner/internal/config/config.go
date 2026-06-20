@@ -58,6 +58,11 @@ func bindEnvVars() {
 	_ = viper.BindEnv("executor.k8s.ttl", "FRIDAY_RUNNER_K8S_TTL")
 	_ = viper.BindEnv("executor.k8s.service_account", "FRIDAY_RUNNER_K8S_SERVICE_ACCOUNT")
 	_ = viper.BindEnv("executor.k8s.image_pull_secret", "FRIDAY_RUNNER_K8S_IMAGE_PULL_SECRET")
+	_ = viper.BindEnv("executor.k8s.active_deadline", "FRIDAY_RUNNER_K8S_ACTIVE_DEADLINE")
+	_ = viper.BindEnv("executor.k8s.cpu_request", "FRIDAY_RUNNER_K8S_CPU_REQUEST")
+	_ = viper.BindEnv("executor.k8s.memory_request", "FRIDAY_RUNNER_K8S_MEMORY_REQUEST")
+	_ = viper.BindEnv("executor.k8s.cpu_limit", "FRIDAY_RUNNER_K8S_CPU_LIMIT")
+	_ = viper.BindEnv("executor.k8s.memory_limit", "FRIDAY_RUNNER_K8S_MEMORY_LIMIT")
 }
 
 func SaveConfig(serverURL, encryptedToken, name string, concurrent int) error {
@@ -137,3 +142,12 @@ func GetK8sTTLSeconds() int {
 }
 
 func GetK8sImagePullSecret() string { return viper.GetString("executor.k8s.image_pull_secret") }
+
+// GetK8sActiveDeadline 返回任务 Job 的 activeDeadlineSeconds 兜底（秒）；默认 0=禁用。
+func GetK8sActiveDeadline() int64 { return viper.GetInt64("executor.k8s.active_deadline") }
+
+// 任务 Pod 资源 requests/limits（留空=不设置）。
+func GetK8sCPURequest() string    { return viper.GetString("executor.k8s.cpu_request") }
+func GetK8sMemoryRequest() string { return viper.GetString("executor.k8s.memory_request") }
+func GetK8sCPULimit() string      { return viper.GetString("executor.k8s.cpu_limit") }
+func GetK8sMemoryLimit() string   { return viper.GetString("executor.k8s.memory_limit") }

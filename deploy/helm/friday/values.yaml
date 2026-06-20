@@ -79,6 +79,14 @@ runner:
     ttlSecondsAfterFinished: 3600 # 完成 Job 的被动 TTL 清理兜底（秒）
     serviceAccountName: "" # 留空用 <fullname>-runner
     imagePullSecret: "" # 私有 registry 拉取密钥（可选）
+    # -- 任务 Job 的 activeDeadlineSeconds 兜底（秒）；>0 时 k8s 主动终止超期 Job，
+    # 兜住 runner 永久丢失场景；0=禁用（默认安全，不改变既有行为）。
+    activeDeadlineSeconds: 0
+    # -- 任务 Pod 的资源 requests/limits（可选，留空=不设置）。便于调度与配额管理。
+    taskResources: {}
+    # 示例：
+    #   requests: { cpu: 250m, memory: 512Mi }
+    #   limits:   { cpu: "2",  memory: 4Gi }
   # -- runner RBAC（仅 executor=kubernetes/k8s 时渲染 SA + namespaced Role + RoleBinding）
   rbac:
     create: true

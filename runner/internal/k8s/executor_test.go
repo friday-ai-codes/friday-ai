@@ -289,6 +289,46 @@ func TestBuildJobSpec(t *testing.T) {
 	}
 }
 
+// TestBuildJobSpecActiveDeadlineAndResources 验证 IN-02：values-gated 的
+// activeDeadlineSeconds 与资源 requests/limits 注入正确；留空时不设置（默认安全）。
+func TestBuildJobSpecActiveDeadlineAndResources(t *testing.T) {
+	cfg := Config{
+		Namespace: "friday", DefaultImage: "img:1", RunnerName: "r1",
+		ActiveDeadlineSeconds: 1800,
+		CPURequest:            "250m", MemoryRequest: "512Mi",
+		CPULimit: "2", MemoryLimit: "4Gi",
+	}
+	task := ws.TaskPayload{TaskID: "t1", TaskType: "coding"}
+	job := buildJobSpec(cfg, task, "friday-task-t1", nil)
+
+	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 1800 {
+		t.Fatalf("activeDeadlineSeconds = %v, want 1800", job.Spec.ActiveDeadlineSeconds)
+	}
+	res := job.Spec.Template.Spec.Containers[0].Resources
+	if got := res.Requests.Cpu().String(); got != "250m" {
+		t.Fatalf("cpu request = %q, want 250m", got)
+	}
+	if got := res.Requests.Memory().String(); got != "512Mi" {
+		t.Fatalf("memory request = %q, want 512Mi", got)
+	}
+	if got := res.Limits.Cpu().String(); got != "2" {
+		t.Fatalf("cpu limit = %q, want 2", got)
+	}
+	if got := res.Limits.Memory().String(); got != "4Gi" {
+		t.Fatalf("memory limit = %q, want 4Gi", got)
+	}
+
+	// 留空：不设置 activeDeadline，不设置 resources（行为同旧版）。
+	bare := buildJobSpec(Config{Namespace: "friday", DefaultImage: "img:1", RunnerName: "r1"}, task, "friday-task-t1", nil)
+	if bare.Spec.ActiveDeadlineSeconds != nil {
+		t.Fatalf("未配置时 activeDeadlineSeconds 应为 nil，got %v", *bare.Spec.ActiveDeadlineSeconds)
+	}
+	bres := bare.Spec.Template.Spec.Containers[0].Resources
+	if len(bres.Requests) != 0 || len(bres.Limits) != 0 {
+		t.Fatalf("未配置时 resources 应为空，got requests=%v limits=%v", bres.Requests, bres.Limits)
+	}
+}
+
 func TestRemoveContainerDeletesJobAndSwallowsNotFound(t *testing.T) {
 	cs := fake.NewSimpleClientset()
 	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})
