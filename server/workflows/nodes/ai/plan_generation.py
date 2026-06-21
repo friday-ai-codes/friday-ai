@@ -44,7 +44,11 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 1. 理解用户的需求描述
 2. 分析关联仓库的代码结构和依赖关系
 3. 生成符合规范的结构化技术方案
-4. 通过验证后推送给用户审阅
+4. 通过 verify_plan 验证，产出最终方案 JSON
+
+注意：方案的飞书文档生成、卡片推送与人工审批均由下游独立节点
+（`human_approval(mode=plan_feishu)`、`feishu_doc_create`、`notify_feishu_im`）负责，
+本节点**只专注产出方案本身**，不要自行推送或等待审批。
 
 ## 工作流程
 
@@ -60,23 +64,14 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 
 4. **调用 verify_plan**：将生成的方案传给 verify_plan 工具验证
 5. **处理验证结果**：
-   - 如果验证通过（valid=true）：进入第三阶段
+   - 如果验证通过（valid=true）：将最终方案 JSON 作为结果输出，任务完成
    - 如果验证失败（valid=false）：根据错误信息修正方案，重新验证
-   - **最多重试 3 轮**，如果 3 轮后仍失败，将最新版本推送给用户并说明问题
-
-### 第三阶段：飞书交互
-
-6. **创建文档**：使用 create_feishu_document 将完整方案写入飞书文档
-7. **发送卡片**：使用 send_plan_card 将方案摘要和文档链接推送到飞书群
-8. **等待反馈**：用户可能：
-   - 确认方案（approve）→ 你的任务完成
-   - 请求修改（revise）→ 根据反馈修改方案，重新走验证和推送流程
-   - 提供反馈（feedback）→ 根据反馈内容优化方案
+   - **最多重试 3 轮**，如果 3 轮后仍失败，输出最新版本并在 final_answer 中说明问题
 
 ### 终止条件
 
-- 用户点击「确认方案」按钮
-- 用户反馈中包含明确的肯定确认
+- 方案通过 verify_plan 验证
+- 重试 3 轮后输出最新版本
 
 ### 重要规则
 
@@ -112,10 +107,12 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     """AI 技术方案生成节点。
 
     通过 Orchestrator Agent 编排多仓库分析，自动生成结构化技术方案。
-    支持 verify_plan 验证 + 飞书卡片多轮迭代。
+    专注产出 `TechnicalPlan`（含 markdown），不负责飞书推送/审批——
+    飞书文档生成、卡片推送与人工审批均交由下游独立节点
+    （`human_approval(mode=plan_feishu)` / `feishu_doc_create` / `notify_feishu_im`）。
 
     Workflow: 分析需求 → 调度工具分析仓库 → 生成方案 → verify_plan 验证
-    → 失败则重试(最多3轮) → 通过后 send_plan_card 推送飞书 → 用户迭代
+    → 失败则重试(最多3轮) → 输出最终方案（下游节点接管审批/推送）
     """
 
     node_type: ClassVar[str] = "ai_plan_generation"
@@ -292,11 +289,16 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         return f"{user_prompt}{upstream_context}{repo_context}{history_block}"
 
     def get_enabled_tools(self, context: ExecutionContext) -> list[str] | None:
-        """返回方案生成节点需要的工具集。"""
+        """返回方案生成节点需要的工具集。
+
+        D1 解耦：移除「自动推送」职责的 send_plan_card / create_feishu_document——
+        方案的飞书文档生成、卡片推送与审批挂起交由下游 human_approval(mode=plan_feishu)
+        + feishu_doc_create + notify_feishu_im 承担，本节点只产出方案。
+        保留 fetch_feishu_document（只读取材，非推送）与 ask_user_question（澄清 HITL，
+        独立 resume 链路，不属于方案卡片审批）。
+        """
         base_tools = [
             "verify_plan",
-            "send_plan_card",
-            "create_feishu_document",
             "fetch_feishu_document",
             "ask_user_question",
             "search_repository_code",

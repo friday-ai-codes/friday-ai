@@ -53,6 +53,30 @@
         "timeout_seconds": 1800,
         "chat_id": ""
       }
+    },
+    {
+      "id": "create_doc",
+      "type": "feishu_doc_create",
+      "name": "生成交付文档",
+      "position": {"x": 400, "y": 940},
+      "config": {
+        "title": "[技术方案] {{nodes.generate_plan.plan.title}}",
+        "content": "{{nodes.generate_plan.final_answer}}",
+        "folder_token": ""
+      }
+    },
+    {
+      "id": "notify_result",
+      "type": "notify_feishu_im",
+      "name": "通知编码结果",
+      "position": {"x": 400, "y": 1140},
+      "config": {
+        "receive_id_type": "chat_id",
+        "receive_id": "",
+        "message_type": "card",
+        "title": "AI 编码完成通知",
+        "content": "AI 编码已完成。\n\n方案文档：{{nodes.create_doc.document_url}}"
+      }
     }
   ],
   "edges": [
@@ -60,6 +84,8 @@
     {"source": "fetch_work_item", "target": "generate_plan"},
     {"source": "generate_plan", "target": "plan_approval"},
     {"source": "plan_approval", "target": "ai_coding", "source_handle": "approved"},
-    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"}
+    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
+    {"source": "ai_coding", "target": "create_doc", "source_handle": "default"},
+    {"source": "create_doc", "target": "notify_result", "source_handle": "default"}
   ]
 }
