@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 Phase: Milestone v0.12.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-21 — Completed quick task 260621-dwn: 工作流画布对标 dify 重做
+Last activity: 2026-06-21 — Completed quick task 20260621-wano: 工作流重写收尾（审批合并/推送解耦/编排路径切换）
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
@@ -457,6 +457,7 @@ None.
 | 260612-cifix | 修复 CI：smoke 列表移除已删除的 test_tool_bindings.py | 2026-06-12 | ec839757 | — |
 | 20260617-csb | 会话列表 SDD/技术方案/编码徽标（PlanSession.conversation_id 软引用 + list annotate）+ 仓库卡片 SDD 强调/水印 | 2026-06-17 | (pending) | [20260617-conversation-sdd-coding-badges](./quick/20260617-conversation-sdd-coding-badges/) |
 | 260621-dwn | 工作流画布对标 dify：横向左入右出 Handle + 单一 0.16 bezier 连线 + 一键自动布局 + 边中点/Handle "+" 加节点 + 四元组重复校验 + 节点配置摘要；验收反馈修复（虚线常驻/+ 误触/间距）。成功-失败双出口与端口 ID 对齐后端延后 | 2026-06-21 | 42fcdffd6 | [260621-dwn-dify-right-left-handle-bezier-curvature0](./quick/260621-dwn-dify-right-left-handle-bezier-curvature0/) |
+| 20260621-wano | 工作流重写收尾：合并 ai_plan_approval→human_approval(mode=plan_feishu)（审批统一走 waiting_approval + 数据迁移 0029）+ 飞书推送从 plan_generation/coding 解耦为独立 notify_feishu_im/feishu_doc_create 节点 + 内置模板切换到 ai_plan_research 编排路径（多仓路由+多 agent 并行，点4 上游输入/驳回回流二义性物理隔离） | 2026-06-21 | 83a0c3494 / adb1e3f27 / c3d3b9dbc | [20260621-workflow-approval-notify-orchestration](./quick/20260621-workflow-approval-notify-orchestration/) |
 
 ## Deferred Items
 
