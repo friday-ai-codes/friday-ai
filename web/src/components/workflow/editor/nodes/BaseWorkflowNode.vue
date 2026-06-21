@@ -14,8 +14,10 @@ import { useRouter } from 'vue-router'
 import { useToast } from '~/composables/useToast'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { getNodeDefinition } from '~/types/workflow/registry'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
+import NodeInsertMenu from '../NodeInsertMenu.vue'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
 
@@ -82,6 +84,61 @@ function portTop(index: number, total: number): string {
   if (total <= 1)
     return '50%'
   return `${((index + 1) / (total + 1)) * 100}%`
+}
+
+/**
+ * 在指定方向追加并自动连线一个新节点（复用 NodeInsertMenu 选择）。
+ * - output（右）：新节点放本节点右侧，边 本节点 → 新节点
+ * - input（左）：新节点放本节点左侧，边 新节点 → 本节点
+ */
+function appendNode(direction: 'input' | 'output', nodeType: string) {
+  const current = store.nodes.find(n => n.id === props.id)
+  if (!current)
+    return
+  const def = getNodeDefinition(nodeType)
+  const newNodeId = randomUUID()
+  const offset = 280
+  store.addNode({
+    id: newNodeId,
+    shortId: generateShortId(),
+    nodeType,
+    name: def?.displayName || nodeType,
+    description: '',
+    position: {
+      x: (current.position?.x ?? 0) + (direction === 'output' ? offset : -offset),
+      y: current.position?.y ?? 0,
+    },
+    config: (def?.defaultConfig as Record<string, unknown>) ?? {},
+    onError: 'abort',
+    retryTimes: 0,
+    retryDelay: 5,
+    nodeTimeoutSeconds: null,
+    fallbackValues: null,
+    runCondition: null,
+    metadata: {},
+  })
+  if (direction === 'output') {
+    store.addEdge({
+      id: `edge-${props.id}-${newNodeId}-${Date.now()}`,
+      source: props.id,
+      target: newNodeId,
+      sourcePort: outputPorts.value[0]?.id ?? 'default',
+      targetPort: 'default',
+      label: undefined,
+      condition: null,
+    })
+  }
+  else {
+    store.addEdge({
+      id: `edge-${newNodeId}-${props.id}-${Date.now()}`,
+      source: newNodeId,
+      target: props.id,
+      sourcePort: 'default',
+      targetPort: inputPorts.value[0]?.id ?? 'default',
+      label: undefined,
+      condition: null,
+    })
+  }
 }
 
 function handleDelete() {
@@ -175,6 +232,14 @@ async function handleTest() {
         :style="{ top: portTop(i, inputPorts.length) }"
       />
 
+      <!-- 入方向 hover "+"：在左侧追加并连线一个新节点（触发器无入端口则不显示） -->
+      <div
+        v-if="inputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
+        class="nodrag nopan absolute -left-7 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <NodeInsertMenu @select="(nt) => appendNode('input', nt)" />
+      </div>
+
       <!-- 头部：图标 + 名称 -->
       <div class="relative flex items-center gap-2 mb-2">
         <div class="bg-gradient-to-br rounded-lg p-1.5" :class="[style.iconBg]">
@@ -205,6 +270,14 @@ async function handleTest() {
         :position="Position.Right"
         :style="{ top: portTop(i, outputPorts.length) }"
       />
+
+      <!-- 出方向 hover "+"：在右侧追加并连线一个新节点 -->
+      <div
+        v-if="outputPorts.length > 0 && hideHandles !== 'output' && hideHandles !== 'both'"
+        class="nodrag nopan absolute -right-7 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <NodeInsertMenu @select="(nt) => appendNode('output', nt)" />
+      </div>
     </div>
   </div>
 </template>

@@ -21,6 +21,10 @@ interface WorkflowNodeData {
 /** Vue Flow Edge 的 data 载荷类型 */
 interface WorkflowEdgeData {
   condition: Record<string, unknown> | null
+  /** 源节点类型（派生字段，供边 "+" 菜单按上下游类型过滤可选节点用，不入 store） */
+  sourceType?: string
+  /** 目标节点类型（派生字段，同上） */
+  targetType?: string
 }
 
 /**
@@ -54,8 +58,20 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore[]): Node<WorkflowNo
  * 将 Pinia Store 边转为 Vue Flow 边。
  * sourcePort/targetPort 映射到 sourceHandle/targetHandle，空值 fallback 到 "default"。
  * 使用自定义 gradient 边类型 + 箭头标记。
+ *
+ * 可选 `storeNodes`：传入后在 edge.data 上派生 sourceType/targetType（两端节点类型），
+ * 供边 "+" 菜单按上下游类型过滤可选节点；取不到留 undefined。派生字段不回写 store。
  */
-export function toVueFlowEdges(storeEdges: WorkflowEdgeStore[]): Edge<WorkflowEdgeData>[] {
+export function toVueFlowEdges(
+  storeEdges: WorkflowEdgeStore[],
+  storeNodes?: WorkflowNodeStore[],
+): Edge<WorkflowEdgeData>[] {
+  const typeById = new Map<string, string>()
+  if (storeNodes) {
+    for (const node of storeNodes)
+      typeById.set(node.id, node.nodeType)
+  }
+
   return storeEdges.map(storeEdge => ({
     id: storeEdge.id,
     source: storeEdge.source,
@@ -63,7 +79,11 @@ export function toVueFlowEdges(storeEdges: WorkflowEdgeStore[]): Edge<WorkflowEd
     sourceHandle: storeEdge.sourcePort || 'default',
     targetHandle: storeEdge.targetPort || 'default',
     label: storeEdge.label,
-    data: { condition: storeEdge.condition },
+    data: {
+      condition: storeEdge.condition,
+      sourceType: typeById.get(storeEdge.source),
+      targetType: typeById.get(storeEdge.target),
+    },
     type: 'gradient',
     markerEnd: MarkerType.ArrowClosed,
   }))
