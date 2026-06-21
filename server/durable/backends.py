@@ -279,8 +279,8 @@ class ProcrastinateBackend:
         按状态过滤取活跃 job：list_jobs_async(queueing_lock=...) 不限状态会返回该
         lock 下所有历史 job（含 succeeded/failed），jobs[0] 可能是早先已结束的同
         lock job，导致幂等 defer 返回陈旧 job 标识（WR-02）。活跃集
-        ={todo, doing, scheduled}（scheduled 覆盖延迟 job），合并后取最新一条
-        （id 最大）作为"当前在队 / 在跑 / 待调度"的那条。
+        ={todo, doing}（延迟 job 仍为 todo + scheduled_at，无独立 scheduled 状态），
+        合并后取最新一条（id 最大）作为"当前在队 / 在跑"的那条。
 
         公开方法：既服务 ``defer`` 内 AlreadyEnqueued 兜底，也作为 ``has_active_by_key``
         的判定基础——按 queueing_lock 查，区别于按数字 job id 的 ``get``。
@@ -290,7 +290,7 @@ class ProcrastinateBackend:
         from procrastinate.contrib.django import app
 
         jobs: list[Any] = []
-        for status in ("todo", "doing", "scheduled"):
+        for status in ("todo", "doing"):
             jobs.extend(
                 await app.job_manager.list_jobs_async(queueing_lock=idempotency_key, status=status)
             )
@@ -299,7 +299,7 @@ class ProcrastinateBackend:
         return str(max(jobs, key=lambda j: j.id).id)
 
     async def has_active_by_key(self, idempotency_key: str) -> bool:
-        """按 idempotency_key（=queueing_lock）判定是否有在途 job（活跃集 todo/doing/scheduled）。
+        """按 idempotency_key（=queueing_lock）判定是否有在途 job（活跃集 todo/doing）。
 
         区别于按数字 job id 的 ``get``：传 deterministic key（如 ``"index:{repo_id}"``）
         给 ``get`` 会走 ``int(job_id)`` 失败而恒返 unknown，令 reconcile 误判恒 False、

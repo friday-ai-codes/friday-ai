@@ -8,7 +8,7 @@
 
 判定经 ``DurableTaskService.has_active_by_key(idempotency_key)`` 门面，按 queueing_lock
 （=idempotency_key，如 ``"index:{repo_id}"`` / ``"graph:{repo_id}"``）查活跃集
-（procrastinate={todo, doing, scheduled}）。**绝不**走按数字 job id 的单 job 查询
+（procrastinate={todo, doing}）。**绝不**走按数字 job id 的单 job 查询
 路径——后者传 deterministic key 会因 ``int(job_id)`` 失败恒返 ``unknown``，令判定误为
 False 而误杀在途任务。
 
@@ -44,7 +44,7 @@ async def has_active_durable_job(idempotency_key: str) -> bool:
     """查某 ``idempotency_key`` 是否有在途 durable job（有接管则 reconcile 保留 RUNNING）。
 
     - durable 后端：经 ``DurableTaskService.has_active_by_key`` 按 queueing_lock 查
-      活跃集（todo / doing / scheduled）。
+      活跃集（todo / doing；延迟 job 仍为 todo + scheduled_at）。
     - 非 durable 后端（SQLite / in-process）：``use_procrastinate_backend()`` False →
       直接返回 False（维持旧"标 FAILED"，不留僵尸 RUNNING）。
     - 任何异常 fail-safe 返回 False（朝"标 FAILED"侧兜底）。
