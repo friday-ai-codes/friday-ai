@@ -83,6 +83,120 @@ async def test_drive_to_done_emits_merged_plan_ref() -> None:
 
 
 @pytest.mark.asyncio
+async def test_done_inlines_merged_plan_content_for_downstream() -> None:
+    """D2 产物迁移（点3）：done → output["plan"] 内联 §7 MergedPlan content（含
+    execution_plan）+ 注入 plan_version_id，供下游 human_approval / ai_coding 直接消费。"""
+    from delivery.models import PlanVersion, TechnicalPlan
+
+    merged_content = {
+        "title": "跨仓主方案",
+        "summary": "融合 repoA/repoB 的跨仓方案",
+        "execution_plan": [
+            {
+                "id": "t1",
+                "name": "A 暴露契约",
+                "repository_id": "repo-a",
+                "repository_name": "repoA",
+                "branch_strategy": "feature",
+                "coding_instruction": "实现 ContractX",
+                "dependencies": [],
+            }
+        ],
+    }
+    tech_plan = await TechnicalPlan.objects.acreate(origin="orchestration")
+    plan_version = await PlanVersion.objects.acreate(
+        plan=tech_plan, version=1, content=merged_content
+    )
+
+    router = AsyncMock()
+    router.route = AsyncMock(
+        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+    )
+    recall = AsyncMock()
+    recall.recall = AsyncMock(return_value={"hits": [], "query": "q", "kinds": []})
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value={})
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+
+    async def _merge_side(session):
+        await PlanSessionService().set_current_plan_version(session, plan_version.id)
+        return {"validation_status": "passed", "attempt": 0}
+
+    merge = AsyncMock()
+    merge.merge = AsyncMock(side_effect=_merge_side)
+
+    engine = PlanOrchestrationEngine(
+        router=router, recall=recall, research=research, merge=merge, clarify=clarify
+    )
+    node = AIPlanResearchNode()
+    _bind_engine(node, engine)
+
+    result = await node.execute(_ctx())
+
+    assert result.status == "completed"
+    assert result.output["plan_version_id"] == str(plan_version.id)
+    # 内联 MergedPlan content（下游 get_input("plan") 直接消费）
+    plan = result.output["plan"]
+    assert plan["title"] == "跨仓主方案"
+    assert plan["summary"] == "融合 repoA/repoB 的跨仓方案"
+    assert plan["execution_plan"][0]["repository_id"] == "repo-a"
+    # plan_version_id 注入 plan（ai_coding wave 模式据此解析 canonical PlanVersion）
+    assert plan["plan_version_id"] == str(plan_version.id)
+
+
+@pytest.mark.asyncio
+async def test_resume_via_session_id_ignores_conflicting_input() -> None:
+    """D2 点4 二义性契约：本节点 output_data.session_id 在场时，resume 续推**同一**
+    session，完全忽略 input/config 中冲突的 requirement_text，且不新建 session。"""
+    from unittest.mock import MagicMock
+
+    from delivery.models import PlanSession, PlanSessionStatus
+
+    # 预置一个已 DONE 的 session（模拟 clarifying/researching 挂起后续推到终态）
+    existing = await PlanSession.objects.acreate(
+        entrypoint="workflow",
+        status=PlanSessionStatus.DONE,
+        decomposition={"requirement_text": "原始需求"},
+    )
+
+    # node_execution.output_data 携带 session_id（续推钥匙，物理隔离于输入端口）
+    node_execution = MagicMock()
+    node_execution.id = uuid.uuid4()
+    node_execution.output_data = {"session_id": str(existing.id)}
+
+    # 构造一个携带**冲突** requirement_text 的 context（若误走首建会建新 session）
+    ctx = ExecutionContext(
+        execution_id="exec-pr-resume",
+        node_id="node-pr-resume",
+        node_config={"requirement_text": "完全不同的新需求（不得被采纳）"},
+        input_data={"requirement_text": "也不得被当成续推钥匙"},
+        workflow_context={},
+        previous_outputs={},
+        node_execution=node_execution,
+    )
+
+    node = AIPlanResearchNode()
+    # engine 不应被驱动产生新 session：build_engine 返回 mock，advance 透传 DONE
+    engine = MagicMock()
+
+    async def _advance(session):
+        return session
+
+    engine.advance = AsyncMock(side_effect=_advance)
+    _bind_engine(node, engine)
+
+    before = await PlanSession.objects.acount()
+    result = await node.execute(ctx)
+    after = await PlanSession.objects.acount()
+
+    # 续推同一 session（非新建）→ 不新增 session 行
+    assert before == after == 1
+    assert result.output["session_id"] == str(existing.id)
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_clarifying_suspends_waiting_event() -> None:
     """needs-clarification → waiting_event（不 completed）+ 卡片 payload + DB pending + clarifying。"""
     router = AsyncMock()

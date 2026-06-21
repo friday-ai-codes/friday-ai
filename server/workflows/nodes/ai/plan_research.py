@@ -11,6 +11,29 @@ researching（容器 fan-out 等待）处复用既有工作流 ``waiting_event``
 （不走 LangChain agent loop）。节点 config_schema + ports 即 SSOT，经 ``/api/node-types/``
 自动渲染（UI reuse-first，无新 Vue 组件）。
 
+**D2 产物迁移（点3）**：经典路径 ``ai_plan_generation`` 产出顶层平铺的 ``TechnicalPlan``
+JSON；本编排路径产出 canonical ``PlanVersion``（``PlanSession.current_plan_version``）。为让
+下游 ``human_approval(mode=plan_feishu)`` 与 ``ai_coding`` 无改造即可消费，``done`` 终态在
+``default`` 输出端口同时携带：
+- 引用三元组 ``session_id`` / ``plan_version_id`` / ``status``（供回溯与 wave 接线）；
+- ``plan``：``PlanVersion.content``（§7 MergedPlan，含 ``execution_plan`` 等），并把
+  ``plan_version_id`` 注入其中——下游 ``ai_coding`` 据 ``plan.plan_version_id`` 解析 canonical
+  ``PlanVersion`` 进入 wave 模式（多仓多 agent fan-out）。
+
+**D2 上游输入 vs 驳回回流 二义性（点4，契约冻结，禁改）**：本节点的「续推已存在 session」
+与「首次按需求建 session」是两条**物理隔离**的通道，不得混淆：
+1. **续推通道（resume）= 本节点自身 ``NodeExecution.output_data["session_id"]``**。
+   仅 clarifying / researching 挂起时由本节点写入；resume 时 ``_resolve_session`` 据此重取
+   **同一** ``PlanSession`` 续推。resume **绝不读取 ``default`` 输入端口的需求**。
+2. **首建通道（first-run）= 节点配置 ``requirement_text`` ∪ ``default`` 输入端口**。
+   仅当续推通道为空（无 session_id）时才走 ``_create_session``。
+3. **驳回回流（rejection）**：``human_approval(rejected)`` 经 ``reject_reason`` 显式字段沿
+   ``rejected`` 出边回流；模板 ``plan_approval --rejected--> generate_plan`` 是**反馈环
+   back-edge**，引擎按 back-edge 处理（已 COMPLETED 的生成节点不自动重跑），故驳回为
+   「干净止于审批、不进编码」的 HITL 终止，**不死锁**。多轮方案修订由编排引擎自身的澄清/
+   融合重试回路（session 内 suspend/resume）承担，**不**借模板 back-edge 把驳回反馈当成
+   首次需求重新建 session（这正是点4 要消解的二义性）。
+
 **async ORM 防裸 lazy-FK**（规避 Phase 38 CR-01 类）：用 ``*_id`` / ``afirst`` / ``aget`` /
 ``aexists`` 标量，绝不裸访问同步 lazy-FK。
 """
@@ -87,13 +110,19 @@ class AIPlanResearchNode(AIAgentBaseNode):
             name="default",
             label="主方案引用",
             port_type=PortType.OBJECT,
-            description="canonical MergedPlan 引用（plan_version_id / session_id / status）",
+            description=(
+                "canonical MergedPlan 引用（plan_version_id / session_id / status）+ "
+                "内联 §7 MergedPlan content（plan，供下游审批/编码节点直接消费）"
+            ),
             schema={
                 "type": "object",
                 "properties": {
                     "plan_version_id": {"type": "string"},
                     "session_id": {"type": "string"},
                     "status": {"type": "string"},
+                    # D2 产物迁移：内联 PlanVersion.content（§7 MergedPlan），下游
+                    # human_approval(plan_feishu) / ai_coding 经 get_input("plan") 直接消费。
+                    "plan": {"type": "object"},
                 },
             },
         ),
@@ -159,12 +188,18 @@ class AIPlanResearchNode(AIAgentBaseNode):
             return suspend
 
         # 5. 终态映射
-        return self._map_terminal(session)
+        return await self._map_terminal(session)
 
     # ===== session 建/恢复 =====
 
     async def _resolve_session(self, context: ExecutionContext) -> Any:
-        """resume：从节点持久化 output_data 取 session_id 重取 PlanSession（无则 None）。"""
+        """续推通道（点4 契约）：仅从**本节点自身** ``NodeExecution.output_data["session_id"]``
+        重取 ``PlanSession`` 续推（clarifying / researching 挂起时写入）；无则 None。
+
+        **绝不读取 ``default`` 输入端口**——续推与首建物理隔离，杜绝把驳回反馈/上游输入
+        当成续推钥匙的二义性。session_id 存在即续推同一 session，``requirement_text`` /
+        上游输入在 resume 路径被完全忽略（见 ``execute`` 的 resolve-先于-create 短路）。
+        """
         from delivery.models import PlanSession
 
         node_execution = getattr(context, "node_execution", None)
@@ -179,7 +214,12 @@ class AIPlanResearchNode(AIAgentBaseNode):
         return await PlanSession.objects.filter(id=session_id).afirst()
 
     async def _create_session(self, context: ExecutionContext, log: Any) -> Any:
-        """首次：解析需求 + include_repos + work_item 锚 + created_by，经共享 helper 建 session。"""
+        """首建通道（点4 契约）：解析需求 + include_repos + work_item 锚 + created_by，经共享
+        helper 建 session。
+
+        **仅当续推通道（_resolve_session）为空时**才被调用——首次需求来源限定为节点配置
+        ``requirement_text`` 与 ``default`` 输入端口回退，绝不与续推 session_id 混用。
+        """
         from services.plan_orchestration import start_orchestration
 
         config = context.node_config or {}
@@ -189,7 +229,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         if not requirement_text:
             return None
 
-        include_repos = config.get("include_repos", []) or []
+        include_repos = self._resolve_include_repos(context)
         work_item = await self._resolve_work_item(context)
         created_by = await self._get_user(context)
 
@@ -221,9 +261,25 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     return value
         return ""
 
+    @staticmethod
+    def _resolve_include_repos(context: ExecutionContext) -> list[str]:
+        """解析候选仓 ID 列表（支持模板变量 {{...}}，逐项渲染 + 去空白/空项）。"""
+        raw = (context.node_config or {}).get("include_repos", []) or []
+        if not isinstance(raw, list):
+            return []
+        resolved: list[str] = []
+        for item in raw:
+            if not isinstance(item, str):
+                continue
+            rendered = context.render_template(item).strip()
+            if rendered:
+                resolved.append(rendered)
+        return resolved
+
     async def _resolve_work_item(self, context: ExecutionContext) -> Any:
-        """解析 work_item 锚（可空，INV-2）；by id 不裸 lazy-FK。"""
-        work_item_id = (context.node_config or {}).get("work_item_id", "") or ""
+        """解析 work_item 锚（可空，INV-2）；支持模板变量渲染，by id 不裸 lazy-FK。"""
+        raw = (context.node_config or {}).get("work_item_id", "") or ""
+        work_item_id = context.render_template(raw).strip() if raw else ""
         if not work_item_id:
             return None
         from delivery.models import WorkItem
@@ -290,21 +346,34 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     # ===== 终态映射 =====
 
-    def _map_terminal(self, session: Any) -> NodeResult:
-        """done → completed（canonical plan_version_id）；failed → failed（error_code）。"""
-        from delivery.models import PlanSessionStatus
+    async def _map_terminal(self, session: Any) -> NodeResult:
+        """done → completed（canonical plan_version_id + 内联 §7 MergedPlan content）；
+        failed → failed（error_code）。
+
+        D2 产物迁移（点3）：done 终态加载 ``PlanVersion.content`` 内联为 ``plan``，并把
+        ``plan_version_id`` 注入其中——下游 ``human_approval(plan_feishu)`` 经 ``plan.summary``
+        / ``plan.execution_plan`` 落审批文档；``ai_coding`` 经 ``plan.plan_version_id`` 解析
+        canonical ``PlanVersion`` 进入 wave 模式（多仓多 agent fan-out）。
+        """
+        from delivery.models import PlanSessionStatus, PlanVersion
 
         if session.status == PlanSessionStatus.DONE:
+            pv_id = (
+                str(session.current_plan_version) if session.current_plan_version else None
+            )
+            plan_content: dict[str, Any] = {}
+            if pv_id:
+                pv = await PlanVersion.objects.filter(id=pv_id).afirst()
+                if pv is not None and isinstance(pv.content, dict):
+                    # 注入 plan_version_id 供下游 ai_coding 解析 canonical PlanVersion 进 wave 模式
+                    plan_content = {**pv.content, "plan_version_id": pv_id}
             return NodeResult(
                 status="completed",
                 output={
                     "session_id": str(session.id),
-                    "plan_version_id": (
-                        str(session.current_plan_version)
-                        if session.current_plan_version
-                        else None
-                    ),
+                    "plan_version_id": pv_id,
                     "status": "done",
+                    "plan": plan_content,
                 },
                 next_handle="default",
             )

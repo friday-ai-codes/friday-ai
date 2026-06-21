@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "name": "飞书全链路自动化",
-  "description": "飞书工作项状态变更触发 → 获取需求详情 → AI 方案生成 → 飞书审批 → 容器编码(含 MR)",
+  "description": "飞书工作项状态变更触发 → 获取需求详情 → AI 方案编排调研(多仓多agent) → 飞书审批 → 容器编码(含 MR)",
   "template_id": "feishu_full_pipeline",
   "nodes": [
     {
@@ -27,11 +27,13 @@
     },
     {
       "id": "generate_plan",
-      "type": "ai_plan_generation",
-      "name": "AI 方案生成",
+      "type": "ai_plan_research",
+      "name": "AI 方案编排调研",
       "position": {"x": 400, "y": 340},
       "config": {
-        "user_prompt": "## 需求\n\n**{{nodes.fetch_work_item.name}}**\n\n{{nodes.fetch_work_item.description}}"
+        "requirement_text": "## 需求\n\n**{{nodes.fetch_work_item.name}}**\n\n{{nodes.fetch_work_item.description}}",
+        "include_repos": [],
+        "work_item_id": ""
       }
     },
     {
@@ -61,7 +63,7 @@
       "position": {"x": 400, "y": 940},
       "config": {
         "title": "[技术方案] {{nodes.generate_plan.plan.title}}",
-        "content": "{{nodes.generate_plan.final_answer}}",
+        "content": "{{nodes.generate_plan.plan.summary}}",
         "folder_token": ""
       }
     },

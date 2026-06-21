@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "name": "代码生成工作流",
-  "description": "从需求到 MR 的完整代码生成流程：方案生成 → 飞书审批 → 容器编码",
+  "description": "从需求到 MR 的完整代码生成流程：方案编排调研(多仓多agent) → 飞书审批 → 容器编码",
   "template_id": "code_generation",
   "nodes": [
     {
@@ -23,11 +23,13 @@
     },
     {
       "id": "generate_plan",
-      "type": "ai_plan_generation",
-      "name": "AI 方案生成",
+      "type": "ai_plan_research",
+      "name": "AI 方案编排调研",
       "position": {"x": 400, "y": 180},
       "config": {
-        "user_prompt": "## 需求\n\n**{{input.title}}**\n\n{{input.description}}"
+        "requirement_text": "## 需求\n\n**{{input.title}}**\n\n{{input.description}}",
+        "include_repos": [],
+        "work_item_id": ""
       }
     },
     {
@@ -57,7 +59,7 @@
       "position": {"x": 400, "y": 780},
       "config": {
         "title": "[技术方案] {{nodes.generate_plan.plan.title}}",
-        "content": "{{nodes.generate_plan.final_answer}}",
+        "content": "{{nodes.generate_plan.plan.summary}}",
         "folder_token": ""
       }
     },
