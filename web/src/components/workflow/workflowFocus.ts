@@ -15,6 +15,8 @@ export type FocusNodeFn = (nodeId: string) => void
 export interface WorkflowFocusContext {
   /** 由 WorkflowCanvas 注册的画布聚焦函数；未就绪时为 null */
   focusNode: FocusNodeFn | null
+  /** 由 WorkflowCanvas 注册的一键自动布局函数（横向 LR + fitView）；未就绪时为 null */
+  autoLayout: (() => void) | null
 }
 
 export const WorkflowFocusKey: InjectionKey<WorkflowFocusContext> = Symbol('workflow-focus')

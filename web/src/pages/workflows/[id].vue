@@ -48,7 +48,7 @@ const { success, info } = useToast()
 
 // 画布聚焦持有器：WorkflowCanvas（VueFlow 上下文内）挂载后写入 focusNode，
 // 兄弟组件 IssuesPanel 注入后调用，实现"点击问题 → 画布居中"（provide/inject 跨兄弟）。
-const workflowFocus = reactive<WorkflowFocusContext>({ focusNode: null })
+const workflowFocus = reactive<WorkflowFocusContext>({ focusNode: null, autoLayout: null })
 provide(WorkflowFocusKey, workflowFocus)
 
 // Leave confirmation dialog state
@@ -188,6 +188,10 @@ function onUndo() {
   store.undo()
 }
 
+function onAutoLayout() {
+  workflowFocus.autoLayout?.()
+}
+
 function onRedo() {
   store.redo()
 }
@@ -265,6 +269,7 @@ async function onUpdateIsActive(isActive: boolean) {
       @execute="onExecute"
       @undo="onUndo"
       @redo="onRedo"
+      @auto-layout="onAutoLayout"
       @back="onBack"
       @history="historySheetOpen = true"
       @export-j-s-o-n="onExportJSON"
