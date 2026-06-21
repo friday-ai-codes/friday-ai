@@ -77,8 +77,8 @@ const isDirty = computed(() => dirtyNodeIds.value.has(props.id))
 /** 单节点测试 loading 状态 */
 const isTesting = ref(false)
 
-/** 多端口时均匀分布的 left 百分比 */
-function portLeft(index: number, total: number): string {
+/** 多端口时沿垂直方向均匀分布的 top 百分比（横向 L→R 布局，Handle 竖排） */
+function portTop(index: number, total: number): string {
   if (total <= 1)
     return '50%'
   return `${((index + 1) / (total + 1)) * 100}%`
@@ -164,15 +164,15 @@ async function handleTest() {
       class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl p-3 transition-all duration-200 group hover:shadow-md hover:border-opacity-70"
       :class="[style.borderColor, selected ? `ring-2 ${style.ringColor} shadow-lg` : '', data.disabled ? 'grayscale opacity-50' : '']"
     >
-      <!-- Input Handles -->
+      <!-- Input Handles：永远左入（target=Left）；触发器节点 inputPorts 为空则不渲染 -->
       <Handle
         v-for="(port, i) in inputPorts"
-        v-show="hideHandles !== 'input' && hideHandles !== 'both'"
+        v-show="inputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
         :id="port.id"
         :key="port.id"
         type="target"
-        :position="Position.Top"
-        :style="{ left: portLeft(i, inputPorts.length) }"
+        :position="Position.Left"
+        :style="{ top: portTop(i, inputPorts.length) }"
       />
 
       <!-- 头部：图标 + 名称 -->
@@ -195,15 +195,15 @@ async function handleTest() {
       <!-- 内容 slot -->
       <slot name="content" />
 
-      <!-- Output Handles -->
+      <!-- Output Handles：永远右出（source=Right） -->
       <Handle
         v-for="(port, i) in outputPorts"
         v-show="hideHandles !== 'output' && hideHandles !== 'both'"
         :id="port.id"
         :key="port.id"
         type="source"
-        :position="Position.Bottom"
-        :style="{ left: portLeft(i, outputPorts.length) }"
+        :position="Position.Right"
+        :style="{ top: portTop(i, outputPorts.length) }"
       />
     </div>
   </div>

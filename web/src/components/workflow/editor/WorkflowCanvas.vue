@@ -23,6 +23,7 @@ import { getValidationError, useConnectionValidator } from './composables/useCon
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
 import { toVueFlowEdges, toVueFlowNodes } from './composables/useWorkflowTransform'
+import CustomConnectionLine from './edges/CustomConnectionLine.vue'
 import GradientEdge from './edges/GradientEdge.vue'
 import { nodeTypes } from './nodes'
 import '@vue-flow/minimap/dist/style.css'
@@ -214,6 +215,11 @@ function handleBatchCopy() {
       @dragover="onDragOver"
       @drop="onDrop"
     >
+      <!-- 拖拽连线：与连成后的边同参数（单一 bezier，source=Right→target=Left） -->
+      <template #connection-line="connectionLineProps">
+        <CustomConnectionLine v-bind="connectionLineProps" />
+      </template>
+
       <Background
         variant="dots"
         :gap="35"

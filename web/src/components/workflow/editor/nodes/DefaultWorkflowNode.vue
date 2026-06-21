@@ -36,7 +36,7 @@ const categoryBorderClass = computed(() => {
     class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl px-3 py-2 shadow-sm"
     :class="categoryBorderClass"
   >
-    <Handle id="default" type="target" :position="Position.Top" />
+    <Handle id="default" type="target" :position="Position.Left" />
 
     <div class="text-sm font-medium truncate">
       {{ data.name }}
@@ -45,6 +45,6 @@ const categoryBorderClass = computed(() => {
       {{ data.nodeType }}
     </div>
 
-    <Handle id="default" type="source" :position="Position.Bottom" />
+    <Handle id="default" type="source" :position="Position.Right" />
   </div>
 </template>

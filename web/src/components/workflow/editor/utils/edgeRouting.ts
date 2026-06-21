@@ -1,4 +1,4 @@
-import { getBezierPath, getSmoothStepPath, Position } from '@vue-flow/core'
+import { getBezierPath, Position } from '@vue-flow/core'
 
 interface EdgeRouteInput {
   sourceX: number
@@ -11,14 +11,16 @@ export interface EdgeRouteResult {
   path: string
   labelX: number
   labelY: number
-  strategy: 'smooth-step' | 'horizontal-bezier' | 'return-bezier'
 }
 
 /**
- * 根据节点相对位置自适应选择更自然的连线路径：
- * - 横向分支优先走侧向 bezier，避免出现笨重的大折返
- * - 逆向/回流边走柔和 bezier，减轻交叉感
- * - 常规自上而下流程仍保持圆角折线，保留流程图语义
+ * 单一连线路径：照抄 dify custom-edge.tsx 的铁律。
+ *
+ * Handle 永远 source=Right / target=Left，连线只有一种 curvature 0.16 的 bezier。
+ * 这是消灭"连线飘"的命门——连线方向（横向 L→R）与 Handle 方向必须一致，
+ * 不再按节点相对位置切换 smooth-step / 折返 bezier，避免方向自相矛盾。
+ *
+ * sourceX 减 8 / targetX 加 8 让连线在 Handle 处留出微小内缩，与 dify 视觉一致。
  */
 export function getWorkflowEdgeRoute({
   sourceX,
@@ -26,62 +28,15 @@ export function getWorkflowEdgeRoute({
   targetX,
   targetY,
 }: EdgeRouteInput): EdgeRouteResult {
-  const dx = targetX - sourceX
-  const dy = targetY - sourceY
-  const absDx = Math.abs(dx)
-  const absDy = Math.abs(dy)
-
-  if (absDx > Math.max(140, absDy * 0.85)) {
-    const [path, labelX, labelY] = getBezierPath({
-      sourceX,
-      sourceY,
-      targetX,
-      targetY,
-      sourcePosition: dx >= 0 ? Position.Right : Position.Left,
-      targetPosition: dx >= 0 ? Position.Left : Position.Right,
-      curvature: absDx > 260 ? 0.22 : 0.3,
-    })
-
-    return {
-      path,
-      labelX,
-      labelY,
-      strategy: 'horizontal-bezier',
-    }
-  }
-
-  if (dy < -48) {
-    const [path, labelX, labelY] = getBezierPath({
-      sourceX,
-      sourceY,
-      targetX,
-      targetY,
-      sourcePosition: Position.Top,
-      targetPosition: Position.Bottom,
-      curvature: 0.22,
-    })
-
-    return {
-      path,
-      labelX,
-      labelY,
-      strategy: 'return-bezier',
-    }
-  }
-
-  const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX,
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX: sourceX - 8,
     sourceY,
-    targetX,
+    sourcePosition: Position.Right,
+    targetX: targetX + 8,
     targetY,
-    borderRadius: 22,
-    offset: 26,
+    targetPosition: Position.Left,
+    curvature: 0.16,
   })
 
-  return {
-    path,
-    labelX,
-    labelY,
-    strategy: 'smooth-step',
-  }
+  return { path, labelX, labelY }
 }

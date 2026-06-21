@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { getWorkflowEdgeRoute } from '../workflow/editor/utils/edgeRouting'
 
+/**
+ * 对标 dify：连线只有一种 bezier（source=Right→target=Left，curvature 0.16）。
+ * 不再按节点相对位置切换 smooth-step / 折返 bezier，故所有方向都产出同一种 bezier 路径。
+ */
 describe('workflow edge routing', () => {
-  it('横向跨度较大时应优先走侧向 bezier', () => {
+  it('横向跨度较大时产出 bezier 曲线', () => {
     const route = getWorkflowEdgeRoute({
       sourceX: 120,
       sourceY: 180,
@@ -10,11 +14,10 @@ describe('workflow edge routing', () => {
       targetY: 240,
     })
 
-    expect(route.strategy).toBe('horizontal-bezier')
     expect(route.path).toContain('C')
   })
 
-  it('目标在源节点上方时应走回流 bezier', () => {
+  it('目标在源节点上方时仍是同一种 bezier（不再回流分支）', () => {
     const route = getWorkflowEdgeRoute({
       sourceX: 360,
       sourceY: 360,
@@ -22,11 +25,10 @@ describe('workflow edge routing', () => {
       targetY: 220,
     })
 
-    expect(route.strategy).toBe('return-bezier')
     expect(route.path).toContain('C')
   })
 
-  it('常规自上而下流转应保持圆角折线', () => {
+  it('常规自上而下流转也产出 bezier（不再走圆角折线）', () => {
     const route = getWorkflowEdgeRoute({
       sourceX: 220,
       sourceY: 160,
@@ -34,7 +36,8 @@ describe('workflow edge routing', () => {
       targetY: 360,
     })
 
-    expect(route.strategy).toBe('smooth-step')
-    expect(route.path).toContain('L')
+    expect(route.path).toContain('C')
+    expect(route.labelX).toBeTypeOf('number')
+    expect(route.labelY).toBeTypeOf('number')
   })
 })
