@@ -12,7 +12,7 @@ import {
 
 } from '@tanstack/vue-table'
 import { useLocalStorage } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import EmptyState from '~/components/common/EmptyState.vue'
 import Button from '~/components/ui/button/Button.vue'
 import { Checkbox } from '~/components/ui/checkbox'
