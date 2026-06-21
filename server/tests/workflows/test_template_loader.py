@@ -191,7 +191,8 @@ class TestCreateWorkflowFromTemplate:
         assert workflow.metadata.get("template_id") == "code_generation"
         nodes = [n async for n in workflow.nodes.all()]
         # code_generation：trigger + generate_plan + plan_approval + ai_coding
-        assert len(nodes) == 4
+        # + create_doc(feishu_doc_create) + notify_result(notify_feishu_im)（D1 解耦）
+        assert len(nodes) == 6
 
 
 class TestRewriteTemplateRefs:

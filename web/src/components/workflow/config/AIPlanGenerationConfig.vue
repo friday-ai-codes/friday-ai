@@ -25,7 +25,8 @@ import { useRepositoriesStore } from '~/stores/repositories'
  * - Repository selection: include/exclude dual tag lists
  * - User Prompt: Markdown editor with variable support (expanded by default)
  * - System Prompt: Markdown editor (collapsed by default)
- * - Advanced options: model, max iterations, chat ID, custom API
+ * - Advanced options: provider credential, model, max iterations
+ * - chat_id: 仅用于 AI 飞书澄清提问（ask_user_question）；方案推送/审批已解耦到下游节点
  */
 
 // ============================================================================
@@ -138,15 +139,14 @@ const advancedOpen = ref(false)
           </h4>
           <p class="text-xs text-muted-foreground leading-relaxed">
             基于 <span class="text-primary font-medium">ReAct Agent</span> 自动分析多仓库代码，
-            通过向量检索 (RAG) 理解代码上下文，生成结构化技术方案，
-            支持自动验证和飞书多轮迭代。
+            通过向量检索 (RAG) 理解代码上下文，生成结构化技术方案并自动验证。
+            方案的文档生成、审批与推送交由下游节点（人工审批 / 飞书文档 / 飞书通知）负责。
           </p>
           <!-- Capability Tags -->
           <div class="flex flex-wrap gap-1 pt-0.5">
             <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">ReAct</span>
             <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">RAG 向量检索</span>
             <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">verify_plan</span>
-            <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">飞书交互</span>
           </div>
         </div>
       </div>
@@ -381,7 +381,7 @@ const advancedOpen = ref(false)
       </div>
 
       <!-- ============================================================== -->
-      <!-- : 飞书推送 -->
+      <!-- : 飞书澄清提问（可选） -->
       <!-- ============================================================== -->
       <div class="relative">
         <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
@@ -391,11 +391,13 @@ const advancedOpen = ref(false)
         <div class="space-y-2.5">
           <div>
             <h5 class="text-sm font-medium flex items-center gap-1.5">
-              <span class="icon-[lucide--send] text-primary text-sm" />
-              飞书推送
+              <span class="icon-[lucide--message-circle-question] text-primary text-sm" />
+              飞书澄清提问
+              <span class="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[9px] font-medium">可选</span>
             </h5>
             <p class="text-[11px] text-muted-foreground mt-0.5">
-              生成飞书文档并发送方案卡片，用户可在线审阅、反馈或确认
+              需求不清晰时 AI 经飞书向用户提问澄清（ask_user_question）。方案文档生成、
+              审批与推送已解耦到下游节点，本节点不再自动推送方案卡片。
             </p>
           </div>
 
@@ -413,7 +415,7 @@ const advancedOpen = ref(false)
               class="bg-background/50"
             />
             <p class="text-[10px] text-muted-foreground">
-              方案卡片发送的目标群聊，支持变量引用
+              AI 澄清提问卡片发送的目标群聊，支持变量引用；留空则不启用澄清提问
             </p>
           </div>
         </div>

@@ -194,17 +194,15 @@ async def test_plan_generation_tool_loop_with_fake_model(
     mock_aresolve_ok: Any,
     make_minimal_context: Any,
 ) -> None:
-    """work item + contract：AIPlanGenerationNode 多轮工具调用回放（verify_plan / send_plan_card）。
+    """work item + contract：AIPlanGenerationNode 多轮工具调用回放（verify_plan）。
 
     回放序列：
       turn 1: AIMessage(content=..., tool_calls=[verify_plan]) → LangChain 归一化
-      turn 2: AIMessage(content=..., tool_calls=[send_plan_card])
-      turn 3: AIMessage(content=最终方案 JSON, tool_calls=[])  → 退出 loop
+      turn 2: AIMessage(content=最终方案 JSON, tool_calls=[])  → 退出 loop
 
-    说明：LangChainAgentRunner 真实执行工具（_execute_tool），这里的 verify_plan
-    / send_plan_card 是已注册工具；FakeChatModel 只控制 AIMessage 序列。
-    由于 AIPlanGenerationNode.get_enabled_tools 白名单包含它们，且注入
-    project_id/session_id 已由 build_langchain_tools 处理。
+    说明：LangChainAgentRunner 真实执行工具（_execute_tool），verify_plan 是已注册
+    且在 D1 解耦后仍属默认工具集的工具；FakeChatModel 只控制 AIMessage 序列。
+    D1 解耦：send_plan_card 已移出默认工具集（方案推送交下游节点），故不再回放。
     """
     import json
 
@@ -215,8 +213,7 @@ async def test_plan_generation_tool_loop_with_fake_model(
     fake_chat_model_factory(
         responses=[
             "我先调用 verify_plan 验证方案结构",
-            "验证通过，发送 plan 卡片",
-            f"方案已全部确认，以下是最终计划：\n```json\n{plan_json_str}\n```",
+            f"方案已验证通过，以下是最终计划：\n```json\n{plan_json_str}\n```",
         ],
         tool_calls=[
             [
@@ -226,14 +223,7 @@ async def test_plan_generation_tool_loop_with_fake_model(
                     "id": "call_verify_1",
                 }
             ],
-            [
-                {
-                    "name": "send_plan_card",
-                    "args": {"chat_id": "test-chat"},
-                    "id": "call_send_1",
-                }
-            ],
-            [],  # 第三轮无工具 → Runner 把它作为 final_answer 退出
+            [],  # 第二轮无工具 → Runner 把它作为 final_answer 退出
         ],
         usage_metadata={
             "input_tokens": 100,
@@ -242,10 +232,7 @@ async def test_plan_generation_tool_loop_with_fake_model(
         },
     )
 
-    ctx = _build_plan_context(
-        make_minimal_context,
-        extra_config={"chat_id": "test-chat"},
-    )
+    ctx = _build_plan_context(make_minimal_context)
     node = AIPlanGenerationNode()
 
     result: NodeResult = await node.execute(ctx)
@@ -382,7 +369,13 @@ def test_get_system_prompt_includes_schema() -> None:
 
 
 def test_get_enabled_tools_includes_defaults() -> None:
-    """get_enabled_tools 返回方案生成必需工具白名单（非 None 非空）。"""
+    """get_enabled_tools 返回方案生成必需工具白名单（非 None 非空）。
+
+    D1 解耦：方案生成只产出方案，不再承担「自动推送」职责——send_plan_card /
+    create_feishu_document 已从默认工具集移除（推送/审批交给下游 human_approval /
+    feishu_doc_create / notify_feishu_im）。保留 verify_plan / search_repository_code /
+    ask_user_question（澄清 HITL）/ fetch_feishu_document（只读取材）。
+    """
     ctx = ExecutionContext(
         execution_id="00000000-0000-0000-0000-000000000001",
         node_id="00000000-0000-0000-0000-000000000011",
@@ -397,9 +390,12 @@ def test_get_enabled_tools_includes_defaults() -> None:
 
     assert tools is not None
     assert "verify_plan" in tools
-    assert "send_plan_card" in tools
-    assert "create_feishu_document" in tools
     assert "search_repository_code" in tools
+    assert "ask_user_question" in tools
+    assert "fetch_feishu_document" in tools
+    # D1 解耦：自动推送类工具不再默认启用
+    assert "send_plan_card" not in tools
+    assert "create_feishu_document" not in tools
 
 
 def test_map_output_no_plan() -> None:

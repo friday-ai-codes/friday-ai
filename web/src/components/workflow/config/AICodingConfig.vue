@@ -13,7 +13,8 @@ import { useConfigModel } from '~/composables/useConfigModel'
  * 配置项：
  * - timeout_seconds: 单个仓库的编码超时时间
  * - polling_interval: 检查 SubAgent 状态的时间间隔
- * - chat_id: 飞书群聊 ID，用于发送编码结果和分支确认卡片
+ * - chat_id: 飞书群聊 ID，用于发送分支确认卡片（HITL）。编码结果通知已解耦到
+ *   下游「飞书通知(IM)」节点；此处留空则不推送结果（仅作可选回退）。
  *
  * 容器镜像固定使用部署配置的默认 task 镜像，不再暴露给用户选择。
  */
@@ -84,7 +85,7 @@ const pollingIntervalStr = computed({
             <span class="icon-[lucide--arrow-right] text-muted-foreground" />
             <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">创建 MR</span>
             <span class="icon-[lucide--arrow-right] text-muted-foreground" />
-            <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">通知结果</span>
+            <span class="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">下游通知</span>
           </div>
         </div>
       </div>
@@ -133,14 +134,16 @@ const pollingIntervalStr = computed({
       <Label class="flex items-center gap-1.5">
         <span class="icon-[lucide--message-circle] text-primary" />
         飞书群 ID
+        <span class="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] font-medium">可选</span>
       </Label>
       <Input
         v-model="chatId"
-        placeholder="输入飞书群 ID"
+        placeholder="输入飞书群 ID（用于分支确认卡片）"
         class="bg-background/50"
       />
       <p class="text-xs text-muted-foreground">
-        编码结果和分支确认卡片将发送到此群。留空则使用上游节点传递的 chat_id。
+        分支确认卡片（HITL）将发送到此群。编码结果通知已解耦到下游「飞书通知(IM)」节点，
+        此处留空则不推送结果（仅作可选回退）。
       </p>
     </div>
   </div>

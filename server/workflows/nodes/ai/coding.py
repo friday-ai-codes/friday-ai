@@ -1,8 +1,12 @@
 """AI Coding node - orchestrates SubAgent coding tasks across repositories.
 
-Reads a confirmed technical plan from upstream PlanApprovalNode, groups tasks
-by repository, dispatches parallel SubAgent coding sessions, creates MRs for
-successful repositories, and sends a Feishu result card.
+Reads a confirmed technical plan from the upstream approval node, groups tasks
+by repository, dispatches parallel SubAgent coding sessions, and creates MRs for
+successful repositories.
+
+D1 解耦：纯结果通知改由下游 ``notify_feishu_im`` 节点承担——本节点仅在显式配置
+``chat_id`` 时作为可选回退推送结果卡片。分支确认卡片（HITL，需挂起等待用户确认
+分支名）仍保留在本节点。
 
 Architecture decision: AICodingNode inherits BaseNode (NOT AIAgentBaseNode).
 The orchestrator pattern (multiple SubAgents + polling + MR creation) is
@@ -91,17 +95,21 @@ def _validate_anthropic_base_url(url: str) -> str:
 class AICodingNode(SubStepMixin, BaseNode):
     """AI 编码执行节点。
 
-    从上游 PlanApprovalNode 读取已确认技术方案，按仓库分组并行分发
-    SubAgent 编码任务，编码完成后为每个成功仓库创建 MR，最终通过
-    飞书结果卡片通知用户。
+    从上游审批节点读取已确认技术方案，按仓库分组并行分发 SubAgent 编码任务，
+    编码完成后为每个成功仓库创建 MR。
+
+    D1 解耦：纯「结果通知」已交由下游 `notify_feishu_im` 节点承担——本节点不再
+    强依赖结果卡片推送（`chat_id` 留空即不推送，仅作可选回退）。**分支确认卡片
+    （HITL）仍保留在本节点**，它需要挂起 `waiting_event` 等待用户确认分支名，
+    与结果通知性质不同。
 
     Flow:
     1. 提取上游技术方案数据
     2. 按 repository_id 分组任务
-    3. 解析/确认分支名（可能进入 waiting_event）
-    4. 并行分发 SubAgent（每仓库一个）+ 轮询等待
+    3. 解析/确认分支名（无法确定时发分支确认卡片进入 waiting_event，HITL）
+    4. 并行分发 SubAgent（每仓库一个）+ 容器回调驱动恢复
     5. 为成功仓库并行创建 MR
-    6. 发送飞书编码结果卡片
+    6.（可选回退）配置了 chat_id 时发送飞书编码结果卡片；否则由下游通知节点推送
     7. 构建输出并返回
     """
 
@@ -134,7 +142,11 @@ class AICodingNode(SubStepMixin, BaseNode):
             "chat_id": {
                 "type": "string",
                 "title": "Chat ID",
-                "description": "飞书群 ID，用于发送结果通知和分支确认",
+                "description": (
+                    "飞书群 ID，用于发送分支确认卡片（HITL）。"
+                    "编码结果通知已解耦到下游 notify_feishu_im 节点；"
+                    "此处留空则不推送结果（仅作可选回退）。"
+                ),
                 "default": "",
             },
             "polling_interval": {
@@ -1270,7 +1282,8 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         await self.emit_sub_step(context, "create_mr", SubStepStatus.COMPLETED)
 
-        # 发送飞书结果卡片
+        # 发送飞书结果卡片（D1 解耦：可选回退——仅当显式配置了 chat_id 时推送；
+        # 默认结果通知由下游 notify_feishu_im 节点承担，本节点不强依赖）。
         await self.emit_sub_step(context, "send_notification", SubStepStatus.RUNNING)
 
         await self._send_result_notification(
@@ -1923,10 +1936,15 @@ class AICodingNode(SubStepMixin, BaseNode):
         base_branch: str,
         log: Any,
     ) -> None:
-        """发送飞书编码结果卡片。"""
+        """发送飞书编码结果卡片（D1 解耦后为可选回退）。
+
+        结果通知的主路径是下游 `notify_feishu_im` 节点；本方法仅在节点显式配置了
+        `chat_id` 时作为回退推送，留空（默认）即跳过——不再是编码节点的硬依赖。
+        """
         chat_id = context.get_config("chat_id", "")
         if not chat_id:
-            log.warning("result_notification_no_chat_id")
+            # 默认路径：不推送（由下游 notify_feishu_im 承担），非错误。
+            log.debug("result_notification_skipped_decoupled")
             return
 
         try:
