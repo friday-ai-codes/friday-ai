@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 Phase: Milestone v0.12.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-20 — Milestone v0.12.0 completed and archived
+Last activity: 2026-06-21 — Completed quick task 260621-dwn: 工作流画布对标 dify 重做
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
@@ -456,6 +456,7 @@ None.
 | 260611-ghb | 统一工作流卡片高度并收纳节点标签 | 2026-06-11 | c7af69b6 | [260611-ghb-workflow-card-uniform](./quick/260611-ghb-workflow-card-uniform/) |
 | 260612-cifix | 修复 CI：smoke 列表移除已删除的 test_tool_bindings.py | 2026-06-12 | ec839757 | — |
 | 20260617-csb | 会话列表 SDD/技术方案/编码徽标（PlanSession.conversation_id 软引用 + list annotate）+ 仓库卡片 SDD 强调/水印 | 2026-06-17 | (pending) | [20260617-conversation-sdd-coding-badges](./quick/20260617-conversation-sdd-coding-badges/) |
+| 260621-dwn | 工作流画布对标 dify：横向左入右出 Handle + 单一 0.16 bezier 连线 + 一键自动布局 + 边中点/Handle "+" 加节点 + 四元组重复校验 + 节点配置摘要；验收反馈修复（虚线常驻/+ 误触/间距）。成功-失败双出口与端口 ID 对齐后端延后 | 2026-06-21 | 42fcdffd6 | [260621-dwn-dify-right-left-handle-bezier-curvature0](./quick/260621-dwn-dify-right-left-handle-bezier-curvature0/) |
 
 ## Deferred Items
 
