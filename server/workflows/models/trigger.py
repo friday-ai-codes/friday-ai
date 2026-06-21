@@ -59,10 +59,12 @@ class WorkflowTrigger(models.Model):
 
     # 专属 Webhook 端点 token（URL 路径段，既是路由标识又是鉴权凭证）
     # 飞书侧自动化规则把 Webhook 动作指向 /api/feishu/webhook/<token>/ 即可直达本工作流。
+    # 注：unique=True 已隐式建唯一索引；再叠加 db_index=True 会令 Postgres 重复创建
+    # 同名 varchar_pattern_ops 的 `*_like` 索引而冲突（relation ... _like already exists），
+    # 故此处只保留 unique=True。
     token = models.CharField(
         max_length=64,
         unique=True,
-        db_index=True,
         default=generate_trigger_token,
         verbose_name="端点 Token",
         help_text="飞书 Webhook 专属端点标识，命中即直接触发对应工作流",

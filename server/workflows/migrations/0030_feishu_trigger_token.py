@@ -39,12 +39,15 @@ class Migration(migrations.Migration):
                 verbose_name="触发节点 ID",
             ),
         ),
-        # Step 1：可空加列（存量行先得 NULL，避免单 default 触发唯一冲突）
+        # Step 1：可空加列（存量行先得 NULL，避免单 default 触发唯一冲突）。
+        # 注意：此处「不」加 db_index，因 Step 3 收紧为 unique 时会自建唯一索引；
+        # 若 Step 1 先建普通索引（含 Postgres 的 varchar_pattern_ops `*_like` 索引），
+        # Step 3 再叠加 unique 会重复创建同名 `*_like` 索引而报
+        # `relation "..._like" already exists`。
         migrations.AddField(
             model_name="workflowtrigger",
             name="token",
             field=models.CharField(
-                db_index=True,
                 max_length=64,
                 null=True,
                 verbose_name="端点 Token",
@@ -52,12 +55,12 @@ class Migration(migrations.Migration):
         ),
         # Step 2：逐行回填唯一 token
         migrations.RunPython(fill_tokens, migrations.RunPython.noop),
-        # Step 3：收紧为非空 unique，并挂上 callable 默认值供新行使用
+        # Step 3：收紧为非空 unique（unique 已隐式建索引，无需再加 db_index），
+        # 并挂上 callable 默认值供新行使用。
         migrations.AlterField(
             model_name="workflowtrigger",
             name="token",
             field=models.CharField(
-                db_index=True,
                 default=workflows.models.trigger.generate_trigger_token,
                 help_text="飞书 Webhook 专属端点标识，命中即直接触发对应工作流",
                 max_length=64,
