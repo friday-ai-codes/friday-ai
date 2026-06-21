@@ -28,6 +28,26 @@ pytest_plugins = [
 User = get_user_model()
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """session 收尾关闭 orchestration checkpointer 的 aiosqlite 连接。
+
+    ``orchestration.checkpointer.get_checkpointer()`` 以进程级单例持有一个 aiosqlite
+    连接，其 worker 线程是 **非 daemon**：pytest 全部用例跑完后，Python 解释器会在
+    join 该线程处永久阻塞（本地卡死 / CI server-ci 跑满 6h 超时）。session 结束时
+    显式关闭即可让解释器干净退出。失败仅记日志，绝不影响测试结论。
+    """
+    import asyncio
+
+    try:
+        from orchestration.checkpointer import close_checkpointer
+
+        asyncio.run(close_checkpointer())
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("checkpointer session teardown failed")
+
+
 # ============================================================================
 # Cache Cleanup — 防止 throttle 等缓存在测试间泄漏
 # ============================================================================
@@ -123,6 +143,48 @@ def _clear_throttle_cache():
         cls.THROTTLE_RATES = orig_throttle_rates
         if orig_rate is not None:
             cls.rate = orig_rate
+
+
+@pytest.fixture(autouse=True)
+def _reset_procrastinate_tables(request):
+    """postgres_queue 测试运行前清空 procrastinate 队列表，避免跨测试污染。
+
+    procrastinate 经自有连接（PsycopgConnector / DjangoConnector）写
+    ``procrastinate_jobs`` / ``procrastinate_workers`` 等表，这些写入不在
+    pytest-django 的测试事务内，``transaction=True`` 的 flush 也未必把残留 job 与
+    自增序列清干净 → 上个用例遗留的 ``todo`` job 会被下个用例的 worker 误领
+    （典型表现：``test_forged_heartbeat_job_rescued_to_todo`` 期望领到自己 defer 的
+    新 job，却拿到上个测试遗留的 ``fetched.id == 1`` 而失败）。
+
+    仅对带 ``postgres_queue`` 标记的真实 Postgres 用例生效：运行前
+    ``TRUNCATE ... RESTART IDENTITY CASCADE`` 现存的所有 ``procrastinate_*`` 表，
+    保证每个用例从干净队列起步；非 postgres_queue / 非 Postgres 路径完全 no-op。
+    """
+    if request.node.get_closest_marker("postgres_queue") is None:
+        yield
+        return
+
+    from django.db import connection
+
+    try:
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT tablename FROM pg_tables "
+                    "WHERE schemaname = current_schema() "
+                    "AND tablename LIKE 'procrastinate_%'"
+                )
+                tables = [row[0] for row in cursor.fetchall()]
+                if tables:
+                    quoted = ", ".join(f'"{name}"' for name in tables)
+                    cursor.execute(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE")
+    except Exception:
+        # 清理失败不应吞主测试结果——记日志即可
+        import logging
+
+        logging.getLogger(__name__).exception("procrastinate pre-clean failed")
+
+    yield
 
 
 # ============================================================================

@@ -24,3 +24,20 @@ async def get_checkpointer() -> AsyncSqliteSaver:
         await saver.setup()
         _checkpointer = saver
     return _checkpointer
+
+
+async def close_checkpointer() -> None:
+    """关闭全局 checkpointer 及其底层 aiosqlite 连接，释放非 daemon worker 线程。
+
+    aiosqlite 每个连接会起一个 **非 daemon** worker 线程，仅在 ``close()`` 时收到
+    停止信号才退出。本单例连接生命周期与进程绑定、平时不关闭；但若进程要正常退出
+    （优雅关停 / pytest session 收尾），未关闭会令 Python 解释器在 join 该线程处
+    永久阻塞（典型表现：CI server-ci 跑满 6h 超时）。故在关停路径显式调用本函数。
+
+    幂等：未初始化时为 no-op；关闭后把单例重置为 None，允许后续按需重建。
+    """
+    global _checkpointer
+    saver = _checkpointer
+    _checkpointer = None
+    if saver is not None:
+        await saver.conn.close()
