@@ -113,7 +113,7 @@ describe('workflowDataTable', () => {
         { id: 'n1', node_type: 'feishu_trigger', name: '飞书事件', position_x: 0, position_y: 0 },
         { id: 'n2', node_type: 'fetch_work_item', name: '获取工作项', position_x: 120, position_y: 80 },
         { id: 'n3', node_type: 'ai_plan_generation', name: 'AI 方案生成', position_x: 240, position_y: 120 },
-        { id: 'n4', node_type: 'ai_plan_approval', name: '方案审批', position_x: 360, position_y: 160 },
+        { id: 'n4', node_type: 'human_approval', name: '方案审批', position_x: 360, position_y: 160 },
         { id: 'n5', node_type: 'ai_coding', name: 'AI 编码执行', position_x: 480, position_y: 200 },
         { id: 'n6', node_type: 'notify_feishu', name: '飞书通知', position_x: 600, position_y: 240 },
       ],

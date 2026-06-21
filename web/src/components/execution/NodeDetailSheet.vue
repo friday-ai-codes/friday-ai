@@ -27,7 +27,6 @@ import NodeConfigTab from './NodeConfigTab.vue'
 import NodeDataTab from './NodeDataTab.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
 import NodeOverviewTab from './NodeOverviewTab.vue'
-import PlanApprovalPanel from './PlanApprovalPanel.vue'
 import SubStepDetailTab from './SubStepDetailTab.vue'
 
 /** UX-02 D-09 — AI 节点 Provider 快照类型 */
@@ -108,15 +107,13 @@ watch(() => props.focusSubStepId, (id) => {
     activeTab.value = 'sub-steps'
 })
 
-/** 是否显示 PlanApprovalPanel：ai_plan_approval + waiting_event/completed */
-const showPlanApproval = computed(() =>
-  nodeType.value === 'ai_plan_approval'
-  && ['waiting_event', 'completed'].includes(nodeStatus.value),
-)
-
+/**
+ * 是否显示 HumanApprovalPanel：human_approval + 审批挂起/完成。
+ * 兼容存量 waiting_event 在途执行（C2 合并前的方案审批节点曾走 waiting_event）。
+ */
 const showHumanApproval = computed(() =>
   nodeType.value === 'human_approval'
-  && ['waiting_approval', 'completed'].includes(nodeStatus.value),
+  && ['waiting_approval', 'waiting_event', 'completed'].includes(nodeStatus.value),
 )
 
 /** 是否显示 AICodingPanel：ai_coding + running/waiting_event/completed */
@@ -132,8 +129,7 @@ const showDebugPanel = computed(() =>
 
 /** 是否有任何附加面板需要显示 */
 const hasExtraPanels = computed(() =>
-  showPlanApproval.value
-  || showHumanApproval.value
+  showHumanApproval.value
   || showAICoding.value
   || showDebugPanel.value,
 )
@@ -219,13 +215,7 @@ function handleActionComplete() {
                 <template v-if="hasExtraPanels">
                   <Separator />
 
-                  <!-- AI 方案审批面板 -->
-                  <PlanApprovalPanel
-                    v-if="showPlanApproval"
-                    :node-execution="nodeExecution"
-                    @action-complete="handleActionComplete"
-                  />
-
+                  <!-- 人工审批面板（含方案+飞书卡片审批） -->
                   <HumanApprovalPanel
                     v-if="showHumanApproval"
                     :node-execution="nodeExecution"

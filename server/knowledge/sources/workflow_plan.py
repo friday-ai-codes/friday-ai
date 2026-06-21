@@ -123,7 +123,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         approval_execution = (
             await NodeExecution.objects.filter(
                 workflow_execution_id=execution_id,
-                node__node_type="ai_plan_approval",
+                node__node_type="human_approval",
                 status=NodeExecutionStatus.COMPLETED,
             )
             .order_by("-completed_at")

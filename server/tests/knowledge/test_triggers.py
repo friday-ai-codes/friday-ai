@@ -243,7 +243,8 @@ def _make_workflow_plan_execution(
     with_feishu_trigger: bool = True,
     with_approval: bool = False,
     approval_status: str = "completed",
-    approval_node_type: str = "ai_plan_approval",
+    approval_node_type: str = "human_approval",
+    approval_config: dict | None = None,
     approval_data: dict | None = None,
 ):
     """Project + Workflow + 生成/审批节点 + Execution 同步工厂（14-04 workflow 触发用例）。
@@ -291,8 +292,17 @@ def _make_workflow_plan_execution(
     )
     approval_exec = None
     if with_approval:
+        # human_approval 缺省按方案审批（mode=plan_feishu）注入，触发 ingestion 钩子；
+        # 其它节点类型保持空配置（如 manual_confirm → 零投递）。
+        if approval_config is None:
+            approval_config = (
+                {"mode": "plan_feishu"} if approval_node_type == "human_approval" else {}
+            )
         approval_node = WorkflowNode.objects.create(
-            workflow=workflow, node_type=approval_node_type, name="方案审批"
+            workflow=workflow,
+            node_type=approval_node_type,
+            name="方案审批",
+            config=approval_config,
         )
         if approval_data is None:
             if approval_status == NodeExecutionStatus.COMPLETED:
@@ -1023,7 +1033,7 @@ class TestWorkflowTriggers:
         captured_requests: list[IngestionRequest],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """approve_node 审批 ai_plan_approval → source_id 为生成节点 key（OQ-2 定案）。"""
+        """approve_node 审批 human_approval(mode=plan_feishu) → source_id 为生成节点 key（OQ-2 定案）。"""
         from types import SimpleNamespace
 
         from workflows.models.execution import NodeExecutionStatus
@@ -1048,7 +1058,7 @@ class TestWorkflowTriggers:
         captured_requests: list[IngestionRequest],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """approve_node 审批非 ai_plan_approval 节点（如人工确认）→ 零投递。"""
+        """approve_node 审批非方案审批节点（如人工确认 manual_confirm）→ 零投递。"""
         from types import SimpleNamespace
 
         from workflows.models.execution import NodeExecutionStatus
@@ -1058,6 +1068,30 @@ class TestWorkflowTriggers:
                 with_approval=True,
                 approval_status=NodeExecutionStatus.WAITING_APPROVAL,
                 approval_node_type="manual_confirm",
+            )
+        )()
+        engine = self._make_engine(monkeypatch)
+        approver = SimpleNamespace(id=1, username="审批人甲")
+
+        await engine.approve_node(approval_exec, approver)
+
+        assert captured_requests == []
+
+    async def test_workflow_generic_human_approval_zero_delivery(
+        self,
+        captured_requests: list[IngestionRequest],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """approve_node 审批 human_approval(mode=generic) → 零投递（仅 plan_feishu 触发摄取）。"""
+        from types import SimpleNamespace
+
+        from workflows.models.execution import NodeExecutionStatus
+
+        _p, _e, _gen_node, _gen_exec, approval_exec = await sync_to_async(
+            lambda: _make_workflow_plan_execution(
+                with_approval=True,
+                approval_status=NodeExecutionStatus.WAITING_APPROVAL,
+                approval_config={"mode": "generic"},
             )
         )()
         engine = self._make_engine(monkeypatch)

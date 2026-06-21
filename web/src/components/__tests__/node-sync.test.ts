@@ -71,9 +71,9 @@ describe('前后端节点漂移守护（fixture 驱动）', () => {
 
   it('多端口节点的端口集应与 fixture 对账（不再依赖 getDefaultPortsForNodeType）', () => {
     // parallel/join 为运行时动态端口，后端静态快照不含分支端口，
-    // 故对真实多输出节点（ai_plan_approval 的 approved/rejected）做端口集漂移守护。
-    const approval = fixtureByType.get('ai_plan_approval')
-    expect(approval, `fixture 缺 ai_plan_approval —— ${REGEN_HINT}`).toBeDefined()
+    // 故对真实多输出节点（human_approval 的 approved/rejected）做端口集漂移守护。
+    const approval = fixtureByType.get('human_approval')
+    expect(approval, `fixture 缺 human_approval —— ${REGEN_HINT}`).toBeDefined()
     const approvalOutputs = (approval?.outputs ?? []).map(o => o.name)
     expect(approvalOutputs).toContain('approved')
     expect(approvalOutputs).toContain('rejected')

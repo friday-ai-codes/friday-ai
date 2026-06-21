@@ -153,6 +153,10 @@ export const joinDef = createNodeDefinition({
 // ============================================================================
 
 const humanApprovalSchema = z.object({
+  // generic=通用控制台审批；plan_feishu=方案+飞书卡片审批（吸收原 ai_plan_approval）
+  mode: z.enum(['generic', 'plan_feishu'], '请选择有效的选项').default('generic'),
+  // plan_feishu 模式下推送审批卡片的飞书群 ID（留空则用上游传递的 chat_id）
+  chat_id: z.string().default(''),
   approvers: z.array(z.string()).default([]),
   approval_message: z.string().default(''),
   timeout_hours: z.number().int().min(1, '不能小于 1').default(72),
@@ -161,12 +165,21 @@ const humanApprovalSchema = z.object({
 export const humanApprovalDef = createNodeDefinition({
   nodeType: 'human_approval',
   displayName: '人工审批',
-  description: '等待人工审批',
+  description: '等待人工审批（支持方案+飞书卡片审批）',
   icon: 'icon-[lucide--user-check]',
   color: 'from-amber-500 to-orange-400',
   category: 'control',
   schema: humanApprovalSchema,
   defaultConfig: humanApprovalSchema.parse({}),
+  uiSchema: {
+    fields: {
+      mode: { widget: 'select', help: 'generic=通用控制台审批；plan_feishu=方案+飞书卡片审批' },
+      chat_id: { widget: 'text', help: 'plan_feishu 模式下发送审批卡片的飞书群 ID，留空则用上游传递的 chat_id' },
+      approvers: { widget: 'json-editor', help: '审批人用户 ID 列表，为空则空间成员均可审批' },
+      approval_message: { widget: 'textarea', help: '审批说明（可选）' },
+      timeout_hours: { widget: 'number', help: '超时时间（小时）' },
+    },
+  },
 })
 
 // ============================================================================

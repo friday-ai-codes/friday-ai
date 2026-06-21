@@ -61,7 +61,6 @@ export const CONFIG_COMPONENTS: Record<string, () => Promise<{ default: Componen
   create_branch: () => import('~/components/workflow/config/CreateBranchConfig.vue'),
   create_pr: () => import('~/components/workflow/config/CreatePRConfig.vue'),
   ai_plan_generation: () => import('~/components/workflow/config/AIPlanGenerationConfig.vue'),
-  ai_plan_approval: () => import('~/components/workflow/config/AIPlanApprovalConfig.vue'),
   ai_coding: () => import('~/components/workflow/config/AICodingConfig.vue'),
 }
 

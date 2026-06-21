@@ -38,7 +38,7 @@ const iconMap: Record<string, Component> = {
   context_retrieval: SearchCode,
   delivery_knowledge_search: Search,
   ai_plan_generation: FileText,
-  ai_plan_approval: CircleCheck,
+  human_approval: CircleCheck,
   ai_coding: Terminal,
 }
 

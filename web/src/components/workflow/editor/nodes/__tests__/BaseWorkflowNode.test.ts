@@ -27,7 +27,7 @@ vi.mock('@vue-flow/core', () => ({
       position: { type: String, default: '' },
     },
     setup(props) {
-      return () => h('div', { 'data-testid': 'handle', 'data-handle-id': props.id, 'data-handle-type': props.type })
+      return () => h('div', { 'data-testid': 'handle', 'data-handle-id': props.id, 'data-handle-type': props.type, 'data-handle-position': props.position })
     },
   }),
   Position: { Top: 'top', Bottom: 'bottom', Left: 'left', Right: 'right' },
@@ -86,6 +86,13 @@ function handleIds(wrapper: ReturnType<typeof mountNode>, type: 'target' | 'sour
     .map(h => h.attributes('data-handle-id'))
 }
 
+function handlePositions(wrapper: ReturnType<typeof mountNode>, type: 'target' | 'source') {
+  return wrapper
+    .findAll('[data-testid="handle"]')
+    .filter(h => h.attributes('data-handle-type') === type)
+    .map(h => h.attributes('data-handle-position'))
+}
+
 describe('baseWorkflowNode Handle 渲染', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -95,6 +102,31 @@ describe('baseWorkflowNode Handle 渲染', () => {
     const wrapper = mountNode('ai_coding')
 
     expect(handleIds(wrapper, 'target')).toEqual(['default'])
+    expect(handleIds(wrapper, 'source')).toEqual(['default'])
+  })
+
+  it('入 Handle 永远左入（left）、出 Handle 永远右出（right）', () => {
+    const wrapper = mountNode('ai_coding')
+
+    expect(handlePositions(wrapper, 'target')).toEqual(['left'])
+    expect(handlePositions(wrapper, 'source')).toEqual(['right'])
+  })
+
+  it('触发器节点（inputs 为空 / category trigger）不渲染入 Handle', async () => {
+    const store = useNodeTypesStore()
+    store.nodeTypes = [
+      makeNodeType({
+        node_type: 'manual_trigger',
+        category: 'trigger',
+        inputs: [],
+        outputs: [makePort('default')],
+      }),
+    ]
+
+    const wrapper = mountNode('manual_trigger')
+    await nextTick()
+
+    expect(handleIds(wrapper, 'target')).toEqual([])
     expect(handleIds(wrapper, 'source')).toEqual(['default'])
   })
 
@@ -123,14 +155,14 @@ describe('baseWorkflowNode Handle 渲染', () => {
     const store = useNodeTypesStore()
     store.nodeTypes = [
       makeNodeType({
-        node_type: 'ai_plan_approval',
+        node_type: 'human_approval',
         category: 'control',
         inputs: [makePort('default')],
         outputs: [makePort('approved'), makePort('rejected')],
       }),
     ]
 
-    const wrapper = mountNode('ai_plan_approval')
+    const wrapper = mountNode('human_approval')
     await nextTick()
 
     const outputs = handleIds(wrapper, 'source')
