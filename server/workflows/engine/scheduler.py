@@ -1368,11 +1368,14 @@ class WorkflowEngine:
             approver=approver,
         )
 
-        # INGEST-01（14-04）：ai_plan_approval 审批通过 → 投递统一摄取。
-        # source_id 恒为同 execution 中生成节点（ai_plan_generation）的 key（OQ-2 定案）；
-        # node FK 未必预加载，经 sync_to_async 安全取 node_type。
-        node_type = await sync_to_async(lambda: node_execution.node.node_type)()
-        if node_type == "ai_plan_approval":
+        # INGEST-01（14-04 / C2）：方案审批（human_approval + mode=plan_feishu）通过 →
+        # 投递统一摄取。source_id 恒为同 execution 中生成节点（ai_plan_generation）的 key
+        # （OQ-2 定案）；node FK 未必预加载，经 sync_to_async 安全取 node_type / config。
+        node_meta = await sync_to_async(
+            lambda: (node_execution.node.node_type, node_execution.node.config or {})
+        )()
+        node_type, node_config = node_meta
+        if node_type == "human_approval" and node_config.get("mode") == "plan_feishu":
             generation_node_id = await (
                 NodeExecution.objects.filter(
                     workflow_execution_id=node_execution.workflow_execution_id,

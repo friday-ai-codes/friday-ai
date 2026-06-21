@@ -78,12 +78,11 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
   ai_variable_extractor: { icon: Variable, color: 'purple' },
   variable_extractor: { icon: Variable, color: 'purple' },
   ai_plan_generation: { icon: FileCode, color: 'purple' },
-  ai_plan_approval: { icon: CheckCircle, color: 'purple' },
   ai_coding: { icon: Terminal, color: 'purple' },
 
   // 控制流 (purple)
   condition: { icon: GitBranch, color: 'purple' },
-  human_approval: { icon: MessageSquare, color: 'purple' },
+  human_approval: { icon: CheckCircle, color: 'purple' },
   delay: { icon: Clock, color: 'purple' },
   parallel: { icon: GitFork, color: 'purple' },
   join: { icon: GitMerge, color: 'purple' },

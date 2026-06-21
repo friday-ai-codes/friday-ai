@@ -36,10 +36,11 @@
     },
     {
       "id": "plan_approval",
-      "type": "ai_plan_approval",
+      "type": "human_approval",
       "name": "方案审批",
       "position": {"x": 700, "y": 540},
       "config": {
+        "mode": "plan_feishu",
         "chat_id": ""
       }
     },

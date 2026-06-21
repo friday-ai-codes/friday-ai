@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-21T01:06:16.677Z",
+  "generated_at": "2026-06-21T02:13:19.060Z",
   "node_count": 19,
   "nodes": [
     {
@@ -351,13 +351,25 @@
     {
       "node_type": "human_approval",
       "display_name": "人工审批",
-      "description": "等待人工审批",
+      "description": "等待人工审批（支持方案+飞书卡片审批）",
       "icon": "icon-[lucide--user-check]",
       "category": "control",
       "config_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "mode": {
+            "default": "generic",
+            "type": "string",
+            "enum": [
+              "generic",
+              "plan_feishu"
+            ]
+          },
+          "chat_id": {
+            "default": "",
+            "type": "string"
+          },
           "approvers": {
             "default": [],
             "type": "array",
@@ -377,13 +389,38 @@
           }
         },
         "required": [
+          "mode",
+          "chat_id",
           "approvers",
           "approval_message",
           "timeout_hours"
         ],
         "additionalProperties": false
       },
-      "ui_schema": null
+      "ui_schema": {
+        "fields": {
+          "mode": {
+            "widget": "select",
+            "help": "generic=通用控制台审批；plan_feishu=方案+飞书卡片审批"
+          },
+          "chat_id": {
+            "widget": "text",
+            "help": "plan_feishu 模式下发送审批卡片的飞书群 ID，留空则用上游传递的 chat_id"
+          },
+          "approvers": {
+            "widget": "json-editor",
+            "help": "审批人用户 ID 列表，为空则空间成员均可审批"
+          },
+          "approval_message": {
+            "widget": "textarea",
+            "help": "审批说明（可选）"
+          },
+          "timeout_hours": {
+            "widget": "number",
+            "help": "超时时间（小时）"
+          }
+        }
+      }
     },
     {
       "node_type": "foreach",

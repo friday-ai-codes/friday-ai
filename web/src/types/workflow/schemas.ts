@@ -289,11 +289,6 @@ export const aiPlanGenerationConfigSchema = z.object({
   provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
 })
 
-/** 方案审批节点配置 */
-export const aiPlanApprovalConfigSchema = z.object({
-  chat_id: z.string().default(''),
-})
-
 /** AI 编码执行节点配置 */
 export const aiCodingConfigSchema = z.object({
   container_image: z.string().default('friday/claude-code:latest'),
@@ -333,7 +328,6 @@ export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
 export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
-export type AIPlanApprovalConfig = z.infer<typeof aiPlanApprovalConfigSchema>
 export type AICodingConfig = z.infer<typeof aiCodingConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 
@@ -352,7 +346,6 @@ export type NodeConfig
     | CreateBranchConfig
     | CreatePRConfig
     | AIPlanGenerationConfig
-    | AIPlanApprovalConfig
     | AICodingConfig
 
 // ============================================================================
@@ -374,7 +367,6 @@ export const NODE_CONFIG_SCHEMAS = {
   create_branch: createBranchConfigSchema,
   create_pr: createPRConfigSchema,
   ai_plan_generation: aiPlanGenerationConfigSchema,
-  ai_plan_approval: aiPlanApprovalConfigSchema,
   ai_coding: aiCodingConfigSchema,
 } as const
 

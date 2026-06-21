@@ -1,5 +1,5 @@
 {
-  "node_count": 36,
+  "node_count": 35,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -46,23 +46,6 @@
         },
         {
           "name": "error"
-        }
-      ]
-    },
-    {
-      "node_type": "ai_plan_approval",
-      "category": "ai",
-      "inputs": [
-        {
-          "name": "default"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "approved"
-        },
-        {
-          "name": "rejected"
         }
       ]
     },

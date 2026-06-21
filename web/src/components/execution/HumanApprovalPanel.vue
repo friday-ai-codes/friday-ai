@@ -4,6 +4,11 @@ import { computed, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '~/components/ui/collapsible'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -17,6 +22,17 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 
+/**
+ * HumanApprovalPanel — 人工审批面板（C2 合并方案审批）。
+ *
+ * 同时承载：
+ * - 通用控制台审批（mode=generic）：标题/说明/展示数据 + 通过/拒绝。
+ * - 方案+飞书卡片审批（mode=plan_feishu，吸收原 PlanApprovalPanel）：方案摘要/任务/风险/
+ *   假设折叠展示 + 文档链接。
+ *
+ * 兼容 waiting_approval（统一审批通道）与存量 waiting_event（C2 合并前在途执行）。
+ */
+
 const props = defineProps<{
   nodeExecution: NodeExecution
 }>()
@@ -27,18 +43,46 @@ const emit = defineEmits<{
 
 const store = useExecutionsStore()
 const { handleError } = useErrorHandler()
-const { success } = useToast()
+const { success, error: showError } = useToast()
 
 const comment = ref('')
 const rejectDialogOpen = ref(false)
 const submitting = ref(false)
 
-const approval = computed(() => props.nodeExecution.output_data || props.nodeExecution.approval_data || {})
-const title = computed(() => approval.value.title || props.nodeExecution.node_name || '人工审批')
-const description = computed(() => approval.value.description || '')
-const displayData = computed(() => approval.value.display_data || {})
+// 折叠面板状态（方案审批）
+const tasksOpen = ref(false)
+const risksOpen = ref(false)
+const assumptionsOpen = ref(false)
+
+// 数据源合并：waiting 态数据落 approval_data，completed 态合并到 output_data。
+// 二者合并保证两阶段都能取到（output_data 优先覆盖 approval_data）。
+const data = computed<Record<string, any>>(() => ({
+  ...(props.nodeExecution.approval_data || {}),
+  ...(props.nodeExecution.output_data || {}),
+}))
+
+const title = computed(() => data.value.title || props.nodeExecution.node_name || '人工审批')
+const description = computed(() => data.value.description || '')
+const displayData = computed(() => data.value.display_data || {})
 const hasDisplayData = computed(() => Object.keys(displayData.value).length > 0)
-const isWaiting = computed(() => props.nodeExecution.status === 'waiting_approval')
+
+// 方案数据（mode=plan_feishu 时存在）
+const planData = computed<Record<string, any> | null>(() => {
+  const plan = data.value.plan
+  return plan && typeof plan === 'object' ? plan : null
+})
+const hasPlan = computed(() => planData.value !== null)
+const planSummary = computed(() => planData.value?.summary || '')
+const planTasks = computed((): Record<string, any>[] =>
+  planData.value?.tasks || planData.value?.execution_plan || [],
+)
+const planRisks = computed((): (string | Record<string, any>)[] => planData.value?.risks || [])
+const planAssumptions = computed((): (string | Record<string, any>)[] => planData.value?.assumptions || [])
+const documentUrl = computed(() => data.value.document_url || '')
+
+const isWaiting = computed(() =>
+  ['waiting_approval', 'waiting_event'].includes(props.nodeExecution.status),
+)
 const isCompleted = computed(() => props.nodeExecution.status === 'completed')
 const approvalResult = computed(() => props.nodeExecution.output_data?._next_handle)
 const rejectReason = computed(() => props.nodeExecution.output_data?.reject_reason || '')
@@ -60,6 +104,10 @@ async function approve() {
 }
 
 async function reject() {
+  if (!comment.value.trim()) {
+    showError('请输入拒绝理由')
+    return
+  }
   submitting.value = true
   try {
     await store.rejectNode(props.nodeExecution.id, comment.value)
@@ -90,6 +138,16 @@ async function reject() {
         <p v-if="description" class="text-xs text-muted-foreground leading-relaxed">
           {{ description }}
         </p>
+        <a
+          v-if="documentUrl"
+          :href="documentUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-xs text-primary hover:underline flex items-center gap-1"
+        >
+          <span class="icon-[lucide--external-link] w-3 h-3" />
+          查看完整文档
+        </a>
       </div>
 
       <Badge v-if="isWaiting" class="bg-amber-500/10 text-amber-700 border-amber-500/20">
@@ -109,7 +167,115 @@ async function reject() {
       </Badge>
     </div>
 
-    <div v-if="hasDisplayData" class="rounded-md bg-muted/60 p-3">
+    <!-- 方案摘要（mode=plan_feishu） -->
+    <div v-if="planSummary" class="space-y-1.5">
+      <div class="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+        <span class="icon-[lucide--align-left] w-3.5 h-3.5" />
+        方案摘要
+      </div>
+      <p class="text-sm leading-relaxed whitespace-pre-wrap">
+        {{ planSummary }}
+      </p>
+    </div>
+
+    <!-- 任务列表（折叠） -->
+    <Collapsible v-if="planTasks.length > 0" v-model:open="tasksOpen">
+      <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <span class="flex items-center gap-2">
+          <span class="icon-[lucide--list-checks] w-4 h-4 text-violet-500" />
+          任务列表
+          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+            {{ planTasks.length }}
+          </Badge>
+        </span>
+        <span
+          class="icon-[lucide--chevron-down] w-4 h-4 transition-transform duration-200"
+          :class="{ 'rotate-180': tasksOpen }"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent class="space-y-2 pt-2">
+        <div
+          v-for="(task, index) in planTasks"
+          :key="index"
+          class="rounded-xl border border-border/40 p-3"
+        >
+          <div class="flex items-start gap-2">
+            <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-600 text-[10px] font-bold">
+              {{ index + 1 }}
+            </span>
+            <div class="space-y-1 flex-1 min-w-0">
+              <div class="text-sm font-medium">
+                {{ task.name || task.title || `Task ${index + 1}` }}
+              </div>
+              <p v-if="task.description" class="text-xs text-muted-foreground leading-relaxed">
+                {{ task.description }}
+              </p>
+              <div v-if="task.repository" class="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span class="icon-[lucide--git-branch] w-3 h-3" />
+                {{ task.repository }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+
+    <!-- 风险（折叠） -->
+    <Collapsible v-if="planRisks.length > 0" v-model:open="risksOpen">
+      <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <span class="flex items-center gap-2">
+          <span class="icon-[lucide--alert-triangle] w-4 h-4 text-amber-500" />
+          风险
+          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+            {{ planRisks.length }}
+          </Badge>
+        </span>
+        <span
+          class="icon-[lucide--chevron-down] w-4 h-4 transition-transform duration-200"
+          :class="{ 'rotate-180': risksOpen }"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent class="space-y-1.5 pt-2">
+        <div
+          v-for="(risk, index) in planRisks"
+          :key="index"
+          class="flex items-start gap-2 text-sm p-2 rounded-lg bg-amber-500/5 border border-amber-500/10"
+        >
+          <span class="icon-[lucide--alert-triangle] w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+          <span>{{ typeof risk === 'string' ? risk : risk.description || risk.name || JSON.stringify(risk) }}</span>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+
+    <!-- 假设（折叠） -->
+    <Collapsible v-if="planAssumptions.length > 0" v-model:open="assumptionsOpen">
+      <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <span class="flex items-center gap-2">
+          <span class="icon-[lucide--lightbulb] w-4 h-4 text-primary" />
+          假设
+          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+            {{ planAssumptions.length }}
+          </Badge>
+        </span>
+        <span
+          class="icon-[lucide--chevron-down] w-4 h-4 transition-transform duration-200"
+          :class="{ 'rotate-180': assumptionsOpen }"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent class="space-y-1.5 pt-2">
+        <div
+          v-for="(assumption, index) in planAssumptions"
+          :key="index"
+          class="flex items-start gap-2 text-sm p-2 rounded-lg bg-primary/5 border border-primary/10"
+        >
+          <span class="icon-[lucide--lightbulb] w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+          <span>{{ typeof assumption === 'string' ? assumption : assumption.description || assumption.name || JSON.stringify(assumption) }}</span>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+
+    <!-- 通用审批展示数据（mode=generic） -->
+    <div v-if="!hasPlan && hasDisplayData" class="rounded-md bg-muted/60 p-3">
       <div class="mb-2 text-xs font-medium text-muted-foreground">
         审批数据
       </div>
@@ -128,10 +294,10 @@ async function reject() {
     <template v-if="isWaiting">
       <Separator />
       <div class="space-y-2">
-        <label class="text-xs font-medium text-muted-foreground">备注（可选）</label>
+        <label class="text-xs font-medium text-muted-foreground">备注 / 拒绝理由</label>
         <Textarea
           v-model="comment"
-          placeholder="添加审批备注..."
+          placeholder="通过可留空；拒绝时请填写理由..."
           class="min-h-20"
         />
       </div>
@@ -162,9 +328,16 @@ async function reject() {
       <DialogHeader>
         <DialogTitle>拒绝审批</DialogTitle>
         <DialogDescription>
-          确认拒绝「{{ title }}」？
+          确认拒绝「{{ title }}」？拒绝理由将通过飞书通知方案作者。
         </DialogDescription>
       </DialogHeader>
+      <div class="space-y-3">
+        <Textarea
+          v-model="comment"
+          placeholder="请输入拒绝理由..."
+          class="min-h-24"
+        />
+      </div>
       <DialogFooter>
         <Button variant="outline" @click="rejectDialogOpen = false">
           取消

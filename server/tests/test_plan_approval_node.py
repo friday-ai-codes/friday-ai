@@ -1,8 +1,7 @@
-"""PlanApprovalNode unit tests.
+"""HumanApprovalNode(mode=plan_feishu) 单元测试。
 
-Tests the PlanApprovalNode's independent execution behavior,
-including happy path (waiting_event), fallback input, error handling,
-and document creation failure resilience.
+测试方案审批模式的独立执行行为：happy path（waiting_approval）、兜底输入、错误处理、
+文档生成失败的非阻塞韧性（C2 合并后由 control/approval.py 的 HumanApprovalNode 承载）。
 """
 
 from typing import Any
@@ -11,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tests.e2e.fixtures.technical_plans import VALID_TECHNICAL_PLAN
-from workflows.nodes.ai.plan_approval import PlanApprovalNode
 from workflows.nodes.base import ExecutionContext, NodeResult
+from workflows.nodes.control.approval import HumanApprovalNode
 
 
 def _make_context(
@@ -21,12 +20,13 @@ def _make_context(
     chat_id: str = "",
     extra_config: dict[str, Any] | None = None,
 ) -> ExecutionContext:
-    """Build a minimal ExecutionContext for PlanApprovalNode tests.
+    """Build a minimal ExecutionContext for plan_feishu 审批 tests.
 
     Constructs the mock workflow_execution -> workflow -> project chain
-    required by PlanApprovalNode.execute().
+    required by HumanApprovalNode._execute_plan_feishu().
     """
     config: dict[str, Any] = {
+        "mode": "plan_feishu",
         "chat_id": chat_id,
     }
     if extra_config:
@@ -66,7 +66,7 @@ PLAN_WITH_DETAILS: dict[str, Any] = {
 
 @pytest.mark.django_db(transaction=True)
 class TestPlanApprovalNode:
-    """Unit tests for PlanApprovalNode independent execution."""
+    """Unit tests for HumanApprovalNode(mode=plan_feishu) independent execution."""
 
     @pytest.mark.asyncio
     @patch(
@@ -76,7 +76,7 @@ class TestPlanApprovalNode:
         self,
         mock_create_doc_client: MagicMock,
     ) -> None:
-        """Input contains plan dict -> returns waiting_event with plan + pending status."""
+        """Input contains plan dict -> returns waiting_approval with plan + pending status."""
         # Arrange
         mock_doc_client = MagicMock()
         mock_doc_client.create_document = AsyncMock(
@@ -93,13 +93,13 @@ class TestPlanApprovalNode:
                 "usage": {"input_tokens": 1000, "output_tokens": 500},
             },
         )
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         # Act
         result: NodeResult = await node.execute(ctx)
 
         # Assert
-        assert result.status == "waiting_event"
+        assert result.status == "waiting_approval"
         assert result.output["plan"] == PLAN_WITH_DETAILS
         assert result.output["approval_status"] == "pending"
         assert "final_answer" in result.output
@@ -128,11 +128,11 @@ class TestPlanApprovalNode:
             "execution_plan": [],
         }
         ctx = _make_context(input_data=fallback_data)
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         result: NodeResult = await node.execute(ctx)
 
-        assert result.status == "waiting_event"
+        assert result.status == "waiting_approval"
         # The fallback uses the entire input_data as plan_data
         assert result.output["plan"]["summary"] == "Fallback 方案摘要"
 
@@ -140,7 +140,7 @@ class TestPlanApprovalNode:
     async def test_execute_missing_plan(self) -> None:
         """No plan and input_data has no 'summary' -> returns failed."""
         ctx = _make_context(input_data={"some_other_key": "value"})
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         result: NodeResult = await node.execute(ctx)
 
@@ -154,7 +154,7 @@ class TestPlanApprovalNode:
         ctx = _make_context(
             input_data={"plan": "This is not a dict, it's a string"},
         )
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         result: NodeResult = await node.execute(ctx)
 
@@ -170,7 +170,7 @@ class TestPlanApprovalNode:
         self,
         mock_create_doc_client: MagicMock,
     ) -> None:
-        """create_document raises exception -> node still returns waiting_event."""
+        """create_document raises exception -> node still returns waiting_approval."""
         mock_doc_client = MagicMock()
         mock_doc_client.create_document = AsyncMock(
             side_effect=Exception("Feishu API error: rate limited")
@@ -182,12 +182,12 @@ class TestPlanApprovalNode:
         ctx = _make_context(
             input_data={"plan": PLAN_WITH_DETAILS},
         )
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         result: NodeResult = await node.execute(ctx)
 
         # Document creation failure is non-blocking
-        assert result.status == "waiting_event"
+        assert result.status == "waiting_approval"
         assert result.output["plan"] == PLAN_WITH_DETAILS
         # document_url should be empty string when creation fails
         assert result.output["document_url"] == ""
@@ -227,9 +227,57 @@ class TestPlanApprovalNode:
         ctx = _make_context(
             input_data={"plan": PLAN_WITH_DETAILS},
         )
-        node = PlanApprovalNode()
+        node = HumanApprovalNode()
 
         result: NodeResult = await node.execute(ctx)
 
-        assert result.status == "waiting_event"
+        assert result.status == "waiting_approval"
         assert result.output["document_url"] == expected_url
+
+
+@pytest.mark.django_db(transaction=True)
+class TestHumanApprovalGenericMode:
+    """通用审批模式（mode=generic / 缺省）的 waiting_approval 行为。"""
+
+    @pytest.mark.asyncio
+    async def test_generic_mode_returns_waiting_approval(self) -> None:
+        """mode=generic：不碰飞书，直接进入 waiting_approval（审批请求带 title/display_data）。"""
+        ctx = ExecutionContext(
+            execution_id="00000000-0000-0000-0000-000000000002",
+            node_id="00000000-0000-0000-0000-000000000012",
+            node_config={
+                "mode": "generic",
+                "title": "请确认上线",
+                "show_data": ["version"],
+            },
+            input_data={"version": "v1.2.3", "ignored": "x"},
+            workflow_context={},
+            previous_outputs={},
+            workflow_execution=None,
+        )
+        node = HumanApprovalNode()
+
+        result: NodeResult = await node.execute(ctx)
+
+        assert result.status == "waiting_approval"
+        assert result.output["title"] == "请确认上线"
+        assert result.output["display_data"] == {"version": "v1.2.3"}
+        assert "plan" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_default_mode_is_generic(self) -> None:
+        """缺省 mode 走通用审批（不要求 plan 输入即可进入 waiting_approval）。"""
+        ctx = ExecutionContext(
+            execution_id="00000000-0000-0000-0000-000000000002",
+            node_id="00000000-0000-0000-0000-000000000012",
+            node_config={},
+            input_data={},
+            workflow_context={},
+            previous_outputs={},
+            workflow_execution=None,
+        )
+        node = HumanApprovalNode()
+
+        result: NodeResult = await node.execute(ctx)
+
+        assert result.status == "waiting_approval"

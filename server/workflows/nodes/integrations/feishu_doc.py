@@ -1,7 +1,7 @@
 """飞书文档生成节点。
 
 把上游节点产出的 Markdown（如技术方案、需求整理结果等）一键生成为飞书云文档。
-复用 `FeishuDocClient`（与 ai_plan_approval 建方案文档同一套能力），凭证优先取项目级
+复用 `FeishuDocClient`（与 human_approval(mode=plan_feishu) 建方案文档同一套能力），凭证优先取项目级
 飞书 App，其次回退系统级配置；目标 folder 优先取节点配置，否则取项目 feishu_doc_folder_token。
 """
 

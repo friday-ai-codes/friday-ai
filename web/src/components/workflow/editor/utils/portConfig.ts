@@ -32,7 +32,7 @@ export const TRIGGER_NODE_TYPES = [
 /**
  * 审批节点类型（一个输入，两个分支输出：approved/rejected）。
  */
-const APPROVAL_NODE_TYPES = ['ai_plan_approval', 'human_approval']
+const APPROVAL_NODE_TYPES = ['human_approval']
 
 /**
  * 带错误输出端口的节点类型（1 个输入，2 个输出：default + error）。

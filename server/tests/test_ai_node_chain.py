@@ -13,7 +13,6 @@ class TestAINodeRegistration:
 
     AI_NODE_TYPES = [
         "ai_plan_generation",
-        "ai_plan_approval",
         "ai_coding",
     ]
 
@@ -50,12 +49,12 @@ class TestAINodeInstantiation:
         assert node.display_name == "AI 方案生成"
 
     def test_plan_approval_instantiation(self):
-        """PlanApproval 节点能正常实例化。"""
-        from workflows.nodes.ai.plan_approval import PlanApprovalNode
+        """方案审批已合并进 control/human_approval（mode=plan_feishu），能正常实例化。"""
+        from workflows.nodes.control.approval import HumanApprovalNode
 
-        node = PlanApprovalNode()
-        assert node.node_type == "ai_plan_approval"
-        assert node.display_name == "方案审批"
+        node = HumanApprovalNode()
+        assert node.node_type == "human_approval"
+        assert node.display_name == "人工审批"
 
     def test_coding_instantiation(self):
         """Coding 节点能正常实例化。"""
@@ -77,24 +76,23 @@ class TestAINodeAttributes:
         assert len(AIPlanGenerationNode.sub_steps) > 0
 
     def test_plan_approval_is_blocking(self):
-        """PlanApproval 节点应标记为阻塞（等待用户审批）。"""
-        from workflows.nodes.ai.plan_approval import PlanApprovalNode
+        """方案审批节点应标记为阻塞（等待用户审批）。"""
+        from workflows.nodes.control.approval import HumanApprovalNode
 
-        assert PlanApprovalNode.is_blocking is True
+        assert HumanApprovalNode.is_blocking is True
 
     def test_plan_approval_execution_mode(self):
-        """PlanApproval 节点应使用 server_local 执行模式。"""
-        from workflows.nodes.ai.plan_approval import PlanApprovalNode
+        """方案审批节点应使用 server_local 执行模式。"""
+        from workflows.nodes.control.approval import HumanApprovalNode
 
-        assert PlanApprovalNode.execution_mode == "server_local"
+        assert HumanApprovalNode.execution_mode == "server_local"
 
     def test_all_nodes_have_execute_method(self):
         """所有 AI 节点应有 execute 方法。"""
         from workflows.nodes.ai.coding import AICodingNode
-        from workflows.nodes.ai.plan_approval import PlanApprovalNode
         from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 
-        for node_class in [AIPlanGenerationNode, PlanApprovalNode, AICodingNode]:
+        for node_class in [AIPlanGenerationNode, AICodingNode]:
             assert hasattr(node_class, "execute"), f"{node_class.__name__} 缺少 execute 方法"
 
 
@@ -191,11 +189,12 @@ class TestAINodeConfigSchema:
     """验证 AI 节点配置 schema。"""
 
     def test_plan_approval_has_config_schema(self):
-        """PlanApproval 应有配置 schema。"""
-        from workflows.nodes.ai.plan_approval import PlanApprovalNode
+        """方案审批节点应有配置 schema（含 mode 字段）。"""
+        from workflows.nodes.control.approval import HumanApprovalNode
 
-        assert hasattr(PlanApprovalNode, "config_schema")
-        assert isinstance(PlanApprovalNode.config_schema, dict)
+        assert hasattr(HumanApprovalNode, "config_schema")
+        assert isinstance(HumanApprovalNode.config_schema, dict)
+        assert "mode" in HumanApprovalNode.config_schema["properties"]
 
     def test_plan_generation_has_config_schema(self):
         """PlanGeneration 应有配置 schema（继承自 AIAgentBaseNode）。"""
