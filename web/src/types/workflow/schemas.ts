@@ -302,18 +302,6 @@ export const aiCodingConfigSchema = z.object({
   polling_interval: z.number().int().min(5, '不能小于 5').max(60, '不能大于 60').default(15),
 })
 
-/** AI 代码审查节点配置 */
-export const aiCodeReviewConfigSchema = z.object({
-  model: z.string().default(''),
-  use_custom_api: z.boolean().default(false),
-  api_base_url: z.string().default(''),
-  api_key: z.string().default(''),
-  chat_id: z.string().default(''),
-  max_iterations: z.number().min(1, '不能小于 1').max(100, '不能大于 100').default(30),
-  // Provider 凭证:指向 ProviderCredential.id;null 走系统默认
-  provider_credential_id: z.string().uuid('凭证 ID 格式无效').nullable().optional(),
-})
-
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
   key: z.string(),
@@ -347,7 +335,6 @@ export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
 export type AIPlanApprovalConfig = z.infer<typeof aiPlanApprovalConfigSchema>
 export type AICodingConfig = z.infer<typeof aiCodingConfigSchema>
-export type AICodeReviewConfig = z.infer<typeof aiCodeReviewConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 
 /** 所有节点配置的联合类型 */
@@ -367,7 +354,6 @@ export type NodeConfig
     | AIPlanGenerationConfig
     | AIPlanApprovalConfig
     | AICodingConfig
-    | AICodeReviewConfig
 
 // ============================================================================
 // Schema 映射
@@ -390,7 +376,6 @@ export const NODE_CONFIG_SCHEMAS = {
   ai_plan_generation: aiPlanGenerationConfigSchema,
   ai_plan_approval: aiPlanApprovalConfigSchema,
   ai_coding: aiCodingConfigSchema,
-  ai_code_review: aiCodeReviewConfigSchema,
 } as const
 
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS

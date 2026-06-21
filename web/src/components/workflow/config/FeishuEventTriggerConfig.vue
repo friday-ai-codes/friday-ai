@@ -4,6 +4,14 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
 
 import { Badge } from '~/components/ui/badge'
+import { Checkbox } from '~/components/ui/checkbox'
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '~/components/ui/command'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -151,31 +159,9 @@ const excludeWorkItemPattern = computed<string>({
 // 空间选择器
 // ============================================================================
 
-const projectSearchQuery = ref('')
+// 弹层开合状态（搜索/过滤交给 shadcn Command 内部处理）
 const projectPopoverOpen = ref(false)
-const excludeProjectSearchQuery = ref('')
 const excludeProjectPopoverOpen = ref(false)
-
-// 过滤后的空间列表
-const filteredProjects = computed(() => {
-  const query = projectSearchQuery.value.toLowerCase().trim()
-  if (!query)
-    return feishuProjects.value
-  return feishuProjects.value.filter(p =>
-    p.name.toLowerCase().includes(query)
-    || p.feishu_project_key?.toLowerCase().includes(query),
-  )
-})
-
-const filteredExcludeProjects = computed(() => {
-  const query = excludeProjectSearchQuery.value.toLowerCase().trim()
-  if (!query)
-    return feishuProjects.value
-  return feishuProjects.value.filter(p =>
-    p.name.toLowerCase().includes(query)
-    || p.feishu_project_key?.toLowerCase().includes(query),
-  )
-})
 
 // 获取选中空间的信息
 const selectedProjects = computed(() => {
@@ -392,12 +378,7 @@ const regexValidation = computed(() => {
                 :class="{ 'bg-primary/10': filterStatus.includes(status.value) }"
                 @click="filterStatus.toggle(status.value, !filterStatus.includes(status.value))"
               >
-                <span
-                  class="w-4 h-4 rounded border flex items-center justify-center transition-colors"
-                  :class="filterStatus.includes(status.value) ? 'bg-primary border-primary text-primary-foreground' : 'border-border'"
-                >
-                  <span v-if="filterStatus.includes(status.value)" class="icon-[lucide--check] text-xs" />
-                </span>
+                <Checkbox :model-value="filterStatus.includes(status.value)" class="pointer-events-none" />
                 <span class="flex-1">{{ status.label }}</span>
                 <span class="text-xs text-muted-foreground">{{ status.value }}</span>
               </button>
@@ -469,47 +450,32 @@ const regexValidation = computed(() => {
               <span class="icon-[lucide--chevron-down] ml-auto text-muted-foreground" />
             </button>
           </PopoverTrigger>
-          <PopoverContent class="w-72 p-2" align="start">
-            <div class="space-y-2">
-              <Input
-                v-model="projectSearchQuery"
-                placeholder="搜索空间名称或 Key..."
-                class="h-8 text-sm"
-              />
-              <div class="max-h-48 overflow-y-auto space-y-0.5">
-                <template v-if="spacesLoading">
-                  <div class="p-3 text-sm text-muted-foreground text-center">
-                    加载中...
-                  </div>
-                </template>
-                <template v-else-if="filteredProjects.length === 0">
-                  <div class="p-3 text-sm text-muted-foreground text-center">
-                    {{ projectSearchQuery ? '未找到匹配空间' : '暂无配置飞书的空间' }}
-                  </div>
-                </template>
-                <template v-else>
-                  <button
-                    v-for="project in filteredProjects"
-                    :key="project.id"
-                    type="button"
-                    class="w-full flex items-center gap-2 p-2 rounded-lg text-left text-sm hover:bg-muted/50 transition-colors"
-                    :class="{ 'bg-primary/10': projectIds.includes(project.id) }"
-                    @click="toggleProject(project.id)"
-                  >
-                    <span
-                      class="w-4 h-4 rounded border flex items-center justify-center transition-colors"
-                      :class="projectIds.includes(project.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-border'"
-                    >
-                      <span v-if="projectIds.includes(project.id)" class="icon-[lucide--check] text-xs" />
-                    </span>
-                    <span class="flex-1 truncate">{{ project.name }}</span>
-                    <span v-if="project.feishu_project_key" class="text-xs text-muted-foreground">
-                      {{ project.feishu_project_key }}
-                    </span>
-                  </button>
-                </template>
-              </div>
-            </div>
+          <PopoverContent class="w-72 p-0" align="start">
+            <Command :multiple="true">
+              <CommandInput placeholder="搜索空间名称或 Key..." />
+              <CommandEmpty>未找到匹配空间</CommandEmpty>
+              <CommandList>
+                <div v-if="spacesLoading" class="p-3 text-sm text-muted-foreground text-center">
+                  加载中...
+                </div>
+                <div v-else-if="feishuProjects.length === 0" class="p-3 text-sm text-muted-foreground text-center">
+                  暂无配置飞书的空间
+                </div>
+                <CommandItem
+                  v-for="project in feishuProjects"
+                  :key="project.id"
+                  :value="project.id"
+                  class="cursor-pointer"
+                  @select="toggleProject(project.id)"
+                >
+                  <Checkbox :model-value="projectIds.includes(project.id)" class="pointer-events-none" />
+                  <span class="flex-1 truncate">{{ project.name }}</span>
+                  <span v-if="project.feishu_project_key" class="text-xs text-muted-foreground">
+                    {{ project.feishu_project_key }}
+                  </span>
+                </CommandItem>
+              </CommandList>
+            </Command>
           </PopoverContent>
         </Popover>
       </div>
@@ -556,42 +522,32 @@ const regexValidation = computed(() => {
               <span class="icon-[lucide--chevron-down] ml-auto text-muted-foreground" />
             </button>
           </PopoverTrigger>
-          <PopoverContent class="w-72 p-2" align="start">
-            <div class="space-y-2">
-              <Input
-                v-model="excludeProjectSearchQuery"
-                placeholder="搜索空间名称或 Key..."
-                class="h-8 text-sm"
-              />
-              <div class="max-h-48 overflow-y-auto space-y-0.5">
-                <template v-if="filteredExcludeProjects.length === 0">
-                  <div class="p-3 text-sm text-muted-foreground text-center">
-                    {{ excludeProjectSearchQuery ? '未找到匹配空间' : '暂无可排除的空间' }}
-                  </div>
-                </template>
-                <template v-else>
-                  <button
-                    v-for="project in filteredExcludeProjects"
-                    :key="project.id"
-                    type="button"
-                    class="w-full flex items-center gap-2 p-2 rounded-lg text-left text-sm hover:bg-muted/50 transition-colors"
-                    :class="{ 'bg-red-500/10': excludeProjectIds.includes(project.id) }"
-                    @click="toggleExcludeProject(project.id)"
-                  >
-                    <span
-                      class="w-4 h-4 rounded border flex items-center justify-center transition-colors"
-                      :class="excludeProjectIds.includes(project.id) ? 'bg-red-500 border-red-500 text-white' : 'border-border'"
-                    >
-                      <span v-if="excludeProjectIds.includes(project.id)" class="icon-[lucide--check] text-xs" />
-                    </span>
-                    <span class="flex-1 truncate">{{ project.name }}</span>
-                    <span v-if="project.feishu_project_key" class="text-xs text-muted-foreground">
-                      {{ project.feishu_project_key }}
-                    </span>
-                  </button>
-                </template>
-              </div>
-            </div>
+          <PopoverContent class="w-72 p-0" align="start">
+            <Command :multiple="true">
+              <CommandInput placeholder="搜索空间名称或 Key..." />
+              <CommandEmpty>未找到匹配空间</CommandEmpty>
+              <CommandList>
+                <div v-if="feishuProjects.length === 0" class="p-3 text-sm text-muted-foreground text-center">
+                  暂无可排除的空间
+                </div>
+                <CommandItem
+                  v-for="project in feishuProjects"
+                  :key="project.id"
+                  :value="project.id"
+                  class="cursor-pointer"
+                  @select="toggleExcludeProject(project.id)"
+                >
+                  <Checkbox
+                    :model-value="excludeProjectIds.includes(project.id)"
+                    class="pointer-events-none data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                  />
+                  <span class="flex-1 truncate">{{ project.name }}</span>
+                  <span v-if="project.feishu_project_key" class="text-xs text-muted-foreground">
+                    {{ project.feishu_project_key }}
+                  </span>
+                </CommandItem>
+              </CommandList>
+            </Command>
           </PopoverContent>
         </Popover>
       </div>

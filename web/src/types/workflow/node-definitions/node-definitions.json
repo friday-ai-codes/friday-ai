@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-29T15:26:46.397Z",
-  "node_count": 14,
+  "generated_at": "2026-06-21T01:06:16.677Z",
+  "node_count": 19,
   "nodes": [
     {
       "node_type": "manual_trigger",
@@ -386,6 +386,124 @@
       "ui_schema": null
     },
     {
+      "node_type": "foreach",
+      "display_name": "ForEach 循环",
+      "description": "对列表中的每个元素执行操作",
+      "icon": "icon-[lucide--repeat]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "list_source": {
+            "default": "{{input.items}}",
+            "type": "string"
+          },
+          "execution_mode": {
+            "default": "sequential",
+            "type": "string",
+            "enum": [
+              "sequential",
+              "parallel"
+            ]
+          },
+          "max_concurrency": {
+            "default": 5,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "on_iteration_error": {
+            "default": "abort",
+            "type": "string",
+            "enum": [
+              "abort",
+              "continue"
+            ]
+          }
+        },
+        "required": [
+          "list_source",
+          "execution_mode",
+          "max_concurrency",
+          "on_iteration_error"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "list_source": {
+            "widget": "text",
+            "help": "列表来源，支持模板变量如 {{input.items}}"
+          },
+          "execution_mode": {
+            "widget": "select",
+            "help": "sequential=串行, parallel=并发"
+          },
+          "max_concurrency": {
+            "widget": "number",
+            "help": "最大并发数（parallel 模式生效，1-50）"
+          },
+          "on_iteration_error": {
+            "widget": "select",
+            "help": "abort=任一失败终止, continue=继续执行"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "aggregate",
+      "display_name": "变量聚合",
+      "description": "将多个上游节点输出绑定为结构化变量",
+      "icon": "icon-[lucide--combine]",
+      "category": "control",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mappings": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_node": {
+                  "default": "",
+                  "type": "string"
+                },
+                "output_field": {
+                  "default": "",
+                  "type": "string"
+                },
+                "target_key": {
+                  "default": "",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_node",
+                "output_field",
+                "target_key"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "mappings"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "mappings": {
+            "widget": "json-editor",
+            "help": "聚合映射数组：source_node, output_field(可选), target_key"
+          }
+        }
+      }
+    },
+    {
       "node_type": "notify_feishu",
       "display_name": "飞书通知",
       "description": "发送消息到飞书",
@@ -487,6 +605,153 @@
           "at_users": {
             "widget": "json-editor",
             "help": "@指定用户 ID 列表"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "notify_feishu_im",
+      "display_name": "飞书通知(IM)",
+      "description": "通过飞书 App 向群聊或个人发送通知",
+      "icon": "icon-[lucide--send]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "receive_id_type": {
+            "default": "chat_id",
+            "type": "string",
+            "enum": [
+              "chat_id",
+              "open_id",
+              "user_id"
+            ]
+          },
+          "receive_id": {
+            "default": "",
+            "type": "string"
+          },
+          "message_type": {
+            "default": "text",
+            "type": "string",
+            "enum": [
+              "text",
+              "card"
+            ]
+          },
+          "title": {
+            "default": "通知",
+            "type": "string"
+          },
+          "content": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receive_id_type",
+          "receive_id",
+          "message_type",
+          "title",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "groups": [
+          {
+            "key": "target",
+            "label": "通知目标",
+            "fields": [
+              "receive_id_type",
+              "receive_id"
+            ]
+          },
+          {
+            "key": "message",
+            "label": "消息内容",
+            "fields": [
+              "message_type",
+              "title",
+              "content"
+            ]
+          }
+        ],
+        "fields": {
+          "receive_id_type": {
+            "widget": "select",
+            "help": "chat_id=群聊；open_id/user_id=个人"
+          },
+          "receive_id": {
+            "widget": "text",
+            "placeholder": "群聊 ID 或用户 open_id/user_id",
+            "help": "支持 {{变量}}"
+          },
+          "message_type": {
+            "widget": "select"
+          },
+          "title": {
+            "widget": "text",
+            "help": "仅卡片形式生效",
+            "visible_if": {
+              "field": "message_type",
+              "operator": "eq",
+              "value": "card"
+            }
+          },
+          "content": {
+            "widget": "textarea",
+            "help": "文本或卡片正文（卡片支持 Markdown），支持 {{变量}}"
+          }
+        }
+      }
+    },
+    {
+      "node_type": "feishu_doc_create",
+      "display_name": "飞书文档生成",
+      "description": "把 Markdown（技术方案等）生成为飞书云文档",
+      "icon": "icon-[lucide--file-text]",
+      "category": "integration",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "default": "",
+            "type": "string"
+          },
+          "content": {
+            "default": "",
+            "type": "string"
+          },
+          "folder_token": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "folder_token"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "title": {
+            "widget": "text",
+            "placeholder": "文档标题，支持 {{变量}}",
+            "help": "支持模板变量"
+          },
+          "content": {
+            "widget": "textarea",
+            "placeholder": "Markdown 内容，支持 {{变量}}",
+            "help": "支持引用上游节点的 markdown，如 {{nodes.generate_plan.plan_markdown}}"
+          },
+          "folder_token": {
+            "widget": "text",
+            "help": "留空则使用项目配置的飞书文档文件夹"
           }
         }
       }
@@ -691,6 +956,46 @@
         "additionalProperties": false
       },
       "ui_schema": null
+    },
+    {
+      "node_type": "code",
+      "display_name": "代码执行",
+      "description": "执行 Python 代码片段",
+      "icon": "icon-[lucide--code]",
+      "category": "action",
+      "config_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "code": {
+            "default": "# 编写 Python 代码\n# 通过 context[\"output\"] = {...} 设置输出\n",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "default": 30,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "code",
+          "timeout_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "ui_schema": {
+        "fields": {
+          "code": {
+            "widget": "json-editor",
+            "help": "Python 代码片段，通过 context[\"output\"] = {...} 设置输出"
+          },
+          "timeout_seconds": {
+            "widget": "number",
+            "help": "执行超时时间（秒，1-300）"
+          }
+        }
+      }
     }
   ]
 }

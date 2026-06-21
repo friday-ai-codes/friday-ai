@@ -119,23 +119,6 @@ describe('baseWorkflowNode Handle 渲染', () => {
     expect(handleIds(wrapper, 'source')).toContain('coding_result')
   })
 
-  it('ai_code_review 渲染后端输入端口 coding_result', async () => {
-    const store = useNodeTypesStore()
-    store.nodeTypes = [
-      makeNodeType({
-        node_type: 'ai_code_review',
-        category: 'ai',
-        inputs: [makePort('coding_result')],
-        outputs: [makePort('default')],
-      }),
-    ]
-
-    const wrapper = mountNode('ai_code_review')
-    await nextTick()
-
-    expect(handleIds(wrapper, 'target')).toContain('coding_result')
-  })
-
   it('审批节点 outputs 含 approved 与 rejected', async () => {
     const store = useNodeTypesStore()
     store.nodeTypes = [

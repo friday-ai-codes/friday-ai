@@ -23,7 +23,6 @@ from workflows.validation.graph_validator import WorkflowGraphValidator
 ALL_TEMPLATE_IDS = [
     "code_generation",
     "feishu_full_pipeline",
-    "code_review_pipeline",
     "daily_summary",
 ]
 
@@ -58,16 +57,15 @@ def _template_to_validator_inputs(template: dict) -> tuple[list[dict], list[dict
 class TestListTemplates:
     """Tests for list_templates()."""
 
-    def test_list_templates_returns_4(self):
-        """list_templates() should return all 4 template metadata records."""
+    def test_list_templates_returns_3(self):
+        """list_templates() should return all 3 template metadata records."""
         templates = list_templates()
-        assert len(templates) == 4
+        assert len(templates) == 3
 
         ids = {t["template_id"] for t in templates}
         expected = {
             "code_generation",
             "feishu_full_pipeline",
-            "code_review_pipeline",
             "daily_summary",
         }
         assert ids == expected
@@ -92,7 +90,6 @@ class TestLoadTemplate:
         [
             "code_generation",
             "feishu_full_pipeline",
-            "code_review_pipeline",
             "daily_summary",
         ],
     )
@@ -119,7 +116,6 @@ class TestNodeTypesRegistered:
         [
             "code_generation",
             "feishu_full_pipeline",
-            "code_review_pipeline",
             "daily_summary",
         ],
     )
@@ -187,15 +183,15 @@ class TestCreateWorkflowFromTemplate:
         project = await Project.objects.acreate(name="Async Template Test")
         workflow = await acreate_workflow_from_template(
             space_id=str(project.id),
-            template_id="code_review_pipeline",
+            template_id="code_generation",
             created_by=user,
         )
 
         assert isinstance(workflow, Workflow)
-        assert workflow.metadata.get("template_id") == "code_review_pipeline"
+        assert workflow.metadata.get("template_id") == "code_generation"
         nodes = [n async for n in workflow.nodes.all()]
-        # 方案 A 重构后 code_review_pipeline 为 3 节点（去除 http_request 中转节点）
-        assert len(nodes) == 3
+        # code_generation：trigger + generate_plan + plan_approval + ai_coding
+        assert len(nodes) == 4
 
 
 class TestRewriteTemplateRefs:
@@ -262,7 +258,6 @@ class TestTemplateFileIntegrity:
         [
             "code_generation",
             "feishu_full_pipeline",
-            "code_review_pipeline",
             "daily_summary",
         ],
     )
@@ -422,7 +417,7 @@ class TestLoaderPreCreateValidation:
 
 
 class TestTemplateFieldAlignmentRegression:
-    """TPL-01：守护 daily_summary / code_review_pipeline 修复不回退到坏字段。"""
+    """TPL-01：守护 daily_summary 修复不回退到坏字段。"""
 
     def test_daily_summary_references_real_output_fields(self):
         """daily_summary 引用真实输出字段（body/text），不回退到 output 坏字段。"""
@@ -434,24 +429,6 @@ class TestTemplateFieldAlignmentRegression:
         assert "{{nodes.summarize.output}}" not in blob
 
         # validator 对修复后的字段引用零 error（不回退守护）
-        nodes, edges = _template_to_validator_inputs(template)
-        result = WorkflowGraphValidator().validate(nodes, edges)
-        assert result["errors"] == []
-
-    def test_code_review_pipeline_method_a_contract(self):
-        """code_review_pipeline 方案 A 契约：无 http 节点、引 review_report、target_handle=coding_result。"""
-        template = load_template("code_review_pipeline")
-        node_types = {n["type"] for n in template["nodes"]}
-        assert "http_request" not in node_types
-
-        blob = json.dumps(template, ensure_ascii=False)
-        assert "{{nodes.review.review_report}}" in blob
-        assert "{{nodes.review.output}}" not in blob
-
-        assert any(
-            e.get("target_handle") == "coding_result" for e in template["edges"]
-        ), "应存在 target_handle=coding_result 的边（编码结果进入审查输入端口）"
-
         nodes, edges = _template_to_validator_inputs(template)
         result = WorkflowGraphValidator().validate(nodes, edges)
         assert result["errors"] == []

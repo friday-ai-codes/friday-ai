@@ -18,8 +18,6 @@ declare module 'vue' {
     AccountSettingsModal: typeof import('./components/settings/AccountSettingsModal.vue')['default']
     ActionNode: typeof import('./components/workflow/editor/nodes/ActionNode.vue')['default']
     AgentExecutionLog: typeof import('./components/workflow/execution/AgentExecutionLog.vue')['default']
-    AICodeReviewConfig: typeof import('./components/workflow/config/AICodeReviewConfig.vue')['default']
-    AICodeReviewPanel: typeof import('./components/execution/AICodeReviewPanel.vue')['default']
     AICodingConfig: typeof import('./components/workflow/config/AICodingConfig.vue')['default']
     AICodingDispatcherConfig: typeof import('./components/workflow/config/AICodingDispatcherConfig.vue')['default']
     AICodingPanel: typeof import('./components/execution/AICodingPanel.vue')['default']

@@ -40,7 +40,6 @@ const iconMap: Record<string, Component> = {
   ai_plan_generation: FileText,
   ai_plan_approval: CircleCheck,
   ai_coding: Terminal,
-  ai_code_review: SearchCode,
 }
 
 const icon = computed(() => iconMap[props.data.nodeType] ?? Cog)

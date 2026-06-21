@@ -54,8 +54,8 @@ def sample_analytics_data(
     )
     node_review = WorkflowNode.objects.create(
         workflow=analytics_workflow,
-        node_type="ai_code_review",
-        name="Review Node",
+        node_type="ai_prompt",
+        name="Prompt Node",
     )
 
     # 创建 5 个 WorkflowExecution（3 completed + 1 failed + 1 running）
@@ -309,7 +309,7 @@ class TestNodePerformance:
 
         data = response.json()
         assert isinstance(data, list)
-        assert len(data) == 2  # ai_coding + ai_code_review
+        assert len(data) == 2  # ai_coding + ai_prompt
 
         # 检查数据结构
         for node in data:
@@ -324,8 +324,8 @@ class TestNodePerformance:
         assert data[0]["execution_count"] == 3
         assert data[0]["success_rate"] == 100.0
 
-        # ai_code_review 第二（1 次失败）
-        assert data[1]["node_type"] == "ai_code_review"
+        # ai_prompt 第二（1 次失败）
+        assert data[1]["node_type"] == "ai_prompt"
         assert data[1]["execution_count"] == 1
         assert data[1]["success_rate"] == 0.0
 

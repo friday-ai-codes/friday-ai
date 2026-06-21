@@ -11,20 +11,28 @@ function deleteNode() {
 <template>
   <NodeViewWrapper
     as="span"
-    class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 m-1 rounded-md select-none transition-colors duration-150"
-    :class="[selected ? 'bg-primary text-white border border-primary' : 'bg-primary/10 text-primary dark:text-primary border border-primary/20']"
+    class="variable-chip-view inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 mx-0.5 my-0.5 align-middle rounded-md select-none ring-1 transition-colors duration-150"
+    :class="[selected
+      ? 'bg-teal-600 text-white ring-teal-600'
+      : 'bg-teal-50 text-teal-800 ring-teal-300 dark:bg-teal-500/15 dark:text-teal-200 dark:ring-teal-500/40']"
     contenteditable="false"
   >
-    <span class="icon-[lucide--variable] text-[10px]" :class="selected ? 'opacity-90' : 'opacity-70'" />
-    <span class="flex flex-col leading-tight">
-      <code class="font-mono text-[11px] font-medium">{{ node.attrs.outputName }}</code>
-      <span class="text-[9px]" :class="selected ? 'opacity-80' : 'opacity-60'">{{ node.attrs.label }}</span>
+    <span
+      class="icon-[lucide--braces] text-[11px] shrink-0"
+      :class="selected ? 'text-white/90' : 'text-teal-500'"
+    />
+    <span class="flex flex-col leading-tight min-w-0">
+      <code class="font-mono text-[11px] font-semibold truncate">{{ node.attrs.outputName }}</code>
+      <span
+        class="text-[9px] truncate"
+        :class="selected ? 'text-white/85' : 'text-teal-700/70 dark:text-teal-300/70'"
+      >{{ node.attrs.label }}</span>
     </span>
     <button
       v-if="editor.isEditable"
       type="button"
-      class="self-start rounded p-0.5"
-      :class="selected ? 'hover:bg-white/20' : 'hover:bg-primary/20'"
+      class="self-center shrink-0 rounded p-0.5 transition-colors"
+      :class="selected ? 'hover:bg-white/25' : 'hover:bg-teal-600/15 text-teal-600'"
       @click="deleteNode"
     >
       <span class="icon-[lucide--x] w-2.5 h-2.5" />

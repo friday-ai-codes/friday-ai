@@ -115,7 +115,7 @@ describe('workflowDataTable', () => {
         { id: 'n3', node_type: 'ai_plan_generation', name: 'AI 方案生成', position_x: 240, position_y: 120 },
         { id: 'n4', node_type: 'ai_plan_approval', name: '方案审批', position_x: 360, position_y: 160 },
         { id: 'n5', node_type: 'ai_coding', name: 'AI 编码执行', position_x: 480, position_y: 200 },
-        { id: 'n6', node_type: 'ai_code_review', name: 'AI 代码审查', position_x: 600, position_y: 240 },
+        { id: 'n6', node_type: 'notify_feishu', name: '飞书通知', position_x: 600, position_y: 240 },
       ],
       node_count: 6,
     } as Workflow

@@ -11,14 +11,14 @@ import { useConfigModel } from '~/composables/useConfigModel'
  * AICodingConfig - AI 编码执行节点配置面板
  *
  * 配置项：
- * - container_image: SubAgent 执行编码使用的 Docker 镜像
  * - timeout_seconds: 单个仓库的编码超时时间
  * - polling_interval: 检查 SubAgent 状态的时间间隔
  * - chat_id: 飞书群聊 ID，用于发送编码结果和分支确认卡片
+ *
+ * 容器镜像固定使用部署配置的默认 task 镜像，不再暴露给用户选择。
  */
 
 interface AICodingConfig {
-  container_image: string
   timeout_seconds: number
   chat_id: string
   polling_interval: number
@@ -46,7 +46,6 @@ const { field } = useConfigModel({
   emit: v => emit('update:config', v as unknown as AICodingConfig),
 })
 
-const containerImage = field('container_image', '') as WritableComputedRef<string>
 const timeoutSeconds = field('timeout_seconds', 1800) as WritableComputedRef<number>
 const pollingInterval = field('polling_interval', 15) as WritableComputedRef<number>
 const chatId = field('chat_id', '') as WritableComputedRef<string>
@@ -89,22 +88,6 @@ const pollingIntervalStr = computed({
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Container Image -->
-    <div class="space-y-2">
-      <Label class="flex items-center gap-1.5">
-        <span class="icon-[lucide--container] text-primary" />
-        容器镜像
-      </Label>
-      <Input
-        v-model="containerImage"
-        placeholder="friday/claude-code:latest"
-        class="bg-background/50"
-      />
-      <p class="text-xs text-muted-foreground">
-        SubAgent 执行编码使用的 Docker 镜像
-      </p>
     </div>
 
     <!-- Timeout Seconds -->

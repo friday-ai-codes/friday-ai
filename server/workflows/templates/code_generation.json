@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "name": "代码生成工作流",
-  "description": "从需求到 MR 的完整代码生成流程：方案生成 → 飞书审批 → 容器编码 → AI 代码审查",
+  "description": "从需求到 MR 的完整代码生成流程：方案生成 → 飞书审批 → 容器编码",
   "template_id": "code_generation",
   "nodes": [
     {
@@ -45,17 +45,7 @@
       "name": "AI 编码执行",
       "position": {"x": 400, "y": 580},
       "config": {
-        "container_image": "friday/claude-code:latest",
         "timeout_seconds": 1800,
-        "chat_id": ""
-      }
-    },
-    {
-      "id": "code_review",
-      "type": "ai_code_review",
-      "name": "AI 代码审查",
-      "position": {"x": 400, "y": 760},
-      "config": {
         "chat_id": ""
       }
     }
@@ -64,7 +54,6 @@
     {"source": "trigger", "target": "generate_plan"},
     {"source": "generate_plan", "target": "plan_approval"},
     {"source": "plan_approval", "target": "ai_coding", "source_handle": "approved"},
-    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
-    {"source": "ai_coding", "target": "code_review"}
+    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"}
   ]
 }

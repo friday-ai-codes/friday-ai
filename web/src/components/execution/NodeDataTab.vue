@@ -35,7 +35,6 @@ const store = useExecutionsStore()
 const AI_NODE_TYPES = [
   'ai_prompt',
   'ai_coding',
-  'ai_code_review',
   'ai_plan_generation',
   'ai_coding_dispatcher',
 ] as const

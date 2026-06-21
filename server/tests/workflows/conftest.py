@@ -64,8 +64,8 @@ def obs_nodes(obs_workflow):
     )
     node3 = WorkflowNode.objects.create(
         workflow=obs_workflow,
-        node_type="ai_code_review",
-        name="Code Review",
+        node_type="ai_coding",
+        name="AI Coding",
         position_x=500,
         position_y=100,
     )
