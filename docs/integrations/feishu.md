@@ -57,6 +57,28 @@ https://your-domain/api/feishu/webhook/
 - 拥有目标字段的读写权限；
 - 机器人已加入需要收发消息的群聊（也可由 `join_group_chat` 节点自动邀请）。
 
+## 飞书事件触发器（专属端点）
+
+`feishu_event_trigger` 是一个纯 Webhook 入口：**"何时触发"完全由飞书项目的自动化规则决定**，节点本身不再配置工作项类型、状态过滤、监听/排除空间等条件。
+
+工作机制：
+
+1. 在工作流画布上添加 `feishu_event_trigger` 节点并**保存工作流**，节点会获得一个专属端点：
+
+   ```text
+   https://your-domain/api/feishu/webhook/<token>/
+   ```
+
+   `<token>` 由服务端自动生成，可在节点配置面板中查看与复制。
+
+2. 在飞书项目中新建自动化规则，配置触发器（例如「需求工作项状态由任意状态变更为 Sprint 计划」），并添加「Webhook」动作，URL 填上一步的专属端点地址。
+
+3. 规则启用后，符合条件的事件会命中该端点并**直接触发对应工作流**，无需在 Friday 侧重复配置过滤条件。
+
+::: tip 与旧版共享端点的关系
+共享端点 `/api/feishu/webhook/`（无 token）仍然保留，用于向后兼容以及空间级副作用（工作项详情摄取、唤醒挂起的工作流等）。新建工作流推荐使用专属端点 URL。
+:::
+
 ## 典型链路
 
 <FlowPipeline :steps="['feishu_event_trigger', 'fetch_work_item', 'AI 技术方案写回飞书', 'wait_feishu_field 等待审核', 'AI 编码指派器', 'PR / MR 卡片回写']" />
@@ -68,7 +90,7 @@ https://your-domain/api/feishu/webhook/
 | 现象 | 排查方向 |
 | --- | --- |
 | `飞书回填失败` / `FeishuAPIError` | 应用凭据是否正确；字段 Key 是否存在且有写入权限；应用是否被授权访问目标空间 |
-| 事件不触发工作流 | 回调地址是否可公网访问（HTTPS）；事件订阅是否包含对应事件类型；查看项目的触发日志 |
+| 事件不触发工作流 | 飞书自动化规则的 Webhook URL 是否填写为该工作流的专属端点（含 token）；规则是否已启用且触发条件命中；工作流是否已保存并启用；查看项目的触发日志 |
 | 卡片按钮无响应 | 卡片回调地址配置；查看 `docker logs friday-server` 中的回调处理日志 |
 
 ## 下一步

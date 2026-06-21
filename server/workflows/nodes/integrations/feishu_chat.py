@@ -3,11 +3,15 @@
 FetchGroupChatNode: 获取群聊 ID（从配置或工作项 API）
 JoinGroupChatNode: 将 Bot 加入指定群聊（幂等）
 CreateGroupChatNode: 创建飞书群并拉入成员，输出 chat_id 供下游使用（可选 writeback）
+CreateWorkItemChatNode: 触发飞书原生自动建群并绑定到工作项，输出 chat_id
 """
 
+import asyncio
 import json
+import time
 
 import structlog
+from asgiref.sync import sync_to_async
 
 from services.feishu_im import FeishuIMError, FeishuIMService
 from workflows.nodes.base import (
@@ -21,6 +25,23 @@ from workflows.nodes.base import (
 from workflows.nodes.registry import register_node
 
 logger = structlog.get_logger(__name__)
+
+
+async def _resolve_project(context: ExecutionContext):
+    """异步安全地解析工作流关联的空间（Project）。
+
+    直接在异步上下文里访问 ``context.workflow_execution.workflow.project`` 会触发
+    Django 同步 ORM 外键懒加载，抛 ``SynchronousOnlyOperation``（"You cannot call
+    this from an async context - use a thread or sync_to_async."）。这里用
+    ``sync_to_async`` 把懒加载放到线程中执行，规避该限制。
+
+    Returns:
+        关联的 Project 实例；无 workflow_execution 时返回 None。
+    """
+    execution = context.workflow_execution
+    if execution is None:
+        return None
+    return await sync_to_async(lambda: execution.workflow.project)()
 
 
 def _parse_id_list(value: object, context: ExecutionContext) -> list[str]:
@@ -148,12 +169,12 @@ class FetchGroupChatNode(BaseNode):
                 next_handle="error",
             )
 
-        # 获取 FeishuIMService 实例
-        project = None
-        if context.workflow_execution:
-            project = context.workflow_execution.workflow.project
+        # 获取 FeishuIMService 实例。
+        # with_project_client=True：从工作项自动获取群聊依赖飞书项目 API client
+        # （get_chat_id_for_work_item 需要 project_client，缺省 False 会导致自动获取恒为空）。
+        project = await _resolve_project(context)
 
-        im_service = await FeishuIMService.create(project)
+        im_service = await FeishuIMService.create(project, with_project_client=True)
 
         try:
             work_item_id = int(work_item_id_str)
@@ -234,9 +255,7 @@ class JoinGroupChatNode(BaseNode):
             )
 
         # 获取 FeishuIMService 实例
-        project = None
-        if context.workflow_execution:
-            project = context.workflow_execution.workflow.project
+        project = await _resolve_project(context)
 
         im_service = await FeishuIMService.create(project)
 
@@ -369,9 +388,7 @@ class CreateGroupChatNode(BaseNode):
             )
 
         # 获取 FeishuIMService 实例
-        project = None
-        if context.workflow_execution:
-            project = context.workflow_execution.workflow.project
+        project = await _resolve_project(context)
 
         im_service = await FeishuIMService.create(project)
 
@@ -467,4 +484,197 @@ class CreateGroupChatNode(BaseNode):
                 "writeback": writeback,
             },
             next_handle="default",
+        )
+
+
+@register_node
+class CreateWorkItemChatNode(BaseNode):
+    """创建工作项群聊节点（飞书原生自动建群并绑定到工作项）。
+
+    机制说明（与 ``create_group_chat`` 的本质区别）：
+        飞书项目（Meegle）**没有**独立的"创建群聊 / 绑定群"OpenAPI 接口。原生建群是
+        通过把工作项的 ``group_type`` 字段更新为 ``"auto"`` 来触发的——写入后飞书后端会
+        **异步**创建群、自动拉入工作项相关人，并把群 ID 原生回填到工作项的
+        ``chat_group`` / ``group_id`` 字段（通常数秒内生效）。
+
+        因此本节点产出的是**飞书项目原生绑定群**：群永久挂在工作项上、``chat_group``
+        长期可查、跨执行不会重复建群。而 ``create_group_chat`` 走的是开放平台 IM API
+        自建群——群 ID 只回写到本地 ``WorkItem.feishu_chat_id``，**不会**回填到飞书工作项
+        字段，飞书原生侧查不到。
+
+    执行流程：
+        1. 幂等短路：先查工作项是否已绑群（``get_chat_id_for_work_item``）——已绑则直接
+           复用现有群（``source=reused``），不重复触发；
+        2. 未绑则调 ``update_work_item_fields(group_type="auto")`` 触发飞书原生自动建群；
+        3. 轮询查询，直到工作项 ``chat_group`` 出现合法 ``oc_`` 群 ID（``source=created``）
+           或达到超时；
+        4. 输出 ``chat_id`` 供下游节点（AI 方案 / 通知 / 澄清）经 ``{{input.chat_id}}`` 使用。
+    """
+
+    node_type = "create_work_item_chat"
+    display_name = "创建工作项群聊"
+    description = "触发飞书原生自动建群并绑定到工作项，输出 chat_id 供下游使用"
+    icon = "users"
+    category = NodeCategory.INTEGRATION
+    execution_mode = "server_local"
+
+    config_schema = {
+        "type": "object",
+        "properties": {
+            "project_key": {
+                "type": "string",
+                "title": "空间 Key",
+                "description": "飞书项目空间 Key，支持模板变量（如 {{nodes.x.project_key}}）",
+                "default": "",
+            },
+            "work_item_id": {
+                "type": "string",
+                "title": "工作项 ID",
+                "description": "工作项 ID，支持模板变量（如 {{nodes.x.work_item_id}}）",
+                "default": "",
+            },
+            "work_item_type": {
+                "type": "string",
+                "title": "工作项类型",
+                "description": "工作项类型 key（story、issue 或自定义类型 key）",
+                "default": "story",
+            },
+            "poll_timeout_seconds": {
+                "type": "integer",
+                "title": "轮询超时(秒)",
+                "description": "等待飞书异步建群并回填群字段的最长时间",
+                "default": 30,
+                "minimum": 5,
+                "maximum": 120,
+            },
+            "poll_interval_seconds": {
+                "type": "integer",
+                "title": "轮询间隔(秒)",
+                "description": "两次查询群字段之间的间隔",
+                "default": 3,
+                "minimum": 1,
+                "maximum": 15,
+            },
+        },
+    }
+
+    inputs = [NodePort(name="default", label="输入", port_type=PortType.OBJECT)]
+    outputs = [
+        NodePort(
+            name="default",
+            label="成功",
+            port_type=PortType.OBJECT,
+            description="含 chat_id（oc_ 群 ID）、source（reused=复用已有 / created=新建）",
+            schema={
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string"},
+                    "source": {"type": "string"},
+                },
+            },
+        ),
+        NodePort(
+            name="error",
+            label="失败",
+            port_type=PortType.OBJECT,
+            description="缺参 / 触发失败 / 超时未回填等错误信息",
+        ),
+    ]
+
+    async def execute(self, context: ExecutionContext) -> NodeResult:
+        config = context.node_config
+        log = logger.bind(node_id=context.node_id)
+
+        # 解析 work_item 锚点（均支持模板变量）
+        project_key = context.render_template(config.get("project_key", "")).strip()
+        work_item_id_str = context.render_template(config.get("work_item_id", "")).strip()
+        work_item_type = (
+            context.render_template(config.get("work_item_type", "story") or "story").strip()
+            or "story"
+        )
+
+        if not project_key or not work_item_id_str:
+            return NodeResult(
+                status="failed",
+                error="缺少 project_key 或 work_item_id，无法创建工作项群聊",
+                next_handle="error",
+            )
+        try:
+            work_item_id = int(work_item_id_str)
+        except ValueError:
+            return NodeResult(
+                status="failed",
+                error=f"work_item_id 格式错误: {work_item_id_str}",
+                next_handle="error",
+            )
+
+        project = await _resolve_project(context)
+
+        # with_project_client=True：触发建群（update）与群字段查询都依赖飞书项目 API client
+        im_service = await FeishuIMService.create(project, with_project_client=True)
+        if im_service.project_client is None:
+            return NodeResult(
+                status="failed",
+                error="未配置飞书项目 API（plugin token / user key），无法创建工作项群聊",
+                next_handle="error",
+            )
+
+        # 1) 幂等短路：已绑群直接复用，不重复触发建群
+        existing = await im_service.get_chat_id_for_work_item(
+            project_key=project_key,
+            work_item_id=work_item_id,
+            work_item_type=work_item_type,
+        )
+        if existing and existing.get("chat_id"):
+            log.info("work_item_chat_reuse", chat_id=existing["chat_id"])
+            return NodeResult(
+                status="completed",
+                output={**existing, "source": "reused"},
+                next_handle="default",
+            )
+
+        # 2) 触发飞书原生自动建群：把 group_type 字段写为 auto
+        try:
+            await im_service.project_client.update_work_item_fields(
+                project_key=project_key,
+                work_item_id=work_item_id,
+                work_item_type=work_item_type,
+                fields={"group_type": "auto"},
+            )
+        except Exception as e:  # noqa: BLE001 — 触发失败走 error handle
+            log.warning("set_group_type_auto_failed", error=str(e))
+            return NodeResult(
+                status="failed",
+                error=f"触发飞书自动建群失败: {e}",
+                next_handle="error",
+            )
+
+        # 3) 轮询等待飞书异步回填 chat_group（建群是异步的，通常数秒内完成）
+        timeout_s = int(config.get("poll_timeout_seconds", 30) or 30)
+        interval_s = int(config.get("poll_interval_seconds", 3) or 3)
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            await asyncio.sleep(interval_s)
+            res = await im_service.get_chat_id_for_work_item(
+                project_key=project_key,
+                work_item_id=work_item_id,
+                work_item_type=work_item_type,
+            )
+            if res and res.get("chat_id"):
+                log.info("work_item_chat_created", chat_id=res["chat_id"])
+                return NodeResult(
+                    status="completed",
+                    output={**res, "source": "created"},
+                    next_handle="default",
+                )
+
+        # 4) 超时：已触发但未在时限内查到回填的群
+        log.warning("work_item_chat_timeout", timeout_seconds=timeout_s)
+        return NodeResult(
+            status="failed",
+            error=(
+                f"已触发飞书自动建群，但 {timeout_s}s 内未查到回填的群聊"
+                "（可能是飞书回填延迟，或该工作项类型/权限不支持自动建群）"
+            ),
+            next_handle="error",
         )

@@ -26,8 +26,10 @@ from .views import (
 )
 
 urlpatterns = [
-    # Webhook endpoint
+    # Webhook endpoint（旧版共享端点：按 payload 解析空间 + 事件类型匹配，向后兼容）
     path("webhook/", FeishuWebhookView.as_view(), name="feishu-webhook"),
+    # 专属端点：每个飞书触发节点一个 token，命中即直达对应工作流（飞书侧自动化规则指向此 URL）
+    path("webhook/<str:token>/", FeishuWebhookView.as_view(), name="feishu-webhook-scoped"),
     # Card callback (IM interactions)
     path("card/callback/", CardCallbackView.as_view(), name="card-callback"),
     # IM message webhook (user messages to bot)

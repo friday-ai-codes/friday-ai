@@ -1,13 +1,12 @@
-"""TRIG-01 同步契约测试（Phase 21 Wave 0 RED）。
+"""飞书触发器同步契约测试（per-workflow 专属端点重构后）。
 
-断言**修复后**的 `async_sync_workflow_triggers` 目标行为：
-- 单数 `event_type` 为事实源，同步后生成 WorkflowTrigger（当前读复数 → RED）。
-- 历史复数 `event_types` 数组兜底仍生成 trigger（Pitfall 1 回归保护）。
-- `filter_status` / `filter_project_key` / `filter_work_item_type` 正确写入 filter_config。
-- 同步生成的 trigger 与真实 payload 端到端匹配（matches_event）。
-- 负向 / 白名单字段（`project_ids` / `exclude_project_ids` / `exclude_work_item_*`）写入
-  `_include` / `_exclude` 子结构，不污染正向 filter_config；UUID 经 Project 映射成
-  飞书 project_key。
+断言 `async_sync_workflow_triggers` 的目标行为：
+- 每个 `feishu_event_trigger` 节点按 node_id upsert 一条启用的 WorkflowTrigger，
+  分配唯一 token，且不写入 event_type / filter_config（飞书侧自动化规则已决定触发时机）。
+- 同步把权威 token 回填到节点 `config.endpoint_token`，供前端展示端点 URL。
+- token 跨多次同步保持稳定（不重新生成、不产生重复 trigger）。
+- 多个触发节点生成各自独立 token 的 trigger。
+- 节点被移除后，其 trigger 被停用（含旧版无 node_id 的存量行）。
 """
 
 import pytest
@@ -23,7 +22,7 @@ async def _make_workflow(name: str = "Trigger Sync WF") -> Workflow:
     """创建最小工作流（created_by 可空，省去 user 夹具）。"""
     project = await Project.objects.acreate(
         name=f"{name} Project",
-        description="Project for trigger sync RED tests",
+        description="Project for trigger sync tests",
     )
     return await Workflow.objects.acreate(
         name=name,
@@ -32,15 +31,15 @@ async def _make_workflow(name: str = "Trigger Sync WF") -> Workflow:
     )
 
 
-async def _make_trigger_node(workflow: Workflow, config: dict) -> WorkflowNode:
-    """创建一个 feishu_event_trigger 节点，承载给定 config。"""
+async def _make_trigger_node(workflow: Workflow, config: dict | None = None) -> WorkflowNode:
+    """创建一个 feishu_event_trigger 节点。"""
     return await WorkflowNode.objects.acreate(
         workflow=workflow,
         node_type="feishu_event_trigger",
         name="Feishu Event Trigger",
         position_x=0,
         position_y=0,
-        config=config,
+        config=config or {},
     )
 
 
@@ -48,142 +47,142 @@ async def _triggers(workflow: Workflow) -> list[WorkflowTrigger]:
     return [t async for t in workflow.triggers.all()]
 
 
-async def test_singular_event_type_creates_trigger():
-    """TRIG-01：单数 event_type 同步后应生成 1 条启用的 WorkflowTrigger。
-
-    现状根因：`async_sync_workflow_triggers` 读 config['event_types']（复数）→ 恒空 →
-    不生成 trigger。因此本用例在修复前为 RED（生成 0 条）。
-    """
+async def test_node_creates_trigger_with_token():
+    """单个触发节点同步后生成 1 条带唯一 token 的启用 trigger，且 token 回填节点 config。"""
     workflow = await _make_workflow()
-    await _make_trigger_node(
-        workflow,
-        {"event_type": "WorkitemStatusEvent", "filter_status": ["s1"]},
-    )
+    node = await _make_trigger_node(workflow)
 
     await async_sync_workflow_triggers(workflow)
 
     triggers = await _triggers(workflow)
     assert len(triggers) == 1
     trigger = triggers[0]
-    assert trigger.event_type == "WorkitemStatusEvent"
     assert trigger.is_active is True
-    # filter_status 数组 → 嵌套路径 cur_work_item_status.state_key（list 成员匹配）
-    assert trigger.filter_config.get("cur_work_item_status.state_key") == ["s1"]
+    assert str(trigger.node_id) == str(node.id)
+    assert trigger.token  # 非空唯一 token
+    # 不再写入事件类型 / 过滤条件
+    assert trigger.event_type == ""
+    assert trigger.filter_config == {}
+    # token 回填到节点 config.endpoint_token
+    await node.arefresh_from_db()
+    assert node.config.get("endpoint_token") == trigger.token
 
 
-async def test_legacy_event_types_array_fallback():
-    """TRIG-01 Pitfall 1：仅含历史复数 event_types 的节点同步后仍应生成 trigger（兜底）。"""
-    workflow = await _make_workflow("Legacy Array WF")
-    await _make_trigger_node(workflow, {"event_types": ["WorkitemStatusEvent"]})
+async def test_client_endpoint_token_adopted():
+    """节点 config 预置合法 endpoint_token（拖入时客户端生成）→ 创建 trigger 时采纳该 token。"""
+    workflow = await _make_workflow("Client Token WF")
+    client_token = "Abc123_def456-GHI789jklMNO"  # 合法 base64url，长度 26
+    node = await _make_trigger_node(workflow, config={"endpoint_token": client_token})
 
     await async_sync_workflow_triggers(workflow)
 
-    triggers = await _triggers(workflow)
-    assert len(triggers) == 1
-    assert triggers[0].event_type == "WorkitemStatusEvent"
+    trigger = (await _triggers(workflow))[0]
+    assert trigger.token == client_token
+    await node.arefresh_from_db()
+    assert node.config.get("endpoint_token") == client_token
 
 
-async def test_filter_config_maps_project_and_work_item():
-    """TRIG-01：filter_project_key / filter_work_item_type 正确映射进 filter_config。"""
-    workflow = await _make_workflow("Filter Map WF")
-    await _make_trigger_node(
-        workflow,
-        {
-            "event_type": "WorkitemStatusEvent",
-            "filter_project_key": "proj-key-123",
-            "filter_work_item_type": "story",
-        },
+async def test_invalid_client_endpoint_token_falls_back():
+    """非法 endpoint_token（含非法字符）→ 不采纳，回退模型 default 生成唯一 token。"""
+    workflow = await _make_workflow("Invalid Token WF")
+    node = await _make_trigger_node(workflow, config={"endpoint_token": "bad token!"})
+
+    await async_sync_workflow_triggers(workflow)
+
+    trigger = (await _triggers(workflow))[0]
+    assert trigger.token != "bad token!"
+    assert trigger.token  # 已回退生成合法 token
+    await node.arefresh_from_db()
+    assert node.config.get("endpoint_token") == trigger.token
+
+
+async def test_duplicate_client_endpoint_token_falls_back():
+    """客户端 token 与已有 trigger token 冲突 → 不采纳，回退生成唯一 token（保证唯一约束）。"""
+    workflow = await _make_workflow("Dup Token WF")
+    taken = "Dup123_def456-GHI789jklMNO"
+    # 先占用该 token
+    await WorkflowTrigger.objects.acreate(
+        workflow=workflow, node_id=None, is_active=True, name="taken", token=taken,
     )
+    node = await _make_trigger_node(workflow, config={"endpoint_token": taken})
+
+    await async_sync_workflow_triggers(workflow)
+
+    new_trigger = await workflow.triggers.filter(node_id=node.id).afirst()
+    assert new_trigger is not None
+    assert new_trigger.token != taken  # 冲突回退
+    assert new_trigger.token
+
+
+async def test_endpoint_path_format():
+    """endpoint_path 为 /api/feishu/webhook/<token>/。"""
+    workflow = await _make_workflow("Endpoint Path WF")
+    await _make_trigger_node(workflow)
+
+    await async_sync_workflow_triggers(workflow)
+
+    trigger = (await _triggers(workflow))[0]
+    assert trigger.endpoint_path == f"/api/feishu/webhook/{trigger.token}/"
+
+
+async def test_token_stable_across_resync():
+    """重复同步不重新生成 token、不产生重复 trigger。"""
+    workflow = await _make_workflow("Stable Token WF")
+    await _make_trigger_node(workflow)
+
+    await async_sync_workflow_triggers(workflow)
+    first = (await _triggers(workflow))[0]
+    first_token = first.token
+
+    await async_sync_workflow_triggers(workflow)
+    triggers = await _triggers(workflow)
+    assert len(triggers) == 1
+    assert triggers[0].token == first_token
+
+
+async def test_multiple_nodes_get_distinct_tokens():
+    """多个触发节点各自生成独立 token 的 trigger。"""
+    workflow = await _make_workflow("Multi Node WF")
+    await _make_trigger_node(workflow)
+    await _make_trigger_node(workflow)
 
     await async_sync_workflow_triggers(workflow)
 
     triggers = await _triggers(workflow)
-    assert len(triggers) == 1
-    fc = triggers[0].filter_config
-    assert fc.get("project_key") == "proj-key-123"
-    assert fc.get("work_item_type_key") == "story"
+    assert len(triggers) == 2
+    tokens = {t.token for t in triggers}
+    assert len(tokens) == 2  # token 互不相同
+    assert all(t.is_active for t in triggers)
 
 
-async def test_e2e_match():
-    """TRIG-01 端到端：同步生成的 trigger 应能匹配真实 payload，错配返回 False。"""
-    workflow = await _make_workflow("E2E Match WF")
-    await _make_trigger_node(
-        workflow,
-        {"event_type": "WorkitemStatusEvent", "filter_status": ["s1"]},
+async def test_removed_node_deactivates_trigger():
+    """节点被移除后其 trigger 被停用。"""
+    workflow = await _make_workflow("Removed Node WF")
+    node = await _make_trigger_node(workflow)
+    await async_sync_workflow_triggers(workflow)
+    assert (await _triggers(workflow))[0].is_active is True
+
+    await node.adelete()
+    await async_sync_workflow_triggers(workflow)
+
+    triggers = await _triggers(workflow)
+    assert len(triggers) == 1  # 行保留但停用
+    assert triggers[0].is_active is False
+
+
+async def test_legacy_trigger_without_node_deactivated():
+    """旧版无 node_id 的存量 trigger 在同步后被停用（无对应画布节点）。"""
+    workflow = await _make_workflow("Legacy Trigger WF")
+    legacy = await WorkflowTrigger.objects.acreate(
+        workflow=workflow,
+        event_type="WorkitemStatusEvent",
+        filter_config={"project_key": "old"},
+        is_active=True,
+        name="legacy",
     )
+    assert legacy.node_id is None
 
     await async_sync_workflow_triggers(workflow)
 
-    triggers = await _triggers(workflow)
-    assert len(triggers) == 1
-    trigger = triggers[0]
-
-    matching_payload = {"cur_work_item_status": {"state_key": "s1"}}
-    assert trigger.matches_event("WorkitemStatusEvent", matching_payload) is True
-
-    non_matching_payload = {"cur_work_item_status": {"state_key": "other"}}
-    assert trigger.matches_event("WorkitemStatusEvent", non_matching_payload) is False
-
-
-async def test_negative_fields_go_to_include_exclude_substructures():
-    """负向 / 白名单字段写入 _include / _exclude 子结构，不污染正向 filter_config。
-
-    不变式（延续原 OQ#1 本意）：project_ids / exclude_project_ids / exclude_work_item_*
-    的**原始键**绝不作为正向顶层键出现——正向匹配遍历会跳过 `_` 开头特殊键，因此
-    负向字段必须落在 `_include` / `_exclude` 而非顶层，避免被当作普通字段路径静默误匹配。
-    project_ids（UUID）经 Project.feishu_project_key 映射成飞书 key。
-    """
-    workflow = await _make_workflow("Negative Fields WF")
-    # 真实 Project（带 feishu_project_key）供 UUID → key 映射
-    inc = await Project.objects.acreate(name="Inc Project", feishu_project_key="key-inc")
-    exc = await Project.objects.acreate(name="Exc Project", feishu_project_key="key-exc")
-    await _make_trigger_node(
-        workflow,
-        {
-            "event_type": "WorkitemStatusEvent",
-            "filter_status": ["s1"],
-            "project_ids": [str(inc.id)],
-            "exclude_project_ids": [str(exc.id)],
-            "exclude_work_item_pattern": "TEST",
-            "exclude_work_item_regex": r"^\[草稿\]",
-        },
-    )
-
-    await async_sync_workflow_triggers(workflow)
-
-    triggers = await _triggers(workflow)
-    assert len(triggers) == 1
-    fc = triggers[0].filter_config
-    # 原始负向键不得作为正向顶层键
-    assert "project_ids" not in fc
-    assert "exclude_project_ids" not in fc
-    assert "exclude_work_item_pattern" not in fc
-    assert "exclude_work_item_regex" not in fc
-    # 正向键保留
-    assert fc.get("cur_work_item_status.state_key") == ["s1"]
-    # 映射进 _include / _exclude
-    assert fc["_include"]["project_keys"] == ["key-inc"]
-    assert fc["_exclude"]["project_keys"] == ["key-exc"]
-    assert fc["_exclude"]["work_item_pattern"] == "TEST"
-    assert fc["_exclude"]["work_item_regex"] == r"^\[草稿\]"
-
-
-async def test_unmapped_project_uuid_skipped():
-    """映射不到 feishu_project_key 的 UUID（Project 无 key / 非法 UUID）跳过，不写 _include。"""
-    workflow = await _make_workflow("Unmapped WF")
-    no_key = await Project.objects.acreate(name="NoKey Project")  # feishu_project_key=None
-    await _make_trigger_node(
-        workflow,
-        {
-            "event_type": "WorkitemStatusEvent",
-            "project_ids": [str(no_key.id), "not-a-uuid"],
-        },
-    )
-
-    await async_sync_workflow_triggers(workflow)
-
-    triggers = await _triggers(workflow)
-    assert len(triggers) == 1
-    fc = triggers[0].filter_config
-    # 无可映射 key → 不生成 _include 子结构
-    assert "_include" not in fc
+    await legacy.arefresh_from_db()
+    assert legacy.is_active is False

@@ -103,6 +103,21 @@ class NotifyFeishuIMNode(BaseNode):
 
             client = await create_feishu_im_client_for_project(project)
 
+            # 群聊场景：发送前确保 Bot 已在群内。飞书要求机器人必须是群成员才能发消息，
+            # 否则返回 "Bot/User can NOT be out of the chat"。原生自动建群（group_type=auto）
+            # 不保证把插件机器人拉进群，这里幂等补一次加入（已在群内则直接通过）。
+            if receive_id_type == "chat_id":
+                join = await client.ensure_bot_in_chat(receive_id)
+                if not join.get("success"):
+                    return NodeResult(
+                        status="failed",
+                        error=(
+                            "飞书 IM 通知失败: Bot 不在群聊中且自动加入失败"
+                            f"（{join.get('error') or '未知原因'}）"
+                        ),
+                        next_handle="error",
+                    )
+
             if message_type == "card":
                 card = self._build_card(title, content)
                 message_id = await client.send_card(

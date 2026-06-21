@@ -456,6 +456,52 @@ async def test_get_chat_id_for_work_item_multiple_chats():
 
 
 @pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_group_id_field():
+    """语义字段 group_id 含合法 oc_ 群 ID → 正确取出（项目跟踪类型场景）。"""
+    service, project_client = _make_service_with_project_client()
+    project_client.get_work_item.return_value = _work_item_info(
+        {
+            "group_type": "bind",
+            "group_id": "oc_88aa55c5263514cbf285f8a6a3a08f27",
+            "chat_group": "oc_88aa55c5263514cbf285f8a6a3a08f27",
+        }
+    )
+
+    result = await service.get_chat_id_for_work_item("proj_key", 7019341893)
+
+    assert result is not None
+    assert result["chat_id"] == "oc_88aa55c5263514cbf285f8a6a3a08f27"
+
+
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_group_type_disabled_rejected():
+    """未绑定：group_type='disabled' 不是合法 oc_ 群 ID → 返回 None（修复误报）。
+
+    历史 bug：key 含 'group' 的 group_type 字段值 'disabled' 被当成 chat_id 返回。
+    oc_ 正则校验后，'disabled' 被拒，正确判为未绑定。
+    """
+    service, project_client = _make_service_with_project_client()
+    project_client.get_work_item.return_value = _work_item_info(
+        {"group_type": "disabled", "title": "需求标题"}
+    )
+
+    result = await service.get_chat_id_for_work_item("proj_key", 6659791768)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_invalid_format_rejected():
+    """字段值非 oc_ 格式（如普通字符串）→ 拒绝，返回 None。"""
+    service, project_client = _make_service_with_project_client()
+    project_client.get_work_item.return_value = _work_item_info(
+        {"chat_id": "not_a_chat_id"}
+    )
+
+    result = await service.get_chat_id_for_work_item("proj_key", 12345)
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_get_chat_id_for_work_item_api_failure():
     """API 调用失败时返回 None。"""
     service, project_client = _make_service_with_project_client()

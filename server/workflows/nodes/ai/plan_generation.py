@@ -75,9 +75,15 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 
 ### 重要规则
 
-- **禁止直接输出文字回复用户。** 当你需要向用户提问、确认信息或请求补充需求时，必须调用 ask_user_question 工具，绝不能用纯文字回复代替。
-- 如果需求描述不清晰、信息不足或存在歧义，立即调用 ask_user_question 向用户提问，不要猜测或自行假设。
-- 你的每一轮迭代都应该调用至少一个工具（search_repository_code、verify_plan、ask_user_question 等），不要空转。
+- 如果需求描述不清晰、信息不足或存在歧义，**不要猜测、不要自行假设**。立即停止分析，并把最终答案输出为如下 JSON（顶层对象，可放在 ```json``` 代码块中），且不要再调用任何工具：
+
+  ```json
+  {"need_clarification": true, "reason": "信息为何不足的简要说明", "questions": ["需要用户补充的问题1", "问题2"]}
+  ```
+
+  系统会据此把工作流分流到下游的人工处理节点（need_clarification 出口）。**本节点不直接向用户提问**，澄清交由下游节点负责，你只需用上面的 JSON 表达“需要澄清”即可。
+- 信息充分时，正常完成方案生成并通过 verify_plan 验证，输出技术方案 JSON；此时**不要**输出上面的澄清 JSON。
+- 你的每一轮迭代都应该调用至少一个工具（search_repository_code、verify_plan 等），不要空转。
 
 ## 输出格式
 
@@ -232,8 +238,26 @@ class AIPlanGenerationNode(AIAgentBaseNode):
             },
         ),
         NodePort(
+            name="need_clarification",
+            label="需澄清",
+            port_type=PortType.OBJECT,
+            description=(
+                "需求信息不足、需要人工补充时走此出口；"
+                "输出 questions（待澄清问题列表）/ reason（原因）。"
+                "可连接下游人工处理节点（如 human_approval / wait_feishu）。"
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "need_clarification": {"type": "boolean"},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                },
+            },
+        ),
+        NodePort(
             name="error",
-            label="Error",
+            label="失败",
             port_type=PortType.OBJECT,
             description="错误信息",
         ),
@@ -294,13 +318,15 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         D1 解耦：移除「自动推送」职责的 send_plan_card / create_feishu_document——
         方案的飞书文档生成、卡片推送与审批挂起交由下游 human_approval(mode=plan_feishu)
         + feishu_doc_create + notify_feishu_im 承担，本节点只产出方案。
-        保留 fetch_feishu_document（只读取材，非推送）与 ask_user_question（澄清 HITL，
-        独立 resume 链路，不属于方案卡片审批）。
+        保留 fetch_feishu_document（只读取材，非推送）。
+
+        单一职责（need_clarification 出口）：移除节点内 ask_user_question——本节点不再
+        就地挂起向用户提问（避免无 chat_id 时死循环）。信息不足时由 LLM 输出
+        need_clarification JSON，节点经 need_clarification 出口分流到下游人工节点处理。
         """
         base_tools = [
             "verify_plan",
             "fetch_feishu_document",
-            "ask_user_question",
             "search_repository_code",
         ]
 
@@ -318,7 +344,22 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         return value
 
     def map_output(self, result: AgentResult) -> dict[str, Any]:
-        """从 AgentResult 提取方案并验证格式。"""
+        """从 AgentResult 提取方案并验证格式。
+
+        优先识别「需澄清」信号：若 final_answer 是 need_clarification JSON，
+        则输出 need_clarification 结构（由 execute() 分流到 need_clarification 出口），
+        不再尝试当作技术方案解析。
+        """
+        clarification = self._extract_clarification(result.final_answer)
+        if clarification is not None:
+            return {
+                "need_clarification": True,
+                "questions": clarification["questions"],
+                "reason": clarification["reason"],
+                "final_answer": result.final_answer,
+                "usage": result.usage,
+            }
+
         plan_dict = self._extract_plan_from_result(result)
 
         if plan_dict is not None:
@@ -440,6 +481,21 @@ class AIPlanGenerationNode(AIAgentBaseNode):
             raise
         await self.emit_sub_step(context, "generate_plan", SubStepStatus.COMPLETED)
 
+        # 信息不足分支：LLM 判定需澄清 → 走 need_clarification 出口分流到下游人工节点，
+        # 本节点不产出方案、不投递知识库。
+        if (
+            result.status != "failed"
+            and isinstance(result.output, dict)
+            and result.output.get("need_clarification")
+        ):
+            await self.emit_sub_step(context, "review", SubStepStatus.RUNNING)
+            await self.emit_sub_step(context, "review", SubStepStatus.COMPLETED)
+            return NodeResult(
+                status="completed",
+                output=result.output,
+                next_handle="need_clarification",
+            )
+
         # Phase: 审查计划（结果验证）
         await self.emit_sub_step(context, "review", SubStepStatus.RUNNING)
         if result.status == "failed":
@@ -485,6 +541,34 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         if result.final_answer:
             return self._extract_json_from_text(result.final_answer)
 
+        return None
+
+    @staticmethod
+    def _extract_clarification(text: str | None) -> dict[str, Any] | None:
+        """从文本中识别「需澄清」JSON：``{"need_clarification": true, ...}``。
+
+        支持 ```json``` 代码块或整段直接 JSON。命中返回归一化的
+        ``{"questions": [...], "reason": ...}``；否则返回 None。
+        """
+        if not text:
+            return None
+        candidates = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        candidates.append(text)
+        for block in candidates:
+            try:
+                data = json.loads(block.strip())
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict) and data.get("need_clarification") is True:
+                questions = data.get("questions") or []
+                if isinstance(questions, str):
+                    questions = [questions]
+                return {
+                    "questions": [
+                        str(q).strip() for q in questions if str(q).strip()
+                    ],
+                    "reason": str(data.get("reason", "")),
+                }
         return None
 
     @staticmethod

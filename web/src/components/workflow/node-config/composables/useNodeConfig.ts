@@ -76,12 +76,25 @@ export function useNodeConfig() {
     }
   }, { immediate: true })
 
-  // 防抖同步配置到 store
+  // 防抖同步配置到 store。
+  // 仅当本地表单与 store 现值「确有差异」才写回——否则切换/选中节点触发的初始同步
+  // 也会写回并把节点误标为「未保存」（dirty）。
   watchDebounced(
     [nodeName, nodeDescription, nodeConfig],
     () => {
       if (!selectedNodeId.value)
         return
+
+      const node = nodes.value.find(n => n.id === selectedNodeId.value)
+      if (!node)
+        return
+
+      const sameName = (node.name || '') === nodeName.value
+      const sameDescription = (node.description || '') === nodeDescription.value
+      const sameConfig
+        = JSON.stringify(node.config ?? {}) === JSON.stringify(nodeConfig.value ?? {})
+      if (sameName && sameDescription && sameConfig)
+        return // 无实际改动（仅切换/选中节点的初始同步）→ 不写回、不标脏
 
       store.updateNodeData(selectedNodeId.value, {
         name: nodeName.value,

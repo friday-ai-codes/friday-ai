@@ -145,11 +145,19 @@ class FetchWorkItemNode(BaseNode):
                 next_handle="error",
             )
 
-        # 解析 work_item_type：优先用配置，其次用触发器数据
+        # 解析 work_item_type：优先用配置，其次按真实来源回退。
+        # 注意 trigger_data 结构为 {"source", "raw_payload"}，并无顶层 work_item_type，
+        # 真实类型在 raw_payload.work_item_type_key（飞书自定义类型为长 ID，如
+        # 658a8bde...）。历史实现直接取 trigger_data["work_item_type"] 会恒落空回退到
+        # "story"，对自定义类型工作项触发 30005 WorkItem Not Found。
         work_item_type = config.get("work_item_type", "")
         if not work_item_type or work_item_type == "__auto__":
-            # 从触发器数据获取
-            work_item_type = context.get_trigger_data("work_item_type", "story")
+            work_item_type = (
+                context.get_input("work_item_type", "")
+                or context.get_trigger_data("raw_payload.work_item_type_key", "")
+                or context.get_trigger_data("work_item_type", "")
+                or "story"
+            )
 
         # 获取空间信息
         project = await self._get_project(context)

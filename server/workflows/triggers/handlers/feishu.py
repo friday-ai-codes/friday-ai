@@ -34,21 +34,28 @@ class FeishuEventHandler(TriggerHandler):
     async def validate(self, context: TriggerContext) -> list[str]:
         """验证飞书事件触发上下文
 
-        检查:
-        1. 必须有 event_type
-        2. 必须有 space
-        3. 验证 webhook token (如果项目配置了)
+        两种路由模式：
+        - **专属端点模式**（``metadata["trigger_token"]`` 存在）：URL 中的 token 即路由
+          标识 + 鉴权凭证，不再要求 event_type，也不再校验 header token。
+        - **旧版共享端点模式**：保持原行为——要求 event_type + space，并按 project 的
+          ``feishu_webhook_token`` 校验 header token（向后兼容）。
         """
         errors = []
 
-        if not context.event_type:
+        trigger_token = context.metadata.get("trigger_token")
+
+        if not trigger_token and not context.event_type:
             errors.append("缺少必需字段: event_type")
 
         if not context.project:
             errors.append("缺少必需字段: space")
             return errors
 
-        # 验证 webhook token
+        # 专属端点模式：token 本身就是凭证，跳过 header token 校验
+        if trigger_token:
+            return errors
+
+        # 旧版共享端点：验证 webhook token
         received_token = context.metadata.get("token", "")
         expected_token = getattr(context.project, "feishu_webhook_token", None)
 
@@ -65,17 +72,40 @@ class FeishuEventHandler(TriggerHandler):
         return errors
 
     async def find_workflows(self, context: TriggerContext) -> list["Workflow"]:
-        """查找匹配飞书事件的工作流
+        """查找要触发的工作流
 
-        通过 WorkflowTrigger 配置匹配事件类型和过滤条件。
-        支持一对多：一个事件可触发多个工作流。
+        - **专属端点模式**：``metadata["trigger_token"]`` 直接定位唯一 WorkflowTrigger，
+          命中即返回其工作流，不做任何 event_type / filter 匹配。
+        - **旧版共享端点模式**：按 event_type + project 匹配 WorkflowTrigger，并用
+          ``matches_event()`` 做过滤（仅对仍保留 event_type 的存量触发器生效）。
         """
+        from workflows.models import WorkflowTrigger
+
+        trigger_token = context.metadata.get("trigger_token")
+        if trigger_token:
+            trigger = (
+                await WorkflowTrigger.objects.filter(
+                    token=trigger_token,
+                    is_active=True,
+                    workflow__is_active=True,
+                )
+                .select_related("workflow")
+                .afirst()
+            )
+            if trigger is None:
+                logger.debug("feishu_trigger_token_unmatched")
+                return []
+            logger.debug(
+                "feishu_trigger_token_matched",
+                trigger_id=str(trigger.id),
+                workflow_id=str(trigger.workflow.id),
+            )
+            return [trigger.workflow]
+
+        # 旧版共享端点：按事件类型匹配
         if not context.event_type or not context.project:
             return []
 
-        from workflows.models import WorkflowTrigger
-
-        # 查找该项目下所有匹配事件类型的活跃触发器
         triggers = [
             t async for t in WorkflowTrigger.objects.filter(
                 event_type=context.event_type,

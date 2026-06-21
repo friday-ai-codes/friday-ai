@@ -64,6 +64,8 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
       fromDef('merge_pr', '合并 PR', '合并 Pull Request'),
       fromDef('mcp_deploy', 'MCP 部署', 'MCP 服务部署'),
       fromDef('fetch_group_chat', '获取群聊', '从飞书工作项获取群聊 ID'),
+      fromDef('create_group_chat', '创建群聊', '创建飞书群并拉入成员，输出 chat_id'),
+      { type: 'create_work_item_chat', name: '创建工作项群聊', description: '飞书原生自动建群并绑定到工作项，输出 chat_id' },
       fromDef('join_group_chat', '加入群聊', 'Bot 加入目标群聊'),
       fromDef('group_chat_question', '群聊提问', '向群聊发送提问卡片等待回答'),
     ],

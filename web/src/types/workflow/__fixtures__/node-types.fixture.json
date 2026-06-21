@@ -1,5 +1,5 @@
 {
-  "node_count": 35,
+  "node_count": 36,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -60,6 +60,9 @@
       "outputs": [
         {
           "name": "default"
+        },
+        {
+          "name": "need_clarification"
         },
         {
           "name": "error"
@@ -192,6 +195,23 @@
     {
       "node_type": "create_pr",
       "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "create_work_item_chat",
+      "category": "integration",
       "inputs": [
         {
           "name": "default"

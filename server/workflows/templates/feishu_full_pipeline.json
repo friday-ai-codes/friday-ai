@@ -9,11 +9,7 @@
       "type": "feishu_event_trigger",
       "name": "飞书事件触发",
       "position": {"x": 400, "y": 0},
-      "config": {
-        "event_type": "WorkitemStatusEvent",
-        "filter_work_item_type": "",
-        "filter_status": []
-      }
+      "config": {}
     },
     {
       "id": "fetch_work_item",

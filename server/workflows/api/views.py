@@ -92,149 +92,82 @@ logger = structlog.get_logger()
 # 拒绝 `.`/`{`/`}`/空白等会破坏模板语法或重写正则的字符（T-17-10, ASVS V5）。
 _SHORT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{2,11}$")
 
-
-async def _map_project_ids_to_feishu_keys(project_ids: list) -> list[str]:
-    """把 Friday Project UUID 列表映射成飞书 project_key 列表。
-
-    - 非法 UUID 跳过并记 warning（避免 ``id__in`` 抛 ValidationError）；
-    - 映射不到 feishu_project_key（为空/None 或 Project 不存在）的 UUID 跳过并记 warning；
-    - 保持入参顺序、去重交给上层（这里仅做映射）。
-    """
-    if not project_ids:
-        return []
-
-    from projects.models import Project
-
-    valid_ids: list[uuid.UUID] = []
-    for pid in project_ids:
-        try:
-            valid_ids.append(uuid.UUID(str(pid)))
-        except (ValueError, TypeError, AttributeError):
-            logger.warning("trigger_sync_invalid_project_id", project_id=str(pid))
-
-    if not valid_ids:
-        return []
-
-    mapping: dict[str, str] = {
-        str(pid): key
-        async for pid, key in Project.objects.filter(id__in=valid_ids).values_list(
-            "id", "feishu_project_key"
-        )
-    }
-
-    keys: list[str] = []
-    for pid in project_ids:
-        key = mapping.get(str(pid))
-        if key:
-            keys.append(key)
-        else:
-            logger.warning("trigger_sync_project_key_unmapped", project_id=str(pid))
-    return keys
+# 飞书端点 token 合法形态（URL 安全 base64，对齐后端 secrets.token_urlsafe）。
+# 客户端在「飞书事件触发」节点拖入时预生成 endpoint_token，同步触发器时若合法且唯一即采纳，
+# 让"拖入即展示的端点 URL"在保存后保持不变；否则回退模型 default 生成。
+_ENDPOINT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
 
 async def async_sync_workflow_triggers(workflow: Workflow) -> None:
     """Sync feishu_event_trigger nodes to WorkflowTrigger table.
 
-    This ensures that trigger nodes configured in the workflow canvas
-    are automatically registered for webhook event matching.
+    每个 ``feishu_event_trigger`` 画布节点对应一条 ``WorkflowTrigger``，按节点 ID
+    （``node_id``）作为稳定键 upsert，保证专属端点 token 跨保存不变。
+
+    飞书侧自动化规则已决定"何时触发"，因此这里不再写入 event_type / filter_config
+    等过滤条件——一条飞书 webhook 命中专属端点 ``/api/feishu/webhook/<token>/`` 即
+    直接触发对应工作流。同步后把权威 token 回填到节点 ``config.endpoint_token``，供前端
+    展示完整端点 URL。
     """
-    # Get all feishu_event_trigger nodes from the workflow
-    configured_triggers: list[dict] = []
-    async for node in workflow.nodes.filter(node_type="feishu_event_trigger"):
-        config = node.config or {}
-        # TRIG-01 / D-01：单数 event_type 为事实源，历史复数 event_types 数组兜底（Pitfall 1：
-        # 并存不删复数读取，避免存量节点同步后丢 trigger）。
-        event_type = config.get("event_type")
-        legacy = config.get("event_types") or []
-        event_type_list = [et for et in ([event_type] if event_type else legacy) if et]
+    # 当前画布上的飞书触发节点
+    trigger_nodes = [
+        node async for node in workflow.nodes.filter(node_type="feishu_event_trigger")
+    ]
 
-        # Build filter config from node config（仅写入可正向表达的 include 字段）。
-        filter_config: dict = {}
-        if config.get("filter_project_key"):
-            filter_config["project_key"] = config["filter_project_key"]
-        if config.get("filter_work_item_type"):
-            filter_config["work_item_type_key"] = config["filter_work_item_type"]
-        if config.get("filter_status"):
-            # filter_status 已是数组 → 嵌套路径走 list 成员匹配（matches_event 契约）。
-            statuses = list(config["filter_status"])
-            if config.get("filter_status_custom"):
-                statuses.append(config["filter_status_custom"])
-            filter_config["cur_work_item_status.state_key"] = statuses
+    # 该工作流已有的全部触发器（含旧版无 node_id 的存量行）
+    existing_triggers = [t async for t in workflow.triggers.all()]
+    existing_by_node = {str(t.node_id): t for t in existing_triggers if t.node_id}
 
-        # 负向 / 白名单过滤写入 _include / _exclude 子结构（保持正向键不变以向后兼容）。
-        # project_ids / exclude_project_ids 是 Friday Project UUID，需映射成飞书
-        # project_key 才能与 payload 对比（不同 ID 空间）；映射不到的 UUID 跳过并记 warning。
-        include_keys = await _map_project_ids_to_feishu_keys(config.get("project_ids") or [])
-        exclude_keys = await _map_project_ids_to_feishu_keys(
-            config.get("exclude_project_ids") or []
-        )
-        exclude_pattern = config.get("exclude_work_item_pattern") or ""
-        exclude_regex = config.get("exclude_work_item_regex") or ""
+    seen_node_ids: set[str] = set()
+    for node in trigger_nodes:
+        node_id = str(node.id)
+        seen_node_ids.add(node_id)
+        node_name = node.name or "飞书事件触发"
 
-        include_block: dict = {}
-        if include_keys:
-            include_block["project_keys"] = include_keys
-
-        exclude_block: dict = {}
-        if exclude_keys:
-            exclude_block["project_keys"] = exclude_keys
-        if exclude_pattern:
-            exclude_block["work_item_pattern"] = exclude_pattern
-        if exclude_regex:
-            exclude_block["work_item_regex"] = exclude_regex
-
-        if include_block:
-            filter_config["_include"] = include_block
-        if exclude_block:
-            filter_config["_exclude"] = exclude_block
-
-        for et in event_type_list:
-            configured_triggers.append(
-                {
-                    "event_type": et,
-                    "filter_config": filter_config,
-                    "node_id": str(node.id),
-                    "node_name": node.name,
-                }
-            )
-
-    # Get existing triggers for this workflow
-    existing_triggers = {t.event_type: t async for t in workflow.triggers.all()}
-
-    # Sync triggers
-    seen_event_types = set()
-    for trigger_config in configured_triggers:
-        event_type = trigger_config["event_type"]
-        seen_event_types.add(event_type)
-
-        if event_type in existing_triggers:
-            # Update existing trigger
-            trigger = existing_triggers[event_type]
-            trigger.filter_config = trigger_config["filter_config"]
-            trigger.is_active = True
-            trigger.name = trigger_config["node_name"] or f"触发器: {event_type}"
-            await trigger.asave()
-        else:
-            # Create new trigger
-            await WorkflowTrigger.objects.acreate(
+        trigger = existing_by_node.get(node_id)
+        if trigger is None:
+            # 优先采纳客户端在节点配置里预生成的合法且唯一 endpoint_token——让"拖入即展示
+            # 的端点 URL"在保存后保持不变；非法 / 与现有 token 冲突则回退模型 default 生成。
+            client_token = str((node.config or {}).get("endpoint_token", "")).strip()
+            create_kwargs: dict = {}
+            if _ENDPOINT_TOKEN_RE.match(client_token) and not await (
+                WorkflowTrigger.objects.filter(token=client_token).aexists()
+            ):
+                create_kwargs["token"] = client_token
+            trigger = await WorkflowTrigger.objects.acreate(
                 workflow=workflow,
-                event_type=event_type,
-                filter_config=trigger_config["filter_config"],
+                node_id=node.id,
+                event_type="",
+                filter_config={},
                 is_active=True,
-                name=trigger_config["node_name"] or f"触发器: {event_type}",
+                name=node_name,
+                **create_kwargs,
             )
-
-    # Deactivate triggers for removed event types
-    for event_type, trigger in existing_triggers.items():
-        if event_type not in seen_event_types:
-            trigger.is_active = False
+        else:
+            trigger.is_active = True
+            trigger.event_type = ""
+            trigger.filter_config = {}
+            trigger.name = node_name
             await trigger.asave()
+
+        # 回填权威 token 到节点 config（覆盖任何客户端传入值），供前端展示端点 URL
+        config = node.config or {}
+        if config.get("endpoint_token") != trigger.token:
+            config["endpoint_token"] = trigger.token
+            node.config = config
+            await node.asave(update_fields=["config"])
+
+    # 停用已不存在对应节点的触发器（含旧版无 node_id 的存量行）
+    for trigger in existing_triggers:
+        node_key = str(trigger.node_id) if trigger.node_id else None
+        if node_key not in seen_node_ids and trigger.is_active:
+            trigger.is_active = False
+            await trigger.asave(update_fields=["is_active"])
 
     logger.info(
         "workflow_triggers_synced",
         workflow_id=str(workflow.id),
-        trigger_count=len(configured_triggers),
-        event_types=list(seen_event_types),
+        trigger_count=len(trigger_nodes),
     )
 
 

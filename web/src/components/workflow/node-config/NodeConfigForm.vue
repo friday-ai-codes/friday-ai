@@ -15,6 +15,7 @@ import {
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import { useNodeDescriptionCollapse } from '~/composables/useNodeDescriptionCollapse'
 
 interface Props {
   nodeName: string
@@ -38,6 +39,12 @@ const emit = defineEmits<{
   'updateConfigValue': [key: string, value: any]
   'updateJsonConfig': [key: string, value: string]
 }>()
+
+// 节点用途说明（介绍该节点是干嘛的）：取节点类型注册的 description。
+const nodeTypeDescription = computed<string>(() => props.nodeTypeInfo?.description ?? '')
+
+// 「节点说明」收起/展开（与节点库共用全局状态，localStorage 持久化，默认展开）
+const { collapsed: descCollapsed, toggle: toggleDesc } = useNodeDescriptionCollapse()
 
 // 根据 schema 判断字段类型
 function getFieldType(schema: any): string {
@@ -120,24 +127,25 @@ const useUiSchema = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="space-y-2">
-      <Label class="text-sm font-medium flex items-center justify-between">
-        <span>名称</span>
-        <span class="text-xs text-muted-foreground">{{ nodeName.length }}/50</span>
-      </Label>
-      <Input :model-value="nodeName" placeholder="节点名称" maxlength="50" class="bg-background/50" @update:model-value="emit('update:name', $event as string)" />
-    </div>
-    <div class="space-y-2">
-      <Label class="text-sm font-medium flex items-center justify-between">
-        <span>描述</span>
-        <span class="text-xs text-muted-foreground">{{ nodeDescription.length }}/200</span>
-      </Label>
-      <Textarea :model-value="nodeDescription" placeholder="描述此节点的功能..." rows="2" maxlength="200" class="bg-background/50" @update:model-value="emit('update:description', $event as string)" />
-    </div>
+  <!-- 节点说明：介绍该节点用途，可收起/展开（与节点库共用全局状态，持久化，默认展开） -->
+  <div v-if="nodeTypeDescription" class="rounded-lg border border-border/50 bg-muted/30 p-2.5">
+    <button
+      type="button"
+      class="flex w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+      :title="descCollapsed ? '展开节点说明' : '收起节点说明'"
+      @click="toggleDesc"
+    >
+      <span class="icon-[lucide--info] text-sm shrink-0" />
+      <span>节点说明</span>
+      <span
+        class="ml-auto w-3.5 h-3.5 transition-transform"
+        :class="descCollapsed ? 'icon-[lucide--chevron-right]' : 'icon-[lucide--chevron-down]'"
+      />
+    </button>
+    <p v-if="!descCollapsed" class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+      {{ nodeTypeDescription }}
+    </p>
   </div>
-
-  <Separator class="bg-border/50" />
 
   <!-- 自定义配置面板（从注册表动态加载）— 最高优先级 -->
   <template v-if="nodeHasCustomConfig && configComponent">
@@ -393,5 +401,15 @@ const useUiSchema = computed(() => {
         {{ propSchema.description }}
       </p>
     </div>
+  </div>
+
+  <Separator class="bg-border/50" />
+
+  <div class="space-y-2">
+    <Label class="text-sm font-medium flex items-center justify-between">
+      <span>备注</span>
+      <span class="text-xs text-muted-foreground">{{ nodeDescription.length }}/200</span>
+    </Label>
+    <Textarea :model-value="nodeDescription" placeholder="为此节点添加备注（可选）..." rows="2" maxlength="200" class="bg-background/50" @update:model-value="emit('update:description', $event as string)" />
   </div>
 </template>

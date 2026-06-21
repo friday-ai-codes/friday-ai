@@ -1,12 +1,18 @@
 """WorkflowTrigger model for event-based workflow triggering."""
 
 import re
+import secrets
 import uuid
 
 import structlog
 from django.db import models
 
 logger = structlog.get_logger()
+
+
+def generate_trigger_token() -> str:
+    """生成飞书触发器专属端点 token（URL 安全，作为路由标识 + 鉴权凭证）。"""
+    return secrets.token_urlsafe(24)
 
 
 class TriggerEventType(models.TextChoices):
@@ -42,12 +48,36 @@ class WorkflowTrigger(models.Model):
         verbose_name="工作流",
     )
 
-    # 事件配置
+    # 关联的画布触发节点 ID（同步稳定键：保证 token 跨保存不变，区分同一工作流的多个触发节点）
+    node_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="触发节点 ID",
+        help_text="关联的 feishu_event_trigger 画布节点 ID",
+    )
+
+    # 专属 Webhook 端点 token（URL 路径段，既是路由标识又是鉴权凭证）
+    # 飞书侧自动化规则把 Webhook 动作指向 /api/feishu/webhook/<token>/ 即可直达本工作流。
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        default=generate_trigger_token,
+        verbose_name="端点 Token",
+        help_text="飞书 Webhook 专属端点标识，命中即直接触发对应工作流",
+    )
+
+    # 事件配置（可选）
+    # 飞书侧自动化规则已决定"何时触发"，此处不再用于路由匹配；
+    # 仅作旧版共享端点（无 token）的向后兼容字段与可读展示保留。
     event_type = models.CharField(
         max_length=50,
         choices=TriggerEventType.choices,
+        blank=True,
+        default="",
         verbose_name="事件类型",
-        help_text="监听的飞书 Webhook 事件类型",
+        help_text="（旧版）监听的飞书 Webhook 事件类型；新版按 token 路由，不再依赖此字段",
     )
 
     # 过滤条件
@@ -102,8 +132,13 @@ class WorkflowTrigger(models.Model):
         # unique_together = [("workflow", "event_type")]
 
     def __str__(self) -> str:
-        name = self.name or self.get_event_type_display()
+        name = self.name or self.get_event_type_display() or "飞书触发器"
         return f"{name} ({self.workflow.name})"
+
+    @property
+    def endpoint_path(self) -> str:
+        """专属 Webhook 端点的相对路径（前端拼 origin 即得完整 URL）。"""
+        return f"/api/feishu/webhook/{self.token}/"
 
     def matches_event(self, event_type: str, payload: dict) -> bool:
         """检查事件是否匹配此触发器

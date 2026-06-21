@@ -374,7 +374,10 @@ def test_get_enabled_tools_includes_defaults() -> None:
     D1 解耦：方案生成只产出方案，不再承担「自动推送」职责——send_plan_card /
     create_feishu_document 已从默认工具集移除（推送/审批交给下游 human_approval /
     feishu_doc_create / notify_feishu_im）。保留 verify_plan / search_repository_code /
-    ask_user_question（澄清 HITL）/ fetch_feishu_document（只读取材）。
+    fetch_feishu_document（只读取材）。
+
+    单一职责：ask_user_question 已移除——信息不足走 need_clarification 出口分流到
+    下游人工节点，节点内不再就地提问（避免无 chat_id 死循环）。
     """
     ctx = ExecutionContext(
         execution_id="00000000-0000-0000-0000-000000000001",
@@ -391,8 +394,9 @@ def test_get_enabled_tools_includes_defaults() -> None:
     assert tools is not None
     assert "verify_plan" in tools
     assert "search_repository_code" in tools
-    assert "ask_user_question" in tools
     assert "fetch_feishu_document" in tools
+    # 单一职责：节点内不再提问
+    assert "ask_user_question" not in tools
     # D1 解耦：自动推送类工具不再默认启用
     assert "send_plan_card" not in tools
     assert "create_feishu_document" not in tools
@@ -416,6 +420,57 @@ def test_map_output_no_plan() -> None:
     assert output["plan"] is None
     assert "error" in output
     assert output["final_answer"] == "I could not generate a plan."
+
+
+def test_outputs_include_need_clarification_port() -> None:
+    """节点声明 default / need_clarification / error 三个出口。"""
+    names = [p.name for p in AIPlanGenerationNode.outputs]
+    assert names == ["default", "need_clarification", "error"]
+
+
+def test_extract_clarification_from_fenced_json() -> None:
+    """```json``` 代码块中的 need_clarification 被正确解析与归一化。"""
+    text = (
+        "我需要更多信息。\n\n"
+        '```json\n{"need_clarification": true, "reason": "缺少验收标准", '
+        '"questions": ["目标分支是什么？", "  ", "是否需要兼容旧接口？"]}\n```'
+    )
+    result = AIPlanGenerationNode._extract_clarification(text)
+    assert result is not None
+    assert result["reason"] == "缺少验收标准"
+    # 空白问题被过滤
+    assert result["questions"] == ["目标分支是什么？", "是否需要兼容旧接口？"]
+
+
+def test_extract_clarification_none_for_plain_plan() -> None:
+    """普通方案/文本不应被误判为需澄清。"""
+    assert AIPlanGenerationNode._extract_clarification("这是一个普通回复") is None
+    assert AIPlanGenerationNode._extract_clarification(None) is None
+    assert (
+        AIPlanGenerationNode._extract_clarification('{"title": "方案", "summary": "x"}')
+        is None
+    )
+
+
+def test_map_output_detects_clarification_before_plan() -> None:
+    """final_answer 为 need_clarification JSON → map_output 走澄清分支，不当作方案。"""
+    from agents.core.result import AgentResult
+
+    node = AIPlanGenerationNode()
+    result = AgentResult(
+        output=[],
+        status="completed",
+        final_answer='{"need_clarification": true, "reason": "信息不足", "questions": ["问题A"]}',
+        usage={"input_tokens": 10, "output_tokens": 5},
+        metadata={},
+    )
+
+    output = node.map_output(result)
+
+    assert output["need_clarification"] is True
+    assert output["questions"] == ["问题A"]
+    assert output["reason"] == "信息不足"
+    assert "plan" not in output
 
 
 def test_map_output_plan_from_verify_tool_in_output() -> None:

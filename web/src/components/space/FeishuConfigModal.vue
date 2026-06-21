@@ -48,12 +48,13 @@ const docConfig = ref<FeishuDocConfig | null>(null)
 const folderToken = ref('')
 const savingDocConfig = ref(false)
 
-// Webhook URL（在客户端计算）
+// Webhook URL（在客户端计算）—— 空间级共享端点（向后兼容 / 副作用入口）。
+// 注意：工作流触发推荐使用各 feishu_event_trigger 节点的专属端点 URL。
 const webhookUrl = computed(() => {
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/api/webhook/feishu`
+    return `${window.location.origin}/api/feishu/webhook/`
   }
-  return '/api/webhook/feishu'
+  return '/api/feishu/webhook/'
 })
 
 async function loadData() {

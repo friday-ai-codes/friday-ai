@@ -203,6 +203,68 @@ class FeishuClient:
                 feishu_fields=feishu_fields,
             )
 
+    async def update_work_item_fields(
+        self,
+        project_key: str,
+        work_item_id: int,
+        work_item_type: str,
+        fields: dict[str, Any],
+    ) -> bool:
+        """更新工作项字段（飞书项目 OpenAPI，实测可用）。
+
+        端点：
+            PUT /open_api/{project_key}/work_item/{work_item_type}/{work_item_id}
+            body: {"update_fields": [{"field_key": k, "field_value": v}, ...]}
+
+        关键用途 —— 触发飞书原生「自动建群并绑定工作项」：
+            飞书项目（Meegle）**没有**独立的"创建群聊 / 绑定群"OpenAPI 接口。原生建群
+            是通过把工作项的 ``group_type`` 字段更新为 ``"auto"`` 来触发的：写入成功后，
+            飞书后端会**异步**创建群、自动把工作项相关人（负责人/关注人等）拉入群，并把
+            群 ID 原生回填到工作项的 ``chat_group`` / ``group_id`` 字段（通常数秒内生效，
+            调用方需轮询 ``get_work_item`` 查询回填结果）。
+
+            实测（study_platform 空间 story 工作项）：``group_type`` 从 ``"disabled"``
+            写为 ``"auto"`` 后，约数秒 ``chat_group`` 即出现 ``oc_xxx`` 群 ID。这是目前
+            唯一可编程触发"飞书原生绑定群"的方式（区别于走开放平台 IM API 自建群——后者
+            不会回填到工作项字段）。
+
+        Args:
+            project_key: 飞书项目空间 Key。
+            work_item_id: 工作项 ID（int64）。
+            work_item_type: 工作项类型 key（story / issue / 自定义类型 key）。
+            fields: ``{field_key: field_value}`` 待更新字段映射（如 ``{"group_type": "auto"}``）。
+
+        Returns:
+            True 表示更新成功（``err_code == 0``）。
+
+        Raises:
+            Exception: API 返回非 0 ``err_code`` 或非 JSON 响应时抛出。
+        """
+        token = await self.get_plugin_token()
+        update_fields = [
+            {"field_key": key, "field_value": value} for key, value in fields.items()
+        ]
+
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}",
+                headers={
+                    "X-PLUGIN-TOKEN": token,
+                    "Content-Type": "application/json",
+                    "X-USER-KEY": self.user_key or "",
+                },
+                json={"update_fields": update_fields},
+            )
+            data = strict_response_json(
+                response,
+                log_event="feishu_update_work_item_parse_failed",
+                project_key=project_key,
+                work_item_id=work_item_id,
+            )
+            if data.get("err_code") != 0:
+                raise Exception(f"更新工作项失败: {data}")
+            return True
+
     async def get_work_item_relations(
         self,
         project_key: str,
