@@ -34,7 +34,7 @@ const store = useWorkflowsStore()
 const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
 
 const vfNodes = computed(() => toVueFlowNodes(storeNodes.value))
-const vfEdges = computed(() => toVueFlowEdges(storeEdges.value))
+const vfEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value))
 
 const edgeTypes = { gradient: markRaw(GradientEdge) }
 

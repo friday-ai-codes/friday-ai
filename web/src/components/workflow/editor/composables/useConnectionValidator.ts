@@ -14,9 +14,14 @@ export function getValidationError(connection: Connection): string | null {
 
   const edges = getEdges.value
 
-  // 防重复连线
+  // 防重复连线：按四元组（source/sourceHandle/target/targetHandle）比对，
+  // handle 可能为 null，统一 ?? 'default' 归一后再比；
+  // 修复「同两节点不同分支端口的多条边被误报重复」。
   const duplicate = edges.some(
-    e => e.source === connection.source && e.target === connection.target,
+    e => e.source === connection.source
+      && e.target === connection.target
+      && (e.sourceHandle ?? 'default') === (connection.sourceHandle ?? 'default')
+      && (e.targetHandle ?? 'default') === (connection.targetHandle ?? 'default'),
   )
   if (duplicate) {
     return '已存在连接'
