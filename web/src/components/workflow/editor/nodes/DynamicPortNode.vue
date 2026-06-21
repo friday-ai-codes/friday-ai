@@ -39,7 +39,7 @@ const defaultPorts: Port[] = [
 
 const ports = computed(() => props.data.ports ?? defaultPorts)
 
-function portLeft(index: number, total: number): string {
+function portTop(index: number, total: number): string {
   if (total <= 1)
     return '50%'
   return `${((index + 1) / (total + 1)) * 100}%`
@@ -112,13 +112,13 @@ function updatePortName(portId: string, name: string) {
     </template>
   </BaseWorkflowNode>
 
-  <!-- 动态 Handle：parallel 渲染 source（底部），join 渲染 target（顶部） -->
+  <!-- 动态 Handle：横向 L→R——parallel 渲染 source（右侧），join 渲染 target（左侧），沿垂直方向均分 -->
   <Handle
     v-for="(port, i) in ports"
     :id="port.id"
     :key="port.id"
     :type="isParallel ? 'source' : 'target'"
-    :position="isParallel ? Position.Bottom : Position.Top"
-    :style="{ left: portLeft(i, ports.length) }"
+    :position="isParallel ? Position.Right : Position.Left"
+    :style="{ top: portTop(i, ports.length) }"
   />
 </template>

@@ -42,7 +42,7 @@ const gradientId = computed(() => `edge-gradient-${props.id}`)
 
 const edgeStyle = computed(() => ({
   stroke: `url(#${gradientId.value})`,
-  strokeWidth: props.selected ? 3 : 2,
+  strokeWidth: props.selected ? 2.5 : 2,
   strokeOpacity: props.selected ? 0.95 : 0.82,
   filter: props.selected ? 'drop-shadow(0 0 6px rgba(139,92,246,0.45))' : 'drop-shadow(0 1px 2px rgba(15,23,42,0.08))',
   transition: 'stroke-width 0.2s, stroke-opacity 0.2s, filter 0.2s',
