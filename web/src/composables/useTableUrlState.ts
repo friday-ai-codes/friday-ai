@@ -25,6 +25,7 @@
  */
 import type { PaginationState, SortingState } from '@tanstack/vue-table'
 import type { Ref } from 'vue'
+import type { LocationQueryRaw } from 'vue-router'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -102,7 +103,7 @@ export function useTableUrlState(options: TableUrlStateOptions = {}) {
 
   // --- 单写入者（state → URL，merge-prune 保留无关 query）---
   watch([...allFacetRefs, globalFilter, sorting, pagination], () => {
-    const query: Record<string, unknown> = { ...route.query }
+    const query: LocationQueryRaw = { ...route.query }
     const setDel = (key: string, val: string) => {
       if (val)
         query[key] = val
