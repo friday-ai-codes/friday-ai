@@ -1376,10 +1376,13 @@ class WorkflowEngine:
         )()
         node_type, node_config = node_meta
         if node_type == "human_approval" and node_config.get("mode") == "plan_feishu":
+            # D2：方案生成源兼容两条路径——经典 ai_plan_generation（TechnicalPlan）与编排
+            # ai_plan_research（PlanVersion 内联 output_data["plan"]）。normalizer
+            # （knowledge/sources/workflow_plan.py）统一读 output_data["plan"]，两路径同构。
             generation_node_id = await (
                 NodeExecution.objects.filter(
                     workflow_execution_id=node_execution.workflow_execution_id,
-                    node__node_type="ai_plan_generation",
+                    node__node_type__in=["ai_plan_generation", "ai_plan_research"],
                     status=NodeExecutionStatus.COMPLETED,
                 )
                 .exclude(output_data={})

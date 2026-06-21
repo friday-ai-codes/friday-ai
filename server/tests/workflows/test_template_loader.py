@@ -190,9 +190,13 @@ class TestCreateWorkflowFromTemplate:
         assert isinstance(workflow, Workflow)
         assert workflow.metadata.get("template_id") == "code_generation"
         nodes = [n async for n in workflow.nodes.all()]
-        # code_generation：trigger + generate_plan + plan_approval + ai_coding
-        # + create_doc(feishu_doc_create) + notify_result(notify_feishu_im)（D1 解耦）
+        # code_generation：trigger + generate_plan(ai_plan_research，D2 编排路径) + plan_approval
+        # + ai_coding + create_doc(feishu_doc_create) + notify_result(notify_feishu_im)（D1 解耦）
         assert len(nodes) == 6
+        # D2：方案生成节点切到 ai_plan_research 编排路径（多仓路由 + 多 agent 并行）
+        node_types = {n.node_type for n in nodes}
+        assert "ai_plan_research" in node_types
+        assert "ai_plan_generation" not in node_types
 
 
 class TestRewriteTemplateRefs:
