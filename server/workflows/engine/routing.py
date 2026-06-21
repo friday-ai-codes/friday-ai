@@ -215,9 +215,8 @@ def collect_inputs(dag: "DAG", node_id: str, node_outputs: dict) -> dict:
     - ai_plan_generation → ai_coding(plan)：上游输出顶层已有 "plan" 键 → 不覆盖，
       coding.get_input("plan") 仍拿到方案对象本身（plan_generation.py:329-352 /
       coding.py:706-712）。
-    - ai_coding → ai_code_review(coding_result)：上游输出顶层无 "coding_result" 键 →
-      补端口键，review.get_input("coding_result") 命中完整上游输出
-      （coding.py:706-712 / code_review.py:308-322）。
+    - <上游> → <下游(port)>：上游输出顶层无该端口键时 → 补端口键，下游
+      get_input(port) 命中完整上游输出（端口非破坏性叠加规则）。
     """
     dag_node = dag.nodes.get(node_id)
     if dag_node is None:

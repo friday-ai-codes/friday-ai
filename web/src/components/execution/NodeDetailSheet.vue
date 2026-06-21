@@ -19,7 +19,6 @@ import {
   SheetTitle,
 } from '~/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import AICodeReviewPanel from './AICodeReviewPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AIInsightTab from './AIInsightTab.vue'
 import ExecutionLogPanel from './ExecutionLogPanel.vue'
@@ -80,7 +79,6 @@ const nodeStatus = computed(() => props.nodeExecution?.status ?? '')
 const AI_NODE_TYPES = [
   'ai_prompt',
   'ai_coding',
-  'ai_code_review',
   'ai_plan_generation',
   'ai_coding_dispatcher',
 ] as const
@@ -127,12 +125,6 @@ const showAICoding = computed(() =>
   && ['running', 'waiting_event', 'completed'].includes(nodeStatus.value),
 )
 
-/** 是否显示 AICodeReviewPanel：ai_code_review + running/completed/failed */
-const showAICodeReview = computed(() =>
-  nodeType.value === 'ai_code_review'
-  && ['running', 'completed', 'failed'].includes(nodeStatus.value),
-)
-
 /** 是否显示 NodeDebugPanel：所有 running/waiting_event/completed/failed 状态 */
 const showDebugPanel = computed(() =>
   ['running', 'waiting_event', 'completed', 'failed'].includes(nodeStatus.value),
@@ -143,7 +135,6 @@ const hasExtraPanels = computed(() =>
   showPlanApproval.value
   || showHumanApproval.value
   || showAICoding.value
-  || showAICodeReview.value
   || showDebugPanel.value,
 )
 
@@ -244,12 +235,6 @@ function handleActionComplete() {
                   <!-- AI 编码面板 -->
                   <AICodingPanel
                     v-if="showAICoding"
-                    :node-execution="nodeExecution"
-                  />
-
-                  <!-- AI 代码审查面板 -->
-                  <AICodeReviewPanel
-                    v-if="showAICodeReview"
                     :node-execution="nodeExecution"
                   />
 

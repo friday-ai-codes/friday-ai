@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 
-import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { computed, onMounted, ref } from 'vue'
 
 import ModelSelect from '~/components/providers/ModelSelect.vue'
 import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
@@ -12,9 +13,10 @@ import {
 } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
+import RepositoryPicker from '~/components/workflow/RepositoryPicker.vue'
 import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
+import { useRepositoriesStore } from '~/stores/repositories'
 
 /**
  * AIPlanGenerationConfig - Configuration panel for AI Plan Generation node.
@@ -82,13 +84,7 @@ const excludeRepos = field('exclude_repos', []) as import('vue').WritableCompute
 const maxIterations = field('max_iterations', 50) as import('vue').WritableComputedRef<number>
 const chatId = field('chat_id', '') as import('vue').WritableComputedRef<string>
 
-// API 配置
-const useCustomApi = computed({
-  get: () => props.config.use_custom_api ?? false,
-  set: v => emit('update:config', { ...props.config, use_custom_api: v }),
-})
-const apiBaseUrl = field('api_base_url', '') as import('vue').WritableComputedRef<string>
-const apiKey = field('api_key', '') as import('vue').WritableComputedRef<string>
+// 模型：方案生成统一走系统 Provider 凭证（默认 Anthropic），不再暴露自定义 API。
 const model = field('model', '') as import('vue').WritableComputedRef<string>
 
 // Provider 凭证
@@ -102,35 +98,21 @@ const providerCredentialId = computed<string | null>({
 })
 
 // ============================================================================
-// Tag Input State
+// 仓库选择（模糊搜索）— 后端 include_repos/exclude_repos 存仓库 UUID，
+// 故用 RepositoryPicker 从真实仓库列表选择，同时保留手动输入（变量/UUID）。
 // ============================================================================
 
-const includeInput = ref('')
-const excludeInput = ref('')
+const repositoriesStore = useRepositoriesStore()
+const { repositories: allRepositories } = storeToRefs(repositoriesStore)
 
-function addIncludeRepo() {
-  const value = includeInput.value.trim()
-  if (value && !includeRepos.value.includes(value)) {
-    includeRepos.value = [...includeRepos.value, value]
-  }
-  includeInput.value = ''
-}
+const repoOptions = computed(() =>
+  allRepositories.value.map(r => ({ id: r.id, name: r.name })),
+)
 
-function removeIncludeRepo(repo: string) {
-  includeRepos.value = includeRepos.value.filter(r => r !== repo)
-}
-
-function addExcludeRepo() {
-  const value = excludeInput.value.trim()
-  if (value && !excludeRepos.value.includes(value)) {
-    excludeRepos.value = [...excludeRepos.value, value]
-  }
-  excludeInput.value = ''
-}
-
-function removeExcludeRepo(repo: string) {
-  excludeRepos.value = excludeRepos.value.filter(r => r !== repo)
-}
+onMounted(() => {
+  if (allRepositories.value.length === 0)
+    repositoriesStore.fetchRepositories().catch(() => {})
+})
 
 // ============================================================================
 // Modal & Collapsible State
@@ -243,50 +225,20 @@ const advancedOpen = ref(false)
           <!-- Include Repos -->
           <div class="space-y-1.5">
             <Label class="text-xs text-muted-foreground">必须包含的仓库</Label>
-            <div v-if="includeRepos.length" class="flex flex-wrap gap-1.5">
-              <span
-                v-for="repo in includeRepos"
-                :key="repo"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
-              >
-                {{ repo }}
-                <button
-                  type="button"
-                  class="icon-[lucide--x] text-[10px] hover:text-destructive transition-colors"
-                  @click="removeIncludeRepo(repo)"
-                />
-              </span>
-            </div>
-            <Input
-              v-model="includeInput"
-              placeholder="输入仓库名，回车添加"
-              class="bg-background/50 h-8 text-sm"
-              @keydown.enter.prevent="addIncludeRepo"
+            <RepositoryPicker
+              v-model="includeRepos"
+              :repositories="repoOptions"
+              placeholder="搜索并选择仓库..."
             />
           </div>
 
           <!-- Exclude Repos -->
           <div class="space-y-1.5">
             <Label class="text-xs text-muted-foreground">必须排除的仓库</Label>
-            <div v-if="excludeRepos.length" class="flex flex-wrap gap-1.5">
-              <span
-                v-for="repo in excludeRepos"
-                :key="repo"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20"
-              >
-                {{ repo }}
-                <button
-                  type="button"
-                  class="icon-[lucide--x] text-[10px] hover:text-destructive transition-colors"
-                  @click="removeExcludeRepo(repo)"
-                />
-              </span>
-            </div>
-            <Input
-              v-model="excludeInput"
-              placeholder="输入要排除的仓库名"
-              class="bg-background/50 h-8 text-sm"
-              @keydown.enter.prevent="addExcludeRepo"
+            <RepositoryPicker
+              v-model="excludeRepos"
+              :repositories="repoOptions"
+              placeholder="搜索并选择要排除的仓库..."
             />
             <p class="text-[10px] text-muted-foreground">
               未指定的仓库由 AI 自动决定是否检索
@@ -385,17 +337,9 @@ const advancedOpen = ref(false)
                   @update:model-value="v => model = v ?? ''"
                 />
                 <p class="text-[10px] text-muted-foreground">
-                  仅列出当前 Provider 支持 tool use 的模型
+                  默认使用系统 Anthropic 凭证，仅列出支持 tool use 的模型
                 </p>
               </div>
-
-              <AIModelConfig
-                v-model:use-custom-api="useCustomApi"
-                v-model:api-base-url="apiBaseUrl"
-                v-model:api-key="apiKey"
-                v-model:model="model"
-                model-description="方案生成使用的 LLM 模型"
-              />
 
               <div class="space-y-1.5">
                 <Label class="text-xs">最大迭代轮次</Label>
@@ -407,7 +351,8 @@ const advancedOpen = ref(false)
                   class="bg-background/50 h-8 text-sm"
                 />
                 <p class="text-[10px] text-muted-foreground">
-                  Agent 最多执行的 ReAct 循环次数 (10-200)
+                  方案生成 Agent 的 ReAct 推理上限：每轮可调用一次工具（如代码检索、verify_plan），
+                  到达上限仍未产出方案即停止，防止死循环。一般 50 足够，复杂跨仓需求可调高。
                 </p>
               </div>
             </CollapsibleContent>

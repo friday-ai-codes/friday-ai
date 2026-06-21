@@ -329,8 +329,8 @@ class TestExecutionMode:
             )
 
     def test_runner_dispatched_nodes(self):
-        """ai_coding and ai_code_review must be runner_dispatched."""
-        for name in ("ai_coding", "ai_code_review"):
+        """ai_coding must be runner_dispatched."""
+        for name in ("ai_coding",):
             cls = NodeRegistry.get(name)
             assert cls is not None, f"{name} not registered"
             assert cls.execution_mode == "runner_dispatched"

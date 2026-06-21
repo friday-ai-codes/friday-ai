@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "name": "飞书全链路自动化",
-  "description": "飞书工作项状态变更触发 → 获取需求详情 → AI 方案生成 → 飞书审批 → 容器编码(含 MR) → AI 代码审查",
+  "description": "飞书工作项状态变更触发 → 获取需求详情 → AI 方案生成 → 飞书审批 → 容器编码(含 MR)",
   "template_id": "feishu_full_pipeline",
   "nodes": [
     {
@@ -49,17 +49,7 @@
       "name": "AI 编码执行",
       "position": {"x": 400, "y": 740},
       "config": {
-        "container_image": "friday/claude-code:latest",
         "timeout_seconds": 1800,
-        "chat_id": ""
-      }
-    },
-    {
-      "id": "code_review",
-      "type": "ai_code_review",
-      "name": "AI 代码审查",
-      "position": {"x": 400, "y": 920},
-      "config": {
         "chat_id": ""
       }
     }
@@ -69,7 +59,6 @@
     {"source": "fetch_work_item", "target": "generate_plan"},
     {"source": "generate_plan", "target": "plan_approval"},
     {"source": "plan_approval", "target": "ai_coding", "source_handle": "approved"},
-    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
-    {"source": "ai_coding", "target": "code_review"}
+    {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"}
   ]
 }

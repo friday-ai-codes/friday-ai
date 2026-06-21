@@ -15,7 +15,6 @@ class TestAINodeRegistration:
         "ai_plan_generation",
         "ai_plan_approval",
         "ai_coding",
-        "ai_code_review",
     ]
 
     def test_all_ai_nodes_registered(self):
@@ -65,13 +64,6 @@ class TestAINodeInstantiation:
         node = AICodingNode()
         assert node.node_type == "ai_coding"
 
-    def test_code_review_instantiation(self):
-        """CodeReview 节点能正常实例化。"""
-        from workflows.nodes.ai.code_review import AICodeReviewNode
-
-        node = AICodeReviewNode()
-        assert node.node_type == "ai_code_review"
-
 
 @pytest.mark.django_db
 class TestAINodeAttributes:
@@ -98,12 +90,11 @@ class TestAINodeAttributes:
 
     def test_all_nodes_have_execute_method(self):
         """所有 AI 节点应有 execute 方法。"""
-        from workflows.nodes.ai.code_review import AICodeReviewNode
         from workflows.nodes.ai.coding import AICodingNode
         from workflows.nodes.ai.plan_approval import PlanApprovalNode
         from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 
-        for node_class in [AIPlanGenerationNode, PlanApprovalNode, AICodingNode, AICodeReviewNode]:
+        for node_class in [AIPlanGenerationNode, PlanApprovalNode, AICodingNode]:
             assert hasattr(node_class, "execute"), f"{node_class.__name__} 缺少 execute 方法"
 
 
@@ -211,12 +202,6 @@ class TestAINodeConfigSchema:
         from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 
         assert hasattr(AIPlanGenerationNode, "config_schema")
-
-    def test_code_review_has_config_schema(self):
-        """CodeReview 应有配置 schema（继承自 AIAgentBaseNode）。"""
-        from workflows.nodes.ai.code_review import AICodeReviewNode
-
-        assert hasattr(AICodeReviewNode, "config_schema")
 
 
 @pytest.mark.skip(

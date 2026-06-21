@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select'
+import { Textarea } from '~/components/ui/textarea'
 
 type OnErrorStrategy = 'abort' | 'retry' | 'ignore'
 
@@ -40,11 +41,11 @@ watch(() => props.fallbackValues, (val) => {
   fallbackJson.value = JSON.stringify(val ?? {}, null, 2)
 })
 
-function onFallbackChange(e: Event) {
-  const target = e.target as HTMLTextAreaElement
-  fallbackJson.value = target.value
+function onFallbackChange(value: string | number) {
+  const text = String(value)
+  fallbackJson.value = text
   try {
-    const parsed = JSON.parse(target.value)
+    const parsed = JSON.parse(text)
     fallbackError.value = ''
     emit('update:fallbackValues', parsed)
   }
@@ -184,12 +185,12 @@ const strategyOptions: Array<{ value: OnErrorStrategy, label: string, descriptio
       <!-- fallback_values (only when on_error=ignore) -->
       <div v-if="onError === 'ignore'" class="space-y-1.5">
         <Label class="text-xs text-muted-foreground">容错默认值 (JSON)</Label>
-        <textarea
-          :value="fallbackJson"
+        <Textarea
+          :model-value="fallbackJson"
           rows="4"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="font-mono"
           placeholder="{&quot;result&quot;: &quot;default_value&quot;}"
-          @input="onFallbackChange"
+          @update:model-value="onFallbackChange"
         />
         <p v-if="fallbackError" class="text-xs text-destructive">
           {{ fallbackError }}

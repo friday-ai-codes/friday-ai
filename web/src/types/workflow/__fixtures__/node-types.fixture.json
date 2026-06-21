@@ -1,5 +1,5 @@
 {
-  "node_count": 34,
+  "node_count": 36,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -12,26 +12,6 @@
       "outputs": [
         {
           "name": "default"
-        }
-      ]
-    },
-    {
-      "node_type": "ai_code_review",
-      "category": "ai",
-      "inputs": [
-        {
-          "name": "coding_result"
-        },
-        {
-          "name": "plan"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "default"
-        },
-        {
-          "name": "error"
         }
       ]
     },
@@ -210,6 +190,23 @@
       ]
     },
     {
+      "node_type": "create_group_chat",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
       "node_type": "create_pr",
       "category": "action",
       "inputs": [
@@ -243,6 +240,23 @@
     {
       "node_type": "delivery_knowledge_search",
       "category": "ai",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "feishu_doc_create",
+      "category": "integration",
       "inputs": [
         {
           "name": "default"
@@ -459,6 +473,23 @@
     },
     {
       "node_type": "notify_feishu",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "notify_feishu_im",
       "category": "integration",
       "inputs": [
         {

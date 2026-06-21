@@ -12,6 +12,7 @@ import {
   CloudUpload,
   Combine,
   FileCode,
+  FileText,
   FolderSearch,
   GitBranch,
   GitFork,
@@ -68,6 +69,8 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
 
   // 通知 (orange)
   notify_feishu: { icon: Send, color: 'orange' },
+  notify_feishu_im: { icon: Send, color: 'orange' },
+  feishu_doc_create: { icon: FileText, color: 'orange' },
 
   // AI (purple)
   ai_prompt: { icon: Sparkles, color: 'purple' },
@@ -77,7 +80,6 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
   ai_plan_generation: { icon: FileCode, color: 'purple' },
   ai_plan_approval: { icon: CheckCircle, color: 'purple' },
   ai_coding: { icon: Terminal, color: 'purple' },
-  ai_code_review: { icon: SearchCode, color: 'purple' },
 
   // 控制流 (purple)
   condition: { icon: GitBranch, color: 'purple' },

@@ -118,7 +118,6 @@ const AI_NODE_TYPES_WEB = new Set([
   'ai_prompt',
   'ai_variable_extractor',
   'ai_plan_generation',
-  'ai_code_review',
   'ai_coding',
   'ai_coding_dispatcher',
 ])

@@ -63,7 +63,6 @@ export const CONFIG_COMPONENTS: Record<string, () => Promise<{ default: Componen
   ai_plan_generation: () => import('~/components/workflow/config/AIPlanGenerationConfig.vue'),
   ai_plan_approval: () => import('~/components/workflow/config/AIPlanApprovalConfig.vue'),
   ai_coding: () => import('~/components/workflow/config/AICodingConfig.vue'),
-  ai_code_review: () => import('~/components/workflow/config/AICodeReviewConfig.vue'),
 }
 
 // ============================================================================

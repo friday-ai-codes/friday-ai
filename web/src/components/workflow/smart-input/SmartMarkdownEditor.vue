@@ -587,7 +587,7 @@ defineExpose({
 
     <!-- Editor content -->
     <div
-      class="px-3 py-2 text-sm overflow-y-auto"
+      class="px-3 py-2 text-sm text-foreground overflow-y-auto"
       :class="compact ? 'max-h-40' : 'max-h-64'"
       :style="{ minHeight: `${minRows * 1.5}rem` }"
     >
@@ -658,13 +658,20 @@ defineExpose({
   padding: 0;
 }
 
-/* Placeholder styling */
+/* Placeholder styling — 提高占位文字可读性（原 0.5 过淡看不清） */
 .smart-markdown-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  color: var(--muted-foreground);
-  opacity: 0.5;
+  color: var(--color-muted-foreground);
+  opacity: 0.8;
   pointer-events: none;
   height: 0;
+}
+
+/* 变量 chip 内文字不被 prose 的 code/链接样式干扰 */
+.smart-markdown-editor .variable-chip-view code {
+  background: none;
+  padding: 0;
+  color: inherit;
 }
 </style>

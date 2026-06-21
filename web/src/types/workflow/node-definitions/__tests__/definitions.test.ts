@@ -18,6 +18,8 @@ describe('aLL_NODE_DEFINITIONS', () => {
     'code',
     // integration
     'notify_feishu',
+    'notify_feishu_im',
+    'feishu_doc_create',
     'http_request',
     'merge_pr',
     'mcp_deploy',

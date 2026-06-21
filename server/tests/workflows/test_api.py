@@ -622,13 +622,12 @@ class TestTemplateAPI:
 
         assert response.status_code == status.HTTP_200_OK
         assert isinstance(response.data, list)
-        assert len(response.data) == 4
+        assert len(response.data) == 3
 
         ids = {t["template_id"] for t in response.data}
         expected = {
             "code_generation",
             "feishu_full_pipeline",
-            "code_review_pipeline",
             "daily_summary",
         }
         assert ids == expected
@@ -675,18 +674,6 @@ class TestTemplateAPI:
         assert "http_request" in node_types
         assert "ai_prompt" in node_types
         assert "notify_feishu" in node_types
-
-    def test_create_from_template_code_review(self, authenticated_admin_client, api_project):
-        """Creating workflow from code_review_pipeline template should succeed."""
-        url = "/api/workflows/from-template/"
-        data = {
-            "template_id": "code_review_pipeline",
-            "space_id": str(api_project.id),
-        }
-        response = authenticated_admin_client.post(url, data, format="json")
-
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["metadata"]["template_id"] == "code_review_pipeline"
 
     def test_create_from_template_missing_project_id(self, authenticated_admin_client):
         """Missing space_id should return 400."""

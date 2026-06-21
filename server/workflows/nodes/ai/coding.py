@@ -123,12 +123,6 @@ class AICodingNode(SubStepMixin, BaseNode):
     config_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
-            "container_image": {
-                "type": "string",
-                "title": "容器镜像",
-                "description": "SubAgent 容器镜像",
-                "default": "friday/claude-code:latest",
-            },
             "timeout_seconds": {
                 "type": "integer",
                 "title": "编码超时（秒）",
@@ -1616,7 +1610,9 @@ class AICodingNode(SubStepMixin, BaseNode):
             task_id=session_id,
             task_type="coding",
             tags=["coding"],
-            image=config.get("container_image", "friday/claude-code:latest"),
+            # 固定使用 runner 配置的默认 task 镜像（FRIDAY_RUNNER_IMAGE / FRIDAY_TASK_IMAGE）；
+            # 不再支持节点级镜像覆盖。空字符串 → runner 回退到部署配置的默认镜像。
+            image="",
             repo_url=repo_url,  # PF-06：SSH→HTTPS 改写后（token 认证需 HTTPS），不再直传 repository.git_url
             branch=base_branch,
             target_branch=branch_name,

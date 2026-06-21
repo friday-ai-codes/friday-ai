@@ -44,6 +44,70 @@ export const notifyFeishuDef = createNodeDefinition({
 })
 
 // ============================================================================
+// Feishu Doc Create — 把 Markdown 生成为飞书云文档
+// ============================================================================
+
+const feishuDocCreateSchema = z.object({
+  title: z.string().default(''),
+  content: z.string().default(''),
+  folder_token: z.string().default(''),
+})
+
+export const feishuDocCreateDef = createNodeDefinition({
+  nodeType: 'feishu_doc_create',
+  displayName: '飞书文档生成',
+  description: '把 Markdown（技术方案等）生成为飞书云文档',
+  icon: 'icon-[lucide--file-text]',
+  color: 'from-emerald-500 to-teal-400',
+  category: 'integration',
+  schema: feishuDocCreateSchema,
+  defaultConfig: feishuDocCreateSchema.parse({}),
+  uiSchema: {
+    fields: {
+      title: { widget: 'text', placeholder: '文档标题，支持 {{变量}}', help: '支持模板变量' },
+      content: { widget: 'textarea', placeholder: 'Markdown 内容，支持 {{变量}}', help: '支持引用上游节点的 markdown，如 {{nodes.generate_plan.plan_markdown}}' },
+      folder_token: { widget: 'text', help: '留空则使用项目配置的飞书文档文件夹' },
+    },
+  },
+})
+
+// ============================================================================
+// Feishu IM Notify — 通过飞书 App 向群聊/个人发送通知
+// ============================================================================
+
+const notifyFeishuIMSchema = z.object({
+  receive_id_type: z.enum(['chat_id', 'open_id', 'user_id'], '请选择有效的选项').default('chat_id'),
+  receive_id: z.string().default(''),
+  message_type: z.enum(['text', 'card'], '请选择有效的选项').default('text'),
+  title: z.string().default('通知'),
+  content: z.string().default(''),
+})
+
+export const notifyFeishuIMDef = createNodeDefinition({
+  nodeType: 'notify_feishu_im',
+  displayName: '飞书通知(IM)',
+  description: '通过飞书 App 向群聊或个人发送通知',
+  icon: 'icon-[lucide--send]',
+  color: 'from-emerald-500 to-teal-400',
+  category: 'integration',
+  schema: notifyFeishuIMSchema,
+  defaultConfig: notifyFeishuIMSchema.parse({}),
+  uiSchema: {
+    groups: [
+      { key: 'target', label: '通知目标', fields: ['receive_id_type', 'receive_id'] },
+      { key: 'message', label: '消息内容', fields: ['message_type', 'title', 'content'] },
+    ],
+    fields: {
+      receive_id_type: { widget: 'select', help: 'chat_id=群聊；open_id/user_id=个人' },
+      receive_id: { widget: 'text', placeholder: '群聊 ID 或用户 open_id/user_id', help: '支持 {{变量}}' },
+      message_type: { widget: 'select' },
+      title: { widget: 'text', help: '仅卡片形式生效', visible_if: { field: 'message_type', operator: 'eq', value: 'card' } },
+      content: { widget: 'textarea', help: '文本或卡片正文（卡片支持 Markdown），支持 {{变量}}' },
+    },
+  },
+})
+
+// ============================================================================
 // HTTP Request (简单占位，后续 Phase 迁移完善)
 // ============================================================================
 
@@ -164,6 +228,8 @@ export const groupChatQuestionDef = createNodeDefinition({
 
 export const INTEGRATION_DEFS: Record<string, NodeDefinition> = {
   notify_feishu: notifyFeishuDef,
+  notify_feishu_im: notifyFeishuIMDef,
+  feishu_doc_create: feishuDocCreateDef,
   http_request: httpRequestDef,
   merge_pr: mergePRDef,
   mcp_deploy: mcpDeployDef,

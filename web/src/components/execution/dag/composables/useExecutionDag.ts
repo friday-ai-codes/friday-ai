@@ -90,7 +90,7 @@ export function useExecutionDag(
         .map(n => [n.node_id, n]),
     )
 
-    const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_code_review', 'ai_plan_generation', 'ai_coding_dispatcher']
+    const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_plan_generation', 'ai_coding_dispatcher']
 
     return definition.nodes?.map((defNode) => {
       const ne = execMap.get(defNode.id)

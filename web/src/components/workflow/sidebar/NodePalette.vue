@@ -72,6 +72,8 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
     name: '通知',
     items: [
       fromDef('notify_feishu', '飞书通知', '发送飞书消息通知'),
+      fromDef('notify_feishu_im', '飞书通知(IM)', '向群聊或个人发送通知'),
+      fromDef('feishu_doc_create', '飞书文档生成', '把 Markdown 生成为飞书文档'),
     ],
   },
   {
@@ -84,7 +86,6 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
       { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案' },
       { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案' },
       { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR' },
-      { type: 'ai_code_review', name: 'AI 代码审查', description: 'AI 多维度代码审查' },
     ],
   },
   {

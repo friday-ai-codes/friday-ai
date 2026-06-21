@@ -71,11 +71,10 @@ class TestLegalGraphs:
             {"id": "ut", "short_id": "trig", "node_type": "manual_trigger", "config": {}},
             {"id": "uc", "short_id": "coding", "node_type": "ai_coding", "config": {}},
             {"id": "ua", "short_id": "approval", "node_type": "ai_plan_approval", "config": {}},
-            {"id": "ur", "short_id": "review", "node_type": "ai_code_review", "config": {}},
+            {"id": "ur", "short_id": "coding2", "node_type": "ai_coding", "config": {}},
         ]
         edges = [
             {"id": "e1", "source_node_id": "ut", "target_node_id": "uc"},
-            # ai_coding → ai_code_review default 边（Pitfall 1：review 无 default 输入端口）
             {"id": "e2", "source_node_id": "uc", "target_node_id": "ua"},
             {
                 "id": "e3",
@@ -208,8 +207,8 @@ class TestStructuralRules:
                 "node_type": "ai_prompt",
                 "config": {"user_prompt": "x"},
             },
-            # 孤立的 ai_code_review（无任何边）
-            {"id": "u3", "short_id": "lonely", "node_type": "ai_code_review", "config": {}},
+            # 孤立的 ai_coding（无任何边）
+            {"id": "u3", "short_id": "lonely", "node_type": "ai_coding", "config": {}},
         ]
         edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
         result = _validate(nodes, edges)

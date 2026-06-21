@@ -85,8 +85,8 @@ async def test_start_execution_writes_node_snapshots_for_ai_nodes(
     )
     await sync_to_async(Node.objects.create)(
         workflow=workflow,
-        node_type="ai_code_review",
-        name="codereview-n3",
+        node_type="ai_plan_generation",
+        name="plangen-n3",
         config={"model": "claude-3-5-sonnet-20241022"},
     )
     # 非 AI 节点（应被白名单过滤）
