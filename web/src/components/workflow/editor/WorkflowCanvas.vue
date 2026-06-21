@@ -12,7 +12,7 @@ import { Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, inject, markRaw, onBeforeUnmount } from 'vue'
+import { computed, inject, markRaw, onBeforeUnmount, ref } from 'vue'
 import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
@@ -45,6 +45,16 @@ const { applyAutoLayout } = useAutoLayout()
 const { onDragOver, onDrop } = useDragAndDrop()
 const { alignmentGuides, checkAlignment, clearGuides } = useAlignmentGuides()
 useKeyboardShortcuts()
+
+/** 是否正在拖拽节点 —— 对齐参考线仅在拖拽过程中显示，松手即清除（避免常驻虚线） */
+const isDragging = ref(false)
+function onNodeDragStart() {
+  isDragging.value = true
+}
+function onNodeDragStop() {
+  isDragging.value = false
+  clearGuides()
+}
 
 /** 将对齐参考线的 flow 坐标转换为屏幕坐标 */
 const guideLines = computed(() => {
@@ -223,6 +233,8 @@ function handleBatchCopy() {
       :selection-mode="SelectionMode.Partial"
       @nodes-change="onNodesChange"
       @edges-change="onEdgesChange"
+      @node-drag-start="onNodeDragStart"
+      @node-drag-stop="onNodeDragStop"
       @node-click="onNodeClick"
       @pane-click="onPaneClick"
       @connect="onConnect"
@@ -256,8 +268,9 @@ function handleBatchCopy() {
         :show-interactive="false"
         class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
       />
-      <!-- 对齐辅助线 overlay -->
+      <!-- 对齐辅助线 overlay：仅拖拽节点时渲染，松手即隐藏（修复虚线常驻） -->
       <svg
+        v-if="isDragging"
         class="pointer-events-none absolute inset-0 z-[1000] overflow-visible"
         style="width: 100%; height: 100%;"
       >

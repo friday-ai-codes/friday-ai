@@ -58,11 +58,14 @@ function onSelect(nodeType: string) {
       <slot name="trigger">
         <button
           type="button"
-          class="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground shadow hover:scale-110 transition-transform"
+          class="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground shadow ring-2 ring-background hover:scale-110 transition-transform"
           :class="props.triggerClass"
           title="添加节点"
+          @click.stop
+          @mousedown.stop
+          @pointerdown.stop
         >
-          <Plus class="w-3 h-3" />
+          <Plus class="w-3.5 h-3.5" />
         </button>
       </slot>
     </PopoverTrigger>

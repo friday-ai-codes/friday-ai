@@ -60,7 +60,8 @@ export function useAutoLayout() {
     const laidOut = applyLayout(
       toVueFlowNodes(store.nodes),
       sortBranchEdges(toVueFlowEdges(store.edges)),
-      { rankdir: 'LR', ranksep: 80, nodesep: 40 },
+      // 横向层间距 / 同层间距：对齐 dify（层间 ~100、同层 ~80）撑开连线，避免节点贴太近
+      { rankdir: 'LR', ranksep: 140, nodesep: 70 },
     )
 
     // 逐节点写回（仅 markDirty 不入历史），最后手动入历史一次 → 单步可撤销
