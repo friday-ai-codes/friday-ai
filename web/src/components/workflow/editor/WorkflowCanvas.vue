@@ -8,7 +8,7 @@
 import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
+import { ConnectionMode, Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
@@ -225,6 +225,7 @@ function handleBatchCopy() {
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="validateConnection"
+      :connection-mode="ConnectionMode.Strict"
       :snap-to-grid="true"
       :snap-grid="[15, 15]"
       :max-zoom="1.5"
