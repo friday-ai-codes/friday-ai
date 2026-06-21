@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Download, Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
+import { Download, Network, Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { Button } from '~/components/ui/button'
 import {
@@ -40,6 +40,7 @@ const emit = defineEmits<{
   (e: 'execute'): void
   (e: 'undo'): void
   (e: 'redo'): void
+  (e: 'autoLayout'): void
   (e: 'saveDraft'): void
   (e: 'back'): void
   (e: 'history'): void
@@ -181,6 +182,18 @@ function confirmEdit() {
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <p>重做</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <!-- 自动整理布局：横向 LR 重排 + 居中 -->
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button variant="ghost" size="icon" class="h-8 w-8" @click="emit('autoLayout')">
+              <Network class="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>自动整理布局</p>
           </TooltipContent>
         </Tooltip>
 

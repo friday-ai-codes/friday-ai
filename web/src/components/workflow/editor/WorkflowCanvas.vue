@@ -19,6 +19,7 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
 import { useAlignmentGuides } from './composables/useAlignmentGuides'
+import { useAutoLayout } from './composables/useAutoLayout'
 import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
@@ -40,6 +41,7 @@ const edgeTypes = { gradient: markRaw(GradientEdge) }
 const { error: showError } = useToast()
 const { getSelectedNodes, fitView, viewport: vfViewport } = useVueFlow()
 const { validateConnection } = useConnectionValidator()
+const { applyAutoLayout } = useAutoLayout()
 const { onDragOver, onDrop } = useDragAndDrop()
 const { alignmentGuides, checkAlignment, clearGuides } = useAlignmentGuides()
 useKeyboardShortcuts()
@@ -148,9 +150,21 @@ function focusNode(nodeId: string) {
 }
 if (workflowFocus)
   workflowFocus.focusNode = focusNode
+
+// 一键自动布局：横向 LR 重排（写回 store + 单步历史）后 fitView 居中。
+function runAutoLayout() {
+  const has = applyAutoLayout()
+  if (has)
+    fitView({ duration: 300 })
+}
+if (workflowFocus)
+  workflowFocus.autoLayout = runAutoLayout
+
 onBeforeUnmount(() => {
-  if (workflowFocus)
+  if (workflowFocus) {
     workflowFocus.focusNode = null
+    workflowFocus.autoLayout = null
+  }
 })
 
 // MiniMap 双击检测：MiniMap 内部 pannable 事件会吞掉 dblclick，

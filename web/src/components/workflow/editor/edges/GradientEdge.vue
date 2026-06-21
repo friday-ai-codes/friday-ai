@@ -6,12 +6,71 @@ import type { EdgeProps } from '@vue-flow/core'
  * 根据源/目标节点类别色渲染 SVG 线性渐变，选中时加粗发光。
  * 支持 label 显示（如审批驳回的「驳回修改」标签）。
  */
-import { BaseEdge } from '@vue-flow/core'
-import { computed } from 'vue'
+import { BaseEdge, EdgeLabelRenderer } from '@vue-flow/core'
+import { computed, ref } from 'vue'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
+import { generateShortId } from '~/utils/shortId'
+import { randomUUID } from '~/utils/uuid'
+import NodeInsertMenu from '../NodeInsertMenu.vue'
 import { getWorkflowEdgeRoute } from '../utils/edgeRouting'
 
 const props = defineProps<EdgeProps>()
+
+const store = useWorkflowsStore()
+
+/** 悬停连线时浮出中点 "+"（mouseenter/mouseleave 控制透明度与 pointer-events） */
+const hovering = ref(false)
+
+/**
+ * 在该边中点插入新节点：删旧边 + 新节点 + 两条新边。
+ * 照抄 dify custom-edge.tsx handleInsert 的「断开-插入-重连」语义。
+ */
+function onInsert(nodeType: string) {
+  const def = getNodeDefinition(nodeType)
+  const sourcePos = props.sourceNode?.position ?? { x: props.sourceX, y: props.sourceY }
+  const targetPos = props.targetNode?.position ?? { x: props.targetX, y: props.targetY }
+  const newNodeId = randomUUID()
+
+  store.removeEdge(props.id)
+  store.addNode({
+    id: newNodeId,
+    shortId: generateShortId(),
+    nodeType,
+    name: def?.displayName || nodeType,
+    description: '',
+    position: {
+      x: (sourcePos.x + targetPos.x) / 2,
+      y: (sourcePos.y + targetPos.y) / 2,
+    },
+    config: (def?.defaultConfig as Record<string, unknown>) ?? {},
+    onError: 'abort',
+    retryTimes: 0,
+    retryDelay: 5,
+    nodeTimeoutSeconds: null,
+    fallbackValues: null,
+    runCondition: null,
+    metadata: {},
+  })
+  store.addEdge({
+    id: `edge-${props.source}-${newNodeId}-${Date.now()}`,
+    source: props.source,
+    target: newNodeId,
+    sourcePort: props.sourceHandleId ?? 'default',
+    targetPort: 'default',
+    label: undefined,
+    condition: null,
+  })
+  store.addEdge({
+    id: `edge-${newNodeId}-${props.target}-${Date.now()}`,
+    source: newNodeId,
+    target: props.target,
+    sourcePort: 'default',
+    targetPort: props.targetHandleId ?? 'default',
+    label: undefined,
+    condition: null,
+  })
+}
 
 const route = computed(() => getWorkflowEdgeRoute({
   sourceX: props.sourceX,
@@ -73,6 +132,16 @@ export default { inheritAttrs: false }
       <stop offset="100%" :stop-color="targetColor" />
     </linearGradient>
   </defs>
+  <!-- 透明加宽命中路径：驱动连线悬停态，使中点 "+" 浮现 -->
+  <path
+    :d="route.path"
+    fill="none"
+    stroke="transparent"
+    :stroke-width="20"
+    style="pointer-events: stroke;"
+    @mouseenter="hovering = true"
+    @mouseleave="hovering = false"
+  />
   <BaseEdge
     :id="id"
     :path="route.path"
@@ -86,6 +155,23 @@ export default { inheritAttrs: false }
     :marker-end="markerEnd"
     :style="edgeStyle"
   />
+  <!-- 边中点悬停浮出 "+"：点击选节点后在该边中间插入新节点 -->
+  <EdgeLabelRenderer>
+    <div
+      class="nopan nodrag"
+      :style="{
+        position: 'absolute',
+        transform: `translate(-50%, -50%) translate(${route.labelX}px, ${route.labelY}px)`,
+        pointerEvents: hovering ? 'all' : 'none',
+        opacity: hovering ? 1 : 0,
+        transition: 'opacity 0.15s',
+      }"
+      @mouseenter="hovering = true"
+      @mouseleave="hovering = false"
+    >
+      <NodeInsertMenu @select="onInsert" />
+    </div>
+  </EdgeLabelRenderer>
 </template>
 
 <style>
