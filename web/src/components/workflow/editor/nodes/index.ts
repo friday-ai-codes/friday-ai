@@ -3,22 +3,22 @@ import type { NodeComponent } from '@vue-flow/core'
  * Vue Flow 节点类型注册
  *
  * 所有节点统一使用 BaseWorkflowNode（图标/颜色由 nodeVisuals 数据源驱动）。
- * parallel/join 使用 DynamicPortNode（需要动态端口管理）。
+ * condition/parallel 使用 BranchNode（分支在卡片内各自一个出口 handle，命名对齐后端 branch_i）。
  */
 import { markRaw } from 'vue'
 import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
-import DynamicPortNode from './DynamicPortNode.vue'
+import BranchNode from './BranchNode.vue'
 import { allNodeTypeKeys } from './nodeVisuals'
 
 const baseNode = markRaw(BaseWorkflowNode) as unknown as NodeComponent
-const dynamicNode = markRaw(DynamicPortNode) as unknown as NodeComponent
+const branchNode = markRaw(BranchNode) as unknown as NodeComponent
 const aiPlanGenNode = markRaw(AIPlanGenerationNode) as unknown as NodeComponent
 
 /** 特殊节点覆盖 */
 const specialNodes: Record<string, NodeComponent> = {
-  parallel: dynamicNode,
-  join: dynamicNode,
+  condition: branchNode,
+  parallel: branchNode,
   ai_plan_generation: aiPlanGenNode,
 }
 

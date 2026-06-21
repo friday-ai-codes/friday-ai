@@ -35,7 +35,7 @@ const props = withDefaults(defineProps<{
     [key: string]: unknown
   }
   selected?: boolean
-  /** 隐藏指定方向的 Handle，供 DynamicPortNode 等自行管理端口 */
+  /** 隐藏指定方向的 Handle，供 BranchNode 等自行管理端口 */
   hideHandles?: 'input' | 'output' | 'both' | 'none'
 }>(), { hideHandles: 'none' })
 
@@ -77,45 +77,88 @@ const isMultiSelect = computed(() => getSelectedNodes.value.length > 1)
 const isDirty = computed(() => dirtyNodeIds.value.has(props.id))
 
 /**
- * 节点配置摘要候选字段（参考 dify 节点 body 显示关键配置）：
- * 按顺序在 config 中查找首个有值的字段，渲染「标签：值」一行，让用户不点开也知节点意图。
+ * 配置字段中文标签字典（参考 dify 节点 body 的只读配置预览）。
+ * config_schema 字段名为 snake_case 英文，缺少中文 title，这里集中映射。
  */
-const SUMMARY_FIELDS: { keys: string[], label: string }[] = [
-  { keys: ['model', 'model_name', 'modelName'], label: '模型' },
-  { keys: ['provider'], label: '供应商' },
-  { keys: ['event_type', 'eventType', 'trigger_event', 'event'], label: '事件' },
-  { keys: ['expression', 'condition'], label: '条件' },
-  { keys: ['tool_name', 'tool', 'toolName'], label: '工具' },
-  { keys: ['language', 'lang'], label: '语言' },
-  { keys: ['url', 'endpoint'], label: 'URL' },
-  { keys: ['prompt', 'system_prompt', 'instruction'], label: '提示词' },
-  { keys: ['dataset', 'dataset_id', 'collection'], label: '知识库' },
-  { keys: ['repository', 'repo', 'branch'], label: '仓库' },
-]
+const CONFIG_LABELS: Record<string, string> = {
+  method: '方法',
+  secret: '密钥',
+  delay_seconds: '延迟(秒)',
+  delay_until: '延迟至',
+  wait_mode: '等待',
+  merge_strategy: '合并',
+  timeout: '超时',
+  timeout_seconds: '超时(秒)',
+  timeout_action: '超时动作',
+  list_source: '列表来源',
+  execution_mode: '执行模式',
+  max_concurrency: '并发',
+  work_item_id: '工作项',
+  work_item_type: '工作项类型',
+  project_key: '项目',
+  title: '标题',
+  require_all: '需全部',
+  timeout_hours: '超时(时)',
+  model: '模型',
+  model_name: '模型',
+  provider: '供应商',
+  prompt: '提示词',
+  system_prompt: '提示词',
+  language: '语言',
+  url: 'URL',
+  endpoint: '地址',
+  tool: '工具',
+  tool_name: '工具',
+  repository: '仓库',
+  branch: '分支',
+  event_type: '事件',
+  pass_input: '传入',
+  default_branch: '默认分支',
+}
 
-function summarizeConfig(config: Record<string, unknown> | undefined): string | null {
-  if (!config)
+/** 把单个配置值格式化为简短可读文本；对象/数组/空值返回 null（不展示） */
+function formatConfigValue(v: unknown): string | null {
+  if (v === null || v === undefined)
     return null
-  for (const { keys, label } of SUMMARY_FIELDS) {
-    for (const k of keys) {
-      const v = config[k]
-      if (typeof v === 'string' && v.trim()) {
-        const text = v.trim()
-        return `${label}：${text.length > 40 ? `${text.slice(0, 40)}…` : text}`
-      }
-      if (typeof v === 'number')
-        return `${label}：${v}`
-    }
+  if (typeof v === 'boolean')
+    return v ? '是' : '否'
+  if (typeof v === 'number')
+    return String(v)
+  if (typeof v === 'string') {
+    const s = v.trim()
+    if (!s)
+      return null
+    return s.length > 24 ? `${s.slice(0, 24)}…` : s
   }
   return null
 }
 
-/** 节点摘要：优先显示用户填写的描述，否则从 config 提取关键字段 */
-const nodeSummary = computed<string | null>(() => {
-  const desc = typeof props.data.description === 'string' ? props.data.description.trim() : ''
-  if (desc)
-    return desc
-  return summarizeConfig(props.data.config as Record<string, unknown> | undefined)
+/**
+ * 节点卡片配置预览 chips：按 config_schema 字段顺序取最多 3 个有值的基础字段。
+ * 让用户不点开节点也能看出关键配置（对齐 dify 节点 body）。
+ */
+const configChips = computed<{ label: string, value: string }[]>(() => {
+  const config = (props.data.config ?? {}) as Record<string, unknown>
+  const nt = nodeTypesStore.getNodeType(props.data.nodeType)
+  const order = nt?.config_schema?.properties
+    ? Object.keys(nt.config_schema.properties)
+    : Object.keys(config)
+  const chips: { label: string, value: string }[] = []
+  for (const key of order) {
+    if (chips.length >= 3)
+      break
+    const value = formatConfigValue(config[key])
+    if (value === null)
+      continue
+    chips.push({ label: CONFIG_LABELS[key] ?? key, value })
+  }
+  return chips
+})
+
+/** 节点描述（用户填写） */
+const nodeDescription = computed<string | null>(() => {
+  const d = typeof props.data.description === 'string' ? props.data.description.trim() : ''
+  return d || null
 })
 
 /** 单节点测试 loading 状态 */
@@ -299,14 +342,26 @@ async function handleTest() {
         />
       </div>
 
-      <!-- 内容 slot：未自定义时回退为配置摘要（描述 / 关键 config 字段） -->
+      <!-- 内容 slot：未自定义时回退为配置预览 chips + 描述（对齐 dify 节点 body） -->
       <slot name="content">
-        <p
-          v-if="nodeSummary"
-          class="mt-0.5 text-xs text-muted-foreground leading-snug line-clamp-2"
-        >
-          {{ nodeSummary }}
-        </p>
+        <div v-if="configChips.length || nodeDescription" class="mt-1 space-y-1">
+          <div v-if="configChips.length" class="flex flex-wrap gap-1">
+            <span
+              v-for="chip in configChips"
+              :key="chip.label"
+              class="inline-flex max-w-full items-center gap-1 rounded-md bg-muted/70 px-1.5 py-0.5 text-[11px] leading-none"
+            >
+              <span class="shrink-0 text-muted-foreground/70">{{ chip.label }}</span>
+              <span class="truncate text-foreground/80">{{ chip.value }}</span>
+            </span>
+          </div>
+          <p
+            v-if="nodeDescription"
+            class="text-xs text-muted-foreground leading-snug line-clamp-2"
+          >
+            {{ nodeDescription }}
+          </p>
+        </div>
       </slot>
 
       <!-- Output Handles：永远右出（source=Right） -->
