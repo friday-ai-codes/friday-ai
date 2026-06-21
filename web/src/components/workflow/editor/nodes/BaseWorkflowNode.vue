@@ -76,6 +76,48 @@ const isMultiSelect = computed(() => getSelectedNodes.value.length > 1)
 /** 当前节点是否有未保存的配置修改 */
 const isDirty = computed(() => dirtyNodeIds.value.has(props.id))
 
+/**
+ * 节点配置摘要候选字段（参考 dify 节点 body 显示关键配置）：
+ * 按顺序在 config 中查找首个有值的字段，渲染「标签：值」一行，让用户不点开也知节点意图。
+ */
+const SUMMARY_FIELDS: { keys: string[], label: string }[] = [
+  { keys: ['model', 'model_name', 'modelName'], label: '模型' },
+  { keys: ['provider'], label: '供应商' },
+  { keys: ['event_type', 'eventType', 'trigger_event', 'event'], label: '事件' },
+  { keys: ['expression', 'condition'], label: '条件' },
+  { keys: ['tool_name', 'tool', 'toolName'], label: '工具' },
+  { keys: ['language', 'lang'], label: '语言' },
+  { keys: ['url', 'endpoint'], label: 'URL' },
+  { keys: ['prompt', 'system_prompt', 'instruction'], label: '提示词' },
+  { keys: ['dataset', 'dataset_id', 'collection'], label: '知识库' },
+  { keys: ['repository', 'repo', 'branch'], label: '仓库' },
+]
+
+function summarizeConfig(config: Record<string, unknown> | undefined): string | null {
+  if (!config)
+    return null
+  for (const { keys, label } of SUMMARY_FIELDS) {
+    for (const k of keys) {
+      const v = config[k]
+      if (typeof v === 'string' && v.trim()) {
+        const text = v.trim()
+        return `${label}：${text.length > 40 ? `${text.slice(0, 40)}…` : text}`
+      }
+      if (typeof v === 'number')
+        return `${label}：${v}`
+    }
+  }
+  return null
+}
+
+/** 节点摘要：优先显示用户填写的描述，否则从 config 提取关键字段 */
+const nodeSummary = computed<string | null>(() => {
+  const desc = typeof props.data.description === 'string' ? props.data.description.trim() : ''
+  if (desc)
+    return desc
+  return summarizeConfig(props.data.config as Record<string, unknown> | undefined)
+})
+
 /** 单节点测试 loading 状态 */
 const isTesting = ref(false)
 
@@ -97,7 +139,7 @@ function appendNode(direction: 'input' | 'output', nodeType: string) {
     return
   const def = getNodeDefinition(nodeType)
   const newNodeId = randomUUID()
-  const offset = 280
+  const offset = 340
   store.addNode({
     id: newNodeId,
     shortId: generateShortId(),
@@ -257,8 +299,15 @@ async function handleTest() {
         />
       </div>
 
-      <!-- 内容 slot -->
-      <slot name="content" />
+      <!-- 内容 slot：未自定义时回退为配置摘要（描述 / 关键 config 字段） -->
+      <slot name="content">
+        <p
+          v-if="nodeSummary"
+          class="mt-0.5 text-xs text-muted-foreground leading-snug line-clamp-2"
+        >
+          {{ nodeSummary }}
+        </p>
+      </slot>
 
       <!-- Output Handles：永远右出（source=Right） -->
       <Handle
