@@ -539,7 +539,7 @@ class FeishuWebhookView(APIView):
 
     permission_classes = [AllowAny]
 
-    async def post(self, request):
+    async def post(self, request, token=None):
         raw_body = request.body.decode("utf-8")
 
         try:
@@ -575,62 +575,104 @@ class FeishuWebhookView(APIView):
             logger.info("webhook_event_duplicate", event_uuid=event_uuid)
             return Response({"status": "duplicate", "uuid": event_uuid})
 
-        # Get project
-        # 事件 payload 同时携带 project_key（飞书内部空间 ID）与
-        # project_simple_name（空间 URL 域名前缀）；用户在空间设置里配的
-        # 通常是后者（UI 提示按 URL 前缀获取），两者任一命中即匹配成功。
-        candidate_keys = [
-            key for key in (payload.get("project_key"), payload.get("project_simple_name")) if key
-        ]
-        if not candidate_keys:
-            await TriggerLog.objects.acreate(
-                webhook_raw_request=raw_body,
-                event_uuid=None,  # 事件未被处理，不占用 unique 约束位
-                event_type=event_type,
-                status=TriggerLogStatus.IGNORED,
-                error_message="缺少 space_key",
-            )
-            return Response({"status": "ignored", "reason": "缺少 space_key"})
+        # 解析路由模式：
+        # - 专属端点模式（URL 携带 token）：token 直达唯一工作流，project 取自该工作流；
+        #   token 本身即鉴权凭证，不再按 payload 解析空间、不再校验 header token。
+        # - 旧版共享端点模式（无 token）：按 payload 的 project_key / project_simple_name
+        #   解析空间，并按空间配置的 feishu_webhook_token 校验 header token（向后兼容）。
+        if token:
+            trigger = await self._resolve_trigger_by_token(token)
+            if trigger is None:
+                await TriggerLog.objects.acreate(
+                    webhook_raw_request=raw_body,
+                    event_uuid=None,
+                    event_type=event_type,
+                    status=TriggerLogStatus.IGNORED,
+                    error_message="无效或已停用的触发器端点",
+                )
+                return Response(
+                    {"status": "ignored", "reason": "无效或已停用的触发器端点"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            project = trigger.workflow.project
+            project_key = project.feishu_project_key if project else None
 
-        project = (
-            await Project.objects.prefetch_related("repositories")
-            .filter(feishu_project_key__in=candidate_keys)
-            .afirst()
-        )
-        if project is None:
-            keys_display = " / ".join(candidate_keys)
-            await TriggerLog.objects.acreate(
-                webhook_raw_request=raw_body,
-                event_uuid=None,  # 事件未被处理，不占用 unique 约束位
-                event_type=event_type,
-                project_key=candidate_keys[0],
-                status=TriggerLogStatus.IGNORED,
-                error_message=f"空间未配置: {keys_display}",
-            )
-            return Response({"status": "ignored", "reason": f"空间未配置: {keys_display}"})
+            # 节点专属校验 token（纵深防御）：若该触发节点配置了 verification_token，
+            # 则比对请求里的 header.token，不匹配即拒绝——端点 URL 泄露也无法触发。
+            # 未配置（旧节点）则跳过，仅靠端点 URL 密钥（向后兼容）。
+            node_token = await self._get_node_verification_token(trigger)
+            if node_token and not verify_webhook_token(header.get("token", ""), node_token):
+                await TriggerLog.objects.acreate(
+                    webhook_raw_request=raw_body,
+                    event_uuid=None,
+                    event_type=event_type,
+                    project_key=project_key,
+                    project=project,
+                    status=TriggerLogStatus.ERROR,
+                    error_message="校验 Token 不匹配",
+                )
+                return Response(
+                    {"detail": "校验 Token 不匹配"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+        else:
+            # 事件 payload 同时携带 project_key（飞书内部空间 ID）与
+            # project_simple_name（空间 URL 域名前缀）；用户在空间设置里配的
+            # 通常是后者（UI 提示按 URL 前缀获取），两者任一命中即匹配成功。
+            candidate_keys = [
+                key
+                for key in (payload.get("project_key"), payload.get("project_simple_name"))
+                if key
+            ]
+            if not candidate_keys:
+                await TriggerLog.objects.acreate(
+                    webhook_raw_request=raw_body,
+                    event_uuid=None,  # 事件未被处理，不占用 unique 约束位
+                    event_type=event_type,
+                    status=TriggerLogStatus.IGNORED,
+                    error_message="缺少 space_key",
+                )
+                return Response({"status": "ignored", "reason": "缺少 space_key"})
 
-        # 后续日志/TriggerLog/摄取统一使用空间配置的 key（与 handler 内
-        # project.feishu_project_key 取值一致，避免同一空间出现两种 key 记录）
-        project_key = project.feishu_project_key
+            project = (
+                await Project.objects.prefetch_related("repositories")
+                .filter(feishu_project_key__in=candidate_keys)
+                .afirst()
+            )
+            if project is None:
+                keys_display = " / ".join(candidate_keys)
+                await TriggerLog.objects.acreate(
+                    webhook_raw_request=raw_body,
+                    event_uuid=None,  # 事件未被处理，不占用 unique 约束位
+                    event_type=event_type,
+                    project_key=candidate_keys[0],
+                    status=TriggerLogStatus.IGNORED,
+                    error_message=f"空间未配置: {keys_display}",
+                )
+                return Response({"status": "ignored", "reason": f"空间未配置: {keys_display}"})
 
-        # Verify webhook token
-        token = header.get("token", "")
-        if project.feishu_webhook_token and not verify_webhook_token(
-            token, project.feishu_webhook_token
-        ):
-            await TriggerLog.objects.acreate(
-                webhook_raw_request=raw_body,
-                event_uuid=None,  # 事件未被处理，不占用 unique 约束位
-                event_type=event_type,
-                project_key=project_key,
-                project=project,
-                status=TriggerLogStatus.ERROR,
-                error_message="Token 验证失败",
-            )
-            return Response(
-                {"detail": "Token 验证失败"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            # 后续日志/TriggerLog/摄取统一使用空间配置的 key（与 handler 内
+            # project.feishu_project_key 取值一致，避免同一空间出现两种 key 记录）
+            project_key = project.feishu_project_key
+
+            # Verify webhook token
+            header_token = header.get("token", "")
+            if project.feishu_webhook_token and not verify_webhook_token(
+                header_token, project.feishu_webhook_token
+            ):
+                await TriggerLog.objects.acreate(
+                    webhook_raw_request=raw_body,
+                    event_uuid=None,  # 事件未被处理，不占用 unique 约束位
+                    event_type=event_type,
+                    project_key=project_key,
+                    project=project,
+                    status=TriggerLogStatus.ERROR,
+                    error_message="Token 验证失败",
+                )
+                return Response(
+                    {"detail": "Token 验证失败"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
 
         # Mark as processed — DB 级别
         if event_uuid:
@@ -665,8 +707,12 @@ class FeishuWebhookView(APIView):
             logger.info("webhook_event_duplicate_db", event_uuid=event_uuid)
             return Response({"status": "duplicate", "uuid": event_uuid})
 
-        # Handle specific events
-        if event_type == "WorkitemCreateEvent":
+        # Handle specific events（副作用：拉详情 / 知识库摄取 / 唤醒挂起工作流 / delivery）
+        # 项目级副作用依赖 project；专属端点模式下若工作流未绑定空间则 project 可能为 None，
+        # 此时跳过副作用，但仍正常触发工作流。
+        if project is None:
+            logger.info("webhook_event_no_project_skip_side_effects", event_type=event_type)
+        elif event_type == "WorkitemCreateEvent":
             await self._handle_workitem_create(project, payload, trigger_log)
         elif event_type == "WorkitemStatusEvent":
             await self._handle_workitem_status(project, payload, trigger_log)
@@ -680,7 +726,10 @@ class FeishuWebhookView(APIView):
             logger.info("webhook_event_unhandled", event_type=event_type)
 
         # Dispatch to workflow system (for all events)
-        await self._dispatch_to_workflows(event_type, project, payload, trigger_log)
+        # token 非空 → 专属端点模式，直达对应工作流；否则走旧版事件类型匹配。
+        await self._dispatch_to_workflows(
+            event_type, project, payload, trigger_log, trigger_token=token
+        )
 
         return Response(
             {
@@ -690,20 +739,59 @@ class FeishuWebhookView(APIView):
             }
         )
 
-    async def _dispatch_to_workflows(self, event_type: str, project, payload: dict, trigger_log):
-        """Dispatch event to workflow system via TriggerDispatcher."""
+    @staticmethod
+    async def _resolve_trigger_by_token(token: str):
+        """按专属端点 token 定位活跃的 WorkflowTrigger（含工作流与空间）。"""
+        from workflows.models import WorkflowTrigger
+
+        return (
+            await WorkflowTrigger.objects.filter(
+                token=token,
+                is_active=True,
+                workflow__is_active=True,
+            )
+            .select_related("workflow", "workflow__project")
+            .afirst()
+        )
+
+    @staticmethod
+    async def _get_node_verification_token(trigger) -> str:
+        """读取触发节点 config.verification_token（节点专属校验 token）。
+
+        trigger 无关联节点 / 节点不存在 / 未配置该字段 → 返回空串（跳过校验）。
+        """
+        if not trigger.node_id:
+            return ""
+        from workflows.models import WorkflowNode
+
+        node = await WorkflowNode.objects.filter(id=trigger.node_id).afirst()
+        if node is None:
+            return ""
+        return str((node.config or {}).get("verification_token", "")).strip()
+
+    async def _dispatch_to_workflows(
+        self, event_type: str, project, payload: dict, trigger_log, trigger_token=None
+    ):
+        """Dispatch event to workflow system via TriggerDispatcher.
+
+        ``trigger_token`` 非空时走专属端点模式：直达该 token 对应的工作流。
+        """
         try:
             trace_id = str(uuid_module.uuid4())
+
+            metadata = {
+                "trace_id": trace_id,
+                "trigger_log_id": str(trigger_log.id),
+            }
+            if trigger_token:
+                metadata["trigger_token"] = trigger_token
 
             context = TriggerContext(
                 trigger_type="feishu",
                 raw_payload=payload,
                 event_type=event_type,
                 project=project,
-                metadata={
-                    "trace_id": trace_id,
-                    "trigger_log_id": str(trigger_log.id),
-                },
+                metadata=metadata,
             )
 
             dispatcher = TriggerDispatcher()

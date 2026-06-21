@@ -1,6 +1,7 @@
 import { useVueFlow } from '@vue-flow/core'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
+import { generateEndpointToken } from '~/utils/endpointToken'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
 
@@ -61,6 +62,17 @@ export function useDragAndDrop() {
     const def = getNodeDefinition(nodeType)
     const dragName = event.dataTransfer?.getData('application/vueflow-name')
 
+    // 拖入即时生成节点默认配置；飞书事件触发节点客户端先生成专属端点 token，
+    // 这样一拖进画布就能展示端点 URL，无需等保存（后端同步时校验并采纳该 token）。
+    const config: Record<string, unknown> = { ...((def?.defaultConfig as Record<string, unknown>) ?? {}) }
+    if (nodeType === 'feishu_event_trigger') {
+      if (!config.endpoint_token)
+        config.endpoint_token = generateEndpointToken()
+      // 节点专属校验 token：拖入即生成，飞书规则需随请求发送，webhook 比对后才触发
+      if (!config.verification_token)
+        config.verification_token = generateEndpointToken()
+    }
+
     store.addNode({
       id: randomUUID(),
       shortId: generateShortId(),
@@ -68,7 +80,7 @@ export function useDragAndDrop() {
       name: dragName || def?.displayName || nodeType,
       description: '',
       position,
-      config: (def?.defaultConfig as Record<string, unknown>) ?? {},
+      config,
       onError: 'abort',
       retryTimes: 0,
       retryDelay: 5,

@@ -26,12 +26,16 @@ class WorkflowTriggerSerializer(serializers.ModelSerializer):
     """Serializer for WorkflowTrigger."""
 
     event_type_display = serializers.CharField(source="get_event_type_display", read_only=True)
+    endpoint_path = serializers.CharField(read_only=True)
 
     class Meta:
         model = WorkflowTrigger
         fields = [
             "id",
             "workflow",
+            "node_id",
+            "token",
+            "endpoint_path",
             "event_type",
             "event_type_display",
             "filter_config",
@@ -42,10 +46,12 @@ class WorkflowTriggerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "token", "endpoint_path", "created_at", "updated_at"]
 
     def validate_event_type(self, value: str) -> str:
-        """Validate event type is a valid choice."""
+        """Validate event type is a valid choice（允许留空——新版按 token 路由）。"""
+        if value == "":
+            return value
         valid_types = [choice.value for choice in TriggerEventType]
         if value not in valid_types:
             raise serializers.ValidationError(

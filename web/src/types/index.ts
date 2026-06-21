@@ -444,12 +444,12 @@ export interface HealthResponse {
 
 /**
  * 飞书事件触发节点数据
+ *
+ * 纯 Webhook 入口：触发时机由飞书侧自动化规则决定，节点仅保留服务端回填的专属端点
+ * token（用于展示端点 URL）。
  */
 export interface FeishuEventTriggerNodeData {
-  event_types: string[]
-  filter_project_key?: string
-  filter_work_item_type?: 'story' | 'task' | 'bug' | ''
-  filter_status?: string
+  endpoint_token?: string
 }
 
 /**

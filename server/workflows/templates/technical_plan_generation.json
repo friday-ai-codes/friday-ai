@@ -1,0 +1,91 @@
+{
+  "version": "1.1",
+  "name": "技术方案生成",
+  "description": "飞书工作项状态变更触发 → 获取需求详情 → 确保工作项群聊（无则原生自动建群）→ 加入群聊（确保 Bot 在群内）→ AI 生成技术方案 → 推送到群（信息不足则在群里发起澄清）",
+  "template_id": "technical_plan_generation",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "feishu_event_trigger",
+      "name": "飞书事件触发",
+      "position": {"x": 400, "y": 0},
+      "config": {}
+    },
+    {
+      "id": "fetch_work_item",
+      "type": "fetch_work_item",
+      "name": "获取工作项详情",
+      "position": {"x": 400, "y": 160},
+      "config": {
+        "work_item_id": "{{nodes.trigger.work_item_id}}",
+        "work_item_type": "__auto__"
+      }
+    },
+    {
+      "id": "ensure_chat",
+      "type": "create_work_item_chat",
+      "name": "创建工作项群聊",
+      "position": {"x": 400, "y": 320},
+      "config": {
+        "project_key": "{{nodes.trigger.project_key}}",
+        "work_item_id": "{{nodes.trigger.work_item_id}}",
+        "work_item_type": "{{nodes.trigger.work_item_type}}",
+        "poll_timeout_seconds": 30,
+        "poll_interval_seconds": 3
+      }
+    },
+    {
+      "id": "join_chat",
+      "type": "join_group_chat",
+      "name": "加入群聊",
+      "position": {"x": 400, "y": 480},
+      "on_error": "ignore",
+      "config": {
+        "chat_id": "{{nodes.ensure_chat.chat_id}}"
+      }
+    },
+    {
+      "id": "generate_plan",
+      "type": "ai_plan_generation",
+      "name": "AI 方案生成",
+      "position": {"x": 400, "y": 640},
+      "config": {
+        "user_prompt": "根据以下需求生成技术方案。\n\n标题：{{nodes.fetch_work_item.name}}\n\n描述：{{nodes.fetch_work_item.description}}"
+      }
+    },
+    {
+      "id": "notify_plan",
+      "type": "notify_feishu_im",
+      "name": "推送方案到群",
+      "position": {"x": 400, "y": 840},
+      "config": {
+        "receive_id_type": "chat_id",
+        "receive_id": "{{nodes.ensure_chat.chat_id}}",
+        "message_type": "card",
+        "title": "技术方案已生成：{{nodes.fetch_work_item.name}}",
+        "content": "{{nodes.generate_plan.final_answer}}"
+      }
+    },
+    {
+      "id": "notify_clarify",
+      "type": "notify_feishu_im",
+      "name": "群内发起澄清",
+      "position": {"x": 760, "y": 840},
+      "config": {
+        "receive_id_type": "chat_id",
+        "receive_id": "{{nodes.ensure_chat.chat_id}}",
+        "message_type": "card",
+        "title": "需要补充需求信息：{{nodes.fetch_work_item.name}}",
+        "content": "为生成技术方案，请补充以下信息：\n\n{{nodes.generate_plan.questions}}\n\n（原因：{{nodes.generate_plan.reason}}）"
+      }
+    }
+  ],
+  "edges": [
+    {"source": "trigger", "target": "fetch_work_item"},
+    {"source": "fetch_work_item", "target": "ensure_chat"},
+    {"source": "ensure_chat", "target": "join_chat"},
+    {"source": "join_chat", "target": "generate_plan", "source_handle": "default"},
+    {"source": "generate_plan", "target": "notify_plan", "source_handle": "default", "label": "方案就绪"},
+    {"source": "generate_plan", "target": "notify_clarify", "source_handle": "need_clarification", "label": "需澄清"}
+  ]
+}

@@ -103,6 +103,27 @@ def _validate_template_graph(template: dict, template_id: str) -> None:
         )
 
 
+def _error_handling_fields(node_data: dict) -> dict[str, Any]:
+    """从模板节点定义提取错误处理 / 执行控制字段（仅当模板显式声明才覆盖默认）。
+
+    模板节点可选声明 ``on_error``（abort/retry/ignore）、``retry_times``、
+    ``retry_delay``、``node_timeout_seconds``、``fallback_values``、``run_condition``。
+    未声明的字段不传入，沿用 ``WorkflowNode`` 的模型默认值（向后兼容旧模板）。
+    """
+    fields: dict[str, Any] = {}
+    for key in (
+        "on_error",
+        "retry_times",
+        "retry_delay",
+        "node_timeout_seconds",
+        "fallback_values",
+        "run_condition",
+    ):
+        if key in node_data and node_data[key] is not None:
+            fields[key] = node_data[key]
+    return fields
+
+
 def rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
     """按 id_map 重写 config 中的节点引用标识符（公共重写引擎）。
 
@@ -196,6 +217,7 @@ def create_workflow_from_template(
             position_x=position.get("x", 0),
             position_y=position.get("y", 0),
             config=node_data.get("config", {}),
+            **_error_handling_fields(node_data),
         )
         node_id_map[node_data["id"]] = str(node.id)
         template_to_short[node_data["id"]] = node.short_id
@@ -287,6 +309,7 @@ async def acreate_workflow_from_template(
             position_x=position.get("x", 0),
             position_y=position.get("y", 0),
             config=node_data.get("config", {}),
+            **_error_handling_fields(node_data),
         )
         node_id_map[node_data["id"]] = str(node.id)
         template_to_short[node_data["id"]] = node.short_id

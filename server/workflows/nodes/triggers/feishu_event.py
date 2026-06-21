@@ -2,7 +2,6 @@
 
 import structlog
 
-from workflows.models.trigger import TriggerEventType
 from workflows.nodes.base import ExecutionContext, NodePort, PortType
 from workflows.nodes.registry import register_node
 from workflows.nodes.triggers.base import BaseTriggerNode
@@ -14,79 +13,44 @@ logger = structlog.get_logger()
 class FeishuEventTriggerNode(BaseTriggerNode):
     """飞书事件触发节点
 
-    通过飞书 Webhook 事件触发工作流执行。
-    支持多种事件类型和过滤条件。
+    纯 Webhook 入口：保存工作流后，节点会获得一个专属端点
+    ``/api/feishu/webhook/<token>/``。在飞书项目的自动化规则里，把"何时触发"
+    （工作项类型、状态流转、空间等条件）配好后，将 Webhook 动作指向该端点即可
+    直达本工作流。
+
+    触发时机与过滤完全由飞书侧自动化规则决定，本节点不再重复配置工作项类型、
+    状态过滤、监听/排除空间等条件。
     """
 
     node_type = "feishu_event_trigger"
     display_name = "飞书事件触发"
-    description = "监听飞书 Webhook 事件触发工作流"
+    description = "通过飞书 Webhook 专属端点触发工作流"
     icon = "webhook"
 
     config_schema = {
         "type": "object",
         "properties": {
-            "event_type": {
+            # 服务端在保存工作流时回填的专属端点 token（只读展示，前端据此拼出完整 URL）。
+            # 客户端传入值会在同步时被服务端权威 token 覆盖。
+            "endpoint_token": {
                 "type": "string",
-                "title": "事件类型",
-                "description": "监听的飞书事件类型（单选）",
-                "enum": [choice.value for choice in TriggerEventType],
+                "title": "端点 Token",
+                "description": "服务端自动生成，对应专属 Webhook 端点路径，无需手动填写",
                 "default": "",
+                "readOnly": True,
             },
-            "project_ids": {
-                "type": "array",
-                "title": "监听空间",
-                "description": "要监听的 Friday 空间（Project）ID 列表，留空监听所有空间",
-                "items": {"type": "string"},
-                "default": [],
-            },
-            "filter_project_key": {
+            # 节点专属校验 token：拖入时客户端生成。飞书自动化规则的 Webhook 动作里需把
+            # 该 token 放进请求（payload header.token），webhook 命中端点后还会比对此值，
+            # 不匹配则拒绝——即使端点 URL 泄露，没有该 token 也无法触发（纵深防御）。
+            # 留空（旧节点）则跳过校验，仅靠端点 URL 密钥。
+            "verification_token": {
                 "type": "string",
-                "title": "飞书项目 Key",
-                "description": "高级用法：直接指定飞书项目标识",
+                "title": "校验 Token",
+                "description": "节点专属校验凭证，需在飞书自动化规则里随请求发送（header.token），不匹配则拒绝触发",
                 "default": "",
-            },
-            "filter_work_item_type": {
-                "type": "string",
-                "title": "工作项类型",
-                "description": "可选，仅处理指定类型的工作项",
-                "enum": ["", "story", "task", "bug", "epic", "feature"],
-                "default": "",
-            },
-            "filter_status": {
-                "type": "array",
-                "title": "状态过滤",
-                "description": "可选，选择状态进行过滤",
-                "items": {"type": "string"},
-                "default": [],
-            },
-            "filter_status_custom": {
-                "type": "string",
-                "title": "自定义状态",
-                "description": "可选，输入自定义状态 key，多个用逗号分隔",
-                "default": "",
-            },
-            "exclude_project_ids": {
-                "type": "array",
-                "title": "排除空间",
-                "description": "要排除的 Friday 空间（Project）ID 列表",
-                "items": {"type": "string"},
-                "default": [],
-            },
-            "exclude_work_item_pattern": {
-                "type": "string",
-                "title": "排除工作项（包含匹配）",
-                "description": "工作项名称包含此文本时将被排除",
-                "default": "",
-            },
-            "exclude_work_item_regex": {
-                "type": "string",
-                "title": "排除工作项（正则匹配）",
-                "description": "使用正则表达式匹配要排除的工作项名称",
-                "default": "",
+                "readOnly": True,
             },
         },
-        "required": ["event_type"],
     }
 
     outputs = [

@@ -11,10 +11,12 @@ import { Copy, Play, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { useToast } from '~/composables/useToast'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
+import { generateEndpointToken } from '~/utils/endpointToken'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
 import NodeInsertMenu from '../NodeInsertMenu.vue'
@@ -24,7 +26,11 @@ import { getNodeVisual } from './nodeVisuals'
 interface PortItem {
   id: string
   group: 'input' | 'output'
+  label: string
 }
+
+/** 出口端口语义 → 颜色/标签：default=成功(绿)、error=失败(红)、need_clarification=需澄清(琥珀)，其余中性 */
+type PortKind = 'success' | 'error' | 'clarify' | 'neutral'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -38,6 +44,31 @@ const props = withDefaults(defineProps<{
   /** 隐藏指定方向的 Handle，供 BranchNode 等自行管理端口 */
   hideHandles?: 'input' | 'output' | 'both' | 'none'
 }>(), { hideHandles: 'none' })
+
+function portKind(id: string): PortKind {
+  if (id === 'error')
+    return 'error'
+  if (id === 'default')
+    return 'success'
+  if (id === 'need_clarification')
+    return 'clarify'
+  return 'neutral'
+}
+
+const PORT_DOT_COLOR: Record<PortKind, string> = {
+  success: '#10b981',
+  error: '#ef4444',
+  clarify: '#f59e0b',
+  neutral: '#94a3b8',
+}
+
+/** 卡内分支列表用：仅文字色（语义色由行末圆点 + 文字共同传达） */
+const PORT_TEXT_CLASS: Record<PortKind, string> = {
+  success: 'text-emerald-600',
+  error: 'text-red-600',
+  clarify: 'text-amber-600',
+  neutral: 'text-muted-foreground',
+}
 
 const store = useWorkflowsStore()
 const nodeTypesStore = useNodeTypesStore()
@@ -58,13 +89,13 @@ const ports = computed<PortItem[]>(() => {
   const nt = nodeTypesStore.getNodeType(props.data.nodeType)
   if (!nt) {
     return [
-      { id: 'default', group: 'input' },
-      { id: 'default', group: 'output' },
+      { id: 'default', group: 'input', label: '输入' },
+      { id: 'default', group: 'output', label: '输出' },
     ]
   }
   return [
-    ...nt.inputs.map(p => ({ id: p.name, group: 'input' as const })),
-    ...nt.outputs.map(p => ({ id: p.name, group: 'output' as const })),
+    ...nt.inputs.map(p => ({ id: p.name, group: 'input' as const, label: p.label || p.name })),
+    ...nt.outputs.map(p => ({ id: p.name, group: 'output' as const, label: p.label || p.name })),
   ]
 })
 const inputPorts = computed(() => ports.value.filter(p => p.group === 'input'))
@@ -116,41 +147,97 @@ const CONFIG_LABELS: Record<string, string> = {
   default_branch: '默认分支',
 }
 
-/** 把单个配置值格式化为简短可读文本；对象/数组/空值返回 null（不展示） */
-function formatConfigValue(v: unknown): string | null {
-  if (v === null || v === undefined)
+// 设计态变量（上游节点输出）path → 友好标签映射，用于把 {{nodes.x.field}} 渲染成
+// 与编辑器变量胶囊一致的可读名（如「飞书事件触发 - 工作项 ID」），而非原始模板字面量。
+const { designTimeVariables } = useDesignTimeVariables(
+  computed(() => store.nodes as any),
+  computed(() => store.edges as any),
+  computed(() => props.id),
+)
+const varLabelByPath = computed<Map<string, string>>(() => {
+  const m = new Map<string, string>()
+  for (const v of designTimeVariables.value) m.set(v.path, v.label)
+  return m
+})
+
+/** 把变量路径渲染为友好名：优先用设计态变量标签，回退取末段字段名。 */
+function friendlyVarName(path: string): string {
+  const label = varLabelByPath.value.get(path)
+  if (label)
+    return label
+  const segs = path.split('.').filter(Boolean)
+  return segs[segs.length - 1] || path
+}
+
+// 卡片不展示的敏感/噪声字段（密钥类，详情在配置面板查看）
+const HIDDEN_CHIP_KEYS = new Set([
+  'endpoint_token',
+  'api_key',
+  'secret',
+  'app_secret',
+  'provider_credential_id',
+])
+
+const SINGLE_VAR_RE = /^\{\{(.+?)\}\}$/
+const ANY_VAR_RE = /\{\{(.+?)\}\}/g
+
+interface ConfigChip {
+  label: string
+  /** var=变量绑定（胶囊）/ auto=自动 / plain=普通文本 */
+  kind: 'var' | 'auto' | 'plain'
+  display: string
+}
+
+function truncate(s: string, max = 22): string {
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
+/** 把单个配置字段格式化为卡片 chip；不展示的值返回 null。 */
+function buildChip(key: string, raw: unknown): ConfigChip | null {
+  if (raw === null || raw === undefined)
     return null
-  if (typeof v === 'boolean')
-    return v ? '是' : '否'
-  if (typeof v === 'number')
-    return String(v)
-  if (typeof v === 'string') {
-    const s = v.trim()
-    if (!s)
-      return null
-    return s.length > 24 ? `${s.slice(0, 24)}…` : s
+  const label = CONFIG_LABELS[key] ?? key
+  if (typeof raw === 'boolean')
+    return { label, kind: 'plain', display: raw ? '是' : '否' }
+  if (typeof raw === 'number')
+    return { label, kind: 'plain', display: String(raw) }
+  if (typeof raw !== 'string')
+    return null
+  const s = raw.trim()
+  if (!s)
+    return null
+  if (s === '__auto__')
+    return { label, kind: 'auto', display: '自动' }
+  const single = s.match(SINGLE_VAR_RE)
+  if (single)
+    return { label, kind: 'var', display: friendlyVarName(single[1].trim()) }
+  if (s.includes('{{')) {
+    // 混合文本：把内嵌变量替换成友好名后截断展示
+    const sub = s.replace(ANY_VAR_RE, (_m, p) => friendlyVarName(String(p).trim()))
+    return { label, kind: 'plain', display: truncate(sub) }
   }
-  return null
+  return { label, kind: 'plain', display: truncate(s) }
 }
 
 /**
- * 节点卡片配置预览 chips：按 config_schema 字段顺序取最多 3 个有值的基础字段。
- * 让用户不点开节点也能看出关键配置（对齐 dify 节点 body）。
+ * 节点卡片配置预览：按 config_schema 字段顺序取最多 3 个有值字段。
+ * 变量绑定渲染为友好胶囊（不暴露 {{nodes.xxx}} 原文），密钥字段不展示。
  */
-const configChips = computed<{ label: string, value: string }[]>(() => {
+const configChips = computed<ConfigChip[]>(() => {
   const config = (props.data.config ?? {}) as Record<string, unknown>
   const nt = nodeTypesStore.getNodeType(props.data.nodeType)
   const order = nt?.config_schema?.properties
     ? Object.keys(nt.config_schema.properties)
     : Object.keys(config)
-  const chips: { label: string, value: string }[] = []
+  const chips: ConfigChip[] = []
   for (const key of order) {
     if (chips.length >= 3)
       break
-    const value = formatConfigValue(config[key])
-    if (value === null)
+    if (HIDDEN_CHIP_KEYS.has(key))
       continue
-    chips.push({ label: CONFIG_LABELS[key] ?? key, value })
+    const chip = buildChip(key, config[key])
+    if (chip)
+      chips.push(chip)
   }
   return chips
 })
@@ -183,6 +270,14 @@ function appendNode(direction: 'input' | 'output', nodeType: string) {
   const def = getNodeDefinition(nodeType)
   const newNodeId = randomUUID()
   const offset = 340
+  // 飞书事件触发节点：插入即生成专属端点 token，立即可展示端点 URL（与拖拽一致）
+  const newConfig: Record<string, unknown> = { ...((def?.defaultConfig as Record<string, unknown>) ?? {}) }
+  if (nodeType === 'feishu_event_trigger') {
+    if (!newConfig.endpoint_token)
+      newConfig.endpoint_token = generateEndpointToken()
+    if (!newConfig.verification_token)
+      newConfig.verification_token = generateEndpointToken()
+  }
   store.addNode({
     id: newNodeId,
     shortId: generateShortId(),
@@ -193,7 +288,7 @@ function appendNode(direction: 'input' | 'output', nodeType: string) {
       x: (current.position?.x ?? 0) + (direction === 'output' ? offset : -offset),
       y: current.position?.y ?? 0,
     },
-    config: (def?.defaultConfig as Record<string, unknown>) ?? {},
+    config: newConfig,
     onError: 'abort',
     retryTimes: 0,
     retryDelay: 5,
@@ -342,18 +437,32 @@ async function handleTest() {
         />
       </div>
 
-      <!-- 内容 slot：未自定义时回退为配置预览 chips + 描述（对齐 dify 节点 body） -->
+      <!-- 内容 slot：未自定义时回退为配置预览（标签 + 友好值/变量胶囊）+ 备注 -->
       <slot name="content">
         <div v-if="configChips.length || nodeDescription" class="mt-1 space-y-1">
-          <div v-if="configChips.length" class="flex flex-wrap gap-1">
+          <div
+            v-for="chip in configChips"
+            :key="chip.label"
+            class="flex items-center gap-1.5 text-[11px] leading-tight"
+          >
+            <span class="shrink-0 text-muted-foreground/60">{{ chip.label }}</span>
+            <!-- 变量绑定：友好胶囊（不暴露 {{nodes.xxx}} 原文） -->
             <span
-              v-for="chip in configChips"
-              :key="chip.label"
-              class="inline-flex max-w-full items-center gap-1 rounded-md bg-muted/70 px-1.5 py-0.5 text-[11px] leading-none"
+              v-if="chip.kind === 'var'"
+              class="inline-flex min-w-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary"
             >
-              <span class="shrink-0 text-muted-foreground/70">{{ chip.label }}</span>
-              <span class="truncate text-foreground/80">{{ chip.value }}</span>
+              <span class="icon-[lucide--braces] w-2.5 h-2.5 shrink-0 opacity-70" />
+              <span class="truncate">{{ chip.display }}</span>
             </span>
+            <!-- 自动 -->
+            <span
+              v-else-if="chip.kind === 'auto'"
+              class="rounded-md bg-muted px-1.5 py-0.5 text-muted-foreground"
+            >
+              {{ chip.display }}
+            </span>
+            <!-- 普通值 -->
+            <span v-else class="truncate text-foreground/80">{{ chip.display }}</span>
           </div>
           <p
             v-if="nodeDescription"
@@ -364,20 +473,48 @@ async function handleTest() {
         </div>
       </slot>
 
-      <!-- Output Handles：永远右出（source=Right） -->
+      <!-- 单出口：居中圆点（source=Right），保持极简外观 -->
       <Handle
-        v-for="(port, i) in outputPorts"
+        v-if="outputPorts.length === 1"
         v-show="hideHandles !== 'output' && hideHandles !== 'both'"
-        :id="port.id"
-        :key="port.id"
+        :id="outputPorts[0].id"
+        :key="outputPorts[0].id"
         type="source"
         :position="Position.Right"
-        :style="{ top: portTop(i, outputPorts.length) }"
+        :style="{ backgroundColor: PORT_DOT_COLOR[portKind(outputPorts[0].id)] }"
       />
 
-      <!-- 出方向 hover "+"：在右侧追加并连线一个新节点 -->
+      <!-- 多出口：卡片内底部「分支列表」。每行 = 语义文案 + 行末圆点（即出口 Handle）。
+           连线自卡片右缘各圆点向右引出，文案落在卡内左侧，从结构上杜绝标签压线。
+           每行 relative → Handle 的 Position.Right 以「行」为基准，圆点贴右缘并随行垂直居中。 -->
       <div
-        v-if="outputPorts.length > 0 && hideHandles !== 'output' && hideHandles !== 'both'"
+        v-if="outputPorts.length > 1 && hideHandles !== 'output' && hideHandles !== 'both'"
+        class="-mx-3 mt-2.5 space-y-1 border-t border-border/40 px-3 pr-0 pt-2"
+      >
+        <div
+          v-for="port in outputPorts"
+          :key="port.id"
+          class="relative flex items-center justify-end"
+        >
+          <span
+            class="mr-2.5 whitespace-nowrap text-[10px] font-medium leading-none"
+            :class="PORT_TEXT_CLASS[portKind(port.id)]"
+          >
+            {{ port.label }}
+          </span>
+          <Handle
+            :id="port.id"
+            type="source"
+            :position="Position.Right"
+            :style="{ backgroundColor: PORT_DOT_COLOR[portKind(port.id)] }"
+          />
+        </div>
+      </div>
+
+      <!-- 出方向 hover "+"：在右侧追加并连线一个新节点。
+           多出口节点不显示居中 "+"（语义不明）——从具体出口拖拽连线即可 -->
+      <div
+        v-if="outputPorts.length === 1 && hideHandles !== 'output' && hideHandles !== 'both'"
         class="nodrag nopan absolute -right-7 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <NodeInsertMenu @select="(nt) => appendNode('output', nt)" />

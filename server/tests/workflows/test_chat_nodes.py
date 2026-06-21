@@ -889,3 +889,136 @@ async def test_create_group_chat_auto_registered() -> None:
 
     assert NodeRegistry.get("create_group_chat") is CreateGroupChatNode
     assert CreateGroupChatNode.node_type == "create_group_chat"
+
+
+# ==================== CreateWorkItemChatNode 测试 ====================
+
+
+def _mock_workitem_chat_service(get_chat_side_effect) -> AsyncMock:
+    """构建 CreateWorkItemChatNode 用的 mock FeishuIMService（含 project_client）。"""
+    service = AsyncMock()
+    service.get_chat_id_for_work_item = AsyncMock(side_effect=get_chat_side_effect)
+    # project_client 必须非 None；update_work_item_fields 为可 await 的 AsyncMock
+    service.project_client = MagicMock()
+    service.project_client.update_work_item_fields = AsyncMock(return_value=True)
+    return service
+
+
+@pytest.mark.asyncio
+async def test_create_work_item_chat_reused() -> None:
+    """已绑群 → 幂等复用（source=reused），不触发 group_type=auto。"""
+    from workflows.nodes.integrations.feishu_chat import CreateWorkItemChatNode
+
+    node = CreateWorkItemChatNode()
+    ctx = _make_create_context(
+        config={"project_key": "P", "work_item_id": "123", "work_item_type": "story"},
+    )
+    service = _mock_workitem_chat_service(
+        get_chat_side_effect=[{"chat_id": "oc_existing", "source": "work_item_api"}],
+    )
+
+    with patch(
+        "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+        return_value=service,
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.next_handle == "default"
+    assert result.output["chat_id"] == "oc_existing"
+    assert result.output["source"] == "reused"
+    service.project_client.update_work_item_fields.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_work_item_chat_created() -> None:
+    """未绑群 → 写 group_type=auto 触发原生建群 → 轮询命中（source=created）。"""
+    from workflows.nodes.integrations.feishu_chat import CreateWorkItemChatNode
+
+    node = CreateWorkItemChatNode()
+    ctx = _make_create_context(
+        config={
+            "project_key": "P",
+            "work_item_id": "123",
+            "work_item_type": "story",
+            "poll_interval_seconds": 1,
+        },
+    )
+    # 预检查返回 None（未绑）→ 触发后轮询第 1 次返回群
+    service = _mock_workitem_chat_service(
+        get_chat_side_effect=[None, {"chat_id": "oc_new", "source": "work_item_api"}],
+    )
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=service,
+        ),
+        patch("workflows.nodes.integrations.feishu_chat.asyncio.sleep", AsyncMock()),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "completed"
+    assert result.output["chat_id"] == "oc_new"
+    assert result.output["source"] == "created"
+    service.project_client.update_work_item_fields.assert_awaited_once()
+    # 触发参数为 group_type=auto
+    call_kwargs = service.project_client.update_work_item_fields.call_args[1]
+    assert call_kwargs["fields"] == {"group_type": "auto"}
+
+
+@pytest.mark.asyncio
+async def test_create_work_item_chat_timeout() -> None:
+    """触发后超时内未回填群 → failed + error handle。"""
+    import itertools
+
+    from workflows.nodes.integrations.feishu_chat import CreateWorkItemChatNode
+
+    node = CreateWorkItemChatNode()
+    ctx = _make_create_context(
+        config={"project_key": "P", "work_item_id": "123", "poll_timeout_seconds": 5},
+    )
+    service = _mock_workitem_chat_service(get_chat_side_effect=None)
+    service.get_chat_id_for_work_item = AsyncMock(return_value=None)  # 始终查不到
+
+    with (
+        patch(
+            "workflows.nodes.integrations.feishu_chat.FeishuIMService.create",
+            return_value=service,
+        ),
+        patch("workflows.nodes.integrations.feishu_chat.asyncio.sleep", AsyncMock()),
+        # 让挂钟快速跨过 deadline，避免真实等待
+        patch(
+            "workflows.nodes.integrations.feishu_chat.time.monotonic",
+            side_effect=itertools.count(0, 10),
+        ),
+    ):
+        result = await node.execute(ctx)
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    service.project_client.update_work_item_fields.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_work_item_chat_missing_anchor() -> None:
+    """缺 work_item_id → failed + error handle（不创建 service）。"""
+    from workflows.nodes.integrations.feishu_chat import CreateWorkItemChatNode
+
+    node = CreateWorkItemChatNode()
+    ctx = _make_create_context(config={"project_key": "P"})  # 缺 work_item_id
+
+    result = await node.execute(ctx)
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+
+
+@pytest.mark.asyncio
+async def test_create_work_item_chat_auto_registered() -> None:
+    """@register_node 自动注册：NodeRegistry.get("create_work_item_chat") 命中。"""
+    from workflows.nodes.integrations.feishu_chat import CreateWorkItemChatNode
+    from workflows.nodes.registry import NodeRegistry
+
+    assert NodeRegistry.get("create_work_item_chat") is CreateWorkItemChatNode
+    assert CreateWorkItemChatNode.node_type == "create_work_item_chat"

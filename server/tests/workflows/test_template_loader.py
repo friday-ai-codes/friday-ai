@@ -24,6 +24,7 @@ ALL_TEMPLATE_IDS = [
     "code_generation",
     "feishu_full_pipeline",
     "daily_summary",
+    "technical_plan_generation",
 ]
 
 
@@ -57,18 +58,13 @@ def _template_to_validator_inputs(template: dict) -> tuple[list[dict], list[dict
 class TestListTemplates:
     """Tests for list_templates()."""
 
-    def test_list_templates_returns_3(self):
-        """list_templates() should return all 3 template metadata records."""
+    def test_list_templates_returns_all(self):
+        """list_templates() should return all built-in template metadata records."""
         templates = list_templates()
-        assert len(templates) == 3
+        assert len(templates) == len(ALL_TEMPLATE_IDS)
 
         ids = {t["template_id"] for t in templates}
-        expected = {
-            "code_generation",
-            "feishu_full_pipeline",
-            "daily_summary",
-        }
-        assert ids == expected
+        assert ids == set(ALL_TEMPLATE_IDS)
 
     def test_list_templates_fields(self):
         """Each template metadata should contain required fields."""
@@ -85,14 +81,7 @@ class TestListTemplates:
 class TestLoadTemplate:
     """Tests for load_template()."""
 
-    @pytest.mark.parametrize(
-        "template_id",
-        [
-            "code_generation",
-            "feishu_full_pipeline",
-            "daily_summary",
-        ],
-    )
+    @pytest.mark.parametrize("template_id", ALL_TEMPLATE_IDS)
     def test_load_each_template(self, template_id):
         """load_template() should correctly parse each template JSON."""
         template = load_template(template_id)
@@ -111,14 +100,7 @@ class TestLoadTemplate:
 class TestNodeTypesRegistered:
     """Verify all template node types are registered."""
 
-    @pytest.mark.parametrize(
-        "template_id",
-        [
-            "code_generation",
-            "feishu_full_pipeline",
-            "daily_summary",
-        ],
-    )
+    @pytest.mark.parametrize("template_id", ALL_TEMPLATE_IDS)
     def test_node_types_are_registered(self, template_id):
         """Every node type in templates must exist in NodeRegistry."""
         template = load_template(template_id)
@@ -258,14 +240,7 @@ class TestRewriteTemplateRefs:
 class TestTemplateFileIntegrity:
     """Verify template JSON files are valid and well-formed."""
 
-    @pytest.mark.parametrize(
-        "template_id",
-        [
-            "code_generation",
-            "feishu_full_pipeline",
-            "daily_summary",
-        ],
-    )
+    @pytest.mark.parametrize("template_id", ALL_TEMPLATE_IDS)
     def test_template_json_valid(self, template_id):
         """Each template file should be valid JSON with required fields."""
         template_path = TEMPLATES_DIR / f"{template_id}.json"

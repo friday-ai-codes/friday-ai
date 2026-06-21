@@ -7,6 +7,7 @@
 import base64
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -29,6 +30,40 @@ if TYPE_CHECKING:
     from services.feishu import FeishuClient
 
 logger = structlog.get_logger(__name__)
+
+# 飞书群聊 open_chat_id 格式：oc_ + 字母数字。用于校验工作项字段里取出的值
+# 确实是群 ID，过滤掉 group_type="disabled" 这类非群 ID 的同名前缀字段误命中。
+_OPEN_CHAT_ID_RE = re.compile(r"oc_[A-Za-z0-9]+")
+
+# 工作项里承载群聊 ID 的语义字段（优先级从高到低），早于 key 名模糊匹配。
+# chat_group 为飞书项目新群组字段（文档标注"推荐使用"）优先，group_id 旧字段兜底。
+_CHAT_FIELD_PRIORITY = ("chat_group", "group_id", "chat_id")
+
+
+def _coerce_chat_meta(value: Any) -> tuple[str | None, str | None, str | None]:
+    """从字段值中提取 (chat_id, chat_name, owner_id) 候选，支持 str/dict/list。
+
+    仅做"取候选字符串"，不做格式校验（oc_ 校验由调用方统一执行）。
+    """
+    if isinstance(value, str):
+        return value, None, None
+    if isinstance(value, dict):
+        return (
+            value.get("chat_id") or value.get("group_id") or value.get("id"),
+            value.get("chat_name") or value.get("name"),
+            value.get("owner_id"),
+        )
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, str):
+            return first, None, None
+        if isinstance(first, dict):
+            return (
+                first.get("chat_id") or first.get("group_id") or first.get("id"),
+                first.get("chat_name") or first.get("name"),
+                first.get("owner_id"),
+            )
+    return None, None, None
 
 
 class FeishuIMError(Exception):
@@ -1147,10 +1182,12 @@ class FeishuIMService:
             return None
 
         try:
+            # 定向只取群字段，缩小响应体（chat_group 新字段优先，group_id 旧字段兜底）
             work_item = await self.project_client.get_work_item(
                 project_key=project_key,
                 work_item_id=work_item_id,
                 work_item_type=work_item_type,
+                fields=["chat_group", "group_id"],
             )
         except Exception:
             log.error("get_work_item_failed", exc_info=True)
@@ -1159,59 +1196,50 @@ class FeishuIMService:
         fields = work_item.fields
         log.debug("work_item_fields", field_keys=list(fields.keys()))
 
-        # 在 fields 中搜索群聊相关字段
-        chat_fields: list[tuple[str, Any]] = []
-        for key, value in fields.items():
+        # 候选字段：语义字段（group_id / chat_group / chat_id）优先，
+        # 其次才是 key 名模糊匹配（含 chat/group/群聊）作为兜底。
+        candidate_keys: list[str] = [k for k in _CHAT_FIELD_PRIORITY if k in fields]
+        for key in fields:
+            if key in candidate_keys:
+                continue
             if any(kw in key.lower() for kw in ("chat", "group", "群聊")):
-                chat_fields.append((key, value))
+                candidate_keys.append(key)
 
-        if not chat_fields:
-            log.warning(
-                "no_chat_field_found",
-                available_fields=list(fields.keys()),
-            )
+        if not candidate_keys:
+            log.warning("no_chat_field_found", available_fields=list(fields.keys()))
             return None
 
-        # 取第一个群聊字段
-        field_key, field_value = chat_fields[0]
-        if len(chat_fields) > 1:
+        # 逐候选解析 + oc_ 正则校验：第一个产出合法 open_chat_id 的字段命中。
+        # oc_ 校验确保过滤掉 group_type="disabled"、空串等非群 ID 的同名前缀字段。
+        for field_key in candidate_keys:
+            raw_id, chat_name, owner_id = _coerce_chat_meta(fields[field_key])
+            if not raw_id or not isinstance(raw_id, str):
+                continue
+            match = _OPEN_CHAT_ID_RE.fullmatch(raw_id.strip())
+            if not match:
+                log.debug(
+                    "chat_field_value_not_open_chat_id",
+                    field_key=field_key,
+                    value_preview=str(raw_id)[:40],
+                )
+                continue
+            chat_id = raw_id.strip()
             log.info(
-                "multiple_chat_fields_found",
-                count=len(chat_fields),
-                using=field_key,
+                "chat_id_resolved",
+                chat_id=chat_id,
+                chat_name=chat_name,
+                field_key=field_key,
             )
+            return {
+                "chat_id": chat_id,
+                "chat_name": chat_name,
+                "owner_id": owner_id,
+                "source": "work_item_api",
+            }
 
-        # 解析群聊 ID——支持字符串和字典两种形式
-        chat_id: str | None = None
-        chat_name: str | None = None
-        owner_id: str | None = None
-
-        if isinstance(field_value, str):
-            chat_id = field_value
-        elif isinstance(field_value, dict):
-            chat_id = field_value.get("chat_id") or field_value.get("id")
-            chat_name = field_value.get("chat_name") or field_value.get("name")
-            owner_id = field_value.get("owner_id")
-        elif isinstance(field_value, list) and field_value:
-            # 多个群聊取第一个
-            first = field_value[0]
-            if isinstance(first, str):
-                chat_id = first
-            elif isinstance(first, dict):
-                chat_id = first.get("chat_id") or first.get("id")
-                chat_name = first.get("chat_name") or first.get("name")
-                owner_id = first.get("owner_id")
-            if len(field_value) > 1:
-                log.info("multiple_chats_found", count=len(field_value), using_first=True)
-
-        if not chat_id:
-            log.warning("chat_id_empty", field_key=field_key, field_value=field_value)
-            return None
-
-        log.info("chat_id_resolved", chat_id=chat_id, chat_name=chat_name)
-        return {
-            "chat_id": chat_id,
-            "chat_name": chat_name,
-            "owner_id": owner_id,
-            "source": "work_item_api",
-        }
+        # 有候选字段但都不是合法 oc_ 群 ID（如 group_type="disabled"）→ 视为未绑定
+        log.warning(
+            "no_valid_chat_id_found",
+            candidate_fields=candidate_keys,
+        )
+        return None

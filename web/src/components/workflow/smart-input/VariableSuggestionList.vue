@@ -67,11 +67,16 @@ const groupedVariables = computed(() => {
   return result
 })
 
-// Flatten all items for consistent indexing: functions first, then variables
+// Flatten all items for consistent indexing: functions first, then variables.
+// 变量必须按「分组后的顺序」（输入组在前，再各节点组）展开，与模板渲染顺序及
+// getVariableFlatIndex 的下标计算保持一致；否则点击/键盘选中会取到错位的变量
+// （历史 bug：按 variables.value 原始顺序展开，导致选「输入变量」插成首个节点变量）。
 const flatItems = computed(() => {
   const result: SuggestionItem[] = []
   functions.value.forEach(f => result.push(f))
-  variables.value.forEach(v => result.push(v))
+  groupedVariables.value.forEach((group) => {
+    group.items.forEach(v => result.push({ type: 'variable', data: v }))
+  })
   return result
 })
 

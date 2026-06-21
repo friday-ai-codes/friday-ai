@@ -126,21 +126,18 @@ export const fetchWorkItemConfigSchema = z.object({
   work_item_type: z.enum(['story', 'task', 'bug', '__auto__'], '请选择有效的选项').default('__auto__'),
 })
 
-/** 飞书事件触发器配置 */
+/** 飞书事件触发器配置
+ *
+ * 纯 Webhook 入口：触发时机与过滤完全由飞书侧自动化规则决定，节点本身不再配置
+ * 事件类型 / 工作项类型 / 状态 / 空间等条件。保存工作流后，服务端回填专属端点
+ * token（`endpoint_token`，只读），前端据此拼出完整端点 URL 展示给用户。
+ */
 export const feishuEventTriggerConfigSchema = z.object({
-  // 事件类型 - 单选，一个触发器只监听一种事件
-  event_type: z.string().default(''),
-  // 事件来源 - 可选多选，留空监听所有项目
-  project_ids: z.array(z.string()).default([]),
-  // 过滤条件
-  filter_project_key: z.string().default(''), // 高级用法：直接指定飞书 project_key
-  filter_work_item_type: z.enum(['story', 'task', 'bug', 'epic', 'feature', ''], '请选择有效的选项').default(''),
-  filter_status: z.array(z.string()).default([]), // 状态过滤（多选）
-  filter_status_custom: z.string().default(''), // 自定义状态输入
-  // 排除规则
-  exclude_project_ids: z.array(z.string()).default([]), // 排除的项目
-  exclude_work_item_pattern: z.string().default(''), // 排除的工作项名称（包含匹配）
-  exclude_work_item_regex: z.string().default(''), // 排除的工作项名称（正则匹配）
+  // 服务端生成的专属端点 token（只读展示，用户无需填写）
+  endpoint_token: z.string().default(''),
+  // 节点专属校验 token（拖入时客户端生成）：飞书规则需随请求发送，webhook 命中端点后比对，
+  // 不匹配则拒绝触发（纵深防御）。
+  verification_token: z.string().default(''),
 })
 
 /** 提取规则 */

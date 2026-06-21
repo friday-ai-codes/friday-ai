@@ -21,6 +21,7 @@ import {
   Globe,
   Hourglass,
   MessageSquare,
+  MessagesSquare,
   Play,
   Repeat,
   SearchCode,
@@ -28,6 +29,7 @@ import {
   Sparkles,
   Terminal,
   UserPlus,
+  Users,
   Variable,
   Webhook,
   Zap,
@@ -64,6 +66,8 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
 
   // 群聊 (orange)
   fetch_group_chat: { icon: MessageSquare, color: 'orange' },
+  create_group_chat: { icon: Users, color: 'orange' },
+  create_work_item_chat: { icon: MessagesSquare, color: 'orange' },
   join_group_chat: { icon: UserPlus, color: 'orange' },
   group_chat_question: { icon: MessageSquare, color: 'orange' },
 

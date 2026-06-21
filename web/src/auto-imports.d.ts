@@ -278,6 +278,7 @@ declare global {
   const useMutationObserver: typeof import('@vueuse/core').useMutationObserver
   const useNavigatorLanguage: typeof import('@vueuse/core').useNavigatorLanguage
   const useNetwork: typeof import('@vueuse/core').useNetwork
+  const useNodeDescriptionCollapse: typeof import('./composables/useNodeDescriptionCollapse').useNodeDescriptionCollapse
   const useNodeMeta: typeof import('./composables/useNodeMeta').useNodeMeta
   const useNodeTypesStore: typeof import('./stores/useNodeTypesStore').useNodeTypesStore
   const useNotificationsStore: typeof import('./stores/notifications').useNotificationsStore
@@ -765,6 +766,7 @@ declare module 'vue' {
     readonly useMutationObserver: UnwrapRef<typeof import('@vueuse/core')['useMutationObserver']>
     readonly useNavigatorLanguage: UnwrapRef<typeof import('@vueuse/core')['useNavigatorLanguage']>
     readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
+    readonly useNodeDescriptionCollapse: UnwrapRef<typeof import('./composables/useNodeDescriptionCollapse')['useNodeDescriptionCollapse']>
     readonly useNodeMeta: UnwrapRef<typeof import('./composables/useNodeMeta')['useNodeMeta']>
     readonly useNodeTypesStore: UnwrapRef<typeof import('./stores/useNodeTypesStore')['useNodeTypesStore']>
     readonly useNotificationsStore: UnwrapRef<typeof import('./stores/notifications')['useNotificationsStore']>
