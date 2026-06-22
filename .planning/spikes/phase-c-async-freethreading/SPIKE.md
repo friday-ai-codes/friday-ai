@@ -60,6 +60,37 @@ tree-sitter、tokenizers）在 cp314t 下**无预编译 wheel**，无法直接�
 - 但 IO 密集型系统开 no-GIL 收益本就有限（GIL 在 IO/网络等待时已释放），
   当前**风险（装不上/源码构建/扩展线程安全 bug）远大于收益**。
 
+### cp313t 对照（3.13 free-threaded 出得更早，wheel 会更多吗？→ 否，反而更差）
+
+同一矩阵在 `3.13+freethreaded`（3.13.13）下：
+
+| 依赖 | cp314t | cp313t |
+|---|---|---|
+| psycopg[binary] | ❌ | ❌ |
+| onnxruntime | ❌ | ❌ |
+| grpcio | ❌ | ❌ |
+| tree-sitter / -python | ❌ | ❌ |
+| tokenizers | ❌ | ❌ |
+| mysqlclient | ❌ | ❌ |
+| cryptography | ✅ | ❌（313t 更差）|
+| qdrant-client | （未测，因 grpcio 必失败）| ❌ |
+| numpy / pydantic / bcrypt | ✅ | ✅ |
+
+结论：**退回 3.13 拿不到任何好处** —— 核心阻塞依赖（psycopg/onnxruntime/grpcio/
+tree-sitter/tokenizers）在 313t/314t 同样无 ft wheel，且 cryptography 在 313t 反而没有。
+即「换 Python 版本」不是 free-threading 的杠杆，**杠杆在第三方 wheel**。
+
+### 官方里程碑（PEP 703 三阶段 / PEP 779）
+
+- **Phase I（3.13）**：free-threaded build 可用，但**实验性**。
+- **Phase II（3.14，PEP 779 已 Final）**：**官方支持**，但仍是**可选非默认**构建
+  （硬指标：单线程性能损失 ≤15%、内存 ≤20%）。
+- **Phase III（未定版本）**：free-threaded 成为**默认** —— 尚无时间表，看社区与指标。
+
+关键洞察：**CPython 自身已经领先你的依赖**（3.14 已 Phase II 官方支持）。真正卡住的
+不是 CPython 里程碑，而是 onnxruntime/grpcio/psycopg/tree-sitter/tokenizers 的 ft wheel。
+→ **watch list 应盯依赖，而非 CPython 版本**。
+
 ### 重新评估触发条件（满足任一即重测）
 - onnxruntime 发布 cp314t wheel（最大阻塞点），且
 - psycopg + grpcio + tree-sitter 跟进 ft wheel。
