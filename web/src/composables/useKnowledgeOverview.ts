@@ -1,7 +1,6 @@
-import type { GraphBuildHistoryItem } from '~/api/codegraph'
 import type { CollectionHealthResponse, GraphRagStatusResponse, IndexStatusResponse } from '~/api/repositories'
 import type { Repository } from '~/types'
-import { listGraphHistory } from '~/api/codegraph'
+import { getCodegraphStats } from '~/api/codegraph'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 
 export type FreshnessState = 'fresh' | 'stale' | 'not_indexed' | 'unknown'
@@ -73,14 +72,15 @@ export function useKnowledgeOverview(
 
   async function loadStructuredGraphCounts() {
     try {
-      const res = await listGraphHistory(repositoryId.value, { limit: 1, status: 'completed' })
-      const item: GraphBuildHistoryItem | undefined = res.results[0]
-      structuredGraphCounts.value = item
+      // 读 codegraph 各表累计计数（getCodegraphStats），而非最近一次 GraphBuildHistory
+      // 的 per-run delta —— 后者在增量构建（只处理变更文件）后会让"关系数"暴跌/误显示。
+      const stats = await getCodegraphStats(repositoryId.value)
+      structuredGraphCounts.value = stats.total > 0
         ? {
-            symbols: item.symbols_count,
-            imports: item.imports_count,
-            calls: item.calls_count,
-            endpoints: item.endpoints_count,
+            symbols: stats.symbols,
+            imports: stats.imports,
+            calls: stats.calls,
+            endpoints: stats.endpoints,
           }
         : null
     }

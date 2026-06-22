@@ -329,6 +329,46 @@ func TestBuildJobSpecActiveDeadlineAndResources(t *testing.T) {
 	}
 }
 
+// TestResolvePullPolicy 钉死拉取策略归一映射（大小写不敏感，兼容 k8s 风格写法）。
+func TestResolvePullPolicy(t *testing.T) {
+	cases := map[string]corev1.PullPolicy{
+		"always":        corev1.PullAlways,
+		"Always":        corev1.PullAlways,
+		"  ALWAYS  ":    corev1.PullAlways,
+		"never":         corev1.PullNever,
+		"Never":         corev1.PullNever,
+		"missing":       corev1.PullIfNotPresent,
+		"ifnotpresent":  corev1.PullIfNotPresent,
+		"IfNotPresent":  corev1.PullIfNotPresent,
+		"":              corev1.PullIfNotPresent, // 默认兜底
+		"bogus-unknown": corev1.PullIfNotPresent, // 未知值兜底
+	}
+	for in, want := range cases {
+		if got := resolvePullPolicy(in); got != want {
+			t.Fatalf("resolvePullPolicy(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestBuildJobSpecImagePullPolicy 验证任务 Pod 的 imagePullPolicy 由 Config 驱动：
+// 默认（空）保持 IfNotPresent（无回归），always/never 正确映射。
+func TestBuildJobSpecImagePullPolicy(t *testing.T) {
+	task := ws.TaskPayload{TaskID: "t1", TaskType: "coding"}
+
+	cases := map[string]corev1.PullPolicy{
+		"":       corev1.PullIfNotPresent,
+		"always": corev1.PullAlways,
+		"never":  corev1.PullNever,
+	}
+	for policy, want := range cases {
+		cfg := Config{Namespace: "friday", DefaultImage: "img:1", RunnerName: "r1", ImagePullPolicy: policy}
+		job := buildJobSpec(cfg, task, "friday-task-t1", nil)
+		if got := job.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != want {
+			t.Fatalf("ImagePullPolicy(cfg=%q) = %q, want %q", policy, got, want)
+		}
+	}
+}
+
 func TestRemoveContainerDeletesJobAndSwallowsNotFound(t *testing.T) {
 	cs := fake.NewSimpleClientset()
 	k := newFast(cs, Config{Namespace: "friday", RunnerName: "r1"})

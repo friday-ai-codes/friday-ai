@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -50,6 +51,7 @@ func bindEnvVars() {
 	_ = viper.BindEnv("executor.type", "FRIDAY_RUNNER_EXECUTOR")
 	_ = viper.BindEnv("executor.timeout", "FRIDAY_RUNNER_TIMEOUT")
 	_ = viper.BindEnv("executor.image", "FRIDAY_RUNNER_IMAGE")
+	_ = viper.BindEnv("executor.image_pull_policy", "FRIDAY_RUNNER_IMAGE_PULL_POLICY")
 	_ = viper.BindEnv("callback.port", "FRIDAY_RUNNER_CALLBACK_PORT")
 	// k8s 模式下 task→runner 回调地址的 host（runner Pod IP），docker 模式留空走默认。
 	_ = viper.BindEnv("callback.host", "FRIDAY_RUNNER_CALLBACK_HOST")
@@ -97,6 +99,28 @@ func GetDefaultImage() string {
 		return v
 	}
 	return "friday-task:latest"
+}
+
+// GetImagePullPolicy 归一任务镜像拉取策略：always / never / missing（默认 missing）。
+//
+//   - always：每次创建任务前都联网拉取（k8s→PullAlways）。
+//   - never ：从不联网拉取，仅用本机已存在镜像（k8s→PullNever）；compose/helm 由
+//     占位拉取或 kubelet 负责镜像新鲜度，runner 不再自拉，避免本机陈旧 latest
+//     永不更新。
+//   - missing：本机缺失才拉（k8s→PullIfNotPresent），保持独立安装的历史行为（默认）。
+//
+// 兼容 k8s 风格大小写写法（Always/Never/IfNotPresent），便于 helm 直接透传。
+func GetImagePullPolicy() string {
+	switch strings.ToLower(strings.TrimSpace(viper.GetString("executor.image_pull_policy"))) {
+	case "always":
+		return "always"
+	case "never":
+		return "never"
+	case "missing", "ifnotpresent":
+		return "missing"
+	default:
+		return "missing"
+	}
 }
 
 func GetExecutorTimeout() int {

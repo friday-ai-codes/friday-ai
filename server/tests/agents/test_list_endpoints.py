@@ -152,14 +152,30 @@ async def test_total_count_returned(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.output["metadata"]["truncated"] is True
 
 
+def _patch_symbol_count(monkeypatch: pytest.MonkeyPatch, *, count: int) -> None:
+    """patch ``Symbol.objects.filter(...).acount()`` 返回指定符号数。"""
+    filter_mock = MagicMock()
+    filter_mock.acount = AsyncMock(return_value=count)
+    objects_mock = MagicMock()
+    objects_mock.filter = MagicMock(return_value=filter_mock)
+
+    from codegraph import models as cg_models
+
+    monkeypatch.setattr(cg_models.Symbol, "objects", objects_mock)
+
+
 @pytest.mark.asyncio
-async def test_empty_repo_returns_empty_list(
+async def test_empty_repo_with_codegraph_built_clarifies_no_endpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """仓库无 endpoint → empty 列表 + message 提示需先索引。"""
+    """codegraph 已构建（symbol>0）但无 endpoint → message 明确「不代表 codegraph 未跑」。
+
+    回归：原文案「需先运行 codegraph 索引」会误导 Agent 得出 codegraph 未跑的结论。
+    """
     from agents.tools.list_endpoints import list_endpoints
 
     _patch_endpoint_list_query(monkeypatch, items=[], total=0)
+    _patch_symbol_count(monkeypatch, count=12678)
 
     result = await list_endpoints(repository_id=_VALID_REPO_ID)
 
@@ -167,7 +183,30 @@ async def test_empty_repo_returns_empty_list(
     data = result.output["data"]
     assert data["endpoints"] == []
     assert data["total"] == 0
-    assert "暂无端点数据" in data["message"]
+    # 不再误导为「codegraph 未跑」，而是说明已构建但无端点
+    assert "codegraph 已构建" in data["message"]
+    assert "未提取到任何 HTTP 端点" in data["message"]
+    assert result.output["metadata"]["codegraph_built"] is True
+    assert result.output["metadata"]["symbol_count"] == 12678
+
+
+@pytest.mark.asyncio
+async def test_empty_repo_without_codegraph_says_not_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """codegraph 未构建（symbol=0）且无 endpoint → message 明确尚未构建。"""
+    from agents.tools.list_endpoints import list_endpoints
+
+    _patch_endpoint_list_query(monkeypatch, items=[], total=0)
+    _patch_symbol_count(monkeypatch, count=0)
+
+    result = await list_endpoints(repository_id=_VALID_REPO_ID)
+
+    assert result.success is True
+    data = result.output["data"]
+    assert data["endpoints"] == []
+    assert "codegraph 索引尚未构建" in data["message"]
+    assert result.output["metadata"]["codegraph_built"] is False
 
 
 @pytest.mark.asyncio

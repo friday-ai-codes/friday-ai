@@ -494,6 +494,46 @@ class EndpointListView(APIView):
         return Response({"count": total, "offset": offset, "limit": limit, "results": data})
 
 
+class CodegraphStatsView(APIView):
+    """GET /api/repositories/{repository_id}/codegraph/stats/
+
+    返回结构化图谱的**累计**实体计数（symbols/imports/calls/endpoints + total）。
+
+    口径修正（2026-06）：前端"N 关系"原读 ``GraphBuildHistory`` 最近一条 completed 的
+    per-run counts。当最近一次是**增量构建**（只处理变更文件）时，其 counts 仅反映那一批
+    文件，导致"关系数"在增量后暴跌 / 误显示（实测线上同一仓库出现 466 vs 36167 的跳变）。
+    本接口直接 count codegraph 各表，反映当前图谱的真实累计规模，与 symbols/imports/
+    endpoints 列表接口口径一致（均按 repository_id 全量计数，不分 branch）。
+    """
+
+    permission_classes = [IsAuthenticated, RepositoryPermission]
+
+    async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
+        symbols = await Symbol.objects.filter(repository_id=repository_id).acount()
+        imports = await ImportEdge.objects.filter(repository_id=repository_id).acount()
+        calls = await CallEdge.objects.filter(repository_id=repository_id).acount()
+        endpoints = await Endpoint.objects.filter(repository_id=repository_id).acount()
+        total = symbols + imports + calls + endpoints
+        logger.info(
+            "codegraph_stats",
+            repository_id=str(repository_id),
+            symbols=symbols,
+            imports=imports,
+            calls=calls,
+            endpoints=endpoints,
+            total=total,
+        )
+        return Response(
+            {
+                "symbols": symbols,
+                "imports": imports,
+                "calls": calls,
+                "endpoints": endpoints,
+                "total": total,
+            }
+        )
+
+
 class CodegraphDeleteView(APIView):
     """DELETE /api/repositories/{repository_id}/codegraph/
 

@@ -86,6 +86,8 @@ async def test_single_dirty_three_candidates(repository) -> None:
     kwargs = mock_client.query_points.call_args.kwargs
     assert kwargs["limit"] == 20
     assert kwargs["score_threshold"] == 0.85
+    # 单向量（dense list）collection 不传 using（保持默认向量空间）
+    assert kwargs.get("using") is None
     assert isinstance(kwargs["query_filter"], qmodels.Filter)
     must_not = kwargs["query_filter"].must_not
     assert must_not is not None
@@ -168,6 +170,9 @@ async def test_hybrid_vector_dict_takes_dense(repository) -> None:
 
     kwargs = mock_client.query_points.call_args.kwargs
     assert kwargs["query"] == [0.5] * 1024
+    # hybrid（命名向量）collection 必须指定 using="dense"，否则 Qdrant 报
+    # "Not existing vector name"
+    assert kwargs["using"] == "dense"
 
 
 @pytest.mark.django_db(transaction=True)

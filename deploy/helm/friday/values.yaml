@@ -65,6 +65,15 @@ runner:
     pullPolicy: IfNotPresent
   registrationToken: "" # RUNNER_REGISTRATION_TOKEN
   name: "k8s-runner"
+  # -- 任务（task）容器镜像：runner 按需创建任务容器所用镜像。repository 留空则不注入
+  # FRIDAY_RUNNER_IMAGE（沿用你自定义的注入方式）。tag 留空跟随 Chart.appVersion。
+  taskImage:
+    repository: ghcr.io/friday-ai-codes/friday-ai/task
+    tag: ""
+  # -- 任务镜像拉取策略：always / never / missing(=IfNotPresent)。k8s 各节点无共享本机
+  # 缓存，默认 Always 保证发版后任务 Pod 拉到新 task 镜像（对齐 compose task-image 占位
+  # + `docker compose pull` 的拉新效果），避免节点上陈旧 latest 永不更新。
+  taskImagePullPolicy: Always
   # -- executor 类型：docker（默认）| kubernetes。kubernetes 接受 k8s 别名
   # （与 runner 端 resolveExecutorKind 归一一致；模板对二者等价处理，不会出现
   # k8s 值渲染成 docker 形态却跑 k8s 逻辑的偏差）。

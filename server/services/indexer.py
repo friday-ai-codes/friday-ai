@@ -929,6 +929,34 @@ class IndexerService:
                 ).values_list("file_path", "file_hash")
             }
 
+            # 根治 FileIndex/Qdrant 数据源不一致（2026-06）：
+            # 断点续传 skip 的语义是"向量已真正写入 Qdrant 的文件才跳过"。但 FileIndex
+            # （DB 锚点）与 Qdrant collection 可能失同步——典型为 collection 被清空 /
+            # 重建（如启用 hybrid 命名向量时重建）/ 丢失，而 FileIndex 锚点残留。
+            # 此前 skip 仅凭 FileIndex hash，会把"DB 有 hash 但 Qdrant 无向量"的文件
+            # 错误跳过，导致向量库永久残缺，且因 commit 已标记完成无法靠"重新构建"自愈。
+            # 修复：以 Qdrant collection 实际存储的 file hash 为准，对 FileIndex 锚点取交集
+            # ——仅当某文件在 Qdrant 中确有同 hash 向量时才允许 resume skip。
+            # 这样"判断 collection 是否有数据"与"是否 skip 文件"统一到 Qdrant 同一数据源。
+            if stored_records:
+                qdrant_file_hashes = await qdrant_get_stored_file_hashes(self.repository_id)
+                reconciled = {
+                    fp: fh
+                    for fp, fh in stored_records.items()
+                    if qdrant_file_hashes.get(fp) == fh
+                }
+                dropped = len(stored_records) - len(reconciled)
+                if dropped > 0:
+                    logger.warning(
+                        "full_index_stale_file_index_anchors_dropped",
+                        repository_id=self.repository_id,
+                        file_index_anchors=len(stored_records),
+                        qdrant_files=len(qdrant_file_hashes),
+                        dropped=dropped,
+                        reconciled=len(reconciled),
+                    )
+                stored_records = reconciled
+
             total_files = len(files)
             await update_current_indexing_file(
                 self.repository_id,

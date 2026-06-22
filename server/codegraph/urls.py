@@ -15,6 +15,7 @@ from codegraph.views import (
     CodegraphHistoryListView,
     CodegraphProgressStreamView,
     CodegraphRebuildView,
+    CodegraphStatsView,
     EndpointListView,
     GraphNeighborsView,
     ImportEdgeListView,
@@ -30,6 +31,8 @@ urlpatterns = [
     ),
     path("imports/", ImportEdgeListView.as_view(), name="codegraph-import-list"),
     path("endpoints/", EndpointListView.as_view(), name="codegraph-endpoint-list"),
+    # 结构化图谱累计计数（前端"N 关系"用，区别于 GraphBuildHistory 的 per-run delta）
+    path("stats/", CodegraphStatsView.as_view(), name="codegraph-stats"),
     # 统一邻居查询（file | component | symbol）。具名前缀放空 path 之前。
     path(
         "graph/neighbors/",

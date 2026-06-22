@@ -490,6 +490,15 @@ class TestFullIndexResume:
                     new_callable=AsyncMock,
                     return_value={},
                 ),
+                # resume skip 需 Qdrant 实际确认：collection 里确有 file_a/file_b 同 hash 向量
+                patch(
+                    "services.indexer.qdrant_get_stored_file_hashes",
+                    new_callable=AsyncMock,
+                    return_value={
+                        "file_a.py": "hash-file_a.py",
+                        "file_b.py": "hash-file_b.py",
+                    },
+                ),
                 patch(
                     "services.indexer.qdrant_upsert_vectors",
                     new_callable=AsyncMock,
@@ -534,3 +543,83 @@ class TestFullIndexResume:
         assert result["files_processed"] == 3
         # 实际 upsert 的 chunk 数仅来自 file_c
         assert result["chunks_indexed"] == 1
+
+    async def test_stale_file_index_with_empty_qdrant_forces_full_reindex(
+        self, repository: Repository
+    ) -> None:
+        """回归（数据源一致性根治）：FileIndex 残留锚点 + Qdrant collection 为空时，
+        run_full_index 必须忽略 FileIndex skip，对全部文件重新索引。
+
+        复现的真实 bug：collection 被清空/重建（如启用 hybrid 命名向量）但 FileIndex
+        锚点残留，旧逻辑仅凭 FileIndex hash 跳过这些文件 → 向量库永久残缺、且因 commit
+        已标记完成无法靠"重新构建"自愈。
+        """
+        # 模拟"DB 锚点齐全但 Qdrant 实际为空"：3 个文件都有 FileIndex 锚点
+        for fname in ["file_a.py", "file_b.py", "file_c.py"]:
+            await FileIndex.objects.acreate(
+                repository_id=repository.id,
+                file_path=fname,
+                file_hash=f"hash-{fname}",
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for fname in ["file_a.py", "file_b.py", "file_c.py"]:
+                with open(os.path.join(tmpdir, fname), "w") as f:
+                    f.write(f"# {fname}\n")
+
+            indexer = IndexerService(str(repository.id))
+            scanned = [
+                os.path.join(tmpdir, n)
+                for n in ["file_a.py", "file_b.py", "file_c.py"]
+            ]
+
+            embed_calls: list[list[str]] = []
+
+            async def fake_embed(texts: list[str], **kw: Any) -> list[list[float]]:
+                embed_calls.append(texts)
+                return [[0.1, 0.2, 0.3]] * len(texts)
+
+            def fake_compute_hash(full_path: str) -> str:
+                return f"hash-{os.path.basename(full_path)}"
+
+            with (
+                patch("services.indexer.scan_directory", return_value=scanned),
+                patch("services.indexer.compute_file_hash", side_effect=fake_compute_hash),
+                patch(
+                    "services.indexer.get_files_last_commit",
+                    new_callable=AsyncMock,
+                    return_value={},
+                ),
+                # Qdrant collection 实际为空 → FileIndex 锚点全部不可信
+                patch(
+                    "services.indexer.qdrant_get_stored_file_hashes",
+                    new_callable=AsyncMock,
+                    return_value={},
+                ),
+                patch(
+                    "services.indexer.qdrant_upsert_vectors",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ),
+                patch.object(
+                    indexer.parser,
+                    "parse_file_dual",
+                    side_effect=lambda full, base_path, repository_id="": (
+                        _mk_chunks_for_file(os.path.relpath(full, base_path), 1),
+                        None,
+                    ),
+                ),
+                patch(
+                    "services.indexer.EmbeddingService.generate_embeddings_batch",
+                    side_effect=fake_embed,
+                ),
+            ):
+                result = await indexer.run_full_index(tmpdir)
+
+        # 三个文件全部重新 embed（不再因残留 FileIndex 锚点被错误跳过）
+        embedded_count = sum(len(call) for call in embed_calls)
+        assert embedded_count == 3, (
+            f"Qdrant 为空时应对全部 3 个文件重新索引，实际 embed chunks={embedded_count}"
+        )
+        assert result["status"] == "success"
+        assert result["chunks_indexed"] == 3

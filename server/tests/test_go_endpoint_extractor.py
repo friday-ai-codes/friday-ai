@@ -26,6 +26,7 @@ from codegraph.extractors.go_endpoints import (
 FIXTURES_DIR = Path(__file__).parent.parent / "codegraph/extractors/tests/fixtures"
 BASIC_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_basic.go"
 OGIN_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_ogin.go"
+KRATOS_FIXTURE = FIXTURES_DIR / "go_kratos_http_pb.go"
 
 STUDY_COURSE_PATH = os.environ.get("GO_SAMPLE_REPO", "")
 STUDY_COURSE_HANDLERS = Path(STUDY_COURSE_PATH) / "handlers" / "handlers.go"
@@ -199,6 +200,47 @@ class TestOginMetadata:
         assert ep.handler_name == "<anonymous>"
 
 
+class TestKratosHttpPbEndpoints:
+    """Kratos / grpc-gateway *_http.pb.go：handler 为函数调用 _Xxx_HTTP_Handler(srv)。
+
+    回归：原实现只接受 selector/identifier/func_literal handler，导致这类
+    call_expression handler 全部 handler_not_found 被跳过、endpoint=0。
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.tree, self.source, self.ctx = _parse_go_fixture(KRATOS_FIXTURE)
+        self.endpoints = extract_go_endpoints(self.tree, self.source, self.ctx)
+        self.by_path: dict[str, EndpointData] = {
+            f"{ep.http_method}:{ep.url_path}": ep for ep in self.endpoints
+        }
+
+    def test_kratos_endpoints_not_empty(self):
+        """call_expression handler 不再被跳过，能提取出全部 5 个路由。"""
+        assert len(self.endpoints) == 5, (
+            f"期望 5 个 endpoint，实际 {len(self.endpoints)}："
+            f"{list(self.by_path.keys())}"
+        )
+
+    def test_kratos_get_endpoint(self):
+        """r.GET('/helloworld/{name}', _Greeter_SayHello0_HTTP_Handler(srv)) 被识别。"""
+        ep = self.by_path.get("GET:/helloworld/{name}")
+        assert ep is not None
+        assert ep.handler_name == "_Greeter_SayHello0_HTTP_Handler"
+
+    def test_kratos_all_methods(self):
+        """GET/POST/PUT/DELETE/PATCH 全部识别。"""
+        methods = {ep.http_method for ep in self.endpoints}
+        assert methods == {"GET", "POST", "PUT", "DELETE", "PATCH"}
+
+    def test_kratos_handler_is_called_function_name(self):
+        """handler_name 取被调用函数名，而非 '<anonymous>' 或 None。"""
+        for ep in self.endpoints:
+            assert ep.handler_name.endswith("_HTTP_Handler"), (
+                f"handler_name 异常：{ep.handler_name}"
+            )
+
+
 # =============================================================================
 # Helper function unit tests
 # =============================================================================
@@ -296,7 +338,6 @@ class TestStudyCourseIntegration:
 
     def test_study_course_no_use_endpoints(self):
         """study-course Use() 路由不应出现在 endpoint 列表。"""
-        url_paths = {ep.url_path for ep in self.endpoints}
         # Use() 注册的 middleware 不应有 url_path
         # 验证 endpoint 列表中无空 url
         for ep in self.endpoints:

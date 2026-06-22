@@ -38,6 +38,9 @@ type Config struct {
 	BackoffLimit    int32
 	TTLSeconds      int32
 	ImagePullSecret string
+	// ImagePullPolicy 任务 Pod 镜像拉取策略：always / never / missing（空=missing=
+	// PullIfNotPresent）。helm 透传以保证发版后 task 镜像在各节点按需刷新。
+	ImagePullPolicy string
 
 	// ActiveDeadlineSeconds >0 时作为 Job 级超时兜底（秒）：runner 永久丢失时由
 	// k8s 主动终止超期任务 Job，不再单纯依赖 runner 存活或重启扫描。0=禁用（默认安全）。
@@ -59,6 +62,7 @@ type KubernetesExecutor struct {
 	backoffLimit    int32
 	ttlSeconds      int32
 	imagePullSecret string
+	imagePullPolicy string
 
 	activeDeadlineSeconds int64
 	cpuRequest            string
@@ -106,6 +110,7 @@ func newExecutor(cs kubernetes.Interface, cfg Config, ns string) *KubernetesExec
 		backoffLimit:          cfg.BackoffLimit,
 		ttlSeconds:            cfg.TTLSeconds,
 		imagePullSecret:       cfg.ImagePullSecret,
+		imagePullPolicy:       cfg.ImagePullPolicy,
 		activeDeadlineSeconds: cfg.ActiveDeadlineSeconds,
 		cpuRequest:            cfg.CPURequest,
 		memoryRequest:         cfg.MemoryRequest,
@@ -143,6 +148,7 @@ func (k *KubernetesExecutor) config() Config {
 		BackoffLimit:          k.backoffLimit,
 		TTLSeconds:            k.ttlSeconds,
 		ImagePullSecret:       k.imagePullSecret,
+		ImagePullPolicy:       k.imagePullPolicy,
 		ActiveDeadlineSeconds: k.activeDeadlineSeconds,
 		CPURequest:            k.cpuRequest,
 		MemoryRequest:         k.memoryRequest,
