@@ -273,6 +273,70 @@ DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'friday.db'}"
 DATABASES = {"default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL)}
 
 # =============================================================================
+# 数据库连接池 / PgBouncer（Phase A —— async 高并发底座）
+# =============================================================================
+# 背景：Django async ORM（aget/abulk_create 等）走 sync_to_async；高并发重活下若
+# 无连接池，每个工作线程反复 connect/close，开销盖过查询本身。Django 6.0 官方 async
+# 指引明确：async 模式应禁用持久连接（CONN_MAX_AGE），改用数据库后端自带连接池。
+#
+# 仅对 PostgreSQL 生效；SQLite / MySQL 保持原样（dev/pytest 走 SQLite，零回归）。
+#
+# 拓扑（per 架构讨论，进程角色分离已完成）：
+# - web（server 角色）：可置于 PgBouncer(transaction pooling) 之后 → 设
+#   DB_PGBOUNCER=true：禁用服务端/命名游标（事务级池化下跨事务不可用）+ 不再叠加
+#   psycopg 应用层池（连接复用交给 PgBouncer，避免双层池）。
+# - worker / scheduler：必须**直连** Postgres —— Procrastinate 依赖 LISTEN/NOTIFY，
+#   穿不过 transaction pooling → 启用 psycopg3 应用层池高效复用连接。
+DB_PGBOUNCER = env.bool("DB_PGBOUNCER", default=False)
+
+
+def configure_postgres_pool(
+    db_config: dict,
+    *,
+    pgbouncer: bool,
+    pool_enabled: bool,
+    min_size: int,
+    max_size: int,
+    timeout: int,
+) -> None:
+    """为 PostgreSQL 配置连接池 / PgBouncer 安全选项（就地修改 db_config）。
+
+    抽成无副作用纯函数（不读 env、不触全局），便于单测直接断言三条分支，而不必
+    重载整个 settings 模块。仅当 ENGINE 含 'postgresql' 时生效——非 postgres 引擎
+    （SQLite/MySQL）直接 return、不改任何字段（dev/pytest 零回归红线）。
+
+    - 任一 postgres 分支：CONN_MAX_AGE=0（pool 与持久连接互斥，Django 强约束）。
+    - pgbouncer=True（web 置于 transaction pooling 之后）：禁用服务端/命名游标
+      （跨事务不可用）+ 移除 psycopg 应用层池（连接复用交给 PgBouncer）。
+    - 否则 + pool_enabled：启用 psycopg3 应用层池（Django 5.1+ 原生 OPTIONS["pool"]）。
+    """
+    if "postgresql" not in db_config.get("ENGINE", ""):
+        return
+    db_config["CONN_MAX_AGE"] = 0
+    options = db_config.setdefault("OPTIONS", {})
+    if pgbouncer:
+        db_config["DISABLE_SERVER_SIDE_CURSORS"] = True
+        options.pop("pool", None)
+    elif pool_enabled:
+        # 多 worker/副本时务必保证 Σ(进程数 × max_size) ≤ Postgres max_connections，
+        # 否则改用 PgBouncer（DB_PGBOUNCER=true）跨进程复用连接。
+        options["pool"] = {
+            "min_size": min_size,
+            "max_size": max_size,
+            "timeout": timeout,
+        }
+
+
+configure_postgres_pool(
+    DATABASES["default"],
+    pgbouncer=DB_PGBOUNCER,
+    pool_enabled=env.bool("DB_POOL_ENABLED", default=True),
+    min_size=env.int("DB_POOL_MIN_SIZE", default=2),
+    max_size=env.int("DB_POOL_MAX_SIZE", default=10),
+    timeout=env.int("DB_POOL_TIMEOUT", default=30),
+)
+
+# =============================================================================
 # durable 任务底座（DurableTaskService 适配层）
 # =============================================================================
 # 后端选择：auto=按 DB 引擎自动（Postgres→Procrastinate durable / 否则 in-process
