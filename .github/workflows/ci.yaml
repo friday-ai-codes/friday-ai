@@ -34,6 +34,11 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v6
+      # 架构守卫测试（如 test_no_loop_set_payload / test_no_retrieve_with_vectors /
+      # test_no_layered_search_direct_import_in_callsites）经 subprocess 调 `rg`
+      # 扫码库找反模式；ubuntu runner 默认未装 ripgrep，缺失会 FileNotFoundError。
+      - name: Install ripgrep (架构守卫测试依赖 rg)
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
