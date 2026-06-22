@@ -141,6 +141,13 @@ async def build_allowed_tools(space_id: str) -> list[str]:
     """
     from repositories.models import Repository
 
+    # space_id 为空（如 reposummary 失败后恢复 agent 会话的路径未携带有效 project_id）时，
+    # 直接拿空字符串当 UUID 过滤会抛 ValidationError（badly formed hexadecimal UUID）。
+    # 提前短路返回空白名单，避免污染失败处理链路。
+    if not space_id:
+        logger.info("build_allowed_tools_empty_space_id", allowed_tools=[])
+        return []
+
     has_indexed = await Repository.objects.filter(
         projects__id=space_id,
         index_status="indexed",

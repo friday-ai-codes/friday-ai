@@ -11,6 +11,7 @@ bypassPermissions 在 Docker 容器隔离环境中是安全的，可以支持无
 
 import asyncio
 import json
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -530,8 +531,14 @@ class ClaudeRunner:
                     files=file_count,
                 )
 
-            # Claude Code stderr 转发到 stdout（被 docker logs 和 Runner StreamLogs 捕获）
+            # Claude Code stderr 转发到 stdout（被 docker logs 和 Runner StreamLogs 捕获），
+            # 同时留存近 N 行环形缓冲：CLI 以非 0 退出码崩溃时（如 "Command failed with
+            # exit code 1 / Check stderr output for details"），SDK 异常本身不含细节，
+            # 这里把崩溃前的 stderr 尾部集中 dump，避免真因被海量 debug 日志淹没。
+            stderr_tail: deque[str] = deque(maxlen=200)
+
             def _stderr_handler(line: str) -> None:
+                stderr_tail.append(line)
                 print(f"[claude] {line}", flush=True)
 
             # 构建 env：通过 ClaudeAgentOptions(env=...) 注入，不污染宿主 os.environ
@@ -681,6 +688,15 @@ class ClaudeRunner:
                     break
                 except Exception as e:
                     if not _is_transient_claude_error(e):
+                        # 非临时错误（如 claude CLI 以退出码 1 崩溃）：集中 dump stderr 尾部，
+                        # 把被海量 debug 日志淹没的真实失败原因暴露出来，便于定位。
+                        print(
+                            f"[task:stderr-dump] CLI 异常退出，stderr 尾部 {len(stderr_tail)} 行 ↓",
+                            flush=True,
+                        )
+                        for _ln in stderr_tail:
+                            print(f"[task:stderr] {_ln}", flush=True)
+                        print("[task:stderr-dump] ↑ stderr 尾部结束", flush=True)
                         raise
                     if attempt >= max_attempts:
                         raise RuntimeError(
