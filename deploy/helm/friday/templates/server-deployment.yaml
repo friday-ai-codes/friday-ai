@@ -60,6 +60,15 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+          {{- if .Values.pgbouncer.enabled }}
+          # web 走 PgBouncer：显式 env 覆盖 envFrom 注入的直连 DATABASE_URL
+          # （worker/scheduler 不加此覆盖，仍直连 Postgres 保 LISTEN/NOTIFY）。
+          env:
+            - name: DATABASE_URL
+              value: {{ include "friday.pgbouncerUrl" . | quote }}
+            - name: DB_PGBOUNCER
+              value: "true"
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "friday.fullname" . }}-config
