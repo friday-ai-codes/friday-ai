@@ -18,11 +18,13 @@ from chat.models import CodingSession
 
 
 @pytest.fixture()
-def pr_review_session(project, repository):
+def pr_review_session(project, repository, user):
     """创建 awaiting_confirmation + pr_review 状态的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="PR 确认测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="PR 确认测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -37,11 +39,13 @@ def pr_review_session(project, repository):
 
 
 @pytest.fixture()
-def running_session(project, repository):
+def running_session(project, repository, user):
     """创建 running 状态的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="测试对话 running")
+    conversation = Conversation.objects.create(
+        project=project, title="测试对话 running", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -67,7 +71,7 @@ class TestPRConfirmGet:
         assert response.status_code == 200
         assert response.data["suggested_pr_title"] == "feat: test feature"
         assert response.data["suggested_pr_description"] == "## Summary\n- Added test feature"
-        assert response.data["target_branch"] == "main"
+        assert response.data["target_branch"] == "develop"
         assert "github.com" in response.data["branch_url"]
         assert "tree/feat20260409.test-feature" in response.data["branch_url"]
 

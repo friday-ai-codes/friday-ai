@@ -55,7 +55,7 @@ def _make_mock_runner(
 ) -> MagicMock:
     """构建 mock SDKAgentRunner 实例。"""
 
-    async def _stream(prompt: str) -> AsyncGenerator[AgentEvent, None]:
+    async def _stream(prompt: str, **kwargs) -> AsyncGenerator[AgentEvent, None]:
         if error is not None:
             raise error
         for event in events:
@@ -388,7 +388,8 @@ async def test_executing_node_handles_sdk_error(graph_config: RunnableConfig) ->
         )
 
     assert result["phase"] == "error"
-    assert result["result_metadata"]["error"] == "Chat runner 运行异常"
+    # 非用户可读领域异常统一降级为通用文案（_user_facing_runner_error），不泄漏内部细节
+    assert result["result_metadata"]["error"] == "服务内部错误，请稍后重试"
 
 
 # ---------------------------------------------------------------------------

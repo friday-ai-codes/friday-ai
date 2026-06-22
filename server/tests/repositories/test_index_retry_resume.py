@@ -18,6 +18,8 @@ def _successful_clone_proc() -> AsyncMock:
     stderr.read = AsyncMock(return_value=b"")
     proc.stderr = stderr
     proc.wait = AsyncMock(return_value=0)
+    # 子进程现统一走 communicate()（git clone / git log 等），返回 (stdout, stderr) 二元组。
+    proc.communicate = AsyncMock(return_value=(b"", b""))
     proc.returncode = 0
     proc.kill = MagicMock()
     return proc

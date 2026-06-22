@@ -440,4 +440,5 @@ class TestConversationRuntimeView:
 
         assert resp.status_code == 404
         data = json.loads(resp.content)
-        assert "无活跃对话" in data["error"]
+        # owner gate（aget_for_user）先于活跃会话探测：不存在/越权统一返回「对话不存在」
+        assert "对话不存在" in data["error"]

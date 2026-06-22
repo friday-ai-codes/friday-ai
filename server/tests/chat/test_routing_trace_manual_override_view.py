@@ -48,8 +48,10 @@ def repo(db, project_with_owner):
 
 
 @pytest.fixture
-def conversation(db, project_with_owner):
-    return Conversation.objects.create(project=project_with_owner, title="override")
+def conversation(db, project_with_owner, user):
+    return Conversation.objects.create(
+        project=project_with_owner, title="override", created_by=user
+    )
 
 
 @pytest.fixture

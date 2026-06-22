@@ -1796,14 +1796,12 @@ class TestCodingTriggers:
         self, captured_requests: list[IngestionRequest]
     ) -> None:
         """create_pr_or_skip_node PR 成功路径恰投递 1 条 chat_coding_pr_created。"""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         from orchestration.coding_graph import create_pr_or_skip_node
         from services.git_platform.models import MRCreateResult
 
         mock_session = _make_mock_chat_coding_session("sub-chat-pr-1")
-        mock_cred = MagicMock()
-        mock_cred.encrypted_token = "encrypted-token"
         mock_client = AsyncMock()
         mock_client.create_merge_request = AsyncMock(
             return_value=MRCreateResult(
@@ -1817,11 +1815,12 @@ class TestCodingTriggers:
                 return_value=mock_session,
             ),
             patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock),
-            patch("repositories.models.GitCredential") as mock_cred_cls,
-            patch("common.encryption.decrypt_value", return_value="token"),
+            patch(
+                "services.git_credentials.aresolve_git_token",
+                new=AsyncMock(return_value="token"),
+            ),
             patch("services.git_platform.get_git_platform_client", return_value=mock_client),
         ):
-            mock_cred_cls.objects.aget = AsyncMock(return_value=mock_cred)
             result = await create_pr_or_skip_node(
                 {
                     "coding_session_id": "cs-mock-1",

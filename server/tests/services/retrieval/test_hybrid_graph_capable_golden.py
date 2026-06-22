@@ -58,6 +58,29 @@ from services.retrieval.types import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _force_offline_token_estimator(monkeypatch: pytest.MonkeyPatch):
+    """固定为离线 ``_FallbackEncoding`` 计数口径，保证 ``total_tokens`` 确定性。
+
+    golden fixtures 在 tiktoken BPE 数据不可用（离线）时生成，统一走
+    ``_FallbackEncoding``（commit「fix: keep retrieval tests offline stable」）。
+    但 ``estimate_tokens`` 在 tiktoken BPE 数据可用时会改用真实 cl100k_base 编码，
+    产出更低的 token 数，导致字节级 body 完全一致、仅 ``total_tokens`` 漂移。
+    这里把估算器钉死在离线 fallback，使 CI（离线）与本地（已缓存 BPE）口径一致。
+    """
+    from services.retrieval import token_budget
+
+    orig_get_encoding = token_budget._get_encoding
+    orig_get_encoding.cache_clear()
+    monkeypatch.setattr(
+        token_budget,
+        "_get_encoding",
+        lambda encoding=token_budget.DEFAULT_ENCODING: token_budget._FallbackEncoding(),
+    )
+    yield
+    orig_get_encoding.cache_clear()
+
+
 class _NoExclusionMatcher:
     """no-op 排除匹配器替身（golden 场景无排除规则，永不命中）。"""
 

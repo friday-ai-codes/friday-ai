@@ -172,7 +172,7 @@ class TestFeedbackAdmin:
         ).afirst()
         assert notif is not None
         assert "谢谢" in notif.body
-        assert notif.link == f"/feedback?id={created['id']}"
+        assert notif.link == f"/notifications?tab=feedback&fid={created['id']}"
 
     async def test_admin_reply_empty_content_400(self):
         _, headers_a = await _make_user_and_headers(username=f"fa_{uuid4().hex[:6]}")

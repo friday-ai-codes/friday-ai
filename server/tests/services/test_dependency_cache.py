@@ -26,7 +26,8 @@ class TestGetVolumeName:
 
         name = manager.get_volume_name("repo-12345678", "abcdef1234567890")
 
-        assert name == "friday-deps-repo-work-item"
+        # friday-deps-{repo_id[:8]}-{lock_hash[:8]}
+        assert name == "friday-deps-repo-123-abcdef12"
         assert name.startswith("friday-deps-")
 
 

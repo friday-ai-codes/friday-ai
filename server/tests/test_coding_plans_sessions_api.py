@@ -32,7 +32,9 @@ def coding_plan(db, project, user):
     ProjectMembership.objects.get_or_create(
         user=user, project=project, defaults={"role": ProjectRole.ADMIN}
     )
-    conversation = Conversation.objects.create(project=project, title="work item 测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="work item 测试对话", created_by=user
+    )
     return CodingPlan.objects.create(
         conversation=conversation,
         tech_plan="## work item 多仓 fan-out 方案\n- 步骤 1\n- 步骤 2",
@@ -154,13 +156,13 @@ class TestCodingPlansSessionsBatchAPI:
         coding_plan: CodingPlan,
         three_repos: list[Repository],
     ) -> None:
-        """非 project 成员 → 403。"""
+        """非 owner（且非 project 成员）→ owner gate 先于 project 403 触发，统一 404（不泄漏存在性）。"""
         resp = other_user_client.post(
             self._url(coding_plan.id),
             data={"repository_ids": [str(three_repos[0].id)]},
             format="json",
         )
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
 
     def test_not_found_when_plan_missing(
         self, authenticated_client: "APIClient"

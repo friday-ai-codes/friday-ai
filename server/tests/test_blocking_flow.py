@@ -34,14 +34,27 @@ def mock_barrier():
     return barrier
 
 
-async def _create_waiting_orch_run() -> tuple[str, Any]:
+async def _create_user() -> Any:
+    """创建一个真实的认证用户（owner gate 要求 conversation.created_by 与请求用户一致）。"""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    return await User.objects.acreate_user(
+        username=f"blk_{uuid.uuid4().hex[:8]}",
+        password="testpass123",
+    )
+
+
+async def _create_waiting_orch_run(user: Any = None) -> tuple[str, Any, Any]:
     """创建 WAITING 状态的 OrchestrationRun（含 Project + Conversation FK 链）。"""
     from chat.models import Conversation
     from orchestration.models import OrchestrationRun
     from projects.models import Project
 
+    if user is None:
+        user = await _create_user()
     project = await Project.objects.acreate(name="test-proj")
-    conv = await Conversation.objects.acreate(project=project, title="test")
+    conv = await Conversation.objects.acreate(project=project, title="test", created_by=user)
     conv_id = str(conv.id)
     orch_run = await OrchestrationRun.objects.acreate(
         conversation=conv,
@@ -49,7 +62,7 @@ async def _create_waiting_orch_run() -> tuple[str, Any]:
         status=OrchestrationRun.Status.WAITING,
         phase=OrchestrationRun.Phase.WAITING,
     )
-    return conv_id, orch_run
+    return conv_id, orch_run, user
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +80,7 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
     t2 = _make_blocking_task("task-002")
     mock_barrier.get_pending_tasks.return_value = [t1, t2]
 
-    conv_id, orch_run = await _create_waiting_orch_run()
+    conv_id, orch_run, user = await _create_waiting_orch_run()
 
     mock_dispatcher = MagicMock()
     mock_dispatcher.cancel = AsyncMock(return_value=True)
@@ -83,7 +96,7 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
 
         factory = AsyncAPIRequestFactory()
         request = factory.post(f"/api/conversations/{conv_id}/interrupt/")
-        request.user = MagicMock(is_authenticated=True)
+        request.user = user
 
         view = ChatInterruptView()
         response = await view.post(request, conv_id)
@@ -109,8 +122,16 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
 @pytest.mark.asyncio
 async def test_interrupt_during_executing_uses_runner() -> None:
     """SDK 运行中中断：使用 runner.interrupt()。"""
+    from chat.models import Conversation
+    from projects.models import Project
+
     mock_runner = MagicMock()
     mock_runner.interrupt = AsyncMock()
+
+    user = await _create_user()
+    project = await Project.objects.acreate(name="exec-proj")
+    conv = await Conversation.objects.acreate(project=project, title="exec", created_by=user)
+    conv_id = str(conv.id)
 
     with patch("orchestration.runner_registry.get_active_runner", return_value=mock_runner):
         from adrf.test import AsyncAPIRequestFactory
@@ -118,11 +139,11 @@ async def test_interrupt_during_executing_uses_runner() -> None:
         from chat.views import ChatInterruptView
 
         factory = AsyncAPIRequestFactory()
-        request = factory.post("/api/conversations/fake-id/interrupt/")
-        request.user = MagicMock(is_authenticated=True)
+        request = factory.post(f"/api/conversations/{conv_id}/interrupt/")
+        request.user = user
 
         view = ChatInterruptView()
-        response = await view.post(request, "a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
+        response = await view.post(request, conv_id)
 
         assert response.status_code == 200
         assert response.data["status"] == "interrupted"
@@ -135,11 +156,22 @@ async def test_interrupt_during_executing_uses_runner() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
 async def test_interrupt_no_active_session_returns_404(
     mock_barrier: MagicMock,
 ) -> None:
     """无 active runner 也无 barrier → 404。"""
+    from chat.models import Conversation
+    from projects.models import Project
+
     mock_barrier.has_barrier_for_thread.return_value = False
+
+    user = await _create_user()
+    project = await Project.objects.acreate(name="no-session-proj")
+    conv = await Conversation.objects.acreate(
+        project=project, title="no-session", created_by=user
+    )
+    conv_id = str(conv.id)
 
     with (
         patch("orchestration.runner_registry.get_active_runner", return_value=None),
@@ -150,11 +182,11 @@ async def test_interrupt_no_active_session_returns_404(
         from chat.views import ChatInterruptView
 
         factory = AsyncAPIRequestFactory()
-        request = factory.post("/api/conversations/no-session/interrupt/")
-        request.user = MagicMock(is_authenticated=True)
+        request = factory.post(f"/api/conversations/{conv_id}/interrupt/")
+        request.user = user
 
         view = ChatInterruptView()
-        response = await view.post(request, "no-session")
+        response = await view.post(request, conv_id)
 
         assert response.status_code == 404
 
@@ -314,7 +346,7 @@ async def test_cancel_dispatched_task_failure_does_not_block_cancel_all(
     t2 = _make_blocking_task("ok-task")
     mock_barrier.get_pending_tasks.return_value = [t1, t2]
 
-    conv_id, orch_run = await _create_waiting_orch_run()
+    conv_id, orch_run, user = await _create_waiting_orch_run()
 
     call_log: list[str] = []
 
@@ -339,7 +371,7 @@ async def test_cancel_dispatched_task_failure_does_not_block_cancel_all(
 
         factory = AsyncAPIRequestFactory()
         request = factory.post(f"/api/conversations/{conv_id}/interrupt/")
-        request.user = MagicMock(is_authenticated=True)
+        request.user = user
 
         view = ChatInterruptView()
         response = await view.post(request, conv_id)

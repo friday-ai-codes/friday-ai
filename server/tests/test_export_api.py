@@ -23,7 +23,17 @@ User = get_user_model()
 
 
 @pytest.fixture
-def conversation_with_messages(db):
+def export_user(db):
+    """导出测试共享用户（owner gate 要求 conversation.created_by 与认证用户一致）。"""
+    return User.objects.create_user(
+        username="export_test_user",
+        email="export@test.com",
+        password="testpass123",
+    )
+
+
+@pytest.fixture
+def conversation_with_messages(db, export_user):
     """创建 Project + Conversation + Messages 用于导出测试。"""
     project = Project.objects.create(
         name="导出测试项目",
@@ -34,6 +44,7 @@ def conversation_with_messages(db):
     conversation = Conversation.objects.create(
         project=project,
         title="测试对话",
+        created_by=export_user,
     )
     msg_assistant_1 = Message.objects.create(
         conversation=conversation,
@@ -60,15 +71,10 @@ def conversation_with_messages(db):
 
 
 @pytest.fixture
-def export_client(db):
+def export_client(db, export_user):
     """创建已认证的 API 客户端。"""
-    user = User.objects.create_user(
-        username="export_test_user",
-        email="export@test.com",
-        password="testpass123",
-    )
     client = APIClient()
-    client.force_authenticate(user=user)
+    client.force_authenticate(user=export_user)
     return client
 
 
@@ -216,7 +222,7 @@ class TestExportToFeishuView:
         assert response.status_code == 400
         assert "未找到可导出的消息" in response.data["error"]
 
-    def test_export_not_configured_returns_400(self, export_client, db):
+    def test_export_not_configured_returns_400(self, export_client, export_user, db):
         """未配置 folder_token -> 400 + error_type='not_configured'。"""
         project = Project.objects.create(
             name="无配置项目",
@@ -224,7 +230,9 @@ class TestExportToFeishuView:
             feishu_app_id="cli_test",
             feishu_app_secret_encrypted="test_secret",
         )
-        conv = Conversation.objects.create(project=project, title="测试")
+        conv = Conversation.objects.create(
+            project=project, title="测试", created_by=export_user
+        )
         msg = Message.objects.create(
             conversation=conv,
             role=Message.Role.ASSISTANT,

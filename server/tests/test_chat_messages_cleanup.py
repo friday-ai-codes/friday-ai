@@ -59,7 +59,9 @@ def test_delete_before_id_removes_older_messages_and_returns_count(
     project_a_admin_user,
 ) -> None:
     """Behavior C：5 条消息 + before_id=第 4 条 → 删前 3 条，返回 deleted_count=3。"""
-    conv = Conversation.objects.create(project=project_a, title="cleanup-test")
+    conv = Conversation.objects.create(
+        project=project_a, title="cleanup-test", created_by=project_a_admin_user
+    )
     msgs = _make_messages(conv, count=5)
     before_msg = msgs[3]  # 删除 < msgs[3].created_at 即前 3 条
 
@@ -95,24 +97,31 @@ def test_delete_nonexistent_conversation_returns_404(
 
 
 # ============================================================================
-# Test E — 403 跨项目越权：project_b_admin_user 试图删 project_a 的对话消息
+# Test E — 跨用户越权：非 owner 访问他人会话 → owner gate 统一 404
 # ============================================================================
 
 
 @pytest.mark.django_db
-def test_delete_cross_project_conversation_returns_403(
+def test_delete_cross_project_conversation_returns_404(
     project_a,
+    project_a_admin_user,
     project_b_admin_user,
 ) -> None:
-    """Behavior E：project_b_admin_user 无 project_a member 权限 → 403 + audit log。"""
-    conv = Conversation.objects.create(project=project_a, title="owned-by-a")
+    """Behavior E：owner gate（ISO-04，无 superuser/项目 bypass）先于 project 403 触发。
+
+    会话归 project_a_admin_user；project_b_admin_user 非 owner → 越权/不存在统一 404
+    （不泄漏存在性），原 403 project-permission 分支被 owner gate 覆盖。
+    """
+    conv = Conversation.objects.create(
+        project=project_a, title="owned-by-a", created_by=project_a_admin_user
+    )
     msgs = _make_messages(conv, count=3)
 
     client = APIClient()
     client.force_authenticate(user=project_b_admin_user)
     resp = client.delete(_url(str(conv.id), str(msgs[1].id)))
 
-    assert resp.status_code == 403, resp.content
+    assert resp.status_code == 404, resp.content
     # 消息未被删除
     assert Message.objects.filter(conversation=conv).count() == 3
 
@@ -150,10 +159,14 @@ def test_delete_before_id_not_in_conversation_returns_400(
     project_a_admin_user,
 ) -> None:
     """Behavior G：before_id 指向其他对话的消息 → 400（防跨 conversation）。"""
-    conv_a = Conversation.objects.create(project=project_a, title="conv-a")
+    conv_a = Conversation.objects.create(
+        project=project_a, title="conv-a", created_by=project_a_admin_user
+    )
     _make_messages(conv_a, count=2)
 
-    conv_b = Conversation.objects.create(project=project_a, title="conv-b")
+    conv_b = Conversation.objects.create(
+        project=project_a, title="conv-b", created_by=project_a_admin_user
+    )
     conv_b_msgs = _make_messages(conv_b, count=2)
 
     client = APIClient()
@@ -176,8 +189,14 @@ def test_delete_by_superuser_succeeds_cross_project(
     project_a,
     system_admin_user,
 ) -> None:
-    """Behavior H：superuser 不受 project ownership 限制 → 200。"""
-    conv = Conversation.objects.create(project=project_a, title="sys-del")
+    """Behavior H：superuser 删除自己在 project_a（其非成员）下创建的会话 → 200。
+
+    owner gate（ISO-03/04）无 superuser bypass：superuser 仅当为会话 owner 时通过；
+    通过后 project ownership 校验对 superuser 豁免，故跨项目（非成员）仍可删。
+    """
+    conv = Conversation.objects.create(
+        project=project_a, title="sys-del", created_by=system_admin_user
+    )
     msgs = _make_messages(conv, count=3)
 
     client = APIClient()

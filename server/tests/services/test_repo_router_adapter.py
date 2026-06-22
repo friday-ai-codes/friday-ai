@@ -18,6 +18,11 @@ from codegraph.services.repo_router_v2 import (
 from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
 from services.plan_orchestration import RepoRouterV2Adapter
 
+# transaction=True：本文件 async 用例经 sync_to_async 桥接在独立线程连接建数据
+# （含 Repository），普通 @pytest.mark.django_db（rollback）无法回滚跨线程连接的提交，
+# 会泄漏 Repository 行污染后续全仓计数用例。TransactionTestCase teardown TRUNCATE 全表。
+pytestmark = pytest.mark.django_db(transaction=True)
+
 
 def _route_result() -> RepoRouteResultV2:
     return RepoRouteResultV2(
@@ -69,7 +74,6 @@ async def test_empty_query_skips(monkeypatch) -> None:
     mock_route.assert_not_awaited()
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_scope_include_repos_precedence(monkeypatch) -> None:
     """include_repos 显式指定 → repository_ids 取之（最高优先级）。"""
@@ -86,7 +90,6 @@ async def test_scope_include_repos_precedence(monkeypatch) -> None:
     assert mock_route.await_args.kwargs["repository_ids"] == ["rX"]
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_scope_project_repos_fallback(monkeypatch) -> None:
     """无 include_repos 时回退 work_item.project 仓库 id 列表。"""
@@ -106,7 +109,6 @@ async def test_scope_project_repos_fallback(monkeypatch) -> None:
     assert mock_route.await_args.kwargs["repository_ids"] == [repo_id]
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_scope_no_work_item_full_repo(monkeypatch) -> None:
     """无 include_repos 且无 work_item → repository_ids=None（全库）。"""

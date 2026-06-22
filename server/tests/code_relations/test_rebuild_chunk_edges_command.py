@@ -108,7 +108,8 @@ def test_dry_run_no_writes(indexed_repo: Repository) -> None:
         )
 
     output = out.getvalue()
-    assert "work item" in output
+    assert "[DRY-RUN]" in output
+    assert "dry_run=True" in output
     assert "pending_chunks=2" in output
     mock_enqueue.assert_not_called()
     # last_built_at 仍是 NULL（dry-run 不更新）

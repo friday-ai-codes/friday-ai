@@ -44,7 +44,8 @@ class TestWorkflowState:
         expected_fields = {
             "run_id", "phase", "blocking_tasks", "user_message", "final_answer",
             "blocking_results", "wait_execute_loops",
-            "accumulated_thinking", "tool_calls", "parts", "result_metadata", "agent_session_id",
+            "accumulated_thinking", "tool_calls", "parts", "user_parts", "result_metadata",
+            "agent_session_id",
             # 协商暂停 payload
             "pending_clarification",
         }

@@ -27,6 +27,12 @@ from delivery.models import (
 from repositories.models import Repository
 from services.plan_orchestration import ArchitectMergeAdapter, PlanOrchestrationEngine
 
+# transaction=True：本文件 async 用例经 sync_to_async 桥接在独立线程连接建数据
+# （含 indexed Repository），普通 @pytest.mark.django_db（rollback）无法回滚跨线程连接
+# 的提交，会泄漏 indexed Repository 行污染后续全仓计数用例。TransactionTestCase
+# 在 teardown TRUNCATE 全表，确保跨连接提交也被清理。
+pytestmark = pytest.mark.django_db(transaction=True)
+
 
 def _valid_merged_plan() -> dict[str, Any]:
     return {
@@ -117,7 +123,6 @@ def _synth(return_value: dict | None = None, side_effect=None):
     return synth
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_pass_path() -> None:
     """pass：合法 MergedPlan → canonical(origin=orchestration) + current_plan_version
@@ -144,7 +149,6 @@ async def test_merge_pass_path() -> None:
     assert "plan.merge.completed" in events
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_fail_path() -> None:
     """fail：不合法 MergedPlan（成环）→ 无 canonical、ArchitectMerge(failed) + report、
@@ -169,7 +173,6 @@ async def test_merge_fail_path() -> None:
     assert "plan.validation.failed" in events
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_schema_invalid_handled_as_failure() -> None:
     """CR-01：schema 非法 MergedPlan（execution_plan 项缺 repository_id）被 §7 schema 闸口
@@ -197,7 +200,6 @@ async def test_merge_schema_invalid_handled_as_failure() -> None:
     assert "plan.validation.failed" in events
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_create_from_schema_drift_degraded() -> None:
     """CR-01 防御补强：即便产物过 §7 闸口 + 跨仓校验，create_from 内 validate_technical_plan
@@ -221,7 +223,6 @@ async def test_merge_create_from_schema_drift_degraded() -> None:
     assert merge_row.merged_plan_version is None
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_e2e_engine_merge_schema_invalid_back_transition() -> None:
     """CR-01 端到端：engine.advance(merging) → schema 非法 → session 回退 clarifying（§14），
@@ -240,7 +241,6 @@ async def test_e2e_engine_merge_schema_invalid_back_transition() -> None:
     assert merge_row.validation_status == ArchitectMergeStatus.FAILED
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_synthesis_failure_degraded() -> None:
     """降级：synthesizer 抛异常 → 不崩、ArchitectMerge(failed, reason=synthesis_failed)。"""
@@ -260,7 +260,6 @@ async def test_merge_synthesis_failure_degraded() -> None:
     assert reloaded.current_plan_version is None
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_inv2_work_item_none() -> None:
     """INV-2：session.work_item=None（chat）→ pass 路径 canonical.work_item is None。"""
@@ -275,7 +274,6 @@ async def test_merge_inv2_work_item_none() -> None:
     assert plan.work_item_id is None
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_e2e_engine_merge_pass() -> None:
     """端到端（Task 3）：engine.advance(merging) → adapter pass → session done + canonical。"""
@@ -294,7 +292,6 @@ async def test_e2e_engine_merge_pass() -> None:
     assert merge_row.validation_status == ArchitectMergeStatus.PASSED
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_e2e_engine_merge_fail_reclarify() -> None:
     """端到端（Task 3）：engine.advance → adapter fail（成环，attempt 0）→ session 回退
@@ -312,7 +309,6 @@ async def test_e2e_engine_merge_fail_reclarify() -> None:
     assert merge_row.validation_status == ArchitectMergeStatus.FAILED
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_fail_reclarify_creates_clarification() -> None:
     """WR-02：merge 校验失败回退 clarifying（attempt 0）→ 主动建一条描述校验失败的 pending
@@ -338,7 +334,6 @@ async def test_merge_fail_reclarify_creates_clarification() -> None:
     assert "clarification.asked" in events
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_fail_reclarify_bounded_when_attempt_exhausted() -> None:
     """WR-02 有界：attempt 已达上限时不建回退 Clarification（engine 将直接落 failed 终态，
@@ -362,7 +357,6 @@ async def test_merge_fail_reclarify_bounded_when_attempt_exhausted() -> None:
     assert await Clarification.objects.filter(session_id=session.id).acount() == 0
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_merge_reclarify_meaningful_with_one_round_guard() -> None:
     """WR-02 × CR-01：merge 失败回退 clarifying 建 pending → 真实 ClarifyAdapter 据 pending

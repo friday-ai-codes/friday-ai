@@ -166,11 +166,13 @@ class TestCodingSessionConfirmAPI:
     """
 
     @pytest.fixture
-    def draft_session(self, project, repository):
+    def draft_session(self, project, repository, user):
         """创建 draft 状态的 CodingSession（含 Conversation + 有效分支名）。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="测试对话")
+        conversation = Conversation.objects.create(
+            project=project, title="测试对话", created_by=user
+        )
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -440,11 +442,13 @@ class TestCodingSessionQueryAPI:
     """CodingSession 查询恢复 API 测试。"""
 
     @pytest.fixture
-    def conversation_with_sessions(self, project, repository):
+    def conversation_with_sessions(self, project, repository, user):
         """创建一个 conversation 并关联 2 个 CodingSession。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="查询测试对话")
+        conversation = Conversation.objects.create(
+            project=project, title="查询测试对话", created_by=user
+        )
         session1 = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -675,11 +679,13 @@ class TestCodingSessionConfirmBranchValidation:
     """
 
     @pytest.fixture
-    def draft_session_with_branch(self, project, repository):
+    def draft_session_with_branch(self, project, repository, user):
         """创建带有效分支名的 draft CodingSession。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="测试编码")
+        conversation = Conversation.objects.create(
+            project=project, title="测试编码", created_by=user
+        )
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,

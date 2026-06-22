@@ -65,6 +65,7 @@ def _fake_sdk_config() -> SimpleNamespace:
         space_id="",
         max_budget_usd=None,
         force_deep_analysis=False,
+        available_models=None,
     )
 
 

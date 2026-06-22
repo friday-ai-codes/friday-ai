@@ -265,6 +265,7 @@ class TestBotServiceProcessing:
             feishu_doc_id: str = "",
             project_context_line: str | None = None,
             search_branch: str | None = None,
+            **kwargs: object,
         ) -> AsyncGenerator[AgentEvent, None]:
             yield AgentEvent(
                 type=MESSAGE_COMPLETE,

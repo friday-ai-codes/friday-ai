@@ -124,7 +124,7 @@ class TestBranchUtils:
     def test_sanitize_normal_branch(self) -> None:
         result = sanitize_branch_name("feature/work item/fix")
         assert "/" not in result
-        assert result.startswith("feature_JIRA-123_fix")
+        assert result.startswith("feature_work_item_fix")
 
     def test_sanitize_special_characters(self) -> None:
         result = sanitize_branch_name("feat/hello@world#test!")

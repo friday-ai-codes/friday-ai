@@ -178,24 +178,26 @@ def test_preflight_missing_payload_has_all_contract_fields(
 @pytest.mark.django_db
 def test_preflight_cross_project_member_denied(
     project_a,
+    project_a_admin_user,
     project_b_admin_user,
 ) -> None:
-    """Behavior G：project_b_admin_user 虽是 project_b 的 ADMIN，但对 project_a
-    的 conversation 无访问权限 → preflight 返 403 + structlog audit log。
+    """Behavior G：会话归 project_a_admin_user；project_b_admin_user 非 owner。
 
-    implementation Hotfix（work item security mitigation）：跨项目 ownership 校验防御信息泄露。
+    owner gate（ISO-04，无 superuser/项目 bypass）先于 project 403 触发 → 越权/不存在
+    统一 404（不泄漏存在性），原 403 project-permission 分支被 owner gate 覆盖。
     """
-    conv = Conversation.objects.create(project=project_a, title="a-only")
+    conv = Conversation.objects.create(
+        project=project_a, title="a-only", created_by=project_a_admin_user
+    )
 
     client = APIClient()
     client.force_authenticate(user=project_b_admin_user)
     resp = client.get(_url(str(conv.id)))
 
-    assert resp.status_code == 403, resp.content
+    assert resp.status_code == 404, resp.content
     body = resp.json()
-    assert "detail" in body
-    # 403 文案不泄漏 project 名或 conversation.title（security mitigation Information Disclosure 防御）
-    assert "a-only" not in body["detail"]
+    # 404 文案不泄漏 project 名或 conversation.title（Information Disclosure 防御）
+    assert "a-only" not in str(body)
 
 
 # ============================================================================
@@ -216,6 +218,11 @@ def test_preflight_non_member_user_denied(
 
     验 security mitigation-04 Information Disclosure mitigation 生效。
     """
+    owner = django_user_model.objects.create_user(
+        username=f"owner_{uuid4().hex[:8]}",
+        email=f"owner_{uuid4().hex[:8]}@test.local",
+        password="test-password",
+    )
     outsider = django_user_model.objects.create_user(
         username=f"outsider_{uuid4().hex[:8]}",
         email=f"outsider_{uuid4().hex[:8]}@test.local",
@@ -223,13 +230,16 @@ def test_preflight_non_member_user_denied(
     )
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
-    conv = Conversation.objects.create(project=project_a, title="a-only-sensitive")
+    conv = Conversation.objects.create(
+        project=project_a, title="a-only-sensitive", created_by=owner
+    )
 
     client = APIClient()
     client.force_authenticate(user=outsider)
     resp = client.get(_url(str(conv.id)))
 
-    assert resp.status_code == 403, resp.content
+    # owner gate（ISO-04）：非 owner → 404（先于 provider 解析），resolved payload 不回流
+    assert resp.status_code == 404, resp.content
     # 关键断言：resolved payload 字段名完全不回流（防 fix 被误 revert）
     body_text = resp.content.decode()
     assert "provider_type" not in body_text
@@ -256,7 +266,11 @@ def test_preflight_superuser_bypass_ownership(
     """
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
-    conv = Conversation.objects.create(project=project_a, title="sys-access")
+    # owner gate（ISO-03/04）无 superuser bypass：superuser 仅当为 owner 时通过 owner gate，
+    # 通过后 project ownership 校验对 superuser 豁免，故跨项目（非成员）仍可探测。
+    conv = Conversation.objects.create(
+        project=project_a, title="sys-access", created_by=system_admin_user
+    )
 
     client = APIClient()
     client.force_authenticate(user=system_admin_user)

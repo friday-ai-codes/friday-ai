@@ -80,6 +80,12 @@ async def test_changed_files_populated_after_incremental_index() -> None:
         patch("services.indexer.update_index_progress", new_callable=AsyncMock),
         patch("services.indexer.update_write_progress", new_callable=AsyncMock),
         patch("services.indexer.update_index_stage", new_callable=AsyncMock),
+        # EXCL-02：增量索引现会构建排除匹配器（读 DB 全局默认规则），本测试不挂 DB，
+        # patch 为返回「不排除任何文件」的匹配器。
+        patch(
+            "services.indexer.build_matcher_for_repo",
+            new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
+        ),
     ):
         mock_fi.objects.filter.return_value = mock_qs
         mock_fi.objects.filter.return_value.adelete = AsyncMock()

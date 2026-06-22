@@ -18,11 +18,13 @@ from chat.models import CodingSession
 
 
 @pytest.fixture()
-def awaiting_session(project, repository):
+def awaiting_session(project, repository, user):
     """创建 awaiting_confirmation 状态的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -36,11 +38,13 @@ def awaiting_session(project, repository):
 
 
 @pytest.fixture()
-def running_session(project, repository):
+def running_session(project, repository, user):
     """创建 running 状态的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="测试对话 running")
+    conversation = Conversation.objects.create(
+        project=project, title="测试对话 running", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -208,6 +212,7 @@ class TestCommitConfirmE2E:
         authenticated_client,
         project,
         repository,
+        user,
     ) -> None:
         """端到端数据流 — progress 回调写入 → GET API 返回真实 AI 建议（非空字符串）。
 
@@ -228,7 +233,7 @@ class TestCommitConfirmE2E:
 
         # ---- Arrange: 创建 conversation + running CodingSession + SubAgentSession ----
         conversation = Conversation.objects.create(
-            project=project, title="work item E2E 测试对话"
+            project=project, title="work item E2E 测试对话", created_by=user
         )
         coding_session = CodingSession.objects.create(
             conversation=conversation,
