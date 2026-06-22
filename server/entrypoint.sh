@@ -21,6 +21,16 @@ connection.ensure_connection()
   sleep 2
 done
 
+# 非 server 角色（worker / scheduler 等）：迁移、系统设置初始化、静态收集统一由 server
+# 角色负责（compose 中 worker/scheduler 均 depends_on server healthy，启动时 DB 已迁移）。
+# 这些进程只需等 DB 就绪后直接执行自己的命令（compose 经 command 传入），避免多副本
+# 并发 migrate 竞争与重复 bootstrap，也不再误跑写死的 gunicorn。
+ROLE="${FRIDAY_PROCESS_ROLE:-server}"
+if [ "$ROLE" != "server" ] && [ "$#" -gt 0 ]; then
+  echo "以角色 ${ROLE} 启动：$*"
+  exec "$@"
+fi
+
 echo "数据库已就绪，执行迁移..."
 python manage.py migrate --noinput
 
