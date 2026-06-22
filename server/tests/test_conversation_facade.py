@@ -45,6 +45,7 @@ class _SdkConfigStub:
     agent_session: Any = None
     max_budget_usd: float | None = None
     force_deep_analysis: bool = False
+    available_models: Any = None
 
 
 class _SessionStub:

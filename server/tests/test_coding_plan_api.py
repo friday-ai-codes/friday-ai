@@ -14,8 +14,10 @@ from chat.models import CodingPlan, CodingSession, Conversation
 
 
 @pytest.fixture
-def conversation(db, project):
-    return Conversation.objects.create(project=project, title="REST 测试对话")
+def conversation(db, project, user):
+    return Conversation.objects.create(
+        project=project, title="REST 测试对话", created_by=user
+    )
 
 
 @pytest.fixture

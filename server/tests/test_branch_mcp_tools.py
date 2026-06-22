@@ -55,6 +55,10 @@ async def test_browse_file_deleted_in_branch() -> None:
         patch(
             "repositories.models.BranchFileIndex.objects",
         ) as mock_bfi_objects,
+        patch(
+            "agents.tools.chat_tools._build_matcher_failclosed",
+            new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
+        ),
     ):
         mock_bfi_objects.filter.return_value.afirst = AsyncMock(return_value=file_change)
 
@@ -100,6 +104,10 @@ async def test_browse_file_modified_in_branch() -> None:
             new_callable=AsyncMock,
             return_value=overlay_payload,
         ),
+        patch(
+            "agents.tools.chat_tools._build_matcher_failclosed",
+            new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
+        ),
     ):
         mock_bfi_objects.filter.return_value.afirst = AsyncMock(return_value=file_change)
 
@@ -123,10 +131,16 @@ async def test_browse_file_no_branch_unchanged() -> None:
         {"content": "base content", "chunk_index": 0, "start_line": 1, "end_line": 5, "language": "python"}
     ]
 
-    with patch(
-        "agents.tools.chat_tools._scroll_file_from_collection",
-        new_callable=AsyncMock,
-        return_value=base_payload,
+    with (
+        patch(
+            "agents.tools.chat_tools._scroll_file_from_collection",
+            new_callable=AsyncMock,
+            return_value=base_payload,
+        ),
+        patch(
+            "agents.tools.chat_tools._build_matcher_failclosed",
+            new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
+        ),
     ):
         result = await browse_file_content(
             repository_id="repo-1",

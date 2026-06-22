@@ -91,10 +91,10 @@ async def e2e_project(e2e_repository: Repository) -> Project:
 
 @pytest_asyncio.fixture
 async def e2e_coding_session(
-    e2e_project: Project, e2e_repository: Repository,
+    e2e_project: Project, e2e_repository: Repository, e2e_user: Any,
 ) -> CodingSession:
     conversation = await Conversation.objects.acreate(
-        project=e2e_project, title="e2e 281 测试对话",
+        project=e2e_project, title="e2e 281 测试对话", created_by=e2e_user,
     )
     return await CodingSession.objects.acreate(
         conversation=conversation,
@@ -243,17 +243,12 @@ async def test_http_callback_resumes_graph_to_awaiting_commit_confirm(
             mr_id="e2e-http",
         )
     )
-    mock_cred = AsyncMock()
-    mock_cred.encrypted_token = "encrypted-token"
     with patch(
         "orchestration.checkpointer.get_checkpointer",
         new=AsyncMock(return_value=memory_checkpointer),
     ), patch(
-        "repositories.models.GitCredential.objects.aget",
-        new=AsyncMock(return_value=mock_cred),
-    ), patch(
-        "common.encryption.decrypt_value",
-        return_value="test-token",
+        "services.git_credentials.aresolve_git_token",
+        new=AsyncMock(return_value="test-token"),
     ), patch(
         "services.git_platform.get_git_platform_client",
         return_value=mock_platform_client,
@@ -351,17 +346,12 @@ async def test_ws_callback_resumes_graph_same_as_http(
             mr_id="e2e-ws",
         )
     )
-    mock_cred = AsyncMock()
-    mock_cred.encrypted_token = "encrypted-token"
     with patch(
         "orchestration.checkpointer.get_checkpointer",
         new=AsyncMock(return_value=memory_checkpointer),
     ), patch(
-        "repositories.models.GitCredential.objects.aget",
-        new=AsyncMock(return_value=mock_cred),
-    ), patch(
-        "common.encryption.decrypt_value",
-        return_value="test-token",
+        "services.git_credentials.aresolve_git_token",
+        new=AsyncMock(return_value="test-token"),
     ), patch(
         "services.git_platform.get_git_platform_client",
         return_value=mock_platform_client,

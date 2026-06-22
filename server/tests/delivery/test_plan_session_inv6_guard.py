@@ -78,10 +78,12 @@ def test_inv6_no_bypass_plan_session_write() -> None:
             # 跳过模型定义行（class PlanSession(models.Model):）
             if line.lstrip().startswith("class PlanSession"):
                 continue
+            # 仅扫描代码部分：剥离行内注释，避免注释中提及 PlanSession(...) 被误判为旁路写入。
+            code_part = line.split("#", 1)[0]
             if (
-                _RE_ORM_WRITE.search(line)
-                or _RE_INSTANCE_SAVE.search(line)
-                or _RE_INSTANTIATE.search(line)
+                _RE_ORM_WRITE.search(code_part)
+                or _RE_INSTANCE_SAVE.search(code_part)
+                or _RE_INSTANTIATE.search(code_part)
             ):
                 violations.append(f"{rel}:{lineno}: {line.strip()}")
 

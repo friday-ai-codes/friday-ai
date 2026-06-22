@@ -51,50 +51,28 @@ async def test_tool_validation():
 
 @pytest.mark.asyncio
 async def test_search_repository_code_hybrid_search():
-    """search_repository_code 调用 BranchAwareSearchService.search 时传入 query_sparse 参数。"""
-    from unittest.mock import AsyncMock, patch
+    """search_repository_code 统一经 HybridSearchService.search 检索（query + repo + top_k）。"""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.embedding import EmbeddingService
-
-    mock_search_result = [
-        {
-            "score": 0.95,
-            "payload": {
-                "file_path": "src/utils.py",
-                "content": "def helper(): pass",
-                "language": "python",
-            },
-        }
-    ]
+    mock_result = SimpleNamespace(final_context="", layers=[])
+    mock_service = MagicMock()
+    mock_service.search = AsyncMock(return_value=mock_result)
 
     with (
-        patch.object(
-            EmbeddingService, "generate_embedding", new_callable=AsyncMock
-        ) as mock_embed,
         patch(
-            "services.sparse_encoder.SparseEncoderService.encode",
-            return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]},
-        ) as mock_sparse_encode,
-        patch(
-            "services.branch_search.BranchAwareSearchService.search",
-            new_callable=AsyncMock,
-        ) as mock_search,
-        patch(
-            "repositories.models.Repository.objects.filter",
-        ) as mock_repo_filter,
+            "services.retrieval.HybridSearchService",
+            return_value=mock_service,
+        ),
+        patch("services.code_intel.get_provider", return_value=MagicMock()),
         patch(
             "repositories.models.Repository.objects.aget",
             new_callable=AsyncMock,
         ) as mock_aget,
     ):
-        mock_embed.return_value = [0.1] * 1536
-        mock_search.return_value = mock_search_result
-
-        # Mock Repository QuerySet 返回一个有索引的仓库
         mock_repo = AsyncMock()
         mock_repo.id = "repo-1"
         mock_repo.default_branch = "main"
-        # 需要让 repository 查找成功 (aget 返回 repo 对象)
         mock_aget.return_value = mock_repo
 
         from agents.tools import ToolRegistry
@@ -104,55 +82,36 @@ async def test_search_repository_code_hybrid_search():
 
         result = await tool_fn.func(query="find helper function", repository_id="repo-1")
 
-        # 验证 sparse encode 被调用
-        mock_sparse_encode.assert_called_once_with("find helper function")
-        # 验证 search 被调用时传入了 query_sparse
-        call_kwargs = mock_search.call_args.kwargs
-        assert "query_sparse" in call_kwargs
-        assert call_kwargs["query_sparse"] == {"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}
+        assert result.success is True
+        # 验证统一经 HybridSearchService.search 检索，带上目标仓库 + top_k
+        mock_service.search.assert_awaited_once()
+        call = mock_service.search.call_args
+        assert call.args[0] == "find helper function"
+        assert call.kwargs["repository_ids"] == ["repo-1"]
+        assert call.kwargs["top_k"] == 20
 
 
 @pytest.mark.asyncio
 async def test_search_repository_code_empty_query_dense_only():
-    """空 sparse 向量时退化为 dense-only，不传 query_sparse 或传 None。"""
-    from unittest.mock import AsyncMock, patch
+    """指定 repository_id 时 HybridSearchService.search 收到该仓库与 branch=None。"""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.embedding import EmbeddingService
-
-    mock_search_result = [
-        {
-            "score": 0.85,
-            "payload": {
-                "file_path": "src/main.py",
-                "content": "def main(): pass",
-                "language": "python",
-            },
-        }
-    ]
+    mock_result = SimpleNamespace(final_context="", layers=[])
+    mock_service = MagicMock()
+    mock_service.search = AsyncMock(return_value=mock_result)
 
     with (
-        patch.object(
-            EmbeddingService, "generate_embedding", new_callable=AsyncMock
-        ) as mock_embed,
         patch(
-            "services.sparse_encoder.SparseEncoderService.encode",
-            return_value={"indices": [], "values": []},  # 空 sparse 向量
-        ) as mock_sparse_encode,
-        patch(
-            "services.branch_search.BranchAwareSearchService.search",
-            new_callable=AsyncMock,
-        ) as mock_search,
-        patch(
-            "repositories.models.Repository.objects.filter",
-        ) as mock_repo_filter,
+            "services.retrieval.HybridSearchService",
+            return_value=mock_service,
+        ),
+        patch("services.code_intel.get_provider", return_value=MagicMock()),
         patch(
             "repositories.models.Repository.objects.aget",
             new_callable=AsyncMock,
         ) as mock_aget,
     ):
-        mock_embed.return_value = [0.1] * 1536
-        mock_search.return_value = mock_search_result
-
         mock_repo = AsyncMock()
         mock_repo.id = "repo-1"
         mock_repo.default_branch = "main"
@@ -165,6 +124,7 @@ async def test_search_repository_code_empty_query_dense_only():
 
         result = await tool_fn.func(query="x", repository_id="repo-1")
 
-        # 验证 search 被调用时 query_sparse 为 None（降级）
-        call_kwargs = mock_search.call_args.kwargs
-        assert call_kwargs.get("query_sparse") is None
+        assert result.success is True
+        call = mock_service.search.call_args
+        assert call.kwargs["repository_ids"] == ["repo-1"]
+        assert call.kwargs["branch_name"] is None

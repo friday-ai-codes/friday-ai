@@ -17,11 +17,13 @@ from chat.models import CodingSession
 
 
 @pytest.fixture()
-def session_with_conflict(project, repository):
+def session_with_conflict(project, repository, user):
     """创建包含 conflict_check_result 的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="冲突预检测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="冲突预检测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -39,11 +41,13 @@ def session_with_conflict(project, repository):
 
 
 @pytest.fixture()
-def session_without_conflict(project, repository):
+def session_without_conflict(project, repository, user):
     """创建未设置 conflict_check_result 的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="无冲突测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="无冲突测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,

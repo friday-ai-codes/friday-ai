@@ -622,13 +622,14 @@ class TestTemplateAPI:
 
         assert response.status_code == status.HTTP_200_OK
         assert isinstance(response.data, list)
-        assert len(response.data) == 3
+        assert len(response.data) == 4
 
         ids = {t["template_id"] for t in response.data}
         expected = {
             "code_generation",
             "feishu_full_pipeline",
             "daily_summary",
+            "technical_plan_generation",
         }
         assert ids == expected
 

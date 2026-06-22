@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections import namedtuple
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -77,6 +77,10 @@ class TestBrowseFileContent:
                 "get_collection_name",
                 return_value="code_index_repo1",
             ),
+            patch(
+                "agents.tools.chat_tools._build_matcher_failclosed",
+                new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
+            ),
         ):
             result = await browse_file_content(
                 repository_id="repo1",
@@ -131,6 +135,10 @@ class TestBrowseFileContent:
                 agents.tools.chat_tools.QdrantService,
                 "get_collection_name",
                 return_value="code_index_repo1",
+            ),
+            patch(
+                "agents.tools.chat_tools._build_matcher_failclosed",
+                new=AsyncMock(return_value=MagicMock(is_excluded=MagicMock(return_value=False))),
             ),
         ):
             result = await browse_file_content(

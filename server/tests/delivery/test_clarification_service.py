@@ -25,6 +25,12 @@ from repositories.models import Repository
 
 _SERVER_ROOT = Path(__file__).resolve().parents[2]
 
+# transaction=True：本文件 async 用例经 acreate 在独立线程连接写库，普通
+# @pytest.mark.django_db（rollback）无法回滚跨线程连接的提交，会泄漏 indexed
+# Repository 行污染后续全仓计数用例（backfill / rebuild / list / all_repositories）。
+# TransactionTestCase 在 teardown TRUNCATE 全表，确保跨连接提交也被清理。
+pytestmark = pytest.mark.django_db(transaction=True)
+
 
 async def _make_task(session, status=RepoResearchTaskStatus.DONE) -> RepoResearchTask:
     repo = await Repository.objects.acreate(
@@ -43,7 +49,6 @@ async def _make_task(session, status=RepoResearchTaskStatus.DONE) -> RepoResearc
     return task
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_create_clarification_pending_with_affected() -> None:
     """create_clarification → pending Clarification（answered_at None）+ affected_partials 关联。"""
@@ -61,7 +66,6 @@ async def test_create_clarification_pending_with_affected() -> None:
     assert [t.id for t in affected] == [task.id]
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_answer_clarification_stales_only_affected() -> None:
     """answer → 写字段 + 仅 affected task stale + 其 partial 失效；非 affected 不变。"""
@@ -93,7 +97,6 @@ async def test_answer_clarification_stales_only_affected() -> None:
     assert other_partial.valid is True
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_answer_without_affected_touches_no_task() -> None:
     """无 affected_partials → answer 仅写字段、不触任何 task。"""
@@ -115,7 +118,6 @@ async def test_answer_without_affected_touches_no_task() -> None:
     assert partial.valid is True
 
 
-@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_answer_idempotent_noop_on_double_answer() -> None:
     """重复答幂等 no-op：第二次不二次覆盖首答、不重复 stale。"""

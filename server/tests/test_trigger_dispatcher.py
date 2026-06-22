@@ -229,6 +229,7 @@ class TestDispatchSuccess:
             trigger_data={"source": "test", "raw_payload": {"event": "test"}},
             debug_mode=False,
             stop_before_node_id=None,
+            user_pat="",
         )
 
     async def test_dispatch_multiple_workflows(self, mock_engine):

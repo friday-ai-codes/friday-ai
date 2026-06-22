@@ -8,12 +8,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agents.chat_runner import ChatRunnerConfig
+from services.provider_config import ProviderType
 
 
 @dataclass
 class _ResolvedStub:
     api_key: str = "sk-test-key"
     base_url: str = "https://api.example.com"
+    provider_type: ProviderType = ProviderType.ANTHROPIC
+    credential_id: None = None
 
 
 @pytest.mark.django_db(transaction=True)

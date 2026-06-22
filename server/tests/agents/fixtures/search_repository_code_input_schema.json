@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Agent tool ``search_repository_code`` 输入契约（per contract）。\n\nPhase 灰度切换时，``space_tools.py`` 的函数体会改用本模型解析 kwargs；\n本 phase 仅冻结字段定义，不动 ``search_repository_code`` 函数签名（per contract）。",
+  "description": "Agent tool ``search_repository_code`` 输入契约（per contract）。\n\nimplementation 灰度切换时，``space_tools.py`` 的函数体会改用本模型解析 kwargs；\n本 phase 仅冻结字段定义，不动 ``search_repository_code`` 函数签名（per contract）。",
   "properties": {
     "include_expansion": {
       "default": true,

@@ -33,7 +33,17 @@ User = get_user_model()
 
 
 @pytest.fixture
-def coding_plan_with_project(db) -> CodingPlan:
+def export_user(db):
+    """导出测试共享用户（owner gate 要求 conversation.created_by 与认证用户一致）。"""
+    return User.objects.create_user(
+        username=f"export_285_{uuid.uuid4().hex[:6]}",
+        email=f"{uuid.uuid4().hex[:6]}@test.local",
+        password="testpass123",
+    )
+
+
+@pytest.fixture
+def coding_plan_with_project(db, export_user) -> CodingPlan:
     """构造 Project + Conversation + CodingPlan，复用 implementation 模型形态。
 
     Project.feishu_doc_folder_token 预填 `fk_fallback`，测试可按需改写。
@@ -46,7 +56,9 @@ def coding_plan_with_project(db) -> CodingPlan:
         feishu_app_id="cli_test",
         feishu_app_secret_encrypted="enc_test",
     )
-    conversation = Conversation.objects.create(project=project, title="对话-checkpoint")
+    conversation = Conversation.objects.create(
+        project=project, title="对话-checkpoint", created_by=export_user
+    )
     return CodingPlan.objects.create(
         conversation=conversation,
         title="示例方案",
@@ -56,15 +68,10 @@ def coding_plan_with_project(db) -> CodingPlan:
 
 
 @pytest.fixture
-def export_client(db) -> APIClient:
+def export_client(db, export_user) -> APIClient:
     """已认证的 APIClient（force_authenticate 注入用户）。"""
-    user = User.objects.create_user(
-        username=f"export_285_{uuid.uuid4().hex[:6]}",
-        email=f"{uuid.uuid4().hex[:6]}@test.local",
-        password="testpass123",
-    )
     client = APIClient()
-    client.force_authenticate(user=user)
+    client.force_authenticate(user=export_user)
     return client
 
 

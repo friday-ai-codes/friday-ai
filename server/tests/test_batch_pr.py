@@ -96,10 +96,9 @@ async def test_batch_create_pr_all_success() -> None:
             return_value=_make_async_filter_qs([repo1, repo2]),
         ),
         patch(
-            "workflows.nodes.git.pr.GitCredential.objects.filter",
-            **{"return_value.afirst": AsyncMock(return_value=credential)},
+            "workflows.nodes.git.pr.aresolve_git_token",
+            new=AsyncMock(return_value="decrypted_token" if credential else None),
         ),
-        patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
         patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
     ):
         node = CreatePRNode()
@@ -156,10 +155,9 @@ async def test_batch_create_pr_partial_failure() -> None:
             return_value=_make_async_filter_qs([repo1, repo2]),
         ),
         patch(
-            "workflows.nodes.git.pr.GitCredential.objects.filter",
-            **{"return_value.afirst": AsyncMock(return_value=credential)},
+            "workflows.nodes.git.pr.aresolve_git_token",
+            new=AsyncMock(return_value="decrypted_token" if credential else None),
         ),
-        patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
         patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
     ):
         node = CreatePRNode()
@@ -256,10 +254,9 @@ async def test_batch_create_pr_cross_reference_disabled() -> None:
             return_value=_make_async_filter_qs([repo1, repo2]),
         ),
         patch(
-            "workflows.nodes.git.pr.GitCredential.objects.filter",
-            **{"return_value.afirst": AsyncMock(return_value=credential)},
+            "workflows.nodes.git.pr.aresolve_git_token",
+            new=AsyncMock(return_value="decrypted_token" if credential else None),
         ),
-        patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
         patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
     ):
         node = CreatePRNode()
@@ -302,10 +299,9 @@ async def test_batch_create_pr_backward_compat() -> None:
             return_value=_make_async_filter_qs([repo]),
         ),
         patch(
-            "workflows.nodes.git.pr.GitCredential.objects.filter",
-            **{"return_value.afirst": AsyncMock(return_value=credential)},
+            "workflows.nodes.git.pr.aresolve_git_token",
+            new=AsyncMock(return_value="decrypted_token" if credential else None),
         ),
-        patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
         patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
     ):
         node = CreatePRNode()
@@ -337,8 +333,8 @@ async def test_batch_create_pr_no_credential() -> None:
             return_value=_make_async_filter_qs([repo]),
         ),
         patch(
-            "workflows.nodes.git.pr.GitCredential.objects.filter",
-            **{"return_value.afirst": AsyncMock(return_value=None)},
+            "workflows.nodes.git.pr.aresolve_git_token",
+            new=AsyncMock(return_value=None),
         ),
     ):
         node = CreatePRNode()

@@ -17,11 +17,13 @@ from chat.models import CodingSession
 
 
 @pytest.fixture()
-def session_with_diff(project, repository):
+def session_with_diff(project, repository, user):
     """创建包含 diff_summary 的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="Diff 摘要测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="Diff 摘要测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -51,11 +53,13 @@ def session_with_diff(project, repository):
 
 
 @pytest.fixture()
-def session_without_diff(project, repository):
+def session_without_diff(project, repository, user):
     """创建未设置 diff_summary 的 CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="无 diff 测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="无 diff 测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
@@ -66,11 +70,13 @@ def session_without_diff(project, repository):
 
 
 @pytest.fixture()
-def session_with_truncated_diff(project, repository):
+def session_with_truncated_diff(project, repository, user):
     """创建 truncated=True 的 diff_summary CodingSession。"""
     from chat.models import Conversation
 
-    conversation = Conversation.objects.create(project=project, title="Truncated diff 测试对话")
+    conversation = Conversation.objects.create(
+        project=project, title="Truncated diff 测试对话", created_by=user
+    )
     return CodingSession.objects.create(
         conversation=conversation,
         repository=repository,
