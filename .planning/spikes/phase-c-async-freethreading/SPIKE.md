@@ -91,6 +91,31 @@ tree-sitter/tokenizers）在 313t/314t 同样无 ft wheel，且 cryptography 在
 不是 CPython 里程碑，而是 onnxruntime/grpcio/psycopg/tree-sitter/tokenizers 的 ft wheel。
 → **watch list 应盯依赖，而非 CPython 版本**。
 
+### 能不能自己构建 wheel？（cp314t 实测）
+
+「有没有预编译 wheel」不等于「能不能用」。实测把阻塞依赖分成四类：
+
+| 依赖 | 自建？ | ft 安全？ | 处置 |
+|---|---|---|---|
+| psycopg（纯 py，不带 [binary]）| 无需编译，直接装 | ✅ 导入后 GIL 仍关 | ✅ 去掉 `[binary]` 即可（慢一点；要快可编 psycopg-c）|
+| tree-sitter（核心）| ✅ 源码构建 ~8s | ✅ 导入后 GIL 仍关 | ✅ 自建可用且 ft 安全 |
+| tree-sitter-python（语法）| ❌ 构建出的是 **abi3** wheel | n/a | ❌ **abi3 与 ft 不兼容**，uv 直接拒；需上游发非 abi3 的 ft wheel 或改构建 |
+| tokenizers | Rust/PyO3，需 cargo 工具链 | 近版 PyO3 支持 ft | △ 可建但需工具链 |
+| grpcio | C++ 大型构建 | ft 支持仍 WIP | ❌ 绕开：qdrant 改用 HTTP 传输 |
+| onnxruntime | C++ 超大构建（小时级）| ft 未支持 | ❌ 硬墙：改为独立进程 offload |
+| mysqlclient | C 构建 | — | ➖ 丢弃（统一 Postgres）|
+
+**致命前提（all-or-nothing）**：只要进程内**任何一个**已导入的 C 扩展未声明
+`Py_mod_gil = Py_MOD_GIL_NOT_USED`，CPython 会**自动把 GIL 重新打开**（带 RuntimeWarning）→
+全部努力归零。所以要审的不是这 7 个，而是 langchain/llama-index/claude-agent-sdk 的
+**整棵传递依赖树**。
+
+**结论**：能自建一部分（psycopg 纯/ tree-sitter 核心甚至 ft 安全），但 abi3 语法包 +
+onnxruntime/grpcio 两堵墙 + 全依赖树审计 + 每次升级重建/自托管私有 wheel 的维护跑步机，
+对一个 IO 密集系统的边际收益严重不划算。**比自建更划算的路 = 消除 + offload**：
+psycopg 改纯 py、qdrant 改 HTTP、丢 mysqlclient、onnxruntime/embedding 拆独立进程；
+剩下只有 tree-sitter 语法 + tokenizers 需要 ft 构建。即便如此，仍建议**搁置**。
+
 ### 重新评估触发条件（满足任一即重测）
 - onnxruntime 发布 cp314t wheel（最大阻塞点），且
 - psycopg + grpcio + tree-sitter 跟进 ft wheel。
