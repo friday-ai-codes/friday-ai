@@ -79,3 +79,11 @@ Runner ServiceAccount 名称：runner.k8s.serviceAccountName 优先，否则 <fu
 {{- printf "%s-postgresql" (include "friday.fullname" .) }}
 {{- end }}
 {{- end }}
+{{/*
+PgBouncer 连接 URL：server(web) 经 PgBouncer transaction pooling 访问内置 Postgres。
+仅在 pgbouncer.enabled + postgresql.enabled 时使用（pgbouncer-deployment.yaml 已 fail-closed
+拦截 external DB 组合）。指向 <fullname>-pgbouncer:6432。
+*/}}
+{{- define "friday.pgbouncerUrl" -}}
+{{- printf "postgres://%s:%s@%s-pgbouncer:6432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "friday.fullname" .) .Values.postgresql.auth.database -}}
+{{- end }}

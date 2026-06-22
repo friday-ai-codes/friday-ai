@@ -160,6 +160,29 @@ postgresql:
 # -- 外部数据库（postgresql.enabled=false 时使用）
 externalDatabase:
   url: "" # postgres://user:${POSTGRES_PASSWORD}@host:5432/dbname
+# -- PgBouncer 连接池（opt-in，默认关闭）
+# 启用后 server(web) 经 PgBouncer transaction pooling 访问 DB（自动注入
+# DB_PGBOUNCER=true + 把 server 的 DATABASE_URL 指向 pgbouncer:6432）；
+# worker/scheduler 仍直连 Postgres —— Procrastinate 依赖 LISTEN/NOTIFY，穿不过
+# transaction pooling。仅支持内置 postgresql.enabled=true（外部 DB + PgBouncer 需自管）。
+pgbouncer:
+  enabled: false
+  image:
+    repository: edoburu/pgbouncer
+    tag: v1.24.1-p1
+    pullPolicy: IfNotPresent
+  poolMode: transaction
+  maxClientConn: 1000
+  defaultPoolSize: 20
+  # >0 才能在 transaction 模式下放行 psycopg3 预编译语句（pgbouncer≥1.21）
+  maxPreparedStatements: 200
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
 # -- Qdrant 向量数据库
 qdrant:
   enabled: true
