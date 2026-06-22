@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
 Phase: Milestone v0.12.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-21 — Completed quick task 20260621-wano: 工作流重写收尾（审批合并/推送解耦/编排路径切换）
+Last activity: 2026-06-23 — Completed quick task 260623-ax1: 数据库连接池 + PgBouncer（Phase A async 高并发底座）
 
 ## Milestone Overview (v0.12.0 — Phases 60–64)
 
@@ -458,6 +458,7 @@ None.
 | 20260617-csb | 会话列表 SDD/技术方案/编码徽标（PlanSession.conversation_id 软引用 + list annotate）+ 仓库卡片 SDD 强调/水印 | 2026-06-17 | (pending) | [20260617-conversation-sdd-coding-badges](./quick/20260617-conversation-sdd-coding-badges/) |
 | 260621-dwn | 工作流画布对标 dify：横向左入右出 Handle + 单一 0.16 bezier 连线 + 一键自动布局 + 边中点/Handle "+" 加节点 + 四元组重复校验 + 节点配置摘要；验收反馈修复（虚线常驻/+ 误触/间距）。成功-失败双出口与端口 ID 对齐后端延后 | 2026-06-21 | 42fcdffd6 | [260621-dwn-dify-right-left-handle-bezier-curvature0](./quick/260621-dwn-dify-right-left-handle-bezier-curvature0/) |
 | 20260621-wano | 工作流重写收尾：合并 ai_plan_approval→human_approval(mode=plan_feishu)（审批统一走 waiting_approval + 数据迁移 0029）+ 飞书推送从 plan_generation/coding 解耦为独立 notify_feishu_im/feishu_doc_create 节点 + 内置模板切换到 ai_plan_research 编排路径（多仓路由+多 agent 并行，点4 上游输入/驳回回流二义性物理隔离） | 2026-06-21 | 83a0c3494 / adb1e3f27 / c3d3b9dbc | [20260621-workflow-approval-notify-orchestration](./quick/20260621-workflow-approval-notify-orchestration/) |
+| 260623-ax1 | Phase A 数据库连接池（角色感知 psycopg3 池 + CONN_MAX_AGE=0，仅 PG 生效、SQLite/MySQL 零回归）+ PgBouncer 支持（compose opt-in profile + helm pgbouncer.enabled，web 走池/worker·scheduler 直连保 Procrastinate LISTEN/NOTIFY） | 2026-06-23 | 1a9cd6a63 / 0c96576ee / 84ce35731 / 5cae1506e | [260623-ax1-db-pool-pgbouncer](./quick/260623-ax1-db-pool-pgbouncer/) |
 
 ## Deferred Items
 
