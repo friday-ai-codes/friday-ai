@@ -35,6 +35,11 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       - DEBUG=${DEBUG:-false}
       - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      # web 置于 PgBouncer(transaction pooling) 之后时设为 true：Django 关闭服务端游标
+      # + 不叠加 psycopg 应用层池（连接复用交给 PgBouncer）。启用 pgbouncer profile 时，
+      # 同时把上面的 DATABASE_URL 指向 pgbouncer:6432，并设 DATABASE_URL_DIRECT 让
+      # worker/scheduler 仍直连 postgres:5432（Procrastinate LISTEN/NOTIFY 需直连）。
+      - DB_PGBOUNCER=${DB_PGBOUNCER:-false}
       - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
       - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN:-}
@@ -87,7 +92,10 @@ services:
     environment:
       - SECRET_KEY=${SECRET_KEY:-}
       - DEBUG=${DEBUG:-false}
-      - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      # worker 必须直连 Postgres：Procrastinate 依赖 LISTEN/NOTIFY，穿不过 PgBouncer
+      # transaction pooling。DATABASE_URL_DIRECT 未设时回退到 DATABASE_URL（与今天行为
+      # 字节一致）；启用 pgbouncer 时设 DATABASE_URL_DIRECT=postgres://...@postgres:5432。
+      - DATABASE_URL=${DATABASE_URL_DIRECT:-${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}}
       - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
       - FRIDAY_PROCESS_ROLE=worker
       - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
@@ -131,7 +139,8 @@ services:
     environment:
       - SECRET_KEY=${SECRET_KEY:-}
       - DEBUG=${DEBUG:-false}
-      - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+      # scheduler 同 worker：直连 Postgres（apscheduler 任务表 + 与 worker 同源约束）。
+      - DATABASE_URL=${DATABASE_URL_DIRECT:-${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}}
       - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY:-}
       - FRIDAY_PROCESS_ROLE=scheduler
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
@@ -242,6 +251,43 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  # PgBouncer 连接池（opt-in）：默认 `docker compose up` 不启动；需要时用
+  #   docker compose --profile pgbouncer up -d
+  # 并按 .env.example「PgBouncer」一节设置：
+  #   DATABASE_URL=postgres://friday:${POSTGRES_PASSWORD}@pgbouncer:6432/friday  # web 走池
+  #   DATABASE_URL_DIRECT=postgres://friday:${POSTGRES_PASSWORD}@postgres:5432/friday  # worker/scheduler 直连
+  #   DB_PGBOUNCER=true
+  # transaction 模式 + max_prepared_statements>0 兼容 psycopg3 预编译语句（pgbouncer≥1.21）。
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    container_name: friday-pgbouncer
+    profiles: ["pgbouncer"]
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-friday}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-friday}
+      - DB_NAME=${POSTGRES_DB:-friday}
+      - LISTEN_PORT=6432
+      - POOL_MODE=transaction
+      - AUTH_TYPE=scram-sha-256
+      - MAX_CLIENT_CONN=${PGBOUNCER_MAX_CLIENT_CONN:-1000}
+      - DEFAULT_POOL_SIZE=${PGBOUNCER_DEFAULT_POOL_SIZE:-20}
+      # >0 才能在 transaction 模式下放行 psycopg3 的预编译语句，否则会
+      # "prepared statement already exists"。
+      - MAX_PREPARED_STATEMENTS=${PGBOUNCER_MAX_PREPARED_STATEMENTS:-200}
+    networks:
+      - friday-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U ${POSTGRES_USER:-friday}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant:latest
