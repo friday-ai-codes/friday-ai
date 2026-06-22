@@ -26,7 +26,7 @@ from agents.tools.schemas.api_tools import (
     ListEndpointsInput,
     ListEndpointsOutput,
 )
-from codegraph.models import Endpoint
+from codegraph.models import Endpoint, Symbol
 
 logger = structlog.get_logger(__name__)
 
@@ -158,7 +158,25 @@ async def _list_endpoints_impl(
             )
         )
 
-    message = "" if endpoints else f"仓库 {repo_id} 中暂无端点数据（需先运行 codegraph 索引）"
+    # 端点为空 ≠ codegraph 未构建：codegraph 可能已建（符号/调用/导入齐全），
+    # 只是该仓库未提取到 HTTP 端点（非 Web 服务，或其路由注册写法尚未被端点
+    # 提取器支持）。用 Symbol 表实际判断，避免给上层 Agent "codegraph 未跑" 的
+    # 误导性结论。
+    codegraph_built = True
+    symbol_count = 0
+    if endpoints:
+        message = ""
+    else:
+        symbol_count = await Symbol.objects.filter(repository_id=repo_id).acount()
+        codegraph_built = symbol_count > 0
+        if codegraph_built:
+            message = (
+                f"该仓库 codegraph 已构建（符号 {symbol_count} 个），但未提取到任何 HTTP 端点。"
+                "这不代表 codegraph 未跑：可能该仓库不是 Web 服务，或其路由注册写法尚未被"
+                "端点提取器支持（符号 / 调用 / 导入关系仍可正常查询）。"
+            )
+        else:
+            message = "该仓库 codegraph 索引尚未构建（Endpoint 与 Symbol 均为空），请先运行 codegraph 索引。"
     output = ListEndpointsOutput(endpoints=endpoints, total=total, message=message)
 
     logger.info(
@@ -167,6 +185,8 @@ async def _list_endpoints_impl(
         returned=len(endpoints),
         total=total,
         truncated=total > effective_limit,
+        codegraph_built=codegraph_built,
+        symbol_count=symbol_count,
     )
 
     return ToolResult(
@@ -178,6 +198,9 @@ async def _list_endpoints_impl(
                 "returned": len(endpoints),
                 "total": total,
                 "truncated": total > effective_limit,
+                # 让 Agent 拿到结构化信号，区分"无端点"与"codegraph 未构建"
+                "codegraph_built": codegraph_built,
+                "symbol_count": symbol_count,
             },
         },
     )

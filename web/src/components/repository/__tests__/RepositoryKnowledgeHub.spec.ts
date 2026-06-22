@@ -5,6 +5,7 @@ import type { Repository } from '~/types'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
+import { getCodegraphStats } from '~/api/codegraph'
 import { repositoriesApi } from '~/api/repositories'
 import RepositoryKnowledgeHub from '../RepositoryKnowledgeHub.vue'
 
@@ -35,6 +36,14 @@ vi.mock('~/api/repositories', () => ({
 
 vi.mock('~/api/codegraph', () => ({
   listGraphHistory: vi.fn().mockResolvedValue({ count: 0, results: [], next: null, previous: null }),
+  // "N 关系" 改读 codegraph 累计 stats（区别于最近一次 build 的 per-run delta）
+  getCodegraphStats: vi.fn().mockResolvedValue({
+    symbols: 0,
+    imports: 0,
+    calls: 0,
+    endpoints: 0,
+    total: 0,
+  }),
 }))
 
 vi.mock('@vueuse/core', async (importOriginal) => {
@@ -154,6 +163,22 @@ describe('repositoryKnowledgeHub', () => {
     await flushPromises()
     // 真实计数应渲染（toLocaleString 千分位），而非旧快照漏写的 0/—
     expect(wrapper.text()).toContain('35,900 语义边')
+  })
+
+  it('结构化图谱「N 关系」读 codegraph 累计 stats（而非最近一次 build 的 per-run delta）', async () => {
+    vi.mocked(getCodegraphStats).mockResolvedValue({
+      symbols: 12678,
+      imports: 2107,
+      calls: 29206,
+      endpoints: 0,
+      total: 43991,
+    })
+    const wrapper = mountHub()
+    await flushPromises()
+    expect(getCodegraphStats).toHaveBeenCalledWith('repo-1')
+    // 43991 = 12678 + 2107 + 29206 + 0（累计），千分位渲染
+    expect(wrapper.text()).toContain('43,991 关系')
+    expect(wrapper.text()).toContain('12678 符号 · 29206 调用')
   })
 
   it('hub 头部渲染 BranchCombobox 并透传 branches', async () => {

@@ -173,6 +173,25 @@ export async function triggerCodegraphIndex(repositoryId: string): Promise<{ mes
   return post<{ message: string }>(`/repositories/${repositoryId}/codegraph/index/`)
 }
 
+/**
+ * 结构化图谱累计计数（GET /codegraph/stats/）。
+ *
+ * 直接 count codegraph 各表，反映当前图谱真实累计规模——区别于
+ * GraphBuildHistory 最近一条的 per-run delta（增量构建只处理变更文件时其
+ * counts 仅反映该批，会导致"关系数"暴跌/误显示）。
+ */
+export interface CodegraphStats {
+  symbols: number
+  imports: number
+  calls: number
+  endpoints: number
+  total: number
+}
+
+export async function getCodegraphStats(repositoryId: string): Promise<CodegraphStats> {
+  return get<CodegraphStats>(`/repositories/${repositoryId}/codegraph/stats/`)
+}
+
 // ============================================================================
 // Playground Search (TEST-01)
 // ============================================================================

@@ -52,7 +52,7 @@ var runCmd = &cobra.Command{
 		var executor ws.ExecutorService
 		switch kind {
 		case "docker":
-			exec, err := docker.NewDockerExecutor(config.GetDefaultImage())
+			exec, err := docker.NewDockerExecutor(config.GetDefaultImage(), config.GetImagePullPolicy())
 			if err != nil {
 				return fmt.Errorf("初始化 Docker 执行器失败: %w", err)
 			}
@@ -65,6 +65,7 @@ var runCmd = &cobra.Command{
 				BackoffLimit:          int32(config.GetK8sBackoffLimit()),
 				TTLSeconds:            int32(config.GetK8sTTLSeconds()),
 				ImagePullSecret:       config.GetK8sImagePullSecret(),
+				ImagePullPolicy:       config.GetImagePullPolicy(),
 				ActiveDeadlineSeconds: config.GetK8sActiveDeadline(),
 				CPURequest:            config.GetK8sCPURequest(),
 				MemoryRequest:         config.GetK8sMemoryRequest(),

@@ -25,6 +25,20 @@ const (
 	jobNamePrefix = "friday-task-"
 )
 
+// resolvePullPolicy 把 runner 统一拉取策略（always/never/missing，大小写不敏感，
+// 兼容 k8s 风格 Always/Never/IfNotPresent）映射为 corev1 拉取策略。
+// 空值或未知值回退 PullIfNotPresent，保持历史默认行为。
+func resolvePullPolicy(policy string) corev1.PullPolicy {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "always":
+		return corev1.PullAlways
+	case "never":
+		return corev1.PullNever
+	default: // missing / ifnotpresent / ""
+		return corev1.PullIfNotPresent
+	}
+}
+
 // buildJobSpec 纯函数装配 batch/v1 Job（便于单测 label/env/backoffLimit/ttl/restartPolicy）。
 // jobName 由调用方经 makeJobName 计算并传入，保持 StartContainer 与 spec 装配使用同一名称。
 func buildJobSpec(cfg Config, task ws.TaskPayload, jobName string, env []corev1.EnvVar) *batchv1.Job {
@@ -45,7 +59,7 @@ func buildJobSpec(cfg Config, task ws.TaskPayload, jobName string, env []corev1.
 		Containers: []corev1.Container{{
 			Name:            "task",
 			Image:           image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			ImagePullPolicy: resolvePullPolicy(cfg.ImagePullPolicy),
 			Env:             env,
 			Ports:           []corev1.ContainerPort{{ContainerPort: answerPort}},
 			Resources:       buildResources(cfg),

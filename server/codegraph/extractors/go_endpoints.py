@@ -6,6 +6,14 @@ per work item（legacy spike T10/T11 决策）：
   - <recv>.Use(...) 不写入 endpoint 表，直接忽略
   - 提取 ogin.G* 参数验证 middleware 元数据写入 metadata JSON 字段
   - work item（已删）：不实装 Group 嵌套前缀合并
+
+Kratos / grpc-gateway 兼容（2026-06 修正）：
+  proto 生成的 ``*_http.pb.go`` 路由注册形如
+  ``r.GET("/v1/...", _Xxx_Method0_HTTP_Handler(srv))``，handler 实参是一个
+  **函数调用**（call_expression），而非裸标识符/选择器。原实现只接受
+  selector_expression/identifier/func_literal，导致这类 handler 全部被判
+  ``handler_not_found`` 跳过、endpoint 表为 0。现已让 handler 提取支持
+  call_expression：取其被调用函数名（如 ``_Xxx_HTTP_Handler``）作为 handler。
 """
 
 from __future__ import annotations
@@ -172,18 +180,28 @@ def _extract_go_string(node: Any) -> str | None:
 
 
 def _extract_handler_name(args: list[Any]) -> str | None:
-    """从参数列表末尾找最后一个 selector_expression / identifier 作为 handler。
+    """从参数列表末尾找 handler 标识。
 
     优先级（从后向前）：
     1. selector_expression → 完整文本（如 newTopic.GetTopicDetailV2）
     2. identifier → 文本（如 handleFunc）
-    3. func_literal → "<anonymous>"
+    3. call_expression → 被调用函数名（Kratos/grpc-gateway 的
+       ``_Xxx_HTTP_Handler(srv)``，取 ``_Xxx_HTTP_Handler``）
+    4. func_literal → "<anonymous>"
     """
     for arg in reversed(args):
         if arg.type == "selector_expression":
             return _node_text(arg)
         if arg.type == "identifier":
             return _node_text(arg)
+        if arg.type == "call_expression":
+            # Kratos / grpc-gateway：r.GET("/path", _Xxx_HTTP_Handler(srv))
+            # handler 是函数调用，取被调用函数名作为 handler 标识。
+            func_node = arg.child_by_field_name("function")
+            if func_node is not None:
+                handler_text = _node_text(func_node)
+                if handler_text:
+                    return handler_text
         if arg.type == "func_literal":
             return "<anonymous>"
     return None

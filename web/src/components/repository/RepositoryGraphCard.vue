@@ -23,6 +23,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   cancelGraphBuild,
   deleteGraph,
+  getCodegraphStats,
   listGraphHistory,
   rebuildGraph,
 } from '~/api/codegraph'
@@ -172,15 +173,21 @@ async function loadRepository() {
 
 async function loadLatestCompletedCounts() {
   try {
-    const res = await listGraphHistory(props.repositoryId, { limit: 1, status: 'completed' })
+    // 4 个实体 count 读 codegraph 累计 stats（反映图谱真实规模），而非最近一次
+    // GraphBuildHistory 的 per-run delta —— 增量构建只处理变更文件时其 counts 仅反映
+    // 该批，会让符号/调用数暴跌误显示。构建耗时（per-run 概念）仍取最近一次 history。
+    const [stats, res] = await Promise.all([
+      getCodegraphStats(props.repositoryId),
+      listGraphHistory(props.repositoryId, { limit: 1, status: 'completed' }),
+    ])
     const item: GraphBuildHistoryItem | undefined = res.results[0]
-    if (item) {
+    if (stats.total > 0 || item) {
       lastCompletedCounts.value = {
-        symbols: item.symbols_count,
-        imports: item.imports_count,
-        calls: item.calls_count,
-        endpoints: item.endpoints_count,
-        durationSeconds: item.duration_seconds,
+        symbols: stats.symbols,
+        imports: stats.imports,
+        calls: stats.calls,
+        endpoints: stats.endpoints,
+        durationSeconds: item?.duration_seconds ?? null,
       }
     }
     else {

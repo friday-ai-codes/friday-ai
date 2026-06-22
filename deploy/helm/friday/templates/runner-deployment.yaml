@@ -45,6 +45,15 @@ spec:
               value: {{ .Values.runner.name | quote }}
             - name: FRIDAY_RUNNER_EXECUTOR
               value: {{ .Values.runner.executor | quote }}
+            {{- if .Values.runner.taskImage.repository }}
+            # 任务（task）容器镜像：runner 按需创建任务容器所用镜像。
+            - name: FRIDAY_RUNNER_IMAGE
+              value: "{{ .Values.runner.taskImage.repository }}:{{ .Values.runner.taskImage.tag | default .Chart.AppVersion }}"
+            {{- end }}
+            # 任务镜像拉取策略（docker/k8s 通用）：always/never/missing。k8s 无共享本机
+            # 缓存，默认 Always 保证发版后各节点按需拉到新 task 镜像（对齐 compose 占位拉新）。
+            - name: FRIDAY_RUNNER_IMAGE_PULL_POLICY
+              value: {{ .Values.runner.taskImagePullPolicy | default "Always" | quote }}
             {{- if $isK8s }}
             # task→runner 回调 host：取本 runner Pod IP（downward API），令任务容器经 Pod IP 回调可达。
             - name: FRIDAY_RUNNER_CALLBACK_HOST

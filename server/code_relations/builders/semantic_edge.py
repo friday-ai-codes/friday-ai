@@ -94,7 +94,7 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
         for chunk_id in dirty_chunk_ids:
             chunk_id_str = str(chunk_id)
 
-            vector, self_file_path = await asyncio.to_thread(
+            vector, self_file_path, vector_name = await asyncio.to_thread(
                 self._fetch_self_vector, client, collection_name, chunk_id_str
             )
             if vector is None or self_file_path is None:
@@ -109,15 +109,21 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
                     ),
                 ],
             )
+            # hybrid（命名向量）collection 必须用 ``using`` 指定向量空间，否则
+            # query_points 报 "Not existing vector name"（dense collection 传 None 即默认）。
+            query_kwargs: dict[str, Any] = {
+                "collection_name": collection_name,
+                "query": vector,
+                "limit": _SEMANTIC_LIMIT,
+                "score_threshold": _SEMANTIC_SCORE_THRESHOLD,
+                "query_filter": query_filter,
+                "with_payload": False,
+                "with_vectors": False,
+            }
+            if vector_name is not None:
+                query_kwargs["using"] = vector_name
             result = await asyncio.to_thread(
-                client.query_points,
-                collection_name=collection_name,
-                query=vector,
-                limit=_SEMANTIC_LIMIT,
-                score_threshold=_SEMANTIC_SCORE_THRESHOLD,
-                query_filter=query_filter,
-                with_payload=False,
-                with_vectors=False,
+                lambda kw=query_kwargs: client.query_points(**kw)
             )
 
             for point in result.points:
@@ -159,8 +165,13 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
         client: Any,
         collection_name: str,
         chunk_id_str: str,
-    ) -> tuple[list[float] | None, str | None]:
-        """scroll 单点拿 (dense vector, file_path)；hybrid 模式取 vector['dense']。"""
+    ) -> tuple[list[float] | None, str | None, str | None]:
+        """scroll 单点拿 (dense vector, file_path, vector_name)。
+
+        vector_name：命名向量（hybrid）collection 返回 "dense"，单向量 collection
+        返回 None —— 供 query_points 的 ``using`` 参数自适应，避免 hybrid collection
+        上报 "Not existing vector name"。
+        """
         from qdrant_client.http import models as qmodels
 
         scroll_result = client.scroll(
@@ -174,17 +185,20 @@ class SemanticEdgeBuilder(BaseEdgeBuilder):
         )
         points, _ = scroll_result
         if not points:
-            return None, None
+            return None, None, None
         p = points[0]
         payload = p.payload or {}
         file_path = payload.get("file_path")
         raw_vec = p.vector
         if raw_vec is None:
-            return None, file_path
+            return None, file_path, None
         if isinstance(raw_vec, dict):
+            # 命名向量 collection：取 dense 空间，query 时需 using="dense"
             vec = raw_vec.get("dense")
+            vector_name: str | None = "dense"
         else:
             vec = raw_vec
+            vector_name = None
         if vec is None:
-            return None, file_path
-        return list(vec), file_path
+            return None, file_path, None
+        return list(vec), file_path, vector_name

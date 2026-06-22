@@ -36,10 +36,13 @@ type Executor interface {
 type DockerExecutor struct {
 	cli          client.APIClient
 	defaultImage string
+	// pullPolicy 任务镜像拉取策略：always / never / missing（空=missing）。
+	pullPolicy string
 }
 
 // NewDockerExecutor 创建 DockerExecutor 并验证连接。
-func NewDockerExecutor(defaultImage string) (*DockerExecutor, error) {
+// pullPolicy 为空时按 missing（本机缺失才拉）处理，保持历史行为。
+func NewDockerExecutor(defaultImage, pullPolicy string) (*DockerExecutor, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("创建 Docker 客户端失败: %w", err)
@@ -47,7 +50,7 @@ func NewDockerExecutor(defaultImage string) (*DockerExecutor, error) {
 	if _, err := cli.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("Docker 连接失败: %w", err)
 	}
-	return &DockerExecutor{cli: cli, defaultImage: defaultImage}, nil
+	return &DockerExecutor{cli: cli, defaultImage: defaultImage, pullPolicy: pullPolicy}, nil
 }
 
 func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (string, string, error) {
@@ -90,24 +93,42 @@ func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload
 	return resp.ID, answerEndpoint, nil
 }
 
-// ensureImage 确保镜像在本地存在；不存在时从 registry 拉取。
-// Runner 创建的是宿主 daemon 上的兄弟容器，compose 不会替 task 镜像做 pull，
-// 因此首次使用发版镜像（ghcr.io/.../task）时必须在这里兜底拉取。
+// ensureImage 按拉取策略保证任务镜像可用：
+//
+//   - never  ：从不联网拉取，仅校验本机已存在（compose task-image 占位 +
+//     `docker compose pull` 负责镜像新鲜度）；本机缺失则报错，不静默回退拉取。
+//   - always ：每次都联网拉取最新。
+//   - missing（默认）：本机缺失才拉，保持独立安装历史行为。
 func (e *DockerExecutor) ensureImage(ctx context.Context, ref string) error {
-	_, err := e.cli.ImageInspect(ctx, ref)
-	if err == nil {
+	switch e.pullPolicy {
+	case "never":
+		if _, err := e.cli.ImageInspect(ctx, ref); err != nil {
+			if client.IsErrNotFound(err) {
+				return fmt.Errorf("镜像本地不存在且拉取策略为 never，请先拉取该镜像: %s", ref)
+			}
+			return fmt.Errorf("检查镜像失败: %w", err)
+		}
 		return nil
+	case "always":
+		return e.pullImage(ctx, ref)
+	default: // missing
+		if _, err := e.cli.ImageInspect(ctx, ref); err == nil {
+			return nil
+		} else if !client.IsErrNotFound(err) {
+			return fmt.Errorf("检查镜像失败: %w", err)
+		}
+		return e.pullImage(ctx, ref)
 	}
-	if !client.IsErrNotFound(err) {
-		return fmt.Errorf("检查镜像失败: %w", err)
-	}
+}
+
+// pullImage 从 registry 拉取镜像并读完响应流（流不读完 pull 不会真正完成）。
+func (e *DockerExecutor) pullImage(ctx context.Context, ref string) error {
 	log.Info().Str("image", ref).Msg("image_pull_started")
 	reader, err := e.cli.ImagePull(ctx, ref, imagetypes.PullOptions{})
 	if err != nil {
 		return fmt.Errorf("拉取镜像失败: %w", err)
 	}
 	defer reader.Close()
-	// 必须读完响应流，pull 才会真正完成
 	if _, err := io.Copy(io.Discard, reader); err != nil {
 		return fmt.Errorf("拉取镜像中断: %w", err)
 	}

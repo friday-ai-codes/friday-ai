@@ -108,6 +108,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 120s
+    # 覆盖镜像内置的 HEALTHCHECK（curl localhost:8000/health 是给 server HTTP 用的）。
+    # worker 复用 server 镜像但不监听 8000，沿用会永远 unhealthy（误导且可能触发编排
+    # 重启）。worker 健康的根本前提是能连上 Postgres（任务队列在 DB），用镜像必带的
+    # psycopg 做轻量连通性检测。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import os,psycopg; psycopg.connect(os.environ['DATABASE_URL'], connect_timeout=5).close()"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # apscheduler cron 单例 scheduler（同 server 镜像 + runapscheduler + role=scheduler）。
   # 首次让 10+1 个 cron 真正运行；单机 compose 默认启用，可用 --scale scheduler=0 关。
@@ -132,6 +145,17 @@ services:
       server:
         condition: service_healthy
     restart: unless-stopped
+    # 同 worker：覆盖镜像内置的 curl:8000 healthcheck（scheduler 不监听 HTTP），
+    # 改为检测 Postgres 连通性（apscheduler 任务表在 DB）。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import os,psycopg; psycopg.connect(os.environ['DATABASE_URL'], connect_timeout=5).close()"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   web:
     image: ${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/web:${FRIDAY_IMAGE_TAG:-latest}
@@ -173,6 +197,10 @@ services:
       # Task 容器镜像：默认用发版时推送到 ghcr 的预构建镜像；
       # 本地源码调试可改成 friday-task:latest（make build-task 构建）。
       - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
+      # Task 镜像拉取策略：compose 下交给 task-image 占位服务 + `docker compose pull`
+      # 统一拉新（见下方 task-image），runner 不再自行联网拉取，避免本机陈旧 latest
+      # 永不更新（曾导致发版后 task 镜像停留在旧版）。always/never/missing。
+      - FRIDAY_RUNNER_IMAGE_PULL_POLICY=${FRIDAY_RUNNER_IMAGE_PULL_POLICY:-never}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./runner/entrypoint.sh:/entrypoint.sh:ro
@@ -182,7 +210,20 @@ services:
     depends_on:
       server:
         condition: service_healthy
+      # 确保 task 镜像在 runner 起来前已被拉到本机（见 task-image 占位服务）。
+      task-image:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  # task 镜像无常驻服务：runner 通过宿主 docker.sock 按需创建任务容器。
+  # 这里用一个"启动即退出(exit 0)"的占位服务，让 `docker compose pull` 把 task 镜像
+  # 拉到本机缓存（task 不在 compose services 内时 compose pull 不会碰它，正是发版后
+  # task 镜像不更新的根因）。runner depends_on 本服务完成后再启动，全程不自行拉取。
+  task-image:
+    image: ${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
+    container_name: friday-task-image
+    entrypoint: ["/bin/true"]
+    restart: "no"
 
   postgres:
     image: postgres:17-alpine
