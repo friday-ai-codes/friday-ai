@@ -28,24 +28,23 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）— ✅ SHIPPED 2026-06-20
+## Current Milestone: v0.13.0 并发治理与索引体验
 
-> 已交付 Phases 60–64（16/16 需求代码层满足、integration_ok、审计 tech_debt）。遗留为真机/真实平台运行期人工验收（见 STATE.md Deferred Items）。下一里程碑待规划。
+> v0.12.0 弹性任务底座已交付（Phases 60–64）。本里程碑聚焦"批量索引大量仓库不打爆资源 + 过程实时可见 + 凭证清晰 + 对话不串台"。
 
-**Goal:** 把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 durable 任务队列系统——**采用 Procrastinate，藏在 Friday 自己的 `DurableTaskService` 适配层后**（业务代码不直接依赖 Procrastinate；Postgres 走 Procrastinate、SQLite/dev 退化为 in-process 非 durable fallback）。统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以**「链接爬取+入库」durable 队列**为首个用户可见垂直切片；并完成 k8s/compose 部署硬化与 runner 改 k8s Job executor，全方位支持 k8s/k0s 多副本/弹性伸缩。
+**Goal:** 按资源分治引入可配置的并发治理（仓库索引/图谱用 Procrastinate 原生 `lock` 槽位池排队、LLM 按 provider 凭证各自限流、容器用 runner.concurrent，**不设全局总上限**），修复 AI 对话跨会话串流，新增超管"全部更新索引"+ 批量建仓，统一索引/图谱/AI 描述的实时进度并修复进度条回退，默认禁用 LSP 仅用 tree-sitter，并把仓库 access token 重构为可选的"密钥提供方(FK)"模型。
 
 **Target features:**
-- **durable 底座 + 适配层**：`DurableTaskService`（`defer/get/cancel/retry_stalled`）隔离队列实现；Postgres→Procrastinate 3.8.1、SQLite/无 `DATABASE_URL`→in-process 非 durable fallback；worker 用独立进程/worker connector（先 `listen_notify=False` polling）。
-- **启动副作用收口**：`FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 门禁 `repositories/codegraph/resumable` 的 `AppConfig.ready()`，worker/migrate 不跑 web-only startup jobs。
-- **周期 rescue + leader 单例**：内置 `retry_stalled_durable_jobs` 周期任务 + `queueing_lock` 单例（替代仅启动补扫与 `flock`），多副本只有一个 leader 扫 stalled。
-- **迁移 index/graph + 收口 ResumableTask**：现有 `wrap_resumable` 调用改 `DurableTaskService.defer`；一次性 migration command 转存量在途行（不双跑）；启动 reconcile 改为"仅无 durable job 接管才回收"；`background_runner` 降级为 dev fallback/轻任务。
-- **爬取+入库 durable 队列（用户可见）**：贴链接→入队→队列可见，开始/停止/重试/断点恢复，刷新与容器重建后不丢；PageIndex/TOC 按 target hash 幂等接入。
-- **部署硬化**：SIGTERM 优雅终止（停领+释放/缩短租约）；compose 与 helm 同构拆 web/worker/scheduler；`terminationGracePeriodSeconds` + PDB + KEDA Postgres scaler + 多副本 Redis channel layer 强约束。
-- **runner 改 k8s Job executor**：去 `/var/run/docker.sock`，经 k8s API 起 Job/Pod（RBAC/日志流/清理/回调契约），k0s/containerd 友好。
+- **AI 对话串流隔离**：流式状态与副作用按 `conversation_id` 隔离，切会话不串台（后台流继续但仅写回所属会话）。
+- **默认禁用 LSP**：索引/图谱默认仅 tree-sitter（Volar/gopls 默认关闭可开关恢复），缓解图谱构建慢。
+- **并发治理（分治）**：索引/图谱 Procrastinate `lock` 槽位锁池（可配上限、原生排队、不和 KEDA 冲突、同仓串行）；LLM 按 `ProviderCredential.max_concurrency` 凭证级限流（排队等待 + 友好提示）；容器复用 `runner.concurrent`；MCP 不限。
+- **实时进度统一 + 进度条修复**：进度单调不回退；图谱实时进度；AI 描述"排队中/生成中"状态。
+- **批量加仓 + 全部更新索引**：超管一键全量重索引；批量建仓支持 CSV 导入数百仓库，受并发上限消费。
+- **access token / 密钥提供方重构**：仓库 token 可选；显式 FK 选择实例凭证或填自有 token；建仓表单按 provider 拼 URL + 失焦校验。
 
-**Key context:** PoC 已 PASS（Procrastinate 3.8.1 / Python 3.14 / Django 6.0 / psycopg 3.3，adrf `defer_async`、worker queue/priority/periodic/retry/stalled rescue 实测通过）。**三条硬前置**：worker 必须独立进程（不能直接拿 DjangoConnector 跑 worker，用 `get_worker_connector()`/官方 management command）；SQLite 只能是非 durable dev fallback（真实 compose/helm 默认 Postgres，`docker-compose.yaml:37`/`settings.py:243`）；先收口 `AppConfig.ready()` 启动副作用（否则 worker/migrate 进程会跑业务 reconcile 误杀在途任务）。**执行语义 at-least-once，不承诺 exactly-once**：DB claim 保证"同一轮领取只一个成功"，但"慢≠死"误判 + 完成未标记即崩仍会重复执行——index/graph/crawl/page_index handler 必须幂等（checkpoint/deterministic key/upsert），外部副作用（飞书通知/建群/MR-PR 创建）上 fencing token 或 outbox。**一个底座、多条逻辑队列**（index/graph/crawl_ingest/page_index/maintenance），各自并发与伸缩，避免长任务堵短任务。**聊天/RAG 流式问答明确不进队列**（请求级，断开让用户重试）。i18n 默认中文。设计底座引用：本次 PoC 调研结论 + `server/resumable/`（现有 lease/CAS/recovery 范式）。
+**Key context:** 部署形态 compose（单 `friday-worker`）与 k8s（worker-deployment + KEDA 按 `procrastinate_jobs.status='todo'` 深度伸缩 maxReplica 5）并存——并发机制必须跨进程生效。**核心决策**：用 Procrastinate 原生 `lock` 槽位池（`lock=index-slot-{hash(repo_id)%N}`）做分类并发上限（原生排队、零空转、不和 KEDA 形成扩容反馈环，同仓恒定同槽→天然串行），**否决**自造"DB 计数准入 + 延迟重投"。LLM 并发上限**挂在每个 provider 凭证上**（各家限制不同，不共用一个数），限流器按凭证 id keyed、Redis 租约信号量跨副本精确、进程内 fallback；chat/深度分析在 server 进程 `ChatAnthropicRunner.stream`，编码在独立容器（受 runner.concurrent 兜底）。`idempotency_key` 即 Procrastinate `queueing_lock`（已防重复入队，与 slot `lock` 正交）。i18n 默认中文；新增凭证/设置复用 `ProviderCredential`/`SystemSetting`/`GitInstanceCredential` 与现有 service 层。
 
-**候选后续方向（见 Backlog）：** Procrastinate `listen_notify=True` 低延迟唤醒、fencing→outbox 演进、workflow/RepoCodingTask 更深度接入、审计/SDD 进阶（AUDITX/SDDX）、图片向量库。
+**候选后续方向（见 Backlog）：** 容器内 LLM 调用接入同一 Redis 限流器（CONCX-01）、限流器按 provider 429 自适应（CONCX-02）、常驻热 LSP 池 + 图谱异步解耦（GRAPHX-01）。
 
 ## Requirements
 
@@ -120,37 +119,32 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **飞书原生 CardKit 流式卡片**：机器人对话回复增量更新（CardKit v1 create/send/stream/settle 封装 + schema 2.0 流式卡），替代 PATCH 全量替换，失败降级既有卡片 — v0.11.0 (CARD-01, `server/services/feishu_im.py`)
 - ✓ **工作流自动建群节点**：`CreateGroupChatNode` 建飞书群 + 拉成员（`FeishuIMClient.create_chat` 建群即拉人）+ chat_id 输出 + 可选写回 `WorkItem.feishu_chat_id`（`WorkItemService.awriteback_feishu_chat_id` 单一入口 INV-6，fail-soft 不阻断） — v0.11.0 (GROUP-01)
 
-### Active（v0.12.0 弹性任务底座）
+### Active（v0.13.0 并发治理与索引体验）
 
-<!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md -->
+<!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md。v0.12.0 弹性任务底座（DURABLE/MIGRATE/IDEMP/CRAWL/PAGEIDX/DEPLOY/RUNNER）已交付，详见 MILESTONES.md 与 milestones/v0.12.0-*。 -->
 
-**durable 底座地基（DURABLE）**
-- ☐ **DURABLE-01**: `DurableTaskService` 适配层隔离队列实现——Postgres 走 Procrastinate 3.8.1、SQLite/无 `DATABASE_URL` 退化 in-process 非 durable fallback；统一 `defer/get/cancel/retry_stalled` + idempotency_key + queue/priority；worker 独立进程（worker connector，先 polling）
-- ☐ **DURABLE-02**: `FRIDAY_PROCESS_ROLE=web|worker|scheduler|migrate|test` 门禁 `repositories/codegraph/resumable` 的 `AppConfig.ready()` 启动副作用，worker/migrate 不跑 web-only reconcile/sweep
-- ☐ **DURABLE-03**: 内置 `retry_stalled_durable_jobs` 周期任务 + `queueing_lock` 单例（leader）扫 stalled 重投，替代仅启动补扫与 `flock` 本地锁；多副本只有一个 leader 执行
-- ☐ **DURABLE-04**: Postgres 专项 CI（GH Actions service container + `postgres_queue` marker）覆盖 defer/priority/retry/stalled rescue/并发 worker 竞争/SQLite fallback，与现有 SQLite 默认测试共存
+**AI 对话串流隔离（STREAM）**
+- ☐ **STREAM-01**: 流式输出进行中切换会话，正在进行的回答不串入当前会话 UI；流式状态与副作用按 `conversation_id` 隔离，后台流继续但仅写回所属会话
 
-**迁移 index/graph + 收口 ResumableTask（MIGRATE）**
-- ☐ **MIGRATE-01**: index/graph 现有 `run_in_background(wrap_resumable(...))` 改 `DurableTaskService.defer`（queue=index/graph，deterministic idempotency_key），`IndexHistory`/`GraphBuildHistory` 仍为进度真相源
-- ☐ **MIGRATE-02**: 一次性 migration command 把存量 PENDING/RUNNING `resumable_tasks` 行按 idempotency key 转 durable job（不双跑，旧行标 migrated）；启动 reconcile 改为"仅无 durable job 接管才回收"；`background_runner` 降级为 dev fallback/轻任务
+**索引后端精简（LSP）**
+- ☐ **LSP-01**: 索引/图谱默认仅用 tree-sitter（Volar/gopls 默认关闭、可经环境开关恢复），向量抽取路径在 LSP 关闭时正确回落 `TreeSitterBackend`
 
-**幂等（IDEMP）**
-- ☐ **IDEMP-01**: durable handler 幂等基线——index/graph/page_index 重复执行经 checkpoint/deterministic key/upsert 结果一致（at-least-once 安全），守护测试覆盖"重复投递不产生重复副作用"
-- ☐ **IDEMP-02**: 外部副作用任务（飞书通知/建群、MR/PR 创建）上 fencing token 或 outbox，重复执行不产生重复外部动作
+**并发治理（CONC）**
+- ☐ **CONC-01**: 仓库索引/图谱并发受可配置上限（系统设置默认索引 5/图谱 3）约束，超出在 durable 队列原生排队（Procrastinate `lock` 槽位池，不和 KEDA 冲突），同仓串行不重复索引
+- ☐ **CONC-02**: 每个 LLM provider 凭证可单独配 `max_concurrency`，chat/深度分析/编码 LLM 调用按凭证 id 限流（Redis 租约信号量 + 进程内 fallback），超限排队 + 超时友好提示，不打到 provider 报错
+- ☐ **CONC-03**: 容器（深度分析/编码）并发受 `runner.concurrent` 约束并暴露/文档化；MCP 工具调用不限并发
 
-**爬取+入库 durable 队列（CRAWL / PAGEIDX）**
-- ☐ **CRAWL-01**: 链接爬取+入库改 durable 任务——后端入队/查询/开始/停止/重试/断点恢复，刷新与容器重建后状态不丢（DB 真相源），at-least-once 幂等入库
-- ☐ **CRAWL-02**: 前端爬取任务队列面板——贴链接入队、队列列表与状态、行内开始/停止/重试、刷新后从后端恢复（不再依赖组件内存）
-- ☐ **PAGEIDX-01**: PageIndex/TOC/summary/tree 生成接入 durable queue（`KnowledgeTreeRebuildView` 等裸 `background_runner` 路径），按 target hash 幂等
+**实时进度（PROG）**
+- ☐ **PROG-01**: 索引进度条单调不回退（消除文件级→chunk 级归零跳变与重触发残留），向量阶段实时展示百分比与阶段文案
+- ☐ **PROG-02**: 图谱构建展示实时进度（百分比 + 当前文件）；AI 描述生成展示"排队中/生成中"状态
 
-**部署硬化（DEPLOY）**
-- ☐ **DEPLOY-01**: worker 优雅终止——SIGTERM 停领新活、跑完/释放或缩短在途租约让其他副本快速接管；helm `terminationGracePeriodSeconds` 配置
-- ☐ **DEPLOY-02**: compose 与 helm 同构拆 web/worker/scheduler（同镜像不同 command），scheduler 单例（leader）跑 cron/rescue
-- ☐ **DEPLOY-03**: KEDA Postgres scaler 按队列深度伸缩（支持 cooldown，按 queue 维度）+ PodDisruptionBudget + 多副本强制 Redis channel layer（fail-closed 提示）
+**批量索引（BATCH）**
+- ☐ **BATCH-01**: 超管在仓库列表页一键"全部更新索引"，批量入队并受 CONC-01 并发上限消费
+- ☐ **BATCH-02**: 批量建仓能力（批量接口或明确复用现有 create 接口循环），支持 CSV 导入数百仓库后受限并发索引
 
-**runner k8s Job executor（RUNNER）**
-- ☐ **RUNNER-01**: runner 抽象出 executor 接口（docker / k8s 两实现），与现有 server↔runner WebSocket/HTTP 回调契约解耦
-- ☐ **RUNNER-02**: k8s Job executor 实现——经 k8s API 起 Job/Pod 跑任务容器（去 `/var/run/docker.sock`），ServiceAccount/RBAC、日志流式回传、Pod 清理、失败重试，k0s/containerd 友好
+**凭证重构（TOKEN）**
+- ☐ **TOKEN-01**: 仓库 token 可选；显式选"密钥提供方"（`GitInstanceCredential` FK）或填自有 token；解析优先级 per-repo → FK → host → 无，老仓库不回退，`has_credential` 反映实例池
+- ☐ **TOKEN-02**: 建仓表单按 provider 拼 URL（前缀只读 + 中间 group/repo 输入 + 固定 `.git`），失焦自动校验仓库存在性/权限（无 token 时按 FK/host fallback）
 
 **Backlog 候选（后续里程碑）：**
 
@@ -255,4 +249,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-20 — start milestone v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）*
+*Last updated: 2026-06-23 — start milestone v0.13.0 并发治理与索引体验*

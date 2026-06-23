@@ -1,62 +1,63 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.12.0
-milestone_name: 弹性任务底座（durable 任务队列与多副本就绪）
-status: Awaiting next milestone
-stopped_at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
-last_updated: "2026-06-20T19:52:46.689Z"
-last_activity: 2026-06-20 — Milestone v0.12.0 completed and archived
+milestone: v0.13.0
+milestone_name: 并发治理与索引体验
+status: planning
+last_updated: "2026-06-23T06:19:26.626Z"
+last_activity: 2026-06-23
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-20 — start milestone v0.12.0)
+See: .planning/PROJECT.md (updated 2026-06-23 — start milestone v0.13.0)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.12.0：把现有"可恢复长任务底座"（`server/resumable/`）演进为生产级 **durable 任务队列**——采用 Procrastinate，藏在 `DurableTaskService` 适配层后（Postgres→Procrastinate / SQLite→in-process 非 durable fallback）；统一承载索引/图谱/PageIndex/爬取等后台任务，支持多副本竞争消费、租约心跳、周期 rescue、leader 选主、优雅终止与按队列深度弹性伸缩；以「链接爬取+入库」durable 队列为首个用户可见垂直切片；完成 k8s/compose 部署硬化与 runner 改 k8s Job executor。
-**Current focus:** Phase 64 — runner k8s Job executor
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.13.0：按资源分治引入可配置并发治理（索引/图谱用 Procrastinate 原生 `lock` 槽位池排队、LLM 按 provider 凭证各自限流、容器用 runner.concurrent，不设全局总上限），修复 AI 对话跨会话串流，新增超管"全部更新索引"+批量建仓，统一索引/图谱/AI 描述实时进度并修复进度条回退，默认禁用 LSP 仅用 tree-sitter，仓库 access token 重构为可选的"密钥提供方(FK)"模型。
+**Current focus:** Phase 65 — AI 对话串流隔离修复
 
 ## Current Position
 
-Phase: Milestone v0.12.0 complete
+Phase: 65 — AI 对话串流隔离修复（ready to plan）
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-23 — Completed quick task 260623-ax1: 数据库连接池 + PgBouncer（Phase A async 高并发底座）
+Status: Roadmap ready — autonomous 可开跑
+Last activity: 2026-06-23 — Milestone v0.13.0 roadmap 创建完成（Phases 65–70 + REQUIREMENTS 11/11 traceability；承接 quick 260623-ax1 PgBouncer Phase A 底座）
 
-## Milestone Overview (v0.12.0 — Phases 60–64)
+## Milestone Overview (v0.13.0 — Phases 65–70)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 60 | durable 底座地基 | DURABLE-01, DURABLE-02, DURABLE-03, DURABLE-04 | ⬜ Not started |
-| 61 | 迁移 index/graph + 收口 ResumableTask | MIGRATE-01, MIGRATE-02, IDEMP-01 | ⬜ Not started |
-| 62 | 爬取+入库 durable 队列 + PageIndex 接入 | CRAWL-01, CRAWL-02, PAGEIDX-01 | ⬜ Not started |
-| 63 | 部署硬化 + 外部副作用 fencing | DEPLOY-01, DEPLOY-02, DEPLOY-03, IDEMP-02 | ⬜ Not started |
-| 64 | runner k8s Job executor | RUNNER-01, RUNNER-02 | ⬜ Not started |
+| 65 | AI 对话串流隔离修复 | STREAM-01 | ⬜ Not started |
+| 66 | 默认禁用 LSP（仅 tree-sitter） | LSP-01 | ⬜ Not started |
+| 67 | 并发治理（槽位锁池 / provider 限流 / 容器上限） | CONC-01, CONC-02, CONC-03 | ⬜ Not started |
+| 68 | 实时进度统一 + 进度条修复 | PROG-01, PROG-02 | ⬜ Not started |
+| 69 | 批量加仓 + 全部更新索引（超管） | BATCH-01, BATCH-02 | ⬜ Not started |
+| 70 | access token / 密钥提供方重构（FK） | TOKEN-01, TOKEN-02 | ⬜ Not started |
 
-**Execution order:** 60 → 61 → 62 → 63 → 64（严格顺序，每阶段建立在前序底座之上）。依赖链：durable 底座地基(60，所有后续的地基) → 迁移 index/graph + 收口 ResumableTask + 幂等基线(61，迁移范式) → 爬取+入库 durable 队列 + PageIndex(62，首个用户可见垂直切片) → 部署硬化 + 外部副作用 fencing(63) → runner k8s Job executor(64，相对独立但排最后)。
+**Execution order:** 65 → 66 → 67 → 68 → 69 → 70。依赖：65（串流，独立低风险打头）、66（禁用 LSP，配置改动缓解图谱慢，独立）、67（并发治理核心基建）→ 68（进度统一，依赖 67 状态字段）、69（全部更新索引，依赖 67 并发上限）；70（token 重构，相对独立、工作量最大，排最后）。65/66/70 与主线相对独立可并行，67 是 68/69 的硬依赖。
 
-**UI 触面（标 UI hint）:** Phase 62（前端爬取任务队列面板 `BatchIngestPanel`，本里程碑唯一 Web 前端重触面）。其余为后端适配层/迁移(60/61)、部署编排(63，helm/compose)、Go runner(64)。
+**UI 触面（标 UI hint）:** Phase 65（chat 前端流式隔离）、Phase 68（仓库索引/图谱/AI 描述进度卡片）、Phase 69（仓库列表页"全部更新索引"按钮）、Phase 70（建仓/编辑/凭证弹窗 + provider URL 拼接）。`/gsd-ui-phase` 可介入 68/69/70 的触面。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
 
-- **采用 Procrastinate 3.8.1，藏在 `DurableTaskService` 适配层后**：业务代码不直接 import Procrastinate；Postgres→Procrastinate、SQLite/无 `DATABASE_URL`→in-process 非 durable fallback；统一接口 `defer/get/cancel/retry_stalled` + idempotency_key + queue/priority。
-- **三条硬前置（PoC 结论）**：① worker 必须独立进程（用 `get_worker_connector()`/官方 management command，不能直接拿 DjangoConnector 跑 worker）；② SQLite 只能是非 durable dev fallback（真实 compose/helm 默认 Postgres，`docker-compose.yaml:37`/`settings.py:243`）；③ 先收口 `AppConfig.ready()` 启动副作用（否则 worker/migrate 进程会跑业务 reconcile 误杀在途任务）。
-- **执行语义 at-least-once，不承诺 exactly-once**：DB claim 仅保证"同一轮领取只一个成功"；"慢≠死"误判 + 完成未标记即崩仍会重复执行——index/graph/crawl/page_index handler 必须幂等（checkpoint/deterministic key/upsert），外部副作用（飞书通知/建群、MR/PR 创建）上 fencing token 或 outbox。
-- **一个底座、多条逻辑队列**（index/graph/crawl_ingest/page_index/maintenance）：各自并发与伸缩，避免长任务（索引）堵短任务（爬取/页面生成）。
-- **scheduler/rescue 单例改 DB leader（`queueing_lock`），弃用本地 `flock`**：`flock` 仅单机有效、跨 Pod 失效；周期 rescue 与 cron 收敛到一个 leader workload。
-- **收口 `ResumableTask`**：Procrastinate/适配层接管生产职责，不三套并存；`background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑。
-- **聊天/RAG 流式问答明确不进队列**：请求级、流式、断开让用户重试。workflow execution / RepoCodingTask 保留自有引擎，只做"从持久化态重驱"的恢复桥接，不扁平成普通 job。
-- **i18n 默认中文**（爬取队列面板文案接入既有 vue-i18n）。
-- **显式非目标 / Out of Scope**：承诺 exactly-once、单一队列塞所有任务、聊天/RAG 进 durable 队列、workflow/RepoCodingTask 整体塞队列、引入 Celery/Temporal/Kafka 等重运维组件、SQLite 下 durable 保证、`listen_notify=True` 低延迟唤醒（留 v2 DURABLEX-01）。
+- **动手前先 `git pull origin main`**：本地落后 origin/main 6 个提交（PgBouncer / worker-scheduler 分流 / 角色感知连接池），并发改造会动 durable/worker 层，以拉取后为基线。
+- **部署形态 compose + k8s 并存**：compose 单 `friday-worker`（`run_worker` 未传 concurrency → 每进程串行）；k8s worker-deployment + KEDA 按 `procrastinate_jobs.status='todo'` 深度伸缩 maxReplica 5。并发机制必须跨进程生效。
+- **并发分治（CONC 核心决策）**：① 索引/图谱用 Procrastinate 原生 `lock` 槽位池 `lock=index-slot-{hash(repo_id)%N}`（N 从 SystemSetting 读，默认索引 5/图谱 3），超限原生留 `todo` 排队、worker 自动跳过、零空转、**不和 KEDA 形成扩容反馈环**，同仓恒定同槽→天然串行防重复索引；**否决**自造"DB 计数准入+延迟重投"。② LLM 上限**挂在每个 `ProviderCredential.max_concurrency`**（各家限制不同，不共用一个数），限流器按凭证 id keyed，Redis 租约信号量跨副本精确 + 进程内 fallback，超限排队 + 超时友好提示。③ 容器复用 `runner.concurrent`；MCP 不限；**不设全局总上限**。
+- **defer 门面增 `lock` 透传**：`idempotency_key` 即 Procrastinate `queueing_lock`（已防 `todo` 重复入队），与 slot `lock`（`doing` 并发）正交并存；KEDA `maxReplicaCount` 应 ≥ N 才能跑满 N。
+- **串流隔离（STREAM）**：流式是 SSE 非 WS，后端按 `conversation_id` 隔离不会串台；根因在前端全局单例 streaming 状态 + 切会话不 abort/不校验。修复=前端按 `conversation_id` 隔离状态与副作用（后台流继续但仅写回所属会话），复用已修复的 ClarificationCard 过滤模式。
+- **禁用 LSP（LSP）**：纯环境开关 `VOLAR_BACKEND_ENABLED` / `GOPLS_BACKEND_ENABLED` 默认改 False（可恢复），验证向量路径回落 `TreeSitterBackend`；图谱慢不只 LSP 冷启动还有逐文件串行抽取，常驻热池+异步解耦留 GRAPHX-01。
+- **进度（PROG）**：`_compute_index_progress` 改单调加权阶段进度（消除文件级→chunk 级归零跳变与重触发残留）；图谱当独立轨展示（"提前 INDEXED"是有意设计，不要把向量 100% 拉回）。
+- **token 重构（TOKEN）**：后端已有 `GitInstanceCredential` 实例池 + `aresolve_git_token`；新增 `Repository.git_instance_credential` FK（可空）+ migration，解析优先级 per-repo → FK → host → 无，老仓库不回退；建仓 token 改可选、TestConnection 支持实例池 fallback；前端 provider URL 拼接 + 失焦校验。
+- **i18n 默认中文**；新增凭证/设置复用 `ProviderCredential`/`SystemSetting`/`SettingKeys`/`GitInstanceCredential` 与现有 service 层，不绕过加密与权限。
+- **显式非目标 / Out of Scope**：全局"所有任务总并发"硬上限、chat 超并发硬 429、DB 计数准入+延迟重投、永久删除 LSP 代码（仅默认关闭可恢复）。
 
-**设计底座引用:** 本里程碑前置 PoC 调研结论（Procrastinate 3.8.1 / Python 3.14 / Django 6.0 / psycopg 3.3，adrf `defer_async`、worker queue/priority/periodic/retry/stalled rescue 实测 PASS）+ 现有 `server/resumable/`（lease/CAS/recovery 范式）、`.planning/PROJECT.md`（Current Milestone v0.12.0 + Key context + Key Decisions 8 条 Pending）、`.planning/REQUIREMENTS.md`（16 v1 需求 + Out of Scope + Traceability）。
+**设计底座引用:** `.planning/PROJECT.md`（Current Milestone v0.13.0 + Key context + Key Decisions）、`.planning/REQUIREMENTS.md`（11 v1 需求 + Out of Scope + Traceability）、`.cursor/plans/并发治理与索引体验改造_d5edeece.plan.md`（完整方案与排查结论）、排查所得关键文件：`server/durable/backends.py`（queueing_lock=idempotency_key）、`server/agents/chat_runner.py`+`llm_factory.py`（LLM 收口）、`server/repositories/index_views.py`（`_compute_index_progress`）、`server/codegraph/apps.py`（LSP 开关）、`server/repositories/models.py`+`server/services/git_credentials.py`（凭证）。
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 
