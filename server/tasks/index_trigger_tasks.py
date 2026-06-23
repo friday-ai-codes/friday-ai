@@ -13,7 +13,6 @@ import time
 from typing import Any
 
 import structlog
-
 from asgiref.sync import sync_to_async
 
 from repositories.models import (
@@ -173,6 +172,7 @@ async def trigger_auto_index(
     # already_indexing / _is_duplicate 业务防抖（与队列层 key 去重互补）。
     # IndexHistory 仍为进度真相源，FileIndex checkpoint 在任务体内复用。
     from durable import QUEUE_INDEX, DurableTaskService
+    from durable.concurrency import aindex_lock
 
     await DurableTaskService.defer(
         "durable_index",
@@ -186,6 +186,8 @@ async def trigger_auto_index(
         },
         queue=QUEUE_INDEX,
         idempotency_key=f"index:{repo_id}",
+        # CONC-01：索引槽位锁池（同仓恒定同槽串行，至多 N 仓并发）
+        lock=await aindex_lock(str(repo_id)),
     )
 
     logger.info(

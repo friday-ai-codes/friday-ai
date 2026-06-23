@@ -56,6 +56,7 @@ from agents.langchain_runner import (
     _CONTEXT_SAFETY_BUFFER,
     ContextWindowExceededError,
 )
+from agents.llm_concurrency import acquire_llm_slot
 from agents.models import AgentSession, ToolCallLog
 from agents.tool_budget import _ToolBudget
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
@@ -113,6 +114,10 @@ class ChatRunnerConfig:
     conversation_id: str = ""
     api_key: str = ""
     api_base_url: str = ""
+    # 并发治理（CONC-02）：凭证 id + 该凭证 LLM 并发上限（0=不限），
+    # 供 astream 前按凭证申请并发槽位限流。
+    credential_id: Any = None
+    max_concurrency: int = 0
     max_turns: int = 30
     timeout_seconds: float = 0
     agent_session: Any = field(default=None)
@@ -143,6 +148,18 @@ def _inject_metadata(data: dict[str, Any], model: str, session_id: str) -> dict[
     payload["model"] = model
     payload["session_id"] = session_id
     return payload
+
+
+async def _astream_with_llm_slot(model: Any, messages: Any, config: ChatRunnerConfig):
+    """在持有凭证级 LLM 并发槽位的前提下消费 model.astream（CONC-02）。
+
+    薄包装生成器：首次迭代触发 :func:`acquire_llm_slot` 申请槽位（超凭证上限排队
+    等待、超时抛 LLMBusyError），整段流式期间持有槽位，生成器结束/关闭即释放。
+    用包装而非在调用处 `async with` 包裹，避免对庞大的 astream 消费循环重新缩进。
+    """
+    async with acquire_llm_slot(config.credential_id, config.max_concurrency):
+        async for chunk in model.astream(messages):
+            yield chunk
 
 
 def _build_human_message_content(
@@ -818,7 +835,7 @@ class ChatAnthropicRunner:
                 else:
                     active_model = model_with_tools
 
-                async for chunk in active_model.astream(messages):
+                async for chunk in _astream_with_llm_slot(active_model, messages, self._config):
                     if not isinstance(chunk, AIMessageChunk):
                         continue
 

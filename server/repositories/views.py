@@ -388,6 +388,7 @@ async def _schedule_default_branch_rolling_index(
     # durable 入队 + deterministic key 去重（index:{repo_id}）；IndexHistory 仍为进度真相源，
     # FileIndex checkpoint 在任务体内复用，重复投递/执行不产生重复数据。
     from durable import QUEUE_INDEX, DurableTaskService
+    from durable.concurrency import aindex_lock
 
     await DurableTaskService.defer(
         "durable_index",
@@ -399,6 +400,8 @@ async def _schedule_default_branch_rolling_index(
         },
         queue=QUEUE_INDEX,
         idempotency_key=f"index:{repo_id}",
+        # CONC-01：索引槽位锁池（同仓恒定同槽串行，至多 N 仓并发）
+        lock=await aindex_lock(str(repo_id)),
     )
 
     repository.index_status = IndexStatus.INDEXING

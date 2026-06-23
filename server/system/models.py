@@ -97,6 +97,14 @@ class SettingKeys:
     HYBRID_SEARCH_ENABLED = "hybrid_search_enabled"
     HYBRID_SEARCH_ALPHA = "hybrid_search_alpha"
 
+    # 并发治理（）：按资源分治的可配置并发上限。
+    # 索引/图谱用 Procrastinate 原生 lock 槽位池排队 —— defer 带
+    # lock=index-slot-{stable_hash(repo_id)%N}，N 从下列设置实时读取，
+    # 超限 job 原生留 todo 排队、worker 自动跳过、零空转；同仓恒定同槽天然串行。
+    # 不设全局总上限（容器走 runner.concurrent、LLM 走 ProviderCredential.max_concurrency）。
+    CONCURRENCY_INDEX_MAX = "concurrency_index_max"  # 默认 5
+    CONCURRENCY_GRAPH_MAX = "concurrency_graph_max"  # 默认 3
+
 
 class CacheVolumeTracker(models.Model):
     """跟踪 Docker 缓存卷的使用情况。
@@ -170,6 +178,16 @@ class ProviderCredential(models.Model):
     base_url = models.CharField(max_length=500, blank=True, default="")
     default_model = models.CharField(max_length=128, blank=True, default="")
     is_active = models.BooleanField(default=True)
+
+    # 并发治理（CONC-02）：该凭证的 LLM 并发上限。
+    # 各家 provider 限制不同，故挂在每个凭证上（不共用一个全局数）。
+    # chat/深度分析/编码的 LLM 调用按凭证 id 限流（Redis 租约信号量 + 进程内 fallback），
+    # 超过该上限时排队等待、超时返回友好「系统繁忙」，不打到 provider 触发 429。
+    # 0 = 不限（默认 50，开箱即用）。
+    max_concurrency = models.PositiveIntegerField(
+        default=50,
+        help_text=("该凭证的 LLM 并发上限（CONC-02）。0=不限，默认 50。"),
+    )
 
     is_default = models.BooleanField(
         default=False,

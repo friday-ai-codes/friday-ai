@@ -743,6 +743,7 @@ class CodegraphRebuildView(APIView):
         # （graph:{repo_id}）；GraphBuildHistory 仍在锁内创建并作真相源，
         # GraphFileIndex checkpoint 在任务体内复用，202 响应契约（history_id）不变。
         from durable import QUEUE_GRAPH, DurableTaskService
+        from durable.concurrency import agraph_lock
 
         repo_id_str = str(repository_id)
         history_id_str = str(history.id)
@@ -757,6 +758,8 @@ class CodegraphRebuildView(APIView):
             },
             queue=QUEUE_GRAPH,
             idempotency_key=f"graph:{repo_id_str}",
+            # CONC-01：图谱槽位锁池——同仓恒定同槽（串行），至多 N 仓并发
+            lock=await agraph_lock(repo_id_str),
         )
 
         logger.info(

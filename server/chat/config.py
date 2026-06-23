@@ -114,6 +114,9 @@ async def build_sdk_config(
         conversation_id=str(conversation.id),
         api_key=resolved.api_key,
         api_base_url=resolved.base_url,
+        # CONC-02：凭证级 LLM 并发限流入参（astream 前按凭证申请槽位）
+        credential_id=resolved.credential_id,
+        max_concurrency=resolved.max_concurrency,
         # Phase P15：30 偏低，跨仓库追踪 / 大型 monorepo 场景容易撞顶。
         # 配合 ChatAnthropicRunner._ToolBudget 的去重 + 单文件硬上限 + 强制
         # final-turn fallback，50 轮足够覆盖绝大多数 chat 流，且单 LLM call
