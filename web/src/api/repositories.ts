@@ -37,6 +37,21 @@ export interface IndexStatusResponse {
   ai_summary_error?: string
 }
 
+// 批量建仓响应（BATCH-02）
+export interface BatchCreateResponse {
+  created: Array<{ id: string, name: string }>
+  failed: Array<{ index: number, name: string, error: unknown }>
+  created_count: number
+  failed_count: number
+}
+
+// 超管全部更新索引响应（BATCH-01）
+export interface ReindexAllResponse {
+  queued: number
+  skipped: number
+  total: number
+}
+
 // OBS-05: 已索引文件清单
 export interface IndexedFileItem {
   file_path: string
@@ -298,6 +313,20 @@ export const repositoriesApi = {
    */
   create: async (data: RepositoryCreate) => {
     return post<Repository>('/repositories/', data)
+  },
+
+  /**
+   * 批量建仓（BATCH-02）：接受仓库数组，逐项创建。前端 CSV 导入解析后调用。
+   */
+  batchCreate: async (repositories: RepositoryCreate[]) => {
+    return post<BatchCreateResponse>('/repositories/batch/', { repositories })
+  },
+
+  /**
+   * 超管「全部更新索引」（BATCH-01）：把全部未删除仓库批量入队，受并发上限排队消费。
+   */
+  reindexAll: async () => {
+    return post<ReindexAllResponse>('/repositories/reindex-all/', {})
   },
 
   /**

@@ -42,6 +42,8 @@ from .views import (
     CacheManagementView,
     GitInstanceCredentialDetailView,
     GitInstanceCredentialsView,
+    ReindexAllView,
+    RepositoryBatchCreateView,
     RepositoryCleanupStatusView,
     RepositoryExclusionRuleDetailView,
     RepositoryExclusionRulesView,
@@ -63,6 +65,17 @@ urlpatterns = [
         "cache/",
         CacheManagementView.as_view(),
         name="cache-management",
+    ),
+    # 批量建仓 + 超管全部更新索引（must be before router 以免被当作 repository id）
+    path(
+        "batch/",
+        RepositoryBatchCreateView.as_view(),
+        name="repository-batch-create",
+    ),
+    path(
+        "reindex-all/",
+        ReindexAllView.as_view(),
+        name="repository-reindex-all",
     ),
     # Test connection (must be before router to avoid being matched as repository id)
     path(

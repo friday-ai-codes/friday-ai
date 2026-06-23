@@ -4,6 +4,7 @@ import os
 import secrets
 import subprocess
 import tempfile
+from typing import Any
 from urllib.parse import quote
 
 import structlog
@@ -417,6 +418,78 @@ async def _schedule_default_branch_rolling_index(
     repository.behind_commits_calculated_at = None
 
 
+async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
+    """建仓核心（单仓 acreate 与批量建仓 BATCH-02 共用）。
+
+    入参为 RepositoryCreateSerializer 已校验的 validated_data（dict 副本）。
+    校验失败抛 ``serializers.ValidationError``（由调用方/DRF 渲染 400）；成功返回
+    创建的 Repository。包含：access_token 非空校验 → 关联空间存在校验 →
+    default/base 分支推断与校验 → 建仓 + 空间关联 + per-repo Git 凭证 + 审计 +
+    后台自动 AI 描述派发。
+    """
+    from projects.models import Project, ProjectRepository
+
+    access_token = data.pop("access_token")
+    git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
+    git_user_email = data.pop("git_user_email", "ai@friday.codes")
+    space_ids = [str(sid) for sid in data.pop("space_ids")]
+
+    if not access_token.strip():
+        raise serializers.ValidationError({"access_token": ["Access Token 不能为空"]})
+
+    spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
+    if len(spaces) != len(set(space_ids)):
+        raise serializers.ValidationError({"space_ids": ["部分空间不存在"]})
+
+    # HEAD 分支由前端从 test-connection 结果带入；未显式选默认分支时自动采用 HEAD 分支
+    head_branch = data.get("remote_head_branch")
+    if head_branch and not data.get("default_branch"):
+        data["default_branch"] = head_branch
+
+    base_branch = data.get("base_branch")
+    if base_branch and "default_branch" not in data:
+        data["default_branch"] = base_branch
+    if base_branch:
+        is_valid = await _validate_base_branch(
+            git_url=data["git_url"],
+            token=access_token,
+            base_branch=base_branch,
+            proxy_url=data.get("proxy_url"),
+        )
+        if not is_valid:
+            raise serializers.ValidationError(
+                {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]}
+            )
+
+    repository = await Repository.objects.acreate(**data)
+
+    await ProjectRepository.objects.abulk_create(
+        [ProjectRepository(project=space, repository=repository) for space in spaces]
+    )
+
+    await GitCredential.objects.acreate(
+        repository=repository,
+        auth_type=AuthType.ACCESS_TOKEN,
+        encrypted_token=encrypt_value(access_token),
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
+    )
+
+    await AuditService.aemit(
+        action=taxonomy.ACTION_CREDENTIAL_CREATED,
+        actor=actor,
+        target_type="git_credential",
+        target_id=repository.id,
+        target_repr=repository.name,
+        after={"provided": True, "git_user_name": git_user_name},
+        source="api",
+    )
+
+    # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort，失败不阻塞）
+    RepositoryViewSet._schedule_auto_summary(str(repository.id))
+    return repository
+
+
 class RepositoryViewSet(ModelViewSet):
     """ViewSet for Repository CRUD operations."""
 
@@ -453,83 +526,11 @@ class RepositoryViewSet(ModelViewSet):
     async def acreate(self, request, *args, **kwargs):
         serializer = RepositoryCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        data = serializer.validated_data
-        access_token = data.pop("access_token")
-        git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
-        git_user_email = data.pop("git_user_email", "ai@friday.codes")
-        space_ids = [str(sid) for sid in data.pop("space_ids")]
-
-        if not access_token.strip():
-            return Response(
-                {"detail": "Access Token 不能为空"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # 校验关联空间存在（所有仓库都必须至少关联一个空间）
-        from projects.models import Project, ProjectRepository
-
-        spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
-        if len(spaces) != len(set(space_ids)):
-            return Response(
-                {"space_ids": ["部分空间不存在"]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # HEAD 分支由前端从 test-connection 结果带入（创建前必须测连拿分支列表）；
-        # 未显式选默认分支时自动采用 HEAD 分支
-        head_branch = data.get("remote_head_branch")
-        if head_branch and not data.get("default_branch"):
-            data["default_branch"] = head_branch
-
-        base_branch = data.get("base_branch")
-        if base_branch and "default_branch" not in data:
-            data["default_branch"] = base_branch
-        if base_branch:
-            is_valid = await _validate_base_branch(
-                git_url=data["git_url"],
-                token=access_token,
-                base_branch=base_branch,
-                proxy_url=data.get("proxy_url"),
-            )
-            if not is_valid:
-                return Response(
-                    {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        # Create repository
-        repository = await Repository.objects.acreate(**data)
-
-        # 建立空间关联
-        await ProjectRepository.objects.abulk_create(
-            [ProjectRepository(project=space, repository=repository) for space in spaces]
+        # 单仓创建复用与批量建仓（BATCH-02）同一核心 helper，校验失败抛
+        # ValidationError 由 DRF 渲染 400（与旧 explicit Response 等价）。
+        repository = await _acreate_repository_core(
+            dict(serializer.validated_data), actor=self.request.user
         )
-
-        # Create credential
-        await GitCredential.objects.acreate(
-            repository=repository,
-            auth_type=AuthType.ACCESS_TOKEN,
-            encrypted_token=encrypt_value(access_token),
-            git_user_name=git_user_name,
-            git_user_email=git_user_email,
-        )
-
-        # 审计：建仓附带 per-repo Git 凭证创建（token 密文绝不入载荷，仅记 provided 布尔）
-        await AuditService.aemit(
-            action=taxonomy.ACTION_CREDENTIAL_CREATED,
-            actor=self.request.user,
-            target_type="git_credential",
-            target_id=repository.id,
-            target_repr=repository.name,
-            after={"provided": True, "git_user_name": git_user_name},
-            source="api",
-        )
-
-        # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort：
-        # Runner 离线 / AI 凭证未配置等失败只记日志，不阻塞建仓响应）。
-        self._schedule_auto_summary(str(repository.id))
-
         # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
         resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)()
         return Response(resp_data, status=status.HTTP_201_CREATED)
@@ -1615,3 +1616,129 @@ class RepositoryCleanupStatusView(APIView):
 
         data = await sync_to_async(lambda: CleanupRunSerializer(run).data)()
         return Response(data)
+
+
+# 批量建仓单次上限（CSV 数百仓库；防一次请求过大）。
+_MAX_BATCH_REPOSITORIES = 500
+
+
+class RepositoryBatchCreateView(APIView):
+    """批量建仓（BATCH-02）——接受仓库数组，逐项复用单仓建仓核心。
+
+    POST /api/repositories/batch/  body: {"repositories": [ {<RepositoryCreateSerializer 字段>}, ... ]}
+    前端 CSV 导入：解析 CSV → 数组 → 调本接口。逐项独立校验/创建，单项失败不影响其余，
+    返回 created / failed（含 index/name/error），支持数百仓库导入。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request, *args, **kwargs):
+        items = request.data.get("repositories")
+        if not isinstance(items, list) or not items:
+            return Response(
+                {"detail": "repositories 必须为非空数组"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(items) > _MAX_BATCH_REPOSITORIES:
+            return Response(
+                {"detail": f"单次最多导入 {_MAX_BATCH_REPOSITORIES} 个仓库"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created: list[dict[str, str]] = []
+        failed: list[dict[str, Any]] = []
+        for idx, item in enumerate(items):
+            name = item.get("name", "") if isinstance(item, dict) else ""
+            serializer = RepositoryCreateSerializer(data=item)
+            if not await sync_to_async(serializer.is_valid)():
+                failed.append({"index": idx, "name": name, "error": serializer.errors})
+                continue
+            try:
+                repo = await _acreate_repository_core(
+                    dict(serializer.validated_data), actor=request.user
+                )
+                created.append({"id": str(repo.id), "name": repo.name})
+            except serializers.ValidationError as exc:
+                failed.append({"index": idx, "name": name, "error": exc.detail})
+            except Exception as exc:  # noqa: BLE001 — 单项失败隔离，不中断批量
+                logger.warning("batch_create_repo_failed", index=idx, name=name, error=str(exc))
+                failed.append({"index": idx, "name": name, "error": str(exc)})
+
+        return Response(
+            {
+                "created": created,
+                "failed": failed,
+                "created_count": len(created),
+                "failed_count": len(failed),
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ReindexAllView(APIView):
+    """超管「全部更新索引」（BATCH-01）——把全部未删除仓库批量入队重索引。
+
+    POST /api/repositories/reindex-all/  (IsSuperUser fail-closed)
+    批量入队的数百仓库受 Phase 67 索引槽位锁池（CONCURRENCY_INDEX_MAX）排队消费，
+    不一次性打爆资源。已在索引中的仓库跳过（不重复入队）。返回已排队 / 跳过 / 总数。
+    """
+
+    permission_classes = [IsSuperUser]
+
+    async def post(self, request, *args, **kwargs):
+        from repositories.index_views import _schedule_index
+
+        repo_ids = [
+            str(rid)
+            async for rid in Repository.objects.filter(is_deleted=False).values_list(
+                "id", flat=True
+            )
+        ]
+
+        queued = 0
+        skipped = 0
+        for rid in repo_ids:
+            repo = await Repository.objects.filter(id=rid).afirst()
+            if repo is None:
+                continue
+            if repo.index_status == IndexStatus.INDEXING:
+                skipped += 1
+                continue
+            # 重置上轮进度残留 + 建 RUNNING history + 置 INDEXING，再经 durable defer
+            # （带 Phase 67 索引槽位锁，超 CONCURRENCY_INDEX_MAX 原生 todo 排队）。
+            await Repository.objects.filter(id=rid).aupdate(
+                index_total_chunks=0,
+                index_processed_chunks=0,
+                index_write_total=0,
+                index_write_processed=0,
+                index_error=None,
+                current_indexing_file="",
+                indexed_files_processed=0,
+                indexed_files_total=0,
+            )
+            history = await IndexHistory.objects.acreate(
+                repository_id=rid,
+                trigger_type=TriggerType.MANUAL,
+                status=IndexHistoryStatus.RUNNING,
+                started_at=timezone.now(),
+            )
+            await Repository.objects.filter(id=rid).aupdate(
+                index_status=IndexStatus.INDEXING,
+                index_stage="排队中...",
+            )
+            try:
+                await sync_to_async(_schedule_index)(rid, str(history.id), trigger="manual")
+                queued += 1
+            except Exception as exc:  # noqa: BLE001 — 单仓入队失败隔离
+                logger.warning("reindex_all_enqueue_failed", repository_id=rid, error=str(exc))
+                await IndexHistory.objects.filter(id=history.id).aupdate(
+                    status=IndexHistoryStatus.FAILED, error_message=str(exc)
+                )
+                await Repository.objects.filter(id=rid).aupdate(
+                    index_status=IndexStatus.FAILED, index_error=str(exc)
+                )
+
+        return Response(
+            {"queued": queued, "skipped": skipped, "total": len(repo_ids)},
+            status=status.HTTP_200_OK,
+        )
