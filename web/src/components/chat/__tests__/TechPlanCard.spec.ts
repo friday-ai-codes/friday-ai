@@ -234,19 +234,22 @@ describe('techPlanCard', () => {
       status: 'draft',
       planId: 'plan-uuid',
       sessionId: 'session-uuid',
-      branchName: 'feat20260520.demo',
+      // 分支格式 {type}/{yymmdd}.{desc}（见 useBranchValidation BRANCH_PATTERN），
+      // 必须可解析否则 shortDesc 为空致按钮 disabled、happy-dom 拦截点击。
+      branchName: 'feat/260520.demo',
     })
     await flushPromises()
-    // 触发 stub 的 Button click
-    const btn = wrapper.find('[data-test="btn"]')
-    await btn.trigger('click')
+    // 卡片可能渲染多个 Button（stub 均为 data-test="btn"）；按文案定位「开始编码」
+    const startBtn = wrapper.findAll('[data-test="btn"]').find(b => b.text().includes('开始编码'))
+    expect(startBtn).toBeTruthy()
+    await startBtn!.trigger('click')
     const emitted = wrapper.emitted('confirm')
     expect(emitted).toBeTruthy()
     expect(emitted![0][0]).toBe('plan-uuid')
     expect(emitted![0][1]).toBe('session-uuid')
-    // branchName 来自 previewBranchName（基于解析的 branch parts）
+    // branchName 来自 previewBranchName（基于解析的 branch parts）：feat/yymmdd.desc
     expect(typeof emitted![0][2]).toBe('string')
-    expect(emitted![0][2]).toMatch(/^feat\d{8}\./)
+    expect(emitted![0][2]).toMatch(/^feat\/\d{6}\./)
   })
 
   it('defaults to collapsed when status is not draft', async () => {
@@ -534,10 +537,11 @@ describe('techPlanCard — FAN-04 multi-repo integration', () => {
     await confirmBtn.trigger('click')
     await flushPromises()
 
-    expect(spy).toHaveBeenCalledWith(
-      ['r1', 'r2'],
-      branchTemplate,
-    )
+    // 组件现额外透传第三参 target_branch（默认 develop）；断言前两参，第三参宽松。
+    expect(spy).toHaveBeenCalled()
+    const call = spy.mock.calls[0]
+    expect(call[0]).toEqual(['r1', 'r2'])
+    expect(call[1]).toBe(branchTemplate)
   })
 
   it('calls store.retrySingleRepository when status row emits retry', async () => {
