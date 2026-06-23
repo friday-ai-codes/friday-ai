@@ -172,6 +172,17 @@ class Repository(models.Model):
         null=True,
         help_text="HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)",
     )
+    # TOKEN-01：可选「密钥提供方」——显式选择某个 GitInstanceCredential（实例池凭证）。
+    # 解析优先级 per-repo GitCredential → 本 FK → host 自动匹配 → 无（见 services.git_credentials）。
+    # SET_NULL：删除实例凭证不级联删仓库（仅断开引用，回退到 host 自动匹配 / 无）。
+    git_instance_credential = models.ForeignKey(
+        "GitInstanceCredential",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="repositories",
+        help_text="可选密钥提供方（实例池凭证）。无 per-repo token 时优先用本 FK 解析 token。",
+    )
     base_branch = models.CharField(
         max_length=100,
         null=True,

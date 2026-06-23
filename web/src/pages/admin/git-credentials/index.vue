@@ -216,6 +216,16 @@ async function removeCredential(cred: GitInstanceCredential) {
       </div>
 
       <div class="p-6 space-y-4">
+        <!-- TOKEN-02：实例凭证「按 provider + host 生效」用途说明 -->
+        <div class="flex items-start gap-2 p-3 rounded-lg border border-border/60 bg-muted/40 text-xs text-muted-foreground">
+          <span class="icon-[lucide--info] mt-0.5 text-primary shrink-0" />
+          <span>
+            实例凭证按 <b>provider + host</b> 生效：同一 Git 实例（host）下的多个仓库可复用一份凭证。
+            建仓时可不填自有 Access Token，改选「密钥提供方」(实例凭证)，或由系统按仓库 URL 的 host 自动匹配此处配置的凭证。
+            解析优先级：仓库自有 token → 仓库指定的密钥提供方 → host 自动匹配 → 无。
+          </span>
+        </div>
+
         <!-- 新建 / 编辑表单 -->
         <div v-if="showForm" class="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-4">
           <h3 class="text-sm font-semibold">

@@ -247,7 +247,10 @@ export interface Repository extends RepositoryBase {
  * 创建仓库请求（包含必填的 Access Token）
  */
 export interface RepositoryCreate extends RepositoryBase {
-  access_token: string
+  /** TOKEN-02：可选——可填自有 token，或经 git_instance_credential_id 选密钥提供方 / host 自动匹配。 */
+  access_token?: string
+  /** TOKEN-01：可选密钥提供方（实例凭证）id。 */
+  git_instance_credential_id?: string | null
   git_user_name?: string
   git_user_email?: string
   /** 必填：所有仓库都必须至少关联一个空间 */
