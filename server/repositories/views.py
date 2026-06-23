@@ -565,11 +565,16 @@ class RepositoryViewSet(ModelViewSet):
     async def acreate(self, request, *args, **kwargs):
         serializer = RepositoryCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # 单仓创建复用与批量建仓（BATCH-02）同一核心 helper，校验失败抛
-        # ValidationError 由 DRF 渲染 400（与旧 explicit Response 等价）。
-        repository = await _acreate_repository_core(
-            dict(serializer.validated_data), actor=self.request.user
-        )
+        # 单仓创建复用与批量建仓（BATCH-02）同一核心 helper。helper 校验失败抛
+        # ValidationError —— 显式 catch 后以 Response 返回 detail，复刻重构前
+        # explicit 400 响应体形状（如 {"base_branch": [...]}），与 adrf 异步异常
+        # 渲染差异脱钩，保证既有契约零回归。
+        try:
+            repository = await _acreate_repository_core(
+                dict(serializer.validated_data), actor=self.request.user
+            )
+        except serializers.ValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
         resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)()
         return Response(resp_data, status=status.HTTP_201_CREATED)

@@ -431,7 +431,7 @@ declare global {
   export type { GraphBuildStreamEvent, ConnectGraphStreamOptions } from './composables/useGraphBuildStream'
   import('./composables/useGraphBuildStream')
   // @ts-ignore
-  export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
+  export type { IndexStreamRepositoryPayload, IndexStreamGraphPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
   import('./composables/useIndexProgressStream')
   // @ts-ignore
   export type { StarNode, StarLink, CloudTerm, KnowledgeSearchItem } from './composables/useKnowledgeCapabilities'
