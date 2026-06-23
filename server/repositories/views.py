@@ -428,14 +428,50 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
     后台自动 AI 描述派发。
     """
     from projects.models import Project, ProjectRepository
+    from repositories.models import GitInstanceCredential
+    from services.git_credentials import _extract_git_host
 
-    access_token = data.pop("access_token")
+    access_token = data.pop("access_token", "") or ""
     git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
     git_user_email = data.pop("git_user_email", "ai@friday.codes")
     space_ids = [str(sid) for sid in data.pop("space_ids")]
+    instance_credential_id = data.pop("git_instance_credential_id", None)
 
-    if not access_token.strip():
-        raise serializers.ValidationError({"access_token": ["Access Token 不能为空"]})
+    # TOKEN-02：token 可选。无 token 时必须可由「密钥提供方」FK 或 host 自动匹配实例池解析，
+    # 否则 fail-loud（绝不建无凭证、无法 clone 的仓库）。
+    instance_credential = None
+    if instance_credential_id:
+        instance_credential = await GitInstanceCredential.objects.filter(
+            id=instance_credential_id
+        ).afirst()
+        if instance_credential is None:
+            raise serializers.ValidationError(
+                {"git_instance_credential_id": ["所选密钥提供方不存在"]}
+            )
+
+    # effective_token：用于建仓期 base_branch 校验（运行期 token 由 aresolve_git_token 解析）。
+    effective_token = access_token
+    has_own_token = bool(access_token.strip())
+    if not has_own_token:
+        from common.encryption import decrypt_value
+
+        # 无自有 token：FK 优先，其次 host 自动匹配实例池
+        resolved_instance = instance_credential
+        if resolved_instance is None:
+            host = _extract_git_host(data.get("git_url"))
+            if host:
+                resolved_instance = await GitInstanceCredential.objects.filter(
+                    host=host
+                ).afirst()
+        if resolved_instance is None:
+            raise serializers.ValidationError(
+                {"access_token": ["未填写 Access Token 且无可用密钥提供方（实例凭证）：请填写 token 或选择/配置密钥提供方"]}
+            )
+        # 绑定 FK（仅在用户显式选择密钥提供方时写 FK；host 自动匹配场景运行期按 host 命中）
+        if instance_credential is not None:
+            data["git_instance_credential_id"] = str(instance_credential.id)
+        if resolved_instance.encrypted_token:
+            effective_token = decrypt_value(resolved_instance.encrypted_token)
 
     spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
     if len(spaces) != len(set(space_ids)):
@@ -452,7 +488,7 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
     if base_branch:
         is_valid = await _validate_base_branch(
             git_url=data["git_url"],
-            token=access_token,
+            token=effective_token,
             base_branch=base_branch,
             proxy_url=data.get("proxy_url"),
         )
@@ -467,13 +503,16 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         [ProjectRepository(project=space, repository=repository) for space in spaces]
     )
 
-    await GitCredential.objects.acreate(
-        repository=repository,
-        auth_type=AuthType.ACCESS_TOKEN,
-        encrypted_token=encrypt_value(access_token),
-        git_user_name=git_user_name,
-        git_user_email=git_user_email,
-    )
+    # TOKEN-02：仅在用户填写自有 token 时建 per-repo GitCredential；否则由密钥提供方
+    # FK / host 实例池在运行期解析（不建空 token 凭证）。
+    if has_own_token:
+        await GitCredential.objects.acreate(
+            repository=repository,
+            auth_type=AuthType.ACCESS_TOKEN,
+            encrypted_token=encrypt_value(access_token),
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
+        )
 
     await AuditService.aemit(
         action=taxonomy.ACTION_CREDENTIAL_CREATED,
@@ -481,7 +520,7 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         target_type="git_credential",
         target_id=repository.id,
         target_repr=repository.name,
-        after={"provided": True, "git_user_name": git_user_name},
+        after={"provided": has_own_token, "git_user_name": git_user_name},
         source="api",
     )
 
@@ -926,8 +965,26 @@ class TestConnectionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if not token:
+                # TOKEN-02：无自有 token → 按密钥提供方 FK / host 自动匹配实例池 fallback 校验
+                from common.encryption import decrypt_value
+                from repositories.models import GitInstanceCredential
+                from services.git_credentials import _extract_git_host
+
+                instance = None
+                fk_id = request.data.get("git_instance_credential_id")
+                if fk_id:
+                    instance = await GitInstanceCredential.objects.filter(id=fk_id).afirst()
+                if instance is None:
+                    host = _extract_git_host(git_url)
+                    if host:
+                        instance = await GitInstanceCredential.objects.filter(
+                            host=host
+                        ).afirst()
+                if instance and instance.encrypted_token:
+                    token = decrypt_value(instance.encrypted_token)
+            if not token:
                 return Response(
-                    {"success": False, "error": "请提供 Access Token"},
+                    {"success": False, "error": "请提供 Access Token 或选择/配置密钥提供方（实例凭证）"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 

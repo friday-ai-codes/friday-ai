@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { GitInstanceCredential } from '~/api/gitInstanceCredentials'
 import type { GitPlatform } from '~/types'
 import { watchDebounced } from '@vueuse/core'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
+import { gitInstanceCredentialsApi } from '~/api/gitInstanceCredentials'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import SpaceMultiSelect from '~/components/repository/SpaceMultiSelect.vue'
 import { Button } from '~/components/ui/button'
@@ -35,11 +37,29 @@ const form = reactive({
   git_platform: 'gitlab' as GitPlatform,
   default_branch: '' as string,
   proxy_url: '',
-  // 凭证信息（必填）
+  // 凭证信息（TOKEN-02：access_token 可选——可填自有 token 或选密钥提供方）
   access_token: '',
+  // TOKEN-01：密钥提供方（实例凭证）id；空串=不指定（按 host 自动匹配或填自有 token）
+  git_instance_credential_id: '',
   git_user_name: 'Friday Codes AI Agent',
   git_user_email: 'ai@friday.codes',
 })
+
+// 密钥提供方（实例凭证）列表：供「不填自有 token」时选择
+const instanceCredentials = ref<GitInstanceCredential[]>([])
+onMounted(async () => {
+  try {
+    instanceCredentials.value = await gitInstanceCredentialsApi.list()
+  }
+  catch {
+    // 加载失败不阻塞建仓：用户仍可填自有 token
+    instanceCredentials.value = []
+  }
+})
+// 有自有 token 或选了密钥提供方任一即视为「凭证已就绪」（host 自动匹配由后端兜底）
+const hasCredentialInput = computed(
+  () => Boolean(form.access_token.trim()) || Boolean(form.git_instance_credential_id),
+)
 
 // 关联空间（必选，至少一个）
 const spaceIds = ref<string[]>([])
@@ -69,8 +89,10 @@ function validate(): boolean {
   else if (!/^https?:\/\//.test(form.git_url)) {
     errors.git_url = '当前仅支持 HTTPS 仓库 URL'
   }
-  if (!form.access_token.trim()) {
-    errors.access_token = '请输入 Access Token'
+  // TOKEN-02：token 可选——但必须有自有 token 或选定密钥提供方之一（host 自动匹配由后端兜底，
+  // 这里仅做最基本引导：两者都空时提示，但不强制阻断 host-匹配场景由后端校验）
+  if (!hasCredentialInput.value && !testResult.value?.success) {
+    errors.access_token = '请填写 Access Token 或选择密钥提供方'
   }
   if (!testResult.value?.success) {
     errors.default_branch = '请先测试连接，从远端分支列表中选择默认分支'
@@ -91,7 +113,7 @@ const testing = ref(false)
 const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string[], head_branch?: string | null, recommended_branch?: string | null } | null>(null)
 
 const canTest = computed(() =>
-  /^https?:\/\//.test(form.git_url.trim()) && Boolean(form.access_token.trim()),
+  /^https?:\/\//.test(form.git_url.trim()) && hasCredentialInput.value,
 )
 
 async function handleTestConnection() {
@@ -104,6 +126,8 @@ async function handleTestConnection() {
     const result = await repositoriesApi.testConnection({
       git_url: form.git_url,
       access_token: form.access_token,
+      // TOKEN-02：无自有 token 时由后端按 FK / host 实例池 fallback 校验
+      git_instance_credential_id: form.git_instance_credential_id || undefined,
       proxy_url: form.proxy_url || undefined,
     })
     testResult.value = result
@@ -128,7 +152,7 @@ async function handleTestConnection() {
 
 // 填完 URL + Token 后自动探测分支列表（防抖，无需手动点按钮）
 watchDebounced(
-  () => [form.git_url, form.access_token, form.proxy_url],
+  () => [form.git_url, form.access_token, form.git_instance_credential_id, form.proxy_url],
   () => {
     testResult.value = null
     form.default_branch = ''
@@ -149,6 +173,8 @@ async function handleSubmit() {
   try {
     const repository = await repositoriesStore.createRepository({
       ...form,
+      // 空串归一为 undefined：后端 UUIDField 不接受空串（TOKEN-01）
+      git_instance_credential_id: form.git_instance_credential_id || undefined,
       space_ids: spaceIds.value,
       remote_head_branch: testResult.value?.head_branch ?? undefined,
     })
@@ -305,18 +331,41 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
           </div>
         </div>
 
-        <!-- Access Token -->
+        <!-- 凭证：密钥提供方（实例凭证）或自有 Access Token（TOKEN-01/02，二选一即可） -->
         <div class="space-y-4">
+          <!-- 密钥提供方（实例凭证）下拉 -->
+          <div v-if="instanceCredentials.length > 0" class="space-y-2">
+            <Label for="git_instance_credential" class="text-foreground">
+              密钥提供方（实例凭证，可选）
+            </Label>
+            <Select v-model="form.git_instance_credential_id">
+              <SelectTrigger id="git_instance_credential" class="h-10 bg-card">
+                <SelectValue placeholder="不指定（填自有 token 或按 host 自动匹配）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">
+                  不指定（填自有 token 或按 host 自动匹配）
+                </SelectItem>
+                <SelectItem v-for="ic in instanceCredentials" :key="ic.id" :value="ic.id">
+                  {{ ic.label || ic.host }}（{{ ic.host }}）
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="text-xs text-muted-foreground">
+              选择已配置的实例凭证后，下方 Access Token 可留空；按 provider + host 生效。
+            </p>
+          </div>
+
           <div class="space-y-2">
             <Label for="access_token" class="flex items-center gap-1 text-foreground">
               Access Token
-              <span class="text-destructive">*</span>
+              <span class="text-muted-foreground text-xs font-normal">（可选）</span>
             </Label>
             <Input
               id="access_token"
               v-model="form.access_token"
               type="password"
-              placeholder="ghp_xxxxxxxxxxxx 或 glpat-xxxxxxxxxxxx"
+              placeholder="ghp_xxxxxxxxxxxx 或 glpat-xxxxxxxxxxxx（留空则用密钥提供方）"
               class="h-10 bg-card"
               :class="{ 'border-destructive': errors.access_token }"
             />
@@ -325,7 +374,7 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
               {{ errors.access_token }}
             </p>
             <p class="text-xs text-muted-foreground">
-              需要仓库读写权限的个人访问令牌（PAT），该令牌会被加密存储
+              需要仓库读写权限的个人访问令牌（PAT），加密存储；留空则使用所选密钥提供方或按 host 自动匹配。
             </p>
           </div>
 

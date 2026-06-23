@@ -2,10 +2,13 @@
 
 单一入口解析仓库的 Git access token，消除散落各处的 per-repo 取 token 逻辑。
 
-解析优先级（per D-02 向后兼容）：
+解析优先级（per D-02 向后兼容 + TOKEN-01 显式 FK）：
 1. per-repo 显式 ``GitCredential.encrypted_token`` —— 既有部署行为不回退，优先返回；
-2. 否则按仓库 URL 的归一化 host 命中 ``GitInstanceCredential`` 实例凭证池；
-3. 都无 → 返回 None（不抛异常、不静默伪造）；调用方保留各自既有「缺凭证」明确报错。
+2. 仓库显式选择的「密钥提供方」``Repository.git_instance_credential`` FK（实例凭证）；
+3. 否则按仓库 URL 的归一化 host 命中 ``GitInstanceCredential`` 实例凭证池；
+4. 都无 → 返回 None（不抛异常、不静默伪造）；调用方保留各自既有「缺凭证」明确报错。
+
+老仓库（仅 per-repo token 或仅 host 匹配，未设 FK）行为零回归：FK 为空时第 2 步天然跳过。
 
 安全契约（per D-04 / 威胁 T-26-02）：
 - token 是 Fernet 密文存库，``decrypt_value`` 为唯一解密出口；
@@ -78,7 +81,21 @@ def resolve_git_token_sync(repo) -> str | None:
         logger.debug("git_token_resolved", repo_id=str(repo.id), source="per_repo", has_token=True)
         return decrypt_value(credential.encrypted_token)
 
-    # ② 按 host 命中实例凭证池
+    # ② 仓库显式选择的密钥提供方 FK（TOKEN-01）——标量取 FK id 避免 async 上下文
+    #    lazy-FK 访问；FK 为空（老仓库）天然跳过，零回归。
+    instance_credential_id = getattr(repo, "git_instance_credential_id", None)
+    if instance_credential_id:
+        fk_instance = GitInstanceCredential.objects.filter(id=instance_credential_id).first()
+        if fk_instance and fk_instance.encrypted_token:
+            logger.debug(
+                "git_token_resolved",
+                repo_id=str(repo.id),
+                source="instance_fk",
+                has_token=True,
+            )
+            return decrypt_value(fk_instance.encrypted_token)
+
+    # ③ 按 host 命中实例凭证池
     host = _extract_git_host(getattr(repo, "git_url", None))
     if host:
         instance = GitInstanceCredential.objects.filter(host=host).first()
@@ -92,7 +109,7 @@ def resolve_git_token_sync(repo) -> str | None:
             )
             return decrypt_value(instance.encrypted_token)
 
-    # ③ 无凭证 → None（调用方保留既有缺凭证报错）
+    # ④ 无凭证 → None（调用方保留既有缺凭证报错）
     logger.debug("git_token_resolved", repo_id=str(repo.id), source="none", has_token=False)
     return None
 

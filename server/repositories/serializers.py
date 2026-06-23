@@ -121,7 +121,19 @@ class RepositorySerializer(serializers.ModelSerializer):
         ]
 
     def get_has_credential(self, obj: Repository) -> bool:
-        return hasattr(obj, "credential") and obj.credential is not None
+        # per-repo 显式凭证
+        if hasattr(obj, "credential") and obj.credential is not None:
+            return True
+        # TOKEN-02：经密钥提供方解析也视为「有凭证」——显式 FK 或 host 自动匹配实例池
+        if obj.git_instance_credential_id:
+            return True
+        from repositories.models import GitInstanceCredential
+        from services.git_credentials import _extract_git_host
+
+        host = _extract_git_host(obj.git_url)
+        if host:
+            return GitInstanceCredential.objects.filter(host=host).exists()
+        return False
 
     def get_methodology(self, obj: Repository) -> str | None:
         """从 facets 派生只读 methodology（如 "SDD"）；无 facets 或未打标时为 None。"""
@@ -141,7 +153,13 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
     space_ids 必填且至少一个：所有仓库都必须关联到至少一个空间。
     """
 
-    access_token = serializers.CharField(write_only=True)
+    # TOKEN-02：access_token 改为可选——可填自有 token，或经 git_instance_credential_id
+    # 选择「密钥提供方」(实例凭证)，或 host 自动匹配实例池。三者皆无时核心 helper 报错。
+    access_token = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    # TOKEN-01：显式选择密钥提供方（实例凭证）。可空。
+    git_instance_credential_id = serializers.UUIDField(
+        write_only=True, required=False, allow_null=True
+    )
     git_user_name = serializers.CharField(default="Friday Codes AI Agent")
     git_user_email = serializers.CharField(default="ai@friday.codes")
     space_ids = serializers.ListField(
@@ -164,6 +182,7 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
             "remote_head_branch",
             "proxy_url",
             "access_token",
+            "git_instance_credential_id",
             "git_user_name",
             "git_user_email",
             "space_ids",

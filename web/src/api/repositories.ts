@@ -477,7 +477,7 @@ export const repositoriesApi = {
   /**
    * 测试仓库连接（新建时使用）
    */
-  testConnection: async (data: { git_url: string, access_token: string, proxy_url?: string }): Promise<TestConnectionResponse> => {
+  testConnection: async (data: { git_url: string, access_token?: string, git_instance_credential_id?: string, proxy_url?: string }): Promise<TestConnectionResponse> => {
     return post<TestConnectionResponse>('/repositories/test-connection/', data)
   },
 
