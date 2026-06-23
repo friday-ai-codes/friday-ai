@@ -51,6 +51,7 @@ from agents.core.events import (
     AgentEvent,
 )
 from agents.core.result import AgentResult
+from agents.llm_concurrency import acquire_llm_slot
 from agents.llm_factory import build_chat_model
 from agents.models import AgentSession, ToolCallLog
 from agents.types import TokenUsage
@@ -492,16 +493,23 @@ class LangChainAgentRunner:
                     )
 
                 aimsg: AIMessageChunk | None = None
-                async for chunk in model_with_tools.astream(messages):
-                    if not isinstance(chunk, AIMessageChunk):
-                        continue
+                # CONC-02：按凭证申请 LLM 并发槽位（仅本 turn 的流式调用持有，
+                # turn 间工具执行期释放）；超凭证上限排队等待、超时抛 LLMBusyError
+                # （被下方 except 转 ERROR 事件友好提示），绝不打到 provider 触发 429。
+                async with acquire_llm_slot(
+                    self._config.resolved.credential_id,
+                    self._config.resolved.max_concurrency,
+                ):
+                    async for chunk in model_with_tools.astream(messages):
+                        if not isinstance(chunk, AIMessageChunk):
+                            continue
 
-                    # LangChain 原生 AIMessageChunk.__add__ 语义（不要自写累加，RESEARCH "Don't Hand-Roll"）
-                    aimsg = chunk if aimsg is None else aimsg + chunk
-                    for event in self._adapt_chunk(chunk):
-                        if event.type == TEXT_DELTA:
-                            accumulated_text.append(event.data.get("text", ""))
-                        yield event
+                        # LangChain 原生 AIMessageChunk.__add__ 语义（不要自写累加，RESEARCH "Don't Hand-Roll"）
+                        aimsg = chunk if aimsg is None else aimsg + chunk
+                        for event in self._adapt_chunk(chunk):
+                            if event.type == TEXT_DELTA:
+                                accumulated_text.append(event.data.get("text", ""))
+                            yield event
 
                 if aimsg is None:
                     continue

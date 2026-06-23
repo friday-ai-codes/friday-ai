@@ -158,6 +158,8 @@ def _schedule_index(
     ``sync_to_async(_schedule_index)`` 包裹后 await（同 ``_acquire_index_lock_async`` 范式），
     避免在事件循环线程上直接 ``async_to_sync``。返回值仅作可观测，调用方不再依赖 Future。
     """
+    from durable.concurrency import index_lock_sync
+
     return async_to_sync(DurableTaskService.defer)(
         "durable_index",
         {
@@ -168,6 +170,8 @@ def _schedule_index(
         },
         queue=QUEUE_INDEX,
         idempotency_key=f"index:{repository_id}",
+        # CONC-01：索引槽位锁池——同仓恒定同槽（串行防重复），至多 N 仓并发
+        lock=index_lock_sync(str(repository_id)),
     )
 
 

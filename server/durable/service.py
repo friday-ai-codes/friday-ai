@@ -88,8 +88,15 @@ class DurableTaskService:
         priority: int = 0,
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
+        lock: str | None = None,
     ) -> str:
-        """入队一个 durable 任务，返回 job id。"""
+        """入队一个 durable 任务，返回 job id。
+
+        ``lock``：Procrastinate 原生 doing 并发锁（同 lock 串行执行），与
+        ``idempotency_key``（= queueing_lock，todo 去重）正交并存。索引/图谱用
+        ``lock=index-slot-{N}`` 槽位池实现可配上限的并发治理（CONC-01）；
+        in-process fallback 无 doing 并发概念，``lock`` 被忽略（dev/pytest 串行）。
+        """
         if use_procrastinate_backend():
             from durable.backends import procrastinate_backend
 
@@ -100,6 +107,7 @@ class DurableTaskService:
                 priority=priority,
                 idempotency_key=idempotency_key,
                 run_at=run_at,
+                lock=lock,
             )
         from durable.backends import in_process_backend
 
@@ -110,6 +118,7 @@ class DurableTaskService:
             priority=priority,
             idempotency_key=idempotency_key,
             run_at=run_at,
+            lock=lock,
         )
 
     @staticmethod

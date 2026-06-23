@@ -225,6 +225,10 @@ class ResolvedProviderConfig:
     credential_id: UUID | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
+    # 并发治理（CONC-02）：该凭证的 LLM 并发上限（0=不限）。由解析时从
+    # ProviderCredential.max_concurrency 透传，供 LLM 调用 chokepoint 按凭证限流。
+    max_concurrency: int = 0
+
 
 @dataclass(frozen=True)
 class ProviderMissingError:
@@ -863,6 +867,7 @@ class ProviderConfigService:
             source=source,
             credential_id=credential.id,
             extra=extra,
+            max_concurrency=int(getattr(credential, "max_concurrency", 0) or 0),
         )
 
     @staticmethod

@@ -41,8 +41,13 @@ class DurableBackend(Protocol):
         priority: int = 0,
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
+        lock: str | None = None,
     ) -> str:
-        """入队一个任务，返回 job id 字符串。"""
+        """入队一个任务，返回 job id 字符串。
+
+        ``lock``：Procrastinate 原生 doing 并发锁（同 lock 串行）；in-process
+        后端无 doing 并发概念，忽略该参数。
+        """
         ...
 
     async def get(self, job_id: str) -> dict[str, Any]:
@@ -103,9 +108,11 @@ class InProcessBackend:
         priority: int = 0,
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
+        lock: str | None = None,
     ) -> str:
         # idempotency_key 直接用作 background_runner 的 name：同 key 二次 defer
         # 会覆盖同名注册（行为可预期、可观测），不静默吞。无 key 时派生稳定 id。
+        # lock（Procrastinate doing 并发锁）在 in-process 后端无对应概念，忽略。
         job_id = idempotency_key or f"durable:{queue}:{uuid.uuid4().hex}"
         _set_job_state(
             job_id,
@@ -232,6 +239,7 @@ class ProcrastinateBackend:
         priority: int = 0,
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
+        lock: str | None = None,
     ) -> str:
         from procrastinate import exceptions
         from procrastinate.contrib.django import app
@@ -249,11 +257,16 @@ class ProcrastinateBackend:
 
         # 仅在显式给出时才透传对应配置项：queueing_lock 让同 key 在 todo 唯一（幂等
         # 入队），schedule_at 落 run_at（延迟调度），priority 影响领取顺序。
+        # lock = Procrastinate 原生 doing 并发锁：同 lock 的 job 串行执行，超限者
+        # 原生留 todo 排队、worker 自动跳过（CONC-01 槽位锁池）；与 queueing_lock
+        # 正交并存（一个控 todo 去重、一个控 doing 并发）。
         configure_options: dict[str, Any] = {"queue": queue, "priority": priority}
         if idempotency_key is not None:
             configure_options["queueing_lock"] = idempotency_key
         if run_at is not None:
             configure_options["schedule_at"] = run_at
+        if lock is not None:
+            configure_options["lock"] = lock
 
         deferrer = task_obj.configure(**configure_options)
         try:

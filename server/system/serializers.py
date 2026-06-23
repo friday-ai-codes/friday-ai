@@ -240,6 +240,7 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
             "is_active",
             "is_default",
             "default_model",
+            "max_concurrency",
             "last_health_check_at",
             "last_health_check_status",
             "last_health_check_error",
@@ -322,6 +323,8 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
     is_default = serializers.BooleanField(required=False, default=False)
     default_model = serializers.CharField(max_length=128, required=True, allow_blank=False)
     available_models = serializers.JSONField(required=True)
+    # CONC-02：该凭证 LLM 并发上限（0=不限，默认 50）
+    max_concurrency = serializers.IntegerField(required=False, default=50, min_value=0)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """scope 一致性 + Pydantic credential_schema dispatch 校验 + default_model 必填。"""
@@ -422,6 +425,8 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
     is_default = serializers.BooleanField(required=False)
     default_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
     available_models = serializers.JSONField(required=False)
+    # CONC-02：该凭证 LLM 并发上限（0=不限）
+    max_concurrency = serializers.IntegerField(required=False, min_value=0)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """含 config 时按 instance.provider_type dispatch Pydantic 校验 + default_model 非空。"""

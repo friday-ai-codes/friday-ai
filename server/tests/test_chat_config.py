@@ -17,6 +17,7 @@ class _ResolvedStub:
     base_url: str = "https://api.example.com"
     provider_type: ProviderType = ProviderType.ANTHROPIC
     credential_id: None = None
+    max_concurrency: int = 0
 
 
 @pytest.mark.django_db(transaction=True)
@@ -167,6 +168,7 @@ class TestBuildSdkConfig:
             base_url: str = "https://api.example.com"
             provider_type: ProviderType = ProviderType.ANTHROPIC
             credential_id: None = None
+            max_concurrency: int = 0
 
         conversation = await Conversation.objects.acreate(
             project=None,

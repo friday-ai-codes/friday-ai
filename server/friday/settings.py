@@ -228,6 +228,29 @@ WORKFLOW_IDEMPOTENCY_REDIS_URL = env.str(
 )
 
 # =============================================================================
+# LLM 并发治理（CONC-02）：按 ProviderCredential 凭证级限流
+# =============================================================================
+# 每个 ProviderCredential 可配 max_concurrency（默认 50，0=不限）。chat/深度分析/
+# 编码的 LLM 调用按凭证 id 限流：配置 Redis 时用租约信号量（跨副本精确），否则
+# 进程内 asyncio.Semaphore fallback（单进程精确、多进程各自计数，降级可用）。
+# 超过上限时排队等待至超时，再抛友好「系统繁忙」错误，不打到 provider 触发 429。
+# Redis URL：显式 LLM_CONCURRENCY_REDIS_URL 优先；否则仅当启用 channel layer redis
+# 时复用其 URL；都没有则走进程内 fallback（空串）。
+LLM_CONCURRENCY_REDIS_URL = env.str(
+    "LLM_CONCURRENCY_REDIS_URL",
+    default=(REDIS_CHANNEL_LAYER_URL if USE_REDIS_CHANNEL_LAYER else ""),
+)
+# 获取并发槽位的最大等待时长（秒），超时抛「系统繁忙」
+LLM_CONCURRENCY_ACQUIRE_TIMEOUT_SECONDS = env.float(
+    "LLM_CONCURRENCY_ACQUIRE_TIMEOUT_SECONDS", default=60.0
+)
+# Redis 租约 TTL（秒）：持有者崩溃后租约自动过期回收，避免永久占槽；
+# 须 > 单次 LLM 调用最长耗时（深度分析可达数分钟），持有期内自动续租。
+LLM_CONCURRENCY_LEASE_TTL_SECONDS = env.int(
+    "LLM_CONCURRENCY_LEASE_TTL_SECONDS", default=900
+)
+
+# =============================================================================
 # 可恢复任务（断点恢复）
 # =============================================================================
 # 真相源 = DB（Postgres/SQLite）：长任务（索引 / 图谱构建等）登记到 ResumableTask，

@@ -32,6 +32,7 @@ logger = structlog.get_logger(__name__)
 def resume_index(task: ResumableTask) -> None:
     """recovery 续驱索引：从 payload 重建后经 durable defer 单一入口投递（同步上下文）。"""
     from durable import QUEUE_INDEX, DurableTaskService
+    from durable.concurrency import index_lock_sync
 
     payload = task.payload or {}
     repository_id = str(payload.get("repository_id") or task.target_id)
@@ -48,6 +49,8 @@ def resume_index(task: ResumableTask) -> None:
         },
         queue=QUEUE_INDEX,
         idempotency_key=f"index:{repository_id}",
+        # CONC-01：索引槽位锁池（同仓恒定同槽串行，至多 N 仓并发）
+        lock=index_lock_sync(repository_id),
     )
 
 
@@ -59,6 +62,7 @@ def resume_index(task: ResumableTask) -> None:
 def resume_graph(task: ResumableTask) -> None:
     """recovery 续驱图谱：从 payload 重建后经 durable defer 单一入口投递（同步上下文）。"""
     from durable import QUEUE_GRAPH, DurableTaskService
+    from durable.concurrency import graph_lock_sync
 
     payload = task.payload or {}
     repository_id = str(payload.get("repository_id") or task.target_id)
@@ -75,6 +79,8 @@ def resume_graph(task: ResumableTask) -> None:
         },
         queue=QUEUE_GRAPH,
         idempotency_key=f"graph:{repository_id}",
+        # CONC-01：图谱槽位锁池（同仓恒定同槽串行，至多 N 仓并发）
+        lock=graph_lock_sync(repository_id),
     )
 
 
