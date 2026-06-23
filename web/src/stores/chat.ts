@@ -11,6 +11,7 @@ import type { RoutingDecisionData } from '~/types/routing'
 import {
   confirmCodingSession as apiConfirmCodingSession,
   confirmCodingSessionWithBranch as apiConfirmCodingSessionWithBranch,
+  skipClarification as apiSkipClarification,
   createConversation,
   createSessionsForPlan,
   deleteConversation,
@@ -23,11 +24,10 @@ import {
   interruptConversation,
   listConversations,
   patchConversation,
-  skipClarification as apiSkipClarification,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
 import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
-import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
+import { connectSSE } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
 import { useAuthStore } from '~/stores/auth'
 import { useRoutingStore } from '~/stores/routing'
@@ -1368,7 +1368,31 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function handleSSEEvent(event: SSEEvent) {
+  /**
+   * SSE 事件分派。
+   *
+   * `ownerConversationId`：发起本次流式的会话 id（由 `sendMessage` 闭包捕获并注入）。
+   * 跨会话串流防护核心 —— 当 owner 与当前会话不一致（用户已切走）时，后台流
+   * **继续执行**（后端仍 finalize 落库），但事件**不写当前会话 UI** 的 streaming
+   * state；唯一例外是 `title_generated`，仍把所属会话在列表里的标题更新（不触当前视图）。
+   * 复用 ClarificationCard 的「写入按 conversation 维度过滤」范式。
+   *
+   * 未传 ownerConversationId 时（旧调用 / 单测 `_dispatchSSE`）按前台处理，行为零回归。
+   */
+  function handleSSEEvent(event: SSEEvent, ownerConversationId?: string) {
+    const isForeground = !ownerConversationId || ownerConversationId === currentConversationId.value
+    if (!isForeground) {
+      // 后台会话流：仅允许更新所属会话在列表中的标题，其余一律不写当前 UI。
+      if (event.type === 'title_generated' && event.title && ownerConversationId) {
+        const conv = conversations.value.find(c => c.id === ownerConversationId)
+        if (conv)
+          conv.title = event.title
+        else if (pendingConversation.value?.id === ownerConversationId)
+          pendingConversation.value = { ...pendingConversation.value, title: event.title }
+      }
+      return
+    }
+
     // 用户已中断，忽略后续事件（仅保留 message_complete 用于清理）
     if (streamingStatus.value === 'interrupted' && event.type !== 'message_complete')
       return
@@ -1936,6 +1960,10 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = true
     const controller = new AbortController()
     abortController.value = controller
+    // 本流独立的 run_id（按流持有，避免并发流互相覆盖；替代模块级 getCurrentRunId）
+    const streamRunIdRef: { value: string | null } = { value: null }
+    // 串流隔离：事件回写以发起会话为权威归属，由 handleSSEEvent 守护是否写当前 UI。
+    const ownerConversationId = conversationId
 
     try {
       // 检索分支由 backend 自动按 base branch 选取，前端不再传 branch 字段
@@ -1945,29 +1973,41 @@ export const useChatStore = defineStore('chat', () => {
         conversationId,
         content,
         selectedRole.value,
-        (event: SSEEvent) => handleSSEEvent(event),
+        (event: SSEEvent) => handleSSEEvent(event, ownerConversationId),
         controller.signal,
         {
           forceDeepAnalysis: forceDeepAnalysis.value,
           feishuDocId,
           inputParts: userInputParts,
+          onRunId: (id) => { streamRunIdRef.value = id },
         },
       )
     }
     catch (e) {
       if ((e as Error).name !== 'AbortError') {
-        // SSE 断线恢复：连接异常但流仍在后端执行时，切换到 runtime 轮询
-        const runId = getCurrentRunId()
+        // SSE 断线恢复：连接异常但流仍在后端执行时，切换到 runtime 轮询。
+        // 仅当用户仍停留在发起会话时才轮询当前会话（切走则后台由 DB finalize）。
+        const runId = streamRunIdRef.value
         if (runId && !streamingContent.value) {
-          scheduleRuntimePoll(conversationId, 1000)
+          if (ownerConversationId === currentConversationId.value)
+            scheduleRuntimePoll(conversationId, 1000)
           return
         }
-        error.value = e instanceof Error ? e.message : '发送消息失败'
+        // 错误仅在用户仍在发起会话时写当前 UI，避免把 A 的错误显示到 B。
+        if (ownerConversationId === currentConversationId.value)
+          error.value = e instanceof Error ? e.message : '发送消息失败'
       }
     }
     finally {
-      isStreaming.value = false
-      abortController.value = null
+      // 串流隔离：用户是否仍停留在发起本次流式的会话。切走后，所有「写当前 UI」
+      // 的收尾（merge 到 messages / 轮询当前会话 / 重置 streaming / 写 error）都
+      // 跳过；后端已 finalize 落库，切回时由 selectConversation/runtime 恢复。
+      // 草稿会话提升到侧栏列表（list 级，不触当前视图）仍无条件执行。
+      const isCurrent = ownerConversationId === currentConversationId.value
+      if (isCurrent) {
+        isStreaming.value = false
+        abortController.value = null
+      }
 
       // —— 草稿会话收尾（最先处理，且必须早于「waiting → scheduleRuntimePoll + return」
       //     的早退逻辑；否则下面的 return 会跳过 pendingConversation 提升，
@@ -1991,13 +2031,19 @@ export const useChatStore = defineStore('chat', () => {
         pendingConversation.value = null
         // 首条失败：记录失败内容供「重试」按钮使用，并短路掉下面 waiting / merge
         // 逻辑（无任何流内容，避免把空消息塞进 messages）；会话本身保留为草稿。
-        if (error.value && !hadStreamingResponse) {
+        // 仅在用户仍停留发起会话时写当前 UI（串流隔离）。
+        if (isCurrent && error.value && !hadStreamingResponse) {
           lastFailedContent.value = content
           messages.value = messages.value.filter(m => m.id !== userMessage.id)
           resetStreamingState()
           return
         }
       }
+
+      // 串流隔离：用户已切到其他会话 —— 不写当前 UI（merge/poll/reset/error 全跳过）。
+      // 后端已 finalize 落库，切回发起会话时由 selectConversation/runtime 恢复内容。
+      if (!isCurrent)
+        return
 
       // ↓↓↓ 以下保持 legacy 之前的 finally 结构不变（流式合并 / waiting 早退）↓↓↓
 
