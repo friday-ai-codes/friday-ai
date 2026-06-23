@@ -175,6 +175,9 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         )
         await self._update_assignment_status(task_id, "completed")
         await _alog_runner_event(self.runner.id, "task_completed", {"task_id": task_id})
+        # ：完成即释放一个并发槽位并续派内存队列，
+        # 使批量派发（如几百个 repo_summary）随空槽连续消费、逐个跑完。
+        await self._free_runner_slot_and_drain()
 
     async def _handle_task_failed(self, content):
         payload = content.get("payload", {})
@@ -191,6 +194,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await _alog_runner_event(
             self.runner.id, "task_failed", {"task_id": task_id, "error": payload.get("error", "")}
         )
+        # ：失败同样释放并发槽位并续派内存队列（与完成路径对称）。
+        await self._free_runner_slot_and_drain()
 
     async def _handle_task_question(self, content):
         payload = content.get("payload", {})
@@ -565,6 +570,27 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await RunnerTaskAssignment.objects.filter(
             runner=self.runner, session__session_id=session_id, status__in=["assigned", "running"]
         ).aupdate(**updates)
+
+    async def _free_runner_slot_and_drain(self) -> None:
+        """任务终态后释放一个并发槽位 + 续派内存待派发队列（）。
+
+        - 服务端立即把 ``Runner.current_tasks`` 减 1（下限 0），不必等 30s 后的下一次
+          心跳，使刚释放的槽位对 ``_try_assign`` 即时可见；心跳上报的绝对值随后会
+          权威校正任何漂移。
+        - 调 ``dispatcher.drain_pending()`` 把队列里等待的任务分配到现在的空槽。
+
+        修复批量 repo_summary/PageIndex 派发"只跑前 N 个、其余卡死"的问题。
+        """
+        from django.db import models as db_models
+        from django.db.models.functions import Greatest
+
+        from runners.dispatcher import get_dispatcher
+        from runners.models import Runner
+
+        await Runner.objects.filter(id=self.runner.id).aupdate(
+            current_tasks=Greatest(db_models.F("current_tasks") - 1, db_models.Value(0)),
+        )
+        await get_dispatcher().drain_pending()
 
     async def _update_channel_name(self, channel_name: str):
         self.runner.channel_name = channel_name
