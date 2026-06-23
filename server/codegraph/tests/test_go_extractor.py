@@ -161,12 +161,19 @@ class TestGoGinHandler:
         json_qualifiers = {c.callee_qualifier for c in calls if c.callee_name == "JSON"}
         assert "c" in json_qualifiers
 
-    def test_endpoints_empty_for_go(self, go_parser, go_gin_handler_source):
-        """Go AST 不触发 Python endpoint decorator → 返空 list（per CONTEXT Deferred）。"""
+    def test_endpoints_extracted_for_go_treesitter(self, go_parser, go_gin_handler_source):
+        """：默认禁用 gopls 后 go 走 tree-sitter backend，gin 路由 endpoint 被抽取。
+
+        旧断言（endpoints==[]）建立在 gopls backend（GOPLS_BACKEND_ENABLED=True，
+        gopls 路径不抽 gin 路由）之上。Phase 66 默认禁用 LSP 后 BACKEND_REGISTRY['go']
+        回落 TreeSitterBackend，gin `r.GET/r.POST` 路由被 tree-sitter 抽取为 EndpointData。
+        """
         tree = go_parser.parse(go_gin_handler_source.encode("utf-8"))
         ctx = FileContext(file_path="handler.go", language="go", repository_id="r1")
         extractor = GraphExtractor()
 
         bundle = extractor.extract_all(tree, go_gin_handler_source, ctx)
 
-        assert bundle.endpoints == []
+        methods = {(e.http_method, e.url_path) for e in bundle.endpoints}
+        assert ("GET", "/users/:id") in methods
+        assert ("POST", "/users") in methods
