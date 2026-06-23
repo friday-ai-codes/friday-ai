@@ -32,6 +32,9 @@ export interface IndexStatusResponse {
   current_indexing_file: string
   indexed_files_processed: number
   indexed_files_total: number
+  // PROG-02: AI 描述生成状态（not_started/pending/running/completed/failed）
+  ai_summary_status?: string
+  ai_summary_error?: string
 }
 
 // OBS-05: 已索引文件清单

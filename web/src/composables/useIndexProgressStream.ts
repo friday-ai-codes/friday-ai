@@ -40,6 +40,22 @@ export interface IndexStreamRepositoryPayload {
   current_indexing_file?: string
   indexed_files_processed?: number
   indexed_files_total?: number
+  // PROG-02: AI 描述生成状态（not_started/pending/running/completed/failed）
+  ai_summary_status?: string
+  ai_summary_error?: string
+}
+
+/** 图谱构建进度（SSE 帧顶层 graph 段，与 repository 平级，PROG-01 独立轨）。 */
+export interface IndexStreamGraphPayload {
+  status: string
+  stage: string
+  files_processed: number
+  files_total: number
+  percent: number
+  current_file: string
+  started_at: string | null
+  edge_count_so_far: number
+  error_message: string
 }
 
 export type IndexStreamEvent
@@ -56,6 +72,8 @@ export type IndexStreamEvent
     // 故 295-01 在 IndexHistoryItem 上新增的 delta 字段在此天然继承，
     // 消除「后端发了 delta 字段、前端类型没有」的 drift。
     running_history: IndexHistoryItem | null
+    // PROG-01：图谱构建独立轨（后端 SSE 帧顶层 graph 段，与 repository 平级）
+    graph?: IndexStreamGraphPayload | null
   }
   | { type: 'done', reason: string }
 

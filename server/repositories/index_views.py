@@ -61,16 +61,23 @@ logger = structlog.get_logger(__name__)
 INDEX_CANCEL_MESSAGE = "用户已停止索引"
 
 
-def _compute_index_progress(repository: Repository) -> dict[str, Any]:
-    """根据 Repository 字段计算 overall_progress / overall_stage。
+# 单调加权阶段进度（PROG-01）：把整个索引拆成两个连续阶段映射到 [0,100]，
+# 解析阶段封顶 FILE_PHASE_CEIL（解析相对 embedding 快、占比小），chunk(embedding+write)
+# 阶段从该上限连续向上到 100。两阶段在边界处衔接（解析最高 = chunk 起点），消除
+# 「文件级 90% → chunk 级 0%」的归零跳变，全程单调不回退。
+_FILE_PHASE_CEIL = 20
 
-    进度口径（contract 续传重构后）：
-      1. **文件级优先**：若 ``indexed_files_total > 0``，使用
-         ``indexed_files_processed / indexed_files_total`` 作为百分比。
-         这一口径在按文件批 _flush_batch 模式下严格单调递增，且中断续传时
-         processed 从已 skip 数起步，百分比天然不归零。
-      2. **chunks 级兜底**：仅当文件级字段未设置（老记录或未走重构路径）时，
-         回退到旧的"embed × 0.7 + write × 0.3"加权口径。
+
+def _compute_index_progress(repository: Repository) -> dict[str, Any]:
+    """根据 Repository 字段计算 overall_progress / overall_stage（单调加权阶段进度）。
+
+    进度口径（PROG-01 单调重构）：
+      - **解析阶段**（``total_chunks == 0``）：``files_processed/files_total`` 映射到
+        ``[0, _FILE_PHASE_CEIL]``。解析只代表 scan/parse/checkpoint 完成，封顶 20%，
+        绝不显示「100% 索引文件中」这种误导态。
+      - **chunk 阶段**（``total_chunks > 0``）：``embed×0.7 + write×0.3`` 映射到
+        ``[_FILE_PHASE_CEIL, 100]``。chunk 总量一建立即从 20% 续接（≥ 解析阶段上限），
+        消除归零跳变；embedding/upsert 推进时单调上升至 100%。
 
     stage 文案：优先采用 indexer 显式上报的 ``index_stage``，缺省时按 chunks 计数推断。
     """
@@ -84,14 +91,18 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
     files_processed = repository.indexed_files_processed or 0
 
     if total_chunks > 0:
-        embedding_pct = (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
-        write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
-        overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
+        # chunk 阶段：embed/write 加权（0..1）线性映射到 [_FILE_PHASE_CEIL, 100]。
+        embed_ratio = min(processed_chunks / total_chunks, 1.0) if total_chunks > 0 else 0.0
+        write_ratio = min(write_processed / write_total, 1.0) if write_total > 0 else 0.0
+        chunk_combined = embed_ratio * 0.7 + write_ratio * 0.3
+        overall_progress = min(
+            int(round(_FILE_PHASE_CEIL + chunk_combined * (100 - _FILE_PHASE_CEIL))), 100
+        )
     elif files_total > 0:
-        # 文件计数只代表 scan/parse/checkpoint 判断完成，不代表 embedding/upsert 完成。
-        # 因此在 chunk 总量尚未建立前最多显示到 90%，避免"100% 索引文件中..."
-        # 这种误导性状态。
-        overall_progress = min(int(files_processed / files_total * 100), 90)
+        # 解析阶段：封顶 _FILE_PHASE_CEIL，避免解析完成即显示高百分比。
+        overall_progress = min(
+            int(round(files_processed / files_total * _FILE_PHASE_CEIL)), _FILE_PHASE_CEIL
+        )
     else:
         overall_progress = 0
 
@@ -117,6 +128,9 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
         "current_indexing_file": repository.current_indexing_file or "",
         "indexed_files_processed": files_processed,
         "indexed_files_total": files_total,
+        # PROG-02：AI 描述生成状态（排队中/生成中/完成/失败）前端可见
+        "ai_summary_status": repository.ai_summary_status or "",
+        "ai_summary_error": repository.ai_summary_error or "",
     }
 
 
@@ -192,6 +206,9 @@ class IndexStatusSerializer(serializers.Serializer):
     current_indexing_file = serializers.CharField(allow_blank=True, default="")
     indexed_files_processed = serializers.IntegerField(default=0)
     indexed_files_total = serializers.IntegerField(default=0)
+    # PROG-02：AI 描述生成状态
+    ai_summary_status = serializers.CharField(allow_blank=True, default="")
+    ai_summary_error = serializers.CharField(allow_blank=True, default="")
 
 
 class RepositoryBranchIndexRowSerializer(serializers.ModelSerializer):

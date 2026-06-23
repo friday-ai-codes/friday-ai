@@ -272,6 +272,19 @@ const overallStage = computed(() => {
   return indexStatus.value?.overall_stage ?? '准备中...'
 })
 
+// PROG-02：AI 描述生成状态（排队中 / 生成中 / 完成 / 失败）前端可见
+const AI_SUMMARY_STATUS_LABELS: Record<string, string> = {
+  pending: '排队中',
+  running: '生成中',
+  completed: '已完成',
+  failed: '生成失败',
+}
+const aiSummaryStatus = computed(() => indexStatus.value?.ai_summary_status ?? '')
+const aiSummaryStatusLabel = computed(() => AI_SUMMARY_STATUS_LABELS[aiSummaryStatus.value] ?? '')
+// 仅在有进行中/失败/完成的明确状态时展示（not_started / 空 不展示）
+const showAiSummaryStatus = computed(() => aiSummaryStatusLabel.value.length > 0)
+const aiSummaryError = computed(() => indexStatus.value?.ai_summary_error ?? '')
+
 // OBS-05：文件级实时进度（来自 SSE / polling）
 const currentFile = computed(() => indexStatus.value?.current_indexing_file ?? '')
 const filesProcessed = computed(() => indexStatus.value?.indexed_files_processed ?? 0)
@@ -500,6 +513,21 @@ onUnmounted(() => {
                 class="h-full bg-primary transition-all duration-500"
                 :style="{ width: `${overallProgress}%` }"
               />
+            </div>
+            <!-- PROG-02：AI 描述生成状态 -->
+            <div
+              v-if="showAiSummaryStatus"
+              class="flex items-center gap-1.5 text-xs text-muted-foreground"
+              data-testid="ai-summary-status"
+            >
+              <span
+                v-if="aiSummaryStatus === 'running' || aiSummaryStatus === 'pending'"
+                class="icon-[lucide--sparkles] text-primary"
+              />
+              <span v-else-if="aiSummaryStatus === 'completed'" class="icon-[lucide--check] text-emerald-500" />
+              <span v-else-if="aiSummaryStatus === 'failed'" class="icon-[lucide--triangle-alert] text-destructive" />
+              <span>AI 描述：{{ aiSummaryStatusLabel }}</span>
+              <span v-if="aiSummaryStatus === 'failed' && aiSummaryError" class="text-destructive/80 truncate">— {{ aiSummaryError }}</span>
             </div>
           </div>
 
