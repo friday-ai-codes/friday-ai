@@ -23,6 +23,11 @@ data:
   FRIDAY_ADMIN_USERNAME: {{ .Values.server.adminUsername | quote }}
   FRIDAY_RUNNER_NAME: {{ .Values.runner.name | quote }}
   FRIDAY_RUNNER_EXECUTOR: {{ .Values.runner.executor | quote }}
+  # 代码图谱 LSP backend 开关（）：默认禁用 LSP（仅 tree-sitter），
+  # 缓解图谱构建慢 / Volar·gopls 冷启动等待。调好后把对应 values 置 true 可逆重开
+  # （codegraph.volarBackendEnabled / codegraph.goplsBackendEnabled），无需改镜像。
+  VOLAR_BACKEND_ENABLED: {{ .Values.codegraph.volarBackendEnabled | default false | quote }}
+  GOPLS_BACKEND_ENABLED: {{ .Values.codegraph.goplsBackendEnabled | default false | quote }}
   # 多副本信号（DEPLOY-03）：web/server 层多进程（replicaCount>1 或 gunicornWorkers>1）
   # 时声明 multi-replica，供 settings 运行期 _require_redis_for_multi_replica 消费。
   # 只看 web 层（不含 worker.enabled）：configmap 由全部 workload 共享，若按 worker.enabled

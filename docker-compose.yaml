@@ -58,6 +58,10 @@ services:
       - QDRANT_BUNDLED=${QDRANT_BUNDLED:-true}
       # 与 runner 服务的 FRIDAY_RUNNER_IMAGE 保持同一默认值（设置页展示用）
       - FRIDAY_RUNNER_IMAGE=${FRIDAY_TASK_IMAGE:-${FRIDAY_IMAGE_PREFIX:-ghcr.io/friday-ai-codes/friday-ai}/task:${FRIDAY_IMAGE_TAG:-latest}}
+      # 代码图谱 LSP backend 开关（）：默认禁用 LSP 仅用 tree-sitter
+      # （缓解图谱构建慢 / LSP 冷启动）。调好后置 true 可逆重开，无需改代码。
+      - VOLAR_BACKEND_ENABLED=${VOLAR_BACKEND_ENABLED:-false}
+      - GOPLS_BACKEND_ENABLED=${GOPLS_BACKEND_ENABLED:-false}
     volumes:
       - "${FRIDAY_DATA_DIR:-~/.friday-ai}/server:/app/data"
     # server 需要通过 answer_endpoint（host.docker.internal:<随机端口>）向任务容器

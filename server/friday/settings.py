@@ -609,12 +609,15 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
     "services.code_intel.local_provider.LocalProvider",
 )
 
-# 各语言使用的 extractor backend（tree_sitter / volar / gopls）
-# 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
+# 各语言使用的 extractor backend（tree_sitter / volar / gopls）—— 声明性映射。
+# ：默认禁用 LSP 后，运行期实际后端由 VOLAR/GOPLS_BACKEND_ENABLED 两个
+# kill-switch 经 codegraph/apps.py::ready() 决定（关闭即全回落 TreeSitterBackend），
+# 本表仅记录「重开 LSP 时各语言期望切换的后端」。go 回落 tree_sitter（gopls 冷启动慢）；
+# ts/tsx/vue/js/jsx 仍声明 volar 作为重开目标（kill-switch 关闭时不生效）。
 EXTRACTOR_BACKENDS: dict[str, str] = {
     "python": "tree_sitter",
-    "go": "gopls",               # implementation 已切换（原 tree_sitter）
-    "typescript": "volar",       # implementation 切（原 tree_sitter）
+    "go": "tree_sitter",         # ：回落 tree_sitter（默认禁用 gopls）
+    "typescript": "volar",       # 声明性：重开 volar 时目标后端（默认 kill-switch 关）
     "tsx": "volar",              # implementation 切
     "vue": "volar",              # implementation 切
     "javascript": "volar",       # implementation 新增（之前未有）
@@ -737,16 +740,18 @@ VOLAR_POOL_MAX_CONCURRENT: int = env.int("VOLAR_POOL_MAX_CONCURRENT", default=4)
 
 # volar backend 运维 kill-switch；False 时 apps.ready 跳过
 # register_backend，BACKEND_REGISTRY 5 项保留 tree-sitter 默认。
-VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
+# ：默认改 False —— 仅用 tree-sitter，缓解图谱构建慢与 LSP 冷启动等待；
+# 调好 Volar 后经 env `VOLAR_BACKEND_ENABLED=true` 可逆重开（无需改代码）。
+VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=False)
 
 # =============================================================================
 # implementation Gopls Backend Settings
 # =============================================================================
 
 # gopls backend 运维 kill-switch
-# 默认 False —— implementation 仅落基础设施，不切 BACKEND_REGISTRY["go"]
-# implementation 已切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=False
-GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=True)
+# ：默认改 False —— 仅用 tree-sitter，缓解图谱构建慢与 gopls 冷启动等待；
+# 调好 gopls 后经 env `GOPLS_BACKEND_ENABLED=true` 可逆重开（无需改代码）。
+GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=False)
 
 # =============================================================================
 # APScheduler Settings

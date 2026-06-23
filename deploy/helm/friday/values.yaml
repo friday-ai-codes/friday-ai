@@ -106,6 +106,13 @@ runner:
     limits:
       cpu: 500m
       memory: 128Mi
+# -- 代码图谱 / 索引 LSP backend 开关（）
+# 默认禁用 LSP（仅 tree-sitter），缓解图谱构建慢与 Volar/gopls 冷启动等待。
+# 调好后置 true 可逆重开（无需改镜像）：volarBackendEnabled→Vue/TS，goplsBackendEnabled→Go。
+codegraph:
+  volarBackendEnabled: false
+  goplsBackendEnabled: false
+
 # -- Worker 配置（durable 队列消费进程，同 server 镜像 + run_worker + role=worker）
 # 可独立水平伸缩。优雅终止不变式：
 #   terminationGracePeriodSeconds(120) > gracefulTimeout(110) > 心跳(10s)/stalled(30s)
