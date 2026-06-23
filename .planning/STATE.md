@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.13.0
 milestone_name: 并发治理与索引体验
-status: planning
-last_updated: "2026-06-23T06:19:26.626Z"
-last_activity: 2026-06-23
+status: Awaiting next milestone
+stopped_at: v0.13.0 里程碑完成并归档（Phases 65–70，11/11 需求满足、审计 tech_debt、integration_ok）
+last_updated: "2026-06-23T10:09:12.904Z"
+last_activity: 2026-06-23 — Milestone v0.13.0 completed and archived
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 8
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -20,25 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-23 — start milestone v0.13.0)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.13.0：按资源分治引入可配置并发治理（索引/图谱用 Procrastinate 原生 `lock` 槽位池排队、LLM 按 provider 凭证各自限流、容器用 runner.concurrent，不设全局总上限），修复 AI 对话跨会话串流，新增超管"全部更新索引"+批量建仓，统一索引/图谱/AI 描述实时进度并修复进度条回退，默认禁用 LSP 仅用 tree-sitter，仓库 access token 重构为可选的"密钥提供方(FK)"模型。
-**Current focus:** Phase 65 — AI 对话串流隔离修复
+**Current focus:** Milestone v0.13.0 已完成并归档 — 等待下一个里程碑（/gsd-new-milestone）
 
 ## Current Position
 
-Phase: 65 — AI 对话串流隔离修复（ready to plan）
+Phase: Milestone v0.13.0 complete
 Plan: —
-Status: Roadmap ready — autonomous 可开跑
-Last activity: 2026-06-23 — Milestone v0.13.0 roadmap 创建完成（Phases 65–70 + REQUIREMENTS 11/11 traceability；承接 quick 260623-ax1 PgBouncer Phase A 底座）
+Status: Awaiting next milestone
+Last activity: 2026-06-23 — Milestone v0.13.0 completed and archived
 
 ## Milestone Overview (v0.13.0 — Phases 65–70)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 65 | AI 对话串流隔离修复 | STREAM-01 | ⬜ Not started |
-| 66 | 默认禁用 LSP（仅 tree-sitter） | LSP-01 | ⬜ Not started |
-| 67 | 并发治理（槽位锁池 / provider 限流 / 容器上限） | CONC-01, CONC-02, CONC-03 | ⬜ Not started |
-| 68 | 实时进度统一 + 进度条修复 | PROG-01, PROG-02 | ⬜ Not started |
-| 69 | 批量加仓 + 全部更新索引（超管） | BATCH-01, BATCH-02 | ⬜ Not started |
-| 70 | access token / 密钥提供方重构（FK） | TOKEN-01, TOKEN-02 | ⬜ Not started |
+| 65 | AI 对话串流隔离修复 | STREAM-01 | ✅ Complete |
+| 66 | 默认禁用 LSP（仅 tree-sitter） | LSP-01 | ✅ Complete |
+| 67 | 并发治理（槽位锁池 / provider 限流 / 容器上限） | CONC-01, CONC-02, CONC-03 | ✅ Complete |
+| 68 | 实时进度统一 + 进度条修复 | PROG-01, PROG-02 | ✅ Complete |
+| 69 | 批量加仓 + 全部更新索引（超管） | BATCH-01, BATCH-02 | ✅ Complete |
+| 70 | access token / 密钥提供方重构（FK） | TOKEN-01, TOKEN-02 | ✅ Complete |
 
 **Execution order:** 65 → 66 → 67 → 68 → 69 → 70。依赖：65（串流，独立低风险打头）、66（禁用 LSP，配置改动缓解图谱慢，独立）、67（并发治理核心基建）→ 68（进度统一，依赖 67 状态字段）、69（全部更新索引，依赖 67 并发上限）；70（token 重构，相对独立、工作量最大，排最后）。65/66/70 与主线相对独立可并行，67 是 68/69 的硬依赖。
 

@@ -1,5 +1,20 @@
 # Milestones
 
+## v0.13.0 并发治理与索引体验 (Shipped: 2026-06-23)
+
+**Phases completed:** 6 phases, 8 plans, 11/11 v1 需求
+
+**Key accomplishments:**
+
+- 并发治理按资源分治、不设全局总上限：索引/图谱用 Procrastinate 原生 `lock` 槽位锁池（稳定 hash 同仓恒定同槽串行、N 从 SystemSetting 读、超限原生 todo 排队）；LLM 按 `ProviderCredential.max_concurrency` 凭证级限流（Redis 租约信号量 + 进程内 fallback + 超时友好「系统繁忙」）；容器复用 `runner.concurrent`、MCP 不限。
+- AI 对话跨会话「串流」修复：前端 streaming 状态与副作用按 `conversation_id` 隔离（`handleSSEEvent` owner 守护 + `sendMessage` finally isCurrent 守护 + per-stream run_id），后台流继续但仅写回所属会话。
+- 默认禁用 LSP 仅用 tree-sitter（VOLAR/GOPLS_BACKEND_ENABLED 默认 False，可经 env 可逆重开），缓解图谱构建慢与冷启动等待。
+- 实时进度统一：索引进度条改单调加权阶段（消除「文件级 90%→chunk 级 0%」归零跳变）；图谱独立轨；AI 描述生成状态（排队中/生成中/完成/失败）前端可见。
+- 超管「全部更新索引」+ CSV 批量建仓：批量入队复用并发槽位锁排队消费、不打爆资源。
+- access token 改可选 + 密钥提供方 FK 重构：`Repository.git_instance_credential` FK + 解析优先级 per-repo→FK→host→none（老仓库零回归），建仓可选实例凭证、TestConnection FK/host fallback。
+
+---
+
 ## v0.12.0 弹性任务底座（durable 任务队列与多副本就绪） (Shipped: 2026-06-20)
 
 **Phases completed:** 5 phases, 16 plans, 43 tasks
