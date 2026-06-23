@@ -217,7 +217,21 @@ class TaskDispatcher:
         )
         return True
 
-    async def on_runner_online(self, runner_id: uuid.UUID) -> None:
+    async def drain_pending(self) -> None:
+        """把内存待派发队列里的任务尽量分配给当前有空槽的 runner。
+
+        在三种时机调用：① runner 上线/重连（``on_runner_online``）；② 任务被拒
+        重排（``on_task_rejected`` 后由调用方触发）；③ **任务完成/失败释放并发槽位**
+        （``consumers._handle_task_completed/_handle_task_failed``）。
+
+        ：此前仅在 runner 重连时排空 ``_pending``，任务完成释放槽位时**不**续派，
+        导致批量派发（如几百个仓库的 repo_summary）只跑前 ``runner.concurrent`` 个、
+        其余永久卡在内存队列直到 runner 重连或超时。新增本方法在完成时续派，使队列
+        随空槽连续消费、批量任务能逐个跑完。
+
+        逐个尝试 ``_try_assign``；遇到第一个无法分配的（无空槽/无匹配 runner）即停止
+        并把它放回队列，避免空转（剩余任务等下一次释放槽位/重连再排）。
+        """
         while not self._pending.empty():
             try:
                 task = self._pending.get_nowait()
@@ -226,6 +240,9 @@ class TaskDispatcher:
             if not await self._try_assign(task):
                 self._pending.put_nowait(task)
                 break
+
+    async def on_runner_online(self, runner_id: uuid.UUID) -> None:
+        await self.drain_pending()
 
     async def on_task_rejected(self, task_id: str, task: DispatchTask) -> None:
         self._pending.put_nowait(task)
