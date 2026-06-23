@@ -29,7 +29,7 @@
 - [x] **Phase 65: AI 对话串流隔离修复** - 流式状态与副作用按 `conversation_id` 隔离，切会话不串台（后台流继续但仅写回所属会话）— STREAM-01 — completed 2026-06-23
 - [x] **Phase 66: 默认禁用 LSP（仅 tree-sitter）** - Volar/gopls backend 默认关闭可开关恢复，向量路径回落 TreeSitterBackend，缓解图谱构建慢 — LSP-01 — completed 2026-06-23
 - [x] **Phase 67: 并发治理（槽位锁池 / provider 限流 / 容器上限）** - 索引/图谱 Procrastinate `lock` 槽位池 + LLM 凭证级限流器 + 容器 runner.concurrent，无全局总上限 — CONC-01, CONC-02, CONC-03 — completed 2026-06-23
-- [ ] **Phase 68: 实时进度统一 + 进度条修复** - 进度单调不回退 + 图谱实时进度 + AI 描述状态可见 — PROG-01, PROG-02
+- [x] **Phase 68: 实时进度统一 + 进度条修复** - 进度单调不回退 + 图谱实时进度 + AI 描述状态可见 — PROG-01, PROG-02 — completed 2026-06-23
 - [ ] **Phase 69: 批量加仓 + 全部更新索引（超管）** - 超管一键全量重索引 + 批量建仓（CSV 数百仓库），受 67 并发上限排队消费 — BATCH-01, BATCH-02
 - [ ] **Phase 70: access token / 密钥提供方重构（FK）** - 仓库 token 可选 + 显式 FK 选实例凭证 + provider URL 拼接与失焦校验 — TOKEN-01, TOKEN-02
 
@@ -196,7 +196,7 @@
 | 65. AI 对话串流隔离修复 | 1/1 | Complete | 2026-06-23 |
 | 66. 默认禁用 LSP（仅 tree-sitter） | 1/1 | Complete | 2026-06-23 |
 | 67. 并发治理（槽位锁池 / provider 限流 / 容器上限） | 3/3 | Complete | 2026-06-23 |
-| 68. 实时进度统一 + 进度条修复 | 0/0 | Not started | — |
+| 68. 实时进度统一 + 进度条修复 | 1/1 | Complete | 2026-06-23 |
 | 69. 批量加仓 + 全部更新索引（超管） | 0/0 | Not started | — |
 | 70. access token / 密钥提供方重构（FK） | 0/0 | Not started | — |
 

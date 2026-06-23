@@ -373,9 +373,9 @@ class TestIndexStatusProgress(TransactionTestCase):
         assert "overall_stage" in data
         assert 0 <= data["overall_progress"] <= 100
 
-        # 验证计算：embedding 70/100 = 70%, write 25/50 = 50%
-        # overall = 70*0.7 + 50*0.3 = 49 + 15 = 64
-        assert data["overall_progress"] == 64
+        # PROG-01 单调阶段进度：chunk 阶段 embed 70/100 + write 25/50 →
+        # combined = 0.7*0.7 + 0.5*0.3 = 0.64，映射到 [20,100] → 20 + 0.64*80 = 71.2 → 71
+        assert data["overall_progress"] == 71
         assert data["overall_stage"] == "写入向量库..."
 
     @pytest.mark.asyncio

@@ -133,7 +133,9 @@ async def test_chunk_progress_takes_precedence_over_completed_file_counter(
 
     assert progress["indexed_files_processed"] == 10
     assert progress["indexed_files_total"] == 10
-    assert progress["overall_progress"] == 50
+    # PROG-01 单调阶段进度：chunk 阶段 embed 50/100 + write 50/100 → combined 0.5，
+    # 映射到 [20,100] → 20 + 0.5*80 = 60（解析完成不掩盖 chunk 进度）。
+    assert progress["overall_progress"] == 60
 
 
 # ---------------------------------------------------------------------------
