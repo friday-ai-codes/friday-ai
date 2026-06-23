@@ -34,11 +34,14 @@ const StubBadge = defineComponent({
 })
 const StubButton = defineComponent({
   name: 'Button',
-  props: ['disabled'],
+  props: ['disabled', 'variant'],
   emits: ['click'],
   setup(props, { slots, emit }) {
+    // 组件底部有「跳过」(variant=ghost) 与「提交答复」(默认 variant) 两个 Button，
+    // 按 variant 区分 data-test，避免 .find('[data-test="submit-btn"]') 误命中跳过按钮。
+    const isSkip = props.variant === 'ghost'
     return () => h('button', {
-      'data-test': 'submit-btn',
+      'data-test': isSkip ? 'skip-btn' : 'submit-btn',
       'disabled': props.disabled || false,
       'onClick': () => !props.disabled && emit('click'),
     }, slots.default?.())
