@@ -1638,6 +1638,23 @@ class RepositoryWebhookView(APIView):
         except Repository.DoesNotExist:
             return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
 
+        # LOG-07：Git push webhook 原始留痕（脱敏后入库，best-effort 绝不反噬主流程）。
+        # 在验签前记录以捕获**全部**入站（含被拒），原始可回放（谁推了什么）。
+        from system.webhook_recorder import client_ip, record_inbound_webhook
+
+        try:
+            _raw = request.body.decode("utf-8", "ignore")
+        except Exception:  # noqa: BLE001 — 取 body 失败不阻塞 webhook 主流程
+            _raw = ""
+        await record_inbound_webhook(
+            kind="git_push",
+            raw_body=_raw,
+            headers=dict(request.headers),
+            source_ip=client_ip(request),
+            verified=False,
+            correlation={"repository_id": str(repository_id)},
+        )
+
         # 检查开关
         if not repository.auto_index_enabled:
             return Response(
