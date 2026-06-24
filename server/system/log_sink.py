@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import random
+import sys
 import threading
 import time
 from collections import deque
@@ -137,14 +138,26 @@ def enqueue_system_log(entry: dict[str, Any]) -> None:
         pass
 
 
+def _is_under_pytest() -> bool:
+    """是否处于 pytest 测试会话。
+
+    ``PYTEST_CURRENT_TEST`` 仅在单个用例执行期间存在，**导入/采集期为空**——而
+    daemon worker 一旦在 app 初始化的首批日志事件里被误启动便常驻整轮测试，用
+    后台连接 autocommit 落库会绕过用例事务回滚、污染相邻用例（如 LOG-02 落库计数）。
+    故同时检测 ``sys.modules`` 是否加载 ``pytest``，覆盖整轮会话保证"测试不起线程"
+    的既定契约稳定生效。
+    """
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
+
+
 def _ensure_worker() -> None:
     """懒启动落库 daemon 线程（加锁单例）。
 
-    测试环境（``PYTEST_CURRENT_TEST``）下**不**启动后台线程——测试用同步
-    ``flush_now()`` 落库，保证确定性、避免跨线程 DB 连接污染测试隔离。
+    测试环境下**不**启动后台线程——测试用同步 ``flush_now()`` 落库，保证确定性、
+    避免跨线程 DB 连接污染测试隔离。
     """
     global _worker_thread
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if _is_under_pytest():
         return
     if _worker_thread is not None and _worker_thread.is_alive():
         return

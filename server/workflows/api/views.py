@@ -1572,6 +1572,27 @@ class WebhookTriggerView(APIView):
         except Exception:
             request_body = b""
 
+        # LOG-07：通用工作流 webhook 原始留痕（脱敏后入库，best-effort 绝不反噬主流程）。
+        # 在 dispatch 前记录以捕获**全部**入站（含无匹配/分发异常），原始可回放（谁触发了什么）。
+        from system.webhook_recorder import (
+            KIND_WORKFLOW,
+            client_ip,
+            record_inbound_webhook,
+        )
+
+        try:
+            _raw = request_body.decode("utf-8", "ignore") if request_body else ""
+        except Exception:  # noqa: BLE001 — 取 body 失败不阻塞 webhook 主流程
+            _raw = ""
+        await record_inbound_webhook(
+            kind=KIND_WORKFLOW,
+            raw_body=_raw,
+            headers=dict(request.headers),
+            source_ip=client_ip(request),
+            verified=False,
+            correlation={"webhook_path": path, "trace_id": trace_id},
+        )
+
         context = TriggerContext(
             trigger_type="webhook",
             raw_payload=request.data if request.data else {},

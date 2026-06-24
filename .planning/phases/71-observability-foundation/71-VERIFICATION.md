@@ -1,9 +1,11 @@
 ---
 phase: 71-observability-foundation
 verified: 2026-06-24T13:06:00Z
-status: gaps_found
-score: 6/8 must-haves verified
+status: passed
+score: 8/8 must-haves verified
 overrides_applied: 0
+gap_closure: 2026-06-24T13:33:00Z
+gap_closure_note: "两处 gap 已闭合（代码 + 测试，全部 green）：LOG-06 分组件级别/堆栈阈值经新增 filter_by_component_level / gate_stack_by_threshold processor 运行时生效（signal 失效缓存即时热更新）；LOG-07 WebhookTriggerView 派发前 await record_inbound_webhook(kind=workflow) 脱敏入库。详见文末「Gap closure（2026-06-24）」。"
 gaps:
   - truth: "运行时改日志级别(全局/分组件)/堆栈阈值/采样初始·后续/保留天数·大小，实时生效无需重启"
     status: partial
@@ -32,8 +34,8 @@ gaps:
 
 **Phase Goal:** 建立可观测性地基——让每次调用都能绑定到触发用户（无则 system），并把系统日志从"每进程 800 条内存环形缓冲"升级为"队列化落库、可搜索、可按条件清理、可运行时配置"的日志中心，统一 webhook 原始留痕与调用下钻。
 **Verified:** 2026-06-24T13:06:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Status:** passed（gap closure 2026-06-24T13:33:00Z；初次 verify 为 gaps_found，两处 gap 已闭合）
+**Re-verification:** No — initial verification + gap closure
 
 ## Goal Achievement
 
@@ -128,5 +130,29 @@ gaps:
 
 ---
 
+## Gap closure（2026-06-24T13:33:00Z）
+
+两处 gap 已在代码层闭合并补测，目标命令全绿（`test_log_runtime_config` / `test_inbound_webhook_event` / `test_credential_leak_protection` / `test_system_log_sink` 共 58 passed），`ruff check` 干净，`makemigrations --check` 无变更（无模型改动）。
+
+### Gap 1（LOG-06）：分组件级别 + 堆栈阈值运行时生效
+
+- `server/common/logging.py` 新增两个 best-effort processor 并挂入链路：
+  - `filter_by_component_level`（挂在 `annotate_category_component` 之后、`buffer_log`/`enqueue_system_log` 之前）：读 `SettingKeys.LOG_COMPONENT_LEVELS`（`settings_service.get_json_setting`，60s 缓存 + signal 失效），命中事件 `component` 且事件级别低于该 component 配置级别时 `raise structlog.DropEvent` 丢弃；未配置/推不出 component/解析失败一律放行。尽早丢弃以省后续缓冲/落库开销，高频路径廉价（未配置时命中缓存空值直接回退，不做 json 解析）。
+  - `gate_stack_by_threshold`（挂在 `StackInfoRenderer`/`format_exc_info` 之前）：读 `SettingKeys.LOG_STACK_THRESHOLD`，事件级别低于阈值时剥除 `stack_info`/`exc_info`/`exception`/`stack` 键，使其后渲染器不再输出堆栈/traceback；未配置阈值则不门控。
+- 运行时生效路径不变：`signals.py` 的 `_apply_log_config_if_needed` 已在写时失效缓存，processor 每条事件读已失效的缓存即得新值，无需重启/reconfigure。
+- 测试（`server/tests/test_log_runtime_config.py`）：`test_component_level_filter_via_signal`（`LOG_COMPONENT_LEVELS={"noisy_component":"ERROR"}` → noisy 的 INFO 被丢、其它 component 的 INFO 放行、noisy 的 ERROR 仍放行）；`test_stack_threshold_gate_via_signal`（`LOG_STACK_THRESHOLD=ERROR` → WARNING 事件剥除异常、ERROR 事件保留 traceback），均经 signal 即时生效。
+
+### Gap 2（LOG-07）：通用 workflow webhook 原始留痕
+
+- `server/workflows/api/views.py` `WebhookTriggerView.post` 在读取 body 后、派发 `TriggerDispatcher` 前，`await record_inbound_webhook(kind=KIND_WORKFLOW, raw_body=<decoded body>, headers=dict(request.headers), source_ip=client_ip(request), verified=False, correlation={"webhook_path": path, "trace_id": trace_id})`，脱敏入库、best-effort、不影响 webhook 主流程（镜像 feishu/git_push 范式）。
+- 测试（`server/tests/test_inbound_webhook_event.py::TestWorkflowWebhookRecording`）：POST `/api/webhook/<path>/`（无匹配 WebhookConfig 仍 200）→ 落 1 行 `InboundWebhookEvent(kind="workflow")`，`correlation.webhook_path` 正确，明文凭证不入库、出现 `***REDACTED***`。
+
+### 附带修复（Rule 1：测试隔离 bug，由本次改动时序暴露）
+
+- `server/system/log_sink.py`：`_ensure_worker` 原仅以 `PYTEST_CURRENT_TEST`（仅单用例执行期存在，导入/采集期为空）判定是否禁用 daemon 落库线程；该线程在 app 初始化首批日志事件里被误启动后常驻整轮测试，用后台连接 autocommit 落库绕过用例事务回滚、污染相邻用例（baseline 仅因 SQLite 锁竞争 `written=0` 侥幸通过，本次改动时序使后台写入落地从而暴露泄漏）。改为新增 `_is_under_pytest()` 同时检测 `sys.modules` 是否含 `pytest`，覆盖整轮会话，落实该函数 docstring 既定的"测试不起后台线程"契约。生产环境（无 pytest）行为不变。
+
+---
+
 _Verified: 2026-06-24T13:06:00Z_
 _Verifier: Claude (gsd-verifier)_
+_Gap closure: 2026-06-24T13:33:00Z (gsd-executor)_
