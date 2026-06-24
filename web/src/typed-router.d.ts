@@ -437,6 +437,13 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
+    '/tasks/': RouteRecordInfo<
+      '/tasks/',
+      '/tasks',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/workflows/': RouteRecordInfo<
       '/workflows/',
       '/workflows',
@@ -934,6 +941,14 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | 'id'
+    }
+    'src/pages/tasks/index.vue': {
+      routes:
+        | '/tasks/'
+      views:
+        | never
+      pathParamNames:
+        | never
     }
     'src/pages/workflows/index.vue': {
       routes:

@@ -93,6 +93,7 @@ const mainNavItems: NavItem[] = [
   { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
   { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
   { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
+  { to: '/tasks', label: '任务中心', icon: 'lucide--list-checks' },
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
   { to: '/specs', label: 'SDD', icon: 'lucide--scroll-text' },

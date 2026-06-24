@@ -524,8 +524,12 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         source="api",
     )
 
-    # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort，失败不阻塞）
-    RepositoryViewSet._schedule_auto_summary(str(repository.id))
+    # 建仓即自动生成「AI 描述 + PageIndex 索引」（best-effort，失败不阻塞）。
+    # 收进 durable 队列（幂等 + slot 锁），server 重启不丢——替代旧的 fire-and-forget。
+    from repositories.summary_service import enqueue_repo_summary
+
+    if repository.ai_summary_status not in (AISummaryStatus.PENDING, AISummaryStatus.RUNNING):
+        await enqueue_repo_summary(str(repository.id))
     return repository
 
 
@@ -578,36 +582,6 @@ class RepositoryViewSet(ModelViewSet):
         # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
         resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)()
         return Response(resp_data, status=status.HTTP_201_CREATED)
-
-    @staticmethod
-    def _schedule_auto_summary(repository_id: str) -> None:
-        """仓库创建后后台自动派发 repo_summary（AI 描述 + PageIndex 能力树）。"""
-        from services.background_runner import run_in_background
-
-        async def _auto_dispatch() -> None:
-            from repositories.summary_service import dispatch_repo_summary
-
-            repo = await Repository.objects.filter(id=repository_id, is_deleted=False).afirst()
-            if repo is None or repo.ai_summary_status in (
-                AISummaryStatus.PENDING,
-                AISummaryStatus.RUNNING,
-            ):
-                return
-            try:
-                session_id = await dispatch_repo_summary(repo)
-                logger.info(
-                    "auto_repo_summary_dispatched",
-                    repository_id=repository_id,
-                    session_id=session_id,
-                )
-            except Exception:  # noqa: BLE001 — 自动触发失败不影响建仓
-                logger.warning(
-                    "auto_repo_summary_dispatch_failed",
-                    repository_id=repository_id,
-                    exc_info=True,
-                )
-
-        run_in_background(_auto_dispatch, name=f"auto_repo_summary_{repository_id}")
 
     async def perform_aupdate(self, serializer):
         base_branch = serializer.validated_data.get("base_branch")

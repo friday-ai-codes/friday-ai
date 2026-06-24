@@ -10,6 +10,14 @@ title: Docker Compose 部署
 
 - Docker Engine + Docker Compose v2
 - Git
+- **内核参数 `vm.max_map_count`（Linux 宿主机必做）**：Qdrant 用 mmap 存储向量/索引，索引仓库较多时 mmap 数量会撞内核默认上限（65530），导致 Qdrant 崩溃重启循环。该参数无法由 compose 设置，需在宿主机执行一次：
+
+```bash
+sudo bash deploy/scripts/set-vm-max-map-count.sh
+# 等价于：
+#   sudo sysctl -w vm.max_map_count=1048576
+#   echo 'vm.max_map_count=1048576' | sudo tee /etc/sysctl.d/99-qdrant.conf
+```
 
 ## 一键部署
 

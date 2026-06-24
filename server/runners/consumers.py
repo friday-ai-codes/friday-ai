@@ -161,6 +161,39 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             {"task_id": task_id, "status": "running"},
         )
         await self._update_assignment_status(task_id, "running")
+        # 标记 SubAgentSession 为 running（task_id == session_id）。历史上 accepted 只更
+        # 新 assignment 不更新 session，导致大量"实际在跑"的 session 永远停在 pending，
+        # observability 的 pending 计数严重失真（生产 554 pending 多为此）。
+        await self._amark_session_running(task_id, payload)
+
+    async def _amark_session_running(self, task_id: str, payload: dict) -> None:
+        """把 task_id 对应的 SubAgentSession 推进到 running，并同步仓库 AI 描述状态。"""
+        if not task_id:
+            return
+        from repositories.models import AISummaryStatus, Repository
+        from subagent.models import SubAgentSession
+
+        session = await SubAgentSession.objects.filter(session_id=task_id).afirst()
+        if session is None or session.status in _TERMINAL_STATUSES:
+            return
+        if session.status != SubAgentSession.Status.RUNNING:
+            try:
+                await session.amark_running(
+                    payload.get("container_id", "") or session.container_id,
+                    payload.get("container_name", "") or session.container_name,
+                )
+            except Exception:  # noqa: BLE001 — 标记失败不阻断任务消费
+                logger.warning("amark_session_running_failed", task_id=task_id, exc_info=True)
+                return
+        # repo_summary：把仓库状态从 pending 推进到 running，前端"生成中"才准确。
+        if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY and isinstance(
+            session.last_output, dict
+        ):
+            repo_id = session.last_output.get("repository_id")
+            if repo_id:
+                await Repository.objects.filter(id=repo_id).aupdate(
+                    ai_summary_status=AISummaryStatus.RUNNING
+                )
 
     async def _handle_task_completed(self, content):
         payload = content.get("payload", {})
@@ -701,12 +734,31 @@ async def _handle_disconnect_timeout(runner_id: uuid.UUID) -> None:
         status__in=["assigned", "running"],
     ).select_related("session")
 
+    from subagent.models import SubAgentSession
+
     failed_count = 0
     async for assignment in pending:
         assignment.status = "failed"
         assignment.completed_at = timezone.now()
         await assignment.asave(update_fields=["status", "completed_at"])
         failed_count += 1
+
+        # 收敛 SubAgentSession 到终态（历史上只改 assignment，导致 session 永卡
+        # pending/running、仓库 ai_summary_status 永卡 pending）。
+        session = assignment.session
+        if session is not None and session.status not in _TERMINAL_STATUSES:
+            error_msg = f"Runner 断连超时（{DISCONNECT_TIMEOUT}秒），任务自动标记失败"
+            try:
+                await session.amark_failed(error=error_msg)
+                if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+                    from subagent.api.callbacks import _update_repository_on_summary_fail
+
+                    await _update_repository_on_summary_fail(session, error_msg)
+            except Exception:
+                logger.warning(
+                    "disconnect_timeout_session_converge_failed",
+                    session_id=session.session_id,
+                )
 
         # 发送失败通知
         if assignment.session:

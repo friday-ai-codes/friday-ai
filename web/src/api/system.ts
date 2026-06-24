@@ -160,3 +160,36 @@ export interface ObservabilityResponse {
 export async function getObservability(): Promise<ObservabilityResponse> {
   return get<ObservabilityResponse>('/system/observability/')
 }
+
+// ============================================================================
+// 任务中心：排队中/进行中的后台任务列表（索引 / AI 描述 / durable 队列）
+// GET /api/system/tasks/（IsAuthenticated）
+// ============================================================================
+
+export interface IndexingTaskItem {
+  repository_id: string
+  name: string
+  stage: string
+  current_file: string
+  files_processed: number
+  files_total: number
+}
+
+export interface SummaryTaskItem {
+  repository_id: string
+  name: string
+  status: string
+}
+
+export interface ActiveTasksResponse {
+  indexing: { count: number, items: IndexingTaskItem[] }
+  summary: { count: number, items: SummaryTaskItem[] }
+  queue: {
+    by_queue_status: QueueStatusRow[]
+    totals: Record<string, number>
+  }
+}
+
+export async function getActiveTasks(): Promise<ActiveTasksResponse> {
+  return get<ActiveTasksResponse>('/system/tasks/')
+}

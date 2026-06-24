@@ -15,6 +15,9 @@ QUEUE_GRAPH = "graph"
 QUEUE_CRAWL_INGEST = "crawl_ingest"
 # 页面级索引（page → index）
 QUEUE_PAGE_INDEX = "page_index"
+# 仓库 AI 描述派发（repo_summary → Runner 容器）。durable job 只负责"可靠地发起一次
+# 派发"，重活在 Runner 容器内执行；解决建仓时 fire-and-forget 派发随 server 重启丢失。
+QUEUE_REPO_SUMMARY = "repo_summary"
 # 维护类周期任务（stalled rescue 等运维任务）
 QUEUE_MAINTENANCE = "maintenance"
 
@@ -24,6 +27,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_GRAPH,
     QUEUE_CRAWL_INGEST,
     QUEUE_PAGE_INDEX,
+    QUEUE_REPO_SUMMARY,
     QUEUE_MAINTENANCE,
 )
 
@@ -32,6 +36,7 @@ __all__ = [
     "QUEUE_GRAPH",
     "QUEUE_CRAWL_INGEST",
     "QUEUE_PAGE_INDEX",
+    "QUEUE_REPO_SUMMARY",
     "QUEUE_MAINTENANCE",
     "ALL_QUEUES",
 ]

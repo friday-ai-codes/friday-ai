@@ -127,6 +127,36 @@ async def run_crawl_ingest(*, batch_id: str, concurrency: int = 3) -> dict[str, 
     return {"status": "ok", "batch_id": batch_id, "count": len(runs)}
 
 
+async def run_repo_summary(*, repository_id: str) -> dict[str, Any]:
+    """仓库 AI 描述派发任务体：可靠地发起一次 repo_summary 派发。
+
+    委托既有 ``summary_service.dispatch_repo_summary``（创建 SubAgentSession + 投递到
+    Runner）。durable job 完成即代表"已发起派发"；重活在 Runner 容器内执行，完成回写
+    由 callbacks 链路负责。仓库不存在 / 已是终态时安全跳过（幂等、防重复推送）。
+    """
+    from asgiref.sync import sync_to_async
+
+    from repositories.models import AISummaryStatus, Repository
+    from repositories.summary_service import dispatch_repo_summary
+
+    repo = await Repository.objects.filter(id=repository_id, is_deleted=False).afirst()
+    if repo is None:
+        logger.info("durable_repo_summary_skipped", repository_id=repository_id, reason="not_found")
+        return {"status": "skipped", "reason": "not_found", "repository_id": repository_id}
+
+    # 已完成的不重复生成（幂等）；pending/running/failed 允许（重新触发/恢复）。
+    if repo.ai_summary_status == AISummaryStatus.COMPLETED:
+        return {"status": "skipped", "reason": "already_completed", "repository_id": repository_id}
+
+    session_id = await dispatch_repo_summary(repo)
+    logger.info(
+        "durable_repo_summary_dispatched",
+        repository_id=repository_id,
+        session_id=session_id,
+    )
+    return {"status": "dispatched", "repository_id": repository_id, "session_id": session_id}
+
+
 async def run_page_index(
     *, target_id: str | None = None, **kwargs: Any
 ) -> dict[str, Any]:

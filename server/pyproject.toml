@@ -81,6 +81,8 @@ dependencies = [
     # channel layer 长轮询不兼容：空 channel 阻塞读会每隔数秒误抛 TimeoutError，导致
     # WebSocket 反复断开重连。pin 到已验证可用的 5.x，待 channels-redis 适配新版后再放开。
     "redis>=5,<6",
+    # 跨进程/跨副本共享缓存后端（CACHES → Redis）；复用上面 pin 的 redis-py 5.x。
+    "django-redis>=5.4,<6",
     "procrastinate[django]>=3.8.1,<3.9",
 ]
 

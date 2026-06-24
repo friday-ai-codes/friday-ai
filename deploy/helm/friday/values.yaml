@@ -197,16 +197,23 @@ qdrant:
     repository: qdrant/qdrant
     tag: latest
   apiKey: ""
+  # 用 privileged initContainer 设置节点 vm.max_map_count，避免一仓一 collection
+  # 时 mmap 数撞默认上限(65530)导致 Qdrant 崩溃循环。集群禁用 privileged 时可关，
+  # 改为在节点层面（DaemonSet / 节点初始化）统一设置该 sysctl。
+  setVmMaxMapCount: true
+  vmMaxMapCount: 1048576
   persistence:
     size: 10Gi
     storageClass: ""
+  # 内存按"一仓一 collection + on_disk 向量 + int8 量化"估算；原 512Mi 与实际
+  # （数百 collection 可达数 GB）严重不符，按数据规模调整 limits.memory。
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 1Gi
     limits:
-      cpu: "1"
-      memory: 512Mi
+      cpu: "2"
+      memory: 4Gi
 # -- 外部 Qdrant（qdrant.enabled=false 时使用）
 # 配置后 server 通过 env 直连，前端向导/设置页将锁定 Qdrant 地址（env 优先）。
 # 两者都留空（qdrant.enabled=false + url 为空）时，Qdrant 交由首启向导手动配置。

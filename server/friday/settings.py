@@ -191,6 +191,41 @@ else:
         },
     }
 
+# -----------------------------------------------------------------------------
+# Django 缓存（CACHES）
+# -----------------------------------------------------------------------------
+# 用 Redis 做**跨进程/跨副本共享**缓存（首页 stats、SystemSetting、健康检查结果、
+# DRF 登录限流）。此前未配置 CACHES → 默认 LocMemCache（进程内，多 gunicorn worker
+# 各自一份、不共享），导致缓存命中率低、限流可被绕过。
+# 默认复用 channel layer 的 Redis（CACHE_REDIS_URL 留空时回退该 URL）；无 Redis 的
+# 本地裸跑（USE_REDIS_CHANNEL_LAYER=false）退回 LocMem，保持开箱即用。
+CACHE_REDIS_URL = env.str(
+    "CACHE_REDIS_URL",
+    default=(REDIS_CHANNEL_LAYER_URL if USE_REDIS_CHANNEL_LAYER else ""),
+)
+if CACHE_REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": CACHE_REDIS_URL,
+            "KEY_PREFIX": "friday",
+            "TIMEOUT": 300,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                # Redis 抖动/不可用时 fail-soft：缓存操作退化为 miss/no-op，绝不
+                # 让缓存故障拖垮业务请求（缓存只是优化、不是真相源）。
+                "IGNORE_EXCEPTIONS": True,
+            },
+        }
+    }
+    DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        },
+    }
+
 
 def _require_redis_for_multi_replica(*, expect_multi: bool, use_redis: bool) -> None:
     """多副本 / 多 worker 部署必须启用 Redis channel layer 的运行期 fail-closed 校验。

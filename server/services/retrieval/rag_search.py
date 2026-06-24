@@ -17,6 +17,7 @@ Logger 命名 `rag_search_*` 与现状 `layered_search_*` / `compat_layered_sear
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -25,6 +26,10 @@ from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.retrieval.types import LayerSnapshot
 
 logger = structlog.get_logger(__name__)
+
+# 多仓 RAG 并发上限：每仓一次 Qdrant 混合检索，跨 50+ 仓时串行延迟线性累加。
+# 用有界并发把延迟从 O(N) 降到 O(N/并发)，上限防止打爆 Qdrant 连接/worker。
+_RAG_REPO_CONCURRENCY = 8
 
 
 async def search_rag(
@@ -84,23 +89,30 @@ async def search_rag(
         all_results: list[dict[str, Any]] = []
         seen_keys: set[tuple[str, str, int]] = set()
 
-        for repo_id in repo_ids:
-            # EXCL-02 单一 chokepoint：按 repo 预取匹配器（每 repo 一次），在收集前剔除被
-            # 排除文件项；构造失败 → 整 repo 结果 fail-closed 不可见（绝不降级泄漏明文）。
-            try:
-                matcher = await build_matcher_for_repo(repo_id)
-            except Exception as e:  # noqa: BLE001 — 构造失败一律 fail-closed
-                logger.warning("rag_search_matcher_build_failed", repo_id=repo_id, error=str(e))
-                log_exclusion_blocked(surface="rag", repository_id=repo_id, rel_path="")
-                continue
-            try:
-                results = await BranchAwareSearchService.search(
-                    repo_id,
-                    query_dense,
-                    query_sparse=query_sparse,
-                    branch_name=branch_name,
-                    top_k=fetch_k,
-                )
+        # 单仓检索（含 EXCL-02 排除过滤），返回该仓"已过滤"的命中列表（未去重）。
+        # 抽成内部协程以便有界并发：matcher 构造 / search 异常一律 fail-closed 返回 []。
+        sem = asyncio.Semaphore(_RAG_REPO_CONCURRENCY)
+
+        async def _search_one(repo_id: str) -> list[dict[str, Any]]:
+            async with sem:
+                try:
+                    matcher = await build_matcher_for_repo(repo_id)
+                except Exception as e:  # noqa: BLE001 — 构造失败一律 fail-closed
+                    logger.warning("rag_search_matcher_build_failed", repo_id=repo_id, error=str(e))
+                    log_exclusion_blocked(surface="rag", repository_id=repo_id, rel_path="")
+                    return []
+                try:
+                    results = await BranchAwareSearchService.search(
+                        repo_id,
+                        query_dense,
+                        query_sparse=query_sparse,
+                        branch_name=branch_name,
+                        top_k=fetch_k,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(e))
+                    return []
+                out: list[dict[str, Any]] = []
                 for r in results:
                     payload = r.get("payload", {})
                     file_path = payload.get("file_path", "")
@@ -113,12 +125,29 @@ async def search_rag(
                             surface="rag", repository_id=repo_id, rel_path=str(file_path)
                         )
                         continue
-                    key = (repo_id, file_path, payload.get("chunk_index", 0))
-                    if key not in seen_keys:
-                        seen_keys.add(key)
-                        all_results.append({**r, "repository_id": repo_id})
-            except Exception as e:
-                logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(e))
+                    out.append({**r, "repository_id": repo_id})
+                return out
+
+        # 有界并发执行所有仓库的检索；**按 repo_ids 原序合并 + 去重**，保证与串行版
+        # 完全一致的去重/排序结果（zero-drift：先到先得 key 仅取决于合并顺序，不取决
+        # 于实际完成顺序）。
+        per_repo = await asyncio.gather(
+            *[_search_one(rid) for rid in repo_ids], return_exceptions=True
+        )
+        for repo_id, res in zip(repo_ids, per_repo, strict=True):
+            if isinstance(res, BaseException):
+                logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(res))
+                continue
+            for r in res:
+                payload = r.get("payload", {})
+                key = (
+                    r["repository_id"],
+                    payload.get("file_path", ""),
+                    payload.get("chunk_index", 0),
+                )
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_results.append(r)
 
         all_results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         # 精排阶段（单一卡点）：model → 外部 reranker，heuristic → 词法重排，

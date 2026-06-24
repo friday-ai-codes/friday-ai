@@ -60,6 +60,11 @@ logger = structlog.get_logger(__name__)
 
 INDEX_CANCEL_MESSAGE = "用户已停止索引"
 
+# index/status 查询 Qdrant 的 wall-clock 上限（秒）。健康的 Qdrant 上
+# check_collection_health 仅个位数毫秒；设短超时是为了在 Qdrant 抖动/不可用时
+# 快速降级到 DB 记录状态，而不是干等同步 SDK 的 60s 客户端超时。
+_INDEX_STATUS_QDRANT_TIMEOUT_S = 5.0
+
 
 # 单调加权阶段进度（PROG-01）：把整个索引拆成两个连续阶段映射到 [0,100]，
 # 解析阶段封顶 FILE_PHASE_CEIL（解析相对 embedding 快、占比小），chunk(embedding+write)
@@ -526,13 +531,19 @@ class IndexStatusView(APIView):
             return Response(serializer.data)
 
         # 非索引中 → Qdrant 是唯一事实来源（Qdrant 不可用时安全降级，避免 500）
+        # 必须加 wall-clock 超时：QdrantService 同步 SDK 的客户端超时是 60s（见
+        # _QDRANT_CLIENT_TIMEOUT_S），Qdrant 抖动/被压满时 get_collections 会一直
+        # 阻塞到 60s，导致前端轮询整段卡死。这里用短超时快速降级到 DB 记录状态。
         try:
-            health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
+            health = await asyncio.wait_for(
+                sync_to_async(QdrantService.check_collection_health)(str(repository_id)),
+                timeout=_INDEX_STATUS_QDRANT_TIMEOUT_S,
+            )
         except Exception as exc:
             logger.warning(
                 "index_status_qdrant_unavailable",
                 repository_id=str(repository_id),
-                error=str(exc),
+                error=str(exc) or type(exc).__name__,
             )
             # 降级到 DB 自身记录状态，不抛 500
             serializer = IndexStatusSerializer(

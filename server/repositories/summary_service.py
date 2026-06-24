@@ -159,6 +159,36 @@ async def dispatch_repo_summary(repository: Repository) -> str:
     return session_id
 
 
+async def enqueue_repo_summary(repository_id: str) -> str | None:
+    """把 repo_summary 派发收进 durable 队列（替代 fire-and-forget run_in_background）。
+
+    durable job 只负责"可靠地发起一次派发"（job 体内调用 ``dispatch_repo_summary``），
+    重活仍在 Runner 容器执行。相比 ``run_in_background``：
+
+    - **不丢**：job 落 Postgres，server/worker 重启后仍会被消费；
+    - **幂等**：``idempotency_key=f"summary:{repo_id}"`` 保证同仓在途只一份；
+    - **平滑**：``summary-slot`` 槽位锁限制并发派发，避免批量建仓 session 创建洪峰。
+
+    返回 durable job id（失败返回 None，不抛——建仓 best-effort 不阻塞）。
+    """
+    from durable.concurrency import asummary_lock
+    from durable.queues import QUEUE_REPO_SUMMARY
+    from durable.service import DurableTaskService
+
+    try:
+        lock = await asummary_lock(str(repository_id))
+        return await DurableTaskService.defer(
+            "durable_repo_summary",
+            {"repository_id": str(repository_id)},
+            queue=QUEUE_REPO_SUMMARY,
+            idempotency_key=f"summary:{repository_id}",
+            lock=lock,
+        )
+    except Exception:  # noqa: BLE001 — 入队失败不阻塞建仓/触发；recover 兜底
+        logger.warning("enqueue_repo_summary_failed", repository_id=str(repository_id), exc_info=True)
+        return None
+
+
 _TERMINAL_FAIL_STATUSES = frozenset({
     SubAgentSession.Status.ERROR,
     SubAgentSession.Status.TIMEOUT,
@@ -181,6 +211,12 @@ _STRANDED_MINUTES = 15
 # 单轮 recover sweep 最多重派的仓库数：防止一次性把数百个搁浅任务全灌进队列，
 # 配合 5 分钟周期逐步 ramp（尤其上游 LLM 有速率上限时更平滑）。
 _RECOVER_MAX_PER_SWEEP = 50
+
+# RUNNING 会话的硬超时（分钟）：基于 started_at（而非 updated_at）的绝对上限。
+# 关键：repo_summary 容器会持续回传 progress/log 刷新 updated_at，单靠 updated_at
+# 陈旧判定永远抓不到「容器还活着但实际已僵死」的任务。DispatchTask.timeout=600s
+# （10min），这里取 20min 留足余量，超出即判定僵死、收敛重派。
+_RUNNING_HARD_TIMEOUT_MINUTES = 20
 
 
 async def reconcile_ai_summary_status(repository: Repository) -> Repository:
@@ -292,18 +328,36 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
     Returns:
         本轮重新派发的仓库数量。
     """
-    cutoff = timezone.now() - timedelta(minutes=_STRANDED_MINUTES)
+    from django.db.models import Q
+
+    now = timezone.now()
+    cutoff = now - timedelta(minutes=_STRANDED_MINUTES)
+    hard_cutoff = now - timedelta(minutes=_RUNNING_HARD_TIMEOUT_MINUTES)
     recovered = 0
     seen_repos: set[str] = set()
 
-    stranded = SubAgentSession.objects.filter(
-        task_type=SubAgentSession.TaskType.REPO_SUMMARY,
-        status__in=[
-            SubAgentSession.Status.PENDING,
-            SubAgentSession.Status.RUNNING,
-        ],
-        updated_at__lt=cutoff,
-    ).order_by("-created_at")
+    # 两类搁浅：
+    # 1) updated_at 陈旧（pending 派发丢失 / 长时间无任何进展）；
+    # 2) RUNNING 且 started_at 超过硬超时（容器仍回传 progress 刷新 updated_at，
+    #    但实际已僵死——单靠 updated_at 永远抓不到，必须用 started_at 绝对上限兜底）。
+    stranded = (
+        SubAgentSession.objects.filter(
+            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+            status__in=[
+                SubAgentSession.Status.PENDING,
+                SubAgentSession.Status.RUNNING,
+            ],
+        )
+        .filter(
+            Q(updated_at__lt=cutoff)
+            | Q(
+                status=SubAgentSession.Status.RUNNING,
+                started_at__isnull=False,
+                started_at__lt=hard_cutoff,
+            )
+        )
+        .order_by("-created_at")
+    )
 
     async for session in stranded:
         if recovered >= limit:

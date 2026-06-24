@@ -41,6 +41,12 @@ async def _crawl_ingest(payload: dict[str, Any]) -> Any:
     return await run_crawl_ingest(**payload)
 
 
+async def _repo_summary(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_repo_summary
+
+    return await run_repo_summary(**payload)
+
+
 def register_business_handlers() -> None:
     """把 index / graph / page_index 的 ``**payload`` 展开 adapter 注册到 in-process 后端。
 
@@ -51,6 +57,7 @@ def register_business_handlers() -> None:
     register_handler("durable_graph", _graph)
     register_handler("durable_page_index", _page_index)
     register_handler("durable_crawl_ingest", _crawl_ingest)
+    register_handler("durable_repo_summary", _repo_summary)
 
 
 __all__ = ["register_business_handlers"]

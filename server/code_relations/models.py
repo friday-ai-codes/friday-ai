@@ -188,6 +188,9 @@ class ChunkEdge(models.Model):
                 fields=["repository", "edge_type", "-weight"],
                 name="idx_chunkedge_topk",
             ),
+            # created_at 索引：支撑首页 dashboard 的"今日新增"范围统计
+            # （created_at >= 今日 AND < 明日）。此前该列无索引，11M 行全表扫描约 1.8s。
+            models.Index(fields=["created_at"], name="idx_chunkedge_created"),
         ]
 
     def __str__(self) -> str:

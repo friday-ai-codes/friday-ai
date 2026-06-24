@@ -72,6 +72,8 @@ export interface ProviderCredentialDto {
   config: Record<string, unknown>
   /** 默认模型（每个 Provider 必须至少有一个模型）。 */
   default_model: string
+  /** 该凭证的 LLM 并发上限（0=不限，默认 50）。由 acquire_llm_slot 限流。 */
+  max_concurrency: number
   created_at: string
   updated_at: string
 }
@@ -123,6 +125,8 @@ export interface ProviderCredentialCreatePayload {
   default_model: string
   /** 绑定到该 Provider 的模型列表（来自接口拉取或手动添加）。 */
   available_models: AvailableModel[]
+  /** 该凭证的 LLM 并发上限（0=不限，默认 50）。 */
+  max_concurrency?: number
 }
 
 /**
@@ -143,6 +147,8 @@ export interface ProviderCredentialUpdatePayload {
   default_model?: string
   /** 绑定到该 Provider 的模型列表（来自接口拉取或手动添加）。 */
   available_models?: AvailableModel[]
+  /** 该凭证的 LLM 并发上限（0=不限）。 */
+  max_concurrency?: number
 }
 
 /** POST /test-connection/ 响应（ 既有端点）。 */
