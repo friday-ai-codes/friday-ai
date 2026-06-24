@@ -144,7 +144,7 @@ class TestParseUpstreamStatus:
 # ===========================================================================
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestArecordLlmUsage:
     async def test_records_runless_row(self) -> None:
         """run=None 也能独立成行（非 MCP 的 LLM 调用，per RATE-02）。"""
@@ -248,7 +248,7 @@ def _make_bound_model(chunks: list[AIMessageChunk]):
     return SimpleNamespace(astream=_astream)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestChatRunnerUsageRecording:
     async def test_chat_runner_records_usage_with_ttft(self) -> None:
         """chat_runner 流式结束落一行 ModelUsageRecord(call_source=chat, ttft 非空,
@@ -338,7 +338,7 @@ class TestChatRunnerUsageRecording:
         assert record.call_source == "chat"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestLangChainRunnerUsageRecording:
     async def test_langchain_runner_records_usage(self) -> None:
         """langchain_runner 的 astream 落一行 ModelUsageRecord(call_source 默认

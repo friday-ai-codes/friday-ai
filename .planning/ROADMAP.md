@@ -26,7 +26,7 @@
 **Milestone Goal:** 在一个里程碑内完整交付可观测性与日志治理，5 个 Phase 线性推进（71→75），autonomous 一次跑完整个里程碑：用户上下文贯穿 + 系统日志队列化落库 + QPS/TPS/召回/SLA/时长/TTFT 时序指标 + CPU/内存/DB/Redis/Qdrant 当前快照 + 并发/排队/吞吐/错误趋势 + 阈值告警与告警事件（P0/P1/P2，邮件）+ 运维大盘。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
 
 - [x] **Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）** (5/5 plans) — CTX-01, CTX-02, LOG-01~08 — completed 2026-06-24（verification 8/8 passed） — **planned: 5 plans / 3 waves**
-- [ ] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** - RequestMetric 全入口埋点(QPS/错误三口径/时长/TTFT) + ModelUsageRecord 扩展(TPS 含容器/上游 429·529) + 召回指标与内容留痕 — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
+- [x] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** (4/4 plans) — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 — completed 2026-06-24（verification 6/6 passed）
 - [ ] **Phase 73: 快照·趋势·查询 API** - CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照 + GaugeSample 趋势采样 + 可用率 + 时序/快照查询 API(percentile_cont 分位) — SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02
 - [ ] **Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）** - 系统级阈值告警规则 + AlertEvent(P0/P1/P2/持续时长/firing-resolved/email_sent/去重) + SMTP 邮件 + 复用飞书/webhook — ALERT-01, ALERT-02, ALERT-03
 - [ ] **Phase 75: 运维大盘前端 + 规范固化** - echarts 大盘(健康分/实时速率/信息卡/趋势/快照) + 告警事件页 + 系统日志下钻页 + 运行时配置面板 + 规范固化与 PR/Review checklist — UI-01, UI-02, UI-03, UI-04, SPEC-01
@@ -198,7 +198,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性与日志治理（Phases 71–75，5 阶段 / 34 需求，1/5 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
+里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性与日志治理（Phases 71–75，5 阶段 / 34 需求，2/5 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
 ---
 *Previous milestones archived in .planning/milestones/*
