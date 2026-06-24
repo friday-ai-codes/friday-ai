@@ -4,6 +4,7 @@
 不再使用 repos 缓存，简化状态管理。
 """
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -107,7 +108,27 @@ class GitOperations:
         if pruned_count:
             log.info("exclusion_prune_complete", pruned_count=pruned_count)
 
+        # Fail-closed：clone/checkout/prune 后工作区必须真的含仓库内容。
+        # 历史 fail-open bug（repo_summary 把 Friday Task 自身当成目标仓库总结、却标
+        # completed 的真凶）：当工作区除 .git 外为空（瞬时 git 失败 / 目标分支为空 /
+        # 被 prune 删空）时，agent 走 bypassPermissions、没有文件系统沙箱，会 `ls /`
+        # 越界到容器自身的 /app 代码生成张冠李戴的描述。这里在 setup 阶段就 fail-closed，
+        # 让任务明确失败而非误导，胜过让 agent 在空工作区上自由发挥。
+        self._assert_workspace_populated()
+
         log.info("Git setup complete", branch=self.config.git_branch)
+
+    def _assert_workspace_populated(self) -> None:
+        """校验克隆后的工作区确实含仓库工作树文件（除 .git 外非空），否则 fail-closed。"""
+        if not self.workspace:
+            raise RuntimeError("Workspace not initialized")
+        entries = [p for p in self.workspace.iterdir() if p.name != ".git"]
+        if not entries:
+            raise RuntimeError(
+                "Cloned workspace is empty (only .git present) for "
+                f"{self._mask_url(self.config.git_repo_url)} @ {self.config.git_branch}; "
+                "refusing to run agent on an empty workspace (fail-closed)。"
+            )
 
     async def _setup_ssh_auth(self) -> None:
         """Set up SSH key authentication."""
@@ -158,44 +179,81 @@ class GitOperations:
 
         logger.info("Token authentication configured")
 
+    # clone 重试参数：瞬时 DNS（"Name or service not known"）/ 连接（"Connection
+    # refused"）失败在突发并发下（几百容器同时拉取打满 Docker 内嵌 DNS）零星出现。
+    # 历史上 _clone_repo 无重试 → 单次瞬时失败即整任务失败；叠加 repo_summary
+    # fail-open 还会被 agent 误当成"分析 /app"产出错误描述。这里加退避重试兜瞬时故障。
+    _CLONE_MAX_ATTEMPTS = 3
+
     async def _clone_repo(self) -> None:
-        """Clone the repository, using reference if available."""
+        """Clone the repository, using reference if available. 瞬时网络/DNS 失败自动重试。"""
         if not self.workspace:
             raise RuntimeError("Workspace not initialized")
 
         reference_path = self.config.git_reference_path
+        last_error: GitCommandError | None = None
 
-        try:
-            if reference_path and os.path.exists(reference_path):
-                # Reference clone: 从本地 bare repo 获取对象，仅下载增量
-                # --dissociate 确保克隆后独立于 reference，可安全删除 reference
-                logger.info(
-                    "using_reference_clone",
-                    reference=reference_path,
-                    repo_url_masked=self._mask_url(self.config.git_repo_url),
+        for attempt in range(1, self._CLONE_MAX_ATTEMPTS + 1):
+            try:
+                if reference_path and os.path.exists(reference_path):
+                    # Reference clone: 从本地 bare repo 获取对象，仅下载增量
+                    # --dissociate 确保克隆后独立于 reference，可安全删除 reference
+                    logger.info(
+                        "using_reference_clone",
+                        reference=reference_path,
+                        repo_url_masked=self._mask_url(self.config.git_repo_url),
+                        attempt=attempt,
+                    )
+                    self.repo = Repo.clone_from(
+                        self.config.git_repo_url,
+                        self.workspace,
+                        branch=self.config.git_branch,
+                        reference=reference_path,
+                        dissociate=True,
+                    )
+                else:
+                    # Fallback: shallow clone
+                    logger.info(
+                        "using_shallow_clone",
+                        repo_url_masked=self._mask_url(self.config.git_repo_url),
+                        attempt=attempt,
+                    )
+                    self.repo = Repo.clone_from(
+                        self.config.git_repo_url,
+                        self.workspace,
+                        branch=self.config.git_branch,
+                        depth=1,
+                    )
+                return
+            except GitCommandError as e:
+                last_error = e
+                logger.warning(
+                    "clone_attempt_failed",
+                    attempt=attempt,
+                    max_attempts=self._CLONE_MAX_ATTEMPTS,
+                    error=str(e),
                 )
-                self.repo = Repo.clone_from(
-                    self.config.git_repo_url,
-                    self.workspace,
-                    branch=self.config.git_branch,
-                    reference=reference_path,
-                    dissociate=True,
-                )
-            else:
-                # Fallback: shallow clone
-                logger.info(
-                    "using_shallow_clone",
-                    repo_url_masked=self._mask_url(self.config.git_repo_url),
-                )
-                self.repo = Repo.clone_from(
-                    self.config.git_repo_url,
-                    self.workspace,
-                    branch=self.config.git_branch,
-                    depth=1,
-                )
-        except GitCommandError as e:
-            logger.error("Failed to clone repository", error=str(e))
-            raise
+                # Repo.clone_from 要求目标目录为空：失败可能残留半成品，重试前清空。
+                self._reset_workspace_dir()
+                if attempt < self._CLONE_MAX_ATTEMPTS:
+                    await asyncio.sleep(min(2 ** (attempt - 1), 8))
+
+        logger.error("Failed to clone repository", error=str(last_error))
+        assert last_error is not None
+        raise last_error
+
+    def _reset_workspace_dir(self) -> None:
+        """清空工作区目录内容（保留目录本身），供 clone 重试前复位。"""
+        if not self.workspace or not self.workspace.exists():
+            return
+        for child in self.workspace.iterdir():
+            try:
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     async def _checkout_branch(self) -> None:
         """Checkout the target branch."""
