@@ -34,5 +34,6 @@ alwaysApply: true
 - [ ] 新增队列/异步任务：积压可被快照采集，任务携带发起用户。
 - [ ] 新增 webhook：原始 payload 脱敏后落库可查看。
 - [ ] 评估是否需要可配置告警阈值。
+- [ ] 高频循环内未用 INFO 刷屏（用 `sampling` 分类 + debug 或采样）。
 
-> 平台基础设施（指标门面 / SystemLogEntry 落库 / 用户上下文贯穿）在 v0.14.0 里程碑分阶段落地。设施就绪前，先遵守事件命名/字段/分类/脱敏/用户绑定约定，平台就绪后无需改业务代码即可生效。
+> 平台基础设施（指标精简事件表 `RequestMetric`/扩展 `ModelUsageRecord`/`GaugeSample`、SystemLogEntry 队列化落库、用户上下文 contextvars 贯穿、快照/趋势查询与告警评估）已在 v0.14.0 里程碑（Phase 71–74）落地。本清单为现行态：新增/改动功能按上述约定补齐即自动生效。事件目录与 call_source/component 清单见 `LOGGING-SPEC.md §4.1/§5/§10`。
