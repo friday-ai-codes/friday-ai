@@ -71,6 +71,17 @@ def test_validate_whitelist_and_agg_default():
         metrics_query._validate("qps", "p95", "drop_table")  # 维度非白名单
 
 
+def test_validate_accepts_p99_and_upstream_metric():
+    """p99 进受控 agg 白名单（不再回退 p95）；upstream 进受控 metric 白名单。"""
+    # p99 被接受并原样返回（非法 agg 才回退 p95）。
+    assert metrics_query._validate("duration", "p99", "") == "p99"
+    assert "p99" in metrics_query._AGGS
+    assert metrics_query._PERCENTILE["p99"] == 0.99
+    # upstream 为合法 metric（不抛 ValueError）。
+    assert metrics_query._validate("upstream", "p95", "") == "p95"
+    assert "upstream" in metrics_query._METRICS
+
+
 def test_validate_gauge_name_controlled_prefix():
     """gauge 名仅允许受控前缀；未知名 → ValueError。"""
     assert metrics_query._validate_gauge_name("concurrency.provider_slots")
@@ -199,6 +210,36 @@ def test_duration_percentile_degrades_on_sqlite():
 
 
 @pytest.mark.django_db
+def test_duration_p99_accepted_and_degrades_on_sqlite():
+    """duration p99：受控 agg 接受；Postgres percentile_cont(0.99) 精确，SQLite 降级 MAX 兜底。"""
+    from django.db import connection
+
+    now = timezone.now()
+    base = now - timedelta(minutes=2)
+    _mk_request_metric(ts=base, duration_ms=100)
+    _mk_request_metric(ts=base + timedelta(seconds=1), duration_ms=200)
+    _mk_request_metric(ts=base + timedelta(seconds=2), duration_ms=900)
+
+    result = metrics_query.query_timeseries(
+        metric="duration",
+        agg="p99",
+        start=(now - timedelta(minutes=10)).isoformat(),
+        end=now.isoformat(),
+        step="1h",
+    )
+    # agg 原样保留（非法才回退 p95）。
+    assert result["agg"] == "p99"
+    assert result["series"], "p99 应有聚合结果"
+    if connection.vendor == "postgresql":
+        assert result["degraded"] is False
+    else:
+        # SQLite 无 percentile_cont → p99 降级 MAX → 900。
+        assert result["degraded"] is True
+        assert result["note"] == "sqlite_percentile_approx"
+        assert result["series"][0]["value"] == 900
+
+
+@pytest.mark.django_db
 def test_duration_excludes_null_value_rows():
     """duration 查询 value_col 为 null 的行被 WHERE 排除。"""
     now = timezone.now()
@@ -242,6 +283,36 @@ def test_tps_sum_tokens_by_provider():
     by_provider = {p["dim"]: p["value"] for p in result["series"]}
     assert by_provider.get("openai") == 150
     assert by_provider.get("anthropic") == 30
+
+
+@pytest.mark.django_db
+def test_upstream_breakdown_429_529_other():
+    """upstream metric：ModelUsageRecord 按 upstream_status_code 分桶计数（429/529/other）。
+
+    null 上游码（正常调用）不计入；非 429/529 的上游码统一归 'other'。
+    """
+    from interactions.models import ModelUsageRecord
+
+    # 429×2、529×1、503→other×1、null（正常）×1（应排除）。
+    ModelUsageRecord.objects.create(provider="anthropic", model="claude", upstream_status_code=429)
+    ModelUsageRecord.objects.create(provider="anthropic", model="claude", upstream_status_code=429)
+    ModelUsageRecord.objects.create(provider="anthropic", model="claude", upstream_status_code=529)
+    ModelUsageRecord.objects.create(provider="openai", model="gpt", upstream_status_code=503)
+    ModelUsageRecord.objects.create(provider="openai", model="gpt", upstream_status_code=None)
+
+    now = timezone.now()
+    result = metrics_query.query_timeseries(
+        metric="upstream",
+        start=(now - timedelta(minutes=10)).isoformat(),
+        end=(now + timedelta(minutes=1)).isoformat(),
+        step="1h",
+    )
+    by_code = {p["dim"]: p["value"] for p in result["series"]}
+    assert by_code.get("429") == 2
+    assert by_code.get("529") == 1
+    assert by_code.get("other") == 1
+    # null 上游码不计入任何桶（总数 = 4）。
+    assert sum(by_code.values()) == 4
 
 
 @pytest.mark.django_db

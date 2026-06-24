@@ -1,40 +1,35 @@
 ---
 phase: 75-dashboard-ui
-verified: 2026-06-24T18:30:00Z
-status: gaps_found
-score: 3/5 must-haves verified
+verified: 2026-06-25T02:45:00Z
+status: passed
+score: 5/5 must-haves verified
 overrides_applied: 0
+gap_closure: 2026-06-25T02:45:00Z
 gaps:
   - truth: "UI-01 信息卡『上游错误』含 429·529 单列"
-    status: partial
-    reason: "后端 error 时序查询（metrics_query._query_request_metric）仅按 error_class 维度拆分 system/upstream/business，RequestMetric 查询无 429/529 上游状态码维度（上游码落在 ModelUsageRecord.upstream_status_code，未经查询 API 暴露为可聚合维度）。前端如实显示 '—' + footnote「细分 429/529 待后端维度支持」，未臆造拆分。属后端查询维度缺口，非前端实现缺陷。"
-    artifacts:
-      - path: "web/src/pages/admin/observability/index.vue"
-        issue: "上游错误卡 429·529 子项硬编码 EMPTY（line ~355），无数据源可填"
-      - path: "server/system/metrics_query.py"
-        issue: "_DIMENSIONS 无 upstream_status_code；error metric 仅 system/upstream/business 三口径"
-    missing:
-      - "后端 metrics_query 增加上游状态码（429/529）可聚合维度，或新增上游码统计端点，前端再补单列数据"
+    status: closed
+    reason: "后端 metrics_query 新增 'upstream' metric（_query_upstream），聚合 ModelUsageRecord.upstream_status_code 为受控 CASE dim（429/529/other），仅统计 upstream_status_code IS NOT NULL 行，双后端 CASE 通用。前端 index.vue 新增 obs-upstream-breakdown 查询 + upstreamCounts 派生，上游错误卡用 429 限流 / 529 过载 / 其它上游码 / 上游错误数 单列取代旧 '—' 占位。"
+    resolution:
+      - "server/system/metrics_query.py: _METRICS 增 'upstream'；新增 _query_upstream + 分派"
+      - "web/src/pages/admin/observability/index.vue: upstreamBreakdown 查询 + upstreamCounts + 卡片单列"
+      - "web/src/api/system.ts: MetricName 增 'upstream'"
+    test: "tests/test_metrics_query.py::test_upstream_breakdown_429_529_other（429=2/529=1/other=1，null 排除）"
   - truth: "UI-01 请求时长 / TTFT 头部为 P99"
-    status: partial
-    reason: "后端 metrics_query._AGGS 受控枚举为 {p95,p90,p50,avg,max}，无 p99。前端头部大字取 P95（最高受控分位）+ footnote「后端分位上限，暂无 P99」。属后端聚合能力缺口。"
-    artifacts:
-      - path: "server/system/metrics_query.py"
-        issue: "_AGGS = {p95,p90,p50,avg,max}；_PERCENTILE 无 0.99"
-      - path: "web/src/pages/admin/observability/index.vue"
-        issue: "durationStats/ttftStats 头部用 p95，未取 p99"
-    missing:
-      - "后端 _AGGS/_PERCENTILE 增加 p99（percentile_cont 0.99），前端头部改取 P99"
+    status: closed
+    reason: "后端 _AGGS 增 p99、_PERCENTILE 增 0.99（Postgres percentile_cont(0.99) 精确，SQLite 降级 MAX 兜底 degraded=true）。前端 DURATION_AGGS 增 p99，请求时长 / TTFT 卡大字头取 P99，P95/P90/P50/Avg/Max 列于副行。"
+    resolution:
+      - "server/system/metrics_query.py: _AGGS 增 p99；_PERCENTILE['p99']=0.99（SQLite degrade 复用 MAX 分支）"
+      - "web/src/pages/admin/observability/index.vue: DURATION_AGGS/percentileSummary 增 p99，头部改 P99"
+      - "web/src/api/system.ts: MetricAgg 增 'p99'"
+    test: "tests/test_metrics_query.py::test_validate_accepts_p99_and_upstream_metric + test_duration_p99_accepted_and_degrades_on_sqlite"
   - truth: "UI-04 系统日志多维筛选支持 call_source/provider/credential/model/关联键（服务端全量过滤）"
-    status: partial
-    reason: "后端 log_views._apply_filters 仅支持 component/level/user_id/source/start/end/keyword 服务端精确/全文筛选；call_source/provider/credential/model/关联键落在 payload/correlation JSON 内，后端不做顶层列筛选。前端对这 5 个维度提供「高级维度」客户端 narrowing（仅作用当前页），已注释并在 UI 明示「仅过滤当前页（后端不支持 payload 顶层筛选）」。属后端查询缺口；前端做了透明降级，未发臆造参数。"
-    artifacts:
-      - path: "server/system/log_views.py"
-        issue: "_extract_filters/_apply_filters 不含 call_source/provider/credential/model/correlation"
-      - path: "web/src/components/observability/SystemLogTable.vue"
-        issue: "高级维度（call_source/provider/credential/model/关联键）仅当前页客户端过滤，非服务端全量筛选"
-    missing:
-      - "后端 SystemLogEntry 查询支持 payload/correlation 内 call_source/provider/credential/model/关联键 服务端筛选（JSON 字段过滤或抽列索引），前端再切为后端参数"
+    status: closed
+    reason: "后端 log_views._extract_filters/_apply_filters 增 5 维：call_source/provider/credential/model 走 payload jsonb 顶层键精确匹配（payload__<key>=），关联键 correlation 走 Cast(correlation→text)__icontains 子串检索（覆盖任意键/值）。双后端 JSON 字段查找原生支持。前端 SystemLogTable 高级维度由当前页客户端 narrowing 切为真实服务端查询参数（advKey 键名即 SystemLogQuery 键），移除『仅过滤当前页』提示，改为『服务端全量筛选』。clear-by-filter 经共用 _apply_filters 同步支持。"
+    resolution:
+      - "server/system/log_views.py: _extract_filters/_has_any_filter/_apply_filters 增 5 维（payload 精确 + correlation 文本子串）"
+      - "web/src/components/observability/SystemLogTable.vue: 高级维度映射为服务端 query 参数（含 300ms 防抖），删除客户端 narrowing"
+      - "web/src/api/system.ts: SystemLogQuery 增 call_source/provider/credential/model/correlation"
+    test: "tests/test_system_log_api.py::test_filter_by_{call_source,provider,credential,model}_payload + test_filter_by_correlation_substring + test_clear_by_advanced_dim_call_source"
 human_verification:
   - test: "超管登录访问 /admin/observability（总览/告警/日志三视图）核对亮/暗双主题"
     expected: "两套主题对比度 ≥4.5:1、状态色语义正确、无样式破裂；颜色非唯一信号（配图标/文字）"
@@ -59,9 +54,9 @@ human_verification:
 # Phase 75: 运维大盘前端 + 规范固化 Verification Report
 
 **Phase Goal:** 后端 API 就绪后做统一运维大盘（借鉴 REFERENCE-UI.md 卡片范式但按 Agent 维度重构），并把日志/埋点规范固化为长期约束。
-**Verified:** 2026-06-24T18:30:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-06-24T18:30:00Z（初验）→ 2026-06-25T02:45:00Z（缺口闭合复核）
+**Status:** passed（3 处后端查询缺口已闭合，见文末「Gap Closure」）
+**Re-verification:** Yes — 初验 gaps_found（5 truths 中 2 PARTIAL）→ 三处缺口实现 + 测试后转 passed
 
 ## Goal Achievement
 
@@ -150,5 +145,37 @@ human_verification:
 
 ---
 
-_Verified: 2026-06-24T18:30:00Z_
-_Verifier: Claude (gsd-verifier)_
+## Gap Closure (2026-06-25)
+
+初验三处缺口**全部源于后端查询 API 能力边界**（已在初验中如实标注，非前端实现缺陷）。本次按"后端补能力 + 前端切真实数据源"闭合，零 model 变更（纯 query-only，`makemigrations --check` 干净）。
+
+### Gap 1 — UI-01 请求时长 / TTFT 头部 P99
+
+- **后端** `server/system/metrics_query.py`：`_AGGS` 增 `p99`、`_PERCENTILE` 增 `"p99": 0.99`。Postgres 走 `percentile_cont(0.99) WITHIN GROUP`；SQLite 无 `percentile_cont` → 复用既有 `MAX` 降级分支（`degraded=true` / `note="sqlite_percentile_approx"`），功能不阻塞。
+- **前端** `web/src/pages/admin/observability/index.vue`：`DURATION_AGGS` 与 `percentileSummary` 增 `p99`；请求时长 / TTFT 卡大字头由 P95 改为 **P99**（per UI-SPEC §2.3），P95/P90/P50/Avg/Max 下沉副行。`web/src/api/system.ts` `MetricAgg` 增 `'p99'`。
+- **测试**：`test_validate_accepts_p99_and_upstream_metric`（p99 进白名单不回退）、`test_duration_p99_accepted_and_degrades_on_sqlite`（SQLite degrade=true + MAX 兜底 900）。
+
+### Gap 2 — UI-01 上游错误 429 / 529 单列
+
+- **后端** `server/system/metrics_query.py`：`_METRICS` 增 `upstream`；新增 `_query_upstream`，聚合 `ModelUsageRecord.upstream_status_code`，受控 `CASE` 收口 dim 为 `429`/`529`/`other`，仅统计 `upstream_status_code IS NOT NULL` 行（时间列 `created_at`，双后端 CASE 通用，无注入面）。
+- **前端** `index.vue`：新增 `obs-upstream-breakdown` 查询 + `upstreamCounts` 派生（按 dim 汇总）；上游错误卡用「429 限流 / 529 过载 / 其它上游码 / 上游错误数」四单列取代旧 `'—'` 占位与 footnote。`system.ts` `MetricName` 增 `'upstream'`。
+- **测试**：`test_upstream_breakdown_429_529_other`（429=2 / 529=1 / other=1，null 上游码排除，总数=4）。
+
+### Gap 3 — UI-04 系统日志 5 高级维度服务端筛选
+
+- **后端** `server/system/log_views.py`：`_extract_filters` / `_has_any_filter`（新增 `_FILTER_KEYS`）/ `_apply_filters` 增 5 维。`call_source/provider/credential/model` 走 `payload` jsonb 顶层键**精确**匹配（`payload__<key>=`，PG `->>` / SQLite `json_extract` 语义一致）；`correlation` 走 `Cast(correlation→TextField)__icontains` 子串检索（覆盖任意关联键/值；PG 为 jsonb 文本表示、SQLite 为存储 JSON 文本，行为一致，best-effort）。clear-by-filter 经共用 `_apply_filters` 同步获得能力。
+- **前端** `web/src/components/observability/SystemLogTable.vue`：高级维度由「当前页客户端 narrowing」切为**真实服务端查询参数**（`advKey` 取值即 `SystemLogQuery` 键，含 300ms 防抖 + 切换维度清值），删除 `dimValue`/客户端过滤 `items`，并把「仅过滤当前页（后端不支持 payload 顶层筛选）」提示改为「服务端全量筛选」。`system.ts` `SystemLogQuery` 增 5 字段。
+- **测试**：`test_filter_by_{call_source,provider,credential,model}_payload`（payload 精确各 1 命中）、`test_filter_by_correlation_substring`（子串命中 run_id/conversation_id 值）、`test_clear_by_advanced_dim_call_source`（高级维度免 confirm_all 清理）。
+
+### 验证结果
+
+- **后端** `cd server && uv run pytest tests/test_metrics_query.py tests/test_system_log_api.py tests/test_credential_leak_protection.py -p no:randomly -q` → **67 passed**。
+- **迁移** `makemigrations --check --dry-run` → **No changes detected**（纯 query-only，无 model 变更）。
+- **前端** `pnpm vue-tsc --noEmit` → exit 0；`pnpm exec vitest run src/components/observability src/api/__tests__/observability.spec.ts` → **4 files / 22 tests passed**。
+
+5/5 code truths 达成。frontmatter `human_verification`（6 项纯视觉/交互 UAT）仍需真机肉眼判定，与本次代码缺口闭合无关。
+
+---
+
+_Verified: 2026-06-24T18:30:00Z（初验） · 2026-06-25T02:45:00Z（缺口闭合复核）_
+_Verifier: Claude (gsd-verifier) · Gap closure: Claude (gsd-executor)_

@@ -367,10 +367,13 @@ export async function getMetricsSnapshot(): Promise<MetricsSnapshot> {
 //    对齐 metrics_query.query_timeseries 受控 metric/dimension/agg 与两种 series 形状。
 // ----------------------------------------------------------------------------
 
-/** 受控 metric：计数/分位/求和型 + gauge:<受控前缀名>。 */
-export type MetricName = 'qps' | 'tps' | 'sla' | 'error' | 'duration' | 'ttft' | `gauge:${string}`
-/** 受控聚合方式（分位 + avg/max）。 */
-export type MetricAgg = 'p95' | 'p90' | 'p50' | 'avg' | 'max'
+/**
+ * 受控 metric：计数/分位/求和型 + 上游错误码分布 + gauge:<受控前缀名>。
+ * upstream：ModelUsageRecord 按 upstream_status_code 分桶计数，dim 收口为 429/529/other。
+ */
+export type MetricName = 'qps' | 'tps' | 'sla' | 'error' | 'duration' | 'ttft' | 'upstream' | `gauge:${string}`
+/** 受控聚合方式（分位 p99/p95/p90/p50 + avg/max）。 */
+export type MetricAgg = 'p99' | 'p95' | 'p90' | 'p50' | 'avg' | 'max'
 /** 受控分组维度（仅白名单列可进 GROUP BY）。 */
 export type MetricDimension = 'source' | 'provider' | 'call_source' | 'error_class' | 'route' | 'model'
 
@@ -580,6 +583,13 @@ export interface SystemLogQuery {
   start?: string
   end?: string
   keyword?: string
+  /** 高级维度（payload jsonb 顶层键精确匹配，服务端全量筛选）。 */
+  call_source?: string
+  provider?: string
+  credential?: string
+  model?: string
+  /** 关联键（correlation jsonb 文本化子串检索，任意键/值命中）。 */
+  correlation?: string
   limit?: number
   offset?: number
 }

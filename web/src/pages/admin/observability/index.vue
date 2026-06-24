@@ -10,9 +10,9 @@
  * 快照；页面隐藏（visibilitychange）时暂停，onUnmounted 清理（观测代码不反噬业务，
  * 拉数全部 best-effort，单源失败不崩页）。
  *
- * 口径取舍：metrics_query agg 白名单为 p95/p90/p50/avg/max（无 p99），故请求时长 / TTFT
- * 大字头取 **P95**（最高受控分位）；上游错误暂无 429/529 拆分维度，单列如实标注
- * 「细分 429/529 待后端维度支持」，不臆造。
+ * 口径取舍：metrics_query agg 白名单含 p99/p95/p90/p50/avg/max，故请求时长 / TTFT 大字头
+ * 取 **P99**（per UI-SPEC §2.3），P95/P90/P50/Avg/Max 列于副行；上游错误 429/529/其它上游码
+ * 由 metrics_query 'upstream' 维度（ModelUsageRecord.upstream_status_code）单列驱动。
  */
 import type { MetricPoint, MetricsQueryResult, SlaPoint } from '~/api/system'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/vue-query'
@@ -108,8 +108,14 @@ const { data: slaData } = useQuery({
   queryFn: () => querySla({ start: timeRange.value.start, end: timeRange.value.end }),
   placeholderData: keepPreviousData,
 })
+// 上游错误码分布（429/529/other）：ModelUsageRecord.upstream_status_code 聚合。
+const { data: upstreamBreakdown } = useQuery({
+  queryKey: ['obs-upstream-breakdown', rangeKey],
+  queryFn: () => queryMetrics({ metric: 'upstream', dimension: '', start: timeRange.value.start, end: timeRange.value.end }),
+  placeholderData: keepPreviousData,
+})
 
-const DURATION_AGGS = ['p95', 'p90', 'p50', 'avg', 'max'] as const
+const DURATION_AGGS = ['p99', 'p95', 'p90', 'p50', 'avg', 'max'] as const
 function usePercentileQuery(key: string, metric: 'duration' | 'ttft') {
   return useQuery({
     queryKey: [key, rangeKey],
@@ -169,6 +175,20 @@ const upstreamErrorRate = computed(() => {
   return errorCounts.value.upstream / req
 })
 
+/** 上游错误码分布：按 dim(429/529/other) 汇总 ModelUsageRecord 上游码计数。 */
+const upstreamCounts = computed(() => {
+  const out = { c429: 0, c529: 0, other: 0 }
+  for (const p of upstreamBreakdown.value?.series ?? []) {
+    if (p.dim === '429')
+      out.c429 += p.value ?? 0
+    else if (p.dim === '529')
+      out.c529 += p.value ?? 0
+    else
+      out.other += p.value ?? 0
+  }
+  return out
+})
+
 /** SLA 汇总：(Σeligible - Σfailures)/Σeligible。 */
 const slaSummary = computed(() => {
   const series: SlaPoint[] = slaData.value?.series ?? []
@@ -196,6 +216,7 @@ function summarizeAgg(result: MetricsQueryResult<MetricPoint> | undefined, mode:
 
 function percentileSummary(data: Record<typeof DURATION_AGGS[number], MetricsQueryResult<MetricPoint>> | undefined) {
   return {
+    p99: summarizeAgg(data?.p99, 'mean'),
     p95: summarizeAgg(data?.p95, 'mean'),
     p90: summarizeAgg(data?.p90, 'mean'),
     p50: summarizeAgg(data?.p50, 'mean'),
@@ -315,15 +336,16 @@ function fmtPct(v: number | null | undefined, digits = 2): string {
         title="请求时长"
         icon="lucide--timer"
         icon-class="bg-amber-500/10 text-amber-600"
-        :main-value="formatDurationMs(durationStats.p95)"
-        main-label="P95"
+        :main-value="formatDurationMs(durationStats.p99)"
+        main-label="P99"
         :sub-items="[
+          { label: 'P95', value: formatDurationMs(durationStats.p95) },
           { label: 'P90', value: formatDurationMs(durationStats.p90) },
           { label: 'P50', value: formatDurationMs(durationStats.p50) },
           { label: 'Avg', value: formatDurationMs(durationStats.avg) },
           { label: 'Max', value: formatDurationMs(durationStats.max) },
         ]"
-        footnote="头部为 P95（后端分位上限，暂无 P99）"
+        footnote="头部为 P99（Postgres percentile_cont；SQLite 近似降级）"
       />
 
       <!-- TTFT -->
@@ -331,15 +353,16 @@ function fmtPct(v: number | null | undefined, digits = 2): string {
         title="首字延迟 TTFT"
         icon="lucide--gauge"
         icon-class="bg-violet-500/10 text-violet-600"
-        :main-value="formatDurationMs(ttftStats.p95)"
-        main-label="P95"
+        :main-value="formatDurationMs(ttftStats.p99)"
+        main-label="P99"
         :sub-items="[
+          { label: 'P95', value: formatDurationMs(ttftStats.p95) },
           { label: 'P90', value: formatDurationMs(ttftStats.p90) },
           { label: 'P50', value: formatDurationMs(ttftStats.p50) },
           { label: 'Avg', value: formatDurationMs(ttftStats.avg) },
           { label: 'Max', value: formatDurationMs(ttftStats.max) },
         ]"
-        footnote="头部为 P95（后端分位上限，暂无 P99）"
+        footnote="头部为 P99（Postgres percentile_cont；SQLite 近似降级）"
       />
 
       <!-- 上游错误 -->
@@ -351,10 +374,12 @@ function fmtPct(v: number | null | undefined, digits = 2): string {
         main-label="上游错误率"
         :tone="upstreamErrorRate != null && upstreamErrorRate >= 0.05 ? 'danger' : 'default'"
         :sub-items="[
+          { label: '429 限流', value: formatNumber(upstreamCounts.c429) },
+          { label: '529 过载', value: formatNumber(upstreamCounts.c529) },
+          { label: '其它上游码', value: formatNumber(upstreamCounts.other) },
           { label: '上游错误数', value: formatNumber(errorCounts.upstream) },
-          { label: '429 · 529', value: EMPTY },
         ]"
-        footnote="细分 429 / 529 待后端维度支持"
+        footnote="429 / 529 来自模型调用上游状态码（ModelUsageRecord）"
       />
     </section>
 
