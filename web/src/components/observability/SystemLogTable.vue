@@ -7,12 +7,11 @@
  * 经 emit('counters') 上抛，由页面顶部 QueueCountersBar 同源消费（与列表同一次请求刷新）。
  * 行点击 emit('rowClick', row) 供页面打开下钻抽屉。
  *
- * 筛选维度说明（**不臆造后端参数**）：
- * - 后端 SystemLogEntry 仅支持顶层筛选 component/level/user_id/source/keyword(message 全文)
- *   + start/end 时间段（见 server/system/log_views.py _extract_filters）。
- * - call_source/provider/credential/model/关联键 落在 payload/correlation 内，后端**不做**
- *   顶层列筛选。本组件对这些维度提供「高级筛选」：在**当前页**结果上按 payload/correlation
- *   客户端过滤（narrowing），不向后端发送臆造参数；如需全量检索请配合 keyword 全文。
+ * 筛选维度说明（全部服务端全量筛选）：
+ * - 顶层列：component/level/user_id/source/keyword(message 全文) + start/end 时间段。
+ * - 高级维度：call_source/provider/credential/model 经后端 payload jsonb 顶层键精确筛选；
+ *   关联键 correlation 经后端 correlation jsonb 文本化子串检索（见 log_views._apply_filters）。
+ *   均作为真实查询参数下发（服务端全量过滤，非当前页 narrowing），参数随分页一并 refetch。
  *
  * UI-SPEC §0：lucide 无 emoji、tabular-nums、亮暗 token、hover 过渡、focus 可见环、
  * 骨架 / 空态、移动端横向滚动不溢出。
@@ -80,13 +79,32 @@ watch(keywordInput, (v) => {
   }, 300)
 })
 
-// ── 高级（payload/correlation）客户端筛选 ──────────────────────────────
+// ── 高级（payload/correlation）服务端筛选 ──────────────────────────────
+// advKey 取值与 SystemLogQuery 的高级维度键一一对应（call_source/provider/credential/
+// model/correlation），直接映射为后端查询参数（服务端全量过滤）。
+type AdvKey = 'call_source' | 'provider' | 'credential' | 'model' | 'correlation'
 const advKey = ref<string>(SENTINEL_ALL)
 const advValue = ref('')
+const advValueInput = ref('')
 
-// 任一筛选（含时间段）变化 → 回第一页。
+// 高级维度值输入防抖（300ms），与 keyword 同款，避免逐字 refetch。
+let advTimer: ReturnType<typeof setTimeout> | null = null
+watch(advValueInput, (v) => {
+  if (advTimer)
+    clearTimeout(advTimer)
+  advTimer = setTimeout(() => {
+    advValue.value = v.trim()
+  }, 300)
+})
+// 切换高级维度时清空已输入的值（避免跨维度残留）。
+watch(advKey, () => {
+  advValueInput.value = ''
+  advValue.value = ''
+})
+
+// 任一筛选（含时间段 / 高级维度）变化 → 回第一页。
 watch(
-  [level, source, component, userId, keyword, () => props.timeRange],
+  [level, source, component, userId, keyword, advKey, advValue, () => props.timeRange],
   () => { offset.value = 0 },
 )
 
@@ -102,6 +120,9 @@ const queryParams = computed<SystemLogQuery>(() => {
     p.user_id = userId.value.trim()
   if (keyword.value)
     p.keyword = keyword.value
+  // 高级维度作为真实服务端查询参数下发（键名即 advKey）。
+  if (advKey.value !== SENTINEL_ALL && advValue.value)
+    p[advKey.value as AdvKey] = advValue.value
   if (props.timeRange?.start)
     p.start = props.timeRange.start
   if (props.timeRange?.end)
@@ -129,34 +150,12 @@ watch(() => data.value?.counters, (c) => {
 }, { immediate: true })
 
 const rawItems = computed<SystemLogRow[]>(() => data.value?.items ?? [])
+// 服务端已全量筛选，列表直接展示返回行（不再做当前页客户端 narrowing）。
+const items = rawItems
 const total = computed(() => data.value?.total ?? 0)
 
-/** 高级维度取值：从 payload / correlation 中宽松取键（字符串化比较）。 */
-function dimValue(row: SystemLogRow, key: string): string {
-  const fromPayload = row.payload?.[key]
-  const fromCorr = row.correlation?.[key]
-  const v = fromPayload ?? fromCorr
-  if (v == null)
-    return ''
-  return typeof v === 'object' ? JSON.stringify(v) : String(v)
-}
-
-// 当前页客户端 narrowing（仅作用当前页，不影响 total/分页）。
-const items = computed<SystemLogRow[]>(() => {
-  if (advKey.value === SENTINEL_ALL || !advValue.value.trim())
-    return rawItems.value
-  const needle = advValue.value.trim().toLowerCase()
-  return rawItems.value.filter((row) => {
-    if (advKey.value === '关联键') {
-      // 关联键：在 correlation 全部键值中模糊匹配。
-      const corr = row.correlation ?? {}
-      return Object.values(corr).some(v => String(v).toLowerCase().includes(needle))
-    }
-    return dimValue(row, advKey.value).toLowerCase().includes(needle)
-  })
-})
-
-const advFilterActive = computed(() => advKey.value !== SENTINEL_ALL && !!advValue.value.trim())
+// 高级维度筛选已激活（用于显示「服务端筛选生效」提示）。
+const advFilterActive = computed(() => advKey.value !== SENTINEL_ALL && !!advValue.value)
 
 const rangeStart = computed(() => (total.value === 0 ? 0 : offset.value + 1))
 const rangeEnd = computed(() => Math.min(offset.value + PAGE_SIZE, total.value))
@@ -192,12 +191,12 @@ const sourceOptions = [
   { value: 'scheduler', label: '调度器' },
 ]
 const advKeyOptions = [
-  { value: SENTINEL_ALL, label: '高级维度（当前页）' },
+  { value: SENTINEL_ALL, label: '高级维度（服务端）' },
   { value: 'call_source', label: 'call_source' },
   { value: 'provider', label: 'provider' },
   { value: 'credential', label: 'credential' },
   { value: 'model', label: 'model' },
-  { value: '关联键', label: '关联键' },
+  { value: 'correlation', label: '关联键' },
 ]
 
 // ── category 徽标 ────────────────────────────────────────────────────────
@@ -293,10 +292,10 @@ defineExpose({ rawItems })
       />
     </div>
 
-    <!-- 高级（payload/correlation）筛选：仅作用当前页 -->
+    <!-- 高级（payload/correlation）筛选：服务端全量过滤 -->
     <div class="flex flex-wrap items-center gap-2.5">
       <Select v-model="advKey">
-        <SelectTrigger class="h-9 w-[170px] rounded-lg bg-background/90" aria-label="高级维度筛选（当前页）">
+        <SelectTrigger class="h-9 w-[170px] rounded-lg bg-background/90" aria-label="高级维度筛选（服务端）">
           <span class="icon-[lucide--filter] mr-1.5 text-sm text-muted-foreground" />
           <SelectValue />
         </SelectTrigger>
@@ -307,15 +306,15 @@ defineExpose({ rawItems })
         </SelectContent>
       </Select>
       <Input
-        v-model="advValue"
+        v-model="advValueInput"
         :disabled="advKey === SENTINEL_ALL"
-        placeholder="值（payload/correlation 内匹配）"
+        :placeholder="advKey === 'correlation' ? '关联键值（子串）' : '值（精确匹配）'"
         class="h-9 w-[200px] rounded-lg bg-background/90"
         aria-label="高级维度取值"
       />
       <p v-if="advFilterActive" class="text-[11px] text-muted-foreground">
         <span class="icon-[lucide--info] mr-1 align-middle" />
-        高级维度仅过滤当前页（后端不支持 payload 顶层筛选）
+        高级维度服务端全量筛选{{ advKey === 'correlation' ? '（关联键子串匹配）' : '（精确匹配）' }}
       </p>
     </div>
 
@@ -370,7 +369,7 @@ defineExpose({ rawItems })
           <TableRow v-else-if="!items.length" class="hover:bg-transparent">
             <TableCell colspan="8" class="py-12 text-center text-sm text-muted-foreground">
               <span class="icon-[lucide--scroll-text] mb-2 block text-2xl opacity-60" />
-              {{ advFilterActive ? '当前页无匹配高级维度的日志' : '暂无系统日志' }}
+              {{ advFilterActive ? '无匹配筛选条件的日志' : '暂无系统日志' }}
             </TableCell>
           </TableRow>
 
@@ -471,7 +470,6 @@ defineExpose({ rawItems })
     <div v-if="rawItems.length" class="flex items-center justify-between gap-3 text-xs text-muted-foreground">
       <span class="tabular-nums">
         第 {{ rangeStart }}–{{ rangeEnd }} 条 / 共 {{ total }} 条
-        <span v-if="advFilterActive">（当前页过滤后 {{ items.length }} 条）</span>
       </span>
       <div class="flex items-center gap-1">
         <Button variant="outline" size="sm" :disabled="!canPrev" aria-label="上一页" @click="prevPage">

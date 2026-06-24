@@ -35,11 +35,11 @@ from django.utils import timezone
 # 受控枚举常量（禁任意字符串污染/SQL 注入面）
 # ---------------------------------------------------------------------------
 
-_METRICS = frozenset({"qps", "tps", "sla", "error", "duration", "ttft"})
-_AGGS = frozenset({"p95", "p90", "p50", "avg", "max"})
+_METRICS = frozenset({"qps", "tps", "sla", "error", "duration", "ttft", "upstream"})
+_AGGS = frozenset({"p99", "p95", "p90", "p50", "avg", "max"})
 # 白名单列名：**仅这些**可进 GROUP BY，杜绝任意列注入。
 _DIMENSIONS = frozenset({"source", "provider", "call_source", "error_class", "route", "model"})
-_PERCENTILE = {"p95": 0.95, "p90": 0.90, "p50": 0.50}
+_PERCENTILE = {"p99": 0.99, "p95": 0.95, "p90": 0.90, "p50": 0.50}
 
 # 各表实际可分组列（dimension 落到该表才分组，否则退化为 '__all__' 全量桶）。
 _REQUEST_DIMS = frozenset({"source", "route", "error_class"})
@@ -289,6 +289,38 @@ def _query_sum(
     return _run(sql, [_adapt(start), _adapt(end)])
 
 
+def _query_upstream(
+    *,
+    start: datetime,
+    end: datetime,
+    step: int,
+    vendor: str,
+) -> list[dict[str, Any]]:
+    """上游错误码分布（SLA-03 查询侧）：``ModelUsageRecord`` 按 ``upstream_status_code``
+    分桶计数，dim 收口为 ``429`` / ``529`` / ``other`` 三类常量。
+
+    - 仅统计 ``upstream_status_code IS NOT NULL`` 的行（上游确实返回了 HTTP 码，
+      含 429 限流 / 529 过载 / 其它上游错误码；正常调用该列为 null，不计入）。
+    - dim 用受控 ``CASE`` 表达式收口为三类常量，无用户原文进 SQL（与 ``_dim_sql`` 同款
+      注入面控制）。429/529 单列，其余上游码统一归 ``other``。
+    - 时间列 ``created_at``（与 TPS 同源 ``ModelUsageRecord``）；无 synthetic 概念，不排除。
+    - best-effort，双后端 ``CASE`` 通用，无 percentile / 自研聚合。
+    """
+    bucket = _bucket_expr("created_at", step, vendor)
+    # 受控 CASE：常量收口为 429/529/other，禁用户原文。
+    dim_expr = (
+        "CASE WHEN upstream_status_code = 429 THEN '429' "
+        "WHEN upstream_status_code = 529 THEN '529' ELSE 'other' END"
+    )
+    sql = (
+        f"SELECT {bucket} AS bucket, {dim_expr} AS dim, COUNT(*) AS value "
+        f"FROM model_usage_records "
+        f"WHERE created_at >= %s AND created_at < %s AND upstream_status_code IS NOT NULL "
+        f"GROUP BY bucket, dim ORDER BY bucket"
+    )
+    return _run(sql, [_adapt(start), _adapt(end)])
+
+
 def _query_gauge(
     *,
     name: str,
@@ -440,6 +472,10 @@ def query_timeseries(
     elif metric == "tps":
         series = _query_sum(
             start=start_dt, end=end_dt, step=step_seconds, vendor=vendor, dimension=dimension
+        )
+    elif metric == "upstream":
+        series = _query_upstream(
+            start=start_dt, end=end_dt, step=step_seconds, vendor=vendor
         )
     elif metric == "sla":
         series = _query_sla(
