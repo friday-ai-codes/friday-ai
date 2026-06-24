@@ -115,6 +115,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/observability/': RouteRecordInfo<
+      '/admin/observability/',
+      '/admin/observability',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/oidc': RouteRecordInfo<
       '/admin/oidc',
       '/admin/oidc',
@@ -555,6 +562,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/git-credentials/index.vue': {
       routes:
         | '/admin/git-credentials/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/observability/index.vue': {
+      routes:
+        | '/admin/observability/'
       views:
         | never
       pathParamNames:
