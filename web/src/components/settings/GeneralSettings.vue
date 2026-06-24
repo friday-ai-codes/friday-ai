@@ -90,11 +90,11 @@ const restoring = ref(false)
 async function handleDownloadBackup() {
   downloadingBackup.value = true
   try {
-    const blob = await downloadSystemBackup()
+    const { blob, filename } = await downloadSystemBackup()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `friday_backup_${new Date().toISOString().slice(0, 10)}.db`
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -122,7 +122,11 @@ async function handleRestore() {
   restoring.value = true
   try {
     const result = await restoreSystemBackup(restoreFile.value)
-    success(`数据库恢复成功，共恢复 ${result.restored_tables} 张表`)
+    success(
+      result.restored_tables != null
+        ? `数据库恢复成功，共恢复 ${result.restored_tables} 张表`
+        : '数据库恢复成功',
+    )
     restoreFile.value = null
     // 刷新页面以使用新数据库
     setTimeout(() => {
@@ -270,94 +274,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 3. Runner 镜像信息 -->
-    <div class="card overflow-hidden">
-      <div class="flex items-center gap-3 p-6 border-b border-border/50">
-        <div class="p-2.5 rounded-xl bg-primary/10 flex items-center justify-center">
-          <span class="icon-[lucide--container] text-2xl text-blue-500" />
-        </div>
-        <div class="flex-1">
-          <h2 class="text-lg font-semibold">
-            Runner 镜像
-          </h2>
-          <p class="text-sm text-muted-foreground">
-            Task Runner 执行 Coding 任务时使用的 Docker 镜像
-          </p>
-        </div>
-      </div>
-
-      <div class="p-6">
-        <div v-if="infoLoading" class="flex items-center gap-2 text-muted-foreground">
-          <span class="icon-[lucide--loader-circle] animate-spin" />
-          加载中...
-        </div>
-        <div v-else-if="systemInfo" class="space-y-3">
-          <div class="space-y-1">
-            <p class="text-xs text-muted-foreground">
-              任务执行镜像
-            </p>
-            <code class="text-sm bg-muted/50 px-2 py-1 rounded">{{ systemInfo.image.task_runner_image }}</code>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            通过环境变量 FRIDAY_RUNNER_IMAGE 配置；Runner 未配置时默认使用 friday-task:latest
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 4. 环境变量 -->
-    <div class="card overflow-hidden">
-      <div class="flex items-center gap-3 p-6 border-b border-border/50">
-        <div class="p-2.5 rounded-xl bg-primary/10 flex items-center justify-center">
-          <span class="icon-[lucide--terminal] text-2xl text-violet-500" />
-        </div>
-        <div class="flex-1">
-          <h2 class="text-lg font-semibold">
-            环境变量
-          </h2>
-          <p class="text-sm text-muted-foreground">
-            当前运行环境的关键配置（只读）
-          </p>
-        </div>
-      </div>
-
-      <div class="p-6">
-        <div v-if="infoLoading" class="flex items-center gap-2 text-muted-foreground">
-          <span class="icon-[lucide--loader-circle] animate-spin" />
-          加载中...
-        </div>
-        <div v-else-if="systemInfo" class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border/50">
-                <th class="text-left py-2 px-3 font-medium text-muted-foreground">
-                  变量名
-                </th>
-                <th class="text-left py-2 px-3 font-medium text-muted-foreground">
-                  值
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(val, key) in systemInfo.environment"
-                :key="key"
-                class="border-b border-border/30 last:border-0 hover:bg-muted/20"
-              >
-                <td class="py-2 px-3 font-mono text-xs">
-                  {{ key }}
-                </td>
-                <td class="py-2 px-3 font-mono text-xs break-all">
-                  {{ val }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. 数据备份 -->
+    <!-- 3. 数据备份 -->
     <div class="card overflow-hidden">
       <div class="flex items-center gap-3 p-6 border-b border-border/50">
         <div class="p-2.5 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -368,7 +285,7 @@ onMounted(() => {
             数据备份
           </h2>
           <p class="text-sm text-muted-foreground">
-            备份或恢复 SQLite 数据库（含所有配置、凭证、对话记录）
+            备份或恢复数据库（含所有配置、凭证、对话记录）。按当前数据库引擎自动选择 pg_dump / mysqldump / SQLite 文件
           </p>
         </div>
       </div>
@@ -407,7 +324,7 @@ onMounted(() => {
                 恢复备份
               </p>
               <p class="text-xs text-muted-foreground">
-                上传 .db 备份文件恢复数据库。恢复前会自动备份当前数据库。
+                上传备份文件恢复数据库（.db / .dump / .sql）。恢复前会自动备份当前数据库。
               </p>
             </div>
           </div>
@@ -422,7 +339,7 @@ onMounted(() => {
           <div class="flex items-center gap-3">
             <input
               type="file"
-              accept=".db"
+              accept=".db,.dump,.sql"
               class="text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20 cursor-pointer"
               @change="onRestoreFileChange"
             >

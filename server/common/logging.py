@@ -24,7 +24,6 @@ from typing import Any, MutableMapping
 import structlog
 from django.conf import settings
 
-
 # === 模块级常量 ===
 
 # 敏感字段名模式（不区分大小写）—— 命中即整个 value 替换为 REDACTED
@@ -81,6 +80,59 @@ def redact_credentials(
         else:
             event_dict[key] = _redact_value(event_dict[key])
     return event_dict
+
+
+# === 内存环形缓冲：运维监控「系统日志」面板数据源 ===
+
+
+def buffer_log(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """structlog processor：把（已脱敏的）事件追加到内存环形缓冲。
+
+    必须挂在 ``redact_credentials`` **之后**，保证缓冲里也是脱敏内容；
+    返回原 event_dict 不变，不影响后续 renderer。
+    """
+    try:
+        from common.log_buffer import append_log
+
+        append_log(
+            {
+                "ts": event_dict.get("timestamp"),
+                "level": str(event_dict.get("level") or method_name or "info").upper(),
+                "logger": str(event_dict.get("logger") or event_dict.get("logger_name") or ""),
+                "message": str(event_dict.get("event", "")),
+                "source": "app",
+            }
+        )
+    except Exception:  # noqa: BLE001 — 缓冲失败绝不影响日志主链路
+        pass
+    return event_dict
+
+
+class RingBufferHandler(logging.Handler):
+    """stdlib logging handler：把 django / 第三方日志写入内存环形缓冲。
+
+    消息体经 ``redact_secrets_in_text`` 兜底脱敏（stdlib 日志不走 structlog 脱敏链）。
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            from datetime import datetime, timezone
+
+            from common.log_buffer import append_log
+
+            append_log(
+                {
+                    "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": redact_secrets_in_text(record.getMessage()),
+                    "source": "system",
+                }
+            )
+        except Exception:  # noqa: BLE001 — handler 永不抛
+            pass
 
 
 # === 业务字符串脱敏 helper（被 services/provider_health.py 等业务代码直接 import）===
@@ -142,6 +194,7 @@ def configure_structlog() -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             redact_credentials,  # ← contract 核心；位置 in front of any renderer
+            buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             (

@@ -36,6 +36,9 @@ class TestObservabilityView:
             "repositories",
             "orchestration",
             "runners",
+            "runtime",
+            "background_tasks",
+            "alerts",
         ):
             assert key in data, f"缺少顶层字段 {key}"
         assert "by_queue_status" in data["durable_queues"]
@@ -44,6 +47,16 @@ class TestObservabilityView:
         assert "active" in data["subagent"]
         assert "index_status" in data["repositories"]
         assert isinstance(data["runners"], list)
+        # 运行时：协程数（可能为 None）+ 线程数
+        assert "asyncio_tasks" in data["runtime"]
+        assert "threads" in data["runtime"]
+        assert isinstance(data["runtime"]["threads"], int)
+        # 后台任务汇总
+        assert "total_active" in data["background_tasks"]
+        # 告警事件
+        assert "recent" in data["alerts"]
+        assert "counts" in data["alerts"]
+        assert isinstance(data["alerts"]["recent"], list)
 
     def test_reflects_repository_and_subagent_data(
         self, api_client, admin_user, repository

@@ -573,19 +573,24 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
+        # 运维监控「系统日志」面板数据源：把 stdlib 日志写入内存环形缓冲
+        "ring_buffer": {
+            "class": "common.logging.RingBufferHandler",
+            "level": "INFO",
+        },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "ring_buffer"],
         "level": "INFO",
     },
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": ["console", "ring_buffer"],
             "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO"),
             "propagate": False,
         },
         "friday": {
-            "handlers": ["console"],
+            "handlers": ["console", "ring_buffer"],
             "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },

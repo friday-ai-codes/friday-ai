@@ -4,7 +4,7 @@ from django.urls import path
 
 from .dashboard_views import DashboardStatsView
 from .health_views import SystemHealthView
-from .observability_views import ObservabilityView
+from .observability_views import ObservabilityView, SystemLogsView
 from .setup_views import (
     SetupFeishuWizardView,
     SetupRagWizardView,
@@ -20,6 +20,8 @@ urlpatterns = [
     path("tasks/", ActiveTasksView.as_view(), name="system-active-tasks"),
     # 超管可观测总览（OBS-01）：任务队列全景 + 系统/Runner 负载（IsSuperUser）
     path("observability/", ObservabilityView.as_view(), name="system-observability"),
+    # 运维监控「系统日志」：内存环形缓冲最近日志（IsSuperUser）
+    path("logs/", SystemLogsView.as_view(), name="system-logs"),
     # 首启向导 Phase 4：安全校验（只读，非阻塞）+ 飞书 / 向量检索可选配置编排
     path("security-check/", SetupSecurityCheckView.as_view(), name="setup-security-check"),
     path("setup-feishu/", SetupFeishuWizardView.as_view(), name="setup-feishu"),

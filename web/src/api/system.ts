@@ -53,8 +53,12 @@ export async function getSystemInfo(): Promise<SystemInfoResponse> {
   return get<SystemInfoResponse>('/settings/info/')
 }
 
-/** 下载数据库备份（返回 Blob，由调用方触发下载）。 */
-export async function downloadSystemBackup(): Promise<Blob> {
+/**
+ * 下载数据库备份（返回 Blob + 服务端给出的文件名）。
+ * 文件扩展名随数据库引擎不同（sqlite=.db / postgres=.dump / mysql=.sql），
+ * 故文件名优先取响应的 Content-Disposition。
+ */
+export async function downloadSystemBackup(): Promise<{ blob: Blob, filename: string }> {
   const resp = await fetch('/api/settings/backup/', {
     method: 'GET',
     headers: {
@@ -65,11 +69,16 @@ export async function downloadSystemBackup(): Promise<Blob> {
     const err = await resp.json().catch(() => ({ detail: '备份下载失败' }))
     throw new Error(err.detail ?? '备份下载失败')
   }
-  return resp.blob()
+  const disposition = resp.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+  const filename = match?.[1]
+    ? decodeURIComponent(match[1])
+    : `friday_backup_${new Date().toISOString().slice(0, 10)}`
+  return { blob: await resp.blob(), filename }
 }
 
-/** 上传备份文件恢复数据库。 */
-export async function restoreSystemBackup(file: File): Promise<{ detail: string, restored_tables: number }> {
+/** 上传备份文件恢复数据库。restored_tables 仅 SQLite 引擎返回。 */
+export async function restoreSystemBackup(file: File): Promise<{ detail: string, restored_tables?: number }> {
   const formData = new FormData()
   formData.append('file', file)
   const resp = await fetch('/api/settings/backup/', {
@@ -137,6 +146,32 @@ export interface RunnerObservability {
   load: RunnerLoad
 }
 
+/** server 进程运行时快照：协程数 + 线程数。 */
+export interface RuntimeStats {
+  asyncio_tasks: number | null
+  threads: number
+}
+
+/** 后台（异步）任务数量汇总。 */
+export interface BackgroundTaskSummary {
+  durable_active: number
+  durable_total: number
+  subagent_active: number
+  orchestration_active: number
+  total_active: number
+}
+
+/** 告警事件（AlertRuleExecution）。 */
+export interface AlertEvent {
+  id: string
+  rule_name: string
+  condition_type: string
+  status: string
+  triggered_event: string
+  error_message: string
+  triggered_at: string
+}
+
 export interface ObservabilityResponse {
   generated_at: string
   durable_queues: {
@@ -155,10 +190,33 @@ export interface ObservabilityResponse {
   }
   orchestration: Record<string, number>
   runners: RunnerObservability[]
+  runtime: RuntimeStats
+  background_tasks: BackgroundTaskSummary
+  alerts: {
+    recent: AlertEvent[]
+    counts: Record<string, number>
+  }
 }
 
 export async function getObservability(): Promise<ObservabilityResponse> {
   return get<ObservabilityResponse>('/system/observability/')
+}
+
+// ============================================================================
+// 运维监控「系统日志」：内存环形缓冲最近日志
+// GET /api/system/logs/（IsSuperUser）
+// ============================================================================
+
+export interface SystemLogEntry {
+  ts: string | null
+  level: string
+  logger: string
+  message: string
+  source: string
+}
+
+export async function getSystemLogs(params: { limit?: number, level?: string } = {}): Promise<{ logs: SystemLogEntry[] }> {
+  return get<{ logs: SystemLogEntry[] }>('/system/logs/', params)
 }
 
 // ============================================================================

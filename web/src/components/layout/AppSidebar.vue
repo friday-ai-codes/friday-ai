@@ -102,7 +102,7 @@ const mainNavItems: NavItem[] = [
 
 const adminNavItems: NavItem[] = [
   { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
-  { to: '/admin/observability', label: '任务与系统总览', icon: 'lucide--activity' },
+  { to: '/admin/observability', label: '运维监控', icon: 'lucide--activity' },
   { to: '/runners', label: 'Runner', icon: 'lucide--server' },
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
   { to: '/admin/conversations', label: '会话管理', icon: 'lucide--messages-square' },
