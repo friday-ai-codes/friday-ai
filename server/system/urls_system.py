@@ -6,7 +6,7 @@ from .dashboard_views import DashboardStatsView
 from .drilldown_views import CallDrilldownView, ConversationDrilldownView
 from .health_views import SystemHealthView
 from .log_views import SystemLogClearView, SystemLogQueryView
-from .metrics_views import MetricsSnapshotView
+from .metrics_views import MetricsQueryView, MetricsSnapshotView
 from .observability_views import ObservabilityView
 from .setup_views import (
     SetupFeishuWizardView,
@@ -26,6 +26,8 @@ urlpatterns = [
     path("observability/", ObservabilityView.as_view(), name="system-observability"),
     # 指标快照（QUERY-02）：一次性聚合 SNAP-01~05 当前值（IsSuperUser）。
     path("metrics/snapshot/", MetricsSnapshotView.as_view(), name="system-metrics-snapshot"),
+    # 时序查询（QUERY-01 / SLA-01 / RATE-03）：metric × start/end/step × dimension × agg。
+    path("metrics/query/", MetricsQueryView.as_view(), name="system-metrics-query"),
     # 运维监控「系统日志」：按条件批量清理（LOG-08，IsSuperUser）。
     # 必须排在 logs/ 之前，保持显式路由顺序惯例（避免被通配/前缀语义影响）。
     path("logs/clear/", SystemLogClearView.as_view(), name="system-logs-clear"),
