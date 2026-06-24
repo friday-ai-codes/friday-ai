@@ -229,6 +229,31 @@ def cleanup_coding_sessions_job():
 
 
 @_with_scheduler_log_context
+def purge_observability_logs_job():
+    """Job wrapper：保留策略到期清理可观测落库表（LOG-08）。
+
+    清理 ``SystemLogEntry`` + ``InboundWebhookEvent``（按 ``LOG_RETENTION_DAYS`` /
+    ``LOG_RETENTION_SIZE``）。沿用既有 ``*_job`` + ``run_async_task`` 范式；清理函数
+    本身 best-effort（异常吞掉记 warning），不抛回本 wrapper。
+    """
+    from system.log_retention import purge_system_logs, purge_webhook_events
+
+    log = logger.bind(job="purge_observability_logs")
+    log.info("job_start")
+
+    async def _run():
+        logs = await purge_system_logs()
+        webhooks = await purge_webhook_events()
+        return {"logs": logs, "webhooks": webhooks}
+
+    try:
+        result = run_async_task(_run)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -383,6 +408,22 @@ class Command(BaseCommand):
             "job_registered",
             job="cleanup_coding_sessions",
             schedule="daily at 04:00",
+        )
+
+        # 保留策略到期清理可观测落库表（LOG-08）daily at 04:30。
+        # 选 04:30 错开既有 03:00/03:30/04:00 清理任务，避免争 SQLite 写锁（Claude's Discretion）。
+        scheduler.add_job(
+            purge_observability_logs_job,
+            trigger=CronTrigger(hour=4, minute=30),
+            id="purge_observability_logs",
+            name="Purge SystemLogEntry + InboundWebhookEvent by retention policy",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="purge_observability_logs",
+            schedule="daily at 04:30",
         )
 
         # Delete old job executions weekly

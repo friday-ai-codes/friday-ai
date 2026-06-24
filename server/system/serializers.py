@@ -12,7 +12,7 @@ from rest_framework import serializers
 from common.encryption import decrypt_value, encrypt_value
 from services.model_modalities import infer_model_modalities
 
-from .models import ProviderCredential, SystemSetting
+from .models import ProviderCredential, SystemLogEntry, SystemSetting
 
 
 class SystemSettingSerializer(serializers.ModelSerializer):
@@ -34,6 +34,33 @@ class SystemSettingSerializer(serializers.ModelSerializer):
 
     def get_has_value(self, obj):
         return bool(obj.value)
+
+
+class SystemLogEntrySerializer(serializers.ModelSerializer):
+    """系统日志条目只读序列化器（LOG-01 查询）。
+
+    暴露落库的全部可读字段；``payload`` / ``correlation`` 已在 71-02 写入前脱敏，
+    此处只读直出，绝不含明文凭证（脱敏契约）。全字段 read_only（查询端点不写）。
+    """
+
+    class Meta:
+        model = SystemLogEntry
+        fields = [
+            "id",
+            "ts",
+            "level",
+            "component",
+            "category",
+            "event",
+            "message",
+            "user_id",
+            "source",
+            "trace_id",
+            "request_id",
+            "payload",
+            "correlation",
+        ]
+        read_only_fields = fields
 
 
 class SystemSettingCreateSerializer(serializers.ModelSerializer):
