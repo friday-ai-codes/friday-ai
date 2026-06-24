@@ -289,7 +289,7 @@ class TestMiddlewareMetric:
         assert row.status_code == 500
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestMcpRecordMetric:
     async def test_record_emits_mcp_metric_with_call_source(self, monkeypatch) -> None:
         from mcp_tools import views as mcp_views
@@ -329,7 +329,7 @@ class TestMcpRecordMetric:
         assert row.labels.get("run_id") == "run-abc"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestChatSseMetric:
     async def test_stream_events_records_ttft_and_duration(self, monkeypatch) -> None:
         import asyncio
@@ -397,7 +397,7 @@ async def _afirst(source: str):
     )()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestCompatMetric:
     async def test_openai_stream_records_ttft(self, monkeypatch) -> None:
         import asyncio
@@ -466,7 +466,7 @@ class TestCompatMetric:
         assert row.ttft_ms is not None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestWebhookMetric:
     async def test_inbound_webhook_records_system_metric(self) -> None:
         from system.webhook_recorder import record_inbound_webhook
@@ -503,7 +503,7 @@ class TestWebhookMetric:
         assert row.source == "webhook_feishu"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestWsMetric:
     async def test_workflow_consumer_connect_disconnect(self) -> None:
         from unittest.mock import AsyncMock
