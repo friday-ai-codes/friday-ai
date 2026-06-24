@@ -21,23 +21,99 @@
 
 ## Phases
 
-### 🚧 v0.14.0 可观测性与日志治理 (Phases 71–75) — IN PROGRESS
+### 🚧 v0.14.0 可观测性与日志治理 (Phases 71–75 — IN PROGRESS)
 
-在一个里程碑内完整交付可观测性与日志治理，5 个 Phase 线性推进（71→75），autonomous 一次跑完整个里程碑。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
+**Milestone Goal:** 在一个里程碑内完整交付可观测性与日志治理，5 个 Phase 线性推进（71→75），autonomous 一次跑完整个里程碑：用户上下文贯穿 + 系统日志队列化落库 + QPS/TPS/召回/SLA/时长/TTFT 时序指标 + CPU/内存/DB/Redis/Qdrant 当前快照 + 并发/排队/吞吐/错误趋势 + 阈值告警与告警事件（P0/P1/P2，邮件）+ 运维大盘。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
 
-- [ ] Phase 71: 可观测性地基——用户上下文贯穿 + 系统日志治理 (0/? plans) — CTX-01, CTX-02, LOG-01~08
-- [ ] Phase 72: 调用数据采集——AI/LLM(TPS) + 召回 + 请求入口(QPS/SLA/时长/TTFT/上游错误) (0/? plans) — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
-- [ ] Phase 73: 快照·趋势·查询 API (0/? plans) — SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02
-- [ ] Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件） (0/? plans) — ALERT-01, ALERT-02, ALERT-03
-- [ ] Phase 75: 运维大盘前端 + 规范固化 (0/? plans) — UI-01~04, SPEC-01
+- [ ] **Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）** - 请求级 contextvars 中间件 + 后台任务用户传播；SystemLogEntry 队列化落库（5000+丢弃/失败计数）+ 运行时配置 + webhook 原始留痕 + 调用下钻 + caller/sampling 分类 — CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08
+- [ ] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** - RequestMetric 全入口埋点(QPS/错误三口径/时长/TTFT) + ModelUsageRecord 扩展(TPS 含容器/上游 429·529) + 召回指标与内容留痕 — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
+- [ ] **Phase 73: 快照·趋势·查询 API** - CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照 + GaugeSample 趋势采样 + 可用率 + 时序/快照查询 API(percentile_cont 分位) — SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02
+- [ ] **Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）** - 系统级阈值告警规则 + AlertEvent(P0/P1/P2/持续时长/firing-resolved/email_sent/去重) + SMTP 邮件 + 复用飞书/webhook — ALERT-01, ALERT-02, ALERT-03
+- [ ] **Phase 75: 运维大盘前端 + 规范固化** - echarts 大盘(健康分/实时速率/信息卡/趋势/快照) + 告警事件页 + 系统日志下钻页 + 运行时配置面板 + 规范固化与 PR/Review checklist — UI-01, UI-02, UI-03, UI-04, SPEC-01
 
-**Success criteria（按阶段）:**
+## Phase Details
 
-- **Phase 71:** ① 任意 HTTP/MCP/对话/compat 请求日志都带 `user_id`(登录用户或 system)+request_id+source；② 飞书/webhook/durable 后台任务日志能显示发起来源、跨线程正确继承；③ 系统日志落库可按最新倒序查看 + 按组件/级别/用户/来源/关键词/时间段筛选搜索；④ 暴露队列(x/5000)/写入/丢弃/失败四计数，满则丢弃、失败计数且不反噬业务；⑤ 每条日志带 caller/sampling + component；⑥ 运行时改级别/堆栈阈值/采样/保留实时生效；⑦ webhook 原始 payload 脱敏入库可查看；⑧ 日志可按条件清理 + 到期自动清理；⑨ MCP/对话可下钻触发用户与会话原始数据。
-- **Phase 72:** ① QPS 按入口分类可采集（REST/MCP/对话/兼容/召回/embedding·reranker/webhook/WS）；② TPS 按 provider 采集，含容器侧 LLM token；③ 召回条数/分层耗时/相关度可采集，召回内容（MCP+对话）可留痕回放；④ 请求错误三口径（系统/业务限制/上游）与上游码（429/529 单列）可采集；⑤ 请求时长与 TTFT 可采集。
-- **Phase 73:** ① CPU/内存/DB(连接·活跃·空闲)/Redis(连接·内存)/Qdrant(collection·占用)/协程/后台/并发排队当前值可查；② 并发/排队/吞吐/错误趋势可按时间段查询；③ 可用率按时刻可查；④ 时序查询 API 支持任意时间段与 P95/P90/P50/Avg/Max。
-- **Phase 74:** ① 可配置阈值规则（CPU/错误率/TTFT/队列深等）超阈值触发；② 告警事件落库含 P0/P1/P2 + 中文标题/规则 + 持续时长 + firing/resolved + email_sent，同规则去重；③ 触发按级别发邮件并回写 email_sent。
-- **Phase 75:** ① 运维大盘出时序图 + 时间范围 + 健康分 + 信息卡（请求/SLA/错误/时长/TTFT/上游 429·529）；② 快照行内联阈值变色 + 吞吐/错误/并发排队趋势；③ 告警事件页 + 系统日志下钻页 + 运行时配置面板可用；④ 规范固化、全量事件目录、PR/Review checklist 落地。
+### Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）
+
+**Goal**: 建立可观测性地基——让每次调用都能绑定到触发用户（无则 system），并把系统日志从"每进程 800 条内存环形缓冲"升级为"队列化落库、可搜索、可按条件清理、可运行时配置"的日志中心，统一 webhook 原始留痕与调用下钻。后续 Phase 的指标/告警/大盘都依赖它。
+**Depends on**: Nothing（地基；为 72–75 提供用户归因与日志载体）
+**Requirements**: CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08
+**Success Criteria** (what must be TRUE):
+
+  1. 任意 HTTP/MCP/对话/compat 请求产生的日志都带 `user_id`（登录用户或 `system`）+ `request_id` + `source`；飞书/webhook/durable 后台任务日志能显示发起来源，跨线程/durable worker 正确继承
+  2. 系统日志落库（`SystemLogEntry`）可按最新时间倒序查看，并按组件/级别(debug·info·warn·error)/用户/来源/关键词/时间段筛选与全文搜索
+  3. 队列化写入（上限 5000）+ 批量落库；暴露队列(x/5000)/写入/丢弃/失败四计数，队列满丢弃且丢弃计数递增、落库失败计失败条数，均不反噬业务
+  4. 每条日志带 `category`(caller/sampling) + `component`；形成事件目录（`LOGGING-SPEC.md`）
+  5. 运行时改日志级别(全局/分组件)/堆栈阈值/采样初始·后续/保留天数·大小，实时生效无需重启
+  6. 飞书/通用 webhook/Git push/容器回调原始 payload 脱敏后入库可查看；MCP 调用可见触发用户，AI 对话可下钻到会话全部请求与原始数据
+  7. 日志可按条件（时间/级别/组件/用户/关键词）批量清理 + 保留策略到期定时自动清理
+  8. 凭证脱敏不破（`redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`，CI 守护通过）
+
+**Plans**: TBD（plan-phase 拆分）
+
+**UI hint**: maybe（可在现有运维页做最小日志查看/配置触面，完整大盘在 Phase 75）
+
+### Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）
+
+**Goal**: 把所有"能成时序"的调用数据采集到精简事件表——QPS/TPS/召回/请求错误三口径/上游错误码/时长/TTFT。本 Phase 只写数据，查询/出图在 Phase 73。
+**Depends on**: Phase 71（用户上下文贯穿——指标/留痕需绑定 user 与 source）
+**Requirements**: RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
+**Success Criteria** (what must be TRUE):
+
+  1. QPS 按入口分类可采集（`RequestMetric` 每请求一行）：REST/MCP/对话 SSE/OpenAI·Anthropic 兼容/召回/embedding·reranker/各类 webhook/WS；轮询·health 路由打标隔离不污染业务统计
+  2. TPS 按 provider 采集（扩展 `ModelUsageRecord` 的 `call_source`/`ttft_ms`/`upstream_status_code`），22 类 call_source 写入 input/output/cache token；**含容器侧** token（补全 task→回调→ModelUsageRecord 链路）
+  3. 召回条数、分层耗时(embedding/sparse/qdrant/rerank)、相关度 score 可采集，按来源(MCP/对话/workflow)区分
+  4. 召回内容留痕扩展到 MCP + AI 对话两条链（`RetrievalTrace` 记 query 原文+chunk 内容+score+会话/用户）
+  5. 请求错误三口径分离（系统错误/业务限制如 LLMBusyError/上游错误）+ 上游码采集（429/529 单列）
+  6. 请求时长与 TTFT 可采集（流式入口埋首 chunk 计时）
+
+**Plans**: TBD（plan-phase 拆分）
+
+### Phase 73: 快照·趋势·查询 API
+
+**Goal**: 把 Phase 72 采集的数据变成"可按任意时间段查询 + 出趋势"，并补齐"只看当前"的快照与查询 API。
+**Depends on**: Phase 72（时序查询依赖采集的事件数据）
+**Requirements**: SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02
+**Success Criteria** (what must be TRUE):
+
+  1. server/主机快照：CPU、内存(psutil)、协程数、线程数、后台任务数当前值可查
+  2. DB(连接·活跃·空闲·max_connections)、Redis(连接·maxclients·内存·命中率)、Qdrant(可用性·collection 数·占用空间，带缓存+长超时)当前值可查
+  3. 并发/排队当前值：provider 凭证槽位、durable 队列 todo/doing、runner 待派发/本地队列、RAG 并发
+  4. 趋势（只记不告警）：`GaugeSample` 周期采样并发/排队/积压；吞吐(各 provider QPS·TPS 千)/错误趋势可按时间段查询
+  5. 每时刻可用率/业务故障率可查（口径"排除业务限制"）
+  6. 时序查询 API 支持任意时间段/step/维度 + P95/P90/P50/Avg/Max（`percentile_cont`）；快照 API 聚合返回当前值
+
+**Plans**: TBD（plan-phase 拆分）
+
+### Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）
+
+**Goal**: 数据可查后评估阈值告警——新建系统级告警（不套 workflow `AlertRule`），沉淀告警事件并按级别通知，共享飞书/webhook/邮件分发。
+**Depends on**: Phase 73（告警评估依赖时序查询与快照）
+**Requirements**: ALERT-01, ALERT-02, ALERT-03
+**Success Criteria** (what must be TRUE):
+
+  1. 可为 QPS/错误率/TTFT/CPU/内存/DB/Redis/Qdrant/队列深等配置阈值规则（运行时可改），超阈值触发；趋势类(RATE-03)默认不参与
+  2. 告警事件落库（`AlertEvent`）含级别 P0/P1/P2、中文标题、机器可读规则信息(规则·当前值·窗口·维度)、开始/结束与持续时长、状态 firing/resolved、邮件状态；同规则同对象去重(一条 firing，恢复收尾)
+  3. 邮件通道接入（Django SMTP + `SystemSetting` 收件人/开关），按级别发邮件并回写 `email_sent`；复用飞书/webhook 三通道并存
+
+**Plans**: TBD（plan-phase 拆分）
+
+### Phase 75: 运维大盘前端 + 规范固化
+
+**Goal**: 后端 API 就绪后做统一运维大盘（借鉴 `REFERENCE-UI.md` 卡片范式但按 Agent 维度重构），并把日志/埋点规范固化为长期约束。
+**Depends on**: Phase 71, Phase 72, Phase 73, Phase 74（消费全部后端能力）
+**Requirements**: UI-01, UI-02, UI-03, UI-04, SPEC-01
+**Success Criteria** (what must be TRUE):
+
+  1. 大盘上半区：复合健康分 + 实时速率卡(窗口 tab + 当前/峰值/平均 QPS·TPS + sparkline) + 信息卡排(请求/SLA 排除业务限制/请求错误系统·业务限制分列/请求时长 P99+分位/TTFT P99+分位/上游错误 429·529 单列) + 时间范围选择器
+  2. 当前快照行(CPU/内存/DB/Redis/Qdrant/协程/后台)卡内内联阈值超阈变色 + 吞吐(各 provider QPS+TPS 千)/错误(三口径)/请求时长分布/并发·排队趋势
+  3. 告警事件页(时间/级别/状态/维度/规则ID/标题+规则信息/持续时长/邮件状态)+多维筛选 + 阈值规则配置入口
+  4. 系统日志页：顶部计数(队列 x/5000·写入·丢弃·失败)+倒序+多维筛选(级别/组件/user_id/source/call_source/provider/credential/model/关联键/关键词)+调用下钻(会话原始/召回内容/webhook 原始)+按筛选清理 + 运行时日志配置表单
+  5. 规范固化：`LOGGING-SPEC.md`+cursor 规则+AGENTS/CLAUDE 复核，全量事件目录补全，PR/Code Review checklist 落地
+
+**Plans**: TBD（plan-phase 拆分）
+
+**UI hint**: yes
 
 完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；方案与约束见 [observability/MILESTONE-PROPOSAL.md](./observability/MILESTONE-PROPOSAL.md) 与 STATE.md「关键约束」。
 
