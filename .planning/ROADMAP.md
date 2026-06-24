@@ -25,7 +25,7 @@
 
 **Milestone Goal:** 在一个里程碑内完整交付可观测性与日志治理，5 个 Phase 线性推进（71→75），autonomous 一次跑完整个里程碑：用户上下文贯穿 + 系统日志队列化落库 + QPS/TPS/召回/SLA/时长/TTFT 时序指标 + CPU/内存/DB/Redis/Qdrant 当前快照 + 并发/排队/吞吐/错误趋势 + 阈值告警与告警事件（P0/P1/P2，邮件）+ 运维大盘。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
 
-- [ ] **Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）** - 请求级 contextvars 中间件 + 后台任务用户传播；SystemLogEntry 队列化落库（5000+丢弃/失败计数）+ 运行时配置 + webhook 原始留痕 + 调用下钻 + caller/sampling 分类 — CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08
+- [ ] **Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）** - 请求级 contextvars 中间件 + 后台任务用户传播；SystemLogEntry 队列化落库（5000+丢弃/失败计数）+ 运行时配置 + webhook 原始留痕 + 调用下钻 + caller/sampling 分类 — CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08 — **planned: 5 plans / 3 waves**
 - [ ] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** - RequestMetric 全入口埋点(QPS/错误三口径/时长/TTFT) + ModelUsageRecord 扩展(TPS 含容器/上游 429·529) + 召回指标与内容留痕 — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
 - [ ] **Phase 73: 快照·趋势·查询 API** - CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照 + GaugeSample 趋势采样 + 可用率 + 时序/快照查询 API(percentile_cont 分位) — SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02
 - [ ] **Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）** - 系统级阈值告警规则 + AlertEvent(P0/P1/P2/持续时长/firing-resolved/email_sent/去重) + SMTP 邮件 + 复用飞书/webhook — ALERT-01, ALERT-02, ALERT-03
@@ -49,7 +49,12 @@
   7. 日志可按条件（时间/级别/组件/用户/关键词）批量清理 + 保留策略到期定时自动清理
   8. 凭证脱敏不破（`redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`，CI 守护通过）
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 5 plans（3 waves）
+- [ ] 71-01-PLAN.md — 用户上下文贯穿：请求级 contextvars 中间件 + DRF 补绑 mixin + 后台任务用户传播（CTX-01/02）[wave 1]
+- [ ] 71-02-PLAN.md — SystemLogEntry + InboundWebhookEvent 模型 + 队列化批量落库 worker（四计数）+ enqueue processor（LOG-01/02）[wave 1]
+- [ ] 71-03-PLAN.md — 运行时日志配置热更新（SettingKeys.LOG_*）+ category/component 分类与采样 + 事件目录补全（LOG-05/06）[wave 2]
+- [ ] 71-04-PLAN.md — 日志查询/筛选/全文 + 四计数 API + 按条件清理 + 保留策略定时清理（LOG-01/03/08）[wave 2]
+- [ ] 71-05-PLAN.md — webhook 原始留痕统一（InboundWebhookEvent + 飞书双写）+ 调用下钻 API（MCP/对话）（LOG-04/07）[wave 3]
 
 **UI hint**: maybe（可在现有运维页做最小日志查看/配置触面，完整大盘在 Phase 75）
 
