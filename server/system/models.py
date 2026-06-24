@@ -104,6 +104,9 @@ class SettingKeys:
     # 不设全局总上限（容器走 runner.concurrent、LLM 走 ProviderCredential.max_concurrency）。
     CONCURRENCY_INDEX_MAX = "concurrency_index_max"  # 默认 5
     CONCURRENCY_GRAPH_MAX = "concurrency_graph_max"  # 默认 3
+    # repo_summary 派发槽位上限：durable job 只做轻量派发，槽位用于平滑批量建仓时的
+    # session 创建与 Runner 投递洪峰（默认 8，与 Runner.concurrent 量级对齐）。
+    CONCURRENCY_SUMMARY_MAX = "concurrency_summary_max"  # 默认 8
 
 
 class CacheVolumeTracker(models.Model):

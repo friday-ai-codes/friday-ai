@@ -27,9 +27,11 @@ import hashlib
 # 槽位上限默认值（无 SystemSetting 配置时生效，开箱即用）
 DEFAULT_INDEX_CONCURRENCY = 5
 DEFAULT_GRAPH_CONCURRENCY = 3
+DEFAULT_SUMMARY_CONCURRENCY = 8
 
 _INDEX_SLOT_PREFIX = "index-slot-"
 _GRAPH_SLOT_PREFIX = "graph-slot-"
+_SUMMARY_SLOT_PREFIX = "summary-slot-"
 
 
 def _stable_slot(repo_id: str, n: int) -> int:
@@ -51,6 +53,11 @@ def index_slot_lock(repo_id: str, n: int) -> str:
 def graph_slot_lock(repo_id: str, n: int) -> str:
     """计算图谱槽位 lock 值：``graph-slot-{stable_hash(repo_id) % N}``。"""
     return f"{_GRAPH_SLOT_PREFIX}{_stable_slot(repo_id, n)}"
+
+
+def summary_slot_lock(repo_id: str, n: int) -> str:
+    """计算 repo_summary 派发槽位 lock 值：``summary-slot-{stable_hash(repo_id) % N}``。"""
+    return f"{_SUMMARY_SLOT_PREFIX}{_stable_slot(repo_id, n)}"
 
 
 def _read_int_setting_sync(key: str, default: int) -> int:
@@ -117,6 +124,19 @@ async def aget_graph_concurrency() -> int:
     )
 
 
+async def aget_summary_concurrency() -> int:
+    from system.models import SettingKeys
+
+    return await _read_int_setting_async(
+        SettingKeys.CONCURRENCY_SUMMARY_MAX, DEFAULT_SUMMARY_CONCURRENCY
+    )
+
+
+async def asummary_lock(repo_id: str) -> str:
+    """读取 N 并返回该仓库的 repo_summary 派发槽位 lock（async 入队点用）。"""
+    return summary_slot_lock(repo_id, await aget_summary_concurrency())
+
+
 async def aindex_lock(repo_id: str) -> str:
     """读取 N 并返回该仓库的索引槽位 lock（async 入队点用）。"""
     return index_slot_lock(repo_id, await aget_index_concurrency())
@@ -140,14 +160,18 @@ def graph_lock_sync(repo_id: str) -> str:
 __all__ = [
     "DEFAULT_INDEX_CONCURRENCY",
     "DEFAULT_GRAPH_CONCURRENCY",
+    "DEFAULT_SUMMARY_CONCURRENCY",
     "index_slot_lock",
     "graph_slot_lock",
+    "summary_slot_lock",
     "get_index_concurrency_sync",
     "get_graph_concurrency_sync",
     "aget_index_concurrency",
     "aget_graph_concurrency",
+    "aget_summary_concurrency",
     "aindex_lock",
     "agraph_lock",
+    "asummary_lock",
     "index_lock_sync",
     "graph_lock_sync",
 ]

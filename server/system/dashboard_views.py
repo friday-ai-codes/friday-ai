@@ -19,9 +19,12 @@ owner-scoped 数据（ISO-01 用户状态隔离），不能在全局首页暴露
   McpWorkItemTechnicalPlan.feishu_document_id 非空）。
 """
 
+from datetime import datetime, time, timedelta
 from typing import Any
 
 import structlog
+from django.core.cache import cache
+from django.db import connection
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -59,6 +62,46 @@ CODING_TASK_DONE = [
 
 IN_PROGRESS_LIMIT = 10
 
+# 首页统计结果缓存 key 与 TTL（秒）。
+# 这些统计里有对 code_relations_chunkedge（千万行 / GB 级）的 COUNT，包含一次
+# created_at 维度的全表扫描（该列无索引），单次就要 ~2s；首页会被频繁轮询/刷新，
+# 不缓存就等于每次刷新都全表扫一遍。短 TTL 把成本摊薄到"最多每 30s 算一次"，
+# 对首页概览而言 30s 的陈旧度可接受。
+_STATS_CACHE_KEY = "dashboard:stats:v1"
+_STATS_CACHE_TTL_S = 30
+
+
+def _today_range() -> tuple[datetime, datetime]:
+    """返回本地"今天"的 [起, 止) 半开区间（tz-aware）。
+
+    用范围比较替代 ``created_at__date=today``：后者对列做 ``::date`` 类型转换，
+    无法走普通 b-tree 索引 → 大表全表扫描；范围比较可命中 created_at 索引。
+    """
+    today = timezone.localdate()
+    start = timezone.make_aware(datetime.combine(today, time.min))
+    return start, start + timedelta(days=1)
+
+
+def _estimate_total(model: Any) -> int:
+    """大表行数估算：优先用 Postgres ``pg_class.reltuples``（O(1)，免全表 COUNT）。
+
+    estimate <= 0（新表 / 未 ANALYZE）或非 Postgres 时回退精确 ``count()``。
+    首页概览对"累计总数"的精度要求低，估算配合 Redis 缓存可消除 5GB 表的反复扫描。
+    """
+    if connection.vendor == "postgresql":
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = %s",
+                    [model._meta.db_table],
+                )
+                row = cursor.fetchone()
+            if row and row[0] and row[0] > 0:
+                return int(row[0])
+        except Exception:  # noqa: BLE001 — 估算失败回退精确 count
+            logger.warning("estimate_total_failed", table=model._meta.db_table, exc_info=True)
+    return model.objects.count()
+
 
 class DashboardStatsView(APIView):
     """首页统计概览（累计 + 今日新增 + 进行中列表）。"""
@@ -66,6 +109,15 @@ class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request) -> Response:
+        cached = cache.get(_STATS_CACHE_KEY)
+        if cached is not None:
+            return Response(cached)
+
+        payload = self._build_payload()
+        cache.set(_STATS_CACHE_KEY, payload, _STATS_CACHE_TTL_S)
+        return Response(payload)
+
+    def _build_payload(self) -> dict[str, Any]:
         today = timezone.localdate()
 
         # ---- 仓库 ----
@@ -76,10 +128,14 @@ class DashboardStatsView(APIView):
         }
 
         # ---- 代码关联（chunk 关系边）----
-        edge_qs = ChunkEdge.objects.all()
+        # 11M+ 行 / 5GB 大表：total 用 pg 统计估算（免全表 COUNT），today 用范围查询
+        # 走新建的 created_at 索引（替代 ::date cast 的全表扫描）。
+        today_start, today_end = _today_range()
         code_relations = {
-            "total": edge_qs.count(),
-            "today": edge_qs.filter(created_at__date=today).count(),
+            "total": _estimate_total(ChunkEdge),
+            "today": ChunkEdge.objects.filter(
+                created_at__gte=today_start, created_at__lt=today_end
+            ).count(),
         }
 
         # ---- 完成的编码（chat CodingSession + workflow CodingTask）----
@@ -179,21 +235,19 @@ class DashboardStatsView(APIView):
             coding_in_progress=active_sessions_count + active_tasks_count,
         )
 
-        return Response(
-            {
-                "stats": {
-                    "repositories": repositories,
-                    "code_relations": code_relations,
-                    "codings": codings,
-                    "tech_plans": tech_plans,
-                    "questions": questions,
-                    "documents": documents,
+        return {
+            "stats": {
+                "repositories": repositories,
+                "code_relations": code_relations,
+                "codings": codings,
+                "tech_plans": tech_plans,
+                "questions": questions,
+                "documents": documents,
+            },
+            "in_progress": {
+                "coding": {
+                    "count": active_sessions_count + active_tasks_count,
+                    "items": coding_items[:IN_PROGRESS_LIMIT],
                 },
-                "in_progress": {
-                    "coding": {
-                        "count": active_sessions_count + active_tasks_count,
-                        "items": coding_items[:IN_PROGRESS_LIMIT],
-                    },
-                },
-            }
-        )
+            },
+        }

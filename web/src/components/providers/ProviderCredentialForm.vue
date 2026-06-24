@@ -311,6 +311,8 @@ const zodSchema = computed(() => {
     scope_id: z.string().uuid('请选择有效空间').nullable().optional(),
     is_active: z.boolean().optional(),
     default_model: z.string().min(1, '请输入或选择一个模型'),
+    // LLM 并发上限（0=不限）。number 输入控件给出字符串，用 coerce 归一。
+    max_concurrency: z.coerce.number().int().min(0, '不能为负').optional(),
   }
   const configShape: Record<string, z.ZodTypeAny> = {}
   for (const [key, prop] of Object.entries(schemaProperties.value)) {
@@ -352,6 +354,7 @@ const { handleSubmit, meta, setValues, values } = useForm({
     scope_id: props.initial?.scope_id ?? props.defaultProjectId,
     is_active: props.initial?.is_active ?? true,
     default_model: props.initial?.default_model ?? '',
+    max_concurrency: props.initial?.max_concurrency ?? 50,
     // edit 模式下回显已配置的 base_url / api_key（后端按写权限分级返回）。
     config: { ...(props.initial?.config ?? {}) } as Record<string, unknown>,
   },
@@ -384,6 +387,7 @@ const onSubmit = handleSubmit((v) => {
       is_active: (v.is_active as boolean | undefined) ?? true,
       default_model: defaultModel,
       available_models: availableModels,
+      max_concurrency: (v.max_concurrency as number | undefined),
     }
     emit('submit', payload)
   }
@@ -397,6 +401,7 @@ const onSubmit = handleSubmit((v) => {
       is_active: v.is_active as boolean | undefined,
       default_model: defaultModel,
       available_models: availableModels,
+      max_concurrency: (v.max_concurrency as number | undefined),
     }
     emit('submit', payload)
   }
@@ -643,6 +648,24 @@ defineExpose({ selectedType, onSubmit })
               <Input
                 v-bind="componentField"
                 placeholder="例如：openai-prod / anthropic-staging"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        </FormField>
+
+        <FormField v-slot="{ componentField }" name="max_concurrency">
+          <FormItem>
+            <FormLabel class="font-normal">
+              并发上限
+              <span class="text-xs text-muted-foreground ml-1">（0 = 不限，默认 50）</span>
+            </FormLabel>
+            <FormControl>
+              <Input
+                v-bind="componentField"
+                type="number"
+                min="0"
+                placeholder="50"
               />
             </FormControl>
             <FormMessage />

@@ -22,6 +22,7 @@ from durable.queues import (
     QUEUE_INDEX,
     QUEUE_MAINTENANCE,
     QUEUE_PAGE_INDEX,
+    QUEUE_REPO_SUMMARY,
 )
 
 logger = structlog.get_logger(__name__)
@@ -80,6 +81,19 @@ async def durable_page_index(**payload: Any) -> dict[str, Any]:
     return await run_page_index(**payload)
 
 
+@app.task(name="durable_repo_summary", queue=QUEUE_REPO_SUMMARY)
+async def durable_repo_summary(*, repository_id: str) -> dict[str, Any]:
+    """仓库 AI 描述派发 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    durable job 只负责"可靠地发起一次 repo_summary 派发"（创建 session + 投递到 Runner），
+    重活在 Runner 容器内执行。这样建仓/手动触发的派发不再随 server 重启丢失。
+    幂等：入队点带 ``idempotency_key=f"summary:{repo_id}"``，同仓在途只一份。
+    """
+    from durable.tasks_impl import run_repo_summary
+
+    return await run_repo_summary(repository_id=repository_id)
+
+
 @app.task(name="durable_crawl_ingest", queue=QUEUE_CRAWL_INGEST)
 async def durable_crawl_ingest(**payload: Any) -> dict[str, Any]:
     """爬取批次入库 durable 任务（procrastinate 包壳，委托共用任务体）。
@@ -136,6 +150,7 @@ async def recover_stranded_repo_summaries(context: Any, timestamp: int) -> int:
 @app.periodic(cron="*/10 * * * *")
 @app.task(
     name="retry_stalled_durable_jobs",
+    queue=QUEUE_MAINTENANCE,
     queueing_lock="retry_stalled_durable_jobs",
     pass_context=True,
 )

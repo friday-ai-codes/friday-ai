@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 
 import httpx
 import structlog
+from django.conf import settings
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
@@ -22,6 +23,33 @@ T = TypeVar("T")
 
 # Qdrant httpx client 超时（秒）。改这里同时更新 get_client() 与可观测性日志字段。
 _QDRANT_CLIENT_TIMEOUT_S: float = 60.0
+
+
+def _vectors_on_disk() -> bool:
+    """原始向量是否落盘（mmap，不常驻内存）。
+
+    大量 collection（一仓一 collection）场景下，把原始向量放磁盘可将常驻内存
+    从 GB 级降到很低；检索精度靠 int8 量化向量 + rescore 读原始向量保证。
+    可用 settings.QDRANT_VECTORS_ON_DISK=false 关闭（回退全内存）。
+    """
+    return bool(getattr(settings, "QDRANT_VECTORS_ON_DISK", True))
+
+
+def _scalar_quantization() -> models.ScalarQuantization | None:
+    """int8 标量量化配置：量化向量常驻内存（always_ram）做快速召回。
+
+    内存约降至原始的 1/4；检索时默认 rescore 读原始向量重排，召回几乎无损。
+    可用 settings.QDRANT_QUANTIZATION_ENABLED=false 关闭。
+    """
+    if not bool(getattr(settings, "QDRANT_QUANTIZATION_ENABLED", True)):
+        return None
+    return models.ScalarQuantization(
+        scalar=models.ScalarQuantizationConfig(
+            type=models.ScalarType.INT8,
+            quantile=0.99,
+            always_ram=True,
+        )
+    )
 
 # upsert 可观测性：跨调用统计在飞 upsert 数与累计字节数。
 # 仅用于日志，不参与限流，所以用最轻的 threading.Lock 即可。
@@ -290,6 +318,25 @@ class QdrantService:
             return fn(cls.get_client())
 
     @classmethod
+    def ping_liveness(cls) -> dict[str, Any]:
+        """轻量存活探测：只 GET ``/healthz``，不枚举 collection。
+
+        健康检查只应回答"服务是否存活、能否连上",不该调 ``get_collections``——
+        一仓一 collection 时它会遍历数百个 collection，在并发/IO 抖动下把 Qdrant 的
+        actix worker 占满，反而把健康检查自己拖成超时（曾导致右上角常驻"异常"）。
+        ``/healthz`` 是 Qdrant 免鉴权的 liveness 端点，毫秒级返回。
+        """
+        config = cls._get_config_sync()
+        url = str(config.get("url", "http://localhost:6333")).rstrip("/")
+        try:
+            resp = httpx.get(f"{url}/healthz", timeout=3.0, trust_env=False)
+        except Exception as exc:
+            return {"status": "unhealthy", "error": str(exc)}
+        if resp.status_code == 200:
+            return {"status": "healthy"}
+        return {"status": "unhealthy", "error": f"HTTP {resp.status_code}"}
+
+    @classmethod
     def health_check(cls) -> dict[str, Any]:
         """Check Qdrant service health.
 
@@ -449,6 +496,9 @@ class QdrantService:
                     return True
 
             # Create collection
+            # 大量 collection 场景省内存：原始向量 on_disk（mmap）+ int8 量化常驻内存。
+            on_disk = _vectors_on_disk()
+            quantization_config = _scalar_quantization()
             if hybrid:
                 client.create_collection(
                     collection_name=collection_name,
@@ -456,11 +506,13 @@ class QdrantService:
                         "dense": models.VectorParams(
                             size=vector_size,
                             distance=models.Distance.COSINE,
+                            on_disk=on_disk,
                         ),
                     },
                     sparse_vectors_config={
                         "sparse": models.SparseVectorParams(),
                     },
+                    quantization_config=quantization_config,
                 )
                 logger.debug("collection_created_hybrid", collection_name=collection_name)
             else:
@@ -469,7 +521,9 @@ class QdrantService:
                     vectors_config=models.VectorParams(
                         size=vector_size,
                         distance=models.Distance.COSINE,
+                        on_disk=on_disk,
                     ),
+                    quantization_config=quantization_config,
                 )
                 logger.debug("collection_created", collection_name=collection_name)
 

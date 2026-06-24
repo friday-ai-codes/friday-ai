@@ -46,6 +46,15 @@ class Command(BaseCommand):
                 "处理提供（install_signal_handlers 默认 True），本参数仅控制等待上限。"
             ),
         )
+        parser.add_argument(
+            "--concurrency",
+            type=int,
+            default=1,
+            help=(
+                "单 worker 进程内并发消费的 job 数（默认 1=串行）。索引/图谱是重 IO "
+                "任务，单进程内适度并发(如 2-4)能提吞吐；与横向多副本(scale)叠加。"
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         # 仅在 Procrastinate durable 后端真正启用（Postgres + backend∈{auto,
@@ -63,15 +72,20 @@ class Command(BaseCommand):
 
         queues = [q.strip() for q in str(options["queues"]).split(",") if q.strip()]
         graceful_timeout = options.get("graceful_timeout")
+        concurrency = max(1, int(options.get("concurrency") or 1))
         self.stdout.write(
             self.style.SUCCESS(
-                f"启动 durable worker，消费队列：{queues}（graceful_timeout={graceful_timeout}）"
+                f"启动 durable worker，消费队列：{queues}"
+                f"（concurrency={concurrency}, graceful_timeout={graceful_timeout}）"
             )
         )
-        asyncio.run(self._run_worker(queues, graceful_timeout))
+        asyncio.run(self._run_worker(queues, graceful_timeout, concurrency))
 
     async def _run_worker(
-        self, queues: list[str], graceful_timeout: float | None = None
+        self,
+        queues: list[str],
+        graceful_timeout: float | None = None,
+        concurrency: int = 1,
     ) -> None:
         # 本地 import procrastinate：保持适配层隔离边界（仅 backends/tasks/management
         # 允许直接 import），且 SQLite 路径在上面已 CommandError 退出、不会到此。
@@ -96,6 +110,7 @@ class Command(BaseCommand):
                 # install_signal_handlers（默认 True）提供，绝不自写信号循环。
                 await worker_app.run_worker_async(
                     queues=queues,
+                    concurrency=concurrency,
                     listen_notify=False,
                     shutdown_graceful_timeout=graceful_timeout,
                 )

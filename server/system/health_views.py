@@ -195,30 +195,29 @@ async def _check_qdrant() -> ServiceStatus:
 
     start = time.perf_counter()
     try:
-        # QdrantService 使用同步 SDK，通过 sync_to_async 包装并加超时
+        # 只做轻量 liveness 探测（GET /healthz），不枚举 collection——后者在
+        # 一仓一 collection 时会拖垮 Qdrant 并让健康检查自身超时。
         result: dict[str, Any] = await asyncio.wait_for(
-            sync_to_async(QdrantService.health_check, thread_sensitive=False)(),
+            sync_to_async(QdrantService.ping_liveness, thread_sensitive=False)(),
             timeout=CHECK_TIMEOUT_SECONDS,
         )
     except Exception as exc:
-        logger.warning("system_health_qdrant_failed", error=str(exc))
+        # asyncio.TimeoutError 的 str() 为空，补一个可读信息避免前端 message 空白
+        message = str(exc) or f"{type(exc).__name__}（探测超时）"
+        logger.warning("system_health_qdrant_failed", error=message)
         return {
             "name": "qdrant",
             "label": "Qdrant",
             "status": "unhealthy",
-            "message": str(exc),
+            "message": message,
         }
 
     if result.get("status") == "healthy":
-        message = ""
-        collections = result.get("collections_count")
-        if collections is not None:
-            message = f"{collections} collections"
         return {
             "name": "qdrant",
             "label": "Qdrant",
             "status": "healthy",
-            "message": message,
+            "message": "",
             "latency_ms": int((time.perf_counter() - start) * 1000),
         }
 
@@ -257,7 +256,18 @@ class SystemHealthView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    # 健康结果短缓存（秒）：前端 header 多个标签页/用户高频轮询，逐次打全部依赖
+    # （含飞书外网请求）既慢又浪费。共享 Redis 缓存几秒，命中即直接返回。
+    _CACHE_KEY = "system:health:v1"
+    _CACHE_TTL_S = 5
+
     async def get(self, request: Any) -> Response:
+        from django.core.cache import cache
+
+        cached = await cache.aget(self._CACHE_KEY)
+        if cached is not None:
+            return Response(cached)
+
         services = await asyncio.gather(
             _check_database(),
             _check_redis(),
@@ -267,10 +277,10 @@ class SystemHealthView(APIView):
         )
         services_list: list[ServiceStatus] = list(services)
 
-        return Response(
-            {
-                "overall": _overall_status(services_list),
-                "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "services": services_list,
-            }
-        )
+        payload = {
+            "overall": _overall_status(services_list),
+            "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "services": services_list,
+        }
+        await cache.aset(self._CACHE_KEY, payload, self._CACHE_TTL_S)
+        return Response(payload)

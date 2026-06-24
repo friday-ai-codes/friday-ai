@@ -19,6 +19,20 @@ spec:
         {{- include "friday.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: qdrant
     spec:
+      {{- if .Values.qdrant.setVmMaxMapCount }}
+      # Qdrant 用 mmap 存储向量/索引；一仓一 collection 时 mmap 数会撞内核
+      # vm.max_map_count 默认上限(65530)，导致 Qdrant 创建线程栈失败而 abort 崩溃循环。
+      # 该 sysctl 是非命名空间内核参数，需 privileged initContainer 在节点上设置。
+      initContainers:
+        - name: set-vm-max-map-count
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "sysctl -w vm.max_map_count={{ .Values.qdrant.vmMaxMapCount }}"
+          securityContext:
+            privileged: true
+      {{- end }}
       containers:
         - name: qdrant
           image: "{{ .Values.qdrant.image.repository }}:{{ .Values.qdrant.image.tag }}"
