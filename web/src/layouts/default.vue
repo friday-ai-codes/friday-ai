@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppSidebar from '~/components/layout/AppSidebar.vue'
+import GitHubStarButton from '~/components/layout/GitHubStarButton.vue'
 import SystemHealthPopover from '~/components/layout/SystemHealthPopover.vue'
 import NotificationBell from '~/components/notifications/NotificationBell.vue'
 import { Toaster } from '~/components/ui/sonner'
@@ -46,6 +47,7 @@ const pageTitle = computed(() => {
               </h1>
             </div>
             <div class="flex items-center gap-3">
+              <GitHubStarButton />
               <NotificationBell />
               <SystemHealthPopover />
             </div>

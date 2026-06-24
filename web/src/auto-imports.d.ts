@@ -247,6 +247,7 @@ declare global {
   const useGamepad: typeof import('@vueuse/core').useGamepad
   const useGeolocation: typeof import('@vueuse/core').useGeolocation
   const useGsapReveal: typeof import('./composables/useMotion').useGsapReveal
+  const useHoverLottie: typeof import('./composables/useMotion').useHoverLottie
   const useI18n: typeof import('vue-i18n').useI18n
   const useId: typeof import('vue').useId
   const useIdle: typeof import('@vueuse/core').useIdle
@@ -735,6 +736,7 @@ declare module 'vue' {
     readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
     readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
     readonly useGsapReveal: UnwrapRef<typeof import('./composables/useMotion')['useGsapReveal']>
+    readonly useHoverLottie: UnwrapRef<typeof import('./composables/useMotion')['useHoverLottie']>
     readonly useI18n: UnwrapRef<typeof import('vue-i18n')['useI18n']>
     readonly useId: UnwrapRef<typeof import('vue')['useId']>
     readonly useIdle: UnwrapRef<typeof import('@vueuse/core')['useIdle']>

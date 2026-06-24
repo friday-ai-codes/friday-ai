@@ -128,3 +128,71 @@ export function useLottie(
     anim = null
   })
 }
+
+/**
+ * 按需（如 hover）从头播放一次的 Lottie 动画。
+ *
+ * 与 useLottie 不同：不循环、不自动播放，静止时停在第 0 帧（动画应把第 0
+ * 帧设计成「静态形态」）。调用返回的 play() 才会从头播放一次。
+ * lottie 异步懒加载，play() 早于加载完成时会标记 pending，加载后补播。
+ * reduced-motion 时仍渲染静态第 0 帧，但 play() 不触发动画。
+ */
+export function useHoverLottie(
+  container: Ref<HTMLElement | null>,
+  animationData: Record<string, any>,
+  options: Pick<UseLottieOptions, 'speed'> = {},
+): { play: () => void } {
+  let anim: AnimationItem | null = null
+  let disposed = false
+  let pendingPlay = false
+
+  async function mount() {
+    if (anim)
+      return
+    const { default: lottie } = await import('lottie-web/build/player/lottie_light')
+    if (disposed || anim || !container.value)
+      return
+    anim = lottie.loadAnimation({
+      container: container.value,
+      renderer: 'svg',
+      loop: false,
+      autoplay: false,
+      animationData: structuredClone(animationData),
+    })
+    if (options.speed)
+      anim.setSpeed(options.speed)
+    anim.goToAndStop(0, true)
+    if (pendingPlay) {
+      pendingPlay = false
+      if (!usePrefersReducedMotion())
+        anim.goToAndPlay(0, true)
+    }
+  }
+
+  function play() {
+    if (usePrefersReducedMotion())
+      return
+    if (anim)
+      anim.goToAndPlay(0, true)
+    else
+      pendingPlay = true
+  }
+
+  watch(container, (el) => {
+    if (el) {
+      void mount()
+    }
+    else {
+      anim?.destroy()
+      anim = null
+    }
+  }, { immediate: true, flush: 'post' })
+
+  onBeforeUnmount(() => {
+    disposed = true
+    anim?.destroy()
+    anim = null
+  })
+
+  return { play }
+}
