@@ -104,6 +104,35 @@ async def durable_ping(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"pong": True, "payload": payload}
 
 
+@app.periodic(cron="*/5 * * * *")
+@app.task(
+    name="recover_stranded_repo_summaries",
+    queue=QUEUE_MAINTENANCE,
+    queueing_lock="recover_stranded_repo_summaries",
+    pass_context=True,
+)
+async def recover_stranded_repo_summaries(context: Any, timestamp: int) -> int:
+    """周期重派搁浅的 repo_summary 会话（DURABLE 兜底，修复内存队列派发的丢失缺口）。
+
+    与 ``retry_stalled_durable_jobs`` 同模式（``@app.periodic`` + ``queueing_lock``
+    单例：DB 保证每周期只 defer 一份、todo 唯一不堆积，多副本 worker 天然单例）。
+
+    缺口背景：index/graph 重启不丢（durable），但 summary/coding 走
+    ``TaskDispatcher`` 进程内存队列，server/runner 重启即丢、``SubAgentSession``
+    永卡 pending。本周期任务把搁浅的 **repo_summary**（只读、可安全重试）重新派发；
+    coding 不在此自动重派（避免重复推 commit），详见 ``recover_stranded_summaries``。
+    """
+    from repositories.summary_service import recover_stranded_summaries
+
+    recovered = await recover_stranded_summaries()
+    logger.info(
+        "recover_stranded_repo_summaries_tick",
+        timestamp=timestamp,
+        recovered=recovered,
+    )
+    return recovered
+
+
 @app.periodic(cron="*/10 * * * *")
 @app.task(
     name="retry_stalled_durable_jobs",
