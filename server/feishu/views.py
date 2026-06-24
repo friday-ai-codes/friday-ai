@@ -22,6 +22,7 @@ from common.encryption import decrypt_value, encrypt_value
 from common.log_context import LogSource, bind_request_context
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
+from system.webhook_recorder import client_ip, record_inbound_webhook
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
 
@@ -200,6 +201,16 @@ class CardCallbackView(APIView):
         # 1. 处理 challenge 验证 (首次配置回调 URL)
         if "challenge" in data:
             return Response({"challenge": data["challenge"]})
+
+        # LOG-07：卡片回调原始留痕（脱敏后入库，best-effort 绝不反噬主流程）。
+        await record_inbound_webhook(
+            kind="feishu",
+            raw_body=raw_body,
+            headers=dict(request.headers),
+            source_ip=client_ip(request),
+            verified=False,
+            correlation={"feishu_entry": "card_callback"},
+        )
 
         # 2. 验签与解密（生产默认强制）
         verified_payload, early_response = _verify_and_decrypt_callback_payload(
@@ -426,6 +437,21 @@ class IMMessageWebhookView(APIView):
         if data.get("type") == "url_verification":
             return Response({"challenge": data.get("challenge", "")})
 
+        # LOG-07：IM 消息回调原始留痕（脱敏后入库，best-effort 绝不反噬主流程）。
+        _im_hdr = data.get("header", {}) if isinstance(data, dict) else {}
+        await record_inbound_webhook(
+            kind="feishu",
+            raw_body=raw_body,
+            headers=dict(request.headers),
+            source_ip=client_ip(request),
+            verified=False,
+            correlation={
+                "feishu_entry": "im_message",
+                "event_id": _im_hdr.get("event_id", "") if isinstance(_im_hdr, dict) else "",
+                "event_type": _im_hdr.get("event_type", "") if isinstance(_im_hdr, dict) else "",
+            },
+        )
+
         # 2. 验签与解密（生产默认强制）
         verified_payload, early_response = _verify_and_decrypt_callback_payload(
             request,
@@ -567,6 +593,21 @@ class FeishuWebhookView(APIView):
         # Handle URL verification challenge
         if data.get("type") == "url_verification":
             return Response({"challenge": data.get("challenge", "")})
+
+        # LOG-07：入站 webhook 原始留痕（脱敏后入库，与既有 TriggerLog 双写纳入统一视图）。
+        # 在验签/路由前记录以捕获**全部**入站（含被拒），best-effort 绝不反噬 webhook 主流程。
+        _hdr = data.get("header", {}) if isinstance(data, dict) else {}
+        await record_inbound_webhook(
+            kind="feishu",
+            raw_body=raw_body,
+            headers=dict(request.headers),
+            source_ip=client_ip(request),
+            verified=False,
+            correlation={
+                "event_uuid": _hdr.get("uuid", "") if isinstance(_hdr, dict) else "",
+                "event_type": _hdr.get("event_type", "") if isinstance(_hdr, dict) else "",
+            },
+        )
 
         # Parse webhook request
         header = data.get("header", {})

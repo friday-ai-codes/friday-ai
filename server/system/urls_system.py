@@ -3,6 +3,7 @@
 from django.urls import path
 
 from .dashboard_views import DashboardStatsView
+from .drilldown_views import CallDrilldownView, ConversationDrilldownView
 from .health_views import SystemHealthView
 from .log_views import SystemLogClearView, SystemLogQueryView
 from .observability_views import ObservabilityView
@@ -12,6 +13,7 @@ from .setup_views import (
     SetupSecurityCheckView,
 )
 from .tasks_views import ActiveTasksView
+from .webhook_views import WebhookEventDetailView, WebhookEventListView
 
 urlpatterns = [
     path("health/", SystemHealthView.as_view(), name="system-health"),
@@ -26,6 +28,20 @@ urlpatterns = [
     path("logs/clear/", SystemLogClearView.as_view(), name="system-logs-clear"),
     # 运维监控「系统日志」：基于 SystemLogEntry 的查询/筛选/全文 + 四计数（LOG-01/03）。
     path("logs/", SystemLogQueryView.as_view(), name="system-logs"),
+    # 入站 webhook 原始留痕（LOG-07）：列表 + 单条原始详情（已脱敏，IsSuperUser）。
+    path("webhooks/", WebhookEventListView.as_view(), name="system-webhooks"),
+    path(
+        "webhooks/<int:event_id>/",
+        WebhookEventDetailView.as_view(),
+        name="system-webhook-detail",
+    ),
+    # 调用下钻（LOG-04）：MCP 调用归因（request_id/run_id）+ AI 对话会话原始（conversation_id）。
+    path("calls/drilldown/", CallDrilldownView.as_view(), name="system-call-drilldown"),
+    path(
+        "conversations/<uuid:conversation_id>/drilldown/",
+        ConversationDrilldownView.as_view(),
+        name="system-conversation-drilldown",
+    ),
     # 首启向导 Phase 4：安全校验（只读，非阻塞）+ 飞书 / 向量检索可选配置编排
     path("security-check/", SetupSecurityCheckView.as_view(), name="setup-security-check"),
     path("setup-feishu/", SetupFeishuWizardView.as_view(), name="setup-feishu"),

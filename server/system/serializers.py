@@ -12,7 +12,12 @@ from rest_framework import serializers
 from common.encryption import decrypt_value, encrypt_value
 from services.model_modalities import infer_model_modalities
 
-from .models import ProviderCredential, SystemLogEntry, SystemSetting
+from .models import (
+    InboundWebhookEvent,
+    ProviderCredential,
+    SystemLogEntry,
+    SystemSetting,
+)
 
 
 class SystemSettingSerializer(serializers.ModelSerializer):
@@ -59,6 +64,31 @@ class SystemLogEntrySerializer(serializers.ModelSerializer):
             "request_id",
             "payload",
             "correlation",
+        ]
+        read_only_fields = fields
+
+
+class InboundWebhookEventSerializer(serializers.ModelSerializer):
+    """入站 webhook 原始留痕只读序列化器（LOG-07 查看）。
+
+    暴露落库的全部可读字段；``headers`` / ``raw_body`` 已在写入前由
+    ``webhook_recorder`` 强制脱敏，此处只读直出，绝不含明文凭证（脱敏契约）。
+    全字段 read_only（查看端点不写）。
+    """
+
+    class Meta:
+        model = InboundWebhookEvent
+        fields = [
+            "id",
+            "received_at",
+            "kind",
+            "source_ip",
+            "headers",
+            "raw_body",
+            "user_id",
+            "verified",
+            "correlation",
+            "created_at",
         ]
         read_only_fields = fields
 

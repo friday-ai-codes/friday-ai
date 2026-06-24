@@ -516,6 +516,28 @@ class ContainerCallbackView(APIView):
             session_id=session_id,
         )
 
+        # LOG-07：容器回调原始留痕（脱敏后入库，best-effort 绝不反噬回调主流程）。
+        # 仅记录生命周期/用户相关回调（completed/failed/question），跳过高频
+        # heartbeat/progress/action_log/token_usage 以免撑爆留痕表（per 观测规范「高频禁刷屏」）。
+        if callback_type in {
+            CallbackType.COMPLETED,
+            CallbackType.FAILED,
+            CallbackType.QUESTION,
+        }:
+            from system.webhook_recorder import client_ip, record_inbound_webhook
+
+            await record_inbound_webhook(
+                kind="container_callback",
+                raw_body=request.data,
+                headers=dict(request.headers),
+                source_ip=client_ip(request),
+                verified=False,
+                correlation={
+                    "session_id": session_id,
+                    "callback_type": str(callback_type),
+                },
+            )
+
         # 2. Token 验证
         expected_token = getattr(settings, "CONTAINER_CALLBACK_TOKEN", "")
         if not expected_token or token != expected_token:
