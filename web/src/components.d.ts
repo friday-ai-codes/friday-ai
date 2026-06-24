@@ -259,6 +259,8 @@ declare module 'vue' {
     NodePortsDisplay: typeof import('./components/workflow/NodePortsDisplay.vue')['default']
     NodeSchemaDisplay: typeof import('./components/workflow/node-config/NodeSchemaDisplay.vue')['default']
     NotificationBell: typeof import('./components/notifications/NotificationBell.vue')['default']
+    ObservabilityTabs: typeof import('./components/observability/ObservabilityTabs.vue')['default']
+    ObservabilityTimeRange: typeof import('./components/observability/ObservabilityTimeRange.vue')['default']
     OIDCProviderSettings: typeof import('./components/settings/OIDCProviderSettings.vue')['default']
     OverrideConfirmDialog: typeof import('./components/workflow/validation/OverrideConfirmDialog.vue')['default']
     PageContainer: typeof import('./components/layout/PageContainer.vue')['default']
