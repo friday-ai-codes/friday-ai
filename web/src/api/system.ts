@@ -85,3 +85,78 @@ export async function restoreSystemBackup(file: File): Promise<{ detail: string,
   }
   return data
 }
+
+// ============================================================================
+// 超管可观测总览（OBS-01）：任务队列全景 + 系统/Runner 负载
+// GET /api/system/observability/（IsSuperUser）
+// ============================================================================
+
+/** durable 队列（procrastinate_jobs）按 queue×status 的一行计数。 */
+export interface QueueStatusRow {
+  queue: string
+  status: string
+  count: number
+}
+
+/** SubAgent 会话按 task_type×status 的一行计数。 */
+export interface SubagentStatusRow {
+  task_type: string
+  status: string
+  count: number
+}
+
+/** 活跃（pending/running）SubAgent 会话条目。 */
+export interface SubagentActiveItem {
+  session_id: string
+  task_type: string
+  status: string
+  repository_id: string
+  runner_id: string
+  updated_at: string
+}
+
+/** Runner 最近一次心跳上报的负载（与主机等价）。 */
+export interface RunnerLoad {
+  cpu_percent?: number
+  mem_percent?: number
+  mem_total_mb?: number
+  mem_used_mb?: number
+  disk_percent?: number
+  disk_total_gb?: number
+  disk_used_gb?: number
+}
+
+export interface RunnerObservability {
+  id: string
+  name: string
+  status: string
+  current_tasks: number
+  concurrent: number
+  version: string
+  last_heartbeat: string | null
+  load: RunnerLoad
+}
+
+export interface ObservabilityResponse {
+  generated_at: string
+  durable_queues: {
+    by_queue_status: QueueStatusRow[]
+    totals: Record<string, number>
+  }
+  subagent: {
+    by_type_status: SubagentStatusRow[]
+    active: SubagentActiveItem[]
+  }
+  repositories: {
+    total: number
+    index_status: Record<string, number>
+    graph_status: Record<string, number>
+    ai_summary_status: Record<string, number>
+  }
+  orchestration: Record<string, number>
+  runners: RunnerObservability[]
+}
+
+export async function getObservability(): Promise<ObservabilityResponse> {
+  return get<ObservabilityResponse>('/system/observability/')
+}
