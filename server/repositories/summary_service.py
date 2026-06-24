@@ -170,6 +170,18 @@ _TERMINAL_FAIL_STATUSES = frozenset({
 # 部署）会清空队列，但 SubAgentSession 停留在非终态 PENDING，UI 永远「排队中」。
 _STALE_PENDING_MINUTES = 10
 
+# 搁浅判定阈值（recover 周期任务用）：pending/running 会话超过该时长「无进展」
+# （updated_at 陈旧）即视为派发丢失（容器死亡 / Runner 重启 / server 重启清空内存
+# 队列）。比 dispatch timeout（600s）留足余量，避免误杀仍在跑的慢任务。
+# 注意：此处用 updated_at 陈旧度判定，**不依赖 runner_id 是否为空** —— 历史 reconcile
+# 仅救 runner_id is None 的孤儿，漏掉了「已分配但容器从未真正执行」（runner_id 已设）
+# 的那批，导致它们永卡 pending；本恢复机制据 updated_at 兜底，两类都能自愈。
+_STRANDED_MINUTES = 15
+
+# 单轮 recover sweep 最多重派的仓库数：防止一次性把数百个搁浅任务全灌进队列，
+# 配合 5 分钟周期逐步 ramp（尤其上游 LLM 有速率上限时更平滑）。
+_RECOVER_MAX_PER_SWEEP = 50
+
 
 async def reconcile_ai_summary_status(repository: Repository) -> Repository:
     """将 Repository.ai_summary_status 与最新 REPO_SUMMARY SubAgentSession 对齐。
@@ -248,6 +260,110 @@ async def reconcile_ai_summary_status(repository: Repository) -> Repository:
         await repository.asave(update_fields=["ai_summary_status", "updated_at"])
 
     return repository
+
+
+async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int:
+    """重派搁浅的 repo_summary 会话（durable 周期任务调用，修复派发丢失缺口）。
+
+    背景（架构缺口）
+    ================
+    index/graph 已迁到 durable（Postgres Procrastinate，重启不丢），但 summary/coding
+    仍走 ``runners.dispatcher.TaskDispatcher`` 的**进程内存队列**（``_pending``，非
+    durable）。server / runner 重启会清空该队列，而 ``SubAgentSession`` 停留在
+    ``pending`` / ``running`` 永不再被执行 —— UI 永远「排队中」。历史 reconcile 仅救
+    ``runner_id is None`` 的孤儿，漏掉了「已分配但容器从未真正执行」（runner_id 已设）
+    的那批，导致它们**永久卡死**。
+
+    本函数作为 durable 兜底安全网：扫描超过 ``_STRANDED_MINUTES`` 无进展（updated_at
+    陈旧）的 ``pending`` / ``running`` repo_summary 会话，对其对应仓库**重新派发**。
+
+    安全边界
+    ========
+    - **只覆盖 repo_summary**（只读分析，可安全无限重试）；**coding 不在此自动重派**
+      —— coding 会建分支 / 推 commit，盲目重试可能产生重复提交，必须人工介入。
+    - 幂等：① ``dispatcher._has_active_assignment`` 防同会话重复派发；② 每仓只取最新
+      一条、重派前把该仓所有未终态旧会话标 TIMEOUT，再起新会话（updated_at 刷新，下个
+      周期 ``_STRANDED_MINUTES`` 内不会再被触碰）；③ 调用方周期任务自身 queueing_lock
+      防并发重入；④ ``limit`` 每轮上限，逐步 ramp 不打爆。
+
+    Args:
+        limit: 单轮最多重派的仓库数（默认 ``_RECOVER_MAX_PER_SWEEP``）。
+
+    Returns:
+        本轮重新派发的仓库数量。
+    """
+    cutoff = timezone.now() - timedelta(minutes=_STRANDED_MINUTES)
+    recovered = 0
+    seen_repos: set[str] = set()
+
+    stranded = SubAgentSession.objects.filter(
+        task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+        status__in=[
+            SubAgentSession.Status.PENDING,
+            SubAgentSession.Status.RUNNING,
+        ],
+        updated_at__lt=cutoff,
+    ).order_by("-created_at")
+
+    async for session in stranded:
+        if recovered >= limit:
+            break
+        raw = session.last_output if isinstance(session.last_output, dict) else {}
+        repo_id = raw.get("repository_id")
+        if not repo_id or repo_id in seen_repos:
+            continue
+        seen_repos.add(repo_id)
+
+        repo = await Repository.objects.filter(id=repo_id, is_deleted=False).afirst()
+        if repo is None:
+            # 仓库已删：收尾搁浅会话，避免僵尸 pending 永久残留。
+            await SubAgentSession.objects.filter(
+                task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+                last_output__repository_id=repo_id,
+                status__in=[
+                    SubAgentSession.Status.PENDING,
+                    SubAgentSession.Status.RUNNING,
+                ],
+            ).aupdate(
+                status=SubAgentSession.Status.TIMEOUT,
+                failure_reason="仓库已删除，搁浅会话收尾",
+            )
+            continue
+
+        # 已完成 / 真实失败的仓库无需恢复（失败是执行后的真实结果，不应被无限重试）。
+        if repo.ai_summary_status not in (
+            AISummaryStatus.PENDING,
+            AISummaryStatus.RUNNING,
+        ):
+            continue
+
+        # 把该仓所有未终态旧会话标 TIMEOUT（不调 _update_repository_on_summary_fail，
+        # 避免把仓库误置 failed —— 随后 dispatch_repo_summary 会重新置 PENDING），
+        # 再重新派发出一个全新会话。
+        await SubAgentSession.objects.filter(
+            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+            last_output__repository_id=repo_id,
+            status__in=[
+                SubAgentSession.Status.PENDING,
+                SubAgentSession.Status.RUNNING,
+            ],
+        ).aupdate(
+            status=SubAgentSession.Status.TIMEOUT,
+            failure_reason="搁浅重派（容器死亡 / Runner 重启导致派发丢失）",
+        )
+
+        try:
+            await dispatch_repo_summary(repo)
+            recovered += 1
+            logger.info("repo_summary_recovered", repository_id=repo_id)
+        except Exception:  # noqa: BLE001 — 单仓失败隔离，不阻断其余恢复
+            logger.warning(
+                "repo_summary_recover_failed", repository_id=repo_id, exc_info=True
+            )
+
+    if recovered:
+        logger.info("repo_summary_recover_sweep", recovered=recovered)
+    return recovered
 
 
 async def _build_env_metadata(repository: Repository) -> dict[str, str]:
