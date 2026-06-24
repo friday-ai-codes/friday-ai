@@ -355,3 +355,17 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## 可观测性与日志规范（强制）
+
+新增或修改任何功能（API / 工作流节点 / 服务 / 任务 / webhook / 工具 / LLM 调用 / 召回）时，必须按规范补齐日志与指标埋点。完整规范见 `.planning/observability/LOGGING-SPEC.md`，里程碑方案见 `.planning/observability/MILESTONE-PROPOSAL.md`，强制规则见 `.cursor/rules/observability-logging.mdc`。
+
+核心要求：
+
+- 用 `structlog.get_logger(__name__)`，事件名 snake_case（started/completed/failed），字段用 kv；关键生命周期带 `duration_ms`。
+- 每个事件设 `category`（`caller` 调用类 / `sampling` 采样类）与 `component`。
+- 绑定触发用户：入口走统一中间件自动注入 `user_id/source/request_id/trace_id`；后台任务（durable/background_runner/workflow/scheduler/飞书·webhook）显式带 `initiated_by_user_id`；系统行为标 `system`。
+- 脱敏不可绕过：凭证/token/上游响应体/异常文本走 `redact_credentials` / `redact_secrets_in_text`；入库留痕走 `redact_for_ledger`。
+- 指标与留痕分离：指标走精简事件表（`RequestMetric` / 扩展的 `ModelUsageRecord` 等，SQL 聚合）；调用详情/召回内容/会话原始数据走 Interaction Ledger（`server/interactions/`）；排障日志走系统日志（采样）。三者用 `request_id/run_id/conversation_id` 关联。
+- 新增 LLM 调用赋 `call_source`（枚举见 LOGGING-SPEC §4.1）并上报请求数/token/TTFT/上游错误码；新增请求入口纳入 QPS/错误率/时长；新增召回上报条数/分层耗时/score 并写 `RetrievalTrace`（MCP + AI 对话两条链）。
+- 观测代码 best-effort，绝不反噬业务；高频循环禁止 INFO 刷屏。
