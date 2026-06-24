@@ -254,6 +254,58 @@ def purge_observability_logs_job():
 
 
 @_with_scheduler_log_context
+def sample_gauges_job():
+    """Job wrapper：周期采样并发/队列/积压快照写 GaugeSample（RATE-03 采样侧）。
+
+    沿用既有 ``*_job`` + ``run_async_task`` 范式。**采样高频**：本 wrapper 的
+    ``job_start`` / ``job_complete`` 保留，但 ``sample_gauges`` 内部用
+    ``category=sampling``，避免高频循环 INFO 刷屏（高频循环纪律）。采样函数本身
+    best-effort（异常吞掉记 warning），不抛回本 wrapper。
+    """
+    from system.metric_sampling import sample_gauges
+
+    log = logger.bind(job="sample_gauges")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(sample_gauges)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
+def purge_metrics_job():
+    """Job wrapper：保留策略到期清理三张指标表（RATE-03 保留治理）。
+
+    清理 ``GaugeSample`` + ``RequestMetric``（按 ``ts``）+ ``ModelUsageRecord``
+    （按 ``created_at``，口径分清）。镜像 ``purge_observability_logs_job``：沿用
+    ``run_async_task`` 范式；清理函数本身 best-effort（异常吞掉记 warning），不抛回本
+    wrapper。
+    """
+    from system.metric_retention import (
+        purge_gauge_samples,
+        purge_model_usage_records,
+        purge_request_metrics,
+    )
+
+    log = logger.bind(job="purge_metrics")
+    log.info("job_start")
+
+    async def _run():
+        gauge = await purge_gauge_samples()
+        request = await purge_request_metrics()
+        model_usage = await purge_model_usage_records()
+        return {"gauge": gauge, "request": request, "model_usage": model_usage}
+
+    try:
+        result = run_async_task(_run)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -425,6 +477,35 @@ class Command(BaseCommand):
             job="purge_observability_logs",
             schedule="daily at 04:30",
         )
+
+        # 趋势采样（RATE-03 采样侧）：IntervalTrigger ~45s 把并发/队列/积压快照拍平成
+        # GaugeSample 行。间隔取 settings.METRIC_SAMPLE_INTERVAL_SECONDS（默认 45）启动值；
+        # 运行时改采样间隔走 SettingKeys.METRIC_SAMPLE_INTERVAL_SECONDS（sample_gauges 内部
+        # 读取/clamp），apscheduler 间隔以启动值为准——热改间隔需重启 scheduler（量级低，可接受）。
+        scheduler.add_job(
+            sample_gauges_job,
+            trigger=IntervalTrigger(
+                seconds=getattr(settings, "METRIC_SAMPLE_INTERVAL_SECONDS", 45)
+            ),
+            id="sample_gauges",
+            name="Sample concurrency/queue/backlog into GaugeSample",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("job_registered", job="sample_gauges", schedule="every ~45s")
+
+        # 指标表保留清理（RATE-03 保留治理）daily at 05:00。
+        # 选 05:00 错开既有 03:00/03:30/04:00/04:30 清理任务（与 prune_cache_volumes 同时段，
+        # 量级低不争写锁），按保留策略清理 GaugeSample/RequestMetric(ts)/ModelUsageRecord(created_at)。
+        scheduler.add_job(
+            purge_metrics_job,
+            trigger=CronTrigger(hour=5, minute=0),
+            id="purge_metrics",
+            name="Purge GaugeSample/RequestMetric/ModelUsageRecord by retention policy",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("job_registered", job="purge_metrics", schedule="daily at 05:00")
 
         # Delete old job executions weekly
         scheduler.add_job(
