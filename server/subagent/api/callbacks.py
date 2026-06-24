@@ -22,6 +22,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from structlog.stdlib import BoundLogger
 
+from agents.call_source import CallSource
+from interactions.ledger import arecord_llm_usage
 from orchestration.progress_payload import parse_progress_payload
 from services.protocols import CallbackType
 from subagent.models import ActionLog, SubAgentSession, TaskResult, TokenUsage
@@ -1086,10 +1088,76 @@ async def _handle_action_log(
     return Response({"status": "ok"})
 
 
+def _derive_container_call_source(session: SubAgentSession) -> str:
+    """服务端权威派生四类容器 LLM 调用来源（T-72-03-TAMPER）。
+
+    依据 dispatch 时服务端写入、runner 不可篡改的 ``SubAgentSession.task_type`` +
+    ``last_output.source`` 映射四类容器 ``CallSource``；无法判定回退 ``sdk_agent_task``。
+    返回值经 ``CallSource.normalize`` 受控，杜绝非法维度。**绝不**采信 runner 经 payload
+    上报的 call_source（对齐 cross_repo_relevance 权威字段范式）。
+    """
+    last_output = session.last_output if isinstance(session.last_output, dict) else {}
+    source = last_output.get("source")
+    effective_task_type = str(last_output.get("task_type") or "")
+
+    if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+        derived = CallSource.REPO_SUMMARY_CONTAINER
+    elif session.task_type == SubAgentSession.TaskType.EXPLORE and source == "chat_deep_analysis":
+        derived = CallSource.DEEP_ANALYSIS_CONTAINER
+    elif (
+        session.task_type == SubAgentSession.TaskType.CODING
+        or effective_task_type in ("coding", "coding_commit")
+    ):
+        derived = CallSource.WORKFLOW_CODING_CONTAINER
+    else:
+        derived = CallSource.SDK_AGENT_TASK
+    return CallSource.normalize(derived)
+
+
+async def _resolve_initiated_user(session: SubAgentSession) -> str:
+    """从服务端权威来源派生发起用户（T-72-03-TAMPER）。
+
+    优先 ``main_session.user``（``AgentSession.user`` FK，dispatch 时服务端写入）；
+    其次 workflow 触发者（``node_execution → workflow_execution.triggered_by``）；均无则
+    ``system``。**绝不**取 runner 可经 progress 篡改的 ``last_output`` 任意键作归因用户。
+    async 安全：仅取标量 id，不在 async 上下文直接访问 FK。
+    """
+    try:
+        if session.main_session_id:
+            from agents.models import AgentSession
+
+            main = await AgentSession.objects.filter(id=session.main_session_id).afirst()
+            if main is not None and main.user_id:
+                return str(main.user_id)
+        if session.node_execution_id:
+            from workflows.models.execution import NodeExecution
+
+            ne = (
+                await NodeExecution.objects.select_related("workflow_execution")
+                .filter(id=session.node_execution_id)
+                .afirst()
+            )
+            if (
+                ne is not None
+                and ne.workflow_execution is not None
+                and ne.workflow_execution.triggered_by_id
+            ):
+                return str(ne.workflow_execution.triggered_by_id)
+    except Exception:  # noqa: BLE001 — 用户派生失败回退 system，绝不反噬回调
+        return "system"
+    return "system"
+
+
 async def _handle_token_usage(
     session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
-    """处理 token_usage 回调 — 写入 TokenUsage 记录。"""
+    """处理 token_usage 回调 — 写入 TokenUsage 记录，并桥接落一行 ModelUsageRecord。
+
+    ``TokenUsage``（成本归因既有消费方）保持原样不动；在其之外**追加**一行
+    ``ModelUsageRecord`` 把容器 LLM token 纳入统一 TPS 源（72-03，指标/留痕分离、不复制
+    语义）。``call_source`` 与发起用户由 ``SubAgentSession`` 服务端权威派生（不信任 runner
+    可篡改 payload）。桥接 best-effort 独立 try/except，失败仅 warning、回调仍返回 200。
+    """
     ser = TokenUsagePayloadSerializer(data=payload)
     if not ser.is_valid():
         return Response(
@@ -1108,6 +1176,40 @@ async def _handle_token_usage(
         total_cost_usd=p["total_cost_usd"],
         source=TokenUsage.Source.SUBAGENT,
     )
+
+    # 桥接：补一行 ModelUsageRecord 纳入 TPS（72-03，RATE-02 核心）。best-effort 独立
+    # try/except swallow，绝不影响回调 200（T-72-03-03）；call_source/user 服务端权威派生
+    # （T-72-03-TAMPER）；只承载 token 计数 + provider/model/status 元数据，无 prompt 文本。
+    try:
+        last_output = session.last_output if isinstance(session.last_output, dict) else {}
+        call_source = _derive_container_call_source(session)
+        provider = p.get("provider") or str(last_output.get("provider") or "")
+        user_id = await _resolve_initiated_user(session)
+        input_tokens = p["input_tokens"]
+        output_tokens = p["output_tokens"]
+        await arecord_llm_usage(
+            run=None,
+            call_source=call_source,
+            provider=provider,
+            model=p["model"],
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+            cache_read_tokens=p["cache_read_tokens"],
+            cache_write_tokens=p["cache_write_tokens"],
+            cost_estimate=p["total_cost_usd"],
+            ttft_ms=p.get("ttft_ms"),
+            upstream_status_code=p.get("upstream_status_code"),
+            failure_type=p.get("failure_type", ""),
+            user_id=user_id,
+            source="container_callback",
+        )
+    except Exception as exc:  # noqa: BLE001 — 桥接绝不反噬回调主流程
+        logger.warning(
+            "container_token_bridge_failed",
+            session_id=session.session_id,
+            error=str(exc),
+        )
 
     log.debug("callback_token_usage_ok", model=p["model"])
     return Response({"status": "ok"})
