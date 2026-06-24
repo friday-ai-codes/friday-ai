@@ -45,14 +45,28 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-def _run_in_thread(coro):
-    """Run a coroutine in a new thread with its own event loop."""
+def _run_in_thread(coro, *, triggered_by_id=None, trace_id=None):
+    """Run a coroutine in a new thread with its own event loop.
+
+    CTX-02：后台工作流线程是干净的新 event loop / 新线程，contextvars 不自动传播，
+    必须在入口显式 ``bind_task_context`` 重新绑定发起用户（手动触发有 triggered_by；
+    飞书/webhook 当前无 → ``system``），run 结束 clear。观测代码 best-effort，
+    绑定失败绝不影响工作流主流程。
+    """
 
     def target():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(coro)
+            from common.log_context import bind_task_context
+
+            with bind_task_context(
+                user_id=triggered_by_id,
+                source="workflow",
+                trace_id=trace_id,
+                component="workflow",
+            ):
+                loop.run_until_complete(coro)
         except Exception as e:
             logger.exception("background_task_error", error=str(e))
         finally:
@@ -382,7 +396,8 @@ class WorkflowEngine:
             _run_in_thread(
                 self._run_execution(
                     execution, dag, input_data, stop_before_node_id=stop_before_node_id
-                )
+                ),
+                triggered_by_id=execution.triggered_by_id,
             )
 
         return execution
@@ -1311,7 +1326,10 @@ class WorkflowEngine:
         logger.info("execution_resumed", execution_id=str(execution.id))
 
         # 4. 重建真实状态重入主循环（is_resume=True 避免覆盖 started_at）
-        _run_in_thread(self._rebuild_and_run(execution, dag))
+        _run_in_thread(
+            self._rebuild_and_run(execution, dag),
+            triggered_by_id=execution.triggered_by_id,
+        )
 
     async def cancel_execution(self, execution: WorkflowExecution) -> None:
         """取消执行"""
@@ -2023,7 +2041,8 @@ class WorkflowEngine:
             _run_in_thread(
                 self._run_execution(
                     new_execution, dag, original_execution.input_data, initial_outputs
-                )
+                ),
+                triggered_by_id=new_execution.triggered_by_id,
             )
 
         return new_execution

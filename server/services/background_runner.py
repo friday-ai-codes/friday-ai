@@ -112,6 +112,7 @@ def run_in_background(
     coro_factory: Callable[[], Awaitable[T]],
     *,
     name: str | None = None,
+    initiated_by_user_id: str | None = None,
 ) -> Future[T]:
     """在常驻 worker 线程的事件循环里运行 coroutine。
 
@@ -125,6 +126,9 @@ def run_in_background(
     Args:
         coro_factory: 无参 callable，调用时返回 coroutine。
         name: 可选 task 名（仅用于日志/debug，不影响 Future 行为）。
+        initiated_by_user_id: 可选发起用户 id（CTX-02）。非空时在 worker 干净
+            context 内经 ``bind_task_context(source="background")`` 重新绑定发起
+            用户；不传 → 不绑定（保持既有零回归，由 contextvars 默认无值）。
 
     Returns:
         concurrent.futures.Future — 调用方可以 .result() 同步等待，
@@ -134,6 +138,14 @@ def run_in_background(
 
     async def _wrapper() -> T:
         try:
+            if initiated_by_user_id:
+                # bind 在 worker 干净 context 内执行（跨线程不自动传播），正确归因。
+                from common.log_context import bind_task_context
+
+                with bind_task_context(
+                    user_id=initiated_by_user_id, source="background"
+                ):
+                    return await coro_factory()
             return await coro_factory()
         except Exception:
             # 显式记录后再抛，确保即使调用方没消费 Future 也能在日志看到原因

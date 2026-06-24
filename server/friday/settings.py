@@ -134,6 +134,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # 靠最外层：尽早绑定 request_id/source/trace_id+system 占位，覆盖整个请求生命周期，
+    # 请求结束清理 contextvars（CTX-01；真实 user_id 由 DRF LogContextMixin 认证后补绑）。
+    "common.middleware.RequestLogContextMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
