@@ -123,7 +123,7 @@ async def test_batch_create_creates_multiple_repos(normal_user: User, space: Pro
             },
         ]
     }
-    with patch("repositories.views.RepositoryViewSet._schedule_auto_summary"):
+    with patch("repositories.summary_service.enqueue_repo_summary"):
         client = AsyncClient()
         resp = await client.post(
             "/api/repositories/batch/",
@@ -155,7 +155,7 @@ async def test_batch_create_isolates_per_item_failure(
             {"name": "bad-repo"},  # 缺必填字段
         ]
     }
-    with patch("repositories.views.RepositoryViewSet._schedule_auto_summary"):
+    with patch("repositories.summary_service.enqueue_repo_summary"):
         client = AsyncClient()
         resp = await client.post(
             "/api/repositories/batch/",

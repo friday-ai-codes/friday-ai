@@ -102,7 +102,7 @@ def space(db) -> Project:
 async def _post_create(client, user, payload):
     from unittest.mock import patch
 
-    with patch("repositories.views.RepositoryViewSet._schedule_auto_summary"):
+    with patch("repositories.summary_service.enqueue_repo_summary"):
         return await client.post(
             "/api/repositories/",
             data=payload,
