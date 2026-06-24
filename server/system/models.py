@@ -1,4 +1,5 @@
-"""Settings models: SystemSetting, CacheVolumeTracker, ProviderCredential。"""
+"""Settings models: SystemSetting, CacheVolumeTracker, ProviderCredential,
+SystemLogEntry, InboundWebhookEvent。"""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import json
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 
 class SystemSetting(models.Model):
@@ -269,3 +271,96 @@ class ProviderCredential(models.Model):
 
         plain = decrypt_value(self.encrypted_config)
         return json.loads(plain) if plain else {}
+
+
+class SystemLogEntry(models.Model):
+    """系统日志落库条目（LOG-01）——队列化批量写入的目标表。
+
+    把"每进程 800 条内存环形缓冲"升级为"可搜索、可清理、可配置"的日志中心存储载体：
+    - 高写入量用 ``BigAutoField`` 自增整数主键（非 UUID）。
+    - 落库内容**必经脱敏**（structlog ``redact_credentials`` / stdlib
+      ``redact_secrets_in_text``）后才入队，本表绝不含明文凭证（脱敏契约）。
+    - 复合索引支撑"时间倒序 + 组件/级别/用户/来源"筛选（71-04 查询消费）；
+      全文搜索用 ``message`` ILIKE/icontains（量级低，不引专用全文索引）。
+
+    append-only：只增不改，按需保留清理（71-04 LOG-08）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 事件时间（倒序查看）；由 structlog timestamp 解析，缺失用 timezone.now()。
+    ts = models.DateTimeField(db_index=True, help_text="事件时间（倒序查看）。")
+    # debug/info/warn/error（小写归一；WARNING→warn）。
+    level = models.CharField(max_length=10, blank=True, default="info")
+    # 组件（见 LOGGING-SPEC §5 组件清单）。
+    component = models.CharField(max_length=40, blank=True, default="")
+    # caller（调用类）/ sampling（采样类）。
+    category = models.CharField(max_length=10, blank=True, default="")
+    # snake_case 事件名。
+    event = models.CharField(max_length=128, blank=True, default="")
+    # 全文搜索目标。
+    message = models.TextField(blank=True, default="")
+    # 触发用户 id（→ system 哨兵）；存字符串以兼容 system + 数字 id。
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    # LogSource 枚举值。
+    source = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    trace_id = models.CharField(max_length=64, blank=True, default="")
+    request_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    # 已脱敏的完整 event_dict 剩余字段。
+    payload = models.JSONField(default=dict, blank=True)
+    # run_id/conversation_id/execution_id 等关联键（供 71-05 下钻与三链关联，不复制数据）。
+    correlation = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "system_log_entries"
+        verbose_name = "系统日志条目"
+        verbose_name_plural = "系统日志条目"
+        ordering = ["-ts"]
+        indexes = [
+            models.Index(fields=["-ts"]),
+            models.Index(fields=["component", "-ts"]),
+            models.Index(fields=["level", "-ts"]),
+            models.Index(fields=["user_id", "-ts"]),
+            models.Index(fields=["source", "-ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"[{self.level}] {self.component}:{self.event}"
+
+
+class InboundWebhookEvent(models.Model):
+    """入站 webhook 原始留痕载体（LOG-07）。
+
+    本 plan 仅建表（避免 71-05 与本 plan 抢 models.py/migration）；**写入逻辑在 71-05**：
+    各 webhook 入口（飞书 / 通用 workflow / Git push / 容器回调）入库前必经
+    ``redact_for_ledger`` / ``redact_secrets_in_text`` 脱敏，``raw_body`` 过大截断
+    由写入方控制。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    received_at = models.DateTimeField(default=timezone.now, db_index=True)
+    # feishu/workflow/git_push/container_callback。
+    kind = models.CharField(max_length=32, db_index=True)
+    source_ip = models.CharField(max_length=64, blank=True, default="")
+    # 脱敏后的请求头。
+    headers = models.JSONField(default=dict, blank=True)
+    # 脱敏后的原始 body（过大截断由 71-05 写入方控制）。
+    raw_body = models.TextField(blank=True, default="")
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    verified = models.BooleanField(default=False)
+    # trigger_log_id / event_uuid / execution_id 关联。
+    correlation = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inbound_webhook_events"
+        verbose_name = "入站 Webhook 事件"
+        verbose_name_plural = "入站 Webhook 事件"
+        ordering = ["-received_at"]
+        indexes = [
+            models.Index(fields=["kind", "-received_at"]),
+            models.Index(fields=["-received_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}@{self.received_at:%Y-%m-%d %H:%M:%S}"
