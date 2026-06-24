@@ -3,7 +3,7 @@
 > **这是强制工程规范。** 任何新增或修改功能（API、节点、服务、任务、webhook、工具）都必须按本规范补齐**日志**与**指标埋点**。
 > 配套：Agent 强制规则 `.cursor/rules/observability-logging.mdc`；里程碑方案 `.planning/observability/MILESTONE-PROPOSAL.md`。
 >
-> 注：本规范定义"目标态"。可观测性平台正在 v0.14.0 里程碑分阶段落地，部分基础设施（指标门面、SystemLogEntry 落库、CTX 贯穿）在对应阶段完成前，先遵守"日志事件命名 + 字段 + 脱敏 + 用户绑定 + caller/sampling 分类"的约定，平台就绪后无需改业务代码即可生效。
+> 状态（v0.14.0 已落地）：可观测性平台基础设施已交付——用户上下文贯穿（contextvars 中间件 + 后台任务绑定，Phase 71 CTX）、SystemLogEntry 队列化落库 + 运行时配置（Phase 71 LOG）、指标精简事件表（`RequestMetric` / 扩展 `ModelUsageRecord` / `GaugeSample`，Phase 72–73）、快照/趋势查询端点与可观测大盘（Phase 73）、告警评估与通知（Phase 74）。本规范即"现行态"：新增/改动功能按下列约定补齐日志与埋点即自动生效，无需再等基础设施。
 
 ---
 
@@ -57,7 +57,7 @@
 - 趋势 gauge（并发/队列/积压）→ 周期采样 `GaugeSample`。
 - 快照（CPU/内存/DB/Redis/Qdrant）→ 按需采集，不长存。
 
-平台表/采集器就绪前，先用 structlog 事件携带等价字段（含下表 labels），平台据此回填；**严禁把用户输入原文当 label**（基数失控），label 取受控枚举。
+指标表/采集器（`RequestMetric` / `ModelUsageRecord` / `GaugeSample`）已就绪：高频数值经 `common.request_metrics.record_request_metric` 等写入精简事件行，SQL 聚合即得 QPS/分位/TPS/召回分布。结构化日志只携带可归因生命周期事件，**不重复**承载高频数值。**严禁把用户输入原文当 label**（基数失控），label 取受控枚举。
 
 ### 4.1 LLM/AI 调用来源枚举（`call_source` 标签，必须带）
 
@@ -123,7 +123,10 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 按现有 Django app / 子系统归类（新增功能就近归类，没有就新增并在此登记）：
 
-`auth` `accounts` `mcp` `chat` `orchestration` `workflows` `compat` `repositories` `indexing` `codegraph` `rag` `knowledge` `delivery` `agents` `llm` `providers` `subagent` `runners` `task` `feishu` `webhook` `durable` `scheduler` `system` `settings` `notifications` `audit` `access_tokens` `health` `metrics` `logging`
+`auth` `accounts` `mcp` `chat` `orchestration` `workflows` `compat` `repositories` `indexing` `codegraph` `rag` `knowledge` `delivery` `agents` `llm` `providers` `subagent` `runners` `task` `feishu` `webhook` `durable` `scheduler` `system` `settings` `notifications` `audit` `access_tokens` `health` `metrics` `logging` `interactions`
+
+可观测性子系统（71–74 实际使用，按视图/服务细分以便筛选）：
+`metric_sampling`（gauge 周期采样）`metric_retention`（指标行清理）`alerting`（告警规则/评估/通知）`alert_retention`（告警事件清理）`call_drilldown`（调用下钻）`conversation_drilldown`（会话下钻）`webhook_events`（webhook 留痕查询）`webhook_recorder`（webhook 入库）`system_logs`（系统日志查询/清理）`log_retention`（系统日志/webhook 留痕保留清理）
 
 ---
 
@@ -152,7 +155,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 ## 8. 系统日志（SystemLogEntry）约定
 
-平台落地后（LOG 阶段），系统日志统一队列化落库：
+系统日志统一队列化落库（Phase 71 LOG 已落地）：
 
 - 写入：业务用 `structlog`（自动进队列）；队列 `deque(maxlen=5000)`，满则丢弃并 `log_dropped_total++`，落库失败 `log_write_failed_total++`。
 - 必带：`category(caller/sampling)`、`component`、`user_id`、`source`、关联键。
@@ -180,12 +183,17 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 
 ---
 
-## 10. 事件目录（Phase 71 已知事件）
+## 10. 事件目录（Phase 71–74 已埋点事件）
 
-> 本节登记 **Phase 71（可观测性地基）涉及/新增**的已知日志事件及其 `category` / `component`。
+> 本节登记 **可观测性里程碑（Phase 71–74）涉及/新增**的已知日志事件及其 `category` / `component`，
+> 事件名与代码 `structlog` 调用一致（经 `rg` 核对，勿臆造）。
 > **不试图穷举全仓**——存量事件渐进迁移，每条业务事件缺省由 `annotate_category_component`
-> processor 兜底（无 `category` → `sampling`；`component` 取 logger name 首段）。**72+ 增量补全**
-> 各子系统事件目录。新增 `caller` 关键调用须业务显式 `category="caller"`。
+> processor 兜底（无 `category` → `sampling`；`component` 取 logger name 首段）。新增 `caller`
+> 关键调用须业务显式 `category="caller"`。
+>
+> 分节：§10.1–10.6 为 Phase 71 地基（用户上下文/落库/webhook/观测 API/后台任务/运行时配置键）；
+> §10.7 调用并发/限流 + 留痕（Phase 72）；§10.8 快照/趋势/查询/采样/保留（Phase 73）；
+> §10.9 告警评估与通知（Phase 74）。
 
 ### 10.1 用户上下文 / 中间件（CTX-01/02，component=`system`/`webhook`）
 
@@ -202,6 +210,10 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | 事件 | category | component | 说明 |
 |------|----------|-----------|------|
 | `system_log_flush_failed` | sampling | logging | 批量落库失败（计入 `log_write_failed_total`，丢批不重试） |
+| `system_logs_purged` | caller | log_retention | 系统日志按保留策略清理（行数/天数到期） |
+| `system_logs_purge_failed` | caller | log_retention | 系统日志清理失败 |
+| `webhook_events_purged` | caller | log_retention | webhook 留痕按保留策略清理 |
+| `webhook_events_purge_failed` | caller | log_retention | webhook 留痕清理失败 |
 
 > 落库队列四计数（`queued`/`enqueued`/`written`/`dropped`/`write_failed`）+ 采样丢弃
 > `sampled_out` 经 `system.log_sink.snapshot_counters()` 采集（71-04 计数端点 / Phase 73 快照消费）。
@@ -213,22 +225,33 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | 事件 | category | component | 说明 |
 |------|----------|-----------|------|
 | `webhook_received` | caller | webhook | 入站 webhook 接收（飞书/通用/Git/容器回调）；71-05 写入 `InboundWebhookEvent` |
+| `inbound_webhook_recorded` | caller | webhook_recorder | webhook 原始 payload 脱敏后入库（`InboundWebhookEvent`） |
+| `inbound_webhook_record_failed` | sampling | webhook_recorder | webhook 留痕入库失败（best-effort，不反噬接收） |
+| `inbound_webhook_bg_schedule_failed` | sampling | webhook_recorder | webhook 留痕后台落库调度失败 |
+| `webhook_events_queried` | sampling | webhook_events | 超管查询 webhook 留痕列表（高频轮询） |
 
-### 10.4 运维观测 API（component=`system`/`metrics`）
+### 10.4 运维观测 API / 下钻（component=`system`/`metrics`/`call_drilldown`/`conversation_drilldown`）
 
 | 事件 | category | component | 说明 |
 |------|----------|-----------|------|
 | `observability_served` | caller | system | 运维大盘/可观测性端点被超管访问 |
+| `call_drilldown_viewed` | caller | call_drilldown | 单次调用（`InteractionRun`/工具调用）下钻详情查看 |
+| `conversation_drilldown_viewed` | caller | conversation_drilldown | 会话维度调用链下钻查看 |
+| `system_logs_queried` | sampling | system_logs | 超管查询系统日志列表（高频轮询，避免污染调用类统计） |
+| `system_logs_cleared` | caller | system_logs | 超管按条件清理系统日志（可归因写操作） |
 
 ### 10.5 后台任务（CTX-02，component=`durable`/`background`/`workflow`/`scheduler`）
 
 | 事件 | category | component | 说明 |
 |------|----------|-----------|------|
 | `background_runner_started` | sampling | system | 后台 runner 协程启动（携 `initiated_by_user_id` 或 `system`） |
+| `job_start` | sampling | scheduler | apscheduler 注册作业开始（经 `_with_scheduler_log_context` 绑 `user_id=system`/`source=scheduler`） |
+| `job_complete` | sampling | scheduler | apscheduler 注册作业完成（带 `result`） |
 
 > 后台任务（durable / `background_runner` / workflow `_run_in_thread` / apscheduler / 飞书 webhook）
-> 入口须经 `common.log_context.bind_task_context` 显式绑定发起用户（无则 `system`）+ `source`，
-> 事件即自动携 `user_id` / `source` / `trace_id`（见 §6）。
+> 入口须经 `common.log_context.bind_task_context`（或 scheduler `_with_scheduler_log_context`）显式绑定
+> 发起用户（无则 `system`）+ `source`，事件即自动携 `user_id` / `source` / `trace_id`（见 §6）。
+> gauge 采样与告警评估两类周期作业的**内部**事件用 `category="sampling"` 避免 INFO 刷屏（见 §10.8/§10.9）。
 
 ### 10.6 运行时日志配置键（LOG-06，`SettingKeys.LOG_*`）
 
@@ -241,3 +264,81 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `log.sampling_rate` | float | 0.1 | `sampling` 类之后按比例记录（0..1） |
 | `log.retention_days` | int | 30 | 保留天数（清理在 71-04 消费） |
 | `log.retention_max_rows` | int | 1_000_000 | 行数上限兜底（71-04 消费） |
+
+### 10.7 LLM 并发/限流 + 留痕（Phase 72，component=`llm`/`interactions`）
+
+> LLM chokepoint（`acquire_llm_slot`）+ 两个 Runner 的 `astream` 循环 + 各 `ainvoke` 站点按
+> `call_source`（§4.1）打标。QPS/TPS/TTFT/上游错误的**数值**写 `ModelUsageRecord` / `RequestMetric`
+> 指标行（非 structlog）；下列结构化事件只覆盖并发槽位与留痕的可归因/失败生命周期。
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `llm_slot_acquired` | sampling | llm | 获取 LLM 并发槽位（带 `call_source` / `queue_wait_ms` / `backend`） |
+| `llm_slot_busy_timeout` | caller | llm | 槽位等待超时限流（抛 `LLMBusyError`，`backend=redis`/`inprocess`，业务可归因） |
+| `llm_slot_redis_unavailable_fallback_inprocess` | sampling | llm | Redis 不可用 fail-soft 降级进程内信号量（默认 component=logger 段，绝不阻断 LLM） |
+
+> 留痕（Interaction Ledger，`server/interactions/ledger.py`）写入均为 best-effort，失败只记 `warning`
+> 不反噬主流程；写入**内容**（`InteractionRun`/`ToolCallRecord`/`RetrievalTrace`/`ModelUsageRecord`）
+> 经 `redact_for_ledger` 脱敏，不出现在事件目录里。
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `ledger_event_write_failed` | sampling | interactions | `InteractionRun` 锚点写入失败 |
+| `ledger_tool_call_write_failed` | sampling | interactions | `ToolCallRecord` 写入失败 |
+| `ledger_retrieval_trace_write_failed` | sampling | interactions | `RetrievalTrace` 召回证据写入失败（MCP + 对话两链） |
+| `ledger_model_usage_write_failed` | sampling | interactions | `ModelUsageRecord` 写入失败 |
+| `ledger_llm_usage_write_failed` | sampling | interactions | LLM 用量回写失败 |
+
+> 召回（RAG）聚合指标——召回条数 / 分层耗时（embedding/sparse/qdrant/rerank）/ top score——经
+> `common.request_metrics.record_request_metric(source="rag", ...)` 写 `RequestMetric` 行（见 §4.2
+> `rag_recall_*`），**不**新增 structlog 事件；召回内容走 `RetrievalTrace` 留痕。存量召回事件
+> （如 `context_retrieval_completed` / `knowledge_vector_recall_completed`）按缺省 `sampling` 兜底。
+
+### 10.8 快照 / 趋势 / 查询 / 采样 / 保留（Phase 73，component=`metrics`/`metric_sampling`/`metric_retention`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `metrics_snapshot_served` | caller | metrics | 实时快照端点（CPU/内存/DB/Redis/Qdrant/并发）被超管访问 |
+| `metrics_query_served` | caller | metrics | 趋势/分位查询端点被访问（带 `duration_ms` / `degraded`） |
+| `snapshot_host_failed` | sampling | metrics | 主机（CPU/内存）快照采集失败（源不可用跳过，不落 0 行） |
+| `snapshot_db_failed` | sampling | metrics | 数据库快照采集失败 |
+| `snapshot_redis_failed` | sampling | metrics | Redis 快照采集失败 |
+| `snapshot_qdrant_failed` | sampling | metrics | Qdrant 快照采集失败 |
+| `snapshot_concurrency_failed` | sampling | metrics | LLM 并发/队列 gauge 快照采集失败 |
+| `gauge_sampled` | sampling | metric_sampling | 周期 gauge 采样写入 `GaugeSample`（并发/队列/积压；高频内部步骤） |
+| `gauge_sample_failed` | sampling | metric_sampling | gauge 采样失败 |
+| `gauge_samples_purged` | caller | metric_retention | `GaugeSample` 行按保留策略清理 |
+| `request_metrics_purged` | caller | metric_retention | `RequestMetric` 行清理 |
+| `model_usage_records_purged` | caller | metric_retention | `ModelUsageRecord` 行清理 |
+| `<label>_purge_failed` | caller | metric_retention | 指标行清理失败（`<label>` 为 `gauge_samples`/`request_metrics`/`model_usage_records`） |
+
+### 10.9 告警评估与通知（Phase 74，component=`alerting`/`alert_retention`）
+
+> 告警评估器（`evaluate_system_alerts`）作为 apscheduler 周期作业，经 `_with_scheduler_log_context`
+> 绑 `user_id=system` / `source=scheduler`（CTX-02）。评估**周期**高频事件用 `category="sampling"`
+> 避免刷屏；firing/resolved 与通知分发为可归因 `category="caller"`（带 `rule_id` / `duration_ms`）。
+> 告警规则写操作（API）为可归因调用 `caller`；事件查询为高频轮询 `sampling`。
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `alert_rules_listed` | caller | alerting | 告警规则列表查询（超管） |
+| `alert_rule_created` | caller | alerting | 创建告警规则 |
+| `alert_rule_updated` | caller | alerting | 更新告警规则 |
+| `alert_rule_deleted` | caller | alerting | 删除告警规则 |
+| `alert_events_queried` | sampling | alerting | 告警事件查询（高频轮询，避免污染调用类统计） |
+| `alert_eval_cycle` | sampling | alerting | 一次评估周期完成（带规则数/触发数；高频循环纪律） |
+| `alert_eval_failed` | sampling | alerting | 评估周期整体失败（best-effort，不反噬 scheduler） |
+| `alert_rule_eval_failed` | sampling | alerting | 单条规则评估失败 |
+| `alert_metric_unsupported` | sampling | alerting | 规则引用了不支持的指标 |
+| `alert_metric_resolve_failed` | sampling | alerting | 指标取值解析失败 |
+| `alert_firing` | caller | alerting | 告警触发（阈值越界，带 `rule_id` / 当前值） |
+| `alert_resolved` | caller | alerting | 告警恢复 |
+| `alert_notify_dispatch_failed` | caller | alerting | 通知分发整体失败 |
+| `alert_notified` | caller | alerting | 通知成功送达（含渠道） |
+| `alert_notify_failed` | caller | alerting | 单渠道通知失败 |
+| `alert_notify_persist_failed` | caller | alerting | 通知结果回写 `AlertEvent` 失败 |
+| `alert_email_failed` | caller | alerting | 邮件渠道发送失败 |
+| `alert_feishu_failed` | caller | alerting | 飞书渠道发送失败 |
+| `alert_webhook_failed` | caller | alerting | 自定义 webhook 渠道发送失败 |
+| `alert_events_purged` | caller | alert_retention | 告警事件按保留策略清理 |
+| `alert_events_purge_failed` | caller | alert_retention | 告警事件清理失败 |
