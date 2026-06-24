@@ -94,6 +94,56 @@ def test_log_level_hot_reload_via_signal(capfd: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_component_level_filter_via_signal(capfd: Any) -> None:
+    """LOG_COMPONENT_LEVELS={"noisy_component":"ERROR"}：经 signal 即时生效——
+    noisy_component 的 INFO 被丢弃、其它 component 的 INFO 放行；noisy 的 ERROR 仍放行。"""
+    configure_structlog()
+    # signal → 失效缓存 → 下一条事件即读到新 map（无需重启/reconfigure）。
+    _save_setting(SettingKeys.LOG_COMPONENT_LEVELS, '{"noisy_component": "ERROR"}')
+
+    log = structlog.get_logger("component_filter_test")
+    log.bind(component="noisy_component").info("noisy_info_evt")
+    log.bind(component="quiet_component").info("quiet_info_evt")
+    out = capfd.readouterr()
+    combined = out.out + out.err
+    assert "noisy_info_evt" not in combined  # noisy INFO < ERROR → 丢弃
+    assert "quiet_info_evt" in combined  # 未配置 component → 回退全局放行
+
+    # noisy_component 达到阈值（ERROR）仍放行。
+    log.bind(component="noisy_component").error("noisy_error_evt")
+    out2 = capfd.readouterr()
+    assert "noisy_error_evt" in (out2.out + out2.err)
+
+
+@pytest.mark.django_db
+def test_stack_threshold_gate_via_signal(capfd: Any) -> None:
+    """LOG_STACK_THRESHOLD=ERROR：经 signal 即时生效——WARNING 事件剥除 stack/exc，
+    ERROR 事件保留异常 traceback（无需重启/reconfigure）。"""
+    configure_structlog()
+    _save_setting(SettingKeys.LOG_STACK_THRESHOLD, "ERROR")
+
+    log = structlog.get_logger("system.stack_threshold_test")
+
+    try:
+        raise ValueError("boom_marker_xyz")
+    except ValueError:
+        log.warning("warn_with_exc", exc_info=True)
+    out = capfd.readouterr()
+    combined = out.out + out.err
+    assert "warn_with_exc" in combined
+    assert "boom_marker_xyz" not in combined  # WARNING < ERROR → 异常/堆栈被剥除
+
+    try:
+        raise ValueError("boom_marker_xyz")
+    except ValueError:
+        log.error("error_with_exc", exc_info=True)
+    out2 = capfd.readouterr()
+    combined2 = out2.out + out2.err
+    assert "error_with_exc" in combined2
+    assert "boom_marker_xyz" in combined2  # ERROR >= ERROR → 保留异常信息
+
+
+@pytest.mark.django_db
 def test_resolve_level_prefers_db_over_env(monkeypatch: Any) -> None:
     """_resolve_structlog_level 读 DB 优先；DB 空回退 env。"""
     import logging

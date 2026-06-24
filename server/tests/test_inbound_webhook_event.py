@@ -136,6 +136,28 @@ class TestFeishuWebhookDoubleWrite:
 
 
 @pytest.mark.django_db
+class TestWorkflowWebhookRecording:
+    """通用工作流 webhook（POST /api/webhook/<path>/）入站留痕（LOG-07）。"""
+
+    def test_workflow_webhook_records_redacted_event(self, api_client):
+        # 无匹配 WebhookConfig → 业务返回 200 no_workflows，但仍应留痕一条 kind=workflow。
+        resp = api_client.post(
+            "/api/webhook/some-hook-path/",
+            data={"api_key": "sk-ant-leaktest1234567890", "ok": True},
+            format="json",
+        )
+        assert resp.status_code in (200, 201)
+
+        evt = InboundWebhookEvent.objects.filter(kind="workflow").first()
+        assert evt is not None
+        assert evt.kind == "workflow"
+        assert evt.correlation.get("webhook_path") == "some-hook-path"
+        # 入库前必经脱敏：明文凭证绝不落库，脱敏占位符出现。
+        assert "sk-ant-leaktest1234567890" not in evt.raw_body
+        assert REDACTED in evt.raw_body
+
+
+@pytest.mark.django_db
 class TestWebhookEventListView:
     def test_non_superuser_forbidden(self, api_client, user):
         api_client.force_authenticate(user=user)

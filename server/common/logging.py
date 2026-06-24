@@ -145,6 +145,89 @@ def annotate_category_component(
     return event_dict
 
 
+# === 运行时分组件级别过滤 + 堆栈阈值门控（LOG-06）===
+
+
+def _event_level_value(event_dict: MutableMapping[str, Any], method_name: str) -> int:
+    """从 event_dict / method_name 解析事件级别数值（默认 INFO）。
+
+    ``add_log_level`` processor 已注入 ``level``（小写方法名）；缺省回退 ``method_name``。
+    """
+    name = str(event_dict.get("level") or method_name or "info").strip().upper()
+    return _STRUCTLOG_LEVEL_NAMES.get(name, logging.INFO)
+
+
+def filter_by_component_level(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """structlog processor：按 ``LOG_COMPONENT_LEVELS`` 对单个 component 分级过滤（LOG-06）。
+
+    读取 ``SettingKeys.LOG_COMPONENT_LEVELS``（JSON map ``{component: level}``，60s 缓存 +
+    signal 失效，热更新即时生效）。命中当前事件 ``component`` 且事件级别 **低于** 该
+    component 配置级别时 ``raise structlog.DropEvent`` 丢弃；未配置 / 推不出 component /
+    解析失败均放行（回退全局 wrapper 级别，不收紧也不放宽）。
+
+    放在 ``annotate_category_component`` 之后（component 已就位）、``buffer_log`` /
+    ``enqueue_system_log`` 之前——尽早丢弃，省掉后续缓冲/落库开销（高频路径保持廉价：
+    未配置时 ``get_json_setting`` 命中缓存的空值直接回退 ``{}``，不做 json 解析）。
+
+    注意：分组件级别只能比全局 wrapper **更严**（wrapper 已先于 processor 链按全局级别
+    过滤，更宽松的 component 级别无法让已被 wrapper 丢弃的事件复活）。
+    """
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import get_json_setting
+
+        comp_levels = get_json_setting(SettingKeys.LOG_COMPONENT_LEVELS)
+        if not comp_levels:
+            return event_dict
+        component = str(event_dict.get("component") or "")
+        if not component:
+            return event_dict
+        raw_threshold = comp_levels.get(component)
+        if not raw_threshold:
+            return event_dict
+        threshold = _STRUCTLOG_LEVEL_NAMES.get(str(raw_threshold).strip().upper())
+        if threshold is None:
+            return event_dict
+        if _event_level_value(event_dict, method_name) < threshold:
+            raise structlog.DropEvent
+    except structlog.DropEvent:
+        raise  # ← 丢弃信号必须冒泡给 structlog，不能被下面 except 吞掉
+    except Exception:  # noqa: BLE001 — 过滤异常绝不反噬日志主链路（best-effort）
+        pass
+    return event_dict
+
+
+def gate_stack_by_threshold(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """structlog processor：按 ``LOG_STACK_THRESHOLD`` 门控堆栈 / 异常信息捕获（LOG-06）。
+
+    读取 ``SettingKeys.LOG_STACK_THRESHOLD``（如 ``ERROR``，60s 缓存 + signal 失效）。
+    事件级别 **低于** 阈值时，剥除 ``stack_info`` / ``exc_info`` / ``exception`` / ``stack``
+    键——使其后的 ``StackInfoRenderer`` / ``format_exc_info`` 不再渲染堆栈/traceback；
+    达到/高于阈值则原样保留。未配置阈值 → 不门控（保留既有行为）。
+
+    必须挂在 ``StackInfoRenderer`` / ``format_exc_info`` **之前**（渲染前剥键才有效）。
+    best-effort：解析失败静默放行，绝不反噬业务。高频路径廉价（未配置时不剥键直接返回）。
+    """
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import get_setting
+
+        raw = get_setting(SettingKeys.LOG_STACK_THRESHOLD, "").strip().upper()
+        threshold = _STRUCTLOG_LEVEL_NAMES.get(raw) if raw else None
+        if threshold is None:
+            return event_dict
+        if _event_level_value(event_dict, method_name) < threshold:
+            for key in ("stack_info", "exc_info", "exception", "stack"):
+                event_dict.pop(key, None)
+    except Exception:  # noqa: BLE001 — 门控异常绝不反噬日志主链路（best-effort）
+        pass
+    return event_dict
+
+
 # === 内存环形缓冲：运维监控「系统日志」面板数据源 ===
 
 
@@ -377,8 +460,10 @@ def configure_structlog() -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             redact_credentials,  # ← contract 核心；位置 in front of any renderer
             annotate_category_component,  # ← 脱敏后兜底 category/component（LOG-05，落库前）
+            filter_by_component_level,  # ← component 就位后分级过滤；尽早丢弃省后续开销（LOG-06）
             buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
             enqueue_system_log,  # ← 在脱敏之后 fan-out 入落库队列（LOG-02，落库内容已脱敏）
+            gate_stack_by_threshold,  # ← 渲染堆栈/traceback 前按阈值门控剥键（LOG-06）
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             (
