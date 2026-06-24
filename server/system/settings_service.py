@@ -7,11 +7,12 @@ Django settings to allow admin runtime modification.
 
 from __future__ import annotations
 
+import json
 from typing import TypeVar
 
 from django.core.cache import cache
 
-from .models import SettingKeys, SystemSetting
+from .models import SystemSetting
 
 T = TypeVar("T", str, bool, int)
 
@@ -63,6 +64,33 @@ def get_int_setting(key: str, default: int = 0) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def get_float_setting(key: str, default: float = 0.0) -> float:
+    """Read float setting from SystemSetting（沿用 _get_raw 缓存；失败回默认）。"""
+    value = _get_raw(key)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_json_setting(key: str, default: dict | None = None) -> dict:
+    """Read JSON(object) setting from SystemSetting（json.loads；失败/非 dict 回默认）。
+
+    供 common.logging / log_sink 读取运行时日志配置（如分组件级别 map）。
+    """
+    fallback = dict(default) if default else {}
+    value = _get_raw(key)
+    if value is None:
+        return fallback
+    try:
+        parsed = json.loads(value)
+    except (ValueError, TypeError):
+        return fallback
+    return parsed if isinstance(parsed, dict) else fallback
 
 
 async def aget_setting(key: str, default: str = "") -> str:

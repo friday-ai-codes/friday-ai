@@ -17,6 +17,7 @@ enqueue / 批量 worker 的任何异常都被吞掉，不打断主流程；落�
 from __future__ import annotations
 
 import os
+import random
 import threading
 import time
 from collections import deque
@@ -43,6 +44,14 @@ _enqueued = 0  # 入队成功条数
 _written = 0  # 成功落库条数
 _dropped = 0  # 队列满丢弃条数
 _write_failed = 0  # 落库失败条数
+_sampled_out = 0  # 采样丢弃条数（与队列满 dropped 区分：sampling 类按配置抽样未中）
+
+# 采样进程内计数：(component, event) → 已见条数（首 N 全记的 N 维度）。
+_sample_counts: dict[tuple[str, str], int] = {}
+
+# 采样配置默认值（LOG-05 / LOG-06，可经 SettingKeys.LOG_SAMPLING_* 运行时覆盖）。
+_DEFAULT_SAMPLING_INITIAL = 50  # 首 N 条全记
+_DEFAULT_SAMPLING_RATE = 0.1  # 之后按比例
 
 # === 后台 worker 单例 ===
 
@@ -72,14 +81,51 @@ _CORRELATION_KEYS = frozenset(
 )
 
 
+def _should_record(entry: dict[str, Any]) -> bool:
+    """采样判定（LOG-05）：``caller`` 全量记录；``sampling``（或缺省）按运行时配置抽样。
+
+    - ``category=="caller"`` → 始终 ``True``（用户可归因调用绝不采样丢弃，LOGGING-SPEC §2）。
+    - 其余按 ``(component, event)`` 维度：首 ``LOG_SAMPLING_INITIAL`` 条全记，之后
+      ``random.random() < LOG_SAMPLING_RATE`` 才记。
+
+    配置经 ``settings_service``（60s 缓存命中即可，不每条打库）。读配置失败 → 保守
+    全记（不采样丢弃），绝不因观测配置异常丢业务可归因之外的日志。
+    """
+    category = str(entry.get("category") or "").strip().lower()
+    if category == "caller":
+        return True
+
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import get_float_setting, get_int_setting
+
+        initial = max(0, get_int_setting(SettingKeys.LOG_SAMPLING_INITIAL, _DEFAULT_SAMPLING_INITIAL))
+        rate = min(1.0, max(0.0, get_float_setting(SettingKeys.LOG_SAMPLING_RATE, _DEFAULT_SAMPLING_RATE)))
+    except Exception:  # noqa: BLE001 — 读采样配置失败 → 保守全记
+        return True
+
+    key = (str(entry.get("component") or ""), str(entry.get("event") or ""))
+    with _lock:
+        seen = _sample_counts.get(key, 0)
+        _sample_counts[key] = seen + 1
+    if seen < initial:
+        return True
+    return random.random() < rate
+
+
 def enqueue_system_log(entry: dict[str, Any]) -> None:
     """线程安全入队一条（已脱敏的）日志事件；best-effort，绝不反噬业务。
 
-    ``entry`` 由 processor 传入，**已脱敏**。满则 ``_dropped += 1`` 不抛；本函数
-    **绝不**做 ORM（落库交后台 worker）。
+    ``entry`` 由 processor 传入，**已脱敏**。``sampling`` 类先经 ``_should_record``
+    采样过滤（未中 ``_sampled_out += 1``，与队列满 ``_dropped`` 区分）；满则
+    ``_dropped += 1`` 不抛；本函数**绝不**做 ORM（落库交后台 worker）。
     """
-    global _enqueued, _dropped
+    global _enqueued, _dropped, _sampled_out
     try:
+        if not _should_record(entry):
+            with _lock:
+                _sampled_out += 1
+            return
         with _lock:
             if len(_queue) >= _MAXLEN:
                 _dropped += 1
@@ -213,6 +259,7 @@ def snapshot_counters() -> dict[str, int]:
             "written": _written,
             "dropped": _dropped,
             "write_failed": _write_failed,
+            "sampled_out": _sampled_out,
         }
 
 
@@ -226,14 +273,16 @@ def flush_now() -> None:
 
 
 def _reset_for_tests() -> None:
-    """清空队列 + 归零四计数（测试钩子）。"""
-    global _enqueued, _written, _dropped, _write_failed
+    """清空队列 + 归零计数 + 采样状态（测试钩子）。"""
+    global _enqueued, _written, _dropped, _write_failed, _sampled_out
     with _lock:
         _queue.clear()
+        _sample_counts.clear()
         _enqueued = 0
         _written = 0
         _dropped = 0
         _write_failed = 0
+        _sampled_out = 0
 
 
 __all__ = [

@@ -177,3 +177,67 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 - [ ] 新增 webhook 入口：原始 payload 脱敏后落库可查看。
 - [ ] 新增可能需要关注的失败/资源指标：评估是否需要可配置告警阈值。
 - [ ] 高频循环内未用 INFO 刷屏（用 `sampling` + debug 或采样）。
+
+---
+
+## 10. 事件目录（Phase 71 已知事件）
+
+> 本节登记 **Phase 71（可观测性地基）涉及/新增**的已知日志事件及其 `category` / `component`。
+> **不试图穷举全仓**——存量事件渐进迁移，每条业务事件缺省由 `annotate_category_component`
+> processor 兜底（无 `category` → `sampling`；`component` 取 logger name 首段）。**72+ 增量补全**
+> 各子系统事件目录。新增 `caller` 关键调用须业务显式 `category="caller"`。
+
+### 10.1 用户上下文 / 中间件（CTX-01/02，component=`system`/`webhook`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `log_runtime_config_apply_failed` | sampling | settings | 运行时改 `LOG_*` 后重设级别失败（best-effort 告警） |
+| `system_setting_cache_invalidate_failed` | sampling | settings | 设置写入后缓存失效失败 |
+| `qdrant_client_reset_due_to_setting_change` | sampling | settings | Qdrant 凭证变更触发 client 重建 |
+| `qdrant_client_reset_failed` | sampling | settings | Qdrant client 重建失败 |
+| `sqlite_pragma_setup_failed` | sampling | system | SQLite WAL/busy_timeout PRAGMA 设置失败 |
+
+### 10.2 系统日志落库 / 队列（LOG-01/02，component=`logging`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `system_log_flush_failed` | sampling | logging | 批量落库失败（计入 `log_write_failed_total`，丢批不重试） |
+
+> 落库队列四计数（`queued`/`enqueued`/`written`/`dropped`/`write_failed`）+ 采样丢弃
+> `sampled_out` 经 `system.log_sink.snapshot_counters()` 采集（71-04 计数端点 / Phase 73 快照消费）。
+> **`dropped`（队列满）与 `sampled_out`（采样未中）语义区分**：前者是背压信号，后者是 `sampling`
+> 类按 `LOG_SAMPLING_INITIAL`/`LOG_SAMPLING_RATE` 主动抽样的正常行为。
+
+### 10.3 Webhook 原始留痕（LOG-07，component=`webhook`/`feishu`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `webhook_received` | caller | webhook | 入站 webhook 接收（飞书/通用/Git/容器回调）；71-05 写入 `InboundWebhookEvent` |
+
+### 10.4 运维观测 API（component=`system`/`metrics`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `observability_served` | caller | system | 运维大盘/可观测性端点被超管访问 |
+
+### 10.5 后台任务（CTX-02，component=`durable`/`background`/`workflow`/`scheduler`）
+
+| 事件 | category | component | 说明 |
+|------|----------|-----------|------|
+| `background_runner_started` | sampling | system | 后台 runner 协程启动（携 `initiated_by_user_id` 或 `system`） |
+
+> 后台任务（durable / `background_runner` / workflow `_run_in_thread` / apscheduler / 飞书 webhook）
+> 入口须经 `common.log_context.bind_task_context` 显式绑定发起用户（无则 `system`）+ `source`，
+> 事件即自动携 `user_id` / `source` / `trace_id`（见 §6）。
+
+### 10.6 运行时日志配置键（LOG-06，`SettingKeys.LOG_*`）
+
+| 设置键 | 类型 | 默认 | 说明 |
+|--------|------|------|------|
+| `log.level` | str | env→INFO | 全局过滤级别；写时 signal 即时重设 wrapper，无需重启 |
+| `log.component_levels` | JSON map | `{}` | 分组件级别覆盖（`get_json_setting` 读取） |
+| `log.stack_threshold` | str | ERROR | 记录堆栈的最低级别（配置就位；消费按需） |
+| `log.sampling_initial` | int | 50 | `sampling` 类首 N 条全记 |
+| `log.sampling_rate` | float | 0.1 | `sampling` 类之后按比例记录（0..1） |
+| `log.retention_days` | int | 30 | 保留天数（清理在 71-04 消费） |
+| `log.retention_max_rows` | int | 1_000_000 | 行数上限兜底（71-04 消费） |

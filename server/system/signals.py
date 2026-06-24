@@ -28,6 +28,17 @@ logger = structlog.get_logger(__name__)
 
 _QDRANT_KEYS = {SettingKeys.QDRANT_URL, SettingKeys.QDRANT_API_KEY}
 
+# 运行时日志配置键：命中即重设过滤级别（LOG-06，写时即时生效无需重启）。
+_LOG_KEYS = {
+    SettingKeys.LOG_LEVEL,
+    SettingKeys.LOG_COMPONENT_LEVELS,
+    SettingKeys.LOG_STACK_THRESHOLD,
+    SettingKeys.LOG_SAMPLING_INITIAL,
+    SettingKeys.LOG_SAMPLING_RATE,
+    SettingKeys.LOG_RETENTION_DAYS,
+    SettingKeys.LOG_RETENTION_SIZE,
+}
+
 
 def _invalidate_setting_cache(key: str) -> None:
     """settings_service._get_raw 用 Django cache 缓存设置；写入后必须失效。"""
@@ -39,6 +50,22 @@ def _invalidate_setting_cache(key: str) -> None:
         cache.delete(_cache_key(key))
     except Exception as exc:  # 失效失败不应阻止业务路径
         logger.warning("system_setting_cache_invalidate_failed", key=key, error=str(exc))
+
+
+def _apply_log_config_if_needed(key: str) -> None:
+    """命中 ``LOG_*`` 键 → 即时重设过滤级别（缓存已先失效，apply 读到新值）。
+
+    best-effort：失败仅告警、绝不阻塞设置写入路径（观测代码永不反噬业务）。
+    级别类立即生效；采样/堆栈/保留等配置经 60s 缓存失效后由各自 consumer 读到新值。
+    """
+    if key not in _LOG_KEYS:
+        return
+    try:
+        from common.logging import apply_log_level
+
+        apply_log_level()
+    except Exception as exc:  # noqa: BLE001 — 调级别失败不阻塞设置写入
+        logger.warning("log_runtime_config_apply_failed", key=key, error=str(exc))
 
 
 def _reset_qdrant_client_if_needed(key: str) -> None:
@@ -66,6 +93,7 @@ def on_system_setting_saved(
 ) -> None:
     _invalidate_setting_cache(instance.key)
     _reset_qdrant_client_if_needed(instance.key)
+    _apply_log_config_if_needed(instance.key)
 
 
 @receiver(post_delete, sender=SystemSetting)
@@ -74,6 +102,7 @@ def on_system_setting_deleted(
 ) -> None:
     _invalidate_setting_cache(instance.key)
     _reset_qdrant_client_if_needed(instance.key)
+    _apply_log_config_if_needed(instance.key)
 
 
 # ---------------------------------------------------------------------------

@@ -82,6 +82,69 @@ def redact_credentials(
     return event_dict
 
 
+# === category / component 地基（LOG-05）===
+
+# LOGGING-SPEC §5 组件清单（component 受控取值）。logger name 首段命中即用，
+# 否则留空（不强行污染维度）。存量事件渐进迁移，72+ 增量补全。
+_KNOWN_COMPONENTS = frozenset(
+    {
+        "auth", "accounts", "mcp", "chat", "orchestration", "workflows", "compat",
+        "repositories", "indexing", "codegraph", "rag", "knowledge", "delivery",
+        "agents", "llm", "providers", "subagent", "runners", "task", "feishu",
+        "webhook", "durable", "scheduler", "system", "settings", "notifications",
+        "audit", "access_tokens", "health", "metrics", "logging",
+    }
+)
+
+
+def _infer_component(logger_name: str) -> str:
+    """从 logger name 推断 component：取模块路径首段，命中 §5 清单则用，否则留空。
+
+    例：``"system.signals"`` → ``"system"``；``"workflows.engine.scheduler"`` →
+    ``"workflows"``；推不出（首段不在清单）留空，待业务显式 ``bind(component=...)``。
+    """
+    if not logger_name:
+        return ""
+    head = logger_name.split(".", 1)[0]
+    return head if head in _KNOWN_COMPONENTS else ""
+
+
+def bound_logger(name: str, *, component: str | None = None) -> Any:
+    """薄包 ``structlog.get_logger(name)``，默认从 logger name 推 component（LOG-05）。
+
+    约定：业务用 ``category=`` 显式传（``caller`` 关键调用全量记录），缺省视为
+    ``sampling``（由 ``annotate_category_component`` processor 兜底）。``component`` 可
+    显式覆盖；推不出且未传则不 bind component（留 processor 兜底/留空）。
+    """
+    log = structlog.get_logger(name)
+    comp = component if component is not None else _infer_component(name)
+    return log.bind(component=comp) if comp else log
+
+
+def annotate_category_component(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """structlog processor：为每条事件兜底 ``component`` + ``category``（LOG-05）。
+
+    - 无 ``component`` → 从 ``logger`` / ``logger_name`` 首段推断（命中 §5 清单）。
+    - 无 ``category`` → 默认 ``"sampling"``（高频内部步骤默认采样类，per 判断口诀；
+      用户可归因调用须由业务显式 ``category="caller"``）。
+
+    挂在 ``redact_credentials`` 之后、``enqueue_system_log`` 之前，保证落库带
+    category/component。纯元字段，不引入用户输入原文（脱敏链路不受影响）。
+    """
+    if not event_dict.get("component"):
+        logger_name = str(
+            event_dict.get("logger") or event_dict.get("logger_name") or ""
+        )
+        comp = _infer_component(logger_name)
+        if comp:
+            event_dict["component"] = comp
+    if not event_dict.get("category"):
+        event_dict["category"] = "sampling"
+    return event_dict
+
+
 # === 内存环形缓冲：运维监控「系统日志」面板数据源 ===
 
 
@@ -128,7 +191,8 @@ def enqueue_system_log(
         logger_name = str(
             event_dict.get("logger") or event_dict.get("logger_name") or ""
         )
-        component = logger_name.rsplit(".", 1)[-1] if logger_name else ""
+        # 优先用 annotate_category_component 注入的 component，缺省回退首段推断。
+        component = str(event_dict.get("component") or "") or _infer_component(logger_name)
         level = str(event_dict.get("level") or method_name or "info")
         # 收集除已映射专属列外的剩余字段进 payload（已脱敏）。
         _reserved = {
@@ -137,6 +201,7 @@ def enqueue_system_log(
             "timestamp",
             "logger",
             "logger_name",
+            "component",
             "category",
             "user_id",
             "source",
@@ -236,8 +301,8 @@ _STRUCTLOG_LEVEL_NAMES: dict[str, int] = {
 }
 
 
-def _resolve_structlog_level() -> int:
-    """根据 ``FRIDAY_STRUCTLOG_LEVEL`` / ``DJANGO_LOG_LEVEL`` 解析 structlog 过滤级别。
+def _resolve_env_structlog_level() -> int:
+    """从环境变量解析 structlog 过滤级别（DB 不可用时的回退源）。
 
     默认 INFO：避免大批量 ``debug`` 事件刷屏 stdout（曾经把 4000+ 文件的
     ``graph_bundle_written`` / ``import_statement_no_modules`` 一起灌出来导致
@@ -249,6 +314,50 @@ def _resolve_structlog_level() -> int:
         or ""
     ).strip().upper()
     return _STRUCTLOG_LEVEL_NAMES.get(raw, logging.INFO)
+
+
+def _resolve_structlog_level() -> int:
+    """解析 structlog 过滤级别：DB（``SettingKeys.LOG_LEVEL``）优先，env 回退（LOG-06）。
+
+    运行时可热更新——超管在设置页改 ``log.level`` 即经 signal 重设过滤级别、无需重启。
+    加载期（settings.py 末尾首次调用）DB / app registry 尚未就绪时局部 import + try/except
+    静默回退 env → INFO，绝不反噬启动。
+    """
+    try:
+        from system.models import SettingKeys
+        from system.settings_service import get_setting
+
+        raw_db = get_setting(SettingKeys.LOG_LEVEL, "").strip().upper()
+        db_level = _STRUCTLOG_LEVEL_NAMES.get(raw_db) if raw_db else None
+    except Exception:  # noqa: BLE001 — DB / app registry 未就绪 → 回退 env
+        db_level = None
+    if db_level is not None:
+        return db_level
+    return _resolve_env_structlog_level()
+
+
+def apply_log_level(level_name: str | None = None) -> None:
+    """运行时热更新过滤级别：即时生效无需重启（LOG-06）。
+
+    解析级别（显式传入 > DB > env）后：
+    - ``logging.getLogger().setLevel(...)`` 调整 stdlib root（影响 RingBufferHandler 等）。
+    - 重设 structlog filtering wrapper（structlog 推荐运行时方式：重新
+      ``structlog.configure(wrapper_class=make_filtering_bound_logger(level))``，仅覆盖
+      wrapper_class、保留既有 processor 链；幂等）。
+
+    best-effort：解析失败 / 配置异常静默吞掉，绝不反噬业务（观测代码永不抛）。
+    """
+    try:
+        if level_name:
+            level = _STRUCTLOG_LEVEL_NAMES.get(
+                str(level_name).strip().upper(), _resolve_structlog_level()
+            )
+        else:
+            level = _resolve_structlog_level()
+        logging.getLogger().setLevel(level)
+        structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(level))
+    except Exception:  # noqa: BLE001 — 运行时调级别绝不反噬业务
+        pass
 
 
 def configure_structlog() -> None:
@@ -267,6 +376,7 @@ def configure_structlog() -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             redact_credentials,  # ← contract 核心；位置 in front of any renderer
+            annotate_category_component,  # ← 脱敏后兜底 category/component（LOG-05，落库前）
             buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
             enqueue_system_log,  # ← 在脱敏之后 fan-out 入落库队列（LOG-02，落库内容已脱敏）
             structlog.processors.StackInfoRenderer(),
@@ -280,6 +390,8 @@ def configure_structlog() -> None:
         wrapper_class=structlog.make_filtering_bound_logger(_resolve_structlog_level()),
         cache_logger_on_first_use=True,
     )
+    # 末尾用 DB 级别覆盖过滤 wrapper（DB 不可用时 _resolve_structlog_level 已静默回退 env）。
+    apply_log_level()
 
 
 # === Sentry before_send pure function（本 phase 仅预留 + 单测；implementation+ 接入时使用）===

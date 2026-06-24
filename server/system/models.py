@@ -110,6 +110,17 @@ class SettingKeys:
     # session 创建与 Runner 投递洪峰（默认 8，与 Runner.concurrent 量级对齐）。
     CONCURRENCY_SUMMARY_MAX = "concurrency_summary_max"  # 默认 8
 
+    # 运行时日志配置（LOG-06，实时生效）：复用 SystemSetting + settings_service(60s 缓存)
+    # + signals(写时失效 + 即时调级别)。点分命名与 code_index.exclusion.* 风格一致。
+    # 写入即经 signal 失效缓存 + 重设过滤级别，无需重启。
+    LOG_LEVEL = "log.level"  # 全局级别 DEBUG/INFO/WARNING/ERROR（空回退 env→INFO）。
+    LOG_COMPONENT_LEVELS = "log.component_levels"  # JSON map {component: level}，分组件覆盖全局。
+    LOG_STACK_THRESHOLD = "log.stack_threshold"  # 记录堆栈的最低级别（如 ERROR）。
+    LOG_SAMPLING_INITIAL = "log.sampling_initial"  # int：首 N 条全记，默认 50。
+    LOG_SAMPLING_RATE = "log.sampling_rate"  # float 0..1：之后按比例记录，默认 0.1。
+    LOG_RETENTION_DAYS = "log.retention_days"  # int：保留天数，默认 30（清理在 71-04 消费）。
+    LOG_RETENTION_SIZE = "log.retention_max_rows"  # int：行数上限兜底，默认 1_000_000（71-04 消费）。
+
 
 class CacheVolumeTracker(models.Model):
     """跟踪 Docker 缓存卷的使用情况。
