@@ -391,6 +391,48 @@ class RequestMetric(models.Model):
         return f"{self.source}:{self.route} {self.status_code} ({self.error_class})"
 
 
+class GaugeSample(models.Model):
+    """周期采样的瞬时度量值（RATE-03）——并发 / 队列深 / 积压趋势的时序点。
+
+    与 ``RequestMetric`` 同域同范式（落 system app，复用 settings/清理/查询设施），
+    但定位不同：``RequestMetric`` 是"每请求一行"的事件流，本表是 apscheduler
+    周期任务（73-03，~45s）采样 ``snapshot_service`` 并发/队列部分写入的"仪表盘读数"，
+    供 73-02 按 ``name`` + 时间桶聚合趋势（``GROUP BY date_trunc(step)``）。
+
+    - 高写入量用 ``BigAutoField`` 自增整数主键（非 UUID）。
+    - ``name`` / ``labels`` 为**受控枚举常量**（如 ``concurrency.provider_slots`` /
+      ``queue.durable_doing`` / ``queue.runner_pending`` / ``backlog.subagent_active``），
+      **禁用户输入原文**（避免基数失控 + 泄漏，T-73-01-03）。
+
+    append-only：只增不改，按需保留清理（复用 log_retention 同款）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 采样时刻（倒序/聚合）；由 73-03 周期任务写入。
+    ts = models.DateTimeField(db_index=True, help_text="采样时刻（倒序/聚合）。")
+    # 受控指标名（点分命名，禁用户输入原文）。
+    name = models.CharField(max_length=64, db_index=True, default="")
+    # 采样值（瞬时读数，如槽位占用数 / 队列深度）。
+    value = models.FloatField(default=0.0)
+    # 受控枚举键（provider/credential/queue/source 等），禁用户输入原文。
+    labels = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "gauge_samples"
+        verbose_name = "仪表盘采样"
+        verbose_name_plural = "仪表盘采样"
+        ordering = ["-ts"]
+        indexes = [
+            # 支撑 73-02 按 name + 时间桶聚合趋势的两种访问路径。
+            models.Index(fields=["ts", "name"]),
+            models.Index(fields=["name", "-ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name}={self.value} @{self.ts:%Y-%m-%d %H:%M:%S}"
+
+
 class InboundWebhookEvent(models.Model):
     """入站 webhook 原始留痕载体（LOG-07）。
 

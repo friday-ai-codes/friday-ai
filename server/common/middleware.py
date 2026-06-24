@@ -37,6 +37,8 @@ _SYNTHETIC_ROUTE_MARKERS = (
     "/health",
     "/api/system/observability",
     "/api/system/dashboard",
+    # 指标快照/查询入口（Phase 73）：纳入 QPS 但标 synthetic 隔离，不污染业务 SLA。
+    "/api/system/metrics",
 )
 _SYNTHETIC_ROUTE_SUFFIXES = ("/poll",)
 
