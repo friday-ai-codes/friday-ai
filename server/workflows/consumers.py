@@ -1,11 +1,42 @@
 """WebSocket consumers for workflows app."""
 
 import json
+import time
 
 import structlog
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from common.log_context import LogSource
+from common.request_metrics import arecord_request_metric
+
 logger = structlog.get_logger()
+
+
+async def _record_ws_metric(
+    *, route: str, event: str, connected_at: float | None = None
+) -> None:
+    """为 WS connect/disconnect 记一行 RequestMetric（best-effort，绝不影响握手/收发）。
+
+    connect：status_code=101（协议切换），ws_event=connect；
+    disconnect：duration_ms=连接时长（从 connect 时刻起算）、ws_event=disconnect。
+    """
+    try:
+        duration_ms = (
+            max(int((time.perf_counter() - connected_at) * 1000), 0)
+            if connected_at is not None
+            else None
+        )
+        await arecord_request_metric(
+            source=LogSource.WS.value,
+            route=route,
+            method="WS",
+            status_code=101,
+            error_class="none",
+            duration_ms=duration_ms,
+            labels={"ws_event": event},
+        )
+    except Exception:  # noqa: BLE001 — WS 指标绝不反噬业务
+        pass
 
 
 class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
@@ -22,8 +53,15 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
 
         await self.accept()
+        self._ws_connected_at = time.perf_counter()
+        await _record_ws_metric(route="ws:workflow_execution", event="connect")
 
     async def disconnect(self, close_code: int) -> None:
+        await _record_ws_metric(
+            route="ws:workflow_execution",
+            event="disconnect",
+            connected_at=getattr(self, "_ws_connected_at", None),
+        )
         # Leave execution group
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 

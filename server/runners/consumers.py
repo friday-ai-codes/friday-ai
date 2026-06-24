@@ -1,6 +1,7 @@
 """Runner WebSocket consumer。"""
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
@@ -8,7 +9,33 @@ import structlog
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 
+from common.log_context import LogSource
+from common.request_metrics import arecord_request_metric
+
 logger = structlog.get_logger()
+
+
+async def _record_runner_ws_metric(
+    *, event: str, connected_at: float | None = None
+) -> None:
+    """为 Runner WS connect/disconnect 记一行 RequestMetric（best-effort）。"""
+    try:
+        duration_ms = (
+            max(int((time.perf_counter() - connected_at) * 1000), 0)
+            if connected_at is not None
+            else None
+        )
+        await arecord_request_metric(
+            source=LogSource.WS.value,
+            route="ws:runner",
+            method="WS",
+            status_code=101,
+            error_class="none",
+            duration_ms=duration_ms,
+            labels={"ws_event": event},
+        )
+    except Exception:  # noqa: BLE001 — WS 指标绝不反噬业务
+        pass
 
 # 终态集合
 _TERMINAL_STATUSES = {"completed", "error", "timeout", "cancelled"}
@@ -51,6 +78,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
         await self._update_channel_name(self.channel_name)
+        self._ws_connected_at = time.perf_counter()
+        await _record_runner_ws_metric(event="connect")
 
         # 握手超时：runner 必须在 HELLO_TIMEOUT 秒内发送 runner.hello
         self._hello_timeout = asyncio.ensure_future(self._hello_timeout_handler())
@@ -66,6 +95,10 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4004)
 
     async def disconnect(self, close_code):
+        await _record_runner_ws_metric(
+            event="disconnect",
+            connected_at=getattr(self, "_ws_connected_at", None),
+        )
         if hasattr(self, "_hello_timeout"):
             self._hello_timeout.cancel()
         if hasattr(self, "group_name"):

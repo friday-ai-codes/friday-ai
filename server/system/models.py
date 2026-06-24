@@ -339,6 +339,58 @@ class SystemLogEntry(models.Model):
         return f"[{self.level}] {self.component}:{self.event}"
 
 
+class RequestMetric(models.Model):
+    """请求级指标精简事件行（RATE-01 / SLA-02 / SLA-04）——每请求一行。
+
+    与 ``SystemLogEntry`` 同域同范式（落 system app，复用 settings/清理/查询设施），
+    但定位不同：本表是"指标精简行"（QPS/错误三口径/时长/TTFT），供 Phase 73 用
+    Postgres ``percentile_cont`` 做精确分位聚合，**零进程内聚合**（第一性原理 §A.2）。
+
+    - 高写入量用 ``BigAutoField`` 自增整数主键（非 UUID）。
+    - **绝不**落 raw payload/headers/凭证——仅元数据 + 受控 ``labels``（白名单枚举键，
+      禁用户输入原文，避免基数失控 + 泄漏，T-72-01-01/02）。
+    - ``user_id`` 取服务端 Phase 71 contextvars（认证后权威值），非客户端 header。
+    - 复合索引 ``(ts, source)`` + ``(ts, error_class)`` + ``(-ts)`` 支撑 Phase 73
+      SQL 聚合 QPS/错误率/分位时长。
+
+    append-only：只增不改，按需保留清理（复用 log_retention 同款）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 事件时间（倒序/聚合）；由 helper 写入 ISO，metric_sink 解析。
+    ts = models.DateTimeField(db_index=True, help_text="事件时间（倒序/聚合）。")
+    # LogSource 枚举值（rest/mcp/chat_sse/compat_openai/compat_anthropic/webhook_*/ws/rag）。
+    source = models.CharField(max_length=32, db_index=True, default="")
+    # 归一化路由（URL pattern，禁 query string / path 参数原文）。
+    route = models.CharField(max_length=200, blank=True, default="")
+    method = models.CharField(max_length=10, blank=True, default="")
+    status_code = models.PositiveIntegerField(default=0)
+    # 三口径：none/system/business/upstream（由 classify_error 单一收口）。
+    error_class = models.CharField(max_length=10, blank=True, default="none")
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    # 流式首 chunk 计时（非流式 null）。
+    ttft_ms = models.PositiveIntegerField(null=True, blank=True)
+    # 触发用户 id（→ system 哨兵）；存字符串以兼容 system + 数字 id。
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    # 受控枚举键（call_source/provider/credential/model/关联键/synthetic），禁用户输入原文。
+    labels = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "request_metrics"
+        verbose_name = "请求指标"
+        verbose_name_plural = "请求指标"
+        ordering = ["-ts"]
+        indexes = [
+            models.Index(fields=["ts", "source"]),
+            models.Index(fields=["ts", "error_class"]),
+            models.Index(fields=["-ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source}:{self.route} {self.status_code} ({self.error_class})"
+
+
 class InboundWebhookEvent(models.Model):
     """入站 webhook 原始留痕载体（LOG-07）。
 
