@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     ripgrep \
     libpq5 \
+    postgresql-client \
     default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 

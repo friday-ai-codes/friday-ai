@@ -1,5 +1,6 @@
 """Settings views."""
 
+import asyncio
 from uuid import UUID
 
 from adrf.views import APIView
@@ -1221,84 +1222,160 @@ class SystemInfoView(APIView):
         return {"engine": engine, "path": db_path, "size": size_str}
 
 
+def _db_engine_kind() -> str:
+    """归一当前默认库引擎为 sqlite / postgres / mysql / unknown。"""
+    engine = settings.DATABASES["default"].get("ENGINE", "")
+    if "sqlite" in engine:
+        return "sqlite"
+    if "postgres" in engine:
+        return "postgres"
+    if "mysql" in engine:
+        return "mysql"
+    return "unknown"
+
+
+def _db_conn_params() -> dict[str, str]:
+    """从 DATABASES['default'] 取连接参数（HOST/PORT 给出合理默认）。"""
+    db = settings.DATABASES["default"]
+    kind = _db_engine_kind()
+    default_port = "5432" if kind == "postgres" else "3306"
+    return {
+        "name": str(db.get("NAME", "") or ""),
+        "user": str(db.get("USER", "") or ""),
+        "password": str(db.get("PASSWORD", "") or ""),
+        "host": str(db.get("HOST", "") or "localhost"),
+        "port": str(db.get("PORT", "") or default_port),
+    }
+
+
+async def _run_dump_cmd(
+    cmd: list[str],
+    env_extra: dict[str, str],
+    *,
+    stdout_path: str | None = None,
+    stdin_path: str | None = None,
+) -> tuple[int, str]:
+    """执行 dump/restore 子进程。可选把 stdout 写入文件 / 从文件喂 stdin。
+
+    返回 (returncode, stderr_text)。可执行文件缺失 → returncode=127。
+    """
+    env = {**os.environ, **env_extra}
+    stdout_f = open(stdout_path, "wb") if stdout_path else asyncio.subprocess.PIPE
+    stdin_f = open(stdin_path, "rb") if stdin_path else None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            env=env,
+            stdout=stdout_f,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=stdin_f,
+        )
+    except FileNotFoundError:
+        if not isinstance(stdout_f, int):
+            stdout_f.close()
+        if stdin_f is not None:
+            stdin_f.close()
+        return 127, f"未找到可执行文件：{cmd[0]}（请确认服务镜像已安装对应客户端工具）"
+    _, stderr = await proc.communicate()
+    if not isinstance(stdout_f, int):
+        stdout_f.close()
+    if stdin_f is not None:
+        stdin_f.close()
+    return proc.returncode or 0, (stderr.decode(errors="replace") if stderr else "")
+
+
+def _file_download_response(path: str, filename: str):
+    """构造下载响应并在关闭时清理临时文件。"""
+
+    def _cleanup() -> None:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    response = FileResponse(
+        open(path, "rb"),
+        as_attachment=True,
+        filename=filename,
+        content_type="application/octet-stream",
+    )
+    response.close = lambda: (_cleanup(), None)  # type: ignore[method-assign]
+    return response
+
+
 class SystemBackupView(APIView):
-    """GET /api/system/backup/ — 下载 SQLite 数据库备份。
+    """GET /api/settings/backup/ — 下载数据库备份。
 
-    POST /api/system/restore/ — 上传备份文件恢复数据库。
+    POST /api/settings/backup/ — 上传备份文件恢复数据库。
 
-    仅支持 SQLite；其他数据库类型返回 400。
+    按数据库引擎分派：
+    - sqlite：直接复制 .db 文件。
+    - postgres：pg_dump（自定义格式 -Fc）/ pg_restore。
+    - mysql：mysqldump / mysql。
+
+    恢复为高危操作：恢复前会先 dump 一份当前库做回滚兜底。
     """
 
     permission_classes = [IsSuperUser]
 
     async def get(self, request) -> Response:  # type: ignore[no-untyped-def]
-        engine = settings.DATABASES["default"].get("ENGINE", "")
-        if "sqlite" not in engine:
-            return Response(
-                {"detail": "仅 SQLite 数据库支持备份下载"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        db_path = Path(settings.DATABASES["default"].get("NAME", ""))
-        if not db_path.exists():
-            return Response(
-                {"detail": "数据库文件不存在"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # 创建临时副本（避免锁定生产数据库）
-        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        shutil.copy2(db_path, tmp.name)
-        tmp.close()
-
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = f"friday_backup_{timestamp}.db"
-
-        def _cleanup():
-            try:
-                Path(tmp.name).unlink(missing_ok=True)
-            except Exception:
-                pass
-
-        response = FileResponse(
-            open(tmp.name, "rb"),
-            as_attachment=True,
-            filename=filename,
-            content_type="application/octet-stream",
+        kind = _db_engine_kind()
+        if kind == "sqlite":
+            return await self._download_sqlite()
+        if kind == "postgres":
+            return await self._download_postgres()
+        if kind == "mysql":
+            return await self._download_mysql()
+        return Response(
+            {"detail": "不支持的数据库引擎，无法备份"},
+            status=status.HTTP_400_BAD_REQUEST,
         )
-        # 响应结束后清理临时文件
-        response.close = lambda: (_cleanup(), None)  # type: ignore[method-assign]
-        return response
 
     async def post(self, request) -> Response:  # type: ignore[no-untyped-def]
-        engine = settings.DATABASES["default"].get("ENGINE", "")
-        if "sqlite" not in engine:
-            return Response(
-                {"detail": "仅 SQLite 数据库支持恢复"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response(
                 {"detail": "请上传备份文件"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        kind = _db_engine_kind()
+        if kind == "sqlite":
+            return await self._restore_sqlite(file_obj)
+        if kind == "postgres":
+            return await self._restore_postgres(file_obj)
+        if kind == "mysql":
+            return await self._restore_mysql(file_obj)
+        return Response(
+            {"detail": "不支持的数据库引擎，无法恢复"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-        # 验证 SQLite 格式
+    # ---- sqlite ----------------------------------------------------------
+
+    async def _download_sqlite(self) -> Response:
+        db_path = Path(settings.DATABASES["default"].get("NAME", ""))
+        if not db_path.exists():
+            return Response(
+                {"detail": "数据库文件不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        shutil.copy2(db_path, tmp.name)
+        tmp.close()
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return _file_download_response(tmp.name, f"friday_backup_{ts}.db")
+
+    async def _restore_sqlite(self, file_obj) -> Response:
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         for chunk in file_obj.chunks():
             tmp.write(chunk)
         tmp.close()
-
         try:
             conn = sqlite3.connect(tmp.name)
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [t[0] for t in cursor.fetchall()]
             conn.close()
-
-            # 校验关键表是否存在（至少要有 django_migrations）
             if "django_migrations" not in tables:
                 Path(tmp.name).unlink(missing_ok=True)
                 return Response(
@@ -1313,17 +1390,12 @@ class SystemBackupView(APIView):
             )
 
         db_path = Path(settings.DATABASES["default"].get("NAME", ""))
-        backup_old = db_path.with_suffix(
-            f".db.bak_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-        )
-
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_old = db_path.with_suffix(f".db.bak_{ts}")
         try:
-            # 先备份当前数据库
             shutil.copy2(db_path, backup_old)
-            # 替换为新数据库
             shutil.copy2(tmp.name, db_path)
         except Exception as e:
-            # 恢复失败则回滚
             if backup_old.exists():
                 shutil.copy2(backup_old, db_path)
             Path(tmp.name).unlink(missing_ok=True)
@@ -1333,5 +1405,151 @@ class SystemBackupView(APIView):
             )
         finally:
             Path(tmp.name).unlink(missing_ok=True)
-
         return Response({"detail": "数据库恢复成功", "restored_tables": len(tables)})
+
+    # ---- postgres --------------------------------------------------------
+
+    async def _download_postgres(self) -> Response:
+        p = _db_conn_params()
+        out = tempfile.NamedTemporaryFile(suffix=".dump", delete=False)
+        out.close()
+        cmd = [
+            "pg_dump",
+            "--no-owner",
+            "--no-acl",
+            "-Fc",  # 自定义格式，供 pg_restore 使用
+            "-h",
+            p["host"],
+            "-p",
+            p["port"],
+            "-U",
+            p["user"],
+            "-f",
+            out.name,
+            p["name"],
+        ]
+        rc, err = await _run_dump_cmd(cmd, {"PGPASSWORD": p["password"]})
+        if rc != 0:
+            Path(out.name).unlink(missing_ok=True)
+            return Response(
+                {"detail": f"pg_dump 失败: {err.strip() or rc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return _file_download_response(out.name, f"friday_backup_{ts}.dump")
+
+    async def _restore_postgres(self, file_obj) -> Response:
+        p = _db_conn_params()
+        tmp = tempfile.NamedTemporaryFile(suffix=".dump", delete=False)
+        for chunk in file_obj.chunks():
+            tmp.write(chunk)
+        tmp.close()
+
+        # 恢复前先 dump 当前库做回滚兜底（best-effort）。
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        rollback = tempfile.NamedTemporaryFile(suffix=f".rollback_{ts}.dump", delete=False)
+        rollback.close()
+        await _run_dump_cmd(
+            [
+                "pg_dump",
+                "--no-owner",
+                "--no-acl",
+                "-Fc",
+                "-h",
+                p["host"],
+                "-p",
+                p["port"],
+                "-U",
+                p["user"],
+                "-f",
+                rollback.name,
+                p["name"],
+            ],
+            {"PGPASSWORD": p["password"]},
+        )
+
+        cmd = [
+            "pg_restore",
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--no-acl",
+            "-h",
+            p["host"],
+            "-p",
+            p["port"],
+            "-U",
+            p["user"],
+            "-d",
+            p["name"],
+            tmp.name,
+        ]
+        rc, err = await _run_dump_cmd(cmd, {"PGPASSWORD": p["password"]})
+        Path(tmp.name).unlink(missing_ok=True)
+        if rc != 0:
+            return Response(
+                {
+                    "detail": (
+                        f"pg_restore 失败: {err.strip() or rc}。"
+                        f"当前库已在恢复前 dump 到服务器临时文件 {rollback.name} 备查"
+                    )
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        Path(rollback.name).unlink(missing_ok=True)
+        return Response({"detail": "数据库恢复成功"})
+
+    # ---- mysql -----------------------------------------------------------
+
+    async def _download_mysql(self) -> Response:
+        p = _db_conn_params()
+        out = tempfile.NamedTemporaryFile(suffix=".sql", delete=False)
+        out.close()
+        cmd = [
+            "mysqldump",
+            "-h",
+            p["host"],
+            "-P",
+            p["port"],
+            "-u",
+            p["user"],
+            p["name"],
+        ]
+        rc, err = await _run_dump_cmd(
+            cmd, {"MYSQL_PWD": p["password"]}, stdout_path=out.name
+        )
+        if rc != 0:
+            Path(out.name).unlink(missing_ok=True)
+            return Response(
+                {"detail": f"mysqldump 失败: {err.strip() or rc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return _file_download_response(out.name, f"friday_backup_{ts}.sql")
+
+    async def _restore_mysql(self, file_obj) -> Response:
+        p = _db_conn_params()
+        tmp = tempfile.NamedTemporaryFile(suffix=".sql", delete=False)
+        for chunk in file_obj.chunks():
+            tmp.write(chunk)
+        tmp.close()
+        cmd = [
+            "mysql",
+            "-h",
+            p["host"],
+            "-P",
+            p["port"],
+            "-u",
+            p["user"],
+            p["name"],
+        ]
+        rc, err = await _run_dump_cmd(
+            cmd, {"MYSQL_PWD": p["password"]}, stdin_path=tmp.name
+        )
+        Path(tmp.name).unlink(missing_ok=True)
+        if rc != 0:
+            return Response(
+                {"detail": f"mysql 恢复失败: {err.strip() or rc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response({"detail": "数据库恢复成功"})

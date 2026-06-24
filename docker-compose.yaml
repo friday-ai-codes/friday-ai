@@ -256,17 +256,24 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # PgBouncer 连接池（opt-in）：默认 `docker compose up` 不启动；需要时用
-  #   docker compose --profile pgbouncer up -d
-  # 并按 .env.example「PgBouncer」一节设置：
+  # PgBouncer 连接池（常驻，推荐）：web/server 高并发下的连接复用底座。
+  # 异步 server（GUNICORN_WORKERS 个进程）若各自维护 psycopg 应用层池，
+  # Σ(进程数 × DB_POOL_MAX_SIZE) 很容易打满 Postgres，且单进程池在"一个页面并行打
+  # 十几个接口"的突发下被瞬间占满 → PoolTimeout 卡住。改走 PgBouncer transaction
+  # pooling 后，几百个应用连接复用到少量真实 PG 连接，根治乘法爆炸。
+  #
+  # 启用（在 .env 设置，见 .env.example「PgBouncer」一节）：
   #   DATABASE_URL=postgres://friday:${POSTGRES_PASSWORD}@pgbouncer:6432/friday  # web 走池
   #   DATABASE_URL_DIRECT=postgres://friday:${POSTGRES_PASSWORD}@postgres:5432/friday  # worker/scheduler 直连
-  #   DB_PGBOUNCER=true
-  # transaction 模式 + max_prepared_statements>0 兼容 psycopg3 预编译语句（pgbouncer≥1.21）。
+  #   DB_PGBOUNCER=true  # server 去掉应用层池 + 禁服务端游标（仅注入 server 容器）
+  # worker/scheduler 必须走 DATABASE_URL_DIRECT 直连（Procrastinate LISTEN/NOTIFY
+  # 穿不过 transaction pooling）。transaction 模式 + max_prepared_statements>0 兼容
+  # psycopg3 预编译语句（pgbouncer≥1.21）。
+  # 注意：migrate（含 CREATE INDEX CONCURRENTLY）应走 DATABASE_URL_DIRECT，不能经
+  # transaction pooling。
   pgbouncer:
     image: edoburu/pgbouncer:v1.24.1-p1
     container_name: friday-pgbouncer
-    profiles: ["pgbouncer"]
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432

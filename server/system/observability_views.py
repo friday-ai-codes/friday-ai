@@ -21,12 +21,12 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
+from adrf.views import APIView
 from django.db import connection
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from permissions.api_permissions import IsSuperUser
 
@@ -129,6 +129,87 @@ def _orchestration_stats() -> dict[str, int]:
     return _count_by(OrchestrationRun.objects.all(), "status")
 
 
+def _alert_events(limit: int = 20) -> dict[str, Any]:
+    """最近告警事件（AlertRuleExecution，按触发时间倒序）+ 状态计数。
+
+    模型不存在 / 表未迁移时优雅降级为空，不影响面板其余部分。
+    """
+    try:
+        from workflows.models import AlertRuleExecution
+
+        recent: list[dict[str, Any]] = []
+        qs = AlertRuleExecution.objects.select_related("alert_rule").order_by("-triggered_at")
+        for e in qs[:limit]:
+            rule = e.alert_rule if e.alert_rule_id else None
+            recent.append(
+                {
+                    "id": str(e.id),
+                    "rule_name": rule.name if rule else "",
+                    "condition_type": rule.condition_type if rule else "",
+                    "status": e.status,
+                    "triggered_event": e.triggered_event,
+                    "error_message": e.error_message,
+                    "triggered_at": e.triggered_at.isoformat(),
+                }
+            )
+        counts = _count_by(AlertRuleExecution.objects.all(), "status")
+        return {"recent": recent, "counts": counts}
+    except Exception:  # noqa: BLE001 — 告警表缺失 / 迁移未跑时降级
+        logger.debug("observability_alerts_unavailable", exc_info=True)
+        return {"recent": [], "counts": {}}
+
+
+def _background_task_summary(
+    durable: dict[str, Any], subagent: dict[str, Any], orchestration: dict[str, int]
+) -> dict[str, int]:
+    """后台（异步）任务数量汇总：把已聚合的几路数据折算成一组关键计数。
+
+    复用已查询好的 durable / subagent / orchestration 结果，不再额外打库。
+    - durable_active：持久化队列里 todo + doing 的任务数（真正在排队/执行）
+    - durable_total：持久化队列全部状态合计
+    - subagent_active：容器会话里 pending + running 的会话数
+    - orchestration_active：对话编排里 running + pending 的运行数
+    """
+    totals = durable.get("totals", {}) if isinstance(durable, dict) else {}
+    durable_active = int(totals.get("todo", 0)) + int(totals.get("doing", 0))
+    durable_total = sum(int(v) for v in totals.values())
+
+    subagent_active = len(subagent.get("active", []) if isinstance(subagent, dict) else [])
+
+    orch_active = sum(
+        int(v)
+        for k, v in (orchestration or {}).items()
+        if str(k).lower() in ("running", "pending", "doing", "in_progress")
+    )
+
+    return {
+        "durable_active": durable_active,
+        "durable_total": durable_total,
+        "subagent_active": subagent_active,
+        "orchestration_active": orch_active,
+        "total_active": durable_active + subagent_active + orch_active,
+    }
+
+
+def _runtime_stats() -> dict[str, Any]:
+    """server 进程运行时快照：asyncio 协程数 + 活跃线程数。
+
+    必须在事件循环内调用（``ObservabilityView.get`` 为 ``async``），
+    ``asyncio.all_tasks()`` 才能拿到当前 loop 的协程；非循环上下文降级为 None。
+    """
+    import asyncio
+    import threading
+
+    try:
+        asyncio_tasks: int | None = len(asyncio.all_tasks())
+    except RuntimeError:
+        asyncio_tasks = None
+    return {
+        "asyncio_tasks": asyncio_tasks,
+        "threads": threading.active_count(),
+    }
+
+
 def _runner_load() -> list[dict[str, Any]]:
     from runners.models import Runner, RunnerEvent
 
@@ -160,22 +241,63 @@ def _runner_load() -> list[dict[str, Any]]:
 
 
 class ObservabilityView(APIView):
-    """超管任务与系统总览（OBS-01，IsSuperUser fail-closed，只读）。"""
+    """超管运维监控总览（OBS-01，IsSuperUser fail-closed，只读）。
+
+    ``get`` 为 ``async``：运行在事件循环内，``_runtime_stats`` 才能用
+    ``asyncio.all_tasks()`` 统计当前进程协程数；DB 聚合走 ``sync_to_async`` 桥接。
+    """
 
     permission_classes = [IsSuperUser]
 
-    def get(self, request: Request) -> Response:
-        payload = {
-            "generated_at": timezone.now().isoformat(),
-            "durable_queues": _durable_queue_stats(),
-            "subagent": _subagent_stats(),
-            "repositories": _repository_stats(),
-            "orchestration": _orchestration_stats(),
-            "runners": _runner_load(),
-        }
+    async def get(self, request: Request) -> Response:
+        from asgiref.sync import sync_to_async
+
+        payload = await sync_to_async(self._build_db_payload, thread_sensitive=True)()
+        # 协程数必须在事件循环线程内取（不能进 sync_to_async 的线程池）。
+        payload["runtime"] = _runtime_stats()
+        payload["generated_at"] = timezone.now().isoformat()
         logger.info(
             "observability_served",
             runner_count=len(payload["runners"]),
             subagent_active=len(payload["subagent"]["active"]),
+            alert_recent=len(payload["alerts"]["recent"]),
         )
         return Response(payload)
+
+    @staticmethod
+    def _build_db_payload() -> dict[str, Any]:
+        """所有需要打库的聚合（在同步线程里一次性算完）。"""
+        durable = _durable_queue_stats()
+        subagent = _subagent_stats()
+        orchestration = _orchestration_stats()
+        return {
+            "durable_queues": durable,
+            "subagent": subagent,
+            "repositories": _repository_stats(),
+            "orchestration": orchestration,
+            "runners": _runner_load(),
+            "alerts": _alert_events(),
+            "background_tasks": _background_task_summary(durable, subagent, orchestration),
+        }
+
+
+class SystemLogsView(APIView):
+    """GET /api/system/logs/ — 最近系统日志（内存环形缓冲，IsSuperUser）。
+
+    查询参数：
+    - ``limit``：返回条数上限（默认 200，最大 800）。
+    - ``level``：按日志级别过滤（INFO/WARNING/ERROR…）。
+    """
+
+    permission_classes = [IsSuperUser]
+
+    def get(self, request: Request) -> Response:
+        from common.log_buffer import snapshot
+
+        try:
+            limit = int(request.query_params.get("limit", 200))
+        except (TypeError, ValueError):
+            limit = 200
+        limit = max(1, min(limit, 800))
+        level = request.query_params.get("level") or None
+        return Response({"logs": snapshot(limit=limit, level=level)})
