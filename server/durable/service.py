@@ -89,6 +89,7 @@ class DurableTaskService:
         idempotency_key: str | None = None,
         run_at: datetime.datetime | None = None,
         lock: str | None = None,
+        initiated_by_user_id: str | None = None,
     ) -> str:
         """入队一个 durable 任务，返回 job id。
 
@@ -96,7 +97,14 @@ class DurableTaskService:
         ``idempotency_key``（= queueing_lock，todo 去重）正交并存。索引/图谱用
         ``lock=index-slot-{N}`` 槽位池实现可配上限的并发治理（CONC-01）；
         in-process fallback 无 doing 并发概念，``lock`` 被忽略（dev/pytest 串行）。
+
+        ``initiated_by_user_id``（CTX-02）：发起用户 id，非空时写入
+        ``payload["initiated_by_user_id"]`` 随 job 跨进程/线程传播，worker 入口
+        （``tasks_impl.run_*``）据此 ``bind_task_context`` 重新绑定发起用户；不覆盖
+        调用方已显式放入 payload 的同名键。不传 → worker 记 ``system``（零回归）。
         """
+        if initiated_by_user_id and "initiated_by_user_id" not in payload:
+            payload = {**payload, "initiated_by_user_id": initiated_by_user_id}
         if use_procrastinate_backend():
             from durable.backends import procrastinate_backend
 

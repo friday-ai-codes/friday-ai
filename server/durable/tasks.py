@@ -35,6 +35,7 @@ async def durable_index(
     history_id: str | None = None,
     branch: str | None = None,
     trigger: str = "manual",
+    initiated_by_user_id: str | None = None,
 ) -> dict[str, Any]:
     """代码索引 durable 任务（procrastinate 包壳，委托共用任务体）。
 
@@ -42,7 +43,8 @@ async def durable_index(
     （``app.tasks.get("durable_index")``）是同一 single source of truth（Phase 60
     CR-01 教训）。keyword-only 形参与 payload 契约逐字一致，下游
     ``DurableTaskService.defer("durable_index", {...})`` 经 ``defer_async(**payload)``
-    展开传入。
+    展开传入。``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发给
+    任务体，使 procrastinate 后端也能在 worker 入口 bind 发起用户（不传零回归）。
     """
     from durable.tasks_impl import run_index
 
@@ -51,6 +53,7 @@ async def durable_index(
         history_id=history_id,
         branch=branch,
         trigger=trigger,
+        initiated_by_user_id=initiated_by_user_id,
     )
 
 
@@ -61,6 +64,7 @@ async def durable_graph(
     history_id: str | None = None,
     branch: str | None = None,
     trigger: str = "manual",
+    initiated_by_user_id: str | None = None,
 ) -> Any:
     """代码图谱构建 durable 任务（procrastinate 包壳，委托共用任务体）。"""
     from durable.tasks_impl import run_graph
@@ -70,6 +74,7 @@ async def durable_graph(
         history_id=history_id,
         branch=branch,
         trigger=trigger,
+        initiated_by_user_id=initiated_by_user_id,
     )
 
 
@@ -82,16 +87,21 @@ async def durable_page_index(**payload: Any) -> dict[str, Any]:
 
 
 @app.task(name="durable_repo_summary", queue=QUEUE_REPO_SUMMARY)
-async def durable_repo_summary(*, repository_id: str) -> dict[str, Any]:
+async def durable_repo_summary(
+    *, repository_id: str, initiated_by_user_id: str | None = None
+) -> dict[str, Any]:
     """仓库 AI 描述派发 durable 任务（procrastinate 包壳，委托共用任务体）。
 
     durable job 只负责"可靠地发起一次 repo_summary 派发"（创建 session + 投递到 Runner），
     重活在 Runner 容器内执行。这样建仓/手动触发的派发不再随 server 重启丢失。
     幂等：入队点带 ``idempotency_key=f"summary:{repo_id}"``，同仓在途只一份。
+    ``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发（不传零回归）。
     """
     from durable.tasks_impl import run_repo_summary
 
-    return await run_repo_summary(repository_id=repository_id)
+    return await run_repo_summary(
+        repository_id=repository_id, initiated_by_user_id=initiated_by_user_id
+    )
 
 
 @app.task(name="durable_crawl_ingest", queue=QUEUE_CRAWL_INGEST)

@@ -10,6 +10,7 @@ Starts the background scheduler for session timeout tasks:
 """
 
 import asyncio
+import functools
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -24,6 +25,36 @@ from django_apscheduler.jobstores import DjangoJobStore
 from django_apscheduler.models import DjangoJobExecution
 
 logger = structlog.get_logger(__name__)
+
+
+def _with_scheduler_log_context(func):
+    """装饰器：周期任务执行体外层绑定调度器日志上下文（CTX-02）。
+
+    apscheduler 任务在独立线程触发、contextvars 不自动传播：系统周期任务无触发
+    用户，统一记 ``user_id="system"`` + ``source="scheduler"`` + ``component=
+    "scheduler"``，使任务体内 structlog 事件可归因为系统调度。best-effort，绑定
+    失败绝不打断 job 主体（沿用观测代码绝不反噬业务）。
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # 仅保护「构造上下文管理器」这一步；func 仍恰好执行一次，其异常正常上抛
+        # （with 退出会清理 contextvars），避免 best-effort 误吞 job 真实错误 /
+        # 误致重复执行。
+        try:
+            from common.log_context import bind_task_context
+
+            cm = bind_task_context(
+                user_id="system", source="scheduler", component="scheduler"
+            )
+        except Exception:  # noqa: BLE001 — bind 不可用则降级为无上下文执行
+            cm = None
+        if cm is None:
+            return func(*args, **kwargs)
+        with cm:
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 def run_async_task(coro_func):
@@ -43,6 +74,7 @@ def run_async_task(coro_func):
         return asyncio.run(coro_func())
 
 
+@_with_scheduler_log_context
 def check_timeout_reminders_job():
     """Job wrapper for check_timeout_reminders task."""
     from tasks.session_timeout_tasks import check_timeout_reminders
@@ -57,6 +89,7 @@ def check_timeout_reminders_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def cleanup_expired_sessions_job():
     """Job wrapper for cleanup_expired_sessions task."""
     from tasks.session_timeout_tasks import cleanup_expired_sessions
@@ -71,6 +104,7 @@ def cleanup_expired_sessions_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 @util.close_old_connections
 def delete_old_job_executions(max_age: int = 604_800):
     """Delete job execution logs older than max_age seconds (default: 7 days)."""
@@ -79,6 +113,7 @@ def delete_old_job_executions(max_age: int = 604_800):
 
 
 
+@_with_scheduler_log_context
 def refresh_repo_caches_job():
     """Job wrapper for refresh_repo_caches task (Phase)."""
     from tasks.cache_tasks import refresh_repo_caches
@@ -93,6 +128,7 @@ def refresh_repo_caches_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def prune_cache_volumes_job():
     """Job wrapper for prune_cache_volumes task (Phase)."""
     from tasks.cache_tasks import prune_cache_volumes
@@ -107,6 +143,7 @@ def prune_cache_volumes_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def poll_repository_updates_job():
     """Job wrapper for poll_repository_updates task (implementation)."""
     from tasks.index_trigger_tasks import poll_repository_updates
@@ -121,6 +158,7 @@ def poll_repository_updates_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def calculate_behind_commits_job() -> None:
     """contract：计算 STALE 仓库的 behind_commits 差值并缓存。"""
     from repositories.freshness_service import update_behind_commits_for_stale_repos
@@ -135,6 +173,7 @@ def calculate_behind_commits_job() -> None:
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def cleanup_stale_branch_indexes_job():
     """Job wrapper for cleanup_stale_branch_indexes (implementation)."""
     from tasks.index_trigger_tasks import cleanup_stale_branch_indexes
@@ -149,6 +188,7 @@ def cleanup_stale_branch_indexes_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def cleanup_orchestration_checkpoints_job():
     """Job wrapper for cleanup_orchestration_checkpoints command (implementation contract).
 
@@ -168,6 +208,7 @@ def cleanup_orchestration_checkpoints_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def cleanup_coding_sessions_job():
     """Job wrapper for cleanup_coding_sessions command (resume SDK session TTL).
 
@@ -187,6 +228,7 @@ def cleanup_coding_sessions_job():
         log.exception("job_error", error=str(e))
 
 
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 

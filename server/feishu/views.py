@@ -19,6 +19,7 @@ from rest_framework.response import Response
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import decrypt_value, encrypt_value
+from common.log_context import LogSource, bind_request_context
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
 from workflows.triggers.context import TriggerContext
@@ -540,6 +541,19 @@ class FeishuWebhookView(APIView):
     permission_classes = [AllowAny]
 
     async def post(self, request, token=None):
+        # CTX-01：webhook 是系统触发（user=system），覆盖入口中间件写入的 source=rest，
+        # 声明为 webhook_feishu，使本次处理产生的所有 structlog 事件可归因到飞书 webhook
+        # 链路。best-effort，绑定失败绝不影响 webhook 主响应。
+        try:
+            bind_request_context(
+                source=LogSource.WEBHOOK_FEISHU,
+                user_id="system",
+                request_id=request.headers.get("X-Request-ID") or uuid_module.uuid4().hex,
+                trace_id=request.headers.get("X-Trace-ID") or uuid_module.uuid4().hex,
+            )
+        except Exception:  # noqa: BLE001 — 观测代码绝不反噬业务
+            pass
+
         raw_body = request.body.decode("utf-8")
 
         try:
@@ -902,6 +916,7 @@ class FeishuWebhookView(APIView):
         run_in_background(
             lambda: WorkItemService().upsert(identity, source="feishu_webhook", fetch=True),
             name=f"delivery-upsert:{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+            initiated_by_user_id="system",  # CTX-02：飞书 webhook 系统触发
         )
 
     async def _handle_workitem_create(self, project, payload, trigger_log):
@@ -1057,6 +1072,7 @@ class FeishuWebhookView(APIView):
                 source="feishu_webhook",
             ),
             name=f"comment-append:{project.feishu_project_key}:{work_item_type}:{work_item_id}",
+            initiated_by_user_id="system",  # CTX-02：飞书 webhook 系统触发
         )
 
     async def _handle_workitem_comment(self, project, payload, trigger_log):
