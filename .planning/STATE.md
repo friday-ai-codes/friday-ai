@@ -59,150 +59,6 @@ Last activity: 2026-06-24 — Milestone v0.14.0 started
 
 **设计底座引用:** `.planning/observability/MILESTONE-PROPOSAL.md`（5 Phase 完整方案 + 第一性原理评审 + 数据模型 §C + Traceability §D）、`.planning/observability/LOGGING-SPEC.md`（日志/埋点规范 + caller/sampling + call_source 枚举 §4.1）、`.planning/observability/REFERENCE-UI.md`（LLM 网关平台参考图 + Agent 维度适配，Phase 75 UI 输入）、`.cursor/rules/observability-logging.mdc`（Agent 强制规则）、`.planning/REQUIREMENTS.md`（34 条需求 + Traceability）。关键文件：`server/common/logging.py`+`log_buffer.py`、`server/system/`(settings_service/signals/models SettingKeys/observability_views/dashboard_views)、`server/interactions/`、`server/agents/`(llm_concurrency/chat_runner/langchain_runner/llm_factory)、`server/services/retrieval/`+`qdrant_service.py`+`embedding.py`、`server/feishu/views.py`(TriggerLog)、`server/friday/settings.py`(MIDDLEWARE/DRF/DATABASES/CACHES)、`server/access_tokens/context.py`(PAT ContextVar 范式)、`web/src/pages/admin/observability/index.vue`+`web/src/api/system.ts`。
 
-## Milestone Overview (v0.11.0 — Phases 56–59)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 56 | compat 内部工具调用 → progress/trace 事件透出 | TRACE-01, TRACE-02 | ✅ Complete (2/2 plans) |
-| 57 | Anthropic 兼容端点 `/v1/messages` | ANTHROPIC-01, ANTHROPIC-02 | ✅ Complete (2/2 plans) |
-| 58 | 飞书原生流式卡片（CardKit） | CARD-01 | ✅ Complete (2/2 plans) |
-| 59 | 工作流自动建群节点 | GROUP-01 | ✅ Complete (2/2 plans) |
-
-**Execution order:** 56 → 57 → 58 → 59。依赖链：先把内部工具调用经 §15 事件 taxonomy 映射为 OpenAI 兼容 progress/trace 透出 adapter(56) → Anthropic `/v1/messages` 端点复用同一 taxonomy→thinking block adapter(57，依赖 56 的透出抽象)；飞书原生流式卡片(58) 与工作流自动建群(59) 相对独立（依赖既有飞书机器人对话 / 飞书 client + 节点机制），排在 Agent API 两 phase 之后。
-
-**UI 触面:** 本里程碑无 Web 前端重触面——56/57 为后端 compat 端点；58 为飞书侧卡片（非 Web 前端）；59 为工作流节点（复用既有节点配置 UI）。`/gsd-ui-phase` 预计不介入。
-
-**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
-
-- **INV-5 对外只透出 progress/trace，非模型私有 CoT**：内部工具调用对外封装为 `reasoning_summary` / thinking block（progress/trace 事件），**绝不用标准 `tool_calls` 回传**——内部工具是服务端闭环执行，回传标准 tool_calls 会让规范客户端误判挂起等待 → 卡死。
-- **复用 v0.7 起的 §15 事件 taxonomy**（`PlanSessionEvent` / `event_taxonomy`，DOMAIN §10/§15）：对外 OpenAI/Anthropic 端点只是不同 adapter，不另建词表；taxonomy 已在 v0.7 稳定落地。
-- **既有 compat 零回归**：`/v1/chat/completions` 流式 + `reasoning_content` 已有，透出机制以 adapter 叠加、缺事件优雅降级，绝不破坏既有行为。
-- **代码现状坐标**：OpenAI compat 已有（`tool_calls` 完全没有、`adapter.py` 明确 continue 跳过、无 Anthropic 端点）；机器人对话已有（双向、群聊需 @），流式卡片部分有（PATCH 全量替换，非原生 CardKit）；自动建群完全没有（仅 `add_bot_to_chat` 加入已有群）。
-- **群 chat_id 写回**：自动建群节点的 chat_id 可写回 `WorkItem.feishu_chat_id`（DOMAIN §1.2 writeback 字段），失败 fail-soft 不阻断工作流。
-- **显式非目标 / Out of Scope**：标准双向 `tool_calls`（客户端自带工具回传）、暴露原始 CoT、Anthropic 端点工具/多模态全量对齐、飞书卡片交互组件/多卡片编排（均列 v2 OPENX-* 或 Out of Scope，见 REQUIREMENTS.md）。
-- **i18n**：飞书卡片/节点文案接入既有 i18n，默认中文。
-
-**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.11`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md §10`（事件/trace taxonomy）+ §15（事件 payload 规格 + 对外 adapter 映射）、`.planning/PREFLIGHT.md`（无映射 v0.11 的 blocking/should-fix 项）、`.planning/PROJECT.md`（Current Milestone v0.11.0 + Key context）。
-
-## Milestone Overview (v0.10.0 — Phases 53–55)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 53 | `AuditEvent` 模型 + emit 地基 | AUDIT-01, AUDIT-02 | ✅ Complete |
-| 54 | 敏感操作全量覆盖 emit | AUDITCOV-01, AUDITCOV-02 | ✅ Complete |
-| 55 | 审计查询 API + 前端视图 + 导出 | AUDITUI-01, AUDITUI-02 | ✅ Complete |
-
-**Execution order:** 53 → 54 → 55（严格顺序）。依赖链：统一 `AuditEvent` 模型 + 单一写入入口 + fail-soft emit 地基(53) → 各敏感操作经统一入口 emit 审计、v0.5 排除/清理埋点收口(54) → 审计查询 API + 前端视图 + 导出(55)。无模型/emit 地基无从 emit，无覆盖的审计数据无从查询展示。
-
-**UI 触面（标 UI hint）:** Phase 55（审计查询前端视图：列表/过滤/before-after 详情 + 导出，本里程碑唯一重前端）。后续 `/gsd-ui-phase` 可介入此处。
-
-**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
-
-- **系统管理员 = 现有 `is_superuser`**：不新建审计角色/权限层（沿用既有里程碑「系统管理员=superuser」决策）；审计查询/导出 superuser fail-closed。
-- **审计为横切能力**：各功能产生敏感操作时 emit，本里程碑统一收口 + 补齐覆盖 + UI；emit 失败 best-effort 不阻断主操作（fail-soft）。
-- **不可篡改 = 应用层 append-only**：`AuditEvent` 无 update/delete 业务路径、写入经单一 service 入口（INV-6 精神，grep 守护无旁路写表）；密码学级防篡改（hash chain/WORM）留 v2（AUDITX-01）。
-- **凭证脱敏**：Provider/Git/飞书凭证、Agent API key/PAT 等敏感操作的审计 before/after 必须脱敏，绝不落明文 token（对齐既有 PAT-02 / 凭证加密约束）。
-- **v0.5 既有埋点收口**：现有分散的 `purge.started/purge.completed` 结构化日志、`TriggerLog`/`ActionLog` 等收口到统一 `AuditEvent` 表（DOMAIN §11；现状「无统一 Admin Audit 表」）。
-- **显式非目标 / Out of Scope**：新建独立审计角色、密码学级防篡改、实时告警/SIEM/webhook 外发、审计保留/归档/自动清理策略、读操作全量审计（均列 v2 AUDITX-* 或 Out of Scope，见 REQUIREMENTS.md）。
-
-**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.10`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md §11`（`AuditEvent` 横切治理）、`.planning/PREFLIGHT.md`（无映射 v0.10 的 blocking/should-fix 项）、`.planning/PROJECT.md`（Current Milestone v0.10.0 + Key context）。
-
-## Milestone Overview (v0.9.0 — Phases 48–52)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 48 | SDD 仓库检测 + facets 打标 + 前端标签 | SDD-01, SDD-02 | ✅ Complete (verify human_needed) |
-| 49 | 方案产 openspec spec + Document(sdd_spec) | SPEC-01, SPEC-02 | ✅ Complete (verify human_needed) |
-| 50 | spec 状态机 + 变更记录 + 评审状态 + 前端展示 | SPECST-01, SPECST-02, SPECST-03 | ✅ Complete (verify human_needed) |
-| 51 | 编码前置 gate + openspec skill 编码策略 | GATE-01, GATE-02 | ✅ Complete (容器 E2E human_needed) |
-| 52 | spec↔需求/PR 关联 + 交付验收视图 | LINK-01, LINK-02 | ✅ Complete (容器 E2E human_needed) |
-
-**Execution order:** 48 → 49 → 50 → 51 → 52（严格顺序）。依赖链：SDD 仓库打标(48) → SDD 仓库方案产 openspec spec draft(49) → spec 状态机 + 评审记录 + 前端展示(50) → 编码前置 gate + openspec 注入(51) → spec↔需求/PR 关联 + 交付验收视图(52)。每个 phase 建立在前序产物之上——无打标无从判定产 spec，无 spec 实体无从挂状态机，无 `approved` 状态无从 gate，无放行编码无实现 PR 可关联。
-
-**UI 触面（标 UI hint）:** Phase 48（仓库列表/详情方法论标签）、Phase 50（spec 列表/详情/状态流转 + 评审记录 UI，本里程碑最重前端）、Phase 52（交付验收视图，沿 spec→WorkItem→PR 链路追溯）。后续 `/gsd-ui-phase` 介入这三处。
-
-**关键约束 / 设计底座（记入约束，plan-phase 必读）:**
-
-- **复用 v0.7/v0.8 预留扩展点**（DOMAIN §6.1）：`Document.SDD_SPEC` 枚举（§3/§12.5 已含）、`RepoCodingTask.follow_openspec` 字段（v0.8 Phase 44 已建，本里程碑首次消费）、`Repository.facets` JSON（通用字段已有）、task `setting_sources=["project"]`（容器原生加载仓库内 `.claude/skills`，v0.9 仅加 system_prompt 注入点）。**核查结论：均为「字段/枚举占位」**——openspec 检测钩子、产 spec 逻辑、system_prompt 注入点均需从零建。
-- **新增 spec 状态/评审为建模空白**：spec 生命周期独立建模（`SddSpec` + 评审记录实体），非复用 `TechnicalPlan`。
-- **spec 状态机命名沿 vNext**：`draft → in_review → approved → implemented → archived`——刻意区别于既有 `TechnicalPlan.status`（`draft|under_review|approved|superseded|archived`），spec 语义确需 `in_review`/`implemented`，不复用避免口径串味。
-- **INV-6 单一写入入口精神**：spec 创建/状态流转/评审写入收口到专用 service（如 `SddSpecService`），禁旁路写表；spec draft 经 `DocumentService` 单一入口落 `Document(sdd_spec)`。
-- **编码前置 gate fail-closed 语义**：未 `approved` 拦截且如实标注阻断原因，不静默放行；非 SDD 仓库零回归。
-- **审计收口顺延 v0.10**：spec 评审记录本里程碑自持久化即可，接入统一 `AuditEvent` 是 v0.10 横切治理范围（REQUIREMENTS Out of Scope 已明确）。
-- **显式非目标**：编码中全自动 replan / spec-code 双向 drift 检测 / openspec lint 深度校验 / 非 openspec 的其他 SDD 框架 / 多级会签审批流 / 新建独立 SDD 角色权限层（均列 v2 SDDX-* 或 Out of Scope）。
-
-**设计底座引用:** `.planning/ROADMAP-vNext.md §v0.9`（Target features / 现状坐标 / 已确认决策 / 候选 phases / 交付物-成功标准-风险）、`.planning/DOMAIN-MODEL.md` §6.1（SDD 扩展点）/§3 + §12.5（`Document` 含 `sdd_spec` 枚举与字段详表）/§6（`RepoCodingTask.follow_openspec`）、`.planning/PROJECT.md`（Current Milestone v0.9.0 + Key context）。
-
-## Milestone Overview (v0.8.0 — Phases 43–47, shipped 2026-06-17)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 43 | 编码 env 对齐 + 通用 resume 回流地基 | PF-06, RESUME-01 | ✅ Complete |
-| 44 | RepoCodingTask + execution_plan DAG 拓扑分层 + wave 调度 | WAVE-01, WAVE-02 | ✅ Complete |
-| 45 | 上游产物提取 + 注入下游 wave | ARTIFACT-01, ARTIFACT-02 | ✅ Complete |
-| 46 | 多仓融合 PR + 跨仓 PR 关联 | PR-01, PR-02 | ✅ Complete |
-| 47 | 编码遇阻 → question 抛人（HITL，非全自动 replan） | HITL-01 | ⬜ Not started |
-
-**Execution order:** 43 → 44 → 45 → 46 → 47（严格顺序）。依赖链：编码 env 对齐 + 通用 resume 回流地基(43) → RepoCodingTask + DAG 拓扑分层 + wave 调度(44) → 上游产物提取/注入下游(45) → 多仓融合 PR + 跨仓关联(46) → 编码遇阻 question 抛人(47)。PF-06（编码 env）+ RESUME-01（resume 通路）是 callback 驱动多 wave 的前置地基；每个 phase 建立在前序编码骨架之上。
-
-**前置修复（PREFLIGHT）:** PF-06（workflow 编码路径未注入 branch strategy / git token env，对齐 chat 路径——should-fix-before-v0.8，作 Phase 43）、PF-07（`execution_plan[].dependencies` 仅 schema 声明、下游全并行不读——can-fix-in-milestone，由 Phase 44 wave 拓扑分层消化）。
-
-**v0.7 结转 tech-debt（audit D-2）:** chat deep-research 自动回流接线缺口——主入口「工作流先行」已闭环，chat fire-and-forget 编排进 researching、容器在途完成后无消费者驱动续跑。由 Phase 43 RESUME-01 通用 resume 回流通路消化。
-
-**UI 触面:** Phase 46（多仓 PR 关联展示，maybe，reuse-first）、Phase 47（question 抛人复用 `ask_user_question` 澄清卡片，yes，无新 Vue 组件）。
-
-**关键约束 / 非目标:** scope=`plan_to_pr`（主方案 → 多仓 wave 编码 → 融合 PR）；**不做编码中全自动回溯重规划**——编码遇阻走已有 question 协议抛人，全自动 replan 留 backlog；diff base 用各仓正确 `target_branch`（非假设 master）；新模型经单一写入入口（INV-6 精神，禁旁路写表）。已锁决策：复用 `waiting_event` + callback resume 扩成多 wave 不另造调度；`RepoCodingTask.follow_openspec` 预留 SDD 扩展点（v0.9 做全）。
-
-**复用底座（v0.7 已交付）:** canonical `TechnicalPlan`/`MergedPlan`（含 `execution_plan` 跨仓依赖拓扑）+ `PlanSession` 编排状态机 + §15 事件 taxonomy；既有 `DispatchTask` 协议、RemoteTool MCP、callback 驱动 workflow resume、`waiting_event`、`AICodingNode` 并行派发、chat `coding_session_service`（branch strategy / git token env 在 chat 路径已有）。
-
-**设计底座:** `.planning/ROADMAP-vNext.md §v0.8`（Target features/现状坐标/已确认决策/候选 phases）、`.planning/DOMAIN-MODEL.md` §6（`RepoCodingTask` wave/`depends_on` DAG/`produced_artifacts` + 可靠恢复规则 + SDD 扩展点）/§14（RepoCodingTask 子任务级状态）、`.planning/PREFLIGHT.md`（PF-06/07）。
-
-## Milestone Overview (v0.7.0 — shipped 2026-06-16)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 36 | 前置修复 + 编排引擎骨架 + PlanSession 状态机 | PF-01, PF-02, ORCH-01, ORCH-02 | ✅ Complete |
-| 37 | canonical TechnicalPlan + TechnicalPlanService + 旧路径软链/迁移 | PLAN-01, PLAN-02, PLAN-03 | ✅ Complete |
-| 38 | 路由 + 召回接入 | ROUTE-01, RECALL-01 | ✅ Complete |
-| 39 | 并行调研子 agent | RESEARCH-01, RESEARCH-02, RESEARCH-03 | ✅ Complete |
-| 40 | 架构师融合 + MergedPlan + PlanValidator + 跨仓依赖 | MERGE-01, MERGE-02, MERGE-03 | ✅ Complete |
-| 41 | HITL 澄清 + 事件 taxonomy + 工作流入口 | CLARIFY-01, ENTRY-01, EVENT-01 | ✅ Complete |
-| 42 | Chat 入口薄封装 | ENTRY-02 | ✅ Complete |
-
-**Execution order:** 36 → 37 → 38 → 39 → 40 → 41 → 42（严格顺序）。依赖链：前置修复+引擎骨架(36) → canonical 方案脊柱(37) → 路由+召回(38) → 并行调研(39) → 架构师融合(40) → 澄清+事件+工作流入口(41) → Chat 入口(42)。每个 phase 都建立在前序编排骨架之上。
-
-**前置修复（PREFLIGHT，作 Phase 36 内 blocking 必修）:** PF-01（`search_code` 工具名漂移 + 未知工具静默 continue）、PF-02（`verify_plan` schema 漂移 `tasks` vs `execution_plan`）——方案质量 + PlanValidator 的地基，开工前必修。
-
-**UI 触面:** Phase 41（工作流入口：工作流节点 + 可能的 plan-session 视图）、Phase 42（Chat 入口薄封装：对话发起编排）标 UI hint。
-
-**关键约束:** INV-2（方案可追溯到 `WorkItem`，chat 自然语言允许 null 但显式标记）、INV-5（对外暴露 progress/trace 事件非模型私有 CoT）、INV-6（方案解析/创建只经 `TechnicalPlanService`，禁旁路写表）。已锁决策：filter_then_container 调研、architect_subagent 融合 + 结构化 MergedPlan + PlanValidator、工作流+Chat 双入口复用同一 engine（工作流先行）、事件 taxonomy 本里程碑即落。
-
-**设计底座:** `.planning/ROADMAP-vNext.md §v0.7`（流水线 6 段/概念/现状坐标/已确认决策）、`.planning/DOMAIN-MODEL.md` §5（canonical TechnicalPlan + service + 迁移规则）/§6（编排状态机 + 子任务级状态 + 可靠恢复规则 + SDD 扩展点）/§7（PartialPlan/MergedPlan/PlanValidator schema）/§14（PlanSession 转移表）/§15（事件 payload 规格）、`.planning/PREFLIGHT.md`（PF-01/02）。
-
-## Milestone Overview (v0.6.0 — shipped 2026-06-15)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 27 | 飞书接口前置修复 | FIX-01..04 | ✅ Complete |
-| 28 | WorkItem 脊柱 + 单一 upsert 入口 | WIT-01..05 | ✅ Complete |
-| 29 | 评论事件流 | CMT-01..02 | ✅ Complete |
-| 30 | Document + REFERENCES 边 | DOC-01..02 | ✅ Complete |
-| 31 | Release 账本 + Bitable adapter 骨架 | REL-01..02 | ✅ Complete |
-| 32 | 一键摄取编排 | ING-01 | ✅ Complete |
-| 33 | 历史 diff 冻结 + bi-temporal 失效 | HDIFF-01..02 | ✅ Complete |
-| 34 | 评论入图 + 片段→需求反查 | RREF-01..02 | ✅ Complete |
-| 35 | 截图识别需求 | VIS-01 | ✅ Complete |
-
-## Milestone Overview (v0.4.0 — shipped 2026-06-13)
-
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 17 | 变量引用链路修复 | VAR-01..04 | ✅ Complete |
-| 18 | 执行引擎状态机修复 | ENG-01..05 | ✅ Complete |
-| 19 | 节点定义单一事实源 | SSOT-01..03 | ✅ Complete |
-| 20 | 保存即合法与模板修复 | VAL-01..03, TPL-01..03 | ✅ Complete |
-| 21 | 触发模型与执行可观测 | TRIG-01..03, OBS-01..03 | ✅ Complete |
-
 ## Performance Metrics
 
 **Milestone v0.3.0:**
@@ -530,11 +386,11 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-20
-Stopped at: v0.12.0 里程碑 roadmap 创建完成（ROADMAP.md Phases 60–64 + STATE.md milestone overview + REQUIREMENTS.md traceability 16/16）
+Last session: 2026-06-24
+Stopped at: v0.14.0 可观测性与日志治理 里程碑立项完成（单里程碑 5 Phase 71–75；PROJECT/REQUIREMENTS/ROADMAP/STATE + observability/ 方案规范就绪，34/34 需求映射）
 Resume file: None
-Next: `/gsd-plan-phase 60`（durable 底座地基）
+Next: `/gsd-autonomous`（一次跑完 v0.14.0，顺序 71→75）或 `/gsd-plan-phase 71`（可观测性地基）
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- 新开会话用 `/gsd-autonomous` 跑完整个 v0.14.0（71→75），或 `/gsd-plan-phase 71` 手动起步
