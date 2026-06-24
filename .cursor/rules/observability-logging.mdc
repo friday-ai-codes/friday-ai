@@ -1,0 +1,38 @@
+---
+description: 可观测性与日志强制规范——新增/修改任何功能都必须补齐日志与指标埋点、绑定触发用户、做好脱敏
+alwaysApply: true
+---
+
+# 可观测性与日志规范（强制）
+
+完整规范见 `.planning/observability/LOGGING-SPEC.md`；里程碑方案见 `.planning/observability/MILESTONE-PROPOSAL.md`。
+**新增或修改任何功能（API / 工作流节点 / 服务 / 任务 / webhook / 工具 / LLM 调用 / 召回）时，必须按下列要求处理日志与埋点。**
+
+## 必守原则
+
+- 用 `structlog.get_logger(__name__)`，事件名 snake_case（`xxx_started`/`xxx_completed`/`xxx_failed`），字段用 kv，**不要**把变量拼进 message。
+- **脱敏不可绕过**：禁止把凭证/token/密钥写进日志或留痕。走 `server/common/logging.py` 的 `redact_credentials`（自动 processor）与 `redact_secrets_in_text`（上游响应体/异常文本手动用）；入库留痕走 `redact_for_ledger`。
+- **绑定触发用户**：每条日志/调用记录都要能回答"谁触发的"。入口走统一中间件自动注入 `user_id/request_id/source/trace_id`；后台任务（durable/`background_runner`/workflow/apscheduler/飞书·webhook 触发）**必须**显式携带 `initiated_by_user_id` 并在 worker 入口重新 bind；无触发用户记 `system`。
+- **指标与留痕分离**：指标走精简事件表（`RequestMetric` / 扩展的 `ModelUsageRecord` 等，SQL 聚合，量级低不自研聚合器）；调用详情/召回内容/会话原始数据走 Interaction Ledger（`server/interactions/`）；排障日志走系统日志（采样）。三者用 `request_id/run_id/conversation_id` 关联，不互相复制。
+- **永不反噬业务**：观测代码 best-effort，失败吞掉（`except: pass`），绝不打断主流程。
+- **级别纪律**：高频循环内禁止 INFO 刷屏，用 `sampling` 分类 + debug 或采样。
+
+## 事件分类（必须二选一，写入 `category`）
+
+- `caller`（调用类）：用户可归因的一次调用（MCP、AI 对话、REST 写操作、compat、webhook、工作流触发、登录）。全量记录、绑定用户、带关联键。
+- `sampling`（采样类）：高频内部步骤（单次 LLM turn、qdrant 查询、embedding、节点内步骤）。按采样配置记录。
+
+## 新功能提交前自检（Code Review 必查）
+
+- [ ] 关键生命周期有 started/completed/failed 结构化事件 + `duration_ms`。
+- [ ] 设了 `category`(caller/sampling) 与 `component`。
+- [ ] 能绑定触发用户（系统行为标 `system`）。
+- [ ] 凭证/上游响应/异常文本已脱敏，无明文泄漏。
+- [ ] 新增 LLM 调用点：赋 `call_source`（枚举见 LOGGING-SPEC §4.1），上报请求数/token/TTFT/上游错误码。
+- [ ] 新增请求入口：纳入 QPS/错误率/时长统计。
+- [ ] 新增召回：上报召回条数/分层耗时/score，召回内容按需写 `RetrievalTrace`（MCP + AI 对话两条链都要覆盖）。
+- [ ] 新增队列/异步任务：积压可被快照采集，任务携带发起用户。
+- [ ] 新增 webhook：原始 payload 脱敏后落库可查看。
+- [ ] 评估是否需要可配置告警阈值。
+
+> 平台基础设施（指标门面 / SystemLogEntry 落库 / 用户上下文贯穿）在 v0.14.0 里程碑分阶段落地。设施就绪前，先遵守事件命名/字段/分类/脱敏/用户绑定约定，平台就绪后无需改业务代码即可生效。
