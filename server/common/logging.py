@@ -110,10 +110,65 @@ def buffer_log(
     return event_dict
 
 
+def enqueue_system_log(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """structlog processor：把（已脱敏的）业务事件 fan-out 入落库队列（LOG-02）。
+
+    **必须**挂在 ``redact_credentials`` **之后**（与 ``buffer_log`` 同侧、紧随其后），
+    保证入队前已脱敏——落库内容绝不含明文凭证（脱敏契约命门）。
+
+    component 暂取 logger name 末段（71-03 会细化 category/component helper）；
+    ``user_id`` / ``source`` / ``trace_id`` / ``request_id`` 由 ``merge_contextvars``
+    已注入。整体 best-effort（``except: pass``），返回原 event_dict 不变。
+    """
+    try:
+        from system.log_sink import enqueue_system_log as _sink_enqueue
+
+        logger_name = str(
+            event_dict.get("logger") or event_dict.get("logger_name") or ""
+        )
+        component = logger_name.rsplit(".", 1)[-1] if logger_name else ""
+        level = str(event_dict.get("level") or method_name or "info")
+        # 收集除已映射专属列外的剩余字段进 payload（已脱敏）。
+        _reserved = {
+            "event",
+            "level",
+            "timestamp",
+            "logger",
+            "logger_name",
+            "category",
+            "user_id",
+            "source",
+            "trace_id",
+            "request_id",
+        }
+        payload = {k: v for k, v in event_dict.items() if k not in _reserved}
+        _sink_enqueue(
+            {
+                "ts": event_dict.get("timestamp"),
+                "level": level,
+                "component": component,
+                "category": str(event_dict.get("category") or ""),
+                "event": str(event_dict.get("event", "")),
+                "message": str(event_dict.get("event", "")),
+                "user_id": event_dict.get("user_id"),
+                "source": event_dict.get("source"),
+                "trace_id": event_dict.get("trace_id"),
+                "request_id": event_dict.get("request_id"),
+                **payload,
+            }
+        )
+    except Exception:  # noqa: BLE001 — 落库 fan-out 绝不影响日志主链路
+        pass
+    return event_dict
+
+
 class RingBufferHandler(logging.Handler):
-    """stdlib logging handler：把 django / 第三方日志写入内存环形缓冲。
+    """stdlib logging handler：把 django / 第三方日志写入内存环形缓冲 + 落库队列。
 
     消息体经 ``redact_secrets_in_text`` 兜底脱敏（stdlib 日志不走 structlog 脱敏链）。
+    在既有内存环形缓冲之后**同样** fan-out 一份到落库队列（``enqueue_system_log``）。
     """
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -122,15 +177,33 @@ class RingBufferHandler(logging.Handler):
 
             from common.log_buffer import append_log
 
+            ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+            safe_message = redact_secrets_in_text(record.getMessage())
             append_log(
                 {
-                    "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                    "ts": ts,
                     "level": record.levelname,
                     "logger": record.name,
-                    "message": redact_secrets_in_text(record.getMessage()),
+                    "message": safe_message,
                     "source": "system",
                 }
             )
+            # fan-out 落库（脱敏后）；独立 try 保证 buffer 已写入不被落库异常波及。
+            try:
+                from system.log_sink import enqueue_system_log as _sink_enqueue
+
+                _sink_enqueue(
+                    {
+                        "ts": ts,
+                        "level": record.levelname,
+                        "component": record.name,
+                        "event": record.name,
+                        "message": safe_message,
+                        "source": "system",
+                    }
+                )
+            except Exception:  # noqa: BLE001 — 落库 fan-out 绝不影响 handler
+                pass
         except Exception:  # noqa: BLE001 — handler 永不抛
             pass
 
@@ -195,6 +268,7 @@ def configure_structlog() -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             redact_credentials,  # ← contract 核心；位置 in front of any renderer
             buffer_log,  # ← 在脱敏之后写入内存环形缓冲（运维监控「系统日志」）
+            enqueue_system_log,  # ← 在脱敏之后 fan-out 入落库队列（LOG-02，落库内容已脱敏）
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             (

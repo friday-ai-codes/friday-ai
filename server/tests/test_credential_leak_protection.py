@@ -265,3 +265,74 @@ class TestConfigureStructlogIntegration:
         captured = capfd.readouterr()
         output = captured.out + captured.err
         assert "sk-leak-validation" not in output
+
+
+@pytest.mark.django_db
+class TestSystemLogSinkRedaction:
+    """落库链路对称守护（LOG-02）：SystemLogEntry 落库行绝不含明文凭证。
+
+    对称于上面的 stdout 守护——验证 ``enqueue_system_log`` 严格挂在
+    ``redact_credentials`` 之后，落库内容已脱敏（脱敏契约命门）。
+    """
+
+    def test_structlog_event_persisted_redacted(self) -> None:
+        """structlog 业务事件经处理链 fan-out 落库后无明文凭证。"""
+        import json
+
+        import structlog
+
+        from system import log_sink
+        from system.models import SystemLogEntry
+
+        log_sink._reset_for_tests()
+        configure_structlog()
+        logger = structlog.get_logger("test_sink_redact")
+        logger.info(
+            "provider_error",
+            api_key="sk-ant-leaktest12345",
+            credential={"api_key": "sk-leaktest-nested"},
+        )
+        log_sink.flush_now()
+
+        latest = SystemLogEntry.objects.order_by("-id").first()
+        assert latest is not None
+        serialized = json.dumps(
+            {
+                "message": latest.message,
+                "payload": latest.payload,
+                "correlation": latest.correlation,
+                "event": latest.event,
+            }
+        )
+        assert "sk-ant-leaktest12345" not in serialized
+        assert "sk-leaktest-nested" not in serialized
+        assert REDACTED in serialized
+
+    def test_stdlib_record_persisted_redacted(self) -> None:
+        """stdlib 日志经 RingBufferHandler fan-out 落库后无明文凭证。"""
+        import json
+        import logging
+
+        from common.logging import RingBufferHandler
+        from system import log_sink
+        from system.models import SystemLogEntry
+
+        log_sink._reset_for_tests()
+        handler = RingBufferHandler()
+        record = logging.LogRecord(
+            name="django.request",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=1,
+            msg="upstream said Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+            args=(),
+            exc_info=None,
+        )
+        handler.emit(record)
+        log_sink.flush_now()
+
+        latest = SystemLogEntry.objects.order_by("-id").first()
+        assert latest is not None
+        serialized = json.dumps({"message": latest.message, "payload": latest.payload})
+        assert "eyJhbGciOiJIUzI1NiI" not in serialized
+        assert REDACTED in serialized
