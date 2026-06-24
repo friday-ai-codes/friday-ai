@@ -2,6 +2,7 @@
 
 ## Milestones
 
+- 🚧 **v0.14.0 可观测性地基（用户上下文贯穿 + 日志治理）** — Phases 71–74 (in progress) — 「可观测性与日志治理」5 里程碑计划（v0.14.0–v0.18.0）第一站；完整方案见 [proposal](./observability/MILESTONE-PROPOSAL.md)、规范见 [logging-spec](./observability/LOGGING-SPEC.md)
 - ✅ **v0.13.0 并发治理与索引体验** — Phases 65–70 (shipped 2026-06-23) — 里程碑审计 tech_debt（11/11 需求满足、integration_ok；遗留既有前端测试失败 + URL 拆段拼接 UI + 真机人工验收）见 [audit](./milestones/v0.13.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.13.0-ROADMAP.md)
 - ✅ **v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）** — Phases 60–64 (shipped 2026-06-20) — 里程碑审计 tech_debt（16/16 需求满足、integration_ok；遗留真机/真实平台运行期人工验收）见 [audit](./milestones/v0.12.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.12.0-ROADMAP.md)
 - ✅ **v0.11.0 开放与协作** — Phases 56–59 (shipped 2026-06-17) — 里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [audit](./milestones/v0.11.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.11.0-ROADMAP.md)
@@ -19,6 +20,24 @@
 > 历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。本里程碑完整方案与排查结论见 `.cursor/plans/并发治理与索引体验改造_d5edeece.plan.md`。
 
 ## Phases
+
+### 🚧 v0.14.0 可观测性地基 (Phases 71–74) — IN PROGRESS
+
+可观测性与日志治理 5 里程碑计划第一站。先打"用户上下文贯穿"地基，再把系统日志从内存环形缓冲升级为队列化落库 + 运行时配置 + webhook 原始留痕 + 调用下钻。线性执行 71 → 74，适合 autonomous 一次跑完。
+
+- [ ] Phase 71: 用户上下文贯穿（请求中间件 + 后台任务用户传播） (0/? plans) — CTX-01, CTX-02
+- [ ] Phase 72: 系统日志落库底座（队列5000 + 丢弃/失败计数 + 用户绑定 + caller/sampling 分类） (0/? plans) — LOG-01, LOG-02, LOG-03, LOG-05
+- [ ] Phase 73: 运行时日志配置 + 保留清理 (0/? plans) — LOG-06, LOG-08
+- [ ] Phase 74: Webhook 原始留痕 + 调用下钻（会话/原始数据） (0/? plans) — LOG-07, LOG-04
+
+**Success criteria（按阶段）:**
+
+- **Phase 71:** ① 任意 HTTP/MCP/对话/compat 请求产生的日志都带 `user_id`（登录用户或 `system`）+ `request_id` + `source`；② 飞书/webhook 触发的后台任务日志能显示发起来源（用户或 system），不再丢失归因；③ 跨线程/durable worker 执行的日志正确继承绑定的用户上下文。
+- **Phase 72:** ① 系统日志写入数据库，运维侧可按最新时间倒序查看；② 可按组件/级别/用户/来源/关键词/时间段筛选与搜索；③ 暴露队列占用(x/5000)、写入总数、丢弃数、失败数四个计数；④ 队列满时新日志被丢弃且丢弃计数递增、落库失败时失败计数递增，均不影响主流程；⑤ 每条日志带 `category`(caller/sampling) 与 `component`。
+- **Phase 73:** ① 超管可改日志级别（全局/分组件）并立即生效，无需重启；② 可配置堆栈记录阈值、采样初始/后续、保留天数/保留大小并实时生效；③ 超出保留策略的日志被定时任务自动清理。
+- **Phase 74:** ① 飞书/通用 webhook/Git push/容器回调的原始 payload 脱敏后入库可查看；② MCP 调用记录可见触发用户；③ AI 对话日志可下钻到所属会话，查看该会话全部请求与原始数据。
+
+完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；方案与约束见 [observability/MILESTONE-PROPOSAL.md](./observability/MILESTONE-PROPOSAL.md) 与 STATE.md「关键约束」。
 
 <details>
 <summary>✅ v0.13.0 并发治理与索引体验 (Phases 65–70) — SHIPPED 2026-06-23 — 审计 tech_debt</summary>
@@ -96,7 +115,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。各里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
+里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性地基（Phases 71–74，4 阶段 / 10 需求，0/4 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
 ---
 *Previous milestones archived in .planning/milestones/*
