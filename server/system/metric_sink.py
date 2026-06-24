@@ -88,6 +88,8 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "stage_rerank_ms",
         "recall_count",
         "top_score",
+        # 召回早退/失败状态（72-04 RAG-01，与 common.request_metrics 白名单对齐）。
+        "rag_status",
     }
 )
 

@@ -42,6 +42,8 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "stage_rerank_ms",
         "recall_count",
         "top_score",
+        # 召回早退/失败状态（72-04 RAG-01：search_rag error 早退记 rag_status=error）。
+        "rag_status",
     }
 )
 
