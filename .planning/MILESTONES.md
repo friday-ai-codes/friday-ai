@@ -1,5 +1,31 @@
 # Milestones
 
+## v0.14.0 可观测性与日志治理 (Shipped: 2026-06-24)
+
+**Phases completed:** 5 phases (71–75), 20 plans, 34/34 v1 需求
+**Audit:** passed — 34/34 requirements satisfied, integration_ok（数据链 contextvars→日志→指标→查询→告警→大盘端到端自洽）见 [milestones/v0.14.0-MILESTONE-AUDIT.md](./milestones/v0.14.0-MILESTONE-AUDIT.md)
+
+**Key accomplishments:**
+
+- **CTX 用户上下文贯穿**：`RequestLogContextMiddleware`（最外层）+ `common/log_context.py` bind/clear + DRF 认证后 rebind mixin 自动注入 `user_id(无则 system)/request_id/source/trace_id`；后台任务（durable / `background_runner` / workflow scheduler / 飞书 webhook / apscheduler）经 `bind_task_context` 显式传播 `initiated_by_user_id`，跨线程/durable worker 正确继承。
+- **LOG 系统日志治理**：`SystemLogEntry`（migration 0009）队列化落库（`deque(maxlen=5000)` + daemon `bulk_create` + dropped/write_failed/written/queued 四计数，全 `except` 吞掉绝不反噬）+ 倒序多维筛选全文查询 + 调用下钻（MCP/对话复用 Interaction Ledger）+ `category`(caller/sampling)/`component` 分类与事件目录 + 运行时配置热更新（级别/堆栈阈值/采样/保留）+ `InboundWebhookEvent` 原始留痕（飞书/git push/容器回调/通用 workflow）+ 按条件清理与保留策略定时清理。
+- **RATE 吞吐与速率**：`RequestMetric`（migration 0010）每请求一行 + 33 处入口埋点（health/observability/poll 打 `synthetic` 隔离）；扩展 `ModelUsageRecord`（`call_source`/`ttft_ms`/`upstream_status_code`，恰 22 类 call_source）补全容器侧 token 链 `task`→回调→`arecord_llm_usage(container_callback)`；`GaugeSample`（migration 0011）apscheduler ~45s 周期采样并发/排队趋势。
+- **RAG 召回可观测**：`rag_search::_record_rag_metric` 采集召回条数 + 分层耗时(embedding/sparse/qdrant/rerank) + top_score；`RetrievalTrace` 留痕扩展到 MCP + AI 对话两条链（query 原文 + chunk 内容 + score + 会话/用户，入库前 redact）。
+- **SLA 可用率/错误/时长**：`classify_error` 三口径单一收口（system/business/upstream/none）+ 上游 429/529 单列 + `duration_ms`/流式入口 `ttft_ms`（首 chunk perf_counter 计时），可用率口径"排除业务限制"。
+- **SNAP 当前快照**：`snapshot_service` 五源 best-effort 聚合——host(psutil CPU/内存/协程/线程/后台) / DB(pg_stat_activity+max_connections+psycopg pool+PgBouncer) / Redis(三路 INFO) / Qdrant(ping + 60s 缓存 + 8s 长超时) / 并发排队（provider 槽位·durable·runner·RAG）。
+- **QUERY 查询 API**：时序 `MetricsQueryView`（Postgres `percentile_cont` 精确分位 + SQLite degrade，全白名单防注入）+ 快照 `MetricsSnapshotView` 五源聚合 + 队列计数。
+- **ALERT 告警引擎与通知**：`SystemAlertRule`（migration 0012，独立 `system_alert_rules` 不套 workflow `AlertRule`）运行时 CRUD + `alert_evaluator` 9 类 metric 分派 + `AlertEvent`（P0/P1/P2 + 中文标题 + 机器可读规则信息 + 持续时长 + firing/resolved + `UniqueConstraint condition=firing` 去重）+ `alert_notifier` 邮件通道（Django SMTP + `SystemSetting` 收件人/开关，回写 `email_sent`）复用飞书/webhook 三通道并存。
+- **UI 运维大盘**：`pages/admin/observability/index.vue` 上半区（健康分 + 实时速率卡 + 6 信息卡 + 时间范围 + 上游 429·529 单列 + 时长·TTFT P99）+ `SnapshotRow`(阈值变色)/`TrendCharts`(吞吐·错误三口径·时长·并发排队) + `AlertEventsTable`/`AlertRulesPanel`/`AlertRuleFormDialog`/`AlertEventDetailSheet` + `SystemLogTable`(4 计数+倒序+服务端多维筛选)/`LogDrilldownSheet`/`RuntimeLogConfigForm`；前端 `useQuery` 消费真实后端端点（无 mock）。
+- **SPEC 规范固化**：`LOGGING-SPEC.md`（§9 PR/Code Review checklist + §10 全量事件目录 + §4.1 call_source 22 枚举 / §5 component 清单）+ `.cursor/rules/observability-logging.mdc` 强制规则 + AGENTS.md/CLAUDE.md 复核，后续任何功能必须按规范补埋点。
+
+**Stats:** 34/34 v1 requirements delivered, 5 phases / 20 plans, 2026-06-24。后端 269 passed（20 套件 -p no:randomly）+ 前端 22 passed + `vue-tsc` exit 0。
+
+**Known deferred items at close:** 3（accepted，非 gap，运行期才能终态确认）— SQLite `percentile_cont` 降级（生产 Postgres 精确）/ ~10 项真机运行期 UAT（真实 SMTP·指标越线 firing→resolved·PG·Redis·Qdrant·浏览器视觉）/ 既有 structlog 跨模块测试污染（pre-existing，`-p no:randomly` 固定序全绿）。详见 milestones/v0.14.0-MILESTONE-AUDIT.md §6。
+
+**What's next:** v0.15.0 立项（`/gsd-new-milestone`）。可观测性增量（Prometheus/OTLP、分布式 tracing、告警降噪、Sentry、日志冷存储）已列 v2 Future Requirements（OBSX-01~06）。
+
+---
+
 ## v0.13.0 并发治理与索引体验 (Shipped: 2026-06-23)
 
 **Phases completed:** 6 phases, 8 plans, 11/11 v1 需求
