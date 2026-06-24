@@ -192,6 +192,7 @@ describe('providerCredentialForm', () => {
           has_api_key: true,
           config: {},
           default_model: 'claude-3-5-sonnet-20241022',
+          max_concurrency: 50,
           created_at: '2026-04-20T00:00:00Z',
           updated_at: '2026-04-20T00:00:00Z',
         },
