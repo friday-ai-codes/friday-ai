@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.14.0 可观测性地基（用户上下文贯穿 + 日志治理）** — Phases 71–74 (in progress) — 「可观测性与日志治理」5 里程碑计划（v0.14.0–v0.18.0）第一站；完整方案见 [proposal](./observability/MILESTONE-PROPOSAL.md)、规范见 [logging-spec](./observability/LOGGING-SPEC.md)
+- 🚧 **v0.14.0 可观测性与日志治理** — Phases 71–75 (in progress) — 一个里程碑完整交付（用户上下文/日志/QPS·TPS·召回·SLA·快照·趋势/告警/大盘）；完整方案见 [proposal](./observability/MILESTONE-PROPOSAL.md)、规范见 [logging-spec](./observability/LOGGING-SPEC.md)
 - ✅ **v0.13.0 并发治理与索引体验** — Phases 65–70 (shipped 2026-06-23) — 里程碑审计 tech_debt（11/11 需求满足、integration_ok；遗留既有前端测试失败 + URL 拆段拼接 UI + 真机人工验收）见 [audit](./milestones/v0.13.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.13.0-ROADMAP.md)
 - ✅ **v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）** — Phases 60–64 (shipped 2026-06-20) — 里程碑审计 tech_debt（16/16 需求满足、integration_ok；遗留真机/真实平台运行期人工验收）见 [audit](./milestones/v0.12.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.12.0-ROADMAP.md)
 - ✅ **v0.11.0 开放与协作** — Phases 56–59 (shipped 2026-06-17) — 里程碑审计 PASS（6/6 需求、INV-5/INV-6 成立）见 [audit](./milestones/v0.11.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.11.0-ROADMAP.md)
@@ -21,21 +21,23 @@
 
 ## Phases
 
-### 🚧 v0.14.0 可观测性地基 (Phases 71–74) — IN PROGRESS
+### 🚧 v0.14.0 可观测性与日志治理 (Phases 71–75) — IN PROGRESS
 
-可观测性与日志治理 5 里程碑计划第一站。先打"用户上下文贯穿"地基，再把系统日志从内存环形缓冲升级为队列化落库 + 运行时配置 + webhook 原始留痕 + 调用下钻。线性执行 71 → 74，适合 autonomous 一次跑完。
+在一个里程碑内完整交付可观测性与日志治理，5 个 Phase 线性推进（71→75），autonomous 一次跑完整个里程碑。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
 
-- [ ] Phase 71: 用户上下文贯穿（请求中间件 + 后台任务用户传播） (0/? plans) — CTX-01, CTX-02
-- [ ] Phase 72: 系统日志落库底座（队列5000 + 丢弃/失败计数 + 用户绑定 + caller/sampling 分类） (0/? plans) — LOG-01, LOG-02, LOG-03, LOG-05
-- [ ] Phase 73: 运行时日志配置 + 保留清理 (0/? plans) — LOG-06, LOG-08
-- [ ] Phase 74: Webhook 原始留痕 + 调用下钻（会话/原始数据） (0/? plans) — LOG-07, LOG-04
+- [ ] Phase 71: 可观测性地基——用户上下文贯穿 + 系统日志治理 (0/? plans) — CTX-01, CTX-02, LOG-01~08
+- [ ] Phase 72: 调用数据采集——AI/LLM(TPS) + 召回 + 请求入口(QPS/SLA/时长/TTFT/上游错误) (0/? plans) — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04
+- [ ] Phase 73: 快照·趋势·查询 API (0/? plans) — SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02
+- [ ] Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件） (0/? plans) — ALERT-01, ALERT-02, ALERT-03
+- [ ] Phase 75: 运维大盘前端 + 规范固化 (0/? plans) — UI-01~04, SPEC-01
 
 **Success criteria（按阶段）:**
 
-- **Phase 71:** ① 任意 HTTP/MCP/对话/compat 请求产生的日志都带 `user_id`（登录用户或 `system`）+ `request_id` + `source`；② 飞书/webhook 触发的后台任务日志能显示发起来源（用户或 system），不再丢失归因；③ 跨线程/durable worker 执行的日志正确继承绑定的用户上下文。
-- **Phase 72:** ① 系统日志写入数据库，运维侧可按最新时间倒序查看；② 可按组件/级别/用户/来源/关键词/时间段筛选与搜索；③ 暴露队列占用(x/5000)、写入总数、丢弃数、失败数四个计数；④ 队列满时新日志被丢弃且丢弃计数递增、落库失败时失败计数递增，均不影响主流程；⑤ 每条日志带 `category`(caller/sampling) 与 `component`。
-- **Phase 73:** ① 超管可改日志级别（全局/分组件）并立即生效，无需重启；② 可配置堆栈记录阈值、采样初始/后续、保留天数/保留大小并实时生效；③ 超出保留策略的日志被定时任务自动清理。
-- **Phase 74:** ① 飞书/通用 webhook/Git push/容器回调的原始 payload 脱敏后入库可查看；② MCP 调用记录可见触发用户；③ AI 对话日志可下钻到所属会话，查看该会话全部请求与原始数据。
+- **Phase 71:** ① 任意 HTTP/MCP/对话/compat 请求日志都带 `user_id`(登录用户或 system)+request_id+source；② 飞书/webhook/durable 后台任务日志能显示发起来源、跨线程正确继承；③ 系统日志落库可按最新倒序查看 + 按组件/级别/用户/来源/关键词/时间段筛选搜索；④ 暴露队列(x/5000)/写入/丢弃/失败四计数，满则丢弃、失败计数且不反噬业务；⑤ 每条日志带 caller/sampling + component；⑥ 运行时改级别/堆栈阈值/采样/保留实时生效；⑦ webhook 原始 payload 脱敏入库可查看；⑧ 日志可按条件清理 + 到期自动清理；⑨ MCP/对话可下钻触发用户与会话原始数据。
+- **Phase 72:** ① QPS 按入口分类可采集（REST/MCP/对话/兼容/召回/embedding·reranker/webhook/WS）；② TPS 按 provider 采集，含容器侧 LLM token；③ 召回条数/分层耗时/相关度可采集，召回内容（MCP+对话）可留痕回放；④ 请求错误三口径（系统/业务限制/上游）与上游码（429/529 单列）可采集；⑤ 请求时长与 TTFT 可采集。
+- **Phase 73:** ① CPU/内存/DB(连接·活跃·空闲)/Redis(连接·内存)/Qdrant(collection·占用)/协程/后台/并发排队当前值可查；② 并发/排队/吞吐/错误趋势可按时间段查询；③ 可用率按时刻可查；④ 时序查询 API 支持任意时间段与 P95/P90/P50/Avg/Max。
+- **Phase 74:** ① 可配置阈值规则（CPU/错误率/TTFT/队列深等）超阈值触发；② 告警事件落库含 P0/P1/P2 + 中文标题/规则 + 持续时长 + firing/resolved + email_sent，同规则去重；③ 触发按级别发邮件并回写 email_sent。
+- **Phase 75:** ① 运维大盘出时序图 + 时间范围 + 健康分 + 信息卡（请求/SLA/错误/时长/TTFT/上游 429·529）；② 快照行内联阈值变色 + 吞吐/错误/并发排队趋势；③ 告警事件页 + 系统日志下钻页 + 运行时配置面板可用；④ 规范固化、全量事件目录、PR/Review checklist 落地。
 
 完整需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)；方案与约束见 [observability/MILESTONE-PROPOSAL.md](./observability/MILESTONE-PROPOSAL.md) 与 STATE.md「关键约束」。
 
@@ -115,7 +117,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性地基（Phases 71–74，4 阶段 / 10 需求，0/4 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
+里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性与日志治理（Phases 71–75，5 阶段 / 34 需求，0/5 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
 ---
 *Previous milestones archived in .planning/milestones/*
