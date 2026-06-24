@@ -129,6 +129,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/observability/logs': RouteRecordInfo<
+      '/admin/observability/logs',
+      '/admin/observability/logs',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/oidc': RouteRecordInfo<
       '/admin/oidc',
       '/admin/oidc',
@@ -592,6 +599,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/observability/alerts.vue': {
       routes:
         | '/admin/observability/alerts'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/observability/logs.vue': {
+      routes:
+        | '/admin/observability/logs'
       views:
         | never
       pathParamNames:
