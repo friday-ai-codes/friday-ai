@@ -94,6 +94,31 @@ def _slot_key(credential_id: str) -> str:
     return f"friday:llm:slots:{credential_id}"
 
 
+def _log_slot_acquired(
+    key_id: str, max_concurrency: int, backend: str, started: float
+) -> None:
+    """获到槽位后旁路上报排队耗时（QPS/queue_wait，per RATE-02），best-effort。
+
+    category=sampling（高频内部步骤）+ component=llm；带 call_source（chokepoint
+    读 contextvar 兜底）。观测失败吞掉，绝不影响限流放行。
+    """
+    try:
+        from agents.call_source import get_call_source
+
+        logger.info(
+            "llm_slot_acquired",
+            credential_id=key_id,
+            max_concurrency=max_concurrency,
+            backend=backend,
+            queue_wait_ms=int((time.perf_counter() - started) * 1000),
+            call_source=get_call_source(),
+            category="sampling",
+            component="llm",
+        )
+    except Exception:  # noqa: BLE001 — 观测绝不反噬限流
+        pass
+
+
 async def _redis_acquire(
     client, key: str, token: str, max_concurrency: int, lease_ttl: float, timeout: float
 ) -> bool:
@@ -169,6 +194,8 @@ async def acquire_llm_slot(
         return
 
     key_id = str(credential_id)
+    # 72-02：排队计时起点（获到槽位后算 queue_wait_ms）。
+    _acquire_start = time.perf_counter()
     url, default_timeout, default_lease = _resolve_settings()
     eff_timeout = default_timeout if timeout is None else timeout
     eff_lease = default_lease if lease_ttl is None else lease_ttl
@@ -183,13 +210,17 @@ async def acquire_llm_slot(
                 client, key, token, max_concurrency, eff_lease, eff_timeout
             )
             if not acquired:
+                # 业务可归因限流（per 72-01 classify_error 归 business）：category=caller。
                 logger.info(
                     "llm_slot_busy_timeout",
                     credential_id=key_id,
                     max_concurrency=max_concurrency,
                     backend="redis",
+                    category="caller",
+                    component="llm",
                 )
                 raise LLMBusyError()
+            _log_slot_acquired(key_id, max_concurrency, "redis", _acquire_start)
             renew_task = asyncio.create_task(_redis_renew_loop(client, key, token, eff_lease))
             try:
                 yield
@@ -214,13 +245,17 @@ async def acquire_llm_slot(
     try:
         await asyncio.wait_for(sem.acquire(), timeout=eff_timeout)
     except (TimeoutError, asyncio.TimeoutError) as exc:
+        # 业务可归因限流（per 72-01 classify_error 归 business）：category=caller。
         logger.info(
             "llm_slot_busy_timeout",
             credential_id=key_id,
             max_concurrency=max_concurrency,
             backend="inprocess",
+            category="caller",
+            component="llm",
         )
         raise LLMBusyError() from exc
+    _log_slot_acquired(key_id, max_concurrency, "inprocess", _acquire_start)
     try:
         yield
     finally:

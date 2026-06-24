@@ -17,6 +17,7 @@ from adrf.views import APIView
 from django.http import StreamingHttpResponse
 from rest_framework.response import Response
 
+from agents.call_source import CallSource, set_call_source
 from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
 from common.log_context import LogSource, bind_source
 from common.request_metrics import arecord_request_metric, classify_error
@@ -67,6 +68,9 @@ class ChatCompletionsView(APIView):
         # source 改写为 compat_openai（覆盖中间件 rest 占位）：让中间件跳过兜底记录，
         # 由本入口（非流式响应前 / 流式生成器内）各自记带 ttft 的指标行。
         bind_source(LogSource.COMPAT_OPENAI)
+        # 72-02：标注 LLM 调用来源（contextvar 持续整请求 task，含流式生成器消费期），
+        # 让经 Runner 的 compat 调用落 ModelUsageRecord 时 call_source 正确归类。
+        set_call_source(CallSource.CHAT_COMPAT_OPENAI)
         _started = time.perf_counter()
 
         serializer = ChatCompletionsRequestSerializer(data=request.data)
@@ -258,6 +262,8 @@ class MessagesView(APIView):
     async def post(self, request: Any) -> Any:  # type: ignore[override]
         # source 改写为 compat_anthropic（覆盖中间件 rest 占位），各分支自行记指标行。
         bind_source(LogSource.COMPAT_ANTHROPIC)
+        # 72-02：标注 LLM 调用来源（含流式生成器消费期）。
+        set_call_source(CallSource.CHAT_COMPAT_ANTHROPIC)
         _started = time.perf_counter()
 
         serializer = AnthropicMessagesRequestSerializer(data=request.data)

@@ -197,8 +197,14 @@ class RetrievalTrace(models.Model):
         FILE = "file", "文件读取"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # run 改 nullable（per 72-02）：chat / workflow 召回无 InteractionRun 也可独立成行，
+    # 上游 run 删除不连带删留痕（SET_NULL）。MCP 路径仍可传 run，向后兼容。
     run = models.ForeignKey(
-        InteractionRun, on_delete=models.CASCADE, related_name="retrieval_traces"
+        InteractionRun,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="retrieval_traces",
     )
     tool_call = models.ForeignKey(
         ToolCallRecord,
@@ -210,6 +216,13 @@ class RetrievalTrace(models.Model):
     seq = models.PositiveIntegerField()
     kind = models.CharField(max_length=20, choices=Kind.choices, db_index=True)
     payload = models.JSONField(default=dict, blank=True)
+    # 绑定触发用户与会话/入口（per 观测规范；query 原文/chunk 内容/score 仍走 payload
+    # 经 redact_for_ledger，由 72-04 写入逻辑负责）。
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    conversation_id = models.CharField(
+        max_length=64, blank=True, default="", db_index=True
+    )
+    source = models.CharField(max_length=32, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -232,8 +245,15 @@ class ModelUsageRecord(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # run 改 nullable（per RATE-02）：非 MCP 的 LLM 调用（chat / workflow / 容器）
+    # 也能独立成行，纳入 TPS 统计；上游 run 删除不连带删用量（SET_NULL）。MCP 路径
+    # 仍可传 run，向后兼容零回归。
     run = models.ForeignKey(
-        InteractionRun, on_delete=models.CASCADE, related_name="model_usages"
+        InteractionRun,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="model_usages",
     )
     parent_event = models.ForeignKey(
         InteractionEvent,
@@ -242,6 +262,8 @@ class ModelUsageRecord(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
     )
+    # LLM 调用来源（受控枚举，22 类见 LOGGING-SPEC §4.1）；TPS/TTFT/上游码按此区分维度。
+    call_source = models.CharField(max_length=40, blank=True, default="", db_index=True)
     provider = models.CharField(max_length=64)
     model = models.CharField(max_length=128)
     # prompt 版本（业务 prompt）与 system prompt 版本，便于回溯对齐。
@@ -257,8 +279,15 @@ class ModelUsageRecord(models.Model):
         max_digits=12, decimal_places=6, null=True, blank=True
     )
     duration_ms = models.PositiveIntegerField(null=True, blank=True)
-    # 失败类型（成功为空字符串）；失败也留痕不覆盖。
+    # 流式首 chunk 计时（per SLA-04）；非流式 / 未知为 null。
+    ttft_ms = models.PositiveIntegerField(null=True, blank=True)
+    # 上游 provider HTTP 状态码（per SLA-03，429/529 单列）；正常 / 未知为 null。
+    upstream_status_code = models.PositiveIntegerField(null=True, blank=True)
+    # 失败类型（成功为空字符串）；失败也留痕不覆盖（429/529/其它上游码标签）。
     failure_type = models.CharField(max_length=64, blank=True, default="")
+    # 绑定触发用户与入口（per 观测规范）；无触发用户记 system。
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    source = models.CharField(max_length=32, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -266,6 +295,9 @@ class ModelUsageRecord(models.Model):
         indexes = [
             models.Index(fields=["run", "-created_at"]),
             models.Index(fields=["provider", "model"]),
+            # Phase 73 TPS / 上游码聚合（call_source 维度 + 上游错误码筛选）。
+            models.Index(fields=["call_source", "-created_at"]),
+            models.Index(fields=["upstream_status_code"]),
         ]
         ordering = ["-created_at"]
 

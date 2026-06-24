@@ -14,6 +14,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, cast
 
 import structlog
@@ -39,6 +40,7 @@ import agents.tools.coding_tools  # noqa: F401
 import agents.tools.plan_research_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
 import agents.tools.repository_relevance  # noqa: F401
 import agents.tools.space_tools  # noqa: F401
+from agents.call_source import CallSource, get_call_source
 from agents.core.events import (
     ERROR,
     MESSAGE_COMPLETE,
@@ -63,6 +65,7 @@ from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
 from chat.multimodal import to_provider_content_blocks
 from chat.parts import PartsCollector
+from interactions.ledger import arecord_llm_usage, parse_upstream_status
 from repositories.models import Repository
 from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
@@ -808,6 +811,9 @@ class ChatAnthropicRunner:
                 raise asyncio.CancelledError("interrupt requested before stream start")
             for _ in range(self._config.max_turns):
                 full_message: AIMessageChunk | None = None
+                # 72-02：本 turn 流式计时锚点（首 chunk = TTFT / 整 turn = duration）。
+                _turn_start = perf_counter()
+                _ttft_ms: int | None = None
 
                 # 每 turn 进入 astream 前做前置 budget check。
                 # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
@@ -838,6 +844,10 @@ class ChatAnthropicRunner:
                 async for chunk in _astream_with_llm_slot(active_model, messages, self._config):
                     if not isinstance(chunk, AIMessageChunk):
                         continue
+
+                    # 72-02：首个有效 chunk 时刻 = TTFT 锚点（per SLA-04）。
+                    if _ttft_ms is None:
+                        _ttft_ms = int((perf_counter() - _turn_start) * 1000)
 
                     full_message = chunk if full_message is None else full_message + chunk
                     for block in _extract_content_blocks(chunk):
@@ -923,6 +933,22 @@ class ChatAnthropicRunner:
                 total_usage["input_tokens"] += usage.get("input_tokens", 0)
                 total_usage["output_tokens"] += usage.get("output_tokens", 0)
                 await _persist_usage(self._config.agent_session, usage)
+
+                # 72-02：每个 LLM turn 收尾落一行 ModelUsageRecord（call_source / TTFT /
+                # input·output token），best-effort 绝不反噬流式主链（T-72-02-05）。
+                try:
+                    await arecord_llm_usage(
+                        call_source=get_call_source() or CallSource.CHAT.value,
+                        provider=str(self._config.provider_type),
+                        model=self._config.model,
+                        prompt_tokens=usage.get("input_tokens", 0),
+                        completion_tokens=usage.get("output_tokens", 0),
+                        ttft_ms=_ttft_ms,
+                        duration_ms=int((perf_counter() - _turn_start) * 1000),
+                        source="chat",
+                    )
+                except Exception:  # noqa: BLE001 — 观测绝不反噬 LLM
+                    pass
 
                 messages.append(full_message)
                 tool_calls = getattr(full_message, "tool_calls", [])
@@ -1271,6 +1297,20 @@ class ChatAnthropicRunner:
             # major #1 ERROR 路径 parts 携带契约：generic Exception 同样发 ERROR +
             # 追发 MESSAGE_COMPLETE，让前端能渲染中段已生成的 text/tool_use。
             logger.exception("chat_runner_error", session_id=self._config.session_id)
+            # 72-02：上游错误（429/529 单列）落一行 failure ModelUsageRecord —— 只取
+            # 数值 status_code，绝不落异常文本（T-72-02-01）；best-effort 不反噬。
+            try:
+                _upstream_code = parse_upstream_status(exc)
+                await arecord_llm_usage(
+                    call_source=get_call_source() or CallSource.CHAT.value,
+                    provider=str(self._config.provider_type),
+                    model=self._config.model,
+                    upstream_status_code=_upstream_code,
+                    failure_type=str(_upstream_code) if _upstream_code is not None else "error",
+                    source="chat",
+                )
+            except Exception:  # noqa: BLE001 — 观测绝不反噬 LLM
+                pass
             collector.flush_all()
             payload = collector.to_message_payload()
             self._result = _make_agent_result(
