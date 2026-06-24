@@ -27,7 +27,7 @@
 
 - [x] **Phase 71: 可观测性地基（用户上下文贯穿 + 系统日志治理）** (5/5 plans) — CTX-01, CTX-02, LOG-01~08 — completed 2026-06-24（verification 8/8 passed） — **planned: 5 plans / 3 waves**
 - [x] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** (4/4 plans) — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 — completed 2026-06-24（verification 6/6 passed）
-- [ ] **Phase 73: 快照·趋势·查询 API** - CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照 + GaugeSample 趋势采样 + 可用率 + 时序/快照查询 API(percentile_cont 分位) — SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02
+- [ ] **Phase 73: 快照·趋势·查询 API** - CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照 + GaugeSample 趋势采样 + 可用率 + 时序/快照查询 API(percentile_cont 分位) — SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02 — **planned: 3 plans / 2 waves**
 - [ ] **Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）** - 系统级阈值告警规则 + AlertEvent(P0/P1/P2/持续时长/firing-resolved/email_sent/去重) + SMTP 邮件 + 复用飞书/webhook — ALERT-01, ALERT-02, ALERT-03
 - [ ] **Phase 75: 运维大盘前端 + 规范固化** - echarts 大盘(健康分/实时速率/信息卡/趋势/快照) + 告警事件页 + 系统日志下钻页 + 运行时配置面板 + 规范固化与 PR/Review checklist — UI-01, UI-02, UI-03, UI-04, SPEC-01
 
@@ -88,7 +88,10 @@
   5. 每时刻可用率/业务故障率可查（口径"排除业务限制"）
   6. 时序查询 API 支持任意时间段/step/维度 + P95/P90/P50/Avg/Max（`percentile_cont`）；快照 API 聚合返回当前值
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 3 plans（2 waves）
+- [ ] 73-01-PLAN.md — GaugeSample 模型 + snapshot_service 五源聚合采集器(SNAP-01~05 best-effort，Qdrant 缓存+长超时) + 快照 API(QUERY-02) [wave 1]
+- [ ] 73-02-PLAN.md — 时序查询 API(QUERY-01：percentile_cont 精确分位 + SQLite 降级，qps/tps/error/duration/ttft/gauge) + SLA-01 可用率(排除业务限制) + RATE-03 趋势查询 [wave 2]
+- [ ] 73-03-PLAN.md — GaugeSample apscheduler 周期采样(~45s，RATE-03 采样侧) + 指标表保留清理(复用 Phase 71 log_retention，GaugeSample/RequestMetric/ModelUsageRecord) [wave 2]
 
 ### Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）
 
