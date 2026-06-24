@@ -279,3 +279,34 @@ class TestGitOpsSetupPrune:
         assert not (ops.workspace / ".env").exists()
         assert (ops.workspace / "main.py").exists()
         ops.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_setup_failclosed_on_empty_workspace(
+        self, monkeypatch: pytest.MonkeyPatch, temp_session_dir: str
+    ) -> None:
+        """clone 后工作区除 .git 外为空 → setup 必须 fail-closed（防 agent 越界分析 /app）。"""
+        from core import TaskConfig
+        from git_ops.operations import GitOperations
+
+        config = TaskConfig(
+            task_id="empty-ws",
+            task_description="desc",
+            git_repo_url="https://git.example.com/x.git",
+            session_dir=temp_session_dir,
+        )
+        ops = GitOperations(config)
+
+        async def _fake_clone() -> None:
+            # 模拟「clone 没就位」：只建出 .git 元数据目录，无任何工作树文件。
+            assert ops.workspace is not None
+            (ops.workspace / ".git").mkdir()
+
+        async def _fake_checkout() -> None:
+            return None
+
+        monkeypatch.setattr(ops, "_clone_repo", _fake_clone)
+        monkeypatch.setattr(ops, "_checkout_branch", _fake_checkout)
+
+        with pytest.raises(RuntimeError, match="empty"):
+            await ops.setup()
+        ops.cleanup()
