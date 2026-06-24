@@ -48,6 +48,7 @@ function makeCred(overrides: Partial<ProviderCredentialDto> = {}): ProviderCrede
     has_api_key: overrides.has_api_key ?? true,
     config: overrides.config ?? {},
     default_model: overrides.default_model ?? 'claude-sonnet-4',
+    max_concurrency: overrides.max_concurrency ?? 50,
     created_at: overrides.created_at ?? '2026-06-01T00:00:00Z',
     updated_at: overrides.updated_at ?? '2026-06-01T00:00:00Z',
   }
