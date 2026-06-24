@@ -18,6 +18,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from agents.call_source import CallSource, set_call_source
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
 from chat.coding_session_service import check_runner_online
 from chat.multimodal import (
@@ -1277,6 +1278,8 @@ class ChatStreamView(APIView):
         # source 改写为 chat_sse（覆盖中间件 rest 占位）：让中间件跳过兜底记录，
         # 由 _stream_events 在流结束记带 ttft 的指标行（避免重复计数）。
         bind_source(LogSource.CHAT_SSE)
+        # 72-02：标注 LLM 调用来源（含 SSE 生成器消费期），与 chat_runner 默认一致、显式更稳。
+        set_call_source(CallSource.CHAT)
         user_id = (
             str(request.user.id)
             if getattr(request.user, "is_authenticated", False)
