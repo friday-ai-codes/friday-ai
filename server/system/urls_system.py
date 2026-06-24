@@ -2,6 +2,11 @@
 
 from django.urls import path
 
+from .alert_views import (
+    AlertEventListView,
+    SystemAlertRuleDetailView,
+    SystemAlertRuleListCreateView,
+)
 from .dashboard_views import DashboardStatsView
 from .drilldown_views import CallDrilldownView, ConversationDrilldownView
 from .health_views import SystemHealthView
@@ -28,6 +33,16 @@ urlpatterns = [
     path("metrics/snapshot/", MetricsSnapshotView.as_view(), name="system-metrics-snapshot"),
     # 时序查询（QUERY-01 / SLA-01 / RATE-03）：metric × start/end/step × dimension × agg。
     path("metrics/query/", MetricsQueryView.as_view(), name="system-metrics-query"),
+    # 系统告警规则 CRUD（ALERT-01，IsSuperUser）：list/create + 单条 retrieve/patch/delete。
+    # 字面 list 段排在 <int:rule_id> 通配前，保持显式路由顺序惯例。
+    path("alerts/rules/", SystemAlertRuleListCreateView.as_view(), name="system-alert-rules"),
+    path(
+        "alerts/rules/<int:rule_id>/",
+        SystemAlertRuleDetailView.as_view(),
+        name="system-alert-rule-detail",
+    ),
+    # 告警事件查询（ALERT-02，IsSuperUser）：severity/status/rule_id/时间段筛选 + 分页倒序。
+    path("alerts/events/", AlertEventListView.as_view(), name="system-alert-events"),
     # 运维监控「系统日志」：按条件批量清理（LOG-08，IsSuperUser）。
     # 必须排在 logs/ 之前，保持显式路由顺序惯例（避免被通配/前缀语义影响）。
     path("logs/clear/", SystemLogClearView.as_view(), name="system-logs-clear"),
