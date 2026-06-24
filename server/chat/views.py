@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ from chat.multimodal import (
     read_image_bytes,
     store_image_bytes,
 )
+from common.log_context import LogSource, bind_source
+from common.request_metrics import arecord_request_metric, classify_error
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
 from orchestration.coding_graph import build_coding_graph
@@ -1271,6 +1274,15 @@ class ChatStreamView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # source 改写为 chat_sse（覆盖中间件 rest 占位）：让中间件跳过兜底记录，
+        # 由 _stream_events 在流结束记带 ttft 的指标行（避免重复计数）。
+        bind_source(LogSource.CHAT_SSE)
+        user_id = (
+            str(request.user.id)
+            if getattr(request.user, "is_authenticated", False)
+            else "system"
+        )
+
         response = StreamingHttpResponse(
             streaming_content=self._stream_events(
                 str(conversation_id),
@@ -1281,6 +1293,7 @@ class ChatStreamView(APIView):
                 feishu_doc_id=feishu_doc_id,
                 search_branch=search_branch,
                 input_parts=input_parts or None,
+                metric_user_id=user_id,
             ),
             content_type="text/event-stream",
         )
@@ -1299,6 +1312,7 @@ class ChatStreamView(APIView):
         feishu_doc_id: str = "",
         search_branch: str | None = None,
         input_parts: list[dict[str, Any]] | None = None,
+        metric_user_id: str = "system",
     ):
         """生成 SSE 事件流。"""
         import uuid as uuid_mod
@@ -1306,6 +1320,12 @@ class ChatStreamView(APIView):
         from orchestration.models import OrchestrationRun
 
         message_id = str(uuid_mod.uuid4())
+
+        # 指标埋点（RATE-01 / SLA-04，source=chat_sse）：首个真实 chunk 计 ttft_ms，
+        # 生成器结束（finally）记一行总 duration_ms。best-effort，绝不打断 SSE。
+        _metric_started = time.perf_counter()
+        _metric_ttft_ms: int | None = None
+        _metric_error_class = "none"
 
         # 获取当前 OrchestrationRun.run_id 用于所有 SSE 事件（work item）
         run_id = ""
@@ -1334,6 +1354,11 @@ class ChatStreamView(APIView):
                 if event.type == KEEPALIVE:
                     yield format_keepalive()
                 else:
+                    # 首个真实业务 chunk 的时刻 = ttft_ms（keepalive 不计）。
+                    if _metric_ttft_ms is None:
+                        _metric_ttft_ms = max(
+                            int((time.perf_counter() - _metric_started) * 1000), 0
+                        )
                     # 延迟获取 run_id：send_message_stream 内部创建 OrchestrationRun
                     if not run_id:
                         latest = await OrchestrationRun.objects.filter(
@@ -1343,23 +1368,39 @@ class ChatStreamView(APIView):
                             run_id = str(latest.run_id)
                     yield format_sse(event, message_id=message_id, run_id=run_id)
         except Conversation.DoesNotExist:
+            _metric_error_class = "business"
             yield format_sse(
                 AgentEvent(type=ERROR, data={"message": "对话不存在"}),
                 message_id=message_id,
                 run_id=run_id,
             )
         except ValueError as e:
+            _metric_error_class = classify_error(exc=e)
             yield format_sse(
                 AgentEvent(type=ERROR, data={"message": str(e)}),
                 message_id=message_id,
                 run_id=run_id,
             )
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            _metric_error_class = classify_error(exc=e)
             logger.exception("sse_stream_error", conversation_id=conversation_id)
             yield format_sse(
                 AgentEvent(type=ERROR, data={"message": "服务内部错误"}),
                 message_id=message_id,
                 run_id=run_id,
+            )
+        finally:
+            _metric_duration_ms = max(int((time.perf_counter() - _metric_started) * 1000), 0)
+            await arecord_request_metric(
+                source=LogSource.CHAT_SSE.value,
+                route="/api/chat/conversations/{id}/stream",
+                method="POST",
+                status_code=200,
+                error_class=_metric_error_class,
+                duration_ms=_metric_duration_ms,
+                ttft_ms=_metric_ttft_ms,
+                user_id=metric_user_id,
+                labels={"conversation_id": str(conversation_id)},
             )
 
 

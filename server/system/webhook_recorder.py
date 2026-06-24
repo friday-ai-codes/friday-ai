@@ -39,6 +39,15 @@ KIND_WORKFLOW = "workflow"
 KIND_GIT_PUSH = "git_push"
 KIND_CONTAINER_CALLBACK = "container_callback"
 
+# webhook kind → RequestMetric source（受控枚举，RATE-01）。
+# webhook 是系统触发（user=system），各入口经本收口补一行指标，避免各 view 重复埋点。
+_KIND_TO_METRIC_SOURCE = {
+    KIND_FEISHU: "webhook_feishu",
+    KIND_WORKFLOW: "webhook_workflow",
+    KIND_GIT_PUSH: "webhook_git",
+    KIND_CONTAINER_CALLBACK: "container_callback",
+}
+
 
 def client_ip(request: Any) -> str:
     """从请求 META 提取来源 IP（X-Forwarded-For 优先，回退 REMOTE_ADDR）。
@@ -141,6 +150,35 @@ async def record_inbound_webhook(
             component="webhook_recorder",
             kind=kind,
         )
+
+    # 指标旁路（RATE-01）：webhook 入口统一收口在此补一行 RequestMetric（source 按 kind
+    # 映射、user=system、labels 取关联键）。与留痕分离、不复制正文；与上方留痕独立 best-effort，
+    # 任一失败都不反噬 webhook 主流程。
+    await _record_webhook_metric(kind=kind, user_id=user_id, correlation=correlation)
+
+
+async def _record_webhook_metric(
+    *,
+    kind: str,
+    user_id: str,
+    correlation: dict[str, Any] | None,
+) -> None:
+    """为一次入站 webhook 记一行 RequestMetric（best-effort）。"""
+    try:
+        from common.request_metrics import arecord_request_metric
+
+        source = _KIND_TO_METRIC_SOURCE.get(str(kind or ""), "webhook_workflow")
+        await arecord_request_metric(
+            source=source,
+            route=f"webhook:{kind}",
+            method="POST",
+            status_code=200,
+            error_class="none",
+            user_id=str(user_id or "system"),
+            labels=dict(correlation or {}),
+        )
+    except Exception:  # noqa: BLE001 — 指标旁路绝不反噬 webhook 主流程
+        pass
 
 
 def record_inbound_webhook_bg(

@@ -20,6 +20,8 @@ from agents.tools.chat_tools import _list_indexed_paths, _scroll_file_from_colle
 from code_relations.models import ChunkRegistry
 from codegraph.models import Symbol
 from common.authentication import CookieJWTAuthentication
+from common.log_context import LogSource, bind_source
+from common.request_metrics import arecord_request_metric
 from interactions.entry import AccessTokenAuthentication, begin_interaction_run
 from interactions.ledger import (
     arecord_event,
@@ -237,6 +239,9 @@ class McpToolView(APIView):
         return super().handle_exception(exc)
 
     async def _begin(self, request: Request) -> tuple[InteractionRun | None, Response | None]:
+        # source 改写为 mcp（覆盖中间件 rest 占位）：让本入口日志/指标归到 mcp 维度，
+        # 并让 RequestLogContextMiddleware 跳过兜底记录（避免与 _record 的 mcp 指标行重复计数）。
+        bind_source(LogSource.MCP)
         # 基类已是 IsAuthenticated，未认证请求在权限层即被 handle_exception 拒为
         # authentication_failed（401），此处不再可能为匿名。保留该 guard 作为纵深防御
         # （兜底「已认证但 request.auth 为 None」的边缘态），错误码对齐 handle_exception 的
@@ -277,6 +282,17 @@ class McpToolView(APIView):
         error: str = "",
     ) -> ToolCallRecord | None:
         duration_ms = max(int((time.perf_counter() - started_at) * 1000), 0)
+        # 指标旁路（RATE-01 / SLA-04）：在 ToolCallRecord 留痕旁记一行 RequestMetric
+        # （source=mcp，labels.call_source=工具名 + run_id），best-effort 绝不反噬。
+        await arecord_request_metric(
+            source=LogSource.MCP.value,
+            route=f"mcp:{self.tool_name}",
+            method="POST",
+            status_code=200 if call_status == "ok" else 500,
+            error_class="none" if call_status == "ok" else "system",
+            duration_ms=duration_ms,
+            labels={"call_source": self.tool_name, "run_id": str(run.run_id)},
+        )
         tool_call = await arecord_tool_call(
             run,
             tool_name=self.tool_name,
