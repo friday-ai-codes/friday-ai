@@ -203,6 +203,7 @@ declare module 'vue' {
     GalaxyLegend: typeof import('./components/galaxy/GalaxyLegend.vue')['default']
     GalaxySigmaGraph: typeof import('./components/galaxy/GalaxySigmaGraph.vue')['default']
     GeneralSettings: typeof import('./components/settings/GeneralSettings.vue')['default']
+    GitHubStarButton: typeof import('./components/layout/GitHubStarButton.vue')['default']
     GlobalConfirmDialog: typeof import('./components/GlobalConfirmDialog.vue')['default']
     GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']
     GraphAutoBuildToggle: typeof import('./components/repository/GraphAutoBuildToggle.vue')['default']
