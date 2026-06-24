@@ -170,20 +170,49 @@ def record_tool_call(
 
 
 def record_retrieval_trace(
-    run: InteractionRun,
+    run: InteractionRun | None = None,
     *,
     kind: str,
     payload: dict[str, Any] | None = None,
     tool_call: ToolCallRecord | None = None,
+    user_id: str | None = None,
+    conversation_id: str = "",
+    source: str = "",
 ) -> RetrievalTrace | None:
-    """记录一条检索证据（work item，best-effort）。"""
+    """记录一条检索证据（work item / RAG-02，best-effort）。
+
+    覆盖 MCP + AI 对话两条召回链：
+
+    - ``run`` 可空（per 72-02）：chat / workflow 召回无 ``InteractionRun`` 也可独立
+      成行；MCP 路径仍传 ``run`` 同源关联，向后兼容（既有调用零改动）。
+    - ``user_id`` / ``source`` 缺省从 Phase 71 ``structlog.contextvars`` 取（无则
+      ``system`` / 空），绝不取客户端输入（T-72-04-03）。MCP 既有调用因此自动获得
+      user 绑定（per RAG-02「透传 user」）。
+    - **seq 分配**：``run`` 非空沿用 ``run.retrieval_traces.count()``；``run`` 为空时
+      按 ``conversation_id`` 维度计数（chat 链无 run，seq 仅作排序）。
+    - payload（query 原文 + chunk 内容 + score）写库前**必经** ``redact_for_ledger``
+      （T-72-04-01）。写库失败降级 warning、返回 None，绝不反噬召回主流程。
+    """
     try:
-        seq = run.retrieval_traces.count()
+        ctx = structlog.contextvars.get_contextvars()
+        if user_id is None:
+            user_id = str(ctx.get("user_id", "system") or "system")
+        if not source:
+            source = str(ctx.get("source", "") or "")
+        if run is not None:
+            seq = run.retrieval_traces.count()
+        elif conversation_id:
+            seq = RetrievalTrace.objects.filter(conversation_id=conversation_id).count()
+        else:
+            seq = 0
         return RetrievalTrace.objects.create(
             run=run,
             tool_call=tool_call,
             kind=kind,
             payload=redact_for_ledger(payload or {}),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            source=source,
             seq=seq,
         )
     except Exception as exc:  # noqa: BLE001 —— best-effort
@@ -373,18 +402,24 @@ async def arecord_tool_call(
 
 
 async def arecord_retrieval_trace(
-    run: InteractionRun,
+    run: InteractionRun | None = None,
     *,
     kind: str,
     payload: dict[str, Any] | None = None,
     tool_call: ToolCallRecord | None = None,
+    user_id: str | None = None,
+    conversation_id: str = "",
+    source: str = "",
 ) -> RetrievalTrace | None:
-    """``record_retrieval_trace`` 的异步包装。"""
+    """``record_retrieval_trace`` 的异步包装（run 可空 + user/conversation/source 透传）。"""
     return await sync_to_async(record_retrieval_trace)(
         run,
         kind=kind,
         payload=payload,
         tool_call=tool_call,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        source=source,
     )
 
 
