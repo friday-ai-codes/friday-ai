@@ -1,8 +1,8 @@
-# 可观测性与日志治理 · 5 里程碑方案（v0.14.0 – v0.18.0）
+# 可观测性与日志治理 · 里程碑 v0.14.0（5 个 Phase 一次做完）
 
-**状态:** 提案（待逐个 `/gsd-new-milestone` 立项 + autonomous 执行）
+**状态:** ✅ 已立项（里程碑 v0.14.0，Phases 71–75）
 **时序存储决策:** ✅ 内置 Postgres（不强依赖 Prometheus，后者列 v2 可选导出）
-**执行方式:** 5 个里程碑线性推进（M1→M5），每个里程碑单开会话用 autonomous 跑完。
+**执行方式:** **单个里程碑 v0.14.0，5 个 Phase（71→75）线性推进**，新开一个会话用 autonomous 一次性跑完整个里程碑。
 **Core Value 对齐:** 让自托管团队"看得见、控得住"——运行数据可量化/可回溯/可告警，任何调用都能追到人。
 
 > 配套规范（已落地）：
@@ -41,7 +41,7 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ### A.3 其它第一性原理结论（已纳入方案）
 
-- **用户上下文贯穿是地基，必须最先做（M1）**。否则日志/指标都答不出"谁触发的"，后面全是补丁。`structlog.contextvars` + 入口中间件 + 后台任务 job metadata 重新 bind，是最小且自洽的实现。
+- **用户上下文贯穿是地基，必须最先做（Phase 71）**。否则日志/指标都答不出"谁触发的"，后面全是补丁。`structlog.contextvars` + 入口中间件 + 后台任务 job metadata 重新 bind，是最小且自洽的实现。
 - **不要硬套现有 `AlertRule`**：它强绑定工作流（`project` 非空、`AlertRuleExecution.workflow_execution` 非空、条件都是 execution_*）。基础设施/指标告警（CPU>95%、错误率、TTFT、队列深）语义不同，**另起系统级告警模型**，只共享通知分发（飞书/webhook/邮件）。强行复用会拧巴、不优雅。
 - **指标 vs 留痕 vs 日志三者分清**（避免重复造数据）：
   - 指标 = 聚合用的精简行（`RequestMetric` + 扩展后的 `ModelUsageRecord`）→ 趋势/分位。
@@ -66,13 +66,13 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ---
 
-## B. 5 个里程碑（线性依赖 M1→M5）
+## B. 5 个 Phase（里程碑 v0.14.0，线性依赖 71→75）
 
-每个里程碑都是一个**可被 autonomous 一次跑完**的自洽单元；建议版本号顺延 v0.14.0–v0.18.0，Phase 号从 71 起。
+整个可观测性与日志治理在**一个里程碑 v0.14.0** 内分 5 个 Phase 一次做完，Phase 号续上一里程碑（70）从 **71** 起，autonomous 顺序执行 71→75。
 
-### M1 · v0.14.0 可观测性地基：用户上下文贯穿 + 日志治理
+### Phase 71 · 可观测性地基：用户上下文贯穿 + 日志治理
 
-**为什么先做：** 它是所有观测的"地基" —— 让每条日志/调用都能绑定到人，并把日志从"每进程 800 条内存"升级为"可搜索、可清理、可配置的落库日志"。做完即有独立价值。
+**为什么先做：** 它是所有观测的"地基" —— 让每条日志/调用都能绑定到人，并把日志从"每进程 800 条内存"升级为"可搜索、可清理、可配置的落库日志"。后续 Phase 的指标/告警/大盘都依赖它。
 
 **需求：**
 
@@ -91,9 +91,9 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ---
 
-### M2 · v0.15.0 调用数据采集：AI/LLM + 召回 + 请求入口
+### Phase 72 · 调用数据采集：AI/LLM + 召回 + 请求入口
 
-**为什么第二：** 地基就绪后，把所有"能成时序"的数据采集到事件表。本里程碑只**写数据**，查询/出图在 M3。
+**为什么第二：** 地基就绪后，把所有"能成时序"的数据采集到事件表。本 Phase 只**写数据**，查询/出图在 Phase 73。
 
 **需求：**
 
@@ -109,9 +109,9 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ---
 
-### M3 · v0.16.0 快照、趋势与查询 API
+### Phase 73 · 快照、趋势与查询 API
 
-**为什么第三：** 把 M2 采集的数据变成"可按任意时间段查询 + 出趋势"，并补齐"只看当前"的快照。
+**为什么第三：** 把 Phase 72 采集的数据变成"可按任意时间段查询 + 出趋势"，并补齐"只看当前"的快照。
 
 **需求：**
 
@@ -120,7 +120,7 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 - **SNAP-03**: Redis 快照——连接数（`connected_clients`/`maxclients`）、内存占用、命中率（`INFO`），覆盖 cache/channels/llm 多路客户端。
 - **SNAP-04**: Qdrant 快照——可用性、collection 数、占用空间（带缓存 + 长超时，避免拖垮）。
 - **SNAP-05**: 并发/排队当前值——各 provider 凭证当前占用槽位、各 durable 队列 todo/doing、runner 待派发与本地队列、RAG 并发。
-- **RATE-03**: 趋势（只记不告警）——`GaugeSample` 周期采样（apscheduler，30–60s）记并发/队列深/积压；吞吐(各 provider QPS/TPS，单位 K)/错误趋势由 M2 事件表 SQL 聚合。
+- **RATE-03**: 趋势（只记不告警）——`GaugeSample` 周期采样（apscheduler，30–60s）记并发/队列深/积压；吞吐(各 provider QPS/TPS，单位 K)/错误趋势由 Phase 72 事件表 SQL 聚合。
 - **SLA-01**: 每时刻可用率/业务故障率——由 `RequestMetric` 成功/失败比派生，**口径为"排除业务限制"**（系统繁忙限流/权限/校验不算故障）+ 健康探针，按入口/时间段查询。
 - **QUERY-01**: 时序查询 API——`GET /api/system/metrics/query`，按任意时间段/step/维度查询 QPS/TPS/SLA/错误/时长 TTFT 分位（`percentile_cont`）；含保留清理 + 可选每日 rollup。
 - **QUERY-02**: 快照 API——`GET /api/system/metrics/snapshot` 聚合返回 SNAP-01~05 当前值。
@@ -129,7 +129,7 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ---
 
-### M4 · v0.17.0 告警引擎与通知
+### Phase 74 · 告警引擎与通知
 
 **为什么第四：** 数据可查后才能评估阈值告警。新建**系统级**告警（不套 workflow `AlertRule`），共享通知分发。
 
@@ -139,11 +139,11 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 - **ALERT-02**: 告警事件落库（`AlertEvent`）——级别 P0/P1/P2、中文标题、机器可读规则信息（参考格式：`cpu_usage_percent > 85.00 (current 95.40) over last 5m (overall)`，含规则·当前值·窗口·维度）、规则ID、开始/结束时间与持续时长（如 1h）、状态 firing/resolved、邮件状态（已发送/已忽略/—）；同规则同对象去重（一条 firing，恢复时收尾）。告警事件表列对齐参考：时间/级别/状态/维度/规则ID/标题+规则信息/持续时间/邮件状态（见 REFERENCE-UI §1.4）。
 - **ALERT-03**: 邮件通道——接入 Django SMTP（`EMAIL_*` + `SystemSetting` 收件人/开关），按级别发邮件并回写 `email_sent`；复用现有飞书/webhook 通知分发，三通道并存。
 
-**关键产物：** 系统告警规则模型 + 周期评估器（查 M3 时序 + 快照）+ `AlertEvent`（含去重/持续时长/恢复）+ SMTP 邮件 + 通知分发集成。
+**关键产物：** 系统告警规则模型 + 周期评估器（查 Phase 73 时序 + 快照）+ `AlertEvent`（含去重/持续时长/恢复）+ SMTP 邮件 + 通知分发集成。
 
 ---
 
-### M5 · v0.18.0 运维大盘前端 + 规范固化
+### Phase 75 · 运维大盘前端 + 规范固化
 
 **为什么最后：** 所有后端 API 就绪后做统一大盘，并把规范固化为长期约束。
 
@@ -163,42 +163,42 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 
 ## C. 数据模型总览（新增/扩展）
 
-| 模型 | 里程碑 | 用途 | 关键字段 |
-|------|--------|------|----------|
-| `SystemLogEntry`（新） | M1 | 日志流落库 | `ts, level, component, category(caller/sampling), event, message, user_id(→system), source, trace_id, request_id, payload(jsonb,脱敏), correlation` |
-| `InboundWebhookEvent`（新/激活 WebhookLog） | M1 | webhook 原始 | `received_at, kind, source_ip, headers(jsonb), raw_body, user_id, verified, correlation` |
-| `RequestMetric`（新，精简行） | M2 | QPS/错误/时长/SLA | `ts, source, route, method, status_code, error_class(system/business/upstream/none), duration_ms, ttft_ms, user_id, labels(jsonb: call_source/provider/credential/model/关联键)` |
-| `ModelUsageRecord`（扩展） | M2 | TPS/上游错误/成本 | 补 `call_source, ttft_ms, upstream_status_code` |
-| `RetrievalTrace`（扩展覆盖面） | M2 | 召回内容 | chat/workflow 也写、透传 user |
-| `GaugeSample`（新，周期采样） | M3 | 并发/队列/积压趋势 | `ts, name, value, labels(jsonb)` |
-| `MetricDailyRollup`（新，可选） | M3 | 长区间趋势 | 每日聚合，按需 |
-| `SystemAlertRule`（新） | M4 | 系统告警阈值 | `metric, op, value, window, severity, enabled, channels, cooldown` |
-| `AlertEvent`（新） | M4 | 告警事件 | `severity(P0/P1/P2), title_zh, rule_info, target, started_at, ended_at, duration_s, status, email_sent, notified_channels` |
+| 模型 | Phase | 用途 | 关键字段 |
+|------|-------|------|----------|
+| `SystemLogEntry`（新） | 71 | 日志流落库 | `ts, level, component, category(caller/sampling), event, message, user_id(→system), source, trace_id, request_id, payload(jsonb,脱敏), correlation` |
+| `InboundWebhookEvent`（新/激活 WebhookLog） | 71 | webhook 原始 | `received_at, kind, source_ip, headers(jsonb), raw_body, user_id, verified, correlation` |
+| `RequestMetric`（新，精简行） | 72 | QPS/错误/时长/SLA | `ts, source, route, method, status_code, error_class(system/business/upstream/none), duration_ms, ttft_ms, user_id, labels(jsonb: call_source/provider/credential/model/关联键)` |
+| `ModelUsageRecord`（扩展） | 72 | TPS/上游错误/成本 | 补 `call_source, ttft_ms, upstream_status_code` |
+| `RetrievalTrace`（扩展覆盖面） | 72 | 召回内容 | chat/workflow 也写、透传 user |
+| `GaugeSample`（新，周期采样） | 73 | 并发/队列/积压趋势 | `ts, name, value, labels(jsonb)` |
+| `MetricDailyRollup`（新，可选） | 73 | 长区间趋势 | 每日聚合，按需 |
+| `SystemAlertRule`（新） | 74 | 系统告警阈值 | `metric, op, value, window, severity, enabled, channels, cooldown` |
+| `AlertEvent`（新） | 74 | 告警事件 | `severity(P0/P1/P2), title_zh, rule_info, target, started_at, ended_at, duration_s, status, email_sent, notified_channels` |
 
 > 复用不新建：`InteractionRun`/`InteractionEvent`/`ToolCallRecord`（MCP 详情/时长）、`Conversation`/`Message`（会话原始）、`SystemSetting`/`settings_service`（运行时配置）、`TriggerLog`（飞书 webhook 原始范本）。
 
 ---
 
-## D. Traceability（需求 → 里程碑）
+## D. Traceability（需求 → Phase）
 
-| 里程碑 | 需求 |
-|--------|------|
-| M1 v0.14.0 | CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08 |
-| M2 v0.15.0 | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 |
-| M3 v0.16.0 | SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02 |
-| M4 v0.17.0 | ALERT-01, ALERT-02, ALERT-03 |
-| M5 v0.18.0 | UI-01, UI-02, UI-03, UI-04, SPEC-01 |
+| Phase | 需求 |
+|-------|------|
+| 71 可观测性地基 | CTX-01, CTX-02, LOG-01, LOG-02, LOG-03, LOG-04, LOG-05, LOG-06, LOG-07, LOG-08 |
+| 72 调用数据采集 | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 |
+| 73 快照·趋势·查询 | SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, RATE-03, SLA-01, QUERY-01, QUERY-02 |
+| 74 告警引擎与通知 | ALERT-01, ALERT-02, ALERT-03 |
+| 75 运维大盘 + 规范固化 | UI-01, UI-02, UI-03, UI-04, SPEC-01 |
 
-**统计:** 31 条 v1 需求，分布 5 里程碑，无悬空。依赖链：M1→M2→M3→M4→M5（线性，适合逐个 autonomous）。
+**统计:** 34 条 v1 需求，分布里程碑 v0.14.0 的 5 个 Phase，无悬空。依赖链：71→72→73→74→75（线性，autonomous 一次跑完整个里程碑）。
 
 ---
 
-## E. v2（后续，本五里程碑不做）
+## E. v2（后续里程碑，本里程碑不做）
 
 | ID | 内容 | 理由 |
 |----|------|------|
 | OBSX-01 | Prometheus / OTLP 导出 + 外部 Grafana | 内置足够；外部栈可选增强 |
-| ~~OBSX-02~~ | ~~容器内 LLM token/TTFT 上报~~ → **已纳入 M2 RATE-02**（TPS 要全量，不能漏容器） | — |
+| ~~OBSX-02~~ | ~~容器内 LLM token/TTFT 上报~~ → **已纳入 Phase 72 RATE-02**（TPS 要全量，不能漏容器） | — |
 | OBSX-03 | 跨 server↔runner↔task 分布式 tracing | 体量大 |
 | OBSX-04 | 告警自适应/降噪/值班排班 | 先静态阈值 + 去重 |
 | OBSX-05 | Sentry 接入（已预留 `sentry_before_send`） | 可选 |
@@ -212,12 +212,12 @@ Friday AI 是**自托管、人触发**的"需求→PR"系统。请求量级是�
 | 自研进程内直方图聚合器 + 多级 rollup 引擎 | 量级低，原始行 + `percentile_cont` 更优雅且精确（见 A.2） |
 | 硬套 workflow `AlertRule` 做基础设施告警 | 语义/约束不符（强绑 workflow），另起系统级告警（见 A.3） |
 | 把 CPU/DB/Redis/Qdrant 做成长时序 | 用户明确"只看当前"，按需采集 |
-| 修改 runner/task 容器内 LLM 计费链路 | 归 OBSX-02 |
+| 容器内 LLM 计费链路超出 token/TTFT 采集的部分 | 仅做可观测采集，不做扣费/配额 |
 
 ---
 
 ## G. 执行建议
 
-1. M1–M5 逐个 `/gsd-new-milestone` 立项（或 autonomous 内立项），按 B 节需求与 Traceability 导入。
-2. 每个里程碑单开会话 autonomous 跑完，顺序 M1→M5（有依赖，勿乱序）。
-3. 规范文件已在仓库，autonomous 执行时受 `.cursor/rules/observability-logging.mdc` 约束自动补埋点。
+1. 里程碑 v0.14.0 已立项（PROJECT/REQUIREMENTS/ROADMAP/STATE 就绪），5 个 Phase 71–75。
+2. 新开一个会话 `/gsd-autonomous` 一次性跑完整个里程碑，顺序 71→72→73→74→75（有依赖，勿乱序）；或手动 `/gsd-plan-phase 71` 起步。
+3. 规范文件已在仓库，执行时受 `.cursor/rules/observability-logging.mdc` 约束自动补埋点。

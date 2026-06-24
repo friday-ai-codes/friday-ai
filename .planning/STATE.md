@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.14.0
-milestone_name: 可观测性地基
+milestone_name: 可观测性与日志治理
 status: planning
-last_updated: "2026-06-24T10:51:11.968Z"
+last_updated: "2026-06-24T11:12:29.250Z"
 last_activity: 2026-06-24
 progress:
   total_phases: 0
@@ -19,8 +19,8 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-24 — start milestone v0.14.0 可观测性地基)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码。v0.14.0（可观测性与日志治理 5 里程碑计划第一站）：建立可观测性地基——每次调用绑定触发用户（无则 system），系统日志从内存环形缓冲升级为队列化落库、可搜索、可清理、可运行时配置的日志中心，统一 webhook 原始留痕与调用下钻。完整方案 `.planning/observability/MILESTONE-PROPOSAL.md`，规范 `LOGGING-SPEC.md`。
-**Current focus:** Milestone v0.14.0 — Phase 71（用户上下文贯穿）起，地基先行，再做日志落库/运行时配置/webhook 留痕。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并全链路"看得见、控得住、可归因"。v0.14.0（一个里程碑、5 Phase 71–75 完整交付可观测性与日志治理）：用户上下文贯穿 + 系统日志队列化落库 + QPS/TPS/召回/SLA/时长/TTFT 时序指标 + CPU/内存/DB/Redis/Qdrant 当前快照 + 并发/排队/吞吐/错误趋势 + 阈值告警与告警事件（P0/P1/P2，邮件）+ 运维大盘。第一性原理：量级低、人触发，用原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表，自研基础设施最小化。完整方案 `.planning/observability/MILESTONE-PROPOSAL.md`，规范 `LOGGING-SPEC.md`，UI 参考 `REFERENCE-UI.md`。
+**Current focus:** Milestone v0.14.0 — autonomous 顺序跑 Phase 71→75（71 地基 → 72 采集 → 73 快照查询 → 74 告警 → 75 大盘）。
 
 ## Current Position
 
@@ -29,31 +29,35 @@ Plan: —
 Status: Defining requirements
 Last activity: 2026-06-24 — Milestone v0.14.0 started
 
-## Milestone Overview (v0.14.0 — Phases 71–74)
+## Milestone Overview (v0.14.0 — Phases 71–75)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 71 | 用户上下文贯穿（请求中间件 + 后台任务用户传播） | CTX-01, CTX-02 | ☐ Pending |
-| 72 | 系统日志落库底座（队列5000 + 丢弃/失败计数 + 用户绑定 + caller/sampling 分类） | LOG-01, LOG-02, LOG-03, LOG-05 | ☐ Pending |
-| 73 | 运行时日志配置 + 保留清理 | LOG-06, LOG-08 | ☐ Pending |
-| 74 | Webhook 原始留痕 + 调用下钻（会话/原始数据） | LOG-07, LOG-04 | ☐ Pending |
+| 71 | 可观测性地基（用户上下文贯穿 + 系统日志治理） | CTX-01, CTX-02, LOG-01~08 | ☐ Pending |
+| 72 | 调用数据采集（AI/LLM TPS + 召回 + 请求入口 QPS/SLA/时长/TTFT/上游错误） | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 | ☐ Pending |
+| 73 | 快照·趋势·查询 API | SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02 | ☐ Pending |
+| 74 | 告警引擎与通知（阈值 + 告警事件 + 邮件） | ALERT-01, ALERT-02, ALERT-03 | ☐ Pending |
+| 75 | 运维大盘前端 + 规范固化 | UI-01~04, SPEC-01 | ☐ Pending |
 
-**Execution order:** 71 → 72 → 73 → 74。依赖：71（用户上下文贯穿）是地基，LOG-03 的用户绑定依赖它，必须先行；72（日志落库底座）建 `SystemLogEntry` + 队列 worker + 计数 + 分类，是 73/74 的载体；73（运行时配置/保留清理）依赖 72 的落库；74（webhook 原始留痕 + 调用下钻）依赖 72 的存储与 71 的用户绑定。线性推进，适合 autonomous 一次跑完。
+**Execution order:** 71 → 72 → 73 → 74 → 75。依赖：71（用户贯穿 + 日志落库）是地基，归因与日志载体先行；72（采集）把 QPS/TPS/召回/SLA/TTFT 写入事件表（`RequestMetric`/扩展 `ModelUsageRecord`/`RetrievalTrace`）；73（快照·趋势·查询）依赖 72 数据做时序查询 + 补当前快照 + 趋势采样；74（告警）依赖 73 的查询/快照评估阈值；75（大盘）依赖前面所有后端 API。线性推进，autonomous 一次跑完整个里程碑。
 
-**UI 触面（标 UI hint）:** 本里程碑以后端为主。日志/配置/下钻的前端完整大盘留到 v0.18.0（M5 UI）；72/73 可在现有 `web/src/pages/admin/observability/` 上做最小可用的日志查看/配置触面（`/gsd-ui-phase` 可选介入，非必须）。
+**UI 触面（标 UI hint）:** Phase 75 是集中前端阶段（`web/src/pages/admin/observability/` 重构 + 日志/告警页 + 运行时配置面板），`/gsd-ui-phase` 应介入；71–74 以后端为主，72/73 可选在现有运维页做最小触面。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
 
-- **第一性原理**：本系统量级低、人触发，观测真正诉求是"看得见、控得住 + 归因"。M1 只做地基（用户贯穿 + 日志落库/配置/留痕），**不做**指标聚合/趋势/告警/大盘（留 v0.15.0+）。
-- **脱敏不可绕过**：所有日志/留痕/webhook 原始入库前必须经 `server/common/logging.py` 的 `redact_credentials`（structlog processor）/`redact_secrets_in_text`（字符串）/`redact_for_ledger`（Ledger）。CI 守护 `server/tests/test_credential_leak_protection.py` 不能破。
-- **用户上下文（CTX 核心）**：用 `structlog.contextvars` + 入口中间件自动注入 `user_id(无则 system)/request_id/source/trace_id`，请求结束 `clear_contextvars`。**注意**：DRF 认证在 view dispatch 才有 `request.user`（Django MIDDLEWARE 在其之前拿不到 JWT user）→ 采用「DRF 基类/mixin + ASGI 外层兜底」组合。跨线程/`_run_in_thread`/durable worker/`background_runner` 用干净 `contextvars.Context()`，**不自动传播**，必须显式 `bind`；后台任务入队携带 `initiated_by_user_id`，worker 入口恢复。
-- **日志队列（LOG 核心）**：`deque(maxlen=5000)` + 后台批量 worker 落 `SystemLogEntry`；满则丢弃计数 `log_dropped_total++`，落库失败 `log_write_failed_total++`，两计数 best-effort 暴露且**绝不反噬业务**（沿用现有 `append_log`/`buffer_log` 的 `except: pass`）。保留现有 `common/log_buffer.py`（800 条内存）作极速兜底视图。
-- **运行时配置（LOG-06）**：复用 `SystemSetting` + `settings_service`（60s 缓存）+ `signals` 写时失效；新增 `SettingKeys.LOG_*`；把当前固定的 `_resolve_structlog_level()` 改为可热更新级别变量 + `logging.setLevel()` 即时生效。
-- **复用既有**：Interaction Ledger（`server/interactions/` 的 `InteractionRun`/`ToolCallRecord`/`RetrievalTrace`/`ModelUsageRecord`）承载 MCP 调用详情与召回；`Conversation`/`Message` 承载对话会话原始数据（LOG-04 下钻复用，不另造）；`TriggerLog.webhook_raw_request` 是飞书 webhook 原始范本（LOG-07 统一到 `InboundWebhookEvent` 或激活 `WebhookLog`）。
-- **事件分类（LOG-05）**：每个 structlog 事件设 `category`(caller/sampling) + `component`；caller=用户可归因调用（全量），sampling=高频内部步骤（按采样配置）。事件目录写入 `LOGGING-SPEC.md`。
-- **异步约束**：ORM 在 async 上下文走 `sync_to_async`；i18n 默认中文。
+- **第一性原理**：量级低、人触发，观测真正诉求是"看得见、控得住 + 归因"。**指标走原始事件行 + Postgres `percentile_cont` 聚合**（精确分位），**不自研**进程内直方图/聚合器/多级 rollup 引擎；最大化复用已有 append-only 表（`ModelUsageRecord`/`ToolCallRecord`/`RetrievalTrace`）。
+- **脱敏不可绕过**：所有日志/留痕/webhook 原始入库前必须经 `server/common/logging.py` 的 `redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`。CI 守护 `server/tests/test_credential_leak_protection.py` 不能破。
+- **用户上下文（Phase 71 核心，地基）**：`structlog.contextvars` + 入口中间件自动注入 `user_id(无则 system)/request_id/source/trace_id`，请求结束 `clear_contextvars`。**注意**：DRF 认证在 view dispatch 才有 `request.user`（Django MIDDLEWARE 在其之前拿不到 JWT user）→ 「DRF 基类/mixin + ASGI 外层兜底」组合。跨线程/`_run_in_thread`/durable worker/`background_runner` 用干净 `contextvars.Context()`，**不自动传播**，必须显式 `bind`；后台任务入队携带 `initiated_by_user_id`，worker 入口恢复。
+- **指标/留痕/日志三分**：指标=精简事件表（`RequestMetric` 每请求一行 + 扩展 `ModelUsageRecord` 的 `call_source`/`ttft_ms`/`upstream_status_code`），留痕=Interaction Ledger（调用详情/召回内容/会话原始），日志=`SystemLogEntry`（队列落库）。三者用 `request_id/run_id/conversation_id` 关联，**不互相复制**。`labels` jsonb 禁止放用户输入原文（基数失控），取受控枚举。
+- **日志队列（LOG 核心）**：`deque(maxlen=5000)` + 后台批量 worker 落 `SystemLogEntry`；满则丢弃计数 `log_dropped_total++`，落库失败 `log_write_failed_total++`，best-effort 暴露且**绝不反噬业务**（沿用 `append_log`/`buffer_log` 的 `except: pass`）。保留 `common/log_buffer.py`（800 条内存）作极速兜底。
+- **运行时配置**：复用 `SystemSetting`+`settings_service`(60s 缓存)+`signals` 写时失效；新增 `SettingKeys.LOG_*`/`ALERT_*`；把固定的 `_resolve_structlog_level()` 改为可热更新级别 + `logging.setLevel()` 即时生效。
+- **采集埋点位**：LLM 走 `acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游码）+ 各 `ainvoke`；召回走 `search_rag` 出口 + `QdrantService.search/hybrid_search` + `EmbeddingService` + `recall_similar_chunks`；请求入口走 DRF 基类/ASGI + MCP `_record` + chat SSE wrap + compat + webhook + WS。容器侧 token 需补全 `task`→回调→`ModelUsageRecord` 链路（RATE-02）。轮询/health 路由打标隔离不污染 SLA。
+- **SLA 三口径**：系统错误（计入故障）/ 业务限制（`LLMBusyError` 系统繁忙·权限·校验，排除）/ 上游错误（429·529 单列）。可用率口径"排除业务限制"。
+- **告警另起系统级模型**：现有 `workflows.AlertRule` 强绑工作流（`project` 非空、`AlertRuleExecution.workflow_execution` 非空），**不复用**；新建 `SystemAlertRule` + `AlertEvent`，共享通知分发（飞书/webhook/邮件）。邮件需新增 SMTP（`EMAIL_*`，全仓当前无）。
+- **快照按需不长存**：CPU/内存/DB/Redis/Qdrant 用户明确"只看当前"。Qdrant collection 枚举/占用走独立端点 + 缓存 + 长超时，避免拖垮（区分现有 `ping_liveness` 与 `health_check`）。SQLite dev 无 `percentile_cont` → 降级近似/跳过分位。
+- **异步约束**：ORM 在 async 上下文走 `sync_to_async`；i18n 默认中文；echarts/vue-echarts 已在前端依赖（大盘出图）。
 
-**设计底座引用:** `.planning/observability/MILESTONE-PROPOSAL.md`（5 里程碑完整方案 + 第一性原理评审 + 数据模型）、`.planning/observability/LOGGING-SPEC.md`（日志/埋点工程规范 + 事件分类 + call_source 枚举）、`.planning/observability/REFERENCE-UI.md`（LLM 网关平台参考图 + Agent 维度适配）、`.cursor/rules/observability-logging.mdc`（Agent 强制规则）、`.planning/REQUIREMENTS.md`（v0.14.0 10 条需求 + Traceability）。关键文件：`server/common/logging.py`、`server/common/log_buffer.py`、`server/system/settings_service.py`+`signals.py`+`models.py`(SettingKeys)、`server/interactions/`、`server/feishu/views.py`(TriggerLog)、`server/friday/settings.py`(MIDDLEWARE/DRF auth)、`server/access_tokens/context.py`(PAT ContextVar 范式)。
+**设计底座引用:** `.planning/observability/MILESTONE-PROPOSAL.md`（5 Phase 完整方案 + 第一性原理评审 + 数据模型 §C + Traceability §D）、`.planning/observability/LOGGING-SPEC.md`（日志/埋点规范 + caller/sampling + call_source 枚举 §4.1）、`.planning/observability/REFERENCE-UI.md`（LLM 网关平台参考图 + Agent 维度适配，Phase 75 UI 输入）、`.cursor/rules/observability-logging.mdc`（Agent 强制规则）、`.planning/REQUIREMENTS.md`（34 条需求 + Traceability）。关键文件：`server/common/logging.py`+`log_buffer.py`、`server/system/`(settings_service/signals/models SettingKeys/observability_views/dashboard_views)、`server/interactions/`、`server/agents/`(llm_concurrency/chat_runner/langchain_runner/llm_factory)、`server/services/retrieval/`+`qdrant_service.py`+`embedding.py`、`server/feishu/views.py`(TriggerLog)、`server/friday/settings.py`(MIDDLEWARE/DRF/DATABASES/CACHES)、`server/access_tokens/context.py`(PAT ContextVar 范式)、`web/src/pages/admin/observability/index.vue`+`web/src/api/system.ts`。
 
 ## Milestone Overview (v0.11.0 — Phases 56–59)
 

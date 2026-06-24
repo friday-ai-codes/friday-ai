@@ -1,48 +1,94 @@
 # Requirements: Friday AI
 
 **Defined:** 2026-06-24
-**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码——并且全链路"看得见、控得住、可归因"。v0.14.0 是「可观测性与日志治理」5 里程碑计划（v0.14.0–v0.18.0）的第一站：建立可观测性地基。
+**Core Value:** 让团队"开箱即用、安全地"把需求自动变成代码——并且全链路"看得见、控得住、可归因"。里程碑 v0.14.0 在**一个里程碑、5 个 Phase（71–75）**内完整交付可观测性与日志治理。
 
-> 完整 5 里程碑方案见 `.planning/observability/MILESTONE-PROPOSAL.md`；日志/埋点规范见 `.planning/observability/LOGGING-SPEC.md`；UI 参考见 `.planning/observability/REFERENCE-UI.md`。
+> 完整方案与第一性原理评审见 `.planning/observability/MILESTONE-PROPOSAL.md`；日志/埋点规范见 `.planning/observability/LOGGING-SPEC.md`；UI 参考见 `.planning/observability/REFERENCE-UI.md`。
 
 ## v1 Requirements
 
-Milestone v0.14.0 可观测性地基（用户上下文贯穿 + 日志治理）。每条映射到一个 roadmap 阶段（见 Traceability）。
+Milestone v0.14.0 可观测性与日志治理。每条映射到一个 Phase（见 Traceability）。
 
 ### 用户上下文贯穿（CTX）
 
 - [ ] **CTX-01**: 请求级上下文中间件——每个 HTTP/SSE/WS/MCP/compat 入口自动把 `user_id`（无则 `system`）、`request_id`、`source`、`trace_id` 绑定到 `structlog.contextvars`，请求结束清理；所有 structlog 事件自动携带这些字段，业务代码无需手动传
-- [ ] **CTX-02**: 后台任务用户传播——durable job / `background_runner` / workflow `_run_in_thread` / apscheduler / 飞书·webhook 触发，入队时携带 `initiated_by_user_id`，worker 入口重新 bind 到 contextvars；跨线程/durable worker 正确继承发起用户；无发起人记 `system`
+- [ ] **CTX-02**: 后台任务用户传播——durable job / `background_runner` / workflow `_run_in_thread` / apscheduler / 飞书·webhook 触发，入队携带 `initiated_by_user_id`，worker 入口重新 bind；跨线程/durable worker 正确继承；无发起人记 `system`
 
-### 系统日志落库（LOG）
+### 系统日志治理（LOG）
 
-- [ ] **LOG-01**: 系统日志落库（`SystemLogEntry`），默认按时间倒序，支持按组件、级别（debug/info/warn/error）、用户、来源、关键词、时间段筛选与全文搜索
-- [ ] **LOG-02**: 队列化写入——内存队列默认上限 5000，后台批量落库；队列满则丢弃并累计丢弃数（按时刻记录），落库失败累计失败条数；两个计数作为可观测指标暴露，且均不影响主流程
-- [ ] **LOG-03**: 日志全量绑定触发用户（依赖 CTX-01/02），无触发用户记 `system`，可按用户筛选
-- [ ] **LOG-04**: 调用下钻后端——MCP 调用显示来自哪个用户；AI 对话事件关联用户 + 所属会话，可取该会话全部请求与原始数据（复用 Interaction Ledger / Conversation / Message，提供下钻 API）
-- [ ] **LOG-05**: 事件分类与目录——所有已知事件按 `caller`（调用）/`sampling`（采样）分类、按组件归类，形成事件目录（落地 `LOGGING-SPEC.md`），每条日志带 `category` 与 `component`
-- [ ] **LOG-06**: 运行时日志配置（实时生效，复用 `SystemSetting` + signal）——级别（全局/分组件）、堆栈记录阈值、采样初始（首 N 条全记）、采样后续（按比例）、保留天数 / 保留大小；变更立即生效无需重启
-- [ ] **LOG-07**: Webhook 原始数据统一落库可查看（`InboundWebhookEvent` 或激活 `WebhookLog`）——飞书、通用工作流 webhook、Git push webhook、容器回调的原始 payload 脱敏后入库，可在后台查看
-- [ ] **LOG-08**: 日志清理——支持按条件（时间/级别/组件/用户/关键词）批量清理；保留策略到期定时自动清理（apscheduler）
+- [ ] **LOG-01**: 系统日志落库（`SystemLogEntry`），默认时间倒序，支持按组件/级别(debug/info/warn/error)/用户/来源/关键词/时间段筛选与全文搜索
+- [ ] **LOG-02**: 队列化写入——内存队列默认上限 5000，后台批量落库；满则丢弃并累计丢弃数，落库失败累计失败条数；两计数作指标暴露且不影响主流程
+- [ ] **LOG-03**: 日志全量绑定触发用户（依赖 CTX），无触发用户记 `system`，可按用户筛选
+- [ ] **LOG-04**: 调用下钻后端——MCP 调用显示触发用户；AI 对话事件关联用户+会话，可取该会话全部请求与原始数据（复用 Interaction Ledger / Conversation / Message）
+- [ ] **LOG-05**: 事件分类与目录——所有已知事件按 `caller`/`sampling` 分类、按组件归类，形成事件目录（`LOGGING-SPEC.md`），每条日志带 `category` 与 `component`
+- [ ] **LOG-06**: 运行时日志配置（实时生效，复用 `SystemSetting`+signal）——级别(全局/分组件)/堆栈记录阈值/采样初始/采样后续/保留天数·保留大小
+- [ ] **LOG-07**: Webhook 原始数据统一落库可查看（`InboundWebhookEvent`）——飞书/通用工作流/Git push/容器回调原始 payload 脱敏后入库
+- [ ] **LOG-08**: 日志清理——按条件(时间/级别/组件/用户/关键词)批量清理；保留策略到期定时自动清理
+
+### 吞吐与速率（RATE）
+
+- [ ] **RATE-01**: QPS 分类采集（`RequestMetric` 每请求一行）——覆盖 REST/MCP 工具/对话 SSE/OpenAI·Anthropic 兼容/召回/embedding·reranker/各类 webhook/WS 连接；轮询·health 路由打标隔离，不污染业务统计
+- [ ] **RATE-02**: TPS 采集（全量，不漏容器）——扩展 `ModelUsageRecord`（`call_source`/`ttft_ms`/`upstream_status_code`），所有 LLM 调用点（22 类 `call_source`）写入 input/output/cache token 按 provider 区分；补全容器侧（编码/repo描述/深度分析）`task`→回调→`ModelUsageRecord` token 链路
+- [ ] **RATE-03**: 趋势采集（只记不告警）——`GaugeSample` 周期采样并发(provider)/排队(索引·AI描述·爬取·异步)深度与积压；吞吐(各 provider QPS·TPS 千)/错误趋势由事件表 SQL 聚合，可按时间段查询
+
+### 召回可观测（RAG）
+
+- [ ] **RAG-01**: 召回指标采集——召回条数、总耗时与分层耗时(embedding/sparse/qdrant/rerank)、相关度 score 分布；按来源(MCP/对话/workflow)与时间段查询
+- [ ] **RAG-02**: 召回内容留痕扩展到 MCP + AI 对话两条链——`RetrievalTrace` 记 query 原文+召回 chunk 内容+score+会话/用户；chat/workflow 代码 RAG 透传 user_id
+
+### SLA / 错误 / 时长（SLA）
+
+- [ ] **SLA-01**: 每时刻可用率/业务故障率——由 `RequestMetric` 成功/失败比派生，口径"排除业务限制"(系统繁忙限流/权限/校验不算故障)+健康探针，按入口/时间段查询
+- [ ] **SLA-02**: 请求错误采集（三口径分离）——区分系统错误(计入 SLA)/业务限制(`LLMBusyError` 等，排除)/上游错误；`RequestMetric` 记 `error_class` + `status_code`，每时刻错误率按入口/口径查询
+- [ ] **SLA-03**: 上游(provider)错误采集——`ModelUsageRecord.upstream_status_code`/`failure_type` 记上游码与类型，429/529 单列其余另计，按 provider/model 区分
+- [ ] **SLA-04**: 请求时长与 TTFT 采集 + 分位——`duration_ms` + 流式入口 `ttft_ms`(首 chunk 计时)，支持 P95/P90/P50/Avg/Max(Postgres `percentile_cont`)
+
+### 当前快照（SNAP，只看当前）
+
+- [ ] **SNAP-01**: server/主机——CPU、内存(psutil)、协程数(asyncio)、线程数、后台任务数(durable/`background_runner`/workflow/edge build)
+- [ ] **SNAP-02**: 数据库——连接数、活跃/空闲/等待(`pg_stat_activity` + `max_connections`；psycopg pool；PgBouncer `SHOW POOLS`)
+- [ ] **SNAP-03**: Redis——连接数(`connected_clients`/`maxclients`)、内存占用、命中率(`INFO`)，覆盖 cache/channels/llm 多路客户端
+- [ ] **SNAP-04**: Qdrant——可用性、collection 数、占用空间(带缓存+长超时，避免拖垮)
+- [ ] **SNAP-05**: 并发/排队当前值——各 provider 凭证占用槽位、各 durable 队列 todo/doing、runner 待派发与本地队列、RAG 并发
+
+### 查询 API（QUERY）
+
+- [ ] **QUERY-01**: 时序查询 API——`GET /api/system/metrics/query`，按任意时间段/step/维度查询 QPS/TPS/SLA/错误/时长 TTFT 分位；含保留清理 + 可选每日 rollup
+- [ ] **QUERY-02**: 快照 API——`GET /api/system/metrics/snapshot` 聚合返回 SNAP-01~05 当前值
+
+### 告警引擎（ALERT）
+
+- [ ] **ALERT-01**: 系统告警阈值规则（新模型，独立于 workflow `AlertRule`）——QPS/错误率/TTFT/CPU/内存/DB/Redis/Qdrant/队列深等阈值（运行时可改），超出触发；趋势类(RATE-03)默认不参与
+- [ ] **ALERT-02**: 告警事件落库（`AlertEvent`）——级别 P0/P1/P2、中文标题、机器可读规则信息(规则·当前值·窗口·维度)、开始/结束与持续时长、状态 firing/resolved、邮件状态；同规则同对象去重(一条 firing，恢复收尾)
+- [ ] **ALERT-03**: 邮件通道——接入 Django SMTP(`EMAIL_*` + `SystemSetting` 收件人/开关)，按级别发邮件并回写 `email_sent`；复用飞书/webhook 通知分发三通道并存
+
+### 运维大盘 + 规范（UI / SPEC）
+
+- [ ] **UI-01**: 大盘上半区——复合健康分 + 实时速率卡(窗口 tab + 当前/峰值/平均 QPS·TPS + sparkline) + 信息卡排(请求/SLA 排除业务限制/请求错误系统·业务限制分列/请求时长 P99+分位/TTFT P99+分位/上游错误 429·529 单列) + 时间范围选择器
+- [ ] **UI-02**: 当前快照行 + 趋势——CPU/内存/DB/Redis/Qdrant/协程/后台任务卡内内联阈值变色；吞吐(各 provider QPS+TPS 千 可切 call_source)/错误(三口径)/请求时长分布/并发·排队趋势
+- [ ] **UI-03**: 告警事件页——表列对齐参考(时间/级别/状态/维度/规则ID/标题+规则信息/持续时长/邮件状态)+多维筛选 + 阈值规则配置入口
+- [ ] **UI-04**: 系统日志页——顶部计数(队列 x/5000·写入·丢弃·失败)+倒序列表+多维筛选(级别/组件/user_id/source/call_source/provider/credential/model/关联键/关键词)+调用下钻(会话全部请求·原始数据/召回内容/webhook 原始)+按筛选清理+运行时日志配置表单
+- [ ] **SPEC-01**: 规范固化——`LOGGING-SPEC.md`+cursor 规则+AGENTS/CLAUDE 复核；全量事件目录补全；PR/Code Review checklist 落地，后续任何功能必须按规范补埋点
 
 ## Future Requirements
 
-后续里程碑（见 MILESTONE-PROPOSAL.md）：
+后续里程碑（v2，本里程碑不做）：
 
-- **v0.15.0 调用数据采集（RATE/RAG/SLA）**: QPS 分类、TPS（每 provider，含容器侧）、召回条数/分层耗时/相关度/内容留痕、请求错误（系统/业务限制/上游三口径）、上游错误码（429/529 单列）、请求时长与 TTFT 采集
-- **v0.16.0 快照·趋势·查询（SNAP/RATE-03/SLA-01/QUERY）**: CPU/内存/DB/Redis/Qdrant/协程/后台任务/并发排队当前快照、趋势采样、可用率、时序查询 API（`percentile_cont` 分位）
-- **v0.17.0 告警引擎（ALERT）**: 系统级阈值告警、AlertEvent（P0/P1/P2 + 持续时长 + email_sent + firing/resolved）、邮件通道（SMTP）
-- **v0.18.0 运维大盘 + 规范固化（UI/SPEC）**: echarts 时序大盘、快照面板、告警事件页、系统日志下钻页、规范固化与 PR checklist
+- **OBSX-01**: Prometheus / OTLP 导出 + 外部 Grafana
+- **OBSX-03**: 跨 server↔runner↔task 分布式 tracing
+- **OBSX-04**: 告警自适应/降噪/值班排班
+- **OBSX-05**: Sentry 接入（已预留 `sentry_before_send`）
+- **OBSX-06**: 日志冷存储 / ELK·Loki 导出
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| 指标聚合 / 时序存储 / 趋势 / 告警 / 大盘 | 属于 v0.15.0–v0.18.0；M1 只做"用户贯穿 + 日志落库/配置/留痕"地基，避免里程碑过大 |
-| 自研进程内直方图聚合器 + 多级 rollup 引擎 | 量级低，后续用原始事件行 + Postgres `percentile_cont` 更优雅且精确（见 MILESTONE-PROPOSAL §A.2） |
-| 集中式日志外部栈（ELK/Loki）/ 冷存储 | 内置落库 + 保留策略先满足自托管开箱即用；外部导出列 v2（OBSX-06） |
-| Sentry 接入 | 已预留 `sentry_before_send`，列 v2（OBSX-05） |
-| 多 worker 内存缓冲合并 | 落库后以 DB 为权威源；内存 `log_buffer` 仅作单进程极速兜底视图 |
+| 强依赖 Prometheus/Grafana/ELK | 违背自托管开箱即用；内置 Postgres + echarts 满足核心，外部栈列 v2 |
+| 自研进程内直方图聚合器 + 多级 rollup 引擎 | 量级低，原始事件行 + Postgres `percentile_cont` 更优雅且精确（见 MILESTONE-PROPOSAL §A.2） |
+| 硬套 workflow `AlertRule` 做基础设施告警 | 语义/约束不符（强绑 workflow），另起系统级告警（§A.3） |
+| 把 CPU/DB/Redis/Qdrant 做成长时序 | 用户明确"只看当前"，按需采集不长存 |
+| 容器 LLM 计费/扣费/配额 | 仅做 token/TTFT 可观测采集，不做计费 |
 
 ## Traceability
 
@@ -50,20 +96,44 @@ Milestone v0.14.0 可观测性地基（用户上下文贯穿 + 日志治理）�
 |-------------|-------|--------|
 | CTX-01 | Phase 71 | ☐ Pending |
 | CTX-02 | Phase 71 | ☐ Pending |
-| LOG-01 | Phase 72 | ☐ Pending |
-| LOG-02 | Phase 72 | ☐ Pending |
-| LOG-03 | Phase 72 | ☐ Pending |
-| LOG-05 | Phase 72 | ☐ Pending |
-| LOG-06 | Phase 73 | ☐ Pending |
-| LOG-08 | Phase 73 | ☐ Pending |
-| LOG-07 | Phase 74 | ☐ Pending |
-| LOG-04 | Phase 74 | ☐ Pending |
+| LOG-01 | Phase 71 | ☐ Pending |
+| LOG-02 | Phase 71 | ☐ Pending |
+| LOG-03 | Phase 71 | ☐ Pending |
+| LOG-04 | Phase 71 | ☐ Pending |
+| LOG-05 | Phase 71 | ☐ Pending |
+| LOG-06 | Phase 71 | ☐ Pending |
+| LOG-07 | Phase 71 | ☐ Pending |
+| LOG-08 | Phase 71 | ☐ Pending |
+| RATE-01 | Phase 72 | ☐ Pending |
+| RATE-02 | Phase 72 | ☐ Pending |
+| RAG-01 | Phase 72 | ☐ Pending |
+| RAG-02 | Phase 72 | ☐ Pending |
+| SLA-02 | Phase 72 | ☐ Pending |
+| SLA-03 | Phase 72 | ☐ Pending |
+| SLA-04 | Phase 72 | ☐ Pending |
+| SNAP-01 | Phase 73 | ☐ Pending |
+| SNAP-02 | Phase 73 | ☐ Pending |
+| SNAP-03 | Phase 73 | ☐ Pending |
+| SNAP-04 | Phase 73 | ☐ Pending |
+| SNAP-05 | Phase 73 | ☐ Pending |
+| RATE-03 | Phase 73 | ☐ Pending |
+| SLA-01 | Phase 73 | ☐ Pending |
+| QUERY-01 | Phase 73 | ☐ Pending |
+| QUERY-02 | Phase 73 | ☐ Pending |
+| ALERT-01 | Phase 74 | ☐ Pending |
+| ALERT-02 | Phase 74 | ☐ Pending |
+| ALERT-03 | Phase 74 | ☐ Pending |
+| UI-01 | Phase 75 | ☐ Pending |
+| UI-02 | Phase 75 | ☐ Pending |
+| UI-03 | Phase 75 | ☐ Pending |
+| UI-04 | Phase 75 | ☐ Pending |
+| SPEC-01 | Phase 75 | ☐ Pending |
 
 **Coverage:**
 
-- v1 requirements: 10 total
-- Mapped to phases: 10
+- v1 requirements: 34 total
+- Mapped to phases: 34
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-06-24 — milestone v0.14.0 可观测性地基*
+*Requirements defined: 2026-06-24 — milestone v0.14.0 可观测性与日志治理（5 Phase 71–75）*

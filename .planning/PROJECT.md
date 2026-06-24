@@ -28,23 +28,22 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.14.0 可观测性地基（用户上下文贯穿 + 日志治理）
+## Current Milestone: v0.14.0 可观测性与日志治理
 
-> v0.13.0 并发治理与索引体验已交付（Phases 65–70）。本里程碑是「可观测性与日志治理」5 里程碑计划（v0.14.0–v0.18.0）的第一站，完整方案见 `.planning/observability/MILESTONE-PROPOSAL.md`、规范见 `LOGGING-SPEC.md`、UI 参考见 `REFERENCE-UI.md`。
+> v0.13.0 并发治理与索引体验已交付（Phases 65–70）。本里程碑**一次性完整交付**可观测性与日志治理，分 5 个 Phase（71–75）线性推进，新开会话用 autonomous 跑完整个里程碑。完整方案见 `.planning/observability/MILESTONE-PROPOSAL.md`、规范见 `LOGGING-SPEC.md`、UI 参考见 `REFERENCE-UI.md`。
 
-**Goal:** 建立可观测性地基——让每一次调用都能绑定到触发用户（无则 system），并把系统日志从"每进程 800 条内存环形缓冲"升级为"队列化落库、可搜索、可按条件清理、可运行时配置"的日志中心；统一 webhook 原始留痕与调用下钻。它是后续指标/快照/告警/大盘里程碑的前置地基。
+**Goal:** 把 Friday AI 从"零散 structlog + 800 条内存缓冲 + 前端 4s 采样"升级为完整可观测性平台：时序指标（QPS/TPS/召回/SLA/时长/TTFT）可按任意时间段查询、当前快照（CPU/内存/DB/Redis/Qdrant/协程/后台任务）实时可见、阈值告警可配置且沉淀为告警事件、系统日志队列化落库且全量绑定触发用户、统一运维大盘可视。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
 
-**Target features:**
-- **用户上下文贯穿**：请求级 `structlog.contextvars` 中间件（HTTP/SSE/WS/MCP/compat 自动注入 user_id/source/request_id/trace_id），后台任务（durable/background_runner/workflow/apscheduler/飞书·webhook）携带 `initiated_by_user_id` 并在 worker 重新 bind；无发起人记 system。
-- **系统日志落库**：`SystemLogEntry` 落库，默认时间倒序，按组件/级别/用户/来源/关键词/时间段筛选与全文搜索。
-- **队列化写入 + 背压计数**：内存队列默认上限 5000，批量落库；满则丢弃并计丢弃数，落库失败计失败条数，两计数作指标暴露。
-- **运行时日志配置（实时生效）**：级别（全局/分组件）、堆栈记录阈值、采样初始/后续、保留天数·保留大小，复用 `SystemSetting`+signal。
-- **Webhook 原始留痕 + 调用下钻**：飞书/通用/Git push/容器回调原始 payload 脱敏入库可查看；MCP/对话日志下钻到触发用户与会话原始数据。
-- **事件分类与目录**：所有已知事件按 caller/sampling 分类、按组件归类，形成事件目录（落地 `LOGGING-SPEC.md`）。
+**Target features（5 Phase）:**
+- **Phase 71 可观测性地基**：用户上下文贯穿（请求中间件 + 后台任务用户传播）+ 系统日志治理（`SystemLogEntry` 落库、队列 5000 + 丢弃/失败计数、运行时配置、webhook 原始留痕、调用下钻、caller/sampling 分类、搜索/清理）。
+- **Phase 72 调用数据采集**：QPS 分类（`RequestMetric`）、TPS（每 provider，含容器）、召回（条数/分层耗时/相关度/内容留痕）、请求错误三口径、上游错误码（429/529 单列）、请求时长 + TTFT。
+- **Phase 73 快照·趋势·查询**：CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照、趋势采样（并发/排队/吞吐/错误）、可用率、时序查询 + 快照 API（`percentile_cont` 分位）。
+- **Phase 74 告警引擎**：系统级阈值告警（独立于 workflow `AlertRule`）、`AlertEvent`（P0/P1/P2 + 持续时长 + email_sent + firing/resolved + 去重）、邮件通道（SMTP）+ 复用飞书/webhook。
+- **Phase 75 运维大盘 + 规范固化**：echarts 时序大盘 + 快照面板 + 告警事件页 + 系统日志下钻页 + 运行时配置面板；规范固化 + 全量事件目录 + PR/Review checklist。
 
-**Key context:** 第一性原理——本系统量级低、人触发，观测的真正诉求是"看得见、控得住 + 归因"。本里程碑只做地基，不做指标聚合/大盘（留 v0.15.0+）。复用既有：`structlog`+`redact_credentials`/`redact_secrets_in_text`（脱敏不可绕过）、`common/log_buffer.py`（升级为队列+落库，保留作极速兜底）、Interaction Ledger（`server/interactions/`，调用详情/会话原始数据下钻）、`SystemSetting`/`settings_service`/`signals`（运行时配置）、`TriggerLog.webhook_raw_request`（飞书 webhook 原始范本）。约束：异步 ORM 走 `sync_to_async`；contextvars 在 adrf/线程/durable worker 不自动传播，须显式 bind；i18n 默认中文。
+**Key context:** 时序存储用**内置 Postgres**（不强依赖 Prometheus，列 v2）。**脱敏不可绕过**（`redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`，CI 守护不能破）。**用户上下文**用 `structlog.contextvars`+入口中间件（DRF 认证晚于 Django 中间件，用基类+ASGI 兜底）；跨线程/`_run_in_thread`/durable worker/`background_runner` 不自动传播，须显式 bind + job metadata 带 `initiated_by_user_id`。**指标/留痕/日志三分**：指标走精简事件表（`RequestMetric`/扩展 `ModelUsageRecord`，SQL 聚合）、留痕走 Interaction Ledger（`server/interactions/`）、日志走 `SystemLogEntry`（队列），用 `request_id/run_id/conversation_id` 关联不互相复制。复用 `SystemSetting`/`settings_service`/`signals`（运行时配置）、`Conversation`/`Message`（会话原始）、`TriggerLog`（飞书 webhook 原始范本）、`acquire_llm_slot` + 两个 Runner 流式循环（LLM 埋点 + TTFT）。告警另起系统级模型（现有 `AlertRule` 强绑工作流，不复用）。异步 ORM 走 `sync_to_async`；i18n 默认中文。
 
-**候选后续方向（本 5 里程碑计划）：** v0.15.0 调用数据采集（QPS/TPS/召回/SLA/上游错误/TTFT）、v0.16.0 快照·趋势·查询 API、v0.17.0 告警引擎与邮件、v0.18.0 运维大盘前端 + 规范固化。
+**候选后续方向（v2）：** Prometheus/OTLP 导出（OBSX-01）、跨 server↔runner↔task 分布式 tracing（OBSX-03）、告警自适应/降噪（OBSX-04）、Sentry（OBSX-05）、日志冷存储/ELK·Loki（OBSX-06）。
 
 ## Requirements
 
@@ -121,21 +120,51 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ### Active（v0.14.0 可观测性地基）
 
-<!-- 本里程碑在建需求。详见 .planning/REQUIREMENTS.md。v0.13.0 并发治理与索引体验（STREAM/LSP/CONC/PROG/BATCH/TOKEN）已交付，详见 MILESTONES.md 与 milestones/v0.13.0-*。完整 5 里程碑方案见 .planning/observability/MILESTONE-PROPOSAL.md。 -->
+<!-- 本里程碑在建需求（34 条，5 Phase 71–75）。详见 .planning/REQUIREMENTS.md 与 .planning/observability/MILESTONE-PROPOSAL.md。v0.13.0（STREAM/LSP/CONC/PROG/BATCH/TOKEN）已交付，详见 MILESTONES.md 与 milestones/v0.13.0-*。 -->
 
-**用户上下文贯穿（CTX）**
-- ☐ **CTX-01**: 请求级上下文中间件——HTTP/SSE/WS/MCP/compat 入口自动把 user_id(无则 system)/request_id/source/trace_id 绑定到 `structlog.contextvars`，请求结束清理，所有 structlog 事件自动带这些字段
-- ☐ **CTX-02**: 后台任务用户传播——durable/background_runner/workflow/apscheduler/飞书·webhook 触发入队携带 `initiated_by_user_id`，worker 入口重新 bind；跨线程/durable worker 正确继承；无发起人记 system
+**Phase 71 · 用户上下文贯穿（CTX）+ 系统日志治理（LOG）**
+- ☐ **CTX-01**: 请求级上下文中间件——HTTP/SSE/WS/MCP/compat 自动注入 user_id(无则 system)/request_id/source/trace_id 到 `structlog.contextvars`，请求结束清理
+- ☐ **CTX-02**: 后台任务用户传播——durable/background_runner/workflow/apscheduler/飞书·webhook 入队携带 `initiated_by_user_id`，worker 重新 bind；无发起人记 system
+- ☐ **LOG-01**: 系统日志落库（`SystemLogEntry`）默认倒序 + 按组件/级别/用户/来源/关键词/时间段筛选与全文搜索
+- ☐ **LOG-02**: 队列化写入（上限 5000）+ 批量落库 + 丢弃计数 + 失败条数计数，不反噬业务
+- ☐ **LOG-03**: 日志全量绑定触发用户（无则 system），可按用户筛选
+- ☐ **LOG-04**: 调用下钻——MCP 显示触发用户；AI 对话下钻会话全部请求与原始数据（复用 Interaction Ledger/Conversation/Message）
+- ☐ **LOG-05**: 事件按 caller/sampling 分类 + 组件归类，形成事件目录
+- ☐ **LOG-06**: 运行时日志配置（实时生效）——级别(全局/分组件)/堆栈阈值/采样初始/后续/保留天数·大小
+- ☐ **LOG-07**: Webhook 原始数据统一落库可查看（飞书/通用/Git push/容器回调，脱敏）
+- ☐ **LOG-08**: 日志清理——按条件批量清理 + 保留策略到期定时清理
 
-**系统日志落库（LOG）**
-- ☐ **LOG-01**: 系统日志落库（`SystemLogEntry`），默认时间倒序，支持按组件/级别(debug·info·warn·error)/用户/来源/关键词/时间段筛选与全文搜索
-- ☐ **LOG-02**: 队列化写入——内存队列上限默认 5000，后台批量落库；满则丢弃并累计丢弃数，落库失败累计失败条数，两计数作指标暴露且不影响主流程
-- ☐ **LOG-03**: 日志全量绑定触发用户（依赖 CTX），无触发用户记 system，可按用户筛选
-- ☐ **LOG-04**: 调用下钻后端——MCP 调用显示触发用户；AI 对话事件关联用户+会话，可取该会话全部请求与原始数据（复用 Interaction Ledger/Conversation/Message）
-- ☐ **LOG-05**: 事件分类与目录——所有已知事件按 caller/sampling 分类、按组件归类，形成事件目录（`LOGGING-SPEC.md`）
-- ☐ **LOG-06**: 运行时日志配置（实时生效，复用 `SystemSetting`+signal）——级别(全局/分组件)/堆栈记录阈值/采样初始/采样后续/保留天数·保留大小
-- ☐ **LOG-07**: Webhook 原始数据统一落库可查看（`InboundWebhookEvent`）——飞书/通用工作流/Git push/容器回调原始 payload 脱敏后入库
-- ☐ **LOG-08**: 日志清理——按条件(时间/级别/组件/用户/关键词)批量清理；保留策略到期定时自动清理
+**Phase 72 · 调用数据采集（RATE/RAG/SLA 采集）**
+- ☐ **RATE-01**: QPS 分类采集（`RequestMetric`），覆盖 REST/MCP/对话/兼容/召回/embedding·reranker/webhook/WS，轮询·health 打标隔离
+- ☐ **RATE-02**: TPS 采集（全量含容器）——扩展 `ModelUsageRecord`（call_source/ttft/上游码），22 类 call_source + 补全容器 token 链路
+- ☐ **RAG-01**: 召回指标——条数/分层耗时(embedding·sparse·qdrant·rerank)/相关度 score，按来源与时间段
+- ☐ **RAG-02**: 召回内容留痕扩展到 MCP + AI 对话两条链（`RetrievalTrace` 记 query+内容+score+会话/用户）
+- ☐ **SLA-02**: 请求错误三口径分离（系统错误/业务限制/上游），`RequestMetric.error_class`+状态码
+- ☐ **SLA-03**: 上游错误码采集（429/529 单列），按 provider/model
+- ☐ **SLA-04**: 请求时长 + TTFT 采集（流式埋首 chunk），支持分位
+
+**Phase 73 · 快照·趋势·查询（SNAP/RATE-03/SLA-01/QUERY）**
+- ☐ **SNAP-01**: server/主机——CPU/内存(psutil)/协程/线程/后台任务数
+- ☐ **SNAP-02**: 数据库——连接数/活跃/空闲/等待(`pg_stat_activity`+max_connections/pool)
+- ☐ **SNAP-03**: Redis——连接(`connected_clients`/maxclients)/内存/命中率(`INFO`)
+- ☐ **SNAP-04**: Qdrant——可用性/collection 数/占用空间（缓存+长超时）
+- ☐ **SNAP-05**: 并发/排队当前值——provider 槽位/durable 队列/runner/RAG
+- ☐ **RATE-03**: 趋势采集（只记不告警）——`GaugeSample` 并发/排队 + 吞吐/错误趋势 SQL 聚合
+- ☐ **SLA-01**: 每时刻可用率/业务故障率（排除业务限制口径）+ 健康探针
+- ☐ **QUERY-01**: 时序查询 API（任意时间段/step/维度 + `percentile_cont` 分位 + 保留清理）
+- ☐ **QUERY-02**: 快照 API（聚合 SNAP-01~05 当前值）
+
+**Phase 74 · 告警引擎与通知（ALERT）**
+- ☐ **ALERT-01**: 系统级阈值告警规则（独立于 workflow `AlertRule`，运行时可改）
+- ☐ **ALERT-02**: 告警事件 `AlertEvent`（P0/P1/P2 + 规则信息 + 持续时长 + firing/resolved + email_sent + 去重）
+- ☐ **ALERT-03**: 邮件通道（SMTP + 收件人配置）+ 复用飞书/webhook 通知分发
+
+**Phase 75 · 运维大盘前端 + 规范固化（UI/SPEC）**
+- ☐ **UI-01**: 大盘上半区——健康分 + 实时速率卡 + 信息卡排（请求/SLA/错误/时长/TTFT/上游 429·529）+ 时间范围
+- ☐ **UI-02**: 当前快照行 + 趋势（吞吐/错误/时长分布/并发排队），卡内内联阈值
+- ☐ **UI-03**: 告警事件页（级别/状态/规则/持续时长/邮件状态）+ 阈值配置入口
+- ☐ **UI-04**: 系统日志页（计数 + 倒序 + 多维筛选 + 调用下钻 + 清理 + 运行时配置表单）
+- ☐ **SPEC-01**: 规范固化 + 全量事件目录 + PR/Review checklist
 
 **Backlog 候选（后续里程碑）：**
 
