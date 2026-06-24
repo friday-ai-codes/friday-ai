@@ -306,6 +306,50 @@ def purge_metrics_job():
 
 
 @_with_scheduler_log_context
+def evaluate_system_alerts_job():
+    """Job wrapper：周期评估 SystemAlertRule 阈值并 fire/resolve AlertEvent（ALERT-01）。
+
+    沿用既有 ``*_job`` + ``run_async_task`` 范式。**评估较高频**（~60s）：本 wrapper 的
+    ``job_start`` / ``job_complete`` 保留，但 ``evaluate_system_alerts`` 内部评估周期事件
+    用 ``category=sampling`` 避免刷屏（高频循环纪律），firing/resolved 用 ``category=
+    caller`` 可归因。评估函数本身 best-effort 单规则隔离（异常吞掉记 warning），不抛回
+    本 wrapper、绝不打断 scheduler 主循环。
+    """
+    from system.alert_evaluator import evaluate_system_alerts
+
+    log = logger.bind(job="evaluate_system_alerts")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(evaluate_system_alerts)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
+def purge_alert_events_job():
+    """Job wrapper：保留策略到期清理 ``AlertEvent``（ALERT-02 保留治理）。
+
+    镜像 ``purge_observability_logs_job``：沿用 ``run_async_task`` 范式；清理函数本身
+    best-effort（异常吞掉记 warning），不抛回本 wrapper。
+    """
+    from system.alert_retention import purge_alert_events
+
+    log = logger.bind(job="purge_alert_events")
+    log.info("job_start")
+
+    async def _run():
+        return await purge_alert_events()
+
+    try:
+        result = run_async_task(_run)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -506,6 +550,36 @@ class Command(BaseCommand):
             replace_existing=True,
         )
         logger.info("job_registered", job="purge_metrics", schedule="daily at 05:00")
+
+        # 系统告警周期评估（ALERT-01）：IntervalTrigger ~60s 对 enabled SystemAlertRule 读
+        # 当前值比阈值，超阈 fire / 恢复 resolve AlertEvent。间隔取
+        # settings.ALERT_EVAL_INTERVAL_SECONDS（默认 60）启动值；运行时改间隔走
+        # SettingKeys.ALERT_EVAL_INTERVAL_SECONDS（热改需重启 scheduler，量级低可接受）。
+        # 评估内部 category=sampling 不刷屏（高频循环纪律）。
+        scheduler.add_job(
+            evaluate_system_alerts_job,
+            trigger=IntervalTrigger(
+                seconds=getattr(settings, "ALERT_EVAL_INTERVAL_SECONDS", 60)
+            ),
+            id="evaluate_system_alerts",
+            name="Evaluate SystemAlertRule thresholds and fire/resolve AlertEvent",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("job_registered", job="evaluate_system_alerts", schedule="every ~60s")
+
+        # 告警事件保留清理（ALERT-02）daily at 05:30。
+        # 选 05:30 错开既有 03:00/03:30/04:00/04:30/05:00 清理任务，避免争 SQLite 写锁
+        # （Claude's Discretion）；按保留策略清理 AlertEvent（按 started_at）。
+        scheduler.add_job(
+            purge_alert_events_job,
+            trigger=CronTrigger(hour=5, minute=30),
+            id="purge_alert_events",
+            name="Purge AlertEvent by retention policy",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("job_registered", job="purge_alert_events", schedule="daily at 05:30")
 
         # Delete old job executions weekly
         scheduler.add_job(
