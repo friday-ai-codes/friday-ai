@@ -376,7 +376,7 @@ defineExpose({ rawItems })
           <!-- 数据行 -->
           <template v-for="row in items" v-else :key="row.id">
             <TableRow
-              class="cursor-pointer transition-colors"
+              class="cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
               tabindex="0"
               @click="onRowClick(row)"
               @keydown.enter="onRowClick(row)"

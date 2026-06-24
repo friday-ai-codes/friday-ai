@@ -295,7 +295,7 @@ function onRowClick(e: AlertEventRow) {
             v-for="ev in events"
             v-else
             :key="ev.id"
-            class="cursor-pointer transition-colors"
+            class="cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
             tabindex="0"
             @click="onRowClick(ev)"
             @keydown.enter="onRowClick(ev)"

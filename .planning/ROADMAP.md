@@ -29,7 +29,7 @@
 - [x] **Phase 72: 调用数据采集（AI/LLM + 召回 + 请求入口）** (4/4 plans) — RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 — completed 2026-06-24（verification 6/6 passed）
 - [x] **Phase 73: 快照·趋势·查询 API** (3/3 plans) — SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02 — completed 2026-06-24（verification 6/6 passed） — **planned: 3 plans / 2 waves**
 - [x] **Phase 74: 告警引擎与通知（阈值 + 告警事件 + 邮件）** (3/3 plans) — ALERT-01, ALERT-02, ALERT-03 — completed 2026-06-24（verification 3/3 passed）
-- [ ] **Phase 75: 运维大盘前端 + 规范固化** - echarts 大盘(健康分/实时速率/信息卡/趋势/快照) + 告警事件页 + 系统日志下钻页 + 运行时配置面板 + 规范固化与 PR/Review checklist — UI-01, UI-02, UI-03, UI-04, SPEC-01
+- [x] **Phase 75: 运维大盘前端 + 规范固化** (5/5 plans) — UI-01, UI-02, UI-03, UI-04, SPEC-01 — completed 2026-06-24（verification 5/5 passed，UI review 20/24 advisory + polish 已修）
 
 ## Phase Details
 
@@ -201,7 +201,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性与日志治理（Phases 71–75，5 阶段 / 34 需求，4/5 完成）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
+里程碑 v0.1.0–v0.13.0（Phases 1–70）均已交付。当前进行：**v0.14.0 可观测性与日志治理（Phases 71–75，5 阶段 / 34 需求，5/5 完成 — 待里程碑收口）**。各历史里程碑详情归档在 `.planning/milestones/`，要点见 `MILESTONES.md`。
 
 ---
 *Previous milestones archived in .planning/milestones/*
