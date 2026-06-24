@@ -121,6 +121,14 @@ class SettingKeys:
     LOG_RETENTION_DAYS = "log.retention_days"  # int：保留天数，默认 30（清理在 71-04 消费）。
     LOG_RETENTION_SIZE = "log.retention_max_rows"  # int：行数上限兜底，默认 1_000_000（71-04 消费）。
 
+    # 指标采样与保留（RATE-03，73-03 消费）：与 LOG_RETENTION_* 同款运行时可配。
+    # GaugeSample 采样间隔；apscheduler IntervalTrigger 以 settings 启动值为准，
+    # sample_gauges 内部按本键 clamp(30..300)；热改间隔需重启 scheduler（量级低可接受）。
+    METRIC_SAMPLE_INTERVAL_SECONDS = "metric.sample_interval_seconds"  # int：采样间隔，默认 45。
+    METRIC_RETENTION_DAYS = "metric.retention_days"  # int：指标表保留天数，默认 30。
+    # int：单表行数上限兜底，默认 2_000_000（指标比日志高频，上限略放宽）。
+    METRIC_RETENTION_SIZE = "metric.retention_max_rows"
+
 
 class CacheVolumeTracker(models.Model):
     """跟踪 Docker 缓存卷的使用情况。
