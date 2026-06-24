@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.14.0
 milestone_name: 可观测性与日志治理
-status: planning
-last_updated: "2026-06-24T11:12:29.250Z"
-last_activity: 2026-06-24
+status: shipped
+last_updated: "2026-06-25T03:07:00.000Z"
+last_activity: 2026-06-25
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 20
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -19,25 +19,27 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-24 — start milestone v0.14.0 可观测性地基)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并全链路"看得见、控得住、可归因"。v0.14.0（一个里程碑、5 Phase 71–75 完整交付可观测性与日志治理）：用户上下文贯穿 + 系统日志队列化落库 + QPS/TPS/召回/SLA/时长/TTFT 时序指标 + CPU/内存/DB/Redis/Qdrant 当前快照 + 并发/排队/吞吐/错误趋势 + 阈值告警与告警事件（P0/P1/P2，邮件）+ 运维大盘。第一性原理：量级低、人触发，用原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表，自研基础设施最小化。完整方案 `.planning/observability/MILESTONE-PROPOSAL.md`，规范 `LOGGING-SPEC.md`，UI 参考 `REFERENCE-UI.md`。
-**Current focus:** Milestone v0.14.0 — autonomous 顺序跑 Phase 71→75（71 地基 → 72 采集 → 73 快照查询 → 74 告警 → 75 大盘）。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并全链路"看得见、控得住、可归因"。v0.14.0（一个里程碑、5 Phase 71–75 完整交付可观测性与日志治理）已于 2026-06-24 shipped、里程碑审计 passed（34/34 需求满足、integration_ok）。
+**Current focus:** v0.14.0 已收口归档；当前无进行中里程碑——下一步 `/gsd-new-milestone` 立项 v0.15.0。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: — (between milestones)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-24 — Milestone v0.14.0 started
+Status: v0.14.0 shipped & archived（里程碑审计 passed，5/5 phases / 20 plans / 34 需求）
+Last activity: 2026-06-25 — Milestone v0.14.0 complete-milestone + cleanup（ROADMAP/REQUIREMENTS/AUDIT 归档至 milestones/v0.14.0-*、phases 71–75 归档至 milestones/v0.14.0-phases/）
 
-## Milestone Overview (v0.14.0 — Phases 71–75)
+## Milestone Overview (v0.14.0 — Phases 71–75 — ✅ SHIPPED 2026-06-24)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 71 | 可观测性地基（用户上下文贯穿 + 系统日志治理） | CTX-01, CTX-02, LOG-01~08 | ☐ Pending |
-| 72 | 调用数据采集（AI/LLM TPS + 召回 + 请求入口 QPS/SLA/时长/TTFT/上游错误） | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 | ☐ Pending |
-| 73 | 快照·趋势·查询 API | SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02 | ☐ Pending |
-| 74 | 告警引擎与通知（阈值 + 告警事件 + 邮件） | ALERT-01, ALERT-02, ALERT-03 | ☐ Pending |
-| 75 | 运维大盘前端 + 规范固化 | UI-01~04, SPEC-01 | ☐ Pending |
+| 71 | 可观测性地基（用户上下文贯穿 + 系统日志治理） | CTX-01, CTX-02, LOG-01~08 | ✅ Complete |
+| 72 | 调用数据采集（AI/LLM TPS + 召回 + 请求入口 QPS/SLA/时长/TTFT/上游错误） | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 | ✅ Complete |
+| 73 | 快照·趋势·查询 API | SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02 | ✅ Complete |
+| 74 | 告警引擎与通知（阈值 + 告警事件 + 邮件） | ALERT-01, ALERT-02, ALERT-03 | ✅ Complete |
+| 75 | 运维大盘前端 + 规范固化 | UI-01~04, SPEC-01 | ✅ Complete |
+
+完整需求与阶段详情已归档：[milestones/v0.14.0-REQUIREMENTS.md](./milestones/v0.14.0-REQUIREMENTS.md) / [milestones/v0.14.0-ROADMAP.md](./milestones/v0.14.0-ROADMAP.md) / [milestones/v0.14.0-MILESTONE-AUDIT.md](./milestones/v0.14.0-MILESTONE-AUDIT.md)。
 
 **Execution order:** 71 → 72 → 73 → 74 → 75。依赖：71（用户贯穿 + 日志落库）是地基，归因与日志载体先行；72（采集）把 QPS/TPS/召回/SLA/TTFT 写入事件表（`RequestMetric`/扩展 `ModelUsageRecord`/`RetrievalTrace`）；73（快照·趋势·查询）依赖 72 数据做时序查询 + 补当前快照 + 趋势采样；74（告警）依赖 73 的查询/快照评估阈值；75（大盘）依赖前面所有后端 API。线性推进，autonomous 一次跑完整个里程碑。
 
@@ -386,11 +388,12 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-24
-Stopped at: v0.14.0 可观测性与日志治理 里程碑立项完成（单里程碑 5 Phase 71–75；PROJECT/REQUIREMENTS/ROADMAP/STATE + observability/ 方案规范就绪，34/34 需求映射）
+Last session: 2026-06-25
+Stopped at: v0.14.0 可观测性与日志治理 里程碑收口完成（complete-milestone + cleanup）——ROADMAP/REQUIREMENTS/AUDIT 已归档至 `milestones/v0.14.0-*`，phases 71–75 已归档至 `milestones/v0.14.0-phases/`，`REQUIREMENTS.md` 已删（待 orchestrator `git rm`），ROADMAP/MILESTONES/STATE 反映 v0.14.0 shipped。里程碑审计 passed（34/34、integration_ok）。
 Resume file: None
-Next: `/gsd-autonomous`（一次跑完 v0.14.0，顺序 71→75）或 `/gsd-plan-phase 71`（可观测性地基）
+Next: `/gsd-new-milestone` 立项 v0.15.0
 
 ## Operator Next Steps
 
-- 新开会话用 `/gsd-autonomous` 跑完整个 v0.14.0（71→75），或 `/gsd-plan-phase 71` 手动起步
+- v0.14.0 已 shipped 并归档；新开会话用 `/gsd-new-milestone` 立项下一个里程碑（v0.15.0）
+- 可观测性增量已列 v2（OBSX-01~06）：Prometheus/OTLP 导出、跨进程分布式 tracing、告警降噪、Sentry、日志冷存储
