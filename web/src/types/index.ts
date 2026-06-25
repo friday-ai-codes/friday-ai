@@ -217,11 +217,17 @@ export interface Repository extends RepositoryBase {
   updated_at: string
   has_credential: boolean
   spaces: SpaceSummary[]
+  /** #15：列表接口返回的关联空间（id+name），用于卡片展示与按空间筛选 */
+  linked_spaces?: SpaceSummary[]
   proxy_url?: string
   auto_index_enabled: boolean
   webhook_secret?: string | null
   linked_spaces_count?: number
   index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed' | 'cancelled'
+  /** 建立知识生成状态（not_started/pending/running/completed/failed） */
+  ai_summary_status?: string
+  /** #15/#16：建立知识（PageIndex 能力树）是否已生成 */
+  has_tree?: boolean
   last_indexed_at: string | null
   /** 远端 HEAD 所在分支（ls-remote --symref 探测缓存，UI 展示 HEAD 标签用） */
   remote_head_branch?: string | null
@@ -253,8 +259,8 @@ export interface RepositoryCreate extends RepositoryBase {
   git_instance_credential_id?: string | null
   git_user_name?: string
   git_user_email?: string
-  /** 必填：所有仓库都必须至少关联一个空间 */
-  space_ids: string[]
+  /** #9：可选——可暂不关联空间，之后再绑定（孤儿仓库仅系统管理员可见） */
+  space_ids?: string[]
   /** test-connection 探测到的 HEAD 分支（display-only 缓存） */
   remote_head_branch?: string | null
 }
@@ -322,6 +328,12 @@ export interface SpaceBase {
 /**
  * 空间完整类型（来自 API）
  */
+export interface SpaceAdmin {
+  id: string
+  username: string
+  display_name: string
+}
+
 export interface Space extends SpaceBase {
   id: string
   created_at: string
@@ -331,6 +343,7 @@ export interface Space extends SpaceBase {
   repositories?: Repository[]
   execution_count?: number
   recent_work_items?: Array<{ id: string, name: string }>
+  admins?: SpaceAdmin[]
 }
 
 /**

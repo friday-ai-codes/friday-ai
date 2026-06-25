@@ -148,25 +148,29 @@ const loading = computed(() => (qpsLoading.value && !qpsData.value) || (tpsLoadi
         <span class="icon-[lucide--activity] text-base text-primary" />
         实时速率
       </div>
-      <div
-        class="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
-        role="tablist"
-        aria-label="实时速率窗口"
-      >
-        <button
-          v-for="w in WINDOWS"
-          :key="w.key"
-          type="button"
-          role="tab"
-          :aria-selected="activeKey === w.key"
-          class="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          :class="activeKey === w.key
-            ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'"
-          @click="activeKey = w.key"
+      <div class="flex items-center gap-2">
+        <span class="hidden text-[11px] text-muted-foreground sm:inline">实时窗口</span>
+        <div
+          class="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+          role="tablist"
+          aria-label="实时速率采样窗口（与顶部历史时间范围相互独立）"
         >
-          {{ w.label }}
-        </button>
+          <button
+            v-for="w in WINDOWS"
+            :key="w.key"
+            type="button"
+            role="tab"
+            :aria-selected="activeKey === w.key"
+            :title="`按最近 ${w.label} 计算瞬时速率`"
+            class="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            :class="activeKey === w.key
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'"
+            @click="activeKey = w.key"
+          >
+            {{ w.label }}
+          </button>
+        </div>
       </div>
     </div>
 

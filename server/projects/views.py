@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import encrypt_value
+from permissions.api_permissions import IsProjectAdmin, IsSuperUser
 from permissions.models import ProjectMembership, ProjectRole
 from permissions.services import PermissionService
 from repositories.models import AuthType, GitCredential, Repository
@@ -56,6 +57,13 @@ class SpaceViewSet(ModelViewSet):
                 "repositories",
                 queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
             ),
+            Prefetch(
+                "memberships",
+                queryset=ProjectMembership.objects.filter(
+                    role=ProjectRole.ADMIN
+                ).select_related("user"),
+                to_attr="admin_memberships",
+            ),
         )
         .annotate(execution_count=Count("workflow_executions", distinct=True))
         .all()
@@ -76,6 +84,20 @@ class SpaceViewSet(ModelViewSet):
 
         # 普通用户按 membership 过滤
         return qs.filter(memberships__user=user).distinct()
+
+    def get_permissions(self):
+        """空间增删 → 系统管理员；改 → 空间管理员；其余按默认（成员可见性）。
+
+        - create / destroy：``IsSuperUser``（新建/删除空间是平台级操作，#10）。
+        - update / partial_update：``IsProjectAdmin``（object-level，空间管理员可改，
+          aget_object 触发 check_object_permissions，#11）。
+        - 其余（list/retrieve/config @actions）：默认权限；config @actions 内部已自校验 admin。
+        """
+        if self.action in ("create", "destroy"):
+            return [IsSuperUser()]
+        if self.action in ("update", "partial_update"):
+            return [IsProjectAdmin()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == "create":

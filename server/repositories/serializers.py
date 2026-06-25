@@ -52,6 +52,10 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     has_credential = serializers.SerializerMethodField()
     linked_spaces_count = serializers.SerializerMethodField()
+    # #15：列表卡片直接展示所属空间名（不止数量），并按空间筛选。
+    linked_spaces = serializers.SerializerMethodField()
+    # #15：建立知识（PageIndex 能力树）是否已生成，供列表卡片展示与筛选。
+    has_tree = serializers.SerializerMethodField()
     # SDD-02（48-02）：从 facets["methodology"] 派生的只读方法论字段（无 facets 时为 null），
     # 让标准 /repositories 列表/详情也能透出 SDD 标记（不仅限知识树）。
     methodology = serializers.SerializerMethodField()
@@ -76,6 +80,8 @@ class RepositorySerializer(serializers.ModelSerializer):
             "updated_at",
             "has_credential",
             "linked_spaces_count",
+            "linked_spaces",
+            "has_tree",
             "methodology",
             "ai_summary",
             "ai_summary_status",
@@ -143,6 +149,14 @@ class RepositorySerializer(serializers.ModelSerializer):
         """返回关联到此仓库的空间数量。"""
         return obj.projects.count()
 
+    def get_linked_spaces(self, obj: Repository) -> list[dict]:
+        """返回关联空间（id+name），供列表卡片展示与按空间筛选（#15）。"""
+        return [{"id": str(p.id), "name": p.name} for p in obj.projects.all()]
+
+    def get_has_tree(self, obj: Repository) -> bool:
+        """建立知识（PageIndex 能力树）是否已生成（#15/#16）。"""
+        return bool(obj.ai_summary_tree)
+
     def validate_git_url(self, value: str) -> str:
         return validate_https_git_url(value)
 
@@ -150,7 +164,8 @@ class RepositorySerializer(serializers.ModelSerializer):
 class RepositoryCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating Repository with credential.
 
-    space_ids 必填且至少一个：所有仓库都必须关联到至少一个空间。
+    space_ids 可选：允许先创建仓库、之后再绑定空间（#9）。未绑定空间的仓库为
+    "孤儿仓库"，仅系统管理员可见/管理，可在仓库详情/列表后补绑定。
     """
 
     # TOKEN-02：access_token 改为可选——可填自有 token，或经 git_instance_credential_id
@@ -165,8 +180,9 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
     space_ids = serializers.ListField(
         child=serializers.UUIDField(),
         write_only=True,
-        allow_empty=False,
-        error_messages={"empty": "仓库必须至少关联一个空间"},
+        required=False,
+        allow_empty=True,
+        default=list,
     )
     # 前端从 test-connection 的 head_branch 带入（display-only 缓存字段）
     remote_head_branch = serializers.CharField(required=False, allow_blank=True, max_length=100)

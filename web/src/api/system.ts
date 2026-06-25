@@ -224,19 +224,27 @@ export async function getSystemLogs(params: { limit?: number, level?: string } =
 // GET /api/system/tasks/（IsAuthenticated）
 // ============================================================================
 
+export interface TaskSpaceRef {
+  id: string
+  name: string
+}
+
 export interface IndexingTaskItem {
   repository_id: string
   name: string
+  status: string
   stage: string
   current_file: string
   files_processed: number
   files_total: number
+  spaces: TaskSpaceRef[]
 }
 
 export interface SummaryTaskItem {
   repository_id: string
   name: string
   status: string
+  spaces: TaskSpaceRef[]
 }
 
 export interface ActiveTasksResponse {
@@ -248,8 +256,30 @@ export interface ActiveTasksResponse {
   }
 }
 
-export async function getActiveTasks(): Promise<ActiveTasksResponse> {
-  return get<ActiveTasksResponse>('/system/tasks/')
+export interface ActiveTasksParams {
+  /** indexing | summary | queue | all（默认 all） */
+  type?: string
+  /** pending | running | all（默认 all） */
+  status?: string
+  /** 按空间 ID 过滤 */
+  space_id?: string
+  limit?: number
+  offset?: number
+}
+
+/** 任务中心：仅系统管理员可访问（后端 IsSuperUser）。 */
+export async function getActiveTasks(params: ActiveTasksParams = {}): Promise<ActiveTasksResponse> {
+  return get<ActiveTasksResponse>('/system/tasks/', params as Record<string, any>)
+}
+
+/** 终止仓库索引任务。 */
+export async function cancelRepoIndex(repositoryId: string): Promise<unknown> {
+  return post(`/repositories/${repositoryId}/index/cancel/`)
+}
+
+/** 终止仓库"建立知识"任务。 */
+export async function cancelRepoSummary(repositoryId: string): Promise<unknown> {
+  return post(`/repositories/${repositoryId}/generate-summary/cancel/`)
 }
 
 // ============================================================================

@@ -31,6 +31,9 @@ logger = structlog.get_logger(__name__)
 # 多仓 RAG 并发上限：每仓一次 Qdrant 混合检索，跨 50+ 仓时串行延迟线性累加。
 # 用有界并发把延迟从 O(N) 降到 O(N/并发)，上限防止打爆 Qdrant 连接/worker。
 _RAG_REPO_CONCURRENCY = 8
+# 单仓检索超时：一个慢 Qdrant 查询不得拖垮整波检索（避免 turn 被无限拉长 →
+# 客户端/网关超时中断 → 前端 network error）。超时单仓 fail-soft 返回 []。
+_RAG_PER_REPO_TIMEOUT_S = 20.0
 
 
 def _record_rag_metric(
@@ -171,13 +174,19 @@ async def search_rag(
                     log_exclusion_blocked(surface="rag", repository_id=repo_id, rel_path="")
                     return []
                 try:
-                    results = await BranchAwareSearchService.search(
-                        repo_id,
-                        query_dense,
-                        query_sparse=query_sparse,
-                        branch_name=branch_name,
-                        top_k=fetch_k,
+                    results = await asyncio.wait_for(
+                        BranchAwareSearchService.search(
+                            repo_id,
+                            query_dense,
+                            query_sparse=query_sparse,
+                            branch_name=branch_name,
+                            top_k=fetch_k,
+                        ),
+                        timeout=_RAG_PER_REPO_TIMEOUT_S,
                     )
+                except TimeoutError:
+                    logger.warning("rag_search_single_repo_timeout", repo_id=repo_id, timeout_s=_RAG_PER_REPO_TIMEOUT_S)
+                    return []
                 except Exception as e:  # noqa: BLE001
                     logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(e))
                     return []

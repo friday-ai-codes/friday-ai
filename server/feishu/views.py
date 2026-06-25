@@ -20,6 +20,8 @@ from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import decrypt_value, encrypt_value
 from common.log_context import LogSource, bind_request_context
+from permissions.models import ProjectRole
+from permissions.services import PermissionService
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
 from system.webhook_recorder import client_ip, record_inbound_webhook
@@ -1328,11 +1330,41 @@ class FeishuWebhookView(APIView):
 # ============ Config Views ============
 
 
+async def _require_space_admin(request, project) -> Response | None:
+    """空间配置写操作守卫：仅空间管理员或系统管理员（#11/#12）。
+
+    通过返回 None；否则返回 403 Response。
+    """
+    is_admin = await sync_to_async(PermissionService.has_project_access)(
+        request.user, project, ProjectRole.ADMIN
+    )
+    if not is_admin:
+        return Response(
+            {"detail": "仅空间管理员可操作此配置"}, status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
+async def _require_space_member(request, project) -> Response | None:
+    """空间读操作守卫：需为空间成员（viewer+）或系统管理员。"""
+    has_access = await sync_to_async(PermissionService.has_project_access)(
+        request.user, project
+    )
+    if not has_access:
+        return Response(
+            {"detail": "无权访问此空间"}, status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
 class FeishuConfigView(APIView):
     """Manage Feishu configuration for a space."""
 
     async def get(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_member(request, project)
+        if denied is not None:
+            return denied
         data = FeishuConfigSerializer(project).data
         logger.info(
             "feishu_config_view_get",
@@ -1347,6 +1379,9 @@ class FeishuConfigView(APIView):
 
     async def put(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_admin(request, project)
+        if denied is not None:
+            return denied
         serializer = FeishuConfigCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -1361,6 +1396,9 @@ class FeishuConfigView(APIView):
 
     async def delete(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_admin(request, project)
+        if denied is not None:
+            return denied
         project.feishu_plugin_id = None
         project.feishu_plugin_secret_encrypted = None
         project.feishu_user_key = None
@@ -1373,6 +1411,9 @@ class FeishuConfigTestView(APIView):
 
     async def post(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_admin(request, project)
+        if denied is not None:
+            return denied
 
         if not project.has_feishu_config():
             return Response(
@@ -1458,6 +1499,9 @@ class RefreshWebhookTokenView(APIView):
 
     async def post(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_admin(request, project)
+        if denied is not None:
+            return denied
         project.feishu_webhook_token = generate_webhook_token()
         await project.asave()
         return Response(
@@ -1470,6 +1514,9 @@ class UpdateWebhookTokenView(APIView):
 
     async def put(self, request, space_id):
         project = await aget_object_or_404(Project, id=space_id)
+        denied = await _require_space_admin(request, project)
+        if denied is not None:
+            return denied
         serializer = WebhookTokenUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

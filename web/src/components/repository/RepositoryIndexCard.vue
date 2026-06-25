@@ -526,7 +526,7 @@ onUnmounted(() => {
               />
               <span v-else-if="aiSummaryStatus === 'completed'" class="icon-[lucide--check] text-emerald-500" />
               <span v-else-if="aiSummaryStatus === 'failed'" class="icon-[lucide--triangle-alert] text-destructive" />
-              <span>AI 描述：{{ aiSummaryStatusLabel }}</span>
+              <span>建立知识：{{ aiSummaryStatusLabel }}</span>
               <span v-if="aiSummaryStatus === 'failed' && aiSummaryError" class="text-destructive/80 truncate">— {{ aiSummaryError }}</span>
             </div>
           </div>

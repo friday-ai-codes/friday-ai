@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { usePermission } from '~/composables/usePermission'
 import { PLATFORM_LABELS } from '~/types'
 
 const route = useRoute('/spaces/[id]/')
@@ -35,6 +36,9 @@ const { success } = useToast()
 const { copy } = useClipboard()
 
 const spaceId = computed(() => route.params.id)
+
+// 权限：删除空间仅系统管理员（#10）；编辑/配置为空间管理员（#11）。
+const { isSystemAdmin, isSpaceAdmin } = usePermission(spaceId)
 
 useHead({
   title: computed(() => spacesStore.currentSpace?.name
@@ -180,7 +184,8 @@ const sections = computed<NavSection[]>(() => [
     badge: spaceExecutions.value.length || undefined,
     badgeTone: 'primary',
   },
-  { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
+  // 危险操作（删除空间）仅系统管理员可见（#10）。
+  ...(isSystemAdmin.value ? [{ id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' }] : []),
 ])
 
 // 关联仓库 - 穿梭框模式
@@ -406,8 +411,8 @@ async function handleCustomToken() {
                     {{ hasFullConfig ? '已就绪' : '配置中' }}
                   </Badge>
                 </div>
-                <p class="text-sm text-muted-foreground mt-1.5">
-                  {{ space.description || '暂无描述' }}
+                <p v-if="space.description" class="text-sm text-muted-foreground mt-1.5">
+                  {{ space.description }}
                 </p>
                 <!-- 元数据行 -->
                 <div class="flex items-center gap-x-5 gap-y-1.5 mt-3 text-xs text-muted-foreground flex-wrap">
@@ -419,6 +424,10 @@ async function handleCustomToken() {
                     <code class="font-mono">{{ space.id.slice(0, 8) }}</code>
                     <span class="icon-[lucide--copy] text-[11px] opacity-0 group-hover/copy:opacity-100 transition-opacity" />
                   </button>
+                  <span v-if="space.admins?.length" class="flex items-center gap-1.5" :title="`空间管理员：${space.admins.map(a => a.display_name).join('、')}`">
+                    <span class="icon-[lucide--shield-user] opacity-60" />
+                    管理员 {{ space.admins.map(a => a.display_name).join('、') }}
+                  </span>
                   <span class="flex items-center gap-1.5">
                     <span class="icon-[lucide--calendar-plus] opacity-60" />
                     创建于 {{ formatDate(space.created_at) }}
@@ -430,7 +439,7 @@ async function handleCustomToken() {
                 </div>
               </div>
             </div>
-            <div class="flex items-center gap-2 shrink-0 sm:self-start">
+            <div v-if="isSpaceAdmin" class="flex items-center gap-2 shrink-0 sm:self-start">
               <Button variant="outline" size="sm" class="group" @click="openEditSpace">
                 <span class="icon-[lucide--pencil] mr-1.5 group-hover:scale-110 transition-transform" />
                 编辑
@@ -950,8 +959,8 @@ async function handleCustomToken() {
           </div>
         </section>
 
-        <!-- 危险操作 -->
-        <section id="danger-zone" class="scroll-mt-22">
+        <!-- 危险操作（删除空间仅系统管理员可见，#10） -->
+        <section v-if="isSystemAdmin" id="danger-zone" class="scroll-mt-22">
           <div class="card border-destructive/30">
             <div class="px-5 py-3.5 border-b border-destructive/20 bg-destructive/[0.03] flex items-center gap-2">
               <span class="icon-[lucide--alert-triangle] text-destructive" />

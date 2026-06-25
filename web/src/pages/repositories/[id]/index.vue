@@ -249,8 +249,7 @@ function openSpacesDialog() {
 }
 
 async function saveLinkedSpaces() {
-  if (editingSpaceIds.value.length === 0)
-    return
+  // #9：允许置空（解绑全部空间）；不再强制至少一个
   savingSpaces.value = true
   try {
     await repositoriesApi.setLinkedSpaces(repositoryId.value, editingSpaceIds.value)
@@ -702,21 +701,21 @@ function copyUrl() {
         <DialogHeader>
           <DialogTitle>管理关联空间</DialogTitle>
           <DialogDescription>
-            仓库必须至少关联一个空间；关联后可在空间内统一管理与协作
+            可不关联空间（孤儿仓库仅系统管理员可见）；关联后可在空间内统一管理与协作
           </DialogDescription>
         </DialogHeader>
         <div class="py-2">
           <SpaceMultiSelect v-model="editingSpaceIds" :disabled="savingSpaces" />
-          <p v-if="editingSpaceIds.length === 0" class="mt-2 text-sm text-destructive flex items-center gap-1">
-            <span class="icon-[lucide--alert-circle]" />
-            请至少保留一个关联空间
+          <p v-if="editingSpaceIds.length === 0" class="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+            <span class="icon-[lucide--info]" />
+            未关联任何空间：仅系统管理员可见与管理
           </p>
         </div>
         <DialogFooter>
           <Button variant="outline" :disabled="savingSpaces" @click="spacesDialogOpen = false">
             取消
           </Button>
-          <Button :disabled="savingSpaces || editingSpaceIds.length === 0" @click="saveLinkedSpaces">
+          <Button :disabled="savingSpaces" @click="saveLinkedSpaces">
             <span v-if="savingSpaces" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
             保存
           </Button>

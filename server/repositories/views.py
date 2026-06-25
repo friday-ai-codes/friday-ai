@@ -23,6 +23,7 @@ from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import encrypt_value
 from permissions.api_permissions import IsSuperUser
+from permissions.services import PermissionService
 from services.background_runner import run_in_background
 from services.dependency_cache import DependencyCacheManager
 from services.exclusion import get_global_default_specs, invalidate_matcher_cache
@@ -434,7 +435,8 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
     access_token = data.pop("access_token", "") or ""
     git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
     git_user_email = data.pop("git_user_email", "ai@friday.codes")
-    space_ids = [str(sid) for sid in data.pop("space_ids")]
+    # #9：space_ids 可选——允许先建仓、后绑定空间（孤儿仓库仅超管可见/管理）
+    space_ids = [str(sid) for sid in (data.pop("space_ids", None) or [])]
     instance_credential_id = data.pop("git_instance_credential_id", None)
 
     # TOKEN-02：token 可选。无 token 时必须可由「密钥提供方」FK 或 host 自动匹配实例池解析，
@@ -704,6 +706,13 @@ class RepositoryViewSet(ModelViewSet):
         触发仓库 AI 描述生成。幂等检查：status=running/pending 时返回 409。
         """
         repository = await self.aget_object()
+        if not await sync_to_async(PermissionService.can_admin_repository)(
+            request.user, str(repository.id)
+        ):
+            return Response(
+                {"detail": "仅空间管理员可操作此仓库的建立知识"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         from .summary_service import dispatch_repo_summary, reconcile_ai_summary_status
 
         repository = await reconcile_ai_summary_status(repository)
@@ -721,6 +730,28 @@ class RepositoryViewSet(ModelViewSet):
 
         session_id = await dispatch_repo_summary(repository)
         return Response({"dispatch_task_id": session_id, "status": "pending"})
+
+    @action(detail=True, methods=["post"], url_path="generate-summary/cancel")
+    async def cancel_summary(self, request, pk=None):
+        """POST /api/repositories/{id}/generate-summary/cancel/
+
+        终止仓库"建立知识"任务（标记在途 session 为 cancelled，状态回退 NOT_STARTED）。
+        """
+        repository = await self.aget_object()
+        if not await sync_to_async(PermissionService.can_admin_repository)(
+            request.user, str(repository.id)
+        ):
+            return Response(
+                {"detail": "仅空间管理员可操作此仓库的建立知识"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        from .summary_service import cancel_repo_summary
+
+        cancelled = await cancel_repo_summary(
+            str(repository.id),
+            initiated_by_user_id=str(getattr(request.user, "id", "")) or None,
+        )
+        return Response({"cancelled": cancelled, "status": AISummaryStatus.NOT_STARTED})
 
     @action(detail=True, methods=["get"], url_path="summary-status")
     async def summary_status(self, request, pk=None):
@@ -854,7 +885,7 @@ class RepositorySpacesView(APIView):
     """仓库侧的「关联空间」管理。
 
     GET  /repositories/{id}/spaces/  -> [{id, name}]
-    PUT  /repositories/{id}/spaces/  body: {"space_ids": [...]}（全量设置，至少一个）
+    PUT  /repositories/{id}/spaces/  body: {"space_ids": [...]}（全量设置，可为空=解绑全部）
     """
 
     permission_classes = [IsAuthenticated]
@@ -867,10 +898,11 @@ class RepositorySpacesView(APIView):
     async def put(self, request, repository_id):
         repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
 
+        # #9：允许置空（解绑全部空间），不再强制"至少一个空间"
         space_ids = request.data.get("space_ids")
-        if not isinstance(space_ids, list) or not space_ids:
+        if not isinstance(space_ids, list):
             return Response(
-                {"space_ids": ["仓库必须至少关联一个空间"]},
+                {"space_ids": ["space_ids 必须为列表"]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         space_ids = [str(sid) for sid in space_ids]
@@ -1458,6 +1490,15 @@ class RepositorySensitiveSuggestionsView(APIView):
         except Repository.DoesNotExist:
             return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
 
+        # #11：敏感信息仅空间管理员/系统管理员可见
+        if not await sync_to_async(PermissionService.can_admin_repository)(
+            request.user, str(repository_id)
+        ):
+            return Response(
+                {"detail": "仅空间管理员可查看敏感信息"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         status_filter = request.query_params.get("status", "pending")
         qs = SensitiveFileSuggestion.objects.filter(repository_id=repository_id)
         if status_filter != "all":
@@ -1664,9 +1705,11 @@ class RepositoryBatchCreateView(APIView):
     POST /api/repositories/batch/  body: {"repositories": [ {<RepositoryCreateSerializer 字段>}, ... ]}
     前端 CSV 导入：解析 CSV → 数组 → 调本接口。逐项独立校验/创建，单项失败不影响其余，
     返回 created / failed（含 index/name/error），支持数百仓库导入。
+
+    权限：仅系统管理员（批量建仓为平台级运维操作）。
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSuperUser]
 
     async def post(self, request, *args, **kwargs):
         items = request.data.get("repositories")

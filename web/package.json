@@ -31,6 +31,7 @@
     "@codemirror/view": "catalog:",
     "@floating-ui/dom": "catalog:",
     "@floating-ui/vue": "catalog:",
+    "@internationalized/date": "catalog:",
     "@shikijs/markdown-it": "catalog:",
     "@sigma/edge-curve": "catalog:",
     "@tailwindcss/typography": "catalog:",
