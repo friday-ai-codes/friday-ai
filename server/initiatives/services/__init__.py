@@ -4,6 +4,12 @@ re-export ``ProjectService`` / ``ProjectTransitionError``（Project 单一写入
 + 实时推送 helper（``project_group_name`` / ``apush_project_event``）。
 """
 
+from initiatives.services.artifact_service import (
+    ArtifactDisabledError,
+    ArtifactError,
+    ArtifactService,
+    ArtifactTypeError,
+)
 from initiatives.services.project_board_sync import (
     BoardSyncResult,
     ProjectBoardSyncService,
@@ -21,6 +27,10 @@ __all__ = [
     "ProjectMemberError",
     "ProjectBoardSyncService",
     "BoardSyncResult",
+    "ArtifactService",
+    "ArtifactError",
+    "ArtifactDisabledError",
+    "ArtifactTypeError",
     "project_group_name",
     "apush_project_event",
 ]
