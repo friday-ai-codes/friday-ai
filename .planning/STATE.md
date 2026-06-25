@@ -7,10 +7,10 @@ last_updated: "2026-06-26T00:30:00.000Z"
 last_activity: 2026-06-26
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
-  percent: 67
+  completed_phases: 5
+  total_plans: 5
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
-**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79 已完成（67%），下一步 Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）。
+**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79/80 已完成（83%），下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。
 
 ## Current Position
 
-Phase: 79 ✅ complete → 80 pending
+Phase: 80 ✅ complete → 81 pending
 Plan: —
-Status: Phase 79 工件/依赖项 + 知识关联已完成（`ArtifactType`/`Artifact` 模型 + 内置 8 类 seed 迁移 + `ArtifactService`（INV-6，类型禁用/双删保护）+ 在线查看读 API `aget_artifact_view`（飞书 doc/表格/外链/md，脱敏 + fail-soft）+ 工件/类型/KLINK REST API + 工件 RAG source `knowledge/sources/artifact.py`（脱敏 + fail-soft + 观测，工件→REFERENCES→项目节点）+ 知识脊柱扩展 EntityKind(+project/repository/space)/EntityOrigin(+artifact/project) + `ProjectKnowledgeGraphService`（KLINK-01/02 经 KnowledgeEdge 统一建模可查询，不与操作态双写））；6352 passed / 新增 39 用例全绿 / 38 failed == Phase-76 baseline 零新增回归（+1 flaky cross-suite ordering，prompt 明示，单跑通过）/ makemigrations --check 干净 / 3 迁移含 seed
-Last activity: 2026-06-26 — Phase 79 完成（feat(79)×6 + test(79)，未 push）；真实飞书 doc/表格 live UAT + bitable 列解析为里程碑级/v2 deferred；下一步 Phase 80（项目记忆 + MR 实体 + context packer + 接入 chat runner）
+Status: Phase 80 项目记忆 + MR 实体 + 上下文召回接入 Web 会话已完成。`ProjectMemory`/`ProjectMemoryRevision`(append-only 可追溯)/`ProjectMemoryDraft` + `MemoryService`(INV-6，成员校验 fail-closed + 脱敏不可绕过) + `MemoryDistiller`(LLM 提炼仅产 pending 草稿，call_source=memory_distill，token/TTFT/上游错误码上报) + `MergeRequest`/`MergeRequestEvent`(append-only) + `MergeRequestService`(INV-6) + 受保护 git webhook `POST /api/git-webhooks/<platform>/`(GitHub HMAC / GitLab token fail-closed + redact_for_ledger 原始 payload + dedup_key 幂等) + context packer `services/project_context_packer.py`(fail-closed 非成员零召回 + grep/RAG + 排序 + 压缩 + token 预算降级 + RetrievalTrace) + `Conversation.bound_project` + chat_runner `_INDEXED_TOOL_NAMES` 接入 search_delivery_knowledge/get_entity_timeline/get_related_entities + build_sdk_config 自动注入项目上下文(fail-closed)。MR 实体落 initiatives 新实体（盘点确认此前仅 CodingTask.pr_url 等 url 散落）；git webhook 接收面盘点确认无既有端点故新增。call_source `memory_distill` 新增（LOGGING-SPEC §4.1 22→23）。6390 passed / 新增 39+1 用例全绿 / 38 failed == Phase-76 baseline 零新增回归（+1 flaky cross-suite ordering，单跑通过）/ makemigrations --check 干净 / 2 迁移（initiatives 0005 + chat 0028）。
+Last activity: 2026-06-26 — Phase 80 完成（feat(80)×6 + test(80)×2，未 push）；真实 GitHub/GitLab webhook E2E + 真实 LLM 蒸馏质量为里程碑级 deferred；下一步 Phase 81（Cursor 回流 + 前端工作台）
 
 ## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
 
@@ -37,7 +37,7 @@ Last activity: 2026-06-26 — Phase 79 完成（feat(79)×6 + test(79)，未 pus
 | 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
 | 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
 | 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
-| 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
+| 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ✅ Complete |
 | 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（38 条 + Traceability）；设计与调研基线见 [.planning/project-aggregate/MILESTONE-PROPOSAL.md](./project-aggregate/MILESTONE-PROPOSAL.md)。
@@ -389,8 +389,9 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-25
-Stopped at: v0.15.0 项目（交付上下文聚合根）里程碑立项完成（new-milestone）——经"想法评审 → 锁定 4 决策（命名 Project→Space 大重构 / 记忆自由文本 / 人工为主+LLM提议 / 不做迭代实体）→ 调研（3 子代理 + 飞书·知识·工作流三子系统）→ 产出工件"。已写 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（38 条）、`ROADMAP.md`（Phases 76–81 + Phase Details）、`PROJECT.md`（Current Milestone + Active + Key Decisions）、`STATE.md`（本文件，重置为 v0.15.0 planning）。
+Last session: 2026-06-26
+Stopped at: Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）完成（plan→execute→verify 端到端，VERIFICATION status: passed）。下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。
+Earlier: v0.15.0 项目（交付上下文聚合根）里程碑立项完成（new-milestone）——经"想法评审 → 锁定 4 决策（命名 Project→Space 大重构 / 记忆自由文本 / 人工为主+LLM提议 / 不做迭代实体）→ 调研（3 子代理 + 飞书·知识·工作流三子系统）→ 产出工件"。已写 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（38 条）、`ROADMAP.md`（Phases 76–81 + Phase Details）、`PROJECT.md`（Current Milestone + Active + Key Decisions）、`STATE.md`（本文件，重置为 v0.15.0 planning）。
 Resume file: None
 Next: `$gsd-discuss-phase 76` 收集上下文澄清，或 `$gsd-plan-phase 76` 直接拆 plan（命名腾挪前置）
 

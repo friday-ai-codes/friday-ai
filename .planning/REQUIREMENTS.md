@@ -55,21 +55,21 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 
 ### 项目记忆（MEM）
 
-- [ ] **MEM-01**: 项目记忆（自由文本条目，支持 append / edit，每条带时间戳 + 贡献者），对项目全部成员共享
-- [ ] **MEM-02**: 记忆贡献仅限项目成员；私聊 / 非成员会话不纳入项目记忆
-- [ ] **MEM-03**: 记忆可人工编辑 / 覆盖（方案推翻、需求变更时修正），编辑保留可追溯
-- [ ] **MEM-04**: LLM 从成员会话提炼记忆草稿 → 人工确认后入库（不自动直接写入）；入库前脱敏不可绕过（`redact_*`）
+- [x] **MEM-01**: 项目记忆（自由文本条目，支持 append / edit，每条带时间戳 + 贡献者），对项目全部成员共享
+- [x] **MEM-02**: 记忆贡献仅限项目成员；私聊 / 非成员会话不纳入项目记忆
+- [x] **MEM-03**: 记忆可人工编辑 / 覆盖（方案推翻、需求变更时修正），编辑保留可追溯
+- [x] **MEM-04**: LLM 从成员会话提炼记忆草稿 → 人工确认后入库（不自动直接写入）；入库前脱敏不可绕过（`redact_*`）
 
 ### 召回与会话接入（RECALL）
 
-- [ ] **RECALL-01**: 项目上下文打包器（context packer）——按项目聚合需求/工件/记忆/关联知识/历史，经 grep(SQL 精确) + RAG(语义) 召回 + 排序 + 压缩，输出可注入 LLM 的上下文，token 预算可降级
-- [ ] **RECALL-02**: Web 对话接入项目上下文——会话可绑定项目，`search_delivery_knowledge` 等接入 chat runner 工具白名单，对话自动加载项目上下文
-- [ ] **RECALL-03**: 召回面覆盖项目全部文字工件 / 记忆 / 工作项，按项目 scope + 用户权限 fail-closed；新增召回上报条数/分层耗时/score 并写 `RetrievalTrace`
+- [x] **RECALL-01**: 项目上下文打包器（context packer）——按项目聚合需求/工件/记忆/关联知识/历史，经 grep(SQL 精确) + RAG(语义) 召回 + 排序 + 压缩，输出可注入 LLM 的上下文，token 预算可降级
+- [x] **RECALL-02**: Web 对话接入项目上下文——会话可绑定项目，`search_delivery_knowledge` 等接入 chat runner 工具白名单，对话自动加载项目上下文
+- [x] **RECALL-03**: 召回面覆盖项目全部文字工件 / 记忆 / 工作项，按项目 scope + 用户权限 fail-closed；新增召回上报条数/分层耗时/score 并写 `RetrievalTrace`
 
 ### MR 实体（MR）
 
-- [ ] **MR-01**: MR/PR 独立实体（`MergeRequest`）——关联项目/仓库/分支/工作项，记 url / 源·目标分支 / 状态(open/merged/closed) / review 状态 / 平台 id，经单一写入入口 `MergeRequestService`（INV-6）
-- [ ] **MR-02**: 入站 webhook 同步 MR 状态（GitHub/GitLab open/merged/closed/review，脱敏原始 payload 落库），项目内可见 MR 状态
+- [x] **MR-01**: MR/PR 独立实体（`MergeRequest`）——关联项目/仓库/分支/工作项，记 url / 源·目标分支 / 状态(open/merged/closed) / review 状态 / 平台 id，经单一写入入口 `MergeRequestService`（INV-6）
+- [x] **MR-02**: 入站 webhook 同步 MR 状态（GitHub/GitLab open/merged/closed/review，脱敏原始 payload 落库），项目内可见 MR 状态
 
 ### Cursor 回流（CURSOR）
 
@@ -131,15 +131,15 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 | ARTIFACT-05 | Phase 79 | ✅ Complete |
 | KLINK-01 | Phase 79 | ✅ Complete |
 | KLINK-02 | Phase 79 | ✅ Complete |
-| MEM-01 | Phase 80 | ☐ Pending |
-| MEM-02 | Phase 80 | ☐ Pending |
-| MEM-03 | Phase 80 | ☐ Pending |
-| MEM-04 | Phase 80 | ☐ Pending |
-| RECALL-01 | Phase 80 | ☐ Pending |
-| RECALL-02 | Phase 80 | ☐ Pending |
-| RECALL-03 | Phase 80 | ☐ Pending |
-| MR-01 | Phase 80 | ☐ Pending |
-| MR-02 | Phase 80 | ☐ Pending |
+| MEM-01 | Phase 80 | ✅ Complete |
+| MEM-02 | Phase 80 | ✅ Complete |
+| MEM-03 | Phase 80 | ✅ Complete |
+| MEM-04 | Phase 80 | ✅ Complete |
+| RECALL-01 | Phase 80 | ✅ Complete |
+| RECALL-02 | Phase 80 | ✅ Complete |
+| RECALL-03 | Phase 80 | ✅ Complete |
+| MR-01 | Phase 80 | ✅ Complete |
+| MR-02 | Phase 80 | ✅ Complete |
 | CURSOR-01 | Phase 81 | ☐ Pending |
 | CURSOR-02 | Phase 81 | ☐ Pending |
 | CURSOR-03 | Phase 81 | ☐ Pending |
@@ -151,7 +151,7 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 
 - v1 requirements: 38 total
 - Mapped to phases: 38
-- Completed: 23（RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02 + ARTIFACT-01~05 + KLINK-01/02）
+- Completed: 32（RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02 + ARTIFACT-01~05 + KLINK-01/02 + MEM-01~04 + RECALL-01~03 + MR-01/02）
 - Unmapped: 0 ✓
 
 ---

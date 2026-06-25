@@ -32,7 +32,7 @@
 - [x] **Phase 77: 项目聚合根 + 身份映射 + 成员协作** - 新建 `Project` 聚合根（隶属 Space + 关联飞书项目跟踪 + 状态机）+ 飞书人员↔Friday 用户映射 + 项目成员(多对多 + 身份角色) + CRUD/权限/实时推送 — PROJ-01~05, IDENT-01, MEMBER-01~03 — completed 2026-06-25（新 app `initiatives`；6294 passed / 新增 28 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / vue-tsc 绿）
 - [x] **Phase 78: 飞书触发建项目 + 看板枚举 + 工作项组合** - 飞书项目跟踪枚举子项/成员封装 + 事件触发幂等建项目(拉人带身份) + `create_project` 工作流节点 + WorkItem(story/缺陷)关系边挂入 — FSPROJ-01~03, COMPOSE-01/02 — completed 2026-06-25（看板枚举 service + ProjectWorkItemLink + 同源 sync_from_board + create_project 节点；6315 passed / 新增 27 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / 飞书无整板 API 经字段派生 fail-soft 降级）
 - [x] **Phase 79: 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联** - `ArtifactType` 可配置注册表(内置 8 类 seed，后台增删禁用/双删保护) + `Artifact` 实例(多载体，INV-6) + 在线查看后端 API + 文字载体 RAG/UI 稿仅元数据 + 项目纳入知识图谱(EntityKind +project/repository/space)经 KnowledgeEdge 统一 KLINK 关联可查询 — ARTIFACT-01~05, KLINK-01/02 — completed 2026-06-26（6352 passed / 新增 39 用例全绿 / 38 failed == baseline 零新增回归 + 1 flaky cross-suite ordering（prompt 明示，单跑通过）/ makemigrations 干净 / 3 迁移含 seed）
-- [ ] **Phase 80: 项目记忆 + MR 实体 + 上下文召回接入 Web 会话** - 项目记忆(自由文本 + 贡献者/时效，人工为主 + LLM 提议确认) + `MergeRequest` 实体 + 入站 webhook 状态同步 + context packer(grep+RAG) + 接入 chat runner — MEM-01~04, RECALL-01~03, MR-01/02
+- [x] **Phase 80: 项目记忆 + MR 实体 + 上下文召回接入 Web 会话** - 项目记忆(自由文本 + 贡献者/时效，人工为主 + LLM 提议确认) + `MergeRequest` 实体 + 入站 webhook 状态同步 + context packer(grep+RAG) + 接入 chat runner — MEM-01~04, RECALL-01~03, MR-01/02 — completed 2026-06-26（MemoryService/MemoryDistiller(call_source=memory_distill)/MergeRequestService(INV-6) + 受保护 git webhook(HMAC/token fail-closed + redact + 幂等) + context packer(fail-closed + token 预算降级 + RetrievalTrace) + Conversation.bound_project + chat 白名单接入；6390 passed / 新增 39+1 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / 2 迁移）
 - [ ] **Phase 81: Cursor 回流 + 前端项目工作台** - MCP 分支→项目反查召回 + Cursor rules 模板 + 沉淀上报写回 memory(归因/脱敏/质量门槛) + 项目列表/详情工作台/记忆编辑/工件类型管理页 — CURSOR-01~03, UI-01~03
 
 ## Phase Details
@@ -229,7 +229,7 @@
 | 77. 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
 | 78. 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
 | 79. 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
-| 80. 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
+| 80. 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ✅ Complete |
 | 81. Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
 
 **Execution order:** 76 → 77 → 78 → 79 → 80 → 81（线性）。依赖链：76（命名腾挪）是硬前置，必须全绿再推进；77（聚合根 + 身份 + 成员）立地基；78（飞书触发 + 组合）与 79（工件 + 知识关联）分别构建组合与依赖；80（记忆 + MR + 召回）把上下文接通会话；81（Cursor 回流 + 前端工作台）打通双向闭环与可视。
