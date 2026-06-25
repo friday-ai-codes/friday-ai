@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "projects",
     "feishu",
     "delivery",
+    "initiatives",
     "chat",
     "workflows",
     "agents",
