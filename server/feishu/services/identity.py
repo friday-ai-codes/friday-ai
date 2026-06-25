@@ -54,15 +54,12 @@ def _resolve_sync(feishu_user_key: str, open_id: str) -> Any | None:
 
     matched = None
     for f in filters:
-        # 手动绑定优先：同键命中时先取 manual。
+        # 手动绑定优先：同键命中时先显式取 manual，未命中再取任意来源（含 jit）。
         binding = (
-            qs.filter(**f)
-            .order_by(
-                # manual 排在前（'jit' > 'manual' 字典序，故 manual 升序在前）
-                "source",
-                "-updated_at",
-            )
+            qs.filter(**f, source=FeishuBindingSource.MANUAL)
+            .order_by("-updated_at")
             .first()
+            or qs.filter(**f).order_by("-updated_at").first()
         )
         if binding is not None:
             matched = binding
