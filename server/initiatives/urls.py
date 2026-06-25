@@ -3,7 +3,12 @@
 from django.urls import path
 
 from initiatives.views import (
+    ArtifactDetailView,
+    ArtifactListCreateView,
+    ArtifactViewView,
     ProjectDetailView,
+    ProjectGraphView,
+    ProjectKnowledgeLinkView,
     ProjectListCreateView,
     ProjectMemberDetailView,
     ProjectMemberListView,
@@ -33,5 +38,32 @@ urlpatterns = [
         "<uuid:project_id>/members/<uuid:user_id>/",
         ProjectMemberDetailView.as_view(),
         name="project-member-detail",
+    ),
+    # 工件（ARTIFACT-02/03）
+    path(
+        "<uuid:project_id>/artifacts/",
+        ArtifactListCreateView.as_view(),
+        name="project-artifact-list",
+    ),
+    path(
+        "<uuid:project_id>/artifacts/<uuid:artifact_id>/",
+        ArtifactDetailView.as_view(),
+        name="project-artifact-detail",
+    ),
+    path(
+        "<uuid:project_id>/artifacts/<uuid:artifact_id>/view/",
+        ArtifactViewView.as_view(),
+        name="project-artifact-view",
+    ),
+    # 知识关联（KLINK-01/02）
+    path(
+        "<uuid:project_id>/knowledge/",
+        ProjectKnowledgeLinkView.as_view(),
+        name="project-knowledge-link",
+    ),
+    path(
+        "<uuid:project_id>/graph/",
+        ProjectGraphView.as_view(),
+        name="project-graph",
     ),
 ]
