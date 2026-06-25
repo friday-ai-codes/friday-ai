@@ -115,6 +115,7 @@ declare module 'vue' {
     CostSummaryBar: typeof import('./components/execution/CostSummaryBar.vue')['default']
     CreateBranchConfig: typeof import('./components/workflow/config/CreateBranchConfig.vue')['default']
     CreatePRConfig: typeof import('./components/workflow/config/CreatePRConfig.vue')['default']
+    CreateProjectModal: typeof import('./components/project/CreateProjectModal.vue')['default']
     CreateRepositoryModal: typeof import('./components/repository/CreateRepositoryModal.vue')['default']
     CreateRunnerModal: typeof import('./components/runners/CreateRunnerModal.vue')['default']
     CreateSpaceModal: typeof import('./components/space/CreateSpaceModal.vue')['default']
