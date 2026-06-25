@@ -118,6 +118,55 @@ class TestSystemLogQuery:
         assert data["total"] == 1
         assert data["items"][0]["event"] == "recent"
 
+    def test_filter_by_call_source_payload(self, api_client, admin_user):
+        """高级维度 call_source：payload jsonb 顶层键服务端精确筛选（非当前页 narrowing）。"""
+        _mk_log(payload={"call_source": "chat_completion", "model": "gpt"})
+        _mk_log(payload={"call_source": "mcp_read", "model": "gpt"})
+        api_client.force_authenticate(user=admin_user)
+        data = api_client.get(QUERY_URL, {"call_source": "chat_completion"}).json()
+        assert data["total"] == 1
+        assert data["items"][0]["payload"]["call_source"] == "chat_completion"
+
+    def test_filter_by_provider_payload(self, api_client, admin_user):
+        """高级维度 provider：payload jsonb 顶层键服务端精确筛选。"""
+        _mk_log(payload={"provider": "anthropic"})
+        _mk_log(payload={"provider": "openai"})
+        api_client.force_authenticate(user=admin_user)
+        data = api_client.get(QUERY_URL, {"provider": "anthropic"}).json()
+        assert data["total"] == 1
+        assert data["items"][0]["payload"]["provider"] == "anthropic"
+
+    def test_filter_by_credential_payload(self, api_client, admin_user):
+        """高级维度 credential：payload jsonb 顶层键服务端精确筛选。"""
+        _mk_log(payload={"credential": "cred-a"})
+        _mk_log(payload={"credential": "cred-b"})
+        api_client.force_authenticate(user=admin_user)
+        data = api_client.get(QUERY_URL, {"credential": "cred-a"}).json()
+        assert data["total"] == 1
+        assert data["items"][0]["payload"]["credential"] == "cred-a"
+
+    def test_filter_by_model_payload(self, api_client, admin_user):
+        """高级维度 model：payload jsonb 顶层键服务端精确筛选。"""
+        _mk_log(payload={"model": "claude-sonnet"})
+        _mk_log(payload={"model": "gpt-4o"})
+        api_client.force_authenticate(user=admin_user)
+        data = api_client.get(QUERY_URL, {"model": "claude-sonnet"}).json()
+        assert data["total"] == 1
+        assert data["items"][0]["payload"]["model"] == "claude-sonnet"
+
+    def test_filter_by_correlation_substring(self, api_client, admin_user):
+        """关联键 correlation：correlation jsonb 文本化子串检索（任意键/值命中）。"""
+        _mk_log(correlation={"run_id": "run-abc-123", "conversation_id": "conv-1"})
+        _mk_log(correlation={"run_id": "run-xyz-999"})
+        api_client.force_authenticate(user=admin_user)
+        # 子串命中 run_id 值。
+        data = api_client.get(QUERY_URL, {"correlation": "abc-123"}).json()
+        assert data["total"] == 1
+        assert data["items"][0]["correlation"]["run_id"] == "run-abc-123"
+        # 命中另一条的 conversation_id 值。
+        data2 = api_client.get(QUERY_URL, {"correlation": "conv-1"}).json()
+        assert data2["total"] == 1
+
     def test_limit_and_offset(self, api_client, admin_user):
         base = timezone.now()
         for i in range(10):
@@ -150,6 +199,17 @@ class TestSystemLogClear:
         assert resp.json()["deleted"] == 2
         assert SystemLogEntry.objects.count() == 1
         assert SystemLogEntry.objects.filter(level="info").exists()
+
+    def test_clear_by_advanced_dim_call_source(self, api_client, admin_user):
+        """按高级维度（call_source）清理：_has_any_filter 识别该维度，无需 confirm_all。"""
+        _mk_log(payload={"call_source": "chat_completion"})
+        _mk_log(payload={"call_source": "mcp_read"})
+        api_client.force_authenticate(user=admin_user)
+        resp = api_client.post(CLEAR_URL, {"call_source": "chat_completion"}, format="json")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 1
+        assert SystemLogEntry.objects.count() == 1
+        assert SystemLogEntry.objects.filter(payload__call_source="mcp_read").exists()
 
     def test_clear_without_condition_requires_confirm(self, api_client, admin_user):
         _mk_log()

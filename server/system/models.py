@@ -121,6 +121,25 @@ class SettingKeys:
     LOG_RETENTION_DAYS = "log.retention_days"  # int：保留天数，默认 30（清理在 71-04 消费）。
     LOG_RETENTION_SIZE = "log.retention_max_rows"  # int：行数上限兜底，默认 1_000_000（71-04 消费）。
 
+    # 指标采样与保留（RATE-03，73-03 消费）：与 LOG_RETENTION_* 同款运行时可配。
+    # GaugeSample 采样间隔；apscheduler IntervalTrigger 以 settings 启动值为准，
+    # sample_gauges 内部按本键 clamp(30..300)；热改间隔需重启 scheduler（量级低可接受）。
+    METRIC_SAMPLE_INTERVAL_SECONDS = "metric.sample_interval_seconds"  # int：采样间隔，默认 45。
+    METRIC_RETENTION_DAYS = "metric.retention_days"  # int：指标表保留天数，默认 30。
+    # int：单表行数上限兜底，默认 2_000_000（指标比日志高频，上限略放宽）。
+    METRIC_RETENTION_SIZE = "metric.retention_max_rows"
+
+    # 系统告警引擎运行时配置（ALERT-01/02/03，74-02 评估器 / 74-03 通知 / alert_retention 消费）：
+    # 与 LOG_*/METRIC_* 同款运行时可配（SystemSetting + settings_service 60s 缓存 + signals）。
+    # 点分命名风格一致；仅常量，无新键迁移。
+    ALERT_EVAL_INTERVAL_SECONDS = "alert.eval_interval_seconds"  # int：评估间隔，默认 60（74-02 apscheduler 启动值）。
+    ALERT_RETENTION_DAYS = "alert.retention_days"  # int：AlertEvent 保留天数，默认 90（告警低频，保留略长）。
+    ALERT_RETENTION_SIZE = "alert.retention_max_rows"  # int：行数上限兜底，默认 500_000。
+    ALERT_EMAIL_ENABLED = "alert.email_enabled"  # bool：邮件通道总开关，默认关（74-03 消费）。
+    ALERT_EMAIL_RECIPIENTS = "alert.email_recipients"  # 收件人（逗号分隔或 JSON 列表，74-03 解析）。
+    ALERT_FEISHU_CHAT_ID = "alert.feishu_chat_id"  # 系统告警飞书目标群 chat_id。
+    ALERT_WEBHOOK_URL = "alert.webhook_url"  # 系统告警 webhook 目标 URL。
+
 
 class CacheVolumeTracker(models.Model):
     """跟踪 Docker 缓存卷的使用情况。
@@ -339,6 +358,100 @@ class SystemLogEntry(models.Model):
         return f"[{self.level}] {self.component}:{self.event}"
 
 
+class RequestMetric(models.Model):
+    """请求级指标精简事件行（RATE-01 / SLA-02 / SLA-04）——每请求一行。
+
+    与 ``SystemLogEntry`` 同域同范式（落 system app，复用 settings/清理/查询设施），
+    但定位不同：本表是"指标精简行"（QPS/错误三口径/时长/TTFT），供 Phase 73 用
+    Postgres ``percentile_cont`` 做精确分位聚合，**零进程内聚合**（第一性原理 §A.2）。
+
+    - 高写入量用 ``BigAutoField`` 自增整数主键（非 UUID）。
+    - **绝不**落 raw payload/headers/凭证——仅元数据 + 受控 ``labels``（白名单枚举键，
+      禁用户输入原文，避免基数失控 + 泄漏，T-72-01-01/02）。
+    - ``user_id`` 取服务端 Phase 71 contextvars（认证后权威值），非客户端 header。
+    - 复合索引 ``(ts, source)`` + ``(ts, error_class)`` + ``(-ts)`` 支撑 Phase 73
+      SQL 聚合 QPS/错误率/分位时长。
+
+    append-only：只增不改，按需保留清理（复用 log_retention 同款）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 事件时间（倒序/聚合）；由 helper 写入 ISO，metric_sink 解析。
+    ts = models.DateTimeField(db_index=True, help_text="事件时间（倒序/聚合）。")
+    # LogSource 枚举值（rest/mcp/chat_sse/compat_openai/compat_anthropic/webhook_*/ws/rag）。
+    source = models.CharField(max_length=32, db_index=True, default="")
+    # 归一化路由（URL pattern，禁 query string / path 参数原文）。
+    route = models.CharField(max_length=200, blank=True, default="")
+    method = models.CharField(max_length=10, blank=True, default="")
+    status_code = models.PositiveIntegerField(default=0)
+    # 三口径：none/system/business/upstream（由 classify_error 单一收口）。
+    error_class = models.CharField(max_length=10, blank=True, default="none")
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    # 流式首 chunk 计时（非流式 null）。
+    ttft_ms = models.PositiveIntegerField(null=True, blank=True)
+    # 触发用户 id（→ system 哨兵）；存字符串以兼容 system + 数字 id。
+    user_id = models.CharField(max_length=64, blank=True, default="system", db_index=True)
+    # 受控枚举键（call_source/provider/credential/model/关联键/synthetic），禁用户输入原文。
+    labels = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "request_metrics"
+        verbose_name = "请求指标"
+        verbose_name_plural = "请求指标"
+        ordering = ["-ts"]
+        indexes = [
+            models.Index(fields=["ts", "source"]),
+            models.Index(fields=["ts", "error_class"]),
+            models.Index(fields=["-ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source}:{self.route} {self.status_code} ({self.error_class})"
+
+
+class GaugeSample(models.Model):
+    """周期采样的瞬时度量值（RATE-03）——并发 / 队列深 / 积压趋势的时序点。
+
+    与 ``RequestMetric`` 同域同范式（落 system app，复用 settings/清理/查询设施），
+    但定位不同：``RequestMetric`` 是"每请求一行"的事件流，本表是 apscheduler
+    周期任务（73-03，~45s）采样 ``snapshot_service`` 并发/队列部分写入的"仪表盘读数"，
+    供 73-02 按 ``name`` + 时间桶聚合趋势（``GROUP BY date_trunc(step)``）。
+
+    - 高写入量用 ``BigAutoField`` 自增整数主键（非 UUID）。
+    - ``name`` / ``labels`` 为**受控枚举常量**（如 ``concurrency.provider_slots`` /
+      ``queue.durable_doing`` / ``queue.runner_pending`` / ``backlog.subagent_active``），
+      **禁用户输入原文**（避免基数失控 + 泄漏，T-73-01-03）。
+
+    append-only：只增不改，按需保留清理（复用 log_retention 同款）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 采样时刻（倒序/聚合）；由 73-03 周期任务写入。
+    ts = models.DateTimeField(db_index=True, help_text="采样时刻（倒序/聚合）。")
+    # 受控指标名（点分命名，禁用户输入原文）。
+    name = models.CharField(max_length=64, db_index=True, default="")
+    # 采样值（瞬时读数，如槽位占用数 / 队列深度）。
+    value = models.FloatField(default=0.0)
+    # 受控枚举键（provider/credential/queue/source 等），禁用户输入原文。
+    labels = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "gauge_samples"
+        verbose_name = "仪表盘采样"
+        verbose_name_plural = "仪表盘采样"
+        ordering = ["-ts"]
+        indexes = [
+            # 支撑 73-02 按 name + 时间桶聚合趋势的两种访问路径。
+            models.Index(fields=["ts", "name"]),
+            models.Index(fields=["name", "-ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name}={self.value} @{self.ts:%Y-%m-%d %H:%M:%S}"
+
+
 class InboundWebhookEvent(models.Model):
     """入站 webhook 原始留痕载体（LOG-07）。
 
@@ -375,3 +488,146 @@ class InboundWebhookEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind}@{self.received_at:%Y-%m-%d %H:%M:%S}"
+
+
+class SystemAlertRule(models.Model):
+    """系统级告警阈值规则（ALERT-01）——**独立于** ``workflows.AlertRule``。
+
+    系统告警语义（CPU>85%、错误率、队列深）与 workflow 强绑模型（project 非空、
+    condition 全 execution_*）截然不同，故另起一张表落 ``system`` app（与
+    SystemLogEntry/RequestMetric/GaugeSample 同域，复用 settings/清理/查询设施），
+    避免拧巴（MILESTONE-PROPOSAL §A.3）。运行时可经 REST CRUD 增删改查（IsSuperUser）。
+
+    - ``metric`` 受控枚举（校验在 serializer 侧 ChoiceField，模型层仅列出受控集合）：
+      ``qps`` / ``error_rate`` / ``ttft`` / ``cpu`` / ``memory`` / ``db_connections`` /
+      ``redis_clients`` / ``qdrant`` / ``queue_depth``。趋势类 gauge:* 不纳入
+      （RATE-03 默认不参与告警）。
+    - ``dimension`` 受控维度 jsonb（如 ``{"provider": "anthropic"}`` / ``{"queue": "index"}``，
+      空 dict=overall）；**禁用户输入原文当 label**，避免基数失控（serializer 白名单收口）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(max_length=64, help_text="规则名（中文/英文）。")
+    # 受控枚举（见 docstring）；校验在 serializer ChoiceField，模型层不强约束以便扩展。
+    metric = models.CharField(max_length=32, db_index=True, help_text="受控指标枚举。")
+    # 比较操作符：gt/gte/lt/lte。
+    op = models.CharField(max_length=4, help_text="比较操作符 gt/gte/lt/lte。")
+    value = models.FloatField(help_text="阈值。")
+    # 评估窗口秒（时序类指标用；快照类指标忽略）。
+    window = models.PositiveIntegerField(default=300, help_text="评估窗口秒（快照类忽略）。")
+    # 受控维度 jsonb（空 dict=overall）；禁用户原文，serializer 白名单收口。
+    dimension = models.JSONField(default=dict, blank=True, help_text="受控维度 jsonb（空=overall）。")
+    # 级别 P0/P1/P2。
+    severity = models.CharField(max_length=2, help_text="级别 P0/P1/P2。")
+    enabled = models.BooleanField(default=True, db_index=True)
+    # 通知通道子集（email/feishu/webhook）；空=不通知仅落事件。
+    channels = models.JSONField(default=list, blank=True, help_text="通道子集 email/feishu/webhook；空=仅落事件。")
+    # 同事件再次通知的冷却秒数（防抖）；0=不额外冷却。
+    cooldown = models.PositiveIntegerField(default=600, help_text="再次通知冷却秒数（防抖）；0=不冷却。")
+    # 中文标题模板，支持 {metric}/{current}/{value} 占位，由 74-02 渲染；空则默认拼接。
+    title_template = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text="中文标题模板（{metric}/{current}/{value} 占位）；空则默认拼接。",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "system_alert_rules"
+        verbose_name = "系统告警规则"
+        verbose_name_plural = "系统告警规则"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["enabled", "metric"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name}[{self.severity}] {self.metric} {self.op} {self.value}"
+
+
+class AlertEvent(models.Model):
+    """告警事件（ALERT-02）——P0/P1/P2 + 中文标题 + 机器可读规则信息 + 去重/持续时长/恢复。
+
+    由 74-02 评估器写入（超阈触发 firing，恢复收尾 resolved），74-03 通知分发回写
+    ``email_sent`` / ``notified_channels``，Phase 75 告警事件页消费查询 API。
+
+    去重硬约束：同规则同对象（``rule`` + ``target_key``）最多保持一条 ``firing``——由
+    ``(rule, target_key)`` status=firing 条件唯一约束在 DB 层兜底（恢复后 status 变
+    ``resolved``，约束释放，可再触发新 firing），镜像 ProviderCredential 条件唯一约束范式。
+
+    **绝不**落 raw payload / 凭证：``rule_info`` / ``title_zh`` / ``target`` 仅承载元数据
+    （阈值 / 当前值 / 受控维度），写入侧（74-02/03）经脱敏（T-74-01-04）。
+
+    列对齐 REFERENCE-UI §1.4（时间 / 级别 / 状态 / 维度 / 规则ID / 标题+规则信息 /
+    持续时长 / 邮件状态）。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    # 规则删除不抹历史事件（SET_NULL）。
+    rule = models.ForeignKey(
+        SystemAlertRule,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="events",
+    )
+    # 冗余规则 severity，便于按级别查询/排序（规则删了仍可见）。
+    severity = models.CharField(max_length=2, db_index=True, help_text="级别 P0/P1/P2（冗余）。")
+    # 中文标题，由 74-02 按 title_template 渲染。
+    title_zh = models.CharField(max_length=200, blank=True, default="")
+    # 机器可读 jsonb：{metric,op,threshold,current,window_s,dimension,expr}；
+    # expr 为 REFERENCE-UI §1.4 同款字符串
+    # `cpu_usage_percent > 85.00 (current 95.40) over last 5m (overall)`。
+    rule_info = models.JSONField(default=dict, blank=True, help_text="机器可读规则信息 jsonb。")
+    # 对象标识 jsonb（如 {"provider":"anthropic"}；overall 为 {}）。
+    target = models.JSONField(default=dict, blank=True, help_text="对象标识 jsonb（overall={}）。")
+    # target 的规范化 JSON 串，由 74-02 写入；**仅用于 DB 层去重约束**（见 constraints）。
+    target_key = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="target 规范化串，仅用于去重唯一约束。",
+    )
+    # firing/resolved。
+    status = models.CharField(max_length=10, default="firing", db_index=True)
+    # 首次触发时刻。
+    started_at = models.DateTimeField(db_index=True, help_text="首次触发时刻。")
+    # 恢复时刻（firing 时 null）。
+    ended_at = models.DateTimeField(null=True, blank=True, help_text="恢复时刻（firing 时 null）。")
+    # 恢复时回写 ended-started 秒数。
+    duration_s = models.PositiveIntegerField(null=True, blank=True, help_text="持续秒数（恢复时回写）。")
+    # 最近一次评估的当前值（74-02 重复评估时更新）。
+    current_value = models.FloatField(null=True, blank=True, help_text="最近一次评估当前值。")
+    # 最近一次仍超阈的评估时刻。
+    last_seen_at = models.DateTimeField(null=True, blank=True, help_text="最近一次仍超阈评估时刻。")
+    # pending/sent/skipped/failed（74-03 回写）。
+    email_sent = models.CharField(max_length=10, default="pending", help_text="邮件状态（74-03 回写）。")
+    # 实际成功通知的通道列表（74-03 回写）。
+    notified_channels = models.JSONField(default=list, blank=True, help_text="实际成功通知通道（74-03 回写）。")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "alert_events"
+        verbose_name = "告警事件"
+        verbose_name_plural = "告警事件"
+        ordering = ["-started_at"]
+        indexes = [
+            # Phase 75 列表两种访问路径 + 按级别查询。
+            models.Index(fields=["status", "-started_at"]),
+            models.Index(fields=["severity", "-started_at"]),
+            models.Index(fields=["-started_at"]),
+            models.Index(fields=["rule", "-started_at"]),
+        ]
+        constraints = [
+            # 去重硬约束：同规则同对象最多一条 firing（恢复后约束释放，可再触发新 firing）。
+            models.UniqueConstraint(
+                fields=["rule", "target_key"],
+                condition=models.Q(status="firing"),
+                name="uniq_firing_alert_per_rule_target",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"[{self.severity}] {self.title_zh or self.status}@{self.started_at:%Y-%m-%d %H:%M:%S}"

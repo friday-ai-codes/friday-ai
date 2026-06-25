@@ -18,6 +18,7 @@ Logger 命名 `rag_search_*` 与现状 `layered_search_*` / `compat_layered_sear
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import structlog
@@ -30,6 +31,54 @@ logger = structlog.get_logger(__name__)
 # 多仓 RAG 并发上限：每仓一次 Qdrant 混合检索，跨 50+ 仓时串行延迟线性累加。
 # 用有界并发把延迟从 O(N) 降到 O(N/并发)，上限防止打爆 Qdrant 连接/worker。
 _RAG_REPO_CONCURRENCY = 8
+
+
+def _record_rag_metric(
+    *,
+    start: float,
+    all_results: list[dict[str, Any]],
+    stage_embedding_ms: float,
+    stage_sparse_ms: float,
+    stage_qdrant_ms: float,
+    stage_rerank_ms: float,
+    rag_status: str,
+) -> None:
+    """search_rag 出口聚合一行召回指标（RAG-01，best-effort，绝不反噬召回主流程）。
+
+    指标只记**聚合数值**：召回条数 + 分层耗时（embedding/sparse/qdrant/rerank）+
+    top score，按来源（``call_source`` contextvar，区分 MCP/对话/workflow）打标。
+    召回内容（query/chunk 原文）**绝不**进 labels（基数控制 + 防泄漏，§A.4 /
+    T-72-04-02），只走 RetrievalTrace 留痕。整段 ``try/except: pass``：计时/写入
+    任何异常都不影响召回返回（zero-drift 行为契约保持）。
+    """
+    try:
+        from agents.call_source import get_call_source
+        from common.request_metrics import record_request_metric
+
+        total_ms = int((time.perf_counter() - start) * 1000)
+        top_score = round(all_results[0].get("score", 0.0), 4) if all_results else 0
+        labels: dict[str, Any] = {
+            "call_source": get_call_source() or "",
+            "recall_count": len(all_results),
+            "top_score": top_score,
+            "stage_embedding_ms": round(stage_embedding_ms, 2),
+            "stage_sparse_ms": round(stage_sparse_ms, 2),
+            "stage_qdrant_ms": round(stage_qdrant_ms, 2),
+            "stage_rerank_ms": round(stage_rerank_ms, 2),
+        }
+        if rag_status != "ok":
+            labels["rag_status"] = rag_status
+        record_request_metric(
+            source="rag",
+            route="search_rag",
+            method="RAG",
+            status_code=200 if rag_status == "ok" else 500,
+            error_class="none" if rag_status == "ok" else "system",
+            duration_ms=total_ms,
+            labels=labels,
+        )
+    except Exception:  # noqa: BLE001 —— 指标写入绝不反噬召回主流程
+        pass
 
 
 async def search_rag(
@@ -63,6 +112,13 @@ async def search_rag(
     Returns:
         `LayerSnapshot`，每个 item 含 `payload` / `score` / `repository_id`。
     """
+    # RAG-01 分层计时：旁路累计各阶段耗时，**不改**步骤顺序/去重/排序/返回结构
+    # （zero-drift）。早退/异常路径也尽量记一行 status 标签。
+    _metric_start = time.perf_counter()
+    _stage_embedding_ms = 0.0
+    _stage_sparse_ms = 0.0
+    _stage_qdrant_ms = 0.0
+    _stage_rerank_ms = 0.0
     try:
         from asgiref.sync import sync_to_async
 
@@ -76,13 +132,26 @@ async def search_rag(
         plan = await get_rerank_plan()
         fetch_k = max(top_k, plan.fetch_k) if plan.mode == "model" else top_k
 
+        _t0 = time.perf_counter()
         query_dense = await EmbeddingService.generate_embedding(query)
+        _stage_embedding_ms = (time.perf_counter() - _t0) * 1000
         if not query_dense:
+            _record_rag_metric(
+                start=_metric_start,
+                all_results=[],
+                stage_embedding_ms=_stage_embedding_ms,
+                stage_sparse_ms=_stage_sparse_ms,
+                stage_qdrant_ms=_stage_qdrant_ms,
+                stage_rerank_ms=_stage_rerank_ms,
+                rag_status="error",
+            )
             return LayerSnapshot(layer="L3", status="error", error="embedding generation failed")
 
+        _t0 = time.perf_counter()
         query_sparse: dict[str, Any] | None = await sync_to_async(SparseEncoderService.encode)(
             query
         )
+        _stage_sparse_ms = (time.perf_counter() - _t0) * 1000
         if not query_sparse or not query_sparse.get("indices"):
             query_sparse = None
 
@@ -131,9 +200,11 @@ async def search_rag(
         # 有界并发执行所有仓库的检索；**按 repo_ids 原序合并 + 去重**，保证与串行版
         # 完全一致的去重/排序结果（zero-drift：先到先得 key 仅取决于合并顺序，不取决
         # 于实际完成顺序）。
+        _t0 = time.perf_counter()
         per_repo = await asyncio.gather(
             *[_search_one(rid) for rid in repo_ids], return_exceptions=True
         )
+        _stage_qdrant_ms = (time.perf_counter() - _t0) * 1000
         for repo_id, res in zip(repo_ids, per_repo, strict=True):
             if isinstance(res, BaseException):
                 logger.warning("rag_search_single_repo_failed", repo_id=repo_id, error=str(res))
@@ -153,8 +224,19 @@ async def search_rag(
         # 精排阶段（单一卡点）：model → 外部 reranker，heuristic → 词法重排，
         # off → 原 score 截断。已 fail-open，异常退回 all_results[:top_k]。
         rerank_meta: dict[str, Any] = {}
+        _t0 = time.perf_counter()
         reordered = await reorder(
             query, all_results, top_k=top_k, plan=plan, out_meta=rerank_meta
+        )
+        _stage_rerank_ms = (time.perf_counter() - _t0) * 1000
+        _record_rag_metric(
+            start=_metric_start,
+            all_results=all_results,
+            stage_embedding_ms=_stage_embedding_ms,
+            stage_sparse_ms=_stage_sparse_ms,
+            stage_qdrant_ms=_stage_qdrant_ms,
+            stage_rerank_ms=_stage_rerank_ms,
+            rag_status="ok",
         )
         return LayerSnapshot(
             layer="L3",
@@ -165,6 +247,15 @@ async def search_rag(
         )
     except Exception as e:
         logger.warning("rag_search_failed", query=query[:100], error=str(e))
+        _record_rag_metric(
+            start=_metric_start,
+            all_results=[],
+            stage_embedding_ms=_stage_embedding_ms,
+            stage_sparse_ms=_stage_sparse_ms,
+            stage_qdrant_ms=_stage_qdrant_ms,
+            stage_rerank_ms=_stage_rerank_ms,
+            rag_status="error",
+        )
         return LayerSnapshot(layer="L3", status="error", error=str(e))
 
 

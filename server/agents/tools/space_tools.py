@@ -17,6 +17,10 @@ from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 
 logger = structlog.get_logger(__name__)
 
+# RAG-02 召回留痕采样上限：AI 对话链召回内容按 top-N 写 RetrievalTrace，
+# 避免每 chunk 一行撑爆留痕表（§A.4 基数控制 / T-72-04-04）。
+_RETRIEVAL_TRACE_SAMPLE_LIMIT = 10
+
 
 async def _filter_excluded_results(
     results: list[dict[str, Any]],
@@ -276,6 +280,10 @@ async def get_repository_info(repository_id: str) -> ToolResult:
                 "type": "string",
                 "description": "分支名（可选；未指定时检索默认分支）",
             },
+            "conversation_id": {
+                "type": "string",
+                "description": "会话 UUID (auto-injected)",
+            },
         },
         "required": ["query"],
     },
@@ -287,6 +295,7 @@ async def search_repository_code(
     limit: int = 20,
     min_score: float = 0.5,
     branch: str | None = None,
+    conversation_id: str = "",
 ) -> ToolResult:
     """
     Perform semantic code search across repositories.
@@ -472,6 +481,30 @@ async def search_repository_code(
         )
         metadata["diagnosis"] = diagnosis
 
+    # RAG-02：AI 对话链召回留痕（覆盖 MCP 之外的对话链）。best-effort + top-N 采样
+    # （§A.4 基数控制）：只对前 _RETRIEVAL_TRACE_SAMPLE_LIMIT 条命中写 RetrievalTrace
+    # （run=None；conversation_id 经注入值透传，user_id/source 由 helper 从 Phase 71
+    # contextvars 取；query 原文 + chunk 内容 + score 经 redact_for_ledger 脱敏）。
+    # 整段 try/except 绝不影响工具返回（T-72-04-05）。
+    try:
+        from interactions.ledger import arecord_retrieval_trace
+        from interactions.models import RetrievalTrace
+
+        for hit in all_results[:_RETRIEVAL_TRACE_SAMPLE_LIMIT]:
+            await arecord_retrieval_trace(
+                run=None,
+                kind=RetrievalTrace.Kind.CHUNK,
+                conversation_id=conversation_id or "",
+                payload={
+                    "query": query,
+                    "file_path": hit.get("file_path", ""),
+                    "chunk": hit.get("content", ""),
+                    "score": hit.get("score", 0.0),
+                },
+            )
+    except Exception:  # noqa: BLE001 —— 留痕 best-effort，绝不影响工具返回
+        pass
+
     return ToolResult(
         success=True,
         output={
@@ -554,7 +587,7 @@ def _diagnose_empty_search(
                 f"L3 hybrid 召回 {l3_raw_count} 条候选，最高分 {l3_top_score:.3f} "
                 f"略低于 min_score={min_score:.2f}（差 {gap:.3f}）。"
             )
-            suggestions.append(f"用 min_score=0.3 重试当前 query，可能能拿到弱相关但有用的结果。")
+            suggestions.append("用 min_score=0.3 重试当前 query，可能能拿到弱相关但有用的结果。")
 
     if l3_raw_count == 0 and searched_repos > 0:
         issues.append(

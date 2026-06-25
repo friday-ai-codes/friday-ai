@@ -25,6 +25,7 @@ import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Literal, cast
 
 import structlog
@@ -40,6 +41,7 @@ from langchain_core.messages import (
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.tools import BaseTool
 
+from agents.call_source import CallSource, get_call_source
 from agents.core.events import (
     BUDGET_WARNING,
     ERROR,
@@ -55,6 +57,7 @@ from agents.llm_concurrency import acquire_llm_slot
 from agents.llm_factory import build_chat_model
 from agents.models import AgentSession, ToolCallLog
 from agents.types import TokenUsage
+from interactions.ledger import arecord_llm_usage, parse_upstream_status
 from services.model_capabilities import ModelCapabilities, ModelCapabilitiesEntry
 from services.provider_config import ResolvedProviderConfig
 
@@ -493,6 +496,9 @@ class LangChainAgentRunner:
                     )
 
                 aimsg: AIMessageChunk | None = None
+                # 72-02：本 turn 流式计时锚点（首 chunk = TTFT / 整 turn = duration）。
+                _turn_start = perf_counter()
+                _ttft_ms: int | None = None
                 # CONC-02：按凭证申请 LLM 并发槽位（仅本 turn 的流式调用持有，
                 # turn 间工具执行期释放）；超凭证上限排队等待、超时抛 LLMBusyError
                 # （被下方 except 转 ERROR 事件友好提示），绝不打到 provider 触发 429。
@@ -503,6 +509,10 @@ class LangChainAgentRunner:
                     async for chunk in model_with_tools.astream(messages):
                         if not isinstance(chunk, AIMessageChunk):
                             continue
+
+                        # 72-02：首个有效 chunk 时刻 = TTFT 锚点（per SLA-04）。
+                        if _ttft_ms is None:
+                            _ttft_ms = int((perf_counter() - _turn_start) * 1000)
 
                         # LangChain 原生 AIMessageChunk.__add__ 语义（不要自写累加，RESEARCH "Don't Hand-Roll"）
                         aimsg = chunk if aimsg is None else aimsg + chunk
@@ -525,6 +535,25 @@ class LangChainAgentRunner:
 
                 # implementation contract：每 turn 结束持久化 usage 到 AgentSession.metadata
                 await self._persist_usage(usage)
+
+                # 72-02：每个 LLM turn 收尾落一行 ModelUsageRecord（call_source / TTFT /
+                # input·output·cache token），call_source 经 caller 的 use_call_source
+                # 设定、runner 读取兜底 workflow_agent_node；best-effort 不反噬 ReAct 主链。
+                try:
+                    await arecord_llm_usage(
+                        call_source=get_call_source() or CallSource.WORKFLOW_AGENT_NODE.value,
+                        provider=str(self._config.resolved.provider_type),
+                        model=self._config.model,
+                        prompt_tokens=int(usage.get("input", 0) or 0),
+                        completion_tokens=int(usage.get("output", 0) or 0),
+                        cache_read_tokens=int(usage.get("cached_input", 0) or 0),
+                        cache_write_tokens=int(usage.get("cache_creation", 0) or 0),
+                        ttft_ms=_ttft_ms,
+                        duration_ms=int((perf_counter() - _turn_start) * 1000),
+                        source="workflow",
+                    )
+                except Exception:  # noqa: BLE001 — 观测绝不反噬 LLM
+                    pass
 
                 tool_calls = list(getattr(aimsg, "tool_calls", []) or [])
                 if not tool_calls:
@@ -678,6 +707,20 @@ class LangChainAgentRunner:
                 "langchain_runner_error",
                 session_id=self._config.session_id,
             )
+            # 72-02：上游错误（429/529 单列）落一行 failure ModelUsageRecord —— 只取
+            # 数值 status_code，绝不落异常文本（T-72-02-01）；best-effort 不反噬。
+            try:
+                _upstream_code = parse_upstream_status(exc)
+                await arecord_llm_usage(
+                    call_source=get_call_source() or CallSource.WORKFLOW_AGENT_NODE.value,
+                    provider=str(self._config.resolved.provider_type),
+                    model=self._config.model,
+                    upstream_status_code=_upstream_code,
+                    failure_type=str(_upstream_code) if _upstream_code is not None else "error",
+                    source="workflow",
+                )
+            except Exception:  # noqa: BLE001 — 观测绝不反噬 LLM
+                pass
             self._result = AgentResult(
                 output=[],
                 status="error",

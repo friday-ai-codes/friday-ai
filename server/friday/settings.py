@@ -559,6 +559,29 @@ FEISHU_ENCRYPT_KEY = env.str("FEISHU_ENCRYPT_KEY", default="")
 FEISHU_SIGNATURE_REQUIRED = env.bool("FEISHU_SIGNATURE_REQUIRED", default=IS_PRODUCTION)
 
 # =============================================================================
+# 邮件（系统告警通知，ALERT-03）
+# =============================================================================
+# 全仓首次引入 Django SMTP 配置：系统告警邮件通道（74-03 alert_notifier 消费）。
+# EMAIL_HOST 留空 = 未配置 SMTP → 邮件通道降级（notify 据此回写 email_sent=skipped，
+# 不依赖 backend 行为）；未配置时 backend 用 dummy（send_mail 静默丢弃不抛）。
+# 收件人列表 / 总开关走 SystemSetting（ALERT_EMAIL_RECIPIENTS / ALERT_EMAIL_ENABLED）。
+EMAIL_HOST = env.str("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env.str("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env.str("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="Friday AI <noreply@localhost>")
+# 防 SMTP 挂起拖垮评估线程（硬约束，T-74-03-03）。
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+# EMAIL_HOST 非空走真实 SMTP backend；否则 dummy（静默丢弃，不抛）。
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.dummy.EmailBackend"
+)
+
+# =============================================================================
 # Logging
 # =============================================================================
 

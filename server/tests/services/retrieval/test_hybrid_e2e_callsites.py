@@ -290,6 +290,8 @@ def test_callsite_signature_unchanged() -> None:
         "limit",
         "min_score",
         "branch",
+        # 72-04 RAG-02：chat 召回链留痕需 conversation_id（auto-injected，LLM 不可见）。
+        "conversation_id",
     }
     actual_agent_params = set(sig.parameters.keys())
     assert expected_agent_params == actual_agent_params, (

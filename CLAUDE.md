@@ -369,3 +369,5 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 - 指标与留痕分离：指标走精简事件表（`RequestMetric` / 扩展的 `ModelUsageRecord` 等，SQL 聚合）；调用详情/召回内容/会话原始数据走 Interaction Ledger（`server/interactions/`）；排障日志走系统日志（采样）。三者用 `request_id/run_id/conversation_id` 关联。
 - 新增 LLM 调用赋 `call_source`（枚举见 LOGGING-SPEC §4.1）并上报请求数/token/TTFT/上游错误码；新增请求入口纳入 QPS/错误率/时长；新增召回上报条数/分层耗时/score 并写 `RetrievalTrace`（MCP + AI 对话两条链）。
 - 观测代码 best-effort，绝不反噬业务；高频循环禁止 INFO 刷屏。
+
+> 平台设施已在 v0.14.0（Phase 71–74）落地：用户上下文 contextvars 贯穿、SystemLogEntry 队列化落库与运行时配置、指标精简事件表（`RequestMetric`/扩展 `ModelUsageRecord`/`GaugeSample`）、快照/趋势查询与可观测大盘、告警评估与通知。提交前自检清单见 `LOGGING-SPEC.md §9` 与 `.cursor/rules/observability-logging.mdc`（同一份）；call_source 枚举（22 值）/component 清单/事件目录见 `LOGGING-SPEC.md §4.1/§5/§10`。

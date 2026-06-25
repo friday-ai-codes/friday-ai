@@ -11,6 +11,7 @@ bypassPermissions 在 Docker 容器隔离环境中是安全的，可以支持无
 
 import asyncio
 import json
+import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -645,12 +646,17 @@ class ClaudeRunner:
                 "repo_summary",
             )
             max_attempts = 3 if retryable_mode else 1
+            # TTFT（per SLA-04）：成功 attempt 的首个 AssistantMessage 相对该 attempt
+            # 起始的时延；解析不到（无 AssistantMessage）保持 None，usage 不带 ttft。
+            ttft_ms: int | None = None
             for attempt in range(1, max_attempts + 1):
                 messages = []
                 text_outputs = []  # 收集所有 AssistantMessage 的文本
                 session_id = None
                 total_cost = None
                 result_output = None  # ResultMessage 的 result 字段
+                attempt_start = time.monotonic()
+                first_token_at: float | None = None
 
                 try:
                     async for message in query(prompt=prompt, options=options):
@@ -658,6 +664,8 @@ class ClaudeRunner:
                         msg_type = type(message).__name__
 
                         if isinstance(message, AssistantMessage):
+                            if first_token_at is None:
+                                first_token_at = time.monotonic()
                             for block in message.content:
                                 if isinstance(block, TextBlock):
                                     text_outputs.append(block.text)
@@ -693,6 +701,8 @@ class ClaudeRunner:
                             # 跳过 UserMessage 等 SDK 内部消息，它们对用户无意义
                             if msg_type != "UserMessage":
                                 print(f"[task:msg] {msg_type}", flush=True)
+                    if first_token_at is not None:
+                        ttft_ms = max(int((first_token_at - attempt_start) * 1000), 0)
                     break
                 except Exception as e:
                     if not _is_transient_claude_error(e):
@@ -808,18 +818,36 @@ class ClaudeRunner:
             )
 
             # Write token usage to shared volume for main agent collection (Phase)
+            # 并主动 emit token_usage 回调（72-03 补全 task→回调断点）。
             if result_message:
                 result_usage = getattr(result_message, "usage", {}) or {}
-                usage_data = {
+                usage_data: dict[str, Any] = {
                     "input_tokens": result_usage.get("input_tokens", 0),
                     "output_tokens": result_usage.get("output_tokens", 0),
                     "cache_read_tokens": result_usage.get("cache_read_input_tokens", 0),
                     "cache_write_tokens": result_usage.get("cache_creation_input_tokens", 0),
                     "total_cost_usd": float(total_cost) if total_cost else 0.0,
-                    "model": "claude-opus-4-6",
+                    "model": self._resolve_usage_model(result_message, main_model),
                     "session_id": session_id,
                 }
+                # 富化可选元数据（缺则不放，交 server _derive_container_call_source 兜底；
+                # call_source 由 server 服务端权威派生，容器不上报，避免 runner 篡改归因）。
+                provider = getattr(self.config, "claude_provider", "") or getattr(
+                    self.config, "provider_type", ""
+                )
+                if provider:
+                    usage_data["provider"] = provider
+                if ttft_ms is not None:
+                    usage_data["ttft_ms"] = ttft_ms
+
+                # 保留 usage.json（向后兼容兜底）
                 await self._write_usage_data(usage_data)
+                # 紧随其后主动 emit（best-effort：整段 try/except swallow，绝不影响任务返回）。
+                if self.callback is not None:
+                    try:
+                        await self.callback.report_token_usage(usage_data)
+                    except Exception as exc:  # noqa: BLE001 — emit 绝不反噬任务主流程
+                        log.warning("report_token_usage_emit_failed", error=str(exc))
 
             return {
                 "success": True,
@@ -942,6 +970,25 @@ class ClaudeRunner:
             session_id=session_id,
             task_id=self.config.task_id,
         )
+
+    @staticmethod
+    def _resolve_usage_model(result_message: Any, main_model: str) -> str:
+        """解析本次执行的真实模型名（72-03 富化）。
+
+        优先 SDK ``ResultMessage`` 暴露的模型（``.model`` 或 ``.usage['model']``），其次本次
+        执行实际传给 SDK 的主模型 ``main_model``，解析失败回退原硬编码默认（零回归）。
+        """
+        val = getattr(result_message, "model", None)
+        if isinstance(val, str) and val:
+            return val
+        usage = getattr(result_message, "usage", None)
+        if isinstance(usage, dict):
+            m = usage.get("model")
+            if isinstance(m, str) and m:
+                return m
+        if isinstance(main_model, str) and main_model:
+            return main_model
+        return "claude-opus-4-6"
 
     async def _write_usage_data(self, usage_data: dict) -> None:
         """Write token usage data to shared volume.
