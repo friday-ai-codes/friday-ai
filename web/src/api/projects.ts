@@ -49,9 +49,55 @@ export interface ProjectMember {
   created_at: string
 }
 
+/** 项目列表筛选参数（UI-01）。 */
+export interface ProjectListFilters {
+  space_id?: string
+  status?: ProjectStatus
+  member?: string
+  q?: string
+}
+
+/** 项目关联工作项摘要（COMPOSE-01/02）。 */
+export interface ProjectWorkItem {
+  id: string
+  feishu_work_item_id: number
+  work_item_type: string
+  title: string
+  feishu_project_key: string
+  provenance: string
+  attached_at: string
+}
+
+/** 项目知识图谱节点（KLINK-02）。 */
+export interface ProjectGraphNode {
+  entity_id?: string
+  kind?: string
+  name?: string
+  relation?: string
+  depth?: number
+  [k: string]: unknown
+}
+
+/** Cursor rules 模板（CURSOR-02）。 */
+export interface CursorRules {
+  filename: string
+  content: string
+}
+
 export const projectsApi = {
-  /** 列出对当前用户可见的项目。 */
-  list: (): Promise<Project[]> => get<Project[]>('/projects/'),
+  /** 列出对当前用户可见的项目（支持 space_id/status/member/q 筛选）。 */
+  list: (filters: ProjectListFilters = {}): Promise<Project[]> => {
+    const params: Record<string, string> = {}
+    if (filters.space_id)
+      params.space_id = filters.space_id
+    if (filters.status)
+      params.status = filters.status
+    if (filters.member)
+      params.member = filters.member
+    if (filters.q)
+      params.q = filters.q
+    return get<Project[]>('/projects/', params)
+  },
 
   /** 项目详情。 */
   get: (id: string): Promise<Project> => get<Project>(`/projects/${id}/`),
@@ -86,6 +132,37 @@ export const projectsApi = {
   /** 转移主R。 */
   transferOwner: (id: string, newOwnerUserId: string): Promise<ProjectMember[]> =>
     post<ProjectMember[]>(`/projects/${id}/transfer-owner/`, { new_owner_user_id: newOwnerUserId }),
+
+  /** 工作项列表（COMPOSE-01/02）。 */
+  listWorkItems: (id: string): Promise<ProjectWorkItem[]> =>
+    get<ProjectWorkItem[]>(`/projects/${id}/work-items/`),
+
+  /** 手动并入工作项（work_item_id 为 delivery WorkItem UUID）。 */
+  attachWorkItem: (id: string, workItemId: string): Promise<{ attached: boolean }> =>
+    post(`/projects/${id}/work-items/`, { work_item_id: workItemId }),
+
+  /** 移除工作项。 */
+  detachWorkItem: (id: string, workItemId: string): Promise<void> =>
+    del(`/projects/${id}/work-items/${workItemId}/`),
+
+  /** 查询项目在交付知识图谱中的关联（KLINK-02）。 */
+  graph: (
+    id: string,
+    opts: { direction?: 'both' | 'out' | 'in', maxHops?: number, relations?: string } = {},
+  ): Promise<{ project_id: string, nodes: ProjectGraphNode[] }> => {
+    const params: Record<string, string> = {}
+    if (opts.direction)
+      params.direction = opts.direction
+    if (opts.maxHops != null)
+      params.max_hops = String(opts.maxHops)
+    if (opts.relations)
+      params.relations = opts.relations
+    return get(`/projects/${id}/graph/`, params)
+  },
+
+  /** 项目专属 Cursor rules 模板（CURSOR-02）。 */
+  cursorRules: (id: string): Promise<CursorRules> =>
+    get<CursorRules>(`/projects/${id}/cursor-rules/`),
 }
 
 export default projectsApi

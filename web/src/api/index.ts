@@ -32,6 +32,18 @@ export * from './logs'
 export { default as notificationsApi } from './notifications'
 export * from './notifications'
 
+export { default as artifactsApi } from './artifacts'
+export * from './artifacts'
+
+export { default as artifactTypesApi } from './artifactTypes'
+export * from './artifactTypes'
+
+export { default as mergeRequestsApi } from './mergeRequests'
+export * from './mergeRequests'
+
+export { default as projectMemoryApi } from './projectMemory'
+export * from './projectMemory'
+
 export { default as projectsApi } from './projects'
 export * from './projects'
 
