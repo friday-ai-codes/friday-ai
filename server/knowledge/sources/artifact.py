@@ -1,0 +1,224 @@
+"""项目工件 → knowledge document 投影 normalizer（ARTIFACT-04）。
+
+镜像 ``sources/feishu_document.py`` 范式：``ragable=True`` 且文字载体（飞书 doc/表格/md/
+仓库文件）的工件正文全文摄取进 ``delivery_knowledge``——产 ``KnowledgeEntity(kind=document,
+source_kind="artifact")`` + ``工件→REFERENCES→项目图谱节点`` 出边（KLINK-01：项目↔知识）。
+
+**UI 稿（figma/mastergo）等图形外链仅元数据**（``ragable=False`` / ``external_link``）——
+``ArtifactService`` 根本不为其调度摄取；即使被显式触发，本 normalizer 也返回空列表（不强行
+RAG 正文，多模态留 v2 PROJX-01）。
+
+降级语义（fail-soft，缺段不缺实体）：
+- 工件不存在 / 类型非 ragable / 图形载体 → 返回空列表（warning）；
+- 飞书正文拉取失败 → 正文空串 + warning，实体与边照常产出（不抛、不回滚、不阻断工件创建）。
+
+**脱敏不可绕过**：飞书 doc/表格正文经 ``redact_secrets_in_text`` 脱敏后才入图。
+观测：``artifact_rag_normalize_started/completed/failed`` + ``duration_ms`` + 正文长度 + 事件数
+（category=sampling, component=knowledge）。
+"""
+
+from __future__ import annotations
+
+import time
+from urllib.parse import parse_qs, urlparse
+
+import structlog
+
+from common.logging import redact_secrets_in_text
+from knowledge.ingestion import EdgeSpec, IngestionEvent, IngestionRequest
+from knowledge.models import EdgeRelation, EntityKind, EntityOrigin
+
+logger = structlog.get_logger(__name__)
+
+__all__ = ["normalize"]
+
+# 与 initiatives.models.ArtifactCarrier 对齐的文字载体（可全文 RAG）。
+_TEXT_CARRIERS = frozenset({"feishu_doc", "feishu_bitable", "markdown", "repo_file"})
+
+
+def _doc_title(body: str, fallback: str) -> str:
+    """取正文首个 markdown 标题作 title；缺正文降级用 fallback。"""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            return stripped.lstrip("#").strip()[:500]
+        return stripped[:500]
+    return fallback[:500]
+
+
+def _extract_doc_token(url: str) -> str:
+    """飞书文档 URL → doc token（取末段 path，剥 query/fragment）；裸 token 原样。"""
+    if not url:
+        return ""
+    value = url.strip()
+    if "feishu.cn" in value or "larksuite.com" in value:
+        return urlparse(value).path.rstrip("/").split("/")[-1]
+    return value
+
+
+def _parse_bitable_url(url: str) -> tuple[str, str]:
+    """飞书多维表格 URL → (app_token, table_id)；解析失败返回 ("","")。
+
+    形如 ``https://xxx.feishu.cn/base/{app_token}?table={table_id}&view=...``。
+    """
+    if not url:
+        return "", ""
+    parsed = urlparse(url.strip())
+    app_token = parsed.path.rstrip("/").split("/")[-1]
+    table_id = ""
+    qs = parse_qs(parsed.query)
+    if qs.get("table"):
+        table_id = qs["table"][0]
+    return app_token, table_id
+
+
+def _records_to_text(data: dict) -> str:
+    """Bitable 记录原始 data → 纯文本（每记录一段 ``key: value`` 行）。"""
+    items = data.get("items") or []
+    lines: list[str] = []
+    for item in items:
+        fields = item.get("fields") or {}
+        for key, value in fields.items():
+            lines.append(f"- {key}: {value}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
+    """按载体拉取工件正文（fail-soft：失败返回空串 + warning）。"""
+    carrier = artifact.carrier
+    if carrier in ("markdown", "repo_file"):
+        # md/内部工件正文即 content_ref；仓库文件引用也走 content_ref（内联或路径快照）。
+        return artifact.content_ref or ""
+
+    if carrier == "feishu_doc":
+        token = _extract_doc_token(artifact.url)
+        if not token:
+            return ""
+        try:
+            from agents.tools.feishu_doc_tools import (
+                create_feishu_doc_client_for_project,
+            )
+
+            client = await create_feishu_doc_client_for_project(space)
+            markdown, _blocks = await client.get_document_content(token)
+            return markdown or ""
+        except Exception as exc:  # noqa: BLE001 — fail-soft 降级空正文
+            logger.warning(
+                "artifact_rag_doc_fetch_failed",
+                artifact_id=str(artifact.id),
+                trigger=request.trigger,
+                doc_token=token,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            return ""
+
+    if carrier == "feishu_bitable":
+        app_token, table_id = _parse_bitable_url(artifact.url)
+        if not app_token or not table_id:
+            return ""
+        try:
+            from services.feishu_bitable import create_bitable_client_for_project
+
+            client = await create_bitable_client_for_project(space)
+            data = await client.list_records(app_token, table_id)
+            return _records_to_text(data)
+        except Exception as exc:  # noqa: BLE001 — fail-soft 降级空正文
+            logger.warning(
+                "artifact_rag_bitable_fetch_failed",
+                artifact_id=str(artifact.id),
+                trigger=request.trigger,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            return ""
+
+    return ""
+
+
+async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
+    """工件 UUID → 单 document 事件（携 REFERENCES→项目节点 出边）；非 ragable 返回空。"""
+    from initiatives.models import TEXT_CARRIERS, Artifact
+    from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
+
+    started = time.perf_counter()
+    logger.info(
+        "artifact_rag_normalize_started",
+        source_id=request.source_id,
+        trigger=request.trigger,
+        component="knowledge",
+        category="sampling",
+    )
+
+    artifact = (
+        await Artifact.objects.select_related("project", "project__space", "type")
+        .filter(id=request.source_id)
+        .afirst()
+    )
+    if artifact is None:
+        logger.warning(
+            "artifact_rag_source_missing",
+            source_id=request.source_id,
+            trigger=request.trigger,
+        )
+        return []
+
+    # 仅 ragable 且文字载体进 RAG 正文；图形外链（UI 稿）仅元数据，不强行摄取。
+    if not artifact.type.ragable or artifact.carrier not in TEXT_CARRIERS:
+        logger.info(
+            "artifact_rag_skipped_non_ragable",
+            artifact_id=str(artifact.id),
+            carrier=artifact.carrier,
+            ragable=artifact.type.ragable,
+            trigger=request.trigger,
+            component="knowledge",
+            category="sampling",
+        )
+        return []
+
+    project = artifact.project
+    space = project.space
+
+    raw_body = await _fetch_body(artifact, space, request=request)
+    # 脱敏不可绕过：飞书正文/异常文本入图前经 redact_secrets_in_text。
+    body = redact_secrets_in_text(raw_body or "")
+
+    # 项目图谱节点（KLINK-01 锚）：工件→REFERENCES→项目节点出边需目标实体先存在。
+    project_node_id = await ProjectKnowledgeGraphService().ensure_project_node(project)
+
+    event = IngestionEvent(
+        kind=EntityKind.DOCUMENT,
+        origin=EntityOrigin.ARTIFACT,
+        source_kind="artifact",
+        source_id=str(artifact.id),
+        title=_doc_title(body, artifact.title or f"工件 {artifact.id}"),
+        content=body,
+        payload={
+            "artifact_id": str(artifact.id),
+            "project_id": str(project.id),
+            "type": artifact.type.key,
+            "carrier": artifact.carrier,
+            "url": artifact.url,
+            "version": artifact.version,
+        },
+        space_id=str(project.space_id) if project.space_id else None,
+        repository_id=None,
+        event_time=artifact.updated_at,
+        edges=(EdgeSpec(relation=EdgeRelation.REFERENCES, target_entity_id=project_node_id),),
+    )
+
+    logger.info(
+        "artifact_rag_normalize_completed",
+        artifact_id=str(artifact.id),
+        carrier=artifact.carrier,
+        content_length=len(body),
+        event_count=1,
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        trigger=request.trigger,
+        component="knowledge",
+        category="sampling",
+    )
+    return [event]
