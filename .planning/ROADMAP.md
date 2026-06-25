@@ -29,7 +29,7 @@
 > 完整设计与调研基线见 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`；需求 38 条见 `.planning/REQUIREMENTS.md`。**不做迭代实体**（另一迭代 = 新项目；历史迭代经项目↔项目关联回看）；记忆为自由文本 + 人工为主/LLM 提议；UI 稿仅存元数据不强行 RAG 正文。
 
 - [x] **Phase 76: 命名腾挪（Project→Space 重构前置）** - 后端 `projects.Project` 重命名为 `Space`，全栈 `project→space` 引用一致更新，腾出 `Project` 名；数据零丢失、行为/测试零回归 — RENAME-01, RENAME-02 — completed 2026-06-25（6266 passed / 新增回归 0 / makemigrations 干净 / 11 元数据级迁移）
-- [ ] **Phase 77: 项目聚合根 + 身份映射 + 成员协作** - 新建 `Project` 聚合根（隶属 Space + 关联飞书项目跟踪 + 状态机）+ 飞书人员↔Friday 用户映射 + 项目成员(多对多 + 身份角色) + CRUD/权限/实时推送 — PROJ-01~05, IDENT-01, MEMBER-01~03
+- [x] **Phase 77: 项目聚合根 + 身份映射 + 成员协作** - 新建 `Project` 聚合根（隶属 Space + 关联飞书项目跟踪 + 状态机）+ 飞书人员↔Friday 用户映射 + 项目成员(多对多 + 身份角色) + CRUD/权限/实时推送 — PROJ-01~05, IDENT-01, MEMBER-01~03 — completed 2026-06-25（新 app `initiatives`；6294 passed / 新增 28 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / vue-tsc 绿）
 - [ ] **Phase 78: 飞书触发建项目 + 看板枚举 + 工作项组合** - 飞书项目跟踪枚举子项/成员封装 + 事件触发幂等建项目(拉人带身份) + `create_project` 工作流节点 + WorkItem(story/缺陷)关系边挂入 — FSPROJ-01~03, COMPOSE-01/02
 - [ ] **Phase 79: 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联** - `ArtifactType` 可配置注册表(默认 8 类，后台增删禁用) + `Artifact` 实例(多载体) + 在线查看 + 文字载体 RAG/UI 稿仅元数据 + 项目↔知识多对多 — ARTIFACT-01~05, KLINK-01/02
 - [ ] **Phase 80: 项目记忆 + MR 实体 + 上下文召回接入 Web 会话** - 项目记忆(自由文本 + 贡献者/时效，人工为主 + LLM 提议确认) + `MergeRequest` 实体 + 入站 webhook 状态同步 + context packer(grep+RAG) + 接入 chat runner — MEM-01~04, RECALL-01~03, MR-01/02
@@ -226,7 +226,7 @@
 | Phase | Requirements | Status |
 |-------|--------------|--------|
 | 76. 命名腾挪（Project→Space 重构前置） | RENAME-01/02 | ✅ Complete |
-| 77. 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ☐ Pending |
+| 77. 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
 | 78. 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ☐ Pending |
 | 79. 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ☐ Pending |
 | 80. 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |

@@ -7,10 +7,10 @@ last_updated: "2026-06-25T12:00:00.000Z"
 last_activity: 2026-06-25
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 17
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -24,17 +24,17 @@ See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目
 
 ## Current Position
 
-Phase: 76 ✅ complete → 77 in progress（autonomous run）
+Phase: 77 ✅ complete → 78 pending
 Plan: —
-Status: Phase 76 命名腾挪 Project→Space 已全绿（6266 passed / 新增回归 0 / makemigrations 干净 / 11 元数据级 rename 迁移、零数据搬迁）；`Project` 名已腾出给聚合根
-Last activity: 2026-06-25 — Phase 76 完成（refactor(76)×2 + docs(76)，未 push）；autonomous 推进 Phase 77
+Status: Phase 77 项目聚合根 + 身份映射 + 成员协作已完成（新 app `initiatives`：Project/ProjectMember/ProjectRelation + ProjectService 单一写入 INV-6 + 状态机 + FeishuUserBinding/resolve_feishu_user + 项目/成员 REST + WS 推送 + 最小前端创建闭环）；6294 passed / 新增 28 用例全绿 / 38 failed == Phase-76 baseline（零新增回归）/ makemigrations --check 干净 / vue-tsc 绿
+Last activity: 2026-06-25 — Phase 77 完成（feat(77)×6 + test(77)×1 + docs，8 commits / 34 files，未 push）；下一步 Phase 78（飞书触发建项目 + 看板枚举 + 工作项组合）
 
 ## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 76 | 命名腾挪（Project→Space 重构前置） | RENAME-01, RENAME-02 | ✅ Complete |
-| 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ☐ Pending |
+| 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
 | 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ☐ Pending |
 | 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ☐ Pending |
 | 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
