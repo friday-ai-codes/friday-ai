@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.15.0
 milestone_name: 项目（交付上下文聚合根）
-status: planning
+status: feature-complete
 last_updated: "2026-06-26T00:30:00.000Z"
 last_activity: 2026-06-26
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 5
-  completed_plans: 5
-  percent: 83
+  completed_phases: 6
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
-**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79/80 已完成（83%），下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。
+**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79/80/81 **全部完成（100%，38/38 需求）**，里程碑 **feature-complete**，下一步 `$gsd-audit-milestone` 里程碑审计后归档。
 
 ## Current Position
 
-Phase: 80 ✅ complete → 81 pending
+Phase: 81 ✅ complete → 里程碑 feature-complete（6/6 phase, 38/38 需求）
 Plan: —
-Status: Phase 80 项目记忆 + MR 实体 + 上下文召回接入 Web 会话已完成。`ProjectMemory`/`ProjectMemoryRevision`(append-only 可追溯)/`ProjectMemoryDraft` + `MemoryService`(INV-6，成员校验 fail-closed + 脱敏不可绕过) + `MemoryDistiller`(LLM 提炼仅产 pending 草稿，call_source=memory_distill，token/TTFT/上游错误码上报) + `MergeRequest`/`MergeRequestEvent`(append-only) + `MergeRequestService`(INV-6) + 受保护 git webhook `POST /api/git-webhooks/<platform>/`(GitHub HMAC / GitLab token fail-closed + redact_for_ledger 原始 payload + dedup_key 幂等) + context packer `services/project_context_packer.py`(fail-closed 非成员零召回 + grep/RAG + 排序 + 压缩 + token 预算降级 + RetrievalTrace) + `Conversation.bound_project` + chat_runner `_INDEXED_TOOL_NAMES` 接入 search_delivery_knowledge/get_entity_timeline/get_related_entities + build_sdk_config 自动注入项目上下文(fail-closed)。MR 实体落 initiatives 新实体（盘点确认此前仅 CodingTask.pr_url 等 url 散落）；git webhook 接收面盘点确认无既有端点故新增。call_source `memory_distill` 新增（LOGGING-SPEC §4.1 22→23）。6390 passed / 新增 39+1 用例全绿 / 38 failed == Phase-76 baseline 零新增回归（+1 flaky cross-suite ordering，单跑通过）/ makemigrations --check 干净 / 2 迁移（initiatives 0005 + chat 0028）。
-Last activity: 2026-06-26 — Phase 80 完成（feat(80)×6 + test(80)×2，未 push）；真实 GitHub/GitLab webhook E2E + 真实 LLM 蒸馏质量为里程碑级 deferred；下一步 Phase 81（Cursor 回流 + 前端工作台）
+Status: Phase 81 Cursor 回流 + 前端项目工作台已完成（里程碑收官）。后端：`services/branch_parsing.py`(feat/xxxx-m{id}-slug 反解析 fail-soft) + MCP `lookup_project_by_branch`(ProjectWorkItemLink 反查 → 单命中经 pack_project_context 召回 + 写 RetrievalTrace **补齐 Phase-80 deferred 的 MCP 链**；多/无命中 fail-soft) + MCP `report_project_knowledge`(PAT 认证 + 归因 request.user + 质量门槛 services/cursor_writeback.py 长度/低信息量/重复可配 + 脱敏不可绕过 + 成员 fail-closed → MemoryService.create_draft **pending 非 active**) + initiatives/services/cursor_rules.py(项目专属 .mdc 强制先关联召回再编码) + `GET /api/projects/<id>/cursor-rules/` + 工作项 REST(list/attach/detach surface ProjectService) + 列表筛选参数(space_id/status/member/q additive) + ArtifactTypeSerializer 补 instance_count + SettingKeys.CURSOR_WRITEBACK_CONFIG。前端：API 模块 artifacts/artifactTypes/projectMemory/mergeRequests + 扩展 projects + barrel；UI-01 /projects 列表(筛选+创建+卡片)；UI-02 /projects/[id] 6 Tab 懒加载(概览+Cursor rules 复制下载/成员转主R/工作项/工件在线查看/记忆/关联 MR+图谱)；UI-03 记忆 LLM 草稿确认 + /admin/artifact-types(删除保护 disabled+tooltip)；zh-CN 全量中文。无新增 migration（仅 SettingKeys 常量 + SerializerMethodField）。后端 6421 passed / 新增 30 用例全绿 / 39 failed == baseline 38 + 1 已知 flaky(test_webhook_dedup_same_sha 单跑通过) 零新增回归 / makemigrations 干净。前端 vue-tsc 绿 / 新增 12 用例全绿 / 1109 passed(2 failed = 既有 ProviderCredentialForm.spec PRE-EXISTING，stash 验证零新增回归)。
+Last activity: 2026-06-26 — Phase 81 完成（feat(81)×3 + test(81)×2，未 push）；真实 Cursor 端 MCP 反查/上报端到端 + 真实飞书在线查看为里程碑级 human_needed/deferred；里程碑 v0.15.0 feature-complete，下一步 `$gsd-audit-milestone`
 
-## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
+## Milestone Overview (v0.15.0 — Phases 76–81 — ✅ FEATURE-COMPLETE 6/6)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
@@ -38,7 +38,7 @@ Last activity: 2026-06-26 — Phase 80 完成（feat(80)×6 + test(80)×2，未 
 | 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
 | 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
 | 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ✅ Complete |
-| 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
+| 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ✅ Complete |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（38 条 + Traceability）；设计与调研基线见 [.planning/project-aggregate/MILESTONE-PROPOSAL.md](./project-aggregate/MILESTONE-PROPOSAL.md)。
 

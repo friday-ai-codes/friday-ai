@@ -2,7 +2,7 @@
 
 ## Milestones
 
-- 🚧 **v0.15.0 项目（交付上下文聚合根）** — Phases 76–81 (planning 2026-06-25)
+- 🚧 **v0.15.0 项目（交付上下文聚合根）** — Phases 76–81 (feature-complete 2026-06-26 — 6/6 phases, 38/38 需求)
 - ✅ **v0.14.0 可观测性与日志治理** — Phases 71–75 (shipped 2026-06-24) — 里程碑审计 passed（34/34 需求满足 / integration_ok）见 [audit](./milestones/v0.14.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.14.0-ROADMAP.md)
 - ✅ **v0.13.0 并发治理与索引体验** — Phases 65–70 (shipped 2026-06-23) — 里程碑审计 tech_debt（11/11 需求满足、integration_ok；遗留既有前端测试失败 + URL 拆段拼接 UI + 真机人工验收）见 [audit](./milestones/v0.13.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.13.0-ROADMAP.md)
 - ✅ **v0.12.0 弹性任务底座（durable 任务队列与多副本就绪）** — Phases 60–64 (shipped 2026-06-20) — 里程碑审计 tech_debt（16/16 需求满足、integration_ok；遗留真机/真实平台运行期人工验收）见 [audit](./milestones/v0.12.0-MILESTONE-AUDIT.md) — [archive](./milestones/v0.12.0-ROADMAP.md)
@@ -33,7 +33,7 @@
 - [x] **Phase 78: 飞书触发建项目 + 看板枚举 + 工作项组合** - 飞书项目跟踪枚举子项/成员封装 + 事件触发幂等建项目(拉人带身份) + `create_project` 工作流节点 + WorkItem(story/缺陷)关系边挂入 — FSPROJ-01~03, COMPOSE-01/02 — completed 2026-06-25（看板枚举 service + ProjectWorkItemLink + 同源 sync_from_board + create_project 节点；6315 passed / 新增 27 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / 飞书无整板 API 经字段派生 fail-soft 降级）
 - [x] **Phase 79: 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联** - `ArtifactType` 可配置注册表(内置 8 类 seed，后台增删禁用/双删保护) + `Artifact` 实例(多载体，INV-6) + 在线查看后端 API + 文字载体 RAG/UI 稿仅元数据 + 项目纳入知识图谱(EntityKind +project/repository/space)经 KnowledgeEdge 统一 KLINK 关联可查询 — ARTIFACT-01~05, KLINK-01/02 — completed 2026-06-26（6352 passed / 新增 39 用例全绿 / 38 failed == baseline 零新增回归 + 1 flaky cross-suite ordering（prompt 明示，单跑通过）/ makemigrations 干净 / 3 迁移含 seed）
 - [x] **Phase 80: 项目记忆 + MR 实体 + 上下文召回接入 Web 会话** - 项目记忆(自由文本 + 贡献者/时效，人工为主 + LLM 提议确认) + `MergeRequest` 实体 + 入站 webhook 状态同步 + context packer(grep+RAG) + 接入 chat runner — MEM-01~04, RECALL-01~03, MR-01/02 — completed 2026-06-26（MemoryService/MemoryDistiller(call_source=memory_distill)/MergeRequestService(INV-6) + 受保护 git webhook(HMAC/token fail-closed + redact + 幂等) + context packer(fail-closed + token 预算降级 + RetrievalTrace) + Conversation.bound_project + chat 白名单接入；6390 passed / 新增 39+1 用例全绿 / 38 failed == baseline 零新增回归 / makemigrations 干净 / 2 迁移）
-- [ ] **Phase 81: Cursor 回流 + 前端项目工作台** - MCP 分支→项目反查召回 + Cursor rules 模板 + 沉淀上报写回 memory(归因/脱敏/质量门槛) + 项目列表/详情工作台/记忆编辑/工件类型管理页 — CURSOR-01~03, UI-01~03
+- [x] **Phase 81: Cursor 回流 + 前端项目工作台** - MCP 分支→项目反查召回 + Cursor rules 模板 + 沉淀上报写回 memory(归因/脱敏/质量门槛) + 项目列表/详情工作台/记忆编辑/工件类型管理页 — CURSOR-01~03, UI-01~03 — completed 2026-06-26（MCP `lookup_project_by_branch`(召回写 RetrievalTrace 补齐 MCP 链)/`report_project_knowledge`(归因+脱敏+质量门槛→draft) + cursor_rules API + 工作项 REST/列表筛选 + 前端工作台(列表+6 Tab 详情+记忆草稿确认+工件类型管理页) + zh-CN 全量；后端 6421 passed/新增 30 用例全绿/39 failed==baseline 38+1 已知 flaky 零新增回归/makemigrations 干净/无新迁移；前端 vue-tsc 绿/新增 12 用例全绿/1109 passed(2 failed 为既有 ProviderCredentialForm，零新增回归)）
 
 ## Phase Details
 
@@ -221,7 +221,7 @@
 
 ## Progress
 
-里程碑 v0.1.0–v0.14.0（Phases 1–75）均已交付。当前进行中：**🚧 v0.15.0 项目（交付上下文聚合根）（Phases 76–81，6 阶段 / 38 需求，planning 2026-06-25）**。
+里程碑 v0.1.0–v0.14.0（Phases 1–75）均已交付。**🚧 v0.15.0 项目（交付上下文聚合根）（Phases 76–81，6 阶段 / 38 需求）已 feature-complete（2026-06-26，6/6 phase / 38/38 需求）**，待里程碑审计后归档。
 
 | Phase | Requirements | Status |
 |-------|--------------|--------|
@@ -230,7 +230,7 @@
 | 78. 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
 | 79. 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
 | 80. 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ✅ Complete |
-| 81. Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
+| 81. Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ✅ Complete |
 
 **Execution order:** 76 → 77 → 78 → 79 → 80 → 81（线性）。依赖链：76（命名腾挪）是硬前置，必须全绿再推进；77（聚合根 + 身份 + 成员）立地基；78（飞书触发 + 组合）与 79（工件 + 知识关联）分别构建组合与依赖；80（记忆 + MR + 召回）把上下文接通会话；81（Cursor 回流 + 前端工作台）打通双向闭环与可视。
 
