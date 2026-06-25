@@ -77,6 +77,17 @@ class Conversation(models.Model):
         related_name="conversations",
         help_text="对话级固定 Provider 凭证（contract pin 语义 contract）",
     )
+    # RECALL-02（v0.15.0 Phase 80）：会话绑定的「项目聚合根」（initiatives.Project），
+    # **区别于 ``space``**（组织单元）。绑定后 chat 自动经 context packer 加载项目完整上下文
+    # （需求/工件/记忆/关联知识），按成员权限 fail-closed。软删项目用 SET_NULL，会话保留。
+    bound_project = models.ForeignKey(
+        "initiatives.Project",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bound_conversations",
+        help_text="绑定的项目聚合根（RECALL-02，区别于 space 组织单元）",
+    )
     # implementation contract contract：对话状态（frozen 判据真源）
     status = models.CharField(
         max_length=20,
