@@ -68,7 +68,7 @@ def _ensure_seed(
         prompt = Prompt.objects.create(
             slug=slug,
             scope=PromptScope.SYSTEM,
-            project=None,
+            space=None,
             category=category,
             title=title,
             description="implementation test re-seed",

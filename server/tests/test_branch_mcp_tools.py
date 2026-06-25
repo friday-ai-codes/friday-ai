@@ -214,7 +214,7 @@ async def test_deep_analysis_passes_branch() -> None:
     mock_dispatcher.dispatch = _fake_dispatch
 
     with (
-        patch("projects.models.Project.objects", new_callable=MagicMock) as mock_proj_objs,
+        patch("projects.models.Space.objects", new_callable=MagicMock) as mock_proj_objs,
         patch("repositories.models.Repository.objects", new_callable=MagicMock) as mock_repo_objs,
         patch("subagent.models.SubAgentSession.objects", new_callable=MagicMock) as mock_sub_objs,
         patch("runners.models.Runner.objects", new_callable=MagicMock) as mock_runner_objs,
@@ -224,7 +224,7 @@ async def test_deep_analysis_passes_branch() -> None:
         patch("agents.tools.blocking_task_registry.register_blocking_task", new_callable=AsyncMock),
         patch("repositories.models.GitCredential.objects", new_callable=MagicMock) as mock_git_objs,
     ):
-        # Project.objects.aget
+        # Space.objects.aget
         mock_proj_objs.aget = AsyncMock(return_value=mock_project)
 
         # Repository.objects.filter → async iter repo

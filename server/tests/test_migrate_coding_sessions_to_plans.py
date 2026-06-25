@@ -40,12 +40,12 @@ def _make_session(conversation, repository, tech_plan: str, **extra):
 
 @pytest.fixture
 def conversation(db, project):
-    return Conversation.objects.create(project=project, title="迁移测试对话")
+    return Conversation.objects.create(space=project, title="迁移测试对话")
 
 
 @pytest.fixture
 def second_conversation(db, project):
-    return Conversation.objects.create(project=project, title="第二对话")
+    return Conversation.objects.create(space=project, title="第二对话")
 
 
 # ---------------------------------------------------------------------------

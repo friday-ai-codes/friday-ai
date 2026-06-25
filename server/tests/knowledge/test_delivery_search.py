@@ -43,7 +43,7 @@ async def test_eval_fixture_smoke(row, project, user, project_memberships, e2e_m
 
 
 async def test_service_delegates_timeline(entity_factory, version_factory, project, user, project_memberships):
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     await sync_to_async(version_factory)(entity)
     svc = DeliveryKnowledgeSearchService()
     nodes = await svc.get_timeline(entity.id, user=user)

@@ -39,7 +39,7 @@ from orchestration.models import OrchestrationRun
 @pytest.fixture
 def conversation(project) -> Conversation:
     return Conversation.objects.create(
-        project=project,
+        space=project,
         title="clarification resume test",
         status=Conversation.Status.RUNNING,
     )

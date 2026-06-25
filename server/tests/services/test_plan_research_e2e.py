@@ -222,7 +222,7 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
       模拟容器完成回调 → barrier→merging；
       节点 resume（重执行）→ done + 产出 MergedPlan（plan_version_id 非空）。
     """
-    from projects.models import Project
+    from projects.models import Space
     from subagent.models import SubAgentSession
     from workflows.models import (
         NodeExecution,
@@ -236,14 +236,14 @@ async def test_research_suspend_resume_reaches_done_via_node_execution() -> None
     repo_a = await _make_repo("repoA")
     repo_b = await _make_repo("repoB")
 
-    # 工作流上下文链：Project → Workflow → WorkflowNode → WorkflowExecution → NodeExecution
-    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
-    workflow = await Workflow.objects.acreate(name="编排工作流", project=project)
+    # 工作流上下文链：Space → Workflow → WorkflowNode → WorkflowExecution → NodeExecution
+    project = await Space.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    workflow = await Workflow.objects.acreate(name="编排工作流", space=project)
     wf_node = await WorkflowNode.objects.acreate(
         workflow=workflow, node_type="ai_plan_research", name="AI 方案编排"
     )
     wf_exec = await WorkflowExecution.objects.acreate(
-        workflow=workflow, project=project, trigger_type="manual"
+        workflow=workflow, space=project, trigger_type="manual"
     )
     node_exec = await NodeExecution.objects.acreate(
         workflow_execution=wf_exec, node=wf_node, status="running"

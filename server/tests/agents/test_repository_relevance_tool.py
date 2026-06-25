@@ -51,7 +51,7 @@ from agents.tools.repository_relevance import (
 )
 from agents.tools.schemas.repository_relevance import RepositoryRelevanceInput
 from chat.models import Conversation, RepositoryRoutingTrace
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from services.retrieval.types import LayerSnapshot, RagSearchResult
 
@@ -66,7 +66,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def project_with_repos(db):
-    project = Project.objects.create(
+    project = Space.objects.create(
         name=f"relev-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"k-{uuid.uuid4().hex[:6]}",
     )
@@ -87,7 +87,7 @@ def project_with_repos(db):
 @pytest.fixture
 def conversation(db, project_with_repos):
     project, _ = project_with_repos
-    return Conversation.objects.create(project=project, title="relev-conv")
+    return Conversation.objects.create(space=project, title="relev-conv")
 
 
 def _make_rag_result(*, items_by_repo: dict[str, list[dict[str, Any]]]) -> RagSearchResult:
@@ -185,11 +185,11 @@ async def test_conversation_not_found(project_with_repos, monkeypatch):
 
 
 async def test_no_indexed_repositories(monkeypatch):
-    project = await Project.objects.acreate(
+    project = await Space.objects.acreate(
         name=f"empty-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"k-{uuid.uuid4().hex[:6]}",
     )
-    conv = await Conversation.objects.acreate(project=project, title="x")
+    conv = await Conversation.objects.acreate(space=project, title="x")
     _patch_hybrid_search(monkeypatch, _make_rag_result(items_by_repo={}))
     result = await analyze_repository_relevance(
         query="x",

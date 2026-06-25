@@ -7,18 +7,18 @@ from django.utils import timezone
 from rest_framework import status
 
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 
 
 @pytest.fixture
 def project(db):
-    return Project.objects.create(name="Fork Project", description="edit fork tests")
+    return Space.objects.create(name="Fork Space", description="edit fork tests")
 
 
 @pytest.fixture
 def source_conversation(db, project):
     return Conversation.objects.create(
-        project=project,
+        space=project,
         title="原始对话",
         model="claude-test",
     )
@@ -75,13 +75,13 @@ def test_fork_user_message_copies_only_prior_history(api_client, source_conversa
 
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data["id"] != str(source_conversation.id)
-    assert response.data["space_id"] == str(source_conversation.project_id)
+    assert response.data["space_id"] == str(source_conversation.space_id)
     assert response.data["model"] == "claude-test"
     assert response.data["title"] == "原始对话"
     assert [m["content"] for m in response.data["messages"]] == ["第一问", "第一答"]
 
     forked = Conversation.objects.get(id=response.data["id"])
-    assert forked.project_id == source_conversation.project_id
+    assert forked.space_id == source_conversation.space_id
     assert forked.model == source_conversation.model
 
     forked_messages = list(Message.objects.filter(conversation=forked).order_by("created_at"))
@@ -133,7 +133,7 @@ def test_fork_rejects_empty_content(api_client, source_conversation):
 
 @pytest.mark.django_db(transaction=True)
 def test_fork_rejects_cross_conversation_message(api_client, source_conversation, project):
-    other = Conversation.objects.create(project=project, title="另一个对话")
+    other = Conversation.objects.create(space=project, title="另一个对话")
     target = _message(other, Message.Role.USER, "其他对话消息", 1)
 
     response = api_client.post(

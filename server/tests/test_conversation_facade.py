@@ -112,8 +112,8 @@ def _make_graph(
 async def _create_conversation(project: Any) -> Any:
     from chat.models import Conversation
 
-    conv = await Conversation.objects.acreate(project=project, title="Test")
-    return await Conversation.objects.select_related("project").aget(id=conv.id)
+    conv = await Conversation.objects.acreate(space=project, title="Test")
+    return await Conversation.objects.select_related("space").aget(id=conv.id)
 
 
 def _facade_patches(
@@ -131,7 +131,7 @@ def _facade_patches(
 
     config_stub = sdk_config or _SdkConfigStub()
     config_stub.conversation_id = str(conversation.id)
-    config_stub.space_id = str(conversation.project_id)
+    config_stub.space_id = str(conversation.space_id)
     session_stub = _SessionStub()
 
     patches = (

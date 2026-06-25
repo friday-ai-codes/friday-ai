@@ -10,7 +10,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from projects.models import Project
+from projects.models import Space
 from workflows.models import Workflow, WorkflowNode, WorkflowTrigger
 
 
@@ -21,9 +21,9 @@ def api_client():
 
 def _make_trigger(verification_token: str = "") -> WorkflowTrigger:
     """创建 active 工作流 + feishu_event_trigger 节点（可带校验 token）+ 专属端点 trigger。"""
-    project = Project.objects.create(name="VT Project")
+    project = Space.objects.create(name="VT Space")
     wf = Workflow.objects.create(
-        name="VT WF", project=project, is_active=True, trigger_type="event",
+        name="VT WF", space=project, is_active=True, trigger_type="event",
     )
     node = WorkflowNode.objects.create(
         workflow=wf,

@@ -25,7 +25,7 @@ from chat.models import Conversation, ConversationIntentTrace, Message
 def conversation(project, user) -> Conversation:
     # ISO owner gate：endpoint 校验 trace.conversation.created_by == 请求 user，
     # 不设 created_by 时所有认证请求都会被 404 拦截（隐藏存在性）。
-    return Conversation.objects.create(project=project, title="协商测试", created_by=user)
+    return Conversation.objects.create(space=project, title="协商测试", created_by=user)
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def trace(conversation: Conversation) -> ConversationIntentTrace:
 
 @pytest.fixture
 def authed_client(api_client: APIClient, user, project_memberships) -> APIClient:
-    """user 是 project admin，project 是 trace.conversation.project。"""
+    """user 是 project admin，project 是 trace.conversation.space。"""
     api_client.force_authenticate(user=user)
     return api_client
 

@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 async def test_timeline_versions_ordered(entity_factory, version_factory, project, user, project_memberships):
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     await sync_to_async(version_factory)(entity, version=1, is_latest=False)
     await sync_to_async(version_factory)(entity, version=2, is_latest=False)
     await sync_to_async(version_factory)(entity, version=3, is_latest=True)
@@ -26,8 +26,8 @@ async def test_timeline_versions_ordered(entity_factory, version_factory, projec
 
 
 async def test_timeline_code_change_attached(entity_factory, version_factory, edge_factory, project, user, project_memberships):
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     await sync_to_async(version_factory)(plan, version=1)
     await sync_to_async(edge_factory)(plan, code, relation=EdgeRelation.IMPLEMENTED_BY)
 
@@ -37,7 +37,7 @@ async def test_timeline_code_change_attached(entity_factory, version_factory, ed
 
 
 async def test_timeline_exclude_superseded(entity_factory, version_factory, project, user, project_memberships):
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     v1_time = entity.event_time
     await sync_to_async(version_factory)(entity, version=1, is_latest=False, invalid_at=v1_time + timezone.timedelta(hours=1))
     await sync_to_async(version_factory)(entity, version=2, is_latest=True)
@@ -47,7 +47,7 @@ async def test_timeline_exclude_superseded(entity_factory, version_factory, proj
 
 
 async def test_timeline_zero_qdrant_calls(entity_factory, version_factory, project, user, project_memberships):
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     await sync_to_async(version_factory)(entity)
     with patch("services.qdrant_service.QdrantService.hybrid_search_by_name") as mock_qdrant:
         await build_entity_timeline(entity.id, user=user)
@@ -55,7 +55,7 @@ async def test_timeline_zero_qdrant_calls(entity_factory, version_factory, proje
 
 
 async def test_timeline_unauthorized_user(entity_factory, version_factory, project, other_user):
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     await sync_to_async(version_factory)(entity)
     assert await build_entity_timeline(entity.id, user=other_user) == []
 
@@ -64,8 +64,8 @@ async def test_timeline_as_of_excludes_future_code_change(
     entity_factory, version_factory, edge_factory, project, user, project_memberships
 ):
     """as_of 在边 valid_at 之前 → timeline 不含该 code_change（ENH-04）。"""
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     version_valid = timezone.now() - timezone.timedelta(days=3)
     await sync_to_async(version_factory)(plan, version=1, valid_at=version_valid, event_time=version_valid)
     future_valid = timezone.now() + timezone.timedelta(days=7)
@@ -82,7 +82,7 @@ async def test_timeline_node_provenance_feishu(
     entity_factory, version_factory, project, user, project_memberships
 ):
     """timeline 节点自身（非嵌套 code_change）provenance 应填充 feishu_url（W2）。"""
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     feishu_url = "https://project.feishu.cn/x/story/detail/123"
     await sync_to_async(version_factory)(entity, version=1, payload={"feishu_url": feishu_url})
 
@@ -95,9 +95,9 @@ async def test_timeline_code_change_not_cross_contaminated(
     entity_factory, version_factory, edge_factory, project, user, project_memberships
 ):
     """不同版本节点的 code_changes 按时间窗口归属，不互相串味（W2 bug 修复）。"""
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code1 = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
-    code2 = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code1 = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
+    code2 = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     await sync_to_async(version_factory)(code1, version=1)
     await sync_to_async(version_factory)(code2, version=1)
 
@@ -130,7 +130,7 @@ async def test_timeline_as_of_passthrough_service(
 ):
     from knowledge.retrieval import DeliveryKnowledgeSearchService
 
-    entity = await sync_to_async(entity_factory)(project=project)
+    entity = await sync_to_async(entity_factory)(space=project)
     await sync_to_async(version_factory)(entity, version=1)
     as_of = timezone.now()
     svc = DeliveryKnowledgeSearchService()

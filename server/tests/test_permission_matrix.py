@@ -3,8 +3,8 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from permissions.models import ProjectMembership, ProjectRole
-from projects.models import Project
+from permissions.models import SpaceMembership, SpaceRole
+from projects.models import Space
 
 User = get_user_model()
 
@@ -104,7 +104,7 @@ class TestProjectCreationPermissions:
         response = authenticated_client.post(
             urls.space_list,
             {
-                "name": "New Project",
+                "name": "New Space",
                 "feishu_project_key": "new-project-key",
             },
             format="json",
@@ -112,9 +112,9 @@ class TestProjectCreationPermissions:
         assert response.status_code == 201
 
         # 验证创建者是 admin
-        new_project = Project.objects.get(name="New Project")
-        membership = ProjectMembership.objects.get(user=user, project=new_project)
-        assert membership.role == ProjectRole.ADMIN
+        new_project = Space.objects.get(name="New Space")
+        membership = SpaceMembership.objects.get(user=user, space=new_project)
+        assert membership.role == SpaceRole.ADMIN
 
 
 @pytest.mark.django_db
@@ -135,7 +135,7 @@ class TestTenantIsolationE2E:
         # 在 second_project 创建一个工作流
         wf = Workflow.objects.create(
             name="Secret Workflow",
-            project=second_project,
+            space=second_project,
         )
 
         api_client.force_authenticate(user=member_user)
@@ -155,8 +155,8 @@ class TestTenantIsolationE2E:
         """superuser 看到所有项目的工作流。"""
         from workflows.models import Workflow
 
-        wf1 = Workflow.objects.create(name="WF1", project=project)
-        wf2 = Workflow.objects.create(name="WF2", project=second_project)
+        wf1 = Workflow.objects.create(name="WF1", space=project)
+        wf2 = Workflow.objects.create(name="WF2", space=second_project)
 
         response = authenticated_admin_client.get("/api/workflows/")
         assert response.status_code == 200

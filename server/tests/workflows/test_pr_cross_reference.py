@@ -155,11 +155,11 @@ class _FakeGitLabClient:
     def __init__(self) -> None:
         self.mr = MagicMock()
         self.mr.save = MagicMock()
-        self.project = MagicMock()
-        self.project.mergerequests.get = MagicMock(return_value=self.mr)
+        self.space = MagicMock()
+        self.space.mergerequests.get = MagicMock(return_value=self.mr)
 
     def _get_project(self) -> Any:
-        return self.project
+        return self.space
 
 
 def _repo_mock(rid: str, name: str) -> MagicMock:

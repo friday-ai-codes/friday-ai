@@ -9,17 +9,17 @@ import pytest
 from chat.models import Conversation
 from orchestration.models import OrchestrationRun
 from orchestration.state import RunPhase
-from projects.models import Project
+from projects.models import Space
 
 
 @pytest.fixture
-def _project(db: None) -> Project:
-    return Project.objects.create(name="Test Project")
+def _project(db: None) -> Space:
+    return Space.objects.create(name="Test Space")
 
 
 @pytest.fixture
-def conversation(_project: Project) -> Conversation:
-    return Conversation.objects.create(project=_project, title="测试对话")
+def conversation(_project: Space) -> Conversation:
+    return Conversation.objects.create(space=_project, title="测试对话")
 
 
 @pytest.mark.django_db

@@ -30,7 +30,7 @@ from langchain_core.tools import tool as lc_tool
 
 from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
 from agents.models import AgentSession, ToolCallLog
-from projects.models import Project
+from projects.models import Space
 from services.provider_config import ProviderType, ResolvedProviderConfig
 from tests.helpers.fake_chat_model import FakeChatModel
 
@@ -99,8 +99,8 @@ def _make_config(
 
 @pytest.fixture
 def persistence_project(db):
-    """本测试专属 Project（与 conftest.project 隔离，避免 feishu_project_key 冲突）。"""
-    return Project.objects.create(
+    """本测试专属 Space（与 conftest.space 隔离，避免 feishu_project_key 冲突）。"""
+    return Space.objects.create(
         name="persistence-test-project",
         feishu_project_key="persistence-test-key",
     )
@@ -121,7 +121,7 @@ async def agent_session_fixture(persistence_project, persistence_user):
     """创建运行中的 AgentSession，供 Runner.stream 消费。"""
     session = await AgentSession.objects.acreate(
         session_id="wf-work-item",
-        project=persistence_project,
+        space=persistence_project,
         user=persistence_user,
         status=AgentSession.Status.RUNNING,
     )

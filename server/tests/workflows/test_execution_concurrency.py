@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine import scheduler as scheduler_module
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import ExecutionStatus, Workflow, WorkflowExecution, WorkflowNode
@@ -14,10 +14,10 @@ from workflows.models import ExecutionStatus, Workflow, WorkflowExecution, Workf
 
 @pytest.fixture
 def concurrency_workflow(db, user):
-    project = Project.objects.create(name="Concurrency Project")
+    project = Space.objects.create(name="Concurrency Space")
     workflow = Workflow.objects.create(
         name="Concurrency Workflow",
-        project=project,
+        space=project,
         trigger_type="manual",
         created_by=user,
         max_concurrent_executions=1,

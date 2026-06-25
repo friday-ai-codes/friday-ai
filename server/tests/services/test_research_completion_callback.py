@@ -362,7 +362,7 @@ async def test_chat_resume_drives_to_done_and_notifies_barrier() -> None:
 @pytest.mark.asyncio
 async def test_workflow_entry_session_skips_chat_resume() -> None:
     """回归守护：工作流入口（有 node_execution）不走 chat 续驱，仍由 _schedule_workflow_resume 处理。"""
-    from projects.models import Project
+    from projects.models import Space
     from workflows.models import (
         NodeExecution,
         Workflow,
@@ -384,13 +384,13 @@ async def test_workflow_entry_session_skips_chat_resume() -> None:
         session=plan_session, repository=repo, status=RepoResearchTaskStatus.RUNNING
     )
     agent = await AgentSession.objects.acreate(session_id=f"agent-{uuid.uuid4().hex[:8]}")
-    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
-    workflow = await Workflow.objects.acreate(name="编排工作流", project=project)
+    project = await Space.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    workflow = await Workflow.objects.acreate(name="编排工作流", space=project)
     wf_node = await WorkflowNode.objects.acreate(
         workflow=workflow, node_type="ai_plan_research", name="AI 方案编排"
     )
     wf_exec = await WorkflowExecution.objects.acreate(
-        workflow=workflow, project=project, trigger_type="manual"
+        workflow=workflow, space=project, trigger_type="manual"
     )
     node_exec = await NodeExecution.objects.acreate(
         workflow_execution=wf_exec, node=wf_node, status="running"

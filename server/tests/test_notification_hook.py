@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from core.feature_flags import FeatureFlags
 from workflows.hooks.builtin import NotificationHook
@@ -19,14 +19,14 @@ def hook() -> NotificationHook:
 
 @pytest.fixture
 def execution() -> SimpleNamespace:
-    workflow = SimpleNamespace(project="workflow-project")
+    workflow = SimpleNamespace(space="workflow-project")
     return SimpleNamespace(
         id="execution-001",
         context={"chat_id": "oc_test_chat"},
         input_data={},
         is_debug=False,
         workflow=workflow,
-        project="execution-project",
+        space="execution-project",
         error_message="",
         feishu_message_id="",
         asave=AsyncMock(),
@@ -44,13 +44,13 @@ def node_execution() -> SimpleNamespace:
 
 @pytest.fixture
 def notification_integration_workflow(db) -> Workflow:
-    project = Project.objects.create(
-        name="Notification Integration Project",
+    project = Space.objects.create(
+        name="Notification Integration Space",
         description="NotificationHook engine integration test project",
     )
     workflow = Workflow.objects.create(
         name="Notification Integration Workflow",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     WorkflowNode.objects.create(
@@ -114,7 +114,7 @@ async def test_target_events_send_feishu_card_and_persist_message_id(
     ) as mock_create:
         await hook.execute(event, **kwargs)
 
-    mock_create.assert_awaited_once_with(execution.workflow.project)
+    mock_create.assert_awaited_once_with(execution.workflow.space)
     mock_service.send_card.assert_awaited_once()
     send_kwargs = mock_service.send_card.await_args.kwargs
     assert send_kwargs["receive_id"] == "oc_test_chat"
@@ -263,4 +263,4 @@ async def test_engine_execution_path_persists_message_id(
     await execution.arefresh_from_db()
     assert execution.status == ExecutionStatus.COMPLETED
     assert execution.feishu_message_id == "msg_engine_123"
-    mock_create.assert_awaited_once_with(notification_integration_workflow.project)
+    mock_create.assert_awaited_once_with(notification_integration_workflow.space)

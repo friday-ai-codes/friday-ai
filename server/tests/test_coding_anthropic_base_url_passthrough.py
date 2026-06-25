@@ -73,7 +73,7 @@ def test_validate_anthropic_base_url(
 def workflow(db: None, project: Any) -> Any:
     from workflows.models.workflow import Workflow
 
-    return Workflow.objects.create(name="Coding Workflow work item", project=project)
+    return Workflow.objects.create(name="Coding Workflow work item", space=project)
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def workflow_execution(db: None, workflow: Any) -> Any:
 
     return WorkflowExecution.objects.create(
         workflow=workflow,
-        project=workflow.project,
+        space=workflow.space,
         status="running",
     )
 

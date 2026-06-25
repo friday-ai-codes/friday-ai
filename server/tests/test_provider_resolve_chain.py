@@ -78,7 +78,7 @@ async def test_conversation_level_wins_when_node_empty(
 ) -> None:
     """B：conversation.provider_credential_id 有值 → winning=conversation。"""
     conv = await Conversation.objects.acreate(
-        project=project_a,
+        space=project_a,
         title="conversation pinned",
     )
     conv.provider_credential_id_id = project_a_anthropic_credential.id
@@ -89,12 +89,12 @@ async def test_conversation_level_wins_when_node_empty(
     await project_a.asave(update_fields=["default_provider_credential_id"])
 
     # 重新拉取以预取 FK _id 列（async 上下文）
-    conv_refetched = await Conversation.objects.select_related("project").aget(id=conv.id)
+    conv_refetched = await Conversation.objects.select_related("space").aget(id=conv.id)
 
     result = await ProviderConfigService.aresolve_with_chain(
         node_config=None,
         conversation=conv_refetched,
-        project=conv_refetched.project,
+        project=conv_refetched.space,
     )
 
     assert isinstance(result, ResolvedProviderChain)
@@ -122,13 +122,13 @@ async def test_project_level_wins_when_conversation_empty(
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     await project_a.asave(update_fields=["default_provider_credential_id"])
 
-    conv = await Conversation.objects.acreate(project=project_a, title="project 层赢")
-    conv_refetched = await Conversation.objects.select_related("project").aget(id=conv.id)
+    conv = await Conversation.objects.acreate(space=project_a, title="project 层赢")
+    conv_refetched = await Conversation.objects.select_related("space").aget(id=conv.id)
 
     result = await ProviderConfigService.aresolve_with_chain(
         node_config=None,
         conversation=conv_refetched,
-        project=conv_refetched.project,
+        project=conv_refetched.space,
     )
 
     assert isinstance(result, ResolvedProviderChain)
@@ -151,13 +151,13 @@ async def test_all_layers_miss_returns_missing_error(
     project_a,
 ) -> None:
     """D：conversation + project + system 均无凭证 → ProviderMissingError。"""
-    conv = await Conversation.objects.acreate(project=project_a, title="全链路无凭证")
-    conv_refetched = await Conversation.objects.select_related("project").aget(id=conv.id)
+    conv = await Conversation.objects.acreate(space=project_a, title="全链路无凭证")
+    conv_refetched = await Conversation.objects.select_related("space").aget(id=conv.id)
 
     result = await ProviderConfigService.aresolve_with_chain(
         node_config=None,
         conversation=conv_refetched,
-        project=conv_refetched.project,
+        project=conv_refetched.space,
     )
 
     assert isinstance(result, ProviderMissingError)

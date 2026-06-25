@@ -36,7 +36,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from agents.models import AgentSession
 from chat.models import CodingSession, Conversation
 from orchestration.coding_graph import build_coding_graph
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from subagent.models import SubAgentSession
 
@@ -80,8 +80,8 @@ async def e2e_repository() -> Repository:
 
 
 @pytest_asyncio.fixture
-async def e2e_project(e2e_repository: Repository) -> Project:
-    project = await Project.objects.acreate(
+async def e2e_project(e2e_repository: Repository) -> Space:
+    project = await Space.objects.acreate(
         name=f"e2e-proj-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"e2e-{uuid.uuid4().hex[:6]}",
     )
@@ -91,10 +91,10 @@ async def e2e_project(e2e_repository: Repository) -> Project:
 
 @pytest_asyncio.fixture
 async def e2e_coding_session(
-    e2e_project: Project, e2e_repository: Repository, e2e_user: Any,
+    e2e_project: Space, e2e_repository: Repository, e2e_user: Any,
 ) -> CodingSession:
     conversation = await Conversation.objects.acreate(
-        project=e2e_project, title="e2e 281 测试对话", created_by=e2e_user,
+        space=e2e_project, title="e2e 281 测试对话", created_by=e2e_user,
     )
     return await CodingSession.objects.acreate(
         conversation=conversation,
@@ -112,7 +112,7 @@ async def _make_sub_session(
 ) -> SubAgentSession:
     agent_session = await AgentSession.objects.acreate(
         session_id=f"agent-{uuid.uuid4().hex[:12]}",
-        project=None,
+        space=None,
         status=AgentSession.Status.RUNNING,
     )
     return await SubAgentSession.objects.acreate(

@@ -186,7 +186,7 @@ class TestManualTriggerNode:
 
         execution = await WorkflowExecution.objects.acreate(
             workflow=obs_workflow,
-            project=obs_workflow.project,
+            space=obs_workflow.space,
             trigger_type="manual",
             triggered_by=user,
             status="running",

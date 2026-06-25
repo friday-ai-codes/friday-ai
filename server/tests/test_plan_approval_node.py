@@ -38,7 +38,7 @@ def _make_context(
     mock_project.feishu_doc_folder_token = "folder_token_123"
 
     mock_workflow = MagicMock()
-    mock_workflow.project = mock_project
+    mock_workflow.space = mock_project
 
     mock_execution = MagicMock()
     mock_execution.workflow = mock_workflow
@@ -208,7 +208,7 @@ class TestPlanApprovalNode:
         mock_project.id = 1
         mock_project.feishu_doc_folder_token = "folder_token_123"
         mock_workflow = MagicMock()
-        mock_workflow.project = mock_project
+        mock_workflow.space = mock_project
         mock_we_instance = MagicMock()
         mock_we_instance.workflow = mock_workflow
         mock_we_objects.select_related.return_value.aget = AsyncMock(

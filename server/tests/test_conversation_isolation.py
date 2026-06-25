@@ -58,7 +58,7 @@ def _conversation_has_created_by() -> bool:
 async def _acreate_conversation(project, *, owner=None, **kwargs):
     """async 创建会话；owner 不为空且字段已落地时写入 created_by。"""
     fields: dict = {
-        "project": project,
+        "space": project,
         "title": kwargs.pop("title", "iso-conv"),
         "model": kwargs.pop("model", ""),
     }

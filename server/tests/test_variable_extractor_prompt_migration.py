@@ -80,7 +80,7 @@ class TestVariableExtractorMigration:
             prompt = Prompt.objects.create(
                 slug=PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
                 scope=PromptScope.SYSTEM,
-                project=None,
+                space=None,
                 category="ai_node",
                 title="AI 节点 - 变量提取",
                 description="implementation test re-seed",
@@ -213,7 +213,7 @@ class TestVariableExtractorPromptByteEqual:
             prompt = Prompt.objects.create(
                 slug=PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
                 scope=PromptScope.SYSTEM,
-                project=None,
+                space=None,
                 category="ai_node",
                 title="AI 节点 - 变量提取",
                 description="implementation test re-seed",

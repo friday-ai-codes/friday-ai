@@ -16,7 +16,7 @@ from feishu.models import ProcessedEvent, TriggerLog, TriggerLogStatus
 def trigger_log(db, project):
     """创建测试触发日志。"""
     return TriggerLog.objects.create(
-        project=project,
+        space=project,
         project_key=project.feishu_project_key,
         event_uuid="test-event-uuid-001",
         event_type="WorkitemCreateEvent",
@@ -43,7 +43,7 @@ def trigger_log(db, project):
 def trigger_log_with_error(db, project):
     """创建带错误信息的触发日志。"""
     return TriggerLog.objects.create(
-        project=project,
+        space=project,
         project_key=project.feishu_project_key,
         event_uuid="test-event-uuid-error",
         event_type="WorkitemStatusEvent",
@@ -142,7 +142,7 @@ class TestTriggerLogList:
         # 创建多条日志
         for i in range(5):
             TriggerLog.objects.create(
-                project=project,
+                space=project,
                 event_uuid=f"pagination-test-{i}",
                 event_type="WorkitemCreateEvent",
                 status=TriggerLogStatus.ACCEPTED,
@@ -233,7 +233,7 @@ class TestTriggerLogRaw:
     def test_get_trigger_log_raw_empty_data(self, authenticated_client, project, feishu_urls):
         """测试获取空原始数据的日志。"""
         empty_log = TriggerLog.objects.create(
-            project=project,
+            space=project,
             event_type="TestEvent",
             status=TriggerLogStatus.IGNORED,
         )
@@ -266,7 +266,7 @@ class TestTriggerLogModel:
     def test_create_trigger_log(self, db, project):
         """测试创建触发日志。"""
         log = TriggerLog.objects.create(
-            project=project,
+            space=project,
             event_uuid="model-test-uuid",
             event_type="WorkitemCreateEvent",
             work_item_id="99999",
@@ -275,7 +275,7 @@ class TestTriggerLogModel:
 
         assert log.id is not None
         assert log.event_uuid == "model-test-uuid"
-        assert log.project == project
+        assert log.space == project
         assert log.created_at is not None
 
     def test_trigger_log_str_representation(self, trigger_log):
@@ -287,13 +287,13 @@ class TestTriggerLogModel:
     def test_trigger_log_ordering(self, db, project):
         """测试日志按创建时间倒序排列。"""
         log1 = TriggerLog.objects.create(
-            project=project,
+            space=project,
             event_uuid="order-test-1",
             event_type="Event1",
             status=TriggerLogStatus.ACCEPTED,
         )
         log2 = TriggerLog.objects.create(
-            project=project,
+            space=project,
             event_uuid="order-test-2",
             event_type="Event2",
             status=TriggerLogStatus.ACCEPTED,
@@ -307,7 +307,7 @@ class TestTriggerLogModel:
     def test_trigger_log_unique_event_uuid(self, db, project):
         """测试 event_uuid 唯一性约束。"""
         TriggerLog.objects.create(
-            project=project,
+            space=project,
             event_uuid="unique-uuid-test",
             event_type="Event1",
             status=TriggerLogStatus.ACCEPTED,
@@ -315,7 +315,7 @@ class TestTriggerLogModel:
 
         with pytest.raises(Exception):  # IntegrityError
             TriggerLog.objects.create(
-                project=project,
+                space=project,
                 event_uuid="unique-uuid-test",
                 event_type="Event2",
                 status=TriggerLogStatus.ACCEPTED,

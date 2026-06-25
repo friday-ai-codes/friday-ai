@@ -17,7 +17,7 @@ def failed_execution(obs_workflow, user):
     now = timezone.now()
     return WorkflowExecution.objects.create(
         workflow=obs_workflow,
-        project=obs_workflow.project,
+        space=obs_workflow.space,
         trigger_type="manual",
         triggered_by=user,
         status="failed",
@@ -31,7 +31,7 @@ class TestAlertRuleModel:
     def test_create_workflow_rule(self, obs_project, obs_workflow):
         rule = AlertRule.objects.create(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="执行失败告警",
             condition_type="execution_failed",
             action_type="feishu_notification",
@@ -45,7 +45,7 @@ class TestAlertRuleModel:
     def test_create_global_rule(self, obs_project):
         rule = AlertRule.objects.create(
             workflow=None,
-            project=obs_project,
+            space=obs_project,
             name="全局成本告警",
             condition_type="cost_threshold",
             condition_config={"threshold_value": "10.00"},
@@ -61,7 +61,7 @@ class TestAlertRuleExecutionModel:
     def test_unique_constraint(self, obs_project, obs_workflow, obs_execution):
         rule = AlertRule.objects.create(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Test",
             condition_type="execution_failed",
             action_type="webhook",
@@ -86,7 +86,7 @@ class TestAlertRuleHook:
     async def test_execution_failed_triggers_rule(self, obs_project, obs_workflow, failed_execution):
         rule = await AlertRule.objects.acreate(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Failed Alert",
             condition_type="execution_failed",
             action_type="webhook",
@@ -105,7 +105,7 @@ class TestAlertRuleHook:
         await failed_execution.asave(update_fields=["is_debug"])
         rule = await AlertRule.objects.acreate(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Debug Skip",
             condition_type="execution_failed",
             action_type="webhook",
@@ -122,7 +122,7 @@ class TestAlertRuleHook:
     async def test_cooldown_prevents_duplicate(self, obs_project, obs_workflow, failed_execution):
         rule = await AlertRule.objects.acreate(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Cooldown Test",
             condition_type="execution_failed",
             action_type="webhook",
@@ -143,7 +143,7 @@ class TestAlertRuleHook:
         """测试成本阈值评估 — 直接测试 _evaluate_condition 和 _execute_action。"""
         rule = await AlertRule.objects.acreate(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Cost Alert",
             condition_type="cost_threshold",
             condition_config={"threshold_value": "0.01"},
@@ -172,15 +172,15 @@ class TestAlertRuleHook:
 @pytest.mark.django_db(transaction=True)
 class TestAlertRuleAPI:
     def test_list_alert_rules(self, authenticated_client, obs_project, obs_workflow):
-        from permissions.models import ProjectMembership, ProjectRole
-        ProjectMembership.objects.create(
+        from permissions.models import SpaceMembership, SpaceRole
+        SpaceMembership.objects.create(
             user=authenticated_client.handler._force_user,
-            project=obs_project,
-            role=ProjectRole.VIEWER,
+            space=obs_project,
+            role=SpaceRole.VIEWER,
         )
         AlertRule.objects.create(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="API Test Rule",
             condition_type="execution_failed",
             action_type="webhook",
@@ -192,11 +192,11 @@ class TestAlertRuleAPI:
         assert any(r["name"] == "API Test Rule" for r in data)
 
     def test_create_alert_rule_validation(self, authenticated_client, obs_project, obs_workflow):
-        from permissions.models import ProjectMembership, ProjectRole
-        ProjectMembership.objects.create(
+        from permissions.models import SpaceMembership, SpaceRole
+        SpaceMembership.objects.create(
             user=authenticated_client.handler._force_user,
-            project=obs_project,
-            role=ProjectRole.MEMBER,
+            space=obs_project,
+            role=SpaceRole.MEMBER,
         )
         payload = {
             "workflow": str(obs_workflow.id),
@@ -210,15 +210,15 @@ class TestAlertRuleAPI:
         assert resp.status_code == 400
 
     def test_toggle_enabled_endpoint(self, authenticated_client, obs_project, obs_workflow):
-        from permissions.models import ProjectMembership, ProjectRole
-        ProjectMembership.objects.create(
+        from permissions.models import SpaceMembership, SpaceRole
+        SpaceMembership.objects.create(
             user=authenticated_client.handler._force_user,
-            project=obs_project,
-            role=ProjectRole.MEMBER,
+            space=obs_project,
+            role=SpaceRole.MEMBER,
         )
         rule = AlertRule.objects.create(
             workflow=obs_workflow,
-            project=obs_project,
+            space=obs_project,
             name="Toggle Test",
             condition_type="execution_failed",
             action_type="webhook",

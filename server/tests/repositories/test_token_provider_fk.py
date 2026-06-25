@@ -15,7 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
 from common.encryption import encrypt_value
-from projects.models import Project
+from projects.models import Space
 from repositories.models import (
     AuthType,
     GitCredential,
@@ -95,8 +95,8 @@ def user(db) -> User:
 
 
 @pytest.fixture
-def space(db) -> Project:
-    return Project.objects.create(name="s")
+def space(db) -> Space:
+    return Space.objects.create(name="s")
 
 
 async def _post_create(client, user, payload):
@@ -112,7 +112,7 @@ async def _post_create(client, user, payload):
 
 
 @pytest.mark.asyncio
-async def test_create_with_fk_no_token(user: User, space: Project) -> None:
+async def test_create_with_fk_no_token(user: User, space: Space) -> None:
     """无自有 token + 显式密钥提供方 FK → 建仓成功，不建 per-repo 凭证，FK 落库。"""
     inst = await GitInstanceCredential.objects.acreate(
         host="gitlab.example.com", encrypted_token=encrypt_value("fk-tok")
@@ -132,7 +132,7 @@ async def test_create_with_fk_no_token(user: User, space: Project) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_with_host_match_no_token(user: User, space: Project) -> None:
+async def test_create_with_host_match_no_token(user: User, space: Space) -> None:
     """无自有 token + host 自动匹配实例池 → 建仓成功。"""
     await GitInstanceCredential.objects.acreate(
         host="gitlab.example.com", encrypted_token=encrypt_value("host-tok")
@@ -147,7 +147,7 @@ async def test_create_with_host_match_no_token(user: User, space: Project) -> No
 
 
 @pytest.mark.asyncio
-async def test_create_no_token_no_provider_fails(user: User, space: Project) -> None:
+async def test_create_no_token_no_provider_fails(user: User, space: Space) -> None:
     """无自有 token + 无 FK + host 无匹配 → 400 fail-loud。"""
     resp = await _post_create(AsyncClient(), user, {
         "name": "bad-repo",

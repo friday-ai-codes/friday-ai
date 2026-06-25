@@ -10,7 +10,7 @@ from django.core import signing
 from rest_framework import status
 
 from identity.models import OIDCProvider
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 
 # ============================================================================
 # 标准登录全流程测试
@@ -273,8 +273,8 @@ class TestOIDCE2EFlow:
         assert len(response.data.get("space_memberships", [])) == 0
 
         # 添加 membership
-        ProjectMembership.objects.create(
-            user=user, project=project, role=ProjectRole.ADMIN
+        SpaceMembership.objects.create(
+            user=user, space=project, role=SpaceRole.ADMIN
         )
 
         # /me 应该反映新角色

@@ -19,7 +19,7 @@ from repositories.models import Repository
 @pytest.fixture
 def conversation(project):
     """创建绑定到 project 的测试 Conversation。"""
-    return Conversation.objects.create(project=project, title="测试编码对话")
+    return Conversation.objects.create(space=project, title="测试编码对话")
 
 
 @pytest.fixture
@@ -570,7 +570,7 @@ async def test_system_prompt_contains_coding_guidance(monkeypatch):
         "PROMPT_CENTER_DISABLED_KEYS",
         "chat.system.developer,chat.strategy.default,chat.coding_guidance",
     )
-    prompt = await _build_system_prompt("Test Project", "test-uuid", "developer")
+    prompt = await _build_system_prompt("Test Space", "test-uuid", "developer")
     assert "create_coding_plan" in prompt
     assert "编码" in prompt or "代码变更" in prompt
 

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     ExecutionStatus,
@@ -18,14 +18,14 @@ async def test_simple_linear_workflow():
     """
     Test a simple linear workflow: Manual Trigger -> Code Node (mock) -> End
     """
-    # 0. Create Project (Required FK)
-    project = await Project.objects.acreate(
-        name="Test Project", description="For Workflow Testing"
+    # 0. Create Space (Required FK)
+    project = await Space.objects.acreate(
+        name="Test Space", description="For Workflow Testing"
     )
 
     # 1. Create Workflow
     workflow = await Workflow.objects.acreate(
-        name="Test Linear Workflow", trigger_type="manual", project=project
+        name="Test Linear Workflow", trigger_type="manual", space=project
     )
 
     # 2. Create Nodes

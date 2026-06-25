@@ -19,10 +19,10 @@ from chat.serializers import ConversationMessageSerializer
 
 @pytest.mark.django_db
 def test_serializer_exposes_parts_field() -> None:
-    from projects.models import Project
+    from projects.models import Space
 
-    project = Project.objects.create(name="p")
-    conv = Conversation.objects.create(project=project, title="t")
+    project = Space.objects.create(name="p")
+    conv = Conversation.objects.create(space=project, title="t")
     msg = Message.objects.create(
         conversation=conv,
         role=Message.Role.ASSISTANT,
@@ -45,10 +45,10 @@ async def test_persist_message_keeps_content_and_parts_in_sync() -> None:
     """传入 parts 时：finalize 用 PartsCollector 派生 content + tool_calls，
     Message.parts / .content / .tool_calls 严格三同源（parts persistence contract）。"""
     from agents.models import AgentSession
-    from projects.models import Project
+    from projects.models import Space
 
-    project = await Project.objects.acreate(name="p")
-    conv = await Conversation.objects.acreate(project=project, title="t")
+    project = await Space.objects.acreate(name="p")
+    conv = await Conversation.objects.acreate(space=project, title="t")
     agent_session = await AgentSession.objects.acreate(
         session_id=f"s-{uuid.uuid4().hex[:8]}",
         status=AgentSession.Status.RUNNING,
@@ -123,10 +123,10 @@ async def test_persist_legacy_path_when_collector_empty_falls_back_to_content_on
     """parts=None / [] 时（如 deep_analysis BarrierManager 回灌路径）：
     legacy 兼容 —— 仍按入参 final_content + tool_calls 写库，不报错。"""
     from agents.models import AgentSession
-    from projects.models import Project
+    from projects.models import Space
 
-    project = await Project.objects.acreate(name="p")
-    conv = await Conversation.objects.acreate(project=project, title="t")
+    project = await Space.objects.acreate(name="p")
+    conv = await Conversation.objects.acreate(space=project, title="t")
     agent_session = await AgentSession.objects.acreate(
         session_id=f"s-{uuid.uuid4().hex[:8]}",
         status=AgentSession.Status.RUNNING,

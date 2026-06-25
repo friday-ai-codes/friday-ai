@@ -18,8 +18,8 @@ from rest_framework.test import APIClient
 
 from accounts.models import Invitation
 from audit.models import AuditEvent
-from permissions.models import ProjectMembership, ProjectRole
-from projects.models import Project, ProjectRepository, RepositoryPermission
+from permissions.models import SpaceMembership, SpaceRole
+from projects.models import Space, SpaceRepository, RepositoryPermission
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -30,8 +30,8 @@ def _admin_client(admin_user) -> APIClient:
     return client
 
 
-def _make_project(name: str = "审计空间") -> Project:
-    return Project.objects.create(name=name, feishu_project_key=f"key-{name}")
+def _make_project(name: str = "审计空间") -> Space:
+    return Space.objects.create(name=name, feishu_project_key=f"key-{name}")
 
 
 # ---------------------------------------------------------------------------
@@ -121,41 +121,41 @@ def test_member_add_emits(admin_user, user):
     client = _admin_client(admin_user)
     resp = client.post(
         f"/api/spaces/{project.id}/members/",
-        {"user_id": str(user.id), "role": ProjectRole.MEMBER},
+        {"user_id": str(user.id), "role": SpaceRole.MEMBER},
         format="json",
     )
     assert resp.status_code == 201
     event = AuditEvent.objects.get(action="member.created", target_type="project_membership")
     assert event.actor_id == admin_user.id
     assert event.after["user_id"] == str(user.id)
-    assert event.after["role"] == ProjectRole.MEMBER
+    assert event.after["role"] == SpaceRole.MEMBER
 
 
 def test_role_change_emits(admin_user, user):
     project = _make_project()
-    ProjectMembership.objects.create(user=user, project=project, role=ProjectRole.MEMBER)
+    SpaceMembership.objects.create(user=user, space=project, role=SpaceRole.MEMBER)
     client = _admin_client(admin_user)
     resp = client.patch(
         f"/api/spaces/{project.id}/members/{user.id}/",
-        {"role": ProjectRole.ADMIN},
+        {"role": SpaceRole.ADMIN},
         format="json",
     )
     assert resp.status_code == 200
     event = AuditEvent.objects.get(action="role.changed", target_type="project_membership")
-    assert event.before == {"role": ProjectRole.MEMBER}
-    assert event.after == {"role": ProjectRole.ADMIN}
+    assert event.before == {"role": SpaceRole.MEMBER}
+    assert event.after == {"role": SpaceRole.ADMIN}
 
 
 def test_member_delete_emits(admin_user, user):
     project = _make_project()
-    ProjectMembership.objects.create(user=user, project=project, role=ProjectRole.MEMBER)
+    SpaceMembership.objects.create(user=user, space=project, role=SpaceRole.MEMBER)
     client = _admin_client(admin_user)
     resp = client.delete(f"/api/spaces/{project.id}/members/{user.id}/")
     assert resp.status_code == 204
     event = AuditEvent.objects.get(action="member.deleted", target_type="project_membership")
     # 删前快照可追溯
     assert event.before["user_id"] == str(user.id)
-    assert event.before["role"] == ProjectRole.MEMBER
+    assert event.before["role"] == SpaceRole.MEMBER
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +184,8 @@ def test_space_feishu_config_emits_no_secret(admin_user):
 
 def test_repo_permission_change_emits(admin_user, repository):
     project = _make_project()
-    link = ProjectRepository.objects.create(
-        project=project,
+    link = SpaceRepository.objects.create(
+        space=project,
         repository=repository,
         permission_level=RepositoryPermission.READ_ONLY,
     )

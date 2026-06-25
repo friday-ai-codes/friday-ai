@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     ExecutionStatus,
@@ -125,9 +125,9 @@ def _register_test_nodes():
 @pytest.fixture
 def engine_project(db):
     """Create a project for error handling tests."""
-    return Project.objects.create(
-        name="Error Handling Test Project",
-        description="Project for error handling testing",
+    return Space.objects.create(
+        name="Error Handling Test Space",
+        description="Space for error handling testing",
     )
 
 
@@ -142,7 +142,7 @@ def abort_workflow(db, engine_project):
     """Workflow with a node that has on_error=abort (default)."""
     workflow = Workflow.objects.create(
         name="Abort Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -173,7 +173,7 @@ def retry_workflow(db, engine_project):
     """Workflow with a node configured for retry."""
     workflow = Workflow.objects.create(
         name="Retry Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -206,7 +206,7 @@ def ignore_workflow(db, engine_project):
     """Workflow with a node configured for ignore + fallback."""
     workflow = Workflow.objects.create(
         name="Ignore Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -250,7 +250,7 @@ def timeout_retry_workflow(db, engine_project):
     """Workflow with a slow node: timeout + retry."""
     workflow = Workflow.objects.create(
         name="Timeout Retry Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -292,7 +292,7 @@ class TestOnErrorField:
     def test_on_error_field_default_abort(self, engine_project):
         """New nodes default to on_error=abort."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
             workflow=workflow,
@@ -306,7 +306,7 @@ class TestOnErrorField:
     def test_on_error_choices_valid(self, engine_project):
         """Only abort/retry/ignore are valid on_error values."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         for strategy in ("abort", "retry", "ignore"):
             node = WorkflowNode.objects.create(
@@ -322,7 +322,7 @@ class TestOnErrorField:
     def test_retry_times_default_zero(self, engine_project):
         """retry_times defaults to 0."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
             workflow=workflow,
@@ -336,7 +336,7 @@ class TestOnErrorField:
     def test_retry_delay_default_five(self, engine_project):
         """retry_delay defaults to 5."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
             workflow=workflow,
@@ -350,7 +350,7 @@ class TestOnErrorField:
     def test_node_timeout_seconds_default_null(self, engine_project):
         """node_timeout_seconds defaults to null."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
             workflow=workflow,
@@ -364,7 +364,7 @@ class TestOnErrorField:
     def test_fallback_values_default_null(self, engine_project):
         """fallback_values defaults to null."""
         workflow = Workflow.objects.create(
-            name="Test", project=engine_project, trigger_type="manual",
+            name="Test", space=engine_project, trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
             workflow=workflow,
@@ -460,7 +460,7 @@ class TestTimeoutBehavior:
     async def test_timeout_triggers_on_error_abort(self, engine, engine_project):
         """Timeout + on_error=abort -> workflow fails."""
         workflow = await Workflow.objects.acreate(
-            name="Timeout Abort", project=engine_project, trigger_type="manual",
+            name="Timeout Abort", space=engine_project, trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
             workflow=workflow, node_type="manual_trigger", name="Start",
@@ -500,7 +500,7 @@ class TestTimeoutBehavior:
     async def test_no_timeout_when_null(self, engine, engine_project):
         """node_timeout_seconds=None means no timeout — node runs fast and completes."""
         workflow = await Workflow.objects.acreate(
-            name="No Timeout", project=engine_project, trigger_type="manual",
+            name="No Timeout", space=engine_project, trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
             workflow=workflow, node_type="manual_trigger", name="Start",
@@ -559,7 +559,7 @@ class TestIgnoreBehavior:
     async def test_ignore_without_fallback_values(self, engine, engine_project):
         """on_error=ignore without fallback_values -> downstream gets default."""
         workflow = await Workflow.objects.acreate(
-            name="Ignore No Fallback", project=engine_project, trigger_type="manual",
+            name="Ignore No Fallback", space=engine_project, trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
             workflow=workflow, node_type="manual_trigger", name="Start",
@@ -585,7 +585,7 @@ class TestIgnoreBehavior:
     async def test_abort_failure_skips_downstream(self, engine, engine_project):
         """on_error=abort failure -> downstream skipped, workflow fails."""
         workflow = await Workflow.objects.acreate(
-            name="Abort Skips Downstream", project=engine_project, trigger_type="manual",
+            name="Abort Skips Downstream", space=engine_project, trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
             workflow=workflow, node_type="manual_trigger", name="Start",
@@ -618,7 +618,7 @@ class TestIgnoreBehavior:
     async def test_mixed_abort_and_ignore(self, engine, engine_project):
         """ignore failure + abort failure in parallel -> workflow fails (only abort counts)."""
         workflow = await Workflow.objects.acreate(
-            name="Mixed", project=engine_project, trigger_type="manual",
+            name="Mixed", space=engine_project, trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
             workflow=workflow, node_type="manual_trigger", name="Start",
@@ -656,7 +656,7 @@ class TestTemplateResolutionError:
         """节点 config 引用不存在节点 {{nodes.zzz.output}} 的工作流。"""
         workflow = Workflow.objects.create(
             name="Bad Ref Workflow",
-            project=engine_project,
+            space=engine_project,
             trigger_type="manual",
         )
         trigger = WorkflowNode.objects.create(

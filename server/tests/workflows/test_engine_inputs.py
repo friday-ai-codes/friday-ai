@@ -112,7 +112,7 @@ def _build_target_handle_workflow(project, target_handle: str) -> Workflow:
     """
     workflow = Workflow.objects.create(
         name=f"TargetHandle Workflow ({target_handle})",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(

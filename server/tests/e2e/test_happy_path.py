@@ -20,7 +20,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from rest_framework.test import APIClient
 
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from tests.e2e.fixtures.mock_services import MockWorkItem
 from tests.e2e.fixtures.technical_plans import create_technical_plan
@@ -56,7 +56,7 @@ def mock_feishu_trigger_validation():
         errors = []
         if not context.event_type:
             errors.append("缺少必需字段: event_type")
-        if not context.project:
+        if not context.space:
             errors.append("缺少必需字段: project")
         return errors
 
@@ -89,7 +89,7 @@ class TestCompleteWorkflowFlow:
     async def test_feishu_trigger_starts_workflow(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -154,7 +154,7 @@ class TestCompleteWorkflowFlow:
     async def test_technical_plan_generation_and_feishu_writeback(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -233,7 +233,7 @@ class TestCompleteWorkflowFlow:
     async def test_approval_webhook_resumes_workflow(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -305,7 +305,7 @@ class TestCompleteWorkflowFlow:
     async def test_coding_tasks_created_by_dispatcher(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -400,7 +400,7 @@ class TestCompleteWorkflowFlow:
     async def test_complete_workflow_end_to_end(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -505,7 +505,7 @@ class TestWorkflowStateVerification:
     async def test_node_execution_outputs_propagate(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -570,7 +570,7 @@ class TestWorkflowStateVerification:
     async def test_global_params_set_by_trigger(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -626,7 +626,7 @@ class TestWorkflowStateVerification:
     async def test_workflow_subscription_lifecycle(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -693,7 +693,7 @@ class TestWorkflowStateVerification:
     async def test_coding_task_metadata(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -782,7 +782,7 @@ class TestHookNotifications:
     async def test_feishu_sync_hook_called_on_node_events(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -876,7 +876,7 @@ class TestHookNotifications:
     async def test_notification_hook_called_on_execution_events(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,
@@ -965,7 +965,7 @@ class TestHookNotifications:
     async def test_hook_receives_correct_execution_context(
         self,
         e2e_workflow: Workflow,
-        e2e_project: Project,
+        e2e_project: Space,
         e2e_repository: Repository,
         e2e_api_client: APIClient,
         mock_feishu_client,

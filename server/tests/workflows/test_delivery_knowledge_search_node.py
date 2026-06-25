@@ -45,7 +45,7 @@ def _hit() -> SearchResultDTO:
             source_id="1",
             origin="feishu",
             event_time=None,
-            project_id="p1",
+            space_id="p1",
             repository_id=None,
             provenance=ProvenanceLinks(feishu_url="https://x"),
         ),

@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from chat.models import Conversation
 from orchestration.models import OrchestrationRun
-from projects.models import Project
+from projects.models import Space
 
 
 # ============================================================================
@@ -32,13 +32,13 @@ from projects.models import Project
 
 
 @pytest.fixture
-def _project(db: None) -> Project:
-    return Project.objects.create(name="Cleanup Test Project")
+def _project(db: None) -> Space:
+    return Space.objects.create(name="Cleanup Test Space")
 
 
 @pytest.fixture
-def conversation(_project: Project) -> Conversation:
-    return Conversation.objects.create(project=_project, title="清理测试对话")
+def conversation(_project: Space) -> Conversation:
+    return Conversation.objects.create(space=_project, title="清理测试对话")
 
 
 def _backdate(run: OrchestrationRun, days: int) -> None:
@@ -67,7 +67,7 @@ def old_error_run(conversation: Conversation) -> OrchestrationRun:
     from chat.models import Conversation as Conv  # noqa: N813
 
     another_conv = Conv.objects.create(
-        project=conversation.project, title="另一个错误对话"
+        space=conversation.space, title="另一个错误对话"
     )
     run = OrchestrationRun.objects.create(
         conversation=another_conv,
@@ -82,7 +82,7 @@ def old_error_run(conversation: Conversation) -> OrchestrationRun:
 def recent_completed_run(conversation: Conversation) -> OrchestrationRun:
     """当前 COMPLETED（不应被清理）。"""
     another_conv = Conversation.objects.create(
-        project=conversation.project, title="近期完成对话"
+        space=conversation.space, title="近期完成对话"
     )
     return OrchestrationRun.objects.create(
         conversation=another_conv,
@@ -95,7 +95,7 @@ def recent_completed_run(conversation: Conversation) -> OrchestrationRun:
 def old_running_run(conversation: Conversation) -> OrchestrationRun:
     """10 天前但 status=RUNNING 的运行（status filter 必须排除）。"""
     another_conv = Conversation.objects.create(
-        project=conversation.project, title="活跃运行对话"
+        space=conversation.space, title="活跃运行对话"
     )
     run = OrchestrationRun.objects.create(
         conversation=another_conv,
@@ -237,7 +237,7 @@ def test_adelete_thread_failure_does_not_stop_batch(
 
 @pytest.mark.django_db
 def test_batch_size_boundary_500(
-    _project: Project,
+    _project: Space,
     mock_saver: AsyncMock,
 ) -> None:
     """contract batch_size=500 边界：501 条 thread_id 应被分 2 批 ORM delete，
@@ -246,7 +246,7 @@ def test_batch_size_boundary_500(
     created_thread_ids: set[str] = set()
     for _ in range(501):
         conv = Conversation.objects.create(
-            project=_project, title=f"批量测试-{uuid.uuid4().hex[:6]}"
+            space=_project, title=f"批量测试-{uuid.uuid4().hex[:6]}"
         )
         run = OrchestrationRun.objects.create(
             conversation=conv,

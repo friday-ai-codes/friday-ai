@@ -11,7 +11,7 @@
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.api.views import async_sync_workflow_triggers
 from workflows.models import Workflow, WorkflowNode, WorkflowTrigger
 
@@ -20,13 +20,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.django_db(transaction=True)]
 
 async def _make_workflow(name: str = "Trigger Sync WF") -> Workflow:
     """创建最小工作流（created_by 可空，省去 user 夹具）。"""
-    project = await Project.objects.acreate(
-        name=f"{name} Project",
-        description="Project for trigger sync tests",
+    project = await Space.objects.acreate(
+        name=f"{name} Space",
+        description="Space for trigger sync tests",
     )
     return await Workflow.objects.acreate(
         name=name,
-        project=project,
+        space=project,
         trigger_type="event",
     )
 

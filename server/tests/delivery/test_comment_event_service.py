@@ -64,15 +64,15 @@ def test_classify_reject_precedence() -> None:
 
 
 # ============================================================================
-# 共用 fixture：Project + WorkItem + respx mock
+# 共用 fixture：Space + WorkItem + respx mock
 # ============================================================================
 
 
 async def _make_project():
     from common.encryption import encrypt_value
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(
+    return await Space.objects.acreate(
         name="study_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",
@@ -395,7 +395,7 @@ async def test_ingest_comments_project_unconfigured_degrades() -> None:
     from delivery.models import SyncFacet, SyncStatus, WorkItemSyncState
     from delivery.services import CommentEventService
 
-    # 不建 Project，但建 work_item（便于记 facet）
+    # 不建 Space，但建 work_item（便于记 facet）
     work_item = await _make_work_item()
 
     result = await CommentEventService().ingest_comments(_identity(), "manual")

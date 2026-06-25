@@ -16,7 +16,7 @@ from delivery.models import TechnicalPlan, TechnicalPlanOrigin
 def conversation(project):
     from chat.models import Conversation
 
-    return Conversation.objects.create(project=project, title="eager 投影测试对话")
+    return Conversation.objects.create(space=project, title="eager 投影测试对话")
 
 
 @pytest.mark.django_db(transaction=True)

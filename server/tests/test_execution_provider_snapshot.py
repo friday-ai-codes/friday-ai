@@ -66,7 +66,7 @@ async def test_start_execution_writes_node_snapshots_for_ai_nodes(
 
     workflow = await sync_to_async(Workflow.objects.create)(
         name="snapshot-wf-a",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
 
@@ -106,12 +106,12 @@ async def test_start_execution_writes_node_snapshots_for_ai_nodes(
 
     execution = await WorkflowExecution.objects.acreate(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     # 预填充 workflow/project 缓存（avoid async FK lazy-load）
     execution.workflow = workflow
-    execution.project = project
+    execution.space = project
 
     snapshots = await engine._snapshot_ai_node_providers(dag, execution)
 
@@ -149,7 +149,7 @@ async def test_snapshot_skips_node_with_missing_credential(
 
     workflow = await sync_to_async(Workflow.objects.create)(
         name="snapshot-wf-miss",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     await sync_to_async(Node.objects.create)(
@@ -163,11 +163,11 @@ async def test_snapshot_skips_node_with_missing_credential(
     dag = await DAG.afrom_workflow(workflow)
     execution = await WorkflowExecution.objects.acreate(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     execution.workflow = workflow
-    execution.project = project
+    execution.space = project
 
     snapshots = await engine._snapshot_ai_node_providers(dag, execution)
 
@@ -195,7 +195,7 @@ async def test_snapshot_filters_non_ai_nodes(
 
     workflow = await sync_to_async(Workflow.objects.create)(
         name="snapshot-wf-c",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     for nt in ("script", "http_request", "data_transform"):
@@ -210,11 +210,11 @@ async def test_snapshot_filters_non_ai_nodes(
     dag = await DAG.afrom_workflow(workflow)
     execution = await WorkflowExecution.objects.acreate(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     execution.workflow = workflow
-    execution.project = project
+    execution.space = project
 
     snapshots = await engine._snapshot_ai_node_providers(dag, execution)
 
@@ -326,7 +326,7 @@ async def test_runner_logs_warning_and_falls_back_on_snapshot_miss(
             "source": "system",
             "credential_id": None,
         }},
-        project=project,
+        space=project,
     )
     ctx = make_minimal_context(
         node_config={"user_prompt": "q", "model": "claude-3-5-sonnet-20241022"},
@@ -396,7 +396,7 @@ async def test_snapshot_json_round_trip_via_context_field(
 
     workflow = await sync_to_async(Workflow.objects.create)(
         name="snapshot-wf-f",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     await sync_to_async(Node.objects.create)(
@@ -410,11 +410,11 @@ async def test_snapshot_json_round_trip_via_context_field(
     dag = await DAG.afrom_workflow(workflow)
     execution = await WorkflowExecution.objects.acreate(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     execution.workflow = workflow
-    execution.project = project
+    execution.space = project
 
     snapshots = await engine._snapshot_ai_node_providers(dag, execution)
 

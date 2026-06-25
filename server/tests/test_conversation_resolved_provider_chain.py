@@ -43,7 +43,7 @@ def test_conversation_detail_includes_resolved_provider_field(
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
 
-    conv = Conversation.objects.create(project=project_a, title="resolved_provider 契约")
+    conv = Conversation.objects.create(space=project_a, title="resolved_provider 契约")
 
     resp = _client().get(_conv_url(str(conv.id)))
 
@@ -74,7 +74,7 @@ def test_resolved_provider_winning_source_matches_chain_active(
     project_a_anthropic_credential,
 ) -> None:
     """E2：winning source="conversation" 时，chain 数组中仅该层 active=True。"""
-    conv = Conversation.objects.create(project=project_a, title="winning=conversation")
+    conv = Conversation.objects.create(space=project_a, title="winning=conversation")
     conv.provider_credential_id_id = project_a_anthropic_credential.id
     conv.save(update_fields=["provider_credential_id"])
 
@@ -100,7 +100,7 @@ def test_resolved_provider_null_when_no_credentials_anywhere(
     project_a,
 ) -> None:
     """E3：conversation + project + system 均无凭证 → resolved_provider=null。"""
-    conv = Conversation.objects.create(project=project_a, title="无凭证")
+    conv = Conversation.objects.create(space=project_a, title="无凭证")
 
     resp = _client().get(_conv_url(str(conv.id)))
     assert resp.status_code == 200, resp.content
@@ -122,7 +122,7 @@ def test_chain_entry_has_all_contract_fields(
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
 
-    conv = Conversation.objects.create(project=project_a, title="字段契约")
+    conv = Conversation.objects.create(space=project_a, title="字段契约")
 
     resp = _client().get(_conv_url(str(conv.id)))
     assert resp.status_code == 200
@@ -157,7 +157,7 @@ def test_workflow_node_resolved_provider_endpoint(
 
     workflow = Workflow.objects.create(
         name="contract test workflow",
-        project=project_a,
+        space=project_a,
         created_by=project_a_admin_user,
     )
     node = WorkflowNode.objects.create(
@@ -196,7 +196,7 @@ def test_workflow_node_resolved_provider_404(
 
     workflow = Workflow.objects.create(
         name="Test WF",
-        project=project_a,
+        space=project_a,
         created_by=project_a_admin_user,
     )
 

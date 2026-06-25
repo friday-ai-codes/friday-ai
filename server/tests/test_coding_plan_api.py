@@ -16,13 +16,13 @@ from chat.models import CodingPlan, CodingSession, Conversation
 @pytest.fixture
 def conversation(db, project, user):
     return Conversation.objects.create(
-        project=project, title="REST 测试对话", created_by=user
+        space=project, title="REST 测试对话", created_by=user
     )
 
 
 @pytest.fixture
 def second_conversation(db, project):
-    return Conversation.objects.create(project=project, title="另一对话")
+    return Conversation.objects.create(space=project, title="另一对话")
 
 
 @pytest.fixture

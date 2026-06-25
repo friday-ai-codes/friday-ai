@@ -294,7 +294,7 @@ class TestConversationRuntimeCodingProgress:
 
         # 创建对话
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="Test Conversation",
         )
 
@@ -368,7 +368,7 @@ class TestConversationRuntimeCodingProgress:
         from chat.models import CodingSession, Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="Test Conversation 2",
         )
 
@@ -403,7 +403,7 @@ class TestConversationRuntimeCodingProgress:
         from chat.models import CodingSession, Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="Test Conversation 3",
         )
 
@@ -728,7 +728,7 @@ class TestPhaseRuntimePollingSmoke:
 
         # --- Setup: 创建 Conversation + AgentSession + SubAgentSession + CodingSession ---
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="implementation smoke",
         )
         agent_session = await AgentSession.objects.acreate(

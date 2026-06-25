@@ -44,7 +44,7 @@ def _patch_successful_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> str:
         agent = await AgentSession.objects.acreate(
             session_id=f"agent-mcp-{uuid.uuid4().hex[:8]}",
-            project=coding_session.conversation.project,
+            space=coding_session.conversation.space,
             status=AgentSession.Status.RUNNING,
             metadata={
                 "source": "mcp_execute_test",

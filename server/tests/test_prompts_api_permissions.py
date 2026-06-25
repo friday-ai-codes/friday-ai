@@ -18,7 +18,7 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 from prompts.models import Prompt, PromptCategory, PromptScope
 from prompts.services import append_version
 
@@ -98,8 +98,8 @@ class TestPromptAPIPermissions:
         """work item 正面：非 superuser project ADMIN 可编辑项目级 prompt → 200。
 
         关键：使用 `user` fixture（非 superuser）+ `project_memberships`
-        将 `user` 设为 project 的 ProjectRole.ADMIN。这样 PATCH 请求实际走的是
-        `PermissionService.has_project_access(user, project, ProjectRole.ADMIN)` 分支，
+        将 `user` 设为 project 的 SpaceRole.ADMIN。这样 PATCH 请求实际走的是
+        `PermissionService.has_project_access(user, project, SpaceRole.ADMIN)` 分支，
         而不是 superuser bypass。
         """
         # 防 fixture 漂移
@@ -107,13 +107,13 @@ class TestPromptAPIPermissions:
             "fixture 漂移：user 必须是非 superuser，否则本测试退化为 superuser bypass"
         )
         assert project_memberships["admin"].user_id == user.id
-        assert project_memberships["admin"].role == ProjectRole.ADMIN
+        assert project_memberships["admin"].role == SpaceRole.ADMIN
 
         p = Prompt.objects.create(
             slug="rbac.proj.admin.edit",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
         )
@@ -147,13 +147,13 @@ class TestPromptAPIPermissions:
         """
         assert not member_user.is_superuser
         assert project_memberships["member"].user_id == member_user.id
-        assert project_memberships["member"].role == ProjectRole.MEMBER
+        assert project_memberships["member"].role == SpaceRole.MEMBER
 
         p = Prompt.objects.create(
             slug="rbac.proj.member",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
         )
@@ -181,12 +181,12 @@ class TestPromptAPIPermissions:
         viewer_user,
         project_memberships,
     ) -> None:
-        assert project_memberships["viewer"].role == ProjectRole.VIEWER
+        assert project_memberships["viewer"].role == SpaceRole.VIEWER
         p = Prompt.objects.create(
             slug="rbac.proj.viewer",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
         )
@@ -211,7 +211,7 @@ class TestPromptAPIPermissions:
             slug="rbac.proj.read",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
         )
@@ -238,16 +238,16 @@ class TestPromptAPIPermissions:
         发 PATCH，应返回 200，因为 is_superuser 在权限判断的最前端短路放行。
         """
         assert admin_user.is_superuser
-        assert not ProjectMembership.objects.filter(
+        assert not SpaceMembership.objects.filter(
             user=admin_user,
-            project=second_project,
+            space=second_project,
         ).exists(), "admin_user 不应在 second_project 有任何成员关系"
 
         p = Prompt.objects.create(
             slug="rbac.proj.su",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=second_project,
+            space=second_project,
             title="t",
             created_by=admin_user,
         )
@@ -269,23 +269,23 @@ class TestPromptAPIPermissions:
         user,
         project_memberships,
     ) -> None:
-        """Project A ADMIN 尝试编辑 Project B 的 prompt → 403。
+        """Space A ADMIN 尝试编辑 Space B 的 prompt → 403。
 
         user 是 project 的 ADMIN（来自 project_memberships fixture），
         但对 second_project 没有任何角色，因此必须被 403 拦截。
         """
         assert not user.is_superuser
         assert project_memberships["admin"].user_id == user.id
-        assert not ProjectMembership.objects.filter(
+        assert not SpaceMembership.objects.filter(
             user=user,
-            project=second_project,
+            space=second_project,
         ).exists()
 
         p = Prompt.objects.create(
             slug="rbac.proj.leak",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=second_project,
+            space=second_project,
             title="t",
             created_by=admin_user,
         )
@@ -312,7 +312,7 @@ class TestPromptAPIPermissions:
             slug="rbac.proj.delete",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
             is_builtin=False,
@@ -355,7 +355,7 @@ class TestPromptAPIPermissions:
             slug="rbac.proj.member.delete",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t",
             created_by=admin_user,
             is_builtin=False,

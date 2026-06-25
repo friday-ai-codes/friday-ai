@@ -119,7 +119,7 @@ def _build_cyclic_workflow(engine_project):
     """
     workflow = Workflow.objects.create(
         name="Deadlock Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     node_a = WorkflowNode.objects.create(
@@ -144,7 +144,7 @@ def _build_cyclic_workflow(engine_project):
     )
     execution = WorkflowExecution.objects.create(
         workflow=workflow,
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
         status=ExecutionStatus.RUNNING,
     )
@@ -271,7 +271,7 @@ def _build_cancelled_dep_execution(engine_project):
 
     workflow = Workflow.objects.create(
         name="Cancelled Dep Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     node_dep = WorkflowNode.objects.create(
@@ -289,7 +289,7 @@ def _build_cancelled_dep_execution(engine_project):
     )
     execution = WorkflowExecution.objects.create(
         workflow=workflow,
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
         status=ExecutionStatus.SUSPENDED,
     )

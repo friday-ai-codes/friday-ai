@@ -21,7 +21,7 @@ def stale_strategy_default_prompt() -> Iterator[None]:
     prompt, created = Prompt.objects.get_or_create(
         slug="chat.strategy.default",
         scope="system",
-        project=None,
+        space=None,
         defaults={
             "category": "chat_agent",
             "title": "seed-chat.strategy.default",
@@ -54,7 +54,7 @@ class TestChatStrategyRouteFirstMigration:
     ) -> None:
         resync.forwards(django_apps, None)
 
-        prompt = Prompt.objects.get(slug="chat.strategy.default", scope="system", project=None)
+        prompt = Prompt.objects.get(slug="chat.strategy.default", scope="system", space=None)
         assert prompt.active_version is not None
         assert prompt.active_version.body == _STRATEGY_DEFAULT
         assert "代码理解" in prompt.active_version.body

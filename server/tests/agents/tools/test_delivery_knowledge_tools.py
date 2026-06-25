@@ -30,7 +30,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def conversation(project, user):
-    return Conversation.objects.create(project=project, title="交付知识测试", created_by=user)
+    return Conversation.objects.create(space=project, title="交付知识测试", created_by=user)
 
 
 def test_schema_search_input_requires_query() -> None:
@@ -78,7 +78,7 @@ async def test_search_mock_service(conversation, user) -> None:
             source_id="1",
             origin="feishu",
             event_time=None,
-            project_id=None,
+            space_id=None,
             repository_id=None,
             provenance=ProvenanceLinks(),
         ),

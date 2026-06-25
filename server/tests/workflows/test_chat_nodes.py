@@ -68,7 +68,7 @@ async def test_fetch_group_chat_from_work_item() -> None:
     node = FetchGroupChatNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={
             "project_key": "TEST",
@@ -105,7 +105,7 @@ async def test_fetch_group_chat_no_chat_found() -> None:
     node = FetchGroupChatNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={
             "project_key": "TEST",
@@ -137,7 +137,7 @@ async def test_join_group_chat_success() -> None:
     node = JoinGroupChatNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={"chat_id": "oc_join_test"},
         workflow_execution=mock_execution,
@@ -165,7 +165,7 @@ async def test_join_group_chat_already_member() -> None:
     node = JoinGroupChatNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={"chat_id": "oc_already"},
         workflow_execution=mock_execution,
@@ -192,7 +192,7 @@ async def test_join_group_chat_permission_denied() -> None:
     node = JoinGroupChatNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={"chat_id": "oc_no_perm"},
         workflow_execution=mock_execution,
@@ -229,7 +229,7 @@ async def test_chat_question_node_returns_waiting_event() -> None:
     node = GroupChatQuestionNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     ctx = _make_context(
         config={
             "chat_id": "oc_question_test",
@@ -302,7 +302,7 @@ async def test_chat_question_node_passes_mention_user_id() -> None:
     node = GroupChatQuestionNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     mock_execution.id = "we-001"
     mock_ne = MagicMock()
     mock_ne.id = "ne-001"
@@ -352,7 +352,7 @@ async def test_chat_question_node_creates_event_subscription() -> None:
     node = GroupChatQuestionNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     mock_execution.id = "we-002"
     mock_ne = MagicMock()
     mock_ne.id = "ne-002"
@@ -429,7 +429,7 @@ async def test_chat_question_node_output_includes_rounds_info() -> None:
     node = GroupChatQuestionNode()
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     mock_execution.id = "we-rounds"
     mock_ne = MagicMock()
     mock_ne.id = "ne-rounds"
@@ -474,7 +474,7 @@ def _make_create_context(config: dict) -> ExecutionContext:
     """构建带 workflow_execution（含 project）的 CreateGroupChatNode 上下文。"""
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
+    mock_execution.workflow.space = MagicMock()
     return _make_context(config=config, workflow_execution=mock_execution)
 
 

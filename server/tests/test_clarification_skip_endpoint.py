@@ -26,7 +26,7 @@ from orchestration.models import OrchestrationRun
 @pytest.fixture
 def conversation(project, user) -> Conversation:
     return Conversation.objects.create(
-        project=project,
+        space=project,
         title="跳过澄清测试",
         created_by=user,
         status=Conversation.Status.RUNNING,

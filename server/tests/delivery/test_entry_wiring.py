@@ -31,9 +31,9 @@ STORY_ID = 7010225564
 
 async def _make_project():
     from common.encryption import encrypt_value
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(
+    return await Space.objects.acreate(
         name="study_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",

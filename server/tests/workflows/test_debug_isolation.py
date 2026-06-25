@@ -16,7 +16,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import (
     WorkflowEngine,
 )
@@ -37,8 +37,8 @@ from workflows.models import (
 @pytest.fixture
 def iso_project(db):
     """隔离测试用项目。"""
-    return Project.objects.create(
-        name="Isolation Test Project",
+    return Space.objects.create(
+        name="Isolation Test Space",
         description="隔离测试专用项目",
     )
 
@@ -48,7 +48,7 @@ def iso_workflow(db, iso_project, user):
     """隔离测试用工作流。"""
     return Workflow.objects.create(
         name="Isolation Workflow",
-        project=iso_project,
+        space=iso_project,
         created_by=user,
         trigger_type="manual",
     )
@@ -59,7 +59,7 @@ def iso_workflow_with_nodes(db, iso_project, user):
     """隔离测试用完整工作流（含节点和边，用于引擎执行）。"""
     workflow = Workflow.objects.create(
         name="Isolation Full Workflow",
-        project=iso_project,
+        space=iso_project,
         created_by=user,
         trigger_type="manual",
     )
@@ -101,7 +101,7 @@ class TestDebugExecutionExcludedFromList:
         # 创建一个正常执行
         normal_exec = WorkflowExecution.objects.create(
             workflow=iso_workflow,
-            project=iso_project,
+            space=iso_project,
             trigger_type="manual",
             status=ExecutionStatus.COMPLETED,
             is_debug=False,
@@ -110,7 +110,7 @@ class TestDebugExecutionExcludedFromList:
         # 创建一个调试执行
         _debug_exec = WorkflowExecution.objects.create(
             workflow=iso_workflow,
-            project=iso_project,
+            space=iso_project,
             trigger_type="manual",
             status=ExecutionStatus.COMPLETED,
             is_debug=True,
@@ -125,7 +125,7 @@ class TestDebugExecutionExcludedFromList:
         """include_debug=true 参数时返回调试执行。"""
         _normal_exec = WorkflowExecution.objects.create(
             workflow=iso_workflow,
-            project=iso_project,
+            space=iso_project,
             trigger_type="manual",
             status=ExecutionStatus.COMPLETED,
             is_debug=False,
@@ -133,7 +133,7 @@ class TestDebugExecutionExcludedFromList:
 
         _debug_exec = WorkflowExecution.objects.create(
             workflow=iso_workflow,
-            project=iso_project,
+            space=iso_project,
             trigger_type="manual",
             status=ExecutionStatus.COMPLETED,
             is_debug=True,
@@ -268,7 +268,7 @@ class TestCheckTimeoutsExcludesDebug:
         # 创建调试执行
         debug_exec = WorkflowExecution.objects.create(
             workflow=iso_workflow,
-            project=iso_project,
+            space=iso_project,
             trigger_type="manual",
             status=ExecutionStatus.RUNNING,
             is_debug=True,
@@ -329,7 +329,7 @@ class TestConcurrencyGuardExcludesDebug:
         # 创建一个 is_debug=True 且 RUNNING 的执行
         _debug_exec = await sync_to_async(WorkflowExecution.objects.create)(
             workflow=workflow,
-            project_id=workflow.project_id,
+            space_id=workflow.space_id,
             trigger_type="manual",
             status=ExecutionStatus.RUNNING,
             is_debug=True,

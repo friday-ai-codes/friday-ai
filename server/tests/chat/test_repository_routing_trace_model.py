@@ -18,7 +18,7 @@ from django.core.management import call_command
 
 from agents.models import AgentSession
 from chat.models import Conversation, RepositoryRoutingTrace
-from projects.models import Project
+from projects.models import Space
 
 
 pytestmark = pytest.mark.django_db
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def project(db):
-    return Project.objects.create(
+    return Space.objects.create(
         name=f"trace-test-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"k-{uuid.uuid4().hex[:6]}",
     )
@@ -34,7 +34,7 @@ def project(db):
 
 @pytest.fixture
 def conversation(db, project):
-    return Conversation.objects.create(project=project, title="trace-conv")
+    return Conversation.objects.create(space=project, title="trace-conv")
 
 
 @pytest.fixture

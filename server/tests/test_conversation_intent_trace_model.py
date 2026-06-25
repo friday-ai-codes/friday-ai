@@ -23,7 +23,7 @@ from chat.models import (
 
 @pytest.fixture
 def conversation(project) -> Conversation:
-    return Conversation.objects.create(project=project, title="意图协商测试")
+    return Conversation.objects.create(space=project, title="意图协商测试")
 
 
 @pytest.mark.django_db

@@ -23,7 +23,7 @@ from delivery.services.derivation import derive_status_events, derive_status_fie
 
 # 回源 upsert 测试经 sync_to_async / 异步 ORM 写库——须用 transaction=True
 # （TransactionTestCase 语义：每测试后 flush 表），否则跨线程连接写入不被主连接
-# 事务回滚清理，导致 Project.feishu_project_key 唯一约束跨测试冲突。
+# 事务回滚清理，导致 Space.feishu_project_key 唯一约束跨测试冲突。
 # 纯函数派生测试不触 DB，不受影响。
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -160,7 +160,7 @@ def test_work_item_synced_signal_importable() -> None:
 
 
 # ============================================================================
-# Task 2 / 3 共用：respx 回源 mock + 带凭证 Project fixture
+# Task 2 / 3 共用：respx 回源 mock + 带凭证 Space fixture
 # ============================================================================
 
 # story 响应字段（含 work_item_related_multi_select → belongs_to_project 派生）
@@ -183,11 +183,11 @@ _STORY_FIELDS = [
 
 
 async def _make_project():
-    """创建带飞书插件凭证的 Project（供 create_feishu_client_for_project）。"""
+    """创建带飞书插件凭证的 Space（供 create_feishu_client_for_project）。"""
     from common.encryption import encrypt_value
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(
+    return await Space.objects.acreate(
         name="study_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",
@@ -383,7 +383,7 @@ async def test_upsert_project_unconfigured_records_missing() -> None:
     from delivery.models import SyncFacet, SyncStatus, WorkItem, WorkItemSyncState
     from delivery.services import WorkItemService
 
-    # 不创建 Project
+    # 不创建 Space
     wi = await WorkItemService().upsert(_identity(), source="manual")
 
     assert await WorkItem.objects.filter(work_item_id=STORY_ID).aexists()

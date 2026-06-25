@@ -27,7 +27,7 @@ def _result(title: str = "t") -> SearchResultDTO:
         source_id="s1",
         origin="feishu",
         event_time=None,
-        project_id="p1",
+        space_id="p1",
         repository_id="r1",
         provenance=ProvenanceLinks(),
     )

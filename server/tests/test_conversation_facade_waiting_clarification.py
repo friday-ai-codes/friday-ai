@@ -57,7 +57,7 @@ def _make_state(
 @pytest.fixture
 def conversation(project) -> Conversation:
     return Conversation.objects.create(
-        project=project,
+        space=project,
         title="waiting_clarification handler test",
         status=Conversation.Status.RUNNING,
     )
@@ -354,7 +354,7 @@ class TestCleanupManagementCommand:
         from django.core.management import call_command
 
         conv = Conversation.objects.create(
-            project=project,
+            space=project,
             title="历史污染 conv",
             status=Conversation.Status.ERROR,
         )
@@ -379,7 +379,7 @@ class TestCleanupManagementCommand:
         from django.core.management import call_command
 
         conv = Conversation.objects.create(
-            project=project,
+            space=project,
             title="有完整 assistant 内容",
             status=Conversation.Status.ERROR,
         )
@@ -408,7 +408,7 @@ class TestCleanupManagementCommand:
         from django.core.management import call_command
 
         conv = Conversation.objects.create(
-            project=project,
+            space=project,
             title="无 assistant 内容",
             status=Conversation.Status.ERROR,
         )
@@ -431,7 +431,7 @@ class TestCleanupManagementCommand:
         from django.core.management import call_command
 
         conv = Conversation.objects.create(
-            project=project,
+            space=project,
             title="dry-run flag test",
             status=Conversation.Status.ERROR,
         )
@@ -456,7 +456,7 @@ class TestCleanupManagementCommand:
         from django.core.management import call_command
 
         conv = Conversation.objects.create(
-            project=project,
+            space=project,
             title="mutex test",
             status=Conversation.Status.ERROR,
         )

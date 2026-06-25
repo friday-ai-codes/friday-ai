@@ -69,7 +69,7 @@ class TestPromptMigrationContract:
         prompt = Prompt.objects.select_related("active_version").get(
             slug=slug,
             scope=PromptScope.SYSTEM,
-            project=None,
+            space=None,
         )
         assert prompt.active_version is not None, (
             f"Prompt {slug} has no active_version"

@@ -16,8 +16,8 @@ from django.contrib.auth import get_user_model  # noqa: E402
 from django.core.cache import cache as django_cache  # noqa: E402
 from rest_framework.test import APIClient  # noqa: E402
 
-from permissions.models import ProjectMembership, ProjectRole  # noqa: E402
-from projects.models import Project  # noqa: E402
+from permissions.models import SpaceMembership, SpaceRole  # noqa: E402
+from projects.models import Space  # noqa: E402
 from repositories.models import Repository  # noqa: E402
 
 # Register E2E mock fixtures for auto-discovery
@@ -328,15 +328,15 @@ def repository_with_credential(db, repository):
 
 
 # ============================================================================
-# Project Fixtures
+# Space Fixtures
 # ============================================================================
 
 
 @pytest.fixture
 def project(db, repository):
     """创建测试项目（关联仓库）。"""
-    proj = Project.objects.create(
-        name="Test Project",
+    proj = Space.objects.create(
+        name="Test Space",
         description="A test project",
         feishu_project_key="test-project-key",
         feishu_webhook_token="test-webhook-token",
@@ -348,8 +348,8 @@ def project(db, repository):
 @pytest.fixture
 def project_without_repo(db):
     """创建无仓库的测试项目。"""
-    return Project.objects.create(
-        name="Project Without Repo",
+    return Space.objects.create(
+        name="Space Without Repo",
         feishu_project_key="no-repo-project-key",
     )
 
@@ -459,8 +459,8 @@ def other_user(db):
 @pytest.fixture
 def second_project(db):
     """创建第二个测试项目。"""
-    return Project.objects.create(
-        name="Second Project",
+    return Space.objects.create(
+        name="Second Space",
         description="A second test project",
         feishu_project_key="second-project-key",
     )
@@ -475,14 +475,14 @@ def project_memberships(db, project, user, member_user, viewer_user):
     - viewer_user → project viewer
     - admin_user 是 superuser，不需要 membership
     """
-    admin_membership = ProjectMembership.objects.create(
-        user=user, project=project, role=ProjectRole.ADMIN
+    admin_membership = SpaceMembership.objects.create(
+        user=user, space=project, role=SpaceRole.ADMIN
     )
-    member_membership = ProjectMembership.objects.create(
-        user=member_user, project=project, role=ProjectRole.MEMBER
+    member_membership = SpaceMembership.objects.create(
+        user=member_user, space=project, role=SpaceRole.MEMBER
     )
-    viewer_membership = ProjectMembership.objects.create(
-        user=viewer_user, project=project, role=ProjectRole.VIEWER
+    viewer_membership = SpaceMembership.objects.create(
+        user=viewer_user, space=project, role=SpaceRole.VIEWER
     )
     return {
         "admin": admin_membership,
@@ -708,7 +708,7 @@ def project_a(db):
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
-    return Project.objects.create(
+    return Space.objects.create(
         name=f"project-a-{suffix}",
         feishu_project_key=f"p229-pa-{suffix}",
     )
@@ -720,16 +720,16 @@ def project_b(db):
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
-    return Project.objects.create(
+    return Space.objects.create(
         name=f"project-b-{suffix}",
         feishu_project_key=f"p229-pb-{suffix}",
     )
 
 
 def _add_membership(project, user, role):
-    """内部 helper：按 ProjectRole 枚举添加成员关系。"""
-    ProjectMembership.objects.create(
-        project=project,
+    """内部 helper：按 SpaceRole 枚举添加成员关系。"""
+    SpaceMembership.objects.create(
+        space=project,
         user=user,
         role=role,
     )
@@ -746,7 +746,7 @@ def project_a_admin_user(db, project_a):
         email=f"pa_admin_{suffix}@test.local",
         password="test-password",
     )
-    _add_membership(project_a, u, ProjectRole.ADMIN)
+    _add_membership(project_a, u, SpaceRole.ADMIN)
     return u
 
 
@@ -761,7 +761,7 @@ def project_a_member_user(db, project_a):
         email=f"pa_member_{suffix}@test.local",
         password="test-password",
     )
-    _add_membership(project_a, u, ProjectRole.MEMBER)
+    _add_membership(project_a, u, SpaceRole.MEMBER)
     return u
 
 
@@ -776,7 +776,7 @@ def project_a_viewer_user(db, project_a):
         email=f"pa_viewer_{suffix}@test.local",
         password="test-password",
     )
-    _add_membership(project_a, u, ProjectRole.VIEWER)
+    _add_membership(project_a, u, SpaceRole.VIEWER)
     return u
 
 
@@ -791,7 +791,7 @@ def project_b_admin_user(db, project_b):
         email=f"pb_admin_{suffix}@test.local",
         password="test-password",
     )
-    _add_membership(project_b, u, ProjectRole.ADMIN)
+    _add_membership(project_b, u, SpaceRole.ADMIN)
     return u
 
 
@@ -951,7 +951,7 @@ def make_minimal_context():
 #   - 使用 `apps.get_model(...)` 避免 Django app registry race（security mitigation-01 缓解）
 #
 # 注意：部分 fixture 引用的字段（Conversation.provider_credential_id /
-# Conversation.status / Project.default_provider_credential_id / ResolvedProviderChain）
+# Conversation.status / Space.default_provider_credential_id / ResolvedProviderChain）
 # 尚未落地，**当前 plan/06 尚未执行**；fixture 实现采用 forward-compatible 写法：
 #   - 工厂通过 **overrides 透传字段，避免字段不存在时强设默认值
 #   - resolve_chain_builder 暂以 dict 代替 dataclass，plan 完成后可升级 type hint
@@ -997,7 +997,7 @@ def frozen_conversation_factory(db, project):
         if "created_by" in overrides and "created_by" not in field_names:
             overrides.pop("created_by")
         defaults: dict[str, Any] = {
-            "project": overrides.pop("project", project),
+            "space": overrides.pop("space", project),
             "title": overrides.pop("title", f"frozen-{status}"),
             "model": overrides.pop("model", ""),
         }
@@ -1047,7 +1047,7 @@ def execution_with_snapshot_factory(db, project):
         if workflow is None:
             workflow = Workflow.objects.create(
                 name=f"wf-snapshot-{uuid4().hex[:8]}",
-                project=project,
+                space=project,
             )
 
         context = overrides.pop("context", {}) or {}
@@ -1056,7 +1056,7 @@ def execution_with_snapshot_factory(db, project):
 
         defaults: dict[str, Any] = {
             "workflow": workflow,
-            "project": project,
+            "space": project,
             "status": "completed",
             "trigger_type": "manual",
             "context": context,

@@ -52,7 +52,7 @@ def create_mock_context(
 
     context.workflow_execution = MagicMock()
     context.workflow_execution.workflow = MagicMock()
-    context.workflow_execution.workflow.project = mock_project
+    context.workflow_execution.workflow.space = mock_project
 
     return context
 

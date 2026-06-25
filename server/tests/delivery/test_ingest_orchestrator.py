@@ -66,9 +66,9 @@ _MR_FILES = [
 
 
 async def _make_project():
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
+    return await Space.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
 
 
 def _make_repo_with_credential():
@@ -281,7 +281,7 @@ async def test_document_step_zero_output_marks_skipped(
     mock_feishu, mock_ensure, mock_embedding, mock_qdrant_client, mock_upsert, fake_git_platform,
     monkeypatch,
 ) -> None:
-    """normalizer 零产出（Project 不存在 / 无可摄取文档）→ document skipped（非 ok）+ error。
+    """normalizer 零产出（Space 不存在 / 无可摄取文档）→ document skipped（非 ok）+ error。
 
     WR-01 守护：``ingest()`` 在 normalizer 返回 ``[]`` 时静默返回 0（不抛异常），
     编排须据真实产出数记 ``skipped`` 而非 ``ok``，避免「零实体入库却显示成功」。

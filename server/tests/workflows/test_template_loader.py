@@ -119,9 +119,9 @@ class TestCreateWorkflowFromTemplate:
 
     def test_create_workflow_from_template(self, db, user):
         """Creating a workflow from template should preserve metadata."""
-        from projects.models import Project
+        from projects.models import Space
 
-        project = Project.objects.create(name="Template Test Project")
+        project = Space.objects.create(name="Template Test Space")
         workflow = create_workflow_from_template(
             space_id=str(project.id),
             template_id="code_generation",
@@ -135,9 +135,9 @@ class TestCreateWorkflowFromTemplate:
 
     def test_create_workflow_nodes_and_edges(self, db, user):
         """Created workflow should have nodes and edges from template."""
-        from projects.models import Project
+        from projects.models import Space
 
-        project = Project.objects.create(name="Template Test Project")
+        project = Space.objects.create(name="Template Test Space")
         workflow = create_workflow_from_template(
             space_id=str(project.id),
             template_id="daily_summary",
@@ -160,9 +160,9 @@ class TestCreateWorkflowFromTemplate:
     @pytest.mark.asyncio
     async def test_async_create_workflow_from_template(self, user):
         """Async version should work identically."""
-        from projects.models import Project
+        from projects.models import Space
 
-        project = await Project.objects.acreate(name="Async Template Test")
+        project = await Space.objects.acreate(name="Async Template Test")
         workflow = await acreate_workflow_from_template(
             space_id=str(project.id),
             template_id="code_generation",
@@ -355,10 +355,10 @@ class TestLoaderPreCreateValidation:
     @pytest.mark.asyncio
     async def test_acreate_rejects_invalid_template(self, user, monkeypatch):
         """注入断裂模板经 acreate_workflow_from_template → ValueError 且 DB 无新 workflow。"""
-        from projects.models import Project
+        from projects.models import Space
         from workflows.templates import loader as loader_mod
 
-        project = await Project.objects.acreate(name="Reject Test Project")
+        project = await Space.objects.acreate(name="Reject Test Space")
 
         broken = deepcopy(load_template("daily_summary"))
         # 注入 schema 可判定断裂：非法 node_type
@@ -383,9 +383,9 @@ class TestLoaderPreCreateValidation:
     @pytest.mark.asyncio
     async def test_acreate_accepts_valid_templates(self, user):
         """4 个合法内置模板经 acreate_workflow_from_template 均成功创建（回归不破）。"""
-        from projects.models import Project
+        from projects.models import Space
 
-        project = await Project.objects.acreate(name="Valid Templates Project")
+        project = await Space.objects.acreate(name="Valid Templates Space")
         for template_id in ALL_TEMPLATE_IDS:
             workflow = await acreate_workflow_from_template(
                 space_id=str(project.id),

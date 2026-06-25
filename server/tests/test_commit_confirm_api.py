@@ -23,7 +23,7 @@ def awaiting_session(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="测试对话", created_by=user
+        space=project, title="测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -43,7 +43,7 @@ def running_session(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="测试对话 running", created_by=user
+        space=project, title="测试对话 running", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -233,7 +233,7 @@ class TestCommitConfirmE2E:
 
         # ---- Arrange: 创建 conversation + running CodingSession + SubAgentSession ----
         conversation = Conversation.objects.create(
-            project=project, title="work item E2E 测试对话", created_by=user
+            space=project, title="work item E2E 测试对话", created_by=user
         )
         coding_session = CodingSession.objects.create(
             conversation=conversation,

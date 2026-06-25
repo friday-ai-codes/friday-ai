@@ -48,7 +48,7 @@ def _make_chunk(
     )
 
 
-def _make_entity(kind: str, *, title: str = "测试实体", project=None):
+def _make_entity(kind: str, *, title: str = "测试实体", space=None):
     from knowledge.models import EntityOrigin, KnowledgeEntity, generate_entity_id
 
     source_kind = f"sk_{kind}"
@@ -60,7 +60,7 @@ def _make_entity(kind: str, *, title: str = "测试实体", project=None):
         source_kind=source_kind,
         source_id=source_id,
         title=title,
-        project=project,
+        space=space,
         event_time=timezone.now(),
     )
 

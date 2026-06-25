@@ -33,7 +33,7 @@ import pytest
 from agents.models import AgentSession
 from agents.tools.schemas.repository_relevance import RepositoryRelevanceCandidate
 from chat.models import Conversation, RepositoryRoutingTrace
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from subagent.api.serializers import CompletedPayloadSerializer
 from subagent.models import SubAgentSession, TaskResult
@@ -49,7 +49,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def project_repo_conv(db):
-    project = Project.objects.create(
+    project = Space.objects.create(
         name=f"da-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"k-{uuid.uuid4().hex[:6]}",
     )
@@ -61,7 +61,7 @@ def project_repo_conv(db):
         index_status="indexed",
     )
     project.repositories.add(repo)
-    conversation = Conversation.objects.create(project=project, title="da-conv")
+    conversation = Conversation.objects.create(space=project, title="da-conv")
     return project, repo, conversation
 
 
@@ -409,11 +409,11 @@ async def test_runner_injected_conversation_id_in_last_output_is_ignored(
     project, repo, real_conversation = project_repo_conv
 
     # 攻击者目标会话（独立 project）—— runner 试图把 trace 写到这里
-    attacker_project = await Project.objects.acreate(
+    attacker_project = await Space.objects.acreate(
         name=f"atk-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"atk-{uuid.uuid4().hex[:6]}",
     )
-    attacker_conv = await Conversation.objects.acreate(project=attacker_project, title="victim-conv")
+    attacker_conv = await Conversation.objects.acreate(space=attacker_project, title="victim-conv")
 
     # 权威来源：main_session.metadata 指向真实会话
     main_session.metadata = {

@@ -159,10 +159,10 @@ def _real_merge_engine(repo_a: str, repo_b: str) -> PlanOrchestrationEngine:
 
 async def _make_project_and_conversation() -> tuple[Any, Any]:
     from chat.models import Conversation
-    from projects.models import Project
+    from projects.models import Space
 
-    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
-    conv = await Conversation.objects.acreate(project=project)
+    project = await Space.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    conv = await Conversation.objects.acreate(space=project)
     return project, conv
 
 

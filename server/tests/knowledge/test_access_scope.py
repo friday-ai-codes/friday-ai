@@ -6,7 +6,7 @@ import pytest
 from asgiref.sync import sync_to_async
 
 from knowledge.access_scope import resolve_allowed_project_ids, resolve_allowed_repository_ids
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -31,8 +31,8 @@ async def test_none_user_returns_empty():
 
 async def test_caller_project_ids_intersect(project, user, project_memberships, project_without_repo):
     """caller project_ids 只能收窄 allowed 集合。"""
-    await sync_to_async(ProjectMembership.objects.create)(
-        user=user, project=project_without_repo, role=ProjectRole.MEMBER
+    await sync_to_async(SpaceMembership.objects.create)(
+        user=user, space=project_without_repo, role=SpaceRole.MEMBER
     )
     allowed = await resolve_allowed_project_ids(user, project_ids=[str(project.id)])
     assert allowed == [str(project.id)]

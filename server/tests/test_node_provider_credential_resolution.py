@@ -27,15 +27,15 @@ cross_project scope 拒绝集成测试（work item / contract + work item 安全
 
 Fixture 策略（work item / checkpoint-03 conftest 复用）：
 - `fake_chat_model_factory` / `make_minimal_context` 引用 conftest，不重复定义。
-- `cred_layers` fixture 预置 3 层凭证 + 2 Project，支持所有测试场景。
+- `cred_layers` fixture 预置 3 层凭证 + 2 Space，支持所有测试场景。
 
-work item 修复：Project 用 `feishu_project_key` 字段（实证存在）。
+work item 修复：Space 用 `feishu_project_key` 字段（实证存在）。
 work item 修复：用 `encrypt_value(json.dumps({"api_key": ...}))` 生成合法 Fernet
 密文，避免占位字符串触发 Pydantic ValidationError。
 
 权威路径（grep 证实）：
 - ProviderCredential：server/system/models.py:102（字段名 encrypted_config）
-- Project：server/projects/models.py（feishu_project_key 确认存在）
+- Space：server/projects/models.py（feishu_project_key 确认存在）
 """
 
 from __future__ import annotations
@@ -51,13 +51,13 @@ from services.provider_config import ProviderType
 
 
 # ============================================================================
-# Fixture：预置 3 层 ProviderCredential + 2 Project
+# Fixture：预置 3 层 ProviderCredential + 2 Space
 # ============================================================================
 
 
 @pytest.fixture
 def cred_layers(db) -> dict[str, Any]:
-    """预置系统级 / 项目级 / 节点级凭证 + 2 Project 用于 scope 校验测试。
+    """预置系统级 / 项目级 / 节点级凭证 + 2 Space 用于 scope 校验测试。
 
     场景布局：
     - project_a：持有自己的 project-scoped 凭证（provider_type=anthropic）
@@ -66,14 +66,14 @@ def cred_layers(db) -> dict[str, Any]:
     - proj_a_cred：project-scoped 凭证（挂 project_a），cross_project 测试专用
     - node_cred：系统级凭证（scope=system）供节点级 FK 测试，可被任一 project 使用
     """
-    from projects.models import Project
+    from projects.models import Space
     from system.models import ProviderCredential
 
-    project_a = Project.objects.create(
+    project_a = Space.objects.create(
         name="project-a",
         feishu_project_key="test-project-a-key",
     )
-    project_b = Project.objects.create(
+    project_b = Space.objects.create(
         name="project-b",
         feishu_project_key="test-project-b-key",
     )
@@ -93,7 +93,7 @@ def cred_layers(db) -> dict[str, Any]:
         is_active=True,
     )
 
-    # Project A 级凭证（scope=project, scope_id=project_a.id）
+    # Space A 级凭证（scope=project, scope_id=project_a.id）
     proj_a_cred = ProviderCredential.objects.create(
         provider_type="anthropic",
         name="project-a-default",
@@ -123,17 +123,17 @@ def cred_layers(db) -> dict[str, Any]:
 
 
 def _build_workflow_execution(project: Any) -> Any:
-    """构造最小 workflow_execution（带 workflow.project 链）供节点 execute 读取 project。"""
+    """构造最小 workflow_execution（带 workflow.space 链）供节点 execute 读取 project。"""
     from workflows.models import Workflow, WorkflowExecution
 
     workflow = Workflow.objects.create(
         name="test-wf",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     return WorkflowExecution.objects.create(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
     )
 
@@ -192,7 +192,7 @@ async def test_node_level_overrides_project(
 
     we = await sync_to_async(_build_workflow_execution)(project_a)
     # execute 内部 re-select_related 读 project；重新赋值 default_provider_credential_id
-    # 需要通过 monkeypatch 拦截或让 Project.objects.aget 返回 patched 实例。
+    # 需要通过 monkeypatch 拦截或让 Space.objects.aget 返回 patched 实例。
     # 为避免 ORM 刷新丢失内存字段，直接调用节点 _call_llm（已通过 context 携带 project）。
 
     ctx = make_minimal_context(
@@ -246,7 +246,7 @@ async def test_project_level_overrides_system(
     指向项目级凭证 → source == "project"。
 
     通过 monkeypatch WorkflowExecution.objects.aget 返回带
-    default_provider_credential_id 属性的 workflow 链，绕过 Project model
+    default_provider_credential_id 属性的 workflow 链，绕过 Space model
     实际 schema 未落地限制（implementation/229 字段预留）。
     """
     fake = fake_chat_model_factory(responses=["done"])
@@ -311,7 +311,7 @@ async def test_system_level_fallback(
     fake = fake_chat_model_factory(responses=["done"])
     captured = _capture_resolved(monkeypatch, fake)
 
-    # 用不带 default_provider_credential_id 的 project（实际 Project model 也没有此字段）
+    # 用不带 default_provider_credential_id 的 project（实际 Space model 也没有此字段）
     project_a = cred_layers["project_a"]
 
     from workflows.nodes.ai import prompt as prompt_mod

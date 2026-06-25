@@ -97,7 +97,7 @@ def _make_mocks(
         return sub
 
     patches = [
-        patch("projects.models.Project.objects", new_callable=MagicMock),
+        patch("projects.models.Space.objects", new_callable=MagicMock),
         patch("repositories.models.Repository.objects", new_callable=MagicMock),
         patch("subagent.models.SubAgentSession.objects", new_callable=MagicMock),
         patch("runners.models.Runner.objects", new_callable=MagicMock),

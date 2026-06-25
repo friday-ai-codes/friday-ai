@@ -27,9 +27,9 @@ async def _make_user_headers() -> dict[str, str]:
 
 
 async def _make_project(name: str, key: str):
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(name=name, feishu_project_key=key)
+    return await Space.objects.acreate(name=name, feishu_project_key=key)
 
 
 # ============================================================================

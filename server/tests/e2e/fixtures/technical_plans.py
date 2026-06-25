@@ -164,7 +164,7 @@ def create_technical_plan(
         "projects": [
             {
                 "id": "test-project",
-                "name": "Test Project",
+                "name": "Test Space",
                 "repository_count": 1,
             }
         ],
@@ -232,7 +232,7 @@ def create_multi_repo_plan(
         "projects": [
             {
                 "id": "multi-repo-project",
-                "name": "Multi-Repo Project",
+                "name": "Multi-Repo Space",
                 "repository_count": len(repositories),
             }
         ],

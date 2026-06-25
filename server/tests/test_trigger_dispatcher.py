@@ -419,15 +419,15 @@ class TestFeishuDispatchFailurePersistence:
     async def _make_trigger_log(self):
         """创建一条 ACCEPTED 状态的 TriggerLog（模拟 webhook 入口已落库）。"""
         from feishu.models import TriggerLog, TriggerLogStatus
-        from projects.models import Project
+        from projects.models import Space
 
-        project = await Project.objects.acreate(
-            name="TRIG-03 Project",
-            description="Project for dispatch failure persistence RED tests",
+        project = await Space.objects.acreate(
+            name="TRIG-03 Space",
+            description="Space for dispatch failure persistence RED tests",
         )
         trigger_log = await TriggerLog.objects.acreate(
             event_type="WorkitemStatusEvent",
-            project=project,
+            space=project,
             status=TriggerLogStatus.ACCEPTED,
         )
         return project, trigger_log

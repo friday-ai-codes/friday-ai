@@ -19,13 +19,13 @@ def _make_prompt_with_body(
     body: str,
     *,
     scope: str = PromptScope.SYSTEM,
-    project=None,
+    space=None,
 ) -> Prompt:
     p = Prompt.objects.create(
         slug=slug,
         category=PromptCategory.AUX_MODEL,
         scope=scope,
-        project=project,
+        space=space,
         title="t",
         created_by=admin_user,
     )
@@ -123,7 +123,7 @@ class TestPromptPreviewAPI:
             "preview.proj.auth",
             "Hi",
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
         )
         # other_user 不是 project 任何角色
         client = APIClient()

@@ -22,7 +22,7 @@ def _context(project, *, name: str = "登录超时 Bug") -> McpWorkItemContext:
     )
     return McpWorkItemContext.objects.create(
         run=run,
-        project=project,
+        space=project,
         feishu_project_key=project.feishu_project_key,
         work_item_type="bug",
         work_item_id=99,
@@ -71,7 +71,7 @@ def _technical_plan(project, indexed_repository) -> McpWorkItemTechnicalPlan:
     plan = McpWorkItemTechnicalPlan.objects.create(
         run=run,
         context=context,
-        project=project,
+        space=project,
         feishu_project_key=project.feishu_project_key,
         work_item_type="bug",
         work_item_id=99,
