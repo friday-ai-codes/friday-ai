@@ -12,7 +12,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.11.0 开放与协作（2026-06-17）
+**Latest shipped:** v0.15.0 项目（交付上下文聚合根）（2026-06-26，审计 passed，38/38 需求）。里程碑 v0.1.0–v0.15.0（Phases 1–81）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。下一里程碑待 `$gsd-new-milestone` 立项。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -28,22 +28,23 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.14.0 可观测性与日志治理
+## Latest Milestone: v0.15.0 项目（交付上下文聚合根）— ✅ SHIPPED 2026-06-26（审计 passed）
 
-> v0.13.0 并发治理与索引体验已交付（Phases 65–70）。本里程碑**一次性完整交付**可观测性与日志治理，分 5 个 Phase（71–75）线性推进，新开会话用 autonomous 跑完整个里程碑。完整方案见 `.planning/observability/MILESTONE-PROPOSAL.md`、规范见 `LOGGING-SPEC.md`、UI 参考见 `REFERENCE-UI.md`。
+> 6 个 Phase（76–81）线性交付，38/38 需求满足、integration_ok、逐 Phase 零新增回归。完整设计与调研基线见 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`、归档见 `.planning/milestones/v0.15.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`。下一里程碑待 `$gsd-new-milestone` 立项（新 `REQUIREMENTS.md` 届时生成）。
 
-**Goal:** 把 Friday AI 从"零散 structlog + 800 条内存缓冲 + 前端 4s 采样"升级为完整可观测性平台：时序指标（QPS/TPS/召回/SLA/时长/TTFT）可按任意时间段查询、当前快照（CPU/内存/DB/Redis/Qdrant/协程/后台任务）实时可见、阈值告警可配置且沉淀为告警事件、系统日志队列化落库且全量绑定触发用户、统一运维大盘可视。第一性原理：量级低、人触发，用"原始事件行 + Postgres `percentile_cont` 聚合 + 复用已有 append-only 表"把自研基础设施压到最小。
+**Goal（已达成）:** 把"需求 → 代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**——每个飞书"项目跟踪"看板对应一个项目，项目聚合需求/工件依赖/工作项(story·缺陷)/记忆/关联知识/仓库/分支/PR；项目对成员共享可参与，飞书人员经身份映射关联到 Friday 用户并带身份（主R/PM/前端/后端/测试）；任何对话、Cursor 编码、Agent 调用都能从项目加载完整上下文并把沉淀写回。
 
-**Target features（5 Phase）:**
-- **Phase 71 可观测性地基**：用户上下文贯穿（请求中间件 + 后台任务用户传播）+ 系统日志治理（`SystemLogEntry` 落库、队列 5000 + 丢弃/失败计数、运行时配置、webhook 原始留痕、调用下钻、caller/sampling 分类、搜索/清理）。
-- **Phase 72 调用数据采集**：QPS 分类（`RequestMetric`）、TPS（每 provider，含容器）、召回（条数/分层耗时/相关度/内容留痕）、请求错误三口径、上游错误码（429/529 单列）、请求时长 + TTFT。
-- **Phase 73 快照·趋势·查询**：CPU/内存/DB/Redis/Qdrant/协程/后台/并发排队当前快照、趋势采样（并发/排队/吞吐/错误）、可用率、时序查询 + 快照 API（`percentile_cont` 分位）。
-- **Phase 74 告警引擎**：系统级阈值告警（独立于 workflow `AlertRule`）、`AlertEvent`（P0/P1/P2 + 持续时长 + email_sent + firing/resolved + 去重）、邮件通道（SMTP）+ 复用飞书/webhook。
-- **Phase 75 运维大盘 + 规范固化**：echarts 时序大盘 + 快照面板 + 告警事件页 + 系统日志下钻页 + 运行时配置面板；规范固化 + 全量事件目录 + PR/Review checklist。
+**Delivered features（6 Phase）:**
+- **Phase 76 命名腾挪**：把现有 `projects.Project`（前端"空间"，历史命名债）重命名为 `Space`，全栈 `project→space` 引用一致更新，腾出 `Project` 名给新聚合根；数据零丢失、行为/测试零回归（独立前置）。
+- **Phase 77 项目聚合根 + 身份映射 + 成员协作**：`Project` 聚合根（隶属 Space + 关联飞书项目跟踪 + 状态机 开发中/归档/终止）+ 飞书人员↔Friday 用户多对多映射 + 项目成员(多对多 + 身份角色) + CRUD/权限/实时推送。
+- **Phase 78 飞书触发建项目 + 看板枚举 + 工作项组合**：飞书项目跟踪枚举子项/成员封装 + 事件幂等建项目(拉人带身份) + `create_project` 工作流节点 + WorkItem(story/缺陷)关系边挂入。
+- **Phase 79 工件/依赖项 + 知识关联**：`ArtifactType` 可配置注册表(默认 8 类，后台增删禁用) + `Artifact` 实例(多载体) + 在线查看 + 文字载体 RAG/UI 稿仅元数据 + 项目↔知识多对多。
+- **Phase 80 项目记忆 + MR 实体 + 召回接入会话**：项目记忆(自由文本 + 贡献者/时效，人工为主 + LLM 提议确认) + `MergeRequest` 实体 + 入站 webhook 状态同步 + context packer(grep+RAG) + 接入 chat runner。
+- **Phase 81 Cursor 回流 + 前端项目工作台**：MCP 分支→项目反查召回 + Cursor rules 模板 + 沉淀上报写回 memory(归因/脱敏/质量门槛) + 项目列表/详情工作台/记忆编辑/工件类型管理页。
 
-**Key context:** 时序存储用**内置 Postgres**（不强依赖 Prometheus，列 v2）。**脱敏不可绕过**（`redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`，CI 守护不能破）。**用户上下文**用 `structlog.contextvars`+入口中间件（DRF 认证晚于 Django 中间件，用基类+ASGI 兜底）；跨线程/`_run_in_thread`/durable worker/`background_runner` 不自动传播，须显式 bind + job metadata 带 `initiated_by_user_id`。**指标/留痕/日志三分**：指标走精简事件表（`RequestMetric`/扩展 `ModelUsageRecord`，SQL 聚合）、留痕走 Interaction Ledger（`server/interactions/`）、日志走 `SystemLogEntry`（队列），用 `request_id/run_id/conversation_id` 关联不互相复制。复用 `SystemSetting`/`settings_service`/`signals`（运行时配置）、`Conversation`/`Message`（会话原始）、`TriggerLog`（飞书 webhook 原始范本）、`acquire_llm_slot` + 两个 Runner 流式循环（LLM 埋点 + TTFT）。告警另起系统级模型（现有 `AlertRule` 强绑工作流，不复用）。异步 ORM 走 `sync_to_async`；i18n 默认中文。
+**Key context:** **命名已锁定大重构**（Project→Space，76 作独立前置 Phase，与新功能解耦）。**不做迭代实体**（用户决策：另一迭代 = 新建项目；"看历史迭代" = 项目↔项目关联链回看）。**记忆为自由文本**（条目 + 时间戳/贡献者，人工为主 + LLM 提议草稿经人工确认入库，不自动直接写）。**工件 RAG 物理边界**：文字载体（飞书文档/表格/md/Spec）可全文 RAG；UI 稿（figma/mastergo）是图形链接仅存元数据，多模态正文留 v2。**最大化复用脊柱**：`KnowledgeEntity/KnowledgeEdge`（交付知识图谱，bi-temporal/版本/边）做项目↔知识与项目间关联、`delivery.WorkItem`（三元组）做 story/缺陷、`delivery_knowledge` 做召回、`projects.Project`(→Space) 做组织单元。**三个净新增空白**：飞书人员↔Friday 用户映射（主R/协作/归因/Cursor 上报前置）、通用项目记忆、MR 实体 + 入站 webhook。**飞书无整板枚举 API**（项目跟踪子项/成员经子项关联字段派生逐项收集，拿不到降级半自动）。**Cursor 回流走 MCP + git + 上报 API**（专用插件留 v2），上报写回须认证 + 归因 + 脱敏 + 质量门槛。脱敏不可绕过；后台任务带 `initiated_by_user_id`；新增 LLM/召回埋点；异步 ORM 走 `sync_to_async`；i18n 默认中文。
 
-**候选后续方向（v2）：** Prometheus/OTLP 导出（OBSX-01）、跨 server↔runner↔task 分布式 tracing（OBSX-03）、告警自适应/降噪（OBSX-04）、Sentry（OBSX-05）、日志冷存储/ELK·Loki（OBSX-06）。
+**候选后续方向（v2）：** UI 稿多模态/figma 正文召回（PROJX-01）、结构化记忆 + 时效降权 + 矛盾消解（PROJX-02）、记忆全自动提炼无需人工确认（PROJX-03）、Cursor 专用插件/hook 主动采集（PROJX-04）、项目级看板可视/燃尽/进度（PROJX-05）。
 
 ## Requirements
 
@@ -118,55 +119,63 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 - ✓ **飞书原生 CardKit 流式卡片**：机器人对话回复增量更新（CardKit v1 create/send/stream/settle 封装 + schema 2.0 流式卡），替代 PATCH 全量替换，失败降级既有卡片 — v0.11.0 (CARD-01, `server/services/feishu_im.py`)
 - ✓ **工作流自动建群节点**：`CreateGroupChatNode` 建飞书群 + 拉成员（`FeishuIMClient.create_chat` 建群即拉人）+ chat_id 输出 + 可选写回 `WorkItem.feishu_chat_id`（`WorkItemService.awriteback_feishu_chat_id` 单一入口 INV-6，fail-soft 不阻断） — v0.11.0 (GROUP-01)
 
-### Active（v0.14.0 可观测性地基）
+### Active（v0.15.0 项目 / 交付上下文聚合根）
 
-<!-- 本里程碑在建需求（34 条，5 Phase 71–75）。详见 .planning/REQUIREMENTS.md 与 .planning/observability/MILESTONE-PROPOSAL.md。v0.13.0（STREAM/LSP/CONC/PROG/BATCH/TOKEN）已交付，详见 MILESTONES.md 与 milestones/v0.13.0-*。 -->
+<!-- 本里程碑在建需求（38 条，6 Phase 76–81）。详见 .planning/REQUIREMENTS.md 与 .planning/project-aggregate/MILESTONE-PROPOSAL.md。v0.14.0（CTX/LOG/RATE/RAG/SLA/SNAP/QUERY/ALERT/UI/SPEC）已交付，详见 MILESTONES.md 与 milestones/v0.14.0-*。 -->
 
-**Phase 71 · 用户上下文贯穿（CTX）+ 系统日志治理（LOG）**
-- ☐ **CTX-01**: 请求级上下文中间件——HTTP/SSE/WS/MCP/compat 自动注入 user_id(无则 system)/request_id/source/trace_id 到 `structlog.contextvars`，请求结束清理
-- ☐ **CTX-02**: 后台任务用户传播——durable/background_runner/workflow/apscheduler/飞书·webhook 入队携带 `initiated_by_user_id`，worker 重新 bind；无发起人记 system
-- ☐ **LOG-01**: 系统日志落库（`SystemLogEntry`）默认倒序 + 按组件/级别/用户/来源/关键词/时间段筛选与全文搜索
-- ☐ **LOG-02**: 队列化写入（上限 5000）+ 批量落库 + 丢弃计数 + 失败条数计数，不反噬业务
-- ☐ **LOG-03**: 日志全量绑定触发用户（无则 system），可按用户筛选
-- ☐ **LOG-04**: 调用下钻——MCP 显示触发用户；AI 对话下钻会话全部请求与原始数据（复用 Interaction Ledger/Conversation/Message）
-- ☐ **LOG-05**: 事件按 caller/sampling 分类 + 组件归类，形成事件目录
-- ☐ **LOG-06**: 运行时日志配置（实时生效）——级别(全局/分组件)/堆栈阈值/采样初始/后续/保留天数·大小
-- ☐ **LOG-07**: Webhook 原始数据统一落库可查看（飞书/通用/Git push/容器回调，脱敏）
-- ☐ **LOG-08**: 日志清理——按条件批量清理 + 保留策略到期定时清理
+**Phase 76 · 命名腾挪（RENAME）**
+- ☐ **RENAME-01**: 后端 `projects.Project` 重命名为 `Space`，数据零丢失，既有"空间"功能行为零回归
+- ☐ **RENAME-02**: 全栈 `project→space` 引用一致更新（serializers/views/permissions/space_tools/fetch_space_info/FK），对外仍称"空间"，测试基线零回归
 
-**Phase 72 · 调用数据采集（RATE/RAG/SLA 采集）**
-- ☐ **RATE-01**: QPS 分类采集（`RequestMetric`），覆盖 REST/MCP/对话/兼容/召回/embedding·reranker/webhook/WS，轮询·health 打标隔离
-- ☐ **RATE-02**: TPS 采集（全量含容器）——扩展 `ModelUsageRecord`（call_source/ttft/上游码），22 类 call_source + 补全容器 token 链路
-- ☐ **RAG-01**: 召回指标——条数/分层耗时(embedding·sparse·qdrant·rerank)/相关度 score，按来源与时间段
-- ☐ **RAG-02**: 召回内容留痕扩展到 MCP + AI 对话两条链（`RetrievalTrace` 记 query+内容+score+会话/用户）
-- ☐ **SLA-02**: 请求错误三口径分离（系统错误/业务限制/上游），`RequestMetric.error_class`+状态码
-- ☐ **SLA-03**: 上游错误码采集（429/529 单列），按 provider/model
-- ☐ **SLA-04**: 请求时长 + TTFT 采集（流式埋首 chunk），支持分位
+**Phase 77 · 项目聚合根 + 身份映射 + 成员协作（PROJ/IDENT/MEMBER）**
+- ☐ **PROJ-01**: `Project` 聚合根（隶属 Space + 关联飞书项目跟踪 + 状态/创建者），单一入口 `ProjectService`
+- ☐ **PROJ-02**: 项目状态机（开发中/归档/终止，可扩展）非法流转 fail-loud + 接入审计
+- ☐ **PROJ-03**: 项目 CRUD REST API，按 Space 成员权限 fail-closed
+- ☐ **PROJ-04**: 项目可关联其他项目（多对多，历史迭代/相关项目回看）
+- ☐ **PROJ-05**: 前端手动创建项目（Space + 飞书看板 + 名称），`(space, feishu_project_key)` 幂等
+- ☐ **IDENT-01**: 飞书人员↔Friday 用户多对多映射（手动 + JIT），单一解析入口，未映射 fail-soft
+- ☐ **MEMBER-01**: 项目成员（多对多 + 身份角色 主R/PM/前端/后端/测试），一人多项目
+- ☐ **MEMBER-02**: 主R 唯一可转移 + 成员增删改 API + 审计 + 全成员可见可参与
+- ☐ **MEMBER-03**: 成员/状态变更经 WebSocket 实时推送
 
-**Phase 73 · 快照·趋势·查询（SNAP/RATE-03/SLA-01/QUERY）**
-- ☐ **SNAP-01**: server/主机——CPU/内存(psutil)/协程/线程/后台任务数
-- ☐ **SNAP-02**: 数据库——连接数/活跃/空闲/等待(`pg_stat_activity`+max_connections/pool)
-- ☐ **SNAP-03**: Redis——连接(`connected_clients`/maxclients)/内存/命中率(`INFO`)
-- ☐ **SNAP-04**: Qdrant——可用性/collection 数/占用空间（缓存+长超时）
-- ☐ **SNAP-05**: 并发/排队当前值——provider 槽位/durable 队列/runner/RAG
-- ☐ **RATE-03**: 趋势采集（只记不告警）——`GaugeSample` 并发/排队 + 吞吐/错误趋势 SQL 聚合
-- ☐ **SLA-01**: 每时刻可用率/业务故障率（排除业务限制口径）+ 健康探针
-- ☐ **QUERY-01**: 时序查询 API（任意时间段/step/维度 + `percentile_cont` 分位 + 保留清理）
-- ☐ **QUERY-02**: 快照 API（聚合 SNAP-01~05 当前值）
+**Phase 78 · 飞书触发建项目 + 看板枚举 + 工作项组合（FSPROJ/COMPOSE）**
+- ☐ **FSPROJ-01**: 飞书"项目跟踪"枚举子项(story/缺陷)/人员(带角色)封装，无整板 API 经字段派生，fail-soft
+- ☐ **FSPROJ-02**: 飞书事件触发幂等建同名项目 + 拉入看板人员(身份映射)，重复不重复建
+- ☐ **FSPROJ-03**: 工作流 `create_project` 节点（看板名建项目 + 拉人带身份 + 关联子项）
+- ☐ **COMPOSE-01**: 项目组合多个 WorkItem（story 复用 delivery.WorkItem 经关系边，可并入/移除）
+- ☐ **COMPOSE-02**: 缺陷（看板类型=缺陷）经关系边挂入，不重复建模
 
-**Phase 74 · 告警引擎与通知（ALERT）**
-- ☐ **ALERT-01**: 系统级阈值告警规则（独立于 workflow `AlertRule`，运行时可改）
-- ☐ **ALERT-02**: 告警事件 `AlertEvent`（P0/P1/P2 + 规则信息 + 持续时长 + firing/resolved + email_sent + 去重）
-- ☐ **ALERT-03**: 邮件通道（SMTP + 收件人配置）+ 复用飞书/webhook 通知分发
+**Phase 79 · 工件/依赖项 + 知识关联（ARTIFACT/KLINK）**
+- ☐ **ARTIFACT-01**: `ArtifactType` 可配置注册表（内置 8 类，后台增删禁用）
+- ☐ **ARTIFACT-02**: `Artifact` 实例（类型/载体 飞书文档·表格·外链·md·仓库文件/链接/版本/贡献者）
+- ☐ **ARTIFACT-03**: 工件在线查看（飞书文档·表格渲染/外链跳转）+ md·内部工件可编辑
+- ☐ **ARTIFACT-04**: 工件 RAG——文字载体全文进 delivery_knowledge；UI 稿外链仅存元数据
+- ☐ **ARTIFACT-05**: 类型增删禁用即时生效，禁用类型不可新建、既有实例只读保留
+- ☐ **KLINK-01**: 项目↔知识实体（KnowledgeEntity）多对多
+- ☐ **KLINK-02**: 项目↔仓库/空间/知识/其他项目，经 KnowledgeEdge 统一建模、可视
 
-**Phase 75 · 运维大盘前端 + 规范固化（UI/SPEC）**
-- ☐ **UI-01**: 大盘上半区——健康分 + 实时速率卡 + 信息卡排（请求/SLA/错误/时长/TTFT/上游 429·529）+ 时间范围
-- ☐ **UI-02**: 当前快照行 + 趋势（吞吐/错误/时长分布/并发排队），卡内内联阈值
-- ☐ **UI-03**: 告警事件页（级别/状态/规则/持续时长/邮件状态）+ 阈值配置入口
-- ☐ **UI-04**: 系统日志页（计数 + 倒序 + 多维筛选 + 调用下钻 + 清理 + 运行时配置表单）
-- ☐ **SPEC-01**: 规范固化 + 全量事件目录 + PR/Review checklist
+**Phase 80 · 项目记忆 + MR 实体 + 召回接入会话（MEM/RECALL/MR）**
+- ☐ **MEM-01**: 项目记忆（自由文本 append/edit + 时间戳/贡献者），全成员共享
+- ☐ **MEM-02**: 贡献限成员；私聊/非成员会话不纳入
+- ☐ **MEM-03**: 记忆可人工编辑/覆盖（方案推翻/需求变更），保留可追溯
+- ☐ **MEM-04**: LLM 提炼记忆草稿→人工确认入库（不自动写）+ 脱敏不可绕过
+- ☐ **RECALL-01**: 项目上下文打包器（grep+RAG 召回+排序+压缩，token 预算可降级）
+- ☐ **RECALL-02**: Web 对话绑定项目自动加载上下文，search_delivery_knowledge 接入 chat runner
+- ☐ **RECALL-03**: 召回覆盖项目全部文字工件/记忆/工作项，权限 fail-closed + 写 RetrievalTrace
+- ☐ **MR-01**: `MergeRequest` 实体（关联项目/仓库/分支/工作项 + 状态 + review），单一入口
+- ☐ **MR-02**: 入站 webhook 同步 MR 状态（GitHub/GitLab，脱敏原始 payload 落库）
+
+**Phase 81 · Cursor 回流 + 前端项目工作台（CURSOR/UI）**
+- ☐ **CURSOR-01**: MCP 分支→项目反查 + 召回需求/工件/记忆
+- ☐ **CURSOR-02**: Cursor rules 模板（强制先关联分支召回再编码）
+- ☐ **CURSOR-03**: Cursor 沉淀上报写回 memory/知识（认证 + 归因 + 脱敏 + 质量门槛）
+- ☐ **UI-01**: 项目列表页（Space/状态/成员筛选）+ 创建入口
+- ☐ **UI-02**: 项目详情工作台（概览/成员带身份/工作项/工件查看/记忆编辑/关联）
+- ☐ **UI-03**: 记忆编辑 + LLM 提议确认 UI + 工件类型后台管理页
 
 **Backlog 候选（后续里程碑）：**
+
+- 项目进阶（v2 PROJX）：UI 稿多模态/figma 正文召回、结构化记忆 + 时效降权 + 矛盾消解、记忆全自动提炼（无人工确认）、Cursor 专用插件/hook 主动采集、项目级看板可视/燃尽/进度
 
 - 开放进阶（v2 OPENX）：标准双向 `tool_calls`（客户端自带工具回传执行）、Anthropic 端点工具/多模态 content block 全量对齐、飞书卡片交互组件/多卡片编排
 - 审计进阶（v2 AUDITX）：密码学级防篡改（hash chain / WORM）、实时告警 / SIEM / webhook 外发、审计保留/归档/自动清理策略
@@ -250,6 +259,14 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | 收口 `ResumableTask`：Procrastinate/适配层接管生产职责，不三套并存 | `background_runner` 降级为 dev fallback/轻任务；存量在途行一次性迁移，不双跑 | ✓ Shipped v0.12.0 |
 | workflow/RepoCodingTask 保留自有引擎，只做恢复桥接；chat/RAG 问答不进队列 | 有自有状态机的任务从持久化态重驱（非内存态恢复，`_debug_sessions` 丢失可降级）；流式问答请求级、断开让用户重试 | ✓ Shipped v0.12.0 |
 | runner 改 k8s Job executor 纳入 v0.12.0（Phase 64），不拆后续里程碑 | 用户选 full 范围；k0s/containerd 下 docker.sock 是反模式，先抽 executor 接口再落 k8s 实现 | ✓ Shipped v0.12.0 |
+| v0.15.0「项目」是聚合根，不是工作流节点；工作流只是写它的入口之一 | 项目是持续存在的领域数据 + 关系图；DAG 节点是一次性执行，语义不符 | — Pending（v0.15.0） |
+| 后端 `projects.Project` 重命名为 `Space`，腾出 `Project` 名给新聚合根（大重构，76 独立前置） | 现状 `Project` model 映射前端"空间"是历史命名债；用户要中文"项目"指向新概念，必须腾名；独立 Phase 解耦降风险 | — Pending（v0.15.0，Phase 76） |
+| 不做迭代实体：另一迭代 = 新建项目；历史迭代经项目↔项目关联回看 | 用户决策，避免多一层粒度；知识/记忆直接挂项目；复用 KnowledgeEdge 做项目间关联 | — Pending（v0.15.0） |
+| 项目记忆为自由文本（条目 + 时间戳/贡献者），人工为主、LLM 仅产草稿经人工确认入库 | 用户选简单形态；矛盾消解靠人工覆盖；结构化 + 自动降权留 v2（PROJX-02） | — Pending（v0.15.0，Phase 80） |
+| 工件统一抽象为可配置类型（ArtifactType 后台增删禁用）+ 实例（多载体）；文字载体 RAG、UI 稿仅元数据 | 避免为每种工件各建表爆炸；复用 KnowledgeEntity 思路；figma/mastergo 图形链接 RAG 不到正文，多模态留 v2（PROJX-01） | — Pending（v0.15.0，Phase 79） |
+| 飞书人员↔Friday 用户映射作为主R/协作/归因/Cursor 上报的前置基础设施先建 | 现状无映射表；与可观测"谁触发"同源；多对多 + 手动 + JIT | — Pending（v0.15.0，Phase 77） |
+| Cursor 回流先走 MCP + git + 上报 API，不做本地专用插件 | MCP/容器 user_token 地基已在（v0.2.0）；专用插件重、留 v2（PROJX-04）；上报写回须认证 + 归因 + 脱敏 + 质量门槛 | — Pending（v0.15.0，Phase 81） |
+| 缺陷复用 `delivery.WorkItem` 经关系边挂项目，不重复建模为工件 | 缺陷（飞书看板类型=缺陷）与 story 同构；Artifact 只留给文档型依赖 | — Pending（v0.15.0，Phase 78） |
 
 ## Evolution
 
@@ -269,4 +286,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-24 — start milestone v0.14.0 可观测性地基*
+*Last updated: 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）*

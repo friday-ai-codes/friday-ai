@@ -2,9 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.15.0
 milestone_name: 项目（交付上下文聚合根）
-status: feature-complete
-last_updated: "2026-06-26T00:30:00.000Z"
-last_activity: 2026-06-26
+status: Awaiting next milestone
+stopped_at: "Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）完成（plan→execute→verify 端到端，VERIFICATION status: passed）。下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。"
+last_updated: "2026-06-25T18:59:24.795Z"
+last_activity: 2026-06-25 — Milestone v0.15.0 completed and archived
 progress:
   total_phases: 6
   completed_phases: 6
@@ -24,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目
 
 ## Current Position
 
-Phase: 81 ✅ complete → 里程碑 feature-complete（6/6 phase, 38/38 需求）
+Phase: Milestone v0.15.0 complete
 Plan: —
-Status: Phase 81 Cursor 回流 + 前端项目工作台已完成（里程碑收官）。后端：`services/branch_parsing.py`(feat/xxxx-m{id}-slug 反解析 fail-soft) + MCP `lookup_project_by_branch`(ProjectWorkItemLink 反查 → 单命中经 pack_project_context 召回 + 写 RetrievalTrace **补齐 Phase-80 deferred 的 MCP 链**；多/无命中 fail-soft) + MCP `report_project_knowledge`(PAT 认证 + 归因 request.user + 质量门槛 services/cursor_writeback.py 长度/低信息量/重复可配 + 脱敏不可绕过 + 成员 fail-closed → MemoryService.create_draft **pending 非 active**) + initiatives/services/cursor_rules.py(项目专属 .mdc 强制先关联召回再编码) + `GET /api/projects/<id>/cursor-rules/` + 工作项 REST(list/attach/detach surface ProjectService) + 列表筛选参数(space_id/status/member/q additive) + ArtifactTypeSerializer 补 instance_count + SettingKeys.CURSOR_WRITEBACK_CONFIG。前端：API 模块 artifacts/artifactTypes/projectMemory/mergeRequests + 扩展 projects + barrel；UI-01 /projects 列表(筛选+创建+卡片)；UI-02 /projects/[id] 6 Tab 懒加载(概览+Cursor rules 复制下载/成员转主R/工作项/工件在线查看/记忆/关联 MR+图谱)；UI-03 记忆 LLM 草稿确认 + /admin/artifact-types(删除保护 disabled+tooltip)；zh-CN 全量中文。无新增 migration（仅 SettingKeys 常量 + SerializerMethodField）。后端 6421 passed / 新增 30 用例全绿 / 39 failed == baseline 38 + 1 已知 flaky(test_webhook_dedup_same_sha 单跑通过) 零新增回归 / makemigrations 干净。前端 vue-tsc 绿 / 新增 12 用例全绿 / 1109 passed(2 failed = 既有 ProviderCredentialForm.spec PRE-EXISTING，stash 验证零新增回归)。
-Last activity: 2026-06-26 — Phase 81 完成（feat(81)×3 + test(81)×2，未 push）；真实 Cursor 端 MCP 反查/上报端到端 + 真实飞书在线查看为里程碑级 human_needed/deferred；里程碑 v0.15.0 feature-complete，下一步 `$gsd-audit-milestone`
+Status: Awaiting next milestone
+Last activity: 2026-06-25 — Milestone v0.15.0 completed and archived
 
 ## Milestone Overview (v0.15.0 — Phases 76–81 — ✅ FEATURE-COMPLETE 6/6)
 
@@ -397,8 +398,4 @@ Next: `$gsd-discuss-phase 76` 收集上下文澄清，或 `$gsd-plan-phase 76` �
 
 ## Operator Next Steps
 
-- 里程碑已立项；下一步 `$gsd-discuss-phase 76`（命名腾挪 Project→Space）或 `$gsd-plan-phase 76`
-- ⚠️ Phase 76 是硬前置（全栈重命名），必须数据零丢失 + 测试零回归后再推进 77；建议作为独立 PR
-- ⚠️ Phase 78 plan-phase 前先验证飞书"项目跟踪"枚举子项/成员 API 能力（无整板 listing，可能降级半自动）
-- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令），若需 SDK 状态同步可后续校正；commit 由用户按需触发
-- v2 候选已列（PROJX-01~05）：UI 稿多模态召回、结构化记忆/降权、记忆全自动提炼、Cursor 专用插件、项目看板可视
+- Start the next milestone with /gsd-new-milestone
