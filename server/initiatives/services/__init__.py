@@ -10,6 +10,13 @@ from initiatives.services.artifact_service import (
     ArtifactService,
     ArtifactTypeError,
 )
+from initiatives.services.memory_distill import MemoryDistiller
+from initiatives.services.memory_service import (
+    MemoryError,
+    MemoryPermissionError,
+    MemoryService,
+    MemoryStateError,
+)
 from initiatives.services.project_board_sync import (
     BoardSyncResult,
     ProjectBoardSyncService,
@@ -31,6 +38,11 @@ __all__ = [
     "ArtifactError",
     "ArtifactDisabledError",
     "ArtifactTypeError",
+    "MemoryService",
+    "MemoryError",
+    "MemoryPermissionError",
+    "MemoryStateError",
+    "MemoryDistiller",
     "project_group_name",
     "apush_project_event",
 ]
