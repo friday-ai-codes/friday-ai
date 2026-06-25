@@ -169,12 +169,19 @@ async function confirmDelete() {
       </p>
 
       <!-- 空态 -->
-      <div v-else-if="!rules.length" class="py-10 text-center">
-        <span class="icon-[lucide--shield-off] mb-2 block text-2xl text-muted-foreground opacity-60" />
-        <p class="text-sm text-muted-foreground">
-          还没有任何告警规则
-        </p>
-        <Button size="sm" variant="outline" class="mt-3" @click="openCreate">
+      <div v-else-if="!rules.length" class="flex flex-col items-center gap-3 py-12 text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <span class="icon-[lucide--shield-off] text-xl text-muted-foreground" />
+        </div>
+        <div class="space-y-1">
+          <p class="text-sm font-medium">
+            还没有任何告警规则
+          </p>
+          <p class="text-xs text-muted-foreground">
+            配置阈值规则后，指标越界时会自动触发告警
+          </p>
+        </div>
+        <Button size="sm" variant="outline" @click="openCreate">
           <span class="icon-[lucide--plus]" />
           创建第一条规则
         </Button>

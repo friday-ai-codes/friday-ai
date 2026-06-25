@@ -131,13 +131,15 @@ function onOpenChange(v: boolean) {
           调用下钻
         </SheetTitle>
         <SheetDescription>
-          会话原始 / 调用明细 / webhook 原始（只读，已脱敏；不显示任何 token）
+          查看该日志关联的会话、调用链与 webhook 原始记录
         </SheetDescription>
       </SheetHeader>
 
-      <div v-if="!anyAvailable" class="px-4 py-12 text-center text-sm text-muted-foreground">
-        <span class="icon-[lucide--unlink] mb-2 block text-2xl opacity-60" />
-        该日志行无可下钻的关联键
+      <div v-if="!anyAvailable" class="flex flex-col items-center gap-2 px-4 py-16 text-center text-muted-foreground">
+        <span class="icon-[lucide--unlink] text-2xl opacity-50" />
+        <p class="text-sm">
+          该日志行没有可下钻的关联记录
+        </p>
       </div>
 
       <Tabs v-else v-model="activeTab" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
@@ -158,10 +160,12 @@ function onOpenChange(v: boolean) {
           <div v-if="convQuery.isLoading.value" class="space-y-2">
             <Skeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-lg" />
           </div>
-          <p v-else-if="convQuery.isError.value" class="py-8 text-center text-sm text-destructive">
-            <span class="icon-[lucide--circle-alert] mr-1.5 align-middle" />
-            {{ extractErrorMessage(convQuery.error.value) }}
-          </p>
+          <div v-else-if="convQuery.isError.value" class="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+            <span class="icon-[lucide--message-square-off] text-2xl opacity-50" />
+            <p class="text-sm">
+              {{ extractErrorMessage(convQuery.error.value) }}
+            </p>
+          </div>
           <div v-else-if="conversation" class="space-y-4 text-sm">
             <!-- 会话元信息 -->
             <section class="space-y-2">
@@ -254,10 +258,12 @@ function onOpenChange(v: boolean) {
           <div v-if="callQuery.isLoading.value" class="space-y-2">
             <Skeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-lg" />
           </div>
-          <p v-else-if="callQuery.isError.value" class="py-8 text-center text-sm text-destructive">
-            <span class="icon-[lucide--circle-alert] mr-1.5 align-middle" />
-            {{ extractErrorMessage(callQuery.error.value) }}
-          </p>
+          <div v-else-if="callQuery.isError.value" class="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+            <span class="icon-[lucide--search-x] text-2xl opacity-50" />
+            <p class="text-sm">
+              该日志未关联到具体的调用链记录
+            </p>
+          </div>
           <div v-else-if="call" class="space-y-4 text-sm">
             <!-- run + 触发用户（不显 token） -->
             <section class="space-y-2">
@@ -335,10 +341,12 @@ function onOpenChange(v: boolean) {
           <div v-if="webhookQuery.isLoading.value" class="space-y-2">
             <Skeleton v-for="i in 4" :key="i" class="h-12 w-full rounded-lg" />
           </div>
-          <p v-else-if="webhookQuery.isError.value" class="py-8 text-center text-sm text-destructive">
-            <span class="icon-[lucide--circle-alert] mr-1.5 align-middle" />
-            {{ extractErrorMessage(webhookQuery.error.value) }}
-          </p>
+          <div v-else-if="webhookQuery.isError.value" class="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+            <span class="icon-[lucide--webhook] text-2xl opacity-50" />
+            <p class="text-sm">
+              {{ extractErrorMessage(webhookQuery.error.value) }}
+            </p>
+          </div>
           <div v-else-if="webhook" class="space-y-4 text-sm">
             <section class="space-y-2">
               <h4 class="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">

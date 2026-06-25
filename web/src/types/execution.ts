@@ -70,7 +70,7 @@ export interface CostBreakdownSummary {
 
 /**
  * 成本拆分完整响应
- * GET /workflows/workflow-executions/{pk}/cost-breakdown/
+ * GET /workflow-executions/{pk}/cost-breakdown/
  */
 export interface CostBreakdown {
   nodes: CostBreakdownNode[]

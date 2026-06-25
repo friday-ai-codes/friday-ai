@@ -20,6 +20,7 @@ import type { SystemLogQuery, SystemLogRow } from '~/api/system'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 import { querySystemLogs } from '~/api/system'
+import { eventMessageLabel } from '~/components/observability/eventLabels'
 import { logLevelClass } from '~/components/observability/status'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -215,7 +216,13 @@ function categoryClass(c: string): string {
   return 'text-muted-foreground bg-muted'
 }
 
-// ── message 展开 ─────────────────────────────────────────────────────────
+// ── message 中文化 + 展开 ────────────────────────────────────────────────
+// 「消息」列优先展示中文事件说明（见 eventLabels.ts），未收录时回退原始 message。
+// 原始英文事件名仍保留在「事件」列，不影响筛选/检索。
+function rowMessage(row: SystemLogRow): string {
+  return eventMessageLabel(row.event ?? '', row.message ?? '')
+}
+
 const expanded = ref<Set<number>>(new Set())
 function toggleExpand(id: number) {
   const next = new Set(expanded.value)
@@ -368,7 +375,7 @@ defineExpose({ rawItems })
           <!-- 空态 -->
           <TableRow v-else-if="!items.length" class="hover:bg-transparent">
             <TableCell colspan="8" class="py-12 text-center text-sm text-muted-foreground">
-              <span class="icon-[lucide--scroll-text] mb-2 block text-2xl opacity-60" />
+              <span class="icon-[lucide--scroll-text] mx-auto mb-2 block text-2xl opacity-60" />
               {{ advFilterActive ? '无匹配筛选条件的日志' : '暂无系统日志' }}
             </TableCell>
           </TableRow>
@@ -410,9 +417,9 @@ defineExpose({ rawItems })
               </TableCell>
               <TableCell class="max-w-[360px]">
                 <div class="flex items-start gap-1.5">
-                  <span class="min-w-0 flex-1 truncate" :title="row.message">{{ row.message || EMPTY }}</span>
+                  <span class="min-w-0 flex-1 truncate" :title="row.message || row.event">{{ rowMessage(row) || EMPTY }}</span>
                   <Button
-                    v-if="hasDetail(row) || (row.message?.length ?? 0) > 40"
+                    v-if="hasDetail(row) || (rowMessage(row).length > 40)"
                     variant="ghost"
                     size="icon-sm"
                     class="-my-1 shrink-0"
@@ -436,7 +443,10 @@ defineExpose({ rawItems })
                     <div class="mb-1 font-semibold text-muted-foreground">
                       完整消息
                     </div>
-                    <pre class="overflow-auto rounded-md bg-background/60 p-2 font-mono break-all whitespace-pre-wrap">{{ row.message || EMPTY }}</pre>
+                    <pre class="overflow-auto rounded-md bg-background/60 p-2 font-mono break-all whitespace-pre-wrap">{{ rowMessage(row) || EMPTY }}</pre>
+                    <div v-if="row.event" class="mt-1 text-[11px] text-muted-foreground">
+                      原始事件：<span class="font-mono">{{ row.event }}</span>
+                    </div>
                   </div>
                   <div v-if="Object.keys(row.payload ?? {}).length" class="grid gap-3 md:grid-cols-2">
                     <div>

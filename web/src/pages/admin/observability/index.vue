@@ -345,7 +345,7 @@ function fmtPct(v: number | null | undefined, digits = 2): string {
           { label: 'Avg', value: formatDurationMs(durationStats.avg) },
           { label: 'Max', value: formatDurationMs(durationStats.max) },
         ]"
-        footnote="头部为 P99（Postgres percentile_cont；SQLite 近似降级）"
+        footnote="头部为 P99 分位"
       />
 
       <!-- TTFT -->
@@ -362,7 +362,7 @@ function fmtPct(v: number | null | undefined, digits = 2): string {
           { label: 'Avg', value: formatDurationMs(ttftStats.avg) },
           { label: 'Max', value: formatDurationMs(ttftStats.max) },
         ]"
-        footnote="头部为 P99（Postgres percentile_cont；SQLite 近似降级）"
+        footnote="头部为 P99 分位"
       />
 
       <!-- 上游错误 -->

@@ -49,6 +49,20 @@ const props = withDefaults(defineProps<{
 // 多系列调色板（与既有大盘色调一致，亮暗自适配靠透明度区分）。
 const PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1', '#ef4444']
 
+/** 维度名中文化：后端无分组时返回常量 `__all__`/`overall`，统一展示为「全部」。 */
+function dimLabel(dim: string): string {
+  if (!dim || dim === '__all__' || dim === 'overall')
+    return '全部'
+  return dim
+}
+
+/** tooltip 数值格式化：最多保留 2 位小数并去掉多余的 0（避免 0.28333333… 刷屏）。 */
+function formatTooltipValue(v: unknown): string {
+  if (typeof v !== 'number' || !Number.isFinite(v))
+    return '—'
+  return Number(v.toFixed(2)).toLocaleString('en-US')
+}
+
 /** 按时间跨度推导步长（无显式 step 时）：控制桶数在可读范围。 */
 const effectiveStep = computed(() => {
   if (props.step)
@@ -116,7 +130,7 @@ function groupByDim(
 
 function baseLineOption(categories: string[], legend: string[], extra: Record<string, any> = {}) {
   return {
-    tooltip: { trigger: 'axis' as const, ...tooltipStyle },
+    tooltip: { trigger: 'axis' as const, ...tooltipStyle, valueFormatter: formatTooltipValue },
     legend: { data: legend, textStyle: legendTextStyle, icon: 'circle', itemWidth: 8, itemHeight: 8, top: 0 },
     grid: chartGrid,
     xAxis: {
@@ -164,7 +178,10 @@ const throughputOption = computed(() => {
   const tpsTotal = categories.map((_, i) =>
     tps.series.reduce((s, ser) => s + (ser.data[i] ?? 0), 0),
   )
-  const legend = [...qps.series.map(s => `QPS·${s.name}`), 'TPS(千)']
+  // 单维度且为「全部」时图例直接显示 QPS；多维度显示 QPS · <维度>。
+  const onlyAll = qps.series.length <= 1
+  const qpsName = (name: string) => (onlyAll ? 'QPS' : `QPS · ${dimLabel(name)}`)
+  const legend = [...qps.series.map(s => qpsName(s.name)), 'TPS(千)']
   return {
     ...baseLineOption(categories, legend, {
       yAxis: [
@@ -173,7 +190,7 @@ const throughputOption = computed(() => {
       ],
     }),
     series: [
-      ...qps.series.map((s, i) => lineSeries(`QPS·${s.name}`, s.data, PALETTE[i % PALETTE.length])),
+      ...qps.series.map((s, i) => lineSeries(qpsName(s.name), s.data, PALETTE[i % PALETTE.length])),
       lineSeries('TPS(千)', tpsTotal.map(v => v / 1000), '#94a3b8', { dashed: true, yAxisIndex: 1 }),
     ],
   }
@@ -329,14 +346,14 @@ const gaugeEmpty = computed(() => (gaugeData.value ?? []).every(r => !r?.series?
     <!-- 请求时长趋势 -->
     <ChartCard
       title="请求时长趋势"
-      :description="durationDegraded ? '分位为近似值（SQLite）' : 'P95 / P50 分位（毫秒）'"
+      :description="durationDegraded ? 'P95 / P50 分位（近似值）' : 'P95 / P50 分位（毫秒）'"
       icon="lucide--timer"
       icon-class="bg-amber-500/10 text-amber-600"
     >
       <template v-if="durationDegraded" #actions>
         <span
           class="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-600"
-          title="SQLite 下分位为近似值"
+          title="当前数据库引擎不支持精确分位，已使用近似估算"
         >
           <span class="icon-[lucide--info] text-xs" />
           近似分位
