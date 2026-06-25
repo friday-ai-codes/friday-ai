@@ -173,7 +173,7 @@ class AnalyticsOverviewView(APIView):
                 }
 
         elif group_by == "space":
-            # 按 workflow_execution.project_id 聚合（TokenUsage.session.node_execution.workflow_execution.project）
+            # 按 workflow_execution.space_id 聚合（TokenUsage.session.node_execution.workflow_execution.space）
             rows = (
                 TokenUsage.objects.filter(
                     session__node_execution__workflow_execution__created_at__date__gte=date_from,

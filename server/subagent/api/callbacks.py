@@ -1464,7 +1464,7 @@ async def _update_agent_session_cross_repo_relevance(
         from chat.models import Conversation
 
         conv = await Conversation.objects.filter(id=authoritative_conv_id).afirst()
-        if conv is None or conv.project_id is None:
+        if conv is None or conv.space_id is None:
             logger.warning(
                 "cross_repo_relevance_skip_conv_not_found",
                 session_id=session.session_id,
@@ -1472,7 +1472,7 @@ async def _update_agent_session_cross_repo_relevance(
             )
             return
         conversation_id = str(conv.id)
-        space_id = str(conv.project_id)
+        space_id = str(conv.space_id)
 
         # lazy import 防止 agents.tools 与 subagent.api 启动顺序循环
         from agents.tools.repository_relevance import _analyze_relevance_core

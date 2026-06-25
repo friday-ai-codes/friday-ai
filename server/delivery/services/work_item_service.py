@@ -313,10 +313,10 @@ class WorkItemService:
     # === 步骤实现 ===
 
     async def _resolve_project(self, project_key: str):
-        """按 feishu_project_key 解析 Project（async）；缺失返回 None。"""
-        from projects.models import Project
+        """按 feishu_project_key 解析 Space（async）；缺失返回 None。"""
+        from projects.models import Space
 
-        return await Project.objects.filter(feishu_project_key=project_key).afirst()
+        return await Space.objects.filter(feishu_project_key=project_key).afirst()
 
     @sync_to_async
     def _get_or_create_locked(
@@ -328,7 +328,7 @@ class WorkItemService:
                 feishu_project_key=identity.feishu_project_key,
                 work_item_type=identity.work_item_type,
                 work_item_id=identity.work_item_id,
-                defaults={"origin": source, "project": project},
+                defaults={"origin": source, "space": project},
             )
 
     async def _fetch(self, project, identity: WorkItemIdentity):

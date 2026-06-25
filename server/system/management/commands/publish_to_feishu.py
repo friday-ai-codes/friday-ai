@@ -79,11 +79,11 @@ class Command(BaseCommand):
 
         project_id = options.get("project")
         if project_id:
-            from projects.models import Project
+            from projects.models import Space
 
             try:
-                project = await Project.objects.aget(id=project_id)
-            except Project.DoesNotExist:
+                project = await Space.objects.aget(id=project_id)
+            except Space.DoesNotExist:
                 raise CommandError(f"项目不存在: {project_id}")
 
             if not project.has_feishu_im_config():

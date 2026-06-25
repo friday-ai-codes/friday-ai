@@ -8,9 +8,9 @@ from rest_framework.response import Response
 
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 from permissions.services import PermissionService
-from projects.models import Project
+from projects.models import Space
 
 from .members_serializers import (
     MemberAddSerializer,
@@ -21,11 +21,11 @@ from .members_serializers import (
 User = get_user_model()
 
 
-async def _get_space_or_404(space_id: str) -> Project | None:
+async def _get_space_or_404(space_id: str) -> Space | None:
     """获取空间对象，不存在时返回 404 响应数据（内部辅助）。"""
     try:
-        return await sync_to_async(Project.objects.get)(pk=space_id)
-    except Project.DoesNotExist:
+        return await sync_to_async(Space.objects.get)(pk=space_id)
+    except Space.DoesNotExist:
         return None
 
 
@@ -46,7 +46,7 @@ class SpaceMemberListView(APIView):
             return Response({"detail": "无权访问此空间"}, status=status.HTTP_403_FORBIDDEN)
 
         qs = (
-            ProjectMembership.objects.filter(project=project)
+            SpaceMembership.objects.filter(space=project)
             .select_related("user")
             .order_by("joined_at")
         )
@@ -61,7 +61,7 @@ class SpaceMemberListView(APIView):
 
         # 权限校验：需要 Admin 角色
         has_admin = await sync_to_async(PermissionService.has_project_access)(
-            request.user, project, min_role=ProjectRole.ADMIN
+            request.user, project, min_role=SpaceRole.ADMIN
         )
         if not has_admin:
             return Response({"detail": "仅空间管理员可添加成员"}, status=status.HTTP_403_FORBIDDEN)
@@ -80,19 +80,19 @@ class SpaceMemberListView(APIView):
 
         # 检查是否已是成员
         already_member = await sync_to_async(
-            ProjectMembership.objects.filter(user=target_user, project=project).exists
+            SpaceMembership.objects.filter(user=target_user, space=project).exists
         )()
         if already_member:
             return Response({"detail": "该用户已是空间成员"}, status=status.HTTP_409_CONFLICT)
 
-        membership = await sync_to_async(ProjectMembership.objects.create)(
+        membership = await sync_to_async(SpaceMembership.objects.create)(
             user=target_user,
-            project=project,
+            space=project,
             role=role,
             invited_by=request.user,
         )
         # select_related 用于序列化
-        membership = await sync_to_async(ProjectMembership.objects.select_related("user").get)(
+        membership = await sync_to_async(SpaceMembership.objects.select_related("user").get)(
             pk=membership.pk
         )
 
@@ -124,9 +124,9 @@ class SpaceMemberDetailView(APIView):
         """获取空间成员关系，不存在返回 None。"""
         try:
             return await sync_to_async(
-                ProjectMembership.objects.select_related("user", "project").get
-            )(project__pk=space_id, user__pk=user_id)
-        except ProjectMembership.DoesNotExist:
+                SpaceMembership.objects.select_related("user", "space").get
+            )(space__pk=space_id, user__pk=user_id)
+        except SpaceMembership.DoesNotExist:
             return None
 
     async def patch(self, request, space_id: str, user_id: str):
@@ -136,7 +136,7 @@ class SpaceMemberDetailView(APIView):
             return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         has_admin = await sync_to_async(PermissionService.has_project_access)(
-            request.user, project, min_role=ProjectRole.ADMIN
+            request.user, project, min_role=SpaceRole.ADMIN
         )
         if not has_admin:
             return Response(
@@ -176,7 +176,7 @@ class SpaceMemberDetailView(APIView):
             return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         has_admin = await sync_to_async(PermissionService.has_project_access)(
-            request.user, project, min_role=ProjectRole.ADMIN
+            request.user, project, min_role=SpaceRole.ADMIN
         )
         if not has_admin:
             return Response({"detail": "仅空间管理员可移除成员"}, status=status.HTTP_403_FORBIDDEN)
@@ -190,7 +190,7 @@ class SpaceMemberDetailView(APIView):
         member_repr = f"{membership.user.username} @ {project.name}"
         snapshot = {
             "user_id": str(membership.user_id),
-            "project_id": str(membership.project_id),
+            "project_id": str(membership.space_id),
             "role": membership.role,
         }
         await sync_to_async(membership.delete)()

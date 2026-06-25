@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 
+from projects.models import Space
 from workflows.models import (
     CodingTask,
     NodeExecution,
@@ -350,7 +351,10 @@ class WorkflowSerializer(serializers.ModelSerializer):
 
     nodes = WorkflowNodeSerializer(many=True, read_only=True)
     edges = WorkflowEdgeSerializer(many=True, read_only=True)
-    space_name = serializers.CharField(source="project.name", read_only=True)
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Space.objects.all(), source="space"
+    )
+    space_name = serializers.CharField(source="space.name", read_only=True)
     created_by_name = serializers.CharField(
         source="created_by.username", read_only=True, allow_null=True
     )
@@ -401,7 +405,10 @@ class WorkflowSerializer(serializers.ModelSerializer):
 class WorkflowListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for workflow list."""
 
-    space_name = serializers.CharField(source="project.name", read_only=True)
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Space.objects.all(), source="space"
+    )
+    space_name = serializers.CharField(source="space.name", read_only=True)
     node_count = serializers.SerializerMethodField()
     execution_count = serializers.SerializerMethodField()
     last_execution = serializers.SerializerMethodField()
@@ -466,6 +473,9 @@ class WorkflowCreateSerializer(serializers.ModelSerializer):
     nodes = WorkflowNodeCreateSerializer(many=True, required=False)
     edges = WorkflowEdgeCreateSerializer(many=True, required=False)
     from_import = serializers.BooleanField(required=False, default=False, write_only=True)
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Space.objects.all(), source="space"
+    )
 
     class Meta:
         model = Workflow
@@ -956,7 +966,10 @@ class AlertRuleSerializer(serializers.ModelSerializer):
     """告警规则序列化器。"""
 
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
-    space_name = serializers.CharField(source="project.name", read_only=True)
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Space.objects.all(), source="space"
+    )
+    space_name = serializers.CharField(source="space.name", read_only=True)
     condition_type_display = serializers.CharField(
         source="get_condition_type_display", read_only=True
     )

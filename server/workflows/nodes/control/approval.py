@@ -266,10 +266,10 @@ class HumanApprovalNode(BaseNode):
 
             from workflows.models import WorkflowExecution
 
-            we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+            we = await WorkflowExecution.objects.select_related("workflow__space").aget(
                 id=context.workflow_execution.id
             )
-            project = we.workflow.project if we.workflow else None
+            project = we.workflow.space if we.workflow else None
 
             if not project:
                 log.warning("plan_approval_no_project")
@@ -406,10 +406,10 @@ class HumanApprovalNode(BaseNode):
 
             from workflows.models import WorkflowExecution as WE2
 
-            we = await WE2.objects.select_related("workflow__project").aget(
+            we = await WE2.objects.select_related("workflow__space").aget(
                 id=context.workflow_execution.id
             )
-            project = we.workflow.project if we.workflow else None
+            project = we.workflow.space if we.workflow else None
 
             if not project:
                 log.warning("plan_approval_no_project_for_card")

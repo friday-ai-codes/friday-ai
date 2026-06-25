@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from permissions.models import ProjectMembership
+from permissions.models import SpaceMembership
 from repositories.models import GitCredential, Repository
 
-from .models import Project, ProjectRepository, RepositoryPermission
+from .models import Space, SpaceRepository, RepositoryPermission
 
 
 class RepositorySerializer(serializers.ModelSerializer):
@@ -54,7 +54,7 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
 
 
 class SpaceSerializer(serializers.ModelSerializer):
-    """Serializer for Space (Project) model."""
+    """Serializer for Space (Space) model."""
 
     has_feishu_config = serializers.SerializerMethodField()
     webhook_token = serializers.SerializerMethodField()
@@ -64,7 +64,7 @@ class SpaceSerializer(serializers.ModelSerializer):
     admins = serializers.SerializerMethodField()
 
     class Meta:
-        model = Project
+        model = Space
         fields = [
             "id",
             "name",
@@ -100,8 +100,8 @@ class SpaceSerializer(serializers.ModelSerializer):
         if admins is not None:
             is_admin = any(str(m.user_id) == str(user.id) for m in admins)
         else:
-            is_admin = ProjectMembership.objects.filter(
-                user=user, project=obj, role="admin"
+            is_admin = SpaceMembership.objects.filter(
+                user=user, space=obj, role="admin"
             ).exists()
         return obj.feishu_webhook_token if is_admin else None
 
@@ -140,7 +140,7 @@ class SpaceCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating Space."""
 
     class Meta:
-        model = Project
+        model = Space
         fields = ["name", "description", "feishu_project_key"]
 
 
@@ -148,7 +148,7 @@ class SpaceUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating Space."""
 
     class Meta:
-        model = Project
+        model = Space
         fields = ["name", "description", "feishu_project_key"]
         extra_kwargs = {field: {"required": False} for field in fields}
 
@@ -267,7 +267,7 @@ class RepositoryWithSpacesSerializer(RepositorySerializer):
         fields = RepositorySerializer.Meta.fields + ["spaces"]
 
     def get_spaces(self, obj):
-        return [{"id": str(p.id), "name": p.name} for p in obj.projects.all()]
+        return [{"id": str(p.id), "name": p.name} for p in obj.spaces.all()]
 
 
 class SpaceRepositorySerializer(serializers.ModelSerializer):
@@ -277,7 +277,7 @@ class SpaceRepositorySerializer(serializers.ModelSerializer):
     repository_name = serializers.CharField(source="repository.name", read_only=True)
 
     class Meta:
-        model = ProjectRepository
+        model = SpaceRepository
         fields = [
             "id",
             "repository_id",

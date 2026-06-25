@@ -273,8 +273,8 @@ class McpWorkItemContext(models.Model):
         on_delete=models.CASCADE,
         related_name="mcp_work_item_contexts",
     )
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -315,7 +315,7 @@ class McpWorkItemContext(models.Model):
             models.Index(fields=["feishu_project_key", "work_item_type", "work_item_id"]),
             models.Index(fields=["run"]),
             models.Index(fields=["status"]),
-            models.Index(fields=["project", "-created_at"]),
+            models.Index(fields=["space", "-created_at"]),
         ]
         ordering = ["-created_at"]
 
@@ -345,8 +345,8 @@ class McpWorkItemTechnicalPlan(models.Model):
         on_delete=models.CASCADE,
         related_name="technical_plans",
     )
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -399,7 +399,7 @@ class McpWorkItemTechnicalPlan(models.Model):
             models.Index(fields=["feishu_project_key", "work_item_type", "work_item_id"]),
             models.Index(fields=["run"]),
             models.Index(fields=["status"]),
-            models.Index(fields=["project", "-created_at"]),
+            models.Index(fields=["space", "-created_at"]),
         ]
         ordering = ["-created_at"]
 

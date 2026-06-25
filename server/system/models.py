@@ -174,7 +174,7 @@ class ProviderCredential(models.Model):
     - encrypted_config 字段存 Fernet 整体加密的 JSON 字符串（由 service 层显式
       encrypt_value(json.dumps(...))），不在 save() override 里自动加密，
       避免 ORM 查询副作用与 update_fields 漏加密。
-    - scope_id 用 UUIDField(null=True) 而非 FK，避免 Project 级联删除时凭证消失。
+    - scope_id 用 UUIDField(null=True) 而非 FK，避免 Space 级联删除时凭证消失。
     - last_health_check_* / available_models 字段一次性预留 implementation/229 所需，
       schema 一次到位，避免未来再加 AddField 迁移。
     """
@@ -202,7 +202,7 @@ class ProviderCredential(models.Model):
         blank=True,
         help_text=(
             "scope=PROJECT 时为 project.id；scope=SYSTEM 时为 NULL。"
-            "刻意不用 FK，避免 Project 级联删除导致凭证消失。"
+            "刻意不用 FK，避免 Space 级联删除导致凭证消失。"
         ),
     )
 

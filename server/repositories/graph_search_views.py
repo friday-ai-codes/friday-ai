@@ -95,7 +95,7 @@ class GraphSearchView(APIView):
             )
         )()
         repo_project_ids = await sync_to_async(
-            lambda: set(repo.projects.values_list("id", flat=True))
+            lambda: set(repo.spaces.values_list("id", flat=True))
         )()
         if not user.is_superuser and not (user_project_ids & repo_project_ids):
             return Response(

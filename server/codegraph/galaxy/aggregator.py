@@ -405,11 +405,11 @@ class GalaxyAggregator:
     def aggregate_repos(space_id: uuid.UUID | None = None) -> dict[str, Any]:
         """聚合仓库节点视图（L2 多仓库总览）。
 
-        节点 = Repository（仅含未软删的仓库；如有 space_id，则限定到该 Project 关联的仓库）。
+        节点 = Repository（仅含未软删的仓库；如有 space_id，则限定到该 Space 关联的仓库）。
         边   = CrossRepoApiCall 按 (caller_repo, callee_repo) 聚合成单条 REPO_API_CALL 边。
 
         Args:
-            space_id: Project UUID，None = 全部仓库。
+            space_id: Space UUID，None = 全部仓库。
 
         Returns:
             {"nodes": [...], "edges": [...], "meta": {...}}，节点 type 为 "repository"，
@@ -418,17 +418,17 @@ class GalaxyAggregator:
         # ---- 仓库节点 ----
         repo_qs = Repository.objects.filter(is_deleted=False)
         if space_id is not None:
-            repo_qs = repo_qs.filter(projects__id=space_id)
+            repo_qs = repo_qs.filter(spaces__id=space_id)
         repo_qs = repo_qs.annotate(
             endpoint_count=Count("endpoints", distinct=True),
             callsite_count=Count("api_call_sites", distinct=True),
-        ).prefetch_related("projects")
+        ).prefetch_related("spaces")
 
         nodes: list[GalaxyNode] = []
         repo_ids_in_view: set[uuid.UUID] = set()
         for repo in repo_qs:
             repo_ids_in_view.add(repo.id)
-            space_ids = [str(p.id) for p in repo.projects.all()]
+            space_ids = [str(p.id) for p in repo.spaces.all()]
             degree = int(repo.endpoint_count) + int(repo.callsite_count)
             nodes.append(
                 GalaxyNode(

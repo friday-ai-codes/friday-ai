@@ -54,7 +54,7 @@ class GitLabClient(GitPlatformClient):
         Args:
             base_url: GitLab instance URL (e.g., https://gitlab.com).
             token: GitLab personal access token.
-            project_path: Project path (e.g., namespace/project).
+            project_path: Space path (e.g., namespace/project).
         """
         self.base_url = base_url
         self.token = token

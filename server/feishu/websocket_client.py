@@ -53,7 +53,7 @@ class FeishuWebSocketClient:
         """
         self.app_id = app_id
         self.app_secret = app_secret
-        self.project_id = project_id
+        self.space_id = project_id
         self._client: WsClient | None = None
         self._running = False
 
@@ -293,7 +293,7 @@ class FeishuWebSocketClient:
         logger.info(
             "ws_client_starting",
             app_id=self.app_id,
-            project_id=self.project_id,
+            project_id=self.space_id,
         )
 
         self._running = True
@@ -443,17 +443,17 @@ def create_client_for_project(project_id: str) -> FeishuWebSocketClient:
     from django.core.exceptions import ObjectDoesNotExist
 
     from common.encryption import decrypt_value
-    from projects.models import Project
+    from projects.models import Space
 
     try:
-        project = Project.objects.get(id=project_id)
+        project = Space.objects.get(id=project_id)
     except ObjectDoesNotExist:
-        raise ValueError(f"Project not found: {project_id}")
+        raise ValueError(f"Space not found: {project_id}")
 
     # Check for Feishu IM config
     if not project.has_feishu_im_config():
         raise ValueError(
-            f"Project {project_id} does not have Feishu IM configured. "
+            f"Space {project_id} does not have Feishu IM configured. "
             "Please configure App ID and App Secret in project settings."
         )
 

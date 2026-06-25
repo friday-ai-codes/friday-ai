@@ -28,7 +28,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     from chat.models import CodingPlan
 
     plan = (
-        await CodingPlan.objects.select_related("conversation", "conversation__project")
+        await CodingPlan.objects.select_related("conversation", "conversation__space")
         .filter(id=request.source_id)
         .afirst()
     )
@@ -43,7 +43,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
 
     first_line = plan.tech_plan.splitlines()[0] if plan.tech_plan else ""
     title = plan.title or first_line[:200]
-    project_id = str(plan.conversation.project_id) if plan.conversation.project_id else None
+    project_id = str(plan.conversation.space_id) if plan.conversation.space_id else None
     return [
         IngestionEvent(
             kind=EntityKind.TECH_PLAN,
@@ -58,7 +58,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                 "affected_files": plan.affected_files,
                 "recommended_repository_ids": plan.recommended_repository_ids,
             },
-            project_id=project_id,
+            space_id=project_id,
             # 多仓方案无单一仓库归属
             repository_id=None,
             event_time=plan.updated_at,

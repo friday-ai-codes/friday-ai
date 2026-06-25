@@ -83,11 +83,11 @@ class WorkflowExecution(models.Model):
         related_name="executions",
     )
 
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.CASCADE,
         related_name="workflow_executions",
-        verbose_name="所属项目",
+        verbose_name="所属空间",
     )
 
     # 状态
@@ -233,7 +233,7 @@ class WorkflowExecution(models.Model):
         indexes = [
             models.Index(fields=["workflow", "status"]),
             models.Index(fields=["status", "created_at"]),
-            models.Index(fields=["project", "status"]),
+            models.Index(fields=["space", "status"]),
         ]
 
     def __str__(self) -> str:
@@ -998,11 +998,11 @@ class AlertRule(models.Model):
         verbose_name="关联工作流",
         help_text="null 表示全局规则（所有工作流）",
     )
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.CASCADE,
         related_name="alert_rules",
-        verbose_name="所属项目",
+        verbose_name="所属空间",
     )
     name = models.CharField(max_length=200, verbose_name="规则名称")
     enabled = models.BooleanField(default=True, verbose_name="启用")
@@ -1040,7 +1040,7 @@ class AlertRule(models.Model):
     class Meta:
         db_table = "workflow_alert_rules"
         indexes = [
-            models.Index(fields=["project", "enabled"]),
+            models.Index(fields=["space", "enabled"]),
             models.Index(fields=["workflow", "enabled"]),
         ]
 

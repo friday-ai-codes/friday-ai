@@ -2,7 +2,7 @@
 
 用户在「批量摄取」粘贴一组 ``{space, work_item_id, work_item_type?, mr_url?}``：
 
-- ``aresolve_items``：逐项把「空间」（UUID / 飞书 key / 模糊名）解析到 ``Project``，
+- ``aresolve_items``：逐项把「空间」（UUID / 飞书 key / 模糊名）解析到 ``Space``，
   拼出工作项三元组与详情 URL，返回逐项校验结果（无副作用，供前端预览/编辑）。
 - ``run_json_batch``：用 ``asyncio.Semaphore`` 控并发（默认 3、最大 10）跑每项
   ``ingest_from_refs``；429/限流的「等待重试」下沉到 embedding / Feishu 客户端的

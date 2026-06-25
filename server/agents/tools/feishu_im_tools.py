@@ -10,7 +10,7 @@ import structlog
 
 from agents.tools.base import ToolResult, tool
 from common.encryption import decrypt_value
-from projects.models import Project
+from projects.models import Space
 from services.feishu_im import CardTemplate, FeishuIMClient, FeishuIMError
 from system.models import SettingKeys, SystemSetting
 
@@ -43,14 +43,14 @@ async def _aget_system_feishu_credentials() -> tuple[str, str] | None:
     return None
 
 
-async def create_feishu_im_client_for_project(project: Project) -> FeishuIMClient:
+async def create_feishu_im_client_for_project(project: Space) -> FeishuIMClient:
     """为指定项目创建 FeishuIMClient 实例。
 
     优先使用项目的飞书 IM App 配置 (feishu_app_id/feishu_app_secret)，
     如果未配置则回退到系统级飞书 IM 配置 (SystemSetting)。
 
     Args:
-        project: Project 模型实例
+        project: Space 模型实例
 
     Returns:
         配置好的 FeishuIMClient 实例
@@ -175,8 +175,8 @@ async def send_card_message(
 
     # Get project
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         log.warning("space_not_found")
         return ToolResult(
             success=False,

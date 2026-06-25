@@ -4,7 +4,7 @@ import structlog
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
 
-from projects.models import Project
+from projects.models import Space
 from workflows.nodes.base import (
     BaseNode,
     ExecutionContext,
@@ -212,7 +212,7 @@ class FetchSpaceInfoNode(BaseNode):
                 next_handle="error",
             )
 
-    async def _find_space(self, identifier: str, identifier_type: str) -> Project | None:
+    async def _find_space(self, identifier: str, identifier_type: str) -> Space | None:
         """查找空间"""
         import uuid as uuid_mod
 
@@ -220,25 +220,25 @@ class FetchSpaceInfoNode(BaseNode):
             # 先尝试 UUID
             try:
                 uuid_mod.UUID(identifier)
-                space = await Project.objects.filter(id=identifier).afirst()
+                space = await Space.objects.filter(id=identifier).afirst()
                 if space:
                     return space
             except ValueError:
                 pass
             # 再尝试飞书项目 Key
-            return await Project.objects.filter(feishu_project_key=identifier).afirst()
+            return await Space.objects.filter(feishu_project_key=identifier).afirst()
 
         elif identifier_type == "id":
-            return await Project.objects.filter(id=identifier).afirst()
+            return await Space.objects.filter(id=identifier).afirst()
 
         elif identifier_type == "feishu_project_key":
-            return await Project.objects.filter(feishu_project_key=identifier).afirst()
+            return await Space.objects.filter(feishu_project_key=identifier).afirst()
 
         return None
 
     async def _build_output(
         self,
-        space: Project,
+        space: Space,
         include_repositories: bool,
         include_feishu_config: bool,
         include_claude_config: bool,
@@ -284,7 +284,7 @@ class FetchSpaceInfoNode(BaseNode):
                 "is_configured": space.has_feishu_config(),
             }
 
-        # implementation（contract/contract）：Project.claude_* 字段硬删；
+        # implementation（contract/contract）：Space.claude_* 字段硬删；
         # include_claude_config flag 保留为向后兼容 stub（始终返回未配置状态）。
         # 调用方应改用 include_provider_config（implementation+ 引入新字段读 ProviderCredential）。
         if include_claude_config:

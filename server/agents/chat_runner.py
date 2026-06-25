@@ -232,7 +232,7 @@ async def _get_tool_names(
     if not space_id:
         return []
     has_indexed = await Repository.objects.filter(
-        projects__id=space_id,
+        spaces__id=space_id,
         index_status="indexed",
         is_deleted=False,
     ).aexists()

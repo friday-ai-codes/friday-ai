@@ -76,7 +76,7 @@ def serialize_entity_metadata(meta: EntityMetadata) -> dict[str, Any]:
             "source_id": meta.source_id,
             "origin": meta.origin,
             "event_time": meta.event_time,
-            "project_id": meta.project_id,
+            "project_id": meta.space_id,
             "repository_id": meta.repository_id,
             "provenance": _serialize_provenance(meta.provenance),
             "superseded_hint": meta.superseded_hint,

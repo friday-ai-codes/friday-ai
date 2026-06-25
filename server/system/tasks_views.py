@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from permissions.api_permissions import IsSuperUser
-from projects.models import ProjectRepository
+from projects.models import SpaceRepository
 from repositories.models import IndexStatus, Repository
 from repositories.summary_service import derive_summary_status
 from subagent.models import SubAgentSession
@@ -39,9 +39,9 @@ def _spaces_for_repos(repo_ids: list[str]) -> dict[str, list[dict[str, str]]]:
     """批量查询一组仓库各自所属的空间（id+name），避免 N+1。"""
     if not repo_ids:
         return {}
-    rows = ProjectRepository.objects.filter(
+    rows = SpaceRepository.objects.filter(
         repository_id__in=repo_ids
-    ).values_list("repository_id", "project__id", "project__name")
+    ).values_list("repository_id", "space__id", "space__name")
     mapping: dict[str, list[dict[str, str]]] = {}
     for repo_id, project_id, project_name in rows:
         mapping.setdefault(str(repo_id), []).append(
@@ -91,7 +91,7 @@ def _active_summary_rows(space_id: str | None) -> dict[str, str]:
         id__in=list(latest_by_repo.keys()), is_deleted=False
     )
     if space_id:
-        repo_filter = repo_filter.filter(projects__id=space_id)
+        repo_filter = repo_filter.filter(spaces__id=space_id)
     alive = set(str(rid) for rid in repo_filter.values_list("id", flat=True))
     return {rid: st for rid, st in latest_by_repo.items() if rid in alive}
 
@@ -121,7 +121,7 @@ class ActiveTasksView(APIView):
                 is_deleted=False, index_status=IndexStatus.INDEXING
             )
             if space_id:
-                indexing_qs = indexing_qs.filter(projects__id=space_id)
+                indexing_qs = indexing_qs.filter(spaces__id=space_id)
             indexing_qs = indexing_qs.order_by("-updated_at").distinct()
             total_indexing = indexing_qs.count()
             page = list(indexing_qs[offset:offset + limit])

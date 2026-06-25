@@ -86,7 +86,7 @@ async def report_feishu_failure(
 
         # Get the project from the workflow execution
         workflow_execution = task.workflow_execution
-        project = workflow_execution.workflow.project
+        project = workflow_execution.workflow.space
 
         # Create Feishu client
         client = create_feishu_client_for_project(project)

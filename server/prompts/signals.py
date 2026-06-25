@@ -29,6 +29,6 @@ def prompt_post_save_handler(
         "prompt_cache_invalidated",
         slug=instance.slug,
         scope=instance.scope,
-        project_id=str(instance.project_id) if instance.project_id else None,
+        project_id=str(instance.space_id) if instance.space_id else None,
         created=created,
     )

@@ -421,19 +421,19 @@ class UserMembershipsView(APIView):
             return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         # 不在模块顶层 import，避免 accounts ↔ permissions 潜在循环依赖（对齐 MeSerializer 写法）
-        from permissions.models import ProjectMembership
+        from permissions.models import SpaceMembership
 
         def _serialize() -> list[dict]:
             qs = (
-                ProjectMembership.objects.filter(user=target_user)
-                .select_related("project")
+                SpaceMembership.objects.filter(user=target_user)
+                .select_related("space")
                 .order_by("joined_at")
             )
             return [
                 {
                     "id": str(m.id),
-                    "space_id": str(m.project_id),
-                    "space_name": m.project.name,
+                    "space_id": str(m.space_id),
+                    "space_name": m.space.name,
                     "role": m.role,
                     "joined_at": m.joined_at.isoformat() if m.joined_at else None,
                 }

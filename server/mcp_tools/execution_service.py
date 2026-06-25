@@ -19,7 +19,7 @@ from mcp_tools.models import (
     McpCodingPlan,
     McpCodingPlanVersion,
 )
-from projects.models import Project
+from projects.models import Space
 from subagent.models import SubAgentSession, TaskResult
 
 
@@ -79,13 +79,13 @@ def _generate_branch_name(version: McpCodingPlanVersion) -> str:
     return f"{branch_name}.mcp-{uuid.uuid4().hex[:6]}"
 
 
-async def _find_project_for_repository(repository_id: uuid.UUID | str) -> Project | None:
-    return await Project.objects.filter(repositories__id=repository_id).order_by("created_at").afirst()
+async def _find_project_for_repository(repository_id: uuid.UUID | str) -> Space | None:
+    return await Space.objects.filter(repositories__id=repository_id).order_by("created_at").afirst()
 
 
 async def _create_bridge_session(
     *,
-    project: Project,
+    project: Space,
     plan: McpCodingPlan,
     version: McpCodingPlanVersion,
     branch_name: str,
@@ -97,7 +97,7 @@ async def _create_bridge_session(
     def _create() -> tuple[Conversation, CodingPlan, CodingSession]:
         with transaction.atomic():
             conversation = Conversation.objects.create(
-                project=project,
+                space=project,
                 title=f"MCP execution: {plan.title}"[:200],
                 status=Conversation.Status.RUNNING,
             )

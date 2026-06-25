@@ -394,7 +394,7 @@ class ExecutionContext:
         the actual value for single-variable templates.
 
         Supports two modes:
-        1. Simple path mode: {{input.project.id}}, {{global.repositories}}
+        1. Simple path mode: {{input.space.id}}, {{global.repositories}}
         2. JSONPath mode: {{$.input.repositories[*].id}} - starts with $
 
         Examples:
@@ -438,7 +438,7 @@ class ExecutionContext:
 
         Examples:
             $.input.repositories[*].id -> extract all repository IDs
-            $.input.project.name -> get project name
+            $.input.space.name -> get project name
             $.global.repositories[-1] -> last repository
 
         Raises:

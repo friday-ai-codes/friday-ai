@@ -29,7 +29,7 @@ class RegistrationToken(models.Model):
         choices=[("global", "全局"), ("project", "项目")],
         default="global",
     )
-    project = models.ForeignKey("projects.Project", on_delete=models.CASCADE, null=True, blank=True)
+    space = models.ForeignKey("projects.Space", on_delete=models.CASCADE, null=True, blank=True)
     # GitLab 风格预设配置（创建时设定，注册时继承到 Runner）
     tags = models.JSONField(default=list, blank=True, help_text="预设标签")
     run_untagged = models.BooleanField(default=True, help_text="运行未打标签的作业")
@@ -81,7 +81,7 @@ class Runner(models.Model):
     token_hash = models.CharField(max_length=64, unique=True, db_index=True)
     token_prefix = models.CharField(max_length=8, default="")
     scope = models.CharField(max_length=20, choices=Scope.choices, default=Scope.GLOBAL)
-    projects = models.ManyToManyField("projects.Project", blank=True)
+    spaces = models.ManyToManyField("projects.Space", blank=True)
     concurrent = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OFFLINE)
     version = models.CharField(max_length=50, blank=True, default="")

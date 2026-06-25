@@ -1,6 +1,6 @@
 """飞书 IM API 客户端。
 
-独立于 FeishuClient (Project API)，使用 tenant_access_token 认证。
+独立于 FeishuClient (Space API)，使用 tenant_access_token 认证。
 用于发送群聊消息、卡片消息等 IM 功能。
 """
 
@@ -23,7 +23,7 @@ from tenacity import (
 )
 
 from common.encryption import decrypt_value
-from projects.models import Project
+from projects.models import Space
 from system.models import SettingKeys, SystemSetting
 
 if TYPE_CHECKING:
@@ -148,8 +148,8 @@ class CardTemplate:
 class FeishuIMClient:
     """飞书 IM API 客户端，使用 tenant_access_token 认证。
 
-    与 FeishuClient (Project API) 独立，因为两者使用不同的认证机制：
-    - Project API: plugin_token
+    与 FeishuClient (Space API) 独立，因为两者使用不同的认证机制：
+    - Space API: plugin_token
     - IM API: tenant_access_token (本客户端)
 
     Example:
@@ -966,7 +966,7 @@ async def _aget_system_feishu_credentials() -> tuple[str, str] | None:
     return None
 
 
-async def create_feishu_im_client_for_project(project: Project | None = None) -> FeishuIMClient:
+async def create_feishu_im_client_for_project(project: Space | None = None) -> FeishuIMClient:
     """Create a Feishu IM client from project config or system defaults."""
 
     if project and project.feishu_app_id and project.feishu_app_secret_encrypted:
@@ -979,7 +979,7 @@ async def create_feishu_im_client_for_project(project: Project | None = None) ->
     if credentials:
         return FeishuIMClient(app_id=credentials[0], app_secret=credentials[1])
 
-    fallback_project = await Project.objects.exclude(feishu_app_id__isnull=True).exclude(
+    fallback_project = await Space.objects.exclude(feishu_app_id__isnull=True).exclude(
         feishu_app_id=""
     ).exclude(feishu_app_secret_encrypted__isnull=True).exclude(
         feishu_app_secret_encrypted=""
@@ -1010,7 +1010,7 @@ class FeishuIMService:
     @classmethod
     async def create(
         cls,
-        project: Project | None = None,
+        project: Space | None = None,
         *,
         with_project_client: bool = False,
     ) -> FeishuIMService:

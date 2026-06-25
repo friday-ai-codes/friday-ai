@@ -106,7 +106,7 @@ class IngestionEvent:
     title: str
     content: str  # 提炼后全文（embedding 输入；对话原文禁止出现在此）
     payload: dict  # 结构化原文快照（落 KnowledgeEntityVersion.payload）
-    project_id: str | None
+    space_id: str | None
     repository_id: str | None
     event_time: datetime  # aware（naive 进 GraphStore / 模型层会被拒）
     edges: tuple[EdgeSpec, ...] = ()
@@ -147,7 +147,7 @@ async def ingest(request: IngestionRequest) -> int:
 
     Returns:
         normalizer 产出并交付 ``ingest_events`` 的事件数；normalizer 零产出
-        （如 Project 不存在 / 无可摄取文档）返回 ``0``。调用方据此区分「真正摄取」
+        （如 Space 不存在 / 无可摄取文档）返回 ``0``。调用方据此区分「真正摄取」
         与「静默零产出」（WR-01：避免零产出被误判为成功）。
     """
     normalize = get_normalizer(request.source_kind)
@@ -483,7 +483,7 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
                     "source_kind": event.source_kind,
                     "source_id": event.source_id,
                     "title": event.title[:500],
-                    "project_id": event.project_id,
+                    "space_id": event.space_id,
                     "repository_id": event.repository_id,
                     "event_time": event.event_time,
                 },

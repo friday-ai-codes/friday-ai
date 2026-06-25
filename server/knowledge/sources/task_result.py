@@ -97,23 +97,23 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     # ---- 归属解析（T-14-22：只走服务端权威 FK，容器回写输出零接触）----
     coding_session = (
         await CodingSession.objects.select_related(
-            "repository", "coding_plan", "conversation", "conversation__project"
+            "repository", "coding_plan", "conversation", "conversation__space"
         )
         .filter(subagent_session=session)
         .afirst()
     )
     repository = None
-    project_id: str | None = None
+    space_id: str | None = None
     if coding_session is not None:
         repository = coding_session.repository
         project_id = (
-            str(coding_session.conversation.project_id)
-            if coding_session.conversation.project_id
+            str(coding_session.conversation.space_id)
+            if coding_session.conversation.space_id
             else None
         )
     elif node_execution is not None:
         execution = node_execution.workflow_execution
-        project_id = str(execution.project_id) if execution.project_id else None
+        project_id = str(execution.space_id) if execution.space_id else None
         # 仓库归属：output_data.pending_sessions（dispatch 时服务端写入）按 session_id 匹配
         from repositories.models import Repository
 
@@ -210,7 +210,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             "total_additions": result.archive.total_additions,
             "total_deletions": result.archive.total_deletions,
         },
-        project_id=project_id,
+        space_id=project_id,
         repository_id=str(repository.id),
         event_time=event_time,
         edges=tuple(result.edge_specs),
@@ -240,7 +240,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                 "affected_files": coding_plan.affected_files,
                 "recommended_repository_ids": coding_plan.recommended_repository_ids,
             },
-            project_id=project_id,
+            space_id=project_id,
             repository_id=None,
             event_time=event_time,
             edges=implemented_by,
@@ -279,7 +279,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                     "execution_id": str(node_execution.workflow_execution_id),
                     "node_id": str(generation.node_id),
                 },
-                project_id=project_id,
+                space_id=project_id,
                 repository_id=None,
                 event_time=event_time,
                 edges=implemented_by,

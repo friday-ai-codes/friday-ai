@@ -17,7 +17,7 @@ from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.response import Response
 
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
 from prompts.models import Prompt, PromptScope
 
@@ -55,8 +55,8 @@ async def _require_write_permission(
     # project scope —— 走 PermissionService 的 sync API（sync_to_async 包装）
     has_access = await sync_to_async(PermissionService.has_project_access)(
         user,
-        prompt.project,
-        ProjectRole.ADMIN,
+        prompt.space,
+        SpaceRole.ADMIN,
     )
     if not has_access:
         return Response(
@@ -85,8 +85,8 @@ async def _require_read_permission(
         return None
     has_access = await sync_to_async(PermissionService.has_project_access)(
         user,
-        prompt.project,
-        ProjectRole.VIEWER,
+        prompt.space,
+        SpaceRole.VIEWER,
     )
     if not has_access:
         return Response(
@@ -114,7 +114,7 @@ async def _require_project_write_permission(
     has_access = await sync_to_async(PermissionService.has_project_access)(
         user,
         project,
-        ProjectRole.ADMIN,
+        SpaceRole.ADMIN,
     )
     if not has_access:
         return Response(
@@ -138,7 +138,7 @@ async def _require_project_read_permission(
     has_access = await sync_to_async(PermissionService.has_project_access)(
         user,
         project,
-        ProjectRole.VIEWER,
+        SpaceRole.VIEWER,
     )
     if not has_access:
         return Response(

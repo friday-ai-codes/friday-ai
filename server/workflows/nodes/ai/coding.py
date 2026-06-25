@@ -488,10 +488,10 @@ class AICodingNode(SubStepMixin, BaseNode):
 
             project = None
             if context.workflow_execution:
-                we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+                we = await WorkflowExecution.objects.select_related("workflow__space").aget(
                     id=context.workflow_execution.id
                 )
-                project = we.workflow.project if we.workflow else None
+                project = we.workflow.space if we.workflow else None
 
             # 强制 provider_type="anthropic"（防止上游 node_config 漂移到非 Anthropic
             # Provider；AICodingNode 容器永久 Anthropic-only）
@@ -1435,10 +1435,10 @@ class AICodingNode(SubStepMixin, BaseNode):
                 if context.workflow_execution:
                     from workflows.models import WorkflowExecution
 
-                    we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+                    we = await WorkflowExecution.objects.select_related("workflow__space").aget(
                         id=context.workflow_execution.id
                     )
-                    project = we.workflow.project if we.workflow else None
+                    project = we.workflow.space if we.workflow else None
 
                     if project:
                         from agents.tools.feishu_doc_tools import (
@@ -1976,10 +1976,10 @@ class AICodingNode(SubStepMixin, BaseNode):
 
             from workflows.models import WorkflowExecution as WE2
 
-            we = await WE2.objects.select_related("workflow__project").aget(
+            we = await WE2.objects.select_related("workflow__space").aget(
                 id=context.workflow_execution.id
             )
-            project = we.workflow.project if we.workflow else None
+            project = we.workflow.space if we.workflow else None
 
             if not project:
                 log.warning("result_notification_no_project")

@@ -40,8 +40,8 @@ class WorkItem(models.Model):
     work_item_id = models.BigIntegerField()
 
     feishu_project_simple_name = models.CharField(max_length=128, blank=True, default="")
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -81,7 +81,7 @@ class WorkItem(models.Model):
         verbose_name_plural = "工作项"
         unique_together = (("feishu_project_key", "work_item_type", "work_item_id"),)
         indexes = [
-            models.Index(fields=["project", "work_item_type"]),
+            models.Index(fields=["space", "work_item_type"]),
             models.Index(fields=["status_state_key"]),
         ]
 

@@ -14,7 +14,7 @@ CLI 用例
 
     python manage.py measure_extractor_precision \\
         --sample-repo=/path/to/vue-repo \\
-        --sub-projects=apps/courses,apps/home,packages/onion-utils \\
+        --sub-spaces=apps/courses,apps/home,packages/onion-utils \\
         --output-json=/tmp/volar_precision_report.json
 """
 

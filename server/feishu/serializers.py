@@ -34,7 +34,7 @@ class TriggerLogSerializer(serializers.ModelSerializer):
         ]
 
     def get_space_name(self, obj):
-        return obj.project.name if obj.project else None
+        return obj.space.name if obj.space else None
 
     def get_execution_status(self, obj):
         """Get the latest workflow execution status."""

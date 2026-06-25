@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from feishu.models import FeishuBotMessage, FeishuBotThread
-from projects.models import Project
+from projects.models import Space
 
 
 @dataclass(slots=True)
 class ProjectResolution:
     status: str
-    project: Project | None
+    space: Space | None
     candidates: list[str]
     reason: str
 
@@ -27,10 +27,10 @@ class ProjectResolver:
     ) -> ProjectResolution:
         haystack = self._build_haystack(message).lower()
         query_terms = [term for term in haystack.replace("：", " ").replace(":", " ").split() if term]
-        matches: list[Project] = []
+        matches: list[Space] = []
 
         projects = [
-            project async for project in Project.objects.prefetch_related("repositories").all()
+            project async for project in Space.objects.prefetch_related("repositories").all()
         ]
         for project in projects:
             aliases = {project.name, project.feishu_project_key or ""}
@@ -47,7 +47,7 @@ class ProjectResolver:
             project = next(iter(unique_matches.values()))
             return ProjectResolution(
                 status="resolved",
-                project=project,
+                space=project,
                 candidates=[project.name],
                 reason="explicit_alias_match",
             )
@@ -55,16 +55,16 @@ class ProjectResolver:
         if len(unique_matches) > 1:
             return ProjectResolution(
                 status="awaiting_project_clarification",
-                project=None,
+                space=None,
                 candidates=[project.name for project in unique_matches.values()][:5],
                 reason="ambiguous_alias_match",
             )
 
-        if thread and thread.project_id:
+        if thread and thread.space_id:
             return ProjectResolution(
                 status="resolved",
-                project=thread.project,
-                candidates=[thread.project.name] if thread.project else [],
+                space=thread.space,
+                candidates=[thread.space.name] if thread.space else [],
                 reason="thread_project_reuse",
             )
 
@@ -72,7 +72,7 @@ class ProjectResolver:
         if recent_projects is not None:
             return ProjectResolution(
                 status="resolved",
-                project=recent_projects,
+                space=recent_projects,
                 candidates=[recent_projects.name],
                 reason="recent_project_preference",
             )
@@ -80,7 +80,7 @@ class ProjectResolver:
         candidates = [project.name for project in projects[:5]]
         return ProjectResolution(
             status="awaiting_project_clarification",
-            project=None,
+            space=None,
             candidates=candidates,
             reason="no_project_match",
         )
@@ -97,23 +97,23 @@ class ProjectResolver:
         return " ".join(filter(None, [message.normalized_text, *attachments]))
 
     @staticmethod
-    async def _recent_project_preference(message: FeishuBotMessage) -> Project | None:
+    async def _recent_project_preference(message: FeishuBotMessage) -> Space | None:
         threads = [
-            thread async for thread in FeishuBotThread.objects.select_related("project").filter(
+            thread async for thread in FeishuBotThread.objects.select_related("space").filter(
                 chat_id=message.chat_id,
-                project__isnull=False,
+                space__isnull=False,
             ).order_by("-updated_at")[:3]
         ]
         if not threads:
             return None
 
         counts: dict[Any, int] = {}
-        latest: dict[Any, Project] = {}
+        latest: dict[Any, Space] = {}
         for thread in threads:
-            if thread.project_id is None or thread.project is None:
+            if thread.space_id is None or thread.space is None:
                 continue
-            counts[thread.project_id] = counts.get(thread.project_id, 0) + 1
-            latest[thread.project_id] = thread.project
+            counts[thread.space_id] = counts.get(thread.space_id, 0) + 1
+            latest[thread.space_id] = thread.space
 
         if len(counts) == 1:
             return next(iter(latest.values()))

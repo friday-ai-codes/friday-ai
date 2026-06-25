@@ -221,7 +221,7 @@ class WorkItemPrdDocumentView(APIView):
 class IngestDispatchView(APIView):
     """一键摄取触发端点（POST，IsAuthenticated，ING-01）。
 
-    校验 ``(board_url, mr_url)`` → 解析看板 URL 留痕 Project（可空）→ 建 running
+    校验 ``(board_url, mr_url)`` → 解析看板 URL 留痕 Space（可空）→ 建 running
     ``IngestRun`` → 经 ``run_in_background`` 派发 ``ingest_from_urls`` 脱离请求生命周期
     → 立即 202 返回 ``{run_id, dispatched}``（长摄取异步，避免请求阻塞，T-32-03/04）。
     """
@@ -234,13 +234,13 @@ class IngestDispatchView(APIView):
         board_url = serializer.validated_data["board_url"]
         mr_url = serializer.validated_data["mr_url"]
 
-        # 看板 URL 解析出的 Project 留痕（解析不出/未配置 → None，不阻断派发）
+        # 看板 URL 解析出的 Space 留痕（解析不出/未配置 → None，不阻断派发）
         project = None
         board = parse_board_url(board_url)
         if board is not None:
-            from projects.models import Project
+            from projects.models import Space
 
-            project = await Project.objects.filter(
+            project = await Space.objects.filter(
                 feishu_project_key=board.feishu_project_key
             ).afirst()
 
@@ -249,7 +249,7 @@ class IngestDispatchView(APIView):
             mr_url=mr_url,
             status=IngestRun.Status.RUNNING,
             steps=default_steps(),
-            project=project,
+            space=project,
         )
 
         run_id = str(run.id)
@@ -290,13 +290,13 @@ class IngestRunDetailView(APIView):
 
 
 async def _resolve_board_project(board_url: str):
-    """看板 URL 解析出的 Project 留痕（解析不出/未配置 → None，不阻断派发）。"""
+    """看板 URL 解析出的 Space 留痕（解析不出/未配置 → None，不阻断派发）。"""
     board = parse_board_url(board_url)
     if board is None:
         return None
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.filter(
+    return await Space.objects.filter(
         feishu_project_key=board.feishu_project_key
     ).afirst()
 
@@ -334,7 +334,7 @@ class IngestBatchDispatchView(APIView):
                 mr_url=mr_url,
                 status=IngestRun.Status.RUNNING,
                 steps=default_steps(),
-                project=project,
+                space=project,
             )
             run_id = str(run.id)
             run_in_background(

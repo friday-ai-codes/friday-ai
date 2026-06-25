@@ -253,7 +253,7 @@ class ConversationDrilldownView(APIView):
                 "title": conv.title,
                 "status": conv.status,
                 "model": conv.model,
-                "project_id": str(conv.project_id) if conv.project_id else None,
+                "project_id": str(conv.space_id) if conv.space_id else None,
                 "created_at": conv.created_at.isoformat(),
                 "updated_at": conv.updated_at.isoformat(),
             },

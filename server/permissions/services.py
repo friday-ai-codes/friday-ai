@@ -6,21 +6,21 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from .models import ProjectMembership, ProjectRole
+from .models import SpaceMembership, SpaceRole
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
 
     from accounts.models import User
-    from projects.models import Project
+    from projects.models import Space
 
 logger = structlog.get_logger(__name__)
 
 # 角色优先级映射：数值越大权限越高
 ROLE_PRIORITY: dict[str, int] = {
-    ProjectRole.VIEWER: 0,
-    ProjectRole.MEMBER: 1,
-    ProjectRole.ADMIN: 2,
+    SpaceRole.VIEWER: 0,
+    SpaceRole.MEMBER: 1,
+    SpaceRole.ADMIN: 2,
 }
 
 
@@ -35,8 +35,8 @@ class PermissionService:
     def has_project_access(
         cls,
         user: User,
-        project: Project,
-        min_role: str = ProjectRole.VIEWER,
+        project: Space,
+        min_role: str = SpaceRole.VIEWER,
     ) -> bool:
         """检查用户是否有指定最低角色的空间访问权限。
 
@@ -80,7 +80,7 @@ class PermissionService:
     def get_user_role(
         cls,
         user: User,
-        project: Project,
+        project: Space,
     ) -> str | None:
         """获取用户在项目中的角色。
 
@@ -88,25 +88,25 @@ class PermissionService:
             角色字符串（admin/member/viewer）或 None（非成员）
         """
         try:
-            membership = ProjectMembership.objects.get(
+            membership = SpaceMembership.objects.get(
                 user=user,
-                project=project,
+                space=project,
             )
             return membership.role
-        except ProjectMembership.DoesNotExist:
+        except SpaceMembership.DoesNotExist:
             return None
 
     @classmethod
-    def get_user_projects(cls, user: User) -> QuerySet[Project]:
+    def get_user_projects(cls, user: User) -> QuerySet[Space]:
         """获取用户所属的所有空间。
 
         superuser 返回所有项目，普通用户按 membership 过滤。
         """
-        from projects.models import Project
+        from projects.models import Space
 
         if user.is_superuser:
-            return Project.objects.all()
-        return Project.objects.filter(memberships__user=user).distinct()
+            return Space.objects.all()
+        return Space.objects.filter(memberships__user=user).distinct()
 
     @classmethod
     def can_admin_repository(cls, user: User, repository_id: str) -> bool:
@@ -120,8 +120,8 @@ class PermissionService:
             return False
         if user.is_superuser:
             return True
-        return ProjectMembership.objects.filter(
+        return SpaceMembership.objects.filter(
             user=user,
-            role=ProjectRole.ADMIN,
-            project__repositories__id=repository_id,
+            role=SpaceRole.ADMIN,
+            space__repositories__id=repository_id,
         ).exists()

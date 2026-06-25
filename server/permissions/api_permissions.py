@@ -12,7 +12,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from .models import ProjectRole
+from .models import SpaceRole
 from .services import PermissionService
 
 logger = structlog.get_logger(__name__)
@@ -52,7 +52,7 @@ class IsProjectMember(BasePermission):
             return False
 
         return PermissionService.has_project_access(
-            cast("User", request.user), project, ProjectRole.VIEWER
+            cast("User", request.user), project, SpaceRole.VIEWER
         )
 
 
@@ -76,7 +76,7 @@ class IsProjectAdmin(BasePermission):
             return False
 
         return PermissionService.has_project_access(
-            cast("User", request.user), project, ProjectRole.ADMIN
+            cast("User", request.user), project, SpaceRole.ADMIN
         )
 
 
@@ -90,7 +90,7 @@ class ProjectRolePermission(BasePermission):
     """
 
     # 写操作的最低角色，子类可覆盖（如 admin+ 用于配置端点）
-    write_min_role: str = ProjectRole.MEMBER
+    write_min_role: str = SpaceRole.MEMBER
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         return bool(request.user and request.user.is_authenticated)
@@ -108,7 +108,7 @@ class ProjectRolePermission(BasePermission):
         # 读操作：viewer+
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return PermissionService.has_project_access(
-                cast("User", request.user), project, ProjectRole.VIEWER
+                cast("User", request.user), project, SpaceRole.VIEWER
             )
 
         # 写操作：由 write_min_role 控制
@@ -121,36 +121,36 @@ def _get_project(obj: Any) -> Any:
     """从对象链式查找关联的 project。
 
     支持以下链路：
-    - obj.project
-    - obj.workflow.project
-    - obj.workflow_execution.workflow.project
-    - obj.config.workflow.project（WebhookLog）
+    - obj.space
+    - obj.workflow.space
+    - obj.workflow_execution.workflow.space
+    - obj.config.workflow.space（WebhookLog）
     """
-    # 直接有 project 属性
-    if hasattr(obj, "project"):
-        return obj.project
+    # 直接有 space 属性
+    if hasattr(obj, "space"):
+        return obj.space
 
-    # workflow -> project
+    # workflow -> space
     if hasattr(obj, "workflow"):
         workflow = obj.workflow
-        if hasattr(workflow, "project"):
-            return workflow.project
+        if hasattr(workflow, "space"):
+            return workflow.space
 
-    # workflow_execution -> workflow -> project
+    # workflow_execution -> workflow -> space
     if hasattr(obj, "workflow_execution"):
         execution = obj.workflow_execution
         if hasattr(execution, "workflow"):
             workflow = execution.workflow
-            if hasattr(workflow, "project"):
-                return workflow.project
+            if hasattr(workflow, "space"):
+                return workflow.space
 
-    # config -> workflow -> project（WebhookLog）
+    # config -> workflow -> space（WebhookLog）
     if hasattr(obj, "config"):
         config = obj.config
         if hasattr(config, "workflow"):
             workflow = config.workflow
-            if hasattr(workflow, "project"):
-                return workflow.project
+            if hasattr(workflow, "space"):
+                return workflow.space
 
     logger.warning(
         "cannot_determine_project",

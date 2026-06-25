@@ -242,14 +242,14 @@ def _user_can_reveal_secrets(request: Any, obj: ProviderCredential) -> bool:
     if getattr(user, "is_superuser", False):
         return True
     if obj.scope == "project" and obj.scope_id:
-        from permissions.models import ProjectRole
+        from permissions.models import SpaceRole
         from permissions.services import PermissionService
-        from projects.models import Project
+        from projects.models import Space
 
-        project = Project.objects.filter(id=obj.scope_id).first()
+        project = Space.objects.filter(id=obj.scope_id).first()
         if project is None:
             return False
-        return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+        return PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
     return False
 
 

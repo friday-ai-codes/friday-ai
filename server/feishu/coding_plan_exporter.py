@@ -18,7 +18,7 @@
     - 不直连飞书 HTTP：通过 ``services/feishu_doc`` 与
       ``agents/tools/feishu_doc_tools`` 已有 client / 凭证回退链路。
     - 单测 mock client：导出器允许 caller 注入 ``doc_client``，默认 ``None`` 时
-      从 ``conversation.project`` 构造凭证（生产路径）。
+      从 ``conversation.space`` 构造凭证（生产路径）。
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ async def export_coding_plan_to_feishu(
     """导出 CodingPlan 为飞书云文档。
 
     Args:
-        coding_plan: 目标方案（caller 需保证 ``conversation.project`` 可用；
+        coding_plan: 目标方案（caller 需保证 ``conversation.space`` 可用；
             ``coding_sessions`` 通过异步 ORM 查询自动拉取，无需 prefetch）。
         folder_token: 目标飞书文件夹 token。
         title: 覆盖文档标题；为 None / 空字符串时回退到 ``coding_plan.title``。
@@ -129,15 +129,15 @@ async def export_coding_plan_to_feishu(
 
 
 async def _aget_project_for_plan(coding_plan: CodingPlan) -> Any:
-    """异步获取 ``coding_plan.conversation.project``。
+    """异步获取 ``coding_plan.conversation.space``。
 
     避免触发 sync ORM 抛 ``SynchronousOnlyOperation``；显式走 async manager
     重新拉一次带 ``select_related`` 的 plan 拿到 project。
     """
     refetched = await CodingPlan.objects.select_related(
-        "conversation__project"
+        "conversation__space"
     ).aget(id=coding_plan.id)
-    return refetched.conversation.project
+    return refetched.conversation.space
 
 
 async def _aload_coding_sessions(coding_plan: CodingPlan) -> list[CodingSession]:

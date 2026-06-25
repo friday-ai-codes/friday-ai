@@ -5,7 +5,7 @@ from typing import Any
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
 from workflows.models import NodeExecution, Workflow, WorkflowExecution
 
@@ -32,18 +32,18 @@ class WorkflowPermission(BasePermission):
             return True
 
         # Check project membership
-        project = obj.project
+        project = obj.space
 
         # For read operations, check if user is project member (viewer+)
         if request.method in ["GET", "HEAD", "OPTIONS"]:
-            return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+            return PermissionService.has_project_access(user, project, SpaceRole.VIEWER)
 
         # For write operations, check if user is member+
         if request.method in ["PUT", "PATCH", "DELETE"]:
-            return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+            return PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
 
         # For POST (execute, duplicate), check member+
-        return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+        return PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
 
 
 class ExecutionPermission(BasePermission):
@@ -67,14 +67,14 @@ class ExecutionPermission(BasePermission):
 
         # Check workflow access
         workflow = obj.workflow
-        project = workflow.project
+        project = workflow.space
 
         # Read access: viewer+
         if request.method in ["GET", "HEAD", "OPTIONS"]:
-            return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+            return PermissionService.has_project_access(user, project, SpaceRole.VIEWER)
 
         # Write access (pause/resume/cancel): member+
-        return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+        return PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
 
 
 class ApprovalPermission(BasePermission):
@@ -110,8 +110,8 @@ class ApprovalPermission(BasePermission):
             return False
 
         # No specific approvers configured - allow any project member (member+)
-        project = obj.workflow_execution.workflow.project
-        return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+        project = obj.workflow_execution.workflow.space
+        return PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
 
 
 class WebhookConfigPermission(BasePermission):
@@ -131,12 +131,12 @@ class WebhookConfigPermission(BasePermission):
             return True
 
         workflow = obj.workflow
-        project = workflow.project
+        project = workflow.space
 
         if request.method in ["GET", "HEAD", "OPTIONS"]:
-            return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+            return PermissionService.has_project_access(user, project, SpaceRole.VIEWER)
 
-        return PermissionService.has_project_access(user, project, ProjectRole.ADMIN)
+        return PermissionService.has_project_access(user, project, SpaceRole.ADMIN)
 
 
 class AlertRulePermission(BasePermission):
@@ -157,21 +157,21 @@ class AlertRulePermission(BasePermission):
         if user.is_superuser:
             return True
 
-        project = obj.project
+        project = obj.space
 
         # 读操作：VIEWER+
         if request.method in ["GET", "HEAD", "OPTIONS"]:
             return PermissionService.has_project_access(
-                user, project, ProjectRole.VIEWER
+                user, project, SpaceRole.VIEWER
             )
 
         # 全局规则（workflow=null）：ADMIN+
         if obj.workflow is None:
             return PermissionService.has_project_access(
-                user, project, ProjectRole.ADMIN
+                user, project, SpaceRole.ADMIN
             )
 
         # 空间级规则：MEMBER+
         return PermissionService.has_project_access(
-            user, project, ProjectRole.MEMBER
+            user, project, SpaceRole.MEMBER
         )

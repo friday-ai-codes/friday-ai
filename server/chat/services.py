@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, Optional
 import structlog
 
 from common.encryption import decrypt_value
-from projects.models import Project
+from projects.models import Space
 from system.models import SystemSetting
 
 if TYPE_CHECKING:
@@ -187,8 +187,8 @@ def _load_project_credential_sync(project_id: int) -> tuple[str, str]:
     )
 
     try:
-        project = Project.objects.get(id=project_id)
-    except Project.DoesNotExist:
+        project = Space.objects.get(id=project_id)
+    except Space.DoesNotExist:
         raise ChatServiceError(f"找不到空间: {project_id}")
 
     # 优先走 project.default_provider_credential_id FK
@@ -236,8 +236,8 @@ async def _aload_project_credential_async(project_id: int) -> tuple[str, str]:
     )
 
     try:
-        project = await Project.objects.aget(id=project_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=project_id)
+    except Space.DoesNotExist:
         raise ChatServiceError(f"找不到空间: {project_id}")
 
     cred: Any = None
@@ -315,7 +315,7 @@ def get_chat_service(
     """Get a ChatService instance with the appropriate configuration.
 
     implementation（contract/contract）：从 ProviderCredential 读取凭证
-    （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
+    （替代 v8.1 Space.claude_* / SettingKeys.ANTHROPIC_* 路径）。
     """
     final_api_key = api_key
     final_base_url = base_url
@@ -354,7 +354,7 @@ async def aget_chat_service(
     """Get a ChatService instance — async 版本。
 
     implementation（contract/contract）：从 ProviderCredential 读取凭证
-    （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
+    （替代 v8.1 Space.claude_* / SettingKeys.ANTHROPIC_* 路径）。
     """
     from services.provider_config import aget_legacy_anthropic_config
 

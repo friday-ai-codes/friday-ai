@@ -173,10 +173,10 @@ async def _aget_system_feishu_credentials() -> tuple[str, str] | None:
 
 async def _aget_spaces() -> list[dict[str, str]]:
     """取已知空间清单（名称 + 飞书 key），供 AI 对照填 ``space``。"""
-    from projects.models import Project
+    from projects.models import Space
 
     out: list[dict[str, str]] = []
-    async for p in Project.objects.all()[:_MAX_SPACES_IN_PROMPT]:
+    async for p in Space.objects.all()[:_MAX_SPACES_IN_PROMPT]:
         out.append(
             {"name": p.name or "", "key": p.feishu_project_key or "", "id": str(p.id)}
         )

@@ -43,9 +43,9 @@ async def _get_feishu_credentials(context: ExecutionContext) -> tuple[str, str]:
         from workflows.models import WorkflowExecution
 
         we = await WorkflowExecution.objects.select_related(
-            "workflow__project"
+            "workflow__space"
         ).aget(id=context.workflow_execution.id)
-        project = we.workflow.project if we.workflow else None
+        project = we.workflow.space if we.workflow else None
 
     client = await create_feishu_im_client_for_project(project)
     return (client.app_id, client.app_secret)

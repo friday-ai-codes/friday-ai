@@ -76,8 +76,8 @@ class IngestRun(models.Model):
     # 固定形状 {work_item, document, mr_diff}，每步 {status, identifier, link, error}
     steps = models.JSONField(default=default_steps, blank=True)
     # 看板 URL 解析出的项目，留痕；解析不出留 None（SET_NULL 避免删项目抹 run）
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,

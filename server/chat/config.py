@@ -41,7 +41,7 @@ async def build_sdk_config(
 
     提取自 ConversationService.send_message_stream() 的配置构建段，
     将散落在 40+ 行中的 API key 解析、model 解析、session 创建等逻辑
-    收敛为单一函数。调用方需确保 conversation 已 select_related("project")。
+    收敛为单一函数。调用方需确保 conversation 已 select_related("space")。
 
     Returns:
         (ChatRunnerConfig, AgentSession) 元组
@@ -52,7 +52,7 @@ async def build_sdk_config(
     try:
         resolved = await ProviderConfigService.aresolve(
             conversation=conversation,
-            project=conversation.project,
+            project=conversation.space,
         )
     except ProviderConfigError as e:
         raise ValueError(str(e)) from e
@@ -75,9 +75,9 @@ async def build_sdk_config(
     session_id = f"chat-{conversation.id}-{uuid.uuid4().hex[:8]}"
     # 无空间对话：project 可空。space_id 传空串 → chat_runner 不注入任何
     # 空间工具；context line 引导 LLM 在任务涉及空间知识时要求用户先选空间。
-    has_project = conversation.project_id is not None
-    project_name = conversation.project.name if has_project else ""
-    project_id = str(conversation.project_id) if has_project else ""
+    has_project = conversation.space_id is not None
+    project_name = conversation.space.name if has_project else ""
+    project_id = str(conversation.space_id) if has_project else ""
     effective_project_context_line = project_context_line
     if effective_project_context_line is None:
         if has_project:
@@ -87,7 +87,7 @@ async def build_sdk_config(
 
     agent_session = await AgentSession.objects.acreate(
         session_id=session_id,
-        project=conversation.project,
+        space=conversation.space,
         user=None,
         status=AgentSession.Status.RUNNING,
         metadata={

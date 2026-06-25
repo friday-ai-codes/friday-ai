@@ -38,7 +38,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
 
     try:
         # Load session
-        session = await AgentSession.objects.select_related("project", "user").aget(
+        session = await AgentSession.objects.select_related("space", "user").aget(
             session_id=session_id
         )
 
@@ -107,7 +107,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
             resolved_model = cc["default_model"]
         else:
             resolve_result = await ProviderConfigService.aresolve_or_error(
-                project=session.project
+                project=session.space
             )
             if isinstance(resolve_result, ProviderMissingError):
                 raise ValueError(
@@ -126,7 +126,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
         runner_config = SdkRunnerConfig(
             system_prompt=system_prompt,
             model=resolved_model,
-            space_id=str(session.project_id) if session.project_id else "",
+            space_id=str(session.space_id) if session.space_id else "",
             session_id=session_id,
             api_key=resolved_api_key,
             api_base_url=resolved_base_url,

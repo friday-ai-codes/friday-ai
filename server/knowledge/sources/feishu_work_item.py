@@ -8,7 +8,7 @@ get_work_item_relations / PRD 与技术方案文档正文全部在此（backgrou
 
 降级语义（13 范式：部分缺料降配不 raise）：
 
-- project_key 查无 Project / get_work_item 失败 → 空列表 + warning（源缺失）；
+- project_key 查无 Space / get_work_item 失败 → 空列表 + warning（源缺失）；
 - get_work_item_relations 失败 → 空关联列表 + warning，事件照常产出；
 - 单文档（PRD / 技术方案）拉取失败 → 快照不含该正文段 + warning，事件照常产出。
 
@@ -168,7 +168,7 @@ async def _fetch_doc_body(doc_client, token: str, *, request: IngestionRequest, 
 async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     """飞书工作项三元组 → 全量快照单事件；源缺失返回空列表，部分缺料降配。"""
     from feishu.models import KeyFields
-    from projects.models import Project
+    from projects.models import Space
 
     parts = request.source_id.split(":", 2)
     if len(parts) != 3 or not all(parts):
@@ -181,7 +181,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         return []
     project_key, work_item_type, work_item_id_raw = parts
 
-    project = await Project.objects.filter(feishu_project_key=project_key).afirst()
+    project = await Space.objects.filter(feishu_project_key=project_key).afirst()
     if project is None:
         logger.warning(
             "knowledge_normalize_source_missing",
@@ -321,7 +321,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                 "comment_count": comment_count,
             },
             # T-14-20：project_id 恒带（Phase 15 检索权限过滤的前提）
-            project_id=str(project.id),
+            space_id=str(project.id),
             repository_id=None,
             event_time=_parse_event_time(fields),
         )

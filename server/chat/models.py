@@ -1,6 +1,6 @@
 """对话数据模型：Conversation 和 Message。
 
-定义对话系统的核心数据结构。Conversation 绑定 Project，
+定义对话系统的核心数据结构。Conversation 绑定 Space，
 Message 支持 user/assistant/system/tool 四种角色，
 用于存储完整的对话历史（含工具调用记录）。
 """
@@ -13,7 +13,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
-from projects.models import Project
+from projects.models import Space
 
 logger = structlog.get_logger(__name__)
 
@@ -41,8 +41,8 @@ class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # 可空：允许不绑定空间的「通用对话」。无空间时检索/编码工具不可用，
     # system prompt 会引导用户在需要空间知识时先选择空间。
-    project = models.ForeignKey(
-        Project,
+    space = models.ForeignKey(
+        Space,
         null=True,
         blank=True,
         on_delete=models.CASCADE,

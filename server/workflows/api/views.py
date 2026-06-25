@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from common.exceptions import TriggerValidationError
 from common.short_id import generate_unique_short_id
 from permissions.mixins import ProjectScopedQuerysetMixin
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
 from workflows.api.permissions import (
     AlertRulePermission,
@@ -406,7 +406,7 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = Workflow.objects.all()
     serializer_class = WorkflowSerializer
     permission_classes = [IsAuthenticated, WorkflowPermission]
-    project_field = "project"
+    project_field = "space"
 
     async def perform_acreate(self, serializer):
         # KEEP: serializer 继承自 rest_framework，不支持 asave()
@@ -430,12 +430,12 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         return WorkflowSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset().select_related("project", "created_by")
+        queryset = super().get_queryset().select_related("space", "created_by")
 
         # Filter by space
         space_id = self.request.query_params.get("space_id")
         if space_id:
-            queryset = queryset.filter(project_id=space_id)
+            queryset = queryset.filter(space_id=space_id)
 
         # Filter by active status
         is_active = self.request.query_params.get("is_active")
@@ -532,9 +532,9 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
 
         new_project = None
         if new_space_id:
-            from projects.models import Project
+            from projects.models import Space
 
-            new_project = await aget_object_or_404(Project, id=new_space_id)
+            new_project = await aget_object_or_404(Space, id=new_space_id)
 
         new_workflow = await workflow.aclone(new_project=new_project, new_name=new_name)
         new_workflow.created_by = request.user
@@ -567,9 +567,9 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from projects.models import Project
+        from projects.models import Space
 
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
 
         # 入库前统一图校验（VAL-02）：解析出的 nodes/edges 与保存同源调 validator。
         # 导入数据的 nodes 自带 id/short_id/node_type/config，edges 用 source_node_id/
@@ -881,7 +881,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         "head",
         "options",
     ]  # No create/update, post for actions
-    project_field = "workflow__project"
+    project_field = "workflow__space"
 
     def get_serializer_class(self):
         if self.action in ["list", "alist"]:
@@ -904,7 +904,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         # Filter by space
         space_id = self.request.query_params.get("space_id")
         if space_id:
-            queryset = queryset.filter(workflow__project_id=space_id)
+            queryset = queryset.filter(workflow__space_id=space_id)
 
         # Filter by status
         exec_status = self.request.query_params.get("status")
@@ -958,7 +958,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
         def _batch_delete() -> dict:
             executions = list(
                 WorkflowExecution.objects.filter(id__in=uuid_ids).select_related(
-                    "workflow__project"
+                    "workflow__space"
                 )
             )
             found_ids = {e.id for e in executions}
@@ -972,11 +972,11 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
 
             for execution in executions:
                 if not user.is_superuser:
-                    project = execution.workflow.project
+                    project = execution.workflow.space
                     allowed = project_admin_cache.get(project.id)
                     if allowed is None:
                         allowed = PermissionService.has_project_access(
-                            user, project, ProjectRole.ADMIN
+                            user, project, SpaceRole.ADMIN
                         )
                         project_admin_cache[project.id] = allowed
                     if not allowed:
@@ -1378,7 +1378,7 @@ class NodeExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
     queryset = NodeExecution.objects.all()
     serializer_class = NodeExecutionSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "workflow_execution__workflow__project"
+    project_field = "workflow_execution__workflow__space"
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("node", "workflow_execution")
@@ -1652,7 +1652,7 @@ class WebhookConfigViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = WebhookConfig.objects.all()
     serializer_class = WebhookConfigSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "workflow__project"
+    project_field = "workflow__space"
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("workflow")
@@ -1670,7 +1670,7 @@ class WebhookLogViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
     queryset = WebhookLog.objects.all()
     serializer_class = WebhookLogSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "webhook_config__workflow__project"
+    project_field = "webhook_config__workflow__space"
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("webhook_config", "execution")
@@ -1697,7 +1697,7 @@ class WorkflowTriggerViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = WorkflowTrigger.objects.all()
     serializer_class = WorkflowTriggerSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "workflow__project"
+    project_field = "workflow__space"
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -1805,7 +1805,7 @@ class NodeResolvedProviderView(APIView):
 
     async def get(self, request: Request, workflow_id, node_id) -> Response:
         """返回 workflow 指定 node 的四层 Provider 解析链。"""
-        from permissions.models import ProjectRole
+        from permissions.models import SpaceRole
         from permissions.services import PermissionService
         from services.provider_config import (
             ProviderConfigService,
@@ -1817,8 +1817,8 @@ class NodeResolvedProviderView(APIView):
         try:
             node = await WorkflowNode.objects.select_related(
                 "workflow",
-                "workflow__project",
-                "workflow__project__default_provider_credential_id",
+                "workflow__space",
+                "workflow__space__default_provider_credential_id",
             ).aget(id=node_id, workflow_id=workflow_id)
         except WorkflowNode.DoesNotExist:
             return Response(
@@ -1830,7 +1830,7 @@ class NodeResolvedProviderView(APIView):
         user = request.user
         if not getattr(user, "is_superuser", False):
             has_access = await sync_to_async(PermissionService.has_project_access)(
-                user, node.workflow.project, ProjectRole.VIEWER
+                user, node.workflow.space, SpaceRole.VIEWER
             )
             if not has_access:
                 return Response(
@@ -1843,7 +1843,7 @@ class NodeResolvedProviderView(APIView):
         chain_result = await ProviderConfigService.aresolve_with_chain(
             node_config=node_config,
             conversation=None,
-            project=node.workflow.project,
+            project=node.workflow.space,
         )
 
         resolved_provider_payload: dict | None = None
@@ -2050,7 +2050,7 @@ class CodingTaskViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = CodingTask.objects.all()
     serializer_class = CodingTaskSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "workflow_execution__workflow__project"
+    project_field = "workflow_execution__workflow__space"
 
     def get_serializer_class(self):
         if self.action in ["list", "alist"]:
@@ -2285,10 +2285,10 @@ class AlertRuleViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
     queryset = AlertRule.objects.all()
     serializer_class = AlertRuleSerializer
     permission_classes = [IsAuthenticated, AlertRulePermission]
-    project_field = "project"
+    project_field = "space"
 
     def get_queryset(self):
-        queryset = super().get_queryset().select_related("workflow", "project")
+        queryset = super().get_queryset().select_related("workflow", "space")
 
         workflow_id = self.request.query_params.get("workflow_id")
         if workflow_id:
@@ -2325,7 +2325,7 @@ class AlertRuleExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet
     queryset = AlertRuleExecution.objects.all()
     serializer_class = AlertRuleExecutionSerializer
     permission_classes = [IsAuthenticated]
-    project_field = "alert_rule__project"
+    project_field = "alert_rule__space"
 
     def get_queryset(self):
         queryset = (

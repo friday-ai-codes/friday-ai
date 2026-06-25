@@ -193,7 +193,7 @@ def create_workflow_from_template(
     workflow = Workflow.objects.create(
         name=name or template.get("name", template_id),
         description=description or template.get("description", ""),
-        project_id=space_id,
+        space_id=space_id,
         created_by=created_by,
         trigger_type="manual",
         metadata={
@@ -285,7 +285,7 @@ async def acreate_workflow_from_template(
     workflow = await Workflow.objects.acreate(
         name=name or template.get("name", template_id),
         description=description or template.get("description", ""),
-        project_id=space_id,
+        space_id=space_id,
         created_by=created_by,
         trigger_type="manual",
         metadata={

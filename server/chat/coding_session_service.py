@@ -225,12 +225,12 @@ async def create_sub_session(
     from subagent.models import SubAgentSession
 
     repo = coding_session.repository
-    project = coding_session.conversation.project
+    project = coding_session.conversation.space
 
     session_id_str = f"coding-{uuid_mod.uuid4().hex[:12]}"
     agent_session = await AgentSession.objects.acreate(
         session_id=f"agent-{session_id_str}",
-        project=project,
+        space=project,
         status=AgentSession.Status.RUNNING,
         metadata={
             "source": "coding_session_confirm",
@@ -466,7 +466,7 @@ async def create_sessions_for_plan(
     per-repository 独立校验 + 独立 ``transaction.atomic()``，部分失败不阻塞其他仓库。
 
     校验链（per repo）：
-      1. repository_id 属于 ``plan.conversation.project.repositories``
+      1. repository_id 属于 ``plan.conversation.space.repositories``
       2. 不在 ``(plan, repo)`` 既有 active sessions 中（work item 约束前置应用层校验）
       3. ``validate_branch_name`` 本地 + DB 唯一性校验通过（``git_client=None``
          跳过远程 refs 检查，远程检查由后续 confirm 流程的 dispatch_coding_task
@@ -474,7 +474,7 @@ async def create_sessions_for_plan(
       4. ``transaction.atomic()`` 内 ``acreate``；捕获 IntegrityError 兜底（race）
 
     **调用方约束**：``plan`` 必须预先 ``select_related("conversation",
-    "conversation__project")``，否则 ``plan.conversation.project`` 会触发同步
+    "conversation__space")``，否则 ``plan.conversation.space`` 会触发同步
     DB 访问报错（async context）。
     """
     from chat.branch_service import DEFAULT_TARGET_BRANCH, validate_branch_name
@@ -486,8 +486,8 @@ async def create_sessions_for_plan(
     if not repository_ids:
         return result
 
-    # 1) 一次性拉所有合法 repository（属于 plan.conversation.project）
-    project = plan.conversation.project
+    # 1) 一次性拉所有合法 repository（属于 plan.conversation.space）
+    project = plan.conversation.space
     valid_repos = [
         r
         async for r in project.repositories.filter(id__in=repository_ids)

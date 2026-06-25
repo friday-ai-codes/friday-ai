@@ -28,7 +28,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
 
     body = _strategy_default_body()
     try:
-        prompt = Prompt.objects.get(slug=SEED_SLUG, scope="system", project=None)
+        prompt = Prompt.objects.get(slug=SEED_SLUG, scope="system")
     except Prompt.DoesNotExist:
         return
 

@@ -54,10 +54,10 @@ async def _entity_visible_metadata(entity_id: uuid.UUID, *, user, as_of=None, in
         entity = await KnowledgeEntity.objects.aget(id=entity_id)
     except KnowledgeEntity.DoesNotExist:
         return None
-    if entity.project_id is None:
+    if entity.space_id is None:
         return None
     allowed = await resolve_allowed_project_ids(user)
-    if str(entity.project_id) not in allowed:
+    if str(entity.space_id) not in allowed:
         return None
 
     from django.db.models import Q

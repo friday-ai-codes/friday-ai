@@ -28,7 +28,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
 
     body = _PLAN_GENERATION_BASE_PROMPT
     try:
-        prompt = Prompt.objects.get(slug=_SLUG, scope="system", project=None)
+        prompt = Prompt.objects.get(slug=_SLUG, scope="system")
     except Prompt.DoesNotExist:
         return
 

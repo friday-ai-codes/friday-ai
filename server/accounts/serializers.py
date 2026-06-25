@@ -56,13 +56,13 @@ class MeSerializer(serializers.ModelSerializer):
 
     def get_space_memberships(self, obj: User) -> list[dict[str, str]]:
         # 注意：此方法在同步上下文中调用（由调用方 sync_to_async 包装）
-        from permissions.models import ProjectMembership
+        from permissions.models import SpaceMembership
 
-        memberships = ProjectMembership.objects.filter(user=obj).select_related("project")
+        memberships = SpaceMembership.objects.filter(user=obj).select_related("space")
         return [
             {
-                "space_id": str(m.project.id),
-                "space_name": m.project.name,
+                "space_id": str(m.space.id),
+                "space_name": m.space.name,
                 "role": m.role,
             }
             for m in memberships

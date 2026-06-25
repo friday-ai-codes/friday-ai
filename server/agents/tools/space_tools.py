@@ -1,5 +1,5 @@
 """
-Project and repository query tools for the Agent.
+Space and repository query tools for the Agent.
 
 Provides tools for querying space data, repository information,
 and semantic code search via Qdrant vectors.
@@ -12,7 +12,7 @@ from typing import Any
 import structlog
 
 from agents.tools.base import ToolResult, tool
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 
@@ -151,8 +151,8 @@ async def list_space_repositories(space_id: str) -> ToolResult:
 
     try:
         # Async query for space
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         logger.warning("project_not_found", space_id=space_id)
         return ToolResult(
             success=True,
@@ -174,7 +174,7 @@ async def list_space_repositories(space_id: str) -> ToolResult:
             "index_status": repo.index_status,
         }
         async for repo in Repository.objects.filter(
-            projects=project,
+            spaces=project,
             is_deleted=False,
         ).select_related()
     ]
@@ -245,7 +245,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
         )
 
     # Use async for M2M space query
-    projects = [{"id": str(p.id), "name": p.name} async for p in repo.projects.all()]
+    projects = [{"id": str(p.id), "name": p.name} async for p in repo.spaces.all()]
 
     logger.info(
         "get_repository_info_success",
@@ -422,8 +422,8 @@ async def search_repository_code(
             )
     elif space_id:
         try:
-            project = await Project.objects.aget(id=space_id)
-        except Project.DoesNotExist:
+            project = await Space.objects.aget(id=space_id)
+        except Space.DoesNotExist:
             return ToolResult(
                 success=True,
                 output={
@@ -435,7 +435,7 @@ async def search_repository_code(
         project_repo_ids = [
             str(rid)
             async for rid in Repository.objects.filter(
-                projects=project,
+                spaces=project,
                 is_deleted=False,
                 index_status="indexed",
             ).values_list("id", flat=True)

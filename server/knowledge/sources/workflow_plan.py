@@ -79,7 +79,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         await NodeExecution.objects.select_related(
             "workflow_execution",
             "workflow_execution__workflow",
-            "workflow_execution__project",
+            "workflow_execution__space",
             "node",
         )
         .filter(
@@ -100,9 +100,9 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         return []
 
     execution = node_execution.workflow_execution
-    project = execution.project
+    project = execution.space
     # T-14-13：project_id 恒从 execution 关联 project 取；无 project 时显式 None
-    project_id = str(execution.project_id) if execution.project_id else None
+    project_id = str(execution.space_id) if execution.space_id else None
 
     title = str(plan.get("title") or "技术方案")
     summary = str(plan.get("summary") or "")
@@ -149,7 +149,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         title=title,
         content=content,
         payload=payload,
-        project_id=project_id,
+        space_id=project_id,
         repository_id=None,
         event_time=event_time,
     )
@@ -186,7 +186,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             "work_item_type": work_item_type,
             "work_item_id": work_item_id,
         },
-        project_id=project_id,
+        space_id=project_id,
         repository_id=None,
         event_time=event_time,
         edges=(

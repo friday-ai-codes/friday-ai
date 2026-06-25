@@ -91,7 +91,7 @@ async def check_timeout_reminders() -> dict[str, Any]:
         status=AgentSession.Status.SUSPENDED,
         suspended_at__lt=reminder_cutoff,
         suspended_at__gte=timeout_cutoff,
-    ).select_related("project")
+    ).select_related("space")
 
     async for session in sessions.aiterator():
         session_log = log.bind(session_id=session.session_id)
@@ -110,7 +110,7 @@ async def check_timeout_reminders() -> dict[str, Any]:
                 continue
 
             # Get project credentials for Feishu client
-            project = session.project
+            project = session.space
             if project is None:
                 session_log.warning("no_project_in_session")
                 continue

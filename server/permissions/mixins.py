@@ -18,16 +18,16 @@ class ProjectScopedQuerysetMixin:
     用法::
 
         class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
-            project_field = "project"  # 默认值
+            project_field = "space"  # 默认值
 
         class ExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
-            project_field = "workflow__project"  # 跨表查询
+            project_field = "workflow__space"  # 跨表查询
 
     注意 MRO：此 Mixin 必须在 ModelViewSet/ReadOnlyModelViewSet 之前继承。
     """
 
-    # 到 project 的查询路径，子类可覆盖
-    project_field: str = "project"
+    # 到 space 的查询路径，子类可覆盖
+    project_field: str = "space"
 
     def get_queryset(self) -> Any:
         qs = super().get_queryset()  # type: ignore[misc]

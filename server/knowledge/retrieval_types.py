@@ -45,7 +45,7 @@ class EntityMetadata:
     source_id: str
     origin: str
     event_time: datetime | None
-    project_id: str | None
+    space_id: str | None
     repository_id: str | None
     provenance: ProvenanceLinks = field(default_factory=ProvenanceLinks)
     superseded_hint: str | None = None

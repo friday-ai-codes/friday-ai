@@ -182,7 +182,7 @@ async def _filter_repos_in_space(
         kept = [
             str(rid)
             async for rid in Repository.objects.filter(
-                id__in=include_repos, projects__id=space_id, is_deleted=False
+                id__in=include_repos, spaces__id=space_id, is_deleted=False
             ).values_list("id", flat=True)
         ]
     except Exception:  # noqa: BLE001 — best-effort 过滤，非法 UUID 等降级为空

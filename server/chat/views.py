@@ -32,7 +32,7 @@ from common.request_metrics import arecord_request_metric, classify_error
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
 from orchestration.coding_graph import build_coding_graph
-from projects.models import Project
+from projects.models import Space
 
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
 from .conversation_service import ConversationService
@@ -388,8 +388,8 @@ class ConversationListView(APIView):
         # 验证 project 存在（仅在指定了空间时）
         if space_id is not None:
             try:
-                await Project.objects.aget(id=space_id)
-            except Project.DoesNotExist:
+                await Space.objects.aget(id=space_id)
+            except Space.DoesNotExist:
                 return Response(
                     {"error": f"空间不存在: {space_id}"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -455,8 +455,8 @@ class ConversationDetailView(APIView):
         # implementation contract contract：四层 Provider 解析 Inspector
         # 预取 FK（async 上下文禁止触发 SynchronousOnlyOperation）
         conversation_prefetched = await Conversation.objects.select_related(
-            "project",
-            "project__default_provider_credential_id",
+            "space",
+            "space__default_provider_credential_id",
             "provider_credential_id",
         ).aget(id=conversation.id)
 
@@ -469,7 +469,7 @@ class ConversationDetailView(APIView):
         chain_result = await ProviderConfigService.aresolve_with_chain(
             node_config=None,
             conversation=conversation_prefetched,
-            project=conversation_prefetched.project,
+            project=conversation_prefetched.space,
         )
         resolved_provider_payload: dict | None = None
         if isinstance(chain_result, ResolvedProviderChain):
@@ -543,7 +543,7 @@ class ConversationDetailView(APIView):
         # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
         response_data = {
             "id": str(conversation.id),
-            "space_id": str(conversation.project_id) if conversation.project_id else None,
+            "space_id": str(conversation.space_id) if conversation.space_id else None,
             "title": conversation.title,
             "model": conversation.model,
             "status": conversation.status,
@@ -706,7 +706,7 @@ class ConversationDetailView(APIView):
         return Response(
             {
                 "id": str(conversation.id),
-                "space_id": str(conversation.project_id) if conversation.project_id else None,
+                "space_id": str(conversation.space_id) if conversation.space_id else None,
                 "title": conversation.title,
                 "model": conversation.model,
                 "status": conversation.status,
@@ -759,8 +759,8 @@ class ConversationPreflightView(APIView):
             # conversation.provider_credential_id / project.default_provider_credential_id
             # 时触发 SynchronousOnlyOperation
             conversation = await Conversation.objects.select_related(
-                "project",
-                "project__default_provider_credential_id",
+                "space",
+                "space__default_provider_credential_id",
                 "provider_credential_id",
             ).aget(
                 id=conversation_id,
@@ -795,20 +795,20 @@ class ConversationPreflightView(APIView):
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
-            and conversation.project_id is not None
+            and conversation.space_id is not None
             # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
             # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
             and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
-                user, conversation.project, "viewer"
+                user, conversation.space, "viewer"
             )
             if not has_access:
                 logger.warning(
                     "chat.preflight_denied_cross_project",
                     user_id=str(getattr(user, "id", "")),
                     conversation_id=str(conversation.id),
-                    space_id=str(conversation.project_id),
+                    space_id=str(conversation.space_id),
                 )
                 return Response(
                     {"detail": "无权访问该对话"},
@@ -824,7 +824,7 @@ class ConversationPreflightView(APIView):
         result = await ProviderConfigService.aresolve_or_error(
             node_config=None,
             conversation=conversation,
-            project=conversation.project,
+            project=conversation.space,
         )
 
         if isinstance(result, ProviderMissingError):
@@ -910,7 +910,7 @@ class ConversationMessagesDeleteView(APIView):
         - ``before_id`` 必填；空/缺失 → 400
         - ``conversation_id`` 不存在 → 404
         - ``before_id`` 指向的消息不属于本 conversation → 400（防跨 conversation 篡改）
-        - Ownership 校验：非 superuser 必须有 conversation.project MEMBER+ 权限；
+        - Ownership 校验：非 superuser 必须有 conversation.space MEMBER+ 权限；
           跨项目越权 → 403 + audit log ``chat.cleanup_denied_cross_project``
         - 成功返回 ``{"deleted_count": N}`` + audit log ``chat.messages_cleaned``
 
@@ -927,7 +927,7 @@ class ConversationMessagesDeleteView(APIView):
         summary="批量删除对话历史消息",
         description=(
             "硬删 before_id 之前的所有消息（created_at 升序）。受 ownership 校验；"
-            "conversation.project 需 user 有 MEMBER+ 权限（superuser 豁免）。"
+            "conversation.space 需 user 有 MEMBER+ 权限（superuser 豁免）。"
             "implementation contract contract。"
         ),
         responses={
@@ -954,7 +954,7 @@ class ConversationMessagesDeleteView(APIView):
 
         # 2. 对话存在性
         try:
-            conversation = await Conversation.objects.select_related("project").aget(
+            conversation = await Conversation.objects.select_related("space").aget(
                 id=conversation_id,
                 is_deleted=False,
             )
@@ -980,20 +980,20 @@ class ConversationMessagesDeleteView(APIView):
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
-            and conversation.project_id is not None
+            and conversation.space_id is not None
             # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
             # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
             and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
-                user, conversation.project, "member"
+                user, conversation.space, "member"
             )
             if not has_access:
                 logger.warning(
                     "chat.cleanup_denied_cross_project",
                     user_id=str(getattr(user, "id", "")),
                     conversation_id=str(conversation.id),
-                    space_id=str(conversation.project_id),
+                    space_id=str(conversation.space_id),
                 )
                 return Response(
                     {"detail": "无权删除其他项目的对话消息"},
@@ -1062,7 +1062,7 @@ class ConversationMessageForkView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            conversation = await Conversation.objects.select_related("project").aget(
+            conversation = await Conversation.objects.select_related("space").aget(
                 id=conversation_id,
                 is_deleted=False,
             )
@@ -1089,20 +1089,20 @@ class ConversationMessageForkView(APIView):
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
-            and conversation.project_id is not None
+            and conversation.space_id is not None
             # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403；
             # 次层 has_project_access 仅作 null-owner/共享行的兜底（保留既有语义）。
             and conversation.created_by_id != user.id
         ):
             has_access = await sync_to_async(PermissionService.has_project_access)(
-                user, conversation.project, "member"
+                user, conversation.space, "member"
             )
             if not has_access:
                 logger.warning(
                     "chat.fork_denied_cross_project",
                     user_id=str(getattr(user, "id", "")),
                     conversation_id=str(conversation.id),
-                    space_id=str(conversation.project_id),
+                    space_id=str(conversation.space_id),
                 )
                 return Response(
                     {"detail": "无权编辑该对话"},
@@ -1130,7 +1130,7 @@ class ConversationMessageForkView(APIView):
         messages = result["messages"]
         response_data = {
             "id": str(forked.id),
-            "space_id": str(forked.project_id) if forked.project_id else None,
+            "space_id": str(forked.space_id) if forked.space_id else None,
             "title": forked.title,
             "model": forked.model,
             "status": forked.status,
@@ -1542,7 +1542,7 @@ class ExportToFeishuView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            conversation = await Conversation.objects.select_related("project").aget(
+            conversation = await Conversation.objects.select_related("space").aget(
                 id=conversation_id,
                 is_deleted=False,
             )
@@ -1558,7 +1558,7 @@ class ExportToFeishuView(APIView):
         ):
             return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
-        project = conversation.project
+        project = conversation.space
         if project is None:
             # 无空间通用对话：没有飞书凭证与文件夹来源，导出不可用
             return Response(
@@ -1668,8 +1668,8 @@ class FeishuExportAvailabilityView(APIView):
             return Response({"available": False, "reason": "no_space"})
 
         try:
-            project = await Project.objects.aget(id=space_id)
-        except (Project.DoesNotExist, ValueError, ValidationError):
+            project = await Space.objects.aget(id=space_id)
+        except (Space.DoesNotExist, ValueError, ValidationError):
             return Response({"available": False, "reason": "space_not_found"})
 
         if not project.feishu_doc_folder_token:
@@ -1715,7 +1715,7 @@ class ExportCodingPlanToFeishuView(APIView):
 
         try:
             coding_plan = await CodingPlan.objects.select_related(
-                "conversation__project"
+                "conversation__space"
             ).aget(id=coding_plan_id)
         except CodingPlan.DoesNotExist:
             return Response(
@@ -1735,7 +1735,7 @@ class ExportCodingPlanToFeishuView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        project = coding_plan.conversation.project
+        project = coding_plan.conversation.space
         title = serializer.validated_data.get("title") or None
         folder_token = (
             serializer.validated_data.get("folder_token")
@@ -1812,7 +1812,7 @@ class CodingSessionConfirmView(APIView):
         # 1. 获取 CodingSession
         try:
             coding_session = await CodingSession.objects.select_related(
-                "repository", "conversation__project"
+                "repository", "conversation__space"
             ).aget(id=session_id)
         except CodingSession.DoesNotExist:
             return Response(
@@ -2471,7 +2471,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
     )
     async def post(self, request, plan_id):  # type: ignore[override]
         from chat.coding_session_service import create_sessions_for_plan
-        from permissions.models import ProjectRole
+        from permissions.models import SpaceRole
         from permissions.services import PermissionService
 
         from .models import CodingPlan
@@ -2483,7 +2483,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
         # 2) CodingPlan 存在性
         try:
             plan = await CodingPlan.objects.select_related(
-                "conversation", "conversation__project"
+                "conversation", "conversation__space"
             ).aget(id=plan_id)
         except CodingPlan.DoesNotExist:
             return Response(
@@ -2513,8 +2513,8 @@ class CodingPlanSessionsBatchCreateView(APIView):
         if not getattr(user, "is_superuser", False) and not is_owner:
             allowed = await sync_to_async(PermissionService.has_project_access)(
                 user=user,
-                project=plan.conversation.project,
-                min_role=ProjectRole.MEMBER,
+                project=plan.conversation.space,
+                min_role=SpaceRole.MEMBER,
             )
             if not allowed:
                 return Response(
@@ -2583,7 +2583,7 @@ class RoutingTraceManualOverrideView(APIView):
 
         try:
             original = await RepositoryRoutingTrace.objects.select_related(
-                "conversation", "conversation__project"
+                "conversation", "conversation__space"
             ).aget(id=trace_id)
         except RepositoryRoutingTrace.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -2609,7 +2609,7 @@ class RoutingTraceManualOverrideView(APIView):
         # （不 bypass 上面的 owner gate；保留 superuser→project 语义仅作用于无主行）。
         if not getattr(user, "is_superuser", False):
             allowed = await sync_to_async(PermissionService.has_project_access)(
-                user, original.conversation.project, "member"
+                user, original.conversation.space, "member"
             )
             if not allowed:
                 logger.warning(
@@ -2699,7 +2699,7 @@ class ClarificationAnswerView(APIView):
 
         try:
             trace = await ConversationIntentTrace.objects.select_related(
-                "conversation", "conversation__project",
+                "conversation", "conversation__space",
             ).aget(clarification_id=clarification_id)
         except ConversationIntentTrace.DoesNotExist:
             return Response(
@@ -2732,7 +2732,7 @@ class ClarificationAnswerView(APIView):
             from permissions.services import PermissionService
 
             allowed = await sync_to_async(PermissionService.has_project_access)(
-                user, trace.conversation.project, "member",
+                user, trace.conversation.space, "member",
             )
             if not allowed:
                 logger.warning(

@@ -147,11 +147,11 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     def get_linked_spaces_count(self, obj: Repository) -> int:
         """返回关联到此仓库的空间数量。"""
-        return obj.projects.count()
+        return obj.spaces.count()
 
     def get_linked_spaces(self, obj: Repository) -> list[dict]:
         """返回关联空间（id+name），供列表卡片展示与按空间筛选（#15）。"""
-        return [{"id": str(p.id), "name": p.name} for p in obj.projects.all()]
+        return [{"id": str(p.id), "name": p.name} for p in obj.spaces.all()]
 
     def get_has_tree(self, obj: Repository) -> bool:
         """建立知识（PageIndex 能力树）是否已生成（#15/#16）。"""
@@ -217,7 +217,7 @@ class RepositoryWithSpacesSerializer(RepositorySerializer):
         fields = RepositorySerializer.Meta.fields + ["spaces"]
 
     def get_spaces(self, obj):
-        return [{"id": str(p.id), "name": p.name} for p in obj.projects.all()]
+        return [{"id": str(p.id), "name": p.name} for p in obj.spaces.all()]
 
 
 class RepoExclusionRuleSerializer(serializers.ModelSerializer):

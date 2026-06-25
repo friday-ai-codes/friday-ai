@@ -196,7 +196,7 @@ class ConversationListSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id", allow_null=True)
+    space_id = serializers.UUIDField(allow_null=True)
     title = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()
@@ -236,7 +236,7 @@ class AdminConversationListSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id", allow_null=True)
+    space_id = serializers.UUIDField(allow_null=True)
     title = serializers.CharField()
     status = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
@@ -307,7 +307,7 @@ class ConversationDetailSerializer(serializers.Serializer):
     """
 
     id = serializers.UUIDField()
-    space_id = serializers.UUIDField(source="project_id", allow_null=True)
+    space_id = serializers.UUIDField(allow_null=True)
     title = serializers.CharField()
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()

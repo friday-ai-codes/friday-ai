@@ -64,7 +64,7 @@ def _work_item_text(context: McpWorkItemContext) -> str:
 
 async def _resolve_context(context_id: str) -> McpWorkItemContext:
     context = (
-        await McpWorkItemContext.objects.select_related("project")
+        await McpWorkItemContext.objects.select_related("space")
         .filter(id=context_id)
         .afirst()
     )
@@ -304,7 +304,7 @@ async def _create_feishu_document(
     markdown: str,
     folder_token: str,
 ) -> tuple[dict[str, Any], str, str]:
-    project = context.project
+    project = context.space
     if project is None:
         return {}, "document_writeback", "工作项上下文未关联 Friday 项目"
     target_folder = folder_token or getattr(project, "feishu_doc_folder_token", "") or ""
@@ -335,7 +335,7 @@ async def _write_work_item_comment(
     document_url: str,
     repository_tasks: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], str, str]:
-    project = context.project
+    project = context.space
     if project is None:
         return {}, "work_item_comment", "工作项上下文未关联 Friday 项目"
     lines = [
@@ -491,7 +491,7 @@ async def build_work_item_technical_plan(
     artifact = await McpWorkItemTechnicalPlan.objects.acreate(
         run=run,
         context=context,
-        project=context.project,
+        space=context.space,
         feishu_project_key=context.feishu_project_key,
         work_item_type=context.work_item_type,
         work_item_id=context.work_item_id,
@@ -512,7 +512,7 @@ async def build_work_item_technical_plan(
     output = {
         "technical_plan_id": str(artifact.id),
         "context_id": str(context.id),
-        "project_id": str(context.project_id) if context.project_id else "",
+        "project_id": str(context.space_id) if context.space_id else "",
         "plan": plan_body,
         "markdown": markdown,
         "repository_tasks": repository_tasks,

@@ -43,11 +43,11 @@ class Workflow(models.Model):
     icon = models.CharField(max_length=50, default="workflow", verbose_name="图标")
 
     # 关联
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.CASCADE,
         related_name="workflows",
-        verbose_name="所属项目",
+        verbose_name="所属空间",
     )
     created_by = models.ForeignKey(
         User,
@@ -108,19 +108,19 @@ class Workflow(models.Model):
         verbose_name_plural = "工作流"
         ordering = ["-updated_at"]
         indexes = [
-            models.Index(fields=["project", "is_active"]),
+            models.Index(fields=["space", "is_active"]),
             models.Index(fields=["trigger_type"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.project.name})"
+        return f"{self.name} ({self.space.name})"
 
     def clone(self, new_project=None, new_name: str | None = None) -> "Workflow":
         """克隆工作流到另一个项目"""
         new_workflow = Workflow.objects.create(
             name=new_name or f"{self.name} (副本)",
             description=self.description,
-            project=new_project or self.project,
+            space=new_project or self.space,
             trigger_type=self.trigger_type,
             trigger_config=self.trigger_config.copy(),
             default_timeout=self.default_timeout,
@@ -145,7 +145,7 @@ class Workflow(models.Model):
         new_workflow = await Workflow.objects.acreate(
             name=new_name or f"{self.name} (副本)",
             description=self.description,
-            project=new_project or self.project,
+            space=new_project or self.space,
             trigger_type=self.trigger_type,
             trigger_config=self.trigger_config.copy(),
             default_timeout=self.default_timeout,
@@ -222,7 +222,7 @@ class Workflow(models.Model):
         workflow = cls.objects.create(
             name=workflow_data["name"],
             description=workflow_data.get("description", ""),
-            project=project,
+            space=project,
             created_by=created_by,
             trigger_type=workflow_data.get("trigger_type", "manual"),
             trigger_config=workflow_data.get("trigger_config", {}),
@@ -262,7 +262,7 @@ class Workflow(models.Model):
         workflow = await cls.objects.acreate(
             name=workflow_data["name"],
             description=workflow_data.get("description", ""),
-            project=project,
+            space=project,
             created_by=created_by,
             trigger_type=workflow_data.get("trigger_type", "manual"),
             trigger_config=workflow_data.get("trigger_config", {}),

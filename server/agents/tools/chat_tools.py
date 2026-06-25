@@ -23,7 +23,7 @@ from qdrant_client.http import models as qdrant_models
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from agents.tools.base import ToolResult, tool
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from services.exclusion import build_matcher_for_repo, log_exclusion_blocked
 from services.qdrant_service import QdrantService
@@ -499,7 +499,7 @@ async def list_space_structure(
 
     # 获取已索引仓库（可选按 repository_id 过滤为单仓库）
     repo_filter = Repository.objects.filter(
-        projects__id=space_id,
+        spaces__id=space_id,
         index_status="indexed",
         is_deleted=False,
     )
@@ -732,8 +732,8 @@ async def get_space_overview(
     logger.info("get_space_overview", space_id=space_id)
 
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         return ToolResult(
             success=True,
             output={
@@ -746,7 +746,7 @@ async def get_space_overview(
     repositories = [
         repo
         async for repo in Repository.objects.filter(
-            projects=project,
+            spaces=project,
             is_deleted=False,
         )
     ]
@@ -957,8 +957,8 @@ async def deep_analysis(
 
     # 1. 查找目标仓库
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         return ToolResult(success=False, error=f"Space not found: {space_id}")
 
     if repository_id:
@@ -966,7 +966,7 @@ async def deep_analysis(
             repo
             async for repo in Repository.objects.filter(
                 id=repository_id,
-                projects=project,
+                spaces=project,
                 is_deleted=False,
                 index_status="indexed",
             )
@@ -975,7 +975,7 @@ async def deep_analysis(
         repos = [
             repo
             async for repo in Repository.objects.filter(
-                projects=project,
+                spaces=project,
                 is_deleted=False,
                 index_status="indexed",
             )[:1]
@@ -1048,7 +1048,7 @@ async def deep_analysis(
         session_id = f"deep-{uuid.uuid4().hex[:12]}"
         agent_session = await AgentSession.objects.acreate(
             session_id=f"agent-{session_id}",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
             metadata={"source": "chat_deep_analysis", "conversation_id": conversation_id},
         )

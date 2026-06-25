@@ -67,7 +67,7 @@ class RegistrationTokenViewSet(ModelViewSet):
             token_hash=hash_token(token),
             description=data.get("description", ""),
             scope=data["scope"],
-            project_id=data.get("project_id"),
+            space_id=data.get("project_id"),
             tags=data.get("tags", []),
             run_untagged=data.get("run_untagged", True),
             is_paused=data.get("is_paused", False),
@@ -135,8 +135,8 @@ class RunnerRegisterView(APIView):
         )
 
         # 绑定项目
-        if reg_token.project:
-            await runner.projects.aadd(reg_token.project)
+        if reg_token.space:
+            await runner.spaces.aadd(reg_token.space)
 
         # 回写 used_by_runner
         reg_token.used_by_runner = runner

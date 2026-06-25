@@ -413,7 +413,7 @@ async def _get_tool_names(space_id: str) -> list[str]:
     ]
 
     has_indexed = await Repository.objects.filter(
-        projects__id=space_id,
+        spaces__id=space_id,
         index_status="indexed",
         is_deleted=False,
     ).aexists()
@@ -810,7 +810,7 @@ class ConversationService:
         # 隔离仅对已认证用户生效：匿名/开放模式不写 owner。
         created_by = user if getattr(user, "is_authenticated", False) else None
         conversation = await Conversation.objects.acreate(
-            project_id=space_id,
+            space_id=space_id,
             title=title,
             model=model,
             created_by=created_by,
@@ -830,7 +830,7 @@ class ConversationService:
     ) -> Message | None:
         """会话内切换绑定空间。
 
-        切换只改 ``conversation.project``，并落库一条 ``role=system`` 的
+        切换只改 ``conversation.space``，并落库一条 ``role=system`` 的
         ``space_switch`` 标记消息（前端渲染为分隔线、LLM 历史重建时注入切换标注）。
         历史消息保留不动 —— 下一个 turn ``build_sdk_config`` 从 ``project_id``
         读到新空间后，system prompt / 工具集自动基于新空间重建。
@@ -845,9 +845,9 @@ class ConversationService:
         Raises:
             ValueError: 目标空间不存在
         """
-        from projects.models import Project
+        from projects.models import Space
 
-        old_space_id = str(conversation.project_id) if conversation.project_id else None
+        old_space_id = str(conversation.space_id) if conversation.space_id else None
         new_space_id = str(space_id) if space_id else None
         if old_space_id == new_space_id:
             return None
@@ -855,22 +855,22 @@ class ConversationService:
         new_space_name = ""
         if new_space_id is not None:
             try:
-                project = await Project.objects.aget(id=new_space_id)
-            except Project.DoesNotExist as exc:
+                project = await Space.objects.aget(id=new_space_id)
+            except Space.DoesNotExist as exc:
                 raise ValueError(f"空间不存在: {new_space_id}") from exc
             new_space_name = project.name
 
         old_space_name = ""
         if old_space_id is not None:
             old_space_name = (
-                await Project.objects.filter(id=old_space_id)
+                await Space.objects.filter(id=old_space_id)
                 .values_list("name", flat=True)
                 .afirst()
                 or ""
             )
 
-        conversation.project_id = new_space_id
-        await conversation.asave(update_fields=["project", "updated_at"])
+        conversation.space_id = new_space_id
+        await conversation.asave(update_fields=["space", "updated_at"])
 
         content = (
             f"已切换空间到「{new_space_name}」"
@@ -932,7 +932,7 @@ class ConversationService:
         fork_title = (source.title or "")[:200]
 
         forked = await Conversation.objects.acreate(
-            project_id=source.project_id,
+            space_id=source.space_id,
             title=fork_title,
             model=source.model,
             provider_credential_id_id=source.provider_credential_id_id,
@@ -986,7 +986,7 @@ class ConversationService:
         """ADMVW-01：跨用户列出全部未删除会话（管理员只读后台）。
 
         **无 created_by 过滤**（跨用户全集）；可选叠加 owner_id / 标题关键字过滤。
-        select_related("created_by", "project") 预取关联对象，避免 async 序列化时
+        select_related("created_by", "space") 预取关联对象，避免 async 序列化时
         惰性访问 FK 触发 SynchronousOnlyOperation（Pitfall 1）；
         annotate(message_count=...) 供列表项展示消息数（无需 N+1 count）。
 
@@ -1004,7 +1004,7 @@ class ConversationService:
 
         qs = (
             Conversation.objects.filter(is_deleted=False)
-            .select_related("created_by", "project")
+            .select_related("created_by", "space")
             .annotate(message_count=Count("messages"))
             # 列表徽标聚合（SDD / 技术方案 / 编码）：与 owner-scoped list_conversations
             # 同源的 Exists 子查询，不引入 N+1、async 安全（annotate 出的布尔是实例列，
@@ -1046,7 +1046,7 @@ class ConversationService:
         """
         conversation = await Conversation.objects.select_related(
             "created_by",
-            "project",
+            "space",
         ).aget(
             id=conversation_id,
             is_deleted=False,
@@ -1104,7 +1104,7 @@ class ConversationService:
         def _copy_atomic() -> tuple[Conversation, int]:
             with transaction.atomic():
                 forked = Conversation.objects.create(
-                    project_id=source.project_id,
+                    space_id=source.space_id,
                     title=fork_title,
                     model=source.model,
                     provider_credential_id_id=source.provider_credential_id_id,
@@ -1278,7 +1278,7 @@ class ConversationService:
             return []
 
         conversation = await Conversation.objects.select_related(
-            "project",
+            "space",
             "provider_credential_id",
         ).aget(
             id=conversation_id,
@@ -1343,7 +1343,7 @@ class ConversationService:
         # 捕获 docSummary 给 finalize 落库（刷新回显飞书文档摘要卡）。
         # 形态与前端 metadata.docSummary 对齐（ChatMessageBubble.docSummary）。
         captured_doc_summary: dict[str, Any] | None = None
-        if feishu_doc_id and conversation.project_id is None:
+        if feishu_doc_id and conversation.space_id is None:
             # 无空间对话没有飞书凭证来源，直接推 doc_error 降级（不中断对话）
             yield AgentEvent(
                 type=DOC_ERROR,
@@ -1354,7 +1354,7 @@ class ConversationService:
             )
         elif feishu_doc_id:
             doc_markdown, doc_event = await ConversationService._fetch_doc_for_context(
-                conversation.project, feishu_doc_id,
+                conversation.space, feishu_doc_id,
             )
             yield doc_event  # 推送 doc_summary 或 doc_error
 
@@ -1706,7 +1706,7 @@ class ConversationService:
         from chat.finalize import finalize_conversation
 
         conversation = await Conversation.objects.select_related(
-            "project", "provider_credential_id",
+            "space", "provider_credential_id",
         ).aget(id=conversation_id, is_deleted=False)
         conv_id_str = str(conversation.id)
 
