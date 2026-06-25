@@ -26,6 +26,9 @@ _NORMALIZERS: dict[str, str] = {
     "feishu_work_item": "knowledge.sources.feishu_work_item",
     # Phase 30 DOC-02：飞书 docx（PRD/技术方案）→ Document + REFERENCES 边投影。
     "feishu_document": "knowledge.sources.feishu_document",
+    # Phase 79 ARTIFACT-04：项目工件正文（飞书 doc/表格/md/repo_file）→ document 投影
+    # + 工件→REFERENCES→项目图谱节点出边（KLINK-01）。
+    "artifact": "knowledge.sources.artifact",
 }
 
 
