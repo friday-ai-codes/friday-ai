@@ -24,6 +24,8 @@ api_patterns = [
     path("auth/", include("accounts.urls")),
     # Spaces
     path("spaces/", include("projects.urls")),
+    # Projects（v0.15.0 项目聚合根：CRUD/状态/成员/主R 转移）
+    path("projects/", include("initiatives.urls")),
     # Repositories
     path("repositories/", include("repositories.urls")),
     # Feishu integration (webhook + logs)
