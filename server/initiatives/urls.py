@@ -6,6 +6,7 @@ from initiatives.views import (
     ArtifactDetailView,
     ArtifactListCreateView,
     ArtifactViewView,
+    ProjectCursorRulesView,
     ProjectDetailView,
     ProjectGraphView,
     ProjectKnowledgeLinkView,
@@ -20,6 +21,8 @@ from initiatives.views import (
     ProjectMergeRequestListView,
     ProjectOwnerTransferView,
     ProjectTransitionView,
+    ProjectWorkItemDetailView,
+    ProjectWorkItemListView,
 )
 
 urlpatterns = [
@@ -103,5 +106,22 @@ urlpatterns = [
         "<uuid:project_id>/merge-requests/",
         ProjectMergeRequestListView.as_view(),
         name="project-merge-request-list",
+    ),
+    # 工作项组合（COMPOSE-01/02）
+    path(
+        "<uuid:project_id>/work-items/",
+        ProjectWorkItemListView.as_view(),
+        name="project-work-item-list",
+    ),
+    path(
+        "<uuid:project_id>/work-items/<uuid:work_item_id>/",
+        ProjectWorkItemDetailView.as_view(),
+        name="project-work-item-detail",
+    ),
+    # Cursor rules 模板（CURSOR-02）
+    path(
+        "<uuid:project_id>/cursor-rules/",
+        ProjectCursorRulesView.as_view(),
+        name="project-cursor-rules",
     ),
 ]

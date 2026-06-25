@@ -126,6 +126,24 @@ class ProjectOwnerTransferSerializer(serializers.Serializer):
     new_owner_user_id = serializers.UUIDField()
 
 
+class ProjectWorkItemAttachSerializer(serializers.Serializer):
+    """手动并入工作项请求（COMPOSE-01）。``work_item_id`` 为 delivery.WorkItem 的 UUID 主键。"""
+
+    work_item_id = serializers.UUIDField()
+
+
+class ProjectWorkItemSerializer(serializers.Serializer):
+    """项目关联工作项摘要（响应，COMPOSE-01/02）。"""
+
+    id = serializers.UUIDField(read_only=True)
+    feishu_work_item_id = serializers.IntegerField(read_only=True)
+    work_item_type = serializers.CharField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    feishu_project_key = serializers.CharField(read_only=True)
+    provenance = serializers.CharField(read_only=True)
+    attached_at = serializers.DateTimeField(read_only=True)
+
+
 # ---- 工件类型（ARTIFACT-01/05）----
 
 

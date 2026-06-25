@@ -96,6 +96,8 @@ from .serializers import (
     GrepRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
+    LookupProjectByBranchRequestSerializer,
+    ReportProjectKnowledgeRequestSerializer,
     ReverseLookupRequestSerializer,
     RouteRepositoriesRequestSerializer,
     SearchDeliveryKnowledgeRequestSerializer,
@@ -1331,6 +1333,17 @@ class ReverseLookupView(McpToolView):
         return Response(output_data, status=status.HTTP_200_OK)
 
 
+def _project_summary(project: Any) -> dict[str, Any]:
+    """项目摘要（候选/命中回显，纯标量）。"""
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "status": project.status,
+        "space_id": str(project.space_id),
+        "feishu_project_key": project.feishu_project_key,
+    }
+
+
 class GetFeishuWorkItemContextView(McpToolView):
     tool_name = "get_feishu_work_item_context"
 
@@ -2553,3 +2566,203 @@ class GetRelatedEntitiesView(McpToolView):
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_200_OK)
+
+
+class LookupProjectByBranchView(McpToolView):
+    """分支名 → 项目反查 + 召回（CURSOR-01）。
+
+    从 ``feat/xxxx-m{work_item_id}-slug`` 抽取 work_item_id（复用
+    ``services.branch_parsing``），经 ``ProjectWorkItemLink`` → ``Project`` 反查；**单命中**
+    经 Phase-80 ``pack_project_context`` 召回需求/工件/记忆，并写 ``RetrievalTrace``
+    （补齐 Phase-80 标注的 MCP 链）。多/无命中 fail-soft（返回候选列表或空，绝不抛）。
+
+    召回经 packer 内置 fail-closed（调用用户非项目成员时零召回），不绕过权限。
+    """
+
+    tool_name = "lookup_project_by_branch"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            LookupProjectByBranchRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from services.branch_parsing import parse_work_item_id_from_branch
+
+        branch_name = str(input_data["branch_name"])
+        work_item_id = parse_work_item_id_from_branch(branch_name)
+
+        output_data: dict[str, Any] = {
+            "branch_name": branch_name,
+            "work_item_id": work_item_id,
+            "matched": False,
+            "project": None,
+            "candidates": [],
+            "context": "",
+            "included_layers": [],
+            "run_id": str(run.run_id),
+        }
+        traces: list[tuple[str, dict[str, Any]]] = []
+
+        if work_item_id is None:
+            # 无法从分支名解析 work_item_id → fail-soft 空返回。
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=traces,
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
+        projects = await self._lookup_projects(work_item_id)
+        output_data["candidates"] = [_project_summary(p) for p in projects]
+
+        if len(projects) == 1:
+            from services.project_context_packer import pack_project_context
+
+            project = projects[0]
+            packed = await pack_project_context(
+                project, request.user, query=branch_name
+            )
+            output_data["matched"] = True
+            output_data["project"] = _project_summary(project)
+            output_data["context"] = packed.text
+            output_data["included_layers"] = packed.included_layers
+            # 补齐 MCP 链 RetrievalTrace（条数/分层耗时/score）。
+            traces.append(
+                (
+                    RetrievalTrace.Kind.CHUNK,
+                    {
+                        "source": "mcp_lookup_project_by_branch",
+                        "branch_name": branch_name,
+                        "work_item_id": work_item_id,
+                        "project_id": str(project.id),
+                        "included_layers": packed.included_layers,
+                        "counts": packed.counts,
+                        "layer_timing_ms": packed.layer_timing_ms,
+                        "scores": packed.scores,
+                        "degraded": packed.degraded,
+                        "total_tokens": packed.total_tokens,
+                    },
+                )
+            )
+        # 多命中 / 无命中：matched 保持 False，仅回候选列表（fail-soft）。
+
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+    @sync_to_async
+    def _lookup_projects(self, work_item_id: int) -> list[Any]:
+        from initiatives.models import Project
+
+        return list(
+            Project.objects.filter(work_items__work_item_id=work_item_id)
+            .select_related("space")
+            .distinct()
+        )
+
+
+class ReportProjectKnowledgeView(McpToolView):
+    """Cursor 沉淀上报写回（CURSOR-03）。
+
+    认证（PAT/JWT）→ 归因（``request.user`` 触发用户 + initiated_by_user_id）→
+    **质量门槛防噪音**（长度/低信息量/与既有 active 记忆重复，阈值可配）→ **脱敏不可绕过**
+    + **成员校验 fail-closed**（经 ``MemoryService.create_draft``）。
+
+    默认写入 **pending 草稿**（绝不直接 active，防共享记忆污染，与 MEM-04 一致）；
+    人工经记忆确认 UI / API 确认后才入库。
+    """
+
+    tool_name = "report_project_knowledge"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            ReportProjectKnowledgeRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        from initiatives.services import MemoryPermissionError, MemoryService
+        from services.cursor_writeback import evaluate_writeback_quality
+
+        project_id = input_data["project_id"]
+        content = str(input_data["content"])
+        source_conversation_id = input_data.get("source_conversation_id")
+
+        # 质量门槛：低信息量/过短/重复 → 拒收（accepted=False，200，不入库不报错）。
+        existing = await self._active_memory_contents(project_id)
+        ok, reason = await evaluate_writeback_quality(content, existing)
+        if not ok:
+            output_data = {
+                "accepted": False,
+                "draft_id": None,
+                "reason": reason,
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
+        try:
+            draft = await MemoryService().create_draft(
+                project_id=project_id,
+                content=content,
+                proposed_by=request.user,
+                source_conversation_id=source_conversation_id,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return error_response(
+                "forbidden", str(exc), status_code=status.HTTP_403_FORBIDDEN
+            )
+
+        output_data = {
+            "accepted": True,
+            "draft_id": str(draft.id),
+            "reason": "",
+            "run_id": str(run.run_id),
+        }
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_201_CREATED)
+
+    @sync_to_async
+    def _active_memory_contents(self, project_id: Any) -> list[str]:
+        from initiatives.models import ProjectMemory, ProjectMemoryStatus
+
+        return list(
+            ProjectMemory.objects.filter(
+                project_id=project_id, status=ProjectMemoryStatus.ACTIVE
+            ).values_list("content", flat=True)[:200]
+        )

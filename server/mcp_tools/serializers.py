@@ -481,6 +481,22 @@ class SearchLearningCasesRequestSerializer(serializers.Serializer):
     limit = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
 
 
+class LookupProjectByBranchRequestSerializer(serializers.Serializer):
+    """分支名 → 项目反查请求（CURSOR-01）。"""
+
+    branch_name = serializers.CharField(required=True, allow_blank=False, max_length=255)
+
+
+class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
+    """Cursor 沉淀上报写回请求（CURSOR-03，默认入 memory draft）。"""
+
+    project_id = serializers.UUIDField(required=True)
+    content = serializers.CharField(required=True, allow_blank=False, max_length=20000)
+    source_conversation_id = serializers.UUIDField(
+        required=False, allow_null=True, default=None
+    )
+
+
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "route_repositories": {
         "request": ["query", "top_k"],
@@ -585,5 +601,22 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "get_related_entities": {
         "request": ["entity_id", "direction", "max_hops", "as_of"],
         "response": ["entity_id", "related", "total", "as_of", "run_id"],
+    },
+    "lookup_project_by_branch": {
+        "request": ["branch_name"],
+        "response": [
+            "branch_name",
+            "work_item_id",
+            "matched",
+            "project",
+            "candidates",
+            "context",
+            "included_layers",
+            "run_id",
+        ],
+    },
+    "report_project_knowledge": {
+        "request": ["project_id", "content", "source_conversation_id"],
+        "response": ["accepted", "draft_id", "reason", "run_id"],
     },
 }
