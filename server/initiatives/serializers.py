@@ -8,8 +8,11 @@ from initiatives.models import (
     Artifact,
     ArtifactCarrier,
     ArtifactType,
+    MergeRequest,
     Project,
     ProjectMember,
+    ProjectMemory,
+    ProjectMemoryDraft,
     ProjectRole,
     ProjectStatus,
 )
@@ -224,3 +227,87 @@ class ProjectKnowledgeLinkSerializer(serializers.Serializer):
 
     entity_id = serializers.UUIDField()
     relation = serializers.CharField(required=False, default="REFERENCES", max_length=30)
+
+
+# ---- 项目记忆（MEM-01~04）----
+
+
+class ProjectMemorySerializer(serializers.ModelSerializer):
+    """项目记忆序列化（响应）。"""
+
+    class Meta:
+        model = ProjectMemory
+        fields = [
+            "id",
+            "project_id",
+            "content",
+            "contributor_id",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ProjectMemoryCreateSerializer(serializers.Serializer):
+    """新增项目记忆请求（MEM-01）。"""
+
+    content = serializers.CharField()
+
+
+class ProjectMemoryEditSerializer(serializers.Serializer):
+    """编辑项目记忆请求（MEM-03）。"""
+
+    content = serializers.CharField()
+
+
+class ProjectMemoryDraftSerializer(serializers.ModelSerializer):
+    """项目记忆草稿序列化（响应，MEM-04）。"""
+
+    class Meta:
+        model = ProjectMemoryDraft
+        fields = [
+            "id",
+            "project_id",
+            "content",
+            "status",
+            "source_conversation_id",
+            "proposed_by_id",
+            "confirmed_memory_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ProjectMemoryDistillSerializer(serializers.Serializer):
+    """从成员会话蒸馏记忆草稿请求（MEM-04）。"""
+
+    conversation_id = serializers.UUIDField()
+
+
+# ---- MergeRequest（MR-01）----
+
+
+class MergeRequestSerializer(serializers.ModelSerializer):
+    """MR 实体序列化（响应）。"""
+
+    class Meta:
+        model = MergeRequest
+        fields = [
+            "id",
+            "project_id",
+            "repository_id",
+            "work_item_id",
+            "platform",
+            "external_id",
+            "url",
+            "title",
+            "source_branch",
+            "target_branch",
+            "status",
+            "review_status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
