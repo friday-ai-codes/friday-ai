@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.15.0
 milestone_name: 项目（交付上下文聚合根）
 status: planning
-last_updated: "2026-06-25T16:20:00.000Z"
-last_activity: 2026-06-25
+last_updated: "2026-06-26T00:30:00.000Z"
+last_activity: 2026-06-26
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
-  percent: 50
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
-**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78 已完成（50%），下一步 Phase 79（工件/依赖项 + 知识关联）。
+**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79 已完成（67%），下一步 Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）。
 
 ## Current Position
 
-Phase: 78 ✅ complete → 79 pending
+Phase: 79 ✅ complete → 80 pending
 Plan: —
-Status: Phase 78 飞书触发建项目 + 看板枚举 + 工作项组合已完成（看板枚举 service `feishu_project_board`（无整板 API 经字段派生 fail-soft）+ `ProjectWorkItemLink` 组合关系边 + `ProjectService.attach/detach_work_item`（INV-6）+ 同源 `ProjectBoardSyncService.sync_from_board`（幂等建项目+拉人带身份+组合子项）+ 飞书事件接线（gated）+ `create_project` 工作流节点）；6315 passed / 新增 27 用例全绿 / 38 failed == Phase-76 baseline（零新增回归）/ makemigrations --check 干净
-Last activity: 2026-06-25 — Phase 78 完成（docs(78) + feat(78)×4 + test(78)，7 commits，未 push）；真实飞书字段 key/事件类型 live UAT 为里程碑级 deferred；下一步 Phase 79（工件/依赖项可配置类型 + 实例 + RAG + 知识关联）
+Status: Phase 79 工件/依赖项 + 知识关联已完成（`ArtifactType`/`Artifact` 模型 + 内置 8 类 seed 迁移 + `ArtifactService`（INV-6，类型禁用/双删保护）+ 在线查看读 API `aget_artifact_view`（飞书 doc/表格/外链/md，脱敏 + fail-soft）+ 工件/类型/KLINK REST API + 工件 RAG source `knowledge/sources/artifact.py`（脱敏 + fail-soft + 观测，工件→REFERENCES→项目节点）+ 知识脊柱扩展 EntityKind(+project/repository/space)/EntityOrigin(+artifact/project) + `ProjectKnowledgeGraphService`（KLINK-01/02 经 KnowledgeEdge 统一建模可查询，不与操作态双写））；6352 passed / 新增 39 用例全绿 / 38 failed == Phase-76 baseline 零新增回归（+1 flaky cross-suite ordering，prompt 明示，单跑通过）/ makemigrations --check 干净 / 3 迁移含 seed
+Last activity: 2026-06-26 — Phase 79 完成（feat(79)×6 + test(79)，未 push）；真实飞书 doc/表格 live UAT + bitable 列解析为里程碑级/v2 deferred；下一步 Phase 80（项目记忆 + MR 实体 + context packer + 接入 chat runner）
 
 ## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-25 — Phase 78 完成（docs(78) + feat(78)×4 + test(78
 | 76 | 命名腾挪（Project→Space 重构前置） | RENAME-01, RENAME-02 | ✅ Complete |
 | 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
 | 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
-| 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ☐ Pending |
+| 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
 | 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
 | 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
 

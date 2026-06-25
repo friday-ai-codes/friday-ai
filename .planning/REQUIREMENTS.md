@@ -124,13 +124,13 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 | FSPROJ-03 | Phase 78 | ✅ Complete |
 | COMPOSE-01 | Phase 78 | ✅ Complete |
 | COMPOSE-02 | Phase 78 | ✅ Complete |
-| ARTIFACT-01 | Phase 79 | ☐ Pending |
-| ARTIFACT-02 | Phase 79 | ☐ Pending |
-| ARTIFACT-03 | Phase 79 | ☐ Pending |
-| ARTIFACT-04 | Phase 79 | ☐ Pending |
-| ARTIFACT-05 | Phase 79 | ☐ Pending |
-| KLINK-01 | Phase 79 | ☐ Pending |
-| KLINK-02 | Phase 79 | ☐ Pending |
+| ARTIFACT-01 | Phase 79 | ✅ Complete |
+| ARTIFACT-02 | Phase 79 | ✅ Complete |
+| ARTIFACT-03 | Phase 79 | ✅ Complete |
+| ARTIFACT-04 | Phase 79 | ✅ Complete |
+| ARTIFACT-05 | Phase 79 | ✅ Complete |
+| KLINK-01 | Phase 79 | ✅ Complete |
+| KLINK-02 | Phase 79 | ✅ Complete |
 | MEM-01 | Phase 80 | ☐ Pending |
 | MEM-02 | Phase 80 | ☐ Pending |
 | MEM-03 | Phase 80 | ☐ Pending |
@@ -151,7 +151,7 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 
 - v1 requirements: 38 total
 - Mapped to phases: 38
-- Completed: 16（RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02）
+- Completed: 23（RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02 + ARTIFACT-01~05 + KLINK-01/02）
 - Unmapped: 0 ✓
 
 ---
