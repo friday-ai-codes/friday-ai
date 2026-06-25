@@ -27,6 +27,7 @@ from repositories.models import (
     GraphBuildHistoryStatus,
     GraphBuildHistoryTrigger,
     IndexStatus,
+    RepoExclusionRule,
     Repository,
     RepositoryBranchIndex,
     RepositoryGraphStatus,
@@ -39,7 +40,7 @@ from services.branch_utils import (
 )
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
-from services.exclusion import build_matcher_for_repo
+from services.exclusion import build_matcher_for_repo, invalidate_matcher_cache, normalize_rel_path
 from services.graph_builder import (
     mark_repository_graph_terminal,
     reset_repository_graph_progress,
@@ -381,6 +382,9 @@ async def update_graph_progress(
             error=str(exc),
         )
 
+
+# 解析前最大文件大小。超过该阈值的源文件会被跳过并自动加入仓库排除规则。
+MAX_PARSE_FILE_BYTES = 2 * 1024 * 1024
 
 # 文件级断点续传：累积约 64 个 chunks 触发一次 embed → upsert → flush FileIndex
 # 阈值的取舍：
@@ -744,6 +748,80 @@ class IndexerService:
         # 缓存 miss 时图谱轨自行解析兜底；实例级（一次索引一个 IndexerService），无需跨方法清理。
         self._session_graph_bundles: dict[str, Any] = {}
 
+    async def _skip_large_file_before_parse(self, full_path: str, rel_path: str) -> bool:
+        """解析前跳过大文件，并把精确路径加入仓库排除规则。"""
+        try:
+            size_bytes = os.path.getsize(full_path)
+        except OSError as exc:
+            logger.warning(
+                "index_parse_file_size_stat_failed",
+                repository_id=self.repository_id,
+                file_path=rel_path,
+                error=str(exc),
+            )
+            return False
+
+        if size_bytes <= MAX_PARSE_FILE_BYTES:
+            return False
+
+        norm_path = normalize_rel_path(rel_path.replace(os.sep, "/"))
+        logger.warning(
+            "index_parse_skipped_file_too_large",
+            repository_id=self.repository_id,
+            file_path=norm_path or rel_path,
+            size_bytes=size_bytes,
+            max_bytes=MAX_PARSE_FILE_BYTES,
+        )
+        if norm_path is not None:
+            await self._record_large_file_exclusion(norm_path, size_bytes)
+        return True
+
+    async def _record_large_file_exclusion(self, rel_path: str, size_bytes: int) -> None:
+        """幂等记录大文件排除规则，后续扫描从源头跳过。"""
+        pattern = re.escape(rel_path)
+        pattern_max = RepoExclusionRule._meta.get_field("pattern").max_length or 500
+        if len(pattern) > pattern_max:
+            logger.warning(
+                "index_large_file_exclusion_pattern_too_long",
+                repository_id=self.repository_id,
+                file_path=rel_path,
+                pattern_length=len(pattern),
+                pattern_max=pattern_max,
+                size_bytes=size_bytes,
+            )
+            return
+
+        try:
+            rule, created = await RepoExclusionRule.objects.aget_or_create(
+                repository_id=self.repository_id,
+                rule_type=RepoExclusionRule.RuleType.REGEX,
+                pattern=pattern,
+                source=RepoExclusionRule.Source.AI_SUGGESTED,
+                defaults={"enabled": True},
+            )
+            enabled_before = rule.enabled
+            if not rule.enabled:
+                rule.enabled = True
+                await rule.asave(update_fields=["enabled", "updated_at"])
+            if created or not enabled_before:
+                invalidate_matcher_cache(str(self.repository_id))
+            logger.info(
+                "index_large_file_exclusion_recorded",
+                repository_id=self.repository_id,
+                file_path=rel_path,
+                pattern=pattern,
+                created=created,
+                size_bytes=size_bytes,
+                max_bytes=MAX_PARSE_FILE_BYTES,
+            )
+        except Exception as exc:
+            logger.warning(
+                "index_large_file_exclusion_record_failed",
+                repository_id=self.repository_id,
+                file_path=rel_path,
+                error=str(exc),
+            )
+
     def _init_graph_services(self):
         """延迟初始化图谱抽取与写入服务（避免循环导入）。"""
         if self._graph_extractor is None:
@@ -972,8 +1050,14 @@ class IndexerService:
             file_hashes_local: dict[str, str] = {}
             files_to_process: list[tuple[str, str, str]] = []  # (abs_path, rel_path, hash)
             skipped_resume = 0
+            skipped_large = 0
+            large_file_skips: set[str] = set()
             for abs_path in files:
-                rel_path = os.path.relpath(abs_path, repo_path)
+                rel_path = os.path.relpath(abs_path, repo_path).replace(os.sep, "/")
+                if await self._skip_large_file_before_parse(abs_path, rel_path):
+                    skipped_large += 1
+                    large_file_skips.add(rel_path)
+                    continue
                 fh = compute_file_hash(abs_path)
                 file_hashes_local[rel_path] = fh
                 if stored_records.get(rel_path) == fh:
@@ -989,12 +1073,21 @@ class IndexerService:
                     remaining=len(files_to_process),
                     total=total_files,
                 )
+            if skipped_large > 0:
+                logger.info(
+                    "full_index_large_files_skipped",
+                    repository_id=self.repository_id,
+                    skipped=skipped_large,
+                    remaining=len(files_to_process),
+                    total=total_files,
+                    max_bytes=MAX_PARSE_FILE_BYTES,
+                )
 
             # 文件级进度从"已 skip 数"起步 — 中断续传时百分比不归零
             await update_current_indexing_file(
                 self.repository_id,
                 file_path="",
-                processed=skipped_resume,
+                processed=skipped_resume + skipped_large,
                 total=total_files,
             )
 
@@ -1017,7 +1110,7 @@ class IndexerService:
             await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
 
             file_payloads: list[tuple[str, str, list[CodeChunk]]] = []
-            processed_files_total = skipped_resume  # 已 skip 也计入文件处理数
+            processed_files_total = skipped_resume + skipped_large  # 已 skip 也计入文件处理数
             for abs_path, rel_path, file_hash in files_to_process:
                 processed_files_total += 1
                 await update_current_indexing_file(
@@ -1236,7 +1329,11 @@ class IndexerService:
             # files 来自 scan_directory(repo_path) 是绝对路径；图谱要求相对路径，
             # 否则 DB 里 file_path 会变成 /var/folders/.../friday_index_xxx/...
             # 这种 tmp 前缀，导致前端代码图谱定位/调用关系全部对不上。
-            graph_file_paths = [os.path.relpath(p, repo_path) for p in files]
+            graph_file_paths: list[str] = []
+            for p in files:
+                rel_graph_path = os.path.relpath(p, repo_path).replace(os.sep, "/")
+                if rel_graph_path not in large_file_skips:
+                    graph_file_paths.append(rel_graph_path)
             if await self._should_build_graph(None):
                 # implementation-01..05：auto_after_index 路径写
                 # GraphBuildHistory 行；薄壳 `_extract_and_write_graph` 不感知
@@ -1552,12 +1649,16 @@ class IndexerService:
             d for d in files_to_index if not branch_exclusion_matcher.is_excluded(d.file_path)
         ]
         points: list[dict] = []
+        large_file_skips: set[str] = set()
 
         if files_to_index:
             all_chunks: list[CodeChunk] = []
             for diff in files_to_index:
                 full_path = os.path.join(repo_path, diff.file_path)
-                if os.path.exists(full_path):
+                if os.path.isfile(full_path):
+                    if await self._skip_large_file_before_parse(full_path, diff.file_path):
+                        large_file_skips.add(diff.file_path)
+                        continue
                     chunks, _bundle = self.parser.parse_file_dual(
                         full_path, base_path=repo_path, repository_id=self.repository_id
                     )
@@ -1640,8 +1741,8 @@ class IndexerService:
         # 图谱轨写入
         # implementation-02：双重判断 gating（run_branch_index 无 history_id 形参，
         # _should_build_graph 走 fallback 查 RUNNING）。
-        if files_to_index and await self._should_build_graph(None):
-            graph_files = [d.file_path for d in files_to_index]
+        graph_files = [d.file_path for d in files_to_index if d.file_path not in large_file_skips]
+        if graph_files and await self._should_build_graph(None):
             # implementation-02：先按 deleted_file_paths 清图谱孤儿数据
             # （Symbol / ImportEdge / Endpoint 三件套），再写新图谱避免孤儿过渡态。
             deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
@@ -1906,6 +2007,7 @@ class IndexerService:
 
         # 处理新增和修改
         files_to_index = [d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)]
+        large_file_skips: set[str] = set()
         if files_to_index:
             # === 文件级断点续传：用 FileIndex hash 过滤已成功完成的文件 ===
             # 上次中断时已成功 upsert 完成的文件会在 FileIndex 中留下 hash 记录，
@@ -1940,6 +2042,9 @@ class IndexerService:
                 # 或已变成目录的路径，exists 对目录也为 True，会让下方 compute_file_hash
                 # 用 open() 读目录抛 [Errno 21] Is a directory，导致整个索引失败。
                 if not os.path.isfile(full_path):
+                    continue
+                if await self._skip_large_file_before_parse(full_path, diff.file_path):
+                    large_file_skips.add(diff.file_path)
                     continue
                 current_hash = compute_file_hash(full_path)
                 if stored_hashes.get(diff.file_path) == current_hash:
@@ -2159,7 +2264,7 @@ class IndexerService:
 
         # 图谱轨写入（失败不影响"已索引"状态）
         # implementation-02：双重判断 gating（git_diff 路径已有 history_id 形参）
-        graph_files = [d.file_path for d in files_to_index]
+        graph_files = [d.file_path for d in files_to_index if d.file_path not in large_file_skips]
         if graph_files and await self._should_build_graph(history_id):
             await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
             # implementation-02：先按 deleted_file_paths 清孤儿（git_diff 路径
@@ -2300,8 +2405,12 @@ class IndexerService:
             exclusion_matcher = await build_matcher_for_repo(self.repository_id)
             files = scan_directory(repo_path, is_excluded_rel=exclusion_matcher.is_excluded)
             local_hashes: dict[str, str] = {}
+            large_file_skips: set[str] = set()
             for file_path in files:
-                relative_path = os.path.relpath(file_path, repo_path)
+                relative_path = os.path.relpath(file_path, repo_path).replace(os.sep, "/")
+                if await self._skip_large_file_before_parse(file_path, relative_path):
+                    large_file_skips.add(relative_path)
+                    continue
                 local_hashes[relative_path] = compute_file_hash(file_path)
 
             # Compute diff
@@ -2371,6 +2480,9 @@ class IndexerService:
                     # isfile 而非 exists：防御 submodule / 目录路径混入，避免
                     # compute_file_hash 用 open() 读目录抛 [Errno 21] Is a directory。
                     if not os.path.isfile(full_path):
+                        continue
+                    if await self._skip_large_file_before_parse(full_path, diff.file_path):
+                        large_file_skips.add(diff.file_path)
                         continue
                     file_hash = local_hashes.get(diff.file_path) or compute_file_hash(full_path)
                     chunks, _bundle = self.parser.parse_file_dual(
@@ -2553,9 +2665,11 @@ class IndexerService:
 
             # 图谱轨写入（失败不影响"已索引"状态）
             # implementation-02：双重判断 gating（incremental 路径已有 history_id 形参）
-            if files_to_index and await self._should_build_graph(history_id):
+            graph_files = [
+                d.file_path for d in files_to_index if d.file_path not in large_file_skips
+            ]
+            if graph_files and await self._should_build_graph(history_id):
                 await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
-                graph_files = [d.file_path for d in files_to_index]
                 # implementation-02：先按 deleted_file_paths 清孤儿。
                 # 注：purge_file 已覆盖 codegraph 删除；此块保留以维持分支归一化语义
                 # （_write_branch 精确单分支删除），与 purge_file 幂等不冲突——重复

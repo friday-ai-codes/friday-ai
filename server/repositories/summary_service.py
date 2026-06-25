@@ -219,6 +219,37 @@ _RECOVER_MAX_PER_SWEEP = 50
 _RUNNING_HARD_TIMEOUT_MINUTES = 20
 
 
+async def _available_repo_summary_runner_slots() -> int:
+    """计算当前可直接派发 repo_summary 的 runner 空槽数。
+
+    repo_summary 任务当前仍经 ``TaskDispatcher`` 派发；当 durable worker 一次重派数量
+    超过 runner 空槽时，超出的任务会进入 worker 进程自己的 ``_pending`` 内存队列，
+    无法被 server 进程的完成回调续派。因此 recover sweep 必须只创建能够立刻投出的
+    session，剩余仓库等下一轮 durable sweep。
+    """
+    from runners.dispatcher import HEARTBEAT_STALE_SECONDS
+    from runners.models import Runner, RunnerTaskAssignment
+
+    stale_threshold = timezone.now() - timedelta(seconds=HEARTBEAT_STALE_SECONDS)
+    slots = 0
+    async for runner in Runner.objects.filter(
+        status=Runner.Status.ONLINE,
+        is_active=True,
+        is_paused=False,
+        last_heartbeat__gte=stale_threshold,
+    ).exclude(channel_name=""):
+        active_assignments = await RunnerTaskAssignment.objects.filter(
+            runner=runner,
+            status__in=[
+                RunnerTaskAssignment.Status.ASSIGNED,
+                RunnerTaskAssignment.Status.RUNNING,
+            ],
+        ).acount()
+        occupied = max(int(runner.current_tasks), active_assignments)
+        slots += max(int(runner.concurrent) - occupied, 0)
+    return slots
+
+
 async def reconcile_ai_summary_status(repository: Repository) -> Repository:
     """将 Repository.ai_summary_status 与最新 REPO_SUMMARY SubAgentSession 对齐。
 
@@ -328,18 +359,47 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
     Returns:
         本轮重新派发的仓库数量。
     """
-    from django.db.models import Q
-
     now = timezone.now()
     cutoff = now - timedelta(minutes=_STRANDED_MINUTES)
     hard_cutoff = now - timedelta(minutes=_RUNNING_HARD_TIMEOUT_MINUTES)
+    available_slots = await _available_repo_summary_runner_slots()
+    if available_slots <= 0:
+        logger.info("repo_summary_recover_skipped_no_runner_capacity")
+        return 0
+    limit = min(limit, available_slots)
     recovered = 0
     seen_repos: set[str] = set()
 
+    from django.db.models import Q
+
+    async def _timeout_sessions(session_ids: list[int], reason: str) -> int:
+        """将搁浅 summary session 与其 active assignment 一起收敛到终态。"""
+        if not session_ids:
+            return 0
+        from runners.models import RunnerTaskAssignment
+
+        terminal_at = timezone.now()
+        count = await SubAgentSession.objects.filter(id__in=session_ids).aupdate(
+            status=SubAgentSession.Status.TIMEOUT,
+            failure_reason=reason,
+            completed_at=terminal_at,
+        )
+        await RunnerTaskAssignment.objects.filter(
+            session_id__in=session_ids,
+            status__in=[
+                RunnerTaskAssignment.Status.ASSIGNED,
+                RunnerTaskAssignment.Status.RUNNING,
+            ],
+        ).aupdate(
+            status=RunnerTaskAssignment.Status.FAILED,
+            completed_at=terminal_at,
+        )
+        return count
+
     # 两类搁浅：
-    # 1) updated_at 陈旧（pending 派发丢失 / 长时间无任何进展）；
-    # 2) RUNNING 且 started_at 超过硬超时（容器仍回传 progress 刷新 updated_at，
-    #    但实际已僵死——单靠 updated_at 永远抓不到，必须用 started_at 绝对上限兜底）。
+    # 1) PENDING 且 updated_at 陈旧（派发丢失 / 长时间未被 Runner 接收）；
+    # 2) RUNNING 且 started_at 超过硬超时。RUNNING 不能再用普通 updated_at 陈旧判定：
+    #    repo_summary 容器不保证刷新 SubAgentSession.updated_at，过早判定会误杀仍在跑的任务。
     stranded = (
         SubAgentSession.objects.filter(
             task_type=SubAgentSession.TaskType.REPO_SUMMARY,
@@ -349,11 +409,16 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
             ],
         )
         .filter(
-            Q(updated_at__lt=cutoff)
+            Q(status=SubAgentSession.Status.PENDING, updated_at__lt=cutoff)
             | Q(
                 status=SubAgentSession.Status.RUNNING,
                 started_at__isnull=False,
                 started_at__lt=hard_cutoff,
+            )
+            | Q(
+                status=SubAgentSession.Status.RUNNING,
+                started_at__isnull=True,
+                updated_at__lt=hard_cutoff,
             )
         )
         .order_by("-created_at")
@@ -368,19 +433,48 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
             continue
         seen_repos.add(repo_id)
 
-        repo = await Repository.objects.filter(id=repo_id, is_deleted=False).afirst()
-        if repo is None:
-            # 仓库已删：收尾搁浅会话，避免僵尸 pending 永久残留。
-            await SubAgentSession.objects.filter(
+        latest_active = await (
+            SubAgentSession.objects.filter(
                 task_type=SubAgentSession.TaskType.REPO_SUMMARY,
                 last_output__repository_id=repo_id,
                 status__in=[
                     SubAgentSession.Status.PENDING,
                     SubAgentSession.Status.RUNNING,
                 ],
-            ).aupdate(
-                status=SubAgentSession.Status.TIMEOUT,
-                failure_reason="仓库已删除，搁浅会话收尾",
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
+        if latest_active is not None and latest_active.id != session.id:
+            await _timeout_sessions(
+                [session.id],
+                "旧搁浅会话已被更新的在途会话取代",
+            )
+            logger.info(
+                "repo_summary_old_stranded_session_closed",
+                repository_id=repo_id,
+                session_id=session.session_id,
+                latest_session_id=latest_active.session_id,
+            )
+            continue
+
+        repo = await Repository.objects.filter(id=repo_id, is_deleted=False).afirst()
+        if repo is None:
+            # 仓库已删：收尾搁浅会话，避免僵尸 pending 永久残留。
+            deleted_ids = [
+                s.id
+                async for s in SubAgentSession.objects.filter(
+                    task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+                    last_output__repository_id=repo_id,
+                    status__in=[
+                        SubAgentSession.Status.PENDING,
+                        SubAgentSession.Status.RUNNING,
+                    ],
+                ).only("id")
+            ]
+            await _timeout_sessions(
+                deleted_ids,
+                "仓库已删除，搁浅会话收尾",
             )
             continue
 
@@ -391,19 +485,25 @@ async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int
         ):
             continue
 
-        # 把该仓所有未终态旧会话标 TIMEOUT（不调 _update_repository_on_summary_fail，
-        # 避免把仓库误置 failed —— 随后 dispatch_repo_summary 会重新置 PENDING），
-        # 再重新派发出一个全新会话。
-        await SubAgentSession.objects.filter(
-            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
-            last_output__repository_id=repo_id,
-            status__in=[
-                SubAgentSession.Status.PENDING,
-                SubAgentSession.Status.RUNNING,
-            ],
-        ).aupdate(
-            status=SubAgentSession.Status.TIMEOUT,
-            failure_reason="搁浅重派（容器死亡 / Runner 重启导致派发丢失）",
+        # 把该仓截至当前搁浅会话为止的未终态旧会话标 TIMEOUT（不调
+        # _update_repository_on_summary_fail，避免把仓库误置 failed —— 随后
+        # dispatch_repo_summary 会重新置 PENDING），再重新派发出一个全新会话。
+        # 使用 created_at__lte 防竞态：如果本轮扫描后已有更新会话被创建，不会误杀它。
+        old_ids = [
+            s.id
+            async for s in SubAgentSession.objects.filter(
+                task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+                last_output__repository_id=repo_id,
+                created_at__lte=session.created_at,
+                status__in=[
+                    SubAgentSession.Status.PENDING,
+                    SubAgentSession.Status.RUNNING,
+                ],
+            ).only("id")
+        ]
+        await _timeout_sessions(
+            old_ids,
+            "搁浅重派（容器死亡 / Runner 重启导致派发丢失）",
         )
 
         try:
