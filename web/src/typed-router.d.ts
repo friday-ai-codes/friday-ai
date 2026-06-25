@@ -59,6 +59,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/artifact-types/': RouteRecordInfo<
+      '/admin/artifact-types/',
+      '/admin/artifact-types',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/audit/': RouteRecordInfo<
       '/admin/audit/',
       '/admin/audit',
@@ -325,6 +332,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/projects/': RouteRecordInfo<
+      '/projects/',
+      '/projects',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/projects/[id]/': RouteRecordInfo<
+      '/projects/[id]/',
+      '/projects/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     '/repositories/': RouteRecordInfo<
       '/repositories/',
       '/repositories',
@@ -519,6 +540,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/announcements/index.vue': {
       routes:
         | '/admin/announcements/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/artifact-types/index.vue': {
+      routes:
+        | '/admin/artifact-types/'
       views:
         | never
       pathParamNames:
@@ -823,6 +852,22 @@ declare module 'vue-router/auto-routes' {
     'src/pages/profile.vue': {
       routes:
         | '/profile'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/projects/index.vue': {
+      routes:
+        | '/projects/'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/projects/[id]/index.vue': {
+      routes:
+        | '/projects/[id]/'
       views:
         | never
       pathParamNames:
