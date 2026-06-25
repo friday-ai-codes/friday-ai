@@ -268,10 +268,10 @@ def test_collector_thinking_then_text_opens_new_text_part() -> None:
 def test_message_parts_field_default_empty_list() -> None:
     """Message.parts 必须 default=[] 且可读可写。"""
     from chat.models import Conversation, Message
-    from projects.models import Project
+    from projects.models import Space
 
-    project = Project.objects.create(name="t")
-    conv = Conversation.objects.create(project=project, title="t")
+    project = Space.objects.create(name="t")
+    conv = Conversation.objects.create(space=project, title="t")
 
     msg = Message.objects.create(
         conversation=conv,

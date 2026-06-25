@@ -29,9 +29,9 @@ from workflows.models.workflow import Workflow
 
 
 @pytest.fixture
-def analytics_workflow(db: None, project: "Project") -> Workflow:  # type: ignore[name-defined]  # noqa: F821
+def analytics_workflow(db: None, project: "Space") -> Workflow:  # type: ignore[name-defined]  # noqa: F821
     """创建分析测试用的工作流。"""
-    return Workflow.objects.create(name="Analytics Test Workflow", project=project)
+    return Workflow.objects.create(name="Analytics Test Workflow", space=project)
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def sample_analytics_data(
     # 创建 5 个 WorkflowExecution（3 completed + 1 failed + 1 running）
     exec1 = WorkflowExecution.objects.create(
         workflow=analytics_workflow,
-        project=analytics_workflow.project,
+        space=analytics_workflow.space,
         status=ExecutionStatus.COMPLETED,
         trigger_type="webhook",
         started_at=now - timedelta(days=2, hours=1),
@@ -69,7 +69,7 @@ def sample_analytics_data(
     )
     exec2 = WorkflowExecution.objects.create(
         workflow=analytics_workflow,
-        project=analytics_workflow.project,
+        space=analytics_workflow.space,
         status=ExecutionStatus.COMPLETED,
         trigger_type="webhook",
         started_at=now - timedelta(days=1, minutes=30),
@@ -77,7 +77,7 @@ def sample_analytics_data(
     )
     exec3 = WorkflowExecution.objects.create(
         workflow=analytics_workflow,
-        project=analytics_workflow.project,
+        space=analytics_workflow.space,
         status=ExecutionStatus.COMPLETED,
         trigger_type="manual",
         started_at=now - timedelta(hours=5),
@@ -85,7 +85,7 @@ def sample_analytics_data(
     )
     exec_failed = WorkflowExecution.objects.create(
         workflow=analytics_workflow,
-        project=analytics_workflow.project,
+        space=analytics_workflow.space,
         status=ExecutionStatus.FAILED,
         trigger_type="webhook",
         started_at=now - timedelta(days=1, hours=2),
@@ -93,7 +93,7 @@ def sample_analytics_data(
     )
     _exec_running = WorkflowExecution.objects.create(
         workflow=analytics_workflow,
-        project=analytics_workflow.project,
+        space=analytics_workflow.space,
         status=ExecutionStatus.RUNNING,
         trigger_type="webhook",
         started_at=now - timedelta(minutes=10),

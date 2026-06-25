@@ -24,16 +24,16 @@ async def _create_conv_and_user() -> tuple[Any, Any]:
     from django.contrib.auth import get_user_model
 
     from chat.models import Conversation
-    from projects.models import Project
+    from projects.models import Space
 
     User = get_user_model()
     user = await User.objects.acreate_user(
         username=f"intr_{uuid.uuid4().hex[:8]}",
         password="testpass123",
     )
-    project = await Project.objects.acreate(name=f"intr-proj-{uuid.uuid4().hex[:6]}")
+    project = await Space.objects.acreate(name=f"intr-proj-{uuid.uuid4().hex[:6]}")
     conv = await Conversation.objects.acreate(
-        project=project, title="interrupt", created_by=user
+        space=project, title="interrupt", created_by=user
     )
     return conv, user
 

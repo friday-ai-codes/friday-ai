@@ -61,7 +61,7 @@ def make_event(**kw) -> IngestionEvent:
         "title": "测试方案",
         "content": "## 背景\n\n方案正文",
         "payload": {"title": "测试方案"},
-        "project_id": None,
+        "space_id": None,
         "repository_id": None,
         "event_time": timezone.now(),
         "edges": (),

@@ -36,7 +36,7 @@ from orchestration.models import OrchestrationRun
 @pytest.fixture
 def conversation(project) -> Conversation:
     return Conversation.objects.create(
-        project=project,
+        space=project,
         title="orphan recovery test",
         status=Conversation.Status.RUNNING,
         model="deepseek-test",
@@ -57,7 +57,7 @@ def running_run(conversation: Conversation) -> OrchestrationRun:
 def agent_session(conversation: Conversation, project) -> AgentSession:
     return AgentSession.objects.create(
         session_id=f"chat-{conversation.id}-test",
-        project=project,
+        space=project,
         metadata={"conversation_id": str(conversation.id)},
     )
 

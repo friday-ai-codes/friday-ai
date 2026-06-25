@@ -68,7 +68,7 @@ class TestDisconnectRecovery:
         )
         agent_session = await AgentSession.objects.acreate(
             session_id="agent-recovery-test",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
         )
         sub_session = await SubAgentSession.objects.acreate(

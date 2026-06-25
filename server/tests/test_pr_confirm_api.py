@@ -23,7 +23,7 @@ def pr_review_session(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="PR 确认测试对话", created_by=user
+        space=project, title="PR 确认测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -44,7 +44,7 @@ def running_session(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="测试对话 running", created_by=user
+        space=project, title="测试对话 running", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,

@@ -38,7 +38,7 @@ from services.provider_config import (
 def workflow(db: None, project: Any) -> Any:
     from workflows.models.workflow import Workflow
 
-    return Workflow.objects.create(name="RemoteTool Dispatch Workflow", project=project)
+    return Workflow.objects.create(name="RemoteTool Dispatch Workflow", space=project)
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def workflow_execution(db: None, workflow: Any) -> Any:
 
     return WorkflowExecution.objects.create(
         workflow=workflow,
-        project=workflow.project,
+        space=workflow.space,
         status="running",
     )
 

@@ -32,12 +32,12 @@ _SENTINEL = "机密对话原文特征串-XJ9QZ-禁止入图"
 
 
 def _make_chat_plan(*, with_sentinel_message: bool = False):
-    """Project + Conversation + CodingPlan 同步工厂（用例内经 sync_to_async 调用）。"""
+    """Space + Conversation + CodingPlan 同步工厂（用例内经 sync_to_async 调用）。"""
     from chat.models import CodingPlan, Conversation, Message
-    from projects.models import Project
+    from projects.models import Space
 
-    project = Project.objects.create(name="知识触发测试项目", feishu_project_key="k-trigger-proj")
-    conversation = Conversation.objects.create(project=project, title="知识触发测试对话")
+    project = Space.objects.create(name="知识触发测试项目", feishu_project_key="k-trigger-proj")
+    conversation = Conversation.objects.create(space=project, title="知识触发测试对话")
     if with_sentinel_message:
         Message.objects.create(
             conversation=conversation,
@@ -58,17 +58,17 @@ def _make_mcp_artifact(*, with_context: bool = True):
     """InteractionRun + McpWorkItemContext + McpWorkItemTechnicalPlan 同步工厂。"""
     from interactions.ledger import create_interaction_run
     from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
-    from projects.models import Project
+    from projects.models import Space
     from runners.models import hash_token
 
-    project = Project.objects.create(name="知识触发 MCP 项目", feishu_project_key="k-mcp-proj")
+    project = Space.objects.create(name="知识触发 MCP 项目", feishu_project_key="k-mcp-proj")
     run = create_interaction_run(
         token_fingerprint=hash_token("knowledge-triggers-test"),
         source="mcp",
     )
     context = McpWorkItemContext.objects.create(
         run=run,
-        project=project,
+        space=project,
         feishu_project_key="k-mcp-proj",
         work_item_type="story",
         work_item_id=1001,
@@ -78,7 +78,7 @@ def _make_mcp_artifact(*, with_context: bool = True):
     artifact = McpWorkItemTechnicalPlan.objects.create(
         run=run,
         context=context,
-        project=project,
+        space=project,
         feishu_project_key="k-mcp-proj",
         work_item_type="story",
         work_item_id=1001,
@@ -113,7 +113,7 @@ class TestNormalizers:
         assert event.payload["title"] == plan.title
         assert event.payload["affected_files"] == plan.affected_files
         assert event.payload["recommended_repository_ids"] == plan.recommended_repository_ids
-        assert event.project_id == str(project.id)
+        assert event.space_id == str(project.id)
         assert event.repository_id is None
         assert event.event_time == plan.updated_at
         assert event.edges == ()
@@ -153,7 +153,7 @@ class TestNormalizers:
         )
         assert work_item.title == context.name
         assert context.description in work_item.content
-        assert work_item.project_id == str(project.id)
+        assert work_item.space_id == str(project.id)
         assert len(work_item.edges) == 1
         spec = work_item.edges[0]
         assert spec.relation == "HAS_PLAN"
@@ -169,7 +169,7 @@ class TestNormalizers:
         assert tech_plan.title == artifact.title
         assert tech_plan.content == artifact.markdown
         assert tech_plan.payload["feishu_document_url"] == artifact.feishu_document_url
-        assert tech_plan.project_id == str(project.id)
+        assert tech_plan.space_id == str(project.id)
         assert tech_plan.event_time == artifact.created_at
         assert tech_plan.edges == ()
 
@@ -215,12 +215,12 @@ def _request_triple(request: IngestionRequest) -> tuple[str, str, str]:
 
 
 def _make_fanout_plan():
-    """Project + Repository + Conversation + CodingPlan（fan-out 用例同步工厂）。"""
+    """Space + Repository + Conversation + CodingPlan（fan-out 用例同步工厂）。"""
     from chat.models import CodingPlan, Conversation
-    from projects.models import Project
+    from projects.models import Space
     from repositories.models import Repository
 
-    project = Project.objects.create(name="触发fanout项目", feishu_project_key="k-fanout-proj")
+    project = Space.objects.create(name="触发fanout项目", feishu_project_key="k-fanout-proj")
     repo = Repository.objects.create(
         name="trigger-repo",
         git_url="https://gitlab.com/test/trigger-repo.git",
@@ -228,7 +228,7 @@ def _make_fanout_plan():
         default_branch="main",
     )
     project.repositories.add(repo)
-    conversation = Conversation.objects.create(project=project, title="fanout 对话")
+    conversation = Conversation.objects.create(space=project, title="fanout 对话")
     plan = CodingPlan.objects.create(
         conversation=conversation,
         title="fanout 方案",
@@ -247,14 +247,14 @@ def _make_workflow_plan_execution(
     approval_config: dict | None = None,
     approval_data: dict | None = None,
 ):
-    """Project + Workflow + 生成/审批节点 + Execution 同步工厂（14-04 workflow 触发用例）。
+    """Space + Workflow + 生成/审批节点 + Execution 同步工厂（14-04 workflow 触发用例）。
 
     返回 ``(project, execution, gen_node, gen_exec, approval_exec)``；
     ``with_feishu_trigger=False`` 模拟手动触发（trigger_data 无飞书工作项字段）。
     """
     from django.utils import timezone
 
-    from projects.models import Project
+    from projects.models import Space
     from workflows.models import Workflow, WorkflowNode
     from workflows.models.execution import (
         NodeExecution,
@@ -262,8 +262,8 @@ def _make_workflow_plan_execution(
         WorkflowExecution,
     )
 
-    project = Project.objects.create(name="知识触发 workflow 项目", feishu_project_key="k-wf-proj")
-    workflow = Workflow.objects.create(name="方案工作流", project=project)
+    project = Space.objects.create(name="知识触发 workflow 项目", feishu_project_key="k-wf-proj")
+    workflow = Workflow.objects.create(name="方案工作流", space=project)
     gen_node = WorkflowNode.objects.create(
         workflow=workflow, node_type="ai_plan_generation", name="方案生成"
     )
@@ -274,7 +274,7 @@ def _make_workflow_plan_execution(
     )
     execution = WorkflowExecution.objects.create(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="feishu" if with_feishu_trigger else "manual",
         trigger_data=trigger_data,
     )
@@ -355,7 +355,7 @@ class TestWorkflowPlanNormalizer:
         assert plan_dict["summary"] in tech_plan.content
         assert "task-1" in tech_plan.content  # execution_plan 取材
         assert tech_plan.title == plan_dict["title"]
-        assert tech_plan.project_id == str(project.id)
+        assert tech_plan.space_id == str(project.id)
         assert tech_plan.repository_id is None
         assert tech_plan.event_time == gen_exec.completed_at
         assert tech_plan.edges == ()
@@ -365,7 +365,7 @@ class TestWorkflowPlanNormalizer:
         assert work_item.source_kind == "feishu_work_item"
         # natural key 规则表三元组格式逐字一致（models.py generate_entity_id docstring）
         assert work_item.source_id == f"{project.feishu_project_key}:story:4242"
-        assert work_item.project_id == str(project.id)
+        assert work_item.space_id == str(project.id)
         assert len(work_item.edges) == 1
         spec = work_item.edges[0]
         assert spec.relation == "HAS_PLAN"
@@ -440,13 +440,13 @@ class TestWorkflowPlanNormalizer:
 
 
 def _make_feishu_project(*, with_feishu_config: bool = False):
-    """Project 同步工厂（feishu_work_item normalizer / 三 handler 接线用例）。"""
-    from projects.models import Project
+    """Space 同步工厂（feishu_work_item normalizer / 三 handler 接线用例）。"""
+    from projects.models import Space
 
     kw = {}
     if with_feishu_config:
         kw = {"feishu_plugin_id": "plg-test", "feishu_plugin_secret_encrypted": "enc"}
-    return Project.objects.create(
+    return Space.objects.create(
         name="知识触发 feishu 项目", feishu_project_key="k-feishu-proj", **kw
     )
 
@@ -614,8 +614,8 @@ class TestFeishuWorkItemNormalizer:
         assert "登录大需求" in event.content
         assert event.payload["status"] == "developing"
         assert event.payload["work_item_type"] == "story"
-        assert event.project_id == str(project.id)
-        assert event.project_id
+        assert event.space_id == str(project.id)
+        assert event.space_id
 
     async def test_feishu_same_key_reingest_upgrades_anchor_to_v2(
         self, monkeypatch: pytest.MonkeyPatch, mock_embedding, mock_qdrant_client
@@ -646,7 +646,7 @@ class TestFeishuWorkItemNormalizer:
             title="登录优化需求",
             content="登录优化需求\n\n登录超时需要更清晰的提示。",
             payload={"name": "登录优化需求"},
-            project_id=str(project.id),
+            space_id=str(project.id),
             repository_id=None,
             event_time=dj_tz.now(),
         )
@@ -746,10 +746,10 @@ class TestFeishuWorkItemNormalizer:
     async def test_feishu_source_missing_returns_empty_with_warning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """源缺失双场景：project_key 查无 Project / get_work_item 失败 → 空列表 + warning。"""
+        """源缺失双场景：project_key 查无 Space / get_work_item 失败 → 空列表 + warning。"""
         from knowledge.sources.feishu_work_item import normalize as normalize_feishu
 
-        # 场景 1：project_key 查无 Project
+        # 场景 1：project_key 查无 Space
         with capture_logs() as cap1:
             events1 = await normalize_feishu(
                 IngestionRequest(
@@ -785,11 +785,11 @@ class TestChatTriggers:
     ) -> None:
         """新建投递 chat_plan_created；同 tech_plan 再调（created=False）零新投递。"""
         from chat.models import CodingPlan, Conversation
-        from projects.models import Project
+        from projects.models import Space
 
         def _setup():
-            project = Project.objects.create(name="触发chat项目", feishu_project_key="k-chat-proj")
-            return Conversation.objects.create(project=project, title="触发对话")
+            project = Space.objects.create(name="触发chat项目", feishu_project_key="k-chat-proj")
+            return Conversation.objects.create(space=project, title="触发对话")
 
         conversation = await sync_to_async(_setup)()
 
@@ -866,17 +866,17 @@ class TestMcpTriggers:
         from interactions.ledger import create_interaction_run
         from mcp_tools.models import McpWorkItemContext
         from mcp_tools.technical_plan_service import build_work_item_technical_plan
-        from projects.models import Project
+        from projects.models import Space
         from runners.models import hash_token
 
         def _setup():
-            project = Project.objects.create(name="触发mcp项目", feishu_project_key="k-mcp-t-proj")
+            project = Space.objects.create(name="触发mcp项目", feishu_project_key="k-mcp-t-proj")
             run = create_interaction_run(
                 token_fingerprint=hash_token("knowledge-trigger-mcp"), source="mcp"
             )
             context = McpWorkItemContext.objects.create(
                 run=run,
-                project=project,
+                space=project,
                 feishu_project_key="k-mcp-t-proj",
                 work_item_type="story",
                 work_item_id=2002,
@@ -1160,7 +1160,7 @@ def _make_feishu_trigger_log(project):
         event_uuid=uuid.uuid4().hex,
         event_type="WorkitemUpdateEvent",
         project_key=project.feishu_project_key,
-        project=project,
+        space=project,
         status=TriggerLogStatus.ACCEPTED,
     )
 
@@ -1255,7 +1255,7 @@ def _make_coding_chat_host(
     task_pr_url: str = "",
     last_output: dict | None = None,
 ):
-    """chat 编码完成全套宿主（Project/Repository/CodingPlan/CodingSession/SubAgentSession/TaskResult）。
+    """chat 编码完成全套宿主（Space/Repository/CodingPlan/CodingSession/SubAgentSession/TaskResult）。
 
     默认形态即两条主路径的真实时序：TaskResult.pr_url 为空（PR 由 server 在容器
     回调之后创建），权威源 CodingSession.pr_url 有值（blocker 修复锚）。
@@ -1264,12 +1264,12 @@ def _make_coding_chat_host(
 
     from agents.models import AgentSession
     from chat.models import CodingPlan, CodingSession, Conversation
-    from projects.models import Project
+    from projects.models import Space
     from repositories.models import Repository
     from subagent.models import SubAgentSession, TaskResult
 
     suffix = uuid.uuid4().hex[:8]
-    project = Project.objects.create(name="编码触发项目", feishu_project_key=f"k-coding-{suffix}")
+    project = Space.objects.create(name="编码触发项目", feishu_project_key=f"k-coding-{suffix}")
     repo = Repository.objects.create(
         name="coding-repo",
         git_url=f"https://gitlab.com/test/coding-repo-{suffix}.git",
@@ -1277,7 +1277,7 @@ def _make_coding_chat_host(
         default_branch="main",
     )
     project.repositories.add(repo)
-    conversation = Conversation.objects.create(project=project, title="编码触发对话")
+    conversation = Conversation.objects.create(space=project, title="编码触发对话")
     plan = None
     if with_plan:
         plan = CodingPlan.objects.create(
@@ -1287,7 +1287,7 @@ def _make_coding_chat_host(
             affected_files=[],
         )
     agent_session = AgentSession.objects.create(
-        session_id=f"agent-coding-{suffix}", project=project
+        session_id=f"agent-coding-{suffix}", space=project
     )
     sub = SubAgentSession.objects.create(
         session_id=f"sub-coding-{suffix}",
@@ -1377,7 +1377,7 @@ def _make_coding_workflow_host(*, mr_results: list[dict] | None | str = "auto"):
         output_data=output_data,
         completed_at=timezone.now(),
     )
-    agent_session = AgentSession.objects.create(session_id=f"agent-wf-{suffix}", project=project)
+    agent_session = AgentSession.objects.create(session_id=f"agent-wf-{suffix}", space=project)
     sub = SubAgentSession.objects.create(
         session_id=session_id,
         main_session=agent_session,
@@ -1503,7 +1503,7 @@ class TestCodingTaskResultNormalizer:
         # diff 原文不进 payload（T-14-24 前提：payload 只放摘要）
         assert _DIFF_SENTINEL not in json.dumps(payload, ensure_ascii=False)
         assert code_change.repository_id == str(repo.id)
-        assert code_change.project_id == str(project.id)
+        assert code_change.space_id == str(project.id)
 
     async def test_coding_workflow_anchor_and_mr_url_from_output_data(self, fake_archive) -> None:
         """workflow 路径方案回溯 + mr_url 取自 node_execution.output_data 持久化项。"""
@@ -1535,7 +1535,7 @@ class TestCodingTaskResultNormalizer:
         assert fake_archive.calls[-1]["mr_url"] == expected_mr_url
         assert fake_archive.calls[-1]["mr_id"] == "9"
         assert code_change.repository_id == str(repo.id)
-        assert code_change.project_id == str(project.id)
+        assert code_change.space_id == str(project.id)
 
     async def test_coding_no_plan_degrades_to_single_event(self, fake_archive) -> None:
         """无方案降级：既无 coding_plan 也无 node_execution → 单 code_change 事件 + warning。"""
@@ -1596,7 +1596,7 @@ class TestCodingTaskResultNormalizer:
         code_change = events[-1]
         assert code_change.payload["repository_id"] == str(repo.id)
         assert code_change.repository_id == str(repo.id)
-        assert code_change.project_id == str(project.id)
+        assert code_change.space_id == str(project.id)
         # 特征串零泄漏（事件全字段 repr 扫描）
         assert _FAKE_REPO_SENTINEL not in repr(events)
         assert fake_archive.calls[-1]["repository"].id == repo.id
@@ -1640,7 +1640,7 @@ class TestCodingTaskResultNormalizer:
                     title="编码需求",
                     content="编码需求\n\n编码完成应自动归档 diff。",
                     payload={},
-                    project_id=str(project.id),
+                    space_id=str(project.id),
                     repository_id=None,
                     event_time=now,
                     edges=(
@@ -1657,7 +1657,7 @@ class TestCodingTaskResultNormalizer:
                     title=plan.title,
                     content=f"{plan.title}\n\n{plan.tech_plan}",
                     payload={},
-                    project_id=str(project.id),
+                    space_id=str(project.id),
                     repository_id=None,
                     event_time=now,
                 ),
@@ -1949,7 +1949,7 @@ class TestExceptionIsolation:
     ) -> None:
         """run_in_background 抛 RuntimeError → aget_or_create_for_conversation 仍成功。"""
         from chat.models import CodingPlan, Conversation
-        from projects.models import Project
+        from projects.models import Space
 
         def _boom(factory, *, name=None):
             raise RuntimeError("runner down")
@@ -1957,8 +1957,8 @@ class TestExceptionIsolation:
         monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
 
         def _setup():
-            project = Project.objects.create(name="隔离chat项目", feishu_project_key="k-iso-proj")
-            return Conversation.objects.create(project=project, title="隔离对话")
+            project = Space.objects.create(name="隔离chat项目", feishu_project_key="k-iso-proj")
+            return Conversation.objects.create(space=project, title="隔离对话")
 
         conversation = await sync_to_async(_setup)()
         plan, created = await CodingPlan.aget_or_create_for_conversation(

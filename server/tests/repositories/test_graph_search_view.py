@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from rest_framework.test import APIClient
 
-from projects.models import ProjectRepository
+from projects.models import SpaceRepository
 from repositories.models import IndexStatus, Repository
 from services.retrieval.types import (
     HybridSearchResult,
@@ -45,7 +45,7 @@ def repo_indexed(db, project_a) -> Repository:
         default_branch="main",
         index_status=IndexStatus.INDEXED,
     )
-    ProjectRepository.objects.create(project=project_a, repository=repo)
+    SpaceRepository.objects.create(space=project_a, repository=repo)
     return repo
 
 
@@ -59,7 +59,7 @@ def repo_unindexed(db, project_a) -> Repository:
         default_branch="main",
         index_status=IndexStatus.NOT_INDEXED,
     )
-    ProjectRepository.objects.create(project=project_a, repository=repo)
+    SpaceRepository.objects.create(space=project_a, repository=repo)
     return repo
 
 

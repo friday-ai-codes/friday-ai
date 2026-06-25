@@ -14,7 +14,7 @@ import uuid
 import pytest
 from rest_framework import status
 
-from projects.models import Project
+from projects.models import Space
 from workflows.models import (
     NodeExecution,
     NodeSubStep,
@@ -28,9 +28,9 @@ from workflows.models import (
 @pytest.fixture
 def api_project(db):
     """Create a project for API tests."""
-    return Project.objects.create(
-        name="API Test Project",
-        description="Project for API testing",
+    return Space.objects.create(
+        name="API Test Space",
+        description="Space for API testing",
     )
 
 
@@ -40,7 +40,7 @@ def api_workflow(db, api_project):
     return Workflow.objects.create(
         name="API Test Workflow",
         description="Workflow for API testing",
-        project=api_project,
+        space=api_project,
         trigger_type="manual",
     )
 
@@ -251,7 +251,7 @@ class TestWorkflowExecutionAPI:
         # Create an execution first
         WorkflowExecution.objects.create(
             workflow=api_workflow_with_nodes,
-            project=api_workflow_with_nodes.project,
+            space=api_workflow_with_nodes.space,
             trigger_type="manual",
         )
 
@@ -264,7 +264,7 @@ class TestWorkflowExecutionAPI:
         """Test getting execution detail."""
         execution = WorkflowExecution.objects.create(
             workflow=api_workflow_with_nodes,
-            project=api_workflow_with_nodes.project,
+            space=api_workflow_with_nodes.space,
             trigger_type="manual",
         )
 
@@ -289,7 +289,7 @@ class TestExecutionBatchDeleteAPI:
     def _create_execution(self, workflow, exec_status="completed"):
         return WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
             status=exec_status,
         )
@@ -323,10 +323,10 @@ class TestExecutionBatchDeleteAPI:
 
     def test_non_admin_member_is_forbidden(self, authenticated_client, user, api_workflow):
         """空间普通成员（member）无权批量删除。"""
-        from permissions.models import ProjectMembership, ProjectRole
+        from permissions.models import SpaceMembership, SpaceRole
 
-        ProjectMembership.objects.create(
-            user=user, project=api_workflow.project, role=ProjectRole.MEMBER
+        SpaceMembership.objects.create(
+            user=user, space=api_workflow.space, role=SpaceRole.MEMBER
         )
         execution = self._create_execution(api_workflow, "completed")
 
@@ -337,10 +337,10 @@ class TestExecutionBatchDeleteAPI:
 
     def test_project_admin_can_batch_delete(self, authenticated_client, user, api_workflow):
         """空间 admin 可以批量删除本空间的执行。"""
-        from permissions.models import ProjectMembership, ProjectRole
+        from permissions.models import SpaceMembership, SpaceRole
 
-        ProjectMembership.objects.create(
-            user=user, project=api_workflow.project, role=ProjectRole.ADMIN
+        SpaceMembership.objects.create(
+            user=user, space=api_workflow.space, role=SpaceRole.ADMIN
         )
         execution = self._create_execution(api_workflow, "cancelled")
 
@@ -991,7 +991,7 @@ class TestNodeSubStepAPI:
         """创建带子步骤的 NodeExecution 测试数据。"""
         workflow = Workflow.objects.create(
             name="SubStep Test Workflow",
-            project=api_project,
+            space=api_project,
             created_by=user,
         )
         node = WorkflowNode.objects.create(
@@ -1003,7 +1003,7 @@ class TestNodeSubStepAPI:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
             triggered_by=user,
         )
@@ -1115,7 +1115,7 @@ class TestNodeSubStepAPI:
         """无子步骤时返回空列表。"""
         workflow = Workflow.objects.create(
             name="Empty SubStep Workflow",
-            project=api_project,
+            space=api_project,
             created_by=user,
         )
         node = WorkflowNode.objects.create(
@@ -1127,7 +1127,7 @@ class TestNodeSubStepAPI:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
         node_execution = NodeExecution.objects.create(

@@ -15,7 +15,7 @@ class TestCodingSessionDefaults:
         """创建 CodingSession 后 status 默认为 draft，revision_count 默认为 0。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="测试对话")
+        conversation = Conversation.objects.create(space=project, title="测试对话")
         session = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -38,7 +38,7 @@ class TestCodingSessionStateMachine:
         """创建 draft 状态的 CodingSession。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="测试对话")
+        conversation = Conversation.objects.create(space=project, title="测试对话")
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -171,7 +171,7 @@ class TestCodingSessionConfirmAPI:
         from chat.models import Conversation
 
         conversation = Conversation.objects.create(
-            project=project, title="测试对话", created_by=user
+            space=project, title="测试对话", created_by=user
         )
         return CodingSession.objects.create(
             conversation=conversation,
@@ -317,10 +317,10 @@ class TestCodingSessionCallback:
         from chat.models import Conversation
         from subagent.models import SubAgentSession
 
-        conversation = Conversation.objects.create(project=project, title="回调测试对话")
+        conversation = Conversation.objects.create(space=project, title="回调测试对话")
         agent_session = AgentSession.objects.create(
             session_id="agent-coding-test-001",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
         )
         # task_type=EXPLORE 测试兼容旧流程路径（非 graph 管理的 session）
@@ -416,7 +416,7 @@ class TestCodingSessionCallback:
 
         agent_session = await AgentSession.objects.acreate(
             session_id="agent-no-coding-001",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
         )
         sub_session = await SubAgentSession.objects.acreate(
@@ -447,7 +447,7 @@ class TestCodingSessionQueryAPI:
         from chat.models import Conversation
 
         conversation = Conversation.objects.create(
-            project=project, title="查询测试对话", created_by=user
+            space=project, title="查询测试对话", created_by=user
         )
         session1 = CodingSession.objects.create(
             conversation=conversation,
@@ -476,7 +476,7 @@ class TestCodingSessionQueryAPI:
         """GET 带无 CodingSession 的 conversation_id 返回空列表。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="空对话")
+        conversation = Conversation.objects.create(space=project, title="空对话")
         url = f"/api/chat/coding-sessions/?conversation_id={conversation.id}"
         response = authenticated_client.get(url)
         assert response.status_code == 200
@@ -523,7 +523,7 @@ class TestCodingSessionAwaitingConfirmationDefaults:
         """新字段 confirmation_step 和 suggested_commit_message 默认为空字符串。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="默认值测试")
+        conversation = Conversation.objects.create(space=project, title="默认值测试")
         session = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -547,7 +547,7 @@ class TestCodingSessionAwaitingConfirmationStateMachine:
         """创建 running 状态的 CodingSession。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="状态转换测试")
+        conversation = Conversation.objects.create(space=project, title="状态转换测试")
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -635,7 +635,7 @@ class TestCodingSessionSerializerNewFields:
         from chat.models import Conversation
         from chat.serializers import CodingSessionSerializer
 
-        conversation = Conversation.objects.create(project=project, title="序列化测试")
+        conversation = Conversation.objects.create(space=project, title="序列化测试")
         session = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -650,7 +650,7 @@ class TestCodingSessionSerializerNewFields:
         from chat.models import Conversation
         from chat.serializers import CodingSessionSerializer
 
-        conversation = Conversation.objects.create(project=project, title="序列化测试")
+        conversation = Conversation.objects.create(space=project, title="序列化测试")
         session = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -684,7 +684,7 @@ class TestCodingSessionConfirmBranchValidation:
         from chat.models import Conversation
 
         conversation = Conversation.objects.create(
-            project=project, title="测试编码", created_by=user
+            space=project, title="测试编码", created_by=user
         )
         return CodingSession.objects.create(
             conversation=conversation,
@@ -784,7 +784,7 @@ class TestUniqueActivePlanRepoConstraint:
         """创建 Conversation + CodingPlan（依赖 implementation 落库的 CodingPlan model）。"""
         from chat.models import CodingPlan, Conversation
 
-        conversation = Conversation.objects.create(project=project, title="work item 对话")
+        conversation = Conversation.objects.create(space=project, title="work item 对话")
         return CodingPlan.objects.create(
             conversation=conversation,
             tech_plan="## work item 方案",
@@ -797,7 +797,7 @@ class TestUniqueActivePlanRepoConstraint:
         """另一个 Conversation + CodingPlan，用于跨 plan 用例。"""
         from chat.models import CodingPlan, Conversation
 
-        conversation = Conversation.objects.create(project=project, title="另一对话")
+        conversation = Conversation.objects.create(space=project, title="另一对话")
         return CodingPlan.objects.create(
             conversation=conversation,
             tech_plan="## 另一方案",
@@ -889,7 +889,7 @@ class TestCodingSessionCallbackBranchSync:
         from subagent.models import SubAgentSession, TaskResult
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="branch sync",
         )
         plan = await CodingPlan.objects.acreate(
@@ -900,7 +900,7 @@ class TestCodingSessionCallbackBranchSync:
         )
         agent_session = await AgentSession.objects.acreate(
             session_id="agent-branch-sync",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
         )
         sub_session = await SubAgentSession.objects.acreate(

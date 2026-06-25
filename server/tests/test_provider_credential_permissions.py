@@ -5,10 +5,10 @@ perform_acreate 契约，参数化 4 角色 × 场景组合成 16 用例矩阵�
 
 矩阵设计原则（与 plan 实际代码对齐）：
 - system_admin（is_superuser=True）：全通
-- project_a_admin（ProjectRole.ADMIN）：system 读 + project_a 读写；跨项目 retrieve 返回 404
-- project_a_member（ProjectRole.MEMBER）：本项目读写（MEMBER+ 即可写，plan 落地）
-- project_a_viewer（ProjectRole.VIEWER）：本项目 + system 只读，写操作 403
-- project_b_admin（ProjectRole.ADMIN）：project_b 读写；跨项目 retrieve/PATCH 404
+- project_a_admin（SpaceRole.ADMIN）：system 读 + project_a 读写；跨项目 retrieve 返回 404
+- project_a_member（SpaceRole.MEMBER）：本项目读写（MEMBER+ 即可写，plan 落地）
+- project_a_viewer（SpaceRole.VIEWER）：本项目 + system 只读，写操作 403
+- project_b_admin（SpaceRole.ADMIN）：project_b 读写；跨项目 retrieve/PATCH 404
 
 contract 关键断言：跨项目 retrieve/PATCH/DELETE → **404**（非 403），防"凭证存在"事实泄漏
 （get_queryset filter 用户可见 → detail 404 比 permission 403 更安全）。

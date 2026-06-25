@@ -48,7 +48,7 @@ class TestPromptSerializers:
 
         serializer = PromptCreateSerializer(
             data={
-                "slug": "x.sys.with.project",
+                "slug": "x.sys.with.space",
                 "category": "aux_model",
                 "scope": "system",
                 "space": str(project.id),
@@ -67,7 +67,7 @@ class TestPromptSerializers:
 
         serializer = PromptCreateSerializer(
             data={
-                "slug": "x.proj.no.project",
+                "slug": "x.proj.no.space",
                 "category": "aux_model",
                 "scope": "project",
                 "space": None,
@@ -132,7 +132,7 @@ class TestPromptCRUDAPI:
             slug="list.p1",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="proj1",
             created_by=admin_user,
         )
@@ -157,7 +157,7 @@ class TestPromptCRUDAPI:
             slug="listproj.a",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="t1",
             created_by=admin_user,
         )
@@ -165,7 +165,7 @@ class TestPromptCRUDAPI:
             slug="listproj.b",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=second_project,
+            space=second_project,
             title="t2",
             created_by=admin_user,
         )

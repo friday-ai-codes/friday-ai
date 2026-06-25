@@ -133,7 +133,7 @@ async def test_golden_final_context_byte_equivalence(
     result = await LayeredSearchService.search(
         entry.query,
         repository_ids=repo_ids,
-        project_id=entry.project_id,
+        project_id=entry.space_id,
         branch_name=entry.branch_name,
         max_tokens=entry.max_tokens,
         top_k=entry.top_k,

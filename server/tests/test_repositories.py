@@ -437,7 +437,7 @@ class TestRepositorySpaces:
         response = authenticated_client.get(self._url(repository.id))
 
         assert response.status_code == status.HTTP_200_OK
-        assert [s["name"] for s in response.data] == ["Test Project"]
+        assert [s["name"] for s in response.data] == ["Test Space"]
 
     def test_put_replaces_links(
         self, authenticated_client, project, second_project, repository

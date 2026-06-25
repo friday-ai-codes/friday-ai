@@ -287,7 +287,7 @@ def _build_resumable_wait_workflow(engine_project):
     """trigger → ResumableWait(Waiter) → Downstream（续跑断裂/互斥用）。"""
     workflow = Workflow.objects.create(
         name="Resumable Wait Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -328,7 +328,7 @@ def _build_wait_branch_workflow(engine_project):
     """trigger → ResumableWait(Waiter) → Branch → TrueSide/FalseSide → Join（双路径一致性 B 路径）。"""
     workflow = Workflow.objects.create(
         name="Wait Branch Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -412,7 +412,7 @@ def _build_approval_workflow(engine_project):
 
     workflow = Workflow.objects.create(
         name="Approval Hot-Loop Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(

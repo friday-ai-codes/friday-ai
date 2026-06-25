@@ -4,7 +4,7 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from identity.models import OIDCIdentity, OIDCProvider
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 
 # ============================================================================
 # OIDCProvider Tests
@@ -121,54 +121,54 @@ class TestOIDCIdentity:
 
 
 # ============================================================================
-# ProjectMembership Tests
+# SpaceMembership Tests
 # ============================================================================
 
 
 class TestProjectMembership:
-    """ProjectMembership 模型测试。"""
+    """SpaceMembership 模型测试。"""
 
     @pytest.mark.django_db
     def test_project_membership_create(self, user, project):
-        """ProjectMembership 可以正常创建并关联 User 和 Project。"""
-        membership = ProjectMembership.objects.create(
-            user=user, project=project, role=ProjectRole.ADMIN
+        """SpaceMembership 可以正常创建并关联 User 和 Space。"""
+        membership = SpaceMembership.objects.create(
+            user=user, space=project, role=SpaceRole.ADMIN
         )
         membership.refresh_from_db()
         assert membership.user == user
-        assert membership.project == project
-        assert membership.role == ProjectRole.ADMIN
+        assert membership.space == project
+        assert membership.role == SpaceRole.ADMIN
         assert membership.joined_at is not None
 
     @pytest.mark.django_db
     def test_project_membership_roles(self, user, project):
         """三种角色（admin/member/viewer）均可正常设置。"""
-        for role_value, _label in ProjectRole.choices:
-            ProjectMembership.objects.filter(user=user, project=project).delete()
-            m = ProjectMembership.objects.create(
-                user=user, project=project, role=role_value
+        for role_value, _label in SpaceRole.choices:
+            SpaceMembership.objects.filter(user=user, space=project).delete()
+            m = SpaceMembership.objects.create(
+                user=user, space=project, role=role_value
             )
             assert m.role == role_value
 
     @pytest.mark.django_db
     def test_project_membership_default_role(self, user, project):
         """默认角色为 member。"""
-        membership = ProjectMembership.objects.create(user=user, project=project)
-        assert membership.role == ProjectRole.MEMBER
+        membership = SpaceMembership.objects.create(user=user, space=project)
+        assert membership.role == SpaceRole.MEMBER
 
     @pytest.mark.django_db
     def test_project_membership_unique_constraint(self, user, project):
         """同一 user + project 组合不能创建两条记录。"""
-        ProjectMembership.objects.create(user=user, project=project)
+        SpaceMembership.objects.create(user=user, space=project)
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                ProjectMembership.objects.create(user=user, project=project)
+                SpaceMembership.objects.create(user=user, space=project)
 
     @pytest.mark.django_db
     def test_project_membership_str(self, user, project):
         """__str__ 返回合理格式。"""
-        membership = ProjectMembership.objects.create(
-            user=user, project=project, role=ProjectRole.ADMIN
+        membership = SpaceMembership.objects.create(
+            user=user, space=project, role=SpaceRole.ADMIN
         )
         result = str(membership)
         assert str(user) in result

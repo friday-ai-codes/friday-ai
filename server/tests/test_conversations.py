@@ -10,7 +10,7 @@ import pytest
 from rest_framework import status
 
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 
 # ============================================================================
 # Fixtures
@@ -20,8 +20,8 @@ from projects.models import Project
 @pytest.fixture
 def test_project(db):
     """创建测试项目（不依赖 repository）。"""
-    return Project.objects.create(
-        name="Test Chat Project",
+    return Space.objects.create(
+        name="Test Chat Space",
         description="项目用于对话测试",
     )
 
@@ -30,7 +30,7 @@ def test_project(db):
 def conversation(db, test_project):
     """创建测试对话。"""
     return Conversation.objects.create(
-        project=test_project,
+        space=test_project,
         title="测试对话",
     )
 
@@ -152,8 +152,8 @@ class TestConversationList:
 
     def test_list_conversations_ordering(self, api_client, test_project):
         """对话按 updated_at 降序排列。"""
-        _conv1 = Conversation.objects.create(project=test_project, title="对话 1")
-        _conv2 = Conversation.objects.create(project=test_project, title="对话 2")
+        _conv1 = Conversation.objects.create(space=test_project, title="对话 1")
+        _conv2 = Conversation.objects.create(space=test_project, title="对话 2")
 
         response = api_client.get("/api/chat/conversations/")
 
@@ -165,7 +165,7 @@ class TestConversationList:
     def test_list_defaults_to_top_50(self, api_client, test_project):
         """默认仅返回最近 50 条（top N）。"""
         for i in range(55):
-            Conversation.objects.create(project=test_project, title=f"对话 {i}")
+            Conversation.objects.create(space=test_project, title=f"对话 {i}")
 
         response = api_client.get("/api/chat/conversations/")
 
@@ -175,7 +175,7 @@ class TestConversationList:
     def test_list_custom_limit(self, api_client, test_project):
         """支持 ?limit= 自定义条数。"""
         for i in range(10):
-            Conversation.objects.create(project=test_project, title=f"对话 {i}")
+            Conversation.objects.create(space=test_project, title=f"对话 {i}")
 
         response = api_client.get("/api/chat/conversations/?limit=3")
 
@@ -184,8 +184,8 @@ class TestConversationList:
 
     def test_list_search_by_title(self, api_client, test_project):
         """?q= 命中标题。"""
-        Conversation.objects.create(project=test_project, title="研发周报")
-        Conversation.objects.create(project=test_project, title="刷题需求")
+        Conversation.objects.create(space=test_project, title="研发周报")
+        Conversation.objects.create(space=test_project, title="刷题需求")
 
         response = api_client.get("/api/chat/conversations/?q=周报")
 
@@ -195,13 +195,13 @@ class TestConversationList:
 
     def test_list_search_by_message_content(self, api_client, test_project):
         """?q= 命中消息内容（标题不含关键词也能搜到）。"""
-        hit = Conversation.objects.create(project=test_project, title="无关标题")
+        hit = Conversation.objects.create(space=test_project, title="无关标题")
         Message.objects.create(
             conversation=hit,
             role=Message.Role.ASSISTANT,
             content="思维培优的判断依据是 isThinking 查询参数",
         )
-        Conversation.objects.create(project=test_project, title="另一个对话")
+        Conversation.objects.create(space=test_project, title="另一个对话")
 
         response = api_client.get("/api/chat/conversations/?q=isThinking")
 
@@ -211,7 +211,7 @@ class TestConversationList:
 
     def test_list_search_dedups_multiple_message_hits(self, api_client, test_project):
         """同一会话多条消息命中关键词时不重复返回。"""
-        conv = Conversation.objects.create(project=test_project, title="标题含关键词abc")
+        conv = Conversation.objects.create(space=test_project, title="标题含关键词abc")
         Message.objects.create(conversation=conv, role=Message.Role.USER, content="abc 1")
         Message.objects.create(conversation=conv, role=Message.Role.ASSISTANT, content="abc 2")
 
@@ -222,9 +222,9 @@ class TestConversationList:
 
     def test_list_excludes_archived(self, api_client, test_project):
         """归档的对话默认不出现在列表。"""
-        Conversation.objects.create(project=test_project, title="正常对话")
+        Conversation.objects.create(space=test_project, title="正常对话")
         Conversation.objects.create(
-            project=test_project, title="归档对话", is_archived=True,
+            space=test_project, title="归档对话", is_archived=True,
         )
 
         response = api_client.get("/api/chat/conversations/")
@@ -235,9 +235,9 @@ class TestConversationList:
 
     def test_list_archived_only(self, api_client, test_project):
         """?archived=1 仅返回已归档会话。"""
-        Conversation.objects.create(project=test_project, title="正常对话")
+        Conversation.objects.create(space=test_project, title="正常对话")
         Conversation.objects.create(
-            project=test_project, title="归档对话", is_archived=True,
+            space=test_project, title="归档对话", is_archived=True,
         )
 
         response = api_client.get("/api/chat/conversations/?archived=1")

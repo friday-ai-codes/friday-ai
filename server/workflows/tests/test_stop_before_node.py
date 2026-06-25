@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     ExecutionStatus,
@@ -19,14 +19,14 @@ from workflows.models import (
 @pytest.mark.django_db(transaction=True)
 async def test_stop_before_second_node():
     """Test that execution stops before the specified node."""
-    # 0. Create Project
-    project = await Project.objects.acreate(
-        name="Test Project", description="For stop_before testing"
+    # 0. Create Space
+    project = await Space.objects.acreate(
+        name="Test Space", description="For stop_before testing"
     )
 
     # 1. Create Workflow
     workflow = await Workflow.objects.acreate(
-        name="Test Stop Before", trigger_type="manual", project=project
+        name="Test Stop Before", trigger_type="manual", space=project
     )
 
     # 2. Create Nodes: manual_trigger -> condition -> end
@@ -107,14 +107,14 @@ async def test_stop_before_second_node():
 @pytest.mark.django_db(transaction=True)
 async def test_stop_before_nonexistent_node_runs_all():
     """Test that execution completes normally when stop_before_node_id doesn't exist."""
-    # 0. Create Project
-    project = await Project.objects.acreate(
-        name="Test Project", description="For stop_before testing"
+    # 0. Create Space
+    project = await Space.objects.acreate(
+        name="Test Space", description="For stop_before testing"
     )
 
     # 1. Create Workflow
     workflow = await Workflow.objects.acreate(
-        name="Test Stop Before Nonexistent", trigger_type="manual", project=project
+        name="Test Stop Before Nonexistent", trigger_type="manual", space=project
     )
 
     # 2. Create Nodes

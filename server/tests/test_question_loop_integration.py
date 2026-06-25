@@ -21,7 +21,7 @@ def mock_session(db):
     """创建测试用 SubAgentSession。"""
     from accounts.models import User
     from agents.models import AgentSession
-    from projects.models import Project
+    from projects.models import Space
     from subagent.models import SubAgentSession
 
     # 创建 User（AgentSession 需要）
@@ -31,16 +31,16 @@ def mock_session(db):
         password="testpass123",
     )
 
-    # 创建 Project（AgentSession 需要）
-    project = Project.objects.create(
-        name="Test Project",
+    # 创建 Space（AgentSession 需要）
+    project = Space.objects.create(
+        name="Test Space",
         description="Test",
     )
 
     # 创建 main_session
     main_session = AgentSession.objects.create(
         session_id="main-test-001",
-        project=project,
+        space=project,
         user=user,
         metadata={"chat_id": "oc_test_chat_id"},
     )

@@ -92,7 +92,7 @@ async def test_scope_include_repos_precedence(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_scope_project_repos_fallback(monkeypatch) -> None:
-    """无 include_repos 时回退 work_item.project 仓库 id 列表。"""
+    """无 include_repos 时回退 work_item.space 仓库 id 列表。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
         "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
@@ -129,10 +129,10 @@ async def test_scope_no_work_item_full_repo(monkeypatch) -> None:
 def _make_work_item_with_repo() -> str:
     """建 project + repository（关联）+ work_item，返回 repository id 字符串。"""
     from delivery.models import WorkItem, WorkItemOrigin
-    from projects.models import Project
+    from projects.models import Space
     from repositories.models import Repository
 
-    project = Project.objects.create(name="P")
+    project = Space.objects.create(name="P")
     repo = Repository.objects.create(name="R", git_url="https://example.com/r.git")
     project.repositories.add(repo)
     WorkItem.objects.create(
@@ -140,7 +140,7 @@ def _make_work_item_with_repo() -> str:
         work_item_type="story",
         work_item_id=1,
         origin=WorkItemOrigin.MANUAL,
-        project=project,
+        space=project,
         title="t",
     )
     return str(repo.id)

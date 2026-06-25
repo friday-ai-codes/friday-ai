@@ -14,7 +14,7 @@ from django.test import Client
 from rest_framework.test import APIClient
 
 from common.encryption import encrypt_value
-from projects.models import Project
+from projects.models import Space
 from repositories.models import AuthType, GitCredential, Repository
 from workflows.models import (
     ExecutionStatus,
@@ -59,15 +59,15 @@ def e2e_repository(db) -> Repository:
 
 
 @pytest.fixture
-def e2e_project(db, e2e_repository: Repository) -> Project:
+def e2e_project(db, e2e_repository: Repository) -> Space:
     """Create a test project for E2E tests.
 
     Returns:
-        Project with Feishu integration configured and repository linked
+        Space with Feishu integration configured and repository linked
     """
-    project = Project.objects.create(
-        name="E2E Test Project",
-        description="Project for E2E workflow testing",
+    project = Space.objects.create(
+        name="E2E Test Space",
+        description="Space for E2E workflow testing",
         feishu_project_key="e2e-test-project",
         feishu_webhook_token="e2e-webhook-contract",
     )
@@ -78,7 +78,7 @@ def e2e_project(db, e2e_repository: Repository) -> Project:
 @pytest.fixture
 def e2e_workflow(
     db,
-    e2e_project: Project,
+    e2e_project: Space,
     e2e_repository: Repository,
 ) -> Workflow:
     """Create a complete E2E workflow with all node types.
@@ -94,7 +94,7 @@ def e2e_workflow(
     """
     workflow = Workflow.objects.create(
         name="E2E Test Workflow",
-        project=e2e_project,
+        space=e2e_project,
         trigger_type="feishu_event",
         description="Complete E2E workflow for testing",
         is_active=True,
@@ -209,7 +209,7 @@ def e2e_workflow(
 
 
 @pytest.fixture
-def e2e_simple_workflow(db, e2e_project: Project) -> Workflow:
+def e2e_simple_workflow(db, e2e_project: Space) -> Workflow:
     """Create a simple two-node workflow for basic E2E tests.
 
     Returns:
@@ -217,7 +217,7 @@ def e2e_simple_workflow(db, e2e_project: Project) -> Workflow:
     """
     workflow = Workflow.objects.create(
         name="Simple E2E Workflow",
-        project=e2e_project,
+        space=e2e_project,
         trigger_type="manual",
         is_active=True,
     )
@@ -268,7 +268,7 @@ def e2e_api_client() -> APIClient:
 
 def simulate_feishu_webhook(
     api_client: APIClient | Client,
-    project: Project,
+    project: Space,
     event_type: str,
     payload: dict[str, Any],
 ) -> Any:
@@ -276,7 +276,7 @@ def simulate_feishu_webhook(
 
     Args:
         api_client: Django test client or DRF APIClient
-        project: Project with Feishu configuration
+        project: Space with Feishu configuration
         event_type: Feishu event type (WorkitemCreateEvent, etc.)
         payload: Complete webhook payload dict
 

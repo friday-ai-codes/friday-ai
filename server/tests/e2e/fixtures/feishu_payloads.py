@@ -1,7 +1,7 @@
 """Feishu webhook payload factories for E2E testing.
 
 These factories create realistic Feishu webhook payloads matching
-the actual payload structure received from Feishu Project webhooks.
+the actual payload structure received from Feishu Space webhooks.
 """
 
 import uuid
@@ -16,11 +16,11 @@ class FeishuProjectProtocol(Protocol):
 
 
 if TYPE_CHECKING:
-    from projects.models import Project
+    from projects.models import Space
 
 
 def create_workitem_create_payload(
-    project: "Project | FeishuProjectProtocol",
+    project: "Space | FeishuProjectProtocol",
     work_item_id: str,
     name: str,
     description: str = "",
@@ -30,7 +30,7 @@ def create_workitem_create_payload(
     """Create a WorkitemCreateEvent webhook payload.
 
     Args:
-        project: Project with feishu_project_key and feishu_webhook_token
+        project: Space with feishu_project_key and feishu_webhook_token
         work_item_id: The Feishu work item ID
         name: Work item name/title
         description: Work item description
@@ -68,7 +68,7 @@ def create_workitem_create_payload(
 
 
 def create_workitem_update_payload(
-    project: "Project | FeishuProjectProtocol",
+    project: "Space | FeishuProjectProtocol",
     work_item_id: str,
     changed_fields: dict[str, Any],
     work_item_type: str = "story",
@@ -77,7 +77,7 @@ def create_workitem_update_payload(
     """Create a WorkitemUpdateEvent webhook payload.
 
     Args:
-        project: Project with feishu_project_key and feishu_webhook_token
+        project: Space with feishu_project_key and feishu_webhook_token
         work_item_id: The Feishu work item ID
         changed_fields: Dictionary of changed field keys and their new values
         work_item_type: Type of work item
@@ -117,7 +117,7 @@ def create_workitem_update_payload(
 
 
 def create_workitem_comment_payload(
-    project: "Project | FeishuProjectProtocol",
+    project: "Space | FeishuProjectProtocol",
     work_item_id: str,
     comment: str,
     work_item_type: str = "story",
@@ -125,7 +125,7 @@ def create_workitem_comment_payload(
     """Create a WorkitemCommentEvent webhook payload.
 
     Args:
-        project: Project with feishu_project_key and feishu_webhook_token
+        project: Space with feishu_project_key and feishu_webhook_token
         work_item_id: The Feishu work item ID
         comment: Comment text
         work_item_type: Type of work item
@@ -149,7 +149,7 @@ def create_workitem_comment_payload(
 
 
 def create_status_change_payload(
-    project: "Project | FeishuProjectProtocol",
+    project: "Space | FeishuProjectProtocol",
     work_item_id: str,
     from_status: str,
     to_status: str,
@@ -158,7 +158,7 @@ def create_status_change_payload(
     """Create a WorkitemUpdateEvent payload for status change.
 
     Args:
-        project: Project with feishu_project_key and feishu_webhook_token
+        project: Space with feishu_project_key and feishu_webhook_token
         work_item_id: The Feishu work item ID
         from_status: Previous status key
         to_status: New status key

@@ -29,11 +29,11 @@ class TestBuildSdkConfig:
         from chat.models import Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test",
             model="claude-sonnet-4-5",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 
@@ -65,11 +65,11 @@ class TestBuildSdkConfig:
         from chat.models import Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test",
             model="claude-opus-5",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 
@@ -102,11 +102,11 @@ class TestBuildSdkConfig:
         from chat.models import Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test",
             model="",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 
@@ -136,10 +136,10 @@ class TestBuildSdkConfig:
         from services.provider_config import ProviderConfigError
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 
@@ -153,7 +153,7 @@ class TestBuildSdkConfig:
             await build_sdk_config(conversation)
 
     async def test_no_space_conversation_builds_general_config(self):
-        """无空间对话（project=None）：space_id 为空串 + prompt 注入无空间指引。
+        """无空间对话（space=None）：space_id 为空串 + prompt 注入无空间指引。
 
         行为契约：space_id="" → chat_runner._get_tool_names 不注入任何空间工具；
         system prompt 引导 LLM 在任务涉及空间知识时要求用户先选择空间。
@@ -171,11 +171,11 @@ class TestBuildSdkConfig:
             max_concurrency: int = 0
 
         conversation = await Conversation.objects.acreate(
-            project=None,
+            space=None,
             title="general",
             model="claude-sonnet-4-5",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 
@@ -193,18 +193,18 @@ class TestBuildSdkConfig:
 
         assert config.space_id == ""
         assert "未绑定任何空间" in config.system_prompt
-        assert agent_session.project_id is None
+        assert agent_session.space_id is None
 
     async def test_budget_from_settings(self, project):
         from chat.config import build_sdk_config
         from chat.models import Conversation
 
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test",
             model="claude-sonnet-4-5",
         )
-        conversation = await Conversation.objects.select_related("project").aget(
+        conversation = await Conversation.objects.select_related("space").aget(
             id=conversation.id,
         )
 

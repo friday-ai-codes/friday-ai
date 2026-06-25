@@ -19,14 +19,14 @@ class TestFinalizeConversation:
     @pytest.fixture
     async def setup_data(self, project):
         conversation = await Conversation.objects.acreate(
-            project=project,
+            space=project,
             title="test conv",
             model="claude-sonnet-4-5",
         )
         session_id = f"chat-{conversation.id}-abc12345"
         agent_session = await AgentSession.objects.acreate(
             session_id=session_id,
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
             metadata={"conversation_id": str(conversation.id)},
         )

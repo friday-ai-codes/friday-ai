@@ -40,7 +40,7 @@ async def _make_runner(concurrent: int = 1) -> Runner:
 async def _make_session(session_id: str) -> SubAgentSession:
     agent = await AgentSession.objects.acreate(
         session_id=f"agent-{session_id}",
-        project=None,
+        space=None,
         status=AgentSession.Status.RUNNING,
     )
     return await SubAgentSession.objects.acreate(

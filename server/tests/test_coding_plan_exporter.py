@@ -19,7 +19,7 @@ from asgiref.sync import sync_to_async
 
 from chat.models import CodingPlan, CodingSession, Conversation
 from feishu.coding_plan_exporter import export_coding_plan_to_feishu
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from services.feishu_doc import FeishuDocAPIError
 
@@ -31,18 +31,18 @@ def _create_plan(
     tech_plan: str = "## 概要\n\n说明",
     affected_files: list[dict[str, str]] | None = None,
 ) -> CodingPlan:
-    """异步友好工厂：sync ORM 写入 Project + Conversation + CodingPlan。"""
+    """异步友好工厂：sync ORM 写入 Space + Conversation + CodingPlan。"""
     from uuid import uuid4
 
     suffix = uuid4().hex[:8]
-    project = Project.objects.create(
+    project = Space.objects.create(
         name=f"导出测试项目-285-{suffix}",
         feishu_project_key=f"p285-{suffix}",
         feishu_doc_folder_token="fk_test",
         feishu_app_id="cli_test",
         feishu_app_secret_encrypted="enc_test",
     )
-    conversation = Conversation.objects.create(project=project, title="对话-285")
+    conversation = Conversation.objects.create(space=project, title="对话-285")
     return CodingPlan.objects.create(
         conversation=conversation,
         title=title,

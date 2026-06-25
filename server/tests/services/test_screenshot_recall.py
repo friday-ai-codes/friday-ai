@@ -276,7 +276,7 @@ def _make_search_result(
         source_id=source_id,
         origin="feishu",
         event_time=None,
-        project_id=None,
+        space_id=None,
         repository_id=None,
         provenance=ProvenanceLinks(feishu_url=feishu_url),
     )

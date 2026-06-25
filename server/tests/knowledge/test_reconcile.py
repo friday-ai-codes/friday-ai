@@ -307,7 +307,7 @@ def test_fix_missing_edges_applies_edge_specs(
         title="工作项锚",
         content="工作项锚",
         payload={},
-        project_id=None,
+        space_id=None,
         repository_id=None,
         event_time=event_time,
         edges=(edge,),

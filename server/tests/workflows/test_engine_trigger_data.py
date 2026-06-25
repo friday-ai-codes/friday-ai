@@ -51,7 +51,7 @@ def _build_echo_trigger_workflow(project) -> Workflow:
     """手建 manual_trigger → EchoTrigger（test_echo_trigger）。"""
     workflow = Workflow.objects.create(
         name="EchoTrigger Workflow",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -74,7 +74,7 @@ def _build_template_trigger_workflow(project) -> Workflow:
     """手建 manual_trigger → TemplateTrigger，config.template 含 {{trigger.*}} 占位符。"""
     workflow = Workflow.objects.create(
         name="TemplateTrigger Workflow",
-        project=project,
+        space=project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -147,7 +147,7 @@ class TestTriggerDataWriteSide:
 
         original = await WorkflowExecution.objects.acreate(
             workflow=workflow,
-            project_id=engine_project.id,
+            space_id=engine_project.id,
             status=ExecutionStatus.FAILED,
             trigger_type="manual",
             trigger_data={"source": "manual", "raw_payload": {"k": "v"}},

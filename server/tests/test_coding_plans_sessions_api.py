@@ -19,7 +19,7 @@ from django.urls import reverse
 from rest_framework import status
 
 from chat.models import CodingPlan, CodingSession, Conversation
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 from repositories.models import Repository
 
 if TYPE_CHECKING:
@@ -29,11 +29,11 @@ if TYPE_CHECKING:
 @pytest.fixture
 def coding_plan(db, project, user):
     """创建 Conversation + CodingPlan（project 已有 user 作为 ADMIN by `project_memberships`）。"""
-    ProjectMembership.objects.get_or_create(
-        user=user, project=project, defaults={"role": ProjectRole.ADMIN}
+    SpaceMembership.objects.get_or_create(
+        user=user, space=project, defaults={"role": SpaceRole.ADMIN}
     )
     conversation = Conversation.objects.create(
-        project=project, title="work item 测试对话", created_by=user
+        space=project, title="work item 测试对话", created_by=user
     )
     return CodingPlan.objects.create(
         conversation=conversation,
@@ -45,7 +45,7 @@ def coding_plan(db, project, user):
 
 @pytest.fixture
 def three_repos(db, project):
-    """创建 3 个 Repository 并 attach 到 coding_plan.conversation.project。"""
+    """创建 3 个 Repository 并 attach 到 coding_plan.conversation.space。"""
     repos = []
     for i, name in enumerate(["repo-a", "repo-b", "repo-c"]):
         r = Repository.objects.create(

@@ -32,7 +32,7 @@ def _mock_search_result(project_id: str) -> SearchResultDTO:
             source_id="wi-1",
             origin="feishu",
             event_time=None,
-            project_id=project_id,
+            space_id=project_id,
             repository_id=None,
             provenance=ProvenanceLinks(feishu_url="https://feishu.cn/wi/1"),
         ),

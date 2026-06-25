@@ -332,19 +332,19 @@ class TestBranchUniqueness:
     def _create_session(self, repository, db):
         """工厂 fixture：创建带指定分支名和状态的 CodingSession（同步）。"""
         from chat.models import CodingSession, Conversation
-        from projects.models import Project
+        from projects.models import Space
 
         # 获取或创建 project
-        project = Project.objects.filter(repositories=repository).first()
+        project = Space.objects.filter(repositories=repository).first()
         if not project:
-            project = Project.objects.create(
-                name="Test Project",
+            project = Space.objects.create(
+                name="Test Space",
                 feishu_project_key="test-key",
             )
             project.repositories.add(repository)
 
         conversation = Conversation.objects.create(
-            project=project,
+            space=project,
             title="test conv",
         )
 

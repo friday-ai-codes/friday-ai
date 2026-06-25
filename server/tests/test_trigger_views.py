@@ -6,8 +6,8 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
-from permissions.models import ProjectMembership, ProjectRole
-from projects.models import Project
+from permissions.models import SpaceMembership, SpaceRole
+from projects.models import Space
 from workflows.models import Workflow, WorkflowNode
 
 
@@ -24,8 +24,8 @@ def user(db):
 @pytest.fixture
 def project(db):
     """Create test project."""
-    return Project.objects.create(
-        name="Test Project",
+    return Space.objects.create(
+        name="Test Space",
     )
 
 
@@ -33,12 +33,12 @@ def project(db):
 def workflow(db, project, user):
     """Create active workflow with manual trigger node."""
     # 确保 user 是 project 的成员
-    ProjectMembership.objects.get_or_create(
-        user=user, project=project, defaults={"role": ProjectRole.MEMBER}
+    SpaceMembership.objects.get_or_create(
+        user=user, space=project, defaults={"role": SpaceRole.MEMBER}
     )
     wf = Workflow.objects.create(
         name="Test Workflow",
-        project=project,
+        space=project,
         is_active=True,
         trigger_type="manual",
         created_by=user,
@@ -57,12 +57,12 @@ def workflow(db, project, user):
 def inactive_workflow(db, project, user):
     """Create inactive workflow."""
     # 确保 user 是 project 的成员
-    ProjectMembership.objects.get_or_create(
-        user=user, project=project, defaults={"role": ProjectRole.MEMBER}
+    SpaceMembership.objects.get_or_create(
+        user=user, space=project, defaults={"role": SpaceRole.MEMBER}
     )
     return Workflow.objects.create(
         name="Inactive Workflow",
-        project=project,
+        space=project,
         is_active=False,
         trigger_type="manual",
         created_by=user,

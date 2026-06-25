@@ -21,7 +21,7 @@ from agents.core.events import (
 from agents.models import AgentSession
 from chat.conversation_service import ConversationService
 from chat.models import Conversation
-from projects.models import Project
+from projects.models import Space
 from subagent.models import SubAgentSession
 
 # ============================================================================
@@ -32,13 +32,13 @@ from subagent.models import SubAgentSession
 @pytest.fixture
 def test_project(db):
     """创建测试项目。"""
-    return Project.objects.create(name="Stream Test Project")
+    return Space.objects.create(name="Stream Test Space")
 
 
 @pytest.fixture
 def conversation(db, test_project):
     """创建测试对话。"""
-    return Conversation.objects.create(project=test_project, title="新对话")
+    return Conversation.objects.create(space=test_project, title="新对话")
 
 
 # ============================================================================
@@ -397,7 +397,7 @@ class TestConversationRuntimeView:
     async def test_runtime_returns_deep_analysis_snapshot(self, conversation, test_project):
         agent_session = await AgentSession.objects.acreate(
             session_id="agent-runtime-test",
-            project=test_project,
+            space=test_project,
             status=AgentSession.Status.RUNNING,
             metadata={"conversation_id": str(conversation.id), "source": "chat_deep_analysis"},
         )

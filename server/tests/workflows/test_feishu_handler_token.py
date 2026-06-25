@@ -8,7 +8,7 @@
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.models import Workflow, WorkflowTrigger
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.handlers.feishu import FeishuEventHandler
@@ -17,8 +17,8 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.django_db(transaction=True)]
 
 
 async def _make_workflow(name: str = "Token Route WF", is_active: bool = True) -> Workflow:
-    project = await Project.objects.acreate(name=f"{name} Project")
-    return await Workflow.objects.acreate(name=name, project=project, trigger_type="event")
+    project = await Space.objects.acreate(name=f"{name} Space")
+    return await Workflow.objects.acreate(name=name, space=project, trigger_type="event")
 
 
 async def test_token_routes_directly_to_workflow():
@@ -31,7 +31,7 @@ async def test_token_routes_directly_to_workflow():
         trigger_type="feishu",
         raw_payload={"id": "1"},
         event_type="WorkitemStatusEvent",
-        project=workflow.project,
+        space=workflow.space,
         metadata={"trigger_token": trigger.token},
     )
 
@@ -59,7 +59,7 @@ async def test_inactive_trigger_token_returns_empty():
     context = TriggerContext(
         trigger_type="feishu",
         raw_payload={},
-        project=workflow.project,
+        space=workflow.space,
         metadata={"trigger_token": trigger.token},
     )
     assert await handler.find_workflows(context) == []
@@ -75,7 +75,7 @@ async def test_validate_token_mode_skips_event_type_requirement():
         trigger_type="feishu",
         raw_payload={},
         event_type="",  # 无事件类型
-        project=workflow.project,
+        space=workflow.space,
         metadata={"trigger_token": trigger.token},
     )
     errors = await handler.validate(context)

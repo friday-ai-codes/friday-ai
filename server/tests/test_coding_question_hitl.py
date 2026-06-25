@@ -55,7 +55,7 @@ async def _make_plan_version() -> PlanVersion:
 
 async def _make_node_execution(chat_id: str = "") -> object:
     """建真实 NodeExecution 链；node.config.chat_id 用于 question 卡片路由。"""
-    from projects.models import Project
+    from projects.models import Space
     from workflows.models import (
         NodeExecution,
         Workflow,
@@ -63,8 +63,8 @@ async def _make_node_execution(chat_id: str = "") -> object:
         WorkflowNode,
     )
 
-    project = await Project.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
-    workflow = await Workflow.objects.acreate(name="wf-hitl", project=project)
+    project = await Space.objects.acreate(name=f"proj-{uuid.uuid4().hex[:6]}")
+    workflow = await Workflow.objects.acreate(name="wf-hitl", space=project)
     wf_node = await WorkflowNode.objects.acreate(
         workflow=workflow,
         node_type="ai_coding",
@@ -72,7 +72,7 @@ async def _make_node_execution(chat_id: str = "") -> object:
         config={"chat_id": chat_id} if chat_id else {},
     )
     wf_exec = await WorkflowExecution.objects.acreate(
-        workflow=workflow, project=project, trigger_type="manual"
+        workflow=workflow, space=project, trigger_type="manual"
     )
     return await NodeExecution.objects.acreate(
         workflow_execution=wf_exec, node=wf_node, status="running"

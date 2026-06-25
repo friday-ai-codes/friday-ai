@@ -148,7 +148,7 @@ class TestRenderPrompt:
             slug="shared.override",
             category=PromptCategory.AUX_MODEL,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="proj",
             created_by=admin_user,
         )

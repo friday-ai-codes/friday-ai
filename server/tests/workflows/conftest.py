@@ -11,7 +11,7 @@ import pytest
 from django.utils import timezone
 
 from agents.models import AgentSession
-from projects.models import Project
+from projects.models import Space
 from subagent.models import ActionLog, SubAgentSession, TokenUsage
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
@@ -28,9 +28,9 @@ from workflows.nodes.registry import NodeRegistry
 @pytest.fixture
 def obs_project(db):
     """可观测性测试用项目。"""
-    return Project.objects.create(
-        name="Obs Test Project",
-        description="Project for observability API tests",
+    return Space.objects.create(
+        name="Obs Test Space",
+        description="Space for observability API tests",
     )
 
 
@@ -39,7 +39,7 @@ def obs_workflow(db, obs_project, user):
     """可观测性测试用工作流。"""
     return Workflow.objects.create(
         name="Obs Test Workflow",
-        project=obs_project,
+        space=obs_project,
         created_by=user,
     )
 
@@ -78,7 +78,7 @@ def obs_execution(obs_workflow, user):
     now = timezone.now()
     return WorkflowExecution.objects.create(
         workflow=obs_workflow,
-        project=obs_workflow.project,
+        space=obs_workflow.space,
         trigger_type="manual",
         triggered_by=user,
         status="completed",
@@ -122,7 +122,7 @@ def obs_agent_session(db, obs_project, user):
     """创建 AgentSession（SubAgentSession 的 FK 依赖）。"""
     return AgentSession.objects.create(
         session_id="test-agent-session-001",
-        project=obs_project,
+        space=obs_project,
         user=user,
         status="completed",
     )
@@ -324,9 +324,9 @@ def engine():
 @pytest.fixture
 def engine_project(db):
     """引擎集成测试用项目。"""
-    return Project.objects.create(
-        name="Engine Integration Test Project",
-        description="Project for engine integration tests",
+    return Space.objects.create(
+        name="Engine Integration Test Space",
+        description="Space for engine integration tests",
     )
 
 
@@ -372,7 +372,7 @@ def branch_workflow(db, engine_project):
     """
     workflow = Workflow.objects.create(
         name="Branch Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -442,7 +442,7 @@ def waiting_workflow(db, engine_project):
     """挂起工作流：manual_trigger → WaitEvent → Downstream（18-03 消费）。"""
     workflow = Workflow.objects.create(
         name="Waiting Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(
@@ -480,7 +480,7 @@ def waiting_terminal_workflow(db, engine_project):
     """末端挂起工作流：manual_trigger → WaitEvent（无下游，18-03 消费）。"""
     workflow = Workflow.objects.create(
         name="Waiting Terminal Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
     trigger = WorkflowNode.objects.create(

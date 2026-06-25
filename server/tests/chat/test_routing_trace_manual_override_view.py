@@ -17,8 +17,8 @@ import pytest
 from rest_framework.test import APIClient
 
 from chat.models import Conversation, RepositoryRoutingTrace
-from permissions.models import ProjectMembership, ProjectRole
-from projects.models import Project
+from permissions.models import SpaceMembership, SpaceRole
+from projects.models import Space
 from repositories.models import Repository
 
 
@@ -27,11 +27,11 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def project_with_owner(db, user):
-    proj = Project.objects.create(
+    proj = Space.objects.create(
         name=f"override-{uuid.uuid4().hex[:6]}",
         feishu_project_key=f"k-{uuid.uuid4().hex[:6]}",
     )
-    ProjectMembership.objects.create(project=proj, user=user, role=ProjectRole.MEMBER)
+    SpaceMembership.objects.create(space=proj, user=user, role=SpaceRole.MEMBER)
     return proj
 
 
@@ -50,7 +50,7 @@ def repo(db, project_with_owner):
 @pytest.fixture
 def conversation(db, project_with_owner, user):
     return Conversation.objects.create(
-        project=project_with_owner, title="override", created_by=user
+        space=project_with_owner, title="override", created_by=user
     )
 
 
@@ -178,7 +178,7 @@ def test_override_ignores_extra_fields(authed_client, chat_tool_trace, repo):
 
 
 def test_cross_user_access_forbidden(chat_tool_trace, db, repo):
-    other = ProjectMembership.objects.create  # type: ignore[var-annotated]  # noqa
+    other = SpaceMembership.objects.create  # type: ignore[var-annotated]  # noqa
     from django.contrib.auth import get_user_model
 
     other_user = get_user_model().objects.create_user(

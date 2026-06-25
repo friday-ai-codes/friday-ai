@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 from services.provider_config import (
     ProviderMissingError,
     ProviderType,
@@ -31,15 +31,15 @@ from tests.helpers.fake_chat_model import FakeChatModel
 
 
 @pytest.fixture
-def test_project(db: Any) -> Project:
+def test_project(db: Any) -> Space:
     """创建测试项目。"""
-    return Project.objects.create(name="Title Test Project")
+    return Space.objects.create(name="Title Test Space")
 
 
 @pytest.fixture
-def conversation(db: Any, test_project: Project) -> Conversation:
+def conversation(db: Any, test_project: Space) -> Conversation:
     """创建测试对话。"""
-    return Conversation.objects.create(project=test_project, title="新对话")
+    return Conversation.objects.create(space=test_project, title="新对话")
 
 
 @pytest.fixture

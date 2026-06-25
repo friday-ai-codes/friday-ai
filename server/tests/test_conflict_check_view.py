@@ -22,7 +22,7 @@ def session_with_conflict(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="冲突预检测试对话", created_by=user
+        space=project, title="冲突预检测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -46,7 +46,7 @@ def session_without_conflict(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="无冲突测试对话", created_by=user
+        space=project, title="无冲突测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,

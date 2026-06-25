@@ -3,7 +3,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
 
 User = get_user_model()
@@ -18,7 +18,7 @@ class TestPermissionServiceHasProjectAccess:
         assert PermissionService.has_project_access(admin_user, project) is True
         assert (
             PermissionService.has_project_access(
-                admin_user, project, ProjectRole.ADMIN
+                admin_user, project, SpaceRole.ADMIN
             )
             is True
         )
@@ -26,21 +26,21 @@ class TestPermissionServiceHasProjectAccess:
     def test_admin_has_admin_access(self, user, project, project_memberships):
         """admin 角色满足 admin 最低要求。"""
         assert (
-            PermissionService.has_project_access(user, project, ProjectRole.ADMIN)
+            PermissionService.has_project_access(user, project, SpaceRole.ADMIN)
             is True
         )
 
     def test_admin_has_member_access(self, user, project, project_memberships):
         """admin 角色满足 member 最低要求。"""
         assert (
-            PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+            PermissionService.has_project_access(user, project, SpaceRole.MEMBER)
             is True
         )
 
     def test_admin_has_viewer_access(self, user, project, project_memberships):
         """admin 角色满足 viewer 最低要求。"""
         assert (
-            PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+            PermissionService.has_project_access(user, project, SpaceRole.VIEWER)
             is True
         )
 
@@ -50,7 +50,7 @@ class TestPermissionServiceHasProjectAccess:
         """member 角色满足 member 最低要求。"""
         assert (
             PermissionService.has_project_access(
-                member_user, project, ProjectRole.MEMBER
+                member_user, project, SpaceRole.MEMBER
             )
             is True
         )
@@ -61,7 +61,7 @@ class TestPermissionServiceHasProjectAccess:
         """member 角色不满足 admin 最低要求。"""
         assert (
             PermissionService.has_project_access(
-                member_user, project, ProjectRole.ADMIN
+                member_user, project, SpaceRole.ADMIN
             )
             is False
         )
@@ -72,7 +72,7 @@ class TestPermissionServiceHasProjectAccess:
         """viewer 角色满足 viewer 最低要求。"""
         assert (
             PermissionService.has_project_access(
-                viewer_user, project, ProjectRole.VIEWER
+                viewer_user, project, SpaceRole.VIEWER
             )
             is True
         )
@@ -83,7 +83,7 @@ class TestPermissionServiceHasProjectAccess:
         """viewer 角色不满足 member 最低要求。"""
         assert (
             PermissionService.has_project_access(
-                viewer_user, project, ProjectRole.MEMBER
+                viewer_user, project, SpaceRole.MEMBER
             )
             is False
         )
@@ -108,14 +108,14 @@ class TestPermissionServiceGetUserRole:
     """测试 PermissionService.get_user_role。"""
 
     def test_returns_admin_role(self, user, project, project_memberships):
-        assert PermissionService.get_user_role(user, project) == ProjectRole.ADMIN
+        assert PermissionService.get_user_role(user, project) == SpaceRole.ADMIN
 
     def test_returns_member_role(
         self, member_user, project, project_memberships
     ):
         assert (
             PermissionService.get_user_role(member_user, project)
-            == ProjectRole.MEMBER
+            == SpaceRole.MEMBER
         )
 
     def test_returns_viewer_role(
@@ -123,7 +123,7 @@ class TestPermissionServiceGetUserRole:
     ):
         assert (
             PermissionService.get_user_role(viewer_user, project)
-            == ProjectRole.VIEWER
+            == SpaceRole.VIEWER
         )
 
     def test_returns_none_for_non_member(self, other_user, project):

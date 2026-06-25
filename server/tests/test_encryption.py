@@ -64,7 +64,7 @@ class TestEncryptionRoundtrip:
     def test_plaintext_legacy_fallback(self) -> None:
         """**关键回归** —— 任意未加密字符串经 decrypt_value 后原样返回。
 
-        保护 26+ 历史 decrypt_value 调用方契约（Project.claude_api_key_encrypted /
+        保护 26+ 历史 decrypt_value 调用方契约（Space.claude_api_key_encrypted /
         SystemSetting.is_encrypted=True 等存量数据路径）。
         """
         from common.encryption import decrypt_value

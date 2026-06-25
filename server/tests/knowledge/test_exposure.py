@@ -53,7 +53,7 @@ def _sample_result() -> SearchResultDTO:
         source_id="wi-1",
         origin="feishu",
         event_time=timezone.now(),
-        project_id="p1",
+        space_id="p1",
         repository_id=None,
         provenance=ProvenanceLinks(feishu_url="https://feishu.cn/wi/1", mr_url=None),
     )

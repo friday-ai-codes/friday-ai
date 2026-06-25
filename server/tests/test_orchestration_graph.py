@@ -37,7 +37,7 @@ def graph_config() -> RunnableConfig:
             "session_id": "test-session-1",
             "system_prompt": "You are a test assistant.",
             "project_id": "proj-123",
-            "project_name": "Test Project",
+            "project_name": "Test Space",
             "role": "developer",
             "agent_session_id": "",
             "notification_user_id": "",

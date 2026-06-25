@@ -48,13 +48,13 @@ class TestPromptModel:
         Prompt.objects.filter(
             slug="chat.system.developer",
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
         ).delete()
         Prompt.objects.create(
             slug="chat.system.developer",
             category=PromptCategory.CHAT_AGENT,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="p1",
             created_by=admin_user,
         )
@@ -63,7 +63,7 @@ class TestPromptModel:
                 slug="chat.system.developer",
                 category=PromptCategory.CHAT_AGENT,
                 scope=PromptScope.PROJECT,
-                project=project,
+                space=project,
                 title="p2",
                 created_by=admin_user,
             )
@@ -82,7 +82,7 @@ class TestPromptModel:
             slug="shared.key",
             category=PromptCategory.CHAT_AGENT,
             scope=PromptScope.PROJECT,
-            project=project,
+            space=project,
             title="proj",
             created_by=admin_user,
         )

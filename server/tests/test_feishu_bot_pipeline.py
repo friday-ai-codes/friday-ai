@@ -21,7 +21,7 @@ from agents.models import AgentSession, ToolCallLog
 from chat.models import Conversation, Message
 from feishu.bot.service import FeishuBotService
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 from services.feishu_im import FeishuIMError
 
@@ -183,11 +183,11 @@ class TestFeishuBotPipeline:
 
     async def test_image_only_message_downloads_image_and_sends_input_parts(self, settings) -> None:
         settings.DATA_DIR = settings.BASE_DIR / "data-test"
-        project = await Project.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
+        project = await Space.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
         thread = await FeishuBotThread.objects.acreate(
             chat_id="chat_img",
             root_message_id="msg_img",
-            project=project,
+            space=project,
         )
         await FeishuBotMessage.objects.acreate(
             message_id="msg_img",
@@ -225,7 +225,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="vision")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="vision")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -247,11 +247,11 @@ class TestFeishuBotPipeline:
 
     async def test_image_download_failure_updates_non_empty_error_card(self, settings) -> None:
         settings.DATA_DIR = settings.BASE_DIR / "data-test"
-        project = await Project.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
+        project = await Space.objects.acreate(name="Friday Vision", feishu_project_key="friday-vision")
         thread = await FeishuBotThread.objects.acreate(
             chat_id="chat_img_fail",
             root_message_id="msg_img_fail",
-            project=project,
+            space=project,
         )
         await FeishuBotMessage.objects.acreate(
             message_id="msg_img_fail",
@@ -291,7 +291,7 @@ class TestFeishuBotPipeline:
 
     async def test_successful_pipeline_updates_processing_card_with_real_trace(self, user: Any) -> None:
         repo = await Repository.objects.acreate(name="server", git_url="https://example.com/server.git")
-        project = await Project.objects.acreate(name="Friday Server", feishu_project_key="friday-server")
+        project = await Space.objects.acreate(name="Friday Server", feishu_project_key="friday-server")
         await project.repositories.aadd(repo)
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_success", root_message_id="msg_success")
         await FeishuBotMessage.objects.acreate(
@@ -314,7 +314,7 @@ class TestFeishuBotPipeline:
         # 预创建 AgentSession + ToolCallLog 供 extract_reference_summaries 查询
         session = await AgentSession.objects.acreate(
             session_id="chat-session-1",
-            project=project,
+            space=project,
             user=user,
             status=AgentSession.Status.COMPLETED,
             messages=[],
@@ -343,7 +343,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ws")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="ws")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -352,7 +352,7 @@ class TestFeishuBotPipeline:
 
         await thread.arefresh_from_db()
         assert result["status"] == "answered"
-        assert thread.project_id == project.id
+        assert thread.space_id == project.id
         im_service.update_card.assert_awaited_once()
         updated_card = im_service.update_card.await_args.args[1]
         content = "\n".join(element.get("content", "") for element in updated_card["elements"] if isinstance(element, dict))
@@ -364,7 +364,7 @@ class TestFeishuBotPipeline:
 
     async def test_update_failure_falls_back_to_new_answer_card(self) -> None:
         repo = await Repository.objects.acreate(name="web", git_url="https://example.com/web.git")
-        project = await Project.objects.acreate(name="Friday Web", feishu_project_key="friday-web")
+        project = await Space.objects.acreate(name="Friday Web", feishu_project_key="friday-web")
         await project.repositories.aadd(repo)
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_fallback", root_message_id="msg_fallback")
         await FeishuBotMessage.objects.acreate(
@@ -392,7 +392,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="web")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="web")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -405,7 +405,7 @@ class TestFeishuBotPipeline:
         assert im_service.send_card.await_count == 3
 
     async def test_waiting_stream_without_final_answer_keeps_non_empty_background_card(self) -> None:
-        project = await Project.objects.acreate(name="Friday Deep", feishu_project_key="friday-deep")
+        project = await Space.objects.acreate(name="Friday Deep", feishu_project_key="friday-deep")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_waiting", root_message_id="msg_waiting")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_waiting",
@@ -430,7 +430,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="waiting")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="waiting")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -460,8 +460,8 @@ class TestFeishuBotPipeline:
         assert "（无回复内容）" not in content
 
     async def test_waiting_stream_updates_processing_card_from_barrier_final_message(self) -> None:
-        project = await Project.objects.acreate(name="Friday Barrier", feishu_project_key="friday-barrier")
-        conversation = await Conversation.objects.acreate(project=project, title="barrier")
+        project = await Space.objects.acreate(name="Friday Barrier", feishu_project_key="friday-barrier")
+        conversation = await Conversation.objects.acreate(space=project, title="barrier")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_barrier", root_message_id="msg_barrier")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_barrier",
@@ -519,7 +519,7 @@ class TestFeishuBotPipeline:
 
     async def test_processing_error_emits_error_card_without_overwriting_processing(self) -> None:
         repo = await Repository.objects.acreate(name="ops", git_url="https://example.com/ops.git")
-        project = await Project.objects.acreate(name="Friday Ops", feishu_project_key="friday-ops")
+        project = await Space.objects.acreate(name="Friday Ops", feishu_project_key="friday-ops")
         await project.repositories.aadd(repo)
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_error", root_message_id="msg_error")
         await FeishuBotMessage.objects.acreate(
@@ -541,7 +541,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ops")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="ops")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=_error_stream,
@@ -555,7 +555,7 @@ class TestFeishuBotPipeline:
         assert "联系管理员" in content
 
     async def test_tool_use_updates_streaming_card(self) -> None:
-        project = await Project.objects.acreate(name="Friday Tooling", feishu_project_key="friday-tooling")
+        project = await Space.objects.acreate(name="Friday Tooling", feishu_project_key="friday-tooling")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_tool", root_message_id="msg_tool")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_tool",
@@ -583,7 +583,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="tool")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="tool")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -598,7 +598,7 @@ class TestFeishuBotPipeline:
         assert "浏览文件" in content
 
     async def test_p2p_message_answers_without_project_clarification(self) -> None:
-        project = await Project.objects.acreate(name="Friday Private", feishu_project_key="friday-private")
+        project = await Space.objects.acreate(name="Friday Private", feishu_project_key="friday-private")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_p2p", root_message_id="msg_p2p")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_p2p",
@@ -623,7 +623,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="p2p")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="p2p")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -632,7 +632,7 @@ class TestFeishuBotPipeline:
 
         await thread.arefresh_from_db()
         assert result["status"] == "answered"
-        assert thread.project_id == project.id
+        assert thread.space_id == project.id
         assert im_service.send_card.await_count == 1
         assert im_service.update_card.await_count == 1
         final_card = im_service.update_card.await_args.args[1]
@@ -640,7 +640,7 @@ class TestFeishuBotPipeline:
         assert "已自动匹配" not in content
 
     async def test_p2p_message_with_explicit_project_match_shows_space_badge(self) -> None:
-        project = await Project.objects.acreate(name="Friday Explicit", feishu_project_key="friday-explicit")
+        project = await Space.objects.acreate(name="Friday Explicit", feishu_project_key="friday-explicit")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_p2p_explicit", root_message_id="msg_p2p_explicit")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_p2p_explicit",
@@ -665,7 +665,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="p2p-explicit")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="p2p-explicit")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -678,7 +678,7 @@ class TestFeishuBotPipeline:
         assert "已自动匹配「friday-explicit」空间" in content
 
     async def test_text_delta_stream_drives_cardkit_incremental(self) -> None:
-        project = await Project.objects.acreate(name="Friday Stream", feishu_project_key="friday-stream")
+        project = await Space.objects.acreate(name="Friday Stream", feishu_project_key="friday-stream")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_stream", root_message_id="msg_stream")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_stream",
@@ -699,7 +699,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="stream")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="stream")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -751,7 +751,7 @@ class TestFeishuBotPipeline:
         assert "已回复" in closeout_content
 
     async def test_cardkit_create_failure_falls_back_to_answer_card(self) -> None:
-        project = await Project.objects.acreate(name="Friday CKCreate", feishu_project_key="friday-ckcreate")
+        project = await Space.objects.acreate(name="Friday CKCreate", feishu_project_key="friday-ckcreate")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckcreate", root_message_id="msg_ckcreate")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_ckcreate",
@@ -774,7 +774,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckcreate")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="ckcreate")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -794,7 +794,7 @@ class TestFeishuBotPipeline:
         assert "已参考上下文" in content
 
     async def test_cardkit_stream_failure_midway_degrades(self) -> None:
-        project = await Project.objects.acreate(name="Friday CKStream", feishu_project_key="friday-ckstream")
+        project = await Space.objects.acreate(name="Friday CKStream", feishu_project_key="friday-ckstream")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckstream", root_message_id="msg_ckstream")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_ckstream",
@@ -817,7 +817,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckstream")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="ckstream")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -837,7 +837,7 @@ class TestFeishuBotPipeline:
         assert "已参考上下文" in content
 
     async def test_cardkit_settle_failure_still_answers(self) -> None:
-        project = await Project.objects.acreate(name="Friday CKSettle", feishu_project_key="friday-cksettle")
+        project = await Space.objects.acreate(name="Friday CKSettle", feishu_project_key="friday-cksettle")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_cksettle", root_message_id="msg_cksettle")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_cksettle",
@@ -860,7 +860,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="cksettle")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="cksettle")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,
@@ -883,7 +883,7 @@ class TestFeishuBotPipeline:
             assert "已参考上下文" not in content
 
     async def test_waiting_stream_does_not_create_cardkit(self) -> None:
-        project = await Project.objects.acreate(name="Friday CKWait", feishu_project_key="friday-ckwait")
+        project = await Space.objects.acreate(name="Friday CKWait", feishu_project_key="friday-ckwait")
         thread = await FeishuBotThread.objects.acreate(chat_id="chat_ckwait", root_message_id="msg_ckwait")
         await FeishuBotMessage.objects.acreate(
             message_id="msg_ckwait",
@@ -906,7 +906,7 @@ class TestFeishuBotPipeline:
 
         with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
             "feishu.bot.service.ConversationService.create_conversation",
-            new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ckwait")),
+            new=AsyncMock(return_value=await Conversation.objects.acreate(space=project, title="ckwait")),
         ), patch(
             "feishu.bot.service.ConversationService.send_message_stream",
             new=fake_send_message_stream,

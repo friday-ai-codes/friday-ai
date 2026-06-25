@@ -2,7 +2,7 @@
 
 覆盖 contract 验收项：
     - DELETE ?before_id=X 硬删 before_id 之前的消息（created_at < target.created_at）
-    - Ownership 校验：user 必须有 conversation.project MEMBER+ 权限
+    - Ownership 校验：user 必须有 conversation.space MEMBER+ 权限
     - 缺少 before_id 参数 → 400
     - conversation 不存在 → 404
     - 跨项目越权 → 403 + audit log
@@ -60,7 +60,7 @@ def test_delete_before_id_removes_older_messages_and_returns_count(
 ) -> None:
     """Behavior C：5 条消息 + before_id=第 4 条 → 删前 3 条，返回 deleted_count=3。"""
     conv = Conversation.objects.create(
-        project=project_a, title="cleanup-test", created_by=project_a_admin_user
+        space=project_a, title="cleanup-test", created_by=project_a_admin_user
     )
     msgs = _make_messages(conv, count=5)
     before_msg = msgs[3]  # 删除 < msgs[3].created_at 即前 3 条
@@ -113,7 +113,7 @@ def test_delete_cross_project_conversation_returns_404(
     （不泄漏存在性），原 403 project-permission 分支被 owner gate 覆盖。
     """
     conv = Conversation.objects.create(
-        project=project_a, title="owned-by-a", created_by=project_a_admin_user
+        space=project_a, title="owned-by-a", created_by=project_a_admin_user
     )
     msgs = _make_messages(conv, count=3)
 
@@ -137,7 +137,7 @@ def test_delete_without_before_id_returns_400(
     project_a_admin_user,
 ) -> None:
     """Behavior F：缺 ?before_id= → 400。"""
-    conv = Conversation.objects.create(project=project_a, title="no-param")
+    conv = Conversation.objects.create(space=project_a, title="no-param")
     _make_messages(conv, count=2)
 
     client = APIClient()
@@ -160,12 +160,12 @@ def test_delete_before_id_not_in_conversation_returns_400(
 ) -> None:
     """Behavior G：before_id 指向其他对话的消息 → 400（防跨 conversation）。"""
     conv_a = Conversation.objects.create(
-        project=project_a, title="conv-a", created_by=project_a_admin_user
+        space=project_a, title="conv-a", created_by=project_a_admin_user
     )
     _make_messages(conv_a, count=2)
 
     conv_b = Conversation.objects.create(
-        project=project_a, title="conv-b", created_by=project_a_admin_user
+        space=project_a, title="conv-b", created_by=project_a_admin_user
     )
     conv_b_msgs = _make_messages(conv_b, count=2)
 
@@ -195,7 +195,7 @@ def test_delete_by_superuser_succeeds_cross_project(
     通过后 project ownership 校验对 superuser 豁免，故跨项目（非成员）仍可删。
     """
     conv = Conversation.objects.create(
-        project=project_a, title="sys-del", created_by=system_admin_user
+        space=project_a, title="sys-del", created_by=system_admin_user
     )
     msgs = _make_messages(conv, count=3)
 

@@ -14,13 +14,13 @@ from chat.models import CodingPlan, CodingSession, Conversation
 @pytest.fixture
 def conversation(db, project):
     """创建测试对话。"""
-    return Conversation.objects.create(project=project, title="测试对话")
+    return Conversation.objects.create(space=project, title="测试对话")
 
 
 @pytest.fixture
 def second_conversation(db, project):
     """同一 project 下的另一个对话（跨 conversation 不去重场景）。"""
-    return Conversation.objects.create(project=project, title="第二对话")
+    return Conversation.objects.create(space=project, title="第二对话")
 
 
 # ---------------------------------------------------------------------------

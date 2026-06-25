@@ -2,7 +2,7 @@
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.dag import DAG
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
@@ -21,11 +21,11 @@ from workflows.models.execution import (
 @pytest.fixture
 async def linear_workflow():
     """创建一个 3 节点线性工作流 A -> B -> C，用于测试 resume_from_node。"""
-    project = await Project.objects.acreate(
-        name="Resume Test Project", description="For resume testing"
+    project = await Space.objects.acreate(
+        name="Resume Test Space", description="For resume testing"
     )
     workflow = await Workflow.objects.acreate(
-        name="Test Linear Resume", trigger_type="manual", project=project
+        name="Test Linear Resume", trigger_type="manual", space=project
     )
     node_a = await WorkflowNode.objects.acreate(
         workflow=workflow,
@@ -96,7 +96,7 @@ async def _create_failed_execution(
 
     execution = await WorkflowExecution.objects.acreate(
         workflow=workflow,
-        project=workflow.project,
+        space=workflow.space,
         status=ExecutionStatus.FAILED,
         trigger_type="manual",
         input_data={"test": "data"},

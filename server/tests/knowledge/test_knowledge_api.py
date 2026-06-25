@@ -14,7 +14,7 @@ pytestmark = pytest.mark.django_db
 
 
 def test_entity_detail_ok(entity_factory, version_factory, project, user, project_memberships, authenticated_client):
-    entity = entity_factory(project=project, kind=EntityKind.WORK_ITEM)
+    entity = entity_factory(space=project, kind=EntityKind.WORK_ITEM)
     version_factory(entity, version=1, content="需求正文")
     resp = authenticated_client.get(f"/api/knowledge/entities/{entity.id}/")
     assert resp.status_code == 200
@@ -27,7 +27,7 @@ def test_entity_detail_ok(entity_factory, version_factory, project, user, projec
 def test_entity_other_user_404(other_user, entity_factory, version_factory, project):
     from rest_framework.test import APIClient
 
-    entity = entity_factory(project=project)
+    entity = entity_factory(space=project)
     version_factory(entity)
     client = APIClient()
     client.force_authenticate(user=other_user)
@@ -44,7 +44,7 @@ def test_invalid_as_of_400(authenticated_client):
 
 
 def test_timeline_as_of_passthrough(entity_factory, version_factory, project, user, project_memberships, authenticated_client):
-    entity = entity_factory(project=project)
+    entity = entity_factory(space=project)
     version_factory(entity)
     with patch(
         "knowledge.api.views._service.get_timeline",

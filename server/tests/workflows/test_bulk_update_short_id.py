@@ -58,7 +58,7 @@ def _collect_ref_idents(workflow: Workflow) -> set[str]:
 def workflow(obs_project, user):
     return Workflow.objects.create(
         name="short_id 收敛测试工作流",
-        project=obs_project,
+        space=obs_project,
         created_by=user,
     )
 
@@ -221,7 +221,7 @@ class TestCrossWorkflowIsolation:
 
     def test_other_workflow_config_untouched(self, workflow, obs_project, user):
         other_workflow = Workflow.objects.create(
-            name="另一个工作流", project=obs_project, created_by=user
+            name="另一个工作流", space=obs_project, created_by=user
         )
         other_node = WorkflowNode.objects.create(
             workflow=other_workflow,

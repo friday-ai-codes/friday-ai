@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from accounts.models import Invitation
-from permissions.models import ProjectMembership
+from permissions.models import SpaceMembership
 
 User = get_user_model()
 
@@ -311,7 +311,7 @@ class TestUserManagement:
 
     def test_admin_can_get_user_memberships(self, authenticated_admin_client, user, project):
         """超级管理员可查询某用户的跨空间成员关系。"""
-        ProjectMembership.objects.create(user=user, project=project, role="member")
+        SpaceMembership.objects.create(user=user, space=project, role="member")
         resp = authenticated_admin_client.get(f"/api/auth/users/{user.pk}/memberships/")
         assert resp.status_code == status.HTTP_200_OK
         assert len(resp.data) == 1
@@ -361,7 +361,7 @@ class TestProjectMembers:
         )
         assert resp.status_code == status.HTTP_201_CREATED
         assert resp.data["role"] == "member"
-        assert ProjectMembership.objects.filter(user=other_user, project=project).exists()
+        assert SpaceMembership.objects.filter(user=other_user, space=project).exists()
 
     def test_non_admin_cannot_add_member(self, authenticated_member_client, project, other_user, project_memberships):
         """非 admin 成员无法添加新成员。"""
@@ -390,14 +390,14 @@ class TestProjectMembers:
         )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["role"] == "viewer"
-        membership = ProjectMembership.objects.get(user=member_user, project=project)
+        membership = SpaceMembership.objects.get(user=member_user, space=project)
         assert membership.role == "viewer"
 
     def test_project_admin_can_remove_member(self, authenticated_client, project, member_user, project_memberships):
         """项目 admin 可移除成员。"""
         resp = authenticated_client.delete(f"/api/spaces/{project.pk}/members/{member_user.pk}/")
         assert resp.status_code == status.HTTP_204_NO_CONTENT
-        assert not ProjectMembership.objects.filter(user=member_user, project=project).exists()
+        assert not SpaceMembership.objects.filter(user=member_user, space=project).exists()
 
     def test_non_admin_cannot_remove_member(self, authenticated_member_client, project, viewer_user, project_memberships):
         """非 admin 成员无法移除其他成员。"""

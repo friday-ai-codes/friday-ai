@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine, _debug_sessions
 from workflows.models import (
     ExecutionStatus,
@@ -28,8 +28,8 @@ from workflows.models import (
 @pytest.fixture
 def debug_project(db):
     """调试测试用项目。"""
-    return Project.objects.create(
-        name="Debug Test Project",
+    return Space.objects.create(
+        name="Debug Test Space",
         description="调试引擎测试专用项目",
     )
 
@@ -39,7 +39,7 @@ def debug_workflow(db, debug_project):
     """含 manual_trigger + condition 的 2 节点调试测试工作流。"""
     workflow = Workflow.objects.create(
         name="Debug Workflow",
-        project=debug_project,
+        space=debug_project,
         trigger_type="manual",
     )
 
@@ -76,7 +76,7 @@ def parallel_workflow(db, debug_project):
     """含 manual_trigger + 2 个并行 condition 节点的工作流（测试串行退化）。"""
     workflow = Workflow.objects.create(
         name="Parallel Debug Workflow",
-        project=debug_project,
+        space=debug_project,
         trigger_type="manual",
     )
 

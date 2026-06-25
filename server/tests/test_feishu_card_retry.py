@@ -21,7 +21,7 @@ def mock_execution():
     execution.input_data = {}
     execution.error_message = ""
     execution.workflow = MagicMock()
-    execution.workflow.project = None
+    execution.workflow.space = None
     return execution
 
 

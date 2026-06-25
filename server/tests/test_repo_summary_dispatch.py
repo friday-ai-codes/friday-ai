@@ -51,7 +51,7 @@ class TestDispatchRepoSummary:
         mock_dispatcher,
         mock_render_prompt,
     ) -> None:
-        """dispatch_repo_summary 创建 AgentSession(project=None) + SubAgentSession(task_type=REPO_SUMMARY)。"""
+        """dispatch_repo_summary 创建 AgentSession(space=None) + SubAgentSession(task_type=REPO_SUMMARY)。"""
         from repositories.summary_service import dispatch_repo_summary
 
         session_id = await dispatch_repo_summary(repository)
@@ -64,7 +64,7 @@ class TestDispatchRepoSummary:
             session_id__startswith="agent-reposummary-",
         ).afirst()
         assert agent_session is not None
-        assert agent_session.project is None
+        assert agent_session.space is None
         assert agent_session.status == AgentSession.Status.RUNNING
 
         # 验证 SubAgentSession 创建

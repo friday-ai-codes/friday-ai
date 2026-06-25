@@ -27,7 +27,7 @@ from delivery.services import CommentEventService
 from knowledge.ingestion import IngestionRequest, ingest_events
 from knowledge.models import KnowledgeEntity, KnowledgeEntityVersion, generate_entity_id
 from knowledge.sources import feishu_work_item
-from projects.models import Project
+from projects.models import Space
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -36,8 +36,8 @@ STORY_ID = 7010225564
 SOURCE_ID = f"{PROJECT_KEY}:story:{STORY_ID}"
 
 
-async def _make_project() -> Project:
-    return await Project.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
+async def _make_project() -> Space:
+    return await Space.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
 
 
 async def _make_work_item() -> WorkItem:

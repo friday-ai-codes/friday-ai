@@ -16,23 +16,23 @@ from rest_framework import status
 
 from chat.conversation_service import ConversationService
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 
 
 @pytest.fixture
 def space_a(db):
-    return Project.objects.create(name="空间A", description="space switch tests")
+    return Space.objects.create(name="空间A", description="space switch tests")
 
 
 @pytest.fixture
 def space_b(db):
-    return Project.objects.create(name="空间B", description="space switch tests")
+    return Space.objects.create(name="空间B", description="space switch tests")
 
 
 @pytest.fixture
 def conversation(db, space_a):
     return Conversation.objects.create(
-        project=space_a,
+        space=space_a,
         title="切换空间测试",
         model="claude-test",
     )
@@ -52,7 +52,7 @@ def test_switch_space_updates_project_and_records_marker(conversation, space_a, 
     message = async_to_sync(ConversationService.switch_space)(conversation, str(space_b.id))
 
     conversation.refresh_from_db()
-    assert conversation.project_id == space_b.id
+    assert conversation.space_id == space_b.id
 
     assert message is not None
     assert message.role == Message.Role.SYSTEM
@@ -71,7 +71,7 @@ def test_switch_space_same_space_is_noop(conversation, space_a):
     assert message is None
     assert Message.objects.filter(conversation=conversation).count() == 0
     conversation.refresh_from_db()
-    assert conversation.project_id == space_a.id
+    assert conversation.space_id == space_a.id
 
 
 @pytest.mark.django_db(transaction=True)
@@ -79,7 +79,7 @@ def test_switch_space_to_none_unbinds(conversation):
     message = async_to_sync(ConversationService.switch_space)(conversation, None)
 
     conversation.refresh_from_db()
-    assert conversation.project_id is None
+    assert conversation.space_id is None
     assert message is not None
     assert message.metadata["to_space_id"] is None
     assert "通用对话" in message.content
@@ -92,7 +92,7 @@ def test_switch_space_nonexistent_raises(conversation):
             conversation, "00000000-0000-0000-0000-000000000000"
         )
     conversation.refresh_from_db()
-    assert conversation.project_id is not None
+    assert conversation.space_id is not None
 
 
 # ============================================================================
@@ -111,7 +111,7 @@ def test_patch_space_id_switches_and_returns_new_space(api_client, conversation,
     assert resp.status_code == status.HTTP_200_OK, resp.content
     assert resp.data["space_id"] == str(space_b.id)
     conversation.refresh_from_db()
-    assert conversation.project_id == space_b.id
+    assert conversation.space_id == space_b.id
     marker = Message.objects.get(conversation=conversation, role=Message.Role.SYSTEM)
     assert marker.metadata["type"] == "space_switch"
 
@@ -129,7 +129,7 @@ def test_patch_space_id_allowed_on_frozen_conversation(api_client, conversation,
 
     assert resp.status_code == status.HTTP_200_OK, resp.content
     conversation.refresh_from_db()
-    assert conversation.project_id == space_b.id
+    assert conversation.space_id == space_b.id
 
 
 @pytest.mark.django_db(transaction=True)
@@ -145,7 +145,7 @@ def test_patch_space_id_rejected_while_running(api_client, conversation, space_b
     assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.content
     assert resp.data["code"] == "conversation_running"
     conversation.refresh_from_db()
-    assert conversation.project_id != space_b.id
+    assert conversation.space_id != space_b.id
 
 
 @pytest.mark.django_db(transaction=True)
@@ -171,4 +171,4 @@ def test_patch_space_id_null_unbinds(api_client, conversation):
     assert resp.status_code == status.HTTP_200_OK, resp.content
     assert resp.data["space_id"] is None
     conversation.refresh_from_db()
-    assert conversation.project_id is None
+    assert conversation.space_id is None

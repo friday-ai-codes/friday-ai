@@ -34,7 +34,7 @@ def _search_result() -> SearchResultDTO:
         source_id="pk:story:1",
         origin="feishu",
         event_time=None,
-        project_id=None,
+        space_id=None,
         repository_id=None,
     )
     return SearchResultDTO(score=0.9, vector_score=0.8, recency_score=0.5, entity=entity)

@@ -24,10 +24,10 @@ def test_conversation_provider_type_field_removed() -> None:
 
 @pytest.mark.django_db
 def test_project_claude_fields_removed() -> None:
-    """Project.claude_api_key_encrypted / claude_base_url / claude_default_model /
+    """Space.claude_api_key_encrypted / claude_base_url / claude_default_model /
     default_provider_type / default_model 字段已删除。"""
-    Project = apps.get_model("projects", "Project")
-    field_names = {f.name for f in Project._meta.get_fields()}
+    Space = apps.get_model("projects", "Space")
+    field_names = {f.name for f in Space._meta.get_fields()}
     assert "claude_api_key_encrypted" not in field_names
     assert "claude_base_url" not in field_names
     assert "claude_default_model" not in field_names
@@ -126,7 +126,7 @@ def test_check_v81_legacy_residue_command_is_callable() -> None:
 
 def test_0009_migration_docstring_documents_noop() -> None:
     """Behavior K：0009 migration 文件必须在 docstring 声明 work item，删除旧的
-    误导性"遍历 Project → 创建 ProviderCredential"表述，并引用预检命令。
+    误导性"遍历 Space → 创建 ProviderCredential"表述，并引用预检命令。
 
     implementation Hotfix（work item）：docstring 语义与 RunPython 实际行为对齐。
 
@@ -147,7 +147,7 @@ def test_0009_migration_docstring_documents_noop() -> None:
         "0009 migration docstring 必须明确声明 backfill 是 work item（implementation Hotfix work-item item）"
     )
     # 旧的误导性表述必须删除
-    assert "遍历仍有 claude_api_key_encrypted 的 Project" not in content, (
+    assert "遍历仍有 claude_api_key_encrypted 的 Space" not in content, (
         "0009 docstring 仍保留旧的误导性 backfill 承诺表述，未完成 implementation 勘误"
     )
     # 预检命令名必须在 docstring 内出现（引导 release manager）

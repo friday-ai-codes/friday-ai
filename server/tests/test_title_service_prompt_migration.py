@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage
 
 from chat.models import Conversation, Message
 from chat.title_service import TITLE_PROMPT, generate_title
-from projects.models import Project
+from projects.models import Space
 from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope
 from services.provider_config import ProviderType, ResolvedProviderConfig
@@ -103,7 +103,7 @@ class TestTitleServiceMigration:
             prompt = Prompt.objects.create(
                 slug=PromptSlugs.AUX_TITLE_GENERATION,
                 scope=PromptScope.SYSTEM,
-                project=None,
+                space=None,
                 category="aux_model",
                 title="标题生成",
                 description="implementation test re-seed",
@@ -121,11 +121,11 @@ class TestTitleServiceMigration:
 
     @pytest.fixture
     def conversation(self, db: Any) -> Conversation:
-        project = Project.objects.create(
+        project = Space.objects.create(
             name="title-test-project",
             feishu_project_key="title-test-key",
         )
-        conv = Conversation.objects.create(project=project, title="")
+        conv = Conversation.objects.create(space=project, title="")
         Message.objects.create(
             conversation=conv,
             role=Message.Role.USER,

@@ -10,7 +10,7 @@ Tests cover:
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.dag import DAG
 from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 
@@ -18,9 +18,9 @@ from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 @pytest.fixture
 def dag_project(db):
     """Create a project for DAG tests."""
-    return Project.objects.create(
-        name="DAG Test Project",
-        description="Project for DAG testing",
+    return Space.objects.create(
+        name="DAG Test Space",
+        description="Space for DAG testing",
     )
 
 
@@ -29,7 +29,7 @@ def linear_workflow(db, dag_project):
     """Create a linear workflow: A -> B -> C."""
     workflow = Workflow.objects.create(
         name="Linear Workflow",
-        project=dag_project,
+        space=dag_project,
         trigger_type="manual",
     )
 
@@ -78,7 +78,7 @@ def branching_workflow(db, dag_project):
     """Create a branching workflow: A -> B, A -> C."""
     workflow = Workflow.objects.create(
         name="Branching Workflow",
-        project=dag_project,
+        space=dag_project,
         trigger_type="manual",
     )
 
@@ -127,7 +127,7 @@ def cyclic_workflow(db, dag_project):
     """Create a workflow with a cycle: A -> B -> C -> A."""
     workflow = Workflow.objects.create(
         name="Cyclic Workflow",
-        project=dag_project,
+        space=dag_project,
         trigger_type="manual",
     )
 
@@ -396,7 +396,7 @@ class TestDAGValidation:
         """Test validation fails when no entry node."""
         workflow = Workflow.objects.create(
             name="No Entry Workflow",
-            project=dag_project,
+            space=dag_project,
             trigger_type="manual",
         )
 

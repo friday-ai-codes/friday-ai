@@ -44,7 +44,7 @@ from knowledge.models import (
     generate_entity_id,
 )
 from knowledge.sources import feishu_document, feishu_work_item
-from projects.models import Project
+from projects.models import Space
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -68,8 +68,8 @@ def _make_request() -> IngestionRequest:
     )
 
 
-async def _make_project() -> Project:
-    return await Project.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
+async def _make_project() -> Space:
+    return await Space.objects.acreate(name="测试项目", feishu_project_key=PROJECT_KEY)
 
 
 async def _make_work_item() -> WorkItem:

@@ -58,11 +58,11 @@ async def _make_user_headers() -> dict[str, str]:
 
 
 async def _make_project():
-    """创建带飞书插件凭证的 Project（供 create_feishu_client_for_project）。"""
+    """创建带飞书插件凭证的 Space（供 create_feishu_client_for_project）。"""
     from common.encryption import encrypt_value
-    from projects.models import Project
+    from projects.models import Space
 
-    return await Project.objects.acreate(
+    return await Space.objects.acreate(
         name="study_platform",
         feishu_project_key=PROJECT_KEY,
         feishu_plugin_id="plugin_test_id",

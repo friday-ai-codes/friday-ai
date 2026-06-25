@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from django.db import IntegrityError
 
-from projects.models import Project
+from projects.models import Space
 from workflows.models import (
     ExecutionStatus,
     NodeExecution,
@@ -28,9 +28,9 @@ from workflows.models import (
 @pytest.fixture
 def workflow_project(db):
     """Create a project for workflow tests."""
-    return Project.objects.create(
-        name="Workflow Test Project",
-        description="Project for workflow testing",
+    return Space.objects.create(
+        name="Workflow Test Space",
+        description="Space for workflow testing",
     )
 
 
@@ -40,7 +40,7 @@ def workflow(db, workflow_project):
     return Workflow.objects.create(
         name="Test Workflow",
         description="A test workflow",
-        project=workflow_project,
+        space=workflow_project,
         trigger_type="manual",
     )
 
@@ -90,7 +90,7 @@ class TestWorkflowModel:
         """Test basic workflow creation."""
         workflow = Workflow.objects.create(
             name="New Workflow",
-            project=workflow_project,
+            space=workflow_project,
             trigger_type="manual",
         )
         assert workflow.id is not None
@@ -134,7 +134,7 @@ class TestWorkflowModel:
 
     def test_workflow_str(self, workflow):
         """Test workflow string representation."""
-        assert str(workflow) == "Test Workflow (Workflow Test Project)"
+        assert str(workflow) == "Test Workflow (Workflow Test Space)"
 
 
 # ============================================================================
@@ -275,7 +275,7 @@ class TestWorkflowExecutionModel:
         """Test basic execution creation."""
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
             input_data={"key": "value"},
         )
@@ -287,7 +287,7 @@ class TestWorkflowExecutionModel:
         """Test execution status can be updated."""
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
 
@@ -312,7 +312,7 @@ class TestWorkflowExecutionModel:
         }
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="feishu_webhook",
             context=context,
         )
@@ -340,7 +340,7 @@ class TestNodeExecutionModel:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
 
@@ -362,7 +362,7 @@ class TestNodeExecutionModel:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
 
@@ -394,7 +394,7 @@ class TestNodeExecutionModel:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
 
@@ -428,7 +428,7 @@ class TestNodeSubStepModel:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=workflow.project,
+            space=workflow.space,
             trigger_type="manual",
         )
         return NodeExecution.objects.create(

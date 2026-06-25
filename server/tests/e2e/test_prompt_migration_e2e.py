@@ -25,7 +25,7 @@ from langchain_core.messages import AIMessage
 
 from chat.models import Conversation, Message
 from chat.title_service import TITLE_PROMPT, generate_title
-from projects.models import Project
+from projects.models import Space
 from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope, PromptVersion
 from services.provider_config import ProviderType, ResolvedProviderConfig
@@ -93,7 +93,7 @@ class TestPromptMigrationE2E:
             prompt = Prompt.objects.create(
                 slug=PromptSlugs.AUX_TITLE_GENERATION,
                 scope=PromptScope.SYSTEM,
-                project=None,
+                space=None,
                 category="aux_model",
                 title="标题生成",
                 description="implementation e2e re-seed",
@@ -111,11 +111,11 @@ class TestPromptMigrationE2E:
 
     @pytest.fixture
     def conv_with_first_message(self, db: Any) -> Conversation:
-        project = Project.objects.create(
+        project = Space.objects.create(
             name="e2e-title-project",
             feishu_project_key="e2e-title-key",
         )
-        conv = Conversation.objects.create(project=project, title="")
+        conv = Conversation.objects.create(space=project, title="")
         Message.objects.create(
             conversation=conv,
             role=Message.Role.USER,

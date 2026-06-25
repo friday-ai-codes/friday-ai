@@ -44,7 +44,7 @@ def mock_coding_session() -> MagicMock:
     session.tech_plan = "## 技术方案\n- 步骤 1"
     session.tech_plan_effective = "## 技术方案\n- 步骤 1"
     session.coding_plan = None
-    session.conversation.project.name = "Test Project"
+    session.conversation.space.name = "Test Space"
     session.repository.name = "Test Repo"
     session.repository.default_branch = "main"
     session.repository.git_url = "https://github.com/test/repo.git"

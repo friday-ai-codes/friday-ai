@@ -172,7 +172,7 @@ async def _call_deep_analysis(mocks: dict[str, MagicMock | AsyncMock]) -> ToolRe
     _store.clear()
 
     with (
-        patch("agents.tools.chat_tools.Project.objects") as mock_proj_objects,
+        patch("agents.tools.chat_tools.Space.objects") as mock_proj_objects,
         patch("agents.tools.chat_tools.Repository.objects") as mock_repo_objects,
         patch("subagent.models.SubAgentSession.objects") as mock_sub_objects,
         patch("runners.models.Runner.objects") as mock_runner_objects,

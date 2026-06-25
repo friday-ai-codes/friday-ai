@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from projects.models import Project
+    from projects.models import Space
     from workflows.models.node import WorkflowNode
     from workflows.models.workflow import Workflow
 
@@ -31,11 +31,11 @@ from workflows.models.execution import NodeExecution, WorkflowErrorCode, Workflo
 
 
 @pytest.fixture
-def workflow(db: None, project: "Project") -> "Workflow":
+def workflow(db: None, project: "Space") -> "Workflow":
     """创建测试工作流。"""
     from workflows.models.workflow import Workflow
 
-    return Workflow.objects.create(name="Test Workflow", project=project)
+    return Workflow.objects.create(name="Test Workflow", space=project)
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def workflow_execution(db: None, workflow: "Workflow") -> WorkflowExecution:
     """创建测试工作流执行实例。"""
     return WorkflowExecution.objects.create(
         workflow=workflow,
-        project=workflow.project,
+        space=workflow.space,
         status="running",
     )
 

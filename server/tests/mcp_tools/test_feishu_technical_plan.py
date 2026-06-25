@@ -58,7 +58,7 @@ def _context(project) -> McpWorkItemContext:
     )
     return McpWorkItemContext.objects.create(
         run=run,
-        project=project,
+        space=project,
         feishu_project_key=project.feishu_project_key,
         work_item_type="bug",
         work_item_id=42,

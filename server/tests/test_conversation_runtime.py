@@ -183,7 +183,7 @@ def conversation_for_runtime(db, project):
     """Conversation 真实落库，给 ConversationService 用。"""
     from chat.models import Conversation
 
-    return Conversation.objects.create(project=project, title="work item 测试")
+    return Conversation.objects.create(space=project, title="work item 测试")
 
 
 @pytest.fixture
@@ -403,7 +403,7 @@ class TestConversationRuntimeCodingPlanPayload:
         repo = three_repos_for_runtime[0]
         agent_session = await sync_to_async(AgentSession.objects.create)(
             session_id="agent-runtime-no-result",
-            project=project,
+            space=project,
             status=AgentSession.Status.RUNNING,
         )
         sub_session = await sync_to_async(SubAgentSession.objects.create)(
@@ -452,7 +452,7 @@ class TestConversationRuntimeDeepSessions:
         async def _make(sid: str, task: str, logs: list) -> None:
             agent = await sync_to_async(AgentSession.objects.create)(
                 session_id=f"agent-{sid}",
-                project=project,
+                space=project,
                 status=AgentSession.Status.COMPLETED,
                 metadata={"source": "chat_deep_analysis", "conversation_id": conv_id},
             )

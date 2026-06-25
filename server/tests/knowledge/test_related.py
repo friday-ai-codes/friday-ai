@@ -13,9 +13,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 async def _chain(entity_factory, edge_factory, version_factory, project):
-    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, project=project)
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, space=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     await sync_to_async(version_factory)(wi)
     await sync_to_async(version_factory)(plan)
     await sync_to_async(version_factory)(code)

@@ -21,7 +21,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from chat.models import CodingPlan, Conversation
-from projects.models import Project
+from projects.models import Space
 from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError
 
 User = get_user_model()
@@ -44,12 +44,12 @@ def export_user(db):
 
 @pytest.fixture
 def coding_plan_with_project(db, export_user) -> CodingPlan:
-    """构造 Project + Conversation + CodingPlan，复用 implementation 模型形态。
+    """构造 Space + Conversation + CodingPlan，复用 implementation 模型形态。
 
-    Project.feishu_doc_folder_token 预填 `fk_fallback`，测试可按需改写。
+    Space.feishu_doc_folder_token 预填 `fk_fallback`，测试可按需改写。
     """
     suffix = uuid.uuid4().hex[:8]
-    project = Project.objects.create(
+    project = Space.objects.create(
         name=f"导出测试-checkpoint-{suffix}",
         feishu_project_key=f"project-{suffix}",
         feishu_doc_folder_token="fk_fallback",
@@ -57,7 +57,7 @@ def coding_plan_with_project(db, export_user) -> CodingPlan:
         feishu_app_secret_encrypted="enc_test",
     )
     conversation = Conversation.objects.create(
-        project=project, title="对话-checkpoint", created_by=export_user
+        space=project, title="对话-checkpoint", created_by=export_user
     )
     return CodingPlan.objects.create(
         conversation=conversation,
@@ -142,8 +142,8 @@ def test_export_400_when_no_folder_token_anywhere(
 ) -> None:
     """请求与 project 都缺 folder_token → 400 not_configured，且不调 exporter。"""
     plan = coding_plan_with_project
-    plan.conversation.project.feishu_doc_folder_token = ""
-    plan.conversation.project.save(update_fields=["feishu_doc_folder_token"])
+    plan.conversation.space.feishu_doc_folder_token = ""
+    plan.conversation.space.save(update_fields=["feishu_doc_folder_token"])
 
     with patch(
         "chat.views.export_coding_plan_to_feishu",

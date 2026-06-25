@@ -30,7 +30,7 @@ def test_default_steps_not_shared():
 
 
 def test_ingest_run_defaults():
-    """新建 run：status=running、三步 pending、project=None、error=""。"""
+    """新建 run：status=running、三步 pending、space=None、error=""。"""
     run = IngestRun.objects.create(
         board_url="https://project.feishu.cn/abc123/issue/detail/456",
         mr_url="https://gitlab.example.com/group/proj/-/merge_requests/42",
@@ -38,7 +38,7 @@ def test_ingest_run_defaults():
     fetched = IngestRun.objects.get(pk=run.pk)
     assert fetched.status == IngestRun.Status.RUNNING
     assert fetched.steps == default_steps()
-    assert fetched.project is None
+    assert fetched.space is None
     assert fetched.error == ""
     assert fetched.completed_at is None
     assert fetched.started_at is not None

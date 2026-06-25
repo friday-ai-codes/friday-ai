@@ -46,15 +46,15 @@ async def _create_user() -> Any:
 
 
 async def _create_waiting_orch_run(user: Any = None) -> tuple[str, Any, Any]:
-    """创建 WAITING 状态的 OrchestrationRun（含 Project + Conversation FK 链）。"""
+    """创建 WAITING 状态的 OrchestrationRun（含 Space + Conversation FK 链）。"""
     from chat.models import Conversation
     from orchestration.models import OrchestrationRun
-    from projects.models import Project
+    from projects.models import Space
 
     if user is None:
         user = await _create_user()
-    project = await Project.objects.acreate(name="test-proj")
-    conv = await Conversation.objects.acreate(project=project, title="test", created_by=user)
+    project = await Space.objects.acreate(name="test-proj")
+    conv = await Conversation.objects.acreate(space=project, title="test", created_by=user)
     conv_id = str(conv.id)
     orch_run = await OrchestrationRun.objects.acreate(
         conversation=conv,
@@ -123,14 +123,14 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
 async def test_interrupt_during_executing_uses_runner() -> None:
     """SDK 运行中中断：使用 runner.interrupt()。"""
     from chat.models import Conversation
-    from projects.models import Project
+    from projects.models import Space
 
     mock_runner = MagicMock()
     mock_runner.interrupt = AsyncMock()
 
     user = await _create_user()
-    project = await Project.objects.acreate(name="exec-proj")
-    conv = await Conversation.objects.acreate(project=project, title="exec", created_by=user)
+    project = await Space.objects.acreate(name="exec-proj")
+    conv = await Conversation.objects.acreate(space=project, title="exec", created_by=user)
     conv_id = str(conv.id)
 
     with patch("orchestration.runner_registry.get_active_runner", return_value=mock_runner):
@@ -162,14 +162,14 @@ async def test_interrupt_no_active_session_returns_404(
 ) -> None:
     """无 active runner 也无 barrier → 404。"""
     from chat.models import Conversation
-    from projects.models import Project
+    from projects.models import Space
 
     mock_barrier.has_barrier_for_thread.return_value = False
 
     user = await _create_user()
-    project = await Project.objects.acreate(name="no-session-proj")
+    project = await Space.objects.acreate(name="no-session-proj")
     conv = await Conversation.objects.acreate(
-        project=project, title="no-session", created_by=user
+        space=project, title="no-session", created_by=user
     )
     conv_id = str(conv.id)
 

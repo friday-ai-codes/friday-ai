@@ -244,7 +244,7 @@ class TestBotServiceProcessing:
     ) -> None:
         """完整处理链路: dispatch -> process_message -> 回复。"""
         chat_id = f"oc_process_{uuid.uuid4().hex[:8]}"
-        msg = create_bot_text_message(chat_id=chat_id, text="E2E Test Project 这个 Bug 怎么修")
+        msg = create_bot_text_message(chat_id=chat_id, text="E2E Test Space 这个 Bug 怎么修")
         result = await dispatch_inbound_message(msg)
         assert result.status == "bot_message_accepted"
 
@@ -282,7 +282,7 @@ class TestBotServiceProcessing:
         mock_project_resolver.resolve = AsyncMock(
             return_value=ProjectResolution(
                 status="resolved",
-                project=e2e_project,
+                space=e2e_project,
                 candidates=[e2e_project.name],
                 reason="explicit_alias_match",
             )
@@ -356,8 +356,8 @@ class TestBotServiceProcessing:
         mock_project_resolver.resolve = AsyncMock(
             return_value=ProjectResolution(
                 status="awaiting_project_clarification",
-                project=None,
-                candidates=["Project A", "Project B"],
+                space=None,
+                candidates=["Space A", "Space B"],
                 reason="no_project_match",
             )
         )

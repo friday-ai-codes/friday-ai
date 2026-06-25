@@ -7,7 +7,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.test import TestCase
 
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
 
 
@@ -15,16 +15,16 @@ class TestArgTypeFixes(TestCase):
     """测试 arg-type 类型修复"""
 
     def test_project_role_enum_is_string_compatible(self):
-        """测试 ProjectRole 枚举值能作为字符串类型参数传递"""
-        # 验证 ProjectRole 值是字符串类型
-        self.assertIsInstance(ProjectRole.VIEWER, str)
-        self.assertIsInstance(ProjectRole.ADMIN, str)
-        self.assertEqual(ProjectRole.VIEWER, "viewer")
-        self.assertEqual(ProjectRole.ADMIN, "admin")
+        """测试 SpaceRole 枚举值能作为字符串类型参数传递"""
+        # 验证 SpaceRole 值是字符串类型
+        self.assertIsInstance(SpaceRole.VIEWER, str)
+        self.assertIsInstance(SpaceRole.ADMIN, str)
+        self.assertEqual(SpaceRole.VIEWER, "viewer")
+        self.assertEqual(SpaceRole.ADMIN, "admin")
 
     @pytest.mark.asyncio
     async def test_has_project_access_accepts_project_role_enum(self):
-        """测试 has_project_access 方法接受 ProjectRole 枚举参数"""
+        """测试 has_project_access 方法接受 SpaceRole 枚举参数"""
         # Mock 用户和项目
         user = MagicMock()
         project = MagicMock()
@@ -33,11 +33,11 @@ class TestArgTypeFixes(TestCase):
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(PermissionService, 'has_project_access', lambda user, project, role: True)
 
-            # 应能接受 ProjectRole 枚举值作为参数
-            result = PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+            # 应能接受 SpaceRole 枚举值作为参数
+            result = PermissionService.has_project_access(user, project, SpaceRole.VIEWER)
             self.assertTrue(result)
 
-            result = PermissionService.has_project_access(user, project, ProjectRole.ADMIN)
+            result = PermissionService.has_project_access(user, project, SpaceRole.ADMIN)
             self.assertTrue(result)
 
     @pytest.mark.asyncio

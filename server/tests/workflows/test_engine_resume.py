@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from rest_framework import status
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import ExecutionStatus, Workflow, WorkflowExecution
 
@@ -13,16 +13,16 @@ from workflows.models import ExecutionStatus, Workflow, WorkflowExecution
 @pytest.fixture
 def paused_execution(db, user):
     """创建一个暂停的执行实例（含已完成节点信息）。"""
-    project = Project.objects.create(name="Resume API Project")
+    project = Space.objects.create(name="Resume API Space")
     workflow = Workflow.objects.create(
         name="Resume API Workflow",
-        project=project,
+        space=project,
         trigger_type="manual",
         created_by=user,
     )
     return WorkflowExecution.objects.create(
         workflow=workflow,
-        project=project,
+        space=project,
         trigger_type="manual",
         triggered_by=user,
         status=ExecutionStatus.PAUSED,

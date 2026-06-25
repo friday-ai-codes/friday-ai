@@ -3,7 +3,7 @@
 覆盖：
 R1  空库 aggregate_repos() → nodes=[], edges=[]
 R2  仓库节点 = 未软删的 Repository，含 metadata 字段
-R3  space_id 过滤：仅返回该 Project 关联的仓库
+R3  space_id 过滤：仅返回该 Space 关联的仓库
 R4  多条 CrossRepoApiCall 同 (caller_repo, callee_repo) 聚合成 1 条 REPO_API_CALL 边
 R5  自环（call_site / endpoint 同仓）跳过
 R6  软删仓库不返回
@@ -29,7 +29,7 @@ from codegraph.models import (
     CrossRepoApiCall,
     Endpoint,
 )
-from projects.models import Project, ProjectRepository
+from projects.models import Space, SpaceRepository
 from repositories.models import Repository
 
 User = get_user_model()
@@ -50,12 +50,12 @@ def make_repo(name: str = "test-repo", platform: str = "gitlab") -> Repository:
     )
 
 
-def make_project(name: str = "space-a") -> Project:
-    return Project.objects.create(name=name)
+def make_project(name: str = "space-a") -> Space:
+    return Space.objects.create(name=name)
 
 
-def link_repo_to_project(project: Project, repo: Repository) -> ProjectRepository:
-    return ProjectRepository.objects.create(project=project, repository=repo)
+def link_repo_to_project(project: Space, repo: Repository) -> SpaceRepository:
+    return SpaceRepository.objects.create(space=project, repository=repo)
 
 
 def make_cross_call(

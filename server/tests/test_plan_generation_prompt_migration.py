@@ -54,7 +54,7 @@ class TestPlanGenerationMigration:
             prompt = Prompt.objects.create(
                 slug=PromptSlugs.AI_NODE_PLAN_GENERATION,
                 scope=PromptScope.SYSTEM,
-                project=None,
+                space=None,
                 category="ai_node",
                 title="AI 节点 - 方案生成",
                 description="implementation test re-seed",

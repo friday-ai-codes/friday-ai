@@ -15,7 +15,7 @@ import pytest
 from django.utils import timezone
 from rest_framework import status
 
-from projects.models import Project
+from projects.models import Space
 from workflows.api.serializers import WorkflowExecutionSerializer
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.hooks.builtin import AlertRuleHook
@@ -108,10 +108,10 @@ class TestSmokeChain:
         """手动触发执行后，NodeExecution 包含结构化日志和合法 error_code。"""
         _register_test_nodes()
 
-        project = await Project.objects.acreate(name="Smoke Test Project")
+        project = await Space.objects.acreate(name="Smoke Test Space")
         workflow = await Workflow.objects.acreate(
             name="Smoke Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
@@ -160,16 +160,16 @@ class TestSmokeChain:
     @pytest.mark.asyncio
     async def test_alert_rule_triggers_and_records_execution(self, db, user):
         """AlertRuleHook 条件评估通过并生成 AlertRuleExecution 记录。"""
-        project = await Project.objects.acreate(name="Alert Test Project")
+        project = await Space.objects.acreate(name="Alert Test Space")
         workflow = await Workflow.objects.acreate(
             name="Alert Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         now = timezone.now()
         failed_execution = await WorkflowExecution.objects.acreate(
             workflow=workflow,
-            project=project,
+            space=project,
             trigger_type="manual",
             triggered_by=user,
             status="failed",
@@ -179,7 +179,7 @@ class TestSmokeChain:
 
         rule = await AlertRule.objects.acreate(
             workflow=workflow,
-            project=project,
+            space=project,
             name="E2E Failed Alert",
             condition_type="execution_failed",
             action_type="webhook",
@@ -287,10 +287,10 @@ class TestNewNodeChain:
         _register_test_nodes()
         _TestFailOnceNode._call_count = 0
 
-        project = await Project.objects.acreate(name="Ignore Test Project")
+        project = await Space.objects.acreate(name="Ignore Test Space")
         workflow = await Workflow.objects.acreate(
             name="Ignore Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         trigger = await WorkflowNode.objects.acreate(
@@ -348,10 +348,10 @@ class TestReplayContract:
 
     def test_execution_serializer_contains_all_fields(self, db, user):
         """WorkflowExecutionSerializer 包含 node_executions、logs、error_code 等字段。"""
-        project = Project.objects.create(name="Replay Test Project")
+        project = Space.objects.create(name="Replay Test Space")
         workflow = Workflow.objects.create(
             name="Replay Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         node = WorkflowNode.objects.create(
@@ -363,7 +363,7 @@ class TestReplayContract:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=project,
+            space=project,
             trigger_type="manual",
             triggered_by=user,
             status="completed",
@@ -406,15 +406,15 @@ class TestReplayContract:
 
     def test_node_snapshots_is_json_serializable(self, db, user):
         """node_snapshots 可序列化，json.dumps() 不抛异常。"""
-        project = Project.objects.create(name="Snapshot Test Project")
+        project = Space.objects.create(name="Snapshot Test Space")
         workflow = Workflow.objects.create(
             name="Snapshot Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=project,
+            space=project,
             trigger_type="manual",
             triggered_by=user,
             status="completed",
@@ -442,10 +442,10 @@ class TestReplayContract:
 
     def test_replay_mode_data_contract(self, db, user):
         """replayMode 数据契约：logs / error_code / input_data / output_data 完整。"""
-        project = Project.objects.create(name="Contract Test Project")
+        project = Space.objects.create(name="Contract Test Space")
         workflow = Workflow.objects.create(
             name="Contract Workflow",
-            project=project,
+            space=project,
             trigger_type="manual",
         )
         node_ok = WorkflowNode.objects.create(
@@ -464,7 +464,7 @@ class TestReplayContract:
         )
         execution = WorkflowExecution.objects.create(
             workflow=workflow,
-            project=project,
+            space=project,
             trigger_type="manual",
             triggered_by=user,
             status="failed",

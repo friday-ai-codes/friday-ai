@@ -16,7 +16,7 @@ AIPlanGenerationNode **源码零改动**（继承 AIAgentBaseNode.execute），�
 Fixture 策略（checkpoint-03 conftest / work item）：
 - ``fake_chat_model_factory`` / ``mock_aresolve_ok`` / ``make_minimal_context`` 从
   ``server/tests/conftest.py`` 引入，**禁止**在本文件重复定义（checkpoint 静态扫描守护）。
-- 为避免真实 DB 查询（WorkflowExecution/Project），对 ``AIAgentBaseNode._get_project``
+- 为避免真实 DB 查询（WorkflowExecution/Space），对 ``AIAgentBaseNode._get_project``
   / ``_get_user`` 走 monkeypatch stub 返回 MagicMock；这是节点级单测惯用姿势，与
   test_base_agent.py 的 workflow_execution=None 路径不同（plan_generation.execute 内的
   `self._get_project(context)` 被显式调用，返回 None 会影响 Prompt Center 查询，故用
@@ -48,7 +48,7 @@ def _stub_project_user(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any]:
     触发真实 DB 外键约束失败（MagicMock project 不在 projects_project 表里）。
     """
     mock_project = MagicMock()
-    # Project.id 是 UUIDField；render_prompt 会用此值做 project_id 查询
+    # Space.id 是 UUIDField；render_prompt 会用此值做 project_id 查询
     mock_project.id = "00000000-0000-0000-0000-000000000001"
     mock_project.feishu_doc_folder_token = "folder_token_123"
 
@@ -106,8 +106,8 @@ def _build_plan_context(
     # _stub_project_user 劫持为直接返回 stub project/user，不会真的去查 DB
     mock_execution = MagicMock()
     mock_execution.workflow = MagicMock()
-    mock_execution.workflow.project = MagicMock()
-    mock_execution.workflow.project.id = "00000000-0000-0000-0000-000000000001"
+    mock_execution.workflow.space = MagicMock()
+    mock_execution.workflow.space.id = "00000000-0000-0000-0000-000000000001"
     mock_execution.triggered_by = MagicMock(id=1)
 
     return make_minimal_context(

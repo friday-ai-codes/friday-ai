@@ -14,7 +14,7 @@ import asyncio
 import pytest
 from asgiref.sync import sync_to_async
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
     ExecutionStatus,
@@ -28,9 +28,9 @@ from workflows.models import (
 @pytest.fixture
 def engine_project(db):
     """Create a project for engine tests."""
-    return Project.objects.create(
-        name="Engine Test Project",
-        description="Project for engine testing",
+    return Space.objects.create(
+        name="Engine Test Space",
+        description="Space for engine testing",
     )
 
 
@@ -39,7 +39,7 @@ def simple_workflow(db, engine_project):
     """Create a simple two-node workflow."""
     workflow = Workflow.objects.create(
         name="Simple Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
 
@@ -76,7 +76,7 @@ def approval_workflow(db, engine_project):
     """Create a workflow with approval node."""
     workflow = Workflow.objects.create(
         name="Approval Workflow",
-        project=engine_project,
+        space=engine_project,
         trigger_type="manual",
     )
 

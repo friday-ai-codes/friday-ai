@@ -7,7 +7,7 @@ import pytest
 from feishu.bot.project_resolver import ProjectResolver
 from feishu.bot.thread_resolver import ThreadResolver
 from feishu.models import FeishuBotMessage, FeishuBotThread
-from projects.models import Project
+from projects.models import Space
 from repositories.models import Repository
 
 
@@ -81,7 +81,7 @@ class TestThreadResolver:
 class TestProjectResolver:
     async def test_explicit_project_name_unique_match(self) -> None:
         repo = await Repository.objects.acreate(name="api-server", git_url="https://example.com/api.git")
-        project = await Project.objects.acreate(name="Friday API", feishu_project_key="friday-api")
+        project = await Space.objects.acreate(name="Friday API", feishu_project_key="friday-api")
         await project.repositories.aadd(repo)
         message = await FeishuBotMessage.objects.acreate(
             message_id="msg_10",
@@ -97,13 +97,13 @@ class TestProjectResolver:
         resolution = await ProjectResolver().resolve(message)
 
         assert resolution.status == "resolved"
-        assert resolution.project == project
+        assert resolution.space == project
 
     async def test_ambiguous_repository_name_requests_clarification(self) -> None:
         repo1 = await Repository.objects.acreate(name="shared-repo", git_url="https://example.com/a.git")
         repo2 = await Repository.objects.acreate(name="shared-repo-ui", git_url="https://example.com/b.git")
-        project1 = await Project.objects.acreate(name="Alpha")
-        project2 = await Project.objects.acreate(name="Beta")
+        project1 = await Space.objects.acreate(name="Alpha")
+        project2 = await Space.objects.acreate(name="Beta")
         await project1.repositories.aadd(repo1)
         await project2.repositories.aadd(repo2)
         message = await FeishuBotMessage.objects.acreate(
@@ -123,8 +123,8 @@ class TestProjectResolver:
         assert resolution.candidates
 
     async def test_recent_thread_project_can_be_reused(self) -> None:
-        project = await Project.objects.acreate(name="Gamma")
-        thread = await FeishuBotThread.objects.acreate(chat_id="chat_3", project=project)
+        project = await Space.objects.acreate(name="Gamma")
+        thread = await FeishuBotThread.objects.acreate(chat_id="chat_3", space=project)
         message = await FeishuBotMessage.objects.acreate(
             message_id="msg_12",
             thread=thread,
@@ -140,4 +140,4 @@ class TestProjectResolver:
         resolution = await ProjectResolver().resolve(message, thread)
 
         assert resolution.status == "resolved"
-        assert resolution.project == project
+        assert resolution.space == project

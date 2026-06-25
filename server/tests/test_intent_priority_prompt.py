@@ -50,7 +50,7 @@ def _ensure_seed_with_stale_body() -> None:
         prompt, created = Prompt.objects.get_or_create(
             slug=slug,
             scope="system",
-            project=None,
+            space=None,
             defaults={
                 "category": "chat_agent",
                 "title": f"seed-{slug}",
@@ -86,7 +86,7 @@ def _count_versions(slug: str) -> int:
 
 
 def _active_body(slug: str) -> str:
-    prompt = Prompt.objects.get(slug=slug, scope="system", project=None)
+    prompt = Prompt.objects.get(slug=slug, scope="system", space=None)
     assert prompt.active_version is not None
     return prompt.active_version.body
 
@@ -138,7 +138,7 @@ class TestIntentPriorityResyncMigration:
         resync.forwards(django_apps, None)
 
         for slug in _THREE_SLUGS:
-            prompt = Prompt.objects.get(slug=slug, scope="system", project=None)
+            prompt = Prompt.objects.get(slug=slug, scope="system", space=None)
             assert prompt.active_version is not None
             note = prompt.active_version.change_note
             assert "work item" in note, f"{slug} change_note 缺 work item: {note!r}"

@@ -19,9 +19,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 async def test_enrich_returns_related_kinds(entity_factory, edge_factory, version_factory, project):
-    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, project=project)
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, space=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     await sync_to_async(version_factory)(wi)
     await sync_to_async(version_factory)(plan)
     await sync_to_async(version_factory)(code)
@@ -40,9 +40,9 @@ async def test_enrich_returns_related_kinds(entity_factory, edge_factory, versio
 
 
 async def test_enrich_max_hops_one(entity_factory, edge_factory, version_factory, project):
-    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, project=project)
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
-    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, project=project)
+    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, space=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
+    code = await sync_to_async(entity_factory)(kind=EntityKind.CODE_CHANGE, space=project)
     await sync_to_async(version_factory)(wi)
     await sync_to_async(version_factory)(plan)
     await sync_to_async(version_factory)(code)
@@ -55,8 +55,8 @@ async def test_enrich_max_hops_one(entity_factory, edge_factory, version_factory
 
 
 async def test_enrich_dedupe(entity_factory, edge_factory, version_factory, project):
-    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, project=project)
-    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, project=project)
+    wi = await sync_to_async(entity_factory)(kind=EntityKind.WORK_ITEM, space=project)
+    plan = await sync_to_async(entity_factory)(kind=EntityKind.TECH_PLAN, space=project)
     await sync_to_async(version_factory)(wi)
     await sync_to_async(version_factory)(plan)
     await sync_to_async(edge_factory)(wi, plan, relation=EdgeRelation.HAS_PLAN)
@@ -99,8 +99,8 @@ async def test_search_similar_unauthorized(project, other_user):
 
 
 async def test_search_similar_recency_order(entity_factory, version_factory, project, user, project_memberships, monkeypatch, mock_embedding):
-    old = await sync_to_async(entity_factory)(project=project, title="旧需求", event_time=timezone.now() - timedelta(days=120))
-    new = await sync_to_async(entity_factory)(project=project, title="新需求", event_time=timezone.now())
+    old = await sync_to_async(entity_factory)(space=project, title="旧需求", event_time=timezone.now() - timedelta(days=120))
+    new = await sync_to_async(entity_factory)(space=project, title="新需求", event_time=timezone.now())
     await sync_to_async(version_factory)(old, version=1)
     await sync_to_async(version_factory)(new, version=1)
 

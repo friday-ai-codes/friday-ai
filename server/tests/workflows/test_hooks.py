@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.hooks.base import BaseHook, HookManager
 from workflows.hooks.builtin import NotificationHook
@@ -120,8 +120,8 @@ class TestHookManagerEvents:
 
 @pytest.fixture
 def scheduler_project(db):
-    return Project.objects.create(
-        name="Scheduler Event Test Project",
+    return Space.objects.create(
+        name="Scheduler Event Test Space",
         description="Scheduler terminal event semantics tests",
     )
 
@@ -130,7 +130,7 @@ def scheduler_project(db):
 def scheduler_single_node_workflow(db, scheduler_project):
     workflow = Workflow.objects.create(
         name="Scheduler Single Node Workflow",
-        project=scheduler_project,
+        space=scheduler_project,
         trigger_type="manual",
     )
     WorkflowNode.objects.create(
@@ -147,7 +147,7 @@ def scheduler_single_node_workflow(db, scheduler_project):
 def scheduler_failing_workflow(db, scheduler_project):
     workflow = Workflow.objects.create(
         name="Scheduler Failing Workflow",
-        project=scheduler_project,
+        space=scheduler_project,
         trigger_type="manual",
     )
     trigger_node = WorkflowNode.objects.create(
@@ -249,7 +249,7 @@ class TestSchedulerTerminalEvents:
 
         execution = await WorkflowExecution.objects.acreate(
             workflow=scheduler_single_node_workflow,
-            project=scheduler_single_node_workflow.project,
+            space=scheduler_single_node_workflow.space,
             trigger_type="manual",
             status=ExecutionStatus.RUNNING,
         )
@@ -283,7 +283,7 @@ class TestSchedulerTerminalEvents:
 
         execution = await WorkflowExecution.objects.acreate(
             workflow=scheduler_single_node_workflow,
-            project=scheduler_single_node_workflow.project,
+            space=scheduler_single_node_workflow.space,
             trigger_type="manual",
             status=ExecutionStatus.RUNNING,
         )

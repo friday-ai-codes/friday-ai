@@ -128,7 +128,7 @@ async def test_hydrate_work_item_feishu_url(entity_factory, version_factory, pro
     entity = await sync_to_async(entity_factory)(
         kind=EntityKind.WORK_ITEM,
         source_kind="feishu_work_item",
-        project=project,
+        space=project,
     )
     ver = await sync_to_async(version_factory)(entity)
     meta = await hydrate_entity_metadata(entity.id, ver.version)

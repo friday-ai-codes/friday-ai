@@ -34,7 +34,7 @@ from agents.core.events import (
     AgentEvent,
 )
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 
 # ============================================================================
 # 辅助函数
@@ -93,8 +93,8 @@ def _parse_sse_data_lines(body: str) -> list[dict]:
 @pytest.fixture
 async def test_project(db):
     """创建测试项目（无仓库依赖）。"""
-    return await Project.objects.acreate(
-        name="E2E Test Project",
+    return await Space.objects.acreate(
+        name="E2E Test Space",
         description="端到端测试用项目",
     )
 
@@ -103,7 +103,7 @@ async def test_project(db):
 async def conversation(db, test_project):
     """创建测试对话。"""
     return await Conversation.objects.acreate(
-        project=test_project,
+        space=test_project,
         title="测试对话",
     )
 
@@ -637,10 +637,10 @@ class TestMessagePersistence:
         """GET /api/chat/conversations/ 返回已创建的对话列表。"""
         # 创建 2 个对话
         await Conversation.objects.acreate(
-            project=test_project, title="对话 A"
+            space=test_project, title="对话 A"
         )
         await Conversation.objects.acreate(
-            project=test_project, title="对话 B"
+            space=test_project, title="对话 B"
         )
 
         client = AsyncClient()

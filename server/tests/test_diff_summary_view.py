@@ -22,7 +22,7 @@ def session_with_diff(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="Diff 摘要测试对话", created_by=user
+        space=project, title="Diff 摘要测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -58,7 +58,7 @@ def session_without_diff(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="无 diff 测试对话", created_by=user
+        space=project, title="无 diff 测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,
@@ -75,7 +75,7 @@ def session_with_truncated_diff(project, repository, user):
     from chat.models import Conversation
 
     conversation = Conversation.objects.create(
-        project=project, title="Truncated diff 测试对话", created_by=user
+        space=project, title="Truncated diff 测试对话", created_by=user
     )
     return CodingSession.objects.create(
         conversation=conversation,

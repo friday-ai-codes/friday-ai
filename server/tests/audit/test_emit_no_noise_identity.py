@@ -10,7 +10,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from audit.models import AuditEvent
-from projects.models import Project
+from projects.models import Space
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -21,8 +21,8 @@ def _admin_client(admin_user) -> APIClient:
     return client
 
 
-def _make_project() -> Project:
-    return Project.objects.create(name="噪音空间", feishu_project_key="key-noise")
+def _make_project() -> Space:
+    return Space.objects.create(name="噪音空间", feishu_project_key="key-noise")
 
 
 def test_user_list_get_no_audit(admin_user):

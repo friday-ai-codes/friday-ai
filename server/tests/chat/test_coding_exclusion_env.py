@@ -71,7 +71,7 @@ class TestBuildDispatchMetadataExclude:
     def coding_session_with_repo(self, project, repository):
         from chat.models import CodingSession, Conversation
 
-        conversation = Conversation.objects.create(project=project, title="exclude env 测试")
+        conversation = Conversation.objects.create(space=project, title="exclude env 测试")
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,

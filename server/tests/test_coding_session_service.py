@@ -56,7 +56,7 @@ class TestBuildDispatchMetadata:
         """创建带 repository 的 CodingSession。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="metadata 测试")
+        conversation = Conversation.objects.create(space=project, title="metadata 测试")
         return CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -201,7 +201,7 @@ class TestDispatchCodingTask:
         """创建 confirmed 状态的 CodingSession（含完整关联）。"""
         from chat.models import Conversation
 
-        conversation = Conversation.objects.create(project=project, title="dispatch 测试")
+        conversation = Conversation.objects.create(space=project, title="dispatch 测试")
         session = CodingSession.objects.create(
             conversation=conversation,
             repository=repository,
@@ -220,7 +220,7 @@ class TestDispatchCodingTask:
 
         # 预加载关联对象（模拟 select_related）
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
 
         with (
@@ -270,7 +270,7 @@ class TestDispatchCodingTask:
 
         # 预加载关联对象
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
 
         with (
@@ -318,7 +318,7 @@ class TestDispatchCodingTask:
         from repositories.models import GitCredential
 
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
 
         metadata = {
@@ -371,7 +371,7 @@ class TestDispatchCodingTask:
         from repositories.models import GitCredential
 
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
 
         mock_git_client = AsyncMock()
@@ -426,7 +426,7 @@ class TestDispatchCodingTask:
         from subagent.models import SubAgentSession
 
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
         before_count = await SubAgentSession.objects.acount()
 
@@ -460,7 +460,7 @@ class TestDispatchCodingTask:
         from chat.coding_session_service import dispatch_coding_task
 
         session = await CodingSession.objects.select_related(
-            "repository", "conversation__project"
+            "repository", "conversation__space"
         ).aget(id=confirmed_session.id)
 
         with patch(
@@ -482,7 +482,7 @@ def coding_plan_for_service(db, project):
     """Conversation + CodingPlan 用于 service 层批量创建测试。"""
     from chat.models import CodingPlan, Conversation
 
-    conversation = Conversation.objects.create(project=project, title="service 测试")
+    conversation = Conversation.objects.create(space=project, title="service 测试")
     return CodingPlan.objects.create(
         conversation=conversation,
         tech_plan="## 多仓 fan-out 方案",
@@ -548,7 +548,7 @@ class TestCreateSessionsForPlan:
     async def test_repository_not_in_project_fails(
         self, coding_plan_for_service, orphan_repo
     ) -> None:
-        """orphan_repo 不属于 coding_plan.conversation.project → failed。"""
+        """orphan_repo 不属于 coding_plan.conversation.space → failed。"""
         from chat.coding_session_service import create_sessions_for_plan
 
         result = await create_sessions_for_plan(

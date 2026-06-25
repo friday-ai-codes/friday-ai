@@ -44,7 +44,7 @@ def test_preflight_returns_missing_when_no_credentials_anywhere(
     project_a,
 ) -> None:
     """Behavior A：conversation + project + system 均无凭证 → 400 + code=provider_credential_missing。"""
-    conv = Conversation.objects.create(project=project_a, title="无凭证")
+    conv = Conversation.objects.create(space=project_a, title="无凭证")
 
     resp = _client().get(_url(str(conv.id)))
 
@@ -70,7 +70,7 @@ def test_preflight_ok_when_project_default_credential_resolves(
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
 
-    conv = Conversation.objects.create(project=project_a, title="走 project 默认")
+    conv = Conversation.objects.create(space=project_a, title="走 project 默认")
 
     resp = _client().get(_url(str(conv.id)))
 
@@ -92,7 +92,7 @@ def test_preflight_ok_with_conversation_pinned_credential(
     project_a_anthropic_credential,
 ) -> None:
     """Behavior C：conversation 自身 pin 了 provider_credential → preflight 返 source=conversation。"""
-    conv = Conversation.objects.create(project=project_a, title="对话级 pin")
+    conv = Conversation.objects.create(space=project_a, title="对话级 pin")
     conv.provider_credential_id_id = project_a_anthropic_credential.id
     conv.save(update_fields=["provider_credential_id"])
 
@@ -119,7 +119,7 @@ def test_preflight_missing_when_credential_inactive(
     project_a_anthropic_credential.is_active = False
     project_a_anthropic_credential.save(update_fields=["is_active"])
 
-    conv = Conversation.objects.create(project=project_a, title="指向不活跃凭证")
+    conv = Conversation.objects.create(space=project_a, title="指向不活跃凭证")
     conv.provider_credential_id_id = project_a_anthropic_credential.id
     conv.save(update_fields=["provider_credential_id"])
 
@@ -155,7 +155,7 @@ def test_preflight_missing_payload_has_all_contract_fields(
     """Behavior F：missing payload 字段完整 — code / data.missing_provider /
     data.recommended_action / data.scope_attempted 四字段全部存在。
     """
-    conv = Conversation.objects.create(project=project_a, title="契约字段断言")
+    conv = Conversation.objects.create(space=project_a, title="契约字段断言")
     resp = _client().get(_url(str(conv.id)))
 
     assert resp.status_code == 400, resp.content
@@ -187,7 +187,7 @@ def test_preflight_cross_project_member_denied(
     统一 404（不泄漏存在性），原 403 project-permission 分支被 owner gate 覆盖。
     """
     conv = Conversation.objects.create(
-        project=project_a, title="a-only", created_by=project_a_admin_user
+        space=project_a, title="a-only", created_by=project_a_admin_user
     )
 
     client = APIClient()
@@ -231,7 +231,7 @@ def test_preflight_non_member_user_denied(
     project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
     project_a.save(update_fields=["default_provider_credential_id"])
     conv = Conversation.objects.create(
-        project=project_a, title="a-only-sensitive", created_by=owner
+        space=project_a, title="a-only-sensitive", created_by=owner
     )
 
     client = APIClient()
@@ -269,7 +269,7 @@ def test_preflight_superuser_bypass_ownership(
     # owner gate（ISO-03/04）无 superuser bypass：superuser 仅当为 owner 时通过 owner gate，
     # 通过后 project ownership 校验对 superuser 豁免，故跨项目（非成员）仍可探测。
     conv = Conversation.objects.create(
-        project=project_a, title="sys-access", created_by=system_admin_user
+        space=project_a, title="sys-access", created_by=system_admin_user
     )
 
     client = APIClient()

@@ -1,6 +1,6 @@
 """飞书文档导出 API 测试。
 
-覆盖 Project.feishu_doc_folder_token 字段、ExportToFeishuView endpoint、
+覆盖 Space.feishu_doc_folder_token 字段、ExportToFeishuView endpoint、
 以及 markdown_to_blocks 转换层。
 """
 
@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from chat.models import Conversation, Message
-from projects.models import Project
+from projects.models import Space
 
 User = get_user_model()
 
@@ -34,15 +34,15 @@ def export_user(db):
 
 @pytest.fixture
 def conversation_with_messages(db, export_user):
-    """创建 Project + Conversation + Messages 用于导出测试。"""
-    project = Project.objects.create(
+    """创建 Space + Conversation + Messages 用于导出测试。"""
+    project = Space.objects.create(
         name="导出测试项目",
         feishu_doc_folder_token="test_folder_token",
         feishu_app_id="cli_test",
         feishu_app_secret_encrypted="test_secret",
     )
     conversation = Conversation.objects.create(
-        project=project,
+        space=project,
         title="测试对话",
         created_by=export_user,
     )
@@ -79,17 +79,17 @@ def export_client(db, export_user):
 
 
 # ============================================================================
-# Task 1: Project model 字段测试
+# Task 1: Space model 字段测试
 # ============================================================================
 
 
 @pytest.mark.django_db
 class TestProjectFolderTokenField:
-    """Project.feishu_doc_folder_token 字段测试。"""
+    """Space.feishu_doc_folder_token 字段测试。"""
 
     def test_project_folder_token_field(self):
-        """Project 实例可设置和读取 feishu_doc_folder_token。"""
-        project = Project.objects.create(
+        """Space 实例可设置和读取 feishu_doc_folder_token。"""
+        project = Space.objects.create(
             name="test",
             feishu_doc_folder_token="my_folder_token",
         )
@@ -97,15 +97,15 @@ class TestProjectFolderTokenField:
         assert project.feishu_doc_folder_token == "my_folder_token"
 
     def test_project_folder_token_default_blank(self):
-        """新建 Project 的 feishu_doc_folder_token 默认为空字符串。"""
-        project = Project.objects.create(name="test_default")
+        """新建 Space 的 feishu_doc_folder_token 默认为空字符串。"""
+        project = Space.objects.create(name="test_default")
         project.refresh_from_db()
         assert project.feishu_doc_folder_token == ""
 
     def test_fixture_creates_conversation_and_messages(self, conversation_with_messages):
         """fixture 创建 conversation + assistant message 成功。"""
         data = conversation_with_messages
-        assert data["conversation"].project == data["project"]
+        assert data["conversation"].space == data["project"]
         assert data["msg_assistant_1"].role == Message.Role.ASSISTANT
         assert data["msg_assistant_2"].role == Message.Role.ASSISTANT
         assert data["msg_user"].role == Message.Role.USER
@@ -176,7 +176,7 @@ class TestExportToFeishuView:
 
         # 创建另一个对话及其消息
         other_conv = Conversation.objects.create(
-            project=data["project"],
+            space=data["project"],
             title="其他对话",
         )
         other_msg = Message.objects.create(
@@ -224,14 +224,14 @@ class TestExportToFeishuView:
 
     def test_export_not_configured_returns_400(self, export_client, export_user, db):
         """未配置 folder_token -> 400 + error_type='not_configured'。"""
-        project = Project.objects.create(
+        project = Space.objects.create(
             name="无配置项目",
             feishu_doc_folder_token="",
             feishu_app_id="cli_test",
             feishu_app_secret_encrypted="test_secret",
         )
         conv = Conversation.objects.create(
-            project=project, title="测试", created_by=export_user
+            space=project, title="测试", created_by=export_user
         )
         msg = Message.objects.create(
             conversation=conv,

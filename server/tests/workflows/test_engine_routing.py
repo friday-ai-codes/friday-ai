@@ -12,7 +12,7 @@
 
 import pytest
 
-from projects.models import Project
+from projects.models import Space
 from tests.workflows.conftest import BranchNode
 from workflows.engine.dag import DAG, DAGNode
 from workflows.engine.routing import (
@@ -49,7 +49,7 @@ class TestDagIncomingEdges:
     def _make_workflow(self):
         return Workflow.objects.create(
             name="Incoming Edges Workflow",
-            project=Project.objects.create(name="Routing Test Project"),
+            space=Space.objects.create(name="Routing Test Space"),
             trigger_type="manual",
         )
 

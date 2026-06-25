@@ -10,7 +10,7 @@ from django.test import AsyncClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
-from projects.models import Project
+from projects.models import Space
 from repositories.models import IndexStatus, Repository
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
@@ -36,8 +36,8 @@ def normal_user(db) -> User:
 
 
 @pytest.fixture
-def space(db) -> Project:
-    return Project.objects.create(name="space-1")
+def space(db) -> Space:
+    return Space.objects.create(name="space-1")
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ async def test_reindex_all_queues_non_deleted_repos(superuser: User) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_batch_create_creates_multiple_repos(normal_user: User, space: Project) -> None:
+async def test_batch_create_creates_multiple_repos(normal_user: User, space: Space) -> None:
     """批量建仓逐项创建，返回 created/failed 计数。"""
     payload = {
         "repositories": [
@@ -140,7 +140,7 @@ async def test_batch_create_creates_multiple_repos(normal_user: User, space: Pro
 
 
 async def test_batch_create_isolates_per_item_failure(
-    normal_user: User, space: Project
+    normal_user: User, space: Space
 ) -> None:
     """单项校验失败不影响其余（缺 git_url 的项落 failed，合法项仍 created）。"""
     payload = {
