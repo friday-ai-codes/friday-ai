@@ -300,6 +300,66 @@ class CallbackClient:
             log.error("report_failed_failed", error=str(e))
             return False
 
+    async def report_token_usage(self, usage: dict[str, Any]) -> bool:
+        """主动上报本次容器执行的 token 用量 —— POST type=token_usage 到统一回调端点。
+
+        补全此前断裂的 task→回调链路：executor 历史上只写本地 ``usage.json``（无人读取），
+        容器 LLM token 从不到达 server。本方法让容器执行结束后主动 emit，server
+        ``_handle_token_usage`` 写 ``TokenUsage`` 并桥接落 ``ModelUsageRecord`` 纳入 TPS。
+
+        严格镜像 ``report_completed`` / ``report_failed`` 范式：
+          - standalone 模式（``not self.enabled``）：记日志返回 True，不发 HTTP。
+          - body 形状与既有回调一致，``payload`` 字段对齐 server ``TokenUsagePayloadSerializer``；
+            可选键（provider/ttft_ms/call_source）仅在非空时放入。
+          - **best-effort**：``httpx.HTTPError`` 吞掉 + 返回 False，**绝不抛**；token_usage 属
+            server ``_DATA_APPEND_TYPES``（终态也接受），失败不影响任务终态回调。
+
+        脱敏（T-72-03-01）：只承载 token 计数 + provider/model/ttft/call_source 元数据，
+        **绝不**发 prompt/completion 文本；standalone 日志仅记 model（非敏感）。
+        """
+        log = logger.bind(task_id=self.config.task_id, model=usage.get("model"))
+
+        if not self.enabled:
+            log.info("report_token_usage_standalone", model=usage.get("model"))
+            return True
+
+        inner_payload: dict[str, Any] = {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "cache_read_tokens": usage.get("cache_read_tokens", 0),
+            "cache_write_tokens": usage.get("cache_write_tokens", 0),
+            "total_cost_usd": usage.get("total_cost_usd", 0.0),
+            "model": usage.get("model", ""),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        # 可选字段仅在非空时透传（向后兼容：旧 server 忽略未知键，新 server 缺省降级）。
+        for opt_key in ("provider", "ttft_ms", "call_source"):
+            val = usage.get(opt_key)
+            if val not in (None, ""):
+                inner_payload[opt_key] = val
+
+        body = {
+            "type": "token_usage",
+            "session_id": self.config.task_id,
+            "token": self.config.callback_token,
+            "payload": inner_payload,
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self._callback_endpoint(),
+                    json=body,
+                    headers=self.headers,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+            log.info("report_token_usage_ok")
+            return True
+        except httpx.HTTPError as e:
+            log.warning("report_token_usage_failed", error=str(e))
+            return False
+
     async def report_question(
         self,
         question: str,

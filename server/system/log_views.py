@@ -21,7 +21,8 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
-from django.db.models import QuerySet
+from django.db.models import QuerySet, TextField
+from django.db.models.functions import Cast
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.request import Request
@@ -77,6 +78,10 @@ def _extract_filters(getter: Any) -> dict[str, Any]:
 
     ``getter`` 为 ``.get(key, default)`` 风格的访问器（QueryDict 或 dict 均可）。
     返回归一化后的筛选字典，供 ``_apply_filters`` 复用（查询与清理同款语义）。
+
+    高级维度（call_source/provider/credential/model/correlation）落在 ``payload`` /
+    ``correlation`` jsonb 内，由 ``_apply_filters`` 经 JSON 字段查找做**服务端**全量筛选
+    （取代前端旧版"仅当前页客户端 narrowing"）。
     """
     return {
         "component": (getter.get("component") or "").strip(),
@@ -86,12 +91,26 @@ def _extract_filters(getter: Any) -> dict[str, Any]:
         "start": _parse_ts_bound((getter.get("start") or "").strip()),
         "end": _parse_ts_bound((getter.get("end") or "").strip()),
         "keyword": (getter.get("keyword") or "").strip(),
+        # 高级维度：payload jsonb 顶层键精确匹配（受控枚举/标识符值）。
+        "call_source": (getter.get("call_source") or "").strip(),
+        "provider": (getter.get("provider") or "").strip(),
+        "credential": (getter.get("credential") or "").strip(),
+        "model": (getter.get("model") or "").strip(),
+        # 关联键：correlation jsonb 自由检索（任意键/值含子串）。
+        "correlation": (getter.get("correlation") or "").strip(),
     }
+
+
+# 服务端可筛选的全部条件键（含高级维度）；用于防误清判定与遍历。
+_FILTER_KEYS = (
+    "component", "level", "user_id", "source", "start", "end", "keyword",
+    "call_source", "provider", "credential", "model", "correlation",
+)
 
 
 def _has_any_filter(filters: dict[str, Any]) -> bool:
     """是否提供了至少一个有效筛选条件（用于 clear 防误清判定）。"""
-    return any(filters.get(k) for k in ("component", "level", "user_id", "source", "start", "end", "keyword"))
+    return any(filters.get(k) for k in _FILTER_KEYS)
 
 
 def _apply_filters(qs: QuerySet[SystemLogEntry], filters: dict[str, Any]) -> QuerySet[SystemLogEntry]:
@@ -99,7 +118,15 @@ def _apply_filters(qs: QuerySet[SystemLogEntry], filters: dict[str, Any]) -> Que
 
     - component / level / user_id / source 精确匹配；
     - start / end 映射 ``ts__gte`` / ``ts__lte``（None 忽略该界）；
-    - keyword 全文：``message__icontains``（PG/SQLite 一致降级，量级低不引专用索引）。
+    - keyword 全文：``message__icontains``（PG/SQLite 一致降级，量级低不引专用索引）；
+    - call_source / provider / credential / model：``payload`` jsonb 顶层键**精确**匹配
+      （JSONField 键变换 ``payload__<key>=``，受控枚举/标识符值，PG 走 ``->>``、SQLite 走
+      ``json_extract``，双后端语义一致）；
+    - correlation：``correlation`` jsonb 整体文本化后 ``icontains`` 子串检索
+      （``Cast(correlation -> text)`` 后 LIKE，覆盖任意关联键/值；PG 为 jsonb 文本表示、
+      SQLite 为存储的 JSON 文本，行为一致——子串可命中键名，best-effort 自由检索）。
+
+    JSON 字段查找在 PG/SQLite 均原生支持；量级低不引 GIN/表达式索引（指标精简范式）。
     """
     if filters.get("component"):
         qs = qs.filter(component=filters["component"])
@@ -115,6 +142,20 @@ def _apply_filters(qs: QuerySet[SystemLogEntry], filters: dict[str, Any]) -> Que
         qs = qs.filter(ts__lte=filters["end"])
     if filters.get("keyword"):
         qs = qs.filter(message__icontains=filters["keyword"])
+    # 高级维度（payload jsonb 顶层键精确匹配）。
+    if filters.get("call_source"):
+        qs = qs.filter(payload__call_source=filters["call_source"])
+    if filters.get("provider"):
+        qs = qs.filter(payload__provider=filters["provider"])
+    if filters.get("credential"):
+        qs = qs.filter(payload__credential=filters["credential"])
+    if filters.get("model"):
+        qs = qs.filter(payload__model=filters["model"])
+    # 关联键（correlation jsonb 文本化子串检索，覆盖任意键/值）。
+    if filters.get("correlation"):
+        qs = qs.annotate(
+            _corr_text=Cast("correlation", output_field=TextField())
+        ).filter(_corr_text__icontains=filters["correlation"])
     return qs
 
 
@@ -125,6 +166,9 @@ class SystemLogQueryView(APIView):
     - ``component`` / ``level`` / ``user_id`` / ``source``：精确筛选；
     - ``start`` / ``end``：ISO8601 时间段（``ts__gte`` / ``ts__lte``，解析失败忽略该界）；
     - ``keyword``：全文搜索（``message__icontains``，SQLite 天然降级）；
+    - ``call_source`` / ``provider`` / ``credential`` / ``model``：``payload`` jsonb 顶层键
+      精确筛选（服务端全量，取代前端旧版客户端当前页 narrowing）；
+    - ``correlation``：``correlation`` jsonb 文本化子串检索（任意关联键/值）；
     - ``limit``（默认 100，最大 500）+ ``offset``（分页）。
 
     向后兼容旧 ``SystemLogsView`` 的 ``limit`` / ``level`` 参数。返回

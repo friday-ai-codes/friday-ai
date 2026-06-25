@@ -17,7 +17,10 @@ from adrf.views import APIView
 from django.http import StreamingHttpResponse
 from rest_framework.response import Response
 
+from agents.call_source import CallSource, set_call_source
 from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
+from common.log_context import LogSource, bind_source
+from common.request_metrics import arecord_request_metric, classify_error
 from services.provider_config import ProviderConfigService, ProviderMissingError
 
 from .adapter import OpenAICompatAdapter
@@ -62,8 +65,24 @@ class ChatCompletionsView(APIView):
     permission_classes = [OptionalBearerTokenAuth]
 
     async def post(self, request: Any) -> Any:  # type: ignore[override]
+        # source 改写为 compat_openai（覆盖中间件 rest 占位）：让中间件跳过兜底记录，
+        # 由本入口（非流式响应前 / 流式生成器内）各自记带 ttft 的指标行。
+        bind_source(LogSource.COMPAT_OPENAI)
+        # 72-02：标注 LLM 调用来源（contextvar 持续整请求 task，含流式生成器消费期），
+        # 让经 Runner 的 compat 调用落 ModelUsageRecord 时 call_source 正确归类。
+        set_call_source(CallSource.CHAT_COMPAT_OPENAI)
+        _started = time.perf_counter()
+
         serializer = ChatCompletionsRequestSerializer(data=request.data)
         if not serializer.is_valid():
+            await arecord_request_metric(
+                source=LogSource.COMPAT_OPENAI.value,
+                route=str(getattr(request, "path", "") or ""),
+                method="POST",
+                status_code=400,
+                error_class="business",
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+            )
             return openai_error_response(
                 message=str(serializer.errors),
                 type_="invalid_request_error",
@@ -83,6 +102,14 @@ class ChatCompletionsView(APIView):
 
         runner = await _build_runner()
         if runner is None:
+            await arecord_request_metric(
+                source=LogSource.COMPAT_OPENAI.value,
+                route=str(getattr(request, "path", "") or ""),
+                method="POST",
+                status_code=503,
+                error_class="system",
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+            )
             return openai_error_response(
                 message="LLM 提供商凭证未配置，请在系统设置添加 Provider Credential",
                 type_="server_error",
@@ -98,7 +125,9 @@ class ChatCompletionsView(APIView):
             prelude_texts = retrieval_to_progress(retr)
             return StreamingHttpResponse(
                 streaming_content=self._stream_chunks(
-                    runner, lc_messages, params, model_name, prelude_texts
+                    runner, lc_messages, params, model_name, prelude_texts,
+                    metric_route=str(getattr(request, "path", "") or ""),
+                    metric_started=_started,
                 ),
                 content_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -135,6 +164,15 @@ class ChatCompletionsView(APIView):
         if reasoning_parts:
             message["reasoning_content"] = "".join(reasoning_parts)
 
+        # 非流式分支：响应返回前记一行（ttft_ms=None）。
+        await arecord_request_metric(
+            source=LogSource.COMPAT_OPENAI.value,
+            route=str(getattr(request, "path", "") or ""),
+            method="POST",
+            status_code=200,
+            error_class="none",
+            duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+        )
         return Response({
             "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
             "object": "chat.completion",
@@ -155,21 +193,33 @@ class ChatCompletionsView(APIView):
         params: dict,
         model_name: str,
         prelude_texts: list[str] | None = None,
+        *,
+        metric_route: str = "",
+        metric_started: float | None = None,
     ):
         """逐 chunk yield OpenAI SSE 格式字节流（含末尾 [DONE] 哨兵）（work item）。
 
         Plan 02：``prelude_texts`` 非空时（命中 RAG），adapter 在正文前以
         ``reasoning_content`` 透出检索 progress；None/空则与现状逐字等价。
+
+        指标埋点（RATE-01 / SLA-04，source=compat_openai）：首 chunk 计 ttft_ms，
+        生成器结束记总 duration_ms。best-effort，绝不打断流。
         """
         include_usage: bool = (params.get("stream_options") or {}).get("include_usage", False)
+        _started = metric_started if metric_started is not None else time.perf_counter()
+        _ttft_ms: int | None = None
+        _error_class = "none"
         try:
             async for chunk_bytes in OpenAICompatAdapter.translate_stream(
                 runner, lc_messages, model=model_name, include_usage=include_usage,
                 prelude_texts=prelude_texts,
             ):
+                if _ttft_ms is None:
+                    _ttft_ms = max(int((time.perf_counter() - _started) * 1000), 0)
                 yield chunk_bytes
             yield b"data: [DONE]\n\n"
         except Exception as exc:
+            _error_class = classify_error(exc=exc)
             logger.exception("compat_stream_error", error=str(exc))
             yield (
                 b"data: "
@@ -183,6 +233,16 @@ class ChatCompletionsView(APIView):
                 + b"\n\n"
             )
             yield b"data: [DONE]\n\n"
+        finally:
+            await arecord_request_metric(
+                source=LogSource.COMPAT_OPENAI.value,
+                route=metric_route,
+                method="POST",
+                status_code=200,
+                error_class=_error_class,
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+                ttft_ms=_ttft_ms,
+            )
 
 
 class MessagesView(APIView):
@@ -200,8 +260,22 @@ class MessagesView(APIView):
     permission_classes = [OptionalBearerTokenAuth]
 
     async def post(self, request: Any) -> Any:  # type: ignore[override]
+        # source 改写为 compat_anthropic（覆盖中间件 rest 占位），各分支自行记指标行。
+        bind_source(LogSource.COMPAT_ANTHROPIC)
+        # 72-02：标注 LLM 调用来源（含流式生成器消费期）。
+        set_call_source(CallSource.CHAT_COMPAT_ANTHROPIC)
+        _started = time.perf_counter()
+
         serializer = AnthropicMessagesRequestSerializer(data=request.data)
         if not serializer.is_valid():
+            await arecord_request_metric(
+                source=LogSource.COMPAT_ANTHROPIC.value,
+                route=str(getattr(request, "path", "") or ""),
+                method="POST",
+                status_code=400,
+                error_class="business",
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+            )
             return anthropic_error_response(
                 message=str(serializer.errors),
                 type_="invalid_request_error",
@@ -220,6 +294,14 @@ class MessagesView(APIView):
 
         runner = await _build_runner()
         if runner is None:
+            await arecord_request_metric(
+                source=LogSource.COMPAT_ANTHROPIC.value,
+                route=str(getattr(request, "path", "") or ""),
+                method="POST",
+                status_code=503,
+                error_class="system",
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+            )
             return anthropic_error_response(
                 message="LLM 提供商凭证未配置，请在系统设置添加 Provider Credential",
                 type_="api_error",
@@ -235,7 +317,9 @@ class MessagesView(APIView):
             prelude_texts = retrieval_to_progress(retr)
             return StreamingHttpResponse(
                 streaming_content=self._stream_anthropic(
-                    runner, lc_messages, model_name, prelude_texts
+                    runner, lc_messages, model_name, prelude_texts,
+                    metric_route=str(getattr(request, "path", "") or ""),
+                    metric_started=_started,
                 ),
                 content_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -245,11 +329,27 @@ class MessagesView(APIView):
         try:
             message = await aggregate_message(runner, lc_messages, model=model_name)
         except RuntimeError as exc:
+            await arecord_request_metric(
+                source=LogSource.COMPAT_ANTHROPIC.value,
+                route=str(getattr(request, "path", "") or ""),
+                method="POST",
+                status_code=500,
+                error_class=classify_error(exc=exc),
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+            )
             return anthropic_error_response(
                 message=str(exc),
                 type_="api_error",
                 http_status=500,
             )
+        await arecord_request_metric(
+            source=LogSource.COMPAT_ANTHROPIC.value,
+            route=str(getattr(request, "path", "") or ""),
+            method="POST",
+            status_code=200,
+            error_class="none",
+            duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+        )
         return Response(message)
 
     async def _stream_anthropic(
@@ -258,21 +358,43 @@ class MessagesView(APIView):
         lc_messages: list,
         model_name: str,
         prelude_texts: list[str] | None = None,
+        *,
+        metric_route: str = "",
+        metric_started: float | None = None,
     ):
         """逐帧 yield Anthropic SSE 双行帧字节流（命中 RAG 时含 thinking block prelude）。
 
         Anthropic 流**不发** ``[DONE]``，以 ``translate_stream`` 内的 ``message_stop`` 收尾。
         流式异常 → logger.exception（仅服务端）+ ``event: error`` 帧（不泄漏 traceback，
         不发 message_stop，P-10）。
+
+        指标埋点（RATE-01 / SLA-04，source=compat_anthropic）：首帧计 ttft_ms，
+        生成器结束记总 duration_ms。best-effort，绝不打断流。
         """
+        _started = metric_started if metric_started is not None else time.perf_counter()
+        _ttft_ms: int | None = None
+        _error_class = "none"
         try:
             async for chunk in AnthropicCompatAdapter.translate_stream(
                 runner, lc_messages, model=model_name, prelude_texts=prelude_texts
             ):
+                if _ttft_ms is None:
+                    _ttft_ms = max(int((time.perf_counter() - _started) * 1000), 0)
                 yield chunk
         except Exception as exc:
+            _error_class = classify_error(exc=exc)
             logger.exception("anthropic_stream_error", error=str(exc))
             yield anthropic_sse_encode("error", anthropic_error_event("内部错误"))
+        finally:
+            await arecord_request_metric(
+                source=LogSource.COMPAT_ANTHROPIC.value,
+                route=metric_route,
+                method="POST",
+                status_code=200,
+                error_class=_error_class,
+                duration_ms=max(int((time.perf_counter() - _started) * 1000), 0),
+                ttft_ms=_ttft_ms,
+            )
 
 
 class ModelsView(APIView):

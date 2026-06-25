@@ -129,6 +129,17 @@ class TokenUsagePayloadSerializer(serializers.Serializer):
     total_cost_usd = serializers.DecimalField(
         max_digits=10, decimal_places=6, required=False, default=0
     )
+    # 72-03 桥接 ModelUsageRecord（统一 TPS 源）所需的可选元数据。全部 required=False
+    # 默认降级——旧容器不上报这些键时行为零回归；ModelUsageRecord 侧对应 nullable 字段。
+    # 注（T-72-03-TAMPER）：call_source 即使上报也仅作前向兼容占位，server 桥接以
+    # _derive_container_call_source 服务端权威派生为准、绝不采信 runner 可篡改的本字段。
+    ttft_ms = serializers.IntegerField(required=False, allow_null=True, default=None)
+    provider = serializers.CharField(required=False, allow_blank=True, default="")
+    call_source = serializers.CharField(required=False, allow_blank=True, default="")
+    upstream_status_code = serializers.IntegerField(
+        required=False, allow_null=True, default=None
+    )
+    failure_type = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 # =============================================================================
