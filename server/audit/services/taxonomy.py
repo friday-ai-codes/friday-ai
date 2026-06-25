@@ -47,6 +47,9 @@ __all__ = [
     "ACTION_PROJECT_MEMBER_ROLE_CHANGED",
     "ACTION_PROJECT_OWNER_TRANSFERRED",
     "ACTION_FEISHU_USER_BOUND",
+    # ---- v0.15.0 Phase 78 工作项组合 ----
+    "ACTION_PROJECT_WORK_ITEM_ATTACHED",
+    "ACTION_PROJECT_WORK_ITEM_DETACHED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -84,6 +87,10 @@ ACTION_PROJECT_MEMBER_ROLE_CHANGED: Final[str] = "project.member_role_changed"
 ACTION_PROJECT_OWNER_TRANSFERRED: Final[str] = "project.owner_transferred"
 ACTION_FEISHU_USER_BOUND: Final[str] = "feishu_user.bound"
 
+# ---- v0.15.0 Phase 78 工作项组合 action 常量（component=initiatives）----
+ACTION_PROJECT_WORK_ITEM_ATTACHED: Final[str] = "project.work_item_attached"
+ACTION_PROJECT_WORK_ITEM_DETACHED: Final[str] = "project.work_item_detached"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -112,6 +119,8 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PROJECT_MEMBER_ROLE_CHANGED,
         ACTION_PROJECT_OWNER_TRANSFERRED,
         ACTION_FEISHU_USER_BOUND,
+        ACTION_PROJECT_WORK_ITEM_ATTACHED,
+        ACTION_PROJECT_WORK_ITEM_DETACHED,
     }
 )
 

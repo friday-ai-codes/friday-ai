@@ -3,6 +3,7 @@
 from initiatives.models.member import ProjectMember, ProjectRole
 from initiatives.models.project import Project, ProjectStatus
 from initiatives.models.relation import ProjectRelation
+from initiatives.models.work_item_link import LinkProvenance, ProjectWorkItemLink
 
 __all__ = [
     "Project",
@@ -10,4 +11,6 @@ __all__ = [
     "ProjectMember",
     "ProjectRole",
     "ProjectRelation",
+    "ProjectWorkItemLink",
+    "LinkProvenance",
 ]

@@ -29,7 +29,7 @@ _PRUNE_DIRS = {
 _ALLOWED_WRITER = "initiatives/services/project_service.py"
 
 # 写表模式（精确锚定，避免误伤更长符号如 ProjectMemberSerializer/ProjectRelationXXX）：
-_MODELS = ("Project", "ProjectMember", "ProjectRelation")
+_MODELS = ("Project", "ProjectMember", "ProjectRelation", "ProjectWorkItemLink")
 _RE_ORM_WRITE = {
     m: re.compile(
         rf"\b{m}\.objects\.(?:create|bulk_create|get_or_create|update_or_create)\b"
