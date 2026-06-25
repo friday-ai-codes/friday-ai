@@ -50,6 +50,14 @@ __all__ = [
     # ---- v0.15.0 Phase 78 工作项组合 ----
     "ACTION_PROJECT_WORK_ITEM_ATTACHED",
     "ACTION_PROJECT_WORK_ITEM_DETACHED",
+    # ---- v0.15.0 Phase 79 工件 + 知识关联 ----
+    "ACTION_ARTIFACT_TYPE_CREATED",
+    "ACTION_ARTIFACT_TYPE_UPDATED",
+    "ACTION_ARTIFACT_TYPE_DELETED",
+    "ACTION_ARTIFACT_CREATED",
+    "ACTION_ARTIFACT_UPDATED",
+    "ACTION_ARTIFACT_DELETED",
+    "ACTION_PROJECT_KNOWLEDGE_LINKED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -91,6 +99,15 @@ ACTION_FEISHU_USER_BOUND: Final[str] = "feishu_user.bound"
 ACTION_PROJECT_WORK_ITEM_ATTACHED: Final[str] = "project.work_item_attached"
 ACTION_PROJECT_WORK_ITEM_DETACHED: Final[str] = "project.work_item_detached"
 
+# ---- v0.15.0 Phase 79 工件 + 知识关联 action 常量（component=initiatives）----
+ACTION_ARTIFACT_TYPE_CREATED: Final[str] = "artifact_type.created"
+ACTION_ARTIFACT_TYPE_UPDATED: Final[str] = "artifact_type.updated"
+ACTION_ARTIFACT_TYPE_DELETED: Final[str] = "artifact_type.deleted"
+ACTION_ARTIFACT_CREATED: Final[str] = "artifact.created"
+ACTION_ARTIFACT_UPDATED: Final[str] = "artifact.updated"
+ACTION_ARTIFACT_DELETED: Final[str] = "artifact.deleted"
+ACTION_PROJECT_KNOWLEDGE_LINKED: Final[str] = "project.knowledge_linked"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -121,6 +138,13 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_FEISHU_USER_BOUND,
         ACTION_PROJECT_WORK_ITEM_ATTACHED,
         ACTION_PROJECT_WORK_ITEM_DETACHED,
+        ACTION_ARTIFACT_TYPE_CREATED,
+        ACTION_ARTIFACT_TYPE_UPDATED,
+        ACTION_ARTIFACT_TYPE_DELETED,
+        ACTION_ARTIFACT_CREATED,
+        ACTION_ARTIFACT_UPDATED,
+        ACTION_ARTIFACT_DELETED,
+        ACTION_PROJECT_KNOWLEDGE_LINKED,
     }
 )
 
