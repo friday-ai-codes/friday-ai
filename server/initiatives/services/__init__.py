@@ -11,6 +11,10 @@ from initiatives.services.artifact_service import (
     ArtifactTypeError,
 )
 from initiatives.services.memory_distill import MemoryDistiller
+from initiatives.services.mr_service import (
+    MergeRequestService,
+    MergeRequestSyncError,
+)
 from initiatives.services.memory_service import (
     MemoryError,
     MemoryPermissionError,
@@ -43,6 +47,8 @@ __all__ = [
     "MemoryPermissionError",
     "MemoryStateError",
     "MemoryDistiller",
+    "MergeRequestService",
+    "MergeRequestSyncError",
     "project_group_name",
     "apush_project_event",
 ]

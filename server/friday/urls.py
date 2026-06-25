@@ -28,6 +28,8 @@ api_patterns = [
     path("projects/", include("initiatives.urls")),
     # 工件类型管理（v0.15.0 Phase 79，超管 CRUD）
     path("artifact-types/", include("initiatives.artifact_type_urls")),
+    # 入站 Git 平台 MR/PR 状态 webhook（v0.15.0 Phase 80，MR-02，共享密钥鉴权）
+    path("git-webhooks/", include("initiatives.webhook_urls")),
     # Repositories
     path("repositories/", include("repositories.urls")),
     # Feishu integration (webhook + logs)

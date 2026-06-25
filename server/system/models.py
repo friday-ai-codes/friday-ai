@@ -64,6 +64,11 @@ class SettingKeys:
     FEISHU_APP_ID = "feishu_app_id"
     FEISHU_APP_SECRET = "feishu_app_secret"
 
+    # Git 平台入站 webhook 共享密钥（MR-02，v0.15.0 Phase 80）：
+    # GitHub 用其做 X-Hub-Signature-256 HMAC 校验，GitLab 用其做 X-Gitlab-Token 等值校验。
+    # 未配置时入站 MR webhook 端点 fail-closed 拒绝（绝不放行未签名 payload）。
+    GIT_WEBHOOK_SECRET = "git_webhook_secret"
+
     # Budget Control
     MAX_BUDGET_USD = "max_budget_usd"
 
