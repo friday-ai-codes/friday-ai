@@ -3,6 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.db import models
 
 if TYPE_CHECKING:
@@ -160,6 +161,69 @@ class FeishuBotMessage(models.Model):
 
     def __str__(self) -> str:
         return self.message_id
+
+
+class FeishuBindingSource(models.TextChoices):
+    """飞书人员↔Friday 用户绑定来源（IDENT-01）。"""
+
+    MANUAL = "manual", "手动绑定"
+    JIT = "jit", "飞书事件自动绑定"
+
+
+class FeishuUserBinding(models.Model):
+    """飞书人员（user_key/open_id）↔ Friday ``User`` 映射（IDENT-01）。
+
+    多对多语义：一个飞书人可对多 Friday 账号、反之亦然（常态一对一）。``source`` 区分手动
+    绑定与飞书事件 JIT 自动绑定；``(feishu_user_key, user)`` 唯一。写入收口于
+    ``feishu.services.identity``（``bind_feishu_user``），解析经单一入口 ``resolve_feishu_user``
+    （手动优先，未映射 fail-soft 返回 None）。**绝不**把飞书凭证写日志（脱敏规范）。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    feishu_user_key = models.CharField(
+        max_length=100, blank=True, default="", db_index=True, verbose_name="飞书 user_key"
+    )
+    open_id = models.CharField(
+        max_length=128, blank=True, default="", db_index=True, verbose_name="飞书 open_id"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="feishu_bindings",
+        verbose_name="Friday 用户",
+    )
+    source = models.CharField(
+        max_length=20,
+        choices=FeishuBindingSource.choices,
+        default=FeishuBindingSource.MANUAL,
+        verbose_name="绑定来源",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feishu_user_bindings"
+        verbose_name = "飞书人员绑定"
+        verbose_name_plural = "飞书人员绑定"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["feishu_user_key", "user"],
+                condition=~models.Q(feishu_user_key=""),
+                name="uniq_feishu_user_key_binding",
+            ),
+            models.UniqueConstraint(
+                fields=["open_id", "user"],
+                condition=~models.Q(open_id=""),
+                name="uniq_feishu_open_id_binding",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["feishu_user_key"]),
+            models.Index(fields=["open_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.feishu_user_key or self.open_id} -> {self.user_id} ({self.source})"
 
 
 class ProcessedEvent(models.Model):
