@@ -1,5 +1,11 @@
-"""initiatives 模型包：聚合根 + 成员 + 项目关联。"""
+"""initiatives 模型包：聚合根 + 成员 + 项目关联 + 工件。"""
 
+from initiatives.models.artifact import (
+    Artifact,
+    ArtifactCarrier,
+    ArtifactType,
+    TEXT_CARRIERS,
+)
 from initiatives.models.member import ProjectMember, ProjectRole
 from initiatives.models.project import Project, ProjectStatus
 from initiatives.models.relation import ProjectRelation
@@ -13,4 +19,8 @@ __all__ = [
     "ProjectRelation",
     "ProjectWorkItemLink",
     "LinkProvenance",
+    "Artifact",
+    "ArtifactType",
+    "ArtifactCarrier",
+    "TEXT_CARRIERS",
 ]
