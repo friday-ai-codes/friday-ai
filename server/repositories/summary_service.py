@@ -70,6 +70,23 @@ async def _build_facet_vocab_section() -> str:
     return "\n".join(lines)
 
 
+async def _is_empty_remote(repository: Repository) -> bool:
+    """远端是否为零分支空仓（用于 dispatch 前 fail-fast）。
+
+    探测失败（不可判定）一律返回 False（放行），绝不把鉴权/网络故障误判为空仓。
+    """
+    from repositories.views import build_authenticated_git_url
+    from services.git_credentials import aremote_branch_count, aresolve_git_token
+
+    token = await aresolve_git_token(repository)
+    auth_url = (
+        build_authenticated_git_url(repository.git_url, token)
+        if token
+        else repository.git_url
+    )
+    return await aremote_branch_count(auth_url) == 0
+
+
 async def dispatch_repo_summary(repository: Repository) -> str:
     """构建 DispatchTask 并 dispatch 到 Runner。
 
@@ -87,6 +104,17 @@ async def dispatch_repo_summary(repository: Repository) -> str:
     Returns:
         sub_session 的 session_id 字符串。
     """
+    # 空仓 fail-fast：零分支空仓没法生成描述，提前判定避免白白起容器烧 token。
+    # ls-remote 探测失败（返回 -1）则放行走正常流程（绝不把不可判定误标为空仓）。
+    if await _is_empty_remote(repository):
+        repository.ai_summary_status = AISummaryStatus.FAILED
+        repository.ai_summary_error = "仓库为空（远端无任何分支/提交），无可生成的描述。"
+        await repository.asave(
+            update_fields=["ai_summary_status", "ai_summary_error", "updated_at"]
+        )
+        logger.info("repo_summary_skipped_empty_repo", repository_id=str(repository.id))
+        return ""
+
     session_id = f"reposummary-{uuid.uuid4().hex[:12]}"
 
     # 1. 创建 AgentSession + SubAgentSession
@@ -327,6 +355,93 @@ async def reconcile_ai_summary_status(repository: Repository) -> Repository:
         await repository.asave(update_fields=["ai_summary_status", "updated_at"])
 
     return repository
+
+
+# ── AI 描述状态唯一真相派生（架构根治）────────────────────────────────────────
+# 背景：Repository.ai_summary_status 历史上是把「真实状态」抄一份存进仓库表，由多个
+# 写入方（dispatch→pending / WS accepted→running / 回调→completed,failed / recover 批量
+# timeout）各自维护。但写 session 终态的人与写仓库列的人不是同一个，且容器回调有终态
+# 门禁（session 已 timeout 时拒绝 completed/failed 回调 → _update_repository_on_summary_*
+# 永不执行）——store-and-trust 必然漂移出「幻影 running」（仓库显示生成中，实际无 session
+# 在跑、零 token）。根治：仓库列退化为「可自愈缓存」，所有展示读取都经下列 helper 从
+# **最新 REPO_SUMMARY SubAgentSession** 派生，读时对齐。这样任何写回缺失/竞态都不再
+# 造成对外撒谎，下一次读即纠正。
+_SESSION_STATUS_TO_SUMMARY: dict[str, str] = {
+    SubAgentSession.Status.COMPLETED: AISummaryStatus.COMPLETED,
+    SubAgentSession.Status.ERROR: AISummaryStatus.FAILED,
+    SubAgentSession.Status.TIMEOUT: AISummaryStatus.FAILED,
+    SubAgentSession.Status.CANCELLED: AISummaryStatus.FAILED,
+    SubAgentSession.Status.RUNNING: AISummaryStatus.RUNNING,
+    SubAgentSession.Status.PENDING: AISummaryStatus.PENDING,
+}
+
+
+def derive_summary_status(session_status: str) -> str | None:
+    """把 SubAgentSession 生命周期状态映射为 AI 描述状态（唯一真相侧）。
+
+    未知/无法映射返回 None（调用方回退仓库现存列）。
+    """
+    return _SESSION_STATUS_TO_SUMMARY.get(session_status)
+
+
+async def aresolve_summary_status(repository: Repository) -> str:
+    """从最新 REPO_SUMMARY session 派生权威 AI 描述状态，并自愈仓库缓存列。
+
+    - 有最新 session → 以其生命周期为准；与仓库缓存不一致时写回（reconcile-on-read，
+      **非巡检**：只在被读取的那一刻、对被读取的那个仓库对齐）。派生为 completed 时走
+      完整内容回填（ai_summary / 能力树），而不仅翻状态。
+    - 无 session → 回退仓库现存列（NOT_STARTED / 历史 completed 等）。
+
+    Returns:
+        权威 AI 描述状态字符串（AISummaryStatus 取值）。
+    """
+    session = await (
+        SubAgentSession.objects.filter(
+            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+            last_output__repository_id=str(repository.id),
+        )
+        .order_by("-created_at")
+        .afirst()
+    )
+    if session is None:
+        return repository.ai_summary_status
+
+    derived = derive_summary_status(session.status)
+    if derived is None or derived == repository.ai_summary_status:
+        return repository.ai_summary_status
+
+    # completed：回填内容（ai_summary/tree），不只翻状态。直接走完成回写而非
+    # reconcile_ai_summary_status——后者有「仅 pending/running 才处理」前置门禁，
+    # 当仓库缓存误停在 failed 时会短路，无法纠正。
+    if derived == AISummaryStatus.COMPLETED:
+        from subagent.api.callbacks import _update_repository_on_summary_complete
+        from subagent.models import TaskResult
+
+        task_result = await TaskResult.objects.filter(session=session).afirst()
+        if task_result is not None:
+            await _update_repository_on_summary_complete(
+                session,
+                {
+                    "result_type": task_result.result_type,
+                    "output": task_result.raw_output or {"text": task_result.text_output},
+                },
+            )
+            await repository.arefresh_from_db()
+            return repository.ai_summary_status
+        repository.ai_summary_status = AISummaryStatus.COMPLETED
+        await repository.asave(update_fields=["ai_summary_status", "updated_at"])
+        return AISummaryStatus.COMPLETED
+
+    # running / pending / failed：直接自愈缓存列。
+    repository.ai_summary_status = derived
+    update_fields = ["ai_summary_status", "updated_at"]
+    if derived == AISummaryStatus.FAILED and not repository.ai_summary_error:
+        repository.ai_summary_error = (
+            session.failure_reason or session.last_error or "AI 描述生成失败"
+        )[:2000]
+        update_fields.append("ai_summary_error")
+    await repository.asave(update_fields=update_fields)
+    return derived
 
 
 async def recover_stranded_summaries(limit: int = _RECOVER_MAX_PER_SWEEP) -> int:

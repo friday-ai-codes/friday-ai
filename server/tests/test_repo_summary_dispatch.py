@@ -17,6 +17,16 @@ from subagent.models import SubAgentSession
 class TestDispatchRepoSummary:
     """Test 5-8: dispatch_repo_summary 服务函数。"""
 
+    @pytest.fixture(autouse=True)
+    def stub_empty_repo_check(self):
+        """默认非空仓，避免 dispatch 前的空仓 fail-fast 触发真实 git ls-remote。"""
+        with patch(
+            "repositories.summary_service._is_empty_remote",
+            new_callable=AsyncMock,
+            return_value=False,
+        ):
+            yield
+
     @pytest.fixture
     def mock_dispatcher(self):
         """Mock get_dispatcher().dispatch() 避免真实分发。"""

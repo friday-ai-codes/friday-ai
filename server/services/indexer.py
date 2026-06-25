@@ -3761,6 +3761,10 @@ async def _run_research_stale_invalidation(repository_id: str) -> None:
         )
 
 
+class EmptyRepositoryError(Exception):
+    """远端为空仓（零分支/零提交），无可索引内容——明确语义，区别于真实 clone 故障。"""
+
+
 async def clone_and_index_repository(
     repository_id: str,
     *,
@@ -3899,6 +3903,16 @@ async def clone_and_index_repository(
                 pass
             raise
         if proc.returncode != 0:
+            # 空仓判定：clone --branch <default> 对「零分支空仓」会失败，且 stderr 往往
+            # 几乎为空（仅 "Cloning into ..."），笼统报 "Git clone failed" 会让用户误判为
+            # 凭证/网络故障。用 ls-remote 权威确认零分支才转明确文案；探测失败（-1，鉴权/
+            # 网络不可判定）一律退回原通用报错，绝不把真实故障误标为空仓。
+            from services.git_credentials import aremote_branch_count
+
+            if await aremote_branch_count(git_url, proxy_url) == 0:
+                raise EmptyRepositoryError(
+                    "仓库为空（远端无任何分支/提交），无可索引内容；请先推送代码后再索引。"
+                )
             raise Exception(f"Git clone failed: {stderr_bytes.decode(errors='ignore')}")
 
         # Run indexing - pass repository_id instead of repository object
