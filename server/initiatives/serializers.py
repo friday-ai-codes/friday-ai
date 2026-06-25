@@ -150,6 +150,8 @@ class ProjectWorkItemSerializer(serializers.Serializer):
 class ArtifactTypeSerializer(serializers.ModelSerializer):
     """工件类型序列化（响应）。"""
 
+    instance_count = serializers.SerializerMethodField()
+
     class Meta:
         model = ArtifactType
         fields = [
@@ -160,10 +162,15 @@ class ArtifactTypeSerializer(serializers.ModelSerializer):
             "ragable",
             "enabled",
             "builtin",
+            "instance_count",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    def get_instance_count(self, obj) -> int:
+        # 有实例的类型受删除保护（ARTIFACT-05）；前端据此禁用删除按钮。
+        return getattr(obj, "instance_count", None) or obj.artifacts.count()
 
 
 class ArtifactTypeCreateSerializer(serializers.Serializer):
