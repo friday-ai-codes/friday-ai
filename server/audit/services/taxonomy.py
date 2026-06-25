@@ -38,6 +38,15 @@ __all__ = [
     "ACTION_EXCLUSION_RULE_CHANGED",
     "ACTION_PURGE_STARTED",
     "ACTION_PURGE_COMPLETED",
+    # ---- v0.15.0 Phase 77 项目聚合根 ----
+    "ACTION_PROJECT_CREATED",
+    "ACTION_PROJECT_UPDATED",
+    "ACTION_PROJECT_STATUS_CHANGED",
+    "ACTION_PROJECT_MEMBER_ADDED",
+    "ACTION_PROJECT_MEMBER_REMOVED",
+    "ACTION_PROJECT_MEMBER_ROLE_CHANGED",
+    "ACTION_PROJECT_OWNER_TRANSFERRED",
+    "ACTION_FEISHU_USER_BOUND",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -65,6 +74,16 @@ ACTION_EXCLUSION_RULE_CHANGED: Final[str] = "exclusion_rule.changed"
 ACTION_PURGE_STARTED: Final[str] = "purge.started"
 ACTION_PURGE_COMPLETED: Final[str] = "purge.completed"
 
+# ---- v0.15.0 Phase 77 项目聚合根 action 常量（component=initiatives）----
+ACTION_PROJECT_CREATED: Final[str] = "project.created"
+ACTION_PROJECT_UPDATED: Final[str] = "project.updated"
+ACTION_PROJECT_STATUS_CHANGED: Final[str] = "project.status_changed"
+ACTION_PROJECT_MEMBER_ADDED: Final[str] = "project.member_added"
+ACTION_PROJECT_MEMBER_REMOVED: Final[str] = "project.member_removed"
+ACTION_PROJECT_MEMBER_ROLE_CHANGED: Final[str] = "project.member_role_changed"
+ACTION_PROJECT_OWNER_TRANSFERRED: Final[str] = "project.owner_transferred"
+ACTION_FEISHU_USER_BOUND: Final[str] = "feishu_user.bound"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -85,6 +104,14 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_EXCLUSION_RULE_CHANGED,
         ACTION_PURGE_STARTED,
         ACTION_PURGE_COMPLETED,
+        ACTION_PROJECT_CREATED,
+        ACTION_PROJECT_UPDATED,
+        ACTION_PROJECT_STATUS_CHANGED,
+        ACTION_PROJECT_MEMBER_ADDED,
+        ACTION_PROJECT_MEMBER_REMOVED,
+        ACTION_PROJECT_MEMBER_ROLE_CHANGED,
+        ACTION_PROJECT_OWNER_TRANSFERRED,
+        ACTION_FEISHU_USER_BOUND,
     }
 )
 
