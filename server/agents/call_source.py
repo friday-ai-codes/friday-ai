@@ -4,7 +4,8 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部 22 个受控枚举值，作为
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（23 值，v0.15.0 Phase 80
+  新增 ``memory_distill``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -57,6 +58,8 @@ class CallSource(str, Enum):
     PROVIDER_HEALTH_PROBE = "provider_health_probe"
     EMBEDDING = "embedding"
     RERANKER = "reranker"
+    # v0.15.0 Phase 80：从成员会话提炼项目记忆草稿（MEM-04，单轮，产 pending 草稿）。
+    MEMORY_DISTILL = "memory_distill"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:

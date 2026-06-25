@@ -87,6 +87,7 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `provider_health_probe` | `provider_health` | 探活 |
 | `embedding` | `EmbeddingService` | 向量 |
 | `reranker` | `RerankerService` | 精排 |
+| `memory_distill` | `initiatives.MemoryDistiller`（v0.15.0 Phase 80） | 从成员会话提炼项目记忆草稿，单轮，产 pending 草稿 |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 

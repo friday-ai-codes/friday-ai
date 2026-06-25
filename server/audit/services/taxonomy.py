@@ -58,6 +58,14 @@ __all__ = [
     "ACTION_ARTIFACT_UPDATED",
     "ACTION_ARTIFACT_DELETED",
     "ACTION_PROJECT_KNOWLEDGE_LINKED",
+    # ---- v0.15.0 Phase 80 项目记忆 + MR 实体 ----
+    "ACTION_PROJECT_MEMORY_CREATED",
+    "ACTION_PROJECT_MEMORY_EDITED",
+    "ACTION_PROJECT_MEMORY_SUPERSEDED",
+    "ACTION_PROJECT_MEMORY_DRAFT_CREATED",
+    "ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED",
+    "ACTION_PROJECT_MEMORY_DRAFT_REJECTED",
+    "ACTION_MERGE_REQUEST_SYNCED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -108,6 +116,15 @@ ACTION_ARTIFACT_UPDATED: Final[str] = "artifact.updated"
 ACTION_ARTIFACT_DELETED: Final[str] = "artifact.deleted"
 ACTION_PROJECT_KNOWLEDGE_LINKED: Final[str] = "project.knowledge_linked"
 
+# ---- v0.15.0 Phase 80 项目记忆 + MR 实体 action 常量（component=initiatives）----
+ACTION_PROJECT_MEMORY_CREATED: Final[str] = "project.memory_created"
+ACTION_PROJECT_MEMORY_EDITED: Final[str] = "project.memory_edited"
+ACTION_PROJECT_MEMORY_SUPERSEDED: Final[str] = "project.memory_superseded"
+ACTION_PROJECT_MEMORY_DRAFT_CREATED: Final[str] = "project.memory_draft_created"
+ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED: Final[str] = "project.memory_draft_confirmed"
+ACTION_PROJECT_MEMORY_DRAFT_REJECTED: Final[str] = "project.memory_draft_rejected"
+ACTION_MERGE_REQUEST_SYNCED: Final[str] = "merge_request.synced"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -145,6 +162,13 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_ARTIFACT_UPDATED,
         ACTION_ARTIFACT_DELETED,
         ACTION_PROJECT_KNOWLEDGE_LINKED,
+        ACTION_PROJECT_MEMORY_CREATED,
+        ACTION_PROJECT_MEMORY_EDITED,
+        ACTION_PROJECT_MEMORY_SUPERSEDED,
+        ACTION_PROJECT_MEMORY_DRAFT_CREATED,
+        ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED,
+        ACTION_PROJECT_MEMORY_DRAFT_REJECTED,
+        ACTION_MERGE_REQUEST_SYNCED,
     }
 )
 
