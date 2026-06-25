@@ -75,7 +75,7 @@ async def send_plan_card(
 
     # Load session
     try:
-        session = await AgentSession.objects.select_related("project").aget(
+        session = await AgentSession.objects.select_related("space").aget(
             session_id=session_id
         )
     except AgentSession.DoesNotExist:
@@ -85,7 +85,7 @@ async def send_plan_card(
             error=f"会话不存在: {session_id}",
         )
 
-    project = session.project
+    project = session.space
     if project is None:
         log.error("project_not_set")
         return ToolResult(

@@ -1,9 +1,9 @@
-"""Project members serializers."""
+"""Space members serializers."""
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 
 User = get_user_model()
 
@@ -22,7 +22,7 @@ class ProjectMembershipSerializer(serializers.ModelSerializer):
     user = MemberUserSerializer(read_only=True)
 
     class Meta:
-        model = ProjectMembership
+        model = SpaceMembership
         fields = ["id", "user", "role", "joined_at"]
 
 
@@ -30,10 +30,10 @@ class MemberAddSerializer(serializers.Serializer):
     """添加项目成员请求。"""
 
     user_id = serializers.UUIDField()
-    role = serializers.ChoiceField(choices=ProjectRole.choices, default=ProjectRole.MEMBER)
+    role = serializers.ChoiceField(choices=SpaceRole.choices, default=SpaceRole.MEMBER)
 
 
 class MemberUpdateSerializer(serializers.Serializer):
     """更新项目成员角色请求。"""
 
-    role = serializers.ChoiceField(choices=ProjectRole.choices)
+    role = serializers.ChoiceField(choices=SpaceRole.choices)

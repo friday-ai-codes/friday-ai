@@ -252,9 +252,9 @@ class FetchWorkItemNode(BaseNode):
                 pk=context.workflow_execution.workflow_id
             ).afirst()
             if workflow:
-                from projects.models import Project
+                from projects.models import Space
 
-                return await Project.objects.filter(pk=workflow.project_id).afirst()
+                return await Space.objects.filter(pk=workflow.space_id).afirst()
         return None
 
     async def _get_repositories(self, project) -> list[dict]:

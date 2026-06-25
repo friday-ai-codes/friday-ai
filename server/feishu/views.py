@@ -20,9 +20,9 @@ from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import decrypt_value, encrypt_value
 from common.log_context import LogSource, bind_request_context
-from permissions.models import ProjectRole
+from permissions.models import SpaceRole
 from permissions.services import PermissionService
-from projects.models import Project, generate_webhook_token
+from projects.models import Space, generate_webhook_token
 from services.feishu_im import FeishuIMClient
 from system.webhook_recorder import client_ip, record_inbound_webhook
 from workflows.triggers.context import TriggerContext
@@ -651,7 +651,7 @@ class FeishuWebhookView(APIView):
                     {"status": "ignored", "reason": "无效或已停用的触发器端点"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            project = trigger.workflow.project
+            project = trigger.workflow.space
             project_key = project.feishu_project_key if project else None
 
             # 节点专属校验 token（纵深防御）：若该触发节点配置了 verification_token，
@@ -664,7 +664,7 @@ class FeishuWebhookView(APIView):
                     event_uuid=None,
                     event_type=event_type,
                     project_key=project_key,
-                    project=project,
+                    space=project,
                     status=TriggerLogStatus.ERROR,
                     error_message="校验 Token 不匹配",
                 )
@@ -692,7 +692,7 @@ class FeishuWebhookView(APIView):
                 return Response({"status": "ignored", "reason": "缺少 space_key"})
 
             project = (
-                await Project.objects.prefetch_related("repositories")
+                await Space.objects.prefetch_related("repositories")
                 .filter(feishu_project_key__in=candidate_keys)
                 .afirst()
             )
@@ -722,7 +722,7 @@ class FeishuWebhookView(APIView):
                     event_uuid=None,  # 事件未被处理，不占用 unique 约束位
                     event_type=event_type,
                     project_key=project_key,
-                    project=project,
+                    space=project,
                     status=TriggerLogStatus.ERROR,
                     error_message="Token 验证失败",
                 )
@@ -753,7 +753,7 @@ class FeishuWebhookView(APIView):
                 event_uuid=event_uuid,
                 event_type=event_type,
                 project_key=project_key,
-                project=project,
+                space=project,
                 work_item_id=str(work_item_id) if work_item_id else None,
                 work_item_name=work_item_name,
                 work_item_type=work_item_type,
@@ -807,7 +807,7 @@ class FeishuWebhookView(APIView):
                 is_active=True,
                 workflow__is_active=True,
             )
-            .select_related("workflow", "workflow__project")
+            .select_related("workflow", "workflow__space")
             .afirst()
         )
 
@@ -847,7 +847,7 @@ class FeishuWebhookView(APIView):
                 trigger_type="feishu",
                 raw_payload=payload,
                 event_type=event_type,
-                project=project,
+                space=project,
                 metadata=metadata,
             )
 
@@ -1336,7 +1336,7 @@ async def _require_space_admin(request, project) -> Response | None:
     通过返回 None；否则返回 403 Response。
     """
     is_admin = await sync_to_async(PermissionService.has_project_access)(
-        request.user, project, ProjectRole.ADMIN
+        request.user, project, SpaceRole.ADMIN
     )
     if not is_admin:
         return Response(
@@ -1361,7 +1361,7 @@ class FeishuConfigView(APIView):
     """Manage Feishu configuration for a space."""
 
     async def get(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_member(request, project)
         if denied is not None:
             return denied
@@ -1378,7 +1378,7 @@ class FeishuConfigView(APIView):
         return Response(data)
 
     async def put(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_admin(request, project)
         if denied is not None:
             return denied
@@ -1395,7 +1395,7 @@ class FeishuConfigView(APIView):
         return Response(FeishuConfigSerializer(project).data)
 
     async def delete(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_admin(request, project)
         if denied is not None:
             return denied
@@ -1410,7 +1410,7 @@ class FeishuConfigTestView(APIView):
     """Test Feishu configuration."""
 
     async def post(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_admin(request, project)
         if denied is not None:
             return denied
@@ -1498,7 +1498,7 @@ class RefreshWebhookTokenView(APIView):
     """Refresh webhook token for a space."""
 
     async def post(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_admin(request, project)
         if denied is not None:
             return denied
@@ -1513,7 +1513,7 @@ class UpdateWebhookTokenView(APIView):
     """Update webhook token with custom value."""
 
     async def put(self, request, space_id):
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await _require_space_admin(request, project)
         if denied is not None:
             return denied
@@ -1546,12 +1546,12 @@ class TriggerLogListView(APIView):
     """List trigger logs."""
 
     async def get(self, request):
-        queryset = TriggerLog.objects.select_related("project").all()
+        queryset = TriggerLog.objects.select_related("space").all()
 
         # Filter by space
         space_id = request.query_params.get("space_id")
         if space_id:
-            queryset = queryset.filter(project_id=space_id)
+            queryset = queryset.filter(space_id=space_id)
 
         # Filter by event type
         event_type = request.query_params.get("event_type")

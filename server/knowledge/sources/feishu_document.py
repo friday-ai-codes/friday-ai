@@ -68,7 +68,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     源缺失 / 无文档 token → 复用 work_item 锚事件原样返回（缺段不缺实体）；
     doc 拉取失败降级正文空串，document 实体与 REFERENCES 边照常产出。
     """
-    from projects.models import Project
+    from projects.models import Space
 
     parts = request.source_id.split(":", 2)
     if len(parts) != 3 or not all(parts):
@@ -81,7 +81,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         return []
     project_key, work_item_type, work_item_id_raw = parts
 
-    project = await Project.objects.filter(feishu_project_key=project_key).afirst()
+    project = await Space.objects.filter(feishu_project_key=project_key).afirst()
     if project is None:
         logger.warning(
             "knowledge_normalize_source_missing",
@@ -179,7 +179,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
                     "canonical_url": canonical_url,
                     "feishu_tenant": tenant,
                 },
-                project_id=str(project.id),
+                space_id=str(project.id),
                 repository_id=None,
                 event_time=wi_event.event_time,
             )

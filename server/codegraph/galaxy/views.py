@@ -108,7 +108,7 @@ class GalaxyReposView(APIView):
     """GET /api/codegraph/galaxy/repos/ — L2 仓库节点视图。
 
     Query params:
-    - space_id: UUID，可选；不传 = 全部仓库。给定时按 Project.repositories 过滤。
+    - space_id: UUID，可选；不传 = 全部仓库。给定时按 Space.repositories 过滤。
     """
 
     permission_classes = [IsAuthenticated]

@@ -180,7 +180,7 @@ class FeishuSyncHook(BaseHook):
             )
             return
 
-        project = execution.workflow.project if hasattr(execution, "workflow") and execution.workflow else None
+        project = execution.workflow.space if hasattr(execution, "workflow") and execution.workflow else None
 
         for attempt in range(MAX_RETRIES):
             try:

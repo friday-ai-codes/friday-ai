@@ -52,8 +52,8 @@ class Prompt(models.Model):
         max_length=10,
         choices=PromptScope.choices,
     )
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -96,7 +96,7 @@ class Prompt(models.Model):
             ),
             # 项目级：同一 slug 每项目唯一
             models.UniqueConstraint(
-                fields=["slug", "scope", "project"],
+                fields=["slug", "scope", "space"],
                 condition=models.Q(scope="project"),
                 name="uq_prompt_project_slug",
             ),
@@ -104,12 +104,12 @@ class Prompt(models.Model):
         indexes = [
             models.Index(fields=["slug", "scope"]),
             models.Index(fields=["category", "scope"]),
-            models.Index(fields=["project", "scope"]),
+            models.Index(fields=["space", "scope"]),
         ]
 
     def __str__(self) -> str:
         scope_label = (
-            "系统" if self.scope == PromptScope.SYSTEM else f"项目{self.project_id}"
+            "系统" if self.scope == PromptScope.SYSTEM else f"项目{self.space_id}"
         )
         return f"[{scope_label}] {self.slug}"
 

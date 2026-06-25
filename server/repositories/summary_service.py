@@ -120,7 +120,7 @@ async def dispatch_repo_summary(repository: Repository) -> str:
     # 1. 创建 AgentSession + SubAgentSession
     agent_session = await AgentSession.objects.acreate(
         session_id=f"agent-{session_id}",
-        project=None,
+        space=None,
         status=AgentSession.Status.RUNNING,
         metadata={
             "source": "repo_summary",

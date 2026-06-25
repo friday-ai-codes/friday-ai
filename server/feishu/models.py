@@ -41,9 +41,9 @@ class TriggerLog(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Project reference (use string reference to avoid circular import)
-    project = models.ForeignKey(
-        "projects.Project",
+    # Space reference (use string reference to avoid circular import)
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -98,8 +98,8 @@ class FeishuBotThread(models.Model):
         blank=True,
         related_name="feishu_bot_threads",
     )
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

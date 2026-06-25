@@ -52,7 +52,7 @@ async def resolve_allowed_repository_ids(
 ) -> list[str]:
     """解析 user 可见 project 下关联的 repository_id（P6 双维权限）。
 
-  仓库通过 Project.repositories M2M 关联；superuser 返回全量仓库。
+  仓库通过 Space.repositories M2M 关联；superuser 返回全量仓库。
     """
     if user is None:
         return []
@@ -70,9 +70,9 @@ async def resolve_allowed_repository_ids(
         return sorted(str(rid) for rid in repo_ids)
 
     def _repos_for_projects() -> list[str]:
-        from projects.models import Project
+        from projects.models import Space
 
-        qs = Project.objects.filter(id__in=allowed_projects).prefetch_related("repositories")
+        qs = Space.objects.filter(id__in=allowed_projects).prefetch_related("repositories")
         ids: set[str] = set()
         for proj in qs:
             for repo in proj.repositories.all():

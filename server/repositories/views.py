@@ -428,7 +428,7 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
     default/base 分支推断与校验 → 建仓 + 空间关联 + per-repo Git 凭证 + 审计 +
     后台自动 AI 描述派发。
     """
-    from projects.models import Project, ProjectRepository
+    from projects.models import Space, SpaceRepository
     from repositories.models import GitInstanceCredential
     from services.git_credentials import _extract_git_host
 
@@ -475,7 +475,7 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
         if resolved_instance.encrypted_token:
             effective_token = decrypt_value(resolved_instance.encrypted_token)
 
-    spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
+    spaces = [s async for s in Space.objects.filter(id__in=space_ids)]
     if len(spaces) != len(set(space_ids)):
         raise serializers.ValidationError({"space_ids": ["部分空间不存在"]})
 
@@ -501,8 +501,8 @@ async def _acreate_repository_core(data: dict, *, actor: Any) -> Repository:
 
     repository = await Repository.objects.acreate(**data)
 
-    await ProjectRepository.objects.abulk_create(
-        [ProjectRepository(project=space, repository=repository) for space in spaces]
+    await SpaceRepository.objects.abulk_create(
+        [SpaceRepository(space=space, repository=repository) for space in spaces]
     )
 
     # TOKEN-02：仅在用户填写自有 token 时建 per-repo GitCredential；否则由密钥提供方
@@ -546,7 +546,7 @@ class RepositoryViewSet(ModelViewSet):
         return (
             Repository.objects.filter(is_deleted=False)
             .select_related("credential")
-            .prefetch_related("projects")
+            .prefetch_related("spaces")
         )
 
     def get_serializer_class(self):
@@ -892,7 +892,7 @@ class RepositorySpacesView(APIView):
 
     async def get(self, request, repository_id):
         repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
-        spaces = [{"id": str(p.id), "name": p.name} async for p in repository.projects.all()]
+        spaces = [{"id": str(p.id), "name": p.name} async for p in repository.spaces.all()]
         return Response(spaces)
 
     async def put(self, request, repository_id):
@@ -907,9 +907,9 @@ class RepositorySpacesView(APIView):
             )
         space_ids = [str(sid) for sid in space_ids]
 
-        from projects.models import Project, ProjectRepository
+        from projects.models import Space, SpaceRepository
 
-        spaces = [s async for s in Project.objects.filter(id__in=space_ids)]
+        spaces = [s async for s in Space.objects.filter(id__in=space_ids)]
         if len(spaces) != len(set(space_ids)):
             return Response(
                 {"space_ids": ["部分空间不存在"]},
@@ -919,20 +919,20 @@ class RepositorySpacesView(APIView):
         target_ids = {str(s.id) for s in spaces}
         existing = [
             link
-            async for link in ProjectRepository.objects.filter(
+            async for link in SpaceRepository.objects.filter(
                 repository=repository
-            ).select_related("project")
+            ).select_related("space")
         ]
-        existing_ids = {str(link.project_id) for link in existing}
+        existing_ids = {str(link.space_id) for link in existing}
 
         # 删除不再关联的，新增缺失的（保留已存在关联的 permission_level）
-        to_remove = [link.pk for link in existing if str(link.project_id) not in target_ids]
+        to_remove = [link.pk for link in existing if str(link.space_id) not in target_ids]
         if to_remove:
-            await ProjectRepository.objects.filter(pk__in=to_remove).adelete()
+            await SpaceRepository.objects.filter(pk__in=to_remove).adelete()
         to_add = [s for s in spaces if str(s.id) not in existing_ids]
         if to_add:
-            await ProjectRepository.objects.abulk_create(
-                [ProjectRepository(project=space, repository=repository) for space in to_add]
+            await SpaceRepository.objects.abulk_create(
+                [SpaceRepository(space=space, repository=repository) for space in to_add]
             )
 
         spaces_sorted = sorted(spaces, key=lambda s: s.name)

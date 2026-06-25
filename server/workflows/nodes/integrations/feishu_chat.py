@@ -28,20 +28,20 @@ logger = structlog.get_logger(__name__)
 
 
 async def _resolve_project(context: ExecutionContext):
-    """异步安全地解析工作流关联的空间（Project）。
+    """异步安全地解析工作流关联的空间（Space）。
 
-    直接在异步上下文里访问 ``context.workflow_execution.workflow.project`` 会触发
+    直接在异步上下文里访问 ``context.workflow_execution.workflow.space`` 会触发
     Django 同步 ORM 外键懒加载，抛 ``SynchronousOnlyOperation``（"You cannot call
     this from an async context - use a thread or sync_to_async."）。这里用
     ``sync_to_async`` 把懒加载放到线程中执行，规避该限制。
 
     Returns:
-        关联的 Project 实例；无 workflow_execution 时返回 None。
+        关联的 Space 实例；无 workflow_execution 时返回 None。
     """
     execution = context.workflow_execution
     if execution is None:
         return None
-    return await sync_to_async(lambda: execution.workflow.project)()
+    return await sync_to_async(lambda: execution.workflow.space)()
 
 
 def _parse_id_list(value: object, context: ExecutionContext) -> list[str]:

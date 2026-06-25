@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import structlog
 
 from agents.tools.base import ToolResult, tool
-from projects.models import Project
+from projects.models import Space
 from services.feishu import create_feishu_client_for_project
 
 logger = structlog.get_logger(__name__)
@@ -63,8 +63,8 @@ async def get_work_item_detail(
 
     try:
         # Get project from database
-        project = await Project.objects.aget(id=project_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=project_id)
+    except Space.DoesNotExist:
         log.warning("project_not_found")
         return ToolResult(
             success=False,
@@ -162,8 +162,8 @@ async def list_related_work_items(
     )
 
     try:
-        project = await Project.objects.aget(id=project_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=project_id)
+    except Space.DoesNotExist:
         log.warning("project_not_found")
         return ToolResult(
             success=False,
@@ -273,8 +273,8 @@ async def add_work_item_comment(
     )
 
     try:
-        project = await Project.objects.aget(id=project_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=project_id)
+    except Space.DoesNotExist:
         log.warning("project_not_found")
         return ToolResult(
             success=False,

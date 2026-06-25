@@ -11,7 +11,7 @@ from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from interactions.redaction import redact_for_ledger
 from mcp_tools.models import McpWorkItemContext
-from projects.models import Project
+from projects.models import Space
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import (
     DocumentNotFoundError,
@@ -86,13 +86,13 @@ async def _resolve_project(
     *,
     project_id: str | None,
     project_key: str,
-) -> Project:
+) -> Space:
     if project_id:
-        project = await Project.objects.filter(id=project_id).afirst()
+        project = await Space.objects.filter(id=project_id).afirst()
         if project is None:
             raise WorkItemContextError("project_not_found", "项目不存在")
         return project
-    project = await Project.objects.filter(feishu_project_key=project_key).afirst()
+    project = await Space.objects.filter(feishu_project_key=project_key).afirst()
     if project is None:
         raise WorkItemContextError(
             "project_not_found",
@@ -130,7 +130,7 @@ def _owners_from_fields(fields: dict[str, Any]) -> list[dict[str, Any]]:
     return owners
 
 
-async def _read_documents(project: Project, refs: list[dict[str, str]]) -> list[dict[str, Any]]:
+async def _read_documents(project: Space, refs: list[dict[str, str]]) -> list[dict[str, Any]]:
     if not refs:
         return []
     try:
@@ -278,7 +278,7 @@ async def build_work_item_context(
     safe_work_item = redact_for_ledger(work_item)
     artifact = await McpWorkItemContext.objects.acreate(
         run=run,
-        project=project,
+        space=project,
         feishu_project_key=effective_project_key,
         work_item_type=work_item_type,
         work_item_id=item.id,

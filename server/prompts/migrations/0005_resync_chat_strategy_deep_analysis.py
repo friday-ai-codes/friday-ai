@@ -39,7 +39,7 @@ def forwards(apps: Any, schema_editor: Any) -> None:
 
     body = _load_body()
     try:
-        prompt = Prompt.objects.get(slug=SEED_SLUG, scope="system", project=None)
+        prompt = Prompt.objects.get(slug=SEED_SLUG, scope="system")
     except Prompt.DoesNotExist:
         # 罕见：0002 未跑过。这里不重复 0002 的创建逻辑，留给 0002 处理。
         return

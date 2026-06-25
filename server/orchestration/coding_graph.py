@@ -38,7 +38,7 @@ async def _get_coding_session(state: CodingSessionState) -> CodingSession:
     """从 state 中的 coding_session_id 查询 CodingSession（含 select_related）。"""
     return await CodingSession.objects.select_related(
         "repository",
-        "conversation__project",
+        "conversation__space",
         "coding_plan",
         "subagent_session",
     ).aget(id=state["coding_session_id"])
@@ -101,7 +101,7 @@ async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
     构建 prompt 调用 dispatch_coding_task，返回 phase1_session_id。
     """
     coding_session = await _get_coding_session(state)
-    project = coding_session.conversation.project
+    project = coding_session.conversation.space
     repo = coding_session.repository
 
     prompt = (

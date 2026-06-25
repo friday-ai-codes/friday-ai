@@ -29,7 +29,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     from mcp_tools.models import McpWorkItemTechnicalPlan
 
     artifact = (
-        await McpWorkItemTechnicalPlan.objects.select_related("context", "project")
+        await McpWorkItemTechnicalPlan.objects.select_related("context", "space")
         .filter(id=request.source_id)
         .afirst()
     )
@@ -42,7 +42,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         )
         return []
 
-    project_id = str(artifact.project_id) if artifact.project_id else None
+    project_id = str(artifact.space_id) if artifact.space_id else None
     tech_plan_event = IngestionEvent(
         kind=EntityKind.TECH_PLAN,
         origin=EntityOrigin.MCP,
@@ -55,7 +55,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             "repository_tasks": artifact.repository_tasks,
             "feishu_document_url": artifact.feishu_document_url,
         },
-        project_id=project_id,
+        space_id=project_id,
         repository_id=None,
         event_time=artifact.created_at,
     )
@@ -86,7 +86,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
             "work_item_type": artifact.work_item_type,
             "work_item_id": artifact.work_item_id,
         },
-        project_id=project_id,
+        space_id=project_id,
         repository_id=None,
         event_time=artifact.created_at,
         edges=(

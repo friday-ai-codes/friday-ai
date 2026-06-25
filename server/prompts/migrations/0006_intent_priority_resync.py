@@ -33,7 +33,7 @@ def _resync_one(apps: Any, slug: str, get_body: Callable[[], str], note: str) ->
 
     body = get_body()
     try:
-        prompt = Prompt.objects.get(slug=slug, scope="system", project=None)
+        prompt = Prompt.objects.get(slug=slug, scope="system")
     except Prompt.DoesNotExist:
         return
 

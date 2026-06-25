@@ -61,7 +61,7 @@ def extract_project_path(git_url: str) -> str:
         git_url: Git repository URL.
 
     Returns:
-        Project path (e.g., namespace/project).
+        Space path (e.g., namespace/project).
     """
     # Handle SSH format: git@host:path
     ssh_match = re.match(r"git@[^:]+:(.+?)(?:\.git)?$", git_url)

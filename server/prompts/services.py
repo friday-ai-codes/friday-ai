@@ -113,7 +113,7 @@ async def get_active_prompt(
             Prompt.objects.filter(
                 slug=slug,
                 scope=PromptScope.PROJECT,
-                project_id=project_id,
+                space_id=project_id,
                 active_version__isnull=False,
             )
             .select_related("active_version", "active_version__prompt")

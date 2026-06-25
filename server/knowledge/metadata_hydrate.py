@@ -18,8 +18,8 @@ def _feishu_url(entity, version) -> str | None:
     payload = version.payload if isinstance(version.payload, dict) else {}
     if payload.get("feishu_url"):
         return str(payload["feishu_url"])
-    if entity.project_id and entity.source_id:
-        key = entity.project.feishu_project_key if entity.project else ""
+    if entity.space_id and entity.source_id:
+        key = entity.space.feishu_project_key if entity.space else ""
         if key:
             return f"https://project.feishu.cn/{key}/story/detail/{entity.source_id}"
     return None
@@ -71,7 +71,7 @@ async def hydrate_entity_metadata(
     """从 PG 补全单条 EntityMetadata。"""
     try:
         ver = await KnowledgeEntityVersion.objects.select_related(
-            "entity", "entity__project", "entity__repository"
+            "entity", "entity__space", "entity__repository"
         ).aget(entity_id=entity_id, version=version)
     except KnowledgeEntityVersion.DoesNotExist:
         return None
@@ -94,7 +94,7 @@ async def hydrate_entity_metadata(
             source_id=entity.source_id,
             origin=entity.origin,
             event_time=ver.event_time,
-            project_id=str(entity.project_id) if entity.project_id else None,
+            space_id=str(entity.space_id) if entity.space_id else None,
             repository_id=str(entity.repository_id) if entity.repository_id else None,
             provenance=provenance,
             superseded_hint=_superseded_hint(entity.id, ver),
@@ -115,7 +115,7 @@ async def hydrate_many(
     entity_ids = {eid for eid, _ in keys}
     versions = await sync_to_async(list)(
         KnowledgeEntityVersion.objects.select_related(
-            "entity", "entity__project", "entity__repository"
+            "entity", "entity__space", "entity__repository"
         ).filter(entity_id__in=entity_ids)
     )
     by_key = {(v.entity_id, v.version): v for v in versions}
@@ -140,7 +140,7 @@ async def hydrate_many(
                 source_id=ent.source_id,
                 origin=ent.origin,
                 event_time=v.event_time,
-                project_id=str(ent.project_id) if ent.project_id else None,
+                space_id=str(ent.space_id) if ent.space_id else None,
                 repository_id=str(ent.repository_id) if ent.repository_id else None,
                 provenance=_build_provenance(ent, v),
                 superseded_hint=_superseded_hint(ent.id, v),

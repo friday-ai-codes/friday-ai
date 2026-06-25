@@ -35,7 +35,7 @@ from services.feishu_doc import FeishuDocAPIError
 
 if TYPE_CHECKING:
     from delivery.models import ReleaseBatch
-    from projects.models import Project
+    from projects.models import Space
 
 logger = structlog.get_logger(__name__)
 
@@ -63,7 +63,7 @@ class BitableReleaseAdapter:
     async def ingest_from_table(
         self,
         *,
-        project: Project,
+        project: Space,
         app_token: str,
         table_id: str,
         source: str = ReleaseSource.BITABLE,
@@ -76,7 +76,7 @@ class BitableReleaseAdapter:
         落库。
 
         Args:
-            project: 解析开放平台凭证用的 Project（注入 client 时可不依赖）。
+            project: 解析开放平台凭证用的 Space（注入 client 时可不依赖）。
             app_token: Bitable app token。
             table_id: 数据表 id。
             source: ``ReleaseSource`` 值（默认 bitable）。

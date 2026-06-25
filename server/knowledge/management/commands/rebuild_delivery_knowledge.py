@@ -117,7 +117,7 @@ class Command(BaseCommand):
         # 只过滤 is_latest=True：旧版本不进检索面（P10 分面纪律——
         # 版本链回溯走 PG，召回面只承载 latest）
         qs = KnowledgeEntityVersion.objects.filter(is_latest=True).select_related(
-            "entity", "entity__project", "entity__repository"
+            "entity", "entity__space", "entity__repository"
         )
         async for version in qs.aiterator():
             try:

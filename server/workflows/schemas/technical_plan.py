@@ -269,7 +269,7 @@ def dict_to_technical_plan(data: dict[str, Any]) -> TechnicalPlan:
         title=data["title"],
         summary=data["summary"],
         created_at=data.get("created_at", ""),
-        projects=data.get("projects", []),
+        spaces=data.get("projects", []),
         execution_plan=execution_tasks,
         total_tasks=data.get("total_tasks", len(execution_tasks)),
         estimated_total_hours=data.get("estimated_total_hours", 0),

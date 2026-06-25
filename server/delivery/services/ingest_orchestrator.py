@@ -204,7 +204,7 @@ async def ingest_from_refs(
 
                 source_id = f"{feishu_project_key}:{work_item_type}:{work_item_id}"
                 # 直接 await（非 aschedule_ingestion）以同步拿成败落 steps。
-                # WR-01：normalizer 零产出（Project 不存在 / 无可摄取文档）时 ingest()
+                # WR-01：normalizer 零产出（Space 不存在 / 无可摄取文档）时 ingest()
                 # 静默返回 0，不抛异常——此处据真实产出数记 ok/skipped，避免「零实体
                 # 入库却显示成功」的 false-positive（对齐「结构化结果如实展示」目标）。
                 events_ingested = await ingest(
@@ -367,7 +367,7 @@ async def _ingest_mr_diff(run: IngestRun, mr_url: str) -> None:
                 "total_additions": archive.total_additions,
                 "total_deletions": archive.total_deletions,
             },
-            project_id=None,
+            space_id=None,
             repository_id=str(repository.id),
             event_time=event_time,
             edges=tuple(archive_result.edge_specs),

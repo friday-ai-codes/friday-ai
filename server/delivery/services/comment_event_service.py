@@ -298,10 +298,10 @@ class CommentEventService:
     # === 步骤实现 ===
 
     async def _resolve_project(self, project_key: str):
-        """按 feishu_project_key 解析 Project（async）；缺失返回 None。"""
-        from projects.models import Project
+        """按 feishu_project_key 解析 Space（async）；缺失返回 None。"""
+        from projects.models import Space
 
-        return await Project.objects.filter(feishu_project_key=project_key).afirst()
+        return await Space.objects.filter(feishu_project_key=project_key).afirst()
 
     async def _resolve_work_item(self, identity: WorkItemIdentity):
         """按三元组解析已落库 canonical WorkItem（async）；缺失返回 None。"""

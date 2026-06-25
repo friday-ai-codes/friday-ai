@@ -61,9 +61,9 @@ async def enrich_vector_hits(
                     continue
                 seen.add(target_id)
                 entity = await KnowledgeEntity.objects.filter(id=target_id).afirst()
-                if entity is None or entity.project_id is None:
+                if entity is None or entity.space_id is None:
                     continue
-                if str(entity.project_id) not in allowed:
+                if str(entity.space_id) not in allowed:
                     continue
                 if allowed_repos:
                     repo = str(entity.repository_id) if entity.repository_id else ""

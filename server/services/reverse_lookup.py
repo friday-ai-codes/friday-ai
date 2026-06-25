@@ -269,7 +269,7 @@ def _hydrate_entities(entity_ids: set[uuid.UUID]) -> dict[uuid.UUID, dict[str, A
     if not entity_ids:
         return {}
     rows = KnowledgeEntity.objects.filter(id__in=list(entity_ids)).values(
-        "id", "kind", "title", "source_kind", "source_id", "project_id"
+        "id", "kind", "title", "source_kind", "source_id", "space_id"
     )
     return {row["id"]: row for row in rows}
 
@@ -280,7 +280,7 @@ def _serialize_work_item(entity: dict[str, Any]) -> dict[str, Any]:
         "title": entity["title"],
         "source_kind": entity["source_kind"],
         "source_id": entity["source_id"],
-        "project_id": str(entity["project_id"]) if entity["project_id"] else None,
+        "project_id": str(entity["space_id"]) if entity["space_id"] else None,
     }
 
 

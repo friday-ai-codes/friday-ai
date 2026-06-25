@@ -37,10 +37,10 @@ async def fetch_related_entities(
     except KnowledgeEntity.DoesNotExist:
         return []
 
-    if entity.project_id is None:
+    if entity.space_id is None:
         return []
     allowed = await resolve_allowed_project_ids(user)
-    if str(entity.project_id) not in allowed:
+    if str(entity.space_id) not in allowed:
         return []
 
     hops = max_hops or int(settings.KNOWLEDGE_RETRIEVAL_GRAPH_MAX_HOPS)
@@ -76,9 +76,9 @@ async def fetch_related_entities(
             frontier.append((other_id, child_depth))
 
             related_entity = await KnowledgeEntity.objects.filter(id=other_id).afirst()
-            if related_entity is None or related_entity.project_id is None:
+            if related_entity is None or related_entity.space_id is None:
                 continue
-            if str(related_entity.project_id) not in allowed:
+            if str(related_entity.space_id) not in allowed:
                 continue
             meta = await hydrate_entity_metadata(related_entity.id, related_entity.current_version)
             results.append(

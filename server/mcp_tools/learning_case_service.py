@@ -64,7 +64,7 @@ def learning_case_payload(case: McpLearningCase, *, score: float | None = None) 
 
 async def _resolve_technical_plan(technical_plan_id: str) -> McpWorkItemTechnicalPlan:
     technical_plan = (
-        await McpWorkItemTechnicalPlan.objects.select_related("context", "project")
+        await McpWorkItemTechnicalPlan.objects.select_related("context", "space")
         .filter(id=technical_plan_id)
         .afirst()
     )

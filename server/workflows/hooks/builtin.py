@@ -167,10 +167,10 @@ class NotificationHook(BaseHook):
 
     def _get_project(self, execution: WorkflowExecution | Any) -> Any:
         workflow = getattr(execution, "workflow", None)
-        workflow_project = getattr(workflow, "project", None)
+        workflow_project = getattr(workflow, "space", None)
         if workflow_project is not None:
             return workflow_project
-        return getattr(execution, "project", None)
+        return getattr(execution, "space", None)
 
     def _build_card(
         self,
@@ -255,12 +255,12 @@ class AlertRuleHook(BaseHook):
         from workflows.models import AlertRule
 
         workflow_id = getattr(execution, "workflow_id", None)
-        project_id = getattr(execution, "project_id", None)
+        project_id = getattr(execution, "space_id", None)
 
         return [
             r async for r in AlertRule.objects.filter(
                 models.Q(workflow_id=workflow_id) | models.Q(workflow__isnull=True),
-                project_id=project_id,
+                space_id=project_id,
                 condition_type=condition_type,
                 enabled=True,
             )
@@ -372,7 +372,7 @@ class AlertRuleHook(BaseHook):
         if not chat_id:
             raise ValueError("飞书通知动作缺少 chat_id")
 
-        project = getattr(execution, "project", None)
+        project = getattr(execution, "space", None)
         im_service = await FeishuIMService.create(project)
 
         workflow_name = ""

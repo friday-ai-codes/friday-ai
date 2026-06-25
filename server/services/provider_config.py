@@ -591,7 +591,7 @@ def _resolve_provider_type(
     """从四层配置中解析 provider_type。
 
     implementation（contract/contract）：v8.1 SettingKeys.DEFAULT_PROVIDER_TYPE +
-    Conversation.provider_type + Project.default_provider_type 硬删后，
+    Conversation.provider_type + Space.default_provider_type 硬删后，
     provider_type 由 ProviderCredential 层承载；本函数仅按 node_config 层探测，
     其他层返回默认 ANTHROPIC（由 _resolve_credential_async 走 ProviderCredential FK 四层）。
     """
@@ -750,7 +750,7 @@ class ProviderConfigService:
         """contract Result 模式入口。不抛异常，返回 ResolvedProviderConfig | ProviderMissingError。
 
         implementation（contract/contract）：SettingKeys.DEFAULT_PROVIDER_TYPE +
-        Conversation.provider_type + Project.default_provider_type 硬删后，
+        Conversation.provider_type + Space.default_provider_type 硬删后，
         provider_type 仅通过 node_config 显式覆盖；其他层由 ProviderCredential 承载。
 
         四层优先级：节点 FK > 对话 FK > 项目 FK > 系统 default ProviderCredential。

@@ -8,7 +8,7 @@ ToolCallLog: Records audit trail of tool executions within a session
 from django.db import models
 
 from accounts.models import User
-from projects.models import Project
+from projects.models import Space
 
 
 class AgentSession(models.Model):
@@ -35,8 +35,8 @@ class AgentSession(models.Model):
     session_id = models.CharField(max_length=64, unique=True, db_index=True)
 
     # Relationships
-    project = models.ForeignKey(
-        Project,
+    space = models.ForeignKey(
+        Space,
         on_delete=models.CASCADE,
         related_name="agent_sessions",
         null=True,
@@ -97,7 +97,7 @@ class AgentSession(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["project", "status"]),
+            models.Index(fields=["space", "status"]),
             models.Index(fields=["user", "-created_at"]),
         ]
 

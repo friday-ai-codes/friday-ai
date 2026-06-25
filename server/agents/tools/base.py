@@ -19,7 +19,7 @@ R = TypeVar("R")
 class ToolCategory(Enum):
     """Categories of tools available to the agent."""
 
-    PROJECT = "PROJECT"  # Project and repository operations
+    PROJECT = "PROJECT"  # Space and repository operations
     KNOWLEDGE = "KNOWLEDGE"  # Knowledge base and context retrieval
     FEISHU = "FEISHU"  # Feishu integration (docs, messages)
     SUBAGENT = "SUBAGENT"  # Claude Code subagent operations

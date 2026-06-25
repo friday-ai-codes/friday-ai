@@ -16,13 +16,13 @@ from audit.services import taxonomy
 from audit.services.audit_service import AuditService
 from common.encryption import encrypt_value
 from permissions.api_permissions import IsProjectAdmin, IsSuperUser
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import SpaceMembership, SpaceRole
 from permissions.services import PermissionService
 from repositories.models import AuthType, GitCredential, Repository
 
 from .models import (
-    Project,
-    ProjectRepository,
+    Space,
+    SpaceRepository,
     generate_webhook_token,
 )
 from .serializers import (
@@ -52,15 +52,15 @@ class SpaceViewSet(ModelViewSet):
     """ViewSet for Space CRUD operations."""
 
     queryset = (
-        Project.objects.prefetch_related(
+        Space.objects.prefetch_related(
             Prefetch(
                 "repositories",
                 queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
             ),
             Prefetch(
                 "memberships",
-                queryset=ProjectMembership.objects.filter(
-                    role=ProjectRole.ADMIN
+                queryset=SpaceMembership.objects.filter(
+                    role=SpaceRole.ADMIN
                 ).select_related("user"),
                 to_attr="admin_memberships",
             ),
@@ -110,12 +110,12 @@ class SpaceViewSet(ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         # KEEP: SpaceCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
-        project = await Project.objects.acreate(**serializer.validated_data)
+        project = await Space.objects.acreate(**serializer.validated_data)
         # 创建空间后自动为创建者添加 admin membership
-        await ProjectMembership.objects.acreate(
+        await SpaceMembership.objects.acreate(
             user=request.user,
-            project=project,
-            role=ProjectRole.ADMIN,
+            space=project,
+            role=SpaceRole.ADMIN,
         )
         # KEEP: SpaceSerializer.get_repositories 触发 repositories.filter() DB 查询
         data = await sync_to_async(lambda: SpaceSerializer(project).data)()
@@ -141,8 +141,8 @@ class SpaceViewSet(ModelViewSet):
         project = await self.aget_object()
         repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
 
-        link, created = await ProjectRepository.objects.aget_or_create(
-            project=project,
+        link, created = await SpaceRepository.objects.aget_or_create(
+            space=project,
             repository=repository,
         )
 
@@ -167,12 +167,12 @@ class SpaceViewSet(ModelViewSet):
         """Unlink a repository from the space."""
         project = await self.aget_object()
         link = await aget_object_or_404(
-            ProjectRepository,
-            project=project,
+            SpaceRepository,
+            space=project,
             repository_id=repository_id,
         )
         link_id = link.id
-        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.project_id)}
+        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.space_id)}
         await link.adelete()
 
         # 审计：仓库解绑空间（删前快照）
@@ -198,7 +198,7 @@ class SpaceViewSet(ModelViewSet):
         # 写操作需要 admin+ 权限
         if request.method != "GET":
             if not request.user.is_superuser and not PermissionService.has_project_access(
-                request.user, project, ProjectRole.ADMIN
+                request.user, project, SpaceRole.ADMIN
             ):
                 return Response(
                     {"detail": "仅空间管理员可修改配置"},
@@ -338,7 +338,7 @@ class SpaceViewSet(ModelViewSet):
         project = await self.aget_object()
         # admin+ 权限
         if not request.user.is_superuser and not PermissionService.has_project_access(
-            request.user, project, ProjectRole.ADMIN
+            request.user, project, SpaceRole.ADMIN
         ):
             return Response(
                 {"detail": "仅空间管理员可刷新 webhook token"},
@@ -368,7 +368,7 @@ class SpaceViewSet(ModelViewSet):
         project = await self.aget_object()
         # admin+ 权限
         if not request.user.is_superuser and not PermissionService.has_project_access(
-            request.user, project, ProjectRole.ADMIN
+            request.user, project, SpaceRole.ADMIN
         ):
             return Response(
                 {"detail": "仅空间管理员可修改 webhook token"},
@@ -421,7 +421,7 @@ class SpaceViewSet(ModelViewSet):
         # 写操作需要 admin+ 权限
         if request.method != "GET":
             if not request.user.is_superuser and not PermissionService.has_project_access(
-                request.user, project, ProjectRole.ADMIN
+                request.user, project, SpaceRole.ADMIN
             ):
                 return Response(
                     {"detail": "仅空间管理员可修改配置"},
@@ -541,7 +541,7 @@ class SpaceViewSet(ModelViewSet):
         # 写操作需要 admin+ 权限
         if request.method != "GET":
             if not request.user.is_superuser and not PermissionService.has_project_access(
-                request.user, project, ProjectRole.ADMIN
+                request.user, project, SpaceRole.ADMIN
             ):
                 return Response(
                     {"detail": "仅空间管理员可修改配置"},
@@ -589,7 +589,7 @@ class RepositoryViewSet(ModelViewSet):
     queryset = (
         Repository.objects.filter(is_deleted=False)
         .select_related("credential")
-        .prefetch_related("projects")
+        .prefetch_related("spaces")
     )
     serializer_class = RepositorySerializer
 
@@ -705,13 +705,13 @@ class SpaceRepositoryListCreateView(APIView):
 
     async def get(self, request: object, space_id: str) -> Response:
         """返回空间关联的仓库列表。"""
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
 
         # 权限：viewer+ 可查看
         has_access = await sync_to_async(PermissionService.has_project_access)(
             request.user,
             project,
-            ProjectRole.VIEWER,
+            SpaceRole.VIEWER,
         )
         if not has_access:
             return Response(
@@ -719,8 +719,8 @@ class SpaceRepositoryListCreateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        links = ProjectRepository.objects.filter(
-            project=project,
+        links = SpaceRepository.objects.filter(
+            space=project,
         ).select_related("repository")
         data = await sync_to_async(
             lambda: SpaceRepositorySerializer([link for link in links], many=True).data
@@ -729,13 +729,13 @@ class SpaceRepositoryListCreateView(APIView):
 
     async def post(self, request: object, space_id: str) -> Response:
         """批量关联仓库到空间。"""
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
 
         # 权限：admin+ 可创建
         has_access = await sync_to_async(PermissionService.has_project_access)(
             request.user,
             project,
-            ProjectRole.ADMIN,
+            SpaceRole.ADMIN,
         )
         if not has_access:
             return Response(
@@ -759,8 +759,8 @@ class SpaceRepositoryListCreateView(APIView):
                 logger.warning("repo_not_found_skip", repo_id=str(repo_id))
                 continue
 
-            link, was_created = await ProjectRepository.objects.aget_or_create(
-                project=project,
+            link, was_created = await SpaceRepository.objects.aget_or_create(
+                space=project,
                 repository=repo,
             )
             if was_created:
@@ -801,12 +801,12 @@ class SpaceRepositoryDetailView(APIView):
     DELETE /api/spaces/{space_id}/repositories/{pk}/ — admin+ 可删除
     """
 
-    async def _check_admin(self, request: object, project: Project) -> Response | None:
+    async def _check_admin(self, request: object, project: Space) -> Response | None:
         """检查 admin 权限，无权返回 403 Response，有权返回 None。"""
         has_access = await sync_to_async(PermissionService.has_project_access)(
             request.user,
             project,
-            ProjectRole.ADMIN,
+            SpaceRole.ADMIN,
         )
         if not has_access:
             return Response(
@@ -817,12 +817,12 @@ class SpaceRepositoryDetailView(APIView):
 
     async def patch(self, request: object, space_id: str, pk: str) -> Response:
         """更新关联的权限级别。"""
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await self._check_admin(request, project)
         if denied:
             return denied
 
-        link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
+        link = await aget_object_or_404(SpaceRepository, pk=pk, space=project)
         serializer = SpaceRepositoryUpdateSerializer(data=request.data)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
 
@@ -848,14 +848,14 @@ class SpaceRepositoryDetailView(APIView):
 
     async def delete(self, request: object, space_id: str, pk: str) -> Response:
         """移除仓库关联。"""
-        project = await aget_object_or_404(Project, id=space_id)
+        project = await aget_object_or_404(Space, id=space_id)
         denied = await self._check_admin(request, project)
         if denied:
             return denied
 
-        link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
+        link = await aget_object_or_404(SpaceRepository, pk=pk, space=project)
         link_id = link.id
-        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.project_id)}
+        snapshot = {"repo_id": str(link.repository_id), "project_id": str(link.space_id)}
         await link.adelete()
 
         logger.info(

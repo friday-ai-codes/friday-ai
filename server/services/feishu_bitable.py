@@ -28,7 +28,7 @@ import structlog
 from services.feishu_doc import FeishuDocClient
 
 if TYPE_CHECKING:
-    from projects.models import Project
+    from projects.models import Space
 
 logger = structlog.get_logger(__name__)
 
@@ -192,7 +192,7 @@ async def _aget_system_open_platform_credentials() -> tuple[str, str] | None:
     return None
 
 
-async def create_bitable_client_for_project(project: Project) -> BitableClient:
+async def create_bitable_client_for_project(project: Space) -> BitableClient:
     """为项目构造 BitableClient（**开放平台 token 来源，独立于项目 plugin token**，REL-02）。
 
     凭证来源镜像 ``create_feishu_doc_client_for_project``：优先项目级开放平台凭证
@@ -204,7 +204,7 @@ async def create_bitable_client_for_project(project: Project) -> BitableClient:
     （REL-02 核心）。
 
     Args:
-        project: Project 模型实例。
+        project: Space 模型实例。
 
     Returns:
         配置好的 BitableClient 实例。

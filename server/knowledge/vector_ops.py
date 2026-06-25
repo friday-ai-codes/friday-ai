@@ -92,7 +92,7 @@ def build_knowledge_points(
             "entity_id": str(entity.id),
             "version": version.version,
             "is_latest": True,
-            "project_id": str(entity.project_id) if entity.project_id else "",
+            "project_id": str(entity.space_id) if entity.space_id else "",
             "repository_id": str(entity.repository_id) if entity.repository_id else "",
             "source_kind": entity.source_kind,
             "event_time": version.event_time.isoformat(),

@@ -1,7 +1,7 @@
 """Feishu Document API client for reading and creating cloud documents.
 
 Provides FeishuDocClient for document operations with Markdown conversion support.
-Uses tenant_access_token authentication (same as IM API, different from Project API).
+Uses tenant_access_token authentication (same as IM API, different from Space API).
 """
 
 import time
@@ -66,7 +66,7 @@ class FeishuDocClient:
     automatic Markdown conversion.
 
     Authentication uses tenant_access_token (2-hour validity, auto-refresh).
-    This is different from FeishuClient which uses plugin_token for Project API.
+    This is different from FeishuClient which uses plugin_token for Space API.
     """
 
     OPEN_API_BASE = "https://open.feishu.cn/open-apis"

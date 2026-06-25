@@ -204,10 +204,10 @@ class AIVariableExtractorNode(BaseNode):
             from workflows.models import WorkflowExecution
 
             we = await WorkflowExecution.objects.select_related(
-                "workflow__project"
+                "workflow__space"
             ).aget(id=context.workflow_execution.id)
-            if we.workflow and we.workflow.project:
-                space_id = str(we.workflow.project.id)
+            if we.workflow and we.workflow.space:
+                space_id = str(we.workflow.space.id)
 
         # 构建完整提示词（走 Prompt Center + fallback 双轨）
         prompt = await render_prompt(
@@ -422,10 +422,10 @@ class AIVariableExtractorNode(BaseNode):
             from workflows.models import WorkflowExecution
 
             we = await WorkflowExecution.objects.select_related(
-                "workflow__project"
+                "workflow__space"
             ).aget(id=context.workflow_execution.id)
             if we.workflow:
-                project = we.workflow.project
+                project = we.workflow.space
 
         node_config: dict[str, Any] | None = None
         if provider_credential_id:

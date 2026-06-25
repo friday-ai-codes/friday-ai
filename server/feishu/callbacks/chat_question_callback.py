@@ -239,7 +239,7 @@ async def _do_chat_answer_async(
                 project = None
                 we = node_execution.workflow_execution
                 if we and hasattr(we, "workflow"):
-                    project = getattr(we.workflow, "project", None)
+                    project = getattr(we.workflow, "space", None)
                 im_client = await create_feishu_im_client_for_project(project)
             except Exception:
                 # 回退到直接构造（无凭证时无法发送）

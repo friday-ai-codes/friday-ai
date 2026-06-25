@@ -130,8 +130,8 @@ class KnowledgeEntity(models.Model):
         max_length=50, help_text="稳定业务引用类型（见 generate_entity_id natural key 规则表）"
     )
     source_id = models.CharField(max_length=255, help_text="业务对象稳定 ID（含飞书三元组拼接）")
-    project = models.ForeignKey(
-        "projects.Project",
+    space = models.ForeignKey(
+        "projects.Space",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -170,7 +170,7 @@ class KnowledgeEntity(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["project", "kind"], name="idx_kentity_proj_kind"),
+            models.Index(fields=["space", "kind"], name="idx_kentity_proj_kind"),
             models.Index(fields=["source_kind", "source_id"], name="idx_kentity_source"),
         ]
 

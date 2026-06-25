@@ -154,8 +154,8 @@ class WorkflowEngine:
     async def _load_execution_for_hooks(self, execution: WorkflowExecution) -> WorkflowExecution:
         """Load execution with related objects to keep hook handlers async-safe."""
         return await WorkflowExecution.objects.select_related(
-            "workflow__project",
-            "project",
+            "workflow__space",
+            "space",
         ).aget(pk=execution.pk)
 
     @staticmethod
@@ -220,7 +220,7 @@ class WorkflowEngine:
 
             return WorkflowExecution.objects.create(
                 workflow_id=workflow_id,
-                project_id=workflow.project_id,
+                space_id=workflow.space_id,
                 status=ExecutionStatus.PENDING,
                 trigger_type=trigger_type,
                 triggered_by_id=triggered_by_id,
@@ -263,7 +263,7 @@ class WorkflowEngine:
         if "project" not in workflow._state.fields_cache:
             from workflows.models import Workflow as WorkflowModel
 
-            workflow = await WorkflowModel.objects.select_related("project").aget(pk=workflow.pk)
+            workflow = await WorkflowModel.objects.select_related("space").aget(pk=workflow.pk)
 
         # 构建 workflow_definition 快照（DAG 结构 + 节点位置，用于前端可视化）
         nodes_snapshot: list[dict] = []
@@ -331,9 +331,9 @@ class WorkflowEngine:
 
         # Cache related objects on execution to avoid sync FK lazy-load in async hooks.
         execution.workflow = workflow
-        execution.project_id = workflow.project_id
+        execution.space_id = workflow.space_id
         if "project" in workflow._state.fields_cache:
-            execution.project = workflow.project
+            execution.space = workflow.space
 
         # 设置调试模式标记（需在失败路径触发 hook 前生效，保证 debug 执行不发通知）
         if debug_mode and not execution.is_debug:
@@ -437,7 +437,7 @@ class WorkflowEngine:
         )
 
         # 确保 project 可读（start_execution 主路径已预填 workflow + project 缓存）
-        project = getattr(workflow_execution, "project", None)
+        project = getattr(workflow_execution, "space", None)
 
         snapshots: dict[str, dict] = {}
         for dag_node in dag.nodes.values():
@@ -1970,7 +1970,7 @@ class WorkflowEngine:
         # 6. 创建新执行实例
         new_execution = await WorkflowExecution.objects.acreate(
             workflow=workflow,
-            project_id=workflow.project_id,
+            space_id=workflow.space_id,
             status=ExecutionStatus.PENDING,
             trigger_type="resume",
             triggered_by=triggered_by,

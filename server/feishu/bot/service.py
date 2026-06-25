@@ -35,7 +35,7 @@ from feishu.cards.bot_cards import (
     build_welcome_card,
 )
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
-from projects.models import Project
+from projects.models import Space
 from services.feishu_im import FeishuIMError, FeishuIMService
 
 from .parser import extract_message_attachments
@@ -130,7 +130,7 @@ def _build_group_context(history_items: list[dict[str, Any]]) -> str:
 
 @dataclass(slots=True)
 class ProjectContextDecision:
-    project: Project
+    space: Space
     matched_space_label: str = ""
     project_context_line: str | None = None
 
@@ -150,7 +150,7 @@ class FeishuBotService:
     async def process_message(self, message_id: str) -> dict[str, Any]:
         message = await FeishuBotMessage.objects.select_related(
             "thread",
-            "thread__project",
+            "thread__space",
             "thread__conversation",
         ).aget(message_id=message_id)
         thread = message.thread
@@ -164,7 +164,7 @@ class FeishuBotService:
             await message.asave(update_fields=["thread"])
 
         is_p2p = message.chat_type == "p2p"
-        im_service = await FeishuIMService.create(thread.project)
+        im_service = await FeishuIMService.create(thread.space)
 
         if not is_p2p:
             await self._maybe_send_welcome(im_service, thread)
@@ -211,7 +211,7 @@ class FeishuBotService:
                         ),
                     )
                     return {"status": "error", "error": "no_project_for_p2p"}
-                thread.project = project_context.project
+                thread.space = project_context.space
                 matched_space_label = project_context.matched_space_label
                 project_context_line = project_context.project_context_line
             else:
@@ -232,7 +232,7 @@ class FeishuBotService:
                     return {"status": "clarification", "reason": thread_resolution.reason}
 
                 project_resolution = await self.project_resolver.resolve(message, thread)
-                if project_resolution.status != "resolved" or project_resolution.project is None:
+                if project_resolution.status != "resolved" or project_resolution.space is None:
                     await self._send_clarification(
                         im_service,
                         thread,
@@ -243,18 +243,18 @@ class FeishuBotService:
                     )
                     return {"status": "clarification", "reason": project_resolution.reason}
 
-                thread.project = project_resolution.project
-                matched_space_label = self._space_label(project_resolution.project)
+                thread.space = project_resolution.space
+                matched_space_label = self._space_label(project_resolution.space)
                 project_context_line = (
-                    f"当前已自动匹配「{matched_space_label}」空间（对应项目：{project_resolution.project.name}）"
+                    f"当前已自动匹配「{matched_space_label}」空间（对应项目：{project_resolution.space.name}）"
                 )
             if thread.conversation_id is None:
                 conversation = await ConversationService.create_conversation(
-                    space_id=str(thread.project_id),
+                    space_id=str(thread.space_id),
                     title=self._build_conversation_title(display_question),
                 )
                 thread.conversation = conversation
-            await thread.asave(update_fields=["project", "conversation", "updated_at"])
+            await thread.asave(update_fields=["space", "conversation", "updated_at"])
 
             # 群聊模式：获取群聊历史作为上下文
             group_context = ""
@@ -669,42 +669,42 @@ class FeishuBotService:
         thread: FeishuBotThread,
     ) -> ProjectContextDecision | None:
         """私聊模式尽量直接可聊，不再因为歧义进入澄清卡。"""
-        if thread.project_id and thread.project is not None:
-            label = self._space_label(thread.project)
+        if thread.space_id and thread.space is not None:
+            label = self._space_label(thread.space)
             return ProjectContextDecision(
-                project=thread.project,
+                space=thread.space,
                 matched_space_label=label,
-                project_context_line=f"当前已自动匹配「{label}」空间（对应项目：{thread.project.name}）",
+                project_context_line=f"当前已自动匹配「{label}」空间（对应项目：{thread.space.name}）",
             )
 
         project_resolution = await self.project_resolver.resolve(message, thread)
-        if project_resolution.project is not None:
+        if project_resolution.space is not None:
             if project_resolution.reason in _AUTO_MATCH_PROJECT_REASONS:
-                label = self._space_label(project_resolution.project)
+                label = self._space_label(project_resolution.space)
                 return ProjectContextDecision(
-                    project=project_resolution.project,
+                    space=project_resolution.space,
                     matched_space_label=label,
                     project_context_line=(
-                        f"当前已自动匹配「{label}」空间（对应项目：{project_resolution.project.name}）"
+                        f"当前已自动匹配「{label}」空间（对应项目：{project_resolution.space.name}）"
                     ),
                 )
             return ProjectContextDecision(
-                project=project_resolution.project,
+                space=project_resolution.space,
                 matched_space_label="",
                 project_context_line="",
             )
 
-        projects = [project async for project in Project.objects.order_by("-updated_at", "-created_at")]
+        projects = [project async for project in Space.objects.order_by("-updated_at", "-created_at")]
         if not projects:
             return None
         return ProjectContextDecision(
-            project=projects[0],
+            space=projects[0],
             matched_space_label="",
             project_context_line="",
         )
 
     @staticmethod
-    def _space_label(project: Project) -> str:
+    def _space_label(project: Space) -> str:
         return (project.feishu_project_key or project.name or "未命名空间").strip()
 
     @staticmethod

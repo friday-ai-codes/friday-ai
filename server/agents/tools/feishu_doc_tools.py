@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import structlog
 
 from agents.tools.base import ToolResult, tool
-from projects.models import Project
+from projects.models import Space
 from services.feishu_doc import FeishuDocAPIError, FeishuDocClient
 
 logger = structlog.get_logger(__name__)
@@ -44,20 +44,20 @@ async def _aget_system_feishu_credentials_for_doc() -> tuple[str, str] | None:
     return None
 
 
-async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocClient:
+async def create_feishu_doc_client_for_project(project: Space) -> FeishuDocClient:
     """Create a FeishuDocClient for a project.
 
     优先使用项目的飞书 IM App 配置 (feishu_app_id/feishu_app_secret)，
     如果未配置则回退到系统级飞书 IM 配置 (SystemSetting)。
 
     Args:
-        project: Project model instance
+        project: Space model instance
 
     Returns:
         Configured FeishuDocClient instance
 
     Raises:
-        ValueError: Project lacks Feishu app configuration
+        ValueError: Space lacks Feishu app configuration
     """
     from common.encryption import decrypt_value
 
@@ -128,8 +128,8 @@ async def fetch_feishu_document(
     doc_id = _extract_document_id(document_id)
 
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         log.warning("space_not_found")
         return ToolResult(
             success=False,
@@ -243,8 +243,8 @@ async def create_feishu_document(
     )
 
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         log.warning("space_not_found")
         return ToolResult(
             success=False,

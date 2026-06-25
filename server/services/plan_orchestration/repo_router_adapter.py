@@ -56,7 +56,7 @@ class RepoRouterV2Adapter:
         }
 
     async def _resolve_repository_ids(self, session: PlanSession) -> list[str] | None:
-        """候选范围优先级解析：① include_repos → ② work_item.project 仓库 → ③ None（全库）。"""
+        """候选范围优先级解析：① include_repos → ② work_item.space 仓库 → ③ None（全库）。"""
         include = (session.decomposition or {}).get("include_repos")
         if include:
             return [str(r) for r in include]
@@ -72,11 +72,11 @@ class RepoRouterV2Adapter:
         from delivery.models import WorkItem
 
         wi = (
-            WorkItem.objects.select_related("project")
+            WorkItem.objects.select_related("space")
             .filter(id=work_item_id)
             .first()
         )
-        if wi is None or wi.project is None:
+        if wi is None or wi.space is None:
             return None
-        repo_ids = [str(r) for r in wi.project.repositories.values_list("id", flat=True)]
+        repo_ids = [str(r) for r in wi.space.repositories.values_list("id", flat=True)]
         return repo_ids or None

@@ -589,10 +589,10 @@ def verify_webhook_token(received_token: str, expected_token: str) -> bool:
 def create_feishu_client_for_project(project) -> FeishuClient:
     """为指定项目创建飞书客户端。
 
-    从 Project 模型中读取加密的凭证并创建客户端实例。
+    从 Space 模型中读取加密的凭证并创建客户端实例。
 
     Args:
-        project: Project 模型实例
+        project: Space 模型实例
 
     Returns:
         配置好的 FeishuClient 实例

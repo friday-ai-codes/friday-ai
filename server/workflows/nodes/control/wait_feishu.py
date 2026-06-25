@@ -173,10 +173,10 @@ class WaitForFeishuFieldNode(BaseNode):
         """获取当前字段值（用于检查条件是否已满足）"""
         try:
             from feishu.client import create_feishu_client_for_project
-            from projects.models import Project
+            from projects.models import Space
 
             # 获取空间
-            project = await Project.objects.filter(feishu_project_key=project_key).afirst()
+            project = await Space.objects.filter(feishu_project_key=project_key).afirst()
 
             if not project:
                 return None

@@ -126,9 +126,9 @@ class FeishuDocCreateNode(BaseNode):
         try:
             from workflows.models import WorkflowExecution
 
-            we = await WorkflowExecution.objects.select_related("workflow__project").aget(
+            we = await WorkflowExecution.objects.select_related("workflow__space").aget(
                 id=context.workflow_execution.id
             )
-            return we.workflow.project if we.workflow else None
+            return we.workflow.space if we.workflow else None
         except Exception:
             return None

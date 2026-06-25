@@ -61,7 +61,7 @@ def _table_cell(value: Any) -> str:
 
 async def _resolve_technical_plan(technical_plan_id: str) -> McpWorkItemTechnicalPlan:
     technical_plan = (
-        await McpWorkItemTechnicalPlan.objects.select_related("context", "project")
+        await McpWorkItemTechnicalPlan.objects.select_related("context", "space")
         .filter(id=technical_plan_id)
         .afirst()
     )
@@ -461,9 +461,9 @@ async def _write_results_back(
     technical_plan.plan_body = body
     technical_plan.markdown = (technical_plan.markdown or "").rstrip() + "\n\n" + markdown
 
-    if technical_plan.project and technical_plan.feishu_document_id:
+    if technical_plan.space and technical_plan.feishu_document_id:
         try:
-            doc_client = await create_feishu_doc_client_for_project(technical_plan.project)
+            doc_client = await create_feishu_doc_client_for_project(technical_plan.space)
             result = await doc_client.append_markdown(
                 technical_plan.feishu_document_id,
                 markdown,
@@ -474,7 +474,7 @@ async def _write_results_back(
         except Exception as exc:  # noqa: BLE001 - writeback errors should be retryable state.
             document_update = {"status": "error", "error": str(exc)}
 
-    if technical_plan.project:
+    if technical_plan.space:
         lines = [
             f"Friday 已更新执行结果：{technical_plan.title}",
             "",
@@ -485,7 +485,7 @@ async def _write_results_back(
                 f"- {task.repository.name}: {task.status}, branch `{task.branch_name}`, MR {task.mr_url or '未生成'}"
             )
         try:
-            client = create_feishu_client_for_project(technical_plan.project)
+            client = create_feishu_client_for_project(technical_plan.space)
             ok = await client.add_comment(
                 technical_plan.feishu_project_key,
                 technical_plan.work_item_id,

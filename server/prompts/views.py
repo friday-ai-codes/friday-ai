@@ -25,7 +25,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from projects.models import Project
+from projects.models import Space
 from prompts.exceptions import (
     PromptError,
     PromptNotFoundError,
@@ -155,11 +155,11 @@ class PromptListView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             # 空间成员资格检查（security mitigation）
-            project = await aget_object_or_404(Project, pk=space_id)
+            project = await aget_object_or_404(Space, pk=space_id)
             denied = await _require_project_read_permission(request, project)
             if denied is not None:
                 return denied
-            qs = qs.filter(scope=PromptScope.PROJECT, project_id=space_id)
+            qs = qs.filter(scope=PromptScope.PROJECT, space_id=space_id)
 
         if category:
             qs = qs.filter(category=category)
@@ -206,7 +206,7 @@ class PromptListView(APIView):
             slug=data["slug"],
             category=data["category"],
             scope=scope,
-            project=data.get("project"),
+            space=data.get("project"),
             title=data["title"],
             description=data.get("description", ""),
             is_builtin=False,
@@ -228,7 +228,7 @@ class PromptListView(APIView):
             "prompt_created",
             slug=prompt.slug,
             scope=scope,
-            space_id=str(prompt.project_id) if prompt.project_id else None,
+            space_id=str(prompt.space_id) if prompt.space_id else None,
         )
         return Response(response_data, status=status.HTTP_201_CREATED)
 
@@ -251,7 +251,7 @@ class PromptDetailView(APIView):
     async def get(self, request: Any, prompt_id: UUID) -> Response:
         prompt = await aget_object_or_404(
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             ),
             pk=prompt_id,
         )
@@ -273,7 +273,7 @@ class PromptDetailView(APIView):
     async def patch(self, request: Any, prompt_id: UUID) -> Response:
         prompt = await aget_object_or_404(
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             ),
             pk=prompt_id,
         )
@@ -312,7 +312,7 @@ class PromptDetailView(APIView):
         # 重新加载以拿到最新 active_version（可能是新追加的，也可能是幂等跳过的原版本）
         prompt = await (
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             )
             .aget(pk=prompt.pk)
         )
@@ -329,7 +329,7 @@ class PromptDetailView(APIView):
     )
     async def delete(self, request: Any, prompt_id: UUID) -> Response:
         prompt = await aget_object_or_404(
-            Prompt.objects.select_related("project"),
+            Prompt.objects.select_related("space"),
             pk=prompt_id,
         )
         denied = await _require_write_permission(request, prompt)
@@ -377,7 +377,7 @@ class PromptRenderPreviewView(APIView):
     async def post(self, request: Any, prompt_id: UUID) -> Response:
         prompt = await aget_object_or_404(
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             ),
             pk=prompt_id,
         )
@@ -395,7 +395,7 @@ class PromptRenderPreviewView(APIView):
             rendered = await render_prompt(
                 slug=prompt.slug,
                 project_id=(
-                    str(prompt.project_id) if prompt.project_id else None
+                    str(prompt.space_id) if prompt.space_id else None
                 ),
                 variables=variables,
                 fallback="",
@@ -423,7 +423,7 @@ class PromptVersionListView(APIView):
     )
     async def get(self, request: Any, prompt_id: UUID) -> Response:
         prompt = await aget_object_or_404(
-            Prompt.objects.select_related("project"), pk=prompt_id
+            Prompt.objects.select_related("space"), pk=prompt_id
         )
         denied = await _require_read_permission(request, prompt)
         if denied is not None:
@@ -454,7 +454,7 @@ class PromptVersionDiffView(APIView):
         v2_num: int,
     ) -> Response:
         prompt = await aget_object_or_404(
-            Prompt.objects.select_related("project"), pk=prompt_id
+            Prompt.objects.select_related("space"), pk=prompt_id
         )
         denied = await _require_read_permission(request, prompt)
         if denied is not None:
@@ -498,7 +498,7 @@ class PromptActivateVersionView(APIView):
     ) -> Response:
         prompt = await aget_object_or_404(
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             ),
             pk=prompt_id,
         )
@@ -513,7 +513,7 @@ class PromptActivateVersionView(APIView):
         # 刷新以拿到最新 active_version 指针
         prompt = await (
             Prompt.objects.select_related(
-                "active_version", "active_version__prompt", "project"
+                "active_version", "active_version__prompt", "space"
             )
             .aget(pk=prompt.pk)
         )

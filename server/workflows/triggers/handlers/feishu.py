@@ -47,7 +47,7 @@ class FeishuEventHandler(TriggerHandler):
         if not trigger_token and not context.event_type:
             errors.append("缺少必需字段: event_type")
 
-        if not context.project:
+        if not context.space:
             errors.append("缺少必需字段: space")
             return errors
 
@@ -57,7 +57,7 @@ class FeishuEventHandler(TriggerHandler):
 
         # 旧版共享端点：验证 webhook token
         received_token = context.metadata.get("token", "")
-        expected_token = getattr(context.project, "feishu_webhook_token", None)
+        expected_token = getattr(context.space, "feishu_webhook_token", None)
 
         if expected_token:
             from feishu.client import verify_webhook_token
@@ -66,7 +66,7 @@ class FeishuEventHandler(TriggerHandler):
                 errors.append("飞书 Webhook Token 验证失败")
                 logger.warning(
                     "feishu_token_invalid",
-                    space_id=str(context.project.id),
+                    space_id=str(context.space.id),
                 )
 
         return errors
@@ -103,7 +103,7 @@ class FeishuEventHandler(TriggerHandler):
             return [trigger.workflow]
 
         # 旧版共享端点：按事件类型匹配
-        if not context.event_type or not context.project:
+        if not context.event_type or not context.space:
             return []
 
         triggers = [
@@ -111,7 +111,7 @@ class FeishuEventHandler(TriggerHandler):
                 event_type=context.event_type,
                 is_active=True,
                 workflow__is_active=True,
-                workflow__project=context.project,
+                workflow__space=context.space,
             ).select_related("workflow")
         ]
 
@@ -131,7 +131,7 @@ class FeishuEventHandler(TriggerHandler):
             logger.debug(
                 "no_triggers_matched",
                 event_type=context.event_type,
-                space_id=str(context.project.id),
+                space_id=str(context.space.id),
                 trigger_count=len(triggers),
             )
 
@@ -147,5 +147,5 @@ class FeishuEventHandler(TriggerHandler):
             "trigger_type": context.trigger_type,
             "raw_payload": context.raw_payload,
             "event_type": context.event_type,
-            "space_id": str(context.project.id) if context.project else None,
+            "space_id": str(context.space.id) if context.space else None,
         }

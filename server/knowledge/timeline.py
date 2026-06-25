@@ -18,10 +18,10 @@ __all__ = ["build_entity_timeline"]
 
 
 async def _assert_entity_access(entity: KnowledgeEntity, user) -> bool:
-    if entity.project_id is None:
+    if entity.space_id is None:
         return False
     allowed = await resolve_allowed_project_ids(user)
-    return str(entity.project_id) in allowed
+    return str(entity.space_id) in allowed
 
 
 def _version_queryset(
@@ -127,7 +127,7 @@ async def build_entity_timeline(
                         source_id=target.source_id,
                         origin=target.origin,
                         event_time=target.event_time,
-                        project_id=str(target.project_id) if target.project_id else None,
+                        space_id=str(target.space_id) if target.space_id else None,
                         repository_id=str(target.repository_id) if target.repository_id else None,
                         provenance=ProvenanceLinks(),
                     )

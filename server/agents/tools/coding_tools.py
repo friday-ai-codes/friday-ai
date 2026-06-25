@@ -136,7 +136,7 @@ async def create_coding_plan(
     ``recommended_repository_ids`` 列表（置顶）。**不再用于创建 session。**
     """
     from chat.models import CodingPlan, Conversation, RepositoryRoutingTrace
-    from projects.models import Project
+    from projects.models import Space
     from repositories.models import Repository
 
     logger.info(
@@ -147,8 +147,8 @@ async def create_coding_plan(
     )
 
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist:
         return ToolResult(
             success=False,
             error=f"Space not found: {space_id}",
@@ -191,7 +191,7 @@ async def create_coding_plan(
             r
             async for r in Repository.objects.filter(
                 id__in=recommended_repository_ids,
-                projects=project,
+                spaces=project,
                 is_deleted=False,
             )
         ]

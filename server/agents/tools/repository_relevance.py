@@ -176,14 +176,14 @@ async def _analyze_relevance_core(
     # lazy import 仅针对 Django ORM 模型避免 app registry race；服务类已在
     # 模块顶层 import（测试 monkeypatch 需要从本模块取 HybridSearchService）。
     from chat.models import Conversation, RepositoryRoutingTrace
-    from projects.models import Project
+    from projects.models import Space
     from repositories.models import Repository
 
     triggered_by = triggered_by or RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL
 
     try:
-        project = await Project.objects.aget(id=space_id)
-    except Project.DoesNotExist as exc:
+        project = await Space.objects.aget(id=space_id)
+    except Space.DoesNotExist as exc:
         raise ValueError(f"Space not found: {space_id}") from exc
 
     try:
@@ -194,7 +194,7 @@ async def _analyze_relevance_core(
     repos: list[Repository] = [
         repo
         async for repo in Repository.objects.filter(
-            projects=project,
+            spaces=project,
             is_deleted=False,
             index_status="indexed",
         )

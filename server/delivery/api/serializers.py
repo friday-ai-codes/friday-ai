@@ -37,6 +37,7 @@ class WorkItemSerializer(serializers.ModelSerializer):
     """
 
     sync_states = WorkItemSyncStateSerializer(many=True, read_only=True)
+    project = serializers.PrimaryKeyRelatedField(read_only=True, source="space")
 
     class Meta:
         model = WorkItem

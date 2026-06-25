@@ -36,7 +36,7 @@ def build_question_card(
         ...     question="Which language do you prefer?",
         ...     options=["Python", "Go", "TypeScript"],
         ...     session_id="sess-123",
-        ...     history=[{"question": "Project name?", "answer": "Friday"}],
+        ...     history=[{"question": "Space name?", "answer": "Friday"}],
         ... )
     """
     elements: list[dict[str, Any]] = []

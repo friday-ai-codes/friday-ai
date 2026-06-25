@@ -18,8 +18,8 @@ def generate_webhook_token():
     return secrets.token_urlsafe(16)[:16]
 
 
-class Project(models.Model):
-    """Project model for managing Feishu integration."""
+class Space(models.Model):
+    """Space model for managing Feishu integration (formerly Space)."""
 
     # 反向关系类型声明
     workflows: "QuerySet[Workflow]"
@@ -65,7 +65,7 @@ class Project(models.Model):
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name="default_for_projects",
+        related_name="default_for_spaces",
         help_text="项目级默认 Provider 凭证（contract 四层解析 L3）",
     )
 
@@ -76,8 +76,8 @@ class Project(models.Model):
     # Many-to-many relationship with repositories (use string reference)
     repositories = models.ManyToManyField(
         "repositories.Repository",
-        through="ProjectRepository",
-        related_name="projects",
+        through="SpaceRepository",
+        related_name="spaces",
     )
 
     class Meta:
@@ -104,10 +104,10 @@ class RepositoryPermission(models.TextChoices):
     READ_ONLY = "read_only", "只读"
 
 
-class ProjectRepository(models.Model):
-    """Through model for Project-Repository many-to-many relationship."""
+class SpaceRepository(models.Model):
+    """Through model for Space-Repository many-to-many relationship."""
 
-    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    space = models.ForeignKey(Space, on_delete=models.CASCADE)
     repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE)
     permission_level = models.CharField(
         max_length=20,
@@ -119,15 +119,15 @@ class ProjectRepository(models.Model):
 
     class Meta:
         db_table = "project_repositories"
-        unique_together = ["project", "repository"]
+        unique_together = ["space", "repository"]
 
     def __str__(self) -> str:
-        return f"{self.project.name} - {self.repository.name} ({self.permission_level})"
+        return f"{self.space.name} - {self.repository.name} ({self.permission_level})"
 
 
 __all__ = [
-    "Project",
-    "ProjectRepository",
+    "Space",
+    "SpaceRepository",
     "RepositoryPermission",
     "generate_webhook_token",
 ]

@@ -358,18 +358,18 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         scope_id = serializer.validated_data.get("scope_id")
 
         if scope == "project" and scope_id is not None and not self.request.user.is_superuser:
-            from permissions.models import ProjectRole
+            from permissions.models import SpaceRole
             from permissions.services import PermissionService
-            from projects.models import Project
+            from projects.models import Space
 
             target_project = await sync_to_async(
-                lambda: Project.objects.filter(id=scope_id).first()
+                lambda: Space.objects.filter(id=scope_id).first()
             )()
             if target_project is None:
                 raise ValidationError({"scope_id": "项目不存在"})
 
             has_access = await sync_to_async(PermissionService.has_project_access)(
-                self.request.user, target_project, ProjectRole.MEMBER
+                self.request.user, target_project, SpaceRole.MEMBER
             )
             if not has_access:
                 raise PermissionDenied("您不是该项目的 MEMBER+，无法为项目创建凭证")
@@ -412,17 +412,17 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
         if new_scope == "project" and not self.request.user.is_superuser:
             # 只有 scope/scope_id 发生变动时才重跑 project_access 校验
             if "scope" in serializer.validated_data or "scope_id" in serializer.validated_data:
-                from permissions.models import ProjectRole
+                from permissions.models import SpaceRole
                 from permissions.services import PermissionService
-                from projects.models import Project
+                from projects.models import Space
 
                 target_project = await sync_to_async(
-                    lambda: Project.objects.filter(id=new_scope_id).first()
+                    lambda: Space.objects.filter(id=new_scope_id).first()
                 )()
                 if target_project is None:
                     raise ValidationError({"scope_id": "项目不存在"})
                 has_access = await sync_to_async(PermissionService.has_project_access)(
-                    self.request.user, target_project, ProjectRole.MEMBER
+                    self.request.user, target_project, SpaceRole.MEMBER
                 )
                 if not has_access:
                     raise PermissionDenied("您不是该项目的 MEMBER+，无法迁移凭证到该项目")

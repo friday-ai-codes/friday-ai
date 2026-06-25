@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from accounts.models import User
-    from projects.models import Project
+    from projects.models import Space
     from workflows.models import Workflow
 
 
@@ -20,7 +20,7 @@ class TriggerContext:
         trigger_type: 触发器类型（如 "feishu", "webhook", "manual"）
         raw_payload: 原始请求数据，不做任何预处理
         event_type: 事件类型（用于飞书等事件源）
-        project: 关联的项目
+        space: 关联的空间
         workflow: 目标工作流（手动触发时指定）
         triggered_by: 触发用户
         idempotency_key: 幂等键，用于去重
@@ -32,7 +32,7 @@ class TriggerContext:
 
     # 可选字段，带默认值
     event_type: str | None = None
-    project: "Project | None" = None
+    space: "Space | None" = None
     workflow: "Workflow | None" = None
     triggered_by: "User | None" = None
     idempotency_key: str | None = None

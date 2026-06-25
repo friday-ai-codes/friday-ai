@@ -257,10 +257,10 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
             from workflows.models import WorkflowExecution
 
             we = await WorkflowExecution.objects.select_related(
-                "workflow__project"
+                "workflow__space"
             ).aget(id=context.workflow_execution.id)
             if we.workflow:
-                return we.workflow.project
+                return we.workflow.space
         return None
 
     async def _get_user(self, context: ExecutionContext) -> Any:

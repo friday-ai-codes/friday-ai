@@ -149,7 +149,7 @@ async def build_allowed_tools(space_id: str) -> list[str]:
         return []
 
     has_indexed = await Repository.objects.filter(
-        projects__id=space_id,
+        spaces__id=space_id,
         index_status="indexed",
         is_deleted=False,
     ).aexists()

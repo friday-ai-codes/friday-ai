@@ -161,7 +161,7 @@ async def _finalize_from_state(
     from chat.finalize import finalize_conversation
     from chat.models import Conversation, Message
 
-    conversation = await Conversation.objects.select_related("project").aget(
+    conversation = await Conversation.objects.select_related("space").aget(
         id=orch_run.conversation_id,
     )
     conv_id_str = str(conversation.id)
