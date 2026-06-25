@@ -10,6 +10,13 @@ import SddMethodologyBadge from '~/components/repository/SddMethodologyBadge.vue
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -124,15 +131,91 @@ const loading = ref(true)
 // 搜索 + 分页（卡片网格客户端分页），状态持久化到 URL（刷新可恢复）
 const { pagination, globalFilter } = useTableUrlState({ pageSize: 12, sort: false })
 
+// #15：筛选 + 排序（客户端，over 已拉取的全量列表）
+const filterSpace = ref('all')
+const filterSdd = ref<'all' | 'sdd' | 'non_sdd'>('all')
+const filterIndex = ref('all')
+const filterKnowledge = ref<'all' | 'built' | 'building' | 'none'>('all')
+const sortKey = ref<'updated_desc' | 'name_asc' | 'indexed_desc'>('updated_desc')
+
+// 所有出现过的空间（用于"按空间筛选"下拉）
+const spaceOptions = computed(() => {
+  const map = new Map<string, string>()
+  for (const r of repositoriesStore.repositories) {
+    for (const s of (r.linked_spaces ?? r.spaces ?? []))
+      map.set(s.id, s.name)
+  }
+  return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+})
+
+// 建立知识状态：built（已建能力树）/ building（生成中/排队）/ none（未建/失败）
+function knowledgeState(r: { has_tree?: boolean, ai_summary_status?: string }): 'built' | 'building' | 'none' {
+  if (r.has_tree)
+    return 'built'
+  if (r.ai_summary_status === 'pending' || r.ai_summary_status === 'running')
+    return 'building'
+  return 'none'
+}
+
+const KNOWLEDGE_LABEL: Record<string, string> = { built: '知识已建', building: '建立中', none: '未建知识' }
+const KNOWLEDGE_TONE: Record<string, string> = {
+  built: 'text-emerald-600 dark:text-emerald-400',
+  building: 'text-blue-600 dark:text-blue-400',
+  none: 'text-muted-foreground',
+}
+
+const hasActiveFilter = computed(() =>
+  filterSpace.value !== 'all' || filterSdd.value !== 'all'
+  || filterIndex.value !== 'all' || filterKnowledge.value !== 'all',
+)
+
+function resetFilters() {
+  filterSpace.value = 'all'
+  filterSdd.value = 'all'
+  filterIndex.value = 'all'
+  filterKnowledge.value = 'all'
+}
+
 const filteredRepositories = computed(() => {
   const q = globalFilter.value.trim().toLowerCase()
-  if (!q)
-    return repositoriesStore.repositories
-  return repositoriesStore.repositories.filter((r) => {
-    const platformLabel = PLATFORM_LABELS[r.git_platform] ?? r.git_platform
-    return [r.name, r.git_url, r.default_branch, platformLabel]
-      .some(field => String(field ?? '').toLowerCase().includes(q))
+  let list = repositoriesStore.repositories.filter((r) => {
+    // 搜索
+    if (q) {
+      const platformLabel = PLATFORM_LABELS[r.git_platform] ?? r.git_platform
+      const hit = [r.name, r.git_url, r.default_branch, platformLabel]
+        .some(field => String(field ?? '').toLowerCase().includes(q))
+      if (!hit)
+        return false
+    }
+    // 按空间
+    if (filterSpace.value !== 'all') {
+      const spaces = r.linked_spaces ?? r.spaces ?? []
+      if (!spaces.some(s => s.id === filterSpace.value))
+        return false
+    }
+    // SDD
+    if (filterSdd.value === 'sdd' && r.methodology !== 'SDD')
+      return false
+    if (filterSdd.value === 'non_sdd' && r.methodology === 'SDD')
+      return false
+    // 索引状态
+    if (filterIndex.value !== 'all' && r.index_status !== filterIndex.value)
+      return false
+    // 建立知识
+    if (filterKnowledge.value !== 'all' && knowledgeState(r) !== filterKnowledge.value)
+      return false
+    return true
   })
+
+  // 排序
+  list = [...list].sort((a, b) => {
+    if (sortKey.value === 'name_asc')
+      return a.name.localeCompare(b.name)
+    if (sortKey.value === 'indexed_desc')
+      return new Date(b.last_indexed_at || 0).getTime() - new Date(a.last_indexed_at || 0).getTime()
+    return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+  })
+  return list
 })
 
 const pagedRepositories = computed(() => {
@@ -206,8 +289,8 @@ function formatIndexedTime(value: string) {
           <span class="icon-[lucide--folder-tree]" />
           知识树
         </Button>
-        <!-- BATCH-02：CSV 批量建仓 -->
-        <Button variant="outline" :disabled="importingCsv" @click="triggerCsvImport">
+        <!-- BATCH-02：CSV 批量建仓（仅系统管理员，后端 IsSuperUser 兜底） -->
+        <Button v-if="isAdmin" variant="outline" :disabled="importingCsv" @click="triggerCsvImport">
           <span v-if="importingCsv" class="icon-[lucide--loader-circle] animate-spin" />
           <span v-else class="icon-[lucide--upload]" />
           CSV 批量建仓
@@ -253,14 +336,120 @@ function formatIndexedTime(value: string) {
     />
 
     <template v-else>
-      <!-- 搜索栏 -->
-      <div class="relative w-full sm:w-72">
-        <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
-        <input
-          v-model="globalFilter"
-          placeholder="搜索仓库名、地址、分支…"
-          class="flex h-9 w-full rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
-        >
+      <!-- 搜索 + 筛选 + 排序 -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <div class="relative w-full sm:w-64">
+          <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
+          <input
+            v-model="globalFilter"
+            placeholder="搜索仓库名、地址、分支…"
+            class="flex h-9 w-full rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
+          >
+        </div>
+
+        <Select v-model="filterSpace">
+          <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90">
+            <span class="icon-[lucide--folder] mr-1.5 text-sm text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              全部空间
+            </SelectItem>
+            <SelectItem v-for="s in spaceOptions" :key="s.id" :value="s.id">
+              {{ s.name }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select v-model="filterIndex">
+          <SelectTrigger class="h-9 w-[130px] rounded-lg bg-background/90">
+            <span class="icon-[lucide--database] mr-1.5 text-sm text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              全部索引状态
+            </SelectItem>
+            <SelectItem value="indexed">
+              已索引
+            </SelectItem>
+            <SelectItem value="indexing">
+              索引中
+            </SelectItem>
+            <SelectItem value="not_indexed">
+              未索引
+            </SelectItem>
+            <SelectItem value="failed">
+              失败
+            </SelectItem>
+            <SelectItem value="cancelled">
+              已取消
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select v-model="filterKnowledge">
+          <SelectTrigger class="h-9 w-[130px] rounded-lg bg-background/90">
+            <span class="icon-[lucide--sparkles] mr-1.5 text-sm text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              全部知识状态
+            </SelectItem>
+            <SelectItem value="built">
+              知识已建
+            </SelectItem>
+            <SelectItem value="building">
+              建立中
+            </SelectItem>
+            <SelectItem value="none">
+              未建知识
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select v-model="filterSdd">
+          <SelectTrigger class="h-9 w-[110px] rounded-lg bg-background/90">
+            <span class="icon-[lucide--scroll-text] mr-1.5 text-sm text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              全部方法论
+            </SelectItem>
+            <SelectItem value="sdd">
+              仅 SDD
+            </SelectItem>
+            <SelectItem value="non_sdd">
+              非 SDD
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select v-model="sortKey">
+          <SelectTrigger class="h-9 w-[130px] rounded-lg bg-background/90">
+            <span class="icon-[lucide--arrow-up-down] mr-1.5 text-sm text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="updated_desc">
+              最近更新
+            </SelectItem>
+            <SelectItem value="indexed_desc">
+              最近索引
+            </SelectItem>
+            <SelectItem value="name_asc">
+              名称 A→Z
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Button v-if="hasActiveFilter" variant="ghost" size="sm" @click="resetFilters">
+          <span class="icon-[lucide--x] mr-1" />
+          清除筛选
+        </Button>
       </div>
 
       <!-- 搜索无结果 -->
@@ -316,11 +505,27 @@ function formatIndexedTime(value: string) {
                     <span class="icon-[lucide--git-branch]" />
                     {{ repository.default_branch }}
                   </span>
-                  <span v-if="repository.linked_spaces_count" class="repo-meta-item">
-                    <span class="icon-[lucide--folder]" />
-                    {{ repository.linked_spaces_count }} 个空间
+                  <!-- 建立知识状态 -->
+                  <span class="repo-meta-item" :class="KNOWLEDGE_TONE[knowledgeState(repository)]">
+                    <span class="icon-[lucide--sparkles]" />
+                    {{ KNOWLEDGE_LABEL[knowledgeState(repository)] }}
                   </span>
                   <SddMethodologyBadge :methodology="repository.methodology" />
+                </div>
+
+                <!-- 所属空间（名称） -->
+                <div
+                  v-if="(repository.linked_spaces ?? repository.spaces ?? []).length"
+                  class="mt-2 flex flex-wrap items-center gap-1.5"
+                >
+                  <span
+                    v-for="s in (repository.linked_spaces ?? repository.spaces ?? [])"
+                    :key="s.id"
+                    class="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+                  >
+                    <span class="icon-[lucide--folder] text-[10px]" />
+                    {{ s.name }}
+                  </span>
                 </div>
               </div>
             </div>

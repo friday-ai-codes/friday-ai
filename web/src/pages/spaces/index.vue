@@ -8,6 +8,7 @@ import CreateSpaceModal from '~/components/space/CreateSpaceModal.vue'
 import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useTableUrlState } from '~/composables/useTableUrlState'
+import { useAuthStore } from '~/stores/auth'
 
 useHead({
   title: '空间管理 - Friday AI',
@@ -15,7 +16,11 @@ useHead({
 
 const router = useRouter()
 const spacesStore = useSpacesStore()
+const authStore = useAuthStore()
 const { handleError } = useErrorHandler()
+
+// 新建空间仅系统管理员（后端 IsSuperUser 兜底）。
+const isAdmin = computed(() => authStore.isAdmin)
 
 // 加载空间列表
 const loading = ref(true)
@@ -82,7 +87,7 @@ async function openCreateSpace() {
       description="管理您的 Git 仓库空间和凭证配置"
     >
       <template #actions>
-        <Button @click="openCreateSpace">
+        <Button v-if="isAdmin" @click="openCreateSpace">
           <span class="icon-[lucide--plus]" />
           新建空间
         </Button>
@@ -97,8 +102,8 @@ async function openCreateSpace() {
       v-else-if="spacesStore.spaces.length === 0"
       icon="lucide--folder-git-2"
       title="暂无空间"
-      description="创建您的第一个空间，开始使用 AI 辅助开发"
-      action-label="新建空间"
+      :description="isAdmin ? '创建您的第一个空间，开始使用 AI 辅助开发' : '暂无可访问的空间，请联系系统管理员创建并将你加入'"
+      :action-label="isAdmin ? '新建空间' : undefined"
       gradient="from-primary/20 to-primary/20"
       @action="openCreateSpace"
     />
@@ -157,6 +162,14 @@ async function openCreateSpace() {
               <span class="w-1 h-1 rounded-full bg-muted-foreground/30 group-hover/item:bg-primary group-hover/item:scale-150 transition-all shrink-0" />
               <span class="truncate flex-1 group-hover/item:text-primary transition-colors" :title="item.name">{{ item.name }}</span>
             </button>
+          </div>
+
+          <!-- 空间管理员（让人知道找谁） -->
+          <div v-if="space.admins?.length" class="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span class="icon-[lucide--shield-user] text-primary/60 shrink-0" />
+            <span class="truncate" :title="`空间管理员：${space.admins.map(a => a.display_name).join('、')}`">
+              管理员 {{ space.admins.map(a => a.display_name).join('、') }}
+            </span>
           </div>
 
           <!-- 底部信息行 -->

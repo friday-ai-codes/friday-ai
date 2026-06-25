@@ -75,6 +75,8 @@ def _excluded_browse_result(repository_id: str, file_path: str) -> ToolResult:
 # 索引完成 / 文件新增不会立刻反映到 chat，可接受。
 _PATH_CACHE_TTL_SECONDS: float = 60.0
 _indexed_paths_cache: dict[str, tuple[float, list[str]]] = {}
+# 文件清单 scroll 兜底上限（×1000 points）：避免超大 collection 全量 scroll 拖慢工具。
+_MAX_SCROLL_BATCHES: int = 40
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +144,10 @@ def _list_indexed_paths(collection_name: str) -> list[str]:
         client = QdrantService.get_client()
         seen: set[str] = set()
         offset = None
-        while True:
+        # 兜底上限：超大 collection 下 scroll 全量会拖慢工具调用（甚至拉长整个 turn
+        # 触发客户端/网关超时）；最多扫 _MAX_SCROLL_BATCHES×1000 个 point 即停（足够
+        # 覆盖绝大多数仓库的文件清单，仅用于 endswith 兜底匹配，部分清单可接受）。
+        for _ in range(_MAX_SCROLL_BATCHES):
             result = client.scroll(
                 collection_name=collection_name,
                 limit=1000,

@@ -20,6 +20,7 @@ from rest_framework.renderers import BaseRenderer
 from rest_framework.response import Response
 
 from durable import QUEUE_INDEX, DurableTaskService
+from permissions.services import PermissionService
 
 
 class ServerSentEventRenderer(BaseRenderer):
@@ -57,6 +58,22 @@ from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 
 logger = structlog.get_logger(__name__)
+
+
+async def _ensure_repo_admin(request: Any, repository_id: str) -> Response | None:
+    """仓库管理守卫（#11）：仅该仓所属任一空间的 admin 或系统管理员可操作索引。
+
+    通过返回 None；否则返回 403 Response。
+    """
+    allowed = await sync_to_async(PermissionService.can_admin_repository)(
+        request.user, str(repository_id)
+    )
+    if not allowed:
+        return Response(
+            {"detail": "仅空间管理员可操作此仓库的索引"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
 
 INDEX_CANCEL_MESSAGE = "用户已停止索引"
 
@@ -291,6 +308,9 @@ class IndexTriggerView(APIView):
 
     async def post(self, request: Any, repository_id: str) -> Response:
         """触发仓库索引（手动），支持可选 branch 参数触发分支索引。"""
+        denied = await _ensure_repo_admin(request, repository_id)
+        if denied is not None:
+            return denied
         # 快速状态检查（无锁开销，快速路径）
         try:
             repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
@@ -358,6 +378,9 @@ class IndexCancelView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def post(self, request: Any, repository_id: str) -> Response:
+        denied = await _ensure_repo_admin(request, repository_id)
+        if denied is not None:
+            return denied
         try:
             repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
         except Repository.DoesNotExist:
@@ -623,6 +646,9 @@ class IndexDeleteView(APIView):
 
     async def delete(self, request, repository_id):
         """Delete the index for the repository."""
+        denied = await _ensure_repo_admin(request, repository_id)
+        if denied is not None:
+            return denied
         try:
             repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
         except Repository.DoesNotExist:

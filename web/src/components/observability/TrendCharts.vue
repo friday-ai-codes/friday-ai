@@ -306,8 +306,8 @@ const gaugeEmpty = computed(() => (gaugeData.value ?? []).every(r => !r?.series?
     >
       <template #actions>
         <Select v-model="throughputDim">
-          <SelectTrigger class="h-8 w-[120px] rounded-lg bg-background/90" aria-label="吞吐分组维度">
-            <span class="icon-[lucide--layout-grid] mr-1.5 text-sm text-muted-foreground" />
+          <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90" aria-label="吞吐分组维度">
+            <span class="icon-[lucide--layout-grid] mr-1.5 text-base text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

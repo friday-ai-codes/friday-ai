@@ -107,3 +107,21 @@ class PermissionService:
         if user.is_superuser:
             return Project.objects.all()
         return Project.objects.filter(memberships__user=user).distinct()
+
+    @classmethod
+    def can_admin_repository(cls, user: User, repository_id: str) -> bool:
+        """仓库级管理权限：超管，或该仓库所关联任一空间的 admin。
+
+        用于仓库级管理操作（索引、建立知识、敏感信息、provider/插件/webhook 等）。
+        仓库可能关联多个空间——只要用户是其中任一空间的 admin 即放行。孤儿仓库
+        （未关联任何空间）仅超管可管理。
+        """
+        if not (user and getattr(user, "is_authenticated", False)):
+            return False
+        if user.is_superuser:
+            return True
+        return ProjectMembership.objects.filter(
+            user=user,
+            role=ProjectRole.ADMIN,
+            project__repositories__id=repository_id,
+        ).exists()

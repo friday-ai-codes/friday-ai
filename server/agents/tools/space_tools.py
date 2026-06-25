@@ -5,6 +5,7 @@ Provides tools for querying space data, repository information,
 and semantic code search via Qdrant vectors.
 """
 
+import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,6 +21,58 @@ logger = structlog.get_logger(__name__)
 # RAG-02 召回留痕采样上限：AI 对话链召回内容按 top-N 写 RetrievalTrace，
 # 避免每 chunk 一行撑爆留痕表（§A.4 基数控制 / T-72-04-04）。
 _RETRIEVAL_TRACE_SAMPLE_LIMIT = 10
+
+# 空间级检索：超过该阈值的已索引仓数量时，先用 L1 仓库路由（repo_summaries /
+# repo_index_nodes 纯向量，无 LLM）收敛到 Top-K 相关仓再深检索——避免对空间内
+# 全部仓库逐个 Qdrant 查询导致 turn 过长被客户端/网关超时中断（network error）。
+_SPACE_ROUTE_THRESHOLD = 8
+_SPACE_ROUTE_TOPK = 6
+# 路由不可用时的硬上限：兜底截断候选仓，绝不无界扇出。
+_SPACE_REPO_HARD_CAP = 20
+
+
+def _is_valid_uuid(value: str | None) -> bool:
+    """宽松校验 UUID：LLM 偶尔把非 UUID（如 "auto"）传进 space_id/repository_id，
+    直接喂给 ``aget(id=...)`` 会抛 ValidationError → 工具 500。先校验避免崩溃。"""
+    if not value:
+        return False
+    try:
+        _uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+async def _route_space_repos(query: str, repo_ids: list[str]) -> list[str]:
+    """空间级检索的 L1 仓库路由：把候选仓收敛到 Top-K 最相关仓（纯向量，无 LLM）。
+
+    复用 ``RepoRouterV2``（Stage-0，repo_index_nodes / repo_summaries 检索）。任何
+    失败都 fail-soft：退回"硬上限截断"的候选子集，绝不抛、绝不无界扇出。
+    """
+    routed: list[str] = []
+    try:
+        from codegraph.services.repo_router_v2 import RepoRouterV2
+
+        result = await RepoRouterV2.route(
+            query, repository_ids=repo_ids, top_k=_SPACE_ROUTE_TOPK, use_llm=False
+        )
+        candidate_set = {str(c.repo_id) for c in result.candidates}
+        routed = [rid for rid in repo_ids if rid in candidate_set]
+        logger.info(
+            "space_repo_routing",
+            category="sampling",
+            component="rag",
+            candidate_count=len(repo_ids),
+            routed_count=len(routed),
+            router_version=getattr(result, "router_version", ""),
+        )
+    except Exception as e:  # noqa: BLE001 — 路由失败不阻塞检索
+        logger.warning("space_repo_routing_failed", error=str(e))
+
+    if routed:
+        return routed[:_SPACE_ROUTE_TOPK]
+    # 路由无命中/失败：硬上限截断，bound 扇出（绝不对全空间逐仓查询）。
+    return repo_ids[:_SPACE_REPO_HARD_CAP]
 
 
 async def _filter_excluded_results(
@@ -86,6 +139,15 @@ async def list_space_repositories(space_id: str) -> ToolResult:
         ToolResult with list of repositories and their metadata
     """
     logger.info("list_space_repositories", space_id=space_id)
+
+    if not _is_valid_uuid(space_id):
+        return ToolResult(
+            success=True,
+            output={
+                "data": {"repositories": []},
+                "error": f"Invalid space_id (must be a UUID): {space_id!r}",
+            },
+        )
 
     try:
         # Async query for space
@@ -327,6 +389,17 @@ async def search_repository_code(
             error="At least one of repository_id or space_id is required",
         )
 
+    # 非 UUID 的 scope（LLM 误传 "auto" 等）直接判空，避免 ORM ValidationError → 500。
+    if repository_id and not _is_valid_uuid(repository_id):
+        repository_id = None
+    if space_id and not _is_valid_uuid(space_id):
+        space_id = None
+    if not repository_id and not space_id:
+        return ToolResult(
+            success=True,
+            output={"data": {"results": []}, "error": "Invalid repository_id/space_id (must be UUID)"},
+        )
+
     # Collect repository IDs to search.
     #
     # Contract per tool description: repository_id 与 space_id 二选一。当 LLM
@@ -371,6 +444,10 @@ async def search_repository_code(
             rid_str = str(rid)
             if rid_str not in repo_ids:
                 repo_ids.append(rid_str)
+
+        # L1 路由收敛：仓库过多时先选 Top-K 相关仓，避免全空间扇出导致超时。
+        if len(repo_ids) > _SPACE_ROUTE_THRESHOLD:
+            repo_ids = await _route_space_repos(query, repo_ids)
 
     if not repo_ids:
         return ToolResult(

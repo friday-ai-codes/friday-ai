@@ -54,6 +54,9 @@ catalogs:
     '@iconify/tailwind4':
       specifier: ^1.2.3
       version: 1.2.3
+    '@internationalized/date':
+      specifier: 3.10.1
+      version: 3.10.1
     '@playwright/test':
       specifier: ^1.60.0
       version: 1.60.0
@@ -372,6 +375,9 @@ importers:
       '@floating-ui/vue':
         specifier: 'catalog:'
         version: 1.1.11(vue@3.5.35(typescript@6.0.3))
+      '@internationalized/date':
+        specifier: 'catalog:'
+        version: 3.10.1
       '@shikijs/markdown-it':
         specifier: 'catalog:'
         version: 4.2.0

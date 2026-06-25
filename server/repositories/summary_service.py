@@ -384,6 +384,55 @@ def derive_summary_status(session_status: str) -> str | None:
     return _SESSION_STATUS_TO_SUMMARY.get(session_status)
 
 
+async def cancel_repo_summary(
+    repository_id: str, *, initiated_by_user_id: str | None = None
+) -> int:
+    """终止仓库"建立知识"任务：标记在途 REPO_SUMMARY session 为 cancelled 并回退状态。
+
+    建立知识在 Runner 容器内执行，无本地后台线程可中断；这里把权威真相侧（在途
+    session）标记 cancelled —— 容器回调有终态门禁（callbacks.py），cancelled 后即便
+    容器最终回调也不会把状态翻回。仓库 ``ai_summary_status`` 回退为 NOT_STARTED，
+    便于用户重新触发。
+
+    Args:
+        repository_id: 仓库 ID。
+        initiated_by_user_id: 触发终止的用户（system 行为传 None）。
+
+    Returns:
+        被标记 cancelled 的 session 数量。
+    """
+    log = logger.bind(
+        category="caller",
+        component="task_center",
+        repository_id=str(repository_id),
+        initiated_by_user_id=initiated_by_user_id or "system",
+    )
+    log.info("repo_summary_cancel_started")
+    sessions = [
+        s
+        async for s in SubAgentSession.objects.filter(
+            task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+            last_output__repository_id=str(repository_id),
+            status__in=[
+                SubAgentSession.Status.PENDING,
+                SubAgentSession.Status.RUNNING,
+            ],
+        )
+    ]
+    for session in sessions:
+        try:
+            await session.amark_cancelled()
+        except Exception:  # noqa: BLE001 — best-effort，单条失败不阻塞其余
+            log.warning("repo_summary_cancel_session_failed", session_id=session.session_id, exc_info=True)
+
+    await Repository.objects.filter(id=repository_id).aupdate(
+        ai_summary_status=AISummaryStatus.NOT_STARTED,
+        updated_at=timezone.now(),
+    )
+    log.info("repo_summary_cancel_completed", cancelled_count=len(sessions))
+    return len(sessions)
+
+
 async def aresolve_summary_status(repository: Repository) -> str:
     """从最新 REPO_SUMMARY session 派生权威 AI 描述状态，并自愈仓库缓存列。
 

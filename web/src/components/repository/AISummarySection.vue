@@ -143,7 +143,7 @@ async function generateSummary() {
   try {
     await repositoriesApi.generateSummary(props.repositoryId)
     status.value = 'pending'
-    toastSuccess(isRegenerate ? 'AI 描述与 PageIndex 索引重新生成任务已启动' : 'AI 描述与 PageIndex 索引生成任务已启动')
+    toastSuccess(isRegenerate ? '重新建立知识任务已启动' : '建立知识任务已启动')
     startPolling()
   }
   catch (e: unknown) {
@@ -194,7 +194,7 @@ onUnmounted(() => {
         </div>
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-foreground">
-            AI 描述与 PageIndex 索引
+            建立知识
           </h3>
           <p class="text-xs text-muted-foreground truncate">
             自动分析仓库结构，生成项目概览与可检索的能力树索引
@@ -248,10 +248,10 @@ onUnmounted(() => {
         <div class="flex flex-col items-center justify-center py-6 space-y-3">
           <span class="icon-[lucide--sparkles] text-2xl text-muted-foreground/40" />
           <p class="text-sm font-semibold text-foreground">
-            尚未生成 AI 描述与 PageIndex 索引
+            尚未建立知识
           </p>
           <p class="text-xs text-muted-foreground text-center max-w-sm">
-            新建仓库会自动触发生成；也可点击下方按钮手动触发，AI 将分析仓库结构并生成描述与能力树索引
+            新建仓库会自动触发建立知识；也可点击下方按钮手动触发，AI 将分析仓库结构并生成描述与能力树索引
           </p>
           <Button
             variant="default"
@@ -260,7 +260,7 @@ onUnmounted(() => {
             @click="generateSummary"
           >
             <span class="icon-[lucide--sparkles] mr-1.5" />
-            生成描述与索引
+            建立知识
           </Button>
         </div>
       </div>
@@ -319,7 +319,7 @@ onUnmounted(() => {
             :class="hasTree ? 'icon-[lucide--folder-tree] text-emerald-600 dark:text-emerald-400' : 'icon-[lucide--folder-tree] text-muted-foreground/60'"
           />
           <template v-if="hasTree">
-            <span class="text-xs font-medium text-foreground">PageIndex 能力树已生成</span>
+            <span class="text-xs font-medium text-foreground">知识能力树已生成</span>
             <Badge variant="secondary" class="text-[10px]">{{ treeNodeCount }} 个节点</Badge>
             <Badge v-if="isMonorepo" variant="secondary" class="text-[10px]">monorepo</Badge>
             <RouterLink
@@ -331,7 +331,7 @@ onUnmounted(() => {
           </template>
           <template v-else>
             <span class="text-xs text-muted-foreground">
-              本次结果未包含能力树索引（可能为旧版描述），点击「重新生成」可补建 PageIndex 索引
+              本次结果未包含能力树索引（可能为旧版描述），点击「重新生成」可补建知识能力树
             </span>
           </template>
         </div>

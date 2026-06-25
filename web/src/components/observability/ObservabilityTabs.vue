@@ -31,7 +31,7 @@ function isActive(to: string): boolean {
 
 <template>
   <nav
-    class="inline-flex items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground"
+    class="inline-flex items-center gap-1 overflow-x-auto rounded-md bg-muted p-1"
     aria-label="运维视图导航"
   >
     <RouterLink
@@ -42,7 +42,7 @@ function isActive(to: string): boolean {
       class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       :class="isActive(tab.to)
         ? 'bg-background text-foreground shadow-sm'
-        : 'hover:text-foreground'"
+        : 'text-foreground/70 hover:text-foreground'"
     >
       <span :class="tab.icon" class="text-base" />
       {{ tab.label }}

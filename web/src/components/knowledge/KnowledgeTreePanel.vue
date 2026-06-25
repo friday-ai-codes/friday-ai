@@ -544,12 +544,13 @@ function clearFacetFilters() {
 
       <!-- ============ 总览/域详情/分组：卡片 ============ -->
       <template v-else>
-        <!-- 业务域未建提示 -->
+        <!-- 当前分组方式提示（中性，不暗示为空：下方已按团队归属分组展示） -->
         <div
           v-if="currentView === 'domain' && levelKind === 'overview' && !treeData?.has_tree"
-          class="mb-3 rounded-md bg-amber-500/10 p-2.5 text-xs text-amber-600 dark:text-amber-300"
+          class="mb-3 flex items-center gap-1.5 rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground"
         >
-          尚未构建业务域树，当前按团队归属兜底分组。可点击「重建域树」由 AI 聚类生成。
+          <span class="icon-[lucide--info] shrink-0 text-sm" />
+          当前按团队归属分组展示。如需由 AI 聚类生成业务域树，可点击「重建域树」。
         </div>
 
         <!-- 域卡片网格（域总览 + 子域） -->

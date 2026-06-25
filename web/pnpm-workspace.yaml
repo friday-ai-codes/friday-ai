@@ -26,6 +26,7 @@ catalogs:
     '@iconify-json/mdi': ^1.2.3
     '@iconify/json': ^2.2.485
     '@iconify/tailwind4': ^1.2.3
+    '@internationalized/date': 3.10.1
     '@playwright/test': ^1.60.0
     '@shikijs/markdown-it': ^4.2.0
     '@sigma/edge-curve': ^3.1.0

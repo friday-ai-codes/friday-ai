@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from permissions.models import ProjectMembership
 from repositories.models import GitCredential, Repository
 
 from .models import Project, ProjectRepository, RepositoryPermission
@@ -56,10 +57,11 @@ class SpaceSerializer(serializers.ModelSerializer):
     """Serializer for Space (Project) model."""
 
     has_feishu_config = serializers.SerializerMethodField()
-    webhook_token = serializers.CharField(source="feishu_webhook_token", read_only=True)
+    webhook_token = serializers.SerializerMethodField()
     repositories = serializers.SerializerMethodField()
     execution_count = serializers.SerializerMethodField()
     recent_work_items = serializers.SerializerMethodField()
+    admins = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -73,6 +75,7 @@ class SpaceSerializer(serializers.ModelSerializer):
             "repositories",
             "execution_count",
             "recent_work_items",
+            "admins",
             "created_at",
             "updated_at",
         ]
@@ -80,6 +83,46 @@ class SpaceSerializer(serializers.ModelSerializer):
 
     def get_has_feishu_config(self, obj):
         return obj.has_feishu_config()
+
+    def get_webhook_token(self, obj):
+        """Webhook Token 属配置敏感项，仅空间管理员/系统管理员可见（#12）。
+
+        空间 ``key``（feishu_project_key）对所有成员可见，但 webhook token 仅管理员可见。
+        无 request 上下文（如创建响应直出）时不暴露。
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            return None
+        if getattr(user, "is_superuser", False):
+            return obj.feishu_webhook_token
+        admins = getattr(obj, "admin_memberships", None)
+        if admins is not None:
+            is_admin = any(str(m.user_id) == str(user.id) for m in admins)
+        else:
+            is_admin = ProjectMembership.objects.filter(
+                user=user, project=obj, role="admin"
+            ).exists()
+        return obj.feishu_webhook_token if is_admin else None
+
+    def get_admins(self, obj):
+        """空间管理员列表（role=admin 成员），便于前端展示"找谁"。
+
+        优先用 ViewSet 预取的 ``admin_memberships``（to_attr），避免 N+1。
+        """
+        memberships = getattr(obj, "admin_memberships", None)
+        if memberships is None:
+            memberships = list(
+                obj.memberships.filter(role="admin").select_related("user")
+            )
+        return [
+            {
+                "id": str(m.user.id),
+                "username": m.user.username,
+                "display_name": getattr(m.user, "display_name", "") or m.user.username,
+            }
+            for m in memberships
+        ]
 
     def get_repositories(self, obj):
         """Return only non-deleted repositories (already filtered via Prefetch in ViewSet)."""

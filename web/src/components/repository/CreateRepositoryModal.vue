@@ -61,7 +61,7 @@ const hasCredentialInput = computed(
   () => Boolean(form.access_token.trim()) || Boolean(form.git_instance_credential_id),
 )
 
-// 关联空间（必选，至少一个）
+// 关联空间（可选，可后期再绑定）
 const spaceIds = ref<string[]>([])
 
 // 表单验证
@@ -100,9 +100,7 @@ function validate(): boolean {
   else if (!form.default_branch) {
     errors.default_branch = '请选择默认分支'
   }
-  if (spaceIds.value.length === 0) {
-    errors.spaces = '请至少关联一个空间'
-  }
+  // #9：空间为可选——允许先建仓、之后再绑定空间
 
   return !errors.name && !errors.git_url && !errors.access_token
     && !errors.default_branch && !errors.spaces
@@ -178,7 +176,7 @@ async function handleSubmit() {
       space_ids: spaceIds.value,
       remote_head_branch: testResult.value?.head_branch ?? undefined,
     })
-    success('创建成功', '仓库已创建，正在自动生成 AI 描述与 PageIndex 索引')
+    success('创建成功', '仓库已创建，正在自动建立知识')
     emit('confirm', repository.id)
   }
   catch (e: unknown) {
@@ -466,11 +464,11 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
         </p>
       </div>
 
-      <!-- 关联空间（必选） -->
+      <!-- 关联空间（可选，可后期再绑定） -->
       <div class="space-y-2">
         <Label class="flex items-center gap-1 text-foreground">
           关联空间
-          <span class="text-destructive">*</span>
+          <span class="text-xs font-normal text-muted-foreground">（可选）</span>
         </Label>
         <SpaceMultiSelect v-model="spaceIds" />
         <p v-if="errors.spaces" class="text-sm text-destructive flex items-center gap-1">
@@ -478,7 +476,7 @@ const selectedPlatform = computed(() => platforms.find(p => p.value === form.git
           {{ errors.spaces }}
         </p>
         <p v-else class="text-xs text-muted-foreground">
-          所有仓库都必须至少关联一个空间，关联后可在空间内统一管理与协作
+          可暂不关联空间，先创建仓库；之后在仓库详情里随时绑定到空间
         </p>
       </div>
 

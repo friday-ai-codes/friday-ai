@@ -48,6 +48,28 @@ export interface ContextExceededPayload {
   recommended_actions: Array<{ id: string, label: string, action_type: string, target: string }>
 }
 
+/**
+ * 把底层流式异常映射为对用户更友好的中文提示。
+ *
+ * 常见根因：复杂问题触发长链工具/分析（含上游 LLM 调用），整轮耗时超过浏览器/
+ * 网关空闲超时 → 连接被中断，fetch 抛 "Failed to fetch"（即用户看到的 network
+ * error）。此时后端可能仍在跑（已切 runtime 轮询兜底）；给出可操作的提示。
+ */
+function friendlyStreamError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e ?? '')
+  const lower = raw.toLowerCase()
+  if (
+    lower.includes('failed to fetch')
+    || lower.includes('network')
+    || lower.includes('networkerror')
+    || lower.includes('load failed')
+    || lower.includes('connection')
+  ) {
+    return '连接中断：本轮分析较长导致请求超时或网络中断。可点击重试；若问题涉及很多仓库，建议在提问中指定具体仓库以加快检索。'
+  }
+  return raw || '发送消息失败'
+}
+
 export const useChatStore = defineStore('chat', () => {
   const { requestAndEnableWebPush, webPushReady } = useWebPush()
 
@@ -1995,7 +2017,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         // 错误仅在用户仍在发起会话时写当前 UI，避免把 A 的错误显示到 B。
         if (ownerConversationId === currentConversationId.value)
-          error.value = e instanceof Error ? e.message : '发送消息失败'
+          error.value = friendlyStreamError(e)
       }
     }
     finally {

@@ -93,7 +93,6 @@ const mainNavItems: NavItem[] = [
   { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
   { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
   { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
-  { to: '/tasks', label: '任务中心', icon: 'lucide--list-checks' },
   { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
   { to: '/logs', label: '日志', icon: 'lucide--file-text' },
   { to: '/specs', label: 'SDD', icon: 'lucide--scroll-text' },
@@ -102,6 +101,7 @@ const mainNavItems: NavItem[] = [
 
 const adminNavItems: NavItem[] = [
   { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
+  { to: '/tasks', label: '任务中心', icon: 'lucide--list-checks' },
   { to: '/admin/observability', label: '运维监控', icon: 'lucide--activity' },
   { to: '/runners', label: 'Runner', icon: 'lucide--server' },
   { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },

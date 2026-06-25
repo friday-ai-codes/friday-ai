@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { DateRangePicker } from '~/components/ui/date-range-picker'
 import {
   Select,
   SelectContent,
@@ -8,7 +9,7 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 
-const _props = defineProps<{
+const props = defineProps<{
   modelValue: { from: string, to: string }
 }>()
 
@@ -21,10 +22,6 @@ type PresetOption = '7' | '30' | 'custom'
 // 计算当前选中的预设
 const selectedPreset = ref<PresetOption>('7')
 
-// 自定义日期输入
-const customFrom = ref('')
-const customTo = ref('')
-
 const presetOptions = [
   { value: '7', label: '近 7 天' },
   { value: '30', label: '近 30 天' },
@@ -32,6 +29,9 @@ const presetOptions = [
 ] as const
 
 const showCustomInputs = computed(() => selectedPreset.value === 'custom')
+
+// DateRangePicker 用 { start, end }，本组件对外为 { from, to }，两侧做映射。
+const customRange = computed(() => ({ start: props.modelValue.from, end: props.modelValue.to }))
 
 function getDateString(daysAgo: number): string {
   const d = new Date()
@@ -52,13 +52,8 @@ function onPresetChange(value: string | number | bigint | Record<string, any> | 
   }
 }
 
-function onCustomDateChange() {
-  if (customFrom.value && customTo.value) {
-    emit('update:modelValue', {
-      from: customFrom.value,
-      to: customTo.value,
-    })
-  }
+function onCustomRangeChange(value: { start: string, end: string }) {
+  emit('update:modelValue', { from: value.start, to: value.end })
 }
 </script>
 
@@ -66,7 +61,7 @@ function onCustomDateChange() {
   <div class="flex flex-wrap items-center gap-2.5">
     <Select :model-value="selectedPreset" @update:model-value="onPresetChange">
       <SelectTrigger class="h-9 w-[140px] rounded-lg bg-background/90">
-        <span class="icon-[lucide--calendar-days] mr-1.5 text-sm text-muted-foreground" />
+        <span class="icon-[lucide--calendar-days] mr-1.5 text-base text-muted-foreground" />
         <SelectValue placeholder="时间范围" />
       </SelectTrigger>
       <SelectContent>
@@ -76,21 +71,12 @@ function onCustomDateChange() {
       </SelectContent>
     </Select>
 
-    <template v-if="showCustomInputs">
-      <input
-        v-model="customFrom"
-        type="date"
-        class="h-9 rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        @change="onCustomDateChange"
-      >
-      <span class="text-muted-foreground text-sm">至</span>
-      <input
-        v-model="customTo"
-        type="date"
-        class="h-9 rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        @change="onCustomDateChange"
-      >
-    </template>
+    <DateRangePicker
+      v-if="showCustomInputs"
+      :model-value="customRange"
+      align="start"
+      @update:model-value="onCustomRangeChange"
+    />
 
     <!-- : Analytics 工具栏右侧扩展插槽（放分组维度 Selector 等） -->
     <slot name="right" />
