@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -187,6 +188,54 @@ async def test_full_index_skips_excluded_files(repository) -> None:
     assert "secrets/leak.py" not in indexed
     assert "app.private.js" not in indexed
     assert ".env" not in indexed
+
+
+@_db
+async def test_full_index_auto_excludes_large_files_before_parse(repository) -> None:
+    """run_full_index：超过 2MB 的文件在 parser 前跳过，并自动落排除规则。"""
+    from repositories.models import RepoExclusionRule
+    from services.exclusion import invalidate_matcher_cache
+    from services.indexer import MAX_PARSE_FILE_BYTES, IndexerService
+
+    invalidate_matcher_cache(str(repository.id))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "app.py"), "w") as f:
+            f.write("def main():\n    return 1\n")
+        with open(os.path.join(tmp, "huge.json"), "w") as f:
+            f.write('{"payload":"')
+            f.write("x" * (MAX_PARSE_FILE_BYTES + 1))
+            f.write('"}\n')
+
+        indexer = IndexerService(str(repository.id))
+
+        def _parse(full: str, base_path: str, repository_id: str = ""):
+            rel = os.path.relpath(full, base_path).replace(os.sep, "/")
+            assert rel != "huge.json"
+            return _mk_chunk(rel), None
+
+        with patch.object(indexer.parser, "parse_file_dual", side_effect=_parse) as parse_mock:
+            result = await indexer.run_full_index(tmp)
+
+        parsed = {
+            os.path.relpath(call.args[0], tmp).replace(os.sep, "/")
+            for call in parse_mock.call_args_list
+        }
+
+    assert result["status"] == "success"
+    assert parsed == {"app.py"}
+    indexed = await _indexed_paths(str(repository.id))
+    assert "app.py" in indexed
+    assert "huge.json" not in indexed
+
+    rule = await RepoExclusionRule.objects.filter(
+        repository=repository,
+        rule_type=RepoExclusionRule.RuleType.REGEX,
+        pattern=re.escape("huge.json"),
+        source=RepoExclusionRule.Source.AI_SUGGESTED,
+    ).afirst()
+    assert rule is not None
+    assert rule.enabled is True
 
 
 @_db
