@@ -44,6 +44,24 @@ from .serializers import (
 logger = structlog.get_logger(__name__)
 
 
+# FSPROJ-02：识别"项目跟踪"看板事件的工作项类型 key（拖到节点/状态触发幂等建项目）。
+# 飞书"项目跟踪"看板的真实 work_item_type_key 需经真实飞书 payload 校验（live UAT）；
+# 默认仅识别 "project"，与既有 story/issue 等事件物理隔离 → 不误触发既有工作流（零回归）。
+PROJECT_TRACKING_WORK_ITEM_TYPE_KEYS: frozenset[str] = frozenset({"project"})
+
+
+def is_project_tracking_event(payload: dict[str, Any]) -> bool:
+    """判定一条飞书事件是否为"项目跟踪"看板事件（据 work_item_type_key 命中）。
+
+    默认仅识别 ``PROJECT_TRACKING_WORK_ITEM_TYPE_KEYS``；其余类型（story/issue/...）一律
+    False，绝不把普通工作项事件误当看板触发（零回归命门，FSPROJ-02）。
+    """
+    if not isinstance(payload, dict):
+        return False
+    type_key = payload.get("work_item_type_key", "")
+    return bool(type_key) and type_key in PROJECT_TRACKING_WORK_ITEM_TYPE_KEYS
+
+
 def _mask_identifier(value: str | None, prefix: int = 6) -> str:
     """Mask identifiers for debug logs without leaking full values."""
     if not value:
@@ -1013,6 +1031,9 @@ class FeishuWebhookView(APIView):
 
         await self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
 
+        # FSPROJ-02：项目跟踪拖到指定状态 → 幂等建项目（gated，best-effort）
+        await self._maybe_schedule_project_board_sync(project, payload)
+
         await self._check_and_resume_suspended_workflows(
             project=project,
             work_item_id=str(work_item_id),
@@ -1035,6 +1056,66 @@ class FeishuWebhookView(APIView):
         # 避免占位类型分裂实体，违背 INV-1，CR-01）。
         self._schedule_delivery_upsert(project, work_item_id, payload.get("work_item_type_key", ""))
 
+    async def _maybe_schedule_project_board_sync(self, project, payload) -> None:
+        """FSPROJ-02：识别"项目跟踪"看板事件 → 后台幂等建项目 + 拉人 + 组合子项。
+
+        仅当 ``is_project_tracking_event``（work_item_type_key 命中看板类型）才触发——普通
+        工作项事件一律跳过（零回归）。后台经 ``ProjectBoardSyncService.sync_from_board``
+        （同源入口，幂等：重复事件不重复建、只补齐成员/链接）；解析触发飞书人对应 Friday 用户
+        作 ``initiated_by_user_id``（未映射 ``system``），并在 worker 入口 re-bind（观测规范）。
+        只投三元组标量，绝不把原始 payload 再次落库（入口 ``record_inbound_webhook`` 已脱敏）。
+        best-effort，绝不阻断既有 webhook 主流程。
+        """
+        if project is None or not is_project_tracking_event(payload):
+            return
+
+        work_item_id = payload.get("id")
+        work_item_type = payload.get("work_item_type_key", "")
+        if not work_item_id or not work_item_type:
+            logger.warning(
+                "project_board_sync_skip_incomplete_identity",
+                work_item_id=work_item_id,
+                work_item_type=work_item_type,
+            )
+            return
+
+        try:
+            board_work_item_id = int(work_item_id)
+        except (TypeError, ValueError):
+            logger.warning("project_board_sync_skip_invalid_id", work_item_id=work_item_id)
+            return
+
+        # 解析触发飞书人 → initiated_by_user_id（未映射 system）
+        initiated_by = "system"
+        operator = str(payload.get("operator_id") or payload.get("user_id") or "")
+        if operator:
+            from feishu.services.identity import resolve_feishu_user
+
+            user = await resolve_feishu_user(open_id=operator) or await resolve_feishu_user(
+                feishu_user_key=operator
+            )
+            if user is not None:
+                initiated_by = str(user.id)
+
+        name = payload.get("name") or f"项目-{board_work_item_id}"
+
+        from initiatives.services import ProjectBoardSyncService
+        from services.background_runner import run_in_background
+
+        feishu_project_key = project.feishu_project_key
+        run_in_background(
+            lambda: ProjectBoardSyncService().sync_from_board(
+                space=project,
+                feishu_project_key=feishu_project_key,
+                board_work_item_id=board_work_item_id,
+                board_work_item_type=work_item_type,
+                name=name,
+                initiated_by_user_id=initiated_by,
+            ),
+            name=f"project-board-sync:{feishu_project_key}:{board_work_item_id}",
+            initiated_by_user_id=initiated_by,  # CTX-02：worker 入口 re-bind
+        )
+
     async def _handle_workflow_node_status(self, project, payload, trigger_log):
         """处理工作项节点流转事件。"""
         work_item_id = payload.get("id")
@@ -1046,6 +1127,9 @@ class FeishuWebhookView(APIView):
         logger.info(
             "workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type
         )
+
+        # FSPROJ-02：项目跟踪拖到指定节点 → 幂等建项目（gated，best-effort）
+        await self._maybe_schedule_project_board_sync(project, payload)
 
     def _schedule_comment_append(self, project, payload) -> None:
         """后台 append 评论事件（CMT-01，append-only 事件流，与 approval/knowledge 并存）。
