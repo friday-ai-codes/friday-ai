@@ -87,29 +87,47 @@ class ProjectListCreateView(APIView):
     """项目列表（GET，按可见性过滤）+ 创建（POST，幂等）。"""
 
     async def get(self, request):
-        """列出对当前用户可见的项目（Space 成员可见 + 项目成员可见）。"""
+        """列出对当前用户可见的项目（Space 成员可见 + 项目成员可见）。
+
+        可选筛选 query 参数（additive，缺省 = 现状）：``space_id`` / ``status`` /
+        ``member``(user_id) / ``q``(名称/描述关键词)。
+        """
         user = request.user
-        projects = await self._list_visible(user)
+        filters = {
+            "space_id": request.query_params.get("space_id") or "",
+            "status": request.query_params.get("status") or "",
+            "member": request.query_params.get("member") or "",
+            "q": (request.query_params.get("q") or "").strip(),
+        }
+        projects = await self._list_visible(user, filters)
         data = await sync_to_async(
             lambda: ProjectSerializer(projects, many=True).data
         )()
         return Response(data)
 
     @sync_to_async
-    def _list_visible(self, user) -> list[Project]:
+    def _list_visible(self, user, filters: dict[str, str]) -> list[Project]:
+        from django.db.models import Q
+
         qs = Project.objects.select_related("space").prefetch_related("members")
         if not user.is_authenticated:
             return []
-        if user.is_superuser:
-            return list(qs)
-        # Space 成员可见 OR 项目成员可见
-        from django.db.models import Q
-
-        return list(
-            qs.filter(
+        if not user.is_superuser:
+            # Space 成员可见 OR 项目成员可见
+            qs = qs.filter(
                 Q(space__memberships__user=user) | Q(members__user=user)
-            ).distinct()
-        )
+            )
+        # 可选筛选（additive）。
+        if filters.get("space_id"):
+            qs = qs.filter(space_id=filters["space_id"])
+        if filters.get("status"):
+            qs = qs.filter(status=filters["status"])
+        if filters.get("member"):
+            qs = qs.filter(members__user_id=filters["member"])
+        if filters.get("q"):
+            q = filters["q"]
+            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+        return list(qs.distinct())
 
     async def post(self, request):
         """创建项目（PROJ-05）。需所属 Space admin+ 权限；(space, feishu_project_key) 幂等。"""
@@ -874,3 +892,113 @@ class ProjectMergeRequestListView(APIView):
         )()
         data = await sync_to_async(lambda: MergeRequestSerializer(mrs, many=True).data)()
         return Response(data)
+
+
+# ============================ Cursor rules 模板（CURSOR-02）============================
+
+
+class ProjectCursorRulesView(APIView):
+    """项目专属 Cursor rules 模板（GET，CURSOR-02；读权限）。
+
+    返回 ``{filename, content}``，前端「概览」Tab 提供复制/下载。
+    """
+
+    async def get(self, request, project_id):
+        project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.services.cursor_rules import (
+            build_project_cursor_rules,
+            cursor_rules_filename,
+        )
+
+        content = await sync_to_async(build_project_cursor_rules)(project)
+        filename = cursor_rules_filename(project)
+        return Response({"filename": filename, "content": content})
+
+
+# ============================ 项目工作项组合（COMPOSE-01/02）============================
+
+
+def _serialize_work_item_links(project_id) -> list[dict]:
+    """项目关联工作项摘要列表（经 link 派生）。"""
+    from initiatives.models import ProjectWorkItemLink
+
+    rows = (
+        ProjectWorkItemLink.objects.filter(project_id=project_id)
+        .select_related("work_item")
+        .order_by("-created_at")
+    )
+    out: list[dict] = []
+    for link in rows:
+        wi = link.work_item
+        out.append(
+            {
+                "id": str(wi.id),
+                "feishu_work_item_id": wi.work_item_id,
+                "work_item_type": wi.work_item_type,
+                "title": wi.title,
+                "feishu_project_key": wi.feishu_project_key,
+                "provenance": link.provenance,
+                "attached_at": link.created_at,
+            }
+        )
+    return out
+
+
+class ProjectWorkItemListView(APIView):
+    """项目工作项列表（GET）+ 手动并入（POST，COMPOSE-01）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        data = await sync_to_async(_serialize_work_item_links)(project_id)
+        return Response(data)
+
+    async def post(self, request, project_id):
+        from initiatives.serializers import ProjectWorkItemAttachSerializer
+
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectWorkItemAttachSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+
+        from delivery.models import WorkItem
+
+        work_item = await WorkItem.objects.filter(
+            pk=serializer.validated_data["work_item_id"]
+        ).afirst()
+        if work_item is None:
+            return Response({"detail": "工作项不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        _link, created = await ProjectService().attach_work_item(
+            project_id=project_id,
+            work_item=work_item,
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+        )
+        if not created:
+            return Response(
+                {"detail": "该工作项已并入项目"}, status=status.HTTP_409_CONFLICT
+            )
+        return Response({"attached": True}, status=status.HTTP_201_CREATED)
+
+
+class ProjectWorkItemDetailView(APIView):
+    """从项目移除工作项（DELETE，COMPOSE-01）。"""
+
+    async def delete(self, request, project_id, work_item_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        removed = await ProjectService().detach_work_item(
+            project_id=project_id,
+            work_item_id=work_item_id,
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+        )
+        if not removed:
+            return Response({"detail": "工作项未关联此项目"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)

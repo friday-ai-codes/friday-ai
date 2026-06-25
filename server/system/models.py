@@ -69,6 +69,12 @@ class SettingKeys:
     # 未配置时入站 MR webhook 端点 fail-closed 拒绝（绝不放行未签名 payload）。
     GIT_WEBHOOK_SECRET = "git_webhook_secret"
 
+    # Cursor 沉淀上报写回质量门槛（CURSOR-03，v0.15.0 Phase 81）：
+    # value 为 JSON：{min_length:int, min_distinct_words:int, max_dup_ratio:float}，
+    # 用于过滤 Cursor 上报的低信息量/过短/与既有记忆高度重复内容（防噪音污染共享记忆）。
+    # 未配置时用 services.cursor_writeback 的合理默认值。
+    CURSOR_WRITEBACK_CONFIG = "cursor_writeback_config"
+
     # Budget Control
     MAX_BUDGET_USD = "max_budget_usd"
 

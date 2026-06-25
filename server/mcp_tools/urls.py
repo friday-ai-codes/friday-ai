@@ -21,6 +21,8 @@ from .views import (
     GrepRepositoryView,
     ImproveCodingPlanView,
     ListRepositoryFilesView,
+    LookupProjectByBranchView,
+    ReportProjectKnowledgeView,
     ReverseLookupView,
     RouteRepositoriesView,
     SearchDeliveryKnowledgeView,
@@ -65,5 +67,16 @@ urlpatterns = [
         "tools/get_related_entities/",
         GetRelatedEntitiesView.as_view(),
         name="mcp-tool-get-related-entities",
+    ),
+    # Cursor 回流（CURSOR-01/03）
+    path(
+        "tools/lookup_project_by_branch/",
+        LookupProjectByBranchView.as_view(),
+        name="mcp-tool-lookup-project-by-branch",
+    ),
+    path(
+        "tools/report_project_knowledge/",
+        ReportProjectKnowledgeView.as_view(),
+        name="mcp-tool-report-project-knowledge",
     ),
 ]
