@@ -35,3 +35,17 @@ def test_purge_actions_promoted_into_all():
     """Phase 54：purge.started/completed 提升为具名常量纳入 ALL_ACTIONS，RESERVED 清空。"""
     assert {"purge.started", "purge.completed"} <= ALL_ACTIONS
     assert RESERVED_ACTIONS == frozenset()
+
+
+def test_phase79_artifact_actions_in_all():
+    """Phase 79：工件/类型/知识关联 action 纳入 ALL_ACTIONS。"""
+    expected = {
+        "artifact_type.created",
+        "artifact_type.updated",
+        "artifact_type.deleted",
+        "artifact.created",
+        "artifact.updated",
+        "artifact.deleted",
+        "project.knowledge_linked",
+    }
+    assert expected <= ALL_ACTIONS, f"Phase 79 action 缺失：{expected - ALL_ACTIONS}"
