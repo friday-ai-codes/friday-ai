@@ -1,5 +1,24 @@
 # Milestones
 
+## v0.15.0 项目（交付上下文聚合根） (Shipped: 2026-06-26)
+
+**Phases completed:** 6 phases (76–81), 38/38 v1 需求；里程碑审计 **passed**（integration_ok，无真实 gap）
+
+**Key accomplishments:**
+
+- **命名腾挪 Project→Space（Phase 76）**：后端领域模型 `projects.Project`→`Space` 全栈一致重命名，11 个元数据级 rename 迁移（零 DeleteModel/CreateModel）数据零丢失、6266 测试零新增回归，腾出 `Project` 名给新聚合根。
+- **项目聚合根 + 身份映射 + 成员（Phase 77）**：新 `initiatives` app —— `Project` 聚合根（隶属 Space + 飞书看板 + 状态机）+ `ProjectService`(INV-6) + `ProjectMember`(身份角色/主R 可转移) + 飞书人员↔Friday 用户映射 `resolve_feishu_user` + 权限 fail-closed + WS 实时推送 + 最小创建前端。
+- **飞书触发建项目 + 工作项组合（Phase 78）**：飞书"项目跟踪"看板枚举（无整板 API → 子项字段派生 fail-soft 降级）+ 事件幂等建项目拉人带身份 + `create_project` 工作流节点 + `ProjectWorkItemLink`（story/缺陷统一复用 `delivery.WorkItem`）。
+- **工件 + RAG + 知识关联（Phase 79）**：`ArtifactType` 可配置注册表（内置 8 类 seed + 增删禁用/双删保护）+ `Artifact` 多载体实例 + 在线查看 API + 文字载体全文进 `delivery_knowledge`/UI 稿仅元数据 + 项目纳入知识图谱经 `KnowledgeEdge` 统一 KLINK 关联可查询。
+- **项目记忆 + MR 实体 + 召回接入会话（Phase 80）**：项目记忆（自由文本 + 修订可追溯 + 成员限定 + LLM 提议草稿人工确认，`call_source=memory_distill`）+ `MergeRequest` 实体 + 受保护 git webhook（HMAC/token fail-closed + 脱敏 + 幂等）+ context packer（grep+RAG + token 预算降级 + fail-closed + RetrievalTrace）+ 接入 chat runner 工具白名单。
+- **Cursor 回流 + 前端工作台（Phase 81）**：MCP `lookup_project_by_branch`（分支反查召回，补齐 MCP 链 RetrievalTrace）+ `report_project_knowledge`（归因+脱敏+质量门槛→memory draft）+ Cursor rules 模板 + 完整项目工作台前端（列表筛选/创建 + 6 Tab 详情 + 记忆草稿确认 + 工件类型管理页，全量 zh-CN）。
+
+**质量基线：** 后端 6266→6421 passed，逐 Phase 零新增回归（文档化 baseline = 38 既有失败 + 1 已知 flaky cross-suite ordering）；前端 vue-tsc 绿、1109 passed；`makemigrations --check` 全程干净。
+
+**已知 deferred（真实环境人工验收，非 gap）：** 真实飞书看板枚举/doc 在线查看、真实 Cursor MCP 端到端、真实 GitHub/GitLab webhook 投递、真实 LLM 蒸馏质量、飞书 bitable 列解析（v2 PROJX）。
+
+---
+
 ## v0.14.0 可观测性与日志治理 (Shipped: 2026-06-24)
 
 **Phases completed:** 5 phases (71–75), 20 plans, 34/34 v1 需求
