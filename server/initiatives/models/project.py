@@ -86,6 +86,15 @@ class Project(models.Model):
         blank=True,
     )
 
+    # 项目↔WorkItem 组合（through ProjectWorkItemLink）。story/缺陷统一复用
+    # delivery.WorkItem（COMPOSE-01/02），经关系边挂入，attach/detach 走 ProjectService（INV-6）。
+    work_items = models.ManyToManyField(
+        "delivery.WorkItem",
+        through="initiatives.ProjectWorkItemLink",
+        related_name="projects",
+        blank=True,
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

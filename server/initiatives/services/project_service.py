@@ -23,7 +23,14 @@ from django.db import transaction
 
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
-from initiatives.models import Project, ProjectMember, ProjectRole, ProjectStatus
+from initiatives.models import (
+    LinkProvenance,
+    Project,
+    ProjectMember,
+    ProjectRole,
+    ProjectStatus,
+    ProjectWorkItemLink,
+)
 from initiatives.services.realtime import apush_project_event
 
 logger = structlog.get_logger(__name__)
@@ -518,3 +525,132 @@ class ProjectService:
             new_member.role = ProjectRole.OWNER
             new_member.save(update_fields=["role", "updated_at"])
         return new_member, old_owner_id, True
+
+    # ---- 工作项组合（COMPOSE-01/02） ----
+
+    async def attach_work_item(
+        self,
+        *,
+        project_id: Any,
+        work_item: Any,
+        provenance: str = LinkProvenance.MANUAL,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> tuple[ProjectWorkItemLink, bool]:
+        """把一个 WorkItem 经关系边挂入项目（COMPOSE-01/02，get_or_create 幂等）。
+
+        story 与缺陷统一复用 ``delivery.WorkItem``（按 ``work_item_type`` 区分），不重复建模。
+        重复并入只返回既有 link（``created=False``，不重复审计/推送）——board_derived 自动并入
+        与 manual 手动并入共用此入口，幂等去重靠 ``unique_together(project, work_item)``。
+
+        Args:
+            project_id: 目标项目 id。
+            work_item: ``delivery.WorkItem`` 实例（已由 ``WorkItemService`` 落库，INV-6）。
+            provenance: 来源（board_derived / manual）。
+            actor / initiated_by_user_id: 审计绑定。
+
+        Returns:
+            ``(link, created)``。
+        """
+        link, created = await self._attach_work_item_locked(
+            project_id, work_item, provenance
+        )
+        if created:
+            actor_id = initiated_by_user_id or getattr(actor, "id", None)
+            await AuditService.aemit(
+                action=taxonomy.ACTION_PROJECT_WORK_ITEM_ATTACHED,
+                actor=actor,
+                target_type="project_work_item_link",
+                target_id=link.id,
+                target_repr=f"{getattr(work_item, 'id', work_item)} @ {project_id}",
+                after={
+                    "project_id": str(project_id),
+                    "work_item_id": str(getattr(work_item, "id", work_item)),
+                    "work_item_type": getattr(work_item, "work_item_type", ""),
+                    "provenance": provenance,
+                },
+                metadata={
+                    "component": _COMPONENT,
+                    "category": "caller",
+                    "initiated_by_user_id": str(actor_id) if actor_id else "system",
+                },
+                source="api",
+            )
+            await apush_project_event(
+                project_id,
+                "work_item_attached",
+                {
+                    "work_item_id": str(getattr(work_item, "id", work_item)),
+                    "provenance": provenance,
+                },
+            )
+        return link, created
+
+    @sync_to_async
+    def _attach_work_item_locked(
+        self, project_id: Any, work_item: Any, provenance: str
+    ) -> tuple[ProjectWorkItemLink, bool]:
+        with transaction.atomic():
+            return ProjectWorkItemLink.objects.get_or_create(
+                project_id=project_id,
+                work_item=work_item,
+                defaults={"provenance": provenance},
+            )
+
+    async def detach_work_item(
+        self,
+        *,
+        project_id: Any,
+        work_item_id: Any,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> bool:
+        """从项目移除一个 WorkItem 组合关系（COMPOSE-01 手动移除）。
+
+        link 不存在时返回 ``False`` 不抛（幂等移除）。
+
+        Returns:
+            ``True`` 表示移除了一条 link，``False`` 表示原本未关联。
+        """
+        snapshot = await self._detach_work_item_locked(project_id, work_item_id)
+        if snapshot is None:
+            return False
+        actor_id = initiated_by_user_id or getattr(actor, "id", None)
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_WORK_ITEM_DETACHED,
+            actor=actor,
+            target_type="project_work_item_link",
+            target_id=snapshot["link_id"],
+            target_repr=f"{work_item_id} @ {project_id}",
+            before={
+                "project_id": str(project_id),
+                "work_item_id": str(work_item_id),
+                "provenance": snapshot["provenance"],
+            },
+            metadata={
+                "component": _COMPONENT,
+                "category": "caller",
+                "initiated_by_user_id": str(actor_id) if actor_id else "system",
+            },
+            source="api",
+        )
+        await apush_project_event(
+            project_id, "work_item_detached", {"work_item_id": str(work_item_id)}
+        )
+        return True
+
+    @sync_to_async
+    def _detach_work_item_locked(
+        self, project_id: Any, work_item_id: Any
+    ) -> dict[str, Any] | None:
+        with transaction.atomic():
+            link = (
+                ProjectWorkItemLink.objects.select_for_update()
+                .filter(project_id=project_id, work_item_id=work_item_id)
+                .first()
+            )
+            if link is None:
+                return None
+            snapshot = {"link_id": link.id, "provenance": link.provenance}
+            link.delete()
+        return snapshot
