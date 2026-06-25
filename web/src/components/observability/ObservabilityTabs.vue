@@ -31,7 +31,7 @@ function isActive(to: string): boolean {
 
 <template>
   <nav
-    class="flex items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-background/60 p-1"
+    class="inline-flex items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground"
     aria-label="运维视图导航"
   >
     <RouterLink
@@ -39,10 +39,10 @@ function isActive(to: string): boolean {
       :key="tab.to"
       :to="tab.to"
       :aria-current="isActive(tab.to) ? 'page' : undefined"
-      class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       :class="isActive(tab.to)
-        ? 'bg-primary/10 text-primary'
-        : 'text-muted-foreground hover:bg-muted/60'"
+        ? 'bg-background text-foreground shadow-sm'
+        : 'hover:text-foreground'"
     >
       <span :class="tab.icon" class="text-base" />
       {{ tab.label }}

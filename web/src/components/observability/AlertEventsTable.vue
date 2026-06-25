@@ -285,7 +285,7 @@ function onRowClick(e: AlertEventRow) {
           <!-- 空态 -->
           <TableRow v-else-if="!events.length" class="hover:bg-transparent">
             <TableCell colspan="8" class="py-12 text-center text-sm text-muted-foreground">
-              <span class="icon-[lucide--bell-off] mb-2 block text-2xl opacity-60" />
+              <span class="icon-[lucide--bell-off] mx-auto mb-2 block text-2xl opacity-60" />
               暂无告警事件
             </TableCell>
           </TableRow>

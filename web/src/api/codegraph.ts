@@ -169,10 +169,6 @@ export async function getEndpoints(
   )
 }
 
-export async function triggerCodegraphIndex(repositoryId: string): Promise<{ message: string }> {
-  return post<{ message: string }>(`/repositories/${repositoryId}/codegraph/index/`)
-}
-
 /**
  * 结构化图谱累计计数（GET /codegraph/stats/）。
  *

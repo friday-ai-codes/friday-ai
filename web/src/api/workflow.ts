@@ -23,7 +23,7 @@ import { del, get, post, put } from './client'
  * 获取工作流的触发器列表
  */
 export async function listTriggers(workflowId: string): Promise<WorkflowTrigger[]> {
-  return get<WorkflowTrigger[]>(`/workflows/workflows/${workflowId}/triggers/`)
+  return get<WorkflowTrigger[]>(`/workflows/${workflowId}/triggers/`)
 }
 
 /**
@@ -33,7 +33,7 @@ export async function createTrigger(
   workflowId: string,
   data: WorkflowTriggerCreate,
 ): Promise<WorkflowTrigger> {
-  return post<WorkflowTrigger>(`/workflows/workflows/${workflowId}/triggers/`, data)
+  return post<WorkflowTrigger>(`/workflows/${workflowId}/triggers/`, data)
 }
 
 /**
@@ -44,14 +44,14 @@ export async function updateTrigger(
   triggerId: string,
   data: Partial<WorkflowTriggerCreate>,
 ): Promise<WorkflowTrigger> {
-  return put<WorkflowTrigger>(`/workflows/workflows/${workflowId}/triggers/${triggerId}/`, data)
+  return put<WorkflowTrigger>(`/workflows/${workflowId}/triggers/${triggerId}/`, data)
 }
 
 /**
  * 删除触发器
  */
 export async function deleteTrigger(workflowId: string, triggerId: string): Promise<void> {
-  return del(`/workflows/workflows/${workflowId}/triggers/${triggerId}/`)
+  return del(`/workflows/${workflowId}/triggers/${triggerId}/`)
 }
 
 // ============================================================================
@@ -91,7 +91,7 @@ export async function retryExecution(
  * 批准编码任务方案
  */
 export async function approveCodingTaskPlan(taskId: string): Promise<{ status: string, message: string }> {
-  return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/approve_plan/`)
+  return post<{ status: string, message: string }>(`/coding-tasks/${taskId}/approve_plan/`)
 }
 
 /**
@@ -101,14 +101,14 @@ export async function rejectCodingTaskPlan(
   taskId: string,
   feedback: string,
 ): Promise<{ status: string, message: string }> {
-  return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/reject_plan/`, { feedback })
+  return post<{ status: string, message: string }>(`/coding-tasks/${taskId}/reject_plan/`, { feedback })
 }
 
 /**
  * 批准编码任务代码
  */
 export async function approveCodingTaskCode(taskId: string): Promise<{ status: string, message: string }> {
-  return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/approve_code/`)
+  return post<{ status: string, message: string }>(`/coding-tasks/${taskId}/approve_code/`)
 }
 
 /**
@@ -118,7 +118,7 @@ export async function rejectCodingTaskCode(
   taskId: string,
   feedback: string,
 ): Promise<{ status: string, message: string }> {
-  return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/reject_code/`, { feedback })
+  return post<{ status: string, message: string }>(`/coding-tasks/${taskId}/reject_code/`, { feedback })
 }
 
 // ============================================================================
@@ -186,7 +186,7 @@ export async function skipNodeWait(
   nodeId: string,
 ): Promise<{ status: string, message: string }> {
   return post<{ status: string, message: string }>(
-    `/workflows/workflow-executions/${executionId}/nodes/${nodeId}/skip-wait/`,
+    `/workflow-executions/${executionId}/nodes/${nodeId}/skip-wait/`,
   )
 }
 
@@ -198,7 +198,7 @@ export async function triggerNodeResume(
   nodeId: string,
 ): Promise<{ status: string, message: string }> {
   return post<{ status: string, message: string }>(
-    `/workflows/workflow-executions/${executionId}/nodes/${nodeId}/trigger-resume/`,
+    `/workflow-executions/${executionId}/nodes/${nodeId}/trigger-resume/`,
   )
 }
 

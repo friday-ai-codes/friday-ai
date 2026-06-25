@@ -176,12 +176,28 @@ def _num(value: Any) -> Any:
 
 
 def _norm_bucket(value: Any) -> str:
-    """桶时间归一化：Postgres datetime → isoformat；SQLite 字符串原样。"""
+    """桶时间归一化为带时区的 ISO8601（UTC），保证前端按 UTC 解析后再转本地时区。
+
+    - Postgres：``to_timestamp`` 返回 aware datetime → ``isoformat()`` 自带 ``+00:00``。
+    - SQLite：``datetime(...,'unixepoch')`` 返回**朴素 UTC 字符串**（``YYYY-MM-DD HH:MM:SS``，
+      无时区后缀）。若原样返回，前端 ``new Date(...)`` 会按浏览器**本地时区**解析，导致
+      整条趋势横轴整体偏移（如本地 UTC+8 时显示成 UTC 时刻）。故此处显式补 ``+00:00``
+      标记为 UTC，由前端 ``toLocaleTimeString`` 统一转本地展示。
+    """
     if value is None:
         return ""
     if hasattr(value, "isoformat"):
         return value.isoformat()
-    return str(value)
+    text = str(value).strip()
+    if not text:
+        return ""
+    # 朴素 UTC 串：空格分隔 → ISO ``T``；无时区后缀（Z/±hh:mm）则补 UTC。
+    normalized = text.replace(" ", "T", 1)
+    time_part = normalized.split("T", 1)[1] if "T" in normalized else ""
+    has_tz = normalized.endswith("Z") or "+" in time_part or "-" in time_part
+    if not has_tz:
+        normalized += "+00:00"
+    return normalized
 
 
 def _run(sql: str, params: list[Any]) -> list[dict[str, Any]]:

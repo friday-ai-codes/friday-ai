@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '~/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -54,6 +61,14 @@ const customEnd = ref('')
 
 const showCustomInputs = computed(() => selectedPreset.value === 'custom')
 
+// 自定义范围 Popover 开关 + 触发按钮展示文案。
+const customOpen = ref(false)
+const customRangeLabel = computed(() => {
+  if (customStart.value && customEnd.value)
+    return `${customStart.value.replace('T', ' ')} → ${customEnd.value.replace('T', ' ')}`
+  return '选择时间范围'
+})
+
 function emitRange(start: string, end: string) {
   emit('update:modelValue', { start, end })
 }
@@ -71,10 +86,11 @@ function onPresetChange(value: any) {
     applyPreset(value as Exclude<PresetOption, 'custom'>)
 }
 
-function onCustomDateChange() {
+function applyCustom() {
   if (customStart.value && customEnd.value) {
-    // datetime-local 无时区，按本地时区转 ISO（与后端 _parse_iso naive 补 UTC 对齐由后端处理）。
+    // datetime-local 无时区，按本地时区转 ISO（后端 _parse_iso 处理时区对齐）。
     emitRange(new Date(customStart.value).toISOString(), new Date(customEnd.value).toISOString())
+    customOpen.value = false
   }
 }
 
@@ -97,23 +113,33 @@ function onAutoRefreshChange(value: boolean) {
       </SelectContent>
     </Select>
 
-    <template v-if="showCustomInputs">
-      <input
-        v-model="customStart"
-        type="datetime-local"
-        aria-label="开始时间"
-        class="h-9 cursor-pointer rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        @change="onCustomDateChange"
-      >
-      <span class="text-muted-foreground text-sm">至</span>
-      <input
-        v-model="customEnd"
-        type="datetime-local"
-        aria-label="结束时间"
-        class="h-9 cursor-pointer rounded-lg border border-border/60 bg-background/90 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        @change="onCustomDateChange"
-      >
-    </template>
+    <Popover v-if="showCustomInputs" v-model:open="customOpen">
+      <PopoverTrigger as-child>
+        <Button variant="outline" class="h-9 gap-1.5 rounded-lg bg-background/90 font-normal" aria-label="选择自定义时间范围">
+          <span class="icon-[lucide--calendar-range] text-sm text-muted-foreground" />
+          <span class="tabular-nums">{{ customRangeLabel }}</span>
+          <span class="icon-[lucide--chevron-down] text-xs text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent class="w-80 space-y-3" align="start">
+        <div class="space-y-1.5">
+          <Label class="text-xs text-muted-foreground">开始时间</Label>
+          <Input v-model="customStart" type="datetime-local" class="tabular-nums" aria-label="开始时间" />
+        </div>
+        <div class="space-y-1.5">
+          <Label class="text-xs text-muted-foreground">结束时间</Label>
+          <Input v-model="customEnd" type="datetime-local" class="tabular-nums" aria-label="结束时间" />
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" @click="customOpen = false">
+            取消
+          </Button>
+          <Button size="sm" :disabled="!customStart || !customEnd" @click="applyCustom">
+            应用
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
 
     <!-- 右侧扩展插槽（放分组维度切换器等，对齐 analytics 范式） -->
     <slot name="right" />
