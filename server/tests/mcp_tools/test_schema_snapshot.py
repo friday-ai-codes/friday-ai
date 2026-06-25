@@ -109,4 +109,21 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": ["entity_id", "direction", "max_hops", "as_of"],
             "response": ["entity_id", "related", "total", "as_of", "run_id"],
         },
+        "lookup_project_by_branch": {
+            "request": ["branch_name"],
+            "response": [
+                "branch_name",
+                "work_item_id",
+                "matched",
+                "project",
+                "candidates",
+                "context",
+                "included_layers",
+                "run_id",
+            ],
+        },
+        "report_project_knowledge": {
+            "request": ["project_id", "content", "source_conversation_id"],
+            "response": ["accepted", "draft_id", "reason", "run_id"],
+        },
     }
