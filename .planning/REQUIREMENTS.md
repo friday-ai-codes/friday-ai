@@ -73,15 +73,15 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 
 ### Cursor 回流（CURSOR）
 
-- [ ] **CURSOR-01**: MCP 分支→项目反查 + 召回——Cursor 经 MCP 用当前分支名（含 `m{work_item_id}`/项目标识）反查项目，召回需求/工件/记忆上下文
-- [ ] **CURSOR-02**: Cursor rules 模板——强制"先关联本分支项目、召回上下文，再编码"（随项目下发或文档化）
-- [ ] **CURSOR-03**: Cursor 沉淀上报写回——处理完成后经 MCP/API 上报知识，由 Friday 写入项目 memory/知识；带认证 + 归因（身份映射）+ 脱敏 + 质量门槛防噪音
+- [x] **CURSOR-01**: MCP 分支→项目反查 + 召回——Cursor 经 MCP 用当前分支名（含 `m{work_item_id}`/项目标识）反查项目，召回需求/工件/记忆上下文
+- [x] **CURSOR-02**: Cursor rules 模板——强制"先关联本分支项目、召回上下文，再编码"（随项目下发或文档化）
+- [x] **CURSOR-03**: Cursor 沉淀上报写回——处理完成后经 MCP/API 上报知识，由 Friday 写入项目 memory/知识；带认证 + 归因（身份映射）+ 脱敏 + 质量门槛防噪音
 
 ### 前端项目工作台（UI）
 
-- [ ] **UI-01**: 项目列表页（按 Space / 状态 / 成员筛选）+ 创建项目入口
-- [ ] **UI-02**: 项目详情工作台——概览 / 成员(带身份) / 工作项 / 工件(在线查看) / 记忆(编辑) / 关联(知识·仓库·项目·PR)
-- [ ] **UI-03**: 项目记忆编辑 + LLM 提议确认 UI；工件类型后台管理页（增删禁用）
+- [x] **UI-01**: 项目列表页（按 Space / 状态 / 成员筛选）+ 创建项目入口
+- [x] **UI-02**: 项目详情工作台——概览 / 成员(带身份) / 工作项 / 工件(在线查看) / 记忆(编辑) / 关联(知识·仓库·项目·PR)
+- [x] **UI-03**: 项目记忆编辑 + LLM 提议确认 UI；工件类型后台管理页（增删禁用）
 
 ## Future Requirements
 
@@ -140,18 +140,18 @@ Milestone v0.15.0 项目（交付上下文聚合根）。每条映射到一个 P
 | RECALL-03 | Phase 80 | ✅ Complete |
 | MR-01 | Phase 80 | ✅ Complete |
 | MR-02 | Phase 80 | ✅ Complete |
-| CURSOR-01 | Phase 81 | ☐ Pending |
-| CURSOR-02 | Phase 81 | ☐ Pending |
-| CURSOR-03 | Phase 81 | ☐ Pending |
-| UI-01 | Phase 81 | ☐ Pending |
-| UI-02 | Phase 81 | ☐ Pending |
-| UI-03 | Phase 81 | ☐ Pending |
+| CURSOR-01 | Phase 81 | ✅ Complete |
+| CURSOR-02 | Phase 81 | ✅ Complete |
+| CURSOR-03 | Phase 81 | ✅ Complete |
+| UI-01 | Phase 81 | ✅ Complete |
+| UI-02 | Phase 81 | ✅ Complete |
+| UI-03 | Phase 81 | ✅ Complete |
 
 **Coverage:**
 
 - v1 requirements: 38 total
 - Mapped to phases: 38
-- Completed: 32（RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02 + ARTIFACT-01~05 + KLINK-01/02 + MEM-01~04 + RECALL-01~03 + MR-01/02）
+- Completed: 38（全部 — RENAME-01/02 + PROJ-01~05 + IDENT-01 + MEMBER-01~03 + FSPROJ-01~03 + COMPOSE-01/02 + ARTIFACT-01~05 + KLINK-01/02 + MEM-01~04 + RECALL-01~03 + MR-01/02 + CURSOR-01~03 + UI-01~03）
 - Unmapped: 0 ✓
 
 ---
