@@ -18,7 +18,16 @@ from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
 
-from initiatives.models import Artifact, ArtifactType, Project, ProjectMember
+from initiatives.models import (
+    Artifact,
+    ArtifactType,
+    MergeRequest,
+    Project,
+    ProjectMember,
+    ProjectMemory,
+    ProjectMemoryDraft,
+    ProjectMemoryStatus,
+)
 from initiatives.permissions import (
     auser_can_access_project,
     auser_is_project_member,
@@ -30,11 +39,17 @@ from initiatives.serializers import (
     ArtifactTypeSerializer,
     ArtifactTypeUpdateSerializer,
     ArtifactUpdateSerializer,
+    MergeRequestSerializer,
     ProjectCreateSerializer,
     ProjectKnowledgeLinkSerializer,
     ProjectMemberAddSerializer,
     ProjectMemberSerializer,
     ProjectMemberUpdateSerializer,
+    ProjectMemoryCreateSerializer,
+    ProjectMemoryDistillSerializer,
+    ProjectMemoryDraftSerializer,
+    ProjectMemoryEditSerializer,
+    ProjectMemorySerializer,
     ProjectOwnerTransferSerializer,
     ProjectSerializer,
     ProjectTransitionSerializer,
@@ -43,6 +58,10 @@ from initiatives.serializers import (
 from initiatives.services import (
     ArtifactError,
     ArtifactService,
+    MemoryDistiller,
+    MemoryError,
+    MemoryPermissionError,
+    MemoryService,
     ProjectMemberError,
     ProjectService,
     ProjectTransitionError,
@@ -633,3 +652,225 @@ class ProjectGraphView(APIView):
             max_hops=max_hops,
         )
         return Response({"project_id": str(project_id), "nodes": nodes})
+
+
+# ============================ 项目记忆（MEM-01~04）============================
+
+
+class ProjectMemoryListCreateView(APIView):
+    """项目记忆列表（GET，active）+ 新增（POST，MEM-01；成员校验 fail-closed）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        memories = await sync_to_async(
+            lambda: list(
+                ProjectMemory.objects.filter(
+                    project_id=project_id, status=ProjectMemoryStatus.ACTIVE
+                )
+            )
+        )()
+        data = await sync_to_async(
+            lambda: ProjectMemorySerializer(memories, many=True).data
+        )()
+        return Response(data)
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectMemoryCreateSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        try:
+            memory = await MemoryService().append(
+                project_id=project_id,
+                content=serializer.validated_data["content"],
+                contributor=request.user,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except MemoryError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        memory = await ProjectMemory.objects.aget(pk=memory.id)
+        body = await sync_to_async(lambda: ProjectMemorySerializer(memory).data)()
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class ProjectMemoryDetailView(APIView):
+    """记忆编辑（PATCH，MEM-03）+ 废弃（DELETE → supersede）。成员校验 fail-closed。"""
+
+    async def patch(self, request, project_id, memory_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if not await ProjectMemory.objects.filter(
+            pk=memory_id, project_id=project_id
+        ).aexists():
+            return Response({"detail": "记忆不存在"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ProjectMemoryEditSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        try:
+            await MemoryService().edit(
+                memory_id=memory_id,
+                content=serializer.validated_data["content"],
+                editor=request.user,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except MemoryError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        memory = await ProjectMemory.objects.aget(pk=memory_id)
+        body = await sync_to_async(lambda: ProjectMemorySerializer(memory).data)()
+        return Response(body)
+
+    async def delete(self, request, project_id, memory_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if not await ProjectMemory.objects.filter(
+            pk=memory_id, project_id=project_id
+        ).aexists():
+            return Response({"detail": "记忆不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            await MemoryService().supersede(
+                memory_id=memory_id,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectMemoryDraftListView(APIView):
+    """记忆草稿列表（GET，pending+）+ 从会话蒸馏（POST，MEM-04）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        drafts = await sync_to_async(
+            lambda: list(ProjectMemoryDraft.objects.filter(project_id=project_id))
+        )()
+        data = await sync_to_async(
+            lambda: ProjectMemoryDraftSerializer(drafts, many=True).data
+        )()
+        return Response(data)
+
+    async def post(self, request, project_id):
+        """从成员会话蒸馏一条 pending 记忆草稿（绝不自动写 active，MEM-04）。"""
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectMemoryDistillSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        conversation_id = serializer.validated_data["conversation_id"]
+        conversation_text = await _gather_conversation_text(conversation_id)
+        try:
+            draft = await MemoryDistiller().distill_to_draft(
+                project_id=project_id,
+                conversation_text=conversation_text,
+                proposed_by=request.user,
+                source_conversation_id=conversation_id,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        if draft is None:
+            return Response(
+                {"detail": "未从会话提炼出可沉淀的记忆草稿"},
+                status=status.HTTP_204_NO_CONTENT,
+            )
+        body = await sync_to_async(lambda: ProjectMemoryDraftSerializer(draft).data)()
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class ProjectMemoryDraftConfirmView(APIView):
+    """确认草稿入库（POST，MEM-04）。成员校验 fail-closed。"""
+
+    async def post(self, request, project_id, draft_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if not await ProjectMemoryDraft.objects.filter(
+            pk=draft_id, project_id=project_id
+        ).aexists():
+            return Response({"detail": "草稿不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            memory = await MemoryService().confirm_draft(
+                draft_id=draft_id,
+                confirmer=request.user,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except MemoryError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        memory = await ProjectMemory.objects.aget(pk=memory.id)
+        body = await sync_to_async(lambda: ProjectMemorySerializer(memory).data)()
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class ProjectMemoryDraftRejectView(APIView):
+    """拒绝草稿（POST，MEM-04）。成员校验 fail-closed。"""
+
+    async def post(self, request, project_id, draft_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if not await ProjectMemoryDraft.objects.filter(
+            pk=draft_id, project_id=project_id
+        ).aexists():
+            return Response({"detail": "草稿不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            draft = await MemoryService().reject_draft(
+                draft_id=draft_id,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except MemoryPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except MemoryError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        body = await sync_to_async(lambda: ProjectMemoryDraftSerializer(draft).data)()
+        return Response(body)
+
+
+async def _gather_conversation_text(conversation_id) -> str:
+    """拼接会话最近消息为文本（供记忆蒸馏；best-effort）。"""
+    try:
+        from chat.models import Message
+
+        rows = [
+            m
+            async for m in Message.objects.filter(conversation_id=conversation_id)
+            .order_by("-created_at")[:40]
+        ]
+    except Exception:  # noqa: BLE001
+        return ""
+    rows.reverse()
+    parts = [f"{m.role}: {m.content}" for m in rows if getattr(m, "content", "")]
+    return "\n".join(parts)
+
+
+# ============================ MergeRequest（MR-01）============================
+
+
+class ProjectMergeRequestListView(APIView):
+    """项目 MR 列表（GET，项目内可见，MR-01/02）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        mrs = await sync_to_async(
+            lambda: list(MergeRequest.objects.filter(project_id=project_id))
+        )()
+        data = await sync_to_async(lambda: MergeRequestSerializer(mrs, many=True).data)()
+        return Response(data)

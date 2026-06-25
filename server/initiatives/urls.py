@@ -12,6 +12,12 @@ from initiatives.views import (
     ProjectListCreateView,
     ProjectMemberDetailView,
     ProjectMemberListView,
+    ProjectMemoryDetailView,
+    ProjectMemoryDraftConfirmView,
+    ProjectMemoryDraftListView,
+    ProjectMemoryDraftRejectView,
+    ProjectMemoryListCreateView,
+    ProjectMergeRequestListView,
     ProjectOwnerTransferView,
     ProjectTransitionView,
 )
@@ -65,5 +71,37 @@ urlpatterns = [
         "<uuid:project_id>/graph/",
         ProjectGraphView.as_view(),
         name="project-graph",
+    ),
+    # 项目记忆（MEM-01~04）
+    path(
+        "<uuid:project_id>/memories/",
+        ProjectMemoryListCreateView.as_view(),
+        name="project-memory-list",
+    ),
+    path(
+        "<uuid:project_id>/memories/<uuid:memory_id>/",
+        ProjectMemoryDetailView.as_view(),
+        name="project-memory-detail",
+    ),
+    path(
+        "<uuid:project_id>/memory-drafts/",
+        ProjectMemoryDraftListView.as_view(),
+        name="project-memory-draft-list",
+    ),
+    path(
+        "<uuid:project_id>/memory-drafts/<uuid:draft_id>/confirm/",
+        ProjectMemoryDraftConfirmView.as_view(),
+        name="project-memory-draft-confirm",
+    ),
+    path(
+        "<uuid:project_id>/memory-drafts/<uuid:draft_id>/reject/",
+        ProjectMemoryDraftRejectView.as_view(),
+        name="project-memory-draft-reject",
+    ),
+    # MergeRequest（MR-01/02，项目内可见）
+    path(
+        "<uuid:project_id>/merge-requests/",
+        ProjectMergeRequestListView.as_view(),
+        name="project-merge-request-list",
     ),
 ]
