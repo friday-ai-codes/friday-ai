@@ -30,6 +30,38 @@ _NO_SPACE_CONTEXT_LINE = (
 )
 
 
+async def _maybe_pack_project_context(conversation: Conversation) -> str:
+    """会话绑定项目聚合根时打包项目上下文（RECALL-02/03，fail-closed + best-effort）。
+
+    - 无绑定项目 / 无会话 owner → 返回空串（无法判定成员，fail-closed）。
+    - 非项目成员 → packer 内部 fail-closed 返回空（零召回零泄漏）。
+    - 任何异常 best-effort 吞掉返回空串，绝不阻断 chat 主流程。
+    """
+    project_id = getattr(conversation, "bound_project_id", None)
+    user_id = getattr(conversation, "created_by_id", None)
+    if not project_id or not user_id:
+        return ""
+    try:
+        from django.contrib.auth import get_user_model
+
+        from initiatives.models import Project
+        from services.project_context_packer import pack_project_context
+
+        project = await Project.objects.select_related("space").filter(pk=project_id).afirst()
+        if project is None:
+            return ""
+        user_model = get_user_model()
+        user = await user_model.objects.filter(pk=user_id).afirst()
+        if user is None:
+            return ""
+        packed = await pack_project_context(
+            project, user, conversation_id=str(conversation.id)
+        )
+        return packed.text
+    except Exception:  # noqa: BLE001 — 项目上下文注入 best-effort，绝不反噬 chat
+        return ""
+
+
 async def build_sdk_config(
     conversation: Conversation,
     role: str = "developer",
@@ -104,6 +136,12 @@ async def build_sdk_config(
         project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
         project_context_line=effective_project_context_line,
     )
+
+    # RECALL-02（v0.15.0 Phase 80）：会话绑定项目聚合根时，经 context packer 自动加载项目
+    # 完整上下文（需求/工件/记忆/关联知识），按成员权限 fail-closed（非成员零注入）。
+    project_context = await _maybe_pack_project_context(conversation)
+    if project_context:
+        system_prompt = f"{system_prompt}\n\n{project_context}"
 
     config = ChatRunnerConfig(
         system_prompt=system_prompt,
