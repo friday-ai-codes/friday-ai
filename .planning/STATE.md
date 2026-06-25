@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.15.0
 milestone_name: 项目（交付上下文聚合根）
 status: planning
-last_updated: "2026-06-25T12:00:00.000Z"
+last_updated: "2026-06-25T16:20:00.000Z"
 last_activity: 2026-06-25
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
-  percent: 33
+  completed_phases: 3
+  total_plans: 3
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
 
 **Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
-**Current focus:** v0.15.0 项目（交付上下文聚合根）立项完成（planning）——6 Phase（76–81）线性推进，下一步 `$gsd-discuss-phase 76` 或 `$gsd-plan-phase 76`（命名腾挪前置）。
+**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78 已完成（50%），下一步 Phase 79（工件/依赖项 + 知识关联）。
 
 ## Current Position
 
-Phase: 77 ✅ complete → 78 pending
+Phase: 78 ✅ complete → 79 pending
 Plan: —
-Status: Phase 77 项目聚合根 + 身份映射 + 成员协作已完成（新 app `initiatives`：Project/ProjectMember/ProjectRelation + ProjectService 单一写入 INV-6 + 状态机 + FeishuUserBinding/resolve_feishu_user + 项目/成员 REST + WS 推送 + 最小前端创建闭环）；6294 passed / 新增 28 用例全绿 / 38 failed == Phase-76 baseline（零新增回归）/ makemigrations --check 干净 / vue-tsc 绿
-Last activity: 2026-06-25 — Phase 77 完成（feat(77)×6 + test(77)×1 + docs，8 commits / 34 files，未 push）；下一步 Phase 78（飞书触发建项目 + 看板枚举 + 工作项组合）
+Status: Phase 78 飞书触发建项目 + 看板枚举 + 工作项组合已完成（看板枚举 service `feishu_project_board`（无整板 API 经字段派生 fail-soft）+ `ProjectWorkItemLink` 组合关系边 + `ProjectService.attach/detach_work_item`（INV-6）+ 同源 `ProjectBoardSyncService.sync_from_board`（幂等建项目+拉人带身份+组合子项）+ 飞书事件接线（gated）+ `create_project` 工作流节点）；6315 passed / 新增 27 用例全绿 / 38 failed == Phase-76 baseline（零新增回归）/ makemigrations --check 干净
+Last activity: 2026-06-25 — Phase 78 完成（docs(78) + feat(78)×4 + test(78)，7 commits，未 push）；真实飞书字段 key/事件类型 live UAT 为里程碑级 deferred；下一步 Phase 79（工件/依赖项可配置类型 + 实例 + RAG + 知识关联）
 
 ## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
 
@@ -35,7 +35,7 @@ Last activity: 2026-06-25 — Phase 77 完成（feat(77)×6 + test(77)×1 + docs
 |-------|------|--------------|--------|
 | 76 | 命名腾挪（Project→Space 重构前置） | RENAME-01, RENAME-02 | ✅ Complete |
 | 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
-| 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ☐ Pending |
+| 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
 | 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ☐ Pending |
 | 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
 | 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
