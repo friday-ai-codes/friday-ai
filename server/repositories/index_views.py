@@ -501,6 +501,12 @@ class IndexStatusView(APIView):
         # 索引进行中 → 进度信息从 DB 读取（indexer 实时更新这些字段 + index_stage）
         if repository.index_status == IndexStatus.INDEXING:
             progress = _compute_index_progress(repository)
+            # AI 描述状态按唯一真相（最新 REPO_SUMMARY session）派生并自愈缓存列，
+            # 杜绝「幻影 running」（仓库缓存停在 running 但实际无 session 在跑）。
+            from repositories.summary_service import aresolve_summary_status
+
+            progress["ai_summary_status"] = await aresolve_summary_status(repository)
+            progress["ai_summary_error"] = repository.ai_summary_error or ""
             serializer = IndexStatusSerializer(
                 {
                     "index_status": IndexStatus.INDEXING,

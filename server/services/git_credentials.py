@@ -28,7 +28,12 @@ from asgiref.sync import sync_to_async
 from common.encryption import decrypt_value
 from repositories.models import GitCredential, GitInstanceCredential
 
-__all__ = ["resolve_git_token_sync", "aresolve_git_token", "_extract_git_host"]
+__all__ = [
+    "resolve_git_token_sync",
+    "aresolve_git_token",
+    "_extract_git_host",
+    "aremote_branch_count",
+]
 
 logger = structlog.get_logger(__name__)
 
@@ -115,3 +120,36 @@ def resolve_git_token_sync(repo) -> str | None:
 
 
 aresolve_git_token = sync_to_async(resolve_git_token_sync)
+
+
+async def aremote_branch_count(auth_url: str, proxy_url: str | None = None) -> int:
+    """用 ``git ls-remote --heads`` 探测远端分支数（不落盘、轻量）。
+
+    用途：空仓 fail-fast。``git clone --depth 1 --branch <default>`` 对「零分支空仓」
+    会以晦涩的 ``Git clone failed`` 报错，易被误判为凭证/网络故障；先用 ls-remote
+    判定是否真为空仓，让调用方给出明确状态、并避免为空仓白白起容器烧 token。
+
+    Returns:
+        - ``>=1``：远端存在分支（正常仓库）。
+        - ``0``：远端零分支（空仓）。
+        - ``-1``：探测失败（鉴权/网络/超时等不可判定）——调用方**不得**据此判定空仓，
+          应放行走正常流程，由后续 clone 暴露真实错误（绝不把不可判定误标为空仓）。
+    """
+    import asyncio
+
+    cmd = ["git"]
+    if proxy_url:
+        cmd += ["-c", f"http.proxy={proxy_url}"]
+    cmd += ["ls-remote", "--heads", auth_url]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        if proc.returncode != 0:
+            return -1
+        return sum(1 for line in out.decode(errors="ignore").splitlines() if line.strip())
+    except Exception:  # noqa: BLE001 — 探测失败回退 -1（不可判定），绝不阻断主流程
+        return -1
