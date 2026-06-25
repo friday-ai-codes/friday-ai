@@ -1,65 +1,66 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.14.0
-milestone_name: 可观测性与日志治理
-status: shipped
-last_updated: "2026-06-25T03:07:00.000Z"
+milestone: v0.15.0
+milestone_name: 项目（交付上下文聚合根）
+status: planning
+last_updated: "2026-06-25T12:00:00.000Z"
 last_activity: 2026-06-25
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 20
-  completed_plans: 20
-  percent: 100
+  total_phases: 6
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 17
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-24 — start milestone v0.14.0 可观测性地基)
+See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并全链路"看得见、控得住、可归因"。v0.14.0（一个里程碑、5 Phase 71–75 完整交付可观测性与日志治理）已于 2026-06-24 shipped、里程碑审计 passed（34/34 需求满足、integration_ok）。
-**Current focus:** v0.14.0 已收口归档；当前无进行中里程碑——下一步 `/gsd-new-milestone` 立项 v0.15.0。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
+**Current focus:** v0.15.0 项目（交付上下文聚合根）立项完成（planning）——6 Phase（76–81）线性推进，下一步 `$gsd-discuss-phase 76` 或 `$gsd-plan-phase 76`（命名腾挪前置）。
 
 ## Current Position
 
-Phase: — (between milestones)
+Phase: 76 ✅ complete → 77 in progress（autonomous run）
 Plan: —
-Status: v0.14.0 shipped & archived（里程碑审计 passed，5/5 phases / 20 plans / 34 需求）
-Last activity: 2026-06-25 — Milestone v0.14.0 complete-milestone + cleanup（ROADMAP/REQUIREMENTS/AUDIT 归档至 milestones/v0.14.0-*、phases 71–75 归档至 milestones/v0.14.0-phases/）
+Status: Phase 76 命名腾挪 Project→Space 已全绿（6266 passed / 新增回归 0 / makemigrations 干净 / 11 元数据级 rename 迁移、零数据搬迁）；`Project` 名已腾出给聚合根
+Last activity: 2026-06-25 — Phase 76 完成（refactor(76)×2 + docs(76)，未 push）；autonomous 推进 Phase 77
 
-## Milestone Overview (v0.14.0 — Phases 71–75 — ✅ SHIPPED 2026-06-24)
+## Milestone Overview (v0.15.0 — Phases 76–81 — 🚧 PLANNING)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 71 | 可观测性地基（用户上下文贯穿 + 系统日志治理） | CTX-01, CTX-02, LOG-01~08 | ✅ Complete |
-| 72 | 调用数据采集（AI/LLM TPS + 召回 + 请求入口 QPS/SLA/时长/TTFT/上游错误） | RATE-01, RATE-02, RAG-01, RAG-02, SLA-02, SLA-03, SLA-04 | ✅ Complete |
-| 73 | 快照·趋势·查询 API | SNAP-01~05, RATE-03, SLA-01, QUERY-01, QUERY-02 | ✅ Complete |
-| 74 | 告警引擎与通知（阈值 + 告警事件 + 邮件） | ALERT-01, ALERT-02, ALERT-03 | ✅ Complete |
-| 75 | 运维大盘前端 + 规范固化 | UI-01~04, SPEC-01 | ✅ Complete |
+| 76 | 命名腾挪（Project→Space 重构前置） | RENAME-01, RENAME-02 | ✅ Complete |
+| 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ☐ Pending |
+| 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ☐ Pending |
+| 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ☐ Pending |
+| 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ☐ Pending |
+| 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ☐ Pending |
 
-完整需求与阶段详情已归档：[milestones/v0.14.0-REQUIREMENTS.md](./milestones/v0.14.0-REQUIREMENTS.md) / [milestones/v0.14.0-ROADMAP.md](./milestones/v0.14.0-ROADMAP.md) / [milestones/v0.14.0-MILESTONE-AUDIT.md](./milestones/v0.14.0-MILESTONE-AUDIT.md)。
+完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（38 条 + Traceability）；设计与调研基线见 [.planning/project-aggregate/MILESTONE-PROPOSAL.md](./project-aggregate/MILESTONE-PROPOSAL.md)。
 
-**Execution order:** 71 → 72 → 73 → 74 → 75。依赖：71（用户贯穿 + 日志落库）是地基，归因与日志载体先行；72（采集）把 QPS/TPS/召回/SLA/TTFT 写入事件表（`RequestMetric`/扩展 `ModelUsageRecord`/`RetrievalTrace`）；73（快照·趋势·查询）依赖 72 数据做时序查询 + 补当前快照 + 趋势采样；74（告警）依赖 73 的查询/快照评估阈值；75（大盘）依赖前面所有后端 API。线性推进，autonomous 一次跑完整个里程碑。
+**Execution order:** 76 → 77 → 78 → 79 → 80 → 81（线性）。依赖：76（命名腾挪）是硬前置，必须全绿再推进；77（聚合根 + 身份 + 成员）立地基；78（飞书触发 + 组合）与 79（工件 + 知识关联）各自构建；80（记忆 + MR + 召回）把上下文接通会话；81（Cursor 回流 + 前端工作台）打通双向闭环与可视。
 
-**UI 触面（标 UI hint）:** Phase 75 是集中前端阶段（`web/src/pages/admin/observability/` 重构 + 日志/告警页 + 运行时配置面板），`/gsd-ui-phase` 应介入；71–74 以后端为主，72/73 可选在现有运维页做最小触面。
+**UI 触面（标 UI hint）:** Phase 77（项目创建/成员）、Phase 79（工件查看/类型管理）、Phase 80（记忆编辑/召回）、Phase 81（项目工作台集中前端，`/gsd-ui-phase` 应介入）。76/78 以后端为主。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
 
-- **第一性原理**：量级低、人触发，观测真正诉求是"看得见、控得住 + 归因"。**指标走原始事件行 + Postgres `percentile_cont` 聚合**（精确分位），**不自研**进程内直方图/聚合器/多级 rollup 引擎；最大化复用已有 append-only 表（`ModelUsageRecord`/`ToolCallRecord`/`RetrievalTrace`）。
-- **脱敏不可绕过**：所有日志/留痕/webhook 原始入库前必须经 `server/common/logging.py` 的 `redact_credentials`/`redact_secrets_in_text`/`redact_for_ledger`。CI 守护 `server/tests/test_credential_leak_protection.py` 不能破。
-- **用户上下文（Phase 71 核心，地基）**：`structlog.contextvars` + 入口中间件自动注入 `user_id(无则 system)/request_id/source/trace_id`，请求结束 `clear_contextvars`。**注意**：DRF 认证在 view dispatch 才有 `request.user`（Django MIDDLEWARE 在其之前拿不到 JWT user）→ 「DRF 基类/mixin + ASGI 外层兜底」组合。跨线程/`_run_in_thread`/durable worker/`background_runner` 用干净 `contextvars.Context()`，**不自动传播**，必须显式 `bind`；后台任务入队携带 `initiated_by_user_id`，worker 入口恢复。
-- **指标/留痕/日志三分**：指标=精简事件表（`RequestMetric` 每请求一行 + 扩展 `ModelUsageRecord` 的 `call_source`/`ttft_ms`/`upstream_status_code`），留痕=Interaction Ledger（调用详情/召回内容/会话原始），日志=`SystemLogEntry`（队列落库）。三者用 `request_id/run_id/conversation_id` 关联，**不互相复制**。`labels` jsonb 禁止放用户输入原文（基数失控），取受控枚举。
-- **日志队列（LOG 核心）**：`deque(maxlen=5000)` + 后台批量 worker 落 `SystemLogEntry`；满则丢弃计数 `log_dropped_total++`，落库失败 `log_write_failed_total++`，best-effort 暴露且**绝不反噬业务**（沿用 `append_log`/`buffer_log` 的 `except: pass`）。保留 `common/log_buffer.py`（800 条内存）作极速兜底。
-- **运行时配置**：复用 `SystemSetting`+`settings_service`(60s 缓存)+`signals` 写时失效；新增 `SettingKeys.LOG_*`/`ALERT_*`；把固定的 `_resolve_structlog_level()` 改为可热更新级别 + `logging.setLevel()` 即时生效。
-- **采集埋点位**：LLM 走 `acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游码）+ 各 `ainvoke`；召回走 `search_rag` 出口 + `QdrantService.search/hybrid_search` + `EmbeddingService` + `recall_similar_chunks`；请求入口走 DRF 基类/ASGI + MCP `_record` + chat SSE wrap + compat + webhook + WS。容器侧 token 需补全 `task`→回调→`ModelUsageRecord` 链路（RATE-02）。轮询/health 路由打标隔离不污染 SLA。
-- **SLA 三口径**：系统错误（计入故障）/ 业务限制（`LLMBusyError` 系统繁忙·权限·校验，排除）/ 上游错误（429·529 单列）。可用率口径"排除业务限制"。
-- **告警另起系统级模型**：现有 `workflows.AlertRule` 强绑工作流（`project` 非空、`AlertRuleExecution.workflow_execution` 非空），**不复用**；新建 `SystemAlertRule` + `AlertEvent`，共享通知分发（飞书/webhook/邮件）。邮件需新增 SMTP（`EMAIL_*`，全仓当前无）。
-- **快照按需不长存**：CPU/内存/DB/Redis/Qdrant 用户明确"只看当前"。Qdrant collection 枚举/占用走独立端点 + 缓存 + 长超时，避免拖垮（区分现有 `ping_liveness` 与 `health_check`）。SQLite dev 无 `percentile_cont` → 降级近似/跳过分位。
-- **异步约束**：ORM 在 async 上下文走 `sync_to_async`；i18n 默认中文；echarts/vue-echarts 已在前端依赖（大盘出图）。
+- **项目是聚合根，不是工作流节点**：项目是持续存在的领域数据 + 关系图；工作流（含 `create_project` 节点）只是写它的入口之一，不要把项目做成 DAG 节点。
+- **命名锁定大重构**：`projects.Project` → `Space`（76 独立前置，与新功能解耦），腾出 `Project` 名给新聚合根；对外仍称"空间"；数据零丢失、行为/测试零回归后再推进 77。
+- **不做迭代实体**：另一迭代 = 新建项目；"看历史迭代" = 项目↔项目关联链回看（复用 `KnowledgeEdge`）；知识/记忆直接挂项目。
+- **记忆为自由文本**：条目 + 时间戳/贡献者；人工为主，LLM 仅产草稿经人工确认入库（不自动直接写）；矛盾消解靠人工覆盖；脱敏不可绕过。结构化 + 自动降权留 v2（PROJX-02）。
+- **工件统一可配置类型 + 实例**：`ArtifactType`（后台增删禁用，内置 8 类）+ `Artifact`（多载体）；文字载体（飞书文档/表格/md/Spec）全文进 `delivery_knowledge` 可召回；**UI 稿（figma/mastergo）是图形链接仅存元数据**，多模态正文 RAG 留 v2（PROJX-01）。
+- **最大化复用脊柱**：`KnowledgeEntity/KnowledgeEdge`（bi-temporal/版本/边）做项目↔知识与项目间关联；`delivery.WorkItem`（三元组）做 story/缺陷（缺陷不重复建模为工件）；`delivery_knowledge` 做召回；`Space` 做组织单元。
+- **三个净新增空白（每个是独立硬骨头）**：飞书人员↔Friday 用户映射（主R/协作/归因/Cursor 上报前置，与可观测"谁触发"同源）、通用项目记忆、MR 实体 + 入站 webhook。
+- **飞书无整板枚举 API**：项目跟踪子项/成员经子项关联字段派生逐项收集（`WorkItemRelation` 范式）；拿不到则降级"半自动"（webhook 逐个并入）。plan-phase 先验证飞书 API。
+- **Cursor 回流走 MCP + git + 上报 API**：复用 `mcp_tools/` + `env_FRIDAY_TASK_USER_TOKEN`（v0.2.0 地基）；分支名 `feat/xxxx-m{work_item_id}-slug` 现为单向生成，需补"分支名→项目"反查；上报写回须认证 + 归因 + 脱敏 + 质量门槛防噪音。专用插件留 v2（PROJX-04）。
+- **召回与会话**：`search_delivery_knowledge` 已实现但**未接入 chat runner 工具白名单**（`agents/chat_runner.py` `_INDEXED_TOOL_NAMES`），RECALL-02 需打通；context packer 按"召回+排序+压缩、token 预算可降级"设计（全量加载是未来态）。
+- **观测/异步**：后台任务带 `initiated_by_user_id`、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`；ORM 在 async 走 `sync_to_async`；i18n 默认中文。
 
-**设计底座引用:** `.planning/observability/MILESTONE-PROPOSAL.md`（5 Phase 完整方案 + 第一性原理评审 + 数据模型 §C + Traceability §D）、`.planning/observability/LOGGING-SPEC.md`（日志/埋点规范 + caller/sampling + call_source 枚举 §4.1）、`.planning/observability/REFERENCE-UI.md`（LLM 网关平台参考图 + Agent 维度适配，Phase 75 UI 输入）、`.cursor/rules/observability-logging.mdc`（Agent 强制规则）、`.planning/REQUIREMENTS.md`（34 条需求 + Traceability）。关键文件：`server/common/logging.py`+`log_buffer.py`、`server/system/`(settings_service/signals/models SettingKeys/observability_views/dashboard_views)、`server/interactions/`、`server/agents/`(llm_concurrency/chat_runner/langchain_runner/llm_factory)、`server/services/retrieval/`+`qdrant_service.py`+`embedding.py`、`server/feishu/views.py`(TriggerLog)、`server/friday/settings.py`(MIDDLEWARE/DRF/DATABASES/CACHES)、`server/access_tokens/context.py`(PAT ContextVar 范式)、`web/src/pages/admin/observability/index.vue`+`web/src/api/system.ts`。
+**设计底座引用:** `.planning/project-aggregate/MILESTONE-PROPOSAL.md`（领域模型 + 现状对照 + 技术前置/风险 + 数据模型建议 + 关键流程 + 阶段总览）、`.planning/REQUIREMENTS.md`（38 条需求 + Traceability）。关键复用位置：`server/projects/`（→Space）、`server/permissions/`、`server/delivery/`（WorkItem/Document/事件流）、`server/knowledge/`（KnowledgeEntity/Edge/retrieval/vector_recall/sources）、`server/services/retrieval/`+`qdrant_service.py`、`server/feishu/`（views/client/websocket_client）、`server/services/feishu*.py`（含 feishu_doc/bitable/im）、`server/agents/chat_runner.py`+`agents/tools/`（delivery_knowledge_tools/space_tools）、`server/mcp_tools/`、`server/services/git_platform/`、`server/accounts/`+`server/access_tokens/`（用户/PAT/context）、`web/src/pages/spaces/`（空间前端范本）、`web/src/api/`。
 
 ## Performance Metrics
 
@@ -389,11 +390,14 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-25
-Stopped at: v0.14.0 可观测性与日志治理 里程碑收口完成（complete-milestone + cleanup）——ROADMAP/REQUIREMENTS/AUDIT 已归档至 `milestones/v0.14.0-*`，phases 71–75 已归档至 `milestones/v0.14.0-phases/`，`REQUIREMENTS.md` 已删（待 orchestrator `git rm`），ROADMAP/MILESTONES/STATE 反映 v0.14.0 shipped。里程碑审计 passed（34/34、integration_ok）。
+Stopped at: v0.15.0 项目（交付上下文聚合根）里程碑立项完成（new-milestone）——经"想法评审 → 锁定 4 决策（命名 Project→Space 大重构 / 记忆自由文本 / 人工为主+LLM提议 / 不做迭代实体）→ 调研（3 子代理 + 飞书·知识·工作流三子系统）→ 产出工件"。已写 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（38 条）、`ROADMAP.md`（Phases 76–81 + Phase Details）、`PROJECT.md`（Current Milestone + Active + Key Decisions）、`STATE.md`（本文件，重置为 v0.15.0 planning）。
 Resume file: None
-Next: `/gsd-new-milestone` 立项 v0.15.0
+Next: `$gsd-discuss-phase 76` 收集上下文澄清，或 `$gsd-plan-phase 76` 直接拆 plan（命名腾挪前置）
 
 ## Operator Next Steps
 
-- v0.14.0 已 shipped 并归档；新开会话用 `/gsd-new-milestone` 立项下一个里程碑（v0.15.0）
-- 可观测性增量已列 v2（OBSX-01~06）：Prometheus/OTLP 导出、跨进程分布式 tracing、告警降噪、Sentry、日志冷存储
+- 里程碑已立项；下一步 `$gsd-discuss-phase 76`（命名腾挪 Project→Space）或 `$gsd-plan-phase 76`
+- ⚠️ Phase 76 是硬前置（全栈重命名），必须数据零丢失 + 测试零回归后再推进 77；建议作为独立 PR
+- ⚠️ Phase 78 plan-phase 前先验证飞书"项目跟踪"枚举子项/成员 API 能力（无整板 listing，可能降级半自动）
+- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令），若需 SDK 状态同步可后续校正；commit 由用户按需触发
+- v2 候选已列（PROJX-01~05）：UI 稿多模态召回、结构化记忆/降权、记忆全自动提炼、Cursor 专用插件、项目看板可视
