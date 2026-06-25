@@ -42,6 +42,12 @@ class EntityKind(models.TextChoices):
     TECH_PLAN = "tech_plan", "技术方案"
     CODE_CHANGE = "code_change", "代码变更"
     DOCUMENT = "document", "文档"
+    # v0.15.0 Phase 79（KLINK）：把项目/仓库/空间纳入交付知识图谱作为图节点，
+    # 经 KnowledgeEdge 统一建模项目↔知识/项目/仓库/空间关联。新增字面值不改既有四类，
+    # 仅扩 generate_entity_id 派生空间与 kentity_kind_valid 约束（既有 uuid5 PK 零漂移）。
+    PROJECT = "project", "项目"
+    REPOSITORY = "repository", "仓库"
+    SPACE = "space", "空间"
 
 
 class EntityOrigin(models.TextChoices):
@@ -55,6 +61,11 @@ class EntityOrigin(models.TextChoices):
     CHAT = "chat", "对话"
     MCP = "mcp", "MCP"
     WORKFLOW = "workflow", "工作流"
+    # v0.15.0 Phase 79：工件正文摄取来源渠道（ARTIFACT-04）+ 项目图谱投影参考节点来源
+    # （KLINK）。origin 不进 generate_entity_id（仅 kind/source_kind/source_id），
+    # 故新增 origin 仅触发 kentity_origin_valid 约束更新，无 PK 漂移。
+    ARTIFACT = "artifact", "工件"
+    PROJECT = "project", "项目"
 
 
 class EdgeRelation(models.TextChoices):
@@ -97,6 +108,10 @@ def generate_entity_id(kind: str, source_kind: str, source_id: str) -> uuid.UUID
     | mcp_technical_plan   | McpWorkItemTechnicalPlan UUID str                    | MCP 产出方案 |
     | workflow_plan        | ``{execution_id}:{node_id}``                         | workflow 产出方案 |
     | task_result          | TaskResult/session UUID str                          | 编码产出 |
+    | artifact             | initiatives.Artifact UUID str（kind=document）        | 项目工件正文（Phase 79）|
+    | project              | initiatives.Project UUID str（kind=project）          | 项目图谱节点（Phase 79）|
+    | repository           | repositories.Repository UUID str（kind=repository）   | 仓库图谱节点（Phase 79）|
+    | space                | projects.Space UUID str（kind=space）                  | 空间图谱节点（Phase 79）|
 
     Args:
         kind: EntityKind 字面值（如 ``"work_item"``）。
