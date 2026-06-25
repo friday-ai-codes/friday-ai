@@ -32,6 +32,9 @@ export * from './logs'
 export { default as notificationsApi } from './notifications'
 export * from './notifications'
 
+export { default as projectsApi } from './projects'
+export * from './projects'
+
 export { default as providerCredentialsApi } from './providerCredentials'
 export * from './providerCredentials'
 
