@@ -100,6 +100,7 @@ from .serializers import (
     LookupProjectByBranchRequestSerializer,
     ReadProjectDocRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
+    ReportProjectStateRequestSerializer,
     ReverseLookupRequestSerializer,
     RouteRepositoriesRequestSerializer,
     SearchDeliveryKnowledgeRequestSerializer,
@@ -2923,6 +2924,207 @@ class ReportProjectKnowledgeView(McpToolView):
                 project_id=project_id, status=ProjectMemoryStatus.ACTIVE
             ).values_list("content", flat=True)[:200]
         )
+
+
+# ============================================================================
+# IDE stop hook STATE 结构化回写 MCP 工具（HOOK-03，Phase 86-04）
+# ============================================================================
+
+
+async def _assert_project_member(project_id: Any, user: Any) -> bool:
+    """写权限成员判定（写仅成员，与 ``MemoryService`` / ``ProjectDocService`` 同口径）。
+
+    fail-closed：无 user / 未认证 / 非成员 → False（调用方据此静默跳过，绝不抛、不阻断编码）。
+    """
+    from initiatives.models import ProjectMember
+
+    uid = getattr(user, "id", None)
+    if uid is None or not getattr(user, "is_authenticated", False):
+        return False
+    return await ProjectMember.objects.filter(
+        project_id=project_id, user_id=uid
+    ).aexists()
+
+
+class ReportProjectStateView(McpToolView):
+    """IDE stop hook STATE 结构化 API 清单直写（HOOK-03）。
+
+    会话结束把新增/改动的 API 以**结构化清单**（method/path/params/status）经
+    ``ProjectDocService.upsert_state_api`` **直接写入** ``ProjectStateApi``（source=HOOK，
+    不经 draft），跨会话/跨角色（前后端）即时可读。写入收口于 INV-6 service（已内置
+    ``(project, method, path)`` 幂等 upsert + 审计 ``state_api_added`` + 可经
+    ``remove_state_api`` 撤销，审计可回滚）。
+
+    四道兜底绝不绕过（与 86-01 active 路径口径一致）：
+
+    - **成员校验静默跳过**：非成员 / 未认证 / 未绑项目 → ``applied=false`` 200，不写库、
+      绝不抛、绝不阻断编码（T-86-04-01）。
+    - **幂等 upsert**：重复回写同 ``(method, path)`` 不产生重复行（按唯一约束更新既有行，
+      T-86-04-02）。
+    - **逐条 fail-soft**：批量内单条非法/失败不影响其余（T-86-04-04）；全路径 fail-soft，
+      任何异常 → 200 + ``applied=false``（绝不 5xx、不阻断编码）。
+    - **审计可回滚 + 脱敏**：写入经 AuditService 留痕（``params`` 入口强制脱敏，T-86-04-03）。
+    """
+
+    tool_name = "report_project_state"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            ReportProjectStateRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+        return await self._handle(run, request, input_data, started_at)
+
+    async def _handle(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        """STATE 结构化清单直写（全路径 fail-soft：任何异常 → applied=false 200）。"""
+        from initiatives.models import ApiSource, ApiStatus
+        from initiatives.services import ProjectDocService
+
+        async def _finish(output_data: dict[str, Any]) -> Response:
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
+        def _skip(reason: str) -> dict[str, Any]:
+            return {
+                "applied": False,
+                "reason": reason,
+                "results": [],
+                "total_applied": 0,
+                "run_id": str(run.run_id),
+            }
+
+        try:
+            project_id = input_data["project_id"]
+            apis = input_data.get("apis") or []
+            user = request.user
+
+            # 未认证 / request.user 非真实用户 → 静默跳过（_begin 已挡匿名，此处纵深防御）。
+            if not getattr(user, "is_authenticated", False) or (
+                getattr(user, "id", None) is None
+            ):
+                return await _finish(_skip("unauthenticated"))
+
+            # 成员校验 fail-closed：非成员 / 未绑项目 → 静默跳过（不写、不抛、不阻断编码）。
+            if not await _assert_project_member(project_id, user):
+                return await _finish(_skip("not_member"))
+
+            service = ProjectDocService()
+            valid_status = {choice[0] for choice in ApiStatus.choices}
+            results: list[dict[str, Any]] = []
+            total_applied = 0
+
+            for item in apis:
+                if not isinstance(item, dict):
+                    results.append(
+                        {
+                            "method": "",
+                            "path": "",
+                            "applied": False,
+                            "action": "skipped",
+                            "reason": "invalid_item",
+                        }
+                    )
+                    continue
+                method = str(item.get("method") or "").strip().upper()
+                path = str(item.get("path") or "").strip()
+                params = item.get("params")
+                if not isinstance(params, dict):
+                    params = {}
+                item_status = str(item.get("status") or ApiStatus.IMPLEMENTED)
+                if item_status not in valid_status:
+                    item_status = ApiStatus.IMPLEMENTED
+
+                # 逐条校验：缺 method/path → 标失败、不影响其余（fail-soft）。
+                if not method or not path:
+                    results.append(
+                        {
+                            "method": method,
+                            "path": path,
+                            "applied": False,
+                            "action": "skipped",
+                            "reason": "missing_method_or_path",
+                        }
+                    )
+                    continue
+
+                try:
+                    api, created = await service.upsert_state_api(
+                        project_id=project_id,
+                        method=method,
+                        path=path,
+                        params=params,
+                        status=item_status,
+                        source=ApiSource.HOOK,
+                        actor=user,
+                        initiated_by_user_id=user.id,
+                    )
+                    # 既有行：经 INV-6 service 更新 params/status（幂等回写按约束更新既有行）。
+                    if not created:
+                        await service.update_state_api(
+                            project_id=project_id,
+                            api_id=api.id,
+                            fields={"params": params, "status": item_status},
+                            actor=user,
+                            initiated_by_user_id=user.id,
+                        )
+                    results.append(
+                        {
+                            "method": method,
+                            "path": path,
+                            "applied": True,
+                            "action": "created" if created else "updated",
+                        }
+                    )
+                    total_applied += 1
+                except Exception:  # noqa: BLE001 — 逐条 fail-soft，单条失败不影响其余
+                    logger.warning(
+                        "report_project_state_item_failed",
+                        project_id=str(project_id),
+                        method=method,
+                        path=path,
+                        initiated_by_user_id=str(getattr(user, "id", "")) or "system",
+                        component="mcp_tools",
+                        category="caller",
+                    )
+                    results.append(
+                        {
+                            "method": method,
+                            "path": path,
+                            "applied": False,
+                            "action": "failed",
+                            "reason": "error",
+                        }
+                    )
+
+            output_data = {
+                "applied": total_applied > 0,
+                "reason": "",
+                "results": results,
+                "total_applied": total_applied,
+                "run_id": str(run.run_id),
+            }
+            return await _finish(output_data)
+        except Exception:  # noqa: BLE001 — 全路径 fail-soft，绝不 5xx/阻断编码
+            return await _finish(_skip("error"))
 
 
 # ============================================================================

@@ -25,6 +25,7 @@ from .views import (
     LookupProjectByBranchView,
     ReadProjectDocView,
     ReportProjectKnowledgeView,
+    ReportProjectStateView,
     ReverseLookupView,
     RouteRepositoriesView,
     SearchDeliveryKnowledgeView,
@@ -81,6 +82,12 @@ urlpatterns = [
         "tools/report_project_knowledge/",
         ReportProjectKnowledgeView.as_view(),
         name="mcp-tool-report-project-knowledge",
+    ),
+    # STATE 结构化回写（HOOK-03，Phase 86-04）
+    path(
+        "tools/report_project_state/",
+        ReportProjectStateView.as_view(),
+        name="mcp-tool-report-project-state",
     ),
     # 项目上下文读半（CTX-01/02，Phase 85-02）
     path(

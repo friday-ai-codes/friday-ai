@@ -545,6 +545,26 @@ class ReadProjectDocRequestSerializer(serializers.Serializer):
     doc_type = serializers.CharField(required=True, allow_blank=False, max_length=64)
 
 
+class ReportProjectStateRequestSerializer(serializers.Serializer):
+    """IDE stop hook STATE 结构化 API 清单直写请求（HOOK-03）。
+
+    ``apis`` 为结构化清单（每项 ``{method, path, params?, status?}``），经
+    ``ProjectDocService.upsert_state_api`` 幂等写入 ``ProjectStateApi``（source=HOOK）。
+
+    **逐条 fail-soft 设计**：``apis`` 仅做「列表非空 + 子项为 dict」的宽松校验——单项缺
+    ``method``/``path`` 或 ``status`` 非法**不**整批 400 拒绝，而是在 view 内逐条校验/规范化
+    （``method`` 大写、``path`` 去空白），非法项标失败、合法项照写（与 86 系列 fail-soft 一致）。
+    """
+
+    project_id = serializers.UUIDField(required=True)
+    apis = serializers.ListField(
+        child=serializers.DictField(),
+        required=True,
+        allow_empty=False,
+        max_length=200,
+    )
+
+
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "route_repositories": {
         "request": ["query", "top_k"],
