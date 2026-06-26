@@ -88,6 +88,7 @@ const chatNavItem: NavItem = { to: '/chat', label: 'AI 对话', icon: 'lucide--m
 
 const mainNavItems: NavItem[] = [
   { to: '/', label: '首页', icon: 'lucide--home', exact: true },
+  { to: '/projects', label: '项目', icon: 'lucide--folder-kanban' },
   { to: '/spaces', label: '空间', icon: 'lucide--folder-git-2' },
   { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
   { to: '/knowledge', label: '知识', icon: 'lucide--book-open' },
