@@ -43,7 +43,10 @@ from initiatives.serializers import (
     ArtifactUpdateSerializer,
     MergeRequestSerializer,
     ProjectCreateSerializer,
+    ProjectDocContentSerializer,
+    ProjectDocHumanBlocksWriteSerializer,
     ProjectDocSerializer,
+    ProjectFeatureTreeSerializer,
     ProjectKnowledgeLinkSerializer,
     ProjectMemberAddSerializer,
     ProjectMemberSerializer,
@@ -55,15 +58,22 @@ from initiatives.serializers import (
     ProjectMemorySerializer,
     ProjectOwnerTransferSerializer,
     ProjectRehomeSerializer,
+    ProjectSearchResultSerializer,
     ProjectSerializer,
     ProjectStateApiCreateSerializer,
     ProjectStateApiSerializer,
+    ProjectStateApiUpdateSerializer,
     ProjectTransitionSerializer,
     ProjectUpdateSerializer,
 )
 from initiatives.services import (
     ArtifactError,
     ArtifactService,
+    DocContentError,
+    DocContentNotFound,
+    DocContentService,
+    FeatureListService,
+    HumanWriteForbidden,
     MemoryDistiller,
     MemoryError,
     MemoryPermissionError,
@@ -71,10 +81,13 @@ from initiatives.services import (
     ProjectDocService,
     ProjectMemberError,
     ProjectRehomeError,
+    ProjectSearchService,
     ProjectService,
     ProjectTransitionError,
+    SystemReadOnlyError,
 )
 from initiatives.services.artifact_view import aget_artifact_view
+from initiatives.services.doc_content_service import ALLOWED_DOC_TYPES
 from initiatives.services.knowledge_graph import (
     ProjectGraphError,
     ProjectKnowledgeGraphService,
@@ -949,6 +962,10 @@ def _serialize_work_item_links(project_id) -> list[dict]:
                 "feishu_project_key": wi.feishu_project_key,
                 "provenance": link.provenance,
                 "attached_at": link.created_at,
+                # WorkItem 状态镜像字段（84-01）：供前端进度灯/里程碑映射。
+                "status_state_key": wi.status_state_key,
+                "status_display_name": wi.status_display_name,
+                "module_normalized": wi.module_normalized,
             }
         )
     return out
@@ -1109,7 +1126,29 @@ class ProjectStateApiListCreateView(APIView):
 
 
 class ProjectStateApiDetailView(APIView):
-    """移除结构化 API 清单条目（DELETE，写权限，DOC-02）。"""
+    """更新（PATCH）/ 移除（DELETE）结构化 API 清单条目（写权限，DOC-02）。"""
+
+    async def patch(self, request, project_id, api_id):
+        """更新单条 API 清单条目的 method/path/params/status（DOC-02，84-01）。"""
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectStateApiUpdateSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        updated = await ProjectDocService().update_state_api(
+            project_id=project_id,
+            api_id=api_id,
+            fields=serializer.validated_data,
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+        )
+        if updated is None:
+            return Response(
+                {"detail": "API 清单条目不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+        updated = await ProjectStateApi.objects.aget(pk=updated.id)
+        body = await sync_to_async(lambda: ProjectStateApiSerializer(updated).data)()
+        return Response(body)
 
     async def delete(self, request, project_id, api_id):
         _project, err = await _aget_project_for_write(request, project_id)
@@ -1126,3 +1165,123 @@ class ProjectStateApiDetailView(APIView):
                 {"detail": "API 清单条目不存在"}, status=status.HTTP_404_NOT_FOUND
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ============================ 工作台后端支撑（WB-02/03/05，84-01）============================
+
+
+class ProjectWorkspaceDocContentView(APIView):
+    """单文档渲染内容 + block 分区读取（GET，WB-03；读权限）。
+
+    路由 ``projects/<project_id>/workspace/docs/<doc_type>/``；``doc_type`` 闭集校验
+    （memory/state/milestones/research/preflight），非法 400；文件不存在 404。
+    """
+
+    async def get(self, request, project_id, doc_type):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if doc_type not in ALLOWED_DOC_TYPES:
+            return Response(
+                {"detail": f"非法 doc_type：{doc_type}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        content = await DocContentService().get_doc_render(
+            project_id=project_id, doc_type=doc_type
+        )
+        if content is None:
+            return Response(
+                {"detail": "工作区文件不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
+        body = await sync_to_async(
+            lambda: ProjectDocContentSerializer(content).data
+        )()
+        return Response(body)
+
+
+class ProjectWorkspaceDocHumanBlocksView(APIView):
+    """人工区 block 写回（PUT/PATCH，WB-03；写操作仅项目成员，WS-02 fail-closed）。
+
+    路由 ``projects/<project_id>/workspace/docs/<doc_type>/human-blocks/``；触发 Phase 83
+    ``DocSyncService`` block 级回灌（永不整篇覆盖）；系统区只读（写 system block → 409）。
+    """
+
+    async def put(self, request, project_id, doc_type):
+        return await self._write(request, project_id, doc_type)
+
+    async def patch(self, request, project_id, doc_type):
+        return await self._write(request, project_id, doc_type)
+
+    async def _write(self, request, project_id, doc_type):
+        # 读权限作为入口前置（项目可见），成员写权限在 service 层 fail-closed 校验。
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        if doc_type not in ALLOWED_DOC_TYPES:
+            return Response(
+                {"detail": f"非法 doc_type：{doc_type}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = ProjectDocHumanBlocksWriteSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        try:
+            result = await DocContentService().update_human_blocks(
+                project_id=project_id,
+                doc_type=doc_type,
+                blocks=serializer.validated_data["blocks"],
+                user=request.user,
+            )
+        except HumanWriteForbidden as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except SystemReadOnlyError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except DocContentNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except DocContentError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+
+class ProjectFeatureListView(APIView):
+    """feature list 树 + 进度灯（GET，WB-02；读权限）。
+
+    路由 ``projects/<project_id>/feature-list/``；返回 模块→功能点→验收项 三层树，每个功能点
+    带四态进度灯；空 feature_list 工件返回空树不报错。
+    """
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        tree = await FeatureListService().build_tree(project_id)
+        body = await sync_to_async(lambda: ProjectFeatureTreeSerializer(tree).data)()
+        return Response(body)
+
+
+class ProjectSearchView(APIView):
+    """项目基础模糊搜索（GET，WB-05；读权限，召回链路写 RetrievalTrace）。
+
+    路由 ``projects/<project_id>/search/?q=``；本期接基础关键词 + 复用知识检索做项目域兜底，
+    结果项带 ``locator``（属哪个 repo/project）。深度项目域 RAG 标注留 Phase 85。
+    """
+
+    async def get(self, request, project_id):
+        project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        q = (request.query_params.get("q") or "").strip()
+        if not q:
+            return Response({"query": "", "results": []})
+        try:
+            top_k = int(request.query_params.get("top_k", "10"))
+        except ValueError:
+            return Response(
+                {"detail": "top_k 必须为整数"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        results = await ProjectSearchService().search(
+            project=project, query=q, user=request.user, top_k=top_k
+        )
+        body = await sync_to_async(
+            lambda: ProjectSearchResultSerializer(results, many=True).data
+        )()
+        return Response({"query": q, "results": body})

@@ -10,6 +10,14 @@ from initiatives.services.artifact_service import (
     ArtifactService,
     ArtifactTypeError,
 )
+from initiatives.services.doc_content_service import (
+    DocContentError,
+    DocContentNotFound,
+    DocContentService,
+    HumanWriteForbidden,
+    SystemReadOnlyError,
+)
+from initiatives.services.feature_list_service import FeatureListService
 from initiatives.services.memory_distill import MemoryDistiller
 from initiatives.services.memory_service import (
     MemoryError,
@@ -26,6 +34,7 @@ from initiatives.services.project_board_sync import (
     ProjectBoardSyncService,
 )
 from initiatives.services.project_doc_service import ProjectDocService
+from initiatives.services.project_search_service import ProjectSearchService
 from initiatives.services.project_service import (
     ProjectMemberError,
     ProjectRehomeError,
@@ -40,6 +49,13 @@ __all__ = [
     "ProjectMemberError",
     "ProjectRehomeError",
     "ProjectDocService",
+    "DocContentService",
+    "DocContentError",
+    "DocContentNotFound",
+    "SystemReadOnlyError",
+    "HumanWriteForbidden",
+    "FeatureListService",
+    "ProjectSearchService",
     "ProjectBoardSyncService",
     "BoardSyncResult",
     "ArtifactService",
