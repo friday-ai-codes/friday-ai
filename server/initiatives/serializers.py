@@ -5,16 +5,20 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from initiatives.models import (
+    ApiStatus,
     Artifact,
     ArtifactCarrier,
     ArtifactType,
     MergeRequest,
     Project,
+    ProjectDoc,
     ProjectMember,
     ProjectMemory,
     ProjectMemoryDraft,
     ProjectRole,
+    ProjectStateApi,
     ProjectStatus,
+    ProjectVisibility,
 )
 
 
@@ -53,9 +57,11 @@ class ProjectSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "status",
+            "visibility",
             "feishu_project_key",
             "feishu_board_url",
             "feishu_board_id",
+            "feishu_folder_token",
             "created_by_id",
             "member_count",
             "created_at",
@@ -87,15 +93,76 @@ class ProjectCreateSerializer(serializers.Serializer):
 
 
 class ProjectUpdateSerializer(serializers.Serializer):
-    """更新项目请求（仅可变字段，不含 status）。"""
+    """更新项目请求（仅可变字段，不含 status；含 visibility 翻转，WS-02/03）。
+
+    ``feishu_folder_token`` 不可经此 PATCH（仅后台 set_folder_token 可写，Pitfall 3）。
+    """
 
     name = serializers.CharField(required=False, max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
+    visibility = serializers.ChoiceField(
+        required=False, choices=ProjectVisibility.choices
+    )
     feishu_board_url = serializers.CharField(
         required=False, allow_blank=True, max_length=1000
     )
     feishu_board_id = serializers.CharField(
         required=False, allow_blank=True, max_length=100
+    )
+
+
+class ProjectRehomeSerializer(serializers.Serializer):
+    """项目改归空间请求（WS-03）。"""
+
+    new_space_id = serializers.UUIDField()
+
+
+class ProjectDocSerializer(serializers.ModelSerializer):
+    """项目工作区文件容器序列化（响应，DOC-01~05）。"""
+
+    class Meta:
+        model = ProjectDoc
+        fields = [
+            "id",
+            "project_id",
+            "doc_type",
+            "feishu_document_id",
+            "feishu_doc_token",
+            "sync_status",
+            "last_synced_revision",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ProjectStateApiSerializer(serializers.ModelSerializer):
+    """项目结构化 API 清单条目序列化（响应，DOC-02）。"""
+
+    class Meta:
+        model = ProjectStateApi
+        fields = [
+            "id",
+            "project_id",
+            "method",
+            "path",
+            "params",
+            "status",
+            "source",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ProjectStateApiCreateSerializer(serializers.Serializer):
+    """手动新增结构化 API 清单条目请求（DOC-02；source 固定 manual 由 view 注入）。"""
+
+    method = serializers.CharField(max_length=10)
+    path = serializers.CharField(max_length=500)
+    params = serializers.JSONField(required=False, default=dict)
+    status = serializers.ChoiceField(
+        required=False, choices=ApiStatus.choices, default=ApiStatus.PLANNED
     )
 
 

@@ -35,7 +35,12 @@ from initiatives.services.realtime import apush_project_event
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["ProjectService", "ProjectTransitionError", "ProjectMemberError"]
+__all__ = [
+    "ProjectService",
+    "ProjectTransitionError",
+    "ProjectMemberError",
+    "ProjectRehomeError",
+]
 
 # 审计来源/组件常量（component=initiatives）。
 _COMPONENT = "initiatives"
@@ -47,6 +52,10 @@ class ProjectTransitionError(Exception):
 
 class ProjectMemberError(Exception):
     """项目成员操作非法 fail-loud（如裸改主R角色 / 转移给非成员，API 层转 400）。"""
+
+
+class ProjectRehomeError(Exception):
+    """项目改归空间非法 fail-loud（目标空间不存在，API 层转 404/400）。"""
 
 
 class ProjectService:
@@ -193,11 +202,18 @@ class ProjectService:
         initiated_by_user_id: Any = None,
         **fields: Any,
     ) -> Project:
-        """更新项目可变字段（name/description/feishu_board_url/feishu_board_id）。
+        """更新项目可变字段（name/description/feishu_board_url/feishu_board_id/visibility）。
 
-        仅白名单字段可改；``status`` 不在此处改（经 ``change_status``）。审计记 before/after。
+        仅白名单字段可改；``status`` 不在此处改（经 ``change_status``）；``feishu_folder_token``
+        **不**在白名单（仅后台 ``set_folder_token`` 可写，Pitfall 3）。审计记 before/after。
         """
-        allowed = {"name", "description", "feishu_board_url", "feishu_board_id"}
+        allowed = {
+            "name",
+            "description",
+            "feishu_board_url",
+            "feishu_board_id",
+            "visibility",
+        }
         changes = {k: v for k, v in fields.items() if k in allowed and v is not None}
         project, before = await self._update_locked(project_id, changes)
         if changes:
@@ -270,6 +286,64 @@ class ProjectService:
             project.feishu_folder_token = token
             project.save(update_fields=["feishu_folder_token", "updated_at"])
         return project
+
+    async def rehome_space(
+        self,
+        *,
+        project_id: Any,
+        new_space_id: Any,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> Project:
+        """项目改归到其他空间（WS-03，专用方法不进 update 白名单，Pitfall 3）。
+
+        换 ``Project.space`` FK；目标空间不存在 fail-loud（``ProjectRehomeError``，API 转
+        404/400）；同空间幂等（不审计不推送）。审计 ``project.space_rehomed``。
+        """
+        project, old_space_id, changed = await self._rehome_space_locked(
+            project_id, new_space_id
+        )
+        if changed:
+            actor_id = initiated_by_user_id or getattr(actor, "id", None)
+            await AuditService.aemit(
+                action=taxonomy.ACTION_PROJECT_SPACE_REHOMED,
+                actor=actor,
+                target_type="project",
+                target_id=project.id,
+                target_repr=project.name,
+                before={"space_id": str(old_space_id)},
+                after={"space_id": str(new_space_id)},
+                metadata={
+                    "component": _COMPONENT,
+                    "category": "caller",
+                    "initiated_by_user_id": str(actor_id) if actor_id else "system",
+                },
+                source="api",
+            )
+            await apush_project_event(
+                project.id,
+                "space_rehomed",
+                {"from": str(old_space_id), "to": str(new_space_id)},
+            )
+        return project
+
+    @sync_to_async
+    def _rehome_space_locked(
+        self, project_id: Any, new_space_id: Any
+    ) -> tuple[Project, Any, bool]:
+        from projects.models import Space
+
+        with transaction.atomic():
+            project = Project.objects.select_for_update().get(pk=project_id)
+            old_space_id = project.space_id
+            if str(old_space_id) == str(new_space_id):
+                # 幂等：同空间不改、不审计、不推送
+                return project, old_space_id, False
+            if not Space.objects.filter(pk=new_space_id).exists():
+                raise ProjectRehomeError(f"目标空间不存在：{new_space_id}")
+            project.space_id = new_space_id
+            project.save(update_fields=["space", "updated_at"])
+        return project, old_space_id, True
 
     # ---- 状态机（PROJ-02） ----
 

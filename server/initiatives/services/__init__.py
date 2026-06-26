@@ -28,6 +28,7 @@ from initiatives.services.project_board_sync import (
 from initiatives.services.project_doc_service import ProjectDocService
 from initiatives.services.project_service import (
     ProjectMemberError,
+    ProjectRehomeError,
     ProjectService,
     ProjectTransitionError,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "ProjectService",
     "ProjectTransitionError",
     "ProjectMemberError",
+    "ProjectRehomeError",
     "ProjectDocService",
     "ProjectBoardSyncService",
     "BoardSyncResult",

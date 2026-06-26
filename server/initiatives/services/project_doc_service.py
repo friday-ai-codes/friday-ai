@@ -308,7 +308,25 @@ class ProjectDocService:
     async def rebuild_workspace(
         self, *, project_id: Any, initiated_by_user_id: Any = None
     ) -> Any:
-        """一键重建工作区（供 82-05 端点调用）= 重新派发 provision。"""
+        """一键重建工作区（供 82-05 端点调用）= 重新派发 provision。
+
+        派发前审计 ``project.workspace_rebuilt``（caller，归因触发用户），兜底飞书首建失败
+        的 broken；派发本身 best-effort 后台执行（绝不阻断响应）。
+        """
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_WORKSPACE_REBUILT,
+            target_type="project",
+            target_id=project_id,
+            target_repr=str(project_id),
+            metadata={
+                "component": _COMPONENT,
+                "category": "caller",
+                "initiated_by_user_id": (
+                    str(initiated_by_user_id) if initiated_by_user_id else "system"
+                ),
+            },
+            source="api",
+        )
         return self.provision_dispatch(project_id, initiated_by_user_id=initiated_by_user_id)
 
     async def _provision_workspace_coro(
