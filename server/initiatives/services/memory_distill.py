@@ -9,6 +9,9 @@ LLM 读成员会话消息 → 提炼一条候选记忆 → **脱敏** → ``Memo
 - 整体 fail-soft：LLM 缺凭证/异常 → 返回 ``None``，不抛、不产草稿。
 
 LLM 调用经 ``agents.llm_factory.build_chat_model`` 统一 seam（测试 mock 点 = ``_acall_llm``）。
+
+Phase 86 复用：``distill_hook_writeback`` 为 IDE stop hook active 直写前的可选精炼
+（``call_source="ide_hook_distill"``，best-effort，失败回退原始 content），复用同一 LLM seam。
 """
 
 from __future__ import annotations
@@ -42,6 +45,14 @@ _DISTILL_PROMPT = (
     "长期记忆的关键结论/决策/约束（自由文本，简洁，单条，不超过 200 字）。"
     "若无值得沉淀的内容，只输出 NONE。只输出记忆正文或 NONE，不要解释。\n\n"
     "会话片段：\n{conversation_text}"
+)
+
+# Phase 86：IDE stop hook 组织上下文 + 用户改动 → 精炼一条记忆条目（active 直写前可选蒸馏）。
+_HOOK_DISTILL_PROMPT = (
+    "你是项目记忆提炼助手。以下是一次 IDE 编码会话结束时组织的上下文与用户改动摘要，"
+    "请提炼出**一条**值得沉淀为项目长期记忆的关键结论/决策/约束（自由文本，简洁，单条，"
+    "不超过 200 字）。若无值得沉淀的内容，只输出 NONE。只输出记忆正文或 NONE，不要解释。\n\n"
+    "会话上下文：\n{conversation_text}"
 )
 
 
@@ -108,8 +119,35 @@ class MemoryDistiller:
             project_id=project_id, user_id=uid
         ).aexists()
 
-    async def _acall_llm(self, conversation_text: str) -> str | None:
-        """单轮 LLM 提炼（call_source=memory_distill）。失败 fail-soft 返回 None。
+    async def distill_hook_writeback(self, *, text: str) -> str | None:
+        """IDE stop hook active 直写前的可选精炼（Phase 86，call_source=ide_hook_distill）。
+
+        组织上下文 + 用户改动 → **一条**精炼记忆条目（脱敏后返回）。**纯 best-effort**：
+        LLM 缺凭证/异常/无候选（NONE）→ 返回 ``None``（调用方回退原始 content，绝不反噬编码）。
+        不做成员校验（active 写回入口 ``record_hook_writeback`` 已成员校验 + 入库再脱敏）。
+        """
+        candidate = await self._acall_llm(
+            text,
+            prompt_template=_HOOK_DISTILL_PROMPT,
+            call_source=CallSource.IDE_HOOK_DISTILL.value,
+        )
+        if not candidate:
+            return None
+        candidate = candidate.strip()
+        if not candidate or candidate.upper() == "NONE":
+            return None
+        # 蒸馏产物入库前脱敏不可绕过（active 写回入口还会再脱敏一次，双保险）。
+        return redact_secrets_in_text(candidate)
+
+    async def _acall_llm(
+        self,
+        conversation_text: str,
+        *,
+        prompt_template: str = _DISTILL_PROMPT,
+        call_source: str = CallSource.MEMORY_DISTILL.value,
+    ) -> str | None:
+        """单轮 LLM 提炼（默认 call_source=memory_distill；hook 蒸馏传 ide_hook_distill）。
+        失败 fail-soft 返回 None。
 
         测试 mock 点：patch 本方法即可绕过真实 provider。
         """
@@ -121,6 +159,7 @@ class MemoryDistiller:
             logger.warning(
                 "memory_distill_skipped",
                 reason="no_credential",
+                call_source=call_source,
                 component=_COMPONENT,
                 category="sampling",
             )
@@ -130,12 +169,12 @@ class MemoryDistiller:
 
         legacy = await aget_legacy_anthropic_config()
         model = legacy.get("default_model") or _DISTILL_MODEL_FALLBACK
-        prompt = _DISTILL_PROMPT.format(conversation_text=conversation_text[:6000])
+        prompt = prompt_template.format(conversation_text=conversation_text[:6000])
 
         _start = perf_counter()
         ttft_ms: int | None = None
         try:
-            with use_call_source(CallSource.MEMORY_DISTILL.value):
+            with use_call_source(call_source):
                 chat_model = build_chat_model(
                     resolved, model, max_output_tokens=512, streaming=False
                 )
@@ -143,12 +182,17 @@ class MemoryDistiller:
             ttft_ms = int((perf_counter() - _start) * 1000)
         except Exception as exc:  # noqa: BLE001 — LLM 失败 fail-soft + 上游错误码留痕
             await self._record_usage(
-                resolved, model, ttft_ms=None, upstream_status_code=parse_upstream_status(exc)
+                resolved,
+                model,
+                ttft_ms=None,
+                upstream_status_code=parse_upstream_status(exc),
+                call_source=call_source,
             )
             logger.warning(
                 "memory_distill_llm_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                call_source=call_source,
                 component=_COMPONENT,
                 category="sampling",
             )
@@ -162,6 +206,7 @@ class MemoryDistiller:
             prompt_tokens=usage.get("input_tokens", 0),
             completion_tokens=usage.get("output_tokens", 0),
             duration_ms=int((perf_counter() - _start) * 1000),
+            call_source=call_source,
         )
         return self._extract_text(ai_msg)
 
@@ -197,10 +242,11 @@ class MemoryDistiller:
         completion_tokens: int = 0,
         duration_ms: int | None = None,
         upstream_status_code: int | None = None,
+        call_source: str = CallSource.MEMORY_DISTILL.value,
     ) -> None:
         try:
             await arecord_llm_usage(
-                call_source=CallSource.MEMORY_DISTILL.value,
+                call_source=call_source,
                 provider=str(getattr(resolved, "provider_type", "")),
                 model=model,
                 prompt_tokens=prompt_tokens,

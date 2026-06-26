@@ -491,13 +491,28 @@ class LookupProjectByBranchRequestSerializer(serializers.Serializer):
 
 
 class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
-    """Cursor 沉淀上报写回请求（CURSOR-03，默认入 memory draft）。"""
+    """Cursor 沉淀上报写回请求（CURSOR-03，默认入 memory draft）。
+
+    Phase 86 扩展（**可选**，向后兼容）：
+
+    - ``writeback_mode``：``draft``（默认，CURSOR-03 不回退）/ ``active``（IDE stop hook
+      用户授权 accepted deviation，MEMORY/RESEARCH 直写生效不落 draft）。
+    - ``target``：``memory``（默认）/ ``research``（active 模式写 RESEARCH ProjectDoc 正文）。
+    - ``distill``：是否在入库前经 best-effort LLM 精炼（call_source=ide_hook_distill）。
+    """
 
     project_id = serializers.UUIDField(required=True)
     content = serializers.CharField(required=True, allow_blank=False, max_length=20000)
     source_conversation_id = serializers.UUIDField(
         required=False, allow_null=True, default=None
     )
+    writeback_mode = serializers.ChoiceField(
+        choices=["draft", "active"], required=False, default="draft"
+    )
+    target = serializers.ChoiceField(
+        choices=["memory", "research"], required=False, default="memory"
+    )
+    distill = serializers.BooleanField(required=False, default=False)
 
 
 class SearchProjectContextRequestSerializer(serializers.Serializer):

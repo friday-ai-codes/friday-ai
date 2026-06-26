@@ -151,3 +151,153 @@ async def test_attribution_records_token_user(mcp_client, access_user) -> None:
     assert resp.status_code == 201
     draft = await _first_draft(project.id)
     assert str(draft.proposed_by_id) == str(access_user.id)
+
+
+# ===========================================================================
+# Phase 86 HOOK-02：active 写回模式（用户授权 accepted deviation 2026-06-26）
+# ===========================================================================
+
+
+@sync_to_async
+def _active_memory_count(project_id) -> int:
+    return ProjectMemory.objects.filter(
+        project_id=project_id, status="active"
+    ).count()
+
+
+@sync_to_async
+def _first_active_memory(project_id):
+    return ProjectMemory.objects.filter(
+        project_id=project_id, status="active"
+    ).first()
+
+
+@sync_to_async
+def _research_snapshot(project_id) -> str:
+    from initiatives.models import DocType, ProjectDoc
+
+    doc = ProjectDoc.objects.filter(
+        project_id=project_id, doc_type=DocType.RESEARCH
+    ).first()
+    return doc.last_synced_snapshot if doc else ""
+
+
+async def test_active_member_writes_active_memory(mcp_client, access_user) -> None:
+    """active + 成员 → 写 active 记忆（非 draft），accepted=true + memory_id，HTTP 200。"""
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-active")
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "project_id": str(project.id),
+            "content": "active 直写：会话结束沉淀本次架构决策，直接生效无需人工确认。",
+            "writeback_mode": "active",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is True
+    assert body["memory_id"]
+    # active 直写，绝不落 draft。
+    assert await _active_memory_count(project.id) == 1
+    assert await _draft_count(project.id) == 0
+
+
+async def test_active_redaction_not_bypassable(mcp_client, access_user) -> None:
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-active-sec")
+    secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "project_id": str(project.id),
+            "content": f"active 接入：使用 token {secret} 调上游完成同步流程沉淀。",
+            "writeback_mode": "active",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["accepted"] is True
+    memory = await _first_active_memory(project.id)
+    assert secret not in memory.content
+
+
+async def test_active_non_member_silent_skip(mcp_client) -> None:
+    """active + 非成员 → accepted=false reason=not_member，HTTP 200，不写不抛。"""
+    client, _ = mcp_client
+    other = await sync_to_async(User.objects.create_user)(
+        username="rpk-active-other", password="x"
+    )
+    project = await _make_project(other, key="rpk-active-nm")
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "project_id": str(project.id),
+            "content": "非成员经 hook active 写共享记忆，应被静默跳过不阻断编码。",
+            "writeback_mode": "active",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is False
+    assert body["reason"] == "not_member"
+    assert await _active_memory_count(project.id) == 0
+
+
+async def test_active_quality_gate_rejects_low_quality(mcp_client, access_user) -> None:
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-active-short")
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {"project_id": str(project.id), "content": "ok", "writeback_mode": "active"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is False
+    assert body["reason"] == "too_short"
+    assert await _active_memory_count(project.id) == 0
+
+
+async def test_active_target_research_appends_doc(mcp_client, access_user) -> None:
+    """active + target=research + 成员 → RESEARCH ProjectDoc 正文新增 append 段。"""
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-active-res")
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "project_id": str(project.id),
+            "content": "调研沉淀：选型对比与最终决策记录在 RESEARCH 文档正文。",
+            "writeback_mode": "active",
+            "target": "research",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is True
+    snapshot = await _research_snapshot(project.id)
+    assert "调研沉淀" in snapshot
+    # research 路径不写记忆。
+    assert await _active_memory_count(project.id) == 0
+
+
+async def test_draft_default_path_not_regressed(mcp_client, access_user) -> None:
+    """不带 writeback_mode（或 draft）→ 行为与现状一致（落 pending draft，HTTP 201）。"""
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-draft-compat")
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "project_id": str(project.id),
+            "content": "默认路径校验：不带 active 标记仍应落 pending draft 不回退。",
+            "writeback_mode": "draft",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json()["accepted"] is True
+    assert await _draft_count(project.id) == 1
+    assert await _active_memory_count(project.id) == 0

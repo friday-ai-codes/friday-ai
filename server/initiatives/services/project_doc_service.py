@@ -101,6 +101,86 @@ class ProjectDocService:
                 project_id=project_id, doc_type=doc_type, defaults=fields
             )
 
+    # ---- IDE stop hook RESEARCH active append（HOOK-02，用户授权 accepted deviation）----
+
+    async def append_research_note(
+        self,
+        *,
+        project_id: Any,
+        content: str,
+        contributor: Any,
+        initiated_by_user_id: Any = None,
+    ) -> dict[str, Any]:
+        """IDE stop hook 写回 RESEARCH **active append**（accepted deviation，2026-06-26）。
+
+        把脱敏后的调研内容 **append**（绝不就地覆盖既有正文，与 MILESTONE-PROPOSAL §4.2
+        「Agent 写一律 append」一致）到该项目 RESEARCH ``ProjectDoc`` 正文
+        （``last_synced_snapshot`` 追加段），不落 draft、不需人工确认。
+
+        强制保留的兜底（绝不绕过）：
+
+        - **非成员静默跳过**：``contributor`` 非项目成员 → 返回
+          ``{"applied": False, "reason": "not_member"}``，不写任何表、**绝不抛**（T-86-01-03）。
+        - **脱敏不可绕过**：入库前经 ``redact_secrets_in_text``（T-86-01-02）。
+        - **审计可回滚**：``AuditService.aemit``（``project.research_note_appended``，
+          category=caller，绑定 ``initiated_by_user_id``），可经人工编辑/移除撤销
+          （T-86-01-01/05）。
+        - **归因**：``initiated_by_user_id`` 优先；未提供取 ``contributor.id``；仍无 → ``system``。
+
+        写入收口经本 service（INV-6，``ProjectDoc`` 写表只此一处）。
+        """
+        from common.logging import redact_secrets_in_text
+
+        is_member = await self._ais_project_member(project_id, contributor)
+        if not is_member:
+            return {"applied": False, "reason": "not_member"}
+        redacted = redact_secrets_in_text(content or "")
+        doc = await self.upsert_doc(project_id=project_id, doc_type=DocType.RESEARCH)
+        await self._append_research_snapshot_locked(doc.id, redacted)
+        actor_id = initiated_by_user_id or getattr(contributor, "id", None)
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_RESEARCH_NOTE_APPENDED,
+            actor=contributor,
+            target_type="project_doc",
+            target_id=doc.id,
+            target_repr=f"research @ {project_id}",
+            after={"project_id": str(project_id), "doc_type": DocType.RESEARCH},
+            metadata={
+                "component": _COMPONENT,
+                "category": "caller",
+                "initiated_by_user_id": str(actor_id) if actor_id else "system",
+            },
+            source="api",
+        )
+        # 写时增量材料化（CTX-01/02）：RESEARCH 正文写后物化进 delivery_knowledge，
+        # best-effort 绝不反噬写主流程。
+        await self._schedule_materialization(doc.id, actor_id)
+        return {"applied": True, "doc_id": str(doc.id)}
+
+    @staticmethod
+    async def _ais_project_member(project_id: Any, user: Any) -> bool:
+        """项目成员判定（与 ``MemoryService`` 同口径，fail-closed：无 user → 非成员）。"""
+        from initiatives.models import ProjectMember
+
+        uid = getattr(user, "id", None)
+        if uid is None:
+            return False
+        return await ProjectMember.objects.filter(
+            project_id=project_id, user_id=uid
+        ).aexists()
+
+    @sync_to_async
+    def _append_research_snapshot_locked(self, doc_id: Any, addition: str) -> str:
+        """把 ``addition`` append 到 RESEARCH ``last_synced_snapshot`` 末尾（append-only，
+        绝不整篇覆盖既有正文）。返回 append 后的全文。"""
+        with transaction.atomic():
+            doc = ProjectDoc.objects.select_for_update().get(pk=doc_id)
+            base = doc.last_synced_snapshot or ""
+            section = f"\n\n## IDE 自动沉淀\n\n{addition}\n" if base else f"{addition}\n"
+            doc.last_synced_snapshot = base + section
+            doc.save(update_fields=["last_synced_snapshot", "updated_at"])
+        return doc.last_synced_snapshot
+
     async def set_doc_feishu(
         self,
         *,

@@ -2719,14 +2719,21 @@ class LookupProjectByBranchView(McpToolView):
 
 
 class ReportProjectKnowledgeView(McpToolView):
-    """Cursor 沉淀上报写回（CURSOR-03）。
+    """Cursor / IDE stop hook 沉淀上报写回（CURSOR-03 + HOOK-02）。
 
     认证（PAT/JWT）→ 归因（``request.user`` 触发用户 + initiated_by_user_id）→
     **质量门槛防噪音**（长度/低信息量/与既有 active 记忆重复，阈值可配）→ **脱敏不可绕过**
-    + **成员校验 fail-closed**（经 ``MemoryService.create_draft``）。
+    + **成员校验**。
 
-    默认写入 **pending 草稿**（绝不直接 active，防共享记忆污染，与 MEM-04 一致）；
-    人工经记忆确认 UI / API 确认后才入库。
+    两条写路径：
+
+    - ``writeback_mode=draft``（默认，CURSOR-03 不回退）：写入 **pending 草稿**（绝不直接
+      active，与 MEM-04 一致），成员校验 fail-closed（非成员 403），人工确认后才入库。
+    - ``writeback_mode=active``（IDE stop hook，**用户授权 accepted deviation 2026-06-26**）：
+      MEMORY/RESEARCH **直写生效（active）不落 draft、不需人工确认**。四道兜底绝不绕过：
+      质量门槛 + 脱敏不可绕过 + 成员校验静默跳过（非成员/未认证/未绑项目 → accepted=false
+      200，绝不抛、绝不阻断编码）+ 审计可回滚。可选 ``distill``（call_source=ide_hook_distill）
+      best-effort 精炼，失败回退原文。全程 fail-soft（任何异常 → accepted=false 200）。
     """
 
     tool_name = "report_project_knowledge"
@@ -2743,6 +2750,12 @@ class ReportProjectKnowledgeView(McpToolView):
             return err
         assert input_data is not None
         started_at = time.perf_counter()
+
+        if input_data.get("writeback_mode") == "active":
+            # 用户授权 accepted deviation：active 直写。全程 fail-soft 包裹，绝不 5xx/阻断编码。
+            return await self._handle_active_writeback(
+                run, request, input_data, started_at
+            )
 
         from initiatives.services import MemoryPermissionError, MemoryService
         from services.cursor_writeback import evaluate_writeback_quality
@@ -2798,6 +2811,108 @@ class ReportProjectKnowledgeView(McpToolView):
             started_at=started_at,
         )
         return Response(output_data, status=status.HTTP_201_CREATED)
+
+    async def _handle_active_writeback(
+        self,
+        run: Any,
+        request: Request,
+        input_data: dict[str, Any],
+        started_at: float,
+    ) -> Response:
+        """IDE stop hook active 直写（accepted deviation）。全程 fail-soft：任何异常 →
+        accepted=false 200，绝不 5xx、绝不阻断编码（T-86-01-04）。"""
+        from initiatives.services import (
+            MemoryService,
+            ProjectDocService,
+        )
+        from services.cursor_writeback import evaluate_writeback_quality
+
+        async def _reject(reason: str) -> Response:
+            output_data = {
+                "accepted": False,
+                "memory_id": None,
+                "reason": reason,
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+
+        try:
+            project_id = input_data["project_id"]
+            content = str(input_data["content"])
+            target = input_data.get("target") or "memory"
+            distill = bool(input_data.get("distill"))
+
+            # 未认证 / request.user 非真实用户 → 静默跳过（_begin 已挡匿名，此处纵深防御）。
+            user = request.user
+            if not getattr(user, "is_authenticated", False) or getattr(
+                user, "id", None
+            ) is None:
+                return await _reject("unauthenticated")
+
+            # 可选 distill（best-effort，失败回退原文，绝不反噬）。
+            if distill:
+                content = await self._maybe_distill(content)
+
+            # 质量门槛（distill 后内容再过）：低质/空/重复 → accepted=false（与 draft 路径一致）。
+            existing = await self._active_memory_contents(project_id)
+            ok, reason = await evaluate_writeback_quality(content, existing)
+            if not ok:
+                return await _reject(reason)
+
+            if target == "research":
+                result = await ProjectDocService().append_research_note(
+                    project_id=project_id,
+                    content=content,
+                    contributor=user,
+                    initiated_by_user_id=user.id,
+                )
+            else:
+                result = await MemoryService().record_hook_writeback(
+                    project_id=project_id,
+                    content=content,
+                    contributor=user,
+                    initiated_by_user_id=user.id,
+                )
+
+            if not result.get("applied"):
+                # 非成员（绝不抛、不写库）→ accepted=false 200。
+                return await _reject(result.get("reason") or "not_member")
+
+            output_data = {
+                "accepted": True,
+                "memory_id": result.get("memory_id"),
+                "doc_id": result.get("doc_id"),
+                "reason": "",
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
+        except Exception:  # noqa: BLE001 — active 路径全 fail-soft，绝不 5xx/阻断编码
+            return await _reject("error")
+
+    @staticmethod
+    async def _maybe_distill(content: str) -> str:
+        """best-effort LLM 精炼（call_source=ide_hook_distill）；失败/无候选回退原文。"""
+        try:
+            from initiatives.services import MemoryDistiller
+
+            refined = await MemoryDistiller().distill_hook_writeback(text=content)
+            return refined or content
+        except Exception:  # noqa: BLE001 — 蒸馏 best-effort，绝不反噬主流程
+            return content
 
     @sync_to_async
     def _active_memory_contents(self, project_id: Any) -> list[str]:

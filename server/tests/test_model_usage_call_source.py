@@ -30,8 +30,8 @@ from agents.call_source import (
 from interactions.ledger import arecord_llm_usage, parse_upstream_status
 from interactions.models import InteractionRun, ModelUsageRecord
 
-# LOGGING-SPEC §4.1 权威 23 值（照抄，作为完整性守护基准；
-# v0.15.0 Phase 80 新增 ``memory_distill``）。
+# LOGGING-SPEC §4.1 权威 24 值（照抄，作为完整性守护基准；
+# v0.15.0 Phase 80 新增 ``memory_distill``；v0.16.0 Phase 86 新增 ``ide_hook_distill``）。
 _EXPECTED_CALL_SOURCES = {
     "chat",
     "chat_compat_openai",
@@ -56,6 +56,7 @@ _EXPECTED_CALL_SOURCES = {
     "embedding",
     "reranker",
     "memory_distill",
+    "ide_hook_distill",
 }
 
 
@@ -66,13 +67,14 @@ _EXPECTED_CALL_SOURCES = {
 
 class TestCallSourceEnum:
     def test_enum_has_all_22_values(self) -> None:
-        """枚举必须完整覆盖 LOGGING-SPEC §4.1 的 23 值，多一个少一个都失败。
+        """枚举必须完整覆盖 LOGGING-SPEC §4.1 的 24 值，多一个少一个都失败。
 
         历史名保留（test_enum_has_all_22_values）；v0.15.0 Phase 80 新增
-        ``memory_distill`` 后基准升至 23 值。
+        ``memory_distill`` 后基准升至 23 值；v0.16.0 Phase 86 新增
+        ``ide_hook_distill`` 后升至 24 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 23
+        assert len(_EXPECTED_CALL_SOURCES) == 24
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"
