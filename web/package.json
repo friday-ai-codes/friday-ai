@@ -24,6 +24,7 @@
     "3d-force-graph": "^1.80.0",
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/lang-json": "catalog:",
+    "@codemirror/lang-markdown": "catalog:",
     "@codemirror/lint": "catalog:",
     "@codemirror/search": "catalog:",
     "@codemirror/state": "catalog:",
