@@ -18,15 +18,18 @@ from .views import (
     GetRelatedEntitiesView,
     GetRepositoryFileView,
     GetRepositoryView,
+    GrepProjectView,
     GrepRepositoryView,
     ImproveCodingPlanView,
     ListRepositoryFilesView,
     LookupProjectByBranchView,
+    ReadProjectDocView,
     ReportProjectKnowledgeView,
     ReverseLookupView,
     RouteRepositoriesView,
     SearchDeliveryKnowledgeView,
     SearchLearningCasesView,
+    SearchProjectContextView,
     SearchRagChunksView,
     SummarizeBranchView,
 )
@@ -78,5 +81,21 @@ urlpatterns = [
         "tools/report_project_knowledge/",
         ReportProjectKnowledgeView.as_view(),
         name="mcp-tool-report-project-knowledge",
+    ),
+    # 项目上下文读半（CTX-01/02，Phase 85-02）
+    path(
+        "tools/search_project_context/",
+        SearchProjectContextView.as_view(),
+        name="mcp-tool-search-project-context",
+    ),
+    path(
+        "tools/grep_project/",
+        GrepProjectView.as_view(),
+        name="mcp-tool-grep-project",
+    ),
+    path(
+        "tools/read_project_doc/",
+        ReadProjectDocView.as_view(),
+        name="mcp-tool-read-project-doc",
     ),
 ]
