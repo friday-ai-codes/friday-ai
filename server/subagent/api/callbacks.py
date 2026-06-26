@@ -622,6 +622,15 @@ async def _persist_sdk_session(
         has_transcript=bool(sdk_transcript),
     )
 
+    # 落库成功后镜像到 SessionStore（Redis）支持跨容器/跨副本/冷启动 resume。
+    # best-effort：镜像失败绝不影响回调落库（DB 仍是真相源，HOOK-04）。
+    try:
+        from chat.session_store import SessionStore
+
+        await SessionStore().mirror(coding_session=coding_session)
+    except Exception:  # noqa: BLE001 — 镜像 best-effort，绝不反噬回调主流程
+        pass
+
 
 async def _update_coding_session_on_complete(
     session: SubAgentSession,
