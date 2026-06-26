@@ -112,6 +112,40 @@ async def test_vector_route_quotas(recall_deps):
     assert limits == [3, 7]
 
 
+def _demand_entity_kinds(calls: list[dict]) -> set:
+    """从 hybrid 调用记录里抽取 demand 分路 entity_kind MatchAny 值集合。"""
+    kinds: set = set()
+    for c in calls:
+        for cond in c["filter"].must:
+            if getattr(cond, "key", None) == "entity_kind":
+                kinds.update(cond.match.any)
+    return kinds
+
+
+async def test_vector_include_document_kind_adds_document(recall_deps):
+    """include_document_kind=True → demand 分路 entity_kind 纳入 document（CTX-01 读路径）。"""
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=[],
+        top_k=5,
+        include_document_kind=True,
+    )
+    assert recall_deps, "应至少有一次 demand 召回"
+    assert EntityKind.DOCUMENT in _demand_entity_kinds(recall_deps)
+
+
+async def test_vector_default_excludes_document_kind(recall_deps):
+    """默认（不传 flag）demand 分路不含 document（不回归全局代码检索召回口径）。"""
+    await recall_similar_chunks(
+        "query",
+        allowed_project_ids=["p1"],
+        allowed_repository_ids=[],
+        top_k=5,
+    )
+    assert EntityKind.DOCUMENT not in _demand_entity_kinds(recall_deps)
+
+
 async def test_vector_dedupe_same_entity():
     """两路同 entity_id → 融合后单条目。"""
     eid = uuid.uuid4()

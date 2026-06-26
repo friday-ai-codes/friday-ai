@@ -25,6 +25,10 @@ logger = structlog.get_logger(__name__)
 __all__ = ["VectorHit", "recall_similar_chunks"]
 
 _DEMAND_KINDS = (EntityKind.WORK_ITEM, EntityKind.TECH_PLAN)
+# 项目上下文读路径（CTX-01）额外纳入 DOCUMENT 召回——项目 5 文件/记忆/工件物化为
+# DOCUMENT 实体，仅在 ``include_document_kind=True`` 时叠加到无仓库 demand 分路（不影响
+# 全局代码检索的既有 demand/code 分路）。
+_DOCUMENT_KINDS = (EntityKind.DOCUMENT,)
 _CODE_KINDS = (EntityKind.CODE_CHANGE,)
 _RRF_K = 60
 
@@ -182,8 +186,14 @@ async def recall_similar_chunks(
     top_k: int = 10,
     entity_kinds: list[str] | None = None,
     include_superseded: bool = False,
+    include_document_kind: bool = False,
 ) -> list[VectorHit]:
-    """分路 hybrid 召回 + 跨路 RRF + entity 去重。"""
+    """分路 hybrid 召回 + 跨路 RRF + entity 去重。
+
+    ``include_document_kind=True``（项目上下文读路径 CTX-01）时，无仓库 demand 分路额外
+    纳入 ``DOCUMENT`` 实体召回（项目 5 文件/记忆/工件物化），不放宽 project_id/repository_id
+    权限闸（visibility 仍由 ``allowed_project_ids`` 收口，无泄漏）。
+    """
     if not allowed_project_ids:
         return []
 
@@ -201,9 +211,12 @@ async def recall_similar_chunks(
         return []
 
     kinds_filter = entity_kinds
+    demand_allowed = list(_DEMAND_KINDS)
+    if include_document_kind:
+        demand_allowed = [*demand_allowed, *_DOCUMENT_KINDS]
     demand_kinds = (
-        [k for k in (kinds_filter or list(_DEMAND_KINDS)) if k in _DEMAND_KINDS]
-        or list(_DEMAND_KINDS)
+        [k for k in (kinds_filter or demand_allowed) if k in demand_allowed]
+        or demand_allowed
     )
     code_kinds = (
         [k for k in (kinds_filter or list(_CODE_KINDS)) if k in _CODE_KINDS] or list(_CODE_KINDS)

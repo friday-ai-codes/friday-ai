@@ -279,7 +279,12 @@ async def _layer_rag(query: str, user: Any, project_id: Any) -> _Layer:
         from knowledge.retrieval import DeliveryKnowledgeSearchService
 
         results = await DeliveryKnowledgeSearchService().search_similar(
-            query, user=user, top_k=8
+            query,
+            user=user,
+            top_k=8,
+            # CTX-01：AI 对话链项目上下文同样纳入 DOCUMENT 召回（项目 5 文件/记忆/工件物化），
+            # 权限仍由 search_similar 内 allowed_project_ids/visibility 收口，无泄漏。
+            include_document_kind=True,
         )
         for r in results:
             title = getattr(getattr(r, "entity", None), "title", "") or ""
