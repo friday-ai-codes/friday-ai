@@ -18,6 +18,7 @@ from procrastinate.contrib.django import app
 
 from durable.queues import (
     QUEUE_CRAWL_INGEST,
+    QUEUE_DOC_SYNC,
     QUEUE_GRAPH,
     QUEUE_INDEX,
     QUEUE_MAINTENANCE,
@@ -101,6 +102,31 @@ async def durable_repo_summary(
 
     return await run_repo_summary(
         repository_id=repository_id, initiated_by_user_id=initiated_by_user_id
+    )
+
+
+@app.task(name="durable_doc_sync_pull", queue=QUEUE_DOC_SYNC)
+async def durable_doc_sync_pull(
+    *,
+    file_token: str = "",
+    event_id: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """飞书→Friday 文档回拉 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    镜像 ``durable_index`` 包壳：显式 ``name="durable_doc_sync_pull"`` 与 ``backends.defer``
+    裸名查找（``app.tasks.get("durable_doc_sync_pull")``）同源；payload 仅
+    ``file_token`` / ``event_id``（**绝不落正文/token 明文**），经 ``defer_async(**payload)``
+    展开传入。``file_token`` 即飞书 docx 的 ``feishu_document_id``。``initiated_by_user_id``
+    （CTX-02）显式形参消费 payload 同名键并转发给任务体，worker 入口据此 re-bind 发起用户
+    （未映射 / 不传 → ``system``）。
+    """
+    from durable.tasks_impl import run_doc_sync_pull
+
+    return await run_doc_sync_pull(
+        file_token=file_token,
+        event_id=event_id,
+        initiated_by_user_id=initiated_by_user_id,
     )
 
 

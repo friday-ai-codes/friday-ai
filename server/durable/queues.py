@@ -20,6 +20,8 @@ QUEUE_PAGE_INDEX = "page_index"
 QUEUE_REPO_SUMMARY = "repo_summary"
 # 维护类周期任务（stalled rescue 等运维任务）
 QUEUE_MAINTENANCE = "maintenance"
+# 飞书↔Friday 文档同步（pull/push/poll 对同一文档共用 lock=docsync-{feishu_document_id} 串行）
+QUEUE_DOC_SYNC = "doc_sync"
 
 # 全部已声明队列的汇总，供注册 / 校验 / worker 启动参数等场景遍历。
 ALL_QUEUES: tuple[str, ...] = (
@@ -29,6 +31,7 @@ ALL_QUEUES: tuple[str, ...] = (
     QUEUE_PAGE_INDEX,
     QUEUE_REPO_SUMMARY,
     QUEUE_MAINTENANCE,
+    QUEUE_DOC_SYNC,
 )
 
 __all__ = [
@@ -38,5 +41,6 @@ __all__ = [
     "QUEUE_PAGE_INDEX",
     "QUEUE_REPO_SUMMARY",
     "QUEUE_MAINTENANCE",
+    "QUEUE_DOC_SYNC",
     "ALL_QUEUES",
 ]

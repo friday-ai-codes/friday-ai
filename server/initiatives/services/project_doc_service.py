@@ -27,6 +27,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
+from django.utils import timezone
 
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
@@ -141,6 +142,53 @@ class ProjectDocService:
             doc.sync_status = status
             doc.save(update_fields=["sync_status", "updated_at"])
         return doc
+
+    async def advance_sync_revision(
+        self,
+        *,
+        doc_id: Any,
+        expected_revision: int,
+        new_revision: int,
+        snapshot: str,
+    ) -> bool:
+        """CAS 推进同步水位（乐观并发兜底，Pitfall 3）：仅当 ``last_synced_revision`` 仍等于
+        ``expected_revision`` 时把它推进到 ``new_revision`` 并落新快照，返回是否更新成功。
+
+        条件 update 不依赖 durable doing 锁（in-process fallback 忽略 lock）：并发 pull/push
+        对同一文档时，先提交者推进成功，后者 CAS 失败（返回 False），调用方据此重拉 rebase
+        而非盲覆盖。``snapshot`` 入库前由上游（DocSyncService）已脱敏，不在本层记日志。
+        """
+        return await self._advance_sync_revision_locked(
+            doc_id, expected_revision, new_revision, snapshot
+        )
+
+    @sync_to_async
+    def _advance_sync_revision_locked(
+        self, doc_id: Any, expected_revision: int, new_revision: int, snapshot: str
+    ) -> bool:
+        with transaction.atomic():
+            updated = ProjectDoc.objects.filter(
+                pk=doc_id, last_synced_revision=expected_revision
+            ).update(
+                last_synced_revision=new_revision,
+                last_synced_snapshot=snapshot,
+                updated_at=timezone.now(),
+            )
+        return updated > 0
+
+    async def clear_block_map(self, *, doc_id: Any, feishu_block_id: str) -> bool:
+        """删除某 block 映射（飞书侧删块同步：清 map 行，幂等）。返回是否删到行。"""
+        return await self._clear_block_map_locked(doc_id, feishu_block_id)
+
+    @sync_to_async
+    def _clear_block_map_locked(self, doc_id: Any, feishu_block_id: str) -> bool:
+        with transaction.atomic():
+            deleted, _ = (
+                ProjectDocBlockMap.objects.filter(
+                    doc_id=doc_id, feishu_block_id=feishu_block_id
+                ).delete()
+            )
+        return deleted > 0
 
     # ---- ProjectDocBlockMap 写入 ----
 
@@ -474,6 +522,13 @@ class ProjectDocService:
                     feishu_doc_token=document_id,
                     sync_status=DocSyncStatus.READY,
                 )
+                # 按文件订阅 drive.file.edit_v1 变更事件（SYNC-01）：fail-soft，失败退化 TTL
+                # 轮询兜底（83-06），绝不阻断 provision。订阅成功才落 subscribed 标志。
+                subscribed = bool(await client.subscribe_file(document_id))
+                if subscribed:
+                    doc = await self.upsert_doc(
+                        project_id=project_id, doc_type=doc_type, subscribed=True
+                    )
                 created_docs[doc_type] = (doc, result.get("url", ""))
                 ready += 1
             except Exception as exc:  # noqa: BLE001 — 单文件失败置 broken，继续其余

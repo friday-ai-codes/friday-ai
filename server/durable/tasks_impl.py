@@ -179,6 +179,33 @@ async def run_repo_summary(
         return {"status": "dispatched", "repository_id": repository_id, "session_id": session_id}
 
 
+async def run_doc_sync_pull(
+    *,
+    file_token: str = "",
+    event_id: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """飞书→Friday 文档回拉任务体（SYNC-01）：worker 入口 bind 发起用户后委托 DocSyncService.pull。
+
+    ``file_token`` 即飞书 docx 的 ``feishu_document_id``。worker 用干净 contextvars 不自动
+    传播，必须经 ``bind_task_context`` 显式 re-bind 发起用户（未映射 / 不传 → ``system``）；
+    ``component="doc_sync"`` 标注观测组件（LOGGING-SPEC）。``DocSyncService.pull`` 自身
+    best-effort fail-soft（归档 / broken / 回拉失败均不抛回事件主流程），本壳不再额外吞异常。
+    """
+    from initiatives.services.doc_sync_service import DocSyncService
+
+    with bind_task_context(
+        user_id=initiated_by_user_id or "system",
+        source="durable",
+        component="doc_sync",
+    ):
+        return await DocSyncService().pull(
+            file_token=file_token,
+            event_id=event_id,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+
+
 async def run_page_index(
     *, target_id: str | None = None, initiated_by_user_id: str | None = None, **kwargs: Any
 ) -> dict[str, Any]:
