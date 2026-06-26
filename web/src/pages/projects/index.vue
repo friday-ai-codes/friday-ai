@@ -13,6 +13,7 @@ import LoadingState from '~/components/common/LoadingState.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
+import ProjectSearchPanel from '~/components/project/ProjectSearchPanel.vue'
 import { Button } from '~/components/ui/button'
 import {
   Select,
@@ -40,6 +41,9 @@ const statusFilter = ref<string>(ALL)
 const onlyMine = ref(false)
 const searchInput = ref('')
 const search = refDebounced(searchInput, 300)
+
+// 全局/模糊搜索面板（WB-05）：默认折叠，在当前筛选可见的项目范围内做内容召回。
+const showSearchPanel = ref(false)
 
 // 可选空间列表（筛选下拉）。
 const { data: spaces } = useQuery({
@@ -162,7 +166,19 @@ async function openCreate() {
         {{ t('projects.filter.onlyMine') }}
       </label>
 
-      <div class="relative w-full sm:w-64 sm:ml-auto">
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="global-search-toggle"
+        :aria-expanded="showSearchPanel"
+        class="sm:ml-auto"
+        @click="showSearchPanel = !showSearchPanel"
+      >
+        <span class="icon-[lucide--search-code] mr-1.5" />
+        {{ showSearchPanel ? t('projects.search.close') : t('projects.search.open') }}
+      </Button>
+
+      <div class="relative w-full sm:w-64">
         <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
         <input
           v-model="searchInput"
@@ -171,6 +187,9 @@ async function openCreate() {
         >
       </div>
     </div>
+
+    <!-- 全局/模糊搜索面板（在当前筛选可见的项目范围内召回，结果带 repo/project 定位） -->
+    <ProjectSearchPanel v-if="showSearchPanel" :projects="projects" />
 
     <!-- 状态 -->
     <LoadingState v-if="isLoading" variant="card" :count="3" :text="t('projects.loading')" />
