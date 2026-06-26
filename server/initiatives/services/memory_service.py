@@ -185,6 +185,61 @@ class MemoryService:
             )
         return memory, before
 
+    async def sync_edit(
+        self,
+        *,
+        memory_id: Any,
+        content: str,
+        editor: Any,
+        initiated_by_user_id: Any = None,
+    ) -> dict[str, Any]:
+        """飞书镜像编辑受限入口（origin=feishu_sync，OQ-1）：兼顾 SYNC-06 fail-soft 与 MEM-02。
+
+        - **成员**：正常落 active + append revision（飞书优先覆盖，旧态留在 revision 链，
+          capture-never-clobber 由历史链天然保证），返回 ``{"applied": True, "attribution": "member"}``。
+        - **非成员**：**绝不抛**（区别于前端贡献 ``edit`` 的 MEM-02 fail-closed）——把飞书内容
+          append 为 ``ProjectMemoryRevision`` 留痕但 **不改 active**（不进 active ProjectMemory），
+          归因 ``system``（未解析用户）/``unmapped``（已解析但非成员），返回
+          ``{"applied": False, "attribution": ...}``。绝不静默丢用户内容（SYNC-04）。
+
+        始终脱敏入库（``redact_secrets_in_text``）。``_skip_doc_push`` 隐含 True（飞书镜像回写，
+        防 pull→push 回声，T-83-03-ECHO）。
+        """
+        project_id = await self._project_id_of_memory(memory_id)
+        is_member = await sync_to_async(self._is_member_sync)(project_id, editor)
+        redacted = redact_secrets_in_text(content or "")
+        if is_member:
+            memory, before = await self._edit_locked(
+                memory_id=memory_id, content=redacted, editor=editor
+            )
+            await self._emit(
+                taxonomy.ACTION_PROJECT_MEMORY_EDITED,
+                actor=editor,
+                initiated_by_user_id=initiated_by_user_id,
+                target_id=memory.id,
+                target_repr=str(memory.id),
+                before={"content": before},
+                after={"content": redacted},
+            )
+            return {"applied": True, "attribution": "member"}
+        # 非成员飞书编辑：capture 为 revision（不进 active），归因受限，绝不抛、绝不丢。
+        await self._capture_sync_revision_locked(
+            memory_id=memory_id, content=redacted, editor=editor
+        )
+        attribution = "system" if _user_id_of(editor) is None else "unmapped"
+        return {"applied": False, "attribution": attribution}
+
+    @sync_to_async
+    def _capture_sync_revision_locked(
+        self, *, memory_id: Any, content: str, editor: Any
+    ) -> None:
+        """非成员飞书镜像编辑 → append-only 留痕（绝不改 active，capture-never-clobber）。"""
+        with transaction.atomic():
+            memory = ProjectMemory.objects.get(pk=memory_id)
+            ProjectMemoryRevision.objects.create(
+                memory=memory, content=content, editor=editor
+            )
+
     async def supersede(
         self,
         *,
