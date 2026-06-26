@@ -43,7 +43,7 @@
 **Wave 3 — feature list 交付流水线：**
 
 - [x] **Phase 87: 看板拆分节点 + 群 + 流式卡片** - feature list → 子看板（work_item/create + 父子关联，名=feature 名/描述=feature 原文）工作流节点 + AI 会话可调 + 拉群+bot 入群 + 拆分结果流式卡片（开始创建/输入框）+ 多轮重拆 — BOARD-01/02
-- [ ] **Phase 88: 智能业务关联仓库** - 知识库（活跃度/功能梳理）+ RAG 多轮 + Agent 自处理 + 卡片引导式多轮澄清/确认 + 用户确认后逐仓自校验 + 最终卡片确认 — REPO-01/02
+- [x] **Phase 88: 智能业务关联仓库** - 知识库（活跃度/功能梳理）+ RAG 多轮 + Agent 自处理 + 卡片引导式多轮澄清/确认 + 用户确认后逐仓自校验 + 最终卡片确认 — REPO-01/02
 - [ ] **Phase 89: 技术方案深化 + 建分支绑项目** - per-repo+overall 方案（负责事项/预改动/影响模块/e2e·单测/风险/feature 冲突）+ 修订回路「调研问题发现」卡片 + 容器 5min 挂起/resume（session 持久化）+ 按方案建分支推送并绑项目 — PLAN-01~04
 
 > **执行/拆分建议**：Wave 1（82–84）是最小可交付地基，必须先做且全绿；Wave 2（85–86）、Wave 3（87–89）依赖 Wave 1，可在本里程碑内顺序推进，也可按需拆成 v0.17/v0.18 独立发布。
@@ -242,23 +242,23 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 88-01-PLAN.md — 持久化地基：RepoAssociation/RepoVerifyTask 模型（镜像 RepoResearchTask）+ 迁移 0010 + SubAgentSession.TaskType.REPO_VERIFY + call_source(repo_verify_container/repo_association) 登记 §4.1 — REPO-01/02
+- [x] 88-01-PLAN.md — 持久化地基：RepoAssociation/RepoVerifyTask 模型（镜像 RepoResearchTask）+ 迁移 0010 + SubAgentSession.TaskType.REPO_VERIFY + call_source(repo_verify_container/repo_association) 登记 §4.1 — REPO-01/02
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 88-02-PLAN.md — RepoAssociationService.propose/refine：COMBINED 选仓复用 RepoRouterV2（补 use_call_source(aux_repo_router)+RetrievalTrace 埋点）+ 候选范围限 Space 仓 + 落 proposed + INV-6 grep 守护 — REPO-01
+- [x] 88-02-PLAN.md — RepoAssociationService.propose/refine：COMBINED 选仓复用 RepoRouterV2（补 use_call_source(aux_repo_router)+RetrievalTrace 埋点）+ 候选范围限 Space 仓 + 落 proposed + INV-6 grep 守护 — REPO-01
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 88-03-PLAN.md — 逐仓 explore 容器深验：RepoVerifyDispatchService（复刻 ResearchDispatchAdapter）+ service confirm/dispatch/collect_verdicts + 容器回调 verify 钩子（解析 verdict 落库）+ 单仓 fail-soft + 88-UAT.md — REPO-02
+- [x] 88-03-PLAN.md — 逐仓 explore 容器深验：RepoVerifyDispatchService（复刻 ResearchDispatchAdapter）+ service confirm/dispatch/collect_verdicts + 容器回调 verify 钩子（解析 verdict 落库）+ 单仓 fail-soft + 88-UAT.md — REPO-02
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 88-04-PLAN.md — 交互面：CardKit 四态卡（候选/进行中/回退/最终）+ RepoAssociationNode（首发 waiting_event + 容器深验续驱聚合判 mismatch/fit）+ associate_repos 工具 — REPO-01/02
+- [x] 88-04-PLAN.md — 交互面：CardKit 四态卡（候选/进行中/回退/最终）+ RepoAssociationNode（首发 waiting_event + 容器深验续驱聚合判 mismatch/fit）+ associate_repos 工具 — REPO-01/02
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 88-05-PLAN.md — 回调状态机：confirm→派深验 / refine→重 route / reconfirm→回退 / accept_mismatch→approve_node + Phase 89 输出契约 get_verified_associations — REPO-02
+- [x] 88-05-PLAN.md — 回调状态机：confirm→派深验 / refine→重 route / reconfirm→回退 / accept_mismatch→approve_node + Phase 89 输出契约 get_verified_associations — REPO-02
 
 **Waves**: W1 = 88-01（无前置）；W2 = 88-02（依赖 01）；W3 = 88-03（依赖 02，扩 service+回调）；W4 = 88-04（依赖 02 propose + 03 collect_verdicts，节点续驱聚合）；W5 = 88-05（依赖 04 节点/卡 + 03 service，回调状态机闭环）
 
@@ -391,7 +391,7 @@ Plans:
 | 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ✅ Complete |
 | 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ✅ Complete |
 | 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ✅ Complete |
-| 88. 智能业务关联仓库 | REPO-01/02 | 3 | ☐ Pending |
+| 88. 智能业务关联仓库 | REPO-01/02 | 3 | ✅ Complete |
 | 89. 技术方案深化 + 建分支绑项目 | PLAN-01~04 | 3 | ☐ Pending |
 
 **Execution order:** 82 → 83 → 84（Wave 1 地基，必须先全绿）→ 85 → 86（Wave 2 闭环）→ 87 → 88 → 89（Wave 3 流水线，线性）。Wave 1 是最小可交付；Wave 2/3 依赖 Wave 1，可在本里程碑内顺序推进或按需拆 v0.17/v0.18。
