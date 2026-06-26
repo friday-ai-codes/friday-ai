@@ -64,7 +64,10 @@ function mountPage() {
 }
 
 describe('/projects 项目列表页', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+  })
 
   it('渲染筛选栏与创建入口（真实 zh-CN 文案）', async () => {
     listMock.mockResolvedValue([makeProject()])
@@ -102,5 +105,24 @@ describe('/projects 项目列表页', () => {
     await flushPromises()
     expect(wrapper.text()).toContain(zhCN.projects.loadError)
     expect(wrapper.text()).toContain(zhCN.projects.retry)
+  })
+
+  it('localStorage 记忆的所选空间驱动列表查询（space_id 生效）', async () => {
+    localStorage.setItem('projects-selected-space', 's1')
+    listMock.mockResolvedValue([makeProject()])
+    mountPage()
+    await flushPromises()
+    expect(listMock).toHaveBeenCalled()
+    const calledFilters = listMock.mock.calls.at(-1)?.[0]
+    expect(calledFilters).toMatchObject({ space_id: 's1' })
+  })
+
+  it('无记忆时默认全部空间（filters 不含 space_id）', async () => {
+    listMock.mockResolvedValue([makeProject()])
+    mountPage()
+    await flushPromises()
+    expect(listMock).toHaveBeenCalled()
+    const calledFilters = listMock.mock.calls.at(-1)?.[0] ?? {}
+    expect(calledFilters).not.toHaveProperty('space_id')
   })
 })

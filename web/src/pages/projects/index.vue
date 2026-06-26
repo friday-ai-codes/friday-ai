@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select'
-import { refDebounced } from '@vueuse/core'
+import { refDebounced, useLocalStorage } from '@vueuse/core'
 import { useAuthStore } from '~/stores/auth'
 
 const { t } = useI18n()
@@ -33,7 +33,9 @@ useHead({ title: () => `${t('projects.title')} - Friday AI` })
 const ALL = '__all__'
 const STATUSES: ProjectStatus[] = ['developing', 'archived', 'terminated']
 
-const spaceFilter = ref<string>(ALL)
+// 所选空间用 localStorage 本地记忆（无后端偏好）：默认 __all__（全部空间），
+// 用户选定后刷新/重进沿用所选空间。
+const spaceFilter = useLocalStorage<string>('projects-selected-space', ALL)
 const statusFilter = ref<string>(ALL)
 const onlyMine = ref(false)
 const searchInput = ref('')
