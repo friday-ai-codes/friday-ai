@@ -103,7 +103,7 @@ async def test_schedule_delivers_immediately_under_autocommit(monkeypatch) -> No
     submitted: list[str | None] = []
     monkeypatch.setattr(
         "knowledge.ingestion.run_in_background",
-        lambda factory, *, name=None: submitted.append(name),
+        lambda factory, *, name=None, initiated_by_user_id=None: submitted.append(name),
     )
     await aschedule_ingestion(IngestionRequest("coding_plan", "abc-123", "chat_plan_created"))
     assert len(submitted) == 1
@@ -116,7 +116,7 @@ def test_schedule_not_delivered_on_rollback(monkeypatch) -> None:
     submitted: list[str | None] = []
     monkeypatch.setattr(
         "knowledge.ingestion.run_in_background",
-        lambda factory, *, name=None: submitted.append(name),
+        lambda factory, *, name=None, initiated_by_user_id=None: submitted.append(name),
     )
     with pytest.raises(RuntimeError, match="force rollback"):
         with transaction.atomic():
@@ -130,7 +130,7 @@ def test_schedule_not_delivered_on_rollback(monkeypatch) -> None:
 async def test_schedule_swallows_exceptions(monkeypatch) -> None:
     """异常隔离：run_in_background 抛异常 → aschedule_ingestion 不上抛 + structlog warning。"""
 
-    def _boom(factory, *, name=None):
+    def _boom(factory, *, name=None, initiated_by_user_id=None):
         raise RuntimeError("runner down")
 
     monkeypatch.setattr("knowledge.ingestion.run_in_background", _boom)
