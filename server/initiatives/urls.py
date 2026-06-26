@@ -12,6 +12,7 @@ from initiatives.views import (
     ProjectDetailView,
     ProjectFeatureListView,
     ProjectGraphView,
+    ProjectIdeHookAssetsView,
     ProjectKnowledgeLinkView,
     ProjectListCreateView,
     ProjectMemberDetailView,
@@ -145,6 +146,12 @@ urlpatterns = [
         "<uuid:project_id>/cursor-rules/",
         ProjectCursorRulesView.as_view(),
         name="project-cursor-rules",
+    ),
+    # IDE hook 资产下发（HOOK-01，按 runtime 取读路径 bundle）
+    path(
+        "<uuid:project_id>/ide-hook-assets/",
+        ProjectIdeHookAssetsView.as_view(),
+        name="project-ide-hook-assets",
     ),
     # 项目工作区（WS-03/04 + DOC-02）
     path(
