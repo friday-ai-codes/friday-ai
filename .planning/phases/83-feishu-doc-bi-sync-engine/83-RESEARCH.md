@@ -227,7 +227,9 @@ if event_type == "drive.file.edit_v1":
         "durable_doc_sync_pull",
         {"file_token": file_token, "event_id": event_id},
         queue=QUEUE_DOC_SYNC,
-        lock=f"docsync-{file_token}",                 # per-doc 串行
+        # 统一 lock 标识 = docsync-{feishu_document_id}；drive 事件 file_token 即 docx 的 feishu_document_id，
+        # 与 push（83-03）/poll（83-06）对同一文档完全一致 → pull/push/poll 全串行、防交叉。
+        lock=f"docsync-{file_token}",
         idempotency_key=f"docpull:{file_token}:{event_id}",
         initiated_by_user_id=initiated_by,            # worker 入口 re-bind（CTX-02）
     )
@@ -239,11 +241,13 @@ if event_type == "drive.file.edit_v1":
 **Example:**
 ```python
 # DB 写后钩子（push 侧）：同一 doc 在 debounce 窗口内多次写只保留一份 todo
+# 钩子先从 ProjectDoc 解析 feishu_document_id（payload 仍可带 doc_id 供 worker 取 ProjectDoc）。
+feishu_document_id = doc.feishu_document_id  # 与 pull（Pattern 1）/poll 同一标识
 await DurableTaskService.defer(
     "durable_doc_sync_push",
     {"doc_id": str(doc_id)},
     queue=QUEUE_DOC_SYNC,
-    lock=f"docsync-{doc_id}",                          # pull/push 共用同 lock → 同 doc 全串行，天然防 pull/push 交叉
+    lock=f"docsync-{feishu_document_id}",              # 统一标识：pull/push/poll 共用 docsync-{feishu_document_id} → 同 doc 全串行，天然防 pull/push 交叉
     idempotency_key=f"docpush:{doc_id}",               # 窗口内多次写去重合并
     run_at=timezone.now() + timedelta(seconds=DEBOUNCE_SECONDS),
 )
@@ -409,20 +413,24 @@ def render_doc_cached(doc_id):
 | A7 | Django `CACHES` 可配 `OPTIONS.IGNORE_EXCEPTIONS=True` 使 redis 故障静默回退 | Code Examples / SYNC-05 | 需在 settings 显式开启（django_redis 支持）→ 低 |
 | A8 | 本期无 LLM 调用、无 RAG 召回，故无需新 `call_source`、无需 `RetrievalTrace` | 观测 | 若 plan 引入 LLM（如冲突摘要）则需补 call_source → 低（设计上不需要） |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **MEMORY 非成员飞书编辑如何兼顾 SYNC-06 fail-soft 与 MEM-02 fail-closed？**（见 Pitfall 4）
    - 已知：`MemoryService` 成员校验 fail-closed；SYNC 要 fail-soft 接受 + 归因。
-   - 推荐：独立 sync 受限入口，非成员编辑落 revision/草稿态（归因 system），不进 active；前端贡献仍 fail-closed。**plan-phase 必须裁决并写进 PLAN。**
+   - 推荐：独立 sync 受限入口，非成员编辑落 revision/草稿态（归因 system），不进 active；前端贡献仍 fail-closed。
+   - **RESOLVED:** 采纳推荐——MEMORY 飞书镜像编辑走受限 sync 入口（`_skip_member_check=True` + `origin="feishu_sync"`），非成员落 `ProjectMemoryRevision` 草稿态（归因 system/unmapped）不进 active，前端贡献 MEM-02 fail-closed 不变（见 83-04 Task 1）。
 
 2. **STATE/MILESTONES/RESEARCH/PREFLIGHT 的 capture-never-clobber 落败方存哪？**（见 Pitfall 5）
    - 推荐：新增 `ProjectDocBlockRevision` 通用段 revision，或飞书评论 + DB 留痕。
+   - **RESOLVED:** 新增 `ProjectDocBlockRevision` 表作 capture 落点（见 83-01 Task 1 建表 + 83-04 Task 1 `capture_block_revision` 写入，飞书评论为辅）。
 
 3. **编辑感知延迟写的"活跃探测"数据源？**
    - 候选：最近 drive 事件时间戳（DB 记每 doc `last_feishu_edit_at`）或回拉的 last-edit；推荐 DB 记最近事件时间，push 前比对，活跃则 `run_at` 再退避。
+   - **RESOLVED:** DB 记 `ProjectDoc.last_feishu_edit_at`（见 83-01 Task 1 加字段 + `touch_feishu_edit`），push 前比对活跃窗口则重排 `run_at`（见 83-04 Task 2）。
 
 4. **subscribe 注册时机与 ProjectDoc 字段扩展**
    - 是否给 `ProjectDoc` 加 `subscribed`(bool) + `last_feishu_edit_at`(datetime)？推荐加（小 migration），承载订阅态与活跃探测。
+   - **RESOLVED:** migration 0007 给 `ProjectDoc` 加 `subscribed`(bool) + `last_feishu_edit_at`(datetime)（见 83-01 Task 1）；订阅注册经 `subscribe_file`（见 83-02），归档退订经 `unsubscribe_file`（见 83-06）。
 
 ## Environment Availability
 

@@ -36,15 +36,18 @@ created: 2026-06-26
 
 ## Per-Task Verification Map
 
+> Wave 列与已提交 PLAN frontmatter 的 `wave`/`depends_on` 对齐（1-indexed，与 ROADMAP 一致）：W1=83-01∥83-05；W2=83-02（依赖 01/05）；W3=83-03（依赖 02）；W4=83-04（依赖 02/03）；W5=83-06（依赖 02/03/04）。83-03 与 83-04 不同波（83-04 depends_on 含 83-03）。
+
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 83-01-* | 01 | 0 | SYNC-03/04 | — | 纯函数 diff/三方合并无 IO | unit | `pytest tests/initiatives/test_doc_sync_diff.py -x` | ❌ W0 | ⬜ pending |
-| 83-02-* | 02 | 1 | SYNC-01 | T-83-spoof | 飞书签名校验 + ProcessedEvent 幂等 | unit | `pytest tests/feishu/test_drive_event_route.py -x` | ❌ W0 | ⬜ pending |
-| 83-03-* | 03 | 2 | SYNC-02 | — | push 只发 block 级增量，永不整篇 replace（respx 断言无全量 PUT） | unit | `pytest tests/initiatives/test_doc_sync_push.py -x` | ❌ W0 | ⬜ pending |
-| 83-04-* | 04 | 2 | SYNC-04 | T-83-clobber | 三方合并 capture-never-clobber；乐观并发 rebase | unit | `pytest tests/initiatives/test_doc_sync_conflict.py tests/initiatives/test_doc_sync_rebase.py -x` | ❌ W0 | ⬜ pending |
+| 83-01-* | 01 | 1 | SYNC-03/04 | — | 纯函数 diff/三方合并无 IO | unit | `pytest tests/initiatives/test_doc_sync_diff.py -x` | ❌ W0 | ⬜ pending |
 | 83-05-* | 05 | 1 | SYNC-05 | — | redis 不可用降级直读 DB | unit | `pytest tests/initiatives/test_doc_sync_cache.py -x` | ❌ W0 | ⬜ pending |
-| 83-06-* | 06 | 3 | SYNC-06 | T-83-dos / T-83-tamper | not-found→broken 重建；归档停同步退订；非成员编辑 fail-soft 归因；限流退避 | unit | `pytest tests/initiatives/test_doc_sync_boundaries.py -x` | ❌ W0 | ⬜ pending |
-| 83-*-guard | — | 1 | INV-6 | — | 写入只经 MemoryService/ProjectDocService | guard | `pytest tests/initiatives/test_doc_sync_inv6_guard.py -x` | ❌ W0 | ⬜ pending |
+| 83-02-* | 02 | 2 | SYNC-01 | T-83-02-SPOOF | 飞书签名校验 + ProcessedEvent 幂等 + 统一 lock=docsync-{feishu_document_id} | unit | `pytest tests/feishu/test_drive_event_route.py -x` | ❌ W0 | ⬜ pending |
+| 83-03-* | 03 | 3 | SYNC-02 | T-83-03-CLOBBER / -DOS | push 只发 block 级增量，永不整篇 replace（respx 断言无全量 PUT）；lock=docsync-{feishu_document_id} 与 pull/poll 同 | unit | `pytest tests/initiatives/test_doc_sync_push.py -x` | ❌ W0 | ⬜ pending |
+| 83-04-* | 04 | 4 | SYNC-03/04 | T-83-04-CLOBBER | 三方合并 capture-never-clobber；乐观并发 rebase | unit | `pytest tests/initiatives/test_doc_sync_conflict.py tests/initiatives/test_doc_sync_rebase.py -x` | ❌ W0 | ⬜ pending |
+| 83-06-* | 06 | 5 | SYNC-01/06 | T-83-06-DOS / -TAMPER | not-found→broken 重建；归档停同步退订；非成员编辑 fail-soft 归因；限流退避；poll lock=docsync-{feishu_document_id} | unit | `pytest tests/initiatives/test_doc_sync_boundaries.py tests/initiatives/test_doc_sync_poll.py -x` | ❌ W0 | ⬜ pending |
+| test_project_doc_inv6_guard | 01 | 1 | INV-6 | — | ProjectDoc/BlockMap/StateApi/BlockRevision 写入只经 ProjectDocService | guard | `pytest tests/initiatives/test_project_doc_inv6_guard.py -x` | ✅ exists（83-01 扩 _MODELS） | ⬜ pending |
+| test_doc_sync_inv6_guard | 02 | 2 | INV-6 | — | doc_sync_service.py 不旁路写表（经 ProjectDocService/MemoryService） | guard | `pytest tests/initiatives/test_doc_sync_inv6_guard.py -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
