@@ -42,7 +42,7 @@
 
 **Wave 3 — feature list 交付流水线：**
 
-- [ ] **Phase 87: 看板拆分节点 + 群 + 流式卡片** - feature list → 子看板（work_item/create + 父子关联，名=feature 名/描述=feature 原文）工作流节点 + AI 会话可调 + 拉群+bot 入群 + 拆分结果流式卡片（开始创建/输入框）+ 多轮重拆 — BOARD-01/02
+- [x] **Phase 87: 看板拆分节点 + 群 + 流式卡片** - feature list → 子看板（work_item/create + 父子关联，名=feature 名/描述=feature 原文）工作流节点 + AI 会话可调 + 拉群+bot 入群 + 拆分结果流式卡片（开始创建/输入框）+ 多轮重拆 — BOARD-01/02
 - [ ] **Phase 88: 智能业务关联仓库** - 知识库（活跃度/功能梳理）+ RAG 多轮 + Agent 自处理 + 卡片引导式多轮澄清/确认 + 用户确认后逐仓自校验 + 最终卡片确认 — REPO-01/02
 - [ ] **Phase 89: 技术方案深化 + 建分支绑项目** - per-repo+overall 方案（负责事项/预改动/影响模块/e2e·单测/风险/feature 冲突）+ 修订回路「调研问题发现」卡片 + 容器 5min 挂起/resume（session 持久化）+ 按方案建分支推送并绑项目 — PLAN-01~04
 
@@ -366,7 +366,7 @@ Plans:
 | 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ✅ Complete |
 | 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ✅ Complete |
 | 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ✅ Complete |
-| 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ☐ Pending |
+| 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ✅ Complete |
 | 88. 智能业务关联仓库 | REPO-01/02 | 3 | ☐ Pending |
 | 89. 技术方案深化 + 建分支绑项目 | PLAN-01~04 | 3 | ☐ Pending |
 
