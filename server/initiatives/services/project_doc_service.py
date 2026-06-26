@@ -307,6 +307,16 @@ class ProjectDocService:
                 },
                 source="api",
             )
+        # 系统区（STATE API 清单）写后 debounce defer push（SYNC-02 / 83-03，fail-soft 不反噬）。
+        from initiatives.services.doc_push_scheduler import schedule_doc_push
+
+        await schedule_doc_push(
+            project_id=project_id,
+            doc_type=DocType.STATE,
+            initiated_by_user_id=(
+                str(initiated_by_user_id or getattr(actor, "id", "")) or None
+            ),
+        )
         return api, created
 
     @sync_to_async
@@ -357,6 +367,16 @@ class ProjectDocService:
                 "initiated_by_user_id": str(actor_id) if actor_id else "system",
             },
             source="api",
+        )
+        # 系统区（STATE API 清单）移除后同样 debounce defer push（diff 自然得 deleted 增量）。
+        from initiatives.services.doc_push_scheduler import schedule_doc_push
+
+        await schedule_doc_push(
+            project_id=project_id,
+            doc_type=DocType.STATE,
+            initiated_by_user_id=(
+                str(initiated_by_user_id or getattr(actor, "id", "")) or None
+            ),
         )
         return True
 

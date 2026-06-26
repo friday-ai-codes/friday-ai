@@ -1,12 +1,19 @@
 """DocSyncService —— 飞书↔Friday 文档同步编排（SYNC-01~06）。
 
-本计划（83-02）落 ``.pull``（飞书→Friday 回拉链路，SYNC-01）：
+本模块落飞书↔Friday 双向同步编排：
 
-    回拉正文（get_document_content）→ doc_sync_diff 结构化分类（block_id + content_hash）
-    → 经 ProjectDocService / MemoryService 写收口 → CAS 推进 last_synced_revision
-    → 失效渲染缓存（invalidate_doc_render）。
+- ``.pull``（83-02，飞书→Friday 回拉，SYNC-01）：回拉正文（get_document_content）→
+  doc_sync_diff 结构化分类（block_id + content_hash）→ 经 ProjectDocService / MemoryService
+  写收口 → CAS 推进 last_synced_revision → 失效渲染缓存（invalidate_doc_render）。
+- ``.push``（83-03，Friday→飞书 推送，SYNC-02）：DB **系统区**写触发 → 渲染系统区期望态 →
+  与 block_map(section=system) 经 diff_blocks 比对 → 新增走 ``create_children`` / 改走
+  ``update_block`` / 删走 ``delete_blocks``（按 index 范围）→ **永不整篇 replace** →
+  ``upsert_block_map`` 更新指纹 + CAS 推进水位 → 失效缓存。per-doc 串行靠 durable
+  ``lock=docsync-{feishu_document_id}``（与 pull/poll 同文档同值），限流靠 client 层 ``@retry``。
 
-push（83-03）/ 真三方合并冲突编排（83-04）/ TTL 轮询兜底（83-06）留后续计划。
+真三方合并冲突编排（83-04）/ 编辑感知延迟写 + 乐观并发 rebase（83-04）/ TTL 轮询兜底
+（83-06）留后续计划。push 本期只对 MEMORY/STATE 渲染系统区期望态；MILESTONES/RESEARCH/
+PREFLIGHT 的系统派生区渲染留后续（无渲染器即跳过，**绝不**对空期望态盲删既有块）。
 
 关键约束（与 83-CONTEXT / 观测规范一致）：
 - **不旁路写表（INV-6）**：``ProjectDoc`` / ``ProjectDocBlockMap`` / ``ProjectDocBlockRevision``
@@ -35,10 +42,15 @@ from asgiref.sync import sync_to_async
 
 from common.logging import redact_secrets_in_text
 from initiatives.models import (
+    ApiStatus,
+    DocSection,
     DocSyncStatus,
     DocType,
     ProjectDoc,
     ProjectDocBlockMap,
+    ProjectMemory,
+    ProjectMemoryStatus,
+    ProjectStateApi,
     ProjectStatus,
 )
 from initiatives.services.doc_sync_cache import invalidate_doc_render
@@ -257,6 +269,7 @@ class DocSyncService:
                 contributor=contributor,
                 initiated_by_user_id=initiated_by_user_id,
                 _skip_member_check=True,
+                _skip_doc_push=True,  # 飞书镜像回写，防 pull→push 回声（T-83-03-ECHO）
             )
         except Exception as exc:  # noqa: BLE001 — MEMORY 写失败不反噬整条 pull（脱敏后记 warning）
             self._log_memory_write_failed("append", exc)
@@ -275,6 +288,7 @@ class DocSyncService:
                 content=content,
                 editor=editor,
                 initiated_by_user_id=initiated_by_user_id,
+                _skip_doc_push=True,  # 飞书镜像回写，防 pull→push 回声（T-83-03-ECHO）
             )
             return True
         except MemoryError:
@@ -296,6 +310,7 @@ class DocSyncService:
                 memory_id=memory_id,
                 actor=actor,
                 initiated_by_user_id=initiated_by_user_id,
+                _skip_doc_push=True,  # 飞书镜像回写，防 pull→push 回声（T-83-03-ECHO）
             )
         except Exception as exc:  # noqa: BLE001 — 废弃失败不反噬（脱敏记 warning）
             self._log_memory_write_failed("supersede", exc)
@@ -311,6 +326,333 @@ class DocSyncService:
             category="caller",
         )
 
+    # ---- push：Friday→飞书 block 级增量推送（SYNC-02，83-03）----
+
+    async def push(
+        self,
+        *,
+        doc_id: str,
+        initiated_by_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """DB 系统区写 → 飞书 block 级增量推送（SYNC-02，best-effort fail-soft）。
+
+        归档 / broken / 无 ``feishu_document_id`` / 无系统区渲染器 在入口 fail-soft 跳过；
+        推送任何异常都被吞掉并置 broken，**绝不抛回 debounce 钩子 / DB 写主流程**。
+        per-doc 串行由 durable ``lock=docsync-{feishu_document_id}`` 保证（与 pull/poll 同值），
+        限流退避由 client 层 ``@retry`` 承载。**永不整篇 replace**：只对系统区算期望态，与
+        block_map(section=system) diff 后逐块 children/update/delete。
+        """
+        uid_repr = initiated_by_user_id or "system"
+        started = time.monotonic()
+
+        doc = await self._aget_doc_by_id(doc_id)
+        if doc is None:
+            self._log_push_skipped(doc_id, uid_repr, "doc_not_found")
+            return {"status": "skipped", "reason": "doc_not_found"}
+        if doc.project.status != ProjectStatus.DEVELOPING:
+            self._log_push_skipped(doc_id, uid_repr, "project_not_developing")
+            return {"status": "skipped", "reason": "project_not_developing"}
+        if doc.sync_status == DocSyncStatus.BROKEN:
+            self._log_push_skipped(doc_id, uid_repr, "doc_broken")
+            return {"status": "skipped", "reason": "doc_broken"}
+        if not doc.feishu_document_id:
+            self._log_push_skipped(doc_id, uid_repr, "no_document_id")
+            return {"status": "skipped", "reason": "no_document_id"}
+
+        # 渲染系统区期望态；无渲染器（MILESTONES/RESEARCH/PREFLIGHT 留后续）→ 跳过，
+        # **绝不**对空期望态把既有系统块全判为 deleted（防误删，T-83-03-CLOBBER）。
+        entries = await self._render_system_entries(doc.doc_type, doc.project_id)
+        if entries is None:
+            self._log_push_skipped(doc_id, uid_repr, "unsupported_doc_type")
+            return {"status": "skipped", "reason": "unsupported_doc_type"}
+
+        logger.info(
+            "doc_sync_push_started",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            entries=len(entries),
+            initiated_by_user_id=uid_repr,
+            component=_COMPONENT,
+            category="caller",
+        )
+
+        try:
+            result = await self._push_apply(doc, entries)
+        except Exception as exc:  # noqa: BLE001 — 推送失败 fail-soft，置 broken 绝不反噬
+            from initiatives.services.project_doc_service import ProjectDocService
+
+            reason = self._classify_pull_error(exc)
+            try:
+                await ProjectDocService().set_sync_status(
+                    doc_id=doc.id, status=DocSyncStatus.BROKEN
+                )
+            except Exception:  # noqa: BLE001 — 连置 broken 都失败也不抛
+                pass
+            logger.warning(
+                "doc_sync_push_failed",
+                doc_id=str(doc.id),
+                doc_type=doc.doc_type,
+                reason=reason,
+                error=redact_secrets_in_text(str(exc)),
+                error_type=type(exc).__name__,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                initiated_by_user_id=uid_repr,
+                component=_COMPONENT,
+                category="caller",
+            )
+            return {"status": "failed", "reason": reason}
+
+        logger.info(
+            "doc_sync_push_completed",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            initiated_by_user_id=uid_repr,
+            component=_COMPONENT,
+            category="caller",
+            **result,
+        )
+        return {"status": "ok", **result}
+
+    async def _push_apply(
+        self, doc: ProjectDoc, entries: list[dict[str, str]]
+    ) -> dict[str, Any]:
+        """系统区期望态 → diff_blocks（按 db_ref 键）→ children/update/delete 增量外呼。
+
+        复用 83-01 ``diff_blocks``：把 DB 渲染的期望块当 ``theirs_blocks``（block_id=db_ref）、
+        系统区 block_map（按 db_ref 键）当 ``block_map`` 比对——新增=db_ref 无映射、编辑=指纹变、
+        删除=映射有但期望态已无。**全程无整篇 PUT**：added→``create_children``、edited→
+        ``update_block``、deleted→``delete_blocks``。写收口经 ProjectDocService（INV-6）。
+        """
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        svc = ProjectDocService()
+        client = await self._build_doc_client(doc.project.space)
+
+        # 系统区映射（按 db_ref 键，过滤 section==SYSTEM → 人工区绝不进 diff/不被改）。
+        rows = await self._load_system_block_rows(doc.id)
+        block_map: dict[str, object] = {
+            db_ref: {"content_hash": v["content_hash"], "db_ref": db_ref, "section": "system"}
+            for db_ref, v in rows.items()
+        }
+        # 期望态块（block_id=db_ref，作为结构化匹配键）。
+        expected_blocks = [
+            {
+                "block_id": e["db_ref"],
+                "content": e["content"],
+                "section": "system",
+                "db_ref": e["db_ref"],
+            }
+            for e in entries
+            if e["db_ref"]
+        ]
+        diffs = diff_blocks(
+            base_snapshot=doc.last_synced_snapshot,
+            theirs_blocks=expected_blocks,
+            block_map=block_map,
+        )
+
+        # 删除按既有块在文档中的相对位序定 index（[ASSUMED] A4：batch_delete by index）；
+        # 降序删避免逐删导致后续 index 漂移。
+        order = [v["feishu_block_id"] for v in rows.values()]
+        counts = {"added": 0, "edited": 0, "deleted": 0}
+        deleted_diffs = [d for d in diffs if d.op == "deleted"]
+        non_deleted = [d for d in diffs if d.op != "deleted"]
+
+        for d in non_deleted:
+            await self._push_one(doc, d, rows, svc, client, counts)
+        for d in sorted(
+            deleted_diffs,
+            key=lambda d: (
+                order.index(rows[d.feishu_block_id]["feishu_block_id"])
+                if d.feishu_block_id in rows
+                else 0
+            ),
+            reverse=True,
+        ):
+            await self._push_delete(doc, d, rows, order, svc, client, counts)
+
+        snapshot = "\n\n".join(e["content"] for e in entries)
+        expected = doc.last_synced_revision
+        advanced = await self._advance(doc.id, expected, expected + 1, snapshot)
+
+        invalidate_doc_render(doc.id)
+        return {"diffs": len(diffs), "advanced": advanced, **counts}
+
+    async def _push_one(
+        self,
+        doc: ProjectDoc,
+        d: BlockDiff,
+        rows: dict[str, dict[str, str]],
+        svc: Any,
+        client: Any,
+        counts: dict[str, int],
+    ) -> None:
+        """单块新增/编辑增量外呼 + 映射回写（added→children / edited→update_block）。"""
+        db_ref = d.feishu_block_id  # push 侧以 db_ref 为结构化匹配键
+        if d.op == "added":
+            new_ids = await client.create_children(
+                doc.feishu_document_id, children=[self._render_block(d.content)]
+            )
+            new_block_id = new_ids[0] if new_ids else f"pending-{db_ref}"
+            await svc.upsert_block_map(
+                doc_id=doc.id,
+                feishu_block_id=new_block_id,
+                db_ref=db_ref,
+                section=DocSection.SYSTEM,
+                content_hash=d.content_hash,
+            )
+            counts["added"] += 1
+        elif d.op == "edited":
+            feishu_block_id = rows.get(db_ref, {}).get("feishu_block_id", "")
+            if feishu_block_id:
+                await client.update_block(
+                    doc.feishu_document_id,
+                    feishu_block_id,
+                    self._render_block_update(d.content),
+                )
+                await svc.upsert_block_map(
+                    doc_id=doc.id,
+                    feishu_block_id=feishu_block_id,
+                    db_ref=db_ref,
+                    section=DocSection.SYSTEM,
+                    content_hash=d.content_hash,
+                )
+            counts["edited"] += 1
+        self._log_block_pushed(doc, d.op, db_ref)
+
+    async def _push_delete(
+        self,
+        doc: ProjectDoc,
+        d: BlockDiff,
+        rows: dict[str, dict[str, str]],
+        order: list[str],
+        svc: Any,
+        client: Any,
+        counts: dict[str, int],
+    ) -> None:
+        """单块删除增量外呼 + 清映射（deleted→delete_blocks by index）。"""
+        db_ref = d.feishu_block_id
+        feishu_block_id = rows.get(db_ref, {}).get("feishu_block_id", "")
+        if feishu_block_id:
+            idx = order.index(feishu_block_id) if feishu_block_id in order else 0
+            await client.delete_blocks(
+                doc.feishu_document_id, start_index=idx, end_index=idx + 1
+            )
+            await svc.clear_block_map(doc_id=doc.id, feishu_block_id=feishu_block_id)
+        counts["deleted"] += 1
+        self._log_block_pushed(doc, d.op, db_ref)
+
+    # ---- push：系统区期望态渲染（只读，按 doc_type 分派）----
+
+    async def _render_system_entries(
+        self, doc_type: str, project_id: Any
+    ) -> list[dict[str, str]] | None:
+        """渲染某文件**系统区**期望态条目 ``[{db_ref, content}]``；无渲染器返回 None（跳过不删）。
+
+        - MEMORY：active ``ProjectMemory`` 逐条镜像（db_ref=memory.id）。
+        - STATE：``ProjectStateApi`` 清单逐条派生（db_ref=api.id）。
+        - MILESTONES/RESEARCH/PREFLIGHT：系统派生区渲染留后续（返回 None → push 跳过，
+          **绝不**对空期望态盲删既有系统块）。
+        """
+        if doc_type == DocType.MEMORY:
+            return await self._render_memory_entries(project_id)
+        if doc_type == DocType.STATE:
+            return await self._render_state_entries(project_id)
+        return None
+
+    @sync_to_async
+    def _render_memory_entries(self, project_id: Any) -> list[dict[str, str]]:
+        rows = (
+            ProjectMemory.objects.filter(
+                project_id=project_id, status=ProjectMemoryStatus.ACTIVE
+            )
+            .order_by("created_at")
+            .values("id", "content")
+        )
+        return [{"db_ref": str(r["id"]), "content": r["content"] or ""} for r in rows]
+
+    @sync_to_async
+    def _render_state_entries(self, project_id: Any) -> list[dict[str, str]]:
+        rows = (
+            ProjectStateApi.objects.filter(project_id=project_id)
+            .exclude(status=ApiStatus.DEPRECATED)
+            .order_by("created_at")
+            .values("id", "method", "path", "status")
+        )
+        return [
+            {
+                "db_ref": str(r["id"]),
+                "content": f"{r['method']} {r['path']} — {r['status']}",
+            }
+            for r in rows
+        ]
+
+    @sync_to_async
+    def _load_system_block_rows(self, doc_id: Any) -> dict[str, dict[str, str]]:
+        """系统区映射按 db_ref 键（仅 section==SYSTEM；人工区绝不进 diff/不被改）。
+
+        返回 ``{db_ref: {feishu_block_id, content_hash}}``，按 created_at 保序（供删除 index 定位）。
+        """
+        rows = (
+            ProjectDocBlockMap.objects.filter(doc_id=doc_id, section=DocSection.SYSTEM)
+            .order_by("created_at")
+            .values("feishu_block_id", "db_ref", "content_hash")
+        )
+        out: dict[str, dict[str, str]] = {}
+        for r in rows:
+            if r["db_ref"]:
+                out[r["db_ref"]] = {
+                    "feishu_block_id": r["feishu_block_id"],
+                    "content_hash": r["content_hash"],
+                }
+        return out
+
+    @staticmethod
+    def _render_block(content: str) -> dict[str, Any]:
+        """系统区新增条目 → 飞书文本块（children API 入参，append 新块）。
+
+        # [ASSUMED] A4：以 block_type=2 文本块承载条目；真实块结构 live 验证后回填。
+        """
+        return {
+            "block_type": 2,
+            "text": {"elements": [{"text_run": {"content": content}}], "style": {}},
+        }
+
+    @staticmethod
+    def _render_block_update(content: str) -> dict[str, Any]:
+        """系统区编辑条目 → update_block PATCH 请求体（就地改既有块文本）。
+
+        # [ASSUMED] A4：``update_text_elements`` 形态；真实请求体 live 验证后回填。
+        """
+        return {
+            "update_text_elements": {"elements": [{"text_run": {"content": content}}]}
+        }
+
+    @staticmethod
+    def _log_block_pushed(doc: ProjectDoc, op: str, db_ref: str) -> None:
+        """per-block 采样 + debug（绝不 INFO 刷屏；只记 op/db_ref，绝不记正文）。"""
+        logger.debug(
+            "doc_block_pushed",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            op=op,
+            db_ref=db_ref,
+            component=_COMPONENT,
+            category="sampling",
+        )
+
+    @staticmethod
+    def _log_push_skipped(doc_id: Any, uid_repr: str, reason: str) -> None:
+        logger.info(
+            "doc_sync_push_skipped",
+            doc_id=str(doc_id),
+            reason=reason,
+            initiated_by_user_id=uid_repr,
+            component=_COMPONENT,
+            category="caller",
+        )
+
     # ---- 读侧 helper（无写表，INV-6 安全）----
 
     @sync_to_async
@@ -321,6 +663,17 @@ class DocSyncService:
         return (
             ProjectDoc.objects.select_related("project", "project__space")
             .filter(feishu_document_id=file_token)
+            .first()
+        )
+
+    @sync_to_async
+    def _aget_doc_by_id(self, doc_id: Any) -> ProjectDoc | None:
+        """按主键取 ProjectDoc，预取 project+space（防 async lazy FK），push 入口用。"""
+        if not doc_id:
+            return None
+        return (
+            ProjectDoc.objects.select_related("project", "project__space")
+            .filter(pk=doc_id)
             .first()
         )
 

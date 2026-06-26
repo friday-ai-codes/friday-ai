@@ -95,10 +95,12 @@ class MemoryService:
         actor: Any = None,
         initiated_by_user_id: Any = None,
         _skip_member_check: bool = False,
+        _skip_doc_push: bool = False,
     ) -> ProjectMemory:
         """新增一条项目记忆（MEM-01）。成员校验 + 脱敏 + 初始 revision 快照。
 
         ``_skip_member_check`` 仅供 ``confirm_draft`` 内部复用（草稿确认时成员校验已在外层完成）。
+        ``_skip_doc_push``：飞书镜像编辑（DocSyncService pull 回写）传 True，防 pull→push 回声（83-03）。
         """
         if not _skip_member_check:
             await self._assert_member(project_id, contributor)
@@ -114,6 +116,8 @@ class MemoryService:
             target_repr=str(memory.id),
             after={"project_id": str(project_id), "status": memory.status},
         )
+        if not _skip_doc_push:
+            await self._schedule_doc_push(project_id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -141,8 +145,12 @@ class MemoryService:
         editor: Any,
         actor: Any = None,
         initiated_by_user_id: Any = None,
+        _skip_doc_push: bool = False,
     ) -> ProjectMemory:
-        """人工编辑/覆盖记忆（MEM-03）。成员校验 + 脱敏 + append revision（保留可追溯）。"""
+        """人工编辑/覆盖记忆（MEM-03）。成员校验 + 脱敏 + append revision（保留可追溯）。
+
+        ``_skip_doc_push``：飞书镜像编辑（DocSyncService pull 回写）传 True，防 pull→push 回声。
+        """
         project_id = await self._project_id_of_memory(memory_id)
         await self._assert_member(project_id, editor)
         redacted = redact_secrets_in_text(content or "")
@@ -158,6 +166,8 @@ class MemoryService:
             before={"content": before},
             after={"content": redacted},
         )
+        if not _skip_doc_push:
+            await self._schedule_doc_push(project_id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -181,8 +191,12 @@ class MemoryService:
         memory_id: Any,
         actor: Any = None,
         initiated_by_user_id: Any = None,
+        _skip_doc_push: bool = False,
     ) -> ProjectMemory:
-        """废弃记忆（status → superseded）。成员校验。"""
+        """废弃记忆（status → superseded）。成员校验。
+
+        ``_skip_doc_push``：飞书镜像删除（DocSyncService pull 回写）传 True，防 pull→push 回声。
+        """
         project_id = await self._project_id_of_memory(memory_id)
         await self._assert_member(project_id, actor)
         memory = await self._supersede_locked(memory_id)
@@ -194,6 +208,8 @@ class MemoryService:
             target_repr=str(memory.id),
             after={"status": memory.status},
         )
+        if not _skip_doc_push:
+            await self._schedule_doc_push(project_id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -337,6 +353,22 @@ class MemoryService:
     @sync_to_async
     def _get_draft(self, draft_id: Any) -> ProjectMemoryDraft:
         return ProjectMemoryDraft.objects.get(pk=draft_id)
+
+    # ---- 系统区写后钩子（debounce defer push，SYNC-02 / 83-03）----
+
+    @staticmethod
+    async def _schedule_doc_push(project_id: Any, initiated_by_user_id: Any) -> None:
+        """MEMORY 系统区写后调统一调度钩子（fail-soft 不反噬记忆写主流程）。"""
+        from initiatives.models import DocType
+        from initiatives.services.doc_push_scheduler import schedule_doc_push
+
+        await schedule_doc_push(
+            project_id=project_id,
+            doc_type=DocType.MEMORY,
+            initiated_by_user_id=(
+                str(initiated_by_user_id) if initiated_by_user_id else None
+            ),
+        )
 
     # ---- 审计 ----
 
