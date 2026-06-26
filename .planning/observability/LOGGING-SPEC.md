@@ -92,6 +92,9 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `board_split` | `initiatives.FeatureListExtractor` / BoardSplitService（v0.16.0 Phase 87） | feature list 结构化抽取/重拆（模块→功能点→验收项），单轮，按模块/标题分块可多次 |
 | `repo_verify_container` | `RepoVerifyDispatchService` per-repo explore 容器（v0.16.0 Phase 88） | 深入仓库代码验证业务适配性，多仓 fan-out，task 容器 |
 | `repo_association` | `initiatives.RepoAssociationService` 候选细化/Agent 自处理（v0.16.0 Phase 88） | 多轮细化候选仓库，可多次调用 |
+| `plan_deepen` | `PlanDeepenService` / `ArchitectMergeAdapter`（v0.16.0 Phase 89） | per-repo 七要素 + overall 整体方案深化，经 v0.7 引擎 per-repo explore 容器 + 架构师融合，多仓 fan-out |
+| `plan_revision` | 方案修订回路「调研问题发现」检测（v0.16.0 Phase 89，89-02） | 执行中发现要改/增/删仓 → 更新方案/补充修订，多轮 |
+| `branch_naming` | 分支名生成（v0.16.0 Phase 89，89-04） | 按固定格式 + 方案上下文生成分支名，server 权威拼装 + 卡片确认，单轮 |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 

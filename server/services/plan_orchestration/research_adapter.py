@@ -20,6 +20,7 @@ from typing import Any
 
 import structlog
 
+from agents.call_source import CallSource, use_call_source
 from delivery.models import PlanSession, RepoResearchTaskStatus
 from delivery.services import PlanSessionService, ResearchService
 from delivery.services.event_taxonomy import (
@@ -212,7 +213,9 @@ class ResearchDispatchAdapter:
             session_id=session_id,
             metadata=metadata,
         )
-        await get_dispatcher().dispatch(dispatch_task)
+        # Phase 89：per-repo explore 容器深化的 LLM 调用来源细分为 plan_deepen（方案七要素深化）。
+        with use_call_source(CallSource.PLAN_DEEPEN):
+            await get_dispatcher().dispatch(dispatch_task)
         await self.research_service.mark_running(task, subagent_session)
 
         await self._emit_started(session, task)
@@ -253,26 +256,50 @@ class ResearchDispatchAdapter:
     def _build_research_prompt(self, session: PlanSession, task: Any, repo: Any) -> str:
         """构造调研 prompt：注入该仓 routing 上下文 + recall_context + 需求 decomposition。
 
-        要求容器产出结构化 PartialPlan（§7 字段，JSON 输出）。prompt 内容来自 server 端
-        权威 session 状态（非外部用户原文拼接执行指令）。
+        要求容器产出结构化 PartialPlan（§7 字段 + Phase 89 per-repo **七要素** 字段，JSON
+        输出）。prompt 内容来自 server 端权威 session 状态（非外部用户原文拼接执行指令）。
+        Phase 89：注入对应仓 88 verdict 的 ``matched_node_paths``/``routed_reason`` 作上下文。
         """
         decomposition = session.decomposition or {}
         requirement_text = decomposition.get("requirement_text", "")
         repo_name = getattr(repo, "name", "") if repo is not None else ""
         recall_summary = self._summarize_recall(session)
+        verdict_context = self._summarize_verdict(session, task)
 
         return (
             f"你正在为仓库「{repo_name}」（路由置信度：{task.routed_confidence or 'unknown'}）"
-            "做方案调研。\n\n"
+            "做技术方案深化调研。\n\n"
             f"需求：\n{requirement_text}\n\n"
             f"相关历史召回（精简）：\n{recall_summary}\n\n"
-            "请深入分析本仓代码，产出**结构化 PartialPlan**，以 JSON 输出，字段：\n"
+            f"该仓关联确认上下文（matched_node_paths / routed_reason）：\n{verdict_context}\n\n"
+            "请深入分析本仓代码，产出**结构化 PartialPlan**，以 JSON 输出。基础字段：\n"
             "- research_summary：本仓调研摘要\n"
             "- proposed_changes：建议改动列表\n"
             "- candidate_files：候选改动文件列表\n"
             "- api_contracts_exposed：本仓对外暴露的契约\n"
             "- dependencies_on_other_repos：依赖其他仓的契约\n"
+            "并补充 Phase 89 **方案深化七要素**字段（数组或对象）：\n"
+            "- responsibilities：本仓负责事项\n"
+            "- impacted_modules：影响的业务模块\n"
+            "- estimated_tests：预计 e2e 与单测用例 + 覆盖项\n"
+            "- risks：风险点\n"
+            "- unclear_features：feature list 不清处（需澄清）\n"
+            "- conflicts_with_existing：与现有功能的冲突\n"
         )
+
+    @staticmethod
+    def _summarize_verdict(session: PlanSession, task: Any) -> str:
+        """从 session.routing 候选取对应仓 routed_reason / matched_node_paths 摘要（缺省占位）。"""
+        repo_id = str(getattr(task, "repository_id", "") or "")
+        candidates = (session.routing or {}).get("candidates", []) or []
+        for c in candidates:
+            if str(c.get("repo_id") or c.get("repository_id") or "") == repo_id:
+                reason = str(c.get("routed_reason") or "")
+                paths = c.get("matched_node_paths") or []
+                paths_text = "、".join(str(p) for p in paths[:10]) if isinstance(paths, list) else ""
+                parts = [x for x in (reason, paths_text) if x]
+                return "；".join(parts) or "（无）"
+        return "（无）"
 
     @staticmethod
     def _summarize_recall(session: PlanSession) -> str:

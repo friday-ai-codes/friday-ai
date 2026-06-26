@@ -70,6 +70,7 @@ class LLMMergedPlanSynthesizer:
     async def synthesize(self, session: PlanSession, partials: list[dict]) -> dict:
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        from agents.call_source import CallSource, use_call_source
         from agents.llm_factory import build_chat_model
         from services.provider_config import ProviderConfigService
 
@@ -80,7 +81,10 @@ class LLMMergedPlanSynthesizer:
         model = build_chat_model(resolved, model_name, streaming=False)
         system = SystemMessage(content=self._system_prompt())
         human = HumanMessage(content=self._build_prompt(session, partials))
-        response = await model.ainvoke([system, human])
+        # Phase 89：架构师融合产 overall 整体方案 + 跨仓上下文，call_source 细分为 plan_deepen
+        # （既有 plan_merge 语义并入方案深化维度）。
+        with use_call_source(CallSource.PLAN_DEEPEN):
+            response = await model.ainvoke([system, human])
         content = _content_to_text(response.content)
         merged = _parse_merged_json(content)
         if merged is None:
@@ -113,6 +117,9 @@ class LLMMergedPlanSynthesizer:
             "- execution_plan：[{id, name, repository_id, repository_name, "
             "branch_strategy, coding_instruction, dependencies, "
             "api_contracts_exposed, dependencies_on_other_repos}]\n"
+            "并补充 Phase 89 整体方案字段：\n"
+            "- overall_plan：overall 整体方案叙述（跨仓如何协同实现需求，文本）\n"
+            "- cross_repo_context：跨仓上下文（聚合各仓七要素 + 跨仓依赖/冲突提要，文本）\n"
         )
 
 
