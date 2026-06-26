@@ -230,6 +230,12 @@ else:
         },
     }
 
+# 项目文件（ProjectDoc）渲染内容 read-through 缓存 TTL（秒，SYNC-05）。
+# 缓存只是渲染加速、DB 恒为真相源：写时/收飞书事件按 doc_id delete 失效，下次读回填；
+# TTL 仅作"漏失效"的兜底过期（秒级最终一致）。redis 不可用时 IGNORE_EXCEPTIONS +
+# doc_sync_cache 模块的 try/except 静默降级直读 DB，绝不反噬渲染主流程。
+DOC_RENDER_CACHE_TTL = env.int("DOC_RENDER_CACHE_TTL", default=300)
+
 
 def _require_redis_for_multi_replica(*, expect_multi: bool, use_redis: bool) -> None:
     """多副本 / 多 worker 部署必须启用 Redis channel layer 的运行期 fail-closed 校验。
