@@ -32,7 +32,7 @@
 **Wave 1 — 工作区实体 + 双向同步地基（最小可交付）：**
 
 - [x] **Phase 82: 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件落地** - 扩 `Project`(visibility/feishu_folder_token) + 新 `ProjectDoc`/`ProjectDocBlockMap` + 每项目飞书文件夹 + 5 文件创建于其下 + 互链/看板描述链接 + 侧边栏「项目」tab + 权限翻转（public_org 默认/写仅成员）— WS-01~04, DOC-01~06
-- [ ] **Phase 83: 飞书文档双向同步引擎** - `drive.file.edit_v1` subscribe + 事件路由 + block 级增量推送 + block_id 结构化匹配（代替整篇 diff）+ last-synced 快照/映射表 + 三方合并 + 编辑感知延迟写 + redis read-through + TTL 兜底 + 边界/失败模式全集 — SYNC-01~06
+- [x] **Phase 83: 飞书文档双向同步引擎** - `drive.file.edit_v1` subscribe + 事件路由 + block 级增量推送 + block_id 结构化匹配（代替整篇 diff）+ last-synced 快照/映射表 + 三方合并 + 编辑感知延迟写 + redis read-through + TTL 兜底 + 边界/失败模式全集 — SYNC-01~06
 - [ ] **Phase 84: 项目工作台前端 2.0** - 大盘（概览/人员带身份/状态栏）+ feature list 进度灯 + 5 文件查看编辑（md 实时渲染）+ 记忆编辑/LLM 提议确认 + 外部依赖关联展示 + 列表筛选/全局+RAG 搜索 — WB-01~05
 
 **Wave 2 — 上下文闭环（IDE hooks）：**
@@ -94,24 +94,24 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 83-01-PLAN.md — 地基：migration 0007（ProjectDoc subscribed/last_feishu_edit_at OQ-4 + ProjectDocBlockRevision capture 落点 OQ-2）+ doc_sync_diff.py 纯函数（block_id 结构化 diff + 三方合并，无 IO）+ conftest — SYNC-03/04
-- [ ] 83-05-PLAN.md — read-through 缓存模块 doc_sync_cache.py（命中/失效 delete/redis 故障降级直读 DB）+ settings IGNORE_EXCEPTIONS + TTL — SYNC-05
+- [x] 83-01-PLAN.md — 地基：migration 0007（ProjectDoc subscribed/last_feishu_edit_at OQ-4 + ProjectDocBlockRevision capture 落点 OQ-2）+ doc_sync_diff.py 纯函数（block_id 结构化 diff + 三方合并，无 IO）+ conftest — SYNC-03/04
+- [x] 83-05-PLAN.md — read-through 缓存模块 doc_sync_cache.py（命中/失效 delete/redis 故障降级直读 DB）+ settings IGNORE_EXCEPTIONS + TTL — SYNC-05
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 83-02-PLAN.md — 飞书→Friday：drive.file.edit_v1 路由+normalizer+归因 + durable pull plumbing(QUEUE_DOC_SYNC) + subscribe_file + DocSyncService.pull + INV-6 guard + live-Feishu UAT 检查点（autonomous:false）— SYNC-01
+- [x] 83-02-PLAN.md — 飞书→Friday：drive.file.edit_v1 路由+normalizer+归因 + durable pull plumbing(QUEUE_DOC_SYNC) + subscribe_file + DocSyncService.pull + INV-6 guard + live-Feishu UAT 检查点（autonomous:false）— SYNC-01
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 83-03-PLAN.md — Friday→飞书：update_block/delete_blocks + DocSyncService.push（系统区 block 级增量，永不整篇 replace）+ per-doc 串行/debounce/退避 + 系统区写后钩子 — SYNC-02
+- [x] 83-03-PLAN.md — Friday→飞书：update_block/delete_blocks + DocSyncService.push（系统区 block 级增量，永不整篇 replace）+ per-doc 串行/debounce/退避 + 系统区写后钩子 — SYNC-02
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 83-04-PLAN.md — 冲突：三方合并 + capture-never-clobber（ProjectDocBlockRevision/ProjectMemoryRevision + 飞书评论）+ OQ-1 MEMORY 非成员 fail-soft 归因 + 编辑感知延迟写(OQ-3) + 乐观并发 rebase — SYNC-03/04
+- [x] 83-04-PLAN.md — 冲突：三方合并 + capture-never-clobber（ProjectDocBlockRevision/ProjectMemoryRevision + 飞书评论）+ OQ-1 MEMORY 非成员 fail-soft 归因 + 编辑感知延迟写(OQ-3) + 乐观并发 rebase — SYNC-03/04
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 83-06-PLAN.md — 边界全集：TTL 兜底轮询 poll_project_docs_revisions + not-found→broken+一键重建 + 归档停同步退订转只读快照 + 非成员归因 + 限流退避，全 fail-soft — SYNC-06（强化 SYNC-01）
+- [x] 83-06-PLAN.md — 边界全集：TTL 兜底轮询 poll_project_docs_revisions + not-found→broken+一键重建 + 归档停同步退订转只读快照 + 非成员归因 + 限流退避，全 fail-soft — SYNC-06（强化 SYNC-01）
 
 **Waves**: W1 = 83-01 ∥ 83-05（无依赖）；W2 = 83-02（依赖 01/05）；W3 = 83-03（依赖 02）；W4 = 83-04（依赖 02/03）；W5 = 83-06（依赖 02/03/04）
 
@@ -317,7 +317,7 @@ Plans:
 | Phase | Requirements | Wave | Status |
 |-------|--------------|------|--------|
 | 82. 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
-| 83. 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ☐ Pending |
+| 83. 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
 | 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ☐ Pending |
 | 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ☐ Pending |
 | 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
