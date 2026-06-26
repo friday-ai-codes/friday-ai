@@ -15,6 +15,7 @@ from agents.tools.base import (
     ToolResult,
     tool,
 )
+from agents.tools.board_split_tools import split_feature_list_to_boards
 from agents.tools.clarification import ask_clarification
 from agents.tools.delivery_knowledge_tools import (
     get_entity_timeline,
@@ -79,6 +80,8 @@ __all__ = [
     "get_work_item_detail",
     "list_related_work_items",
     "add_work_item_comment",
+    # Board split tool (BOARD-01)
+    "split_feature_list_to_boards",
     # Feishu IM tools
     "send_card_message",
     "send_plan_card",
