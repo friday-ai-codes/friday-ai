@@ -20,9 +20,14 @@ from initiatives.views import (
     ProjectMemoryListCreateView,
     ProjectMergeRequestListView,
     ProjectOwnerTransferView,
+    ProjectRehomeView,
+    ProjectStateApiDetailView,
+    ProjectStateApiListCreateView,
     ProjectTransitionView,
     ProjectWorkItemDetailView,
     ProjectWorkItemListView,
+    ProjectWorkspaceDocsView,
+    ProjectWorkspaceRebuildView,
 )
 
 urlpatterns = [
@@ -123,5 +128,31 @@ urlpatterns = [
         "<uuid:project_id>/cursor-rules/",
         ProjectCursorRulesView.as_view(),
         name="project-cursor-rules",
+    ),
+    # 项目工作区（WS-03/04 + DOC-02）
+    path(
+        "<uuid:project_id>/workspace/docs/",
+        ProjectWorkspaceDocsView.as_view(),
+        name="project-workspace-docs",
+    ),
+    path(
+        "<uuid:project_id>/workspace/rebuild/",
+        ProjectWorkspaceRebuildView.as_view(),
+        name="project-workspace-rebuild",
+    ),
+    path(
+        "<uuid:project_id>/workspace/state-apis/",
+        ProjectStateApiListCreateView.as_view(),
+        name="project-state-api-list",
+    ),
+    path(
+        "<uuid:project_id>/workspace/state-apis/<uuid:api_id>/",
+        ProjectStateApiDetailView.as_view(),
+        name="project-state-api-detail",
+    ),
+    path(
+        "<uuid:project_id>/rehome/",
+        ProjectRehomeView.as_view(),
+        name="project-rehome",
     ),
 ]

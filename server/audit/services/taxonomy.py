@@ -68,6 +68,8 @@ __all__ = [
     "ACTION_MERGE_REQUEST_SYNCED",
     # ---- v0.16.0 Phase 82 项目工作区 ----
     "ACTION_PROJECT_WORKSPACE_PROVISIONED",
+    "ACTION_PROJECT_WORKSPACE_REBUILT",
+    "ACTION_PROJECT_SPACE_REHOMED",
     "ACTION_PROJECT_STATE_API_ADDED",
     "ACTION_PROJECT_STATE_API_REMOVED",
     "ALL_ACTIONS",
@@ -131,6 +133,8 @@ ACTION_MERGE_REQUEST_SYNCED: Final[str] = "merge_request.synced"
 
 # ---- v0.16.0 Phase 82 项目工作区 action 常量（component=initiatives）----
 ACTION_PROJECT_WORKSPACE_PROVISIONED: Final[str] = "project.workspace_provisioned"
+ACTION_PROJECT_WORKSPACE_REBUILT: Final[str] = "project.workspace_rebuilt"
+ACTION_PROJECT_SPACE_REHOMED: Final[str] = "project.space_rehomed"
 ACTION_PROJECT_STATE_API_ADDED: Final[str] = "project.state_api_added"
 ACTION_PROJECT_STATE_API_REMOVED: Final[str] = "project.state_api_removed"
 
@@ -179,6 +183,8 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PROJECT_MEMORY_DRAFT_REJECTED,
         ACTION_MERGE_REQUEST_SYNCED,
         ACTION_PROJECT_WORKSPACE_PROVISIONED,
+        ACTION_PROJECT_WORKSPACE_REBUILT,
+        ACTION_PROJECT_SPACE_REHOMED,
         ACTION_PROJECT_STATE_API_ADDED,
         ACTION_PROJECT_STATE_API_REMOVED,
     }

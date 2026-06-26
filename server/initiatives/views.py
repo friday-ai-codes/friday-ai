@@ -23,10 +23,12 @@ from initiatives.models import (
     ArtifactType,
     MergeRequest,
     Project,
+    ProjectDoc,
     ProjectMember,
     ProjectMemory,
     ProjectMemoryDraft,
     ProjectMemoryStatus,
+    ProjectStateApi,
 )
 from initiatives.permissions import (
     auser_can_access_project,
@@ -41,6 +43,7 @@ from initiatives.serializers import (
     ArtifactUpdateSerializer,
     MergeRequestSerializer,
     ProjectCreateSerializer,
+    ProjectDocSerializer,
     ProjectKnowledgeLinkSerializer,
     ProjectMemberAddSerializer,
     ProjectMemberSerializer,
@@ -51,7 +54,10 @@ from initiatives.serializers import (
     ProjectMemoryEditSerializer,
     ProjectMemorySerializer,
     ProjectOwnerTransferSerializer,
+    ProjectRehomeSerializer,
     ProjectSerializer,
+    ProjectStateApiCreateSerializer,
+    ProjectStateApiSerializer,
     ProjectTransitionSerializer,
     ProjectUpdateSerializer,
 )
@@ -62,7 +68,9 @@ from initiatives.services import (
     MemoryError,
     MemoryPermissionError,
     MemoryService,
+    ProjectDocService,
     ProjectMemberError,
+    ProjectRehomeError,
     ProjectService,
     ProjectTransitionError,
 )
@@ -1001,4 +1009,120 @@ class ProjectWorkItemDetailView(APIView):
         )
         if not removed:
             return Response({"detail": "工作项未关联此项目"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ============================ 项目工作区（WS-03/04 + DOC-02）============================
+
+
+class ProjectWorkspaceDocsView(APIView):
+    """项目工作区 5 文件容器列表（GET，DOC-01~05；读权限）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        docs = await sync_to_async(
+            lambda: list(ProjectDoc.objects.filter(project_id=project_id))
+        )()
+        data = await sync_to_async(lambda: ProjectDocSerializer(docs, many=True).data)()
+        return Response(data)
+
+
+class ProjectWorkspaceRebuildView(APIView):
+    """工作区一键重建（POST，WS-04 兜底飞书首建失败的 broken；写权限 Space admin+）。"""
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        await ProjectDocService().rebuild_workspace(
+            project_id=project_id,
+            initiated_by_user_id=request.user.id,
+        )
+        return Response({"rebuilding": True}, status=status.HTTP_202_ACCEPTED)
+
+
+class ProjectRehomeView(APIView):
+    """项目改归到其他空间（POST，WS-03；写权限 Space admin+）。"""
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectRehomeSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        new_space_id = serializer.validated_data["new_space_id"]
+        if await _aget_space(new_space_id) is None:
+            return Response({"detail": "目标空间不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            updated = await ProjectService().rehome_space(
+                project_id=project_id,
+                new_space_id=new_space_id,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except ProjectRehomeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        updated = await Project.objects.select_related("space").aget(pk=updated.id)
+        body = await sync_to_async(lambda: ProjectSerializer(updated).data)()
+        return Response(body)
+
+
+class ProjectStateApiListCreateView(APIView):
+    """项目结构化 API 清单列表（GET，读权限）+ 手动新增（POST，写权限，DOC-02）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        apis = await sync_to_async(
+            lambda: list(ProjectStateApi.objects.filter(project_id=project_id))
+        )()
+        data = await sync_to_async(
+            lambda: ProjectStateApiSerializer(apis, many=True).data
+        )()
+        return Response(data)
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectStateApiCreateSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        d = serializer.validated_data
+        api, created = await ProjectDocService().upsert_state_api(
+            project_id=project_id,
+            method=d["method"],
+            path=d["path"],
+            params=d.get("params") or {},
+            status=d["status"],
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+        )
+        api = await ProjectStateApi.objects.aget(pk=api.id)
+        body = await sync_to_async(lambda: ProjectStateApiSerializer(api).data)()
+        return Response(
+            body,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ProjectStateApiDetailView(APIView):
+    """移除结构化 API 清单条目（DELETE，写权限，DOC-02）。"""
+
+    async def delete(self, request, project_id, api_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        removed = await ProjectDocService().remove_state_api(
+            project_id=project_id,
+            api_id=api_id,
+            actor=request.user,
+            initiated_by_user_id=request.user.id,
+        )
+        if not removed:
+            return Response(
+                {"detail": "API 清单条目不存在"}, status=status.HTTP_404_NOT_FOUND
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
