@@ -336,6 +336,10 @@ class CodingSession(models.Model):
         AWAITING_CONFIRMATION = "awaiting_confirmation", "等待确认"
         COMPLETED = "completed", "已完成"
         FAILED = "failed", "已失败"
+        # 容器 5min 无回复挂起态（PLAN-03）：单仓编码容器遇阻等待用户，到点无回复
+        # → finish turn 停容器（dispatcher.cancel）+ 标此态；用户卡片回复后经
+        # SessionStore resume 续跑回 RUNNING。写入收口 ContainerSuspendService（INV-6）。
+        SUSPENDED = "suspended", "已挂起"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversation = models.ForeignKey(
@@ -469,6 +473,14 @@ class CodingSession(models.Model):
         blank=True,
         verbose_name="SDK 会话保存时间",
         help_text="transcript 落库时间；7 天定时清理以此为准",
+    )
+    # 容器 5min 无回复挂起时间戳（PLAN-03）：便于审计 / 恢复诊断。写入收口经
+    # ContainerSuspendService（INV-6），与 status=SUSPENDED 同步落。
+    parked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="容器挂起时间",
+        help_text="5min 无回复挂起停容器的时间戳（PLAN-03，审计/恢复诊断用）",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
