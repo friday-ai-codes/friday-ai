@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from chat.session_store import WORKSPACE_CWD, SessionStore
+
 if TYPE_CHECKING:
     from chat.models import CodingSession
 
@@ -29,15 +31,40 @@ RESUME_CHUNK_CHARS = 25_000
 MAX_RESUME_TRANSCRIPT_BYTES = 800_000
 
 
-def build_resume_dispatch_env(coding_session: CodingSession) -> dict[str, str]:
-    """据 CodingSession 已存的 SDK 会话数据构建 resume 下发 env（分片）。
+def build_resume_dispatch_env(
+    coding_session: CodingSession,
+    *,
+    dispatch_cwd: str = WORKSPACE_CWD,
+) -> dict[str, str]:
+    """据已镜像的 SDK 会话数据构建 resume 下发 env（分片）。
 
-    无 sdk_session_id / transcript，或 transcript 超字节上限 → 返回空 dict（默认安全，
-    不改变现有 dispatch 行为，容器全新执行）。
+    经 :class:`chat.session_store.SessionStore` 取回 transcript（Redis 镜像 → DB
+    fallback），支持跨容器 / 跨副本 / 冷启动 resume。命中后再经
+    :meth:`SessionStore.assert_cwd_consistent` 校验容器 workspace cwd 与首跑一致——
+    cwd 漂移会令 transcript 目录派生落空甚至错配他容器，**不一致即放弃 resume**。
+
+    无 sdk_session_id / transcript、cwd 不一致，或 transcript 超字节上限 → 返回空 dict
+    （默认安全，不改变现有 dispatch 行为，容器全新执行）。
     """
-    sid = (coding_session.sdk_session_id or "").strip()
-    transcript = coding_session.sdk_transcript or ""
+    store = SessionStore()
+    data = store.load(coding_session=coding_session)
+    if not data:
+        return {}
+
+    sid = (data.get("sdk_session_id") or "").strip()
+    transcript = data.get("sdk_transcript") or ""
     if not sid or not transcript:
+        return {}
+
+    # cwd 一致校验：stored_cwd 空（DB fallback / 旧数据）→ 放行不回退；非空且漂移 → 放弃。
+    stored_cwd = data.get("cwd") or ""
+    if not store.assert_cwd_consistent(stored_cwd=stored_cwd, dispatch_cwd=dispatch_cwd):
+        logger.warning(
+            "resume_cwd_mismatch_skip",
+            coding_session_id=str(getattr(coding_session, "id", "")),
+            stored_cwd=stored_cwd,
+            dispatch_cwd=dispatch_cwd,
+        )
         return {}
 
     byte_len = len(transcript.encode("utf-8"))
