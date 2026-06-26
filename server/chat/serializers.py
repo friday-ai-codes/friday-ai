@@ -157,6 +157,9 @@ class ConversationPatchSerializer(serializers.Serializer):
     )
     title = serializers.CharField(required=False, max_length=500)
     space_id = serializers.UUIDField(required=False, allow_null=True)
+    # WS-03：AI 对话的项目绑定可改归/解绑（null 解绑）。可读性校验在 view 层
+    # 经 resolve_allowed_project_ids fail-closed 完成。
+    bound_project_id = serializers.UUIDField(required=False, allow_null=True)
     # 归档开关：true 归档（从默认列表隐藏）/ false 取消归档。不受 frozen 限制。
     is_archived = serializers.BooleanField(required=False)
 

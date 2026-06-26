@@ -684,6 +684,20 @@ class ConversationDetailView(APIView):
         if "title" in data:
             conversation.title = data["title"]
             updated_fields.append("title")
+        if "bound_project_id" in data:
+            # WS-03：会话项目绑定改归/解绑。null 解绑；非空校验 user 可读（fail-closed）。
+            pid = data["bound_project_id"]
+            if pid is not None:
+                from knowledge.access_scope import resolve_allowed_project_ids
+
+                allowed = await resolve_allowed_project_ids(request.user, [str(pid)])
+                if not allowed:
+                    return Response(
+                        {"error": "项目不存在或无权访问"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            conversation.bound_project_id = pid
+            updated_fields.append("bound_project")
         if "is_archived" in data:
             # 归档与 frozen 正交：任何状态都可归档/取消归档。
             conversation.is_archived = data["is_archived"]
@@ -707,6 +721,11 @@ class ConversationDetailView(APIView):
             {
                 "id": str(conversation.id),
                 "space_id": str(conversation.space_id) if conversation.space_id else None,
+                "bound_project_id": (
+                    str(conversation.bound_project_id)
+                    if conversation.bound_project_id
+                    else None
+                ),
                 "title": conversation.title,
                 "model": conversation.model,
                 "status": conversation.status,
