@@ -34,6 +34,7 @@ from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.list_endpoints import list_endpoints
 from agents.tools.plan_research_tools import start_plan_research
 from agents.tools.registry import ToolRegistry
+from agents.tools.repo_association_tools import associate_repos
 from agents.tools.repository_relevance import analyze_repository_relevance
 from agents.tools.send_plan_card import send_plan_card
 from agents.tools.space_tools import (
@@ -82,6 +83,8 @@ __all__ = [
     "add_work_item_comment",
     # Board split tool (BOARD-01)
     "split_feature_list_to_boards",
+    # Repo association tool (REPO-01, 88-04)
+    "associate_repos",
     # Feishu IM tools
     "send_card_message",
     "send_plan_card",
