@@ -9,8 +9,10 @@ from initiatives.models import (
     Artifact,
     ArtifactCarrier,
     ArtifactType,
+    BranchSource,
     MergeRequest,
     Project,
+    ProjectBranch,
     ProjectDoc,
     ProjectMember,
     ProjectMemory,
@@ -494,6 +496,41 @@ class ProjectMemoryDistillSerializer(serializers.Serializer):
     """从成员会话蒸馏记忆草稿请求（MEM-04）。"""
 
     conversation_id = serializers.UUIDField()
+
+
+# ---- 分支↔项目绑定（BIND-01）----
+
+
+class ProjectBranchSerializer(serializers.ModelSerializer):
+    """项目分支绑定序列化（响应）。"""
+
+    repository_name = serializers.CharField(source="repository.name", read_only=True)
+
+    class Meta:
+        model = ProjectBranch
+        fields = [
+            "id",
+            "repository_id",
+            "repository_name",
+            "branch_name",
+            "source",
+            "feishu_board_id",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class ProjectBranchBindRequestSerializer(serializers.Serializer):
+    """绑定分支请求（BIND-01）：必填 repository_id/branch_name，可选 source/feishu_board_id。"""
+
+    repository_id = serializers.UUIDField()
+    branch_name = serializers.CharField(max_length=255)
+    source = serializers.ChoiceField(
+        required=False, choices=BranchSource.choices, default=BranchSource.MANUAL
+    )
+    feishu_board_id = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=100
+    )
 
 
 # ---- MergeRequest（MR-01）----

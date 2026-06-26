@@ -21,6 +21,7 @@ from initiatives.models.merge_request import (
     MRStatus,
 )
 from initiatives.models.project import Project, ProjectStatus, ProjectVisibility
+from initiatives.models.project_branch import BranchSource, ProjectBranch
 from initiatives.models.project_doc import (
     DocSection,
     DocSyncStatus,
@@ -41,6 +42,8 @@ __all__ = [
     "Project",
     "ProjectStatus",
     "ProjectVisibility",
+    "ProjectBranch",
+    "BranchSource",
     "ProjectDoc",
     "ProjectDocBlockMap",
     "ProjectDocBlockRevision",

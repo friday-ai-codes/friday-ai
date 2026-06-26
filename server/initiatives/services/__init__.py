@@ -33,6 +33,11 @@ from initiatives.services.project_board_sync import (
     BoardSyncResult,
     ProjectBoardSyncService,
 )
+from initiatives.services.project_branch_service import (
+    ProjectBranchError,
+    ProjectBranchPermissionError,
+    ProjectBranchService,
+)
 from initiatives.services.project_doc_service import ProjectDocService
 from initiatives.services.project_search_service import ProjectSearchService
 from initiatives.services.project_service import (
@@ -58,6 +63,9 @@ __all__ = [
     "ProjectSearchService",
     "ProjectBoardSyncService",
     "BoardSyncResult",
+    "ProjectBranchService",
+    "ProjectBranchError",
+    "ProjectBranchPermissionError",
     "ArtifactService",
     "ArtifactError",
     "ArtifactDisabledError",

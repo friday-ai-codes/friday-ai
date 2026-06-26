@@ -72,6 +72,9 @@ __all__ = [
     "ACTION_PROJECT_SPACE_REHOMED",
     "ACTION_PROJECT_STATE_API_ADDED",
     "ACTION_PROJECT_STATE_API_REMOVED",
+    # ---- v0.16.0 Phase 85 分支↔项目绑定 ----
+    "ACTION_PROJECT_BRANCH_BOUND",
+    "ACTION_PROJECT_BRANCH_UNBOUND",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -138,6 +141,10 @@ ACTION_PROJECT_SPACE_REHOMED: Final[str] = "project.space_rehomed"
 ACTION_PROJECT_STATE_API_ADDED: Final[str] = "project.state_api_added"
 ACTION_PROJECT_STATE_API_REMOVED: Final[str] = "project.state_api_removed"
 
+# ---- v0.16.0 Phase 85 分支↔项目绑定 action 常量（component=initiatives）----
+ACTION_PROJECT_BRANCH_BOUND: Final[str] = "project.branch_bound"
+ACTION_PROJECT_BRANCH_UNBOUND: Final[str] = "project.branch_unbound"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -187,6 +194,8 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PROJECT_SPACE_REHOMED,
         ACTION_PROJECT_STATE_API_ADDED,
         ACTION_PROJECT_STATE_API_REMOVED,
+        ACTION_PROJECT_BRANCH_BOUND,
+        ACTION_PROJECT_BRANCH_UNBOUND,
     }
 )
 
