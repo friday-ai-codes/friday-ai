@@ -159,6 +159,7 @@ class FeatureListExtractor:
         raw_text: str,
         *,
         space: Any | None = None,
+        extra_instruction: str | None = None,
         initiated_by_user_id: Any = None,
     ) -> dict[str, Any]:
         """原文 → 分块 + token 预算降级 + LLM 抽取 → 结构化拆分。
@@ -191,7 +192,9 @@ class FeatureListExtractor:
         modules_acc: dict[str, dict[str, Any]] = {}
         try:
             for idx, chunk in enumerate(chunks):
-                chunk_result = await self._aextract_chunk(chunk, space=space)
+                chunk_result = await self._aextract_chunk(
+                    chunk, space=space, extra_instruction=extra_instruction
+                )
                 self._merge_modules(modules_acc, chunk_result)
                 logger.debug(
                     "feature_list_chunk_extracted",
@@ -313,11 +316,15 @@ class FeatureListExtractor:
     # LLM 抽取 + 解析 + 合并
     # ------------------------------------------------------------------
 
-    async def _aextract_chunk(self, chunk_text: str, *, space: Any) -> dict[str, Any]:
+    async def _aextract_chunk(
+        self, chunk_text: str, *, space: Any, extra_instruction: str | None = None
+    ) -> dict[str, Any]:
         """单块抽取：LLM → JSON 解析（解析失败返回空模块，不反噬整体）。"""
         if not chunk_text.strip():
             return {"modules": []}
-        raw = await self._acall_llm(chunk_text, space=space)
+        raw = await self._acall_llm(
+            chunk_text, space=space, extra_instruction=extra_instruction
+        )
         return self._parse_llm_json(raw)
 
     async def _aresolve_model(self, space: Any) -> tuple[Any, str]:
@@ -335,13 +342,25 @@ class FeatureListExtractor:
         model = legacy.get("default_model") or _EXTRACT_MODEL_FALLBACK
         return result, model
 
-    async def _acall_llm(self, chunk_text: str, *, space: Any) -> str:
-        """单轮 LLM 抽取，包裹 ``use_call_source(BOARD_SPLIT)`` + 指标上报（fail-loud）。"""
+    async def _acall_llm(
+        self, chunk_text: str, *, space: Any, extra_instruction: str | None = None
+    ) -> str:
+        """单轮 LLM 抽取，包裹 ``use_call_source(BOARD_SPLIT)`` + 指标上报（fail-loud）。
+
+        ``extra_instruction`` 非空（87-04 多轮重拆）时作为附加拆分约束追加到系统提示，
+        影响本轮抽取粒度/分组，而不污染原始 feature list 正文。
+        """
         from agents.llm_factory import build_chat_model
 
         resolved, model = await self._aresolve_model(space)
+        system_prompt = _EXTRACT_SYSTEM_PROMPT
+        if extra_instruction and extra_instruction.strip():
+            system_prompt = (
+                f"{_EXTRACT_SYSTEM_PROMPT}\n\n"
+                f"# 额外拆分要求（用户补充，优先遵循）\n{extra_instruction.strip()}"
+            )
         messages = [
-            SystemMessage(content=_EXTRACT_SYSTEM_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=chunk_text),
         ]
 

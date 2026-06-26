@@ -15,6 +15,7 @@ create/save 方法。
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 import structlog
@@ -286,6 +287,123 @@ class ProjectService:
             project.feishu_folder_token = token
             project.save(update_fields=["feishu_folder_token", "updated_at"])
         return project
+
+    async def resolve_or_create_group(
+        self,
+        *,
+        project: Any,
+        member_ids: list[str] | None = None,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> str:
+        """复用项目群，无则建新群 + bot 入群 + writeback chat_id（87-04，INV-6 + fail-soft）。
+
+        ① ``project.feishu_chat_id`` 非空 → 直接复用（不调 create_chat）；
+        ② 否则经 ``FeishuIMService.create_chat`` 单步建群即拉人 → ``ensure_bot_in_chat``
+           入群 → ``_writeback_chat_id_locked`` 持久化（select_for_update 防并发双建）+
+           ``AuditService.aemit`` 审计。建群/入群任一异常 **fail-soft** 返回 ``""``（不抛，
+           由上层节点降级提示无法拉群）。
+
+        Args:
+            project: ``initiatives.models.Project`` 实例（含 ``space`` / ``feishu_chat_id``）。
+            member_ids: 拉入新群的成员飞书 open_id 列表（复用群时忽略）。
+            actor / initiated_by_user_id: 审计/可观测归因（缺记 system）。
+
+        Returns:
+            群 ``chat_id``；建群失败返回 ``""``（fail-soft）。
+        """
+        started = perf_counter()
+        existing = str(getattr(project, "feishu_chat_id", "") or "").strip()
+        if existing:
+            logger.info(
+                "board_group_resolved",
+                project_id=str(getattr(project, "id", "")),
+                reused=True,
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=str(initiated_by_user_id)
+                if initiated_by_user_id is not None
+                else "system",
+                component=_COMPONENT,
+                category="caller",
+            )
+            return existing
+
+        # 函数级 import 防循环依赖（services.feishu_im → initiatives 反向）。
+        from services.feishu_im import FeishuIMService
+
+        try:
+            space = await sync_to_async(lambda: project.space)()
+            im_service = await FeishuIMService.create(space)
+            data = await im_service.create_chat(
+                f"{project.name} 项目群",
+                user_id_list=list(member_ids or []) or None,
+            )
+            chat_id = str(data.get("chat_id", "") or "").strip()
+            if not chat_id:
+                raise ValueError("create_chat 未返回 chat_id")
+            # bot 入群（幂等 + 自降级，结构化返回不抛）。
+            await im_service.ensure_bot_in_chat(chat_id)
+        except Exception as exc:  # noqa: BLE001 — 建群 fail-soft，返回空让上层降级
+            logger.warning(
+                "board_group_resolved",
+                project_id=str(getattr(project, "id", "")),
+                reused=False,
+                created=False,
+                error_type=type(exc).__name__,
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                initiated_by_user_id=str(initiated_by_user_id)
+                if initiated_by_user_id is not None
+                else "system",
+                component=_COMPONENT,
+                category="caller",
+            )
+            return ""
+
+        # writeback（INV-6：经 ProjectService 收口，select_for_update 防并发双建）。
+        final_chat_id = await self._writeback_chat_id_locked(project.id, chat_id)
+        if hasattr(project, "feishu_chat_id"):
+            project.feishu_chat_id = final_chat_id
+
+        actor_id = initiated_by_user_id or getattr(actor, "id", None)
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_UPDATED,
+            actor=actor,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            after={"feishu_chat_id": final_chat_id},
+            metadata={
+                "component": _COMPONENT,
+                "category": "caller",
+                "initiated_by_user_id": str(actor_id) if actor_id else "system",
+            },
+            source="api",
+        )
+
+        logger.info(
+            "board_group_resolved",
+            project_id=str(getattr(project, "id", "")),
+            reused=final_chat_id != chat_id,
+            created=final_chat_id == chat_id,
+            duration_ms=round((perf_counter() - started) * 1000, 2),
+            initiated_by_user_id=str(actor_id) if actor_id else "system",
+            component=_COMPONENT,
+            category="caller",
+        )
+        return final_chat_id
+
+    @sync_to_async
+    def _writeback_chat_id_locked(self, project_id: Any, chat_id: str) -> str:
+        """原子回写 feishu_chat_id（select_for_update 防并发双建：已写则复用既有）。"""
+        with transaction.atomic():
+            project = Project.objects.select_for_update().get(pk=project_id)
+            current = str(project.feishu_chat_id or "").strip()
+            if current:
+                # 并发下另一路已建群并回写 → 复用既有，丢弃本次新建（幂等）。
+                return current
+            project.feishu_chat_id = chat_id
+            project.save(update_fields=["feishu_chat_id", "updated_at"])
+        return chat_id
 
     async def rehome_space(
         self,

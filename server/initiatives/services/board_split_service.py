@@ -66,6 +66,7 @@ class BoardSplitService:
         uploaded_text: str | None = None,
         feishu_url: str | None = None,
         pasted_text: str | None = None,
+        extra_instruction: str | None = None,
         initiated_by_user_id: Any = None,
     ) -> dict[str, Any]:
         """多源 feature list → 结构化拆分提案（薄委托 FeatureListExtractor）。
@@ -75,6 +76,8 @@ class BoardSplitService:
             uploaded_text: 上传文件正文（md）。
             feishu_url: 飞书文档链接/ID（回拉正文）。
             pasted_text: 粘贴文本。
+            extra_instruction: 多轮重拆指令（87-04，用户在群卡片输入框补充的拆分要求）；
+                透传给 ``extract_structure`` 影响 LLM 抽取，缺省 None 即首轮无附加指令。
             initiated_by_user_id: 触发用户 id（审计/可观测绑定；缺记 system）。
 
         Returns:
@@ -92,7 +95,10 @@ class BoardSplitService:
             space=space,
         )
         proposal = await extractor.extract_structure(
-            raw_text, space=space, initiated_by_user_id=initiated_by_user_id
+            raw_text,
+            space=space,
+            extra_instruction=extra_instruction,
+            initiated_by_user_id=initiated_by_user_id,
         )
 
         logger.info(

@@ -91,6 +91,15 @@ class Project(models.Model):
     feishu_board_id = models.CharField(
         max_length=100, blank=True, default="", verbose_name="飞书看板 ID"
     )
+    # 复用项目群：拆分结果/协同卡片优先发到此群（无则建新群 + bot 入群后 writeback，87-04）。
+    # 写入只经 ProjectService.resolve_or_create_group（INV-6）。
+    feishu_chat_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        verbose_name="飞书项目群 ID",
+        help_text="项目复用群 chat_id；为空时由 resolve_or_create_group 建群后回写",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
