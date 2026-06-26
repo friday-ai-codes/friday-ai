@@ -8,10 +8,10 @@ last_updated: "2026-06-26T10:14:35.958Z"
 last_activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82–89 / 3 Wave；4 决策锁定：DB canonical+飞书双向镜像、全员可读+visibility、MEMORY 条目式不整篇 diff、STATE/MILESTONES 活计算）
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 13
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 11
+  percent: 25
 ---
 
 # Project State
@@ -35,7 +35,7 @@ Last activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82
 | Phase | Name | Requirements | Wave | Status |
 |-------|------|--------------|------|--------|
 | 82 | 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
-| 83 | 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ☐ Pending |
+| 83 | 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
 | 84 | 项目工作台前端 2.0 | WB-01~05 | 1 | ☐ Pending |
 | 85 | 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ☐ Pending |
 | 86 | IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
