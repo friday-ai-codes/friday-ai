@@ -159,6 +159,26 @@ def poll_repository_updates_job():
 
 
 @_with_scheduler_log_context
+def poll_project_docs_revisions_job():
+    """Job wrapper：飞书文档 TTL 兜底轮询（SYNC-01 漏事件兜底，83-06）。
+
+    遍历进行中项目 READY doc 比对 revision，漂移即 defer durable_doc_sync_pull。
+    沿用既有 ``*_job`` + ``run_async_task`` 范式；归因 system（scheduler 上下文）。
+    poll 函数内单 doc try/except 隔离，异常不抛回本 wrapper、绝不打断 scheduler。
+    """
+    from tasks.doc_sync_poll import poll_project_docs_revisions
+
+    log = logger.bind(job="poll_project_docs_revisions")
+    log.info("job_start")
+
+    try:
+        result = run_async_task(poll_project_docs_revisions)
+        log.info("job_complete", result=result)
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def calculate_behind_commits_job() -> None:
     """contract：计算 STALE 仓库的 behind_commits 差值并缓存。"""
     from repositories.freshness_service import update_behind_commits_for_stale_repos
@@ -627,6 +647,23 @@ class Command(BaseCommand):
         # DELETE FROM django_apscheduler_djangojob WHERE id='poll_repository_updates';
         # 启动新代码后 scheduler 会自动重建，避免旧 job_state 残留旧 trigger。
         logger.info("job_registered", job="poll_repository_updates", schedule=f"every {settings.SYNC_INTERVAL_SECONDS}s")
+
+        # 飞书文档 TTL 兜底轮询（SYNC-01 漏事件兜底，83-06）：进行中项目 READY doc 周期比对
+        # revision 漂移 → defer durable_doc_sync_pull。间隔取 settings.DOC_SYNC_POLL_INTERVAL_SECONDS
+        # （默认 120）启动值；单实例 max_instances=1 防重叠。
+        scheduler.add_job(
+            poll_project_docs_revisions_job,
+            trigger=IntervalTrigger(seconds=settings.DOC_SYNC_POLL_INTERVAL_SECONDS),
+            id="poll_project_docs_revisions",
+            name="Poll Feishu doc revisions for missed-event fallback sync",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="poll_project_docs_revisions",
+            schedule=f"every {settings.DOC_SYNC_POLL_INTERVAL_SECONDS}s",
+        )
 
         # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates（implementation contract）
         scheduler.add_job(
