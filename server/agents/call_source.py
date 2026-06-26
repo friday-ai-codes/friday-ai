@@ -4,10 +4,11 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（27 值，v0.15.0 Phase 80
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（30 值，v0.15.0 Phase 80
   新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
   新增 ``board_split``，v0.16.0 Phase 88 新增 ``repo_verify_container`` /
-  ``repo_association``），作为
+  ``repo_association``，v0.16.0 Phase 89 新增 ``plan_deepen`` / ``plan_revision`` /
+  ``branch_naming``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -27,12 +28,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import Enum
 
-# 非法 call_source 的安全回退值（不在 22 类枚举内时使用）。
+# 非法 call_source 的安全回退值（不在受控枚举内时使用）。
 UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，27 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，30 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -74,6 +75,15 @@ class CallSource(str, Enum):
     # v0.16.0 Phase 88：候选细化/Agent 自处理 LLM（RepoAssociationService 多轮细化候选
     # 仓库，可多次调用）。
     REPO_ASSOCIATION = "repo_association"
+    # v0.16.0 Phase 89：per-repo/overall 技术方案七要素深化 LLM（PlanDeepenService 经 v0.7
+    # 引擎驱 per-repo explore 容器深化 + ArchitectMergeAdapter 合成 overall 整体方案）。
+    PLAN_DEEPEN = "plan_deepen"
+    # v0.16.0 Phase 89：方案修订「调研问题发现」检测 LLM（89-02 修订回路消费，执行中发现
+    # 要改/增/删仓 → 更新方案/创建补充修订）。
+    PLAN_REVISION = "plan_revision"
+    # v0.16.0 Phase 89：分支名生成 LLM（89-04 消费，按固定格式 + 方案上下文生成分支名，
+    # server 权威拼装 + 用户卡片确认）。
+    BRANCH_NAMING = "branch_naming"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:
