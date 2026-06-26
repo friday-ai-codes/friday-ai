@@ -2,7 +2,8 @@
 
 生成一段 Cursor ``.mdc`` rules 文本，强制 Cursor 在编码前**先用当前分支名经 MCP
 ``lookup_project_by_branch`` 关联本分支所属 Friday 项目、召回需求/工件/记忆上下文，再编码**；
-完成后经 ``report_project_knowledge`` 上报沉淀（人工确认入库）。
+完成后经 ``report_project_knowledge`` 上报沉淀（经服务端脱敏 + 质量门槛 + 审计可回滚后
+**直接写入生效（active）**，无需人工确认——与 86-01 服务端行为一致的 accepted deviation）。
 
 下发方式（双轨，见 81-CONTEXT specifics）：
 1. 项目详情页「概览」Tab 提供「复制 / 下载」（前端消费 ``GET /api/projects/<id>/cursor-rules/``）；
@@ -70,7 +71,8 @@ alwaysApply: true
    - 若 `matched=false`（多/无命中），结合返回的 `candidates` 人工确认项目，必要时向维护者求证，不要在缺乏上下文的情况下臆测实现。
 2. **再编码**：在已加载的项目上下文约束下进行设计与实现，遵守项目记忆中已记录的方案决策、约束与历史教训；不要与既有记忆/需求矛盾。
 3. **完成后上报沉淀**：把本次产生的、对团队有价值的方案决策 / 经验教训，经 MCP 工具 `report_project_knowledge(project_id="{project_id}", content=<提炼后的沉淀>)` 上报。
-   - 上报内容会经脱敏 + 质量门槛过滤后，写入项目记忆**草稿**，由项目成员人工确认后才正式入库（不会自动污染共享记忆）。
+   - 上报内容经服务端**脱敏 + 质量门槛过滤（低质 / 空 / 重复不写）+ 审计可回滚**兜底后，**直接写入生效（active）**，无需人工确认即对团队可见；防污染由这三道兜底保证（与 IDE stop hook 静默直写一致）。
+   - 非项目成员 / 无 PAT / 未绑项目 → 静默跳过，不写入、不阻断编码。
    - 绝不上报任何凭证 / 密钥 / token / 个人敏感信息。
 
 ## 约束

@@ -952,10 +952,11 @@ class ProjectIdeHookAssetsView(APIView):
 
     ``GET /api/projects/<id>/ide-hook-assets/?runtime=cursor|claude_code|codex&kind=read``
 
-    返回三家 always-on 规则（强制「先反查项目 + 召回再编码」）；Claude Code 额外含
-    ``UserPromptSubmit`` 注入脚本 + ``settings.json`` 片段。读权限对齐项目读口径
-    （``_aget_project_for_read`` fail-closed，非成员不泄漏资产正文）。``kind=write`` 由
-    86-05 扩展。
+    ``kind=read``（默认）返回三家 always-on 规则（强制「先反查项目 + 召回再编码」），
+    Claude Code 额外含 ``UserPromptSubmit`` 注入脚本 + ``settings.json`` 片段；
+    ``kind=write`` 返回三家 stop hook 写路径资产（会话结束默认开启 + 静默 active 回写 +
+    STATE 结构化回写，HOOK-02/03）。写路径资产仅是「告诉用户怎么装 hook」的安装说明文本、
+    不执行写，故读权限口径不变（``_aget_project_for_read`` fail-closed，非成员不泄漏资产正文）。
     """
 
     async def get(self, request, project_id):
@@ -963,13 +964,17 @@ class ProjectIdeHookAssetsView(APIView):
         if err is not None:
             return err
         from initiatives.serializers import IdeHookAssetsQuerySerializer
-        from initiatives.services.ide_hook_assets import build_read_path_assets
+        from initiatives.services.ide_hook_assets import (
+            build_read_path_assets,
+            build_write_path_assets,
+        )
 
         serializer = IdeHookAssetsQuerySerializer(data=request.query_params)
         await sync_to_async(serializer.is_valid)(raise_exception=True)
         runtime = serializer.validated_data["runtime"]
         kind = serializer.validated_data["kind"]
-        bundle = await sync_to_async(build_read_path_assets)(project, runtime)
+        builder = build_write_path_assets if kind == "write" else build_read_path_assets
+        bundle = await sync_to_async(builder)(project, runtime)
         bundle["kind"] = kind
         return Response(bundle)
 

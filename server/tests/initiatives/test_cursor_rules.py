@@ -47,6 +47,18 @@ def test_build_rules_contains_mandatory_flow(project) -> None:
     assert str(project.id) in text
 
 
+def test_build_rules_wording_active_writeback(project) -> None:
+    """措辞同步 86-01 active 直写生效（accepted deviation），不再说「人工确认」。"""
+    text = build_project_cursor_rules(project)
+    assert "active" in text
+    # 不再把沉淀落「草稿」等人工确认入库。
+    assert "草稿" not in text
+    assert "无需人工确认" in text
+    # 保留三道兜底 + 静默跳过说明。
+    assert "审计可回滚" in text
+    assert "静默跳过" in text
+
+
 def test_filename(project) -> None:
     assert cursor_rules_filename(project) == f"friday-project-{project.id}.mdc"
 
