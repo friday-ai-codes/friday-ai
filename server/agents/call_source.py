@@ -4,9 +4,10 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（25 值，v0.15.0 Phase 80
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（27 值，v0.15.0 Phase 80
   新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
-  新增 ``board_split``），作为
+  新增 ``board_split``，v0.16.0 Phase 88 新增 ``repo_verify_container`` /
+  ``repo_association``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -31,7 +32,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，25 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，27 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -67,6 +68,12 @@ class CallSource(str, Enum):
     # v0.16.0 Phase 87：看板拆分 FeatureListExtractor / BoardSplitService（feature list
     # 结构化抽取 模块→功能点→验收项，单轮，按模块/标题分块时可多次调用）。
     BOARD_SPLIT = "board_split"
+    # v0.16.0 Phase 88：逐仓 explore 容器深验 LLM（RepoVerifyDispatchService per-repo
+    # 容器深入仓库代码验证业务适配性，多仓 fan-out）。
+    REPO_VERIFY_CONTAINER = "repo_verify_container"
+    # v0.16.0 Phase 88：候选细化/Agent 自处理 LLM（RepoAssociationService 多轮细化候选
+    # 仓库，可多次调用）。
+    REPO_ASSOCIATION = "repo_association"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:

@@ -90,6 +90,8 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `memory_distill` | `initiatives.MemoryDistiller`（v0.15.0 Phase 80） | 从成员会话提炼项目记忆草稿，单轮，产 pending 草稿 |
 | `ide_hook_distill` | `report_project_knowledge` active 模式蒸馏（v0.16.0 Phase 86） | stop hook 组织上下文 → 精炼记忆条目，单轮，best-effort，active 直写前可选精炼 |
 | `board_split` | `initiatives.FeatureListExtractor` / BoardSplitService（v0.16.0 Phase 87） | feature list 结构化抽取/重拆（模块→功能点→验收项），单轮，按模块/标题分块可多次 |
+| `repo_verify_container` | `RepoVerifyDispatchService` per-repo explore 容器（v0.16.0 Phase 88） | 深入仓库代码验证业务适配性，多仓 fan-out，task 容器 |
+| `repo_association` | `initiatives.RepoAssociationService` 候选细化/Agent 自处理（v0.16.0 Phase 88） | 多轮细化候选仓库，可多次调用 |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 
