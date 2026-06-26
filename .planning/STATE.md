@@ -1,67 +1,67 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.15.0
-milestone_name: 项目（交付上下文聚合根）
-status: Awaiting next milestone
-stopped_at: "Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）完成（plan→execute→verify 端到端，VERIFICATION status: passed）。下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。"
-last_updated: "2026-06-25T18:59:24.795Z"
-last_activity: 2026-06-25 — Milestone v0.15.0 completed and archived
+milestone: v0.16.0
+milestone_name: 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
+status: planning
+last_updated: "2026-06-26T06:00:00.000Z"
+last_activity: 2026-06-26 — Milestone v0.16.0 立项（PROJECT/REQUIREMENTS/ROADMAP/STATE + project-workspace/MILESTONE-PROPOSAL 就绪）
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 5
+  percent: 13
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）)
+See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"需求→代码"全链路上下文统一收口到一个**在线协作的「项目」聚合根**，让每次对话/Cursor 编码/Agent 调用都能加载该项目全部历史关联、依赖工件、记忆与召回，并把沉淀写回。v0.14.0 可观测性与日志治理已于 2026-06-24 shipped、审计 passed。
-**Current focus:** v0.15.0 项目（交付上下文聚合根）——6 Phase（76–81）线性推进，76/77/78/79/80/81 **全部完成（100%，38/38 需求）**，里程碑 **feature-complete**，下一步 `$gsd-audit-milestone` 里程碑审计后归档。
+**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"项目"做成团队真正用的**在线协作工作区**：人在飞书写、Agent/Cursor 在系统写，双向实时同步不互相冲掉；项目上下文可被任意来源读取/召回/回写；并把"feature list → 拆看板 → 关联仓库 → 技术方案 → 建分支"做成人机协同交付流水线。v0.15.0 项目（交付上下文聚合根）已于 2026-06-26 shipped、审计 passed。
+**Current focus:** v0.16.0 项目工作区立项完成（planning）——8 Phase（82–89）/ 3 Wave 推进，下一步 `$gsd-discuss-phase 82` 或 `$gsd-plan-phase 82`（Wave 1 工作区实体地基）。
 
 ## Current Position
 
-Phase: Milestone v0.15.0 complete
+Phase: Not started（立项完成 — ready to plan Phase 82）
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-25 — Milestone v0.15.0 completed and archived
+Status: 里程碑 v0.16.0 已立项（PROJECT/REQUIREMENTS/ROADMAP/STATE + project-workspace/MILESTONE-PROPOSAL 就绪）
+Last activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82–89 / 3 Wave；4 决策锁定：DB canonical+飞书双向镜像、全员可读+visibility、MEMORY 条目式不整篇 diff、STATE/MILESTONES 活计算）
 
-## Milestone Overview (v0.15.0 — Phases 76–81 — ✅ FEATURE-COMPLETE 6/6)
+## Milestone Overview (v0.16.0 — Phases 82–89 — 🚧 PLANNING)
 
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 76 | 命名腾挪（Project→Space 重构前置） | RENAME-01, RENAME-02 | ✅ Complete |
-| 77 | 项目聚合根 + 身份映射 + 成员协作 | PROJ-01~05, IDENT-01, MEMBER-01~03 | ✅ Complete |
-| 78 | 飞书触发建项目 + 看板枚举 + 工作项组合 | FSPROJ-01~03, COMPOSE-01/02 | ✅ Complete |
-| 79 | 工件/依赖项（可配置类型 + 实例 + RAG）+ 知识关联 | ARTIFACT-01~05, KLINK-01/02 | ✅ Complete |
-| 80 | 项目记忆 + MR 实体 + 上下文召回接入 Web 会话 | MEM-01~04, RECALL-01~03, MR-01/02 | ✅ Complete |
-| 81 | Cursor 回流 + 前端项目工作台 | CURSOR-01~03, UI-01~03 | ✅ Complete |
+| Phase | Name | Requirements | Wave | Status |
+|-------|------|--------------|------|--------|
+| 82 | 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
+| 83 | 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ☐ Pending |
+| 84 | 项目工作台前端 2.0 | WB-01~05 | 1 | ☐ Pending |
+| 85 | 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ☐ Pending |
+| 86 | IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
+| 87 | 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ☐ Pending |
+| 88 | 智能业务关联仓库 | REPO-01/02 | 3 | ☐ Pending |
+| 89 | 技术方案深化 + 建分支绑项目 | PLAN-01~04 | 3 | ☐ Pending |
 
-完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（38 条 + Traceability）；设计与调研基线见 [.planning/project-aggregate/MILESTONE-PROPOSAL.md](./project-aggregate/MILESTONE-PROPOSAL.md)。
+完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（37 条 + Traceability）；设计与调研基线见 [.planning/project-workspace/MILESTONE-PROPOSAL.md](./project-workspace/MILESTONE-PROPOSAL.md)。
 
-**Execution order:** 76 → 77 → 78 → 79 → 80 → 81（线性）。依赖：76（命名腾挪）是硬前置，必须全绿再推进；77（聚合根 + 身份 + 成员）立地基；78（飞书触发 + 组合）与 79（工件 + 知识关联）各自构建；80（记忆 + MR + 召回）把上下文接通会话；81（Cursor 回流 + 前端工作台）打通双向闭环与可视。
+**Execution order:** 82 → 83 → 84（Wave 1 地基，必须先全绿）→ 85 → 86（Wave 2 闭环）→ 87 → 88 → 89（Wave 3 流水线，线性）。Wave 1 是最小可交付；Wave 2/3 依赖 Wave 1，可在本里程碑内顺序推进或按需拆 v0.17/v0.18。
 
-**UI 触面（标 UI hint）:** Phase 77（项目创建/成员）、Phase 79（工件查看/类型管理）、Phase 80（记忆编辑/召回）、Phase 81（项目工作台集中前端，`/gsd-ui-phase` 应介入）。76/78 以后端为主。
+**UI 触面（标 UI hint）:** Phase 82（侧边栏 tab/文件落地）、Phase 84（项目工作台集中前端，`/gsd-ui-phase` 应介入）。其余以后端 + 节点 + 同步/卡片为主。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
 
-- **项目是聚合根，不是工作流节点**：项目是持续存在的领域数据 + 关系图；工作流（含 `create_project` 节点）只是写它的入口之一，不要把项目做成 DAG 节点。
-- **命名锁定大重构**：`projects.Project` → `Space`（76 独立前置，与新功能解耦），腾出 `Project` 名给新聚合根；对外仍称"空间"；数据零丢失、行为/测试零回归后再推进 77。
-- **不做迭代实体**：另一迭代 = 新建项目；"看历史迭代" = 项目↔项目关联链回看（复用 `KnowledgeEdge`）；知识/记忆直接挂项目。
-- **记忆为自由文本**：条目 + 时间戳/贡献者；人工为主，LLM 仅产草稿经人工确认入库（不自动直接写）；矛盾消解靠人工覆盖；脱敏不可绕过。结构化 + 自动降权留 v2（PROJX-02）。
-- **工件统一可配置类型 + 实例**：`ArtifactType`（后台增删禁用，内置 8 类）+ `Artifact`（多载体）；文字载体（飞书文档/表格/md/Spec）全文进 `delivery_knowledge` 可召回；**UI 稿（figma/mastergo）是图形链接仅存元数据**，多模态正文 RAG 留 v2（PROJX-01）。
-- **最大化复用脊柱**：`KnowledgeEntity/KnowledgeEdge`（bi-temporal/版本/边）做项目↔知识与项目间关联；`delivery.WorkItem`（三元组）做 story/缺陷（缺陷不重复建模为工件）；`delivery_knowledge` 做召回；`Space` 做组织单元。
-- **三个净新增空白（每个是独立硬骨头）**：飞书人员↔Friday 用户映射（主R/协作/归因/Cursor 上报前置，与可观测"谁触发"同源）、通用项目记忆、MR 实体 + 入站 webhook。
-- **飞书无整板枚举 API**：项目跟踪子项/成员经子项关联字段派生逐项收集（`WorkItemRelation` 范式）；拿不到则降级"半自动"（webhook 逐个并入）。plan-phase 先验证飞书 API。
-- **Cursor 回流走 MCP + git + 上报 API**：复用 `mcp_tools/` + `env_FRIDAY_TASK_USER_TOKEN`（v0.2.0 地基）；分支名 `feat/xxxx-m{work_item_id}-slug` 现为单向生成，需补"分支名→项目"反查；上报写回须认证 + 归因 + 脱敏 + 质量门槛防噪音。专用插件留 v2（PROJX-04）。
-- **召回与会话**：`search_delivery_knowledge` 已实现但**未接入 chat runner 工具白名单**（`agents/chat_runner.py` `_INDEXED_TOOL_NAMES`），RECALL-02 需打通；context packer 按"召回+排序+压缩、token 预算可降级"设计（全量加载是未来态）。
-- **观测/异步**：后台任务带 `initiated_by_user_id`、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`；ORM 在 async 走 `sync_to_async`；i18n 默认中文。
+- **4 个锁定决策**：① 5 文件 **DB canonical + 飞书文档双向镜像 + redis 纯读缓存**（取消"归档才进 DB"）；② 权限**默认全员可读可问（public_org）+ visibility 开关 + 写仅成员**；③ MEMORY **保留条目式 `ProjectMemory`** 渲染为文件，飞书编辑按 block_id 落 revision、**不做整篇 diff**；④ STATE/MILESTONES **活计算派生 + 结构化字段 + 自由文本补充段**。
+- **飞书文档双向同步引擎（Phase 83 核心硬骨头）**：飞书→Friday 走 `drive.file.edit_v1` subscribe（事件不含正文需回拉）+ TTL 兜底；Friday→飞书 **block 级增量、永不整篇覆盖**；**防冲突四机制**=block 级写 + 区段所有权分区（系统区/人工区）+ Agent append + 编辑感知延迟写；**diff 用 block_id 结构化匹配 + last-synced 快照/映射表**（非整篇文本 diff）；真冲突三方合并 + **capture-never-clobber**。
+- **每项目飞书专属文件夹**：`drive/v1/files/create_folder`（父=Space `feishu_doc_folder_token`，5QPS/不可并发/单层 1500 上限）；5 文件建于其下，DB 存 folder/doc token，**不乱放**；文件互链 + 看板描述追加链接可打开。
+- **IDE hooks 三家差异**：Cursor `beforeSubmitPrompt` **不能注入上下文** → 读路径走 **MCP 工具 + always-on rule**（三家通）；Claude Code `UserPromptSubmit` 可注入做增强；Codex 仅 MCP+rules。写路径 `stop` hook → report → draft。
+- **容器挂起/resume**：session JSONL 本地态、跨容器不共享 → 必须 **SessionStore→Redis** 或重灌应用态；cwd 须一致；复用 v0.8 callback resume + v0.12 durable。
+- **看板拆分写 API**：`work_item/create` + `relation_type=1` 父子（plugin_token+user_key 鉴权，父子类型可能需配置中心预配）；plan-phase 先 live 验证写接口（Phase 78 仅验证读）。
+- **最大化复用 v0.15.0 地基**：`initiatives`(`Project`/`ProjectService`/`ProjectMember`/`ProjectMemory`/`Artifact`/`MergeRequest`/`ProjectWorkItemLink`/`ProjectRelation`)、`resolve_feishu_user`、context packer、`Conversation.bound_project`、`lookup_project_by_branch`/`report_project_knowledge`、cursor_rules、KnowledgeEdge、`feishu_doc.py`、`feishu.py::update_work_item_fields`、git-webhook。**严禁重复造。**
+- **观测/异步**：新增 LLM（看板拆分/仓库关联/方案/hook 提炼）赋 `call_source`（LOGGING-SPEC §4.1 登记）；新增召回（项目搜索/MCP 注入/hook）写 `RetrievalTrace`（MCP+对话两链）；飞书正文/hook 上传/webhook payload 脱敏；后台/外部触发带 `initiated_by_user_id`；写入收口 INV-6；ORM async 走 `sync_to_async`；i18n 默认中文。
 
-**设计底座引用:** `.planning/project-aggregate/MILESTONE-PROPOSAL.md`（领域模型 + 现状对照 + 技术前置/风险 + 数据模型建议 + 关键流程 + 阶段总览）、`.planning/REQUIREMENTS.md`（38 条需求 + Traceability）。关键复用位置：`server/projects/`（→Space）、`server/permissions/`、`server/delivery/`（WorkItem/Document/事件流）、`server/knowledge/`（KnowledgeEntity/Edge/retrieval/vector_recall/sources）、`server/services/retrieval/`+`qdrant_service.py`、`server/feishu/`（views/client/websocket_client）、`server/services/feishu*.py`（含 feishu_doc/bitable/im）、`server/agents/chat_runner.py`+`agents/tools/`（delivery_knowledge_tools/space_tools）、`server/mcp_tools/`、`server/services/git_platform/`、`server/accounts/`+`server/access_tokens/`（用户/PAT/context）、`web/src/pages/spaces/`（空间前端范本）、`web/src/api/`。
+**设计底座引用:** `.planning/project-workspace/MILESTONE-PROPOSAL.md`（设计立场 + 同步引擎详设 + 5 文件形态 + 数据模型 + IDE 闭环 + 交付流水线 + 边界/失败模式 + 调研结论 + 阶段总览 + 风险）、`.planning/REQUIREMENTS.md`（37 条 + Traceability）。关键复用/落点：`server/initiatives/`、`server/projects/`(Space)、`server/permissions/`、`server/delivery/`(WorkItem)、`server/knowledge/`(Entity/Edge/ingestion/sources)、`server/services/feishu_doc.py`+`feishu.py`+`feishu_im.py`+`feishu_bitable.py`、`server/feishu/`(views/client/websocket_client/事件链路)、`server/agents/chat_runner.py`+`agents/tools/`、`server/mcp_tools/`、`server/services/git_platform/`、`server/resumable/`(durable)、`task/`(claude-agent-sdk runner)、`web/src/pages/projects/`+`web/src/pages/spaces/`+`web/src/api/`+`web/src/components/layout/AppSidebar.vue`。
+
+**历史里程碑约束（仍生效）:** 不做迭代实体（另一迭代=新项目）；UI 稿仅元数据（多模态留 v2）；记忆人工为主+LLM 提议确认；脱敏不可绕过。
 
 ## Performance Metrics
 
@@ -391,11 +391,16 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-26
-Stopped at: Phase 80（项目记忆 + MR 实体 + 上下文召回接入 Web 会话）完成（plan→execute→verify 端到端，VERIFICATION status: passed）。下一步 Phase 81（Cursor 回流 + 前端项目工作台，里程碑收官）。
-Earlier: v0.15.0 项目（交付上下文聚合根）里程碑立项完成（new-milestone）——经"想法评审 → 锁定 4 决策（命名 Project→Space 大重构 / 记忆自由文本 / 人工为主+LLM提议 / 不做迭代实体）→ 调研（3 子代理 + 飞书·知识·工作流三子系统）→ 产出工件"。已写 `.planning/project-aggregate/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（38 条）、`ROADMAP.md`（Phases 76–81 + Phase Details）、`PROJECT.md`（Current Milestone + Active + Key Decisions）、`STATE.md`（本文件，重置为 v0.15.0 planning）。
+Stopped at: v0.16.0 项目工作区里程碑立项完成（new-milestone）——经"方案 review（对照 v0.15.0 已交付能力）→ 锁定 4 决策（DB canonical+飞书双向镜像 / 全员可读+visibility / MEMORY 条目式不整篇 diff / STATE·MILESTONES 活计算）→ 飞书文档双向同步引擎详设（block_id 结构化匹配 + 防冲突四机制）→ 外部依赖调研确认（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks 限制 / 容器 resume SessionStore）→ 产出工件"。已写 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（37 条）、`ROADMAP.md`（Phases 82–89 + Phase Details + Progress）、`STATE.md`（本文件，重置为 v0.16.0 planning）、`PROJECT.md`（Current Milestone）。
+Earlier: v0.15.0 项目（交付上下文聚合根）已 shipped + 审计 passed + 归档（2026-06-26）。
 Resume file: None
-Next: `$gsd-discuss-phase 76` 收集上下文澄清，或 `$gsd-plan-phase 76` 直接拆 plan（命名腾挪前置）
+Next: `$gsd-discuss-phase 82` 收集上下文澄清，或 `$gsd-plan-phase 82` 直接拆 plan（Wave 1 工作区实体地基）
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- 里程碑已立项；下一步 `$gsd-discuss-phase 82`（或 `$gsd-plan-phase 82`）启动 Wave 1
+- ⚠️ Wave 1（82–84）是最小可交付地基，必须先全绿再推 Wave 2/3；可按需把 Wave 2/3 拆成 v0.17/v0.18 独立发布
+- ⚠️ Phase 83（飞书双向同步引擎）是全期最大风险——建议先把 MEMORY（append 最简）跑通再推 STATE/RESEARCH；plan-phase 先 live 验证 `subscribe` + block 写
+- ⚠️ Phase 87（看板拆分）plan-phase 前先 live 验证飞书 `work_item/create` + 父子关系写 API（Phase 78 仅验证读）
+- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令）；commit 由用户按需触发
+- 可用 `$gsd-autonomous` 自动跑完整个里程碑（如 v0.15.0），或逐 Wave 推进

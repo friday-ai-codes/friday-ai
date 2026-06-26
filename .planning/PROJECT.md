@@ -12,7 +12,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.15.0 项目（交付上下文聚合根）（2026-06-26，审计 passed，38/38 需求）。里程碑 v0.1.0–v0.15.0（Phases 1–81）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。下一里程碑待 `$gsd-new-milestone` 立项。
+**Latest shipped:** v0.15.0 项目（交付上下文聚合根）（2026-06-26，审计 passed，38/38 需求）。里程碑 v0.1.0–v0.15.0（Phases 1–81）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）（Phases 82–89，planning）。**
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -27,6 +27,21 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 **已知 follow-up（tech debt）：** v0.2.0 chat/MCP 编码 dispatch 路径的实时明文 PAT 注入未覆盖、RTOOL-02/03/04 容器端 E2E 待真实环境验收；v0.8 多仓 wave 编码/PR/HITL 的真实 runner+Docker 容器端到端验收待真实环境；chat 编码入口（`coding_session_service`）的 cross-ref / 遇阻 HITL 接线为 follow-up（helper 入口无关已就绪）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 失败待修；部分里程碑的纯观感人工验收（UAT）顺延。详见 `.planning/MILESTONES.md` 与 `.planning/STATE.md`。
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
+
+## Current Milestone: v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
+
+> v0.15.0 项目（交付上下文聚合根）已 shipped + 审计 passed。本里程碑在其领域地基上，把"项目"升级为团队真正用的**在线协作工作区**，分 8 个 Phase（82–89）/ 3 Wave 推进。完整设计与调研基线见 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、需求 37 条见 `.planning/REQUIREMENTS.md`。
+
+**Goal:** 每个项目一个飞书文件夹 + 5 个固定工作区文件（MEMORY/STATE/MILESTONES/RESEARCH/PREFLIGHT），人在飞书写、Agent/Cursor 在系统写，**双向实时同步且不互相冲掉**；项目上下文可被任意来源（前端 AI 对话 / MCP / skills / IDE hooks）读取/召回/回写；并把"feature list → 拆看板 → 关联仓库 → 技术方案 → 建分支"做成人机协同卡片流水线。
+
+**Target features（8 Phase / 3 Wave）:**
+- **Wave 1 地基**：Phase 82 项目工作区实体 + 权限翻转（全员可读+visibility/写仅成员）+ 每项目飞书文件夹 + 5 文件落地 + 侧边栏 tab；Phase 83 飞书文档双向同步引擎（subscribe + block_id 结构化匹配 + 三方合并 + 编辑感知延迟写 + 边界全集）；Phase 84 项目工作台前端 2.0（大盘/进度灯/5 文件实时编辑/全局+RAG 搜索）。
+- **Wave 2 闭环**：Phase 85 项目上下文可 RAG+grep+file-read + 分支↔项目多绑定；Phase 86 IDE 上下文闭环（MCP 注入+rules+CC/Cursor/Codex hooks 读写 + session 持久化 + runner 派发带上下文）。
+- **Wave 3 流水线**：Phase 87 看板拆分节点 + 群 + 流式卡片；Phase 88 智能业务关联仓库（多轮交互+逐仓自校验）；Phase 89 技术方案深化（per-repo+overall + 修订回路 + 5min 挂起/resume + 建分支绑项目）。
+
+**Key context:** 4 决策锁定——① 5 文件 **DB canonical + 飞书双向镜像 + redis 纯读缓存**；② **默认全员可读可问 + visibility 开关 + 写仅成员**；③ MEMORY **条目式不做整篇 diff**；④ STATE/MILESTONES **活计算 + 结构化 + 补充段**。同步引擎防冲突=**block 级写 + 区段所有权分区 + Agent append + 编辑感知延迟写**，diff 用 **block_id 结构化匹配 + last-synced 快照**（非整篇文本 diff），真冲突三方合并 + **capture-never-clobber**。IDE 读路径走 **MCP+rules**（Cursor `beforeSubmitPrompt` 不能注入）、CC `UserPromptSubmit` 增强；容器 resume 必须 **SessionStore→Redis**。**最大化复用 v0.15.0 `initiatives` 地基，严禁重复造。** 外部依赖（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks / 容器 resume）已全部调研确认可行。脱敏不可绕过、新增 LLM 赋 call_source、新增召回写 RetrievalTrace、后台任务带 initiated_by_user_id、INV-6 单一写入、异步 ORM 走 sync_to_async、i18n 默认中文。
+
+**候选后续方向（v2）：** 产品系统内调研产出 feature list（PROJX-06）、UI 稿多模态召回（PROJX-01）、结构化记忆/降权（PROJX-02）、记忆全自动提炼（PROJX-03）、IDE 专用插件主动采集（PROJX-04）、项目看板燃尽/进度（PROJX-05）。
 
 ## Latest Milestone: v0.15.0 项目（交付上下文聚合根）— ✅ SHIPPED 2026-06-26（审计 passed）
 
