@@ -670,3 +670,149 @@ class RepoAssociationService:
             "unknown": unknown,
             "all_terminal": all_terminal,
         }
+
+    # ------------------------------------------------------------------
+    # 回退 / 接受 mismatch 状态迁移（INV-6 唯一写入口，88-05）
+    # ------------------------------------------------------------------
+
+    async def accept_mismatch(
+        self, association: Any, *, initiated_by_user_id: Any = None
+    ) -> bool:
+        """用户接受 mismatch：把 rejected/verifying 关联置 ``status=verified``（幂等）。
+
+        条件更新（仅 rejected/verifying → verified）保证幂等：已 verified 重复接受 no-op
+        返回 ``False``。承载 D-03「发现不符仍接受并继续」的回退分支收口。
+        """
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        return await self._accept_mismatch_sync(association, user_label)
+
+    @sync_to_async
+    def _accept_mismatch_sync(self, association: Any, initiated_by_user_id: str) -> bool:
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        updated = (
+            RepoAssociation.objects.filter(id=association.id)
+            .filter(
+                status__in=[
+                    RepoAssociationStatus.REJECTED,
+                    RepoAssociationStatus.VERIFYING,
+                ]
+            )
+            .update(status=RepoAssociationStatus.VERIFIED, updated_at=timezone.now())
+        )
+        if updated == 1:
+            logger.info(
+                "repo_association_mismatch_accepted",
+                repo_id=str(association.repository_id),
+                initiated_by_user_id=initiated_by_user_id,
+                component=_COMPONENT,
+                category="caller",
+            )
+        return updated == 1
+
+    async def reopen_candidates(
+        self, association: Any, *, initiated_by_user_id: Any = None
+    ) -> bool:
+        """回退重确认：把已流转关联回置 ``status=proposed``（重开候选选择，幂等）。
+
+        条件更新（排除已 proposed）保证幂等：把 confirmed/verifying/verified/rejected 回
+        proposed，使用户可重新确认仓库（D-03 发现不符可回退）。
+        """
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        return await self._reopen_candidates_sync(association, user_label)
+
+    @sync_to_async
+    def _reopen_candidates_sync(
+        self, association: Any, initiated_by_user_id: str
+    ) -> bool:
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        updated = (
+            RepoAssociation.objects.filter(id=association.id)
+            .exclude(status=RepoAssociationStatus.PROPOSED)
+            .update(status=RepoAssociationStatus.PROPOSED, updated_at=timezone.now())
+        )
+        if updated == 1:
+            logger.info(
+                "repo_association_reopened",
+                repo_id=str(association.repository_id),
+                initiated_by_user_id=initiated_by_user_id,
+                component=_COMPONENT,
+                category="caller",
+            )
+        return updated == 1
+
+    # ------------------------------------------------------------------
+    # Phase 89 输出契约（D-06，只读查询，不旁路写）
+    # ------------------------------------------------------------------
+
+    async def get_verified_associations(
+        self, *, project: Any, work_item: Any = None
+    ) -> list[dict[str, Any]]:
+        """Phase 89 输出契约：返回已确认（verified）仓库关联 + 各仓最新 verdict。
+
+        供 Phase 89 技术方案深化 ``PlanSession.decomposition.include_repos`` 直接消费
+        （``repository_id`` 对齐 ``RepoRouterV2Adapter`` include 优先级），verdict 携粗
+        「该仓是否适配 + 摘要 + 证据」（精确 feature→repo 分配留 Phase 89，RESEARCH Q1/Q2）。
+
+        Returns:
+            ``[{repository_id, repo_name, verdict, matched_node_paths, routed_reason,
+            score}]``；仅 ``status=verified`` 关联计入（proposed/confirmed/verifying/
+            rejected 不计入），无 verified → 返回 ``[]``。只读不写（INV-6 不涉及）。
+        """
+        return await self._get_verified_associations_sync(project, work_item)
+
+    @sync_to_async
+    def _get_verified_associations_sync(
+        self, project: Any, work_item: Any
+    ) -> list[dict[str, Any]]:
+        from initiatives.models import (
+            RepoAssociation,
+            RepoAssociationStatus,
+            RepoVerifyTask,
+        )
+
+        qs = RepoAssociation.objects.filter(
+            project=project, status=RepoAssociationStatus.VERIFIED
+        ).select_related("repository")
+        if work_item is not None:
+            qs = qs.filter(work_item=work_item)
+
+        out: list[dict[str, Any]] = []
+        for assoc in qs.order_by("-score", "repository_id"):
+            task = (
+                RepoVerifyTask.objects.filter(association=assoc)
+                .order_by("-created_at")
+                .first()
+            )
+            raw = task.verdict if (task and isinstance(task.verdict, dict)) else {}
+            repo = getattr(assoc, "repository", None)
+            out.append(
+                {
+                    "repository_id": str(assoc.repository_id),
+                    "repo_name": getattr(repo, "name", "") or str(assoc.repository_id),
+                    "verdict": {
+                        "fit": str(raw.get("fit") or "unknown"),
+                        "confidence": str(
+                            raw.get("confidence") or assoc.confidence or ""
+                        ),
+                        "summary": str(raw.get("summary") or ""),
+                        "evidence_files": list(raw.get("evidence_files") or []),
+                        "mismatch_reasons": list(raw.get("mismatch_reasons") or []),
+                    },
+                    "matched_node_paths": list(assoc.matched_node_paths or []),
+                    "routed_reason": assoc.routed_reason or "",
+                    "score": float(assoc.score or 0.0),
+                }
+            )
+        logger.info(
+            "repo_association_output_collected",
+            verified_count=len(out),
+            component=_COMPONENT,
+            category="caller",
+        )
+        return out

@@ -10,6 +10,7 @@ import feishu.callbacks.chat_question_callback as _chat_question_callback  # noq
 import feishu.callbacks.coding_callback as _coding_callback  # noqa: F401
 import feishu.callbacks.container_callback as _container_callback  # noqa: F401
 import feishu.callbacks.plan_callback as _plan_callback  # noqa: F401
+import feishu.callbacks.repo_association_callback as _repo_association_callback  # noqa: F401
 
 from .views import (
     CardCallbackView,
