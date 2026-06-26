@@ -1216,18 +1216,33 @@
         "title": "文件",
         "view": "查看",
         "edit": "编辑源码",
+        "cancel": "取消",
         "saving": "保存中…",
         "save": "保存到飞书",
         "saved": "已提交同步，飞书将很快更新",
+        "saveFailed": "保存失败，请重试",
         "systemReadonly": "系统区由 Friday 自动维护，只读；可编辑下方人工区",
         "saveConflict": "飞书侧已有更新，已为你保留改动；请刷新后重新编辑人工区",
-        "loadError": "加载文件失败"
+        "loadError": "加载文件失败",
+        "empty": "该文件暂无内容",
+        "humanArea": "人工区（可编辑，保存后回灌飞书）",
+        "noHumanArea": "该文件暂无可编辑的人工区",
+        "fileNavLabel": "工作区文件导航",
+        "file": {
+          "memory": "记忆",
+          "state": "状态",
+          "milestones": "里程碑",
+          "research": "调研",
+          "preflight": "预检"
+        }
       },
       "feature": {
         "title": "feature",
         "emptyTitle": "还没有 feature",
         "emptyDesc": "feature list 工件同步后，这里会按「模块 → 功能点 → 验收项」展示进度。",
         "loadError": "加载 feature 失败",
+        "noFeatures": "该模块暂无功能点",
+        "noAcceptance": "暂无验收项",
         "state": {
           "todo": "待开发",
           "in_progress": "进行中",
@@ -1238,7 +1253,24 @@
       "deps": {
         "title": "外部依赖",
         "loadError": "加载外部依赖失败",
-        "empty": "暂无外部依赖"
+        "empty": "暂无外部依赖",
+        "artifactsTitle": "外部工件",
+        "artifactsHint": "原型 / Spec / UI 稿 / 评审 / 复盘 等按类型分组；缺陷以工作项呈现",
+        "artifactsEmpty": "暂无工件",
+        "artifactsLoadError": "加载工件失败",
+        "branchesTitle": "关联分支",
+        "branchesDeferred": "分支多绑定将在 Phase 85 开放",
+        "repositoriesTitle": "关联仓库",
+        "repositoriesEmpty": "暂无关联仓库",
+        "repositoriesLoadError": "加载仓库失败",
+        "knowledgeTitle": "知识关联",
+        "knowledgeEmpty": "暂无知识关联",
+        "knowledgeLoadError": "加载知识关联失败",
+        "projectsTitle": "关联项目",
+        "projectsEmpty": "暂无关联项目",
+        "mergeRequestsTitle": "关联 PR / MR",
+        "mrEmpty": "暂无关联 PR",
+        "mrLoadError": "加载 PR 失败"
       },
       "search": {
         "title": "搜索",
@@ -1247,7 +1279,8 @@
         "emptyDesc": "换个关键词试试，或调整空间 / 状态 / 成员筛选。",
         "loadError": "搜索失败"
       },
-      "loadError": "加载{section}失败，请重试"
+      "loadError": "加载{section}失败，请重试",
+      "retry": "重试"
     }
   },
   "artifactTypes": {
