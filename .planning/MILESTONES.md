@@ -1,5 +1,26 @@
 # Milestones
 
+## v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线） (Shipped: 2026-06-26)
+
+**Phases completed:** 8 phases (82–89), 38 plans, 37/37 v1 需求；里程碑审计 **tech_debt**（37/37 需求满足 / integration_ok，无关键阻断；遗留真机·live-platform 验收 + 既有并发测试欠债）见 [milestones/v0.16.0-MILESTONE-AUDIT.md](./milestones/v0.16.0-MILESTONE-AUDIT.md)
+
+**Key accomplishments:**
+
+- **项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件（Phase 82）**：扩 `Project`(visibility/feishu_folder_token) + 新 `ProjectDoc`/`ProjectDocBlockMap`/`ProjectStateApi`（写入收口 service，INV-6）+ 每项目飞书专属文件夹 + MEMORY/STATE/MILESTONES/RESEARCH/PREFLIGHT 5 文件创建于其下 + 互链/看板描述链接 + 侧边栏「项目」tab + 权限翻转（public_org 默认可读、写仅成员 fail-closed）。
+- **飞书文档双向同步引擎（Phase 83）**：`drive.file.edit_v1` 订阅 + 事件路由 + Friday→飞书 block 级增量（永不整篇覆盖）+ block_id 结构化匹配 + last-synced 快照/映射表代替整篇 diff + 三方合并 + capture-never-clobber + 编辑感知延迟写 + redis read-through + TTL 兜底 + 边界/失败模式全集 fail-soft。
+- **项目工作台前端 2.0（Phase 84）**：大盘（概览/人员带身份/状态栏）+ feature list 进度灯 + 5 文件在线查看/CM6 源码编辑（系统区只读/人工区写回经 DocSyncService 回灌）+ 记忆/LLM 草稿确认 + 外部依赖关联 + 列表筛选/全局+RAG 搜索，全量 zh-CN、vue-tsc 绿。
+- **项目上下文可读 + 分支绑定（Phase 85）**：项目上下文物化进 `delivery_knowledge` 可 RAG+grep+file-read（MCP `search_project_context`/`grep_project`/`read_project_doc` + visibility 对称守护 + RetrievalTrace）+ `ProjectBranch` 多绑定模型 + `lookup_project_by_branch` 显式多绑定反查（多/无命中 fail-soft）。
+- **IDE 上下文闭环 hooks（Phase 86）**：读路径 MCP 工具 + always-on rule（Cursor/Claude Code/Codex 三家）+ Claude Code UserPromptSubmit 注入；写路径 stop hook → `report_project_knowledge`（**用户授权 active 直写** + 四道兜底：质量门槛/脱敏/归因·静默跳过/AuditEvent 可回滚）+ STATE 结构化回写 + claude code runner 带上下文派发 + SessionStore→Redis 跨容器 resume。
+- **feature list 交付流水线（Phase 87–89）**：看板拆分节点（`work_item/create` + 父子关联，工作流节点 + AI 工具共用单一 service）+ 拉群/bot 入群 + CardKit 流式卡片；智能业务关联仓库（知识库活跃度 + RAG 多轮 + 逐仓 explore 容器深验 + 四态卡片人机确认）；技术方案深化（per-repo+overall 方案 + 修订回路 + 容器 5min 挂起/resume）+ 按方案建分支推送并绑项目，回接 IDE 闭环。
+
+**质量基线：** 核心 app 冒烟 `tests/initiatives` 356 passed 零失败；各 phase gate 历史零回归（82=140、83=316、84=220/40、85=689、86=494、87=338、88=385、89=544）；8/8 phase VERIFICATION passed。
+
+**已知 deferred（真机/live-platform 验收，非 gap）：** 飞书写 API（work_item/create、relation、父子类型配置中心）/ CardKit schema 2.0 真机抓包 / 容器 runner+Docker E2E（repo_verify explore、方案挂起 resume）/ 真机 git push 建分支 / 跨容器冷启动 resume，均按文档约定实现 + respx mock/seam 覆盖契约 + fail-soft，待真实环境验收。Pre-existing 欠债：`tests/workflows/test_execution_concurrency.py` 2 例（sqlite select_for_update 行锁，本里程碑未触碰调度器）。Accepted deviation：Phase 86 stop-hook active 直写（用户 2026-06-26 授权，四道兜底齐备）。
+
+**What's next:** v0.17/v0.18 可承接 Wave 2/3 增量或新里程碑（`$gsd-new-milestone`）。
+
+---
+
 ## v0.15.0 项目（交付上下文聚合根） (Shipped: 2026-06-26)
 
 **Phases completed:** 6 phases (76–81), 38/38 v1 需求；里程碑审计 **passed**（integration_ok，无真实 gap）
