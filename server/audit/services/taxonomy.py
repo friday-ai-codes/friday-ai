@@ -75,6 +75,8 @@ __all__ = [
     # ---- v0.16.0 Phase 85 分支↔项目绑定 ----
     "ACTION_PROJECT_BRANCH_BOUND",
     "ACTION_PROJECT_BRANCH_UNBOUND",
+    # ---- v0.16.0 Phase 86 IDE hook RESEARCH active append ----
+    "ACTION_PROJECT_RESEARCH_NOTE_APPENDED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -145,6 +147,11 @@ ACTION_PROJECT_STATE_API_REMOVED: Final[str] = "project.state_api_removed"
 ACTION_PROJECT_BRANCH_BOUND: Final[str] = "project.branch_bound"
 ACTION_PROJECT_BRANCH_UNBOUND: Final[str] = "project.branch_unbound"
 
+# ---- v0.16.0 Phase 86 IDE hook RESEARCH active append action 常量（component=initiatives）----
+# stop hook active 模式把精炼调研内容 append 到 RESEARCH ProjectDoc 正文（accepted deviation），
+# 每次自动写入留审计、可经人工编辑/移除撤销（审计可回滚，T-86-01-01/05）。
+ACTION_PROJECT_RESEARCH_NOTE_APPENDED: Final[str] = "project.research_note_appended"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -196,6 +203,7 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PROJECT_STATE_API_REMOVED,
         ACTION_PROJECT_BRANCH_BOUND,
         ACTION_PROJECT_BRANCH_UNBOUND,
+        ACTION_PROJECT_RESEARCH_NOTE_APPENDED,
     }
 )
 

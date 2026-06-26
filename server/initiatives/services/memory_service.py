@@ -10,6 +10,9 @@ service 收口（旁路写表由 ``test_memory_inv6_guard`` grep 守护）。模
   当前态读 ``ProjectMemory.content``，编辑历史永不就地丢失。
 - **MEM-04 草稿**：LLM 仅产 ``pending`` 草稿（``create_draft``），**绝不自动写 active**；
   人工 ``confirm_draft`` 才入库为 ``ProjectMemory``。
+  **例外（用户授权 accepted deviation，2026-06-26）**：IDE stop hook 经
+  ``record_hook_writeback`` active 直写生效（不落 draft），叠加质量门槛 + 脱敏 + 成员校验
+  静默跳过 + 审计可回滚四道兜底（详见该方法 docstring，HOOK-02 / Phase 86）。
 - **脱敏不可绕过**：入库内容经 ``redact_secrets_in_text``；审计 before/after 经 AuditService
   内置 ``redact_for_ledger``。
 - 写入经 ``AuditService.aemit``（component=initiatives, category=caller, initiated_by_user_id）；
@@ -282,6 +285,53 @@ class MemoryService:
     @sync_to_async
     def _project_id_of_memory(self, memory_id: Any) -> Any:
         return ProjectMemory.objects.values_list("project_id", flat=True).get(pk=memory_id)
+
+    # ---- IDE stop hook active 直写（HOOK-02，用户授权 accepted deviation 2026-06-26）----
+
+    async def record_hook_writeback(
+        self,
+        *,
+        project_id: Any,
+        content: str,
+        contributor: Any,
+        initiated_by_user_id: Any = None,
+    ) -> dict[str, Any]:
+        """IDE stop hook 写回 MEMORY **active 直写**入口（accepted deviation）。
+
+        **用户授权的范围变更（2026-06-26）**：覆盖 MEM-04「LLM 仅产 pending 草稿」与
+        Out-of-Scope「记忆全自动写入本期不做」——stop hook 经 ``report_project_knowledge``
+        active 模式调用时，内容直接写入 **active** ``ProjectMemory``（不落 draft、不需人工确认）。
+        区别于 ``create_draft``（仍是 draft 默认路径，CURSOR-03 不回退）。
+
+        强制保留的兜底（绝不绕过）：
+
+        - **非成员静默跳过**（区别于 ``append`` 的 ``MemoryPermissionError`` fail-closed）：
+          ``contributor`` 非项目成员 → 返回 ``{"applied": False, "reason": "not_member"}``，
+          不写任何表、**绝不抛**（hook 绝不阻断编码，T-86-01-03）。
+        - **脱敏不可绕过**：复用 ``append`` 路径（内置 ``redact_secrets_in_text``），入库内容
+          天然脱敏（T-86-01-02）。
+        - **审计可回滚**：``append`` 已 ``_emit`` 一条 ``ACTION_PROJECT_MEMORY_CREATED`` 审计
+          + 初始 ``ProjectMemoryRevision`` 快照（MEM-03 可追溯）；撤销经既有 ``supersede``
+          （status→superseded，留 revision，T-86-01-01/05）。
+        - **归因**：``initiated_by_user_id`` 优先；未提供取 ``contributor.id``；仍无 → ``system``。
+
+        质量门槛（``evaluate_writeback_quality`` 低质/空/重复拒收）由调用方（view）在入库前
+        强制执行，本入口只负责成员校验 + active 直写 + 脱敏 + 审计。
+        """
+        is_member = await sync_to_async(self._is_member_sync)(project_id, contributor)
+        if not is_member:
+            return {"applied": False, "reason": "not_member"}
+        # 复用 append：脱敏 + 初始 revision + ACTION_PROJECT_MEMORY_CREATED 审计 + 物化钩子。
+        # 成员校验本入口已做（_skip_member_check=True）。
+        memory = await self.append(
+            project_id=project_id,
+            content=content,
+            contributor=contributor,
+            actor=contributor,
+            initiated_by_user_id=initiated_by_user_id or _user_id_of(contributor),
+            _skip_member_check=True,
+        )
+        return {"applied": True, "memory_id": str(memory.id)}
 
     # ---- 草稿（MEM-04）----
 
