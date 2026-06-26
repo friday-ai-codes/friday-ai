@@ -33,7 +33,7 @@
 
 - [x] **Phase 82: 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件落地** - 扩 `Project`(visibility/feishu_folder_token) + 新 `ProjectDoc`/`ProjectDocBlockMap` + 每项目飞书文件夹 + 5 文件创建于其下 + 互链/看板描述链接 + 侧边栏「项目」tab + 权限翻转（public_org 默认/写仅成员）— WS-01~04, DOC-01~06
 - [x] **Phase 83: 飞书文档双向同步引擎** - `drive.file.edit_v1` subscribe + 事件路由 + block 级增量推送 + block_id 结构化匹配（代替整篇 diff）+ last-synced 快照/映射表 + 三方合并 + 编辑感知延迟写 + redis read-through + TTL 兜底 + 边界/失败模式全集 — SYNC-01~06
-- [ ] **Phase 84: 项目工作台前端 2.0** - 大盘（概览/人员带身份/状态栏）+ feature list 进度灯 + 5 文件查看编辑（md 实时渲染）+ 记忆编辑/LLM 提议确认 + 外部依赖关联展示 + 列表筛选/全局+RAG 搜索 — WB-01~05
+- [x] **Phase 84: 项目工作台前端 2.0** - 大盘（概览/人员带身份/状态栏）+ feature list 进度灯 + 5 文件查看编辑（md 实时渲染）+ 记忆编辑/LLM 提议确认 + 外部依赖关联展示 + 列表筛选/全局+RAG 搜索 — WB-01~05
 
 **Wave 2 — 上下文闭环（IDE hooks）：**
 
@@ -136,17 +136,17 @@ Plans:
 
 **Wave 1** *(无前置；后端支撑与前端基座并行)*
 
-- [ ] 84-01-PLAN.md — 后端支撑 REST（WB-02/03/05 backend）：5 文件内容 GET + block 系统/人工分区 + 人工区写回触发 DocSyncService 回灌 + feature 树/进度灯 + work-items 含 status + 项目基础搜索 + StateApi PATCH
-- [ ] 84-02-PLAN.md — 前端基座 + 大盘（WB-01）：左导航+右主区工作台外壳（借 AnchorNavLayout）+ 概览/人员身份/状态栏 + projectWorkspace API 客户端 + 全量 zh-CN i18n + 区块占位
+- [x] 84-01-PLAN.md — 后端支撑 REST（WB-02/03/05 backend）：5 文件内容 GET + block 系统/人工分区 + 人工区写回触发 DocSyncService 回灌 + feature 树/进度灯 + work-items 含 status + 项目基础搜索 + StateApi PATCH
+- [x] 84-02-PLAN.md — 前端基座 + 大盘（WB-01）：左导航+右主区工作台外壳（借 AnchorNavLayout）+ 概览/人员身份/状态栏 + projectWorkspace API 客户端 + 全量 zh-CN i18n + 区块占位
 
 **Wave 2** *(blocked on Wave 1：依赖 84-01 端点 + 84-02 外壳/契约)*
 
-- [ ] 84-03-PLAN.md — 5 文件查看/编辑（WB-03）：MarkdownRenderer 查看 + CM6 markdown 源码编辑（新增 @codemirror/lang-markdown）+ 系统区只读/人工区写回 + MEMORY 条目/LLM 草稿确认
-- [ ] 84-04-PLAN.md — feature 树+进度灯（WB-02）+ 外部依赖/关联（WB-04，工件/知识/仓库/PR；分支留 Phase 85）
+- [x] 84-03-PLAN.md — 5 文件查看/编辑（WB-03）：MarkdownRenderer 查看 + CM6 markdown 源码编辑（新增 @codemirror/lang-markdown）+ 系统区只读/人工区写回 + MEMORY 条目/LLM 草稿确认
+- [x] 84-04-PLAN.md — feature 树+进度灯（WB-02）+ 外部依赖/关联（WB-04，工件/知识/仓库/PR；分支留 Phase 85）
 
 **Wave 3** *(blocked on Wave 2：搜索深链落点为 Wave 2 区块)*
 
-- [ ] 84-05-PLAN.md — 项目列表（WB-05）：空间/状态/成员 筛选 + 全局/模糊搜索（定位 repo/project，深度 RAG 留 Phase 85）+ 创建/绑定看板入口
+- [x] 84-05-PLAN.md — 项目列表（WB-05）：空间/状态/成员 筛选 + 全局/模糊搜索（定位 repo/project，深度 RAG 留 Phase 85）+ 创建/绑定看板入口
 
 **Cross-cutting constraints**：全量 zh-CN（i18n）、vue-tsc 绿、不破前端基线；写回收口 Phase 83 DocSyncService（永不整篇覆盖、系统区只读）；新增后端端点遵守可观测性规范（started/completed/failed + duration_ms + category/component + RetrievalTrace）。
 
@@ -328,7 +328,7 @@ Plans:
 |-------|--------------|------|--------|
 | 82. 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
 | 83. 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
-| 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ☐ Pending |
+| 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ✅ Complete |
 | 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ☐ Pending |
 | 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
 | 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ☐ Pending |
