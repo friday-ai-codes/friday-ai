@@ -1057,6 +1057,38 @@ async def _handle_question(
         # 没有运行中的事件循环
         asyncio.run(_send_card())
 
+    # PLAN-03：容器编码遇阻发卡 → 注册 5min 无回复挂起计时（仅 coding 容器，
+    # best-effort try/except 绝不反噬回调）。到点无回复 → 停容器 + CodingSession
+    # SUSPENDED；用户回复经 container_callback resume 续跑。
+    async def _arm_suspend_timeout() -> None:
+        try:
+            from chat.container_suspend_service import ContainerSuspendService
+            from chat.models import CodingSession
+
+            coding_session = await CodingSession.objects.filter(
+                subagent_session=session
+            ).afirst()
+            if coding_session is None:
+                return  # 非 coding 容器问答（如 workflow chat 提问）→ 不挂起
+            initiated_by = await _resolve_initiated_user(session)
+            await ContainerSuspendService().arm_timeout(
+                coding_session_id=str(coding_session.id),
+                task_id=session.session_id,
+                initiated_by_user_id=initiated_by,
+            )
+        except Exception as exc:  # noqa: BLE001 — 计时注册 best-effort，绝不反噬回调
+            log.warning(
+                "container_suspend_arm_from_question_failed",
+                session_id=session.session_id,
+                error_type=type(exc).__name__,
+            )
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_arm_suspend_timeout())
+    except RuntimeError:
+        asyncio.run(_arm_suspend_timeout())
+
     log.info(
         "callback_question_ok",
         question_id=question_id,

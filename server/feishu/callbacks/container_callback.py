@@ -62,6 +62,24 @@ async def handle_container_answer(callback: CardCallback) -> dict[str, Any] | No
         answer_source=answer_source,
     )
 
+    # PLAN-03：取消 5min 挂起计时 + （仅挂起态）经 SessionStore resume 续跑容器。
+    # 后台线程处理（飞书回调须 3s 内响应）+ bind_task_context 归因；全段 fail-soft
+    # 绝不反噬回调（未挂起则 no-op，答复已由上方 answer.json/HTTP 直达活容器）。
+    try:
+        from chat.container_suspend_service import schedule_container_resume
+
+        schedule_container_resume(
+            session_id=session_id,
+            user_reply=answer,
+            responder_id=callback.user_open_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — resume 调度 best-effort，绝不反噬回调
+        logger.warning(
+            "container_resume_schedule_failed",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        )
+
     # 立即返回灰色已回复卡片
     return build_container_answered_card(
         question="",
