@@ -30,6 +30,17 @@ class ProjectStatus(models.TextChoices):
     TERMINATED = "terminated", "终止"
 
 
+class ProjectVisibility(models.TextChoices):
+    """项目可见性（权限翻转闭集，D-06）。
+
+    ``public_org`` 全员可读、可对其发起会话；``members_only`` 仍仅成员可读。
+    写（记忆/STATE/成员/文件）一律保持成员闸，与 visibility 无关。
+    """
+
+    PUBLIC_ORG = "public_org", "全员可读"
+    MEMBERS_ONLY = "members_only", "仅成员"
+
+
 class Project(models.Model):
     """项目聚合根：隶属 Space + 关联飞书看板 + 状态机。"""
 
@@ -50,6 +61,20 @@ class Project(models.Model):
         choices=ProjectStatus.choices,
         default=ProjectStatus.DEVELOPING,
         verbose_name="状态",
+    )
+    # 权限翻转：默认 public_org（全员可读），无历史项目故不回填（D-01/WS-02）。
+    visibility = models.CharField(
+        max_length=20,
+        choices=ProjectVisibility.choices,
+        default=ProjectVisibility.PUBLIC_ORG,
+        verbose_name="可见性",
+    )
+    # 项目专属飞书工作区文件夹 token（后台 provision 写入，WS-04）。
+    feishu_folder_token = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="飞书工作区文件夹 token",
     )
 
     # 飞书"项目跟踪"看板引用（语义对齐既有 feishu_project_key 命名）

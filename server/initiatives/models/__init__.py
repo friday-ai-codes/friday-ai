@@ -1,10 +1,10 @@
 """initiatives 模型包：聚合根 + 成员 + 项目关联 + 工件。"""
 
 from initiatives.models.artifact import (
+    TEXT_CARRIERS,
     Artifact,
     ArtifactCarrier,
     ArtifactType,
-    TEXT_CARRIERS,
 )
 from initiatives.models.member import ProjectMember, ProjectRole
 from initiatives.models.memory import (
@@ -20,13 +20,34 @@ from initiatives.models.merge_request import (
     MRPlatform,
     MRStatus,
 )
-from initiatives.models.project import Project, ProjectStatus
+from initiatives.models.project import Project, ProjectStatus, ProjectVisibility
+from initiatives.models.project_doc import (
+    DocSection,
+    DocSyncStatus,
+    DocType,
+    ProjectDoc,
+    ProjectDocBlockMap,
+)
+from initiatives.models.project_state_api import (
+    ApiSource,
+    ApiStatus,
+    ProjectStateApi,
+)
 from initiatives.models.relation import ProjectRelation
 from initiatives.models.work_item_link import LinkProvenance, ProjectWorkItemLink
 
 __all__ = [
     "Project",
     "ProjectStatus",
+    "ProjectVisibility",
+    "ProjectDoc",
+    "ProjectDocBlockMap",
+    "DocType",
+    "DocSyncStatus",
+    "DocSection",
+    "ProjectStateApi",
+    "ApiStatus",
+    "ApiSource",
     "ProjectMember",
     "ProjectRole",
     "ProjectRelation",
