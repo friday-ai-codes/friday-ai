@@ -856,6 +856,10 @@ GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=False)
 # 仓库轮询间隔秒数（contract），与 IntervalTrigger(hours=2) 及 SyncStatusView.interval_seconds 保持同步
 SYNC_INTERVAL_SECONDS: int = 7200
 
+# 飞书文档 TTL 兜底轮询间隔秒数（SYNC-01 漏事件兜底，83-06）：进行中项目 READY doc
+# 周期比对飞书 revision，漂移即 defer durable_doc_sync_pull（与事件链路共用 lock + idempotency）。
+DOC_SYNC_POLL_INTERVAL_SECONDS: int = 120
+
 # Format for django-apscheduler scheduler
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 

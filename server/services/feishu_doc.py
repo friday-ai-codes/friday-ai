@@ -380,6 +380,69 @@ class FeishuDocClient:
         retry=retry_if_exception_type(RateLimitError),
         reraise=True,
     )
+    async def _unsubscribe_file_request(self, file_token: str, file_type: str) -> bool:
+        """按文件退订飞书云文档变更事件的实际外呼（限流经 @retry 退避）。
+
+        # [ASSUMED] A3: 端点形态 MEDIUM，需 live 验证
+        # （DELETE /drive/v1/files/{file_token}/subscribe?file_type=docx，tenant_token 鉴权，
+        # 返回 data.code==0 即退订成功）。镜像 subscribe_file 端点形态（同一资源 DELETE 语义）。
+        """
+        token = await self.get_tenant_access_token()
+
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                "DELETE",
+                f"{self.OPEN_API_BASE}/drive/v1/files/{file_token}/subscribe",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                params={"file_type": file_type},
+            )
+            data = response.json()
+
+            if data.get("code") != 0:
+                error_msg = data.get("msg", "Unknown error")
+                if "rate limit" in error_msg.lower() or data.get("code") == 99991400:
+                    raise RateLimitError(f"Rate limit hit: {error_msg}")
+                # 非限流错误（权限/已退订/端点漂移）→ fail-soft 返回 False（不抛）。
+                return False
+            return True
+
+    async def unsubscribe_file(self, file_token: str, *, file_type: str = "docx") -> bool:
+        """按文件退订 drive.file.edit_v1 变更事件，返回是否退订成功（fail-soft，绝不抛）。
+
+        项目归档/终止 → 停双向同步时退订释放飞书订阅配额（83-06，T-83-06-DOS）。失败
+        （限流耗尽 / 权限 / 端点漂移 / 网络 / 本就未订）一律 **fail-soft 返回 False**，
+        绝不反噬归档/同步主流程（DB 已停同步、只读快照保留即满足停同步语义）。仅记
+        ``file_token``（业务标识）+ 结果布尔，**绝不**记 token / 正文。
+        """
+        try:
+            ok = await self._unsubscribe_file_request(file_token, file_type)
+        except Exception as exc:  # noqa: BLE001 — 退订失败 fail-soft（DB 已停同步），绝不抛
+            logger.warning(
+                "feishu_file_unsubscribe_failed",
+                file_token=file_token,
+                error_type=type(exc).__name__,
+                component="doc_sync",
+                category="caller",
+            )
+            return False
+        logger.info(
+            "feishu_file_unsubscribe",
+            file_token=file_token,
+            unsubscribed=ok,
+            component="doc_sync",
+            category="caller",
+        )
+        return ok
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
     async def _add_comment_request(
         self, document_id: str, block_id: str, text: str
     ) -> bool:

@@ -11,8 +11,10 @@
   ``upsert_block_map`` 更新指纹 + CAS 推进水位 → 失效缓存。per-doc 串行靠 durable
   ``lock=docsync-{feishu_document_id}``（与 pull/poll 同文档同值），限流靠 client 层 ``@retry``。
 
-真三方合并冲突编排（83-04）/ 编辑感知延迟写 + 乐观并发 rebase（83-04）/ TTL 轮询兜底
-（83-06）留后续计划。push 本期只对 MEMORY/STATE 渲染系统区期望态；MILESTONES/RESEARCH/
+真三方合并冲突编排（83-04）/ 编辑感知延迟写 + 乐观并发 rebase（83-04）已落地；TTL 轮询
+兜底（83-06，``tasks/doc_sync_poll.py``）+ 边界全收口（归档→停同步+退订+只读快照、not-found
+→broken+一键重建、非成员归因 fail-soft、限流退避不置 broken）于本计划落地。push 本期只对
+MEMORY/STATE 渲染系统区期望态；MILESTONES/RESEARCH/
 PREFLIGHT 的系统派生区渲染留后续（无渲染器即跳过，**绝不**对空期望态盲删既有块）。
 
 关键约束（与 83-CONTEXT / 观测规范一致）：
@@ -102,7 +104,9 @@ class DocSyncService:
             self._log_skipped(file_token, event_id, uid_repr, "doc_not_found")
             return {"status": "skipped", "reason": "doc_not_found"}
         if doc.project.status != ProjectStatus.DEVELOPING:
-            # 项目归档/终止 → 停双向同步（Pitfall 6），fail-soft 跳过（退订留生命周期编排）。
+            # 项目归档/终止 → 停双向同步 + best-effort 退订释放配额 + 文档转只读快照
+            # （DB 保留 last_synced_snapshot 不再刷新，83-06，Pitfall 6），fail-soft 跳过。
+            await self._stop_sync_on_archived(doc, uid_repr)
             self._log_skipped(file_token, event_id, uid_repr, "project_not_developing")
             return {"status": "skipped", "reason": "project_not_developing"}
         if doc.sync_status == DocSyncStatus.BROKEN:
@@ -122,16 +126,15 @@ class DocSyncService:
 
         try:
             result = await self._pull_apply(doc, initiated_by_user_id)
-        except Exception as exc:  # noqa: BLE001 — 回拉/应用失败 fail-soft，置 broken 绝不反噬
-            from initiatives.services.project_doc_service import ProjectDocService
-
+        except Exception as exc:  # noqa: BLE001 — 回拉/应用失败 fail-soft，绝不反噬事件主流程
             reason = self._classify_pull_error(exc)
-            try:
-                await ProjectDocService().set_sync_status(
-                    doc_id=doc.id, status=DocSyncStatus.BROKEN
-                )
-            except Exception:  # noqa: BLE001 — 连置 broken 都失败也不抛
-                pass
+            if reason == "rate_limited":
+                # 限流瞬态：client @retry 退避已耗尽 → 记采样、保留 READY 待下次事件/poll 兜底，
+                # **不置 broken**（broken 会停后续同步，限流是可恢复的，T-83-06-DOS）。
+                self._log_rate_limited(doc, "pull")
+                return {"status": "failed", "reason": reason}
+            # 永久性错误（not-found / 权限 / 其它）→ 置 broken（供 rebuild_workspace 一键重建）。
+            await self._mark_broken_soft(doc.id)
             logger.warning(
                 "doc_sync_pull_failed",
                 file_token=file_token,
@@ -145,6 +148,9 @@ class DocSyncService:
                 component=_COMPONENT,
                 category="caller",
             )
+            if reason == "document_not_found":
+                # 文档被删/移：标 broken + 记事件（供一键重建 rebuild_workspace 入口）。
+                self._log_doc_not_found(doc, uid_repr)
             return {"status": "failed", "reason": reason}
 
         logger.info(
@@ -539,6 +545,8 @@ class DocSyncService:
             self._log_push_skipped(doc_id, uid_repr, "doc_not_found")
             return {"status": "skipped", "reason": "doc_not_found"}
         if doc.project.status != ProjectStatus.DEVELOPING:
+            # 归档/终止 → 停同步 + best-effort 退订 + 只读快照保留（同 pull 入口收口，83-06）。
+            await self._stop_sync_on_archived(doc, uid_repr)
             self._log_push_skipped(doc_id, uid_repr, "project_not_developing")
             return {"status": "skipped", "reason": "project_not_developing"}
         if doc.sync_status == DocSyncStatus.BROKEN:
@@ -579,16 +587,13 @@ class DocSyncService:
 
         try:
             result = await self._push_with_rebase(doc, entries, initiated_by_user_id)
-        except Exception as exc:  # noqa: BLE001 — 推送失败 fail-soft，置 broken 绝不反噬
-            from initiatives.services.project_doc_service import ProjectDocService
-
+        except Exception as exc:  # noqa: BLE001 — 推送失败 fail-soft，绝不反噬 debounce/DB 写主流程
             reason = self._classify_pull_error(exc)
-            try:
-                await ProjectDocService().set_sync_status(
-                    doc_id=doc.id, status=DocSyncStatus.BROKEN
-                )
-            except Exception:  # noqa: BLE001 — 连置 broken 都失败也不抛
-                pass
+            if reason == "rate_limited":
+                # 限流瞬态：保留 READY 待下次写/poll 兜底，不置 broken（T-83-06-DOS）。
+                self._log_rate_limited(doc, "push")
+                return {"status": "failed", "reason": reason}
+            await self._mark_broken_soft(doc.id)
             logger.warning(
                 "doc_sync_push_failed",
                 doc_id=str(doc.id),
@@ -601,6 +606,8 @@ class DocSyncService:
                 component=_COMPONENT,
                 category="caller",
             )
+            if reason == "document_not_found":
+                self._log_doc_not_found(doc, uid_repr)
             return {"status": "failed", "reason": reason}
 
         logger.info(
@@ -1010,6 +1017,88 @@ class DocSyncService:
             expected_revision=expected,
             new_revision=new_revision,
             snapshot=snapshot,
+        )
+
+    # ---- 边界 gate 收口（归档退订/只读 + not-found→broken + 限流退避，83-06，全 fail-soft）----
+
+    async def _stop_sync_on_archived(self, doc: ProjectDoc, uid_repr: str) -> None:
+        """项目归档/终止 → 停双向同步：best-effort 退订 + 标 ``subscribed=False`` + 只读快照保留。
+
+        只读快照 = DB 保留 ``last_synced_snapshot`` 但不再 pull/push 刷新（由 gate skip 保证）。
+        仅当确有订阅（``subscribed`` 且有 ``feishu_document_id``）才退订释放飞书配额并标记，
+        避免对已停同步文档反复退订（幂等）。整段 fail-soft，任何异常绝不反噬归档主流程。
+        """
+        if not (doc.subscribed and doc.feishu_document_id):
+            return
+
+        unsubscribed = False
+        try:
+            client = await self._build_doc_client(doc.project.space)
+            unsubscribed = bool(await client.unsubscribe_file(doc.feishu_document_id))
+        except Exception as exc:  # noqa: BLE001 — 退订失败 fail-soft（DB 已停同步），绝不反噬
+            logger.warning(
+                "doc_sync_unsubscribe_failed",
+                doc_id=str(doc.id),
+                error_type=type(exc).__name__,
+                component=_COMPONENT,
+                category="caller",
+            )
+        # 标 subscribed=False（写收口经 ProjectDocService，INV-6）：下次归档 gate 不再退订。
+        try:
+            from initiatives.services.project_doc_service import ProjectDocService
+
+            await ProjectDocService().upsert_doc(
+                project_id=doc.project_id, doc_type=doc.doc_type, subscribed=False
+            )
+        except Exception:  # noqa: BLE001 — 标记失败也不反噬（最坏下次再退订一次，幂等）
+            pass
+
+        logger.info(
+            "doc_sync_archived_stopped",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            unsubscribed=unsubscribed,
+            initiated_by_user_id=uid_repr,
+            component=_COMPONENT,
+            category="caller",
+        )
+
+    @staticmethod
+    async def _mark_broken_soft(doc_id: Any) -> None:
+        """置 doc sync_status=broken（供 rebuild_workspace 一键重建），连置 broken 失败也不抛。"""
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        try:
+            await ProjectDocService().set_sync_status(
+                doc_id=doc_id, status=DocSyncStatus.BROKEN
+            )
+        except Exception:  # noqa: BLE001 — 连置 broken 都失败也不抛
+            pass
+
+    @staticmethod
+    def _log_doc_not_found(doc: ProjectDoc, uid_repr: str) -> None:
+        """文档被删/移 → 标 broken 后记事件（caller，供前端展示「一键重建」入口，T-83-06-DOS）。"""
+        logger.info(
+            "doc_sync_doc_not_found",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            project_id=str(doc.project_id),
+            rebuild="rebuild_workspace",
+            initiated_by_user_id=uid_repr,
+            component=_COMPONENT,
+            category="caller",
+        )
+
+    @staticmethod
+    def _log_rate_limited(doc: ProjectDoc, op: str) -> None:
+        """飞书限流（client @retry 退避耗尽）→ 记采样，不置 broken、不抛回主流程（高频纪律）。"""
+        logger.warning(
+            "doc_sync_rate_limited",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            op=op,
+            component=_COMPONENT,
+            category="sampling",
         )
 
     @staticmethod

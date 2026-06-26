@@ -32,6 +32,35 @@
 | A4-comment | `add_comment`=POST `/docx/v1/documents/{document_id}/comments`，body 含 `block_id` + `reply_list.replies[].content.elements[].text_run.text`，`data.code==0` 即成功 | `server/services/feishu_doc.py::FeishuDocClient._add_comment_request` + `DocSyncService._best_effort_comment` | 对真实 docx 的某 block 发评论，确认端点路径 + 请求体（评论内容结构）+ 成功响应码 | 回填真实端点/请求体；改 [VERIFIED]（整段 fail-soft，回填前评论失败不影响 capture/同步） |
 | A5-merge-base | 三方合并 base 正文未逐块持久化（仅存 `ProjectDocBlockMap.content_hash` + 整篇 `last_synced_snapshot`）；`three_way_merge` 用「ours 指纹==base 指纹 → base 即 ours，否则占位符」驱动归并判定（仅做相等比较，base 真实正文不影响 disjoint/相交结论） | `server/initiatives/services/doc_sync_service.py::_base_for_merge` | 取到真实文档 `revision` 后，可选改为持久化逐块 base 正文做精确字符级合并（当前块级整体合并已满足 SYNC-04 capture-never-clobber 语义） | 若需字符级合并再回填逐块 base 存储；当前块级整体合并标 [VERIFIED] |
 
+## 83-06（SYNC-06 边界/失败模式全收口 + SYNC-01 TTL 轮询兜底）
+
+| ID | 契约假设 [ASSUMED] | 代码位置 | how-to-verify（真机） | 回填动作 |
+|----|--------------------|----------|------------------------|----------|
+| A3-unsubscribe | 按文件退订端点 `DELETE /drive/v1/files/{file_token}/subscribe?file_type=docx`（tenant_token 鉴权，`data.code==0` 即退订成功）；镜像 `subscribe_file`（A3）同资源 DELETE 语义 | `server/services/feishu_doc.py::FeishuDocClient._unsubscribe_file_request` | 对一个已订阅 docx 调退订，确认端点路径 + HTTP method（DELETE vs POST cancel）+ 鉴权 + 返回体；确认退订后人工编辑不再收到事件 | 回填真实端点/method/请求形态；改 [VERIFIED] |
+| A5-poll-revision | TTL 轮询用回拉正文归一化指纹（`block_content_hash(markdown)`）作 revision 代理比对 `last_synced_snapshot` 指纹判漂移（真实飞书整型 `revision` 未取，与 83-02 A5 同源） | `server/tasks/doc_sync_poll.py::_check_and_defer` | 取到真实文档整型 `revision` 后，可改为直接比对 `last_synced_revision`（更精确、免回拉正文）；当前指纹代理已满足"漂移即兜底 pull、未变不 defer" | 取到真实 revision 后改 poll 用整型 revision 比对（免全文回拉）；改 [VERIFIED] |
+
+### 83-06 备注
+
+- TTL 兜底轮询（`tasks/doc_sync_poll.py::poll_project_docs_revisions`）：apscheduler 单实例
+  `IntervalTrigger(DOC_SYNC_POLL_INTERVAL_SECONDS=120)`、`max_instances=1`；遍历进行中项目
+  READY doc 比对 revision 漂移 → `defer durable_doc_sync_pull`（`lock=docsync-{feishu_document_id}`
+  与 83-02 pull / 83-03 push 同文档同值，`idempotency_key=docpull:{token}:poll:{revision}` 去重）；
+  归因 `system`；单 doc try/except 隔离、结构化 `{checked, triggered}` 返回。归档/broken doc
+  天然被 `project__status=developing` + `sync_status=READY` gate 过滤，不被反复触发（T-83-06-DOS）。
+- 边界全收口（fail-soft 不反噬主流程）：
+  - 归档/终止 → pull/push 入口 gate `_stop_sync_on_archived`：best-effort `unsubscribe_file`
+    释放配额 + `subscribed` 置 False（INV-6 经 ProjectDocService）+ 只读快照保留
+    （`last_synced_snapshot` 不清不刷新）；记 `doc_sync_archived_stopped`(unsubscribed)。
+  - 文档被删/移 → 回拉 `DocumentNotFoundError` → `set_sync_status(broken)` + 记
+    `doc_sync_doc_not_found`(rebuild=rebuild_workspace) 供一键重建（复用 Phase 82 `rebuild_workspace`）。
+  - 非成员飞书编辑 → operator 未映射 → 归因 `system`（contributor None，`_resolve_user` 取不到），
+    fail-soft 接受不拒绝（与 83-04 受限 sync 入口一致）。
+  - 飞书限流 → client `@retry` 指数退避 + per-doc 串行 lock；退避耗尽 → 记 `doc_sync_rate_limited`
+    (sampling) + 返回 `failed/rate_limited`，**不置 broken**（瞬态可恢复，留下次事件/poll 兜底），
+    绝不抛回 webhook / 编辑主流程。
+- 均不依赖 live 飞书：退订端点（A3-unsubscribe）/ poll revision 代理（A5-poll-revision）以
+  respx / fake client 覆盖单测；真机校验后回填上表。
+
 ### 83-04 备注
 
 - 同块三方合并（base=last-synced / theirs=飞书 / ours=DB）+ capture-never-clobber：相交冲突 DB 取飞书侧 merged，落败系统侧落 `ProjectDocBlockRevision`(source=system, reason=conflict_loser)、MEMORY 非成员落 `ProjectMemoryRevision` 不进 active、飞书评论提示 best-effort；不相交自动并。
