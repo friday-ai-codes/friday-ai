@@ -44,6 +44,7 @@ class SubAgentSession(models.Model):
         PLAN = "plan", "Generate Plan"
         CODING = "coding", "Coding Task"
         REPO_SUMMARY = "repo_summary", "Repository Summary"
+        REPO_VERIFY = "repo_verify", "Repo Verify"
 
     class HealthStatus(models.TextChoices):
         HEALTHY = "healthy", "Healthy"

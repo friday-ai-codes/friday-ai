@@ -36,6 +36,12 @@ from initiatives.models.project_state_api import (
     ProjectStateApi,
 )
 from initiatives.models.relation import ProjectRelation
+from initiatives.models.repo_association import (
+    RepoAssociation,
+    RepoAssociationStatus,
+    RepoVerifyTask,
+    RepoVerifyTaskStatus,
+)
 from initiatives.models.work_item_link import LinkProvenance, ProjectWorkItemLink
 
 __all__ = [
@@ -56,6 +62,10 @@ __all__ = [
     "ProjectMember",
     "ProjectRole",
     "ProjectRelation",
+    "RepoAssociation",
+    "RepoAssociationStatus",
+    "RepoVerifyTask",
+    "RepoVerifyTaskStatus",
     "ProjectWorkItemLink",
     "LinkProvenance",
     "Artifact",
