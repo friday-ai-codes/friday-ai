@@ -53,6 +53,12 @@ async def _doc_sync_pull(payload: dict[str, Any]) -> Any:
     return await run_doc_sync_pull(**payload)
 
 
+async def _doc_sync_push(payload: dict[str, Any]) -> Any:
+    from durable.tasks_impl import run_doc_sync_push
+
+    return await run_doc_sync_push(**payload)
+
+
 def register_business_handlers() -> None:
     """把 index / graph / page_index 的 ``**payload`` 展开 adapter 注册到 in-process 后端。
 
@@ -65,6 +71,7 @@ def register_business_handlers() -> None:
     register_handler("durable_crawl_ingest", _crawl_ingest)
     register_handler("durable_repo_summary", _repo_summary)
     register_handler("durable_doc_sync_pull", _doc_sync_pull)
+    register_handler("durable_doc_sync_push", _doc_sync_push)
 
 
 __all__ = ["register_business_handlers"]

@@ -130,6 +130,29 @@ async def durable_doc_sync_pull(
     )
 
 
+@app.task(name="durable_doc_sync_push", queue=QUEUE_DOC_SYNC)
+async def durable_doc_sync_push(
+    *,
+    doc_id: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Friday→飞书 文档 block 级增量推送 durable 任务（procrastinate 包壳，委托共用任务体）。
+
+    镜像 ``durable_doc_sync_pull`` 包壳：显式 ``name="durable_doc_sync_push"`` 与 ``backends.defer``
+    裸名查找同源；payload 仅 ``doc_id``（ProjectDoc 主键，**绝不**落正文/token 明文），经
+    ``defer_async(**payload)`` 展开传入。入队点 ``lock=docsync-{feishu_document_id}``（与
+    83-02 pull / 83-06 poll 对同一文档同值 → pull/push/poll 全串行）+ ``run_at=now+DEBOUNCE``
+    合并窗口内多次写。``initiated_by_user_id``（CTX-02）显式形参消费 payload 同名键并转发，
+    worker 入口据此 re-bind 发起用户（未映射 / 不传 → ``system``）。
+    """
+    from durable.tasks_impl import run_doc_sync_push
+
+    return await run_doc_sync_push(
+        doc_id=doc_id,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
 @app.task(name="durable_crawl_ingest", queue=QUEUE_CRAWL_INGEST)
 async def durable_crawl_ingest(**payload: Any) -> dict[str, Any]:
     """爬取批次入库 durable 任务（procrastinate 包壳，委托共用任务体）。

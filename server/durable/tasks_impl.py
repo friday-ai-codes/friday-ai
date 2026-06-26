@@ -206,6 +206,31 @@ async def run_doc_sync_pull(
         )
 
 
+async def run_doc_sync_push(
+    *,
+    doc_id: str = "",
+    initiated_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    """Friday→飞书 文档 block 级增量推送任务体（SYNC-02）：worker 入口 bind 发起用户后委托 push。
+
+    ``doc_id`` 为 ProjectDoc 主键。worker 用干净 contextvars 不自动传播，必须经
+    ``bind_task_context`` 显式 re-bind 发起用户（未映射 / 不传 → ``system``）；
+    ``component="doc_sync"`` 标注观测组件。``DocSyncService.push`` 自身 best-effort fail-soft
+    （归档 / broken / 无 document_id / 无渲染器 / 外呼失败均不抛回钩子主流程），本壳不再额外吞异常。
+    """
+    from initiatives.services.doc_sync_service import DocSyncService
+
+    with bind_task_context(
+        user_id=initiated_by_user_id or "system",
+        source="durable",
+        component="doc_sync",
+    ):
+        return await DocSyncService().push(
+            doc_id=doc_id,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+
+
 async def run_page_index(
     *, target_id: str | None = None, initiated_by_user_id: str | None = None, **kwargs: Any
 ) -> dict[str, Any]:

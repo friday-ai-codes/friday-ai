@@ -374,6 +374,157 @@ class FeishuDocClient:
         )
         return ok
 
+    def _raise_for_block_error(self, data: dict[str, Any]) -> None:
+        """分类 block 级写 API 的 ``code!=0``（镜像 ``get_document_content`` 错误码口径）。
+
+        仅按受控错误码分类抛异常，**绝不**把 ``msg`` / 响应体记日志（防正文/凭证泄漏）；
+        限流（``99991400`` / msg 含 "rate limit"）抛 ``RateLimitError`` 交 ``@retry`` 退避。
+        """
+        if data.get("code") == 0:
+            return
+        error_code = data.get("code", 0)
+        error_msg = data.get("msg", "Unknown error")
+        if error_code == 99991400 or "rate limit" in error_msg.lower():
+            raise RateLimitError(f"Rate limit hit: {error_msg}")
+        if error_code in PERMISSION_CODES:
+            raise PermissionDeniedError(f"无权限写文档: {error_msg}")
+        if error_code in NOT_FOUND_CODES:
+            raise DocumentNotFoundError(f"文档/块不存在: {error_msg}")
+        raise FeishuDocAPIError(f"block 写失败: {error_msg} (code={error_code})")
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def update_block(
+        self,
+        document_id: str,
+        block_id: str,
+        block_payload: dict[str, Any],
+    ) -> None:
+        """block 级**就地改**单个 block（PATCH），**永不整篇 replace**。
+
+        同步引擎（DocSyncService.push）只对系统区既有 block 走本方法做增量编辑；per-doc
+        串行由 durable ``lock=docsync-{document_id}`` 保证、限流（``99991400``）经 ``@retry``
+        指数退避重试。仅记 ``document_id``/``block_id`` 业务标识 + 错误码，**绝不**记正文/token。
+
+        # [ASSUMED] A4: PATCH ``/docx/v1/documents/{document_id}/blocks/{block_id}``，
+        # body=``block_payload``（如 ``{"update_text_elements": {"elements": [...]}}``），
+        # 返回 ``data.code==0`` 即成功。真实端点/请求体/响应需 live 验证后标 [VERIFIED]
+        # （记入 83-UAT.md，与 83-02 A1/A3/A5 同一文档）。
+        """
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.patch(
+                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{block_id}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=block_payload,
+            )
+            self._raise_for_block_error(response.json())
+            logger.debug(
+                "feishu_block_updated",
+                document_id=document_id,
+                block_id=block_id,
+                component="doc_sync",
+                category="sampling",
+            )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def create_children(
+        self,
+        document_id: str,
+        *,
+        children: list[dict[str, Any]],
+        index: int = -1,
+    ) -> list[str]:
+        """在文档根块下**增量 append** 子 block（children API），返回新建 block_id 列表。
+
+        系统区新增条目走本方法（Agent 写一律 append 新 block，绝不就地改既有 block）；
+        **永不整篇 replace**。per-doc 串行 + 限流 ``@retry`` 退避。仅记 document_id + 计数。
+
+        # [ASSUMED] A4: POST ``/docx/v1/documents/{document_id}/blocks/{document_id}/children``，
+        # body=``{"children": [...], "index": -1}``，返回 ``data.children[].block_id``。
+        """
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"children": children, "index": index},
+            )
+            data = response.json()
+            self._raise_for_block_error(data)
+            created = data.get("data", {}).get("children", []) or []
+            block_ids = [
+                str(c.get("block_id"))
+                for c in created
+                if isinstance(c, dict) and c.get("block_id")
+            ]
+            logger.debug(
+                "feishu_children_created",
+                document_id=document_id,
+                created_count=len(block_ids),
+                component="doc_sync",
+                category="sampling",
+            )
+            return block_ids
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def delete_blocks(
+        self,
+        document_id: str,
+        *,
+        start_index: int,
+        end_index: int,
+    ) -> None:
+        """按 index 范围**批量删**文档根块下的子 block（children batch_delete），**永不整篇 replace**。
+
+        系统区删条目走本方法（删 ``[start_index, end_index)`` 的子块）；per-doc 串行 + 限流
+        ``@retry`` 退避。仅记 document_id + index 范围（非正文/凭证）。
+
+        # [ASSUMED] A4: ``/docx/v1/documents/{document_id}/blocks/{document_id}/children/batch_delete``，
+        # body=``{"start_index": s, "end_index": e}``。真实端点/index 语义/响应需 live 验证后标 [VERIFIED]。
+        """
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                "DELETE",
+                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}"
+                f"/blocks/{document_id}/children/batch_delete",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"start_index": start_index, "end_index": end_index},
+            )
+            self._raise_for_block_error(response.json())
+            logger.debug(
+                "feishu_blocks_deleted",
+                document_id=document_id,
+                start_index=start_index,
+                end_index=end_index,
+                component="doc_sync",
+                category="sampling",
+            )
+
     async def append_markdown(
         self,
         document_id: str,
