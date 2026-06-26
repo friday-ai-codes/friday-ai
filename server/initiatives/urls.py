@@ -6,6 +6,8 @@ from initiatives.views import (
     ArtifactDetailView,
     ArtifactListCreateView,
     ArtifactViewView,
+    ProjectBranchDetailView,
+    ProjectBranchListCreateView,
     ProjectCursorRulesView,
     ProjectDetailView,
     ProjectFeatureListView,
@@ -115,6 +117,17 @@ urlpatterns = [
         "<uuid:project_id>/merge-requests/",
         ProjectMergeRequestListView.as_view(),
         name="project-merge-request-list",
+    ),
+    # 分支↔项目绑定（BIND-01）
+    path(
+        "<uuid:project_id>/branches/",
+        ProjectBranchListCreateView.as_view(),
+        name="project-branch-list",
+    ),
+    path(
+        "<uuid:project_id>/branches/<uuid:branch_id>/",
+        ProjectBranchDetailView.as_view(),
+        name="project-branch-detail",
     ),
     # 工作项组合（COMPOSE-01/02）
     path(

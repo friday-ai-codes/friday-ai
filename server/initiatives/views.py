@@ -23,6 +23,7 @@ from initiatives.models import (
     ArtifactType,
     MergeRequest,
     Project,
+    ProjectBranch,
     ProjectDoc,
     ProjectMember,
     ProjectMemory,
@@ -42,6 +43,8 @@ from initiatives.serializers import (
     ArtifactTypeUpdateSerializer,
     ArtifactUpdateSerializer,
     MergeRequestSerializer,
+    ProjectBranchBindRequestSerializer,
+    ProjectBranchSerializer,
     ProjectCreateSerializer,
     ProjectDocContentSerializer,
     ProjectDocHumanBlocksWriteSerializer,
@@ -78,6 +81,9 @@ from initiatives.services import (
     MemoryError,
     MemoryPermissionError,
     MemoryService,
+    ProjectBranchError,
+    ProjectBranchPermissionError,
+    ProjectBranchService,
     ProjectDocService,
     ProjectMemberError,
     ProjectRehomeError,
@@ -1026,6 +1032,79 @@ class ProjectWorkItemDetailView(APIView):
         )
         if not removed:
             return Response({"detail": "工作项未关联此项目"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ============================ 分支↔项目绑定（BIND-01）============================
+
+
+class ProjectBranchListCreateView(APIView):
+    """项目分支绑定列表（GET，读权限）+ 绑定（POST，BIND-01；写仅成员 fail-closed）。"""
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        bindings = await ProjectBranchService().list_for_project(project_id=project_id)
+        data = await sync_to_async(
+            lambda: ProjectBranchSerializer(bindings, many=True).data
+        )()
+        return Response(data)
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        serializer = ProjectBranchBindRequestSerializer(data=request.data)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        d = serializer.validated_data
+        from repositories.models import Repository
+
+        if not await Repository.objects.filter(pk=d["repository_id"]).aexists():
+            return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            binding = await ProjectBranchService().bind(
+                project_id=project_id,
+                repository_id=d["repository_id"],
+                branch_name=d["branch_name"],
+                source=d.get("source"),
+                feishu_board_id=d.get("feishu_board_id", ""),
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except ProjectBranchPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ProjectBranchError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        binding = await ProjectBranch.objects.select_related("repository").aget(
+            pk=binding.id
+        )
+        body = await sync_to_async(lambda: ProjectBranchSerializer(binding).data)()
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class ProjectBranchDetailView(APIView):
+    """解绑分支（DELETE，BIND-01；写仅成员 fail-closed）。"""
+
+    async def delete(self, request, project_id, branch_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        binding = await ProjectBranch.objects.filter(
+            pk=branch_id, project_id=project_id
+        ).afirst()
+        if binding is None:
+            return Response({"detail": "分支绑定不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            await ProjectBranchService().unbind(
+                project_id=project_id,
+                repository_id=binding.repository_id,
+                branch_name=binding.branch_name,
+                actor=request.user,
+                initiated_by_user_id=request.user.id,
+            )
+        except ProjectBranchPermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
