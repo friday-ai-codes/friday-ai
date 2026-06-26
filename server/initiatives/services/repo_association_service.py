@@ -34,6 +34,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
 from agents.call_source import CallSource, use_call_source
 from common.logging import redact_secrets_in_text
@@ -397,3 +398,275 @@ class RepoAssociationService:
             if matched is not None:
                 return matched
         return qs.first()
+
+    # ------------------------------------------------------------------
+    # 确认 / 逐仓深验编排（REPO-02，88-03）
+    # ------------------------------------------------------------------
+
+    async def confirm_repos(
+        self,
+        *,
+        project: Any,
+        repo_ids: list[Any],
+        initiated_by_user_id: Any = None,
+    ) -> list[Any]:
+        """用户确认：命中 proposed 候选置 ``status=confirmed``，返回 confirmed 关联列表。
+
+        仅确认 ``repo_ids`` 命中的 proposed 候选（其余 proposed 保留不动，便于后续重确认）；
+        条件更新幂等（已 confirmed 重复确认 no-op）。
+        """
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        return await self._confirm_repos_sync(project, repo_ids, user_label)
+
+    @sync_to_async
+    def _confirm_repos_sync(
+        self, project: Any, repo_ids: list[Any], initiated_by_user_id: str
+    ) -> list[Any]:
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        ids = [str(r) for r in (repo_ids or []) if r]
+        if not ids:
+            return []
+        confirmed: list[Any] = []
+        for assoc in RepoAssociation.objects.filter(
+            project=project, repository_id__in=ids
+        ):
+            # 条件更新幂等：仅 proposed → confirmed（已 confirmed/verifying 不回退）
+            RepoAssociation.objects.filter(
+                id=assoc.id, status=RepoAssociationStatus.PROPOSED
+            ).update(status=RepoAssociationStatus.CONFIRMED, updated_at=timezone.now())
+            assoc.refresh_from_db()
+            confirmed.append(assoc)
+        logger.info(
+            "repo_association_confirmed",
+            confirmed_count=len(confirmed),
+            requested_count=len(ids),
+            initiated_by_user_id=initiated_by_user_id,
+            component=_COMPONENT,
+            category="caller",
+        )
+        return confirmed
+
+    async def dispatch_verify(
+        self,
+        *,
+        project: Any = None,
+        confirmed: list[Any],
+        node_execution_id: str = "",
+        initiated_by_user_id: Any = None,
+    ) -> dict[str, Any]:
+        """逐仓深验编排：置 ``status=verifying`` → 薄委托 ``RepoVerifyDispatchService.dispatch``。
+
+        ``confirmed`` 为 :meth:`confirm_repos` 返回的 confirmed ``RepoAssociation`` 列表。
+        全程 fail-soft（dispatch 内单仓隔离 + runner 离线降级）。
+        """
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        items = list(confirmed or [])
+        if not items:
+            return {"dispatched": [], "failed": [], "runner_offline": False}
+
+        await self._mark_verifying_sync([a.id for a in items])
+
+        from initiatives.services.repo_verify_dispatch import RepoVerifyDispatchService
+
+        dispatcher = RepoVerifyDispatchService(
+            association_service=self, node_execution_id=node_execution_id
+        )
+        return await dispatcher.dispatch(items, initiated_by_user_id=user_label)
+
+    @sync_to_async
+    def _mark_verifying_sync(self, association_ids: list[Any]) -> int:
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        return RepoAssociation.objects.filter(
+            id__in=association_ids, status=RepoAssociationStatus.CONFIRMED
+        ).update(status=RepoAssociationStatus.VERIFYING, updated_at=timezone.now())
+
+    # ------------------------------------------------------------------
+    # RepoVerifyTask 状态机 + verdict 落库（INV-6 唯一写入口，88-03）
+    # ------------------------------------------------------------------
+
+    async def create_verify_task(
+        self,
+        association: Any,
+        repository: Any,
+        *,
+        initiated_by_user_id: Any = None,
+    ) -> Any:
+        """为确认仓建 ``RepoVerifyTask(status=pending)``（get_or_create 幂等，resume 安全）。"""
+        user_label = (
+            str(initiated_by_user_id) if initiated_by_user_id is not None else "system"
+        )
+        return await self._create_verify_task_sync(association, repository, user_label)
+
+    @sync_to_async
+    def _create_verify_task_sync(
+        self, association: Any, repository: Any, initiated_by_user_id: str
+    ) -> Any:
+        from initiatives.models import RepoVerifyTask, RepoVerifyTaskStatus
+
+        task, _created = RepoVerifyTask.objects.get_or_create(
+            association=association,
+            repository=repository,
+            defaults={
+                "status": RepoVerifyTaskStatus.PENDING,
+                "attempt": 0,
+                "initiated_by_user_id": initiated_by_user_id,
+            },
+        )
+        return task
+
+    async def mark_verify_running(self, task: Any, subagent_session: Any) -> None:
+        """task.status→running，回填 subagent_session 外键。"""
+        await self._mark_verify_running_sync(task, subagent_session)
+
+    @sync_to_async
+    def _mark_verify_running_sync(self, task: Any, subagent_session: Any) -> None:
+        from initiatives.models import RepoVerifyTaskStatus
+
+        task.status = RepoVerifyTaskStatus.RUNNING
+        task.subagent_session = subagent_session
+        task.save(update_fields=["status", "subagent_session", "updated_at"])
+
+    async def mark_verify_failed(self, task: Any, error: Any) -> None:
+        """task.status→failed，error JSON 落库（正文脱敏；非 dict 包成 {message}）。"""
+        await self._mark_verify_failed_sync(task, error)
+
+    @sync_to_async
+    def _mark_verify_failed_sync(self, task: Any, error: Any) -> None:
+        from initiatives.models import RepoVerifyTaskStatus
+
+        if isinstance(error, dict):
+            safe_error = {
+                k: redact_secrets_in_text(v) if isinstance(v, str) else v
+                for k, v in error.items()
+            }
+        else:
+            safe_error = {"message": redact_secrets_in_text(str(error))}
+        task.status = RepoVerifyTaskStatus.FAILED
+        task.error = safe_error
+        task.save(update_fields=["status", "error", "updated_at"])
+
+    async def record_verdict(self, task: Any, verdict: dict[str, Any]) -> bool:
+        """写 verdict JSON + task.status→done + 同步 per-repo association 状态（幂等）。
+
+        条件更新（排除已 done）保证幂等：重复 ``record_verdict`` 不翻已终态（no-op）。
+        verdict ``fit`` → 关联状态：fit→verified / mismatch→rejected / unknown→保持 verifying
+        （最终批量确认/回退由 88-05 处理；此处仅 per-repo 落地）。
+        """
+        return await self._record_verdict_sync(task, verdict)
+
+    @sync_to_async
+    def _record_verdict_sync(self, task: Any, verdict: dict[str, Any]) -> bool:
+        from initiatives.models import (
+            RepoAssociation,
+            RepoAssociationStatus,
+            RepoVerifyTask,
+            RepoVerifyTaskStatus,
+        )
+
+        safe_verdict = self._sanitize_verdict(verdict)
+        updated = (
+            RepoVerifyTask.objects.filter(id=task.id)
+            .exclude(status=RepoVerifyTaskStatus.DONE)
+            .update(
+                status=RepoVerifyTaskStatus.DONE,
+                verdict=safe_verdict,
+                updated_at=timezone.now(),
+            )
+        )
+        if updated != 1:
+            return False
+        fit = str(safe_verdict.get("fit") or "unknown").lower()
+        target = None
+        if fit == "fit":
+            target = RepoAssociationStatus.VERIFIED
+        elif fit == "mismatch":
+            target = RepoAssociationStatus.REJECTED
+        if target is not None:
+            RepoAssociation.objects.filter(
+                id=task.association_id, status=RepoAssociationStatus.VERIFYING
+            ).update(status=target, updated_at=timezone.now())
+        logger.info(
+            "repo_verify_verdict_recorded",
+            repo_id=str(task.repository_id),
+            fit=fit,
+            component=_COMPONENT,
+            category="caller",
+        )
+        return True
+
+    @staticmethod
+    def _sanitize_verdict(verdict: dict[str, Any]) -> dict[str, Any]:
+        """归一 + 脱敏 verdict（fit 受控；summary/mismatch_reasons 正文脱敏 + 截断）。"""
+        raw = verdict if isinstance(verdict, dict) else {}
+        fit = str(raw.get("fit") or "unknown").lower()
+        if fit not in ("fit", "mismatch", "unknown"):
+            fit = "unknown"
+        reasons = raw.get("mismatch_reasons") or []
+        if not isinstance(reasons, list):
+            reasons = [reasons]
+        return {
+            "fit": fit,
+            "confidence": str(raw.get("confidence") or ""),
+            "summary": redact_secrets_in_text(str(raw.get("summary") or ""))[:4000],
+            "evidence_files": [str(f) for f in (raw.get("evidence_files") or [])][:50],
+            "mismatch_reasons": [
+                redact_secrets_in_text(str(r))[:1000] for r in reasons
+            ][:20],
+        }
+
+    async def collect_verdicts(self, associations: list[Any]) -> dict[str, Any]:
+        """聚合确认批次各仓 verdict → ``{fit, mismatch, unknown, all_terminal}``。
+
+        缺 verdict / 未建 task / 失败仓记 ``unknown``（不阻断终态，D-03 fail-soft）；
+        ``all_terminal`` 为各仓 verify task 是否全部终态（done/failed/stale）。
+        """
+        return await self._collect_verdicts_sync(list(associations or []))
+
+    @sync_to_async
+    def _collect_verdicts_sync(self, associations: list[Any]) -> dict[str, Any]:
+        from initiatives.models import RepoVerifyTask, RepoVerifyTaskStatus
+
+        terminal = {
+            RepoVerifyTaskStatus.DONE,
+            RepoVerifyTaskStatus.FAILED,
+            RepoVerifyTaskStatus.STALE,
+        }
+        fit: list[str] = []
+        mismatch: list[str] = []
+        unknown: list[str] = []
+        all_terminal = True
+        for assoc in associations:
+            repo_id = str(assoc.repository_id)
+            task = (
+                RepoVerifyTask.objects.filter(association=assoc)
+                .order_by("-created_at")
+                .first()
+            )
+            if task is None:
+                # 未建 task 的确认仓记 unknown，不阻断
+                unknown.append(repo_id)
+                continue
+            if task.status not in terminal:
+                all_terminal = False
+            verdict = task.verdict if isinstance(task.verdict, dict) else {}
+            fit_val = str(verdict.get("fit") or "").lower()
+            if task.status == RepoVerifyTaskStatus.FAILED:
+                unknown.append(repo_id)
+            elif fit_val == "fit":
+                fit.append(repo_id)
+            elif fit_val == "mismatch":
+                mismatch.append(repo_id)
+            else:
+                unknown.append(repo_id)
+        return {
+            "fit": fit,
+            "mismatch": mismatch,
+            "unknown": unknown,
+            "all_terminal": all_terminal,
+        }

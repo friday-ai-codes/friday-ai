@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from structlog.stdlib import BoundLogger
 
 from agents.call_source import CallSource
+from common.logging import redact_secrets_in_text
 from interactions.ledger import arecord_llm_usage
 from orchestration.progress_payload import parse_progress_payload
 from services.protocols import CallbackType
@@ -142,6 +143,15 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
             # _schedule_chat_plan_resume 内做（不在此重复查询，分支保持薄）。
             log.debug("plan_research_delegate_chat_resume", session_id=session.session_id)
             _schedule_chat_plan_resume(session, log)
+            return
+        if src == "repo_verify":
+            # repo_verify 容器复用 AgentSession+SubAgentSession 底座，但 verdict 由
+            # _handle_repo_verify_completion / _handle_repo_verify_failure 唯一驱动落
+            # RepoVerifyTask（经 service）。绝不在此触发 SDKAgentRunner resume 合成幽灵
+            # agent（与 plan_research / chat_deep_analysis 短路对称，88-03 Pitfall）。
+            # 工作流入口（有 node_execution_id）已在本函数顶部短路并改由
+            # _schedule_workflow_resume 续驱挂起节点；Chat 入口此处直接 no-op。
+            log.debug("repo_verify_no_agent_resume", session_id=session.session_id)
             return
 
     # 检查是否有 main_session
@@ -873,6 +883,17 @@ async def _handle_completed(
             error=str(exc),
         )
 
+    # repo_verify 容器完成 → 解析 verdict 落 RepoVerifyTask（经 service，INV-6，88-03）。
+    # 独立 try/except swallow，绝不让回调失败（Pitfall 4 不回 5xx）。
+    try:
+        await _handle_repo_verify_completion(session, p, log)
+    except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_completed 主流程
+        logger.warning(
+            "repo_verify_completion_callback_failed",
+            session_id=session.session_id,
+            error=str(exc),
+        )
+
     # CR-01：续驱调度必须在 _handle_research_completion 之后——它把 RepoResearchTask 翻终态
     # 并将 chat 入口 session researching→merging。若在其之前调度（旧实现），fire-and-forget
     # 的 _resume() 会与 research 完成处理在事件循环 await 点交错，可能在 task 翻终态前读到
@@ -925,6 +946,16 @@ async def _handle_failed(
     except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
         logger.warning(
             "research_failure_callback_failed",
+            session_id=session.session_id,
+            error=str(exc),
+        )
+
+    # repo_verify 容器失败 → mark_verify_failed（经 service，88-03）。独立 try/except swallow。
+    try:
+        await _handle_repo_verify_failure(session, p, log)
+    except Exception as exc:  # noqa: BLE001 — 永不阻塞 _handle_failed 主流程
+        logger.warning(
+            "repo_verify_failure_callback_failed",
             session_id=session.session_id,
             error=str(exc),
         )
@@ -1111,6 +1142,9 @@ def _derive_container_call_source(session: SubAgentSession) -> str:
 
     if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
         derived = CallSource.REPO_SUMMARY_CONTAINER
+    elif session.task_type == SubAgentSession.TaskType.REPO_VERIFY:
+        # 逐仓 explore 容器深验 LLM（88-03）；服务端权威派生，不信 runner 上报 call_source
+        derived = CallSource.REPO_VERIFY_CONTAINER
     elif session.task_type == SubAgentSession.TaskType.EXPLORE and source == "chat_deep_analysis":
         derived = CallSource.DEEP_ANALYSIS_CONTAINER
     elif (
@@ -1659,6 +1693,112 @@ async def _handle_research_failure(
         )
     await _trigger_research_barrier(plan_session)
     log.info("research_failure_handled", task_id=str(task.id))
+
+
+# === repo_verify 容器回调 → verdict 落 RepoVerifyTask（经 service，INV-6，Phase 88-03） ===
+
+
+def _is_repo_verify(session: SubAgentSession) -> bool:
+    """路由判定：REPO_VERIFY 任务 + last_output.source == repo_verify。"""
+    return (
+        session.task_type == SubAgentSession.TaskType.REPO_VERIFY
+        and isinstance(session.last_output, dict)
+        and session.last_output.get("source") == "repo_verify"
+    )
+
+
+def parse_verify_verdict(output: Any) -> dict[str, Any] | None:
+    """从容器 output 提取 JSON verdict（含 ``fit`` 键）；空/不可解析返回 None。
+
+    优先结构化透传（output 已含 ``fit``）；否则从 ``output["text"]`` 经
+    ``_parse_summary_json`` 风格的 JSON 围栏 / 花括号跨度提取后 ``json.loads``。
+    """
+    import json as json_mod
+
+    if not isinstance(output, dict):
+        return None
+    if "fit" in output:
+        return output
+    text = str(output.get("text", "") or "")
+    if not text:
+        return None
+    parsed = _parse_summary_json(text)
+    try:
+        obj = json_mod.loads(parsed)
+    except (json_mod.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(obj, dict) or "fit" not in obj:
+        return None
+    return obj
+
+
+async def _aload_verify_task(session: SubAgentSession):
+    """从 last_output 取 repo_verify_task_id → 读 RepoVerifyTask（缺失/已终态返回 None）。"""
+    from initiatives.models import RepoVerifyTask, RepoVerifyTaskStatus
+
+    lo = session.last_output or {}
+    task_id = lo.get("repo_verify_task_id")
+    if not task_id:
+        return None
+    task = await RepoVerifyTask.objects.filter(id=task_id).afirst()
+    if task is None or task.status in (
+        RepoVerifyTaskStatus.DONE,
+        RepoVerifyTaskStatus.FAILED,
+        RepoVerifyTaskStatus.STALE,
+    ):
+        return None
+    return task
+
+
+async def _handle_repo_verify_completion(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """repo_verify 容器完成 → 解析 verdict 落 RepoVerifyTask（经 service，INV-6）。
+
+    空/不可解析 → ``mark_verify_failed("empty_or_unparseable")``；否则 ``record_verdict``
+    （verdict 文本经 service 内 redact 脱敏）。非 repo_verify session 不触发。
+    """
+    if not _is_repo_verify(session):
+        return
+
+    from initiatives.services.repo_association_service import RepoAssociationService
+
+    task = await _aload_verify_task(session)
+    if task is None:
+        return
+
+    svc = RepoAssociationService()
+    verdict = parse_verify_verdict(p.get("output") or {})
+    if verdict is None:
+        await svc.mark_verify_failed(task, {"reason": "empty_or_unparseable"})
+    else:
+        await svc.record_verdict(task, verdict)
+    log.info(
+        "repo_verify_completion_handled",
+        task_id=str(task.id),
+        failed=verdict is None,
+    )
+
+
+async def _handle_repo_verify_failure(
+    session: SubAgentSession, p: dict[str, Any], log: BoundLogger
+) -> None:
+    """repo_verify 容器失败 → mark_verify_failed（container_failed，经 service）。"""
+    if not _is_repo_verify(session):
+        return
+
+    from initiatives.services.repo_association_service import RepoAssociationService
+
+    task = await _aload_verify_task(session)
+    if task is None:
+        return
+
+    error_msg = p.get("error", "Unknown error")
+    await RepoAssociationService().mark_verify_failed(
+        task,
+        {"reason": "container_failed", "error": redact_secrets_in_text(str(error_msg))},
+    )
+    log.info("repo_verify_failure_handled", task_id=str(task.id))
 
 
 # 处理器映射
