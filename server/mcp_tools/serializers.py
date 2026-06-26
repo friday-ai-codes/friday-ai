@@ -482,9 +482,12 @@ class SearchLearningCasesRequestSerializer(serializers.Serializer):
 
 
 class LookupProjectByBranchRequestSerializer(serializers.Serializer):
-    """分支名 → 项目反查请求（CURSOR-01）。"""
+    """分支名 → 项目反查请求（CURSOR-01 + BIND-02 显式多绑定）。"""
 
     branch_name = serializers.CharField(required=True, allow_blank=False, max_length=255)
+    # 可选 repository_id（BIND-02）：Phase 86 IDE hook 通常知当前 repo，可用于跨仓同名
+    # 分支收窄到具体仓的绑定；不传则跨仓返回候选（fail-soft 不变）。
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
@@ -633,10 +636,11 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
         "response": ["entity_id", "related", "total", "as_of", "run_id"],
     },
     "lookup_project_by_branch": {
-        "request": ["branch_name"],
+        "request": ["branch_name", "repository_id"],
         "response": [
             "branch_name",
             "work_item_id",
+            "repository_id",
             "matched",
             "project",
             "candidates",

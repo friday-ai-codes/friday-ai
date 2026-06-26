@@ -110,10 +110,11 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "response": ["entity_id", "related", "total", "as_of", "run_id"],
         },
         "lookup_project_by_branch": {
-            "request": ["branch_name"],
+            "request": ["branch_name", "repository_id"],
             "response": [
                 "branch_name",
                 "work_item_id",
+                "repository_id",
                 "matched",
                 "project",
                 "candidates",
