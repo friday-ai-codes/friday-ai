@@ -89,7 +89,19 @@ Plans:
   4. 冲突处理：区段所有权分区（系统区/人工区互不写）+ Agent append + 三方合并 + capture-never-clobber + 编辑感知延迟写——验证"用户编辑中系统写入不冲掉用户内容"
   5. 边界全覆盖：漏事件、同块冲突、编辑系统区、文档被删/移、归档停同步转只读快照、redis 不可用降级、非成员编辑归因——全部 fail-soft 不反噬
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 6 plans（5 waves）
+
+Plans:
+- [ ] 83-01-PLAN.md — 地基：migration 0007（ProjectDoc subscribed/last_feishu_edit_at OQ-4 + ProjectDocBlockRevision capture 落点 OQ-2）+ doc_sync_diff.py 纯函数（block_id 结构化 diff + 三方合并，无 IO）+ conftest — SYNC-03/04
+- [ ] 83-05-PLAN.md — read-through 缓存模块 doc_sync_cache.py（命中/失效 delete/redis 故障降级直读 DB）+ settings IGNORE_EXCEPTIONS + TTL — SYNC-05
+- [ ] 83-02-PLAN.md — 飞书→Friday：drive.file.edit_v1 路由+normalizer+归因 + durable pull plumbing(QUEUE_DOC_SYNC) + subscribe_file + DocSyncService.pull + INV-6 guard + live-Feishu UAT 检查点（autonomous:false）— SYNC-01
+- [ ] 83-03-PLAN.md — Friday→飞书：update_block/delete_blocks + DocSyncService.push（系统区 block 级增量，永不整篇 replace）+ per-doc 串行/debounce/退避 + 系统区写后钩子 — SYNC-02
+- [ ] 83-04-PLAN.md — 冲突：三方合并 + capture-never-clobber（ProjectDocBlockRevision/ProjectMemoryRevision + 飞书评论）+ OQ-1 MEMORY 非成员 fail-soft 归因 + 编辑感知延迟写(OQ-3) + 乐观并发 rebase — SYNC-03/04
+- [ ] 83-06-PLAN.md — 边界全集：TTL 兜底轮询 poll_project_docs_revisions + not-found→broken+一键重建 + 归档停同步退订转只读快照 + 非成员归因 + 限流退避，全 fail-soft — SYNC-06（强化 SYNC-01）
+
+**Waves**: W1 = 83-01 ∥ 83-05（无依赖）；W2 = 83-02（依赖 01/05）；W3 = 83-03（依赖 02）；W4 = 83-04（依赖 02/03）；W5 = 83-06（依赖 02/03/04）
+
+> 注：83-02 含 live-Feishu UAT 真机验证（A1/A3/A5），autonomous:false；真机 E2E（update/delete block A4 等）deferred 记 83-UAT.md，autonomous 链路以 respx/[ASSUMED] seam 覆盖。
 
 ### Phase 84: 项目工作台前端（Project Workbench UI）
 
