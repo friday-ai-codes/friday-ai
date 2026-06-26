@@ -1,25 +1,24 @@
 <script setup lang="ts">
 import type { Project, ProjectStatus } from '~/api/projects'
+import type { WorkbenchSection } from '~/components/project/workbench/WorkbenchShell.vue'
 import { useQuery } from '@tanstack/vue-query'
 import { useHead } from '@vueuse/head'
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { projectsApi } from '~/api/projects'
 import EmptyState from '~/components/common/EmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import WorkbenchShell from '~/components/project/workbench/WorkbenchShell.vue'
 import { Button } from '~/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { usePermission } from '~/composables/usePermission'
 
-const OverviewTab = defineAsyncComponent(() => import('~/components/project/workbench/OverviewTab.vue'))
-const MembersTab = defineAsyncComponent(() => import('~/components/project/workbench/MembersTab.vue'))
-const WorkItemsTab = defineAsyncComponent(() => import('~/components/project/workbench/WorkItemsTab.vue'))
-const ArtifactsTab = defineAsyncComponent(() => import('~/components/project/workbench/ArtifactsTab.vue'))
-const MemoryTab = defineAsyncComponent(() => import('~/components/project/workbench/MemoryTab.vue'))
-const LinksTab = defineAsyncComponent(() => import('~/components/project/workbench/LinksTab.vue'))
+const OverviewSection = defineAsyncComponent(() => import('~/components/project/workbench/OverviewSection.vue'))
+const DocsSection = defineAsyncComponent(() => import('~/components/project/workbench/DocsSection.vue'))
+const FeatureListSection = defineAsyncComponent(() => import('~/components/project/workbench/FeatureListSection.vue'))
+const DependenciesSection = defineAsyncComponent(() => import('~/components/project/workbench/DependenciesSection.vue'))
 
 const route = useRoute('/projects/[id]/')
 const router = useRouter()
@@ -44,7 +43,12 @@ useHead({
   title: () => (project.value ? `${project.value.name} - Friday AI` : t('projects.detail.title')),
 })
 
-const activeTab = ref('overview')
+const sections = computed<WorkbenchSection[]>(() => [
+  { id: 'overview', label: t('projects.workbench.nav.overview'), icon: 'icon-[lucide--layout-dashboard]' },
+  { id: 'docs', label: t('projects.workbench.nav.docs'), icon: 'icon-[lucide--files]' },
+  { id: 'feature', label: t('projects.workbench.nav.feature'), icon: 'icon-[lucide--list-tree]' },
+  { id: 'deps', label: t('projects.workbench.nav.deps'), icon: 'icon-[lucide--network]' },
+])
 
 const STATUS_FLOW: Record<ProjectStatus, ProjectStatus[]> = {
   developing: ['archived', 'terminated'],
@@ -163,54 +167,15 @@ function statusBadgeClass(status: ProjectStatus): string {
         </div>
       </div>
 
-      <!-- Tab 导航（懒加载） -->
-      <Tabs v-model="activeTab">
-        <TabsList class="flex-wrap">
-          <TabsTrigger value="overview">
-            <span class="icon-[lucide--layout-dashboard] mr-1.5" />
-            {{ t('projects.tabs.overview') }}
-          </TabsTrigger>
-          <TabsTrigger value="members">
-            <span class="icon-[lucide--users] mr-1.5" />
-            {{ t('projects.tabs.members') }}
-          </TabsTrigger>
-          <TabsTrigger value="workItems">
-            <span class="icon-[lucide--list-checks] mr-1.5" />
-            {{ t('projects.tabs.workItems') }}
-          </TabsTrigger>
-          <TabsTrigger value="artifacts">
-            <span class="icon-[lucide--package] mr-1.5" />
-            {{ t('projects.tabs.artifacts') }}
-          </TabsTrigger>
-          <TabsTrigger value="memory">
-            <span class="icon-[lucide--brain] mr-1.5" />
-            {{ t('projects.tabs.memory') }}
-          </TabsTrigger>
-          <TabsTrigger value="links">
-            <span class="icon-[lucide--network] mr-1.5" />
-            {{ t('projects.tabs.links') }}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" class="mt-5">
-          <OverviewTab v-if="activeTab === 'overview'" :project="project" />
-        </TabsContent>
-        <TabsContent value="members" class="mt-5">
-          <MembersTab v-if="activeTab === 'members'" :project-id="project.id" :can-manage="canManage" />
-        </TabsContent>
-        <TabsContent value="workItems" class="mt-5">
-          <WorkItemsTab v-if="activeTab === 'workItems'" :project-id="project.id" :can-manage="canManage" />
-        </TabsContent>
-        <TabsContent value="artifacts" class="mt-5">
-          <ArtifactsTab v-if="activeTab === 'artifacts'" :project-id="project.id" :can-manage="canManage" />
-        </TabsContent>
-        <TabsContent value="memory" class="mt-5">
-          <MemoryTab v-if="activeTab === 'memory'" :project-id="project.id" />
-        </TabsContent>
-        <TabsContent value="links" class="mt-5">
-          <LinksTab v-if="activeTab === 'links'" :project-id="project.id" />
-        </TabsContent>
-      </Tabs>
+      <!-- 工作台：左导航 + 右主内容区（section 懒加载） -->
+      <WorkbenchShell :sections="sections" :nav-label="t('projects.workbench.nav.sectionLabel')">
+        <template #default="{ active }">
+          <OverviewSection v-if="active === 'overview'" :project="project" :can-manage="canManage" />
+          <DocsSection v-else-if="active === 'docs'" :project-id="project.id" />
+          <FeatureListSection v-else-if="active === 'feature'" :project-id="project.id" />
+          <DependenciesSection v-else-if="active === 'deps'" :project-id="project.id" />
+        </template>
+      </WorkbenchShell>
     </div>
   </div>
 </template>

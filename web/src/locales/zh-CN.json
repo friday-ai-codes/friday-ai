@@ -1173,6 +1173,81 @@
       "knowledge": "知识图谱关联",
       "graphLoadError": "加载关联失败",
       "graphEmpty": "暂无关联节点"
+    },
+    "workbench": {
+      "rebuild": "重建工作区",
+      "rebuilding": "重建中…",
+      "rebuilt": "已触发重建，工作区将很快更新",
+      "rebuildFailed": "重建工作区失败",
+      "nav": {
+        "overview": "大盘",
+        "docs": "文件",
+        "feature": "feature",
+        "deps": "外部依赖",
+        "search": "搜索",
+        "sectionLabel": "工作区导航"
+      },
+      "section": {
+        "buildingTitle": "建设中",
+        "buildingDesc": "该区块将在后续迭代中开放。"
+      },
+      "overview": {
+        "title": "大盘",
+        "peopleTitle": "项目人员",
+        "statusTitle": "项目状态",
+        "peopleEmpty": "暂无项目成员",
+        "peopleLoadError": "加载人员失败",
+        "docsLoadError": "加载工作区状态失败",
+        "emptyTitle": "工作台尚未就绪",
+        "emptyDesc": "项目工作区文件正在创建中，稍后刷新即可查看大盘与文件。",
+        "identity": {
+          "pm": "PM",
+          "owner": "开发负责人",
+          "developer": "开发者",
+          "qa": "测试"
+        },
+        "docCount": "工作区文件 {n} 个",
+        "syncing": "同步中",
+        "synced": "已同步",
+        "syncError": "同步异常",
+        "syncIdle": "待同步"
+      },
+      "docs": {
+        "title": "文件",
+        "view": "查看",
+        "edit": "编辑源码",
+        "saving": "保存中…",
+        "save": "保存到飞书",
+        "saved": "已提交同步，飞书将很快更新",
+        "systemReadonly": "系统区由 Friday 自动维护，只读；可编辑下方人工区",
+        "saveConflict": "飞书侧已有更新，已为你保留改动；请刷新后重新编辑人工区",
+        "loadError": "加载文件失败"
+      },
+      "feature": {
+        "title": "feature",
+        "emptyTitle": "还没有 feature",
+        "emptyDesc": "feature list 工件同步后，这里会按「模块 → 功能点 → 验收项」展示进度。",
+        "loadError": "加载 feature 失败",
+        "state": {
+          "todo": "待开发",
+          "in_progress": "进行中",
+          "testing": "测试中",
+          "done": "已完成"
+        }
+      },
+      "deps": {
+        "title": "外部依赖",
+        "loadError": "加载外部依赖失败",
+        "empty": "暂无外部依赖"
+      },
+      "search": {
+        "title": "搜索",
+        "placeholder": "搜索项目内容、文件、工件…",
+        "emptyTitle": "没有匹配的内容",
+        "emptyDesc": "换个关键词试试，或调整空间 / 状态 / 成员筛选。",
+        "loadError": "搜索失败"
+      },
+      "loadError": "加载{section}失败，请重试"
     }
   },
   "artifactTypes": {

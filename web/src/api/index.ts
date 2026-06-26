@@ -47,6 +47,9 @@ export * from './projectMemory'
 export { default as projectsApi } from './projects'
 export * from './projects'
 
+export { default as projectWorkspaceApi } from './projectWorkspace'
+export * from './projectWorkspace'
+
 export { default as providerCredentialsApi } from './providerCredentials'
 export * from './providerCredentials'
 
