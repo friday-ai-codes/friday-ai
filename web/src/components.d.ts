@@ -299,6 +299,7 @@ declare module 'vue' {
     PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
     PRConfirmCard: typeof import('./components/chat/PRConfirmCard.vue')['default']
     Progress: typeof import('./components/ui/progress/Progress.vue')['default']
+    ProjectSearchPanel: typeof import('./components/project/ProjectSearchPanel.vue')['default']
     PromptBodyEditor: typeof import('./components/prompts/PromptBodyEditor.vue')['default']
     PromptEditor: typeof import('./components/prompts/PromptEditor.vue')['default']
     PromptMetadataForm: typeof import('./components/prompts/PromptMetadataForm.vue')['default']
