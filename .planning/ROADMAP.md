@@ -193,7 +193,27 @@ Plans:
   3. STATE 结构化回写——会话结束把新增/改动 API 以结构化清单写入，跨会话/跨角色可读，带审计可回滚
   4. claude code runner 派发带项目上下文 + session 持久化（`SessionStore`→Redis）支持跨容器 resume；hook 无 PAT/未绑项目时静默跳过不阻断编码
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 5 plans（3 waves）
+
+Plans:
+
+**Wave 1** *(无前置；服务端写/读路径与容器 resume 并行)*
+
+- [ ] 86-01-PLAN.md — HOOK-02 写路径 active：MemoryService.record_hook_writeback（MEMORY active 直写）+ ProjectDocService.append_research_note（RESEARCH append）+ report_project_knowledge active 模式（三道兜底：质量门槛/脱敏/审计回滚 + 归因 + 非成员/未认证静默跳过）+ 可选 ide_hook_distill call_source 登记 — **用户授权 accepted deviation**
+- [ ] 86-02-PLAN.md — HOOK-04：SessionStore→Redis（SDK session 镜像 + DB fallback + cwd 一致校验）+ runner 派发带项目上下文（pack_project_context 注入 + RetrievalTrace + 脱敏）+ 接入 v0.8 callback resume / v0.12 durable
+- [ ] 86-03-PLAN.md — HOOK-01 读路径：三家（Cursor/Claude Code/Codex）always-on 规则强制「先反查项目+召回再编码」+ Claude Code UserPromptSubmit 注入资产（Cursor beforeSubmitPrompt 不能注入 → 仅规则+MCP）+ ide-hook-assets 下发端点（读路径召回复用 lookup_project_by_branch 的 RetrievalTrace）
+
+**Wave 2** *(blocked on Wave 1：共享 mcp_tools/views.py 与 86-01)*
+
+- [ ] 86-04-PLAN.md — HOOK-03 STATE 结构化回写：report_project_state MCP 工具 → ProjectDocService.upsert_state_api（source=HOOK，(project,method,path) 幂等 + 审计可回滚）+ 跨会话/跨角色即时可读 + 成员静默跳过 + 逐条 fail-soft
+
+**Wave 3** *(blocked on Wave 2：写路径资产依赖 86-01/86-04 工具 + 86-03 端点/资产)*
+
+- [ ] 86-05-PLAN.md — HOOK-02/03 客户端 stop hook 资产（三家）：默认开启 + 静默回写（report_project_knowledge active + report_project_state）+ 无 PAT/未绑项目静默 exit 0 不阻断 + cursor_rules 措辞同步 active（accepted deviation）+ kind=write 下发
+
+**Waves**: W1 = 86-01 ∥ 86-02 ∥ 86-03（无前置）；W2 = 86-04（依赖 86-01 共享 mcp_tools 文件）；W3 = 86-05（依赖 86-03 资产/端点 + 86-04 工具）
+
+> **Accepted deviation（用户 2026-06-26 授权）**：HOOK-02 stop hook 写路径默认开启 + 静默**直写生效（active）无需人工确认**，覆盖 REQUIREMENTS HOOK-02「落 draft 人工确认」与 Out-of-Scope「记忆全自动写入本期不做」；三道兜底（质量门槛/脱敏不可绕过/审计可回滚）+ 归因 + 非成员·无 PAT·未绑项目静默跳过必须齐备，VERIFICATION 须记为 accepted deviation。
 
 ### Phase 87: 看板拆分节点 + 群 + 流式卡片（Board Split + Card）
 
