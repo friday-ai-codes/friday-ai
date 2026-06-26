@@ -8,6 +8,7 @@ from initiatives.views import (
     ArtifactViewView,
     ProjectCursorRulesView,
     ProjectDetailView,
+    ProjectFeatureListView,
     ProjectGraphView,
     ProjectKnowledgeLinkView,
     ProjectListCreateView,
@@ -21,11 +22,14 @@ from initiatives.views import (
     ProjectMergeRequestListView,
     ProjectOwnerTransferView,
     ProjectRehomeView,
+    ProjectSearchView,
     ProjectStateApiDetailView,
     ProjectStateApiListCreateView,
     ProjectTransitionView,
     ProjectWorkItemDetailView,
     ProjectWorkItemListView,
+    ProjectWorkspaceDocContentView,
+    ProjectWorkspaceDocHumanBlocksView,
     ProjectWorkspaceDocsView,
     ProjectWorkspaceRebuildView,
 )
@@ -136,6 +140,16 @@ urlpatterns = [
         name="project-workspace-docs",
     ),
     path(
+        "<uuid:project_id>/workspace/docs/<str:doc_type>/",
+        ProjectWorkspaceDocContentView.as_view(),
+        name="project-workspace-doc-content",
+    ),
+    path(
+        "<uuid:project_id>/workspace/docs/<str:doc_type>/human-blocks/",
+        ProjectWorkspaceDocHumanBlocksView.as_view(),
+        name="project-workspace-doc-human-blocks",
+    ),
+    path(
         "<uuid:project_id>/workspace/rebuild/",
         ProjectWorkspaceRebuildView.as_view(),
         name="project-workspace-rebuild",
@@ -154,5 +168,17 @@ urlpatterns = [
         "<uuid:project_id>/rehome/",
         ProjectRehomeView.as_view(),
         name="project-rehome",
+    ),
+    # feature list 树 + 进度灯（WB-02，84-01）
+    path(
+        "<uuid:project_id>/feature-list/",
+        ProjectFeatureListView.as_view(),
+        name="project-feature-list",
+    ),
+    # 项目基础搜索（WB-05，84-01）
+    path(
+        "<uuid:project_id>/search/",
+        ProjectSearchView.as_view(),
+        name="project-search",
     ),
 ]

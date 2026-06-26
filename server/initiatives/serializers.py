@@ -166,6 +166,117 @@ class ProjectStateApiCreateSerializer(serializers.Serializer):
     )
 
 
+class ProjectStateApiUpdateSerializer(serializers.Serializer):
+    """更新单条结构化 API 清单条目请求（DOC-02，84-01）：仅可变字段，全部可选。"""
+
+    method = serializers.CharField(required=False, max_length=10)
+    path = serializers.CharField(required=False, max_length=500)
+    params = serializers.JSONField(required=False)
+    status = serializers.ChoiceField(required=False, choices=ApiStatus.choices)
+
+
+# ---- 工作区单文档内容 + 人工区写回（WB-03，84-01）----
+
+
+class ProjectDocBlockSerializer(serializers.Serializer):
+    """工作区文档单 block（系统区/人工区分区，响应）。
+
+    **wire 契约单一来源**：字段名 snake_case，84-02 前端 TS 接口须照此对齐。
+    """
+
+    block_id = serializers.CharField(read_only=True)
+    db_ref = serializers.CharField(read_only=True, allow_blank=True)
+    section = serializers.CharField(read_only=True)
+    text = serializers.CharField(read_only=True, allow_blank=True)
+    editable = serializers.BooleanField(read_only=True)
+
+
+class ProjectDocContentSerializer(serializers.Serializer):
+    """工作区单文档渲染内容 + block 分区（响应，WB-03）。
+
+    **wire 契约单一来源**：``rendered_markdown`` / ``sync_status`` /
+    ``last_synced_revision`` / ``blocks[*]`` 字段名即前端契约（84-02 W2 约束照此对齐）。
+    """
+
+    doc_type = serializers.CharField(read_only=True)
+    sync_status = serializers.CharField(read_only=True)
+    last_synced_revision = serializers.IntegerField(read_only=True)
+    rendered_markdown = serializers.CharField(read_only=True, allow_blank=True)
+    blocks = ProjectDocBlockSerializer(many=True, read_only=True)
+
+
+class ProjectDocHumanBlockInputSerializer(serializers.Serializer):
+    """人工区写回单 block 入参（请求；仅 block_id + text）。"""
+
+    block_id = serializers.CharField(max_length=200)
+    text = serializers.CharField(allow_blank=True, trim_whitespace=False)
+
+
+class ProjectDocHumanBlocksWriteSerializer(serializers.Serializer):
+    """人工区写回请求（WB-03；blocks 至少一项，写回触发同步引擎 block 级回灌）。"""
+
+    blocks = ProjectDocHumanBlockInputSerializer(many=True, allow_empty=False)
+
+
+# ---- feature list 树 + 进度灯（WB-02，84-01）----
+
+
+class ProjectFeatureNodeSerializer(serializers.Serializer):
+    """单个功能点节点（功能点 + 验收项 + 四态进度灯，响应）。
+
+    **wire 契约单一来源**：``name`` / ``acceptance`` / ``progress`` /
+    ``status_display_name`` 字段名即前端契约。
+    """
+
+    name = serializers.CharField(read_only=True)
+    acceptance = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    progress = serializers.CharField(read_only=True)
+    status_display_name = serializers.CharField(read_only=True, allow_blank=True)
+
+
+class ProjectFeatureModuleSerializer(serializers.Serializer):
+    """模块节点（模块名 + 功能点列表，响应）。"""
+
+    module = serializers.CharField(read_only=True)
+    features = ProjectFeatureNodeSerializer(many=True, read_only=True)
+
+
+class ProjectFeatureTreeSerializer(serializers.Serializer):
+    """feature 树（模块→功能点→验收项，响应，WB-02）。"""
+
+    modules = ProjectFeatureModuleSerializer(many=True, read_only=True)
+
+
+# ---- 项目基础搜索（WB-05，84-01）----
+
+
+class ProjectSearchLocatorSerializer(serializers.Serializer):
+    """搜索结果定位（属哪个仓库/项目，响应）。"""
+
+    project_id = serializers.CharField(read_only=True)
+    project_name = serializers.CharField(read_only=True, allow_blank=True)
+    repository_id = serializers.CharField(
+        read_only=True, allow_blank=True, allow_null=True, required=False
+    )
+
+
+class ProjectSearchResultSerializer(serializers.Serializer):
+    """单条项目搜索结果（响应，WB-05）。
+
+    **wire 契约单一来源**：``kind`` / ``title`` / ``snippet`` / ``score`` /
+    ``source`` / ``locator`` 字段名即前端契约。
+    """
+
+    kind = serializers.CharField(read_only=True)
+    title = serializers.CharField(read_only=True, allow_blank=True)
+    snippet = serializers.CharField(read_only=True, allow_blank=True)
+    score = serializers.FloatField(read_only=True)
+    source = serializers.CharField(read_only=True)
+    locator = ProjectSearchLocatorSerializer(read_only=True)
+
+
 class ProjectTransitionSerializer(serializers.Serializer):
     """项目状态流转请求（PROJ-02）。"""
 
@@ -200,7 +311,11 @@ class ProjectWorkItemAttachSerializer(serializers.Serializer):
 
 
 class ProjectWorkItemSerializer(serializers.Serializer):
-    """项目关联工作项摘要（响应，COMPOSE-01/02）。"""
+    """项目关联工作项摘要（响应，COMPOSE-01/02）。
+
+    84-01 起含 WorkItem 状态镜像字段（``status_state_key`` / ``status_display_name`` /
+    ``module_normalized``），供前端 feature 进度灯 / 里程碑映射。
+    """
 
     id = serializers.UUIDField(read_only=True)
     feishu_work_item_id = serializers.IntegerField(read_only=True)
@@ -209,6 +324,9 @@ class ProjectWorkItemSerializer(serializers.Serializer):
     feishu_project_key = serializers.CharField(read_only=True)
     provenance = serializers.CharField(read_only=True)
     attached_at = serializers.DateTimeField(read_only=True)
+    status_state_key = serializers.CharField(read_only=True, allow_blank=True)
+    status_display_name = serializers.CharField(read_only=True, allow_blank=True)
+    module_normalized = serializers.CharField(read_only=True, allow_blank=True)
 
 
 # ---- 工件类型（ARTIFACT-01/05）----

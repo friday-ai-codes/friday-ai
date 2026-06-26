@@ -417,6 +417,120 @@ class ProjectDocService:
             api.delete()
         return snapshot
 
+    async def update_state_api(
+        self,
+        *,
+        project_id: Any,
+        api_id: Any,
+        fields: dict[str, Any],
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> ProjectStateApi | None:
+        """更新单条 API 清单条目的 method/path/params/status（DOC-02，84-01 Task 2）。
+
+        ``fields`` 仅取白名单列（method/path/params/status），其余忽略；条目不存在返回 None
+        （幂等，view 转 404）。更新后发结构化事件 ``project_state_api_updated``（caller，绑定
+        触发用户）并 debounce defer STATE push（系统区重渲染，fail-soft 不反噬）。
+        """
+        allowed = {
+            k: v
+            for k, v in fields.items()
+            if k in ("method", "path", "params", "status") and v is not None
+        }
+        updated = await self._update_state_api_locked(project_id, api_id, allowed)
+        if updated is None:
+            return None
+        actor_id = initiated_by_user_id or getattr(actor, "id", None)
+        logger.info(
+            "project_state_api_updated",
+            project_id=str(project_id),
+            api_id=str(api_id),
+            fields=sorted(allowed.keys()),
+            initiated_by_user_id=str(actor_id) if actor_id else "system",
+            component="initiatives.workspace",
+            category="caller",
+        )
+        from initiatives.services.doc_push_scheduler import schedule_doc_push
+
+        await schedule_doc_push(
+            project_id=project_id,
+            doc_type=DocType.STATE,
+            initiated_by_user_id=(str(actor_id) if actor_id else None),
+        )
+        return updated
+
+    @sync_to_async
+    def _update_state_api_locked(
+        self, project_id: Any, api_id: Any, fields: dict[str, Any]
+    ) -> ProjectStateApi | None:
+        with transaction.atomic():
+            api = (
+                ProjectStateApi.objects.select_for_update()
+                .filter(project_id=project_id, id=api_id)
+                .first()
+            )
+            if api is None:
+                return None
+            update_cols: list[str] = []
+            for col, val in fields.items():
+                setattr(api, col, val)
+                update_cols.append(col)
+            if update_cols:
+                update_cols.append("updated_at")
+                api.save(update_fields=update_cols)
+        return api
+
+    # ---- 人工区 block 写回（WB-03，84-01 Task 2；收口经本 service，INV-6）----
+
+    async def write_human_block(
+        self,
+        *,
+        doc_id: Any,
+        feishu_block_id: str,
+        content: str,
+        editor: Any = None,
+    ) -> ProjectDocBlockRevision:
+        """人工区 block 文本写回（append-only 留痕 + 刷新映射指纹，永不整篇覆盖）。
+
+        - 文本经 ``capture_block_revision``（source=``human``）append-only 留痕（内部脱敏），
+          作为人工区当前态的权威存储（读侧取最新一条）。
+        - 同步刷新 ``ProjectDocBlockMap`` 的 ``content_hash``（section 保持 HUMAN），供
+          Phase 83 同步引擎 block 级增量识别变更（绝不整篇 replace）。
+        - 仅写 section==HUMAN 的 block（系统区只读由上游 ``DocContentService`` 校验拒绝）。
+        """
+        from common.logging import redact_secrets_in_text
+        from initiatives.services.doc_sync_diff import block_content_hash
+
+        redacted = redact_secrets_in_text(content or "")
+        existing_db_ref = await self._aget_block_db_ref(doc_id, feishu_block_id)
+        revision = await self.capture_block_revision(
+            doc_id=doc_id,
+            feishu_block_id=feishu_block_id,
+            content=content,
+            db_ref=existing_db_ref,
+            source="human",
+            reason="human_write",
+        )
+        await self.upsert_block_map(
+            doc_id=doc_id,
+            feishu_block_id=feishu_block_id,
+            db_ref=existing_db_ref,
+            section=DocSection.HUMAN,
+            content_hash=block_content_hash(redacted),
+        )
+        return revision
+
+    @sync_to_async
+    def _aget_block_db_ref(self, doc_id: Any, feishu_block_id: str) -> str:
+        row = (
+            ProjectDocBlockMap.objects.filter(
+                doc_id=doc_id, feishu_block_id=feishu_block_id
+            )
+            .values("db_ref")
+            .first()
+        )
+        return (row["db_ref"] if row else "") or ""
+
     # ---- 后台 provision 编排（WS-04 / DOC-06） ----
 
     def provision_dispatch(
