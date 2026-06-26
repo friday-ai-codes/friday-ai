@@ -238,7 +238,31 @@ Plans:
   1. 智能仓库关联——结合知识库（活跃度/功能梳理）+ RAG 多轮 + Agent 自处理，发卡片引导式多轮澄清/确认涉及仓库（含用户自校验）
   2. 用户确认仓库后逐仓自校验（基于确认仓库再验证业务适配性，发现不符可回退重确认）+ 最终卡片确认
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 5 plans（5 waves，线性——HITL 流水线 + 共享 service 文件耦合，复用 v0.7/v0.8/v0.11/v0.12 地基不重造）
+Plans:
+**Wave 1**
+
+- [ ] 88-01-PLAN.md — 持久化地基：RepoAssociation/RepoVerifyTask 模型（镜像 RepoResearchTask）+ 迁移 0010 + SubAgentSession.TaskType.REPO_VERIFY + call_source(repo_verify_container/repo_association) 登记 §4.1 — REPO-01/02
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 88-02-PLAN.md — RepoAssociationService.propose/refine：COMBINED 选仓复用 RepoRouterV2（补 use_call_source(aux_repo_router)+RetrievalTrace 埋点）+ 候选范围限 Space 仓 + 落 proposed + INV-6 grep 守护 — REPO-01
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 88-03-PLAN.md — 逐仓 explore 容器深验：RepoVerifyDispatchService（复刻 ResearchDispatchAdapter）+ service confirm/dispatch/collect_verdicts + 容器回调 verify 钩子（解析 verdict 落库）+ 单仓 fail-soft + 88-UAT.md — REPO-02
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 88-04-PLAN.md — 交互面：CardKit 四态卡（候选/进行中/回退/最终）+ RepoAssociationNode（首发 waiting_event + 容器深验续驱聚合判 mismatch/fit）+ associate_repos 工具 — REPO-01/02
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 88-05-PLAN.md — 回调状态机：confirm→派深验 / refine→重 route / reconfirm→回退 / accept_mismatch→approve_node + Phase 89 输出契约 get_verified_associations — REPO-02
+
+**Waves**: W1 = 88-01（无前置）；W2 = 88-02（依赖 01）；W3 = 88-03（依赖 02，扩 service+回调）；W4 = 88-04（依赖 02 propose + 03 collect_verdicts，节点续驱聚合）；W5 = 88-05（依赖 04 节点/卡 + 03 service，回调状态机闭环）
+
+> 注：88-03 含真机容器 explore E2E + 未知 task_type 容错（A1）deferred 记 88-UAT.md，autonomous 链路以 respx/dispatcher/feishu seam 覆盖（对齐 Phase 83/87）。
 
 ### Phase 89: 技术方案深化 + 建分支绑项目（Tech Plan + Branch）
 

@@ -4,7 +4,7 @@ milestone: v0.16.0
 milestone_name: 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
 status: 里程碑 v0.16.0 已立项（PROJECT/REQUIREMENTS/ROADMAP/STATE + project-workspace/MILESTONE-PROPOSAL 就绪）
 stopped_at: v0.16.0 项目工作区里程碑立项完成（new-milestone）——经"方案 review（对照 v0.15.0 已交付能力）→ 锁定 4 决策（DB canonical+飞书双向镜像 / 全员可读+visibility / MEMORY 条目式不整篇 diff / STATE·MILESTONES 活计算）→ 飞书文档双向同步引擎详设（block_id 结构化匹配 + 防冲突四机制）→ 外部依赖调研确认（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks 限制 / 容器 resume SessionStore）→ 产出工件"。已写 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（37 条）、`ROADMAP.md`（Phases 82–89 + Phase Details + Progress）、`STATE.md`（本文件，重置为 v0.16.0 planning）、`PROJECT.md`（Current Milestone）。
-last_updated: "2026-06-26T20:23:48.686Z"
+last_updated: "2026-06-26T21:36:35.033Z"
 last_activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82–89 / 3 Wave；4 决策锁定：DB canonical+飞书双向镜像、全员可读+visibility、MEMORY 条目式不整篇 diff、STATE/MILESTONES 活计算）
 progress:
   total_phases: 8
