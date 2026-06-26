@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.16.0
 milestone_name: 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
-status: 里程碑 v0.16.0 已立项（PROJECT/REQUIREMENTS/ROADMAP/STATE + project-workspace/MILESTONE-PROPOSAL 就绪）
+status: shipped — 里程碑 v0.16.0 已交付并归档（complete-milestone：ROADMAP 折叠 + audit 移入 milestones/；里程碑审计 tech_debt，37/37 需求满足 / integration_ok）
 stopped_at: v0.16.0 项目工作区里程碑立项完成（new-milestone）——经"方案 review（对照 v0.15.0 已交付能力）→ 锁定 4 决策（DB canonical+飞书双向镜像 / 全员可读+visibility / MEMORY 条目式不整篇 diff / STATE·MILESTONES 活计算）→ 飞书文档双向同步引擎详设（block_id 结构化匹配 + 防冲突四机制）→ 外部依赖调研确认（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks 限制 / 容器 resume SessionStore）→ 产出工件"。已写 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（37 条）、`ROADMAP.md`（Phases 82–89 + Phase Details + Progress）、`STATE.md`（本文件，重置为 v0.16.0 planning）、`PROJECT.md`（Current Milestone）。
-last_updated: "2026-06-26T22:52:22.759Z"
-last_activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82–89 / 3 Wave；4 决策锁定：DB canonical+飞书双向镜像、全员可读+visibility、MEMORY 条目式不整篇 diff、STATE/MILESTONES 活计算）
+last_updated: "2026-06-27T00:00:00.000Z"
+last_activity: 2026-06-27 — Milestone v0.16.0 shipped（complete-milestone：8/8 phase / 38 plans / 37 需求；里程碑审计 tech_debt — 37/37 满足 / integration_ok，遗留真机·live-platform 验收 + 既有并发测试欠债；ROADMAP 折叠归档 + audit 移入 milestones/ + phase 目录归档 milestones/v0.16.0-phases/）
 progress:
   total_phases: 8
   completed_phases: 8
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: Not started（立项完成 — ready to plan Phase 82）
+Phase: All complete（82–89 全部完成 + 已归档 milestones/v0.16.0-phases/）
 Plan: —
-Status: 里程碑 v0.16.0 已立项（PROJECT/REQUIREMENTS/ROADMAP/STATE + project-workspace/MILESTONE-PROPOSAL 就绪）
-Last activity: 2026-06-26 — Milestone v0.16.0 started（37 需求 / 8 Phase 82–89 / 3 Wave；4 决策锁定：DB canonical+飞书双向镜像、全员可读+visibility、MEMORY 条目式不整篇 diff、STATE/MILESTONES 活计算）
+Status: shipped — 里程碑 v0.16.0 已交付并归档（complete-milestone + cleanup）；里程碑审计 tech_debt（37/37 需求满足 / integration_ok）
+Last activity: 2026-06-27 — Milestone v0.16.0 shipped（complete-milestone：ROADMAP 折叠归档 + audit 移入 milestones/ + phase 目录归档；审计 tech_debt）
 
-## Milestone Overview (v0.16.0 — Phases 82–89 — 🚧 PLANNING)
+## Milestone Overview (v0.16.0 — Phases 82–89 — ✅ SHIPPED 2026-06-26)
 
 | Phase | Name | Requirements | Wave | Status |
 |-------|------|--------------|------|--------|
@@ -391,17 +391,14 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-06-26
-Stopped at: v0.16.0 项目工作区里程碑立项完成（new-milestone）——经"方案 review（对照 v0.15.0 已交付能力）→ 锁定 4 决策（DB canonical+飞书双向镜像 / 全员可读+visibility / MEMORY 条目式不整篇 diff / STATE·MILESTONES 活计算）→ 飞书文档双向同步引擎详设（block_id 结构化匹配 + 防冲突四机制）→ 外部依赖调研确认（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks 限制 / 容器 resume SessionStore）→ 产出工件"。已写 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（37 条）、`ROADMAP.md`（Phases 82–89 + Phase Details + Progress）、`STATE.md`（本文件，重置为 v0.16.0 planning）、`PROJECT.md`（Current Milestone）。
+Last session: 2026-06-27
+Stopped at: v0.16.0 项目工作区里程碑已 shipped（complete-milestone + cleanup）——8/8 phase（82–89）/ 38 plans / 37 需求全部完成并提交；里程碑审计 tech_debt（37/37 需求满足 / integration_ok，遗留真机·live-platform 验收 + 既有并发测试欠债，见 `.planning/milestones/v0.16.0-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.0-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.0-phases/`。
 Earlier: v0.15.0 项目（交付上下文聚合根）已 shipped + 审计 passed + 归档（2026-06-26）。
 Resume file: None
-Next: `$gsd-discuss-phase 82` 收集上下文澄清，或 `$gsd-plan-phase 82` 直接拆 plan（Wave 1 工作区实体地基）
+Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）；遗留真机/live-platform 验收项见 audit §6 与各 phase VERIFICATION「Deferred」段。
 
 ## Operator Next Steps
 
-- 里程碑已立项；下一步 `$gsd-discuss-phase 82`（或 `$gsd-plan-phase 82`）启动 Wave 1
-- ⚠️ Wave 1（82–84）是最小可交付地基，必须先全绿再推 Wave 2/3；可按需把 Wave 2/3 拆成 v0.17/v0.18 独立发布
-- ⚠️ Phase 83（飞书双向同步引擎）是全期最大风险——建议先把 MEMORY（append 最简）跑通再推 STATE/RESEARCH；plan-phase 先 live 验证 `subscribe` + block 写
-- ⚠️ Phase 87（看板拆分）plan-phase 前先 live 验证飞书 `work_item/create` + 父子关系写 API（Phase 78 仅验证读）
-- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令）；commit 由用户按需触发
-- 可用 `$gsd-autonomous` 自动跑完整个里程碑（如 v0.15.0），或逐 Wave 推进
+- 里程碑 v0.16.0 已 shipped + 归档；下一步 `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）
+- ⚠️ 遗留真机/live-platform 验收（飞书写 API / CardKit 抓包 / 容器 runner+Docker E2E / 真机 git push / 跨容器 resume）+ 既有并发测试欠债（`tests/workflows/test_execution_concurrency.py` 2 例），详见 `milestones/v0.16.0-MILESTONE-AUDIT.md` §6/§7 与各 phase VERIFICATION「Deferred」段
+- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令）；commit 由用户按需触发；未打 git tag（按任务范围，complete-milestone 仅文档归档）
