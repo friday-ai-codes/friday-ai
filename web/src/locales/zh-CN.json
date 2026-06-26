@@ -1015,6 +1015,26 @@
       "onlyMine": "仅我参与",
       "searchPlaceholder": "搜索项目名、描述…"
     },
+    "search": {
+      "open": "全局搜索",
+      "close": "收起搜索",
+      "title": "全局搜索",
+      "placeholder": "搜索项目内容、文件、工件…",
+      "hint": "在当前筛选的项目范围内模糊搜索，结果会标注所属仓库 / 项目。",
+      "scope": "搜索范围：当前 {n} 个项目",
+      "scopeEmpty": "当前没有可搜索的项目，请先调整筛选条件。",
+      "loading": "搜索中…",
+      "loadError": "搜索失败，请重试",
+      "retry": "重试",
+      "emptyTitle": "没有匹配的内容",
+      "emptyDesc": "换个关键词试试，或调整空间 / 状态 / 成员筛选。",
+      "resultCount": "找到 {n} 条匹配",
+      "locator": "属于 {locator}",
+      "rag": {
+        "title": "深度语义召回（RAG）",
+        "deferred": "项目域 RAG 深度召回将在 Phase 85 开放，当前为关键词召回结果。"
+      }
+    },
     "status": {
       "developing": "开发中",
       "archived": "已归档",

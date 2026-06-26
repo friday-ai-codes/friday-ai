@@ -169,35 +169,45 @@ function handleCancel() {
         </p>
       </div>
 
-      <!-- 飞书看板链接 -->
-      <div class="space-y-2">
-        <Label for="feishu_board_url" class="flex items-center gap-2 text-foreground">
-          飞书"项目跟踪"看板链接
+      <!-- 绑定看板（可选）：手动创建项目时一并关联飞书"项目跟踪"看板 -->
+      <div class="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4" data-testid="bind-board-section">
+        <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+          <span class="icon-[lucide--layout-dashboard] text-primary" />
+          绑定看板
           <span class="text-xs text-muted-foreground font-normal">(可选)</span>
-        </Label>
-        <Input
-          id="feishu_board_url"
-          v-model="form.feishu_board_url"
-          placeholder="https://project.feishu.cn/..."
-          class="h-10"
-        />
-      </div>
+        </div>
 
-      <!-- 飞书项目 Key（幂等键） -->
-      <div class="space-y-2">
-        <Label for="feishu_project_key" class="flex items-center gap-2 text-foreground">
-          飞书项目 Key
-          <span class="text-xs text-muted-foreground font-normal">(可选，幂等键)</span>
-        </Label>
-        <Input
-          id="feishu_project_key"
-          v-model="form.feishu_project_key"
-          placeholder="例如：demo_project"
-          class="h-10"
-        />
-        <p class="text-xs text-muted-foreground">
-          同一空间下相同 Key 的项目幂等去重；留空则每次新建独立项目。
-        </p>
+        <!-- 飞书看板链接 -->
+        <div class="space-y-2">
+          <Label for="feishu_board_url" class="flex items-center gap-2 text-foreground">
+            飞书"项目跟踪"看板链接
+          </Label>
+          <Input
+            id="feishu_board_url"
+            v-model="form.feishu_board_url"
+            data-testid="feishu-board-url"
+            placeholder="https://project.feishu.cn/..."
+            class="h-10"
+          />
+        </div>
+
+        <!-- 飞书项目 Key（幂等键） -->
+        <div class="space-y-2">
+          <Label for="feishu_project_key" class="flex items-center gap-2 text-foreground">
+            飞书项目 Key
+            <span class="text-xs text-muted-foreground font-normal">(幂等键)</span>
+          </Label>
+          <Input
+            id="feishu_project_key"
+            v-model="form.feishu_project_key"
+            data-testid="feishu-project-key"
+            placeholder="例如：demo_project"
+            class="h-10"
+          />
+          <p class="text-xs text-muted-foreground">
+            同一空间下相同 Key 的项目幂等去重；留空则每次新建独立项目。
+          </p>
+        </div>
       </div>
 
       <!-- 项目描述 -->

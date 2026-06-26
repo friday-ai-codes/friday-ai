@@ -27,6 +27,19 @@ vi.mock('~/api/spaces', () => ({
   default: { list: vi.fn().mockResolvedValue([{ id: 's1', name: '空间一' }]) },
 }))
 
+// WB-05 全局搜索面板：mock 项目内搜索端点（聚合调用）。
+const searchMock = vi.fn()
+vi.mock('~/api/projectWorkspace', () => ({
+  projectWorkspaceApi: { search: (...a: unknown[]) => searchMock(...a) },
+}))
+
+// CreateProjectModal 走 '~/api' barrel（projectsApi.create / spacesApi.list）。
+const createMock = vi.fn()
+vi.mock('~/api', () => ({
+  projectsApi: { create: (...a: unknown[]) => createMock(...a) },
+  spacesApi: { list: vi.fn().mockResolvedValue([{ id: 's1', name: '空间一' }]) },
+}))
+
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
 
 function makeProject(overrides: Record<string, unknown> = {}) {
@@ -124,5 +137,123 @@ describe('/projects 项目列表页', () => {
     expect(listMock).toHaveBeenCalled()
     const calledFilters = listMock.mock.calls.at(-1)?.[0] ?? {}
     expect(calledFilters).not.toHaveProperty('space_id')
+  })
+
+  it('状态筛选控件渲染（按状态筛选入口存在）', async () => {
+    listMock.mockResolvedValue([makeProject()])
+    const wrapper = mountPage()
+    await flushPromises()
+    // 状态筛选 trigger 以真实 zh-CN aria-label 暴露
+    expect(wrapper.find(`[aria-label="${zhCN.projects.filter.status}"]`).exists()).toBe(true)
+    expect(wrapper.text()).toContain(zhCN.projects.filter.allStatus)
+  })
+
+  it('成员筛选：勾选「仅我参与」驱动 filters.member', async () => {
+    listMock.mockResolvedValue([makeProject()])
+    const wrapper = mountPage()
+    await flushPromises()
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    expect(checkbox.exists()).toBe(true)
+    await checkbox.setValue(true)
+    await flushPromises()
+    const calledFilters = listMock.mock.calls.at(-1)?.[0] ?? {}
+    expect(calledFilters).toMatchObject({ member: 'u1' })
+  })
+
+  it('全局搜索：展开面板、搜索结果渲染并标注 repo/project 定位', async () => {
+    listMock.mockResolvedValue([makeProject()])
+    searchMock.mockResolvedValue([
+      { text: '命中：登录鉴权改造方案', score: 0.92, locator: '仓库 auth-svc / 登录重构' },
+    ])
+    const wrapper = mountPage()
+    await flushPromises()
+
+    // 默认折叠：先点开全局搜索
+    expect(wrapper.find('[data-testid="global-search-panel"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="global-search-toggle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="global-search-panel"]').exists()).toBe(true)
+
+    // 输入关键词并即时触发（回车，避开防抖计时器）
+    const input = wrapper.find('[data-testid="global-search-input"]')
+    await input.setValue('登录')
+    await input.trigger('keyup.enter')
+    await flushPromises()
+
+    expect(searchMock).toHaveBeenCalledWith('p1', '登录')
+    const results = wrapper.findAll('[data-testid="search-result"]')
+    expect(results.length).toBe(1)
+    expect(wrapper.text()).toContain('命中：登录鉴权改造方案')
+    // locator 定位文案（属于 仓库/项目）
+    expect(wrapper.text()).toContain('仓库 auth-svc / 登录重构')
+    // RAG 预留位（Phase 85）
+    expect(wrapper.find('[data-testid="search-rag-slot"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('全局搜索：无结果落空态文案「没有匹配的内容」', async () => {
+    listMock.mockResolvedValue([makeProject()])
+    searchMock.mockResolvedValue([])
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-testid="global-search-toggle"]').trigger('click')
+    await flushPromises()
+    const input = wrapper.find('[data-testid="global-search-input"]')
+    await input.setValue('不存在的词')
+    await input.trigger('keyup.enter')
+    await flushPromises()
+    expect(wrapper.text()).toContain(zhCN.projects.search.emptyTitle)
+    wrapper.unmount()
+  })
+})
+
+describe('CreateProjectModal 创建入口（手动创建 + 绑定看板）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  async function mountModal() {
+    const Modal = (await import('~/components/project/CreateProjectModal.vue')).default
+    return mount(Modal, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFinalModal: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+  }
+
+  it('渲染创建表单与绑定看板字段（飞书看板链接 + 项目 Key）', async () => {
+    const wrapper = await mountModal()
+    await flushPromises()
+    expect(wrapper.text()).toContain('创建项目')
+    expect(wrapper.find('[data-testid="bind-board-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="feishu-board-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="feishu-project-key"]').exists()).toBe(true)
+  })
+
+  it('提交手动创建并携带绑定看板字段，成功后 emit confirm(projectId)', async () => {
+    createMock.mockResolvedValue({ id: 'new-proj-1' })
+    const wrapper = await mountModal()
+    await flushPromises()
+
+    // 选择空间 + 填名称 + 绑定看板字段
+    await wrapper.find('#space_id').setValue('s1')
+    await wrapper.find('#name').setValue('支付重构')
+    await wrapper.find('[data-testid="feishu-board-url"]').setValue('https://project.feishu.cn/board/x')
+    await wrapper.find('[data-testid="feishu-project-key"]').setValue('pay_key')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      space_id: 's1',
+      name: '支付重构',
+      feishu_board_url: 'https://project.feishu.cn/board/x',
+      feishu_project_key: 'pay_key',
+    }))
+    expect(wrapper.emitted('confirm')?.[0]).toEqual(['new-proj-1'])
   })
 })
