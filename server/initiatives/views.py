@@ -944,6 +944,36 @@ class ProjectCursorRulesView(APIView):
         return Response({"filename": filename, "content": content})
 
 
+# ============================ IDE hook 资产下发（HOOK-01）============================
+
+
+class ProjectIdeHookAssetsView(APIView):
+    """按 runtime 下发读路径 IDE hook 资产 bundle（GET，HOOK-01；项目读权限）。
+
+    ``GET /api/projects/<id>/ide-hook-assets/?runtime=cursor|claude_code|codex&kind=read``
+
+    返回三家 always-on 规则（强制「先反查项目 + 召回再编码」）；Claude Code 额外含
+    ``UserPromptSubmit`` 注入脚本 + ``settings.json`` 片段。读权限对齐项目读口径
+    （``_aget_project_for_read`` fail-closed，非成员不泄漏资产正文）。``kind=write`` 由
+    86-05 扩展。
+    """
+
+    async def get(self, request, project_id):
+        project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.serializers import IdeHookAssetsQuerySerializer
+        from initiatives.services.ide_hook_assets import build_read_path_assets
+
+        serializer = IdeHookAssetsQuerySerializer(data=request.query_params)
+        await sync_to_async(serializer.is_valid)(raise_exception=True)
+        runtime = serializer.validated_data["runtime"]
+        kind = serializer.validated_data["kind"]
+        bundle = await sync_to_async(build_read_path_assets)(project, runtime)
+        bundle["kind"] = kind
+        return Response(bundle)
+
+
 # ============================ 项目工作项组合（COMPOSE-01/02）============================
 
 
