@@ -164,6 +164,12 @@ class DocSyncService:
             category="caller",
             **result,
         )
+        # 写时增量材料化（CTX-01/02）：飞书→Friday 回写成功后把该文件正文物化进
+        # delivery_knowledge。飞书 pull 高频回写——依赖 ingestion 的 content_hash 短路保证重复
+        # 触发是幂等空操作（Pitfall 3），无需额外去重；钩子 best-effort 绝不反噬 pull 主流程。
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        await ProjectDocService()._schedule_materialization(doc.id, initiated_by_user_id)
         return {"status": "ok", **result}
 
     # ---- pull 内部流水线 ----
