@@ -4,8 +4,9 @@
 ====
 QPS/TPS/TTFT/上游错误统计都按 ``call_source`` 区分维度。本模块提供：
 
-- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（24 值，v0.15.0 Phase 80
-  新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``），作为
+- :class:`CallSource`：LOGGING-SPEC §4.1 全部受控枚举值（25 值，v0.15.0 Phase 80
+  新增 ``memory_distill``，v0.16.0 Phase 86 新增 ``ide_hook_distill``，v0.16.0 Phase 87
+  新增 ``board_split``），作为
   ``ModelUsageRecord.call_source`` 与各 LLM chokepoint 指标标签的权威取值；任意
   非法字符串经 :meth:`CallSource.normalize` 回退安全默认，杜绝基数失控
   （T-72-02-03 Tampering mitigation）。
@@ -30,7 +31,7 @@ UNKNOWN_CALL_SOURCE = "unknown"
 
 
 class CallSource(str, Enum):
-    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，24 值，权威照抄）。
+    """LLM/AI 调用来源受控枚举（LOGGING-SPEC §4.1，25 值，权威照抄）。
 
     取值刻意收敛为有限集合：作为指标/筛选维度时基数可控；任意字符串经
     :meth:`normalize` 回退默认，杜绝外部输入污染 call_source 维度。
@@ -63,6 +64,9 @@ class CallSource(str, Enum):
     # v0.16.0 Phase 86：report_project_knowledge active 模式蒸馏（stop hook 组织上下文 →
     # 精炼记忆条目，单轮，best-effort，用户授权 active 直写前的可选精炼）。
     IDE_HOOK_DISTILL = "ide_hook_distill"
+    # v0.16.0 Phase 87：看板拆分 FeatureListExtractor / BoardSplitService（feature list
+    # 结构化抽取 模块→功能点→验收项，单轮，按模块/标题分块时可多次调用）。
+    BOARD_SPLIT = "board_split"
 
     @classmethod
     def normalize(cls, value: object, default: str = UNKNOWN_CALL_SOURCE) -> str:

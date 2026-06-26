@@ -17,6 +17,7 @@ from initiatives.services.doc_content_service import (
     HumanWriteForbidden,
     SystemReadOnlyError,
 )
+from initiatives.services.feature_list_extractor import FeatureListExtractor
 from initiatives.services.feature_list_service import FeatureListService
 from initiatives.services.memory_distill import MemoryDistiller
 from initiatives.services.memory_service import (
@@ -60,6 +61,7 @@ __all__ = [
     "SystemReadOnlyError",
     "HumanWriteForbidden",
     "FeatureListService",
+    "FeatureListExtractor",
     "ProjectSearchService",
     "ProjectBoardSyncService",
     "BoardSyncResult",
