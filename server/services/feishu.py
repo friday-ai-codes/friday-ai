@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import httpx
+import structlog
 
 from common.encryption import decrypt_value
+from common.logging import redact_secrets_in_text
 from services.feishu_parsing import (
     build_feishu_fields,
     flatten_fields,
@@ -16,6 +18,8 @@ from services.feishu_parsing import (
     safe_response_json,
     strict_response_json,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -332,6 +336,325 @@ class FeishuClient:
 
             return relations
 
+    async def create_work_item(
+        self,
+        project_key: str,
+        work_item_type: str,
+        name: str,
+        *,
+        description: str = "",
+        template_id: Optional[int] = None,
+        extra_fields: Optional[list[dict[str, Any]]] = None,
+    ) -> int:
+        """创建工作项（飞书项目 OpenAPI 写端点，看板拆分地基 BOARD-01）。
+
+        每个 feature 拆成一个子看板 work_item：名=feature 名、描述=feature 原文。
+        鉴权复用 ``get_plugin_token()`` + ``X-PLUGIN-TOKEN`` / ``X-USER-KEY``
+        骨架（与 ``update_work_item_fields`` 一致）。
+
+        端点 / 请求体字段名标 ``[ASSUMED] A-CREATE``：Phase 78 仅验证读，写 API
+        从未真机跑通，真实端点 / 请求体 / 返回 id 字段名 deferred 记 ``87-UAT.md``，
+        autonomous 模式以 respx 覆盖契约、不打断。
+
+        Args:
+            project_key: 飞书项目空间 Key。
+            work_item_type: 工作项类型（story / 自定义类型 key）。
+            name: 工作项名（= feature 名）。
+            description: 工作项描述（= feature 原文），经 ``_markdown_to_rich_text``
+                落 ``description`` 字段。
+            template_id: 工作项模板 id（部分空间建项必填，[ASSUMED] 可选透传）。
+            extra_fields: 追加的 ``field_value_pairs`` 项（与默认字段合并）。
+
+        Returns:
+            新建工作项 id（int）。
+
+        Raises:
+            Exception: ``err_code != 0`` 或非 JSON 响应时 fail-loud 抛出（消息脱敏）。
+        """
+        started = time.perf_counter()
+        logger.info(
+            "feishu_work_item_create_started",
+            category="caller",
+            component="feishu",
+            project_key=project_key,
+            work_item_type=work_item_type,
+            name_len=len(name or ""),
+            description_len=len(description or ""),
+        )
+
+        token = await self.get_plugin_token()
+
+        # [ASSUMED] A-CREATE：description 落 description 字段（富文本），其余字段透传。
+        field_value_pairs: list[dict[str, Any]] = []
+        if description:
+            field_value_pairs.append(
+                {
+                    "field_key": "description",  # [ASSUMED] A-CREATE
+                    "field_value": self._markdown_to_rich_text(description),
+                }
+            )
+        if extra_fields:
+            field_value_pairs.extend(extra_fields)
+
+        # [ASSUMED] A-CREATE：请求体字段名（name / field_value_pairs / template_id）
+        body: dict[str, Any] = {"name": name, "field_value_pairs": field_value_pairs}
+        if template_id is not None:
+            body["template_id"] = template_id
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    # [ASSUMED] A-CREATE：work_item/{type}/create 端点
+                    f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/create",
+                    headers={
+                        "X-PLUGIN-TOKEN": token,
+                        "Content-Type": "application/json",
+                        "X-USER-KEY": self.user_key or "",
+                    },
+                    json=body,
+                )
+                data = strict_response_json(
+                    response,
+                    log_event="feishu_work_item_create_parse_failed",
+                    project_key=project_key,
+                    work_item_type=work_item_type,
+                )
+
+                if data.get("err_code") != 0:
+                    # 异常文本脱敏（绝不拼明文 token；err_msg 走 redact helper）
+                    raise Exception(
+                        redact_secrets_in_text(
+                            f"创建工作项失败 err_code={data.get('err_code')}: "
+                            f"{data.get('err_msg', '')}"
+                        )
+                    )
+
+                # [ASSUMED] A-CREATE：返回 id 字段名（data.id 或 data.work_item_id）
+                payload = data.get("data")
+                new_id: Any = None
+                if isinstance(payload, dict):
+                    new_id = payload.get("id")
+                    if new_id is None:
+                        new_id = payload.get("work_item_id")
+                elif isinstance(payload, int):
+                    new_id = payload
+                if new_id is None:
+                    raise Exception("创建工作项失败: 返回数据中缺少工作项 id")
+
+                duration_ms = (time.perf_counter() - started) * 1000
+                logger.info(
+                    "feishu_work_item_create_completed",
+                    category="caller",
+                    component="feishu",
+                    project_key=project_key,
+                    work_item_type=work_item_type,
+                    work_item_id=int(new_id),
+                    duration_ms=round(duration_ms, 2),
+                )
+                return int(new_id)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000
+            logger.warning(
+                "feishu_work_item_create_failed",
+                category="caller",
+                component="feishu",
+                project_key=project_key,
+                work_item_type=work_item_type,
+                duration_ms=round(duration_ms, 2),
+                error=redact_secrets_in_text(str(exc)),
+            )
+            raise
+
+    async def add_work_item_relation(
+        self,
+        project_key: str,
+        work_item_type: str,
+        work_item_id: int,
+        *,
+        relation_type: int,
+        target_id: int,
+        target_type: Optional[str] = None,
+    ) -> bool:
+        """为工作项写关联关系（relation_type=1 关联项目跟踪 / 父子关系）。
+
+        端点 / 请求体标 ``[ASSUMED] A-REL``：写关系端点形态 + 是否需配置中心预配
+        关系类型未真机验证，deferred 记 ``87-UAT.md``。
+
+        Args:
+            project_key: 飞书项目空间 Key。
+            work_item_type: 源工作项类型。
+            work_item_id: 源工作项 id。
+            relation_type: 关系类型（1 = 关联项目跟踪；父子关系类型由空间配置）。
+            target_id: 关联目标工作项 id。
+            target_type: 关联目标工作项类型（可选）。
+
+        Returns:
+            ``err_code == 0`` 返回 True。
+
+        Raises:
+            Exception: ``err_code != 0`` 或非 JSON 响应时 fail-loud 抛出（消息脱敏）。
+        """
+        started = time.perf_counter()
+        logger.info(
+            "feishu_work_item_relation_started",
+            category="caller",
+            component="feishu",
+            project_key=project_key,
+            work_item_type=work_item_type,
+            work_item_id=work_item_id,
+            relation_type=relation_type,
+        )
+
+        token = await self.get_plugin_token()
+
+        # [ASSUMED] A-REL：请求体字段名（relation_type / target_id / target_type）
+        body: dict[str, Any] = {
+            "relation_type": relation_type,
+            "target_id": target_id,
+        }
+        if target_type is not None:
+            body["target_type"] = target_type
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    # [ASSUMED] A-REL：work_item/{type}/{id}/relation 写端点
+                    f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/relation",
+                    headers={
+                        "X-PLUGIN-TOKEN": token,
+                        "Content-Type": "application/json",
+                        "X-USER-KEY": self.user_key or "",
+                    },
+                    json=body,
+                )
+                data = strict_response_json(
+                    response,
+                    log_event="feishu_work_item_relation_parse_failed",
+                    project_key=project_key,
+                    work_item_id=work_item_id,
+                )
+                if data.get("err_code") != 0:
+                    raise Exception(
+                        redact_secrets_in_text(
+                            f"写工作项关系失败 err_code={data.get('err_code')}: "
+                            f"{data.get('err_msg', '')}"
+                        )
+                    )
+
+                duration_ms = (time.perf_counter() - started) * 1000
+                logger.info(
+                    "feishu_work_item_relation_completed",
+                    category="caller",
+                    component="feishu",
+                    project_key=project_key,
+                    work_item_type=work_item_type,
+                    work_item_id=work_item_id,
+                    relation_type=relation_type,
+                    duration_ms=round(duration_ms, 2),
+                )
+                return True
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000
+            logger.warning(
+                "feishu_work_item_relation_failed",
+                category="caller",
+                component="feishu",
+                project_key=project_key,
+                work_item_type=work_item_type,
+                work_item_id=work_item_id,
+                relation_type=relation_type,
+                duration_ms=round(duration_ms, 2),
+                error=redact_secrets_in_text(str(exc)),
+            )
+            raise
+
+    async def detect_relation_capability(
+        self,
+        project_key: str,
+        work_item_type: str,
+    ) -> dict[str, Any]:
+        """探测空间是否配置父子 / 关联关系类型（fail-soft 降级位，绝不抛）。
+
+        看板拆分需要在建看板前判断父子关系类型是否预配：缺失则降级（建看板不挂
+        父子 + 提示去配置中心），绝不阻断建看板。
+
+        端点标 ``[ASSUMED] A-DEGRADE``：空间关系类型配置端点形态未真机确认，候选
+        ``work_item/{type}/meta``；无法确定的字段经 ``safe_response_json`` fail-soft。
+
+        Returns:
+            ``{"parent_child": bool, "project_track": bool, "raw": Any}``。
+            保守默认：关联项目跟踪可用、父子不可用（宁可降级不可误挂）。
+        """
+        # 保守默认：父子默认不可用、关联项目跟踪默认可用
+        capability: dict[str, Any] = {
+            "parent_child": False,
+            "project_track": True,
+            "raw": None,
+        }
+
+        try:
+            token = await self.get_plugin_token()
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    # [ASSUMED] A-DEGRADE：空间关系/字段类型配置元数据端点
+                    f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/meta",
+                    headers={
+                        "X-PLUGIN-TOKEN": token,
+                        "X-USER-KEY": self.user_key or "",
+                    },
+                )
+            data = safe_response_json(
+                response,
+                log_event="feishu_relation_capability_parse_failed",
+                expect=dict,
+                project_key=project_key,
+                work_item_type=work_item_type,
+            )
+            if data is None or data.get("err_code") != 0:
+                # 解析失败 / 非 dict / err_code 非 0 → 保守降级（不抛）
+                logger.debug(
+                    "feishu_relation_capability_probed",
+                    category="sampling",
+                    component="feishu",
+                    project_key=project_key,
+                    work_item_type=work_item_type,
+                    parent_child=False,
+                    project_track=True,
+                    degraded=True,
+                )
+                return capability
+
+            capability["raw"] = data.get("data")
+            # [ASSUMED] A-DEGRADE：从 meta 中识别关系类型定义
+            relation_types = _extract_relation_type_keys(data.get("data"))
+            if "parent_child" in relation_types or "parent" in relation_types:
+                capability["parent_child"] = True
+            if relation_types:
+                # 命中任意关系类型配置即认为关联项目跟踪可用
+                capability["project_track"] = True
+
+            logger.debug(
+                "feishu_relation_capability_probed",
+                category="sampling",
+                component="feishu",
+                project_key=project_key,
+                work_item_type=work_item_type,
+                parent_child=capability["parent_child"],
+                project_track=capability["project_track"],
+                degraded=False,
+            )
+            return capability
+        except Exception as exc:  # noqa: BLE001 — 探测绝不抛、绝不阻断建看板
+            logger.warning(
+                "feishu_relation_capability_probe_error",
+                category="sampling",
+                component="feishu",
+                project_key=project_key,
+                work_item_type=work_item_type,
+                error=redact_secrets_in_text(str(exc)),
+            )
+            return capability
+
     async def add_comment(
         self,
         project_key: str,
@@ -594,6 +917,41 @@ class FeishuClient:
                 }
             ]
         }
+
+
+def _extract_relation_type_keys(meta: Any) -> set[str]:
+    """从空间 meta 中尽力提取关系类型 key/name 集合（[ASSUMED] A-DEGRADE，fail-soft）。
+
+    meta 真实形状未真机确认，兼容多种候选：``relation_types`` / ``relations`` /
+    嵌套 ``fields`` 中带 ``relation`` 标记的项；逐项取 ``type_key`` / ``key`` /
+    ``name`` / ``relation_type``。任何形状不符均跳过，绝不抛。
+    """
+    keys: set[str] = set()
+    if not isinstance(meta, dict):
+        return keys
+
+    candidates: list[Any] = []
+    for container_key in ("relation_types", "relations", "relation_type_list"):
+        value = meta.get(container_key)
+        if isinstance(value, list):
+            candidates.extend(value)
+
+    # 部分空间把关系类型藏在 fields 元数据里
+    fields = meta.get("fields")
+    if isinstance(fields, list):
+        for fld in fields:
+            if isinstance(fld, dict) and "relation" in str(fld.get("field_type_key", "")):
+                candidates.append(fld)
+
+    for item in candidates:
+        if isinstance(item, str):
+            keys.add(item)
+        elif isinstance(item, dict):
+            for k in ("type_key", "key", "relation_type", "name", "field_key"):
+                v = item.get(k)
+                if isinstance(v, str) and v:
+                    keys.add(v)
+    return keys
 
 
 def verify_webhook_token(received_token: str, expected_token: str) -> bool:
