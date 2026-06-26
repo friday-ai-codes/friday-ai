@@ -134,11 +134,21 @@ Plans:
 
 Plans:
 
-- [x] 82-01-PLAN.md — 数据层：扩 Project(visibility/feishu_folder_token) + 新 ProjectDoc/ProjectDocBlockMap/ProjectStateApi + 迁移 0006（纯 AddField+CreateModel，无回填）
-- [x] 82-02-PLAN.md — 飞书供给：FeishuDocClient.create_folder + ProjectDocService(INV-6) + 后台串行建文件夹+5 文件（归因/broken）
-- [x] 82-03-PLAN.md — 权限翻转 + 初始化 REST（visibility/space 改归/ProjectDoc 列表·重建/StateApi CRUD）+ DOC-06 互链与看板段
-- [x] 82-04-PLAN.md — 前端 WS-01：侧边栏「项目」tab（首页↓空间↑）+ 列表按所选空间 localStorage 记忆 + API 接口补字段
-- [x] 82-05-PLAN.md — WS-03 会话项目绑定改归/解绑（Conversation.bound_project）
+**Wave 1** *(无前置；后端支撑与前端基座并行)*
+
+- [ ] 84-01-PLAN.md — 后端支撑 REST（WB-02/03/05 backend）：5 文件内容 GET + block 系统/人工分区 + 人工区写回触发 DocSyncService 回灌 + feature 树/进度灯 + work-items 含 status + 项目基础搜索 + StateApi PATCH
+- [ ] 84-02-PLAN.md — 前端基座 + 大盘（WB-01）：左导航+右主区工作台外壳（借 AnchorNavLayout）+ 概览/人员身份/状态栏 + projectWorkspace API 客户端 + 全量 zh-CN i18n + 区块占位
+
+**Wave 2** *(blocked on Wave 1：依赖 84-01 端点 + 84-02 外壳/契约)*
+
+- [ ] 84-03-PLAN.md — 5 文件查看/编辑（WB-03）：MarkdownRenderer 查看 + CM6 markdown 源码编辑（新增 @codemirror/lang-markdown）+ 系统区只读/人工区写回 + MEMORY 条目/LLM 草稿确认
+- [ ] 84-04-PLAN.md — feature 树+进度灯（WB-02）+ 外部依赖/关联（WB-04，工件/知识/仓库/PR；分支留 Phase 85）
+
+**Wave 3** *(blocked on Wave 2：搜索深链落点为 Wave 2 区块)*
+
+- [ ] 84-05-PLAN.md — 项目列表（WB-05）：空间/状态/成员 筛选 + 全局/模糊搜索（定位 repo/project，深度 RAG 留 Phase 85）+ 创建/绑定看板入口
+
+**Cross-cutting constraints**：全量 zh-CN（i18n）、vue-tsc 绿、不破前端基线；写回收口 Phase 83 DocSyncService（永不整篇覆盖、系统区只读）；新增后端端点遵守可观测性规范（started/completed/failed + duration_ms + category/component + RetrievalTrace）。
 
 **UI hint**: yes
 
