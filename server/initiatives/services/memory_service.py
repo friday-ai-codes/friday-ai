@@ -118,6 +118,7 @@ class MemoryService:
         )
         if not _skip_doc_push:
             await self._schedule_doc_push(project_id, initiated_by_user_id)
+        await self._schedule_materialization(memory.id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -168,6 +169,7 @@ class MemoryService:
         )
         if not _skip_doc_push:
             await self._schedule_doc_push(project_id, initiated_by_user_id)
+        await self._schedule_materialization(memory.id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -221,6 +223,7 @@ class MemoryService:
                 before={"content": before},
                 after={"content": redacted},
             )
+            await self._schedule_materialization(memory.id, initiated_by_user_id)
             return {"applied": True, "attribution": "member"}
         # 非成员飞书编辑：capture 为 revision（不进 active），归因受限，绝不抛、绝不丢。
         await self._capture_sync_revision_locked(
@@ -265,6 +268,7 @@ class MemoryService:
         )
         if not _skip_doc_push:
             await self._schedule_doc_push(project_id, initiated_by_user_id)
+        await self._schedule_materialization(memory.id, initiated_by_user_id)
         return memory
 
     @sync_to_async
@@ -424,6 +428,35 @@ class MemoryService:
                 str(initiated_by_user_id) if initiated_by_user_id else None
             ),
         )
+
+    # ---- 写时增量材料化钩子（CTX-01/02，best-effort 绝不反噬记忆写）----
+
+    @staticmethod
+    async def _schedule_materialization(
+        memory_id: Any, initiated_by_user_id: Any
+    ) -> None:
+        """记忆写后调度项目上下文材料化进 delivery_knowledge（CTX-01/02，fail-soft）。
+
+        投递经 ``aschedule_ingestion``（内部 on_commit → run_in_background，自身已吞异常），
+        透传 ``initiated_by_user_id`` 供 worker 入口 re-bind 归因（无则 system）。外层 try
+        为双保险：材料化失败绝不反噬记忆写主流程（T-85-01-02）。content_hash 短路保证重复
+        触发是幂等空操作（Pitfall 3）。
+        """
+        try:
+            from knowledge.ingestion import IngestionRequest, aschedule_ingestion
+
+            await aschedule_ingestion(
+                IngestionRequest(
+                    source_kind="project_memory",
+                    source_id=str(memory_id),
+                    trigger="project_memory_materialize",
+                ),
+                initiated_by_user_id=(
+                    str(initiated_by_user_id) if initiated_by_user_id else None
+                ),
+            )
+        except Exception:  # noqa: BLE001 — 材料化 best-effort，绝不反噬记忆写主流程
+            pass
 
     # ---- 审计 ----
 

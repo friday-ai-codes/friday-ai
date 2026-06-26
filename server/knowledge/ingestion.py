@@ -112,7 +112,9 @@ class IngestionEvent:
     edges: tuple[EdgeSpec, ...] = ()
 
 
-async def aschedule_ingestion(request: IngestionRequest) -> None:
+async def aschedule_ingestion(
+    request: IngestionRequest, *, initiated_by_user_id: str | None = None
+) -> None:
     """触发点唯一入口：注册 on_commit → run_in_background 投递后台摄取。
 
     A1 写法（RESEARCH Pattern 2，全仓唯一正确写法）：``transaction.on_commit``
@@ -120,12 +122,22 @@ async def aschedule_ingestion(request: IngestionRequest) -> None:
     默认 True，与 ORM 写同线程）在 sync 线程内注册——autocommit 下回调立即执行，
     atomic 块内延迟到 commit，rollback 时被丢弃。
 
+    ``initiated_by_user_id``（CTX-02）：非空时透传给 ``run_in_background``，由其在
+    worker 干净 context 内 ``bind_task_context(source="background")`` 重新绑定发起用户，
+    使后台摄取日志可归因；默认 ``None`` 保既有 5 个调用点零回归（无触发用户记 system）。
+
     任何异常 log warning 不上抛（"永不阻塞主流程"纪律，signals.py 同款）。
     """
 
     def _register() -> None:
         task_name = f"knowledge-ingest-{request.source_kind}-{request.source_id}"
-        transaction.on_commit(lambda: run_in_background(lambda: ingest(request), name=task_name))
+        transaction.on_commit(
+            lambda: run_in_background(
+                lambda: ingest(request),
+                name=task_name,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        )
 
     try:
         await sync_to_async(_register)()

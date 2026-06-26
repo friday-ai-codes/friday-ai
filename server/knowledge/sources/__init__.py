@@ -29,6 +29,10 @@ _NORMALIZERS: dict[str, str] = {
     # Phase 79 ARTIFACT-04：项目工件正文（飞书 doc/表格/md/repo_file）→ document 投影
     # + 工件→REFERENCES→项目图谱节点出边（KLINK-01）。
     "artifact": "knowledge.sources.artifact",
+    # Phase 85 CTX-01/02：项目上下文物化（逻辑隔离于代码 RAG，复用 delivery_knowledge）。
+    # 5 文件正文 / active 记忆 → document 投影 + REFERENCES→项目节点出边（写时增量 + 兜底重建）。
+    "project_doc": "knowledge.sources.project_doc",
+    "project_memory": "knowledge.sources.project_memory",
 }
 
 

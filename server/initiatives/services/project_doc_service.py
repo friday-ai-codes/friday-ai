@@ -518,7 +518,36 @@ class ProjectDocService:
             section=DocSection.HUMAN,
             content_hash=block_content_hash(redacted),
         )
+        # 写时增量材料化（CTX-01/02）：人工区写回后把该文件正文物化进 delivery_knowledge，
+        # best-effort 绝不反噬文件写主流程（content_hash 短路保证重复触发幂等空操作）。
+        await self._schedule_materialization(doc_id, getattr(editor, "id", None))
         return revision
+
+    @staticmethod
+    async def _schedule_materialization(
+        doc_id: Any, initiated_by_user_id: Any
+    ) -> None:
+        """文件正文写后调度材料化进 delivery_knowledge（CTX-01/02，fail-soft 不反噬）。
+
+        投递经 ``aschedule_ingestion``（内部 on_commit → run_in_background，自身已吞异常），
+        透传 ``initiated_by_user_id`` 供 worker 入口 re-bind 归因（无则 system）。外层 try
+        为双保险：材料化失败绝不阻断文件写主流程（T-85-01-02）。
+        """
+        try:
+            from knowledge.ingestion import IngestionRequest, aschedule_ingestion
+
+            await aschedule_ingestion(
+                IngestionRequest(
+                    source_kind="project_doc",
+                    source_id=str(doc_id),
+                    trigger="project_doc_materialize",
+                ),
+                initiated_by_user_id=(
+                    str(initiated_by_user_id) if initiated_by_user_id else None
+                ),
+            )
+        except Exception:  # noqa: BLE001 — 材料化 best-effort，绝不反噬文件写主流程
+            pass
 
     @sync_to_async
     def _aget_block_db_ref(self, doc_id: Any, feishu_block_id: str) -> str:

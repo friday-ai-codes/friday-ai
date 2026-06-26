@@ -370,6 +370,27 @@ def purge_alert_events_job():
 
 
 @_with_scheduler_log_context
+def rebuild_project_context_job():
+    """Job wrapper：项目上下文物化兜底全量重建（CTX-01/02，85-01）。
+
+    与 ``cleanup_orchestration_checkpoints_job`` 同 ``call_command`` 模式（命令内部已
+    ``asyncio.run``，无需 run_async_task 包装）。按 source 重新调度全部 ProjectDoc + active
+    ProjectMemory 的增量摄取，content_hash 短路保证未变内容幂等空操作，**绝不删库**。归因
+    system（scheduler 上下文）。命令异常被本 wrapper 吞掉记日志，绝不打断 scheduler。
+    """
+    from django.core.management import call_command
+
+    log = logger.bind(job="rebuild_project_context")
+    log.info("job_start")
+
+    try:
+        call_command("rebuild_project_context")
+        log.info("job_complete")
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -600,6 +621,23 @@ class Command(BaseCommand):
             replace_existing=True,
         )
         logger.info("job_registered", job="purge_alert_events", schedule="daily at 05:30")
+
+        # 项目上下文物化兜底全量重建（CTX-01/02，85-01）daily at 06:00。
+        # 选 06:00 错开既有 03:00~05:30 清理任务（量级低，按 source 重调度增量摄取，
+        # content_hash 短路保证未变内容幂等空操作，绝不删库）。
+        scheduler.add_job(
+            rebuild_project_context_job,
+            trigger=CronTrigger(hour=6, minute=0),
+            id="rebuild_project_context",
+            name="Rebuild project context materialization into delivery_knowledge (idempotent)",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="rebuild_project_context",
+            schedule="daily at 06:00",
+        )
 
         # Delete old job executions weekly
         scheduler.add_job(
