@@ -33,6 +33,7 @@ __all__ = [
     "RUNTIME_CURSOR",
     "RUNTIMES",
     "build_read_path_assets",
+    "build_write_path_assets",
 ]
 
 RUNTIME_CURSOR = "cursor"
@@ -43,10 +44,22 @@ RUNTIMES = (RUNTIME_CURSOR, RUNTIME_CLAUDE_CODE, RUNTIME_CODEX)
 # 读路径反查工具的 REST 入口（CC 注入脚本据此调用；与 mcp_tools.urls 路由一致）。
 _LOOKUP_TOOL_PATH = "/api/mcp/tools/lookup_project_by_branch/"
 
+# 写路径回写工具的 REST 入口（stop hook 脚本据此调用；与 mcp_tools.urls 路由一致）。
+_REPORT_KNOWLEDGE_TOOL_PATH = "/api/mcp/tools/report_project_knowledge/"
+_REPORT_STATE_TOOL_PATH = "/api/mcp/tools/report_project_state/"
+
 # 脱敏告诫（三家资产正文通用，绝不可绕过）。
 _REDACTION_NOTICE = (
     "绝不上报 / 打印任何凭证、密钥、token、个人敏感信息；"
     "上下文召回与写回均按项目成员权限校验，非成员不会得到上下文。"
+)
+
+# 写路径三道兜底告诫（accepted deviation 配套：active 直写的安全由服务端兜住）。
+_SERVER_SAFEGUARDS_NOTICE = (
+    "active 直写生效的防污染由 Friday 服务端三道兜底保证："
+    "① 质量门槛过滤（低质 / 空 / 重复内容不写）；"
+    "② 脱敏不可绕过（入库前强制 redact_secrets_in_text / redact_for_ledger）；"
+    "③ 审计可回滚（每次自动写入留审计、可撤销）。客户端 stop hook 只是触发器。"
 )
 
 
@@ -292,6 +305,256 @@ def build_read_path_assets(project: Any, runtime: str) -> dict[str, Any]:
             "notes": (
                 "Codex hook 能力弱，按「仅 MCP + rules」对待：只产 always-on 规则"
                 "（合并进 `AGENTS.md`）+ MCP `lookup_project_by_branch`，不产注入 hook。"
+            ),
+        }
+
+    raise ValueError(
+        f"未知 runtime：{runtime!r}（支持：{', '.join(RUNTIMES)}）"
+    )
+
+
+# ============================ 写路径（HOOK-02/03，stop hook 资产）============================
+
+
+def _stop_writeback_script(project: Any, runtime: str) -> str:
+    """三家通用的 stop hook 写回脚本（active 写回 MEMORY + STATE 结构化回写）。
+
+    **默认开启 + 静默**：会话结束自动收集「本次上下文 + 改动摘要」直写项目记忆
+    （``report_project_knowledge(writeback_mode="active")``）、把新增/改动 API 结构化清单
+    回写 STATE（``report_project_state``）。
+
+    fail-soft / 绝不阻断：无 PAT / 未绑项目 / 接口非 2xx / 任何异常 → 静默 ``exit 0``，
+    既不弹窗也不阻断 IDE 编码。脚本不内嵌任何密钥（PAT 经环境变量传入）。
+    """
+    _name, project_id, _feishu_key, _space_name = _project_fields(project)
+    return f"""#!/usr/bin/env bash
+# Friday 写路径 stop hook（{runtime}，项目 {project_id}）。
+#
+# 行为（默认开启 + 静默回写）：IDE 会话结束时自动——
+#   1) 收集本次「上下文 + 用户改动摘要」→ 调 Friday MCP `report_project_knowledge`
+#      （writeback_mode=active）直写项目记忆 MEMORY；
+#   2) 把新增 / 改动 API 的结构化清单 → 调 `report_project_state` 回写 STATE。
+#
+# 安全（三道兜底由 Friday 服务端保证，accepted deviation 配套）：
+#   {_SERVER_SAFEGUARDS_NOTICE}
+# 脱敏：{_REDACTION_NOTICE}
+#       脚本只提交 git 改动摘要，绝不拼接 / 上报凭证、密钥、token、个人敏感信息。
+# 静默不阻断：无 PAT / 未绑项目 / 接口非 2xx / 任何异常 → 静默 exit 0，绝不 block 编码。
+#
+# 所需环境变量：
+#   FRIDAY_API_URL          Friday 后端基址，如 https://friday.example.com
+#   FRIDAY_PAT              你的个人访问令牌（PAT）；脚本不内嵌任何密钥
+#   FRIDAY_PROJECT_ID       目标项目 ID（缺省取本脚本内置值）
+#   FRIDAY_STATE_APIS_FILE  可选；新增/改动 API 结构化清单 JSON 文件（数组，每项
+#                           {{method, path, params?, status?}}），无文件则跳过 STATE 回写
+#   FRIDAY_STOP_WRITEBACK   可选；设为 0 临时关闭本 hook（默认开启）
+set -u
+
+FRIDAY_API_URL="${{FRIDAY_API_URL:-}}"
+FRIDAY_PAT="${{FRIDAY_PAT:-}}"
+FRIDAY_PROJECT_ID="${{FRIDAY_PROJECT_ID:-{project_id}}}"
+FRIDAY_STATE_APIS_FILE="${{FRIDAY_STATE_APIS_FILE:-}}"
+
+# 默认开启；如需临时关闭：export FRIDAY_STOP_WRITEBACK=0
+if [ "${{FRIDAY_STOP_WRITEBACK:-1}}" = "0" ]; then
+  exit 0
+fi
+
+# 缺少必要配置（无 PAT / 未绑项目）→ 静默退出，不回写、不阻断编码。
+if [ -z "$FRIDAY_API_URL" ] || [ -z "$FRIDAY_PAT" ] || [ -z "$FRIDAY_PROJECT_ID" ]; then
+  exit 0
+fi
+
+# 收集本次改动摘要（best-effort；非 git 仓库 / 无改动均不致命）。
+changes="$(git -c core.quotepath=false diff --stat HEAD 2>/dev/null | tail -n 80)"
+recent="$(git log -n 5 --pretty=format:'- %s' 2>/dev/null)"
+
+content="$(CHANGES="$changes" RECENT="$recent" python3 - <<'PY'
+import os
+changes = os.environ.get("CHANGES", "").strip()
+recent = os.environ.get("RECENT", "").strip()
+parts = ["本次会话改动摘要（Friday stop hook 自动沉淀）："]
+if recent:
+    parts.append("最近提交：")
+    parts.append(recent)
+if changes:
+    parts.append("文件改动：")
+    parts.append(changes)
+# 仅有标题、无实际改动 → 输出空串，交给服务端质量门槛 / 此处静默跳过避免空写。
+print("\\n".join(parts) if (recent or changes) else "")
+PY
+)" || exit 0
+
+# 1) active 直写项目记忆（MEMORY）。安全由服务端三道兜底兜住（质量门槛 + 脱敏 + 审计回滚）。
+if [ -n "$(printf '%s' "$content" | tr -d '[:space:]')" ]; then
+  payload_k="$(PID="$FRIDAY_PROJECT_ID" CONTENT="$content" python3 - <<'PY'
+import json, os
+print(json.dumps({{
+    "project_id": os.environ.get("PID", ""),
+    "content": os.environ.get("CONTENT", ""),
+    "writeback_mode": "active",
+    "target": "memory",
+}}))
+PY
+)" || payload_k=""
+  if [ -n "$payload_k" ]; then
+    curl -sS -m 20 -o /dev/null \\
+      -X POST "${{FRIDAY_API_URL%/}}{_REPORT_KNOWLEDGE_TOOL_PATH}" \\
+      -H "Authorization: Bearer ${{FRIDAY_PAT}}" \\
+      -H "Content-Type: application/json" \\
+      -d "$payload_k" >/dev/null 2>&1 || true
+  fi
+fi
+
+# 2) STATE 结构化 API 清单回写（HOOK-03）。新增/改动 API 由 $FRIDAY_STATE_APIS_FILE 提供
+#    （JSON 数组，每项 {{method, path, params?, status?}}）；无文件 → 跳过，绝不阻断。
+if [ -n "$FRIDAY_STATE_APIS_FILE" ] && [ -f "$FRIDAY_STATE_APIS_FILE" ]; then
+  payload_s="$(PID="$FRIDAY_PROJECT_ID" APIS_FILE="$FRIDAY_STATE_APIS_FILE" python3 - <<'PY'
+import json, os, sys
+try:
+    with open(os.environ["APIS_FILE"], encoding="utf-8") as fh:
+        apis = json.load(fh)
+except Exception:
+    sys.exit(1)
+if not isinstance(apis, list) or not apis:
+    sys.exit(1)
+print(json.dumps({{"project_id": os.environ.get("PID", ""), "apis": apis}}))
+PY
+)" && [ -n "$payload_s" ] && \\
+    curl -sS -m 20 -o /dev/null \\
+      -X POST "${{FRIDAY_API_URL%/}}{_REPORT_STATE_TOOL_PATH}" \\
+      -H "Authorization: Bearer ${{FRIDAY_PAT}}" \\
+      -H "Content-Type: application/json" \\
+      -d "$payload_s" >/dev/null 2>&1 || true
+fi
+
+# 无论成功与否：静默 exit 0，绝不阻断 IDE 编码。
+exit 0
+"""
+
+
+def _cursor_stop_hooks_snippet() -> str:
+    """``.cursor/hooks.json`` 的 ``stop`` 钩子注册片段。"""
+    return """{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "bash .cursor/hooks/friday-stop-writeback.sh"
+      }
+    ]
+  }
+}
+"""
+
+
+def _claude_stop_settings_snippet() -> str:
+    """``.claude/settings.json`` 的 ``hooks.Stop`` 注册片段。"""
+    return """{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/friday-stop-writeback.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+"""
+
+
+def build_write_path_assets(project: Any, runtime: str) -> dict[str, Any]:
+    """生成指定 runtime 的写路径 stop hook 资产 bundle（HOOK-02/03）。
+
+    会话结束**默认开启 + 静默回写**：调 86-01 ``report_project_knowledge``
+    （``writeback_mode=active``）直写 MEMORY/RESEARCH + 调 86-04 ``report_project_state``
+    回写结构化 API 清单（STATE）。stop hook **不弹窗、不阻断编码**；无 PAT / 未绑项目 /
+    接口失败 → 静默 ``exit 0``。实际写入安全由服务端三道兜底（质量门槛 / 脱敏 / 审计回滚）保证。
+
+    Args:
+        project: ``initiatives.Project`` 实例（建议已 ``select_related("space")``）。
+        runtime: ``cursor`` / ``claude_code`` / ``codex`` 之一。
+
+    Returns:
+        ``{"runtime", "kind": "write", "files": [{"path", "filename", "content"}], "notes"}``，
+        供前端「复制 / 下载」。
+
+    Raises:
+        ValueError: 未知 runtime。
+    """
+    script = _stop_writeback_script(project, runtime)
+
+    if runtime == RUNTIME_CURSOR:
+        return {
+            "runtime": RUNTIME_CURSOR,
+            "kind": "write",
+            "files": [
+                {
+                    "path": ".cursor/hooks.json",
+                    "filename": "hooks.json",
+                    "content": _cursor_stop_hooks_snippet(),
+                },
+                {
+                    "path": ".cursor/hooks/friday-stop-writeback.sh",
+                    "filename": "friday-stop-writeback.sh",
+                    "content": script,
+                },
+            ],
+            "notes": (
+                "Cursor 写路径 = `.cursor/hooks.json` 注册 `stop` 钩子 + stop 脚本，会话结束"
+                "默认开启 + 静默回写（active 直写 MEMORY + STATE 回写）。脚本需配置环境变量 "
+                "`FRIDAY_API_URL` / `FRIDAY_PAT`（可选 `FRIDAY_STATE_APIS_FILE` 提供结构化 API "
+                "清单）；无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不弹窗或阻断编码。"
+                + _SERVER_SAFEGUARDS_NOTICE
+            ),
+        }
+
+    if runtime == RUNTIME_CLAUDE_CODE:
+        return {
+            "runtime": RUNTIME_CLAUDE_CODE,
+            "kind": "write",
+            "files": [
+                {
+                    "path": ".claude/settings.json",
+                    "filename": "settings.json",
+                    "content": _claude_stop_settings_snippet(),
+                },
+                {
+                    "path": ".claude/hooks/friday-stop-writeback.sh",
+                    "filename": "friday-stop-writeback.sh",
+                    "content": script,
+                },
+            ],
+            "notes": (
+                "Claude Code 写路径 = `.claude/settings.json` 注册 `Stop` hook + 同款 stop "
+                "脚本，会话结束默认开启 + 静默回写（active 直写 MEMORY + STATE 回写）。若已有"
+                "读路径 `UserPromptSubmit` 注册，请把 `Stop` 合并进同一 `settings.json` 的 "
+                "`hooks`。无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不阻断编码。"
+                + _SERVER_SAFEGUARDS_NOTICE
+            ),
+        }
+
+    if runtime == RUNTIME_CODEX:
+        return {
+            "runtime": RUNTIME_CODEX,
+            "kind": "write",
+            "files": [
+                {
+                    "path": "scripts/friday-stop-writeback.sh",
+                    "filename": "friday-stop-writeback.sh",
+                    "content": script,
+                }
+            ],
+            "notes": (
+                "Codex 原生 hook 注入 / 回写能力弱，按「仅 MCP + rules」对待：写路径不产自动 "
+                "stop hook，仅提供**可手动执行 / CI 兜底**的回写脚本（会话结束或 CI 阶段手动 "
+                "`bash scripts/friday-stop-writeback.sh` 触发 active 直写 + STATE 回写）。"
+                "脚本行为与三家一致：无 PAT / 未绑项目 / 接口失败均静默 exit 0，绝不阻断编码。"
+                + _SERVER_SAFEGUARDS_NOTICE
             ),
         }
 

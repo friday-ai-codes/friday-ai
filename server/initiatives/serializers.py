@@ -563,11 +563,13 @@ class MergeRequestSerializer(serializers.ModelSerializer):
 class IdeHookAssetsQuerySerializer(serializers.Serializer):
     """IDE hook 资产下发查询参数校验（HOOK-01）。
 
-    ``runtime`` 必填（``cursor`` / ``claude_code`` / ``codex``）；``kind`` 默认 ``read``，
-    写路径资产（``write``）由 86-05 扩展。
+    ``runtime`` 必填（``cursor`` / ``claude_code`` / ``codex``）；``kind`` 默认 ``read``
+    （读路径 always-on 规则 + 注入），``write`` 下发写路径 stop hook 资产（86-05）。
     """
 
     runtime = serializers.ChoiceField(
         choices=["cursor", "claude_code", "codex"], required=True
     )
-    kind = serializers.ChoiceField(choices=["read"], required=False, default="read")
+    kind = serializers.ChoiceField(
+        choices=["read", "write"], required=False, default="read"
+    )

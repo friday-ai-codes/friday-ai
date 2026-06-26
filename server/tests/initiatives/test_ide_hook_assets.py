@@ -15,6 +15,7 @@ from initiatives.services.ide_hook_assets import (
     RUNTIME_CODEX,
     RUNTIME_CURSOR,
     build_read_path_assets,
+    build_write_path_assets,
 )
 from projects.models import Space
 
@@ -111,6 +112,75 @@ def test_read_path_unknown_runtime_raises(project) -> None:
         build_read_path_assets(project, "vscode")
 
 
+# ------------------------------ 服务层（写路径 stop hook 资产生成）------------------------------
+
+
+def test_write_path_cursor_stop_hook(project) -> None:
+    bundle = build_write_path_assets(project, RUNTIME_CURSOR)
+    assert bundle["runtime"] == RUNTIME_CURSOR
+    assert bundle["kind"] == "write"
+    by_path = {f["path"]: f["content"] for f in bundle["files"]}
+    # .cursor/hooks.json 注册 stop 钩子。
+    assert ".cursor/hooks.json" in by_path
+    hooks = json.loads(by_path[".cursor/hooks.json"])
+    assert "stop" in hooks["hooks"]
+    # stop 脚本含 active 写回 + STATE 回写 + 无 PAT/失败静默 exit 0。
+    script = by_path[".cursor/hooks/friday-stop-writeback.sh"]
+    assert "report_project_knowledge" in script
+    assert '"writeback_mode": "active"' in script
+    assert "report_project_state" in script
+    assert "FRIDAY_PAT" in script
+    assert "Authorization: Bearer ${FRIDAY_PAT}" in script
+    assert "exit 0" in script
+
+
+def test_write_path_claude_code_stop_hook(project) -> None:
+    bundle = build_write_path_assets(project, RUNTIME_CLAUDE_CODE)
+    assert bundle["runtime"] == RUNTIME_CLAUDE_CODE
+    assert bundle["kind"] == "write"
+    by_path = {f["path"]: f["content"] for f in bundle["files"]}
+    # .claude/settings.json 注册 Stop hook。
+    settings = json.loads(by_path[".claude/settings.json"])
+    assert "Stop" in settings["hooks"]
+    script = by_path[".claude/hooks/friday-stop-writeback.sh"]
+    assert "report_project_knowledge" in script
+    assert '"writeback_mode": "active"' in script
+    assert "report_project_state" in script
+
+
+def test_write_path_codex_manual_script(project) -> None:
+    bundle = build_write_path_assets(project, RUNTIME_CODEX)
+    assert bundle["runtime"] == RUNTIME_CODEX
+    assert bundle["kind"] == "write"
+    files = bundle["files"]
+    assert len(files) == 1
+    # 可手动执行的回写脚本 + notes 标 Codex 弱。
+    assert files[0]["filename"] == "friday-stop-writeback.sh"
+    assert "report_project_knowledge" in files[0]["content"]
+    assert "Codex" in bundle["notes"]
+    assert "手动" in bundle["notes"]
+
+
+@pytest.mark.parametrize(
+    "runtime", [RUNTIME_CURSOR, RUNTIME_CLAUDE_CODE, RUNTIME_CODEX]
+)
+def test_write_path_default_on_silent_and_safeguards(project, runtime) -> None:
+    bundle = build_write_path_assets(project, runtime)
+    blob = "\n".join(f["content"] for f in bundle["files"])
+    # 默认开启 + 静默不阻断：含 exit 0 + 不阻断说明。
+    assert "exit 0" in blob
+    assert "不阻断" in blob
+    # 三道兜底由服务端保证。
+    assert "三道兜底" in blob
+    # 脱敏告诫：绝不上报凭证/密钥/token。
+    assert "token" in blob and ("凭证" in blob or "密钥" in blob)
+
+
+def test_write_path_unknown_runtime_raises(project) -> None:
+    with pytest.raises(ValueError):
+        build_write_path_assets(project, "vscode")
+
+
 # ------------------------------ 端点（按 runtime 下发）------------------------------
 
 
@@ -164,5 +234,56 @@ def test_endpoint_forbidden_for_outsider(project) -> None:
     client.force_authenticate(user=outsider)
     resp = client.get(
         f"/api/projects/{project.id}/ide-hook-assets/?runtime=cursor"
+    )
+    assert resp.status_code == 403
+
+
+# ------------------------------ 端点（kind=write 写路径下发）------------------------------
+
+
+@pytest.mark.parametrize(
+    "runtime", ["cursor", "claude_code", "codex"]
+)
+def test_endpoint_kind_write_returns_stop_hook(project, member, runtime) -> None:
+    client = APIClient()
+    client.force_authenticate(user=member)
+    resp = client.get(
+        f"/api/projects/{project.id}/ide-hook-assets/?kind=write&runtime={runtime}"
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["runtime"] == runtime
+    assert body["kind"] == "write"
+    blob = "\n".join(f["content"] for f in body["files"])
+    assert "report_project_knowledge" in blob
+    assert "report_project_state" in blob
+
+
+def test_endpoint_kind_write_claude_has_stop_settings(project, member) -> None:
+    client = APIClient()
+    client.force_authenticate(user=member)
+    resp = client.get(
+        f"/api/projects/{project.id}/ide-hook-assets/?kind=write&runtime=claude_code"
+    )
+    assert resp.status_code == 200, resp.content
+    by_path = {f["path"]: f["content"] for f in resp.json()["files"]}
+    assert "Stop" in json.loads(by_path[".claude/settings.json"])["hooks"]
+
+
+def test_endpoint_invalid_kind_400(project, member) -> None:
+    client = APIClient()
+    client.force_authenticate(user=member)
+    resp = client.get(
+        f"/api/projects/{project.id}/ide-hook-assets/?kind=delete&runtime=cursor"
+    )
+    assert resp.status_code == 400, resp.content
+
+
+def test_endpoint_kind_write_forbidden_for_outsider(project) -> None:
+    outsider = User.objects.create_user(username="hook_w_outsider", password="x")
+    client = APIClient()
+    client.force_authenticate(user=outsider)
+    resp = client.get(
+        f"/api/projects/{project.id}/ide-hook-assets/?kind=write&runtime=cursor"
     )
     assert resp.status_code == 403
