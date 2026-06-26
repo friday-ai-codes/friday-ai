@@ -37,7 +37,7 @@
 
 **Wave 2 — 上下文闭环（IDE hooks）：**
 
-- [ ] **Phase 85: 项目上下文可读 + 分支绑定** - 项目上下文物化为可 RAG+grep+file-read（MCP/skills/前端任意来源）+ 沉淀进知识图谱可索引/关联扩充 + `ProjectBranch` 多绑定模型 + 分支名反查项目扩展 — CTX-01/02, BIND-01/02
+- [x] **Phase 85: 项目上下文可读 + 分支绑定** - 项目上下文物化为可 RAG+grep+file-read（MCP/skills/前端任意来源）+ 沉淀进知识图谱可索引/关联扩充 + `ProjectBranch` 多绑定模型 + 分支名反查项目扩展 — CTX-01/02, BIND-01/02
 - [ ] **Phase 86: IDE 上下文闭环（hooks）** - 读路径 MCP 注入工具 + always-on rule（三家通）+ Claude Code UserPromptSubmit 注入；写路径 stop hook → report 写回 draft（质量门槛/归因/脱敏）+ STATE 结构化回写 + claude code runner 派发带上下文 + session 持久化（SessionStore→Redis）— HOOK-01~04
 
 **Wave 3 — feature list 交付流水线：**
@@ -170,16 +170,16 @@ Plans:
 
 **Wave 1** *(无前置；物化写半与分支模型并行)*
 
-- [ ] 85-01-PLAN.md — 项目上下文物化进 delivery_knowledge（CTX-01/02 写半）：project_doc/project_memory normalizer + aschedule_ingestion 归因透传 + 三处写时增量钩子（记忆/文件/飞书同步，fail-soft）+ 兜底全量重建 command + apscheduler job；A1 collection 口径决策显式记录
-- [ ] 85-03-PLAN.md — ProjectBranch 多绑定模型（BIND-01）：模型 + 迁移 0008 + ProjectBranchService 写收口（INV-6）+ 审计 action + 前端绑定 REST（写仅成员）+ branch↔board
+- [x] 85-01-PLAN.md — 项目上下文物化进 delivery_knowledge（CTX-01/02 写半）：project_doc/project_memory normalizer + aschedule_ingestion 归因透传 + 三处写时增量钩子（记忆/文件/飞书同步，fail-soft）+ 兜底全量重建 command + apscheduler job；A1 collection 口径决策显式记录
+- [x] 85-03-PLAN.md — ProjectBranch 多绑定模型（BIND-01）：模型 + 迁移 0008 + ProjectBranchService 写收口（INV-6）+ 审计 action + 前端绑定 REST（写仅成员）+ branch↔board
 
 **Wave 2** *(blocked on Wave 1：召回需 85-01 物化内容 + 复用 delivery_knowledge)*
 
-- [ ] 85-02-PLAN.md — 读侧 MCP 工具暴露（CTX-01 读半 / CTX-02 RetrievalTrace MCP 链）：search_project_context（RAG）+ grep_project（关键词+locator）+ read_project_doc（file-read）+ visibility 对称守护（members_only 非成员零召回）
+- [x] 85-02-PLAN.md — 读侧 MCP 工具暴露（CTX-01 读半 / CTX-02 RetrievalTrace MCP 链）：search_project_context（RAG）+ grep_project（关键词+locator）+ read_project_doc（file-read）+ visibility 对称守护（members_only 非成员零召回）
 
 **Wave 3** *(blocked on 85-03 模型 + 85-02 共享 mcp views/serializers)*
 
-- [ ] 85-04-PLAN.md — lookup_project_by_branch 显式多绑定反查（BIND-02）：叠加 ProjectBranch 查询 + 合并去重 + 可选 repository_id 收窄 + 多/无命中 fail-soft 候选（绝不抛、绝不阻断编码）
+- [x] 85-04-PLAN.md — lookup_project_by_branch 显式多绑定反查（BIND-02）：叠加 ProjectBranch 查询 + 合并去重 + 可选 repository_id 收窄 + 多/无命中 fail-soft 候选（绝不抛、绝不阻断编码）
 
 ### Phase 86: IDE 上下文闭环（Context Loop）
 
@@ -344,7 +344,7 @@ Plans:
 | 82. 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
 | 83. 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
 | 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ✅ Complete |
-| 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ☐ Pending |
+| 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ✅ Complete |
 | 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
 | 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ☐ Pending |
 | 88. 智能业务关联仓库 | REPO-01/02 | 3 | ☐ Pending |
