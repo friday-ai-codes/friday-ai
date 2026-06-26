@@ -18,6 +18,7 @@ from initiatives.services.doc_content_service import (
     SystemReadOnlyError,
 )
 from initiatives.services.board_split_service import BoardSplitService
+from initiatives.services.branch_provision_service import BranchProvisionService
 from initiatives.services.feature_list_extractor import FeatureListExtractor
 from initiatives.services.feature_list_service import FeatureListService
 from initiatives.services.memory_distill import MemoryDistiller
@@ -70,6 +71,7 @@ __all__ = [
     "ProjectBranchService",
     "ProjectBranchError",
     "ProjectBranchPermissionError",
+    "BranchProvisionService",
     "ArtifactService",
     "ArtifactError",
     "ArtifactDisabledError",
