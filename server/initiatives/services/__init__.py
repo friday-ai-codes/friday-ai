@@ -11,20 +11,21 @@ from initiatives.services.artifact_service import (
     ArtifactTypeError,
 )
 from initiatives.services.memory_distill import MemoryDistiller
-from initiatives.services.mr_service import (
-    MergeRequestService,
-    MergeRequestSyncError,
-)
 from initiatives.services.memory_service import (
     MemoryError,
     MemoryPermissionError,
     MemoryService,
     MemoryStateError,
 )
+from initiatives.services.mr_service import (
+    MergeRequestService,
+    MergeRequestSyncError,
+)
 from initiatives.services.project_board_sync import (
     BoardSyncResult,
     ProjectBoardSyncService,
 )
+from initiatives.services.project_doc_service import ProjectDocService
 from initiatives.services.project_service import (
     ProjectMemberError,
     ProjectService,
@@ -36,6 +37,7 @@ __all__ = [
     "ProjectService",
     "ProjectTransitionError",
     "ProjectMemberError",
+    "ProjectDocService",
     "ProjectBoardSyncService",
     "BoardSyncResult",
     "ArtifactService",
