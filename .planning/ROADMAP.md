@@ -39,8 +39,6 @@
 
 </details>
 
-## Phase Details
-
 <details>
 <summary>✅ v0.15.0 项目（交付上下文聚合根）(Phases 76–81) — SHIPPED 2026-06-26 — 审计 passed</summary>
 
