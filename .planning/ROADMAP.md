@@ -38,7 +38,7 @@
 **Wave 2 — 上下文闭环（IDE hooks）：**
 
 - [x] **Phase 85: 项目上下文可读 + 分支绑定** - 项目上下文物化为可 RAG+grep+file-read（MCP/skills/前端任意来源）+ 沉淀进知识图谱可索引/关联扩充 + `ProjectBranch` 多绑定模型 + 分支名反查项目扩展 — CTX-01/02, BIND-01/02
-- [ ] **Phase 86: IDE 上下文闭环（hooks）** - 读路径 MCP 注入工具 + always-on rule（三家通）+ Claude Code UserPromptSubmit 注入；写路径 stop hook → report 写回 draft（质量门槛/归因/脱敏）+ STATE 结构化回写 + claude code runner 派发带上下文 + session 持久化（SessionStore→Redis）— HOOK-01~04
+- [x] **Phase 86: IDE 上下文闭环（hooks）** - 读路径 MCP 注入工具 + always-on rule（三家通）+ Claude Code UserPromptSubmit 注入；写路径 stop hook → report 写回 draft（质量门槛/归因/脱敏）+ STATE 结构化回写 + claude code runner 派发带上下文 + session 持久化（SessionStore→Redis）— HOOK-01~04
 
 **Wave 3 — feature list 交付流水线：**
 
@@ -199,17 +199,17 @@ Plans:
 
 **Wave 1** *(无前置；服务端写/读路径与容器 resume 并行)*
 
-- [ ] 86-01-PLAN.md — HOOK-02 写路径 active：MemoryService.record_hook_writeback（MEMORY active 直写）+ ProjectDocService.append_research_note（RESEARCH append）+ report_project_knowledge active 模式（三道兜底：质量门槛/脱敏/审计回滚 + 归因 + 非成员/未认证静默跳过）+ 可选 ide_hook_distill call_source 登记 — **用户授权 accepted deviation**
-- [ ] 86-02-PLAN.md — HOOK-04：SessionStore→Redis（SDK session 镜像 + DB fallback + cwd 一致校验）+ runner 派发带项目上下文（pack_project_context 注入 + RetrievalTrace + 脱敏）+ 接入 v0.8 callback resume / v0.12 durable
-- [ ] 86-03-PLAN.md — HOOK-01 读路径：三家（Cursor/Claude Code/Codex）always-on 规则强制「先反查项目+召回再编码」+ Claude Code UserPromptSubmit 注入资产（Cursor beforeSubmitPrompt 不能注入 → 仅规则+MCP）+ ide-hook-assets 下发端点（读路径召回复用 lookup_project_by_branch 的 RetrievalTrace）
+- [x] 86-01-PLAN.md — HOOK-02 写路径 active：MemoryService.record_hook_writeback（MEMORY active 直写）+ ProjectDocService.append_research_note（RESEARCH append）+ report_project_knowledge active 模式（三道兜底：质量门槛/脱敏/审计回滚 + 归因 + 非成员/未认证静默跳过）+ 可选 ide_hook_distill call_source 登记 — **用户授权 accepted deviation**
+- [x] 86-02-PLAN.md — HOOK-04：SessionStore→Redis（SDK session 镜像 + DB fallback + cwd 一致校验）+ runner 派发带项目上下文（pack_project_context 注入 + RetrievalTrace + 脱敏）+ 接入 v0.8 callback resume / v0.12 durable
+- [x] 86-03-PLAN.md — HOOK-01 读路径：三家（Cursor/Claude Code/Codex）always-on 规则强制「先反查项目+召回再编码」+ Claude Code UserPromptSubmit 注入资产（Cursor beforeSubmitPrompt 不能注入 → 仅规则+MCP）+ ide-hook-assets 下发端点（读路径召回复用 lookup_project_by_branch 的 RetrievalTrace）
 
 **Wave 2** *(blocked on Wave 1：共享 mcp_tools/views.py 与 86-01)*
 
-- [ ] 86-04-PLAN.md — HOOK-03 STATE 结构化回写：report_project_state MCP 工具 → ProjectDocService.upsert_state_api（source=HOOK，(project,method,path) 幂等 + 审计可回滚）+ 跨会话/跨角色即时可读 + 成员静默跳过 + 逐条 fail-soft
+- [x] 86-04-PLAN.md — HOOK-03 STATE 结构化回写：report_project_state MCP 工具 → ProjectDocService.upsert_state_api（source=HOOK，(project,method,path) 幂等 + 审计可回滚）+ 跨会话/跨角色即时可读 + 成员静默跳过 + 逐条 fail-soft
 
 **Wave 3** *(blocked on Wave 2：写路径资产依赖 86-01/86-04 工具 + 86-03 端点/资产)*
 
-- [ ] 86-05-PLAN.md — HOOK-02/03 客户端 stop hook 资产（三家）：默认开启 + 静默回写（report_project_knowledge active + report_project_state）+ 无 PAT/未绑项目静默 exit 0 不阻断 + cursor_rules 措辞同步 active（accepted deviation）+ kind=write 下发
+- [x] 86-05-PLAN.md — HOOK-02/03 客户端 stop hook 资产（三家）：默认开启 + 静默回写（report_project_knowledge active + report_project_state）+ 无 PAT/未绑项目静默 exit 0 不阻断 + cursor_rules 措辞同步 active（accepted deviation）+ kind=write 下发
 
 **Waves**: W1 = 86-01 ∥ 86-02 ∥ 86-03（无前置）；W2 = 86-04（依赖 86-01 共享 mcp_tools 文件）；W3 = 86-05（依赖 86-03 资产/端点 + 86-04 工具）
 
@@ -365,7 +365,7 @@ Plans:
 | 83. 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
 | 84. 项目工作台前端 2.0 | WB-01~05 | 1 | ✅ Complete |
 | 85. 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ✅ Complete |
-| 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ☐ Pending |
+| 86. IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ✅ Complete |
 | 87. 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ☐ Pending |
 | 88. 智能业务关联仓库 | REPO-01/02 | 3 | ☐ Pending |
 | 89. 技术方案深化 + 建分支绑项目 | PLAN-01~04 | 3 | ☐ Pending |
