@@ -164,7 +164,22 @@ Plans:
   3. `ProjectBranch` 多绑定模型（一项目多分支，前端可绑）+ 分支↔看板结合
   4. 分支名反查项目（扩展 `lookup_project_by_branch` 支持显式多绑定），多/无命中 fail-soft
 
-**Plans**: TBD（plan-phase 拆分）
+**Plans**: 4 plans（3 waves）
+
+Plans:
+
+**Wave 1** *(无前置；物化写半与分支模型并行)*
+
+- [ ] 85-01-PLAN.md — 项目上下文物化进 delivery_knowledge（CTX-01/02 写半）：project_doc/project_memory normalizer + aschedule_ingestion 归因透传 + 三处写时增量钩子（记忆/文件/飞书同步，fail-soft）+ 兜底全量重建 command + apscheduler job；A1 collection 口径决策显式记录
+- [ ] 85-03-PLAN.md — ProjectBranch 多绑定模型（BIND-01）：模型 + 迁移 0008 + ProjectBranchService 写收口（INV-6）+ 审计 action + 前端绑定 REST（写仅成员）+ branch↔board
+
+**Wave 2** *(blocked on Wave 1：召回需 85-01 物化内容 + 复用 delivery_knowledge)*
+
+- [ ] 85-02-PLAN.md — 读侧 MCP 工具暴露（CTX-01 读半 / CTX-02 RetrievalTrace MCP 链）：search_project_context（RAG）+ grep_project（关键词+locator）+ read_project_doc（file-read）+ visibility 对称守护（members_only 非成员零召回）
+
+**Wave 3** *(blocked on 85-03 模型 + 85-02 共享 mcp views/serializers)*
+
+- [ ] 85-04-PLAN.md — lookup_project_by_branch 显式多绑定反查（BIND-02）：叠加 ProjectBranch 查询 + 合并去重 + 可选 repository_id 收窄 + 多/无命中 fail-soft 候选（绝不抛、绝不阻断编码）
 
 ### Phase 86: IDE 上下文闭环（Context Loop）
 

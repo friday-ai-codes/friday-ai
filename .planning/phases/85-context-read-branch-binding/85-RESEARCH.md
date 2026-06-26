@@ -374,7 +374,18 @@ class ReadProjectDocView(McpToolView):
 | A4 | [ASSUMED] source=coding 自动绑定由 coding/plan 流水线（Phase 89）写入 ProjectBranch，本期不接 git push webhook（现有 git webhook 仅处理 MR 状态，无 push 事件） | Open Question 3 | LOW。本期只需提供 ProjectBranchService 写入方法 + 手动 REST；push 自动绑属 Phase 89 |
 | A5 | [ASSUMED] 兜底重建按 source 重新 `aschedule_ingestion`（幂等 content_hash 短路），不删整个 delivery_knowledge | Code Examples | LOW。删整库会连带删 work_item/tech_plan 等其他来源 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 由 plan-phase 拆分（85-01~04）+ revision pass 形式定案。原始讨论保留在下方「## Open Questions（原始）」供溯源。
+
+- **OQ1 — 独立 collection 物理实现（A1）：RESOLVED**。复用既有 `delivery_knowledge` 作「项目上下文专属、逻辑独立于代码 RAG（per-repo `code_index_*`）」的承载，经新 `source_kind`（`project_doc`/`project_memory`）+ 复用 `EntityKind.DOCUMENT` 逻辑隔离，**不**新建第二个物理 collection（避免与 CTX-02 双重向量化）。决策与被否决备选已在 `85-01-PLAN.md` 的「A1 架构口径决策」节显式记录，用户可执行前 veto。
+- **OQ2 — visibility 召回过滤口径（A3 / Pitfall 2）：RESOLVED（within-phase 修复路径）**。`85-02-PLAN.md` Task 1 为安全前置门：**先**以 PASS（非 xfail）零泄漏测试验证「非成员对 members_only 项目内容经 `search_similar` 召回为零」；若 live 发现按 Space 维度而非 `initiatives.Project.visibility` 过滤导致泄漏，则**在 Phase 85 内**修复 `server/knowledge/access_scope.py` 的 visibility 过滤口径（与 85-01 normalizer 写入的 `space_id` 维度对齐），零泄漏测试通过后才暴露 3 个 MCP 召回工具。**不以 xfail 放行已知泄漏、不 defer 给 verify-work。**
+- **OQ3 — source=coding/plan 绑定写入时机（A4）：RESOLVED**。本期仅提供 `ProjectBranchService.bind(source=…)` 写收口（INV-6）+ 手动 REST（source=manual）；source=coding 的 git push 自动绑定（现 git webhook 仅 MR、无 push）与 source=plan（方案流水线）留 Phase 89 调用该 service。已在 `85-03-PLAN.md` 标注 out-of-scope / Phase 89 handoff。
+- **OQ4 — lookup_project_by_branch 是否接 repository 收窄：RESOLVED**。`85-04-PLAN.md` Task 1 为序列化器加**可选** `repository_id`，多命中时收窄；不传则跨仓返回候选（fail-soft 不变）。
+
+---
+
+## Open Questions（原始）
 
 1. **独立 collection 物理实现（A1）**
    - What we know: locked decision 要求"与代码 RAG 分离"；CTX-02 要求复用 KnowledgeEntity/Edge（= delivery_knowledge）；delivery_knowledge 已物理独立于 code_index_*。
