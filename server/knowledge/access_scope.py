@@ -17,6 +17,19 @@ if TYPE_CHECKING:
 __all__ = ["resolve_allowed_project_ids", "resolve_allowed_repository_ids"]
 
 
+@sync_to_async
+def _public_org_project_ids() -> set[str]:
+    """visibility==public_org 的项目 id 集合（只读，WS-02 读半放宽）。"""
+    from initiatives.models import Project, ProjectVisibility
+
+    return {
+        str(pid)
+        for pid in Project.objects.filter(
+            visibility=ProjectVisibility.PUBLIC_ORG
+        ).values_list("id", flat=True)
+    }
+
+
 async def resolve_allowed_project_ids(
     user: User | None,
     project_ids: list[str] | None = None,
@@ -25,8 +38,8 @@ async def resolve_allowed_project_ids(
 
     - user=None → []
     - superuser → 全项目（caller project_ids 可收窄）
-    - 普通用户 → membership 项目集合
-    - caller project_ids 与 allowed 取交集；含不可见 id → []
+    - 普通用户 → membership 项目 ∪ visibility==public_org 项目
+    - caller project_ids 与 allowed 取交集；含不可见 id → []（收窄语义不被放宽破坏）
     """
     if user is None:
         return []
@@ -35,6 +48,10 @@ async def resolve_allowed_project_ids(
         lambda: list(PermissionService.get_user_projects(user).values_list("id", flat=True))
     )()
     allowed_set = {str(pid) for pid in allowed}
+
+    # WS-02 权限翻转（读半）：public_org 项目并入可读集合（只读，不写）。
+    # members_only 不并入 → 非成员维持零可见；caller intersect 收窄语义保持不变。
+    allowed_set |= await _public_org_project_ids()
 
     if project_ids is None:
         return sorted(allowed_set)

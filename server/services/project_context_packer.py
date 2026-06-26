@@ -97,13 +97,24 @@ async def pack_project_context(
         token_budget: token 预算（超预算按优先级裁剪低优层）。
         history_messages: 会话历史文本（可选，由调用方提供）。
     """
+    from initiatives.models import ProjectVisibility
+
     project_id = getattr(project, "id", project)
-    # RECALL-03 fail-closed：非成员零召回零泄漏。
-    if not await _is_member(project_id, user):
+    # 纯枚举读不触 DB，async 安全。
+    visibility = getattr(project, "visibility", "")
+    # WS-02 权限翻转（读半，RECALL-03 visibility 感知）：
+    # - 成员（任意 visibility）→ 放行（不回退）
+    # - 非成员 + public_org → 放行（全员可读可发起会话）
+    # - 非成员 + members_only → fail-closed 零召回零泄漏
+    allowed = await _is_member(project_id, user)
+    if not allowed and visibility == ProjectVisibility.PUBLIC_ORG:
+        allowed = True
+    if not allowed:
         logger.info(
             "project_context_pack_denied",
             project_id=str(project_id),
-            reason="not_member",
+            reason="not_member_members_only",
+            visibility=str(visibility),
             component=_COMPONENT,
             category="caller",
         )
@@ -153,7 +164,13 @@ async def pack_project_context(
         total_tokens=used,
     )
 
-    await _write_trace(result, query=query, conversation_id=conversation_id, user=user)
+    await _write_trace(
+        result,
+        query=query,
+        conversation_id=conversation_id,
+        user=user,
+        visibility=str(visibility),
+    )
     return result
 
 
@@ -286,9 +303,17 @@ def _ms(start: float) -> int:
 
 
 async def _write_trace(
-    result: PackedContext, *, query: str, conversation_id: str, user: Any
+    result: PackedContext,
+    *,
+    query: str,
+    conversation_id: str,
+    user: Any,
+    visibility: str = "",
 ) -> None:
-    """上报召回条数/分层耗时/score 并写 RetrievalTrace（best-effort）。"""
+    """上报召回条数/分层耗时/score 并写 RetrievalTrace（best-effort）。
+
+    payload 标记 ``visibility``——非成员命中 public_org 召回也写 trace，保证可归因。
+    """
     try:
         from interactions.ledger import arecord_retrieval_trace
 
@@ -302,6 +327,7 @@ async def _write_trace(
                 "included_layers": result.included_layers,
                 "degraded": result.degraded,
                 "total_tokens": result.total_tokens,
+                "visibility": visibility,
             },
             user_id=str(getattr(user, "id", None)) if getattr(user, "id", None) else None,
             conversation_id=conversation_id or "",

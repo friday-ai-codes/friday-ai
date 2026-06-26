@@ -12,7 +12,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 
-from initiatives.models import Artifact, ArtifactType
+from initiatives.models import Artifact, ArtifactType, ProjectVisibility
 from initiatives.services import MemoryService, ProjectService
 from interactions.models import RetrievalTrace
 from projects.models import Space
@@ -28,18 +28,25 @@ def _make_user(username):
     return User.objects.create_user(username=username, password="x")
 
 
-async def _make_project_with_member():
+async def _make_project_with_member(*, key="pack-k", visibility=ProjectVisibility.PUBLIC_ORG):
+    """建项目并显式设 visibility（绕过 update 白名单，仅测试夹具用，不进生产写路径）。"""
     space = await sync_to_async(Space.objects.create)(name="S")
-    owner = await _make_user("owner")
+    owner = await _make_user(f"owner-{key}")
     project, _ = await ProjectService().create(
-        space=space, name="P", feishu_project_key="pack-k", created_by=owner
+        space=space, name="P", feishu_project_key=key, created_by=owner
     )
+    if visibility != ProjectVisibility.PUBLIC_ORG:
+        project.visibility = visibility
+        await project.asave(update_fields=["visibility"])
     project = await type(project).objects.select_related("space").aget(pk=project.id)
     return project, owner
 
 
-async def test_non_member_zero_recall_fail_closed():
-    project, owner = await _make_project_with_member()
+async def test_members_only_non_member_zero_recall_fail_closed():
+    """members_only 非成员 → 零召回零泄漏（维持 fail-closed）。"""
+    project, owner = await _make_project_with_member(
+        key="mo-k", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
     await MemoryService().append(
         project_id=project.id, content="机密决策", contributor=owner
     )
@@ -47,6 +54,33 @@ async def test_non_member_zero_recall_fail_closed():
     packed = await pack_project_context(project, stranger)
     assert packed.text == ""
     assert packed.included_layers == []
+
+
+async def test_public_org_non_member_can_recall():
+    """public_org 非成员 → 读放行（按内容产出非空打包）。"""
+    project, owner = await _make_project_with_member(
+        key="po-k", visibility=ProjectVisibility.PUBLIC_ORG
+    )
+    await MemoryService().append(
+        project_id=project.id, content="公开记忆条目", contributor=owner
+    )
+    stranger = await _make_user("stranger-po")
+    packed = await pack_project_context(project, stranger)
+    assert "公开记忆条目" in packed.text
+    assert packed.included_layers != []
+
+
+async def test_member_members_only_not_regressed():
+    """成员 + members_only → 仍可召回（读放宽不回退成员既有权限）。"""
+    project, owner = await _make_project_with_member(
+        key="mo-mem-k", visibility=ProjectVisibility.MEMBERS_ONLY
+    )
+    await MemoryService().append(
+        project_id=project.id, content="成员可见记忆", contributor=owner
+    )
+    packed = await pack_project_context(project, owner)
+    assert "成员可见记忆" in packed.text
+    assert packed.included_layers != []
 
 
 async def test_aggregates_memory_and_artifacts():
