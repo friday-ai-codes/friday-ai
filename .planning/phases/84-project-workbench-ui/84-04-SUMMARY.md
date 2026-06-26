@@ -1,49 +1,49 @@
-# 84-04 SUMMARY — 工作台 feature 树 + 进度灯（WB-02）+ 外部依赖关联（WB-04）
+# 84-04 Summary — 工作台 feature 树 + 进度灯（WB-02）+ 外部依赖关联展示（WB-04）
 
-**Plan:** 84-04 | **Phase:** 84 项目工作台前端 2.0 | **Wave:** 2 | **Requirements:** WB-02, WB-04
-**Status:** ✅ Done | **Completed:** 2026-06-27
+**Plan:** `.planning/phases/84-project-workbench-ui/84-04-PLAN.md`
+**Wave:** 2 · depends_on [84-01, 84-02]
+**Requirements:** WB-02, WB-04
 
-## What shipped
+## 交付内容
 
-补全 84-02 占位的两个工作台区块组件，复用 84-01 端点与 84-02 API 模块，未引入新依赖、未杜撰端点。
-
-### WB-02 — `FeatureListSection.vue`（feature 树 + 进度灯）
-- 调 `projectWorkspaceApi.getFeatureList(id)`，queryKey `['project-features', idRef]`。
-- 三层 `reka-ui Collapsible` 折叠树：**模块 → 功能点 → 验收项**，每层可折叠（trigger 带 reka-ui `data-state` / `aria-expanded`），默认展开。
-- 功能点行右侧**进度灯**（圆点 + 文案），按 WorkItem 状态四态映射 UI-SPEC 语义色：
+### WB-02 — FeatureListSection.vue（feature 树 + 进度灯）
+- 调 `projectWorkspaceApi.getFeatureList(id)`（queryKey `['project-features', idRef]`）。
+- 渲染 **模块 → 功能点 → 验收项** 三层 `Collapsible` 折叠树；trigger 带 `aria-expanded` + chevron `group-data-[state=open]:rotate-90`。
+- 功能点右侧进度灯（圆点 + 文案），按 84-01 WorkItem 状态映射四态语义色（UI-SPEC）：
   - 待开发 `bg-muted text-muted-foreground`
   - 进行中 `bg-primary/15 text-primary`
   - 测试中 `bg-amber-500/15 text-amber-500`
   - 已完成 `bg-emerald-500/15 text-emerald-500`
-- 加载 `LoadingState skeleton` / 空 `EmptyState`（"还没有 feature"）/ 错误行内重试。
+- 加载 `LoadingState skeleton`、空 `EmptyState`（“还没有 feature”）、错 行内重试。
+- 模块无功能点 / 功能点无验收项 各有兜底文案。
 
-### WB-04 — `DependenciesSection.vue`（外部依赖 / 关联）
-- **外部工件**：`artifactsApi.list` 按 `type_name` 分组（原型 / Spec / UI 稿 / 评审 / 复盘…，缺陷以工作项呈现，UI 文案标注映射来源）+ 在线查看弹窗（复用 `ArtifactsTab` view 模式，`MarkdownRenderer` 不解析 HTML、外链 `rel="noopener noreferrer"`）。
-- **关联分支**：Phase 85 占位标注（不杜撰 ProjectBranch 端点）。
-- **关联仓库**：经项目 `space_id`（`projectsApi.get`）→ `getSpaceRepositories`，`enabled` 守门。
-- **知识关联 / 关联项目**：`projectsApi.graph` 节点，按 `kind` 拆分（非 project → 知识；project → 关联项目）。
-- **关联 PR / MR**：`mergeRequestsApi.list` 只读列表 + 外链 + 状态徽章。
-- 各分组独立 query + 加载/空/错兜底。
+### WB-04 — DependenciesSection.vue（外部依赖 / 关联）
+- 六个分组卡片，各自独立 query + 加载/空/错兜底：
+  - **外部工件**：`artifactsApi.list` 按类型分组 + 在线查看 `Dialog`（复用 ArtifactsTab view 模式，markdown/text/link/records 分支，外链 `rel="noopener noreferrer"`）；UI 文案标注覆盖 原型/Spec/缺陷/UI 稿/评审/复盘 的归类来源。
+  - **关联分支**：占位标注「Phase 85 开放」（ProjectBranch 多绑定不杜撰端点）。
+  - **关联仓库**：`projectsApi.get` 取 `space_id` → `getSpaceRepositories(spaceId)`（dependent query，enabled on space_id）。
+  - **知识关联** / **关联项目**：`projectsApi.graph(direction=both, maxHops=1)`，按 `kind === 'project'` 拆分知识节点与关联项目节点。
+  - **关联 PR / MR**：`mergeRequestsApi.list` 只读列表 + 外链 + 状态徽标。
 
-## Files
+### i18n（zh-CN.json，命名空间 `projects.workbench.*`）
+- `feature.*`：`noFeatures` / `noAcceptance` + 既有 `state.{todo,in_progress,testing,done}`。
+- `deps.*`：`artifactsTitle/artifactsHint/artifactsEmpty/artifactsLoadError`、`branchesTitle/branchesDeferred`、`repositoriesTitle/repositoriesEmpty/repositoriesLoadError`、`knowledgeTitle/knowledgeEmpty/knowledgeLoadError`、`projectsTitle/projectsEmpty`、`mergeRequestsTitle/mrEmpty/mrLoadError`。
 
-**Modified**
-- `web/src/components/project/workbench/FeatureListSection.vue`（占位 → WB-02 实现）
-- `web/src/components/project/workbench/DependenciesSection.vue`（占位 → WB-04 实现）
-- `web/src/locales/zh-CN.json`（新增 `projects.workbench.feature.noFeatures/noAcceptance` + `projects.workbench.deps.*` 分组文案）
+### 测试
+- `__tests__/FeatureListSection.spec.ts`：三层树渲染、四态灯 class+文案、折叠 aria-expanded 切换、空态、错误态重试。
+- `__tests__/DependenciesSection.spec.ts`：六分组渲染（含分支占位）、PR 列表、工件按类型分组可查看、各分组空态文案。
 
-**Created**
-- `web/src/components/project/workbench/__tests__/FeatureListSection.spec.ts`
-- `web/src/components/project/workbench/__tests__/DependenciesSection.spec.ts`
+## 验证结果
+- `cd web && pnpm vue-tsc --noEmit` ✅ 通过（无错误）。
+- `pnpm vitest run` 两个 spec ✅ **9 passed**。
+- 全量 zh-CN；不破前端基线。
 
-## Verification
-- `pnpm vue-tsc --noEmit` ✅ 通过（exit 0）
-- `pnpm vitest run FeatureListSection DependenciesSection` ✅ 2 files / 8 tests passed
-  - 树三层渲染、四态进度灯 class + zh-CN 文案、空态、错误重试
-  - 工件分组 + PR 列表 + 仓库渲染 + 各分组空态文案
-- ESLint：无新增告警（ReadLints 干净）
+## 说明 / 缺口
+- ProjectBranch 多绑定按计划诚实标注 Phase 85，未杜撰端点。
+- 本 plan 与并行 84-03（DocsSection 等）共享 `zh-CN.json`：仅本 plan 的 feature/deps 键由本次落地，其余键归属对应 plan。
 
-## Honest gaps（按 plan 诚实标注）
-- **ProjectBranch 多绑定**：UI 预留"关联分支"位并标注 "Phase 85 开放"，本期不接端点。
-- **关联项目**：依赖 `graph` 返回 `kind==='project'` 节点；后端暂未必产出该类节点时显示空态。
-- 工件类别"缺陷/原型"无内置类型者：以工件类型注册表 `type_name` 实际归类，UI 文案注明缺陷以工作项呈现。
+## Must-Haves 校验
+- [x] 模块→功能点→验收项 三层折叠树
+- [x] 功能点四态进度灯（看板 WorkItem 状态点亮）
+- [x] 外部依赖：工件（原型/Spec/缺陷/UI 稿/评审/复盘）+ 分支/知识/仓库/项目/PR
+- [x] 树折叠与依赖列表均有 加载/空/错 兜底

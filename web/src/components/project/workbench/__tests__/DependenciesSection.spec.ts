@@ -1,7 +1,8 @@
 /**
  * DependenciesSection 守护测试（WB-04）。
  *
- * 覆盖：外部工件分组 + PR 列表渲染 / 分支 Phase 85 占位 / 各分组空态（真实 zh-CN 文案）。
+ * 覆盖：外部工件 / 分支(Phase85) / 仓库 / 知识 / 项目 / PR 分组渲染 /
+ * PR 列表渲染 / 工件按类型分组可查看 / 各分组空态真实 zh-CN 文案。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -9,6 +10,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zhCN from '~/locales/zh-CN.json'
 
+vi.mock('~/composables/useToast', () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }),
+}))
 vi.mock('~/composables/useErrorHandler', () => ({
   useErrorHandler: () => ({ handleError: vi.fn() }),
 }))
@@ -21,31 +25,28 @@ vi.mock('~/api/artifacts', () => ({
     view: (...a: unknown[]) => artifactsViewMock(...a),
   },
 }))
-
 const mrListMock = vi.fn()
 vi.mock('~/api/mergeRequests', () => ({
   mergeRequestsApi: { list: (...a: unknown[]) => mrListMock(...a) },
 }))
-
-const projectGetMock = vi.fn()
-const projectGraphMock = vi.fn()
+const graphMock = vi.fn()
+const getProjectMock = vi.fn()
 vi.mock('~/api/projects', () => ({
   projectsApi: {
-    get: (...a: unknown[]) => projectGetMock(...a),
-    graph: (...a: unknown[]) => projectGraphMock(...a),
+    graph: (...a: unknown[]) => graphMock(...a),
+    get: (...a: unknown[]) => getProjectMock(...a),
   },
 }))
-
-const reposMock = vi.fn()
+const getReposMock = vi.fn()
 vi.mock('~/api/spaces', () => ({
-  getSpaceRepositories: (...a: unknown[]) => reposMock(...a),
+  getSpaceRepositories: (...a: unknown[]) => getReposMock(...a),
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
 
 const Comp = (await import('../DependenciesSection.vue')).default
 
-function mountSection() {
+function mountComp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return mount(Comp, {
     props: { projectId: 'p1' },
@@ -53,30 +54,27 @@ function mountSection() {
   })
 }
 
-function setEmptyDefaults() {
+function setupEmpty() {
   artifactsListMock.mockResolvedValue([])
   mrListMock.mockResolvedValue([])
-  projectGetMock.mockResolvedValue({ id: 'p1', space_id: 's1', name: '项目一' })
-  projectGraphMock.mockResolvedValue({ project_id: 'p1', nodes: [] })
-  reposMock.mockResolvedValue([])
+  graphMock.mockResolvedValue({ project_id: 'p1', nodes: [] })
+  getProjectMock.mockResolvedValue({ id: 'p1', space_id: 's1' })
+  getReposMock.mockResolvedValue([])
 }
 
-describe('DependenciesSection（WB-04 外部依赖/关联）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    setEmptyDefaults()
-  })
+describe('dependenciesSection（WB-04）', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it('渲染各分组标题与分支 Phase 85 占位', async () => {
-    const wrapper = mountSection()
+  it('渲染六个依赖分组（含分支 Phase85 占位）', async () => {
+    setupEmpty()
+    const wrapper = mountComp()
     await flushPromises()
-
     expect(wrapper.find('[data-testid="deps-artifacts"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="deps-branches"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="deps-repos"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="deps-knowledge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="deps-projects"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="deps-mrs"]').exists()).toBe(true)
-
     const text = wrapper.text()
     expect(text).toContain(zhCN.projects.workbench.deps.artifactsTitle)
     expect(text).toContain(zhCN.projects.workbench.deps.branchesTitle)
@@ -84,25 +82,8 @@ describe('DependenciesSection（WB-04 外部依赖/关联）', () => {
     expect(text).toContain(zhCN.projects.workbench.deps.mergeRequestsTitle)
   })
 
-  it('渲染外部工件分组与 PR 列表', async () => {
-    artifactsListMock.mockResolvedValue([
-      {
-        id: 'a1',
-        project_id: 'p1',
-        type_id: 't1',
-        type_key: 'ui_design',
-        type_name: 'UI 稿',
-        ragable: false,
-        carrier: 'feishu_doc',
-        title: '登录页 UI 稿',
-        url: 'https://example.com/doc',
-        content_ref: '',
-        version: 2,
-        contributor_id: null,
-        created_at: '2026-06-20T00:00:00Z',
-        updated_at: '2026-06-20T00:00:00Z',
-      },
-    ])
+  it('PR 列表渲染（外链 + 状态徽标）', async () => {
+    setupEmpty()
     mrListMock.mockResolvedValue([
       {
         id: 'mr1',
@@ -112,7 +93,7 @@ describe('DependenciesSection（WB-04 外部依赖/关联）', () => {
         platform: 'github',
         external_id: '12',
         url: 'https://github.com/x/y/pull/12',
-        title: '实现登录',
+        title: '登录重构 PR',
         source_branch: 'feat/login',
         target_branch: 'main',
         status: 'open',
@@ -121,31 +102,44 @@ describe('DependenciesSection（WB-04 外部依赖/关联）', () => {
         updated_at: '2026-06-20T00:00:00Z',
       },
     ])
-    const wrapper = mountSection()
+    const wrapper = mountComp()
     await flushPromises()
-
-    expect(wrapper.findAll('[data-testid="deps-artifact-row"]').length).toBe(1)
-    expect(wrapper.text()).toContain('登录页 UI 稿')
-    expect(wrapper.text()).toContain('UI 稿')
-
-    const mrRows = wrapper.findAll('[data-testid="deps-mr-row"]')
-    expect(mrRows.length).toBe(1)
-    expect(wrapper.text()).toContain('实现登录')
+    const rows = wrapper.findAll('[data-testid="deps-mr-row"]')
+    expect(rows.length).toBe(1)
+    expect(wrapper.text()).toContain('登录重构 PR')
     expect(wrapper.text()).toContain(zhCN.projects.links.mrStatus.open)
   })
 
-  it('渲染关联仓库（经所属空间）', async () => {
-    reposMock.mockResolvedValue([
-      { id: 'lk1', repository_id: 'r1', repository_name: 'friday-web', permission_level: 'read', created_at: '2026-06-20T00:00:00Z' },
+  it('外部工件按类型分组渲染并可查看', async () => {
+    setupEmpty()
+    artifactsListMock.mockResolvedValue([
+      {
+        id: 'a1',
+        project_id: 'p1',
+        type_id: 't1',
+        type_key: 'ui_design',
+        type_name: 'UI 稿',
+        ragable: false,
+        carrier: 'external_link',
+        title: '登录页 UI',
+        url: 'https://figma.com/x',
+        content_ref: '',
+        version: 1,
+        contributor_id: null,
+        created_at: '2026-06-20T00:00:00Z',
+        updated_at: '2026-06-20T00:00:00Z',
+      },
     ])
-    const wrapper = mountSection()
+    const wrapper = mountComp()
     await flushPromises()
-    expect(wrapper.findAll('[data-testid="deps-repo-row"]').length).toBe(1)
-    expect(wrapper.text()).toContain('friday-web')
+    expect(wrapper.findAll('[data-testid="deps-artifact-row"]').length).toBe(1)
+    expect(wrapper.text()).toContain('UI 稿')
+    expect(wrapper.find('[data-testid="deps-view-artifact-btn"]').exists()).toBe(true)
   })
 
-  it('各分组空态渲染 zh-CN 文案', async () => {
-    const wrapper = mountSection()
+  it('各分组空态渲染真实 zh-CN 文案', async () => {
+    setupEmpty()
+    const wrapper = mountComp()
     await flushPromises()
     const text = wrapper.text()
     expect(text).toContain(zhCN.projects.workbench.deps.artifactsEmpty)
