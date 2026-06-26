@@ -39,6 +39,7 @@ from typing import Any
 
 import structlog
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
 from common.logging import redact_secrets_in_text
 from initiatives.models import (
@@ -54,13 +55,28 @@ from initiatives.models import (
     ProjectStatus,
 )
 from initiatives.services.doc_sync_cache import invalidate_doc_render
-from initiatives.services.doc_sync_diff import BlockDiff, diff_blocks
+from initiatives.services.doc_sync_diff import (
+    BlockDiff,
+    block_content_hash,
+    diff_blocks,
+    three_way_merge,
+)
 
 logger = structlog.get_logger(__name__)
 
 __all__ = ["DocSyncService"]
 
 _COMPONENT = "doc_sync"
+
+# 编辑感知延迟写（OQ-3）：push 前若距 last_feishu_edit_at 不足该窗口（秒）判为「用户活跃编辑中」，
+# 不抢写、重排 run_at 延迟落，避免与用户飞书编辑冲撞（防 T-83-04-RACE）。
+DOC_SYNC_ACTIVE_EDIT_WINDOW = 15
+# 活跃时重排推送的延迟（秒），到静默窗口再尝试落。
+DOC_SYNC_DEFER_SECONDS = 10
+# 乐观并发 rebase 有限重试上限（CAS 落空→pull rebase 再推），绝不死循环（Pitfall 3）。
+_MAX_PUSH_REBASE_ATTEMPTS = 3
+# 系统区落败方飞书评论提示文案（capture-never-clobber 时 best-effort 提示，绝不阻断）。
+_CAPTURE_COMMENT_TEXT = "此段由系统维护，您的修改已留痕保存，请写到人工编辑区以免被覆盖。"
 
 
 class DocSyncService:
@@ -156,6 +172,11 @@ class DocSyncService:
         # 回拉正文（DocumentNotFoundError 等错误由 pull 捕获置 broken）。
         markdown, raw_blocks = await client.get_document_content(doc.feishu_document_id)
 
+        # 记录飞书侧编辑时间（编辑感知延迟写探测源，OQ-3）：drive 事件回拉即视为最近编辑。
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        await ProjectDocService().touch_feishu_edit(doc_id=doc.id, at=timezone.now())
+
         theirs = self._normalize_theirs_blocks(raw_blocks, blocks_to_markdown)
         block_map = await self._load_block_map(doc.id)
         diffs = diff_blocks(
@@ -166,7 +187,7 @@ class DocSyncService:
 
         counts = {"added": 0, "edited": 0, "deleted": 0, "captured": 0}
         for d in diffs:
-            await self._apply_diff(doc, d, initiated_by_user_id, counts)
+            await self._apply_diff(doc, d, block_map, client, initiated_by_user_id, counts)
 
         # CAS 推进水位（乐观并发）：以入口读到的 revision 为期望值。真实飞书 revision 整型
         # 回填留 A5 live 验证；本期用单调 +1 推进（不依赖飞书 revision，仍保证 CAS 语义）。
@@ -181,6 +202,8 @@ class DocSyncService:
         self,
         doc: ProjectDoc,
         d: BlockDiff,
+        block_map: dict[str, dict[str, str]],
+        client: Any,
         initiated_by_user_id: str | None,
         counts: dict[str, int],
     ) -> None:
@@ -208,24 +231,14 @@ class DocSyncService:
             counts["added"] += 1
 
         elif d.op == "edited":
-            applied = False
-            if is_memory and d.db_ref:
-                applied = await self._memory_edit(
-                    d.db_ref, d.content, initiated_by_user_id
+            base_hash = self._mapped_hash(block_map.get(d.feishu_block_id))
+            if is_memory:
+                await self._apply_memory_edit(
+                    doc, d, initiated_by_user_id, client, counts
                 )
-            if not applied:
-                # 飞书优先覆盖快照 + capture 飞书侧内容留痕（never-drop，SYNC-04）。
-                # TODO(83-04): 真三方合并（base=last_synced / theirs=飞书 / ours=DB），
-                # 相交冲突落败方 capture + 飞书评论提示；本期最简“飞书优先 + 留痕”。
-                await svc.capture_block_revision(
-                    doc_id=doc.id,
-                    feishu_block_id=d.feishu_block_id,
-                    content=d.content,
-                    db_ref=d.db_ref,
-                    source="feishu",
-                    reason="pull_edit",
-                )
-                counts["captured"] += 1
+            else:
+                await self._apply_generic_edit(doc, d, base_hash, client, counts)
+            # 飞书侧 merged 即新态：推进 block_map 指纹（飞书优先覆盖快照）。
             await svc.upsert_block_map(
                 doc_id=doc.id,
                 feishu_block_id=d.feishu_block_id,
@@ -253,6 +266,205 @@ class DocSyncService:
             category="sampling",
         )
 
+    # ---- pull 同块冲突三方合并（base=last-synced / theirs=飞书 / ours=DB，SYNC-04）----
+
+    async def _apply_generic_edit(
+        self,
+        doc: ProjectDoc,
+        d: BlockDiff,
+        base_hash: str,
+        client: Any,
+        counts: dict[str, int],
+    ) -> None:
+        """非 MEMORY 同块编辑：三方合并飞书优先；相交冲突落败系统侧 capture（绝不静默丢）。
+
+        ``ours``（DB 系统态）能解析时走 ``three_way_merge``：仅飞书改→自动并（不产 revision）；
+        两侧都改且相交→DB 取飞书侧 merged、落败方（ours）经 ``capture_block_revision`` 留
+        ``ProjectDocBlockRevision`` + best-effort 飞书评论。``ours`` 不可解析（db_ref 空/无渲染器）
+        → 退回 83-02「飞书优先 + 留痕」（source=feishu），仍 never-drop。
+        """
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        svc = ProjectDocService()
+        ours = await self._resolve_ours_content(doc, d)
+        if ours is None:
+            # 无独立系统态可比对 → 飞书优先 + 留痕（83-02 行为，never-drop）。
+            await svc.capture_block_revision(
+                doc_id=doc.id,
+                feishu_block_id=d.feishu_block_id,
+                content=d.content,
+                db_ref=d.db_ref,
+                source="feishu",
+                reason="pull_edit",
+            )
+            counts["captured"] += 1
+            return
+
+        merge = three_way_merge(
+            base=self._base_for_merge(base_hash, ours), theirs=d.content, ours=ours
+        )
+        if merge.has_conflict:
+            # 相交冲突：DB 取飞书侧 merged（飞书优先），落败系统侧 capture（绝不静默丢）。
+            await svc.capture_block_revision(
+                doc_id=doc.id,
+                feishu_block_id=d.feishu_block_id,
+                content=merge.loser,
+                db_ref=d.db_ref,
+                source="system",
+                reason="conflict_loser",
+            )
+            counts["captured"] += 1
+            self._log_conflict_captured(doc, d, merge.loser)
+            await self._best_effort_comment(client, doc, d.feishu_block_id)
+        # 不相交（仅飞书改 / 两侧改成相同）→ 自动并，飞书侧 merged 即新态，不产 revision。
+
+    async def _apply_memory_edit(
+        self,
+        doc: ProjectDoc,
+        d: BlockDiff,
+        initiated_by_user_id: str | None,
+        client: Any,
+        counts: dict[str, int],
+    ) -> None:
+        """MEMORY 同块编辑走受限 sync 入口（OQ-1）：成员落 active+revision；非成员 capture 不进 active。
+
+        非成员飞书编辑 fail-soft 接受（不抛、active 不变、落 revision），归因 system/unmapped，
+        best-effort 飞书评论提示；任何异常兜底 capture 飞书内容（never-drop）。
+        """
+        from initiatives.services.memory_service import MemoryService
+        from initiatives.services.project_doc_service import ProjectDocService
+
+        if not d.db_ref:
+            # 无 db_ref 映射 → 退回飞书优先 + 留痕（never-drop）。
+            await ProjectDocService().capture_block_revision(
+                doc_id=doc.id,
+                feishu_block_id=d.feishu_block_id,
+                content=d.content,
+                db_ref=d.db_ref,
+                source="feishu",
+                reason="pull_edit",
+            )
+            counts["captured"] += 1
+            return
+
+        editor = await self._resolve_user(initiated_by_user_id)
+        try:
+            outcome = await MemoryService().sync_edit(
+                memory_id=d.db_ref,
+                content=d.content,
+                editor=editor,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — MEMORY 写失败兜底 capture，绝不反噬整条 pull
+            self._log_memory_write_failed("edit", exc)
+            await ProjectDocService().capture_block_revision(
+                doc_id=doc.id,
+                feishu_block_id=d.feishu_block_id,
+                content=d.content,
+                db_ref=d.db_ref,
+                source="feishu",
+                reason="pull_edit",
+            )
+            counts["captured"] += 1
+            return
+
+        if not outcome.get("applied", False):
+            # 非成员飞书编辑：已在 MemoryService 落 revision 不进 active；记归因 + 评论提示。
+            counts["captured"] += 1
+            self._log_nonmember_captured(doc, d, outcome.get("attribution", "system"))
+            await self._best_effort_comment(client, doc, d.feishu_block_id)
+
+    async def _resolve_ours_content(
+        self, doc: ProjectDoc, d: BlockDiff
+    ) -> str | None:
+        """解析某块的 DB 系统态（ours），用于三方合并；不可解析返回 None（退回飞书优先）。
+
+        - STATE：按 db_ref 取 ``ProjectStateApi`` 渲染（与 push 渲染口径一致）。
+        - 其余非 MEMORY 文件：暂无 per-block DB 态（系统派生区渲染留后续）→ None。
+        """
+        if not d.db_ref:
+            return None
+        if doc.doc_type == DocType.STATE:
+            return await self._aget_state_api_content(d.db_ref)
+        return None
+
+    @sync_to_async
+    def _aget_state_api_content(self, db_ref: str) -> str | None:
+        row = (
+            ProjectStateApi.objects.filter(pk=db_ref)
+            .values("method", "path", "status")
+            .first()
+        )
+        if row is None:
+            return None
+        return f"{row['method']} {row['path']} — {row['status']}"
+
+    @staticmethod
+    def _base_for_merge(base_hash: str, ours: str) -> str:
+        """构造三方合并 base 入参（``three_way_merge`` 仅做相等比较，无需真实 base 正文）。
+
+        - ``ours`` 指纹 == base 指纹 → 系统侧自上次同步未改 → base 即 ours（仅飞书改→自动并）。
+        - 否则系统侧也改过 → 返回与 ours/theirs 必不相等的占位（保留「两侧都改」冲突判定），
+          真实 base 正文未逐块持久化（仅存 content_hash + 整篇快照），占位即可驱动正确归并。
+        """
+        if block_content_hash(ours) == base_hash:
+            return ours
+        return f"\x00base:{base_hash}"
+
+    @staticmethod
+    def _mapped_hash(mapped: Any) -> str:
+        if isinstance(mapped, dict):
+            return str(mapped.get("content_hash", "") or "")
+        return ""
+
+    async def _best_effort_comment(
+        self, client: Any, doc: ProjectDoc, feishu_block_id: str
+    ) -> None:
+        """capture 落败方时给飞书块发评论提示（A4 [ASSUMED]，整段 fail-soft 绝不反噬同步）。"""
+        try:
+            await client.add_comment(
+                doc.feishu_document_id,
+                block_id=feishu_block_id,
+                text=_CAPTURE_COMMENT_TEXT,
+            )
+        except Exception as exc:  # noqa: BLE001 — 评论失败不影响 capture/同步（DB 留痕保底）
+            logger.warning(
+                "doc_capture_comment_failed",
+                doc_id=str(doc.id),
+                error_type=type(exc).__name__,
+                component=_COMPONENT,
+                category="caller",
+            )
+
+    @staticmethod
+    def _log_conflict_captured(doc: ProjectDoc, d: BlockDiff, loser: str) -> None:
+        """同块冲突落败方 capture 留痕（caller，只记落败长度计数，绝不记正文，T-83-04-INFO）。"""
+        logger.info(
+            "doc_block_conflict_captured",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            feishu_block_id=d.feishu_block_id,
+            section=d.section,
+            loser_len=len(loser or ""),
+            component=_COMPONENT,
+            category="caller",
+        )
+
+    @staticmethod
+    def _log_nonmember_captured(
+        doc: ProjectDoc, d: BlockDiff, attribution: str
+    ) -> None:
+        """MEMORY 非成员飞书编辑 capture（caller，记归因，不进 active，绝不记正文，OQ-1）。"""
+        logger.info(
+            "doc_nonmember_edit_captured",
+            doc_id=str(doc.id),
+            doc_type=doc.doc_type,
+            feishu_block_id=d.feishu_block_id,
+            attribution=attribution,
+            component=_COMPONENT,
+            category="caller",
+        )
+
     # ---- MEMORY 写收口（经 MemoryService，OQ-1 独立 sync 路径）----
 
     async def _memory_append(
@@ -274,29 +486,6 @@ class DocSyncService:
         except Exception as exc:  # noqa: BLE001 — MEMORY 写失败不反噬整条 pull（脱敏后记 warning）
             self._log_memory_write_failed("append", exc)
             return None
-
-    async def _memory_edit(
-        self, memory_id: str, content: str, initiated_by_user_id: str | None
-    ) -> bool:
-        """飞书编辑块 → 编辑对应记忆（成员可编辑；非成员/异常返回 False 交调用方 capture 留痕）。"""
-        from initiatives.services.memory_service import MemoryError, MemoryService
-
-        editor = await self._resolve_user(initiated_by_user_id)
-        try:
-            await MemoryService().edit(
-                memory_id=memory_id,
-                content=content,
-                editor=editor,
-                initiated_by_user_id=initiated_by_user_id,
-                _skip_doc_push=True,  # 飞书镜像回写，防 pull→push 回声（T-83-03-ECHO）
-            )
-            return True
-        except MemoryError:
-            # 非成员飞书编辑（MEM-02 fail-closed）/ 状态非法 → 不就地改，交 capture 留痕（never-drop）。
-            return False
-        except Exception as exc:  # noqa: BLE001 — 其余异常脱敏记 warning，交 capture 留痕
-            self._log_memory_write_failed("edit", exc)
-            return False
 
     async def _memory_supersede(
         self, memory_id: str, initiated_by_user_id: str | None
@@ -366,6 +555,18 @@ class DocSyncService:
             self._log_push_skipped(doc_id, uid_repr, "unsupported_doc_type")
             return {"status": "skipped", "reason": "unsupported_doc_type"}
 
+        # 编辑感知延迟写（OQ-3，gate ①）：用户活跃编辑中 → 不抢写，重排 run_at 延迟落。
+        if self._is_active_edit(doc):
+            await self._defer_push(doc, initiated_by_user_id)
+            logger.debug(
+                "doc_push_deferred_active_edit",
+                doc_id=str(doc.id),
+                doc_type=doc.doc_type,
+                component=_COMPONENT,
+                category="sampling",
+            )
+            return {"status": "deferred", "reason": "active_edit"}
+
         logger.info(
             "doc_sync_push_started",
             doc_id=str(doc.id),
@@ -377,7 +578,7 @@ class DocSyncService:
         )
 
         try:
-            result = await self._push_apply(doc, entries)
+            result = await self._push_with_rebase(doc, entries, initiated_by_user_id)
         except Exception as exc:  # noqa: BLE001 — 推送失败 fail-soft，置 broken 绝不反噬
             from initiatives.services.project_doc_service import ProjectDocService
 
@@ -413,6 +614,80 @@ class DocSyncService:
             **result,
         )
         return {"status": "ok", **result}
+
+    # ---- push gate：编辑感知延迟写 + 乐观并发 rebase（83-04，不依赖真实 doing lock）----
+
+    @staticmethod
+    def _is_active_edit(doc: ProjectDoc) -> bool:
+        """判定文档是否处于「用户活跃编辑」窗口（距 last_feishu_edit_at < ACTIVE_EDIT_WINDOW 秒）。"""
+        last = doc.last_feishu_edit_at
+        if last is None:
+            return False
+        delta = (timezone.now() - last).total_seconds()
+        return 0 <= delta < DOC_SYNC_ACTIVE_EDIT_WINDOW
+
+    async def _defer_push(
+        self, doc: ProjectDoc, initiated_by_user_id: str | None
+    ) -> None:
+        """活跃编辑中重排一次延迟推送（lock/key 与 debounce 同口径），整段 fail-soft 不反噬。"""
+        try:
+            from datetime import timedelta
+
+            from durable.queues import QUEUE_DOC_SYNC
+            from durable.service import DurableTaskService
+
+            await DurableTaskService.defer(
+                "durable_doc_sync_push",
+                {"doc_id": str(doc.id)},
+                queue=QUEUE_DOC_SYNC,
+                lock=f"docsync-{doc.feishu_document_id}",
+                idempotency_key=f"docpush:{doc.id}",
+                run_at=timezone.now() + timedelta(seconds=DOC_SYNC_DEFER_SECONDS),
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — 重排失败 fail-soft，绝不反噬 push 调用方
+            logger.warning(
+                "doc_push_defer_failed",
+                doc_id=str(doc.id),
+                error_type=type(exc).__name__,
+                component=_COMPONENT,
+                category="caller",
+            )
+
+    async def _push_with_rebase(
+        self, doc: ProjectDoc, entries: list[dict[str, str]], uid: str | None
+    ) -> dict[str, Any]:
+        """乐观并发推送（gate ②，Pitfall 3）：CAS 推进水位落空→先 pull rebase 再重试（有限次）。
+
+        不依赖 durable doing lock（in-process fallback 忽略 lock）：``_push_apply`` 内 CAS
+        条件 update ``last_synced_revision``；并发改过（影响 0 行）→ ``advanced=False`` →
+        本方法重拉 rebase（``self.pull``）再以最新水位重试，``_MAX_PUSH_REBASE_ATTEMPTS`` 上限
+        防死循环。重试时 push 自身幂等（已落 block_map 的块不再重复增量）。
+        """
+        result: dict[str, Any] = {}
+        for _attempt in range(_MAX_PUSH_REBASE_ATTEMPTS):
+            result = await self._push_apply(doc, entries)
+            if result.get("advanced", False):
+                return result
+            # CAS 落空：并发 pull/push 改过水位 → 先 pull rebase 再以最新态重试。
+            logger.info(
+                "doc_push_rebased",
+                doc_id=str(doc.id),
+                doc_type=doc.doc_type,
+                initiated_by_user_id=uid or "system",
+                component=_COMPONENT,
+                category="caller",
+            )
+            await self.pull(file_token=doc.feishu_document_id, initiated_by_user_id=uid)
+            refreshed = await self._aget_doc_by_id(doc.id)
+            if refreshed is None:
+                break
+            doc = refreshed
+            rerendered = await self._render_system_entries(doc.doc_type, doc.project_id)
+            if rerendered is None:
+                break
+            entries = rerendered
+        return result
 
     async def _push_apply(
         self, doc: ProjectDoc, entries: list[dict[str, str]]

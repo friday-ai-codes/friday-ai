@@ -374,6 +374,80 @@ class FeishuDocClient:
         )
         return ok
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def _add_comment_request(
+        self, document_id: str, block_id: str, text: str
+    ) -> bool:
+        """对文档/块发一条评论的实际外呼（限流经 @retry 退避）。
+
+        # [ASSUMED] A4: 端点形态 MEDIUM，需 live 验证
+        # （POST /docx/v1/documents/{document_id}/comments，tenant_token 鉴权，body 含
+        # quote/block_id + reply_list 文本，返回 data.code==0 即成功）。真实端点/请求体/响应
+        # 需 live 验证后标 [VERIFIED]（记入 83-UAT.md，与 A4 同组）。
+        """
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/comments",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "block_id": block_id,
+                    "reply_list": {
+                        "replies": [
+                            {"content": {"elements": [{"text_run": {"text": text}}]}}
+                        ]
+                    },
+                },
+            )
+            data = response.json()
+            if data.get("code") != 0:
+                error_msg = data.get("msg", "Unknown error")
+                if "rate limit" in error_msg.lower() or data.get("code") == 99991400:
+                    raise RateLimitError(f"Rate limit hit: {error_msg}")
+                # 非限流错误（权限/端点漂移）→ fail-soft 返回 False（不抛）。
+                return False
+            return True
+
+    async def add_comment(
+        self, document_id: str, *, block_id: str, text: str
+    ) -> bool:
+        """给某 block 发评论提示（capture 落败方时的飞书侧提示），返回是否成功（fail-soft，绝不抛）。
+
+        三方合并 capture-never-clobber 时，对落败 block 发评论提示（如「此段系统维护，请写到
+        人工区」），整段 **best-effort**：评论失败（限流耗尽/权限/端点漂移/网络）一律
+        **fail-soft 返回 False**，绝不影响 capture/同步主流程（T-83-04-CLOBBER 仍以 DB 留痕保底）。
+        仅记 ``document_id``/``block_id`` 业务标识 + 结果布尔，**绝不**记评论正文/token。
+        """
+        try:
+            ok = await self._add_comment_request(document_id, block_id, text)
+        except Exception as exc:  # noqa: BLE001 — 评论失败 fail-soft（DB 留痕保底），绝不抛
+            logger.warning(
+                "feishu_doc_comment_failed",
+                document_id=document_id,
+                block_id=block_id,
+                error_type=type(exc).__name__,
+                component="doc_sync",
+                category="caller",
+            )
+            return False
+        logger.debug(
+            "feishu_doc_comment_added",
+            document_id=document_id,
+            block_id=block_id,
+            ok=ok,
+            component="doc_sync",
+            category="sampling",
+        )
+        return ok
+
     def _raise_for_block_error(self, data: dict[str, Any]) -> None:
         """分类 block 级写 API 的 ``code!=0``（镜像 ``get_document_content`` 错误码口径）。
 

@@ -241,11 +241,32 @@ class ProjectDocService:
     ) -> ProjectDocBlockRevision:
         """三方合并落败方 append-only 留痕（绝不静默丢用户内容，SYNC-04）。
 
-        本计划（83-01）建写入收口（INV-6），编排（何时调、归因、飞书评论提示）由 83-04 填充。
+        唯一 ``ProjectDocBlockRevision`` 写入入口（INV-6）；编排（何时调、归因、飞书评论提示）由
+        ``DocSyncService``（83-04）填充。``content`` 入库前经 ``redact_secrets_in_text`` 脱敏
+        （留痕正文绝不含明文凭证，T-83-04-INFO）。
         """
+        from common.logging import redact_secrets_in_text
+
+        redacted = redact_secrets_in_text(content or "")
         return await self._capture_block_revision_locked(
-            doc_id, feishu_block_id, content, db_ref, source, reason
+            doc_id, feishu_block_id, redacted, db_ref, source, reason
         )
+
+    async def touch_feishu_edit(self, *, doc_id: Any, at: Any = None) -> None:
+        """记录某文件最近一次飞书侧编辑时间（编辑感知延迟写探测数据源，OQ-3）。
+
+        ``last_feishu_edit_at`` 在 drive 事件回拉（``DocSyncService.pull``）时更新为事件时间；
+        push 前据此判活跃窗口决定是否延迟写。best-effort 单字段 update，不反噬同步主流程。
+        """
+        await self._touch_feishu_edit_locked(doc_id, at)
+
+    @sync_to_async
+    def _touch_feishu_edit_locked(self, doc_id: Any, at: Any) -> None:
+        ts = at or timezone.now()
+        with transaction.atomic():
+            ProjectDoc.objects.filter(pk=doc_id).update(
+                last_feishu_edit_at=ts, updated_at=timezone.now()
+            )
 
     @sync_to_async
     def _capture_block_revision_locked(

@@ -25,6 +25,20 @@
 
 > A4 同组的 `add_comment`（83-04 capture 评论提示）一并 live 验证端点/请求体后回填。
 
+## 83-04（SYNC-04 三方合并 + capture-never-clobber + 编辑感知延迟写 + 乐观并发 rebase）
+
+| ID | 契约假设 [ASSUMED] | 代码位置 | how-to-verify（真机） | 回填动作 |
+|----|--------------------|----------|------------------------|----------|
+| A4-comment | `add_comment`=POST `/docx/v1/documents/{document_id}/comments`，body 含 `block_id` + `reply_list.replies[].content.elements[].text_run.text`，`data.code==0` 即成功 | `server/services/feishu_doc.py::FeishuDocClient._add_comment_request` + `DocSyncService._best_effort_comment` | 对真实 docx 的某 block 发评论，确认端点路径 + 请求体（评论内容结构）+ 成功响应码 | 回填真实端点/请求体；改 [VERIFIED]（整段 fail-soft，回填前评论失败不影响 capture/同步） |
+| A5-merge-base | 三方合并 base 正文未逐块持久化（仅存 `ProjectDocBlockMap.content_hash` + 整篇 `last_synced_snapshot`）；`three_way_merge` 用「ours 指纹==base 指纹 → base 即 ours，否则占位符」驱动归并判定（仅做相等比较，base 真实正文不影响 disjoint/相交结论） | `server/initiatives/services/doc_sync_service.py::_base_for_merge` | 取到真实文档 `revision` 后，可选改为持久化逐块 base 正文做精确字符级合并（当前块级整体合并已满足 SYNC-04 capture-never-clobber 语义） | 若需字符级合并再回填逐块 base 存储；当前块级整体合并标 [VERIFIED] |
+
+### 83-04 备注
+
+- 同块三方合并（base=last-synced / theirs=飞书 / ours=DB）+ capture-never-clobber：相交冲突 DB 取飞书侧 merged，落败系统侧落 `ProjectDocBlockRevision`(source=system, reason=conflict_loser)、MEMORY 非成员落 `ProjectMemoryRevision` 不进 active、飞书评论提示 best-effort；不相交自动并。
+- 编辑感知延迟写（`last_feishu_edit_at` < `DOC_SYNC_ACTIVE_EDIT_WINDOW`=15s → 重排 `run_at=now+DOC_SYNC_DEFER_SECONDS`，不抢写）+ 乐观并发 rebase（CAS 推进 `last_synced_revision` 落空 → `pull` rebase 再重试，`_MAX_PUSH_REBASE_ATTEMPTS`=3 防死循环，不依赖真实 durable doing lock）均已实现并经 respx/单测覆盖，**不依赖** live 飞书。
+- MEMORY 非成员飞书编辑 fail-soft 归因（OQ-1）：受限 sync 入口 `MemoryService.sync_edit`（成员落 active+revision；非成员 capture revision 不进 active，归因 system/unmapped）；前端贡献 `MemoryService.edit` 仍 MEM-02 fail-closed 不变。
+- capture content 入库经 `redact_secrets_in_text`（`ProjectDocService.capture_block_revision`）；冲突/非成员日志只记 `loser_len`/`attribution` 计数，绝不记正文（T-83-04-INFO）；INV-6 写收口（`ProjectDocService`/`MemoryService`）。
+
 ### 备注
 
 - 归因（`resolve_feishu_user(open_id)`，未映射 `system`）、durable 串行 lock（`docsync-{feishu_document_id}`）、
