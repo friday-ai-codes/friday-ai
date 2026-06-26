@@ -66,6 +66,7 @@
 **Plans**: 5 plans
 
 Plans:
+
 - [x] 82-01-PLAN.md — 扩 Project(visibility/feishu_folder_token) + 新 ProjectDoc/ProjectDocBlockMap/ProjectStateApi 模型 + 迁移 0006（纯 AddField+CreateModel 无回填）
 - [x] 82-02-PLAN.md — FeishuDocClient.create_folder + ProjectDocService 单一写入(INV-6) + 后台串行建文件夹/5 文件/互链/看板描述追加(DOC-06) + broken 兜底 + guard/feishu respx 测试
 - [x] 82-03-PLAN.md — 权限翻转读半：pack_project_context + access_scope 按 visibility 分流（public_org 读放行 / members_only fail-closed）+ 对称守护测试
@@ -90,13 +91,26 @@ Plans:
   5. 边界全覆盖：漏事件、同块冲突、编辑系统区、文档被删/移、归档停同步转只读快照、redis 不可用降级、非成员编辑归因——全部 fail-soft 不反噬
 
 **Plans**: 6 plans（5 waves）
-
 Plans:
+**Wave 1**
+
 - [ ] 83-01-PLAN.md — 地基：migration 0007（ProjectDoc subscribed/last_feishu_edit_at OQ-4 + ProjectDocBlockRevision capture 落点 OQ-2）+ doc_sync_diff.py 纯函数（block_id 结构化 diff + 三方合并，无 IO）+ conftest — SYNC-03/04
 - [ ] 83-05-PLAN.md — read-through 缓存模块 doc_sync_cache.py（命中/失效 delete/redis 故障降级直读 DB）+ settings IGNORE_EXCEPTIONS + TTL — SYNC-05
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 83-02-PLAN.md — 飞书→Friday：drive.file.edit_v1 路由+normalizer+归因 + durable pull plumbing(QUEUE_DOC_SYNC) + subscribe_file + DocSyncService.pull + INV-6 guard + live-Feishu UAT 检查点（autonomous:false）— SYNC-01
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 83-03-PLAN.md — Friday→飞书：update_block/delete_blocks + DocSyncService.push（系统区 block 级增量，永不整篇 replace）+ per-doc 串行/debounce/退避 + 系统区写后钩子 — SYNC-02
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 83-04-PLAN.md — 冲突：三方合并 + capture-never-clobber（ProjectDocBlockRevision/ProjectMemoryRevision + 飞书评论）+ OQ-1 MEMORY 非成员 fail-soft 归因 + 编辑感知延迟写(OQ-3) + 乐观并发 rebase — SYNC-03/04
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 83-06-PLAN.md — 边界全集：TTL 兜底轮询 poll_project_docs_revisions + not-found→broken+一键重建 + 归档停同步退订转只读快照 + 非成员归因 + 限流退避，全 fail-soft — SYNC-06（强化 SYNC-01）
 
 **Waves**: W1 = 83-01 ∥ 83-05（无依赖）；W2 = 83-02（依赖 01/05）；W3 = 83-03（依赖 02）；W4 = 83-04（依赖 02/03）；W5 = 83-06（依赖 02/03/04）
@@ -119,6 +133,7 @@ Plans:
 **Plans**: 5 plans（3 waves）
 
 Plans:
+
 - [x] 82-01-PLAN.md — 数据层：扩 Project(visibility/feishu_folder_token) + 新 ProjectDoc/ProjectDocBlockMap/ProjectStateApi + 迁移 0006（纯 AddField+CreateModel，无回填）
 - [x] 82-02-PLAN.md — 飞书供给：FeishuDocClient.create_folder + ProjectDocService(INV-6) + 后台串行建文件夹+5 文件（归因/broken）
 - [x] 82-03-PLAN.md — 权限翻转 + 初始化 REST（visibility/space 改归/ProjectDoc 列表·重建/StateApi CRUD）+ DOC-06 互链与看板段
