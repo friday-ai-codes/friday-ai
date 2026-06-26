@@ -66,6 +66,10 @@ __all__ = [
     "ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED",
     "ACTION_PROJECT_MEMORY_DRAFT_REJECTED",
     "ACTION_MERGE_REQUEST_SYNCED",
+    # ---- v0.16.0 Phase 82 项目工作区 ----
+    "ACTION_PROJECT_WORKSPACE_PROVISIONED",
+    "ACTION_PROJECT_STATE_API_ADDED",
+    "ACTION_PROJECT_STATE_API_REMOVED",
     "ALL_ACTIONS",
     "RESERVED_ACTIONS",
 ]
@@ -125,6 +129,11 @@ ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED: Final[str] = "project.memory_draft_confir
 ACTION_PROJECT_MEMORY_DRAFT_REJECTED: Final[str] = "project.memory_draft_rejected"
 ACTION_MERGE_REQUEST_SYNCED: Final[str] = "merge_request.synced"
 
+# ---- v0.16.0 Phase 82 项目工作区 action 常量（component=initiatives）----
+ACTION_PROJECT_WORKSPACE_PROVISIONED: Final[str] = "project.workspace_provisioned"
+ACTION_PROJECT_STATE_API_ADDED: Final[str] = "project.state_api_added"
+ACTION_PROJECT_STATE_API_REMOVED: Final[str] = "project.state_api_removed"
+
 # 本 phase 定义的种子 action 全集（守护测试基准）
 ALL_ACTIONS: Final[frozenset[str]] = frozenset(
     {
@@ -169,6 +178,9 @@ ALL_ACTIONS: Final[frozenset[str]] = frozenset(
         ACTION_PROJECT_MEMORY_DRAFT_CONFIRMED,
         ACTION_PROJECT_MEMORY_DRAFT_REJECTED,
         ACTION_MERGE_REQUEST_SYNCED,
+        ACTION_PROJECT_WORKSPACE_PROVISIONED,
+        ACTION_PROJECT_STATE_API_ADDED,
+        ACTION_PROJECT_STATE_API_REMOVED,
     }
 )
 

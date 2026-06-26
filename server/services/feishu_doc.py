@@ -249,6 +249,69 @@ class FeishuDocClient:
                 "url": doc_url,
             }
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def create_folder(self, name: str, folder_token: str) -> str:
+        """在指定父文件夹下创建子文件夹，返回新文件夹 token。
+
+        镜像 ``create_document`` 的 token/headers/retry/错误码处理。每项目专属工作区
+        文件夹经此创建（父 = Space 的 ``feishu_doc_folder_token``）。
+
+        约束：飞书 Drive ``create_folder`` 5QPS 且**不可并发** —— 调用方须 per-task 串行
+        （绝不 ``asyncio.gather``）；限流（``99991400`` / msg 含 "rate limit"）经 @retry 退避。
+
+        # A1: 端点形态 MEDIUM，需 live 验证（POST /drive/v1/files/create_folder，
+        # body {name, folder_token}，返回 data.token）。
+
+        Args:
+            name: 新文件夹名称。
+            folder_token: 父文件夹 token（Space ``feishu_doc_folder_token``）。
+
+        Returns:
+            新建文件夹 token。
+
+        Raises:
+            FeishuDocAPIError: API 调用失败或返回体缺 token。
+            RateLimitError: 命中限流（@retry 自动退避重试）。
+        """
+        token = await self.get_tenant_access_token()
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/drive/v1/files/create_folder",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "name": name,
+                    "folder_token": folder_token,
+                },
+            )
+            data = response.json()
+
+            if data.get("code") != 0:
+                error_msg = data.get("msg", "Unknown error")
+                if "rate limit" in error_msg.lower() or data.get("code") == 99991400:
+                    raise RateLimitError(f"Rate limit hit: {error_msg}")
+                raise FeishuDocAPIError(f"Failed to create folder: {error_msg}")
+
+            new_token = data.get("data", {}).get("token", "")
+            if not new_token:
+                raise FeishuDocAPIError("No token in create_folder response")
+
+            # 仅记父/新 token（业务标识，非凭证/正文），便于排障定位。
+            logger.info(
+                "feishu_folder_created",
+                folder_token=folder_token,
+                new_token=new_token,
+            )
+            return new_token
+
     async def append_markdown(
         self,
         document_id: str,

@@ -123,6 +123,24 @@ class ProjectService:
                 project.id, "created", {"name": name, "status": project.status}
             )
 
+            # WS-04：建项目后台 best-effort 派发飞书工作区 provision（建文件夹 + 5 文件）。
+            # 函数级 import 避免循环依赖；整段吞异常 + warning，绝不阻断 create 返回。
+            try:
+                from initiatives.services.project_doc_service import ProjectDocService
+
+                ProjectDocService().provision_dispatch(
+                    project.id, initiated_by_user_id=actor_id
+                )
+            except Exception as exc:  # noqa: BLE001 — provision 派发失败不反噬建项目
+                logger.warning(
+                    "project_workspace_provision_dispatch_failed",
+                    project_id=str(project.id),
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    component=_COMPONENT,
+                    category="caller",
+                )
+
         return project, created
 
     @sync_to_async
@@ -214,6 +232,44 @@ class ProjectService:
             if changes:
                 project.save(update_fields=[*changes.keys(), "updated_at"])
         return project, before
+
+    async def set_folder_token(
+        self,
+        *,
+        project_id: Any,
+        token: str,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> Project:
+        """落项目飞书工作区文件夹 token（WS-04，专用方法不进 update 白名单，Pitfall 3）。
+
+        后台 provision 串行建文件夹成功后调用；审计 ``project.workspace_provisioned``。
+        """
+        project = await self._set_folder_token_locked(project_id, token)
+        actor_id = initiated_by_user_id or getattr(actor, "id", None)
+        await AuditService.aemit(
+            action=taxonomy.ACTION_PROJECT_WORKSPACE_PROVISIONED,
+            actor=actor,
+            target_type="project",
+            target_id=project.id,
+            target_repr=project.name,
+            after={"feishu_folder_token": token},
+            metadata={
+                "component": _COMPONENT,
+                "category": "caller",
+                "initiated_by_user_id": str(actor_id) if actor_id else "system",
+            },
+            source="api",
+        )
+        return project
+
+    @sync_to_async
+    def _set_folder_token_locked(self, project_id: Any, token: str) -> Project:
+        with transaction.atomic():
+            project = Project.objects.select_for_update().get(pk=project_id)
+            project.feishu_folder_token = token
+            project.save(update_fields=["feishu_folder_token", "updated_at"])
+        return project
 
     # ---- 状态机（PROJ-02） ----
 
