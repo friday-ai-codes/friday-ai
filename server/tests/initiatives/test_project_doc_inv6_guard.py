@@ -31,7 +31,12 @@ _PRUNE_DIRS = {
 
 _ALLOWED_WRITER = "initiatives/services/project_doc_service.py"
 
-_MODELS = ("ProjectDoc", "ProjectDocBlockMap", "ProjectStateApi")
+_MODELS = (
+    "ProjectDoc",
+    "ProjectDocBlockMap",
+    "ProjectDocBlockRevision",
+    "ProjectStateApi",
+)
 _RE_ORM_WRITE = {
     m: re.compile(
         rf"\b{m}\.objects\.(?:create|bulk_create|get_or_create|update_or_create)\b"

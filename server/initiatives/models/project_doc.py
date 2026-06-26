@@ -75,6 +75,12 @@ class ProjectDoc(models.Model):
         default=DocSyncStatus.PENDING,
         verbose_name="同步状态",
     )
+    # 飞书侧文件订阅态（drive.file.edit_v1 subscribe，注册态在飞书侧，DB 仅记标志，OQ-4）。
+    subscribed = models.BooleanField(default=False, verbose_name="已订阅飞书编辑事件")
+    # 最近一次飞书侧编辑时间：编辑感知延迟写的活跃探测数据源（OQ-3/OQ-4）。
+    last_feishu_edit_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="最近飞书编辑时间"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -131,3 +137,42 @@ class ProjectDocBlockMap(models.Model):
 
     def __str__(self) -> str:
         return f"ProjectDocBlockMap({self.doc_id}, {self.feishu_block_id})"
+
+
+class ProjectDocBlockRevision(models.Model):
+    """capture-never-clobber 落败方留痕（SYNC-04，OQ-2）。
+
+    同步引擎做三方合并时，相交冲突的落败一侧内容（飞书优先，DB 侧落败）在此 append-only 留史，
+    作为 STATE/MILESTONES/RESEARCH/PREFLIGHT 等"人工区/正文段"的通用 capture 落点
+    （MEMORY 仍走 ``ProjectMemoryRevision``）。**绝不静默丢用户内容**。
+
+    本计划（83-01）只建表，不加业务 create/save 方法——写入收口于
+    ``initiatives.services.ProjectDocService.capture_block_revision``（INV-6，由
+    ``test_project_doc_inv6_guard`` grep 守护），编排由 83-04 填充。
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    doc = models.ForeignKey(
+        "initiatives.ProjectDoc",
+        on_delete=models.CASCADE,
+        related_name="block_revisions",
+        verbose_name="所属文件",
+    )
+    feishu_block_id = models.CharField(max_length=200, verbose_name="飞书 block id")
+    db_ref = models.CharField(max_length=200, blank=True, default="", verbose_name="库内引用")
+    content = models.TextField(verbose_name="留痕内容")
+    source = models.CharField(max_length=20, default="system", verbose_name="来源")
+    reason = models.CharField(max_length=40, blank=True, default="", verbose_name="留痕原因")
+    captured_at = models.DateTimeField(auto_now_add=True, verbose_name="捕获时间")
+
+    class Meta:
+        db_table = "initiative_project_doc_block_revisions"
+        verbose_name = "项目文件 block 留痕"
+        verbose_name_plural = "项目文件 block 留痕"
+        ordering = ["-captured_at"]
+        indexes = [
+            models.Index(fields=["doc", "feishu_block_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"ProjectDocBlockRevision({self.doc_id}, {self.feishu_block_id})"

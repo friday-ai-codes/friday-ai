@@ -27,6 +27,7 @@ from initiatives.models.project_doc import (
     DocType,
     ProjectDoc,
     ProjectDocBlockMap,
+    ProjectDocBlockRevision,
 )
 from initiatives.models.project_state_api import (
     ApiSource,
@@ -42,6 +43,7 @@ __all__ = [
     "ProjectVisibility",
     "ProjectDoc",
     "ProjectDocBlockMap",
+    "ProjectDocBlockRevision",
     "DocType",
     "DocSyncStatus",
     "DocSection",

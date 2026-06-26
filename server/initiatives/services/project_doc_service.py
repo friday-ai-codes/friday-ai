@@ -38,6 +38,7 @@ from initiatives.models import (
     DocType,
     ProjectDoc,
     ProjectDocBlockMap,
+    ProjectDocBlockRevision,
     ProjectStateApi,
 )
 
@@ -176,6 +177,46 @@ class ProjectDocService:
                     "section": section,
                     "content_hash": content_hash,
                 },
+            )
+
+    # ---- ProjectDocBlockRevision 写入（capture-never-clobber，SYNC-04） ----
+
+    async def capture_block_revision(
+        self,
+        *,
+        doc_id: Any,
+        feishu_block_id: str,
+        content: str,
+        db_ref: str = "",
+        source: str = "system",
+        reason: str = "",
+    ) -> ProjectDocBlockRevision:
+        """三方合并落败方 append-only 留痕（绝不静默丢用户内容，SYNC-04）。
+
+        本计划（83-01）建写入收口（INV-6），编排（何时调、归因、飞书评论提示）由 83-04 填充。
+        """
+        return await self._capture_block_revision_locked(
+            doc_id, feishu_block_id, content, db_ref, source, reason
+        )
+
+    @sync_to_async
+    def _capture_block_revision_locked(
+        self,
+        doc_id: Any,
+        feishu_block_id: str,
+        content: str,
+        db_ref: str,
+        source: str,
+        reason: str,
+    ) -> ProjectDocBlockRevision:
+        with transaction.atomic():
+            return ProjectDocBlockRevision.objects.create(
+                doc_id=doc_id,
+                feishu_block_id=feishu_block_id,
+                content=content,
+                db_ref=db_ref,
+                source=source,
+                reason=reason,
             )
 
     # ---- ProjectStateApi 写入（DOC-02） ----
