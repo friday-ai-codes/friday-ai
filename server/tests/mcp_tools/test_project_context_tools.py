@@ -238,6 +238,43 @@ async def test_search_project_context_member_hits_and_trace(
     assert payload["project_id"] == str(project.id)
 
 
+async def test_search_project_context_recalls_document_kind(
+    mcp_client, access_user, monkeypatch
+):
+    """CTX-01：search_project_context 读路径纳入 DOCUMENT 召回（物化项目文档可被向量 RAG 返回）。
+
+    断言：调用 search_similar 时透传 ``include_document_kind=True``（widen 到 DOCUMENT 实体），
+    且返回的物化项目文档命中出现在结果里（不绕过 visibility/access 闸）。
+    """
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="sp-doc")
+
+    from mcp_tools import views as views_module
+
+    captured: dict = {}
+
+    async def _fake_search_similar(query, **kwargs):
+        captured.update(kwargs)
+        return [_mock_search_result(str(project.space_id))]
+
+    monkeypatch.setattr(
+        views_module._delivery_knowledge_service,
+        "search_similar",
+        _fake_search_similar,
+    )
+    resp = await sync_to_async(client.post)(
+        _SEARCH_URL,
+        {"project_id": str(project.id), "query": "项目文档"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # 读路径必须 widen 到 DOCUMENT 召回（否则项目物化文档/记忆向量 RAG 返回空）。
+    assert captured.get("include_document_kind") is True
+    assert body["total"] == 1
+    assert body["results"][0]["title"] == "项目文档命中"
+
+
 async def test_search_project_context_missing_query_400(mcp_client, access_user):
     client, _ = mcp_client
     project = await _make_project(access_user, key="sp-400")

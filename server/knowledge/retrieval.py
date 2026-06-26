@@ -41,6 +41,7 @@ class DeliveryKnowledgeSearchService:
         repository_ids: list[str] | None = None,
         as_of: datetime | None = None,
         include_superseded: bool = False,
+        include_document_kind: bool = False,
     ) -> list[SearchResultDTO]:
         logger.info("knowledge_search_started", query_len=len(query), top_k=top_k)
         allowed_projects = await resolve_allowed_project_ids(user, project_ids)
@@ -58,6 +59,7 @@ class DeliveryKnowledgeSearchService:
             top_k=top_k,
             entity_kinds=entity_kinds,
             include_superseded=include_superseded,
+            include_document_kind=include_document_kind,
         )
         if not hits:
             logger.info("knowledge_search_completed", result_count=0)
