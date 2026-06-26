@@ -2600,11 +2600,14 @@ class LookupProjectByBranchView(McpToolView):
         from services.branch_parsing import parse_work_item_id_from_branch
 
         branch_name = str(input_data["branch_name"])
+        repository_id = input_data.get("repository_id")
+        repository_id_str = str(repository_id) if repository_id else None
         work_item_id = parse_work_item_id_from_branch(branch_name)
 
         output_data: dict[str, Any] = {
             "branch_name": branch_name,
             "work_item_id": work_item_id,
+            "repository_id": repository_id_str,
             "matched": False,
             "project": None,
             "candidates": [],
@@ -2614,24 +2617,37 @@ class LookupProjectByBranchView(McpToolView):
         }
         traces: list[tuple[str, dict[str, Any]]] = []
 
-        if work_item_id is None:
-            # 无法从分支名解析 work_item_id → fail-soft 空返回。
-            await self._record(
-                run,
-                input_data=input_data,
-                output_data=output_data,
-                traces=traces,
-                started_at=started_at,
-            )
-            return Response(output_data, status=status.HTTP_200_OK)
+        # 反查两源（fail-soft，绝不抛、绝不阻断编码）：
+        # 1) work_item_id 反查（v0.15.0 既有：分支名解析 work_item_id → Project）；
+        # 2) ProjectBranch 显式多绑定反查（BIND-02：branch_name[+repository_id] → Project）。
+        work_item_projects: list[Any] = []
+        if work_item_id is not None:
+            work_item_projects = await self._lookup_projects(work_item_id)
+        binding_projects = await self._lookup_by_branch_binding(
+            branch_name, repository_id
+        )
 
-        projects = await self._lookup_projects(work_item_id)
+        # 合并去重（work_item 源优先保留实例；绑定源补充未出现的项目）。
+        merged: dict[Any, Any] = {p.id: p for p in work_item_projects}
+        work_item_ids = set(merged.keys())
+        for p in binding_projects:
+            merged.setdefault(p.id, p)
+        binding_ids = {p.id for p in binding_projects}
+        projects = list(merged.values())
         output_data["candidates"] = [_project_summary(p) for p in projects]
 
         if len(projects) == 1:
             from services.project_context_packer import pack_project_context
 
             project = projects[0]
+            # 标记命中来源（work_item / branch_binding / both），便于排障。
+            in_wi = project.id in work_item_ids
+            in_binding = project.id in binding_ids
+            binding_source = (
+                "both" if in_wi and in_binding
+                else "work_item" if in_wi
+                else "branch_binding"
+            )
             packed = await pack_project_context(
                 project, request.user, query=branch_name
             )
@@ -2647,6 +2663,8 @@ class LookupProjectByBranchView(McpToolView):
                         "source": "mcp_lookup_project_by_branch",
                         "branch_name": branch_name,
                         "work_item_id": work_item_id,
+                        "repository_id": repository_id_str,
+                        "binding_source": binding_source,
                         "project_id": str(project.id),
                         "included_layers": packed.included_layers,
                         "counts": packed.counts,
@@ -2677,6 +2695,27 @@ class LookupProjectByBranchView(McpToolView):
             .select_related("space")
             .distinct()
         )
+
+    @sync_to_async
+    def _lookup_by_branch_binding(
+        self, branch_name: str, repository_id: Any = None
+    ) -> list[Any]:
+        """ProjectBranch 显式绑定反查（BIND-02）。
+
+        按 ``branch_name`` 查显式绑定项目；传 ``repository_id`` 则追加收窄（跨仓同名分支
+        定位到具体仓）。返回去重 ``Project`` 列表（ORM 参数化，无注入）。
+        """
+        from initiatives.models import ProjectBranch
+
+        qs = ProjectBranch.objects.filter(branch_name=branch_name)
+        if repository_id:
+            qs = qs.filter(repository_id=repository_id)
+        seen: dict[Any, Any] = {}
+        for binding in qs.select_related("project__space"):
+            project = binding.project
+            if project is not None:
+                seen.setdefault(project.id, project)
+        return list(seen.values())
 
 
 class ReportProjectKnowledgeView(McpToolView):
@@ -2850,6 +2889,9 @@ class SearchProjectContextView(McpToolView):
                 project_ids=[project_id],
                 entity_kinds=entity_kinds,
                 top_k=top_k,
+                # CTX-01：项目上下文读路径纳入 DOCUMENT 召回（项目 5 文件/记忆/工件物化），
+                # 不放宽 visibility/access 闸（仍由 search_similar 内 project_ids 收口）。
+                include_document_kind=True,
             )
             recall_ms = round((time.perf_counter() - recall_started) * 1000, 2)
 
