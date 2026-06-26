@@ -93,15 +93,18 @@ from .serializers import (
     GetRelatedEntitiesRequestSerializer,
     GetRepositoryFileRequestSerializer,
     GetRepositoryRequestSerializer,
+    GrepProjectRequestSerializer,
     GrepRepositoryRequestSerializer,
     ImproveCodingPlanRequestSerializer,
     ListRepositoryFilesRequestSerializer,
     LookupProjectByBranchRequestSerializer,
+    ReadProjectDocRequestSerializer,
     ReportProjectKnowledgeRequestSerializer,
     ReverseLookupRequestSerializer,
     RouteRepositoriesRequestSerializer,
     SearchDeliveryKnowledgeRequestSerializer,
     SearchLearningCasesRequestSerializer,
+    SearchProjectContextRequestSerializer,
     SearchRagChunksRequestSerializer,
     SummarizeBranchRequestSerializer,
 )
@@ -2766,3 +2769,266 @@ class ReportProjectKnowledgeView(McpToolView):
                 project_id=project_id, status=ProjectMemoryStatus.ACTIVE
             ).values_list("content", flat=True)[:200]
         )
+
+
+# ============================================================================
+# 项目上下文读半 MCP 工具（CTX-01/02，Phase 85-02）
+# ============================================================================
+
+
+async def _aget_project(project_id: Any) -> Any:
+    """取 initiatives.Project（含 space，供 visibility 读校验）；不存在返回 None。"""
+    from initiatives.models import Project
+
+    return (
+        await Project.objects.filter(id=project_id).select_related("space").afirst()
+    )
+
+
+async def _assert_project_readable(project: Any, user: Any) -> bool:
+    """项目上下文读校验（与 ``pack_project_context`` 同口径，members_only fail-closed）。
+
+    单一可读口径（CTX A3 within-phase 校验结论）：
+
+    - 成员（``ProjectMember``，任意 visibility）→ 放行（与 AI 对话链 packer ``_is_member`` 一致）；
+    - 非成员 + ``public_org`` → 放行（全员可读，visibility 对称）；
+    - 非成员 + ``members_only`` → 拒绝（零召回零泄漏）。
+
+    口径直接判 ``initiatives.Project.visibility``（而非 Space 维度），因此即便同一 Space
+    内含混合可见性项目也不泄漏：grep/read 服务按 ``Project.id`` 维度过滤正文，RAG 经
+    ``search_similar`` 的 ``resolve_allowed_project_ids`` caller-intersect 二次收口。
+    """
+    from initiatives.models import ProjectMember, ProjectVisibility
+
+    uid = getattr(user, "id", None)
+    if uid is None or not getattr(user, "is_authenticated", False):
+        return False
+    is_member = await ProjectMember.objects.filter(
+        project_id=project.id, user_id=uid
+    ).aexists()
+    if is_member:
+        return True
+    return getattr(project, "visibility", "") == ProjectVisibility.PUBLIC_ORG
+
+
+class SearchProjectContextView(McpToolView):
+    """项目上下文语义召回（RAG，CTX-01 读半 + CTX-02 MCP 链 RetrievalTrace）。
+
+    复用 ``DeliveryKnowledgeSearchService.search_similar``（已 visibility 感知）；读校验经
+    ``_assert_project_readable``（members_only 非成员零召回，不抛、不泄漏）。每次召回写一条
+    ``RetrievalTrace``（``Kind.CHUNK``，含条数 / score / **分层耗时 duration_ms**）。
+    """
+
+    tool_name = "search_project_context"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(
+            SearchProjectContextRequestSerializer, request
+        )
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        project_id = str(input_data["project_id"])
+        query = str(input_data["query"])
+        top_k = int(input_data.get("top_k") or 5)
+        entity_kinds = [str(k) for k in (input_data.get("entity_kinds") or [])] or None
+
+        results: list[Any] = []
+        recall_ms = 0.0
+        project = await _aget_project(project_id)
+        if project is not None and await _assert_project_readable(project, request.user):
+            recall_started = time.perf_counter()
+            results = await _delivery_knowledge_service.search_similar(
+                query,
+                user=request.user,
+                project_ids=[project_id],
+                entity_kinds=entity_kinds,
+                top_k=top_k,
+            )
+            recall_ms = round((time.perf_counter() - recall_started) * 1000, 2)
+
+        serialized = serialize_search_results(results)
+        output_data = {
+            "project_id": project_id,
+            "query": query,
+            "results": serialized,
+            "total": len(serialized),
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="project_context_searched",
+            payload={"project_id": project_id, "result_count": len(serialized)},
+        )
+        scores = [item.get("score", 0) for item in serialized]
+        traces = [
+            (
+                RetrievalTrace.Kind.CHUNK,
+                {
+                    "source": "mcp_search_project_context",
+                    "project_id": project_id,
+                    "result_count": len(serialized),
+                    "scores": scores,
+                    "top_score": max(scores) if scores else 0,
+                    "duration_ms": recall_ms,
+                },
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class GrepProjectView(McpToolView):
+    """项目上下文关键词 grep（CTX-01 读半）。
+
+    复用 ``ProjectSearchService.search``（关键词命中 work_item/state_api/artifact/记忆正文/
+    **ProjectDoc 正文** + locator，并在 service 内部写带 ``local_ms``/``knowledge_ms`` 分层耗时的
+    ``RetrievalTrace``）。读校验经 ``_assert_project_readable``（members_only 非成员零结果，不泄漏）。
+    本 view 不重复写召回 trace（service 已覆盖），仅 ``_record`` 留 ToolCallRecord + RequestMetric。
+    """
+
+    tool_name = "grep_project"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(GrepProjectRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        project_id = str(input_data["project_id"])
+        query = str(input_data["query"])
+        top_k = int(input_data.get("top_k") or 10)
+
+        project = await _aget_project(project_id)
+        if project is None:
+            return error_response(
+                "project_not_found", "项目不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        results: list[Any] = []
+        if await _assert_project_readable(project, request.user):
+            from initiatives.services.project_search_service import ProjectSearchService
+
+            results = await ProjectSearchService().search(
+                project=project, query=query, user=request.user, top_k=top_k
+            )
+
+        output_data = {
+            "project_id": project_id,
+            "query": query,
+            "results": results,
+            "total": len(results),
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="project_grepped",
+            payload={"project_id": project_id, "result_count": len(results)},
+        )
+        # 分层耗时（local_ms/knowledge_ms）由 ProjectSearchService 内部 trace 满足，
+        # 此处不重复写 RetrievalTrace。
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=[],
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)
+
+
+class ReadProjectDocView(McpToolView):
+    """项目工作区单文档 file-read（CTX-01 读半 + CTX-02 MCP 链 RetrievalTrace）。
+
+    复用 ``DocContentService.get_doc_render``（渲染 markdown + block 分区，不改其签名/行为）。
+    读校验经 ``_assert_project_readable``（members_only 非成员返回空文档，**不泄漏存在性**）；
+    doc 不存在同样返回空文档（与无权读对外同形，防存在性探测）。写一条 ``RetrievalTrace``
+    （``Kind.FILE``，含 ``block_count`` + **分层耗时 duration_ms**）。
+    """
+
+    tool_name = "read_project_doc"
+
+    async def post(self, request: Request) -> Response:
+        run, err = await self._begin(request)
+        if err is not None:
+            return err
+        assert run is not None
+        input_data, err = await self._validate(ReadProjectDocRequestSerializer, request)
+        if err is not None:
+            return err
+        assert input_data is not None
+        started_at = time.perf_counter()
+
+        project_id = str(input_data["project_id"])
+        doc_type = str(input_data["doc_type"])
+
+        project = await _aget_project(project_id)
+        if project is None:
+            return error_response(
+                "project_not_found", "项目不存在", status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        rendered_markdown = ""
+        blocks: list[Any] = []
+        read_ms = 0.0
+        if await _assert_project_readable(project, request.user):
+            from initiatives.services.doc_content_service import DocContentService
+
+            read_started = time.perf_counter()
+            rendered = await DocContentService().get_doc_render(
+                project_id=project_id, doc_type=doc_type
+            )
+            read_ms = round((time.perf_counter() - read_started) * 1000, 2)
+            if rendered is not None:
+                rendered_markdown = rendered.get("rendered_markdown", "") or ""
+                blocks = rendered.get("blocks", []) or []
+
+        output_data = {
+            "project_id": project_id,
+            "doc_type": doc_type,
+            "rendered_markdown": rendered_markdown,
+            "blocks": blocks,
+            "run_id": str(run.run_id),
+        }
+        await self._record_agent_decision(
+            run,
+            action="project_doc_read",
+            payload={"project_id": project_id, "doc_type": doc_type, "block_count": len(blocks)},
+        )
+        traces = [
+            (
+                RetrievalTrace.Kind.FILE,
+                {
+                    "source": "mcp_read_project_doc",
+                    "project_id": project_id,
+                    "doc_type": doc_type,
+                    "block_count": len(blocks),
+                    "duration_ms": read_ms,
+                },
+            )
+        ]
+        await self._record(
+            run,
+            input_data=input_data,
+            output_data=output_data,
+            traces=traces,
+            started_at=started_at,
+        )
+        return Response(output_data, status=status.HTTP_200_OK)

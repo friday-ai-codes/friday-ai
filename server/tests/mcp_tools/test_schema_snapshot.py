@@ -126,4 +126,16 @@ def test_mcp_read_tool_schema_snapshot() -> None:
             "request": ["project_id", "content", "source_conversation_id"],
             "response": ["accepted", "draft_id", "reason", "run_id"],
         },
+        "search_project_context": {
+            "request": ["project_id", "query", "top_k", "entity_kinds"],
+            "response": ["project_id", "query", "results", "total", "run_id"],
+        },
+        "grep_project": {
+            "request": ["project_id", "query", "top_k"],
+            "response": ["project_id", "query", "results", "total", "run_id"],
+        },
+        "read_project_doc": {
+            "request": ["project_id", "doc_type"],
+            "response": ["project_id", "doc_type", "rendered_markdown", "blocks", "run_id"],
+        },
     }

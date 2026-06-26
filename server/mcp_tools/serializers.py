@@ -497,6 +497,36 @@ class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
     )
 
 
+class SearchProjectContextRequestSerializer(serializers.Serializer):
+    """项目上下文语义召回请求（CTX-01 RAG 读半）。"""
+
+    project_id = serializers.UUIDField(required=True)
+    query = serializers.CharField(required=True, allow_blank=False, max_length=4000)
+    top_k = serializers.IntegerField(required=False, default=5, min_value=1, max_value=20)
+    entity_kinds = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        required=False,
+        allow_empty=True,
+        default=list,
+        max_length=20,
+    )
+
+
+class GrepProjectRequestSerializer(serializers.Serializer):
+    """项目上下文关键词 grep 请求（CTX-01 grep 读半）。"""
+
+    project_id = serializers.UUIDField(required=True)
+    query = serializers.CharField(required=True, allow_blank=False, max_length=1000)
+    top_k = serializers.IntegerField(required=False, default=10, min_value=1, max_value=50)
+
+
+class ReadProjectDocRequestSerializer(serializers.Serializer):
+    """项目工作区单文档 file-read 请求（CTX-01 file-read 读半）。"""
+
+    project_id = serializers.UUIDField(required=True)
+    doc_type = serializers.CharField(required=True, allow_blank=False, max_length=64)
+
+
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "route_repositories": {
         "request": ["query", "top_k"],
@@ -618,5 +648,17 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
     "report_project_knowledge": {
         "request": ["project_id", "content", "source_conversation_id"],
         "response": ["accepted", "draft_id", "reason", "run_id"],
+    },
+    "search_project_context": {
+        "request": ["project_id", "query", "top_k", "entity_kinds"],
+        "response": ["project_id", "query", "results", "total", "run_id"],
+    },
+    "grep_project": {
+        "request": ["project_id", "query", "top_k"],
+        "response": ["project_id", "query", "results", "total", "run_id"],
+    },
+    "read_project_doc": {
+        "request": ["project_id", "doc_type"],
+        "response": ["project_id", "doc_type", "rendered_markdown", "blocks", "run_id"],
     },
 }

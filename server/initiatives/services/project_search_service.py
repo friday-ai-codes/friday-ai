@@ -21,6 +21,7 @@ from django.db.models import Q
 
 from initiatives.models import (
     Artifact,
+    ProjectDoc,
     ProjectMemory,
     ProjectMemoryStatus,
     ProjectStateApi,
@@ -159,6 +160,20 @@ class ProjectSearchService:
                     kind="memory",
                     title="项目记忆",
                     snippet=mem.content,
+                    query=query,
+                    locator=locator,
+                )
+            )
+
+        # 工作区 5 文件正文（last_synced_snapshot；CTX-01 ProjectDoc 正文 grep 覆盖）。
+        for doc in ProjectDoc.objects.filter(project_id=project_id).filter(
+            last_synced_snapshot__icontains=query
+        )[:top_k]:
+            out.append(
+                self._item(
+                    kind="project_doc",
+                    title=doc.doc_type,
+                    snippet=doc.last_synced_snapshot or doc.doc_type,
                     query=query,
                     locator=locator,
                 )
