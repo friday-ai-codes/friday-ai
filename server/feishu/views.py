@@ -581,6 +581,48 @@ def pop_message(message_id: str) -> dict[str, Any] | None:
 # ============ Webhook View ============
 
 
+def _normalize_drive_edit_event(data: dict[str, Any]) -> dict[str, str]:
+    """防御性提取 drive.file.edit_v1 的 file_token/operator/event_id（SYNC-01 normalizer）。
+
+    飞书云文档事件走开放平台标准 schema（``header`` + ``event``），**真实字段名以 live UAT
+    固化**；此处兼容 ``event`` / ``payload`` 两种容器与多候选键，缺字段降级空串（绝不抛）。
+
+    # [ASSUMED] A1: file_token 即 docx 的 feishu_document_id（改文字不变）；operator 取
+    # operator_id_list[0].open_id（自上次通知以来的编辑者列表）；event_id 取 header.event_id /
+    # header.uuid。须 live-Feishu 抓 record_inbound_webhook 原始 payload 校验后回填。
+    """
+    if not isinstance(data, dict):
+        return {"file_token": "", "operator": "", "event_id": ""}
+    header = data.get("header") if isinstance(data.get("header"), dict) else {}
+    body = data.get("event") or data.get("payload") or {}
+    if not isinstance(body, dict):
+        body = {}
+
+    file_token = str(body.get("file_token") or body.get("token") or "")
+
+    operator = ""
+    operator_list = body.get("operator_id_list")
+    if isinstance(operator_list, list) and operator_list:
+        first = operator_list[0]
+        if isinstance(first, dict):
+            operator = str(
+                first.get("open_id") or first.get("user_id") or first.get("union_id") or ""
+            )
+        else:
+            operator = str(first or "")
+    if not operator:
+        op = body.get("operator_id")
+        if isinstance(op, dict):
+            operator = str(op.get("open_id") or op.get("user_id") or "")
+        else:
+            operator = str(op or body.get("operator") or "")
+
+    event_id = str(
+        header.get("event_id") or header.get("uuid") or body.get("event_id") or ""
+    )
+    return {"file_token": file_token, "operator": operator, "event_id": event_id}
+
+
 class FeishuWebhookView(APIView):
     """Handle Feishu webhook events."""
 
@@ -649,6 +691,14 @@ class FeishuWebhookView(APIView):
         if event_uuid and await is_event_processed_db(event_uuid):
             logger.info("webhook_event_duplicate", event_uuid=event_uuid)
             return Response({"status": "duplicate", "uuid": event_uuid})
+
+        # drive.file.edit_v1：飞书云文档编辑事件（SYNC-01）。该类事件走开放平台标准
+        # schema（header + event）、**不携带 project_key**，不经看板项目解析/验签分支；按
+        # file_token（即 docx 的 feishu_document_id）归因 + 投 durable 回拉，取材（回拉正文）在
+        # 后台、handler 不阻塞。原始 payload 已在上方 record_inbound_webhook 脱敏留痕。
+        if event_type == "drive.file.edit_v1":
+            await self._handle_drive_file_edit(data)
+            return Response({"status": "accepted", "event_type": event_type})
 
         # 解析路由模式：
         # - 专属端点模式（URL 携带 token）：token 直达唯一工作流，project 取自该工作流；
@@ -1115,6 +1165,72 @@ class FeishuWebhookView(APIView):
             name=f"project-board-sync:{feishu_project_key}:{board_work_item_id}",
             initiated_by_user_id=initiated_by,  # CTX-02：worker 入口 re-bind
         )
+
+    async def _handle_drive_file_edit(self, data: dict) -> None:
+        """drive.file.edit_v1：归因 + durable defer 回拉（handler 不回拉正文，取材在后台，SYNC-01）。
+
+        镜像 Phase 14「handler 只投三元组 ID、取材在后台」范式：normalizer 防御性取
+        file_token(=feishu_document_id)/operator/event_id → ``resolve_feishu_user`` 归因（未映射
+        ``system``）→ ``DurableTaskService.defer("durable_doc_sync_pull", lock=docsync-{file_token},
+        idempotency_key=docpull:{file_token}:{event_id})``。**lock 统一 ``docsync-{feishu_document_id}``**
+        （此处 file_token 即 feishu_document_id），与 83-03 push / 83-06 poll 对同一文档完全一致 →
+        pull/push/poll 全串行。**handler 不调 get_document_content**（取材在后台 Task 3）；原始 payload
+        已在 post 入口经 ``record_inbound_webhook`` 脱敏留痕，本 handler 只记 file_token/event_id，
+        **绝不记正文**。best-effort：缺 file_token 跳过，defer 失败吞掉，绝不反噬 webhook 主响应。
+        """
+        info = _normalize_drive_edit_event(data)
+        file_token = info["file_token"]
+        event_id = info["event_id"]
+        if not file_token:
+            logger.warning(
+                "drive_edit_event_missing_file_token",
+                event_id=event_id,
+                component="doc_sync",
+                category="caller",
+            )
+            return
+
+        initiated_by = "system"
+        operator = info["operator"]
+        if operator:
+            from feishu.services.identity import resolve_feishu_user
+
+            user = await resolve_feishu_user(open_id=operator) or await resolve_feishu_user(
+                feishu_user_key=operator
+            )
+            if user is not None:
+                initiated_by = str(user.id)
+
+        logger.info(
+            "drive_edit_event_received",
+            file_token=file_token,
+            event_id=event_id,
+            initiated_by_user_id=initiated_by,
+            component="doc_sync",
+            category="caller",
+        )
+
+        try:
+            from durable.queues import QUEUE_DOC_SYNC
+            from durable.service import DurableTaskService
+
+            await DurableTaskService.defer(
+                "durable_doc_sync_pull",
+                {"file_token": file_token, "event_id": event_id},
+                queue=QUEUE_DOC_SYNC,
+                lock=f"docsync-{file_token}",
+                idempotency_key=f"docpull:{file_token}:{event_id}",
+                initiated_by_user_id=initiated_by,
+            )
+        except Exception as exc:  # noqa: BLE001 — defer 失败 fail-soft（TTL 轮询兜底），绝不反噬主响应
+            logger.warning(
+                "drive_edit_event_defer_failed",
+                file_token=file_token,
+                event_id=event_id,
+                error_type=type(exc).__name__,
+                component="doc_sync",
+                category="caller",
+            )
 
     async def _handle_workflow_node_status(self, project, payload, trigger_log):
         """处理工作项节点流转事件。"""

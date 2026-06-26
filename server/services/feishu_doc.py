@@ -312,6 +312,68 @@ class FeishuDocClient:
             )
             return new_token
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+        reraise=True,
+    )
+    async def _subscribe_file_request(self, file_token: str, file_type: str) -> bool:
+        """按文件订阅飞书云文档变更事件的实际外呼（限流经 @retry 退避）。
+
+        # [ASSUMED] A3: 端点形态 MEDIUM，需 live 验证
+        # （POST /drive/v1/files/{file_token}/subscribe?file_type=docx，tenant_token 鉴权，
+        # 返回 data.code==0 即订阅成功）。app 即文件 owner 可订；单回调地址多路复用。
+        """
+        token = await self.get_tenant_access_token()
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.OPEN_API_BASE}/drive/v1/files/{file_token}/subscribe",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                params={"file_type": file_type},
+            )
+            data = response.json()
+
+            if data.get("code") != 0:
+                error_msg = data.get("msg", "Unknown error")
+                if "rate limit" in error_msg.lower() or data.get("code") == 99991400:
+                    raise RateLimitError(f"Rate limit hit: {error_msg}")
+                # 非限流错误（权限/未发布/端点漂移）→ fail-soft 返回 False（不抛）。
+                return False
+            return True
+
+    async def subscribe_file(self, file_token: str, *, file_type: str = "docx") -> bool:
+        """按文件订阅 drive.file.edit_v1 变更事件，返回是否订阅成功（fail-soft，绝不抛）。
+
+        订阅态在飞书侧（不入 git/DB，DB 仅记 ``ProjectDoc.subscribed`` 标志，OQ-4）。失败
+        （限流耗尽 / 权限 / 端点漂移 / 网络）一律 **fail-soft 返回 False**，退化为 TTL 轮询
+        兜底（83-06），绝不抛回 provision / 主流程。仅记 ``file_token``（业务标识）+ 结果布尔，
+        **绝不记 token / 正文**。
+        """
+        try:
+            ok = await self._subscribe_file_request(file_token, file_type)
+        except Exception as exc:  # noqa: BLE001 — 订阅失败 fail-soft（退化 TTL 轮询），绝不抛
+            logger.warning(
+                "feishu_file_subscribe_failed",
+                file_token=file_token,
+                error_type=type(exc).__name__,
+                component="doc_sync",
+                category="caller",
+            )
+            return False
+        logger.info(
+            "feishu_file_subscribe",
+            file_token=file_token,
+            subscribed=ok,
+            component="doc_sync",
+            category="caller",
+        )
+        return ok
+
     async def append_markdown(
         self,
         document_id: str,

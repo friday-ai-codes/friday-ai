@@ -66,7 +66,12 @@ class FeishuWebSocketClient:
         )
 
     def _build_event_handler(self) -> lark.EventDispatcherHandler:
-        """Build event dispatcher with registered handlers."""
+        """Build event dispatcher with registered handlers.
+
+        # [ASSUMED] A2: WS 长连是否支持 register_p2_drive_file_edit_v1 待 live 验证。SDK 暂
+        # 不确定有此注册器，故 drive.file.edit_v1 仅经 HTTP webhook 入口路由（FeishuWebhookView
+        # ._handle_drive_file_edit），WS 长连不订阅 drive 事件；live 验证可用后再在此注册。
+        """
         handler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_im_message_receive_v1(self._handle_message_receive)
