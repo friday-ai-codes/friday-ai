@@ -6,6 +6,7 @@
  * VueFlow 的所有内部变更（拖拽、删除等）通过 @nodes-change/@edges-change 统一回写 store。
  */
 import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
+import type { SnapCandidate, SnapTarget } from './composables/usePortSnap'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { ConnectionMode, Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
@@ -16,14 +17,18 @@ import { computed, inject, markRaw, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useToast } from '~/composables/useToast'
+import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
+import { resolvePortShape } from './composables/portShapes'
 import { useAlignmentGuides } from './composables/useAlignmentGuides'
 import { useAutoLayout } from './composables/useAutoLayout'
+import { useConnectionDragState } from './composables/useConnectionDragState'
 import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
+import { findSnapTarget } from './composables/usePortSnap'
 import { toVueFlowEdges, toVueFlowNodes } from './composables/useWorkflowTransform'
 import CustomConnectionLine from './edges/CustomConnectionLine.vue'
 import GradientEdge from './edges/GradientEdge.vue'
@@ -39,10 +44,25 @@ const vfEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value
 
 const edgeTypes = { gradient: markRaw(GradientEdge) }
 
+const nodeTypesStore = useNodeTypesStore()
 const { error: showError } = useToast()
 const { t } = useI18n()
-const { getSelectedNodes, fitView, viewport: vfViewport } = useVueFlow()
+const {
+  getSelectedNodes,
+  fitView,
+  viewport: vfViewport,
+  getNodes,
+  findNode,
+  screenToFlowCoordinate,
+} = useVueFlow()
 const { validateConnection } = useConnectionValidator()
+const {
+  dragging: connectDragging,
+  source: connectSource,
+  startConnect,
+  endConnect,
+  isCompatibleTarget,
+} = useConnectionDragState()
 const { applyAutoLayout } = useAutoLayout()
 const { onDragOver, onDrop } = useDragAndDrop()
 const { alignmentGuides, checkAlignment, clearGuides } = useAlignmentGuides()
@@ -132,18 +152,104 @@ function onPaneClick() {
   store.selectNode(null)
 }
 
+// ============================================================================
+// SLOT-03 磁吸交互：拖拽态驱动 + 吸附端点（snap-locked）+ 不兼容落点 Toast 拒绝
+// ============================================================================
+
+/** 拖拽连线吸附命中的目标端点（flow 坐标）；未命中为 null。透传给 CustomConnectionLine。 */
+const snapTarget = ref<SnapTarget | null>(null)
+
+/** 解析源 output 端口的契约 shape（用于 compatible-highlight / 吸附兼容判定数据源）。 */
+function resolveSourceShape(nodeId: string, handleId: string): string | undefined {
+  const node = store.nodes.find(n => n.id === nodeId)
+  if (!node)
+    return undefined
+  return resolvePortShape(node.nodeType, handleId, 'output')
+}
+
+/**
+ * 拖拽连线开始（VueFlow `@connect-start`）：解析源 handle shape 后驱动共享拖拽态。
+ * 负载形如 `{ nodeId, handleId, handleType }`（handleType='source' 表示从 output 拉出）。
+ */
+function onConnectStart(payload: { nodeId?: string | null, handleId?: string | null, handleType?: string | null }) {
+  const nodeId = payload?.nodeId
+  const handleId = payload?.handleId
+  if (!nodeId || !handleId)
+    return
+  startConnect(nodeId, handleId, resolveSourceShape(nodeId, handleId))
+}
+
+/** 拖拽连线结束（成功/取消统一）：复位拖拽态 + 清吸附端点。 */
+function onConnectEnd() {
+  endConnect()
+  snapTarget.value = null
+}
+
+/**
+ * 收集当前可见节点的 input handle 几何（flow 坐标）+ 兼容标注，作吸附候选。
+ * 纯几何 O(n)：handle 取节点左缘，多入口在卡高度内均匀分布（happy-dom 无布局时尺寸为 0）。
+ * 兼容性由 `isCompatibleTarget` 预标注——吸附只吸兼容候选（不放行不兼容，命门）。
+ */
+function collectSnapCandidates(): SnapCandidate[] {
+  const result: SnapCandidate[] = []
+  const srcId = connectSource.value?.nodeId
+  for (const n of getNodes.value) {
+    if (n.id === srcId)
+      continue
+    const nodeType = (n.data?.nodeType ?? n.type) as string | undefined
+    if (!nodeType)
+      continue
+    const inputs = nodeTypesStore.getNodeType(nodeType)?.inputs ?? []
+    if (!inputs.length)
+      continue
+    const fn = findNode(n.id)
+    const pos = fn?.computedPosition ?? n.computedPosition ?? n.position ?? { x: 0, y: 0 }
+    const dims = fn?.dimensions ?? { width: 0, height: 0 }
+    inputs.forEach((port, i) => {
+      result.push({
+        nodeId: n.id,
+        handleId: port.name,
+        x: pos.x,
+        y: pos.y + (dims.height * (i + 1)) / (inputs.length + 1),
+        compatible: isCompatibleTarget(nodeType, port.name),
+      })
+    })
+  }
+  return result
+}
+
+/**
+ * 高频拖拽指针：仅 dragging 时计算吸附端点（纯几何，不打日志）。
+ * 屏幕坐标经 `screenToFlowCoordinate` 换算到 flow 后比距（阈值按 zoom 换算见 usePortSnap）。
+ */
+function updateSnapFromPointer(event: PointerEvent) {
+  if (!connectDragging.value) {
+    if (snapTarget.value)
+      snapTarget.value = null
+    return
+  }
+  const pointer = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+  snapTarget.value = findSnapTarget(pointer, collectSnapCandidates(), vfViewport.value.zoom)
+}
+
 function onConnect(connection: Connection) {
-  const validationError = getValidationError(connection, t)
+  // 吸附命中时用吸附目标端口落点（吸附不绕合法性：落点仍走 getValidationError 双校验）。
+  const snap = snapTarget.value
+  const target = snap ? snap.nodeId : connection.target
+  const targetHandle = snap ? snap.handleId : connection.targetHandle
+  const effective: Connection = { ...connection, target, targetHandle }
+
+  const validationError = getValidationError(effective, t)
   if (validationError) {
     showError(t('workflow.editor.slot.incompatibleTitle'), validationError)
     return
   }
   store.addEdge({
-    id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
-    source: connection.source,
-    target: connection.target,
-    sourcePort: connection.sourceHandle ?? 'default',
-    targetPort: connection.targetHandle ?? 'default',
+    id: `edge-${effective.source}-${target}-${Date.now()}`,
+    source: effective.source,
+    target,
+    sourcePort: effective.sourceHandle ?? 'default',
+    targetPort: targetHandle ?? 'default',
     label: undefined,
     condition: null,
   })
@@ -217,6 +323,16 @@ function handleBatchCopy() {
     store.addNode(newNode)
   })
 }
+
+// 暴露内部处理器供单测驱动（无真实 @vue-flow 画布交互时的可测面）。
+defineExpose({
+  onConnectStart,
+  onConnectEnd,
+  onConnect,
+  updateSnapFromPointer,
+  collectSnapCandidates,
+  snapTarget,
+})
 </script>
 
 <template>
@@ -240,13 +356,20 @@ function handleBatchCopy() {
       @node-drag-stop="onNodeDragStop"
       @node-click="onNodeClick"
       @pane-click="onPaneClick"
+      @connect-start="onConnectStart"
+      @connect-end="onConnectEnd"
       @connect="onConnect"
       @dragover="onDragOver"
       @drop="onDrop"
+      @pointermove="updateSnapFromPointer"
     >
-      <!-- 拖拽连线：与连成后的边同参数（单一 bezier，source=Right→target=Left） -->
+      <!-- 拖拽连线：与连成后的边同参数（单一 bezier）；命中吸附时透传 snap 端点（snap-locked） -->
       <template #connection-line="connectionLineProps">
-        <CustomConnectionLine v-bind="connectionLineProps" />
+        <CustomConnectionLine
+          v-bind="connectionLineProps"
+          :snap-x="snapTarget?.x"
+          :snap-y="snapTarget?.y"
+        />
       </template>
 
       <Background
