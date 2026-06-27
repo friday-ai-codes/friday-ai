@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: "91-03 executed（工作流澄清收答侧：新建飞书澄清回调 @register_card_callback('plan_clarify_')——群卡 form_submit（q{i}/qt{i}）经 CardCallbackView 合并进 action_value → 据卡片权威 clarification_id 取整轮子题（按 order，绝不信回调直传 session_id 防伪造）→ _build_answers 按 order 枚举映射 answers[]（索引↔question_id 与发卡侧一致 WARNING #3）→ 同源 helper aanswer_round_and_resume（91-01）写答案 + 续推 PlanSession（工作流入口 engine 带 node_execution_id）→ approve_node 重调度挂起的 ai_plan_research → 置灰卡 best-effort；幂等门（非 waiting no-op）+ fail-soft 脱敏 + 写入只经 answer_round（INV-6）；11 新测 + tests/feishu+clarification 116 测绿、ruff/mypy 干净）"
-stopped_at: 执行 91-03（飞书澄清回调 plan_clarify_ 收答 → 同源 helper 续推 → approve_node 重调度，CLARIFY-05/06）——据卡片 clarification_id 取整轮 order 子题映射 answers[]、aanswer_round_and_resume 续推、approve_node 重入 ai_plan_research；feishu/urls.py import 触发注册；11 测绿、ruff/mypy 干净。
-last_updated: "2026-06-27T08:42:00.000Z"
+status: "91-04 executed（会话端 plan 澄清出口面 + 回流，CLARIFY-04/06）：runtime get_conversation_runtime 检测本会话软引用 PlanSession 的 pending 结构化澄清轮 → 新键 pending_plan_clarification 序列化多题 questions[]（question_id/qtype/options/recommended/selected，按 order），与 chat 单题 pending_clarification 物理隔离 best-effort 只读；新建专属路由 POST conversations/<id>/plan-clarification/answer/（PlanClarificationAnswerView + PlanClarificationAnswerSerializer）收结构化 answers[] → owner gate（created_by_id + has_project_access，无 superuser bypass，跨用户/跨项目 404 隐藏存在性）→ question_id 归属校验（acount 比对 pending 轮，越界 400）→ 干净 contextvars 后台 task 经同源 helper aanswer_round_and_resume 写 delivery + 续推 PlanSession（INV-6 不旁路写，chat barrier 回灌由既有 _schedule_chat_plan_resume 接管）；10 新测绿 + 既有 chat 单题澄清/INV-6 守护无回归、ruff/mypy 干净"
+stopped_at: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推，CLARIFY-04/06）——runtime 新键 pending_plan_clarification 暴露结构化轮、PlanClarificationAnswerView owner gate + 越界校验 + 干净 contextvars 续推 aanswer_round_and_resume；10 测绿、ruff/mypy 干净。下一步 91-05（前端 ClarificationCard 多题多选渲染）。
+last_updated: "2026-06-27T08:57:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
-  percent: 17
+  completed_plans: 8
+  percent: 19
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 91
-Plan: 91-03 complete（4/5；下一步 91-04 会话端续推 endpoint 或 91-05 前端 ClarificationCard）
-Status: 91-03 executed（工作流澄清收答侧——新建飞书澄清回调 @register_card_callback("plan_clarify_") 收群卡 form_submit → 据卡片权威 clarification_id 取整轮 order 子题映射 answers[]（索引↔question_id 与发卡侧一致 WARNING #3，绝不信回调直传 session_id）→ 同源 helper aanswer_round_and_resume 写答案 + 续推 PlanSession → approve_node 重调度挂起的 ai_plan_research → 置灰卡 best-effort；幂等门 + fail-soft 脱敏 + INV-6；11 新测 + tests/feishu+clarification 116 测绿、ruff/mypy 干净）
+Plan: 91-04 complete（4/5；下一步 91-05 前端 ClarificationCard 多题多选渲染）
+Status: 91-04 executed（会话端 plan 澄清出口面 + 回流——runtime get_conversation_runtime 新键 pending_plan_clarification 暴露本会话关联 PlanSession 的 pending 结构化轮 questions[]（按 order，与 chat 单题 pending_clarification 物理隔离，best-effort 只读）；新建专属路由 POST conversations/<id>/plan-clarification/answer/ 收结构化 answers[] → owner gate（created_by_id + has_project_access，无 superuser bypass，跨用户/跨项目 404）→ question_id 归属 acount 校验越界 400 → 干净 contextvars 后台 task 经同源 helper aanswer_round_and_resume 写 delivery + 续推 PlanSession（INV-6，chat barrier 回灌交既有 _schedule_chat_plan_resume）；10 新测绿 + 既有 chat 单题澄清/INV-6 守护无回归、ruff/mypy 干净）
 Last activity: 2026-06-27
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
@@ -35,7 +35,7 @@ Last activity: 2026-06-27
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 90 | 澄清能力层 | CLARIFY-01/02/03 | Not started |
-| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | In progress (3/5) |
+| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | In progress (4/5) |
 | 92 | 插槽系统（后端） | SLOT-01/02 | Not started |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | Not started |
 | 94 | 入口统一 | UNIFY-01~06 | Not started |

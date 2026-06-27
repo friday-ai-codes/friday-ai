@@ -29,7 +29,7 @@
 > patch 级优化/统一里程碑（非新功能）。把工作流 / 对话 / MCP 三入口的 4 套分散「AI 技术方案生成」归一到唯一图编排底座 `plan_orchestration`，废弃旧 LangChain 单 agent `ai_plan_generation`，并完善能力——结构化交互式澄清（多轮 resume）、LLM 跨仓拆分、方案推群干净渲染、插槽式（形状端口磁吸）编辑范式。**依赖顺序**：澄清能力/数据（90）→ 出口面 + resume（91）→ 插槽后端（92）→ 插槽前端（93）；入口统一（94）依赖澄清单一来源（90/91）；拆分完善（95）相对独立可收尾。
 
 - [x] **Phase 90: 澄清能力层** — 结构化 `Clarification` 数据模型 + LLM 多问题生成 + 入口无关统一提问能力（CLARIFY-01/02/03） (completed 2026-06-27)
-- [ ] **Phase 91: 澄清出口面 + 回流 resume** — 会话内联卡 / 群飞书交互卡双出口 + 答复统一回流续推 + 多轮（CLARIFY-04/05/06/07）(3/5 plans)
+- [ ] **Phase 91: 澄清出口面 + 回流 resume** — 会话内联卡 / 群飞书交互卡双出口 + 答复统一回流续推 + 多轮（CLARIFY-04/05/06/07）(4/5 plans)
 - [ ] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）
 - [ ] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）
 - [ ] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
@@ -72,7 +72,7 @@
 - [x] 91-01-PLAN.md — 共享回流 helper aanswer_round_and_resume + 多轮放开（移除 CR-01 + round_no 上界 6 + 带答案重判）（Wave 1，CLARIFY-06/07）✅
 - [x] 91-02-PLAN.md — 工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id/新 action + WR-03 三处 pending 收口（Wave 1，CLARIFY-05/WR-03）✅
 - [x] 91-03-PLAN.md — 飞书澄清回调 plan_clarify_（form_value→answers→answer_round→续推→approve_node）（Wave 2，CLARIFY-05/06）✅
-- [ ] 91-04-PLAN.md — 会话端专路由 endpoint 收 answers[] + owner gate + runtime 暴露 plan 结构化轮 + 续推（Wave 2，CLARIFY-04/06）
+- [x] 91-04-PLAN.md — 会话端专路由 endpoint 收 answers[] + owner gate + runtime 暴露 plan 结构化轮 + 续推（Wave 2，CLARIFY-04/06）✅
 - [ ] 91-05-PLAN.md — 前端 ClarificationCard 多题多选扩展 + 类型/api/store + i18n 守护（Wave 3，CLARIFY-04）
 
 ### Phase 92: 插槽系统（后端）
