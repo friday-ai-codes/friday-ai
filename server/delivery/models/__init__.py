@@ -4,7 +4,10 @@ from delivery.models.architect_merge import (
     ArchitectMerge,
     ArchitectMergeStatus,
 )
-from delivery.models.clarification import Clarification
+from delivery.models.clarification import (
+    Clarification,
+    ClarificationQuestion,
+)
 from delivery.models.comment_event import (
     ApprovalSemantic,
     CommentEventType,
@@ -107,6 +110,7 @@ __all__ = [
     "ArchitectMerge",
     "ArchitectMergeStatus",
     "Clarification",
+    "ClarificationQuestion",
     "TechnicalPlan",
     "TechnicalPlanOrigin",
     "TechnicalPlanStatus",
