@@ -63,3 +63,50 @@ export interface ClarificationAnswerResponse {
   answered_at: string
   inferred_state: Record<string, unknown>
 }
+
+// ============================================================================
+// Plan 结构化澄清（多题 + 多选）—— 与上方 chat 单题澄清并存，物理隔离不串。
+//
+// 对齐 Phase 90 结构化模型 + 91-04 runtime `pending_plan_clarification` /
+// 专路由 `POST /chat/conversations/{id}/plan-clarification/answer/`。
+// runtime questions[] 字段：question_id/question/qtype/options/recommended/
+// selected/freeform_text。
+// ============================================================================
+
+/** plan 澄清单题类型：single=单选 / multi=多选。 */
+export type PlanClarificationQType = 'single' | 'multi'
+
+export interface PlanClarificationQuestion {
+  question_id: string
+  question: string
+  qtype: PlanClarificationQType
+  options: string[]
+  /** 推荐项（⭐ 默认选中）：single 取一个、multi 可多个。runtime 可能给 str 或 str[]。 */
+  recommended?: string | string[]
+  /** 后端已回填的选择（已答轮回显）。 */
+  selected?: string | string[]
+  freeform_text?: string
+}
+
+export interface PlanClarificationPayload {
+  clarification_id: string
+  round_no: number
+  questions: PlanClarificationQuestion[]
+  /**
+   * 卡片归属的 conversation id——store 写入时绑定（mirror ClarificationPayload
+   * 的防污染范式），`ChatMessageArea` 按当前会话过滤防跨会话串渲染。
+   */
+  conversation_id?: string
+  status?: ClarificationStatus
+}
+
+/** 单题答复项：single→selected 为 str；multi→selected 为 string[]。 */
+export interface PlanClarificationAnswerItem {
+  question_id: string
+  selected: string | string[]
+  freeform_text?: string
+}
+
+export interface PlanClarificationAnswerRequest {
+  answers: PlanClarificationAnswerItem[]
+}

@@ -5,7 +5,7 @@
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
 import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ImagePart, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
-import type { ClarificationAnswer, ClarificationPayload } from '~/types/clarification'
+import type { ClarificationAnswer, ClarificationPayload, PlanClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
 import {
@@ -137,6 +137,11 @@ export const useChatStore = defineStore('chat', () => {
   // 不进 localStorage —— 与现有 streaming state pattern 对齐；刷新页面靠后端
   // streaming_snapshot restore 路径还原（plan 03 已落 pending_clarification 进 checkpoint）。
   const pendingClarifications = ref<Map<string, ClarificationPayload>>(new Map())
+
+  // ：plan 结构化澄清（多题 + 多选）状态机（按 clarification_id 唯一）。
+  // 与 chat 单题 pendingClarifications 物理隔离（独立 Map），仅由 91-04 runtime
+  // `pending_plan_clarification` 回灌；按 conversation 维度绑定防跨会话串渲染。
+  const pendingPlanClarifications = ref<Map<string, PlanClarificationPayload>>(new Map())
 
   // / ：仓库多选 modal 状态机
   const repoMultiSelectorState = ref<{
@@ -702,6 +707,7 @@ export const useChatStore = defineStore('chat', () => {
     restoredRuntimeConversationId.value = null
     // ：切换 conversation 时清空协商状态防串台
     pendingClarifications.value = new Map()
+    pendingPlanClarifications.value = new Map()
   }
 
   function upsertConversationAtTop(conversation: Conversation) {
@@ -724,6 +730,7 @@ export const useChatStore = defineStore('chat', () => {
     diffSummaryData.value = null
     completedConfirmSteps.value = []
     pendingClarifications.value = new Map()
+    pendingPlanClarifications.value = new Map()
     isExportSelectMode.value = false
     selectedMessageIds.value = new Set()
     lastFailedContent.value = null
@@ -1069,6 +1076,17 @@ export const useChatStore = defineStore('chat', () => {
           question: pc.question || '',
           options: Array.isArray(pc.options) ? pc.options : [],
           allow_freeform: pc.allow_freeform !== false,
+          status: 'pending',
+        }, id)
+      }
+      // 91-04 runtime 新键：plan 结构化澄清轮（多题），独立于上方 chat 单题，
+      // 按 conversation 维度回灌，questions 非空才进 plan 澄清面（旧单题行不误入）。
+      const ppc = runtime.pending_plan_clarification
+      if (ppc && ppc.clarification_id && Array.isArray(ppc.questions) && ppc.questions.length > 0) {
+        upsertPlanClarification({
+          clarification_id: ppc.clarification_id,
+          round_no: ppc.round_no,
+          questions: ppc.questions,
           status: 'pending',
         }, id)
       }
@@ -2571,6 +2589,44 @@ export const useChatStore = defineStore('chat', () => {
 
   function clearAllClarifications() {
     pendingClarifications.value = new Map()
+    pendingPlanClarifications.value = new Map()
+  }
+
+  // ========================================================================
+  // ：plan 结构化澄清（多题 + 多选）actions —— 与 chat 单题澄清物理隔离
+  // ========================================================================
+
+  function getPlanClarification(id: string): PlanClarificationPayload | undefined {
+    return pendingPlanClarifications.value.get(id)
+  }
+
+  /**
+   * 写入/更新 plan 多题澄清轮，绑定 conversation 维度（mirror upsertClarification
+   * 防污染范式）。`conversationId` 缺省时回退当前会话上下文，保证带 conv 维度。
+   */
+  function upsertPlanClarification(payload: PlanClarificationPayload, conversationId?: string) {
+    const conv = conversationId ?? payload.conversation_id ?? currentConversationId.value ?? undefined
+    pendingPlanClarifications.value.set(payload.clarification_id, {
+      ...payload,
+      conversation_id: conv,
+    })
+  }
+
+  /**
+   * 提交 plan 多题答复后切「已回复」态。提交本身由组件调 api，store 只负责
+   * 状态机 + kick 一次 runtime 轮询跟上后台续推（mirror markClarificationAnswered）。
+   */
+  function markPlanClarificationAnswered(id: string) {
+    const existing = pendingPlanClarifications.value.get(id)
+    if (!existing)
+      return
+    pendingPlanClarifications.value.set(id, {
+      ...existing,
+      status: 'answered',
+    })
+    const convId = existing.conversation_id ?? currentConversationId.value
+    if (convId && convId === currentConversationId.value)
+      scheduleRuntimePoll(convId, 800)
   }
 
   /**
@@ -2721,6 +2777,11 @@ export const useChatStore = defineStore('chat', () => {
     markClarificationAnswered,
     clearAllClarifications,
     skipClarification,
+    // plan 结构化澄清（多题多选，91-05）
+    pendingPlanClarifications,
+    getPlanClarification,
+    upsertPlanClarification,
+    markPlanClarificationAnswered,
     // 单测专用 SSE dispatch 入口
     //   生产路径走 sendMessage → connectSSE → onEvent callback；本字段把内部
     //   闭包暴露给 vitest，避免反射 / sendMessage mock 的开销。

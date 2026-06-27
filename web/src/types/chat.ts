@@ -12,6 +12,16 @@ import type { RoutingDecisionData } from '~/types/routing'
  */
 export type { ConversationStatus } from '~/composables/useConversationFrozen'
 
+/** 会话可见性（项目作战室 P2）。 */
+export type ConversationVisibility = 'personal' | 'shared'
+
+/** 会话贡献者简要（创建者；前端渲染头像首字母 + 名字）。 */
+export interface ConversationContributor {
+  id: string
+  username: string
+  display_name: string
+}
+
 /** 对话 */
 export interface Conversation {
   id: string
@@ -23,6 +33,14 @@ export interface Conversation {
   status: ConversationStatus
   /** 对话级 pin 的 ProviderCredential UUID（null=未 pin） */
   provider_credential_id: string | null
+  /** 绑定项目（项目作战室会话；null=通用会话）。 */
+  bound_project_id?: string | null
+  /** 可见性（personal=仅创建者 / shared=项目共享只读）。 */
+  visibility?: ConversationVisibility
+  /** 创建者简要（项目作战室 P2，列表/详情 annotate）。 */
+  created_by?: ConversationContributor | null
+  /** 单会话执行时长（毫秒；所有 OrchestrationRun 运行时长之和，详情返回）。 */
+  duration_ms?: number
   /** 是否已归档（归档会话从默认列表隐藏） */
   is_archived?: boolean
   /** 该会话的方案编排是否产出了 SDD spec（列表 annotate，缺省 false） */
@@ -243,6 +261,23 @@ export interface ConversationRuntime {
     options: Array<{ id: string, label: string, hint?: string, implies?: Record<string, unknown> }>
     allow_freeform?: boolean
   } | null
+  /**
+   * 待回复的 plan 结构化澄清轮（91-04 runtime 新键，供 91-05 渲染多题澄清卡）。
+   * 与单题 `pending_clarification` 物理隔离；`questions` 为空/无轮时为 null。
+   */
+  pending_plan_clarification?: {
+    clarification_id: string
+    round_no: number
+    questions: Array<{
+      question_id: string
+      question: string
+      qtype: 'single' | 'multi'
+      options: string[]
+      recommended?: string | string[]
+      selected?: string | string[]
+      freeform_text?: string
+    }>
+  } | null
 }
 
 /** 对话详情（含消息列表） */
@@ -265,6 +300,10 @@ export interface CreateConversationParams {
   space_id: string | null
   title?: string
   model?: string
+  /** 绑定项目（项目作战室会话；非空则自动加载项目上下文）。 */
+  bound_project_id?: string | null
+  /** 可见性（personal 默认 / shared 共享，shared 需 bound_project）。 */
+  visibility?: ConversationVisibility
 }
 
 /**
