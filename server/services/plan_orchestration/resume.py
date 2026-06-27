@@ -40,7 +40,8 @@ async def adrive_plan_session_to_pause_or_terminal(
     状态只经 ``engine.session_service.transition`` 转移，绝不直接写 ``session.status``。
     """
     # 函数内 lazy import 规避 import 环（resume → models / barrel）
-    from delivery.models import Clarification, PlanSession, PlanSessionStatus
+    from delivery.models import PlanSession, PlanSessionStatus
+    from delivery.services import ClarificationService
     from services.plan_orchestration import aall_research_tasks_terminal
 
     terminal = {PlanSessionStatus.DONE, PlanSessionStatus.FAILED}
@@ -56,20 +57,20 @@ async def adrive_plan_session_to_pause_or_terminal(
             )
             return await PlanSession.objects.aget(id=session.id)
 
-        # clarifying 在途短路（BLOCKER 修复，保护澄清 HITL）：照搬节点/工具 _maybe_suspend
-        # 的 clarifying 分支 query（answered_at__isnull=True），保证行为等价——否则 engine
-        # 在 needs_clarification 时保持 clarifying→clarifying 自挂起，helper 不短路会一路
-        # advance 到 max_steps 被错误 FAILED，回归澄清 HITL。
-        if session.status == PlanSessionStatus.CLARIFYING:
-            has_pending = await Clarification.objects.filter(
-                session_id=session.id, answered_at__isnull=True
-            ).aexists()
-            if has_pending:
-                return session
+        # clarifying 在途短路（BLOCKER 修复，保护澄清 HITL）：pending 谓词收口到 service 统一
+        # ahas_pending（兼容旧单题行 + 新结构化子题，T-90-03-04），与节点/工具 _maybe_suspend
+        # 行为等价——否则 engine 在 needs_clarification 时保持 clarifying→clarifying 自挂起，
+        # helper 不短路会一路 advance 到 max_steps 被错误 FAILED，回归澄清 HITL。
+        if (
+            session.status == PlanSessionStatus.CLARIFYING
+            and await ClarificationService().ahas_pending(session.id)
+        ):
+            return session
 
         # researching 在途短路：仍有在途调研 → 等下一次容器回调，不再 advance
-        if session.status == PlanSessionStatus.RESEARCHING and not await aall_research_tasks_terminal(
-            session.id
+        if (
+            session.status == PlanSessionStatus.RESEARCHING
+            and not await aall_research_tasks_terminal(session.id)
         ):
             return session
 

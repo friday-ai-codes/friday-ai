@@ -176,12 +176,14 @@ async def _drive(
         if session.status in (PlanSessionStatus.DONE, PlanSessionStatus.FAILED):
             return session
         if session.status == PlanSessionStatus.CLARIFYING:
-            pending = await Clarification.objects.filter(
-                session_id=session.id, answered_at__isnull=True
-            ).afirst()
-            if pending is not None:
-                await ClarificationService().answer_clarification(pending, answer_text)
-                continue
+            # pending 谓词收口到 service 统一 ahas_pending（兼容旧单题行 + 新结构化子题）。
+            if await ClarificationService().ahas_pending(session.id):
+                pending = await Clarification.objects.filter(
+                    session_id=session.id, answered_at__isnull=True
+                ).afirst()
+                if pending is not None:
+                    await ClarificationService().answer_clarification(pending, answer_text)
+                    continue
         if session.status == PlanSessionStatus.RESEARCHING:
             if not await aall_research_tasks_terminal(session.id):
                 running = await RepoResearchTask.objects.filter(
@@ -364,7 +366,8 @@ async def test_e2e_requirement_to_merged_plan_with_cross_repo_deps() -> None:
 
     # §15 事件持久化覆盖（routing/recalling/research.*/merge.*）
     events = {
-        e async for e in PlanSessionEvent.objects.filter(session_id=session.id).values_list(
+        e
+        async for e in PlanSessionEvent.objects.filter(session_id=session.id).values_list(
             "event", flat=True
         )
     }
@@ -455,15 +458,11 @@ async def test_e2e_clarification_loop_reruns_only_affected() -> None:
     a_invalidated = await PartialPlan.objects.filter(
         research_task_id=task_a.id, valid=False, invalidated_reason="clarification"
     ).acount()
-    a_valid = await PartialPlan.objects.filter(
-        research_task_id=task_a.id, valid=True
-    ).acount()
+    a_valid = await PartialPlan.objects.filter(research_task_id=task_a.id, valid=True).acount()
     assert a_invalidated == 1
     assert a_valid == 1
     # taskB 复用：始终单一 valid partial，从未失效
-    b_valid = await PartialPlan.objects.filter(
-        research_task_id=task_b.id, valid=True
-    ).acount()
+    b_valid = await PartialPlan.objects.filter(research_task_id=task_b.id, valid=True).acount()
     b_invalidated = await PartialPlan.objects.filter(
         research_task_id=task_b.id, valid=False
     ).acount()
