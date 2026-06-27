@@ -145,7 +145,12 @@
   1. `decompose` 阶段由「按非空行切分」升级为 LLM 跨仓业务线/模块/前后端拆分。
   2. 新增 LLM 调用赋 `call_source` 并上报指标，失败 fail-soft 降级回退到现状按行切分。
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 95-01-PLAN.md — CallSource.PLAN_DECOMPOSE 枚举 + LOGGING-SPEC §4.1 登记（补 plan_clarification）
+- [ ] 95-02-PLAN.md — decompose_segments.py LLM 拆分 helper（健壮解析 + normalize + call_source + fail-soft）
+- [ ] 95-03-PLAN.md — engine._decompose 接线 helper + splitlines 回退 + 测试
 
 #### Progress
 
