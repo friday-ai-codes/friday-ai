@@ -3,7 +3,7 @@
  */
 
 import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest, ImagePart } from '~/types/chat'
-import type { ClarificationAnswerRequest, ClarificationAnswerResponse } from '~/types/clarification'
+import type { ClarificationAnswerRequest, ClarificationAnswerResponse, PlanClarificationAnswerRequest } from '~/types/clarification'
 import { del, get, patch, post, upload } from './client'
 
 // ============================================================================
@@ -223,6 +223,8 @@ export interface ListConversationsParams {
   limit?: number
   /** 仅返回已归档会话（「查看已归档」入口）。 */
   archived?: boolean
+  /** 项目作战室：按绑定项目过滤（项目页大盘会话栏只列本项目会话）。 */
+  bound_project?: string
 }
 
 /**
@@ -240,7 +242,19 @@ export async function listConversations(
     query.limit = params.limit
   if (params.archived)
     query.archived = 1
+  if (params.bound_project)
+    query.bound_project = params.bound_project
   return get<Conversation[]>('/chat/conversations/', query)
+}
+
+/**
+ * 克隆会话为「我的项目个人会话」（项目作战室 P2 clone 贡献）。
+ *
+ * 共享会话对项目成员只读；成员要发言即 clone 一份归属自己的副本（personal，
+ * 继承 bound_project），在副本里自由对话。返回新会话 id。
+ */
+export async function cloneConversation(id: string): Promise<{ conversation_id: string }> {
+  return post<{ conversation_id: string }>(`/chat/conversations/${id}/clone/`, {})
 }
 
 /**
@@ -285,6 +299,10 @@ export interface PatchConversationParams {
   title?: string
   /** 会话内切换空间；null 切回不绑定空间的通用对话 */
   space_id?: string | null
+  /** 绑定/解绑项目（项目作战室）。 */
+  bound_project_id?: string | null
+  /** 可见性互转（个人↔共享，仅创建者；共享需 bound_project）。 */
+  visibility?: 'personal' | 'shared'
   /** 归档开关：true 归档（从默认列表隐藏）/ false 取消归档 */
   is_archived?: boolean
 }
@@ -513,6 +531,25 @@ export async function postClarificationAnswer(
   )
 }
 
+/**
+ * ：提交 plan 结构化澄清答复（多题 + 多选）。
+ * POST /api/chat/conversations/{conversation_id}/plan-clarification/answer/
+ *
+ * 对接 91-04 会话端专属路由（与 chat 单题 `postClarificationAnswer` 物理隔离）：
+ * owner gate + question_id 归属校验后经同源 helper 写 delivery + 续推 PlanSession。
+ * 前端只组装 UI 选择 `answers:[{question_id,selected,freeform_text}]`，越界/越权
+ * 由服务端把关；提交后等 runtime polling 拿续推产出。
+ */
+export async function postPlanClarificationAnswer(
+  conversationId: string,
+  payload: PlanClarificationAnswerRequest,
+): Promise<{ status?: string }> {
+  return post<{ status?: string }>(
+    `/chat/conversations/${conversationId}/plan-clarification/answer/`,
+    payload,
+  )
+}
+
 /** 跳过澄清的响应（按 conversation 维度，不依赖 clarification_id）。 */
 export interface ClarificationSkipResponse {
   status: 'skipped' | 'no_pending'
@@ -547,6 +584,7 @@ export default {
   uploadChatImage,
   listConversations,
   createConversation,
+  cloneConversation,
   getConversationDetail,
   getConversationRuntime,
   patchConversation,
@@ -568,5 +606,6 @@ export default {
   getConflictCheck,
   getDiffSummary,
   postClarificationAnswer,
+  postPlanClarificationAnswer,
   skipClarification,
 }
