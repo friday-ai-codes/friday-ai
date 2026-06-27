@@ -65,7 +65,9 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     node_type: ClassVar[str] = "ai_plan_research"
     display_name: ClassVar[str] = "AI 方案编排调研"
-    description: ClassVar[str] = "从需求建 PlanSession 驱动编排（拆分→路由→召回→澄清→调研→融合）产出主方案"
+    description: ClassVar[str] = (
+        "从需求建 PlanSession 驱动编排（拆分→路由→召回→澄清→调研→融合）产出主方案"
+    )
     icon: ClassVar[str] = "git-merge"
 
     config_schema: ClassVar[dict[str, Any]] = {
@@ -178,7 +180,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
         # 4. 入口私有挂起 marker 映射（保留）：helper 短路返回后再判一次，clarifying-pending /
         #    researching-在途 处返回工作流 waiting_event marker。
-        suspend = await self._maybe_suspend(session)
+        suspend = await self._maybe_suspend(session, context)
         if suspend is not None:
             log.info(
                 "plan_research_suspended",
@@ -304,11 +306,21 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     # ===== 挂起判定 =====
 
-    async def _maybe_suspend(self, session: Any) -> NodeResult | None:
-        """clarifying（pending clarification）/ researching（在途调研）处返回 waiting_event。"""
+    async def _maybe_suspend(self, session: Any, context: ExecutionContext) -> NodeResult | None:
+        """clarifying（pending clarification）/ researching（在途调研）处返回 waiting_event。
+
+        CLARIFY-05：工作流入口（有 ``workflow_execution`` / ``node_execution``）在 CLARIFYING
+        挂起时发飞书澄清交互卡到项目群 + 建 ``WorkflowEventSubscription(PlanClarifyCallback)``
+        超时兜底（mirror ``plan_deepen``）；chat 入口（无 execution）不发卡（走 91-04 会话出口面）。
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
         from delivery.models import Clarification, PlanSessionStatus
         from delivery.services.clarification_service import ClarificationService
         from services.plan_orchestration import aall_research_tasks_terminal
+        from workflows.models.execution import WorkflowEventSubscription
 
         if session.status == PlanSessionStatus.CLARIFYING:
             # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判：容器 answered_at 仍空
@@ -317,13 +329,24 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 pending = None
             else:
                 pending = await (
-                    Clarification.objects.filter(
-                        session_id=session.id, answered_at__isnull=True
-                    )
+                    Clarification.objects.filter(session_id=session.id, answered_at__isnull=True)
+                    .order_by("round_no", "created_at")
                     .values("id", "question")
                     .afirst()
                 )
             if pending is not None:
+                clarification_id = str(pending["id"])
+                # CLARIFY-05：仅工作流入口发卡 + 订阅（chat 入口走 91-04 会话出口面）。
+                if context.workflow_execution and context.node_execution:
+                    await self._send_clarify_card(session, context, clarification_id)
+                    await WorkflowEventSubscription.objects.acreate(
+                        workflow_execution=context.workflow_execution,
+                        node_execution=context.node_execution,
+                        event_type="PlanClarifyCallback",
+                        project_key=context.workflow_context.get("project_key", ""),
+                        timeout_at=timezone.now() + timedelta(minutes=60),
+                        timeout_action="fail",
+                    )
                 return NodeResult(
                     status="waiting_event",
                     output={
@@ -331,7 +354,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                         "kind": "clarification",
                         "suspension": {
                             "type": "ask_user_question",
-                            "clarification_id": str(pending["id"]),
+                            "clarification_id": clarification_id,
                             "question": pending["question"],
                         },
                     },
@@ -350,6 +373,101 @@ class AIPlanResearchNode(AIAgentBaseNode):
                 )
         return None
 
+    # ===== CLARIFY-05 发卡（工作流入口，mirror plan_deepen._send_clarify_card） =====
+
+    async def _send_clarify_card(
+        self, session: Any, context: ExecutionContext, clarification_id: str
+    ) -> None:
+        """发澄清交互卡到项目群（best-effort，绝不反噬挂起）。
+
+        取 pending 轮子题（按 ``order``，与回调侧 91-03 枚举顺序一致）→ 复用
+        ``build_clarification_card``（携 ``clarification_id``）→ 解析项目群（mirror
+        ``plan_deepen._asend_card``）→ ``FeishuIMService.send_card``。卡片正文经
+        ``redact_secrets_in_text`` 脱敏（T-91-02-02）；触发用户带 ``initiated_by_user_id``
+        （T-91-02-03）；全程 try/except 失败仅 log（T-91-02-05）。
+        """
+        from delivery.models import Clarification
+        from feishu.cards.chat_question_card import build_clarification_card
+        from initiatives.services.project_service import ProjectService
+        from services.feishu_im import FeishuIMService
+        from workflows.nodes.integrations.board_split_review import (
+            _aresolve_project,
+            _resolve_space,
+        )
+
+        log = logger.bind(
+            execution_id=context.execution_id,
+            node_id=context.node_id,
+            component="plan_research",
+            category="caller",
+        )
+        try:
+            questions = await self._acollect_round_questions(clarification_id)
+            if not questions:
+                return
+            round_meta = await (
+                Clarification.objects.filter(id=clarification_id).values("round_no").afirst()
+            )
+            space = await _resolve_space(context)
+            if space is None:
+                return
+            project = await _aresolve_project(space)
+            if project is None:
+                return
+            initiated_by_user_id = self._resolve_initiator(context)
+            chat_id = await ProjectService().resolve_or_create_group(
+                project=project,
+                member_ids=[],
+                initiated_by_user_id=initiated_by_user_id,
+            )
+            if not chat_id:
+                return
+            card = build_clarification_card(
+                questions,
+                execution_id=context.execution_id,
+                node_id=context.node_id,
+                clarification_id=clarification_id,
+                round_no=(round_meta or {}).get("round_no") or 1,
+            )
+            im_service = await FeishuIMService.create(space)
+            await im_service.send_card(receive_id=chat_id, receive_id_type="chat_id", card=card)
+        except Exception:  # noqa: BLE001 — 发卡 best-effort，绝不反噬挂起
+            log.warning("plan_research_clarify_card_failed", session_id=str(session.id))
+
+    @staticmethod
+    async def _acollect_round_questions(clarification_id: str) -> list[dict[str, Any]]:
+        """取 pending 轮未答子题（按 ``order``），组装发卡用 questions，正文脱敏。"""
+        from common.logging import redact_secrets_in_text
+        from delivery.models import ClarificationQuestion
+
+        questions: list[dict[str, Any]] = []
+        async for q in (
+            ClarificationQuestion.objects.filter(
+                clarification_id=clarification_id, answered_at__isnull=True
+            )
+            .order_by("order")
+            .values("question", "qtype", "options", "recommended")
+        ):
+            questions.append(
+                {
+                    "question": redact_secrets_in_text(str(q.get("question") or "")),
+                    "type": q.get("qtype") or "single",
+                    "options": q.get("options") or [],
+                    "recommended": q.get("recommended") or [],
+                }
+            )
+        return questions
+
+    @staticmethod
+    def _resolve_initiator(context: ExecutionContext) -> str:
+        """取工作流触发用户 id（缺记 system，观测约束：后台/外部触发带 initiated_by_user_id）。"""
+        execution = context.workflow_execution
+        if execution is not None:
+            triggered_by_id = getattr(execution, "triggered_by_id", None)
+            if triggered_by_id:
+                return str(triggered_by_id)
+        return "system"
+
     # ===== 终态映射 =====
 
     async def _map_terminal(self, session: Any) -> NodeResult:
@@ -364,9 +482,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         from delivery.models import PlanSessionStatus, PlanVersion
 
         if session.status == PlanSessionStatus.DONE:
-            pv_id = (
-                str(session.current_plan_version) if session.current_plan_version else None
-            )
+            pv_id = str(session.current_plan_version) if session.current_plan_version else None
             plan_content: dict[str, Any] = {}
             if pv_id:
                 pv = await PlanVersion.objects.filter(id=pv_id).afirst()

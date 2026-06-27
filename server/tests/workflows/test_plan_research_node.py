@@ -8,7 +8,8 @@ schema 合法 + 自动注册。用真实 PlanSession/PlanSessionService + 真实
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -295,9 +296,11 @@ async def test_maybe_suspend_structured_round_pending_via_ahas_pending() -> None
         ],
     )
     node = AIPlanResearchNode()
+    # chat 入口 context（无 workflow_execution/node_execution）→ 不发卡、不订阅
+    ctx = _ctx()
 
     # 子题未答 → ahas_pending=True → 正确挂起 waiting_event
-    suspend = await node._maybe_suspend(session)
+    suspend = await node._maybe_suspend(session, ctx)
     assert suspend is not None
     assert suspend.status == "waiting_event"
     assert suspend.output["kind"] == "clarification"
@@ -307,7 +310,115 @@ async def test_maybe_suspend_structured_round_pending_via_ahas_pending() -> None
     await svc.answer_round(
         round_, [{"question_id": str(q.id), "selected": "api", "freeform_text": ""}]
     )
-    assert await node._maybe_suspend(session) is None
+    assert await node._maybe_suspend(session, ctx) is None
+
+
+def _workflow_ctx() -> ExecutionContext:
+    """工作流入口 context（带 workflow_execution/node_execution → 触发发卡 + 订阅）。"""
+    return ExecutionContext(
+        execution_id="exec-clarify",
+        node_id="node-clarify",
+        node_config={},
+        input_data={},
+        workflow_context={"project_key": "PK"},
+        previous_outputs={},
+        workflow_execution=SimpleNamespace(id="we-1", triggered_by_id=7),
+        node_execution=SimpleNamespace(id="ne-1"),
+    )
+
+
+def _clarify_send_patches(im: MagicMock, acreate: AsyncMock):
+    """patch 发卡 IO 边界（群解析 / ProjectService / FeishuIMService / 订阅 acreate）。"""
+    proj_svc = MagicMock()
+    proj_svc.resolve_or_create_group = AsyncMock(return_value="chat-123")
+    feishu_cls = MagicMock()
+    feishu_cls.create = AsyncMock(return_value=im)
+    return (
+        patch(
+            "workflows.nodes.integrations.board_split_review._resolve_space",
+            AsyncMock(return_value=SimpleNamespace(id="s1")),
+        ),
+        patch(
+            "workflows.nodes.integrations.board_split_review._aresolve_project",
+            AsyncMock(return_value=SimpleNamespace(id="p1")),
+        ),
+        patch("initiatives.services.project_service.ProjectService", return_value=proj_svc),
+        patch("services.feishu_im.FeishuIMService", feishu_cls),
+        patch(
+            "workflows.models.execution.WorkflowEventSubscription.objects.acreate", new=acreate
+        ),
+    )
+
+
+async def _seed_clarifying_round() -> PlanSession:
+    """建 CLARIFYING session + 结构化多子题 pending 轮。"""
+    from delivery.services.clarification_service import ClarificationService
+
+    session = await PlanSession.objects.acreate(
+        entrypoint="workflow", status=PlanSessionStatus.CLARIFYING
+    )
+    await ClarificationService().create_round(
+        session,
+        [
+            {"question": "实验组用户？", "type": "single", "options": ["全部", "灰度"], "recommended": "灰度"},
+            {"question": "目标仓库？", "type": "multi", "options": ["api", "web"], "recommended": ["api"]},
+        ],
+    )
+    return session
+
+
+@pytest.mark.asyncio
+async def test_clarifying_workflow_entry_sends_card_and_subscribes() -> None:
+    """CLARIFY-05：工作流入口 CLARIFYING 挂起 → 发 build_clarification_card 到群 + 建订阅。"""
+    session = await _seed_clarifying_round()
+    sent: dict = {}
+    im = MagicMock()
+
+    async def _send_card(**kwargs):
+        sent.update(kwargs)
+
+    im.send_card = AsyncMock(side_effect=_send_card)
+    acreate = AsyncMock()
+    p_space, p_proj, p_psvc, p_feishu, p_sub = _clarify_send_patches(im, acreate)
+
+    node = AIPlanResearchNode()
+    with p_space, p_proj, p_psvc, p_feishu, p_sub:
+        result = await node._maybe_suspend(session, _workflow_ctx())
+
+    assert result is not None
+    assert result.status == "waiting_event"
+    assert result.output["kind"] == "clarification"
+    # 发卡到项目群
+    im.send_card.assert_awaited_once()
+    assert sent["receive_id"] == "chat-123"
+    assert sent["receive_id_type"] == "chat_id"
+    # 卡片携 clarification_id + 新 action（按 order 的 q0/q1 子题）
+    value = _form_submit_value(sent["card"])
+    assert value["action"] == "plan_clarify_answer"
+    assert value["clarification_id"] == result.output["suspension"]["clarification_id"]
+    # 建 PlanClarifyCallback 订阅（超时兜底）
+    acreate.assert_awaited_once()
+    assert acreate.await_args.kwargs["event_type"] == "PlanClarifyCallback"
+    assert acreate.await_args.kwargs["timeout_action"] == "fail"
+
+
+@pytest.mark.asyncio
+async def test_clarify_card_failure_does_not_block_suspension() -> None:
+    """T-91-02-05：发卡抛错 best-effort——节点仍返回 waiting_event 且仍建订阅（不反噬挂起）。"""
+    session = await _seed_clarifying_round()
+    im = MagicMock()
+    im.send_card = AsyncMock(side_effect=RuntimeError("飞书 500"))
+    acreate = AsyncMock()
+    p_space, p_proj, p_psvc, p_feishu, p_sub = _clarify_send_patches(im, acreate)
+
+    node = AIPlanResearchNode()
+    with p_space, p_proj, p_psvc, p_feishu, p_sub:
+        result = await node._maybe_suspend(session, _workflow_ctx())
+
+    assert result is not None
+    assert result.status == "waiting_event"
+    # 发卡失败被吞，订阅仍建（超时兜底不缺）
+    acreate.assert_awaited_once()
 
 
 @pytest.mark.asyncio
