@@ -67,7 +67,13 @@
   3. 回写结构化答案后经 `answer_clarification` → `adrive_plan_session_to_pause_or_terminal` 续推，工作流 + 会话同源（不造两套）。
   4. 答后引擎/Agent 重判：信息不足再发一轮、足够则继续编排出方案，且有防无限挂起的上界。
 
-**Plans**: TBD
+**Plans**: 5 plans（3 waves）
+
+- [ ] 91-01-PLAN.md — 共享回流 helper aanswer_round_and_resume + 多轮放开（移除 CR-01 + round_no 上界 6 + 带答案重判）（Wave 1，CLARIFY-06/07）
+- [ ] 91-02-PLAN.md — 工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id/新 action + WR-03 三处 pending 收口（Wave 1，CLARIFY-05/WR-03）
+- [ ] 91-03-PLAN.md — 飞书澄清回调 plan_clarify_（form_value→answers→answer_round→续推→approve_node）（Wave 2，CLARIFY-05/06）
+- [ ] 91-04-PLAN.md — 会话端专路由 endpoint 收 answers[] + owner gate + runtime 暴露 plan 结构化轮 + 续推（Wave 2，CLARIFY-04/06）
+- [ ] 91-05-PLAN.md — 前端 ClarificationCard 多题多选扩展 + 类型/api/store + i18n 守护（Wave 3，CLARIFY-04）
 
 ### Phase 92: 插槽系统（后端）
 
@@ -128,7 +134,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 90. 澄清能力层 | 4/4 | Complete    | 2026-06-27 |
-| 91. 澄清出口面 + 回流 resume | 0/TBD | Not started | - |
+| 91. 澄清出口面 + 回流 resume | 0/5 | Not started | - |
 | 92. 插槽系统（后端） | 0/TBD | Not started | - |
 | 93. 插槽编辑器（前端） | 0/TBD | Not started | - |
 | 94. 入口统一 | 0/TBD | Not started | - |
