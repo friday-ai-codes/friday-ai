@@ -108,7 +108,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 90. 澄清能力层 | 0/TBD | Not started | - |
+| 90. 澄清能力层 | 1/4 | In progress | - |
 | 91. 澄清出口面 + 回流 resume | 0/TBD | Not started | - |
 | 92. 插槽系统（后端） | 0/TBD | Not started | - |
 | 93. 插槽编辑器（前端） | 0/TBD | Not started | - |

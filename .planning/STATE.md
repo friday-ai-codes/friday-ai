@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: planning
-last_updated: "2026-06-27T04:51:19.415Z"
+status: in_progress
+last_updated: "2026-06-27T06:19:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 4
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 90 (not started)
-Plan: —
-Status: Roadmap created, ready for planning
-Last activity: 2026-06-27 — Milestone v0.16.1 roadmap created (Phases 90–95)
+Phase: 90 (in progress)
+Plan: 01 完成（数据脊柱）→ 下一步 90-02（service 写入收口）
+Status: 90-01 executed（Clarification 容器扩展 + ClarificationQuestion 子表 + 迁移 0026）
+Last activity: 2026-06-27 — 执行 90-01：结构化澄清数据模型（CLARIFY-01 模型半）
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
 
@@ -280,7 +280,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 58]: 58-01: CardKit 封装层（Wave 1）——FeishuIMClient 手写 httpx 新增 4 个 CardKit v1 方法（create_card_entity POST /cardkit/v1/cards 建实体返 card_id / send_card_entity 复用 send_message interactive 引用 card_id / stream_card_content PUT elements/{id}/content 全量文本+sequence / settle_card_stream PATCH settings streaming_mode=false），复用 get_tenant_access_token + httpx.AsyncClient + structlog，不引 lark-oapi cardkit SDK、不新建 feishu_cardkit.py（直接进 feishu_im.py 与 send_card/update_card 同类，D-1）；code!=0 统一抛 FeishuIMError（F-5 降级判定基础）；FeishuIMService 4 同构委托。sequence 由调用方严格递增透传、方法层不内置计数器（P-2 留 Wave 2）；content 全量非 delta 不做累积（P-4）；uuid 关键字默认空串非空才写 body（D-6 幂等）。bot_cards 新增 build_streaming_card_v2（schema 2.0 流式卡 + config.streaming_mode/update_multi/streaming_config + 单 markdown 元素带 element_id）+ build_answer_markdown（终态 answer+引用+usage 单 markdown 串，复用 _reference_lines + usage 行格式与 build_answer_card 逐字一致保降级一致，D-3）。零回归：send_card/update_card/send_message/get_tenant_access_token + 既有所有 builder 符号逐字不变。新建 test_feishu_cardkit.py（respx 形状单测，token 缓存预置避真实鉴权，10 例）；31 passed（cardkit+bot_cards+card_retry）
 - [Phase 59]: 59-01: 建群封装 + writeback 入口（Wave 1）——FeishuIMClient.create_chat 手写 httpx 一次 `POST /im/v1/chats` 建群即拉人单步（body 仅放非空字段：name 恒放 + user_id_list≤50 + bot_id_list≤5 + 可选 owner_id/description；query user_id_type 默认 open_id，set_bot_manager 仅 owner_id 非空且需设管理员时下发 "true"），复用 get_tenant_access_token + httpx + structlog，对齐 add_bot_to_chat（NOTE-1：仅 raise RateLimitError，不加 @retry 避免单测真实 sleep）；code!=0→FeishuIMError、99991400→RateLimitError、成功取 data（含 chat_id）；FeishuIMService.create_chat 同构委托。WorkItemService.awriteback_feishu_chat_id（feishu_chat_id writeback 单一入口，INV-6/P-5）——三元组定位 + save(update_fields=["feishu_chat_id","updated_at"])，WorkItem 不存在返回 False 不抛（fail-soft 留调用方）、DB 异常不吞；@sync_to_async 包同步块；feishu_chat_id 绝不进 _MIRROR_FIELDS、绝不在 _refresh_mirror 写（否则 sync 覆盖回空）。INV-6 grep 守护扩 feishu_chat_id（正则 `\.feishu_chat_id\s*=\s*[^=]` 排除比较；旁路写禁止 + writer-actually-writes 正向有效性，复用 _is_scanned_for_inv6 剪枝）。零回归：add_bot_to_chat/ensure_bot_in_chat/get_chat_members/_refresh_mirror/_MIRROR_FIELDS/upsert 逐字不变（diff 纯新增）；411 passed。Wave 2（59-02）在 feishu_chat.py 新增 CreateGroupChatNode 接线消费
 - [Phase 59]: 59-02: CreateGroupChatNode 节点接线（Wave 2，兑现 GROUP-01 SC-1/2/3）——feishu_chat.py 新增 `CreateGroupChatNode`（@register_node 自动注册 `create_group_chat`，全局唯一不撞 fetch/join_group_chat；`NodeCategory.INTEGRATION`/`execution_mode="server_local"`，镜像 Fetch/Join 节点结构 + 全中文 config_schema），inputs=[default]、outputs=[default(成功),error(失败)]。execute：render 群名 + `_parse_id_list`（member_ids 三形态：模板 get_template_value 保留 list / JSON 列表兼容单引号 / 逗号分隔，逐项 strip 去空，镜像 normalize_repositories）→ 缺群名 **或** 缺成员 → failed+error handle（D-4，建群+拉人核心空成员无意义）→ `FeishuIMService.create(project).create_chat(name, user_id_list=, owner_id=, description=, user_id_type=open_id)`（建群即拉人单步，消费 Wave 1）；`except FeishuIMError → failed+error handle`（D-7 建群失败）。输出 `{chat_id(一等),chat_name,owner_id(data.get 容错空串 P-3),source:"create_group_chat",writeback:{attempted,success}}`（D-8）。可选 writeback（D-7 fail-soft）：仅 project_key+work_item_id 均非空才触发，`int()` 失败 warning 跳过（attempted=False，P-11）；`WorkItemService().awriteback_feishu_chat_id(project_key,work_item_type,int(work_item_id),chat_id)`（函数级 import 避循环依赖）经 `try/except Exception`+log.warning 包裹——DB 异常/返回 False 节点**仍 completed** 返回 chat_id，绝不冒泡（P-6 INV-6 单一入口，节点无 WorkItem.objects/.save 直接写表）。绝不改 FetchGroupChatNode/JoinGroupChatNode（git diff 仅 import 行扩展 FeishuIMError）。测试 patch 源模块类属性 `delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id`（节点函数级 import，patch feishu_chat 模块不生效，NOTE-3）。新增 14 例（happy/三形态/缺参/建群失败/writeback happy·fail-soft·不存在·未配/自动注册）；34 passed（含既有零回归）+ Wave 1+2 60 passed
-- [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏；emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
+- [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏； emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
+- [Phase 90]: 90-01: 结构化澄清数据脊柱（CLARIFY-01 模型半）——沿用 `Clarification` 作轮次容器（非新建 ClarificationRound，最小迁移成本），新增 4 个 nullable 字段 `round_no`/`container_status`（**非 status**，避免与 PlanSession.status 混淆 + 迁移误判状态机字段）/`origin_repo`（CLARIFY-03 携带）/`plan_version_id`（采纳率冗余绑定，canonical 仍 session.current_plan_version）；新建 `ClarificationQuestion` 子表（FK CASCADE related_name=questions、db_table=delivery_clarification_question、复合索引 [clarification, order]，字段 order/question/qtype(**非 type**，避开 Python 内建)/options/recommended/origin_repo/selected/freeform_text/answered_at/recommendation_adopted/created_at）承载多问题+单多选+按题答案+采纳信号。新字段全 null=True 保留既有 question/answer/answered_at/affected_partials 不删（旧行 migrate 不破坏、不强制回填，T-90-01-01）；模型层零业务方法守 INV-6（写入收口归 90-02 service，grep 守护待扩展覆盖子模型）；迁移 0026_clarification_questions 自动生成后重命名、依赖 0025、makemigrations --check 干净 + 可正向 migrate（SQLite dev 验证）
 
 ### Pending Todos
 
