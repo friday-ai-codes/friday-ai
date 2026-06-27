@@ -14,12 +14,15 @@ import pytest
 
 from delivery.models import (
     Clarification,
+    ClarificationQuestion,
     PlanSession,
     PlanSessionEntrypoint,
     PlanSessionStatus,
 )
 from delivery.services import ClarificationService
 from services.plan_orchestration import ClarifyAdapter, PlanOrchestrationEngine
+
+_LLM_GEN = "services.plan_orchestration.clarify_adapter.agenerate_clarification_questions"
 
 
 @pytest.mark.django_db
@@ -45,9 +48,7 @@ async def test_needs_clarification_suspends_and_emits_asked() -> None:
     ).acount()
     assert pending == 1
     # emit clarification.asked
-    asked = [
-        c for c in emit_spy.call_args_list if c.args and c.args[0] == "clarification.asked"
-    ]
+    asked = [c for c in emit_spy.call_args_list if c.args and c.args[0] == "clarification.asked"]
     assert len(asked) == 1
     assert asked[0].args[2]["question"] == "请补充涉及仓库/模块"
 
@@ -107,9 +108,7 @@ async def test_existing_pending_not_duplicated_on_resume() -> None:
     assert reloaded.status == PlanSessionStatus.CLARIFYING
     # 仍只有 1 条 pending（未重复建）
     assert (
-        await Clarification.objects.filter(
-            session_id=session.id, answered_at__isnull=True
-        ).acount()
+        await Clarification.objects.filter(session_id=session.id, answered_at__isnull=True).acount()
         == 1
     )
 
@@ -178,4 +177,128 @@ async def test_real_policy_answered_round_advances_no_second_clarification() -> 
     session = await PlanSession.objects.aget(id=session.id)
     assert session.status == PlanSessionStatus.RESEARCHING
     # 关键：未创建第二条 Clarification（仍只有首轮那 1 条）
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+
+
+# ── CLARIFY-02：LLM 多题接线 + fail-soft 回退 + pending 升级（90-03） ──────────────
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_clarify_wires_llm_multi_questions() -> None:
+    """首轮 needs==True → 调 LLM 产多题，经 create_round 落容器 + N 个 ClarificationQuestion。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        decomposition={"requirement_text": "把实验组用户引流到新页"},
+    )
+    llm_questions = [
+        {
+            "question": "**实验组用户**口径？",
+            "type": "single",
+            "options": ["按标签", "按名单"],
+            "recommended": "按标签",
+        },
+        {
+            "question": "改动涉及哪些端？",
+            "type": "multi",
+            "options": ["web", "app"],
+            "recommended": ["web"],
+        },
+    ]
+    adapter = ClarifyAdapter(policy=lambda s: (True, "粗问题", []))
+    gen = AsyncMock(return_value=llm_questions)
+    with patch(_LLM_GEN, new=gen):
+        result = await adapter.clarify(session)
+
+    # LLM 生成器被调用（首轮 needs==True 后）
+    assert gen.await_count == 1
+    assert result["needs_clarification"] is True
+    # create_round 落 1 容器 + 2 子题
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+    children = [
+        q
+        async for q in ClarificationQuestion.objects.filter(
+            clarification__session_id=session.id
+        ).order_by("order")
+    ]
+    assert len(children) == 2
+    assert children[0].qtype == "single"
+    assert children[1].qtype == "multi"
+    assert children[0].options == ["按标签", "按名单"]
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_clarify_fail_soft_empty_falls_back_to_coarse() -> None:
+    """LLM 返回 [] → fail-soft 回退现状粗单题（legacy 单题行、无子题）、记回退事件、不抛。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        decomposition={"requirement_text": "需求文本"},
+    )
+    adapter = ClarifyAdapter(policy=lambda s: (True, "请补充涉及仓库/模块", []))
+    with (
+        patch(_LLM_GEN, new=AsyncMock(return_value=[])),
+        patch("services.plan_orchestration.clarify_adapter.logger") as mock_logger,
+    ):
+        result = await adapter.clarify(session)
+
+    assert result["needs_clarification"] is True
+    # 回退建 1 条 legacy 单题行（无子题）
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+    assert (
+        await ClarificationQuestion.objects.filter(clarification__session_id=session.id).acount()
+        == 0
+    )
+    # 记 clarification_fallback_coarse_question 回退事件
+    events = [c.args[0] for c in mock_logger.info.call_args_list if c.args]
+    assert "clarification_fallback_coarse_question" in events
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_clarify_fail_soft_exception_does_not_fail_session() -> None:
+    """生成器内部已吞异常返回 [] → adapter 不抛、engine 不落 failed（仍 clarifying 挂起）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        decomposition={"requirement_text": "需求文本"},
+    )
+    adapter = ClarifyAdapter(policy=lambda s: (True, "粗问题", []))
+    engine = PlanOrchestrationEngine(clarify=adapter)
+    with patch(_LLM_GEN, new=AsyncMock(return_value=[])):
+        await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    # engine 未落 failed：fail-soft 回退后保持 clarifying 挂起
+    assert reloaded.status == PlanSessionStatus.CLARIFYING
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_clarify_pending_uses_ahas_pending() -> None:
+    """轮内有未答子题 → 再次 clarify 经 ahas_pending 判 pending=True，不重复建轮。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        decomposition={"requirement_text": "需求文本"},
+    )
+    # 预置一个结构化多题轮（子题未答 → ahas_pending True）
+    await ClarificationService().create_round(
+        session,
+        [{"question": "Q1", "type": "single", "options": ["a", "b"], "recommended": "a"}],
+    )
+
+    adapter = ClarifyAdapter(policy=lambda s: (True, "不应被调用", []))
+    gen = AsyncMock(
+        return_value=[{"question": "Q2", "type": "single", "options": [], "recommended": ""}]
+    )
+    with patch(_LLM_GEN, new=gen):
+        result = await adapter.clarify(session)
+
+    # pending 短路：返回 pending、未调 LLM、未重复建轮
+    assert result == {"needs_clarification": True, "pending": True}
+    assert gen.await_count == 0
     assert await Clarification.objects.filter(session_id=session.id).acount() == 1
