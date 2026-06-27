@@ -208,9 +208,17 @@ class PlanDeepenNode(BaseNode):
 
     @staticmethod
     async def _apending_clarification_question(session: Any) -> str:
-        """取最新未答 Clarification 问题（无则空串）。"""
-        from delivery.models import Clarification
+        """取最新未答 Clarification 问题（无则空串）。
 
+        WR-03：存在性判定收口 ``ClarificationService.ahas_pending``（结构化子题轮不误判）；
+        确认仍有未答澄清后，取最新未答问题文本仍用既有 ``.order_by("-created_at")`` 查询
+        （分工：判存在用谓词、取内容用查询，零回归既有发卡）。
+        """
+        from delivery.models import Clarification
+        from delivery.services.clarification_service import ClarificationService
+
+        if not await ClarificationService().ahas_pending(session.id):
+            return ""
         clar = (
             await Clarification.objects.filter(
                 session_id=session.id, answered_at__isnull=True

@@ -205,16 +205,21 @@ async def _filter_repos_in_space(
 async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | None:
     """clarifying（pending）/ researching（在途）处复用 chat 既有 HITL 返回挂起 marker。"""
     from delivery.models import Clarification, PlanSessionStatus
+    from delivery.services.clarification_service import ClarificationService
     from services.plan_orchestration import aall_research_tasks_terminal
 
     if session.status == PlanSessionStatus.CLARIFYING:
-        pending = await (
-            Clarification.objects.filter(
-                session_id=session.id, answered_at__isnull=True
+        # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判）；取内容仍用显式查询。
+        if not await ClarificationService().ahas_pending(session.id):
+            pending = None
+        else:
+            pending = await (
+                Clarification.objects.filter(
+                    session_id=session.id, answered_at__isnull=True
+                )
+                .values("id", "question")
+                .afirst()
             )
-            .values("id", "question")
-            .afirst()
-        )
         if pending is not None:
             # 复用 chat 既有 ask_clarification interrupt（orchestration.graph 据 marker 识别挂起）
             from agents.tools.clarification import CLARIFICATION_PENDING_MARKER
