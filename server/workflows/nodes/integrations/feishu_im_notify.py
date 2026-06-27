@@ -156,7 +156,13 @@ class NotifyFeishuIMNode(BaseNode):
             )
 
     def _build_card(self, title: str, content: str) -> dict[str, Any]:
-        """构建最小交互卡片（lark_md 正文）。"""
+        """构建最小卡片。
+
+        正文用 `markdown` 组件而非 `lark_md` 文本：`lark_md` 是飞书受限子集，
+        **不支持有序/无序列表**（`- ` 会被当字面文本显示）；`markdown` 组件支持
+        完整 Markdown（列表需飞书客户端 ≥ 7.6）。配合上游用 `•` 项目符号兜底，
+        在低版本客户端也能展示成类列表。
+        """
         return {
             "config": {"wide_screen_mode": True},
             "header": {
@@ -164,7 +170,7 @@ class NotifyFeishuIMNode(BaseNode):
                 "template": "blue",
             },
             "elements": [
-                {"tag": "div", "text": {"tag": "lark_md", "content": content}},
+                {"tag": "markdown", "content": content},
             ],
         }
 

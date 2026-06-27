@@ -37,6 +37,7 @@ from agents.tools.registry import ToolRegistry
 from agents.tools.repo_association_tools import associate_repos
 from agents.tools.repository_relevance import analyze_repository_relevance
 from agents.tools.send_plan_card import send_plan_card
+from agents.tools.submit_plan import request_clarification, submit_technical_plan
 from agents.tools.space_tools import (
     get_repository_info,
     list_space_repositories,
@@ -95,6 +96,9 @@ __all__ = [
     "ask_user_question",
     # Plan verification tools
     "verify_plan",
+    # Plan submission / clarification (strict tool-call structured output)
+    "submit_technical_plan",
+    "request_clarification",
     # Plan orchestration chat entry (ENTRY-02)
     "start_plan_research",
 ]
