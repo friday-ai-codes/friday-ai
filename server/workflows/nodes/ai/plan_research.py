@@ -137,6 +137,11 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     # D2 产物迁移：内联 PlanVersion.content（§7 MergedPlan），下游
                     # human_approval(plan_feishu) / ai_coding 经 get_input("plan") 直接消费。
                     "plan": {"type": "object"},
+                    # UNIFY-06：done 出口干净结构化 markdown（render_merged_plan_markdown
+                    # 结果，不 dump LLM 原文），供模板 {{nodes.X.plan_markdown}} 引用推群；
+                    # 声明该字段以规避 Pitfall 1 field_not_found（technical_plan_generation
+                    # 模板引用依赖此 schema 声明）。
+                    "plan_markdown": {"type": "string"},
                 },
             },
         ),
@@ -508,15 +513,20 @@ class AIPlanResearchNode(AIAgentBaseNode):
         canonical ``PlanVersion`` 进入 wave 模式（多仓多 agent fan-out）。
         """
         from delivery.models import PlanSessionStatus, PlanVersion
+        from services.plan_orchestration import render_merged_plan_markdown
 
         if session.status == PlanSessionStatus.DONE:
             pv_id = str(session.current_plan_version) if session.current_plan_version else None
             plan_content: dict[str, Any] = {}
+            # UNIFY-06：done 出口干净结构化 markdown（仅消费 canonical MergedPlan 结构化
+            # 字段，不 dump LLM 原文）；content 缺失/非 dict 时为空串（零回归不改 plan={}）。
+            plan_markdown = ""
             if pv_id:
                 pv = await PlanVersion.objects.filter(id=pv_id).afirst()
                 if pv is not None and isinstance(pv.content, dict):
                     # 注入 plan_version_id 供下游 ai_coding 解析 canonical PlanVersion 进 wave 模式
                     plan_content = {**pv.content, "plan_version_id": pv_id}
+                    plan_markdown = render_merged_plan_markdown(pv.content)
             return NodeResult(
                 status="completed",
                 output={
@@ -524,6 +534,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     "plan_version_id": pv_id,
                     "status": "done",
                     "plan": plan_content,
+                    "plan_markdown": plan_markdown,
                 },
                 next_handle="default",
             )
