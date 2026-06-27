@@ -719,17 +719,17 @@ defineExpose({
     <AlertDialog :open="!!pendingDelete" @update:open="(open) => { if (!open) cancelDelete() }">
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>删除节点</AlertDialogTitle>
+          <AlertDialogTitle>{{ t('workflow.editor.slot.deleteTitle') }}</AlertDialogTitle>
           <AlertDialogDescription>
             {{ deleteDialogBody }}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel @click="cancelDelete">
-            取消
+            {{ t('workflow.editor.slot.cancel') }}
           </AlertDialogCancel>
           <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="confirmDelete">
-            删除
+            {{ t('workflow.editor.slot.delete') }}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -746,7 +746,7 @@ defineExpose({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel @click="cancelDetach">
-            取消
+            {{ t('workflow.editor.slot.cancel') }}
           </AlertDialogCancel>
           <AlertDialogAction @click="confirmDetach">
             {{ t('workflow.editor.slot.detachTitle') }}
