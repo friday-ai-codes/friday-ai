@@ -1423,6 +1423,15 @@ class CreateFeishuTechnicalPlanView(McpToolView):
         assert input_data is not None
         started_at = time.perf_counter()
 
+        # actor 解析（T-94-03-ELEV）：从 request.user 取发起编排用户透传 delegate（召回权限 actor）；
+        # 非真实用户 → None，召回 stage fail-closed 空召回（文档化降级，不绕权限）。
+        user = request.user
+        actor = (
+            user
+            if getattr(user, "is_authenticated", False) and getattr(user, "id", None) is not None
+            else None
+        )
+
         try:
             result = await build_work_item_technical_plan(
                 run=run,
@@ -1435,6 +1444,7 @@ class CreateFeishuTechnicalPlanView(McpToolView):
                 folder_token=str(input_data.get("folder_token") or ""),
                 create_document=bool(input_data.get("create_document", True)),
                 write_comment=bool(input_data.get("write_comment", True)),
+                actor=actor,
             )
         except TechnicalPlanError as exc:
             status_map = {
