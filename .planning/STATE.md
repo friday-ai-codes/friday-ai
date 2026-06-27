@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: "91-05 executed（AI 会话出口面前端，CLARIFY-04）：扩展 ClarificationCard.vue 按 payload 形态分支——含 questions[] 走 plan 多题轮（每题 single button / multi Checkbox + ⭐推荐默认选中 + 每题可选自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}]（single=str/multi=string[]）打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered 切已回复。新增类型 PlanClarificationPayload/AnswerRequest（types/clarification.ts）+ ConversationRuntime.pending_plan_clarification 透传（types/chat.ts）+ store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌；ChatMessageArea 增 plan 卡渲染分支；新增 chat.clarification i18n 文案区（默认中文）+ 新建守护 spec（TDD，真实 zh-CN.json messages 锁文案）。ClarificationCard.spec.ts(6) 全绿 + src/components/chat+src/stores(267) 无回归 + vue-tsc 通过 + 受改文件 eslint 干净。Phase 91 完成（5/5）"
-stopped_at: 执行 91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——按 payload 形态分支 plan 多题轮（single/multi + ⭐推荐默认选中 + 自由输入）+ answers[] 聚合提交专路由 + store conversation 维度隔离 + i18n 默认中文 + TDD 守护 spec；6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。Phase 91（澄清出口面 + 回流 resume）5/5 全部完成，下一步 Phase 92（插槽系统后端）或 94（入口统一）。
-last_updated: "2026-06-27T09:20:00.000Z"
+status: 91-05 executed（AI 会话出口面前端 CLARIFY-04——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮，每题 single(button)/multi(Checkbox) + ⭐推荐默认选中（single 取 recommended[0]、multi 取全部）+ 每题可选自由输入；提交聚合 answers[{question_id,selected,freeform_text}]（single=str/multi=string[]）打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered 切已回复；否则走既有 chat 单题路径零回归。新增 PlanClarificationPayload/AnswerRequest 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离防串）+ runtime 回灌；ChatMessageArea 增 plan 卡渲染分支；chat.clarification i18n 文案区（默认中文）+ TDD 守护 spec（真实 zh-CN.json messages 锁「推荐/提交答复/可多选」）。ClarificationCard.spec.ts(6) 全绿 + chat/stores(267) 无回归 + vue-tsc 通过 + eslint 干净）
+stopped_at: 执行 91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
+last_updated: "2026-06-27T10:00:53.925Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 91（澄清出口面 + 回流 resume）— ✅ 完成（5/5）
-Plan: 91-05 complete（5/5；Phase 91 全部就绪，下一步 Phase 92 插槽系统后端 / 94 入口统一）
+Phase: 92
+Plan: Not started
 Status: 91-05 executed（AI 会话出口面前端 CLARIFY-04——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮，每题 single(button)/multi(Checkbox) + ⭐推荐默认选中（single 取 recommended[0]、multi 取全部）+ 每题可选自由输入；提交聚合 answers[{question_id,selected,freeform_text}]（single=str/multi=string[]）打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered 切已回复；否则走既有 chat 单题路径零回归。新增 PlanClarificationPayload/AnswerRequest 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离防串）+ runtime 回灌；ChatMessageArea 增 plan 卡渲染分支；chat.clarification i18n 文案区（默认中文）+ TDD 守护 spec（真实 zh-CN.json messages 锁「推荐/提交答复/可多选」）。ClarificationCard.spec.ts(6) 全绿 + chat/stores(267) 无回归 + vue-tsc 通过 + eslint 干净）
 Last activity: 2026-06-27
 
