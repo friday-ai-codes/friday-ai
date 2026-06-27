@@ -19,9 +19,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agents.tools.base import ToolCategory
-from agents.tools.plan_research_tools import start_plan_research
+from agents.tools.plan_research_tools import (
+    PLAN_CLARIFICATION_RENDER_MARKER,
+    _maybe_suspend,
+    start_plan_research,
+)
 from agents.tools.registry import ToolRegistry
 from delivery.models import (
+    Clarification,
     PlanSession,
     PlanSessionStatus,
     PlanVersion,
@@ -279,3 +284,103 @@ async def test_start_plan_research_inv2_null_work_item(monkeypatch) -> None:
     plan = await TechnicalPlan.objects.aget(id=pv.plan_id)
     assert plan.work_item_id is None
     assert plan.origin == "orchestration"
+
+
+# ===========================================================================
+# UNIFY-05 二义消除守护（94-05）：plan 澄清挂起单一来源 + marker 物理隔离
+# ---------------------------------------------------------------------------
+# RESEARCH Wave 0 第 4 项续推/二义守护：plan 澄清用独立渲染 marker
+# （"plan_clarification"），不被 chat 单题 _extract_pending_clarification（双条件
+# name + marker = "ask_clarification"）捕获——彻底切断「marker 偷渡进 chat 单题
+# interrupt → 写 ConversationIntentTrace → 不续推 PlanSession」误路由（T-94-05-MARKER）。
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_plan_clarification_uses_independent_render_marker(monkeypatch) -> None:
+    """① plan marker 独立性：CLARIFYING 挂起 → ToolResult.output marker=="plan_clarification"
+    且携 session_id + clarification_id（前端走 plan 多题卡的必要字段）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint="chat",
+        status=PlanSessionStatus.CLARIFYING,
+    )
+    # 旧单题行（无子题）→ ahas_pending 判 pending（legacy_pending 路径）
+    clar = await Clarification.objects.acreate(
+        session=session,
+        question="要限定到哪个仓库？",
+    )
+
+    suspend = await _maybe_suspend(session, conversation_id=str(uuid.uuid4()))
+
+    assert suspend is not None
+    assert suspend.success is True
+    assert suspend.output["marker"] == PLAN_CLARIFICATION_RENDER_MARKER
+    assert suspend.output["marker"] == "plan_clarification"
+    # 独立常量必不等于 chat 单题 marker（物理隔离前置条件）
+    from agents.tools.clarification import CLARIFICATION_PENDING_MARKER
+
+    assert suspend.output["marker"] != CLARIFICATION_PENDING_MARKER
+    # 前端据 session_id + clarification_id 走 plan 卡（pending_plan_clarification runtime 驱动）
+    assert suspend.output["session_id"] == str(session.id)
+    assert suspend.output["clarification_id"] == str(clar.id)
+    assert suspend.output["pending"] is True
+
+
+@pytest.mark.asyncio
+async def test_plan_clarification_not_captured_by_chat_single_extractor(monkeypatch) -> None:
+    """② 不被 chat 单题路径捕获：把 plan CLARIFYING 挂起 output 包成
+    _extract_pending_clarification 入参形态，断言返回 None（绝不进 chat 单题
+    wait_clarification interrupt → 不写 ConversationIntentTrace，T-94-05-MARKER 守护）。"""
+    from orchestration.graph import _extract_pending_clarification
+
+    session = await PlanSession.objects.acreate(
+        entrypoint="chat",
+        status=PlanSessionStatus.CLARIFYING,
+    )
+    await Clarification.objects.acreate(session=session, question="要限定到哪个仓库？")
+
+    suspend = await _maybe_suspend(session, conversation_id=str(uuid.uuid4()))
+    assert suspend is not None
+
+    # plan 工具 tool_call：name=start_plan_research（非 ask_clarification）+ marker=plan_clarification
+    tool_calls_by_id = {
+        "tc1": {"name": "start_plan_research", "result": suspend.output},
+    }
+    assert _extract_pending_clarification(tool_calls_by_id) is None
+
+    # 纵深：即便名字被错填成 ask_clarification，marker 不命中也必返回 None（marker 单独隔离）
+    spoofed = {
+        "tc-spoof": {"name": "ask_clarification", "result": dict(suspend.output)},
+    }
+    assert _extract_pending_clarification(spoofed) is None
+
+
+@pytest.mark.asyncio
+async def test_chat_single_clarification_still_captured_zero_regression() -> None:
+    """③ chat 单题零回归对照：ask_clarification 工具 output marker 仍 == "ask_clarification"
+    且被 _extract_pending_clarification 捕获（name + marker 双 "ask_clarification"），
+    证明两路径物理隔离、chat 单题链零回归。"""
+    from agents.tools.clarification import (
+        CLARIFICATION_PENDING_MARKER,
+        ask_clarification,
+    )
+    from orchestration.graph import _extract_pending_clarification
+
+    result = await ask_clarification(
+        question="你想动哪个仓库？",
+        options=[
+            {"id": "opt-A", "label": "study-app"},
+            {"id": "opt-B", "label": "problem-app"},
+        ],
+    )
+    assert result.success is True
+    assert result.output["marker"] == CLARIFICATION_PENDING_MARKER
+    assert result.output["marker"] == "ask_clarification"
+
+    tool_calls_by_id = {
+        "tc1": {"name": "ask_clarification", "result": result.output},
+    }
+    extracted = _extract_pending_clarification(tool_calls_by_id)
+    assert extracted is not None
+    assert extracted["clarification_id"] == result.output["clarification_id"]
+    assert extracted["question"] == "你想动哪个仓库？"
