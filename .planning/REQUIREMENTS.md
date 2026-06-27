@@ -20,9 +20,9 @@
 
 ### 澄清能力 + 出口面（CLARIFY）
 
-- [ ] **CLARIFY-01**: 结构化澄清数据模型——`Clarification` 扩展支持多问题（单选/多选 + 选项 + 推荐项）+ 多答案的结构化存储（单一写入入口 INV-6）
-- [ ] **CLARIFY-02**: LLM 结构化澄清问题生成——基于需求 + 路由候选 + 召回上下文产出多问题（关键词加重 / 每题选项 + 推荐），`call_source=plan_clarification`
-- [ ] **CLARIFY-03**: 统一「提问能力」——编排过程任意点（架构师融合 / 某调研容器卡住）经一个 `ask_clarification` 能力产出结构化澄清请求，入口无关、可携带 origin_repo
+- [x] **CLARIFY-01**: 结构化澄清数据模型——`Clarification` 扩展支持多问题（单选/多选 + 选项 + 推荐项）+ 多答案的结构化存储（单一写入入口 INV-6）
+- [x] **CLARIFY-02**: LLM 结构化澄清问题生成——基于需求 + 路由候选 + 召回上下文产出多问题（关键词加重 / 每题选项 + 推荐），`call_source=plan_clarification`
+- [x] **CLARIFY-03**: 统一「提问能力」——编排过程任意点（架构师融合 / 某调研容器卡住）经一个 `ask_clarification` 能力产出结构化澄清请求，入口无关、可携带 origin_repo
 - [ ] **CLARIFY-04**: 出口面·AI 会话——澄清请求在对话前端内联渲染为单/多选提问卡（前端组件），用户作答经 endpoint 回流
 - [ ] **CLARIFY-05**: 出口面·工作流 / 群——澄清请求经飞书交互卡（单/多选 + ⭐推荐 + 其他）由机器人发到群（复用已建 `build_clarification_card`）
 - [ ] **CLARIFY-06**: 答复回流统一——回调/endpoint 回写结构化答案 → `answer_clarification` → `adrive_plan_session_to_pause_or_terminal` 续推（工作流 + 会话同源，不造两套）
@@ -67,9 +67,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLARIFY-01 | Phase 90 | Pending |
-| CLARIFY-02 | Phase 90 | Pending |
-| CLARIFY-03 | Phase 90 | Pending |
+| CLARIFY-01 | Phase 90 | Complete |
+| CLARIFY-02 | Phase 90 | Complete |
+| CLARIFY-03 | Phase 90 | Complete |
 | CLARIFY-04 | Phase 91 | Pending |
 | CLARIFY-05 | Phase 91 | Pending |
 | CLARIFY-06 | Phase 91 | Pending |
@@ -87,6 +87,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DECOMP-01 | Phase 95 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 18 total
 - Mapped to phases: 18 ✓（Phase 90–95）
 - Unmapped: 0 ✓
