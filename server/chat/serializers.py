@@ -709,3 +709,31 @@ class ClarificationAnswerSerializer(serializers.Serializer):
                 "必须至少提供 selected_option_id 或 freeform_text 之一"
             )
         return attrs
+
+
+class PlanClarificationAnswerSerializer(serializers.Serializer):
+    """``POST /api/chat/conversations/<id>/plan-clarification/answer/`` 请求体。
+
+    收 plan 编排结构化澄清轮的多题答复（与 chat 单题 ``ClarificationAnswerSerializer``
+    物理隔离）。每条形态 ``{question_id, selected, freeform_text?}``：
+
+    - ``question_id``：必填字符串（视图层做归属校验——必属该 session pending 轮）。
+    - ``selected``：``str``（single）或 ``list[str]``（multi）；纯 freeform 时可空。
+    - ``freeform_text``：可选自由文本补充。
+
+    serializer 只做**结构**校验（非空列表 + 每条含 ``question_id``）；归属/越界校验留
+    视图层（acount 比对该 session pending 轮的子题集合）。
+    """
+
+    answers = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False,
+        help_text="结构化答复列表，每条 {question_id, selected, freeform_text?}",
+    )
+
+    def validate_answers(self, value: list[dict]) -> list[dict]:
+        for ans in value:
+            qid = str(ans.get("question_id") or "").strip()
+            if not qid:
+                raise serializers.ValidationError("每条 answer 必须含非空 question_id")
+        return value
