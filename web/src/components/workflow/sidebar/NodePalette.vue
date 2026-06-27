@@ -87,6 +87,7 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
       { type: 'variable_extractor', name: '变量提取', description: '提取变量值' },
       { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案' },
       { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR' },
+      { type: 'clarification_card', name: '澄清卡', description: '发送澄清交互卡并等待回答' },
     ],
   },
   {
