@@ -346,11 +346,12 @@ if session.status == PlanSessionStatus.DONE:
 - **Phase gate:** 全套绿 + `makemigrations --check` 干净 + `ruff format/check` + `mypy` + `vue-tsc --noEmit`，再 `/gsd-verify-work`
 
 ### Wave 0 Gaps
-- [ ] `tests/workflows/test_template_loader.py` — 同步 `technical_plan_generation` 断言到 ai_plan_research（修当前 field_not_found 红）；补「ai_plan_research not legacy」断言（mirror code_generation 的 `ai_plan_generation not in node_types`）
-- [ ] MCP 响应外形守护（`tests/mcp_tools/`）— `create_feishu_technical_plan` / `create_coding_plan` delegate 后响应键集合 snapshot + `McpWorkItemTechnicalPlan`/`McpCodingPlan` 落库断言
-- [ ] deprecated 节点守护 — `ai_plan_generation` 仍 `@register_node`（既有实例可运行）但 NodePalette 不暴露
-- [ ] UNIFY-05 守护 — plan 澄清答经专路由续推 PlanSession（不误入 ConversationIntentTrace 单题路径）
-- [ ] `ai_plan_research` `plan_markdown` 输出字段渲染单测（UNIFY-06）+ fixture 重生成（node-sync 绿）
+- [ ] `tests/workflows/test_template_loader.py` — 同步 `technical_plan_generation` 断言到 ai_plan_research（修当前 field_not_found 红）；补「ai_plan_research not legacy」断言（mirror code_generation 的 `ai_plan_generation not in node_types`）（→ 94-01 T3）
+- [ ] MCP 响应外形守护（`tests/mcp_tools/`）— `create_feishu_technical_plan` / `create_coding_plan` delegate 后响应键集合 snapshot + `McpWorkItemTechnicalPlan`/`McpCodingPlan` 落库断言（→ 94-03 T2 / 94-04 T1）
+- [ ] **MCP 同步达 DONE 契约测试（WARNING 2）** — research 可同步解析、空 `node_execution_id` 下 delegate 达 `completed`；并文档化「MCP 默认可能返回 PARTIAL」调用方契约（→ 94-03 T2 契约用例 + objective/success_criteria）
+- [ ] deprecated 节点守护 — `ai_plan_generation` 仍 `@register_node`（既有实例可运行）但 NodePalette 不暴露；NodePalette **暴露 `ai_plan_research`** 裸项（UNIFY-02 第二半，palette ⊆ fixture，ai_plan_research 已在 fixture）（→ 94-02 T1/T2）
+- [ ] UNIFY-05 守护 — plan 澄清答经专路由续推 PlanSession（不误入 ConversationIntentTrace 单题路径）；**前端零回归断言（WARNING 3）**：plan 澄清卡经 `pending_plan_clarification` runtime 按 `session_id`/`clarification_id` 渲染，不依赖 marker 字面（→ 94-05 T2 后端 + T3 前端）
+- [ ] `ai_plan_research` `plan_markdown` 输出字段渲染单测（UNIFY-06）+ fixture 重生成（node-sync 绿）（→ 94-01 T1/T2 + 94-02 T2）
 
 ## Security Domain
 
@@ -376,20 +377,22 @@ if session.status == PlanSessionStatus.DONE:
 | 方案 markdown 推群泄漏密文/原始上游响应 | Info Disclosure | `redact_secrets_in_text` 脱敏 + 不 dump LLM 原文（UNIFY-06） |
 | MCP 响应映射意外暴露 canonical 内部字段 | Info Disclosure | 显式字段映射白名单（只暴露旧契约字段，不透传全 content 内部键） |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 全部 Open Questions 已在 plan-phase 决议并落入对应 plan（引用见各条 RESOLVED）。
 
 1. **MCP delegate 的挂起态语义（UNIFY-03/04 关键决策）**
    - 已知：MCP 是单次同步响应、无 resume 通路；编排可能挂起 CLARIFYING（需澄清）/ RESEARCHING（容器在途）；`adrive` 在挂起点短路返回非终态 session。
    - 不清楚：MCP 调用方对「方案未就绪」期望什么？返回 `PARTIAL` + `session_id`（调用方轮询）？还是对 MCP 入口禁用澄清/调研挂起（policy 注入「带现有信息直接产方案」）？旧 seam 是确定性同步产出（无挂起），delegate 后引入了挂起可能性。
-   - 推荐：plan-phase 决策。倾向「MCP delegate 用同步友好形态——若挂起则返回 `status=PARTIAL` + canonical `session_id` + 已有部分 content，调用方可后续经会话/工作流续推」；或注入跳过澄清的 policy 保 MCP 同步语义。需与 CONTEXT「产 canonical 同一口径」权衡。
+   - **RESOLVED（→ 94-03 Plan / `orchestration_delegate.py`）：** MCP 入口注入 `build_orchestration_engine(skip_clarification=True)` 的 no-clarify policy（best-effort「带现有信息继续」，不发交互澄清）；终态映射 `DONE→status="completed"` 取 canonical `PlanVersion.content`，若仍挂起 `RESEARCHING/CLARIFYING`（容器在途、MCP 无 resume 通路）则返回 `status="partial"` + 可选 `session_id`（调用方后续经会话/工作流续推），`FAILED→status="failed"`。**响应外形保留**（旧键全在 + 新增可选 `session_id`/`status`）。调用方契约：MCP 默认可能返回 PARTIAL；94-03 加同步达 DONE 契约测试（research 可同步解析时空 `node_execution_id` 下能达 completed）守护「同步友好路径」。
 
 2. **`create_coding_plan` 单仓 vs 编排多仓（UNIFY-04）**
    - 已知：`build_coding_plan` 是**单仓**确定性方案（repository_id 必填）；plan_orchestration 是**多仓**编排（execution_plan[] 跨仓）。
    - 不清楚：单仓 coding plan delegate 到多仓编排后，如何映射回单仓响应（`affected_files`/`steps`/`test_plan`）？是限定 `include_repos=[repository_id]` 让编排只跑单仓，还是取 canonical execution_plan 中该仓的子集？
-   - 推荐：plan-phase 定映射策略（建议 `include_repos=[repository_id]` 约束编排单仓 + 从 content 提取该仓 task 映射回旧字段）。
+   - **RESOLVED（→ 94-04 Plan / `CreateCodingPlanView.post`）：** delegate 时 `include_repos=[repository_id]` **约束编排只跑单仓**；从 canonical `execution_plan` 中筛该 `repository_id` 的 task 子集映射回旧单仓字段 `affected_files`/`steps`/`test_plan`/`title`（best-effort，缺字段填空不抛）；继续落 `McpCodingPlan`/`McpCodingPlanVersion` 兼容。挂起态沿用 Q1 决议（partial + session_id）。
 
 3. **deprecated 标注的精确形式（UNIFY-02，CONTEXT Claude's Discretion）**
-   - 推荐：类级 `deprecated: ClassVar[bool] = True` + docstring 顶「DEPRECATED」标记 + 实例化 warning 日志 + 迁移指引文档落点（建议 `docs/` 或节点 description 内联「请改用 ai_plan_research」）。具体由 plan-phase 定。
+   - **RESOLVED（→ 94-02 Plan / `plan_generation.py`）：** 类级 `deprecated: ClassVar[bool] = True`（`BaseNode` 加默认 `False`）+ docstring 顶部「DEPRECATED：改用 ai_plan_research」一行 + `__init__` 一次性 `logger.warning("deprecated_node_instantiated", node_type=..., category="sampling", component="workflow_node", migration="ai_plan_research")` + 迁移指引文档落 `docs/workflows/ai-plan-generation-deprecation.md`；**保留 `@register_node` 与全部节点代码**（既有实例向后兼容）。
 
 ## Environment Availability
 
