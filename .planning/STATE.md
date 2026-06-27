@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.16.0
-milestone_name: 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
-status: shipped — 里程碑 v0.16.0 已交付并归档（complete-milestone：ROADMAP 折叠 + audit 移入 milestones/；里程碑审计 tech_debt，37/37 需求满足 / integration_ok）
-stopped_at: v0.16.0 项目工作区里程碑立项完成（new-milestone）——经"方案 review（对照 v0.15.0 已交付能力）→ 锁定 4 决策（DB canonical+飞书双向镜像 / 全员可读+visibility / MEMORY 条目式不整篇 diff / STATE·MILESTONES 活计算）→ 飞书文档双向同步引擎详设（block_id 结构化匹配 + 防冲突四机制）→ 外部依赖调研确认（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks 限制 / 容器 resume SessionStore）→ 产出工件"。已写 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、`REQUIREMENTS.md`（37 条）、`ROADMAP.md`（Phases 82–89 + Phase Details + Progress）、`STATE.md`（本文件，重置为 v0.16.0 planning）、`PROJECT.md`（Current Milestone）。
-last_updated: "2026-06-27T00:00:00.000Z"
-last_activity: 2026-06-27 — Milestone v0.16.0 shipped（complete-milestone：8/8 phase / 38 plans / 37 需求；里程碑审计 tech_debt — 37/37 满足 / integration_ok，遗留真机·live-platform 验收 + 既有并发测试欠债；ROADMAP 折叠归档 + audit 移入 milestones/ + phase 目录归档 milestones/v0.16.0-phases/）
+milestone: v0.16.1
+milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
+status: planning
+last_updated: "2026-06-27T04:51:19.415Z"
+last_activity: 2026-06-27
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 38
-  completed_plans: 38
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: All complete（82–89 全部完成 + 已归档 milestones/v0.16.0-phases/）
+Phase: Not started (defining requirements)
 Plan: —
-Status: shipped — 里程碑 v0.16.0 已交付并归档（complete-milestone + cleanup）；里程碑审计 tech_debt（37/37 需求满足 / integration_ok）
-Last activity: 2026-06-27 — Milestone v0.16.0 shipped（complete-milestone：ROADMAP 折叠归档 + audit 移入 milestones/ + phase 目录归档；审计 tech_debt）
+Status: Defining requirements
+Last activity: 2026-06-27 — Milestone v0.16.1 started
 
 ## Milestone Overview (v0.16.0 — Phases 82–89 — ✅ SHIPPED 2026-06-26)
 
