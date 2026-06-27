@@ -37,7 +37,7 @@
 
 ### 拆分完善（DECOMP）
 
-- [ ] **DECOMP-01**: `decompose` 阶段从「按非空行切分」升级为 LLM 跨仓业务线/模块/前后端拆分，提升路由/调研精度（`call_source` 赋值、fail-soft 降级回退现状）
+- [x] **DECOMP-01**: `decompose` 阶段从「按非空行切分」升级为 LLM 跨仓业务线/模块/前后端拆分，提升路由/调研精度（`call_source` 赋值、fail-soft 降级回退现状）
 
 ## v2 Requirements
 
@@ -84,7 +84,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UNIFY-04 | Phase 94 | Complete |
 | UNIFY-05 | Phase 94 | Complete |
 | UNIFY-06 | Phase 94 | Complete |
-| DECOMP-01 | Phase 95 | Pending |
+| DECOMP-01 | Phase 95 | Complete |
 
 **Coverage:**
 

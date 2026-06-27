@@ -33,7 +33,7 @@
 - [x] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）— 3 plans
 - [x] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）(7/7 plans) (completed 2026-06-27)
 - [x] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
-- [ ] **Phase 95: 拆分完善** — `decompose` 升级为 LLM 跨仓业务线/模块/前后端拆分（DECOMP-01）
+- [x] **Phase 95: 拆分完善** — `decompose` 升级为 LLM 跨仓业务线/模块/前后端拆分（DECOMP-01）
 
 #### Phase Details
 
@@ -150,7 +150,7 @@
 Plans:
 - [x] 95-01-PLAN.md — CallSource.PLAN_DECOMPOSE 枚举 + LOGGING-SPEC §4.1 登记（补 plan_clarification）
 - [x] 95-02-PLAN.md — decompose_segments.py LLM 拆分 helper（健壮解析 + normalize + call_source + fail-soft）
-- [ ] 95-03-PLAN.md — engine._decompose 接线 helper + splitlines 回退 + 测试
+- [x] 95-03-PLAN.md — engine._decompose 接线 helper + splitlines 回退 + 测试
 
 #### Progress
 
@@ -161,7 +161,7 @@ Plans:
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
 | 93. 插槽编辑器（前端） | 7/7 | Complete    | 2026-06-27 |
 | 94. 入口统一 | 5/5 | Complete    | 2026-06-27 |
-| 95. 拆分完善 | 2/3 | In progress | 2026-06-28 |
+| 95. 拆分完善 | 3/3 | Complete    | 2026-06-28 |
 
 <details>
 <summary>✅ v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）(Phases 82–89) — SHIPPED 2026-06-26 — 审计 tech_debt</summary>
