@@ -226,6 +226,43 @@ async def test_clarifying_suspends_waiting_event() -> None:
 
 
 @pytest.mark.asyncio
+async def test_maybe_suspend_structured_round_pending_via_ahas_pending() -> None:
+    """WR-03：CLARIFYING 存在性判定经 ahas_pending——结构化子题未答→挂起；全答→不误挂起。"""
+    from delivery.models import ClarificationQuestion
+    from delivery.services.clarification_service import ClarificationService
+
+    session = await PlanSession.objects.acreate(
+        entrypoint="workflow", status=PlanSessionStatus.CLARIFYING
+    )
+    svc = ClarificationService()
+    round_ = await svc.create_round(
+        session,
+        [
+            {
+                "question": "涉及哪些仓库？",
+                "type": "single",
+                "options": ["api", "web"],
+                "recommended": ["api"],
+            }
+        ],
+    )
+    node = AIPlanResearchNode()
+
+    # 子题未答 → ahas_pending=True → 正确挂起 waiting_event
+    suspend = await node._maybe_suspend(session)
+    assert suspend is not None
+    assert suspend.status == "waiting_event"
+    assert suspend.output["kind"] == "clarification"
+
+    # 子题全已答（容器 advance）→ ahas_pending=False → 不误挂起
+    q = await ClarificationQuestion.objects.filter(clarification_id=round_.id).afirst()
+    await svc.answer_round(
+        round_, [{"question_id": str(q.id), "selected": "api", "freeform_text": ""}]
+    )
+    assert await node._maybe_suspend(session) is None
+
+
+@pytest.mark.asyncio
 async def test_failed_terminal_maps_to_node_failed() -> None:
     """merge 限次耗尽 → failed → NodeResult failed + error_code=plan_session_failed。"""
     router = AsyncMock()

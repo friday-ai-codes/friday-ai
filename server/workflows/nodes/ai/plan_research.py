@@ -307,16 +307,22 @@ class AIPlanResearchNode(AIAgentBaseNode):
     async def _maybe_suspend(self, session: Any) -> NodeResult | None:
         """clarifying（pending clarification）/ researching（在途调研）处返回 waiting_event。"""
         from delivery.models import Clarification, PlanSessionStatus
+        from delivery.services.clarification_service import ClarificationService
         from services.plan_orchestration import aall_research_tasks_terminal
 
         if session.status == PlanSessionStatus.CLARIFYING:
-            pending = await (
-                Clarification.objects.filter(
-                    session_id=session.id, answered_at__isnull=True
+            # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判：容器 answered_at 仍空
+            # 但子题已答 / 反之）；取问题内容仍用显式查询（分工：判存在用谓词、取内容用查询）。
+            if not await ClarificationService().ahas_pending(session.id):
+                pending = None
+            else:
+                pending = await (
+                    Clarification.objects.filter(
+                        session_id=session.id, answered_at__isnull=True
+                    )
+                    .values("id", "question")
+                    .afirst()
                 )
-                .values("id", "question")
-                .afirst()
-            )
             if pending is not None:
                 return NodeResult(
                     status="waiting_event",
