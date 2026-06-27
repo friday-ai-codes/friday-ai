@@ -58,6 +58,13 @@ class NodePort:
     # 详细输出结构 (JSON Schema 格式)
     # 用于描述 object/array 类型端口的具体字段
     schema: dict | None = None
+    # 能力/内容契约标识（与 port_type 正交）：port_type 描述「数据类型」，
+    # shape 描述「能力语义」——能产出/消费同一类内容/能力的端口才可连。
+    # 空字符串 = 通配宽松（向后兼容，既有节点/工作流零回归）；取值面向能力，
+    # 见 workflows.nodes.shapes.KNOWN_PORT_SHAPES（如 clarification_request /
+    # clarification_answer / feishu_message 等，取值可扩展、非闭集）。
+    # 带默认值放在末尾，避免既有位置参数构造 TypeError（Pitfall 2）。
+    shape: str = ""
 
 
 @dataclass
@@ -624,6 +631,7 @@ class BaseNode(ABC):
                     "required": p.required,
                     "description": p.description,
                     "schema": p.schema,
+                    "shape": p.shape,
                 }
                 for p in cls.inputs
             ],
@@ -635,6 +643,7 @@ class BaseNode(ABC):
                     "required": p.required,
                     "description": p.description,
                     "schema": p.schema,
+                    "shape": p.shape,
                 }
                 for p in cls.outputs
             ],
