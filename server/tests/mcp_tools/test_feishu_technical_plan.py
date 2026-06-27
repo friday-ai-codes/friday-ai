@@ -1,5 +1,14 @@
+"""create_feishu_technical_plan 飞书 writeback + 落库守护（Phase 94 UNIFY-03 后）。
+
+UNIFY-03 起方案生成 delegate 到统一编排（``delegate_plan_orchestration``），本测试 monkeypatch
+delegate 返回 canonical DONE 结果以**确定性**覆盖：飞书文档/评论 writeback（喂 delegate markdown +
+映射后的 repository_tasks）+ McpWorkItemTechnicalPlan 落库 + tool_call 关联 + 部分失败降级。
+delegate 三态映射 / 响应外形 snapshot / 同步达 DONE 契约见 test_create_feishu_technical_plan_delegate。
+"""
+
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -8,10 +17,61 @@ from rest_framework.test import APIClient
 from interactions.ledger import create_interaction_run
 from interactions.models import ToolCallRecord
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
-from repositories.models import FileIndex
 from runners.models import hash_token
 
 pytestmark = pytest.mark.django_db
+
+
+def _delegate_content(repo_id: str, repo_name: str) -> dict[str, Any]:
+    """合法 §7 MergedPlan content（单仓，含 files 供 candidate_files 映射）。"""
+    return {
+        "title": "登录超时 Bug 技术方案",
+        "summary": "在 auth 仓修复 token 刷新边界。",
+        "api_contracts": [],
+        "dependency_dag": {},
+        "data_migrations": [],
+        "compat_risks": ["token 边界变更需回归登录态"],
+        "release_order": [repo_id],
+        "rollback_plan": {repo_id: "revert 对应 PR"},
+        "execution_plan": [
+            {
+                "id": "t1",
+                "name": "修复 token 刷新",
+                "description": "对齐刷新边界",
+                "repository_id": repo_id,
+                "repository_name": repo_name,
+                "branch_strategy": "feature",
+                "coding_instruction": "在 session 校验处补刷新边界判断并加测试。",
+                "dependencies": [],
+                "files": [{"path": "src/auth/session.py", "action": "modify"}],
+            }
+        ],
+    }
+
+
+def _patch_delegate(
+    monkeypatch: pytest.MonkeyPatch, *, repo_id: str, repo_name: str, status: str = "completed"
+) -> None:
+    """monkeypatch delegate 返回 canonical DONE 结果（确定性，不触发真实编排）。"""
+    from mcp_tools.orchestration_delegate import DelegateResult
+
+    content = _delegate_content(repo_id, repo_name) if status == "completed" else {}
+    markdown = (
+        "**登录超时 Bug 技术方案**\n\n在 auth 仓修复 token 刷新边界。"
+        if status == "completed"
+        else ""
+    )
+
+    async def _fake(**_kwargs: Any) -> DelegateResult:
+        return DelegateResult(
+            session=type("S", (), {"id": uuid.uuid4()})(),
+            status=status,
+            content=content,
+            plan_version_id=str(uuid.uuid4()) if status == "completed" else None,
+            markdown=markdown,
+        )
+
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake)
 
 
 class _FakeDocClient:
@@ -23,7 +83,8 @@ class _FakeDocClient:
     ) -> dict[str, str]:
         assert title
         assert folder_token == "folder_tech_plan"
-        assert "仓库任务矩阵" in content
+        # 文档正文 = delegate 渲染的 markdown（render_merged_plan_markdown 结果）。
+        assert "登录超时 Bug 技术方案" in content
         return {
             "document_id": "doxcnTechnicalPlan",
             "url": "https://feishu.cn/docx/doxcnTechnicalPlan",
@@ -99,6 +160,9 @@ def test_create_feishu_technical_plan_writes_doc_comment_and_artifact(
     project.save(update_fields=["feishu_doc_folder_token"])
     context = _context(project)
     _FakeFeishuClient.comments.clear()
+    _patch_delegate(
+        monkeypatch, repo_id=str(indexed_repository.id), repo_name=indexed_repository.name
+    )
 
     async def _doc_client(_project):
         return _FakeDocClient()
@@ -117,23 +181,6 @@ def test_create_feishu_technical_plan_writes_doc_comment_and_artifact(
         {
             "context_id": str(context.id),
             "repository_ids": [str(indexed_repository.id)],
-            "context_chunks": [
-                {
-                    "chunk_id": "chunk-1",
-                    "repository_id": str(indexed_repository.id),
-                    "file_path": "src/auth/session.py",
-                    "content": "def validate_session(): ...",
-                    "score": 0.91,
-                }
-            ],
-            "similar_cases": [
-                {
-                    "case_id": "case-1",
-                    "title": "登录态过期修复",
-                    "outcome": "merged",
-                    "reuse_judgement": "可复用 token 刷新边界判断",
-                }
-            ],
             "title": "登录超时 Bug 技术方案",
         },
         format="json",
@@ -145,10 +192,12 @@ def test_create_feishu_technical_plan_writes_doc_comment_and_artifact(
     assert body["feishu_document"]["status"] == "created"
     assert body["comment"]["status"] == "written"
     assert body["retry_state"]["retryable"] is False
+    # canonical execution_plan → 旧矩阵形态映射（外形兼容）。
     assert body["repository_tasks"][0]["repository_id"] == str(indexed_repository.id)
-    assert body["repository_tasks"][0]["planned_branch"].startswith("feat/feishu-bug-42")
+    assert body["repository_tasks"][0]["planned_branch"] == "feature"
     assert "src/auth/session.py" in body["repository_tasks"][0]["candidate_files"]
-    assert "登录态过期修复" in body["markdown"]
+    assert "登录超时 Bug 技术方案" in body["markdown"]
+    assert body["session_id"]
 
     artifact = McpWorkItemTechnicalPlan.objects.get(id=body["technical_plan_id"])
     assert artifact.context == context
@@ -164,15 +213,14 @@ def test_create_feishu_technical_plan_preserves_partial_doc_writeback_failure(
     mcp_client: tuple[APIClient, str],
     project,
     indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, _plaintext = mcp_client
     project.feishu_doc_folder_token = ""
     project.save(update_fields=["feishu_doc_folder_token"])
     context = _context(project)
-    FileIndex.objects.get_or_create(
-        repository=indexed_repository,
-        file_path="src/auth/session.py",
-        defaults={"file_hash": "hash-auth"},
+    _patch_delegate(
+        monkeypatch, repo_id=str(indexed_repository.id), repo_name=indexed_repository.name
     )
 
     response = client.post(
@@ -188,6 +236,7 @@ def test_create_feishu_technical_plan_preserves_partial_doc_writeback_failure(
 
     assert response.status_code == 200
     body = response.json()
+    # delegate 产出 completed，但飞书文档 writeback 失败（无 folder token）→ 降级 partial。
     assert body["status"] == "partial"
     assert body["feishu_document"]["status"] == "error"
     assert body["retry_state"]["retryable"] is True

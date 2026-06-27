@@ -1,18 +1,22 @@
-"""Technical-plan generation and Feishu writeback for work item MCP flows."""
+"""Technical-plan generation and Feishu writeback for work item MCP flows.
+
+UNIFY-03：方案生成已从独立确定性 ``_build_repo_task_matrix`` seam **改为 delegate 到
+``plan_orchestration`` 统一编排**（经 ``delegate_plan_orchestration`` 产 canonical §7
+MergedPlan/PlanVersion），再**显式映射回旧 MCP 响应字段**（外形兼容，调用方不破坏），并
+继续落 ``McpWorkItemTechnicalPlan`` 保兼容。飞书文档/评论 writeback 逻辑保留（喂 delegate
+产的 markdown + 映射后的 repository_tasks）。
+"""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from typing import Any, cast
-
-from django.db.models import Q
+from typing import Any
 
 from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.learning_case_service import search_learning_cases
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
-from repositories.models import FileIndex, IndexStatus, Repository
+from mcp_tools.orchestration_delegate import delegate_plan_orchestration
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError, RateLimitError
 
@@ -33,22 +37,63 @@ class TechnicalPlanResult:
     traces: list[tuple[str, dict[str, Any]]]
 
 
-_SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+_STATUS_MAP: dict[str, McpWorkItemTechnicalPlan.Status] = {
+    "completed": McpWorkItemTechnicalPlan.Status.COMPLETED,
+    "partial": McpWorkItemTechnicalPlan.Status.PARTIAL,
+    "failed": McpWorkItemTechnicalPlan.Status.FAILED,
+}
 
 
-def _slug(value: str) -> str:
-    cleaned = _SLUG_RE.sub("-", value.lower()).strip("-")
-    return cleaned[:60] or "work-item"
+def _map_status(delegate_status: str) -> McpWorkItemTechnicalPlan.Status:
+    """delegate 三态 → McpWorkItemTechnicalPlan.Status（未知态保守落 PARTIAL）。"""
+    return _STATUS_MAP.get(delegate_status, McpWorkItemTechnicalPlan.Status.PARTIAL)
+
+
+def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dict[str, Any]]:
+    """canonical §7 ``execution_plan[]`` → 旧 ``repository_tasks`` 矩阵形态（外形兼容）。
+
+    **显式字段映射白名单**（T-94-03-INFO：绝不透传 content 内部键），逐项 best-effort
+    取 ``repository_id`` / ``repository_name`` / ``coding_instruction``（→ change_goal 回退）
+    / ``branch_strategy``（→ planned_branch）/ ``files[].path``（→ candidate_files）/
+    ``dependencies``；缺字段填空不抛（半可信 LLM 产物防御）。
+    """
+    raw_plan = content.get("execution_plan") if isinstance(content, dict) else None
+    if not isinstance(raw_plan, list):
+        return []
+    execution_plan: list[Any] = raw_plan
+    tasks: list[dict[str, Any]] = []
+    for index, item in enumerate(execution_plan, start=1):
+        if not isinstance(item, dict):
+            continue
+        raw_files = item.get("files")
+        files = raw_files if isinstance(raw_files, list) else []
+        candidate_files = [
+            str(f.get("path") or "") for f in files if isinstance(f, dict) and f.get("path")
+        ]
+        coding_instruction = str(item.get("coding_instruction") or "")
+        change_goal = (
+            str(item.get("description") or "") or coding_instruction or str(item.get("name") or "")
+        )
+        dependencies = item.get("dependencies")
+        dependencies = dependencies if isinstance(dependencies, list) else []
+        tasks.append(
+            {
+                "order": index,
+                "repository_id": str(item.get("repository_id") or ""),
+                "repository_name": str(item.get("repository_name") or ""),
+                "planned_branch": str(item.get("branch_strategy") or ""),
+                "change_goal": change_goal,
+                "coding_instruction": coding_instruction,
+                "candidate_files": candidate_files,
+                "dependencies": [str(dep) for dep in dependencies],
+            }
+        )
+    return tasks
 
 
 def _preview(value: str, limit: int = 500) -> str:
     text = value.strip()
     return text[:limit] + ("..." if len(text) > limit else "")
-
-
-def _table_cell(value: Any) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return text.replace("|", "\\|").replace("`", "\\`").replace("\n", "<br>").strip()
 
 
 def _work_item_text(context: McpWorkItemContext) -> str:
@@ -64,65 +109,26 @@ def _work_item_text(context: McpWorkItemContext) -> str:
 
 async def _resolve_context(context_id: str) -> McpWorkItemContext:
     context = (
-        await McpWorkItemContext.objects.select_related("space")
-        .filter(id=context_id)
-        .afirst()
+        await McpWorkItemContext.objects.select_related("space").filter(id=context_id).afirst()
     )
     if context is None:
         raise TechnicalPlanError("work_item_context_not_found", "工作项上下文快照不存在")
     return context
 
 
-async def _resolve_repositories(
-    *,
-    repository_ids: list[str],
-    repo_hints: list[str],
-    limit: int,
-) -> list[Repository]:
-    if repository_ids:
-        repos_by_id: dict[str, Repository] = {}
-        async for repo in Repository.objects.filter(id__in=repository_ids).aiterator():
-            repos_by_id[str(repo.id)] = repo
-        missing = [repo_id for repo_id in repository_ids if repo_id not in repos_by_id]
-        if missing:
-            raise TechnicalPlanError(
-                "repository_not_found",
-                f"仓库不存在: {', '.join(missing)}",
-            )
-        return [repos_by_id[repo_id] for repo_id in repository_ids]
+async def _resolve_delivery_work_item(context: McpWorkItemContext) -> Any:
+    """按飞书三元组解析 canonical delivery ``WorkItem`` 作 delegate 编排锚（INV-2 可空）。
 
-    query = Q(index_status=IndexStatus.INDEXED)
-    if repo_hints:
-        hint_q = Q()
-        for hint in repo_hints:
-            hint_q |= Q(name__icontains=hint) | Q(description__icontains=hint)
-        query &= hint_q
-    repos = [repo async for repo in Repository.objects.filter(query).order_by("name")[:limit]]
-    if repos or not repo_hints:
-        return repos
-    return [
-        repo
-        async for repo in Repository.objects.filter(index_status=IndexStatus.INDEXED)
-        .order_by("name")[:limit]
-    ]
+    ``afirst`` 取（无则 None，编排以「自然语言需求」continue，文档化降级）；async 防裸
+    lazy-FK：用标量三元组过滤、不裸访问 FK。
+    """
+    from delivery.models import WorkItem
 
-
-async def _candidate_files(repo: Repository, context_chunks: list[dict[str, Any]]) -> list[str]:
-    paths: list[str] = []
-    seen: set[str] = set()
-    repo_id = str(repo.id)
-    for chunk in context_chunks:
-        if str(chunk.get("repository_id") or repo_id) != repo_id:
-            continue
-        path = str(chunk.get("file_path") or "").strip()
-        if path and path not in seen:
-            paths.append(path)
-            seen.add(path)
-    async for item in FileIndex.objects.filter(repository=repo).order_by("file_path")[:8].aiterator():
-        if item.file_path not in seen:
-            paths.append(item.file_path)
-            seen.add(item.file_path)
-    return paths[:8]
+    return await WorkItem.objects.filter(
+        feishu_project_key=context.feishu_project_key,
+        work_item_type=context.work_item_type,
+        work_item_id=context.work_item_id,
+    ).afirst()
 
 
 def _evidence_from_context(
@@ -178,125 +184,6 @@ def _evidence_from_context(
     return evidence
 
 
-async def _build_repo_task_matrix(
-    *,
-    context: McpWorkItemContext,
-    repositories: list[Repository],
-    context_chunks: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    matrix: list[dict[str, Any]] = []
-    item_slug = _slug(f"{context.work_item_type}-{context.work_item_id}-{context.name}")
-    for index, repo in enumerate(repositories, start=1):
-        branch = f"feat/feishu-{context.work_item_type}-{context.work_item_id}-{_slug(repo.name)}"
-        files = await _candidate_files(repo, context_chunks)
-        matrix.append(
-            {
-                "order": index,
-                "repository_id": str(repo.id),
-                "repository_name": repo.name,
-                "base_branch": repo.base_branch or repo.default_branch,
-                "planned_branch": branch[:200],
-                "change_goal": f"根据 Feishu 工作项 {context.work_item_type}#{context.work_item_id} 实现或修复 {context.name}",
-                "candidate_files": files,
-                "steps": [
-                    "确认工作项、关联文档和代码证据是否一致。",
-                    "在候选文件附近完成最小可验证修改。",
-                    "补充或更新覆盖该工作项行为的测试。",
-                    "运行仓库相关测试并记录结果。",
-                ],
-                "test_strategy": [
-                    "优先运行受影响模块的单元测试。",
-                    "若变更跨服务，补充接口或集成级验证。",
-                ],
-                "risks": [
-                    "候选文件来自现有索引和输入证据，执行前仍需读取最新分支代码确认。",
-                    "Feishu 文档可能存在权限或内容截断，缺失信息需要在 PR/MR 描述中标明。",
-                ],
-                "rollback": f"回滚分支 `{branch[:200]}` 或 revert 该仓库对应 PR/MR commit。",
-                "routing_reason": f"repo task {index} for {item_slug}",
-            }
-        )
-    return matrix
-
-
-def render_technical_plan_markdown(plan: dict[str, Any]) -> str:
-    raw_work_item = plan.get("work_item")
-    work_item = cast(dict[str, Any], raw_work_item) if isinstance(raw_work_item, dict) else {}
-    repo_tasks = plan.get("repository_task_matrix")
-    repo_tasks = repo_tasks if isinstance(repo_tasks, list) else []
-    evidence = plan.get("evidence")
-    evidence = evidence if isinstance(evidence, list) else []
-    similar_cases = plan.get("similar_cases")
-    similar_cases = similar_cases if isinstance(similar_cases, list) else []
-
-    lines = [
-        f"# {plan.get('title') or 'Feishu 工作项技术方案'}",
-        "",
-        "## 工作项",
-        "",
-        f"- 类型：{work_item.get('work_item_type', '')}",
-        f"- ID：{work_item.get('work_item_id', '')}",
-        f"- 名称：{work_item.get('name', '')}",
-        f"- 状态：{work_item.get('status', '')}",
-        "",
-        "## 方案摘要",
-        "",
-        str(plan.get("summary") or ""),
-        "",
-        "## 仓库任务矩阵",
-        "",
-        "| 仓库 | 分支 | 修改目标 | 候选文件 | 测试 | 风险 |",
-        "|---|---|---|---|---|---|",
-    ]
-    if repo_tasks:
-        for task in repo_tasks:
-            files = (
-                "<br>".join(_table_cell(path) for path in task.get("candidate_files", [])[:6])
-                or "待执行前确认"
-            )
-            tests = "<br>".join(_table_cell(item) for item in task.get("test_strategy", [])[:4])
-            risks = "<br>".join(_table_cell(item) for item in task.get("risks", [])[:4])
-            lines.append(
-                "| {repo} | `{branch}` | {goal} | {files} | {tests} | {risks} |".format(
-                    repo=_table_cell(task.get("repository_name", "")),
-                    branch=_table_cell(task.get("planned_branch", "")),
-                    goal=_table_cell(task.get("change_goal", "")),
-                    files=files,
-                    tests=tests,
-                    risks=risks,
-                )
-            )
-    else:
-        lines.append("| 待路由 | 待生成 | 需要补充 repository_ids 或 repo_hints | 待确认 | 待确认 | repo routing 未命中 |")
-    lines.extend(["", "## 执行步骤", ""])
-    for task in repo_tasks:
-        lines.append(f"### {task.get('repository_name', '')}")
-        for step in task.get("steps", []):
-            lines.append(f"- {step}")
-        lines.append("")
-    lines.extend(["## 相似案例", ""])
-    if similar_cases:
-        for case in similar_cases:
-            lines.append(
-                f"- {case.get('title') or case.get('case_id') or case.get('id')}: "
-                f"{case.get('reuse_judgement') or 'needs_review'}"
-            )
-    else:
-        lines.append("- 暂无已召回相似案例。")
-    lines.extend(["", "## 证据", ""])
-    for item in evidence[:20]:
-        label = item.get("source", "evidence")
-        target = item.get("file_path") or item.get("document_id") or item.get("case_id") or item.get("context_id")
-        lines.append(f"- {label}: {target}")
-    lines.extend(["", "## 回滚", ""])
-    if repo_tasks:
-        for task in repo_tasks:
-            lines.append(f"- {task.get('repository_name', '')}: {task.get('rollback', '')}")
-    else:
-        lines.append("- 未创建 repo task 前无需代码回滚。")
-    return "\n".join(lines).strip() + "\n"
-
-
 async def _create_feishu_document(
     *,
     context: McpWorkItemContext,
@@ -321,11 +208,15 @@ async def _create_feishu_document(
         return {}, "document_writeback", str(exc)
     except (FeishuDocAPIError, PermissionDeniedError, RateLimitError) as exc:
         return {}, "document_writeback", str(exc)
-    return {
-        "document_id": result.get("document_id", ""),
-        "url": result.get("url", ""),
-        "folder_token": target_folder,
-    }, "", ""
+    return (
+        {
+            "document_id": result.get("document_id", ""),
+            "url": result.get("url", ""),
+            "folder_token": target_folder,
+        },
+        "",
+        "",
+    )
 
 
 async def _write_work_item_comment(
@@ -377,13 +268,15 @@ async def build_work_item_technical_plan(
     folder_token: str,
     create_document: bool,
     write_comment: bool,
+    actor: Any = None,
 ) -> TechnicalPlanResult:
+    """delegate 到 ``plan_orchestration`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
+
+    ``actor`` 为发起编排的用户（从 view 透传 request.user，可空）：delegate 经
+    ``start_orchestration(created_by=actor)`` 传入，召回 stage 据此作权限 actor；为 None 时
+    下游 ``search_similar`` fail-closed 空召回（不泄漏越权数据，T-94-03-ELEV 文档化降级）。
+    """
     context = await _resolve_context(context_id)
-    repositories = await _resolve_repositories(
-        repository_ids=repository_ids,
-        repo_hints=repo_hints,
-        limit=5,
-    )
     effective_similar_cases = similar_cases
     if not effective_similar_cases:
         effective_similar_cases = await search_learning_cases(
@@ -398,43 +291,32 @@ async def build_work_item_technical_plan(
             symbol_hints=[],
             limit=5,
         )
-    repository_tasks = await _build_repo_task_matrix(
-        context=context,
-        repositories=repositories,
-        context_chunks=context_chunks,
+
+    # UNIFY-03：方案生成 delegate 到统一编排（绝不在 MCP 层重写拆分/路由/调研/融合）。
+    work_item = await _resolve_delivery_work_item(context)
+    delegate = await delegate_plan_orchestration(
+        requirement_text=_work_item_text(context),
+        work_item=work_item,
+        include_repos=repository_ids,
+        created_by=actor,
     )
-    plan_title = title.strip() or f"{context.name or context.work_item_type} 技术方案"
+    content = delegate.content if isinstance(delegate.content, dict) else {}
+    # canonical → 旧响应字段显式映射（外形兼容，绝不透传 content 内部键，T-94-03-INFO）。
+    repository_tasks = _map_execution_plan_to_repository_tasks(content)
+    markdown = delegate.markdown or ""
+    plan_title = (
+        title.strip()
+        or str(content.get("title") or "")
+        or f"{context.name or context.work_item_type} 技术方案"
+    )
     evidence = _evidence_from_context(
         context=context,
         context_chunks=context_chunks,
         similar_cases=effective_similar_cases,
     )
-    work_item = {
-        "context_id": str(context.id),
-        "project_key": context.feishu_project_key,
-        "work_item_type": context.work_item_type,
-        "work_item_id": context.work_item_id,
-        "name": context.name,
-        "status": context.work_item_status,
-        "source": (context.context or {}).get("work_item", {}).get("source", {}),
-    }
-    plan_body = {
-        "title": plan_title,
-        "summary": (
-            f"基于 Feishu 工作项、关联文档和代码证据，计划按 {len(repository_tasks)} 个仓库任务执行。"
-            if repository_tasks
-            else "尚未命中仓库任务，需要补充 repository_ids、repo_hints 或 GraphRAG 证据。"
-        ),
-        "work_item": work_item,
-        "repository_task_matrix": repository_tasks,
-        "linked_documents": context.documents,
-        "similar_cases": effective_similar_cases,
-        "evidence": evidence,
-        "context_preview": _preview(_work_item_text(context), 1200),
-    }
-    markdown = render_technical_plan_markdown(plan_body)
 
-    status = McpWorkItemTechnicalPlan.Status.COMPLETED
+    # 终态/挂起 → 落库 status 基线（编排在途 partial / 失败 failed），writeback 失败再降级。
+    status = _map_status(delegate.status)
     error_stage = ""
     error = ""
     retry_state: dict[str, Any] = {
@@ -443,9 +325,17 @@ async def build_work_item_technical_plan(
         "comment_written": False,
         "failed_stage": "",
     }
+    if delegate.status == "partial":
+        # 编排挂起（RESEARCHING/CLARIFYING 在途，MCP 无 resume 通路）：调用方据 session_id 续推。
+        retry_state.update({"retryable": True, "failed_stage": "orchestration_pending"})
+    elif delegate.status == "failed":
+        retry_state.update({"retryable": True, "failed_stage": "orchestration"})
+        error_stage = "orchestration"
+        error = "编排未产出 canonical 方案"
 
+    # writeback 仅在编排产出方案（非 failed）时进行（喂 delegate markdown + 映射后矩阵）。
     feishu_document: dict[str, Any] = {"status": "skipped"}
-    if create_document:
+    if create_document and delegate.status != "failed":
         doc_payload, stage, doc_error = await _create_feishu_document(
             context=context,
             title=plan_title,
@@ -454,16 +344,19 @@ async def build_work_item_technical_plan(
         )
         if stage:
             status = McpWorkItemTechnicalPlan.Status.PARTIAL
-            error_stage = stage
-            error = doc_error
-            retry_state.update({"retryable": True, "failed_stage": stage})
+            if not error_stage:
+                error_stage = stage
+                error = doc_error
+            retry_state.update(
+                {"retryable": True, "failed_stage": retry_state.get("failed_stage") or stage}
+            )
             feishu_document = {"status": "error", "error": doc_error}
         else:
             feishu_document = {"status": "created", **doc_payload}
             retry_state["document_created"] = True
 
     comment_result: dict[str, Any] = {"status": "skipped"}
-    if write_comment:
+    if write_comment and delegate.status != "failed":
         comment_payload, stage, comment_error = await _write_work_item_comment(
             context=context,
             plan_title=plan_title,
@@ -475,19 +368,15 @@ async def build_work_item_technical_plan(
             if not error_stage:
                 error_stage = stage
                 error = comment_error
-            retry_state.update({"retryable": True, "failed_stage": retry_state.get("failed_stage") or stage})
+            retry_state.update(
+                {"retryable": True, "failed_stage": retry_state.get("failed_stage") or stage}
+            )
             comment_result = {"status": "error", "error": comment_error}
         else:
             comment_result = {"status": "written", **comment_payload}
             retry_state["comment_written"] = True
 
-    if not repository_tasks:
-        status = McpWorkItemTechnicalPlan.Status.PARTIAL
-        if not error_stage:
-            error_stage = "repository_routing"
-            error = "未生成仓库任务矩阵"
-        retry_state.update({"retryable": True, "failed_stage": retry_state.get("failed_stage") or "repository_routing"})
-
+    # McpWorkItemTechnicalPlan 继续落库（plan_body=canonical content，字段全保留兼容 A5）。
     artifact = await McpWorkItemTechnicalPlan.objects.acreate(
         run=run,
         context=context,
@@ -497,7 +386,7 @@ async def build_work_item_technical_plan(
         work_item_id=context.work_item_id,
         title=plan_title[:240],
         status=status,
-        plan_body=plan_body,
+        plan_body=content,
         markdown=markdown,
         repository_tasks=repository_tasks,
         evidence=evidence,
@@ -509,11 +398,12 @@ async def build_work_item_technical_plan(
         error_stage=error_stage,
         error=error,
     )
+    # 响应外形兼容：保留全部既有键 + 新增可选 session_id（partial 时供调用方续推）。
     output = {
         "technical_plan_id": str(artifact.id),
         "context_id": str(context.id),
         "project_id": str(context.space_id) if context.space_id else "",
-        "plan": plan_body,
+        "plan": content,
         "markdown": markdown,
         "repository_tasks": repository_tasks,
         "evidence": evidence,
@@ -522,6 +412,7 @@ async def build_work_item_technical_plan(
         "status": status,
         "retry_state": retry_state,
         "run_id": str(run.run_id),
+        "session_id": str(delegate.session.id),
     }
     from knowledge import ingestion  # lazy import 防循环
 

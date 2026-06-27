@@ -148,6 +148,7 @@ def test_create_feishu_technical_plan_auto_includes_similar_learning_case(
     mcp_client: tuple[APIClient, str],
     project,
     indexed_repository,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, _plaintext = mcp_client
     plan = _technical_plan(project, indexed_repository)
@@ -162,6 +163,35 @@ def test_create_feishu_technical_plan_auto_includes_similar_learning_case(
         format="json",
     )
     new_context = _context(project, name="登录超时相似 Bug")
+
+    # UNIFY-03：方案生成 delegate 到统一编排——monkeypatch delegate 返回 DONE（确定性，不触发
+    # 真实编排）；学习案例自动召回（search_learning_cases）独立于 delegate，落 evidence + artifact。
+    from mcp_tools.orchestration_delegate import DelegateResult
+
+    async def _fake_delegate(**_kwargs: object) -> DelegateResult:
+        return DelegateResult(
+            session=type("S", (), {"id": "00000000-0000-0000-0000-000000000001"})(),
+            status="completed",
+            content={
+                "title": "登录超时相似 Bug 技术方案",
+                "summary": "复用既有 token 刷新边界修复经验。",
+                "execution_plan": [
+                    {
+                        "id": "t1",
+                        "name": "修复刷新边界",
+                        "repository_id": str(indexed_repository.id),
+                        "repository_name": indexed_repository.name,
+                        "branch_strategy": "feature",
+                    }
+                ],
+            },
+            plan_version_id="00000000-0000-0000-0000-000000000002",
+            markdown="**登录超时相似 Bug 技术方案**",
+        )
+
+    monkeypatch.setattr(
+        "mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake_delegate
+    )
 
     response = client.post(
         "/api/mcp/tools/create_feishu_technical_plan/",
@@ -184,5 +214,7 @@ def test_create_feishu_technical_plan_auto_includes_similar_learning_case(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["plan"]["similar_cases"]
-    assert body["plan"]["similar_cases"][0]["title"] == "登录超时 Bug 技术方案"
+    # 相似学习案例经召回落 evidence（learning_case 源），不再内联 canonical plan content。
+    learning_evidence = [item for item in body["evidence"] if item.get("source") == "learning_case"]
+    assert learning_evidence
+    assert learning_evidence[0]["title"] == "登录超时 Bug 技术方案"
