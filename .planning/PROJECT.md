@@ -12,7 +12,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current State
 
-**Latest shipped:** v0.15.0 项目（交付上下文聚合根）（2026-06-26，审计 passed，38/38 需求）。里程碑 v0.1.0–v0.15.0（Phases 1–81）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）（Phases 82–89，planning）。**
+**Latest shipped:** v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）（2026-06-26，审计 tech_debt，37/37 需求，Phases 82–89）。里程碑 v0.1.0–v0.16.0（Phases 1–89）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。**当前在建：v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）（Phases 90+，planning）。**
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
@@ -28,20 +28,21 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Codebase 现状：** 后端 Django 5.1+/Python 3.14（adrf + channels）、前端 Vue 3 + TS + Tailwind 4、Go runner、Python task executor；测试基线后端 ~520 个 `test_*.py`、前端 ~130 个 spec。完整代码地图见 `.planning/codebase/`。
 
-## Current Milestone: v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）
+## Current Milestone: v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
 
-> v0.15.0 项目（交付上下文聚合根）已 shipped + 审计 passed。本里程碑在其领域地基上，把"项目"升级为团队真正用的**在线协作工作区**，分 8 个 Phase（82–89）/ 3 Wave 推进。完整设计与调研基线见 `.planning/project-workspace/MILESTONE-PROPOSAL.md`、需求 37 条见 `.planning/REQUIREMENTS.md`。
+> v0.16.0 项目工作区（Phases 82–89）已 shipped + 归档（审计 tech_debt，37/37 需求）。本里程碑为 **patch 级优化/统一**（非新功能）：把分散的多套「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`，并完善澄清/拆分能力 + 引入插槽式编辑范式。Phases 90+ 续号。需求 18 条见 `.planning/REQUIREMENTS.md`。
 
-**Goal:** 每个项目一个飞书文件夹 + 5 个固定工作区文件（MEMORY/STATE/MILESTONES/RESEARCH/PREFLIGHT），人在飞书写、Agent/Cursor 在系统写，**双向实时同步且不互相冲掉**；项目上下文可被任意来源（前端 AI 对话 / MCP / skills / IDE hooks）读取/召回/回写；并把"feature list → 拆看板 → 关联仓库 → 技术方案 → 建分支"做成人机协同卡片流水线。
+**Goal:** 把当前 4 套分散的「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`（工作流 / 对话 / MCP 三入口归一、废弃旧 LangChain 单 agent `ai_plan_generation`），并完善该能力——LLM 跨仓拆分、结构化交互式澄清 + 多轮 resume 续推、方案推送渲染；引入「插槽式（形状端口磁吸）」工作流编辑范式，让澄清等子环节像拼图一样拖拽拼接到方案节点上。
 
-**Target features（8 Phase / 3 Wave）:**
-- **Wave 1 地基**：Phase 82 项目工作区实体 + 权限翻转（全员可读+visibility/写仅成员）+ 每项目飞书文件夹 + 5 文件落地 + 侧边栏 tab；Phase 83 飞书文档双向同步引擎（subscribe + block_id 结构化匹配 + 三方合并 + 编辑感知延迟写 + 边界全集）；Phase 84 项目工作台前端 2.0（大盘/进度灯/5 文件实时编辑/全局+RAG 搜索）。
-- **Wave 2 闭环**：Phase 85 项目上下文可 RAG+grep+file-read + 分支↔项目多绑定；Phase 86 IDE 上下文闭环（MCP 注入+rules+CC/Cursor/Codex hooks 读写 + session 持久化 + runner 派发带上下文）。
-- **Wave 3 流水线**：Phase 87 看板拆分节点 + 群 + 流式卡片；Phase 88 智能业务关联仓库（多轮交互+逐仓自校验）；Phase 89 技术方案深化（per-repo+overall + 修订回路 + 5min 挂起/resume + 建分支绑项目）。
+**Target features（暂拟 Phase 90 起 / 4 类需求）:**
+- **入口归一（UNIFY）**：工作流模板切 `ai_plan_research`、废弃 `ai_plan_generation`；MCP 方案生成 delegate 到 plan_orchestration；对话澄清挂起收口单一来源；done 出口接「推送方案到群」干净渲染。
+- **澄清能力 + 出口面（CLARIFY）**：`Clarification` 结构化扩展（多问题/单多选/推荐 + 多答案）+ LLM 结构化问题 + 统一 `ask_clarification` 提问能力 + 双出口面（会话内联前端卡 / 工作流·群飞书交互卡）+ 答复回流 resume 续推 + 多轮。
+- **插槽式编辑器（SLOT）**：端口「形状(shape)」语义 + `WorkflowGraphValidator` 形状校验；`ai_plan_research` 暴露 clarify/resume 插槽 + 「澄清卡」节点；@vue-flow 形状磁吸（对上才连）；澄清节点作为方案节点的附着子节点可视编组、可下接发飞书群聊。
+- **拆分完善（DECOMP）**：`decompose` 从按行切升级为 LLM 跨仓业务线/模块/前后端拆分。
 
-**Key context:** 4 决策锁定——① 5 文件 **DB canonical + 飞书双向镜像 + redis 纯读缓存**；② **默认全员可读可问 + visibility 开关 + 写仅成员**；③ MEMORY **条目式不做整篇 diff**；④ STATE/MILESTONES **活计算 + 结构化 + 补充段**。同步引擎防冲突=**block 级写 + 区段所有权分区 + Agent append + 编辑感知延迟写**，diff 用 **block_id 结构化匹配 + last-synced 快照**（非整篇文本 diff），真冲突三方合并 + **capture-never-clobber**。IDE 读路径走 **MCP+rules**（Cursor `beforeSubmitPrompt` 不能注入）、CC `UserPromptSubmit` 增强；容器 resume 必须 **SessionStore→Redis**。**最大化复用 v0.15.0 `initiatives` 地基，严禁重复造。** 外部依赖（drive.file.edit_v1 / create_folder / work_item create+父子 / Cursor hooks / 容器 resume）已全部调研确认可行。脱敏不可绕过、新增 LLM 赋 call_source、新增召回写 RetrievalTrace、后台任务带 initiated_by_user_id、INV-6 单一写入、异步 ORM 走 sync_to_async、i18n 默认中文。
+**Key context:** `plan_orchestration` 已是统一底座（**自研 PlanSession 状态机，非 langgraph**；工作流 `ai_plan_research` + 对话 `start_plan_research` 已在用；resume / 多 claude code 容器并行调研 / 架构师融合汇总均已具备；下游 `human_approval`/`ai_coding` 已兼容 `MergedPlan`+wave）。已落地并验证：LLM 结构化澄清问题生成器 + `CallSource.PLAN_CLARIFICATION`、交互澄清卡 `build_clarification_card`（飞书 App 渲染 2.0 表单、网页版不支持）、通知/方案卡渲染修复（markdown 组件 + `•`）。**缺口**：澄清「答→续推」目前仅对话有、工作流侧缺发卡/收答闭环；`Clarification` 仅单 question/answer 需结构化；`decompose` 仍是 stub。**插槽=端口 shape 语义 + 磁吸（输入输出形状对应才能拼）**，反馈环 resume 复用引擎「非 default handle 回边=合法反馈环」（同审批驳回）。约束沿用：INV-6 单一写入、async ORM 走 `sync_to_async`、脱敏不可绕过、新增 LLM 赋 `call_source`、新增召回写 `RetrievalTrace`、i18n 默认中文；**最大化复用 `plan_orchestration`，严禁重复造**。
 
-**候选后续方向（v2）：** 产品系统内调研产出 feature list（PROJX-06）、UI 稿多模态召回（PROJX-01）、结构化记忆/降权（PROJX-02）、记忆全自动提炼（PROJX-03）、IDE 专用插件主动采集（PROJX-04）、项目看板燃尽/进度（PROJX-05）。
+**候选后续方向（v2）：** 方案文本流式卡片（STREAM，cardkit/v1 打字机）、插槽系统推广到更多节点类型（SLOTX，通用带槽节点 + 适配拼图生态）。
 
 ## Latest Milestone: v0.15.0 项目（交付上下文聚合根）— ✅ SHIPPED 2026-06-26（审计 passed）
 
@@ -301,4 +302,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-25 — start milestone v0.15.0 项目（交付上下文聚合根）*
+*Last updated: 2026-06-27 — start milestone v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）*
