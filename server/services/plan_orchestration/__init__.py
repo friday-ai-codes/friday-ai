@@ -17,6 +17,7 @@ from services.plan_orchestration.artifact_injection import (
     acollect_upstream_artifacts,
     render_upstream_artifacts_section,
 )
+from services.plan_orchestration.ask_clarification import ask_clarification
 from services.plan_orchestration.clarify_adapter import (
     ClarifyAdapter,
     default_needs_clarification,
@@ -112,4 +113,5 @@ __all__ = [
     "classify_modified_files",
     "acollect_upstream_artifacts",
     "render_upstream_artifacts_section",
+    "ask_clarification",
 ]
