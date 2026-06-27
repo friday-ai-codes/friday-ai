@@ -9,19 +9,18 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
 from services.plan_orchestration import PlanOrchestrationEngine
 
-ENGINE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "services"
-    / "plan_orchestration"
-    / "engine.py"
-)
+ENGINE_PATH = Path(__file__).resolve().parents[2] / "services" / "plan_orchestration" / "engine.py"
+
+# _decompose 内 lazy import agenerate_decomposition_segments，故 patch 源定义点
+# （engine 模块命名空间无该名字 → 只能 patch decompose_segments 源模块）。
+_DECOMPOSE_GEN = "services.plan_orchestration.decompose_segments.agenerate_decomposition_segments"
 
 
 @pytest.mark.django_db
@@ -40,6 +39,77 @@ async def test_advance_from_decomposing_real_decompose() -> None:
     assert reloaded.status == PlanSessionStatus.ROUTING
     assert reloaded.decomposition["segments"] == ["做A", "做B"]
     assert reloaded.decomposition["include_repos"] == ["r1"]
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_decompose_llm_success_structured_segments() -> None:
+    """LLM 成功产结构化 segments（list[dict]）→ 写入 decomposition + 推进 ROUTING + 契约键保留。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.DECOMPOSING,
+        decomposition={"requirement_text": "把实验组引流到新页", "include_repos": ["r1"]},
+    )
+    llm_segments = [
+        {"title": "登录页改造", "module": "用户中心", "layer": "frontend", "repo_hint": "r1"},
+    ]
+    engine = PlanOrchestrationEngine()
+    with patch(_DECOMPOSE_GEN, new=AsyncMock(return_value=llm_segments)):
+        await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.ROUTING
+    # LLM 成功 → segments 为结构化 dict 列表（非 splitlines）
+    assert reloaded.decomposition["segments"] == llm_segments
+    # routing 契约键两路径都保留
+    assert reloaded.decomposition["requirement_text"] == "把实验组引流到新页"
+    assert reloaded.decomposition["include_repos"] == ["r1"]
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_decompose_fail_soft_falls_back_to_splitlines() -> None:
+    """helper 返回 None（LLM 失败/缺 model）→ 回退 splitlines list[str] + 记回退事件 + 推进 ROUTING（非 FAILED）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.DECOMPOSING,
+        decomposition={"requirement_text": "做A\n做B", "include_repos": ["r1"]},
+    )
+    engine = PlanOrchestrationEngine()
+    with (
+        patch(_DECOMPOSE_GEN, new=AsyncMock(return_value=None)),
+        patch("services.plan_orchestration.engine.logger") as mock_logger,
+    ):
+        await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    # fail-soft：回退按非空行切分 list[str]，session 推进 ROUTING（绝不落 FAILED）
+    assert reloaded.status == PlanSessionStatus.ROUTING
+    assert reloaded.decomposition["segments"] == ["做A", "做B"]
+    assert reloaded.decomposition["requirement_text"] == "做A\n做B"
+    assert reloaded.decomposition["include_repos"] == ["r1"]
+    # 记 plan_decompose_fallback_splitlines 回退事件
+    events = [c.args[0] for c in mock_logger.info.call_args_list if c.args]
+    assert "plan_decompose_fallback_splitlines" in events
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_decompose_no_model_equivalent_fail_soft() -> None:
+    """无 default_model 等价 fail-soft（helper 返回 None）→ 回退 splitlines + ROUTING（非 FAILED）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.CHAT,
+        status=PlanSessionStatus.DECOMPOSING,
+        decomposition={"requirement_text": "需求一\n需求二", "include_repos": []},
+    )
+    engine = PlanOrchestrationEngine()
+    with patch(_DECOMPOSE_GEN, new=AsyncMock(return_value=None)):
+        await engine.advance(session)
+
+    reloaded = await PlanSession.objects.aget(id=session.id)
+    assert reloaded.status == PlanSessionStatus.ROUTING
+    assert reloaded.decomposition["segments"] == ["需求一", "需求二"]
+    assert reloaded.decomposition["include_repos"] == []
 
 
 @pytest.mark.django_db
@@ -85,11 +155,7 @@ async def test_route_persists_routing_and_emits_event() -> None:
     assert reloaded.status == PlanSessionStatus.RECALLING
     assert reloaded.routing == routing
     # transition 内部以 §14 event "routed" 调 _emit_event，此处用 any 匹配 repo.routing
-    emitted = [
-        call
-        for call in spy.call_args_list
-        if call.args and call.args[0] == "repo.routing"
-    ]
+    emitted = [call for call in spy.call_args_list if call.args and call.args[0] == "repo.routing"]
     assert len(emitted) == 1
     assert emitted[0].args[2] == {"candidates": [{"repo_id": "r1", "confidence": "high"}]}
 
@@ -121,9 +187,7 @@ async def test_recall_persists_context_and_emits_event() -> None:
     assert reloaded.status == PlanSessionStatus.CLARIFYING
     assert reloaded.recall_context == hits
     emitted = [
-        call
-        for call in spy.call_args_list
-        if call.args and call.args[0] == "knowledge.recalling"
+        call for call in spy.call_args_list if call.args and call.args[0] == "knowledge.recalling"
     ]
     assert len(emitted) == 1
     assert emitted[0].args[2] == {
