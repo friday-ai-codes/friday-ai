@@ -206,12 +206,19 @@ async def _resolve_tasks(
 def _coding_plan_body(task: McpWorkItemRepoTask) -> dict[str, Any]:
     body = task.task_body if isinstance(task.task_body, dict) else {}
     files = list(body.get("candidate_files") or [])
+    # WR-01：透传最富信息的 coding_instruction 供编码代理消费——requirement/steps 在
+    # change_goal/steps 缺失时回退到 coding_instruction，避免方案细节在编码链路丢失。
+    coding_instruction = str(body.get("coding_instruction") or "")
+    requirement = str(body.get("change_goal") or "") or coding_instruction
+    steps = list(body.get("steps") or [])
+    if not steps and coding_instruction:
+        steps = [coding_instruction]
     return {
         "title": f"{task.repository.name}: Feishu work item task",
-        "requirement": str(body.get("change_goal") or ""),
-        "problem_statement": str(body.get("change_goal") or ""),
+        "requirement": requirement,
+        "problem_statement": requirement,
         "affected_files": files,
-        "steps": list(body.get("steps") or []),
+        "steps": steps,
         "test_plan": list(body.get("test_strategy") or []),
         "risks": list(body.get("risks") or []),
         "rollback": str(body.get("rollback") or ""),

@@ -49,13 +49,26 @@ def _map_status(delegate_status: str) -> McpWorkItemTechnicalPlan.Status:
     return _STATUS_MAP.get(delegate_status, McpWorkItemTechnicalPlan.Status.PARTIAL)
 
 
+def _str_list(value: Any) -> list[str]:
+    """半可信 LLM 产物 → 去空白后的 ``list[str]``（非 list 恒空 list，防御性）。"""
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dict[str, Any]]:
     """canonical §7 ``execution_plan[]`` → 旧 ``repository_tasks`` 矩阵形态（外形兼容）。
 
     **显式字段映射白名单**（T-94-03-INFO：绝不透传 content 内部键），逐项 best-effort
-    取 ``repository_id`` / ``repository_name`` / ``coding_instruction``（→ change_goal 回退）
-    / ``branch_strategy``（→ planned_branch）/ ``files[].path``（→ candidate_files）/
-    ``dependencies``；缺字段填空不抛（半可信 LLM 产物防御）。
+    取 ``repository_id`` / ``repository_name`` / ``coding_instruction`` / ``branch_strategy``
+    （→ planned_branch）/ ``files[].path``（→ candidate_files）/ ``dependencies`` /
+    ``base_branch``（IN-02：canonical 含基线分支则透传，缺则下游回退仓库默认分支）。
+
+    WR-01：下游 ``work_item_execution_service._coding_plan_body`` 从 ``task_body`` 读取
+    ``steps`` / ``test_strategy`` / ``risks`` / ``rollback``，故这些键必须映射进每项（canonical
+    task 含同名字段则直取；缺 ``steps`` 时把最富信息的 ``coding_instruction`` 落为单步，避免
+    编码代理拿到空步骤而丢失方案细节）。``coding_instruction`` 始终透传供下游消费。缺字段填空
+    不抛（半可信 LLM 产物防御）。
     """
     raw_plan = content.get("execution_plan") if isinstance(content, dict) else None
     if not isinstance(raw_plan, list):
@@ -76,19 +89,76 @@ def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dic
         )
         dependencies = item.get("dependencies")
         dependencies = dependencies if isinstance(dependencies, list) else []
+        # WR-01：steps 缺失时把 coding_instruction 落为单步，保证编码代理拿到方案细节。
+        steps = _str_list(item.get("steps"))
+        if not steps and coding_instruction:
+            steps = [coding_instruction]
         tasks.append(
             {
                 "order": index,
                 "repository_id": str(item.get("repository_id") or ""),
                 "repository_name": str(item.get("repository_name") or ""),
                 "planned_branch": str(item.get("branch_strategy") or ""),
+                # IN-02：canonical 含 base_branch 则透传（缺则下游回退仓库默认分支）。
+                "base_branch": str(item.get("base_branch") or ""),
                 "change_goal": change_goal,
                 "coding_instruction": coding_instruction,
                 "candidate_files": candidate_files,
                 "dependencies": [str(dep) for dep in dependencies],
+                # WR-01：下游 _coding_plan_body 读取的方案细节键（含 coding_instruction 兜底）。
+                "steps": steps,
+                "test_strategy": _str_list(item.get("test_strategy")),
+                "risks": _str_list(item.get("risks")),
+                "rollback": str(item.get("rollback") or ""),
             }
         )
     return tasks
+
+
+def _map_plan_payload(
+    *,
+    content: dict[str, Any],
+    context: McpWorkItemContext,
+    plan_title: str,
+    repository_tasks: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    similar_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """canonical content → 旧 ``plan`` / ``plan_body`` 外形（WR-02，外形兼容）。
+
+    UNIFY-03 曾把嵌套 ``plan`` / 落库 ``plan_body`` 整体替换为 canonical §7 content，破坏读
+    ``plan.repository_task_matrix`` / ``plan.work_item`` / ``plan.summary`` 的旧调用方（且与
+    ``repository_tasks`` 的「显式白名单、绝不透传 content 内部键」原则自相矛盾）。本函数把
+    canonical 显式映射回旧关键键，保持响应/落库外形兼容；canonical content 仍以独立
+    ``canonical_content`` 键保留（不丢信息、可追踪）。
+    """
+    summary = str(content.get("summary") or "") if isinstance(content, dict) else ""
+    linked_documents = [
+        {
+            "document_id": str(doc.get("document_id") or ""),
+            "url": str(doc.get("url") or ""),
+            "status": str(doc.get("status") or ""),
+        }
+        for doc in context.documents or []
+    ]
+    return {
+        "title": plan_title,
+        "summary": summary,
+        "work_item": {
+            "feishu_project_key": context.feishu_project_key,
+            "work_item_type": context.work_item_type,
+            "work_item_id": context.work_item_id,
+            "name": context.name,
+            "work_item_status": context.work_item_status,
+        },
+        "repository_task_matrix": repository_tasks,
+        "linked_documents": linked_documents,
+        "similar_cases": similar_cases,
+        "evidence": evidence,
+        "context_preview": _preview(_work_item_text(context), 500),
+        # canonical §7 content 保留（不丢信息、可追踪；旧外形键见上）。
+        "canonical_content": content,
+    }
 
 
 def _preview(value: str, limit: int = 500) -> str:
@@ -314,6 +384,16 @@ async def build_work_item_technical_plan(
         context_chunks=context_chunks,
         similar_cases=effective_similar_cases,
     )
+    # WR-02：旧 plan/plan_body 外形（repository_task_matrix/work_item/summary 等）映射自
+    # canonical，保持响应/落库外形兼容（canonical content 仍以 canonical_content 键保留）。
+    plan_payload = _map_plan_payload(
+        content=content,
+        context=context,
+        plan_title=plan_title,
+        repository_tasks=repository_tasks,
+        evidence=evidence,
+        similar_cases=effective_similar_cases,
+    )
 
     # 终态/挂起 → 落库 status 基线（编排在途 partial / 失败 failed），writeback 失败再降级。
     status = _map_status(delegate.status)
@@ -376,7 +456,7 @@ async def build_work_item_technical_plan(
             comment_result = {"status": "written", **comment_payload}
             retry_state["comment_written"] = True
 
-    # McpWorkItemTechnicalPlan 继续落库（plan_body=canonical content，字段全保留兼容 A5）。
+    # McpWorkItemTechnicalPlan 继续落库（plan_body=旧外形映射 WR-02，字段全保留兼容 A5）。
     artifact = await McpWorkItemTechnicalPlan.objects.acreate(
         run=run,
         context=context,
@@ -386,7 +466,7 @@ async def build_work_item_technical_plan(
         work_item_id=context.work_item_id,
         title=plan_title[:240],
         status=status,
-        plan_body=content,
+        plan_body=plan_payload,
         markdown=markdown,
         repository_tasks=repository_tasks,
         evidence=evidence,
@@ -403,7 +483,7 @@ async def build_work_item_technical_plan(
         "technical_plan_id": str(artifact.id),
         "context_id": str(context.id),
         "project_id": str(context.space_id) if context.space_id else "",
-        "plan": content,
+        "plan": plan_payload,
         "markdown": markdown,
         "repository_tasks": repository_tasks,
         "evidence": evidence,
