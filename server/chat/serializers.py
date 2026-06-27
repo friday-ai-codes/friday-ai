@@ -409,6 +409,10 @@ class ConversationRuntimeSerializer(serializers.Serializer):
     # 待回复的澄清（刷新 / 切回会话时恢复 ClarificationCard）；JSONField pass-through
     # 与前端 ClarificationPayload 对齐（clarification_id/question/options/allow_freeform）。
     pending_clarification = serializers.JSONField(allow_null=True, required=False)
+    # plan 编排结构化澄清轮（CLARIFY-04，与 chat 单题 pending_clarification 物理隔离）：
+    # {clarification_id, round_no, questions:[{question_id, question, qtype, options,
+    # recommended, selected, freeform_text}]}，供前端 91-05 渲染多题澄清卡。
+    pending_plan_clarification = serializers.JSONField(allow_null=True, required=False)
 
 
 class WebPushPublicKeySerializer(serializers.Serializer):
