@@ -90,7 +90,12 @@ async def test_persisted_round_sends_card_and_suspends() -> None:
     clar = await ClarificationService().create_round(
         session,
         [
-            {"question": "实验组用户？", "type": "single", "options": ["A", "B"], "recommended": ["A"]},
+            {
+                "question": "实验组用户？",
+                "type": "single",
+                "options": ["A", "B"],
+                "recommended": ["A"],
+            },
             {"question": "命中策略？", "type": "multi", "options": ["X", "Y"], "recommended": []},
         ],
     )
@@ -164,6 +169,42 @@ async def test_raw_questions_transient_suspends() -> None:
     assert result.output["persisted"] is False
     assert result.output["question_count"] == 2
     assert len(result.output["questions_meta"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 3b：发卡问题正文脱敏（WR-01，与镜像 ai_plan_research 发卡脱敏一致）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_card_question_text_is_redacted() -> None:
+    from workflows.nodes.integrations.clarification_card import ClarificationCardNode
+
+    secret = "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"
+    ctx = _ctx(
+        request_payload={
+            "questions": [
+                {"question": f"用哪个密钥？{secret}", "type": "single", "options": ["A"]},
+            ],
+            "chat_id": "oc_chat",
+        },
+    )
+
+    im_client = MagicMock()
+    im_client.send_card = AsyncMock(return_value="msg-1")
+
+    with (
+        patch(f"{_MOD}._get_feishu_credentials", AsyncMock(return_value=("app", "secret"))),
+        patch(f"{_MOD}.FeishuIMClient", return_value=im_client),
+        patch(f"{_MOD}.build_clarification_card", return_value={"card": "x"}) as mock_card,
+    ):
+        result = await ClarificationCardNode().execute(ctx)
+
+    assert result.status == "waiting_event"
+    card_questions = mock_card.call_args.args[0]
+    question_text = card_questions[0]["question"]
+    assert secret not in question_text
+    assert "***REDACTED***" in question_text
 
 
 # ---------------------------------------------------------------------------

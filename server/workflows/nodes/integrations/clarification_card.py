@@ -12,8 +12,8 @@
 
 观测：structlog snake_case（``clarification_card_started`` / ``clarification_card_sent`` /
 ``clarification_card_send_failed``）带 ``category="caller"`` / ``component="workflow_node"`` /
-``duration_ms``；触发用户经 context 解析（缺记 ``system``）。发卡正文自由文本（reason/title）经
-``redact_secrets_in_text`` 脱敏。
+``duration_ms``；触发用户经 context 解析（缺记 ``system``）。发卡正文自由文本（reason/title/
+问题正文）经 ``redact_secrets_in_text`` 脱敏（与镜像 ``ai_plan_research`` 发卡脱敏一致）。
 """
 
 from __future__ import annotations
@@ -175,7 +175,7 @@ class ClarificationCardNode(BaseNode):
         # 发卡用 questions（card 形态）+ questions_meta（回调透传据 order 映射）。
         card_questions = [
             {
-                "question": str(q.get("question", "")),
+                "question": redact_secrets_in_text(str(q.get("question", ""))),
                 "type": q.get("type") or q.get("qtype") or "single",
                 "options": q.get("options") or [],
                 "recommended": q.get("recommended") or [],
