@@ -42,7 +42,7 @@ async def ask_clarification(
     *,
     origin_repo: str | None = None,
     clarification_service: ClarificationService | None = None,
-) -> Clarification:
+) -> Clarification | None:
     """编排层主动发问：写结构化澄清轮（薄封装 ``create_round``，INV-6）。
 
     Args:
@@ -53,7 +53,8 @@ async def ask_clarification(
         clarification_service: 可选注入（测试 / 复用既有实例）；缺省构造默认实例。
 
     Returns:
-        新建的 ``Clarification`` 轮次容器。
+        新建的 ``Clarification`` 轮次容器；``questions`` 为空时返回 ``None``
+        （空轮守护 WR-02，避免落成永久不可作答的 pending 容器导致无限挂起）。
 
     本 helper **仅**薄封装 ``create_round``：不驱动 ``engine.advance``、不挂起 marker、
     不写 ``session.status``。与 chat tool ``agents/tools/clarification.py:ask_clarification``

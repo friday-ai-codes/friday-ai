@@ -148,7 +148,7 @@ class ClarificationService:
         origin_repo: str | None = None,
         round_no: int | None = None,
         plan_version_id: Any = None,
-    ) -> Clarification:
+    ) -> Clarification | None:
         """建 1 个澄清轮次容器 + N 个 ClarificationQuestion 子题（结构化澄清唯一写入入口）。
 
         ``questions`` 为归一后的问题列表（见 ``normalize_clarification_questions`` 形态：
@@ -156,7 +156,19 @@ class ClarificationService:
         列、真身在子题；子题按列表顺序 ``order`` 0-based 递增，``qtype`` 取 ``type``（缺省
         single），可携 ``origin_repo``（CLARIFY-03 透传）。全部写入只经本 service（INV-6），
         子题经 ``bulk_create`` 在 ``sync_to_async`` 同步块内一次性落库。
+
+        **空问题守护（WR-02）**：``questions`` 为空时**不创建轮次**、返回 ``None``——空轮会落成
+        一个永久无子题可作答的 pending 容器（``ahas_pending`` 旧单题分支恒判 pending）导致无限挂起。
+        调用方据 ``None`` 不挂起（保 fail-soft）。
         """
+        if not questions:
+            self._safe_log(
+                "clarification_round_skipped_empty",
+                category="caller",
+                component="delivery",
+                session_id=str(getattr(session, "id", "")),
+            )
+            return None
         started = time.perf_counter()
         clar = await self._create_round_sync(
             session, questions, origin_repo, round_no, plan_version_id
@@ -222,7 +234,9 @@ class ClarificationService:
         """
         started = time.perf_counter()
         round_id = getattr(round_or_id, "id", round_or_id)
-        answered_count, adopted_count = await self._answer_round_sync(answers)
+        answered_count, adopted_count, round_completed = await self._answer_round_sync(
+            round_id, answers
+        )
         self._safe_log(
             "clarification_round_answered",
             category="caller",
@@ -231,13 +245,16 @@ class ClarificationService:
             answered_count=answered_count,
             adopted_count=adopted_count,
             total=len(answers),
+            round_completed=round_completed,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         clar = await Clarification.objects.filter(id=round_id).afirst()
         return clar if clar is not None else round_or_id
 
     @sync_to_async
-    def _answer_round_sync(self, answers: list[dict[str, Any]]) -> tuple[int, int]:
+    def _answer_round_sync(
+        self, round_id: Any, answers: list[dict[str, Any]]
+    ) -> tuple[int, int, bool]:
         answered = 0
         adopted = 0
         for ans in answers:
@@ -250,7 +267,29 @@ class ClarificationService:
                 answered += 1
                 if was_adopted:
                     adopted += 1
-        return answered, adopted
+        round_completed = self._maybe_advance_container(round_id)
+        return answered, adopted, round_completed
+
+    def _maybe_advance_container(self, round_id: Any) -> bool:
+        """轮内所有子题都已作答时，把容器 ``container_status`` 推进到 ``answered``（WR-01）。
+
+        幂等：仅当容器仍 ``container_status="pending"`` 且**无任何 ``answered_at IS NULL`` 子题**
+        时条件更新（兼容并发竞答 + 重复作答 no-op）。无子题的旧单题行不经本路径（结构化轮才有
+        子题）。返回是否本次推进到 answered。
+        """
+        has_unanswered = ClarificationQuestion.objects.filter(
+            clarification_id=round_id, answered_at__isnull=True
+        ).exists()
+        if has_unanswered:
+            return False
+        has_children = ClarificationQuestion.objects.filter(clarification_id=round_id).exists()
+        if not has_children:
+            # 无子题（非结构化轮）→ 不动容器状态，交 legacy answer_clarification 路径
+            return False
+        updated = Clarification.objects.filter(id=round_id, container_status="pending").update(
+            container_status="answered", answered_at=timezone.now()
+        )
+        return updated == 1
 
     def _answer_question(
         self, question_id: Any, selected: Any, freeform_text: Any

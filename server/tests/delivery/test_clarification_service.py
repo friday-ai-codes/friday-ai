@@ -408,3 +408,45 @@ async def test_answer_round_idempotent() -> None:
     assert second.selected == "A"  # 首答未被覆盖
     assert second.recommendation_adopted is True
     assert second.answered_at == first_answered_at
+
+
+@pytest.mark.asyncio
+async def test_answer_round_advances_container_when_all_answered() -> None:
+    """WR-01：轮内全部子题作答后，容器 container_status 从 pending 推进到 answered。"""
+    session = await _clarifying_session()
+    svc = ClarificationService()
+    clar = await svc.create_round(
+        session,
+        [
+            {"question": "Q1", "type": "single", "options": ["A", "B"], "recommended": "A"},
+            {"question": "Q2", "type": "single", "options": ["A", "B"], "recommended": "A"},
+        ],
+    )
+    rows = [
+        q async for q in ClarificationQuestion.objects.filter(clarification=clar).order_by("order")
+    ]
+
+    # 只答一题 → 容器仍 pending
+    await svc.answer_round(clar, [{"question_id": rows[0].id, "selected": "A"}])
+    mid = await Clarification.objects.aget(id=clar.id)
+    assert mid.container_status == "pending"
+    assert mid.answered_at is None
+
+    # 答完剩余题 → 容器推进 answered + answered_at 落定
+    await svc.answer_round(clar, [{"question_id": rows[1].id, "selected": "A"}])
+    done = await Clarification.objects.aget(id=clar.id)
+    assert done.container_status == "answered"
+    assert done.answered_at is not None
+    assert await svc.ahas_pending(session.id) is False
+
+
+@pytest.mark.asyncio
+async def test_create_round_empty_questions_returns_none() -> None:
+    """WR-02：空问题列表不创建轮次（返回 None），避免永久不可作答的 pending 容器。"""
+    session = await _clarifying_session()
+    svc = ClarificationService()
+    result = await svc.create_round(session, [])
+    assert result is None
+    # 未建任何容器 → 会话不挂起
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 0
+    assert await svc.ahas_pending(session.id) is False
