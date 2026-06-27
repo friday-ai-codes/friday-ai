@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: "94-05 executed（plan_research_tools 新增 PLAN_CLARIFICATION_RENDER_MARKER="plan_clarification" 独立常量，_maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用、marker 改独立值 + 携 session_id/clarification_id；marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中物理隔离 T-94-05-MARKER；RESEARCHING 零回归 + 导出 __all__。挂起/续推权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由 aanswer_round_and_resume；marker 仅前端渲染信号。后端 3 守护 + 前端 4 守护（plan 卡 runtime 驱动·marker 字面非依赖；chat 单题仍仅认 ask_clarification 零回归，WARNING 3）。DEVIATION: None）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed + frontend 20 passed、ruff/mypy/vue-tsc/eslint 干净、无新迁移。"
-stopped_at: "执行 94-02（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口 ai_plan_research + 迁移指引）——BaseNode.deprecated ClassVar 默认 False + AIPlanGenerationNode deprecated=True/docstring DEPRECATED 注/__init__ 一次性 warning（category=sampling，best-effort），保留 @register_node 与全部节点代码/端口/map_output（既有实例零回归，不删代码/不注销/不删 fixture）；新建 docs/workflows/ai-plan-generation-deprecation.md 迁移指引；NodePalette AI 分组 ai_plan_generation→ai_plan_research 裸项（不改 fixture，palette ⊆ fixture 仍成立）；test_node_schema deprecated 注册守护 + node-sync 双向不变量（ai_plan_generation ∉ palette ∧ ∈ fixture；ai_plan_research ∈ palette ∧ ∈ fixture）。DEVIATION: None。2 commits（ddd1998cc/d6187da8a）；test_node_schema -k Deprecated(2)+node-sync vitest(7) 全绿、ruff/eslint 干净、vue-tsc --noEmit 通过、无新迁移。Issue：git stash 误扫工作树在制品 + pop 被管道过滤致首提交仅含迁移文档，恢复后 amend 并入 3 后端文件（4 文件原子）。Deferred：base.py:515 既有 mypy var-annotated 超范围。"
-last_updated: "2026-06-27T17:03:11.618Z"
-last_activity: 2026-06-27
+status: "95-01 executed（DECOMP-01 观测底座：CallSource 受控枚举新增 PLAN_DECOMPOSE='plan_decompose'，docstring 成员计数订正 30→32（修复 plan_clarification 漏计）；LOGGING-SPEC §4.1 登记 plan_decompose + 补登历史漏记 plan_clarification。DEVIATION: Rule 1 — call_source 完整性守护测试 _EXPECTED_CALL_SOURCES 同步补 plan_clarification/plan_decompose 两值 + 计数 30→32（Phase 90 加入枚举时漏更，叠加本次新增致守护失败），随枚举原子提交）。2 commits（e0df4fcbc feat/565fd6013 docs）；call_source pytest 25 passed、ruff/mypy（call_source.py）干净、无新迁移、无供应链面。"
+stopped_at: "执行 94-05（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed + frontend 20 passed、ruff/mypy/vue-tsc/eslint 干净、无新迁移。"
+last_updated: "2026-06-27T17:36:49.000Z"
+last_activity: 2026-06-28
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 27
+  completed_plans: 25
   percent: 83
 ---
 
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 95
-Plan: Not started
+Plan: 95-01 executed（1/3）
+Status: 95-01 executed（DECOMP-01 观测底座：CallSource 受控枚举新增 PLAN_DECOMPOSE="plan_decompose" + 中文注释；模块/类 docstring 成员计数订正 30→32（实测 31 + 新增 = 32，修复 Phase 90 PLAN_CLARIFICATION 漏计）；normalize 受控不变（非法值回退 unknown）。LOGGING-SPEC §4.1 branch_naming 行后追加 plan_clarification（补登历史漏记）+ plan_decompose（Phase 95 拆分调用）两行登记，列对齐、中文表述/英文标识。DEVIATION: Rule 1 — tests/test_model_usage_call_source.py 完整性守护 _EXPECTED_CALL_SOURCES 同步补两值 + 计数断言 30→32（守护「枚举多一少一都失败」，Phase 90 漏更 + 本次新增致失败，随枚举契约原子提交于 e0df4fcbc）。2 commits（e0df4fcbc feat/565fd6013 docs）；call_source pytest 25 passed、ruff/mypy（call_source.py）干净、无新迁移、无供应链面。下游 → 95-02（decompose_segments LLM 拆分 helper 经 use_call_source(PLAN_DECOMPOSE) 标注）。
+Earlier: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）。3 commits（d4edb83c5/69bef698a/ee69076ee）。
 Earlier: 94-03 executed（UNIFY-03：MCP create_feishu_technical_plan delegate 到统一编排——共享 delegate 核心 + 响应外形/落库兼容 + skip_clarification 开关）
-Earlier: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）
-Status: 94-05 executed（plan_research_tools 新增 PLAN_CLARIFICATION_RENDER_MARKER="plan_clarification" 独立常量，_maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用、marker 改独立值 + 携 session_id/clarification_id；marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中物理隔离 T-94-05-MARKER；RESEARCHING 零回归 + 导出 __all__。挂起/续推权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由 aanswer_round_and_resume；marker 仅前端渲染信号。后端 3 守护 + 前端 4 守护（plan 卡 runtime 驱动·marker 字面非依赖；chat 单题仍仅认 ask_clarification 零回归，WARNING 3）。DEVIATION: None）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed + frontend 20 passed、ruff/mypy/vue-tsc/eslint 干净、无新迁移。
 Earlier: 94-02 executed（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口到 ai_plan_research + 迁移指引）。2 commits（ddd1998cc/d6187da8a）。base.py:515 既有 mypy var-annotated 超范围未修（记 deferred）。
 Earlier: 94-01 executed（入口统一工作流侧：done 渲染 plan_markdown + 模板切 ai_plan_research，UNIFY-01/06）。3 commits（d73127290/07f18f989/12b6a7c74）。
 
@@ -45,7 +45,7 @@ Last activity: 2026-06-27
 | 92 | 插槽系统（后端） | SLOT-01/02 | ✅ Complete (3/3) |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | ✅ Complete (7/7) |
 | 94 | 入口统一 | UNIFY-01~06 | ✅ Complete (5/5) |
-| 95 | 拆分完善 | DECOMP-01 | Not started |
+| 95 | 拆分完善 | DECOMP-01 | 🚧 In progress (1/3) |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
 
