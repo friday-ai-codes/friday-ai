@@ -75,8 +75,20 @@ async def aanswer_round_and_resume(
     clarification_service = clarification_service or ClarificationService()
     clar = await clarification_service.answer_round(clarification_or_id, answers)
 
-    # async 防裸 lazy-FK：用 session_id 标量解析会话
-    session = await PlanSession.objects.filter(id=clar.session_id).afirst()
+    # async 防裸 lazy-FK：用 session_id 标量解析会话。轮缺失（TOCTOU：并发删除/过期）时
+    # answer_round 返回裸 id 而非模型实例，``getattr`` 取不到 session_id → 干净返回 None
+    # （与 docstring「解析不出 → 返回 None」一致，不抛 AttributeError）。
+    session_id = getattr(clar, "session_id", None)
+    if session_id is None:
+        _safe_log(
+            "answer_round_and_resume_completed",
+            category="caller",
+            component="plan_orchestration",
+            resolved_session=False,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return None
+    session = await PlanSession.objects.filter(id=session_id).afirst()
     if session is None:
         _safe_log(
             "answer_round_and_resume_completed",
