@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
 status: in_progress
-last_updated: "2026-06-27T06:19:00.000Z"
+last_updated: "2026-06-27T06:34:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 4
+  completed_plans: 2
+  percent: 8
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 90 (in progress)
-Plan: 01 完成（数据脊柱）→ 下一步 90-02（service 写入收口）
-Status: 90-01 executed（Clarification 容器扩展 + ClarificationQuestion 子表 + 迁移 0026）
-Last activity: 2026-06-27 — 执行 90-01：结构化澄清数据模型（CLARIFY-01 模型半）
+Plan: 02 完成（service 写入收口）→ 下一步 90-03（ClarifyAdapter 接 LLM + 三处 pending 升级）
+Status: 90-02 executed（ClarificationService.create_round/answer_round/ahas_pending + 采纳信号定格 + INV-6 子模型守护 + 生命周期埋点）
+Last activity: 2026-06-27 — 执行 90-02：结构化澄清写入入口（CLARIFY-01 service 半）
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
 
@@ -282,6 +282,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 59]: 59-02: CreateGroupChatNode 节点接线（Wave 2，兑现 GROUP-01 SC-1/2/3）——feishu_chat.py 新增 `CreateGroupChatNode`（@register_node 自动注册 `create_group_chat`，全局唯一不撞 fetch/join_group_chat；`NodeCategory.INTEGRATION`/`execution_mode="server_local"`，镜像 Fetch/Join 节点结构 + 全中文 config_schema），inputs=[default]、outputs=[default(成功),error(失败)]。execute：render 群名 + `_parse_id_list`（member_ids 三形态：模板 get_template_value 保留 list / JSON 列表兼容单引号 / 逗号分隔，逐项 strip 去空，镜像 normalize_repositories）→ 缺群名 **或** 缺成员 → failed+error handle（D-4，建群+拉人核心空成员无意义）→ `FeishuIMService.create(project).create_chat(name, user_id_list=, owner_id=, description=, user_id_type=open_id)`（建群即拉人单步，消费 Wave 1）；`except FeishuIMError → failed+error handle`（D-7 建群失败）。输出 `{chat_id(一等),chat_name,owner_id(data.get 容错空串 P-3),source:"create_group_chat",writeback:{attempted,success}}`（D-8）。可选 writeback（D-7 fail-soft）：仅 project_key+work_item_id 均非空才触发，`int()` 失败 warning 跳过（attempted=False，P-11）；`WorkItemService().awriteback_feishu_chat_id(project_key,work_item_type,int(work_item_id),chat_id)`（函数级 import 避循环依赖）经 `try/except Exception`+log.warning 包裹——DB 异常/返回 False 节点**仍 completed** 返回 chat_id，绝不冒泡（P-6 INV-6 单一入口，节点无 WorkItem.objects/.save 直接写表）。绝不改 FetchGroupChatNode/JoinGroupChatNode（git diff 仅 import 行扩展 FeishuIMError）。测试 patch 源模块类属性 `delivery.services.work_item_service.WorkItemService.awriteback_feishu_chat_id`（节点函数级 import，patch feishu_chat 模块不生效，NOTE-3）。新增 14 例（happy/三形态/缺参/建群失败/writeback happy·fail-soft·不存在·未配/自动注册）；34 passed（含既有零回归）+ Wave 1+2 60 passed
 - [Phase 53]: 53-02: AuditService.emit/aemit 是 AuditEvent 唯一写入入口（INV-6）——sync emit + async aemit(via sync_to_async) 收口于唯一 AuditEvent.objects.create；入口内强制脱敏 before/after/metadata（_redact_audit_payload：key-name 命中整体抹值 + 值级密钥正则/高熵 Shannon 只抹叶子，调用方传明文也绝不落明文）；整段 fail-soft 吞异常 + audit.emit_failed warning(仅记 action/target_type)，绝不冒泡阻断主操作；aemit actor 字段访问全在 sync 块内(async 安全)；redaction.py 复刻(非 import)sensitive_detect/work_item_service 正则常量守 INV-3；taxonomy.py 15 种子 Final[str]+ALL_ACTIONS+purge.* RESERVED 预留(具体值 Phase 54 补)；INV-6 grep 守护断言无旁路写+writer-actually-writes 反向断言。AUDIT-01/02 整体闭环 — AUDIT-01/02 要求单一写入入口 + append-only + fail-soft + 凭证脱敏； emit 地基供 Phase 54 任意敏感操作安全埋点（绝不落明文/绝不阻断/写入唯一收口）
 - [Phase 90]: 90-01: 结构化澄清数据脊柱（CLARIFY-01 模型半）——沿用 `Clarification` 作轮次容器（非新建 ClarificationRound，最小迁移成本），新增 4 个 nullable 字段 `round_no`/`container_status`（**非 status**，避免与 PlanSession.status 混淆 + 迁移误判状态机字段）/`origin_repo`（CLARIFY-03 携带）/`plan_version_id`（采纳率冗余绑定，canonical 仍 session.current_plan_version）；新建 `ClarificationQuestion` 子表（FK CASCADE related_name=questions、db_table=delivery_clarification_question、复合索引 [clarification, order]，字段 order/question/qtype(**非 type**，避开 Python 内建)/options/recommended/origin_repo/selected/freeform_text/answered_at/recommendation_adopted/created_at）承载多问题+单多选+按题答案+采纳信号。新字段全 null=True 保留既有 question/answer/answered_at/affected_partials 不删（旧行 migrate 不破坏、不强制回填，T-90-01-01）；模型层零业务方法守 INV-6（写入收口归 90-02 service，grep 守护待扩展覆盖子模型）；迁移 0026_clarification_questions 自动生成后重命名、依赖 0025、makemigrations --check 干净 + 可正向 migrate（SQLite dev 验证）
+- [Phase 90]: 90-02: 结构化澄清写入收口（CLARIFY-01 service 半，INV-6）——`ClarificationService` 新增 `create_round`（建容器 `question=""` 占位 + `ClarificationQuestion.bulk_create` N 子题，order 0-based、qtype/options/recommended/origin_repo 落库，全程 sync_to_async）/ `answer_round`（遍历 `[{question_id,selected,freeform_text}]` 按题幂等 `filter(answered_at__isnull=True).update(...)` + **作答时一次性定格 `recommendation_adopted`**：single `selected==rec[0]`、multi `set(selected)==set(rec)` 全等、无推荐或纯 freeform→None，**绝不接受调用方传入** T-90-02-02）/ `ahas_pending`（统一 pending 谓词收口两形态：子题未答 OR 旧单题行 `answered_at__isnull=True,questions__isnull=True`，防历史挂起误放行 Pitfall 2）。采纳率不另写方法，由 `ClarificationQuestion.objects.filter(recommendation_adopted__isnull=False).aaggregate(total=Count, adopted=Count(filter=Q(...=True)))` SQL 聚合。INV-6 grep 守护新增 `test_inv6_clarification_question_single_write_entry`（正则覆盖 `ClarificationQuestion.objects.create/.bulk_create/(...).save` 旁路写）。生命周期埋点 `clarification_round_created/answered`（category=caller、component=delivery、duration_ms，经 `_safe_log` best-effort）。多选采纳取 set 全等（CONTEXT 未指定子集，全等最无歧义）。14 测全绿（既有 5 + 新增 9）、mypy/ruff 干净；唯一偏离：测试单题轮 `afirst()`→`aget()` 规避 mypy union-attr（Rule 3）
 
 ### Pending Todos
 
@@ -388,10 +389,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-27
-Stopped at: v0.16.1 立项 + roadmap 创建完成——18 v1 需求（UNIFY/CLARIFY/SLOT/DECOMP）映射到 6 Phase（90–95），100% 覆盖无 orphan；ROADMAP.md 追加 v0.16.1 active 段（phase 表 + Phase Details + Progress 表）、STATE.md Milestone Overview 更新、REQUIREMENTS.md Traceability 填齐。
-Earlier: v0.16.0 项目工作区已 shipped + 审计 tech_debt + 归档（2026-06-27）；v0.15.0 已 shipped + passed（2026-06-26）。
+Stopped at: 执行 90-02（ClarificationService 结构化澄清写入入口）——create_round/answer_round/ahas_pending + recommendation_adopted 作答时定格 + 采纳率 SQL 聚合 + INV-6 子模型守护扩展 + 生命周期埋点；14 测全绿、mypy/ruff 干净。
+Earlier: 执行 90-01（结构化澄清数据脊柱）；v0.16.1 立项 + roadmap 创建完成；v0.16.0 已 shipped + 归档（2026-06-27）。
 Resume file: None
-Next: `$gsd-plan-phase 90`（澄清能力层，CLARIFY-01/02/03）。依赖链：90→91→92→93；94 依赖 90/91；95 相对独立。
+Next: 执行 90-03（ClarifyAdapter 接 LLM 多题 + fail-soft 回退 + 三处 pending 判定升级为统一 ahas_pending）+ 90-04（入口无关 ask_clarification helper）。
 
 ## Operator Next Steps
 
