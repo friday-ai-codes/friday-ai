@@ -2985,11 +2985,13 @@ class PlanClarificationAnswerView(APIView):
             )
 
         # 归属校验（T-91-04-02 防伪造 question_id）：每个提交的 question_id 必属该 pending
-        # 轮，否则 400 拒绝（不丢弃越界静默成功）。answer_round 内再按 id + answered_at IS
-        # NULL 过滤 no-op 作纵深。
+        # 轮容器（按 pending_round.id 而非 session 维度，否则同 session 历史已答轮的 id 也能
+        # 通过校验、进 answer_round 被 answered filter no-op、轮不推进却返回误导性 answered:True）。
+        # 越界 400 拒绝（不丢弃越界静默成功）。answer_round 内再按 id + answered_at IS NULL
+        # 过滤 no-op 作纵深。
         submitted_ids = [str(a.get("question_id") or "").strip() for a in answers]
         owned_count = await ClarificationQuestion.objects.filter(
-            clarification__session_id=session.id, id__in=submitted_ids
+            clarification_id=pending_round.id, id__in=submitted_ids
         ).acount()
         if owned_count != len(submitted_ids):
             logger.warning(

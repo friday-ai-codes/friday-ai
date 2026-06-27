@@ -251,6 +251,49 @@ class TestPlanClarificationAnswerEndpoint:
         assert resp.status_code == 400
         assert capture_helper["calls"] == []
 
+    def test_400_question_id_from_prior_answered_round(
+        self,
+        authed_client: APIClient,
+        conversation: Conversation,
+        capture_helper: dict[str, Any],
+    ) -> None:
+        """WR-03 回归：同 session 历史已答轮的 question_id 不应通过 pending 轮归属校验。
+
+        归属校验作用域收窄到 pending_round.id 后，旧轮 id → 400（而非 session 维度误放行后
+        被 answer_round no-op、轮卡住却返回误导性 answered:True）。
+        """
+        from delivery.models import ClarificationQuestion
+
+        session = _make_plan_session(conversation)
+        # 第一轮：全部作答 → 关闭
+        round1 = _make_pending_round(session)
+        r1_qids = list(
+            ClarificationQuestion.objects.filter(clarification_id=round1.id)
+            .order_by("order")
+            .values_list("id", flat=True)
+        )
+        async_to_sync(ClarificationService().answer_round)(
+            round1.id,
+            [
+                {"question_id": str(r1_qids[0]), "selected": "后端"},
+                {"question_id": str(r1_qids[1]), "selected": ["auth"]},
+            ],
+        )
+        # 第二轮：新建 pending 轮
+        async_to_sync(ClarificationService().create_round)(
+            session,
+            [{"question": "再追问一题？", "type": "single", "options": ["A", "B"]}],
+            round_no=2,
+        )
+        # 提交第一轮（已答轮）的 question_id → 400（不属当前 pending 轮）
+        resp = authed_client.post(
+            _url(conversation.id),
+            data={"answers": [{"question_id": str(r1_qids[0]), "selected": "后端"}]},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert capture_helper["calls"] == []
+
     def test_200_answers_invokes_shared_helper(
         self,
         authed_client: APIClient,
