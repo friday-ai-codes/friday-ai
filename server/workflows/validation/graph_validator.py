@@ -41,7 +41,7 @@ class ValidationIssue:
             unknown_node_type | config_schema_invalid | cycle | no_entry |
             orphan_node | edge_node_missing | invalid_source_handle |
             invalid_target_handle | node_not_found | field_not_found |
-            no_upstream_for_input
+            no_upstream_for_input | incompatible_port_shape
         severity: "error"（阻断保存）| "warning"（仅提示，不阻断）
         field_path: 问题定位（如 "config.user_prompt" / "edges[2].source_handle"）
         node_id: 涉及的节点 ID（UUID 形态）
@@ -109,6 +109,9 @@ class WorkflowGraphValidator:
 
         # (e) nodes.* / input.* / trigger.* 变量静态校验
         self._validate_variables(nodes, edges, errors)
+
+        # (f) 端口能力契约兼容校验（SLOT-01）
+        self._validate_port_shapes(nodes, edges, errors)
 
         return {
             "errors": [asdict(i) for i in errors],
@@ -201,6 +204,57 @@ class WorkflowGraphValidator:
                             ),
                         )
                     )
+
+    def _validate_port_shapes(
+        self,
+        nodes: list[dict],
+        edges: list[dict],
+        errors: list[ValidationIssue],
+    ) -> None:
+        """端口能力契约（shape）兼容校验（SLOT-01，与 (d) handle 名校验并存）。
+
+        契约语义见 ``workflows.nodes.shapes``：shape 与 port_type 正交，描述「能力」
+        而非「数据类型」。**向后兼容命门**（Pitfall 1/4，零回归红线）：任一端契约为空
+        → 通配放行；仅双端非空且不等才报 ``incompatible_port_shape``。handle 不在端口集
+        / 节点类型未知 / 边节点缺失 → 跳过（已由 (a)/(d) 报 unknown_node_type /
+        invalid_*_handle / edge_node_missing，不重复报）。
+
+        高频纯函数不打日志（与既有规则一致，遵守观测规范禁高频 INFO 刷屏）。
+        message 只含 handle/shape 名，绝不回显 config/payload 取值（T-92-01-INFO）。
+        """
+        node_by_id = {str(nd["id"]): nd for nd in nodes if nd.get("id") is not None}
+        for idx, edge in enumerate(edges):
+            src = node_by_id.get(str(edge.get("source_node_id")))
+            tgt = node_by_id.get(str(edge.get("target_node_id")))
+            if src is None or tgt is None:
+                continue  # 已由 (d) edge_node_missing 报
+            src_cls = NodeRegistry.get(src.get("node_type"))
+            tgt_cls = NodeRegistry.get(tgt.get("node_type"))
+            if src_cls is None or tgt_cls is None:
+                continue  # 已由 (a) unknown_node_type 报
+            sh = edge.get("source_handle") or "default"
+            th = edge.get("target_handle") or "default"
+            src_port = next((p for p in src_cls.outputs if p.name == sh), None)
+            tgt_port = next((p for p in tgt_cls.inputs if p.name == th), None)
+            if src_port is None or tgt_port is None:
+                continue  # handle 非法已由 (d) invalid_*_handle 报，不重复
+            src_shape = getattr(src_port, "shape", "") or ""
+            tgt_shape = getattr(tgt_port, "shape", "") or ""
+            if not src_shape or not tgt_shape:
+                continue  # 任一端空契约 / default 端口 shape 恒空 → 通配放行（向后兼容）
+            if src_shape != tgt_shape:
+                errors.append(
+                    ValidationIssue(
+                        reason="incompatible_port_shape",
+                        severity="error",
+                        edge_id=edge.get("id"),
+                        field_path=f"edges[{idx}]",
+                        message=(
+                            f"端口契约不兼容：源 '{sh}'({src_shape}) → "
+                            f"目标 '{th}'({tgt_shape})"
+                        ),
+                    )
+                )
 
     def _validate_variables(
         self,
