@@ -48,7 +48,7 @@
 **Plans**: 4 plans（3 waves）
 - [ ] 90-01-PLAN.md — 结构化数据模型：Clarification 容器扩展 + ClarificationQuestion 子表 + 迁移 0026 + barrel（Wave 1）
 - [x] 90-02-PLAN.md — ClarificationService 扩展：create_round/answer_round + recommendation_adopted 定格 + ahas_pending + INV-6 子模型守护（Wave 2）
-- [ ] 90-03-PLAN.md — ClarifyAdapter 接 LLM 多题 + fail-soft 回退 + 三处 pending 判定升级（resume/e2e helper）（Wave 3）
+- [x] 90-03-PLAN.md — ClarifyAdapter 接 LLM 多题 + fail-soft 回退 + 三处 pending 判定升级（resume/e2e helper）（Wave 3）
 - [ ] 90-04-PLAN.md — 入口无关统一 ask_clarification helper（写 delivery、origin_repo、与 chat tool 同名防撞）（Wave 3）
 
 ### Phase 91: 澄清出口面 + 回流 resume
@@ -108,7 +108,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 90. 澄清能力层 | 2/4 | In progress | - |
+| 90. 澄清能力层 | 3/4 | In progress | - |
 | 91. 澄清出口面 + 回流 resume | 0/TBD | Not started | - |
 | 92. 插槽系统（后端） | 0/TBD | Not started | - |
 | 93. 插槽编辑器（前端） | 0/TBD | Not started | - |
