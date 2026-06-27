@@ -603,10 +603,53 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     saveToHistory()
   }
 
+  /**
+   * 取某父节点的全部附着子节点（SLOT-04）。
+   * 子节点经 `metadata.parentNodeId === parentId` 标记，供 UI 取附着数/徽标。
+   */
+  function getChildNodes(parentId: string): WorkflowNodeStore[] {
+    return nodes.value.filter(n => n.metadata?.parentNodeId === parentId)
+  }
+
+  /**
+   * 把子节点附着到父节点（SLOT-04 单一入口）。
+   * 写 `metadata.parentNodeId=parentId` 持久化父子关系（经既有 metadata JSON 列，
+   * 无后端 schema 变更），并把位置改为相对父的坐标（由调用方 93-06 换算）。
+   */
+  function attachChild(childId: string, parentId: string, relativePosition: { x: number, y: number }) {
+    const node = nodes.value.find(n => n.id === childId)
+    if (!node)
+      return
+    node.metadata = { ...node.metadata, parentNodeId: parentId }
+    node.position = relativePosition
+    saveToHistory()
+  }
+
+  /**
+   * 解除子节点附着（SLOT-04 单一入口）。
+   * 清除 `metadata.parentNodeId`（delete 键，往返不残留）并恢复绝对坐标。
+   */
+  function detachChild(childId: string, absolutePosition: { x: number, y: number }) {
+    const node = nodes.value.find(n => n.id === childId)
+    if (!node)
+      return
+    const { parentNodeId: _drop, ...rest } = node.metadata as Record<string, unknown>
+    node.metadata = rest
+    node.position = absolutePosition
+    saveToHistory()
+  }
+
   function removeNode(nodeId: string) {
-    nodes.value = nodes.value.filter(n => n.id !== nodeId)
-    // Also remove connected edges
-    edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
+    // SLOT-04 生命周期绑定：删父方案节点时级联删除其附着子节点（连同两者相关边）。
+    // 先收集待删 id 集合再统一过滤，避免遍历中改数组。删普通节点（无子）退化为只删自身 + 连边。
+    const childIds = nodes.value
+      .filter(n => n.metadata?.parentNodeId === nodeId)
+      .map(n => n.id)
+    const removeIds = new Set<string>([nodeId, ...childIds])
+
+    nodes.value = nodes.value.filter(n => !removeIds.has(n.id))
+    // Also remove connected edges (含被级联删除子节点的连边)
+    edges.value = edges.value.filter(e => !removeIds.has(e.source) && !removeIds.has(e.target))
     saveToHistory()
   }
 
@@ -740,6 +783,11 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     updateNode,
     updateNodeData,
     removeNode,
+
+    // Parent/child attachment (SLOT-04, with history)
+    attachChild,
+    detachChild,
+    getChildNodes,
 
     // Edge operations (with history)
     addEdge,
