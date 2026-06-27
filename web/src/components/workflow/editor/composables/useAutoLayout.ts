@@ -57,8 +57,15 @@ export function useAutoLayout() {
     if (store.nodes.length === 0)
       return false
 
+    // SLOT-04：附着子节点（metadata.parentNodeId 非空）不参与 dagre 自由布局——
+    // 其坐标相对父定位、随父移动，父子作为整体（UI-SPEC Layout「parent/child 视为整体」）。
+    // 故从 dagre 输入中排除子节点，且写回坐标时跳过它们（保留相对父坐标不被打乱）。
+    const layoutStoreNodes = store.nodes.filter(n => !n.metadata?.parentNodeId)
+    if (layoutStoreNodes.length === 0)
+      return false
+
     const laidOut = applyLayout(
-      toVueFlowNodes(store.nodes),
+      toVueFlowNodes(layoutStoreNodes),
       sortBranchEdges(toVueFlowEdges(store.edges)),
       // 横向层间距 / 同层间距：对齐 dify（层间 ~100、同层 ~80）撑开连线，避免节点贴太近
       { rankdir: 'LR', ranksep: 140, nodesep: 70 },
