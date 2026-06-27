@@ -11,12 +11,12 @@
 
 ### 入口归一（UNIFY）
 
-- [ ] **UNIFY-01**: 工作流方案生成统一到 `ai_plan_research`（plan_orchestration）；`technical_plan_generation` 模板从 `ai_plan_generation` 切换到 `ai_plan_research`，既有已实例化工作流不破坏
+- [x] **UNIFY-01**: 工作流方案生成统一到 `ai_plan_research`（plan_orchestration）；`technical_plan_generation` 模板从 `ai_plan_generation` 切换到 `ai_plan_research`，既有已实例化工作流不破坏
 - [x] **UNIFY-02**: 旧 `ai_plan_generation`（LangChain 单 agent）标记 deprecated + 迁移指引，最终从默认模板/新建路径移除，保留向后兼容不回退
 - [x] **UNIFY-03**: MCP `create_feishu_technical_plan` 改为 delegate 到 `plan_orchestration`，产 canonical `MergedPlan`/`PlanVersion`（与工作流/对话同一产物口径）
 - [x] **UNIFY-04**: MCP `create_coding_plan` 产物口径收口（并入或对齐 plan_orchestration，不再走独立确定性 seam 产分叉结构）
-- [ ] **UNIFY-05**: 对话方案生成的澄清挂起收敛为单一来源（消除 `ToolResult` marker vs `PlanSession.Clarification` 双挂起二义）
-- [ ] **UNIFY-06**: `ai_plan_research` 的 `done` 出口接「推送方案到群」，用干净结构化 markdown 渲染（复用本轮渲染修复，不 dump LLM 原始文本）
+- [x] **UNIFY-05**: 对话方案生成的澄清挂起收敛为单一来源（消除 `ToolResult` marker vs `PlanSession.Clarification` 双挂起二义）
+- [x] **UNIFY-06**: `ai_plan_research` 的 `done` 出口接「推送方案到群」，用干净结构化 markdown 渲染（复用本轮渲染修复，不 dump LLM 原始文本）
 
 ### 澄清能力 + 出口面（CLARIFY）
 
@@ -78,12 +78,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SLOT-02 | Phase 92 | Complete |
 | SLOT-03 | Phase 93 | Complete |
 | SLOT-04 | Phase 93 | Complete |
-| UNIFY-01 | Phase 94 | Pending |
+| UNIFY-01 | Phase 94 | Complete |
 | UNIFY-02 | Phase 94 | Complete |
 | UNIFY-03 | Phase 94 | Complete |
 | UNIFY-04 | Phase 94 | Complete |
-| UNIFY-05 | Phase 94 | Pending |
-| UNIFY-06 | Phase 94 | Pending |
+| UNIFY-05 | Phase 94 | Complete |
+| UNIFY-06 | Phase 94 | Complete |
 | DECOMP-01 | Phase 95 | Pending |
 
 **Coverage:**
