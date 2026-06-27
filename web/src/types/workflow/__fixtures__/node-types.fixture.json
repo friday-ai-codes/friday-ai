@@ -1,5 +1,5 @@
 {
-  "node_count": 36,
+  "node_count": 42,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -75,11 +75,17 @@
       "inputs": [
         {
           "name": "default"
+        },
+        {
+          "name": "resume"
         }
       ],
       "outputs": [
         {
           "name": "default"
+        },
+        {
+          "name": "clarify"
         },
         {
           "name": "error"
@@ -114,6 +120,66 @@
       "outputs": [
         {
           "name": "variables"
+        }
+      ]
+    },
+    {
+      "node_type": "board_split",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "board_split_review",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "created"
+        },
+        {
+          "name": "refining"
+        },
+        {
+          "name": "timeout"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "clarification_card",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "clarification_request"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "clarification_answer"
+        },
+        {
+          "name": "feishu_message"
+        },
+        {
+          "name": "error"
         }
       ]
     },
@@ -195,6 +261,23 @@
     {
       "node_type": "create_pr",
       "category": "action",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "create_project",
+      "category": "integration",
       "inputs": [
         {
           "name": "default"
@@ -517,6 +600,49 @@
         }
       ],
       "outputs": []
+    },
+    {
+      "node_type": "plan_deepen",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "clarifying"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "repo_association",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "verified"
+        },
+        {
+          "name": "reconfirm"
+        },
+        {
+          "name": "timeout"
+        },
+        {
+          "name": "error"
+        }
+      ]
     },
     {
       "node_type": "variable_extractor",
