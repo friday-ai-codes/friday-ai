@@ -104,6 +104,15 @@ const visibleClarifications = computed(() => {
   )
 })
 
+// 91-05：plan 结构化澄清（多题多选），与上方单题澄清物理隔离，同样按
+// conversation 维度过滤防跨会话串渲染。
+const visiblePlanClarifications = computed(() => {
+  const currentConv = chatStore.currentConversationId
+  return [...chatStore.pendingPlanClarifications.values()].filter(
+    p => !p.conversation_id || p.conversation_id === currentConv,
+  )
+})
+
 /**
  * UAT 2026-05-27 hotfix：自动跟随用户意图状态机（替代原 `|| chatStore.isStreaming`
  * 暴力强制下拉的逻辑）。
@@ -367,6 +376,14 @@ function handleExportSuccess(
         <ClarificationCard
           v-for="payload in visibleClarifications"
           :key="payload.clarification_id"
+          v-gsap-rise
+          :payload="payload"
+        />
+
+        <!-- 91-05：plan 结构化澄清卡（多题多选），与单题卡共存物理隔离 -->
+        <ClarificationCard
+          v-for="payload in visiblePlanClarifications"
+          :key="`plan-${payload.clarification_id}`"
           v-gsap-rise
           :payload="payload"
         />
