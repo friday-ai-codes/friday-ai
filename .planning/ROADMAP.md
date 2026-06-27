@@ -31,7 +31,7 @@
 - [x] **Phase 90: 澄清能力层** — 结构化 `Clarification` 数据模型 + LLM 多问题生成 + 入口无关统一提问能力（CLARIFY-01/02/03） (completed 2026-06-27)
 - [x] **Phase 91: 澄清出口面 + 回流 resume** — 会话内联卡 / 群飞书交互卡双出口 + 答复统一回流续推 + 多轮（CLARIFY-04/05/06/07）(5/5 plans) (completed 2026-06-27)
 - [x] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）— 3 plans
-- [ ] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）
+- [x] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）(7/7 plans) (completed 2026-06-27)
 - [ ] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
 - [ ] **Phase 95: 拆分完善** — `decompose` 升级为 LLM 跨仓业务线/模块/前后端拆分（DECOMP-01）
 
@@ -112,7 +112,7 @@
 - [x] 93-03-PLAN.md — SLOT-04 数据：store metadata.parentNodeId 持久化 + attach/detach + 删父级联删子 + transform parentNode/extent（top-level 与 data.metadata 同源）+ autoLayout 编组整体（Wave 1，SLOT-04）✅
 - [x] 93-04-PLAN.md — palette 收录 clarification_card + nodeVisuals 琥珀视觉 + node-sync 守护绿（Wave 1，SLOT-03/04）✅
 - [x] 93-05-PLAN.md — BaseWorkflowNode 端口方形/圆形 + shape 着色 + 拖拽兼容/禁止态 + IM 门控 + 附着徽标 + useImCapability（Wave 4，SLOT-03/04）✅
-- [ ] 93-06-PLAN.md — 画布磁吸交互（connect-start/end + 吸附 + 不兼容 Toast）+ 附着编组渲染（.slot-attach-group/.slot-attach-connector）/删父级联确认/解除确认 + 人工验收（Wave 4，SLOT-03/04）
+- [x] 93-06-PLAN.md — 画布磁吸交互（connect-start/end + 吸附 + 不兼容 Toast）+ 附着编组渲染（.slot-attach-group/.slot-attach-connector）/删父级联确认/解除确认 + 人工验收（Wave 4，SLOT-03/04）✅（human-verify 可视项延后 Phase 93 UAT）
 
 ### Phase 94: 入口统一
 
@@ -148,7 +148,7 @@
 | 90. 澄清能力层 | 4/4 | Complete    | 2026-06-27 |
 | 91. 澄清出口面 + 回流 resume | 5/5 | Complete    | 2026-06-27 |
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
-| 93. 插槽编辑器（前端） | 6/7 | 🚧 In progress | - |
+| 93. 插槽编辑器（前端） | 7/7 | Complete    | 2026-06-27 |
 | 94. 入口统一 | 0/TBD | Not started | - |
 | 95. 拆分完善 | 0/TBD | Not started | - |
 
