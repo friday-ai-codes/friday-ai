@@ -837,6 +837,9 @@ class NodePortSerializer(serializers.Serializer):
     required = serializers.BooleanField()
     description = serializers.CharField()
     schema = serializers.JSONField(required=False, allow_null=True)
+    # SLOT-03：能力契约形状标识（与 NodePort.shape: str = "" 同口径，空串=通配）。
+    # 未声明则 DRF 静默剥离 get_schema() 写入的 shape，致前端 resolvePortShape 恒 undefined。
+    shape = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class NodeTypeSerializer(serializers.Serializer):
