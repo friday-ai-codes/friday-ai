@@ -181,6 +181,35 @@ class TestCreateWorkflowFromTemplate:
         assert "ai_plan_generation" not in node_types
 
 
+class TestTechnicalPlanGenerationOrchestrationSwitch:
+    """UNIFY-01：technical_plan_generation 模板方案节点切到 ai_plan_research 编排路径
+    （mirror code_generation 的 ai_plan_research / not ai_plan_generation 断言）。"""
+
+    def test_generate_plan_uses_ai_plan_research(self):
+        """generate_plan 节点切到 ai_plan_research、不再用废弃 ai_plan_generation。"""
+        template = load_template("technical_plan_generation")
+        node_types = {n["type"] for n in template["nodes"]}
+        assert "ai_plan_research" in node_types
+        assert "ai_plan_generation" not in node_types
+
+    def test_generate_plan_uses_requirement_text_config(self):
+        """切换后 generate_plan config 用 requirement_text（编排入参），不再用 user_prompt。"""
+        template = load_template("technical_plan_generation")
+        gen = next(n for n in template["nodes"] if n["id"] == "generate_plan")
+        assert gen["type"] == "ai_plan_research"
+        assert "requirement_text" in gen["config"]
+        assert "user_prompt" not in gen["config"]
+
+    def test_no_notify_clarify_need_clarification_edge(self):
+        """ai_plan_research 无 need_clarification 出口端口——删 notify_clarify 节点及该出边
+        （澄清经节点内部发飞书卡，保留该边会触发 invalid_source_handle）。"""
+        template = load_template("technical_plan_generation")
+        node_ids = {n["id"] for n in template["nodes"]}
+        assert "notify_clarify" not in node_ids
+        handles = {e.get("source_handle") for e in template["edges"]}
+        assert "need_clarification" not in handles
+
+
 class TestRewriteTemplateRefs:
     """Tests for rewrite_template_refs()."""
 

@@ -46,11 +46,13 @@
     },
     {
       "id": "generate_plan",
-      "type": "ai_plan_generation",
-      "name": "AI 方案生成",
+      "type": "ai_plan_research",
+      "name": "AI 方案编排调研",
       "position": {"x": 400, "y": 640},
       "config": {
-        "user_prompt": "根据以下需求生成技术方案。\n\n标题：{{nodes.fetch_work_item.name}}\n\n描述：{{nodes.fetch_work_item.description}}"
+        "requirement_text": "根据以下需求生成技术方案。\n\n标题：{{nodes.fetch_work_item.name}}\n\n描述：{{nodes.fetch_work_item.description}}",
+        "work_item_id": "{{nodes.trigger.work_item_id}}",
+        "include_repos": []
       }
     },
     {
@@ -65,19 +67,6 @@
         "title": "技术方案已生成：{{nodes.fetch_work_item.name}}",
         "content": "{{nodes.generate_plan.plan_markdown}}"
       }
-    },
-    {
-      "id": "notify_clarify",
-      "type": "notify_feishu_im",
-      "name": "群内发起澄清",
-      "position": {"x": 760, "y": 840},
-      "config": {
-        "receive_id_type": "chat_id",
-        "receive_id": "{{nodes.ensure_chat.chat_id}}",
-        "message_type": "card",
-        "title": "需要补充需求信息：{{nodes.fetch_work_item.name}}",
-        "content": "{{nodes.generate_plan.final_answer}}"
-      }
     }
   ],
   "edges": [
@@ -85,7 +74,6 @@
     {"source": "fetch_work_item", "target": "ensure_chat"},
     {"source": "ensure_chat", "target": "join_chat"},
     {"source": "join_chat", "target": "generate_plan", "source_handle": "default"},
-    {"source": "generate_plan", "target": "notify_plan", "source_handle": "default", "label": "方案就绪"},
-    {"source": "generate_plan", "target": "notify_clarify", "source_handle": "need_clarification", "label": "需澄清"}
+    {"source": "generate_plan", "target": "notify_plan", "source_handle": "default", "label": "方案就绪"}
   ]
 }
