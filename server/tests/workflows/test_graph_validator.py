@@ -74,7 +74,12 @@ class TestLegalGraphs:
         nodes = [
             {"id": "ut", "short_id": "trig", "node_type": "manual_trigger", "config": {}},
             {"id": "uc", "short_id": "coding", "node_type": "ai_coding", "config": {}},
-            {"id": "ua", "short_id": "approval", "node_type": "human_approval", "config": {"mode": "plan_feishu"}},
+            {
+                "id": "ua",
+                "short_id": "approval",
+                "node_type": "human_approval",
+                "config": {"mode": "plan_feishu"},
+            },
             {"id": "ur", "short_id": "coding2", "node_type": "ai_coding", "config": {}},
         ]
         edges = [

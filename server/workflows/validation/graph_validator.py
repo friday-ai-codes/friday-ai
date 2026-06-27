@@ -228,8 +228,12 @@ class WorkflowGraphValidator:
             tgt = node_by_id.get(str(edge.get("target_node_id")))
             if src is None or tgt is None:
                 continue  # 已由 (d) edge_node_missing 报
-            src_cls = NodeRegistry.get(src.get("node_type"))
-            tgt_cls = NodeRegistry.get(tgt.get("node_type"))
+            src_type = src.get("node_type")
+            tgt_type = tgt.get("node_type")
+            if src_type is None or tgt_type is None:
+                continue  # 已由 (a) unknown_node_type 报
+            src_cls = NodeRegistry.get(src_type)
+            tgt_cls = NodeRegistry.get(tgt_type)
             if src_cls is None or tgt_cls is None:
                 continue  # 已由 (a) unknown_node_type 报
             sh = edge.get("source_handle") or "default"
@@ -250,8 +254,7 @@ class WorkflowGraphValidator:
                         edge_id=edge.get("id"),
                         field_path=f"edges[{idx}]",
                         message=(
-                            f"端口契约不兼容：源 '{sh}'({src_shape}) → "
-                            f"目标 '{th}'({tgt_shape})"
+                            f"端口契约不兼容：源 '{sh}'({src_shape}) → 目标 '{th}'({tgt_shape})"
                         ),
                     )
                 )
