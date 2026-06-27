@@ -30,7 +30,7 @@
 
 - [x] **Phase 90: 澄清能力层** — 结构化 `Clarification` 数据模型 + LLM 多问题生成 + 入口无关统一提问能力（CLARIFY-01/02/03） (completed 2026-06-27)
 - [x] **Phase 91: 澄清出口面 + 回流 resume** — 会话内联卡 / 群飞书交互卡双出口 + 答复统一回流续推 + 多轮（CLARIFY-04/05/06/07）(5/5 plans) (completed 2026-06-27)
-- [ ] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）
+- [ ] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）— 3 plans
 - [ ] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）
 - [ ] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
 - [ ] **Phase 95: 拆分完善** — `decompose` 升级为 LLM 跨仓业务线/模块/前后端拆分（DECOMP-01）
@@ -86,7 +86,11 @@
   2. `ai_plan_research` 暴露 `clarify`（clarification_request 凹槽）/ `resume`（clarification_answer 凸点）插槽端口。
   3. 新增「澄清卡」节点（入 clarification_request、出 clarification_answer + feishu_message）可被注册与编排。
 
-**Plans**: TBD
+**Plans**: 3 plans（3 waves）
+
+- [ ] 92-01-PLAN.md — NodePort.shape 能力契约字段 + KNOWN_PORT_SHAPES 常量 + get_schema 输出 + WorkflowGraphValidator 契约兼容校验（Wave 1，SLOT-01）
+- [ ] 92-02-PLAN.md — ai_plan_research 暴露 clarify/resume 插槽端口 + build_clarification_card action 前缀参数化（Wave 2，SLOT-02）
+- [ ] 92-03-PLAN.md — clarification_card 节点 + clarify_card_ 独立回调（answer_round 落库 + approve 本节点）+ fixture 重生成（Wave 3，SLOT-02）
 
 ### Phase 93: 插槽编辑器（前端）
 
