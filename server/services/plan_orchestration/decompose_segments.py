@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import structlog
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["normalize_decomposition_segments"]
+__all__ = ["agenerate_decomposition_segments", "normalize_decomposition_segments"]
 
 _MAX_SEGMENTS = 20
 _VALID_LAYERS = ("frontend", "backend", "fullstack", "infra")
@@ -126,3 +127,84 @@ def _build_prompt(requirement: str, include_repos: list | None) -> str:
         )
     parts.append("请输出拆分 segments JSON。")
     return "\n\n".join(parts)
+
+
+async def agenerate_decomposition_segments(
+    *,
+    requirement_text: str,
+    include_repos: list | None = None,
+    max_segments: int = _MAX_SEGMENTS,
+) -> list[dict[str, Any]] | None:
+    """LLM 把需求跨仓拆为结构化 segments；失败/无 model/空 → ``None``（best-effort，绝不抛）。
+
+    返回 ``None`` 作为「LLM 拆分不可用」信号，交由上游 ``_decompose`` 触发 splitlines 回退。
+    成功时返回 ``list[dict]``（经 :func:`normalize_decomposition_segments` 归一）。
+    """
+    if not (requirement_text or "").strip():
+        return None
+
+    started = time.monotonic()
+    repos_count = len(include_repos or [])
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agents.call_source import CallSource, use_call_source
+        from agents.llm_factory import build_chat_model
+        from services.provider_config import ProviderConfigService
+
+        logger.info(
+            "plan_decompose_started",
+            category="sampling",
+            component="plan_orchestration",
+            requirement_len=len(requirement_text),
+            include_repos_count=repos_count,
+        )
+
+        resolved = await ProviderConfigService.aresolve()
+        model_name = (getattr(resolved, "extra", None) or {}).get("default_model", "")
+        if not model_name:
+            logger.warning(
+                "plan_decompose_no_default_model",
+                category="sampling",
+                component="plan_orchestration",
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+            )
+            return None
+
+        model = build_chat_model(resolved, model_name, streaming=False)
+        messages = [
+            SystemMessage(content=_system_prompt()),
+            HumanMessage(content=_build_prompt(requirement_text, include_repos)),
+        ]
+        with use_call_source(CallSource.PLAN_DECOMPOSE):
+            response = await model.ainvoke(messages)
+
+        raw = _parse_segments_json(_content_to_text(response.content))
+        segments = normalize_decomposition_segments(raw, max_segments=max_segments)
+        duration_ms = round((time.monotonic() - started) * 1000, 2)
+        if not segments:
+            logger.info(
+                "plan_decompose_completed",
+                category="sampling",
+                component="plan_orchestration",
+                segment_count=0,
+                duration_ms=duration_ms,
+            )
+            return None
+        logger.info(
+            "plan_decompose_completed",
+            category="sampling",
+            component="plan_orchestration",
+            segment_count=len(segments),
+            duration_ms=duration_ms,
+        )
+        return segments
+    except Exception as exc:  # noqa: BLE001 — best-effort，绝不阻断编排
+        logger.warning(
+            "plan_decompose_failed",
+            category="sampling",
+            component="plan_orchestration",
+            error=str(exc),
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        return None
