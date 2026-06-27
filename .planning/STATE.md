@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: "91-04 executed（会话端 plan 澄清出口面 + 回流，CLARIFY-04/06）：runtime get_conversation_runtime 检测本会话软引用 PlanSession 的 pending 结构化澄清轮 → 新键 pending_plan_clarification 序列化多题 questions[]（question_id/qtype/options/recommended/selected，按 order），与 chat 单题 pending_clarification 物理隔离 best-effort 只读；新建专属路由 POST conversations/<id>/plan-clarification/answer/（PlanClarificationAnswerView + PlanClarificationAnswerSerializer）收结构化 answers[] → owner gate（created_by_id + has_project_access，无 superuser bypass，跨用户/跨项目 404 隐藏存在性）→ question_id 归属校验（acount 比对 pending 轮，越界 400）→ 干净 contextvars 后台 task 经同源 helper aanswer_round_and_resume 写 delivery + 续推 PlanSession（INV-6 不旁路写，chat barrier 回灌由既有 _schedule_chat_plan_resume 接管）；10 新测绿 + 既有 chat 单题澄清/INV-6 守护无回归、ruff/mypy 干净"
-stopped_at: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推，CLARIFY-04/06）——runtime 新键 pending_plan_clarification 暴露结构化轮、PlanClarificationAnswerView owner gate + 越界校验 + 干净 contextvars 续推 aanswer_round_and_resume；10 测绿、ruff/mypy 干净。下一步 91-05（前端 ClarificationCard 多题多选渲染）。
-last_updated: "2026-06-27T08:57:00.000Z"
+status: "91-05 executed（AI 会话出口面前端，CLARIFY-04）：扩展 ClarificationCard.vue 按 payload 形态分支——含 questions[] 走 plan 多题轮（每题 single button / multi Checkbox + ⭐推荐默认选中 + 每题可选自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}]（single=str/multi=string[]）打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered 切已回复。新增类型 PlanClarificationPayload/AnswerRequest（types/clarification.ts）+ ConversationRuntime.pending_plan_clarification 透传（types/chat.ts）+ store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌；ChatMessageArea 增 plan 卡渲染分支；新增 chat.clarification i18n 文案区（默认中文）+ 新建守护 spec（TDD，真实 zh-CN.json messages 锁文案）。ClarificationCard.spec.ts(6) 全绿 + src/components/chat+src/stores(267) 无回归 + vue-tsc 通过 + 受改文件 eslint 干净。Phase 91 完成（5/5）"
+stopped_at: 执行 91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——按 payload 形态分支 plan 多题轮（single/multi + ⭐推荐默认选中 + 自由输入）+ answers[] 聚合提交专路由 + store conversation 维度隔离 + i18n 默认中文 + TDD 守护 spec；6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。Phase 91（澄清出口面 + 回流 resume）5/5 全部完成，下一步 Phase 92（插槽系统后端）或 94（入口统一）。
+last_updated: "2026-06-27T09:20:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 19
+  completed_plans: 9
+  percent: 33
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 91
-Plan: 91-04 complete（4/5；下一步 91-05 前端 ClarificationCard 多题多选渲染）
-Status: 91-04 executed（会话端 plan 澄清出口面 + 回流——runtime get_conversation_runtime 新键 pending_plan_clarification 暴露本会话关联 PlanSession 的 pending 结构化轮 questions[]（按 order，与 chat 单题 pending_clarification 物理隔离，best-effort 只读）；新建专属路由 POST conversations/<id>/plan-clarification/answer/ 收结构化 answers[] → owner gate（created_by_id + has_project_access，无 superuser bypass，跨用户/跨项目 404）→ question_id 归属 acount 校验越界 400 → 干净 contextvars 后台 task 经同源 helper aanswer_round_and_resume 写 delivery + 续推 PlanSession（INV-6，chat barrier 回灌交既有 _schedule_chat_plan_resume）；10 新测绿 + 既有 chat 单题澄清/INV-6 守护无回归、ruff/mypy 干净）
+Phase: 91（澄清出口面 + 回流 resume）— ✅ 完成（5/5）
+Plan: 91-05 complete（5/5；Phase 91 全部就绪，下一步 Phase 92 插槽系统后端 / 94 入口统一）
+Status: 91-05 executed（AI 会话出口面前端 CLARIFY-04——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮，每题 single(button)/multi(Checkbox) + ⭐推荐默认选中（single 取 recommended[0]、multi 取全部）+ 每题可选自由输入；提交聚合 answers[{question_id,selected,freeform_text}]（single=str/multi=string[]）打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered 切已回复；否则走既有 chat 单题路径零回归。新增 PlanClarificationPayload/AnswerRequest 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离防串）+ runtime 回灌；ChatMessageArea 增 plan 卡渲染分支；chat.clarification i18n 文案区（默认中文）+ TDD 守护 spec（真实 zh-CN.json messages 锁「推荐/提交答复/可多选」）。ClarificationCard.spec.ts(6) 全绿 + chat/stores(267) 无回归 + vue-tsc 通过 + eslint 干净）
 Last activity: 2026-06-27
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
@@ -35,7 +35,7 @@ Last activity: 2026-06-27
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 90 | 澄清能力层 | CLARIFY-01/02/03 | Not started |
-| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | In progress (4/5) |
+| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | ✅ Complete (5/5) |
 | 92 | 插槽系统（后端） | SLOT-01/02 | Not started |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | Not started |
 | 94 | 入口统一 | UNIFY-01~06 | Not started |
@@ -290,6 +290,8 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 91]: 91-03: 飞书澄清回调收答 + 续推 + 重调度（CLARIFY-05/06）——新建 `feishu/callbacks/plan_clarify_callback.py` `@register_card_callback("plan_clarify_")`（mirror plan_revision_callback，前缀唯一不撞 plan_revise/plan_revision_/chat_question_）。同步入口 `handle_plan_clarify_action`：`action != "plan_clarify_answer"`→None；缺 clarification_id/execution_id/node_id→warning+None（T-91-03-01 防伪造，绝不退化信任 session_id）；`_run_in_thread(_do_clarify_answer_async)` 后台 + 即时返回 `_ack_card`（3s 内同步 T-91-03-05）。后台：`bind_task_context(user_id=callback.user_open_id, source=feishu)` re-bind（T-91-03-04）→ ① 幂等门 `_aget_waiting_node`（非 waiting ignored，T-91-03-02）② **据卡片权威 clarification_id 取整轮子题** `ClarificationQuestion.objects.filter(clarification_id=...).order_by("order")`（`_acollect_round_questions`，**不加 answered_at filter**——索引↔question_id 不随部分已答/重放漂移 WARNING #3，与 91-02 发卡侧枚举逐字一致；绝不信回调直传 session_id）③ `_build_answers`（纯函数，单测固化映射）按 order 枚举 `q{i}`(single=str/multi=list)/`qt{i}`(freeform) 组 answers[{question_id,selected,freeform_text}] ④ 同源续推 `engine=build_orchestration_engine(node_execution_id=str(ne.id))` → `aanswer_round_and_resume(clarification_id, answers, engine=engine)`（91-01）⑤ 重调度 `approval_data={clarification_answered,clarification_id}`+SUSPENDED→RUNNING+`approve_node(ne, _FeishuResponder, "plan_clarify_answer")`（节点重入据 output_data.session_id 续推）⑥ 置灰卡 best-effort（`build_clarification_answered_card`→`create_feishu_im_client_for_project` 发到 callback.chat_id，space 经 `_resolve_space`）。全程 fail-soft `redact_secrets_in_text` 脱敏不反噬 5xx；写入只经 answer_round（INV-6，回调无 .objects.create/.update/.save）。`feishu/urls.py` 加 import 触发注册。**DEVIATION: None**（plan 逐项落地）。test_plan_clarify_callback 11 测 + tests/feishu+clarification 116 测绿、test_plan_research_node 12 测绿、ruff format/check+mypy 干净。**2 个既有 INV-6 守护失败（initiatives/ war-room 未提交 + plan_revision_callback docstring 误判）经确认与本 plan 无关（命中文件均非新增 plan_clarify_callback.py），记 deferred-items.md。**
 - [Phase 90]: 90-02: 结构化澄清写入收口（CLARIFY-01 service 半，INV-6）——`ClarificationService` 新增 `create_round`（建容器 `question=""` 占位 + `ClarificationQuestion.bulk_create` N 子题，order 0-based、qtype/options/recommended/origin_repo 落库，全程 sync_to_async）/ `answer_round`（遍历 `[{question_id,selected,freeform_text}]` 按题幂等 `filter(answered_at__isnull=True).update(...)` + **作答时一次性定格 `recommendation_adopted`**：single `selected==rec[0]`、multi `set(selected)==set(rec)` 全等、无推荐或纯 freeform→None，**绝不接受调用方传入** T-90-02-02）/ `ahas_pending`（统一 pending 谓词收口两形态：子题未答 OR 旧单题行 `answered_at__isnull=True,questions__isnull=True`，防历史挂起误放行 Pitfall 2）。采纳率不另写方法，由 `ClarificationQuestion.objects.filter(recommendation_adopted__isnull=False).aaggregate(total=Count, adopted=Count(filter=Q(...=True)))` SQL 聚合。INV-6 grep 守护新增 `test_inv6_clarification_question_single_write_entry`（正则覆盖 `ClarificationQuestion.objects.create/.bulk_create/(...).save` 旁路写）。生命周期埋点 `clarification_round_created/answered`（category=caller、component=delivery、duration_ms，经 `_safe_log` best-effort）。多选采纳取 set 全等（CONTEXT 未指定子集，全等最无歧义）。14 测全绿（既有 5 + 新增 9）、mypy/ruff 干净；唯一偏离：测试单题轮 `afirst()`→`aget()` 规避 mypy union-attr（Rule 3）
 
+- [Phase 91]: 91-05: AI 会话出口面前端（CLARIFY-04）——扩展现有 `ClarificationCard.vue`（CONTEXT 锁定不新建专组件），以 `isPlan = Array.isArray(payload.questions)` 判别两分支共用头/底壳：含 `questions[]`（PlanClarificationPayload）走 plan 多题轮渲染，否则走既有 chat 单题（ClarificationPayload）零回归。plan 渲染 `v-for` 每题——`qtype==='single'` 用既有 button radiogroup 范式（每题独立 `singleSel`）；`qtype==='multi'` 用整行 button 承接 toggle（Set 语义 `multiSel[qid]` 数组）+ `Checkbox` 组件作只读视觉指示（`pointer-events-none` 避免行 button 与 Checkbox 双重 toggle，满足 A5「用 Checkbox」且测试点击稳定）；⭐推荐项标记 + 默认选中（single 取 `recommended[0]`、multi 取全部 recommended，`recommendedOf` 归一 str|str[]→str[]；已答轮 `selectedOf` 回显优先）+ 每题各带可选 `Textarea` freeform。提交聚合 `answers:[{question_id, selected: single=str|multi=string[], freeform_text}]` → 组件直调 `postPlanClarificationAnswer(conversationId, {answers})`（mirror 既有 postClarificationAnswer，命中 91-04 专路由）→ `chatStore.markPlanClarificationAnswered` 切已回复。`types/clarification.ts` 新增 `PlanClarificationQuestion/PlanClarificationPayload/PlanClarificationAnswerItem/PlanClarificationAnswerRequest`（与 chat 单题类型并存不改既有）；`types/chat.ts` `ConversationRuntime` 增 `pending_plan_clarification` 透传（**DEVIATION Rule 2**：plan files_modified 未列但 store 读 runtime 需类型声明，否则 vue-tsc 报错/前端拿不到数据）。`stores/chat.ts` 新增独立 `pendingPlanClarifications` Map（与单题 `pendingClarifications` 物理隔离）+ `upsertPlanClarification`/`getPlanClarification`/`markPlanClarificationAnswered`；`restoreConversationRuntime` 仅在 `questions` 非空时回灌（对齐 91-04「旧单题行不进 plan 面」），切换/fork 会话一并清空防串台（conversation_id 维度过滤，T-91-05-02）。`ChatMessageArea.vue` 增 `visiblePlanClarifications`（按 currentConversationId 过滤）+ plan 卡渲染分支，与单题卡共存不串。i18n：新增 `chat.clarification` 文案区进 zh-CN.json（title/recommended/multiHint/submit/freeform 等，默认中文），组件全程 `t(...)`；TDD 守护 spec `__tests__/ClarificationCard.spec.ts`（Wave 0 缺口，先 RED 后 GREEN）以真实 zh-CN.json 作 createI18n messages 锁「推荐/提交答复/可多选」不被改空（T-91-05-03，Phase 24 范式）。ClarificationCard.spec.ts(6) 全绿 + src/components/chat+src/stores(267) 无回归 + `pnpm vue-tsc --noEmit` 通过 + 受改文件 `pnpm eslint` 干净。**T-91-05-01（越界 answers）accept**：前端非权威面仅组装 UI 选择，越权/越界由 91-04 服务端 owner gate + question_id 归属校验把关。**out-of-scope**：`ProviderCredentialForm.spec.ts` 2 例失败由工作树预存无关未提交改动引发（git diff 确认本 plan 仅改 8 个 chat/类型/locale 文件），记 SUMMARY Deferred Issues。Phase 91（澄清出口面 + 回流 resume）5/5 全部完成。
+
 ### Pending Todos
 
 [From .planning/todos/pending/ — ideas captured during sessions]
@@ -395,10 +397,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-27
-Stopped at: 执行 91-03（飞书澄清回调 plan_clarify_ 收答 → 同源 helper 续推 → approve_node 重调度，CLARIFY-05/06）——新建 @register_card_callback("plan_clarify_")：据卡片权威 clarification_id 取整轮 order 子题映射 answers[]（索引↔question_id 与发卡侧一致 WARNING #3，绝不信回调直传 session_id）→ aanswer_round_and_resume 写答案 + 续推 PlanSession（工作流入口 engine 带 node_execution_id）→ approve_node 重入 ai_plan_research → 置灰卡 best-effort；幂等门 + fail-soft 脱敏 + INV-6；feishu/urls.py import 触发注册；11 测绿、ruff/mypy 干净。
-Earlier: 执行 91-02（工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id/新 action + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮澄清放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
+Stopped at: 执行 91-05（前端 ClarificationCard 多题多选渲染，CLARIFY-04）——扩展 ClarificationCard.vue 按 payload 形态分支：含 questions[] 走 plan 多题轮（single button / multi Checkbox + ⭐推荐默认选中 + 每题自由输入），否则走既有 chat 单题（零回归）；提交聚合 answers[{question_id,selected,freeform_text}] 打 91-04 专路由 postPlanClarificationAnswer → markPlanClarificationAnswered；新增 PlanClarification* 类型 + ConversationRuntime.pending_plan_clarification 透传 + store 独立 pendingPlanClarifications（conversation 维度隔离）+ runtime 回灌 + ChatMessageArea 渲染分支 + chat.clarification i18n（默认中文）+ TDD 守护 spec（真实 zh-CN.json）。6 用例绿、chat/stores 267 无回归、vue-tsc/eslint 干净。**Phase 91 全部完成（5/5）。**
+Earlier: 执行 91-04（会话端 plan 澄清专路由 + runtime 暴露 + 同源续推）；91-03（飞书澄清回调 plan_clarify_ 收答 → 续推 → approve_node 重调度）；91-02（工作流节点发卡 + WorkflowEventSubscription + WR-03 三处 pending 收口）；91-01（共享回流 helper aanswer_round_and_resume + 多轮放开）；90-04（入口无关 ask_clarification helper）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: 推进 91-04（会话端专路由 endpoint 收 answers[] + owner gate + runtime 暴露 plan 结构化轮 + 续推，CLARIFY-04/06）或 91-05（前端 ClarificationCard 多题多选扩展，CLARIFY-04）。
+Next: 推进 Phase 92（插槽系统后端 SLOT-01/02）或 Phase 94（入口统一 UNIFY-01~06，依赖 90/91 澄清单一来源已就绪）。
 
 ## Operator Next Steps
 
