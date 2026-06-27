@@ -12,7 +12,7 @@
   传带 ``node_execution_id`` 的 engine 直接复用。**入口私有重调度（节点重入 / chat barrier
   回灌 / marker 写入）留各调用方**，本 helper 不碰。
 - **INV-6**：写入只经 ``ClarificationService.answer_round``，helper 内绝不直接写 delivery 表
-  （无 ``Clarification.objects.create/.update/.save``）。
+  （无任何 ORM create / update / save 旁路写）。
 - **async 防裸 lazy-FK**：由 ``clar.session_id`` 标量取会话，不裸访问 ``clar.session``。
 - **观测 best-effort**：进出口 ``answer_round_and_resume_started/completed``（category=caller、
   component=plan_orchestration、duration_ms），日志失败吞掉绝不反噬；业务异常**不**吞（让调用方
