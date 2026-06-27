@@ -103,8 +103,16 @@
   2. 澄清节点作为方案节点的「附着子节点」可视编组（生命周期绑定的视觉表达）。
   3. 澄清节点可下接「发送飞书群聊」等吃 feishu_message 形状的节点。
 
-**Plans**: TBD
+**Plans**: 7 plans（4 waves）
 **UI hint**: yes
+
+- [ ] 93-00-PLAN.md — 后端地基（BLOCKER 修复）：NodePortSerializer 补 shape 字段 + GET /api/node-types/ shape 暴露集成断言（Wave 1，SLOT-03）
+- [ ] 93-01-PLAN.md — 契约判定地基：NodePort.shape? + portShapes 兼容纯函数 + useConnectionValidator 第 4 条 + i18n 全量键（Wave 2，依赖 93-00，SLOT-03）
+- [ ] 93-02-PLAN.md — 磁吸支撑：useConnectionDragState 拖拽态 holder + usePortSnap 吸附几何（28px/zoom 换算/仅兼容）（Wave 3，SLOT-03）
+- [ ] 93-03-PLAN.md — SLOT-04 数据：store metadata.parentNodeId 持久化 + attach/detach + 删父级联删子 + transform parentNode/extent（top-level 与 data.metadata 同源）+ autoLayout 编组整体（Wave 1，SLOT-04）
+- [ ] 93-04-PLAN.md — palette 收录 clarification_card + nodeVisuals 琥珀视觉 + node-sync 守护绿（Wave 1，SLOT-03/04）
+- [ ] 93-05-PLAN.md — BaseWorkflowNode 端口方形/圆形 + shape 着色 + 拖拽兼容/禁止态 + IM 门控 + 附着徽标 + useImCapability（Wave 4，SLOT-03/04）
+- [ ] 93-06-PLAN.md — 画布磁吸交互（connect-start/end + 吸附 + 不兼容 Toast）+ 附着编组渲染（.slot-attach-group/.slot-attach-connector）/删父级联确认/解除确认 + 人工验收（Wave 4，SLOT-03/04）
 
 ### Phase 94: 入口统一
 
@@ -140,7 +148,7 @@
 | 90. 澄清能力层 | 4/4 | Complete    | 2026-06-27 |
 | 91. 澄清出口面 + 回流 resume | 5/5 | Complete    | 2026-06-27 |
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
-| 93. 插槽编辑器（前端） | 0/TBD | Not started | - |
+| 93. 插槽编辑器（前端） | 0/6 | Not started | - |
 | 94. 入口统一 | 0/TBD | Not started | - |
 | 95. 拆分完善 | 0/TBD | Not started | - |
 
