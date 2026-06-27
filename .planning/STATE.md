@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: 92-03 executed（SLOT-02 收官——新增 clarification_card 原子节点 INTEGRATION/blocking：入 clarification_request、出 clarification_answer + feishu_message；发卡复用 build_clarification_card(action=clarify_card_answer) 隔离 91 路由 + 建 ClarifyCardCallback 订阅 + waiting_event，发卡 best-effort 不反噬挂起。standalone clarify_card_ 回调据权威 execution_id/node_id 定位 + node_type 校验 + WAITING_EVENT 幂等门收答，有 clarification_id 经 answer_round 落库（INV-6）/ 无则据 questions_meta 透传，approve_node 本 card 节点（不绑 PlanSession/ai_plan_research），fail-soft 脱敏。fixture node_count 36→42（含 clarification_card + 收敛 5 个既有 stale 节点）、node-sync 绿。Task1/2 TDD 5 提交（test→feat×2 + chore）；test_clarification_card_node(5)+test_clarify_card_callback(9)=14 全绿；tests/workflows tests/feishu tests/delivery 1166 passed/10 failed（均既有 war-room，base 复跑一致）；ruff/mypy/makemigrations 干净、无 DB 迁移。Phase 92 完成 3/3）
-stopped_at: 执行 92-03（SLOT-02 收官：clarification_card 节点 + clarify_card_ 独立回调 + fixture 重生成）。Task1/2 TDD 5 提交；14 相关用例绿、零回归（10 既有 war-room 失败 base 复跑一致）、无 DB 迁移。Phase 92 全部完成（3/3）。下一步 Phase 93（插槽编辑器前端 SLOT-03/04，需 NodePalette 收录 clarification_card）或 Phase 94（入口统一 UNIFY-01~06）。
-last_updated: "2026-06-27T11:05:00.000Z"
+status: 92-03 executed（SLOT-02 收官——clarification_card 原子节点 INTEGRATION/blocking：入 clarification_request、出 clarification_answer + feishu_message；发卡复用 build_clarification_card(action=clarify_card_answer) 隔离 91 + ClarifyCardCallback 订阅 + waiting_event（best-effort 不反噬挂起）。standalone clarify_card_ 回调据权威 execution_id/node_id 定位 + node_type==clarification_card 校验 + WAITING_EVENT 幂等门收答；有 clarification_id 经 answer_round 落库（INV-6）/ 无则据 output_data.questions_meta 透传；approve_node 本 card 节点（绝不绑 PlanSession/ai_plan_research）；fail-soft 脱敏。fixture node_count 36→42（含 clarification_card + 顺带收敛 board_split/board_split_review/create_project/plan_deepen/repo_association 5 个既有 stale 节点）、node-sync 5 测绿。Task1/2 TDD 5 提交（test→feat×2 + chore fixture）；test_clarification_card_node(5)+test_clarify_card_callback(9)=14 全绿；ruff/mypy/makemigrations 干净、无 DB 迁移。10 既有 war-room 失败 base 复跑一致、与本 plan 无关）
+stopped_at: 执行 92-03（SLOT-02 收官）——新建 clarification_card 原子节点（INTEGRATION/blocking，入 clarification_request、出 clarification_answer + feishu_message）：发卡复用 build_clarification_card(action=clarify_card_answer) 隔离 91 + ClarifyCardCallback 订阅 + waiting_event（发卡 best-effort 不反噬挂起）；standalone clarify_card_ 回调据权威 execution_id/node_id 定位 + node_type==clarification_card 校验 + WAITING_EVENT 幂等门收答，有 clarification_id 经 answer_round 落库(INV-6)/无则据 questions_meta 透传，approve_node 本 card 节点（不绑 PlanSession/ai_plan_research），fail-soft 脱敏；feishu/urls.py import 注册。fixture node_count 36→42（含 clarification_card + 收敛 5 既有 stale 节点）、node-sync 5 测绿。Task1/2 TDD 5 提交；14 相关用例绿、ruff/mypy/makemigrations 干净、无 DB 迁移；10 既有 war-room 失败经 base 复跑核实与本 plan 无关。**Phase 92（插槽系统后端）3/3 全部完成。**
+last_updated: "2026-06-27T11:28:16.994Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 12
   completed_plans: 12
-  percent: 45
+  percent: 50
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 
 ## Current Position
 
-Phase: 92（完成 3/3）
-Plan: 03 executed（Phase 92 全部完成）
+Phase: 93
+Plan: Not started
 Status: 92-03 executed（SLOT-02 收官——clarification_card 原子节点 INTEGRATION/blocking：入 clarification_request、出 clarification_answer + feishu_message；发卡复用 build_clarification_card(action=clarify_card_answer) 隔离 91 + ClarifyCardCallback 订阅 + waiting_event（best-effort 不反噬挂起）。standalone clarify_card_ 回调据权威 execution_id/node_id 定位 + node_type==clarification_card 校验 + WAITING_EVENT 幂等门收答；有 clarification_id 经 answer_round 落库（INV-6）/ 无则据 output_data.questions_meta 透传；approve_node 本 card 节点（绝不绑 PlanSession/ai_plan_research）；fail-soft 脱敏。fixture node_count 36→42（含 clarification_card + 顺带收敛 board_split/board_split_review/create_project/plan_deepen/repo_association 5 个既有 stale 节点）、node-sync 5 测绿。Task1/2 TDD 5 提交（test→feat×2 + chore fixture）；test_clarification_card_node(5)+test_clarify_card_callback(9)=14 全绿；ruff/mypy/makemigrations 干净、无 DB 迁移。10 既有 war-room 失败 base 复跑一致、与本 plan 无关）
 Last activity: 2026-06-27
 
