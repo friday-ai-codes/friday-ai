@@ -595,6 +595,144 @@ def test_render_merged_plan_markdown_excludes_raw_llm_text() -> None:
 
 
 @pytest.mark.asyncio
+async def test_done_output_includes_plan_markdown() -> None:
+    """Task 2 Test 1：DONE + 合法 MergedPlan content → output 含 plan_markdown 非空字符串
+    （render_merged_plan_markdown 结果），且既有字段零回归。"""
+    from delivery.models import PlanVersion, TechnicalPlan
+
+    merged_content = {
+        "title": "跨仓主方案",
+        "summary": "融合 repoA/repoB 的跨仓方案",
+        "execution_plan": [
+            {
+                "id": "t1",
+                "name": "A 暴露契约",
+                "repository_id": "repo-a",
+                "repository_name": "repoA",
+                "branch_strategy": "feature",
+                "coding_instruction": "实现 ContractX",
+                "dependencies": [],
+            }
+        ],
+    }
+    tech_plan = await TechnicalPlan.objects.acreate(origin="orchestration")
+    plan_version = await PlanVersion.objects.acreate(
+        plan=tech_plan, version=1, content=merged_content
+    )
+
+    router = AsyncMock()
+    router.route = AsyncMock(
+        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+    )
+    recall = AsyncMock()
+    recall.recall = AsyncMock(return_value={"hits": [], "query": "q", "kinds": []})
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value={})
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+
+    async def _merge_side(session):
+        await PlanSessionService().set_current_plan_version(session, plan_version.id)
+        return {"validation_status": "passed", "attempt": 0}
+
+    merge = AsyncMock()
+    merge.merge = AsyncMock(side_effect=_merge_side)
+
+    engine = PlanOrchestrationEngine(
+        router=router, recall=recall, research=research, merge=merge, clarify=clarify
+    )
+    node = AIPlanResearchNode()
+    _bind_engine(node, engine)
+
+    result = await node.execute(_ctx())
+
+    assert result.status == "completed"
+    # plan_markdown 非空且为结构化渲染（含标题/摘要）
+    md = result.output["plan_markdown"]
+    assert isinstance(md, str)
+    assert "**跨仓主方案**" in md
+    assert "融合 repoA/repoB 的跨仓方案" in md
+    # 既有字段零回归
+    assert result.output["plan_version_id"] == str(plan_version.id)
+    assert result.output["session_id"]
+    assert result.output["status"] == "done"
+    assert result.output["plan"]["title"] == "跨仓主方案"
+
+
+@pytest.mark.asyncio
+async def test_done_plan_markdown_empty_when_no_content() -> None:
+    """Task 2 Test 2：DONE 但 current_plan_version 为空 → plan_markdown 空串（不抛），plan={}。"""
+    router = AsyncMock()
+    router.route = AsyncMock(return_value={"candidates": []})
+    recall = AsyncMock()
+    recall.recall = AsyncMock(return_value={"hits": [], "query": "q", "kinds": []})
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value={})
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+
+    async def _merge_side(session):
+        # 不设置 current_plan_version → DONE 但无 content
+        return {"validation_status": "passed", "attempt": 0}
+
+    merge = AsyncMock()
+    merge.merge = AsyncMock(side_effect=_merge_side)
+
+    engine = PlanOrchestrationEngine(
+        router=router, recall=recall, research=research, merge=merge, clarify=clarify
+    )
+    node = AIPlanResearchNode()
+    _bind_engine(node, engine)
+
+    result = await node.execute(_ctx())
+
+    assert result.status == "completed"
+    assert result.output["plan_markdown"] == ""
+    assert result.output["plan"] == {}
+
+
+def test_default_output_schema_declares_plan_markdown() -> None:
+    """Task 2 Test 3：get_schema() default 输出端口 schema.properties 含 plan_markdown
+    (type string)，既有 plan_version_id/session_id/status/plan 键保留。"""
+    schema = AIPlanResearchNode.get_schema()
+    out_by_name = {p["name"]: p for p in schema["outputs"]}
+    props = out_by_name["default"]["schema"]["properties"]
+    assert props["plan_markdown"]["type"] == "string"
+    assert {"plan_version_id", "session_id", "status", "plan"} <= set(props)
+
+
+@pytest.mark.asyncio
+async def test_failed_branch_no_plan_markdown_regression() -> None:
+    """Task 2 Test 4：failed 分支零回归——next_handle=error，无 plan_markdown 依赖。"""
+    router = AsyncMock()
+    router.route = AsyncMock(
+        return_value={"candidates": [{"repo_id": "r1", "confidence": "high"}]}
+    )
+    recall = AsyncMock()
+    recall.recall = AsyncMock(return_value={"hits": [], "query": "q", "kinds": []})
+    research = AsyncMock()
+    research.dispatch = AsyncMock(return_value={})
+    clarify = AsyncMock()
+    clarify.clarify = AsyncMock(return_value={"needs_clarification": False})
+    merge = AsyncMock()
+    merge.merge = AsyncMock(
+        return_value={"validation_status": "failed", "attempt": 1, "report": {}}
+    )
+
+    engine = PlanOrchestrationEngine(
+        router=router, recall=recall, research=research, merge=merge, clarify=clarify
+    )
+    node = AIPlanResearchNode()
+    _bind_engine(node, engine)
+
+    result = await node.execute(_ctx())
+
+    assert result.status == "failed"
+    assert result.next_handle == "error"
+    assert "plan_markdown" not in result.output
+
+
+@pytest.mark.asyncio
 async def test_acollect_round_questions_includes_answered_subquestions() -> None:
     """WR-01 不变量：发卡侧整轮按 order 取子题（含已答），与回调侧逐字一致、不漂移。
 
