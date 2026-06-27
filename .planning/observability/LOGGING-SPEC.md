@@ -95,6 +95,8 @@ QPS/TPS/TTFT/上游错误统计都按 `call_source` 区分。新增任何 LLM �
 | `plan_deepen` | `PlanDeepenService` / `ArchitectMergeAdapter`（v0.16.0 Phase 89） | per-repo 七要素 + overall 整体方案深化，经 v0.7 引擎 per-repo explore 容器 + 架构师融合，多仓 fan-out |
 | `plan_revision` | 方案修订回路「调研问题发现」检测（v0.16.0 Phase 89，89-02） | 执行中发现要改/增/删仓 → 更新方案/补充修订，多轮 |
 | `branch_naming` | 分支名生成（v0.16.0 Phase 89，89-04） | 按固定格式 + 方案上下文生成分支名，server 权威拼装 + 卡片确认，单轮 |
+| `plan_clarification` | `clarification_questions` / ClarifyAdapter（v0.16.1 Phase 90） | 基于需求+路由+召回产结构化澄清问题（多题/单多选/推荐），单轮 |
+| `plan_decompose` | `decompose_segments` / `PlanOrchestrationEngine._decompose`（v0.16.1 Phase 95） | LLM 跨仓业务线/模块/前后端拆需求 → 结构化 segments，单轮，best-effort 失败回退按行切分 |
 
 > 埋点位置：`acquire_llm_slot`（QPS/排队/`LLMBusyError`）+ 两个 Runner 的 `astream` 循环（TTFT/TPS/上游错误）+ 各 `ainvoke` 站点。详见 MILESTONE-PROPOSAL §1。
 
