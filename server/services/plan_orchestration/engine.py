@@ -104,18 +104,45 @@ class PlanOrchestrationEngine:
         return session
 
     async def _decompose(self, session: PlanSession) -> None:
-        """**最小真实实现**：拆需求文本 + include_repos → 结构化 decomposition。
+        """**LLM 跨仓拆分 + fail-soft 回退**（DECOMP-01）：需求文本 → 结构化 decomposition。
 
-        本 phase 取 session.decomposition 既有输入（requirement_text/include_repos），
-        无 work_item 文本源时回退占位。segments 做最小切分（按非空行）。
-        TODO(Phase 38+)：真实业务线/模块/前后端拆分。
+        取 session.decomposition 既有输入（requirement_text/include_repos），无 work_item
+        文本源时回退占位。调 ``agenerate_decomposition_segments`` 用 LLM 把需求跨业务线/
+        模块/前后端拆为结构化 ``segments``（list[dict]）；helper best-effort 返回 ``None``
+        （LLM 失败/缺 default_model/解析空）时**回退按非空行切分**（list[str]，保持现状
+        行为，下游 routing 契约不变）。
+
+        守护：helper 已自包 ``except Exception`` 返回 None（不在此再 try 包裹），
+        ``_decompose`` 恒走 ``transition("decomposed")`` —— decompose 任何路径绝不落
+        FAILED（RESEARCH Anti-Pattern 1）；始终保留 requirement_text/include_repos
+        两契约键（Anti-Pattern 2）；不直接 mutate session.status（只经 transition，
+        Anti-Pattern 3 / T-36-03-01）。
         """
+        from services.plan_orchestration.decompose_segments import (
+            agenerate_decomposition_segments,
+        )
+
         existing = session.decomposition or {}
         requirement_text = existing.get("requirement_text", "")
         if not requirement_text and session.work_item_id is not None:
             requirement_text = await self._work_item_title(session)
         include_repos = existing.get("include_repos", [])
-        segments = [line.strip() for line in requirement_text.splitlines() if line.strip()]
+
+        result = await agenerate_decomposition_segments(
+            requirement_text=requirement_text, include_repos=include_repos
+        )
+        segments: list[Any]
+        if result:
+            segments = result
+        else:
+            # fail-soft 回退：LLM 不可用（None/空）→ 按非空行切分（现状 list[str] 行为）
+            segments = [line.strip() for line in requirement_text.splitlines() if line.strip()]
+            logger.info(
+                "plan_decompose_fallback_splitlines",
+                category="sampling",
+                component="plan_orchestration",
+                segment_count=len(segments),
+            )
         decomposition: dict[str, Any] = {
             "requirement_text": requirement_text,
             "include_repos": include_repos,
@@ -140,8 +167,7 @@ class PlanOrchestrationEngine:
         candidates = (result.get("candidates") or []) if isinstance(result, dict) else []
         trace = {
             "candidates": [
-                {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")}
-                for c in candidates
+                {"repo_id": c.get("repo_id"), "confidence": c.get("confidence")} for c in candidates
             ]
         }
         await self.session_service._emit_event(EVENT_REPO_ROUTING, session, trace)
@@ -226,9 +252,7 @@ class PlanOrchestrationEngine:
             # merging），engine 内存态 from_status=researching 的条件更新命中 0 行 → 视为
             # 成功 no-op。**绝不**让该异常落到 advance 的通用 except → fail（否则 _fail
             # 会把回调正确推进的 merging 错误覆盖回 failed，属状态损坏）。
-            logger.info(
-                "research_already_advanced_by_barrier", session_id=str(session.id)
-            )
+            logger.info("research_already_advanced_by_barrier", session_id=str(session.id))
 
     async def _merge(self, session: PlanSession) -> None:
         """融合 stage（MERGE-01/02/03 已接入）：调注入 merge adapter 据结果做 §14 转移。
@@ -272,13 +296,9 @@ class PlanOrchestrationEngine:
                     else "clarifying"
                 )
                 if back_target == "researching":
-                    await self.session_service.transition(
-                        session, "validation_failed_reresearch"
-                    )
+                    await self.session_service.transition(session, "validation_failed_reresearch")
                 else:
-                    await self.session_service.transition(
-                        session, "validation_failed_reclarify"
-                    )
+                    await self.session_service.transition(session, "validation_failed_reclarify")
         except ConcurrentTransitionError:
             # merging 段并发推进良性 no-op（对齐 _research）：绝不让其落到 advance 通用
             # except → fail（否则覆盖并发正确推进的状态，属状态损坏）。
