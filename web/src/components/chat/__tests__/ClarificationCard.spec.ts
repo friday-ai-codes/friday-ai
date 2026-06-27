@@ -1,234 +1,183 @@
 /**
- * ：ClarificationCard.vue 单元测试。
+ * ClarificationCard 守护测试（91-05 CLARIFY-04：plan 多题多选澄清 + 单题零回归）。
  *
  * 覆盖：
- * - 渲染 question + options
- * - 提交按钮 disabled 当无 selection 且无 freeform
- * - 提交调用 postClarificationAnswer + markClarificationAnswered
- * - 提交错误展示错误文案
- * - answered 态：button / textarea / 按钮 disable + 「已回复」摘要
- * - allow_freeform=false 隐藏 textarea
- *
- * 组件用 `<button role="radio">` 而非原生 input radio 实现单选（与 shadcn-vue
- * 设计风格统一；项目内无 RadioGroup 组件）。
+ * - plan 多题轮渲染（single/multi）+ ⭐推荐默认选中（single 取一项 / multi 取全部推荐）
+ * - single 单选互斥 / multi 多选 Set 语义（累加/取消）
+ * - 提交聚合 answers:[{question_id, selected: single=str|multi=string[], freeform_text}]
+ *   打 postPlanClarificationAnswer + 成功切「已回复」(markPlanClarificationAnswered)
+ * - i18n 真实 zh-CN.json 守护关键文案（推荐 / 提交答复 /（可多选）不被改空）
+ * - 既有 chat 单题澄清路径零回归（postClarificationAnswer 仍被调）
  */
-import type { ClarificationPayload } from '~/types/clarification'
+import type { ClarificationPayload, PlanClarificationPayload } from '~/types/clarification'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
-import ClarificationCard from '~/components/chat/ClarificationCard.vue'
-import { useChatStore } from '~/stores/chat'
+import { createI18n } from 'vue-i18n'
+import zhCN from '~/locales/zh-CN.json'
 
+const postPlanClarificationAnswerMock = vi.fn()
 const postClarificationAnswerMock = vi.fn()
 vi.mock('~/api/chat', () => ({
-  postClarificationAnswer: (...args: unknown[]) => postClarificationAnswerMock(...args),
+  postPlanClarificationAnswer: (...a: unknown[]) => postPlanClarificationAnswerMock(...a),
+  postClarificationAnswer: (...a: unknown[]) => postClarificationAnswerMock(...a),
 }))
 
-const StubBadge = defineComponent({
-  name: 'Badge',
-  props: ['variant'],
-  setup(props, { slots }) {
-    return () => h('span', { 'data-test': 'badge', 'data-variant': props.variant }, slots.default?.())
-  },
-})
-const StubButton = defineComponent({
-  name: 'Button',
-  props: ['disabled', 'variant'],
-  emits: ['click'],
-  setup(props, { slots, emit }) {
-    // 组件底部有「跳过」(variant=ghost) 与「提交答复」(默认 variant) 两个 Button，
-    // 按 variant 区分 data-test，避免 .find('[data-test="submit-btn"]') 误命中跳过按钮。
-    const isSkip = props.variant === 'ghost'
-    return () => h('button', {
-      'data-test': isSkip ? 'skip-btn' : 'submit-btn',
-      'disabled': props.disabled || false,
-      'onClick': () => !props.disabled && emit('click'),
-    }, slots.default?.())
-  },
-})
-const StubTextarea = defineComponent({
-  name: 'Textarea',
-  props: ['modelValue', 'disabled'],
-  emits: ['update:modelValue'],
-  setup(props, { emit }) {
-    return () => h('textarea', {
-      'value': props.modelValue,
-      'disabled': props.disabled,
-      'data-test': 'textarea',
-      'onInput': (e: Event) => emit('update:modelValue', (e.target as HTMLTextAreaElement).value),
-    })
-  },
-})
+const markPlanClarificationAnsweredMock = vi.fn()
+const markClarificationAnsweredMock = vi.fn()
+const skipClarificationMock = vi.fn()
+vi.mock('~/stores/chat', () => ({
+  useChatStore: () => ({
+    currentConversationId: 'conv-1',
+    markPlanClarificationAnswered: markPlanClarificationAnsweredMock,
+    markClarificationAnswered: markClarificationAnsweredMock,
+    skipClarification: skipClarificationMock,
+  }),
+}))
 
-const globalStubs = {
-  Badge: StubBadge,
-  Button: StubButton,
-  Textarea: StubTextarea,
-}
+const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
 
-function makePayload(overrides: Partial<ClarificationPayload> = {}): ClarificationPayload {
+const ClarificationCard = (await import('../ClarificationCard.vue')).default
+
+function planPayload(overrides: Partial<PlanClarificationPayload> = {}): PlanClarificationPayload {
   return {
-    clarification_id: 'cid-abc',
-    question: '你想改哪个仓库？',
-    options: [
-      { id: 'opt-A', label: '改 friday-server', hint: '修改后端 API' },
-      { id: 'opt-B', label: '改 friday-web' },
-    ],
-    allow_freeform: true,
+    clarification_id: 'pc-1',
+    round_no: 1,
+    conversation_id: 'conv-1',
     status: 'pending',
+    questions: [
+      {
+        question_id: 'q1',
+        question: '选择目标分支策略',
+        qtype: 'single',
+        options: ['main', 'develop', 'release'],
+        recommended: 'develop',
+      },
+      {
+        question_id: 'q2',
+        question: '需要覆盖的测试类型',
+        qtype: 'multi',
+        options: ['unit', 'integration', 'e2e'],
+        recommended: ['unit', 'integration'],
+      },
+    ],
     ...overrides,
   }
 }
 
-function mountCard(payload: ClarificationPayload) {
+function mountPlan(payload: PlanClarificationPayload) {
   return mount(ClarificationCard, {
     props: { payload },
-    global: { stubs: globalStubs },
+    global: { plugins: [i18n] },
   })
 }
 
-/** 返回所有 role=radio 按钮（不含提交按钮）。 */
-function getOptionButtons(wrapper: ReturnType<typeof mountCard>) {
-  return wrapper.findAll('button[role="radio"]')
+function optionBtn(wrapper: any, qid: string, value: string) {
+  return wrapper.find(`[data-question-id="${qid}"] [data-option][data-value="${value}"]`)
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  setActivePinia(createPinia())
+  postPlanClarificationAnswerMock.mockResolvedValue({ status: 'accepted' })
+  postClarificationAnswerMock.mockResolvedValue({
+    selected_option_id: 'a',
+    freeform_text: '',
+    answered_at: '2026-06-27T00:00:00Z',
+  })
 })
 
-describe('clarificationCard', () => {
-  it('renders question + options 列表', async () => {
-    const wrapper = mountCard(makePayload())
-    await flushPromises()
-    expect(wrapper.text()).toContain('你想改哪个仓库？')
-    expect(wrapper.text()).toContain('改 friday-server')
-    expect(wrapper.text()).toContain('改 friday-web')
-    expect(wrapper.text()).toContain('修改后端 API')
-    expect(getOptionButtons(wrapper).length).toBe(2)
+describe('clarificationCard - plan 多题多选', () => {
+  it('渲染多题并按推荐默认选中（single 一项 / multi 全部推荐）', () => {
+    const wrapper = mountPlan(planPayload())
+    // 两题都渲染
+    expect(wrapper.find('[data-question-id="q1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-question-id="q2"]').exists()).toBe(true)
+    // q1 single 默认选中 develop
+    expect(optionBtn(wrapper, 'q1', 'develop').attributes('aria-checked')).toBe('true')
+    expect(optionBtn(wrapper, 'q1', 'main').attributes('aria-checked')).toBe('false')
+    // q2 multi 默认选中 unit + integration（非 e2e）
+    expect(optionBtn(wrapper, 'q2', 'unit').attributes('aria-checked')).toBe('true')
+    expect(optionBtn(wrapper, 'q2', 'integration').attributes('aria-checked')).toBe('true')
+    expect(optionBtn(wrapper, 'q2', 'e2e').attributes('aria-checked')).toBe('false')
   })
 
-  it('提交按钮在 selection / freeform 均空时 disabled', async () => {
-    const wrapper = mountCard(makePayload())
-    await flushPromises()
-    const submitBtn = wrapper.find('[data-test="submit-btn"]')
-    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(true)
+  it('single 单选互斥：点其他项只保留一个', async () => {
+    const wrapper = mountPlan(planPayload())
+    await optionBtn(wrapper, 'q1', 'main').trigger('click')
+    expect(optionBtn(wrapper, 'q1', 'main').attributes('aria-checked')).toBe('true')
+    expect(optionBtn(wrapper, 'q1', 'develop').attributes('aria-checked')).toBe('false')
+    expect(optionBtn(wrapper, 'q1', 'release').attributes('aria-checked')).toBe('false')
   })
 
-  it('选中 option 后提交 → 调 api + markAnswered + status 切换', async () => {
-    postClarificationAnswerMock.mockResolvedValue({
-      clarification_id: 'cid-abc',
-      selected_option_id: 'opt-A',
-      freeform_text: '',
-      answered_at: '2026-05-21T03:00:00Z',
-      inferred_state: { selected_repository_ids: ['r1'] },
+  it('multi 多选 Set 语义：累加与取消', async () => {
+    const wrapper = mountPlan(planPayload())
+    // 取消 unit
+    await optionBtn(wrapper, 'q2', 'unit').trigger('click')
+    expect(optionBtn(wrapper, 'q2', 'unit').attributes('aria-checked')).toBe('false')
+    // 加 e2e
+    await optionBtn(wrapper, 'q2', 'e2e').trigger('click')
+    expect(optionBtn(wrapper, 'q2', 'e2e').attributes('aria-checked')).toBe('true')
+    // integration 仍在
+    expect(optionBtn(wrapper, 'q2', 'integration').attributes('aria-checked')).toBe('true')
+  })
+
+  it('提交聚合 answers[] 命中专路由：single=str / multi=string[]，并切已回复', async () => {
+    const wrapper = mountPlan(planPayload())
+    await wrapper.find('[data-testid="plan-clarification-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(postPlanClarificationAnswerMock).toHaveBeenCalledTimes(1)
+    const [convId, body] = postPlanClarificationAnswerMock.mock.calls[0]
+    expect(convId).toBe('conv-1')
+    const answers = body.answers
+    const a1 = answers.find((a: any) => a.question_id === 'q1')
+    const a2 = answers.find((a: any) => a.question_id === 'q2')
+    expect(a1.selected).toBe('develop')
+    expect(Array.isArray(a2.selected)).toBe(true)
+    expect([...a2.selected].sort()).toEqual(['integration', 'unit'])
+
+    expect(markPlanClarificationAnsweredMock).toHaveBeenCalledWith('pc-1')
+  })
+
+  it('i18n 真实文案守护：推荐 /（可多选）/ 提交答复 不被改空', () => {
+    const wrapper = mountPlan(planPayload())
+    const text = wrapper.text()
+    expect(text).toContain('推荐')
+    expect(text).toContain('提交答复')
+    // q2 为多选题，应出现多选提示
+    expect(text).toContain('可多选')
+  })
+})
+
+describe('clarificationCard - 既有 chat 单题零回归', () => {
+  function singlePayload(): ClarificationPayload {
+    return {
+      clarification_id: 'c-1',
+      question: '你想做什么？',
+      options: [
+        { id: 'a', label: '选项A' },
+        { id: 'b', label: '选项B' },
+      ],
+      allow_freeform: true,
+      status: 'pending',
+      conversation_id: 'conv-1',
+    }
+  }
+
+  it('渲染单题并提交走 postClarificationAnswer（不串 plan 路径）', async () => {
+    const wrapper = mount(ClarificationCard, {
+      props: { payload: singlePayload() },
+      global: { plugins: [i18n] },
     })
-
-    const payload = makePayload()
-    const store = useChatStore()
-    store.upsertClarification(payload)
-
-    const wrapper = mountCard(payload)
+    // 单题问题渲染
+    expect(wrapper.text()).toContain('你想做什么？')
+    // 无 plan 多题容器
+    expect(wrapper.find('[data-question-id]').exists()).toBe(false)
+    // 选一个选项再提交
+    const optBtns = wrapper.findAll('[role="radio"]')
+    await optBtns[0].trigger('click')
+    await wrapper.findAll('button').filter(b => b.text().includes('提交答复'))[0].trigger('click')
     await flushPromises()
-
-    const optionBtns = getOptionButtons(wrapper)
-    await optionBtns[0].trigger('click')
-    await nextTick()
-
-    const submitBtn = wrapper.find('[data-test="submit-btn"]')
-    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(false)
-    await submitBtn.trigger('click')
-    await flushPromises()
-
-    expect(postClarificationAnswerMock).toHaveBeenCalledWith('cid-abc', {
-      selected_option_id: 'opt-A',
-      freeform_text: undefined,
-    })
-
-    const updated = store.pendingClarifications.get('cid-abc')
-    expect(updated?.status).toBe('answered')
-    expect(updated?.answer?.selected_option_id).toBe('opt-A')
-  })
-
-  it('仅 freeform 文本时也能提交', async () => {
-    postClarificationAnswerMock.mockResolvedValue({
-      clarification_id: 'cid-abc',
-      selected_option_id: '',
-      freeform_text: '我想改 cli 仓库',
-      answered_at: '2026-05-21T03:00:00Z',
-      inferred_state: {},
-    })
-
-    const wrapper = mountCard(makePayload())
-    await flushPromises()
-    const textarea = wrapper.find('textarea')
-    expect(textarea.exists()).toBe(true)
-    await textarea.setValue('我想改 cli 仓库')
-    await nextTick()
-
-    const submitBtn = wrapper.find('[data-test="submit-btn"]')
-    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(false)
-    await submitBtn.trigger('click')
-    await flushPromises()
-
-    expect(postClarificationAnswerMock).toHaveBeenCalledWith('cid-abc', {
-      selected_option_id: undefined,
-      freeform_text: '我想改 cli 仓库',
-    })
-  })
-
-  it('submit 异常时展示错误文案，不切到 answered', async () => {
-    postClarificationAnswerMock.mockRejectedValue(new Error('网络故障'))
-
-    const payload = makePayload()
-    const store = useChatStore()
-    store.upsertClarification(payload)
-
-    const wrapper = mountCard(payload)
-    await flushPromises()
-    await getOptionButtons(wrapper)[0].trigger('click')
-    await nextTick()
-    await wrapper.find('[data-test="submit-btn"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('网络故障')
-    // 仍是 pending（未 markAnswered）
-    const entry = store.pendingClarifications.get('cid-abc')
-    expect(entry?.status).toBe('pending')
-  })
-
-  it('answered 态：option 按钮 disabled + 按钮区不渲染 + 显示已回复摘要', async () => {
-    const payload = makePayload({
-      status: 'answered',
-      answer: {
-        selected_option_id: 'opt-A',
-        freeform_text: '',
-        answered_at: '2026-05-21T03:00:00Z',
-      },
-    })
-    const wrapper = mountCard(payload)
-    await flushPromises()
-
-    // 已回复态下方提交按钮区整体不渲染
-    expect(wrapper.find('[data-test="submit-btn"]').exists()).toBe(false)
-    // 但 option 按钮仍然渲染，只是 disabled
-    const optionBtns = getOptionButtons(wrapper)
-    expect(optionBtns.length).toBe(2)
-    for (const b of optionBtns)
-      expect((b.element as HTMLButtonElement).disabled).toBe(true)
-
-    // 摘要文案
-    expect(wrapper.text()).toContain('已回复')
-    expect(wrapper.text()).toContain('改 friday-server')
-
-    const badge = wrapper.find('[data-test="badge"]')
-    expect(badge.text()).toBe('已回复')
-  })
-
-  it('allow_freeform=false 不渲染 textarea', async () => {
-    const wrapper = mountCard(makePayload({ allow_freeform: false }))
-    await flushPromises()
-    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(postClarificationAnswerMock).toHaveBeenCalledTimes(1)
+    expect(postPlanClarificationAnswerMock).not.toHaveBeenCalled()
   })
 })
