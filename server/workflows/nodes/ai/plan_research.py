@@ -436,15 +436,18 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     @staticmethod
     async def _acollect_round_questions(clarification_id: str) -> list[dict[str, Any]]:
-        """取 pending 轮未答子题（按 ``order``），组装发卡用 questions，正文脱敏。"""
+        """取该轮**整轮**子题（按 ``order``），组装发卡用 questions，正文脱敏。
+
+        WARNING #3 不变量：整轮按 ``order`` 取（**不按 answered_at 过滤**），与回调侧
+        ``plan_clarify_callback._acollect_round_questions`` 枚举顺序逐字一致——索引 ``i`` ↔
+        第 ``i`` 个子题固定不随「同一轮部分已答后重发」漂移，杜绝 ``q{i}`` ↔ question_id 错位。
+        """
         from common.logging import redact_secrets_in_text
         from delivery.models import ClarificationQuestion
 
         questions: list[dict[str, Any]] = []
         async for q in (
-            ClarificationQuestion.objects.filter(
-                clarification_id=clarification_id, answered_at__isnull=True
-            )
+            ClarificationQuestion.objects.filter(clarification_id=clarification_id)
             .order_by("order")
             .values("question", "qtype", "options", "recommended")
         ):
