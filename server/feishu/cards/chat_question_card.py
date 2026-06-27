@@ -135,6 +135,7 @@ def build_clarification_card(
     node_id: str,
     *,
     clarification_id: str = "",
+    action: str = "plan_clarify_answer",
     title: str = "",
     reason: str = "",
     round_no: int = 1,
@@ -152,6 +153,11 @@ def build_clarification_card(
         execution_id / node_id: 工作流回调路由
         clarification_id: 澄清轮次（delivery.Clarification）id；写进 form_submit value，
             供 plan_clarify 回调据此定位轮 + 按 order 映射 q{i} 子题（CLARIFY-05 / Pitfall 1）。
+        action: 回调路由前缀（写进 form_submit value.action）——默认 ``plan_clarify_answer``
+            （91 工作流 ai_plan_research 澄清，绑 PlanSession，由 plan_clarify_callback 消费）；
+            92-03 standalone 澄清卡节点传 ``clarify_card_answer`` 路由到独立回调。两前缀
+            （``plan_clarify_`` / ``clarify_card_`` / 旧 ``chat_question_answer``）经
+            CardCallbackView ``startswith`` 匹配物理隔离、互不抢占。
         title: 卡片标题（通常为工作项名）
         reason: 需要澄清的原因，展示在顶部
         round_no: 当前澄清轮次（多轮时展示）
@@ -267,10 +273,11 @@ def build_clarification_card(
             "type": "primary",
             "action_type": "form_submit",
             "value": {
-                # Pitfall 1：新前缀 `plan_clarify_` 隔离工作流 GroupChatQuestion 的
-                # `chat_question_answer` 路由（CardCallbackView 前缀 startswith 匹配不交叉）；
-                # 携服务端权威 clarification_id 供回调按 round 取轮 + order 映射子题。
-                "action": "plan_clarify_answer",
+                # Pitfall 1：action 前缀（默认 `plan_clarify_answer`，92-03 standalone 卡传
+                # `clarify_card_answer`）隔离工作流 GroupChatQuestion 的 `chat_question_answer`
+                # 路由（CardCallbackView 前缀 startswith 匹配不交叉）；携服务端权威
+                # clarification_id 供回调按 round 取轮 + order 映射子题。
+                "action": action,
                 "execution_id": execution_id,
                 "node_id": node_id,
                 "clarification_id": clarification_id,
