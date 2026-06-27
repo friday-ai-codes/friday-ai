@@ -1,4 +1,19 @@
 {
+  "chat": {
+    "clarification": {
+      "title": "还需要确认一下",
+      "statusPending": "待回复",
+      "statusAnswered": "已回复",
+      "recommended": "推荐",
+      "multiHint": "（可多选）",
+      "freeformLabel": "或自由输入（可选）",
+      "freeformPlaceholder": "如果以上选项都不准确，可以在这里补充…",
+      "submit": "提交答复",
+      "submitting": "提交中…",
+      "submitError": "提交失败，请重试",
+      "answeredAt": "已回复 · {time}"
+    }
+  },
   "setup": {
     "title": "首次设置",
     "subtitle": "欢迎使用 Friday AI，开始初始化你的实例",
@@ -1301,6 +1316,137 @@
       },
       "loadError": "加载{section}失败，请重试",
       "retry": "重试"
+    },
+    "warroom": {
+      "health": {
+        "title": "项目健康总览",
+        "featureTotal": "feature 总数",
+        "openMr": "待合并 MR",
+        "nextLabel": "下一步建议",
+        "rebuild": "重建工作区",
+        "rebuilding": "重建中…",
+        "rebuilt": "已触发重建，工作区将很快更新",
+        "rebuildFailed": "重建工作区失败",
+        "syncing": "同步中",
+        "synced": "已同步",
+        "syncError": "同步异常",
+        "syncIdle": "待同步",
+        "next": {
+          "testing": "推进验收：有 feature 处于测试中",
+          "inProgress": "继续推进开发中的 feature",
+          "mr": "处理待合并的 PR / MR",
+          "noFeature": "补充 feature list 以启动交付",
+          "good": "项目进展良好，保持节奏"
+        }
+      },
+      "feature": {
+        "viewLabel": "feature 视图切换",
+        "byStatus": "按状态",
+        "byModule": "按模块",
+        "emptyGroup": "暂无",
+        "acceptanceCount": "验收项 {n}"
+      },
+      "apis": {
+        "title": "API 清单",
+        "add": "新增",
+        "added": "已新增 API 条目",
+        "addFailed": "新增失败",
+        "updateFailed": "更新失败",
+        "delete": "删除",
+        "deleted": "已删除",
+        "deleteFailed": "删除失败",
+        "deleteTitle": "删除 API 条目？",
+        "confirmDelete": "确认删除",
+        "empty": "暂无 API 清单条目",
+        "loadError": "加载 API 清单失败",
+        "pathPlaceholder": "/api/资源/路径",
+        "methodLabel": "HTTP 方法",
+        "pathLabel": "API 路径",
+        "statusLabel": "状态",
+        "status": {
+          "planned": "规划中",
+          "in_progress": "开发中",
+          "done": "已完成"
+        }
+      },
+      "galaxy": {
+        "title": "关系星图",
+        "loadError": "加载关系星图失败",
+        "emptyTitle": "暂无关联关系",
+        "emptyDesc": "当项目关联了 feature / 工作项 / 仓库 / PR 后，这里会展示它们之间的关系网络。",
+        "open": "打开",
+        "clearSelection": "清除选择",
+        "truncated": "节点较多，已采样展示前 {n} 个",
+        "type": {
+          "project": "项目",
+          "feature": "feature",
+          "workItem": "工作项",
+          "repository": "仓库",
+          "mergeRequest": "PR/MR"
+        }
+      },
+      "assistant": {
+        "title": "项目助手",
+        "expand": "展开会话栏",
+        "collapse": "收起会话栏",
+        "maximize": "放大会话",
+        "ai": "AI",
+        "you": "我",
+        "switch": "切换会话",
+        "actions": "会话操作",
+        "noConversation": "选择或新建会话",
+        "groupMine": "我的项目会话",
+        "groupShared": "项目共享会话",
+        "newPersonal": "新建个人会话",
+        "newShared": "新建共享会话",
+        "newFailed": "新建会话失败",
+        "cloneToMine": "克隆到我的会话",
+        "cloneToSpeak": "克隆后发言",
+        "cloned": "已克隆为我的会话",
+        "cloneFailed": "克隆失败",
+        "makeShared": "设为项目共享",
+        "makePersonal": "设为个人",
+        "makeSharedTitle": "设为项目共享会话？",
+        "makeSharedDesc": "设为共享后，本会话历史将对全项目成员可见。确认继续？",
+        "makePersonalTitle": "设为个人会话？",
+        "makePersonalDesc": "设为个人后，其他成员将无法再看到本会话。确认继续？",
+        "visibilityChanged": "可见性已更新",
+        "visibilityFailed": "更新可见性失败",
+        "archive": "归档",
+        "unarchive": "取消归档",
+        "archiveFailed": "归档操作失败",
+        "delete": "删除会话",
+        "deleteTitle": "删除会话？",
+        "deleteDesc": "删除后无法恢复，确认删除该会话？",
+        "deleted": "会话已删除",
+        "deleteFailed": "删除失败",
+        "confirm": "确认",
+        "shared": "共享",
+        "personal": "个人",
+        "startHint": "发送消息开始与项目 AI 对话",
+        "welcomeTitle": "向项目 AI 提问",
+        "welcomeDesc": "我已加载当前项目的需求、feature、文档与关联上下文，问我任何关于这个项目的问题。",
+        "quick": {
+          "blocked": "这个项目现在卡在哪里？",
+          "next": "根据当前 feature list，下一步该做什么？",
+          "missingAcceptance": "哪些 feature 还缺验收项？",
+          "summary": "总结一下当前项目进展",
+          "lastFailure": "最近失败的执行是什么原因？",
+          "weekly": "帮我生成项目周报"
+        },
+        "readOnlyHint": "这是项目共享会话（只读），克隆一份到我的会话即可发言。",
+        "inputPlaceholder": "向项目 AI 提问…（Enter 发送 / Shift+Enter 换行）",
+        "send": "发送",
+        "stop": "停止"
+      },
+      "workspace": {
+        "back": "返回",
+        "conversations": "对话",
+        "materials": "项目资料",
+        "newConversation": "新建对话",
+        "empty": "还没有对话",
+        "emptyHint": "在中间输入框发出第一条消息，对话会自动出现在这里"
+      }
     }
   },
   "artifactTypes": {
