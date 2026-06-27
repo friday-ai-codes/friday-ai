@@ -3,9 +3,16 @@
  */
 import type { ClarificationPayload } from '~/types/clarification'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getConversationRuntime } from '~/api/chat'
 import { useChatStore } from '~/stores/chat'
+
+// 仅替换 getConversationRuntime（runtime 回灌 plan 澄清卡的数据源），其余 API 保持真实。
+vi.mock('~/api/chat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('~/api/chat')>()
+  return { ...actual, getConversationRuntime: vi.fn() }
+})
 
 function makePayload(overrides: Partial<ClarificationPayload> = {}): ClarificationPayload {
   return {
@@ -229,6 +236,138 @@ describe('chat store - clarifications', () => {
       })
 
       expect(store.getClarification('c-bad-options')?.options).toEqual([])
+    })
+  })
+
+  /**
+   * UNIFY-05 / WARNING 3（94-05）：plan 澄清卡不依赖 marker 字面值。
+   *
+   * 94-05 后端把 plan 澄清挂起 marker 从 `ask_clarification` 改名为
+   * `plan_clarification`（仅前端渲染信号，权威在 delivery.Clarification + PlanSession）。
+   * 前端 plan 澄清卡由 91-04 runtime `pending_plan_clarification`（session_id /
+   * clarification_id / questions）驱动，**不读任何 marker 字面值** —— marker 改名
+   * 对 plan 卡渲染零影响；且 chat 单题路径仍仅认 `ask_clarification`，renamed
+   * plan marker 不会被误认成 chat 单题澄清。
+   */
+  describe('plan 澄清卡 runtime 驱动 + marker 字面非依赖（94-05 UNIFY-05 / WARNING 3）', () => {
+    beforeEach(() => {
+      vi.mocked(getConversationRuntime).mockReset()
+      // chat 单题 ask_clarification 解析在 legacy tool_use_* 路径（'new' 协议下走 part_*）；
+      // 显式切 legacy 以单测覆盖 marker 双条件判定（生产灰度同机制，见 useChatPartsProtocol）。
+      localStorage.setItem('chat-parts-protocol', 'legacy')
+    })
+
+    afterEach(() => {
+      localStorage.removeItem('chat-parts-protocol')
+    })
+
+    it('① plan 澄清卡由 pending_plan_clarification runtime（session_id/clarification_id）驱动渲染，不读 marker 字面值', async () => {
+      const store = useChatStore()
+      // runtime 回灌 payload **故意不含任何 marker 字段** —— 若渲染依赖 marker 字面值则此卡渲染不出。
+      vi.mocked(getConversationRuntime).mockResolvedValue({
+        active: false,
+        pending_plan_clarification: {
+          clarification_id: 'plan-clar-1',
+          round_no: 1,
+          questions: [
+            {
+              question_id: 'q1',
+              question: '选哪种鉴权方案？',
+              qtype: 'single',
+              options: ['JWT', 'Session'],
+              recommended: 'JWT',
+            },
+          ],
+        },
+      } as any)
+
+      await store.restoreConversationRuntime('conv-plan-1')
+
+      // 标识键取自 clarification_id（runtime 字段），卡渲染成功 → 证明 marker 字面非渲染依赖
+      const card = store.getPlanClarification('plan-clar-1')
+      expect(card).toBeDefined()
+      expect(card?.clarification_id).toBe('plan-clar-1')
+      expect(card?.round_no).toBe(1)
+      expect(card?.questions.length).toBe(1)
+      expect(card?.status).toBe('pending')
+      expect(card?.conversation_id).toBe('conv-plan-1')
+      // payload 对象上不存在 marker 字段（plan 卡契约本就不含 marker）
+      expect((card as unknown as Record<string, unknown>).marker).toBeUndefined()
+      // 未误入 chat 单题澄清 Map
+      expect(store.getClarification('plan-clar-1')).toBeUndefined()
+    })
+
+    it('① 旁证：questions 为空的 runtime 不进 plan 澄清面（旧单题行不误入）', async () => {
+      const store = useChatStore()
+      vi.mocked(getConversationRuntime).mockResolvedValue({
+        active: false,
+        pending_plan_clarification: {
+          clarification_id: 'plan-clar-empty',
+          round_no: 1,
+          questions: [],
+        },
+      } as any)
+
+      await store.restoreConversationRuntime('conv-plan-2')
+
+      expect(store.getPlanClarification('plan-clar-empty')).toBeUndefined()
+    })
+
+    it('② chat 单题路径仍仅认 marker===ask_clarification：renamed plan_clarification marker 不被误认单题卡', () => {
+      const store = useChatStore()
+      store.currentConversationId = 'conv-marker-1'
+
+      // 模拟 renamed plan marker 偷渡进 ask_clarification 工具结果：marker=plan_clarification
+      store._dispatchSSE({
+        type: 'tool_use_start',
+        tool_call_id: 'tc-plan-marker',
+        tool_name: 'ask_clarification',
+        input: {},
+      })
+      store._dispatchSSE({
+        type: 'tool_use_result',
+        tool_call_id: 'tc-plan-marker',
+        result: JSON.stringify({
+          pending: true,
+          marker: 'plan_clarification',
+          clarification_id: 'leaked-plan-1',
+          question: 'q',
+          options: [],
+          allow_freeform: true,
+        }),
+      })
+
+      // 双条件 parsed.marker==='ask_clarification' 不命中 → 不弹 chat 单题卡
+      expect(store.getClarification('leaked-plan-1')).toBeUndefined()
+    })
+
+    it('② 对照零回归：marker===ask_clarification 仍被识别为 chat 单题澄清', () => {
+      const store = useChatStore()
+      store.currentConversationId = 'conv-marker-2'
+
+      store._dispatchSSE({
+        type: 'tool_use_start',
+        tool_call_id: 'tc-chat-marker',
+        tool_name: 'ask_clarification',
+        input: {},
+      })
+      store._dispatchSSE({
+        type: 'tool_use_result',
+        tool_call_id: 'tc-chat-marker',
+        result: JSON.stringify({
+          pending: true,
+          marker: 'ask_clarification',
+          clarification_id: 'chat-single-1',
+          question: '你想动哪个仓库？',
+          options: [{ id: 'opt-A', label: 'study-app' }],
+          allow_freeform: true,
+        }),
+      })
+
+      const card = store.getClarification('chat-single-1')
+      expect(card).toBeDefined()
+      expect(card?.question).toBe('你想动哪个仓库？')
+      expect(card?.status).toBe('pending')
     })
   })
 })
