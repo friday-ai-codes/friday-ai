@@ -102,8 +102,8 @@ def test_create_coding_plan_stores_version_and_evidence(
 
     方案生成从确定性 ``build_coding_plan`` 改 delegate 到统一编排，故 monkeypatch
     ``delegate_plan_orchestration`` 返回 canonical DONE → 断言映射后单仓字段 +
-    McpCodingPlan(Version) 落库 + 工具调用/召回 trace（ModelUsageRecord 不再由 MCP 层记录，
-    编排 adapters 内部承担，移除该断言）。
+    McpCodingPlan(Version) 落库 + 工具调用/召回 trace。WR-03：delegate 回传本次编排聚合
+    ``model_usage``，view 仍落 ModelUsageRecord 到 MCP run（token/成本归因不回退）。
     """
     client, _plaintext = mcp_client
     repo_id = str(indexed_repository.id)
@@ -126,6 +126,15 @@ def test_create_coding_plan_stores_version_and_evidence(
             content=_canonical_coding_content(repo_id, indexed_repository.name),
             plan_version_id=str(uuid.uuid4()),
             markdown="**新增 MCP 规划工具**",
+            # WR-03：delegate 回传本次编排聚合用量，view 落到 MCP run 维度（归因不回退）。
+            model_usage={
+                "provider": "plan_orchestration",
+                "model": "aggregate",
+                "prompt_tokens": 120,
+                "completion_tokens": 80,
+                "total_tokens": 200,
+                "duration_ms": 42,
+            },
         )
 
     monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
@@ -158,6 +167,10 @@ def test_create_coding_plan_stores_version_and_evidence(
     ).exists()
     # evidence 由映射后 affected_files 推导 → RetrievalTrace FILE 落库（外形兼容）。
     assert RetrievalTrace.objects.filter(run=version.run).exists()
+    # WR-03：delegate 回传的编排聚合用量落到 MCP run 维度（token/成本归因不回退）。
+    usage = ModelUsageRecord.objects.filter(run=version.run)
+    assert usage.exists()
+    assert usage.first().total_tokens == 200
 
 
 def test_improve_coding_plan_appends_new_version(

@@ -52,6 +52,18 @@ _LEGACY_OUTPUT_KEYS = {
     "run_id",
 }
 
+# 嵌套 plan / 落库 plan_body 外形契约（WR-02：旧关键键映射自 canonical，外形兼容守护）。
+_LEGACY_PLAN_KEYS = {
+    "title",
+    "summary",
+    "work_item",
+    "repository_task_matrix",
+    "linked_documents",
+    "similar_cases",
+    "evidence",
+    "context_preview",
+}
+
 
 def _merged_content(repo_id: str, repo_name: str) -> dict:
     """合法 §7 MergedPlan content（单仓最小集，过 validate_merged_plan）。"""
@@ -74,6 +86,12 @@ def _merged_content(repo_id: str, repo_name: str) -> dict:
                 "branch_strategy": "feature",
                 "coding_instruction": "在 session 校验处补刷新边界判断并加测试。",
                 "dependencies": [],
+                # WR-01/IN-02：canonical task 携带方案细节 + 基线分支（映射须透传至 repository_tasks）。
+                "base_branch": "release/2026.06",
+                "steps": ["定位 session 校验入口", "补刷新边界判断", "加回归测试"],
+                "test_strategy": ["针对刷新边界补单测", "回归登录态 e2e"],
+                "risks": ["token 边界变更需回归登录态"],
+                "rollback": "revert 对应 PR 并回滚刷新边界判断。",
             }
         ],
     }
@@ -176,6 +194,79 @@ async def test_delegate_failed_maps_failed_empty(
     assert result.markdown == ""
 
 
+@pytest.mark.asyncio
+async def test_delegate_aggregates_orchestration_model_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-03：编排 adapters 落 run 未绑定的用量行 → delegate 聚合本次驱动窗口回传 model_usage。"""
+    from interactions.models import ModelUsageRecord
+    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+
+    repo_id = str(uuid.uuid4())
+    version = await _make_plan_version(_merged_content(repo_id, "auth-service"))
+    session = await _make_session(PlanSessionStatus.DONE, plan_version_id=version.id)
+
+    async def _fake_start(*_args: Any, **_kwargs: Any) -> PlanSession:
+        return session
+
+    async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> PlanSession:
+        # 模拟编排 adapter 落一行用量（run=None，挂 call_source 维度，不挂 MCP run）。
+        await ModelUsageRecord.objects.acreate(
+            run=None,
+            provider="anthropic",
+            model="claude",
+            call_source="plan_deepen",
+            prompt_tokens=120,
+            completion_tokens=80,
+            total_tokens=200,
+            duration_ms=42,
+        )
+        return session
+
+    monkeypatch.setattr("services.plan_orchestration.start_orchestration", _fake_start)
+    monkeypatch.setattr(
+        "services.plan_orchestration.build_orchestration_engine",
+        lambda **_kwargs: MagicMock(),
+    )
+    monkeypatch.setattr(
+        "services.plan_orchestration.adrive_plan_session_to_pause_or_terminal",
+        _fake_adrive,
+    )
+
+    result = await delegate_plan_orchestration(requirement_text="登录超时", include_repos=[repo_id])
+
+    assert result.status == "completed"
+    assert result.model_usage["total_tokens"] == 200
+    assert result.model_usage["prompt_tokens"] == 120
+    assert result.model_usage["completion_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_delegate_guards_unexpected_exception_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """IN-03：start_orchestration 等抛穿被外层护栏映射为 failed 终态（不回退 5xx）。"""
+    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+
+    async def _boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("orchestration backend down")
+
+    monkeypatch.setattr("services.plan_orchestration.start_orchestration", _boom)
+    monkeypatch.setattr(
+        "services.plan_orchestration.build_orchestration_engine",
+        lambda **_kwargs: MagicMock(),
+    )
+
+    result = await delegate_plan_orchestration(requirement_text="登录超时")
+
+    assert result.status == "failed"
+    assert result.content == {}
+    assert result.plan_version_id is None
+    assert result.markdown == ""
+    # session 未建 → 占位 SimpleNamespace(id="")，调用方 str(.id) 安全。
+    assert str(result.session.id) == ""
+
+
 # ===================== Task 2: create_feishu_technical_plan delegate 接线 =====================
 
 
@@ -272,14 +363,31 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
     assert task["planned_branch"] == "feature"
     assert "src/auth/session.py" in task["candidate_files"]
     assert task["coding_instruction"]
-    # plan 为 canonical content（含 §7 execution_plan），markdown 为 render 结果。
-    assert body["plan"]["execution_plan"][0]["repository_id"] == str(indexed_repository.id)
+    # WR-01：下游 _coding_plan_body 读取的方案细节键非空映射（steps/test_strategy/risks/rollback）。
+    assert task["steps"]
+    assert task["test_strategy"]
+    assert task["risks"]
+    assert task["rollback"]
+    # IN-02：canonical base_branch 透传（下游不再静默回退仓库默认分支）。
+    assert task["base_branch"] == "release/2026.06"
+    # WR-02：plan 恢复旧外形（repository_task_matrix/work_item/summary 等），canonical 入 canonical_content。
+    assert _LEGACY_PLAN_KEYS <= set(body["plan"].keys())
+    assert body["plan"]["repository_task_matrix"][0]["repository_id"] == str(indexed_repository.id)
+    assert body["plan"]["work_item"]["work_item_id"] == 77
+    assert body["plan"]["summary"]
+    assert body["plan"]["canonical_content"]["execution_plan"][0]["repository_id"] == str(
+        indexed_repository.id
+    )
     assert "登录超时修复跨仓方案" in body["markdown"]
 
-    # McpWorkItemTechnicalPlan 继续落库（plan_body=canonical content / markdown / status）。
+    # McpWorkItemTechnicalPlan 继续落库（plan_body=旧外形映射 WR-02 / markdown / status）。
     artifact = McpWorkItemTechnicalPlan.objects.get(id=body["technical_plan_id"])
     assert artifact.status == McpWorkItemTechnicalPlan.Status.COMPLETED
+    assert _LEGACY_PLAN_KEYS <= set(artifact.plan_body.keys())
     assert artifact.plan_body["title"] == "登录超时修复跨仓方案"
+    assert artifact.plan_body["repository_task_matrix"][0]["repository_id"] == str(
+        indexed_repository.id
+    )
     assert artifact.markdown == body["markdown"]
     assert artifact.repository_tasks[0]["repository_id"] == str(indexed_repository.id)
 
