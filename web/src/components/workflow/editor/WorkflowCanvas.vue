@@ -385,23 +385,53 @@ function attachClarification(parentId: string, childId: string) {
 }
 
 // --- 级联删除确认（删带附着子的父节点前弹 deleteWithChildBody） ---
-const pendingDelete = ref<{ id: string, name: string, count: number } | null>(null)
+// WR-02：pendingDelete 持有**一批**带附着子的父节点 id（聚合确认），避免一次框选
+// 含 ≥2 个带子父节点时单一 ref 互相覆盖致静默丢删。
+const pendingDelete = ref<{ ids: string[], name: string, count: number } | null>(null)
 
-/** 删节点入口：有附着子 → 弹确认（延后删）；无子 → 直接删（既有行为零回归）。 */
+/**
+ * 删节点入口：无附着子 → 直接删（既有行为零回归）；有附着子 → 聚合进 pendingDelete
+ * 延后确认。批量场景（handleBatchDelete / onNodesChange 多个 remove）多次调用本函数时，
+ * 带子父节点逐个聚合（不再覆盖），确认后一并删除（WR-02）。
+ */
 function requestRemoveNode(id: string) {
   const count = store.getChildNodes(id).length
-  if (count > 0) {
-    const node = store.nodes.find(n => n.id === id)
-    pendingDelete.value = { id, name: node?.name ?? '', count }
+  if (count === 0) {
+    store.removeNode(id)
+    return
+  }
+  const prev = pendingDelete.value
+  if (prev) {
+    if (!prev.ids.includes(id)) {
+      pendingDelete.value = {
+        ids: [...prev.ids, id],
+        name: prev.name,
+        count: prev.count + count,
+      }
+    }
   }
   else {
-    store.removeNode(id)
+    const node = store.nodes.find(n => n.id === id)
+    pendingDelete.value = { ids: [id], name: node?.name ?? '', count }
   }
 }
 
+/** 级联删除确认弹窗正文：单个父节点带名展示；多个父节点聚合展示总数（WR-02）。 */
+const deleteDialogBody = computed(() => {
+  const p = pendingDelete.value
+  if (!p)
+    return ''
+  if (p.ids.length > 1)
+    return t('workflow.editor.slot.deleteWithChildBatchBody', { nodeCount: p.ids.length, count: p.count })
+  return t('workflow.editor.slot.deleteWithChildBody', { name: p.name, count: p.count })
+})
+
 function confirmDelete() {
-  if (pendingDelete.value)
-    store.removeNode(pendingDelete.value.id)
+  if (pendingDelete.value) {
+    // 逐个删除全部带子父节点（连同其附着子，store.removeNode 级联）。
+    for (const id of pendingDelete.value.ids)
+      store.removeNode(id)
+  }
   pendingDelete.value = null
 }
 
@@ -524,9 +554,11 @@ defineExpose({
   snapTarget,
   attachGroups,
   requestRemoveNode,
+  handleBatchDelete,
   confirmDelete,
   cancelDelete,
   pendingDelete,
+  deleteDialogBody,
   onNodeContextMenu,
   confirmDetach,
   cancelDetach,
@@ -672,7 +704,7 @@ defineExpose({
         <AlertDialogHeader>
           <AlertDialogTitle>删除节点</AlertDialogTitle>
           <AlertDialogDescription>
-            {{ t('workflow.editor.slot.deleteWithChildBody', { name: pendingDelete?.name ?? '', count: pendingDelete?.count ?? 0 }) }}
+            {{ deleteDialogBody }}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

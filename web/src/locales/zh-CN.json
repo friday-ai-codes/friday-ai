@@ -1444,6 +1444,7 @@
         "conversations": "对话",
         "materials": "项目资料",
         "newConversation": "新建对话",
+        "close": "关闭",
         "empty": "还没有对话",
         "emptyHint": "在中间输入框发出第一条消息，对话会自动出现在这里"
       }
@@ -1504,7 +1505,8 @@
         "imGatedHint": "需先添加「创建群聊」节点以提供 chat_id",
         "detachTitle": "解除附着",
         "detachBody": "解除后澄清节点将成为独立节点，不再随方案节点联动。确认解除？",
-        "deleteWithChildBody": "删除「{name}」将一并移除其 {count} 个附着澄清节点。确认删除？"
+        "deleteWithChildBody": "删除「{name}」将一并移除其 {count} 个附着澄清节点。确认删除？",
+        "deleteWithChildBatchBody": "删除选中的 {nodeCount} 个节点将一并移除其 {count} 个附着澄清节点。确认删除？"
       },
       "shape": {
         "clarificationRequest": "澄清请求",
