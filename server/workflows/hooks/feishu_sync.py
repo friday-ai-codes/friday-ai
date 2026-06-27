@@ -9,6 +9,7 @@ import asyncio
 from typing import Any
 
 import structlog
+from asgiref.sync import sync_to_async
 
 from core.feature_flags import feature_flags
 from workflows.hooks.base import BaseHook
@@ -30,14 +31,26 @@ class FeishuSyncHook(BaseHook):
 
     name = "feishu_sync"
 
+    @staticmethod
+    async def _get_node_meta(node_execution: Any) -> tuple[str, dict[str, Any]]:
+        """异步安全地读取节点 name/config（关联对象访问会触发同步 ORM 查询，
+        在 async 上下文必须经 sync_to_async，否则抛 SynchronousOnlyOperation）。"""
+
+        def _read() -> tuple[str, dict[str, Any]]:
+            node = node_execution.node
+            return node.name, (node.config or {})
+
+        return await sync_to_async(_read)()
+
     async def on_node_started(self, execution: Any, node_execution: Any, **kwargs: Any) -> None:
         """Send notification when node starts."""
         if not feature_flags.sync_workflow_to_feishu:
             return
 
+        node_name, _ = await self._get_node_meta(node_execution)
         await self._send_notification(
             execution,
-            content=f"开始执行: {node_execution.node.name}",
+            content=f"开始执行: {node_name}",
             color="blue",
         )
 
@@ -46,9 +59,10 @@ class FeishuSyncHook(BaseHook):
         if not feature_flags.sync_workflow_to_feishu:
             return
 
+        node_name, _ = await self._get_node_meta(node_execution)
         await self._send_notification(
             execution,
-            content=f"完成: {node_execution.node.name}",
+            content=f"完成: {node_name}",
             color="green",
         )
 
@@ -57,10 +71,11 @@ class FeishuSyncHook(BaseHook):
         if not feature_flags.sync_workflow_to_feishu:
             return
 
+        node_name, _ = await self._get_node_meta(node_execution)
         error_msg = node_execution.error_message or "未知错误"
         await self._send_notification(
             execution,
-            content=f"失败: {node_execution.node.name}\n错误: {error_msg[:200]}",
+            content=f"失败: {node_name}\n错误: {error_msg[:200]}",
             color="red",
         )
 
@@ -69,13 +84,13 @@ class FeishuSyncHook(BaseHook):
         if not feature_flags.sync_workflow_to_feishu:
             return
 
-        config = node_execution.node.config or {}
+        node_name, config = await self._get_node_meta(node_execution)
         description = config.get("description_template", "请审批")
 
         await self._send_notification(
             execution,
             content=(
-                f"等待审批: {node_execution.node.name}\n\n"
+                f"等待审批: {node_name}\n\n"
                 f"{description}\n\n"
                 "回复「通过」或「驳回」进行审批"
             ),
@@ -180,7 +195,11 @@ class FeishuSyncHook(BaseHook):
             )
             return
 
-        project = execution.workflow.space if hasattr(execution, "workflow") and execution.workflow else None
+        def _read_space() -> Any:
+            wf = getattr(execution, "workflow", None)
+            return getattr(wf, "space", None) if wf else None
+
+        project = await sync_to_async(_read_space)()
 
         for attempt in range(MAX_RETRIES):
             try:

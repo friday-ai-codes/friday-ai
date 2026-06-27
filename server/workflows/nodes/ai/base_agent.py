@@ -20,6 +20,7 @@ from typing import Any, ClassVar, Literal
 import structlog
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
+from agents.core.events import TOOL_USE_START
 from agents.core.result import AgentResult
 from agents.langchain_runner import (
     ContextWindowExceededError,
@@ -602,6 +603,12 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
         """Execute the AI agent node using LangChainAgentRunner (implementation Wave)."""
         config = context.node_config
 
+        # 工具调用入参捕获：runner 在 completed 时 result.output 恒为 []，工具调用历史只在
+        # stream 事件里。子类（如 plan_generation）需从 submit_technical_plan/verify_plan
+        # 等工具调用的结构化入参里取方案，故在此累积 {tool, input}，map_output 读取。
+        # 每次 execute 重置，避免实例复用串场。
+        self._captured_tool_calls: list[dict[str, Any]] = []
+
         # 1. Call hook methods
         system_prompt = self.get_system_prompt(context)
         user_prompt = self.get_user_prompt(context)
@@ -704,7 +711,15 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
                 HumanMessage(content=user_prompt),
             ]
             async for _event in runner.stream(messages):
-                pass
+                # 捕获工具调用入参（best-effort，绝不打断主链）
+                if getattr(_event, "type", None) == TOOL_USE_START:
+                    data = getattr(_event, "data", None) or {}
+                    self._captured_tool_calls.append(
+                        {
+                            "tool": data.get("tool_name", ""),
+                            "input": data.get("tool_input", {}) or {},
+                        }
+                    )
 
             result = runner.result
             if result is None:

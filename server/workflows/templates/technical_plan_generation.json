@@ -63,7 +63,7 @@
         "receive_id": "{{nodes.ensure_chat.chat_id}}",
         "message_type": "card",
         "title": "技术方案已生成：{{nodes.fetch_work_item.name}}",
-        "content": "{{nodes.generate_plan.final_answer}}"
+        "content": "{{nodes.generate_plan.plan_markdown}}"
       }
     },
     {
@@ -76,7 +76,7 @@
         "receive_id": "{{nodes.ensure_chat.chat_id}}",
         "message_type": "card",
         "title": "需要补充需求信息：{{nodes.fetch_work_item.name}}",
-        "content": "为生成技术方案，请补充以下信息：\n\n{{nodes.generate_plan.questions}}\n\n（原因：{{nodes.generate_plan.reason}}）"
+        "content": "{{nodes.generate_plan.final_answer}}"
       }
     }
   ],

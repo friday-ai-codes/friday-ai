@@ -174,6 +174,10 @@ class FeishuIMClient:
         self.app_secret = app_secret
         self._tenant_token: str | None = None
         self._token_expires_at: float = 0
+        # 机器人自身 open_id 缓存（用于 is_bot_in_chat 成员比对）。
+        # 群成员列表只能按 open_id/union_id/user_id 返回，拿不到 app_id，
+        # 故必须用机器人 open_id（/bot/v3/info）去比对，而非 app_id。
+        self._bot_open_id: str | None = None
 
     async def get_tenant_access_token(self) -> str:
         """获取 tenant_access_token（带缓存，2小时有效）。
@@ -740,11 +744,49 @@ class FeishuIMClient:
     # 群聊成员管理方法
     # ------------------------------------------------------------------
 
-    async def get_chat_members(self, chat_id: str) -> list[dict[str, Any]]:
+    async def get_bot_open_id(self) -> str:
+        """获取当前机器人自身的 open_id（带缓存）。
+
+        飞书 ``/bot/v3/info`` 用 tenant_access_token 返回 bot 的 open_id。
+        群成员列表无法用 app_id 比对（成员只按 open_id/union_id/user_id 返回），
+        因此判断"机器人是否在群"必须用 open_id。
+
+        Returns:
+            机器人 open_id（ou_ 前缀）。
+
+        Raises:
+            FeishuIMError: API 调用失败。
+        """
+        if self._bot_open_id:
+            return self._bot_open_id
+
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.OPEN_API_BASE}/bot/v3/info",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            data = response.json()
+            if data.get("code") != 0:
+                logger.error("get_bot_info_failed", app_id=self.app_id, response=data)
+                raise FeishuIMError(
+                    f"获取机器人信息失败: {data.get('msg', data)}", code=data.get("code")
+                )
+            open_id = (data.get("bot", {}) or {}).get("open_id", "")
+            self._bot_open_id = open_id
+            return open_id
+
+    async def get_chat_members(
+        self,
+        chat_id: str,
+        member_id_type: Literal["open_id", "union_id", "user_id"] = "open_id",
+    ) -> list[dict[str, Any]]:
         """获取群聊成员列表。
 
         Args:
             chat_id: 群聊 ID
+            member_id_type: 成员 ID 类型，飞书仅接受 open_id/union_id/user_id
+                （注意：app_id 非法，会触发 99992402 field validation failed）。
 
         Returns:
             成员列表，每项包含 member_id、name、tenant_key 等
@@ -758,7 +800,7 @@ class FeishuIMClient:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members",
-                params={"member_id_type": "app_id"},
+                params={"member_id_type": member_id_type, "page_size": 100},
                 headers={"Authorization": f"Bearer {token}"},
             )
             data = response.json()
@@ -777,8 +819,13 @@ class FeishuIMClient:
     async def is_bot_in_chat(self, chat_id: str) -> bool:
         """检查当前 Bot 是否已在指定群聊中。
 
-        通过查询群聊成员列表，检查 self.app_id 是否在其中。
-        查询失败时降级返回 False。
+        使用飞书专用接口 ``GET /im/v1/chats/{chat_id}/members/is_in_chat``：用
+        tenant_access_token 调用时，判断的就是「当前机器人」是否在群内。
+
+        不能用 ``/members`` 列表比对——该列表只返回**用户成员**，不含机器人，
+        且历史代码传 ``member_id_type=app_id`` 是非法参数（99992402）。
+
+        查询失败时降级返回 False（由 ensure_bot_in_chat 走幂等加入兜底）。
 
         Args:
             chat_id: 群聊 ID
@@ -787,8 +834,17 @@ class FeishuIMClient:
             Bot 在群聊中返回 True，否则返回 False
         """
         try:
-            members = await self.get_chat_members(chat_id)
-            return any(m.get("member_id") == self.app_id for m in members)
+            token = await self.get_tenant_access_token()
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members/is_in_chat",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                data = response.json()
+            if data.get("code") == 0:
+                return bool(data.get("data", {}).get("is_in_chat", False))
+            logger.warning("is_bot_in_chat_check_failed", chat_id=chat_id, response=data)
+            return False
         except Exception:
             logger.warning("is_bot_in_chat_check_failed", chat_id=chat_id, exc_info=True)
             return False

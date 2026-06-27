@@ -44,7 +44,7 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 1. 理解用户的需求描述
 2. 分析关联仓库的代码结构和依赖关系
 3. 生成符合规范的结构化技术方案
-4. 通过 verify_plan 验证，产出最终方案 JSON
+4. 通过 verify_plan 验证后，调用 submit_technical_plan 工具提交最终方案
 
 注意：方案的飞书文档生成、卡片推送与人工审批均由下游独立节点
 （`human_approval(mode=plan_feishu)`、`feishu_doc_create`、`notify_feishu_im`）负责，
@@ -58,36 +58,34 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 2. **仓库分析**：使用 search_repository_code 工具分析相关仓库的代码结构
    - 有依赖关系的仓库串行分析（先分析被依赖方）
    - 无依赖关系的仓库可以交替分析
-3. **生成方案**：基于分析结果，生成完整的技术方案 JSON
+3. **生成方案**：基于分析结果，生成完整的技术方案（结构化对象）
 
-### 第二阶段：方案验证（自动重试）
+### 第二阶段：验证并提交（结构化工具调用，强约束）
 
 4. **调用 verify_plan**：将生成的方案传给 verify_plan 工具验证
 5. **处理验证结果**：
-   - 如果验证通过（valid=true）：将最终方案 JSON 作为结果输出，任务完成
-   - 如果验证失败（valid=false）：根据错误信息修正方案，重新验证
-   - **最多重试 3 轮**，如果 3 轮后仍失败，输出最新版本并在 final_answer 中说明问题
+   - 验证失败（valid=false）：根据错误信息修正方案，重新验证（**最多重试 3 轮**）
+   - 验证通过（valid=true）：调用 **submit_technical_plan** 工具，以结构化入参 `plan`
+     提交最终方案。这是方案产出的**唯一终止动作**。
+6. 提交后用一句话简短确认即可结束，**不要**把方案 JSON 再写进文本回复。
 
 ### 终止条件
 
-- 方案通过 verify_plan 验证
-- 重试 3 轮后输出最新版本
+- 调用 submit_technical_plan 成功提交方案（信息充分时）
+- 调用 request_clarification 发起澄清（信息不足时）
 
-### 重要规则
+### 重要规则（务必遵守）
 
-- 如果需求描述不清晰、信息不足或存在歧义，**不要猜测、不要自行假设**。立即停止分析，并把最终答案输出为如下 JSON（顶层对象，可放在 ```json``` 代码块中），且不要再调用任何工具：
+- **方案只能通过 submit_technical_plan 工具提交**，禁止把方案 JSON 写进自由文本 / ```json``` 代码块。
+  下游严格从工具调用入参读取结构化方案；写进文本不会被采纳。
+- 如果需求描述不清晰、信息不足或存在歧义，**不要猜测、不要自行假设**：立即调用
+  **request_clarification** 工具，以结构化入参传入 `reason`（原因）与 `questions`（待补充问题列表），
+  然后结束。系统会据此分流到下游人工处理节点（need_clarification 出口）。
+  **本节点不直接向用户提问**，也不要把澄清内容写进文本回复。
+- 信息充分时正常生成方案并 verify_plan 通过后调用 submit_technical_plan；此时**不要**调用 request_clarification。
+- 你的每一轮迭代都应该调用至少一个工具（search_repository_code、verify_plan、submit_technical_plan 等），不要空转。
 
-  ```json
-  {"need_clarification": true, "reason": "信息为何不足的简要说明", "questions": ["需要用户补充的问题1", "问题2"]}
-  ```
-
-  系统会据此把工作流分流到下游的人工处理节点（need_clarification 出口）。**本节点不直接向用户提问**，澄清交由下游节点负责，你只需用上面的 JSON 表达“需要澄清”即可。
-- 信息充分时，正常完成方案生成并通过 verify_plan 验证，输出技术方案 JSON；此时**不要**输出上面的澄清 JSON。
-- 你的每一轮迭代都应该调用至少一个工具（search_repository_code、verify_plan 等），不要空转。
-
-## 输出格式
-
-技术方案必须符合以下 JSON Schema：
+## 方案结构（submit_technical_plan 的 plan 入参必须符合以下 JSON Schema）
 
 ```json
 {{schema_json}}
@@ -326,6 +324,8 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         """
         base_tools = [
             "verify_plan",
+            "submit_technical_plan",
+            "request_clarification",
             "fetch_feishu_document",
             "search_repository_code",
         ]
@@ -346,49 +346,172 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     def map_output(self, result: AgentResult) -> dict[str, Any]:
         """从 AgentResult 提取方案并验证格式。
 
-        优先识别「需澄清」信号：若 final_answer 是 need_clarification JSON，
-        则输出 need_clarification 结构（由 execute() 分流到 need_clarification 出口），
-        不再尝试当作技术方案解析。
+        权威来源：**工具调用入参**（不再依赖 LLM 在自由文本里输出 ```json``` 代码块）。
+        优先级：
+          1. request_clarification 工具调用 → need_clarification 出口
+          2. submit_technical_plan 工具调用入参 → 结构化方案
+          3. verify_plan 工具调用入参（兼容：现网 prompt 仍走 verify_plan）
+          4. 兜底：解析 final_answer 文本（旧行为，防御未启用新工具的历史路径）
+
+        产出方案时同时生成 ``plan_markdown``（干净的卡片渲染），并把 ``final_answer``
+        覆盖为该渲染，使下游飞书卡片（推送方案到群）展示结构化内容而非 LLM 原始自由文本；
+        原始文本保留在 ``raw_answer`` 供排障。
         """
-        clarification = self._extract_clarification(result.final_answer)
-        if clarification is not None:
+        # 1. 工具调用：澄清优先
+        clar_call = self._find_last_tool_call("request_clarification")
+        if clar_call is not None:
+            questions = clar_call.get("questions") or []
+            if isinstance(questions, str):
+                questions = [questions]
+            questions = [str(q).strip() for q in questions if str(q).strip()]
+            reason = str(clar_call.get("reason", ""))
             return {
                 "need_clarification": True,
-                "questions": clarification["questions"],
-                "reason": clarification["reason"],
-                "final_answer": result.final_answer,
+                "questions": questions,
+                "reason": reason,
+                "final_answer": self._render_clarification_markdown(questions, reason),
+                "raw_answer": result.final_answer,
                 "usage": result.usage,
             }
 
-        plan_dict = self._extract_plan_from_result(result)
+        # 2/3. 工具调用：提交方案（submit_technical_plan 优先，verify_plan 兼容兜底）
+        plan_dict = self._extract_plan_from_tool_calls()
+
+        # 4. 兜底：旧文本解析路径（未启用新工具的历史 prompt / 异常情况）
+        if plan_dict is None:
+            legacy_clar = self._extract_clarification(result.final_answer)
+            if legacy_clar is not None:
+                return {
+                    "need_clarification": True,
+                    "questions": legacy_clar["questions"],
+                    "reason": legacy_clar["reason"],
+                    "final_answer": self._render_clarification_markdown(
+                        legacy_clar["questions"], legacy_clar["reason"]
+                    ),
+                    "raw_answer": result.final_answer,
+                    "usage": result.usage,
+                }
+            plan_dict = self._extract_plan_from_result(result)
 
         if plan_dict is not None:
             is_valid, error_msg = validate_technical_plan(plan_dict)
-            if is_valid:
-                return {
-                    "plan": plan_dict,
-                    "final_answer": result.final_answer,
-                    "usage": result.usage,
-                }
-            logger.warning(
-                "plan_validation_failed_in_map_output",
-                error=error_msg,
-            )
-            return {
+            markdown = self._render_plan_markdown(plan_dict)
+            output: dict[str, Any] = {
                 "plan": plan_dict,
-                "error": f"方案格式验证警告: {error_msg}",
-                "final_answer": result.final_answer,
+                "plan_markdown": markdown,
+                # 覆盖 final_answer 为干净渲染：卡片模板多用 {{nodes.x.final_answer}}，
+                # 原始 LLM 文本（含 "Now I have enough understanding..." 前言）移到 raw_answer。
+                "final_answer": markdown,
+                "raw_answer": result.final_answer,
                 "usage": result.usage,
             }
+            if not is_valid:
+                logger.warning("plan_validation_failed_in_map_output", error=error_msg)
+                output["error"] = f"方案格式验证警告: {error_msg}"
+            return output
 
         # 无法提取结构化方案，返回原始输出
         return {
             "plan": None,
-            "error": "未能从 Agent 输出中提取结构化方案",
+            "error": "未能从 Agent 工具调用 / 输出中提取结构化方案",
             "final_answer": result.final_answer,
             "raw_output": result.output,
             "usage": result.usage,
         }
+
+    def _find_last_tool_call(self, tool_name: str) -> dict[str, Any] | None:
+        """从 base_agent 捕获的工具调用历史里取最后一次指定工具的入参。"""
+        calls = getattr(self, "_captured_tool_calls", None) or []
+        for entry in reversed(calls):
+            if isinstance(entry, dict) and entry.get("tool") == tool_name:
+                tool_input = entry.get("input")
+                return tool_input if isinstance(tool_input, dict) else None
+        return None
+
+    def _extract_plan_from_tool_calls(self) -> dict[str, Any] | None:
+        """从工具调用入参提取结构化方案：submit_technical_plan 优先，verify_plan 兼容。"""
+        submit = self._find_last_tool_call("submit_technical_plan")
+        if submit is not None and isinstance(submit.get("plan"), dict):
+            logger.info(
+                "plan_captured_from_tool_call",
+                category="sampling",
+                component="workflow_node",
+                tool="submit_technical_plan",
+            )
+            return submit["plan"]
+        verify = self._find_last_tool_call("verify_plan")
+        if verify is not None and isinstance(verify.get("plan"), dict):
+            logger.info(
+                "plan_captured_from_tool_call",
+                category="sampling",
+                component="workflow_node",
+                tool="verify_plan",
+            )
+            return verify["plan"]
+        return None
+
+    @staticmethod
+    def _render_clarification_markdown(questions: list[str], reason: str) -> str:
+        """把澄清问题渲染为干净的飞书 lark_md 文本。"""
+        lines = ["**为生成技术方案，请补充以下信息：**", ""]
+        for i, q in enumerate(questions, 1):
+            lines.append(f"{i}. {q}")
+        if reason:
+            lines.append("")
+            lines.append(f"*原因：{reason}*")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_plan_markdown(plan: dict[str, Any]) -> str:
+        """把结构化技术方案渲染为干净的飞书 lark_md 卡片正文。
+
+        取代直接把 LLM 自由文本（含前言 + ```json``` 代码块）塞进卡片。
+        """
+        if not isinstance(plan, dict):
+            return ""
+
+        parts: list[str] = []
+        title = str(plan.get("title", "")).strip()
+        if title:
+            parts.append(f"**{title}**")
+
+        summary = str(plan.get("summary", "")).strip()
+        if summary:
+            parts.append(summary)
+
+        tasks = plan.get("execution_plan") or []
+        if isinstance(tasks, list) and tasks:
+            parts.append(f"**📋 执行计划（共 {len(tasks)} 项）**")
+            for i, task in enumerate(tasks, 1):
+                if not isinstance(task, dict):
+                    continue
+                name = str(task.get("name", f"任务 {i}")).strip()
+                repo = str(task.get("repository_name", "")).strip()
+                head = f"**{i}. {name}**"
+                if repo:
+                    head += f"  `{repo}`"
+                parts.append(head)
+                desc = str(task.get("description", "")).strip()
+                if desc:
+                    parts.append(desc)
+                instruction = str(task.get("coding_instruction", "")).strip()
+                if instruction:
+                    snippet = instruction if len(instruction) <= 300 else instruction[:300] + "…"
+                    parts.append(f"> {snippet}")
+
+        risks = plan.get("risks") or []
+        if isinstance(risks, list) and risks:
+            # 用 • 字面项目符号而非 Markdown `- ` 列表：lark_md 不支持列表语法，
+            # markdown 组件也仅 ≥7.6 渲染；• 在所有客户端都按字面正常显示，跨版本稳定。
+            bullets = "\n".join(f"• {str(r).strip()}" for r in risks if str(r).strip())
+            parts.append(f"**⚠️ 风险**\n{bullets}")
+
+        assumptions = plan.get("assumptions") or []
+        if isinstance(assumptions, list) and assumptions:
+            bullets = "\n".join(f"• {str(a).strip()}" for a in assumptions if str(a).strip())
+            parts.append(f"**📝 假设**\n{bullets}")
+
+        return "\n\n".join(p for p in parts if p)
 
     # ===== Execute override with sub-step tracking =====
 

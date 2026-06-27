@@ -119,6 +119,194 @@ def build_chat_question_card(
     }
 
 
+def build_clarification_card(
+    questions: list[dict[str, Any]],
+    execution_id: str,
+    node_id: str,
+    *,
+    title: str = "",
+    reason: str = "",
+    round_no: int = 1,
+    history: list[dict[str, str]] | None = None,
+    mention_user_id: str | None = None,
+) -> dict[str, Any]:
+    """构建多问题交互澄清卡片（卡片 JSON 2.0 表单）。
+
+    每个问题各自一块：问题文本（支持 Markdown 加重，如 **实验组用户**）+ 可选下拉
+    （含「（推荐）」标记并默认选中推荐项）+ 自定义输入框；底部一个提交按钮统一提交。
+    提交后由回调用 build_clarification_answered_card 置灰，禁止重复提交。
+
+    Args:
+        questions: 结构化问题列表，每项 {question, options?(list[str]), recommended?(str)}
+        execution_id / node_id: 工作流回调路由
+        title: 卡片标题（通常为工作项名）
+        reason: 需要澄清的原因，展示在顶部
+        round_no: 当前澄清轮次（多轮时展示）
+        history: 历史轮次问答 [{question, answer}]
+        mention_user_id: @ 的用户 open_id
+
+    Returns:
+        飞书卡片 JSON（2.0 结构，form 表单）
+    """
+    elements: list[dict[str, Any]] = []
+
+    if mention_user_id:
+        elements.append({
+            "tag": "markdown",
+            "content": f'<at id="{mention_user_id}"></at> 需要你补充以下信息以继续生成技术方案',
+        })
+
+    if reason:
+        elements.append({"tag": "markdown", "content": f"💡 {reason}"})
+
+    # 历史轮次（多轮澄清）
+    if history:
+        hist = "\n".join(
+            f"**第{idx + 1}轮** Q: {qa.get('question', '')}\nA: {qa.get('answer', '')}"
+            for idx, qa in enumerate(history)
+        )
+        elements.append({"tag": "markdown", "content": hist})
+        elements.append({"tag": "hr"})
+
+    # 表单：每个问题一组 (label + 单选/多选 + 「其他」输入框)
+    form_elements: list[dict[str, Any]] = []
+    for i, q in enumerate(questions):
+        q_text = str(q.get("question", "")).strip()
+        q_type = str(q.get("type", "single")).strip().lower()
+        is_multi = q_type in ("multi", "multiple", "multi_select")
+        options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+
+        # recommended 可为 str（单选）或 list（多选）
+        rec_raw = q.get("recommended")
+        if isinstance(rec_raw, (list, tuple)):
+            recommended = {str(r).strip() for r in rec_raw if str(r).strip()}
+        elif rec_raw:
+            recommended = {str(rec_raw).strip()}
+        else:
+            recommended = set()
+
+        label = f"**{i + 1}. {q_text}**"
+        if is_multi and options:
+            label += "（可多选）"
+        form_elements.append({"tag": "markdown", "content": label})
+
+        if options:
+            select_options: list[dict[str, Any]] = []
+            rec_values: list[str] = []
+            for opt in options:
+                is_rec = opt in recommended
+                text = f"⭐ {opt}" if is_rec else opt
+                if is_rec:
+                    rec_values.append(opt)
+                select_options.append({
+                    "text": {"tag": "plain_text", "content": text},
+                    "value": opt,
+                })
+
+            if is_multi:
+                multi_el: dict[str, Any] = {
+                    "tag": "multi_select_static",
+                    "name": f"q{i}",
+                    "placeholder": {"tag": "plain_text", "content": "选择（可多选）"},
+                    "options": select_options,
+                }
+                if rec_values:
+                    multi_el["selected_values"] = rec_values
+                form_elements.append(multi_el)
+            else:
+                single_el: dict[str, Any] = {
+                    "tag": "select_static",
+                    "name": f"q{i}",
+                    "placeholder": {"tag": "plain_text", "content": "选择"},
+                    "options": select_options,
+                }
+                if rec_values:
+                    single_el["initial_option"] = rec_values[0]
+                form_elements.append(single_el)
+
+            # 每题常驻「其他」输入框（飞书无法做"选其他才出现"的条件显隐）
+            form_elements.append({
+                "tag": "input",
+                "name": f"qt{i}",
+                "placeholder": {"tag": "plain_text", "content": "其他（自定义填写）"},
+            })
+        else:
+            form_elements.append({
+                "tag": "input",
+                "name": f"qt{i}",
+                "placeholder": {"tag": "plain_text", "content": "请输入"},
+            })
+
+    # 提交按钮（form_submit 统一收集所有命名字段）
+    form_elements.append({
+        "tag": "button",
+        "name": "submit_clarification",
+        "text": {"tag": "plain_text", "content": "提交"},
+        "type": "primary",
+        "action_type": "form_submit",
+        "value": {
+            "action": "chat_question_answer",
+            "execution_id": execution_id,
+            "node_id": node_id,
+            "question_count": len(questions),
+        },
+    })
+
+    elements.append({
+        "tag": "form",
+        "name": "clarification_form",
+        "elements": form_elements,
+    })
+
+    header_title = "需要补充需求信息"
+    if title:
+        header_title = f"需要补充需求信息 — {title}"
+    if round_no > 1:
+        header_title += f"（第 {round_no} 轮）"
+
+    return {
+        "config": {"wide_screen_mode": True, "update_multi": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": header_title},
+            "template": "orange",
+        },
+        "elements": elements,
+    }
+
+
+def build_clarification_answered_card(
+    qa_pairs: list[dict[str, str]],
+    *,
+    title: str = "",
+    responder_name: str = "",
+) -> dict[str, Any]:
+    """构建澄清「已提交」状态卡片（灰色、只读，等于置灰原交互卡片）。"""
+    lines: list[str] = []
+    for i, qa in enumerate(qa_pairs):
+        lines.append(f"**{i + 1}. {qa.get('question', '')}**")
+        lines.append(f"↳ {qa.get('answer', '') or '（未填写）'}")
+    content = "\n".join(lines)
+    if responder_name:
+        content += f"\n\n**回复者：** {responder_name}"
+
+    header_title = "已收到补充信息"
+    if title:
+        header_title = f"已收到补充信息 — {title}"
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": header_title},
+            "template": "grey",
+        },
+        "elements": [
+            {"tag": "markdown", "content": content},
+            {"tag": "hr"},
+            {"tag": "markdown", "content": "_正在据此继续生成技术方案..._"},
+        ],
+    }
+
+
 def build_chat_answered_card(
     question: str,
     answer: str,
