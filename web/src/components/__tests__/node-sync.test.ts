@@ -56,6 +56,16 @@ describe('前后端节点漂移守护（fixture 驱动）', () => {
     }
   })
 
+  it('ai_plan_generation 已从 palette 移除但仍在 fixture（UNIFY-02，后端保留注册）', () => {
+    expect(paletteSet.has('ai_plan_generation'), 'ai_plan_generation 应已从 NodePalette 移除').toBe(false)
+    expect(fixtureTypes.has('ai_plan_generation'), `ai_plan_generation 应仍在 fixture（后端 deprecated 但保留注册）—— ${REGEN_HINT}`).toBe(true)
+  })
+
+  it('ai_plan_research 已暴露到 palette 且 ⊆ fixture（UNIFY-02 第二半）', () => {
+    expect(paletteSet.has('ai_plan_research'), 'ai_plan_research 应暴露到 NodePalette AI 分组').toBe(true)
+    expect(fixtureTypes.has('ai_plan_research'), `ai_plan_research 应在 fixture —— ${REGEN_HINT}`).toBe(true)
+  })
+
   it('真实节点 fetch_space_info 应同时存在于 fixture 与 palette', () => {
     expect(fixtureTypes.has('fetch_space_info'), `fixture 缺 fetch_space_info —— ${REGEN_HINT}`).toBe(true)
     expect(paletteSet.has('fetch_space_info')).toBe(true)
