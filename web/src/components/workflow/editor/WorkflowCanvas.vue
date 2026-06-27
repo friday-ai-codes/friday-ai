@@ -13,6 +13,7 @@ import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, inject, markRaw, onBeforeUnmount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
@@ -39,6 +40,7 @@ const vfEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value
 const edgeTypes = { gradient: markRaw(GradientEdge) }
 
 const { error: showError } = useToast()
+const { t } = useI18n()
 const { getSelectedNodes, fitView, viewport: vfViewport } = useVueFlow()
 const { validateConnection } = useConnectionValidator()
 const { applyAutoLayout } = useAutoLayout()
@@ -131,9 +133,9 @@ function onPaneClick() {
 }
 
 function onConnect(connection: Connection) {
-  const validationError = getValidationError(connection)
+  const validationError = getValidationError(connection, t)
   if (validationError) {
-    showError('连线失败', validationError)
+    showError(t('workflow.editor.slot.incompatibleTitle'), validationError)
     return
   }
   store.addEdge({
