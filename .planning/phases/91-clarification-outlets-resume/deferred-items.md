@@ -17,3 +17,14 @@ Out-of-scope discoveries logged during execution (not fixed — see SCOPE BOUNDA
 | `tests/delivery/test_technical_plan_inv6_guard.py::test_inv6_no_bypass_canonical_plan_write`（1） | canonical plan INV-6 守护 | war-room |
 
 **Action:** 不在 91-02 范围内修复；待 war-room 工作落定 / 后续 phase 收编时处理。
+
+## 91-03：执行期复现同两项既有 INV-6 守护失败（与本 plan 无关）
+
+`cd server && uv run pytest tests/delivery -k inv6 -q` → 2 failed / 26 passed。失败为 91-02 已记的同两项：
+
+| 测试 | 旁路写命中文件 | 归因 |
+|------|--------------|------|
+| `test_inv6_no_bypass_feishu_chat_id_write` | `initiatives/services/project_service.py:365/404`（`project.feishu_chat_id = ...`） | war-room 未提交在制品（`git status` 标 `M server/initiatives/...`） |
+| `test_inv6_no_bypass_canonical_plan_write` | `initiatives/services/plan_deepen_service.py:267`（docstring）/ `feishu/callbacks/plan_revision_callback.py:11`（89-02 既有 docstring 字面误判） | war-room + 既有 docstring false-positive |
+
+**确认与 91-03 无关：** 命中文件均非本 plan 新增的 `feishu/callbacks/plan_clarify_callback.py`（该文件无 `.feishu_chat_id =` / 无 TechnicalPlan/PlanVersion 旁路写，守护未 flag）。本 plan 写入只经 `aanswer_round_and_resume` → `ClarificationService.answer_round`（INV-6）。不在 91-03 范围内修复。
