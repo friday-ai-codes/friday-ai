@@ -3,6 +3,8 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
+import { createI18n } from 'vue-i18n'
+import zhCN from '~/locales/zh-CN.json'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import BaseWorkflowNode from '../BaseWorkflowNode.vue'
 
@@ -70,12 +72,15 @@ function makePort(name: string) {
   return { name, label: name, type: 'any', required: false, description: '' }
 }
 
+const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
+
 function mountNode(nodeType: string) {
   return mount(BaseWorkflowNode, {
     props: {
       id: 'node-1',
       data: { name: 'Test Node', nodeType },
     },
+    global: { plugins: [i18n] },
   })
 }
 

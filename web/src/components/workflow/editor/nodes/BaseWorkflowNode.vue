@@ -10,6 +10,7 @@ import { NodeToolbar } from '@vue-flow/node-toolbar'
 import { Copy, Play, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { useToast } from '~/composables/useToast'
@@ -19,6 +20,8 @@ import { getNodeDefinition } from '~/types/workflow/registry'
 import { generateEndpointToken } from '~/utils/endpointToken'
 import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
+import { useConnectionDragState } from '../composables/useConnectionDragState'
+import { useImCapability } from '../composables/useImCapability'
 import NodeInsertMenu from '../NodeInsertMenu.vue'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
@@ -27,6 +30,8 @@ interface PortItem {
   id: string
   group: 'input' | 'output'
   label: string
+  /** 端口能力契约 shape（typed=非空 → 方形+shape 色；空=通用流圆形，零回归）。 */
+  shape?: string
 }
 
 /** 出口端口语义 → 颜色/标签：default=成功(绿)、error=失败(红)、need_clarification=需澄清(琥珀)，其余中性 */
@@ -62,6 +67,31 @@ const PORT_DOT_COLOR: Record<PortKind, string> = {
   neutral: '#94a3b8',
 }
 
+/**
+ * 能力 shape → 色板（UI-SPEC「能力 shape 色板」）。
+ * shape 非空时优先于 handle-id 语义色；O(1) 查表，避免每帧建新对象。
+ */
+const SHAPE_DOT_COLOR: Record<string, string> = {
+  clarification_request: '#f59e0b',
+  clarification_answer: '#f59e0b',
+  feishu_message: '#06b6d4',
+  feishu_document: '#6366f1',
+  technical_plan: '#8b5cf6',
+  coding_assignment: '#a78bfa',
+  approval_result: '#10b981',
+}
+
+/**
+ * handle 背景/描边色（着色优先级，UI-SPEC「着色优先级」）：
+ * shape 非空 → `SHAPE_DOT_COLOR[shape]`（未知 shape 回退语义色）；
+ * shape 空 → 回退既有 `PORT_DOT_COLOR[portKind(id)]`（保 default 绿/error 红零回归）。
+ */
+function handleColor(port: PortItem): string {
+  if (port.shape)
+    return SHAPE_DOT_COLOR[port.shape] ?? PORT_DOT_COLOR[portKind(port.id)]
+  return PORT_DOT_COLOR[portKind(port.id)]
+}
+
 /** 卡内分支列表用：仅文字色（语义色由行末圆点 + 文字共同传达） */
 const PORT_TEXT_CLASS: Record<PortKind, string> = {
   success: 'text-emerald-600',
@@ -76,6 +106,61 @@ const { dirtyNodeIds } = storeToRefs(store)
 const { getSelectedNodes } = useVueFlow()
 const router = useRouter()
 const { success, error: toastError } = useToast()
+const { t } = useI18n()
+
+// 拖拽连接态（SLOT-03）：驱动 input handle 的 compatible-highlight / forbidden 类。
+const { dragging, isCompatibleTarget } = useConnectionDragState()
+// 图级 IM 能力门控（SLOT-04 / CONTEXT D）：缺 chat_id 源时降级 IM 依赖节点。
+const { isImGated } = useImCapability()
+
+/** 本节点是否因缺 IM 源被门控（视觉降级 + 锁徽标 + 引导 tooltip）。 */
+const imGated = computed(() => isImGated(props.data.nodeType))
+
+/**
+ * 附着父节点 id（SLOT-04，跨 plan 数据契约）：来源**固定**为
+ * `props.data.metadata.parentNodeId`——93-03 transform 固化的同源字段，非空即本节点为附着子。
+ */
+const attachedParentId = computed<string | null>(() => {
+  const meta = props.data.metadata as Record<string, unknown> | undefined
+  const pid = meta?.parentNodeId
+  return typeof pid === 'string' && pid ? pid : null
+})
+
+/** 某 input port 在拖拽态下的兼容/禁止类（idle 时为空，零回归既有外观）。 */
+function inputHandleClass(port: PortItem): string[] {
+  const cls: string[] = []
+  if (port.shape)
+    cls.push('slot-handle-typed', 'slot-handle-input')
+  if (dragging.value)
+    cls.push(isCompatibleTarget(props.data.nodeType, port.id) ? 'compatible-highlight' : 'forbidden')
+  if (imGated.value)
+    cls.push('slot-handle-gated')
+  return cls
+}
+
+/** output port 的 shape 类（typed → 圆角方形实心凸点；空 → 既有圆形）。 */
+function outputHandleClass(port: PortItem): string[] {
+  return port.shape ? ['slot-handle-typed', 'slot-handle-output'] : []
+}
+
+/** input handle style：typed shape → 圆角方形描边凹槽（透明底）；空 → 既有圆形（仅 top）。 */
+function inputHandleStyle(port: PortItem, index: number, total: number): Record<string, string> {
+  const base: Record<string, string> = { top: portTop(index, total) }
+  if (port.shape) {
+    base.borderRadius = '4px'
+    base.border = `2px solid ${handleColor(port)}`
+    base.background = 'transparent'
+  }
+  return base
+}
+
+/** output handle style：typed shape → 圆角方形实心；空 → 既有圆形，二者均着色（shape 优先）。 */
+function outputHandleStyle(port: PortItem): Record<string, string> {
+  const base: Record<string, string> = { backgroundColor: handleColor(port) }
+  if (port.shape)
+    base.borderRadius = '4px'
+  return base
+}
 
 const visual = computed(() => getNodeVisual(props.data.nodeType))
 const style = computed(() => useNodeStyle(visual.value.color).value)
@@ -94,8 +179,8 @@ const ports = computed<PortItem[]>(() => {
     ]
   }
   return [
-    ...nt.inputs.map(p => ({ id: p.name, group: 'input' as const, label: p.label || p.name })),
-    ...nt.outputs.map(p => ({ id: p.name, group: 'output' as const, label: p.label || p.name })),
+    ...nt.inputs.map(p => ({ id: p.name, group: 'input' as const, label: p.label || p.name, shape: p.shape })),
+    ...nt.outputs.map(p => ({ id: p.name, group: 'output' as const, label: p.label || p.name, shape: p.shape })),
   ]
 })
 const inputPorts = computed(() => ports.value.filter(p => p.group === 'input'))
@@ -398,9 +483,27 @@ async function handleTest() {
     </NodeToolbar>
 
     <div
-      class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl p-3 transition-all duration-200 group hover:shadow-md hover:border-opacity-70"
-      :class="[style.borderColor, selected ? `ring-2 ${style.ringColor} shadow-lg` : '', data.disabled ? 'grayscale opacity-50' : '']"
+      class="relative w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl p-3 transition-all duration-200 group hover:shadow-md hover:border-opacity-70"
+      :class="[style.borderColor, selected ? `ring-2 ${style.ringColor} shadow-lg` : '', data.disabled ? 'grayscale opacity-50' : '', imGated ? 'opacity-40' : '']"
     >
+      <!-- 附着子节点徽标（SLOT-04）：data.metadata.parentNodeId 非空 → 左上角『附着』+ tooltip -->
+      <div
+        v-if="attachedParentId"
+        class="absolute -top-2 left-2 z-10 rounded-md bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-600"
+        :title="t('workflow.editor.slot.attachedHint')"
+      >
+        {{ t('workflow.editor.slot.attachedBadge') }}
+      </div>
+
+      <!-- IM 能力门控锁徽标（SLOT-04 / CONTEXT D）：缺 chat_id 源 → 右上角锁 + 引导 tooltip -->
+      <div
+        v-if="imGated"
+        class="absolute -top-2 -right-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-card shadow-sm"
+        :title="t('workflow.editor.slot.imGatedHint')"
+      >
+        <span class="icon-[lucide--lock] h-3 w-3 text-amber-600" />
+      </div>
+
       <!-- Input Handles：永远左入（target=Left）；触发器节点 inputPorts 为空则不渲染 -->
       <Handle
         v-for="(port, i) in inputPorts"
@@ -409,7 +512,8 @@ async function handleTest() {
         :key="port.id"
         type="target"
         :position="Position.Left"
-        :style="{ top: portTop(i, inputPorts.length) }"
+        :class="inputHandleClass(port)"
+        :style="inputHandleStyle(port, i, inputPorts.length)"
       />
 
       <!-- 入方向 hover "+"：在左侧追加并连线一个新节点（触发器无入端口则不显示） -->
@@ -481,7 +585,8 @@ async function handleTest() {
         :key="outputPorts[0].id"
         type="source"
         :position="Position.Right"
-        :style="{ backgroundColor: PORT_DOT_COLOR[portKind(outputPorts[0].id)] }"
+        :class="outputHandleClass(outputPorts[0])"
+        :style="outputHandleStyle(outputPorts[0])"
       />
 
       <!-- 多出口：卡片内底部「分支列表」。每行 = 语义文案 + 行末圆点（即出口 Handle）。
@@ -506,7 +611,8 @@ async function handleTest() {
             :id="port.id"
             type="source"
             :position="Position.Right"
-            :style="{ backgroundColor: PORT_DOT_COLOR[portKind(port.id)] }"
+            :class="outputHandleClass(port)"
+            :style="outputHandleStyle(port)"
           />
         </div>
       </div>
@@ -522,3 +628,30 @@ async function handleTest() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* SLOT-03 拖拽态机：兼容目标 input handle 高亮放大 + emerald 光环；不兼容降透明 + 禁止光标。
+   形状（圆角方形/圆形）与着色由 inline style 决定，此处只叠加拖拽态视觉，零回归 idle 外观。 */
+.compatible-highlight {
+  width: 14px !important;
+  height: 14px !important;
+  box-shadow: 0 0 0 4px hsl(142 71% 45% / 0.25) !important;
+  z-index: 5;
+}
+
+.forbidden {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+}
+
+/* IM 门控 handle：缺 chat_id 源时禁止落点光标（节点整体降透明由卡片 class 控制）。 */
+.slot-handle-gated {
+  cursor: not-allowed !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compatible-highlight {
+    transition: none !important;
+  }
+}
+</style>
