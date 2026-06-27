@@ -88,7 +88,7 @@
 
 **Plans**: 3 plans（3 waves）
 
-- [ ] 92-01-PLAN.md — NodePort.shape 能力契约字段 + KNOWN_PORT_SHAPES 常量 + get_schema 输出 + WorkflowGraphValidator 契约兼容校验（Wave 1，SLOT-01）
+- [x] 92-01-PLAN.md — NodePort.shape 能力契约字段 + KNOWN_PORT_SHAPES 常量 + get_schema 输出 + WorkflowGraphValidator 契约兼容校验（Wave 1，SLOT-01）
 - [ ] 92-02-PLAN.md — ai_plan_research 暴露 clarify/resume 插槽端口 + build_clarification_card action 前缀参数化（Wave 2，SLOT-02）
 - [ ] 92-03-PLAN.md — clarification_card 节点 + clarify_card_ 独立回调（answer_round 落库 + approve 本节点）+ fixture 重生成（Wave 3，SLOT-02）
 
@@ -139,7 +139,7 @@
 |-------|----------------|--------|-----------|
 | 90. 澄清能力层 | 4/4 | Complete    | 2026-06-27 |
 | 91. 澄清出口面 + 回流 resume | 5/5 | Complete    | 2026-06-27 |
-| 92. 插槽系统（后端） | 0/TBD | Not started | - |
+| 92. 插槽系统（后端） | 1/3 | In Progress | - |
 | 93. 插槽编辑器（前端） | 0/TBD | Not started | - |
 | 94. 入口统一 | 0/TBD | Not started | - |
 | 95. 拆分完善 | 0/TBD | Not started | - |
