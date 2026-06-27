@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from structlog.testing import capture_logs
 
 from agents.call_source import get_call_source
 from services.plan_orchestration.decompose_segments import (
@@ -220,6 +221,30 @@ async def test_agenerate_empty_requirement_returns_none_without_network() -> Non
         result = await agenerate_decomposition_segments(requirement_text="   ")
     assert result is None
     aresolve_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_agenerate_redacts_secret_in_failed_log() -> None:
+    """ainvoke 抛含凭证的异常 → None，且 plan_decompose_failed 的 error 文本被脱敏。
+
+    上游 LLM 异常可能回显含凭证的内容；error=str(exc) 必须手动走
+    redact_secrets_in_text（AGENTS.md 硬规则），凭证不得明文入日志。
+    """
+    secret = "sk-ant-secret0123456789"
+    model = MagicMock()
+    model.ainvoke = AsyncMock(side_effect=RuntimeError(f"upstream 401: token {secret} rejected"))
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=model),
+        capture_logs() as logs,
+    ):
+        result = await agenerate_decomposition_segments(requirement_text="需求")
+    assert result is None
+    failed = [e for e in logs if e.get("event") == "plan_decompose_failed"]
+    assert len(failed) == 1
+    error_text = failed[0]["error"]
+    assert secret not in error_text
+    assert "***REDACTED***" in error_text
 
 
 @pytest.mark.asyncio

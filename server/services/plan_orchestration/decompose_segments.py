@@ -22,6 +22,8 @@ from typing import Any
 
 import structlog
 
+from common.logging import redact_secrets_in_text
+
 logger = structlog.get_logger(__name__)
 
 __all__ = ["agenerate_decomposition_segments", "normalize_decomposition_segments"]
@@ -204,7 +206,7 @@ async def agenerate_decomposition_segments(
             "plan_decompose_failed",
             category="sampling",
             component="plan_orchestration",
-            error=str(exc),
+            error=redact_secrets_in_text(str(exc)),
             duration_ms=round((time.monotonic() - started) * 1000, 2),
         )
         return None
