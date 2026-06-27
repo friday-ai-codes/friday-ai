@@ -276,6 +276,98 @@ async def test_clarify_fail_soft_exception_does_not_fail_session() -> None:
     assert await Clarification.objects.filter(session_id=session.id).acount() == 1
 
 
+# ── CLARIFY-07：放开多轮 + round_no 上界 + 带答案重判（91-01） ──────────────────
+
+
+async def _answered_round(session: PlanSession, question: str = "Q") -> None:
+    """建一个结构化单题轮并作答（无 pending），供多轮测试铺垫已答轮。"""
+    svc = ClarificationService()
+    clar = await svc.create_round(
+        session,
+        [{"question": question, "type": "single", "options": ["a", "b"], "recommended": "a"}],
+    )
+    assert clar is not None
+    q = await ClarificationQuestion.objects.aget(clarification_id=clar.id)
+    await svc.answer_round(clar, [{"question_id": str(q.id), "selected": "a", "freeform_text": ""}])
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_multi_round_reclarifies_when_still_insufficient() -> None:
+    """已答 1 轮 + policy 仍判需澄清 + 重判生成器返回非空 → 再发一轮（round_no 递增）。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+        decomposition={"requirement_text": "需求文本"},
+    )
+    await _answered_round(session)
+
+    adapter = ClarifyAdapter()  # 默认 policy：low → 恒判需澄清
+    gen = AsyncMock(
+        return_value=[{"question": "Q2", "type": "single", "options": ["x", "y"], "recommended": "x"}]
+    )
+    with patch(_LLM_GEN, new=gen):
+        result = await adapter.clarify(session)
+
+    assert result["needs_clarification"] is True
+    assert "clarification_id" in result
+    # 第二轮已建（共 2 容器），新轮 round_no=2
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 2
+    new_clar = await Clarification.objects.aget(id=result["clarification_id"])
+    assert new_clar.round_no == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_multi_round_advances_when_rejudge_sufficient() -> None:
+    """已答 1 轮 + 重判生成器返回 [] → 视为信息足够，放行 researching，不再发轮。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+        decomposition={"requirement_text": "需求文本"},
+    )
+    await _answered_round(session)
+
+    adapter = ClarifyAdapter()
+    with patch(_LLM_GEN, new=AsyncMock(return_value=[])):
+        result = await adapter.clarify(session)
+
+    assert result == {"needs_clarification": False}
+    # 未新建第二轮（仍只有首轮 1 条）
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+async def test_round_cap_reached_continues_without_new_round() -> None:
+    """已答轮数达上界（_MAX_CLARIFY_ROUNDS=6）→ 带现有信息继续，不再发轮 + log 触顶。"""
+    session = await PlanSession.objects.acreate(
+        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+        status=PlanSessionStatus.CLARIFYING,
+        routing={"candidates": [{"repo_id": "r1", "confidence": "low"}]},
+        decomposition={"requirement_text": "需求文本"},
+    )
+    for i in range(6):
+        await _answered_round(session, question=f"Q{i}")
+
+    adapter = ClarifyAdapter()
+    gen = AsyncMock(return_value=[{"question": "不该被调", "type": "single", "options": [], "recommended": ""}])
+    with (
+        patch(_LLM_GEN, new=gen),
+        patch("services.plan_orchestration.clarify_adapter.logger") as mock_logger,
+    ):
+        result = await adapter.clarify(session)
+
+    assert result == {"needs_clarification": False}
+    # 达上界不再发轮（仍 6 条）、不调生成器
+    assert await Clarification.objects.filter(session_id=session.id).acount() == 6
+    assert gen.await_count == 0
+    events = [c.args[0] for c in mock_logger.info.call_args_list if c.args]
+    assert "clarification_round_cap_reached" in events
+
+
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_clarify_pending_uses_ahas_pending() -> None:
