@@ -20,6 +20,7 @@ import {
   GitPullRequest,
   Globe,
   Hourglass,
+  MessageCircleQuestion,
   MessageSquare,
   MessagesSquare,
   Play,
@@ -83,6 +84,9 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
   variable_extractor: { icon: Variable, color: 'purple' },
   ai_plan_generation: { icon: FileCode, color: 'purple' },
   ai_coding: { icon: Terminal, color: 'purple' },
+
+  // 澄清 (orange = 琥珀语义，呼应既有 need_clarification 琥珀色)
+  clarification_card: { icon: MessageCircleQuestion, color: 'orange' },
 
   // 控制流 (purple)
   condition: { icon: GitBranch, color: 'purple' },
