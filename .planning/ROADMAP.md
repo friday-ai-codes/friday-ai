@@ -45,7 +45,11 @@
   1. `Clarification` 可存储多个问题（单选/多选 + 选项 + 推荐项）与多答案，所有写入经单一入口（INV-6），并自带向后兼容迁移。
   2. 编排过程能基于需求 + 路由候选 + 召回上下文由 LLM 产出多问题结构化澄清（每题带选项 + 推荐 / 关键词加重），`call_source=plan_clarification` 上报请求/token/TTFT/上游错误码。
   3. 编排任意点（架构师融合 / 调研容器卡住）可经统一 `ask_clarification` 能力产出结构化澄清请求，入口无关、可携带 origin_repo。
-**Plans**: TBD
+**Plans**: 4 plans（3 waves）
+- [ ] 90-01-PLAN.md — 结构化数据模型：Clarification 容器扩展 + ClarificationQuestion 子表 + 迁移 0026 + barrel（Wave 1）
+- [ ] 90-02-PLAN.md — ClarificationService 扩展：create_round/answer_round + recommendation_adopted 定格 + ahas_pending + INV-6 子模型守护（Wave 2）
+- [ ] 90-03-PLAN.md — ClarifyAdapter 接 LLM 多题 + fail-soft 回退 + 三处 pending 判定升级（resume/e2e helper）（Wave 3）
+- [ ] 90-04-PLAN.md — 入口无关统一 ask_clarification helper（写 delivery、origin_repo、与 chat tool 同名防撞）（Wave 3）
 
 ### Phase 91: 澄清出口面 + 回流 resume
 **Goal**: 澄清请求能在「AI 会话」与「工作流/群」两个出口面发出，用户作答能统一回流并续推编排，且支持多轮且不无限挂起。
