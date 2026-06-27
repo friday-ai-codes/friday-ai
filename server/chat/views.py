@@ -57,6 +57,7 @@ from .serializers import (
     ExportToFeishuSerializer,
     ModelsRequestSerializer,
     ModelsResponseSerializer,
+    PlanClarificationAnswerSerializer,
     RoutingTraceManualOverrideSerializer,
     SendMessageSerializer,
     WebPushPublicKeySerializer,
@@ -2866,6 +2867,170 @@ class ClarificationAnswerView(APIView):
                 "answered_at": now.isoformat(),
                 "inferred_state": implies,
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PlanClarificationAnswerView(APIView):
+    """POST /api/chat/conversations/<uuid:conversation_id>/plan-clarification/answer/
+
+    会话端 **plan 编排澄清专属路由**（CLARIFY-04 收答 / CLARIFY-06 会话侧）。与既有
+    ``ClarificationAnswerView``（chat 单题澄清，``clarifications/<id>/answer/``）**物理
+    隔离**——本路由只处理 plan 编排的结构化多题澄清轮，绝不污染既有 chat 单题澄清回归。
+
+    收结构化 ``answers: [{question_id, selected, freeform_text}]``，完成：
+
+    1. owner gate（mirror ``ClarificationAnswerView``）：经 ``conversation.created_by_id``
+       校验归属，跨用户 → 404 隐藏存在性；非 superuser 再 ``has_project_access`` 兜底；
+       owner-miss 必须在落库/续推**之前** 404。
+    2. 取本会话软引用关联的 pending ``PlanSession`` 轮（无 session / 无 pending → 404/409）。
+    3. **归属校验**：``answers`` 的每个 ``question_id`` 必须属于该 session pending 轮
+       （``acount`` 比对），越界 → 400（防伪造 question_id 答他人轮，T-91-04-02）。
+    4. 经共享 helper ``aanswer_round_and_resume``（91-01，与飞书回调同源、不造两套）
+       写 ``delivery.Clarification`` + 续驱 ``PlanSession``——**写入只经 helper→answer_round
+       （INV-6），view 绝不旁路写 delivery 表**。
+    5. 后台续推 task 用**干净 contextvars** 启动（Pitfall 3：复制请求 contextvars 带
+       ``CurrentThreadExecutor``，请求结束后 ``sync_to_async`` 抛 "already quit"、run 永卡）
+       + ``_BACKGROUND_TASKS`` 强引用防 asyncio GC 中止。helper 续驱后，chat 入口私有重
+       调度（barrier 回灌）由既有 ``_schedule_chat_plan_resume``（43-03，调研全终态回调）
+       接管，本 view 不重复驱动。
+    """
+
+    authentication_classes = [OptionalJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    async def post(self, request, conversation_id):  # type: ignore[override,no-untyped-def]
+        from delivery.models import Clarification, ClarificationQuestion, PlanSession
+        from delivery.services import ClarificationService
+
+        started = time.perf_counter()
+        ser = PlanClarificationAnswerSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        answers = ser.validated_data["answers"]
+
+        _not_found = Response(
+            {"detail": "plan 澄清不存在或已过期"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+        try:
+            conversation = await Conversation.objects.select_related("space").aget(
+                id=conversation_id,
+            )
+        except Conversation.DoesNotExist:
+            return _not_found
+
+        # owner gate（mirror ClarificationAnswerView，无 superuser bypass）：跨用户 → 404
+        # 隐藏存在性；用 created_by_id 避免 async 惰性 FK。
+        user = request.user
+        if (
+            getattr(user, "is_authenticated", False)
+            and conversation.created_by_id != user.id
+        ):
+            logger.warning(
+                "plan_clarification_answer_denied_cross_user",
+                user_id=str(getattr(user, "id", "")),
+                conversation_id=str(conversation_id),
+            )
+            return _not_found
+
+        # project 级 has_project_access 兜底（不 bypass 上面 owner gate）。
+        if not getattr(user, "is_superuser", False):
+            from permissions.services import PermissionService
+
+            allowed = await sync_to_async(PermissionService.has_project_access)(
+                user, conversation.space, "member",
+            )
+            if not allowed:
+                logger.warning(
+                    "plan_clarification_answer_denied_cross_project",
+                    user_id=str(getattr(user, "id", "")),
+                    conversation_id=str(conversation_id),
+                )
+                return _not_found
+
+        # 取本会话软引用关联的最近 PlanSession + pending 轮
+        session = (
+            await PlanSession.objects.filter(conversation_id=conversation_id)
+            .order_by("-created_at")
+            .afirst()
+        )
+        if session is None:
+            return _not_found
+
+        clarification_service = ClarificationService()
+        if not await clarification_service.ahas_pending(session.id):
+            return Response(
+                {"detail": "该会话当前无可答的 plan 澄清"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        pending_round = (
+            await Clarification.objects.filter(
+                session_id=session.id, answered_at__isnull=True
+            )
+            .order_by("round_no")
+            .afirst()
+        )
+        if pending_round is None:
+            return Response(
+                {"detail": "该会话当前无可答的 plan 澄清"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # 归属校验（T-91-04-02 防伪造 question_id）：每个提交的 question_id 必属该 pending
+        # 轮，否则 400 拒绝（不丢弃越界静默成功）。answer_round 内再按 id + answered_at IS
+        # NULL 过滤 no-op 作纵深。
+        submitted_ids = [str(a.get("question_id") or "").strip() for a in answers]
+        owned_count = await ClarificationQuestion.objects.filter(
+            clarification__session_id=session.id, id__in=submitted_ids
+        ).acount()
+        if owned_count != len(submitted_ids):
+            logger.warning(
+                "plan_clarification_answer_question_id_mismatch",
+                conversation_id=str(conversation_id),
+                clarification_id=str(pending_round.id),
+                submitted=len(submitted_ids),
+                owned=owned_count,
+            )
+            return Response(
+                {"detail": "存在不属于当前澄清轮的 question_id"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        round_id = pending_round.id
+
+        # 后台续推：经同源 helper aanswer_round_and_resume 写 delivery + 续驱 PlanSession。
+        # 必须用干净 contextvars 启动（Pitfall 3：请求 contextvars 带 CurrentThreadExecutor，
+        # 请求结束后后台 sync_to_async 抛 "already quit"、run 永卡）+ _BACKGROUND_TASKS 强引用。
+        async def _answer_and_resume() -> None:
+            from services.plan_orchestration import aanswer_round_and_resume
+
+            try:
+                await aanswer_round_and_resume(round_id, answers)
+            except Exception:
+                logger.exception(
+                    "plan_clarification_answer_resume_failed",
+                    conversation_id=str(conversation_id),
+                    clarification_id=str(round_id),
+                )
+
+        task = asyncio.create_task(_answer_and_resume(), context=contextvars.Context())
+        _BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+        logger.info(
+            "plan_clarification_answer_recorded",
+            category="caller",
+            component="chat",
+            conversation_id=str(conversation_id),
+            clarification_id=str(round_id),
+            answer_count=len(answers),
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+
+        return Response(
+            {"clarification_id": str(round_id), "answered": True},
             status=status.HTTP_200_OK,
         )
 

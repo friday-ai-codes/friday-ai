@@ -29,6 +29,7 @@ from .views import (
     ExportToFeishuView,
     FeishuExportAvailabilityView,
     ModelsView,
+    PlanClarificationAnswerView,
     PRConfirmView,
     RoutingTraceManualOverrideView,
     WebPushPublicKeyView,
@@ -184,5 +185,11 @@ urlpatterns = [
         "conversations/<uuid:conversation_id>/clarification/skip/",
         ClarificationSkipView.as_view(),
         name="conversation-clarification-skip",
+    ),
+    # plan 编排澄清专属路由（CLARIFY-04/06，与上面 chat 单题澄清物理隔离）
+    path(
+        "conversations/<uuid:conversation_id>/plan-clarification/answer/",
+        PlanClarificationAnswerView.as_view(),
+        name="conversation-plan-clarification-answer",
     ),
 ]
