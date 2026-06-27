@@ -513,6 +513,87 @@ def test_get_schema_exposes_clarify_shape() -> None:
     assert in_by_name["resume"]["shape"] == "clarification_answer"
 
 
+def test_render_merged_plan_markdown_title_and_summary() -> None:
+    """Task 1 Test 1：含 title → 输出含 `**{title}**`；含 summary → 含 summary 文本。"""
+    from services.plan_orchestration import render_merged_plan_markdown
+
+    md = render_merged_plan_markdown(
+        {"title": "跨仓主方案", "summary": "融合 repoA/repoB 的跨仓方案"}
+    )
+    assert "**跨仓主方案**" in md
+    assert "融合 repoA/repoB 的跨仓方案" in md
+
+
+def test_render_merged_plan_markdown_execution_plan() -> None:
+    """Task 1 Test 2：execution_plan 非空 → 含「执行计划（共 N 项）」+ 逐任务 name +
+    repository_name；coding_instruction 超 300 字符截断带省略号。"""
+    from services.plan_orchestration import render_merged_plan_markdown
+
+    long_instruction = "实" * 400
+    md = render_merged_plan_markdown(
+        {
+            "title": "T",
+            "execution_plan": [
+                {
+                    "name": "A 暴露契约",
+                    "repository_name": "repoA",
+                    "description": "实现契约层",
+                    "coding_instruction": long_instruction,
+                },
+                {"name": "B 调用契约", "repository_name": "repoB"},
+            ],
+        }
+    )
+    assert "执行计划（共 2 项）" in md
+    assert "A 暴露契约" in md
+    assert "repoA" in md
+    assert "B 调用契约" in md
+    assert "repoB" in md
+    # 300 截断带省略号（原文 400 字符不应整段出现）
+    assert "…" in md
+    assert long_instruction not in md
+
+
+def test_render_merged_plan_markdown_compat_risks_uses_bullet() -> None:
+    """Task 1 Test 3：compat_risks 非空 → 用 `•` 字面项目符号（不用 Markdown `- ` 列表）。"""
+    from services.plan_orchestration import render_merged_plan_markdown
+
+    md = render_merged_plan_markdown(
+        {"title": "T", "compat_risks": ["接口不兼容", "数据迁移风险"]}
+    )
+    assert "• 接口不兼容" in md
+    assert "• 数据迁移风险" in md
+    # 绝不用 Markdown `- ` 列表语法
+    assert "- 接口不兼容" not in md
+
+
+def test_render_merged_plan_markdown_defensive_non_dict() -> None:
+    """Task 1 Test 4：半可信输入防御——顶层非 dict / 空 dict → 返回空串，绝不抛异常。"""
+    from services.plan_orchestration import render_merged_plan_markdown
+
+    assert render_merged_plan_markdown(None) == ""
+    assert render_merged_plan_markdown("not a dict") == ""
+    assert render_merged_plan_markdown([1, 2, 3]) == ""
+    assert render_merged_plan_markdown({}) == ""
+
+
+def test_render_merged_plan_markdown_excludes_raw_llm_text() -> None:
+    """Task 1 Test 5：渲染结果不含 LLM 原始文本字段（仅消费 MergedPlan 结构化字段）。"""
+    from services.plan_orchestration import render_merged_plan_markdown
+
+    md = render_merged_plan_markdown(
+        {
+            "title": "干净标题",
+            "summary": "干净摘要",
+            "raw_output": "LLM 原始自由文本不应出现 SECRET_RAW",
+            "raw_response": "```json {...}``` 原始响应",
+        }
+    )
+    assert "SECRET_RAW" not in md
+    assert "原始响应" not in md
+    assert "干净标题" in md
+
+
 @pytest.mark.asyncio
 async def test_acollect_round_questions_includes_answered_subquestions() -> None:
     """WR-01 不变量：发卡侧整轮按 order 取子题（含已答），与回调侧逐字一致、不漂移。

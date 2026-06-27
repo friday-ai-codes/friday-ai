@@ -49,6 +49,7 @@ from services.plan_orchestration.protocols import (
     SkeletonRouter,
 )
 from services.plan_orchestration.recall_adapter import DeliveryKnowledgeRecallAdapter
+from services.plan_orchestration.render import render_merged_plan_markdown
 from services.plan_orchestration.repo_router_adapter import RepoRouterV2Adapter
 from services.plan_orchestration.research_adapter import ResearchDispatchAdapter
 from services.plan_orchestration.research_aggregation import (
@@ -116,4 +117,5 @@ __all__ = [
     "render_upstream_artifacts_section",
     "ask_clarification",
     "aanswer_round_and_resume",
+    "render_merged_plan_markdown",
 ]
