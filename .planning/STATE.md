@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-27T04:51:19.415Z"
 last_activity: 2026-06-27
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,49 +19,45 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目工作区)
 
-**Core value:** 让团队"开箱即用、安全地"把需求自动变成代码——并把"项目"做成团队真正用的**在线协作工作区**：人在飞书写、Agent/Cursor 在系统写，双向实时同步不互相冲掉；项目上下文可被任意来源读取/召回/回写；并把"feature list → 拆看板 → 关联仓库 → 技术方案 → 建分支"做成人机协同交付流水线。v0.15.0 项目（交付上下文聚合根）已于 2026-06-26 shipped、审计 passed。
-**Current focus:** v0.16.0 项目工作区立项完成（planning）——8 Phase（82–89）/ 3 Wave 推进，下一步 `$gsd-discuss-phase 82` 或 `$gsd-plan-phase 82`（Wave 1 工作区实体地基）。
+**Core value:** 把当前分散的多套「AI 技术方案生成」统一到唯一图编排底座 `plan_orchestration`（工作流 / 对话 / MCP 三入口归一、废弃旧 LangChain 单 agent 路径），并完善该能力——LLM 跨仓拆分、结构化交互式澄清 + 多轮 resume 续推、方案推送渲染，并引入「插槽式（形状端口磁吸）」工作流编辑范式。v0.16.0 项目工作区已于 2026-06-26 shipped、审计 tech_debt。
+**Current focus:** v0.16.1 立项完成（planning）——6 Phase（90–95），下一步 `$gsd-plan-phase 90`（澄清能力层）。
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 90 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-27 — Milestone v0.16.1 started
+Status: Roadmap created, ready for planning
+Last activity: 2026-06-27 — Milestone v0.16.1 roadmap created (Phases 90–95)
 
-## Milestone Overview (v0.16.0 — Phases 82–89 — ✅ SHIPPED 2026-06-26)
+## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
 
-| Phase | Name | Requirements | Wave | Status |
-|-------|------|--------------|------|--------|
-| 82 | 项目工作区实体 + 权限翻转 + 飞书文件夹 + 5 文件 | WS-01~04, DOC-01~06 | 1 | ✅ Complete |
-| 83 | 飞书文档双向同步引擎 | SYNC-01~06 | 1 | ✅ Complete |
-| 84 | 项目工作台前端 2.0 | WB-01~05 | 1 | ✅ Complete |
-| 85 | 项目上下文可读 + 分支绑定 | CTX-01/02, BIND-01/02 | 2 | ✅ Complete |
-| 86 | IDE 上下文闭环（hooks） | HOOK-01~04 | 2 | ✅ Complete |
-| 87 | 看板拆分节点 + 群 + 流式卡片 | BOARD-01/02 | 3 | ✅ Complete |
-| 88 | 智能业务关联仓库 | REPO-01/02 | 3 | ✅ Complete |
-| 89 | 技术方案深化 + 建分支绑项目 | PLAN-01~04 | 3 | ✅ Complete |
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 90 | 澄清能力层 | CLARIFY-01/02/03 | Not started |
+| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | Not started |
+| 92 | 插槽系统（后端） | SLOT-01/02 | Not started |
+| 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | Not started |
+| 94 | 入口统一 | UNIFY-01~06 | Not started |
+| 95 | 拆分完善 | DECOMP-01 | Not started |
 
-完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（37 条 + Traceability）；设计与调研基线见 [.planning/project-workspace/MILESTONE-PROPOSAL.md](./project-workspace/MILESTONE-PROPOSAL.md)。
+完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
 
-**Execution order:** 82 → 83 → 84（Wave 1 地基，必须先全绿）→ 85 → 86（Wave 2 闭环）→ 87 → 88 → 89（Wave 3 流水线，线性）。Wave 1 是最小可交付；Wave 2/3 依赖 Wave 1，可在本里程碑内顺序推进或按需拆 v0.17/v0.18。
+**Execution order（依赖链）:** 90（澄清能力/数据）→ 91（出口面 + resume）→ 92（插槽后端）→ 93（插槽前端）；94（入口统一）依赖 90/91（澄清单一来源），可在 91 后并行；95（拆分完善）相对独立，可收尾推进。**澄清能力/数据必须先于插槽接线与入口统一。**
 
-**UI 触面（标 UI hint）:** Phase 82（侧边栏 tab/文件落地）、Phase 84（项目工作台集中前端，`/gsd-ui-phase` 应介入）。其余以后端 + 节点 + 同步/卡片为主。
+**UI 触面（标 UI hint）:** Phase 93（@vue-flow 形状磁吸编辑器 + 澄清节点可视编组，`/gsd-ui-phase` 应介入）。其余以后端 + 节点 + 飞书卡片为主。
 
 **关键约束 / 设计底座（记入约束，plan-phase 必读）:**
 
-- **4 个锁定决策**：① 5 文件 **DB canonical + 飞书文档双向镜像 + redis 纯读缓存**（取消"归档才进 DB"）；② 权限**默认全员可读可问（public_org）+ visibility 开关 + 写仅成员**；③ MEMORY **保留条目式 `ProjectMemory`** 渲染为文件，飞书编辑按 block_id 落 revision、**不做整篇 diff**；④ STATE/MILESTONES **活计算派生 + 结构化字段 + 自由文本补充段**。
-- **飞书文档双向同步引擎（Phase 83 核心硬骨头）**：飞书→Friday 走 `drive.file.edit_v1` subscribe（事件不含正文需回拉）+ TTL 兜底；Friday→飞书 **block 级增量、永不整篇覆盖**；**防冲突四机制**=block 级写 + 区段所有权分区（系统区/人工区）+ Agent append + 编辑感知延迟写；**diff 用 block_id 结构化匹配 + last-synced 快照/映射表**（非整篇文本 diff）；真冲突三方合并 + **capture-never-clobber**。
-- **每项目飞书专属文件夹**：`drive/v1/files/create_folder`（父=Space `feishu_doc_folder_token`，5QPS/不可并发/单层 1500 上限）；5 文件建于其下，DB 存 folder/doc token，**不乱放**；文件互链 + 看板描述追加链接可打开。
-- **IDE hooks 三家差异**：Cursor `beforeSubmitPrompt` **不能注入上下文** → 读路径走 **MCP 工具 + always-on rule**（三家通）；Claude Code `UserPromptSubmit` 可注入做增强；Codex 仅 MCP+rules。写路径 `stop` hook → report → draft。
-- **容器挂起/resume**：session JSONL 本地态、跨容器不共享 → 必须 **SessionStore→Redis** 或重灌应用态；cwd 须一致；复用 v0.8 callback resume + v0.12 durable。
-- **看板拆分写 API**：`work_item/create` + `relation_type=1` 父子（plugin_token+user_key 鉴权，父子类型可能需配置中心预配）；plan-phase 先 live 验证写接口（Phase 78 仅验证读）。
-- **最大化复用 v0.15.0 地基**：`initiatives`(`Project`/`ProjectService`/`ProjectMember`/`ProjectMemory`/`Artifact`/`MergeRequest`/`ProjectWorkItemLink`/`ProjectRelation`)、`resolve_feishu_user`、context packer、`Conversation.bound_project`、`lookup_project_by_branch`/`report_project_knowledge`、cursor_rules、KnowledgeEdge、`feishu_doc.py`、`feishu.py::update_work_item_fields`、git-webhook。**严禁重复造。**
-- **观测/异步**：新增 LLM（看板拆分/仓库关联/方案/hook 提炼）赋 `call_source`（LOGGING-SPEC §4.1 登记）；新增召回（项目搜索/MCP 注入/hook）写 `RetrievalTrace`（MCP+对话两链）；飞书正文/hook 上传/webhook payload 脱敏；后台/外部触发带 `initiated_by_user_id`；写入收口 INV-6；ORM async 走 `sync_to_async`；i18n 默认中文。
+- **最大化复用 `plan_orchestration`，严禁重复造**：统一底座已具备 resume / 多 claude code 容器并行调研 / 架构师融合汇总；工作流 `ai_plan_research` + 对话 `start_plan_research` 已在用；下游 `human_approval`/`ai_coding` 已兼容 `MergedPlan`+wave。**自研 PlanSession 状态机，非 langgraph**——本里程碑不重写为 langgraph（已确认能力等价，见 REQUIREMENTS Out of Scope）。
+- **已落地预研（本 phase 收编，未提交）**：LLM 结构化澄清问题生成器 `clarification_questions.py` + `CallSource.PLAN_CLARIFICATION`；交互澄清卡 `build_clarification_card`（飞书 App 渲染 2.0 表单，网页版不支持）；通知/方案卡渲染修复（markdown 组件 + `•`）。Phase 90/91 在此基础上收编 + 补缺口。
+- **现状缺口**：澄清「答→续推」目前仅对话有、工作流侧缺发卡/收答闭环（Phase 91 补）；`Clarification` 仅单 question/answer 需结构化（Phase 90 扩展 + migration）；`decompose` 仍是按行切 stub（Phase 95）；MCP/对话/工作流方案生成口径分叉（Phase 94 收口）。
+- **插槽 = 端口 shape 语义 + 磁吸**（输入输出形状对应才能拼）；反馈环 resume 复用引擎「非 default handle 回边 = 合法反馈环」（同审批驳回）。`WorkflowGraphValidator` 保存即校验 shape 兼容性。
+- **飞书交互卡平台限制**：2.0 表单组件仅飞书 App 渲染，网页版显示升级占位 → 交互澄清卡定位飞书 App / 会话前端（REQUIREMENTS Out of Scope）。
+- **观测/异步约束沿用**：新增 LLM 调用赋 `call_source`（澄清=plan_clarification、拆分 DECOMP 新增，LOGGING-SPEC §4.1 登记）并上报请求/token/TTFT/上游错误码；新增召回写 `RetrievalTrace`（MCP + AI 对话两链）；飞书 payload/上游响应/异常文本脱敏；后台/外部触发带 `initiated_by_user_id`；写入收口 INV-6；async ORM 走 `sync_to_async`；i18n 默认中文；观测代码 best-effort 绝不反噬业务。
 
-**设计底座引用:** `.planning/project-workspace/MILESTONE-PROPOSAL.md`（设计立场 + 同步引擎详设 + 5 文件形态 + 数据模型 + IDE 闭环 + 交付流水线 + 边界/失败模式 + 调研结论 + 阶段总览 + 风险）、`.planning/REQUIREMENTS.md`（37 条 + Traceability）。关键复用/落点：`server/initiatives/`、`server/projects/`(Space)、`server/permissions/`、`server/delivery/`(WorkItem)、`server/knowledge/`(Entity/Edge/ingestion/sources)、`server/services/feishu_doc.py`+`feishu.py`+`feishu_im.py`+`feishu_bitable.py`、`server/feishu/`(views/client/websocket_client/事件链路)、`server/agents/chat_runner.py`+`agents/tools/`、`server/mcp_tools/`、`server/services/git_platform/`、`server/resumable/`(durable)、`task/`(claude-agent-sdk runner)、`web/src/pages/projects/`+`web/src/pages/spaces/`+`web/src/api/`+`web/src/components/layout/AppSidebar.vue`。
+**设计底座引用:** `.planning/REQUIREMENTS.md`（18 条 + Traceability）；本轮会话设计稿（统一底座能力对账 + 澄清能力/出口面模型 + 插槽式编辑器设计）。关键复用/落点：`server/services/plan_orchestration/`（engine/session/entrypoint/resume/clarify adapter/wave_progression）、`server/delivery/`（`Clarification`/`ClarificationService`/`PlanSession`/`TechnicalPlan`/`PlanVersion`）、`server/workflows/nodes/ai/plan_research.py`+`coding.py`、`server/workflows/`（`WorkflowGraphValidator`/node registry/node-definitions.json）、`server/agents/tools/plan_research_tools.py`、`server/mcp_tools/`（`create_feishu_technical_plan`/`create_coding_plan`）、`server/services/feishu_im.py`（`build_clarification_card`/CardKit）、`web/src/pages` 工作流编辑器（@vue-flow）+`web/src/components` 节点/Handle/对话澄清卡。
 
-**历史里程碑约束（仍生效）:** 不做迭代实体（另一迭代=新项目）；UI 稿仅元数据（多模态留 v2）；记忆人工为主+LLM 提议确认；脱敏不可绕过。
+**历史里程碑约束（仍生效）:** 编码中全自动 replan 留 backlog（沿用「抛 question 给人」HITL）；脱敏不可绕过；INV-6 单一写入；不为「形式上是 langgraph」做大重写。
 
 ## Performance Metrics
 
@@ -391,13 +387,13 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-27
-Stopped at: v0.16.0 项目工作区里程碑已 shipped（complete-milestone + cleanup）——8/8 phase（82–89）/ 38 plans / 37 需求全部完成并提交；里程碑审计 tech_debt（37/37 需求满足 / integration_ok，遗留真机·live-platform 验收 + 既有并发测试欠债，见 `.planning/milestones/v0.16.0-MILESTONE-AUDIT.md`）。归档：`ROADMAP.md` 折叠为 `<details>` + 全量快照入 `.planning/milestones/v0.16.0-ROADMAP.md`；audit git mv 入 `milestones/`；phase 目录 git mv 入 `.planning/milestones/v0.16.0-phases/`。
-Earlier: v0.15.0 项目（交付上下文聚合根）已 shipped + 审计 passed + 归档（2026-06-26）。
+Stopped at: v0.16.1 立项 + roadmap 创建完成——18 v1 需求（UNIFY/CLARIFY/SLOT/DECOMP）映射到 6 Phase（90–95），100% 覆盖无 orphan；ROADMAP.md 追加 v0.16.1 active 段（phase 表 + Phase Details + Progress 表）、STATE.md Milestone Overview 更新、REQUIREMENTS.md Traceability 填齐。
+Earlier: v0.16.0 项目工作区已 shipped + 审计 tech_debt + 归档（2026-06-27）；v0.15.0 已 shipped + passed（2026-06-26）。
 Resume file: None
-Next: `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）；遗留真机/live-platform 验收项见 audit §6 与各 phase VERIFICATION「Deferred」段。
+Next: `$gsd-plan-phase 90`（澄清能力层，CLARIFY-01/02/03）。依赖链：90→91→92→93；94 依赖 90/91；95 相对独立。
 
 ## Operator Next Steps
 
-- 里程碑 v0.16.0 已 shipped + 归档；下一步 `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）
-- ⚠️ 遗留真机/live-platform 验收（飞书写 API / CardKit 抓包 / 容器 runner+Docker E2E / 真机 git push / 跨容器 resume）+ 既有并发测试欠债（`tests/workflows/test_execution_concurrency.py` 2 例），详见 `milestones/v0.16.0-MILESTONE-AUDIT.md` §6/§7 与各 phase VERIFICATION「Deferred」段
-- 注：本里程碑工件由会话直接产出（未走 GSD SDK `gsd_run` 命令）；commit 由用户按需触发；未打 git tag（按任务范围，complete-milestone 仅文档归档）
+- v0.16.1 roadmap 已创建；下一步 `$gsd-plan-phase 90` 或 `$gsd-discuss-phase 90`（澄清能力层）
+- Phase 93（插槽编辑器前端）标 UI hint，`/gsd-ui-phase` 应在该 phase 介入
+- ⚠️ v0.16.0 遗留真机/live-platform 验收（飞书写 API / CardKit 抓包 / 容器 runner+Docker E2E / 真机 git push / 跨容器 resume）+ 既有并发测试欠债（`tests/workflows/test_execution_concurrency.py` 2 例），详见 `milestones/v0.16.0-MILESTONE-AUDIT.md` §6/§7
