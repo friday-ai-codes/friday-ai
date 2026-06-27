@@ -32,7 +32,7 @@
 - [x] **Phase 91: 澄清出口面 + 回流 resume** — 会话内联卡 / 群飞书交互卡双出口 + 答复统一回流续推 + 多轮（CLARIFY-04/05/06/07）(5/5 plans) (completed 2026-06-27)
 - [x] **Phase 92: 插槽系统（后端）** — 端口 shape 语义 + Validator 形状校验 + `ai_plan_research` 澄清插槽 + 澄清卡节点（SLOT-01/02）— 3 plans
 - [x] **Phase 93: 插槽编辑器（前端）** — @vue-flow 形状磁吸 + 澄清节点附着子节点可视编组 + 下接发群（SLOT-03/04）(7/7 plans) (completed 2026-06-27)
-- [ ] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
+- [x] **Phase 94: 入口统一** — 工作流/对话/MCP 三入口归一到 plan_orchestration + 废弃 ai_plan_generation + done 推群干净渲染（UNIFY-01~06）
 - [ ] **Phase 95: 拆分完善** — `decompose` 升级为 LLM 跨仓业务线/模块/前后端拆分（DECOMP-01）
 
 #### Phase Details
@@ -133,7 +133,7 @@
 - [x] 94-02-PLAN.md — ai_plan_generation 标 deprecated（保留注册）+ NodePalette 移除 + 迁移指引 + 注册守护（Wave 1，UNIFY-02）
 - [x] 94-05-PLAN.md — 对话澄清单一来源：独立 plan 渲染 marker，物理隔离 chat 单题路径（Wave 1，UNIFY-05）
 - [x] 94-03-PLAN.md — MCP create_feishu_technical_plan delegate plan_orchestration + 共享 delegate 核心 + 响应外形/落库兼容（Wave 2，UNIFY-03）
-- [ ] 94-04-PLAN.md — MCP create_coding_plan delegate（单仓约束 include_repos=[repository_id] + canonical 映射）+ 落库兼容（Wave 3，UNIFY-04）
+- [x] 94-04-PLAN.md — MCP create_coding_plan delegate（单仓约束 include_repos=[repository_id] + canonical 映射）+ 落库兼容（Wave 3，UNIFY-04）
 
 ### Phase 95: 拆分完善
 
@@ -155,7 +155,7 @@
 | 91. 澄清出口面 + 回流 resume | 5/5 | Complete    | 2026-06-27 |
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
 | 93. 插槽编辑器（前端） | 7/7 | Complete    | 2026-06-27 |
-| 94. 入口统一 | 4/5 | In progress | - |
+| 94. 入口统一 | 5/5 | Complete    | 2026-06-27 |
 | 95. 拆分完善 | 0/TBD | Not started | - |
 
 <details>
