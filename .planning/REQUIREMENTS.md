@@ -32,8 +32,8 @@
 
 - [x] **SLOT-01**: 端口「形状（shape）」语义——节点定义声明端口 shape（`technical_plan` / `clarification_request` / `clarification_answer` / `feishu_message` 等）；后端 `WorkflowGraphValidator` 按 shape 兼容性校验连接合法性（保存即校验）
 - [x] **SLOT-02**: `ai_plan_research` 暴露 `clarify`（`clarification_request` 凹槽）/ `resume`（`clarification_answer` 凸点）插槽端口；新增「澄清卡」节点（入 `clarification_request`、出 `clarification_answer` + `feishu_message`）
-- [ ] **SLOT-03**: 前端编辑器（@vue-flow）形状磁吸——`isValidConnection` 按 shape 兼容判定，拖拽时兼容插槽高亮 + 磁吸吸附，不兼容形状不可连
-- [ ] **SLOT-04**: 澄清节点作为方案节点的「附着子节点」可视编组（生命周期绑定的视觉表达），并可下接「发送飞书群聊」等吃 `feishu_message` 形状的节点
+- [x] **SLOT-03**: 前端编辑器（@vue-flow）形状磁吸——`isValidConnection` 按 shape 兼容判定，拖拽时兼容插槽高亮 + 磁吸吸附，不兼容形状不可连
+- [x] **SLOT-04**: 澄清节点作为方案节点的「附着子节点」可视编组（生命周期绑定的视觉表达），并可下接「发送飞书群聊」等吃 `feishu_message` 形状的节点
 
 ### 拆分完善（DECOMP）
 
@@ -76,8 +76,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLARIFY-07 | Phase 91 | Complete |
 | SLOT-01 | Phase 92 | Complete |
 | SLOT-02 | Phase 92 | Complete |
-| SLOT-03 | Phase 93 | Pending |
-| SLOT-04 | Phase 93 | Pending |
+| SLOT-03 | Phase 93 | Complete |
+| SLOT-04 | Phase 93 | Complete |
 | UNIFY-01 | Phase 94 | Pending |
 | UNIFY-02 | Phase 94 | Pending |
 | UNIFY-03 | Phase 94 | Pending |
