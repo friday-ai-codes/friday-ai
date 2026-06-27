@@ -7,6 +7,7 @@
  */
 import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
 import type { SnapCandidate, SnapTarget } from './composables/usePortSnap'
+import type { WorkflowNodeStore } from '~/types/workflow/store'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { ConnectionMode, Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
@@ -15,6 +16,16 @@ import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, inject, markRaw, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '~/components/ui/alert-dialog'
 import { WorkflowFocusKey } from '~/components/workflow/workflowFocus'
 import { useToast } from '~/composables/useToast'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
@@ -127,7 +138,8 @@ function onNodesChange(changes: NodeChange[]) {
       store.updateNodePosition(change.id, change.position)
     }
     else if (change.type === 'remove') {
-      store.removeNode(change.id)
+      // SLOT-04：删带附着子的父节点前弹确认（延后删）；无子节点直接删（零回归）。
+      requestRemoveNode(change.id)
     }
   }
 }
@@ -244,6 +256,19 @@ function onConnect(connection: Connection) {
     showError(t('workflow.editor.slot.incompatibleTitle'), validationError)
     return
   }
+
+  // SLOT-04 附着：方案节点 clarify 槽（shape=clarification_request）连澄清卡 →
+  // store.attachChild 形成生命周期绑定编组，而非建普通边（UI-SPEC 方案 A）。
+  const srcType = store.nodes.find(n => n.id === effective.source)?.nodeType
+  const tgtType = store.nodes.find(n => n.id === target)?.nodeType
+  const srcShape = srcType
+    ? resolvePortShape(srcType, effective.sourceHandle ?? 'default', 'output')
+    : undefined
+  if (srcShape === 'clarification_request' && tgtType === 'clarification_card') {
+    attachClarification(effective.source, target)
+    return
+  }
+
   store.addEdge({
     id: `edge-${effective.source}-${target}-${Date.now()}`,
     source: effective.source,
@@ -253,6 +278,170 @@ function onConnect(connection: Connection) {
     label: undefined,
     condition: null,
   })
+}
+
+// ============================================================================
+// SLOT-04 附着编组：clarify 附着 + 琥珀虚线编组容器渲染 + 级联删除/解除确认
+// ============================================================================
+
+/** 父节点绝对位置 + 尺寸（findNode 几何优先；happy-dom 无布局时回退 store position/0 尺寸）。 */
+function nodeBox(node: WorkflowNodeStore, parentAbs?: { x: number, y: number }) {
+  const fn = findNode(node.id)
+  const dims = fn?.dimensions ?? { width: 0, height: 0 }
+  const cp = fn?.computedPosition
+  let x: number
+  let y: number
+  if (cp) {
+    x = cp.x
+    y = cp.y
+  }
+  else {
+    // 子节点 store position 为相对父，补父绝对换算为绝对；父节点直接用 own。
+    const own = node.position ?? { x: 0, y: 0 }
+    x = parentAbs ? parentAbs.x + own.x : own.x
+    y = parentAbs ? parentAbs.y + own.y : own.y
+  }
+  return { x, y, w: dims.width, h: dims.height }
+}
+
+interface AttachGroup {
+  parentId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  connectorX: number
+  connectorY: number
+}
+
+/**
+ * 附着编组容器（单一实现，WARNING 2 收敛）：对每个「有附着子」的父节点输出一个
+ * `.slot-attach-group` 琥珀虚线容器（覆盖父子包围盒）+ 一个 `.slot-attach-connector`
+ * 短实线琥珀连接器（父 clarify 槽右侧 → 子，≤24px）。派生 computed，不每帧建新对象遍历。
+ */
+const attachGroups = computed<AttachGroup[]>(() => {
+  const childrenByParent = new Map<string, WorkflowNodeStore[]>()
+  for (const n of storeNodes.value) {
+    const pid = n.metadata?.parentNodeId
+    if (typeof pid === 'string' && pid) {
+      const arr = childrenByParent.get(pid) ?? []
+      arr.push(n)
+      childrenByParent.set(pid, arr)
+    }
+  }
+
+  const groups: AttachGroup[] = []
+  for (const [parentId, children] of childrenByParent) {
+    const parent = storeNodes.value.find(n => n.id === parentId)
+    if (!parent)
+      continue
+    const parentBox = nodeBox(parent)
+    const parentAbs = { x: parentBox.x, y: parentBox.y }
+    const boxes = [parentBox, ...children.map(c => nodeBox(c, parentAbs))]
+    const minX = Math.min(...boxes.map(b => b.x))
+    const minY = Math.min(...boxes.map(b => b.y))
+    const maxX = Math.max(...boxes.map(b => b.x + b.w))
+    const maxY = Math.max(...boxes.map(b => b.y + b.h))
+    const pad = 8
+    groups.push({
+      parentId,
+      x: minX - pad,
+      y: minY - pad,
+      width: maxX - minX + pad * 2,
+      height: maxY - minY + pad * 2,
+      // 连接器锚点：父卡右缘中点（短实线向子节点方向延伸）
+      connectorX: parentBox.x + parentBox.w,
+      connectorY: parentBox.y + parentBox.h / 2,
+    })
+  }
+  return groups
+})
+
+/** 附着编组 overlay 随 viewport 平移/缩放（与 .vue-flow__viewport 同步）。 */
+const overlayTransform = computed(() => {
+  const { x, y, zoom } = vfViewport.value
+  return { transform: `translate(${x}px, ${y}px) scale(${zoom})`, transformOrigin: '0 0' }
+})
+
+/**
+ * 把澄清卡附着到方案节点：绝对→相对坐标换算（子相对父 = 子绝对 − 父绝对），
+ * dock 到父卡 clarify 槽右下方（子在父左/上时给默认 dock 偏移）。
+ */
+function attachClarification(parentId: string, childId: string) {
+  const parent = store.nodes.find(n => n.id === parentId)
+  const child = store.nodes.find(n => n.id === childId)
+  if (!parent || !child)
+    return
+  const parentBox = nodeBox(parent)
+  const childBox = nodeBox(child)
+  let relX = childBox.x - parentBox.x
+  let relY = childBox.y - parentBox.y
+  // dock 右下：子未在父右下方时给默认偏移（父宽 + 间距 / 父高 + 间距）
+  if (relX < 20)
+    relX = (parentBox.w || 240) + 48
+  if (relY < 20)
+    relY = (parentBox.h || 0) + 24
+  store.attachChild(childId, parentId, { x: relX, y: relY })
+}
+
+// --- 级联删除确认（删带附着子的父节点前弹 deleteWithChildBody） ---
+const pendingDelete = ref<{ id: string, name: string, count: number } | null>(null)
+
+/** 删节点入口：有附着子 → 弹确认（延后删）；无子 → 直接删（既有行为零回归）。 */
+function requestRemoveNode(id: string) {
+  const count = store.getChildNodes(id).length
+  if (count > 0) {
+    const node = store.nodes.find(n => n.id === id)
+    pendingDelete.value = { id, name: node?.name ?? '', count }
+  }
+  else {
+    store.removeNode(id)
+  }
+}
+
+function confirmDelete() {
+  if (pendingDelete.value)
+    store.removeNode(pendingDelete.value.id)
+  pendingDelete.value = null
+}
+
+function cancelDelete() {
+  pendingDelete.value = null
+}
+
+// --- 解除附着确认（子节点右键 → detachBody 确认 → 恢复独立绝对坐标） ---
+const pendingDetach = ref<{ childId: string } | null>(null)
+
+function onNodeContextMenu({ event, node }: NodeMouseEvent) {
+  event?.preventDefault?.()
+  const pid = (node?.data as { metadata?: { parentNodeId?: unknown } } | undefined)?.metadata?.parentNodeId
+  if (typeof pid === 'string' && pid)
+    pendingDetach.value = { childId: node.id }
+}
+
+function confirmDetach() {
+  const childId = pendingDetach.value?.childId
+  if (!childId) {
+    pendingDetach.value = null
+    return
+  }
+  const child = store.nodes.find(n => n.id === childId)
+  const parentId = child?.metadata?.parentNodeId as string | undefined
+  const parent = parentId ? store.nodes.find(n => n.id === parentId) : undefined
+  // 相对→绝对：子绝对 = 父绝对 + 子相对（findNode 几何优先）
+  const childAbs = findNode(childId)?.computedPosition
+  const abs = childAbs
+    ? { x: childAbs.x, y: childAbs.y }
+    : {
+        x: (parent?.position?.x ?? 0) + (child?.position?.x ?? 0),
+        y: (parent?.position?.y ?? 0) + (child?.position?.y ?? 0),
+      }
+  store.detachChild(childId, abs)
+  pendingDetach.value = null
+}
+
+function cancelDetach() {
+  pendingDetach.value = null
 }
 
 function handleFitView() {
@@ -301,7 +490,8 @@ function handleMiniMapClickCapture(event: MouseEvent) {
 
 function handleBatchDelete() {
   const selectedIds = getSelectedNodes.value.map(n => n.id)
-  selectedIds.forEach(id => store.removeNode(id))
+  // 经 requestRemoveNode：无附着子直接删；带子的弹级联删除确认。
+  selectedIds.forEach(id => requestRemoveNode(id))
 }
 
 function handleBatchCopy() {
@@ -332,6 +522,15 @@ defineExpose({
   updateSnapFromPointer,
   collectSnapCandidates,
   snapTarget,
+  attachGroups,
+  requestRemoveNode,
+  confirmDelete,
+  cancelDelete,
+  pendingDelete,
+  onNodeContextMenu,
+  confirmDetach,
+  cancelDetach,
+  pendingDetach,
 })
 </script>
 
@@ -356,6 +555,7 @@ defineExpose({
       @node-drag-stop="onNodeDragStop"
       @node-click="onNodeClick"
       @pane-click="onPaneClick"
+      @node-context-menu="onNodeContextMenu"
       @connect-start="onConnectStart"
       @connect-end="onConnectEnd"
       @connect="onConnect"
@@ -371,6 +571,35 @@ defineExpose({
           :snap-y="snapTarget?.y"
         />
       </template>
+
+      <!-- SLOT-04 附着编组容器（单一实现）：随 viewport 平移/缩放，沉于节点之下 -->
+      <div
+        class="slot-attach-overlay pointer-events-none absolute inset-0 z-0 overflow-visible"
+        :style="overlayTransform"
+      >
+        <div
+          v-for="group in attachGroups"
+          :key="group.parentId"
+          class="slot-attach-group absolute bg-amber-500/[0.04] border border-dashed border-amber-400/40 rounded-2xl"
+          :style="{
+            left: `${group.x}px`,
+            top: `${group.y}px`,
+            width: `${group.width}px`,
+            height: `${group.height}px`,
+          }"
+        >
+          <!-- 短实线琥珀连接器（父 clarify 槽 → 子，长度 24px） -->
+          <div
+            class="slot-attach-connector absolute bg-amber-400/70 rounded-full"
+            :style="{
+              left: `${group.connectorX - group.x}px`,
+              top: `${group.connectorY - group.y}px`,
+              width: '24px',
+              height: '2px',
+            }"
+          />
+        </div>
+      </div>
 
       <Background
         variant="dots"
@@ -436,5 +665,45 @@ defineExpose({
         </div>
       </Panel>
     </VueFlow>
+
+    <!-- SLOT-04 级联删除确认：删带附着子的方案节点前确认（一并移除附着澄清节点） -->
+    <AlertDialog :open="!!pendingDelete" @update:open="(open) => { if (!open) cancelDelete() }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除节点</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ t('workflow.editor.slot.deleteWithChildBody', { name: pendingDelete?.name ?? '', count: pendingDelete?.count ?? 0 }) }}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel @click="cancelDelete">
+            取消
+          </AlertDialogCancel>
+          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="confirmDelete">
+            删除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- SLOT-04 解除附着确认：澄清子节点恢复独立坐标，不再随方案节点联动 -->
+    <AlertDialog :open="!!pendingDetach" @update:open="(open) => { if (!open) cancelDetach() }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t('workflow.editor.slot.detachTitle') }}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ t('workflow.editor.slot.detachBody') }}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel @click="cancelDetach">
+            取消
+          </AlertDialogCancel>
+          <AlertDialogAction @click="confirmDetach">
+            {{ t('workflow.editor.slot.detachTitle') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
