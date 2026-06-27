@@ -565,6 +565,10 @@ class BaseNode(ABC):
     supports_retry: ClassVar[bool] = True  # 是否支持重试
     is_blocking: ClassVar[bool] = False  # 是否阻塞（如审批节点）
 
+    # 废弃标记：默认非废弃。子类设 True 表示节点已废弃（仅为向后兼容保留注册，
+    # 不再从前端节点库暴露给新建工作流）。既有实例仍可经 registry 查找并 execute。
+    deprecated: ClassVar[bool] = False
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         # 跳过抽象中间类（无 node_type 或有 abstractmethods）

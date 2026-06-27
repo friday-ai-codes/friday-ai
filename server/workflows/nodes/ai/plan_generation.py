@@ -110,6 +110,9 @@ _PLAN_GENERATION_BASE_PROMPT: Final[
 class AIPlanGenerationNode(AIAgentBaseNode):
     """AI 技术方案生成节点。
 
+    DEPRECATED：已由统一编排入口 `ai_plan_research` 取代，仅为向后兼容保留注册；
+    新建工作流请改用 ai_plan_research，迁移见 docs/workflows/ai-plan-generation-deprecation.md。
+
     通过 Orchestrator Agent 编排多仓库分析，自动生成结构化技术方案。
     专注产出 `TechnicalPlan`（含 markdown），不负责飞书推送/审批——
     飞书文档生成、卡片推送与人工审批均交由下游独立节点
@@ -123,6 +126,8 @@ class AIPlanGenerationNode(AIAgentBaseNode):
     display_name: ClassVar[str] = "AI 方案生成"
     description: ClassVar[str] = "AI 自动跨仓库分析需求，生成结构化技术方案"
     icon: ClassVar[str] = "file-text"
+    # DEPRECATED：保留 @register_node 注册供既有实例运行，新建路径改用 ai_plan_research。
+    deprecated: ClassVar[bool] = True
 
     # 子步骤声明：分析需求 → 生成计划 → 审查计划
     sub_steps: ClassVar[list[tuple[str, str]]] = [
@@ -137,6 +142,15 @@ class AIPlanGenerationNode(AIAgentBaseNode):
         # execute() 预渲染结果注入口；get_system_prompt 从此读取
         self._precomputed_base_prompt: str | None = None
         self._similar_history_markdown: str = ""
+        # 观测：deprecated 节点被实例化告警（category=sampling 避免高频 INFO 刷屏；
+        # best-effort 不反噬主流程，仅记标量字段不含 config/需求正文）。
+        logger.warning(
+            "deprecated_node_instantiated",
+            node_type="ai_plan_generation",
+            category="sampling",
+            component="workflow_node",
+            migration="ai_plan_research",
+        )
 
     config_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -687,9 +701,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
                 if isinstance(questions, str):
                     questions = [questions]
                 return {
-                    "questions": [
-                        str(q).strip() for q in questions if str(q).strip()
-                    ],
+                    "questions": [str(q).strip() for q in questions if str(q).strip()],
                     "reason": str(data.get("reason", "")),
                 }
         return None

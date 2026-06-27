@@ -66,6 +66,24 @@ class TestKnownPortShapes:
         } <= KNOWN_PORT_SHAPES
 
 
+class TestDeprecatedNodeRegistration:
+    """UNIFY-02：ai_plan_generation 标 deprecated 但保留注册（既有实例向后兼容）。"""
+
+    def test_ai_plan_generation_still_registered_and_deprecated(self):
+        """ai_plan_generation 仍经 @register_node 注册，且 deprecated ClassVar 为 True。"""
+        node_class = NodeRegistry.get("ai_plan_generation")
+        assert node_class is not None, (
+            "ai_plan_generation 必须仍注册（既有实例运行依赖 registry 查找）"
+        )
+        assert node_class.deprecated is True
+
+    def test_ai_plan_research_not_deprecated(self):
+        """对照：统一编排入口 ai_plan_research 未被误标 deprecated。"""
+        node_class = NodeRegistry.get("ai_plan_research")
+        assert node_class is not None
+        assert node_class.deprecated is False
+
+
 def _find_port(ports: list[dict], name: str) -> dict | None:
     """从端口项列表按 name 取出端口 dict（不存在返回 None）。"""
     for item in ports:
