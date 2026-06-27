@@ -2934,8 +2934,14 @@ class PlanClarificationAnswerView(APIView):
             )
             return _not_found
 
-        # project 级 has_project_access 兜底（不 bypass 上面 owner gate）。
-        if not getattr(user, "is_superuser", False):
+        # project 级 has_project_access 仅作 null-owner/共享行兜底；owner 已由上方 owner
+        # gate 授权不再叠加项目门，且 space 为空（个人/通用会话）时跳过以防 has_project_access
+        # 对 None 空间访问 .pk 抛 500。范式对齐 views.py:882-889 / 1099-1106 / 1208-1215。
+        if (
+            not getattr(user, "is_superuser", False)
+            and conversation.space_id is not None
+            and conversation.created_by_id != user.id
+        ):
             from permissions.services import PermissionService
 
             allowed = await sync_to_async(PermissionService.has_project_access)(

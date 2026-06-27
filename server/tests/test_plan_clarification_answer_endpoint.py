@@ -289,6 +289,82 @@ class TestPlanClarificationAnswerEndpoint:
         assert str(call["clarification_or_id"]) == str(clar.id)
         assert len(call["answers"]) == 2
 
+    def test_owner_with_empty_space_allowed(
+        self,
+        api_client: APIClient,
+        user,
+        capture_helper: dict[str, Any],
+        run_bg_inline,
+    ) -> None:
+        """CR-01 回归：个人/通用会话（space 为空）owner 作答应放行（不 500）。
+
+        修复前二级 has_project_access(user, None) 会访问 None.pk 抛 AttributeError → 500。
+        owner-skip + space_id 守卫使该路径短路放行。
+        """
+        from delivery.models import ClarificationQuestion
+
+        conversation = Conversation.objects.create(space=None, title="个人会话", created_by=user)
+        session = _make_plan_session(conversation)
+        clar = _make_pending_round(session)
+        qids = list(
+            ClarificationQuestion.objects.filter(clarification_id=clar.id)
+            .order_by("order")
+            .values_list("id", flat=True)
+        )
+        # user 是 owner，但未建任何 project membership（且 space 为空）
+        api_client.force_authenticate(user=user)
+        resp = api_client.post(
+            _url(conversation.id),
+            data={
+                "answers": [
+                    {"question_id": str(qids[0]), "selected": "后端"},
+                    {"question_id": str(qids[1]), "selected": ["auth"]},
+                ]
+            },
+            format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["answered"] is True
+        assert len(capture_helper["calls"]) == 1
+
+    def test_owner_non_member_allowed(
+        self,
+        api_client: APIClient,
+        user,
+        conversation: Conversation,
+        capture_helper: dict[str, Any],
+        run_bg_inline,
+    ) -> None:
+        """CR-01 回归：owner 在该 space 非成员（无 membership）作答应放行（不 404）。
+
+        修复前二级 has_project_access(..., "member") 对非成员 owner 返回 False → 误 404。
+        owner-skip 守卫（created_by_id == user.id）使已授权 owner 直接放行。
+        """
+        from delivery.models import ClarificationQuestion
+
+        # conversation.space=project 但 user 无 membership（不引入 project_memberships fixture）
+        session = _make_plan_session(conversation)
+        clar = _make_pending_round(session)
+        qids = list(
+            ClarificationQuestion.objects.filter(clarification_id=clar.id)
+            .order_by("order")
+            .values_list("id", flat=True)
+        )
+        api_client.force_authenticate(user=user)
+        resp = api_client.post(
+            _url(conversation.id),
+            data={
+                "answers": [
+                    {"question_id": str(qids[0]), "selected": "后端"},
+                    {"question_id": str(qids[1]), "selected": ["auth"]},
+                ]
+            },
+            format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["answered"] is True
+        assert len(capture_helper["calls"]) == 1
+
     def test_cross_user_returns_404(
         self,
         api_client: APIClient,
