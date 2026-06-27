@@ -105,6 +105,18 @@ class AIPlanResearchNode(AIAgentBaseNode):
             required=False,
             description="上游节点输出（需求/锚），可在模板中通过 {{nodes.ID.field}} 引用",
         ),
+        # SLOT-02：澄清回流「插槽端口」声明（凸点，shape=clarification_answer）——供编辑器
+        # 形状磁吸（Phase 93）+ WorkflowGraphValidator 契约兼容识别（92-01）。**仅端口声明**：
+        # execute 运行时不读取本端口（resume 续推钥匙仍是节点自身 output_data.session_id，
+        # 见类 docstring 点4 契约 + Pitfall 5）。default 端口逐字保留、shape 恒空（通配）。
+        NodePort(
+            name="resume",
+            label="澄清答复",
+            port_type=PortType.OBJECT,
+            required=False,
+            shape="clarification_answer",
+            description="回流澄清答案续推（凸点）",
+        ),
     ]
 
     outputs: ClassVar[list[NodePort]] = [
@@ -127,6 +139,19 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     "plan": {"type": "object"},
                 },
             },
+        ),
+        # SLOT-02：澄清请求「插槽端口」声明（凹槽，shape=clarification_request）——需澄清时
+        # 在编辑器侧吐出澄清请求供形状磁吸（Phase 93）+ validator 契约识别（92-01）。**仅端口
+        # 声明**：execute / _map_terminal / _maybe_suspend 不经本 handle 路由（NodeResult.next_handle
+        # 仍只走 default/error；91 发卡逻辑在 _maybe_suspend/_send_clarify_card，不依赖 clarify
+        # handle，见 Pitfall 5 / A4）。default/error 生产端口逐字保留、shape 恒空（保「空契约=通配」
+        # 零回归，不拦截既有 plan→coding 边）。
+        NodePort(
+            name="clarify",
+            label="澄清请求",
+            port_type=PortType.OBJECT,
+            shape="clarification_request",
+            description="需澄清时吐出澄清请求（凹槽）",
         ),
         NodePort(
             name="error",
