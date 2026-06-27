@@ -31,27 +31,55 @@ interface WorkflowEdgeData {
  * 将 Pinia Store 节点转为 Vue Flow 节点。
  * nodeType 映射到 Vue Flow 的 type 字段，用于查找自定义节点组件。
  * 其余业务字段全部放入 data 中，保证往返转换无丢失。
+ *
+ * SLOT-04 父子映射：store 节点若带 `metadata.parentNodeId`（附着子节点），
+ * 输出附 `parentNode: <parentId>` + `extent: 'parent'`（Vue Flow 原生包含/级联拖拽/相对定位）。
+ *
+ * 数据契约命门（WARNING 1，跨 plan 固化）：top-level `parentNode` 与 `data.metadata`
+ * （含 `parentNodeId`）**同源并存**——`data.metadata` 逐字透传既有 storeNode.metadata，
+ * 不为提 parentNode 到顶层而从 metadata 删改 parentNodeId。下游 93-05 经
+ * `props.data.metadata.parentNodeId` 判附着徽标，故 `node.data.metadata.parentNodeId`
+ * 是该判定的唯一权威来源，必须随节点透传。
+ *
+ * 排序命门：返回前把带 parent 的子节点排到其父之后（先无 parent 再有 parent 的两趟稳定排序），
+ * 否则 Vue Flow 报 "parent node not found"。
  */
 export function toVueFlowNodes(storeNodes: WorkflowNodeStore[]): Node<WorkflowNodeData>[] {
-  return storeNodes.map(storeNode => ({
-    id: storeNode.id,
-    type: storeNode.nodeType,
-    position: { ...storeNode.position },
-    data: {
-      nodeType: storeNode.nodeType,
-      shortId: storeNode.shortId,
-      name: storeNode.name,
-      description: storeNode.description,
-      config: storeNode.config,
-      onError: storeNode.onError,
-      retryTimes: storeNode.retryTimes,
-      retryDelay: storeNode.retryDelay,
-      nodeTimeoutSeconds: storeNode.nodeTimeoutSeconds,
-      fallbackValues: storeNode.fallbackValues,
-      runCondition: storeNode.runCondition,
-      metadata: storeNode.metadata,
-    },
-  }))
+  const vfNodes = storeNodes.map((storeNode) => {
+    const parentNodeId = storeNode.metadata?.parentNodeId
+    const node: Node<WorkflowNodeData> = {
+      id: storeNode.id,
+      type: storeNode.nodeType,
+      position: { ...storeNode.position },
+      data: {
+        nodeType: storeNode.nodeType,
+        shortId: storeNode.shortId,
+        name: storeNode.name,
+        description: storeNode.description,
+        config: storeNode.config,
+        onError: storeNode.onError,
+        retryTimes: storeNode.retryTimes,
+        retryDelay: storeNode.retryDelay,
+        nodeTimeoutSeconds: storeNode.nodeTimeoutSeconds,
+        fallbackValues: storeNode.fallbackValues,
+        runCondition: storeNode.runCondition,
+        // 同源透传：含 parentNodeId 在内的全部 metadata 逐字保留（93-05 徽标读取来源）
+        metadata: storeNode.metadata,
+      },
+    }
+    // 仅附着子节点提 parentNode + extent 到顶层（Vue Flow 包含语义）；不改 data.metadata
+    if (typeof parentNodeId === 'string' && parentNodeId) {
+      node.parentNode = parentNodeId
+      node.extent = 'parent'
+    }
+    return node
+  })
+
+  // 父先子排序（Vue Flow 硬约束）：稳定两趟——先无 parentNode 的，再有 parentNode 的
+  return [
+    ...vfNodes.filter(n => !n.parentNode),
+    ...vfNodes.filter(n => n.parentNode),
+  ]
 }
 
 /**
