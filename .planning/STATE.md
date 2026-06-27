@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
 status: verifying
-stopped_at: "执行 94-02（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口 ai_plan_research + 迁移指引）——BaseNode.deprecated ClassVar 默认 False + AIPlanGenerationNode deprecated=True/docstring DEPRECATED 注/__init__ 一次性 warning（category=sampling），保留 @register_node 与全部节点代码/端口/map_output（既有实例零回归，不删代码/不注销/不删 fixture）；新建 docs/workflows/ai-plan-generation-deprecation.md 迁移指引；NodePalette AI 分组 ai_plan_generation→ai_plan_research 裸项；test_node_schema deprecated 注册守护 + node-sync 双向不变量。DEVIATION: None。2 commits（ddd1998cc/d6187da8a）；test_node_schema -k Deprecated(2)+node-sync vitest(7) 全绿、ruff/eslint 干净、vue-tsc --noEmit 通过、无新迁移。"
-last_updated: "2026-06-27T15:18:00.000Z"
+stopped_at: "执行 94-05（UNIFY-05：对话方案澄清挂起单一来源收口）——start_plan_research._maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用，改用独立常量 PLAN_CLARIFICATION_RENDER_MARKER=\"plan_clarification\"（仅前端渲染信号，权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由），携 session_id/clarification_id；新 marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中（物理隔离，绝不写 ConversationIntentTrace，T-94-05-MARKER）；RESEARCHING 分支零回归、常量导出 __all__。后端守护测试（marker 独立性 + 不被 _extract_pending_clarification 捕获含 marker 单独隔离纵深 + chat 单题对照零回归）；前端守护测试（plan 卡 runtime pending_plan_clarification 驱动·marker 字面非依赖 + renamed marker 不被 chat 单题误认·ask_clarification 仍认零回归，WARNING 3）。DEVIATION: None（观测豁免：仅改 marker 字面+字段透传，无新入口/LLM 调用）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed（start_plan_research 9 + ask_clarification 15 + plan_clarification_answer_endpoint 13）+ frontend chat.clarification 20 passed、ruff/mypy(plan_research_tools.py)/vue-tsc/受改文件 eslint 干净、无新迁移。"
+last_updated: "2026-06-27T15:33:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 24
-  completed_plans: 21
-  percent: 88
+  completed_plans: 22
+  percent: 92
 ---
 
 # Project State
@@ -26,8 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 94
-Plan: 94-02 executed（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口到 ai_plan_research + 迁移指引）
-Status: 94-02 executed（BaseNode.deprecated ClassVar 默认 False + AIPlanGenerationNode deprecated=True/docstring DEPRECATED 注/__init__ 一次性 warning category=sampling，保留 @register_node 与全部节点代码/端口/map_output 既有实例零回归；NodePalette AI 分组 ai_plan_generation→ai_plan_research 裸项；docs/workflows/ai-plan-generation-deprecation.md 迁移指引；test_node_schema deprecated 注册守护 + node-sync 双向不变量）。2 commits（ddd1998cc/d6187da8a）；test_node_schema -k Deprecated(2) 绿、node-sync vitest 7 绿、ruff/eslint 干净、vue-tsc --noEmit 通过、无新迁移。base.py:515 既有 mypy var-annotated 超范围未修（记 deferred）。
+Plan: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）
+Status: 94-05 executed（plan_research_tools 新增 PLAN_CLARIFICATION_RENDER_MARKER="plan_clarification" 独立常量，_maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用、marker 改独立值 + 携 session_id/clarification_id；marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中物理隔离 T-94-05-MARKER；RESEARCHING 零回归 + 导出 __all__。挂起/续推权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由 aanswer_round_and_resume；marker 仅前端渲染信号。后端 3 守护 + 前端 4 守护（plan 卡 runtime 驱动·marker 字面非依赖；chat 单题仍仅认 ask_clarification 零回归，WARNING 3）。DEVIATION: None）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed + frontend 20 passed、ruff/mypy/vue-tsc/eslint 干净、无新迁移。
+Earlier: 94-02 executed（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口到 ai_plan_research + 迁移指引）。2 commits（ddd1998cc/d6187da8a）。base.py:515 既有 mypy var-annotated 超范围未修（记 deferred）。
 Earlier: 94-01 executed（入口统一工作流侧：done 渲染 plan_markdown + 模板切 ai_plan_research，UNIFY-01/06）。3 commits（d73127290/07f18f989/12b6a7c74）。
 
 Earlier: 93-06 executed（SLOT-03/04 画布层集成，Phase 93 收官）——WorkflowCanvas 接 `@connect-start`/`@connect-end` 解析源 output shape 驱 `useConnectionDragState.startConnect/endConnect`；`@pointermove` 收集可见节点 input handle 几何（getNodes+findNode+节点类型 inputs，左缘均匀分布）经 `isCompatibleTarget` 标注兼容 → `findSnapTarget` 算吸附端点 `snapTarget`（仅吸兼容候选）；`onConnect` 顶部用 snapTarget 覆盖 target/targetHandle → 仍经 `getValidationError` 双校验（吸附改落点不绕合法性）→ 不兼容弹 `incompatibleTitle`/`incompatibleBody` Toast 拒绝、兼容 addEdge 用吸附目标端口。`CustomConnectionLine` 新增可选 `snapX/snapY`：命中用吸附端点绘制 bezier 终点 + emerald 实心圆 + `snap-pulse` 脉冲环（`@media (prefers-reduced-motion: reduce)` 降级）。SLOT-04 附着：`onConnect` 检测方案节点 clarify 槽（shape=clarification_request）连 clarification_card → `store.attachChild`（绝对→相对换算 + dock 右下），不建普通边；**附着编组容器单一实现（WARNING 2 收敛）**——派生 `attachGroups` computed（getChildNodes 聚合父子 + findNode 几何 best-effort 包围盒，happy-dom 无布局尺寸 0 但元素必存在）对每个有附着子的父节点渲染一个 `.slot-attach-group`（琥珀虚线，随 viewport overlayTransform 平移缩放）+ 一个 `.slot-attach-connector`（短实线琥珀 24px）。删带附着子的父节点经 `@nodes-change` remove/工具栏 → `requestRemoveNode` 有子则置 `pendingDelete` 弹 `deleteWithChildBody` AlertDialog（延后删，受控 :nodes 故节点保留），确认 `store.removeNode` 级联；无子直接删零回归。子节点右键 `@node-context-menu` → 附着子 `pendingDetach` 弹 `detachTitle/detachBody` 确认 → `store.detachChild`（相对→绝对恢复独立坐标）。解除触发收敛 WorkflowCanvas 单文件（不改 BaseWorkflowNode）；内部处理器 defineExpose 供单测直驱（@vue-flow 系包 stub + useVueFlow mock）。i18n 读 93-01 已落 `workflow.editor.slot.*` 键（不写 locale）。**human-verify checkpoint（画布交互观感，autonomous:false）延后到 Phase 93 UAT 由人工浏览器核对，不阻塞收尾。** DEVIATION: None。2 commits（7020338c9/394cff119）；vitest WorkflowCanvas.slot 12（connect-start/end 拖拽态 / 不兼容拒绝含 incompatibleBody / 合法零回归 / 吸附命中用目标端口 / 不兼容不吸附 / clarify attachChild 相对坐标 / 编组容器有附着存在·基线不存在 / 级联删除确认·无子直接删 / 解除确认 detachChild·非附着不弹）+ editor 全组 91 全绿、vue-tsc --noEmit 通过、受改文件 eslint 干净。下游 → Phase 94（入口统一）。BaseWorkflowNode 一次性落节点卡全部插槽视觉：ports computed 并入 shape；SHAPE_DOT_COLOR 色板 + handleColor（shape 非空优先、未知 shape 与空均回退 PORT_DOT_COLOR[portKind(id)]）；typed shape input → 圆角方形描边凹槽（border+透明底）、output → 圆角方形实心凸点，default/error 空契约保持既有圆形 + 语义色（零回归命门）；拖拽态消费 useConnectionDragState——dragging 时 input handle 按 isCompatibleTarget 加 compatible-highlight（14px+emerald 4px 光环）/forbidden（opacity 0.3+not-allowed），idle 不加类零回归；IM 门控消费 useImCapability——isImGated(props.data.nodeType) → 卡片 opacity-40 + 右上锁徽标 icon-[lucide--lock] + imGatedHint tooltip + IM handle cursor-not-allowed，不阻断既有逻辑；附着徽标读取来源固定 props.data.metadata.parentNodeId（93-03 同源契约）→ 左上琥珀『附着』Badge + attachedHint。shape 方形/着色经 inline style（borderRadius:4px+border/bg 覆盖 vue-flow 圆角），拖拽态/门控经 class + scoped <style>。i18n 经组件 useI18n().t 读 93-01 已落键（不写 locale）。DEVIATION: None（既有 BaseWorkflowNode.test.ts 补 i18n plugin 属测试基础设施适配非行为回归；新 composable 导入路径 ../composables/ 因 useNodeStyle 在 nodes/composables/、新 composable 在 editor/composables/）。2 commits（2be8f2b13/849959d31）；vitest BaseWorkflowNode 13（shape 方形/圆形+着色 hex / 拖拽 compatible·forbidden / IM 门控锁徽标+真实 zh-CN.json 文案 / 附着徽标读 data.metadata.parentNodeId + 既有 Handle 渲染零回归）+ useImCapability 6 + workflow 全组 106 全绿、vue-tsc --noEmit 通过、受改文件 eslint 干净。下游仅余 93-06（画布磁吸交互 + 不兼容 Toast + 附着编组渲染 + attach/detach 拖拽 + 人工验收）。
@@ -41,7 +42,7 @@ Last activity: 2026-06-27
 | 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | ✅ Complete (5/5) |
 | 92 | 插槽系统（后端） | SLOT-01/02 | ✅ Complete (3/3) |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | ✅ Complete (7/7) |
-| 94 | 入口统一 | UNIFY-01~06 | Not started |
+| 94 | 入口统一 | UNIFY-01~06 | 🚧 In progress (3/5) |
 | 95 | 拆分完善 | DECOMP-01 | Not started |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
