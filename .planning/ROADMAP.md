@@ -132,7 +132,7 @@
 - [x] 94-01-PLAN.md — ai_plan_research done 渲染 plan_markdown + 共享渲染 helper + technical_plan_generation 模板切到 ai_plan_research（Wave 1，UNIFY-01/06）
 - [x] 94-02-PLAN.md — ai_plan_generation 标 deprecated（保留注册）+ NodePalette 移除 + 迁移指引 + 注册守护（Wave 1，UNIFY-02）
 - [x] 94-05-PLAN.md — 对话澄清单一来源：独立 plan 渲染 marker，物理隔离 chat 单题路径（Wave 1，UNIFY-05）
-- [ ] 94-03-PLAN.md — MCP create_feishu_technical_plan delegate plan_orchestration + 共享 delegate 核心 + 响应外形/落库兼容（Wave 2，UNIFY-03）
+- [x] 94-03-PLAN.md — MCP create_feishu_technical_plan delegate plan_orchestration + 共享 delegate 核心 + 响应外形/落库兼容（Wave 2，UNIFY-03）
 - [ ] 94-04-PLAN.md — MCP create_coding_plan delegate（单仓约束 include_repos=[repository_id] + canonical 映射）+ 落库兼容（Wave 3，UNIFY-04）
 
 ### Phase 95: 拆分完善
@@ -155,7 +155,7 @@
 | 91. 澄清出口面 + 回流 resume | 5/5 | Complete    | 2026-06-27 |
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
 | 93. 插槽编辑器（前端） | 7/7 | Complete    | 2026-06-27 |
-| 94. 入口统一 | 3/5 | In progress | - |
+| 94. 入口统一 | 4/5 | In progress | - |
 | 95. 拆分完善 | 0/TBD | Not started | - |
 
 <details>
