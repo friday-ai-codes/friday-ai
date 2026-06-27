@@ -17,6 +17,9 @@ export interface NodePort {
   required: boolean
   description: string
   schema?: PortSchema | null
+  // 端口能力契约形状（92-01 后端 get_schema 写入、93-00 经 /node-types/ 真实回传）。
+  // 空串/undefined = 通配（default/error 等通用端口恒空），是连接契约校验的零回归命门。
+  shape?: string
 }
 
 export interface NodeType {
