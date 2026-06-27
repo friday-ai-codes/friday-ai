@@ -1872,6 +1872,11 @@ class CreateCodingPlanView(McpToolView):
             created_by=actor,
         )
         content = delegate.content if isinstance(delegate.content, dict) else {}
+        # WR-03：恢复 MCP run 维度 token/成本归因——delegate 回传本次编排聚合用量，落本 run
+        # （编排 adapters 的 call_source 维度记录仍在原行保留，不重复 / 不互相复制）。best-effort，
+        # 无用量则跳过（不落零行）。
+        if delegate.model_usage:
+            await self._record_model_usage(run, delegate.model_usage)
         # canonical execution_plan 该仓 task → 旧单仓响应/落库字段映射（显式白名单，T-94-04-INFO）。
         plan_payload = map_canonical_to_coding_plan(
             content=content,

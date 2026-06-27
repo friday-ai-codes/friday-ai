@@ -19,7 +19,8 @@ mcp_tools、duration_ms、status）；编排内部 LLM/召回埋点由 plan_orch
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import structlog
@@ -39,6 +40,9 @@ class DelegateResult:
       partial best-effort 当前版本或 ``{}``；failed 恒 ``{}``）。
     - ``plan_version_id``：canonical ``PlanVersion.id``（无则 None）。
     - ``markdown``：``render_merged_plan_markdown(content)`` 结构化渲染（复用 94-01 共享 helper）。
+    - ``model_usage``：本次编排聚合的模型用量（WR-03，best-effort）。编排 adapters 经
+      ``arecord_llm_usage`` 落用量行但不挂 MCP run，故 delegate 把本次驱动窗口内的 token/
+      duration 聚合回传，由 MCP view 落到自身 run 维度，避免 token/成本归因回退（空则 ``{}``）。
     """
 
     session: Any
@@ -46,6 +50,7 @@ class DelegateResult:
     content: dict
     plan_version_id: str | None
     markdown: str
+    model_usage: dict = field(default_factory=dict)
 
 
 async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
@@ -64,6 +69,47 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
     if pv is None or not isinstance(pv.content, dict):
         return pv_id, {}, ""
     return pv_id, pv.content, render_merged_plan_markdown(pv.content)
+
+
+async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
+    """best-effort 聚合本次编排驱动窗口内的模型用量（WR-03）。
+
+    编排 adapters（research / architect_merge 等）经 ``arecord_llm_usage(run=None, call_source
+    =...)`` 落用量行——挂在各自 call_source 维度但**不挂 MCP run**。为避免 MCP run 维度 token/
+    成本归因回退，按 ``created_at`` 窗口聚合本次驱动内 ``run`` 未绑定的用量行，回传 view 落到
+    MCP run（call_source 维度记录仍在原行保留，不重复 / 不互相复制）。
+
+    最小窗口聚合（``created_at >= start_dt`` 且 ``run__isnull``）：观测 best-effort，写库异常 /
+    无用量恒返回 ``{}``，绝不反噬主流程。
+    """
+    try:
+        from django.db.models import Sum
+
+        from interactions.models import ModelUsageRecord
+
+        agg = await ModelUsageRecord.objects.filter(
+            run__isnull=True, created_at__gte=start_dt
+        ).aaggregate(
+            prompt=Sum("prompt_tokens"),
+            completion=Sum("completion_tokens"),
+            total=Sum("total_tokens"),
+            duration=Sum("duration_ms"),
+        )
+    except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+        return {}
+    prompt = int(agg.get("prompt") or 0)
+    completion = int(agg.get("completion") or 0)
+    total = int(agg.get("total") or 0)
+    if prompt <= 0 and completion <= 0 and total <= 0:
+        return {}
+    return {
+        "provider": "plan_orchestration",
+        "model": "aggregate",
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total or (prompt + completion),
+        "duration_ms": int(agg.get("duration") or 0),
+    }
 
 
 async def delegate_plan_orchestration(
@@ -85,6 +131,8 @@ async def delegate_plan_orchestration(
       best-effort 当前 canonical content（通常 {}）+ ``session`` 供续推。
     - ``FAILED`` → ``status="failed"``，content={}。
     """
+    from django.utils import timezone
+
     from delivery.models import PlanSessionStatus
     from services.plan_orchestration import (
         adrive_plan_session_to_pause_or_terminal,
@@ -93,6 +141,7 @@ async def delegate_plan_orchestration(
     )
 
     started_at = time.perf_counter()
+    start_dt = timezone.now()
     try:
         logger.info(
             "mcp_plan_delegate_started",
@@ -103,42 +152,72 @@ async def delegate_plan_orchestration(
     except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
         pass
 
-    session = await start_orchestration(
-        entrypoint="workflow",
-        requirement_text=requirement_text,
-        work_item=work_item,
-        created_by=created_by,
-        include_repos=include_repos,
-    )
-    engine = build_orchestration_engine(skip_clarification=True)
-    session = await adrive_plan_session_to_pause_or_terminal(engine, session)
-
-    if session.status == PlanSessionStatus.DONE:
-        pv_id, content, markdown = await _load_canonical(session)
-        result = DelegateResult(
-            session=session,
-            status="completed",
-            content=content,
-            plan_version_id=pv_id,
-            markdown=markdown,
+    # IN-03：delegate 外层异常护栏——start_orchestration（create_session/DB）、PlanSession.aget、
+    # _load_canonical 的 PlanVersion 查询、advance 中 NotImplementedError re-raise 等仍可抛穿。
+    # 与工作流引擎「异常 → failed 终态」对称：把未预期异常映射为 failed DelegateResult（best-effort
+    # 埋 mcp_plan_delegate_failed），杜绝 MCP 入口 5xx 回退。
+    session: Any = None
+    try:
+        session = await start_orchestration(
+            entrypoint="workflow",
+            requirement_text=requirement_text,
+            work_item=work_item,
+            created_by=created_by,
+            include_repos=include_repos,
         )
-    elif session.status == PlanSessionStatus.FAILED:
+        engine = build_orchestration_engine(skip_clarification=True)
+        session = await adrive_plan_session_to_pause_or_terminal(engine, session)
+
+        model_usage = await _aggregate_orchestration_usage(start_dt)
+        if session.status == PlanSessionStatus.DONE:
+            pv_id, content, markdown = await _load_canonical(session)
+            result = DelegateResult(
+                session=session,
+                status="completed",
+                content=content,
+                plan_version_id=pv_id,
+                markdown=markdown,
+                model_usage=model_usage,
+            )
+        elif session.status == PlanSessionStatus.FAILED:
+            result = DelegateResult(
+                session=session,
+                status="failed",
+                content={},
+                plan_version_id=None,
+                markdown="",
+                model_usage=model_usage,
+            )
+        else:
+            # RESEARCHING / CLARIFYING 仍挂起（容器在途 / MCP 无 resume 通路）→ partial best-effort。
+            pv_id, content, markdown = await _load_canonical(session)
+            result = DelegateResult(
+                session=session,
+                status="partial",
+                content=content,
+                plan_version_id=pv_id,
+                markdown=markdown,
+                model_usage=model_usage,
+            )
+    except Exception as exc:  # noqa: BLE001 — 异常 → failed 终态对称护栏（IN-03）
+        try:
+            logger.warning(
+                "mcp_plan_delegate_failed",
+                category="caller",
+                component="mcp_tools",
+                error=str(exc),
+            )
+        except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
+            pass
+        # session 可能未建/未达终态：回退 best-effort 用量 + 空 id session 占位（调用方 str(.id) 安全）。
+        model_usage = await _aggregate_orchestration_usage(start_dt)
         result = DelegateResult(
-            session=session,
+            session=session if session is not None else SimpleNamespace(id=""),
             status="failed",
             content={},
             plan_version_id=None,
             markdown="",
-        )
-    else:
-        # RESEARCHING / CLARIFYING 仍挂起（容器在途 / MCP 无 resume 通路）→ partial best-effort。
-        pv_id, content, markdown = await _load_canonical(session)
-        result = DelegateResult(
-            session=session,
-            status="partial",
-            content=content,
-            plan_version_id=pv_id,
-            markdown=markdown,
+            model_usage=model_usage,
         )
 
     try:
@@ -149,7 +228,7 @@ async def delegate_plan_orchestration(
             component="mcp_tools",
             duration_ms=duration_ms,
             status=result.status,
-            session_id=str(session.id),
+            session_id=str(getattr(result.session, "id", "")),
         )
     except Exception:  # noqa: BLE001 — 观测 best-effort，绝不反噬业务
         pass
