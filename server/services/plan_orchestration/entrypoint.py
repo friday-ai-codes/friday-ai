@@ -25,6 +25,17 @@ if TYPE_CHECKING:
 __all__ = ["start_orchestration", "build_orchestration_engine"]
 
 
+def _no_clarify(session: Any) -> tuple[bool, str, list]:
+    """no-clarify policy（Open Q1 决议 #1，MCP 单次同步入口注入）。
+
+    MCP `create_feishu_technical_plan` 是**单次同步**入口（无 HITL resume 通路），故
+    best-effort「带现有信息继续」——恒判不需澄清，使编排在 clarifying 段直通 researching，
+    不发交互澄清轮。形态对齐 ``clarify_adapter.default_needs_clarification`` 返回签名
+    ``(needs, question, affected_task_ids)``，可经 ``ClarifyAdapter(policy=...)`` 注入。
+    """
+    return False, "", []
+
+
 async def start_orchestration(
     entrypoint: str,
     requirement_text: str,
@@ -59,6 +70,7 @@ def build_orchestration_engine(
     *,
     session_service: Any = None,
     node_execution_id: str = "",
+    skip_clarification: bool = False,
 ) -> PlanOrchestrationEngine:
     """注入与 Phase 41 完全相同的真实 adapters 构造 ``PlanOrchestrationEngine``（SC-1）。
 
@@ -66,6 +78,10 @@ def build_orchestration_engine(
     ``node_execution_id`` 仅工作流入口传（CR-02 调研容器回调 resume 钥匙）；chat 入口传默认
     ``""``（chat 走既有 deep_analysis 机制 resume，不依赖 node_execution）。adapters 用函数内
     lazy import 规避 import 环（``__init__`` 在模块加载期 re-export 本模块）。
+
+    ``skip_clarification`` 为 True 时用 ``ClarifyAdapter(policy=_no_clarify)`` 注入 no-clarify
+    policy（MCP 单次同步入口 best-effort 直推、不发交互澄清，Open Q1 决议 #1）；为 False 时保持
+    现状 ``ClarifyAdapter()``（工作流/chat 入口零回归）。其余 adapters 逐字不变。
     """
     from delivery.services import PlanSessionService
     from services.plan_orchestration import (
@@ -77,11 +93,12 @@ def build_orchestration_engine(
         ResearchDispatchAdapter,
     )
 
+    clarify = ClarifyAdapter(policy=_no_clarify) if skip_clarification else ClarifyAdapter()
     return PlanOrchestrationEngine(
         session_service=session_service or PlanSessionService(),
         router=RepoRouterV2Adapter(),
         recall=DeliveryKnowledgeRecallAdapter(),
         research=ResearchDispatchAdapter(node_execution_id=node_execution_id),
         merge=ArchitectMergeAdapter(),
-        clarify=ClarifyAdapter(),
+        clarify=clarify,
     )
