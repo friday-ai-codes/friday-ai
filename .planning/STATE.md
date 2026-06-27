@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
 status: verifying
-stopped_at: "执行 94-05（UNIFY-05：对话方案澄清挂起单一来源收口）——start_plan_research._maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用，改用独立常量 PLAN_CLARIFICATION_RENDER_MARKER=\"plan_clarification\"（仅前端渲染信号，权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由），携 session_id/clarification_id；新 marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中（物理隔离，绝不写 ConversationIntentTrace，T-94-05-MARKER）；RESEARCHING 分支零回归、常量导出 __all__。后端守护测试（marker 独立性 + 不被 _extract_pending_clarification 捕获含 marker 单独隔离纵深 + chat 单题对照零回归）；前端守护测试（plan 卡 runtime pending_plan_clarification 驱动·marker 字面非依赖 + renamed marker 不被 chat 单题误认·ask_clarification 仍认零回归，WARNING 3）。DEVIATION: None（观测豁免：仅改 marker 字面+字段透传，无新入口/LLM 调用）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed（start_plan_research 9 + ask_clarification 15 + plan_clarification_answer_endpoint 13）+ frontend chat.clarification 20 passed、ruff/mypy(plan_research_tools.py)/vue-tsc/受改文件 eslint 干净、无新迁移。"
-last_updated: "2026-06-27T15:33:00.000Z"
+stopped_at: "执行 94-03（UNIFY-03：MCP create_feishu_technical_plan delegate 到统一编排）——build_orchestration_engine 新增 skip_clarification 开关（True 注入 _no_clarify policy，MCP 单次同步入口直推不发交互澄清，默认 False 零回归）；新建 mcp_tools/orchestration_delegate.delegate_plan_orchestration + DelegateResult 共享 delegate 核心（start_orchestration entrypoint=workflow + build_orchestration_engine(skip_clarification=True) + adrive → 三态映射 DONE→completed / RESEARCHING|CLARIFYING→partial / FAILED→failed，复用 94-01 render_merged_plan_markdown；进出口 best-effort 埋点 category=caller/component=mcp_tools/duration_ms/status）。build_work_item_technical_plan 改 delegate 路径——移除 _build_repo_task_matrix/_resolve_repositories 确定性 seam，canonical §7 execution_plan → 旧 repository_tasks 矩阵显式字段映射白名单（T-94-03-INFO 不透传内部键）；plan=canonical content / markdown=render 结果；响应外形兼容（旧键全保留 + 新增可选 session_id）；status 映射 + writeback 失败再降级；McpWorkItemTechnicalPlan 继续落库（plan_body=canonical content）。view 解析 actor（request.user，非真实用户 None fail-closed 召回，T-94-03-ELEV）透传 delegate。DEVIATION: 更新既有 test_feishu_technical_plan/test_learning_cases 适配 delegate seam（旧确定性断言失效，Rule 1）。2 commits（97adec023/06ed87966）；mcp_tools technical_plan 12 passed + 广域回归 144 passed、ruff/mypy（orchestration_delegate/technical_plan_service/entrypoint）干净、无新迁移。\n\n[prev 94-05] 执行 94-05（UNIFY-05：对话方案澄清挂起单一来源收口）——start_plan_research._maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用，改用独立常量 PLAN_CLARIFICATION_RENDER_MARKER=\"plan_clarification\"（仅前端渲染信号，权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由），携 session_id/clarification_id；新 marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中（物理隔离，绝不写 ConversationIntentTrace，T-94-05-MARKER）；RESEARCHING 分支零回归、常量导出 __all__。后端守护测试（marker 独立性 + 不被 _extract_pending_clarification 捕获含 marker 单独隔离纵深 + chat 单题对照零回归）；前端守护测试（plan 卡 runtime pending_plan_clarification 驱动·marker 字面非依赖 + renamed marker 不被 chat 单题误认·ask_clarification 仍认零回归，WARNING 3）。DEVIATION: None（观测豁免：仅改 marker 字面+字段透传，无新入口/LLM 调用）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed（start_plan_research 9 + ask_clarification 15 + plan_clarification_answer_endpoint 13）+ frontend chat.clarification 20 passed、ruff/mypy(plan_research_tools.py)/vue-tsc/受改文件 eslint 干净、无新迁移。"
+last_updated: "2026-06-27T16:05:51.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 24
-  completed_plans: 22
-  percent: 92
+  completed_plans: 23
+  percent: 96
 ---
 
 # Project State
@@ -26,7 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 94
-Plan: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）
+Plan: 94-03 executed（UNIFY-03：MCP create_feishu_technical_plan delegate 到统一编排——共享 delegate 核心 + 响应外形/落库兼容 + skip_clarification 开关）
+Earlier: 94-05 executed（UNIFY-05：对话方案澄清挂起单一来源收口——独立 plan 渲染 marker，物理隔离 chat 单题路径）
 Status: 94-05 executed（plan_research_tools 新增 PLAN_CLARIFICATION_RENDER_MARKER="plan_clarification" 独立常量，_maybe_suspend CLARIFYING 分支移除 chat 单题 CLARIFICATION_PENDING_MARKER 复用、marker 改独立值 + 携 session_id/clarification_id；marker != ask_clarification → chat graph _extract_pending_clarification 双条件必不命中物理隔离 T-94-05-MARKER；RESEARCHING 零回归 + 导出 __all__。挂起/续推权威唯一在 delivery.Clarification+PlanSession，收答经 91-04 专路由 aanswer_round_and_resume；marker 仅前端渲染信号。后端 3 守护 + 前端 4 守护（plan 卡 runtime 驱动·marker 字面非依赖；chat 单题仍仅认 ask_clarification 零回归，WARNING 3）。DEVIATION: None）。3 commits（d4edb83c5/69bef698a/ee69076ee）；backend 37 passed + frontend 20 passed、ruff/mypy/vue-tsc/eslint 干净、无新迁移。
 Earlier: 94-02 executed（UNIFY-02：ai_plan_generation 标 deprecated 保留注册 + NodePalette 收口到 ai_plan_research + 迁移指引）。2 commits（ddd1998cc/d6187da8a）。base.py:515 既有 mypy var-annotated 超范围未修（记 deferred）。
 Earlier: 94-01 executed（入口统一工作流侧：done 渲染 plan_markdown + 模板切 ai_plan_research，UNIFY-01/06）。3 commits（d73127290/07f18f989/12b6a7c74）。
@@ -42,7 +43,7 @@ Last activity: 2026-06-27
 | 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | ✅ Complete (5/5) |
 | 92 | 插槽系统（后端） | SLOT-01/02 | ✅ Complete (3/3) |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | ✅ Complete (7/7) |
-| 94 | 入口统一 | UNIFY-01~06 | 🚧 In progress (3/5) |
+| 94 | 入口统一 | UNIFY-01~06 | 🚧 In progress (4/5) |
 | 95 | 拆分完善 | DECOMP-01 | Not started |
 
 完整需求见 [.planning/REQUIREMENTS.md](./REQUIREMENTS.md)（18 条 + Traceability，100% 映射）。
