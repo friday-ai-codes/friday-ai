@@ -225,6 +225,54 @@ async def test_clarifying_suspends_waiting_event() -> None:
     )
 
 
+def _form_submit_value(card: dict) -> dict:
+    """从卡片中取 form_submit 按钮的 value（回调路由锚）。"""
+    for el in card["elements"]:
+        if el.get("tag") == "form":
+            for fe in el["elements"]:
+                if fe.get("action_type") == "form_submit":
+                    return fe["value"]
+    raise AssertionError("no form_submit element in card")
+
+
+def test_build_clarification_card_carries_clarification_id_and_new_action() -> None:
+    """CLARIFY-05 / Pitfall 1：澄清卡 form_submit value 携新 action + clarification_id。"""
+    from feishu.cards.chat_question_card import build_clarification_card
+
+    card = build_clarification_card(
+        [
+            {"question": "实验组用户？", "type": "single", "options": ["全部", "灰度"], "recommended": "灰度"},
+            {"question": "目标仓库？", "type": "multi", "options": ["api", "web"], "recommended": ["api"]},
+        ],
+        execution_id="exec-123",
+        node_id="node-456",
+        clarification_id="clar-9",
+    )
+    value = _form_submit_value(card)
+    # 新前缀 action（绝不撞 GroupChatQuestion 既有 chat_question_answer）
+    assert value["action"] == "plan_clarify_answer"
+    assert value["clarification_id"] == "clar-9"
+    assert value["execution_id"] == "exec-123"
+    assert value["node_id"] == "node-456"
+    assert value["question_count"] == 2
+    # 索引↔question 字段映射固化（按 order：q0/q1，回调侧 91-03 据此对齐）
+    form = next(el for el in card["elements"] if el.get("tag") == "form")
+    names = {fe.get("name") for fe in form["elements"] if fe.get("name")}
+    assert {"q0", "q1"} <= names
+
+
+def test_build_clarification_card_default_clarification_id_empty() -> None:
+    """缺省 clarification_id → 空串（向后兼容，不报错）。"""
+    from feishu.cards.chat_question_card import build_clarification_card
+
+    card = build_clarification_card(
+        [{"question": "q", "options": ["a"], "recommended": "a"}],
+        execution_id="e",
+        node_id="n",
+    )
+    assert _form_submit_value(card)["clarification_id"] == ""
+
+
 @pytest.mark.asyncio
 async def test_maybe_suspend_structured_round_pending_via_ahas_pending() -> None:
     """WR-03：CLARIFYING 存在性判定经 ahas_pending——结构化子题未答→挂起；全答→不误挂起。"""

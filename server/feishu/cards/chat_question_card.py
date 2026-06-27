@@ -35,10 +35,12 @@ def build_chat_question_card(
 
     # @mention 提示（放在最前面）
     if mention_user_id:
-        elements.append({
-            "tag": "markdown",
-            "content": f'<at id="{mention_user_id}">相关人员</at> 请查看以下问题',
-        })
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": f'<at id="{mention_user_id}">相关人员</at> 请查看以下问题',
+            }
+        )
 
     # 历史 Q&A 区块
     if history:
@@ -47,62 +49,70 @@ def build_chat_question_card(
             history_content += f"**Q:** {qa.get('question', '')}\n"
             history_content += f"**A:** {qa.get('answer', '')}\n\n"
 
-        elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "lark_md",
-                "content": history_content.strip(),
-            },
-        })
+        elements.append(
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": history_content.strip(),
+                },
+            }
+        )
         elements.append({"tag": "hr"})
 
     # 当前问题（加粗）
-    elements.append({
-        "tag": "markdown",
-        "content": f"**{question}**",
-    })
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": f"**{question}**",
+        }
+    )
 
     # 快捷选项按钮
     if options:
         actions: list[dict[str, Any]] = []
         for opt in options:
-            actions.append({
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": opt},
-                "type": "default",
-                "value": {
-                    "action": "chat_question_answer",
-                    "execution_id": execution_id,
-                    "node_id": node_id,
-                    "answer": opt,
-                },
-            })
+            actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": opt},
+                    "type": "default",
+                    "value": {
+                        "action": "chat_question_answer",
+                        "execution_id": execution_id,
+                        "node_id": node_id,
+                        "answer": opt,
+                    },
+                }
+            )
         elements.append({"tag": "action", "actions": actions})
 
     # 自由输入表单
-    elements.append({
-        "tag": "form",
-        "name": "chat_answer_form",
-        "elements": [
-            {
-                "tag": "input",
-                "name": "custom_answer",
-                "placeholder": {"tag": "plain_text", "content": "输入自定义回复..."},
-            },
-            {
-                "tag": "button",
-                "name": "submit_chat_answer",
-                "text": {"tag": "plain_text", "content": "提交"},
-                "type": "primary",
-                "action_type": "form_submit",
-                "value": {
-                    "action": "chat_question_answer",
-                    "execution_id": execution_id,
-                    "node_id": node_id,
+    elements.append(
+        {
+            "tag": "form",
+            "name": "chat_answer_form",
+            "elements": [
+                {
+                    "tag": "input",
+                    "name": "custom_answer",
+                    "placeholder": {"tag": "plain_text", "content": "输入自定义回复..."},
                 },
-            },
-        ],
-    })
+                {
+                    "tag": "button",
+                    "name": "submit_chat_answer",
+                    "text": {"tag": "plain_text", "content": "提交"},
+                    "type": "primary",
+                    "action_type": "form_submit",
+                    "value": {
+                        "action": "chat_question_answer",
+                        "execution_id": execution_id,
+                        "node_id": node_id,
+                    },
+                },
+            ],
+        }
+    )
 
     # Header 标题
     title = "Friday 提问"
@@ -124,6 +134,7 @@ def build_clarification_card(
     execution_id: str,
     node_id: str,
     *,
+    clarification_id: str = "",
     title: str = "",
     reason: str = "",
     round_no: int = 1,
@@ -139,6 +150,8 @@ def build_clarification_card(
     Args:
         questions: 结构化问题列表，每项 {question, options?(list[str]), recommended?(str)}
         execution_id / node_id: 工作流回调路由
+        clarification_id: 澄清轮次（delivery.Clarification）id；写进 form_submit value，
+            供 plan_clarify 回调据此定位轮 + 按 order 映射 q{i} 子题（CLARIFY-05 / Pitfall 1）。
         title: 卡片标题（通常为工作项名）
         reason: 需要澄清的原因，展示在顶部
         round_no: 当前澄清轮次（多轮时展示）
@@ -151,10 +164,12 @@ def build_clarification_card(
     elements: list[dict[str, Any]] = []
 
     if mention_user_id:
-        elements.append({
-            "tag": "markdown",
-            "content": f'<at id="{mention_user_id}"></at> 需要你补充以下信息以继续生成技术方案',
-        })
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": f'<at id="{mention_user_id}"></at> 需要你补充以下信息以继续生成技术方案',
+            }
+        )
 
     if reason:
         elements.append({"tag": "markdown", "content": f"💡 {reason}"})
@@ -198,10 +213,12 @@ def build_clarification_card(
                 text = f"⭐ {opt}" if is_rec else opt
                 if is_rec:
                     rec_values.append(opt)
-                select_options.append({
-                    "text": {"tag": "plain_text", "content": text},
-                    "value": opt,
-                })
+                select_options.append(
+                    {
+                        "text": {"tag": "plain_text", "content": text},
+                        "value": opt,
+                    }
+                )
 
             if is_multi:
                 multi_el: dict[str, Any] = {
@@ -225,38 +242,50 @@ def build_clarification_card(
                 form_elements.append(single_el)
 
             # 每题常驻「其他」输入框（飞书无法做"选其他才出现"的条件显隐）
-            form_elements.append({
-                "tag": "input",
-                "name": f"qt{i}",
-                "placeholder": {"tag": "plain_text", "content": "其他（自定义填写）"},
-            })
+            form_elements.append(
+                {
+                    "tag": "input",
+                    "name": f"qt{i}",
+                    "placeholder": {"tag": "plain_text", "content": "其他（自定义填写）"},
+                }
+            )
         else:
-            form_elements.append({
-                "tag": "input",
-                "name": f"qt{i}",
-                "placeholder": {"tag": "plain_text", "content": "请输入"},
-            })
+            form_elements.append(
+                {
+                    "tag": "input",
+                    "name": f"qt{i}",
+                    "placeholder": {"tag": "plain_text", "content": "请输入"},
+                }
+            )
 
     # 提交按钮（form_submit 统一收集所有命名字段）
-    form_elements.append({
-        "tag": "button",
-        "name": "submit_clarification",
-        "text": {"tag": "plain_text", "content": "提交"},
-        "type": "primary",
-        "action_type": "form_submit",
-        "value": {
-            "action": "chat_question_answer",
-            "execution_id": execution_id,
-            "node_id": node_id,
-            "question_count": len(questions),
-        },
-    })
+    form_elements.append(
+        {
+            "tag": "button",
+            "name": "submit_clarification",
+            "text": {"tag": "plain_text", "content": "提交"},
+            "type": "primary",
+            "action_type": "form_submit",
+            "value": {
+                # Pitfall 1：新前缀 `plan_clarify_` 隔离工作流 GroupChatQuestion 的
+                # `chat_question_answer` 路由（CardCallbackView 前缀 startswith 匹配不交叉）；
+                # 携服务端权威 clarification_id 供回调按 round 取轮 + order 映射子题。
+                "action": "plan_clarify_answer",
+                "execution_id": execution_id,
+                "node_id": node_id,
+                "clarification_id": clarification_id,
+                "question_count": len(questions),
+            },
+        }
+    )
 
-    elements.append({
-        "tag": "form",
-        "name": "clarification_form",
-        "elements": form_elements,
-    })
+    elements.append(
+        {
+            "tag": "form",
+            "name": "clarification_form",
+            "elements": form_elements,
+        }
+    )
 
     header_title = "需要补充需求信息"
     if title:
@@ -335,10 +364,12 @@ def build_chat_answered_card(
     elements.append({"tag": "hr"})
 
     # 处理中提示
-    elements.append({
-        "tag": "markdown",
-        "content": "_正在处理中..._",
-    })
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": "_正在处理中..._",
+        }
+    )
 
     return {
         "config": {"wide_screen_mode": True},
@@ -369,18 +400,22 @@ def build_chat_reminder_card(
 
     # 问题摘要（截断到 200 字）
     summary = question[:200] + "..." if len(question) > 200 else question
-    elements.append({
-        "tag": "markdown",
-        "content": f"**原问题摘要：**\n{summary}",
-    })
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": f"**原问题摘要：**\n{summary}",
+        }
+    )
 
     elements.append({"tag": "hr"})
 
     # 剩余时间提示
-    elements.append({
-        "tag": "markdown",
-        "content": f"距离超时还剩 **{remaining_minutes}** 分钟，请尽快回复原提问卡片。",
-    })
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": f"距离超时还剩 **{remaining_minutes}** 分钟，请尽快回复原提问卡片。",
+        }
+    )
 
     # Header 标题
     title = "提醒：待回复提问"
