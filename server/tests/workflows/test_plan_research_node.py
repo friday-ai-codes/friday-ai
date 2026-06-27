@@ -473,11 +473,44 @@ def test_schema_and_registration() -> None:
     ) == []
     props = cls.config_schema["properties"]
     assert {"requirement_text", "include_repos", "work_item_id"} <= set(props)
-    assert [p.name for p in cls.inputs] == ["default"]
+    # 92-02：inputs 增 resume（插槽端口），仍保留 default；outputs 增 clarify，仍保留 default/error。
+    input_names = {p.name for p in cls.inputs}
+    assert input_names == {"default", "resume"}
     output_names = {p.name for p in cls.outputs}
-    assert output_names == {"default", "error"}
+    assert output_names == {"default", "clarify", "error"}
     default_out = next(p for p in cls.outputs if p.name == "default")
     assert "plan_version_id" in (default_out.schema or {}).get("properties", {})
+
+
+def test_clarify_resume_slot_ports_declared() -> None:
+    """SLOT-02 behavior 1/2：clarify(out, clarification_request)/resume(in, clarification_answer)
+    插槽端口声明；default/error 生产端口逐字保留且 shape 恒空（validator 通配命门）。"""
+    cls = AIPlanResearchNode
+
+    # Test 1：inputs 含 resume，shape=clarification_answer；既有 default 保留且 shape 空。
+    resume_in = next(p for p in cls.inputs if p.name == "resume")
+    assert resume_in.shape == "clarification_answer"
+    default_in = next(p for p in cls.inputs if p.name == "default")
+    assert default_in.shape == ""
+
+    # Test 2：outputs 含 clarify，shape=clarification_request；既有 default/error 保留且 shape 空。
+    clarify_out = next(p for p in cls.outputs if p.name == "clarify")
+    assert clarify_out.shape == "clarification_request"
+    default_out = next(p for p in cls.outputs if p.name == "default")
+    error_out = next(p for p in cls.outputs if p.name == "error")
+    assert default_out.shape == ""
+    assert error_out.shape == ""
+
+
+def test_get_schema_exposes_clarify_shape() -> None:
+    """SLOT-02 behavior 3：get_schema() outputs 中 clarify 项含 shape=clarification_request；
+    default 端口 shape 恒空（前端磁吸可读）。"""
+    schema = AIPlanResearchNode.get_schema()
+    out_by_name = {p["name"]: p for p in schema["outputs"]}
+    assert out_by_name["clarify"]["shape"] == "clarification_request"
+    assert out_by_name["default"]["shape"] == ""
+    in_by_name = {p["name"]: p for p in schema["inputs"]}
+    assert in_by_name["resume"]["shape"] == "clarification_answer"
 
 
 @pytest.mark.asyncio
