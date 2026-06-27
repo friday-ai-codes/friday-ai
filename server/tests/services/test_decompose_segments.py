@@ -7,13 +7,36 @@ call_source 标注。
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from agents.call_source import get_call_source
 from services.plan_orchestration.decompose_segments import (
     _build_prompt,
     _content_to_text,
     _parse_segments_json,
     _system_prompt,
+    agenerate_decomposition_segments,
     normalize_decomposition_segments,
 )
+
+_ARESOLVE = "services.provider_config.ProviderConfigService.aresolve"
+_BUILD = "agents.llm_factory.build_chat_model"
+
+
+def _resolved(default_model: str = "test-model") -> SimpleNamespace:
+    """构造一个带 extra.default_model 的伪 resolved（aresolve 返回值）。"""
+    return SimpleNamespace(extra={"default_model": default_model})
+
+
+def _model_returning(content: object) -> MagicMock:
+    """构造一个 ainvoke 返回指定 content 的伪 chat model。"""
+    model = MagicMock()
+    model.ainvoke = AsyncMock(return_value=SimpleNamespace(content=content))
+    return model
+
 
 # ── 纯函数：_parse_segments_json ──────────────────────────────────────────
 
@@ -135,3 +158,85 @@ def test_build_prompt_without_repos() -> None:
     prompt = _build_prompt("需求", include_repos=None)
     assert "需求" in prompt
     assert "候选仓库" not in prompt
+
+
+# ── 异步：agenerate_decomposition_segments ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_agenerate_happy_path_returns_segments() -> None:
+    """成功路径：LLM 产 JSON → normalize → 返回 list[dict]。"""
+    content = '```json\n{"segments": [{"title": "登录页改造", "layer": "frontend", "repo_hint": "web"}]}\n```'
+    model = _model_returning(content)
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=model),
+    ):
+        result = await agenerate_decomposition_segments(
+            requirement_text="把登录页改造", include_repos=["web"]
+        )
+    assert result == [
+        {"title": "登录页改造", "module": "", "layer": "frontend", "repo_hint": "web"}
+    ]
+    model.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_agenerate_no_default_model_returns_none() -> None:
+    """缺 default_model → None（不触 build/ainvoke）。"""
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved(default_model=""))),
+        patch(_BUILD) as build_spy,
+    ):
+        result = await agenerate_decomposition_segments(requirement_text="需求")
+    assert result is None
+    build_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_agenerate_aresolve_raises_returns_none() -> None:
+    """aresolve 抛（如测试环境无凭证）→ None，绝不上抛。"""
+    with patch(_ARESOLVE, new=AsyncMock(side_effect=RuntimeError("no credential"))):
+        result = await agenerate_decomposition_segments(requirement_text="需求")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_agenerate_malformed_content_returns_none() -> None:
+    """ainvoke 返回畸形 content（非 JSON）→ normalize 空 → None。"""
+    model = _model_returning("这只是一段没有 JSON 的解释。")
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=model),
+    ):
+        result = await agenerate_decomposition_segments(requirement_text="需求")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_agenerate_empty_requirement_returns_none_without_network() -> None:
+    """空白 requirement → 直接 None，不触网（aresolve 不被调用）。"""
+    with patch(_ARESOLVE, new=AsyncMock()) as aresolve_spy:
+        result = await agenerate_decomposition_segments(requirement_text="   ")
+    assert result is None
+    aresolve_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_agenerate_sets_call_source_during_invoke() -> None:
+    """LLM 调用期 contextvar call_source == 'plan_decompose'。"""
+    captured: dict[str, object] = {}
+
+    async def _capture_ainvoke(_messages: object) -> SimpleNamespace:
+        captured["call_source"] = get_call_source()
+        return SimpleNamespace(content='{"segments": [{"title": "A"}]}')
+
+    model = MagicMock()
+    model.ainvoke = AsyncMock(side_effect=_capture_ainvoke)
+    with (
+        patch(_ARESOLVE, new=AsyncMock(return_value=_resolved())),
+        patch(_BUILD, return_value=model),
+    ):
+        result = await agenerate_decomposition_segments(requirement_text="需求")
+    assert captured["call_source"] == "plan_decompose"
+    assert result == [{"title": "A", "module": "", "layer": "", "repo_hint": ""}]
