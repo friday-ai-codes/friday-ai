@@ -4,6 +4,7 @@ curated re-export：``PlanOrchestrationEngine``（状态驱动推进器）+ 可�
 与骨架默认实现（38-41 逐步替换）。
 """
 
+from services.plan_orchestration.answer_resume import aanswer_round_and_resume
 from services.plan_orchestration.architect_merge_adapter import (
     ArchitectMergeAdapter,
     LLMMergedPlanSynthesizer,
@@ -114,4 +115,5 @@ __all__ = [
     "acollect_upstream_artifacts",
     "render_upstream_artifacts_section",
     "ask_clarification",
+    "aanswer_round_and_resume",
 ]
