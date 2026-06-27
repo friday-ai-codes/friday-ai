@@ -478,3 +478,43 @@ def test_schema_and_registration() -> None:
     assert output_names == {"default", "error"}
     default_out = next(p for p in cls.outputs if p.name == "default")
     assert "plan_version_id" in (default_out.schema or {}).get("properties", {})
+
+
+@pytest.mark.asyncio
+async def test_acollect_round_questions_includes_answered_subquestions() -> None:
+    """WR-01 不变量：发卡侧整轮按 order 取子题（含已答），与回调侧逐字一致、不漂移。
+
+    构造「同一轮部分已答」：第 0 题已答、第 1 题未答。修复前发卡侧按 answered_at__isnull=True
+    过滤会跳过已答的第 0 题，导致 q{i} 与回调侧（取整轮）错位；修复后两侧都取整轮全部子题。
+    """
+    from delivery.models import ClarificationQuestion
+    from delivery.services import ClarificationService
+
+    session = await PlanSession.objects.acreate(
+        entrypoint="chat",
+        status=PlanSessionStatus.CLARIFYING,
+    )
+    svc = ClarificationService()
+    clar = await svc.create_round(
+        session,
+        [
+            {"question": "第一题？", "type": "single", "options": ["A", "B"]},
+            {"question": "第二题？", "type": "single", "options": ["C", "D"]},
+        ],
+        round_no=1,
+    )
+    qids = [
+        str(qid)
+        async for qid in ClarificationQuestion.objects.filter(clarification_id=clar.id)
+        .order_by("order")
+        .values_list("id", flat=True)
+    ]
+    # 仅作答第 0 题 → 该轮部分已答（第 0 题 answered_at 非空、第 1 题仍 NULL）
+    await svc.answer_round(clar.id, [{"question_id": qids[0], "selected": "A"}])
+
+    collected = await AIPlanResearchNode._acollect_round_questions(str(clar.id))
+
+    # 整轮全部子题（含已答的第 0 题）均在内、按 order，索引与回调侧逐字一致
+    assert len(collected) == 2
+    assert collected[0]["question"] == "第一题？"
+    assert collected[1]["question"] == "第二题？"
