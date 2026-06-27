@@ -2084,6 +2084,7 @@ class ConversationService:
             "coding_session": None,
             "streaming_snapshot": streaming_snapshot,
             "pending_clarification": None,
+            "pending_plan_clarification": None,
         }
 
         # 待回复的澄清（ask_clarification）—— 刷新 / 切回会话时恢复 ClarificationCard。
@@ -2105,6 +2106,65 @@ class ConversationService:
                     "options": trace.options,
                     "allow_freeform": True,
                 }
+
+        # plan 编排澄清轮（CLARIFY-04 数据传输）：与上面 chat 单题 pending_clarification
+        # （ConversationIntentTrace）**物理隔离**，独立 key 不污染既有 chat 澄清回归。
+        # 检测本会话软引用关联的 PlanSession 是否存在 pending 结构化澄清轮 → 序列化多题
+        # questions[] 供前端 91-05 渲染。只读、不写库；序列化失败 best-effort 吞为 None，
+        # 绝不反噬 runtime。async 全程用 *_id 标量过滤，禁裸 lazy-FK。
+        try:
+            from delivery.models import (
+                Clarification,
+                ClarificationQuestion,
+                PlanSession,
+            )
+            from delivery.services import ClarificationService
+
+            plan_session = (
+                await PlanSession.objects.filter(conversation_id=conv_uuid)
+                .order_by("-created_at")
+                .afirst()
+            )
+            if plan_session is not None and await ClarificationService().ahas_pending(
+                plan_session.id
+            ):
+                pending_round = (
+                    await Clarification.objects.filter(
+                        session_id=plan_session.id, answered_at__isnull=True
+                    )
+                    .order_by("round_no")
+                    .afirst()
+                )
+                if pending_round is not None:
+                    questions = [
+                        {
+                            "question_id": str(q.id),
+                            "question": q.question,
+                            "qtype": q.qtype,
+                            "options": q.options or [],
+                            "recommended": q.recommended,
+                            "selected": q.selected,
+                            "freeform_text": q.freeform_text,
+                        }
+                        async for q in ClarificationQuestion.objects.filter(
+                            clarification_id=pending_round.id
+                        ).order_by("order")
+                    ]
+                    # 仅结构化轮（含子题）暴露；旧单题行（无子题）不渲染 plan 澄清卡。
+                    if questions:
+                        runtime["pending_plan_clarification"] = {
+                            "clarification_id": str(pending_round.id),
+                            "round_no": pending_round.round_no or 1,
+                            "questions": questions,
+                        }
+        except Exception:
+            # best-effort：plan 澄清序列化失败不反噬 runtime（保持 None 默认）。
+            logger.warning(
+                "conversation_runtime_plan_clarification_failed",
+                conversation_id=conversation_id,
+                exc_info=True,
+            )
+            runtime["pending_plan_clarification"] = None
 
         # deep_analysis 会话信息（向后兼容 + 多子会话各自独立日志）
         # order_by("-id") 是降序，最新的在最前。收集本对话全部 chat_deep_analysis
