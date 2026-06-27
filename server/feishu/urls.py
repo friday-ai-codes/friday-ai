@@ -8,6 +8,7 @@ import feishu.callbacks.approval_callback as _approval_callback  # noqa: F401
 import feishu.callbacks.board_split_callback as _board_split_callback  # noqa: F401
 import feishu.callbacks.branch_confirm_callback as _branch_confirm_callback  # noqa: F401
 import feishu.callbacks.chat_question_callback as _chat_question_callback  # noqa: F401
+import feishu.callbacks.clarify_card_callback as _clarify_card_callback  # noqa: F401
 import feishu.callbacks.coding_callback as _coding_callback  # noqa: F401
 import feishu.callbacks.container_callback as _container_callback  # noqa: F401
 import feishu.callbacks.plan_callback as _plan_callback  # noqa: F401
