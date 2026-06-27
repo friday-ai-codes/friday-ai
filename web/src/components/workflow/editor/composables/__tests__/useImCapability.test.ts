@@ -1,10 +1,12 @@
 /**
- * useImCapability 图级 IM 能力判定单元测试（SLOT-04 / CONTEXT 决策 D）。
+ * useImCapability 图级 IM 能力判定单元测试（SLOT-04 / CONTEXT 决策 D / WR-01）。
  *
  * 覆盖：
  * - 图含 create_group_chat → hasImCapability=true → isImGated('notify_feishu_im')=false。
  * - 图含 create_work_item_chat（另一 IM 源）→ 同样具备能力。
- * - 图无任何 IM 源 → isImGated('notify_feishu_im')=true、isImGated('notify_feishu')=true。
+ * - 图无任何 IM 源 + notify_feishu_im 发群（默认 chat_id 模式且无 receive_id）→ 门控。
+ * - WR-01：notify_feishu（webhook 型）永不门控；notify_feishu_im 发个人
+ *   （open_id/user_id）或已配置 receive_id（字面/变量化）不误报。
  * - 非 IM 依赖节点（ai_coding）恒 false（不论是否有源）。
  * - 源/依赖集导出常量内容正确。
  */
@@ -71,13 +73,42 @@ describe('useImCapability - 图级 IM 能力判定', () => {
     expect(isImGated('notify_feishu_im')).toBe(false)
   })
 
-  it('图无任何 IM 源 → IM 依赖节点被门控', () => {
+  it('图无任何 IM 源 + notify_feishu_im 发群默认（无 receive_id）→ 门控', () => {
     store.nodes.push(makeNode('a', 'ai_coding'), makeNode('b', 'notify_feishu_im'))
     const { hasImCapability, isImGated } = useImCapability()
 
     expect(hasImCapability.value).toBe(false)
+    // 默认 chat_id 模式且未配置 receive_id → 缺 chat_id 来源，门控
     expect(isImGated('notify_feishu_im')).toBe(true)
-    expect(isImGated('notify_feishu')).toBe(true)
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'chat_id' })).toBe(true)
+  })
+
+  it('notify_feishu（webhook 型）永不门控（WR-01，无 chat_id 依赖）', () => {
+    store.nodes.push(makeNode('a', 'ai_coding'), makeNode('b', 'notify_feishu'))
+    const { isImGated } = useImCapability()
+
+    expect(isImGated('notify_feishu')).toBe(false)
+    expect(isImGated('notify_feishu', { webhook_url: 'https://example' })).toBe(false)
+  })
+
+  it('notify_feishu_im 发个人（open_id/user_id）→ 不误门控（WR-01）', () => {
+    store.nodes.push(makeNode('a', 'ai_coding'), makeNode('b', 'notify_feishu_im'))
+    const { isImGated } = useImCapability()
+
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'open_id' })).toBe(false)
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'user_id' })).toBe(false)
+  })
+
+  it('notify_feishu_im 已配置 receive_id（字面/变量化 chat_id）→ 不误门控（WR-01）', () => {
+    store.nodes.push(makeNode('a', 'ai_coding'), makeNode('b', 'notify_feishu_im'))
+    const { isImGated } = useImCapability()
+
+    // 字面群 ID
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'chat_id', receive_id: 'oc_xxx' })).toBe(false)
+    // 模板变量化 chat_id（如来自 fetch_group_chat）
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'chat_id', receive_id: '{{ chat_id }}' })).toBe(false)
+    // 空白 receive_id 仍视为无来源 → 门控
+    expect(isImGated('notify_feishu_im', { receive_id_type: 'chat_id', receive_id: '   ' })).toBe(true)
   })
 
   it('非 IM 依赖节点恒不门控（有源/无源均 false）', () => {
@@ -97,10 +128,10 @@ describe('useImCapability - 图级 IM 能力判定', () => {
     expect(hasImCapability.value).toBe(true)
   })
 
-  it('导出源/依赖集内容正确', () => {
+  it('导出源/依赖集内容正确（WR-01：notify_feishu 不在依赖集）', () => {
     expect(IM_SOURCE_TYPES.has('create_group_chat')).toBe(true)
     expect(IM_SOURCE_TYPES.has('create_work_item_chat')).toBe(true)
-    expect(IM_DEPENDENT_TYPES.has('notify_feishu')).toBe(true)
     expect(IM_DEPENDENT_TYPES.has('notify_feishu_im')).toBe(true)
+    expect(IM_DEPENDENT_TYPES.has('notify_feishu')).toBe(false)
   })
 })

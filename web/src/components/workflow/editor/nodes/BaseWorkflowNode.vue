@@ -114,7 +114,9 @@ const { dragging, isCompatibleTarget } = useConnectionDragState()
 const { isImGated } = useImCapability()
 
 /** 本节点是否因缺 IM 源被门控（视觉降级 + 锁徽标 + 引导 tooltip）。 */
-const imGated = computed(() => isImGated(props.data.nodeType))
+const imGated = computed(() =>
+  isImGated(props.data.nodeType, props.data.config as Record<string, unknown> | undefined),
+)
 
 /**
  * 附着父节点 id（SLOT-04，跨 plan 数据契约）：来源**固定**为
