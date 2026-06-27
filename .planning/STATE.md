@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.16.1
 milestone_name: 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善）
-status: "91-01 executed（共享回流 helper aanswer_round_and_resume：薄封装 answer_round + build_orchestration_engine + adrive，飞书回调/会话 endpoint 同源调用、barrel 导出；ClarifyAdapter 多轮放开——移除 CR-01 单轮硬限 + _MAX_CLARIFY_ROUNDS=6 上界兜底 + 带已答重判防同题死循环；INV-6 写入只经 service、async 标量防裸 lazy-FK；test_answer_resume(5)+test_engine_clarify(14)+INV-6 守护(2) 全绿、ruff/mypy 干净、makemigrations --check 无变化）"
-stopped_at: 执行 91-01（共享回流 helper + 多轮澄清放开，CLARIFY-06/07）——aanswer_round_and_resume 入口无关薄封装供飞书回调/会话 endpoint 同源调用；移除 CR-01 单轮硬限改带已答重判 + _MAX_CLARIFY_ROUNDS=6 上界兜底不无限挂起；19+2 测全绿、ruff/mypy 干净。
-last_updated: "2026-06-27T08:05:00.000Z"
+status: "91-02 executed（工作流澄清出口面发卡侧：ai_plan_research CLARIFYING 挂起经扩展后的 build_clarification_card（携 clarification_id + 新 action plan_clarify_answer）发飞书交互卡到项目群 + 建 WorkflowEventSubscription(PlanClarifyCallback) 60min 超时兜底——mirror plan_deepen，发卡 best-effort 脱敏 + initiated_by 归因不反噬挂起；WR-03 三处 pending 存在性判定收口 ahas_pending（plan_research/plan_research_tools/plan_deepen）；-k clarif/subscription/pending 35 测绿、ruff format/check + mypy 干净、makemigrations --check 无变化）"
+stopped_at: 执行 91-02（工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id/新 action + WR-03 三处 pending 收口，CLARIFY-05/WR-03）——节点 CLARIFYING 发卡到群 + PlanClarifyCallback 订阅；卡片新前缀 plan_clarify_answer 隔离 GroupChatQuestion 路由；三处存在性谓词收口 ahas_pending；6 新测 + 12 文件测绿、ruff/mypy 干净。
+last_updated: "2026-06-27T08:30:00.000Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-26 — start milestone v0.16.0 项目
 ## Current Position
 
 Phase: 91
-Plan: 91-01 complete（2/5；下一步 91-02 工作流发卡 或 91-03/04 出口面）
-Status: 91-01 executed（共享回流 helper aanswer_round_and_resume 入口无关薄封装、barrel 导出供飞书回调/会话 endpoint 同源调用；ClarifyAdapter 多轮放开——移除 CR-01 单轮硬限 + _MAX_CLARIFY_ROUNDS=6 上界兜底 + 带已答重判防同题死循环；19+2 测全绿、ruff/mypy 干净、makemigrations --check 无变化）
+Plan: 91-02 complete（3/5；下一步 91-03 飞书澄清回调 plan_clarify_ 或 91-04 会话端 endpoint）
+Status: 91-02 executed（工作流澄清发卡侧——ai_plan_research CLARIFYING 经 build_clarification_card（携 clarification_id + 新 action plan_clarify_answer）发卡到项目群 + 建 WorkflowEventSubscription(PlanClarifyCallback) 60min 超时兜底，mirror plan_deepen，best-effort 脱敏/归因不反噬挂起；WR-03 三处 pending 存在性收口 ahas_pending；35 测绿、ruff/mypy 干净、makemigrations --check 无变化）
 Last activity: 2026-06-27
 
 ## Milestone Overview (v0.16.1 — Phases 90–95 — 🚧 IN PROGRESS)
@@ -35,7 +35,7 @@ Last activity: 2026-06-27
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 90 | 澄清能力层 | CLARIFY-01/02/03 | Not started |
-| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | In progress (1/5) |
+| 91 | 澄清出口面 + 回流 resume | CLARIFY-04/05/06/07 | In progress (2/5) |
 | 92 | 插槽系统（后端） | SLOT-01/02 | Not started |
 | 93 | 插槽编辑器（前端，UI hint） | SLOT-03/04 | Not started |
 | 94 | 入口统一 | UNIFY-01~06 | Not started |
@@ -286,6 +286,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 - [Phase 90]: 90-03: ClarifyAdapter 接 LLM 多题 + fail-soft 回退 + pending 收口（CLARIFY-02）——`ClarifyAdapter.clarify` 三段判定改造：①pending 短路收口 `ClarificationService.ahas_pending`（兼容旧单题行 + 新子题）；②CR-01 已答轮短路用 `Clarification.objects.filter(session_id=...).aexists()`（步骤①已确认无 pending，存在任意轮即视澄清满足放行 researching，零回归无限挂起修复）；③首轮静态 policy needs==True 后调 `agenerate_clarification_questions(requirement, routing, recall_hits)`（模块顶 import，生成器自身 lazy SDK + 吞异常返回 []）→ 非空经 `create_round` 落结构化多子题轮。**关键 DEVIATION（Rule 1 零回归）**：fail-soft 回退用 `create_clarification`（legacy 单题行）而非 plan 字面的 `create_round`——后者建未答子题，与 CR-01 用例 `test_real_policy_answered_round_advances_no_second_clarification`（经 legacy `answer_clarification` 只答容器不答子题）冲突致 `ahas_pending` 永真无限挂起；改 legacy 路径后回退作答路径配套，且与 user query「fail-soft 回退现状粗单题」语义一致；回退记 `clarification_fallback_coarse_question`（category=sampling/component=plan_orchestration）。`resume.adrive_plan_session_to_pause_or_terminal` 与 e2e `_drive` helper 的 CLARIFYING 短路同步收口 `ahas_pending`（lazy import，最小 diff，不动 researching/max_steps 分支）。`_emit_asked` 仍传 policy 粗 question 不改事件契约（多题摘要升级留出口面）。既有 7 测 + 新增 4 测（LLM 多题/fail-soft 空/fail-soft engine 不落 failed/pending 经 ahas_pending）全绿；e2e 3 测零回归。6 个无关失败（initiatives/comment-wiring/canonical-plan，源于并发未提交 war-room 工作）记 deferred-items.md 不在范围
 - [Phase 90]: 90-04: 入口无关 ask_clarification helper（CLARIFY-03）——新建 `services/plan_orchestration/ask_clarification.py`，`async def ask_clarification(session, questions, *, origin_repo=None, clarification_service=None) -> Clarification` 仅薄封装 `ClarificationService.create_round`（写 delivery.Clarification 轮 + 多子题、携 origin_repo、守 INV-6）；**不**驱动 `engine.advance`、**不**挂起 marker、**不**碰 `session.status`（驱动是入口私有，对齐 entrypoint.py / resume.py）；TYPE_CHECKING 声明类型 + 函数内 lazy import 规避 import 环。barrel `__init__.py` 加 import + `__all__`（90-03 未碰该文件无冲突）。**命名撞车防护（Pitfall 1/T-90-04-02）**：仓内同名 chat tool `agents/tools/clarification.py:ask_clarification`（写 chat.ConversationIntentTrace 走 LangGraph interrupt）经**模块路径**区分（保留命名不改名），docstring 显式标注 + 守护测试断言 `__module__=="services.plan_orchestration.ask_clarification"`，绝不复用/import/改 chat 资产。守护测试 `tests/services/test_ask_clarification_helper.py`（与既有 `tests/test_ask_clarification_tool.py` chat tool 测试显式区分）：写 delivery 轮 + 多子题 / 携 origin_repo / 调用前后 session.status 不变（不驱动/不挂起）/ 注入 service 复用 / __module__ 区分，5 测全绿；ruff/mypy 干净，90-02 INV-6 子模型 grep 守护无回归。CLARIFY-03 完成，Phase 90 四 plan 全部就绪
 - [Phase 91]: 91-01: 共享回流 helper + 多轮澄清放开（CLARIFY-06/07）——新建 `services/plan_orchestration/answer_resume.py` 的入口无关 `aanswer_round_and_resume(clarification_or_id, answers, *, engine=None, clarification_service=None)`：薄封装 ① `ClarificationService.answer_round`（按题幂等写入，INV-6 唯一写入入口）② 由 `clar.session_id` 标量解析 `PlanSession`（解析不出→return None，async 防裸 lazy-FK）③ engine 缺省走 `build_orchestration_engine()`（chat 入口）/显式传入复用（工作流入口带 node_execution_id）④ `adrive_plan_session_to_pause_or_terminal` 续驱返回——飞书回调（91-03）/会话 endpoint（91-04）同源调用，**入口私有重调度（approve_node / chat barrier / marker）留各调用方**；barrel 导出；best-effort 进出口埋点 answer_round_and_resume_started/completed（category=caller/component=plan_orchestration/duration_ms）。ClarifyAdapter 多轮放开：**移除 CR-01 `Clarification.objects.filter(...).aexists()` 单轮硬限**，改三段决策（pending 短路 ahas_pending → round_count 上界兜底 → policy + 带已答重判）；`_MAX_CLARIFY_ROUNDS=6`（CONTEXT D Discretion 须 ≥5）超界带现有信息继续 + best-effort log `clarification_round_cap_reached`（仅记 round_count/session_id 标量，T-91-01-04）；已答不足且未达上界→`create_round(round_no=round_count+1)` 再发一轮；重判生成空首轮 fail-soft 回退粗单题、多轮放行 researching；`_collect_prior_answers` 读已答子题（`order_by("clarification__round_no","order").values(...)`）拼进重判 requirement 防同题死循环（Pitfall 2/T-91-01-03，最小 diff 不改生成器签名）。**DEVIATION**（均 Rule 3 blocking）：① helper docstring 字面 `Clarification.objects.create` 误触 INV-6 grep 守护→改述避开；② create_round 返回 `Clarification | None` 触发 mypy union-attr→加 `if clar is None: return {needs_clarification: False}` 防御 narrow（兼守 WR-02）。重判输入选「拼进 requirement」而非给 agenerate_clarification_questions 加 prior_answers 参数——生成器为未提交 war-room 资产，避免无关改动卷进 commit。test_answer_resume(5)+test_engine_clarify(14，新增 3 多轮/上界)+INV-6 守护(2) 全绿、ruff/mypy 干净、makemigrations --check 无变化
+- [Phase 91]: 91-02: 工作流澄清出口面发卡侧 + WR-03 收口（CLARIFY-05/WR-03）——`build_clarification_card` 扩 keyword 入参 `clarification_id`（写进 form_submit `value`）+ `value.action` 由 `chat_question_answer` 改新前缀 `plan_clarify_answer`（Pitfall 1：与工作流 GroupChatQuestion 既有路由物理不交叉，CardCallbackView startswith 匹配；该函数无生产调用方，`feishu/bot/service.py` 用的是 `bot_cards.py` 同名单题版不动）；字段命名 `q{i}`/`qt{i}` 不变（回调据 order=i 映射子题）。`ai_plan_research._maybe_suspend` 增 `context` 参数，工作流入口（有 workflow_execution/node_execution）CLARIFYING 挂起：取 pending 轮未答子题（`order_by("order")` 脱敏正文）→ `build_clarification_card(..., clarification_id=str(round.id), round_no=...)` → `board_split_review._resolve_space/_aresolve_project` + `ProjectService().resolve_or_create_group` 解析项目群 → `FeishuIMService.send_card`（mirror plan_deepen._asend_card）+ 建 `WorkflowEventSubscription(event_type="PlanClarifyCallback", timeout_at=now+60min, timeout_action="fail")`；新增 helper `_send_clarify_card`/`_acollect_round_questions`/`_resolve_initiator`。**发卡 best-effort try/except（失败仍返回 waiting_event 不反噬挂起 T-91-02-05），订阅 acreate 不包裹（超时兜底是可靠性机制，guard 已确保 FK 有效应 surface）**；正文 `redact_secrets_in_text` 脱敏（T-91-02-02）、`initiated_by_user_id` 缺记 system（T-91-02-03）。chat 入口（无 execution）不发卡/不订阅（走 91-04 会话出口面），零回归。WR-03 三处 pending **存在性**判定收口 `ClarificationService.ahas_pending`（结构化子题轮不误判）——`plan_research.py`/`plan_research_tools.py` `_maybe_suspend` CLARIFYING gate、`plan_deepen.py._apending_clarification_question` 前置门（取问题内容仍用显式查询，分工：判存在用谓词、取内容用查询，plan_deepen 既有发卡零回归）。**DEVIATION**（Rule 3 blocking）：受改两文件 `chat_question_card.py`/`plan_research.py` 历史从未 ruff format-clean、改动行自身被 flag，plan 验收明列 `ruff format --check` 须过，故对受改文件整体 format（仅空白机械变更）。新订阅事件键 `PlanClarifyCallback`（91-03 回调消费）。`-k clarif/subscription/pending` 35 测绿、`test_plan_research_node.py` 12 测绿、ruff format/check + mypy 干净、makemigrations --check 无变化。**10 个既有失败（execution_concurrency 2 / template_loader 2 / comment-wiring 3 / entry_wiring 1 / inv6 feishu_chat 1 / canonical 1）经基线回归确认改动前已同样失败、与本 plan 无关（war-room 未提交在制品），记 deferred-items.md。**
 - [Phase 90]: 90-02: 结构化澄清写入收口（CLARIFY-01 service 半，INV-6）——`ClarificationService` 新增 `create_round`（建容器 `question=""` 占位 + `ClarificationQuestion.bulk_create` N 子题，order 0-based、qtype/options/recommended/origin_repo 落库，全程 sync_to_async）/ `answer_round`（遍历 `[{question_id,selected,freeform_text}]` 按题幂等 `filter(answered_at__isnull=True).update(...)` + **作答时一次性定格 `recommendation_adopted`**：single `selected==rec[0]`、multi `set(selected)==set(rec)` 全等、无推荐或纯 freeform→None，**绝不接受调用方传入** T-90-02-02）/ `ahas_pending`（统一 pending 谓词收口两形态：子题未答 OR 旧单题行 `answered_at__isnull=True,questions__isnull=True`，防历史挂起误放行 Pitfall 2）。采纳率不另写方法，由 `ClarificationQuestion.objects.filter(recommendation_adopted__isnull=False).aaggregate(total=Count, adopted=Count(filter=Q(...=True)))` SQL 聚合。INV-6 grep 守护新增 `test_inv6_clarification_question_single_write_entry`（正则覆盖 `ClarificationQuestion.objects.create/.bulk_create/(...).save` 旁路写）。生命周期埋点 `clarification_round_created/answered`（category=caller、component=delivery、duration_ms，经 `_safe_log` best-effort）。多选采纳取 set 全等（CONTEXT 未指定子集，全等最无歧义）。14 测全绿（既有 5 + 新增 9）、mypy/ruff 干净；唯一偏离：测试单题轮 `afirst()`→`aget()` 规避 mypy union-attr（Rule 3）
 
 ### Pending Todos
@@ -393,10 +394,10 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 ## Session Continuity
 
 Last session: 2026-06-27
-Stopped at: 执行 91-01（共享回流 helper aanswer_round_and_resume + 多轮澄清放开，CLARIFY-06/07）——入口无关薄封装供飞书回调/会话 endpoint 同源调用；移除 CR-01 单轮硬限改带已答重判 + _MAX_CLARIFY_ROUNDS=6 上界兜底不无限挂起；test_answer_resume(5)+test_engine_clarify(14)+INV-6 守护(2) 全绿、ruff/mypy 干净、makemigrations --check 无变化。
-Earlier: 执行 90-04（入口无关 ask_clarification helper，CLARIFY-03，Phase 90 四 plan 全部就绪）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口 ahas_pending）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
+Stopped at: 执行 91-02（工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id/新 action + WR-03 三处 pending 收口，CLARIFY-05/WR-03）——ai_plan_research CLARIFYING 发飞书澄清卡到项目群 + 建 PlanClarifyCallback 订阅 60min 超时兜底（mirror plan_deepen，best-effort 脱敏/归因不反噬挂起）；卡片新前缀 plan_clarify_answer 隔离 GroupChatQuestion 路由 + 携 clarification_id；三处存在性谓词收口 ahas_pending；35 测绿、ruff/mypy 干净、makemigrations --check 无变化。
+Earlier: 执行 91-01（共享回流 helper aanswer_round_and_resume + 多轮澄清放开，CLARIFY-06/07）；90-04（入口无关 ask_clarification helper，CLARIFY-03）；90-03（ClarifyAdapter 接 LLM 多题 + fail-soft + pending 收口 ahas_pending）；90-02（ClarificationService 写入入口）；90-01（结构化澄清数据脊柱）。
 Resume file: None
-Next: 推进 91-02（工作流节点发卡 + WorkflowEventSubscription + build_clarification_card 携 clarification_id）或 91-03/91-04（飞书回调 / 会话端续推 endpoint，消费 aanswer_round_and_resume 同源回流）。
+Next: 推进 91-03（飞书澄清回调 plan_clarify_：form_value→answers→answer_round→续推→approve_node，消费 PlanClarifyCallback + 91-01 aanswer_round_and_resume）或 91-04（会话端专路由 endpoint 收 answers[]）。
 
 ## Operator Next Steps
 
