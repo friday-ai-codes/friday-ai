@@ -67,29 +67,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLARIFY-01 | TBD | Pending |
-| CLARIFY-02 | TBD | Pending |
-| CLARIFY-03 | TBD | Pending |
-| CLARIFY-04 | TBD | Pending |
-| CLARIFY-05 | TBD | Pending |
-| CLARIFY-06 | TBD | Pending |
-| CLARIFY-07 | TBD | Pending |
-| SLOT-01 | TBD | Pending |
-| SLOT-02 | TBD | Pending |
-| SLOT-03 | TBD | Pending |
-| SLOT-04 | TBD | Pending |
-| UNIFY-01 | TBD | Pending |
-| UNIFY-02 | TBD | Pending |
-| UNIFY-03 | TBD | Pending |
-| UNIFY-04 | TBD | Pending |
-| UNIFY-05 | TBD | Pending |
-| UNIFY-06 | TBD | Pending |
-| DECOMP-01 | TBD | Pending |
+| CLARIFY-01 | Phase 90 | Pending |
+| CLARIFY-02 | Phase 90 | Pending |
+| CLARIFY-03 | Phase 90 | Pending |
+| CLARIFY-04 | Phase 91 | Pending |
+| CLARIFY-05 | Phase 91 | Pending |
+| CLARIFY-06 | Phase 91 | Pending |
+| CLARIFY-07 | Phase 91 | Pending |
+| SLOT-01 | Phase 92 | Pending |
+| SLOT-02 | Phase 92 | Pending |
+| SLOT-03 | Phase 93 | Pending |
+| SLOT-04 | Phase 93 | Pending |
+| UNIFY-01 | Phase 94 | Pending |
+| UNIFY-02 | Phase 94 | Pending |
+| UNIFY-03 | Phase 94 | Pending |
+| UNIFY-04 | Phase 94 | Pending |
+| UNIFY-05 | Phase 94 | Pending |
+| UNIFY-06 | Phase 94 | Pending |
+| DECOMP-01 | Phase 95 | Pending |
 
 **Coverage:**
 - v1 requirements: 18 total
-- Mapped to phases: 0（待 roadmapper 填充）
-- Unmapped: 18 ⚠️（roadmap 创建后归零）
+- Mapped to phases: 18 ✓（Phase 90–95）
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-27*
