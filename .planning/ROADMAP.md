@@ -106,7 +106,7 @@
 **Plans**: 7 plans（4 waves）
 **UI hint**: yes
 
-- [ ] 93-00-PLAN.md — 后端地基（BLOCKER 修复）：NodePortSerializer 补 shape 字段 + GET /api/node-types/ shape 暴露集成断言（Wave 1，SLOT-03）
+- [x] 93-00-PLAN.md — 后端地基（BLOCKER 修复）：NodePortSerializer 补 shape 字段 + GET /api/node-types/ shape 暴露集成断言（Wave 1，SLOT-03）✅
 - [ ] 93-01-PLAN.md — 契约判定地基：NodePort.shape? + portShapes 兼容纯函数 + useConnectionValidator 第 4 条 + i18n 全量键（Wave 2，依赖 93-00，SLOT-03）
 - [ ] 93-02-PLAN.md — 磁吸支撑：useConnectionDragState 拖拽态 holder + usePortSnap 吸附几何（28px/zoom 换算/仅兼容）（Wave 3，SLOT-03）
 - [ ] 93-03-PLAN.md — SLOT-04 数据：store metadata.parentNodeId 持久化 + attach/detach + 删父级联删子 + transform parentNode/extent（top-level 与 data.metadata 同源）+ autoLayout 编组整体（Wave 1，SLOT-04）
