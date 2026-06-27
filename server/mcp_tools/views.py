@@ -72,10 +72,11 @@ from .models import (
     McpCodingPlanVersion,
     McpRepositoryAnalysis,
 )
+from .orchestration_delegate import delegate_plan_orchestration
 from .planning_service import (
-    build_coding_plan,
     build_repository_analysis,
     improve_coding_plan,
+    map_canonical_to_coding_plan,
 )
 from .serializers import (
     AnalyzeRepositoryRequestSerializer,
@@ -1839,7 +1840,6 @@ class CreateCodingPlanView(McpToolView):
         branch = graph_branch or (repo.base_branch or repo.default_branch)
 
         analysis: McpRepositoryAnalysis | None = None
-        analysis_summary: dict[str, Any] | None = None
         if input_data.get("analysis_id"):
             try:
                 analysis = await McpRepositoryAnalysis.objects.aget(
@@ -1852,49 +1852,75 @@ class CreateCodingPlanView(McpToolView):
                     "分析 artifact 不存在或不属于该仓库",
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
-            analysis_summary = dict(analysis.summary or {})
 
-        file_paths = await self._collect_indexed_paths(repository_id, limit=120)
-        result = build_coding_plan(
+        # actor 解析（T-94-04-ELEV）：从 request.user 取发起编排用户透传 delegate（召回权限 actor）；
+        # 非真实用户 → None，召回 stage fail-closed 空召回（文档化降级，不绕权限）。
+        user = request.user
+        actor = (
+            user
+            if getattr(user, "is_authenticated", False) and getattr(user, "id", None) is not None
+            else None
+        )
+
+        # UNIFY-04：方案生成 delegate 到统一编排，include_repos=[repository_id] 约束**只跑单仓**
+        # （Open Q2 决议）；绝不在 MCP 层重写拆分/路由/调研/融合（复用 Plan 03 共享核心）。
+        requirement = str(input_data["requirement"])
+        delegate = await delegate_plan_orchestration(
+            requirement_text=requirement,
+            work_item=None,
+            include_repos=[repository_id],
+            created_by=actor,
+        )
+        content = delegate.content if isinstance(delegate.content, dict) else {}
+        # canonical execution_plan 该仓 task → 旧单仓响应/落库字段映射（显式白名单，T-94-04-INFO）。
+        plan_payload = map_canonical_to_coding_plan(
+            content=content,
             repository=repo,
             branch=branch,
-            requirement=str(input_data["requirement"]),
-            analysis_summary=analysis_summary,
-            file_paths=file_paths,
-            context_chunks=list(input_data.get("context_chunks") or []),
-            max_steps=int(input_data.get("max_steps") or 8),
+            requirement=requirement,
         )
+        evidence = [
+            {"kind": "file", "file_path": path, "reason": "方案影响文件候选"}
+            for path in plan_payload["affected_files"]
+        ]
+
+        # McpCodingPlan / McpCodingPlanVersion 继续落库（兼容旧调用方，A5 字段全保留）；
+        # plan_body 优先 canonical content（挂起/失败态为 {} 时回退映射后单仓 payload）。
         plan = await McpCodingPlan.objects.acreate(
             run=run,
             repository=repo,
             analysis=analysis,
             branch=branch,
-            requirement=str(input_data["requirement"]),
-            title=str(result.payload.get("title") or repo.name)[:240],
+            requirement=requirement,
+            title=str(plan_payload.get("title") or repo.name)[:240],
             current_version=1,
         )
         version = await McpCodingPlanVersion.objects.acreate(
             plan=plan,
             run=run,
             version=1,
-            plan_body=result.payload,
-            affected_files=list(result.payload.get("affected_files") or []),
-            steps=list(result.payload.get("steps") or []),
-            test_plan=list(result.payload.get("test_plan") or []),
-            risks=list(result.payload.get("risks") or []),
-            evidence=result.evidence,
+            plan_body=content or plan_payload,
+            affected_files=list(plan_payload.get("affected_files") or []),
+            steps=list(plan_payload.get("steps") or []),
+            test_plan=list(plan_payload.get("test_plan") or []),
+            risks=list(plan_payload.get("risks") or []),
+            evidence=evidence,
             change_summary="Initial MCP coding plan",
             risk_delta={"added": [], "reduced": []},
         )
+        # 响应外形兼容：保留全部既有键（plan_id/version_id/version/repository_id/branch/plan/
+        # evidence/run_id）+ 新增可选 session_id（partial 续推钥匙）+ status（delegate 终态映射）。
         output_data = {
             "plan_id": str(plan.id),
             "version_id": str(version.id),
             "version": version.version,
             "repository_id": repository_id,
             "branch": branch,
-            "plan": result.payload,
-            "evidence": result.evidence,
+            "plan": plan_payload,
+            "evidence": evidence,
             "run_id": str(run.run_id),
+            "session_id": str(delegate.session.id),
+            "status": delegate.status,
         }
         await self._record_agent_decision(
             run,
@@ -1904,15 +1930,14 @@ class CreateCodingPlanView(McpToolView):
                 "version_id": str(version.id),
                 "repository_id": repository_id,
                 "branch": branch,
-                "affected_files": result.payload.get("affected_files") or [],
+                "affected_files": plan_payload.get("affected_files") or [],
             },
         )
-        await self._record_model_usage(run, result.model_usage)
         tool_call = await self._record(
             run,
             input_data=input_data,
             output_data=output_data,
-            traces=_traces_from_evidence(result.evidence),
+            traces=_traces_from_evidence(evidence),
             started_at=started_at,
         )
         if tool_call is not None:
@@ -2729,6 +2754,58 @@ class LookupProjectByBranchView(McpToolView):
         return list(seen.values())
 
 
+@sync_to_async
+def _resolve_projects_by_branch(branch_name: str, repository_id: Any = None) -> list[Any]:
+    """按分支名(+可选 repository_id)反查项目（两源合并：work_item 解析 + ProjectBranch 显式绑定）。
+
+    与 ``lookup_project_by_branch`` 同源逻辑，供 report_* 工具在未传 ``project_id`` 时按当前
+    分支解析唯一项目用（通用规则/hook 不写死项目）。返回去重 ``Project`` 列表，调用方据数量判定。
+    """
+    from initiatives.models import Project, ProjectBranch
+    from services.branch_parsing import parse_work_item_id_from_branch
+
+    merged: dict[Any, Any] = {}
+    work_item_id = parse_work_item_id_from_branch(branch_name)
+    if work_item_id is not None:
+        for p in (
+            Project.objects.filter(work_items__work_item_id=work_item_id)
+            .select_related("space")
+            .distinct()
+        ):
+            merged.setdefault(p.id, p)
+    qs = ProjectBranch.objects.filter(branch_name=branch_name)
+    if repository_id:
+        qs = qs.filter(repository_id=repository_id)
+    for binding in qs.select_related("project__space"):
+        if binding.project is not None:
+            merged.setdefault(binding.project.id, binding.project)
+    return list(merged.values())
+
+
+async def _resolve_report_project_id(
+    input_data: dict[str, Any],
+) -> tuple[Any | None, str | None]:
+    """report_* 工具统一项目解析：优先 ``project_id``；否则按 ``branch_name`` 反查唯一项目。
+
+    解析成功把 ``project_id`` 注回 ``input_data`` 并返回 ``(project_id, None)``；无/多命中
+    返回 ``(None, "branch_unresolved")``，调用方据此 fail-soft 跳过（不写、不报错、不阻断）。
+    """
+    project_id = input_data.get("project_id")
+    if project_id:
+        return project_id, None
+    branch_name = str(input_data.get("branch_name") or "").strip()
+    if not branch_name:
+        return None, "branch_unresolved"
+    projects = await _resolve_projects_by_branch(
+        branch_name, input_data.get("repository_id")
+    )
+    if len(projects) == 1:
+        pid = projects[0].id
+        input_data["project_id"] = pid
+        return pid, None
+    return None, "branch_unresolved"
+
+
 class ReportProjectKnowledgeView(McpToolView):
     """Cursor / IDE stop hook 沉淀上报写回（CURSOR-03 + HOOK-02）。
 
@@ -2761,6 +2838,25 @@ class ReportProjectKnowledgeView(McpToolView):
             return err
         assert input_data is not None
         started_at = time.perf_counter()
+
+        # 项目解析：未传 project_id 时按 branch_name 反查唯一项目（通用规则不写死项目）。
+        resolved_pid, resolve_reason = await _resolve_report_project_id(input_data)
+        if resolved_pid is None:
+            output_data = {
+                "accepted": False,
+                "draft_id": None,
+                "memory_id": None,
+                "reason": resolve_reason,
+                "run_id": str(run.run_id),
+            }
+            await self._record(
+                run,
+                input_data=input_data,
+                output_data=output_data,
+                traces=[],
+                started_at=started_at,
+            )
+            return Response(output_data, status=status.HTTP_200_OK)
 
         if input_data.get("writeback_mode") == "active":
             # 用户授权 accepted deviation：active 直写。全程 fail-soft 包裹，绝不 5xx/阻断编码。
@@ -3023,7 +3119,10 @@ class ReportProjectStateView(McpToolView):
             }
 
         try:
-            project_id = input_data["project_id"]
+            # 项目解析：未传 project_id 时按 branch_name 反查唯一项目（通用规则不写死项目）。
+            project_id, resolve_reason = await _resolve_report_project_id(input_data)
+            if project_id is None:
+                return await _finish(_skip(resolve_reason or "branch_unresolved"))
             apis = input_data.get("apis") or []
             user = request.user
 
