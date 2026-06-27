@@ -14,6 +14,10 @@ validator 与 DAG.from_node_edge_dicts 均为零 ORM / 零 DB 纯函数，本文
 - 信息泄露：任一 issue.message 不含被引用 config 的取值字符串（T-20-01）。
 """
 
+import pytest
+
+from workflows.nodes.base import BaseNode, NodeCategory, NodePort, NodeResult
+from workflows.nodes.registry import NodeRegistry
 from workflows.validation import ValidationIssue, WorkflowGraphValidator
 
 
@@ -565,3 +569,147 @@ class TestInformationDisclosure:
         assert "node_not_found" in _reasons(result)
         for issue in result["errors"] + result["warnings"]:
             assert secret not in issue["message"]
+
+
+class _ShapeSrcNode(BaseNode):
+    """测试用源节点：clarify 输出贴 clarification_request 契约，default 无契约。"""
+
+    node_type = "_shape_src"
+    display_name = "ShapeSrc"
+    category = NodeCategory.AI
+    execution_mode = "server_local"
+    inputs = [NodePort(name="default", label="输入", required=False)]
+    outputs = [
+        NodePort(name="default", label="默认输出"),
+        NodePort(name="clarify", label="澄清请求", shape="clarification_request"),
+    ]
+
+    async def execute(self, context):  # pragma: no cover - 校验用桩
+        return NodeResult(status="completed")
+
+
+class _ShapeTgtNode(BaseNode):
+    """测试用目标节点：answer 入口贴 clarification_request、msg 入口贴 feishu_message。"""
+
+    node_type = "_shape_tgt"
+    display_name = "ShapeTgt"
+    category = NodeCategory.AI
+    execution_mode = "server_local"
+    inputs = [
+        NodePort(name="default", label="默认输入", required=False),
+        NodePort(name="answer", label="澄清答复", shape="clarification_answer"),
+        NodePort(name="req", label="澄清请求", shape="clarification_request"),
+        NodePort(name="msg", label="飞书消息", shape="feishu_message"),
+    ]
+    outputs = [NodePort(name="default", label="输出")]
+
+    async def execute(self, context):  # pragma: no cover - 校验用桩
+        return NodeResult(status="completed")
+
+
+@pytest.fixture
+def _register_shape_nodes():
+    """临时注册带 shape 端口的测试节点，用后还原 NodeRegistry（避免污染单例）。"""
+    NodeRegistry.register(_ShapeSrcNode)
+    NodeRegistry.register(_ShapeTgtNode)
+    NodeRegistry._ensure_initialized()
+    try:
+        yield
+    finally:
+        NodeRegistry._nodes.pop("_shape_src", None)
+        NodeRegistry._nodes.pop("_shape_tgt", None)
+
+
+class TestPortShapeCompatibility:
+    """端口能力契约兼容校验（SLOT-01，_validate_port_shapes）。"""
+
+    def _two_node_graph(self, *, source_handle, target_handle):
+        nodes = [
+            {"id": "s", "short_id": "src", "node_type": "_shape_src", "config": {}},
+            {"id": "t", "short_id": "tgt", "node_type": "_shape_tgt", "config": {}},
+        ]
+        edges = [
+            {
+                "id": "e1",
+                "source_node_id": "s",
+                "target_node_id": "t",
+                "source_handle": source_handle,
+                "target_handle": target_handle,
+            }
+        ]
+        return nodes, edges
+
+    def test_incompatible_shapes_report_error(self, _register_shape_nodes):
+        """双端非空且不等 → incompatible_port_shape error（带 edge_id/field_path）。"""
+        nodes, edges = self._two_node_graph(source_handle="clarify", target_handle="msg")
+        result = _validate(nodes, edges)
+        assert "incompatible_port_shape" in _reasons(result)
+        issue = next(i for i in result["errors"] if i["reason"] == "incompatible_port_shape")
+        assert issue["severity"] == "error"
+        assert issue["edge_id"] == "e1"
+        assert issue["field_path"]
+
+    def test_equal_shapes_pass(self, _register_shape_nodes):
+        """双端契约相等放行（clarification_request → clarification_request）。"""
+        nodes, edges = self._two_node_graph(source_handle="clarify", target_handle="req")
+        result = _validate(nodes, edges)
+        assert "incompatible_port_shape" not in _reasons(result)
+
+    def test_empty_target_shape_is_wildcard(self, _register_shape_nodes):
+        """目标端空契约（default 入口）→ 通配放行（向后兼容命门，Pitfall 1）。"""
+        nodes, edges = self._two_node_graph(source_handle="clarify", target_handle="default")
+        result = _validate(nodes, edges)
+        assert "incompatible_port_shape" not in _reasons(result)
+
+    def test_empty_source_shape_is_wildcard(self, _register_shape_nodes):
+        """源端空契约（default 输出）→ 通配放行。"""
+        nodes, edges = self._two_node_graph(source_handle="default", target_handle="req")
+        result = _validate(nodes, edges)
+        assert "incompatible_port_shape" not in _reasons(result)
+
+    def test_default_to_default_zero_regression(self):
+        """既有 default → default 合法图（无 shape 端口）零回归不报 incompatible_port_shape。"""
+        nodes = [
+            {"id": "u1", "short_id": "trig", "node_type": "manual_trigger", "config": {}},
+            {
+                "id": "u2",
+                "short_id": "p",
+                "node_type": "ai_prompt",
+                "config": {"user_prompt": "x"},
+            },
+        ]
+        edges = [{"id": "e1", "source_node_id": "u1", "target_node_id": "u2"}]
+        result = _validate(nodes, edges)
+        assert "incompatible_port_shape" not in _reasons(result)
+
+    def test_invalid_handle_not_double_reported(self, _register_shape_nodes):
+        """source_handle 非法 → 只报 invalid_source_handle，不额外报 incompatible_port_shape。"""
+        nodes, edges = self._two_node_graph(source_handle="nonexistent", target_handle="req")
+        result = _validate(nodes, edges)
+        reasons = _reasons(result)
+        assert "invalid_source_handle" in reasons
+        assert "incompatible_port_shape" not in reasons
+
+    def test_message_contains_only_topology(self, _register_shape_nodes):
+        """incompatible_port_shape message 只含 handle/shape 名，不回显 config（T-92-01-INFO）。"""
+        secret = "TOP_SECRET_CONFIG_xyz789"
+        nodes = [
+            {"id": "s", "short_id": "src", "node_type": "_shape_src", "config": {"k": secret}},
+            {"id": "t", "short_id": "tgt", "node_type": "_shape_tgt", "config": {"k": secret}},
+        ]
+        edges = [
+            {
+                "id": "e1",
+                "source_node_id": "s",
+                "target_node_id": "t",
+                "source_handle": "clarify",
+                "target_handle": "msg",
+            }
+        ]
+        result = _validate(nodes, edges)
+        issue = next(i for i in result["errors"] if i["reason"] == "incompatible_port_shape")
+        assert "clarify" in issue["message"]
+        assert "msg" in issue["message"]
+        assert "clarification_request" in issue["message"]
+        assert "feishu_message" in issue["message"]
+        assert secret not in issue["message"]
