@@ -18,7 +18,7 @@ import 规避 chat→delivery 循环（对齐 coding_tools）。
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 import structlog
 
@@ -28,6 +28,18 @@ logger = structlog.get_logger(__name__)
 
 # 驱动循环最大步数（防 advance 不前进死循环，T-42-03；mirror 工作流节点 _MAX_ADVANCE_STEPS）
 _MAX_ADVANCE_STEPS = 20
+
+# plan 编排澄清挂起的**独立渲染 marker**（UNIFY-05 单一来源收口，T-94-05-MARKER）。
+#
+# **仅前端渲染信号**——区别 chat 单题 ``ask_clarification``（见 agents/tools/clarification.py
+# 的 ``CLARIFICATION_PENDING_MARKER``）。挂起 / 续推的**权威唯一**以 ``delivery.Clarification`` +
+# ``PlanSession`` 为准，收答唯一经 91-04 专路由 ``POST /conversations/{id}/plan-clarification/answer/``
+# → ``aanswer_round_and_resume``。
+#
+# 取独立值（``!= "ask_clarification"``）确保 chat graph ``_extract_pending_clarification`` 的双条件
+# （``tc.name == "ask_clarification"`` AND ``payload.marker == "ask_clarification"``）**必不命中**本工具
+# 输出 → plan 澄清绝不写 ``ConversationIntentTrace``、不靠 chat graph interrupt 收答（物理隔离）。
+PLAN_CLARIFICATION_RENDER_MARKER: Final[str] = "plan_clarification"
 
 
 @tool(
@@ -51,9 +63,7 @@ _MAX_ADVANCE_STEPS = 20
             "include_repos": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": (
-                    "可选：限定候选仓库 UUID 列表（不传则按召回 / 路由自动选取）。"
-                ),
+                "description": ("可选：限定候选仓库 UUID 列表（不传则按召回 / 路由自动选取）。"),
             },
             "space_id": {
                 "type": "string",
@@ -155,11 +165,7 @@ async def _resolve_actor(conversation_id: str) -> Any:
         return None
     from chat.models import Conversation
 
-    row = (
-        await Conversation.objects.filter(id=conversation_id)
-        .values("created_by")
-        .afirst()
-    )
+    row = await Conversation.objects.filter(id=conversation_id).values("created_by").afirst()
     if not row or not row.get("created_by"):
         return None
     from accounts.models import User
@@ -167,9 +173,7 @@ async def _resolve_actor(conversation_id: str) -> Any:
     return await User.objects.filter(id=row["created_by"]).afirst()
 
 
-async def _filter_repos_in_space(
-    space_id: str, include_repos: list[str] | None
-) -> list[str]:
+async def _filter_repos_in_space(space_id: str, include_repos: list[str] | None) -> list[str]:
     """include_repos best-effort 过滤到属于 space 的仓库 UUID（透传，不做新路由）。
 
     非法 UUID / 查询异常一律降级为空列表（best-effort，不阻断编排发起）。
@@ -214,22 +218,23 @@ async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | Non
             pending = None
         else:
             pending = await (
-                Clarification.objects.filter(
-                    session_id=session.id, answered_at__isnull=True
-                )
+                Clarification.objects.filter(session_id=session.id, answered_at__isnull=True)
                 .values("id", "question")
                 .afirst()
             )
         if pending is not None:
-            # 复用 chat 既有 ask_clarification interrupt（orchestration.graph 据 marker 识别挂起）
-            from agents.tools.clarification import CLARIFICATION_PENDING_MARKER
-
+            # UNIFY-05：用**独立 plan 澄清渲染 marker**（不复用 chat 单题 ask_clarification）。
+            # marker 仅作前端渲染信号——前端据 session_id + clarification_id 走 plan 多题卡
+            # （pending_plan_clarification runtime 驱动），不走 chat 单题卡；挂起/续推权威唯一在
+            # delivery.Clarification + PlanSession，收答经 91-04 专路由 → aanswer_round_and_resume。
+            # 新 marker != "ask_clarification" → chat graph _extract_pending_clarification 双条件
+            # （name + marker）必不命中 → 物理隔离，plan 澄清绝不写 ConversationIntentTrace。
             return ToolResult(
                 success=True,
                 output={
                     "clarification_id": str(pending["id"]),
                     "pending": True,
-                    "marker": CLARIFICATION_PENDING_MARKER,
+                    "marker": PLAN_CLARIFICATION_RENDER_MARKER,
                     "question": pending["question"],
                     "options": [],
                     "allow_freeform": True,
@@ -278,9 +283,7 @@ def _map_terminal(session: Any) -> ToolResult:
             output={
                 "session_id": str(session.id),
                 "plan_version_id": (
-                    str(session.current_plan_version)
-                    if session.current_plan_version
-                    else None
+                    str(session.current_plan_version) if session.current_plan_version else None
                 ),
                 "status": "done",
                 "message": "跨仓方案编排已完成，已产出 canonical 主方案（MergedPlan）。",
@@ -293,4 +296,4 @@ def _map_terminal(session: Any) -> ToolResult:
     )
 
 
-__all__ = ["start_plan_research"]
+__all__ = ["PLAN_CLARIFICATION_RENDER_MARKER", "start_plan_research"]
