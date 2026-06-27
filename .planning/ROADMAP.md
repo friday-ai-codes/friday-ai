@@ -148,6 +148,7 @@
 **Plans**: 3 plans
 
 Plans:
+
 - [x] 95-01-PLAN.md — CallSource.PLAN_DECOMPOSE 枚举 + LOGGING-SPEC §4.1 登记（补 plan_clarification）
 - [x] 95-02-PLAN.md — decompose_segments.py LLM 拆分 helper（健壮解析 + normalize + call_source + fail-soft）
 - [x] 95-03-PLAN.md — engine._decompose 接线 helper + splitlines 回退 + 测试
@@ -161,7 +162,7 @@ Plans:
 | 92. 插槽系统（后端） | 3/3 | Complete    | 2026-06-27 |
 | 93. 插槽编辑器（前端） | 7/7 | Complete    | 2026-06-27 |
 | 94. 入口统一 | 5/5 | Complete    | 2026-06-27 |
-| 95. 拆分完善 | 3/3 | Complete    | 2026-06-28 |
+| 95. 拆分完善 | 3/3 | Complete    | 2026-06-27 |
 
 <details>
 <summary>✅ v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线）(Phases 82–89) — SHIPPED 2026-06-26 — 审计 tech_debt</summary>
