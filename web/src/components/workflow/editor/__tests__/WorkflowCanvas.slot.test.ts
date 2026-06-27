@@ -78,6 +78,26 @@ vi.mock('~/composables/useToast', () => ({
   useToast: () => ({ success: vi.fn(), error: mockError }),
 }))
 
+// AlertDialog（reka-ui）stub 为透传容器：避免 teleport/上下文复杂度，断言走 exposed 状态 + store。
+vi.mock('~/components/ui/alert-dialog', () => {
+  const passthrough = (name: string) => defineComponent({
+    name,
+    setup(_, { slots }) {
+      return () => h('div', slots.default?.())
+    },
+  })
+  return {
+    AlertDialog: passthrough('AlertDialog'),
+    AlertDialogAction: passthrough('AlertDialogAction'),
+    AlertDialogCancel: passthrough('AlertDialogCancel'),
+    AlertDialogContent: passthrough('AlertDialogContent'),
+    AlertDialogDescription: passthrough('AlertDialogDescription'),
+    AlertDialogFooter: passthrough('AlertDialogFooter'),
+    AlertDialogHeader: passthrough('AlertDialogHeader'),
+    AlertDialogTitle: passthrough('AlertDialogTitle'),
+  }
+})
+
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
 
 function makeNodeType(overrides: Partial<NodeType>): NodeType {
@@ -244,5 +264,124 @@ describe('workflowCanvas 吸附端点（SLOT-03 snap-locked）', () => {
     wrapper.vm.updateSnapFromPointer({ clientX: 300, clientY: 140 } as any)
 
     expect(wrapper.vm.snapTarget).toBeNull()
+  })
+})
+
+describe('workflowCanvas clarify 附着（SLOT-04）', () => {
+  it('clarify 槽连 clarification_card → store.attachChild（相对坐标），不建普通边', () => {
+    useNodeTypesStore().nodeTypes = [
+      makeNodeType({ node_type: 'ai_plan_research', category: 'ai', outputs: [makePort('clarify', 'clarification_request')] }),
+      makeNodeType({ node_type: 'clarification_card', category: 'ai', inputs: [makePort('in', 'clarification_request')] }),
+    ]
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research', position: { x: 0, y: 0 } }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', position: { x: 400, y: 200 } }),
+    )
+    mockVfNodes.value = [
+      { id: 'p', data: { nodeType: 'ai_plan_research' } },
+      { id: 'c', data: { nodeType: 'clarification_card' } },
+    ]
+    const attachChild = vi.spyOn(store, 'attachChild')
+    const addEdge = vi.spyOn(store, 'addEdge')
+
+    const wrapper = mountCanvas()
+    wrapper.vm.onConnect({ source: 'p', sourceHandle: 'clarify', target: 'c', targetHandle: 'in' } as any)
+
+    expect(addEdge).not.toHaveBeenCalled()
+    expect(attachChild).toHaveBeenCalledTimes(1)
+    expect(attachChild.mock.calls[0][0]).toBe('c')
+    expect(attachChild.mock.calls[0][1]).toBe('p')
+    expect(attachChild.mock.calls[0][2]).toMatchObject({ x: 400, y: 200 })
+  })
+})
+
+describe('workflowCanvas 附着编组容器（SLOT-04，WARNING 2 存在性断言）', () => {
+  it('有附着子 → 渲染 .slot-attach-group + .slot-attach-connector', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research', position: { x: 0, y: 0 } }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', position: { x: 300, y: 120 }, metadata: { parentNodeId: 'p' } }),
+    )
+
+    const wrapper = mountCanvas()
+    expect(wrapper.vm.attachGroups).toHaveLength(1)
+    expect(wrapper.find('.slot-attach-group').exists()).toBe(true)
+    expect(wrapper.find('.slot-attach-connector').exists()).toBe(true)
+  })
+
+  it('基线无附着关系 → 不渲染 .slot-attach-group', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research' }),
+      makeStoreNode({ id: 'o', nodeType: 'http_request' }),
+    )
+
+    const wrapper = mountCanvas()
+    expect(wrapper.vm.attachGroups).toHaveLength(0)
+    expect(wrapper.find('.slot-attach-group').exists()).toBe(false)
+  })
+})
+
+describe('workflowCanvas 级联删除确认（SLOT-04）', () => {
+  it('删带附着子的父节点 → 弹确认（延后删）；确认后 removeNode 级联', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research' }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', metadata: { parentNodeId: 'p' } }),
+    )
+    const removeNode = vi.spyOn(store, 'removeNode')
+
+    const wrapper = mountCanvas()
+    wrapper.vm.requestRemoveNode('p')
+
+    expect(removeNode).not.toHaveBeenCalled()
+    expect(wrapper.vm.pendingDelete).toMatchObject({ id: 'p', count: 1 })
+
+    wrapper.vm.confirmDelete()
+    expect(removeNode).toHaveBeenCalledWith('p')
+    expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+
+  it('删无附着子的普通节点 → 直接删（零回归，不弹确认）', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(makeStoreNode({ id: 'x', nodeType: 'http_request' }))
+    const removeNode = vi.spyOn(store, 'removeNode')
+
+    const wrapper = mountCanvas()
+    wrapper.vm.requestRemoveNode('x')
+
+    expect(removeNode).toHaveBeenCalledWith('x')
+    expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+})
+
+describe('workflowCanvas 解除附着确认（SLOT-04）', () => {
+  it('右键附着子节点 → 弹 detach 确认；确认后 detachChild（恢复绝对坐标）', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research', position: { x: 10, y: 20 } }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', position: { x: 30, y: 40 }, metadata: { parentNodeId: 'p' } }),
+    )
+    const detachChild = vi.spyOn(store, 'detachChild')
+
+    const wrapper = mountCanvas()
+    wrapper.vm.onNodeContextMenu({ event: { preventDefault: vi.fn() }, node: { id: 'c', data: { metadata: { parentNodeId: 'p' } } } } as any)
+    expect(wrapper.vm.pendingDetach).toMatchObject({ childId: 'c' })
+
+    wrapper.vm.confirmDetach()
+    expect(detachChild).toHaveBeenCalledTimes(1)
+    expect(detachChild.mock.calls[0][0]).toBe('c')
+    // 相对→绝对：父(10,20)+子相对(30,40)=(40,60)
+    expect(detachChild.mock.calls[0][1]).toMatchObject({ x: 40, y: 60 })
+  })
+
+  it('右键非附着节点 → 不弹解除确认', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(makeStoreNode({ id: 'x', nodeType: 'http_request' }))
+
+    const wrapper = mountCanvas()
+    wrapper.vm.onNodeContextMenu({ event: { preventDefault: vi.fn() }, node: { id: 'x', data: { metadata: {} } } } as any)
+    expect(wrapper.vm.pendingDetach).toBeNull()
   })
 })
