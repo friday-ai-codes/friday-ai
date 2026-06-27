@@ -4,7 +4,57 @@ from feishu.cards.chat_question_card import (
     build_chat_answered_card,
     build_chat_question_card,
     build_chat_reminder_card,
+    build_clarification_card,
 )
+
+
+def _clarification_form_submit_value(card: dict) -> dict:
+    """从澄清卡中取 form_submit 按钮的 value（回调路由锚）。"""
+    for el in card["elements"]:
+        if el.get("tag") == "form":
+            for fe in el["elements"]:
+                if fe.get("action_type") == "form_submit":
+                    return fe["value"]
+    raise AssertionError("no form_submit element in clarification card")
+
+
+class TestBuildClarificationCardAction:
+    """build_clarification_card 回调 action 前缀参数化测试（92-02 Task 2）。"""
+
+    def test_default_action_is_plan_clarify_answer(self) -> None:
+        """Test 1（向后兼容）：不传 action → value.action == 'plan_clarify_answer'（91 路由不变）。"""
+        card = build_clarification_card(
+            [{"question": "涉及哪些仓库？", "options": ["api", "web"], "recommended": "api"}],
+            execution_id="exec-1",
+            node_id="node-1",
+            clarification_id="cid",
+        )
+        assert _clarification_form_submit_value(card)["action"] == "plan_clarify_answer"
+
+    def test_custom_action_routes_to_standalone_callback(self) -> None:
+        """Test 2（standalone 路由）：传 action='clarify_card_answer' → value.action 切换。"""
+        card = build_clarification_card(
+            [{"question": "涉及哪些仓库？", "options": ["api", "web"], "recommended": "api"}],
+            execution_id="exec-1",
+            node_id="node-1",
+            clarification_id="cid",
+            action="clarify_card_answer",
+        )
+        assert _clarification_form_submit_value(card)["action"] == "clarify_card_answer"
+
+    def test_value_carries_routing_anchors(self) -> None:
+        """Test 3：value 仍并列携 execution_id/node_id/clarification_id（92-03 据其定位本节点）。"""
+        card = build_clarification_card(
+            [{"question": "q", "options": ["a"], "recommended": "a"}],
+            execution_id="exec-9",
+            node_id="node-8",
+            clarification_id="clar-7",
+            action="clarify_card_answer",
+        )
+        value = _clarification_form_submit_value(card)
+        assert value["execution_id"] == "exec-9"
+        assert value["node_id"] == "node-8"
+        assert value["clarification_id"] == "clar-7"
 
 
 class TestBuildChatQuestionCard:
