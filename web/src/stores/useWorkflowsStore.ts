@@ -633,7 +633,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     const node = nodes.value.find(n => n.id === childId)
     if (!node)
       return
-    const { parentNodeId: _drop, ...rest } = node.metadata as Record<string, unknown>
+    const { parentNodeId: _drop, ...rest } = (node.metadata ?? {}) as Record<string, unknown>
     node.metadata = rest
     node.position = absolutePosition
     saveToHistory()
