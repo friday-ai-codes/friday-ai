@@ -21,6 +21,7 @@ import WorkflowCanvas from '../WorkflowCanvas.vue'
 const mockViewport = ref({ x: 0, y: 0, zoom: 1 })
 const mockVfNodes = ref<any[]>([])
 const mockVfEdges = ref<any[]>([])
+const mockSelectedNodes = ref<any[]>([])
 const mockFindNode = vi.fn((id: string) => mockVfNodes.value.find(n => n.id === id))
 const mockScreenToFlow = vi.fn((p: { x: number, y: number }) => ({ ...p }))
 const mockError = vi.fn()
@@ -41,13 +42,14 @@ vi.mock('@vue-flow/core', () => {
     Position: { Top: 'top', Bottom: 'bottom', Left: 'left', Right: 'right' },
     getBezierPath: () => ['M0,0'],
     useVueFlow: () => ({
-      getSelectedNodes: ref([]),
+      getSelectedNodes: mockSelectedNodes,
       fitView: vi.fn(),
       viewport: mockViewport,
       getNodes: mockVfNodes,
       getEdges: mockVfEdges,
       findNode: mockFindNode,
       screenToFlowCoordinate: mockScreenToFlow,
+      setNodes: vi.fn(),
     }),
   }
 })
@@ -147,6 +149,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   mockVfNodes.value = []
   mockVfEdges.value = []
+  mockSelectedNodes.value = []
   mockViewport.value = { x: 0, y: 0, zoom: 1 }
   mockError.mockClear()
   mockScreenToFlow.mockClear()
@@ -336,11 +339,52 @@ describe('workflowCanvas 级联删除确认（SLOT-04）', () => {
     wrapper.vm.requestRemoveNode('p')
 
     expect(removeNode).not.toHaveBeenCalled()
-    expect(wrapper.vm.pendingDelete).toMatchObject({ id: 'p', count: 1 })
+    expect(wrapper.vm.pendingDelete).toMatchObject({ ids: ['p'], count: 1 })
 
     wrapper.vm.confirmDelete()
     expect(removeNode).toHaveBeenCalledWith('p')
     expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+
+  it('批量删除 ≥2 个带附着子父节点 → 聚合为一次确认，确认后全部删除（WR-02）', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p1', nodeType: 'ai_plan_research', name: '方案1' }),
+      makeStoreNode({ id: 'c1', nodeType: 'clarification_card', metadata: { parentNodeId: 'p1' } }),
+      makeStoreNode({ id: 'p2', nodeType: 'ai_plan_research', name: '方案2' }),
+      makeStoreNode({ id: 'c2', nodeType: 'clarification_card', metadata: { parentNodeId: 'p2' } }),
+      makeStoreNode({ id: 'x', nodeType: 'http_request' }),
+    )
+    mockSelectedNodes.value = [{ id: 'p1' }, { id: 'p2' }, { id: 'x' }]
+    const removeNode = vi.spyOn(store, 'removeNode')
+
+    const wrapper = mountCanvas()
+    wrapper.vm.handleBatchDelete()
+
+    // 无附着子的 x 立即删除
+    expect(removeNode).toHaveBeenCalledWith('x')
+    // 两个带子父节点聚合进单一 pendingDelete（不再互相覆盖）
+    expect(wrapper.vm.pendingDelete).toMatchObject({ ids: ['p1', 'p2'], count: 2 })
+
+    wrapper.vm.confirmDelete()
+    // 确认后两个父节点都被删除（连同各自附着子）
+    expect(removeNode).toHaveBeenCalledWith('p1')
+    expect(removeNode).toHaveBeenCalledWith('p2')
+    expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+
+  it('同一父节点重复请求删除 → 不重复聚合（WR-02）', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research' }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', metadata: { parentNodeId: 'p' } }),
+    )
+
+    const wrapper = mountCanvas()
+    wrapper.vm.requestRemoveNode('p')
+    wrapper.vm.requestRemoveNode('p')
+
+    expect(wrapper.vm.pendingDelete).toMatchObject({ ids: ['p'], count: 1 })
   })
 
   it('删无附着子的普通节点 → 直接删（零回归，不弹确认）', () => {
