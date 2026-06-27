@@ -50,7 +50,20 @@ import '@vue-flow/controls/dist/style.css'
 const store = useWorkflowsStore()
 const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
 
-const vfNodes = computed(() => toVueFlowNodes(storeNodes.value))
+/**
+ * WR-03：取消级联删除后强制重灌 `:nodes` 用的版本号。
+ * Vue Flow `applyDefault` 默认在发出 remove 变更时已把节点从其内部状态移除；带附着子的
+ * 父节点删除被延后（仅置 pendingDelete，store 未变），若用户点「取消」，store 不变 →
+ * `vfNodes` 引用不变 → Vue Flow 不会被重新喂入 → 节点已从画布消失却仍在 store（失同步）。
+ * bump 本版本号即可让 `vfNodes` 产出新数组引用，触发 Vue Flow 从 store 重新同步内部节点。
+ */
+const canvasSyncVersion = ref(0)
+
+const vfNodes = computed(() => {
+  // 依赖 canvasSyncVersion：取消级联删除时 bump 以强制 Vue Flow 重灌 :nodes（WR-03）。
+  void canvasSyncVersion.value
+  return toVueFlowNodes(storeNodes.value)
+})
 const vfEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value))
 
 const edgeTypes = { gradient: markRaw(GradientEdge) }
@@ -437,6 +450,9 @@ function confirmDelete() {
 
 function cancelDelete() {
   pendingDelete.value = null
+  // WR-03：取消后 store 未变，但 Vue Flow 可能已（经 applyDefault）移除被延后的父节点。
+  // bump 版本号强制 vfNodes 产出新引用 → Vue Flow 从 store 重灌，恢复画布与 store 同步。
+  canvasSyncVersion.value += 1
 }
 
 // --- 解除附着确认（子节点右键 → detachBody 确认 → 恢复独立绝对坐标） ---
@@ -546,6 +562,7 @@ function handleBatchCopy() {
 
 // 暴露内部处理器供单测驱动（无真实 @vue-flow 画布交互时的可测面）。
 defineExpose({
+  vfNodes,
   onConnectStart,
   onConnectEnd,
   onConnect,

@@ -387,6 +387,36 @@ describe('workflowCanvas 级联删除确认（SLOT-04）', () => {
     expect(wrapper.vm.pendingDelete).toMatchObject({ ids: ['p'], count: 1 })
   })
 
+  it('取消级联删除 → 节点仍在 store 且强制重灌 :nodes（WR-03 画布/store 同步）', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'p', nodeType: 'ai_plan_research' }),
+      makeStoreNode({ id: 'c', nodeType: 'clarification_card', metadata: { parentNodeId: 'p' } }),
+    )
+    const removeNode = vi.spyOn(store, 'removeNode')
+
+    const wrapper = mountCanvas()
+    const before = wrapper.vm.vfNodes
+
+    // 触发删除（带子 → 延后确认，store 未变）
+    wrapper.vm.requestRemoveNode('p')
+    expect(removeNode).not.toHaveBeenCalled()
+    expect(wrapper.vm.pendingDelete).toMatchObject({ ids: ['p'] })
+
+    // 取消
+    wrapper.vm.cancelDelete()
+
+    // store 仍保留父子节点（未删）
+    expect(removeNode).not.toHaveBeenCalled()
+    expect(store.nodes.some(n => n.id === 'p')).toBe(true)
+    expect(store.nodes.some(n => n.id === 'c')).toBe(true)
+    // 强制重灌：vfNodes 产出新引用，且节点仍渲染于画布
+    const after = wrapper.vm.vfNodes
+    expect(after).not.toBe(before)
+    expect(after.some((n: any) => n.id === 'p')).toBe(true)
+    expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+
   it('删无附着子的普通节点 → 直接删（零回归，不弹确认）', () => {
     const store = useWorkflowsStore()
     store.nodes.push(makeStoreNode({ id: 'x', nodeType: 'http_request' }))
