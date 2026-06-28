@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { usePaletteDragState } from '../editor/composables/usePaletteDragState'
 import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 
 const props = defineProps<{
@@ -9,11 +10,18 @@ const props = defineProps<{
 }>()
 
 const visual = computed(() => getNodeVisual(props.nodeType))
+const { startPaletteDrag, endPaletteDrag } = usePaletteDragState()
 
 function handleDragStart(event: DragEvent) {
   event.dataTransfer?.setData('application/vueflow', props.nodeType)
   event.dataTransfer?.setData('application/vueflow-name', props.name)
   event.dataTransfer!.effectAllowed = 'move'
+  // SLOT-04：记录被拖能力，供宿主节点能力槽在 dragover 期判定类型匹配高亮。
+  startPaletteDrag(props.nodeType)
+}
+
+function handleDragEnd() {
+  endPaletteDrag()
 }
 
 function getIconGradient(color: string): string {
@@ -53,6 +61,7 @@ function getHoverGlow(color: string): string {
     class="group flex items-center gap-3 p-3 text-sm rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 transition-all duration-300 cursor-grab active:cursor-grabbing hover:bg-card/90 hover:shadow-md"
     :class="getHoverGlow(visual.color)"
     @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
   >
     <!-- Drag Handle (6-dot grip) -->
     <div

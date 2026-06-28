@@ -32,22 +32,16 @@ interface WorkflowEdgeData {
  * nodeType 映射到 Vue Flow 的 type 字段，用于查找自定义节点组件。
  * 其余业务字段全部放入 data 中，保证往返转换无丢失。
  *
- * SLOT-04 父子映射：store 节点若带 `metadata.parentNodeId`（附着子节点），
- * 输出附 `parentNode: <parentId>` + `extent: 'parent'`（Vue Flow 原生包含/级联拖拽/相对定位）。
+ * SLOT-04 拼积木插槽：store 节点若带 `metadata.parentNodeId`（附着子节点/插件），
+ * **不作为独立画布节点渲染**——它嵌入宿主卡的能力槽内（in-card chip，见 BaseWorkflowNode）。
+ * 因此这里把附着子节点从画布节点集中过滤掉；它们仍留在 store（SSOT，供后端执行 + 卡内渲染）。
  *
- * 数据契约命门（WARNING 1，跨 plan 固化）：top-level `parentNode` 与 `data.metadata`
- * （含 `parentNodeId`）**同源并存**——`data.metadata` 逐字透传既有 storeNode.metadata，
- * 不为提 parentNode 到顶层而从 metadata 删改 parentNodeId。下游 93-05 经
- * `props.data.metadata.parentNodeId` 判附着徽标，故 `node.data.metadata.parentNodeId`
- * 是该判定的唯一权威来源，必须随节点透传。
- *
- * 排序命门：返回前把带 parent 的子节点排到其父之后（先无 parent 再有 parent 的两趟稳定排序），
- * 否则 Vue Flow 报 "parent node not found"。
+ * 数据契约：`data.metadata`（含 `parentNodeId`）逐字透传 storeNode.metadata。
  */
 export function toVueFlowNodes(storeNodes: WorkflowNodeStore[]): Node<WorkflowNodeData>[] {
-  const vfNodes = storeNodes.map((storeNode) => {
-    const parentNodeId = storeNode.metadata?.parentNodeId
-    const node: Node<WorkflowNodeData> = {
+  return storeNodes
+    .filter(storeNode => !isAttachedChild(storeNode))
+    .map(storeNode => ({
       id: storeNode.id,
       type: storeNode.nodeType,
       position: { ...storeNode.position },
@@ -63,23 +57,15 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore[]): Node<WorkflowNo
         nodeTimeoutSeconds: storeNode.nodeTimeoutSeconds,
         fallbackValues: storeNode.fallbackValues,
         runCondition: storeNode.runCondition,
-        // 同源透传：含 parentNodeId 在内的全部 metadata 逐字保留（93-05 徽标读取来源）
         metadata: storeNode.metadata,
       },
-    }
-    // 仅附着子节点提 parentNode + extent 到顶层（Vue Flow 包含语义）；不改 data.metadata
-    if (typeof parentNodeId === 'string' && parentNodeId) {
-      node.parentNode = parentNodeId
-      node.extent = 'parent'
-    }
-    return node
-  })
+    }))
+}
 
-  // 父先子排序（Vue Flow 硬约束）：稳定两趟——先无 parentNode 的，再有 parentNode 的
-  return [
-    ...vfNodes.filter(n => !n.parentNode),
-    ...vfNodes.filter(n => n.parentNode),
-  ]
+/** 是否为附着子节点（插件）：带非空 metadata.parentNodeId。 */
+function isAttachedChild(storeNode: WorkflowNodeStore): boolean {
+  const pid = storeNode.metadata?.parentNodeId
+  return typeof pid === 'string' && pid.length > 0
 }
 
 /**
@@ -95,12 +81,19 @@ export function toVueFlowEdges(
   storeNodes?: WorkflowNodeStore[],
 ): Edge<WorkflowEdgeData>[] {
   const typeById = new Map<string, string>()
+  // 附着子节点（插件）id 集：与其相连的边为「内部接线」，不在画布渲染（卡内 chip 已表达）。
+  const attachedChildIds = new Set<string>()
   if (storeNodes) {
-    for (const node of storeNodes)
+    for (const node of storeNodes) {
       typeById.set(node.id, node.nodeType)
+      if (isAttachedChild(node))
+        attachedChildIds.add(node.id)
+    }
   }
 
-  return storeEdges.map(storeEdge => ({
+  return storeEdges
+    .filter(e => !attachedChildIds.has(e.source) && !attachedChildIds.has(e.target))
+    .map(storeEdge => ({
     id: storeEdge.id,
     source: storeEdge.source,
     target: storeEdge.target,

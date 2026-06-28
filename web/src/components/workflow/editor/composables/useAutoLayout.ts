@@ -66,7 +66,8 @@ export function useAutoLayout() {
 
     const laidOut = applyLayout(
       toVueFlowNodes(layoutStoreNodes),
-      sortBranchEdges(toVueFlowEdges(store.edges)),
+      // 传全量 store.nodes 以识别附着子节点，过滤其内部边（避免 dagre 收到指向非画布节点的边）
+      sortBranchEdges(toVueFlowEdges(store.edges, store.nodes)),
       // 横向层间距 / 同层间距：对齐 dify（层间 ~100、同层 ~80）撑开连线，避免节点贴太近
       { rankdir: 'LR', ranksep: 140, nodesep: 70 },
     )
