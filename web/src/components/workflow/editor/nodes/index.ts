@@ -33,6 +33,10 @@ const registeredTypes: Record<string, NodeComponent> = Object.fromEntries(
 /**
  * 使用 Proxy 为未注册的节点类型提供 fallback，
  * 避免数据库中残留旧类型（如 generate_plan）时 Vue Flow 报 "Node type is missing" 警告。
+ *
+ * 同时 trap `has`：Vue Flow 内部用 `type in nodeTypes` 判定组件是否存在，
+ * 仅 trap `get` 时未注册类型会被判为缺失而回退到内置默认节点（不渲染自定义 Handle/插槽）。
+ * `has` 对任意字符串 key 返回 true，确保 `get` 的 baseNode fallback 真正被采用。
  */
 export const nodeTypes: Record<string, NodeComponent> = new Proxy(registeredTypes, {
   get(target, prop, receiver) {
@@ -40,5 +44,11 @@ export const nodeTypes: Record<string, NodeComponent> = new Proxy(registeredType
       return baseNode
     }
     return Reflect.get(target, prop, receiver)
+  },
+  has(target, prop) {
+    if (typeof prop === 'string') {
+      return true
+    }
+    return Reflect.has(target, prop)
   },
 })

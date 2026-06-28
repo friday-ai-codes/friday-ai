@@ -12,6 +12,7 @@ import {
   CloudUpload,
   Combine,
   FileCode,
+  FileSearch,
   FileText,
   FolderSearch,
   GitBranch,
@@ -83,6 +84,7 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
   ai_variable_extractor: { icon: Variable, color: 'purple' },
   variable_extractor: { icon: Variable, color: 'purple' },
   ai_plan_generation: { icon: FileCode, color: 'purple' },
+  ai_plan_research: { icon: FileSearch, color: 'purple' },
   ai_coding: { icon: Terminal, color: 'purple' },
 
   // 澄清 (orange = 琥珀语义，呼应既有 need_clarification 琥珀色)
