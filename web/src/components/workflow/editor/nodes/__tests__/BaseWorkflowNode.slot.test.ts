@@ -102,7 +102,7 @@ afterEach(() => {
 })
 
 describe('baseWorkflowNode 端口形状/着色（SLOT-03）', () => {
-  it('typed shape input → 圆角方形描边凹槽 + shape 色；typed output → 圆角方形实心', async () => {
+  it('typed shape input → 卡内嵌虚线插槽位（缺口 + 拖入提示 + 拼图凸榫连接点）；typed output → 圆角方形实心', async () => {
     const store = useNodeTypesStore()
     store.nodeTypes = [
       makeNodeType({
@@ -115,14 +115,16 @@ describe('baseWorkflowNode 端口形状/着色（SLOT-03）', () => {
     const wrapper = mountNode('ai_plan_research')
     await nextTick()
 
+    // typed input 不再是边缘漂浮方块，而是卡内嵌「拼积木」插槽位：
+    // 连接点为左缘拼图凸榫（slot-tab-handle），卡内渲染虚线缺口 + 拖入提示文案。
     const input = findHandle(wrapper, 'clarify', 'target')!
-    expect(input.classes()).toContain('slot-handle-typed')
-    expect(input.classes()).toContain('slot-handle-input')
-    const inputStyle = input.attributes('style') ?? ''
-    expect(inputStyle).toContain('border-radius: 4px')
-    expect(inputStyle).toContain('#f59e0b') // clarification_request shape 色
-    expect(inputStyle).toContain('background: transparent')
+    expect(input.classes()).toContain('slot-tab-handle')
+    const dropzone = wrapper.find('.slot-dropzone')
+    expect(dropzone.exists()).toBe(true)
+    expect(dropzone.text()).toContain('clarify') // 插槽标题=端口 label
+    expect(dropzone.text()).toContain('拖入兼容卡片') // dropHint 文案（真实 zh-CN）
 
+    // typed output 仍为圆角方形实心凸点（右侧出口，未改）
     const output = findHandle(wrapper, 'resume', 'source')!
     expect(output.classes()).toContain('slot-handle-typed')
     expect(output.classes()).toContain('slot-handle-output')

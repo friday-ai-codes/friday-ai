@@ -188,6 +188,15 @@ const ports = computed<PortItem[]>(() => {
 const inputPorts = computed(() => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed(() => ports.value.filter(p => p.group === 'output'))
 
+/**
+ * 输入端口分流（SLOT-04 拼积木式插槽）：
+ * - `plainInputPorts`（shape 空，如 default）：仍渲染为左缘圆形 Handle（数据流入口，零回归）。
+ * - `slotInputPorts`（shape 非空，如 resume/clarification_answer）：渲染为**卡片内嵌虚线插槽位**
+ *   （缺口 + 拖入提示），把「能力卡」拖/连进来，而非边缘漂浮的方块。
+ */
+const plainInputPorts = computed(() => inputPorts.value.filter(p => !p.shape))
+const slotInputPorts = computed(() => inputPorts.value.filter(p => !!p.shape))
+
 /** 多选时隐藏单节点工具栏，改用画布级统一工具栏 */
 const isMultiSelect = computed(() => getSelectedNodes.value.length > 1)
 
@@ -506,21 +515,21 @@ async function handleTest() {
         <span class="icon-[lucide--lock] h-3 w-3 text-amber-600" />
       </div>
 
-      <!-- Input Handles：永远左入（target=Left）；触发器节点 inputPorts 为空则不渲染 -->
+      <!-- 普通 Input Handles：左缘圆形入口（shape 空，如 default）；触发器无入端口则不渲染 -->
       <Handle
-        v-for="(port, i) in inputPorts"
-        v-show="inputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
+        v-for="(port, i) in plainInputPorts"
+        v-show="plainInputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
         :id="port.id"
         :key="port.id"
         type="target"
         :position="Position.Left"
         :class="inputHandleClass(port)"
-        :style="inputHandleStyle(port, i, inputPorts.length)"
+        :style="inputHandleStyle(port, i, plainInputPorts.length)"
       />
 
       <!-- 入方向 hover "+"：在左侧追加并连线一个新节点（触发器无入端口则不显示） -->
       <div
-        v-if="inputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
+        v-if="plainInputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
         class="nodrag nopan absolute -left-7 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <NodeInsertMenu @select="(nt) => appendNode('input', nt)" />
@@ -578,6 +587,44 @@ async function handleTest() {
           </p>
         </div>
       </slot>
+
+      <!-- 卡片内嵌「能力插槽位」（SLOT-04 拼积木）：typed input port（shape 非空，如澄清答复）
+           渲染为卡内虚线缺口 + 拖入提示；连接点为左缘小拼图凸榫（target Handle，行内 relative 定位）。
+           把兼容「能力卡」连进来即附着，不再是边缘漂浮方块。 -->
+      <div
+        v-if="slotInputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
+        class="-mx-3 mt-2.5 space-y-1.5 border-t border-border/40 px-3 pt-2.5"
+      >
+        <div
+          v-for="port in slotInputPorts"
+          :key="port.id"
+          class="relative"
+        >
+          <Handle
+            :id="port.id"
+            type="target"
+            :position="Position.Left"
+            class="slot-tab-handle"
+            :class="dragging ? (isCompatibleTarget(data.nodeType, port.id) ? 'compatible-highlight' : 'forbidden') : ''"
+            :style="{ top: '50%', backgroundColor: handleColor(port) }"
+          />
+          <div
+            class="slot-dropzone flex items-center gap-2 rounded-lg border border-dashed px-2 py-1.5 transition-colors"
+            :class="dragging && isCompatibleTarget(data.nodeType, port.id) ? 'slot-dropzone-active' : ''"
+            :style="{ borderColor: handleColor(port), background: `${handleColor(port)}14` }"
+          >
+            <span class="icon-[lucide--puzzle] h-3.5 w-3.5 shrink-0" :style="{ color: handleColor(port) }" />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[11px] font-medium leading-tight text-foreground/80">
+                {{ port.label }}
+              </div>
+              <div class="truncate text-[9px] leading-tight text-muted-foreground/70">
+                {{ dragging && isCompatibleTarget(data.nodeType, port.id) ? t('workflow.editor.slot.dropActiveHint') : t('workflow.editor.slot.dropHint') }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 单出口：居中圆点（source=Right），保持极简外观 -->
       <Handle
@@ -649,6 +696,21 @@ async function handleTest() {
 /* IM 门控 handle：缺 chat_id 源时禁止落点光标（节点整体降透明由卡片 class 控制）。 */
 .slot-handle-gated {
   cursor: not-allowed !important;
+}
+
+/* 卡内插槽位连接点：左缘竖向圆角「拼图凸榫」（替代旧的边缘漂浮方块），
+   背景色经 inline style 取 shape 色，行内 relative 定位使其贴卡片左缘并随插槽行垂直居中。 */
+.slot-tab-handle {
+  width: 8px !important;
+  height: 18px !important;
+  border-radius: 4px !important;
+  border: 2px solid hsl(var(--card)) !important;
+}
+
+/* 插槽缺口拖拽命中态：兼容能力卡拖近时虚线变实 + 轻微高亮，传达「可松开接入」。 */
+.slot-dropzone-active {
+  border-style: solid !important;
+  box-shadow: 0 0 0 3px hsl(142 71% 45% / 0.15);
 }
 
 @media (prefers-reduced-motion: reduce) {
