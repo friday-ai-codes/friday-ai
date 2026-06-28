@@ -65,7 +65,7 @@ app.use(head)
 app.use(vfm)
 
 // 路由守卫
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
   // ── Step 1：初始化状态检测（每次 app 首次守卫触发时检查一次）──
@@ -83,16 +83,17 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // ── Step 2：setup 路由守卫（必须在 initAuth 之前）──
+  // Vue Router 4：返回值即结果——返回路由跳转、返回 true 放行（不再用 next() 回调）。
   if (authStore.needsSetup && to.path !== '/setup') {
-    return next('/setup')
+    return '/setup'
   }
   if (!authStore.needsSetup && to.path === '/setup') {
     // 管理员已创建（needs_setup=false）但首启向导仍在进行（provider/feishu/rag），
     // 刷新后允许停留在 /setup 恢复进度，避免“直接进去了”。完成后进度被清除即正常重定向。
     if (hasResumableSetup()) {
-      return next()
+      return true
     }
-    return next('/login')
+    return '/login'
   }
 
   // ── Step 3：原有认证守卫（不变，/setup 已加入 publicPages）──
@@ -108,28 +109,28 @@ router.beforeEach(async (to, from, next) => {
 
   if (authRequired && !authStore.isAuthenticated) {
     // 需要认证但未登录 -> 跳转登录页
-    return next({ path: '/login', query: { redirect: to.fullPath } })
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
 
   if (to.path === '/login' && authStore.isAuthenticated) {
     // 已登录访问登录页 -> 检查是否需要修改密码
     if (authStore.mustChangePassword) {
-      return next('/force-change-password')
+      return '/force-change-password'
     }
-    return next('/')
+    return '/'
   }
 
   // 如果需要强制修改密码，只允许访问强制修改密码页面
   if (authStore.isAuthenticated && authStore.mustChangePassword && to.path !== '/force-change-password') {
-    return next('/force-change-password')
+    return '/force-change-password'
   }
 
   // 检查管理员专属页面
   if (to.meta.requiresAdmin && !authStore.isAdmin) {
-    return next('/403')
+    return '/403'
   }
 
-  next()
+  return true
 })
 
 // 监听 403 事件，跳转无权访问页面
