@@ -22,7 +22,16 @@ import { generateShortId } from '~/utils/shortId'
 import { randomUUID } from '~/utils/uuid'
 import { useConnectionDragState } from '../composables/useConnectionDragState'
 import { useImCapability } from '../composables/useImCapability'
+import { usePaletteDragState } from '../composables/usePaletteDragState'
 import NodeInsertMenu from '../NodeInsertMenu.vue'
+import {
+  CAPABILITY_META,
+  getNodeProvides,
+  getNodeSlots,
+  isPluginCompatible,
+  resolveSlotEdges,
+  type SlotCapability,
+} from '../slotTaxonomy'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
 
@@ -110,6 +119,8 @@ const { t } = useI18n()
 
 // 拖拽连接态（SLOT-03）：驱动 input handle 的 compatible-highlight / forbidden 类。
 const { dragging, isCompatibleTarget } = useConnectionDragState()
+// 节点库拖拽能力态（SLOT-04 拖拽落槽）：驱动卡内能力槽的兼容高亮/降亮。
+const { draggingCapability, endPaletteDrag } = usePaletteDragState()
 // 图级 IM 能力门控（SLOT-04 / CONTEXT D）：缺 chat_id 源时降级 IM 依赖节点。
 const { isImGated } = useImCapability()
 
@@ -189,13 +200,88 @@ const inputPorts = computed(() => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed(() => ports.value.filter(p => p.group === 'output'))
 
 /**
- * 输入端口分流（SLOT-04 拼积木式插槽）：
- * - `plainInputPorts`（shape 空，如 default）：仍渲染为左缘圆形 Handle（数据流入口，零回归）。
- * - `slotInputPorts`（shape 非空，如 resume/clarification_answer）：渲染为**卡片内嵌虚线插槽位**
- *   （缺口 + 拖入提示），把「能力卡」拖/连进来，而非边缘漂浮的方块。
+ * 端口分流（SLOT-04 拼积木式插槽）：
+ * - plain 端口（shape 空，如 default/error）：渲染为左/右缘圆形 Handle（普通数据流，零回归）。
+ * - typed 端口（shape 非空，如 clarify/resume）：是「能力槽」的内部接线端点，**不渲染为可见 handle**；
+ *   能力以卡内嵌「能力槽位」（hostSlots，按 slotTaxonomy）呈现，拖入对应能力的插件即附着接线。
  */
 const plainInputPorts = computed(() => inputPorts.value.filter(p => !p.shape))
-const slotInputPorts = computed(() => inputPorts.value.filter(p => !!p.shape))
+const plainOutputPorts = computed(() => outputPorts.value.filter(p => !p.shape))
+
+// 本节点暴露的能力槽（按 slotTaxonomy 分类）。
+const hostSlots = computed<SlotCapability[]>(() => getNodeSlots(props.data.nodeType))
+
+/** 已附着到本节点的插件（子节点，带 metadata.parentNodeId === 本节点 id）。 */
+const attachedChildren = computed(() =>
+  store.nodes.filter(n => (n.metadata as Record<string, unknown> | undefined)?.parentNodeId === props.id),
+)
+
+/** 能力 → 已填入该槽的插件子节点（单槽单插件，取首个匹配能力的子节点）。 */
+const slotFillByCapability = computed(() => {
+  const map: Partial<Record<SlotCapability, (typeof attachedChildren.value)[number]>> = {}
+  for (const child of attachedChildren.value) {
+    const cap = getNodeProvides(child.nodeType)
+    if (cap && !map[cap])
+      map[cap] = child
+  }
+  return map
+})
+
+/** 拖拽落入空槽：类型匹配则建插件子节点 + 附着 + 按能力自动接线。 */
+function onSlotDrop(event: DragEvent, capability: SlotCapability): void {
+  event.preventDefault()
+  event.stopPropagation()
+  const nodeType = event.dataTransfer?.getData('application/vueflow')
+  endPaletteDrag()
+  if (!nodeType || !isPluginCompatible(nodeType, capability) || slotFillByCapability.value[capability])
+    return
+  const def = getNodeDefinition(nodeType)
+  const pluginId = randomUUID()
+  const hostNt = nodeTypesStore.getNodeType(props.data.nodeType)
+  const hostOutputs = hostNt?.outputs.map(p => p.name) ?? []
+  const hostInputs = hostNt?.inputs.map(p => p.name) ?? []
+  store.addNode({
+    id: pluginId,
+    shortId: generateShortId(),
+    nodeType,
+    name: def?.displayName || nodeType,
+    description: '',
+    position: { x: 0, y: 0 },
+    config: { ...((def?.defaultConfig as Record<string, unknown>) ?? {}) },
+    onError: 'abort',
+    retryTimes: 0,
+    retryDelay: 5,
+    nodeTimeoutSeconds: null,
+    fallbackValues: null,
+    runCondition: null,
+    metadata: { parentNodeId: props.id, slotCapability: capability },
+  })
+  for (const e of resolveSlotEdges({ hostId: props.id, hostOutputs, hostInputs, pluginId, capability })) {
+    store.addEdge({
+      id: `edge-${e.source}-${e.target}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      source: e.source,
+      target: e.target,
+      sourcePort: e.sourcePort,
+      targetPort: e.targetPort,
+      label: undefined,
+      condition: null,
+    })
+  }
+}
+
+/** 仅当被拖能力与槽匹配时允许落入（preventDefault 才会触发 drop）。 */
+function onSlotDragOver(event: DragEvent, capability: SlotCapability): void {
+  if (draggingCapability.value === capability) {
+    event.preventDefault()
+    if (event.dataTransfer)
+      event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+/** 移除槽内插件（删子节点，级联清其内部边）。 */
+function removeSlotPlugin(child: (typeof attachedChildren.value)[number]): void {
+  store.removeNode(child.id)
+}
 
 /** 多选时隐藏单节点工具栏，改用画布级统一工具栏 */
 const isMultiSelect = computed(() => getSelectedNodes.value.length > 1)
@@ -398,7 +484,7 @@ function appendNode(direction: 'input' | 'output', nodeType: string) {
       id: `edge-${props.id}-${newNodeId}-${Date.now()}`,
       source: props.id,
       target: newNodeId,
-      sourcePort: outputPorts.value[0]?.id ?? 'default',
+      sourcePort: plainOutputPorts.value[0]?.id ?? 'default',
       targetPort: 'default',
       label: undefined,
       condition: null,
@@ -410,7 +496,7 @@ function appendNode(direction: 'input' | 'output', nodeType: string) {
       source: newNodeId,
       target: props.id,
       sourcePort: 'default',
-      targetPort: inputPorts.value[0]?.id ?? 'default',
+      targetPort: plainInputPorts.value[0]?.id ?? 'default',
       label: undefined,
       condition: null,
     })
@@ -588,65 +674,80 @@ async function handleTest() {
         </div>
       </slot>
 
-      <!-- 卡片内嵌「能力插槽位」（SLOT-04 拼积木）：typed input port（shape 非空，如澄清答复）
-           渲染为卡内虚线缺口 + 拖入提示；连接点为左缘小拼图凸榫（target Handle，行内 relative 定位）。
-           把兼容「能力卡」连进来即附着，不再是边缘漂浮方块。 -->
+      <!-- 卡片内嵌「能力槽位」（SLOT-04 拼积木）：按 slotTaxonomy 渲染本节点暴露的能力槽。
+           空槽 = 虚线缺口 + 拖入提示（从节点库拖兼容插件落入即附着接线）；已填 = 插件 chip + 移除。
+           类型匹配：仅当被拖能力 === 槽能力时高亮可落，其余降亮不可落。 -->
       <div
-        v-if="slotInputPorts.length > 0 && hideHandles !== 'input' && hideHandles !== 'both'"
+        v-if="hostSlots.length > 0"
         class="-mx-3 mt-2.5 space-y-1.5 border-t border-border/40 px-3 pt-2.5"
       >
-        <div
-          v-for="port in slotInputPorts"
-          :key="port.id"
-          class="relative"
-        >
-          <Handle
-            :id="port.id"
-            type="target"
-            :position="Position.Left"
-            class="slot-tab-handle"
-            :class="dragging ? (isCompatibleTarget(data.nodeType, port.id) ? 'compatible-highlight' : 'forbidden') : ''"
-            :style="{ top: '50%', backgroundColor: handleColor(port) }"
-          />
+        <template v-for="cap in hostSlots" :key="cap">
+          <!-- 已填：插件 chip（图标 + 名称 + 移除） -->
           <div
-            class="slot-dropzone flex items-center gap-2 rounded-lg border border-dashed px-2 py-1.5 transition-colors"
-            :class="dragging && isCompatibleTarget(data.nodeType, port.id) ? 'slot-dropzone-active' : ''"
-            :style="{ borderColor: handleColor(port), background: `${handleColor(port)}14` }"
+            v-if="slotFillByCapability[cap]"
+            class="flex items-center gap-1.5 rounded-lg border px-2 py-1.5"
+            :style="{ borderColor: CAPABILITY_META[cap].color, background: `${CAPABILITY_META[cap].color}14` }"
           >
-            <span class="icon-[lucide--puzzle] h-3.5 w-3.5 shrink-0" :style="{ color: handleColor(port) }" />
+            <component
+              :is="getNodeVisual(slotFillByCapability[cap]!.nodeType).icon"
+              class="h-3.5 w-3.5 shrink-0"
+              :style="{ color: CAPABILITY_META[cap].color }"
+            />
+            <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground/85">
+              {{ slotFillByCapability[cap]!.name }}
+            </span>
+            <button
+              type="button"
+              class="nodrag shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              title="移除"
+              @click.stop="removeSlotPlugin(slotFillByCapability[cap]!)"
+            >
+              <span class="icon-[lucide--x] h-3 w-3" />
+            </button>
+          </div>
+          <!-- 空槽：虚线缺口 drop-zone（拖拽落入） -->
+          <div
+            v-else
+            class="slot-dropzone nodrag flex items-center gap-2 rounded-lg border border-dashed px-2 py-1.5 transition-all"
+            :class="draggingCapability === cap ? 'slot-dropzone-active' : (draggingCapability ? 'opacity-40' : '')"
+            :style="{ borderColor: CAPABILITY_META[cap].color, background: `${CAPABILITY_META[cap].color}0d` }"
+            @dragover="onSlotDragOver($event, cap)"
+            @drop="onSlotDrop($event, cap)"
+          >
+            <component :is="CAPABILITY_META[cap].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: CAPABILITY_META[cap].color }" />
             <div class="min-w-0 flex-1">
-              <div class="truncate text-[11px] font-medium leading-tight text-foreground/80">
-                {{ port.label }}
+              <div class="truncate text-[11px] font-medium leading-tight text-foreground/75">
+                {{ CAPABILITY_META[cap].label }}
               </div>
               <div class="truncate text-[9px] leading-tight text-muted-foreground/70">
-                {{ dragging && isCompatibleTarget(data.nodeType, port.id) ? t('workflow.editor.slot.dropActiveHint') : t('workflow.editor.slot.dropHint') }}
+                {{ draggingCapability === cap ? CAPABILITY_META[cap].activeHint : CAPABILITY_META[cap].hint }}
               </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <!-- 单出口：居中圆点（source=Right），保持极简外观 -->
       <Handle
-        v-if="outputPorts.length === 1"
+        v-if="plainOutputPorts.length === 1"
         v-show="hideHandles !== 'output' && hideHandles !== 'both'"
-        :id="outputPorts[0].id"
-        :key="outputPorts[0].id"
+        :id="plainOutputPorts[0].id"
+        :key="plainOutputPorts[0].id"
         type="source"
         :position="Position.Right"
-        :class="outputHandleClass(outputPorts[0])"
-        :style="outputHandleStyle(outputPorts[0])"
+        :class="outputHandleClass(plainOutputPorts[0])"
+        :style="outputHandleStyle(plainOutputPorts[0])"
       />
 
       <!-- 多出口：卡片内底部「分支列表」。每行 = 语义文案 + 行末圆点（即出口 Handle）。
            连线自卡片右缘各圆点向右引出，文案落在卡内左侧，从结构上杜绝标签压线。
            每行 relative → Handle 的 Position.Right 以「行」为基准，圆点贴右缘并随行垂直居中。 -->
       <div
-        v-if="outputPorts.length > 1 && hideHandles !== 'output' && hideHandles !== 'both'"
+        v-if="plainOutputPorts.length > 1 && hideHandles !== 'output' && hideHandles !== 'both'"
         class="-mx-3 mt-2.5 space-y-1 border-t border-border/40 px-3 pr-0 pt-2"
       >
         <div
-          v-for="port in outputPorts"
+          v-for="port in plainOutputPorts"
           :key="port.id"
           class="relative flex items-center justify-end"
         >
@@ -669,7 +770,7 @@ async function handleTest() {
       <!-- 出方向 hover "+"：在右侧追加并连线一个新节点。
            多出口节点不显示居中 "+"（语义不明）——从具体出口拖拽连线即可 -->
       <div
-        v-if="outputPorts.length === 1 && hideHandles !== 'output' && hideHandles !== 'both'"
+        v-if="plainOutputPorts.length === 1 && hideHandles !== 'output' && hideHandles !== 'both'"
         class="nodrag nopan absolute -right-7 top-1/2 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <NodeInsertMenu @select="(nt) => appendNode('output', nt)" />
@@ -698,19 +799,11 @@ async function handleTest() {
   cursor: not-allowed !important;
 }
 
-/* 卡内插槽位连接点：左缘竖向圆角「拼图凸榫」（替代旧的边缘漂浮方块），
-   背景色经 inline style 取 shape 色，行内 relative 定位使其贴卡片左缘并随插槽行垂直居中。 */
-.slot-tab-handle {
-  width: 8px !important;
-  height: 18px !important;
-  border-radius: 4px !important;
-  border: 2px solid hsl(var(--card)) !important;
-}
-
-/* 插槽缺口拖拽命中态：兼容能力卡拖近时虚线变实 + 轻微高亮，传达「可松开接入」。 */
+/* 能力槽缺口拖拽命中态：兼容插件拖入时虚线变实 + 轻微高亮 + 微放大，传达「松开即落入」。 */
 .slot-dropzone-active {
   border-style: solid !important;
-  box-shadow: 0 0 0 3px hsl(142 71% 45% / 0.15);
+  box-shadow: 0 0 0 3px hsl(142 71% 45% / 0.18);
+  transform: scale(1.02);
 }
 
 @media (prefers-reduced-motion: reduce) {

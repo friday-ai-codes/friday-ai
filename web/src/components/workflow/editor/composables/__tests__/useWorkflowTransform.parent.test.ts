@@ -1,20 +1,22 @@
 /**
- * useWorkflowTransform 父子映射单元测试（SLOT-04）。
+ * useWorkflowTransform 附着子节点（拼积木插槽）单元测试（SLOT-04）。
+ *
+ * 新模型（拖拽落槽）：附着子节点（插件，带 metadata.parentNodeId）**不作为独立画布节点渲染**，
+ * 它嵌入宿主卡的能力槽内（in-card chip）；其相连的内部边也不在画布渲染。子节点/内部边仍留在
+ * store（SSOT，供后端执行 + 卡内渲染）。
  *
  * 覆盖：
- * - 带 metadata.parentNodeId 的 store 节点 → vf 节点含 parentNode + extent:'parent'。
- * - 数据契约断言（WARNING 1）：同一附着子节点 node.parentNode===parentId 且
- *   node.data.metadata.parentNodeId===parentId（两者同源不丢，锁死 93-05 读取来源）。
- * - 父先子排序：输出数组中父节点索引恒小于其子节点索引（即便输入中子先于父）。
- * - fromVueFlowNodes 往返保留 metadata.parentNodeId。
- * - 无父子图零回归（节点无 parentNode/extent）。
+ * - toVueFlowNodes 过滤附着子节点（画布只渲染宿主与普通节点）。
+ * - toVueFlowEdges 过滤「内部边」（任一端为附着子节点）。
+ * - 普通节点 data.metadata 透传；无父子图零回归。
+ * - fromVueFlowNodes 普通节点往返不丢字段。
  * - useAutoLayout 不改动附着子节点坐标（子节点不进 dagre）。
  */
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useAutoLayout } from '../useAutoLayout'
-import { fromVueFlowNodes, toVueFlowNodes } from '../useWorkflowTransform'
+import { fromVueFlowNodes, toVueFlowEdges, toVueFlowNodes } from '../useWorkflowTransform'
 
 function makeStoreNode(id: string, overrides: Record<string, any> = {}) {
   return {
@@ -36,67 +38,52 @@ function makeStoreNode(id: string, overrides: Record<string, any> = {}) {
   }
 }
 
-describe('toVueFlowNodes - 父子映射 + 数据契约', () => {
-  it('带 metadata.parentNodeId 的节点 → parentNode + extent:\'parent\'', () => {
+describe('toVueFlowNodes - 附着子节点过滤（拼积木插槽）', () => {
+  it('附着子节点不渲染为画布节点（嵌入宿主卡内）', () => {
     const nodes = [
       makeStoreNode('parent'),
       makeStoreNode('child', { metadata: { parentNodeId: 'parent' }, position: { x: 20, y: 30 } }),
     ]
     const vf = toVueFlowNodes(nodes)
-    const child = vf.find(n => n.id === 'child')!
-    expect(child.parentNode).toBe('parent')
-    expect(child.extent).toBe('parent')
-    // 相对父坐标透传
-    expect(child.position).toEqual({ x: 20, y: 30 })
+    expect(vf.find(n => n.id === 'child')).toBeUndefined()
+    expect(vf.find(n => n.id === 'parent')).toBeDefined()
+    expect(vf).toHaveLength(1)
   })
 
-  it('数据契约（WARNING 1）：parentNode 与 data.metadata.parentNodeId 同源并存', () => {
-    const nodes = [
-      makeStoreNode('p'),
-      makeStoreNode('c', { metadata: { parentNodeId: 'p', extra: 1 } }),
-    ]
+  it('普通节点 data.metadata 透传 + 无父子图零回归', () => {
+    const nodes = [makeStoreNode('a', { metadata: { extra: 1 } }), makeStoreNode('b')]
     const vf = toVueFlowNodes(nodes)
-    const child = vf.find(n => n.id === 'c')!
-    // top-level parentNode
-    expect(child.parentNode).toBe('p')
-    // data.metadata 同源保留 parentNodeId（93-05 徽标唯一权威来源）
-    expect(child.data!.metadata.parentNodeId).toBe('p')
-    // 其它 metadata 字段不丢
-    expect(child.data!.metadata.extra).toBe(1)
-  })
-
-  it('父先子排序：父索引恒小于子索引（即便输入中子先于父）', () => {
-    const nodes = [
-      makeStoreNode('child', { metadata: { parentNodeId: 'parent' } }),
-      makeStoreNode('parent'),
-    ]
-    const vf = toVueFlowNodes(nodes)
-    const pIdx = vf.findIndex(n => n.id === 'parent')
-    const cIdx = vf.findIndex(n => n.id === 'child')
-    expect(pIdx).toBeLessThan(cIdx)
-  })
-
-  it('无父子图零回归：节点不含 parentNode/extent', () => {
-    const nodes = [makeStoreNode('a'), makeStoreNode('b')]
-    const vf = toVueFlowNodes(nodes)
+    expect(vf.map(n => n.id)).toEqual(['a', 'b'])
+    expect(vf.find(n => n.id === 'a')!.data!.metadata.extra).toBe(1)
     for (const n of vf) {
       expect(n.parentNode).toBeUndefined()
       expect(n.extent).toBeUndefined()
     }
-    // 顺序保持
-    expect(vf.map(n => n.id)).toEqual(['a', 'b'])
   })
 })
 
-describe('fromVueFlowNodes - 往返保 parentNodeId', () => {
-  it('toVueFlowNodes → fromVueFlowNodes 往返 metadata.parentNodeId 不丢', () => {
+describe('toVueFlowEdges - 内部边过滤', () => {
+  it('任一端为附着子节点的边不渲染；普通边保留', () => {
     const nodes = [
-      makeStoreNode('parent'),
-      makeStoreNode('child', { metadata: { parentNodeId: 'parent' } }),
+      makeStoreNode('host'),
+      makeStoreNode('plugin', { metadata: { parentNodeId: 'host' } }),
+      makeStoreNode('other'),
     ]
+    const edges = [
+      { id: 'internal1', source: 'host', sourcePort: 'clarify', target: 'plugin', targetPort: 'clarification_request', condition: null },
+      { id: 'internal2', source: 'plugin', sourcePort: 'clarification_answer', target: 'host', targetPort: 'resume', condition: null },
+      { id: 'normal', source: 'host', sourcePort: 'default', target: 'other', targetPort: 'default', condition: null },
+    ]
+    const vf = toVueFlowEdges(edges, nodes)
+    expect(vf.map(e => e.id)).toEqual(['normal'])
+  })
+})
+
+describe('fromVueFlowNodes - 普通节点往返', () => {
+  it('toVueFlowNodes → fromVueFlowNodes 普通节点字段不丢', () => {
+    const nodes = [makeStoreNode('a'), makeStoreNode('b')]
     const back = fromVueFlowNodes(toVueFlowNodes(nodes))
-    const child = back.find(n => n.id === 'child')!
-    expect(child.metadata.parentNodeId).toBe('parent')
+    expect(back.map(n => n.id)).toEqual(['a', 'b'])
   })
 })
 

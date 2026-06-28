@@ -8,6 +8,7 @@ import zhCN from '~/locales/zh-CN.json'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useConnectionDragState } from '../../composables/useConnectionDragState'
+import { usePaletteDragState } from '../../composables/usePaletteDragState'
 import BaseWorkflowNode from '../BaseWorkflowNode.vue'
 
 /**
@@ -101,94 +102,126 @@ afterEach(() => {
   useConnectionDragState().endConnect()
 })
 
-describe('baseWorkflowNode 端口形状/着色（SLOT-03）', () => {
-  it('typed shape input → 卡内嵌虚线插槽位（缺口 + 拖入提示 + 拼图凸榫连接点）；typed output → 圆角方形实心', async () => {
+function pushHost(wf: ReturnType<typeof useWorkflowsStore>, id = 'node-1', nodeType = 'ai_plan_research') {
+  wf.nodes.push({
+    id,
+    shortId: id.slice(0, 3),
+    nodeType,
+    name: '宿主',
+    description: '',
+    position: { x: 0, y: 0 },
+    config: {},
+    onError: 'abort',
+    retryTimes: 0,
+    retryDelay: 5,
+    nodeTimeoutSeconds: null,
+    fallbackValues: null,
+    runCondition: null,
+    metadata: {},
+  } as any)
+}
+
+describe('baseWorkflowNode 能力槽渲染 + 拖拽落入（SLOT-04）', () => {
+  beforeEach(() => {
     const store = useNodeTypesStore()
     store.nodeTypes = [
       makeNodeType({
         node_type: 'ai_plan_research',
         category: 'ai',
-        inputs: [makePort('clarify', 'clarification_request')],
-        outputs: [makePort('resume', 'clarification_answer')],
+        inputs: [makePort('default'), makePort('resume', 'clarification_answer')],
+        outputs: [makePort('default'), makePort('clarify', 'clarification_request'), makePort('error')],
+      }),
+      makeNodeType({
+        node_type: 'clarification_card',
+        category: 'ai',
+        inputs: [makePort('clarification_request')],
+        outputs: [makePort('clarification_answer'), makePort('feishu_message'), makePort('error')],
       }),
     ]
+  })
+
+  it('宿主按 taxonomy 渲染能力槽（澄清/文档/通知）；typed 端口不渲染为 handle，plain 端口仍渲染', async () => {
     const wrapper = mountNode('ai_plan_research')
     await nextTick()
 
-    // typed input 不再是边缘漂浮方块，而是卡内嵌「拼积木」插槽位：
-    // 连接点为左缘拼图凸榫（slot-tab-handle），卡内渲染虚线缺口 + 拖入提示文案。
-    const input = findHandle(wrapper, 'clarify', 'target')!
-    expect(input.classes()).toContain('slot-tab-handle')
-    const dropzone = wrapper.find('.slot-dropzone')
-    expect(dropzone.exists()).toBe(true)
-    expect(dropzone.text()).toContain('clarify') // 插槽标题=端口 label
-    expect(dropzone.text()).toContain('拖入兼容卡片') // dropHint 文案（真实 zh-CN）
-
-    // typed output 仍为圆角方形实心凸点（右侧出口，未改）
-    const output = findHandle(wrapper, 'resume', 'source')!
-    expect(output.classes()).toContain('slot-handle-typed')
-    expect(output.classes()).toContain('slot-handle-output')
-    const outputStyle = output.attributes('style') ?? ''
-    expect(outputStyle).toContain('border-radius: 4px')
-    expect(outputStyle).toContain('#f59e0b') // clarification_answer shape 实心色
+    // ai_plan_research → hostSlots = [clarification, document, notification] → 3 个 dropzone
+    expect(wrapper.findAll('.slot-dropzone').length).toBe(3)
+    // typed 端口（clarify/resume）是内部接线端点，不渲染为可见 handle
+    expect(findHandle(wrapper, 'clarify', 'source')).toBeUndefined()
+    expect(findHandle(wrapper, 'resume', 'target')).toBeUndefined()
+    // plain 端口（default 出口）仍渲染（零回归）
+    expect(findHandle(wrapper, 'default', 'source')).toBeDefined()
   })
 
-  it('default/error 通用端口 → 圆形（无 typed 类）+ 既有语义色（零回归）', async () => {
-    const store = useNodeTypesStore()
-    store.nodeTypes = [
-      makeNodeType({
-        node_type: 'http_request',
-        category: 'action',
-        inputs: [makePort('default')],
-        outputs: [makePort('default'), makePort('error')],
-      }),
-    ]
-    const wrapper = mountNode('http_request')
+  it('拖入兼容插件落槽 → 建插件子节点(parentNodeId) + 按能力自动接线', async () => {
+    const wf = useWorkflowsStore()
+    pushHost(wf)
+    const wrapper = mountNode('ai_plan_research')
     await nextTick()
 
-    const defaultOut = findHandle(wrapper, 'default', 'source')!
-    expect(defaultOut.classes()).not.toContain('slot-handle-typed')
-    expect(defaultOut.attributes('style') ?? '').toContain('#10b981') // emerald 成功
-    expect(defaultOut.attributes('style') ?? '').not.toContain('border-radius: 4px')
+    // 第 1 个 dropzone = 澄清槽；拖入澄清卡（提供 clarification）
+    await wrapper.findAll('.slot-dropzone')[0].trigger('drop', {
+      dataTransfer: { getData: () => 'clarification_card' },
+    })
 
-    const errorOut = findHandle(wrapper, 'error', 'source')!
-    expect(errorOut.classes()).not.toContain('slot-handle-typed')
-    expect(errorOut.attributes('style') ?? '').toContain('#ef4444') // red 失败
+    const child = wf.nodes.find(n => (n.metadata as any)?.parentNodeId === 'node-1')
+    expect(child).toBeDefined()
+    expect(child!.nodeType).toBe('clarification_card')
+    // 双向澄清接线：host.clarify→plugin.clarification_request + plugin.clarification_answer→host.resume
+    expect(wf.edges.some(e => e.source === 'node-1' && e.sourcePort === 'clarify')).toBe(true)
+    expect(wf.edges.some(e => e.target === 'node-1' && e.targetPort === 'resume')).toBe(true)
+  })
+
+  it('拖入不兼容插件 → 不落槽（类型不匹配，无附着）', async () => {
+    const wf = useWorkflowsStore()
+    pushHost(wf)
+    const wrapper = mountNode('ai_plan_research')
+    await nextTick()
+
+    // 第 2 个 dropzone = 文档槽；拖入澄清卡（提供 clarification ≠ document）
+    await wrapper.findAll('.slot-dropzone')[1].trigger('drop', {
+      dataTransfer: { getData: () => 'clarification_card' },
+    })
+
+    expect(wf.nodes.find(n => (n.metadata as any)?.parentNodeId === 'node-1')).toBeUndefined()
   })
 })
 
-describe('baseWorkflowNode 拖拽态机（SLOT-03）', () => {
+describe('baseWorkflowNode 能力槽类型匹配高亮（SLOT-04 palette 拖拽）', () => {
   beforeEach(() => {
     const store = useNodeTypesStore()
     store.nodeTypes = [
       makeNodeType({
-        node_type: 'tgt',
-        category: 'integration',
-        inputs: [makePort('msg', 'feishu_message'), makePort('doc', 'feishu_document')],
-        outputs: [makePort('default')],
+        node_type: 'ai_plan_research',
+        category: 'ai',
+        inputs: [makePort('default'), makePort('resume', 'clarification_answer')],
+        outputs: [makePort('default'), makePort('clarify', 'clarification_request'), makePort('error')],
       }),
     ]
   })
 
-  it('拖拽中：兼容 input handle 带 compatible-highlight，不兼容带 forbidden', async () => {
-    // 源 output shape=feishu_message → 'msg'(feishu_message) 兼容、'doc'(feishu_document) 不兼容
-    useConnectionDragState().startConnect('src', 'out', 'feishu_message')
-    const wrapper = mountNode('tgt')
-    await nextTick()
-
-    const msg = findHandle(wrapper, 'msg', 'target')!
-    const doc = findHandle(wrapper, 'doc', 'target')!
-    expect(msg.classes()).toContain('compatible-highlight')
-    expect(doc.classes()).toContain('forbidden')
+  afterEach(() => {
+    usePaletteDragState().endPaletteDrag()
   })
 
-  it('非拖拽态：input handle 无 compatible/forbidden 类（idle 零回归）', async () => {
-    const wrapper = mountNode('tgt')
+  it('拖起兼容插件(澄清卡) → 澄清槽高亮(active)，其余能力槽降亮(opacity-40)', async () => {
+    usePaletteDragState().startPaletteDrag('clarification_card')
+    const wrapper = mountNode('ai_plan_research')
     await nextTick()
 
-    const msg = findHandle(wrapper, 'msg', 'target')!
-    expect(msg.classes()).not.toContain('compatible-highlight')
-    expect(msg.classes()).not.toContain('forbidden')
+    const zones = wrapper.findAll('.slot-dropzone')
+    expect(zones[0].classes()).toContain('slot-dropzone-active') // clarification 兼容
+    expect(zones[1].classes()).toContain('opacity-40') // document 不兼容
+    expect(zones[2].classes()).toContain('opacity-40') // notification 不兼容
+  })
+
+  it('非拖拽态：能力槽无高亮/降亮（idle 零回归）', async () => {
+    const wrapper = mountNode('ai_plan_research')
+    await nextTick()
+
+    const zone = wrapper.findAll('.slot-dropzone')[0]
+    expect(zone.classes()).not.toContain('slot-dropzone-active')
+    expect(zone.classes()).not.toContain('opacity-40')
   })
 })
 
