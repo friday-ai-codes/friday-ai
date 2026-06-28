@@ -98,8 +98,8 @@ async def start_plan_research(
             error="缺少需求文本（requirement_text）",
         )
 
-    from services.plan_orchestration import (
-        adrive_plan_session_to_pause_or_terminal,
+    from services.process_runtime import (
+        adrive_convergence_session_to_pause_or_terminal,
         build_orchestration_engine,
         start_orchestration,
     )
@@ -136,7 +136,7 @@ async def start_plan_research(
     # 5. 复用 43-02 共享续驱 helper（与工作流节点 / 回调消费者同源，不造两套循环）：
     #    advance 至「重挂起短路点」（clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；
     #    step 上限由 helper 内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
-    session = await adrive_plan_session_to_pause_or_terminal(
+    session = await adrive_convergence_session_to_pause_or_terminal(
         engine, session, max_steps=_MAX_ADVANCE_STEPS
     )
 
@@ -208,11 +208,11 @@ async def _filter_repos_in_space(space_id: str, include_repos: list[str] | None)
 
 async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | None:
     """clarifying（pending）/ researching（在途）处复用 chat 既有 HITL 返回挂起 marker。"""
-    from delivery.models import Clarification, PlanSessionStatus
+    from delivery.models import Clarification, ConvergenceSessionStatus
     from delivery.services.clarification_service import ClarificationService
-    from services.plan_orchestration import aall_research_tasks_terminal
+    from services.process_runtime import aall_research_tasks_terminal
 
-    if session.status == PlanSessionStatus.CLARIFYING:
+    if session.status == ConvergenceSessionStatus.WAITING_CLARIFICATION:
         # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判）；取内容仍用显式查询。
         if not await ClarificationService().ahas_pending(session.id):
             pending = None
@@ -242,7 +242,7 @@ async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | Non
                 },
             )
 
-    if session.status == PlanSessionStatus.RESEARCHING:
+    if session.status == ConvergenceSessionStatus.WAITING_EVENT:
         if not await aall_research_tasks_terminal(session.id):
             # 复用 chat 既有 deep_analysis fire-and-forget marker（容器完成后既有机制 resume）
             from agents.tools.blocking_task_registry import register_blocking_task
@@ -274,19 +274,21 @@ async def _maybe_suspend(session: Any, conversation_id: str) -> ToolResult | Non
 
 
 def _map_terminal(session: Any) -> ToolResult:
-    """done → success + canonical plan_version_id；failed → 失败（取 session.error 消息）。"""
-    from delivery.models import PlanSessionStatus
+    """done → success + artifact_version_id；failed → 失败（取 session.error 消息）。"""
+    from delivery.models import ConvergenceSessionStatus
 
-    if session.status == PlanSessionStatus.DONE:
+    if session.status == ConvergenceSessionStatus.DONE:
         return ToolResult(
             success=True,
             output={
                 "session_id": str(session.id),
-                "plan_version_id": (
-                    str(session.current_plan_version) if session.current_plan_version else None
+                "artifact_version_id": (
+                    str(session.current_artifact_version_id)
+                    if session.current_artifact_version_id
+                    else None
                 ),
                 "status": "done",
-                "message": "跨仓方案编排已完成，已产出 canonical 主方案（MergedPlan）。",
+                "message": "跨仓方案编排已完成，已产出技术方案产物（ArtifactVersion）。",
             },
         )
     error = session.error if isinstance(session.error, dict) else {}

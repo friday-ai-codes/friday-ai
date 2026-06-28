@@ -35,7 +35,10 @@ from orchestration.coding_graph import build_coding_graph
 from projects.models import Space
 
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
-from .conversation_service import ConversationService
+from .conversation_service import (
+    ConversationService,
+    compute_conversation_duration_ms,
+)
 from .models import Conversation
 from .permissions import ChatAuthPermission
 from .serializers import (
@@ -79,8 +82,7 @@ def _append_feishu_export_record(message, record: dict[str, str]) -> None:
 
     document_id = record.get("document_id", "")
     if document_id and any(
-        isinstance(item, dict) and item.get("document_id") == document_id
-        for item in exports
+        isinstance(item, dict) and item.get("document_id") == document_id for item in exports
     ):
         return
 
@@ -357,9 +359,15 @@ class ConversationListView(APIView):
         # ?archived=1 → 仅返回已归档会话（「查看已归档」入口）。
         archived_raw = (request.query_params.get("archived") or "").lower()
         archived_only = archived_raw in {"1", "true", "yes"}
-        # owner gate（ISO-02）：已认证用户仅列自己的会话，无 superuser bypass。
+        # owner gate（ISO-02）+ 项目作战室 P2：已认证用户列「自己的会话 ∪ 所在项目共享会话」；
+        # ?bound_project= 过滤到单项目（项目页大盘会话栏）。
+        bound_project = request.query_params.get("bound_project") or None
         conversations = await ConversationService.list_conversations(
-            request.user, query=q, limit=limit, archived_only=archived_only,
+            request.user,
+            query=q,
+            limit=limit,
+            archived_only=archived_only,
+            bound_project=bound_project,
         )
         serializer = ConversationListSerializer(conversations, many=True)
         return Response(serializer.data)
@@ -385,6 +393,9 @@ class ConversationListView(APIView):
         space_id = str(data["space_id"]) if data.get("space_id") else None
         title = data.get("title", "新对话")
         model = data.get("model", "")
+        # 项目作战室 P2：绑定项目 + 可见性。
+        bound_project_id = str(data["bound_project_id"]) if data.get("bound_project_id") else None
+        visibility = data.get("visibility") or "personal"
 
         # 验证 project 存在（仅在指定了空间时）
         if space_id is not None:
@@ -396,12 +407,25 @@ class ConversationListView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # 可读性 fail-closed：绑定项目时校验当前用户为该项目成员，避免越权把会话
+        # 绑到无权项目（共享会话尤甚）。非成员一律拒绝。
+        if bound_project_id is not None:
+            from chat.conversation_service import _is_project_member
+
+            if not await _is_project_member(request.user, bound_project_id):
+                return Response(
+                    {"error": "无权绑定该项目或项目不存在"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         # owner 注入（ISO-01）：已认证写 created_by=request.user，匿名/开放模式写 null。
         conversation = await ConversationService.create_conversation(
             space_id=space_id,
             title=title,
             model=model,
             user=request.user,
+            bound_project_id=bound_project_id,
+            visibility=visibility,
         )
         response_serializer = ConversationListSerializer(conversation)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -428,12 +452,10 @@ class ConversationDetailView(APIView):
         implementation contract contract：响应扩展 resolved_provider 字段 = {provider_type,
         model, source, chain: [4 层]}。
         """
-        # owner gate（ISO-04）：先于任何取数/序列化做 owner-scoped 存在性校验，
-        # 越权/不存在统一 404，杜绝存在性泄漏（无 superuser bypass）。
+        # 读取 gate（项目作战室 P2）：owner 或「shared + bound_project 成员」可读；
+        # 越权/不存在统一 404，杜绝存在性泄漏（写/管理路径仍走 owner gate）。
         try:
-            await ConversationService.aget_for_user(
-                str(conversation_id), request.user
-            )
+            await ConversationService.aget_for_read(str(conversation_id), request.user)
         except Conversation.DoesNotExist:
             return Response(
                 {"error": "对话不存在"},
@@ -459,6 +481,7 @@ class ConversationDetailView(APIView):
             "space",
             "space__default_provider_credential_id",
             "provider_credential_id",
+            "created_by",
         ).aget(id=conversation.id)
 
         from services.provider_config import (
@@ -502,15 +525,21 @@ class ConversationDetailView(APIView):
         # 等依赖 routing trace 的徽章能回显（否则 routingStore 纯内存刷新即空）。
         from chat.models import RepositoryRoutingTrace
 
-        latest_trace = await RepositoryRoutingTrace.objects.filter(
-            conversation_id=conversation.id,
-        ).order_by("-created_at").afirst()
+        latest_trace = (
+            await RepositoryRoutingTrace.objects.filter(
+                conversation_id=conversation.id,
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
         routing_trace_payload: dict[str, Any] | None = None
         if latest_trace is not None:
             routing_trace_payload = {
                 "trace_id": str(latest_trace.id),
                 "query": latest_trace.query,
-                "candidates": latest_trace.candidates if isinstance(latest_trace.candidates, list) else [],
+                "candidates": latest_trace.candidates
+                if isinstance(latest_trace.candidates, list)
+                else [],
                 "threshold": latest_trace.threshold,
                 "triggered_by": latest_trace.triggered_by,
             }
@@ -525,23 +554,38 @@ class ConversationDetailView(APIView):
             conversation_id=conversation.id,
             answered_at__isnull=False,
         ).order_by("created_at"):
-            clarifications_payload.append({
-                "clarification_id": trace.clarification_id,
-                "question": trace.question,
-                "options": trace.options if isinstance(trace.options, list) else [],
-                "allow_freeform": True,
-                "status": "answered",
-                "answer": {
-                    "selected_option_id": trace.selected_option_id or "",
-                    "freeform_text": trace.freeform_answer or "",
-                    "answered_at": trace.answered_at.isoformat() if trace.answered_at else "",
-                },
-                "triggering_message_id": trace.triggering_message_id or "",
-            })
+            clarifications_payload.append(
+                {
+                    "clarification_id": trace.clarification_id,
+                    "question": trace.question,
+                    "options": trace.options if isinstance(trace.options, list) else [],
+                    "allow_freeform": True,
+                    "status": "answered",
+                    "answer": {
+                        "selected_option_id": trace.selected_option_id or "",
+                        "freeform_text": trace.freeform_answer or "",
+                        "answered_at": trace.answered_at.isoformat() if trace.answered_at else "",
+                    },
+                    "triggering_message_id": trace.triggering_message_id or "",
+                }
+            )
 
         # UAT 第 3 项 hotfix（follow-up）：detail 响应补齐 model + status +
         # provider_credential_id，与 list 字段对齐；conversation_prefetched 已 select_related
         # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
+        # 项目作战室 P2：贡献者（会话创建者，前端渲染头像/名字）+ 单会话执行时长。
+        _creator = getattr(conversation_prefetched, "created_by", None)
+        created_by_payload = (
+            {
+                "id": str(_creator.id),
+                "username": _creator.username,
+                "display_name": _creator.display_name or "",
+            }
+            if _creator is not None
+            else None
+        )
+        duration_ms = await compute_conversation_duration_ms(conversation.id)
+
         response_data = {
             "id": str(conversation.id),
             "space_id": str(conversation.space_id) if conversation.space_id else None,
@@ -553,6 +597,14 @@ class ConversationDetailView(APIView):
                 if conversation_prefetched.provider_credential_id_id
                 else None
             ),
+            "bound_project_id": (
+                str(conversation_prefetched.bound_project_id)
+                if conversation_prefetched.bound_project_id
+                else None
+            ),
+            "visibility": conversation_prefetched.visibility,
+            "created_by": created_by_payload,
+            "duration_ms": duration_ms,
             "created_at": conversation.created_at,
             "updated_at": conversation.updated_at,
             "messages": ConversationMessageSerializer(messages, many=True).data,
@@ -575,9 +627,7 @@ class ConversationDetailView(APIView):
         """软删除对话。"""
         # owner gate（ISO-04）：owner-scoped 软删，0 行更新 → DoesNotExist → 404。
         try:
-            await ConversationService.delete_conversation(
-                str(conversation_id), request.user
-            )
+            await ConversationService.delete_conversation(str(conversation_id), request.user)
         except Conversation.DoesNotExist:
             return Response(
                 {"error": "对话不存在"},
@@ -626,10 +676,7 @@ class ConversationDetailView(APIView):
                 return Response(
                     {
                         "code": "conversation_frozen",
-                        "detail": (
-                            f"对话状态为 {conversation.status}，"
-                            "Provider / 模型不可修改"
-                        ),
+                        "detail": (f"对话状态为 {conversation.status}，Provider / 模型不可修改"),
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -703,6 +750,20 @@ class ConversationDetailView(APIView):
             # 归档与 frozen 正交：任何状态都可归档/取消归档。
             conversation.is_archived = data["is_archived"]
             updated_fields.append("is_archived")
+        if "visibility" in data:
+            # 项目作战室 P2：可见性互转（个人↔共享）。aget_for_user 已保证仅创建者；
+            # 共享要求 bound_project 非空（可能于本次 patch 同时设置，故读已更新值）。
+            new_vis = data["visibility"]
+            if new_vis == Conversation.Visibility.SHARED and conversation.bound_project_id is None:
+                return Response(
+                    {
+                        "code": "visibility_requires_project",
+                        "detail": "共享会话必须先绑定项目",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            conversation.visibility = new_vis
+            updated_fields.append("visibility")
 
         if updated_fields:
             updated_fields.append("updated_at")
@@ -723,9 +784,7 @@ class ConversationDetailView(APIView):
                 "id": str(conversation.id),
                 "space_id": str(conversation.space_id) if conversation.space_id else None,
                 "bound_project_id": (
-                    str(conversation.bound_project_id)
-                    if conversation.bound_project_id
-                    else None
+                    str(conversation.bound_project_id) if conversation.bound_project_id else None
                 ),
                 "title": conversation.title,
                 "model": conversation.model,
@@ -736,6 +795,7 @@ class ConversationDetailView(APIView):
                     else None
                 ),
                 "is_archived": conversation.is_archived,
+                "visibility": conversation.visibility,
                 "created_at": conversation.created_at,
                 "updated_at": conversation.updated_at,
                 "messages": [],
@@ -796,10 +856,7 @@ class ConversationPreflightView(APIView):
         # 与 aresolve_or_error 之前 —— owner-miss → 404，避免 provider payload 信息泄漏
         # （T-08-08）。用 created_by_id 比对避免 async 惰性 FK；无 superuser bypass（ISO-03）。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             return Response(
                 {"error": "对话不存在"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -812,6 +869,7 @@ class ConversationPreflightView(APIView):
         #   detail: "无权删除其他项目的对话消息" → "无权访问该对话"
         # 放置位置：owner gate 之后，作 null-owner/共享行的次层防御（保留既有 403 语义）。
         from permissions.services import PermissionService
+
         if (
             getattr(user, "is_authenticated", False)
             and not getattr(user, "is_superuser", False)
@@ -883,12 +941,42 @@ class ConversationPreflightView(APIView):
                     "provider_type": str(result.provider_type),
                     "model": result.extra.get("model", "") or (conversation.model or ""),
                     "source": result.source,
-                    "credential_id": (
-                        str(result.credential_id) if result.credential_id else None
-                    ),
+                    "credential_id": (str(result.credential_id) if result.credential_id else None),
                 },
             },
         )
+
+
+class ConversationCloneView(APIView):
+    """项目作战室 P2：把共享/可读会话整份克隆为「我的项目个人会话」（clone 贡献）。
+
+    共享会话对项目成员只读；成员要发言即 clone 一份归属自己的副本
+    （created_by=自己 / visibility=personal，继承 bound_project），在副本里自由对话。
+    """
+
+    authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+    permission_classes = [ChatAuthPermission]
+
+    @extend_schema(
+        summary="克隆会话为我的项目个人会话",
+        description="整份复制一个共享/可读会话为归属当前用户的项目个人会话副本。",
+        responses={
+            201: {"description": "{conversation_id: 新会话 id}"},
+            404: {"description": "对话不存在或无读权限"},
+        },
+        tags=["Conversations"],
+    )
+    async def post(self, request, conversation_id):
+        try:
+            result = await ConversationService.aclone_for_contribution(
+                str(conversation_id), request.user
+            )
+        except Conversation.DoesNotExist:
+            return Response(
+                {"error": "对话不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(result, status=status.HTTP_201_CREATED)
 
 
 class ConversationRuntimeView(APIView):
@@ -904,11 +992,9 @@ class ConversationRuntimeView(APIView):
         tags=["Conversations"],
     )
     async def get(self, request, conversation_id):
-        # owner gate（ISO-04）：owner-scoped 存在性校验，越权/不存在统一 404。
+        # 读取 gate（项目作战室 P2）：owner 或「shared + 项目成员」可查看运行态。
         try:
-            await ConversationService.aget_for_user(
-                str(conversation_id), request.user
-            )
+            await ConversationService.aget_for_read(str(conversation_id), request.user)
         except Conversation.DoesNotExist:
             return Response(
                 {"error": "对话不存在"},
@@ -987,10 +1073,7 @@ class ConversationMessagesDeleteView(APIView):
         # 2.5 owner gate（ISO-04，主/外层）：先于 has_project_access，owner-miss → 404
         # （避免任意中断/篡改与存在性泄漏）；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             return Response(
                 {"error": "对话不存在"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -1022,9 +1105,7 @@ class ConversationMessagesDeleteView(APIView):
 
         # 4. before_id 必须指向本 conversation 的消息（security mitigation-03 Tampering 防御）
         try:
-            target = await Message.objects.aget(
-                id=before_id, conversation=conversation
-            )
+            target = await Message.objects.aget(id=before_id, conversation=conversation)
         except Message.DoesNotExist:
             return Response(
                 {"detail": "before_id 指向的消息不存在或不属于本对话"},
@@ -1097,10 +1178,7 @@ class ConversationMessageForkView(APIView):
         # owner gate（ISO-04，主/外层）：先于 has_project_access，owner-miss → 404；
         # 本期 fork 仅限自己（管理员 fork 他人留 Phase 9）；无 superuser bypass。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             return Response(
                 {"error": "对话不存在"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -1155,9 +1233,7 @@ class ConversationMessageForkView(APIView):
             "model": forked.model,
             "status": forked.status,
             "provider_credential_id": (
-                str(forked.provider_credential_id_id)
-                if forked.provider_credential_id_id
-                else None
+                str(forked.provider_credential_id_id) if forked.provider_credential_id_id else None
             ),
             "created_at": forked.created_at,
             "updated_at": forked.updated_at,
@@ -1286,9 +1362,7 @@ class ChatStreamView(APIView):
         # 做 owner-scoped 存在性校验，越权返回干净 HTTP 404 而非 text/event-stream
         # 内的 error 事件；无 superuser bypass。
         try:
-            await ConversationService.aget_for_user(
-                str(conversation_id), request.user
-            )
+            await ConversationService.aget_for_user(str(conversation_id), request.user)
         except Conversation.DoesNotExist:
             return Response(
                 {"error": "对话不存在"},
@@ -1301,9 +1375,7 @@ class ChatStreamView(APIView):
         # 72-02：标注 LLM 调用来源（含 SSE 生成器消费期），与 chat_runner 默认一致、显式更稳。
         set_call_source(CallSource.CHAT)
         user_id = (
-            str(request.user.id)
-            if getattr(request.user, "is_authenticated", False)
-            else "system"
+            str(request.user.id) if getattr(request.user, "is_authenticated", False) else "system"
         )
 
         response = StreamingHttpResponse(
@@ -1352,9 +1424,13 @@ class ChatStreamView(APIView):
 
         # 获取当前 OrchestrationRun.run_id 用于所有 SSE 事件（work item）
         run_id = ""
-        orch_run = await OrchestrationRun.objects.filter(
-            conversation_id=conversation_id,
-        ).order_by("-created_at").afirst()
+        orch_run = (
+            await OrchestrationRun.objects.filter(
+                conversation_id=conversation_id,
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
         if orch_run:
             run_id = str(orch_run.run_id)
 
@@ -1384,9 +1460,13 @@ class ChatStreamView(APIView):
                         )
                     # 延迟获取 run_id：send_message_stream 内部创建 OrchestrationRun
                     if not run_id:
-                        latest = await OrchestrationRun.objects.filter(
-                            conversation_id=conversation_id,
-                        ).order_by("-created_at").afirst()
+                        latest = (
+                            await OrchestrationRun.objects.filter(
+                                conversation_id=conversation_id,
+                            )
+                            .order_by("-created_at")
+                            .afirst()
+                        )
                         if latest:
                             run_id = str(latest.run_id)
                     yield format_sse(event, message_id=message_id, run_id=run_id)
@@ -1483,10 +1563,14 @@ class ChatInterruptView(APIView):
             # 标记最新 assistant 消息 metadata.status = interrupted
             from chat.models import Message
 
-            latest_msg = await Message.objects.filter(
-                conversation_id=conv_id_str,
-                role=Message.Role.ASSISTANT,
-            ).order_by("-created_at").afirst()
+            latest_msg = (
+                await Message.objects.filter(
+                    conversation_id=conv_id_str,
+                    role=Message.Role.ASSISTANT,
+                )
+                .order_by("-created_at")
+                .afirst()
+            )
             if latest_msg is not None:
                 metadata = latest_msg.metadata if isinstance(latest_msg.metadata, dict) else {}
                 metadata["status"] = "interrupted"
@@ -1501,10 +1585,14 @@ class ChatInterruptView(APIView):
 
         barrier = get_barrier_manager()
         if barrier.has_barrier_for_thread(conv_id_str):
-            orch_run = await OrchestrationRun.objects.filter(
-                conversation_id=conv_id_str,
-                status=OrchestrationRun.Status.WAITING,
-            ).order_by("-created_at").afirst()
+            orch_run = (
+                await OrchestrationRun.objects.filter(
+                    conversation_id=conv_id_str,
+                    status=OrchestrationRun.Status.WAITING,
+                )
+                .order_by("-created_at")
+                .afirst()
+            )
 
             if orch_run:
                 run_id = str(orch_run.run_id)
@@ -1572,10 +1660,7 @@ class ExportToFeishuView(APIView):
         # owner gate（ISO-04）：在读取 project / messages 之前做 owner-scoped 校验，
         # 越权 → 404；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         project = conversation.space
@@ -1588,8 +1673,7 @@ class ExportToFeishuView(APIView):
         message_ids = serializer.validated_data["message_ids"]
         title = serializer.validated_data["title"]
         folder_token = (
-            serializer.validated_data.get("folder_token")
-            or project.feishu_doc_folder_token
+            serializer.validated_data.get("folder_token") or project.feishu_doc_folder_token
         )
 
         if not folder_token:
@@ -1734,9 +1818,9 @@ class ExportCodingPlanToFeishuView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            coding_plan = await CodingPlan.objects.select_related(
-                "conversation__space"
-            ).aget(id=coding_plan_id)
+            coding_plan = await CodingPlan.objects.select_related("conversation__space").aget(
+                id=coding_plan_id
+            )
         except CodingPlan.DoesNotExist:
             return Response(
                 {"error": "方案不存在"},
@@ -1758,8 +1842,7 @@ class ExportCodingPlanToFeishuView(APIView):
         project = coding_plan.conversation.space
         title = serializer.validated_data.get("title") or None
         folder_token = (
-            serializer.validated_data.get("folder_token")
-            or project.feishu_doc_folder_token
+            serializer.validated_data.get("folder_token") or project.feishu_doc_folder_token
         )
 
         if not folder_token:
@@ -1974,9 +2057,9 @@ class CommitConfirmView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related("conversation").aget(
+                id=session_id
+            )
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2004,19 +2087,21 @@ class CommitConfirmView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        return Response({
-            "suggested_commit_message": coding_session.suggested_commit_message,
-            "affected_files": coding_session.affected_files,
-        })
+        return Response(
+            {
+                "suggested_commit_message": coding_session.suggested_commit_message,
+                "affected_files": coding_session.affected_files,
+            }
+        )
 
     async def post(self, request, session_id):  # type: ignore[override]
         """接受用户编辑后的 commit message 并 resume CodingSession graph。"""
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related("conversation").aget(
+                id=session_id
+            )
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2090,7 +2175,8 @@ class PRConfirmView(APIView):
 
         try:
             coding_session = await CodingSession.objects.select_related(
-                "repository", "conversation",
+                "repository",
+                "conversation",
             ).aget(id=session_id)
         except CodingSession.DoesNotExist:
             return Response(
@@ -2128,20 +2214,22 @@ class PRConfirmView(APIView):
             coding_session.branch_name,
         )
 
-        return Response({
-            "suggested_pr_title": coding_session.suggested_pr_title,
-            "suggested_pr_description": coding_session.suggested_pr_description,
-            "target_branch": _resolve_target_branch(coding_session),
-            "branch_url": branch_url,
-        })
+        return Response(
+            {
+                "suggested_pr_title": coding_session.suggested_pr_title,
+                "suggested_pr_description": coding_session.suggested_pr_description,
+                "target_branch": _resolve_target_branch(coding_session),
+                "branch_url": branch_url,
+            }
+        )
 
     async def post(self, request, session_id):  # type: ignore[override]
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related("conversation").aget(
+                id=session_id
+            )
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2238,12 +2326,14 @@ class PRConfirmView(APIView):
         config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
 
         await graph.ainvoke(
-            Command(resume={
-                "skip_pr": False,
-                "title": title,
-                "description": description,
-                "target_branch": target_branch,
-            }),
+            Command(
+                resume={
+                    "skip_pr": False,
+                    "title": title,
+                    "description": description,
+                    "target_branch": target_branch,
+                }
+            ),
             config=config,
         )
 
@@ -2265,9 +2355,9 @@ class ConflictCheckView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related("conversation").aget(
+                id=session_id
+            )
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2302,9 +2392,9 @@ class DiffSummaryView(APIView):
         from .models import CodingSession
 
         try:
-            coding_session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            coding_session = await CodingSession.objects.select_related("conversation").aget(
+                id=session_id
+            )
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2370,9 +2460,7 @@ class CodingSessionDetailView(APIView):
         from .models import CodingSession
 
         try:
-            session = await CodingSession.objects.select_related(
-                "conversation"
-            ).aget(id=session_id)
+            session = await CodingSession.objects.select_related("conversation").aget(id=session_id)
         except CodingSession.DoesNotExist:
             return Response(
                 {"detail": "CodingSession not found"},
@@ -2421,9 +2509,9 @@ class CodingPlanListView(APIView):
             return Response([], status=status.HTTP_200_OK)
         plans = [
             plan
-            async for plan in CodingPlan.objects.filter(
-                conversation_id=conversation_id
-            ).order_by("-created_at")
+            async for plan in CodingPlan.objects.filter(conversation_id=conversation_id).order_by(
+                "-created_at"
+            )
         ]
         serializer = CodingPlanSerializer(plans, many=True)
         return Response(serializer.data)
@@ -2442,9 +2530,7 @@ class CodingPlanDetailView(APIView):
         from .models import CodingPlan
 
         try:
-            plan = await CodingPlan.objects.select_related(
-                "conversation"
-            ).aget(id=plan_id)
+            plan = await CodingPlan.objects.select_related("conversation").aget(id=plan_id)
         except CodingPlan.DoesNotExist:
             return Response(
                 {"detail": "CodingPlan not found"},
@@ -2454,10 +2540,7 @@ class CodingPlanDetailView(APIView):
         # owner gate（ISO-04）：经 plan.conversation 反查 owner，置于序列化之前，
         # 越权 → 404；用 created_by_id 避免 async 惰性 FK；无 superuser bypass。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and plan.conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and plan.conversation.created_by_id != user.id:
             return Response(
                 {"detail": "CodingPlan not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -2515,10 +2598,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
         #    has_project_access 之前 —— owner-miss 必须先 404（不是 403，不泄漏存在性）。
         #    用 created_by_id 避免 async 惰性 FK；无 superuser bypass（ISO-03）。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and plan.conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and plan.conversation.created_by_id != user.id:
             return Response(
                 {"detail": "CodingPlan 不存在"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -2527,8 +2607,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
         # 4) 项目级 ownership（MEMBER+）—— 保留为 null-owner/共享行次层防御
         # 已确认的 owner 已由上方 owner gate 授权，不再叠加 project 403。
         is_owner = (
-            getattr(user, "is_authenticated", False)
-            and plan.conversation.created_by_id == user.id
+            getattr(user, "is_authenticated", False) and plan.conversation.created_by_id == user.id
         )
         if not getattr(user, "is_superuser", False) and not is_owner:
             allowed = await sync_to_async(PermissionService.has_project_access)(
@@ -2561,8 +2640,7 @@ class CodingPlanSessionsBatchCreateView(APIView):
                 for i in result.created
             ],
             "failed": [
-                {"repository_id": str(i.repository_id), "error": i.error}
-                for i in result.failed
+                {"repository_id": str(i.repository_id), "error": i.error} for i in result.failed
             ],
         }
         resp_ser = CodingSessionsBatchCreateResponseSerializer(data=resp_payload)
@@ -2597,8 +2675,7 @@ class RoutingTraceManualOverrideView(APIView):
         ser = RoutingTraceManualOverrideSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         requested = {
-            str(c["repository_id"]): bool(c["selected"])
-            for c in ser.validated_data["candidates"]
+            str(c["repository_id"]): bool(c["selected"]) for c in ser.validated_data["candidates"]
         }
 
         try:
@@ -2641,7 +2718,7 @@ class RoutingTraceManualOverrideView(APIView):
 
         # 继承原 candidates，仅更新 selected_by_user_final
         new_candidates: list[dict[str, Any]] = []
-        for c in (original.candidates or []):
+        for c in original.candidates or []:
             c2 = dict(c)
             rid = str(c2.get("repository_id", ""))
             if rid in requested:
@@ -2719,7 +2796,8 @@ class ClarificationAnswerView(APIView):
 
         try:
             trace = await ConversationIntentTrace.objects.select_related(
-                "conversation", "conversation__space",
+                "conversation",
+                "conversation__space",
             ).aget(clarification_id=clarification_id)
         except ConversationIntentTrace.DoesNotExist:
             return Response(
@@ -2732,10 +2810,7 @@ class ClarificationAnswerView(APIView):
         # 之前 404。**无 superuser bypass**（管理员操作他人会话 → 404）；
         # 用 created_by_id 避免 async 惰性 FK。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and trace.conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and trace.conversation.created_by_id != user.id:
             logger.warning(
                 "clarification_answer_denied_cross_user",
                 user_id=str(getattr(user, "id", "")),
@@ -2752,7 +2827,9 @@ class ClarificationAnswerView(APIView):
             from permissions.services import PermissionService
 
             allowed = await sync_to_async(PermissionService.has_project_access)(
-                user, trace.conversation.space, "member",
+                user,
+                trace.conversation.space,
+                "member",
             )
             if not allowed:
                 logger.warning(
@@ -2782,7 +2859,7 @@ class ClarificationAnswerView(APIView):
         implies: dict[str, Any] = {}
         selected_label = ""
         if selected_id:
-            for opt in (trace.options or []):
+            for opt in trace.options or []:
                 if not isinstance(opt, dict):
                     continue
                 if str(opt.get("id", "")) == selected_id:
@@ -2832,7 +2909,8 @@ class ClarificationAnswerView(APIView):
         async def _resume_graph() -> None:
             try:
                 await ConversationService.resume_clarification_run(
-                    thread_id, resume_payload,
+                    thread_id,
+                    resume_payload,
                 )
             except Exception:
                 logger.exception(
@@ -2900,7 +2978,11 @@ class PlanClarificationAnswerView(APIView):
     permission_classes = [IsAuthenticated]
 
     async def post(self, request, conversation_id):  # type: ignore[override,no-untyped-def]
-        from delivery.models import Clarification, ClarificationQuestion, PlanSession
+        from delivery.models import (
+            Clarification,
+            ClarificationQuestion,
+            ConvergenceSession,
+        )
         from delivery.services import ClarificationService
 
         started = time.perf_counter()
@@ -2923,10 +3005,7 @@ class PlanClarificationAnswerView(APIView):
         # owner gate（mirror ClarificationAnswerView，无 superuser bypass）：跨用户 → 404
         # 隐藏存在性；用 created_by_id 避免 async 惰性 FK。
         user = request.user
-        if (
-            getattr(user, "is_authenticated", False)
-            and conversation.created_by_id != user.id
-        ):
+        if getattr(user, "is_authenticated", False) and conversation.created_by_id != user.id:
             logger.warning(
                 "plan_clarification_answer_denied_cross_user",
                 user_id=str(getattr(user, "id", "")),
@@ -2945,7 +3024,9 @@ class PlanClarificationAnswerView(APIView):
             from permissions.services import PermissionService
 
             allowed = await sync_to_async(PermissionService.has_project_access)(
-                user, conversation.space, "member",
+                user,
+                conversation.space,
+                "member",
             )
             if not allowed:
                 logger.warning(
@@ -2955,9 +3036,9 @@ class PlanClarificationAnswerView(APIView):
                 )
                 return _not_found
 
-        # 取本会话软引用关联的最近 PlanSession + pending 轮
+        # 取本会话软引用关联的最近 ConvergenceSession + pending 轮
         session = (
-            await PlanSession.objects.filter(conversation_id=conversation_id)
+            await ConvergenceSession.objects.filter(conversation_id=conversation_id)
             .order_by("-created_at")
             .afirst()
         )
@@ -2972,9 +3053,7 @@ class PlanClarificationAnswerView(APIView):
             )
 
         pending_round = (
-            await Clarification.objects.filter(
-                session_id=session.id, answered_at__isnull=True
-            )
+            await Clarification.objects.filter(session_id=session.id, answered_at__isnull=True)
             .order_by("round_no")
             .afirst()
         )
@@ -3012,7 +3091,7 @@ class PlanClarificationAnswerView(APIView):
         # 必须用干净 contextvars 启动（Pitfall 3：请求 contextvars 带 CurrentThreadExecutor，
         # 请求结束后后台 sync_to_async 抛 "already quit"、run 永卡）+ _BACKGROUND_TASKS 强引用。
         async def _answer_and_resume() -> None:
-            from services.plan_orchestration import aanswer_round_and_resume
+            from services.process_runtime import aanswer_round_and_resume
 
             try:
                 await aanswer_round_and_resume(round_id, answers)
@@ -3100,14 +3179,18 @@ class ClarificationSkipView(APIView):
         # 断开后台任务被回收），run 会停在 ``status=running, phase=waiting_clarification``
         # 且无 ConversationIntentTrace —— 这正是「无卡可答、永久等待」的孤儿态，
         # 跳过出口必须能覆盖它。
-        waiting_run = await OrchestrationRun.objects.filter(
-            conversation=conversation,
-            status__in=[
-                OrchestrationRun.Status.WAITING,
-                OrchestrationRun.Status.RUNNING,
-            ],
-            phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
-        ).order_by("-created_at").afirst()
+        waiting_run = (
+            await OrchestrationRun.objects.filter(
+                conversation=conversation,
+                status__in=[
+                    OrchestrationRun.Status.WAITING,
+                    OrchestrationRun.Status.RUNNING,
+                ],
+                phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
         if waiting_run is None:
             return Response(
                 {"status": "no_pending"},
@@ -3116,10 +3199,14 @@ class ClarificationSkipView(APIView):
 
         # 最近一条未答复 trace（可能不存在：waiting_clarification_without_clarification_id
         # 的退化场景）。有则标记已跳过 + 落审计；无则仍可凭 waiting_run 直接 resume。
-        trace = await ConversationIntentTrace.objects.filter(
-            conversation=conversation,
-            answered_at__isnull=True,
-        ).order_by("-created_at").afirst()
+        trace = (
+            await ConversationIntentTrace.objects.filter(
+                conversation=conversation,
+                answered_at__isnull=True,
+            )
+            .order_by("-created_at")
+            .afirst()
+        )
 
         now = timezone.now()
         clarification_id = trace.clarification_id if trace else None
@@ -3154,7 +3241,8 @@ class ClarificationSkipView(APIView):
         async def _resume_graph() -> None:
             try:
                 await ConversationService.resume_clarification_run(
-                    thread_id, resume_payload,
+                    thread_id,
+                    resume_payload,
                 )
             except Exception:
                 logger.exception(

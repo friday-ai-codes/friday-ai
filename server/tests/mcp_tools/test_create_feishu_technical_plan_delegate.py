@@ -1,7 +1,7 @@
 """create_feishu_technical_plan delegate 守护测试（Phase 94 UNIFY-03）。
 
 覆盖：
-- Task 1：``delegate_plan_orchestration`` 三态映射（DONE→completed / RESEARCHING→partial /
+- Task 1：``delegate_process_runtime`` 三态映射（DONE→completed / RESEARCHING→partial /
   FAILED→failed），DONE 含 render 后 markdown + canonical content + plan_version_id；
   partial 可取 session_id。
 - Task 2：``create_feishu_technical_plan`` 经 delegate 接线后响应外形 snapshot（旧键全在 +
@@ -23,12 +23,11 @@ import pytest
 from rest_framework.test import APIClient
 
 from delivery.models import (
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
-    PlanVersion,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
+    Artifact,
+    ArtifactVersion,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
 )
 from interactions.ledger import create_interaction_run
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
@@ -97,38 +96,44 @@ def _merged_content(repo_id: str, repo_name: str) -> dict:
     }
 
 
-async def _make_plan_version(content: dict) -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    version = await PlanVersion.objects.acreate(plan=plan, version=1, content=content)
-    await TechnicalPlan.objects.filter(id=plan.id).aupdate(current_version=version)
+async def _make_plan_version(content: dict) -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    version = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content=content, content_hash="h"
+    )
+    await Artifact.objects.filter(id=artifact.id).aupdate(current_version=version)
     return version
 
 
-async def _make_session(status: str, *, plan_version_id: Any = None) -> PlanSession:
-    return await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.WORKFLOW,
+async def _make_session(
+    status: str, *, current_stage: str = "merge", plan_version_id: Any = None
+) -> ConvergenceSession:
+    return await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage=current_stage,
         status=status,
-        decomposition={"requirement_text": "登录超时", "include_repos": []},
-        current_plan_version=plan_version_id,
+        stage_state={"decomposition": {"requirement_text": "登录超时", "include_repos": []}},
+        current_artifact_version_id=plan_version_id,
     )
 
 
-def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: PlanSession) -> None:
+def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: ConvergenceSession) -> None:
     """monkeypatch delegate 调用的共享 helper（start/build/adrive）使其返回指定 session。"""
 
-    async def _fake_start(*_args: Any, **_kwargs: Any) -> PlanSession:
+    async def _fake_start(*_args: Any, **_kwargs: Any) -> ConvergenceSession:
         return session
 
-    async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> PlanSession:
+    async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> ConvergenceSession:
         return session
 
-    monkeypatch.setattr("services.plan_orchestration.start_orchestration", _fake_start)
+    monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.plan_orchestration.build_orchestration_engine",
+        "services.process_runtime.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.plan_orchestration.adrive_plan_session_to_pause_or_terminal",
+        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
@@ -140,14 +145,14 @@ def _patch_delegate_pipeline(monkeypatch: pytest.MonkeyPatch, *, session: PlanSe
 async def test_delegate_done_maps_completed_with_canonical_and_markdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
     repo_id = str(uuid.uuid4())
     version = await _make_plan_version(_merged_content(repo_id, "auth-service"))
-    session = await _make_session(PlanSessionStatus.DONE, plan_version_id=version.id)
+    session = await _make_session(ConvergenceSessionStatus.DONE, plan_version_id=version.id)
     _patch_delegate_pipeline(monkeypatch, session=session)
 
-    result = await delegate_plan_orchestration(requirement_text="登录超时", include_repos=[repo_id])
+    result = await delegate_process_runtime(requirement_text="登录超时", include_repos=[repo_id])
 
     assert result.status == "completed"
     assert result.plan_version_id == str(version.id)
@@ -162,12 +167,12 @@ async def test_delegate_done_maps_completed_with_canonical_and_markdown(
 async def test_delegate_researching_maps_partial_with_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
-    session = await _make_session(PlanSessionStatus.RESEARCHING)
+    session = await _make_session(ConvergenceSessionStatus.WAITING_EVENT, current_stage="research")
     _patch_delegate_pipeline(monkeypatch, session=session)
 
-    result = await delegate_plan_orchestration(requirement_text="登录超时")
+    result = await delegate_process_runtime(requirement_text="登录超时")
 
     assert result.status == "partial"
     # 调用方据 session_id 后续经会话/工作流续推（MCP 无 resume 通路）。
@@ -181,12 +186,12 @@ async def test_delegate_researching_maps_partial_with_session(
 async def test_delegate_failed_maps_failed_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
-    session = await _make_session(PlanSessionStatus.FAILED)
+    session = await _make_session(ConvergenceSessionStatus.FAILED)
     _patch_delegate_pipeline(monkeypatch, session=session)
 
-    result = await delegate_plan_orchestration(requirement_text="登录超时")
+    result = await delegate_process_runtime(requirement_text="登录超时")
 
     assert result.status == "failed"
     assert result.content == {}
@@ -200,16 +205,16 @@ async def test_delegate_aggregates_orchestration_model_usage(
 ) -> None:
     """WR-03：编排 adapters 落 run 未绑定的用量行 → delegate 聚合本次驱动窗口回传 model_usage。"""
     from interactions.models import ModelUsageRecord
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
     repo_id = str(uuid.uuid4())
     version = await _make_plan_version(_merged_content(repo_id, "auth-service"))
-    session = await _make_session(PlanSessionStatus.DONE, plan_version_id=version.id)
+    session = await _make_session(ConvergenceSessionStatus.DONE, plan_version_id=version.id)
 
-    async def _fake_start(*_args: Any, **_kwargs: Any) -> PlanSession:
+    async def _fake_start(*_args: Any, **_kwargs: Any) -> ConvergenceSession:
         return session
 
-    async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> PlanSession:
+    async def _fake_adrive(_engine: Any, _session: Any, **_kwargs: Any) -> ConvergenceSession:
         # 模拟编排 adapter 落一行用量（run=None，挂 call_source 维度，不挂 MCP run）。
         await ModelUsageRecord.objects.acreate(
             run=None,
@@ -223,17 +228,17 @@ async def test_delegate_aggregates_orchestration_model_usage(
         )
         return session
 
-    monkeypatch.setattr("services.plan_orchestration.start_orchestration", _fake_start)
+    monkeypatch.setattr("services.process_runtime.start_orchestration", _fake_start)
     monkeypatch.setattr(
-        "services.plan_orchestration.build_orchestration_engine",
+        "services.process_runtime.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
     monkeypatch.setattr(
-        "services.plan_orchestration.adrive_plan_session_to_pause_or_terminal",
+        "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
         _fake_adrive,
     )
 
-    result = await delegate_plan_orchestration(requirement_text="登录超时", include_repos=[repo_id])
+    result = await delegate_process_runtime(requirement_text="登录超时", include_repos=[repo_id])
 
     assert result.status == "completed"
     assert result.model_usage["total_tokens"] == 200
@@ -246,18 +251,18 @@ async def test_delegate_guards_unexpected_exception_as_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """IN-03：start_orchestration 等抛穿被外层护栏映射为 failed 终态（不回退 5xx）。"""
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
     async def _boom(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("orchestration backend down")
 
-    monkeypatch.setattr("services.plan_orchestration.start_orchestration", _boom)
+    monkeypatch.setattr("services.process_runtime.start_orchestration", _boom)
     monkeypatch.setattr(
-        "services.plan_orchestration.build_orchestration_engine",
+        "services.process_runtime.build_orchestration_engine",
         lambda **_kwargs: MagicMock(),
     )
 
-    result = await delegate_plan_orchestration(requirement_text="登录超时")
+    result = await delegate_process_runtime(requirement_text="登录超时")
 
     assert result.status == "failed"
     assert result.content == {}
@@ -330,7 +335,7 @@ def test_create_feishu_technical_plan_response_shape_and_persistence(
         )
 
     monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake_delegate
+        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
     )
 
     response = client.post(
@@ -426,7 +431,7 @@ async def test_build_work_item_technical_plan_missing_actor_degrades(
         return None
 
     monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake_delegate
+        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
     )
     # 避免真实后台 ingestion 线程与测试连接竞争（sqlite table locked）。
     monkeypatch.setattr("knowledge.ingestion.aschedule_ingestion", _noop_ingest)
@@ -470,7 +475,7 @@ def test_create_feishu_technical_plan_partial_when_orchestration_suspended(
         )
 
     monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake_delegate
+        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
     )
 
     response = client.post(
@@ -506,7 +511,7 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
     默认返回 status="partial" + session_id，调用方须容忍 PARTIAL 并经会话/工作流续推。本用例证实
     「research 可同步完成」时的同步友好路径真实可达（非仅 monkeypatch adrive 的单测）。
     """
-    from services.plan_orchestration.architect_merge_adapter import (
+    from services.process_runtime.architect_merge_adapter import (
         ArchitectMergeAdapter as RealMergeAdapter,
     )
 
@@ -542,18 +547,18 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
 
     # 仅 stub router/recall/research/merge adapter（IO 边界）；ClarifyAdapter + build_orchestration_engine
     # + adrive + start_orchestration 全走真实路径（空 node_execution_id 由 build 默认注入）。
-    monkeypatch.setattr("services.plan_orchestration.RepoRouterV2Adapter", lambda: _FakeRouter())
+    monkeypatch.setattr("services.process_runtime.RepoRouterV2Adapter", lambda: _FakeRouter())
     monkeypatch.setattr(
-        "services.plan_orchestration.DeliveryKnowledgeRecallAdapter", lambda: _FakeRecall()
+        "services.process_runtime.DeliveryKnowledgeRecallAdapter", lambda: _FakeRecall()
     )
-    monkeypatch.setattr("services.plan_orchestration.ResearchDispatchAdapter", _FakeResearch)
+    monkeypatch.setattr("services.process_runtime.ResearchDispatchAdapter", _FakeResearch)
     monkeypatch.setattr(
-        "services.plan_orchestration.ArchitectMergeAdapter", lambda: _merge_factory()
+        "services.process_runtime.ArchitectMergeAdapter", lambda: _merge_factory()
     )
 
-    from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+    from mcp_tools.orchestration_delegate import delegate_process_runtime
 
-    result = await delegate_plan_orchestration(
+    result = await delegate_process_runtime(
         requirement_text="为 auth 仓修复登录超时", include_repos=[repo_id]
     )
 
@@ -562,6 +567,6 @@ async def test_mcp_sync_research_reaches_done_via_real_delegate(
     assert result.content["title"] == "登录超时修复跨仓方案"
     assert result.markdown
     # 底层 session 确达 DONE（canonical 已落 current_plan_version）。
-    refreshed = await PlanSession.objects.aget(id=result.session.id)
-    assert refreshed.status == PlanSessionStatus.DONE
-    assert refreshed.current_plan_version is not None
+    refreshed = await ConvergenceSession.objects.aget(id=result.session.id)
+    assert refreshed.status == ConvergenceSessionStatus.DONE
+    assert refreshed.current_artifact_version_id is not None

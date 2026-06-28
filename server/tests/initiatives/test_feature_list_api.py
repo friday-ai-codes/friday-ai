@@ -217,6 +217,26 @@ def test_search_returns_results_with_locator(space, space_admin) -> None:
     assert RetrievalTrace.objects.filter(source="project_search").exists()
 
 
+def test_search_knowledge_fallback_includes_project_documents(space, space_admin) -> None:
+    client = _client(space_admin)
+    pid = _create_project(client, space, "se1-docs")
+
+    with patch(
+        "knowledge.retrieval.DeliveryKnowledgeSearchService.search_similar",
+        new_callable=AsyncMock,
+    ) as mocked:
+        mocked.return_value = []
+
+        resp = client.get(f"/api/projects/{pid}/search/", {"q": "错题本"})
+
+    assert resp.status_code == 200, resp.content
+    mocked.assert_awaited_once()
+    args, kwargs = mocked.await_args
+    assert args == ("错题本",)
+    assert kwargs["project_ids"] == [pid]
+    assert kwargs["include_document_kind"] is True
+
+
 def test_search_empty_query_returns_empty(space, space_admin) -> None:
     client = _client(space_admin)
     pid = _create_project(client, space, "se2")

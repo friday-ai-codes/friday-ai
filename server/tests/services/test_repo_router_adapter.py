@@ -15,8 +15,8 @@ from codegraph.services.repo_router_v2 import (
     RepoRouteCandidateV2,
     RepoRouteResultV2,
 )
-from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
-from services.plan_orchestration import RepoRouterV2Adapter
+from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
+from services.process_runtime import RepoRouterV2Adapter
 
 # transaction=True：本文件 async 用例经 sync_to_async 桥接在独立线程连接建数据
 # （含 Repository），普通 @pytest.mark.django_db（rollback）无法回滚跨线程连接的提交，
@@ -45,11 +45,12 @@ async def test_maps_router_result(monkeypatch) -> None:
     """RepoRouterV2 结果映射为精简 dict（repo_id/confidence/repository_name + version/auto）。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
-        "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
+        "services.process_runtime.repo_router_adapter.RepoRouterV2.route", mock_route
     )
-    session = PlanSession(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        decomposition={"requirement_text": "做一个登录页"},
+    session = ConvergenceSession(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        stage_state={"decomposition": {"requirement_text": "做一个登录页"}},
     )
     result = await RepoRouterV2Adapter().route(session)
     assert result["candidates"][0] == {
@@ -66,9 +67,13 @@ async def test_empty_query_skips(monkeypatch) -> None:
     """空 requirement_text → 返回 skipped 空候选，不调 RepoRouterV2.route。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
-        "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
+        "services.process_runtime.repo_router_adapter.RepoRouterV2.route", mock_route
     )
-    session = PlanSession(entrypoint=PlanSessionEntrypoint.CHAT, decomposition={})
+    session = ConvergenceSession(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        stage_state={},
+    )
     result = await RepoRouterV2Adapter().route(session)
     assert result == {"candidates": [], "router_version": "skipped", "auto_selected": False}
     mock_route.assert_not_awaited()
@@ -79,12 +84,13 @@ async def test_scope_include_repos_precedence(monkeypatch) -> None:
     """include_repos 显式指定 → repository_ids 取之（最高优先级）。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
-        "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
+        "services.process_runtime.repo_router_adapter.RepoRouterV2.route", mock_route
     )
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.ROUTING,
-        decomposition={"requirement_text": "x", "include_repos": ["rX"]},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="route",
+        stage_state={"decomposition": {"requirement_text": "x", "include_repos": ["rX"]}},
     )
     await RepoRouterV2Adapter().route(session)
     assert mock_route.await_args.kwargs["repository_ids"] == ["rX"]
@@ -95,15 +101,16 @@ async def test_scope_project_repos_fallback(monkeypatch) -> None:
     """无 include_repos 时回退 work_item.space 仓库 id 列表。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
-        "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
+        "services.process_runtime.repo_router_adapter.RepoRouterV2.route", mock_route
     )
     repo_id = await _make_work_item_with_repo()
     work_item = await _latest_work_item()
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.WORKFLOW,
-        status=PlanSessionStatus.ROUTING,
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage="route",
         work_item=work_item,
-        decomposition={"requirement_text": "x"},
+        stage_state={"decomposition": {"requirement_text": "x"}},
     )
     await RepoRouterV2Adapter().route(session)
     assert mock_route.await_args.kwargs["repository_ids"] == [repo_id]
@@ -114,12 +121,13 @@ async def test_scope_no_work_item_full_repo(monkeypatch) -> None:
     """无 include_repos 且无 work_item → repository_ids=None（全库）。"""
     mock_route = AsyncMock(return_value=_route_result())
     monkeypatch.setattr(
-        "services.plan_orchestration.repo_router_adapter.RepoRouterV2.route", mock_route
+        "services.process_runtime.repo_router_adapter.RepoRouterV2.route", mock_route
     )
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.ROUTING,
-        decomposition={"requirement_text": "x"},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="route",
+        stage_state={"decomposition": {"requirement_text": "x"}},
     )
     await RepoRouterV2Adapter().route(session)
     assert mock_route.await_args.kwargs["repository_ids"] is None

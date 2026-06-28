@@ -78,6 +78,21 @@ class WebSocketBroadcastHook(BaseHook):
                     message["error_message"] = (node_execution.error_message or "")[:2000]
                     message["error_code"] = node_execution.error_code or ""
 
+                # P5：补节点生命周期相位 + 收敛轮次（投影自关联 ConvergenceSession +
+                # 待答 Clarification.round_no，不扩 NodeExecutionStatus）。best-effort，
+                # 投影失败不写这些键、不影响既有 node_status/error 字段与下游 hook。
+                try:
+                    from workflows.lifecycle_projection import aproject_node_lifecycle
+
+                    projection = await aproject_node_lifecycle(node_execution)
+                    if projection is not None:
+                        message["lifecycle"] = projection.lifecycle
+                        if projection.round is not None:
+                            message["round"] = projection.round
+                            message["max_rounds"] = projection.max_rounds
+                except Exception:  # noqa: BLE001 — 生命周期投影绝不反噬广播主流程
+                    pass
+
             await channel_layer.group_send(
                 f"execution_{execution.id}",
                 message,

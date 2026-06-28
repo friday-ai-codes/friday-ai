@@ -17,12 +17,11 @@ import pytest
 from chat.conversation_service import ConversationService
 from chat.models import CodingPlan, CodingSession, Conversation
 from delivery.models import (
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
     SddSpec,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from repositories.models import Repository
 
@@ -43,11 +42,14 @@ async def _make_repo() -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.CHAT)
-    return await PlanVersion.objects.acreate(
-        plan=plan, version=1, content={}, content_hash="h"
+async def _make_plan_version() -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content={}, content_hash="h"
     )
+    artifact.current_version = av
+    await artifact.asave(update_fields=["current_version", "updated_at"])
+    return av
 
 
 async def _row_for(conv_id) -> Conversation:
@@ -83,12 +85,13 @@ async def test_sdd_spec_flag_via_plan_session() -> None:
     conv = await _make_conversation()
     repo = await _make_repo()
     pv = await _make_plan_version()
-    await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
+    await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
         conversation_id=conv.id,
-        current_plan_version=pv.id,
+        current_artifact_version_id=pv.id,
     )
-    await SddSpec.objects.acreate(repository=repo, plan_version=pv)
+    await SddSpec.objects.acreate(repository=repo, artifact_version=pv)
     row = await _row_for(conv.id)
     assert row.has_sdd_spec is True
 
@@ -99,12 +102,13 @@ async def test_sdd_spec_not_leaked_across_conversations() -> None:
     conv_b = await _make_conversation("b")
     repo = await _make_repo()
     pv = await _make_plan_version()
-    await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
+    await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
         conversation_id=conv_a.id,
-        current_plan_version=pv.id,
+        current_artifact_version_id=pv.id,
     )
-    await SddSpec.objects.acreate(repository=repo, plan_version=pv)
+    await SddSpec.objects.acreate(repository=repo, artifact_version=pv)
 
     assert (await _row_for(conv_a.id)).has_sdd_spec is True
     assert (await _row_for(conv_b.id)).has_sdd_spec is False

@@ -4,6 +4,12 @@ from delivery.models.architect_merge import (
     ArchitectMerge,
     ArchitectMergeStatus,
 )
+from delivery.models.artifact import (
+    Artifact,
+    ArtifactApprovalStatus,
+    ArtifactStatus,
+    ArtifactVersion,
+)
 from delivery.models.clarification import (
     Clarification,
     ClarificationQuestion,
@@ -13,6 +19,12 @@ from delivery.models.comment_event import (
     CommentEventType,
     WorkItemCommentEvent,
 )
+from delivery.models.convergence_session import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
+)
+from delivery.models.convergence_session_event import ConvergenceSessionEvent
 from delivery.models.document import (
     ContentStorage,
     Document,
@@ -20,13 +32,13 @@ from delivery.models.document import (
     DocumentType,
     DocumentVersion,
 )
-from delivery.models.ingest_run import IngestRun, default_steps
-from delivery.models.plan_session import (
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
+from delivery.models.human_task import (
+    HumanTask,
+    HumanTaskScope,
+    HumanTaskStatus,
+    HumanTaskType,
 )
-from delivery.models.plan_session_event import PlanSessionEvent
+from delivery.models.ingest_run import IngestRun, default_steps
 from delivery.models.relation import (
     RelationOrigin,
     RelationType,
@@ -64,13 +76,6 @@ from delivery.models.sync_state import (
     SyncStatus,
     WorkItemSyncState,
 )
-from delivery.models.technical_plan import (
-    PlanExternalRef,
-    PlanVersion,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
-    TechnicalPlanStatus,
-)
 from delivery.models.work_item import WorkItem, WorkItemOrigin
 
 __all__ = [
@@ -93,10 +98,10 @@ __all__ = [
     "ContentStorage",
     "IngestRun",
     "default_steps",
-    "PlanSession",
-    "PlanSessionEntrypoint",
-    "PlanSessionStatus",
-    "PlanSessionEvent",
+    "ConvergenceSession",
+    "ConvergenceSessionEntrypoint",
+    "ConvergenceSessionStatus",
+    "ConvergenceSessionEvent",
     "RepoCodingTask",
     "RepoCodingTaskStatus",
     "RepoResearchTask",
@@ -109,13 +114,16 @@ __all__ = [
     "ReviewDecision",
     "ArchitectMerge",
     "ArchitectMergeStatus",
+    "Artifact",
+    "ArtifactVersion",
+    "ArtifactStatus",
+    "ArtifactApprovalStatus",
     "Clarification",
     "ClarificationQuestion",
-    "TechnicalPlan",
-    "TechnicalPlanOrigin",
-    "TechnicalPlanStatus",
-    "PlanVersion",
-    "PlanExternalRef",
+    "HumanTask",
+    "HumanTaskType",
+    "HumanTaskScope",
+    "HumanTaskStatus",
     "ReleaseBatch",
     "ReleaseRecord",
     "ReleaseArtifact",

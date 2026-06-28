@@ -41,8 +41,16 @@ def _load_seed_data() -> list[tuple[str, str, str, str]]:
     )
     from chat.title_service import TITLE_PROMPT
     from workflows.nodes.ai.code_review import REVIEW_SYSTEM_PROMPT
-    from workflows.nodes.ai.plan_generation import _PLAN_GENERATION_BASE_PROMPT
     from workflows.nodes.ai.variable_extractor import EXTRACTION_PROMPT_TEMPLATE
+
+    # Chassis v2 · P2：ai_plan_generation 节点已删除（编排统一走 ai_plan_research +
+    # ProcessEngine）；其 seed prompt 条目随之废弃（import 不可用时跳过该条）。
+    try:
+        from workflows.nodes.ai.plan_generation import (  # type: ignore[import-not-found]
+            _PLAN_GENERATION_BASE_PROMPT,
+        )
+    except ImportError:
+        _PLAN_GENERATION_BASE_PROMPT = ""
 
     return [
         ("chat.system.developer", "chat_agent", "Chat Agent - 开发者角色", ROLE_PROMPTS["developer"]),
@@ -56,7 +64,11 @@ def _load_seed_data() -> list[tuple[str, str, str, str]]:
         ("aux.title_generation", "aux_model", "标题生成", TITLE_PROMPT),
         ("ai_node.variable_extractor.template", "ai_node", "AI 节点 - 变量提取", EXTRACTION_PROMPT_TEMPLATE),
         ("ai_node.code_review.system", "ai_node", "AI 节点 - 代码审查", REVIEW_SYSTEM_PROMPT),
-        ("ai_node.plan_generation.system", "ai_node", "AI 节点 - 方案生成", _PLAN_GENERATION_BASE_PROMPT),
+        *(
+            [("ai_node.plan_generation.system", "ai_node", "AI 节点 - 方案生成", _PLAN_GENERATION_BASE_PROMPT)]
+            if _PLAN_GENERATION_BASE_PROMPT
+            else []
+        ),
     ]
 
 

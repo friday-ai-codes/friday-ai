@@ -13,7 +13,6 @@ from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope, PromptVersion
 from prompts.services import render_prompt
 from workflows.nodes.ai.code_review import REVIEW_SYSTEM_PROMPT
-from workflows.nodes.ai.plan_generation import _PLAN_GENERATION_BASE_PROMPT
 from workflows.nodes.ai.variable_extractor import EXTRACTION_PROMPT_TEMPLATE
 
 # (slug, fallback, sample_variables, category, title) — 5 个关键调用点
@@ -42,13 +41,6 @@ CALL_SITES: list[tuple[str, str, dict[str, str], str, str]] = [
         {},
         "ai_node",
         "AI 节点 - 代码审查",
-    ),
-    (
-        PromptSlugs.AI_NODE_PLAN_GENERATION,
-        _PLAN_GENERATION_BASE_PROMPT,
-        {"schema_json": "S"},
-        "ai_node",
-        "AI 节点 - 方案生成",
     ),
     (
         PromptSlugs.CHAT_SYSTEM_DEVELOPER,

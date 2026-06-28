@@ -72,6 +72,7 @@ export interface ProjectWorkItem {
 export interface ProjectGraphNode {
   entity_id?: string
   kind?: string
+  title?: string
   name?: string
   relation?: string
   depth?: number
@@ -163,6 +164,10 @@ export const projectsApi = {
   /** 项目专属 Cursor rules 模板（CURSOR-02）。 */
   cursorRules: (id: string): Promise<CursorRules> =>
     get<CursorRules>(`/projects/${id}/cursor-rules/`),
+
+  /** 按 feature list 用 AI 生成/更新项目描述（#2，手动触发）。 */
+  generateDescription: (id: string): Promise<{ description: string }> =>
+    post<{ description: string }>(`/projects/${id}/description/generate/`, {}),
 }
 
 export default projectsApi

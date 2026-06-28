@@ -208,7 +208,12 @@ class ProjectSearchService:
             from knowledge.retrieval import DeliveryKnowledgeSearchService
 
             results = await DeliveryKnowledgeSearchService().search_similar(
-                query, user=user, top_k=top_k
+                query,
+                user=user,
+                top_k=top_k,
+                project_ids=[str(project.id)],
+                # 项目搜索的知识兜底应纳入 Artifact/ProjectDoc 物化出的 DOCUMENT。
+                include_document_kind=True,
             )
         except Exception as exc:  # noqa: BLE001 — 知识检索不可用 fail-soft（本期低量，不反噬）
             logger.warning(

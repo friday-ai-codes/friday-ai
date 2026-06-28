@@ -40,11 +40,14 @@ class RepoCodingTask(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # 归属一次 PlanVersion（真实 FK，v0.7 已建表，同 app 无迁移耦合风险）；
-    # 删方案版本级联删其编码子任务
-    plan_version = models.ForeignKey(
-        "delivery.PlanVersion",
+    # 归属一次 ArtifactVersion（technical_plan 产物版本，真实 FK）；删产物版本级联删其编码子任务。
+    # null=True：P2 破坏性重建期由 ArtifactVersion 取代旧 PlanVersion FK，无存量数据，
+    # 置空避免迁移 one-off default；实际建任务恒由 RepoCodingTaskService 传入非空版本。
+    artifact_version = models.ForeignKey(
+        "delivery.ArtifactVersion",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="coding_tasks",
     )
     # 被编码仓（跨 app 真实 FK，repositories 是稳定基础 app）；related_name="+" 不污染
@@ -93,7 +96,7 @@ class RepoCodingTask(models.Model):
         verbose_name = "仓库编码子任务"
         verbose_name_plural = "仓库编码子任务"
         indexes = [
-            models.Index(fields=["plan_version", "wave", "status"]),
+            models.Index(fields=["artifact_version", "wave", "status"]),
             models.Index(fields=["repository"]),
         ]
 

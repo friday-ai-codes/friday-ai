@@ -455,6 +455,47 @@ async def _aget_project_for_read(request, project_id):
     return project, None
 
 
+async def _maybe_autogen_description(artifact: Any, project_id: Any, request: Any) -> None:
+    """feature_list 工件创建/更新后，按功能清单自动 AI 重写项目描述（#2，best-effort）。"""
+    try:
+        from initiatives.services.feature_list_service import FEATURE_LIST_TYPE_KEY
+
+        type_key = getattr(getattr(artifact, "type", None), "key", "")
+        if type_key != FEATURE_LIST_TYPE_KEY:
+            return
+        from initiatives.services.project_description_service import (
+            ProjectDescriptionService,
+        )
+
+        await ProjectDescriptionService().agenerate_and_save(
+            project_id, request.user, initiated_by_user_id=getattr(request.user, "id", None)
+        )
+    except Exception:  # noqa: BLE001 — 自动描述生成绝不反噬工件创建/更新主流程
+        pass
+
+
+class ProjectDescriptionGenerateView(APIView):
+    """手动触发：按 feature list 用 AI 生成/更新项目描述（#2）。"""
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.services.project_description_service import (
+            ProjectDescriptionService,
+        )
+
+        description = await ProjectDescriptionService().agenerate_and_save(
+            project_id, request.user, initiated_by_user_id=getattr(request.user, "id", None)
+        )
+        if not description:
+            return Response(
+                {"detail": "暂无可用于生成描述的 feature list，或未配置 AI Provider"},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        return Response({"description": description})
+
+
 class ArtifactListCreateView(APIView):
     """项目工件列表（GET）+ 创建（POST，ARTIFACT-02）。"""
 
@@ -494,6 +535,7 @@ class ArtifactListCreateView(APIView):
         except ArtifactError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         artifact = await Artifact.objects.select_related("type").aget(pk=artifact.id)
+        await _maybe_autogen_description(artifact, project_id, request)
         body = await sync_to_async(lambda: ArtifactSerializer(artifact).data)()
         return Response(body, status=status.HTTP_201_CREATED)
 
@@ -531,6 +573,7 @@ class ArtifactDetailView(APIView):
         except ArtifactError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         artifact = await Artifact.objects.select_related("type").aget(pk=artifact_id)
+        await _maybe_autogen_description(artifact, project_id, request)
         body = await sync_to_async(lambda: ArtifactSerializer(artifact).data)()
         return Response(body)
 
@@ -1399,3 +1442,121 @@ class ProjectSearchView(APIView):
             lambda: ProjectSearchResultSerializer(results, many=True).data
         )()
         return Response({"query": q, "results": body})
+
+
+def _build_project_galaxy(project, tree: dict, *, max_nodes: int = 300) -> dict:
+    """项目作战室 P4：聚合项目关系星图（sync，供 sync_to_async 包裹）。
+
+    节点类型：project / feature / work_item / repository / merge_request。
+    边：project 为枢纽（HAS_FEATURE / HAS_WORK_ITEM / HAS_MR / USES_REPO），
+    叠加 MR→repo、MR→work_item 关联。超 max_nodes 截断（meta.truncated=True）。
+    """
+    from initiatives.models import MergeRequest, ProjectWorkItemLink
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen: set[str] = set()
+
+    def add_node(nid: str, ntype: str, label: str, **extra) -> None:
+        if nid in seen:
+            return
+        seen.add(nid)
+        nodes.append({"id": nid, "type": ntype, "label": label, **extra})
+
+    pid = str(project.id)
+    proj_node = f"project:{pid}"
+    add_node(proj_node, "project", project.name or "项目", ref_id=pid)
+
+    # feature 节点（来自 feature 树：模块 → 功能点）
+    for module in tree.get("modules") or []:
+        module_name = module.get("name", "")
+        for feat in module.get("features") or []:
+            fname = feat.get("name", "")
+            fid = f"feature:{module_name}/{fname}"
+            add_node(
+                fid, "feature", fname,
+                state=feat.get("state"), module=module_name,
+            )
+            edges.append({"source": proj_node, "target": fid, "relation": "HAS_FEATURE"})
+
+    # 工作项节点
+    wi_node_by_id: dict[str, str] = {}
+    for link in (
+        ProjectWorkItemLink.objects.filter(project_id=pid).select_related("work_item")
+    ):
+        wi = link.work_item
+        nid = f"work_item:{wi.id}"
+        wi_node_by_id[str(wi.id)] = nid
+        add_node(
+            nid, "work_item", wi.title or f"工作项 {wi.work_item_id}",
+            work_item_type=wi.work_item_type, ref_id=str(wi.id),
+        )
+        edges.append({"source": proj_node, "target": nid, "relation": "HAS_WORK_ITEM"})
+
+    # MR + 仓库节点
+    for mr in (
+        MergeRequest.objects.filter(project_id=pid).select_related("repository", "work_item")
+    ):
+        mr_nid = f"mr:{mr.id}"
+        add_node(
+            mr_nid, "merge_request", mr.title or mr.external_id or "MR",
+            status=mr.status, url=mr.url, ref_id=str(mr.id),
+        )
+        edges.append({"source": proj_node, "target": mr_nid, "relation": "HAS_MR"})
+        if mr.repository_id:
+            repo_nid = f"repository:{mr.repository_id}"
+            repo_name = mr.repository.name if mr.repository else str(mr.repository_id)
+            add_node(repo_nid, "repository", repo_name, ref_id=str(mr.repository_id))
+            edges.append({"source": proj_node, "target": repo_nid, "relation": "USES_REPO"})
+            edges.append({"source": mr_nid, "target": repo_nid, "relation": "MR_REPO"})
+        if mr.work_item_id and str(mr.work_item_id) in wi_node_by_id:
+            edges.append({
+                "source": mr_nid,
+                "target": wi_node_by_id[str(mr.work_item_id)],
+                "relation": "MR_WORK_ITEM",
+            })
+
+    truncated = False
+    if len(nodes) > max_nodes:
+        nodes = nodes[:max_nodes]
+        kept = {n["id"] for n in nodes}
+        edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
+        truncated = True
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "meta": {
+            "total_nodes": len(nodes),
+            "total_edges": len(edges),
+            "truncated": truncated,
+        },
+    }
+
+
+class ProjectGalaxyView(APIView):
+    """项目级关系星图（GET，读权限；项目作战室 P4）。
+
+    路由 ``projects/<project_id>/galaxy/``；聚合 项目/feature/工作项/仓库/MR 节点
+    与关联边，前端用力导图呈现「某 feature 关联了什么」。按项目成员 fail-closed。
+    """
+
+    async def get(self, request, project_id):
+        import time
+
+        project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        started = time.monotonic()
+        tree = await FeatureListService().build_tree(project_id)
+        payload = await sync_to_async(_build_project_galaxy)(project, tree)
+        logger.info(
+            "project_galaxy_built",
+            project_id=str(project_id),
+            nodes=payload["meta"]["total_nodes"],
+            edges=payload["meta"]["total_edges"],
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+            component="initiatives.galaxy",
+            category="caller",
+        )
+        return Response(payload)

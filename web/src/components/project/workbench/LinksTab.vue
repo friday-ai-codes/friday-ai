@@ -102,7 +102,7 @@ function mrStatusClass(status: string): string {
         >
           <div class="min-w-0">
             <p class="text-sm font-medium text-foreground truncate">
-              {{ node.name || node.entity_id || '—' }}
+              {{ node.title || node.name || node.entity_id || '—' }}
             </p>
             <p class="text-xs text-muted-foreground">
               {{ node.kind }}<span v-if="node.relation"> · {{ node.relation }}</span>

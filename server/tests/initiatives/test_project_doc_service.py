@@ -233,15 +233,19 @@ async def test_provision_broken_path_marks_doc_and_continues() -> None:
     board.update_work_item_fields.assert_not_awaited()
 
 
-async def test_provision_no_parent_folder_marks_all_broken() -> None:
+async def test_provision_no_feishu_creates_local_pending_docs() -> None:
+    """#3：未配置飞书（无父文件夹）→ 建 5 个本地「待同步」(pending) 文档，不报 broken、不同步。"""
     space = await _make_space(folder="", key="p3")
     project = await _make_project(space, feishu_project_key="p3")
-    # 无父文件夹 → 不应触达 client；5 doc 全 broken
     await ProjectDocService()._provision_workspace_coro(project.id)
+    pending = await ProjectDoc.objects.filter(
+        project_id=project.id, sync_status=DocSyncStatus.PENDING
+    ).acount()
     broken = await ProjectDoc.objects.filter(
         project_id=project.id, sync_status=DocSyncStatus.BROKEN
     ).acount()
-    assert broken == 5
+    assert pending == 5
+    assert broken == 0
 
 
 async def test_provision_board_append_idempotent_when_marker_present() -> None:

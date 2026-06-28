@@ -301,3 +301,73 @@ async def test_draft_default_path_not_regressed(mcp_client, access_user) -> None
     assert resp.json()["accepted"] is True
     assert await _draft_count(project.id) == 1
     assert await _active_memory_count(project.id) == 0
+
+
+# ===========================================================================
+# #1a：不传 project_id，按 branch_name 反查唯一项目（通用规则不写死项目）
+# ===========================================================================
+
+
+async def _attach_work_item(project, work_item_id: int) -> None:
+    from delivery.services import WorkItemIdentity, WorkItemService
+
+    wi = await WorkItemService().upsert(
+        WorkItemIdentity(
+            feishu_project_key="rpk-wpk",
+            work_item_type="story",
+            work_item_id=work_item_id,
+        ),
+        source="feishu_webhook",
+        fetch=False,
+    )
+    await ProjectService().attach_work_item(project_id=project.id, work_item=wi)
+
+
+async def test_branch_name_resolves_project_without_project_id(
+    mcp_client, access_user
+) -> None:
+    """只给 branch_name（无 project_id）→ 按分支反查唯一项目并落草稿。"""
+    client, _ = mcp_client
+    project = await _make_project(access_user, key="rpk-branch")
+    await _attach_work_item(project, 7001)
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "branch_name": "feat/xxxx-m7001-login-rework",
+            "content": "按当前分支自动定位项目并沉淀本次登录改造的关键方案决策。",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json()["accepted"] is True
+    assert await _draft_count(project.id) == 1
+
+
+async def test_unresolvable_branch_fail_soft(mcp_client, access_user) -> None:
+    """分支无法唯一定位 → fail-soft：accepted=false reason=branch_unresolved，不入库不报错。"""
+    client, _ = mcp_client
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {
+            "branch_name": "feat/no-such-branch-zzz",
+            "content": "无法定位项目时应 fail-soft 跳过，既不入库也不报 5xx。",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["accepted"] is False
+    assert body["reason"] == "branch_unresolved"
+
+
+async def test_missing_project_id_and_branch_is_validation_error(
+    mcp_client, access_user
+) -> None:
+    """既无 project_id 又无 branch_name → 校验失败（400）。"""
+    client, _ = mcp_client
+    resp = await sync_to_async(client.post)(
+        _URL,
+        {"content": "两个定位键都不给，应被 serializer 校验拦下。"},
+        format="json",
+    )
+    assert resp.status_code == 400

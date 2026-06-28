@@ -31,7 +31,7 @@ __all__ = [
     "EVENT_PLAN_MERGE_STARTED",
     "EVENT_PLAN_MERGE_COMPLETED",
     "EVENT_PLAN_VALIDATION_FAILED",
-    "EVENT_PLAN_SESSION_FAILED",
+    "EVENT_PROCESS_SESSION_FAILED",
     "EVENT_SPEC_DRAFTED",
     "EVENT_CODING_WAVE_STARTED",
     "EVENT_CODING_WAVE_COMPLETED",
@@ -53,10 +53,12 @@ EVENT_REPO_RESEARCH_COMPLETED: Final[str] = "repo.research.completed"
 EVENT_REPO_RESEARCH_FAILED: Final[str] = "repo.research.failed"
 EVENT_CLARIFICATION_ASKED: Final[str] = "clarification.asked"
 EVENT_CLARIFICATION_ANSWERED: Final[str] = "clarification.answered"
-EVENT_PLAN_MERGE_STARTED: Final[str] = "plan.merge.started"
-EVENT_PLAN_MERGE_COMPLETED: Final[str] = "plan.merge.completed"
-EVENT_PLAN_VALIDATION_FAILED: Final[str] = "plan.validation.failed"
-EVENT_PLAN_SESSION_FAILED: Final[str] = "plan.session.failed"
+# technical_plan process 产出（P2：plan.* → technical_plan.* 通用/process 前缀）
+EVENT_PLAN_MERGE_STARTED: Final[str] = "technical_plan.merge.started"
+EVENT_PLAN_MERGE_COMPLETED: Final[str] = "technical_plan.merge.completed"
+EVENT_PLAN_VALIDATION_FAILED: Final[str] = "technical_plan.validation.failed"
+# 通用收敛会话失败（process 前缀，所有 process_type 共用）
+EVENT_PROCESS_SESSION_FAILED: Final[str] = "process.session.failed"
 
 # v0.9 SDD spec 产出，payload {spec_id, repository_id, plan_version_id}
 # （producer = Plan 03 spec_generation.py，融合通过后逐 SDD 仓 best-effort emit）
@@ -79,7 +81,7 @@ ALL_EVENTS: Final[frozenset[str]] = frozenset(
         EVENT_PLAN_MERGE_STARTED,
         EVENT_PLAN_MERGE_COMPLETED,
         EVENT_PLAN_VALIDATION_FAILED,
-        EVENT_PLAN_SESSION_FAILED,
+        EVENT_PROCESS_SESSION_FAILED,
         EVENT_SPEC_DRAFTED,
     }
 )

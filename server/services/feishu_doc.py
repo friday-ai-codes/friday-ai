@@ -7,6 +7,7 @@ Uses tenant_access_token authentication (same as IM API, different from Space AP
 import time
 import unicodedata
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import mistune
@@ -50,6 +51,7 @@ PERMISSION_CODES: frozenset[int] = frozenset({91003, 91004, 91204, 95008, 95009,
 NOT_FOUND_CODES: frozenset[int] = frozenset({1002, 18066, 91402, 95006, 95007})
 
 MAX_DOC_CHARS: int = 30_000
+UPGRADED_DOCS_HINTS: tuple[str, ...] = ("not supported docx", "upgraded docs")
 
 
 def truncate_doc_content(markdown: str) -> tuple[str, bool]:
@@ -121,7 +123,7 @@ class FeishuDocClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=60),
-        retry=retry_if_exception_type(RateLimitError),
+        retry=retry_if_exception_type((RateLimitError, httpx.TransportError)),
         reraise=True,
     )
     async def get_document_content(
@@ -140,29 +142,52 @@ class FeishuDocClient:
             FeishuDocAPIError: API call failed
             RateLimitError: Rate limit hit (will retry automatically)
         """
+        # Legacy Docs tokens (`doccn...`) are served by the old doc/v2 API.
+        if document_id.startswith("doccn"):
+            markdown = await self.get_legacy_document_content(document_id)
+            return markdown, []
+
+        return await self._get_docx_document_content(document_id)
+
+    async def _get_docx_document_content(
+        self,
+        document_id: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Read Feishu docx blocks without legacy token routing."""
         token = await self.get_tenant_access_token()
 
-        async with httpx.AsyncClient() as client:
-            # Get document blocks
-            response = await client.get(
-                f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"page_size": 500},
-            )
-            data = response.json()
+        blocks: list[dict[str, Any]] = []
+        page_token: str | None = None
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                params: dict[str, Any] = {"page_size": 500}
+                if page_token:
+                    params["page_token"] = page_token
+                response = await client.get(
+                    f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params=params,
+                )
+                data = response.json()
 
-            if data.get("code") != 0:
-                error_code = data.get("code", 0)
-                error_msg = data.get("msg", "Unknown error")
-                if error_code == 99991400 or "rate limit" in error_msg.lower():
-                    raise RateLimitError(f"Rate limit hit: {error_msg}")
-                if error_code in PERMISSION_CODES:
-                    raise PermissionDeniedError(f"无权限访问文档: {error_msg}")
-                if error_code in NOT_FOUND_CODES:
-                    raise DocumentNotFoundError(f"文档不存在: {error_msg}")
-                raise FeishuDocAPIError(f"读取文档失败: {error_msg}")
+                if data.get("code") != 0:
+                    error_code = data.get("code", 0)
+                    error_msg = data.get("msg", "Unknown error")
+                    if error_code == 99991400 or "rate limit" in error_msg.lower():
+                        raise RateLimitError(f"Rate limit hit: {error_msg}")
+                    if error_code in PERMISSION_CODES or "forbidden" in error_msg.lower():
+                        raise PermissionDeniedError(f"无权限访问文档: {error_msg}")
+                    if error_code in NOT_FOUND_CODES:
+                        raise DocumentNotFoundError(f"文档不存在: {error_msg}")
+                    raise FeishuDocAPIError(f"读取文档失败: {error_msg}")
 
-            blocks = data.get("data", {}).get("items", [])
+                page = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+                blocks.extend(page.get("items", []) or [])
+                if not page.get("has_more"):
+                    break
+                page_token = page.get("page_token")
+                if not page_token:
+                    break
             markdown = blocks_to_markdown(blocks)
 
             logger.info(
@@ -173,6 +198,131 @@ class FeishuDocClient:
             )
 
             return markdown, blocks
+
+    async def get_document_content_by_url(
+        self,
+        url_or_token: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Read Feishu docs by full URL or token.
+
+        Supports new docx URLs, legacy docs URLs, and wiki node URLs that wrap
+        doc/docx objects.
+        """
+        value = (url_or_token or "").strip()
+        if not value:
+            return "", []
+
+        parsed = urlparse(value)
+        if parsed.scheme and parsed.netloc:
+            segments = [s for s in parsed.path.split("/") if s]
+            if "wiki" in segments:
+                idx = segments.index("wiki")
+                if idx + 1 >= len(segments):
+                    return "", []
+                obj_type, obj_token = await self.resolve_wiki_node(segments[idx + 1])
+                if obj_type == "docx":
+                    return await self.get_document_content(obj_token)
+                if obj_type == "doc":
+                    markdown = await self.get_legacy_document_content(obj_token)
+                    return markdown, []
+                raise FeishuDocAPIError(f"暂不支持的 wiki 内容类型: {obj_type}")
+            for marker in ("docx", "docs"):
+                if marker in segments:
+                    idx = segments.index(marker)
+                    if idx + 1 < len(segments):
+                        token = segments[idx + 1]
+                        if marker == "docs":
+                            return await self._get_docs_url_content(token)
+                        return await self.get_document_content(token)
+            # Full URL with an unsupported Feishu path: fall back to tail token.
+            value = parsed.path.rstrip("/").split("/")[-1]
+
+        return await self.get_document_content(value)
+
+    async def _get_docs_url_content(
+        self,
+        token: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Read a `/docs/{token}` URL, falling back to docx for upgraded docs."""
+        try:
+            markdown = await self.get_legacy_document_content(token)
+            return markdown, []
+        except FeishuDocAPIError as exc:
+            message = str(exc).lower()
+            if any(hint in message for hint in UPGRADED_DOCS_HINTS):
+                logger.info("feishu_docs_url_upgraded_to_docx", document_id=token)
+                return await self._get_docx_document_content(token)
+            raise
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type((RateLimitError, httpx.TransportError)),
+        reraise=True,
+    )
+    async def resolve_wiki_node(self, node_token: str) -> tuple[str, str]:
+        """Resolve a wiki node token to (obj_type, obj_token)."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{self.OPEN_API_BASE}/wiki/v2/spaces/get_node",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"token": node_token},
+            )
+            data = response.json()
+
+        if data.get("code") != 0:
+            error_code = data.get("code", 0)
+            error_msg = data.get("msg", "Unknown error")
+            if error_code == 99991400 or "rate limit" in error_msg.lower():
+                raise RateLimitError(f"Rate limit hit: {error_msg}")
+            if error_code in PERMISSION_CODES or "permission" in error_msg.lower():
+                raise PermissionDeniedError(f"无权限访问 wiki 节点: {error_msg}")
+            if error_code in NOT_FOUND_CODES:
+                raise DocumentNotFoundError(f"wiki 节点不存在: {error_msg}")
+            raise FeishuDocAPIError(f"解析 wiki 节点失败: {error_msg}")
+
+        node = (data.get("data") or {}).get("node") or {}
+        obj_type = str(node.get("obj_type") or "")
+        obj_token = str(node.get("obj_token") or "")
+        if not obj_type or not obj_token:
+            raise FeishuDocAPIError("解析 wiki 节点失败: 响应缺少 obj_type/obj_token")
+        return obj_type, obj_token
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type((RateLimitError, httpx.TransportError)),
+        reraise=True,
+    )
+    async def get_legacy_document_content(self, document_id: str) -> str:
+        """Read legacy Feishu Docs (`/docs/doccn...`) raw content."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.OPEN_API_BASE}/doc/v2/{document_id}/raw_content",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            data = response.json()
+
+        if data.get("code") != 0:
+            error_code = data.get("code", 0)
+            error_msg = data.get("msg", "Unknown error")
+            if error_code == 99991400 or "rate limit" in error_msg.lower():
+                raise RateLimitError(f"Rate limit hit: {error_msg}")
+            if error_code in PERMISSION_CODES or "forbidden" in error_msg.lower():
+                raise PermissionDeniedError(f"无权限访问文档: {error_msg}")
+            if error_code in NOT_FOUND_CODES:
+                raise DocumentNotFoundError(f"文档不存在: {error_msg}")
+            raise FeishuDocAPIError(f"读取旧版文档失败: {error_msg}")
+
+        content = str((data.get("data") or {}).get("content") or "")
+        logger.info(
+            "feishu_legacy_document_read",
+            document_id=document_id,
+            content_length=len(content),
+        )
+        return content
 
     @retry(
         stop=stop_after_attempt(3),

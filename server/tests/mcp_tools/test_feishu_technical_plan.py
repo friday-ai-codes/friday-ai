@@ -1,6 +1,6 @@
 """create_feishu_technical_plan 飞书 writeback + 落库守护（Phase 94 UNIFY-03 后）。
 
-UNIFY-03 起方案生成 delegate 到统一编排（``delegate_plan_orchestration``），本测试 monkeypatch
+UNIFY-03 起方案生成 delegate 到统一编排（``delegate_process_runtime``），本测试 monkeypatch
 delegate 返回 canonical DONE 结果以**确定性**覆盖：飞书文档/评论 writeback（喂 delegate markdown +
 映射后的 repository_tasks）+ McpWorkItemTechnicalPlan 落库 + tool_call 关联 + 部分失败降级。
 delegate 三态映射 / 响应外形 snapshot / 同步达 DONE 契约见 test_create_feishu_technical_plan_delegate。
@@ -71,7 +71,7 @@ def _patch_delegate(
             markdown=markdown,
         )
 
-    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake)
+    monkeypatch.setattr("mcp_tools.technical_plan_service.delegate_process_runtime", _fake)
 
 
 class _FakeDocClient:

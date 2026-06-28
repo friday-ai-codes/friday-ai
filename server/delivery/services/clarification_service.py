@@ -1,21 +1,15 @@
 """ClarificationService —— Clarification 唯一写入入口（CLARIFY-01，INV-6）。
 
-承载 HITL 澄清回路的落库与状态变更（DOMAIN §6/§14），对齐 ``PlanSessionService`` /
-``ResearchService`` 单一写入范式：
-
-- ``create_clarification``：建 pending ``Clarification``（``answered_at=None``）+ 设
-  ``affected_partials`` M2M（回答后须重跑的 task）。
-- ``answer_clarification``：条件更新 ``answer`` / ``answered_at``（仅 ``answered_at IS NULL``
-  可答，重复答幂等 no-op，不二次覆盖首答）；对 ``affected_partials`` 对应
-  ``RepoResearchTask`` 经 ``ResearchService.mark_stale`` 置 stale 重跑（§14 仅 affected
-  重跑，其余 partial 复用）；无 affected_partials → 纯解除挂起（不触任何 task）。
-
-结构化澄清（CLARIFY-01，轮次容器 + 多子题）唯一写入入口：
+承载 HITL 澄清回路的落库与状态变更（DOMAIN §6/§14），对齐
+``ConvergenceSessionService`` 单一写入范式。**process-agnostic**：P3 起统一收口到结构化
+轮次三方法，移除原与"多仓调研"耦合的 legacy 双写（``create_clarification`` /
+``answer_clarification`` + ``affected_partials`` stale 重跑），使澄清对任意 ``process_type``
+通用：
 
 - ``create_round``：建 1 容器 + N 个 ``ClarificationQuestion`` 子题（``bulk_create``）。
 - ``answer_round``：按题幂等作答 + 作答时一次性定格 ``recommendation_adopted`` 采纳信号
-  （server 端计算，绝不接受调用方传入）。
-- ``ahas_pending``：统一 pending 谓词，兼容旧单题行与新结构化子题两形态。
+  （server 端计算，绝不接受调用方传入）；整轮答毕推进容器 + emit ``clarification.answered``。
+- ``ahas_pending``：统一 pending 谓词，兼容无子题容器与结构化子题两形态。
 
 INV-6：Clarification / ClarificationQuestion 落库/状态变更仅经本 service（grep 守护断言无旁路
 ``Clarification.objects.create`` / ``.save`` 出现在 service 外）。所有 ORM 写经
@@ -34,7 +28,6 @@ from django.utils import timezone
 
 from delivery.models import Clarification, ClarificationQuestion
 from delivery.services.event_taxonomy import EVENT_CLARIFICATION_ANSWERED
-from delivery.services.research_service import ResearchService
 
 logger = structlog.get_logger(__name__)
 
@@ -47,96 +40,16 @@ class ClarificationService:
     def __init__(
         self,
         *,
-        research_service: ResearchService | None = None,
         session_service: Any = None,
     ) -> None:
-        self.research_service = research_service or ResearchService()
-        # 延迟默认构造避免 import 环（PlanSessionService 同 app）
+        # 延迟默认构造避免 import 环（ConvergenceSessionService 同 app）
         if session_service is None:
-            from delivery.services.plan_session_service import PlanSessionService
+            from delivery.services.convergence_session_service import (
+                ConvergenceSessionService,
+            )
 
-            session_service = PlanSessionService()
+            session_service = ConvergenceSessionService()
         self.session_service = session_service
-
-    async def create_clarification(
-        self, session: Any, question: str, affected_task_ids: list | None = None
-    ) -> Clarification:
-        """建 pending Clarification（answered_at=None）+ 设 affected_partials M2M。
-
-        ``affected_task_ids`` 为 RepoResearchTask id 列表（回答后须重跑的 task），
-        空则不关联（纯挂起后全量按现状继续）。
-        """
-        return await self._create_sync(session, question, affected_task_ids or [])
-
-    @sync_to_async
-    def _create_sync(self, session: Any, question: str, affected_task_ids: list) -> Clarification:
-        clar = Clarification.objects.create(session=session, question=question)
-        if affected_task_ids:
-            clar.affected_partials.set(affected_task_ids)
-        return clar
-
-    async def answer_clarification(
-        self, clarification: Clarification, answer: str
-    ) -> Clarification:
-        """写 answer/answered_at（幂等条件更新）+ 仅 affected_partials 经 stale 重跑。
-
-        条件更新前置 ``answered_at IS NULL``（镜像 PlanSessionService 条件更新断言风格）：
-        重复答幂等 no-op（不二次覆盖首答、不重复 stale、不重复 emit）。命中首答后取
-        affected_partials 对应 task → ``ResearchService.mark_stale``（仅触指定 task，绝不动
-        其他）+ emit ``clarification.answered``（best-effort）；无 affected_partials → 纯解除
-        挂起（不触任何 task）但仍 emit answered。
-        """
-        answered, affected_ids = await self._answer_sync(clarification, answer)
-        if not answered:
-            return clarification
-        if affected_ids:
-            await self.research_service.mark_stale(affected_ids)
-        await self._emit_answered(clarification, answer, affected_ids)
-        return clarification
-
-    @sync_to_async
-    def _answer_sync(self, clarification: Clarification, answer: str) -> tuple[bool, list]:
-        now = timezone.now()
-        updated = Clarification.objects.filter(
-            id=clarification.id, answered_at__isnull=True
-        ).update(answer=answer, answered_at=now)
-        if updated != 1:
-            # 幂等 no-op：已答，不二次覆盖首答、不重复 stale/emit
-            logger.info(
-                "clarification_answer_noop_already_answered",
-                clarification_id=str(clarification.id),
-            )
-            return False, []
-        clarification.answer = answer
-        clarification.answered_at = now
-        # affected_partials 对应 task id（标量列表，不裸 lazy-FK）
-        return True, list(clarification.affected_partials.values_list("id", flat=True))
-
-    async def _emit_answered(
-        self, clarification: Clarification, answer: str, affected_ids: list
-    ) -> None:
-        """emit clarification.answered（payload {clarification_id, answer, affected_partials}），best-effort。
-
-        async 安全：经 ``session_id`` 取 PlanSession（不裸 lazy-FK ``clarification.session``，
-        规避 Phase 38 CR-01 类）。事件持久化失败不阻断 answer 主流程。
-        """
-        from delivery.models import PlanSession
-
-        session = await PlanSession.objects.filter(id=clarification.session_id).afirst()
-        if session is None:
-            return
-        payload = {
-            "clarification_id": str(clarification.id),
-            "answer": answer,
-            "affected_partials": [str(tid) for tid in affected_ids],
-        }
-        try:
-            await self.session_service._emit_event(EVENT_CLARIFICATION_ANSWERED, session, payload)
-        except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断 answer
-            logger.warning(
-                "clarification_answered_emit_failed",
-                clarification_id=str(clarification.id),
-            )
 
     # ── CLARIFY-01 结构化澄清「轮次容器 + 多子题」写入入口（INV-6） ──────────────
 
@@ -249,7 +162,44 @@ class ClarificationService:
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         clar = await Clarification.objects.filter(id=round_id).afirst()
+        # 整轮答毕（容器本次推进 answered）→ emit clarification.answered（best-effort，
+        # process-agnostic：不再携带任何 process 专属重跑面，仅含 clarification_id + 计数标量）。
+        if round_completed:
+            await self._emit_answered(round_id, answered_count, adopted_count)
         return clar if clar is not None else round_or_id
+
+    async def _emit_answered(
+        self, round_id: Any, answered_count: int, adopted_count: int
+    ) -> None:
+        """emit ``clarification.answered``（payload 仅标量，绝不含澄清正文），best-effort。
+
+        async 安全：经 ``clarification.session_id`` 标量取会话（不裸 lazy-FK
+        ``clarification.session``，规避 Phase 38 CR-01 类）；事件持久化失败不阻断作答主流程。
+        """
+        from delivery.models import ConvergenceSession
+
+        session_id = await (
+            Clarification.objects.filter(id=round_id).values_list("session_id", flat=True).afirst()
+        )
+        if session_id is None:
+            return
+        session = await ConvergenceSession.objects.filter(id=session_id).afirst()
+        if session is None:
+            return
+        payload = {
+            "clarification_id": str(round_id),
+            "answered_count": answered_count,
+            "adopted_count": adopted_count,
+        }
+        try:
+            await self.session_service._emit_event(EVENT_CLARIFICATION_ANSWERED, session, payload)
+        except Exception:  # noqa: BLE001 — 事件 best-effort，绝不阻断作答
+            self._safe_log(
+                "clarification_answered_emit_failed",
+                category="caller",
+                component="delivery",
+                clarification_id=str(round_id),
+            )
 
     @sync_to_async
     def _answer_round_sync(
@@ -284,7 +234,8 @@ class ClarificationService:
             return False
         has_children = ClarificationQuestion.objects.filter(clarification_id=round_id).exists()
         if not has_children:
-            # 无子题（非结构化轮）→ 不动容器状态，交 legacy answer_clarification 路径
+            # 防御性：无子题容器不经本路径推进（结构化轮才有子题；空轮已由 create_round
+            # 的 WR-02 守护拒建，正常不会出现）。
             return False
         updated = Clarification.objects.filter(id=round_id, container_status="pending").update(
             container_status="answered", answered_at=timezone.now()
@@ -328,13 +279,11 @@ class ClarificationService:
         return True, adopted
 
     async def ahas_pending(self, session_id: Any) -> bool:
-        """统一 pending 谓词：会话内是否仍有未答澄清（兼容旧单题行 + 新结构化子题）。
+        """统一 pending 谓词：会话内是否仍有未答澄清（adapter / resume / 节点共用）。
 
-        两形态收口为单一判定（90-03 adapter / resume / e2e 共用，避免逻辑漂移）：
-
-        - **新结构化**：轮内存在 ``answered_at IS NULL`` 的子题 → pending。
-        - **旧单题行**（Pitfall 2）：容器 ``answered_at IS NULL`` 且**无任何子题** → 仍判
-          pending，否则历史挂起会被误放行。
+        - **结构化轮**：轮内存在 ``answered_at IS NULL`` 的子题 → pending。
+        - **无子题容器**（防御性）：容器 ``answered_at IS NULL`` 且**无任何子题** → 仍判
+          pending（正常不出现，create_round 的 WR-02 守护拒建空轮；保留兜底防误放行）。
         """
         return await self._ahas_pending_sync(session_id)
 
@@ -345,11 +294,11 @@ class ClarificationService:
         ).exists()
         if child_pending:
             return True
-        # 旧单题行：无子题且容器未答（questions__isnull=True 表达「无子题」）
-        legacy_pending = Clarification.objects.filter(
+        # 无子题容器：未答且无任何子题（questions__isnull=True 表达「无子题」）
+        childless_pending = Clarification.objects.filter(
             session_id=session_id, answered_at__isnull=True, questions__isnull=True
         ).exists()
-        return legacy_pending
+        return childless_pending
 
     @staticmethod
     def _safe_log(event: str, **fields: Any) -> None:

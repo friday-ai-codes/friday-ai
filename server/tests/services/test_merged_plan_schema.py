@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.plan_orchestration import validate_merged_plan
+from services.process_runtime import validate_merged_plan
 
 
 def _valid_merged_plan() -> dict[str, Any]:

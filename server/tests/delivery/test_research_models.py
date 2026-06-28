@@ -13,9 +13,9 @@ from django.core.management import call_command
 
 from agents.models import AgentSession
 from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
     PartialPlan,
-    PlanSession,
-    PlanSessionEntrypoint,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
@@ -33,8 +33,8 @@ def _make_repo() -> Repository:
     )
 
 
-def _make_session() -> PlanSession:
-    return PlanSession.objects.create(entrypoint=PlanSessionEntrypoint.CHAT)
+def _make_session() -> ConvergenceSession:
+    return ConvergenceSession.objects.create(entrypoint=ConvergenceSessionEntrypoint.CHAT)
 
 
 @pytest.mark.django_db
@@ -70,7 +70,7 @@ def test_partial_plan_defaults() -> None:
 
 @pytest.mark.django_db
 def test_cascade_session_delete() -> None:
-    """删 PlanSession → 关联 RepoResearchTask 级联删除（CASCADE）。"""
+    """删 ConvergenceSession → 关联 RepoResearchTask 级联删除（CASCADE）。"""
     session = _make_session()
     repo = _make_repo()
     task = RepoResearchTask.objects.create(session=session, repository=repo)

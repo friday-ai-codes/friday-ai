@@ -261,31 +261,9 @@ async def create_coding_plan(
         plan.recommended_repository_ids = final_recommended
         await plan.asave(update_fields=["recommended_repository_ids", "updated_at"])
 
-    # Phase 37 canonical eager 投影示范（DOMAIN §5.3）：仅新建 plan 时投影 canonical
-    # TechnicalPlan + 回填 canonical_plan_id 软链。INV-2：chat 自然语言 work_item=None +
-    # origin=chat 显式标记。best-effort try/except 隔离——投影失败仅 warning，**绝不**
-    # 影响 CodingPlan 创建 / 工具返回（对齐 ingestion 派发的「失败不致命」范式）。
-    if plan_created:
-        try:
-            from delivery.services import (  # lazy import 防 chat→delivery 循环
-                TechnicalPlanService,
-                chat_codingplan_to_content,
-            )
-
-            _plan_svc = TechnicalPlanService()
-            _canonical = await _plan_svc.create_from(
-                origin="chat",
-                payload={"content": chat_codingplan_to_content(plan)},
-                work_item=None,
-            )
-            await _plan_svc.link(plan, _canonical)
-        except Exception as exc:  # noqa: BLE001 best-effort 隔离，不阻断创建
-            # IN-03：仅记录异常类型，避免 PlanContentInvalid 等把被校验 content 片段写入日志
-            logger.warning(
-                "chat_eager_plan_projection_failed",
-                coding_plan_id=str(plan.id),
-                error_type=type(exc).__name__,
-            )
+    # Chassis v2 · P2：移除 chat→delivery TechnicalPlan eager 投影（canonical_plan_id 软链
+    # 与 delivery TechnicalPlanService 已删除；技术方案产物统一走 ConvergenceSession +
+    # ArtifactService，chat CodingPlan 不再耦合 delivery 产物脊柱）。
 
     logger.info(
         "create_coding_plan_completed",

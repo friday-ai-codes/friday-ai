@@ -13,11 +13,10 @@ import pytest
 from asgiref.sync import sync_to_async
 
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from delivery.services import RepoCodingTaskService
 from repositories.models import Repository
@@ -36,9 +35,9 @@ async def _make_repo(facets: dict | None = None) -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return await PlanVersion.objects.acreate(plan=plan, version=1, content={"a": 1})
+async def _make_artifact_version() -> ArtifactVersion:
+    plan = await Artifact.objects.acreate(artifact_type="technical_plan")
+    return await ArtifactVersion.objects.acreate(artifact=plan, version_no=1, content={"a": 1})
 
 
 @sync_to_async
@@ -48,8 +47,8 @@ def _depends_on_ids(task: RepoCodingTask) -> list:
 
 @pytest.mark.asyncio
 async def test_create_idempotent() -> None:
-    """同 plan_version 两次 create → 同一批 task（get_or_create 幂等），wave + 边正确。"""
-    plan_version = await _make_plan_version()
+    """同 artifact_version 两次 create → 同一批 task（get_or_create 幂等），wave + 边正确。"""
+    artifact_version = await _make_artifact_version()
     repo_a = await _make_repo()
     repo_b = await _make_repo()
     rid_a, rid_b = str(repo_a.id), str(repo_b.id)
@@ -58,14 +57,14 @@ async def test_create_idempotent() -> None:
     repo_dep_edges = {rid_a: [rid_b]}
 
     svc = RepoCodingTaskService()
-    first = await svc.create_tasks_for_plan(plan_version, repo_waves, repo_dep_edges)
-    second = await svc.create_tasks_for_plan(plan_version, repo_waves, repo_dep_edges)
+    first = await svc.create_tasks_for_plan(artifact_version, repo_waves, repo_dep_edges)
+    second = await svc.create_tasks_for_plan(artifact_version, repo_waves, repo_dep_edges)
 
     assert set(first) == {rid_a, rid_b}
     assert first[rid_a].id == second[rid_a].id
     assert first[rid_b].id == second[rid_b].id
     # 幂等：两次调用不重复建行。
-    count = await RepoCodingTask.objects.filter(plan_version=plan_version).acount()
+    count = await RepoCodingTask.objects.filter(artifact_version=artifact_version).acount()
     assert count == 2
     # wave 正确。
     assert first[rid_a].wave == 1
@@ -80,11 +79,11 @@ async def test_create_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_follow_openspec_sdd_repo() -> None:
     """SDD 仓（facets.methodology==SDD）建任务 → follow_openspec=True（D-51-1 首次消费）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo(facets={"methodology": "SDD"})
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     reread = await RepoCodingTask.objects.aget(id=tasks[rid].id)
     assert reread.follow_openspec is True
 
@@ -92,12 +91,12 @@ async def test_follow_openspec_sdd_repo() -> None:
 @pytest.mark.asyncio
 async def test_follow_openspec_non_sdd_repo() -> None:
     """非 SDD 仓（facets 缺失 / methodology!=SDD）→ follow_openspec=False（零回归）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo_empty = await _make_repo()  # facets={}
     repo_other = await _make_repo(facets={"methodology": "TDD"})
     rid_empty, rid_other = str(repo_empty.id), str(repo_other.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid_empty: 0, rid_other: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid_empty: 0, rid_other: 0}, {})
     assert (await RepoCodingTask.objects.aget(id=tasks[rid_empty].id)).follow_openspec is False
     assert (await RepoCodingTask.objects.aget(id=tasks[rid_other].id)).follow_openspec is False
 
@@ -105,25 +104,25 @@ async def test_follow_openspec_non_sdd_repo() -> None:
 @pytest.mark.asyncio
 async def test_follow_openspec_drift_backfill() -> None:
     """已存在 task 的 follow_openspec 与当前 facets 推导值漂移 → 回填，重复调用幂等不重复写。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()  # 初始非 SDD
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     assert (await RepoCodingTask.objects.aget(id=tasks[rid].id)).follow_openspec is False
 
     # 后打 SDD 标 → 再次建任务应回填 follow_openspec=True（漂移回填）。
     repo.facets = {"methodology": "SDD"}
     await repo.asave(update_fields=["facets"])
-    await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     reread = await RepoCodingTask.objects.aget(id=tasks[rid].id)
     assert reread.follow_openspec is True
     # 行未重建（幂等）。
-    assert await RepoCodingTask.objects.filter(plan_version=plan_version).acount() == 1
+    assert await RepoCodingTask.objects.filter(artifact_version=artifact_version).acount() == 1
 
     # 重复调用（值相等）→ updated_at 不变（相等不写）。
     before = reread.updated_at
-    await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     reread2 = await RepoCodingTask.objects.aget(id=tasks[rid].id)
     assert reread2.updated_at == before
 
@@ -131,11 +130,11 @@ async def test_follow_openspec_drift_backfill() -> None:
 @pytest.mark.asyncio
 async def test_mark_done_idempotent() -> None:
     """running→done 第一次成功；对已 done task 再 mark_done → no-op 不报错、仍 done。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
     await svc.mark_running(task, None)
 
@@ -152,11 +151,11 @@ async def test_mark_done_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_mark_done_guard() -> None:
     """对 pending（非 running）task mark_done → 条件更新影响 0 行，status 仍 pending。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
 
     await svc.mark_done(task)
@@ -167,11 +166,11 @@ async def test_mark_done_guard() -> None:
 @pytest.mark.asyncio
 async def test_mark_blocked() -> None:
     """pending task mark_blocked(["u1","u2"]) → failed + error upstream_failed 结构。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
 
     await svc.mark_blocked(task, ["u1", "u2"])
@@ -183,11 +182,11 @@ async def test_mark_blocked() -> None:
 @pytest.mark.asyncio
 async def test_mark_blocked_guard_running() -> None:
     """已运行 task mark_blocked → no-op（仅 pending 可阻断），不强翻在途。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
     await svc.mark_running(task, None)
 
@@ -199,11 +198,11 @@ async def test_mark_blocked_guard_running() -> None:
 @pytest.mark.asyncio
 async def test_record_produced_artifacts() -> None:
     """done task 写 produced_artifacts 成功（aget 重读相等）；重复写同产物幂等（值不变）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
     await svc.mark_running(task, None)
     await svc.mark_done(task)
@@ -232,11 +231,11 @@ async def test_record_produced_artifacts() -> None:
 @pytest.mark.asyncio
 async def test_mark_gate_blocked_pending() -> None:
     """pending task mark_gate_blocked → failed + error={reason, spec_status}（D-51-3）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
 
     affected = await svc.mark_gate_blocked(task, "spec_not_approved", "draft")
@@ -249,11 +248,11 @@ async def test_mark_gate_blocked_pending() -> None:
 @pytest.mark.asyncio
 async def test_mark_gate_blocked_guard_running() -> None:
     """已运行 task mark_gate_blocked → no-op（仅 pending 生效），不强翻在途。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
     await svc.mark_running(task, None)
 
@@ -266,11 +265,11 @@ async def test_mark_gate_blocked_guard_running() -> None:
 @pytest.mark.asyncio
 async def test_mark_gate_blocked_idempotent() -> None:
     """重复 mark_gate_blocked 同一已 blocked task → 影响 0 行（status 已 failed 不匹配 pending）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
 
     first = await svc.mark_gate_blocked(task, "spec_not_approved", "missing")
@@ -284,11 +283,11 @@ async def test_mark_gate_blocked_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_mark_failed_wraps() -> None:
     """mark_failed(task, "boom") → error={"message":"boom"}（非 dict 包装）。"""
-    plan_version = await _make_plan_version()
+    artifact_version = await _make_artifact_version()
     repo = await _make_repo()
     rid = str(repo.id)
     svc = RepoCodingTaskService()
-    tasks = await svc.create_tasks_for_plan(plan_version, {rid: 0}, {})
+    tasks = await svc.create_tasks_for_plan(artifact_version, {rid: 0}, {})
     task = tasks[rid]
 
     await svc.mark_failed(task, "boom")

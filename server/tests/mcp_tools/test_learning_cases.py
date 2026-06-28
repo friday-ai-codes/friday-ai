@@ -190,7 +190,7 @@ def test_create_feishu_technical_plan_auto_includes_similar_learning_case(
         )
 
     monkeypatch.setattr(
-        "mcp_tools.technical_plan_service.delegate_plan_orchestration", _fake_delegate
+        "mcp_tools.technical_plan_service.delegate_process_runtime", _fake_delegate
     )
 
     response = client.post(

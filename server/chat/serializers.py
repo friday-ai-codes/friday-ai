@@ -136,6 +136,15 @@ class CreateConversationSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="LLM 模型 ID（可选，为空时使用系统默认）",
     )
+    # 项目作战室 P2：绑定项目 + 可见性（shared 守护要求 bound_project 非空，service 层兜底）。
+    bound_project_id = serializers.UUIDField(
+        required=False, allow_null=True, default=None,
+        help_text="绑定项目聚合根（项目作战室会话；非空则自动加载项目上下文）",
+    )
+    visibility = serializers.ChoiceField(
+        choices=["personal", "shared"], required=False, default="personal",
+        help_text="会话可见性（personal=仅创建者 / shared=项目共享只读）",
+    )
 
 
 class ConversationPatchSerializer(serializers.Serializer):
@@ -162,6 +171,10 @@ class ConversationPatchSerializer(serializers.Serializer):
     bound_project_id = serializers.UUIDField(required=False, allow_null=True)
     # 归档开关：true 归档（从默认列表隐藏）/ false 取消归档。不受 frozen 限制。
     is_archived = serializers.BooleanField(required=False)
+    # 项目作战室 P2：可见性互转（个人↔共享，仅创建者；共享→个人语义见 service）。
+    visibility = serializers.ChoiceField(
+        choices=["personal", "shared"], required=False,
+    )
 
     def validate_provider_credential_id(self, value):
         """FK 存在性 + is_active 校验，防止指向已软删 / 已禁用凭证（security mitigation-02）。"""
@@ -205,6 +218,10 @@ class ConversationListSerializer(serializers.Serializer):
     status = serializers.CharField()
     provider_credential_id = serializers.SerializerMethodField()
     is_archived = serializers.BooleanField(required=False)
+    # 项目作战室 P2：会话归属项目 + 可见性 + 贡献者（头像/名字由前端用 display_name 渲染）。
+    bound_project_id = serializers.SerializerMethodField()
+    visibility = serializers.CharField(required=False, default="personal")
+    created_by = serializers.SerializerMethodField()
     # 列表徽标聚合标记（由 list_conversations annotate 注入；default=False 向后兼容）。
     has_sdd_spec = serializers.BooleanField(required=False, default=False)
     has_coding_plan = serializers.BooleanField(required=False, default=False)
@@ -216,6 +233,21 @@ class ConversationListSerializer(serializers.Serializer):
         """读 FK 的 _id 列（避免 sync ORM 触发；list/detail 路径均 async-safe）。"""
         cred_id = getattr(obj, "provider_credential_id_id", None)
         return str(cred_id) if cred_id else None
+
+    def get_bound_project_id(self, obj) -> str | None:
+        pid = getattr(obj, "bound_project_id", None)
+        return str(pid) if pid else None
+
+    def get_created_by(self, obj) -> dict | None:
+        """会话创建者简要（需 service select_related("created_by") 预取）。"""
+        user = getattr(obj, "created_by", None)
+        if user is None:
+            return None
+        return {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name or "",
+        }
 
 
 class _OwnerBriefSerializer(serializers.Serializer):
@@ -315,6 +347,11 @@ class ConversationDetailSerializer(serializers.Serializer):
     model = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField()
     provider_credential_id = serializers.SerializerMethodField()
+    # 项目作战室 P2：归属项目 + 可见性 + 贡献者 + 单会话执行时长。
+    bound_project_id = serializers.SerializerMethodField()
+    visibility = serializers.CharField(required=False, default="personal")
+    created_by = serializers.SerializerMethodField()
+    duration_ms = serializers.IntegerField(required=False, default=0)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
     messages = ConversationMessageSerializer(many=True, required=False)
@@ -325,6 +362,20 @@ class ConversationDetailSerializer(serializers.Serializer):
         """读 FK 的 _id 列（避免 sync ORM 触发；list/detail 路径均 async-safe）。"""
         cred_id = getattr(obj, "provider_credential_id_id", None)
         return str(cred_id) if cred_id else None
+
+    def get_bound_project_id(self, obj) -> str | None:
+        pid = getattr(obj, "bound_project_id", None)
+        return str(pid) if pid else None
+
+    def get_created_by(self, obj) -> dict | None:
+        user = getattr(obj, "created_by", None)
+        if user is None:
+            return None
+        return {
+            "id": str(user.id),
+            "username": user.username,
+            "display_name": user.display_name or "",
+        }
 
 
 class RuntimeLogSerializer(serializers.Serializer):

@@ -19,6 +19,7 @@ import {
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
+import { LIFECYCLE_VISUALS, lifecycleBadgeText, normalizeLifecyclePhase } from './composables/lifecycleBadge'
 import SubStepTimeline from './SubStepTimeline.vue'
 
 const props = defineProps<{
@@ -51,6 +52,14 @@ const statusBorderClass = computed(() => {
   }
   return map[props.data.status] ?? 'border-border/50'
 })
+
+// P5：节点生命周期相位徽章（相位 + 收敛轮次）。idle 不展示以免污染待运行节点。
+const lifecyclePhase = computed(() => normalizeLifecyclePhase(props.data.lifecycle))
+const showLifecycleBadge = computed(() => lifecyclePhase.value !== 'idle')
+const lifecycleVisual = computed(() => LIFECYCLE_VISUALS[lifecyclePhase.value])
+const lifecycleText = computed(() =>
+  lifecycleBadgeText(lifecyclePhase.value, props.data.round, props.data.maxRounds),
+)
 
 // OBS-01：失败节点 error 摘要（最小实现，供 tooltip 展示；富交互留 v2）
 const failedErrorMessage = computed(() => {
@@ -200,6 +209,16 @@ function handleSubStepClick(stepId: string) {
           </Tooltip>
         </TooltipProvider>
         <div v-else class="w-2 h-2 rounded-full shrink-0" :class="statusDotClass" />
+      </div>
+
+      <!-- P5：生命周期相位徽章（相位语义色 + 收敛轮次文案） -->
+      <div
+        v-if="showLifecycleBadge"
+        class="mb-1.5 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+        :class="lifecycleVisual.badgeClass"
+      >
+        <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="lifecycleVisual.dotClass" />
+        <span class="truncate">{{ lifecycleText }}</span>
       </div>
 
       <!-- 底部：耗时 + 从此继续按钮 + 成本徽章 + 瓶颈标签 -->

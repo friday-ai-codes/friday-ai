@@ -114,6 +114,31 @@ async def test_token_cached_single_network_call() -> None:
     assert route.call_count == 1
 
 
+@respx.mock
+async def test_list_tables_passes_page_token() -> None:
+    """list_tables 支持表分页游标，供大 Bitable 空间完整枚举。"""
+    _mock_token()
+    route = respx.get(f"{OPEN_API_BASE}/bitable/v1/apps/{APP_TOKEN}/tables").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": [{"table_id": TABLE_ID}],
+                    "has_more": False,
+                    "page_token": "",
+                },
+            },
+        )
+    )
+    client = BitableClient(app_id="app", app_secret="secret")
+
+    data = await client.list_tables(APP_TOKEN, page_token="next-page")
+
+    assert data["items"][0]["table_id"] == TABLE_ID
+    assert route.calls.last.request.url.params.get("page_token") == "next-page"
+
+
 def test_credential_source_decoupled_from_plugin_token() -> None:
     """源码守护：feishu_bitable 不取项目 plugin token 入口（REL-02 解耦核心）。"""
     src = Path(inspect.getfile(BitableClient)).read_text(encoding="utf-8")

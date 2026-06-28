@@ -163,20 +163,20 @@ class PlanDeepenNode(BaseNode):
                 next_handle="error",
             )
 
-        from delivery.models import PlanSessionStatus
+        from delivery.models import ConvergenceSessionStatus
 
-        if session.status == PlanSessionStatus.DONE:
+        if session.status == ConvergenceSessionStatus.DONE:
             await self._send_done_card(space, project, session, initiated_by_user_id, log=log)
             return NodeResult(
                 status="completed",
                 output={
                     "session_id": str(session.id),
-                    "plan_version_id": str(session.current_plan_version or ""),
+                    "artifact_version_id": str(session.current_artifact_version_id or ""),
                 },
                 next_handle="default",
             )
 
-        if session.status == PlanSessionStatus.FAILED:
+        if session.status == ConvergenceSessionStatus.FAILED:
             return NodeResult(
                 status="failed",
                 error="技术方案深化未达终态（融合失败）",

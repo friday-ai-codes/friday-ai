@@ -152,9 +152,10 @@ describe('/projects 项目列表页', () => {
     listMock.mockResolvedValue([makeProject()])
     const wrapper = mountPage()
     await flushPromises()
-    const checkbox = wrapper.find('input[type="checkbox"]')
+    // reka-ui Checkbox 渲染为 button[role=checkbox]，点击切换 v-model。
+    const checkbox = wrapper.find('[data-testid="only-mine-checkbox"]')
     expect(checkbox.exists()).toBe(true)
-    await checkbox.setValue(true)
+    await checkbox.trigger('click')
     await flushPromises()
     const calledFilters = listMock.mock.calls.at(-1)?.[0] ?? {}
     expect(calledFilters).toMatchObject({ member: 'u1' })

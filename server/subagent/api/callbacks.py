@@ -308,7 +308,7 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
 
     与 ``_schedule_workflow_resume`` 对称（fire-and-forget + 幂等 + fail-soft），但驱动的是
     **chat 入口**（无 node_execution）的 ``PlanSession``：所有 RepoResearchTask 终态后，用
-    43-02 的同源续驱 helper ``adrive_plan_session_to_pause_or_terminal`` 把 engine 续驱到
+    43-02 的同源续驱 helper ``adrive_convergence_session_to_pause_or_terminal`` 把 engine 续驱到
     ``done``（消化缺口 b：``amaybe_complete_research`` 只 researching→merging，chat 入口此后
     无消费者驱动 ``engine.advance``），再经 ``BarrierManager.task_completed`` 回灌主方案到
     chat 会话（消化缺口 a：chat barrier 从不被通知）。
@@ -321,16 +321,16 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
     async def _resume() -> None:
         try:
             from delivery.models import (
-                PlanSession,
-                PlanSessionEntrypoint,
-                PlanSessionStatus,
+                ConvergenceSession,
+                ConvergenceSessionEntrypoint,
+                ConvergenceSessionStatus,
                 RepoResearchTask,
             )
             from orchestration.barrier import get_barrier_manager
             from orchestration.contracts import BlockingTaskResult
-            from services.plan_orchestration import (
+            from services.process_runtime import (
                 aall_research_tasks_terminal,
-                adrive_plan_session_to_pause_or_terminal,
+                adrive_convergence_session_to_pause_or_terminal,
                 build_orchestration_engine,
             )
 
@@ -339,12 +339,12 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
             plan_session_id = lo.get("plan_session_id")
             if not plan_session_id:
                 return
-            plan_session = await PlanSession.objects.filter(id=plan_session_id).afirst()
+            plan_session = await ConvergenceSession.objects.filter(id=plan_session_id).afirst()
             if plan_session is None:
                 return
 
             # b. 守门（T-43-TAMPER）：仅 chat 入口续驱，用服务端权威字段 entrypoint
-            if str(plan_session.entrypoint) != str(PlanSessionEntrypoint.CHAT):
+            if str(plan_session.entrypoint) != str(ConvergenceSessionEntrypoint.CHAT):
                 return
 
             # b2. 归属校验（T-43-TAMPER 加固，WR-03）：交叉验证本 session 的 research_task 确属
@@ -364,12 +364,15 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
             engine = build_orchestration_engine()
 
             # e. 先续驱到终态（43-02 同源 helper）
-            plan_session = await adrive_plan_session_to_pause_or_terminal(engine, plan_session)
+            plan_session = await adrive_convergence_session_to_pause_or_terminal(engine, plan_session)
 
             # e2. 终态守门（WR-02）：adrive 可能在非终态短路返回（clarifying-pending /
             #     researching-在途），此时不构建 BlockingTaskResult、不通知 barrier——否则会以
             #     success=False 提前把 chat 阻塞任务误解析为失败。仅 {DONE, FAILED} 才回灌。
-            if plan_session.status not in (PlanSessionStatus.DONE, PlanSessionStatus.FAILED):
+            if plan_session.status not in (
+                ConvergenceSessionStatus.DONE,
+                ConvergenceSessionStatus.FAILED,
+            ):
                 log.info(
                     "chat_plan_resume_resuspended",
                     plan_session_id=str(plan_session.id),
@@ -378,8 +381,8 @@ def _schedule_chat_plan_resume(session: SubAgentSession, log: BoundLogger) -> No
                 return
 
             # f. 再构建 BlockingTaskResult（复用 deep_analysis 回灌通道；A2：失败 output="")
-            success = plan_session.status == PlanSessionStatus.DONE
-            output_text = str(plan_session.current_plan_version or "") if success else ""
+            success = plan_session.status == ConvergenceSessionStatus.DONE
+            output_text = str(plan_session.current_artifact_version_id or "") if success else ""
             error_text = "" if success else str(plan_session.error or {})
             result: BlockingTaskResult = {
                 "task_id": str(plan_session.id),
@@ -1613,7 +1616,7 @@ async def _aload_research_task(session: SubAgentSession):
 
     返回 ``(task, plan_session)``；任一不可用则对应位 None（调用方 no-op，幂等）。
     """
-    from delivery.models import PlanSession, RepoResearchTask, RepoResearchTaskStatus
+    from delivery.models import ConvergenceSession, RepoResearchTask, RepoResearchTaskStatus
 
     lo = session.last_output or {}
     research_task_id = lo.get("research_task_id")
@@ -1629,7 +1632,7 @@ async def _aload_research_task(session: SubAgentSession):
         return None, None
     plan_session = None
     if plan_session_id:
-        plan_session = await PlanSession.objects.filter(id=plan_session_id).afirst()
+        plan_session = await ConvergenceSession.objects.filter(id=plan_session_id).afirst()
     return task, plan_session
 
 
@@ -1637,7 +1640,7 @@ async def _trigger_research_barrier(plan_session) -> None:
     """所有 RepoResearchTask 终态则推 research_complete（→ merging）；幂等安全。"""
     if plan_session is None:
         return
-    from services.plan_orchestration.research_aggregation import amaybe_complete_research
+    from services.process_runtime.research_aggregation import amaybe_complete_research
 
     await amaybe_complete_research(plan_session)
 
@@ -1653,19 +1656,19 @@ async def _handle_research_completion(
     if not _is_plan_research(session):
         return
 
-    from delivery.services import PlanSessionService, ResearchService
+    from delivery.services import ConvergenceSessionService, ResearchService
     from delivery.services.event_taxonomy import (
         EVENT_REPO_RESEARCH_COMPLETED,
         EVENT_REPO_RESEARCH_FAILED,
     )
-    from services.plan_orchestration.research_aggregation import parse_partial_plan_content
+    from services.process_runtime.research_aggregation import parse_partial_plan_content
 
     task, plan_session = await _aload_research_task(session)
     if task is None:
         return
 
     research_service = ResearchService()
-    session_service = PlanSessionService()
+    session_service = ConvergenceSessionService()
     content = parse_partial_plan_content(
         p.get("output") or {}, repository_id=str(task.repository_id)
     )
@@ -1708,7 +1711,7 @@ async def _handle_research_failure(
     if not _is_plan_research(session):
         return
 
-    from delivery.services import PlanSessionService, ResearchService
+    from delivery.services import ConvergenceSessionService, ResearchService
     from delivery.services.event_taxonomy import EVENT_REPO_RESEARCH_FAILED
 
     task, plan_session = await _aload_research_task(session)
@@ -1718,7 +1721,7 @@ async def _handle_research_failure(
     error_msg = p.get("error", "Unknown error")
     await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_msg})
     if plan_session is not None:
-        await PlanSessionService()._emit_event(
+        await ConvergenceSessionService()._emit_event(
             EVENT_REPO_RESEARCH_FAILED,
             plan_session,
             {"repo_id": str(task.repository_id), "task_id": str(task.id), "error": error_msg},

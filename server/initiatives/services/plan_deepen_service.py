@@ -1,7 +1,7 @@
 """PlanDeepenService —— Phase 89 PLAN-01 技术方案深化编排收口（INV-6）。
 
 把 Phase 88 确认仓（``RepoAssociationService.get_verified_associations``）喂入 **v0.7
-同一编排引擎**（``build_orchestration_engine`` + ``adrive_plan_session_to_pause_or_terminal``，
+同一编排引擎**（``build_orchestration_engine`` + ``adrive_convergence_session_to_pause_or_terminal``，
 **绝不新建第二个 engine 工厂**），深化出 per-repo 七要素 + overall 整体方案 + 跨仓上下文，
 落 canonical ``TechnicalPlan``/``PlanVersion``（复用不新建），终态再把方案文本**镜像进项目
 RESEARCH**（经 ``ProjectDocService.append_research_note`` → 触发 Phase 83 双向同步飞书，
@@ -60,12 +60,12 @@ class PlanDeepenService:
         无 verified 仍可走自然语言需求，``include_repos=[]`` 引擎自路由，不抛）；
         ② ``start_orchestration("workflow", requirement_text, work_item, include_repos)`` 建会话；
         ③ ``build_orchestration_engine(node_execution_id=...)``（v0.7 同一工厂）；
-        ④ ``adrive_plan_session_to_pause_or_terminal`` 续驱到「重挂起短路或终态」；
+        ④ ``adrive_convergence_session_to_pause_or_terminal`` 续驱到「重挂起短路或终态」；
         ⑤ 终态 ``DONE`` → ``_mirror_to_research``（best-effort，失败不反噬）。
         """
         from initiatives.services.repo_association_service import RepoAssociationService
-        from services.plan_orchestration import (
-            adrive_plan_session_to_pause_or_terminal,
+        from services.process_runtime import (
+            adrive_convergence_session_to_pause_or_terminal,
             build_orchestration_engine,
             start_orchestration,
         )
@@ -97,7 +97,7 @@ class PlanDeepenService:
                 include_repos=include_repos,
             )
             engine = build_orchestration_engine(node_execution_id=node_execution_id)
-            session = await adrive_plan_session_to_pause_or_terminal(engine, session)
+            session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
         except Exception as exc:  # noqa: BLE001 — 深化失败结构化记账，向上抛由入口节点映射 error
             log.error(
                 "plan_deepen_failed",
@@ -107,9 +107,9 @@ class PlanDeepenService:
             raise
 
         # ⑤ 终态 DONE → 镜像方案进 RESEARCH（best-effort）。
-        from delivery.models import PlanSessionStatus
+        from delivery.models import ConvergenceSessionStatus
 
-        if session.status == PlanSessionStatus.DONE:
+        if session.status == ConvergenceSessionStatus.DONE:
             await self._mirror_to_research(project, session, initiated_by_user_id)
 
         log.info(
@@ -273,7 +273,7 @@ class PlanDeepenService:
 
         Returns: 新建（或幂等复用的）``PlanVersion``。association 同步 best-effort 不反噬版本。
         """
-        from delivery.services import TechnicalPlanService
+        from delivery.services import ArtifactService
 
         started = perf_counter()
         revision = revision or {}
@@ -295,7 +295,7 @@ class PlanDeepenService:
         # ① 补充修订版本（PlanVersion.supersedes；写经 service，INV-6）。
         content = await self._aget_plan_content(plan)
         new_content = self._merge_delta_into_content(content, delta)
-        version = await TechnicalPlanService().add_version(plan, new_content)
+        version = await ArtifactService().add_version(plan, new_content)
 
         # ② 同步改/增/删仓库关联（经 88 service 写收口，best-effort 不反噬版本）。
         await self._sync_repo_associations(
@@ -306,7 +306,7 @@ class PlanDeepenService:
 
         log.info(
             "plan_revision_applied",
-            version=getattr(version, "version", None),
+            version=getattr(version, "version_no", None),
             version_id=str(getattr(version, "id", "") or ""),
             duration_ms=round((perf_counter() - started) * 1000, 2),
         )
@@ -315,12 +315,12 @@ class PlanDeepenService:
     @staticmethod
     async def _aget_plan_content(plan: Any) -> dict:
         """取 canonical ``plan.current_version.content``（async 禁裸 lazy-FK，by id）。"""
-        from delivery.models import PlanVersion
+        from delivery.models import ArtifactVersion
 
         version_id = getattr(plan, "current_version_id", None)
         if not version_id:
             return {}
-        pv = await PlanVersion.objects.filter(id=version_id).afirst()
+        pv = await ArtifactVersion.objects.filter(id=version_id).afirst()
         content = getattr(pv, "content", None) if pv is not None else None
         return dict(content) if isinstance(content, dict) else {}
 
@@ -451,12 +451,12 @@ class PlanDeepenService:
     @staticmethod
     async def _aget_current_plan_content(session: Any) -> dict:
         """取终态 canonical ``PlanVersion.content``（overall §7 MergedPlan，含 overall 扩段）。"""
-        from delivery.models import PlanVersion
+        from delivery.models import ArtifactVersion
 
-        version_id = getattr(session, "current_plan_version", None)
+        version_id = getattr(session, "current_artifact_version_id", None)
         if not version_id:
             return {}
-        pv = await PlanVersion.objects.filter(id=version_id).afirst()
+        pv = await ArtifactVersion.objects.filter(id=version_id).afirst()
         content = getattr(pv, "content", None) if pv is not None else None
         return content if isinstance(content, dict) else {}
 

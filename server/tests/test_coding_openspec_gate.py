@@ -21,17 +21,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
     SddSpec,
     SddSpecStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from delivery.services import RepoCodingTaskService
 from repositories.models import Repository
-from services.plan_orchestration.wave_progression import aadvance_coding_waves
+from services.process_runtime.wave_progression import aadvance_coding_waves
 from workflows.nodes.ai.coding import AICodingNode
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
@@ -53,13 +52,18 @@ async def _make_repo(*, sdd: bool = False) -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return await PlanVersion.objects.acreate(plan=plan, version=1, content={})
+async def _make_plan_version() -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content={}, content_hash="h"
+    )
+    artifact.current_version = av
+    await artifact.asave(update_fields=["current_version", "updated_at"])
+    return av
 
 
-async def _make_spec(pv: PlanVersion, repo: Repository, status: str) -> SddSpec:
-    return await SddSpec.objects.acreate(plan_version=pv, repository=repo, status=status)
+async def _make_spec(pv: ArtifactVersion, repo: Repository, status: str) -> SddSpec:
+    return await SddSpec.objects.acreate(artifact_version=pv, repository=repo, status=status)
 
 
 def _log() -> Any:

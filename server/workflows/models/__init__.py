@@ -13,6 +13,12 @@ from workflows.models.execution import (
     WorkflowExecution,
 )
 from workflows.models.node import WorkflowEdge, WorkflowNode
+from workflows.models.reaction import (
+    ReactionBlockingMode,
+    ReactionExecution,
+    ReactionExecutionStatus,
+    WorkflowReaction,
+)
 from workflows.models.trigger import TriggerEventType, WorkflowTrigger
 from workflows.models.webhook import WebhookConfig, WebhookLog
 from workflows.models.workflow import Workflow
@@ -40,4 +46,8 @@ __all__ = [
     "CodingTaskStatus",
     "AlertRule",
     "AlertRuleExecution",
+    "WorkflowReaction",
+    "ReactionExecution",
+    "ReactionBlockingMode",
+    "ReactionExecutionStatus",
 ]

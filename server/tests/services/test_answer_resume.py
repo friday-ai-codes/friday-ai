@@ -22,22 +22,25 @@ import pytest
 from delivery.models import (
     Clarification,
     ClarificationQuestion,
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
 )
 from delivery.services import ClarificationService
-from services.plan_orchestration import aanswer_round_and_resume
+from services.process_runtime import aanswer_round_and_resume
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-_BUILD_ENGINE = "services.plan_orchestration.entrypoint.build_orchestration_engine"
-_ADRIVE = "services.plan_orchestration.resume.adrive_plan_session_to_pause_or_terminal"
+_BUILD_ENGINE = "services.process_runtime.entrypoint.build_orchestration_engine"
+_ADRIVE = "services.process_runtime.resume.adrive_convergence_session_to_pause_or_terminal"
 
 
-async def _make_round() -> tuple[PlanSession, Clarification, ClarificationQuestion]:
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.CLARIFYING
+async def _make_round() -> tuple[ConvergenceSession, Clarification, ClarificationQuestion]:
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="clarify",
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
     )
     clar = await ClarificationService().create_round(
         session,

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from services.plan_orchestration import render_upstream_artifacts_section
+from services.process_runtime import render_upstream_artifacts_section
 
 
 def test_empty_list_renders_empty_string():

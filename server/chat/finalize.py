@@ -231,6 +231,23 @@ async def finalize_conversation(
         updated_at=timezone.now(),
     )
 
+    # 4b. 实时同步：广播 AI 回复 + 终态，让其他参与者无需刷新即可看到回复与状态更新。
+    from chat.realtime import abroadcast_conversation, abroadcast_message
+
+    await abroadcast_message(
+        conversation.id,
+        {
+            "id": str(assistant_msg_id),
+            "role": "assistant",
+            "content": final_content,
+            "tool_calls": tool_calls_data,
+            "parts": parts_data,
+            "metadata": msg_metadata,
+            "created_at": timezone.now().isoformat(),
+        },
+    )
+    await abroadcast_conversation(conversation.id)
+
     # 5. 标题生成
     if await should_generate_title(str(conversation.id)):
         title = await generate_title(str(conversation.id), user_message)

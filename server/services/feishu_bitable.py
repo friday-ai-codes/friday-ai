@@ -19,6 +19,7 @@ app_id/app_secret，2h 缓存自动刷新）——为真正 DRY，内部组合�
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -127,13 +128,23 @@ class BitableClient:
 
         # 大表首页/复杂字段可能 >5s，显式给 30s（对齐 FeishuDocClient.get_document_content），
         # 否则 httpx 默认 5s ReadTimeout 会被上层吞成「抓取信息源时出错」泛化提示。
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records",
-                headers={"Authorization": f"Bearer {token}"},
-                params=params,
-            )
-            data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await asyncio.wait_for(
+                    client.get(
+                        f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+                        headers={"Authorization": f"Bearer {token}"},
+                        params=params,
+                    ),
+                    timeout=35.0,
+                )
+                data = response.json()
+        except TimeoutError as exc:
+            raise BitableAPIError("读取 Bitable 记录超时") from exc
+        except httpx.TimeoutException as exc:
+            raise BitableAPIError("读取 Bitable 记录超时") from exc
+        except httpx.TransportError as exc:
+            raise BitableAPIError(f"读取 Bitable 记录网络失败: {exc}") from exc
 
         if data.get("code") != 0:
             error_code = data.get("code", 0)
@@ -146,18 +157,35 @@ class BitableClient:
         return data.get("data", {})
 
     async def list_tables(
-        self, app_token: str, *, page_size: int = 100
+        self,
+        app_token: str,
+        *,
+        page_token: str | None = None,
+        page_size: int = 100,
     ) -> dict[str, Any]:
         """列出 Bitable 数据表（骨架，端点形状同 list_records，留 REL-03 演进）。"""
         token = await self.get_tenant_access_token()
+        params: dict[str, Any] = {"page_size": page_size}
+        if page_token:
+            params["page_token"] = page_token
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"page_size": page_size},
-            )
-            data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await asyncio.wait_for(
+                    client.get(
+                        f"{self.OPEN_API_BASE}/bitable/v1/apps/{app_token}/tables",
+                        headers={"Authorization": f"Bearer {token}"},
+                        params=params,
+                    ),
+                    timeout=35.0,
+                )
+                data = response.json()
+        except TimeoutError as exc:
+            raise BitableAPIError("读取 Bitable 数据表超时") from exc
+        except httpx.TimeoutException as exc:
+            raise BitableAPIError("读取 Bitable 数据表超时") from exc
+        except httpx.TransportError as exc:
+            raise BitableAPIError(f"读取 Bitable 数据表网络失败: {exc}") from exc
 
         if data.get("code") != 0:
             raise BitableAPIError(

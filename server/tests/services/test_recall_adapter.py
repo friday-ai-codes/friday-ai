@@ -14,10 +14,10 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 
-from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
+from delivery.models import ConvergenceSession, ConvergenceSessionEntrypoint
 from knowledge.retrieval_types import EntityMetadata, SearchResultDTO
-from services.plan_orchestration import DeliveryKnowledgeRecallAdapter
-from services.plan_orchestration.recall_adapter import RECALL_ENTITY_KINDS
+from services.process_runtime import DeliveryKnowledgeRecallAdapter
+from services.process_runtime.recall_adapter import RECALL_ENTITY_KINDS
 
 User = get_user_model()
 
@@ -52,10 +52,11 @@ async def test_maps_search_result_dto(monkeypatch) -> None:
     """SearchResultDTO 映射为 {entity_id, kind, title, score}，query/kinds 透传。"""
     dto = _search_result()
     _patch_search(monkeypatch, AsyncMock(return_value=[dto]))
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RECALLING,
-        decomposition={"requirement_text": "做登录"},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="recall",
+        stage_state={"decomposition": {"requirement_text": "做登录"}},
     )
     result = await DeliveryKnowledgeRecallAdapter().recall(session)
     hit = result["hits"][0]
@@ -75,10 +76,11 @@ async def test_created_by_none_graceful_empty(monkeypatch) -> None:
     """created_by None → 透传 user=None（不伪造 actor），fail-closed 空召回不抛。"""
     mock = AsyncMock(return_value=[])
     _patch_search(monkeypatch, mock)
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.WORKFLOW,
-        status=PlanSessionStatus.RECALLING,
-        decomposition={"requirement_text": "x"},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage="recall",
+        stage_state={"decomposition": {"requirement_text": "x"}},
     )
     assert session.created_by is None
     result = await DeliveryKnowledgeRecallAdapter().recall(session)
@@ -100,14 +102,15 @@ async def test_created_by_real_user_loads_actor_without_sync_error(monkeypatch) 
     actor = await sync_to_async(User.objects.create_user)(
         username="recall-actor", password="x"
     )
-    created = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RECALLING,
-        decomposition={"requirement_text": "做登录"},
+    created = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="recall",
+        stage_state={"decomposition": {"requirement_text": "做登录"}},
         created_by=actor,
     )
     # 关键：不 select_related("created_by") 重新加载，强制走 FK 懒加载路径
-    session = await PlanSession.objects.aget(id=created.id)
+    session = await ConvergenceSession.objects.aget(id=created.id)
     result = await DeliveryKnowledgeRecallAdapter().recall(session)
     assert result["hits"] == []
     # actor 经 sync_to_async 解析后正确透传（按 pk 相等）
@@ -119,10 +122,11 @@ async def test_created_by_real_user_loads_actor_without_sync_error(monkeypatch) 
 async def test_search_exception_returns_empty(monkeypatch) -> None:
     """search_similar 抛异常 → best-effort 空召回不向上抛。"""
     _patch_search(monkeypatch, AsyncMock(side_effect=RuntimeError("boom")))
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RECALLING,
-        decomposition={"requirement_text": "x"},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="recall",
+        stage_state={"decomposition": {"requirement_text": "x"}},
     )
     result = await DeliveryKnowledgeRecallAdapter().recall(session)
     assert result["hits"] == []
@@ -134,11 +138,14 @@ async def test_repository_ids_from_routing(monkeypatch) -> None:
     """routing 候选仓收窄召回 → search_similar 收到 repository_ids=候选 repo_id 列表。"""
     mock = AsyncMock(return_value=[])
     _patch_search(monkeypatch, mock)
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RECALLING,
-        decomposition={"requirement_text": "x"},
-        routing={"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="recall",
+        stage_state={
+            "decomposition": {"requirement_text": "x"},
+            "routing": {"candidates": [{"repo_id": "r1", "confidence": "high"}]},
+        },
     )
     await DeliveryKnowledgeRecallAdapter().recall(session)
     assert mock.await_args.kwargs["repository_ids"] == ["r1"]

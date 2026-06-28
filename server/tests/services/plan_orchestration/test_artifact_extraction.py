@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from services.plan_orchestration import build_produced_artifacts, classify_modified_files
+from services.process_runtime import build_produced_artifacts, classify_modified_files
 from subagent.models import TaskResult
 
 

@@ -3,12 +3,12 @@
 覆盖：
 - ``get_verified_associations`` 被调，且 ``include_repos`` 透传给 ``start_orchestration``。
 - 引擎工厂复用：``build_orchestration_engine`` 被调（无第二 engine 工厂）+
-  ``adrive_plan_session_to_pause_or_terminal`` 续驱。
+  ``adrive_convergence_session_to_pause_or_terminal`` 续驱。
 - 终态 DONE → ``ProjectDocService.append_research_note`` 被调（RESEARCH 镜像）。
 - 非 DONE（clarifying）→ 不镜像。
 - 三新 call_source（plan_deepen/plan_revision/branch_naming）normalize 命中。
 
-纯 seam mock（patch repo_association / plan_orchestration helpers / ProjectDocService），
+纯 seam mock（patch repo_association / process_runtime helpers / ProjectDocService），
 不落库。
 """
 
@@ -24,7 +24,7 @@ from initiatives.services.plan_deepen_service import PlanDeepenService
 
 _SVC_MOD = "initiatives.services.plan_deepen_service"
 _RA_MOD = "initiatives.services.repo_association_service"
-_PO_MOD = "services.plan_orchestration"
+_PO_MOD = "services.process_runtime"
 _DOC_MOD = "initiatives.services.project_doc_service"
 
 _VERIFIED = [
@@ -59,7 +59,7 @@ def _patches(
         patch(f"{_RA_MOD}.RepoAssociationService", return_value=ra_instance),
         patch(f"{_PO_MOD}.start_orchestration", new=AsyncMock(side_effect=_start)),
         patch(f"{_PO_MOD}.build_orchestration_engine", new=engine_factory),
-        patch(f"{_PO_MOD}.adrive_plan_session_to_pause_or_terminal", new=adrive),
+        patch(f"{_PO_MOD}.adrive_convergence_session_to_pause_or_terminal", new=adrive),
         patch(f"{_DOC_MOD}.ProjectDocService", return_value=doc_mock),
         engine_factory,
         adrive,

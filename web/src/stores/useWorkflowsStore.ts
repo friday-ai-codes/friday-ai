@@ -626,6 +626,19 @@ export const useWorkflowsStore = defineStore('workflows', () => {
   }
 
   /**
+   * 设置附着插件订阅的宿主信号（SLOT P4 信号反应器）。
+   * 把已选信号写入 `metadata.subscribeSignals`（经既有 metadata JSON 列，无后端 schema
+   * 变更）；保存工作流时由后端 config_sync 转换为 WorkflowReaction（reaction 配置为 SSOT）。
+   */
+  function setSubscribeSignals(childId: string, signals: string[]) {
+    const node = nodes.value.find(n => n.id === childId)
+    if (!node)
+      return
+    node.metadata = { ...node.metadata, subscribeSignals: signals }
+    saveToHistory()
+  }
+
+  /**
    * 解除子节点附着（SLOT-04 单一入口）。
    * 清除 `metadata.parentNodeId`（delete 键，往返不残留）并恢复绝对坐标。
    */
@@ -788,6 +801,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     attachChild,
     detachChild,
     getChildNodes,
+    setSubscribeSignals,
 
     // Edge operations (with history)
     addEdge,

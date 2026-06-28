@@ -71,6 +71,17 @@ class Workflow(models.Model):
         help_text="根据触发类型存储不同配置，如 cron 表达式、webhook secret 等",
     )
 
+    # 输出 Schema（P9「工作流即端点」接缝）：声明工作流对外暴露的稳定结果结构。
+    # JSON Schema 格式（``{"type": "object", "properties": {...}}``）；空 dict 表示
+    # 未声明（投影时原样返回 output_data，向后兼容）。供未来 Workflow Agent Gateway /
+    # tool 返回时把终端节点 output 投影成稳定字段集。
+    output_schema = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="输出参数 Schema",
+        help_text="JSON Schema 格式，声明工作流对外暴露的稳定输出结构（供工具/端点返回投影）",
+    )
+
     # 状态
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     is_template = models.BooleanField(

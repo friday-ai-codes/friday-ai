@@ -14,13 +14,13 @@ from django.core.management import call_command
 from delivery.models import (
     ArchitectMerge,
     ArchitectMergeStatus,
-    PlanSession,
-    PlanSessionEntrypoint,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
 )
 
 
-def _make_session() -> PlanSession:
-    return PlanSession.objects.create(entrypoint=PlanSessionEntrypoint.CHAT)
+def _make_session() -> ConvergenceSession:
+    return ConvergenceSession.objects.create(entrypoint=ConvergenceSessionEntrypoint.CHAT)
 
 
 @pytest.mark.django_db
@@ -32,30 +32,30 @@ def test_architect_merge_defaults() -> None:
     assert merge.validation_status == ArchitectMergeStatus.FAILED
     assert merge.attempt == 0
     assert merge.validation_report == {}
-    assert merge.merged_plan_version is None
+    assert merge.merged_artifact_version is None
     assert merge.created_at is not None
 
 
 @pytest.mark.django_db
 def test_architect_merge_passed_with_version() -> None:
-    """passed 态可写入 merged_plan_version 软引用（UUID）。"""
+    """passed 态可写入 merged_artifact_version 软引用（UUID）。"""
     session = _make_session()
     version_id = uuid.uuid4()
     merge = ArchitectMerge.objects.create(
         session=session,
         validation_status=ArchitectMergeStatus.PASSED,
-        merged_plan_version=version_id,
+        merged_artifact_version=version_id,
         attempt=1,
     )
 
     assert merge.validation_status == ArchitectMergeStatus.PASSED
-    assert merge.merged_plan_version == version_id
+    assert merge.merged_artifact_version == version_id
     assert merge.attempt == 1
 
 
 @pytest.mark.django_db
 def test_cascade_session_delete() -> None:
-    """删 PlanSession → 关联 ArchitectMerge 级联删除（CASCADE）。"""
+    """删 ConvergenceSession → 关联 ArchitectMerge 级联删除（CASCADE）。"""
     session = _make_session()
     merge = ArchitectMerge.objects.create(session=session)
     merge_id = merge.id

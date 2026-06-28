@@ -143,6 +143,22 @@ class WorkflowEngine:
         ):
             self.hooks.register_hook(event, alert_rule_hook)
 
+        # ReactionDispatchHook: 信号 → 幂等横切反应（Chassis v2 · P0）
+        # 投影 lifecycle 事件为 Signal 并后台分发 WorkflowReaction，绝不阻塞主链路。
+        from workflows.reactions.hook import ReactionDispatchHook
+
+        reaction_hook = ReactionDispatchHook()
+        for event in (
+            "node_started",
+            "node_completed",
+            "node_failed",
+            "node_waiting_approval",
+            "node_waiting_event",
+            "node_approved",
+            "node_rejected",
+        ):
+            self.hooks.register_hook(event, reaction_hook)
+
         # FeishuSyncHook: 飞书卡片状态同步
         # execute() 内部有 event_map 路由，对未处理事件是 no-op，注册所有事件安全
         from workflows.hooks.feishu_sync import FeishuSyncHook

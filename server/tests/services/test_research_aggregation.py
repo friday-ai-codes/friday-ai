@@ -12,14 +12,13 @@ import uuid
 import pytest
 
 from delivery.models import (
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
 from repositories.models import Repository
-from services.plan_orchestration.research_aggregation import (
+from services.process_runtime.research_aggregation import (
     aall_research_tasks_terminal,
     amaybe_complete_research,
     parse_partial_plan_content,
@@ -38,9 +37,11 @@ async def _repo() -> Repository:
     )
 
 
-async def _session() -> PlanSession:
-    return await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+async def _session(current_stage: str = "research") -> ConvergenceSession:
+    return await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage=current_stage,
     )
 
 
@@ -85,36 +86,34 @@ async def test_terminal_pending_running_stale_false() -> None:
 
 @pytest.mark.asyncio
 async def test_maybe_complete_advances_to_merging() -> None:
-    """所有终态 → transition research_complete → merging，返回 True。"""
+    """所有终态 → transition research_complete → merge stage，返回 True。"""
     session = await _session()
     await RepoResearchTask.objects.acreate(
         session=session, repository=await _repo(), status=RepoResearchTaskStatus.DONE
     )
     advanced = await amaybe_complete_research(session)
     assert advanced is True
-    reloaded = await PlanSession.objects.aget(id=session.id)
-    assert reloaded.status == PlanSessionStatus.MERGING
+    reloaded = await ConvergenceSession.objects.aget(id=session.id)
+    assert reloaded.current_stage == "merge"
 
 
 @pytest.mark.asyncio
 async def test_maybe_complete_in_flight_no_advance() -> None:
-    """仍有 running 在途 → 不推进，停留 researching。"""
+    """仍有 running 在途 → 不推进，停留 research stage。"""
     session = await _session()
     await RepoResearchTask.objects.acreate(
         session=session, repository=await _repo(), status=RepoResearchTaskStatus.RUNNING
     )
     advanced = await amaybe_complete_research(session)
     assert advanced is False
-    reloaded = await PlanSession.objects.aget(id=session.id)
-    assert reloaded.status == PlanSessionStatus.RESEARCHING
+    reloaded = await ConvergenceSession.objects.aget(id=session.id)
+    assert reloaded.current_stage == "research"
 
 
 @pytest.mark.asyncio
 async def test_maybe_complete_non_researching_noop() -> None:
-    """非 researching（已推进）→ no-op return False。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.MERGING
-    )
+    """非 research stage（已推进）→ no-op return False。"""
+    session = await _session(current_stage="merge")
     advanced = await amaybe_complete_research(session)
     assert advanced is False
 

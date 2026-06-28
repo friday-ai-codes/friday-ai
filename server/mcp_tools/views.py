@@ -72,7 +72,7 @@ from .models import (
     McpCodingPlanVersion,
     McpRepositoryAnalysis,
 )
-from .orchestration_delegate import delegate_plan_orchestration
+from .orchestration_delegate import delegate_process_runtime
 from .planning_service import (
     build_repository_analysis,
     improve_coding_plan,
@@ -1865,7 +1865,7 @@ class CreateCodingPlanView(McpToolView):
         # UNIFY-04：方案生成 delegate 到统一编排，include_repos=[repository_id] 约束**只跑单仓**
         # （Open Q2 决议）；绝不在 MCP 层重写拆分/路由/调研/融合（复用 Plan 03 共享核心）。
         requirement = str(input_data["requirement"])
-        delegate = await delegate_plan_orchestration(
+        delegate = await delegate_process_runtime(
             requirement_text=requirement,
             work_item=None,
             include_repos=[repository_id],

@@ -501,7 +501,13 @@ class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
     - ``distill``：是否在入库前经 best-effort LLM 精炼（call_source=ide_hook_distill）。
     """
 
-    project_id = serializers.UUIDField(required=True)
+    # project_id 可省略：未传时用 branch_name(+repository_id) 按当前分支反查唯一项目
+    # （通用规则/hook 不写死项目，跨分支跨项目复用）。两者至少给一个。
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    branch_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     content = serializers.CharField(required=True, allow_blank=False, max_length=20000)
     source_conversation_id = serializers.UUIDField(
         required=False, allow_null=True, default=None
@@ -513,6 +519,11 @@ class ReportProjectKnowledgeRequestSerializer(serializers.Serializer):
         choices=["memory", "research"], required=False, default="memory"
     )
     distill = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if not attrs.get("project_id") and not str(attrs.get("branch_name") or "").strip():
+            raise serializers.ValidationError("必须提供 project_id 或 branch_name")
+        return attrs
 
 
 class SearchProjectContextRequestSerializer(serializers.Serializer):
@@ -556,13 +567,23 @@ class ReportProjectStateRequestSerializer(serializers.Serializer):
     （``method`` 大写、``path`` 去空白），非法项标失败、合法项照写（与 86 系列 fail-soft 一致）。
     """
 
-    project_id = serializers.UUIDField(required=True)
+    # project_id 可省略：未传时用 branch_name(+repository_id) 按当前分支反查唯一项目。
+    project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    branch_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    repository_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     apis = serializers.ListField(
         child=serializers.DictField(),
         required=True,
         allow_empty=False,
         max_length=200,
     )
+
+    def validate(self, attrs: dict) -> dict:
+        if not attrs.get("project_id") and not str(attrs.get("branch_name") or "").strip():
+            raise serializers.ValidationError("必须提供 project_id 或 branch_name")
+        return attrs
 
 
 TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {

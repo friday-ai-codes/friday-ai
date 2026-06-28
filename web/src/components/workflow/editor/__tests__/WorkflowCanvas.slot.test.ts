@@ -59,6 +59,7 @@ vi.mock('@vue-flow/controls', () => ({ Controls: { name: 'Controls', render: () 
 vi.mock('@vue-flow/minimap', () => ({ MiniMap: { name: 'MiniMap', render: () => null } }))
 vi.mock('../nodes', () => ({ nodeTypes: {} }))
 vi.mock('../edges/GradientEdge.vue', () => ({ default: { name: 'GradientEdge', render: () => null } }))
+vi.mock('../edges/SignalSubscriptionEdge.vue', () => ({ default: { name: 'SignalSubscriptionEdge', render: () => null } }))
 
 vi.mock('../composables/useAlignmentGuides', () => ({
   useAlignmentGuides: () => ({
@@ -427,6 +428,44 @@ describe('workflowCanvas 级联删除确认（SLOT-04）', () => {
 
     expect(removeNode).toHaveBeenCalledWith('x')
     expect(wrapper.vm.pendingDelete).toBeNull()
+  })
+})
+
+describe('workflowCanvas 信号层双层视图（P6）', () => {
+  it('默认关闭 → 无信号边、目标插件不 surfaced 进 vfNodes', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'host', nodeType: 'ai_plan_research' }),
+      makeStoreNode({ id: 'notify', nodeType: 'notify_feishu', position: { x: 300, y: 80 }, metadata: { parentNodeId: 'host', subscribeSignals: ['node.completed', 'node.failed'] } }),
+    )
+
+    const wrapper = mountCanvas()
+    expect(wrapper.vm.signalLayerEnabled).toBe(false)
+    expect(wrapper.vm.signalEdges).toHaveLength(0)
+    // 附着子默认折叠为 chip：不作为画布节点（vfNodes 仅宿主）
+    expect(wrapper.vm.vfNodes.map((n: any) => n.id)).toEqual(['host'])
+  })
+
+  it('开启 → 派生虚线信号边 + surfaced 通知节点；并入 vfEdges', () => {
+    const store = useWorkflowsStore()
+    store.nodes.push(
+      makeStoreNode({ id: 'host', nodeType: 'ai_plan_research', position: { x: 0, y: 0 } }),
+      makeStoreNode({ id: 'notify', nodeType: 'notify_feishu', position: { x: 300, y: 80 }, metadata: { parentNodeId: 'host', subscribeSignals: ['node.completed', 'node.failed'] } }),
+    )
+
+    const wrapper = mountCanvas()
+    wrapper.vm.toggleSignalLayer()
+
+    expect(wrapper.vm.signalLayerEnabled).toBe(true)
+    // 完成 + 失败 = 2 条信号边
+    expect(wrapper.vm.signalEdges).toHaveLength(2)
+    // surfaced 目标节点：notify 进入 vfNodes（绝对坐标 = 宿主 0,0 + 子相对 300,80）
+    const notifyNode = wrapper.vm.vfNodes.find((n: any) => n.id === 'notify')!
+    expect(notifyNode).toBeTruthy()
+    expect(notifyNode.position).toMatchObject({ x: 300, y: 80 })
+    expect(notifyNode.class).toBe('signal-surfaced-node')
+    // vfEdges 同时含交付边（此例无）与信号边
+    expect(wrapper.vm.vfEdges.filter((e: any) => e.data?.kind === 'signal_subscription')).toHaveLength(2)
   })
 })
 

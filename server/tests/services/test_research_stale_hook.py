@@ -14,10 +14,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
     PartialPlan,
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
@@ -40,8 +39,10 @@ async def test_hook_invalidates_partial_to_stale() -> None:
         default_branch="main",
         index_status="indexed",
     )
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research",
     )
     task = await RepoResearchTask.objects.acreate(session=session, repository=repo)
     await ResearchService().record_partial(task, {"repository_id": str(repo.id)})

@@ -15,6 +15,8 @@ const repositoriesStore = useRepositoriesStore()
 
 // Chat 数据懒加载：首次进入 /chat 时初始化
 onMounted(async () => {
+  // 与项目作战室共用同一 store：进入全局 /chat 时解除项目作用域过滤，恢复全量列表。
+  chatStore.exitProjectScope()
   await Promise.all([
     chatStore.fetchConversations(),
     spacesStore.fetchSpaces(),
@@ -33,6 +35,8 @@ onMounted(async () => {
     chatStore.selectedSpaceId = spacesStore.spaces[0]!.id
   }
   await chatStore.restoreFromURL()
+  // 实时同步：全局对话页也建立 ws/chat/ 连接，本人的会话（含项目共享）实时一致。
+  chatStore.connectRealtime()
   if (chatStore.notificationsEnabled)
     chatStore.requestNotificationPermission()
   // 惰性拉取仓库列表：供 ChatMessageBubble 把工具调用里的 repository_id

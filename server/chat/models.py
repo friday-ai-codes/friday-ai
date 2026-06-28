@@ -38,6 +38,17 @@ class Conversation(models.Model):
         STOPPED = "stopped", "已停止"
         ERROR = "error", "异常"
 
+    class Visibility(models.TextChoices):
+        """会话可见性（项目作战室 P2）。
+
+        - ``personal``：仅创建者可见可用（默认，沿用 ISO owner 隔离语义）。
+        - ``shared``：项目共享会话——绑定项目的成员**只读可见**；他人要发言需
+          clone 成自己的「项目个人会话」（fork）。仅当 ``bound_project`` 非空时可设。
+        """
+
+        PERSONAL = "personal", "个人"
+        SHARED = "shared", "项目共享"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # 可空：允许不绑定空间的「通用对话」。无空间时检索/编码工具不可用，
     # system prompt 会引导用户在需要空间知识时先选择空间。
@@ -100,6 +111,15 @@ class Conversation(models.Model):
     # 归档：与软删（is_deleted）正交 —— 归档的会话从默认列表隐藏，但不删除，
     # 可由用户取消归档恢复。默认列表 filter(is_archived=False)。
     is_archived = models.BooleanField(default=False, db_index=True)
+    # 项目作战室 P2：会话可见性（personal=仅创建者 / shared=项目成员只读可见）。
+    # 存量数据默认 personal（行为不回退）；shared 仅在 bound_project 非空时有意义。
+    visibility = models.CharField(
+        max_length=16,
+        choices=Visibility.choices,
+        default=Visibility.PERSONAL,
+        db_index=True,
+        help_text="会话可见性（personal=仅创建者 / shared=项目共享只读）",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -108,6 +128,10 @@ class Conversation(models.Model):
         ordering = ["-updated_at"]
         verbose_name = "对话"
         verbose_name_plural = "对话"
+        indexes = [
+            models.Index(fields=["bound_project", "visibility", "is_deleted", "is_archived"]),
+            models.Index(fields=["bound_project", "created_by"]),
+        ]
 
     def __str__(self) -> str:
         return f"{self.title} ({self.id})"
@@ -237,15 +261,6 @@ class CodingPlan(models.Model):
             "自动从 conversation 最近一条 RepositoryRoutingTrace 取 "
             "selected_by_user_final=True 的仓库（implementation）。"
         ),
-    )
-    # canonical 软链（DOMAIN §5.2，Phase 37）：存 delivery.TechnicalPlan.id；
-    # **非跨 app 硬 FK**（避免 chat→delivery 耦合 + 循环依赖）——读写经 TechnicalPlanService。
-    canonical_plan_id = models.UUIDField(
-        null=True,
-        blank=True,
-        db_index=True,
-        verbose_name="canonical 方案软链",
-        help_text="canonical delivery.TechnicalPlan.id 软链，非 FK（DOMAIN §5.2）",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

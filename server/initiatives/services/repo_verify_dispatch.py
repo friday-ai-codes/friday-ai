@@ -1,6 +1,6 @@
 """RepoVerifyDispatchService —— 逐仓容器深验 fan-out（REPO-02，88-03）。
 
-复刻 ``services.plan_orchestration.research_adapter.ResearchDispatchAdapter`` 的结构
+复刻 ``services.process_runtime.research_adapter.ResearchDispatchAdapter`` 的结构
 （**复刻不复用**，避免污染 v0.7 ``PlanSession`` 编排状态机，RESEARCH Alternatives）：
 对用户确认的每个仓库 fan-out 一个独立 claude code ``explore`` 只读容器，深入仓库**代码**
 验证业务适配性（D-02，非元数据/README 匹配），容器 explore 产 JSON verdict；容器完成回调

@@ -1,14 +1,13 @@
-"""SC-2 入口无关一致性守护测试（ENTRY-02，42-01 Task 3，IO 边界 mock）。
+"""SC-2 入口无关一致性守护测试（ENTRY-02，IO 边界 mock）。
 
-证明「同一 engine、同一状态机 → 入口无关一致产物」：相同需求 + 相同 include_repos，分别经
-``start_orchestration(entrypoint="workflow")`` 与 ``start_orchestration(entrypoint="chat",
-work_item=None)`` 建两 session，用**结构相同的**注入 engine（同 _FakeSynth 产同一 §7
-MergedPlan、同 mock router/recall、真实 ResearchDispatchAdapter + ArchitectMergeAdapter）
+证明「同一 engine、同一 stage graph → 入口无关一致产物」：相同需求 + 相同 include_repos，
+分别经 ``start_orchestration(entrypoint="workflow")`` 与 ``start_orchestration(entrypoint="chat",
+work_item=None)`` 建两 ConvergenceSession，用**结构相同的**注入 engine（同 _FakeSynth 产同一
+§7 MergedPlan、同 mock router/recall、真实 ResearchDispatchAdapter + ArchitectMergeAdapter）
 分别驱动到 done。断言：
 
-- 两 session 各自 current_plan_version 对应 PlanVersion.content **结构等价**（同一融合产物，
-  跨仓 dependency_dag / execution_plan[].dependencies 拓扑一致）。
-- 两 session 的 §15 事件 taxonomy **序列相同**（按 created 顺序取 PlanSessionEvent.event 列表）。
+- 两 session 各自 current_artifact_version 对应 ArtifactVersion.content **结构等价**。
+- 两 session 的 §15 事件 taxonomy **序列相同**（按 created 顺序取 ConvergenceSessionEvent.event）。
 
 真实 LLM / 容器端到端沿用既有 deferred（mock 在 IO 边界），范式取材 test_plan_research_e2e.py。
 """
@@ -16,25 +15,26 @@ MergedPlan、同 mock router/recall、真实 ResearchDispatchAdapter + Architect
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from delivery.models import (
-    PlanSession,
-    PlanSessionEvent,
-    PlanSessionStatus,
-    PlanVersion,
+    ArtifactVersion,
+    ConvergenceSession,
+    ConvergenceSessionEvent,
+    ConvergenceSessionStatus,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
-from delivery.services import PlanSessionService
+from delivery.services import ConvergenceSessionService
 from repositories.models import Repository
-from services.plan_orchestration import (
+from services.process_runtime import (
     ArchitectMergeAdapter,
     ClarifyAdapter,
-    PlanOrchestrationEngine,
+    ProcessEngine,
     ResearchDispatchAdapter,
     aall_research_tasks_terminal,
     start_orchestration,
@@ -137,7 +137,7 @@ def _repo_content(repository_id: str, exposer_id: str) -> dict:
     }
 
 
-async def _complete_running_tasks(session: PlanSession, exposer_id: str) -> None:
+async def _complete_running_tasks(session: ConvergenceSession, exposer_id: str) -> None:
     """模拟容器回调：对所有 running RepoResearchTask 调真实 _handle_research_completion。"""
     from subagent.api.callbacks import _handle_research_completion
     from subagent.models import SubAgentSession
@@ -155,18 +155,21 @@ async def _complete_running_tasks(session: PlanSession, exposer_id: str) -> None
 
 
 async def _drive(
-    engine: PlanOrchestrationEngine,
-    session: PlanSession,
+    engine: ProcessEngine,
+    session: ConvergenceSession,
     *,
     exposer_id: str,
     max_iter: int = 40,
-) -> PlanSession:
-    """通用驱动：advance + researching(在途) 完成容器回调（无澄清直通）。"""
+) -> ConvergenceSession:
+    """通用驱动：advance + waiting_event(在途) 完成容器回调（无澄清直通）。"""
     for _ in range(max_iter):
-        session = await PlanSession.objects.aget(id=session.id)
-        if session.status in (PlanSessionStatus.DONE, PlanSessionStatus.FAILED):
+        session = await ConvergenceSession.objects.aget(id=session.id)
+        if session.status in (
+            ConvergenceSessionStatus.DONE,
+            ConvergenceSessionStatus.FAILED,
+        ):
             return session
-        if session.status == PlanSessionStatus.RESEARCHING:
+        if session.status == ConvergenceSessionStatus.WAITING_EVENT:
             if not await aall_research_tasks_terminal(session.id):
                 running = await RepoResearchTask.objects.filter(
                     session_id=session.id, status=RepoResearchTaskStatus.RUNNING
@@ -175,30 +178,30 @@ async def _drive(
                     await _complete_running_tasks(session, exposer_id)
                     continue
         await engine.advance(session)
-    return await PlanSession.objects.aget(id=session.id)
+    return await ConvergenceSession.objects.aget(id=session.id)
 
 
-def _make_engine(candidates: list[dict], repo_a: str, repo_b: str) -> PlanOrchestrationEngine:
+def _make_engine(candidates: list[dict], repo_a: str, repo_b: str) -> ProcessEngine:
     """结构相同的注入 engine：同 mock router/recall + 真实 research/merge（同 _FakeSynth）。"""
     router = AsyncMock()
     router.route = AsyncMock(return_value={"candidates": candidates})
     recall = AsyncMock()
     recall.recall = AsyncMock(return_value={"hits": [], "query": "需求", "kinds": []})
-    return PlanOrchestrationEngine(
-        session_service=PlanSessionService(),
+    deps = SimpleNamespace(
         router=router,
         recall=recall,
         research=ResearchDispatchAdapter(),
         merge=ArchitectMergeAdapter(synthesizer=_FakeSynth(repo_a, repo_b)),
         clarify=ClarifyAdapter(),
     )
+    return ProcessEngine(session_service=ConvergenceSessionService(), deps=deps)
 
 
 async def _event_sequence(session_id: Any) -> list[str]:
     """按 created 顺序取 §15 事件 taxonomy 序列。"""
     return [
         e
-        async for e in PlanSessionEvent.objects.filter(session_id=session_id)
+        async for e in ConvergenceSessionEvent.objects.filter(session_id=session_id)
         .order_by("created_at")
         .values_list("event", flat=True)
     ]
@@ -216,7 +219,6 @@ async def test_chat_and_workflow_entries_yield_equivalent_merged_plan() -> None:
         {"repo_id": str(repo_b.id), "confidence": "high"},
     ]
 
-    # 两入口共用同一 helper 建 session（workflow 带 work_item=None；chat 显式 work_item=None）
     session_wf = await start_orchestration(
         entrypoint="workflow",
         requirement_text=requirement,
@@ -242,28 +244,26 @@ async def test_chat_and_workflow_entries_yield_equivalent_merged_plan() -> None:
         engine_chat = _make_engine(candidates, str(repo_a.id), str(repo_b.id))
         session_chat = await _drive(engine_chat, session_chat, exposer_id=str(repo_a.id))
 
-    assert session_wf.status == PlanSessionStatus.DONE
-    assert session_chat.status == PlanSessionStatus.DONE
+    assert session_wf.status == ConvergenceSessionStatus.DONE
+    assert session_chat.status == ConvergenceSessionStatus.DONE
 
-    # 1) MergedPlan content 结构等价（同一融合产物；content 无 id/时间类字段，直接 dict 相等）
-    pv_wf = await PlanVersion.objects.aget(id=session_wf.current_plan_version)
-    pv_chat = await PlanVersion.objects.aget(id=session_chat.current_plan_version)
-    assert pv_wf.content == pv_chat.content
-    # 跨仓拓扑一致（dependency_dag / execution_plan[].dependencies）
-    assert pv_wf.content["dependency_dag"] == {str(repo_b.id): [str(repo_a.id)]}
-    t2_wf = next(t for t in pv_wf.content["execution_plan"] if t["id"] == "t2")
-    t2_chat = next(t for t in pv_chat.content["execution_plan"] if t["id"] == "t2")
+    # 1) MergedPlan content 结构等价（同一融合产物）
+    av_wf = await ArtifactVersion.objects.aget(id=session_wf.current_artifact_version_id)
+    av_chat = await ArtifactVersion.objects.aget(id=session_chat.current_artifact_version_id)
+    assert av_wf.content == av_chat.content
+    assert av_wf.content["dependency_dag"] == {str(repo_b.id): [str(repo_a.id)]}
+    t2_wf = next(t for t in av_wf.content["execution_plan"] if t["id"] == "t2")
+    t2_chat = next(t for t in av_chat.content["execution_plan"] if t["id"] == "t2")
     assert t2_wf["dependencies"] == t2_chat["dependencies"] == ["t1"]
 
     # 2) §15 事件 taxonomy 序列相同（入口无关一致 trace）
     seq_wf = await _event_sequence(session_wf.id)
     seq_chat = await _event_sequence(session_chat.id)
     assert seq_wf == seq_chat
-    # 序列覆盖编排各 stage（routing/recalling/research.*/merge.*）
     assert "repo.routing" in seq_wf
     assert "knowledge.recalling" in seq_wf
-    assert "plan.merge.completed" in seq_wf
+    assert "technical_plan.merge.completed" in seq_wf
 
-    # 3) INV-2：两入口 work_item 均为 None（chat 自然语言 + workflow 本测试无锚）
+    # 3) INV-2：两入口 work_item 均为 None
     assert session_wf.work_item_id is None
     assert session_chat.work_item_id is None

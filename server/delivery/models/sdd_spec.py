@@ -71,9 +71,9 @@ class SddSpec(models.Model):
         on_delete=models.SET_NULL,
         related_name="sdd_specs",
     )
-    # SPEC-02 来源方案版本；SET_NULL 删版本不抹脊柱。
-    plan_version = models.ForeignKey(
-        "delivery.PlanVersion",
+    # SPEC-02 来源产物版本（technical_plan ArtifactVersion）；SET_NULL 删版本不抹脊柱。
+    artifact_version = models.ForeignKey(
+        "delivery.ArtifactVersion",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -102,8 +102,8 @@ class SddSpec(models.Model):
         db_table = "delivery_sdd_spec"
         verbose_name = "SDD 规格"
         verbose_name_plural = "SDD 规格"
-        # 幂等键：同一方案版本对同一仓只产一份 spec（D-49-1）。
-        unique_together = (("plan_version", "repository"),)
+        # 幂等键：同一产物版本对同一仓只产一份 spec（D-49-1）。
+        unique_together = (("artifact_version", "repository"),)
         indexes = [
             models.Index(fields=["repository"]),
             models.Index(fields=["work_item"]),

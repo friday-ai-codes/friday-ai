@@ -22,6 +22,10 @@ const pageTitle = computed(() => {
   const meta = route.meta as { title?: string }
   return meta.title || ''
 })
+
+// 项目详情页（作战室大盘）走「全屏应用」布局：锁定视口高度、内部各自滚动，
+// 与 /chat 一致的沉浸式风格（保留全局顶栏）。匹配 /projects/<id>，不含列表页。
+const isProjectWorkspace = computed(() => /^\/projects\/[^/]+$/.test(route.path))
 </script>
 
 <template>
@@ -35,6 +39,24 @@ const pageTitle = computed(() => {
            顶部条与输入框固定不随页面滚动 -->
       <div v-if="route.path === '/chat'" key="content-chat" class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <RouterView />
+      </div>
+
+      <!-- 项目作战室：全屏应用布局（锁定视口高度 + 保留全局顶栏 + 内部滚动） -->
+      <div
+        v-else-if="isProjectWorkspace"
+        key="content-workspace"
+        class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background"
+      >
+        <header class="header-glass shrink-0 z-40 h-16">
+          <div class="flex h-full items-center justify-end px-6 gap-3">
+            <GitHubStarButton />
+            <NotificationBell />
+            <SystemHealthPopover />
+          </div>
+        </header>
+        <main class="flex-1 min-h-0 overflow-hidden bg-mesh-gradient">
+          <RouterView />
+        </main>
       </div>
 
       <!-- 工作台路由 -->

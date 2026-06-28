@@ -5,7 +5,7 @@
 - implementation_prs：detail 输出该字段为列表；无回填 → 空列表 []（天然 fail-soft）。
 - work_item 追溯：relations.work_item 含 {id, title, url}，url 取 prd_url（无 prd_url → ""）；
   无 work_item → relations 不含 work_item 键（降级不报错）。
-- plan_version 追溯：relations.plan_version 含 {id, version}；无 → 不含该键。
+- artifact_version 追溯：relations.artifact_version 含 {id, version}；无 → 不含该键。
 - 列表序列化（SddSpecListSerializer）不暴露 implementation_prs（仅 detail）。
 
 纯序列化器单测（sync），无 async ORM；建模 fixture 对齐 test_spec_api.py 范式。
@@ -19,11 +19,10 @@ import pytest
 
 from delivery.api.serializers import SddSpecDetailSerializer, SddSpecListSerializer
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     SddSpec,
     SddSpecStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
     WorkItem,
     WorkItemOrigin,
 )
@@ -53,9 +52,9 @@ def _make_work_item(*, prd_url: str = "") -> WorkItem:
     )
 
 
-def _make_plan_version() -> PlanVersion:
-    plan = TechnicalPlan.objects.create(origin=TechnicalPlanOrigin.CHAT)
-    return PlanVersion.objects.create(plan=plan, version=3, content={}, content_hash="h")
+def _make_artifact_version() -> ArtifactVersion:
+    plan = Artifact.objects.create(artifact_type="technical_plan")
+    return ArtifactVersion.objects.create(artifact=plan, version_no=3, content={}, content_hash="h")
 
 
 def test_detail_exposes_implementation_prs() -> None:
@@ -102,13 +101,13 @@ def test_detail_relations_omits_work_item_when_absent() -> None:
     assert "work_item" not in rel
 
 
-def test_detail_relations_includes_plan_version() -> None:
-    """有 plan_version → relations.plan_version 含 version。"""
-    pv = _make_plan_version()
-    spec = SddSpec.objects.create(repository=_make_repo(), plan_version=pv)
+def test_detail_relations_includes_artifact_version() -> None:
+    """有 artifact_version → relations.artifact_version 含 version。"""
+    pv = _make_artifact_version()
+    spec = SddSpec.objects.create(repository=_make_repo(), artifact_version=pv)
     rel = SddSpecDetailSerializer(spec).data["relations"]
-    assert rel["plan_version"]["id"] == str(pv.id)
-    assert rel["plan_version"]["version"] == 3
+    assert rel["artifact_version"]["id"] == str(pv.id)
+    assert rel["artifact_version"]["version"] == 3
 
 
 def test_list_serializer_omits_implementation_prs() -> None:

@@ -765,8 +765,126 @@ def _build_message_complete_event(
     return AgentEvent(type=MESSAGE_COMPLETE, data=payload)
 
 
+# ============================================================================
+# 项目作战室 P2：共享会话权限辅助（项目成员/管理员判定 + 单会话执行时长）
+# ============================================================================
+
+
+async def _user_project_ids(user: Any) -> set[str]:
+    """当前已认证用户作为成员的全部项目 id 集合（用于列「项目共享会话」）。"""
+    if not getattr(user, "is_authenticated", False):
+        return set()
+    from initiatives.models import ProjectMember
+
+    return {
+        str(pid)
+        async for pid in ProjectMember.objects.filter(user=user).values_list(
+            "project_id", flat=True
+        )
+    }
+
+
+async def _is_project_member(user: Any, project_id: Any) -> bool:
+    """user 是否为 project_id 的项目成员。"""
+    if not project_id or not getattr(user, "is_authenticated", False):
+        return False
+    from initiatives.models import ProjectMember
+
+    return await ProjectMember.objects.filter(
+        project_id=project_id, user=user
+    ).aexists()
+
+
+async def _is_project_admin(user: Any, project_id: Any) -> bool:
+    """user 是否为 project_id 的项目管理员（主R / OWNER）。"""
+    if not project_id or not getattr(user, "is_authenticated", False):
+        return False
+    from initiatives.models import ProjectMember, ProjectRole
+
+    return await ProjectMember.objects.filter(
+        project_id=project_id, user=user, role=ProjectRole.OWNER
+    ).aexists()
+
+
+async def compute_conversation_duration_ms(conversation_id: Any) -> int:
+    """单条会话的执行时长（毫秒）= 该会话所有 OrchestrationRun 运行时长之和。
+
+    口径：每个 run 取 ``updated_at - created_at`` 的毫秒差求和；无 run 返回 0。
+    best-effort，异常吞掉返回 0（观测不反噬业务）。
+    """
+    try:
+        total_ms = 0
+        async for run in OrchestrationRun.objects.filter(
+            conversation_id=conversation_id
+        ).values("created_at", "updated_at"):
+            start = run.get("created_at")
+            end = run.get("updated_at")
+            if start and end and end >= start:
+                total_ms += int((end - start).total_seconds() * 1000)
+        return total_ms
+    except Exception:
+        return 0
+
+
 class ConversationService:
     """对话系统业务逻辑服务。"""
+
+    @staticmethod
+    async def aget_for_read(conversation_id: str, user: Any = None) -> Conversation:
+        """读取 gate（项目作战室 P2）：owner 或「shared + bound_project 成员」可读。
+
+        与 owner-only 的 ``aget_for_user`` 并列：本方法用于**只读路径**（详情/消息/
+        runtime），让项目共享会话对项目成员可见；写/管理路径仍走 owner gate。
+        越权/不存在统一抛 ``Conversation.DoesNotExist``（view 映射 404）。
+        """
+        conv = await Conversation.objects.aget(
+            id=conversation_id, is_deleted=False
+        )
+        if not getattr(user, "is_authenticated", False):
+            return conv  # 开放模式维持现状
+        if conv.created_by_id == user.id:
+            return conv
+        if (
+            conv.visibility == Conversation.Visibility.SHARED
+            and conv.bound_project_id is not None
+            and await _is_project_member(user, conv.bound_project_id)
+        ):
+            return conv
+        raise Conversation.DoesNotExist(
+            f"对话不存在或无权访问: {conversation_id}"
+        )
+
+    @staticmethod
+    async def aset_visibility(
+        conversation_id: str, user: Any, visibility: str
+    ) -> Conversation:
+        """互转会话可见性（个人↔共享）。仅创建者可操作（二次确认在前端）。
+
+        共享要求 bound_project 非空；否则抛 ValueError（view 兜成 400）。
+        越权（非创建者）抛 ``Conversation.DoesNotExist``（404）。
+        """
+        conv = await Conversation.objects.aget(
+            id=conversation_id, is_deleted=False
+        )
+        if getattr(user, "is_authenticated", False) and conv.created_by_id != user.id:
+            raise Conversation.DoesNotExist(
+                f"对话不存在或无权操作: {conversation_id}"
+            )
+        if (
+            visibility == Conversation.Visibility.SHARED
+            and conv.bound_project_id is None
+        ):
+            raise ValueError("共享会话必须先绑定项目")
+        conv.visibility = visibility
+        await conv.asave(update_fields=["visibility", "updated_at"])
+        logger.info(
+            "conversation_visibility_changed",
+            conversation_id=str(conv.id),
+            visibility=visibility,
+            category="caller",
+            component="chat.conversation",
+        )
+        return conv
 
     @staticmethod
     async def aget_for_user(conversation_id: str, user: Any = None) -> Conversation:
@@ -795,6 +913,8 @@ class ConversationService:
         title: str = "新对话",
         model: str = "",
         user: Any = None,
+        bound_project_id: str | None = None,
+        visibility: str | None = None,
     ) -> Conversation:
         """创建新对话。
 
@@ -803,24 +923,40 @@ class ConversationService:
             title: 对话标题
             model: LLM 模型 ID（为空时运行时使用系统默认）
             user: 创建者；已认证则写入 created_by，未认证（开放模式）写 null（ISO-01）
+            bound_project_id: 绑定项目（项目作战室）；非空则 chat 自动加载项目上下文
+            visibility: personal/shared；shared 守护——必须有 bound_project，否则降级 personal
 
         Returns:
             新创建的 Conversation 实例
         """
         # 隔离仅对已认证用户生效：匿名/开放模式不写 owner。
         created_by = user if getattr(user, "is_authenticated", False) else None
+        vis = visibility or Conversation.Visibility.PERSONAL
+        # 守护：shared 必须绑定项目，否则回落 personal（防越权可见性泄漏）。
+        if vis == Conversation.Visibility.SHARED and not bound_project_id:
+            vis = Conversation.Visibility.PERSONAL
         conversation = await Conversation.objects.acreate(
             space_id=space_id,
             title=title,
             model=model,
             created_by=created_by,
+            bound_project_id=bound_project_id,
+            visibility=vis,
         )
         logger.info(
             "conversation_created",
             conversation_id=str(conversation.id),
             space_id=space_id,
+            bound_project_id=str(bound_project_id) if bound_project_id else None,
+            visibility=vis,
             title=title,
+            category="caller",
+            component="chat.conversation",
         )
+        # 实时同步：新建会话广播给本人 / 项目成员（共享会话即时出现在他人列表）。
+        from chat.realtime import abroadcast_conversation
+
+        await abroadcast_conversation(conversation.id, event="created")
         return conversation
 
     @staticmethod
@@ -970,6 +1106,75 @@ class ConversationService:
         )
         return {"conversation": forked, "messages": messages}
 
+    @staticmethod
+    async def aclone_for_contribution(
+        conversation_id: str,
+        actor: Any,
+    ) -> dict[str, Any]:
+        """项目作战室 P2：把一个（共享/可读）会话整份克隆为「我的项目个人会话」。
+
+        共享会话对项目成员只读；成员要发言即调用本方法 clone 一份归属自己的副本
+        （``created_by=actor`` / ``visibility=personal``，继承 ``bound_project``），
+        在副本里自由对话。语义参照 ``admin_fork_to_own``，但以「项目成员读权限」
+        而非 superuser 授权：先经 ``aget_for_read`` 校验 actor 可读源会话。
+
+        Returns:
+            {"conversation_id": <新会话 id 字符串>}
+
+        Raises:
+            Conversation.DoesNotExist: 源会话不存在或 actor 无读权限（view 兜 404）。
+        """
+        source = await ConversationService.aget_for_read(conversation_id, actor)
+
+        fork_title = (source.title or "新对话")
+        suffix = "（我的副本）"
+        fork_title = f"{fork_title[:200 - len(suffix)]}{suffix}"
+
+        @sync_to_async
+        def _copy_atomic() -> tuple[Conversation, int]:
+            with transaction.atomic():
+                forked = Conversation.objects.create(
+                    space_id=source.space_id,
+                    title=fork_title,
+                    model=source.model,
+                    provider_credential_id_id=source.provider_credential_id_id,
+                    created_by=actor if getattr(actor, "is_authenticated", False) else None,
+                    bound_project_id=source.bound_project_id,
+                    visibility=Conversation.Visibility.PERSONAL,
+                    status=Conversation.Status.DRAFT,
+                )
+                source_messages = list(
+                    Message.objects.filter(conversation_id=source.id).order_by(
+                        "created_at"
+                    )
+                )
+                Message.objects.bulk_create(
+                    [
+                        Message(
+                            conversation=forked,
+                            role=msg.role,
+                            content=msg.content,
+                            tool_calls=deepcopy(msg.tool_calls),
+                            tool_call_id=msg.tool_call_id,
+                            metadata=deepcopy(msg.metadata),
+                            parts=deepcopy(msg.parts),
+                        )
+                        for msg in source_messages
+                    ]
+                )
+                return forked, len(source_messages)
+
+        forked, copied_count = await _copy_atomic()
+        logger.info(
+            "conversation_cloned_for_contribution",
+            source_conversation_id=str(source.id),
+            forked_conversation_id=str(forked.id),
+            copied_count=copied_count,
+            category="caller",
+            component="chat.conversation",
+        )
+        return {"conversation_id": str(forked.id)}
+
     # ========================================================================
     # 管理员只读会话后台（ADMVW-01/02/03）—— 物理分离的 admin_* 业务方法。
     #
@@ -1000,7 +1205,7 @@ class ConversationService:
         from django.db.models import Count, Exists, OuterRef
 
         from chat.models import CodingPlan, CodingSession
-        from delivery.models import PlanSession, SddSpec
+        from delivery.models import ConvergenceSession, SddSpec
 
         qs = (
             Conversation.objects.filter(is_deleted=False)
@@ -1017,12 +1222,12 @@ class ConversationService:
                     CodingSession.objects.filter(conversation_id=OuterRef("pk"))
                 ),
                 has_sdd_spec=Exists(
-                    PlanSession.objects.filter(
+                    ConvergenceSession.objects.filter(
                         conversation_id=OuterRef("pk"),
-                        current_plan_version__isnull=False,
-                        current_plan_version__in=SddSpec.objects.filter(
-                            plan_version__isnull=False
-                        ).values("plan_version_id"),
+                        current_artifact_version__isnull=False,
+                        current_artifact_version__in=SddSpec.objects.filter(
+                            artifact_version__isnull=False
+                        ).values("artifact_version_id"),
                     )
                 ),
             )
@@ -1338,6 +1543,24 @@ class ConversationService:
         conversation.status = Conversation.Status.RUNNING
         await conversation.asave(update_fields=["status"])
 
+        # 实时同步：广播用户提问 + 进行中状态（其他参与者实时看到新消息与「运行中」）。
+        from django.utils import timezone
+
+        from chat.realtime import abroadcast_conversation, abroadcast_message
+
+        await abroadcast_message(
+            conversation.id,
+            {
+                "id": user_msg_id_str,
+                "role": "user",
+                "content": user_msg_content,
+                "parts": input_parts_data,
+                "metadata": user_msg_metadata,
+                "created_at": timezone.now().isoformat(),
+            },
+        )
+        await abroadcast_conversation(conversation.id)
+
         # 飞书文档预处理（per contract: 读取成功即自动注入上下文）
         doc_context_prefix = ""
         # 捕获 docSummary 给 finalize 落库（刷新回显飞书文档摘要卡）。
@@ -1473,6 +1696,9 @@ class ConversationService:
 
         graph_task = asyncio.create_task(_run_graph())
 
+        # 旁观者打字机：把发起者的 SSE 流逐事件镜像广播到共享会话分组。
+        from chat.realtime import abroadcast_stream
+
         detached_finalizer = False
         message_complete_seen = False
         try:
@@ -1493,6 +1719,12 @@ class ConversationService:
                     message_complete_seen = True
                     event.data.setdefault("model", model)
                     event.data.setdefault("session_id", session_id)
+
+                # 旁观者打字机镜像（keepalive 仅心跳，无需广播）。
+                if event.type != KEEPALIVE:
+                    await abroadcast_stream(
+                        conversation, {"type": event.type, **event.data}
+                    )
 
                 yield event
 
@@ -1876,6 +2108,7 @@ class ConversationService:
         limit: int = 50,
         include_archived: bool = False,
         archived_only: bool = False,
+        bound_project: str | None = None,
     ) -> list[Conversation]:
         """返回未删除对话列表，按 updated_at 降序。
 
@@ -1893,15 +2126,32 @@ class ConversationService:
         from django.db.models import Exists, OuterRef, Q
 
         from chat.models import CodingPlan, CodingSession
-        from delivery.models import PlanSession, SddSpec
+        from delivery.models import ConvergenceSession, SddSpec
 
-        qs = Conversation.objects.filter(is_deleted=False)
+        # select_related("created_by")：列表项序列化器需读会话创建者简要（项目作战室
+        # P2 贡献者头像/名字），async 路径必须预取避免惰性 FK 触发 SynchronousOnlyOperation。
+        qs = Conversation.objects.filter(is_deleted=False).select_related("created_by")
         if archived_only:
             qs = qs.filter(is_archived=True)
         elif not include_archived:
             qs = qs.filter(is_archived=False)
         if getattr(user, "is_authenticated", False):
-            qs = qs.filter(created_by=user)
+            # owner-scoped（ISO-02）+ 项目作战室 P2：叠加「我所在项目的共享会话」。
+            project_ids = await _user_project_ids(user)
+            own_q = Q(created_by=user)
+            if project_ids:
+                qs = qs.filter(
+                    own_q
+                    | Q(
+                        visibility=Conversation.Visibility.SHARED,
+                        bound_project_id__in=project_ids,
+                    )
+                )
+            else:
+                qs = qs.filter(own_q)
+        # 项目作战室：按绑定项目过滤（项目页大盘只列本项目会话）。
+        if bound_project:
+            qs = qs.filter(bound_project_id=bound_project)
 
         q = (query or "").strip()
         if q:
@@ -1923,12 +2173,12 @@ class ConversationService:
             # 命中某条 SddSpec.plan_version（UUID 相等匹配，无需跨 app FK）。单层 OuterRef
             # 关联会话，内层 __in 为非关联子查询（全部 spec 的 plan_version 集合）。
             has_sdd_spec=Exists(
-                PlanSession.objects.filter(
+                ConvergenceSession.objects.filter(
                     conversation_id=OuterRef("pk"),
-                    current_plan_version__isnull=False,
-                    current_plan_version__in=SddSpec.objects.filter(
-                        plan_version__isnull=False
-                    ).values("plan_version_id"),
+                    current_artifact_version__isnull=False,
+                    current_artifact_version__in=SddSpec.objects.filter(
+                        artifact_version__isnull=False
+                    ).values("artifact_version_id"),
                 )
             ),
         )
@@ -2116,12 +2366,12 @@ class ConversationService:
             from delivery.models import (
                 Clarification,
                 ClarificationQuestion,
-                PlanSession,
+                ConvergenceSession,
             )
             from delivery.services import ClarificationService
 
             plan_session = (
-                await PlanSession.objects.filter(conversation_id=conv_uuid)
+                await ConvergenceSession.objects.filter(conversation_id=conv_uuid)
                 .order_by("-created_at")
                 .afirst()
             )
@@ -2405,20 +2655,41 @@ class ConversationService:
         Raises:
             Conversation.DoesNotExist: 对话不存在、已删除，或越权删除他人会话
         """
-        qs = Conversation.objects.filter(
-            id=conversation_id,
-            is_deleted=False,
-        )
+        # 项目作战室 P2：共享会话删除限「创建者 + 项目管理员（主R）」。
+        # 个人会话维持 owner-only（ISO-04）。已认证用户先做权限判定再软删。
         if getattr(user, "is_authenticated", False):
-            qs = qs.filter(created_by=user)
-        updated = await qs.aupdate(is_deleted=True)
-
-        if updated == 0:
-            raise Conversation.DoesNotExist(
-                f"对话不存在或已删除: {conversation_id}"
-            )
+            conv = await Conversation.objects.filter(
+                id=conversation_id, is_deleted=False
+            ).afirst()
+            if conv is None:
+                raise Conversation.DoesNotExist(
+                    f"对话不存在或已删除: {conversation_id}"
+                )
+            allowed = conv.created_by_id == user.id
+            if (
+                not allowed
+                and conv.visibility == Conversation.Visibility.SHARED
+                and conv.bound_project_id is not None
+            ):
+                allowed = await _is_project_admin(user, conv.bound_project_id)
+            if not allowed:
+                raise Conversation.DoesNotExist(
+                    f"对话不存在或无权删除: {conversation_id}"
+                )
+            await Conversation.objects.filter(id=conv.id).aupdate(is_deleted=True)
+        else:
+            # 未认证（开放模式）维持现状：无 owner 过滤直接软删。
+            updated = await Conversation.objects.filter(
+                id=conversation_id, is_deleted=False
+            ).aupdate(is_deleted=True)
+            if updated == 0:
+                raise Conversation.DoesNotExist(
+                    f"对话不存在或已删除: {conversation_id}"
+                )
 
         logger.info(
             "conversation_deleted",
             conversation_id=conversation_id,
+            category="caller",
+            component="chat.conversation",
         )

@@ -1,7 +1,7 @@
 """Technical-plan generation and Feishu writeback for work item MCP flows.
 
 UNIFY-03：方案生成已从独立确定性 ``_build_repo_task_matrix`` seam **改为 delegate 到
-``plan_orchestration`` 统一编排**（经 ``delegate_plan_orchestration`` 产 canonical §7
+``process_runtime`` 统一编排**（经 ``delegate_process_runtime`` 产 canonical §7
 MergedPlan/PlanVersion），再**显式映射回旧 MCP 响应字段**（外形兼容，调用方不破坏），并
 继续落 ``McpWorkItemTechnicalPlan`` 保兼容。飞书文档/评论 writeback 逻辑保留（喂 delegate
 产的 markdown + 映射后的 repository_tasks）。
@@ -16,7 +16,7 @@ from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
 from interactions.models import InteractionRun
 from mcp_tools.learning_case_service import search_learning_cases
 from mcp_tools.models import McpWorkItemContext, McpWorkItemTechnicalPlan
-from mcp_tools.orchestration_delegate import delegate_plan_orchestration
+from mcp_tools.orchestration_delegate import delegate_process_runtime
 from services.feishu import create_feishu_client_for_project
 from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError, RateLimitError
 
@@ -340,7 +340,7 @@ async def build_work_item_technical_plan(
     write_comment: bool,
     actor: Any = None,
 ) -> TechnicalPlanResult:
-    """delegate 到 ``plan_orchestration`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
+    """delegate 到 ``process_runtime`` 产 canonical 方案 → 映射回旧响应外形 + 落库（UNIFY-03）。
 
     ``actor`` 为发起编排的用户（从 view 透传 request.user，可空）：delegate 经
     ``start_orchestration(created_by=actor)`` 传入，召回 stage 据此作权限 actor；为 None 时
@@ -364,7 +364,7 @@ async def build_work_item_technical_plan(
 
     # UNIFY-03：方案生成 delegate 到统一编排（绝不在 MCP 层重写拆分/路由/调研/融合）。
     work_item = await _resolve_delivery_work_item(context)
-    delegate = await delegate_plan_orchestration(
+    delegate = await delegate_process_runtime(
         requirement_text=_work_item_text(context),
         work_item=work_item,
         include_repos=repository_ids,
