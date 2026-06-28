@@ -1,5 +1,26 @@
 # Milestones
 
+## v0.16.1 统一 AI 技术方案生成（图编排归一 + 插槽式澄清拼接 + 能力完善） (Shipped: 2026-06-28)
+
+**Phases completed:** 6 phases (90–95), 27 plans, 18/18 v1 需求；里程碑审计 **tech_debt**（18/18 需求满足 / integration_ok / 0 gaps / 0 BLOCKER；遗留真机·真实 provider·画布视觉端到端验收 + INFO 欠债）见 [milestones/v0.16.1-MILESTONE-AUDIT.md](./milestones/v0.16.1-MILESTONE-AUDIT.md)
+
+**Key accomplishments:**
+
+- **澄清能力层（Phase 90）**：把「澄清」做成编排一等能力——结构化 `Clarification`（多题单/多选 + 选项 + 推荐 + 多答案）+ `ClarificationQuestion` 子表 + 迁移 0026（向后兼容）+ 单一写入入口（INV-6）+ `ClarifyAdapter` 接 LLM 多题生成（`call_source=plan_clarification`、fail-soft 回退）+ 入口无关统一 `ask_clarification` helper（携 origin_repo）。
+- **澄清出口面 + 回流 resume（Phase 91）**：会话内联卡（`ClarificationCard.vue` 多题多选 + ⭐推荐默认选中 + 自由输入）+ 飞书群交互卡（`build_clarification_card` 携 clarification_id）双出口；共享回流 helper `aanswer_round_and_resume` 同被会话 + 飞书调用（工作流/会话同源不造两套）+ 多轮 round_no 上界防无限挂起 + 答后重判续推。
+- **插槽系统后端（Phase 92）**：`NodePort.shape` 能力契约字段 + `KNOWN_PORT_SHAPES` + `WorkflowGraphValidator` 保存即按 shape 兼容性校验；`ai_plan_research` 暴露 `clarify`(clarification_request 凹槽)/`resume`(clarification_answer 凸点)插槽端口；新增 `clarification_card` 原子节点 + `clarify_card_` 独立回调（answer_round 落库 + approve 本节点，fixture 36→42、node-sync 绿）。
+- **插槽编辑器前端（Phase 93）**：@vue-flow 按 shape 兼容判定 + 拖拽兼容高亮（emerald 光环）+ 磁吸吸附（28px/snap-pulse 脉冲，不绕合法性）+ 不兼容禁止 + Toast；澄清节点作方案节点「附着子节点」可视编组（`metadata.parentNodeId` 持久化 + `.slot-attach-group` 琥珀虚线容器 + 删父级联删子/解除确认 AlertDialog）+ 下接发飞书群 + IM 门控锁徽标。
+- **入口统一（Phase 94）**：`technical_plan_generation` 模板切 `ai_plan_research`（既有实例不破坏）+ 旧 `ai_plan_generation` 标 deprecated **保留注册**（向后兼容不回退）+ NodePalette 收口 + 迁移指引；MCP `create_feishu_technical_plan`/`create_coding_plan` delegate 到统一编排（共享 `render_merged_plan_markdown` + delegate 核心，三入口产同一 canonical `MergedPlan`/`PlanVersion`）；对话澄清挂起单一来源（消除双挂起二义）；done 出口干净结构化 markdown 推群（不 dump 原文）。
+- **拆分完善（Phase 95）**：`PlanOrchestrationEngine._decompose` 从「按非空行切分 stub」升级为 LLM 跨仓业务线/模块/前后端拆分（`agenerate_decomposition_segments` + `CallSource.PLAN_DECOMPOSE` + LOGGING-SPEC §4.1 登记），best-effort fail-soft（缺 model/解析空/异常 → splitlines 回退，绝不落 FAILED）。
+
+**质量基线：** 6/6 phase 完成（2 passed：92/95；4 human_needed：90/91/93/94，全因外部服务/真实 provider/画布视觉端到端验收，非代码缺陷）；全部 critical/warning 代码评审项已修复并补守护测试；跨阶段集成 integration_ok（依赖链 90→91→92→93、94 on 90/91、95 独立全部接线核实，三入口收口同一 canonical）。
+
+**Known deferred items at close（真机/真实 provider/画布视觉端到端人工验收，非 gap）：** 10 项——90 真实 provider 澄清质量 + token/TTFT；91 会话内联卡 E2E + 飞书群发卡回调 E2E；93 画布 UAT ×5（高亮/磁吸/编组/Toast/IM 门控/既有回归）；94 真实飞书需求推群干净卡片 + 真实 provider MCP 两工具产 canonical（DONE/PARTIAL 响应外形）。INFO 级 tech debt + 1 既有 mypy 告警（base.py:515）deferred。详见 milestones/v0.16.1-MILESTONE-AUDIT.md §4/§5。
+
+**What's next:** `$gsd-new-milestone` 启动下一里程碑（含 requirements 重新定义）。
+
+---
+
 ## v0.16.0 项目工作区（飞书文档双向同步 + IDE 上下文闭环 + feature list 交付流水线） (Shipped: 2026-06-26)
 
 **Phases completed:** 8 phases (82–89), 38 plans, 37/37 v1 需求；里程碑审计 **tech_debt**（37/37 需求满足 / integration_ok，无关键阻断；遗留真机·live-platform 验收 + 既有并发测试欠债）见 [milestones/v0.16.0-MILESTONE-AUDIT.md](./milestones/v0.16.0-MILESTONE-AUDIT.md)
