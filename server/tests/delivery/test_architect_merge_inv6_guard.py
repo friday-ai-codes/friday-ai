@@ -6,7 +6,7 @@ writer 自身），断言无旁路 ``ArchitectMerge.objects.<write>`` / 直接�
 链式 save 入口；命中即 fail 列 ``文件:行``。
 
 唯一允许写 ``ArchitectMerge`` 的模块 = 融合 adapter
-``services/plan_orchestration/architect_merge_adapter.py``。
+``services/process_runtime/architect_merge_adapter.py``。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ _PRUNE_DIRS = {
 }
 
 # 唯一允许写 ArchitectMerge 的模块（融合 service/adapter，相对 server/）
-_ALLOWED_WRITER = "services/plan_orchestration/architect_merge_adapter.py"
+_ALLOWED_WRITER = "services/process_runtime/architect_merge_adapter.py"
 
 # A：ArchitectMerge.objects.<write>
 _RE_ORM_WRITE = re.compile(

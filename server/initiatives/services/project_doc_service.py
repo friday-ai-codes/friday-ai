@@ -721,26 +721,30 @@ class ProjectDocService:
         space = project.space
         parent_folder = getattr(space, "feishu_doc_folder_token", "") or ""
 
-        # 无父文件夹 / 无飞书凭证 → 5 文件全置 broken，fail-soft 返回（不抛）。
+        # 未配置飞书（无父文件夹）→ #3：建本地「待同步」文档，不视为错误、不同步飞书。
         if not parent_folder:
-            broken = await self._mark_all_broken(project_id)
-            self._log_completed(project_id, uid_repr, started, ready, broken, reason="no_parent_folder")
+            pending = await self._ensure_all_pending(project_id)
+            self._log_completed(
+                project_id, uid_repr, started, ready, broken,
+                reason="feishu_not_configured", pending=pending,
+            )
             return
 
         try:
             client = await self._build_doc_client(space)
-        except Exception as exc:  # noqa: BLE001 — 缺凭证/构建失败降级，不阻断
-            broken = await self._mark_all_broken(project_id)
-            logger.warning(
-                "project_workspace_provision_failed",
+        except Exception as exc:  # noqa: BLE001 — 缺凭证/构建失败：按未配置处理（本地待同步，不报错）
+            pending = await self._ensure_all_pending(project_id)
+            logger.info(
+                "project_workspace_provision_local_only",
                 project_id=str(project_id),
                 reason="feishu_client_unavailable",
-                error=redact_secrets_in_text(str(exc)),
                 error_type=type(exc).__name__,
                 component=_COMPONENT,
                 category="caller",
             )
-            self._log_completed(project_id, uid_repr, started, ready, broken)
+            self._log_completed(
+                project_id, uid_repr, started, ready, broken, pending=pending
+            )
             return
 
         # ① 建文件夹（5QPS 串行）→ 落 Project.feishu_folder_token（经 ProjectService，INV-6）
@@ -842,6 +846,21 @@ class ProjectDocService:
                 project_id=project_id,
                 doc_type=doc_type,
                 sync_status=DocSyncStatus.BROKEN,
+            )
+        return len(_DOC_ORDER)
+
+    async def _ensure_all_pending(self, project_id: Any) -> int:
+        """未配置飞书时：把 5 个 doc_type 建为本地「待同步」(pending) 而非 broken。
+
+        #3：建项即建本地文档；飞书未配置就不视为错误（pending 是干净态，配置飞书后一键
+        重建即推送同步）。未配置态下飞书从未建过文档（无 folder_token），不存在 ready 可回退。
+        返回 pending 文档数。
+        """
+        for doc_type in _DOC_ORDER:
+            await self.upsert_doc(
+                project_id=project_id,
+                doc_type=doc_type,
+                sync_status=DocSyncStatus.PENDING,
             )
         return len(_DOC_ORDER)
 
@@ -981,6 +1000,7 @@ class ProjectDocService:
         ready: int,
         broken: int,
         reason: str = "",
+        pending: int = 0,
     ) -> None:
         logger.info(
             "project_workspace_provision_completed",
@@ -988,6 +1008,7 @@ class ProjectDocService:
             initiated_by_user_id=uid_repr,
             ready=ready,
             broken=broken,
+            pending=pending,
             reason=reason,
             duration_ms=round((time.monotonic() - started) * 1000, 2),
             component=_COMPONENT,

@@ -23,6 +23,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 import structlog
+from django.utils import timezone
 
 from common.logging import redact_secrets_in_text
 from knowledge.ingestion import EdgeSpec, IngestionEvent, IngestionRequest
@@ -36,16 +37,13 @@ __all__ = ["normalize"]
 _TEXT_CARRIERS = frozenset({"feishu_doc", "feishu_bitable", "markdown", "repo_file"})
 
 
-def _doc_title(body: str, fallback: str) -> str:
-    """取正文首个 markdown 标题作 title；缺正文降级用 fallback。"""
-    for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("#"):
-            return stripped.lstrip("#").strip()[:500]
-        return stripped[:500]
-    return fallback[:500]
+def _artifact_title(artifact) -> str:
+    """Knowledge entity title must remain the artifact/document name.
+
+    Body headings are often section titles such as "版本追溯表" or "项目背景";
+    using them as the entity title makes graph/search results unreadable.
+    """
+    return (artifact.title or f"工件 {artifact.id}")[:500]
 
 
 def _extract_doc_token(url: str) -> str:
@@ -86,6 +84,36 @@ def _records_to_text(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+async def _fetch_bitable_text(client, app_token: str, table_id: str) -> str:
+    """Fetch one or more Bitable tables and render records as text."""
+    table_ids: list[str] = []
+    if table_id:
+        table_ids = [table_id]
+    else:
+        data = await client.list_tables(app_token)
+        for item in data.get("items") or []:
+            tid = item.get("table_id")
+            if tid:
+                table_ids.append(str(tid))
+
+    sections: list[str] = []
+    for tid in table_ids:
+        page_token: str | None = None
+        items: list[dict] = []
+        while True:
+            data = await client.list_records(app_token, tid, page_token=page_token)
+            items.extend(data.get("items") or [])
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token")
+            if not page_token:
+                break
+        text = _records_to_text({"items": items})
+        if text:
+            sections.append(f"## Table {tid}\n\n{text}" if len(table_ids) > 1 else text)
+    return "\n\n".join(sections).strip()
+
+
 async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
     """按载体拉取工件正文（fail-soft：失败返回空串 + warning）。"""
     carrier = artifact.carrier
@@ -103,7 +131,7 @@ async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
             )
 
             client = await create_feishu_doc_client_for_project(space)
-            markdown, _blocks = await client.get_document_content(token)
+            markdown, _blocks = await client.get_document_content_by_url(artifact.url or token)
             return markdown or ""
         except Exception as exc:  # noqa: BLE001 — fail-soft 降级空正文
             logger.warning(
@@ -118,14 +146,13 @@ async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
 
     if carrier == "feishu_bitable":
         app_token, table_id = _parse_bitable_url(artifact.url)
-        if not app_token or not table_id:
+        if not app_token:
             return ""
         try:
             from services.feishu_bitable import create_bitable_client_for_project
 
             client = await create_bitable_client_for_project(space)
-            data = await client.list_records(app_token, table_id)
-            return _records_to_text(data)
+            return await _fetch_bitable_text(client, app_token, table_id)
         except Exception as exc:  # noqa: BLE001 — fail-soft 降级空正文
             logger.warning(
                 "artifact_rag_bitable_fetch_failed",
@@ -185,6 +212,9 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     raw_body = await _fetch_body(artifact, space, request=request)
     # 脱敏不可绕过：飞书正文/异常文本入图前经 redact_secrets_in_text。
     body = redact_secrets_in_text(raw_body or "")
+    event_time = timezone.now()
+    if artifact.updated_at and artifact.updated_at > event_time:
+        event_time = artifact.updated_at
 
     # 项目图谱节点（KLINK-01 锚）：工件→REFERENCES→项目节点出边需目标实体先存在。
     project_node_id = await ProjectKnowledgeGraphService().ensure_project_node(project)
@@ -194,7 +224,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         origin=EntityOrigin.ARTIFACT,
         source_kind="artifact",
         source_id=str(artifact.id),
-        title=_doc_title(body, artifact.title or f"工件 {artifact.id}"),
+        title=_artifact_title(artifact),
         content=body,
         payload={
             "artifact_id": str(artifact.id),
@@ -206,7 +236,7 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         },
         space_id=str(project.space_id) if project.space_id else None,
         repository_id=None,
-        event_time=artifact.updated_at,
+        event_time=event_time,
         edges=(EdgeSpec(relation=EdgeRelation.REFERENCES, target_entity_id=project_node_id),),
     )
 

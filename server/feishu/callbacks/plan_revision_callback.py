@@ -202,14 +202,14 @@ def _aresolve_project(space: Any) -> Any:
 
 @sync_to_async
 def _aresolve_plan(node_execution: NodeExecution) -> Any:
-    """解析本节点对应的 canonical ``TechnicalPlan``（由 output_data.plan_id 定位；只读）。"""
+    """解析本节点对应的 technical_plan ``Artifact``（由 output_data.plan_id 定位；只读）。"""
     output = node_execution.output_data or {}
     plan_id = str(output.get("plan_id") or "").strip()
     if not plan_id:
         return None
-    from delivery.models import TechnicalPlan
+    from delivery.models import Artifact
 
-    return TechnicalPlan.objects.filter(id=plan_id).first()
+    return Artifact.objects.filter(id=plan_id).first()
 
 
 async def _aget_waiting_node(execution_id: str, node_id: str) -> NodeExecution | None:

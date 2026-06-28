@@ -66,7 +66,7 @@ async def test_view_feishu_doc_renders_markdown() -> None:
             url="https://x.feishu.cn/docx/doctoken123",
         )
     mock_client = MagicMock()
-    mock_client.get_document_content = AsyncMock(return_value=("# 渲染后\n内容", []))
+    mock_client.get_document_content_by_url = AsyncMock(return_value=("# 渲染后\n内容", []))
     with patch(
         "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
         new=AsyncMock(return_value=mock_client),

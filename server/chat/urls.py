@@ -18,6 +18,7 @@ from .views import (
     CodingSessionListView,
     CommitConfirmView,
     ConflictCheckView,
+    ConversationCloneView,
     ConversationDetailView,
     ConversationListView,
     ConversationMessageForkView,
@@ -71,6 +72,11 @@ urlpatterns = [
         "conversations/<uuid:conversation_id>/messages/",
         ConversationMessagesDeleteView.as_view(),
         name="conversation-messages-delete",
+    ),
+    path(
+        "conversations/<uuid:conversation_id>/clone/",
+        ConversationCloneView.as_view(),
+        name="conversation-clone",
     ),
     path(
         "conversations/<uuid:conversation_id>/messages/<uuid:message_id>/fork/",

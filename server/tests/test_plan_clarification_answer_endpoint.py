@@ -24,7 +24,11 @@ from rest_framework.test import APIClient
 
 from chat.conversation_service import ConversationService
 from chat.models import Conversation
-from delivery.models import PlanSession, PlanSessionEntrypoint, PlanSessionStatus
+from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
+)
 from delivery.services import ClarificationService
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -45,15 +49,17 @@ def authed_client(api_client: APIClient, user, project_memberships) -> APIClient
     return api_client
 
 
-def _make_plan_session(conversation: Conversation) -> PlanSession:
-    return PlanSession.objects.create(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.CLARIFYING,
+def _make_plan_session(conversation: Conversation) -> ConvergenceSession:
+    return ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="clarify",
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
         conversation_id=conversation.id,
     )
 
 
-def _make_pending_round(session: PlanSession):
+def _make_pending_round(session: ConvergenceSession):
     """经 ClarificationService（INV-6 唯一写入入口）建结构化 pending 轮 + 2 子题。"""
     return async_to_sync(ClarificationService().create_round)(
         session,
@@ -156,7 +162,7 @@ def capture_helper(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return None
 
     monkeypatch.setattr(
-        "services.plan_orchestration.aanswer_round_and_resume",
+        "services.process_runtime.aanswer_round_and_resume",
         _fake,
     )
     return captured

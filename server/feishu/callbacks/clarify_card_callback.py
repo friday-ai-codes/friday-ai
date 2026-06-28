@@ -52,6 +52,11 @@ logger = structlog.get_logger(__name__)
 
 _COMPONENT = "workflow_node"
 _NODE_TYPE = "clarification_card"
+# ai_coding_dispatcher 复用本回调收答，但**续推方式不同**：它需「节点重入」重新派发编码任务，
+# 故走 `_resume_from_callback` 标记 + `_continue_after_node`（Model A 重执行），而非
+# clarification_card 的 approve_node（Model B 标记完成 + 直接走下游）。
+_CODING_DISPATCHER_NODE_TYPE = "ai_coding_dispatcher"
+_RESUME_NODE_TYPES = (_NODE_TYPE, _CODING_DISPATCHER_NODE_TYPE)
 
 
 @register_card_callback("clarify_card_")
@@ -234,9 +239,9 @@ async def _do_clarify_card_async(
                 )
                 return
 
-            # T-92-03-SPOOF：校验本节点确为 clarification_card（防跨节点误 approve）。
+            # T-92-03-SPOOF：校验本节点为已知澄清消费节点（防跨节点误 approve/重入）。
             node_type = await _aget_node_type(node_execution)
-            if node_type != _NODE_TYPE:
+            if node_type not in _RESUME_NODE_TYPES:
                 logger.warning(
                     "clarify_card_answer_wrong_node_type",
                     execution_id=execution_id,
@@ -259,21 +264,30 @@ async def _do_clarify_card_async(
             if clarification_id:
                 await ClarificationService().answer_round(clarification_id, answers)
 
-            # ④ approve 本 card 节点（answers 随 approve_node 进 output，供 clarification_answer 端口语义）。
-            node_execution.approval_data = {
-                "clarification_answered": True,
-                "clarification_id": clarification_id,
-                "answers": answers,
-            }
-            await node_execution.asave(update_fields=["approval_data"])
+            # ④ 续推：按节点类型分流——
+            #    - ai_coding_dispatcher：写 `_resume_from_callback` 标记 + answers 到
+            #      output_data → `_continue_after_node` 节点重入（重执行据答复重映射缺失仓再派发）。
+            #    - clarification_card：approve 本节点（answers 进 output，供下游 clarification_answer
+            #      端口消费），节点不重执行（Model B）。
+            if node_type == _CODING_DISPATCHER_NODE_TYPE:
+                await _resume_coding_dispatcher(node_execution, clarification_id, answers)
+            else:
+                node_execution.approval_data = {
+                    "clarification_answered": True,
+                    "clarification_id": clarification_id,
+                    "answers": answers,
+                }
+                await node_execution.asave(update_fields=["approval_data"])
 
-            workflow_execution = node_execution.workflow_execution
-            if workflow_execution.status == ExecutionStatus.SUSPENDED:
-                workflow_execution.status = ExecutionStatus.RUNNING
-                await workflow_execution.asave(update_fields=["status"])
+                workflow_execution = node_execution.workflow_execution
+                if workflow_execution.status == ExecutionStatus.SUSPENDED:
+                    workflow_execution.status = ExecutionStatus.RUNNING
+                    await workflow_execution.asave(update_fields=["status"])
 
-            responder = _FeishuResponder(responder_id)
-            await WorkflowEngine().approve_node(node_execution, responder, "clarify_card_answer")
+                responder = _FeishuResponder(responder_id)
+                await WorkflowEngine().approve_node(
+                    node_execution, responder, "clarify_card_answer"
+                )
 
             # ⑤ 置灰卡（best-effort，发卡失败不阻断恢复）。
             if chat_id:
@@ -308,6 +322,31 @@ async def _do_clarify_card_async(
                 component=_COMPONENT,
                 category="caller",
             )
+
+
+async def _resume_coding_dispatcher(
+    node_execution: NodeExecution,
+    clarification_id: str,
+    answers: list[dict[str, Any]],
+) -> None:
+    """ai_coding_dispatcher 续推：写回流标记 + answers 到 output_data → 节点重入（Model A）。
+
+    与 clarification_card 的 approve_node（Model B）不同：编码派发节点需**重执行**（据答复把
+    缺失仓引用重映射后再创建 CodingTask），故沿用容器回调同款 `_resume_from_callback` 标记，由
+    `_continue_after_node` 重置 RUNNING 经 `_execute_node` 重跑本节点。保留挂起 output 原有字段
+    （`missing_repo_refs` / `questions_meta`）以供节点重入按 order 对齐答复。
+    """
+    output = node_execution.output_data or {}
+    output["_resume_from_callback"] = True
+    output["clarification_answered"] = True
+    output["clarification_id"] = clarification_id
+    output["clarification_answers"] = answers
+    node_execution.output_data = output
+    await node_execution.asave(update_fields=["output_data"])
+    # _continue_after_node 内部原子抢 SUSPENDED→RUNNING + 据标记重入；本处不预翻转状态。
+    await WorkflowEngine()._continue_after_node(
+        node_execution.workflow_execution, node_execution
+    )
 
 
 async def _send_answered_card_best_effort(

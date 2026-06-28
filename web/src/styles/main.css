@@ -171,15 +171,19 @@
   }
 }
 
-/* Sub2API 风格卡片系统 */
+/*
+ * 扁平卡片系统 — 用描边而非阴影定义层级
+ * 设计意图：纯白卡片置于 slate-50 底色上，靠 1px hairline 描边 + 统一圆角
+ * 形成克制、扁平、高级的质感；避免浮起阴影带来的"气泡感"。
+ */
 .card {
   background: white;
-  border: 1px solid hsl(214 32% 91%);
-  border-radius: 1rem;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.08),
-    0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
+  border: 1px solid hsl(214 32% 91% / 0.9);
+  border-radius: 0.875rem;
+  box-shadow: none;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .card-interactive {
@@ -187,16 +191,30 @@
 }
 
 .card-interactive:hover {
-  box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.1),
-    0 2px 8px rgba(0, 0, 0, 0.06);
-  border-color: hsl(168 76% 42% / 0.3);
-  transform: translateY(-2px);
+  border-color: hsl(168 76% 42% / 0.35);
+  background-color: hsl(168 76% 42% / 0.02);
 }
 
 .card-interactive:focus-visible {
   outline: 2px solid hsl(168 76% 42% / 0.5);
   outline-offset: 2px;
+}
+
+/*
+ * 分区标题图标芯片 — 大盘各卡片统一的"签名"视觉节奏
+ * 扁平 teal 淡色方块，呼应品牌主色又不喧宾夺主。
+ */
+.section-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.5rem;
+  background: hsl(168 76% 42% / 0.1);
+  color: hsl(168 76% 42%);
+  font-size: 0.8125rem;
+  flex-shrink: 0;
 }
 
 .card-header {

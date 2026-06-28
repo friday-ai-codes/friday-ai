@@ -14,6 +14,12 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { useToast } from '~/composables/useToast'
+import {
+  LIFECYCLE_VISUALS,
+  lifecycleBadgeText,
+  normalizeLifecyclePhase,
+} from '~/components/execution/dag/composables/lifecycleBadge'
+import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
@@ -26,11 +32,17 @@ import { usePaletteDragState } from '../composables/usePaletteDragState'
 import NodeInsertMenu from '../NodeInsertMenu.vue'
 import {
   CAPABILITY_META,
+  getEmptySlotHint,
   getNodeProvides,
   getNodeSlots,
+  getSubscribableSignals,
   isPluginCompatible,
+  normalizeSubscribeSignals,
   resolveSlotEdges,
+  SIGNAL_META,
   type SlotCapability,
+  type SubscribableSignal,
+  toggleSubscribeSignal,
 } from '../slotTaxonomy'
 import { useNodeStyle } from './composables/useNodeStyle'
 import { getNodeVisual } from './nodeVisuals'
@@ -111,7 +123,9 @@ const PORT_TEXT_CLASS: Record<PortKind, string> = {
 
 const store = useWorkflowsStore()
 const nodeTypesStore = useNodeTypesStore()
+const executionsStore = useExecutionsStore()
 const { dirtyNodeIds } = storeToRefs(store)
+const { currentExecution } = storeToRefs(executionsStore)
 const { getSelectedNodes } = useVueFlow()
 const router = useRouter()
 const { success, error: toastError } = useToast()
@@ -282,6 +296,55 @@ function onSlotDragOver(event: DragEvent, capability: SlotCapability): void {
 function removeSlotPlugin(child: (typeof attachedChildren.value)[number]): void {
   store.removeNode(child.id)
 }
+
+/** 从子节点 metadata 读取已选订阅信号（原始字符串数组，未归一）。 */
+function rawSubscribeSignals(child: (typeof attachedChildren.value)[number]): string[] | undefined {
+  const raw = (child.metadata as Record<string, unknown> | undefined)?.subscribeSignals
+  return Array.isArray(raw) ? raw.map(String) : undefined
+}
+
+/** 子节点当前订阅的信号（归一化：过滤非法 + 空回退默认完成）。 */
+function childSubscribeSignals(child: (typeof attachedChildren.value)[number]): SubscribableSignal[] {
+  const cap = getNodeProvides(child.nodeType)
+  if (!cap)
+    return []
+  return normalizeSubscribeSignals(cap, rawSubscribeSignals(child))
+}
+
+/** 切换某子节点对某信号的订阅（写回 metadata.subscribeSignals）。 */
+function onToggleSignal(child: (typeof attachedChildren.value)[number], signal: SubscribableSignal): void {
+  const cap = getNodeProvides(child.nodeType)
+  if (!cap)
+    return
+  store.setSubscribeSignals(child.id, toggleSubscribeSignal(cap, rawSubscribeSignals(child), signal))
+}
+
+/**
+ * 运行态生命周期投影（P5）：仅当编辑画布处于「执行监控」态（executionsStore 有
+ * currentExecution）且本节点有对应 NodeExecution 时展示徽章；纯设计态 currentExecution
+ * 为空 → 不展示（复用执行监控 store + WS 实时下发的 lifecycle/round）。
+ */
+const runtimeNodeExecution = computed(() => {
+  const exec = currentExecution.value
+  if (!exec)
+    return null
+  return exec.node_executions?.find(ne => ne.node === props.id) ?? null
+})
+
+const lifecyclePhase = computed(() => {
+  const ne = runtimeNodeExecution.value
+  return ne ? normalizeLifecyclePhase(ne.lifecycle) : 'idle'
+})
+
+/** 设计态（无执行）或 idle 相位不展示，避免污染编辑画布。 */
+const showLifecycleBadge = computed(() =>
+  runtimeNodeExecution.value != null && lifecyclePhase.value !== 'idle',
+)
+const lifecycleVisual = computed(() => LIFECYCLE_VISUALS[lifecyclePhase.value])
+const lifecycleText = computed(() => {
+  const ne = runtimeNodeExecution.value
+  return lifecycleBadgeText(lifecyclePhase.value, ne?.round, ne?.max_rounds)
+})
 
 /** 多选时隐藏单节点工具栏，改用画布级统一工具栏 */
 const isMultiSelect = computed(() => getSelectedNodes.value.length > 1)
@@ -638,6 +701,16 @@ async function handleTest() {
         />
       </div>
 
+      <!-- P5：运行态生命周期相位徽章（仅执行监控态展示，设计态隐藏） -->
+      <div
+        v-if="showLifecycleBadge"
+        class="mb-1.5 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+        :class="lifecycleVisual.badgeClass"
+      >
+        <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="lifecycleVisual.dotClass" />
+        <span class="truncate">{{ lifecycleText }}</span>
+      </div>
+
       <!-- 内容 slot：未自定义时回退为配置预览（标签 + 友好值/变量胶囊）+ 备注 -->
       <slot name="content">
         <div v-if="configChips.length || nodeDescription" class="mt-1 space-y-1">
@@ -682,28 +755,53 @@ async function handleTest() {
         class="-mx-3 mt-2.5 space-y-1.5 border-t border-border/40 px-3 pt-2.5"
       >
         <template v-for="cap in hostSlots" :key="cap">
-          <!-- 已填：插件 chip（图标 + 名称 + 移除） -->
+          <!-- 已填：插件 chip（图标 + 名称 + 移除）+ 信号订阅切换（成功/失败/产出） -->
           <div
             v-if="slotFillByCapability[cap]"
-            class="flex items-center gap-1.5 rounded-lg border px-2 py-1.5"
+            class="rounded-lg border px-2 py-1.5"
             :style="{ borderColor: CAPABILITY_META[cap].color, background: `${CAPABILITY_META[cap].color}14` }"
           >
-            <component
-              :is="getNodeVisual(slotFillByCapability[cap]!.nodeType).icon"
-              class="h-3.5 w-3.5 shrink-0"
-              :style="{ color: CAPABILITY_META[cap].color }"
-            />
-            <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground/85">
-              {{ slotFillByCapability[cap]!.name }}
-            </span>
-            <button
-              type="button"
-              class="nodrag shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-              title="移除"
-              @click.stop="removeSlotPlugin(slotFillByCapability[cap]!)"
+            <div class="flex items-center gap-1.5">
+              <component
+                :is="getNodeVisual(slotFillByCapability[cap]!.nodeType).icon"
+                class="h-3.5 w-3.5 shrink-0"
+                :style="{ color: CAPABILITY_META[cap].color }"
+              />
+              <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground/85">
+                {{ slotFillByCapability[cap]!.name }}
+              </span>
+              <button
+                type="button"
+                class="nodrag shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                title="移除"
+                @click.stop="removeSlotPlugin(slotFillByCapability[cap]!)"
+              >
+                <span class="icon-[lucide--x] h-3 w-3" />
+              </button>
+            </div>
+            <!-- 信号反应器（SLOT P4）：选择订阅宿主哪个生命周期信号触发本插件。
+                 至少订阅一个（取消最后一个无效）；选中态用信号语义色高亮。 -->
+            <div
+              v-if="getSubscribableSignals(cap).length > 0"
+              class="slot-signal-toggles mt-1.5 flex flex-wrap items-center gap-1"
             >
-              <span class="icon-[lucide--x] h-3 w-3" />
-            </button>
+              <button
+                v-for="sig in getSubscribableSignals(cap)"
+                :key="sig"
+                type="button"
+                class="nodrag rounded px-1.5 py-0.5 text-[9px] font-medium leading-none transition-colors"
+                :class="childSubscribeSignals(slotFillByCapability[cap]!).includes(sig)
+                  ? 'text-white'
+                  : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted'"
+                :style="childSubscribeSignals(slotFillByCapability[cap]!).includes(sig)
+                  ? { backgroundColor: SIGNAL_META[sig].color }
+                  : {}"
+                :title="SIGNAL_META[sig].hint"
+                @click.stop="onToggleSignal(slotFillByCapability[cap]!, sig)"
+              >
+                {{ SIGNAL_META[sig].label }}
+              </button>
+            </div>
           </div>
           <!-- 空槽：虚线缺口 drop-zone（拖拽落入） -->
           <div
@@ -720,7 +818,7 @@ async function handleTest() {
                 {{ CAPABILITY_META[cap].label }}
               </div>
               <div class="truncate text-[9px] leading-tight text-muted-foreground/70">
-                {{ draggingCapability === cap ? CAPABILITY_META[cap].activeHint : CAPABILITY_META[cap].hint }}
+                {{ draggingCapability === cap ? CAPABILITY_META[cap].activeHint : getEmptySlotHint(cap) }}
               </div>
             </div>
           </div>

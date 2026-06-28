@@ -12,6 +12,12 @@ from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
 from workflows.triggers.handlers import TriggerHandler
 from workflows.triggers.registry import TriggerHandlerRegistry, register_handler
+from workflows.triggers.result import (
+    await_execution_result,
+    build_tool_result,
+    deliver_callback_result,
+    project_output,
+)
 
 __all__ = [
     "TriggerContext",
@@ -19,4 +25,8 @@ __all__ = [
     "TriggerHandler",
     "TriggerHandlerRegistry",
     "register_handler",
+    "project_output",
+    "build_tool_result",
+    "await_execution_result",
+    "deliver_callback_result",
 ]

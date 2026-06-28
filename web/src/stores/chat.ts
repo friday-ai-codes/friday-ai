@@ -85,6 +85,15 @@ export const useChatStore = defineStore('chat', () => {
   const messagesLoading = ref(false)
   const error = ref<string | null>(null)
 
+  /**
+   * 项目作用域绑定。
+   *
+   * 非空时：会话列表按 bound_project 过滤、新建/草稿会话自动 bound_project_id 绑定到
+   * 该项目。供项目作战室中间对话区复用全局 chat（同 store / 同渲染器 / 同输入框）。
+   * null 时（默认）：保持 /chat 全局行为不变。
+   */
+  const boundProjectId = ref<string | null>(null)
+
   // 流式状态
   const isStreaming = ref(false)
   const streamingContent = ref('')
@@ -296,7 +305,10 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
     error.value = null
     try {
-      conversations.value = await listConversations({ limit: CONVERSATION_LIST_LIMIT })
+      conversations.value = await listConversations({
+        limit: CONVERSATION_LIST_LIMIT,
+        ...(boundProjectId.value ? { bound_project: boundProjectId.value } : {}),
+      })
     }
     catch (e) {
       error.value = e instanceof Error ? e.message : '获取对话列表失败'
@@ -304,6 +316,52 @@ export const useChatStore = defineStore('chat', () => {
     finally {
       loading.value = false
     }
+  }
+
+  /**
+   * 进入项目作用域：项目作战室中间对话区挂载时调用。绑定项目 + 空间，拉取
+   * 该项目的会话列表并自动选中第一条（无则进入草稿态）。与 /chat 共用同一 store，
+   * 故离开项目页回到 /chat 时需调 exitProjectScope 解除过滤。
+   */
+  async function enterProjectScope(projectId: string, spaceId?: string | null) {
+    boundProjectId.value = projectId
+    if (spaceId)
+      selectedSpaceId.value = spaceId
+    clearCurrentConversation()
+    await fetchConversations()
+    const first = conversations.value[0]
+    if (first)
+      await selectConversation(first.id)
+    // 建立/复用实时同步连接并订阅本项目共享分组。
+    connectRealtime()
+  }
+
+  /** 退出项目作用域（/chat 页挂载时调用，恢复全局全量列表行为）。 */
+  function exitProjectScope() {
+    boundProjectId.value = null
+  }
+
+  /**
+   * 在当前项目作用域内即时创建一条会话（区别于草稿懒建：共享会话需要在创建时
+   * 就确定 visibility）。创建后置顶并选中。
+   */
+  async function createProjectConversation(visibility: 'personal' | 'shared' = 'personal') {
+    const conv = await createConversation({
+      space_id: selectedSpaceId.value || null,
+      bound_project_id: boundProjectId.value || undefined,
+      visibility,
+      model: resolveModelForNewConversation(),
+    })
+    upsertConversationAtTop(conv)
+    await selectConversation(conv.id)
+    return conv
+  }
+
+  /** 切换会话可见性（项目个人 ↔ 项目共享），成功后同步本地列表。 */
+  async function setConversationVisibility(id: string, visibility: 'personal' | 'shared') {
+    const updated = await patchConversation(id, { visibility })
+    patchConversationLocal(id, updated)
+    return updated
   }
 
   // 已归档会话列表（「查看已归档」入口；与默认列表分开存放）。
@@ -1921,6 +1979,7 @@ export const useChatStore = defineStore('chat', () => {
         materializedConversation = await createConversation({
           space_id: selectedSpaceId.value || null,
           model: resolveModelForNewConversation(),
+          ...(boundProjectId.value ? { bound_project_id: boundProjectId.value } : {}),
         })
         pendingConversation.value = materializedConversation
         currentConversationId.value = materializedConversation.id
@@ -2661,6 +2720,134 @@ export const useChatStore = defineStore('chat', () => {
     scheduleRuntimePoll(convId, 1200)
   }
 
+  // ========================================================================
+  // 实时同步（WebSocket）—— 项目共享会话多用户实时一致
+  // ------------------------------------------------------------------------
+  // 连接 ws/chat/（鉴权同 notifications，握手自动带 HTTP-only JWT cookie）。本人自动
+  // 加入 user 分组（自有会话事件）；项目作用域下额外订阅 project 分组（成员可见共享会话）。
+  // 后端在「新建 / 进行中 / 新消息 / 完成」广播，这里并进 conversations / messages。
+  // best-effort：失败指数退避重连，绝不阻断 REST/SSE 主链路。
+  // ========================================================================
+  let chatWs: WebSocket | null = null
+  let chatWsRetry = 0
+  let chatWsRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+  function chatRealtimeUrl(): string {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${location.host}/ws/chat/`
+  }
+
+  function sendProjectSubscription() {
+    const pid = boundProjectId.value
+    if (pid && chatWs && chatWs.readyState === WebSocket.OPEN)
+      chatWs.send(JSON.stringify({ action: 'subscribe_project', project_id: pid }))
+  }
+
+  function applyRealtimeConversation(conv: Conversation, _event?: string) {
+    // 项目作用域：只接受本项目会话，避免本人在别处的会话串进当前项目列表。
+    if (boundProjectId.value && (conv as any).bound_project_id !== boundProjectId.value)
+      return
+    const idx = conversations.value.findIndex(c => c.id === conv.id)
+    if (idx >= 0)
+      conversations.value[idx] = { ...conversations.value[idx], ...conv }
+    else
+      conversations.value = [conv, ...conversations.value]
+  }
+
+  function applyRealtimeMessage(evt: { conversation_id?: string, conversation_status?: string, message?: ConversationMessage }) {
+    const cid = evt.conversation_id
+    if (!cid)
+      return
+    // 同步列表项状态（运行中/完成圆点实时变化）+ 置顶。
+    const idx = conversations.value.findIndex(c => c.id === cid)
+    if (idx >= 0) {
+      const updated = { ...conversations.value[idx], ...(evt.conversation_status ? { status: evt.conversation_status as Conversation['status'] } : {}) }
+      conversations.value.splice(idx, 1)
+      conversations.value = [updated, ...conversations.value]
+    }
+    // 旁观者打字机收尾：本端非发起者(abortController 为空)但处于流式态(WS 驱动)，
+    // 收到最终消息时先清掉打字机气泡，再按 id 去重追加正式消息。发起者(abortController
+    // 非空)不动，靠 SSE/finalize 自行合并。
+    if (cid === currentConversationId.value && evt.message?.id) {
+      if (isStreaming.value && !abortController.value)
+        resetStreamingState()
+      if (!isStreaming.value && !messages.value.some(m => m.id === evt.message!.id))
+        messages.value.push(evt.message)
+    }
+  }
+
+  function applyRealtimeStream(evt: { conversation_id?: string, payload?: any }) {
+    const cid = evt.conversation_id
+    // 只渲染当前查看会话的流；发起者本人靠 SSE，跳过 WS 回声。
+    if (!cid || cid !== currentConversationId.value || abortController.value)
+      return
+    const payload = evt.payload
+    if (!payload || !payload.type)
+      return
+    // 旁观者收到首个流事件 → 进入流式态（清掉上一轮残留），后续复用同一 SSE 分派。
+    if (!isStreaming.value) {
+      resetStreamingState()
+      isStreaming.value = true
+    }
+    handleSSEEvent(payload)
+  }
+
+  function handleRealtimeRaw(raw: string) {
+    let msg: any
+    try {
+      msg = JSON.parse(raw)
+    }
+    catch {
+      return
+    }
+    if (msg.type === 'conversation' && msg.conversation)
+      applyRealtimeConversation(msg.conversation as Conversation, msg.event)
+    else if (msg.type === 'message')
+      applyRealtimeMessage(msg)
+    else if (msg.type === 'stream')
+      applyRealtimeStream(msg)
+  }
+
+  function connectRealtime() {
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined')
+      return
+    if (chatWs && chatWs.readyState <= WebSocket.OPEN) {
+      sendProjectSubscription()
+      return
+    }
+    try {
+      chatWs = new WebSocket(chatRealtimeUrl())
+    }
+    catch {
+      return
+    }
+    chatWs.onopen = () => {
+      chatWsRetry = 0
+      sendProjectSubscription()
+    }
+    chatWs.onmessage = (e: MessageEvent) => handleRealtimeRaw(e.data)
+    chatWs.onclose = (e: CloseEvent) => {
+      chatWs = null
+      if (e.code === 4401)
+        return
+      if (chatWsRetry >= 10)
+        return
+      const delay = Math.min(1000 * 2 ** chatWsRetry, 30000)
+      chatWsRetry++
+      chatWsRetryTimer = setTimeout(connectRealtime, delay)
+    }
+    chatWs.onerror = () => {}
+  }
+
+  function disconnectRealtime() {
+    if (chatWsRetryTimer)
+      clearTimeout(chatWsRetryTimer)
+    chatWsRetryTimer = null
+    chatWsRetry = 0
+    chatWs?.close()
+    chatWs = null
+  }
+
   return {
     // State
     conversations,
@@ -2716,6 +2903,14 @@ export const useChatStore = defineStore('chat', () => {
     fetchArchivedConversations,
     // Actions
     fetchConversations,
+    // 项目作用域（项目作战室复用全局 chat）
+    boundProjectId,
+    enterProjectScope,
+    exitProjectScope,
+    createProjectConversation,
+    setConversationVisibility,
+    connectRealtime,
+    disconnectRealtime,
     selectConversation,
     createNewConversation,
     removeConversation,

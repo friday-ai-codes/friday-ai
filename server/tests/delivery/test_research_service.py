@@ -12,10 +12,10 @@ import pytest
 
 from agents.models import AgentSession
 from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
     PartialPlan,
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
@@ -36,9 +36,10 @@ def _make_repo() -> Repository:
     )
 
 
-def _make_session() -> PlanSession:
-    return PlanSession.objects.create(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+def _make_session() -> ConvergenceSession:
+    return ConvergenceSession.objects.create(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
 
 
@@ -56,8 +57,9 @@ def _sample_content(repo_id: str) -> dict:
 @pytest.mark.asyncio
 async def test_create_tasks_idempotent() -> None:
     """同 deep_repos 两次 create → RepoResearchTask 数不翻倍（get_or_create 幂等）。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}",
@@ -82,8 +84,9 @@ async def test_create_tasks_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_state_transitions_table() -> None:
     """pending→running→done；另一 task →failed + error 落库。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo_a = await Repository.objects.acreate(
         name=f"a-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -123,8 +126,9 @@ async def test_state_transitions_table() -> None:
 @pytest.mark.asyncio
 async def test_mark_failed_wraps_non_dict() -> None:
     """mark_failed 非 dict error 包成 {"message": str}。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -139,8 +143,9 @@ async def test_mark_failed_wraps_non_dict() -> None:
 @pytest.mark.asyncio
 async def test_record_partial_done_and_hash() -> None:
     """record_partial → PartialPlan.valid True + content_hash 非空 + 两次同内容 hash 一致；task done。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -166,8 +171,9 @@ async def test_record_partial_done_and_hash() -> None:
 @pytest.mark.asyncio
 async def test_retry_task_isolation() -> None:
     """RESEARCH-02 核心：retry_task(A failed) → A pending + attempt=1；B/C 与 session 不变。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repos = [
         await Repository.objects.acreate(
@@ -196,14 +202,15 @@ async def test_retry_task_isolation() -> None:
     assert task_b.attempt == 0
     assert task_c.status == RepoResearchTaskStatus.DONE
     await session.arefresh_from_db()
-    assert session.status == PlanSessionStatus.RESEARCHING
+    assert session.current_stage == "research"
 
 
 @pytest.mark.asyncio
 async def test_retry_non_failed_raises() -> None:
     """对 running task retry → ValueError。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -219,8 +226,9 @@ async def test_retry_non_failed_raises() -> None:
 @pytest.mark.asyncio
 async def test_retry_stale_task_resets_pending() -> None:
     """IN-01：stale 任务（重索引失效）可经 retry_task 复位 pending（与 failed 对等的恢复路径）。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -237,8 +245,9 @@ async def test_retry_stale_task_resets_pending() -> None:
 @pytest.mark.asyncio
 async def test_retry_rejected_when_session_not_researching() -> None:
     """IN-01：session 已 merging（barrier 已 fire）时 retry failed 任务被拒，避免状态不一致。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.MERGING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="merge", status=ConvergenceSessionStatus.RUNNING
     )
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -257,8 +266,9 @@ async def test_retry_rejected_when_session_not_researching() -> None:
 @pytest.mark.asyncio
 async def test_invalidate_for_repo_stale() -> None:
     """RESEARCH-03 核心：invalidate_for_repo(X) → partial 失效 + task stale + 计数=1；其他 repo 不受影响；幂等。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
     repo_x = await Repository.objects.acreate(
         name=f"x-{uuid.uuid4().hex[:6]}", git_url=f"https://x/{uuid.uuid4().hex[:6]}.git",
@@ -345,9 +355,10 @@ async def test_mark_stale_running_only_is_noop() -> None:
     assert task_running.status == RepoResearchTaskStatus.RUNNING
 
 
-async def _make_session_async() -> PlanSession:
-    return await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT, status=PlanSessionStatus.RESEARCHING
+async def _make_session_async() -> ConvergenceSession:
+    return await ConvergenceSession.objects.acreate(
+        process_type="technical_plan", entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research", status=ConvergenceSessionStatus.WAITING_EVENT
     )
 
 

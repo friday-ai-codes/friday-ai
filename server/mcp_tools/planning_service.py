@@ -230,8 +230,8 @@ def build_coding_plan(
 ) -> PlanningResult:
     """[DEPRECATED — UNIFY-04] 旧确定性单仓 coding plan seam。
 
-    ``create_coding_plan`` 入口已收口到 ``plan_orchestration`` 统一编排（经
-    ``mcp_tools.orchestration_delegate.delegate_plan_orchestration`` 产 canonical §7
+    ``create_coding_plan`` 入口已收口到 ``process_runtime`` 统一编排（经
+    ``mcp_tools.orchestration_delegate.delegate_process_runtime`` 产 canonical §7
     MergedPlan，再经 ``map_canonical_to_coding_plan`` 映射回旧响应字段）。本函数**保留不删**
     （渲染/兼容 helper、被既有测试引用），但不再作 MCP create_coding_plan 的方案生成路径
     （对齐「seam 被取代但函数保留」）。

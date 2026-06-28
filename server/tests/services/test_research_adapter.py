@@ -14,15 +14,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
     PartialPlan,
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
 from repositories.models import Repository
-from services.plan_orchestration import ResearchDispatchAdapter
+from services.process_runtime import ResearchDispatchAdapter
 from subagent.models import SubAgentSession
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -44,17 +43,20 @@ def session_with_candidates(db):
     repo_high = _make_repo("high")
     repo_medium = _make_repo("medium")
     repo_low = _make_repo("low")
-    session = PlanSession.objects.create(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RESEARCHING,
-        decomposition={"requirement_text": "统一鉴权改造"},
-        recall_context=[{"kind": "work_item", "title": "历史鉴权需求", "score": 0.9}],
-        routing={
-            "candidates": [
-                {"repo_id": str(repo_high.id), "confidence": "high", "repository_name": "high"},
-                {"repo_id": str(repo_medium.id), "confidence": "medium", "repository_name": "medium"},
-                {"repo_id": str(repo_low.id), "confidence": "low", "repository_name": "low"},
-            ]
+    session = ConvergenceSession.objects.create(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research",
+        stage_state={
+            "decomposition": {"requirement_text": "统一鉴权改造"},
+            "recall_context": [{"kind": "work_item", "title": "历史鉴权需求", "score": 0.9}],
+            "routing": {
+                "candidates": [
+                    {"repo_id": str(repo_high.id), "confidence": "high", "repository_name": "high"},
+                    {"repo_id": str(repo_medium.id), "confidence": "medium", "repository_name": "medium"},
+                    {"repo_id": str(repo_low.id), "confidence": "low", "repository_name": "low"},
+                ]
+            },
         },
     )
     return session, repo_high, repo_medium, repo_low
@@ -153,10 +155,11 @@ async def test_prompt_injects_context(session_with_candidates) -> None:
 @pytest.mark.asyncio
 async def test_no_candidates_noop() -> None:
     """routing 空 candidates → 不建 task、不派容器、返回 skipped=no_candidates。"""
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RESEARCHING,
-        routing={},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research",
+        stage_state={"routing": {}},
     )
     dispatcher, captured = _mock_dispatcher()
     adapter = ResearchDispatchAdapter()
@@ -302,14 +305,17 @@ async def test_duplicate_candidates_deduped(db) -> None:
         default_branch="main",
         index_status="indexed",
     )
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RESEARCHING,
-        routing={
-            "candidates": [
-                {"repo_id": str(repo_low.id), "confidence": "low"},
-                {"repo_id": str(repo_low.id), "confidence": "low"},  # 重复
-            ]
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research",
+        stage_state={
+            "routing": {
+                "candidates": [
+                    {"repo_id": str(repo_low.id), "confidence": "low"},
+                    {"repo_id": str(repo_low.id), "confidence": "low"},  # 重复
+                ]
+            }
         },
     )
     dispatcher, captured = _mock_dispatcher()
@@ -334,10 +340,11 @@ async def test_missing_git_url_fails_task_without_container(db) -> None:
         default_branch="main",
         index_status="indexed",
     )
-    session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.CHAT,
-        status=PlanSessionStatus.RESEARCHING,
-        routing={"candidates": [{"repo_id": str(repo.id), "confidence": "high"}]},
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="research",
+        stage_state={"routing": {"candidates": [{"repo_id": str(repo.id), "confidence": "high"}]}},
     )
     dispatcher, captured = _mock_dispatcher()
     adapter = ResearchDispatchAdapter()

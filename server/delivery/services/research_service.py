@@ -141,18 +141,18 @@ class ResearchService:
 
     @sync_to_async
     def _retry_task_sync(self, task: RepoResearchTask) -> RepoResearchTask:
-        from delivery.models import PlanSession, PlanSessionStatus
+        from delivery.models import ConvergenceSession
 
-        # session 状态前置校验（IN-01）：仅 researching 可重试/复位
-        session_status = (
-            PlanSession.objects.filter(id=task.session_id)
-            .values_list("status", flat=True)
+        # session 状态前置校验（IN-01）：仅 research stage 可重试/复位
+        current_stage = (
+            ConvergenceSession.objects.filter(id=task.session_id)
+            .values_list("current_stage", flat=True)
             .first()
         )
-        if session_status != PlanSessionStatus.RESEARCHING:
+        if current_stage != "research":
             raise ValueError(
-                f"RepoResearchTask {task.id} 所属 PlanSession 非 researching"
-                f"（status={session_status}），不可重试/复位"
+                f"RepoResearchTask {task.id} 所属 ConvergenceSession 非 research stage"
+                f"（current_stage={current_stage}），不可重试/复位"
             )
         updated = RepoResearchTask.objects.filter(
             id=task.id,

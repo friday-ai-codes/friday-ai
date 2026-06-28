@@ -33,15 +33,15 @@ class ArchitectMerge(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # 归属一次 PlanSession 编排；删 session 级联删其融合记录
+    # 归属一次 ConvergenceSession 收敛；删 session 级联删其融合记录
     session = models.ForeignKey(
-        "delivery.PlanSession",
+        "delivery.ConvergenceSession",
         on_delete=models.CASCADE,
         related_name="architect_merges",
     )
-    # 软引用 PlanVersion.id（不建硬 FK 避免 delivery 内循环）；passed 时 40-02 写入，
-    # failed 时留 null（不落 canonical）。
-    merged_plan_version = models.UUIDField(null=True, blank=True)
+    # 软引用 ArtifactVersion.id（不建硬 FK 避免 delivery 内循环）；passed 时写入，
+    # failed 时留 null（不落产物）。
+    merged_artifact_version = models.UUIDField(null=True, blank=True)
     # fail-closed：未明确通过即视为失败（对齐 MERGE-02 拦截语义）
     validation_status = models.CharField(
         max_length=16,

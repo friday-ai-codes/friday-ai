@@ -51,8 +51,32 @@ class FeishuEventHandler(TriggerHandler):
             errors.append("缺少必需字段: space")
             return errors
 
-        # 专属端点模式：token 本身就是凭证，跳过 header token 校验
+        # 专属端点模式：token 本身就是凭证，跳过 header token 校验。
+        # 接线 input_schema 校验（此前 WorkflowTrigger.validate_input 未接入 dispatch）：
+        # 命中触发器若声明 input_schema，则对 raw_payload 跑 JSON Schema 校验。
         if trigger_token:
+            from workflows.models import WorkflowTrigger
+
+            trigger = (
+                await WorkflowTrigger.objects.filter(
+                    token=trigger_token,
+                    is_active=True,
+                    workflow__is_active=True,
+                )
+                .only("id", "input_schema")
+                .afirst()
+            )
+            if trigger is not None:
+                schema_errors = trigger.validate_input(context.raw_payload or {})
+                if schema_errors:
+                    logger.info(
+                        "feishu_trigger_input_invalid",
+                        category="caller",
+                        component="workflow_trigger",
+                        trigger_id=str(trigger.id),
+                        error_count=len(schema_errors),
+                    )
+                    errors.extend(schema_errors)
             return errors
 
         # 旧版共享端点：验证 webhook token

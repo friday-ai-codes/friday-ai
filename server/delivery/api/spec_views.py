@@ -51,7 +51,7 @@ def _detail_queryset():
         "document__current_version",
         "repository",
         "work_item",
-        "plan_version",
+        "artifact_version",
     ).prefetch_related(_DETAIL_PREFETCH)
 
 

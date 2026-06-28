@@ -75,6 +75,18 @@ const mrQuery = useQuery({
 })
 const mrs = computed<MergeRequest[]>(() => mrQuery.data.value ?? [])
 
+// ── 关联分支：从关联 PR/MR 归集去重的真实分支（替代占位）──────────
+const linkedBranches = computed(() => {
+  const seen = new Map<string, { name: string, mr?: MergeRequest }>()
+  for (const mr of mrs.value) {
+    if (mr.source_branch && !seen.has(mr.source_branch))
+      seen.set(mr.source_branch, { name: mr.source_branch, mr })
+    if (mr.target_branch && !seen.has(mr.target_branch))
+      seen.set(mr.target_branch, { name: mr.target_branch })
+  }
+  return [...seen.values()]
+})
+
 function mrStatusClass(status: string): string {
   switch (status) {
     case 'merged':
@@ -120,8 +132,8 @@ async function openView(artifact: Artifact) {
 
 <template>
   <section class="card" data-testid="workbench-deps-section">
-    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
-      <span class="icon-[lucide--network] text-primary" />
+    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2.5">
+      <span class="section-chip"><span class="icon-[lucide--network]" /></span>
       <h2 class="text-sm font-semibold text-foreground">
         {{ t('projects.workbench.deps.title') }}
       </h2>
@@ -201,16 +213,41 @@ async function openView(artifact: Artifact) {
         </div>
       </section>
 
-      <!-- 关联分支（Phase 85 占位）-->
+      <!-- 关联分支：从关联 PR/MR 归集的真实分支 -->
       <section class="space-y-2" data-testid="deps-branches">
         <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
           <span class="icon-[lucide--git-branch] text-primary" />
           {{ t('projects.workbench.deps.branchesTitle') }}
         </h3>
-        <p class="text-xs text-muted-foreground flex items-center gap-1.5">
-          <span class="icon-[lucide--clock]" />
-          {{ t('projects.workbench.deps.branchesDeferred') }}
+        <p v-if="linkedBranches.length === 0" class="text-sm text-muted-foreground py-4 text-center">
+          {{ t('projects.workbench.deps.branchesEmpty') }}
         </p>
+        <template v-else>
+          <p class="text-xs text-muted-foreground">
+            {{ t('projects.workbench.deps.branchesHint') }}
+          </p>
+          <ul class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
+            <li
+              v-for="b in linkedBranches"
+              :key="b.name"
+              class="flex items-center gap-3 px-4 py-3"
+              data-testid="deps-branch-row"
+            >
+              <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
+              <code class="text-sm text-foreground truncate font-mono">{{ b.name }}</code>
+              <a
+                v-if="b.mr?.url"
+                :href="b.mr.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="ml-auto shrink-0 text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                :title="t('projects.workbench.deps.mergeRequestsTitle')"
+              >
+                <span class="icon-[lucide--external-link]" />
+              </a>
+            </li>
+          </ul>
+        </template>
       </section>
 
       <!-- 关联仓库 -->
@@ -234,15 +271,17 @@ async function openView(artifact: Artifact) {
           {{ t('projects.workbench.deps.repositoriesEmpty') }}
         </div>
         <ul v-else class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
-          <li
+          <RouterLink
             v-for="repo in repos"
             :key="repo.id"
-            class="flex items-center gap-3 px-4 py-3"
+            :to="`/repositories/${repo.repository_id}`"
+            class="group flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
             data-testid="deps-repo-row"
           >
-            <span class="icon-[lucide--git-fork] text-muted-foreground" />
-            <span class="text-sm text-foreground truncate">{{ repo.repository_name }}</span>
-          </li>
+            <span class="icon-[lucide--git-fork] text-muted-foreground shrink-0" />
+            <span class="text-sm text-foreground truncate group-hover:text-primary transition-colors">{{ repo.repository_name }}</span>
+            <span class="icon-[lucide--chevron-right] ml-auto shrink-0 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+          </RouterLink>
         </ul>
       </section>
 
@@ -275,7 +314,7 @@ async function openView(artifact: Artifact) {
           >
             <div class="min-w-0">
               <p class="text-sm font-medium text-foreground truncate">
-                {{ node.name || node.entity_id || '—' }}
+                {{ node.title || node.name || node.entity_id || '—' }}
               </p>
               <p class="text-xs text-muted-foreground">
                 {{ node.kind }}<span v-if="node.relation"> · {{ node.relation }}</span>
@@ -302,7 +341,7 @@ async function openView(artifact: Artifact) {
             data-testid="deps-project-row"
           >
             <span class="icon-[lucide--folder] text-muted-foreground" />
-            <span class="text-sm text-foreground truncate">{{ node.name || node.entity_id || '—' }}</span>
+            <span class="text-sm text-foreground truncate">{{ node.title || node.name || node.entity_id || '—' }}</span>
           </li>
         </ul>
       </section>

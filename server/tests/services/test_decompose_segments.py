@@ -14,7 +14,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from agents.call_source import get_call_source
-from services.plan_orchestration.decompose_segments import (
+from services.process_runtime.decompose_segments import (
     _build_prompt,
     _content_to_text,
     _parse_segments_json,

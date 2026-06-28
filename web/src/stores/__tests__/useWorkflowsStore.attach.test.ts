@@ -68,7 +68,7 @@ beforeEach(() => {
 
 describe('useWorkflowsStore - attachChild / detachChild', () => {
   it('attachChild 写入 metadata.parentNodeId 并设相对坐标', () => {
-    store.nodes = [makeNode('parent'), makeNode('child')]
+    store.nodes.push(makeNode('parent'), makeNode('child'))
 
     store.attachChild('child', 'parent', { x: 20, y: 30 })
 
@@ -78,10 +78,10 @@ describe('useWorkflowsStore - attachChild / detachChild', () => {
   })
 
   it('detachChild 清除 metadata.parentNodeId（不残留键）并恢复绝对坐标', () => {
-    store.nodes = [
+    store.nodes.push(
       makeNode('parent'),
       makeNode('child', { metadata: { parentNodeId: 'parent', foo: 'bar' }, position: { x: 20, y: 30 } }),
-    ]
+    )
 
     store.detachChild('child', { x: 400, y: 500 })
 
@@ -94,7 +94,7 @@ describe('useWorkflowsStore - attachChild / detachChild', () => {
 
   it('attach 入历史一次（单步可撤销，含 fetchWorkflow 初始 seed）', () => {
     // 模拟 fetchWorkflow seed 初始快照（historyIndex=0），再 attach 应再入一帧 → canUndo
-    store.nodes = [makeNode('parent'), makeNode('child')]
+    store.nodes.push(makeNode('parent'), makeNode('child'))
     store.saveToHistory()
     store.attachChild('child', 'parent', { x: 1, y: 2 })
     expect(store.hasUnsavedChanges).toBe(true)
@@ -102,12 +102,12 @@ describe('useWorkflowsStore - attachChild / detachChild', () => {
   })
 
   it('getChildNodes 取某父的全部附着子节点', () => {
-    store.nodes = [
+    store.nodes.push(
       makeNode('parent'),
       makeNode('c1', { metadata: { parentNodeId: 'parent' } }),
       makeNode('c2', { metadata: { parentNodeId: 'parent' } }),
       makeNode('other'),
-    ]
+    )
     const children = store.getChildNodes('parent')
     expect(children.map(n => n.id).sort()).toEqual(['c1', 'c2'])
   })
@@ -115,16 +115,16 @@ describe('useWorkflowsStore - attachChild / detachChild', () => {
 
 describe('useWorkflowsStore - removeNode 级联删除', () => {
   it('删父方案节点时级联删除其附着子节点 + 两者相关边', () => {
-    store.nodes = [
+    store.nodes.push(
       makeNode('parent'),
       makeNode('child', { metadata: { parentNodeId: 'parent' } }),
       makeNode('keep'),
-    ]
-    store.edges = [
+    )
+    store.edges.push(
       { id: 'e1', source: 'parent', sourcePort: 'default', target: 'keep', targetPort: 'default', condition: null },
       { id: 'e2', source: 'keep', sourcePort: 'default', target: 'child', targetPort: 'default', condition: null },
       { id: 'e3', source: 'keep', sourcePort: 'default', target: 'keep', targetPort: 'default', condition: null },
-    ]
+    )
 
     store.removeNode('parent')
 
@@ -134,11 +134,11 @@ describe('useWorkflowsStore - removeNode 级联删除', () => {
   })
 
   it('删普通节点（无子）行为零回归：只删自身 + 连边', () => {
-    store.nodes = [makeNode('a'), makeNode('b'), makeNode('c')]
-    store.edges = [
+    store.nodes.push(makeNode('a'), makeNode('b'), makeNode('c'))
+    store.edges.push(
       { id: 'e1', source: 'a', sourcePort: 'default', target: 'b', targetPort: 'default', condition: null },
       { id: 'e2', source: 'b', sourcePort: 'default', target: 'c', targetPort: 'default', condition: null },
-    ]
+    )
 
     store.removeNode('b')
 
@@ -150,8 +150,8 @@ describe('useWorkflowsStore - removeNode 级联删除', () => {
 
 describe('useWorkflowsStore - metadata.parentNodeId 持久化往返', () => {
   it('attach 后经 saveWorkflow（toBackendNodes）上送 metadata.parentNodeId，reload（toStoreNodes）后保留', async () => {
-    store.currentWorkflow = { id: 'wf1', nodes: [], edges: [] } as any
-    store.nodes = [makeNode('parent'), makeNode('child')]
+    ;(store as { currentWorkflow: unknown }).currentWorkflow = { id: 'wf1', nodes: [], edges: [] }
+    store.nodes.push(makeNode('parent'), makeNode('child'))
     store.attachChild('child', 'parent', { x: 10, y: 20 })
 
     // mock 后端 bulk-update：捕获上送 payload，并把节点以后端 snake_case 形态回显

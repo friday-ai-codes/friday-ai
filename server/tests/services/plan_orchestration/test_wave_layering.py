@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from services.plan_orchestration import build_repo_dep_edges, build_repo_waves
+from services.process_runtime import build_repo_dep_edges, build_repo_waves
 
 
 def _task(tid: str, repo: str, deps: list[str] | None = None) -> dict:

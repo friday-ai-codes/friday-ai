@@ -376,15 +376,6 @@ class McpWorkItemTechnicalPlan(models.Model):
     similar_cases = models.JSONField(default=list, blank=True)
     feishu_document_id = models.CharField(max_length=128, blank=True, default="")
     feishu_document_url = models.CharField(max_length=500, blank=True, default="")
-    # canonical 软链（DOMAIN §5.2，Phase 37）：存 delivery.TechnicalPlan.id；
-    # **非跨 app 硬 FK**（避免 mcp_tools→delivery 耦合 + 循环依赖）——读写经 TechnicalPlanService。
-    canonical_plan_id = models.UUIDField(
-        null=True,
-        blank=True,
-        db_index=True,
-        verbose_name="canonical 方案软链",
-        help_text="canonical delivery.TechnicalPlan.id 软链，非 FK（DOMAIN §5.2）",
-    )
     comment_result = models.JSONField(default=dict, blank=True)
     retry_state = models.JSONField(default=dict, blank=True)
     error_stage = models.CharField(max_length=80, blank=True, default="")

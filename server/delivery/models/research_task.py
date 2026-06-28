@@ -39,7 +39,7 @@ class RepoResearchTask(models.Model):
 
     # 归属一次 PlanSession 编排；删 session 级联删其调研子任务
     session = models.ForeignKey(
-        "delivery.PlanSession",
+        "delivery.ConvergenceSession",
         on_delete=models.CASCADE,
         related_name="research_tasks",
     )

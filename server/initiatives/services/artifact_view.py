@@ -86,7 +86,7 @@ async def aget_artifact_view(artifact: Any) -> dict[str, Any]:
             )
 
             client = await create_feishu_doc_client_for_project(space)
-            markdown, _blocks = await client.get_document_content(token)
+            markdown, _blocks = await client.get_document_content_by_url(artifact.url or token)
             return {
                 **base,
                 "render_type": "markdown",

@@ -1,4 +1,8 @@
-"""delivery_knowledge_search 节点与 plan_generation hook 测试（Phase 16-03）。"""
+"""delivery_knowledge_search 节点测试（Phase 16-03）。
+
+注：原 ``ai_plan_generation`` 节点（``AIPlanGenerationNode``）已随底盘重构删除，相关
+注入相似历史的 hook 测试同步移除；本文件聚焦 DeliveryKnowledgeSearchNode 检索节点。
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,6 @@ import pytest
 
 from knowledge.retrieval_types import EntityMetadata, ProvenanceLinks, SearchResultDTO
 from workflows.nodes.ai.delivery_knowledge_search import DeliveryKnowledgeSearchNode
-from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 from workflows.nodes.base import ExecutionContext
 
 pytestmark = pytest.mark.django_db
@@ -122,33 +125,3 @@ async def test_delivery_node_empty_query_failed() -> None:
     node = DeliveryKnowledgeSearchNode()
     result = await node.execute(_ctx(node_config={"query": "  "}))
     assert result.status == "failed"
-
-
-@pytest.mark.asyncio
-async def test_plan_generation_injects_similar_history() -> None:
-    node = AIPlanGenerationNode()
-    node._similar_history_markdown = "## 相似历史交付\n- **历史需求**"
-    context = _ctx(node_config={"user_prompt": "实现 SSO 登录"})
-    context.render_template = lambda tpl: tpl  # type: ignore[method-assign]
-    prompt = node.get_user_prompt(context)
-    assert "相似历史交付" in prompt
-
-
-@pytest.mark.asyncio
-async def test_plan_generation_auto_inject_disabled() -> None:
-    node = AIPlanGenerationNode()
-    with patch(
-        "knowledge.retrieval.DeliveryKnowledgeSearchService.search_similar",
-        new=AsyncMock(),
-    ) as mock_search:
-        context = _ctx(
-            node_config={
-                "user_prompt": "需求",
-                "auto_inject_similar_history": False,
-            }
-        )
-        context.render_template = lambda tpl: tpl  # type: ignore[method-assign]
-        node._similar_history_markdown = ""
-        prompt = node.get_user_prompt(context)
-        assert "相似历史交付" not in prompt
-        mock_search.assert_not_called()

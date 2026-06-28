@@ -115,7 +115,7 @@ def test_create_coding_plan_delegates_single_repo(
             status="completed", repo_id=repo_id, repo_name=indexed_repository.name
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = _post_create_coding_plan(client, repo_id)
 
@@ -146,7 +146,7 @@ def test_create_coding_plan_maps_canonical_task_fields(
             status="completed", repo_id=repo_id, repo_name=indexed_repository.name
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = _post_create_coding_plan(client, repo_id)
 
@@ -186,7 +186,7 @@ def test_create_coding_plan_response_shape_snapshot(
             status="completed", repo_id=repo_id, repo_name=indexed_repository.name
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = _post_create_coding_plan(client, repo_id)
 
@@ -220,7 +220,7 @@ def test_create_coding_plan_persists_plan_and_version(
             status="completed", repo_id=repo_id, repo_name=indexed_repository.name
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = _post_create_coding_plan(client, repo_id)
 
@@ -258,7 +258,7 @@ def test_create_coding_plan_partial_carries_session(
             status="partial", repo_id=repo_id, repo_name=indexed_repository.name
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = _post_create_coding_plan(client, repo_id)
 

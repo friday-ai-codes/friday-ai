@@ -78,14 +78,15 @@ def test_registration_and_schema_shapes() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_persisted_round_sends_card_and_suspends() -> None:
-    from delivery.models import PlanSession, PlanSessionStatus
+    from delivery.models import ConvergenceSession, ConvergenceSessionStatus
     from delivery.services.clarification_service import ClarificationService
     from workflows.nodes.integrations.clarification_card import ClarificationCardNode
 
-    session = await PlanSession.objects.acreate(
+    session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
         entrypoint="workflow",
-        status=PlanSessionStatus.CLARIFYING,
-        decomposition={"requirement_text": "需求"},
+        status=ConvergenceSessionStatus.WAITING_CLARIFICATION,
+        stage_state={"decomposition": {"requirement_text": "需求"}},
     )
     clar = await ClarificationService().create_round(
         session,

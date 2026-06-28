@@ -12,11 +12,10 @@ import uuid
 import pytest
 
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from repositories.models import Repository
 
@@ -31,17 +30,17 @@ def _make_repo() -> Repository:
     )
 
 
-def _make_plan_version() -> PlanVersion:
-    plan = TechnicalPlan.objects.create(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return PlanVersion.objects.create(plan=plan, version=1, content={"a": 1})
+def _make_artifact_version() -> ArtifactVersion:
+    plan = Artifact.objects.create(artifact_type="technical_plan")
+    return ArtifactVersion.objects.create(artifact=plan, version_no=1, content={"a": 1})
 
 
 @pytest.mark.django_db
 def test_repo_coding_task_defaults() -> None:
     """默认 status=pending、wave=0、attempt=0、produced_artifacts={}、follow_openspec=False、error={}。"""
-    plan_version = _make_plan_version()
+    artifact_version = _make_artifact_version()
     repo = _make_repo()
-    task = RepoCodingTask.objects.create(plan_version=plan_version, repository=repo)
+    task = RepoCodingTask.objects.create(artifact_version=artifact_version, repository=repo)
 
     assert task.status == RepoCodingTaskStatus.PENDING
     assert task.wave == 0
@@ -66,11 +65,11 @@ def test_db_table_and_status_choices() -> None:
 @pytest.mark.django_db
 def test_depends_on_is_directed_self_m2m() -> None:
     """depends_on 是 symmetrical=False 有向 self-M2M——A→B 不蕴含 B→A。"""
-    plan_version = _make_plan_version()
+    artifact_version = _make_artifact_version()
     repo_a = _make_repo()
     repo_b = _make_repo()
-    task_a = RepoCodingTask.objects.create(plan_version=plan_version, repository=repo_a)
-    task_b = RepoCodingTask.objects.create(plan_version=plan_version, repository=repo_b)
+    task_a = RepoCodingTask.objects.create(artifact_version=artifact_version, repository=repo_a)
+    task_b = RepoCodingTask.objects.create(artifact_version=artifact_version, repository=repo_b)
 
     task_a.depends_on.add(task_b)
 
@@ -83,7 +82,7 @@ def test_depends_on_is_directed_self_m2m() -> None:
 
 @pytest.mark.django_db
 def test_meta_indexes() -> None:
-    """Meta.indexes 含 (plan_version,wave,status) 与 (repository) 两组字段。"""
+    """Meta.indexes 含 (artifact_version,wave,status) 与 (repository) 两组字段。"""
     index_field_sets = {tuple(idx.fields) for idx in RepoCodingTask._meta.indexes}
-    assert ("plan_version", "wave", "status") in index_field_sets
+    assert ("artifact_version", "wave", "status") in index_field_sets
     assert ("repository",) in index_field_sets

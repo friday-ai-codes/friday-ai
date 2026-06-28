@@ -135,8 +135,8 @@ function syncDotClass(status: string): string {
 
 <template>
   <section class="card" data-testid="workbench-docs-section">
-    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
-      <span class="icon-[lucide--files] text-primary" />
+    <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2.5">
+      <span class="section-chip"><span class="icon-[lucide--files]" /></span>
       <h2 class="text-sm font-semibold text-foreground">
         {{ t('projects.workbench.docs.title') }}
       </h2>

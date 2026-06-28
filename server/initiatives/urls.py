@@ -10,7 +10,9 @@ from initiatives.views import (
     ProjectBranchListCreateView,
     ProjectCursorRulesView,
     ProjectDetailView,
+    ProjectDescriptionGenerateView,
     ProjectFeatureListView,
+    ProjectGalaxyView,
     ProjectGraphView,
     ProjectIdeHookAssetsView,
     ProjectKnowledgeLinkView,
@@ -195,10 +197,21 @@ urlpatterns = [
         ProjectFeatureListView.as_view(),
         name="project-feature-list",
     ),
+    path(
+        "<uuid:project_id>/description/generate/",
+        ProjectDescriptionGenerateView.as_view(),
+        name="project-description-generate",
+    ),
     # 项目基础搜索（WB-05，84-01）
     path(
         "<uuid:project_id>/search/",
         ProjectSearchView.as_view(),
         name="project-search",
+    ),
+    # 项目级关系星图（项目作战室 P4）
+    path(
+        "<uuid:project_id>/galaxy/",
+        ProjectGalaxyView.as_view(),
+        name="project-galaxy",
     ),
 ]

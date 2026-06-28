@@ -51,6 +51,20 @@ _UPSERT_BATCH_SIZE = 100
 _SCHEMA_KEYS = set(KNOWLEDGE_PAYLOAD_INDEXED_FIELDS) | set(KNOWLEDGE_PAYLOAD_REQUIRED_FIELDS)
 
 
+def _vector_project_id(entity: KnowledgeEntity, version: KnowledgeEntityVersion) -> str:
+    """Return the visibility project id used by vector filters.
+
+    ``KnowledgeEntity.space_id`` is a FK to ``projects.Space`` for DB integrity.
+    Project-scoped document sources also carry the Initiative Project id in
+    version payload; vector retrieval filters use that narrower project id.
+    """
+    payload = version.payload if isinstance(version.payload, dict) else {}
+    project_id = payload.get("project_id")
+    if project_id:
+        return str(project_id)
+    return str(entity.space_id) if entity.space_id else ""
+
+
 def build_knowledge_points(
     *,
     entity: KnowledgeEntity,
@@ -92,7 +106,7 @@ def build_knowledge_points(
             "entity_id": str(entity.id),
             "version": version.version,
             "is_latest": True,
-            "project_id": str(entity.space_id) if entity.space_id else "",
+            "project_id": _vector_project_id(entity, version),
             "repository_id": str(entity.repository_id) if entity.repository_id else "",
             "source_kind": entity.source_kind,
             "event_time": version.event_time.isoformat(),

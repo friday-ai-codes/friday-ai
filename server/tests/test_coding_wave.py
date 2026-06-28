@@ -24,14 +24,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from repositories.models import Repository
-from services.plan_orchestration.wave_progression import aadvance_coding_waves
+from services.process_runtime.wave_progression import aadvance_coding_waves
 from subagent.models import SubAgentSession, TaskResult
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.base import ExecutionContext, NodeResult
@@ -165,13 +164,18 @@ async def _make_repo(name: str) -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return await PlanVersion.objects.acreate(plan=plan, version=1, content={})
+async def _make_plan_version() -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content={}, content_hash="h"
+    )
+    artifact.current_version = av
+    await artifact.asave(update_fields=["current_version", "updated_at"])
+    return av
 
 
 async def _settle_session(
-    plan_version: PlanVersion,
+    plan_version: ArtifactVersion,
     repo_id: str,
     *,
     ok: bool,
@@ -182,7 +186,7 @@ async def _settle_session(
     ``modified_files`` 默认 ``["f.py"]``（既有 wave 测试零回归）；happy-path 产物传递测试
     传入 openapi 契约文件名（如 ``["api/openapi.yaml"]``）以驱动 Plan 01 提取归类。
     """
-    task = await RepoCodingTask.objects.aget(plan_version=plan_version, repository_id=repo_id)
+    task = await RepoCodingTask.objects.aget(artifact_version=plan_version, repository_id=repo_id)
     sess = await SubAgentSession.objects.aget(id=task.subagent_session_id)
     sess.status = SubAgentSession.Status.COMPLETED if ok else SubAgentSession.Status.ERROR
     sess.last_error = "" if ok else "container boom"
@@ -279,7 +283,7 @@ async def test_multi_wave_progression(_dispatched: list[Any]) -> None:
         "title": "multi-wave",
         "branch_name": "feat/mw",
         "global_context": "",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_a, "name": "A", "coding_instruction": "a"},
             {
@@ -301,8 +305,8 @@ async def test_multi_wave_progression(_dispatched: list[Any]) -> None:
     assert _dispatched_repo_ids(_dispatched) == {id_a}
     assert r1.output["plan_version_id"] == str(pv.id)
     # RepoCodingTask：2 行；repoA running（含 subagent_session）、repoB pending。
-    task_a = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_a)
-    task_b = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_b)
+    task_a = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_a)
+    task_b = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_b)
     assert task_a.status == RepoCodingTaskStatus.RUNNING
     assert task_a.subagent_session_id is not None
     assert task_b.status == RepoCodingTaskStatus.PENDING
@@ -344,7 +348,7 @@ async def test_partial_success_finalize(_dispatched: list[Any]) -> None:
         "title": "partial",
         "branch_name": "feat/ps",
         "global_context": "",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_a, "name": "A", "coding_instruction": "a"},
             {"id": "t2", "repository_id": id_b, "name": "B", "coding_instruction": "b"},
@@ -365,7 +369,7 @@ async def test_partial_success_finalize(_dispatched: list[Any]) -> None:
     r1: NodeResult = await node.execute(ctx)
     assert r1.status == "waiting_event"
     assert _dispatched_repo_ids(_dispatched) == {id_a, id_b}
-    task_c = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_c)
+    task_c = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_c)
     assert task_c.status == RepoCodingTaskStatus.PENDING
 
     # ── repoA done、repoB failed → resume → repoC 被阻断、收尾 ──
@@ -380,9 +384,9 @@ async def test_partial_success_finalize(_dispatched: list[Any]) -> None:
     # 部分成功：repoA 出 MR → 节点 completed（mr_results 非空）。
     assert r2.status == "completed"
 
-    task_a = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_a)
-    task_b = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_b)
-    task_c = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_c)
+    task_a = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_a)
+    task_b = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_b)
+    task_c = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_c)
     assert task_a.status == RepoCodingTaskStatus.DONE
     assert task_b.status == RepoCodingTaskStatus.FAILED
     assert task_c.status == RepoCodingTaskStatus.FAILED
@@ -411,7 +415,7 @@ async def test_dependency_cycle_fails_fast(_dispatched: list[Any]) -> None:
         "title": "cycle",
         "branch_name": "feat/cy",
         "global_context": "",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_a, "dependencies": ["t2"], "coding_instruction": "a"},
             {"id": "t2", "repository_id": id_b, "dependencies": ["t1"], "coding_instruction": "b"},
@@ -448,7 +452,7 @@ async def test_artifact_passthrough(_dispatched: list[Any]) -> None:
         "title": "artifact-passthrough",
         "branch_name": "feat/ap",
         "global_context": "跨仓契约传递",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "建契约"},
             {
@@ -480,7 +484,7 @@ async def test_artifact_passthrough(_dispatched: list[Any]) -> None:
     assert _dispatched_repo_ids(_dispatched) == {id_fe}  # 仅 wave1 前端仓
 
     # 提取落库正确：后端 task.produced_artifacts["openapi"] 含契约文件。
-    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    task_be = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_be)
     assert task_be.status == RepoCodingTaskStatus.DONE
     assert task_be.produced_artifacts.get("available") is True
     assert openapi_file in task_be.produced_artifacts["openapi"]
@@ -508,7 +512,7 @@ async def test_artifact_passthrough_idempotent(_dispatched: list[Any]) -> None:
         "title": "idem",
         "branch_name": "feat/idem",
         "global_context": "",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "a"},
             {
@@ -531,7 +535,7 @@ async def test_artifact_passthrough_idempotent(_dispatched: list[Any]) -> None:
     _resume(ne, r1.output)
     await node.execute(ctx)
 
-    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    task_be = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_be)
     artifacts_first = dict(task_be.produced_artifacts)
     assert artifacts_first.get("available") is True
 
@@ -540,7 +544,7 @@ async def test_artifact_passthrough_idempotent(_dispatched: list[Any]) -> None:
     again = await aadvance_coding_waves(pv.id)
     assert again.get("waiting") is True  # advance 不冒泡、不重复派发
 
-    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    task_be = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_be)
     # 覆盖写 no-op：produced_artifacts 逐字不漂移（含 extracted_at）。
     assert task_be.produced_artifacts == artifacts_first
     assert _dispatched_repo_ids(_dispatched) == set()  # 无重复异常派发
@@ -558,7 +562,7 @@ async def test_artifact_extract_fail_soft(
 
     # _backfill_running_terminal 内局部 import build_produced_artifacts → patch 源模块属性。
     monkeypatch.setattr(
-        "services.plan_orchestration.artifact_extraction.build_produced_artifacts",
+        "services.process_runtime.artifact_extraction.build_produced_artifacts",
         _boom,
     )
 
@@ -571,7 +575,7 @@ async def test_artifact_extract_fail_soft(
         "title": "fail-soft",
         "branch_name": "feat/fs",
         "global_context": "",
-        "plan_version_id": str(pv.id),
+        "artifact_version_id": str(pv.id),
         "execution_plan": [
             {"id": "t1", "repository_id": id_be, "name": "后端", "coding_instruction": "a"},
             {
@@ -598,7 +602,7 @@ async def test_artifact_extract_fail_soft(
     assert r2.status == "waiting_event"
     assert _dispatched_repo_ids(_dispatched) == {id_fe}
 
-    task_be = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_be)
+    task_be = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_be)
     assert task_be.status == RepoCodingTaskStatus.DONE
     # 提取失败 → produced_artifacts 留空（未落库），下游注入段为空（零回归降级）。
     assert task_be.produced_artifacts == {}

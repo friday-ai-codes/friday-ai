@@ -146,7 +146,7 @@ async def fetch_feishu_document(
         )
 
     try:
-        markdown_content, blocks = await client.get_document_content(doc_id)
+        markdown_content, blocks = await client.get_document_content_by_url(document_id)
 
         # Extract title from first heading or first line
         title = _extract_title(markdown_content)

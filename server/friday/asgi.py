@@ -33,6 +33,7 @@ django_asgi_app = get_asgi_application()
 from channels.auth import AuthMiddlewareStack  # noqa: E402
 from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
 
+from chat.routing import websocket_urlpatterns as chat_ws_patterns  # noqa: E402
 from core.middleware import WSSEnforcementMiddleware  # noqa: E402
 from initiatives.routing import websocket_urlpatterns as project_ws_patterns  # noqa: E402
 from notifications.routing import websocket_urlpatterns as notification_ws_patterns  # noqa: E402
@@ -49,6 +50,7 @@ application = ProtocolTypeRouter(
                     + workflow_ws_patterns
                     + notification_ws_patterns
                     + project_ws_patterns
+                    + chat_ws_patterns
                 )
             )
         ),

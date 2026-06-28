@@ -131,7 +131,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
             schema={
                 "type": "object",
                 "properties": {
-                    "plan_version_id": {"type": "string"},
+                    "artifact_version_id": {"type": "string"},
                     "session_id": {"type": "string"},
                     "status": {"type": "string"},
                     # D2 产物迁移：内联 PlanVersion.content（§7 MergedPlan），下游
@@ -180,8 +180,8 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     async def execute(self, context: ExecutionContext) -> NodeResult:
         """建/恢复 PlanSession → 注入真实 adapters 驱动 engine.advance → 终态/挂起映射。"""
-        from services.plan_orchestration import (
-            adrive_plan_session_to_pause_or_terminal,
+        from services.process_runtime import (
+            adrive_convergence_session_to_pause_or_terminal,
         )
 
         log = logger.bind(execution_id=context.execution_id, node_id=context.node_id)
@@ -204,7 +204,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         # 3. 复用 43-02 共享续驱 helper（不造两套循环）：advance 至「重挂起短路点」
         #    （clarifying-未答 / researching-在途）或终态 {DONE, FAILED}；step 上限由 helper
         #    内部经 transition(fail) fail-soft 退出。行为等价于原内联循环。
-        session = await adrive_plan_session_to_pause_or_terminal(
+        session = await adrive_convergence_session_to_pause_or_terminal(
             engine, session, max_steps=_MAX_ADVANCE_STEPS
         )
 
@@ -232,7 +232,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         当成续推钥匙的二义性。session_id 存在即续推同一 session，``requirement_text`` /
         上游输入在 resume 路径被完全忽略（见 ``execute`` 的 resolve-先于-create 短路）。
         """
-        from delivery.models import PlanSession
+        from delivery.models import ConvergenceSession as PlanSession
 
         node_execution = getattr(context, "node_execution", None)
         if node_execution is None:
@@ -252,7 +252,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
         **仅当续推通道（_resolve_session）为空时**才被调用——首次需求来源限定为节点配置
         ``requirement_text`` 与 ``default`` 输入端口回退，绝不与续推 session_id 混用。
         """
-        from services.plan_orchestration import start_orchestration
+        from services.process_runtime import start_orchestration
 
         config = context.node_config or {}
         requirement_text = context.render_template(config.get("requirement_text", "") or "")
@@ -322,7 +322,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
     def _build_engine(self, context: ExecutionContext, session: Any) -> Any:
         """经共享 helper 注入真实 adapters 构造 engine（生产默认；测试可 monkeypatch override）。"""
-        from services.plan_orchestration import build_orchestration_engine
+        from services.process_runtime import build_orchestration_engine
 
         # CR-02：把本节点 NodeExecution id 透传给调研 dispatch——每个调研 SubAgentSession
         # 据此关联 node_execution，容器完成回调经既有 _schedule_workflow_resume 重新驱动
@@ -347,12 +347,12 @@ class AIPlanResearchNode(AIAgentBaseNode):
 
         from django.utils import timezone
 
-        from delivery.models import Clarification, PlanSessionStatus
+        from delivery.models import Clarification, ConvergenceSessionStatus
         from delivery.services.clarification_service import ClarificationService
-        from services.plan_orchestration import aall_research_tasks_terminal
+        from services.process_runtime import aall_research_tasks_terminal
         from workflows.models.execution import WorkflowEventSubscription
 
-        if session.status == PlanSessionStatus.CLARIFYING:
+        if session.status == ConvergenceSessionStatus.WAITING_CLARIFICATION:
             # WR-03：存在性判定收口 `ahas_pending`（结构化子题轮不误判：容器 answered_at 仍空
             # 但子题已答 / 反之）；取问题内容仍用显式查询（分工：判存在用谓词、取内容用查询）。
             if not await ClarificationService().ahas_pending(session.id):
@@ -390,7 +390,7 @@ class AIPlanResearchNode(AIAgentBaseNode):
                     },
                 )
 
-        if session.status == PlanSessionStatus.RESEARCHING:
+        if session.status == ConvergenceSessionStatus.WAITING_EVENT:
             terminal = await aall_research_tasks_terminal(session.id)
             if not terminal:
                 return NodeResult(
@@ -512,26 +512,30 @@ class AIPlanResearchNode(AIAgentBaseNode):
         / ``plan.execution_plan`` 落审批文档；``ai_coding`` 经 ``plan.plan_version_id`` 解析
         canonical ``PlanVersion`` 进入 wave 模式（多仓多 agent fan-out）。
         """
-        from delivery.models import PlanSessionStatus, PlanVersion
-        from services.plan_orchestration import render_merged_plan_markdown
+        from delivery.models import ArtifactVersion, ConvergenceSessionStatus
+        from services.process_runtime import render_merged_plan_markdown
 
-        if session.status == PlanSessionStatus.DONE:
-            pv_id = str(session.current_plan_version) if session.current_plan_version else None
+        if session.status == ConvergenceSessionStatus.DONE:
+            av_id = (
+                str(session.current_artifact_version_id)
+                if session.current_artifact_version_id
+                else None
+            )
             plan_content: dict[str, Any] = {}
-            # UNIFY-06：done 出口干净结构化 markdown（仅消费 canonical MergedPlan 结构化
-            # 字段，不 dump LLM 原文）；content 缺失/非 dict 时为空串（零回归不改 plan={}）。
+            # done 出口干净结构化 markdown（仅消费 technical_plan ArtifactVersion content）；
+            # content 缺失/非 dict 时为空串。
             plan_markdown = ""
-            if pv_id:
-                pv = await PlanVersion.objects.filter(id=pv_id).afirst()
-                if pv is not None and isinstance(pv.content, dict):
-                    # 注入 plan_version_id 供下游 ai_coding 解析 canonical PlanVersion 进 wave 模式
-                    plan_content = {**pv.content, "plan_version_id": pv_id}
-                    plan_markdown = render_merged_plan_markdown(pv.content)
+            if av_id:
+                av = await ArtifactVersion.objects.filter(id=av_id).afirst()
+                if av is not None and isinstance(av.content, dict):
+                    # 注入 artifact_version_id 供下游 ai_coding 解析产物进 wave 模式
+                    plan_content = {**av.content, "artifact_version_id": av_id}
+                    plan_markdown = render_merged_plan_markdown(av.content)
             return NodeResult(
                 status="completed",
                 output={
                     "session_id": str(session.id),
-                    "plan_version_id": pv_id,
+                    "artifact_version_id": av_id,
                     "status": "done",
                     "plan": plan_content,
                     "plan_markdown": plan_markdown,

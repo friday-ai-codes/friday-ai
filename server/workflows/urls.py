@@ -10,6 +10,7 @@ from workflows.api.analytics import (
     TokenCostView,
     TrendView,
 )
+from workflows.api.tool_endpoint import ToolInvokeView
 from workflows.api.views import (
     ActionLogDetailView,
     AlertRuleExecutionViewSet,
@@ -50,6 +51,12 @@ urlpatterns = router.urls + [
         "webhook/<path:path>/",
         WebhookTriggerView.as_view(),
         name="webhook-trigger",
+    ),
+    # P9「工作流即端点」：工具调用入口（tool_name == WorkflowTrigger.token）
+    path(
+        "workflows/tools/<str:tool_name>/invoke/",
+        ToolInvokeView.as_view(),
+        name="workflow-tool-invoke",
     ),
     # Execution context endpoint
     path(

@@ -391,6 +391,26 @@ def rebuild_project_context_job():
 
 
 @_with_scheduler_log_context
+def check_workflow_event_timeouts_job():
+    """Job wrapper：扫描超时的工作流事件订阅并按 timeout_action 处理（Chassis v2 · P0）。
+
+    与 ``cleanup_orchestration_checkpoints_job`` 同 ``call_command`` 模式（命令内部
+    自管事务 + 对 retry 目标 asyncio.run 重跑）。归因 system（scheduler 上下文）。
+    命令异常被本 wrapper 吞掉记日志，绝不打断 scheduler 主循环。
+    """
+    from django.core.management import call_command
+
+    log = logger.bind(job="check_workflow_event_timeouts")
+    log.info("job_start")
+
+    try:
+        call_command("check_timeouts")
+        log.info("job_complete")
+    except Exception as e:
+        log.exception("job_error", error=str(e))
+
+
+@_with_scheduler_log_context
 def backfill_chunk_edges_job() -> None:
     """scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
 
@@ -730,6 +750,25 @@ class Command(BaseCommand):
             "job_registered",
             job="cleanup_stale_branch_indexes",
             schedule="every 1 hour",
+        )
+
+        # 工作流事件订阅超时扫描（Chassis v2 · P0）：IntervalTrigger ~60s 处理
+        # timeout_at 已到达的活跃订阅（fail/skip/retry）。间隔取
+        # settings.WORKFLOW_TIMEOUT_CHECK_INTERVAL_SECONDS（默认 60）启动值。
+        scheduler.add_job(
+            check_workflow_event_timeouts_job,
+            trigger=IntervalTrigger(
+                seconds=getattr(settings, "WORKFLOW_TIMEOUT_CHECK_INTERVAL_SECONDS", 60)
+            ),
+            id="check_workflow_event_timeouts",
+            name="Check workflow event subscription timeouts (fail/skip/retry)",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "job_registered",
+            job="check_workflow_event_timeouts",
+            schedule="every ~60s",
         )
 
         # implementation ½：scheduler 启动后一次性 backfill ChunkEdge（老仓库

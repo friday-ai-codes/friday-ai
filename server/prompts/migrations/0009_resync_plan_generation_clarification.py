@@ -21,7 +21,13 @@ _NOTE = "Resync plan_generation: ask_user_question 移除 → need_clarification
 
 
 def forwards(apps: Any, schema_editor: Any) -> None:
-    from workflows.nodes.ai.plan_generation import _PLAN_GENERATION_BASE_PROMPT
+    # Chassis v2 · P2：ai_plan_generation 节点已删除；其 resync 成为 no-op。
+    try:
+        from workflows.nodes.ai.plan_generation import (  # type: ignore[import-not-found]
+            _PLAN_GENERATION_BASE_PROMPT,
+        )
+    except ImportError:
+        return
 
     Prompt = apps.get_model("prompts", "Prompt")
     PromptVersion = apps.get_model("prompts", "PromptVersion")

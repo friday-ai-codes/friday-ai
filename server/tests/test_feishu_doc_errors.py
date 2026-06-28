@@ -177,3 +177,75 @@ class TestFeishuDocErrorClassification:
                 markdown, blocks = await client.get_document_content("test-doc")
                 assert isinstance(markdown, str)
                 assert isinstance(blocks, list)
+
+    @pytest.mark.asyncio
+    async def test_docs_url_routes_to_legacy_raw_content(
+        self, client: FeishuDocClient
+    ) -> None:
+        with patch.object(
+            client, "get_legacy_document_content", new=AsyncMock(return_value="旧版正文")
+        ) as legacy:
+            markdown, blocks = await client.get_document_content_by_url(
+                "https://x.feishu.cn/docs/doccnLegacy123"
+            )
+
+        legacy.assert_awaited_once_with("doccnLegacy123")
+        assert markdown == "旧版正文"
+        assert blocks == []
+
+    @pytest.mark.asyncio
+    async def test_docs_url_falls_back_to_docx_for_upgraded_docs(
+        self, client: FeishuDocClient
+    ) -> None:
+        legacy_error = FeishuDocAPIError(
+            "读取旧版文档失败: this API is not supported docx (Upgraded Docs) type"
+        )
+        with patch.object(
+            client, "get_legacy_document_content", new=AsyncMock(side_effect=legacy_error)
+        ) as legacy, patch.object(
+            client, "_get_docx_document_content", new=AsyncMock(return_value=("新版正文", []))
+        ) as get_docx:
+            markdown, blocks = await client.get_document_content_by_url(
+                "https://x.feishu.cn/docs/upgradedToken123"
+            )
+
+        legacy.assert_awaited_once_with("upgradedToken123")
+        get_docx.assert_awaited_once_with("upgradedToken123")
+        assert markdown == "新版正文"
+        assert blocks == []
+
+    @pytest.mark.asyncio
+    async def test_wiki_url_routes_docx_node_to_docx_blocks(
+        self, client: FeishuDocClient
+    ) -> None:
+        with patch.object(
+            client, "resolve_wiki_node", new=AsyncMock(return_value=("docx", "docxToken"))
+        ) as resolve, patch.object(
+            client, "get_document_content", new=AsyncMock(return_value=("新版正文", []))
+        ) as get_docx:
+            markdown, blocks = await client.get_document_content_by_url(
+                "https://x.feishu.cn/wiki/wikiNode123"
+            )
+
+        resolve.assert_awaited_once_with("wikiNode123")
+        get_docx.assert_awaited_once_with("docxToken")
+        assert markdown == "新版正文"
+        assert blocks == []
+
+    @pytest.mark.asyncio
+    async def test_wiki_url_routes_legacy_doc_node_to_raw_content(
+        self, client: FeishuDocClient
+    ) -> None:
+        with patch.object(
+            client, "resolve_wiki_node", new=AsyncMock(return_value=("doc", "doccnLegacy123"))
+        ) as resolve, patch.object(
+            client, "get_legacy_document_content", new=AsyncMock(return_value="旧版正文")
+        ) as legacy:
+            markdown, blocks = await client.get_document_content_by_url(
+                "https://x.feishu.cn/wiki/wikiNode123"
+            )
+
+        resolve.assert_awaited_once_with("wikiNode123")
+        legacy.assert_awaited_once_with("doccnLegacy123")
+        assert markdown == "旧版正文"
+        assert blocks == []

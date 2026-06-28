@@ -101,7 +101,7 @@ def test_create_coding_plan_stores_version_and_evidence(
     """UNIFY-04：create_coding_plan 收口到 delegate（canonical 映射）后落库/响应/trace 守护。
 
     方案生成从确定性 ``build_coding_plan`` 改 delegate 到统一编排，故 monkeypatch
-    ``delegate_plan_orchestration`` 返回 canonical DONE → 断言映射后单仓字段 +
+    ``delegate_process_runtime`` 返回 canonical DONE → 断言映射后单仓字段 +
     McpCodingPlan(Version) 落库 + 工具调用/召回 trace。WR-03：delegate 回传本次编排聚合
     ``model_usage``，view 仍落 ModelUsageRecord 到 MCP run（token/成本归因不回退）。
     """
@@ -128,7 +128,7 @@ def test_create_coding_plan_stores_version_and_evidence(
             markdown="**新增 MCP 规划工具**",
             # WR-03：delegate 回传本次编排聚合用量，view 落到 MCP run 维度（归因不回退）。
             model_usage={
-                "provider": "plan_orchestration",
+                "provider": "process_runtime",
                 "model": "aggregate",
                 "prompt_tokens": 120,
                 "completion_tokens": 80,
@@ -137,7 +137,7 @@ def test_create_coding_plan_stores_version_and_evidence(
             },
         )
 
-    monkeypatch.setattr("mcp_tools.views.delegate_plan_orchestration", _fake_delegate)
+    monkeypatch.setattr("mcp_tools.views.delegate_process_runtime", _fake_delegate)
 
     response = client.post(
         "/api/mcp/tools/create_coding_plan/",

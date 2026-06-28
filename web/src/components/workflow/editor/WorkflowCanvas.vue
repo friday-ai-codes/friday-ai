@@ -5,14 +5,14 @@
  * 数据同步策略：Pinia store 是 source of truth，通过 :nodes/:edges 单向传入 VueFlow。
  * VueFlow 的所有内部变更（拖拽、删除等）通过 @nodes-change/@edges-change 统一回写 store。
  */
-import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
+import type { Connection, EdgeChange, Node, NodeChange, NodeMouseEvent } from '@vue-flow/core'
 import type { SnapCandidate, SnapTarget } from './composables/usePortSnap'
 import type { WorkflowNodeStore } from '~/types/workflow/store'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { ConnectionMode, Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
-import { Copy, Trash2 } from 'lucide-vue-next'
+import { Copy, Trash2, Waypoints } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, inject, markRaw, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -40,9 +40,11 @@ import { getValidationError, useConnectionValidator } from './composables/useCon
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
 import { findSnapTarget } from './composables/usePortSnap'
+import { SIGNAL_EDGE_TYPE, useSignalLayer } from './composables/useSignalLayer'
 import { toVueFlowEdges, toVueFlowNodes } from './composables/useWorkflowTransform'
 import CustomConnectionLine from './edges/CustomConnectionLine.vue'
 import GradientEdge from './edges/GradientEdge.vue'
+import SignalSubscriptionEdge from './edges/SignalSubscriptionEdge.vue'
 import { nodeTypes } from './nodes'
 import '@vue-flow/minimap/dist/style.css'
 import '@vue-flow/controls/dist/style.css'
@@ -59,14 +61,83 @@ const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
  */
 const canvasSyncVersion = ref(0)
 
+// ============================================================================
+// P6 画布双层视图：信号层开关 + 虚线信号订阅边（纯派生叠加，reaction 配置为准）。
+// 关闭时画布与现状完全一致；开启时叠加「宿主 → 通知/文档」虚线订阅边 + surfaced 目标节点。
+// ============================================================================
+
+/** 信号层开关：false=只看交付流（默认，与现状一致）；true=叠加信号订阅层。 */
+const signalLayerEnabled = ref(false)
+function toggleSignalLayer() {
+  signalLayerEnabled.value = !signalLayerEnabled.value
+}
+
+const { signalEdges, signalTargetIds } = useSignalLayer(storeNodes, signalLayerEnabled)
+
+/**
+ * 信号层「可视化目标」节点：把被折叠为卡内 chip 的 notification/document 附着子，
+ * 在信号层开启时 surfaced 为画布节点（虚线订阅边的落点）。绝对坐标 = 宿主绝对 + 子相对。
+ * 关闭时为空（不入 vfNodes，画布与现状一致）。
+ */
+const signalTargetNodes = computed<Node[]>(() => {
+  if (!signalLayerEnabled.value)
+    return []
+  const byId = new Map(storeNodes.value.map(n => [n.id, n]))
+  const result: Node[] = []
+  for (const id of signalTargetIds.value) {
+    const child = byId.get(id)
+    if (!child)
+      continue
+    const parentId = child.metadata?.parentNodeId as string | undefined
+    const parent = parentId ? byId.get(parentId) : undefined
+    const abs = parent
+      ? {
+          x: (parent.position?.x ?? 0) + (child.position?.x ?? 0),
+          y: (parent.position?.y ?? 0) + (child.position?.y ?? 0),
+        }
+      : { ...child.position }
+    result.push({
+      id: child.id,
+      type: child.nodeType,
+      position: abs,
+      // 标记为信号层 surfaced 节点：弱化样式，与交付层节点区分（不改 BaseWorkflowNode）。
+      class: 'signal-surfaced-node',
+      selectable: false,
+      data: {
+        nodeType: child.nodeType,
+        shortId: child.shortId,
+        name: child.name,
+        description: child.description,
+        config: child.config,
+        onError: child.onError,
+        retryTimes: child.retryTimes,
+        retryDelay: child.retryDelay,
+        nodeTimeoutSeconds: child.nodeTimeoutSeconds,
+        fallbackValues: child.fallbackValues,
+        runCondition: child.runCondition,
+        metadata: child.metadata,
+      },
+    })
+  }
+  return result
+})
+
 const vfNodes = computed(() => {
   // 依赖 canvasSyncVersion：取消级联删除时 bump 以强制 Vue Flow 重灌 :nodes（WR-03）。
   void canvasSyncVersion.value
-  return toVueFlowNodes(storeNodes.value)
+  const base = toVueFlowNodes(storeNodes.value)
+  return signalLayerEnabled.value ? [...base, ...signalTargetNodes.value] : base
 })
-const vfEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value))
+const deliveryEdges = computed(() => toVueFlowEdges(storeEdges.value, storeNodes.value))
+/** 传给 VueFlow 的边：交付边 + （信号层开启时）虚线信号订阅边。 */
+const vfEdges = computed(() =>
+  signalLayerEnabled.value ? [...deliveryEdges.value, ...signalEdges.value] : deliveryEdges.value,
+)
 
-const edgeTypes = { gradient: markRaw(GradientEdge) }
+const edgeTypes = {
+  gradient: markRaw(GradientEdge),
+  [SIGNAL_EDGE_TYPE]: markRaw(SignalSubscriptionEdge),
+}
 
 const nodeTypesStore = useNodeTypesStore()
 const { error: showError } = useToast()
@@ -563,6 +634,11 @@ function handleBatchCopy() {
 // 暴露内部处理器供单测驱动（无真实 @vue-flow 画布交互时的可测面）。
 defineExpose({
   vfNodes,
+  vfEdges,
+  signalLayerEnabled,
+  toggleSignalLayer,
+  signalEdges,
+  signalTargetNodes,
   onConnectStart,
   onConnectEnd,
   onConnect,
@@ -649,6 +725,40 @@ defineExpose({
           />
         </div>
       </div>
+
+      <!-- P6 信号层开关：切换「只看交付流 / 叠加信号订阅层」 -->
+      <Panel position="top-left">
+        <div class="flex flex-col gap-1.5">
+          <button
+            class="signal-layer-toggle flex items-center gap-1.5 bg-card/90 backdrop-blur-sm border rounded-xl px-3 py-1.5 shadow-lg text-xs font-medium transition-colors"
+            :class="signalLayerEnabled
+              ? 'border-primary/50 text-primary'
+              : 'border-border/50 text-muted-foreground hover:text-foreground'"
+            :title="signalLayerEnabled
+              ? '当前：叠加信号层。点击切回只看交付流'
+              : '当前：只看交付流。点击叠加信号订阅层（虚线显示通知/文档订阅的宿主信号）'"
+            @click="toggleSignalLayer"
+          >
+            <Waypoints class="w-3.5 h-3.5" />
+            <span>{{ signalLayerEnabled ? '信号层 · 开' : '信号层' }}</span>
+          </button>
+          <!-- 信号语义色图例（仅信号层开启时显示） -->
+          <div
+            v-if="signalLayerEnabled"
+            class="flex items-center gap-2.5 bg-card/90 backdrop-blur-sm border border-border/50 rounded-xl px-3 py-1.5 shadow-lg text-[10px] text-muted-foreground"
+          >
+            <span class="flex items-center gap-1">
+              <span class="inline-block w-3 border-t border-dashed" style="border-color: #10b981;" />成功
+            </span>
+            <span class="flex items-center gap-1">
+              <span class="inline-block w-3 border-t border-dashed" style="border-color: #ef4444;" />失败
+            </span>
+            <span class="flex items-center gap-1">
+              <span class="inline-block w-3 border-t border-dashed" style="border-color: #8b5cf6;" />产出
+            </span>
+          </div>
+        </div>
+      </Panel>
 
       <Background
         variant="dots"
@@ -756,3 +866,11 @@ defineExpose({
     </AlertDialog>
   </div>
 </template>
+
+<style>
+/* P6 信号层 surfaced 目标节点：弱化呈现，与实线交付层节点视觉区分（虚线订阅边的落点）。 */
+.signal-surfaced-node {
+  opacity: 0.78;
+  filter: saturate(0.85);
+}
+</style>

@@ -19,15 +19,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from delivery.services import RepoCodingTaskService
 from repositories.models import Repository
-from services.plan_orchestration.wave_progression import aadvance_coding_waves
+from services.process_runtime.wave_progression import aadvance_coding_waves
 from subagent.models import SubAgentSession, TaskResult
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
@@ -48,9 +47,14 @@ async def _make_repo(name: str) -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return await PlanVersion.objects.acreate(plan=plan, version=1, content={})
+async def _make_plan_version() -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content={}, content_hash="h"
+    )
+    artifact.current_version = av
+    await artifact.asave(update_fields=["current_version", "updated_at"])
+    return av
 
 
 async def _make_node_execution(chat_id: str = "") -> object:
@@ -200,7 +204,7 @@ async def test_send_card_main_session_chat_id_unchanged(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def _build_two_wave_tasks() -> tuple[PlanVersion, str, str, SubAgentSession]:
+async def _build_two_wave_tasks() -> tuple[ArtifactVersion, str, str, SubAgentSession]:
     """建 A(wave0) ← B(wave1 depends A)；A 置 running + pending_question（模拟遇阻发问）。"""
     pv = await _make_plan_version()
     repo_a = await _make_repo("hitl-a")
@@ -237,8 +241,8 @@ async def test_blocked_wave_task_stays_waiting():
     result = await aadvance_coding_waves(pv.id)
 
     assert result == {"waiting": True}
-    task_a = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_a)
-    task_b = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_b)
+    task_a = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_a)
+    task_b = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_b)
     assert task_a.status == RepoCodingTaskStatus.RUNNING  # 仍在途（遇阻等待），未失败
     assert task_b.status == RepoCodingTaskStatus.PENDING  # 下游未被阻断、未派发
 
@@ -256,7 +260,7 @@ async def test_answer_then_complete_resumes_wave():
 
     result = await aadvance_coding_waves(pv.id)
 
-    task_a = await RepoCodingTask.objects.aget(plan_version=pv, repository_id=id_a)
+    task_a = await RepoCodingTask.objects.aget(artifact_version=pv, repository_id=id_a)
     assert task_a.status == RepoCodingTaskStatus.DONE
     assert "dispatch" in result
     dispatched_repo_ids = {str(t.repository_id) for t in result["dispatch"]}
@@ -266,7 +270,7 @@ async def test_answer_then_complete_resumes_wave():
 
 async def test_hitl_path_does_not_trigger_replan(monkeypatch):
     """no-replan 守护（HITL-01c）：遇阻→等待→回答→推进全程不触发 research/replan 编排。"""
-    import services.plan_orchestration.research_aggregation as ra
+    import services.process_runtime.research_aggregation as ra
 
     replan_spy = AsyncMock()
     # 守护代表性 research/replan 编排入口——HITL wave 推进绝不应调用它。

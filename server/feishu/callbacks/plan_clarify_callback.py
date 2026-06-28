@@ -38,8 +38,8 @@ from common.logging import redact_secrets_in_text
 from feishu.cards.chat_question_card import build_clarification_answered_card
 from feishu.views import CardCallback, register_card_callback
 from services.feishu_im import create_feishu_im_client_for_project
-from services.plan_orchestration import aanswer_round_and_resume
-from services.plan_orchestration.entrypoint import build_orchestration_engine
+from services.process_runtime import aanswer_round_and_resume
+from services.process_runtime.entrypoint import build_orchestration_engine
 from workflows.engine.scheduler import WorkflowEngine, _run_in_thread
 from workflows.models.execution import (
     ExecutionStatus,
@@ -49,7 +49,7 @@ from workflows.models.execution import (
 
 logger = structlog.get_logger(__name__)
 
-_COMPONENT = "plan_orchestration"
+_COMPONENT = "process_runtime"
 
 
 @register_card_callback("plan_clarify_")

@@ -5,6 +5,16 @@
 
 from django.urls import path
 
+from delivery.api.artifact_views import (
+    ArtifactListView,
+    ArtifactTimelineView,
+    ArtifactVersionDownstreamView,
+)
+from delivery.api.human_task_views import (
+    ClarificationAnswerView,
+    HumanTaskActionView,
+    HumanTaskInboxView,
+)
 from delivery.api.views import (
     IngestBatchDetailView,
     IngestBatchDispatchView,
@@ -99,5 +109,34 @@ urlpatterns = [
         "screenshot-recall/",
         ScreenshotRecallView.as_view(),
         name="screenshot-recall",
+    ),
+    # Artifact 版本轨 / 时间线（P7，只读呈现）：list（过滤）/ 版本时间线 / 下游引用聚合
+    path("artifacts/", ArtifactListView.as_view(), name="artifact-list"),
+    path(
+        "artifacts/<uuid:artifact_id>/",
+        ArtifactTimelineView.as_view(),
+        name="artifact-timeline",
+    ),
+    path(
+        "artifact-versions/<uuid:version_id>/downstream/",
+        ArtifactVersionDownstreamView.as_view(),
+        name="artifact-version-downstream",
+    ),
+    # Human Task Center（P8）：统一待办收件箱（list/open）+ 物化待办动作 + 投影澄清回流。
+    # 字面段 clarification/ 必须在 <uuid:task_id> 动作路由之前注册（避免被 uuid 段吞）。
+    path(
+        "human-tasks/",
+        HumanTaskInboxView.as_view(),
+        name="human-task-inbox",
+    ),
+    path(
+        "human-tasks/clarification/<uuid:clarification_id>/answer/",
+        ClarificationAnswerView.as_view(),
+        name="human-task-clarification-answer",
+    ),
+    path(
+        "human-tasks/<uuid:task_id>/<str:action>/",
+        HumanTaskActionView.as_view(),
+        name="human-task-action",
     ),
 ]

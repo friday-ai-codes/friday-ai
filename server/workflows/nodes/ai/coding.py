@@ -333,7 +333,7 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         # 4.5 拓扑分层（消费 execution_plan[].dependencies = task id；wave 状态走 DB 不存内存，
         #     不另造调度——wave N→N+1 由容器回调 _schedule_workflow_resume 触发节点重入自驱）。
-        from services.plan_orchestration import build_repo_dep_edges, build_repo_waves
+        from services.process_runtime import build_repo_dep_edges, build_repo_waves
 
         repo_waves, cycle = build_repo_waves(execution_plan)
         if cycle is not None:
@@ -368,12 +368,12 @@ class AICodingNode(SubStepMixin, BaseNode):
 
         # wave 接线：plan_version 可解析且分层完整覆盖时建 RepoCodingTask 行（INV-6 单一写入），
         # 仅 dispatch 当前（最小）wave；否则退化为现有全并行 dispatch 全部仓（零回归命门）。
-        plan_version_id = plan_data.get("plan_version_id")
+        plan_version_id = plan_data.get("artifact_version_id")
         plan_version = None
         if plan_version_id:
-            from delivery.models import PlanVersion  # lazy import 防循环
+            from delivery.models import ArtifactVersion  # lazy import 防循环
 
-            plan_version = await PlanVersion.objects.filter(id=plan_version_id).afirst()
+            plan_version = await ArtifactVersion.objects.filter(id=plan_version_id).afirst()
 
         service = None
         tasks_by_repo = None
@@ -665,7 +665,7 @@ class AICodingNode(SubStepMixin, BaseNode):
           "unknown")`` + log.warning），异常绝不向外冒泡、不波及其余仓 dispatch（绝不崩整 wave）。
 
         仅当 ``service`` 与 ``tasks_by_repo`` 均非空（wave 模式）实际执行 gate，否则原样返回
-        ``repo_ids`` + 空 failed（零回归短路命门）。async ORM 安全：用 ``task.plan_version_id``
+        ``repo_ids`` + 空 failed（零回归短路命门）。async ORM 安全：用 ``task.artifact_version_id``
         / ``task.repository_id`` 标量 + ``afirst``，绝不裸 lazy-FK（D-51-6）。
         """
         # 零回归短路：legacy / 非 wave 路径完全不经 gate（D-51-5 命门）。
@@ -689,7 +689,7 @@ class AICodingNode(SubStepMixin, BaseNode):
             try:
                 spec = (
                     await SddSpec.objects.filter(
-                        plan_version_id=task.plan_version_id,
+                        artifact_version_id=task.artifact_version_id,
                         repository_id=task.repository_id,
                     )
                     .order_by("-updated_at")
@@ -921,11 +921,11 @@ class AICodingNode(SubStepMixin, BaseNode):
         迭代数 ≤ 本 plan_version 的 task 总数，必终止。
         """
         from delivery.models import RepoCodingTask
-        from services.plan_orchestration import aadvance_coding_waves
+        from services.process_runtime import aadvance_coding_waves
 
         # 收敛上界 = task 总数（每次 continue 至少使一批 pending→failed，严格收敛）。
         max_passes = (
-            await RepoCodingTask.objects.filter(plan_version_id=plan_version_id).acount() + 1
+            await RepoCodingTask.objects.filter(artifact_version_id=plan_version_id).acount() + 1
         )
         for _ in range(max_passes):
             try:
@@ -1005,7 +1005,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         # 已收集产物，绝不让容器回调 5xx 致重试风暴（T-45-08）。仅记 repo_id / error 字符串，
         # 绝不记产物正文（T-45-07）。
         upstream_by_repo: dict[str, list[dict]] = {}
-        from services.plan_orchestration.artifact_injection import (
+        from services.process_runtime.artifact_injection import (
             acollect_upstream_artifacts,
         )
 
@@ -1101,7 +1101,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         failed_repos: list[dict[str, Any]] = []
         completed_session_ids: list[str] = []
 
-        async for task in RepoCodingTask.objects.filter(plan_version_id=plan_version_id):
+        async for task in RepoCodingTask.objects.filter(artifact_version_id=plan_version_id):
             repo_id = str(task.repository_id)
             repo = await Repository.objects.filter(id=repo_id).afirst()
             repo_name = repo.name if repo else repo_id
@@ -1237,7 +1237,7 @@ class AICodingNode(SubStepMixin, BaseNode):
                 spec_service = SddSpecService()
                 for mr in successful_mrs:
                     await spec_service.link_implementation_pr(
-                        plan_version_id=link_plan_version_id,
+                        artifact_version_id=link_plan_version_id,
                         repository_id=mr["repository_id"],
                         pr_url=mr["mr_url"],
                     )
@@ -1728,7 +1728,7 @@ class AICodingNode(SubStepMixin, BaseNode):
         （默认 None → 首发 wave 0 / 无上游 → 注入段不渲染 → 与 Phase 44 现行为逐字一致，
         零回归命门）。
         """
-        from services.plan_orchestration.artifact_injection import (
+        from services.process_runtime.artifact_injection import (
             render_upstream_artifacts_section,
         )
 

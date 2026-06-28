@@ -49,6 +49,7 @@ async def test_project_memory_normalize_produces_document_event_with_edge() -> N
     assert event.source_kind == "project_memory"
     project = await sync_to_async(lambda: memory.project)()
     assert event.space_id == str(project.space_id)
+    assert event.payload["project_id"] == str(project.id)
     assert event.repository_id is None
     # 脱敏不可绕过。
     assert secret not in event.content

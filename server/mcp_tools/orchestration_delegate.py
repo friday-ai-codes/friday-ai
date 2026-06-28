@@ -1,6 +1,6 @@
 """共享 MCP delegate 核心（UNIFY-03）——MCP 入口归一到统一编排底座。
 
-把 MCP 工具的「方案生成」从各自确定性 seam 收口到 ``plan_orchestration`` 统一编排：
+把 MCP 工具的「方案生成」从各自确定性 seam 收口到 ``process_runtime`` 统一编排：
 建 ``PlanSession``（entrypoint=workflow）→ ``build_orchestration_engine(skip_clarification=True)``
 → ``adrive`` 续驱到终态/挂起 → 取 canonical ``PlanVersion.content``（§7 MergedPlan）→ 终态/
 挂起映射为 ``DelegateResult``。**绝不在 MCP 层重写拆分/路由/调研/融合**（只调共享 helper，落
@@ -12,7 +12,7 @@ CONTEXT「最大化复用，严禁重复造」）。
 
 **async ORM 防裸 lazy-FK**：全程用 ``current_plan_version`` 标量 / ``afirst``，绝不裸访问
 ``session`` 的同步 lazy-FK。观测：进出口 best-effort 埋点（category=caller、component=
-mcp_tools、duration_ms、status）；编排内部 LLM/召回埋点由 plan_orchestration adapters 承担
+mcp_tools、duration_ms、status）；编排内部 LLM/召回埋点由 process_runtime adapters 承担
 （call_source 链路完整，无需 MCP 层重复赋值）。
 """
 
@@ -27,7 +27,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["DelegateResult", "delegate_plan_orchestration"]
+__all__ = ["DelegateResult", "delegate_process_runtime"]
 
 
 @dataclass(frozen=True)
@@ -59,16 +59,20 @@ async def _load_canonical(session: Any) -> tuple[str | None, dict, str]:
     用 ``current_plan_version`` 标量 + ``afirst`` 取 ``PlanVersion``；content 非 dict 时回退
     ``{}`` / 空串（防御性，对齐 render/merged_plan fail-safe）。
     """
-    from delivery.models import PlanVersion
-    from services.plan_orchestration import render_merged_plan_markdown
+    from delivery.models import ArtifactVersion
+    from services.process_runtime import render_merged_plan_markdown
 
-    pv_id = str(session.current_plan_version) if session.current_plan_version else None
-    if not pv_id:
+    av_id = (
+        str(session.current_artifact_version_id)
+        if session.current_artifact_version_id
+        else None
+    )
+    if not av_id:
         return None, {}, ""
-    pv = await PlanVersion.objects.filter(id=pv_id).afirst()
-    if pv is None or not isinstance(pv.content, dict):
-        return pv_id, {}, ""
-    return pv_id, pv.content, render_merged_plan_markdown(pv.content)
+    av = await ArtifactVersion.objects.filter(id=av_id).afirst()
+    if av is None or not isinstance(av.content, dict):
+        return av_id, {}, ""
+    return av_id, av.content, render_merged_plan_markdown(av.content)
 
 
 async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
@@ -103,7 +107,7 @@ async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
     if prompt <= 0 and completion <= 0 and total <= 0:
         return {}
     return {
-        "provider": "plan_orchestration",
+        "provider": "process_runtime",
         "model": "aggregate",
         "prompt_tokens": prompt,
         "completion_tokens": completion,
@@ -112,18 +116,18 @@ async def _aggregate_orchestration_usage(start_dt: Any) -> dict[str, Any]:
     }
 
 
-async def delegate_plan_orchestration(
+async def delegate_process_runtime(
     *,
     requirement_text: str,
     work_item: Any = None,
     include_repos: list[str] | None = None,
     created_by: Any = None,
 ) -> DelegateResult:
-    """delegate 到 ``plan_orchestration`` 统一编排，产 canonical MergedPlan/PlanVersion。
+    """delegate 到 ``process_runtime`` 统一编排，产 canonical MergedPlan/PlanVersion。
 
     流程（仅调共享 helper，绝不在 MCP 层重写编排）：
     ``start_orchestration(entrypoint="workflow")`` → ``build_orchestration_engine(
-    skip_clarification=True)`` → ``adrive_plan_session_to_pause_or_terminal`` → 终态/挂起映射。
+    skip_clarification=True)`` → ``adrive_convergence_session_to_pause_or_terminal`` → 终态/挂起映射。
 
     终态/挂起映射（mirror ``plan_research._map_terminal``）：
     - ``DONE`` → ``status="completed"``，取 ``PlanVersion.content`` + 渲染 markdown。
@@ -133,9 +137,9 @@ async def delegate_plan_orchestration(
     """
     from django.utils import timezone
 
-    from delivery.models import PlanSessionStatus
-    from services.plan_orchestration import (
-        adrive_plan_session_to_pause_or_terminal,
+    from delivery.models import ConvergenceSessionStatus
+    from services.process_runtime import (
+        adrive_convergence_session_to_pause_or_terminal,
         build_orchestration_engine,
         start_orchestration,
     )
@@ -166,10 +170,10 @@ async def delegate_plan_orchestration(
             include_repos=include_repos,
         )
         engine = build_orchestration_engine(skip_clarification=True)
-        session = await adrive_plan_session_to_pause_or_terminal(engine, session)
+        session = await adrive_convergence_session_to_pause_or_terminal(engine, session)
 
         model_usage = await _aggregate_orchestration_usage(start_dt)
-        if session.status == PlanSessionStatus.DONE:
+        if session.status == ConvergenceSessionStatus.DONE:
             pv_id, content, markdown = await _load_canonical(session)
             result = DelegateResult(
                 session=session,
@@ -179,7 +183,7 @@ async def delegate_plan_orchestration(
                 markdown=markdown,
                 model_usage=model_usage,
             )
-        elif session.status == PlanSessionStatus.FAILED:
+        elif session.status == ConvergenceSessionStatus.FAILED:
             result = DelegateResult(
                 session=session,
                 status="failed",

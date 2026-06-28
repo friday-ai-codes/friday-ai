@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectsApi } from '~/api/projects'
+import { Avatar, AvatarFallback } from '~/components/ui/avatar'
+import { Badge } from '~/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -123,9 +125,11 @@ async function removeMember(member: ProjectMember) {
         data-testid="member-row"
       >
         <div class="min-w-0 flex items-center gap-3">
-          <div class="size-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary shrink-0">
-            {{ (member.user.display_name || member.user.username).slice(0, 1).toUpperCase() }}
-          </div>
+          <Avatar class="size-8 bg-primary/10 shrink-0">
+            <AvatarFallback class="bg-transparent text-xs font-medium text-primary">
+              {{ (member.user.display_name || member.user.username).slice(0, 1).toUpperCase() }}
+            </AvatarFallback>
+          </Avatar>
           <div class="min-w-0">
             <p class="text-sm font-medium text-foreground truncate">
               {{ member.user.display_name || member.user.username }}
@@ -137,13 +141,14 @@ async function removeMember(member: ProjectMember) {
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
-          <span
+          <Badge
             v-if="member.role === 'owner'"
-            class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 inline-flex items-center gap-1"
+            variant="warning"
+            class="gap-1"
           >
             <span class="icon-[lucide--crown]" />
             {{ t('projects.role.owner') }}
-          </span>
+          </Badge>
           <template v-else>
             <Select
               v-if="canManage"
@@ -160,12 +165,9 @@ async function removeMember(member: ProjectMember) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <span
-              v-else
-              class="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
-            >
+            <Badge v-else variant="muted">
               {{ t(`projects.role.${member.role}`) }}
-            </span>
+            </Badge>
           </template>
 
           <template v-if="canManage && member.role !== 'owner'">

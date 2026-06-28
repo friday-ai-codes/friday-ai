@@ -19,16 +19,18 @@ from delivery.services import ALL_EVENTS
 _SERVER_ROOT = Path(__file__).resolve().parents[2]
 
 # emit 点源文件（38/39/40/41 实际产出 §15 事件的位置）
-_ENGINE = _SERVER_ROOT / "services" / "plan_orchestration" / "engine.py"
-_RESEARCH_ADAPTER = _SERVER_ROOT / "services" / "plan_orchestration" / "research_adapter.py"
-_ARCHITECT_ADAPTER = _SERVER_ROOT / "services" / "plan_orchestration" / "architect_merge_adapter.py"
+_ENGINE = _SERVER_ROOT / "services" / "process_runtime" / "engine.py"
+_RESEARCH_ADAPTER = _SERVER_ROOT / "services" / "process_runtime" / "research_adapter.py"
+_ARCHITECT_ADAPTER = _SERVER_ROOT / "services" / "process_runtime" / "architect_merge_adapter.py"
 _CALLBACKS = _SERVER_ROOT / "subagent" / "api" / "callbacks.py"
-_SESSION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "plan_session_service.py"
+_SESSION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "convergence_session_service.py"
 # 41-02 落地后存在（顺序安全：缺失时覆盖检查跳过对应事件）
-_CLARIFY_ADAPTER = _SERVER_ROOT / "services" / "plan_orchestration" / "clarify_adapter.py"
+_CLARIFY_ADAPTER = _SERVER_ROOT / "services" / "process_runtime" / "clarify_adapter.py"
 _CLARIFICATION_SERVICE = _SERVER_ROOT / "delivery" / "services" / "clarification_service.py"
 # Phase 49 落地后存在（spec.drafted producer）
-_SPEC_GENERATION = _SERVER_ROOT / "services" / "plan_orchestration" / "spec_generation.py"
+_SPEC_GENERATION = _SERVER_ROOT / "services" / "process_runtime" / "spec_generation.py"
+# Chassis v2：generic ProcessEngine 不再直接 emit stage 事件，recall/route 落到 stage 处理器
+_BUILTIN_PROCESSES = _SERVER_ROOT / "services" / "process_runtime" / "builtin_processes.py"
 
 _EMIT_FILES = [
     _ENGINE,
@@ -43,15 +45,15 @@ _EMIT_FILES = [
 
 # 事件 → 其 producer 源文件（覆盖性反查；文件不存在 → 跳过该事件，顺序安全）
 _EVENT_PRODUCERS: dict[str, Path] = {
-    "knowledge.recalling": _ENGINE,
-    "repo.routing": _ENGINE,
+    "knowledge.recalling": _BUILTIN_PROCESSES,
+    "repo.routing": _BUILTIN_PROCESSES,
     "repo.research.started": _RESEARCH_ADAPTER,
     "repo.research.failed": _RESEARCH_ADAPTER,
     "repo.research.completed": _CALLBACKS,
-    "plan.merge.started": _ARCHITECT_ADAPTER,
-    "plan.merge.completed": _ARCHITECT_ADAPTER,
-    "plan.validation.failed": _ARCHITECT_ADAPTER,
-    "plan.session.failed": _SESSION_SERVICE,
+    "technical_plan.merge.started": _ARCHITECT_ADAPTER,
+    "technical_plan.merge.completed": _ARCHITECT_ADAPTER,
+    "technical_plan.validation.failed": _ARCHITECT_ADAPTER,
+    "process.session.failed": _SESSION_SERVICE,
     "clarification.asked": _CLARIFY_ADAPTER,
     "clarification.answered": _CLARIFICATION_SERVICE,
     "spec.drafted": _SPEC_GENERATION,

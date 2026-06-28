@@ -7,6 +7,7 @@ re-export ``WorkItemService`` / ``WorkItemIdentity``（WorkItem 单一写入入�
 + ``BitableReleaseAdapter``（Bitable 行 → ReleaseService 落库骨架，REL-02）。
 """
 
+from delivery.services.artifact_service import ArtifactContentInvalid, ArtifactService
 from delivery.services.bitable_release_adapter import BitableReleaseAdapter
 from delivery.services.clarification_service import ClarificationService
 from delivery.services.comment_event_service import (
@@ -17,8 +18,13 @@ from delivery.services.comment_projection import (
     aproject_comment_tree,
     project_comment_tree,
 )
+from delivery.services.convergence_session_service import (
+    ConcurrentTransitionError,
+    ConvergenceSessionService,
+)
 from delivery.services.document_service import DocumentService, derive_feishu_tenant
 from delivery.services.event_taxonomy import ALL_EVENTS, RESERVED_EVENTS, build_envelope
+from delivery.services.human_task_service import HumanTaskService, HumanTaskView
 from delivery.services.ingest_orchestrator import (
     StepResult,
     build_board_url,
@@ -32,20 +38,11 @@ from delivery.services.ingest_parsing import (
     parse_board_url,
     parse_mr_url,
 )
-from delivery.services.plan_session_service import PlanSessionService
 from delivery.services.release_service import ReleaseService
 from delivery.services.repo_coding_task_service import RepoCodingTaskService
 from delivery.services.research_service import ResearchService
 from delivery.services.sdd_spec_service import SddSpecService, SddSpecTransitionError
 from delivery.services.space_resolver import SpaceResolution, aresolve_space
-from delivery.services.technical_plan_service import (
-    PlanContentInvalid,
-    PlanNotFound,
-    PlanRef,
-    TechnicalPlanService,
-    chat_codingplan_to_content,
-    mcp_plan_to_content,
-)
 from delivery.services.work_item_service import WorkItemIdentity, WorkItemService
 
 __all__ = [
@@ -73,16 +70,15 @@ __all__ = [
     "aresolve_space",
     "SpaceResolution",
     "StepResult",
-    "PlanSessionService",
+    "ConvergenceSessionService",
+    "ConcurrentTransitionError",
     "ResearchService",
     "RepoCodingTaskService",
     "ClarificationService",
     "SddSpecService",
     "SddSpecTransitionError",
-    "TechnicalPlanService",
-    "PlanRef",
-    "PlanContentInvalid",
-    "PlanNotFound",
-    "chat_codingplan_to_content",
-    "mcp_plan_to_content",
+    "ArtifactService",
+    "ArtifactContentInvalid",
+    "HumanTaskService",
+    "HumanTaskView",
 ]

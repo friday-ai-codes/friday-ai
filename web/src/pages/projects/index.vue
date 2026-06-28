@@ -14,7 +14,12 @@ import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 import ProjectSearchPanel from '~/components/project/ProjectSearchPanel.vue'
+import { Avatar, AvatarFallback } from '~/components/ui/avatar'
+import { Badge, type BadgeVariants } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { Checkbox } from '~/components/ui/checkbox'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -90,16 +95,14 @@ const spaceLabel = computed(() =>
     : spaceOptions.value.find(s => s.id === spaceFilter.value)?.name ?? t('projects.filter.allSpace'),
 )
 
-function statusBadgeClass(status: ProjectStatus): string {
+function statusVariant(status: ProjectStatus): BadgeVariants['variant'] {
   switch (status) {
     case 'developing':
-      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-    case 'archived':
-      return 'bg-muted text-muted-foreground'
+      return 'success'
     case 'terminated':
-      return 'bg-destructive/10 text-destructive'
+      return 'destructive'
     default:
-      return 'bg-muted text-muted-foreground'
+      return 'muted'
   }
 }
 
@@ -118,6 +121,7 @@ async function openCreate() {
   <PageContainer>
     <PageHeader
       icon="lucide--folder-kanban"
+      icon-gradient="from-primary/10 to-primary/10"
       :title="t('projects.title')"
       :description="t('projects.subtitle')"
     >
@@ -130,7 +134,7 @@ async function openCreate() {
     </PageHeader>
 
     <!-- 筛选栏 -->
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap items-center gap-2.5">
       <Select v-model="spaceFilter">
         <SelectTrigger class="w-[200px]" :aria-label="t('projects.filter.space')">
           <span class="icon-[lucide--folder-git-2] mr-1.5 text-sm text-muted-foreground" />
@@ -161,30 +165,34 @@ async function openCreate() {
         </SelectContent>
       </Select>
 
-      <label class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-        <input v-model="onlyMine" type="checkbox" class="rounded border-border/60">
-        {{ t('projects.filter.onlyMine') }}
-      </label>
-
-      <Button
-        variant="outline"
-        size="sm"
-        data-testid="global-search-toggle"
-        :aria-expanded="showSearchPanel"
-        class="sm:ml-auto"
-        @click="showSearchPanel = !showSearchPanel"
+      <Label
+        class="inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm cursor-pointer select-none transition-colors"
+        :class="onlyMine ? 'border-primary/30 bg-primary/5 text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/50'"
       >
-        <span class="icon-[lucide--search-code] mr-1.5" />
-        {{ showSearchPanel ? t('projects.search.close') : t('projects.search.open') }}
-      </Button>
+        <Checkbox v-model="onlyMine" data-testid="only-mine-checkbox" class="size-4" />
+        {{ t('projects.filter.onlyMine') }}
+      </Label>
 
-      <div class="relative w-full sm:w-64">
-        <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none" />
-        <input
-          v-model="searchInput"
-          :placeholder="t('projects.filter.searchPlaceholder')"
-          class="flex h-9 w-full rounded-lg border border-border/60 bg-background/90 pl-9 pr-3 py-1 text-sm placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring/50"
+      <div class="sm:ml-auto flex items-center gap-2.5 w-full sm:w-auto">
+        <div class="relative flex-1 sm:w-64">
+          <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 text-sm pointer-events-none z-10" />
+          <Input
+            v-model="searchInput"
+            :placeholder="t('projects.filter.searchPlaceholder')"
+            class="h-9 pl-9 rounded-lg"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-9"
+          data-testid="global-search-toggle"
+          :aria-expanded="showSearchPanel"
+          @click="showSearchPanel = !showSearchPanel"
         >
+          <span class="icon-[lucide--search-code] mr-1.5" />
+          {{ showSearchPanel ? t('projects.search.close') : t('projects.search.open') }}
+        </Button>
       </div>
     </div>
 
@@ -211,33 +219,42 @@ async function openCreate() {
     />
 
     <!-- 项目卡片网格 -->
-    <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div v-else class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
       <RouterLink
         v-for="p in projects"
         :key="p.id"
         :to="`/projects/${p.id}`"
-        class="card card-interactive group flex flex-col gap-3 p-4"
+        class="card card-interactive group flex flex-col p-5"
         data-testid="project-card"
       >
-        <div class="flex items-start justify-between gap-2">
-          <h3 class="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-            {{ p.name }}
-          </h3>
-          <span
-            class="shrink-0 px-2 py-0.5 rounded-full text-xs font-medium"
-            :class="statusBadgeClass(p.status)"
-          >
+        <!-- 头部：头像 + 名称/空间 + 状态 -->
+        <div class="flex items-center gap-3">
+          <Avatar shape="square" class="size-10 rounded-xl bg-primary/10 ring-1 ring-primary/15 shrink-0">
+            <AvatarFallback class="bg-transparent rounded-xl text-primary font-semibold">
+              {{ (p.name || '?').slice(0, 1).toUpperCase() }}
+            </AvatarFallback>
+          </Avatar>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+              {{ p.name }}
+            </h3>
+            <p class="text-xs text-muted-foreground inline-flex items-center gap-1 max-w-full truncate">
+              <span class="icon-[lucide--folder-git-2] text-[11px] shrink-0" />
+              <span class="truncate">{{ p.space_name }}</span>
+            </p>
+          </div>
+          <Badge :variant="statusVariant(p.status)" class="shrink-0">
             {{ t(`projects.status.${p.status}`) }}
-          </span>
+          </Badge>
         </div>
-        <p v-if="p.description" class="text-sm text-muted-foreground line-clamp-2">
-          {{ p.description }}
+
+        <!-- 描述 -->
+        <p class="mt-3.5 text-sm text-muted-foreground line-clamp-2 min-h-10">
+          {{ p.description || t('projects.overview.noDescription') }}
         </p>
-        <div class="mt-auto flex items-center gap-3 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1">
-            <span class="icon-[lucide--folder-git-2]" />
-            {{ p.space_name }}
-          </span>
+
+        <!-- 底部：成员 / 飞书 + 打开提示 -->
+        <div class="mt-4 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
           <span class="inline-flex items-center gap-1">
             <span class="icon-[lucide--users]" />
             {{ t('projects.memberCount', { n: p.member_count }) }}
@@ -249,6 +266,9 @@ async function openCreate() {
           >
             <span class="icon-[lucide--link]" />
             {{ t('projects.feishuLinked') }}
+          </span>
+          <span class="ml-auto inline-flex items-center text-primary opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0">
+            <span class="icon-[lucide--arrow-right]" />
           </span>
         </div>
       </RouterLink>

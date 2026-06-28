@@ -240,10 +240,10 @@ class SddSpecDetailSerializer(SddSpecListSerializer):
                 # url 取 prd_url（无则空串，对齐 pr_cross_reference 不构造臆造 URL 范式）。
                 "url": obj.work_item.prd_url or "",
             }
-        if obj.plan_version_id is not None:
-            relations["plan_version"] = {
-                "id": str(obj.plan_version_id),
-                "version": obj.plan_version.version,
+        if obj.artifact_version_id is not None:
+            relations["artifact_version"] = {
+                "id": str(obj.artifact_version_id),
+                "version": obj.artifact_version.version_no,
             }
         return relations
 

@@ -75,25 +75,28 @@ async def render_traceability_section(plan_version_id: str | None) -> str:
         return ""
     try:
         # lazy import 防循环依赖。
-        from delivery.models import PlanVersion, TechnicalPlan, WorkItem
+        from delivery.models import ArtifactVersion, WorkItem
 
-        pv = await PlanVersion.objects.filter(id=plan_version_id).afirst()
-        if pv is None:
+        av = await ArtifactVersion.objects.filter(id=plan_version_id).afirst()
+        if av is None:
             return ""
-        # TechnicalPlan ← PlanVersion.plan（FK）；用 plan_id 标量再查规避 lazy-FK。
-        tp = await TechnicalPlan.objects.filter(id=pv.plan_id).afirst()
-        if tp is None:
+        # Artifact ← ArtifactVersion.artifact（FK）；用 artifact_id 标量再查规避 lazy-FK。
+        artifact = await ArtifactVersion.objects.filter(id=av.id).values(
+            "artifact_id", "version_no", "artifact__work_item_id"
+        ).afirst()
+        if artifact is None:
             return ""
 
         lines = [
             "\n---",
             "## 关联方案 / 工作项",
             "",
-            f"- 技术方案: `{tp.id}` (v{pv.version})",
+            f"- 技术方案: `{artifact['artifact_id']}` (v{artifact['version_no']})",
         ]
-        # WorkItem ← TechnicalPlan.work_item（nullable FK）；用 work_item_id 标量。
-        if tp.work_item_id:
-            wi = await WorkItem.objects.filter(id=tp.work_item_id).afirst()
+        # WorkItem ← Artifact.work_item（nullable FK）；用 work_item_id 标量。
+        work_item_id = artifact.get("artifact__work_item_id")
+        if work_item_id:
+            wi = await WorkItem.objects.filter(id=work_item_id).afirst()
             if wi is not None:
                 # WorkItem 无通用 url 字段——用飞书三元组 + 标题标识，有 prd_url 才附链接
                 # （不构造臆造 URL）。

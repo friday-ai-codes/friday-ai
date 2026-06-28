@@ -188,6 +188,7 @@ declare global {
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useCached: typeof import('@vueuse/core').useCached
   const useChatPartsProtocol: typeof import('./composables/useChatPartsProtocol').useChatPartsProtocol
+  const useChatSession: typeof import('./composables/useChatSession').useChatSession
   const useChatStore: typeof import('./stores/chat').useChatStore
   const useClipboard: typeof import('@vueuse/core').useClipboard
   const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
@@ -404,6 +405,9 @@ declare global {
   // @ts-ignore
   export type { ChatPartsProtocol } from './composables/useChatPartsProtocol'
   import('./composables/useChatPartsProtocol')
+  // @ts-ignore
+  export type { ChatSessionGroups } from './composables/useChatSession'
+  import('./composables/useChatSession')
   // @ts-ignore
   export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
   import('./composables/useConfigModel')
@@ -677,6 +681,7 @@ declare module 'vue' {
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useChatPartsProtocol: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['useChatPartsProtocol']>
+    readonly useChatSession: UnwrapRef<typeof import('./composables/useChatSession')['useChatSession']>
     readonly useChatStore: UnwrapRef<typeof import('./stores/chat')['useChatStore']>
     readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>
     readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>

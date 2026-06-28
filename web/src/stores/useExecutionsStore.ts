@@ -27,6 +27,12 @@ export interface NodeExecution {
   sub_step_progress: { completed: number, total: number } | null
   logs: ExecutionLogEntry[] | null
   error_code: string | null
+  /** P5：节点生命周期相位（WS 投影实时下发；静态加载时缺省，由前端从 status 兜底） */
+  lifecycle?: string | null
+  /** P5：收敛轮次（澄清/修订态有值） */
+  round?: number | null
+  /** P5：收敛轮次上限（用于「第 N/M 轮」展示） */
+  max_rounds?: number | null
 }
 
 export interface WorkflowDefinitionNode {
@@ -364,6 +370,14 @@ export const useExecutionsStore = defineStore('executions', () => {
       )
       if (nodeExec) {
         nodeExec.status = node_status
+        // P5：消费生命周期相位 + 收敛轮次投影（防御读，缺字段不覆盖既有值）。
+        // round 缺省时显式清空（如从「等澄清·第 N 轮」回到无轮次态），max_rounds 仅随 round 出现。
+        if (data.lifecycle != null) {
+          nodeExec.lifecycle = data.lifecycle
+          nodeExec.round = data.round ?? null
+          if (data.max_rounds != null)
+            nodeExec.max_rounds = data.max_rounds
+        }
       }
     }
 
@@ -475,6 +489,7 @@ export const useExecutionsStore = defineStore('executions', () => {
     triggerNode,
     connectWebSocket,
     disconnectWebSocket,
+    handleWebSocketMessage,
     sendDebugAction,
     sendBreakpointAction,
     sendDebugModeSwitch,

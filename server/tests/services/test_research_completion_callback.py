@@ -17,10 +17,10 @@ import pytest
 
 from agents.models import AgentSession
 from delivery.models import (
+    ConvergenceSession,
+    ConvergenceSessionEntrypoint,
+    ConvergenceSessionStatus,
     PartialPlan,
-    PlanSession,
-    PlanSessionEntrypoint,
-    PlanSessionStatus,
     RepoResearchTask,
     RepoResearchTaskStatus,
 )
@@ -32,8 +32,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 async def _setup(
     last_output_extra: dict | None = None,
-    status=PlanSessionStatus.RESEARCHING,
-    entrypoint=PlanSessionEntrypoint.CHAT,
+    current_stage="research",
+    entrypoint=ConvergenceSessionEntrypoint.CHAT,
 ):
     repo = await Repository.objects.acreate(
         name=f"r-{uuid.uuid4().hex[:6]}",
@@ -42,8 +42,11 @@ async def _setup(
         default_branch="main",
         index_status="indexed",
     )
-    plan_session = await PlanSession.objects.acreate(
-        entrypoint=entrypoint, status=status
+    plan_session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=entrypoint,
+        current_stage=current_stage,
+        status=ConvergenceSessionStatus.WAITING_EVENT,
     )
     task = await RepoResearchTask.objects.acreate(
         session=plan_session, repository=repo, status=RepoResearchTaskStatus.RUNNING
@@ -101,7 +104,7 @@ async def test_structured_partial_recorded_and_completed_event() -> None:
     emit_spy = AsyncMock()
     with (
         _PATCHES[0], _PATCHES[1], _PATCHES[2],
-        patch("delivery.services.PlanSessionService._emit_event", new=emit_spy),
+        patch("delivery.services.ConvergenceSessionService._emit_event", new=emit_spy),
     ):
         resp = await _handle_completed(sub, payload, _log())
 
@@ -117,7 +120,7 @@ async def test_structured_partial_recorded_and_completed_event() -> None:
     assert completed[0].args[2]["repo_id"] == str(repo.id)
     # barrier：唯一 task done → research_complete → merging
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.MERGING
+    assert plan_session.current_stage == "merge"
 
 
 @pytest.mark.asyncio
@@ -147,7 +150,7 @@ async def test_empty_result_marks_failed_and_failed_event() -> None:
     emit_spy = AsyncMock()
     with (
         _PATCHES[0], _PATCHES[1], _PATCHES[2],
-        patch("delivery.services.PlanSessionService._emit_event", new=emit_spy),
+        patch("delivery.services.ConvergenceSessionService._emit_event", new=emit_spy),
     ):
         resp = await _handle_completed(sub, payload, _log())
 
@@ -159,7 +162,7 @@ async def test_empty_result_marks_failed_and_failed_event() -> None:
     assert len(failed) == 1
     # failed 也是 barrier 终态 → merging
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.MERGING
+    assert plan_session.current_stage == "merge"
 
 
 @pytest.mark.asyncio
@@ -259,7 +262,7 @@ async def test_failed_callback_marks_task_failed() -> None:
         patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
         patch("subagent.api.callbacks._schedule_workflow_resume"),
         patch("subagent.api.callbacks._schedule_agent_session_resume"),
-        patch("delivery.services.PlanSessionService._emit_event", new=emit_spy),
+        patch("delivery.services.ConvergenceSessionService._emit_event", new=emit_spy),
     ):
         resp = await _handle_failed(sub, payload, _log())
 
@@ -270,7 +273,7 @@ async def test_failed_callback_marks_task_failed() -> None:
     failed = [c for c in emit_spy.call_args_list if c.args and c.args[0] == "repo.research.failed"]
     assert len(failed) == 1
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.MERGING
+    assert plan_session.current_stage == "merge"
 
 
 # === RESUME-01（43-03）：chat 入口续驱 + barrier 回灌闭环 / 回归 / 幂等 / fail-soft / 失败路径 ===
@@ -296,18 +299,27 @@ def _passing_engine() -> Any:
     主流程 amaybe_complete_research 尚未把 session 推到 merging）的窗口运行，此时 engine 会
     经 _research 再走一次 amaybe_complete_research（幂等去重）推进——等价生产真实 adapter。
     """
-    from services.plan_orchestration import PlanOrchestrationEngine
+    from types import SimpleNamespace
+
+    from delivery.services import ConvergenceSessionService
+    from services.process_runtime import ProcessEngine
 
     research = AsyncMock()
     research.dispatch = AsyncMock(return_value=None)
     merge = AsyncMock()
     merge.merge = AsyncMock(return_value={"validation_status": "passed"})
-    return PlanOrchestrationEngine(research=research, merge=merge)
+    return ProcessEngine(
+        session_service=ConvergenceSessionService(),
+        deps=SimpleNamespace(research=research, merge=merge),
+    )
 
 
 def _failing_engine() -> Any:
     """构造真实 engine，research.dispatch no-op + merge 限次回退耗尽（merging→failed 终态）。"""
-    from services.plan_orchestration import PlanOrchestrationEngine
+    from types import SimpleNamespace
+
+    from delivery.services import ConvergenceSessionService
+    from services.process_runtime import ProcessEngine
 
     research = AsyncMock()
     research.dispatch = AsyncMock(return_value=None)
@@ -315,7 +327,10 @@ def _failing_engine() -> Any:
     merge.merge = AsyncMock(
         return_value={"validation_status": "failed", "attempt": 1, "report": {}}
     )
-    return PlanOrchestrationEngine(research=research, merge=merge)
+    return ProcessEngine(
+        session_service=ConvergenceSessionService(),
+        deps=SimpleNamespace(research=research, merge=merge),
+    )
 
 
 @pytest.mark.asyncio
@@ -339,7 +354,7 @@ async def test_chat_resume_drives_to_done_and_notifies_barrier() -> None:
         _PATCHES[0],
         _PATCHES[1],  # 放开 _schedule_agent_session_resume —— 让真实分支委派跑
         patch(
-            "services.plan_orchestration.build_orchestration_engine",
+            "services.process_runtime.build_orchestration_engine",
             return_value=_passing_engine(),
         ),
         patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
@@ -349,7 +364,7 @@ async def test_chat_resume_drives_to_done_and_notifies_barrier() -> None:
 
     assert resp.status_code == 200
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.DONE
+    assert plan_session.status == ConvergenceSessionStatus.DONE
     # barrier 回灌：task_id 用 str(plan_session.id)（Pitfall 3），success=True
     barrier_mock.task_completed.assert_awaited_once()
     call = barrier_mock.task_completed.await_args
@@ -377,8 +392,11 @@ async def test_workflow_entry_session_skips_chat_resume() -> None:
         default_branch="main",
         index_status="indexed",
     )
-    plan_session = await PlanSession.objects.acreate(
-        entrypoint=PlanSessionEntrypoint.WORKFLOW, status=PlanSessionStatus.RESEARCHING
+    plan_session = await ConvergenceSession.objects.acreate(
+        process_type="technical_plan",
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW,
+        current_stage="research",
+        status=ConvergenceSessionStatus.WAITING_EVENT,
     )
     task = await RepoResearchTask.objects.acreate(
         session=plan_session, repository=repo, status=RepoResearchTaskStatus.RUNNING
@@ -432,7 +450,7 @@ async def test_workflow_entry_session_skips_chat_resume() -> None:
 async def test_chat_resume_guards_non_chat_entrypoint() -> None:
     """T-43-TAMPER：守门用服务端权威字段 entrypoint —— 非 chat（workflow）入口绝不续驱。"""
     repo, plan_session, task, sub = await _setup(
-        entrypoint=PlanSessionEntrypoint.WORKFLOW
+        entrypoint=ConvergenceSessionEntrypoint.WORKFLOW
     )
     payload = {"result_type": "text", "output": {"research_summary": "改鉴权"}}
     from subagent.api.callbacks import _handle_completed
@@ -443,7 +461,7 @@ async def test_chat_resume_guards_non_chat_entrypoint() -> None:
     with (
         _PATCHES[0],
         _PATCHES[1],
-        patch("services.plan_orchestration.build_orchestration_engine", new=engine_spy),
+        patch("services.process_runtime.build_orchestration_engine", new=engine_spy),
         patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
     ):
         resp = await _handle_completed(sub, payload, _log())
@@ -478,7 +496,7 @@ async def test_chat_resume_idempotent_when_research_in_flight() -> None:
     with (
         _PATCHES[0],
         _PATCHES[1],
-        patch("services.plan_orchestration.build_orchestration_engine", new=engine_spy),
+        patch("services.process_runtime.build_orchestration_engine", new=engine_spy),
         patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
     ):
         resp = await _handle_completed(sub, payload, _log())
@@ -489,7 +507,7 @@ async def test_chat_resume_idempotent_when_research_in_flight() -> None:
     engine_spy.assert_not_called()
     barrier_mock.task_completed.assert_not_awaited()
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.RESEARCHING
+    assert plan_session.current_stage == "research"
 
 
 @pytest.mark.asyncio
@@ -506,11 +524,11 @@ async def test_chat_resume_swallows_internal_error_returns_200() -> None:
         _PATCHES[0],
         _PATCHES[1],
         patch(
-            "services.plan_orchestration.build_orchestration_engine",
+            "services.process_runtime.build_orchestration_engine",
             return_value=MagicMock(),
         ),
         patch(
-            "services.plan_orchestration.adrive_plan_session_to_pause_or_terminal",
+            "services.process_runtime.adrive_convergence_session_to_pause_or_terminal",
             new=_boom_drive,
         ),
     ):
@@ -535,7 +553,7 @@ async def test_chat_resume_failed_research_notifies_barrier_success_false() -> N
         patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
         patch("subagent.api.callbacks._schedule_workflow_resume"),
         patch(
-            "services.plan_orchestration.build_orchestration_engine",
+            "services.process_runtime.build_orchestration_engine",
             return_value=_failing_engine(),
         ),
         patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
@@ -550,7 +568,7 @@ async def test_chat_resume_failed_research_notifies_barrier_success_false() -> N
     assert call.args[0] == str(plan_session.id)
     assert call.args[1]["success"] is False
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.FAILED
+    assert plan_session.status == ConvergenceSessionStatus.FAILED
 
 
 # === CR-01：续驱调度顺序回归（必须在 research 完成/失败处理之后调度，消除竞态） ===
@@ -637,7 +655,7 @@ async def test_chat_resume_drives_to_terminal_with_real_ordering() -> None:
         _PATCHES[0],
         _PATCHES[1],
         patch(
-            "services.plan_orchestration.build_orchestration_engine",
+            "services.process_runtime.build_orchestration_engine",
             return_value=_passing_engine(),
         ),
         patch("orchestration.barrier.get_barrier_manager", return_value=barrier_mock),
@@ -649,7 +667,7 @@ async def test_chat_resume_drives_to_terminal_with_real_ordering() -> None:
     await task.arefresh_from_db()
     assert task.status == RepoResearchTaskStatus.DONE
     await plan_session.arefresh_from_db()
-    assert plan_session.status == PlanSessionStatus.DONE
+    assert plan_session.status == ConvergenceSessionStatus.DONE
     barrier_mock.task_completed.assert_awaited_once()
     call = barrier_mock.task_completed.await_args
     assert call.args[0] == str(plan_session.id)

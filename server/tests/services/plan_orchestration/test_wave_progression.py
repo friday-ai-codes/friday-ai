@@ -18,15 +18,14 @@ import pytest
 
 from agents.models import AgentSession
 from delivery.models import (
-    PlanVersion,
+    Artifact,
+    ArtifactVersion,
     RepoCodingTask,
     RepoCodingTaskStatus,
-    TechnicalPlan,
-    TechnicalPlanOrigin,
 )
 from delivery.services import RepoCodingTaskService
 from repositories.models import Repository
-from services.plan_orchestration import aadvance_coding_waves
+from services.process_runtime import aadvance_coding_waves
 from subagent.models import SubAgentSession
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -42,9 +41,14 @@ async def _make_repo() -> Repository:
     )
 
 
-async def _make_plan_version() -> PlanVersion:
-    plan = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    return await PlanVersion.objects.acreate(plan=plan, version=1, content={"a": 1})
+async def _make_plan_version() -> ArtifactVersion:
+    artifact = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(
+        artifact=artifact, version_no=1, content={"a": 1}, content_hash="h"
+    )
+    artifact.current_version = av
+    await artifact.asave(update_fields=["current_version", "updated_at"])
+    return av
 
 
 async def _make_subagent(status: str) -> SubAgentSession:

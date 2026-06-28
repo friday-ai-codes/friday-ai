@@ -91,7 +91,9 @@ def _deepen_patches(session: SimpleNamespace, capture: dict):
 @pytest.mark.asyncio
 async def test_clarifying_waiting_event_and_subscription() -> None:
     node = PlanDeepenNode()
-    session = SimpleNamespace(id="sess-1", status="clarifying", current_plan_version=None)
+    session = SimpleNamespace(
+        id="sess-1", status="waiting_clarification", current_artifact_version_id=None
+    )
     capture: dict = {}
     p_space, p_proj, p_svc = _deepen_patches(session, capture)
     acreate = AsyncMock()
@@ -116,7 +118,7 @@ async def test_clarifying_waiting_event_and_subscription() -> None:
 @pytest.mark.asyncio
 async def test_done_completed_with_plan_anchor() -> None:
     node = PlanDeepenNode()
-    session = SimpleNamespace(id="sess-1", status="done", current_plan_version="ver-9")
+    session = SimpleNamespace(id="sess-1", status="done", current_artifact_version_id="ver-9")
     capture: dict = {}
     p_space, p_proj, p_svc = _deepen_patches(session, capture)
 
@@ -127,14 +129,14 @@ async def test_done_completed_with_plan_anchor() -> None:
 
     assert result.status == "completed"
     assert result.next_handle == "default"
-    assert result.output["plan_version_id"] == "ver-9"
+    assert result.output["artifact_version_id"] == "ver-9"
     assert result.output["session_id"] == "sess-1"
 
 
 @pytest.mark.asyncio
 async def test_failed_session_routes_error() -> None:
     node = PlanDeepenNode()
-    session = SimpleNamespace(id="sess-1", status="failed", current_plan_version=None)
+    session = SimpleNamespace(id="sess-1", status="failed", current_artifact_version_id=None)
     capture: dict = {}
     p_space, p_proj, p_svc = _deepen_patches(session, capture)
 

@@ -43,9 +43,10 @@ async def test_project_doc_normalize_produces_document_event_with_edge() -> None
     assert event.kind == EntityKind.DOCUMENT
     assert event.origin == EntityOrigin.PROJECT
     assert event.source_kind == "project_doc"
-    # space_id 等于项目所属 Space id（visibility 维度）。
+    # KnowledgeEntity.space_id remains the owning Space FK; vector payload carries Project id.
     project = await sync_to_async(lambda: doc.project)()
     assert event.space_id == str(project.space_id)
+    assert event.payload["project_id"] == str(project.id)
     assert event.repository_id is None
     # 脱敏不可绕过：正文不含明文 secret。
     assert secret not in event.content

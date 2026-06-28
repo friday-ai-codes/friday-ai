@@ -62,11 +62,10 @@ def test_cross_reference_section_single_returns_empty() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_traceability_full_chain() -> None:
-    """链全在 → 段含 TechnicalPlan 标识 + WorkItem 三元组/标题/prd_url。"""
+    """链全在 → 段含 Artifact 标识 + WorkItem 三元组/标题/prd_url。"""
     from delivery.models import (
-        PlanVersion,
-        TechnicalPlan,
-        TechnicalPlanOrigin,
+        Artifact,
+        ArtifactVersion,
         WorkItem,
         WorkItemOrigin,
     )
@@ -80,15 +79,13 @@ async def test_traceability_full_chain() -> None:
         title="登录功能",
         prd_url="https://feishu.example/prd/1",
     )
-    tp = await TechnicalPlan.objects.acreate(
-        origin=TechnicalPlanOrigin.ORCHESTRATION, work_item=wi
-    )
-    pv = await PlanVersion.objects.acreate(plan=tp, version=3, content={})
+    art = await Artifact.objects.acreate(artifact_type="technical_plan", work_item=wi)
+    av = await ArtifactVersion.objects.acreate(artifact=art, version_no=3, content={})
 
-    section = await render_traceability_section(str(pv.id))
+    section = await render_traceability_section(str(av.id))
 
     assert "## 关联方案 / 工作项" in section
-    assert str(tp.id) in section
+    assert str(art.id) in section
     assert "v3" in section
     assert "story/12345" in section
     assert "登录功能" in section
@@ -99,15 +96,15 @@ async def test_traceability_full_chain() -> None:
 @pytest.mark.asyncio
 async def test_traceability_no_work_item_still_renders_plan() -> None:
     """方案无 work_item → 段含技术方案标识、无工作项行、不抛。"""
-    from delivery.models import PlanVersion, TechnicalPlan, TechnicalPlanOrigin
+    from delivery.models import Artifact, ArtifactVersion
     from workflows.services.pr_cross_reference import render_traceability_section
 
-    tp = await TechnicalPlan.objects.acreate(origin=TechnicalPlanOrigin.ORCHESTRATION)
-    pv = await PlanVersion.objects.acreate(plan=tp, version=1, content={})
+    art = await Artifact.objects.acreate(artifact_type="technical_plan")
+    av = await ArtifactVersion.objects.acreate(artifact=art, version_no=1, content={})
 
-    section = await render_traceability_section(str(pv.id))
+    section = await render_traceability_section(str(av.id))
 
-    assert str(tp.id) in section
+    assert str(art.id) in section
     # 标题含「工作项」但不应有工作项数据行。
     assert "- 工作项:" not in section
 

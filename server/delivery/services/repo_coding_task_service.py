@@ -36,7 +36,7 @@ class RepoCodingTaskService:
 
     async def create_tasks_for_plan(
         self,
-        plan_version: Any,
+        artifact_version: Any,
         repo_waves: dict[str, int],
         repo_dep_edges: dict[str, list[str]],
     ) -> dict[str, RepoCodingTask]:
@@ -48,12 +48,12 @@ class RepoCodingTaskService:
         已存在则按需回填 ``wave``；depends_on M2M 边在**同步块内** ``set(...)``（避免 async
         lazy 访问）。返回 ``{repository_id: task}`` 便于调用方按仓索引。
         """
-        return await self._create_tasks_sync(plan_version, repo_waves, repo_dep_edges)
+        return await self._create_tasks_sync(artifact_version, repo_waves, repo_dep_edges)
 
     @sync_to_async
     def _create_tasks_sync(
         self,
-        plan_version: Any,
+        artifact_version: Any,
         repo_waves: dict[str, int],
         repo_dep_edges: dict[str, list[str]],
     ) -> dict[str, RepoCodingTask]:
@@ -67,7 +67,7 @@ class RepoCodingTaskService:
             facets = Repository.objects.filter(id=repo_id).values_list("facets", flat=True).first()
             is_sdd = (facets or {}).get("methodology") == "SDD"
             task, created = RepoCodingTask.objects.get_or_create(
-                plan_version=plan_version,
+                artifact_version=artifact_version,
                 repository_id=repo_id,
                 defaults={
                     "status": RepoCodingTaskStatus.PENDING,

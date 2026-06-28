@@ -16,6 +16,7 @@ import { MarkerType } from '@vue-flow/core'
 import { computed, markRaw } from 'vue'
 import GradientEdge from '~/components/workflow/editor/edges/GradientEdge.vue'
 import ExecutionNode from '../ExecutionNode.vue'
+import { deriveLifecycleFromStatus, type LifecyclePhase, normalizeLifecyclePhase } from './lifecycleBadge'
 
 /** Vue Flow 执行节点的 data 载荷类型 */
 export interface ExecutionNodeData {
@@ -54,6 +55,12 @@ export interface ExecutionNodeData {
   onToggleBreakpoint?: (nodeId: string) => void
   /** 是否为调试执行（控制断点指示器显示） */
   isDebugExecution?: boolean
+  /** P5：节点生命周期相位（WS 投影优先，缺省从 status 兜底） */
+  lifecycle?: LifecyclePhase
+  /** P5：收敛轮次（澄清/修订态有值） */
+  round?: number | null
+  /** P5：收敛轮次上限 */
+  maxRounds?: number | null
 }
 
 /** 自定义节点类型注册 */
@@ -96,6 +103,10 @@ export function useExecutionDag(
       const ne = execMap.get(defNode.id)
       const bn = bottleneckMap.get(defNode.id)
       const nodeStatus = (ne ? statusOverride?.(ne) : undefined) ?? ne?.status ?? 'pending'
+      // P5：生命周期相位 —— WS 投影 lifecycle 优先，缺省从节点 status 兜底（静态加载/旧执行）。
+      const lifecycle: LifecyclePhase = ne?.lifecycle
+        ? normalizeLifecyclePhase(ne.lifecycle)
+        : deriveLifecycleFromStatus(nodeStatus)
       return {
         id: defNode.id,
         type: 'execution',
@@ -114,6 +125,9 @@ export function useExecutionDag(
           subStepProgress: ne?.sub_step_progress ?? null,
           isAINode: AI_NODE_TYPES.includes(defNode.node_type),
           isDebugPaused: exec.debug_paused_at_node === defNode.id,
+          lifecycle,
+          round: ne?.round ?? null,
+          maxRounds: ne?.max_rounds ?? null,
         },
       }
     }) ?? []
