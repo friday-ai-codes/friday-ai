@@ -1369,6 +1369,9 @@
       "apis": {
         "title": "API 清单",
         "add": "新增",
+        "editDetail": "编辑接口详情（字段/类型/返回结构）",
+        "fieldCount": "入参 {req} · 出参 {res}",
+        "fieldCountTitle": "请求字段数 · 返回字段数",
         "added": "已新增 API 条目",
         "addFailed": "新增失败",
         "updateFailed": "更新失败",

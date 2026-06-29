@@ -70,13 +70,25 @@ export interface HumanBlockWrite {
 /** 结构化 API 清单条目状态（对齐后端 ApiStatus）。 */
 export type StateApiStatus = 'planned' | 'in_progress' | 'done' | string
 
-/** 项目结构化 API 清单条目（DOC-02）。 */
+/** API 字段定义（请求/返回，支持嵌套 children 表达返回结构，#5）。 */
+export interface ApiField {
+  name: string
+  type: string
+  optional?: boolean
+  description?: string
+  children?: ApiField[]
+}
+
+/** 项目结构化 API 清单条目（DOC-02 + #5 完整 schema）。 */
 export interface StateApi {
   id: string
   project_id: string
   method: string
   path: string
   params: Record<string, unknown>
+  description: string
+  request_fields: ApiField[]
+  response_fields: ApiField[]
   status: StateApiStatus
   source: string
   created_at: string
@@ -88,6 +100,9 @@ export interface StateApiInput {
   method?: string
   path?: string
   params?: Record<string, unknown>
+  description?: string
+  request_fields?: ApiField[]
+  response_fields?: ApiField[]
   status?: StateApiStatus
 }
 
