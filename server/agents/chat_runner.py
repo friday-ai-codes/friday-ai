@@ -38,7 +38,8 @@ import agents.tools.chat_tools  # noqa: F401
 import agents.tools.clarification  # noqa: F401  # implementation
 import agents.tools.coding_tools  # noqa: F401
 import agents.tools.delivery_knowledge_tools  # noqa: F401  # RECALL-02 交付知识召回工具
-import agents.tools.plan_research_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
+import agents.tools.plan_research_tools  # noqa: F401
+import agents.tools.project_feature_tools  # noqa: F401  # ENTRY-02 chat 入口薄封装
 import agents.tools.repository_relevance  # noqa: F401
 import agents.tools.space_tools  # noqa: F401
 from agents.call_source import CallSource, get_call_source
@@ -102,6 +103,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "update_coding_plan",
     # ENTRY-02：对话中发起多仓 / 跨仓方案编排（薄入口，复用同一编排 engine）
     "start_plan_research",
+    # #5 Part A：把整理出的 feature list 绑定到当前对话所绑定的项目
+    "save_project_feature_list",
     # RECALL-02（v0.15.0 Phase 80）：交付知识召回接入 chat 工具白名单。
     # 这些工具以 conversation_id 解析会话 owner 做权限 fail-closed（非成员零召回），
     # 与项目上下文打包器（context packer）互补——packer 自动注入，工具供 LLM 主动追溯。
