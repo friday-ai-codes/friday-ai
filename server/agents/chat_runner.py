@@ -105,6 +105,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
     "start_plan_research",
     # #5 Part A：把整理出的 feature list 绑定到当前对话所绑定的项目
     "save_project_feature_list",
+    # #5 Part A：feature list 拆子看板/工作项并关联到当前对话所绑定的项目
+    "split_feature_list_to_boards",
     # RECALL-02（v0.15.0 Phase 80）：交付知识召回接入 chat 工具白名单。
     # 这些工具以 conversation_id 解析会话 owner 做权限 fail-closed（非成员零召回），
     # 与项目上下文打包器（context packer）互补——packer 自动注入，工具供 LLM 主动追溯。
