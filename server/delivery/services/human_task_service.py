@@ -264,13 +264,23 @@ class HumanTaskService:
         *,
         assignee_user_id: str | None = None,
         include_projections: bool = True,
+        project_id: str | None = None,
     ) -> list[HumanTaskView]:
         """返回统一待办列表（"我需要处理什么"）。
 
         - ``assignee_user_id``：仅过滤**物化** HumanTask（投影类待办无 assignee，恒纳入，
           因为审批 / 失败反应 / 澄清通常面向当值处理者）；传 None 返回全部 open 物化行。
         - ``include_projections``：是否叠加投影（澄清 / 审批 / 失败反应）。
+        - ``project_id``：限定某项目维度的待办。当前 ``HumanTask`` 与各投影源（Clarification /
+          NodeExecution / ReactionExecution）均为工作区级、**不携带项目归属**，无法可靠归属到
+          具体项目；为避免把**全局待办**误塞进项目作战室（修 #10：空项目不该出现别处的待办），
+          传 ``project_id`` 时只返回**能确证属于该项目**的待办——当前无此链路即返回空列表。
+          待 AI 产物（方案/澄清/工作项）绑定项目落地后，再在此按项目归属补充投影来源。
         """
+        # 项目维度：在建立"待办↔项目"归属链路前，按 fail-closed 返回空，杜绝全局待办泄漏到项目。
+        if project_id is not None:
+            return []
+
         views: list[HumanTaskView] = []
         materialized_keys: set[str] = set()
         for view, dedup_key in await self._materialized_views(assignee_user_id):
