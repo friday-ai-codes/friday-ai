@@ -9,8 +9,8 @@ from initiatives.views import (
     ProjectBranchDetailView,
     ProjectBranchListCreateView,
     ProjectCursorRulesView,
-    ProjectDetailView,
     ProjectDescriptionGenerateView,
+    ProjectDetailView,
     ProjectFeatureListView,
     ProjectGalaxyView,
     ProjectGraphView,
@@ -27,6 +27,7 @@ from initiatives.views import (
     ProjectMergeRequestListView,
     ProjectOwnerTransferView,
     ProjectRehomeView,
+    ProjectRepositoryListView,
     ProjectSearchView,
     ProjectStateApiDetailView,
     ProjectStateApiListCreateView,
@@ -196,6 +197,12 @@ urlpatterns = [
         "<uuid:project_id>/feature-list/",
         ProjectFeatureListView.as_view(),
         name="project-feature-list",
+    ),
+    # 项目「关联仓库」（业务关联 ∪ 分支绑定，#4：按项目而非空间）
+    path(
+        "<uuid:project_id>/repositories/",
+        ProjectRepositoryListView.as_view(),
+        name="project-repository-list",
     ),
     path(
         "<uuid:project_id>/description/generate/",
