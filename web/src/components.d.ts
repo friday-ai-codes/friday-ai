@@ -47,6 +47,7 @@ declare module 'vue' {
     AnnouncementEditorDialog: typeof import('./components/admin/AnnouncementEditorDialog.vue')['default']
     AnnouncementPopup: typeof import('./components/announcements/AnnouncementPopup.vue')['default']
     AnnouncementReadStatusDialog: typeof import('./components/admin/AnnouncementReadStatusDialog.vue')['default']
+    ApiSchemaEditModal: typeof import('./components/project/warroom/ApiSchemaEditModal.vue')['default']
     AppSidebar: typeof import('./components/layout/AppSidebar.vue')['default']
     ArtifactsTab: typeof import('./components/project/workbench/ArtifactsTab.vue')['default']
     ArtifactTimeline: typeof import('./components/delivery/ArtifactTimeline.vue')['default']
