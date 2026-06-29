@@ -203,28 +203,28 @@ const STATS = computed(() => [
         </p>
       </div>
 
-      <!-- 统计卡 -->
-      <div class="grid grid-cols-3 gap-2.5" :aria-busy="isLoading">
+      <!-- 统计卡（Data-Dense：紧凑 KPI，图标与数字同行，省高度） -->
+      <div class="grid grid-cols-3 gap-2" :aria-busy="isLoading">
         <div
           v-for="s in STATS"
           :key="s.key"
-          class="group relative rounded-lg border border-border/60 bg-muted/30 px-3.5 py-3 min-h-[80px] flex flex-col gap-2.5 transition-colors duration-200 hover:border-primary/30 hover:bg-primary/4"
+          class="group relative rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2 flex flex-col gap-1 transition-colors duration-200 hover:border-primary/30 hover:bg-primary/4"
           :data-testid="`warroom-stat-${s.key}`"
         >
-          <span
-            class="inline-flex size-7 items-center justify-center rounded-md text-sm"
-            :class="s.chip"
-          >
-            <span :class="s.icon" />
-          </span>
-          <div class="min-w-0">
-            <p class="text-[26px] font-bold tabular-nums leading-none tracking-tight" :class="s.cls">
+          <div class="flex items-center gap-1.5">
+            <span
+              class="inline-flex size-5 items-center justify-center rounded text-[11px]"
+              :class="s.chip"
+            >
+              <span :class="s.icon" />
+            </span>
+            <p class="text-lg font-bold tabular-nums leading-none tracking-tight" :class="s.cls">
               {{ s.value }}
             </p>
-            <p class="text-xs text-muted-foreground truncate mt-1.5">
-              {{ s.label }}
-            </p>
           </div>
+          <p class="text-[11px] text-muted-foreground truncate">
+            {{ s.label }}
+          </p>
         </div>
       </div>
 
