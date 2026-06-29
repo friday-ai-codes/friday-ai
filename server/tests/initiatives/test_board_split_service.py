@@ -242,7 +242,7 @@ async def test_tool_space_not_found() -> None:
         mock_space.DoesNotExist = Exception
         mock_space.objects.aget = AsyncMock(side_effect=mock_space.DoesNotExist())
         result = await split_feature_list_to_boards(
-            space_id="missing", feature_list_text="x"
+            space_id="missing", conversation_id="c1", feature_list_text="x"
         )
     assert result.success is False
     assert "不存在" in (result.error or "")
@@ -251,7 +251,7 @@ async def test_tool_space_not_found() -> None:
 async def test_tool_no_input_source() -> None:
     from agents.tools.board_split_tools import split_feature_list_to_boards
 
-    result = await split_feature_list_to_boards(space_id="s1")
+    result = await split_feature_list_to_boards(space_id="s1", conversation_id="c1")
     assert result.success is False
 
 
@@ -275,7 +275,7 @@ async def test_tool_happy_delegates_service() -> None:
         instance.propose_split = AsyncMock(return_value=_PROPOSAL)
         instance.create_boards = AsyncMock(return_value=create_result)
         result = await split_feature_list_to_boards(
-            space_id="s1", feature_list_text="x"
+            space_id="s1", conversation_id="c1", feature_list_text="x"
         )
     assert result.success is True
     assert result.output["data"]["created"]

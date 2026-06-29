@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 from agents.tools.base import ToolResult, tool
@@ -15,6 +17,26 @@ from initiatives.services.board_split_service import BoardSplitService
 from projects.models import Space
 
 logger = structlog.get_logger(__name__)
+
+
+async def _aresolve_bound_project(conversation_id: str | None) -> Any:
+    """由会话反查 bound_project（Project 实例）；未绑/不存在返回 None（fail-soft）。"""
+    if not conversation_id:
+        return None
+    try:
+        from chat.models import Conversation
+        from initiatives.models import Project
+
+        row = await (
+            Conversation.objects.filter(id=conversation_id)
+            .values("bound_project_id")
+            .afirst()
+        )
+        if not row or not row.get("bound_project_id"):
+            return None
+        return await Project.objects.filter(id=row["bound_project_id"]).afirst()
+    except Exception:  # noqa: BLE001 — 反查失败回退按 space 解析，不阻断拆分
+        return None
 
 
 @tool(
@@ -49,12 +71,17 @@ logger = structlog.get_logger(__name__)
                 "description": "子看板工作项类型",
                 "default": "story",
             },
+            "conversation_id": {
+                "type": "string",
+                "description": "会话 UUID (auto-injected)",
+            },
         },
-        "required": ["space_id"],
+        "required": ["space_id", "conversation_id"],
     },
 )
 async def split_feature_list_to_boards(
     space_id: str,
+    conversation_id: str,
     feature_list_url: str | None = None,
     feature_list_text: str | None = None,
     uploaded_text: str | None = None,
@@ -86,6 +113,9 @@ async def split_feature_list_to_boards(
         log.warning("space_not_found")
         return ToolResult(success=False, error=f"空间不存在: {space_id}")
 
+    # #5 Part A：优先把拆出的工作项关联到「当前对话所绑定的项目」（而非按 space 猜首个项目）。
+    bound_project = await _aresolve_bound_project(conversation_id)
+
     try:
         service = BoardSplitService()
         proposal = await service.propose_split(
@@ -98,6 +128,7 @@ async def split_feature_list_to_boards(
             space=space,
             proposal=proposal,
             work_item_type=work_item_type,
+            project=bound_project,
         )
     except Exception as e:
         log.error("split_feature_list_to_boards_failed", error=str(e))

@@ -122,6 +122,7 @@ class BoardSplitService:
         proposal: dict[str, Any],
         work_item_type: str = "story",
         parent_work_item_id: int | None = None,
+        project: Any = None,
         actor: Any = None,
         initiated_by_user_id: Any = None,
     ) -> dict[str, Any]:
@@ -133,6 +134,7 @@ class BoardSplitService:
             work_item_type: 子看板工作项类型（默认 story）。
             parent_work_item_id: 「项目跟踪」父工作项 id（关联项目跟踪 + 父子的 target）；
                 缺省时尝试从关联 Project.feishu_board_id 解析（数值串）。
+            project: 显式关联项目（如对话 bound_project）；缺省则按 space 解析（向后兼容）。
             actor / initiated_by_user_id: 审计/可观测归因（缺记 system）。
 
         Returns:
@@ -143,7 +145,8 @@ class BoardSplitService:
         features: list[dict[str, Any]] = list(proposal.get("features_flat") or [])
         project_key = getattr(space, "feishu_project_key", "") or ""
 
-        project = await self._aresolve_project(space)
+        # 优先用调用方显式传入的项目（如对话 bound_project）；否则按 space 解析（向后兼容）。
+        project = project or await self._aresolve_project(space)
         if parent_work_item_id is None and project is not None:
             parent_work_item_id = self._parse_parent_id(
                 getattr(project, "feishu_board_id", "")
