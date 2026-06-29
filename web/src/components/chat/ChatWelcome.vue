@@ -26,6 +26,10 @@ useGsapReveal(rootEl, () => {
     .from('.welcome-item', { y: 12, autoAlpha: 0, duration: 0.4, stagger: 0.07, ease: 'power2.out', clearProps: 'all' }, '-=0.25')
 })
 
+// 项目作战室内复用本组件作为对话空态：此时围绕「项目」而非「空间」，
+// 不应再引导用户去创建/选择空间（boundProjectId 非空即项目作用域）。
+const isProjectScope = computed(() => !!chatStore.boundProjectId)
+
 const hasSpace = computed(() => !!chatStore.selectedSpaceId)
 /** 实例里一个空间都没有：引导创建，或直接开始通用对话 */
 const noSpacesExist = computed(() => spacesStore.spaces.length === 0)
@@ -42,6 +46,16 @@ const quickPrompts = [
   { icon: 'icon-[lucide--search]', label: '搜索代码实现', prompt: '请帮我在空间中搜索相关的代码实现：' },
   { icon: 'icon-[lucide--file-text]', label: '生成空间概览', prompt: '请给我一个当前空间的整体概览' },
 ]
+
+// 项目作用域的提示词：围绕需求拆解 / 仓库关联 / 技术方案 / 项目现状。
+const projectPrompts = [
+  { icon: 'icon-[lucide--list-tree]', label: '拆解需求', prompt: '帮我把这个项目的需求拆解成 feature list（模块 → 功能点 → 验收项）' },
+  { icon: 'icon-[lucide--git-branch]', label: '梳理仓库', prompt: '这个项目可能涉及哪些代码仓库？帮我分析业务与仓库的关联' },
+  { icon: 'icon-[lucide--file-text]', label: '生成技术方案', prompt: '基于当前需求，帮我生成一份技术方案' },
+  { icon: 'icon-[lucide--gauge]', label: '项目现状', prompt: '总结一下这个项目当前的交付现状和下一步建议' },
+]
+
+const activePrompts = computed(() => (isProjectScope.value ? projectPrompts : quickPrompts))
 
 function handleQuickPrompt(prompt: string) {
   chatStore.prefillDraft(prompt)
@@ -69,7 +83,10 @@ function handleQuickPrompt(prompt: string) {
         有什么可以帮你？
       </h1>
       <p class="welcome-item mt-2 text-sm text-muted-foreground">
-        <template v-if="hasSpace">
+        <template v-if="isProjectScope">
+          围绕本项目的交付上下文，随时为你解答；可以直接提问，或让我帮你拆解需求、生成技术方案
+        </template>
+        <template v-else-if="hasSpace">
           基于「{{ currentSpaceName }}」空间的代码知识，随时为你解答
         </template>
         <template v-else-if="noSpacesExist">
@@ -80,8 +97,8 @@ function handleQuickPrompt(prompt: string) {
         </template>
       </p>
 
-      <!-- 实例无任何空间：引导创建 or 直接对话 -->
-      <div v-if="noSpacesExist" class="welcome-item mt-8 flex justify-center">
+      <!-- 实例无任何空间：引导创建 or 直接对话（项目作用域内不引导空间） -->
+      <div v-if="!isProjectScope && noSpacesExist" class="welcome-item mt-8 flex justify-center">
         <div class="welcome-space-card">
           <div class="flex items-center gap-2.5 text-left">
             <span class="welcome-space-icon">
@@ -108,8 +125,8 @@ function handleQuickPrompt(prompt: string) {
         </div>
       </div>
 
-      <!-- 有空间但未选：引导选择（也允许直接对话） -->
-      <div v-else-if="!hasSpace" class="welcome-item mt-8 flex justify-center">
+      <!-- 有空间但未选：引导选择（也允许直接对话；项目作用域内不引导空间） -->
+      <div v-else-if="!isProjectScope && !hasSpace" class="welcome-item mt-8 flex justify-center">
         <div class="welcome-space-card">
           <div class="flex items-center gap-2.5 text-left">
             <span class="welcome-space-icon">
@@ -144,10 +161,10 @@ function handleQuickPrompt(prompt: string) {
         </div>
       </div>
 
-      <!-- 已选空间：快捷提示 -->
+      <!-- 已选空间 / 项目作用域：快捷提示 -->
       <div v-else class="mt-8 grid grid-cols-2 gap-2.5">
         <button
-          v-for="item in quickPrompts"
+          v-for="item in activePrompts"
           :key="item.label"
           type="button"
           class="welcome-prompt-card welcome-item group"

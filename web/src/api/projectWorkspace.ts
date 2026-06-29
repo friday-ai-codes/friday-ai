@@ -124,6 +124,28 @@ export interface ProjectWorkItemWithStatus {
   module_normalized: string
 }
 
+/** 手动录入的 feature 功能点（含可选验收项 + 状态）。 */
+export interface FeatureListFeatureInput {
+  name: string
+  acceptance?: string[]
+  status?: string
+}
+
+/** 手动录入的模块（含功能点）。 */
+export interface FeatureListModuleInput {
+  module: string
+  features: FeatureListFeatureInput[]
+}
+
+/**
+ * 设置 feature list（#5 两种录入方式）：
+ * - mode='manual'：手动录入模块/功能点/验收项（落 markdown 载体工件，可全文 RAG）。
+ * - mode='feishu'：贴飞书多维表格链接（落 feishu_bitable 载体，经同步拉取）。
+ */
+export type FeatureListInput
+  = | { mode: 'manual', modules: FeatureListModuleInput[], title?: string }
+    | { mode: 'feishu', url: string, title?: string }
+
 /** 项目搜索结果项（WB-05，84-01 ProjectSearchResultSerializer）。 */
 export interface SearchResult {
   /** 命中内容片段。 */
@@ -178,6 +200,10 @@ export const projectWorkspaceApi = {
   /** feature list 树 + 进度灯（WB-02）。 */
   getFeatureList: (projectId: string): Promise<FeatureNode[]> =>
     get<FeatureNode[]>(`/projects/${projectId}/feature-list/`),
+
+  /** 设置/更新 feature list（#5 手动录入 或 飞书链接；仅项目成员）。 */
+  setFeatureList: (projectId: string, data: FeatureListInput): Promise<{ ok: boolean }> =>
+    post<{ ok: boolean }>(`/projects/${projectId}/feature-list/`, data),
 
   /** 项目工作项列表（含 WorkItem 状态字段，WB-02）。 */
   listWorkItems: (projectId: string): Promise<ProjectWorkItemWithStatus[]> =>

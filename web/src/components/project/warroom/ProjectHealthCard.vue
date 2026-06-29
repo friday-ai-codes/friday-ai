@@ -13,6 +13,8 @@ import { useToast } from '~/composables/useToast'
 
 // P1 健康总览：复用现有 feature-list / MR / docs 端点聚合真实交付状态 + 规则化下一步建议。
 const props = defineProps<{ project: Project, canManage?: boolean }>()
+// 「补充 feature list」CTA 由父级（资料面板）接管，打开 feature list 录入入口。
+const emit = defineEmits<{ 'add-feature-list': [] }>()
 
 const { t } = useI18n()
 const { handleError } = useErrorHandler()
@@ -112,17 +114,19 @@ const genDescMutation = useMutation({
 })
 
 // ── 下一步建议（规则版，仅基于真实数据）────────────────────────
+// key=noFeature 时附带「补充 feature list」可点 CTA（#2）。
 const nextStep = computed(() => {
   if (counts.value.testing > 0)
-    return { icon: 'icon-[lucide--clipboard-check]', text: t('projects.warroom.health.next.testing') }
+    return { key: 'testing', icon: 'icon-[lucide--clipboard-check]', text: t('projects.warroom.health.next.testing') }
   if (counts.value.in_progress > 0)
-    return { icon: 'icon-[lucide--hammer]', text: t('projects.warroom.health.next.inProgress') }
+    return { key: 'in_progress', icon: 'icon-[lucide--hammer]', text: t('projects.warroom.health.next.inProgress') }
   if (openMrCount.value > 0)
-    return { icon: 'icon-[lucide--git-pull-request]', text: t('projects.warroom.health.next.mr') }
+    return { key: 'mr', icon: 'icon-[lucide--git-pull-request]', text: t('projects.warroom.health.next.mr') }
   if (featureTotal.value === 0)
-    return { icon: 'icon-[lucide--list-plus]', text: t('projects.warroom.health.next.noFeature') }
-  return { icon: 'icon-[lucide--check-circle-2]', text: t('projects.warroom.health.next.good') }
+    return { key: 'noFeature', icon: 'icon-[lucide--list-plus]', text: t('projects.warroom.health.next.noFeature') }
+  return { key: 'good', icon: 'icon-[lucide--check-circle-2]', text: t('projects.warroom.health.next.good') }
 })
+const hasFeatures = computed(() => featureTotal.value > 0)
 
 const isLoading = computed(() => featuresQuery.isLoading.value || mrQuery.isLoading.value)
 
@@ -173,8 +177,10 @@ const STATS = computed(() => [
         <p v-else class="text-sm italic text-muted-foreground/70">
           {{ t('projects.overview.noDescription') }}
         </p>
+        <!-- #3：AI 生成描述依赖 feature list，无 feature 时按钮无意义 → 仅在有 feature 时展示；
+             否则给一句解释，避免用户点了没反应。 -->
         <Button
-          v-if="canManage"
+          v-if="canManage && hasFeatures"
           size="sm"
           variant="ghost"
           class="h-7 -ml-2 text-xs text-primary hover:text-primary"
@@ -188,6 +194,13 @@ const STATS = computed(() => [
           />
           {{ project.description ? t('projects.warroom.health.regenerateDesc') : t('projects.warroom.health.generateDesc') }}
         </Button>
+        <p
+          v-else-if="canManage && !project.description"
+          class="text-xs text-muted-foreground/60"
+          data-testid="gen-desc-hint"
+        >
+          {{ t('projects.warroom.health.descNeedsFeature') }}
+        </p>
       </div>
 
       <!-- 统计卡 -->
@@ -223,7 +236,7 @@ const STATS = computed(() => [
         <span class="inline-flex size-9 items-center justify-center rounded-md bg-primary/12 text-primary shrink-0">
           <span :class="nextStep.icon" />
         </span>
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <p class="text-[11px] font-medium uppercase tracking-wider text-primary/70">
             {{ t('projects.warroom.health.nextLabel') }}
           </p>
@@ -231,6 +244,17 @@ const STATS = computed(() => [
             {{ nextStep.text }}
           </p>
         </div>
+        <!-- #2：可点 CTA——无 feature 时直达「补充 feature list」入口 -->
+        <Button
+          v-if="nextStep.key === 'noFeature' && canManage"
+          size="sm"
+          class="shrink-0"
+          data-testid="next-step-add-feature"
+          @click="emit('add-feature-list')"
+        >
+          <span class="icon-[lucide--plus] mr-1" />
+          {{ t('projects.warroom.health.addFeatureCta') }}
+        </Button>
       </div>
     </div>
   </section>

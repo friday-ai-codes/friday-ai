@@ -85,6 +85,18 @@ export interface CursorRules {
   content: string
 }
 
+/** 项目「关联仓库」条目（业务关联 ∪ 分支绑定，#4）。 */
+export interface ProjectRepoLink {
+  /** 关联行 id（association / branch 行）。 */
+  id: string
+  repository_id: string
+  repository_name: string
+  git_url: string
+  /** 来源：'association'（业务关联）| 'branch'（分支绑定）。 */
+  source: 'association' | 'branch'
+  status: string
+}
+
 export const projectsApi = {
   /** 列出对当前用户可见的项目（支持 space_id/status/member/q 筛选）。 */
   list: (filters: ProjectListFilters = {}): Promise<Project[]> => {
@@ -113,6 +125,10 @@ export const projectsApi = {
   /** 状态流转。 */
   transition: (id: string, toStatus: ProjectStatus): Promise<Project> =>
     post<Project>(`/projects/${id}/transition/`, { to_status: toStatus }),
+
+  /** 改归到其他空间（WS-03）。 */
+  rehome: (id: string, newSpaceId: string): Promise<Project> =>
+    post<Project>(`/projects/${id}/rehome/`, { new_space_id: newSpaceId }),
 
   /** 成员列表。 */
   listMembers: (id: string): Promise<ProjectMember[]> =>
@@ -168,6 +184,10 @@ export const projectsApi = {
   /** 按 feature list 用 AI 生成/更新项目描述（#2，手动触发）。 */
   generateDescription: (id: string): Promise<{ description: string }> =>
     post<{ description: string }>(`/projects/${id}/description/generate/`, {}),
+
+  /** 项目「关联仓库」（业务关联 ∪ 分支绑定，#4：按项目而非空间，空项目返回 []）。 */
+  repositories: (id: string): Promise<ProjectRepoLink[]> =>
+    get<ProjectRepoLink[]>(`/projects/${id}/repositories/`),
 }
 
 export default projectsApi

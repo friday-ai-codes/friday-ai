@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Project, ProjectListFilters, ProjectStatus } from '~/api/projects'
 import type { Space } from '~/types'
-import { useQuery } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useHead } from '@vueuse/head'
 import { computed, markRaw, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -33,6 +33,7 @@ import { useAuthStore } from '~/stores/auth'
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const queryClient = useQueryClient()
 
 useHead({ title: () => `${t('projects.title')} - Friday AI` })
 
@@ -110,7 +111,10 @@ async function openCreate() {
   const { open } = useModal<string>({
     component: markRaw(CreateProjectModal),
     onConfirm: (projectId) => {
-      router.push(`/projects/${projectId}`)
+      // 刷新项目列表缓存（创建后返回列表即可见新项目），并跳转到详情页。
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      if (projectId)
+        router.push(`/projects/${projectId}`)
     },
   })
   await open()

@@ -1,0 +1,27 @@
+import { useQueryClient } from '@tanstack/vue-query'
+import { markRaw } from 'vue'
+import { useModal } from '~/composables/useModal'
+import FeatureListEditModal from './FeatureListEditModal.vue'
+
+/**
+ * #5：feature list 录入入口（手动录入 / 飞书链接）。命令式弹窗，确认后刷新
+ * 该项目的 feature 缓存（健康总览 / FeatureBoard / 引导共享同一 queryKey）。
+ */
+export function useFeatureListEditor() {
+  const queryClient = useQueryClient()
+
+  function openFeatureListEditor(projectId: string) {
+    const { open } = useModal({
+      component: markRaw(FeatureListEditModal),
+      attrs: { projectId },
+      onConfirm: () => {
+        queryClient.invalidateQueries({ queryKey: ['project-features', projectId] })
+        // 描述可能随 feature list 自动重写，一并失效项目详情缓存。
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+      },
+    })
+    void open()
+  }
+
+  return { openFeatureListEditor }
+}

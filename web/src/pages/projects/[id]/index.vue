@@ -1,25 +1,22 @@
 <script setup lang="ts">
-import type { Project, ProjectStatus } from '~/api/projects'
+import type { Project } from '~/api/projects'
 import { useQuery } from '@tanstack/vue-query'
 import { useHead } from '@vueuse/head'
-import { computed } from 'vue'
+import { computed, markRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { projectsApi } from '~/api/projects'
 import EmptyState from '~/components/common/EmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import ProjectSettingsModal from '~/components/project/ProjectSettingsModal.vue'
 import ProjectWarRoom from '~/components/project/warroom/ProjectWarRoom.vue'
 import ProjectWorkspaceHeader from '~/components/project/warroom/ProjectWorkspaceHeader.vue'
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
-import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useModal } from '~/composables/useModal'
 import { usePermission } from '~/composables/usePermission'
 
 const route = useRoute('/projects/[id]/')
 const router = useRouter()
 const { t } = useI18n()
-const { handleError } = useErrorHandler()
-const { confirm } = useConfirmDialog()
-const { success } = useToast()
 
 const projectId = computed(() => route.params.id as string)
 
@@ -44,27 +41,18 @@ function goBack() {
     router.push('/projects')
 }
 
-async function changeStatus(to: ProjectStatus) {
+// #8：打开项目配置弹窗（改名/换空间/状态流转），确认后刷新项目详情。
+function openSettings() {
   if (!project.value)
     return
-  const ok = await confirm({
-    title: t('projects.status.changeTitle'),
-    description: t('projects.status.changeConfirm', {
-      to: t(`projects.status.${to}`),
-    }),
-    confirmText: t('projects.status.changeConfirmText'),
-    variant: to === 'terminated' ? 'destructive' : 'default',
+  const { open } = useModal({
+    component: markRaw(ProjectSettingsModal),
+    attrs: { project: project.value },
+    onConfirm: () => {
+      refetch()
+    },
   })
-  if (!ok)
-    return
-  try {
-    await projectsApi.transition(project.value.id, to)
-    success(t('projects.status.changed'))
-    await refetch()
-  }
-  catch (e: unknown) {
-    handleError(e, t('projects.status.changeFailed'))
-  }
+  void open()
 }
 </script>
 
@@ -89,7 +77,7 @@ async function changeStatus(to: ProjectStatus) {
         :project="project"
         :can-manage="canManage"
         @back="goBack"
-        @transition="changeStatus"
+        @settings="openSettings"
       />
 
       <!-- 左中右工作台：会话列表 / AI 对话 / 项目资料 -->

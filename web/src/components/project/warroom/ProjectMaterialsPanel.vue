@@ -6,8 +6,10 @@ import FeatureBoard from '~/components/project/warroom/FeatureBoard.vue'
 import ProjectApiListCard from '~/components/project/warroom/ProjectApiListCard.vue'
 import ProjectGalaxyCard from '~/components/project/warroom/ProjectGalaxyCard.vue'
 import ProjectHealthCard from '~/components/project/warroom/ProjectHealthCard.vue'
+import ProjectOnboardingGuide from '~/components/project/warroom/ProjectOnboardingGuide.vue'
 import MembersTab from '~/components/project/workbench/MembersTab.vue'
 import WorkItemsTab from '~/components/project/workbench/WorkItemsTab.vue'
+import { useFeatureListEditor } from '~/components/project/warroom/useFeatureListEditor'
 
 // 左中右布局 · 右栏：项目所有资料的扁平堆叠展示（无卡片、无外边距，分隔线分区）。
 // 各资料组件保持原样复用，卡片样式由本面板局部「拍平」（去描边/圆角/底色），
@@ -15,6 +17,12 @@ import WorkItemsTab from '~/components/project/workbench/WorkItemsTab.vue'
 const props = defineProps<{ project: Project, canManage: boolean }>()
 
 const { t } = useI18n()
+
+// #2/#5/#9：「补充 feature list」统一入口——打开手动录入 / 飞书链接录入弹窗。
+const { openFeatureListEditor } = useFeatureListEditor()
+function onAddFeatureList() {
+  openFeatureListEditor(props.project.id)
+}
 
 const DocsSection = defineAsyncComponent(() => import('~/components/project/workbench/DocsSection.vue'))
 const DependenciesSection = defineAsyncComponent(() => import('~/components/project/workbench/DependenciesSection.vue'))
@@ -34,10 +42,21 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
 
     <!-- 扁平资料流 -->
     <div class="materials flex-1 min-h-0 overflow-y-auto">
-      <ProjectHealthCard :project="project" :can-manage="canManage" />
+      <!-- #9 空项目上手引导（无 feature 时显示；有 feature 自动隐藏） -->
+      <ProjectOnboardingGuide
+        :project-id="project.id"
+        :can-manage="canManage"
+        @add-feature-list="onAddFeatureList"
+      />
 
-      <!-- 统一人类待办收件箱（P8）：一处看全待办（澄清/审批/接管/失败反应）并回流 -->
-      <HumanTaskInbox />
+      <ProjectHealthCard
+        :project="project"
+        :can-manage="canManage"
+        @add-feature-list="onAddFeatureList"
+      />
+
+      <!-- 统一人类待办收件箱（P8）：按项目过滤，无待办则不渲染（空项目不突兀） -->
+      <HumanTaskInbox :project-id="project.id" hide-when-empty />
 
       <FeatureBoard :project-id="project.id" />
 
@@ -92,11 +111,24 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
   background: transparent !important;
 }
 
+/* #6 紧凑化：右栏空间有限，统一收窄各卡片的内边距与分区间距，
+   减少空旷感（语义结构不变，仅压缩留白）。 */
+.materials :deep(.p-5) {
+  padding: 0.875rem 1rem;
+}
+.materials :deep(.px-5) {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.materials :deep(.space-y-5 > * + *) {
+  margin-top: 0.875rem;
+}
+
 .flat-header {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 0.875rem 1.25rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid hsl(214 32% 91% / 0.5);
 }
 

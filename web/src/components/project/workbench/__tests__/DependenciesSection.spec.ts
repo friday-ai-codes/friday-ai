@@ -31,15 +31,14 @@ vi.mock('~/api/mergeRequests', () => ({
 }))
 const graphMock = vi.fn()
 const getProjectMock = vi.fn()
+const getReposMock = vi.fn()
 vi.mock('~/api/projects', () => ({
   projectsApi: {
     graph: (...a: unknown[]) => graphMock(...a),
     get: (...a: unknown[]) => getProjectMock(...a),
+    // #4：关联仓库改为项目级端点（业务关联 ∪ 分支绑定），不再走空间仓库池。
+    repositories: (...a: unknown[]) => getReposMock(...a),
   },
-}))
-const getReposMock = vi.fn()
-vi.mock('~/api/spaces', () => ({
-  getSpaceRepositories: (...a: unknown[]) => getReposMock(...a),
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
@@ -78,7 +77,7 @@ describe('dependenciesSection（WB-04）', () => {
     const text = wrapper.text()
     expect(text).toContain(zhCN.projects.workbench.deps.artifactsTitle)
     expect(text).toContain(zhCN.projects.workbench.deps.branchesTitle)
-    expect(text).toContain(zhCN.projects.workbench.deps.branchesDeferred)
+    expect(text).toContain(zhCN.projects.workbench.deps.branchesEmpty)
     expect(text).toContain(zhCN.projects.workbench.deps.mergeRequestsTitle)
   })
 
