@@ -7,6 +7,8 @@ import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 import ProjectConversationList from '~/components/project/warroom/ProjectConversationList.vue'
 import ProjectMaterialsPanel from '~/components/project/warroom/ProjectMaterialsPanel.vue'
+import ProjectOnboardingGuide from '~/components/project/warroom/ProjectOnboardingGuide.vue'
+import { useFeatureListEditor } from '~/components/project/warroom/useFeatureListEditor'
 import { useChatStore } from '~/stores/chat'
 
 // 项目作战室 · 左中右工作台：左=会话列表，中=AI 对话，右=项目资料。
@@ -16,6 +18,12 @@ const props = defineProps<{ project: Project, canManage: boolean }>()
 
 const { t } = useI18n()
 const chatStore = useChatStore()
+
+// #9 空项目上手引导（分步式）移到中间对话区顶部；「补充 feature list」打开录入弹窗。
+const { openFeatureListEditor } = useFeatureListEditor()
+function onAddFeatureList() {
+  openFeatureListEditor(props.project.id)
+}
 
 onMounted(() => {
   chatStore.enterProjectScope(props.project.id, props.project.space_id)
@@ -77,6 +85,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           {{ t('projects.warroom.workspace.conversations') }}
         </button>
       </div>
+      <!-- 空项目分步上手引导（无 feature 时显示，置于对话区上方） -->
+      <ProjectOnboardingGuide
+        :project-id="project.id"
+        :can-manage="canManage"
+        @add-feature-list="onAddFeatureList"
+      />
       <div class="flex-1 min-h-0 relative">
         <ChatMessageArea />
         <ChatInput

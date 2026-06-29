@@ -6,7 +6,6 @@ import FeatureBoard from '~/components/project/warroom/FeatureBoard.vue'
 import ProjectApiListCard from '~/components/project/warroom/ProjectApiListCard.vue'
 import ProjectGalaxyCard from '~/components/project/warroom/ProjectGalaxyCard.vue'
 import ProjectHealthCard from '~/components/project/warroom/ProjectHealthCard.vue'
-import ProjectOnboardingGuide from '~/components/project/warroom/ProjectOnboardingGuide.vue'
 import MembersTab from '~/components/project/workbench/MembersTab.vue'
 import WorkItemsTab from '~/components/project/workbench/WorkItemsTab.vue'
 import { useFeatureListEditor } from '~/components/project/warroom/useFeatureListEditor'
@@ -33,22 +32,15 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
 <template>
   <div class="flex flex-col h-full min-h-0 bg-card" data-testid="warroom-materials">
     <!-- 面板头部 -->
-    <header class="h-12 shrink-0 flex items-center gap-2 px-4 border-b border-border/60">
+    <header class="h-10 shrink-0 flex items-center gap-2 px-3.5 border-b border-border/60">
       <span class="section-chip"><span class="icon-[lucide--folder-git-2]" /></span>
-      <h2 class="text-sm font-semibold text-foreground tracking-wide">
+      <h2 class="text-[13px] font-semibold text-foreground tracking-wide">
         {{ t('projects.warroom.workspace.materials') }}
       </h2>
     </header>
 
     <!-- 扁平资料流 -->
     <div class="materials flex-1 min-h-0 overflow-y-auto">
-      <!-- #9 空项目上手引导（无 feature 时显示；有 feature 自动隐藏） -->
-      <ProjectOnboardingGuide
-        :project-id="project.id"
-        :can-manage="canManage"
-        @add-feature-list="onAddFeatureList"
-      />
-
       <ProjectHealthCard
         :project="project"
         :can-manage="canManage"
@@ -111,29 +103,37 @@ const HumanTaskInbox = defineAsyncComponent(() => import('~/components/delivery/
   background: transparent !important;
 }
 
-/* #6 紧凑化：右栏空间有限，统一收窄各卡片的内边距与分区间距，
-   减少空旷感（语义结构不变，仅压缩留白）。 */
+/* #7 Data-Dense 密集化：右栏空间有限，统一收窄各卡片的内边距、分区间距与头部高度，
+   提升信息密度（语义结构不变，仅压缩留白），并给可点行加 hover 高亮反馈。 */
 .materials :deep(.p-5) {
-  padding: 0.875rem 1rem;
+  padding: 0.75rem 0.875rem;
 }
 .materials :deep(.px-5) {
-  padding-left: 1rem;
-  padding-right: 1rem;
+  padding-left: 0.875rem;
+  padding-right: 0.875rem;
+}
+.materials :deep(.py-3\.5) {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
 }
 .materials :deep(.space-y-5 > * + *) {
-  margin-top: 0.875rem;
+  margin-top: 0.75rem;
+}
+/* 卡片内分区标题（header）统一压扁 */
+.materials :deep(section > header) {
+  min-height: 0;
 }
 
 .flat-header {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
   border-bottom: 1px solid hsl(214 32% 91% / 0.5);
 }
 
 .flat-header h3 {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-foreground);
 }
