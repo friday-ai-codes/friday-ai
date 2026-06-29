@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import type { Artifact, ArtifactView } from '~/api/artifacts'
 import type { MergeRequest } from '~/api/mergeRequests'
-import type { ProjectGraphNode, ProjectRepoLink } from '~/api/projects'
-import { useQuery } from '@tanstack/vue-query'
-import { computed, ref, toRef } from 'vue'
+import type { ProjectBranch, ProjectGraphNode, ProjectRepoLink } from '~/api/projects'
+import type { SpaceRepositoryLink } from '~/types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artifactsApi } from '~/api/artifacts'
 import { mergeRequestsApi } from '~/api/mergeRequests'
 import { projectsApi } from '~/api/projects'
+import { getSpaceRepositories } from '~/api/spaces'
+import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
+import { Button } from '~/components/ui/button'
 import {
   Dialog,
   DialogDescription,
@@ -15,6 +19,14 @@ import {
   DialogScrollContent,
   DialogTitle,
 } from '~/components/ui/dialog'
+import { Input } from '~/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 
 // WB-04：外部工件（原型/Spec/缺陷/UI 稿/评审/复盘，复用 Artifact）+ 关联（分支/仓库/知识/项目/PR）。
@@ -23,6 +35,8 @@ const props = defineProps<{ projectId: string }>()
 
 const { t } = useI18n()
 const { handleError } = useErrorHandler()
+const { success } = useToast()
+const queryClient = useQueryClient()
 const projectIdRef = toRef(props, 'projectId')
 
 // ── 外部工件 ──────────────────────────────────────────────
@@ -65,17 +79,58 @@ const mrQuery = useQuery({
 })
 const mrs = computed<MergeRequest[]>(() => mrQuery.data.value ?? [])
 
-// ── 关联分支：从关联 PR/MR 归集去重的真实分支（替代占位）──────────
-const linkedBranches = computed(() => {
-  const seen = new Map<string, { name: string, mr?: MergeRequest }>()
-  for (const mr of mrs.value) {
-    if (mr.source_branch && !seen.has(mr.source_branch))
-      seen.set(mr.source_branch, { name: mr.source_branch, mr })
-    if (mr.target_branch && !seen.has(mr.target_branch))
-      seen.set(mr.target_branch, { name: mr.target_branch })
-  }
-  return [...seen.values()]
+// ── 关联分支（#3 严格按分支名：ProjectBranch 绑定，不再从 MR 归集；空项目亦可绑定）──
+const branchesQuery = useQuery({
+  queryKey: ['project-branches', projectIdRef],
+  queryFn: () => projectsApi.listBranches(props.projectId),
 })
+const branches = computed<ProjectBranch[]>(() => branchesQuery.data.value ?? [])
+
+// 取项目所属空间的仓库池，供「绑定分支」选择仓库（分支绑定模型要求 repository_id）。
+const projectQuery = useQuery({
+  queryKey: ['project', projectIdRef],
+  queryFn: () => projectsApi.get(props.projectId),
+})
+const spaceId = computed(() => projectQuery.data.value?.space_id)
+const spaceReposQuery = useQuery({
+  queryKey: ['project-space-repos', spaceId],
+  queryFn: () => getSpaceRepositories(spaceId.value as string),
+  enabled: computed(() => !!spaceId.value),
+})
+const spaceRepos = computed<SpaceRepositoryLink[]>(() => spaceReposQuery.data.value ?? [])
+
+const showAddBranch = ref(false)
+const newBranch = reactive({ repository_id: '', branch_name: '' })
+
+const bindMutation = useMutation({
+  mutationFn: () => projectsApi.bindBranch(props.projectId, {
+    repository_id: newBranch.repository_id,
+    branch_name: newBranch.branch_name.trim(),
+  }),
+  onSuccess: () => {
+    success(t('projects.workbench.deps.branchBound'))
+    newBranch.repository_id = ''
+    newBranch.branch_name = ''
+    showAddBranch.value = false
+    queryClient.invalidateQueries({ queryKey: ['project-branches', projectIdRef] })
+    // 绑定分支会让该仓库出现在「关联仓库」，一并失效。
+    queryClient.invalidateQueries({ queryKey: ['project-deps-repos', projectIdRef] })
+  },
+  onError: (e: unknown) => handleError(e, t('projects.workbench.deps.branchBindFailed')),
+})
+
+const unbindMutation = useMutation({
+  mutationFn: (branchId: string) => projectsApi.unbindBranch(props.projectId, branchId),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['project-branches', projectIdRef] })
+    queryClient.invalidateQueries({ queryKey: ['project-deps-repos', projectIdRef] })
+  },
+  onError: (e: unknown) => handleError(e, t('projects.workbench.deps.branchUnbindFailed')),
+})
+
+const canSubmitBranch = computed(() =>
+  !!newBranch.repository_id && !!newBranch.branch_name.trim() && !bindMutation.isPending.value,
+)
 
 function mrStatusClass(status: string): string {
   switch (status) {
@@ -178,24 +233,28 @@ async function openView(artifact: Artifact) {
                     </p>
                   </div>
                 </div>
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button
+                    class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 h-7 text-xs text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+                    data-testid="deps-view-artifact-btn"
+                    :title="t('projects.artifacts.view')"
+                    @click="openView(a)"
+                  >
+                    <span class="icon-[lucide--maximize-2] text-[11px]" />
+                    {{ t('projects.artifacts.view') }}
+                  </button>
                   <a
                     v-if="a.url"
                     :href="a.url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-xs text-muted-foreground hover:text-primary"
+                    class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 h-7 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
                     :title="t('projects.artifacts.openExternal')"
+                    data-testid="deps-open-external-btn"
                   >
-                    <span class="icon-[lucide--external-link]" />
+                    <span class="icon-[lucide--external-link] text-[11px]" />
+                    {{ a.carrier === 'feishu_doc' || a.carrier === 'feishu_bitable' ? t('projects.artifacts.openFeishu') : t('projects.artifacts.openLink') }}
                   </a>
-                  <button
-                    class="text-xs text-primary hover:underline"
-                    data-testid="deps-view-artifact-btn"
-                    @click="openView(a)"
-                  >
-                    {{ t('projects.artifacts.view') }}
-                  </button>
                 </div>
               </li>
             </ul>
@@ -203,41 +262,75 @@ async function openView(artifact: Artifact) {
         </div>
       </section>
 
-      <!-- 关联分支：从关联 PR/MR 归集的真实分支 -->
+      <!-- 关联分支（#3 严格按分支名：ProjectBranch 绑定，空项目亦可配置，配合 skills 分支→项目反查） -->
       <section class="space-y-2" data-testid="deps-branches">
-        <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
-          <span class="icon-[lucide--git-branch] text-primary" />
-          {{ t('projects.workbench.deps.branchesTitle') }}
-        </h3>
-        <p v-if="linkedBranches.length === 0" class="text-sm text-muted-foreground py-4 text-center">
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+            <span class="icon-[lucide--git-branch] text-primary" />
+            {{ t('projects.workbench.deps.branchesTitle') }}
+          </h3>
+          <button
+            class="ml-auto text-xs text-primary hover:underline inline-flex items-center gap-1"
+            data-testid="deps-add-branch-btn"
+            @click="showAddBranch = !showAddBranch"
+          >
+            <span class="icon-[lucide--plus] text-[11px]" />
+            {{ t('projects.workbench.deps.branchAdd') }}
+          </button>
+        </div>
+
+        <!-- 绑定分支表单：选仓库 + 填分支名 -->
+        <div v-if="showAddBranch" class="rounded-lg border border-border/50 p-3 space-y-2" data-testid="deps-branch-form">
+          <Select v-model="newBranch.repository_id">
+            <SelectTrigger class="h-8 text-sm" data-testid="deps-branch-repo">
+              <SelectValue :placeholder="t('projects.workbench.deps.branchRepoPlaceholder')" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="r in spaceRepos" :key="r.repository_id" :value="r.repository_id">
+                {{ r.repository_name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <div class="flex items-center gap-2">
+            <Input
+              v-model="newBranch.branch_name"
+              :placeholder="t('projects.workbench.deps.branchNamePlaceholder')"
+              class="h-8 flex-1 font-mono text-sm"
+              data-testid="deps-branch-name"
+            />
+            <Button size="sm" :disabled="!canSubmitBranch" data-testid="deps-branch-submit" @click="() => bindMutation.mutate()">
+              {{ t('projects.workbench.deps.branchBind') }}
+            </Button>
+          </div>
+          <p v-if="spaceRepos.length === 0" class="text-xs text-muted-foreground">
+            {{ t('projects.workbench.deps.branchNoRepo') }}
+          </p>
+        </div>
+
+        <p v-if="branches.length === 0 && !showAddBranch" class="text-sm text-muted-foreground py-4 text-center">
           {{ t('projects.workbench.deps.branchesEmpty') }}
         </p>
-        <template v-else>
-          <p class="text-xs text-muted-foreground">
-            {{ t('projects.workbench.deps.branchesHint') }}
-          </p>
-          <ul class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
-            <li
-              v-for="b in linkedBranches"
-              :key="b.name"
-              class="flex items-center gap-3 px-4 py-3"
-              data-testid="deps-branch-row"
+        <ul v-else-if="branches.length > 0" class="divide-y divide-border/40 rounded-lg border border-border/40 bg-card">
+          <li
+            v-for="b in branches"
+            :key="b.id"
+            class="flex items-center gap-3 px-4 py-3"
+            data-testid="deps-branch-row"
+          >
+            <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
+            <code class="text-sm text-foreground truncate font-mono">{{ b.branch_name }}</code>
+            <span class="text-xs text-muted-foreground truncate hidden sm:inline">· {{ b.repository_name }}</span>
+            <button
+              class="ml-auto shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+              :disabled="unbindMutation.isPending.value"
+              :title="t('projects.workbench.deps.branchUnbind')"
+              data-testid="deps-branch-unbind"
+              @click="() => unbindMutation.mutate(b.id)"
             >
-              <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-              <code class="text-sm text-foreground truncate font-mono">{{ b.name }}</code>
-              <a
-                v-if="b.mr?.url"
-                :href="b.mr.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="ml-auto shrink-0 text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                :title="t('projects.workbench.deps.mergeRequestsTitle')"
-              >
-                <span class="icon-[lucide--external-link]" />
-              </a>
-            </li>
-          </ul>
-        </template>
+              <span class="icon-[lucide--x] text-sm" />
+            </button>
+          </li>
+        </ul>
       </section>
 
       <!-- 关联仓库 -->
@@ -403,8 +496,14 @@ async function openView(artifact: Artifact) {
             >
               {{ viewData.url }}
             </a>
+            <div
+              v-else-if="viewData.render_type === 'markdown'"
+              class="max-h-[60vh] overflow-auto"
+            >
+              <MarkdownRenderer :content="viewData.content || ''" />
+            </div>
             <pre
-              v-else-if="viewData.render_type === 'markdown' || viewData.render_type === 'text'"
+              v-else-if="viewData.render_type === 'text'"
               class="text-xs bg-muted/50 rounded-lg p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap"
             >{{ viewData.content }}</pre>
             <div v-else-if="viewData.render_type === 'records'" class="text-xs space-y-1 max-h-[60vh] overflow-auto">

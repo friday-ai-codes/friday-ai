@@ -32,13 +32,24 @@ vi.mock('~/api/mergeRequests', () => ({
 const graphMock = vi.fn()
 const getProjectMock = vi.fn()
 const getReposMock = vi.fn()
+const listBranchesMock = vi.fn()
+const bindBranchMock = vi.fn()
+const unbindBranchMock = vi.fn()
 vi.mock('~/api/projects', () => ({
   projectsApi: {
     graph: (...a: unknown[]) => graphMock(...a),
     get: (...a: unknown[]) => getProjectMock(...a),
     // #4：关联仓库改为项目级端点（业务关联 ∪ 分支绑定），不再走空间仓库池。
     repositories: (...a: unknown[]) => getReposMock(...a),
+    // #3：关联分支改为 ProjectBranch 绑定。
+    listBranches: (...a: unknown[]) => listBranchesMock(...a),
+    bindBranch: (...a: unknown[]) => bindBranchMock(...a),
+    unbindBranch: (...a: unknown[]) => unbindBranchMock(...a),
   },
+}))
+const getSpaceReposMock = vi.fn()
+vi.mock('~/api/spaces', () => ({
+  getSpaceRepositories: (...a: unknown[]) => getSpaceReposMock(...a),
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhCN as any } })
@@ -59,6 +70,8 @@ function setupEmpty() {
   graphMock.mockResolvedValue({ project_id: 'p1', nodes: [] })
   getProjectMock.mockResolvedValue({ id: 'p1', space_id: 's1' })
   getReposMock.mockResolvedValue([])
+  listBranchesMock.mockResolvedValue([])
+  getSpaceReposMock.mockResolvedValue([])
 }
 
 describe('dependenciesSection（WB-04）', () => {
