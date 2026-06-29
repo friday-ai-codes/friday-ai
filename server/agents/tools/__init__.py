@@ -33,16 +33,17 @@ from agents.tools.find_related_code import find_related_code
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.list_endpoints import list_endpoints
 from agents.tools.plan_research_tools import start_plan_research
+from agents.tools.project_feature_tools import save_project_feature_list
 from agents.tools.registry import ToolRegistry
 from agents.tools.repo_association_tools import associate_repos
 from agents.tools.repository_relevance import analyze_repository_relevance
 from agents.tools.send_plan_card import send_plan_card
-from agents.tools.submit_plan import request_clarification, submit_technical_plan
 from agents.tools.space_tools import (
     get_repository_info,
     list_space_repositories,
     search_repository_code,
 )
+from agents.tools.submit_plan import request_clarification, submit_technical_plan
 from agents.tools.user_interaction import ask_user_question
 from agents.tools.verify_plan import verify_plan
 from agents.tools.work_item_tools import (
@@ -101,4 +102,5 @@ __all__ = [
     "request_clarification",
     # Plan orchestration chat entry (ENTRY-02)
     "start_plan_research",
+    "save_project_feature_list",
 ]

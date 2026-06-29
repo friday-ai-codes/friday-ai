@@ -222,11 +222,69 @@ class ArchitectMergeAdapter:
                 session_id=str(session.id),
                 artifact_version_id=str(version_id),
             )
+        # #5 Part A：项目内 AI 对话产出的技术方案自动绑定到当前项目（镜像进 RESEARCH，best-effort）。
+        await self._maybe_bind_plan_to_project(session, merged)
         return {
             "validation_status": "passed",
             "artifact_version_id": str(version_id),
             "attempt": attempt,
         }
+
+    async def _maybe_bind_plan_to_project(
+        self, session: ConvergenceSession, merged: dict
+    ) -> None:
+        """会话绑定了项目时，把生成的技术方案镜像进项目 RESEARCH 文档（绑定到当前项目）。
+
+        反查链：``session.conversation_id`` → ``Conversation.bound_project_id`` /
+        ``created_by``；经 ``ProjectDocService.append_research_note``（INV-6 写收口 + 脱敏 +
+        非成员静默跳过）。整段 best-effort，任一步失败仅记 ``plan_bind_project_failed``，绝不反噬融合。
+        """
+        conversation_id = getattr(session, "conversation_id", None)
+        if not conversation_id:
+            return
+        try:
+            from chat.models import Conversation
+            from initiatives.services.project_doc_service import ProjectDocService
+            from services.process_runtime.render import render_merged_plan_markdown
+
+            row = await Conversation.objects.filter(id=conversation_id).values(
+                "bound_project_id", "created_by_id"
+            ).afirst()
+            if not row or not row.get("bound_project_id"):
+                return
+            project_id = row["bound_project_id"]
+            contributor = await self._aget_user(row.get("created_by_id"))
+            markdown = render_merged_plan_markdown(merged)
+            if not markdown.strip():
+                return
+            await ProjectDocService().append_research_note(
+                project_id=project_id,
+                content=markdown,
+                contributor=contributor,
+                initiated_by_user_id=str(row.get("created_by_id") or "") or None,
+            )
+            logger.info(
+                "plan_bound_to_project",
+                session_id=str(session.id),
+                project_id=str(project_id),
+                component="process_runtime.architect_merge",
+                category="caller",
+            )
+        except Exception:  # noqa: BLE001 — 绑定 best-effort，绝不反噬融合主链
+            logger.warning(
+                "plan_bind_project_failed",
+                session_id=str(getattr(session, "id", "") or ""),
+                component="process_runtime.architect_merge",
+                category="caller",
+            )
+
+    @staticmethod
+    async def _aget_user(user_id: Any) -> Any:
+        if not user_id:
+            return None
+        from django.contrib.auth import get_user_model
+
+        return await get_user_model().objects.filter(id=user_id).afirst()
 
     async def _handle_fail(
         self, session: ConvergenceSession, report: dict, attempt: int, has_stale: bool
