@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import type { Artifact, ArtifactView } from '~/api/artifacts'
 import type { MergeRequest } from '~/api/mergeRequests'
-import type { ProjectGraphNode } from '~/api/projects'
-import type { SpaceRepositoryLink } from '~/types'
+import type { ProjectGraphNode, ProjectRepoLink } from '~/api/projects'
 import { useQuery } from '@tanstack/vue-query'
 import { computed, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { artifactsApi } from '~/api/artifacts'
 import { mergeRequestsApi } from '~/api/mergeRequests'
 import { projectsApi } from '~/api/projects'
-import { getSpaceRepositories } from '~/api/spaces'
 import {
   Dialog,
   DialogDescription,
@@ -44,20 +42,12 @@ const artifactGroups = computed(() => {
   return Array.from(map, ([name, list]) => ({ name, list }))
 })
 
-// ── 项目详情（取 space_id 用于关联仓库）──────────────────────
-const projectQuery = useQuery({
-  queryKey: ['project', projectIdRef],
-  queryFn: () => projectsApi.get(props.projectId),
-})
-const spaceId = computed(() => projectQuery.data.value?.space_id)
-
-// ── 关联仓库（经所属空间）──────────────────────────────────
+// ── 关联仓库（#4：项目级——业务关联 ∪ 分支绑定，空项目为空，不再显示整个空间的仓库池）──
 const reposQuery = useQuery({
-  queryKey: ['project-deps-repos', spaceId],
-  queryFn: () => getSpaceRepositories(spaceId.value as string),
-  enabled: computed(() => !!spaceId.value),
+  queryKey: ['project-deps-repos', projectIdRef],
+  queryFn: () => projectsApi.repositories(props.projectId),
 })
-const repos = computed<SpaceRepositoryLink[]>(() => reposQuery.data.value ?? [])
+const repos = computed<ProjectRepoLink[]>(() => reposQuery.data.value ?? [])
 
 // ── 知识 / 关联项目（知识图谱）─────────────────────────────
 const graphQuery = useQuery({

@@ -49,6 +49,8 @@ export interface InboxParams {
   mine?: boolean
   /** 是否叠加投影（默认 true）。 */
   includeProjections?: boolean
+  /** 限定某项目维度的待办（按项目过滤；不传则全局）。 */
+  projectId?: string
 }
 
 /** 开原生待办入参（risk_ack / takeover 等）。 */
@@ -80,6 +82,8 @@ export async function listHumanTasks(params: InboxParams = {}): Promise<HumanTas
     query.mine = '1'
   if (params.includeProjections === false)
     query.include_projections = '0'
+  if (params.projectId)
+    query.project_id = params.projectId
   return get<HumanTaskView[]>('/delivery/human-tasks/', query)
 }
 

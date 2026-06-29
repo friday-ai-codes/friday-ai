@@ -1077,7 +1077,8 @@
       "notFound": "项目不存在",
       "notFoundDesc": "未找到该项目，可能已被删除或你无权访问",
       "backToList": "返回项目列表",
-      "feishuBoard": "飞书看板"
+      "feishuBoard": "飞书看板",
+      "settings": "项目配置"
     },
     "tabs": {
       "overview": "概览",
@@ -1272,9 +1273,9 @@
         }
       },
       "feature": {
-        "title": "feature",
-        "emptyTitle": "还没有 feature",
-        "emptyDesc": "feature list 工件同步后，这里会按「模块 → 功能点 → 验收项」展示进度。",
+        "title": "Features",
+        "emptyTitle": "还没有 Feature",
+        "emptyDesc": "补充 feature list 后，这里会按「模块 → 功能点 → 验收项」展示进度。",
         "loadError": "加载 feature 失败",
         "noFeatures": "该模块暂无功能点",
         "noAcceptance": "暂无验收项",
@@ -1322,7 +1323,7 @@
     "warroom": {
       "health": {
         "title": "项目健康总览",
-        "featureTotal": "feature 总数",
+        "featureTotal": "Feature 总数",
         "openMr": "待合并 MR",
         "nextLabel": "下一步建议",
         "rebuild": "重建工作区",
@@ -1331,6 +1332,8 @@
         "rebuildFailed": "重建工作区失败",
         "generateDesc": "用 AI 生成描述",
         "regenerateDesc": "AI 重新生成描述",
+        "descNeedsFeature": "补充 feature list 后即可用 AI 生成项目描述",
+        "addFeatureCta": "补充 feature list",
         "descGenerated": "已按 feature list 生成项目描述",
         "descGenerateFailed": "生成描述失败（请确认已配置 AI Provider 且有 feature list）",
         "syncing": "同步中",

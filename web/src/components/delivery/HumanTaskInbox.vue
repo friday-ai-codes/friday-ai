@@ -23,15 +23,27 @@ import {
 const props = defineProps<{
   /** 仅看指派给当前用户的物化待办（投影类待办恒纳入）。 */
   mine?: boolean
+  /** 限定某项目的待办（传入则按项目过滤；空项目无待办即不渲染本卡）。 */
+  projectId?: string
+  /** 无待办时整卡不渲染（用于项目作战室，避免空项目里突兀的空收件箱）。 */
+  hideWhenEmpty?: boolean
 }>()
 
 const queryClient = useQueryClient()
 
 const inboxQuery = useQuery({
-  queryKey: ['human-tasks', computed(() => props.mine ?? false)],
-  queryFn: () => listHumanTasks({ mine: props.mine }),
+  queryKey: ['human-tasks', computed(() => props.mine ?? false), computed(() => props.projectId ?? '')],
+  queryFn: () => listHumanTasks({ mine: props.mine, projectId: props.projectId }),
 })
 const tasks = computed<HumanTaskView[]>(() => inboxQuery.data.value ?? [])
+
+// hideWhenEmpty：加载完成且确无待办 → 整卡隐藏（不显示空态/标题）。
+const shouldHide = computed(() =>
+  !!props.hideWhenEmpty
+  && !inboxQuery.isLoading.value
+  && !inboxQuery.isError.value
+  && tasks.value.length === 0,
+)
 
 const TYPE_META: Record<HumanTaskType, { label: string, icon: string, cls: string }> = {
   clarification: { label: '待答澄清', icon: 'icon-[lucide--message-circle-question]', cls: 'bg-amber-500/12 text-amber-600' },
@@ -96,7 +108,7 @@ const acting = computed(() =>
 </script>
 
 <template>
-  <section class="card" data-testid="human-task-inbox">
+  <section v-if="!shouldHide" class="card" data-testid="human-task-inbox">
     <header class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2.5">
       <span class="section-chip"><span class="icon-[lucide--inbox]" /></span>
       <h2 class="text-sm font-semibold text-foreground">

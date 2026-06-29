@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Project, ProjectStatus } from '~/api/projects'
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Avatar, AvatarFallback } from '~/components/ui/avatar'
 import { Badge, type BadgeVariants } from '~/components/ui/badge'
@@ -12,18 +11,12 @@ import {
   TooltipTrigger,
 } from '~/components/ui/tooltip'
 
-// 左中右布局 · 顶部页头：返回 + 项目身份 + 飞书看板 + 状态流转动作。
+// 左中右布局 · 顶部页头：返回 + 项目身份 + 飞书看板 + 项目配置入口（#8）。
+// 归档/终止等状态流转收纳进「项目配置」弹窗，不再裸放页头。
 const props = defineProps<{ project: Project, canManage: boolean }>()
-const emit = defineEmits<{ back: [], transition: [to: ProjectStatus] }>()
+const emit = defineEmits<{ back: [], settings: [] }>()
 
 const { t } = useI18n()
-
-const STATUS_FLOW: Record<ProjectStatus, ProjectStatus[]> = {
-  developing: ['archived', 'terminated'],
-  archived: ['developing', 'terminated'],
-  terminated: [],
-}
-const nextStatuses = computed<ProjectStatus[]>(() => STATUS_FLOW[props.project.status] ?? [])
 
 function statusVariant(status: ProjectStatus): BadgeVariants['variant'] {
   switch (status) {
@@ -92,18 +85,16 @@ function statusVariant(status: ProjectStatus): BadgeVariants['variant'] {
           <span class="hidden sm:inline">{{ t('projects.detail.feishuBoard') }}</span>
         </Button>
       </a>
-      <template v-if="canManage">
-        <Button
-          v-for="to in nextStatuses"
-          :key="to"
-          size="sm"
-          :variant="to === 'terminated' ? 'destructive' : 'outline'"
-          :data-testid="`status-to-${to}`"
-          @click="emit('transition', to)"
-        >
-          {{ t(`projects.status.action.${to}`) }}
-        </Button>
-      </template>
+      <Button
+        v-if="canManage"
+        variant="outline"
+        size="sm"
+        data-testid="project-settings-btn"
+        @click="emit('settings')"
+      >
+        <span class="icon-[lucide--settings] sm:mr-1.5" />
+        <span class="hidden sm:inline">{{ t('projects.detail.settings') }}</span>
+      </Button>
     </div>
   </header>
 </template>
