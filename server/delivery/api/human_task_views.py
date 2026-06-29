@@ -49,11 +49,14 @@ class HumanTaskInboxView(APIView):
             request.query_params.get("include_projections"), default=True
         )
         assignee_user_id = str(request.user.id) if mine else None
+        # 项目维度过滤（#10）：传 project_id 时仅返回归属该项目的待办，避免全局待办泄漏到项目作战室。
+        project_id = (request.query_params.get("project_id") or "").strip() or None
 
         service = HumanTaskService()
         views = await service.list_inbox(
             assignee_user_id=assignee_user_id,
             include_projections=include_projections,
+            project_id=project_id,
         )
         return Response([v.to_dict() for v in views])
 
