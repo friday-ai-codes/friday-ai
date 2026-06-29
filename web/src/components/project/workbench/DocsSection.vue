@@ -38,9 +38,21 @@ const projectIdRef = toRef(props, 'projectId')
 
 const DOC_TYPES: ProjectDocType[] = ['memory', 'state', 'milestones', 'research', 'preflight']
 
+// #3：5 文件改为竖向可展开子项（accordion），展开项即 activeDocType（单活，复用单内容查询）。
+// 默认展开首个（MEMORY.md），进入即可见首个文件内容。
+const expanded = ref<ProjectDocType | null>('memory')
 const activeDocType = ref<ProjectDocType>('memory')
 const mode = ref<'view' | 'edit'>('view')
 const isMemory = computed(() => activeDocType.value === 'memory')
+
+// 文件原名（与 i18n 同步，作兜底/可读）。
+const DOC_FILENAME: Record<ProjectDocType, string> = {
+  memory: 'MEMORY.md',
+  state: 'STATE.md',
+  milestones: 'MILESTONES.md',
+  research: 'RESEARCH.md',
+  preflight: 'PREFLIGHT.md',
+}
 
 // ── 文件列表元数据（sync_status badge）─────────────────────────
 const docsQuery = useQuery({
@@ -81,10 +93,14 @@ watch(activeDocType, () => {
   mode.value = 'view'
 })
 
-function selectDoc(dt: ProjectDocType) {
-  if (dt === activeDocType.value)
+function toggleDoc(dt: ProjectDocType) {
+  if (expanded.value === dt) {
+    expanded.value = null
     return
+  }
+  expanded.value = dt
   activeDocType.value = dt
+  mode.value = 'view'
 }
 
 function enterEdit() {
@@ -142,132 +158,139 @@ function syncDotClass(status: string): string {
       </h2>
     </header>
 
-    <div class="p-5 space-y-5">
-      <!-- 5 文件切换 -->
-      <div class="flex flex-wrap gap-2" role="tablist" :aria-label="t('projects.workbench.docs.fileNavLabel')">
+    <!-- #3：5 文件竖向平铺为可展开子项，展示原名（MEMORY.md 等），展开后在线查看/编辑/新增 -->
+    <div class="p-5 space-y-2" :aria-label="t('projects.workbench.docs.fileNavLabel')">
+      <div
+        v-for="dt in DOC_TYPES"
+        :key="dt"
+        class="rounded-lg border border-border/40 overflow-hidden"
+      >
+        <!-- 子项头：文件名 + 同步灯 + 展开箭头 -->
         <button
-          v-for="dt in DOC_TYPES"
-          :key="dt"
           type="button"
-          role="tab"
-          :aria-selected="activeDocType === dt"
+          class="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-muted/40 transition-colors"
+          :aria-expanded="expanded === dt"
           :data-testid="`doc-file-${dt}`"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors"
-          :class="activeDocType === dt
-            ? 'border-primary/40 bg-primary/8 text-primary font-medium'
-            : 'border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/40'"
-          @click="selectDoc(dt)"
+          @click="toggleDoc(dt)"
         >
-          <span class="size-2 rounded-full shrink-0" :class="syncDotClass(docSyncStatus(dt))" />
-          {{ t(`projects.workbench.docs.file.${dt}`) }}
+          <span
+            class="icon-[lucide--chevron-right] text-xs text-muted-foreground transition-transform shrink-0"
+            :class="expanded === dt ? 'rotate-90' : ''"
+          />
+          <span class="icon-[lucide--file-text] text-muted-foreground shrink-0" />
+          <code class="text-sm font-mono text-foreground">{{ DOC_FILENAME[dt] }}</code>
+          <span class="size-2 rounded-full shrink-0 ml-auto" :class="syncDotClass(docSyncStatus(dt))" />
         </button>
-      </div>
 
-      <!-- MEMORY：条目 + 草稿确认 -->
-      <MemorySection v-if="isMemory" :project-id="projectId" />
+        <!-- 展开内容 -->
+        <div v-if="expanded === dt" class="border-t border-border/40 p-3.5">
+          <!-- MEMORY：条目 + 草稿确认（已带贡献者归因） -->
+          <MemorySection v-if="dt === 'memory'" :project-id="projectId" />
 
-      <!-- 其余 4 文件：查看（渲染）/编辑（源码） -->
-      <template v-else>
-        <div v-if="docContentQuery.isLoading.value" class="text-sm text-muted-foreground py-8 text-center">
-          {{ t('projects.loading') }}
-        </div>
-        <div v-else-if="docContentQuery.isError.value" class="py-8 text-center space-y-2">
-          <p class="text-sm text-destructive">
-            {{ t('projects.workbench.docs.loadError') }}
-          </p>
-          <button class="text-sm text-primary underline" @click="() => docContentQuery.refetch()">
-            {{ t('projects.retry') }}
-          </button>
-        </div>
-
-        <template v-else>
-          <!-- 操作条：查看/编辑切换 + 保存 -->
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs text-muted-foreground inline-flex items-center gap-1.5">
-              <span class="size-2 rounded-full" :class="syncDotClass(content?.sync_status ?? 'idle')" />
-              <template v-if="content?.sync_status === 'syncing'">{{ t('projects.workbench.overview.syncing') }}</template>
-              <template v-else-if="content?.sync_status === 'error'">{{ t('projects.workbench.overview.syncError') }}</template>
-              <template v-else-if="content?.sync_status === 'synced'">{{ t('projects.workbench.overview.synced') }}</template>
-              <template v-else>{{ t('projects.workbench.overview.syncIdle') }}</template>
-            </span>
-            <div class="flex items-center gap-2">
-              <Button
-                v-if="mode === 'view'"
-                size="sm"
-                variant="outline"
-                data-testid="doc-edit-toggle"
-                @click="enterEdit"
-              >
-                <span class="icon-[lucide--pencil] mr-1.5" />
-                {{ t('projects.workbench.docs.edit') }}
-              </Button>
-              <template v-else>
-                <Button size="sm" variant="ghost" :disabled="isSaving" data-testid="doc-cancel-btn" @click="cancelEdit">
-                  {{ t('projects.workbench.docs.cancel') }}
-                </Button>
-                <Button
-                  size="sm"
-                  :disabled="isSaving || !hasHumanBlock"
-                  data-testid="doc-save-btn"
-                  @click="() => saveMutation.mutate()"
-                >
-                  <span class="icon-[lucide--cloud-upload] mr-1.5" :class="isSaving ? 'animate-spin' : ''" />
-                  {{ isSaving ? t('projects.workbench.docs.saving') : t('projects.workbench.docs.save') }}
-                </Button>
-              </template>
+          <!-- 其余 4 文件：查看（渲染）/编辑（源码） -->
+          <template v-else>
+            <div v-if="docContentQuery.isLoading.value" class="text-sm text-muted-foreground py-6 text-center">
+              {{ t('projects.loading') }}
             </div>
-          </div>
-
-          <!-- 查看态：markdown 实时渲染 -->
-          <div v-if="mode === 'view'" data-testid="doc-view">
-            <div v-if="!content?.rendered_markdown" class="text-sm text-muted-foreground py-8 text-center">
-              {{ t('projects.workbench.docs.empty') }}
-            </div>
-            <MarkdownRenderer v-else :content="content.rendered_markdown" />
-          </div>
-
-          <!-- 编辑态：CodeMirror 源码，系统区只读 / 人工区可编辑 -->
-          <div v-else class="space-y-4" data-testid="doc-edit">
-            <div
-              v-if="hasSystemBlock"
-              class="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 border border-border/50 rounded-lg px-3 py-2.5"
-              data-testid="doc-system-hint"
-            >
-              <span class="icon-[lucide--lock] mt-0.5 shrink-0" />
-              <span>{{ t('projects.workbench.docs.systemReadonly') }}</span>
-            </div>
-
-            <p v-if="!hasHumanBlock" class="text-xs text-muted-foreground" data-testid="doc-no-human">
-              {{ t('projects.workbench.docs.noHumanArea') }}
-            </p>
-
-            <div
-              v-for="block in blocks"
-              :key="block.block_id"
-              class="space-y-1.5"
-              :data-testid="`doc-block-${block.section}`"
-            >
-              <p
-                v-if="block.section === 'human' && block.editable"
-                class="text-xs font-medium text-foreground"
-              >
-                {{ t('projects.workbench.docs.humanArea') }}
+            <div v-else-if="docContentQuery.isError.value" class="py-6 text-center space-y-2">
+              <p class="text-sm text-destructive">
+                {{ t('projects.workbench.docs.loadError') }}
               </p>
-              <MarkdownSourceEditor
-                v-if="block.section === 'system' || !block.editable"
-                :model-value="block.text"
-                :readonly="true"
-              />
-              <MarkdownSourceEditor
-                v-else
-                :model-value="humanDrafts[block.block_id] ?? block.text"
-                :readonly="false"
-                @update:model-value="(v: string) => { humanDrafts[block.block_id] = v }"
-              />
+              <button class="text-sm text-primary underline" @click="() => docContentQuery.refetch()">
+                {{ t('projects.retry') }}
+              </button>
             </div>
-          </div>
-        </template>
-      </template>
+
+            <template v-else>
+              <!-- 操作条：查看/编辑切换 + 保存 -->
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <span class="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                  <span class="size-2 rounded-full" :class="syncDotClass(content?.sync_status ?? 'idle')" />
+                  <template v-if="content?.sync_status === 'syncing'">{{ t('projects.workbench.overview.syncing') }}</template>
+                  <template v-else-if="content?.sync_status === 'error'">{{ t('projects.workbench.overview.syncError') }}</template>
+                  <template v-else-if="content?.sync_status === 'synced'">{{ t('projects.workbench.overview.synced') }}</template>
+                  <template v-else>{{ t('projects.workbench.overview.syncIdle') }}</template>
+                </span>
+                <div class="flex items-center gap-2">
+                  <Button
+                    v-if="mode === 'view'"
+                    size="sm"
+                    variant="outline"
+                    data-testid="doc-edit-toggle"
+                    @click="enterEdit"
+                  >
+                    <span class="icon-[lucide--pencil] mr-1.5" />
+                    {{ t('projects.workbench.docs.edit') }}
+                  </Button>
+                  <template v-else>
+                    <Button size="sm" variant="ghost" :disabled="isSaving" data-testid="doc-cancel-btn" @click="cancelEdit">
+                      {{ t('projects.workbench.docs.cancel') }}
+                    </Button>
+                    <Button
+                      size="sm"
+                      :disabled="isSaving || !hasHumanBlock"
+                      data-testid="doc-save-btn"
+                      @click="() => saveMutation.mutate()"
+                    >
+                      <span class="icon-[lucide--cloud-upload] mr-1.5" :class="isSaving ? 'animate-spin' : ''" />
+                      {{ isSaving ? t('projects.workbench.docs.saving') : t('projects.workbench.docs.save') }}
+                    </Button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- 查看态：markdown 实时渲染 -->
+              <div v-if="mode === 'view'" data-testid="doc-view">
+                <div v-if="!content?.rendered_markdown" class="text-sm text-muted-foreground py-6 text-center">
+                  {{ t('projects.workbench.docs.empty') }}
+                </div>
+                <MarkdownRenderer v-else :content="content.rendered_markdown" />
+              </div>
+
+              <!-- 编辑态：CodeMirror 源码，系统区只读 / 人工区可编辑 -->
+              <div v-else class="space-y-4" data-testid="doc-edit">
+                <div
+                  v-if="hasSystemBlock"
+                  class="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 border border-border/50 rounded-lg px-3 py-2.5"
+                  data-testid="doc-system-hint"
+                >
+                  <span class="icon-[lucide--lock] mt-0.5 shrink-0" />
+                  <span>{{ t('projects.workbench.docs.systemReadonly') }}</span>
+                </div>
+
+                <p v-if="!hasHumanBlock" class="text-xs text-muted-foreground" data-testid="doc-no-human">
+                  {{ t('projects.workbench.docs.noHumanArea') }}
+                </p>
+
+                <div
+                  v-for="block in blocks"
+                  :key="block.block_id"
+                  class="space-y-1.5"
+                  :data-testid="`doc-block-${block.section}`"
+                >
+                  <p
+                    v-if="block.section === 'human' && block.editable"
+                    class="text-xs font-medium text-foreground"
+                  >
+                    {{ t('projects.workbench.docs.humanArea') }}
+                  </p>
+                  <MarkdownSourceEditor
+                    v-if="block.section === 'system' || !block.editable"
+                    :model-value="block.text"
+                    :readonly="true"
+                  />
+                  <MarkdownSourceEditor
+                    v-else
+                    :model-value="humanDrafts[block.block_id] ?? block.text"
+                    :readonly="false"
+                    @update:model-value="(v: string) => { humanDrafts[block.block_id] = v }"
+                  />
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+      </div>
     </div>
   </section>
 </template>

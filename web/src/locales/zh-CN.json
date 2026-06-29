@@ -1267,11 +1267,11 @@
         "noHumanArea": "该文件暂无可编辑的人工区",
         "fileNavLabel": "工作区文件导航",
         "file": {
-          "memory": "记忆",
-          "state": "状态",
-          "milestones": "里程碑",
-          "research": "调研",
-          "preflight": "预检"
+          "memory": "MEMORY.md",
+          "state": "STATE.md",
+          "milestones": "MILESTONES.md",
+          "research": "RESEARCH.md",
+          "preflight": "PREFLIGHT.md"
         }
       },
       "feature": {
