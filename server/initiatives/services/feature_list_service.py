@@ -128,14 +128,17 @@ class FeatureListService:
         mode: str,
         modules: list[dict[str, Any]] | None = None,
         url: str = "",
+        paste_text: str = "",
         title: str = "",
         actor: Any = None,
         initiated_by_user_id: Any = None,
     ) -> Artifact:
-        """设置/更新项目 feature_list 工件（#5，唯一写入入口走 ArtifactService）。
+        """设置/更新项目 feature_list 工件（#4/#5，唯一写入入口走 ArtifactService）。
 
         - ``mode="manual"``：手动录入 → markdown 载体，``content_ref`` 存归一 JSON。
         - ``mode="feishu"``：飞书多维表格链接 → feishu_bitable 载体，``url`` 存链接。
+        - ``mode="gitlab"``：GitLab 文件链接 → 全局凭证取文 + LLM 逐字解析 → markdown 载体。
+        - ``mode="paste"``：粘贴整篇文档 → LLM 逐字解析结构 → markdown 载体。
 
         每项目复用同一条 feature_list 工件（存在则更新、否则新建），避免堆积多条。
         """
@@ -153,6 +156,32 @@ class FeatureListService:
             carrier = ArtifactCarrier.FEISHU_BITABLE
             content_ref = ""
             default_title = "Feature List（飞书）"
+        elif mode in ("paste", "gitlab"):
+            # 文档导入：先取正文（gitlab 取文 / paste 直接用），再 LLM 逐字解析为结构化模块。
+            from initiatives.services.feature_list_import import (
+                afetch_gitlab_file_text,
+                agenerate_feature_modules_from_text,
+            )
+
+            if mode == "gitlab":
+                if not url:
+                    raise ValueError("gitlab 模式需提供文件链接")
+                text = await afetch_gitlab_file_text(url)
+                default_title = "Feature List（GitLab 文档）"
+            else:
+                text = paste_text or ""
+                if not text.strip():
+                    raise ValueError("paste 模式需提供文档内容")
+                default_title = "Feature List（文档解析）"
+            parsed = await agenerate_feature_modules_from_text(project_id, text)
+            if not parsed:
+                raise ValueError("AI 解析未产出有效 feature list（请检查文档内容或 AI Provider 配置）")
+            carrier = ArtifactCarrier.MARKDOWN
+            content_ref = json.dumps(
+                {"modules": self._normalize_manual_modules(parsed)},
+                ensure_ascii=False,
+            )
+            url = ""
         else:
             raise ValueError(f"未知 feature list 录入模式：{mode}")
 

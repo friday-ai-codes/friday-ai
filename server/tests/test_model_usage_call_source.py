@@ -69,6 +69,7 @@ _EXPECTED_CALL_SOURCES = {
     "branch_naming",
     "plan_clarification",
     "plan_decompose",
+    "feature_list_parse",
 }
 
 
@@ -90,7 +91,7 @@ class TestCallSourceEnum:
         ``plan_decompose`` 后升至 32 值。
         """
         assert {member.value for member in CallSource} == _EXPECTED_CALL_SOURCES
-        assert len(_EXPECTED_CALL_SOURCES) == 32
+        assert len(_EXPECTED_CALL_SOURCES) == 33
 
     def test_normalize_valid_value(self) -> None:
         assert CallSource.normalize("chat") == "chat"

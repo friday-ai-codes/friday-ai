@@ -138,13 +138,17 @@ export interface FeatureListModuleInput {
 }
 
 /**
- * 设置 feature list（#5 两种录入方式）：
+ * 设置 feature list（#4/#5 录入方式）：
  * - mode='manual'：手动录入模块/功能点/验收项（落 markdown 载体工件，可全文 RAG）。
  * - mode='feishu'：贴飞书多维表格链接（落 feishu_bitable 载体，经同步拉取）。
+ * - mode='gitlab'：GitLab 文件链接（全局凭证鉴权取文 + AI 逐字解析结构）。
+ * - mode='paste'：粘贴整篇文档（AI 逐字解析结构，内容保留原文）。
  */
 export type FeatureListInput
   = | { mode: 'manual', modules: FeatureListModuleInput[], title?: string }
     | { mode: 'feishu', url: string, title?: string }
+    | { mode: 'gitlab', url: string, title?: string }
+    | { mode: 'paste', text: string, title?: string }
 
 /** 项目搜索结果项（WB-05，84-01 ProjectSearchResultSerializer）。 */
 export interface SearchResult {

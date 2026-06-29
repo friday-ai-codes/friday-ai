@@ -1422,9 +1422,9 @@ class ProjectFeatureListView(APIView):
         if err is not None:
             return err
         mode = request.data.get("mode")
-        if mode not in ("manual", "feishu"):
+        if mode not in ("manual", "feishu", "gitlab", "paste"):
             return Response(
-                {"detail": "mode 必须为 manual 或 feishu"},
+                {"detail": "mode 必须为 manual / feishu / gitlab / paste"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         kwargs: dict = {"mode": mode}
@@ -1436,14 +1436,22 @@ class ProjectFeatureListView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             kwargs["modules"] = modules
-        else:
+        elif mode in ("feishu", "gitlab"):
             url = (request.data.get("url") or "").strip()
             if not url:
                 return Response(
-                    {"detail": "feishu 模式需提供 url"},
+                    {"detail": f"{mode} 模式需提供 url"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             kwargs["url"] = url
+        else:  # paste
+            paste_text = request.data.get("text") or ""
+            if not str(paste_text).strip():
+                return Response(
+                    {"detail": "paste 模式需提供 text"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            kwargs["paste_text"] = paste_text
         title = (request.data.get("title") or "").strip()
         if title:
             kwargs["title"] = title
