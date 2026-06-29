@@ -58,19 +58,19 @@ describe('projectApiListCard（P5）', () => {
     expect(wrapper.text()).toContain('/api/y')
   })
 
-  it('成员可见新增表单与删除入口', async () => {
+  it('成员可见新增入口与删除入口', async () => {
     listStateApisMock.mockResolvedValue(ROWS)
     const wrapper = mountComp(true)
     await flushPromises()
-    expect(wrapper.find('[data-testid="api-add-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="api-add-btn"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="api-delete"]').exists()).toBe(true)
   })
 
-  it('非成员只读：无新增表单与删除入口', async () => {
+  it('非成员只读：无新增入口与删除入口', async () => {
     listStateApisMock.mockResolvedValue(ROWS)
     const wrapper = mountComp(false)
     await flushPromises()
-    expect(wrapper.find('[data-testid="api-add-form"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="api-add-btn"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="api-delete"]').exists()).toBe(false)
   })
 

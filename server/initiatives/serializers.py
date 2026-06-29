@@ -149,6 +149,9 @@ class ProjectStateApiSerializer(serializers.ModelSerializer):
             "method",
             "path",
             "params",
+            "description",
+            "request_fields",
+            "response_fields",
             "status",
             "source",
             "created_at",
@@ -158,22 +161,28 @@ class ProjectStateApiSerializer(serializers.ModelSerializer):
 
 
 class ProjectStateApiCreateSerializer(serializers.Serializer):
-    """手动新增结构化 API 清单条目请求（DOC-02；source 固定 manual 由 view 注入）。"""
+    """手动新增结构化 API 清单条目请求（DOC-02 + #5 完整 schema；source 固定 manual 由 view 注入）。"""
 
     method = serializers.CharField(max_length=10)
     path = serializers.CharField(max_length=500)
     params = serializers.JSONField(required=False, default=dict)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    request_fields = serializers.JSONField(required=False, default=list)
+    response_fields = serializers.JSONField(required=False, default=list)
     status = serializers.ChoiceField(
         required=False, choices=ApiStatus.choices, default=ApiStatus.PLANNED
     )
 
 
 class ProjectStateApiUpdateSerializer(serializers.Serializer):
-    """更新单条结构化 API 清单条目请求（DOC-02，84-01）：仅可变字段，全部可选。"""
+    """更新单条结构化 API 清单条目请求（DOC-02 + #5）：仅可变字段，全部可选。"""
 
     method = serializers.CharField(required=False, max_length=10)
     path = serializers.CharField(required=False, max_length=500)
     params = serializers.JSONField(required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    request_fields = serializers.JSONField(required=False)
+    response_fields = serializers.JSONField(required=False)
     status = serializers.ChoiceField(required=False, choices=ApiStatus.choices)
 
 

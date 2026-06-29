@@ -377,6 +377,9 @@ class ProjectDocService:
         method: str,
         path: str,
         params: dict[str, Any] | None = None,
+        description: str = "",
+        request_fields: list[dict[str, Any]] | None = None,
+        response_fields: list[dict[str, Any]] | None = None,
         status: str = ApiStatus.PLANNED,
         source: str = ApiSource.MANUAL,
         actor: Any = None,
@@ -384,7 +387,15 @@ class ProjectDocService:
     ) -> tuple[ProjectStateApi, bool]:
         """按 (project, method, path) 幂等新增 API 清单条目；新建时审计 state_api_added。"""
         api, created = await self._upsert_state_api_locked(
-            project_id, method, path, params or {}, status, source
+            project_id,
+            method,
+            path,
+            params or {},
+            description or "",
+            request_fields or [],
+            response_fields or [],
+            status,
+            source,
         )
         if created:
             actor_id = initiated_by_user_id or getattr(actor, "id", None)
@@ -427,6 +438,9 @@ class ProjectDocService:
         method: str,
         path: str,
         params: dict[str, Any],
+        description: str,
+        request_fields: list[dict[str, Any]],
+        response_fields: list[dict[str, Any]],
         status: str,
         source: str,
     ) -> tuple[ProjectStateApi, bool]:
@@ -435,7 +449,14 @@ class ProjectDocService:
                 project_id=project_id,
                 method=method,
                 path=path,
-                defaults={"params": params, "status": status, "source": source},
+                defaults={
+                    "params": params,
+                    "description": description,
+                    "request_fields": request_fields,
+                    "response_fields": response_fields,
+                    "status": status,
+                    "source": source,
+                },
             )
 
     async def remove_state_api(
@@ -515,7 +536,17 @@ class ProjectDocService:
         allowed = {
             k: v
             for k, v in fields.items()
-            if k in ("method", "path", "params", "status") and v is not None
+            if k
+            in (
+                "method",
+                "path",
+                "params",
+                "description",
+                "request_fields",
+                "response_fields",
+                "status",
+            )
+            and v is not None
         }
         updated = await self._update_state_api_locked(project_id, api_id, allowed)
         if updated is None:

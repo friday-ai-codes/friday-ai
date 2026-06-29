@@ -45,6 +45,11 @@ class ProjectStateApi(models.Model):
     method = models.CharField(max_length=10, verbose_name="HTTP 方法")
     path = models.CharField(max_length=500, verbose_name="路径")
     params = models.JSONField(default=dict, blank=True, verbose_name="参数")
+    # 接口说明
+    description = models.TextField(blank=True, default="", verbose_name="接口说明")
+    # 完整请求/返回结构（每项 {name,type,optional,description}，支持嵌套 children 表达返回结构）
+    request_fields = models.JSONField(default=list, blank=True, verbose_name="请求字段")
+    response_fields = models.JSONField(default=list, blank=True, verbose_name="返回字段")
     status = models.CharField(
         max_length=20,
         choices=ApiStatus.choices,
