@@ -85,6 +85,25 @@ export interface CursorRules {
   content: string
 }
 
+/** 项目分支绑定（BIND-01）。 */
+export interface ProjectBranch {
+  id: string
+  repository_id: string
+  repository_name: string
+  branch_name: string
+  source: string
+  feishu_board_id: string
+  created_at: string
+}
+
+/** 绑定分支请求。 */
+export interface ProjectBranchBind {
+  repository_id: string
+  branch_name: string
+  source?: string
+  feishu_board_id?: string
+}
+
 /** 项目「关联仓库」条目（业务关联 ∪ 分支绑定，#4）。 */
 export interface ProjectRepoLink {
   /** 关联行 id（association / branch 行）。 */
@@ -188,6 +207,18 @@ export const projectsApi = {
   /** 项目「关联仓库」（业务关联 ∪ 分支绑定，#4：按项目而非空间，空项目返回 []）。 */
   repositories: (id: string): Promise<ProjectRepoLink[]> =>
     get<ProjectRepoLink[]>(`/projects/${id}/repositories/`),
+
+  /** 项目分支绑定列表（BIND-01）。 */
+  listBranches: (id: string): Promise<ProjectBranch[]> =>
+    get<ProjectBranch[]>(`/projects/${id}/branches/`),
+
+  /** 绑定分支（严格按分支名，配合 skills 分支→项目反查；空项目亦可绑定）。 */
+  bindBranch: (id: string, data: ProjectBranchBind): Promise<ProjectBranch> =>
+    post<ProjectBranch>(`/projects/${id}/branches/`, data),
+
+  /** 解绑分支。 */
+  unbindBranch: (id: string, branchId: string): Promise<void> =>
+    del(`/projects/${id}/branches/${branchId}/`),
 }
 
 export default projectsApi
