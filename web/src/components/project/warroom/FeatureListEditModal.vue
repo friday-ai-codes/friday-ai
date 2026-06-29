@@ -17,9 +17,20 @@ const emit = defineEmits<{ confirm: [], cancel: [], closed: [] }>()
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-type Mode = 'manual' | 'feishu'
+type Mode = 'manual' | 'paste' | 'gitlab' | 'feishu'
 const mode = ref<Mode>('manual')
 const submitting = ref(false)
+
+const MODE_TABS: { id: Mode, label: string }[] = [
+  { id: 'manual', label: '手动录入' },
+  { id: 'paste', label: '粘贴解析' },
+  { id: 'gitlab', label: 'GitLab 文档' },
+  { id: 'feishu', label: '飞书链接' },
+]
+
+// 粘贴文档（AI 逐字解析）/ GitLab 文件链接。
+const pasteText = ref('')
+const gitlabUrl = ref('')
 
 // 手动录入：模块 → 功能点（验收项以换行分隔，提交时拆成数组）。
 interface FeatureDraft { name: string, acceptanceText: string }
@@ -78,6 +89,22 @@ async function handleSubmit() {
       }
       await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'manual', modules: payload })
     }
+    else if (mode.value === 'paste') {
+      const text = pasteText.value.trim()
+      if (!text) {
+        errorText.value = '请粘贴文档内容'
+        return
+      }
+      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'paste', text })
+    }
+    else if (mode.value === 'gitlab') {
+      const url = gitlabUrl.value.trim()
+      if (!url) {
+        errorText.value = '请填写 GitLab 文件链接'
+        return
+      }
+      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'gitlab', url })
+    }
     else {
       const url = feishuUrl.value.trim()
       if (!url) {
@@ -122,24 +149,17 @@ async function handleSubmit() {
 
     <!-- 模式切换 -->
     <div class="px-5 pt-4">
-      <div class="inline-flex rounded-lg border border-border/60 p-0.5 text-sm">
+      <div class="inline-flex flex-wrap rounded-lg border border-border/60 p-0.5 text-sm gap-0.5">
         <button
+          v-for="tab in MODE_TABS"
+          :key="tab.id"
           type="button"
           class="px-3 py-1 rounded-md transition-colors"
-          :class="mode === 'manual' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
-          data-testid="fl-mode-manual"
-          @click="mode = 'manual'"
+          :class="mode === tab.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+          :data-testid="`fl-mode-${tab.id}`"
+          @click="mode = tab.id"
         >
-          手动录入
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1 rounded-md transition-colors"
-          :class="mode === 'feishu' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
-          data-testid="fl-mode-feishu"
-          @click="mode = 'feishu'"
-        >
-          飞书链接
+          {{ tab.label }}
         </button>
       </div>
     </div>
@@ -214,6 +234,33 @@ async function handleSubmit() {
         >
           <span class="icon-[lucide--folder-plus] mr-1.5" /> 添加模块
         </button>
+      </div>
+
+      <!-- 粘贴文档（AI 逐字解析） -->
+      <div v-else-if="mode === 'paste'" class="space-y-2" data-testid="fl-paste">
+        <label class="text-sm font-medium text-foreground">粘贴文档内容</label>
+        <Textarea
+          v-model="pasteText"
+          placeholder="把需求 / PRD / feature 文档整篇粘贴进来，AI 会解析为「模块 → 功能点 → 验收项」结构"
+          :rows="10"
+          class="text-sm font-mono"
+        />
+        <p class="text-xs text-muted-foreground">
+          AI 仅解析结构，功能点 / 验收项内容<strong>逐字保留原文</strong>（不改写、不翻译）。
+        </p>
+      </div>
+
+      <!-- GitLab 文件链接（全局凭证鉴权取文 + AI 解析） -->
+      <div v-else-if="mode === 'gitlab'" class="space-y-2" data-testid="fl-gitlab">
+        <label class="text-sm font-medium text-foreground">GitLab 文件链接</label>
+        <Input
+          v-model="gitlabUrl"
+          placeholder="https://gitlab.xxx.com/group/proj/-/blob/main/docs/features.md"
+          class="h-9 font-mono text-sm"
+        />
+        <p class="text-xs text-muted-foreground">
+          用全局 GitLab 凭证（按 host 命中）拉取该文件，再由 AI 逐字解析为 feature 结构。
+        </p>
       </div>
 
       <!-- 飞书链接 -->
