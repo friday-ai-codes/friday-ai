@@ -13,6 +13,7 @@ feature_list / 拉取失败 → 返回空树不报错。深度项目域 RAG 标�
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -20,6 +21,7 @@ import structlog
 from asgiref.sync import sync_to_async
 
 from initiatives.models import Artifact, ProjectWorkItemLink
+from initiatives.models.artifact import ArtifactCarrier
 
 logger = structlog.get_logger(__name__)
 
@@ -98,9 +100,14 @@ class FeatureListService:
             )
             return {"modules": []}
 
-        records = await self._fetch_records(artifact)
         work_item_index = await self._aload_work_item_index(project_id)
-        tree = self._parse_records(records, work_item_index)
+        # 手动录入（#5）：markdown 载体的 feature_list 直接解析 content_ref JSON，
+        # 不走飞书 bitable 拉取；飞书链接（feishu_bitable 等）仍走 records 路径。
+        if artifact.carrier == ArtifactCarrier.MARKDOWN:
+            tree = self._parse_manual(artifact.content_ref, work_item_index)
+        else:
+            records = await self._fetch_records(artifact)
+            tree = self._parse_records(records, work_item_index)
 
         feature_count = sum(len(m["features"]) for m in tree["modules"])
         logger.info(
@@ -113,6 +120,116 @@ class FeatureListService:
             category="caller",
         )
         return tree
+
+    async def aset_feature_list(
+        self,
+        project_id: Any,
+        *,
+        mode: str,
+        modules: list[dict[str, Any]] | None = None,
+        url: str = "",
+        title: str = "",
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> Artifact:
+        """设置/更新项目 feature_list 工件（#5，唯一写入入口走 ArtifactService）。
+
+        - ``mode="manual"``：手动录入 → markdown 载体，``content_ref`` 存归一 JSON。
+        - ``mode="feishu"``：飞书多维表格链接 → feishu_bitable 载体，``url`` 存链接。
+
+        每项目复用同一条 feature_list 工件（存在则更新、否则新建），避免堆积多条。
+        """
+        from initiatives.services.artifact_service import ArtifactService
+
+        if mode == "manual":
+            carrier = ArtifactCarrier.MARKDOWN
+            content_ref = json.dumps(
+                {"modules": self._normalize_manual_modules(modules or [])},
+                ensure_ascii=False,
+            )
+            url = ""
+            default_title = "Feature List（手动录入）"
+        elif mode == "feishu":
+            carrier = ArtifactCarrier.FEISHU_BITABLE
+            content_ref = ""
+            default_title = "Feature List（飞书）"
+        else:
+            raise ValueError(f"未知 feature list 录入模式：{mode}")
+
+        type_id = await self._aget_feature_list_type_id()
+        existing_id = await self._aget_feature_list_artifact_id(project_id)
+        service = ArtifactService()
+        if existing_id is not None:
+            return await service.update_artifact(
+                artifact_id=existing_id,
+                title=title or default_title,
+                carrier=carrier,
+                url=url,
+                content_ref=content_ref,
+                actor=actor,
+                initiated_by_user_id=initiated_by_user_id,
+            )
+        return await service.create_artifact(
+            project_id=project_id,
+            type_id=type_id,
+            title=title or default_title,
+            carrier=carrier,
+            url=url,
+            content_ref=content_ref,
+            contributor=actor,
+            actor=actor,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+
+    @staticmethod
+    def _normalize_manual_modules(modules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """归一手动录入模块（防御脏数据：丢空名功能点、去空验收项、裁剪类型）。"""
+        out: list[dict[str, Any]] = []
+        for raw_mod in modules:
+            if not isinstance(raw_mod, dict):
+                continue
+            module_name = str(raw_mod.get("module") or "未分组").strip() or "未分组"
+            features: list[dict[str, Any]] = []
+            for raw_feat in raw_mod.get("features") or []:
+                if not isinstance(raw_feat, dict):
+                    continue
+                name = str(raw_feat.get("name") or "").strip()
+                if not name:
+                    continue
+                acceptance = [
+                    str(a).strip()
+                    for a in (raw_feat.get("acceptance") or [])
+                    if str(a).strip()
+                ]
+                feat: dict[str, Any] = {"name": name, "acceptance": acceptance}
+                status = str(raw_feat.get("status") or "").strip()
+                if status:
+                    feat["status"] = status
+                features.append(feat)
+            out.append({"module": module_name, "features": features})
+        return out
+
+    @sync_to_async
+    def _aget_feature_list_type_id(self) -> Any:
+        from initiatives.models import ArtifactType
+
+        artifact_type = ArtifactType.objects.filter(key=FEATURE_LIST_TYPE_KEY).first()
+        if artifact_type is None:
+            raise ValueError(
+                f"工件类型 {FEATURE_LIST_TYPE_KEY} 未注册（应由 data migration seed）"
+            )
+        return artifact_type.id
+
+    @sync_to_async
+    def _aget_feature_list_artifact_id(self, project_id: Any) -> Any:
+        artifact = (
+            Artifact.objects.filter(
+                project_id=project_id, type__key=FEATURE_LIST_TYPE_KEY
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        return artifact.id if artifact is not None else None
 
     @sync_to_async
     def _aget_feature_list_artifact(self, project_id: Any) -> Artifact | None:
@@ -227,6 +344,65 @@ class FeatureListService:
                 for m in modules.values()
             ]
         }
+
+    def _parse_manual(
+        self,
+        content_ref: str,
+        work_item_index: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """解析手动录入的 feature_list（markdown 载体，content_ref 存 JSON）。
+
+        约定结构：``{"modules": [{"module": str, "features": [{"name": str,
+        "acceptance": [str], "status": str}]}]}``。任何解析异常 → 返回空树（fail-soft）。
+        """
+        try:
+            data = json.loads(content_ref or "{}")
+        except (ValueError, TypeError):
+            return {"modules": []}
+        raw_modules = data.get("modules") if isinstance(data, dict) else None
+        if not isinstance(raw_modules, list):
+            return {"modules": []}
+
+        modules_out: list[dict[str, Any]] = []
+        for raw_mod in raw_modules:
+            if not isinstance(raw_mod, dict):
+                continue
+            module_name = str(raw_mod.get("module") or "未分组").strip() or "未分组"
+            features_out: list[dict[str, Any]] = []
+            for raw_feat in raw_mod.get("features") or []:
+                if not isinstance(raw_feat, dict):
+                    continue
+                name = str(raw_feat.get("name") or "").strip()
+                if not name:
+                    continue
+                acceptance = [
+                    str(a).strip()
+                    for a in (raw_feat.get("acceptance") or [])
+                    if str(a).strip()
+                ]
+                status_text = str(raw_feat.get("status") or "").strip()
+                wi = work_item_index.get(name)
+                if wi is not None:
+                    progress = progress_light(
+                        status_state_key=wi["status_state_key"],
+                        status_sub_stage=wi["status_sub_stage"],
+                        is_archived_state=wi["is_archived_state"],
+                        is_init_state=wi["is_init_state"],
+                    )
+                    status_display = wi["status_display_name"]
+                else:
+                    progress = progress_light(status_text=status_text)
+                    status_display = ""
+                features_out.append(
+                    {
+                        "name": name,
+                        "acceptance": acceptance,
+                        "progress": progress,
+                        "status_display_name": status_display,
+                    }
+                )
+            modules_out.append({"module": module_name, "features": features_out})
+        return {"modules": modules_out}
 
     @staticmethod
     def _first(fields: dict[str, Any], keys: tuple[str, ...]) -> str:

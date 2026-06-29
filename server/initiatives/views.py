@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
@@ -1413,6 +1415,111 @@ class ProjectFeatureListView(APIView):
         tree = await FeatureListService().build_tree(project_id)
         body = await sync_to_async(lambda: ProjectFeatureTreeSerializer(tree).data)()
         return Response(body)
+
+    async def post(self, request, project_id):
+        """设置/更新 feature list（#5）：手动录入 或 飞书多维表格链接（写权限 Space admin+）。"""
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        mode = request.data.get("mode")
+        if mode not in ("manual", "feishu"):
+            return Response(
+                {"detail": "mode 必须为 manual 或 feishu"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        kwargs: dict = {"mode": mode}
+        if mode == "manual":
+            modules = request.data.get("modules")
+            if not isinstance(modules, list):
+                return Response(
+                    {"detail": "manual 模式需提供 modules 数组"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            kwargs["modules"] = modules
+        else:
+            url = (request.data.get("url") or "").strip()
+            if not url:
+                return Response(
+                    {"detail": "feishu 模式需提供 url"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            kwargs["url"] = url
+        title = (request.data.get("title") or "").strip()
+        if title:
+            kwargs["title"] = title
+        try:
+            await FeatureListService().aset_feature_list(
+                project_id,
+                actor=request.user,
+                initiated_by_user_id=getattr(request.user, "id", None),
+                **kwargs,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True})
+
+
+def _serialize_project_repositories(project_id: Any) -> list[dict[str, Any]]:
+    """项目「关联仓库」= 业务关联（RepoAssociation 非 rejected）∪ 分支绑定（ProjectBranch），去重。
+
+    新空项目两者皆空 → 返回 []，不再误把整个空间的仓库池当作项目关联仓库。
+    """
+    from initiatives.models import ProjectBranch
+    from initiatives.models.repo_association import (
+        RepoAssociation,
+        RepoAssociationStatus,
+    )
+
+    rows: dict[str, dict[str, Any]] = {}
+    associations = (
+        RepoAssociation.objects.filter(project_id=project_id)
+        .exclude(status=RepoAssociationStatus.REJECTED)
+        .select_related("repository")
+    )
+    for assoc in associations:
+        repo = assoc.repository
+        rows.setdefault(
+            str(repo.id),
+            {
+                "id": str(assoc.id),
+                "repository_id": str(repo.id),
+                "repository_name": repo.name,
+                "git_url": repo.git_url,
+                "source": "association",
+                "status": assoc.status,
+            },
+        )
+    branches = ProjectBranch.objects.filter(project_id=project_id).select_related(
+        "repository"
+    )
+    for branch in branches:
+        repo = branch.repository
+        if str(repo.id) in rows:
+            continue
+        rows[str(repo.id)] = {
+            "id": str(branch.id),
+            "repository_id": str(repo.id),
+            "repository_name": repo.name,
+            "git_url": repo.git_url,
+            "source": "branch",
+            "status": "",
+        }
+    return list(rows.values())
+
+
+class ProjectRepositoryListView(APIView):
+    """项目「关联仓库」列表（GET，读权限）。
+
+    返回该项目业务级关联（``RepoAssociation``）∪ 分支绑定（``ProjectBranch``）涉及的仓库，
+    去重。**不是**所属空间的仓库池——新空项目应返回空列表（修 #4：避免误显示全部仓库）。
+    """
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        data = await sync_to_async(_serialize_project_repositories)(project_id)
+        return Response(data)
 
 
 class ProjectSearchView(APIView):
