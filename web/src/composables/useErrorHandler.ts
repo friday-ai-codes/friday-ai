@@ -37,7 +37,10 @@ export function useErrorHandler() {
 
   function handleError(e: unknown, context?: string): void {
     const message = extractErrorMessage(e)
-    const title = context ? `${context}失败` : '操作失败'
+    // context 作为「动作」前缀，统一补「失败」；若调用方已自带「失败」则不重复（避免「…失败失败」）。
+    const title = context
+      ? (context.endsWith('失败') ? context : `${context}失败`)
+      : '操作失败'
     showError(title, message)
   }
 

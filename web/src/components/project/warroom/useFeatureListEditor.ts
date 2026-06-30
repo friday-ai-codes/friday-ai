@@ -15,7 +15,10 @@ export function useFeatureListEditor() {
       component: markRaw(FeatureListEditModal),
       attrs: { projectId },
       onConfirm: () => {
+        // feature list 落库后让项目相关视图立即回显（Features 灯 / 健康总览 / 星图 / 详情）。
         queryClient.invalidateQueries({ queryKey: ['project-features', projectId] })
+        queryClient.invalidateQueries({ queryKey: ['project-galaxy', projectId] })
+        queryClient.invalidateQueries({ queryKey: ['project-work-items', projectId] })
         // 描述可能随 feature list 自动重写，一并失效项目详情缓存。
         queryClient.invalidateQueries({ queryKey: ['project', projectId] })
       },
