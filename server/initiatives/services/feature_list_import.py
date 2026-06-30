@@ -44,9 +44,10 @@ __all__ = [
 
 _COMPONENT = "initiatives.feature_list_import"
 _MODEL_FALLBACK = "claude-sonnet-4-20250514"
-# 行号裁剪方案下输入可放宽（输入额度远大于输出）；输出只含结构+行号，体积很小。
+# 行号裁剪方案下输入可放宽（输入额度远大于输出）；输出只含结构+行号，体积很小，
+# 故输出额度取**各家通用安全值 8000**（≤ DeepSeek 8192 上限，避免请求超限被 API 400 拒绝）。
 _MAX_DOC_CHARS = 100000
-_MAX_OUTPUT_TOKENS = 16000
+_MAX_OUTPUT_TOKENS = 8000
 
 # 行号裁剪 prompt：模型只返回「结构 + 行号范围」，不复制原文 → 输出与文档大小解耦、不被截断；
 # 验收项内容由系统按行号从原文裁剪，保证逐字一致。功能点名为短标题，可直接给出原文。
@@ -362,7 +363,11 @@ async def agenerate_feature_modules_from_text(
             "feature_list_parse_failed",
             project_id=str(project_id),
             doc_chars=len(doc),
+            model=model,
+            max_output_tokens=_MAX_OUTPUT_TOKENS,
             error_type=type(exc).__name__,
+            # 脱敏后记录上游错误摘要，便于区分「max_tokens 超限 / 鉴权 / 限流」等真实原因。
+            error=redact_secrets_in_text(str(exc))[:300],
             component=_COMPONENT,
             category="caller",
         )
