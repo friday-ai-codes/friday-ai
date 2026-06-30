@@ -56,9 +56,9 @@ describe('前后端节点漂移守护（fixture 驱动）', () => {
     }
   })
 
-  it('ai_plan_generation 已从 palette 移除但仍在 fixture（UNIFY-02，后端保留注册）', () => {
+  it('ai_plan_generation 已完全移除（Chassis v2 删除旧 plan 域，palette 与 fixture 均无）', () => {
     expect(paletteSet.has('ai_plan_generation'), 'ai_plan_generation 应已从 NodePalette 移除').toBe(false)
-    expect(fixtureTypes.has('ai_plan_generation'), `ai_plan_generation 应仍在 fixture（后端 deprecated 但保留注册）—— ${REGEN_HINT}`).toBe(true)
+    expect(fixtureTypes.has('ai_plan_generation'), `ai_plan_generation 已随旧 plan 域移除，不应再在 fixture —— ${REGEN_HINT}`).toBe(false)
   })
 
   it('ai_plan_research 已暴露到 palette 且 ⊆ fixture（UNIFY-02 第二半）', () => {

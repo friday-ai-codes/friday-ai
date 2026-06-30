@@ -1,5 +1,5 @@
 {
-  "node_count": 42,
+  "node_count": 43,
   "nodes": [
     {
       "node_type": "aggregate",
@@ -38,11 +38,17 @@
       "inputs": [
         {
           "name": "plan"
+        },
+        {
+          "name": "resume"
         }
       ],
       "outputs": [
         {
           "name": "default"
+        },
+        {
+          "name": "clarify"
         },
         {
           "name": "error"
@@ -50,19 +56,19 @@
       ]
     },
     {
-      "node_type": "ai_plan_generation",
-      "category": "ai",
+      "node_type": "ai_create_branch",
+      "category": "action",
       "inputs": [
         {
           "name": "default"
+        },
+        {
+          "name": "plan"
         }
       ],
       "outputs": [
         {
           "name": "default"
-        },
-        {
-          "name": "need_clarification"
         },
         {
           "name": "error"
@@ -281,6 +287,26 @@
       "inputs": [
         {
           "name": "default"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "error"
+        }
+      ]
+    },
+    {
+      "node_type": "create_project_workspace",
+      "category": "integration",
+      "inputs": [
+        {
+          "name": "default"
+        },
+        {
+          "name": "feature_list"
         }
       ],
       "outputs": [

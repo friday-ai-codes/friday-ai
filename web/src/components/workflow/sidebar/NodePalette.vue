@@ -60,6 +60,8 @@ const nodeGroups = computed<PaletteGroup[]>(() => [
     name: '集成',
     items: [
       { type: 'create_branch', name: '创建分支', description: '创建 Git 分支' },
+      { type: 'ai_create_branch', name: 'AI 创建分支', description: '基于方案/feature list 给多仓建分支并绑项目' },
+      { type: 'create_project_workspace', name: '创建项目', description: '创建项目并建 5 文件、绑定/AI 拆分 feature list' },
       { type: 'create_pr', name: '创建 PR', description: '创建 Pull Request' },
       fromDef('merge_pr', '合并 PR', '合并 Pull Request'),
       fromDef('mcp_deploy', 'MCP 部署', 'MCP 服务部署'),

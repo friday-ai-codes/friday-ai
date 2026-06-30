@@ -24,5 +24,7 @@ KNOWN_PORT_SHAPES: frozenset[str] = frozenset(
         "coding_assignment",
         "feishu_document",
         "approval_result",
+        # 结构化 feature list（模块→功能点→验收项）：拆分节点产出、创建项目节点消费（#4）。
+        "feature_list",
     }
 )
