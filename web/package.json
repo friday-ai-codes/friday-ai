@@ -87,6 +87,7 @@
     "lucide-vue-next": "catalog:",
     "markdown-it": "catalog:",
     "medium-zoom": "^1.1.0",
+    "mermaid": "^11.16.0",
     "nanoid": "catalog:",
     "pinia": "catalog:",
     "shiki": "catalog:",

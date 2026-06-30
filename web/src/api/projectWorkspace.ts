@@ -122,7 +122,19 @@ export interface FeatureNode {
   status_state_key?: string
   status_display_name?: string
   module_normalized?: string
+  /** 整段原文（功能点节点）/ 模块概述（模块节点）；供点开后按需结构化为详情 sections。 */
+  source?: string
   children?: FeatureNode[]
+}
+
+/** 功能点详情段落（Step 2 结构化，柔性、不固定字段）。 */
+export interface FeatureDetailSection {
+  /** 段落小标题（如「功能描述」「业务规则与约束」「数据流转」「验收项」）。 */
+  title: string
+  /** 渲染类型：text=文本、list=逐条列表、mermaid=流程图源码。 */
+  type: 'text' | 'list' | 'mermaid'
+  /** type=list 时为字符串数组，否则为字符串。 */
+  content: string | string[]
 }
 
 /** 含 WorkItem 状态的工作项（84-01 扩展 ProjectWorkItemListView）。 */
@@ -139,9 +151,11 @@ export interface ProjectWorkItemWithStatus {
   module_normalized: string
 }
 
-/** 手动录入的 feature 功能点（含可选验收项 + 状态）。 */
+/** 手动录入的 feature 功能点（含可选验收项 + 状态 + 原文）。 */
 export interface FeatureListFeatureInput {
   name: string
+  /** 功能点整段原文（解析得来，供详情按需结构化；手动录入可缺省）。 */
+  source?: string
   acceptance?: string[]
   status?: string
 }
@@ -149,7 +163,21 @@ export interface FeatureListFeatureInput {
 /** 手动录入的模块（含功能点）。 */
 export interface FeatureListModuleInput {
   module: string
+  /** 模块概述/交互流程原文（解析得来，可缺省）。 */
+  summary?: string
   features: FeatureListFeatureInput[]
+}
+
+/** 粘贴文档 AI 解析的额度配置（后端按解析模型 ModelCapabilities 计算）。 */
+export interface FeatureListParseConfig {
+  /** 解析使用的模型 ID（无 Provider 时为空）。 */
+  model: string
+  /** 模型最大输入 token（0=未知/无 Provider）。 */
+  max_input_tokens: number
+  /** 本次解析请求的输出 token 上限。 */
+  max_output_tokens: number
+  /** 单次粘贴允许的最大字数（已扣 system prompt / 输出 / 安全余量）。 */
+  max_input_chars: number
 }
 
 /**
@@ -232,6 +260,20 @@ export const projectWorkspaceApi = {
     post<{ modules: FeatureListModuleInput[] }>(
       `/projects/${projectId}/feature-list/parse/`,
       { text },
+    ),
+
+  /** 粘贴文档 AI 解析的额度配置（按解析模型，已扣 prompt/输出/安全余量）。 */
+  getFeatureListParseConfig: (projectId: string): Promise<FeatureListParseConfig> =>
+    get<FeatureListParseConfig>(`/projects/${projectId}/feature-list/parse-config/`),
+
+  /** 把单个功能点/模块原文结构化为柔性 sections（Step 2，按需，点开详情时调用）。 */
+  getFeatureDetail: (
+    projectId: string,
+    source: string,
+  ): Promise<{ sections: FeatureDetailSection[] }> =>
+    post<{ sections: FeatureDetailSection[] }>(
+      `/projects/${projectId}/feature-list/feature-detail/`,
+      { source },
     ),
 
   /** 项目工作项列表（含 WorkItem 状态字段，WB-02）。 */
