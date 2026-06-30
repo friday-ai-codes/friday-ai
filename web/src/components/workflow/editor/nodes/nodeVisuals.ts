@@ -14,6 +14,7 @@ import {
   FileCode,
   FileSearch,
   FileText,
+  FolderPlus,
   FolderSearch,
   GitBranch,
   GitFork,
@@ -62,6 +63,8 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
 
   // 集成 (blue)
   create_branch: { icon: GitBranch, color: 'blue' },
+  ai_create_branch: { icon: GitFork, color: 'blue' },
+  create_project_workspace: { icon: FolderPlus, color: 'blue' },
   create_pr: { icon: GitPullRequest, color: 'blue' },
   merge_pr: { icon: GitMerge, color: 'blue' },
   mcp_deploy: { icon: CloudUpload, color: 'blue' },
