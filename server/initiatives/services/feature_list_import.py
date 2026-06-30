@@ -40,6 +40,8 @@ __all__ = [
     "afetch_gitlab_file_text",
     "agenerate_feature_modules_from_text",
     "agenerate_feature_detail_sections",
+    "agenerate_module_outline",
+    "agenerate_module_features",
     "compute_parse_budget",
     "aget_parse_budget",
     "GitlabFetchError",
@@ -143,6 +145,31 @@ _DETAIL_SYSTEM_PROMPT = (
 # Step 2 输出仍较小（结构 + 原文切片），单功能点正文有限，输出额度取期望值即可。
 _DETAIL_DESIRED_OUTPUT_TOKENS = 8000
 _DETAIL_MAX_SOURCE_CHARS = 24000
+
+# ── 分层解析（修复多模块大文档一次性输出被截断）──────────────────────────
+# Step 0：只识别**模块**层级（输出极小，模块再多也不截断），返回各模块的行区间，
+# 由前端按行区间切片后逐模块再发起 Step 1 功能点解析，实现「先出模块、再逐步填功能点」。
+_MODULES_ONLY_SYSTEM_PROMPT = (
+    "你是需求结构解析器。输入是**带行号的文档**（每行形如「123|内容」）。"
+    "**只识别模块层级，不要解析功能点**。\n"
+    "强约束：\n"
+    "1. 仅输出一个 JSON 对象：{\"modules\":[{\"module\":\"模块名\",\"lines\":[起始行号,结束行号]}]}。\n"
+    "2. lines 指向该模块**完整区间**（从模块标题行到下一个模块标题之前；最后一个模块到文末）。\n"
+    "3. 模块名取标题原文（简短、逐字）。行号必须是输入中真实出现的行号。\n"
+    "4. 无任何前后缀/解释/代码块标记。无法识别模块时用「未分组」。"
+)
+# Step 1：输入是**单个模块**的正文切片，只解析该模块下的功能点（输出受单模块体量约束，不截断）。
+_MODULE_FEATURES_SYSTEM_PROMPT = (
+    "你是需求结构解析器。输入是**带行号的【单个模块】正文**（每行形如「123|内容」）。"
+    "把它解析为该模块下的**功能点**列表。\n"
+    "强约束：\n"
+    "1. 不要复制原文；一律用行号范围指向原文，由系统裁剪，确保逐字一致。\n"
+    "2. name 取功能点标题原文（简短、逐字）。\n"
+    "3. feature_lines=[起始行号,结束行号] 指向功能点完整正文区间。\n"
+    "4. acceptance_lines=若干 [起始行号,结束行号] 指向验收项原文行；无则空数组。\n"
+    "5. 行号必须是输入中真实出现的行号。仅输出 {\"features\":[{\"name\":\"\",\"feature_lines\":[s,e],"
+    "\"acceptance_lines\":[[s,e]]}]}，无任何前后缀/解释/代码块标记。"
+)
 
 
 class GitlabFetchError(ValueError):
@@ -331,45 +358,51 @@ def _materialize_modules(
             continue
         module_name = str(mod.get("module") or "未分组").strip() or "未分组"
         module_summary = _slice_span(lines, mod.get("summary_lines"))
-        features: list[dict[str, Any]] = []
-        for feat in mod.get("features") or []:
-            if not isinstance(feat, dict):
-                continue
-            name = str(feat.get("name") or "").strip()
-            if not name and feat.get("name_line") is not None:
-                name = _slice_lines(lines, feat["name_line"], feat["name_line"])
-            if not name:
-                continue
-            acceptance: list[str] = []
-            spans = feat.get("acceptance_lines")
-            if isinstance(spans, list):
-                for span in spans:
-                    if isinstance(span, (list, tuple)) and len(span) >= 2:
-                        sliced = _slice_lines(lines, span[0], span[1])
-                    elif isinstance(span, (int, str)):
-                        sliced = _slice_lines(lines, span, span)
-                    else:
-                        sliced = ""
-                    if sliced:
-                        acceptance.append(sliced)
-            else:
-                acceptance = [
-                    str(a).strip()
-                    for a in (feat.get("acceptance") or [])
-                    if str(a).strip()
-                ]
-            # 功能点整段原文（供 Step 2 按需结构化为 sections）；缺 feature_lines 时回退验收项拼接。
-            source = _slice_span(lines, feat.get("feature_lines"))
-            feat_out: dict[str, Any] = {"name": name, "acceptance": acceptance}
-            if source:
-                feat_out["source"] = source
-            features.append(feat_out)
+        features = _materialize_features(mod.get("features") or [], lines)
         if features:
             mod_out: dict[str, Any] = {"module": module_name, "features": features}
             if module_summary:
                 mod_out["summary"] = module_summary
             out.append(mod_out)
     return out or None
+
+
+def _materialize_features(
+    raw_feats: list[Any], lines: list[str]
+) -> list[dict[str, Any]]:
+    """把 LLM 返回的功能点（行号范围）物化为 ``[{name, acceptance, source}]``（验收项/原文按行裁剪）。"""
+    features: list[dict[str, Any]] = []
+    for feat in raw_feats or []:
+        if not isinstance(feat, dict):
+            continue
+        name = str(feat.get("name") or "").strip()
+        if not name and feat.get("name_line") is not None:
+            name = _slice_lines(lines, feat["name_line"], feat["name_line"])
+        if not name:
+            continue
+        acceptance: list[str] = []
+        spans = feat.get("acceptance_lines")
+        if isinstance(spans, list):
+            for span in spans:
+                if isinstance(span, (list, tuple)) and len(span) >= 2:
+                    sliced = _slice_lines(lines, span[0], span[1])
+                elif isinstance(span, (int, str)):
+                    sliced = _slice_lines(lines, span, span)
+                else:
+                    sliced = ""
+                if sliced:
+                    acceptance.append(sliced)
+        else:
+            acceptance = [
+                str(a).strip() for a in (feat.get("acceptance") or []) if str(a).strip()
+            ]
+        # 功能点整段原文（供 Step 2 按需结构化为 sections）。
+        source = _slice_span(lines, feat.get("feature_lines"))
+        feat_out: dict[str, Any] = {"name": name, "acceptance": acceptance}
+        if source:
+            feat_out["source"] = source
+        features.append(feat_out)
+    return features
 
 
 def _slice_span(lines: list[str], span: Any) -> str:
@@ -517,6 +550,179 @@ async def agenerate_feature_modules_from_text(
             category="caller",
         )
     return modules
+
+
+def _loads_features_raw(raw: str) -> list[Any] | None:
+    """从 LLM 输出取出 features 数组（剥代码块/前后缀；截断时抢救完整对象），失败返回 None。"""
+    if not raw:
+        return None
+    text = raw.strip()
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    else:
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+    try:
+        data = json.loads(text)
+        feats = data.get("features") if isinstance(data, dict) else None
+    except (ValueError, TypeError):
+        m = re.search(r'"features"\s*:\s*\[', raw)
+        feats = None
+        if m:
+            objs = _extract_complete_objects(raw[m.end():])
+            salvaged: list[Any] = []
+            for obj in objs:
+                try:
+                    salvaged.append(json.loads(obj))
+                except (ValueError, TypeError):
+                    continue
+            feats = salvaged or None
+    return feats if isinstance(feats, list) else None
+
+
+async def _ainvoke_parse_llm(
+    project_id: Any, system_prompt: str, doc: str, *, log_event: str
+) -> tuple[str, list[str], bool]:
+    """通用解析 LLM 调用：解析 Provider → 算额度 → 喂带行号文档 → 返回 ``(content, lines, truncated)``。
+
+    无 Provider / LLM 调用失败抛 :class:`FeatureListParseError`（携可读 reason）。
+    """
+    project = await _aget_project(project_id)
+    if project is None:
+        raise FeatureListParseError("项目不存在")
+    space = getattr(project, "space", None)
+    resolved = await ProviderConfigService.aresolve_or_error(project=space)
+    if isinstance(resolved, ProviderMissingError):
+        raise FeatureListParseError("未配置可用的 AI Provider，请先在空间或系统设置中配置 AI 模型")
+
+    from agents.llm_factory import build_chat_model
+
+    legacy = await aget_legacy_anthropic_config()
+    model = legacy.get("default_model") or _MODEL_FALLBACK
+    budget = compute_parse_budget(str(resolved.provider_type), model)
+    doc = doc[: budget["max_input_chars"]]
+    lines, numbered_doc = _number_lines(doc)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=numbered_doc),
+    ]
+    start = perf_counter()
+    ttft_ms: int | None = None
+    try:
+        with use_call_source(CallSource.FEATURE_LIST_PARSE):
+            chat_model = build_chat_model(
+                resolved, model, max_output_tokens=budget["max_output_tokens"], streaming=False
+            )
+            ai_msg = await chat_model.ainvoke(messages)
+        ttft_ms = int((perf_counter() - start) * 1000)
+    except Exception as exc:  # noqa: BLE001 — 转可读错误，不反噬
+        await _record_usage(
+            resolved, model, ttft_ms=None, upstream_status_code=parse_upstream_status(exc)
+        )
+        logger.warning(
+            f"{log_event}_failed",
+            project_id=str(project_id),
+            doc_chars=len(doc),
+            model=model,
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:300],
+            component=_COMPONENT,
+            category="caller",
+        )
+        raise FeatureListParseError("AI 调用失败，请稍后重试或检查 AI Provider 配置") from exc
+
+    usage = getattr(ai_msg, "usage_metadata", None) or {}
+    await _record_usage(
+        resolved,
+        model,
+        ttft_ms=ttft_ms,
+        prompt_tokens=usage.get("input_tokens", 0) if isinstance(usage, dict) else 0,
+        completion_tokens=usage.get("output_tokens", 0) if isinstance(usage, dict) else 0,
+        duration_ms=int((perf_counter() - start) * 1000),
+    )
+    meta = getattr(ai_msg, "response_metadata", None) or {}
+    stop_reason = str(meta.get("stop_reason") or meta.get("finish_reason") or "").lower()
+    truncated = stop_reason in ("max_tokens", "length")
+    content = getattr(ai_msg, "content", "")
+    if isinstance(content, list):
+        content = " ".join(
+            str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content
+        )
+    return str(content or ""), lines, truncated
+
+
+async def agenerate_module_outline(
+    project_id: Any, text: str
+) -> list[dict[str, Any]]:
+    """Step 0：只解析**模块层级**，返回 ``[{module, line_start, line_end}]``。
+
+    输出极小（模块再多也不截断）；行区间供前端切片后逐模块再发起 Step 1 功能点解析。
+    无可解析模块 / 无 Provider / LLM 失败抛 :class:`FeatureListParseError`。
+    """
+    if not str(text or "").strip():
+        raise FeatureListParseError("文档为空")
+    content, lines, truncated = await _ainvoke_parse_llm(
+        project_id, _MODULES_ONLY_SYSTEM_PROMPT, str(text), log_event="feature_list_parse_modules"
+    )
+    raw = _loads_modules_raw(content)
+    out: list[dict[str, Any]] = []
+    for mod in raw or []:
+        if not isinstance(mod, dict):
+            continue
+        name = str(mod.get("module") or "未分组").strip() or "未分组"
+        span = mod.get("lines")
+        if isinstance(span, (list, tuple)) and len(span) >= 2:
+            try:
+                s = max(1, int(span[0]))
+                e = min(len(lines), int(span[1]))
+            except (TypeError, ValueError):
+                s, e = 1, len(lines)
+        else:
+            s, e = 1, len(lines)
+        if s > e:
+            s, e = 1, len(lines)
+        out.append({"module": name, "line_start": s, "line_end": e})
+    logger.info(
+        "feature_list_modules_parsed",
+        project_id=str(project_id),
+        module_count=len(out),
+        truncated=truncated,
+        component=_COMPONENT,
+        category="caller",
+    )
+    if not out:
+        raise FeatureListParseError("AI 未从文档解析出模块，请检查文档内容")
+    return out
+
+
+async def agenerate_module_features(
+    project_id: Any, module_text: str
+) -> list[dict[str, Any]]:
+    """Step 1：解析**单个模块切片**下的功能点，返回 ``[{name, acceptance, source}]``。
+
+    输入受单模块体量约束、输出不截断。无 Provider / LLM 失败抛 :class:`FeatureListParseError`；
+    解析不出功能点时返回空列表（前端展示该模块为空，可手动补）。
+    """
+    src = str(module_text or "").strip()
+    if not src:
+        return []
+    content, lines, _ = await _ainvoke_parse_llm(
+        project_id,
+        _MODULE_FEATURES_SYSTEM_PROMPT,
+        src,
+        log_event="feature_list_parse_module_features",
+    )
+    features = _materialize_features(_loads_features_raw(content) or [], lines)
+    logger.info(
+        "feature_list_module_features_parsed",
+        project_id=str(project_id),
+        feature_count=len(features),
+        component=_COMPONENT,
+        category="caller",
+    )
+    return features
 
 
 def _normalize_sections(raw: Any) -> list[dict[str, Any]]:

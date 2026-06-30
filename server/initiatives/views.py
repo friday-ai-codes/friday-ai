@@ -1502,6 +1502,64 @@ class ProjectFeatureListParseView(APIView):
         return Response({"modules": modules})
 
 
+class ProjectFeatureListParseModulesView(APIView):
+    """Step 0：只解析**模块层级**（POST；写权限）。
+
+    路由 ``projects/<project_id>/feature-list/parse-modules/``；body ``{text}``。返回
+    ``{modules: [{module, line_start, line_end}]}``——输出极小、模块再多也不截断。前端据
+    行区间切片后逐模块调用 parse-module-features，实现「先出模块、再逐步填功能点」。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        text = request.data.get("text") or ""
+        if not str(text).strip():
+            return Response({"detail": "需提供 text"}, status=status.HTTP_400_BAD_REQUEST)
+        from initiatives.services.feature_list_import import (
+            FeatureListParseError,
+            agenerate_module_outline,
+        )
+
+        try:
+            modules = await agenerate_module_outline(project_id, str(text))
+        except FeatureListParseError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+        return Response({"modules": modules})
+
+
+class ProjectFeatureListParseModuleFeaturesView(APIView):
+    """Step 1：解析**单个模块切片**下的功能点（POST；写权限）。
+
+    路由 ``projects/<project_id>/feature-list/parse-module-features/``；body ``{text}``
+    （单个模块的原文切片）。返回 ``{features: [{name, acceptance, source}]}``——输入受单模块
+    体量约束、输出不截断。逐字保留原文。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        text = request.data.get("text") or ""
+        if not str(text).strip():
+            return Response({"features": []})
+        from initiatives.services.feature_list_import import (
+            FeatureListParseError,
+            agenerate_module_features,
+        )
+
+        try:
+            features = await agenerate_module_features(project_id, str(text))
+        except FeatureListParseError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+        return Response({"features": features})
+
+
 class ProjectFeatureListParseConfigView(APIView):
     """粘贴文档 AI 解析的额度配置（GET，读权限）。
 

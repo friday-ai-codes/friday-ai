@@ -13,6 +13,8 @@ from initiatives.views import (
     ProjectDetailView,
     ProjectFeatureListFeatureDetailView,
     ProjectFeatureListParseConfigView,
+    ProjectFeatureListParseModuleFeaturesView,
+    ProjectFeatureListParseModulesView,
     ProjectFeatureListParseView,
     ProjectFeatureListView,
     ProjectGalaxyView,
@@ -205,6 +207,16 @@ urlpatterns = [
         "<uuid:project_id>/feature-list/parse/",
         ProjectFeatureListParseView.as_view(),
         name="project-feature-list-parse",
+    ),
+    path(
+        "<uuid:project_id>/feature-list/parse-modules/",
+        ProjectFeatureListParseModulesView.as_view(),
+        name="project-feature-list-parse-modules",
+    ),
+    path(
+        "<uuid:project_id>/feature-list/parse-module-features/",
+        ProjectFeatureListParseModuleFeaturesView.as_view(),
+        name="project-feature-list-parse-module-features",
     ),
     path(
         "<uuid:project_id>/feature-list/parse-config/",
