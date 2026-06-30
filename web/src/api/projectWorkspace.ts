@@ -220,9 +220,19 @@ export const projectWorkspaceApi = {
   getFeatureList: (projectId: string): Promise<FeatureNode[]> =>
     get<FeatureNode[]>(`/projects/${projectId}/feature-list/`),
 
-  /** 设置/更新 feature list（#5 手动录入 或 飞书链接；仅项目成员）。 */
+  /** 设置/更新 feature list（手动录入；仅项目成员）。 */
   setFeatureList: (projectId: string, data: FeatureListInput): Promise<{ ok: boolean }> =>
     post<{ ok: boolean }>(`/projects/${projectId}/feature-list/`, data),
+
+  /** 把粘贴文档 AI 解析为结构化模块（只解析不落库，供录入编辑器自动填入）。 */
+  parseFeatureList: (
+    projectId: string,
+    text: string,
+  ): Promise<{ modules: FeatureListModuleInput[] }> =>
+    post<{ modules: FeatureListModuleInput[] }>(
+      `/projects/${projectId}/feature-list/parse/`,
+      { text },
+    ),
 
   /** 项目工作项列表（含 WorkItem 状态字段，WB-02）。 */
   listWorkItems: (projectId: string): Promise<ProjectWorkItemWithStatus[]> =>

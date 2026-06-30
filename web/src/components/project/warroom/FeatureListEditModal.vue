@@ -9,37 +9,19 @@ import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 
-// #5 feature list 录入弹窗：两种方式——手动录入（模块 → 功能点 → 验收项）
-// 或 贴飞书多维表格链接。提交经 POST /projects/{id}/feature-list/，由 ArtifactService 收口。
+// feature list 录入弹窗：单一「手动录入」结构（模块 → 功能点 → 验收项）。
+// 可粘贴整篇文档，点「AI 解析填入」由 agent 拆解为结构化行自动填入编辑器，再人工确认保存。
 const props = defineProps<{ projectId: string }>()
 const emit = defineEmits<{ confirm: [], cancel: [], closed: [] }>()
 
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-type Mode = 'manual' | 'paste' | 'gitlab' | 'feishu'
-const mode = ref<Mode>('manual')
-const submitting = ref(false)
-
-const MODE_TABS: { id: Mode, label: string }[] = [
-  { id: 'manual', label: '手动录入' },
-  { id: 'paste', label: '粘贴解析' },
-  { id: 'gitlab', label: 'GitLab 文档' },
-  { id: 'feishu', label: '飞书链接' },
-]
-
-// 粘贴文档（AI 逐字解析）/ GitLab 文件链接。
-const pasteText = ref('')
-const gitlabUrl = ref('')
-
-// 手动录入：模块 → 功能点（验收项以换行分隔，提交时拆成数组）。
 interface FeatureDraft { name: string, acceptanceText: string }
 interface ModuleDraft { module: string, features: FeatureDraft[] }
 const modules = reactive<ModuleDraft[]>([
   { module: '', features: [{ name: '', acceptanceText: '' }] },
 ])
-
-const feishuUrl = ref('')
 
 function addModule() {
   modules.push({ module: '', features: [{ name: '', acceptanceText: '' }] })
@@ -56,6 +38,52 @@ function removeFeature(mi: number, fi: number) {
   modules[mi].features.splice(fi, 1)
   if (modules[mi].features.length === 0)
     modules[mi].features.push({ name: '', acceptanceText: '' })
+}
+
+// 判断当前编辑器是否仍是初始空白（只有一个空模块空功能点）——用于解析后决定覆盖还是追加。
+function isPristine(): boolean {
+  if (modules.length !== 1)
+    return false
+  const m = modules[0]
+  return !m.module.trim() && m.features.length === 1 && !m.features[0].name.trim()
+}
+
+// ── 粘贴文档 → AI 解析 → 填入结构化行 ──────────────────────────
+const pasteText = ref('')
+const parsing = ref(false)
+
+async function parseAndFill() {
+  const text = pasteText.value.trim()
+  if (!text || parsing.value)
+    return
+  parsing.value = true
+  try {
+    const { modules: parsed } = await projectWorkspaceApi.parseFeatureList(props.projectId, text)
+    const drafts: ModuleDraft[] = (parsed || []).map(m => ({
+      module: m.module || '',
+      features: (m.features || []).map(f => ({
+        name: f.name || '',
+        acceptanceText: (f.acceptance || []).join('\n'),
+      })),
+    })).filter(m => m.features.length > 0)
+    if (drafts.length === 0) {
+      errorText.value = 'AI 未从文档解析出功能点，请检查文档内容'
+      return
+    }
+    // 初始空白 → 覆盖；已有内容 → 追加（支持粘贴多篇文档累积）。
+    if (isPristine())
+      modules.splice(0, modules.length, ...drafts)
+    else
+      modules.push(...drafts)
+    pasteText.value = ''
+    success(`已解析填入 ${drafts.reduce((n, m) => n + m.features.length, 0)} 个功能点`)
+  }
+  catch (e: unknown) {
+    handleError(e, 'AI 解析文档失败')
+  }
+  finally {
+    parsing.value = false
+  }
 }
 
 function buildManualPayload(): FeatureListModuleInput[] {
@@ -75,44 +103,19 @@ function buildManualPayload(): FeatureListModuleInput[] {
     .filter(m => m.features.length > 0)
 }
 
+const submitting = ref(false)
 const errorText = ref('')
 
 async function handleSubmit() {
   errorText.value = ''
   submitting.value = true
   try {
-    if (mode.value === 'manual') {
-      const payload = buildManualPayload()
-      if (payload.length === 0) {
-        errorText.value = '请至少填写一个功能点'
-        return
-      }
-      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'manual', modules: payload })
+    const payload = buildManualPayload()
+    if (payload.length === 0) {
+      errorText.value = '请至少填写一个功能点'
+      return
     }
-    else if (mode.value === 'paste') {
-      const text = pasteText.value.trim()
-      if (!text) {
-        errorText.value = '请粘贴文档内容'
-        return
-      }
-      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'paste', text })
-    }
-    else if (mode.value === 'gitlab') {
-      const url = gitlabUrl.value.trim()
-      if (!url) {
-        errorText.value = '请填写 GitLab 文件链接'
-        return
-      }
-      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'gitlab', url })
-    }
-    else {
-      const url = feishuUrl.value.trim()
-      if (!url) {
-        errorText.value = '请填写飞书多维表格链接'
-        return
-      }
-      await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'feishu', url })
-    }
+    await projectWorkspaceApi.setFeatureList(props.projectId, { mode: 'manual', modules: payload })
     success('已保存 feature list')
     emit('confirm')
   }
@@ -142,31 +145,34 @@ async function handleSubmit() {
           补充 feature list
         </h2>
         <p class="text-xs text-muted-foreground">
-          手动录入，或贴飞书多维表格链接同步进来
+          手动录入「模块 → 功能点 → 验收项」，或粘贴文档让 AI 解析后自动填入
         </p>
       </div>
     </header>
 
-    <!-- 模式切换 -->
-    <div class="px-5 pt-4">
-      <div class="inline-flex flex-wrap rounded-lg border border-border/60 p-0.5 text-sm gap-0.5">
-        <button
-          v-for="tab in MODE_TABS"
-          :key="tab.id"
-          type="button"
-          class="px-3 py-1 rounded-md transition-colors"
-          :class="mode === tab.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
-          :data-testid="`fl-mode-${tab.id}`"
-          @click="mode = tab.id"
-        >
-          {{ tab.label }}
-        </button>
-      </div>
-    </div>
-
     <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
-      <!-- 手动录入 -->
-      <div v-if="mode === 'manual'" class="space-y-4" data-testid="fl-manual">
+      <!-- 粘贴文档 → AI 解析填入 -->
+      <div class="rounded-lg border border-dashed border-primary/30 bg-primary/[0.03] p-3 space-y-2" data-testid="fl-paste">
+        <div class="flex items-center gap-2">
+          <span class="icon-[lucide--sparkles] text-primary text-sm" />
+          <span class="text-sm font-medium text-foreground">粘贴文档，AI 解析填入</span>
+        </div>
+        <Textarea
+          v-model="pasteText"
+          placeholder="把需求 / PRD / feature 文档整篇粘贴进来（可粘贴多篇，多次解析累积）。AI 仅解析结构，功能点 / 验收项内容逐字保留原文。"
+          :rows="5"
+          class="text-sm font-mono"
+        />
+        <div class="flex justify-end">
+          <Button size="sm" :disabled="!pasteText.trim() || parsing" data-testid="fl-parse-btn" @click="parseAndFill">
+            <span class="icon-[lucide--wand-2] mr-1.5" :class="parsing ? 'animate-pulse' : ''" />
+            {{ parsing ? 'AI 解析中…' : 'AI 解析填入' }}
+          </Button>
+        </div>
+      </div>
+
+      <!-- 手动录入结构 -->
+      <div class="space-y-3" data-testid="fl-manual">
         <div
           v-for="(mod, mi) in modules"
           :key="mi"
@@ -234,46 +240,6 @@ async function handleSubmit() {
         >
           <span class="icon-[lucide--folder-plus] mr-1.5" /> 添加模块
         </button>
-      </div>
-
-      <!-- 粘贴文档（AI 逐字解析） -->
-      <div v-else-if="mode === 'paste'" class="space-y-2" data-testid="fl-paste">
-        <label class="text-sm font-medium text-foreground">粘贴文档内容</label>
-        <Textarea
-          v-model="pasteText"
-          placeholder="把需求 / PRD / feature 文档整篇粘贴进来，AI 会解析为「模块 → 功能点 → 验收项」结构"
-          :rows="10"
-          class="text-sm font-mono"
-        />
-        <p class="text-xs text-muted-foreground">
-          AI 仅解析结构，功能点 / 验收项内容<strong>逐字保留原文</strong>（不改写、不翻译）。
-        </p>
-      </div>
-
-      <!-- GitLab 文件链接（全局凭证鉴权取文 + AI 解析） -->
-      <div v-else-if="mode === 'gitlab'" class="space-y-2" data-testid="fl-gitlab">
-        <label class="text-sm font-medium text-foreground">GitLab 文件链接</label>
-        <Input
-          v-model="gitlabUrl"
-          placeholder="https://gitlab.xxx.com/group/proj/-/blob/main/docs/features.md"
-          class="h-9 font-mono text-sm"
-        />
-        <p class="text-xs text-muted-foreground">
-          用全局 GitLab 凭证（按 host 命中）拉取该文件，再由 AI 逐字解析为 feature 结构。
-        </p>
-      </div>
-
-      <!-- 飞书链接 -->
-      <div v-else class="space-y-2" data-testid="fl-feishu">
-        <label class="text-sm font-medium text-foreground">飞书多维表格链接</label>
-        <Input
-          v-model="feishuUrl"
-          placeholder="https://xxx.feishu.cn/base/..."
-          class="h-9"
-        />
-        <p class="text-xs text-muted-foreground">
-          贴入承载「模块 / 功能点 / 验收项 / 状态」的多维表格链接，系统会同步并解析为 feature 树。
-        </p>
       </div>
 
       <p v-if="errorText" class="text-sm text-destructive" data-testid="fl-error">
