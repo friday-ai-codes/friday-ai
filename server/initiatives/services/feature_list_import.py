@@ -35,11 +35,19 @@ from services.provider_config import (
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["afetch_gitlab_file_text", "agenerate_feature_modules_from_text", "GitlabFetchError"]
+__all__ = [
+    "afetch_gitlab_file_text",
+    "agenerate_feature_modules_from_text",
+    "GitlabFetchError",
+    "FeatureListParseError",
+]
 
 _COMPONENT = "initiatives.feature_list_import"
 _MODEL_FALLBACK = "claude-sonnet-4-20250514"
 _MAX_DOC_CHARS = 60000
+# 输出额度：结构化 feature 树需逐字保留原文，输出体积大，给足额度降低截断概率
+# （Claude Sonnet 4 支持较大输出；超限时 _parse_modules_json 抢救已完整对象）。
+_MAX_OUTPUT_TOKENS = 32000
 
 _SYSTEM_PROMPT = (
     "你是需求结构解析器。把给定文档解析为「模块 → 功能点 → 验收项」三层结构。\n"
@@ -55,6 +63,14 @@ _SYSTEM_PROMPT = (
 
 class GitlabFetchError(ValueError):
     """GitLab 文件取文失败（链接非法 / 无凭证 / 远端错误，API 层 except ValueError 转 400）。"""
+
+
+class FeatureListParseError(ValueError):
+    """feature list AI 解析失败（无 Provider / LLM 失败 / 输出截断或非结构化）。
+
+    携带用户可读 ``reason``；API 层 ``except ValueError`` 统一转 4xx 并回显该 reason，
+    让用户区分「未配置 AI」「文档过长被截断」「文档无可解析结构」。
+    """
 
 
 def _parse_gitlab_blob_url(url: str) -> tuple[str, str, str, str]:
@@ -125,8 +141,59 @@ async def afetch_gitlab_file_text(url: str) -> str:
     return text
 
 
+def _extract_complete_objects(array_body: str) -> list[str]:
+    """从 JSON 数组正文（``[`` 之后的内容）按括号匹配抽取完整的顶层 ``{...}`` 对象串。
+
+    用于抢救被 ``max_tokens`` 截断的输出：忽略末尾不完整对象，返回已闭合的完整对象列表
+    （正确处理字符串内的引号与转义，不被花括号误导）。
+    """
+    objects: list[str] = []
+    depth = 0
+    start = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(array_body):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start != -1:
+                objects.append(array_body[start : i + 1])
+                start = -1
+        elif ch == "]" and depth == 0:
+            break
+    return objects
+
+
+def _salvage_truncated_modules(text: str) -> list[Any] | None:
+    """从截断的 ``{"modules":[{...},{...}` 文本抢救已完整的 module 对象列表。"""
+    m = re.search(r'"modules"\s*:\s*\[', text)
+    if not m:
+        return None
+    objs = _extract_complete_objects(text[m.end():])
+    salvaged: list[Any] = []
+    for obj in objs:
+        try:
+            salvaged.append(json.loads(obj))
+        except (ValueError, TypeError):
+            continue
+    return salvaged or None
+
+
 def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
-    """从 LLM 输出健壮解析 modules JSON（剥代码块/前后缀），失败返回 None。"""
+    """从 LLM 输出健壮解析 modules JSON（剥代码块/前后缀，截断时抢救完整对象），失败返回 None。"""
     if not raw:
         return None
     text = raw.strip()
@@ -139,11 +206,13 @@ def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end != -1 and end > start:
             text = text[start : end + 1]
+    modules: Any = None
     try:
         data = json.loads(text)
+        modules = data.get("modules") if isinstance(data, dict) else None
     except (ValueError, TypeError):
-        return None
-    modules = data.get("modules") if isinstance(data, dict) else None
+        # 输出被 max_tokens 截断 → 抢救已完整的 module 对象（尽量不丢已解析内容）。
+        modules = _salvage_truncated_modules(raw)
     if not isinstance(modules, list):
         return None
     # 归一防御：丢空名功能点，逐字保留文本。
@@ -171,11 +240,15 @@ def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
 async def agenerate_feature_modules_from_text(
     project_id: Any, text: str
 ) -> list[dict[str, Any]] | None:
-    """把文档 LLM 解析为结构化模块（逐字保留功能点/验收项原文）。best-effort 返回 None。"""
+    """把文档 LLM 解析为结构化模块（逐字保留功能点/验收项原文）。
+
+    失败抛 :class:`FeatureListParseError`（携可读 reason）：无 Provider / LLM 调用失败 /
+    输出截断或非结构化。成功返回非空 modules 列表。
+    """
     started = perf_counter()
     project = await _aget_project(project_id)
     if project is None:
-        return None
+        raise FeatureListParseError("项目不存在")
     space = getattr(project, "space", None)
     resolved = await ProviderConfigService.aresolve_or_error(project=space)
     if isinstance(resolved, ProviderMissingError):
@@ -185,37 +258,39 @@ async def agenerate_feature_modules_from_text(
             component=_COMPONENT,
             category="caller",
         )
-        return None
+        raise FeatureListParseError("未配置可用的 AI Provider，请先在空间或系统设置中配置 AI 模型")
 
     from agents.llm_factory import build_chat_model
 
     legacy = await aget_legacy_anthropic_config()
     model = legacy.get("default_model") or _MODEL_FALLBACK
+    doc = text[:_MAX_DOC_CHARS]
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=text[:_MAX_DOC_CHARS]),
+        HumanMessage(content=doc),
     ]
     start = perf_counter()
     ttft_ms: int | None = None
     try:
         with use_call_source(CallSource.FEATURE_LIST_PARSE):
             chat_model = build_chat_model(
-                resolved, model, max_output_tokens=8000, streaming=False
+                resolved, model, max_output_tokens=_MAX_OUTPUT_TOKENS, streaming=False
             )
             ai_msg = await chat_model.ainvoke(messages)
         ttft_ms = int((perf_counter() - start) * 1000)
-    except Exception as exc:  # noqa: BLE001 — best-effort，不反噬
+    except Exception as exc:  # noqa: BLE001 — 转可读错误，不反噬
         await _record_usage(
             resolved, model, ttft_ms=None, upstream_status_code=parse_upstream_status(exc)
         )
         logger.warning(
             "feature_list_parse_failed",
             project_id=str(project_id),
+            doc_chars=len(doc),
             error_type=type(exc).__name__,
             component=_COMPONENT,
             category="caller",
         )
-        return None
+        raise FeatureListParseError("AI 调用失败，请稍后重试或检查 AI Provider 配置") from exc
 
     usage = getattr(ai_msg, "usage_metadata", None) or {}
     await _record_usage(
@@ -226,6 +301,11 @@ async def agenerate_feature_modules_from_text(
         completion_tokens=usage.get("output_tokens", 0) if isinstance(usage, dict) else 0,
         duration_ms=int((perf_counter() - start) * 1000),
     )
+    # 截断检测（anthropic stop_reason=max_tokens / openai finish_reason=length）。
+    meta = getattr(ai_msg, "response_metadata", None) or {}
+    stop_reason = str(meta.get("stop_reason") or meta.get("finish_reason") or "").lower()
+    truncated = stop_reason in ("max_tokens", "length")
+
     content = getattr(ai_msg, "content", "")
     if isinstance(content, list):
         content = " ".join(
@@ -235,11 +315,28 @@ async def agenerate_feature_modules_from_text(
     logger.info(
         "feature_list_parsed",
         project_id=str(project_id),
+        doc_chars=len(doc),
         module_count=len(modules) if modules else 0,
+        truncated=truncated,
         duration_ms=round((perf_counter() - started) * 1000, 2),
         component=_COMPONENT,
         category="caller",
     )
+    if not modules:
+        if truncated:
+            raise FeatureListParseError(
+                "文档过长，AI 解析输出被截断，请缩减文档或分模块分多次粘贴解析"
+            )
+        raise FeatureListParseError("AI 未从文档解析出结构化功能点，请检查文档内容")
+    if truncated:
+        # 抢救到部分模块但输出被截断：返回已解析部分（前端追加累积，可再分段补充）。
+        logger.info(
+            "feature_list_parsed_partial_truncated",
+            project_id=str(project_id),
+            module_count=len(modules),
+            component=_COMPONENT,
+            category="caller",
+        )
     return modules
 
 

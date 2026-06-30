@@ -1488,14 +1488,15 @@ class ProjectFeatureListParseView(APIView):
                 {"detail": "需提供 text"}, status=status.HTTP_400_BAD_REQUEST
             )
         from initiatives.services.feature_list_import import (
+            FeatureListParseError,
             agenerate_feature_modules_from_text,
         )
 
-        modules = await agenerate_feature_modules_from_text(project_id, str(text))
-        if not modules:
+        try:
+            modules = await agenerate_feature_modules_from_text(project_id, str(text))
+        except FeatureListParseError as exc:
             return Response(
-                {"detail": "AI 解析未产出有效结构（请检查文档内容或 AI Provider 配置）"},
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
             )
         return Response({"modules": modules})
 

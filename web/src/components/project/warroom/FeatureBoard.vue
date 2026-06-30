@@ -15,9 +15,28 @@ const props = defineProps<{ projectId: string }>()
 const { t } = useI18n()
 const projectIdRef = toRef(props, 'projectId')
 
+// 实时回显：暂无 feature 时轻量轮询（异步/Agent/节点生成的 feature list 自动浮现），
+// 一旦解析出 feature 即停止轮询；切回窗口也刷新。
+function _featureCount(d: unknown): number {
+  const mods = Array.isArray(d) ? d : ((d as { modules?: FeatureNode[] } | undefined)?.modules ?? [])
+  let n = 0
+  const walk = (ns: FeatureNode[]) => {
+    for (const node of ns ?? []) {
+      if (node.kind === 'feature')
+        n += 1
+      if (node.children?.length)
+        walk(node.children)
+    }
+  }
+  walk(mods as FeatureNode[])
+  return n
+}
+
 const { data, isLoading, isError, refetch } = useQuery({
   queryKey: ['project-features', projectIdRef],
   queryFn: () => projectWorkspaceApi.getFeatureList(props.projectId),
+  refetchOnWindowFocus: true,
+  refetchInterval: query => (_featureCount(query.state.data) === 0 ? 5000 : false),
 })
 
 // feature-list 端点返回 { modules: FeatureNode[] }；兼容历史/测试里的纯数组形态。
