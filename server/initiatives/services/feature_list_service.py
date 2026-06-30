@@ -25,7 +25,12 @@ from initiatives.models.artifact import ArtifactCarrier
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["FeatureListService", "progress_light", "FEATURE_LIST_TYPE_KEY"]
+__all__ = [
+    "FeatureListService",
+    "progress_light",
+    "FEATURE_LIST_TYPE_KEY",
+    "to_feature_node_tree",
+]
 
 _COMPONENT = "initiatives.workspace"
 
@@ -78,6 +83,60 @@ def progress_light(
         return LIGHT_PENDING
     # 其余进行态。
     return LIGHT_IN_PROGRESS
+
+
+# 进度灯（中文）→ 前端 FeatureState 枚举（前端 STATE_CLASS 着色键）。
+_PROGRESS_TO_STATE = {
+    LIGHT_PENDING: "todo",
+    LIGHT_IN_PROGRESS: "in_progress",
+    LIGHT_TESTING: "testing",
+    LIGHT_DONE: "done",
+}
+
+
+def to_feature_node_tree(tree: dict[str, Any]) -> dict[str, Any]:
+    """把内部树 ``{modules:[{module, features:[{name,acceptance,progress,...}]}]}`` 转为
+    前端 ``FeatureNode`` 树：``{modules:[{kind:'module',name,children:[{kind:'feature',name,
+    state,status_display_name,module_normalized,children:[{kind:'acceptance',name}]}]}]}``。
+
+    前端 FeatureBoard / 健康总览 / 上手引导 / 星图均按此 kind/children/state 契约消费；
+    本转换是接口出参的唯一表示层，内部 ``build_tree`` 输出保持不变（galaxy 等内部消费照旧）。
+    """
+    modules_out: list[dict[str, Any]] = []
+    for mod in tree.get("modules", []):
+        module_name = str(mod.get("module") or "未分组")
+        feats_out: list[dict[str, Any]] = []
+        for feat in mod.get("features", []):
+            progress = feat.get("progress") or LIGHT_PENDING
+            state = _PROGRESS_TO_STATE.get(progress, "todo")
+            acceptance_children = [
+                {"kind": "acceptance", "name": str(a)}
+                for a in (feat.get("acceptance") or [])
+                if str(a).strip()
+            ]
+            feat_node: dict[str, Any] = {
+                "kind": "feature",
+                "name": str(feat.get("name") or ""),
+                "state": state,
+                "status_display_name": str(feat.get("status_display_name") or ""),
+                "module_normalized": module_name,
+                "children": acceptance_children,
+            }
+            # 整段原文（供前端点开后按需结构化为 sections 详情；可缺省）。
+            source = str(feat.get("source") or "").strip()
+            if source:
+                feat_node["source"] = source
+            feats_out.append(feat_node)
+        mod_node: dict[str, Any] = {
+            "kind": "module",
+            "name": module_name,
+            "children": feats_out,
+        }
+        summary = str(mod.get("summary") or "").strip()
+        if summary:
+            mod_node["source"] = summary
+        modules_out.append(mod_node)
+    return {"modules": modules_out}
 
 
 class FeatureListService:
@@ -234,8 +293,16 @@ class FeatureListService:
                 status = str(raw_feat.get("status") or "").strip()
                 if status:
                     feat["status"] = status
+                # 功能点整段原文（供详情按需结构化为 sections；解析得来，可缺省）。
+                source = str(raw_feat.get("source") or "").strip()
+                if source:
+                    feat["source"] = source
                 features.append(feat)
-            out.append({"module": module_name, "features": features})
+            mod_out: dict[str, Any] = {"module": module_name, "features": features}
+            summary = str(raw_mod.get("summary") or "").strip()
+            if summary:
+                mod_out["summary"] = summary
+            out.append(mod_out)
         return out
 
     @sync_to_async
@@ -422,15 +489,21 @@ class FeatureListService:
                 else:
                     progress = progress_light(status_text=status_text)
                     status_display = ""
-                features_out.append(
-                    {
-                        "name": name,
-                        "acceptance": acceptance,
-                        "progress": progress,
-                        "status_display_name": status_display,
-                    }
-                )
-            modules_out.append({"module": module_name, "features": features_out})
+                feat_out: dict[str, Any] = {
+                    "name": name,
+                    "acceptance": acceptance,
+                    "progress": progress,
+                    "status_display_name": status_display,
+                }
+                source = str(raw_feat.get("source") or "").strip()
+                if source:
+                    feat_out["source"] = source
+                features_out.append(feat_out)
+            mod_out: dict[str, Any] = {"module": module_name, "features": features_out}
+            summary = str(raw_mod.get("summary") or "").strip()
+            if summary:
+                mod_out["summary"] = summary
+            modules_out.append(mod_out)
         return {"modules": modules_out}
 
     @staticmethod

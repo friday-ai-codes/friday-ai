@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agents.call_source import CallSource, use_call_source
 from common.logging import redact_secrets_in_text
 from interactions.ledger import arecord_llm_usage, parse_upstream_status
+from services.model_capabilities import ModelCapabilities, strip_context_suffix
 from services.provider_config import (
     ProviderConfigService,
     ProviderMissingError,
@@ -38,16 +39,70 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "afetch_gitlab_file_text",
     "agenerate_feature_modules_from_text",
+    "agenerate_feature_detail_sections",
+    "compute_parse_budget",
+    "aget_parse_budget",
     "GitlabFetchError",
     "FeatureListParseError",
 ]
 
 _COMPONENT = "initiatives.feature_list_import"
 _MODEL_FALLBACK = "claude-sonnet-4-20250514"
-# 行号裁剪方案下输入可放宽（输入额度远大于输出）；输出只含结构+行号，体积很小，
-# 故输出额度取**各家通用安全值 8000**（≤ DeepSeek 8192 上限，避免请求超限被 API 400 拒绝）。
+
+# ── 输入/输出额度预算（按解析模型的 ModelCapabilities 动态计算）──────────────
+# 行号裁剪方案下输出只含「结构 + 行号」，体积很小：请求量取**期望值 8000**，并按模型
+# max_output_tokens 取 min（≤ DeepSeek 8192 上限，避免请求超限被 API 400 拒绝）。
+_DESIRED_OUTPUT_TOKENS = 8000
+# 输入预算 = 模型 max_input_tokens − 输出预留 − system prompt 预留 − 安全余量。
+# system prompt 体积固定且不大，预留 1500 token；再留 2000 token 安全余量吸收分词偏差。
+_SYSTEM_PROMPT_TOKEN_RESERVE = 1500
+_SAFETY_TOKEN_BUFFER = 2000
+# token→字数换算：文档以中文为主（≈1 char/token），取 1.4 略放宽但仍偏保守，避免超限。
+_CHARS_PER_TOKEN = 1.4
+# 输入字数硬顶（即便模型上下文很大，单次粘贴也不超过此值；多步解析在 Phase 2 承接）。
 _MAX_DOC_CHARS = 100000
-_MAX_OUTPUT_TOKENS = 8000
+# 无 Provider 时给前端的兜底预算（按 DEFAULT_CAPABILITIES：128k 输入 / 4096 输出）。
+_FALLBACK_INPUT_CHARS = 60000
+
+
+def compute_parse_budget(provider_type: str, model: str) -> dict[str, Any]:
+    """按解析模型的能力表算出本次解析的输入/输出额度预算。
+
+    返回 ``{model, max_input_tokens, max_output_tokens, max_input_chars}``：
+    - ``max_output_tokens``：min(期望 8000, 模型输出上限)，喂给 ``build_chat_model``；
+    - ``max_input_chars``：(模型输入上限 − 输出预留 − prompt 预留 − 安全余量) × 字/token，
+      并与硬顶 ``_MAX_DOC_CHARS`` 取 min；前端据此限制单次粘贴字数，避免 prompt 撑爆上下文。
+    """
+    caps = ModelCapabilities.get(provider_type, strip_context_suffix(model))
+    max_out = min(_DESIRED_OUTPUT_TOKENS, caps.max_output_tokens)
+    input_budget_tokens = max(
+        2000,
+        caps.max_input_tokens - max_out - _SYSTEM_PROMPT_TOKEN_RESERVE - _SAFETY_TOKEN_BUFFER,
+    )
+    max_chars = min(_MAX_DOC_CHARS, int(input_budget_tokens * _CHARS_PER_TOKEN))
+    return {
+        "model": model,
+        "max_input_tokens": caps.max_input_tokens,
+        "max_output_tokens": max_out,
+        "max_input_chars": max_chars,
+    }
+
+
+async def aget_parse_budget(project_id: Any) -> dict[str, Any]:
+    """解析「粘贴文档」前端所需的额度配置（best-effort，无 Provider 时给兜底预算）。"""
+    project = await _aget_project(project_id)
+    space = getattr(project, "space", None) if project is not None else None
+    resolved = await ProviderConfigService.aresolve_or_error(project=space)
+    if isinstance(resolved, ProviderMissingError):
+        return {
+            "model": "",
+            "max_input_tokens": 0,
+            "max_output_tokens": 0,
+            "max_input_chars": _FALLBACK_INPUT_CHARS,
+        }
+    legacy = await aget_legacy_anthropic_config()
+    model = legacy.get("default_model") or _MODEL_FALLBACK
+    return compute_parse_budget(str(resolved.provider_type), model)
 
 # 行号裁剪 prompt：模型只返回「结构 + 行号范围」，不复制原文 → 输出与文档大小解耦、不被截断；
 # 验收项内容由系统按行号从原文裁剪，保证逐字一致。功能点名为短标题，可直接给出原文。
@@ -55,16 +110,39 @@ _SYSTEM_PROMPT = (
     "你是需求结构解析器。输入是**带行号的文档**（每行形如「123|内容」，123 为该行行号）。"
     "把它解析为「模块 → 功能点 → 验收项」三层结构。\n"
     "强约束（必须遵守）：\n"
-    "1. **不要复制原文内容**；验收项一律用**行号范围**指向原文，由系统裁剪，确保逐字一致。\n"
+    "1. **不要复制原文内容**；一律用**行号范围**指向原文，由系统裁剪，确保逐字一致。\n"
     "2. 功能点名称(name)取该功能点的标题原文（简短，逐字，不要补充）。\n"
-    "3. acceptance_lines 是若干 [起始行号, 结束行号]（含两端，指向验收项所在的原文行，"
-    "可跨多行）；没有验收项时为空数组。行号必须是输入中真实出现的行号。\n"
-    "4. 仅输出一个 JSON 对象，不要任何前后缀/解释/代码块标记。\n"
-    "5. JSON 结构："
-    "{\"modules\":[{\"module\":\"模块名\",\"features\":"
-    "[{\"name\":\"功能点名\",\"acceptance_lines\":[[12,15],[20,20]]}]}]}。\n"
-    "6. 无法识别模块时用「未分组」。"
+    "3. feature_lines 是 [起始行号, 结束行号]（含两端），指向该功能点**完整正文区间**"
+    "（从其标题行到下一个功能点/模块之前），供后续逐功能点结构化解析。\n"
+    "4. acceptance_lines 是若干 [起始行号, 结束行号]，指向验收项所在原文行；无则空数组。\n"
+    "5. summary_lines 是 [起始行号, 结束行号]，指向**模块概述/交互流程**区间（模块标题到第一个"
+    "功能点之前）；无则省略或空数组。\n"
+    "6. 行号必须是输入中真实出现的行号。仅输出一个 JSON 对象，无任何前后缀/解释/代码块标记。\n"
+    "7. JSON 结构："
+    "{\"modules\":[{\"module\":\"模块名\",\"summary_lines\":[5,20],\"features\":"
+    "[{\"name\":\"功能点名\",\"feature_lines\":[21,60],\"acceptance_lines\":[[50,55]]}]}]}。\n"
+    "8. 无法识别模块时用「未分组」。"
 )
+
+# Step 2 逐功能点结构化 prompt：输入是**单个功能点的原文**，拆为柔性 sections（不固定字段）。
+_DETAIL_SYSTEM_PROMPT = (
+    "你是需求结构化解析器。输入是**单个功能点（或模块）的原文片段**。"
+    "把它拆成若干有序段落 sections，便于前端分层展示。\n"
+    "强约束（必须遵守）：\n"
+    "1. **逐字保留原文**，不改写/不翻译/不润色/不补充；只做结构切分与归类。\n"
+    "2. 每个 section = {\"title\":\"小标题\",\"type\":\"text|list|mermaid\",\"content\":...}：\n"
+    "   - type=text：content 为字符串（多段用换行）；\n"
+    "   - type=list：content 为字符串数组（如验收项、业务规则逐条）；\n"
+    "   - type=mermaid：content 为 mermaid 流程图源码字符串（flowchart/graph 等，逐字照搬）。\n"
+    "3. title 取原文里的自然小标题（如「功能描述」「业务规则与约束」「数据流转」「交互流程」"
+    "「验收项」等）；没有明确标题时自拟简短贴切的标题。**不要固定字段**，原文有什么就切什么。\n"
+    "4. 识别到流程图（mermaid 代码，常以 flowchart/graph/sequenceDiagram 开头）必须单列为"
+    " type=mermaid 的 section，content 为其源码（去掉 ``` 围栏，保留图本身）。\n"
+    "5. 仅输出一个 JSON 对象：{\"sections\":[...]}，无任何前后缀/解释/代码块标记。"
+)
+# Step 2 输出仍较小（结构 + 原文切片），单功能点正文有限，输出额度取期望值即可。
+_DETAIL_DESIRED_OUTPUT_TOKENS = 8000
+_DETAIL_MAX_SOURCE_CHARS = 24000
 
 
 class GitlabFetchError(ValueError):
@@ -252,6 +330,7 @@ def _materialize_modules(
         if not isinstance(mod, dict):
             continue
         module_name = str(mod.get("module") or "未分组").strip() or "未分组"
+        module_summary = _slice_span(lines, mod.get("summary_lines"))
         features: list[dict[str, Any]] = []
         for feat in mod.get("features") or []:
             if not isinstance(feat, dict):
@@ -279,10 +358,25 @@ def _materialize_modules(
                     for a in (feat.get("acceptance") or [])
                     if str(a).strip()
                 ]
-            features.append({"name": name, "acceptance": acceptance})
+            # 功能点整段原文（供 Step 2 按需结构化为 sections）；缺 feature_lines 时回退验收项拼接。
+            source = _slice_span(lines, feat.get("feature_lines"))
+            feat_out: dict[str, Any] = {"name": name, "acceptance": acceptance}
+            if source:
+                feat_out["source"] = source
+            features.append(feat_out)
         if features:
-            out.append({"module": module_name, "features": features})
+            mod_out: dict[str, Any] = {"module": module_name, "features": features}
+            if module_summary:
+                mod_out["summary"] = module_summary
+            out.append(mod_out)
     return out or None
+
+
+def _slice_span(lines: list[str], span: Any) -> str:
+    """按 [start, end] 行号区间裁原文；span 非法/缺失返回空串。"""
+    if isinstance(span, (list, tuple)) and len(span) >= 2:
+        return _slice_lines(lines, span[0], span[1])
+    return ""
 
 
 def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
@@ -339,7 +433,9 @@ async def agenerate_feature_modules_from_text(
 
     legacy = await aget_legacy_anthropic_config()
     model = legacy.get("default_model") or _MODEL_FALLBACK
-    doc = text[:_MAX_DOC_CHARS]
+    budget = compute_parse_budget(str(resolved.provider_type), model)
+    max_output_tokens = budget["max_output_tokens"]
+    doc = text[: budget["max_input_chars"]]
     # 行号裁剪：喂带行号的文档，模型只回结构+行号范围，验收项由系统按行号裁剪原文。
     lines, numbered_doc = _number_lines(doc)
     messages = [
@@ -351,7 +447,7 @@ async def agenerate_feature_modules_from_text(
     try:
         with use_call_source(CallSource.FEATURE_LIST_PARSE):
             chat_model = build_chat_model(
-                resolved, model, max_output_tokens=_MAX_OUTPUT_TOKENS, streaming=False
+                resolved, model, max_output_tokens=max_output_tokens, streaming=False
             )
             ai_msg = await chat_model.ainvoke(messages)
         ttft_ms = int((perf_counter() - start) * 1000)
@@ -364,7 +460,7 @@ async def agenerate_feature_modules_from_text(
             project_id=str(project_id),
             doc_chars=len(doc),
             model=model,
-            max_output_tokens=_MAX_OUTPUT_TOKENS,
+            max_output_tokens=max_output_tokens,
             error_type=type(exc).__name__,
             # 脱敏后记录上游错误摘要，便于区分「max_tokens 超限 / 鉴权 / 限流」等真实原因。
             error=redact_secrets_in_text(str(exc))[:300],
@@ -421,6 +517,132 @@ async def agenerate_feature_modules_from_text(
             category="caller",
         )
     return modules
+
+
+def _normalize_sections(raw: Any) -> list[dict[str, Any]]:
+    """归一 LLM 返回的 sections：保留 {title, type, content}，type∈text/list/mermaid，丢空段。"""
+    out: list[dict[str, Any]] = []
+    items = raw.get("sections") if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        return out
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        stype = str(item.get("type") or "text").strip().lower()
+        if stype not in ("text", "list", "mermaid"):
+            stype = "text"
+        content = item.get("content")
+        if stype == "list":
+            if isinstance(content, list):
+                content = [str(c).strip() for c in content if str(c).strip()]
+            elif isinstance(content, str) and content.strip():
+                content = [ln.strip() for ln in content.splitlines() if ln.strip()]
+            else:
+                content = []
+            if not content:
+                continue
+        else:
+            content = str(content or "").strip()
+            if not content:
+                continue
+        out.append(
+            {"title": str(item.get("title") or "").strip(), "type": stype, "content": content}
+        )
+    return out
+
+
+def _loads_sections_raw(raw: str) -> Any:
+    """从 LLM 输出取出 JSON（剥代码块/前后缀），失败返回 None。"""
+    if not raw:
+        return None
+    text = raw.strip()
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    else:
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return None
+
+
+async def agenerate_feature_detail_sections(
+    project_id: Any, source: str
+) -> list[dict[str, Any]]:
+    """Step 2：把**单个功能点/模块的原文**结构化为柔性 sections（按需调用）。
+
+    best-effort：无 Provider / LLM 失败 / 解析失败 → 返回空列表（前端回退展示原文），绝不反噬。
+    """
+    src = str(source or "").strip()
+    if not src:
+        return []
+    project = await _aget_project(project_id)
+    space = getattr(project, "space", None) if project is not None else None
+    resolved = await ProviderConfigService.aresolve_or_error(project=space)
+    if isinstance(resolved, ProviderMissingError):
+        return []
+
+    from agents.llm_factory import build_chat_model
+
+    legacy = await aget_legacy_anthropic_config()
+    model = legacy.get("default_model") or _MODEL_FALLBACK
+    caps_out = min(
+        _DETAIL_DESIRED_OUTPUT_TOKENS,
+        ModelCapabilities.get(str(resolved.provider_type), strip_context_suffix(model)).max_output_tokens,
+    )
+    messages = [
+        SystemMessage(content=_DETAIL_SYSTEM_PROMPT),
+        HumanMessage(content=src[:_DETAIL_MAX_SOURCE_CHARS]),
+    ]
+    start = perf_counter()
+    try:
+        with use_call_source(CallSource.FEATURE_LIST_PARSE):
+            chat_model = build_chat_model(
+                resolved, model, max_output_tokens=caps_out, streaming=False
+            )
+            ai_msg = await chat_model.ainvoke(messages)
+    except Exception as exc:  # noqa: BLE001 — 详情 best-effort，失败回退原文
+        await _record_usage(
+            resolved, model, upstream_status_code=parse_upstream_status(exc)
+        )
+        logger.warning(
+            "feature_detail_parse_failed",
+            project_id=str(project_id),
+            source_chars=len(src),
+            model=model,
+            error_type=type(exc).__name__,
+            error=redact_secrets_in_text(str(exc))[:200],
+            component=_COMPONENT,
+            category="caller",
+        )
+        return []
+
+    usage = getattr(ai_msg, "usage_metadata", None) or {}
+    await _record_usage(
+        resolved,
+        model,
+        prompt_tokens=usage.get("input_tokens", 0) if isinstance(usage, dict) else 0,
+        completion_tokens=usage.get("output_tokens", 0) if isinstance(usage, dict) else 0,
+        duration_ms=int((perf_counter() - start) * 1000),
+    )
+    content = getattr(ai_msg, "content", "")
+    if isinstance(content, list):
+        content = " ".join(
+            str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content
+        )
+    sections = _normalize_sections(_loads_sections_raw(str(content or "")))
+    logger.info(
+        "feature_detail_parsed",
+        project_id=str(project_id),
+        source_chars=len(src),
+        section_count=len(sections),
+        component=_COMPONENT,
+        category="caller",
+    )
+    return sections
 
 
 @sync_to_async

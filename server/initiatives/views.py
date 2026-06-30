@@ -51,7 +51,6 @@ from initiatives.serializers import (
     ProjectDocContentSerializer,
     ProjectDocHumanBlocksWriteSerializer,
     ProjectDocSerializer,
-    ProjectFeatureTreeSerializer,
     ProjectKnowledgeLinkSerializer,
     ProjectMemberAddSerializer,
     ProjectMemberSerializer,
@@ -1415,9 +1414,11 @@ class ProjectFeatureListView(APIView):
         _project, err = await _aget_project_for_read(request, project_id)
         if err is not None:
             return err
+        from initiatives.services.feature_list_service import to_feature_node_tree
+
         tree = await FeatureListService().build_tree(project_id)
-        body = await sync_to_async(lambda: ProjectFeatureTreeSerializer(tree).data)()
-        return Response(body)
+        # 转为前端 FeatureNode 树（kind/name/children/state）——前端各组件统一按此契约消费。
+        return Response(to_feature_node_tree(tree))
 
     async def post(self, request, project_id):
         """设置/更新 feature list（#5）：手动录入 或 飞书多维表格链接（写权限 Space admin+）。"""
@@ -1499,6 +1500,48 @@ class ProjectFeatureListParseView(APIView):
                 {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
             )
         return Response({"modules": modules})
+
+
+class ProjectFeatureListParseConfigView(APIView):
+    """粘贴文档 AI 解析的额度配置（GET，读权限）。
+
+    路由 ``projects/<project_id>/feature-list/parse-config/``；返回
+    ``{model, max_input_tokens, max_output_tokens, max_input_chars}``：前端据
+    ``max_input_chars`` 限制单次粘贴字数（已扣除 system prompt / 输出 / 安全余量），
+    避免因 prompt 撑爆上下文导致上游 400。无 Provider 时给兜底字数，不报错。
+    """
+
+    async def get(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        from initiatives.services.feature_list_import import aget_parse_budget
+
+        return Response(await aget_parse_budget(project_id))
+
+
+class ProjectFeatureListFeatureDetailView(APIView):
+    """把单个功能点/模块的原文结构化为柔性 sections（POST，按需；读权限）。
+
+    路由 ``projects/<project_id>/feature-list/feature-detail/``；body ``{source}``（功能点
+    整段原文，取自 feature 树节点的 ``source``）。返回 ``{sections: [{title,type,content}]}``，
+    type∈text/list/mermaid。Step 2 单功能点单独请求，体积小、绝不超限；best-effort，
+    失败返回空 sections（前端回退展示原文）。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_read(request, project_id)
+        if err is not None:
+            return err
+        source = request.data.get("source") or ""
+        if not str(source).strip():
+            return Response({"sections": []})
+        from initiatives.services.feature_list_import import (
+            agenerate_feature_detail_sections,
+        )
+
+        sections = await agenerate_feature_detail_sections(project_id, str(source))
+        return Response({"sections": sections})
 
 
 def _serialize_project_repositories(project_id: Any) -> list[dict[str, Any]]:

@@ -3,12 +3,68 @@
 from __future__ import annotations
 
 from initiatives.services.feature_list_import import (
+    _MAX_DOC_CHARS,
     _extract_complete_objects,
     _materialize_modules,
+    _normalize_sections,
     _number_lines,
     _parse_modules_json,
     _slice_lines,
+    compute_parse_budget,
 )
+
+
+def test_materialize_slices_source_and_summary() -> None:
+    # feature_lines → 功能点整段 source；summary_lines → 模块概述 summary。
+    doc = "模块A概述行1\n概述行2\n功能点X标题\n功能描述正文\n验收：a"
+    lines = doc.split("\n")
+    raw = [
+        {
+            "module": "模块A",
+            "summary_lines": [1, 2],
+            "features": [
+                {"name": "功能点X", "feature_lines": [3, 5], "acceptance_lines": [[5, 5]]}
+            ],
+        }
+    ]
+    out = _materialize_modules(raw, lines)
+    assert out and out[0]["summary"] == "模块A概述行1\n概述行2"
+    feat = out[0]["features"][0]
+    assert feat["name"] == "功能点X"
+    assert feat["source"] == "功能点X标题\n功能描述正文\n验收：a"
+    assert feat["acceptance"] == ["验收：a"]
+
+
+def test_normalize_sections_types_and_dropping() -> None:
+    raw = {
+        "sections": [
+            {"title": "功能描述", "type": "text", "content": "一段描述"},
+            {"title": "业务规则", "type": "list", "content": ["规则1", " ", "规则2"]},
+            {"title": "流程图", "type": "mermaid", "content": "flowchart TD\n A-->B"},
+            {"title": "空段", "type": "text", "content": "  "},
+            {"title": "脏类型", "type": "weird", "content": "兜底为 text"},
+        ]
+    }
+    out = _normalize_sections(raw)
+    assert [s["type"] for s in out] == ["text", "list", "mermaid", "text"]
+    assert out[1]["content"] == ["规则1", "规则2"]
+    assert out[3]["type"] == "text"
+
+
+def test_compute_parse_budget_reserves_headroom() -> None:
+    # 输出取 min(期望8000, 模型上限)；输入字数 < 模型输入 token（已扣输出/prompt/安全余量）。
+    budget = compute_parse_budget("anthropic", "claude-sonnet-4-20250514")
+    assert budget["max_output_tokens"] <= 8000
+    assert 0 < budget["max_input_chars"] <= _MAX_DOC_CHARS
+    # 字数预算应小于「输入token×换算」上界，确保扣过余量。
+    assert budget["max_input_chars"] < budget["max_input_tokens"] * 1.4
+
+
+def test_compute_parse_budget_unknown_model_falls_back() -> None:
+    # 未知模型走 DEFAULT_CAPABILITIES（128k 输入 / 4096 输出），仍给出正字数。
+    budget = compute_parse_budget("unknown", "totally-made-up-model")
+    assert budget["max_input_chars"] > 0
+    assert budget["max_output_tokens"] > 0
 
 
 def test_parse_clean_json() -> None:

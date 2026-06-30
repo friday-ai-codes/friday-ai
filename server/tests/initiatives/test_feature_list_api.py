@@ -26,9 +26,6 @@ from initiatives.models import (
 )
 from initiatives.services import ProjectDocService
 from initiatives.services.feature_list_service import (
-    LIGHT_DONE,
-    LIGHT_PENDING,
-    LIGHT_TESTING,
     FeatureListService,
 )
 from interactions.models import RetrievalTrace
@@ -149,20 +146,25 @@ def test_feature_list_builds_three_layer_tree(space, space_admin) -> None:
     ):
         resp = client.get(f"/api/projects/{pid}/feature-list/")
     assert resp.status_code == 200, resp.content
-    modules = {m["module"]: m for m in resp.json()["modules"]}
+    # 接口出参为前端 FeatureNode 树：module 节点 kind=module + children=功能点；
+    # 功能点 kind=feature + state 枚举 + children=验收项(kind=acceptance)。
+    modules = {m["name"]: m for m in resp.json()["modules"]}
     assert set(modules) == {"登录", "支付"}
+    assert all(m["kind"] == "module" for m in modules.values())
 
-    login_features = {f["name"]: f for f in modules["登录"]["features"]}
-    # 同一功能点两条验收项聚合。
-    assert set(login_features["短信登录"]["acceptance"]) == {"收到验证码", "校验通过"}
-    # WorkItem 归档完成态 → 已完成。
-    assert login_features["短信登录"]["progress"] == LIGHT_DONE
+    login_features = {f["name"]: f for f in modules["登录"]["children"]}
+    assert login_features["短信登录"]["kind"] == "feature"
+    # 同一功能点两条验收项聚合为 acceptance 子节点。
+    acc = {c["name"] for c in login_features["短信登录"]["children"] if c["kind"] == "acceptance"}
+    assert acc == {"收到验证码", "校验通过"}
+    # WorkItem 归档完成态 → 已完成 → state=done。
+    assert login_features["短信登录"]["state"] == "done"
 
-    pay_features = {f["name"]: f for f in modules["支付"]["features"]}
-    # 记录状态文本「测试中」→ 测试中（无匹配 WorkItem）。
-    assert pay_features["微信支付"]["progress"] == LIGHT_TESTING
-    # 无状态无匹配 → 待开发。
-    assert pay_features["退款"]["progress"] == LIGHT_PENDING
+    pay_features = {f["name"]: f for f in modules["支付"]["children"]}
+    # 记录状态文本「测试中」→ testing（无匹配 WorkItem）。
+    assert pay_features["微信支付"]["state"] == "testing"
+    # 无状态无匹配 → todo。
+    assert pay_features["退款"]["state"] == "todo"
 
 
 # ============================ work-items 含 status ============================
