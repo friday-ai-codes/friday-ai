@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from initiatives.services.feature_list_import import (
     _extract_complete_objects,
+    _materialize_modules,
+    _number_lines,
     _parse_modules_json,
+    _slice_lines,
 )
 
 
@@ -44,3 +47,66 @@ def test_parse_salvages_truncated_output() -> None:
     names = [m["module"] for m in out]
     assert "M1" in names and "M2" in names  # 截断的 M3 被丢弃，前两个抢救成功
     assert "M3" not in names
+
+
+# ── 行号裁剪方案 ──────────────────────────────────────────────
+
+
+def test_number_lines() -> None:
+    lines, numbered = _number_lines("a\nb\nc")
+    assert lines == ["a", "b", "c"]
+    assert numbered == "1|a\n2|b\n3|c"
+
+
+def test_slice_lines_inclusive_and_clamp() -> None:
+    lines = ["L1", "L2", "L3", "L4"]
+    assert _slice_lines(lines, 2, 3) == "L2\nL3"  # 闭区间
+    assert _slice_lines(lines, 1, 1) == "L1"
+    assert _slice_lines(lines, 3, 999) == "L3\nL4"  # 越界 clamp
+    assert _slice_lines(lines, 5, 6) == ""  # 全越界
+    assert _slice_lines(lines, "x", 2) == ""  # 非法
+
+
+def test_materialize_modules_slices_acceptance_by_lines() -> None:
+    lines = [
+        "功能点 A：入口位置",  # 1
+        "验收项一：当持有权限时展示入口",  # 2
+        "验收项二：样式与其他入口一致",  # 3
+    ]
+    raw = [
+        {
+            "module": "入口模块",
+            "features": [
+                {"name": "入口位置", "acceptance_lines": [[2, 2], [3, 3]]},
+            ],
+        }
+    ]
+    out = _materialize_modules(raw, lines)
+    assert out == [
+        {
+            "module": "入口模块",
+            "features": [
+                {
+                    "name": "入口位置",
+                    "acceptance": ["验收项一：当持有权限时展示入口", "验收项二：样式与其他入口一致"],
+                }
+            ],
+        }
+    ]
+
+
+def test_materialize_modules_fallback_text_acceptance() -> None:
+    out = _materialize_modules(
+        [{"module": "M", "features": [{"name": "F", "acceptance": ["原文验收项"]}]}],
+        ["irrelevant"],
+    )
+    assert out == [{"module": "M", "features": [{"name": "F", "acceptance": ["原文验收项"]}]}]
+
+
+def test_materialize_modules_name_line() -> None:
+    lines = ["功能点标题原文", "其他"]
+    out = _materialize_modules(
+        [{"module": "M", "features": [{"name_line": 1, "acceptance_lines": []}]}],
+        lines,
+    )
+    assert out and out[0]["features"][0]["name"] == "功能点标题原文"

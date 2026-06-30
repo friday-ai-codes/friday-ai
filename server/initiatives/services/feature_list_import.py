@@ -44,20 +44,25 @@ __all__ = [
 
 _COMPONENT = "initiatives.feature_list_import"
 _MODEL_FALLBACK = "claude-sonnet-4-20250514"
-_MAX_DOC_CHARS = 60000
-# 输出额度：结构化 feature 树需逐字保留原文，输出体积大，给足额度降低截断概率
-# （Claude Sonnet 4 支持较大输出；超限时 _parse_modules_json 抢救已完整对象）。
-_MAX_OUTPUT_TOKENS = 32000
+# 行号裁剪方案下输入可放宽（输入额度远大于输出）；输出只含结构+行号，体积很小。
+_MAX_DOC_CHARS = 100000
+_MAX_OUTPUT_TOKENS = 16000
 
+# 行号裁剪 prompt：模型只返回「结构 + 行号范围」，不复制原文 → 输出与文档大小解耦、不被截断；
+# 验收项内容由系统按行号从原文裁剪，保证逐字一致。功能点名为短标题，可直接给出原文。
 _SYSTEM_PROMPT = (
-    "你是需求结构解析器。把给定文档解析为「模块 → 功能点 → 验收项」三层结构。\n"
+    "你是需求结构解析器。输入是**带行号的文档**（每行形如「123|内容」，123 为该行行号）。"
+    "把它解析为「模块 → 功能点 → 验收项」三层结构。\n"
     "强约束（必须遵守）：\n"
-    "1. 只解析结构，不改写内容。功能点名称、验收项文本必须**逐字保留原文**，"
-    "不要翻译、不要润色、不要概括、不要补充。\n"
-    "2. 仅输出一个 JSON 对象，不要任何前后缀/解释/代码块标记。\n"
-    "3. JSON 结构：{\"modules\":[{\"module\":\"模块名\",\"features\":"
-    "[{\"name\":\"功能点原文\",\"acceptance\":[\"验收项原文\"]}]}]}。\n"
-    "4. 无法识别模块时用「未分组」。没有验收项时 acceptance 为空数组。"
+    "1. **不要复制原文内容**；验收项一律用**行号范围**指向原文，由系统裁剪，确保逐字一致。\n"
+    "2. 功能点名称(name)取该功能点的标题原文（简短，逐字，不要补充）。\n"
+    "3. acceptance_lines 是若干 [起始行号, 结束行号]（含两端，指向验收项所在的原文行，"
+    "可跨多行）；没有验收项时为空数组。行号必须是输入中真实出现的行号。\n"
+    "4. 仅输出一个 JSON 对象，不要任何前后缀/解释/代码块标记。\n"
+    "5. JSON 结构："
+    "{\"modules\":[{\"module\":\"模块名\",\"features\":"
+    "[{\"name\":\"功能点名\",\"acceptance_lines\":[[12,15],[20,20]]}]}]}。\n"
+    "6. 无法识别模块时用「未分组」。"
 )
 
 
@@ -192,27 +197,96 @@ def _salvage_truncated_modules(text: str) -> list[Any] | None:
     return salvaged or None
 
 
-def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
-    """从 LLM 输出健壮解析 modules JSON（剥代码块/前后缀，截断时抢救完整对象），失败返回 None。"""
+def _number_lines(text: str) -> tuple[list[str], str]:
+    """把文档拆行并生成带行号的文本（每行「行号|内容」），供 LLM 引用行号。"""
+    lines = text.split("\n")
+    numbered = "\n".join(f"{i + 1}|{ln}" for i, ln in enumerate(lines))
+    return lines, numbered
+
+
+def _slice_lines(lines: list[str], start: Any, end: Any) -> str:
+    """按 1-indexed 闭区间行号从原文裁剪（越界 clamp，非法返回空），保证逐字一致。"""
+    try:
+        s = int(start)
+        e = int(end)
+    except (TypeError, ValueError):
+        return ""
+    s = max(1, s)
+    e = min(len(lines), e)
+    if s > e:
+        return ""
+    return "\n".join(lines[s - 1 : e]).strip()
+
+
+def _loads_modules_raw(raw: str) -> list[Any] | None:
+    """从 LLM 输出取出 modules 数组（剥代码块/前后缀；截断时抢救完整对象），失败返回 None。"""
     if not raw:
         return None
     text = raw.strip()
-    # 剥 ```json ... ``` 代码块
     fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fence:
         text = fence.group(1)
     else:
-        # 取首个 { 到末个 } 之间
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end != -1 and end > start:
             text = text[start : end + 1]
-    modules: Any = None
     try:
         data = json.loads(text)
         modules = data.get("modules") if isinstance(data, dict) else None
     except (ValueError, TypeError):
-        # 输出被 max_tokens 截断 → 抢救已完整的 module 对象（尽量不丢已解析内容）。
         modules = _salvage_truncated_modules(raw)
+    return modules if isinstance(modules, list) else None
+
+
+def _materialize_modules(
+    raw_modules: list[Any], lines: list[str]
+) -> list[dict[str, Any]] | None:
+    """把 LLM 返回的「结构 + 行号范围」物化为 modules 树：验收项按行号从原文裁剪。
+
+    兼容三种功能点表达：``acceptance_lines``（行号范围，优先裁剪）/ ``acceptance``（文本，回退）；
+    名称取 ``name``（短标题文本）或 ``name_line``（行号，裁剪该行）。
+    """
+    out: list[dict[str, Any]] = []
+    for mod in raw_modules:
+        if not isinstance(mod, dict):
+            continue
+        module_name = str(mod.get("module") or "未分组").strip() or "未分组"
+        features: list[dict[str, Any]] = []
+        for feat in mod.get("features") or []:
+            if not isinstance(feat, dict):
+                continue
+            name = str(feat.get("name") or "").strip()
+            if not name and feat.get("name_line") is not None:
+                name = _slice_lines(lines, feat["name_line"], feat["name_line"])
+            if not name:
+                continue
+            acceptance: list[str] = []
+            spans = feat.get("acceptance_lines")
+            if isinstance(spans, list):
+                for span in spans:
+                    if isinstance(span, (list, tuple)) and len(span) >= 2:
+                        sliced = _slice_lines(lines, span[0], span[1])
+                    elif isinstance(span, (int, str)):
+                        sliced = _slice_lines(lines, span, span)
+                    else:
+                        sliced = ""
+                    if sliced:
+                        acceptance.append(sliced)
+            else:
+                acceptance = [
+                    str(a).strip()
+                    for a in (feat.get("acceptance") or [])
+                    if str(a).strip()
+                ]
+            features.append({"name": name, "acceptance": acceptance})
+        if features:
+            out.append({"module": module_name, "features": features})
+    return out or None
+
+
+def _parse_modules_json(raw: str) -> list[dict[str, Any]] | None:
+    """文本型 acceptance 的解析（向后兼容/回退路径）：剥壳+解析+抢救后按文本归一。"""
+    modules = _loads_modules_raw(raw)
     if not isinstance(modules, list):
         return None
     # 归一防御：丢空名功能点，逐字保留文本。
@@ -265,9 +339,11 @@ async def agenerate_feature_modules_from_text(
     legacy = await aget_legacy_anthropic_config()
     model = legacy.get("default_model") or _MODEL_FALLBACK
     doc = text[:_MAX_DOC_CHARS]
+    # 行号裁剪：喂带行号的文档，模型只回结构+行号范围，验收项由系统按行号裁剪原文。
+    lines, numbered_doc = _number_lines(doc)
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=doc),
+        HumanMessage(content=numbered_doc),
     ]
     start = perf_counter()
     ttft_ms: int | None = None
@@ -311,7 +387,9 @@ async def agenerate_feature_modules_from_text(
         content = " ".join(
             str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content
         )
-    modules = _parse_modules_json(str(content or ""))
+    # 行号裁剪物化：取出结构（含 acceptance_lines），按行号从原文裁剪验收项 → 逐字一致。
+    raw_modules = _loads_modules_raw(str(content or ""))
+    modules = _materialize_modules(raw_modules, lines) if raw_modules else None
     logger.info(
         "feature_list_parsed",
         project_id=str(project_id),
