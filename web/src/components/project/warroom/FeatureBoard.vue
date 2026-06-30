@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { FeatureNode, FeatureState } from '~/api/projectWorkspace'
 import { useQuery } from '@tanstack/vue-query'
-import { computed, ref, toRef } from 'vue'
+import { computed, markRaw, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import EmptyState from '~/components/common/EmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
+import { useModal } from '~/composables/useModal'
+import FeatureDetailModal from './FeatureDetailModal.vue'
 
 // P1：Feature 大盘——「按状态 / 按模块」视图切换。数据同源 getFeatureList（与 ProjectHealthCard 共享 queryKey，vue-query 去重）。
 const props = defineProps<{ projectId: string }>()
@@ -67,6 +69,7 @@ interface FeatureRow {
   state: FeatureState
   acceptance: FeatureNode[]
   statusDisplay?: string
+  node: FeatureNode
 }
 
 // 拍平：模块 → 功能点，带模块归属（按状态视图用）。
@@ -82,11 +85,21 @@ const rows = computed<FeatureRow[]>(() => {
         state: normalizeState(feat.state),
         acceptance: (feat.children ?? []).filter(c => c.kind === 'acceptance'),
         statusDisplay: feat.status_display_name,
+        node: feat,
       })
     }
   }
   return out
 })
+
+// 点开功能点详情（按需结构化为 sections，含流程图）。
+function openDetail(node: FeatureNode) {
+  const { open } = useModal({
+    component: markRaw(FeatureDetailModal),
+    attrs: { projectId: props.projectId, node },
+  })
+  void open()
+}
 
 const byState = computed(() => {
   const map: Record<FeatureState, FeatureRow[]> = { in_progress: [], testing: [], todo: [], done: [] }
@@ -175,6 +188,14 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
                 <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                   {{ t('projects.warroom.feature.acceptanceCount', { n: row.acceptance.length }) }}
                 </span>
+                <button
+                  type="button"
+                  class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
+                  data-testid="feature-detail-btn"
+                  @click="openDetail(row.node)"
+                >
+                  <span class="icon-[lucide--panel-right-open] text-[11px]" /> 详情
+                </button>
               </div>
               <CollapsibleContent class="px-3 pb-2 pl-9">
                 <p v-if="row.acceptance.length === 0" class="py-1 text-xs text-muted-foreground">
@@ -218,10 +239,15 @@ const isEmpty = computed(() => rows.value.length === 0 && modules.value.length =
               :key="`f-${mi}-${fi}`"
               class="flex items-center justify-between gap-2 pl-5 py-2 border-t border-border/30 first:border-t-0"
             >
-              <div class="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                class="flex min-w-0 items-center gap-2 text-left group/feat"
+                data-testid="feature-detail-btn"
+                @click="openDetail(feat)"
+              >
                 <span class="icon-[lucide--git-branch] text-muted-foreground shrink-0" />
-                <span class="text-sm text-foreground truncate">{{ feat.name }}</span>
-              </div>
+                <span class="text-sm text-foreground truncate group-hover/feat:text-primary group-hover/feat:underline">{{ feat.name }}</span>
+              </button>
               <span
                 class="inline-flex items-center gap-1.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
                 :class="STATE_CLASS[normalizeState(feat.state)]"
