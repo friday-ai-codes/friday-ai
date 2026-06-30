@@ -11,6 +11,7 @@ from initiatives.views import (
     ProjectCursorRulesView,
     ProjectDescriptionGenerateView,
     ProjectDetailView,
+    ProjectFeatureListParseView,
     ProjectFeatureListView,
     ProjectGalaxyView,
     ProjectGraphView,
@@ -197,6 +198,11 @@ urlpatterns = [
         "<uuid:project_id>/feature-list/",
         ProjectFeatureListView.as_view(),
         name="project-feature-list",
+    ),
+    path(
+        "<uuid:project_id>/feature-list/parse/",
+        ProjectFeatureListParseView.as_view(),
+        name="project-feature-list-parse",
     ),
     # 项目「关联仓库」（业务关联 ∪ 分支绑定，#4：按项目而非空间）
     path(

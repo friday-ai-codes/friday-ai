@@ -1470,6 +1470,36 @@ class ProjectFeatureListView(APIView):
         return Response({"ok": True})
 
 
+class ProjectFeatureListParseView(APIView):
+    """把粘贴的文档 AI 解析为结构化 feature 模块（只解析、不落库；#4 录入填充）。
+
+    路由 ``projects/<project_id>/feature-list/parse/``；body ``{text}``。返回
+    ``{modules: [{module, features: [{name, acceptance: [...]}]}]}``，供前端「手动录入」
+    编辑器自动填入后人工确认再保存。强约束：内容逐字保留原文（见 feature_list_import）。
+    """
+
+    async def post(self, request, project_id):
+        _project, err = await _aget_project_for_write(request, project_id)
+        if err is not None:
+            return err
+        text = request.data.get("text") or ""
+        if not str(text).strip():
+            return Response(
+                {"detail": "需提供 text"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        from initiatives.services.feature_list_import import (
+            agenerate_feature_modules_from_text,
+        )
+
+        modules = await agenerate_feature_modules_from_text(project_id, str(text))
+        if not modules:
+            return Response(
+                {"detail": "AI 解析未产出有效结构（请检查文档内容或 AI Provider 配置）"},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        return Response({"modules": modules})
+
+
 def _serialize_project_repositories(project_id: Any) -> list[dict[str, Any]]:
     """项目「关联仓库」= 业务关联（RepoAssociation 非 rejected）∪ 分支绑定（ProjectBranch），去重。
 
