@@ -168,6 +168,13 @@ export interface FeatureListModuleInput {
   features: FeatureListFeatureInput[]
 }
 
+/** Step 0 解析出的模块大纲（模块名 + 在原文中的行区间，供前端切片逐模块解析）。 */
+export interface FeatureModuleOutline {
+  module: string
+  line_start: number
+  line_end: number
+}
+
 /** 粘贴文档 AI 解析的额度配置（后端按解析模型 ModelCapabilities 计算）。 */
 export interface FeatureListParseConfig {
   /** 解析使用的模型 ID（无 Provider 时为空）。 */
@@ -265,6 +272,26 @@ export const projectWorkspaceApi = {
   /** 粘贴文档 AI 解析的额度配置（按解析模型，已扣 prompt/输出/安全余量）。 */
   getFeatureListParseConfig: (projectId: string): Promise<FeatureListParseConfig> =>
     get<FeatureListParseConfig>(`/projects/${projectId}/feature-list/parse-config/`),
+
+  /** Step 0：只解析模块层级（输出极小不截断），返回各模块行区间，供前端切片后逐模块解析。 */
+  parseFeatureModules: (
+    projectId: string,
+    text: string,
+  ): Promise<{ modules: FeatureModuleOutline[] }> =>
+    post<{ modules: FeatureModuleOutline[] }>(
+      `/projects/${projectId}/feature-list/parse-modules/`,
+      { text },
+    ),
+
+  /** Step 1：解析单个模块切片下的功能点（输出不截断），返回功能点（含原文 source）。 */
+  parseModuleFeatures: (
+    projectId: string,
+    text: string,
+  ): Promise<{ features: FeatureListFeatureInput[] }> =>
+    post<{ features: FeatureListFeatureInput[] }>(
+      `/projects/${projectId}/feature-list/parse-module-features/`,
+      { text },
+    ),
 
   /** 把单个功能点/模块原文结构化为柔性 sections（Step 2，按需，点开详情时调用）。 */
   getFeatureDetail: (

@@ -1,30 +1,41 @@
 <script setup lang="ts">
-import type { FeatureListModuleInput } from '~/api/projectWorkspace'
-import { computed, onMounted, reactive, ref } from 'vue'
+import type MarkdownIt from 'markdown-it'
+import type { FeatureListModuleInput, FeatureNode } from '~/api/projectWorkspace'
+import { computed, onMounted, reactive, ref, shallowRef } from 'vue'
 import { VueFinalModal } from 'vue-final-modal'
 import { projectWorkspaceApi } from '~/api/projectWorkspace'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import { useToast } from '~/composables/useToast'
 
-// feature list 录入弹窗：单一「手动录入」结构（模块 → 功能点 → 验收项）。
-// 可粘贴整篇文档，点「AI 解析填入」由 agent 拆解为结构化行自动填入编辑器，再人工确认保存。
+// feature list 录入弹窗：模块 → 功能点 → 验收项。支持：加载已有 feature list 增删改、
+// 拖动排序；粘贴任意文档（markdown/飞书/gitlab/typora）可预览可编辑；AI「分层渐进式」解析
+// （先出模块，再逐模块填功能点）。
 const props = defineProps<{ projectId: string }>()
 const emit = defineEmits<{ confirm: [], cancel: [], closed: [] }>()
 
 const { handleError } = useErrorHandler()
 const { success } = useToast()
 
-// source/summary：解析得来的整段原文（功能点）/ 模块概述，随保存留存，供详情按需结构化。
-interface FeatureDraft { name: string, acceptanceText: string, source?: string }
-interface ModuleDraft { module: string, summary?: string, features: FeatureDraft[] }
-const modules = reactive<ModuleDraft[]>([
-  { module: '', features: [{ name: '', acceptanceText: '' }] },
-])
+// ── 草稿模型（带稳定 key，供拖拽排序时正确复用 DOM）──────────────
+let _seq = 0
+function uid(): string {
+  _seq += 1
+  return `d${_seq}`
+}
+interface FeatureDraft { key: string, name: string, acceptanceText: string, source?: string }
+interface ModuleDraft { key: string, module: string, summary?: string, features: FeatureDraft[], parsing?: boolean }
+function newFeature(init: Partial<FeatureDraft> = {}): FeatureDraft {
+  return { key: uid(), name: '', acceptanceText: '', ...init }
+}
+function newModule(init: Partial<ModuleDraft> = {}): ModuleDraft {
+  return { key: uid(), module: '', features: [newFeature()], ...init }
+}
+const modules = reactive<ModuleDraft[]>([newModule()])
 
-// 头部计数（只统计已填名称的功能点）。
 const totalFeatures = computed(() =>
   modules.reduce((n, m) => n + m.features.filter(f => f.name.trim()).length, 0),
 )
@@ -36,7 +47,7 @@ function acceptanceCount(feat: FeatureDraft): number {
 }
 
 function addModule() {
-  modules.push({ module: '', features: [{ name: '', acceptanceText: '' }] })
+  modules.push(newModule())
 }
 function removeModule(i: number) {
   modules.splice(i, 1)
@@ -44,12 +55,33 @@ function removeModule(i: number) {
     addModule()
 }
 function addFeature(mi: number) {
-  modules[mi].features.push({ name: '', acceptanceText: '' })
+  modules[mi].features.push(newFeature())
 }
 function removeFeature(mi: number, fi: number) {
   modules[mi].features.splice(fi, 1)
   if (modules[mi].features.length === 0)
-    modules[mi].features.push({ name: '', acceptanceText: '' })
+    modules[mi].features.push(newFeature())
+}
+
+// ── 拖拽排序：模块整体排序 + 功能点同模块内排序 ──────────────
+const dragModule = ref<number | null>(null)
+function onModuleDrop(to: number) {
+  const from = dragModule.value
+  dragModule.value = null
+  if (from === null || from === to)
+    return
+  const [m] = modules.splice(from, 1)
+  modules.splice(to, 0, m)
+}
+const dragFeat = ref<{ mi: number, fi: number } | null>(null)
+function onFeatDrop(mi: number, to: number) {
+  const d = dragFeat.value
+  dragFeat.value = null
+  if (!d || d.mi !== mi || d.fi === to)
+    return
+  const arr = modules[mi].features
+  const [f] = arr.splice(d.fi, 1)
+  arr.splice(to, 0, f)
 }
 
 // 判断当前编辑器是否仍是初始空白（只有一个空模块空功能点）——用于解析后决定覆盖还是追加。
@@ -60,53 +92,130 @@ function isPristine(): boolean {
   return !m.module.trim() && m.features.length === 1 && !m.features[0].name.trim()
 }
 
-// ── 粘贴文档 → AI 解析 → 填入结构化行 ──────────────────────────
-const pasteText = ref('')
-const parsing = ref(false)
-
-// 单次粘贴最大字数：按解析模型上限（已扣 system prompt / 输出 / 安全余量）；
-// 加载前给保守兜底，避免未取到配置时无限制粘贴撑爆上下文。
-const maxInputChars = ref(60000)
-onMounted(async () => {
+// ── 加载已有 feature list（#4：可对已有列表增删改/排序/再解析追加）──────────────
+const loadingExisting = ref(true)
+async function loadExisting() {
   try {
-    const cfg = await projectWorkspaceApi.getFeatureListParseConfig(props.projectId)
-    if (cfg?.max_input_chars && cfg.max_input_chars > 0)
-      maxInputChars.value = cfg.max_input_chars
+    const d = await projectWorkspaceApi.getFeatureList(props.projectId) as
+      | FeatureNode[]
+      | { modules?: FeatureNode[] }
+    const mods = Array.isArray(d) ? d : (d?.modules ?? [])
+    const drafts = mods.map(m => newModule({
+      module: m.name || '',
+      summary: m.source || '',
+      features: (m.children ?? [])
+        .filter(c => c.kind === 'feature')
+        .map(f => newFeature({
+          name: f.name || '',
+          acceptanceText: (f.children ?? [])
+            .filter(c => c.kind === 'acceptance')
+            .map(c => c.name)
+            .join('\n'),
+          source: f.source || '',
+        })),
+    }))
+    drafts.forEach((m) => {
+      if (!m.features.length)
+        m.features.push(newFeature())
+    })
+    if (drafts.length)
+      modules.splice(0, modules.length, ...drafts)
   }
   catch {
-    // best-effort：取不到配置就用兜底字数，不打断录入。
+    // 新项目无 feature list / 取数失败 → 保持空白录入。
   }
-})
+  finally {
+    loadingExisting.value = false
+  }
+}
+
+// ── 粘贴文档（可编辑 / markdown 预览）──────────────
+const pasteText = ref('')
+const pasteView = ref<'edit' | 'preview'>('edit')
+const mdRef = shallowRef<MarkdownIt | null>(null)
+const previewHtml = computed(() =>
+  mdRef.value ? mdRef.value.render(pasteText.value || '') : '',
+)
+
+// 单次粘贴最大字数：按解析模型上限（已扣 system prompt / 输出 / 安全余量）。
+const maxInputChars = ref(60000)
 const pasteLen = computed(() => pasteText.value.length)
 const overLimit = computed(() => pasteLen.value > maxInputChars.value)
 
+onMounted(() => {
+  void loadExisting()
+  void (async () => {
+    try {
+      const cfg = await projectWorkspaceApi.getFeatureListParseConfig(props.projectId)
+      if (cfg?.max_input_chars && cfg.max_input_chars > 0)
+        maxInputChars.value = cfg.max_input_chars
+    }
+    catch {}
+  })()
+  void (async () => {
+    try {
+      mdRef.value = await getMarkdownRenderer()
+    }
+    catch {}
+  })()
+})
+
+// ── AI 分层渐进式解析：先出模块外壳，再逐模块填充功能点 ──────────────
+const parsing = ref(false)
+const parseProgress = reactive({ done: 0, total: 0 })
+
 async function parseAndFill() {
-  const text = pasteText.value.trim()
-  if (!text || parsing.value || overLimit.value)
+  const text = pasteText.value
+  if (!text.trim() || parsing.value || overLimit.value)
     return
+  errorText.value = ''
   parsing.value = true
+  parseProgress.done = 0
+  parseProgress.total = 0
   try {
-    const { modules: parsed } = await projectWorkspaceApi.parseFeatureList(props.projectId, text)
-    const drafts: ModuleDraft[] = (parsed || []).map(m => ({
-      module: m.module || '',
-      summary: m.summary || '',
-      features: (m.features || []).map(f => ({
-        name: f.name || '',
-        acceptanceText: (f.acceptance || []).join('\n'),
-        source: f.source || '',
-      })),
-    })).filter(m => m.features.length > 0)
-    if (drafts.length === 0) {
-      errorText.value = 'AI 未从文档解析出功能点，请检查文档内容'
+    // Step 0：只解析模块（输出极小、不截断）。
+    const { modules: outline } = await projectWorkspaceApi.parseFeatureModules(
+      props.projectId,
+      text.trim(),
+    )
+    if (!outline?.length) {
+      errorText.value = 'AI 未从文档解析出模块，请检查文档内容'
       return
     }
-    // 初始空白 → 覆盖；已有内容 → 追加（支持粘贴多篇文档累积）。
-    if (isPristine())
-      modules.splice(0, modules.length, ...drafts)
+    const docLines = text.split('\n')
+    const replace = isPristine()
+    const baseIndex = replace ? 0 : modules.length
+    const shells = outline.map(o => newModule({ module: o.module, features: [], parsing: true }))
+    if (replace)
+      modules.splice(0, modules.length, ...shells)
     else
-      modules.push(...drafts)
+      modules.push(...shells)
+    parseProgress.total = shells.length
+
+    // Step 1：逐模块切片解析功能点，渐进渲染（通过 modules[idx] 的响应式代理写入）。
+    for (let i = 0; i < outline.length; i++) {
+      const o = outline[i]
+      const mod = modules[baseIndex + i]
+      const slice = docLines.slice(Math.max(0, o.line_start - 1), o.line_end).join('\n')
+      try {
+        const { features } = await projectWorkspaceApi.parseModuleFeatures(props.projectId, slice)
+        mod.features = (features || []).map(f => newFeature({
+          name: f.name || '',
+          acceptanceText: (f.acceptance || []).join('\n'),
+          source: f.source || '',
+        }))
+      }
+      catch {
+        // 单模块解析失败不阻断其余模块。
+      }
+      if (!mod.features.length)
+        mod.features = [newFeature()]
+      mod.parsing = false
+      parseProgress.done = i + 1
+    }
     pasteText.value = ''
-    success(`已解析填入 ${drafts.reduce((n, m) => n + m.features.length, 0)} 个功能点`)
+    pasteView.value = 'edit'
+    success(`已解析 ${shells.length} 个模块、${totalFeatures.value} 个功能点`)
   }
   catch (e: unknown) {
     handleError(e, 'AI 解析文档失败')
@@ -174,10 +283,10 @@ async function handleSubmit() {
       </span>
       <div class="min-w-0 flex-1">
         <h2 class="text-sm font-semibold text-foreground">
-          补充 feature list
+          编辑 feature list
         </h2>
         <p class="text-xs text-muted-foreground">
-          手动录入「模块 → 功能点 → 验收项」，或粘贴文档让 AI 解析后自动填入
+          录入/编辑「模块 → 功能点 → 验收项」，可拖动排序；或粘贴文档让 AI 分层解析填入
         </p>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
@@ -191,27 +300,60 @@ async function handleSubmit() {
     </header>
 
     <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
-      <!-- 粘贴文档 → AI 解析填入 -->
+      <!-- 粘贴文档 → AI 分层解析填入（可编辑 / markdown 预览） -->
       <div class="rounded-xl border border-dashed border-primary/30 bg-primary/[0.03] p-4 space-y-2.5" data-testid="fl-paste">
         <div class="flex items-center gap-2">
           <span class="icon-[lucide--sparkles] text-primary text-base" />
-          <span class="text-sm font-semibold text-foreground">粘贴文档，AI 解析填入</span>
-          <span class="text-xs text-muted-foreground">· 仅解析结构，功能点 / 验收项逐字保留原文</span>
+          <span class="text-sm font-semibold text-foreground">粘贴文档，AI 分层解析填入</span>
+          <span class="text-xs text-muted-foreground hidden sm:inline">· markdown / 飞书 / gitlab 等均可，逐字保留原文</span>
+          <div class="ml-auto inline-flex rounded-md border border-border/60 overflow-hidden text-xs">
+            <button
+              type="button"
+              class="px-2 py-1"
+              :class="pasteView === 'edit' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'"
+              @click="pasteView = 'edit'"
+            >
+              编辑
+            </button>
+            <button
+              type="button"
+              class="px-2 py-1 border-l border-border/60"
+              :class="pasteView === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'"
+              :disabled="!pasteText.trim()"
+              @click="pasteView = 'preview'"
+            >
+              预览
+            </button>
+          </div>
         </div>
+
         <Textarea
+          v-if="pasteView === 'edit'"
           v-model="pasteText"
-          placeholder="把需求 / PRD / feature 文档整篇粘贴进来（可粘贴多篇，多次解析累积）。"
-          :rows="5"
+          placeholder="把需求 / PRD / feature 文档整篇粘贴进来（markdown / 飞书 / gitlab / typora 等）。"
+          :rows="6"
           class="text-sm font-mono leading-relaxed"
           :class="overLimit ? 'border-destructive focus-visible:border-destructive' : ''"
         />
+        <!-- eslint-disable-next-line vue/no-v-html — markdown-it 以 html:false 渲染，无 XSS 风险 -->
+        <div
+          v-else
+          class="rounded-lg border border-border/50 bg-background max-h-72 overflow-auto p-3 text-sm leading-relaxed [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mb-1 [&_h2]:font-semibold [&_h2]:mt-2 [&_h3]:font-medium [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:rounded [&_pre]:overflow-x-auto [&_table]:w-full [&_th]:text-left [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
+          v-html="previewHtml"
+        />
+
         <div class="flex items-center justify-between gap-2">
           <span
             class="text-xs tabular-nums"
             :class="overLimit ? 'text-destructive font-medium' : 'text-muted-foreground'"
             data-testid="fl-paste-counter"
           >
-            {{ pasteLen.toLocaleString() }} / {{ maxInputChars.toLocaleString() }} 字<template v-if="overLimit"> · 超出上限，请缩减或分段解析</template>
+            <template v-if="parsing && parseProgress.total">
+              逐模块解析中 {{ parseProgress.done }} / {{ parseProgress.total }}…
+            </template>
+            <template v-else>
+              {{ pasteLen.toLocaleString() }} / {{ maxInputChars.toLocaleString() }} 字<template v-if="overLimit"> · 超出上限，请缩减或分段解析</template>
+            </template>
           </span>
           <Button size="sm" :disabled="!pasteText.trim() || parsing || overLimit" data-testid="fl-parse-btn" @click="parseAndFill">
             <span class="icon-[lucide--wand-2] mr-1.5" :class="parsing ? 'animate-pulse' : ''" />
@@ -220,15 +362,32 @@ async function handleSubmit() {
         </div>
       </div>
 
-      <!-- 手动录入结构：模块 → 功能点 → 验收项 -->
-      <div class="space-y-4" data-testid="fl-manual">
+      <div v-if="loadingExisting" class="py-6 text-center text-sm text-muted-foreground">
+        <span class="icon-[lucide--loader-2] animate-spin mr-1.5" />加载已有 feature list…
+      </div>
+
+      <!-- 模块 → 功能点 → 验收项（可拖动排序） -->
+      <div v-else class="space-y-4" data-testid="fl-manual">
         <div
           v-for="(mod, mi) in modules"
-          :key="mi"
+          :key="mod.key"
           class="rounded-xl border border-border/60 bg-background/40 overflow-hidden"
+          :class="dragModule === mi ? 'opacity-50' : ''"
+          @dragover.prevent
+          @drop="onModuleDrop(mi)"
         >
           <!-- 模块头 -->
           <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-muted/40 border-b border-border/50">
+            <button
+              type="button"
+              class="cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-muted-foreground shrink-0"
+              draggable="true"
+              :aria-label="`拖动模块 ${mi + 1}`"
+              @dragstart="dragModule = mi"
+              @dragend="dragModule = null"
+            >
+              <span class="icon-[lucide--grip-vertical] text-sm" />
+            </button>
             <span class="inline-flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
               <span class="icon-[lucide--folder] text-sm" />
             </span>
@@ -238,7 +397,10 @@ async function handleSubmit() {
               placeholder="模块名（如：用户中心）"
               class="h-8 flex-1 font-medium bg-transparent border-transparent focus-visible:border-border focus-visible:bg-background"
             />
-            <span class="text-xs text-muted-foreground shrink-0 tabular-nums">{{ moduleFeatureCount(mod) }} 功能点</span>
+            <span v-if="mod.parsing" class="text-[11px] text-primary shrink-0 inline-flex items-center gap-1">
+              <span class="icon-[lucide--loader-2] animate-spin text-[11px]" />解析中
+            </span>
+            <span v-else class="text-xs text-muted-foreground shrink-0 tabular-nums">{{ moduleFeatureCount(mod) }} 功能点</span>
             <button
               type="button"
               class="size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/5 shrink-0"
@@ -249,16 +411,32 @@ async function handleSubmit() {
             </button>
           </div>
 
-          <!-- 功能点（带左侧层级轨） -->
+          <!-- 功能点（带左侧层级轨，可拖动排序） -->
           <div class="pl-3.5 pr-3.5 py-3 space-y-2.5">
+            <div v-if="mod.parsing && !mod.features.length" class="pl-5 text-xs text-muted-foreground">
+              功能点解析中…
+            </div>
             <div
               v-for="(feat, fi) in mod.features"
-              :key="fi"
+              :key="feat.key"
               class="relative pl-5 border-l-2 border-border/50"
+              :class="dragFeat && dragFeat.mi === mi && dragFeat.fi === fi ? 'opacity-50' : ''"
+              @dragover.prevent
+              @drop="onFeatDrop(mi, fi)"
             >
               <span class="absolute -left-[5px] top-3 size-2 rounded-full bg-primary/60 ring-2 ring-card" />
               <div class="rounded-lg border border-border/40 bg-muted/20 p-2.5 space-y-2">
                 <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground shrink-0"
+                    draggable="true"
+                    :aria-label="`拖动功能点 ${fi + 1}`"
+                    @dragstart="dragFeat = { mi, fi }"
+                    @dragend="dragFeat = null"
+                  >
+                    <span class="icon-[lucide--grip-vertical] text-xs" />
+                  </button>
                   <span class="icon-[lucide--git-branch] text-primary/70 text-sm shrink-0" />
                   <Input
                     v-model="feat.name"
