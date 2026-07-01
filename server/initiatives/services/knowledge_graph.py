@@ -132,14 +132,21 @@ class ProjectKnowledgeGraphService:
         source_id: uuid.UUID,
         target_id: uuid.UUID,
         relation: str,
+        metadata: dict | None = None,
     ) -> bool:
-        """幂等建边：已有同 target 活跃出边 → 跳过；并发撞约束 → warning 放弃。
+        """幂等建边：已有同 target 活跃出边 → 跳过（``metadata`` 非空则覆盖）；
+        并发撞约束 → warning 放弃。
 
         Returns:
-            True 表示新建了边，False 表示已存在/并发放弃。
+            True 表示新建了边，False 表示已存在（或已 upsert metadata）/并发放弃。
         """
         existing = await graph_store.neighbors(source_id, relations=[relation], direction="out")
-        if any(e.target_id == target_id for e in existing):
+        hit = next((e for e in existing if e.target_id == target_id), None)
+        if hit is not None:
+            # 幂等 upsert：活跃边已存在。传入 metadata → 覆盖为最新（KDEP-08）；
+            # 既有无 metadata 调用路径行为不变（继续跳过）。
+            if metadata is not None:
+                await graph_store.update_edge_metadata(hit.edge_id, metadata=metadata)
             return False
         try:
             await graph_store.add_edge(
@@ -147,6 +154,7 @@ class ProjectKnowledgeGraphService:
                 target_id=target_id,
                 relation=relation,
                 valid_at=timezone.now(),
+                metadata=metadata,
             )
             return True
         except IntegrityError as exc:
@@ -222,14 +230,19 @@ class ProjectKnowledgeGraphService:
         project: Any,
         repository: Any,
         relation: str = EdgeRelation.RELATES_TO,
+        metadata: dict | None = None,
         actor: Any = None,
         initiated_by_user_id: Any = None,
     ) -> bool:
-        """KLINK-02：项目↔仓库（图层）。"""
+        """KLINK-02 / KDEP-08：项目↔仓库（图层）。
+
+        ``metadata`` 非空时透传（首建写入 / 已存在则 upsert 覆盖），承载
+        ``source/association_id/score/confidence/matched_node_paths``（verified 关联派生）。
+        """
         node_id = await self.ensure_project_node(project)
         repo_id = await self.ensure_repository_node(repository)
         created = await self._add_edge_idempotent(
-            source_id=node_id, target_id=repo_id, relation=relation
+            source_id=node_id, target_id=repo_id, relation=relation, metadata=metadata
         )
         if created:
             await self._emit_linked(
@@ -241,6 +254,43 @@ class ProjectKnowledgeGraphService:
                 initiated_by_user_id=initiated_by_user_id,
             )
         return created
+
+    async def unlink_repository(
+        self,
+        *,
+        project: Any,
+        repository: Any,
+        relation: str = EdgeRelation.RELATES_TO,
+        actor: Any = None,
+        initiated_by_user_id: Any = None,
+    ) -> bool:
+        """KDEP-08：失效项目→仓库派生边（真相源离开 verified → 派生边失效置位）。
+
+        定位 project→repo 活跃 ``RELATES_TO`` 出边并逐条 ``invalidate_edge`` 失效置位
+        （单向派生一致性）；无匹配活跃边 → 幂等 no-op 返回 ``False``。
+
+        Returns:
+            True 表示失效了至少一条边，False 表示无活跃边（幂等 no-op）。
+        """
+        node_id = await self.ensure_project_node(project)
+        repo_id = repository_node_id(repository.id)
+        existing = await graph_store.neighbors(node_id, relations=[relation], direction="out")
+        invalidated = False
+        for edge in existing:
+            if edge.target_id == repo_id:
+                await graph_store.invalidate_edge(edge.edge_id, invalid_at=timezone.now())
+                invalidated = True
+        if invalidated:
+            logger.info(
+                "project_graph_repository_unlinked",
+                project_id=str(getattr(project, "id", project)),
+                repository_id=str(repository.id),
+                relation=relation,
+                initiated_by_user_id=str(initiated_by_user_id) if initiated_by_user_id else "system",
+                component=_COMPONENT,
+                category="caller",
+            )
+        return invalidated
 
     async def link_space(
         self,
@@ -274,7 +324,9 @@ class ProjectKnowledgeGraphService:
         """从 Phase 77/78 操作态表单向派生 KLINK 边（不双写，幂等补建）。
 
         - ``Project.space`` FK → 项目↔空间边；
-        - ``ProjectRelation``（related_projects）→ 项目↔项目边。
+        - ``ProjectRelation``（related_projects）→ 项目↔项目边；
+        - ``RepoAssociation(status=verified)`` → 项目↔仓库边（KDEP-08，单向派生，
+          metadata 携 source=repo_association 等；RepoAssociation 只读、不双写真相源）。
 
         Returns:
             新建的边数。
@@ -297,14 +349,50 @@ class ProjectKnowledgeGraphService:
                 initiated_by_user_id=initiated_by_user_id,
             ):
                 created += 1
+
+        # KDEP-08：verified RepoAssociation 单向派生项目→仓库边（真相源只读）。
+        # 延迟 import 避免 initiatives 内循环依赖（参照 repo_association_service 写法）。
+        from initiatives.models import RepoAssociation, RepoAssociationStatus
+
+        verified_assocs = await sync_to_async(
+            lambda: list(
+                RepoAssociation.objects.filter(
+                    project=project, status=RepoAssociationStatus.VERIFIED
+                ).select_related("repository")
+            )
+        )()
+        verified_repo_edges = 0
+        for assoc in verified_assocs:
+            if await self.link_repository(
+                project=project,
+                repository=assoc.repository,
+                metadata=self._association_edge_metadata(assoc),
+                actor=actor,
+                initiated_by_user_id=initiated_by_user_id,
+            ):
+                verified_repo_edges += 1
+        created += verified_repo_edges
+
         logger.info(
             "project_graph_synced_from_operational",
             project_id=str(project.id),
             edges_created=created,
+            verified_repo_edges=verified_repo_edges,
             component=_COMPONENT,
             category="caller",
         )
         return created
+
+    @staticmethod
+    def _association_edge_metadata(assoc: Any) -> dict:
+        """从 RepoAssociation 组装派生边 metadata（KDEP-08 契约）。"""
+        return {
+            "source": "repo_association",
+            "association_id": str(assoc.id),
+            "score": float(assoc.score or 0.0),
+            "confidence": assoc.confidence or "",
+            "matched_node_paths": list(assoc.matched_node_paths or []),
+        }
 
     # ---- 查询（KLINK-02 可查询）----
 
