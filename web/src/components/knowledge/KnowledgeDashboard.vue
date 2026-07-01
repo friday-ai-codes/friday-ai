@@ -6,6 +6,7 @@
  * 业务域亮点、分面分布、快捷入口。数据全部由单次 `getKnowledgeTree()` 派生，
  * 无额外请求（repo card 已自带 facets/index_status）。
  */
+import type { ArtifactOverviewItem } from '~/api/knowledge'
 import type { DomainNode, RepoCard } from '~/api/repoTree'
 import type { CloudTerm, KnowledgeSearchItem, StarNode } from '~/composables/useKnowledgeCapabilities'
 import { useQuery } from '@tanstack/vue-query'
@@ -13,6 +14,7 @@ import { gsap } from 'gsap'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { knowledgeApi } from '~/api'
 import repoTreeApi from '~/api/repoTree'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import KnowledgeSearchBar from '~/components/knowledge/KnowledgeSearchBar.vue'
@@ -24,6 +26,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from '~/components/ui/dialog'
+import { Input } from '~/components/ui/input'
 import { Skeleton } from '~/components/ui/skeleton'
 import { useKnowledgeCapabilities } from '~/composables/useKnowledgeCapabilities'
 
@@ -233,6 +236,57 @@ function onSearchSelect(item: KnowledgeSearchItem) {
 function onCloudPick() {
   cloudOpen.value = false
   emit('navigate', 'tree')
+}
+
+// ---------- 交付文档 / 外部依赖（KDEP-03，走 96-03 聚合接口）----------
+const overviewQuery = useQuery({
+  queryKey: ['knowledge', 'artifact-overview'],
+  queryFn: () => knowledgeApi.getArtifactOverview(),
+  staleTime: 60_000,
+})
+const depTypes = computed(() => overviewQuery.data.value?.types ?? [])
+const depItems = computed(() => overviewQuery.data.value?.items ?? [])
+const depTotal = computed(() => overviewQuery.data.value?.total ?? 0)
+const depTruncated = computed(() => overviewQuery.data.value?.truncated ?? false)
+const depLoading = computed(() => overviewQuery.isLoading.value)
+const depEmpty = computed(() => !depLoading.value && depTotal.value === 0)
+
+// 区块内即时搜索：客户端过滤已加载条目（沿用 Dashboard 现有模式，无额外请求）。
+const depSearch = ref('')
+const filteredDepItems = computed(() => {
+  const q = depSearch.value.trim().toLowerCase()
+  if (!q)
+    return depItems.value
+  return depItems.value.filter(i =>
+    i.title.toLowerCase().includes(q)
+    || i.type_name.toLowerCase().includes(q)
+    || i.project_name.toLowerCase().includes(q),
+  )
+})
+
+const DEP_CARRIER_ICON: Record<string, string> = {
+  feishu_doc: 'lucide--file-text',
+  feishu_bitable: 'lucide--table',
+  external_link: 'lucide--external-link',
+  markdown: 'lucide--file-code',
+  repo_file: 'lucide--file',
+}
+function depCarrierIcon(carrier: string): string {
+  return DEP_CARRIER_ICON[carrier] ?? 'lucide--file'
+}
+
+// 点某类型 → 跳搜索 Tab 预筛该类型（?dep_type= 预填，供搜索侧消费）。
+function goToDepType(typeKey: string) {
+  router.push({ query: { tab: 'search', dep_type: typeKey } })
+}
+
+// 条目点击：external_link 新标签打开；其余跳搜索 Tab。
+function openDepItem(item: ArtifactOverviewItem) {
+  if (item.carrier === 'external_link' && item.url) {
+    window.open(item.url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  emit('navigate', 'search')
 }
 </script>
 
@@ -531,6 +585,93 @@ function onCloudPick() {
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- 交付文档 / 外部依赖（按类型计数 + 入口 + 区块内即时搜索） -->
+      <section class="card p-5" data-testid="knowledge-deps-section">
+        <div class="mb-4 flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-primary" />
+          <h3 class="text-sm font-semibold">
+            {{ t('knowledge.overview.deps.title') }}
+          </h3>
+          <span class="text-xs text-muted-foreground">{{ t('knowledge.overview.deps.hint') }}</span>
+        </div>
+
+        <!-- 加载骨架 -->
+        <div v-if="depLoading" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton v-for="n in 4" :key="n" class="h-[76px] w-full rounded-2xl" />
+        </div>
+
+        <!-- 优雅空态：指向作战室「外部依赖」维护入口，不渲染空网格 -->
+        <CompactEmptyState
+          v-else-if="depEmpty"
+          icon="lucide--package"
+          :title="t('knowledge.overview.deps.empty.title')"
+          :description="t('knowledge.overview.deps.empty.body')"
+        />
+
+        <template v-else>
+          <!-- 类型计数磁贴（点某类型进搜索预筛） -->
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <button
+              v-for="ty in depTypes"
+              :key="ty.type_key"
+              type="button"
+              class="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+              @click="goToDepType(ty.type_key)"
+            >
+              <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br from-primary/20 to-transparent blur-2xl" />
+              <div class="relative flex items-center gap-3.5">
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-inset ring-primary/15">
+                  <span class="text-lg text-primary" :class="`icon-[${depCarrierIcon(ty.carrier)}]`" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xl font-bold leading-none tabular-nums">
+                    {{ ty.count }}
+                  </p>
+                  <p class="mt-1.5 truncate text-xs text-muted-foreground group-hover:text-primary">
+                    {{ ty.type_name }}
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <!-- 区块内即时搜索（客户端过滤已加载条目）+ 条目列表 -->
+          <div class="mt-4">
+            <div class="relative">
+              <span class="icon-[lucide--search] absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground" />
+              <Input
+                v-model="depSearch"
+                :placeholder="t('knowledge.overview.deps.searchPlaceholder')"
+                class="pl-9"
+              />
+            </div>
+            <ul class="mt-3 divide-y divide-border/60">
+              <li v-for="item in filteredDepItems" :key="item.artifact_id">
+                <button
+                  type="button"
+                  class="group flex w-full items-center gap-3 rounded-lg px-1.5 py-2.5 text-left transition-colors hover:bg-muted/40"
+                  @click="openDepItem(item)"
+                >
+                  <span class="shrink-0 text-muted-foreground" :class="`icon-[${depCarrierIcon(item.carrier)}]`" />
+                  <span class="min-w-0 flex-1 truncate text-sm transition-colors group-hover:text-primary">{{ item.title }}</span>
+                  <span class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{{ item.type_name }}</span>
+                  <span class="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+                    <span class="icon-[lucide--folder] text-[11px]" />
+                    <span class="max-w-[8rem] truncate">{{ item.project_name }}</span>
+                  </span>
+                </button>
+              </li>
+              <li v-if="!filteredDepItems.length" class="py-4 text-center text-xs text-muted-foreground">
+                {{ t('knowledge.overview.deps.noMatch') }}
+              </li>
+            </ul>
+            <p v-if="depTruncated" class="mt-2 text-[11px] text-muted-foreground">
+              {{ t('knowledge.overview.deps.truncated', { n: depItems.length }) }}
+            </p>
+          </div>
+        </template>
       </section>
 
       <!-- 知识结构：业务域排行 + 分面透视 -->

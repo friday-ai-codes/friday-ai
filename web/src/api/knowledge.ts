@@ -69,6 +69,34 @@ export interface KnowledgeSearchResultItem {
   artifact?: KnowledgeSearchArtifactMeta | null
 }
 
+/** 交付文档 / 外部依赖聚合（对齐 96-03 后端契约）。 */
+export interface ArtifactTypeCount {
+  type_key: string
+  type_name: string
+  carrier: string
+  ragable: boolean
+  count: number
+}
+
+export interface ArtifactOverviewItem {
+  artifact_id: string
+  title: string
+  type_key: string
+  type_name: string
+  carrier: string
+  url: string
+  project_id: string
+  project_name: string
+  updated_at: string
+}
+
+export interface ArtifactOverview {
+  total: number
+  types: ArtifactTypeCount[]
+  items: ArtifactOverviewItem[]
+  truncated: boolean
+}
+
 function withAsOf(params: Record<string, string | number | boolean | undefined>, asOf?: string | null) {
   if (asOf)
     params.as_of = asOf
@@ -116,11 +144,18 @@ export async function searchDeliveryKnowledge(params: {
   })
 }
 
+export async function getArtifactOverview(params?: { typeKey?: string }) {
+  return get<ArtifactOverview>('/knowledge/artifacts/overview/', {
+    type_key: params?.typeKey,
+  })
+}
+
 const knowledgeApi = {
   getEntity,
   getTimeline,
   getRelated,
   searchDeliveryKnowledge,
+  getArtifactOverview,
 }
 
 export default knowledgeApi
