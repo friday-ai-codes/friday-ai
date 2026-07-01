@@ -11,6 +11,7 @@ import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
 import BatchIngestPanel from '~/components/knowledge/BatchIngestPanel.vue'
+import DeliveryDocsTree from '~/components/knowledge/DeliveryDocsTree.vue'
 import EntityDetailToolbar from '~/components/knowledge/EntityDetailToolbar.vue'
 import EntityKindBadge from '~/components/knowledge/EntityKindBadge.vue'
 import KnowledgeDashboard from '~/components/knowledge/KnowledgeDashboard.vue'
@@ -56,6 +57,24 @@ watch(() => route.query.tab, (v) => {
 watch(activeTab, (v) => {
   if (route.query.tab !== v)
     router.replace({ query: { ...route.query, tab: v } })
+})
+
+// tree Tab 视图切换（代码能力树 | 交付文档），默认代码能力树；与 ?view= 双向同步支持深链。
+type TreeView = 'capability' | 'docs'
+function normalizeTreeView(value: unknown): TreeView {
+  return value === 'docs' ? 'docs' : 'capability'
+}
+const treeView = ref<TreeView>(normalizeTreeView(route.query.view))
+
+watch(() => route.query.view, (v) => {
+  const next = normalizeTreeView(v)
+  if (next !== treeView.value)
+    treeView.value = next
+})
+
+watch(treeView, (v) => {
+  if (route.query.view !== v)
+    router.replace({ query: { ...route.query, view: v } })
 })
 
 // 类型预筛：总览「交付文档」类型磁贴跳搜索 Tab 时带 ?dep_type=<type_key>，此处消费。
@@ -379,8 +398,31 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
         </div>
       </TabsContent>
 
-      <TabsContent value="tree" class="mt-5">
-        <KnowledgeTreePanel />
+      <TabsContent value="tree" class="mt-5 space-y-4">
+        <!-- 视图切换：代码能力树（PageIndex，默认）｜交付文档（并行树）。样式复用工具栏 segmented control 令牌 -->
+        <div class="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-muted/40 p-1 w-fit">
+          <button
+            type="button"
+            class="rounded-md px-3 py-1 text-xs transition-colors"
+            :class="treeView === 'capability' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'"
+            data-testid="tree-view-capability"
+            @click="treeView = 'capability'"
+          >
+            {{ t('knowledge.tree.viewSwitch.capability') }}
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-3 py-1 text-xs transition-colors"
+            :class="treeView === 'docs' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'"
+            data-testid="tree-view-docs"
+            @click="treeView = 'docs'"
+          >
+            {{ t('knowledge.tree.viewSwitch.docs') }}
+          </button>
+        </div>
+
+        <KnowledgeTreePanel v-if="treeView === 'capability'" />
+        <DeliveryDocsTree v-else />
       </TabsContent>
     </Tabs>
 
