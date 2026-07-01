@@ -24,13 +24,15 @@ const graphFailed = ref(false)
 const selected = ref<ProjectGalaxyNode | null>(null)
 
 // 节点类型语义色（与大盘 design token 语义对齐：项目=primary，feature=teal，
-// 工作项=sky，仓库=violet，MR=emerald）。force-graph 需具体色值。
+// 工作项=sky，仓库=violet，MR=emerald，工件=amber，能力=rose）。force-graph 需具体色值。
 const TYPE_COLOR: Record<ProjectGalaxyNodeType, string> = {
   project: '#2563eb',
   feature: '#14b8a6',
   work_item: '#0ea5e9',
   repository: '#8b5cf6',
   merge_request: '#10b981',
+  artifact: '#f59e0b',
+  capability: '#ec4899',
 }
 const TYPE_LABEL: Record<ProjectGalaxyNodeType, string> = {
   project: 'project',
@@ -38,6 +40,8 @@ const TYPE_LABEL: Record<ProjectGalaxyNodeType, string> = {
   work_item: 'workItem',
   repository: 'repository',
   merge_request: 'mergeRequest',
+  artifact: 'artifact',
+  capability: 'capability',
 }
 
 const isEmpty = computed(() => (data.value?.nodes.length ?? 0) <= 1)

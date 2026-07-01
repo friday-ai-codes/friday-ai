@@ -1344,6 +1344,7 @@
         "artifactsHint": "原型 / Spec / UI 稿 / 评审 / 复盘 等按类型分组；缺陷以工作项呈现",
         "artifactsEmpty": "暂无工件",
         "artifactsLoadError": "加载工件失败",
+        "viewKnowledge": "知识实体",
         "branchesTitle": "关联分支",
         "branchesDeferred": "分支多绑定将在 Phase 85 开放",
         "branchesEmpty": "暂无关联分支，绑定分支名后可配合 skills 按分支反查项目",
@@ -1454,7 +1455,9 @@
           "feature": "feature",
           "workItem": "工作项",
           "repository": "仓库",
-          "mergeRequest": "PR/MR"
+          "mergeRequest": "PR/MR",
+          "artifact": "工件",
+          "capability": "能力"
         }
       },
       "assistant": {

@@ -7,7 +7,7 @@
 import { get } from './client'
 
 export type ProjectGalaxyNodeType
-  = 'project' | 'feature' | 'work_item' | 'repository' | 'merge_request'
+  = 'project' | 'feature' | 'work_item' | 'repository' | 'merge_request' | 'artifact' | 'capability'
 
 export interface ProjectGalaxyNode {
   id: string

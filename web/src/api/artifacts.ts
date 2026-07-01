@@ -8,12 +8,12 @@
 import { del, get, patch, post } from './client'
 
 /** 工件载体（对齐后端 ArtifactCarrier）。 */
-export type ArtifactCarrier =
-  | 'feishu_doc'
-  | 'feishu_bitable'
-  | 'external_link'
-  | 'markdown'
-  | 'repo_file'
+export type ArtifactCarrier
+  = | 'feishu_doc'
+    | 'feishu_bitable'
+    | 'external_link'
+    | 'markdown'
+    | 'repo_file'
 
 /** 工件实例（响应）。 */
 export interface Artifact {
@@ -29,6 +29,8 @@ export interface Artifact {
   content_ref: string
   version: number
   contributor_id: string | null
+  /** 确定性知识实体 id（= document 实体 id，供跳知识实体详情，KDEP-12）。 */
+  entity_id: string
   created_at: string
   updated_at: string
 }

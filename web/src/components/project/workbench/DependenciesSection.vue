@@ -243,6 +243,15 @@ async function openView(artifact: Artifact) {
                     <span class="icon-[lucide--maximize-2] text-[11px]" />
                     {{ t('projects.artifacts.view') }}
                   </button>
+                  <RouterLink
+                    v-if="a.entity_id"
+                    :to="`/knowledge/entities/${a.entity_id}`"
+                    class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 h-7 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
+                    data-testid="deps-view-knowledge-btn"
+                    :title="t('projects.workbench.deps.viewKnowledge')"
+                  >
+                    <span class="icon-[lucide--brain] text-[11px]" />
+                  </RouterLink>
                   <a
                     v-if="a.url"
                     :href="a.url"
