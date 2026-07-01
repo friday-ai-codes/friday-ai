@@ -351,7 +351,11 @@ async def _fetch_body(artifact, space, *, request: IngestionRequest) -> str:
 
 
 async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
-    """工件 UUID → 单 document 事件（携 REFERENCES→项目节点 出边）；非 ragable 返回空。"""
+    """工件 UUID → 单 document 事件（携 REFERENCES→项目节点 出边）。
+
+    ragable 文字载体走全文向量化；非 ragable（如 UI 稿 external_link）走元数据-only
+    分支：仍登记 document 实体 + 边（可被图谱/关联查询命中），但不进 Qdrant 向量（KDEP-01）。
+    """
     from initiatives.models import TEXT_CARRIERS, Artifact
     from initiatives.services.knowledge_graph import ProjectKnowledgeGraphService
 
