@@ -37,7 +37,7 @@ function carrierIcon(carrier: string): string {
   return CARRIER_ICON[carrier] ?? 'icon-[lucide--file]'
 }
 
-const { data, isLoading, isError, error } = useQuery({
+const { data, isLoading, isError, isFetching, error, refetch } = useQuery({
   queryKey: ['knowledge', 'artifact-tree'],
   queryFn: () => knowledgeApi.fetchArtifactTree(),
   staleTime: 60_000,
@@ -183,6 +183,29 @@ async function openLeafView(projectId: string, leaf: ArtifactTreeLeaf): Promise<
     <div v-if="isLoading" class="flex items-center justify-center py-20 text-muted-foreground">
       <span class="icon-[lucide--loader-2] mr-2 h-5 w-5 animate-spin" />
       {{ t('knowledge.tree.docs.loading') }}
+    </div>
+
+    <!-- 错误态：后端 5xx / 网络异常时区别于空态，提供重试（避免误导「暂无文档」）。stale 缓存命中则继续渲染树。 -->
+    <div v-else-if="isError && !data" class="flex min-h-[380px] items-center justify-center">
+      <CompactEmptyState
+        icon="lucide--triangle-alert"
+        :title="t('knowledge.tree.docs.error.title')"
+        :description="t('knowledge.tree.docs.error.body')"
+      >
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="isFetching"
+          data-testid="artifact-tree-retry"
+          @click="refetch()"
+        >
+          <span
+            class="h-3.5 w-3.5 shrink-0"
+            :class="isFetching ? 'icon-[lucide--loader-2] animate-spin' : 'icon-[lucide--refresh-cw]'"
+          />
+          {{ t('knowledge.tree.docs.error.retry') }}
+        </button>
+      </CompactEmptyState>
     </div>
 
     <!-- 整树空态：指向作战室「外部依赖」维护入口 -->
