@@ -373,7 +373,17 @@
       "sections": {
         "metadata": "基本信息",
         "timeline": "版本历史",
-        "related": "关联实体"
+        "related": "关联实体",
+        "associations": "关联"
+      },
+      "associations": {
+        "title": "关联",
+        "repositories": "关联仓库",
+        "capabilities": "关联能力",
+        "keywords": "关联关键词",
+        "relatedDocs": "相关交付文档",
+        "empty": "暂无关联",
+        "loadFailed": "加载关联失败，请稍后重试"
       },
       "kind": {
         "workItem": "需求/缺陷",
