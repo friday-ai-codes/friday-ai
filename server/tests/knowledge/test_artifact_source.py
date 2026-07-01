@@ -115,17 +115,53 @@ async def test_markdown_artifact_ingested_with_redaction_and_edge(
     ).aexists()
 
 
-async def test_graphic_artifact_metadata_only_no_ingestion() -> None:
+async def test_graphic_artifact_metadata_only_registered(
+    mock_ensure, mock_embedding, mock_upsert
+) -> None:
+    """非 ragable（external_link）工件 → 元数据-only 登记：实体 + 边存在，零向量。"""
     _space, project, t = await _setup("external_link", False, key="ui")
     artifact = await _create_artifact(
         project, t, title="UI 稿", url="https://figma.com/file/x"
     )
+
+    # produce 1 event（不再返回空）
     normalize = get_normalizer("artifact")
     events = await normalize(IngestionRequest("artifact", str(artifact.id), "test"))
-    assert events == []
-    # 无文档实体产出
+    assert len(events) == 1
+    assert events[0].vectorize is False
+
+    # 经完整摄取后落库
+    n = await ingest(IngestionRequest("artifact", str(artifact.id), "test"))
+    assert n == 1
+
     entity_id = generate_entity_id(EntityKind.DOCUMENT, "artifact", str(artifact.id))
-    assert not await KnowledgeEntity.objects.filter(id=entity_id).aexists()
+    entity = await KnowledgeEntity.objects.filter(id=entity_id).afirst()
+    assert entity is not None
+    assert entity.kind == EntityKind.DOCUMENT
+    assert entity.title == "UI 稿"
+
+    version = await KnowledgeEntityVersion.objects.filter(
+        entity_id=entity_id, is_latest=True
+    ).afirst()
+    assert version is not None
+    # 元数据-only：无向量点、vector_synced=True、payload 承载工件元数据
+    assert version.qdrant_point_ids == []
+    assert version.vector_synced is True
+    assert version.payload["type"] == "ui"
+    assert version.payload["carrier"] == "external_link"
+    assert version.payload["url"] == "https://figma.com/file/x"
+
+    # 工件→REFERENCES→项目图谱节点边存在
+    pnode = project_node_id(project.id)
+    assert await KnowledgeEdge.objects.filter(
+        source_entity_id=entity_id,
+        target_entity_id=pnode,
+        relation=EdgeRelation.REFERENCES,
+        invalid_at__isnull=True,
+    ).aexists()
+
+    # 无向量写入
+    assert mock_upsert == []
 
 
 async def test_feishu_doc_fetch_failure_fail_soft(

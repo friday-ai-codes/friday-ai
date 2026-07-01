@@ -8,9 +8,10 @@
   ``type.enabled``，否则 ``ArtifactDisabledError``）。
 - **类型删除双重保护**：``Artifact.type`` FK ``on_delete=PROTECT``（DB 兜底）+ 本 service 预检
   （有实例则拒删 / builtin 禁删只可禁用，``ArtifactTypeError``）。
-- **RAG 摄取**：``ragable=True`` 且文字载体（飞书 doc/表格/md/repo_file）→ 调
-  ``aschedule_ingestion``（source_kind=``"artifact"``）异步全文进 ``delivery_knowledge``；
-  UI 稿图形外链（``ragable=False`` / ``external_link``）仅元数据不强行 RAG（ARTIFACT-04）。
+- **知识摄取**：全类型工件 create/update 均经 ``_maybe_schedule_ingestion`` 调
+  ``aschedule_ingestion``（source_kind=``"artifact"``）；normalizer 内按 ragable + 载体决定
+  ragable 文字载体全文进 ``delivery_knowledge``、非 ragable（UI 稿 external_link）元数据-only 登记
+  （KDEP-01：覆盖全部类型零遗漏，ARTIFACT-04）。
 - 写入经 ``AuditService.aemit``（component=initiatives, category=caller, initiated_by_user_id）。
   async ORM 经 ``sync_to_async``。
 """
@@ -26,7 +27,7 @@ from django.db.models import ProtectedError
 
 from audit.services import taxonomy
 from audit.services.audit_service import AuditService
-from initiatives.models import Artifact, ArtifactType, TEXT_CARRIERS
+from initiatives.models import Artifact, ArtifactType
 
 logger = structlog.get_logger(__name__)
 
@@ -53,14 +54,6 @@ class ArtifactDisabledError(ArtifactError):
 
 class ArtifactTypeError(ArtifactError):
     """工件类型操作非法（builtin 禁删 / 有实例拒删，API 层转 400/409）。"""
-
-
-def _should_ingest(artifact: Artifact, artifact_type: ArtifactType) -> bool:
-    """是否应把工件正文摄取进 RAG：类型 ragable 且载体为文字载体。
-
-    UI 稿图形外链（external_link / ragable=False）→ False（仅元数据，不强行 RAG 正文）。
-    """
-    return bool(artifact_type.ragable) and artifact.carrier in TEXT_CARRIERS
 
 
 class ArtifactService:
@@ -375,9 +368,12 @@ class ArtifactService:
     async def _maybe_schedule_ingestion(
         self, artifact: Artifact, artifact_type: ArtifactType, *, trigger: str
     ) -> None:
-        """ragable 文字载体 → 调度异步 RAG 摄取（best-effort，绝不阻断主写入）。"""
-        if not _should_ingest(artifact, artifact_type):
-            return
+        """全类型工件 → 调度异步摄取（best-effort，绝不阻断主写入）。
+
+        KDEP-01：覆盖全部 ``ArtifactType`` 不遗漏——ragable 文字载体进向量摄取、
+        非 ragable（UI 稿 external_link 等）走元数据-only 登记，由 normalizer 内部按
+        ``ragable`` + 载体决定 ``vectorize``，service 侧不再预筛。
+        """
         try:
             from knowledge.ingestion import IngestionRequest, aschedule_ingestion
 
@@ -385,6 +381,7 @@ class ArtifactService:
                 "artifact_rag_scheduled",
                 artifact_id=str(artifact.id),
                 carrier=artifact.carrier,
+                ragable=artifact_type.ragable,
                 trigger=trigger,
                 component=_COMPONENT,
                 category="caller",
