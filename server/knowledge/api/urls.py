@@ -1,5 +1,6 @@
 from django.urls import path
 
+from knowledge.api.artifact_associations import ArtifactAssociationsView
 from knowledge.api.artifact_overview import ArtifactOverviewView
 from knowledge.api.artifact_tree import ArtifactTreeView
 from knowledge.api.views import (
@@ -16,4 +17,9 @@ urlpatterns = [
     path("related/<uuid:entity_id>/", KnowledgeRelatedView.as_view(), name="knowledge-related"),
     path("artifacts/overview/", ArtifactOverviewView.as_view(), name="knowledge-artifact-overview"),
     path("artifacts/tree/", ArtifactTreeView.as_view(), name="knowledge-artifact-tree"),
+    path(
+        "artifacts/<uuid:artifact_id>/associations/",
+        ArtifactAssociationsView.as_view(),
+        name="knowledge-artifact-associations",
+    ),
 ]
