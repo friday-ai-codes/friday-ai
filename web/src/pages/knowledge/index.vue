@@ -58,6 +58,37 @@ watch(activeTab, (v) => {
     router.replace({ query: { ...route.query, tab: v } })
 })
 
+// 类型预筛：总览「交付文档」类型磁贴跳搜索 Tab 时带 ?dep_type=<type_key>，此处消费。
+// 客户端按结果中的 artifact.type_key 过滤，并以可清除的筛选 chip 反映当前约束。
+function readDepType(v: unknown): string {
+  return typeof v === 'string' && v.length > 0 ? v : ''
+}
+const depTypeFilter = ref(readDepType(route.query.dep_type))
+watch(() => route.query.dep_type, (v) => {
+  depTypeFilter.value = readDepType(v)
+})
+
+// 类型名解析：复用总览聚合缓存（同 queryKey 去重），仅在存在类型预筛时启用。
+const overviewQuery = useQuery({
+  queryKey: ['knowledge', 'artifact-overview'],
+  queryFn: () => knowledgeApi.getArtifactOverview(),
+  enabled: computed(() => depTypeFilter.value.length > 0),
+  staleTime: 60_000,
+})
+const depTypeName = computed(() => {
+  const key = depTypeFilter.value
+  if (!key)
+    return ''
+  const match = overviewQuery.data.value?.types.find(ty => ty.type_key === key)
+  return match?.type_name ?? key
+})
+
+function clearDepType() {
+  depTypeFilter.value = ''
+  const { dep_type: _omit, ...rest } = route.query
+  router.replace({ query: rest })
+}
+
 // 输入框当前值与「已提交」查询词分离：仅点击搜索 / 回车时提交，避免输入即触发请求。
 const queryInput = ref('')
 const submittedQuery = ref('')
@@ -101,6 +132,12 @@ const searchQuery = useQuery({
 })
 
 const results = computed(() => searchQuery.data.value ?? [])
+// 类型预筛（?dep_type=）客户端过滤：仅保留命中该类型工件的结果。
+const displayResults = computed(() => {
+  if (!depTypeFilter.value)
+    return results.value
+  return results.value.filter(item => item.artifact?.type_key === depTypeFilter.value)
+})
 const hasSearched = computed(() => submittedQuery.value.length > 0)
 
 // ── 工件命中：类型徽标 + 项目名 + 一键查看（复用 DependenciesSection 弹窗范式）──
@@ -193,6 +230,26 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
             </Button>
           </div>
 
+          <!-- 类型预筛 chip（来自总览「交付文档」类型磁贴的 ?dep_type=，可一键清除） -->
+          <div v-if="depTypeFilter" class="max-w-3xl">
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 py-1 pl-3 pr-1.5 text-xs font-medium text-primary"
+              data-testid="knowledge-dep-type-chip"
+            >
+              <span class="icon-[lucide--filter] text-[13px]" />
+              {{ t('knowledge.search.typeFilterLabel', { name: depTypeName }) }}
+              <button
+                type="button"
+                class="inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors hover:bg-primary/20"
+                :aria-label="t('knowledge.search.clearTypeFilter')"
+                data-testid="knowledge-dep-type-clear"
+                @click="clearDepType"
+              >
+                <span class="icon-[lucide--x] text-[12px]" />
+              </button>
+            </span>
+          </div>
+
           <!-- 历史视点折叠（默认收起，避免次要筛选喧宾夺主） -->
           <div class="max-w-3xl">
             <button
@@ -228,7 +285,7 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
           />
         </div>
 
-        <div v-else-if="!results.length" class="flex min-h-[380px] items-center justify-center">
+        <div v-else-if="!displayResults.length" class="flex min-h-[380px] items-center justify-center">
           <CompactEmptyState
             icon="icon-[lucide--file-x]"
             :title="t('knowledge.search.emptyTitle')"
@@ -239,11 +296,11 @@ async function openArtifactView(item: KnowledgeSearchResultItem) {
         <!-- 结果（双列网格，充分利用横向空间） -->
         <div v-else class="space-y-3" data-testid="knowledge-search-results">
           <p class="text-xs text-muted-foreground">
-            {{ t('knowledge.search.resultCount', { count: results.length }) }}
+            {{ t('knowledge.search.resultCount', { count: displayResults.length }) }}
           </p>
           <div class="grid gap-3 sm:grid-cols-2">
             <div
-              v-for="item in results"
+              v-for="item in displayResults"
               :key="`${item.entity_id}-${item.version}`"
               class="group card p-4 space-y-2.5 transition-all duration-200 hover:border-primary/30 hover:shadow-md"
               data-testid="knowledge-search-result"
