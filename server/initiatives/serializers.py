@@ -397,6 +397,13 @@ class ArtifactSerializer(serializers.ModelSerializer):
     type_key = serializers.CharField(source="type.key", read_only=True)
     type_name = serializers.CharField(source="type.name", read_only=True)
     ragable = serializers.BooleanField(source="type.ragable", read_only=True)
+    entity_id = serializers.SerializerMethodField()
+
+    def get_entity_id(self, obj) -> str:
+        # 函数内 import 避免 initiatives→knowledge 顶层耦合；确定性 uuid5 派生 document 实体 id。
+        from knowledge.models import EntityKind, generate_entity_id
+
+        return str(generate_entity_id(EntityKind.DOCUMENT, "artifact", str(obj.id)))
 
     class Meta:
         model = Artifact
@@ -413,6 +420,7 @@ class ArtifactSerializer(serializers.ModelSerializer):
             "content_ref",
             "version",
             "contributor_id",
+            "entity_id",
             "created_at",
             "updated_at",
         ]
