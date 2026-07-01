@@ -49,6 +49,10 @@ class EntityMetadata:
     repository_id: str | None
     provenance: ProvenanceLinks = field(default_factory=ProvenanceLinks)
     superseded_hint: str | None = None
+    # 仅当 origin == "artifact" 时填充：承载工件专有元数据
+    # （type_key/type_name/carrier/url/artifact_id/project_id/project_name），
+    # 供 KDEP-02 前端标类型徽标 + 一键查看跳转；非工件命中恒为 None。
+    artifact: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
