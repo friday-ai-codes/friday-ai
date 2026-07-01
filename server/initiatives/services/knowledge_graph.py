@@ -325,7 +325,7 @@ class ProjectKnowledgeGraphService:
 
         - ``Project.space`` FK → 项目↔空间边；
         - ``ProjectRelation``（related_projects）→ 项目↔项目边；
-        - ``RepoAssociation(status=verified)`` → 项目↔仓库边（KDEP-08，单向派生，
+        - status == verified 的 ``RepoAssociation`` 行 → 项目↔仓库边（KDEP-08，单向派生，
           metadata 携 source=repo_association 等；RepoAssociation 只读、不双写真相源）。
 
         Returns:
