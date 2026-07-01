@@ -434,7 +434,9 @@
       "loading": "正在搜索…",
       "owningProject": "所属项目",
       "view": "查看",
-      "openExternal": "打开外链"
+      "openExternal": "打开外链",
+      "typeFilterLabel": "仅看类型：{name}",
+      "clearTypeFilter": "清除类型筛选"
     },
     "relation": {
       "HAS_PLAN": "技术方案",
