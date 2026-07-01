@@ -137,6 +137,7 @@ class ArtifactOverviewView(APIView):
                 "artifact_overview_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
                 component=_COMPONENT,
                 category="caller",
             )
