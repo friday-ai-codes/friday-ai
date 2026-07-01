@@ -21,6 +21,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 
+from common.logging import redact_secrets_in_text
 from knowledge.access_scope import resolve_allowed_project_ids, resolve_allowed_repository_ids
 from knowledge.graph_store import graph_store
 from knowledge.models import EdgeRelation, EntityKind, KnowledgeEntity, generate_entity_id
@@ -133,8 +134,9 @@ class ArtifactAssociationService:
                 "artifact_associations_query_failed",
                 direction="forward",
                 artifact_id=str(artifact_id),
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 error_type=type(exc).__name__,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
                 component=_COMPONENT,
                 category="caller",
             )
@@ -218,8 +220,9 @@ class ArtifactAssociationService:
                 "artifact_associations_query_failed",
                 direction="reverse_repository",
                 repository_id=str(repository_id),
-                error=str(exc),
+                error=redact_secrets_in_text(str(exc)),
                 error_type=type(exc).__name__,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
                 component=_COMPONENT,
                 category="caller",
             )
