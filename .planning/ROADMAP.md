@@ -48,7 +48,12 @@
   3. `KnowledgeDashboard` 增加「交付文档/外部依赖」区块：按类型计数 + 入口 + 即时搜索，风格与现有仓库/域指标一致。
 
 **UI hint**: yes（知识总览区块 + 搜索结果项，`/gsd-ui-phase` 可介入）
-**Plans**: TBD（discuss/plan-phase 生成）
+**Plans**: 5 plans（3 waves）
+- [ ] 96-01-PLAN.md — KDEP-01 全类型工件登记（非 ragable 元数据-only 实体+边，摄取管线 vectorize 开关）[wave 1]
+- [ ] 96-02-PLAN.md — KDEP-02 后端：搜索纳入 document 召回 + 结果补工件元数据（类型/载体/url/项目名）[wave 1]
+- [ ] 96-03-PLAN.md — KDEP-03 后端：交付文档聚合接口（access_scope 过滤 + 类型分组计数 + 截断列表）[wave 1]
+- [ ] 96-04-PLAN.md — KDEP-02 前端：搜索结果工件类型徽标 + 项目名 + 一键查看（弹窗/新标签）[wave 2]
+- [ ] 96-05-PLAN.md — KDEP-03 前端：KnowledgeDashboard「交付文档/外部依赖」区块（计数+入口+即时搜索+空态）[wave 3]
 
 ### Phase 97: 交付文档知识树视图
 
