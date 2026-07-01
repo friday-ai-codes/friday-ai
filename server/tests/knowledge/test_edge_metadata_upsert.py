@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -57,8 +58,16 @@ async def test_update_edge_metadata_invalidated_edge_is_noop(entity_factory, edg
 
     def _setup():
         a, b = entity_factory(), entity_factory()
+        # invalid_at 必须严格晚于 valid_at（kedge_valid_range: invalid_at > valid_at）；
+        # 两次 timezone.now() 可能落在同一微秒 tick 导致 invalid_at == valid_at 违约（时序 flaky），
+        # 故显式让失效时间落在成立之后，保证约束确定性满足。
+        valid = timezone.now()
         edge = edge_factory(
-            a, b, valid_at=timezone.now(), invalid_at=timezone.now(), metadata={"v": "old"}
+            a,
+            b,
+            valid_at=valid,
+            invalid_at=valid + timedelta(seconds=1),
+            metadata={"v": "old"},
         )
         return edge
 
