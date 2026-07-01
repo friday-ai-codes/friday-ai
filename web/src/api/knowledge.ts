@@ -1,3 +1,4 @@
+import type { ArtifactCarrier } from '~/api/artifacts'
 import { get } from './client'
 
 export interface ProvenanceLinks {
@@ -97,6 +98,40 @@ export interface ArtifactOverview {
   truncated: boolean
 }
 
+/** 交付文档知识树叶子（对齐 97-01 后端契约）。 */
+export interface ArtifactTreeLeaf {
+  artifact_id: string
+  title: string
+  carrier: ArtifactCarrier
+  url: string
+  updated_at: string | null
+}
+
+/** 交付文档知识树类型分组（对齐 97-01 后端契约）。 */
+export interface ArtifactTreeTypeGroup {
+  type_key: string
+  type_name: string
+  carrier: string
+  ragable: boolean
+  count: number
+  artifacts: ArtifactTreeLeaf[]
+}
+
+/** 交付文档知识树项目节点（对齐 97-01 后端契约）。 */
+export interface ArtifactTreeProject {
+  project_id: string
+  project_name: string
+  count: number
+  types: ArtifactTreeTypeGroup[]
+}
+
+/** 交付文档知识树（项目→类型→工件，对齐 97-01 后端契约，前端零拼装）。 */
+export interface ArtifactTree {
+  total: number
+  projects: ArtifactTreeProject[]
+  truncated: boolean
+}
+
 function withAsOf(params: Record<string, string | number | boolean | undefined>, asOf?: string | null) {
   if (asOf)
     params.as_of = asOf
@@ -150,12 +185,18 @@ export async function getArtifactOverview(params?: { typeKey?: string }) {
   })
 }
 
+/** 一次加载整棵可见交付文档树（供前端客户端搜索/展开/查看，零拼装）。 */
+export async function fetchArtifactTree(): Promise<ArtifactTree> {
+  return get<ArtifactTree>('/knowledge/artifacts/tree/')
+}
+
 const knowledgeApi = {
   getEntity,
   getTimeline,
   getRelated,
   searchDeliveryKnowledge,
   getArtifactOverview,
+  fetchArtifactTree,
 }
 
 export default knowledgeApi
