@@ -8,6 +8,7 @@ import { knowledgeApi } from '~/api'
 import { artifactsApi } from '~/api/artifacts'
 import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import MarkdownRenderer from '~/components/execution/MarkdownRenderer.vue'
+import { ARTIFACT_BADGE_CLASS, carrierIcon } from '~/components/knowledge/artifactDisplay'
 import {
   Dialog,
   DialogDescription,
@@ -21,21 +22,6 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 
 const { t } = useI18n()
 const { handleError } = useErrorHandler()
-
-// 工件类型徽标配色令牌（与 index.vue Phase 96 令牌一致，视觉统一）。
-const ARTIFACT_BADGE_CLASS = 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400'
-
-// 载体图标映射：字面量完整 class 字符串，确保 Tailwind 源扫描命中、无需改 safelist。
-const CARRIER_ICON: Record<string, string> = {
-  feishu_doc: 'icon-[lucide--file-text]',
-  feishu_bitable: 'icon-[lucide--table]',
-  markdown: 'icon-[lucide--file-text]',
-  repo_file: 'icon-[lucide--file-code]',
-  external_link: 'icon-[lucide--external-link]',
-}
-function carrierIcon(carrier: string): string {
-  return CARRIER_ICON[carrier] ?? 'icon-[lucide--file]'
-}
 
 const { data, isLoading, isError, isFetching, error, refetch } = useQuery({
   queryKey: ['knowledge', 'artifact-tree'],
