@@ -87,7 +87,7 @@ export interface ArtifactOverviewItem {
   url: string
   project_id: string
   project_name: string
-  updated_at: string
+  updated_at: string | null
 }
 
 export interface ArtifactOverview {
