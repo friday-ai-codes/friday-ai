@@ -309,6 +309,7 @@ class ArtifactAssociationService:
                 "artifact_id": str(a.id),
                 "title": a.title,
                 "type_key": a.type.key,
+                "carrier": a.carrier,
                 "project_id": str(a.project_id),
                 "project_name": a.project.name,
             }

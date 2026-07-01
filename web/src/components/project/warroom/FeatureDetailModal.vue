@@ -96,7 +96,7 @@ const STATE_LABEL: Record<string, string> = {
 
     <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
       <div v-if="loading" class="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-        <span class="icon-[lucide--loader-2] animate-spin" /> AI 正在结构化解析该功能点…
+        <span class="icon-[lucide--loader-2] animate-spin" /> 正在解析…
       </div>
 
       <!-- 结构化 sections -->

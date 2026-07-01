@@ -20,13 +20,13 @@ describe('dashboardKpiCards', () => {
     })
   })
 
-  it('should show today delta when > 0 and fallback text when 0', () => {
+  it('should show today delta only when > 0 (hidden when 0)', () => {
     const wrapper = mount(DashboardKpiCards, {
       props: { stats, loading: false },
       global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
-    expect(wrapper.text()).toContain('今日 +2')
-    expect(wrapper.text()).toContain('今日暂无新增')
+    expect(wrapper.text()).toContain('今日新增 2')
+    expect(wrapper.text()).not.toContain('今日暂无新增')
   })
 
   it('should show skeleton when loading', () => {

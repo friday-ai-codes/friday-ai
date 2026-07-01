@@ -84,16 +84,16 @@ function handleQuickPrompt(prompt: string) {
       </h1>
       <p class="welcome-item mt-2 text-sm text-muted-foreground">
         <template v-if="isProjectScope">
-          围绕本项目的交付上下文，随时为你解答；可以直接提问，或让我帮你拆解需求、生成技术方案
+          围绕这个项目提问，也可以让我拆解需求、生成技术方案
         </template>
         <template v-else-if="hasSpace">
-          基于「{{ currentSpaceName }}」空间的代码知识，随时为你解答
+          可以问「{{ currentSpaceName }}」空间里的代码
         </template>
         <template v-else-if="noSpacesExist">
-          还没有创建任何空间，可以先创建空间获得代码知识问答，也可以直接开始对话
+          还没有空间，创建后可以问代码，也可以直接开始对话
         </template>
         <template v-else>
-          选择一个空间获得代码知识问答，或直接开始通用对话
+          选个空间可以问代码，或直接开始对话
         </template>
       </p>
 

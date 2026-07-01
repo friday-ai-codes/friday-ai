@@ -155,6 +155,7 @@ export interface RepositoryArtifact {
   artifact_id: string
   title: string
   type_key: string
+  carrier: ArtifactCarrier
   project_id: string
   project_name: string
   node_paths: string[]

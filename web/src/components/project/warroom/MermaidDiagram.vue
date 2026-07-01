@@ -74,7 +74,7 @@ const zoomOpen = ref(false)
       class="p-3 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words"
     >{{ props.code }}</pre>
     <p v-if="error" class="px-3 pb-2 text-[11px] text-muted-foreground/70">
-      （流程图源码暂无法渲染，已展示原文）
+      无法渲染流程图，已展示源码
     </p>
 
     <VueFinalModal
