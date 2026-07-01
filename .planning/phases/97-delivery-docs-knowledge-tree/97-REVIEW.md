@@ -64,7 +64,13 @@ Remaining findings are minor robustness / UX-consistency notes; none block ship.
 
 ## Warnings
 
-### MED-01: Backend error is rendered as the "empty" CTA state, not an error state
+### MED-01: Backend error is rendered as the "empty" CTA state, not an error state — ✅ RESOLVED
+
+**Resolution:** Added a dedicated error branch `v-else-if="isError && !data"` before the empty
+branch in `DeliveryDocsTree.vue`, rendering a `triangle-alert` `CompactEmptyState` with an error
+message and a retry button that calls `refetch()` (disabled while `isFetching`, spinner feedback).
+Stale-cache success still renders the tree (`!data` guard). Added zh-CN keys
+`knowledge.tree.docs.error.{title,body,retry}`.
 
 **File:** `web/src/components/knowledge/DeliveryDocsTree.vue:189` (and error branch `:46-49`)
 **Issue:** On query failure `data` is `undefined`, so the guard
@@ -88,7 +94,10 @@ because it separates loading/empty explicitly.
 
 ## Info
 
-### LOW-01: `truncated` false-positive at the exact global cap boundary
+### LOW-01: `truncated` false-positive at the exact global cap boundary — ✅ RESOLVED
+
+**Resolution:** Now fetches `[:_GLOBAL_FETCH_CAP + 1]` as a sentinel; `truncated = len(rows) > _GLOBAL_FETCH_CAP`
+then trims `rows = rows[:_GLOBAL_FETCH_CAP]`. Exactly-at-cap no longer false-flags.
 
 **File:** `server/knowledge/api/artifact_tree.py:61`
 **Issue:** `truncated = len(rows) >= _GLOBAL_FETCH_CAP`. When there are *exactly* 5000
@@ -99,7 +108,12 @@ artifacts, the slice `[:_GLOBAL_FETCH_CAP]` returned all of them yet `truncated`
 then `truncated = len(rows) > _GLOBAL_FETCH_CAP` and trim `rows = rows[:_GLOBAL_FETCH_CAP]`.
 Low priority.
 
-### LOW-02: `total` excludes projects dropped by the `_MAX_PROJECTS` clamp
+### LOW-02: `total` excludes projects dropped by the `_MAX_PROJECTS` clamp — ✅ RESOLVED
+
+**Resolution:** `total` is now `len(rows)` (true visible artifact count within the global cap),
+computed before the clamp loop rather than summed only over surviving projects. `total` and
+`truncated` are now self-consistent even when the `_MAX_PROJECTS`/type/leaf clamps trim the tail;
+docstring updated to state this contract.
 
 **File:** `server/knowledge/api/artifact_tree.py:106-123`
 **Issue:** `total` is summed only over projects that survive the `_MAX_PROJECTS`
