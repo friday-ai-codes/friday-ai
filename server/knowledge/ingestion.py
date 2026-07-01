@@ -110,6 +110,9 @@ class IngestionEvent:
     repository_id: str | None
     event_time: datetime  # aware（naive 进 GraphStore / 模型层会被拒）
     edges: tuple[EdgeSpec, ...] = ()
+    # vectorize=False 表示元数据-only 登记（无正文可 embed，如 UI 稿 external_link）：
+    # 只落 PG 实体/版本/边，不产生任何 Qdrant 向量点（KDEP-01）。默认 True 保既有 normalizer 零回归。
+    vectorize: bool = True
 
 
 async def aschedule_ingestion(
@@ -208,8 +211,10 @@ async def ingest_events(events: list[IngestionEvent], *, trigger: str = "") -> N
     # ---- 阶段 A：每 event 预检 / 向量化 / 单事务持久化 ----
     for event in events:
         require_aware(event.event_time, "event_time")
-        # 步 0：collection 自检（mismatch raise → 整次摄取响亮 abort）
-        await ensure_delivery_knowledge_collection()
+        # 步 0：collection 自检（mismatch raise → 整次摄取响亮 abort）。
+        # 元数据-only 登记（vectorize=False）不依赖 Qdrant 可用性，保持 fail-soft 独立，跳过自检。
+        if event.vectorize:
+            await ensure_delivery_knowledge_collection()
 
         content_hash = hashlib.sha256(event.content.encode("utf-8")).hexdigest()
         entity_id = generate_entity_id(event.kind, event.source_kind, event.source_id)
@@ -243,17 +248,28 @@ async def ingest_events(events: list[IngestionEvent], *, trigger: str = "") -> N
             )
             continue
 
-        # 步 1：确定性切块 + dense/sparse 向量化（任一 None → 整体 abort，零写入）
-        chunks = chunk_knowledge_text(event.title, event.content)
-        texts = [c.text for c in chunks]
-        dense = await EmbeddingService.generate_embeddings_batch(texts)
-        failed = [i for i, vec in enumerate(dense) if vec is None]
-        if failed:
-            raise KnowledgeError(
-                "embedding 批量结果含 None，整体 abort（禁止写入残缺向量）",
-                details={"entity_id": str(entity_id), "failed_chunk_indexes": failed},
+        # 步 1：确定性切块 + dense/sparse 向量化（任一 None → 整体 abort，零写入）。
+        # 元数据-only 登记跳过 chunk/embed（无正文可 embed），令 chunks/dense/sparse 皆空。
+        if event.vectorize:
+            chunks = chunk_knowledge_text(event.title, event.content)
+            texts = [c.text for c in chunks]
+            dense = await EmbeddingService.generate_embeddings_batch(texts)
+            failed = [i for i, vec in enumerate(dense) if vec is None]
+            if failed:
+                raise KnowledgeError(
+                    "embedding 批量结果含 None，整体 abort（禁止写入残缺向量）",
+                    details={"entity_id": str(entity_id), "failed_chunk_indexes": failed},
+                )
+            sparse = await sync_to_async(SparseEncoderService.encode_batch)(texts)
+        else:
+            chunks, dense, sparse = [], [], []
+            logger.info(
+                "knowledge_ingest_metadata_only",
+                entity_id=str(entity_id),
+                trigger=trigger,
+                component="knowledge",
+                category="sampling",
             )
-        sparse = await sync_to_async(SparseEncoderService.encode_batch)(texts)
 
         # 步 2：单事务持久化（权威三态判定在 select_for_update 锁内）
         result = await sync_to_async(_persist_sync)(event, chunks)
@@ -264,7 +280,7 @@ async def ingest_events(events: list[IngestionEvent], *, trigger: str = "") -> N
                 trigger=trigger,
                 stage="locked",
             )
-        staged.append((event, result, (chunks, dense, sparse)))
+        staged.append((event, result, (chunks, dense, sparse) if event.vectorize else None))
 
     # ---- 阶段 B：全部实体/版本持久化后统一处理边（含短路事件，幂等自愈）----
     for event, result, _vectors in staged:
@@ -273,6 +289,23 @@ async def ingest_events(events: list[IngestionEvent], *, trigger: str = "") -> N
     # ---- 阶段 C：向量序（步 3 → 步 4 → 步 5）----
     for event, result, vectors in staged:
         if result.skipped:
+            continue
+        if not event.vectorize:
+            # 元数据-only 登记：无新向量可 upsert（持久化阶段已置 vector_synced=True）；
+            # best-effort 清理 ragable→非 ragable 翻转时残留的旧向量点（失败仅 error 不上抛，
+            # 语义与既有 tombstone 一致）。
+            if result.old_point_ids:
+                try:
+                    await tombstone_points(result.old_point_ids)
+                except Exception as exc:
+                    logger.error(
+                        "knowledge_ingest_tombstone_failed",
+                        entity_id=str(result.entity.id),
+                        point_count=len(result.old_point_ids),
+                        error=str(exc),
+                        error_type=type(exc).__name__,
+                    )
+                await delete_points(result.old_point_ids)
             continue
         if result.needs_revector:
             # hash 相同但向量缺失（上次 crash 于向量步骤）：只补写向量，
@@ -526,11 +559,19 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
                 latest.save(update_fields=["is_latest", "invalid_at"])
 
             new_version_id = uuid.uuid4()
-            point_ids = derive_point_ids(new_version_id, len(chunks))
-            # PageIndex 章节树：确定性纯函数，与 chunks 同源生成（标题层级优先）
-            toc_tree = build_toc_tree(
-                event.title, event.content, [c.text for c in chunks]
-            )
+            if event.vectorize:
+                point_ids = derive_point_ids(new_version_id, len(chunks))
+                # PageIndex 章节树：确定性纯函数，与 chunks 同源生成（标题层级优先）
+                toc_tree = build_toc_tree(
+                    event.title, event.content, [c.text for c in chunks]
+                )
+                vector_synced = False
+            else:
+                # 元数据-only 登记：无向量点、无章节树；vector_synced=True 使重触发走
+                # skipped 短路（天然幂等），且不进阶段 C upsert。
+                point_ids = []
+                toc_tree = []
+                vector_synced = True
             new_version = KnowledgeEntityVersion.objects.create(
                 id=new_version_id,
                 entity=entity,
@@ -542,7 +583,7 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
                 qdrant_point_ids=point_ids,
                 toc_tree=toc_tree,
                 is_latest=True,
-                vector_synced=False,
+                vector_synced=vector_synced,
                 event_time=event.event_time,
                 valid_at=event.event_time,
             )

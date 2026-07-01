@@ -4,12 +4,13 @@
 仓库文件）的工件正文全文摄取进 ``delivery_knowledge``——产 ``KnowledgeEntity(kind=document,
 source_kind="artifact")`` + ``工件→REFERENCES→项目图谱节点`` 出边（KLINK-01：项目↔知识）。
 
-**UI 稿（figma/mastergo）等图形外链仅元数据**（``ragable=False`` / ``external_link``）——
-``ArtifactService`` 根本不为其调度摄取；即使被显式触发，本 normalizer 也返回空列表（不强行
-RAG 正文，多模态留 v2 PROJX-01）。
+**UI 稿（figma/mastergo）等图形外链元数据-only 登记**（``ragable=False`` / ``external_link``）——
+产 ``vectorize=False`` 的 document 事件（KDEP-01）：仍建 ``KnowledgeEntity(kind=document)``
++ ``工件→REFERENCES→项目节点`` 边，承载 title/type/carrier/url 元数据，但**不进 Qdrant 向量**
+（无正文可 embed，多模态留 v2 PROJX-01）。保证总览计数/搜索/树视图覆盖全部类型零遗漏。
 
 降级语义（fail-soft，缺段不缺实体）：
-- 工件不存在 / 类型非 ragable / 图形载体 → 返回空列表（warning）；
+- 工件不存在 → 返回空列表（warning）；
 - 飞书正文拉取失败 → 正文空串 + warning，实体与边照常产出（不抛、不回滚、不阻断工件创建）。
 
 **脱敏不可绕过**：飞书 doc/表格正文经 ``redact_secrets_in_text`` 脱敏后才入图。
@@ -193,25 +194,13 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         )
         return []
 
-    # 仅 ragable 且文字载体进 RAG 正文；图形外链（UI 稿）仅元数据，不强行摄取。
-    if not artifact.type.ragable or artifact.carrier not in TEXT_CARRIERS:
-        logger.info(
-            "artifact_rag_skipped_non_ragable",
-            artifact_id=str(artifact.id),
-            carrier=artifact.carrier,
-            ragable=artifact.type.ragable,
-            trigger=request.trigger,
-            component="knowledge",
-            category="sampling",
-        )
-        return []
-
     project = artifact.project
     space = project.space
 
-    raw_body = await _fetch_body(artifact, space, request=request)
-    # 脱敏不可绕过：飞书正文/异常文本入图前经 redact_secrets_in_text。
-    body = redact_secrets_in_text(raw_body or "")
+    # 是否文字载体可全文 RAG：ragable 类型 + 文字载体（飞书 doc/表格/md/repo_file）。
+    # 非 ragable（UI 稿 external_link 等）走元数据-only 分支：仍登记实体 + 边，但不进 Qdrant 向量（KDEP-01）。
+    vectorize = bool(artifact.type.ragable) and artifact.carrier in TEXT_CARRIERS
+
     event_time = timezone.now()
     if artifact.updated_at and artifact.updated_at > event_time:
         event_time = artifact.updated_at
@@ -219,13 +208,30 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
     # 项目图谱节点（KLINK-01 锚）：工件→REFERENCES→项目节点出边需目标实体先存在。
     project_node_id = await ProjectKnowledgeGraphService().ensure_project_node(project)
 
+    if vectorize:
+        raw_body = await _fetch_body(artifact, space, request=request)
+        # 脱敏不可绕过：飞书正文/异常文本入图前经 redact_secrets_in_text。
+        content = redact_secrets_in_text(raw_body or "")
+    else:
+        # 元数据-only：content 为确定性元数据文本（title/type/carrier/url 拼接），
+        # 仅作 content_hash 幂等锚（title/url/carrier 变更 → hash 变 → 版本翻转），不会被 embed。
+        raw_meta = "\n".join(
+            [
+                artifact.title or "",
+                artifact.type.name or artifact.type.key,
+                artifact.carrier or "",
+                artifact.url or "",
+            ]
+        )
+        content = redact_secrets_in_text(raw_meta)
+
     event = IngestionEvent(
         kind=EntityKind.DOCUMENT,
         origin=EntityOrigin.ARTIFACT,
         source_kind="artifact",
         source_id=str(artifact.id),
         title=_artifact_title(artifact),
-        content=body,
+        content=content,
         payload={
             "artifact_id": str(artifact.id),
             "project_id": str(project.id),
@@ -238,13 +244,15 @@ async def normalize(request: IngestionRequest) -> list[IngestionEvent]:
         repository_id=None,
         event_time=event_time,
         edges=(EdgeSpec(relation=EdgeRelation.REFERENCES, target_entity_id=project_node_id),),
+        vectorize=vectorize,
     )
 
     logger.info(
         "artifact_rag_normalize_completed",
         artifact_id=str(artifact.id),
         carrier=artifact.carrier,
-        content_length=len(body),
+        vectorize=vectorize,
+        content_length=len(content),
         event_count=1,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         trigger=request.trigger,

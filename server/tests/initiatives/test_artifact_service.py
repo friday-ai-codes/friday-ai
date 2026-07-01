@@ -110,8 +110,12 @@ async def test_ragable_text_carrier_schedules_ingestion() -> None:
     assert req.source_kind == "artifact"
 
 
-async def test_graphic_artifact_skips_ingestion() -> None:
-    """UI 稿图形外链（external_link / ragable=False）→ 不调度 RAG（仅元数据）。"""
+async def test_graphic_artifact_schedules_metadata_only_ingestion() -> None:
+    """UI 稿图形外链（external_link / ragable=False）→ 仍调度摄取（元数据-only 登记，KDEP-01）。
+
+    覆盖全部 ArtifactType 不遗漏：service 侧不再预筛，是否进向量由 normalizer 内部按
+    ragable + 载体决定（非 ragable → vectorize=False 元数据-only）。
+    """
     space = await _make_space()
     project = await _make_project(space)
     t = await _make_type(key="ui", carrier="external_link", ragable=False)
@@ -121,7 +125,9 @@ async def test_graphic_artifact_skips_ingestion() -> None:
         await ArtifactService().create_artifact(
             project_id=project.id, type_id=t.id, title="UI", url="https://figma.com/file/x"
         )
-    sched.assert_not_awaited()
+    sched.assert_awaited()
+    req = sched.call_args.args[0]
+    assert req.source_kind == "artifact"
 
 
 async def test_delete_artifact() -> None:
