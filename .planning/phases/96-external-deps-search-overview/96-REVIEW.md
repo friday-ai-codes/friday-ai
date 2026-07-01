@@ -45,13 +45,18 @@ Phase 96 把「全类型工件登记为可发现实体（含非 ragable 元数�
 
 主要遗留集中在前端总览的两个功能耦合缺陷（M1/M2）与一个预存在的权限 id 语义错配（M3，根因在 Phase 96 范围外的 `access_scope.py`，且为「少召回」的 fail-closed 方向，非泄漏）。这些均不构成 BLOCKER/HIGH，故 `status: clean`。
 
+> **Review Fixes 应用（2026-07-01）：** MED-01 / MED-02 及 LOW-01~LOW-04 已修复并原子提交（各 finding 见下方 Resolution 批注）；MED-03 因根因在 Phase 96 范围外的 `access_scope.py`、方向为 fail-closed（非泄漏）且同时影响搜索链路，**推迟**至专门的 access_scope 修复单独跟踪。前端 `vue-tsc --noEmit` 通过；`pytest tests/knowledge -k "artifact or overview or exposure or knowledge_api or ingestion"` 43 passed。预存在 INFO 项（`test_artifact_inv6_guard` grep 误扫、`ingestion.py` ruff I001）维持 out-of-scope 不改。
+
 ## Narrative Findings (AI reviewer)
 
 ---
 
 ### Medium
 
-#### MED-01: `dep_type` 预筛参数被推送但从未被消费（承诺的类型预筛静默失效）
+#### MED-01: `dep_type` 预筛参数被推送但从未被消费（承诺的类型预筛静默失效）— ✅ 已修复
+
+> **Resolution（2026-07-01）：** 搜索 Tab 现消费 `route.query.dep_type`——按结果中的 `artifact.type_key` 客户端过滤（`displayResults`），并渲染可一键清除的类型筛选 chip（`typeFilterLabel`/`clearTypeFilter` 已接入 i18n；类型名复用总览聚合缓存解析）。清除按钮同步剥离 URL 上的 `dep_type`。`web/src/pages/knowledge/index.vue` + `web/src/locales/zh-CN.json`。commit `82793c15`。
+
 
 **File:** `web/src/components/knowledge/KnowledgeDashboard.vue:278-281`，`web/src/pages/knowledge/index.vue:50-59`
 **Issue:** 类型磁贴点击调用 `goToDepType(typeKey)`：
@@ -65,13 +70,19 @@ function goToDepType(typeKey: string) {
 注释声称「跳搜索 Tab 预筛该类型（?dep_type= 预填，供搜索侧消费）」，但 `index.vue` 仅 `watch(() => route.query.tab, ...)`，从不读取 `route.query.dep_type`；`searchDeliveryKnowledge()` 也没有类型过滤参数。结果：点击类型磁贴只切到搜索 Tab，搜索框空、无任何预筛/自动检索，与文案承诺不符。
 **Fix:** 二选一——（a）在搜索 Tab 消费 `route.query.dep_type`（预填搜索或加类型 facet 过滤，需后端/前端补类型过滤能力）；（b）若本期不做预筛，移除 `dep_type` 参数与误导性注释，改为纯 `emit('navigate', 'search')` 或直接跳到该类型的说明。
 
-#### MED-02: 交付文档区块被 `isEmpty`（仓库为空）连坐隐藏——无仓库但有工件的工作区看不到新功能
+#### MED-02: 交付文档区块被 `isEmpty`（仓库为空）连坐隐藏——无仓库但有工件的工作区看不到新功能 — ✅ 已修复
+
+> **Resolution（2026-07-01）：** 仓库派生内容（搜索栏/指标/全景/健康）收拢进 `<template v-if="!isEmpty">`，交付文档 `<section>` 提为 `v-else` 内的独立同级块，靠自身 `depLoading`/`depEmpty` 控制显隐；全局空态改为 `isEmpty && depEmpty && !depLoading` 才占位。无仓库但有工件的工作区现可正常看到交付文档总览。`web/src/components/knowledge/KnowledgeDashboard.vue`。commit `4d975463`。
+
 
 **File:** `web/src/components/knowledge/KnowledgeDashboard.vue:307,316,591`
 **Issue:** `isEmpty = !isLoading && repos.value.length === 0`（基于 `getKnowledgeTree()` 的仓库数）。整段交付文档区块（line 591）位于 `<template v-else>`（line 316）之内，即「非 loading 且非 isEmpty」才渲染。因此当工作区**有工件但无已纳管/索引仓库**时，`isEmpty` 为 true，整个 Dashboard 落到全局空态（line 307），交付文档总览区块完全不渲染——即便 `overviewQuery` 已返回非空数据。交付文档与代码仓库彼此独立，不应被仓库存在性连坐。
 **Fix:** 将交付文档区块从 `repos` 驱动的 `isEmpty` 解耦。例如把该 `<section>` 提到 `v-else` 之外、以自身 `depLoading`/`depEmpty`/`depTotal` 独立控制显隐；或在全局空态分支内也渲染 deps 区块（`v-if="!isLoading && (repos.length || depTotal)"`）。
 
-#### MED-03: public_org 工件对非成员在总览中不可见（access_scope 混用 Space id 与 initiatives.Project id）；overview docstring 描述与实现不符
+#### MED-03: public_org 工件对非成员在总览中不可见（access_scope 混用 Space id 与 initiatives.Project id）；overview docstring 描述与实现不符 — ⏸️ 已推迟（Deferred）
+
+> **Deferred（2026-07-01）：** 根因位于 Phase 96 范围外的 `access_scope.py`（Phase 15 / WS-02 引入），方向为 fail-closed「少召回」而非泄漏，且同时影响搜索链路。留待专门的 `access_scope` 修复（`_public_org_project_ids()` 返回 Space id + 同步 docstring）单独 issue 跟踪，本次不改。
+
 
 **File:** `server/knowledge/api/artifact_overview.py:7-8,53`；根因 `server/knowledge/access_scope.py:21-30,47-54`
 **Issue:** `resolve_allowed_project_ids` 返回的 `allowed` 集合语义不一致：
@@ -87,7 +98,10 @@ overview 聚合按 `Artifact.objects.filter(project__space_id__in=allowed)` 过�
 
 ### Low
 
-#### LOW-01: 飞书正文拉取失败日志 `error=str(exc)` 未过 `redact_secrets_in_text`（上游异常文本可能夹带 token/URL）
+#### LOW-01: 飞书正文拉取失败日志 `error=str(exc)` 未过 `redact_secrets_in_text`（上游异常文本可能夹带 token/URL）— ✅ 已修复
+
+> **Resolution（2026-07-01）：** `_fetch_body` 的 `artifact_rag_doc_fetch_failed` / `artifact_rag_bitable_fetch_failed` 两处 `error=` 均改为 `redact_secrets_in_text(str(exc))`。`server/knowledge/sources/artifact.py`。commit `f4b94d91`。
+
 
 **File:** `server/knowledge/sources/artifact.py:138-146,157-165`
 **Issue:** `_fetch_body` 对飞书 doc/bitable 拉取失败记 `error=str(exc)`，未经 `redact_secrets_in_text` 手动脱敏。项目强制规范（`.cursor/rules/observability-logging.mdc`）要求「上游响应体/异常文本手动用 `redact_secrets_in_text`」。飞书客户端异常消息可能内嵌带 token 的 URL。自动 processor `redact_credentials` 可兜底常见凭证形态，且该 `error=str(exc)` 写法在全仓普遍存在，故降为 LOW。
@@ -97,19 +111,28 @@ from common.logging import redact_secrets_in_text
 logger.warning("artifact_rag_doc_fetch_failed", ..., error=redact_secrets_in_text(str(exc)))
 ```
 
-#### LOW-02: `icon-[lucide--table]`（feishu_bitable）未纳入 `main.css` safelist，动态拼接类可能不生成
+#### LOW-02: `icon-[lucide--table]`（feishu_bitable）未纳入 `main.css` safelist，动态拼接类可能不生成 — ✅ 已修复
+
+> **Resolution（2026-07-01）：** `main.css` `@source inline(...)` 增补 `icon-[lucide--table]`（feishu_bitable 载体）、`icon-[lucide--package]`（交付文档空态经 `CompactEmptyState` 动态拼接）与 `icon-[lucide--folder]`。`web/src/styles/main.css`。commit `8fafd029`。
+
 
 **File:** `web/src/components/knowledge/KnowledgeDashboard.vue:269`（`DEP_CARRIER_ICON.feishu_bitable = 'lucide--table'`）
 **Issue:** 图标类以 `:class="`icon-[${depCarrierIcon(...)}]`"` 动态拼接。`web/src/styles/main.css` 通过 `@source inline(...)` 手动 safelist 动态图标，但**缺 `icon-[lucide--table]`**（`file-text`/`external-link`/`file-code`/`file` 均已在列）。Tailwind v4 + `@iconify/tailwind4` 不会为运行时拼接、源码中无字面量的类生成样式，feishu_bitable 的类型磁贴/条目将无图标。此为与 `DependenciesSection.vue:149`、`ArtifactsTab.vue:48` 共享的**预存在 safelist 缺口**，Phase 96 新 UI 继承之。
 **Fix:** 在 `main.css` 的 `@source inline(...)` 增补 `icon-[lucide--table]`。
 
-#### LOW-03: 前端 `ArtifactOverviewItem.updated_at` 类型不可空，后端可返回 `null`
+#### LOW-03: 前端 `ArtifactOverviewItem.updated_at` 类型不可空，后端可返回 `null` — ✅ 已修复
+
+> **Resolution（2026-07-01）：** `ArtifactOverviewItem.updated_at` 改为 `string | null`，对齐后端 `... if a.updated_at else None`。`web/src/api/knowledge.ts`。commit `df32d073`。
+
 
 **File:** `web/src/api/knowledge.ts:90` vs `server/knowledge/api/artifact_overview.py:88`
 **Issue:** 后端 `"updated_at": a.updated_at.isoformat() if a.updated_at else None` 可能返回 `null`；TS 接口声明 `updated_at: string`（非空）。类型契约不严；虽然 `updated_at` 为 `auto_now` 实际几乎恒有值，但 DTO 允许 null。
 **Fix:** `updated_at: string | null`（或后端保证非空）。
 
-#### LOW-04: `artifact_overview_failed` warning 缺 `duration_ms`，与 started/completed 观测不一致
+#### LOW-04: `artifact_overview_failed` warning 缺 `duration_ms`，与 started/completed 观测不一致 — ✅ 已修复
+
+> **Resolution（2026-07-01）：** `artifact_overview_failed` 补 `duration_ms=round((time.perf_counter() - started) * 1000, 2)`，与 started/completed 时延观测一致。`server/knowledge/api/artifact_overview.py`。commit `a760e057`。
+
 
 **File:** `server/knowledge/api/artifact_overview.py:136-142`
 **Issue:** `completed` 分支带 `duration_ms`，`failed` 分支未带，关键生命周期时延观测不完整。
